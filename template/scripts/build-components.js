@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const fs = require("fs");
 const path = require("path");
+const { buildFolderMap: buildRisuFolderMap, resolveFolderName: resolveRisuFolderName } = require("./shared/risu-api");
 
 const argv = process.argv.slice(2);
 const helpMode = argv.includes("-h") || argv.includes("--help");
@@ -77,7 +78,7 @@ function listJsonFilesRecursive(rootDir) {
       const full = path.join(curDir, e.name);
       if (e.isDirectory()) {
         walk(full);
-      } else if (e.isFile() && e.name.toLowerCase().endsWith(".json")) {
+      } else if (e.isFile() && e.name.toLowerCase().endsWith(".json") && e.name !== "_order.json") {
         out.push(full);
       }
     }
@@ -92,9 +93,51 @@ function listJsonFilesFlat(rootDir) {
   if (!fs.existsSync(rootDir) || !fs.statSync(rootDir).isDirectory()) return [];
   return fs
     .readdirSync(rootDir, { withFileTypes: true })
-    .filter((e) => e.isFile() && e.name.toLowerCase().endsWith(".json"))
+    .filter((e) => e.isFile() && e.name.toLowerCase().endsWith(".json") && e.name !== "_order.json")
     .map((e) => path.join(rootDir, e.name))
     .sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
+}
+
+function resolveOrderedFiles(dir, files) {
+  const manifestPath = path.join(dir, "_order.json");
+  if (!fs.existsSync(manifestPath)) return files;
+
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+  } catch {
+    console.warn("  ⚠️  _order.json 파싱 실패 — 알파벳순 정렬 사용");
+    return files;
+  }
+
+  if (!Array.isArray(manifest)) return files;
+
+  const fileMap = new Map();
+  for (const f of files) {
+    const rel = toPosix(path.relative(dir, f));
+    fileMap.set(rel, f);
+  }
+
+  const ordered = [];
+
+  for (const rel of manifest) {
+    if (fileMap.has(rel)) {
+      ordered.push(fileMap.get(rel));
+      fileMap.delete(rel);
+    } else {
+      console.warn(`  ⚠️  _order.json: 파일 없음 (skip): ${rel}`);
+    }
+  }
+
+  if (fileMap.size > 0) {
+    const orphans = [...fileMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    for (const [rel, abs] of orphans) {
+      console.warn(`  ⚠️  _order.json에 없는 파일 (끝에 추가): ${rel}`);
+      ordered.push(abs);
+    }
+  }
+
+  return ordered;
 }
 
 function pickKnownRegexFields(raw) {
@@ -121,7 +164,7 @@ function pickKnownRegexFields(raw) {
   return out;
 }
 
-function normalizeLorebookEntry(raw, relDirPosix) {
+function normalizeLorebookEntry(raw, relDirPosix, folderMap) {
   const insertorder = Number.isFinite(raw.insertorder)
     ? raw.insertorder
     : Number.isFinite(raw.insertion_order)
@@ -148,8 +191,9 @@ function normalizeLorebookEntry(raw, relDirPosix) {
     bookVersion: Number.isFinite(raw.bookVersion) ? raw.bookVersion : 2,
   };
 
-  const folder = typeof raw.folder === "string" && raw.folder.length > 0
-    ? raw.folder
+  const folderRef = typeof raw.folder === "string" && raw.folder.length > 0 ? raw.folder : "";
+  const folder = folderRef
+    ? resolveRisuFolderName(folderRef, folderMap, (v) => v)
     : relDirPosix !== "."
       ? relDirPosix
       : "";
@@ -187,7 +231,7 @@ function lorebookDedupeKey(entry) {
 }
 
 function buildRegexExport() {
-  const files = listJsonFilesFlat(regexDir);
+  const files = resolveOrderedFiles(regexDir, listJsonFilesFlat(regexDir));
   const items = [];
 
   for (const filePath of files) {
@@ -202,8 +246,8 @@ function buildRegexExport() {
 }
 
 function buildLorebookExport() {
-  const files = listJsonFilesRecursive(lorebooksDir);
-  const items = [];
+  const files = resolveOrderedFiles(lorebooksDir, listJsonFilesRecursive(lorebooksDir));
+  const rows = [];
 
   for (const filePath of files) {
     const raw = readJson(filePath);
@@ -213,8 +257,11 @@ function buildLorebookExport() {
 
     const rel = toPosix(path.relative(lorebooksDir, filePath));
     const relDir = toPosix(path.dirname(rel));
-    items.push(normalizeLorebookEntry(raw, relDir));
+    rows.push({ raw, relDir });
   }
+
+  const folderMap = buildRisuFolderMap(rows.map((r) => r.raw), { fallbackName: "unnamed" });
+  const items = rows.map((r) => normalizeLorebookEntry(r.raw, r.relDir, folderMap));
 
   let data = items;
   if (dedupeLorebook) {
