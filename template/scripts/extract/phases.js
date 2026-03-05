@@ -3,13 +3,16 @@ const path = require("path");
 const toPosix = (p) => p.split(path.sep).join("/");
 const {
   sanitizeFilename,
+  ensureDir,
   writeJson,
   writeText,
+  writeBinary,
   uniquePath,
   parsePngChunks,
   buildFolderMap,
   resolveFolderName,
 } = require("../shared/extract-helpers");
+const { resolveAssetUri, guessMimeExt } = require("../shared/uri-resolver");
 const { parseCharx, parseModuleRisum } = require("./parsers");
 
 function phase1_parseCard(inputPath) {
@@ -66,7 +69,7 @@ function phase1_parseCard(inputPath) {
       console.log(`     에셋: ${assetCount}개`);
     }
 
-    return card;
+    return { card, assetSources: assets };
   }
 
   if (ext === ".png") {
@@ -75,6 +78,15 @@ function phase1_parseCard(inputPath) {
     const chunks = parsePngChunks(buf);
     const keys = Object.keys(chunks);
     console.log(`     tEXt 청크: ${keys.join(", ") || "(없음)"}`);
+
+    const assetSources = {};
+    const assetChunkRe = /^chara-ext-asset_:?(\d+)$/;
+    for (const key of Object.keys(chunks)) {
+      const m = assetChunkRe.exec(key);
+      if (m) {
+        assetSources[m[1]] = Buffer.from(chunks[key], 'base64');
+      }
+    }
 
     let jsonStr = null;
     if (chunks.ccv3) {
@@ -101,7 +113,7 @@ function phase1_parseCard(inputPath) {
     console.log(`     spec: ${card.spec || "unknown"}`);
     console.log(`     이름: ${card.data?.name || card.name || "unknown"}`);
 
-    return card;
+    return { card, assetSources };
   }
 
   if (ext === ".json") {
@@ -109,7 +121,7 @@ function phase1_parseCard(inputPath) {
     const card = JSON.parse(buf.toString("utf-8"));
     console.log(`     spec: ${card.spec || "unknown"}`);
     console.log(`     이름: ${card.data?.name || card.name || "unknown"}`);
-    return card;
+    return { card, assetSources: {} };
   }
 
   console.error(`  ❌ 지원하지 않는 파일 포맷: ${ext}`);
@@ -279,9 +291,164 @@ function phase4_extractTriggerLua(card, outputDir) {
   return luaCount;
 }
 
+function detectSourceFormat(assetSources) {
+  const keys = Object.keys(assetSources || {});
+  if (keys.length === 0) return "json";
+  if (keys.every((k) => /^\d+$/.test(k))) return "png";
+  return "charx";
+}
+
+function phase5_extractAssets(card, outputDir, assetSources) {
+  const assets = card.data?.assets;
+  if (assets == null) {
+    console.log("     (V2 카드 — assets 배열 없음)");
+    return 0;
+  }
+
+  if (assets.length === 0) {
+    console.log("     (에셋 없음)");
+    return 0;
+  }
+
+  console.log("\n  🖼️ Phase 5: 에셋 추출");
+  console.log("     assets: " + assets.length + "개");
+
+  const assetsDir = path.join(outputDir, "assets");
+  ensureDir(assetsDir);
+
+  const manifest = {
+    version: 1,
+    source_format: detectSourceFormat(assetSources),
+    total: assets.length,
+    extracted: 0,
+    skipped: 0,
+    assets: [],
+  };
+
+  for (let i = 0; i < assets.length; i++) {
+    const asset = assets[i];
+    const resolved = resolveAssetUri(asset?.uri, assetSources);
+    const entry = {
+      index: i,
+      original_uri: asset?.uri,
+      extracted_path: null,
+      status: "skipped",
+      type: asset?.type || null,
+      name: asset?.name || null,
+      ext: asset?.ext || null,
+      size_bytes: null,
+    };
+
+    if (resolved === null) {
+      entry.status = "unresolved";
+      console.warn(`     ⚠️ asset[${i}] URI 해석 실패: ${asset?.uri || "(missing uri)"}`);
+      manifest.assets.push(entry);
+      manifest.skipped++;
+      continue;
+    }
+
+    if (resolved.type === "remote") {
+      entry.status = "remote";
+      manifest.assets.push(entry);
+      manifest.skipped++;
+      continue;
+    }
+
+    if (resolved.type === "ccdefault") {
+      entry.status = "pointer_to_main_image";
+      manifest.assets.push(entry);
+      manifest.skipped++;
+      continue;
+    }
+
+    if (!resolved.data) {
+      entry.status = "unresolved";
+      console.warn(`     ⚠️ asset[${i}] 데이터 없음: ${asset?.uri || "(missing uri)"}`);
+      manifest.assets.push(entry);
+      manifest.skipped++;
+      continue;
+    }
+
+    const ext = asset?.ext
+      ? "." + String(asset.ext).replace(/^\./, "")
+      : guessMimeExt(resolved.metadata?.mime || "");
+    const baseName = sanitizeFilename(asset?.name || "asset_" + i);
+    const outPath = uniquePath(assetsDir, baseName, ext);
+    writeBinary(outPath, resolved.data);
+
+    entry.extracted_path = path.basename(outPath);
+    entry.status = "extracted";
+    entry.size_bytes = resolved.data.length;
+    manifest.extracted++;
+    manifest.assets.push(entry);
+  }
+
+  writeJson(path.join(assetsDir, "manifest.json"), manifest);
+  console.log(
+    "     ✅ " +
+      manifest.extracted +
+      "개 추출, " +
+      manifest.skipped +
+      "개 스킵 → " +
+      path.relative(".", assetsDir) +
+      "/"
+  );
+
+  return manifest.extracted;
+}
+
+function phase6_extractBackgroundHTML(card, outputDir) {
+  console.log('\n  🌐 Phase 6: BackgroundHTML 추출');
+  const html = card.data?.extensions?.risuai?.backgroundHTML;
+  if (!html) {
+    console.log('     (backgroundHTML 없음)');
+    return 0;
+  }
+  const outPath = path.join(outputDir, 'html', 'background.html');
+  writeText(outPath, html);
+  console.log('     ✅ html/background.html → ' + path.relative('.', path.join(outputDir, 'html')));
+  return 1;
+}
+
+function phase7_extractVariables(card, outputDir) {
+  console.log('\n  📋 Phase 7: DefaultVariables 추출');
+  const raw = card.data?.extensions?.risuai?.defaultVariables;
+  if (!raw) {
+    console.log('     (defaultVariables 없음)');
+    return 0;
+  }
+  const txtPath = path.join(outputDir, 'variables', 'default.txt');
+  writeText(txtPath, raw);
+
+  const parsed = {};
+  const lines = raw.split(/\r?\n/);
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    const eqIdx = line.indexOf('=');
+    if (eqIdx === -1) {
+      console.warn('     ⚠️ = 없는 줄 (key만 저장): ' + line);
+      parsed[line] = '';
+    } else {
+      const key = line.slice(0, eqIdx);
+      const val = line.slice(eqIdx + 1);
+      parsed[key] = val;
+    }
+  }
+
+  const jsonPath = path.join(outputDir, 'variables', 'default.json');
+  writeJson(jsonPath, parsed);
+
+  const count = Object.keys(parsed).length;
+  console.log('     ✅ variables/default.txt + default.json (' + count + '개 변수) → ' + path.relative('.', path.join(outputDir, 'variables')));
+  return count;
+}
+
 module.exports = {
   phase1_parseCard,
   phase2_extractLorebooks,
   phase3_extractRegex,
   phase4_extractTriggerLua,
+  phase5_extractAssets,
+  phase6_extractBackgroundHTML,
+  phase7_extractVariables,
 };

@@ -7,6 +7,9 @@ const {
   phase2_extractLorebooks,
   phase3_extractRegex,
   phase4_extractTriggerLua,
+  phase5_extractAssets,
+  phase6_extractBackgroundHTML,
+  phase7_extractVariables,
 } = require("./extract/phases");
 
 const argv = process.argv.slice(2);
@@ -33,6 +36,10 @@ if (helpMode || !filePath) {
     2. globalLore 추출 → lorebooks/ (폴더 구조 유지)
     3. customscript(regex) 추출 → regex/
     4. triggerlua 스크립트 추출 → lua/
+    5. 에셋 바이너리 추출 → assets/ + assets/manifest.json
+    6. backgroundHTML 추출 → html/background.html
+    7. defaultVariables 추출 → variables/default.txt + default.json
+    8. Lua 분석 (analyze.js)
 
   Examples:
     node extract.js mychar.charx
@@ -54,7 +61,7 @@ function runLuaAnalysis(resolvedOutDir, cardJsonPath) {
   const luaFiles = fs.readdirSync(luaDir).filter((f) => f.endsWith(".lua"));
   if (luaFiles.length === 0) return;
 
-  console.log("\n  ═══ Phase 5: Lua Analysis ═══");
+  console.log("\n  ═══ Phase 8: Lua Analysis ═══");
   const analyzeScript = path.join(__dirname, "analyze.js");
   if (!fs.existsSync(analyzeScript)) {
     console.log("     ⚠️ analyze.js를 찾을 수 없습니다: " + analyzeScript);
@@ -78,7 +85,7 @@ function runLuaAnalysis(resolvedOutDir, cardJsonPath) {
 function main() {
   console.log(`\n  🐿️ RisuAI Character Card Extractor\n`);
 
-  const card = phase1_parseCard(filePath);
+  const { card, assetSources } = phase1_parseCard(filePath);
 
   const resolvedOutDir = path.resolve(outDir);
   ensureDir(resolvedOutDir);
@@ -94,6 +101,9 @@ function main() {
   phase2_extractLorebooks(card, resolvedOutDir);
   phase3_extractRegex(card, resolvedOutDir);
   phase4_extractTriggerLua(card, resolvedOutDir);
+  phase5_extractAssets(card, resolvedOutDir, assetSources);
+  phase6_extractBackgroundHTML(card, resolvedOutDir);
+  phase7_extractVariables(card, resolvedOutDir);
   runLuaAnalysis(resolvedOutDir, cardJsonPath);
 
   console.log("\n  ────────────────────────────────────────");
