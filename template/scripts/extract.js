@@ -33,13 +33,14 @@ if (helpMode || !filePath) {
 
   Phases:
     1. 캐릭터 카드 파싱 → card.json
-    2. globalLore 추출 → lorebooks/ (폴더 구조 유지)
+    2. globalLore 추출 → lorebooks/ + lorebooks/manifest.json
     3. customscript(regex) 추출 → regex/
     4. triggerlua 스크립트 추출 → lua/
     5. 에셋 바이너리 추출 → assets/ + assets/manifest.json
     6. backgroundHTML 추출 → html/background.html
     7. defaultVariables 추출 → variables/default.txt + default.json
     8. Lua 분석 (analyze.js)
+    9. 카드 종합 분석 (analyze-card.js) → analysis/
 
   Examples:
     node extract.js mychar.charx
@@ -82,6 +83,28 @@ function runLuaAnalysis(resolvedOutDir, cardJsonPath) {
   }
 }
 
+function runCardAnalysis(resolvedOutDir, cardJsonPath) {
+  // Check if card.json exists (it always should at this point)
+  if (!fs.existsSync(cardJsonPath)) return;
+
+  console.log("\n  ═══ Phase 9: Card Analysis ═══");
+  const analyzeCardScript = path.join(__dirname, "analyze-card.js");
+  if (!fs.existsSync(analyzeCardScript)) {
+    console.log("     ⚠️ analyze-card.js를 찾을 수 없습니다: " + analyzeCardScript);
+    return;
+  }
+
+  try {
+    const { execSync } = require("child_process");
+    execSync(`node "${analyzeCardScript}" "${resolvedOutDir}"`, {
+      stdio: "inherit",
+      timeout: 120000,
+    });
+  } catch (e) {
+    console.error(`  ⚠️ analyze-card.js 실행 실패: ${e.message}`);
+  }
+}
+
 function main() {
   console.log(`\n  🐿️ RisuAI Character Card Extractor\n`);
 
@@ -105,6 +128,7 @@ function main() {
   phase6_extractBackgroundHTML(card, resolvedOutDir);
   phase7_extractVariables(card, resolvedOutDir);
   runLuaAnalysis(resolvedOutDir, cardJsonPath);
+  runCardAnalysis(resolvedOutDir, cardJsonPath);
 
   console.log("\n  ────────────────────────────────────────");
   console.log(`  📊 추출 완료 → ${path.relative(".", resolvedOutDir)}/`);
