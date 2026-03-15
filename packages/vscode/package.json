@@ -7,14 +7,77 @@
     "vscode": "^1.96.0"
   },
   "main": "./dist/extension.js",
-  "activationEvents": [],
-  "contributes": {},
+  "activationEvents": [
+    "onCommand:risuWorkbench.extractCard",
+    "onCommand:risuWorkbench.packCard",
+    "onCommand:risuWorkbench.analyzeLua",
+    "onCommand:risuWorkbench.inspectCard",
+    "onCommand:risuWorkbench.openCardPanel",
+    "onView:risuWorkbench.cards"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "risuWorkbench",
+          "title": "Risu Workbench",
+          "icon": "resources/workbench.svg"
+        }
+      ]
+    },
+    "views": {
+      "risuWorkbench": [
+        {
+          "id": "risuWorkbench.cards",
+          "name": "Cards"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "risuWorkbench.extractCard",
+        "title": "Risu Workbench: Extract Card"
+      },
+      {
+        "command": "risuWorkbench.packCard",
+        "title": "Risu Workbench: Pack Card"
+      },
+      {
+        "command": "risuWorkbench.analyzeLua",
+        "title": "Risu Workbench: Analyze Lua"
+      },
+      {
+        "command": "risuWorkbench.inspectCard",
+        "title": "Risu Workbench: Inspect Card"
+      },
+      {
+        "command": "risuWorkbench.openCardPanel",
+        "title": "Risu Workbench: Open Card Panel"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "risuWorkbench.openCardPanel",
+          "when": "view == risuWorkbench.cards",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "risuWorkbench.inspectCard",
+          "when": "view == risuWorkbench.cards && viewItem == risuWorkbench.cardItem",
+          "group": "inline"
+        }
+      ]
+    }
+  },
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch"
   },
   "dependencies": {
-    "risu-workbench-core": "workspace:*"
+    "risu-workbench-core": "*"
   },
   "devDependencies": {
     "@types/vscode": "^1.96.0",
