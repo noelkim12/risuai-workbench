@@ -9,11 +9,13 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,
+    "allowJs": false,
     "esModuleInterop": true,
+    "types": ["node"],
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "scripts"]
+  "exclude": ["node_modules", "dist"]
 }

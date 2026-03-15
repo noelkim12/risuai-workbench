@@ -80,7 +80,7 @@ describe('pack.js character round-trip', () => {
     const outPath = path.join(workDir, 'packed.charx');
     execFileSync(
       'node',
-      [path.join(process.cwd(), 'scripts', 'pack.js'), '--in', workDir, '--format', 'charx', '--out', outPath],
+      [path.join(process.cwd(), 'dist', 'cli', 'main.js'), 'pack', '--in', workDir, '--format', 'charx', '--out', outPath],
       {
         cwd: process.cwd(),
         stdio: 'pipe',

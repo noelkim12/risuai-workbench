@@ -1,0 +1,33 @@
+const {
+  safeArray,
+  lineStart,
+  lineEnd,
+  lineCount,
+  nodeKey,
+  callArgs,
+  strLit,
+  exprName,
+  assignName,
+  directCalleeName,
+  sanitizeName,
+  toModuleName,
+  prefixOf,
+  createMaxBlankRun,
+} = require("../../../domain");
+
+module.exports = {
+  safeArray,
+  lineStart,
+  lineEnd,
+  lineCount,
+  nodeKey,
+  callArgs,
+  strLit,
+  exprName,
+  assignName,
+  directCalleeName,
+  sanitizeName,
+  toModuleName,
+  prefixOf,
+  createMaxBlankRun,
+};

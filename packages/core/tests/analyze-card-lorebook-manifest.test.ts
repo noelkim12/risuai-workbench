@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 const require = createRequire(import.meta.url);
-const { collectLorebookCBS } = require('../scripts/analyze-card/collectors.js');
+const { collectLorebookCBS } = require('../dist/cli/analyze-card/collectors.js');
 
 const tempDirs: string[] = [];
 

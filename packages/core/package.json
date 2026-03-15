@@ -4,9 +4,22 @@
   "description": "Core engine for RisuAI character card workbench",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./node": "./dist/node/index.js"
+  },
   "bin": {
     "risu-core": "bin/risu-core.js"
   },
+  "files": [
+    "dist",
+    "!dist/runtime/**",
+    "bin",
+    "assets/rpack_map.bin",
+    "package.json",
+    "README*",
+    "LICENSE*"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run"

@@ -13,8 +13,8 @@ afterEach(() => {
   }
 });
 
-function runCoreScript(scriptName: string, args: string[], cwd = process.cwd()) {
-  execFileSync('node', [path.join(cwd, 'scripts', scriptName), ...args], {
+function runCoreCommand(commandName: string, args: string[], cwd = process.cwd()) {
+  execFileSync('node', [path.join(cwd, 'dist', 'cli', 'main.js'), commandName, ...args], {
     cwd,
     stdio: 'pipe',
   });
@@ -103,7 +103,7 @@ describe('lorebook folder layout', () => {
 
     writeFileSync(inputCardPath, `${JSON.stringify(card, null, 2)}\n`, 'utf-8');
 
-    runCoreScript('extract.js', [inputCardPath, '--out', extractDir]);
+    runCoreCommand('extract', [inputCardPath, '--out', extractDir]);
 
     const lorebooksDir = path.join(extractDir, 'lorebooks');
     const manifestPath = path.join(lorebooksDir, 'manifest.json');
@@ -150,12 +150,12 @@ describe('lorebook folder layout', () => {
       'Lorebook_Example2_Always_Active.json',
     ]);
 
-    runCoreScript('build-components.js', ['--in', extractDir, '--out', extractDir]);
+    runCoreCommand('build', ['--in', extractDir, '--out', extractDir]);
     const lorebookExport = JSON.parse(readFileSync(path.join(extractDir, 'lorebook_export.json'), 'utf-8'));
     expect(lorebookExport.data[0]).toEqual(expect.objectContaining({ mode: 'folder', comment: 'Lorebook Folder Example1' }));
 
     const packedPath = path.join(workDir, 'roundtrip.charx');
-    runCoreScript('pack.js', ['--in', extractDir, '--format', 'charx', '--out', packedPath]);
+    runCoreCommand('pack', ['--in', extractDir, '--format', 'charx', '--out', packedPath]);
 
     const packedArchive = unzipSync(readFileSync(packedPath));
     const packedCard = JSON.parse(strFromU8(packedArchive['card.json']));
