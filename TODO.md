@@ -56,6 +56,7 @@
 - [x] Task 14: vitest setup for packages/core
 - [x] Task 15: TODO.md update + root test.js cleanup
 - [x] `packages/core/src/shared/phase-helpers.ts` 분해 이관 완료 (lorebook 순수 계획은 `domain/lorebook/folders.ts`, 실행 I/O는 `node/lorebook-io.ts`, 소비자 phase는 plan+execute로 전환)
+- [x] `packages/core` Task 9 완료: `cli/analyze` 순수 로직 domain 추출 (`lua-collector.ts`, `lua-analyzer.ts`, correlation 순수 로직 분리)
 ### Remaining
 
 #### Repack Contract & Validation
