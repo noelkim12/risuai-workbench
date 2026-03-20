@@ -137,3 +137,21 @@ export function createMaxBlankRun(
     return max;
   };
 }
+
+/**
+ * Lua 소스에서 최상위 함수명을 추론한다.
+ * triggerscript에서 추출한 Lua 코드의 파일명을 결정할 때 사용한다.
+ */
+export function inferLuaFunctionName(code: string): string | null {
+  if (!code) return null;
+  const patterns = [
+    /\blocal\s+function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/,
+    /\bfunction\s+([A-Za-z_][A-Za-z0-9_.:]*)\s*\(/,
+    /\b([A-Za-z_][A-Za-z0-9_.]*)\s*=\s*function\s*\(/,
+  ];
+  for (const regex of patterns) {
+    const match = code.match(regex);
+    if (match && match[1]) return match[1];
+  }
+  return null;
+}
