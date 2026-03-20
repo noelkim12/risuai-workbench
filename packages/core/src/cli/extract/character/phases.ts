@@ -2,6 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   sanitizeFilename,
+  resolveAssetUri,
+  guessMimeExt,
+  inferLuaFunctionName,
+  createLorebookDirAllocator,
+  planLorebookExtraction,
+} from '../../../domain';
+import {
   ensureDir,
   writeJson,
   writeText,
@@ -9,13 +16,8 @@ import {
   uniquePath,
   parsePngChunks,
   stripPngTextChunks,
-  resolveAssetUri,
-  guessMimeExt,
-  inferLuaFunctionName,
-  createLorebookDirAllocator,
-  planLorebookExtraction,
   executeLorebookPlan,
-} from '../../../shared';
+} from '../../../node';
 import { parseCharx, parseModuleRisum } from '../parsers';
 
 export function phase1_parseCard(inputPath: string): {

@@ -2,16 +2,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   sanitizeFilename,
+  inferLuaFunctionName,
+  createLorebookDirAllocator,
+  planLorebookExtraction,
+} from '../../../domain';
+import {
   ensureDir,
   writeJson,
   writeText,
   writeBinary,
   uniquePath,
-  inferLuaFunctionName,
-  createLorebookDirAllocator,
-  planLorebookExtraction,
   executeLorebookPlan,
-} from '../../../shared';
+} from '../../../node';
 import { parseModuleRisumFull, parseModuleJson } from '../parsers';
 import type { ParsedModuleFull } from '../parsers';
 

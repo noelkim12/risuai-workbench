@@ -3,12 +3,8 @@ import { createDecipheriv, createHash } from 'node:crypto';
 import path from 'node:path';
 import { decode as decodeMsgpack } from 'msgpackr';
 import { decompressSync } from 'fflate';
-import {
-  sanitizeFilename,
-  writeJson,
-  writeText,
-  uniquePath,
-} from '../../../shared';
+import { sanitizeFilename } from '../../../domain';
+import { writeJson, writeText, uniquePath } from '../../../node';
 import { decodeRPackData, initRPack } from '../parsers';
 
 // ─── Preset Type Detection ───────────────────────────────────────────────────
