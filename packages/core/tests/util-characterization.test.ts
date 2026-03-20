@@ -10,22 +10,22 @@ import fs from 'node:fs';
  * consolidating duplicate implementations.
  * 
  * Test coverage:
- * 1. toPosix: 4 implementations
+ * 1. toPosix: 2 implementations
  *    - domain/lorebook/folders.ts:toPosix (canonical)
- *    - cli/pack/shared.ts:toPosix
  *    - cli/build/workflow.ts:toPosix (local function, inlined)
  * 
- * 2. sanitizeFilename: 2 implementations
+ * 2. sanitizeFilename: 1 canonical implementation
  *    - domain/card/filenames.ts:sanitizeFilename
- *    - cli/pack/shared.ts:sanitizeFilename
  * 
  * 3. listJsonFilesRecursive: 1 implementation (filesystem function)
- *    - cli/pack/shared.ts:listJsonFilesRecursive
+ *    - node/json-listing.ts:listJsonFilesRecursive
  */
 
 // Import implementations
 import { toPosix as toPosixFolders } from '../src/domain/lorebook/folders';
-import { toPosix as toPosixShared, sanitizeFilename as sanitizeFilenameShared, listJsonFilesRecursive } from '../src/cli/pack/shared';
+import { toPosix as toPosixShared } from '../src/domain/lorebook/folders';
+import { sanitizeFilename as sanitizeFilenameShared } from '../src/domain/card/filenames';
+import { listJsonFilesRecursive } from '../src/node/json-listing';
 import { sanitizeFilename as sanitizeFilenameCard } from '../src/domain/card/filenames';
 
 // Inline implementation from cli/build/workflow.ts (line 163-164)

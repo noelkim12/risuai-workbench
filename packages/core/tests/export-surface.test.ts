@@ -72,13 +72,24 @@ describe('export surface (snapshot)', () => {
 
     expect(exportedKeys).toMatchInlineSnapshot(`
       [
+        "JPEG_1X1",
+        "PNG_1X1_TRANSPARENT",
+        "PNG_SIGNATURE",
+        "crc32",
         "decodeCharacterJsonFromChunks",
         "default",
+        "encodeChunk",
+        "encodeModuleRisum",
+        "encodeRPack",
+        "encodeTextChunk",
         "ensureDir",
         "executeLorebookPlan",
         "isDir",
+        "isJpeg",
+        "isPng",
         "listJsonFilesFlat",
         "listJsonFilesRecursive",
+        "loadRPackEncodeMap",
         "parseCardFile",
         "parsePngChunks",
         "parsePngTextChunks",
@@ -88,6 +99,7 @@ describe('export surface (snapshot)', () => {
         "uniquePath",
         "writeBinary",
         "writeJson",
+        "writePngTextChunks",
         "writeText",
       ]
     `);

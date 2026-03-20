@@ -3,6 +3,15 @@ import {
   decodeCharacterJsonFromChunks,
   parsePngTextChunks,
   stripPngTextChunks,
+  PNG_SIGNATURE,
+  PNG_1X1_TRANSPARENT,
+  JPEG_1X1,
+  writePngTextChunks,
+  encodeTextChunk,
+  encodeChunk,
+  crc32,
+  isPng,
+  isJpeg,
 } from './png';
 import { parseCardFile } from './card-io';
 import { executeLorebookPlan } from './lorebook-io';
@@ -13,6 +22,7 @@ import {
   readJson,
   isDir,
 } from './json-listing';
+import { encodeModuleRisum, encodeRPack, loadRPackEncodeMap } from './rpack';
 
 const parsePngChunks = parsePngTextChunks;
 
@@ -33,4 +43,16 @@ export {
   resolveOrderedFiles,
   readJson,
   isDir,
+  PNG_SIGNATURE,
+  PNG_1X1_TRANSPARENT,
+  JPEG_1X1,
+  writePngTextChunks,
+  encodeTextChunk,
+  encodeChunk,
+  crc32,
+  isPng,
+  isJpeg,
+  encodeModuleRisum,
+  encodeRPack,
+  loadRPackEncodeMap,
 };

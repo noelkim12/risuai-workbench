@@ -7,23 +7,21 @@ import {
   PNG_SIGNATURE,
   PNG_1X1_TRANSPARENT,
   JPEG_1X1,
-  argValue,
-  encodeModuleRisum,
   writePngTextChunks,
-  readJson,
-  setNestedValue,
-  isDir,
-  sanitizeFilename,
-  classifyAssetExt,
-  normalizeExt,
-  toPosix,
-  fromPosix,
   isPng,
   isJpeg,
+} from '../../../node/png';
+import { encodeModuleRisum } from '../../../node/rpack';
+import {
   listJsonFilesRecursive,
   listJsonFilesFlat,
   resolveOrderedFiles,
-} from '../shared';
+  readJson,
+  isDir,
+} from '../../../node/json-listing';
+import { toPosix } from '../../../domain/lorebook/folders';
+import { sanitizeFilename } from '../../../domain/card/filenames';
+import { argValue, setNestedValue, classifyAssetExt, normalizeExt, fromPosix } from '../utils';
 
 const HELP_TEXT = `
   🐿️ RisuAI Character Card Packer
