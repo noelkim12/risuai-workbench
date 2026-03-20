@@ -256,6 +256,12 @@ export function buildLorebookRegexCorrelation(
   };
 }
 
+/**
+ * Lorebook 엔트리 배열에서 CBS 변수별 읽기/쓰기 주체를 수집한다.
+ *
+ * @param entries - RisuAI lorebook 엔트리 배열
+ * @returns 변수명 → { readers, writers } 맵 (각 Set은 엔트리 레이블)
+ */
 export function extractLorebookCBSVariables(
   entries: any[],
 ): Map<string, { readers: Set<string>; writers: Set<string> }> {
@@ -281,6 +287,12 @@ export function extractLorebookCBSVariables(
   return vars;
 }
 
+/**
+ * Regex 스크립트 배열에서 CBS 변수별 읽기/쓰기 주체를 수집한다.
+ *
+ * @param customScripts - RisuAI custom regex 스크립트 배열
+ * @returns 변수명 → { readers, writers } 맵 (각 Set은 스크립트 레이블)
+ */
 export function extractRegexCBSVariables(
   customScripts: any[],
 ): Map<string, { readers: Set<string>; writers: Set<string> }> {
@@ -308,6 +320,13 @@ export function extractRegexCBSVariables(
   return vars;
 }
 
+/**
+ * Lorebook 엔트리와 Lua 분석 결과를 결합하여 변수 상관관계를 계산한다.
+ *
+ * @param params.entries - RisuAI lorebook 엔트리 배열
+ * @param params.collected - Lua 수집 단계 결과 (stateVars, loreApiCalls 포함)
+ * @returns 변수별 lua↔lorebook 방향성 및 엔트리 정보가 담긴 LorebookCorrelation
+ */
 export function buildLorebookCorrelationFromEntries(params: {
   entries: any[];
   collected: CollectedData;
@@ -391,6 +410,14 @@ export function buildLorebookCorrelationFromEntries(params: {
   };
 }
 
+/**
+ * Regex 스크립트와 Lua 분석 결과를 결합하여 변수 상관관계를 계산한다.
+ *
+ * @param params.scripts - RisuAI custom regex 스크립트 배열
+ * @param params.collected - Lua 수집 단계 결과
+ * @param params.totalScripts - 전체 스크립트 수 (비율 계산용, 선택)
+ * @returns 변수별 lua↔regex 방향성이 담긴 RegexCorrelation
+ */
 export function buildRegexCorrelationFromScripts(params: {
   scripts: any[];
   collected: CollectedData;
