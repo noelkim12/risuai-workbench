@@ -1,17 +1,32 @@
 import { sanitizeFilename } from '../card/filenames';
 
+/** RisuAI 캐릭터 북(로어북) 엔트리의 최소 구조 인터페이스에요. */
 export interface RisuCharbookEntry {
+  /** 엔트리 모드 (entry, folder 등) */
   mode: string;
+  /** 엔트리 키 목록 (폴더의 경우 [0]번 인덱스가 식별자가 됨) */
   keys?: string[];
+  /** 엔트리 이름 */
   name?: string;
+  /** 엔트리 설명/주석 */
   comment?: string;
 }
 
+/** 폴더 맵 생성 옵션이에요. */
 export interface FolderMapOptions {
+  /** 폴더 이름을 변환하는 함수 (예: sanitize) */
   nameTransform?: (name: string) => string;
+  /** 이름이 없을 때 사용할 기본값 */
   fallbackName?: string;
 }
 
+/**
+ * 로어북 엔트리 목록에서 폴더 키(keys[0])와 폴더 이름의 매핑을 생성해요.
+ *
+ * @param entries - 로어북 엔트리 배열
+ * @param opts - 변환 옵션
+ * @returns {폴더키: 폴더이름} 매핑 객체
+ */
 export function buildFolderMap(
   entries: RisuCharbookEntry[],
   opts?: FolderMapOptions,
@@ -37,6 +52,14 @@ export function buildFolderMap(
   return map;
 }
 
+/**
+ * 폴더 참조 식별자(folderRef)를 폴더 맵을 통해 실제 폴더 이름으로 해석해요.
+ *
+ * @param folderRef - 엔트리의 folder 필드 값
+ * @param folderMap - buildFolderMap으로 생성된 매핑 객체
+ * @param fallbackTransform - 맵에 없을 때 적용할 폴더 이름 변환기
+ * @returns 해석된 폴더 이름 (참조가 없으면 null)
+ */
 export function resolveFolderName(
   folderRef: string | null | undefined,
   folderMap: Record<string, string>,
@@ -144,21 +167,32 @@ export function buildLorebookFolderDirMap(
   return resolvedDirs;
 }
 
+/** 추출될 로어북 아이템(폴더 또는 개별 엔트리)의 상세 정보에요. */
 export type LorebookExtractionEntry =
   | {
+      /** 아이템 타입 */
       type: 'folder';
+      /** 출처 (캐릭터 카드 또는 모듈) */
       source: 'character' | 'module';
+      /** 아이템이 위치할 상대 디렉토리 경로 */
       relDir: string;
+      /** 원본 데이터 */
       data: any;
     }
   | {
+      /** 아이템 타입 */
       type: 'entry';
+      /** 출처 */
       source: 'character' | 'module';
+      /** 아이템 파일의 상대 경로 */
       relPath: string;
+      /** 원본 데이터 */
       data: any;
     };
 
+/** 로어북 추출 계획 전체를 담는 인터페이스에요. */
 export interface LorebookExtractionPlan {
+  /** 계획된 아이템 목록 */
   items: LorebookExtractionEntry[];
 }
 

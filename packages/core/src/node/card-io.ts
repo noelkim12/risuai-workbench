@@ -3,6 +3,10 @@ import path from 'node:path';
 
 import { decodeCharacterJsonFromChunks, parsePngTextChunks } from './png';
 
+/** 캐릭터 카드 파일(.json 또는 .png)을 파싱하여 캐릭터 데이터 객체를 반환합니다.
+ * @param cardPath - 캐릭터 카드 파일 경로
+ * @returns 파싱된 캐릭터 데이터 객체 또는 null (실패 시)
+ */
 export function parseCardFile(cardPath: string): unknown {
   const ext = path.extname(cardPath).toLowerCase();
   const buf = fs.readFileSync(cardPath);

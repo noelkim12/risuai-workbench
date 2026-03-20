@@ -1,41 +1,62 @@
+/**
+ * Lua AST 노드를 정의하는 인터페이스에요.
+ */
 export interface LuaASTNode {
+  /** 노드 타입 (Identifier, FunctionDeclaration 등) */
   type: string;
+  /** 노드 위치 정보 (행 번호 등) */
   loc?: {
     start: { line: number };
     end: { line: number };
   };
+  /** 바이트 범위 [start, end] */
   range?: [number, number];
+  /** 노드 이름 (Identifier 등에서 사용) */
   name?: string;
+  /** 노드 값 (Literal 등에서 사용) */
   value?: unknown;
+  /** 노드 원본 텍스트 */
   raw?: string;
+  /** 함수 호출 등의 인자 목록 */
   arguments?: LuaASTNode[];
+  /** 함수 정의 등의 파라미터 목록 */
   args?: LuaASTNode[];
+  /** 멤버/인덱스 표현식의 베이스 노드 */
   base?: LuaASTNode;
+  /** 멤버 표현식의 식별자 */
   identifier?: LuaASTNode;
+  /** 인덱스 표현식의 인덱스 노드 */
   index?: LuaASTNode;
+  /** 멤버 접근 연산자 ('.' 또는 ':') */
   indexer?: string;
 }
 
+/** 배열이 아닐 경우 빈 배열을 반환하는 안전한 캐스팅 함수에요. */
 export const safeArray = <T>(v: unknown): T[] =>
   Array.isArray(v) ? (v as T[]) : [];
 
+/** 노드의 시작 행 번호를 추출해요. */
 export const lineStart = (n: LuaASTNode | null | undefined): number =>
   n && n.loc && n.loc.start ? n.loc.start.line : 0;
 
+/** 노드의 종료 행 번호를 추출해요. */
 export const lineEnd = (n: LuaASTNode | null | undefined): number =>
   n && n.loc && n.loc.end ? n.loc.end.line : 0;
 
+/** 노드가 차지하는 총 행 수를 계산해요. */
 export const lineCount = (n: LuaASTNode | null | undefined): number => {
   const s = lineStart(n);
   const e = lineEnd(n);
   return s > 0 && e >= s ? e - s + 1 : 0;
 };
 
+/** 노드의 고유 키(타입과 위치 정보 조합)를 생성해요. */
 export const nodeKey = (n: LuaASTNode | null | undefined): string =>
   n && Array.isArray(n.range)
     ? `${n.type}@${n.range[0]}:${n.range[1]}`
     : `${n && n.type}@${lineStart(n)}:${lineEnd(n)}`;
 
+/** 함수 호출 노드에서 인자 목록을 추출해요. */
 export const callArgs = (
   n: LuaASTNode | null | undefined,
 ): LuaASTNode[] => {
@@ -44,6 +65,7 @@ export const callArgs = (
   return [];
 };
 
+/** 리터럴 노드에서 문자열 값을 추출해요. */
 export const strLit = (n: LuaASTNode | null | undefined): string | null => {
   if (!n || typeof n !== 'object') return null;
   if (n.type === 'StringLiteral') {
@@ -58,6 +80,7 @@ export const strLit = (n: LuaASTNode | null | undefined): string | null => {
   return null;
 };
 
+/** 표현식 노드(식별자, 멤버 접근 등)의 전체 이름을 재귀적으로 추출해요. */
 export function exprName(n: LuaASTNode | null | undefined): string | null {
   if (!n || typeof n !== 'object') return null;
   if (n.type === 'Identifier') return n.name || null;
@@ -76,10 +99,12 @@ export function exprName(n: LuaASTNode | null | undefined): string | null {
   return null;
 }
 
+/** 할당 대상 노드에서 이름을 추출해요. */
 export function assignName(n: LuaASTNode | null | undefined): string | null {
   return n && n.type === 'Identifier' ? (n.name ?? null) : exprName(n);
 }
 
+/** 함수 호출 노드에서 호출 대상의 직접적인 이름을 추출해요. */
 export function directCalleeName(
   callNode: LuaASTNode | null | undefined,
 ): string | null {
@@ -87,6 +112,7 @@ export function directCalleeName(
   return base && base.type === 'Identifier' ? (base.name ?? null) : null;
 }
 
+/** 문자열에서 특수 문자를 제거하여 안전한 식별자 이름으로 변환해요. */
 export function sanitizeName(
   name: string | null | undefined,
   fallback: string,
@@ -100,6 +126,7 @@ export function sanitizeName(
   return cleaned || fallback;
 }
 
+/** 문자열을 스네이크 케이스 기반의 모듈 이름 형식으로 변환해요. */
 export function toModuleName(name: string | null | undefined): string {
   return (
     String(name || '')
@@ -112,6 +139,7 @@ export function toModuleName(name: string | null | undefined): string {
   );
 }
 
+/** 식별자 이름에서 접두사(네임스페이스 등)를 추출해요. */
 export function prefixOf(name: string | null | undefined): string | null {
   const head = String(name || '').split(/[.:]/)[0];
   if (!head.includes('_')) return null;
@@ -119,6 +147,7 @@ export function prefixOf(name: string | null | undefined): string | null {
   return prefix.length >= 3 ? prefix : null;
 }
 
+/** 특정 범위 내의 최대 연속 공백 라인 수를 계산하는 함수를 생성해요. */
 export function createMaxBlankRun(
   lines: string[],
   total: number,

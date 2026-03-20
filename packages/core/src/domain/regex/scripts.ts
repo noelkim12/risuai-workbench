@@ -4,12 +4,26 @@ import { getCustomScripts } from '../card/data';
 import { ELEMENT_TYPES } from '../analyze/constants';
 import type { ElementCBSData } from '../analyze/correlation';
 
+/**
+ * 정규식 스크립트에서 추출된 변수 조작 정보를 담는 인터페이스에요.
+ */
 export interface RegexScriptOps {
+  /** 스크립트 이름 */
   elementName: string;
+  /** 읽기 연산 변수 집합 */
   reads: Set<string>;
+  /** 쓰기 연산 변수 집합 */
   writes: Set<string>;
 }
 
+/**
+ * 정규식 스크립트 객체에서 CBS 변수 조작 연산을 추출해요.
+ * 'in', 'out', 'flag' 필드 등을 분석해요.
+ *
+ * @param script - 분석할 스크립트 객체
+ * @param index - 스크립트 인덱스 (이름이 없을 경우 대비)
+ * @returns 추출된 연산 정보 (추출할 연산이 없으면 null)
+ */
 export function extractRegexScriptOps(
   script: unknown,
   index: number,
@@ -45,11 +59,23 @@ export function extractRegexScriptOps(
   };
 }
 
+/**
+ * 캐릭터 카드 객체에서 모든 정규식 스크립트의 CBS 정보를 수집해요.
+ *
+ * @param card - 캐릭터 카드 객체
+ * @returns 수집된 CBS 정보 배열
+ */
 export function collectRegexCBSFromCard(card: unknown): ElementCBSData[] {
   const scripts = getCustomScripts(card);
   return collectRegexCBSFromScripts(scripts);
 }
 
+/**
+ * 정규식 스크립트 레코드 배열에서 CBS 정보를 수집해요.
+ *
+ * @param scripts - 분석할 스크립트 레코드 배열
+ * @returns 수집된 CBS 정보 배열
+ */
 export function collectRegexCBSFromScripts(
   scripts: GenericRecord[] | null | undefined,
 ): ElementCBSData[] {
@@ -67,6 +93,13 @@ export function collectRegexCBSFromScripts(
   return result;
 }
 
+/**
+ * 텍스트 형식의 기본 변수(defaultVariables) 설정을 파싱해요.
+ * 'key=value' 형식의 줄 단위 텍스트를 처리해요.
+ *
+ * @param raw - 파싱할 텍스트 데이터
+ * @returns {변수명: 값} 매핑 객체
+ */
 export function parseDefaultVariablesText(raw: unknown): Record<string, string> {
   const variables: Record<string, string> = {};
   if (typeof raw !== 'string' || !raw.trim()) return variables;
@@ -86,6 +119,12 @@ export function parseDefaultVariablesText(raw: unknown): Record<string, string> 
   return variables;
 }
 
+/**
+ * JSON 형식(객체 또는 객체 배열)의 기본 변수 설정을 파싱해요.
+ *
+ * @param raw - 파싱할 데이터 (객체 또는 배열)
+ * @returns {변수명: 값} 매핑 객체
+ */
 export function parseDefaultVariablesJson(raw: unknown): Record<string, string> {
   const variables: Record<string, string> = {};
   if (!raw) return variables;

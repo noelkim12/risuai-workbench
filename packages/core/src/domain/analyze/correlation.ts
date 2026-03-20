@@ -5,12 +5,21 @@ import { type CollectedData, type LorebookCorrelation, type RegexCorrelation } f
 
 const ELEMENT_TYPE_ORDER = Object.values(ELEMENT_TYPES);
 
+/**
+ * 특정 엘리먼트의 CBS 변수 사용 데이터를 나타냅니다.
+ */
 export interface ElementCBSData {
+  /** 엘리먼트 타입 (lorebook, regex, lua 등) */
   elementType: ElementType | string;
+  /** 엘리먼트의 표시 이름 */
   elementName: string;
+  /** 읽기 연산이 발생하는 변수 집합 */
   reads: Set<string>;
+  /** 쓰기 연산이 발생하는 변수 집합 */
   writes: Set<string>;
+  /** 변수별 세부 읽기 주체 목록 (선택 사항) */
   readersByVar?: Record<string, string[]>;
+  /** 변수별 세부 쓰기 주체 목록 (선택 사항) */
   writersByVar?: Record<string, string[]>;
 }
 
@@ -19,34 +28,67 @@ interface ElementSource {
   writers: string[];
 }
 
+/**
+ * 여러 엘리먼트에 걸쳐 사용되는 통합된 CBS 변수 항목을 나타냅니다.
+ */
 export interface UnifiedVarEntry {
+  /** 변수 이름 */
   varName: string;
+  /** 엘리먼트 타입별 소스 정보 */
   sources: Record<string, ElementSource>;
+  /** 기본값 (문자열 형태) */
   defaultValue: string | null;
+  /** 이 변수를 사용하는 서로 다른 엘리먼트 타입의 수 */
   elementCount: number;
+  /** 변수의 전파 방향 (isolated: 단일 타입 내 사용, bridged: 여러 타입 간 공유) */
   direction: 'isolated' | 'bridged';
+  /** 이 변수에 값을 쓰는 엘리먼트 타입 목록 */
   crossElementWriters: string[];
+  /** 이 변수에서 값을 읽는 엘리먼트 타입 목록 */
   crossElementReaders: string[];
 }
 
+/**
+ * 로어북과 정규식 간 공유되는 CBS 변수 정보를 나타냅니다.
+ */
 export interface LorebookRegexSharedVar {
+  /** 변수 이름 */
   varName: string;
+  /** 데이터 흐름 방향 */
   direction: 'lorebook->regex' | 'regex->lorebook' | 'bidirectional';
+  /** 이 변수를 사용하는 로어북 엔트리 이름 목록 */
   lorebookEntries: string[];
+  /** 이 변수를 사용하는 정규식 스크립트 이름 목록 */
   regexScripts: string[];
 }
 
+/**
+ * 로어북과 정규식 간의 CBS 변수 상관관계 분석 결과입니다.
+ */
 export interface LorebookRegexCorrelation {
+  /** 공유 변수 목록 */
   sharedVars: LorebookRegexSharedVar[];
+  /** 로어북에서만 사용되는 변수 목록 */
   lorebookOnlyVars: string[];
+  /** 정규식에서만 사용되는 변수 목록 */
   regexOnlyVars: string[];
+  /** 분석 결과 요약 */
   summary: {
+    /** 총 공유 변수 수 */
     totalShared: number;
+    /** 로어북 전용 변수 수 */
     totalLBOnly: number;
+    /** 정규식 전용 변수 수 */
     totalRXOnly: number;
   };
 }
 
+/**
+ * 수집된 모든 CBS 데이터를 바탕으로 통합된 CBS 변수 그래프를 빌드합니다.
+ * @param allCollected - 수집된 각 엘리먼트의 CBS 사용 데이터 배열
+ * @param defaultVariables - 봇 설정 등에서 정의된 기본 변수 맵
+ * @returns 변수 이름을 키로 하는 통합 변수 항목 맵
+ */
 export function buildUnifiedCBSGraph(
   allCollected: ElementCBSData[] | null | undefined,
   defaultVariables: Record<string, unknown> | null | undefined,
@@ -131,6 +173,12 @@ export function buildUnifiedCBSGraph(
   return new Map(sorted.slice(0, MAX_VARS_IN_REPORT));
 }
 
+/**
+ * 로어북과 정규식 간의 CBS 변수 사용 현황을 비교하여 상관관계를 분석합니다.
+ * @param lorebookCBS - 로어북 엔트리들의 CBS 사용 데이터
+ * @param regexCBS - 정규식 스크립트들의 CBS 사용 데이터
+ * @returns 로어북과 정규식 간의 변수 공유 및 방향성 분석 결과
+ */
 export function buildLorebookRegexCorrelation(
   lorebookCBS: ElementCBSData[] | null | undefined,
   regexCBS: ElementCBSData[] | null | undefined,

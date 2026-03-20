@@ -15,6 +15,12 @@ import {
 } from './lua-helpers';
 import { type ApiMeta, type CollectedData, type CollectedFunction } from './lua-analysis-types';
 
+/**
+ * Lua AST를 순회하며 함수 정의, API 호출, 상태 변수 접근 등을 수집하는 1차 수집 단계에요.
+ *
+ * @param params - 분석할 AST 본문과 RisuAI API 메타데이터
+ * @returns 수집된 기초 분석 데이터
+ */
 export function runCollectPhase(params: {
   body: LuaASTNode[];
   risuApi: Record<string, ApiMeta>;

@@ -1,13 +1,27 @@
 const MAX_DATA_URI_BYTES = 50 * 1024 * 1024;
 
+/** 애셋 데이터 딕셔너리 타입이에요. */
 export type AssetDict = Record<string, unknown>;
 
+/**
+ * 해석된 애셋 정보를 담는 인터페이스에요.
+ */
 export interface ResolvedAsset {
+  /** 애셋 실제 데이터 */
   data: unknown;
+  /** 애셋 타입 (인덱스 참조, 임베디드, 기본값, 데이터 URI, 원격 URL 등) */
   type: 'asset-index' | 'embedded' | 'ccdefault' | 'data-uri' | 'remote';
+  /** 애셋 관련 메타데이터 */
   metadata: Record<string, string>;
 }
 
+/**
+ * 다양한 형식의 애셋 URI(ccdefault:, embedded://, data:, http:// 등)를 해석해요.
+ *
+ * @param uri - 해석할 애셋 URI
+ * @param assetDict - 임베디드 애셋이나 인덱스 참조 시 사용할 데이터 사전
+ * @returns 해석된 애셋 정보 (해석 실패 시 null)
+ */
 export function resolveAssetUri(
   uri: string,
   assetDict?: AssetDict | null,
@@ -81,6 +95,12 @@ export function resolveAssetUri(
   return null;
 }
 
+/**
+ * MIME 타입을 기반으로 적절한 파일 확장자를 추측해요.
+ *
+ * @param mime - MIME 타입 (image/png 등)
+ * @returns 확장자 (예: .png, .jpg 등. 알 수 없으면 .bin)
+ */
 export function guessMimeExt(mime: string): string {
   const table: Record<string, string> = {
     'image/png': '.png',
