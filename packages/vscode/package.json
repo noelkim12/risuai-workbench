@@ -1,5 +1,7 @@
 {
   "name": "risu-workbench-vscode",
+  "displayName": "Risu Workbench",
+  "publisher": "risuai",
   "version": "0.1.0",
   "private": true,
   "description": "VSCode extension for RisuAI character card workbench",
@@ -74,7 +76,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "watch": "tsc --watch"
+    "watch": "tsc --watch",
+    "dev": "tsc && code --extensionDevelopmentPath=\"$PWD\""
   },
   "dependencies": {
     "risu-workbench-core": "*"

@@ -21,7 +21,7 @@ function printHelp(): void {
   Usage:  risu-core <command> [options]
 
   Commands:
-    extract        캐릭터 카드 추출 (.charx / .png)
+    extract        캐릭터 카드 / 프리셋 / 모듈 추출 (.charx / .png / .risum / .json)
     pack           캐릭터 카드 패킹
     analyze        Lua 스크립트 분석
     analyze-card   카드 종합 분석

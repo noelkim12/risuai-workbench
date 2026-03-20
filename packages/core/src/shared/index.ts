@@ -64,6 +64,8 @@ export {
 
 export {
   analyzeLorebookStructure,
+  analyzeLorebookStructureFromCard,
+  collectLorebookCBS,
   collectLorebookCBSFromCard,
   type LorebookStructureEntry,
   type LorebookStructureResult,
@@ -77,3 +79,17 @@ export {
   parseDefaultVariablesJson,
   type RegexScriptOps,
 } from '../domain/regex/scripts';
+
+export {
+  toPosix,
+  getLorebookFolderKey,
+  createLorebookDirAllocator,
+  buildLorebookFolderDirMap,
+  planLorebookExtraction,
+  type LorebookExtractionEntry,
+  type LorebookExtractionPlan,
+} from '../domain/lorebook/folders';
+
+export { inferLuaFunctionName } from '../domain/analyze/lua-helpers';
+
+export { executeLorebookPlan } from '../node/lorebook-io';

@@ -24,6 +24,10 @@
 - [x] `extract.js` Lua 분석 호출에 `--json` 추가 (lua/*.analysis.json 자동 생성)
 - [x] `phase4_extractTriggerLua` 파일명 fallback 개선 (comment 없으면 Lua 함수명 추론 사용)
 - [x] `extract.js` Phase 8 Character Card 추출 추가 (`character/` 8개 파일: 6x `.txt` 텍스트 필드 + `alternate_greetings.json` + `metadata.json`)
+- [x] `packages/core` preset extract 추가 (`extract/preset/` + `.risup/.risupreset` 바이너리 디코드 지원)
+- [x] `packages/core` preset `prompt_template/` 계약 정리 (`<label>.json` + `_order.json`, 번호 prefix 제거)
+- [x] `packages/core` module extract 추가 (`extract/module/phases.ts`, `extract/module/workflow.ts`)
+- [x] `packages/core/tests/module-extract.test.ts` 추가 (module extract phase1-7 + 라우팅 판별 통합 테스트)
 - [x] `extract.js` Phase 5 에셋 타입별 서브디렉토리 분리 (`assets/icons/`, `assets/additional/`, `assets/emotions/`, `assets/other/`)
 - [x] `analyze-card` Unified Variables에서 Lua writer/reader를 파일명 대신 `writtenBy`/`readBy` owner로 표시
 - [x] core 테스트 전략 문서 추가 (`docs/core-test-strategy.md`)
@@ -33,6 +37,8 @@
 - [x] lorebook 폴더를 실제 디렉토리로 추출하고 raw metadata는 `lorebooks/manifest.json`에 보존
 - [x] `lorebooks/manifest.json` 정책 확정 (extract always writes manifest, build/pack manifest-first)
 - [x] repack contract & validation 문서화 (`../docs/repack-contract-validation.md`)
+- [x] `packages/core/structure.md` 구조 문서 추가
+- [x] `packages/core/core-structure-ko.md` 한글 번역 문서 추가
 - [x] **Monorepo Restructure (Tasks 1-15)**
   - [x] Task 1: Root monorepo configuration (package.json, workspaces)
   - [x] Task 2: packages/core scaffold + package.json
@@ -47,8 +53,9 @@
   - [x] Task 11: Core CLI entry point + index.ts
   - [x] Task 12: packages/vscode scaffold
   - [x] Task 13: Root .gitignore update
-  - [x] Task 14: vitest setup for packages/core
-  - [x] Task 15: TODO.md update + root test.js cleanup
+- [x] Task 14: vitest setup for packages/core
+- [x] Task 15: TODO.md update + root test.js cleanup
+- [x] `packages/core/src/shared/phase-helpers.ts` 분해 이관 완료 (lorebook 순수 계획은 `domain/lorebook/folders.ts`, 실행 I/O는 `node/lorebook-io.ts`, 소비자 phase는 plan+execute로 전환)
 ### Remaining
 
 #### Repack Contract & Validation
@@ -71,67 +78,74 @@
 - [x] `template/` 퇴역 결정 반영: 루트 역할을 scaffold 패키지에서 workspace/product 루트로 재정의
 - [x] `bin/create.js`, `template/`, README의 scaffold 흐름 제거/축소 계획 수립
 - [x] 구조 제안 문서 작성 (`docs/architecture-proposal.md`)
+- [x] 프로젝트 철학/제품 방향성 Octto 세션 및 설계 문서 작성 (`../docs/plans/2026-03-17-risuai-workbench-philosophy-design.md`)
+- [x] 프로젝트 정체성 정교화 Octto 세션 및 설계 문서 작성 (`docs/plans/2026-03-18-risuai-workbench-identity-design.md`)
 
 ##### Phase 1: Core 내부 정리 (domain/node/cli 분리, scripts/ 제거)
 
 - [x] 1차 계약 테스트 보강 (package root import smoke, CLI smoke, 실제 workflow seam 고정)
 - [x] `src/shared` ↔ `scripts/shared` helper parity 정리 (`risu-api`, `extract-helpers` 중심)
-- [ ] **1-1. `src/domain/` 생성 + 순수 로직 분리**
-  - [ ] `src/shared/`에서 Node.js 의존성 없는 순수 로직을 `src/domain/`으로 이동
-  - [ ] `domain/card/` — CardData 파싱, CBS 분석
-  - [ ] `domain/lorebook/` — lorebook 구조 분석
-  - [ ] `domain/regex/` — regex script 처리
-  - [ ] `domain/analyze/` — 분석 로직 (상관관계, 통계)
-  - [ ] 완료 기준: domain/ 내 모든 함수가 Node.js import 0
-- [ ] **1-2. `src/node/` 정비 (I/O 어댑터 전용)**
-  - [ ] `node/fs-helpers.ts` — ensureDir, writeJson, writeText, writeBinary
-  - [ ] `node/png.ts` — PNG chunk 파싱 (Buffer 의존)
-  - [ ] `node/card-io.ts` — parseCardFile (fs + fflate)
-  - [ ] 완료 기준: node/가 domain/에만 의존, 역방향 의존 없음
-- [ ] **1-3. `src/cli/` 생성 + scripts/*.js 로직 TS 이관**
-  - [ ] `cli/main.ts` — subcommand dispatcher (bin/risu-core.js의 로직 흡수)
-  - [ ] `cli/extract.ts` ← `scripts/extract.js` + `scripts/extract/phases.js`, `parsers.js`
-  - [ ] `cli/pack.ts` ← `scripts/pack.js`
-  - [ ] `cli/analyze.ts` ← `scripts/analyze.js` + `scripts/analyze/*.js`
-  - [ ] `cli/analyze-card.ts` ← `scripts/analyze-card.js` + `scripts/analyze-card/*.js`
-  - [ ] `cli/build.ts` ← `scripts/build-components.js`
-  - [ ] 이관 원칙: JS→TS 변환, strict mode, I/O는 node/ 사용, 순수 로직은 domain/ 사용
-  - [ ] 이관 전 각 커맨드별 integration test 작성 (현재 동작 고정)
-  - [ ] 완료 기준: 모든 CLI 커맨드가 src/cli/에서 동작, 기존 테스트 통과
-- [ ] **1-4. `bin/risu-core.js` → `dist/cli/main.js` 직접 호출**
-  - [ ] `execSync` 제거, 같은 프로세스에서 `require('../dist/cli/main').run()` 호출
-  - [ ] 완료 기준: `risu-core extract/pack/analyze` 등 기존 CLI 동일 동작
-- [ ] **1-5. `scripts/shared/` bridge 삭제**
-  - [ ] `scripts/shared/risu-api.js` 삭제
-  - [ ] `scripts/shared/extract-helpers.js` 삭제
-  - [ ] `scripts/shared/analyze-helpers.js` 삭제
-  - [ ] `scripts/shared/uri-resolver.js` 삭제
-- [ ] **1-6. `scripts/` 폴더 삭제**
-  - [ ] 모든 직접 구현체 이관 확인 후 `scripts/` 디렉토리 제거
-  - [ ] `scripts/rpack_map.bin` → `src/node/` 또는 `assets/`로 이동
-  - [ ] `scripts/package.json` 삭제
-- [ ] **1-7. barrel export 정비 + 계약 테스트 최종 보강**
-  - [ ] `src/index.ts` — types + domain만 export (브라우저 safe)
-  - [ ] `src/node/index.ts` — Node.js I/O 전용 export
-  - [ ] package.json exports 필드 확인: `"."` = types+domain, `"./node"` = I/O
-  - [ ] CLI smoke + domain unit + node integration 전체 통과 확인
+- [x] **1-1. `src/domain/` 생성 + 순수 로직 분리**
+  - [x] `src/domain/index.ts` + 초기 pure helper 모듈 생성 (`card/cbs.ts`, `card/filenames.ts`, `card/asset-uri.ts`, `lorebook/folders.ts`, `analyze/lua-helpers.ts`)
+  - [x] 기존 `src/shared/*` 중 순수 helper를 domain 구현으로 이관하고 shared는 compatibility facade로 유지
+  - [x] `src/shared/`에서 Node.js 의존성 없는 순수 로직을 `src/domain/`으로 이동
+  - [x] `domain/card/` — CardData 파싱, CBS 분석
+  - [x] `domain/lorebook/` — lorebook 구조 분석
+  - [x] `domain/regex/` — regex script 처리
+  - [x] `domain/analyze/` — 분석 로직 (상관관계, 통계)
+  - [x] 완료 기준: domain/ 내 모든 함수가 Node.js import 0
+- [x] **1-2. `src/node/` 정비 (I/O 어댑터 전용)**
+  - [x] `src/node/fs-helpers.ts`, `src/node/png.ts`, `src/node/card-io.ts` 추가
+  - [x] `src/node/index.ts`를 node/domain 기반의 단일 explicit compatibility/export surface로 정리 (`legacy` 중간 레이어 없이 유지)
+  - [x] `tests/domain-node-structure.test.ts` 추가로 Phase 1 domain/node 경계 스모크 고정
+  - [x] `node/fs-helpers.ts` — ensureDir, writeJson, writeText, writeBinary
+  - [x] `node/png.ts` — PNG chunk 파싱 (Buffer 의존)
+  - [x] `node/card-io.ts` — parseCardFile (fs + fflate)
+  - [x] 완료 기준: node/가 domain/에만 의존, 역방향 의존 없음
+- [x] **1-3. `src/cli/` 생성 + scripts/*.js 로직 TS 이관**
+  - [x] `cli/main.ts` — subcommand dispatcher (bin/risu-core.js의 로직 흡수)
+  - [x] `cli/extract.ts` ← `scripts/extract.js` + `scripts/extract/phases.js`, `parsers.js`
+  - [x] `cli/pack.ts` ← `scripts/pack.js`
+  - [x] `cli/analyze.ts` ← `scripts/analyze.js` + `scripts/analyze/*.js`
+  - [x] `cli/analyze-card.ts` ← `scripts/analyze-card.js` + `scripts/analyze-card/*.js`
+  - [x] `cli/build.ts` ← `scripts/build-components.js`
+  - [x] 이관 원칙: JS→TS 변환, strict mode, I/O는 node/ 사용, 순수 로직은 domain/ 사용
+  - [x] 이관 전 각 커맨드별 integration test 작성 (현재 동작 고정)
+  - [x] 완료 기준: 모든 CLI 커맨드가 src/cli/에서 동작, 기존 테스트 통과
+- [x] **1-4. `bin/risu-core.js` → `dist/cli/main.js` 직접 호출**
+  - [x] `execSync` 제거, 같은 프로세스에서 `require('../dist/cli/main').run()` 호출
+  - [x] 완료 기준: `risu-core extract/pack/analyze` 등 기존 CLI 동일 동작
+- [x] **1-5. `scripts/shared/` bridge 삭제**
+  - [x] `scripts/shared/risu-api.js` 삭제
+  - [x] `scripts/shared/extract-helpers.js` 삭제
+  - [x] `scripts/shared/analyze-helpers.js` 삭제
+  - [x] `scripts/shared/uri-resolver.js` 삭제
+- [x] **1-6. `scripts/` 폴더 삭제**
+  - [x] 모든 직접 구현체 이관 확인 후 `scripts/` 디렉토리 제거
+  - [x] `scripts/rpack_map.bin` → `src/node/` 또는 `assets/`로 이동
+  - [x] `scripts/package.json` 삭제
+- [x] **1-7. barrel export 정비 + 계약 테스트 최종 보강**
+  - [x] `src/index.ts` — types + domain만 export (브라우저 safe)
+  - [x] `src/node/index.ts` — Node.js I/O 전용 export
+  - [x] package.json exports 필드 확인: `"."` = types+domain, `"./node"` = I/O
+  - [x] CLI smoke + domain unit + node integration 전체 통과 확인
 
 ##### Phase 2: VSCode Extension 구조 확장
 
-- [ ] **2-1. `services/` 계층 도입 (core import 시작)**
-  - [ ] `services/card-service.ts` — core domain + node를 조합하는 서비스
-  - [ ] `services/analysis-service.ts` — 분석 기능 서비스
-  - [ ] 완료 기준: core `"."`, `"./node"` import 정상 동작
-- [ ] **2-2. `providers/` 도입 (VSCode UI 제공자)**
-  - [ ] `providers/tree-provider.ts` — TreeView 제공자
+- [x] **2-1. `services/` 계층 도입 (core import 시작)**
+  - [x] `services/card-service.ts` — core domain + node를 조합하는 서비스
+  - [x] `services/analysis-service.ts` — 분석 기능 서비스
+  - [x] 완료 기준: core `"."`, `"./node"` import 정상 동작
+- [x] **2-2. `providers/` 도입 (VSCode UI 제공자)**
+  - [x] `providers/tree-provider.ts` — TreeView 제공자
   - [ ] `providers/codelens-provider.ts` — CodeLens 제공자 (필요시)
-  - [ ] 완료 기준: VSCode UI 제공자 1개 이상 동작
-- [ ] **2-3. `commands/` 도입 (command palette 바인딩)**
-  - [ ] extract, pack, analyze 등 핵심 기능 command palette 연동
-  - [ ] 완료 기준: command palette에서 core 기능 호출 가능
-- [ ] **2-4. `panels/` 도입 (webview host 준비)**
-  - [ ] `panels/card-panel.ts` — webview panel skeleton + 메시지 라우팅 준비
-  - [ ] 완료 기준: 빈 webview panel 생성 가능
+  - [x] 완료 기준: VSCode UI 제공자 1개 이상 동작
+- [x] **2-3. `commands/` 도입 (command palette 바인딩)**
+  - [x] extract, pack, analyze 등 핵심 기능 command palette 연동
+  - [x] 완료 기준: command palette에서 core 기능 호출 가능
+- [x] **2-4. `panels/` 도입 (webview host 준비)**
+  - [x] `panels/card-panel.ts` — webview panel skeleton + 메시지 라우팅 준비
+  - [x] 완료 기준: 빈 webview panel 생성 가능
 
 ##### Phase 3: Contracts + Webview
 

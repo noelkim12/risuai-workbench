@@ -1,13 +1,20 @@
+export { asRecord, type GenericRecord } from './types';
+export { extractCBSVarOps, type CBSVarOps } from './cbs';
 export {
   buildFolderMap as buildRisuFolderMap,
   resolveFolderName as resolveRisuFolderName,
+  toPosix,
+  getLorebookFolderKey,
+  createLorebookDirAllocator,
+  buildLorebookFolderDirMap,
+  planLorebookExtraction,
   type FolderMapOptions,
   type RisuCharbookEntry,
+  type LorebookExtractionEntry,
+  type LorebookExtractionPlan,
 } from './lorebook/folders';
-export { extractCBSVarOps, type CBSVarOps } from './card/cbs';
 export { sanitizeFilename } from './card/filenames';
 export {
-  asRecord,
   getCardName,
   getCharacterBookEntries,
   getModuleLorebookEntries,
@@ -15,7 +22,6 @@ export {
   getCustomScripts,
   getDefaultVariablesRaw,
   type CardLike,
-  type GenericRecord,
 } from './card/data';
 export {
   resolveAssetUri,
@@ -25,6 +31,8 @@ export {
 } from './card/asset-uri';
 export {
   analyzeLorebookStructure,
+  analyzeLorebookStructureFromCard,
+  collectLorebookCBS,
   collectLorebookCBSFromCard,
   type LorebookStructureEntry,
   type LorebookStructureResult,
@@ -68,5 +76,6 @@ export {
   toModuleName,
   prefixOf,
   createMaxBlankRun,
+  inferLuaFunctionName,
   type LuaASTNode,
 } from './analyze/lua-helpers';

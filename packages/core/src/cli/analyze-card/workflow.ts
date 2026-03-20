@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  analyzeLorebookStructure,
+  analyzeLorebookStructureFromCard,
   buildLorebookRegexCorrelation,
   buildUnifiedCBSGraph,
 } from '../../domain';
@@ -136,7 +136,7 @@ function runMain(
 
   console.log('\n  ═══ Phase 3: ANALYZE ═══');
   const lorebookStructure = safeCollect(
-    () => analyzeLorebookStructure(card),
+    () => analyzeLorebookStructureFromCard(card),
     'Lorebook 구조 분석 실패',
     {
       folders: [],

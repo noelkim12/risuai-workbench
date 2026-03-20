@@ -1,10 +1,9 @@
-import { extractCBSVarOps } from '../card/cbs';
+import { extractCBSVarOps } from '../cbs';
+import { asRecord, type GenericRecord } from '../types';
 import {
-  asRecord,
-  getAllLorebookEntries,
   getCharacterBookEntries,
   getModuleLorebookEntries,
-  type GenericRecord,
+  getAllLorebookEntries,
 } from '../card/data';
 import {
   buildFolderMap,
@@ -55,13 +54,12 @@ const EMPTY_RESULT: LorebookStructureResult = {
   keywords: { all: [], overlaps: {} },
 };
 
-export function analyzeLorebookStructure(card: unknown): LorebookStructureResult {
-  const allEntries = getAllLorebookEntries(card);
-  if (allEntries.length === 0) return EMPTY_RESULT;
+export function analyzeLorebookStructure(entries: GenericRecord[]): LorebookStructureResult {
+  if (entries.length === 0) return EMPTY_RESULT;
 
-  const folderMap = buildFolderMap(allEntries as unknown as RisuCharbookEntry[]);
+  const folderMap = buildFolderMap(entries as unknown as RisuCharbookEntry[]);
   const folders = Object.entries(folderMap).map(([id, name]) => ({ id, name }));
-  const regularEntries = allEntries.filter((entry) => entry.mode !== 'folder');
+  const regularEntries = entries.filter((entry) => entry.mode !== 'folder');
 
   const stats = {
     totalEntries: 0,
@@ -73,7 +71,7 @@ export function analyzeLorebookStructure(card: unknown): LorebookStructureResult
 
   const keywordMap = new Map<string, string[]>();
 
-  const entries = regularEntries.map((entry, index) => {
+  const structured = regularEntries.map((entry, index) => {
     stats.totalEntries += 1;
 
     if (entry.constant) stats.activationModes.constant += 1;
@@ -118,7 +116,7 @@ export function analyzeLorebookStructure(card: unknown): LorebookStructureResult
 
   return {
     folders,
-    entries,
+    entries: structured,
     stats,
     keywords: {
       all: [...keywordMap.keys()].sort(),
@@ -127,7 +125,14 @@ export function analyzeLorebookStructure(card: unknown): LorebookStructureResult
   };
 }
 
-export function collectLorebookCBSFromCard(card: unknown): Array<{
+export function analyzeLorebookStructureFromCard(card: unknown): LorebookStructureResult {
+  return analyzeLorebookStructure(getAllLorebookEntries(card));
+}
+
+export function collectLorebookCBS(
+  entries: GenericRecord[],
+  opts?: { prefix?: string },
+): Array<{
   elementType: 'lorebook';
   elementName: string;
   reads: Set<string>;
@@ -140,26 +145,7 @@ export function collectLorebookCBSFromCard(card: unknown): Array<{
     writes: Set<string>;
   }> = [];
 
-  const charBookEntries = getCharacterBookEntries(card);
-  pushLorebookCBS(results, charBookEntries, false);
-
-  const moduleEntries = getModuleLorebookEntries(card);
-  pushLorebookCBS(results, moduleEntries, true);
-
-  return results;
-}
-
-function pushLorebookCBS(
-  acc: Array<{
-    elementType: 'lorebook';
-    elementName: string;
-    reads: Set<string>;
-    writes: Set<string>;
-  }>,
-  entries: GenericRecord[],
-  moduleSource: boolean,
-): void {
-  if (entries.length === 0) return;
+  if (entries.length === 0) return results;
 
   const folderMap = buildFolderMap(entries as unknown as RisuCharbookEntry[]);
 
@@ -176,13 +162,27 @@ function pushLorebookCBS(
     const name = getLorebookEntryName(entry, index);
     const scoped = folderName ? `${folderName}/${name}` : name;
 
-    acc.push({
+    results.push({
       elementType: 'lorebook',
-      elementName: moduleSource ? `[module]/${scoped}` : scoped,
+      elementName: opts?.prefix ? `${opts.prefix}/${scoped}` : scoped,
       reads,
       writes,
     });
   });
+
+  return results;
+}
+
+export function collectLorebookCBSFromCard(card: unknown): Array<{
+  elementType: 'lorebook';
+  elementName: string;
+  reads: Set<string>;
+  writes: Set<string>;
+}> {
+  return [
+    ...collectLorebookCBS(getCharacterBookEntries(card)),
+    ...collectLorebookCBS(getModuleLorebookEntries(card), { prefix: '[module]' }),
+  ];
 }
 
 function getLorebookEntryName(entry: GenericRecord, index: number): string {

@@ -12,18 +12,12 @@ import {
 } from '../src/domain';
 
 describe('Phase 1-1 domain extraction', () => {
-  it('analyzes lorebook structure from card data', () => {
-    const result = analyzeLorebookStructure({
-      data: {
-        character_book: {
-          entries: [
-            { mode: 'folder', keys: ['f1'], name: 'Main Folder' },
-            { mode: 'normal', folder: 'f1', name: 'Entry A', content: '{{getvar::foo}}', enabled: true },
-            { mode: 'normal', key: 'alias', comment: 'Entry B', content: '{{setvar::bar}}', enabled: false },
-          ],
-        },
-      },
-    });
+  it('analyzes lorebook structure from entries', () => {
+    const result = analyzeLorebookStructure([
+      { mode: 'folder', keys: ['f1'], name: 'Main Folder' },
+      { mode: 'normal', folder: 'f1', name: 'Entry A', content: '{{getvar::foo}}', enabled: true },
+      { mode: 'normal', key: 'alias', comment: 'Entry B', content: '{{setvar::bar}}', enabled: false },
+    ]);
 
     expect(result.stats.totalEntries).toBe(2);
     expect(result.stats.totalFolders).toBe(1);

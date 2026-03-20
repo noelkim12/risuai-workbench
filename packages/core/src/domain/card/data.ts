@@ -1,6 +1,5 @@
-export interface GenericRecord {
-  [key: string]: unknown;
-}
+export { asRecord, type GenericRecord } from '../types';
+import { asRecord, type GenericRecord } from '../types';
 
 export interface CardLike {
   name?: string;
@@ -17,12 +16,6 @@ export interface CardLike {
       };
     };
   };
-}
-
-export function asRecord(value: unknown): GenericRecord | null {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as GenericRecord)
-    : null;
 }
 
 export function getCardName(card: unknown): string {
