@@ -1,5 +1,5 @@
 import { ELEMENT_TYPES, MAX_VARS_IN_REPORT, type ElementType } from './constants';
-import { extractCBSVarOps } from '../cbs';
+import { extractCBSVarOps } from '../card/cbs';
 import { buildFolderMap as buildRisuFolderMap, resolveFolderName as resolveRisuFolderName } from '../lorebook/folders';
 import { type CollectedData, type LorebookCorrelation, type RegexCorrelation } from './lua-analysis-types';
 

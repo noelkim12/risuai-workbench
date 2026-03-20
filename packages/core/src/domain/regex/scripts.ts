@@ -1,4 +1,4 @@
-import { extractCBSVarOps } from '../cbs';
+import { extractCBSVarOps } from '../card/cbs';
 import { asRecord, type GenericRecord } from '../types';
 import { getCustomScripts } from '../card/data';
 import { ELEMENT_TYPES } from '../analyze/constants';
