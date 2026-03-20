@@ -1,4 +1,4 @@
-export type ApiMeta = { cat: string; access: string; rw: 'read' | 'write' };
+export type { ApiMeta } from '../../domain/analyze/lua-api';
 
 export interface CollectedFunction {
   name: string;
