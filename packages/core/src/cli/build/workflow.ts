@@ -3,9 +3,16 @@ import path from 'node:path';
 import {
   buildRisuFolderMap,
   resolveRisuFolderName,
+  toPosix,
   type RisuCharbookEntry,
 } from '../../domain';
 import { writeText } from '../../node/fs-helpers';
+import {
+  listJsonFilesRecursive,
+  listJsonFilesFlat,
+  resolveOrderedFiles,
+  readJson,
+} from '../../node/json-listing';
 
 interface BuildOptions {
   inDir: string;
@@ -156,100 +163,8 @@ function writeJsonWithTrailingNewline(filePath: string, data: unknown): void {
   writeText(filePath, `${JSON.stringify(data, null, 2)}\n`);
 }
 
-function readJson(filePath: string): unknown {
-  return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-}
-
-function toPosix(value: string): string {
-  return value.split(path.sep).join('/');
-}
-
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-function listJsonFilesRecursive(rootDir: string): string[] {
-  if (!fs.existsSync(rootDir) || !fs.statSync(rootDir).isDirectory()) return [];
-
-  const out: string[] = [];
-
-  const walk = (curDir: string): void => {
-    const entries = fs.readdirSync(curDir, { withFileTypes: true });
-    entries.sort((a, b) => a.name.localeCompare(b.name));
-
-    for (const entry of entries) {
-      const full = path.join(curDir, entry.name);
-      if (entry.isDirectory()) {
-        walk(full);
-      } else if (
-        entry.isFile() &&
-        entry.name.toLowerCase().endsWith('.json') &&
-        entry.name !== '_order.json' &&
-        entry.name !== 'manifest.json'
-      ) {
-        out.push(full);
-      }
-    }
-  };
-
-  walk(rootDir);
-  out.sort((a, b) => toPosix(path.relative(rootDir, a)).localeCompare(toPosix(path.relative(rootDir, b))));
-  return out;
-}
-
-function listJsonFilesFlat(rootDir: string): string[] {
-  if (!fs.existsSync(rootDir) || !fs.statSync(rootDir).isDirectory()) return [];
-
-  return fs
-    .readdirSync(rootDir, { withFileTypes: true })
-    .filter(
-      (entry) =>
-        entry.isFile() && entry.name.toLowerCase().endsWith('.json') && entry.name !== '_order.json',
-    )
-    .map((entry) => path.join(rootDir, entry.name))
-    .sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
-}
-
-function resolveOrderedFiles(dir: string, files: string[]): string[] {
-  const orderPath = path.join(dir, '_order.json');
-  if (!fs.existsSync(orderPath)) return files;
-
-  let manifest: unknown;
-  try {
-    manifest = JSON.parse(fs.readFileSync(orderPath, 'utf-8'));
-  } catch {
-    console.warn('  ⚠️  _order.json 파싱 실패 — 알파벳순 정렬 사용');
-    return files;
-  }
-
-  if (!Array.isArray(manifest)) return files;
-
-  const fileMap = new Map<string, string>();
-  for (const filePath of files) {
-    fileMap.set(toPosix(path.relative(dir, filePath)), filePath);
-  }
-
-  const ordered: string[] = [];
-  for (const rel of manifest) {
-    if (typeof rel !== 'string') continue;
-    const matched = fileMap.get(rel);
-    if (matched) {
-      ordered.push(matched);
-      fileMap.delete(rel);
-    } else {
-      console.warn(`  ⚠️  _order.json: 파일 없음 (skip): ${rel}`);
-    }
-  }
-
-  if (fileMap.size > 0) {
-    const orphans = [...fileMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-    for (const [rel, abs] of orphans) {
-      console.warn(`  ⚠️  _order.json에 없는 파일 (끝에 추가): ${rel}`);
-      ordered.push(abs);
-    }
-  }
-
-  return ordered;
 }
 
 function pickKnownRegexFields(raw: Record<string, unknown>): Record<string, unknown> {

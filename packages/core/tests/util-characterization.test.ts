@@ -61,13 +61,15 @@ describe('Utility Function Characterization', () => {
       const result2 = toPosixShared(backslashPath);
       const result3 = toPosixWorkflow(backslashPath);
 
+      // After consolidation, toPosixShared now uses the canonical domain implementation
+      // which always converts backslashes to forward slashes (platform-independent)
       expect(result1).toBe('a/b/c');
+      expect(result2).toBe('a/b/c');
       
       if (path.sep === '\\') {
-        expect(result2).toBe('a/b/c');
         expect(result3).toBe('a/b/c');
       } else {
-        expect(result2).toBe(backslashPath);
+        // toPosixWorkflow is still the old path.sep-based implementation (not yet consolidated)
         expect(result3).toBe(backslashPath);
       }
     });

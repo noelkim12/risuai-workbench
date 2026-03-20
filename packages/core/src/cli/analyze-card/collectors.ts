@@ -5,12 +5,10 @@ import {
   extractCBSVarOps,
   buildRisuFolderMap,
   resolveRisuFolderName,
+  toPosix,
 } from '../../domain';
+import { listJsonFilesRecursive } from '../../node/json-listing';
 import { type ElementCBSData, type HtmlResult, type VariablesResult } from './types';
-
-function toPosix(value: string): string {
-  return value.split(path.sep).join('/');
-}
 
 function dirExists(dirPath: string): boolean {
   try {
@@ -42,33 +40,6 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function listJsonFilesRecursive(rootDir: string): string[] {
-  if (!dirExists(rootDir)) return [];
-
-  const out: string[] = [];
-  const walk = (curDir: string): void => {
-    const entries = fs.readdirSync(curDir, { withFileTypes: true });
-    entries.sort((a, b) => a.name.localeCompare(b.name));
-
-    for (const entry of entries) {
-      const full = path.join(curDir, entry.name);
-      if (entry.isDirectory()) {
-        walk(full);
-        continue;
-      }
-
-      if (!entry.isFile()) continue;
-      const lower = entry.name.toLowerCase();
-      if (!lower.endsWith('.json')) continue;
-      if (entry.name === '_order.json' || entry.name === 'manifest.json') continue;
-      out.push(full);
-    }
-  };
-
-  walk(rootDir);
-  out.sort((a, b) => toPosix(path.relative(rootDir, a)).localeCompare(toPosix(path.relative(rootDir, b))));
-  return out;
-}
 
 function resolveOrderedFiles(dir: string, files: string[]): string[] {
   const orderPath = path.join(dir, '_order.json');
