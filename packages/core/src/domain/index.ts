@@ -79,3 +79,18 @@ export {
   inferLuaFunctionName,
   type LuaASTNode,
 } from './analyze/lua-helpers';
+export { RISUAI_API, type ApiMeta, LUA_STDLIB_CALLS } from './analyze/lua-api';
+export {
+  type CollectedFunction,
+  type CollectedStateVar,
+  type CollectedCall,
+  type CollectedApiCall,
+  type CollectedLoreApiCall,
+  type CollectedData,
+  type AnalyzePhaseResult,
+  type CorrelationEntry,
+  type LorebookCorrelation,
+  type RegexCorrelation,
+} from './analyze/lua-analysis-types';
+export { runCollectPhase } from './analyze/lua-collector';
+export { runAnalyzePhase } from './analyze/lua-analyzer';
