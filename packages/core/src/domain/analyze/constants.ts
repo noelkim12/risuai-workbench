@@ -1,12 +1,12 @@
-/** 분석 리포트에서 표시할 최대 변수 수에요. */
+/** 분석 리포트에서 표시할 최대 변수 수 */
 export const MAX_VARS_IN_REPORT = 80;
-/** 분석 리포트에서 표시할 최대 엔트리 수에요. */
+/** 분석 리포트에서 표시할 최대 엔트리 수 */
 export const MAX_ENTRIES_IN_REPORT = 50;
-/** 분석 리포트에서 표시할 최대 스크립트 수에요. */
+/** 분석 리포트에서 표시할 최대 스크립트 수 */
 export const MAX_SCRIPTS_IN_REPORT = 40;
 
 /**
- * 분석 대상이 되는 요소의 타입들이에요.
+ * 분석 대상이 되는 요소의 타입들이
  */
 export const ELEMENT_TYPES = {
   /** 로어북 엔트리 */
@@ -24,7 +24,7 @@ export const ELEMENT_TYPES = {
 } as const;
 
 /**
- * CBS 변수 조작 연산의 종류에요.
+ * CBS 변수 조작 연산의 종류
  */
 export const CBS_OPS = {
   /** 읽기 연산 */
@@ -33,5 +33,4 @@ export const CBS_OPS = {
   WRITE: 'write',
 } as const;
 
-export type ElementType =
-  (typeof ELEMENT_TYPES)[keyof typeof ELEMENT_TYPES];
+export type ElementType = (typeof ELEMENT_TYPES)[keyof typeof ELEMENT_TYPES];

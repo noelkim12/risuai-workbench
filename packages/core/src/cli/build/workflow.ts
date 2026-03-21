@@ -5,14 +5,14 @@ import {
   resolveRisuFolderName,
   toPosix,
   type RisuCharbookEntry,
-} from '../../domain';
-import { writeText } from '../../node/fs-helpers';
+} from '@/domain';
+import { writeText } from '@/node/fs-helpers';
 import {
   listJsonFilesRecursive,
   listJsonFilesFlat,
   resolveOrderedFiles,
   readJson,
-} from '../../node/json-listing';
+} from '@/node/json-listing';
 
 interface BuildOptions {
   inDir: string;
@@ -131,18 +131,12 @@ function executeBuild(options: BuildOptions): void {
 
   if (shouldBuildRegex) {
     regexExport = buildRegexExport(options.regexDir);
-    writeJsonWithTrailingNewline(
-      path.join(options.outDir, 'regexscript_export.json'),
-      regexExport,
-    );
+    writeJsonWithTrailingNewline(path.join(options.outDir, 'regexscript_export.json'), regexExport);
   }
 
   if (shouldBuildLorebook) {
     lorebookExport = buildLorebookExport(options.lorebooksDir, options.dedupeLorebook);
-    writeJsonWithTrailingNewline(
-      path.join(options.outDir, 'lorebook_export.json'),
-      lorebookExport,
-    );
+    writeJsonWithTrailingNewline(path.join(options.outDir, 'lorebook_export.json'), lorebookExport);
   }
 
   console.log('\nBuild complete:');
@@ -215,20 +209,14 @@ function normalizeLorebookEntry(
     secondkey: typeof raw.secondkey === 'string' ? raw.secondkey : '',
     insertorder: insertOrder,
     comment:
-      typeof raw.comment === 'string'
-        ? raw.comment
-        : typeof raw.name === 'string'
-          ? raw.name
-          : '',
+      typeof raw.comment === 'string' ? raw.comment : typeof raw.name === 'string' ? raw.name : '',
     content: typeof raw.content === 'string' ? raw.content : '',
     mode: typeof raw.mode === 'string' ? raw.mode : 'normal',
     alwaysActive: typeof raw.alwaysActive === 'boolean' ? raw.alwaysActive : Boolean(raw.constant),
     selective: typeof raw.selective === 'boolean' ? raw.selective : false,
     useRegex: typeof raw.useRegex === 'boolean' ? raw.useRegex : Boolean(raw.use_regex),
     bookVersion:
-      typeof raw.bookVersion === 'number' && Number.isFinite(raw.bookVersion)
-        ? raw.bookVersion
-        : 2,
+      typeof raw.bookVersion === 'number' && Number.isFinite(raw.bookVersion) ? raw.bookVersion : 2,
   };
 
   const folderRef = typeof raw.folder === 'string' && raw.folder.length > 0 ? raw.folder : '';
@@ -317,7 +305,9 @@ function readLorebookRowsFromManifest(lorebooksDir: string): LorebookRow[] | nul
   }
 
   if (!isPlainObject(manifest) || !Array.isArray(manifest.entries)) {
-    console.warn('  ⚠️  lorebooks/manifest.json 형식이 잘못되었습니다 — 기존 파일 스캔 방식으로 진행');
+    console.warn(
+      '  ⚠️  lorebooks/manifest.json 형식이 잘못되었습니다 — 기존 파일 스캔 방식으로 진행',
+    );
     return null;
   }
 
@@ -405,9 +395,12 @@ function buildLorebookExport(lorebooksDir: string, dedupeLorebook: boolean): Lor
     }
   }
 
-  const folderMap = buildRisuFolderMap(rows.map((row) => toRisuCharbookEntry(row.raw)), {
-    fallbackName: 'unnamed',
-  });
+  const folderMap = buildRisuFolderMap(
+    rows.map((row) => toRisuCharbookEntry(row.raw)),
+    {
+      fallbackName: 'unnamed',
+    },
+  );
   const items = rows.map((row) => normalizeLorebookEntry(row.raw, row.relDir, folderMap));
 
   let data = items;

@@ -1,5 +1,5 @@
 /**
- * CBS(Character Bot Scripting) 변수 연산(읽기/쓰기)을 정의하는 인터페이스에요.
+ * CBS(Character Bot Scripting) 변수 연산(읽기/쓰기)을 정의하는 인터페이스
  */
 export interface CBSVarOps {
   /** 읽기(getvar) 연산이 발생한 변수 이름 집합 */
@@ -9,7 +9,7 @@ export interface CBSVarOps {
 }
 
 /**
- * 텍스트에서 CBS 변수 조작 연산({{getvar::...}}, {{setvar::...}}, {{addvar::...}})을 추출해요.
+ * 텍스트에서 CBS 변수 조작 연산({{getvar::...}}, {{setvar::...}}, {{addvar::...}})을 추출
  *
  * @param text - 분석할 CBS 텍스트
  * @returns 추출된 변수 읽기/쓰기 연산 정보

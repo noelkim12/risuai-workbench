@@ -16,15 +16,14 @@ import {
 import { type ApiMeta, type CollectedData, type CollectedFunction } from './lua-analysis-types';
 
 /**
- * Lua AST를 순회하며 함수 정의, API 호출, 상태 변수 접근 등을 수집하는 1차 수집 단계에요.
+ * Lua AST를 순회하며 함수 정의, API 호출, 상태 변수 접근 등을 수집하는 1차 수집 단계
  *
  * @param params - 분석할 AST 본문과 RisuAI API 메타데이터
  * @returns 수집된 기초 분석 데이터
  */
-export function runCollectPhase(params: {
-  body: LuaASTNode[];
-  risuApi: Record<string, ApiMeta>;
-}): { collected: CollectedData } {
+export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<string, ApiMeta> }): {
+  collected: CollectedData;
+} {
   const { body, risuApi } = params;
 
   const collected: CollectedData = {
@@ -227,7 +226,12 @@ export function runCollectPhase(params: {
 
     addApiCall(callee, lineStart(node), caller);
 
-    if (callee === 'setChatVar' || callee === 'getChatVar' || callee === 'setState' || callee === 'getState') {
+    if (
+      callee === 'setChatVar' ||
+      callee === 'getChatVar' ||
+      callee === 'setState' ||
+      callee === 'getState'
+    ) {
       const key = strLit(callArgs(node)[1]);
       const writeValue = callee === 'setChatVar' ? strLit(callArgs(node)[2]) : null;
       if (key) addStateAccess(callee, key, caller, lineStart(node), writeValue);
@@ -274,14 +278,26 @@ export function runCollectPhase(params: {
           parentFunction: currentFn(explicitParent),
         });
       } else {
-        const fallbackName = sanitizeName(exprName((node as any).identifier) || `anonymous_l${lineStart(node)}`, `fn_l${lineStart(node)}`).replace(/-/g, '_');
+        const fallbackName = sanitizeName(
+          exprName((node as any).identifier) || `anonymous_l${lineStart(node)}`,
+          `fn_l${lineStart(node)}`,
+        ).replace(/-/g, '_');
         rec = ensureFnIndex(fallbackName)[0] || null;
       }
 
       const fnName = rec ? rec.name : currentFn(explicitParent);
       const declaredName = exprName((node as any).identifier);
-      if (declaredName && ['onStart', 'onInput', 'onOutput', 'onButtonClick'].includes(declaredName)) {
-        markHandler(declaredName, lineStart(node), Boolean(rec?.isAsync), rec?.name || null, declaredName);
+      if (
+        declaredName &&
+        ['onStart', 'onInput', 'onOutput', 'onButtonClick'].includes(declaredName)
+      ) {
+        markHandler(
+          declaredName,
+          lineStart(node),
+          Boolean(rec?.isAsync),
+          rec?.name || null,
+          declaredName,
+        );
       }
 
       fnStack.push(fnName);

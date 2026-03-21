@@ -3,8 +3,8 @@ import { createDecipheriv, createHash } from 'node:crypto';
 import path from 'node:path';
 import { decode as decodeMsgpack } from 'msgpackr';
 import { decompressSync } from 'fflate';
-import { sanitizeFilename } from '../../../domain';
-import { writeJson, writeText, uniquePath } from '../../../node';
+import { sanitizeFilename } from '@/domain';
+import { writeJson, writeText, uniquePath } from '@/node';
 import { decodeRPackData, initRPack } from '../parsers';
 
 // ─── Preset Type Detection ───────────────────────────────────────────────────
@@ -125,7 +125,9 @@ export function phase1_parsePreset(inputPath: string): ParsedPreset {
 
 function decodeBinaryRPack(buf: Buffer, inputPath: string): Buffer {
   if (!initRPack()) {
-    throw new Error(`rpack_map.bin을 찾을 수 없어 ${path.basename(inputPath)} 디코딩에 실패했습니다.`);
+    throw new Error(
+      `rpack_map.bin을 찾을 수 없어 ${path.basename(inputPath)} 디코딩에 실패했습니다.`,
+    );
   }
   return decodeRPackData(buf);
 }
@@ -325,8 +327,7 @@ function buildSTPromptTemplate(data: Record<string, unknown>): any[] {
   if (!Array.isArray(promptOrder?.[0]?.order) || !Array.isArray(prompts)) return [];
 
   const template: any[] = [];
-  const findPrompt = (identifier: string) =>
-    prompts.find((p: any) => p.identifier === identifier);
+  const findPrompt = (identifier: string) => prompts.find((p: any) => p.identifier === identifier);
 
   for (const orderItem of promptOrder[0].order) {
     if (!orderItem?.enabled) continue;
@@ -335,11 +336,21 @@ function buildSTPromptTemplate(data: Record<string, unknown>): any[] {
 
     switch (p.identifier) {
       case 'main':
-        template.push({ type: 'plain', type2: 'main', text: p.content ?? '', role: p.role ?? 'system' });
+        template.push({
+          type: 'plain',
+          type2: 'main',
+          text: p.content ?? '',
+          role: p.role ?? 'system',
+        });
         break;
       case 'jailbreak':
       case 'nsfw':
-        template.push({ type: 'jailbreak', type2: 'normal', text: p.content ?? '', role: p.role ?? 'system' });
+        template.push({
+          type: 'jailbreak',
+          type2: 'normal',
+          text: p.content ?? '',
+          role: p.role ?? 'system',
+        });
         break;
       case 'chatHistory':
         template.push({ type: 'chat', rangeEnd: 'end', rangeStart: 0 });
@@ -359,7 +370,12 @@ function buildSTPromptTemplate(data: Record<string, unknown>): any[] {
       case 'worldInfoAfter':
         break; // ignored by risuai
       default:
-        template.push({ type: 'plain', type2: 'normal', text: p.content ?? '', role: p.role ?? 'system' });
+        template.push({
+          type: 'plain',
+          type2: 'normal',
+          text: p.content ?? '',
+          role: p.role ?? 'system',
+        });
     }
   }
 
@@ -409,8 +425,10 @@ export function phase4_extractParameters(preset: ParsedPreset, outputDir: string
   } else if (preset.presetType === 'sillytavern') {
     params = {
       temperature: typeof data.temperature === 'number' ? data.temperature * 100 : null,
-      frequency_penalty: typeof data.frequency_penalty === 'number' ? data.frequency_penalty * 100 : null,
-      presence_penalty: typeof data.presence_penalty === 'number' ? data.presence_penalty * 100 : null,
+      frequency_penalty:
+        typeof data.frequency_penalty === 'number' ? data.frequency_penalty * 100 : null,
+      presence_penalty:
+        typeof data.presence_penalty === 'number' ? data.presence_penalty * 100 : null,
       top_p: data.top_p ?? null,
     };
   } else {
@@ -725,10 +743,7 @@ export function phase8_extractRegexAndAdvanced(preset: ParsedPreset, outputDir: 
 
 // ─── Utility ─────────────────────────────────────────────────────────────────
 
-function pickDefined(
-  source: Record<string, unknown>,
-  keys: string[],
-): Record<string, unknown> {
+function pickDefined(source: Record<string, unknown>, keys: string[]): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const key of keys) {
     if (source[key] !== undefined && source[key] !== null) {
@@ -738,10 +753,7 @@ function pickDefined(
   return result;
 }
 
-function pickNonEmpty(
-  source: Record<string, unknown>,
-  keys: string[],
-): Record<string, unknown> {
+function pickNonEmpty(source: Record<string, unknown>, keys: string[]): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const key of keys) {
     const val = source[key];

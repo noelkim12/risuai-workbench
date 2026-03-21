@@ -22,11 +22,11 @@ import fs from 'node:fs';
  */
 
 // Import implementations
-import { toPosix as toPosixFolders } from '../src/domain/lorebook/folders';
-import { toPosix as toPosixShared } from '../src/domain/lorebook/folders';
-import { sanitizeFilename as sanitizeFilenameShared } from '../src/domain/card/filenames';
-import { listJsonFilesRecursive } from '../src/node/json-listing';
-import { sanitizeFilename as sanitizeFilenameCard } from '../src/domain/card/filenames';
+import { toPosix as toPosixFolders } from '@/domain/lorebook/folders';
+import { toPosix as toPosixShared } from '@/domain/lorebook/folders';
+import { sanitizeFilename as sanitizeFilenameShared } from '@/utils/filenames';
+import { listJsonFilesRecursive } from '@/node/json-listing';
+import { sanitizeFilename as sanitizeFilenameCard } from '@/utils/filenames';
 
 // Inline implementation from cli/build/workflow.ts (line 163-164)
 // This is a local function not exported, so we replicate it here for testing

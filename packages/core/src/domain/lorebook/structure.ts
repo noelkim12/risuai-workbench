@@ -1,15 +1,11 @@
-import { extractCBSVarOps } from '../card/cbs';
+import { extractCBSVarOps } from '../cbs/cbs';
 import { asRecord, type GenericRecord } from '../types';
 import {
-  getCharacterBookEntries,
+  getLorebookEntriesFromCharx,
   getModuleLorebookEntries,
-  getAllLorebookEntries,
+  getAllLorebookEntriesFromCharx,
 } from '../card/data';
-import {
-  buildFolderMap,
-  resolveFolderName,
-  type RisuCharbookEntry,
-} from './folders';
+import { buildFolderMap, resolveFolderName, type RisuCharbookEntry } from './folders';
 
 /**
  * 로어북 엔트리의 구조적 정보를 나타냅니다.
@@ -121,8 +117,7 @@ export function analyzeLorebookStructure(entries: GenericRecord[]): LorebookStru
       keywordMap.get(keyword)!.push(entryName);
     }
 
-    const folderRef =
-      typeof entry.folder === 'string' ? entry.folder : undefined;
+    const folderRef = typeof entry.folder === 'string' ? entry.folder : undefined;
     const folder = resolveFolderName(folderRef, folderMap);
 
     return {
@@ -160,7 +155,7 @@ export function analyzeLorebookStructure(entries: GenericRecord[]): LorebookStru
  * @returns 로어북 구조 분석 결과
  */
 export function analyzeLorebookStructureFromCard(card: unknown): LorebookStructureResult {
-  return analyzeLorebookStructure(getAllLorebookEntries(card));
+  return analyzeLorebookStructure(getAllLorebookEntriesFromCharx(card));
 }
 
 /**
@@ -196,8 +191,7 @@ export function collectLorebookCBS(
     const { reads, writes } = extractCBSVarOps(content);
     if (reads.size === 0 && writes.size === 0) return;
 
-    const folderRef =
-      typeof entry.folder === 'string' ? entry.folder : undefined;
+    const folderRef = typeof entry.folder === 'string' ? entry.folder : undefined;
     const folderName = resolveFolderName(folderRef, folderMap);
     const name = getLorebookEntryName(entry, index);
     const scoped = folderName ? `${folderName}/${name}` : name;
@@ -225,11 +219,21 @@ export function collectLorebookCBSFromCard(card: unknown): Array<{
   writes: Set<string>;
 }> {
   return [
-    ...collectLorebookCBS(getCharacterBookEntries(card)),
+    ...collectLorebookCBS(getLorebookEntriesFromCharx(card)),
     ...collectLorebookCBS(getModuleLorebookEntries(card), { prefix: '[module]' }),
   ];
 }
 
+/**
+ * 로어북 엔트리의 표시 이름을 결정합니다.
+ *
+ * `name → comment → entry-{id} → entry-{index}` 순서로 폴백하여
+ * 사람이 읽을 수 있는 엔트리 식별자를 반환합니다.
+ *
+ * @param entry - 로어북 엔트리 객체
+ * @param index - 엔트리의 배열 인덱스 (폴백 이름 생성에 사용)
+ * @returns 결정된 엔트리 표시 이름
+ */
 function getLorebookEntryName(entry: GenericRecord, index: number): string {
   if (typeof entry.name === 'string' && entry.name) return entry.name;
   if (typeof entry.comment === 'string' && entry.comment) return entry.comment;
@@ -237,14 +241,20 @@ function getLorebookEntryName(entry: GenericRecord, index: number): string {
   return `entry-${index}`;
 }
 
+/**
+ * 로어북 엔트리에서 활성화 키워드 목록을 정규화하여 반환합니다.
+ *
+ * `keys`/`key` 필드를 우선 탐색하고, 없으면 `data.keys`/`data.key`를 참조합니다.
+ * 단일 값과 배열 모두 처리하며, 각 값은 공백 제거 후 빈 문자열을 걸러냅니다.
+ *
+ * @param entry - 로어북 엔트리 객체
+ * @returns 공백이 제거된 비어 있지 않은 키워드 문자열 배열
+ */
 function normalizeKeywords(entry: GenericRecord): string[] {
-  const directKeys =
-    entry.keys !== undefined ? entry.keys : asRecord(entry.data)?.keys;
+  const directKeys = entry.keys !== undefined ? entry.keys : asRecord(entry.data)?.keys;
   const directKey = entry.key !== undefined ? entry.key : asRecord(entry.data)?.key;
   const raw = directKeys ?? directKey;
 
   const values = Array.isArray(raw) ? raw : raw ? [raw] : [];
-  return values
-    .map((value) => String(value).trim())
-    .filter((value) => value.length > 0);
+  return values.map((value) => String(value).trim()).filter((value) => value.length > 0);
 }

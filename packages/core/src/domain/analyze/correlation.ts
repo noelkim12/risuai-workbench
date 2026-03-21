@@ -1,7 +1,14 @@
 import { ELEMENT_TYPES, MAX_VARS_IN_REPORT, type ElementType } from './constants';
-import { extractCBSVarOps } from '../card/cbs';
-import { buildFolderMap as buildRisuFolderMap, resolveFolderName as resolveRisuFolderName } from '../lorebook/folders';
-import { type CollectedData, type LorebookCorrelation, type RegexCorrelation } from './lua-analysis-types';
+import { extractCBSVarOps } from '../cbs/cbs';
+import {
+  buildFolderMap as buildRisuFolderMap,
+  resolveFolderName as resolveRisuFolderName,
+} from '../lorebook/folders';
+import {
+  type CollectedData,
+  type LorebookCorrelation,
+  type RegexCorrelation,
+} from './lua-analysis-types';
 
 const ELEMENT_TYPE_ORDER = Object.values(ELEMENT_TYPES);
 
@@ -97,17 +104,14 @@ export function buildUnifiedCBSGraph(
 
   for (const element of allCollected || []) {
     if (!element) continue;
-    const { elementType, elementName, reads, writes, readersByVar, writersByVar } =
-      element;
+    const { elementType, elementName, reads, writes, readersByVar, writersByVar } = element;
 
     for (const varName of reads || []) {
       ensureEntry(graph, varName);
       const entry = graph.get(varName)!;
       ensureSource(entry, elementType);
       const labels =
-        readersByVar &&
-        Array.isArray(readersByVar[varName]) &&
-        readersByVar[varName].length > 0
+        readersByVar && Array.isArray(readersByVar[varName]) && readersByVar[varName].length > 0
           ? readersByVar[varName]
           : [elementName];
 
@@ -123,9 +127,7 @@ export function buildUnifiedCBSGraph(
       const entry = graph.get(varName)!;
       ensureSource(entry, elementType);
       const labels =
-        writersByVar &&
-        Array.isArray(writersByVar[varName]) &&
-        writersByVar[varName].length > 0
+        writersByVar && Array.isArray(writersByVar[varName]) && writersByVar[varName].length > 0
           ? writersByVar[varName]
           : [elementName];
 
@@ -139,8 +141,7 @@ export function buildUnifiedCBSGraph(
 
   const defaults = defaultVariables || {};
   for (const [varName, entry] of graph.entries()) {
-    entry.defaultValue =
-      defaults[varName] !== undefined ? String(defaults[varName]) : null;
+    entry.defaultValue = defaults[varName] !== undefined ? String(defaults[varName]) : null;
 
     const sourceTypes = Object.keys(entry.sources);
     entry.elementCount = sourceTypes.length;
@@ -233,10 +234,7 @@ export function buildLorebookRegexCorrelation(
           ...(lbReads.get(varName) || []),
           ...(lbWrites.get(varName) || []),
         ]),
-        regexScripts: unique([
-          ...(rxReads.get(varName) || []),
-          ...(rxWrites.get(varName) || []),
-        ]),
+        regexScripts: unique([...(rxReads.get(varName) || []), ...(rxWrites.get(varName) || [])]),
       };
     })
     .sort((a, b) => sortCorrelationDirection(a.direction, b.direction));
@@ -270,7 +268,9 @@ export function extractLorebookCBSVariables(
 
   for (const entry of entries) {
     if (entry.mode === 'folder' || !entry.content) continue;
-    const folderName = entry.folder ? resolveRisuFolderName(entry.folder, folderMap, (ref) => ref) : null;
+    const folderName = entry.folder
+      ? resolveRisuFolderName(entry.folder, folderMap, (ref) => ref)
+      : null;
     const entryLabel = folderName ? `${folderName}/${entry.name}` : entry.name;
     const ops = extractCBSVarOps(String(entry.content));
 
@@ -300,7 +300,8 @@ export function extractRegexCBSVariables(
 
   for (let i = 0; i < customScripts.length; i += 1) {
     const script = customScripts[i] || {};
-    const label = script.comment && String(script.comment).trim() ? String(script.comment).trim() : `#${i}`;
+    const label =
+      script.comment && String(script.comment).trim() ? String(script.comment).trim() : `#${i}`;
     const fields = [script.in, script.out, script.ableFlag];
 
     for (const field of fields) {
@@ -336,45 +337,45 @@ export function buildLorebookCorrelationFromEntries(params: {
   const folderMap = buildRisuFolderMap(entries as any);
   const allVarNames = new Set([...collected.stateVars.keys(), ...cbsVars.keys()]);
 
-  const correlations = [...allVarNames]
-    .sort()
-    .map((varName) => {
-      const lua = collected.stateVars.get(varName);
-      const cbs = cbsVars.get(varName);
+  const correlations = [...allVarNames].sort().map((varName) => {
+    const lua = collected.stateVars.get(varName);
+    const cbs = cbsVars.get(varName);
 
-      const entry = {
-        varName,
-        luaReaders: lua ? [...lua.readBy].filter((n) => n !== '<top-level>') : [],
-        luaWriters: lua ? [...lua.writtenBy].filter((n) => n !== '<top-level>') : [],
-        lorebookReaders: cbs ? [...cbs.readers] : [],
-        lorebookWriters: cbs ? [...cbs.writers] : [],
-        luaOnly: Boolean(lua) && !cbs,
-        lorebookOnly: !lua && Boolean(cbs),
-        direction: 'isolated',
-      };
+    const entry = {
+      varName,
+      luaReaders: lua ? [...lua.readBy].filter((n) => n !== '<top-level>') : [],
+      luaWriters: lua ? [...lua.writtenBy].filter((n) => n !== '<top-level>') : [],
+      lorebookReaders: cbs ? [...cbs.readers] : [],
+      lorebookWriters: cbs ? [...cbs.writers] : [],
+      luaOnly: Boolean(lua) && !cbs,
+      lorebookOnly: !lua && Boolean(cbs),
+      direction: 'isolated',
+    };
 
-      const hasLuaWrite = entry.luaWriters.length > 0;
-      const hasLuaRead = entry.luaReaders.length > 0;
-      const hasLbRead = entry.lorebookReaders.length > 0;
-      const hasLbWrite = entry.lorebookWriters.length > 0;
+    const hasLuaWrite = entry.luaWriters.length > 0;
+    const hasLuaRead = entry.luaReaders.length > 0;
+    const hasLbRead = entry.lorebookReaders.length > 0;
+    const hasLbWrite = entry.lorebookWriters.length > 0;
 
-      if ((hasLuaWrite || hasLuaRead) && (hasLbRead || hasLbWrite)) {
-        if (hasLuaWrite && hasLbRead && !hasLbWrite && !hasLuaRead) {
-          entry.direction = 'lua→lorebook';
-        } else if (hasLbWrite && hasLuaRead && !hasLuaWrite && !hasLbRead) {
-          entry.direction = 'lorebook→lua';
-        } else {
-          entry.direction = 'bidirectional';
-        }
+    if ((hasLuaWrite || hasLuaRead) && (hasLbRead || hasLbWrite)) {
+      if (hasLuaWrite && hasLbRead && !hasLbWrite && !hasLuaRead) {
+        entry.direction = 'lua→lorebook';
+      } else if (hasLbWrite && hasLuaRead && !hasLuaWrite && !hasLbRead) {
+        entry.direction = 'lorebook→lua';
+      } else {
+        entry.direction = 'bidirectional';
       }
+    }
 
-      return entry;
-    });
+    return entry;
+  });
 
   const entryInfos: LorebookCorrelation['entryInfos'] = [];
   for (const entry of entries) {
     if (entry.mode === 'folder') continue;
-    const folderName = entry.folder ? resolveRisuFolderName(entry.folder, folderMap, (ref) => ref) : null;
+    const folderName = entry.folder
+      ? resolveRisuFolderName(entry.folder, folderMap, (ref) => ref)
+      : null;
     const ops = extractCBSVarOps(entry.content || '');
     const usedVars = new Set([...ops.reads, ...ops.writes]);
     const luaDeps = new Set<string>();
@@ -428,47 +429,46 @@ export function buildRegexCorrelationFromScripts(params: {
   const regexVars = extractRegexCBSVariables(activeScriptsList);
   const allVarNames = new Set([...collected.stateVars.keys(), ...regexVars.keys()]);
 
-  const correlations = [...allVarNames]
-    .sort()
-    .map((varName) => {
-      const lua = collected.stateVars.get(varName);
-      const regex = regexVars.get(varName);
+  const correlations = [...allVarNames].sort().map((varName) => {
+    const lua = collected.stateVars.get(varName);
+    const regex = regexVars.get(varName);
 
-      const entry = {
-        varName,
-        luaReaders: lua ? [...lua.readBy].filter((n) => n !== '<top-level>') : [],
-        luaWriters: lua ? [...lua.writtenBy].filter((n) => n !== '<top-level>') : [],
-        regexReaders: regex ? [...regex.readers] : [],
-        regexWriters: regex ? [...regex.writers] : [],
-        luaOnly: Boolean(lua) && !regex,
-        regexOnly: !lua && Boolean(regex),
-        direction: 'isolated',
-      };
+    const entry = {
+      varName,
+      luaReaders: lua ? [...lua.readBy].filter((n) => n !== '<top-level>') : [],
+      luaWriters: lua ? [...lua.writtenBy].filter((n) => n !== '<top-level>') : [],
+      regexReaders: regex ? [...regex.readers] : [],
+      regexWriters: regex ? [...regex.writers] : [],
+      luaOnly: Boolean(lua) && !regex,
+      regexOnly: !lua && Boolean(regex),
+      direction: 'isolated',
+    };
 
-      const hasLuaWrite = entry.luaWriters.length > 0;
-      const hasLuaRead = entry.luaReaders.length > 0;
-      const hasRegexRead = entry.regexReaders.length > 0;
-      const hasRegexWrite = entry.regexWriters.length > 0;
+    const hasLuaWrite = entry.luaWriters.length > 0;
+    const hasLuaRead = entry.luaReaders.length > 0;
+    const hasRegexRead = entry.regexReaders.length > 0;
+    const hasRegexWrite = entry.regexWriters.length > 0;
 
-      if ((hasLuaWrite || hasLuaRead) && (hasRegexRead || hasRegexWrite)) {
-        if (hasLuaWrite && hasRegexRead && !hasRegexWrite && !hasLuaRead) {
-          entry.direction = 'lua→regex';
-        } else if (hasRegexWrite && hasLuaRead && !hasLuaWrite && !hasRegexRead) {
-          entry.direction = 'regex→lua';
-        } else {
-          entry.direction = 'bidirectional';
-        }
+    if ((hasLuaWrite || hasLuaRead) && (hasRegexRead || hasRegexWrite)) {
+      if (hasLuaWrite && hasRegexRead && !hasRegexWrite && !hasLuaRead) {
+        entry.direction = 'lua→regex';
+      } else if (hasRegexWrite && hasLuaRead && !hasLuaWrite && !hasRegexRead) {
+        entry.direction = 'regex→lua';
+      } else {
+        entry.direction = 'bidirectional';
       }
+    }
 
-      return entry;
-    });
+    return entry;
+  });
 
   const scriptInfos: RegexCorrelation['scriptInfos'] = [];
   for (let i = 0; i < activeScriptsList.length; i += 1) {
     const script = activeScriptsList[i] || {};
     const usedVars = new Set<string>();
     const fields = [script.in, script.out, script.ableFlag];
-    const comment = script.comment && String(script.comment).trim() ? String(script.comment).trim() : `#${i}`;
+    const comment =
+      script.comment && String(script.comment).trim() ? String(script.comment).trim() : `#${i}`;
 
     for (const field of fields) {
       if (typeof field !== 'string' || field.length === 0) continue;

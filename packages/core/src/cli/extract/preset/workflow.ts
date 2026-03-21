@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ensureDir, writeJson } from '../../../node/fs-helpers';
+import { ensureDir, writeJson } from '@/node/fs-helpers';
 import {
   phase1_parsePreset,
   phase2_extractPrompts,
@@ -68,10 +68,7 @@ export function runExtractWorkflow(argv: readonly string[]): number {
   const outArg = outIdx >= 0 ? argv[outIdx + 1] : null;
   const filePath = argv.find(
     (value) =>
-      !value.startsWith('-') &&
-      value !== outArg &&
-      value !== '--out' &&
-      value !== '--json-only',
+      !value.startsWith('-') && value !== outArg && value !== '--out' && value !== '--json-only',
   );
 
   if (helpMode || !filePath) {

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { MAX_VARS_IN_REPORT } from '../../domain';
+import { MAX_VARS_IN_REPORT } from '@/domain';
 import { type HtmlResult, type LorebookRegexCorrelation } from './types';
 
 const mdRow = (cells: string[]): string => `| ${cells.join(' | ')} |`;
@@ -115,15 +115,22 @@ function renderUnifiedCBSGraph(out: string[], unifiedGraph: Map<string, UnifiedV
 
   for (const [varName, entry] of shown) {
     const defaultVal = entry.defaultValue !== null ? entry.defaultValue : '—';
-    const writers = entry.crossElementWriters.length > 0 ? entry.crossElementWriters.join(', ') : '—';
-    const readers = entry.crossElementReaders.length > 0 ? entry.crossElementReaders.join(', ') : '—';
-    out.push(mdRow([varName, String(entry.elementCount), entry.direction, defaultVal, writers, readers]));
+    const writers =
+      entry.crossElementWriters.length > 0 ? entry.crossElementWriters.join(', ') : '—';
+    const readers =
+      entry.crossElementReaders.length > 0 ? entry.crossElementReaders.join(', ') : '—';
+    out.push(
+      mdRow([varName, String(entry.elementCount), entry.direction, defaultVal, writers, readers]),
+    );
   }
 
   out.push('');
 }
 
-function renderCrossElementSummary(out: string[], unifiedGraph: Map<string, UnifiedVarEntry>): void {
+function renderCrossElementSummary(
+  out: string[],
+  unifiedGraph: Map<string, UnifiedVarEntry>,
+): void {
   out.push('## Cross-Element Summary');
   out.push('');
 
@@ -161,7 +168,10 @@ function renderCrossElementSummary(out: string[], unifiedGraph: Map<string, Unif
   out.push('');
 }
 
-function renderLorebookRegexCorrelation(out: string[], correlation: LorebookRegexCorrelation): void {
+function renderLorebookRegexCorrelation(
+  out: string[],
+  correlation: LorebookRegexCorrelation,
+): void {
   out.push('## Lorebook ↔ Regex Correlation');
   out.push('');
 
@@ -181,12 +191,14 @@ function renderLorebookRegexCorrelation(out: string[], correlation: LorebookRege
   out.push('|----------|-----------|------------------|---------------|');
 
   for (const sv of correlation.sharedVars) {
-    out.push(mdRow([
-      sv.varName,
-      sv.direction,
-      sv.lorebookEntries.join(', ') || '—',
-      sv.regexScripts.join(', ') || '—',
-    ]));
+    out.push(
+      mdRow([
+        sv.varName,
+        sv.direction,
+        sv.lorebookEntries.join(', ') || '—',
+        sv.regexScripts.join(', ') || '—',
+      ]),
+    );
   }
 
   out.push('');
@@ -270,7 +282,10 @@ function renderHTMLAnalysis(out: string[], htmlAnalysis: HtmlResult): void {
   }
 }
 
-function renderLorebookStructure(out: string[], lorebookStructure: ReportData['lorebookStructure']): void {
+function renderLorebookStructure(
+  out: string[],
+  lorebookStructure: ReportData['lorebookStructure'],
+): void {
   out.push('## Lorebook Structure');
   out.push('');
 
@@ -288,7 +303,9 @@ function renderLorebookStructure(out: string[], lorebookStructure: ReportData['l
       out.push(`- 📁 **${folder.name || folder.id || 'unknown'}**`);
       const folderEntries = entries.filter((entry) => entry.folder === (folder.name || folder.id));
       for (const entry of folderEntries) {
-        out.push(`  - ${entry.name}${entry.constant ? ' _(constant)_' : ''}${entry.enabled === false ? ' _(disabled)_' : ''}`);
+        out.push(
+          `  - ${entry.name}${entry.constant ? ' _(constant)_' : ''}${entry.enabled === false ? ' _(disabled)_' : ''}`,
+        );
       }
     }
 
@@ -296,7 +313,9 @@ function renderLorebookStructure(out: string[], lorebookStructure: ReportData['l
     if (unfoldered.length > 0) {
       out.push('- 📁 **_(no folder)_**');
       for (const entry of unfoldered) {
-        out.push(`  - ${entry.name}${entry.constant ? ' _(constant)_' : ''}${entry.enabled === false ? ' _(disabled)_' : ''}`);
+        out.push(
+          `  - ${entry.name}${entry.constant ? ' _(constant)_' : ''}${entry.enabled === false ? ' _(disabled)_' : ''}`,
+        );
       }
     }
     out.push('');
@@ -340,7 +359,9 @@ function renderUnmappedVariables(out: string[], unifiedGraph: Map<string, Unifie
     return;
   }
 
-  const isolated = [...unifiedGraph.entries()].filter(([, entry]) => entry.direction === 'isolated');
+  const isolated = [...unifiedGraph.entries()].filter(
+    ([, entry]) => entry.direction === 'isolated',
+  );
   if (isolated.length === 0) {
     out.push('> ℹ️ No unmapped (isolated) variables found');
     return;

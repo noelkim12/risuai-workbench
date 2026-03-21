@@ -75,15 +75,20 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && tsc-alias",
     "watch": "tsc --watch",
-    "dev": "tsc && code --extensionDevelopmentPath=\"$PWD\""
+    "dev": "tsc && code --extensionDevelopmentPath=\"$PWD\"",
+    "lint": "eslint 'src/**/*.ts'",
+    "lint:fix": "eslint 'src/**/*.ts' --fix",
+    "format": "prettier --write 'src/**/*.ts'",
+    "format:check": "prettier --check 'src/**/*.ts'"
   },
   "dependencies": {
     "risu-workbench-core": "*"
   },
   "devDependencies": {
     "@types/vscode": "^1.96.0",
+    "tsc-alias": "^1.8.0",
     "typescript": "^5.7.0"
   }
 }

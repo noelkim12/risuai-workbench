@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { zipSync } from 'fflate';
-import { ensureDir } from '../../../node/fs-helpers';
+import { ensureDir } from '@/node/fs-helpers';
 import {
   PNG_SIGNATURE,
   PNG_1X1_TRANSPARENT,
@@ -10,17 +10,17 @@ import {
   writePngTextChunks,
   isPng,
   isJpeg,
-} from '../../../node/png';
-import { encodeModuleRisum } from '../../../node/rpack';
+} from '@/node/png';
+import { encodeModuleRisum } from '@/node/rpack';
 import {
   listJsonFilesRecursive,
   listJsonFilesFlat,
   resolveOrderedFiles,
   readJson,
   isDir,
-} from '../../../node/json-listing';
-import { toPosix } from '../../../domain/lorebook/folders';
-import { sanitizeFilename } from '../../../domain/card/filenames';
+} from '@/node/json-listing';
+import { toPosix } from '@/domain/lorebook/folders';
+import { sanitizeFilename } from '@/utils/filenames';
 import { argValue, setNestedValue, classifyAssetExt, normalizeExt, fromPosix } from '../utils';
 
 const HELP_TEXT = `
@@ -312,6 +312,7 @@ function resolveTargetFormat(inRoot: string, formatArgValue: string): PackFormat
       if (manifest.source_format === 'png') return 'png';
       if (manifest.source_format === 'charx') return 'charx';
     } catch {
+      // manifest read failure — fall through to default
     }
   }
 
@@ -325,7 +326,10 @@ function resolveOutputPath(params: {
   card: any;
   format: PackFormat;
 }): { outPath: string; baseName: string } {
-  const defaultBase = sanitizeFilename(params.nameArg || params.card.data?.name || 'character', 'character');
+  const defaultBase = sanitizeFilename(
+    params.nameArg || params.card.data?.name || 'character',
+    'character',
+  );
   const ext = params.format === 'png' ? '.png' : params.format === 'charx-jpg' ? '.jpg' : '.charx';
   const defaultFile = path.join(params.inRoot, `${defaultBase}_repack${ext}`);
 
@@ -336,11 +340,17 @@ function resolveOutputPath(params: {
   const resolved = path.resolve(params.outArg);
   const asDir = fs.existsSync(resolved) && fs.statSync(resolved).isDirectory();
   if (asDir) {
-    return { outPath: path.join(resolved, `${defaultBase}_repack${ext}`), baseName: `${defaultBase}_repack` };
+    return {
+      outPath: path.join(resolved, `${defaultBase}_repack${ext}`),
+      baseName: `${defaultBase}_repack`,
+    };
   }
 
   if (!fs.existsSync(resolved) && path.extname(resolved) === '') {
-    return { outPath: path.join(resolved, `${defaultBase}_repack${ext}`), baseName: `${defaultBase}_repack` };
+    return {
+      outPath: path.join(resolved, `${defaultBase}_repack${ext}`),
+      baseName: `${defaultBase}_repack`,
+    };
   }
 
   const parsed = path.parse(resolved);
@@ -371,7 +381,13 @@ function buildPngCardBuffer(card: any, inRoot: string, coverArgPath: string | nu
     if (!asset || typeof asset !== 'object') continue;
 
     const uri = typeof asset.uri === 'string' ? asset.uri : '';
-    if (uri === 'ccdefault:' || uri.startsWith('http://') || uri.startsWith('https://') || uri.startsWith('data:')) continue;
+    if (
+      uri === 'ccdefault:' ||
+      uri.startsWith('http://') ||
+      uri.startsWith('https://') ||
+      uri.startsWith('data:')
+    )
+      continue;
 
     const blob = assetBlobs.get(idx);
     if (!blob) continue;
@@ -380,7 +396,10 @@ function buildPngCardBuffer(card: any, inRoot: string, coverArgPath: string | nu
     chunks.push({ key: `chara-ext-asset_:${idx}`, value: blob.toString('base64') });
   }
 
-  chunks.unshift({ key: 'ccv3', value: Buffer.from(JSON.stringify(work), 'utf-8').toString('base64') });
+  chunks.unshift({
+    key: 'ccv3',
+    value: Buffer.from(JSON.stringify(work), 'utf-8').toString('base64'),
+  });
   return writePngTextChunks(cover, chunks);
 }
 
@@ -400,7 +419,8 @@ function buildCharxBuffer(card: any, inRoot: string): Buffer {
     if (!blob) continue;
 
     const uri = typeof asset.uri === 'string' ? asset.uri : '';
-    if (uri.startsWith('http://') || uri.startsWith('https://') || uri.startsWith('data:')) continue;
+    if (uri.startsWith('http://') || uri.startsWith('https://') || uri.startsWith('data:'))
+      continue;
 
     const assetType = sanitizeFilename(asset.type || 'asset', 'asset').toLowerCase();
     const extClass = classifyAssetExt(asset.ext || 'bin');
@@ -508,7 +528,14 @@ function resolveCoverBytes(
       if (!asset || asset.type !== 'icon' || asset.name !== 'main') continue;
       const blob = blobs.get(i + 1);
       if (!blob) continue;
-      if (exts.includes(`.${String(asset.ext || '').toLowerCase().replace(/^\./, '')}`)) return blob;
+      if (
+        exts.includes(
+          `.${String(asset.ext || '')
+            .toLowerCase()
+            .replace(/^\./, '')}`,
+        )
+      )
+        return blob;
       if (isPng(blob) && exts.includes('.png')) return blob;
       if (isJpeg(blob) && (exts.includes('.jpg') || exts.includes('.jpeg'))) return blob;
     }

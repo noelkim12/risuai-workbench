@@ -36,8 +36,6 @@ export function parseCardFile(cardPath: string): unknown {
     }
   }
 
-  console.error(
-    `  ⚠️  --card: 지원하지 않는 형식 (${ext}). .json 또는 .png만 지원합니다.`,
-  );
+  console.error(`  ⚠️  --card: 지원하지 않는 형식 (${ext}). .json 또는 .png만 지원합니다.`);
   return null;
 }

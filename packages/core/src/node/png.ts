@@ -114,13 +114,22 @@ export function stripPngTextChunks(buf: Buffer): Buffer {
  * @param records - 삽입할 키-값 쌍 배열
  * @returns 새로운 텍스트 청크가 포함된 PNG 바이너리 버퍼
  */
-export function writePngTextChunks(pngBuf: Uint8Array, records: Array<{ key: string; value: string }>): Buffer {
+export function writePngTextChunks(
+  pngBuf: Uint8Array,
+  records: Array<{ key: string; value: string }>,
+): Buffer {
   const chunks = parseRawPngChunks(pngBuf);
   if (!chunks) {
     throw new Error('유효한 PNG 커버를 읽지 못했습니다.');
   }
 
-  const kept = chunks.filter((chunk) => chunk.type !== 'tEXt' && chunk.type !== 'iTXt' && chunk.type !== 'zTXt' && chunk.type !== 'IEND');
+  const kept = chunks.filter(
+    (chunk) =>
+      chunk.type !== 'tEXt' &&
+      chunk.type !== 'iTXt' &&
+      chunk.type !== 'zTXt' &&
+      chunk.type !== 'IEND',
+  );
   const iend = chunks.find((chunk) => chunk.type === 'IEND');
   if (!iend) {
     throw new Error('PNG IEND chunk가 없습니다.');
@@ -138,7 +147,8 @@ export function writePngTextChunks(pngBuf: Uint8Array, records: Array<{ key: str
  * Different from parsePngTextChunks which decodes tEXt chunks to key-value pairs.
  */
 function parseRawPngChunks(buf: Uint8Array): Array<{ type: string; data: Uint8Array }> | null {
-  if (!Buffer.isBuffer(buf) || buf.length < 8 || !buf.subarray(0, 8).equals(PNG_SIGNATURE)) return null;
+  if (!Buffer.isBuffer(buf) || buf.length < 8 || !buf.subarray(0, 8).equals(PNG_SIGNATURE))
+    return null;
 
   let pos = 8;
   const out: Array<{ type: string; data: Uint8Array }> = [];

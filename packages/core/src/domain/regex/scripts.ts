@@ -1,11 +1,11 @@
-import { extractCBSVarOps } from '../card/cbs';
+import { extractCBSVarOps } from '../cbs/cbs';
 import { asRecord, type GenericRecord } from '../types';
-import { getCustomScripts } from '../card/data';
+import { getCustomScriptsFromCharx } from '../card/data';
 import { ELEMENT_TYPES } from '../analyze/constants';
 import type { ElementCBSData } from '../analyze/correlation';
 
 /**
- * 정규식 스크립트에서 추출된 변수 조작 정보를 담는 인터페이스에요.
+ * 정규식 스크립트에서 추출된 변수 조작 정보를 담는 인터페이스
  */
 export interface RegexScriptOps {
   /** 스크립트 이름 */
@@ -17,17 +17,14 @@ export interface RegexScriptOps {
 }
 
 /**
- * 정규식 스크립트 객체에서 CBS 변수 조작 연산을 추출해요.
- * 'in', 'out', 'flag' 필드 등을 분석해요.
+ * 정규식 스크립트 객체에서 CBS 변수 조작 연산을 추출
+ * 'in', 'out', 'flag' 필드 등을 분석
  *
  * @param script - 분석할 스크립트 객체
  * @param index - 스크립트 인덱스 (이름이 없을 경우 대비)
  * @returns 추출된 연산 정보 (추출할 연산이 없으면 null)
  */
-export function extractRegexScriptOps(
-  script: unknown,
-  index: number,
-): RegexScriptOps | null {
+export function extractRegexScriptOps(script: unknown, index: number): RegexScriptOps | null {
   const record = asRecord(script);
   if (!record) return null;
 
@@ -43,8 +40,7 @@ export function extractRegexScriptOps(
   let writes = new Set([...inOps.writes, ...outOps.writes, ...flagOps.writes]);
 
   if (reads.size === 0 && writes.size === 0) {
-    const alt =
-      getStringField(record, 'script') || getStringField(record, 'content');
+    const alt = getStringField(record, 'script') || getStringField(record, 'content');
     const altOps = extractCBSVarOps(alt || '');
     reads = altOps.reads;
     writes = altOps.writes;
@@ -60,18 +56,18 @@ export function extractRegexScriptOps(
 }
 
 /**
- * 캐릭터 카드 객체에서 모든 정규식 스크립트의 CBS 정보를 수집해요.
+ * 캐릭터 카드 객체에서 모든 정규식 스크립트의 CBS 정보를 수집
  *
  * @param card - 캐릭터 카드 객체
  * @returns 수집된 CBS 정보 배열
  */
 export function collectRegexCBSFromCard(card: unknown): ElementCBSData[] {
-  const scripts = getCustomScripts(card);
+  const scripts = getCustomScriptsFromCharx(card);
   return collectRegexCBSFromScripts(scripts);
 }
 
 /**
- * 정규식 스크립트 레코드 배열에서 CBS 정보를 수집해요.
+ * 정규식 스크립트 레코드 배열에서 CBS 정보를 수집
  *
  * @param scripts - 분석할 스크립트 레코드 배열
  * @returns 수집된 CBS 정보 배열
@@ -94,8 +90,8 @@ export function collectRegexCBSFromScripts(
 }
 
 /**
- * 텍스트 형식의 기본 변수(defaultVariables) 설정을 파싱해요.
- * 'key=value' 형식의 줄 단위 텍스트를 처리해요.
+ * 텍스트 형식의 기본 변수(defaultVariables) 설정을 파싱
+ * 'key=value' 형식의 줄 단위 텍스트를 처리
  *
  * @param raw - 파싱할 텍스트 데이터
  * @returns {변수명: 값} 매핑 객체
@@ -120,7 +116,7 @@ export function parseDefaultVariablesText(raw: unknown): Record<string, string> 
 }
 
 /**
- * JSON 형식(객체 또는 객체 배열)의 기본 변수 설정을 파싱해요.
+ * JSON 형식(객체 또는 객체 배열)의 기본 변수 설정을 파싱
  *
  * @param raw - 파싱할 데이터 (객체 또는 배열)
  * @returns {변수명: 값} 매핑 객체

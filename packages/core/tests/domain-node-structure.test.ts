@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import * as domain from '../src/domain';
+import * as domain from '@/domain';
 import {
   buildRisuFolderMap,
   extractCBSVarOps,
   sanitizeFilename,
-} from '../src/domain';
-import { ensureDir, parseCardFile } from '../src/node';
+} from '@/domain';
+import { ensureDir, parseCardFile } from '@/node';
 
 describe('packages/core Phase 1 domain/node structure', () => {
   it('provides a domain entry for pure helpers only', () => {

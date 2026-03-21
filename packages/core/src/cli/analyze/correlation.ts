@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import {
   buildLorebookCorrelationFromEntries,
   buildRegexCorrelationFromScripts,
-} from '../../domain/analyze/correlation';
-import { parseCardFile } from '../../node';
+} from '@/domain/analyze/correlation';
+import { parseCardFile } from '@/node';
 import { type CollectedData, type LorebookCorrelation, type RegexCorrelation } from './types';
 
 export function buildLorebookCorrelation(params: {

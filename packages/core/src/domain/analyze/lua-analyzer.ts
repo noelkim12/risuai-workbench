@@ -1,9 +1,4 @@
-import {
-  lineStart,
-  sanitizeName,
-  toModuleName,
-  type LuaASTNode,
-} from './lua-helpers';
+import { lineStart, sanitizeName, toModuleName, type LuaASTNode } from './lua-helpers';
 import {
   type ApiMeta,
   type AnalyzePhaseResult,
@@ -12,7 +7,7 @@ import {
 } from './lua-analysis-types';
 
 /**
- * 수집된 Lua 분석 데이터를 바탕으로 호출 그래프, 모듈 그룹화, 상태 변수 소유권 등을 분석하는 2차 분석 단계에요.
+ * 수집된 Lua 분석 데이터를 바탕으로 호출 그래프, 모듈 그룹화, 상태 변수 소유권 등을 분석하는 2차 분석 단계
  *
  * @param params - 분석에 필요한 데이터(주석, 전체 라인 수, 수집된 데이터, API 메타데이터 등)
  * @returns 종합 분석 결과 객체
@@ -112,7 +107,8 @@ export function runAnalyzePhase(params: {
       key,
       readBy,
       writers,
-      ownerModule: writers.length > 0 ? moduleByFunction.get(writers[0]) || '(unassigned)' : '(none)',
+      ownerModule:
+        writers.length > 0 ? moduleByFunction.get(writers[0]) || '(unassigned)' : '(none)',
       crossModule: mods.size > 1,
     });
   }
@@ -179,7 +175,9 @@ export function runAnalyzePhase(params: {
   };
 }
 
-function collectCommentSections(comments: LuaASTNode[]): Array<{ title: string; line: number; source: string }> {
+function collectCommentSections(
+  comments: LuaASTNode[],
+): Array<{ title: string; line: number; source: string }> {
   const sections: Array<{ title: string; line: number; source: string }> = [];
   const sorted = [...comments].sort((a, b) => lineStart(a) - lineStart(b));
 

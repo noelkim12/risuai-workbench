@@ -1,1 +1,1 @@
-export { runAnalyzePhase } from '../../domain/analyze/lua-analyzer';
+export { runAnalyzePhase } from '@/domain/analyze/lua-analyzer';

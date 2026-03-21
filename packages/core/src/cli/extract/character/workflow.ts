@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ensureDir, writeJson } from '../../../node/fs-helpers';
-import { runAnalyzeWorkflow } from '../../analyze/workflow';
-import { runAnalyzeCardWorkflow } from '../../analyze-card/workflow';
+import { ensureDir, writeJson } from '@/node/fs-helpers';
+import { runAnalyzeWorkflow } from '@/cli/analyze/workflow';
+import { runAnalyzeCardWorkflow } from '@/cli/analyze-card/workflow';
 import {
   phase1_parseCard,
   phase2_extractLorebooks,
@@ -56,10 +56,7 @@ export function runExtractWorkflow(argv: readonly string[]): number {
   const outDir = outArg || '.';
   const filePath = argv.find(
     (value) =>
-      !value.startsWith('-') &&
-      value !== outArg &&
-      value !== '--out' &&
-      value !== '--json-only',
+      !value.startsWith('-') && value !== outArg && value !== '--out' && value !== '--json-only',
   );
 
   if (helpMode || !filePath) {

@@ -29,7 +29,9 @@ export function listJsonFilesRecursive(rootDir: string): string[] {
   };
 
   walk(rootDir);
-  out.sort((a, b) => toPosix(path.relative(rootDir, a)).localeCompare(toPosix(path.relative(rootDir, b))));
+  out.sort((a, b) =>
+    toPosix(path.relative(rootDir, a)).localeCompare(toPosix(path.relative(rootDir, b))),
+  );
   return out;
 }
 
@@ -41,7 +43,12 @@ export function listJsonFilesFlat(rootDir: string): string[] {
   if (!isDir(rootDir)) return [];
   return fs
     .readdirSync(rootDir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.json') && entry.name !== '_order.json')
+    .filter(
+      (entry) =>
+        entry.isFile() &&
+        entry.name.toLowerCase().endsWith('.json') &&
+        entry.name !== '_order.json',
+    )
     .map((entry) => path.join(rootDir, entry.name))
     .sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
 }

@@ -25,7 +25,12 @@ export function runExtractWorkflow(argv: readonly string[]): number {
   }
 
   const filePath = argv.find(
-    (v) => !v.startsWith('-') && v !== typeArg && v !== '--type' && v !== '--out' && !isOptionValue(argv, v),
+    (v) =>
+      !v.startsWith('-') &&
+      v !== typeArg &&
+      v !== '--type' &&
+      v !== '--out' &&
+      !isOptionValue(argv, v),
   );
 
   if (filePath) {

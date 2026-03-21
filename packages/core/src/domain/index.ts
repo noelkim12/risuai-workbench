@@ -1,5 +1,5 @@
 export { asRecord, type GenericRecord } from './types';
-export { extractCBSVarOps, type CBSVarOps } from './card/cbs';
+export { extractCBSVarOps, type CBSVarOps } from './cbs/cbs';
 export {
   buildFolderMap as buildRisuFolderMap,
   resolveFolderName as resolveRisuFolderName,
@@ -13,22 +13,22 @@ export {
   type LorebookExtractionEntry,
   type LorebookExtractionPlan,
 } from './lorebook/folders';
-export { sanitizeFilename } from './card/filenames';
+export { sanitizeFilename } from '../utils/filenames';
 export {
-  getCardName,
-  getCharacterBookEntries,
+  getCharacterName as getCardName,
+  getLorebookEntriesFromCharx as getCharacterBookEntries,
   getModuleLorebookEntries,
-  getAllLorebookEntries,
-  getCustomScripts,
-  getDefaultVariablesRaw,
-  type CardLike,
+  getAllLorebookEntriesFromCharx as getAllLorebookEntries,
+  getCustomScriptsFromCharx as getCustomScripts,
+  getDefaultVariablesRawFromCharx as getDefaultVariablesRaw,
+  type CharxStructure as CardLike,
 } from './card/data';
 export {
   resolveAssetUri,
   guessMimeExt,
   type AssetDict,
   type ResolvedAsset,
-} from './card/asset-uri';
+} from './asset/asset-uri';
 export {
   analyzeLorebookStructure,
   analyzeLorebookStructureFromCard,

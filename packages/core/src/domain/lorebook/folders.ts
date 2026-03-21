@@ -1,6 +1,6 @@
-import { sanitizeFilename } from '../card/filenames';
+import { sanitizeFilename } from '@/utils/filenames';
 
-/** RisuAI 캐릭터 북(로어북) 엔트리의 최소 구조 인터페이스에요. */
+/** RisuAI 캐릭터 북(로어북) 엔트리의 최소 구조 인터페이스 */
 export interface RisuCharbookEntry {
   /** 엔트리 모드 (entry, folder 등) */
   mode: string;
@@ -12,7 +12,7 @@ export interface RisuCharbookEntry {
   comment?: string;
 }
 
-/** 폴더 맵 생성 옵션이에요. */
+/** 폴더 맵 생성 옵션 */
 export interface FolderMapOptions {
   /** 폴더 이름을 변환하는 함수 (예: sanitize) */
   nameTransform?: (name: string) => string;
@@ -21,7 +21,7 @@ export interface FolderMapOptions {
 }
 
 /**
- * 로어북 엔트리 목록에서 폴더 키(keys[0])와 폴더 이름의 매핑을 생성해요.
+ * 로어북 엔트리 목록에서 폴더 키(keys[0])와 폴더 이름의 매핑을 생성
  *
  * @param entries - 로어북 엔트리 배열
  * @param opts - 변환 옵션
@@ -33,19 +33,14 @@ export function buildFolderMap(
 ): Record<string, string> {
   const options = opts || {};
   const nameTransform =
-    typeof options.nameTransform === 'function'
-      ? options.nameTransform
-      : (value: string) => value;
-  const fallbackName =
-    typeof options.fallbackName === 'string' ? options.fallbackName : 'unnamed';
+    typeof options.nameTransform === 'function' ? options.nameTransform : (value: string) => value;
+  const fallbackName = typeof options.fallbackName === 'string' ? options.fallbackName : 'unnamed';
   const map: Record<string, string> = {};
 
   for (const entry of entries) {
     if (entry.mode === 'folder' && entry.keys && entry.keys.length > 0) {
       const folderKey = entry.keys[0];
-      map[folderKey] = nameTransform(
-        entry.name || entry.comment || fallbackName,
-      );
+      map[folderKey] = nameTransform(entry.name || entry.comment || fallbackName);
     }
   }
 
@@ -53,7 +48,7 @@ export function buildFolderMap(
 }
 
 /**
- * 폴더 참조 식별자(folderRef)를 폴더 맵을 통해 실제 폴더 이름으로 해석해요.
+ * 폴더 참조 식별자(folderRef)를 폴더 맵을 통해 실제 폴더 이름으로 해석
  *
  * @param folderRef - 엔트리의 folder 필드 값
  * @param folderMap - buildFolderMap으로 생성된 매핑 객체
@@ -144,6 +139,7 @@ export function buildLorebookFolderDirMap(
     folderEntriesByKey.set(key, entry);
   }
 
+  /** 폴더 키를 통해 상대 디렉토리 경로를 재귀적으로 해석 */
   const resolveDirByKey = (folderKey: string | null): string => {
     if (!folderKey) return '';
     if (resolvedDirs.has(folderKey)) return resolvedDirs.get(folderKey)!;
@@ -167,7 +163,7 @@ export function buildLorebookFolderDirMap(
   return resolvedDirs;
 }
 
-/** 추출될 로어북 아이템(폴더 또는 개별 엔트리)의 상세 정보에요. */
+/** 추출될 로어북 아이템(폴더 또는 개별 엔트리)의 상세 정보 */
 export type LorebookExtractionEntry =
   | {
       /** 아이템 타입 */
@@ -190,7 +186,7 @@ export type LorebookExtractionEntry =
       data: any;
     };
 
-/** 로어북 추출 계획 전체를 담는 인터페이스에요. */
+/** 로어북 추출 계획 전체를 담는 인터페이스 */
 export interface LorebookExtractionPlan {
   /** 계획된 아이템 목록 */
   items: LorebookExtractionEntry[];
@@ -224,7 +220,7 @@ export function planLorebookExtraction(
     const entry = entries[i];
     const name = sanitizeFilename(entry.name || entry.comment || `entry_${i}`);
 
-    if (entry.mode === 'folder') {
+    if (entry.mode === 'folder') { 
       const folderKey = getLorebookFolderKey(entry);
       const relDir =
         folderKey && folderDirMap.has(folderKey)
@@ -239,12 +235,10 @@ export function planLorebookExtraction(
       });
       continue;
     }
-
+ 
     const relDir = entry.folder
       ? folderDirMap.get(entry.folder) ||
-        resolveFolderName(entry.folder, fallbackFolderMap, (ref) =>
-          sanitizeFilename(ref),
-        ) ||
+        resolveFolderName(entry.folder, fallbackFolderMap, (ref) => sanitizeFilename(ref)) ||
         ''
       : '';
 

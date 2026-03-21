@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ensureDir, writeJson } from '../../../node/fs-helpers';
+import { ensureDir, writeJson } from '@/node/fs-helpers';
 import {
   phase1_parseModule,
   phase2_extractLorebooks,
@@ -47,10 +47,7 @@ export function runExtractWorkflow(argv: readonly string[]): number {
   const outArg = outIdx >= 0 ? argv[outIdx + 1] : null;
   const filePath = argv.find(
     (value) =>
-      !value.startsWith('-') &&
-      value !== outArg &&
-      value !== '--out' &&
-      value !== '--json-only',
+      !value.startsWith('-') && value !== outArg && value !== '--out' && value !== '--json-only',
   );
 
   if (helpMode || !filePath) {
@@ -77,7 +74,9 @@ function runMain(filePath: string, outArg: string | null, jsonOnly: boolean): vo
   console.log('\n  RisuAI Module Extractor\n');
 
   const parsed = phase1_parseModule(filePath);
-  const safeName = sanitizeOutputName(parsed.module?.name || path.basename(filePath, path.extname(filePath)));
+  const safeName = sanitizeOutputName(
+    parsed.module?.name || path.basename(filePath, path.extname(filePath)),
+  );
   const defaultOutDir = `module_${safeName}`;
   const resolvedOutDir = path.resolve(outArg || defaultOutDir);
   ensureDir(resolvedOutDir);

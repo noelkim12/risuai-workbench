@@ -11,9 +11,9 @@ import {
   phase5_extractAssets,
   phase6_extractBackgroundEmbedding,
   phase7_extractModuleIdentity,
-} from '../src/cli/extract/module/phases';
-import { isModuleFile } from '../src/cli/extract/module/workflow';
-import { isModuleJson } from '../src/cli/extract/parsers';
+} from '@/cli/extract/module/phases';
+import { isModuleFile } from '@/cli/extract/module/workflow';
+import { isModuleJson } from '@/cli/extract/parsers';
 
 describe('module extract', () => {
   let tmpDir: string;

@@ -1,1 +1,1 @@
-export { runCollectPhase } from '../../domain/analyze/lua-collector';
+export { runCollectPhase } from '@/domain/analyze/lua-collector';

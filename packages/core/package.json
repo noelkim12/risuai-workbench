@@ -21,8 +21,12 @@
     "LICENSE*"
   ],
   "scripts": {
-    "build": "tsc",
-    "test": "vitest run"
+    "build": "tsc && tsc-alias",
+    "test": "vitest run",
+    "lint": "eslint 'src/**/*.ts'",
+    "lint:fix": "eslint 'src/**/*.ts' --fix",
+    "format": "prettier --write 'src/**/*.ts'",
+    "format:check": "prettier --check 'src/**/*.ts'"
   },
   "dependencies": {
     "fflate": "^0.8.2",
@@ -31,6 +35,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.3.5",
+    "tsc-alias": "^1.8.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   }

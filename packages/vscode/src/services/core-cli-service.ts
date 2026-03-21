@@ -25,7 +25,11 @@ export interface CoreCliRunOptions {
 }
 
 export class CoreCliService {
-  async run(command: string, args: readonly string[], options: CoreCliRunOptions = {}): Promise<void> {
+  async run(
+    command: string,
+    args: readonly string[],
+    options: CoreCliRunOptions = {},
+  ): Promise<void> {
     const binPath = require.resolve('risu-workbench-core/bin/risu-core.js');
     const nodeArgs = [binPath, command, ...args];
     await execFileAsync(process.execPath, nodeArgs, {

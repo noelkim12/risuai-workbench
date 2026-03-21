@@ -85,9 +85,7 @@ function printSections(analyzePhase: AnalyzePhaseResult, total: number): void {
 }
 
 function printTopFunctions(collected: CollectedData, total: number): void {
-  const sorted = [...collected.functions]
-    .sort((a, b) => b.lineCount - a.lineCount)
-    .slice(0, 20);
+  const sorted = [...collected.functions].sort((a, b) => b.lineCount - a.lineCount).slice(0, 20);
 
   console.log('\n  ────────────────────────────────────────');
   console.log(`  거대 함수 TOP ${sorted.length}`);
@@ -115,9 +113,7 @@ function printSummary(
   console.log(
     `     500줄+ 함수: ${collected.functions.filter((f) => f.lineCount > 500).length}개 (분할 권장)`,
   );
-  console.log(
-    `     200줄+ 함수: ${collected.functions.filter((f) => f.lineCount > 200).length}개`,
-  );
+  console.log(`     200줄+ 함수: ${collected.functions.filter((f) => f.lineCount > 200).length}개`);
   console.log(
     `     상태 변수: ${analyzePhase.stateOwnership.length}개 / 제안 모듈: ${analyzePhase.moduleGroups.length}개`,
   );
@@ -151,9 +147,7 @@ function printCorrelationSummary(
     console.log(
       `     Regex: ${regexCorrelation.totalScripts}개 스크립트 / ${regexCorrelation.activeScripts}개 활성`,
     );
-    console.log(
-      `     Bridge 변수: ${regexCorrelation.bridgedVars.length}개 (Lua↔Regex 공유)`,
-    );
+    console.log(`     Bridge 변수: ${regexCorrelation.bridgedVars.length}개 (Lua↔Regex 공유)`);
     console.log(
       `     Lua 전용: ${regexCorrelation.luaOnlyVars.length}개 / Regex 전용: ${regexCorrelation.regexOnlyVars.length}개`,
     );
@@ -170,7 +164,8 @@ function renderMarkdown(params: {
   lorebookCorrelation: LorebookCorrelation | null;
   regexCorrelation: RegexCorrelation | null;
 }): void {
-  const { filePath, total, analyzePhase, collected, lorebookCorrelation, regexCorrelation } = params;
+  const { filePath, total, analyzePhase, collected, lorebookCorrelation, regexCorrelation } =
+    params;
   const filename = path.basename(filePath);
   const out: string[] = [];
 
@@ -226,7 +221,10 @@ function renderMarkdown(params: {
     out.push('');
   }
 
-  const mdPath = path.join(path.dirname(filePath), `${path.basename(filePath, path.extname(filePath))}.analysis.md`);
+  const mdPath = path.join(
+    path.dirname(filePath),
+    `${path.basename(filePath, path.extname(filePath))}.analysis.md`,
+  );
   fs.writeFileSync(mdPath, `${out.join('\n')}\n`, 'utf-8');
   console.log(`  ✅ Markdown exported to ${mdPath}`);
 }
@@ -239,7 +237,8 @@ function renderHtml(params: {
   lorebookCorrelation: LorebookCorrelation | null;
   regexCorrelation: RegexCorrelation | null;
 }): void {
-  const { filePath, total, analyzePhase, collected, lorebookCorrelation, regexCorrelation } = params;
+  const { filePath, total, analyzePhase, collected, lorebookCorrelation, regexCorrelation } =
+    params;
 
   const html = `<!doctype html>
 <html lang="en">
@@ -272,7 +271,8 @@ function renderHtml(params: {
       ${
         analyzePhase.stateOwnership
           .map(
-            (state) => `<tr><td>${escapeHtml(state.key)}</td><td>${escapeHtml(state.ownerModule)}</td><td>${state.readBy.length}</td><td>${state.writers.length}</td></tr>`,
+            (state) =>
+              `<tr><td>${escapeHtml(state.key)}</td><td>${escapeHtml(state.ownerModule)}</td><td>${state.readBy.length}</td><td>${state.writers.length}</td></tr>`,
           )
           .join('') || '<tr><td colspan="4">No state variables</td></tr>'
       }
@@ -286,7 +286,10 @@ function renderHtml(params: {
 </body>
 </html>`;
 
-  const htmlPath = path.join(path.dirname(filePath), `${path.basename(filePath, path.extname(filePath))}.analysis.html`);
+  const htmlPath = path.join(
+    path.dirname(filePath),
+    `${path.basename(filePath, path.extname(filePath))}.analysis.html`,
+  );
   fs.writeFileSync(htmlPath, html, 'utf-8');
   console.log(`  ✅ HTML exported to ${htmlPath}`);
 }

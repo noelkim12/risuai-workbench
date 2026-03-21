@@ -1,4 +1,7 @@
-import { type ElementCBSData, type LorebookRegexCorrelation } from '../../domain/analyze/correlation';
+import {
+  type ElementCBSData,
+  type LorebookRegexCorrelation,
+} from '@/domain/analyze/correlation';
 
 export type { ElementCBSData, LorebookRegexCorrelation };
 

@@ -4,8 +4,8 @@ import {
   analyzeLorebookStructureFromCard,
   buildLorebookRegexCorrelation,
   buildUnifiedCBSGraph,
-} from '../../domain';
-import { ensureDir } from '../../node/fs-helpers';
+} from '@/domain';
+import { ensureDir } from '@/node/fs-helpers';
 import {
   collectHTMLCBS,
   collectLorebookCBS,
@@ -16,7 +16,12 @@ import {
 } from './collectors';
 import { renderMarkdown } from './reporting';
 import { renderHtml } from './reporting/htmlRenderer';
-import { type ElementCBSData, type HtmlResult, type LorebookRegexCorrelation, type VariablesResult } from './types';
+import {
+  type ElementCBSData,
+  type HtmlResult,
+  type LorebookRegexCorrelation,
+  type VariablesResult,
+} from './types';
 
 const HELP_TEXT = `
   🐿️ RisuAI Character Card Analyzer
@@ -87,23 +92,40 @@ function runMain(
     throw new Error(`card.json 파싱 실패: ${message}`);
   }
 
-  const lorebookCBS = safeCollect(() => collectLorebookCBS(card, resolvedOutDir), 'Lorebook CBS 수집 실패', [] as ElementCBSData[]);
-  const regexCBS = safeCollect(() => collectRegexCBS(card, resolvedOutDir), 'Regex CBS 수집 실패', [] as ElementCBSData[]);
+  const lorebookCBS = safeCollect(
+    () => collectLorebookCBS(card, resolvedOutDir),
+    'Lorebook CBS 수집 실패',
+    [] as ElementCBSData[],
+  );
+  const regexCBS = safeCollect(
+    () => collectRegexCBS(card, resolvedOutDir),
+    'Regex CBS 수집 실패',
+    [] as ElementCBSData[],
+  );
   const variablesResult = safeCollect(
     () => collectVariablesCBS(card, resolvedOutDir),
     'Variables 수집 실패',
     { variables: {}, cbsData: [] } as VariablesResult,
   );
-  const htmlResult = safeCollect(
-    () => collectHTMLCBS(card, resolvedOutDir),
-    'HTML CBS 수집 실패',
-    { cbsData: null, assetRefs: [] } as HtmlResult,
+  const htmlResult = safeCollect(() => collectHTMLCBS(card, resolvedOutDir), 'HTML CBS 수집 실패', {
+    cbsData: null,
+    assetRefs: [],
+  } as HtmlResult);
+  const tsCBS = safeCollect(
+    () => collectTSCBS(resolvedOutDir),
+    'TS CBS 수집 실패',
+    [] as ElementCBSData[],
   );
-  const tsCBS = safeCollect(() => collectTSCBS(resolvedOutDir), 'TS CBS 수집 실패', [] as ElementCBSData[]);
-  const luaCBS = safeCollect(() => importLuaAnalysis(resolvedOutDir), 'Lua 분석 임포트 실패', [] as ElementCBSData[]);
+  const luaCBS = safeCollect(
+    () => importLuaAnalysis(resolvedOutDir),
+    'Lua 분석 임포트 실패',
+    [] as ElementCBSData[],
+  );
 
   const defaultVariables = variablesResult.variables || {};
-  console.log(`     ✅ Lorebook: ${lorebookCBS.length}, Regex: ${regexCBS.length}, TS: ${tsCBS.length}, Lua: ${luaCBS.length}`);
+  console.log(
+    `     ✅ Lorebook: ${lorebookCBS.length}, Regex: ${regexCBS.length}, TS: ${tsCBS.length}, Lua: ${luaCBS.length}`,
+  );
 
   console.log('\n  ═══ Phase 2: CORRELATE ═══');
 
@@ -132,7 +154,9 @@ function runMain(
     } as LorebookRegexCorrelation,
   );
 
-  console.log(`     ✅ Unified graph: ${unifiedGraph.size} variables, LB↔RX shared: ${lorebookRegexCorrelation.summary.totalShared}`);
+  console.log(
+    `     ✅ Unified graph: ${unifiedGraph.size} variables, LB↔RX shared: ${lorebookRegexCorrelation.summary.totalShared}`,
+  );
 
   console.log('\n  ═══ Phase 3: ANALYZE ═══');
   const lorebookStructure = safeCollect(
@@ -152,7 +176,9 @@ function runMain(
     },
   );
 
-  console.log(`     ✅ Lorebook: ${lorebookStructure.stats.totalEntries} entries, ${lorebookStructure.stats.totalFolders} folders`);
+  console.log(
+    `     ✅ Lorebook: ${lorebookStructure.stats.totalEntries} entries, ${lorebookStructure.stats.totalFolders} folders`,
+  );
 
   console.log('\n  ═══ Phase 4: REPORT ═══');
 
@@ -174,7 +200,9 @@ function runMain(
   if (!options.noMarkdown) {
     try {
       renderMarkdown(reportData, resolvedOutDir);
-      console.log(`     ✅ card-analysis.md → ${path.relative('.', path.join(analysisDir, 'card-analysis.md'))}`);
+      console.log(
+        `     ✅ card-analysis.md → ${path.relative('.', path.join(analysisDir, 'card-analysis.md'))}`,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`  ⚠️ Markdown 리포트 생성 실패: ${message}`);
@@ -184,7 +212,9 @@ function runMain(
   if (!options.noHtml) {
     try {
       renderHtml(reportData, resolvedOutDir);
-      console.log(`     ✅ card-analysis.html → ${path.relative('.', path.join(analysisDir, 'card-analysis.html'))}`);
+      console.log(
+        `     ✅ card-analysis.html → ${path.relative('.', path.join(analysisDir, 'card-analysis.html'))}`,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`  ⚠️ HTML 리포트 생성 실패: ${message}`);

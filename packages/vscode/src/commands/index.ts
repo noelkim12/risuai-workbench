@@ -107,10 +107,7 @@ function workspaceRoot(): string | undefined {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 }
 
-async function runCli(
-  output: vscode.OutputChannel,
-  runner: () => Promise<void>,
-): Promise<void> {
+async function runCli(output: vscode.OutputChannel, runner: () => Promise<void>): Promise<void> {
   output.show(true);
   output.appendLine('[Risu Workbench] Running core CLI...');
   try {

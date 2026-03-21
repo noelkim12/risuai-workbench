@@ -10,4 +10,4 @@ export type {
   CorrelationEntry,
   LorebookCorrelation,
   RegexCorrelation,
-} from '../../domain/analyze/lua-analysis-types';
+} from '@/domain/analyze/lua-analysis-types';

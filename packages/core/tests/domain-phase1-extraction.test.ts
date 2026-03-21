@@ -9,7 +9,7 @@ import {
   collectRegexCBSFromCard,
   parseDefaultVariablesJson,
   parseDefaultVariablesText,
-} from '../src/domain';
+} from '@/domain';
 
 describe('Phase 1-1 domain extraction', () => {
   it('analyzes lorebook structure from entries', () => {

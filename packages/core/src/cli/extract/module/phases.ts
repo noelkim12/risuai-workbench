@@ -5,7 +5,7 @@ import {
   inferLuaFunctionName,
   createLorebookDirAllocator,
   planLorebookExtraction,
-} from '../../../domain';
+} from '@/domain';
 import {
   ensureDir,
   writeJson,
@@ -13,7 +13,7 @@ import {
   writeBinary,
   uniquePath,
   executeLorebookPlan,
-} from '../../../node';
+} from '@/node';
 import { parseModuleRisumFull, parseModuleJson } from '../parsers';
 import type { ParsedModuleFull } from '../parsers';
 
@@ -164,7 +164,7 @@ export function phase4_extractTriggerLua(module: any, outputDir: string): number
         const header = [
           `-- Extracted from module trigger: ${trigger.comment || '(unnamed)'}`,
           `-- Trigger type: ${trigger.type || 'unknown'}`,
-          `-- Low-level access: ${(trigger.lowLevelAccess || module?.lowLevelAccess) ? 'yes' : 'no'}`,
+          `-- Low-level access: ${trigger.lowLevelAccess || module?.lowLevelAccess ? 'yes' : 'no'}`,
           '',
         ].join('\n');
 
@@ -270,7 +270,9 @@ export function phase5_extractAssets(
   }
 
   writeJson(path.join(assetsDir, 'manifest.json'), manifest);
-  console.log(`     ✅ ${manifest.extracted}개 에셋 추출, ${manifest.skipped}개 스킵 → ${path.relative('.', assetsDir)}/`);
+  console.log(
+    `     ✅ ${manifest.extracted}개 에셋 추출, ${manifest.skipped}개 스킵 → ${path.relative('.', assetsDir)}/`,
+  );
   return manifest.extracted;
 }
 

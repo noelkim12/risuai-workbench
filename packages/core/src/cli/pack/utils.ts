@@ -31,7 +31,11 @@ export function classifyAssetExt(extValue: string): string {
 }
 
 export function normalizeExt(extValue: string): string {
-  return String(extValue || 'bin').toLowerCase().replace(/^\./, '') || 'bin';
+  return (
+    String(extValue || 'bin')
+      .toLowerCase()
+      .replace(/^\./, '') || 'bin'
+  );
 }
 
 export function fromPosix(value: string): string {

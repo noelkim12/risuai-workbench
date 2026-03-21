@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import luaparse from 'luaparse';
 import { type Chunk } from 'luaparse';
-import { type LuaASTNode } from '../../domain';
-import { RISUAI_API, LUA_STDLIB_CALLS } from '../../domain/analyze/lua-api';
-import { runCollectPhase } from '../../domain/analyze/lua-collector';
-import { runAnalyzePhase } from '../../domain/analyze/lua-analyzer';
+import { type LuaASTNode } from '@/domain';
+import { RISUAI_API, LUA_STDLIB_CALLS } from '@/domain/analyze/lua-api';
+import { runCollectPhase } from '@/domain/analyze/lua-collector';
+import { runAnalyzePhase } from '@/domain/analyze/lua-analyzer';
 import { buildLorebookCorrelation, buildRegexCorrelation } from './correlation';
 import { runReporting } from './reporting';
 import { type CollectedData } from './types';
@@ -56,7 +56,9 @@ export function runAnalyzeWorkflow(argv: readonly string[]): number {
     }) as unknown as Chunk;
   } catch (error) {
     const parseError = error as { line?: number; column?: number; message?: string };
-    console.error(`\n  ❌ Parse error at line ${parseError.line ?? '-'}, col ${parseError.column ?? '-'}: ${parseError.message ?? 'unknown'}\n`);
+    console.error(
+      `\n  ❌ Parse error at line ${parseError.line ?? '-'}, col ${parseError.column ?? '-'}: ${parseError.message ?? 'unknown'}\n`,
+    );
     return 1;
   }
 

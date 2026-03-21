@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ELEMENT_TYPES, MAX_VARS_IN_REPORT } from '../../../domain';
+import { ELEMENT_TYPES, MAX_VARS_IN_REPORT } from '@/domain';
 import { type LorebookRegexCorrelation } from '../types';
 
 interface UnifiedVarEntry {
@@ -16,7 +16,11 @@ interface HtmlReportData {
   unifiedGraph: Map<string, UnifiedVarEntry>;
   lorebookRegexCorrelation: LorebookRegexCorrelation;
   lorebookStructure: {
-    folders?: Array<{ name?: string; children?: unknown[]; entries?: Array<{ name: string; enabled?: boolean }> }>;
+    folders?: Array<{
+      name?: string;
+      children?: unknown[];
+      entries?: Array<{ name: string; enabled?: boolean }>;
+    }>;
     stats?: {
       activationModes?: { normal?: number; constant?: number; selective?: number };
     };
@@ -57,20 +61,43 @@ export function renderHtml(data: HtmlReportData, outputDir: string): void {
 
   const elementChartData = {
     labels: Object.keys(elementCounts),
-    datasets: [{ data: Object.values(elementCounts), backgroundColor: ['#58a6ff', '#3fb950', '#d29922', '#f85149', '#8b949e'] }],
+    datasets: [
+      {
+        data: Object.values(elementCounts),
+        backgroundColor: ['#58a6ff', '#3fb950', '#d29922', '#f85149', '#8b949e'],
+      },
+    ],
   };
   const typeChartData = {
     labels: ['Isolated', 'Bridged'],
-    datasets: [{ label: 'Variables', data: [isolatedCount, bridgedCount], backgroundColor: ['#8b949e', '#58a6ff'] }],
+    datasets: [
+      {
+        label: 'Variables',
+        data: [isolatedCount, bridgedCount],
+        backgroundColor: ['#8b949e', '#58a6ff'],
+      },
+    ],
   };
 
-  const modes = data.lorebookStructure?.stats?.activationModes || { normal: 0, constant: 0, selective: 0 };
+  const modes = data.lorebookStructure?.stats?.activationModes || {
+    normal: 0,
+    constant: 0,
+    selective: 0,
+  };
   const modeChartData = {
     labels: ['Normal', 'Constant', 'Selective'],
-    datasets: [{ label: 'Lorebook Entries', data: [modes.normal || 0, modes.constant || 0, modes.selective || 0], backgroundColor: ['#3fb950', '#d29922', '#58a6ff'] }],
+    datasets: [
+      {
+        label: 'Lorebook Entries',
+        data: [modes.normal || 0, modes.constant || 0, modes.selective || 0],
+        backgroundColor: ['#3fb950', '#d29922', '#58a6ff'],
+      },
+    ],
   };
 
-  const sortedVars = unifiedVars.sort((a, b) => b.elementCount - a.elementCount).slice(0, MAX_VARS_IN_REPORT);
+  const sortedVars = unifiedVars
+    .sort((a, b) => b.elementCount - a.elementCount)
+    .slice(0, MAX_VARS_IN_REPORT);
   const varRows = sortedVars.length
     ? sortedVars
         .map((entry) => {
@@ -81,8 +108,10 @@ export function renderHtml(data: HtmlReportData, outputDir: string): void {
           const readers: string[] = [];
 
           for (const [type, src] of Object.entries(entry.sources)) {
-            if (src.writers.length > 0) writers.push(`<b>${escapeHtml(type)}</b>: ${src.writers.map(escapeHtml).join(', ')}`);
-            if (src.readers.length > 0) readers.push(`<b>${escapeHtml(type)}</b>: ${src.readers.map(escapeHtml).join(', ')}`);
+            if (src.writers.length > 0)
+              writers.push(`<b>${escapeHtml(type)}</b>: ${src.writers.map(escapeHtml).join(', ')}`);
+            if (src.readers.length > 0)
+              readers.push(`<b>${escapeHtml(type)}</b>: ${src.readers.map(escapeHtml).join(', ')}`);
           }
 
           return `
@@ -101,33 +130,51 @@ export function renderHtml(data: HtmlReportData, outputDir: string): void {
   const sharedVars = data.lorebookRegexCorrelation?.sharedVars || [];
   const sharedRows = sharedVars.length
     ? sharedVars
-        .map((entry) => `
+        .map(
+          (entry) => `
       <tr>
         <td><code>${escapeHtml(entry.varName)}</code></td>
         <td class="small-text">${entry.lorebookEntries.map(escapeHtml).join(', ')}</td>
         <td class="small-text">${entry.regexScripts.map(escapeHtml).join(', ')}</td>
-      </tr>`)
+      </tr>`,
+        )
         .join('')
     : '<tr><td colspan="3" class="muted">No shared variables found.</td></tr>';
 
-  const renderFolder = (folder: { name?: string; children?: unknown[]; entries?: Array<{ name: string; enabled?: boolean }> }): string => {
+  const renderFolder = (folder: {
+    name?: string;
+    children?: unknown[];
+    entries?: Array<{ name: string; enabled?: boolean }>;
+  }): string => {
     const children = Array.isArray(folder.children)
       ? folder.children
-          .filter((child): child is { name?: string; children?: unknown[]; entries?: Array<{ name: string; enabled?: boolean }> } =>
-            typeof child === 'object' && child !== null,
+          .filter(
+            (
+              child,
+            ): child is {
+              name?: string;
+              children?: unknown[];
+              entries?: Array<{ name: string; enabled?: boolean }>;
+            } => typeof child === 'object' && child !== null,
           )
           .map((child) => renderFolder(child))
           .join('')
       : '';
     const entries = Array.isArray(folder.entries)
-      ? folder.entries.map((entry) => `<li>📄 ${escapeHtml(entry.name)} ${entry.enabled === false ? '(disabled)' : ''}</li>`).join('')
+      ? folder.entries
+          .map(
+            (entry) =>
+              `<li>📄 ${escapeHtml(entry.name)} ${entry.enabled === false ? '(disabled)' : ''}</li>`,
+          )
+          .join('')
       : '';
     return `<li>📁 <b>${escapeHtml(folder.name || 'unnamed')}</b><ul>${children}${entries}</ul></li>`;
   };
 
-  const foldersHtml = Array.isArray(data.lorebookStructure?.folders) && data.lorebookStructure.folders.length > 0
-    ? `<ul>${data.lorebookStructure.folders.map(renderFolder).join('')}</ul>`
-    : '<p class="muted">No folders found.</p>';
+  const foldersHtml =
+    Array.isArray(data.lorebookStructure?.folders) && data.lorebookStructure.folders.length > 0
+      ? `<ul>${data.lorebookStructure.folders.map(renderFolder).join('')}</ul>`
+      : '<p class="muted">No folders found.</p>';
 
   const html = `<!DOCTYPE html>
 <html lang="en">

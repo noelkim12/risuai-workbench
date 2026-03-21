@@ -169,7 +169,7 @@ export function isModuleJson(filePath: string): boolean {
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
     const data = JSON.parse(content);
-    return (data.type === 'risuModule') || (data.name && data.id && !data.spec && !data.data?.name);
+    return data.type === 'risuModule' || (data.name && data.id && !data.spec && !data.data?.name);
   } catch {
     return false;
   }

@@ -1,5 +1,5 @@
 /**
- * API 메타데이터 정보를 담는 타입이에요.
+ * API 메타데이터 정보를 담는 타입이
  */
 export type ApiMeta = {
   /** API 카테고리 (state, chat, ui 등) */
@@ -11,7 +11,7 @@ export type ApiMeta = {
 };
 
 /**
- * RisuAI에서 제공하는 주요 Lua API 함수들의 메타데이터 정의에요.
+ * RisuAI에서 제공하는 주요 Lua API 함수들의 메타데이터 정의
  */
 export const RISUAI_API: Record<string, ApiMeta> = {
   getChatVar: { cat: 'state', access: 'injected', rw: 'read' },
@@ -68,8 +68,23 @@ export const RISUAI_API: Record<string, ApiMeta> = {
 };
 
 /**
- * Lua 표준 라이브러리 함수들 중 분석 시 무시하거나 식별할 함수 목록이에요.
+ * Lua 표준 라이브러리 함수들 중 분석 시 무시하거나 식별할 함수 목록이
  */
 export const LUA_STDLIB_CALLS = new Set([
-  'string', 'table', 'math', 'os', 'pcall', 'tostring', 'tonumber', 'type', 'ipairs', 'pairs', 'next', 'select', 'unpack', 'print', 'error', 'assert',
+  'string',
+  'table',
+  'math',
+  'os',
+  'pcall',
+  'tostring',
+  'tonumber',
+  'type',
+  'ipairs',
+  'pairs',
+  'next',
+  'select',
+  'unpack',
+  'print',
+  'error',
+  'assert',
 ]);

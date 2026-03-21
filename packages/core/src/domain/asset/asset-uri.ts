@@ -1,10 +1,10 @@
 const MAX_DATA_URI_BYTES = 50 * 1024 * 1024;
 
-/** 애셋 데이터 딕셔너리 타입이에요. */
+/** 애셋 데이터 딕셔너리 타입이 */
 export type AssetDict = Record<string, unknown>;
 
 /**
- * 해석된 애셋 정보를 담는 인터페이스에요.
+ * 해석된 애셋 정보를 담는 인터페이스
  */
 export interface ResolvedAsset {
   /** 애셋 실제 데이터 */
@@ -16,20 +16,16 @@ export interface ResolvedAsset {
 }
 
 /**
- * 다양한 형식의 애셋 URI(ccdefault:, embedded://, data:, http:// 등)를 해석해요.
+ * 다양한 형식의 애셋 URI(ccdefault:, embedded://, data:, http:// 등)를 해석
  *
  * @param uri - 해석할 애셋 URI
  * @param assetDict - 임베디드 애셋이나 인덱스 참조 시 사용할 데이터 사전
  * @returns 해석된 애셋 정보 (해석 실패 시 null)
  */
-export function resolveAssetUri(
-  uri: string,
-  assetDict?: AssetDict | null,
-): ResolvedAsset | null {
+export function resolveAssetUri(uri: string, assetDict?: AssetDict | null): ResolvedAsset | null {
   if (typeof uri !== 'string') return null;
 
-  const dict: AssetDict =
-    assetDict && typeof assetDict === 'object' ? assetDict : {};
+  const dict: AssetDict = assetDict && typeof assetDict === 'object' ? assetDict : {};
 
   if (uri.startsWith('__asset:')) {
     const index = uri.slice('__asset:'.length);
@@ -96,7 +92,7 @@ export function resolveAssetUri(
 }
 
 /**
- * MIME 타입을 기반으로 적절한 파일 확장자를 추측해요.
+ * MIME 타입을 기반으로 적절한 파일 확장자를 추측
  *
  * @param mime - MIME 타입 (image/png 등)
  * @returns 확장자 (예: .png, .jpg 등. 알 수 없으면 .bin)

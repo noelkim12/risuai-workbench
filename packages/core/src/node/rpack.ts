@@ -8,7 +8,10 @@ let rpackEncodeMap: Buffer | null = null;
  * @returns 인코딩된 .risum 바이너리 버퍼
  */
 export function encodeModuleRisum(moduleObj: Record<string, unknown>): Buffer {
-  const payload = Buffer.from(JSON.stringify({ module: moduleObj, type: 'risuModule' }, null, 2), 'utf-8');
+  const payload = Buffer.from(
+    JSON.stringify({ module: moduleObj, type: 'risuModule' }, null, 2),
+    'utf-8',
+  );
   const encodedMain = encodeRPack(payload);
 
   const out: Buffer[] = [];

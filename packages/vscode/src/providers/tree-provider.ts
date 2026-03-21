@@ -31,7 +31,10 @@ export class RisuTreeProvider implements vscode.TreeDataProvider<vscode.TreeItem
     const summary = this.cardService.summarizeCard(filePath);
     const filename = filePath.split(/[/\\]/).pop() ?? filePath;
 
-    const item = new vscode.TreeItem(summary?.name ?? filename, vscode.TreeItemCollapsibleState.None);
+    const item = new vscode.TreeItem(
+      summary?.name ?? filename,
+      vscode.TreeItemCollapsibleState.None,
+    );
     item.description = summary
       ? `lorebook ${summary.lorebookEntries} · scripts ${summary.customScripts}`
       : 'card parse failed';

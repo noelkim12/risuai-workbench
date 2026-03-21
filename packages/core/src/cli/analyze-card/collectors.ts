@@ -6,8 +6,8 @@ import {
   buildRisuFolderMap,
   resolveRisuFolderName,
   toPosix,
-} from '../../domain';
-import { listJsonFilesRecursive } from '../../node/json-listing';
+} from '@/domain';
+import { listJsonFilesRecursive } from '@/node/json-listing';
 import { type ElementCBSData, type HtmlResult, type VariablesResult } from './types';
 
 function dirExists(dirPath: string): boolean {
@@ -39,7 +39,6 @@ function readJsonIfExists(filePath: string): unknown {
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
-
 
 function resolveOrderedFiles(dir: string, files: string[]): string[] {
   const orderPath = path.join(dir, '_order.json');
@@ -127,7 +126,10 @@ function collectLorebookCBSFromDir(lorebooksDir: string): ElementCBSData[] {
   return results;
 }
 
-function collectLorebookCBSFromManifest(lorebooksDir: string, manifestEntries: unknown[]): ElementCBSData[] {
+function collectLorebookCBSFromManifest(
+  lorebooksDir: string,
+  manifestEntries: unknown[],
+): ElementCBSData[] {
   const files = listJsonFilesRecursive(lorebooksDir);
   const fileMap = new Map<string, string>();
   for (const filePath of files) {
@@ -147,12 +149,7 @@ function collectLorebookCBSFromManifest(lorebooksDir: string, manifestEntries: u
     if (!filePath) continue;
 
     usedFiles.add(rel);
-    pushLorebookCBSFromFile(
-      results,
-      filePath,
-      rel,
-      rec.source === 'module' ? 'module' : null,
-    );
+    pushLorebookCBSFromFile(results, filePath, rel, rec.source === 'module' ? 'module' : null);
   }
 
   const orphans = [...fileMap.keys()]
@@ -252,7 +249,12 @@ function collectLorebookCBSFromCard(card: unknown): ElementCBSData[] {
         'unnamed';
       const baseName = folderName ? `${folderName}/${entryName}` : entryName;
 
-      results.push({ elementType: ELEMENT_TYPES.LOREBOOK, elementName: `[module]/${baseName}`, reads, writes });
+      results.push({
+        elementType: ELEMENT_TYPES.LOREBOOK,
+        elementName: `[module]/${baseName}`,
+        reads,
+        writes,
+      });
     }
   }
 
@@ -361,19 +363,11 @@ function parseDefaultVariablesJson(raw: unknown): Record<string, string> {
     for (const rec of raw) {
       if (!isPlainObject(rec)) continue;
       const key =
-        typeof rec.key === 'string'
-          ? rec.key
-          : typeof rec.name === 'string'
-            ? rec.name
-            : '';
+        typeof rec.key === 'string' ? rec.key : typeof rec.name === 'string' ? rec.name : '';
       if (!key) continue;
 
       const value =
-        typeof rec.value === 'string'
-          ? rec.value
-          : rec.value == null
-            ? ''
-            : String(rec.value);
+        typeof rec.value === 'string' ? rec.value : rec.value == null ? '' : String(rec.value);
       variables[key] = value;
     }
   }
@@ -507,10 +501,14 @@ export function importLuaAnalysis(outputDir: string): ElementCBSData[] {
         if (raw.stateVars && typeof raw.stateVars === 'object') {
           for (const [varName, info] of Object.entries(raw.stateVars)) {
             const readBy = Array.isArray(info.readBy)
-              ? info.readBy.filter((item): item is string => typeof item === 'string' && item.length > 0)
+              ? info.readBy.filter(
+                  (item): item is string => typeof item === 'string' && item.length > 0,
+                )
               : [];
             const writtenBy = Array.isArray(info.writtenBy)
-              ? info.writtenBy.filter((item): item is string => typeof item === 'string' && item.length > 0)
+              ? info.writtenBy.filter(
+                  (item): item is string => typeof item === 'string' && item.length > 0,
+                )
               : [];
 
             if (readBy.length > 0) {

@@ -7,7 +7,7 @@ import {
   inferLuaFunctionName,
   createLorebookDirAllocator,
   planLorebookExtraction,
-} from '../../../domain';
+} from '@/domain';
 import {
   ensureDir,
   writeJson,
@@ -17,7 +17,7 @@ import {
   parsePngChunks,
   stripPngTextChunks,
   executeLorebookPlan,
-} from '../../../node';
+} from '@/node';
 import { parseCharx, parseModuleRisum } from '../parsers';
 
 export function phase1_parseCard(inputPath: string): {
@@ -232,7 +232,10 @@ export function phase4_extractTriggerLua(card: any, outputDir: string): number {
         const baseName = sanitizeFilename(
           trigger.comment || inferLuaFunctionName(effect.code) || `trigger_${i}`,
         );
-        const name = effects.filter((e: any) => e.type === 'triggerlua').length > 1 ? `${baseName}_${j}` : baseName;
+        const name =
+          effects.filter((e: any) => e.type === 'triggerlua').length > 1
+            ? `${baseName}_${j}`
+            : baseName;
         const outPath = uniquePath(luaDir, name, '.lua');
 
         const header = [
