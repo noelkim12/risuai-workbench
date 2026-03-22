@@ -4,7 +4,11 @@ import {
   buildRegexCorrelationFromScripts,
 } from '@/domain/analyze/correlation';
 import { parseCardFile } from '@/node';
-import { type CollectedData, type LorebookCorrelation, type RegexCorrelation } from './types';
+import {
+  type CollectedData,
+  type LorebookCorrelation,
+  type RegexCorrelation,
+} from '@/domain/analyze/lua-analysis-types';
 
 export function buildLorebookCorrelation(params: {
   cardArg: string | null;

@@ -1,12 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { escapeHtml, mdRow } from '../shared';
 import {
   type AnalyzePhaseResult,
   type CollectedData,
   type LorebookCorrelation,
   type RegexCorrelation,
-} from './types';
+} from '@/domain/analyze/lua-analysis-types';
+import { escapeHtml, mdRow } from '../../shared';
 
 function bar(size: number, total: number): string {
   const n = total > 0 ? Math.max(1, Math.round((size / total) * 30)) : 1;

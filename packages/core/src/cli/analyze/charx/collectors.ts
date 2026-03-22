@@ -9,7 +9,7 @@ import {
 } from '@/domain';
 import { dirExists, readJsonIfExists, readTextIfExists } from '@/node/fs-helpers';
 import { listJsonFilesRecursive, resolveOrderedFiles } from '@/node/json-listing';
-import { isPlainObject } from '../shared';
+import { isPlainObject } from '../../shared';
 import { type ElementCBSData, type HtmlResult, type VariablesResult } from './types';
 
 function stripJsonExt(fileName: string): string {

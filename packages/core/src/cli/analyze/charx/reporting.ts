@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { MAX_VARS_IN_REPORT } from '@/domain';
-import { mdRow } from '../shared';
+import { mdRow } from '../../shared';
 import { type HtmlResult, type LorebookRegexCorrelation, type UnifiedVarEntry } from './types';
 
 interface ReportData {

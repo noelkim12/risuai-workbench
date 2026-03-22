@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ensureDir, writeJson } from '@/node/fs-helpers';
-import { runAnalyzeWorkflow } from '@/cli/analyze/workflow';
-import { runAnalyzeCardWorkflow } from '@/cli/analyze-card/workflow';
+import { runAnalyzeWorkflow } from '@/cli/analyze/lua/workflow';
+import { runAnalyzeCardWorkflow } from '@/cli/analyze/charx/workflow';
 import {
   phase1_parseCard,
   phase2_extractLorebooks,

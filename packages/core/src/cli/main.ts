@@ -1,5 +1,5 @@
 import { runAnalyzeCommand } from './analyze';
-import { runAnalyzeCardCommand } from './analyze-card';
+import { runAnalyzeCardWorkflow } from './analyze/charx/workflow';
 import { runBuildCommand } from './build';
 import { runExtractCommand } from './extract';
 import { runPackCommand } from './pack';
@@ -10,7 +10,7 @@ const COMMANDS: Record<string, CommandRunner> = {
   extract: runExtractCommand,
   pack: runPackCommand,
   analyze: runAnalyzeCommand,
-  'analyze-card': runAnalyzeCardCommand,
+  'analyze-card': runAnalyzeCardWorkflow,
   build: runBuildCommand,
 };
 

@@ -6,7 +6,7 @@ import {
   buildUnifiedCBSGraph,
 } from '@/domain';
 import { ensureDir } from '@/node/fs-helpers';
-import { safeCollect } from '../shared';
+import { safeCollect } from '../../shared';
 import {
   collectHTMLCBS,
   collectLorebookCBS,

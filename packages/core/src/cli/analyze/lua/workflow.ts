@@ -6,9 +6,9 @@ import { type LuaASTNode } from '@/domain';
 import { RISUAI_API, LUA_STDLIB_CALLS } from '@/domain/analyze/lua-api';
 import { runCollectPhase } from '@/domain/analyze/lua-collector';
 import { runAnalyzePhase } from '@/domain/analyze/lua-analyzer';
+import { type CollectedData } from '@/domain/analyze/lua-analysis-types';
 import { buildLorebookCorrelation, buildRegexCorrelation } from './correlation';
 import { runReporting } from './reporting';
-import { type CollectedData } from './types';
 
 const HELP_TEXT = `
   Usage: node analyze.js <file.lua> [options]

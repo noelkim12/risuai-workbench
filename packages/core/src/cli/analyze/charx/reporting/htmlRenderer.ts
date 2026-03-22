@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ELEMENT_TYPES, MAX_VARS_IN_REPORT } from '@/domain';
-import { escapeHtml } from '../../shared';
+import { escapeHtml } from '../../../shared';
 import { type LorebookRegexCorrelation, type UnifiedVarEntry } from '../types';
 
 interface HtmlReportData {
