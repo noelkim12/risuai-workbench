@@ -6,6 +6,7 @@ import {
   buildUnifiedCBSGraph,
 } from '@/domain';
 import { ensureDir } from '@/node/fs-helpers';
+import { safeCollect } from '../shared';
 import {
   collectHTMLCBS,
   collectLorebookCBS,
@@ -224,16 +225,6 @@ function runMain(
   console.log('\n  ────────────────────────────────────────');
   console.log(`  📊 분석 완료 → ${path.relative('.', analysisDir)}/`);
   console.log('  ────────────────────────────────────────\n');
-}
-
-function safeCollect<T>(fn: () => T, warnPrefix: string, fallback: T): T {
-  try {
-    return fn();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(`  ⚠️ ${warnPrefix}: ${message}`);
-    return fallback;
-  }
 }
 
 function resolveCardName(card: unknown): string {
