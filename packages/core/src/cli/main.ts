@@ -10,7 +10,7 @@ const COMMANDS: Record<string, CommandRunner> = {
   extract: runExtractCommand,
   pack: runPackCommand,
   analyze: runAnalyzeCommand,
-  'analyze-card': runAnalyzeCardWorkflow,
+  'analyze-card': runAnalyzeCardWorkflow,  // backward compat until Phase 3
   build: runBuildCommand,
 };
 

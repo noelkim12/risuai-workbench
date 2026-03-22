@@ -1,4 +1,4 @@
-import { runAnalyzeWorkflow } from './analyze/lua/workflow';
+import { runAnalyzeWorkflow } from './analyze/workflow';
 
 export function runAnalyzeCommand(argv: readonly string[]): number {
   return runAnalyzeWorkflow(argv);
