@@ -8,6 +8,7 @@ import {
   toPosix,
 } from '@/domain';
 import { listJsonFilesRecursive } from '@/node/json-listing';
+import { isPlainObject } from '../shared';
 import { type ElementCBSData, type HtmlResult, type VariablesResult } from './types';
 
 function dirExists(dirPath: string): boolean {
@@ -34,10 +35,6 @@ function readJsonIfExists(filePath: string): unknown {
   } catch {
     return null;
   }
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function resolveOrderedFiles(dir: string, files: string[]): string[] {

@@ -13,6 +13,7 @@ import {
   resolveOrderedFiles,
   readJson,
 } from '@/node/json-listing';
+import { isPlainObject } from '../shared';
 
 interface BuildOptions {
   inDir: string;
@@ -155,10 +156,6 @@ function executeBuild(options: BuildOptions): void {
 
 function writeJsonWithTrailingNewline(filePath: string, data: unknown): void {
   writeText(filePath, `${JSON.stringify(data, null, 2)}\n`);
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function pickKnownRegexFields(raw: Record<string, unknown>): Record<string, unknown> {
