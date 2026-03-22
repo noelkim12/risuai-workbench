@@ -1,31 +1,46 @@
-import { runAnalyzeCommand } from './analyze';
-import { runAnalyzeCardWorkflow } from './analyze/charx/workflow';
-import { runBuildCommand } from './build';
-import { runExtractCommand } from './extract';
-import { runPackCommand } from './pack';
+import { runExtractWorkflow } from './extract/workflow';
+import { runPackWorkflow } from './pack/workflow';
+import { runAnalyzeWorkflow } from './analyze/workflow';
+import { runBuildWorkflow } from './build/workflow';
 
 type CommandRunner = (argv: readonly string[]) => number;
 
-const COMMANDS: Record<string, CommandRunner> = {
-  extract: runExtractCommand,
-  pack: runPackCommand,
-  analyze: runAnalyzeCommand,
-  'analyze-card': runAnalyzeCardWorkflow,  // backward compat until Phase 3
-  build: runBuildCommand,
+interface CommandDef {
+  run: CommandRunner;
+  description: string;
+}
+
+const COMMANDS: Record<string, CommandDef> = {
+  extract: {
+    run: runExtractWorkflow,
+    description: '캐릭터 카드 / 프리셋 / 모듈 추출',
+  },
+  pack: {
+    run: runPackWorkflow,
+    description: '캐릭터 카드 패킹',
+  },
+  analyze: {
+    run: runAnalyzeWorkflow,
+    description: 'Lua 스크립트 / 카드 종합 분석',
+  },
+  build: {
+    run: runBuildWorkflow,
+    description: '컴포넌트 빌드',
+  },
 };
 
 function printHelp(): void {
+  const lines = Object.entries(COMMANDS).map(
+    ([name, def]) => `    ${name.padEnd(15)}${def.description}`,
+  );
+
   console.log(`
   🐿️ risu-core CLI
 
   Usage:  risu-core <command> [options]
 
   Commands:
-    extract        캐릭터 카드 / 프리셋 / 모듈 추출 (.charx / .png / .risum / .json)
-    pack           캐릭터 카드 패킹
-    analyze        Lua 스크립트 분석
-    analyze-card   카드 종합 분석
-    build          컴포넌트 빌드
+${lines.join('\n')}
 
   Options:
     -h, --help     도움말
@@ -50,7 +65,7 @@ export function run(argv: readonly string[] = process.argv.slice(2)): number {
     return 1;
   }
 
-  return command(rest);
+  return command.run(rest);
 }
 
 if (require.main === module) {
