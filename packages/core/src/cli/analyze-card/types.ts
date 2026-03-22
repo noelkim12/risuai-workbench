@@ -14,3 +14,13 @@ export interface HtmlResult {
   cbsData: ElementCBSData | null;
   assetRefs: string[];
 }
+
+export interface UnifiedVarEntry {
+  varName: string;
+  sources: Record<string, { readers: string[]; writers: string[] }>;
+  defaultValue: string | null;
+  elementCount: number;
+  direction: string;
+  crossElementWriters: string[];
+  crossElementReaders: string[];
+}

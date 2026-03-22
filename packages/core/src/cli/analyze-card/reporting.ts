@@ -2,17 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { MAX_VARS_IN_REPORT } from '@/domain';
 import { mdRow } from '../shared';
-import { type HtmlResult, type LorebookRegexCorrelation } from './types';
-
-interface UnifiedVarEntry {
-  varName: string;
-  sources: Record<string, { readers: string[]; writers: string[] }>;
-  defaultValue: string | null;
-  elementCount: number;
-  direction: string;
-  crossElementWriters: string[];
-  crossElementReaders: string[];
-}
+import { type HtmlResult, type LorebookRegexCorrelation, type UnifiedVarEntry } from './types';
 
 interface ReportData {
   card: unknown;
