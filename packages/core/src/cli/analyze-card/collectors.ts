@@ -7,77 +7,10 @@ import {
   resolveRisuFolderName,
   toPosix,
 } from '@/domain';
-import { listJsonFilesRecursive } from '@/node/json-listing';
+import { dirExists, readJsonIfExists, readTextIfExists } from '@/node/fs-helpers';
+import { listJsonFilesRecursive, resolveOrderedFiles } from '@/node/json-listing';
 import { isPlainObject } from '../shared';
 import { type ElementCBSData, type HtmlResult, type VariablesResult } from './types';
-
-function dirExists(dirPath: string): boolean {
-  try {
-    return fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-function readTextIfExists(filePath: string): string {
-  try {
-    if (!fs.existsSync(filePath)) return '';
-    return fs.readFileSync(filePath, 'utf-8');
-  } catch {
-    return '';
-  }
-}
-
-function readJsonIfExists(filePath: string): unknown {
-  try {
-    if (!fs.existsSync(filePath)) return null;
-    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-  } catch {
-    return null;
-  }
-}
-
-function resolveOrderedFiles(dir: string, files: string[]): string[] {
-  const orderPath = path.join(dir, '_order.json');
-  const manifest = readJsonIfExists(orderPath);
-  if (!Array.isArray(manifest) || manifest.length === 0) return files;
-
-  const fileMap = new Map<string, string>();
-  for (const filePath of files) {
-    const rel = toPosix(path.relative(dir, filePath));
-    fileMap.set(rel, filePath);
-  }
-
-  const ordered: string[] = [];
-  for (const relRaw of manifest) {
-    if (typeof relRaw !== 'string' || relRaw.length === 0) continue;
-    const rel = toPosix(relRaw);
-
-    const direct = fileMap.get(rel);
-    if (direct) {
-      ordered.push(direct);
-      fileMap.delete(rel);
-      continue;
-    }
-
-    const baseOnly = rel.split('/').pop();
-    if (!baseOnly) continue;
-    const baseMatch = fileMap.get(baseOnly);
-    if (baseMatch) {
-      ordered.push(baseMatch);
-      fileMap.delete(baseOnly);
-    }
-  }
-
-  if (fileMap.size > 0) {
-    const orphans = [...fileMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-    for (const [, abs] of orphans) {
-      ordered.push(abs);
-    }
-  }
-
-  return ordered;
-}
 
 function stripJsonExt(fileName: string): string {
   return fileName.toLowerCase().endsWith('.json') ? fileName.slice(0, -5) : fileName;

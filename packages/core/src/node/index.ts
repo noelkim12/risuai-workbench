@@ -1,4 +1,13 @@
-import { ensureDir, writeBinary, writeJson, writeText, uniquePath } from './fs-helpers';
+import {
+  ensureDir,
+  writeBinary,
+  writeJson,
+  writeText,
+  uniquePath,
+  readJsonIfExists,
+  readTextIfExists,
+  dirExists,
+} from './fs-helpers';
 import {
   decodeCharacterJsonFromChunks,
   parsePngTextChunks,
@@ -36,6 +45,9 @@ export {
   writeText,
   writeBinary,
   uniquePath,
+  readJsonIfExists,
+  readTextIfExists,
+  dirExists,
   parsePngChunks,
   executeLorebookPlan,
   listJsonFilesRecursive,

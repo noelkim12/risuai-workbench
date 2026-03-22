@@ -35,6 +35,32 @@ export function writeBinary(filePath: string, data: Buffer | Uint8Array): void {
   fs.writeFileSync(filePath, data);
 }
 
+export function readJsonIfExists(filePath: string): unknown {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+export function readTextIfExists(filePath: string): string {
+  try {
+    if (!fs.existsSync(filePath)) return '';
+    return fs.readFileSync(filePath, 'utf-8');
+  } catch {
+    return '';
+  }
+}
+
+export function dirExists(dirPath: string): boolean {
+  try {
+    return fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 /** 파일이 이미 존재하면 접미사를 붙여 고유한 파일 경로를 반환합니다.
  * @param dir - 파일이 위치할 디렉토리
  * @param baseName - 파일 이름 (확장자 제외)
