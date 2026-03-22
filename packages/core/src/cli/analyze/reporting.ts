@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { escapeHtml, mdRow } from '../shared';
 import {
   type AnalyzePhaseResult,
   type CollectedData,
@@ -11,8 +12,6 @@ function bar(size: number, total: number): string {
   const n = total > 0 ? Math.max(1, Math.round((size / total) * 30)) : 1;
   return '█'.repeat(n) + '░'.repeat(Math.max(0, 30 - n));
 }
-
-const mdRow = (cells: string[]): string => `| ${cells.join(' | ')} |`;
 
 export function runReporting(context: {
   filePath: string;
@@ -294,11 +293,4 @@ function renderHtml(params: {
   console.log(`  ✅ HTML exported to ${htmlPath}`);
 }
 
-function escapeHtml(value: string): string {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+

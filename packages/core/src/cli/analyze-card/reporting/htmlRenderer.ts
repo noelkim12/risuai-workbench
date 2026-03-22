@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ELEMENT_TYPES, MAX_VARS_IN_REPORT } from '@/domain';
+import { escapeHtml } from '../../shared';
 import { type LorebookRegexCorrelation } from '../types';
 
 interface UnifiedVarEntry {
@@ -28,14 +29,6 @@ interface HtmlReportData {
 }
 
 export function renderHtml(data: HtmlReportData, outputDir: string): void {
-  const escapeHtml = (value: unknown): string =>
-    String(value ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-
   const elementCounts: Record<string, number> = {
     [ELEMENT_TYPES.LOREBOOK]: 0,
     [ELEMENT_TYPES.REGEX]: 0,

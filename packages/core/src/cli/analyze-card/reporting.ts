@@ -1,9 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { MAX_VARS_IN_REPORT } from '@/domain';
+import { mdRow } from '../shared';
 import { type HtmlResult, type LorebookRegexCorrelation } from './types';
-
-const mdRow = (cells: string[]): string => `| ${cells.join(' | ')} |`;
 
 interface UnifiedVarEntry {
   varName: string;
