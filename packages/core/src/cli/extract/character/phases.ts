@@ -21,7 +21,7 @@ import {
 import { parseCharx, parseModuleRisum } from '../parsers';
 
 export function phase1_parseCard(inputPath: string): {
-  card: any;
+  charx: any;
   assetSources: Record<string, Uint8Array>;
   mainImage: Buffer | null;
 } {
@@ -73,7 +73,7 @@ export function phase1_parseCard(inputPath: string): {
       console.log(`     에셋: ${assetCount}개`);
     }
 
-    return { card, assetSources: assets, mainImage: null };
+    return { charx: card, assetSources: assets, mainImage: null };
   }
 
   if (ext === '.png') {
@@ -115,7 +115,7 @@ export function phase1_parseCard(inputPath: string): {
     console.log(`     spec: ${card.spec || 'unknown'}`);
     console.log(`     이름: ${card.data?.name || card.name || 'unknown'}`);
 
-    return { card, assetSources, mainImage: stripPngTextChunks(buf) };
+    return { charx: card, assetSources, mainImage: stripPngTextChunks(buf) };
   }
 
   if (ext === '.json') {
@@ -123,13 +123,13 @@ export function phase1_parseCard(inputPath: string): {
     const card = JSON.parse(buf.toString('utf-8'));
     console.log(`     spec: ${card.spec || 'unknown'}`);
     console.log(`     이름: ${card.data?.name || card.name || 'unknown'}`);
-    return { card, assetSources: {}, mainImage: null };
+    return { charx: card, assetSources: {}, mainImage: null };
   }
 
   throw new Error(`지원하지 않는 파일 포맷: ${ext} (지원: .charx, .png, .json)`);
 }
 
-export function phase2_extractLorebooks(card: any, outputDir: string): number {
+export function phase2_extractLorebooks(charx: any, outputDir: string): number {
   console.log('\n  📚 Phase 2: Lorebook 추출');
 
   const lorebooksDir = path.join(outputDir, 'lorebooks');
@@ -139,7 +139,7 @@ export function phase2_extractLorebooks(card: any, outputDir: string): number {
   const allocateDir = createLorebookDirAllocator();
   const usedRelPaths = new Set<string>();
 
-  const charBook = card.data?.character_book;
+  const charBook = charx.data?.character_book;
   if (charBook && charBook.entries && charBook.entries.length > 0) {
     console.log(`     character_book.entries: ${charBook.entries.length}개`);
     const plan = planLorebookExtraction(charBook.entries, 'character', allocateDir, usedRelPaths);
@@ -149,7 +149,7 @@ export function phase2_extractLorebooks(card: any, outputDir: string): number {
     orderList.push(...result.orderList);
   }
 
-  const moduleLorebook = card.data?.extensions?.risuai?._moduleLorebook;
+  const moduleLorebook = charx.data?.extensions?.risuai?._moduleLorebook;
   if (moduleLorebook && moduleLorebook.length > 0) {
     console.log(`     module lorebook: ${moduleLorebook.length}개`);
     const plan = planLorebookExtraction(moduleLorebook, 'module', allocateDir, usedRelPaths);
@@ -157,7 +157,7 @@ export function phase2_extractLorebooks(card: any, outputDir: string): number {
     count += result.count;
     manifestEntries.push(...result.manifestEntries);
     orderList.push(...result.orderList);
-    delete card.data.extensions.risuai._moduleLorebook;
+    delete charx.data.extensions.risuai._moduleLorebook;
   }
 
   if (manifestEntries.length > 0) {
@@ -177,11 +177,11 @@ export function phase2_extractLorebooks(card: any, outputDir: string): number {
   return count;
 }
 
-export function phase3_extractRegex(card: any, outputDir: string): number {
+export function phase3_extractRegex(charx: any, outputDir: string): number {
   console.log('\n  🔧 Phase 3: Regex(customscript) 추출');
 
   const regexDir = path.join(outputDir, 'regex');
-  const scripts = card.data?.extensions?.risuai?.customScripts;
+  const scripts = charx.data?.extensions?.risuai?.customScripts;
   if (!scripts || scripts.length === 0) {
     console.log('     (customscript 없음)');
     return 0;
@@ -207,11 +207,11 @@ export function phase3_extractRegex(card: any, outputDir: string): number {
   return count;
 }
 
-export function phase4_extractTriggerLua(card: any, outputDir: string): number {
+export function phase4_extractTriggerLua(charx: any, outputDir: string): number {
   console.log('\n  🌙 Phase 4: TriggerLua 스크립트 추출');
 
   const luaDir = path.join(outputDir, 'lua');
-  const triggers = card.data?.extensions?.risuai?.triggerscript;
+  const triggers = charx.data?.extensions?.risuai?.triggerscript;
   if (!triggers || triggers.length === 0) {
     console.log('     (triggerscript 없음)');
     return 0;
@@ -277,12 +277,12 @@ function assetTypeToSubdir(type: string): string {
 }
 
 export function phase5_extractAssets(
-  card: any,
+  charx: any,
   outputDir: string,
   assetSources: Record<string, Uint8Array>,
   mainImage: Buffer | null,
 ): number {
-  const assets = card.data?.assets;
+  const assets = charx.data?.assets;
   if (assets == null) {
     console.log('     (V2 카드 — assets 배열 없음)');
     return 0;
@@ -396,9 +396,9 @@ export function phase5_extractAssets(
   return manifest.extracted;
 }
 
-export function phase6_extractBackgroundHTML(card: any, outputDir: string): number {
+export function phase6_extractBackgroundHTML(charx: any, outputDir: string): number {
   console.log('\n  🌐 Phase 6: BackgroundHTML 추출');
-  const html = card.data?.extensions?.risuai?.backgroundHTML;
+  const html = charx.data?.extensions?.risuai?.backgroundHTML;
   if (!html) {
     console.log('     (backgroundHTML 없음)');
     return 0;

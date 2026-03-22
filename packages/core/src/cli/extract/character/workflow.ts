@@ -82,11 +82,11 @@ export function runExtractWorkflow(argv: readonly string[]): number {
 function runMain(filePath: string, outDir: string, jsonOnly: boolean): void {
   console.log('\n  🐿️ RisuAI Character Card Extractor\n');
 
-  const { card, assetSources, mainImage } = phase1_parseCard(filePath);
+  const { charx, assetSources, mainImage } = phase1_parseCard(filePath);
   const resolvedOutDir = path.resolve(outDir);
   ensureDir(resolvedOutDir);
   const cardJsonPath = path.join(resolvedOutDir, 'card.json');
-  writeJson(cardJsonPath, card);
+  writeJson(cardJsonPath, charx);
   console.log(`\n     ✅ card.json → ${path.relative('.', cardJsonPath)}`);
 
   if (jsonOnly) {
@@ -94,13 +94,13 @@ function runMain(filePath: string, outDir: string, jsonOnly: boolean): void {
     return;
   }
 
-  phase2_extractLorebooks(card, resolvedOutDir);
-  phase3_extractRegex(card, resolvedOutDir);
-  phase4_extractTriggerLua(card, resolvedOutDir);
-  phase5_extractAssets(card, resolvedOutDir, assetSources, mainImage);
-  phase6_extractBackgroundHTML(card, resolvedOutDir);
-  phase7_extractVariables(card, resolvedOutDir);
-  phase8_extractCharacterCard(card, resolvedOutDir);
+  phase2_extractLorebooks(charx, resolvedOutDir);
+  phase3_extractRegex(charx, resolvedOutDir);
+  phase4_extractTriggerLua(charx, resolvedOutDir);
+  phase5_extractAssets(charx, resolvedOutDir, assetSources, mainImage);
+  phase6_extractBackgroundHTML(charx, resolvedOutDir);
+  phase7_extractVariables(charx, resolvedOutDir);
+  phase8_extractCharacterCard(charx, resolvedOutDir);
   runLuaAnalysis(resolvedOutDir, cardJsonPath);
   runCardAnalysis(resolvedOutDir, cardJsonPath);
 
