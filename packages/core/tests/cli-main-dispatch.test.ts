@@ -100,18 +100,29 @@ describe('src/cli main dispatcher integration', () => {
     expect(result.stderr).not.toContain('legacy-script-execution-blocked');
   });
 
-  it('dispatches analyze and analyze-card to TypeScript command paths', () => {
+  it('dispatches analyze to unified analyze router', () => {
     const analyze = runCli(['analyze', '--help']);
-    const analyzeCard = runCli(['analyze-card', '--help']);
-
     expect(analyze.status).toBe(0);
-    expect(analyze.stdout).toContain('Usage: node analyze.js');
+    expect(analyze.stdout).toContain('risu-core analyze');
     expect(analyze.stderr).not.toContain('legacy-script-execution-blocked');
+  });
 
-    expect(analyzeCard.status).toBe(0);
-    expect(analyzeCard.stdout).toContain('Character Card Analyzer');
-    expect(analyzeCard.stdout).toContain('node analyze-card.js');
-    expect(analyzeCard.stderr).not.toContain('legacy-script-execution-blocked');
+  it('dispatches analyze --type lua', () => {
+    const result = runCli(['analyze', '--type', 'lua', '--help']);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Usage: node analyze.js');
+  });
+
+  it('dispatches analyze --type charx', () => {
+    const result = runCli(['analyze', '--type', 'charx', '--help']);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Character Card Analyzer');
+  });
+
+  it('returns exit code 1 for unknown analyze type', () => {
+    const result = runCli(['analyze', '--type', 'unknown']);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Unknown analyze type');
   });
 
   it('dispatches build to TypeScript command path', () => {
