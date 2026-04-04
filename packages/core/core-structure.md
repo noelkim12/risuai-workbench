@@ -36,14 +36,14 @@ packages/core/
 ### Node-specific entry
 
 - `src/node/index.ts`
-- Re-exports filesystem helpers, PNG chunk helpers, and `parseCardFile`
+- Re-exports filesystem helpers, PNG chunk helpers, `parseCharxFile`, and the compat alias `parseCardFile`
 - Published as the `./node` subpath export in `package.json`
 
 ### CLI entry
 
 - `bin/risu-core.js`
 - Loads `dist/cli/main.js` and delegates to its exported `run()` function in-process
-- `src/cli/main.ts` dispatches subcommands: `extract`, `pack`, `analyze`, `analyze-card`, `build`
+- `src/cli/main.ts` dispatches subcommands: `extract`, `pack`, `analyze`, `build`
 
 ## Source Layering
 
@@ -51,7 +51,7 @@ packages/core/
 
 This directory contains the structural TypeScript contracts exported from the root package.
 
-- `src/types/card.ts` defines core data shapes such as `CardData`, `RegexScript`, `LorebookEntry`, and `Variable`
+- `src/types/charx.ts` defines core data shapes such as `CharxData`, `CardData` (compat alias), `RegexScript`, `LorebookEntry`, and `Variable`
 - `src/types/index.ts` is a small barrel used by `src/index.ts`
 
 This layer has no runtime behavior.
@@ -60,7 +60,7 @@ This layer has no runtime behavior.
 
 This is the pure logic center of the package. It should remain free of Node.js I/O.
 
-- `src/domain/card/`
+- `src/domain/charx/`
   - `data.ts`: reads useful fields from unknown card-shaped input
   - `cbs.ts`: extracts CBS variable reads/writes from text
   - `filenames.ts`: filename sanitization
@@ -85,7 +85,7 @@ This directory is the platform adapter layer for Node.js runtime concerns.
 
 - `fs-helpers.ts`: `ensureDir`, `writeJson`, `writeText`, `writeBinary`, `uniquePath`
 - `png.ts`: PNG text chunk parsing, character JSON decoding, text chunk stripping
-- `card-io.ts`: parses `.json` and `.png` card inputs from disk
+- `charx-io.ts`: parses `.json` and `.png` character inputs from disk
 - `index.ts`: explicit Node-only export surface
 
 This layer depends on Node built-ins and is intentionally separated from the root package export.
@@ -110,7 +110,7 @@ This is the application layer. Each command has a tiny command module plus a wor
   - `extract.ts`
   - `pack.ts`
   - `analyze.ts`
-  - `analyze-card.ts`
+  - analysis is routed through `analyze.ts`
   - `build.ts`
 - dispatcher
   - `main.ts`
@@ -122,10 +122,14 @@ This is the application layer. Each command has a tiny command module plus a wor
   - `pack/`
     - `workflow.ts`: reconstructs output cards from extracted components and assets
   - `analyze/`
-    - `workflow.ts`: Lua analysis orchestrator
-    - `collector.ts`, `analyzer.ts`, `correlation.ts`, `reporting.ts`, `types.ts`
-  - `analyze-card/`
-    - `workflow.ts`: end-to-end card analysis orchestrator
+    - `workflow.ts`: top-level analyze router for lua/charx/module/preset/compose
+    - `lua/`: script-level Lua analysis workflow
+    - `charx/`: character-wide analyzer
+    - `module/`: module-wide analyzer, collectors, reporting
+    - `preset/`: preset-wide analyzer, collectors, reporting
+    - `shared/`: visualization contract, HTML shell, analyzer view-model helpers
+  - `analyze/charx/`
+    - `workflow.ts`: end-to-end charx analysis orchestrator
     - `collectors.ts`, `reporting.ts`, `reporting/htmlRenderer.ts`, `types.ts`
   - `build/`
     - `workflow.ts`: emits export JSON from `regex/` and `lorebooks/`
@@ -153,7 +157,9 @@ The command files are deliberately thin. Real behavior lives in workflow files s
 - `src/cli/extract/workflow.ts`
 - `src/cli/pack/workflow.ts`
 - `src/cli/analyze/workflow.ts`
-- `src/cli/analyze-card/workflow.ts`
+- `src/cli/analyze/charx/workflow.ts`
+- `src/cli/analyze/module/workflow.ts`
+- `src/cli/analyze/preset/workflow.ts`
 - `src/cli/build/workflow.ts`
 
 This keeps command dispatch simple and makes orchestration logic easier to test and evolve.
