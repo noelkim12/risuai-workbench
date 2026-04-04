@@ -2,6 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { runAnalyzeWorkflow as runLuaAnalyze } from './lua/workflow';
 import { runAnalyzeCharxWorkflow as runCharxAnalyze } from './charx/workflow';
+import { runAnalyzeComposeWorkflow } from './compose/workflow';
+import { runAnalyzeModuleWorkflow } from './module/workflow';
+import { runAnalyzePresetWorkflow } from './preset/workflow';
+
+const KNOWN_TYPES = ['lua', 'charx', 'module', 'preset', 'compose'] as const;
 
 const HELP_TEXT = `
   🐿️ risu-core analyze
@@ -11,15 +16,19 @@ const HELP_TEXT = `
   Types:
     lua           Lua 스크립트 정적 분석 (default for .lua files)
     charx         캐릭터 카드 종합 분석 (default for directories with charx.json)
+    module        모듈 종합 분석 (default for directories with module.json)
+    preset        프리셋 종합 분석 (default for directories with preset.json)
+    compose       아티팩트 조합 충돌 분석 (explicit only)
 
   Auto-detection:
     .lua file       → lua
-    directory       → charx (charx.json 존재 시)
+    directory       → module (module.json) / preset (preset.json) / charx (charx.json)
+    compose         → auto-detect 없음, --type compose로 명시
 
   Run 'risu-core analyze --type <type> --help' for type-specific help.
 `;
 
-/** analyze CLI 진입점. --type 플래그 또는 대상 파일 확장자를 기준으로 lua/charx 분석을 자동 분기한다. */
+/** analyze CLI 진입점. --type 플래그 또는 대상 경로를 기준으로 lua/charx/module/preset/compose 분석을 분기한다. */
 export function runAnalyzeWorkflow(argv: readonly string[]): number {
   const helpMode =
     argv.length === 0 ||
@@ -43,9 +52,21 @@ export function runAnalyzeWorkflow(argv: readonly string[]): number {
     return runCharxAnalyze(argv.filter(stripType));
   }
 
-  if (typeArg && typeArg !== 'lua' && typeArg !== 'charx') {
+  if (typeArg === 'module') {
+    return runAnalyzeModuleWorkflow(argv.filter(stripType));
+  }
+
+  if (typeArg === 'preset') {
+    return runAnalyzePresetWorkflow(argv.filter(stripType));
+  }
+
+  if (typeArg === 'compose') {
+    return runAnalyzeComposeWorkflow(argv.filter(stripType));
+  }
+
+  if (typeArg && !KNOWN_TYPES.includes(typeArg as (typeof KNOWN_TYPES)[number])) {
     console.error(`\n  ❌ Unknown analyze type: ${typeArg}`);
-    console.error('  Available types: lua, charx\n');
+    console.error(`  Available types: ${KNOWN_TYPES.join(', ')}\n`);
     return 1;
   }
 
@@ -61,8 +82,16 @@ export function runAnalyzeWorkflow(argv: readonly string[]): number {
 
     try {
       const stat = fs.statSync(target);
-      if (stat.isDirectory() && fs.existsSync(path.join(target, 'charx.json'))) {
-        return runCharxAnalyze(argv);
+      if (stat.isDirectory()) {
+        if (fs.existsSync(path.join(target, 'module.json'))) {
+          return runAnalyzeModuleWorkflow(argv);
+        }
+        if (fs.existsSync(path.join(target, 'preset.json'))) {
+          return runAnalyzePresetWorkflow(argv);
+        }
+        if (fs.existsSync(path.join(target, 'charx.json'))) {
+          return runCharxAnalyze(argv);
+        }
       }
     } catch {
       // fall through to default

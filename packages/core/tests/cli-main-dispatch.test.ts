@@ -144,6 +144,9 @@ describe('src/cli main dispatcher integration', () => {
     const analyze = runCli(['analyze', '--help']);
     expect(analyze.status).toBe(0);
     expect(analyze.stdout).toContain('risu-core analyze');
+    expect(analyze.stdout).toContain('module');
+    expect(analyze.stdout).toContain('preset');
+    expect(analyze.stdout).toContain('compose');
     expect(analyze.stderr).not.toContain('legacy-script-execution-blocked');
   });
 
@@ -157,6 +160,48 @@ describe('src/cli main dispatcher integration', () => {
     const result = runCli(['analyze', '--type', 'charx', '--help']);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('Character Card Analyzer');
+  });
+
+  it('dispatches analyze --type module', () => {
+    const result = runCli(['analyze', '--type', 'module', '--help']);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('RisuAI Module Analyzer');
+  });
+
+  it('dispatches analyze --type preset', () => {
+    const result = runCli(['analyze', '--type', 'preset', '--help']);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('RisuAI Preset Analyzer');
+  });
+
+  it('dispatches analyze --type compose', () => {
+    const result = runCli(['analyze', '--type', 'compose', '--help']);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('RisuAI Composition Analyzer');
+  });
+
+  it('auto-detects module analysis from a directory with module.json', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-core-analyze-module-'));
+    fs.writeFileSync(path.join(tempDir, 'module.json'), '{"name":"Module Stub"}\n', 'utf-8');
+
+    const result = runCli(['analyze', tempDir]);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('Module analysis is not yet implemented.');
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('auto-detects preset analysis from a directory with preset.json', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-core-analyze-preset-'));
+    fs.writeFileSync(path.join(tempDir, 'preset.json'), '{"name":"Preset Stub"}\n', 'utf-8');
+
+    const result = runCli(['analyze', tempDir]);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('Preset analysis is not yet implemented.');
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
   it('keeps deprecated --card working for lua analyze and emits a warning', () => {
@@ -266,6 +311,9 @@ describe('src/cli main dispatcher integration', () => {
     const result = runCli(['analyze', '--type', 'unknown']);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('Unknown analyze type');
+    expect(result.stderr).toContain('module');
+    expect(result.stderr).toContain('preset');
+    expect(result.stderr).toContain('compose');
   });
 
   it('dispatches build to TypeScript command path', () => {
