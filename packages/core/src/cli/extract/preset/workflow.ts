@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { runAnalyzePresetWorkflow } from '@/cli/analyze/preset/workflow';
 import { ensureDir, writeJson } from '@/node/fs-helpers';
 import {
   phase1_parsePreset,
@@ -131,8 +132,17 @@ function runMain(filePath: string, outArg: string | null, jsonOnly: boolean): vo
   phase6_extractProviderSettings(parsed, resolvedOutDir);
   phase7_extractPromptSettings(parsed, resolvedOutDir);
   phase8_extractRegexAndAdvanced(parsed, resolvedOutDir);
+  runPresetAnalysis(resolvedOutDir);
 
   console.log('\n  ────────────────────────────────────────');
   console.log(`  추출 완료 -> ${path.relative('.', resolvedOutDir)}/`);
   console.log('  ────────────────────────────────────────\n');
+}
+
+function runPresetAnalysis(resolvedOutDir: string): void {
+  console.log('\n  ═══ Phase 9: Preset Analysis ═══');
+  const code = runAnalyzePresetWorkflow([resolvedOutDir]);
+  if (code !== 0) {
+    console.error(`  ⚠️ preset analyze 실행 실패: exit code ${code}`);
+  }
 }
