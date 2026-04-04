@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { runAnalyzeModuleWorkflow } from '@/cli/analyze/module/workflow';
 import { ensureDir, writeJson } from '@/node/fs-helpers';
 import {
   phase1_parseModule,
@@ -96,6 +97,7 @@ function runMain(filePath: string, outArg: string | null, jsonOnly: boolean): vo
   phase5_extractAssets(parsed.module, resolvedOutDir, parsed.assetBuffers, parsed.sourceFormat);
   phase6_extractBackgroundEmbedding(parsed.module, resolvedOutDir);
   phase7_extractModuleIdentity(parsed.module, resolvedOutDir);
+  runModuleAnalysis(resolvedOutDir);
 
   console.log('\n  ────────────────────────────────────────');
   console.log(`  추출 완료 -> ${path.relative('.', resolvedOutDir)}/`);
@@ -108,4 +110,12 @@ function sanitizeOutputName(name: string): string {
     .replace(/\s+/g, '_')
     .replace(/_+/g, '_')
     .substring(0, 50);
+}
+
+function runModuleAnalysis(resolvedOutDir: string): void {
+  console.log('\n  ═══ Phase 8: Module Analysis ═══');
+  const code = runAnalyzeModuleWorkflow([resolvedOutDir]);
+  if (code !== 0) {
+    console.error(`  ⚠️ module analyze 실행 실패: exit code ${code}`);
+  }
 }
