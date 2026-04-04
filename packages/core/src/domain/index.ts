@@ -15,6 +15,16 @@ export {
 } from './lorebook/folders';
 export { sanitizeFilename } from '../utils/filenames';
 export {
+  getModuleLorebookEntriesFromModule,
+  getModuleRegexScriptsFromModule,
+  getModuleTriggersFromModule,
+  getModuleBackgroundEmbeddingFromModule,
+} from './module/index';
+export {
+  getPresetPromptTextsFromPreset,
+  getPresetPromptTemplateItemsFromPreset,
+} from './preset/index';
+export {
   getCharacterName as getCharxName,
   getCharacterName as getCardName,
   getLorebookEntriesFromCharx as getCharacterBookEntries,
