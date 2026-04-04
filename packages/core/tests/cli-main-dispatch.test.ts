@@ -186,8 +186,9 @@ describe('src/cli main dispatcher integration', () => {
 
     const result = runCli(['analyze', tempDir]);
 
-    expect(result.status).toBe(1);
-    expect(result.stdout).toContain('Module analysis is not yet implemented.');
+    expect(result.status).toBe(0);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'module-analysis.md'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'module-analysis.html'))).toBe(true);
 
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
@@ -198,8 +199,9 @@ describe('src/cli main dispatcher integration', () => {
 
     const result = runCli(['analyze', tempDir]);
 
-    expect(result.status).toBe(1);
-    expect(result.stdout).toContain('Preset analysis is not yet implemented.');
+    expect(result.status).toBe(0);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'preset-analysis.md'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'preset-analysis.html'))).toBe(true);
 
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
