@@ -91,6 +91,46 @@ describe('src/cli main dispatcher integration', () => {
     expect(result.stderr).not.toContain('legacy-script-execution-blocked');
   });
 
+  it('writes character extract output into character_<name> by default', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-core-extract-character-'));
+    const cardPath = path.join(tempDir, 'sample-character.json');
+
+    fs.writeFileSync(
+      cardPath,
+      `${JSON.stringify(
+        {
+          spec: 'chara_card_v3',
+          data: {
+            name: 'Default Output Character',
+            description: 'hello',
+            character_book: { entries: [] },
+            extensions: { risuai: { customScripts: [] } },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      'utf-8',
+    );
+
+    const result = spawnSync('node', [cliPath, 'extract', cardPath], {
+      cwd: tempDir,
+      encoding: 'utf-8',
+      env: {
+        ...process.env,
+        NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --require=${scriptGuardPath}`.trim(),
+      },
+    });
+
+    const expectedOutDir = path.join(tempDir, 'character_Default_Output_Character');
+    expect(result.status).toBe(0);
+    expect(fs.existsSync(path.join(expectedOutDir, 'charx.json'))).toBe(true);
+    expect(fs.existsSync(path.join(expectedOutDir, 'character', 'metadata.json'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, 'charx.json'))).toBe(false);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
   it('dispatches pack to TypeScript command path', () => {
     const result = runCli(['pack', '--help']);
 
@@ -117,6 +157,109 @@ describe('src/cli main dispatcher integration', () => {
     const result = runCli(['analyze', '--type', 'charx', '--help']);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('Character Card Analyzer');
+  });
+
+  it('keeps deprecated --card working for lua analyze and emits a warning', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-core-analyze-card-'));
+    const luaPath = path.join(tempDir, 'sample.lua');
+    const charxPath = path.join(tempDir, 'charx.json');
+
+    fs.writeFileSync(luaPath, 'local value = getState(chat, "foo")\n', 'utf-8');
+    fs.writeFileSync(
+      charxPath,
+      `${JSON.stringify(
+        {
+          spec: 'chara_card_v3',
+          data: {
+            name: 'Test Character',
+            character_book: { entries: [] },
+            extensions: { risuai: { customScripts: [] } },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      'utf-8',
+    );
+
+    const result = runCli([
+      'analyze',
+      '--type',
+      'lua',
+      luaPath,
+      '--card',
+      charxPath,
+      '--json',
+      '--no-markdown',
+      '--no-html',
+    ]);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain('--card is deprecated; use --charx instead.');
+    expect(fs.existsSync(path.join(tempDir, 'sample.analysis.json'))).toBe(true);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('writes charx-analysis filenames for charx reports', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-core-analyze-charx-'));
+    const charxPath = path.join(tempDir, 'charx.json');
+
+    fs.writeFileSync(
+      charxPath,
+      `${JSON.stringify(
+        {
+          spec: 'chara_card_v3',
+          data: {
+            name: 'Report Character',
+            character_book: { entries: [] },
+            extensions: { risuai: { customScripts: [] } },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      'utf-8',
+    );
+
+    const result = runCli(['analyze', '--type', 'charx', tempDir]);
+
+    expect(result.status).toBe(0);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'charx-analysis.md'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'charx-analysis.html'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'card-analysis.md'))).toBe(false);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'card-analysis.html'))).toBe(false);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('rejects legacy card.json-only analyze directories', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-core-analyze-legacy-cardjson-'));
+    const legacyJsonPath = path.join(tempDir, 'card.json');
+
+    fs.writeFileSync(
+      legacyJsonPath,
+      `${JSON.stringify(
+        {
+          spec: 'chara_card_v3',
+          data: {
+            name: 'Legacy Character',
+            character_book: { entries: [] },
+            extensions: { risuai: { customScripts: [] } },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      'utf-8',
+    );
+
+    const result = runCli(['analyze', '--type', 'charx', tempDir]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('charx.json을 찾을 수 없습니다');
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
   it('returns exit code 1 for unknown analyze type', () => {

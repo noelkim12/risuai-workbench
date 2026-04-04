@@ -28,14 +28,15 @@ function getStringField(obj: unknown, key: string): string {
   return '';
 }
 
-export function collectLorebookCBS(card: unknown, outputDir?: string): ElementCBSData[] {
+/** 로어북 엔트리에서 CBS 변수 읽기/쓰기 연산을 수집한다. 추출 디렉토리 우선, 없으면 charx.json 직접 파싱한다. */
+export function collectLorebookCBS(charx: unknown, outputDir?: string): ElementCBSData[] {
   if (outputDir) {
     const lorebooksDir = path.join(outputDir, 'lorebooks');
     if (dirExists(lorebooksDir)) {
       return collectLorebookCBSFromDir(lorebooksDir);
     }
   }
-  return collectLorebookCBSFromCard(card);
+  return collectLorebookCBSFromCharx(charx);
 }
 
 function collectLorebookCBSFromDir(lorebooksDir: string): ElementCBSData[] {
@@ -123,8 +124,8 @@ function pushLorebookCBSFromFile(
   }
 }
 
-function getCardArray(card: unknown, pathKeys: string[]): unknown[] {
-  let cur: unknown = card;
+function getCharxArray(charx: unknown, pathKeys: string[]): unknown[] {
+  let cur: unknown = charx;
   for (const key of pathKeys) {
     if (!isPlainObject(cur)) return [];
     cur = cur[key];
@@ -132,10 +133,10 @@ function getCardArray(card: unknown, pathKeys: string[]): unknown[] {
   return Array.isArray(cur) ? cur : [];
 }
 
-function collectLorebookCBSFromCard(card: unknown): ElementCBSData[] {
+function collectLorebookCBSFromCharx(charx: unknown): ElementCBSData[] {
   const results: ElementCBSData[] = [];
 
-  const charBookEntries = getCardArray(card, ['data', 'character_book', 'entries']);
+  const charBookEntries = getCharxArray(charx, ['data', 'character_book', 'entries']);
   if (charBookEntries.length > 0) {
     const folderMap = buildRisuFolderMap(charBookEntries as never[]);
 
@@ -159,7 +160,7 @@ function collectLorebookCBSFromCard(card: unknown): ElementCBSData[] {
     }
   }
 
-  const moduleEntries = getCardArray(card, ['data', 'extensions', 'risuai', '_moduleLorebook']);
+  const moduleEntries = getCharxArray(charx, ['data', 'extensions', 'risuai', '_moduleLorebook']);
   if (moduleEntries.length > 0) {
     const folderMap = buildRisuFolderMap(moduleEntries as never[]);
 
@@ -191,7 +192,8 @@ function collectLorebookCBSFromCard(card: unknown): ElementCBSData[] {
   return results;
 }
 
-export function collectRegexCBS(card: unknown, outputDir?: string): ElementCBSData[] {
+/** Regex(customScripts)에서 CBS 변수 연산을 수집한다. in/out/flag 필드와 script/content를 모두 탐색. */
+export function collectRegexCBS(charx: unknown, outputDir?: string): ElementCBSData[] {
   if (outputDir) {
     const regexDir = path.join(outputDir, 'regex');
     if (dirExists(regexDir)) {
@@ -199,7 +201,7 @@ export function collectRegexCBS(card: unknown, outputDir?: string): ElementCBSDa
     }
   }
 
-  return collectRegexCBSFromCard(card);
+  return collectRegexCBSFromCharx(charx);
 }
 
 function collectRegexCBSFromDir(regexDir: string): ElementCBSData[] {
@@ -233,9 +235,9 @@ function collectRegexCBSFromDir(regexDir: string): ElementCBSData[] {
   return results;
 }
 
-function collectRegexCBSFromCard(card: unknown): ElementCBSData[] {
+function collectRegexCBSFromCharx(charx: unknown): ElementCBSData[] {
   const results: ElementCBSData[] = [];
-  const scripts = getCardArray(card, ['data', 'extensions', 'risuai', 'customScripts']);
+  const scripts = getCharxArray(charx, ['data', 'extensions', 'risuai', 'customScripts']);
 
   for (let i = 0; i < scripts.length; i += 1) {
     const script = scripts[i];
@@ -305,6 +307,7 @@ function parseDefaultVariablesJson(raw: unknown): Record<string, string> {
   return variables;
 }
 
+/** defaultVariables를 JSON 또는 텍스트(key=value) 포맷에서 파싱한다. */
 export function collectVariablesCBS(card: unknown, outputDir?: string): VariablesResult {
   if (outputDir) {
     const jsonPath = path.join(outputDir, 'variables', 'default.json');
@@ -352,7 +355,8 @@ function collectHTMLCBSFromString(html: string, elementName: string): HtmlResult
   };
 }
 
-export function collectHTMLCBS(card: unknown, outputDir?: string): HtmlResult {
+/** backgroundHTML에서 CBS 변수 연산과 에셋 참조(src 속성, url() CSS)를 추출한다. */
+export function collectHTMLCBS(charx: unknown, outputDir?: string): HtmlResult {
   if (outputDir) {
     const htmlPath = path.join(outputDir, 'html', 'background.html');
     const html = readTextIfExists(htmlPath);
@@ -362,17 +366,18 @@ export function collectHTMLCBS(card: unknown, outputDir?: string): HtmlResult {
   }
 
   const html =
-    isPlainObject(card) &&
-    isPlainObject(card.data) &&
-    isPlainObject(card.data.extensions) &&
-    isPlainObject(card.data.extensions.risuai) &&
-    typeof card.data.extensions.risuai.backgroundHTML === 'string'
-      ? card.data.extensions.risuai.backgroundHTML
+    isPlainObject(charx) &&
+    isPlainObject(charx.data) &&
+    isPlainObject(charx.data.extensions) &&
+    isPlainObject(charx.data.extensions.risuai) &&
+    typeof charx.data.extensions.risuai.backgroundHTML === 'string'
+      ? charx.data.extensions.risuai.backgroundHTML
       : '';
 
   return collectHTMLCBSFromString(html, 'background.html');
 }
 
+/** TypeScript-to-Lua(tstl) 소스에서 RisuAI 변수 API 호출 패턴을 정규식으로 추출한다. */
 export function collectTSCBS(outputDir: string): ElementCBSData[] {
   try {
     let tstlDir = path.join(outputDir, '..', 'tstl');
@@ -408,6 +413,7 @@ export function collectTSCBS(outputDir: string): ElementCBSData[] {
   }
 }
 
+/** 이전에 생성된 Lua 분석 JSON(*.analysis.json)에서 CBS 데이터를 임포트한다. */
 export function importLuaAnalysis(outputDir: string): ElementCBSData[] {
   try {
     const luaDir = path.join(outputDir, 'lua');

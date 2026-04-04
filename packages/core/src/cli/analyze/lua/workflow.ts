@@ -14,21 +14,24 @@ const HELP_TEXT = `
   Usage: node analyze.js <file.lua> [options]
 
   Options:
-    --card <path>     캐릭터 카드 (card.json 또는 .png) — Lua↔Lorebook 상관관계 분석
+    --charx <path>    캐릭터 카드 (charx.json 또는 .png) — Lua↔Lorebook 상관관계 분석 (--card도 허용)
     --json            분석 데이터를 JSON 파일로 내보내기
     --no-markdown     마크다운 리포트 생성 안 함
     --no-html         HTML 분석 시트 생성 안 함
     -h, --help        도움말
   `;
 
+/** Lua 스크립트 정적 분석 워크플로우. AST 파싱 → 수집 → 분석 → 상관관계 → 리포트 파이프라인을 실행한다. */
 export function runAnalyzeWorkflow(argv: readonly string[]): number {
   const markdownMode = !argv.includes('--no-markdown');
   const htmlMode = !argv.includes('--no-html');
   const jsonMode = argv.includes('--json');
   const helpMode = argv.includes('-h') || argv.includes('--help') || argv.length === 0;
+  const charxIdx = argv.indexOf('--charx');
   const cardIdx = argv.indexOf('--card');
-  const cardArg = cardIdx >= 0 ? argv[cardIdx + 1] : null;
-  const filePath = argv.find((value) => !value.startsWith('-') && value !== cardArg);
+  const flagIdx = charxIdx >= 0 ? charxIdx : cardIdx;
+  const charxArg = flagIdx >= 0 ? argv[flagIdx + 1] : null;
+  const filePath = argv.find((value) => !value.startsWith('-') && value !== charxArg);
 
   if (helpMode || !filePath) {
     console.log(HELP_TEXT);
@@ -89,8 +92,12 @@ export function runAnalyzeWorkflow(argv: readonly string[]): number {
     luaStdlibCalls: LUA_STDLIB_CALLS,
   });
 
-  const lorebookCorrelation = buildLorebookCorrelation({ cardArg, collected });
-  const regexCorrelation = buildRegexCorrelation({ cardArg, collected });
+  if (cardIdx >= 0 && charxIdx < 0) {
+    console.warn('  ⚠️  --card is deprecated; use --charx instead.');
+  }
+
+  const lorebookCorrelation = buildLorebookCorrelation({ charxArg, collected });
+  const regexCorrelation = buildRegexCorrelation({ charxArg, collected });
 
   if (jsonMode) {
     const serialized = serializeCollected(collected);
@@ -100,29 +107,29 @@ export function runAnalyzeWorkflow(argv: readonly string[]): number {
     console.log(`  ✅ JSON exported to ${jsonPath}`);
   }
 
-  runReporting({
-    filePath,
-    markdownMode,
-    htmlMode,
-    total,
-    lines,
-    analyzePhase: {
-      commentSections,
-      sectionMapSections,
-      callGraph,
-      calledBy,
-      apiByCategory,
-      moduleGroups,
-      moduleByFunction,
-      stateOwnership,
-      registryVars,
-      rootFunctions,
-      getDescendants,
+  runReporting(
+    {
+      filePath,
+      total,
+      analyzePhase: {
+        commentSections,
+        sectionMapSections,
+        callGraph,
+        calledBy,
+        apiByCategory,
+        moduleGroups,
+        moduleByFunction,
+        stateOwnership,
+        registryVars,
+        rootFunctions,
+        getDescendants,
+      },
+      collected,
+      lorebookCorrelation,
+      regexCorrelation,
     },
-    collected,
-    lorebookCorrelation,
-    regexCorrelation,
-  });
+    { markdown: markdownMode, html: htmlMode },
+  );
 
   return 0;
 }

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { runAnalyzeWorkflow as runLuaAnalyze } from './lua/workflow';
-import { runAnalyzeCardWorkflow as runCharxAnalyze } from './charx/workflow';
+import { runAnalyzeCharxWorkflow as runCharxAnalyze } from './charx/workflow';
 
 const HELP_TEXT = `
   🐿️ risu-core analyze
@@ -10,15 +10,16 @@ const HELP_TEXT = `
 
   Types:
     lua           Lua 스크립트 정적 분석 (default for .lua files)
-    charx         캐릭터 카드 종합 분석 (default for directories with card.json)
+    charx         캐릭터 카드 종합 분석 (default for directories with charx.json)
 
   Auto-detection:
     .lua file       → lua
-    directory       → card (card.json 존재 시)
+    directory       → charx (charx.json 존재 시)
 
   Run 'risu-core analyze --type <type> --help' for type-specific help.
 `;
 
+/** analyze CLI 진입점. --type 플래그 또는 대상 파일 확장자를 기준으로 lua/charx 분석을 자동 분기한다. */
 export function runAnalyzeWorkflow(argv: readonly string[]): number {
   const helpMode =
     argv.length === 0 ||
@@ -60,7 +61,7 @@ export function runAnalyzeWorkflow(argv: readonly string[]): number {
 
     try {
       const stat = fs.statSync(target);
-      if (stat.isDirectory() && fs.existsSync(path.join(target, 'card.json'))) {
+      if (stat.isDirectory() && fs.existsSync(path.join(target, 'charx.json'))) {
         return runCharxAnalyze(argv);
       }
     } catch {
@@ -80,5 +81,5 @@ function isOptionValue(argv: readonly string[], value: string): boolean {
   const idx = argv.indexOf(value);
   if (idx <= 0) return false;
   const prev = argv[idx - 1];
-  return prev === '--type' || prev === '--card' || prev === '--out';
+  return prev === '--type' || prev === '--card' || prev === '--charx' || prev === '--out';
 }

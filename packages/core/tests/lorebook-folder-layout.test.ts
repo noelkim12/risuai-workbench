@@ -158,7 +158,7 @@ describe('lorebook folder layout', () => {
     runCoreCommand('pack', ['--in', extractDir, '--format', 'charx', '--out', packedPath]);
 
     const packedArchive = unzipSync(readFileSync(packedPath));
-    const packedCard = JSON.parse(strFromU8(packedArchive['card.json']));
+    const packedCard = JSON.parse(strFromU8(packedArchive['charx.json']));
     expect(packedCard.data.character_book.entries[0]).toEqual(expect.objectContaining({ mode: 'folder', name: 'Lorebook Folder Example1' }));
     expect(packedCard.data.character_book.entries[1]).toEqual(expect.objectContaining({ folder: 'folder-key-1', name: 'Lorebook Example1' }));
   });

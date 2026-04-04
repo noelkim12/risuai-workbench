@@ -212,12 +212,12 @@ describe('module extract', () => {
 
   it('isModuleJson detects module JSON and rejects character card JSON', () => {
     const moduleJsonPath = path.join(tmpDir, 'module.json');
-    const cardJsonPath = path.join(tmpDir, 'card.json');
+    const charxJsonPath = path.join(tmpDir, 'charx.json');
 
     fs.writeFileSync(moduleJsonPath, JSON.stringify({ type: 'risuModule', name: 'x', id: 'y' }), 'utf-8');
-    fs.writeFileSync(cardJsonPath, JSON.stringify({ spec: 'chara_card_v3', data: { name: 'char' } }), 'utf-8');
+    fs.writeFileSync(charxJsonPath, JSON.stringify({ spec: 'chara_card_v3', data: { name: 'char' } }), 'utf-8');
 
     expect(Boolean(isModuleJson(moduleJsonPath))).toBe(true);
-    expect(Boolean(isModuleJson(cardJsonPath))).toBe(false);
+    expect(Boolean(isModuleJson(charxJsonPath))).toBe(false);
   });
 });

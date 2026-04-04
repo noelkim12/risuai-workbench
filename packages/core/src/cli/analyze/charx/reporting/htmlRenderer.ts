@@ -2,25 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ELEMENT_TYPES, MAX_VARS_IN_REPORT } from '@/domain';
 import { escapeHtml } from '../../../shared';
-import { type LorebookRegexCorrelation, type UnifiedVarEntry } from '../types';
+import { type CharxReportData } from '../types';
 
-interface HtmlReportData {
-  cardName: string;
-  unifiedGraph: Map<string, UnifiedVarEntry>;
-  lorebookRegexCorrelation: LorebookRegexCorrelation;
-  lorebookStructure: {
-    folders?: Array<{
-      name?: string;
-      children?: unknown[];
-      entries?: Array<{ name: string; enabled?: boolean }>;
-    }>;
-    stats?: {
-      activationModes?: { normal?: number; constant?: number; selective?: number };
-    };
-  };
-}
-
-export function renderHtml(data: HtmlReportData, outputDir: string): void {
+/** 수집·분석 데이터를 인터랙티브 HTML 리포트(Chart.js 차트 포함)로 렌더링하여 analysis/ 디렉토리에 저장한다. */
+export function renderHtml(data: CharxReportData, outputDir: string): void {
   const elementCounts: Record<string, number> = {
     [ELEMENT_TYPES.LOREBOOK]: 0,
     [ELEMENT_TYPES.REGEX]: 0,
@@ -166,7 +151,7 @@ export function renderHtml(data: HtmlReportData, outputDir: string): void {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Card Analysis: ${escapeHtml(data.cardName)}</title>
+  <title>Card Analysis: ${escapeHtml(data.characterName)}</title>
   <style>
     :root { --bg: #0d1117; --surface: #161b22; --border: #30363d; --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff; --green: #3fb950; --yellow: #d29922; --red: #f85149; }
     body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; padding: 20px; line-height: 1.5; }
@@ -200,7 +185,7 @@ export function renderHtml(data: HtmlReportData, outputDir: string): void {
 </head>
 <body>
   <div class="container">
-    <h1>Card Analysis: ${escapeHtml(data.cardName)}</h1>
+    <h1>Card Analysis: ${escapeHtml(data.characterName)}</h1>
     <div class="grid">
       <div class="card"><h3>Element Distribution</h3><div class="chart-container"><canvas id="elementChart"></canvas></div></div>
       <div class="card"><h3>Variable Types</h3><div class="chart-container"><canvas id="typeChart"></canvas></div></div>
@@ -241,5 +226,5 @@ export function renderHtml(data: HtmlReportData, outputDir: string): void {
   if (!fs.existsSync(outPath)) {
     fs.mkdirSync(outPath, { recursive: true });
   }
-  fs.writeFileSync(path.join(outPath, 'card-analysis.html'), html, 'utf8');
+  fs.writeFileSync(path.join(outPath, 'charx-analysis.html'), html, 'utf8');
 }

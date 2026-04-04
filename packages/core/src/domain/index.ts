@@ -15,14 +15,16 @@ export {
 } from './lorebook/folders';
 export { sanitizeFilename } from '../utils/filenames';
 export {
+  getCharacterName as getCharxName,
   getCharacterName as getCardName,
   getLorebookEntriesFromCharx as getCharacterBookEntries,
   getModuleLorebookEntries,
   getAllLorebookEntriesFromCharx as getAllLorebookEntries,
   getCustomScriptsFromCharx as getCustomScripts,
   getDefaultVariablesRawFromCharx as getDefaultVariablesRaw,
+  type CharxStructure,
   type CharxStructure as CardLike,
-} from './card/data';
+} from './charx/data';
 export {
   resolveAssetUri,
   guessMimeExt,
@@ -31,14 +33,17 @@ export {
 } from './asset/asset-uri';
 export {
   analyzeLorebookStructure,
-  analyzeLorebookStructureFromCard,
+  analyzeLorebookStructureFromCharx,
+  analyzeLorebookStructureFromCharx as analyzeLorebookStructureFromCard,
   collectLorebookCBS,
-  collectLorebookCBSFromCard,
+  collectLorebookCBSFromCharx,
+  collectLorebookCBSFromCharx as collectLorebookCBSFromCard,
   type LorebookStructureEntry,
   type LorebookStructureResult,
 } from './lorebook/structure';
 export {
-  collectRegexCBSFromCard,
+  collectRegexCBSFromCharx,
+  collectRegexCBSFromCharx as collectRegexCBSFromCard,
   collectRegexCBSFromScripts,
   extractRegexScriptOps,
   parseDefaultVariablesText,

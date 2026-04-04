@@ -14,14 +14,14 @@ afterEach(() => {
 });
 
 describe('pack.js character round-trip', () => {
-  it('merges extracted character fields back into card.json before packing', () => {
+  it('merges extracted character fields back into charx.json before packing', () => {
     const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-pack-character-'));
     tempDirs.push(workDir);
 
     const characterDir = path.join(workDir, 'character');
     mkdirSync(characterDir, { recursive: true });
 
-    const sourceCard = {
+    const sourceCharx = {
       spec: 'chara_card_v3',
       data: {
         name: 'Original Name',
@@ -47,7 +47,7 @@ describe('pack.js character round-trip', () => {
       },
     };
 
-    writeFileSync(path.join(workDir, 'card.json'), `${JSON.stringify(sourceCard, null, 2)}\n`, 'utf-8');
+    writeFileSync(path.join(workDir, 'charx.json'), `${JSON.stringify(sourceCharx, null, 2)}\n`, 'utf-8');
     writeFileSync(path.join(characterDir, 'description.txt'), 'updated description', 'utf-8');
     writeFileSync(path.join(characterDir, 'first_mes.txt'), 'updated first message', 'utf-8');
     writeFileSync(path.join(characterDir, 'system_prompt.txt'), 'updated system prompt', 'utf-8');
@@ -88,21 +88,21 @@ describe('pack.js character round-trip', () => {
     );
 
     const archive = unzipSync(readFileSync(outPath));
-    const packedCard = JSON.parse(strFromU8(archive['card.json']));
+    const packedCharx = JSON.parse(strFromU8(archive['charx.json']));
 
-    expect(packedCard.data.description).toBe('updated description');
-    expect(packedCard.data.first_mes).toBe('updated first message');
-    expect(packedCard.data.system_prompt).toBe('updated system prompt');
-    expect(packedCard.data.post_history_instructions).toBe('updated post history');
-    expect(packedCard.data.creator_notes).toBe('updated creator notes');
-    expect(packedCard.data.extensions.risuai.additionalText).toBe('updated additional text');
-    expect(packedCard.data.alternate_greetings).toEqual(['hello there', 'general kenobi']);
-    expect(packedCard.data.name).toBe('Updated Name');
-    expect(packedCard.data.creator).toBe('Updated Creator');
-    expect(packedCard.data.character_version).toBe('2.0.0');
-    expect(packedCard.data.creation_date).toBe('2025-05-01');
-    expect(packedCard.data.modification_date).toBe('2025-05-02');
-    expect(packedCard.data.extensions.risuai.utilityBot).toBe(true);
-    expect(packedCard.data.extensions.risuai.lowLevelAccess).toBe(true);
+    expect(packedCharx.data.description).toBe('updated description');
+    expect(packedCharx.data.first_mes).toBe('updated first message');
+    expect(packedCharx.data.system_prompt).toBe('updated system prompt');
+    expect(packedCharx.data.post_history_instructions).toBe('updated post history');
+    expect(packedCharx.data.creator_notes).toBe('updated creator notes');
+    expect(packedCharx.data.extensions.risuai.additionalText).toBe('updated additional text');
+    expect(packedCharx.data.alternate_greetings).toEqual(['hello there', 'general kenobi']);
+    expect(packedCharx.data.name).toBe('Updated Name');
+    expect(packedCharx.data.creator).toBe('Updated Creator');
+    expect(packedCharx.data.character_version).toBe('2.0.0');
+    expect(packedCharx.data.creation_date).toBe('2025-05-01');
+    expect(packedCharx.data.modification_date).toBe('2025-05-02');
+    expect(packedCharx.data.extensions.risuai.utilityBot).toBe(true);
+    expect(packedCharx.data.extensions.risuai.lowLevelAccess).toBe(true);
   });
 });

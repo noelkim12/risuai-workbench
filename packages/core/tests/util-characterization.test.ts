@@ -15,7 +15,7 @@ import fs from 'node:fs';
  *    - cli/build/workflow.ts:toPosix (local function, inlined)
  * 
  * 2. sanitizeFilename: 1 canonical implementation
- *    - domain/card/filenames.ts:sanitizeFilename
+ *    - utils/filenames.ts:sanitizeFilename
  * 
  * 3. listJsonFilesRecursive: 1 implementation (filesystem function)
  *    - node/json-listing.ts:listJsonFilesRecursive

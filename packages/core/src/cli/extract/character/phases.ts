@@ -20,7 +20,7 @@ import {
 } from '@/node';
 import { parseCharx, parseModuleRisum } from '../parsers';
 
-export function phase1_parseCard(inputPath: string): {
+export function phase1_parseCharx(inputPath: string): {
   charx: any;
   assetSources: Record<string, Uint8Array>;
   mainImage: Buffer | null;
@@ -33,13 +33,13 @@ export function phase1_parseCard(inputPath: string): {
 
   if (ext === '.charx') {
     console.log('     포맷: CharX (ZIP)');
-    const { card, moduleData, assets } = parseCharx(buf);
-    if (!card) {
-      throw new Error('card.json을 찾을 수 없습니다.');
+    const { card: charx, moduleData, assets } = parseCharx(buf);
+    if (!charx) {
+      throw new Error('charx.json을 찾을 수 없습니다.');
     }
 
-    console.log(`     spec: ${card.spec || 'unknown'}`);
-    console.log(`     이름: ${card.data?.name || 'unknown'}`);
+    console.log(`     spec: ${charx.spec || 'unknown'}`);
+    console.log(`     이름: ${charx.data?.name || 'unknown'}`);
 
     if (moduleData) {
       console.log(`     module.risum: ${(moduleData.length / 1024).toFixed(1)} KB`);
@@ -47,22 +47,22 @@ export function phase1_parseCard(inputPath: string): {
       if (mod) {
         console.log(`     모듈 이름: ${mod.name || 'unknown'}`);
 
-        card.data = card.data || {};
-        card.data.extensions = card.data.extensions || {};
-        card.data.extensions.risuai = card.data.extensions.risuai || {};
+        charx.data = charx.data || {};
+        charx.data.extensions = charx.data.extensions || {};
+        charx.data.extensions.risuai = charx.data.extensions.risuai || {};
 
         if (mod.trigger && mod.trigger.length > 0) {
-          card.data.extensions.risuai.triggerscript = mod.trigger;
+          charx.data.extensions.risuai.triggerscript = mod.trigger;
           console.log(`     triggerscript: ${mod.trigger.length}개 병합됨`);
         }
 
         if (mod.regex && mod.regex.length > 0) {
-          card.data.extensions.risuai.customScripts = mod.regex;
+          charx.data.extensions.risuai.customScripts = mod.regex;
           console.log(`     customScripts: ${mod.regex.length}개 병합됨`);
         }
 
         if (mod.lorebook && mod.lorebook.length > 0) {
-          card.data.extensions.risuai._moduleLorebook = mod.lorebook;
+          charx.data.extensions.risuai._moduleLorebook = mod.lorebook;
           console.log(`     lorebook (module): ${mod.lorebook.length}개 병합됨`);
         }
       }
@@ -73,7 +73,7 @@ export function phase1_parseCard(inputPath: string): {
       console.log(`     에셋: ${assetCount}개`);
     }
 
-    return { charx: card, assetSources: assets, mainImage: null };
+    return { charx, assetSources: assets, mainImage: null };
   }
 
   if (ext === '.png') {
@@ -104,26 +104,26 @@ export function phase1_parseCard(inputPath: string): {
       throw new Error('캐릭터 데이터 청크를 찾을 수 없습니다 (chara/ccv3).');
     }
 
-    let card: any;
+    let charx: any;
     try {
-      card = JSON.parse(jsonStr);
+      charx = JSON.parse(jsonStr);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`JSON 파싱 실패: ${message}`);
     }
 
-    console.log(`     spec: ${card.spec || 'unknown'}`);
-    console.log(`     이름: ${card.data?.name || card.name || 'unknown'}`);
+    console.log(`     spec: ${charx.spec || 'unknown'}`);
+    console.log(`     이름: ${charx.data?.name || charx.name || 'unknown'}`);
 
-    return { charx: card, assetSources, mainImage: stripPngTextChunks(buf) };
+    return { charx, assetSources, mainImage: stripPngTextChunks(buf) };
   }
 
   if (ext === '.json') {
     console.log('     포맷: JSON');
-    const card = JSON.parse(buf.toString('utf-8'));
-    console.log(`     spec: ${card.spec || 'unknown'}`);
-    console.log(`     이름: ${card.data?.name || card.name || 'unknown'}`);
-    return { charx: card, assetSources: {}, mainImage: null };
+    const charx = JSON.parse(buf.toString('utf-8'));
+    console.log(`     spec: ${charx.spec || 'unknown'}`);
+    console.log(`     이름: ${charx.data?.name || charx.name || 'unknown'}`);
+    return { charx, assetSources: {}, mainImage: null };
   }
 
   throw new Error(`지원하지 않는 파일 포맷: ${ext} (지원: .charx, .png, .json)`);
@@ -409,9 +409,9 @@ export function phase6_extractBackgroundHTML(charx: any, outputDir: string): num
   return 1;
 }
 
-export function phase7_extractVariables(card: any, outputDir: string): number {
+export function phase7_extractVariables(charx: any, outputDir: string): number {
   console.log('\n  📋 Phase 7: DefaultVariables 추출');
-  const raw = card.data?.extensions?.risuai?.defaultVariables;
+  const raw = charx.data?.extensions?.risuai?.defaultVariables;
   if (!raw) {
     console.log('     (defaultVariables 없음)');
     return 0;
@@ -442,10 +442,10 @@ export function phase7_extractVariables(card: any, outputDir: string): number {
   return count;
 }
 
-export function phase8_extractCharacterCard(card: any, outputDir: string): number {
+export function phase8_extractCharacterFields(charx: any, outputDir: string): number {
   console.log('\n  🧾 Phase 8: Character Card 추출');
 
-  const data = card.data || {};
+  const data = charx.data || {};
   const risuai = data.extensions?.risuai || {};
   const characterDir = path.join(outputDir, 'character');
 

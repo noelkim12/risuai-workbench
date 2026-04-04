@@ -30,7 +30,7 @@ export interface Variable {
   source: 'card' | 'runtime';
 }
 
-export interface CardData {
+export interface CharxData {
   name: string;
   creator: string;
   createdAt: string;
@@ -45,3 +45,5 @@ export interface CardData {
   hasLorebook: boolean;
   isNew: boolean;
 }
+
+export type CardData = CharxData;

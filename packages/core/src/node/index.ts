@@ -22,7 +22,7 @@ import {
   isPng,
   isJpeg,
 } from './png';
-import { parseCardFile } from './card-io';
+import { parseCardFile, parseCharxFile } from './charx-io';
 import { executeLorebookPlan } from './lorebook-io';
 import {
   listJsonFilesRecursive,
@@ -39,6 +39,7 @@ export {
   parsePngTextChunks,
   stripPngTextChunks,
   decodeCharacterJsonFromChunks,
+  parseCharxFile,
   parseCardFile,
   ensureDir,
   writeJson,

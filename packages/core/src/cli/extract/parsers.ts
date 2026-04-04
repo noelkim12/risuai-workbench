@@ -51,7 +51,7 @@ export function parseCharx(buf: Buffer): {
   };
 
   for (const filename of Object.keys(unzipped)) {
-    if (filename === 'card.json') {
+    if (filename === 'charx.json') {
       result.card = JSON.parse(Buffer.from(unzipped[filename]).toString('utf-8'));
     } else if (filename === 'module.risum') {
       result.moduleData = Buffer.from(unzipped[filename]);

@@ -6,7 +6,7 @@ import {
   extractCBSVarOps,
   sanitizeFilename,
 } from '@/domain';
-import { ensureDir, parseCardFile } from '@/node';
+import { ensureDir, parseCardFile, parseCharxFile } from '@/node';
 
 describe('packages/core Phase 1 domain/node structure', () => {
   it('provides a domain entry for pure helpers only', () => {
@@ -18,6 +18,7 @@ describe('packages/core Phase 1 domain/node structure', () => {
   });
 
   it('keeps node-only helpers on the node entry', () => {
+    expect(parseCharxFile).toBeTypeOf('function');
     expect(parseCardFile).toBeTypeOf('function');
     expect(ensureDir).toBeTypeOf('function');
   });

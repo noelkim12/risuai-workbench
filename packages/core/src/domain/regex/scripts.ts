@@ -1,6 +1,6 @@
 import { extractCBSVarOps } from '../cbs/cbs';
 import { asRecord, type GenericRecord } from '../types';
-import { getCustomScriptsFromCharx } from '../card/data';
+import { getCustomScriptsFromCharx } from '../charx/data';
 import { ELEMENT_TYPES } from '../analyze/constants';
 import type { ElementCBSData } from '../analyze/correlation';
 
@@ -58,11 +58,11 @@ export function extractRegexScriptOps(script: unknown, index: number): RegexScri
 /**
  * 캐릭터 카드 객체에서 모든 정규식 스크립트의 CBS 정보를 수집
  *
- * @param card - 캐릭터 카드 객체
+ * @param charx - 캐릭터 카드 객체
  * @returns 수집된 CBS 정보 배열
  */
-export function collectRegexCBSFromCard(card: unknown): ElementCBSData[] {
-  const scripts = getCustomScriptsFromCharx(card);
+export function collectRegexCBSFromCharx(charx: unknown): ElementCBSData[] {
+  const scripts = getCustomScriptsFromCharx(charx);
   return collectRegexCBSFromScripts(scripts);
 }
 

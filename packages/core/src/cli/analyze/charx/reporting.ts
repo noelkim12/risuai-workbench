@@ -1,93 +1,76 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { MAX_VARS_IN_REPORT } from '@/domain';
+import { MAX_VARS_IN_REPORT, type LorebookStructureResult } from '@/domain';
 import { mdRow } from '../../shared';
-import { type HtmlResult, type LorebookRegexCorrelation, type UnifiedVarEntry } from './types';
+import {
+  type CharxReportData,
+  type HtmlResult,
+  type LorebookRegexCorrelation,
+  type UnifiedVarEntry,
+} from './types';
 
-interface ReportData {
-  card: unknown;
-  cardName: string;
-  unifiedGraph: Map<string, UnifiedVarEntry>;
-  lorebookRegexCorrelation: LorebookRegexCorrelation;
-  lorebookStructure: {
-    folders: Array<{ id?: string; name?: string }>;
-    entries: Array<{
-      name: string;
-      folder?: string | null;
-      enabled?: boolean;
-      constant?: boolean;
-    }>;
-    stats: {
-      totalEntries: number;
-      activationModes: { normal: number; constant: number; selective: number };
-      enabledCount: number;
-      withCBS: number;
-    };
-    keywords: { overlaps: Record<string, string[]> };
-  };
-  defaultVariables: Record<string, string>;
-  htmlAnalysis: HtmlResult;
-}
-
-function getCardSpec(card: unknown): string {
-  if (typeof card !== 'object' || card == null) return 'unknown';
-  const record = card as { spec?: string; data?: { spec?: string } };
+function getCharxSpec(charx: unknown): string {
+  if (typeof charx !== 'object' || charx == null) return 'unknown';
+  const record = charx as { spec?: string; data?: { spec?: string } };
   return record.data?.spec || record.spec || 'unknown';
 }
 
-export function renderMarkdown(data: ReportData, outputDir: string): void {
-  const out: string[] = [];
+/** 수집·분석 데이터를 Markdown 포맷 리포트로 렌더링하여 analysis/ 디렉토리에 저장한다. */
+export function renderMarkdown(data: CharxReportData, outputDir: string): void {
+  const sections = [
+    renderHeader(data),
+    renderUnifiedCBSGraph(data.unifiedGraph),
+    renderCrossElementSummary(data.unifiedGraph),
+    renderLorebookRegexCorrelation(data.lorebookRegexCorrelation),
+    renderDefaultVariablesMapping(data.defaultVariables, data.unifiedGraph),
+    renderHTMLAnalysis(data.htmlAnalysis),
+    renderLorebookStructure(data.lorebookStructure),
+    renderUnmappedVariables(data.unifiedGraph),
+  ];
 
-  renderHeader(out, data);
-  out.push('', '---', '');
-  renderUnifiedCBSGraph(out, data.unifiedGraph);
-  out.push('', '---', '');
-  renderCrossElementSummary(out, data.unifiedGraph);
-  out.push('', '---', '');
-  renderLorebookRegexCorrelation(out, data.lorebookRegexCorrelation);
-  out.push('', '---', '');
-  renderDefaultVariablesMapping(out, data.defaultVariables, data.unifiedGraph);
-  out.push('', '---', '');
-  renderHTMLAnalysis(out, data.htmlAnalysis);
-  out.push('', '---', '');
-  renderLorebookStructure(out, data.lorebookStructure);
-  out.push('', '---', '');
-  renderUnmappedVariables(out, data.unifiedGraph);
+  const out: string[] = [];
+  for (let i = 0; i < sections.length; i += 1) {
+    out.push(...sections[i]);
+    if (i < sections.length - 1) {
+      out.push('', '---', '');
+    }
+  }
 
   const analysisDir = path.join(outputDir, 'analysis');
   fs.mkdirSync(analysisDir, { recursive: true });
-  fs.writeFileSync(path.join(analysisDir, 'card-analysis.md'), out.join('\n'), 'utf8');
+  fs.writeFileSync(path.join(analysisDir, 'charx-analysis.md'), out.join('\n'), 'utf8');
 }
 
-function renderHeader(out: string[], data: ReportData): void {
-  const specVersion = getCardSpec(data.card);
+function renderHeader(data: CharxReportData): string[] {
+  const specVersion = getCharxSpec(data.charx);
   const hasHTML = Boolean(data.htmlAnalysis?.cbsData);
   const varCount = data.unifiedGraph ? data.unifiedGraph.size : 0;
 
-  out.push(`# ${data.cardName} — Character Card Analysis`);
-  out.push('');
-  out.push('> Auto-generated comprehensive analysis of RisuAI character card structure.');
-  out.push('');
-  out.push('## Card Info');
-  out.push('| Metric | Value |');
-  out.push('|--------|-------|');
-  out.push(mdRow(['Card Name', data.cardName || 'unknown']));
-  out.push(mdRow(['Spec Version', specVersion]));
-  out.push(mdRow(['Lorebook Entries', String(data.lorebookStructure?.stats?.totalEntries || 0)]));
-  out.push(mdRow(['Regex Scripts', String(0)]));
-  out.push(mdRow(['Lua Files', String(0)]));
-  out.push(mdRow(['HTML Present', hasHTML ? 'Yes' : 'No']));
-  out.push(mdRow(['Variables Count', String(varCount)]));
-  out.push('');
+  return [
+    `# ${data.characterName} — Character Card Analysis`,
+    '',
+    '> Auto-generated comprehensive analysis of RisuAI character card structure.',
+    '',
+    '## Card Info',
+    '| Metric | Value |',
+    '|--------|-------|',
+    mdRow(['Card Name', data.characterName || 'unknown']),
+    mdRow(['Spec Version', specVersion]),
+    mdRow(['Lorebook Entries', String(data.lorebookStructure?.stats?.totalEntries || 0)]),
+    mdRow(['Regex Scripts', String(0)]),
+    mdRow(['Lua Files', String(0)]),
+    mdRow(['HTML Present', hasHTML ? 'Yes' : 'No']),
+    mdRow(['Variables Count', String(varCount)]),
+    '',
+  ];
 }
 
-function renderUnifiedCBSGraph(out: string[], unifiedGraph: Map<string, UnifiedVarEntry>): void {
-  out.push('## Unified CBS Variable Graph');
-  out.push('');
+function renderUnifiedCBSGraph(unifiedGraph: Map<string, UnifiedVarEntry>): string[] {
+  const out: string[] = ['## Unified CBS Variable Graph', ''];
 
   if (!unifiedGraph || unifiedGraph.size === 0) {
     out.push('> ℹ️ No data available');
-    return;
+    return out;
   }
 
   const totalSize = unifiedGraph.size;
@@ -114,18 +97,15 @@ function renderUnifiedCBSGraph(out: string[], unifiedGraph: Map<string, UnifiedV
   }
 
   out.push('');
+  return out;
 }
 
-function renderCrossElementSummary(
-  out: string[],
-  unifiedGraph: Map<string, UnifiedVarEntry>,
-): void {
-  out.push('## Cross-Element Summary');
-  out.push('');
+function renderCrossElementSummary(unifiedGraph: Map<string, UnifiedVarEntry>): string[] {
+  const out: string[] = ['## Cross-Element Summary', ''];
 
   if (!unifiedGraph || unifiedGraph.size === 0) {
     out.push('> ℹ️ No data available');
-    return;
+    return out;
   }
 
   const pairCounts: Record<string, number> = {};
@@ -145,7 +125,7 @@ function renderCrossElementSummary(
   const pairs = Object.entries(pairCounts).filter(([, count]) => count > 0);
   if (pairs.length === 0) {
     out.push('> ℹ️ No cross-element variable sharing detected');
-    return;
+    return out;
   }
 
   out.push('| Element Pair | Shared Variables |');
@@ -155,23 +135,20 @@ function renderCrossElementSummary(
   }
 
   out.push('');
+  return out;
 }
 
-function renderLorebookRegexCorrelation(
-  out: string[],
-  correlation: LorebookRegexCorrelation,
-): void {
-  out.push('## Lorebook ↔ Regex Correlation');
-  out.push('');
+function renderLorebookRegexCorrelation(correlation: LorebookRegexCorrelation): string[] {
+  const out: string[] = ['## Lorebook ↔ Regex Correlation', ''];
 
   if (!correlation || correlation.sharedVars.length === 0) {
     out.push('> ℹ️ No data available');
     out.push('');
     if (correlation) {
-      renderOnlyVarsList(out, 'Lorebook-Only Variables', correlation.lorebookOnlyVars);
-      renderOnlyVarsList(out, 'Regex-Only Variables', correlation.regexOnlyVars);
+      out.push(...renderOnlyVarsList('Lorebook-Only Variables', correlation.lorebookOnlyVars));
+      out.push(...renderOnlyVarsList('Regex-Only Variables', correlation.regexOnlyVars));
     }
-    return;
+    return out;
   }
 
   out.push('### Shared Variables');
@@ -191,33 +168,32 @@ function renderLorebookRegexCorrelation(
   }
 
   out.push('');
-  renderOnlyVarsList(out, 'Lorebook-Only Variables', correlation.lorebookOnlyVars);
-  renderOnlyVarsList(out, 'Regex-Only Variables', correlation.regexOnlyVars);
+  out.push(...renderOnlyVarsList('Lorebook-Only Variables', correlation.lorebookOnlyVars));
+  out.push(...renderOnlyVarsList('Regex-Only Variables', correlation.regexOnlyVars));
+  return out;
 }
 
-function renderOnlyVarsList(out: string[], title: string, vars: string[]): void {
-  if (!vars || vars.length === 0) return;
+function renderOnlyVarsList(title: string, vars: string[]): string[] {
+  if (!vars || vars.length === 0) return [];
 
-  out.push(`### ${title}`);
-  out.push('');
-  for (const variable of vars) {
-    out.push(`- \`${variable}\``);
-  }
-  out.push('');
+  return [
+    `### ${title}`,
+    '',
+    ...vars.map((variable) => `- \`${variable}\``),
+    '',
+  ];
 }
 
 function renderDefaultVariablesMapping(
-  out: string[],
   defaultVariables: Record<string, string>,
   unifiedGraph: Map<string, UnifiedVarEntry>,
-): void {
-  out.push('## DefaultVariables Mapping');
-  out.push('');
+): string[] {
+  const out: string[] = ['## DefaultVariables Mapping', ''];
 
   const keys = Object.keys(defaultVariables || {});
   if (keys.length === 0) {
     out.push('> ℹ️ No data available');
-    return;
+    return out;
   }
 
   out.push('| Variable | Default Value | Used By |');
@@ -232,15 +208,15 @@ function renderDefaultVariablesMapping(
   }
 
   out.push('');
+  return out;
 }
 
-function renderHTMLAnalysis(out: string[], htmlAnalysis: HtmlResult): void {
-  out.push('## BackgroundHTML Analysis');
-  out.push('');
+function renderHTMLAnalysis(htmlAnalysis: HtmlResult): string[] {
+  const out: string[] = ['## BackgroundHTML Analysis', ''];
 
   if (!htmlAnalysis || !htmlAnalysis.cbsData) {
     out.push('> ℹ️ No BackgroundHTML found in this card');
-    return;
+    return out;
   }
 
   const reads = htmlAnalysis.cbsData.reads || new Set<string>();
@@ -269,18 +245,16 @@ function renderHTMLAnalysis(out: string[], htmlAnalysis: HtmlResult): void {
     }
     out.push('');
   }
+
+  return out;
 }
 
-function renderLorebookStructure(
-  out: string[],
-  lorebookStructure: ReportData['lorebookStructure'],
-): void {
-  out.push('## Lorebook Structure');
-  out.push('');
+function renderLorebookStructure(lorebookStructure: LorebookStructureResult): string[] {
+  const out: string[] = ['## Lorebook Structure', ''];
 
   if (!lorebookStructure || lorebookStructure.stats.totalEntries === 0) {
     out.push('> ℹ️ No data available');
-    return;
+    return out;
   }
 
   const { folders, entries, stats, keywords } = lorebookStructure;
@@ -337,15 +311,16 @@ function renderLorebookStructure(
     }
     out.push('');
   }
+
+  return out;
 }
 
-function renderUnmappedVariables(out: string[], unifiedGraph: Map<string, UnifiedVarEntry>): void {
-  out.push('## Unmapped Variables');
-  out.push('');
+function renderUnmappedVariables(unifiedGraph: Map<string, UnifiedVarEntry>): string[] {
+  const out: string[] = ['## Unmapped Variables', ''];
 
   if (!unifiedGraph || unifiedGraph.size === 0) {
     out.push('> ℹ️ No data available');
-    return;
+    return out;
   }
 
   const isolated = [...unifiedGraph.entries()].filter(
@@ -353,7 +328,7 @@ function renderUnmappedVariables(out: string[], unifiedGraph: Map<string, Unifie
   );
   if (isolated.length === 0) {
     out.push('> ℹ️ No unmapped (isolated) variables found');
-    return;
+    return out;
   }
 
   out.push('Variables that appear in only one element type:');
@@ -371,4 +346,5 @@ function renderUnmappedVariables(out: string[], unifiedGraph: Map<string, Unifie
   }
 
   out.push('');
+  return out;
 }

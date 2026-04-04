@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  analyzeLorebookStructureFromCard,
+  analyzeLorebookStructureFromCharx,
   buildLorebookRegexCorrelation,
   buildUnifiedCBSGraph,
 } from '@/domain';
@@ -18,6 +18,9 @@ import {
 import { renderMarkdown } from './reporting';
 import { renderHtml } from './reporting/htmlRenderer';
 import {
+  type CharxReportData,
+  type CollectResult,
+  type CorrelateResult,
   type ElementCBSData,
   type HtmlResult,
   type LorebookRegexCorrelation,
@@ -27,7 +30,7 @@ import {
 const HELP_TEXT = `
   🐿️ RisuAI Character Card Analyzer
 
-  Usage:  node analyze-card.js <output-dir> [options]
+  Usage:  node analyze-charx.js <output-dir> [options]
 
   Options:
     --no-markdown     마크다운 리포트 생성 안 함
@@ -41,11 +44,12 @@ const HELP_TEXT = `
     4. REPORT - 리포트 생성
 
   Examples:
-    node analyze-card.js ./output
-    node analyze-card.js ./output --no-markdown
+    node analyze-charx.js ./output
+    node analyze-charx.js ./output --no-markdown
 `;
 
-export function runAnalyzeCardWorkflow(argv: readonly string[]): number {
+/** 캐릭터 카드 분석 CLI 워크플로우. COLLECT → CORRELATE → ANALYZE → REPORT 4단계 파이프라인을 실행한다. */
+export function runAnalyzeCharxWorkflow(argv: readonly string[]): number {
   const helpMode = argv.includes('-h') || argv.includes('--help') || argv.length === 0;
   const noMarkdown = argv.includes('--no-markdown');
   const noHtml = argv.includes('--no-html');
@@ -56,59 +60,39 @@ export function runAnalyzeCardWorkflow(argv: readonly string[]): number {
     return 0;
   }
 
-  const cardJsonPath = path.join(outputDir, 'card.json');
-  if (!fs.existsSync(cardJsonPath)) {
-    console.error(`\n  ❌ card.json을 찾을 수 없습니다: ${cardJsonPath}\n`);
+  const charxJsonPath = resolveCharxJsonPath(outputDir);
+  if (!charxJsonPath) {
+    console.error(`\n  ❌ charx.json을 찾을 수 없습니다: ${path.join(outputDir, 'charx.json')}\n`);
     return 1;
   }
 
   try {
-    runMain(outputDir, cardJsonPath, { noMarkdown, noHtml });
+    runMain(outputDir, charxJsonPath, { noMarkdown, noHtml });
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error(`\n  ❌ analyze-card 실행 실패: ${message}\n`);
+    console.error(`\n  ❌ analyze-charx 실행 실패: ${message}\n`);
     return 1;
   }
 }
 
-function runMain(
-  outputDir: string,
-  cardJsonPath: string,
-  options: { noMarkdown: boolean; noHtml: boolean },
-): void {
-  console.log('\n  🐿️ RisuAI Character Card Analyzer\n');
-
-  const resolvedOutDir = path.resolve(outputDir);
-  const analysisDir = path.join(resolvedOutDir, 'analysis');
-  ensureDir(analysisDir);
-
-  console.log('\n  ═══ Phase 1: COLLECT ═══');
-
-  let card: unknown;
-  try {
-    card = JSON.parse(fs.readFileSync(cardJsonPath, 'utf8'));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`card.json 파싱 실패: ${message}`);
-  }
-
+function runCollect(charx: unknown, resolvedOutDir: string): CollectResult {
   const lorebookCBS = safeCollect(
-    () => collectLorebookCBS(card, resolvedOutDir),
+    () => collectLorebookCBS(charx, resolvedOutDir),
     'Lorebook CBS 수집 실패',
     [] as ElementCBSData[],
   );
   const regexCBS = safeCollect(
-    () => collectRegexCBS(card, resolvedOutDir),
+    () => collectRegexCBS(charx, resolvedOutDir),
     'Regex CBS 수집 실패',
     [] as ElementCBSData[],
   );
-  const variablesResult = safeCollect(
-    () => collectVariablesCBS(card, resolvedOutDir),
+  const variables = safeCollect(
+    () => collectVariablesCBS(charx, resolvedOutDir),
     'Variables 수집 실패',
     { variables: {}, cbsData: [] } as VariablesResult,
   );
-  const htmlResult = safeCollect(() => collectHTMLCBS(card, resolvedOutDir), 'HTML CBS 수집 실패', {
+  const html = safeCollect(() => collectHTMLCBS(charx, resolvedOutDir), 'HTML CBS 수집 실패', {
     cbsData: null,
     assetRefs: [],
   } as HtmlResult);
@@ -123,29 +107,31 @@ function runMain(
     [] as ElementCBSData[],
   );
 
-  const defaultVariables = variablesResult.variables || {};
-  console.log(
-    `     ✅ Lorebook: ${lorebookCBS.length}, Regex: ${regexCBS.length}, TS: ${tsCBS.length}, Lua: ${luaCBS.length}`,
-  );
+  return { lorebookCBS, regexCBS, variables, html, tsCBS, luaCBS };
+}
 
-  console.log('\n  ═══ Phase 2: CORRELATE ═══');
-
-  const allCollected = [
-    ...lorebookCBS,
-    ...regexCBS,
-    ...tsCBS,
-    ...luaCBS,
-    ...(htmlResult.cbsData ? [htmlResult.cbsData] : []),
+function runCorrelate(collected: CollectResult): CorrelateResult {
+  const allCBSData = [
+    ...collected.lorebookCBS,
+    ...collected.regexCBS,
+    ...collected.tsCBS,
+    ...collected.luaCBS,
+    ...(collected.html.cbsData ? [collected.html.cbsData] : []),
   ];
+  const defaultVariables = collected.variables.variables || {};
 
   const unifiedGraph = safeCollect(
-    () => buildUnifiedCBSGraph(allCollected, defaultVariables),
+    () => buildUnifiedCBSGraph(allCBSData, defaultVariables),
     'Unified graph 빌드 실패',
     new Map(),
   );
 
   const lorebookRegexCorrelation = safeCollect(
-    () => buildLorebookRegexCorrelation(lorebookCBS, regexCBS) as LorebookRegexCorrelation,
+    () =>
+      buildLorebookRegexCorrelation(
+        collected.lorebookCBS,
+        collected.regexCBS,
+      ) as LorebookRegexCorrelation,
     'LB-RX 상관관계 실패',
     {
       sharedVars: [],
@@ -155,13 +141,43 @@ function runMain(
     } as LorebookRegexCorrelation,
   );
 
+  return { unifiedGraph, lorebookRegexCorrelation, defaultVariables };
+}
+
+function runMain(
+  outputDir: string,
+  charxJsonPath: string,
+  options: { noMarkdown: boolean; noHtml: boolean },
+): void {
+  console.log('\n  🐿️ RisuAI Character Card Analyzer\n');
+
+  const resolvedOutDir = path.resolve(outputDir);
+  const analysisDir = path.join(resolvedOutDir, 'analysis');
+  ensureDir(analysisDir);
+
+  let charx: unknown;
+  try {
+    charx = JSON.parse(fs.readFileSync(charxJsonPath, 'utf8'));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`${path.basename(charxJsonPath)} 파싱 실패: ${message}`);
+  }
+
+  console.log('\n  ═══ Phase 1: COLLECT ═══');
+  const collected = runCollect(charx, resolvedOutDir);
   console.log(
-    `     ✅ Unified graph: ${unifiedGraph.size} variables, LB↔RX shared: ${lorebookRegexCorrelation.summary.totalShared}`,
+    `     ✅ Lorebook: ${collected.lorebookCBS.length}, Regex: ${collected.regexCBS.length}, TS: ${collected.tsCBS.length}, Lua: ${collected.luaCBS.length}`,
+  );
+
+  console.log('\n  ═══ Phase 2: CORRELATE ═══');
+  const correlated = runCorrelate(collected);
+  console.log(
+    `     ✅ Unified graph: ${correlated.unifiedGraph.size} variables, LB↔RX shared: ${correlated.lorebookRegexCorrelation.summary.totalShared}`,
   );
 
   console.log('\n  ═══ Phase 3: ANALYZE ═══');
   const lorebookStructure = safeCollect(
-    () => analyzeLorebookStructureFromCard(card),
+    () => analyzeLorebookStructureFromCharx(charx),
     'Lorebook 구조 분석 실패',
     {
       folders: [],
@@ -176,33 +192,25 @@ function runMain(
       keywords: { all: [], overlaps: {} },
     },
   );
-
   console.log(
     `     ✅ Lorebook: ${lorebookStructure.stats.totalEntries} entries, ${lorebookStructure.stats.totalFolders} folders`,
   );
 
   console.log('\n  ═══ Phase 4: REPORT ═══');
-
-  const cardName = resolveCardName(card);
-  const reportData = {
-    card,
-    cardName,
-    unifiedGraph,
-    lorebookRegexCorrelation,
+  const characterName = resolveCharxName(charx);
+  const reportData: CharxReportData = {
+    charx,
+    characterName,
+    ...correlated,
     lorebookStructure,
-    defaultVariables,
-    htmlAnalysis: htmlResult,
-    lorebookCBS,
-    regexCBS,
-    tsCBS,
-    luaCBS,
+    htmlAnalysis: collected.html,
   };
 
   if (!options.noMarkdown) {
     try {
       renderMarkdown(reportData, resolvedOutDir);
       console.log(
-        `     ✅ card-analysis.md → ${path.relative('.', path.join(analysisDir, 'card-analysis.md'))}`,
+        `     ✅ charx-analysis.md → ${path.relative('.', path.join(analysisDir, 'charx-analysis.md'))}`,
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -214,7 +222,7 @@ function runMain(
     try {
       renderHtml(reportData, resolvedOutDir);
       console.log(
-        `     ✅ card-analysis.html → ${path.relative('.', path.join(analysisDir, 'card-analysis.html'))}`,
+        `     ✅ charx-analysis.html → ${path.relative('.', path.join(analysisDir, 'charx-analysis.html'))}`,
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -227,9 +235,16 @@ function runMain(
   console.log('  ────────────────────────────────────────\n');
 }
 
-function resolveCardName(card: unknown): string {
-  if (typeof card !== 'object' || card == null) return 'Unknown';
-  const record = card as { data?: { name?: unknown }; name?: unknown };
+function resolveCharxJsonPath(outputDir: string): string | null {
+  const primary = path.join(outputDir, 'charx.json');
+  if (fs.existsSync(primary)) return primary;
+
+  return null;
+}
+
+function resolveCharxName(charx: unknown): string {
+  if (typeof charx !== 'object' || charx == null) return 'Unknown';
+  const record = charx as { data?: { name?: unknown }; name?: unknown };
   if (typeof record.data?.name === 'string' && record.data.name.length > 0) return record.data.name;
   if (typeof record.name === 'string' && record.name.length > 0) return record.name;
   return 'Unknown';

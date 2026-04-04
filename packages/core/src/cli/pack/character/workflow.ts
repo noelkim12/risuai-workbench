@@ -4,7 +4,6 @@ import crypto from 'node:crypto';
 import { zipSync } from 'fflate';
 import { ensureDir } from '@/node/fs-helpers';
 import {
-  PNG_SIGNATURE,
   PNG_1X1_TRANSPARENT,
   JPEG_1X1,
   writePngTextChunks,
@@ -37,9 +36,9 @@ const HELP_TEXT = `
     -h, --help          도움말
 
   Notes:
-    - card.json은 필수입니다.
-    - lorebooks/, regex/, assets/, html/, variables/, character/가 있으면 card.json 위에 병합합니다.
-    - lua/*.lua는 자동 역변환하지 않습니다 (기존 card.json의 triggerscript 유지).
+    - charx.json이 필수 입력입니다.
+    - lorebooks/, regex/, assets/, html/, variables/, character/가 있으면 charx.json 위에 병합합니다.
+    - lua/*.lua는 자동 역변환하지 않습니다 (기존 charx.json의 triggerscript 유지).
     - 현재는 chara_card_v3만 지원합니다.
     - cover를 지정하지 않으면 png/jpg는 1x1 fallback 이미지를 사용합니다.
 `;
@@ -81,38 +80,38 @@ export function runPackWorkflow(argv: readonly string[]): number {
 
 function runMain(options: PackOptions): void {
   const resolvedIn = path.resolve(options.inDir);
-  const cardPath = path.join(resolvedIn, 'card.json');
-  if (!fs.existsSync(cardPath)) {
-    throw new Error(`card.json을 찾을 수 없습니다: ${cardPath}`);
+  const charxPath = resolveCharxJsonPath(resolvedIn);
+  if (!charxPath) {
+    throw new Error(`charx.json을 찾을 수 없습니다: ${path.join(resolvedIn, 'charx.json')}`);
   }
 
-  const card = readJson(cardPath) as any;
-  if (!card || card.spec !== 'chara_card_v3') {
+  const charx = readJson(charxPath) as any;
+  if (!charx || charx.spec !== 'chara_card_v3') {
     throw new Error('현재 pack.js는 spec=chara_card_v3 카드만 지원합니다.');
   }
 
   console.log('\n  🐿️ RisuAI Character Card Packer\n');
   console.log(`  입력: ${path.relative('.', resolvedIn)}`);
 
-  const mergedCard = mergeExtractedComponents(card, resolvedIn);
+  const mergedCharx = mergeExtractedComponents(charx, resolvedIn);
   const targetFormat = resolveTargetFormat(resolvedIn, options.formatArg);
   const { outPath, baseName } = resolveOutputPath({
     inRoot: resolvedIn,
     outArg: options.outArg,
     nameArg: options.nameArg,
-    card: mergedCard,
+    charx: mergedCharx,
     format: targetFormat,
   });
   ensureDir(path.dirname(outPath));
 
   if (targetFormat === 'png') {
-    const pngBuf = buildPngCardBuffer(mergedCard, resolvedIn, options.coverArg);
+    const pngBuf = buildPngCharxBuffer(mergedCharx, resolvedIn, options.coverArg);
     fs.writeFileSync(outPath, pngBuf);
   } else if (targetFormat === 'charx') {
-    const charxBuf = buildCharxBuffer(mergedCard, resolvedIn);
+    const charxBuf = buildCharxBuffer(mergedCharx, resolvedIn);
     fs.writeFileSync(outPath, charxBuf);
   } else if (targetFormat === 'charx-jpg') {
-    const charxBuf = buildCharxBuffer(mergedCard, resolvedIn);
+    const charxBuf = buildCharxBuffer(mergedCharx, resolvedIn);
     const jpegCover = resolveCoverBytes(resolvedIn, options.coverArg, ['.jpg', '.jpeg'], JPEG_1X1);
     fs.writeFileSync(outPath, Buffer.concat([jpegCover, charxBuf]));
   } else {
@@ -123,8 +122,8 @@ function runMain(options: PackOptions): void {
   console.log(`  출력 이름: ${baseName}\n`);
 }
 
-function mergeExtractedComponents(card: any, inRoot: string): any {
-  const next = structuredClone(card);
+function mergeExtractedComponents(charx: any, inRoot: string): any {
+  const next = structuredClone(charx);
   next.data = next.data || {};
   next.data.extensions = next.data.extensions || {};
   next.data.extensions.risuai = next.data.extensions.risuai || {};
@@ -138,20 +137,20 @@ function mergeExtractedComponents(card: any, inRoot: string): any {
   return next;
 }
 
-function mergeLorebooks(card: any, inRoot: string): void {
+function mergeLorebooks(charx: any, inRoot: string): void {
   const loreDir = path.join(inRoot, 'lorebooks');
   if (!isDir(loreDir)) return;
 
   const rebuilt = readLorebookEntries(loreDir);
   if (!rebuilt) return;
 
-  card.data.character_book = card.data.character_book || {};
-  card.data.character_book.entries = rebuilt.characterEntries;
+  charx.data.character_book = charx.data.character_book || {};
+  charx.data.character_book.entries = rebuilt.characterEntries;
 
   if (rebuilt.moduleEntries.length > 0) {
-    card.data.extensions.risuai._moduleLorebook = rebuilt.moduleEntries;
+    charx.data.extensions.risuai._moduleLorebook = rebuilt.moduleEntries;
   } else {
-    delete card.data.extensions.risuai._moduleLorebook;
+    delete charx.data.extensions.risuai._moduleLorebook;
   }
 }
 
@@ -210,13 +209,13 @@ function readLorebookEntries(loreDir: string): { characterEntries: any[]; module
   return { characterEntries: fallbackEntries, moduleEntries: [] };
 }
 
-function mergeRegex(card: any, inRoot: string): void {
+function mergeRegex(charx: any, inRoot: string): void {
   const regexDir = path.join(inRoot, 'regex');
   if (!isDir(regexDir)) return;
 
   const files = resolveOrderedFiles(regexDir, listJsonFilesFlat(regexDir));
   if (files.length === 0) {
-    card.data.extensions.risuai.customScripts = [];
+    charx.data.extensions.risuai.customScripts = [];
     return;
   }
 
@@ -229,22 +228,22 @@ function mergeRegex(card: any, inRoot: string): void {
     scripts.push(raw);
   }
 
-  card.data.extensions.risuai.customScripts = scripts;
+  charx.data.extensions.risuai.customScripts = scripts;
 }
 
-function mergeBackgroundHtml(card: any, inRoot: string): void {
+function mergeBackgroundHtml(charx: any, inRoot: string): void {
   const htmlPath = path.join(inRoot, 'html', 'background.html');
   if (!fs.existsSync(htmlPath)) return;
-  card.data.extensions.risuai.backgroundHTML = fs.readFileSync(htmlPath, 'utf-8');
+  charx.data.extensions.risuai.backgroundHTML = fs.readFileSync(htmlPath, 'utf-8');
 }
 
-function mergeDefaultVariables(card: any, inRoot: string): void {
+function mergeDefaultVariables(charx: any, inRoot: string): void {
   const txtPath = path.join(inRoot, 'variables', 'default.txt');
   if (!fs.existsSync(txtPath)) return;
-  card.data.extensions.risuai.defaultVariables = fs.readFileSync(txtPath, 'utf-8');
+  charx.data.extensions.risuai.defaultVariables = fs.readFileSync(txtPath, 'utf-8');
 }
 
-function mergeCharacter(card: any, inRoot: string): void {
+function mergeCharacter(charx: any, inRoot: string): void {
   const characterDir = path.join(inRoot, 'character');
   if (!isDir(characterDir)) return;
 
@@ -260,7 +259,7 @@ function mergeCharacter(card: any, inRoot: string): void {
   for (const [fileName, targetPath] of Object.entries(textFieldMap)) {
     const filePath = path.join(characterDir, fileName);
     if (!fs.existsSync(filePath)) continue;
-    setNestedValue(card, targetPath, fs.readFileSync(filePath, 'utf-8'));
+    setNestedValue(charx, targetPath, fs.readFileSync(filePath, 'utf-8'));
   }
 
   const greetingsPath = path.join(characterDir, 'alternate_greetings.json');
@@ -269,7 +268,7 @@ function mergeCharacter(card: any, inRoot: string): void {
     if (!Array.isArray(greetings)) {
       throw new Error(`잘못된 alternate_greetings.json 형식: ${greetingsPath}`);
     }
-    card.data.alternate_greetings = greetings;
+    charx.data.alternate_greetings = greetings;
   }
 
   const metadataPath = path.join(characterDir, 'metadata.json');
@@ -290,15 +289,15 @@ function mergeCharacter(card: any, inRoot: string): void {
 
   for (const [key, targetPath] of Object.entries(stringMetadataFields)) {
     if (typeof metadata[key] === 'string' || metadata[key] === null) {
-      setNestedValue(card, targetPath, metadata[key]);
+      setNestedValue(charx, targetPath, metadata[key]);
     }
   }
 
   if (typeof metadata.utilityBot === 'boolean') {
-    card.data.extensions.risuai.utilityBot = metadata.utilityBot;
+    charx.data.extensions.risuai.utilityBot = metadata.utilityBot;
   }
   if (typeof metadata.lowLevelAccess === 'boolean') {
-    card.data.extensions.risuai.lowLevelAccess = metadata.lowLevelAccess;
+    charx.data.extensions.risuai.lowLevelAccess = metadata.lowLevelAccess;
   }
 }
 
@@ -323,11 +322,11 @@ function resolveOutputPath(params: {
   inRoot: string;
   outArg: string | null;
   nameArg: string | null;
-  card: any;
+  charx: any;
   format: PackFormat;
 }): { outPath: string; baseName: string } {
   const defaultBase = sanitizeFilename(
-    params.nameArg || params.card.data?.name || 'character',
+    params.nameArg || params.charx.data?.name || 'character',
     'character',
   );
   const ext = params.format === 'png' ? '.png' : params.format === 'charx-jpg' ? '.jpg' : '.charx';
@@ -359,13 +358,13 @@ function resolveOutputPath(params: {
   return { outPath: path.join(parsed.dir || '.', `${finalName}${finalExt}`), baseName: finalName };
 }
 
-function buildPngCardBuffer(card: any, inRoot: string, coverArgPath: string | null): Buffer {
-  const work = structuredClone(card);
+function buildPngCharxBuffer(charx: any, inRoot: string, coverArgPath: string | null): Buffer {
+  const work = structuredClone(charx);
   const assetBlobs = collectAssetBuffers(work, inRoot);
 
   let cover = resolveCoverBytes(inRoot, coverArgPath, ['.png'], PNG_1X1_TRANSPARENT, {
     allowFromAsset: true,
-    card: work,
+    charx: work,
     assetBlobs,
   });
 
@@ -403,8 +402,8 @@ function buildPngCardBuffer(card: any, inRoot: string, coverArgPath: string | nu
   return writePngTextChunks(cover, chunks);
 }
 
-function buildCharxBuffer(card: any, inRoot: string): Buffer {
-  const work = structuredClone(card);
+function buildCharxBuffer(charx: any, inRoot: string): Buffer {
+  const work = structuredClone(charx);
   const assetBlobs = collectAssetBuffers(work, inRoot);
   const zipEntries: Record<string, Uint8Array | Buffer> = {};
   const usedPaths = new Set<string>();
@@ -439,20 +438,27 @@ function buildCharxBuffer(card: any, inRoot: string): Buffer {
     zipEntries[toPosix(rel)] = new Uint8Array(blob);
   }
 
-  const moduleObj = buildModuleFromCard(work);
+  const moduleObj = buildModuleFromCharx(work);
   delete work.data.extensions.risuai.triggerscript;
   delete work.data.extensions.risuai.customScripts;
   delete work.data.extensions.risuai._moduleLorebook;
 
-  zipEntries['card.json'] = Buffer.from(`${JSON.stringify(work, null, 2)}\n`, 'utf-8');
+  zipEntries['charx.json'] = Buffer.from(`${JSON.stringify(work, null, 2)}\n`, 'utf-8');
   zipEntries['module.risum'] = encodeModuleRisum(moduleObj);
 
   return Buffer.from(zipSync(zipEntries, { level: 0 }));
 }
 
-function buildModuleFromCard(card: any): Record<string, unknown> {
-  const name = card.data?.name || 'Character';
-  const risu = card.data?.extensions?.risuai || {};
+function resolveCharxJsonPath(inRoot: string): string | null {
+  const primary = path.join(inRoot, 'charx.json');
+  if (fs.existsSync(primary)) return primary;
+
+  return null;
+}
+
+function buildModuleFromCharx(charx: any): Record<string, unknown> {
+  const name = charx.data?.name || 'Character';
+  const risu = charx.data?.extensions?.risuai || {};
   return {
     name: `${name} Module`,
     description: `Module for ${name}`,
@@ -464,7 +470,7 @@ function buildModuleFromCard(card: any): Record<string, unknown> {
   };
 }
 
-function collectAssetBuffers(card: any, inRoot: string): Map<number, Buffer> {
+function collectAssetBuffers(charx: any, inRoot: string): Map<number, Buffer> {
   const out = new Map<number, Buffer>();
   const assetDir = path.join(inRoot, 'assets');
   const manifestPath = path.join(assetDir, 'manifest.json');
@@ -483,10 +489,10 @@ function collectAssetBuffers(card: any, inRoot: string): Map<number, Buffer> {
     out.set(Number(rec.index) + 1, fs.readFileSync(filePath));
   }
 
-  for (let i = 0; i < (card.data.assets || []).length; i += 1) {
+  for (let i = 0; i < (charx.data.assets || []).length; i += 1) {
     const idx = i + 1;
     if (out.has(idx)) continue;
-    const asset = card.data.assets[i];
+    const asset = charx.data.assets[i];
     if (!asset || typeof asset.uri !== 'string') continue;
 
     if (asset.uri.startsWith('embeded://') || asset.uri.startsWith('embedded://')) {
@@ -506,7 +512,7 @@ function resolveCoverBytes(
   coverArgPath: string | null,
   exts: string[],
   fallback: Buffer,
-  opts: { allowFromAsset?: boolean; card?: any; assetBlobs?: Map<number, Buffer> } = {},
+  opts: { allowFromAsset?: boolean; charx?: any; assetBlobs?: Map<number, Buffer> } = {},
 ): Buffer {
   if (coverArgPath) {
     const abs = path.resolve(coverArgPath);
@@ -519,10 +525,10 @@ function resolveCoverBytes(
     }
   }
 
-  const card = opts.card;
+  const charx = opts.charx;
   const blobs = opts.assetBlobs;
-  if (opts.allowFromAsset && card && blobs) {
-    const assets = Array.isArray(card.data?.assets) ? card.data.assets : [];
+  if (opts.allowFromAsset && charx && blobs) {
+    const assets = Array.isArray(charx.data?.assets) ? charx.data.assets : [];
     for (let i = 0; i < assets.length; i += 1) {
       const asset = assets[i];
       if (!asset || asset.type !== 'icon' || asset.name !== 'main') continue;

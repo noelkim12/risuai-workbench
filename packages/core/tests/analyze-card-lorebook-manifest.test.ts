@@ -15,7 +15,7 @@ afterEach(() => {
   }
 });
 
-describe('analyze-card lorebook manifest support', () => {
+describe('analyze-charx lorebook manifest support', () => {
   it('uses manifest source metadata when reading extracted lorebooks from disk', () => {
     const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-lorebook-cbs-'));
     tempDirs.push(workDir);

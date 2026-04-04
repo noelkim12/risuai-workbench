@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { CardData, RegexScript, LorebookEntry } from 'risu-workbench-core';
+import type { CardData, CharxData, RegexScript, LorebookEntry } from 'risu-workbench-core';
 
 describe('root entry contract (1-7)', () => {
   it('should export only types and domain, not shared', async () => {
@@ -10,7 +10,9 @@ describe('root entry contract (1-7)', () => {
     expect(core.extractCBSVarOps).toBeTypeOf('function');
     expect(core.buildRisuFolderMap).toBeTypeOf('function');
     expect(core.analyzeLorebookStructure).toBeTypeOf('function');
+    expect(core.collectRegexCBSFromCharx).toBeTypeOf('function');
     expect(core.collectRegexCBSFromCard).toBeTypeOf('function');
+    expect(core.getCharxName).toBeTypeOf('function');
     expect(core.resolveAssetUri).toBeTypeOf('function');
     
     // Verify shared-only exports are NOT present (Node.js I/O helpers)
@@ -41,6 +43,8 @@ describe('root entry contract (1-7)', () => {
       hasLorebook: false,
       isNew: false,
     };
+
+    const charxData: CharxData = cardData;
     
     const regexScript: RegexScript = {
       id: 'test',
@@ -64,6 +68,7 @@ describe('root entry contract (1-7)', () => {
     };
     
     expect(cardData).toBeDefined();
+    expect(charxData).toBeDefined();
     expect(regexScript).toBeDefined();
     expect(lorebookEntry).toBeDefined();
   });

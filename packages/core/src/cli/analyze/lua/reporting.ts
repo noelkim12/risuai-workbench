@@ -8,60 +8,39 @@ import {
 } from '@/domain/analyze/lua-analysis-types';
 import { escapeHtml, mdRow } from '../../shared';
 
+/** Lua 분석 리포터의 입력 데이터. 분석 Phase 결과와 상관관계 데이터를 포함한다. */
+export interface LuaReportData {
+  filePath: string;
+  total: number;
+  analyzePhase: AnalyzePhaseResult;
+  collected: CollectedData;
+  lorebookCorrelation: LorebookCorrelation | null;
+  regexCorrelation: RegexCorrelation | null;
+}
+
 function bar(size: number, total: number): string {
   const n = total > 0 ? Math.max(1, Math.round((size / total) * 30)) : 1;
   return '█'.repeat(n) + '░'.repeat(Math.max(0, 30 - n));
 }
 
-export function runReporting(context: {
-  filePath: string;
-  markdownMode: boolean;
-  htmlMode: boolean;
-  total: number;
-  lines: string[];
-  analyzePhase: AnalyzePhaseResult;
-  collected: CollectedData;
-  lorebookCorrelation: LorebookCorrelation | null;
-  regexCorrelation: RegexCorrelation | null;
-}): void {
-  const {
-    filePath,
-    markdownMode,
-    htmlMode,
-    total,
-    lines,
-    analyzePhase,
-    collected,
-    lorebookCorrelation,
-    regexCorrelation,
-  } = context;
+/** 콘솔 요약 출력 후 옵션에 따라 Markdown/HTML 리포트를 생성한다. */
+export function runReporting(
+  data: LuaReportData,
+  options: { markdown: boolean; html: boolean },
+): void {
+  const { analyzePhase, collected, total, lorebookCorrelation, regexCorrelation } = data;
 
   printSections(analyzePhase, total);
   printTopFunctions(collected, total);
   printSummary(analyzePhase, collected, total);
   printCorrelationSummary(lorebookCorrelation, regexCorrelation);
 
-  if (markdownMode) {
-    renderMarkdown({
-      filePath,
-      total,
-      lines,
-      analyzePhase,
-      collected,
-      lorebookCorrelation,
-      regexCorrelation,
-    });
+  if (options.markdown) {
+    renderMarkdown(data);
   }
 
-  if (htmlMode) {
-    renderHtml({
-      filePath,
-      total,
-      analyzePhase,
-      collected,
-      lorebookCorrelation,
-      regexCorrelation,
-    });
+  if (options.html) {
+    renderHtml(data);
   }
 }
 
@@ -154,17 +133,9 @@ function printCorrelationSummary(
   }
 }
 
-function renderMarkdown(params: {
-  filePath: string;
-  total: number;
-  lines: string[];
-  analyzePhase: AnalyzePhaseResult;
-  collected: CollectedData;
-  lorebookCorrelation: LorebookCorrelation | null;
-  regexCorrelation: RegexCorrelation | null;
-}): void {
+function renderMarkdown(data: LuaReportData): void {
   const { filePath, total, analyzePhase, collected, lorebookCorrelation, regexCorrelation } =
-    params;
+    data;
   const filename = path.basename(filePath);
   const out: string[] = [];
 
@@ -228,16 +199,9 @@ function renderMarkdown(params: {
   console.log(`  ✅ Markdown exported to ${mdPath}`);
 }
 
-function renderHtml(params: {
-  filePath: string;
-  total: number;
-  analyzePhase: AnalyzePhaseResult;
-  collected: CollectedData;
-  lorebookCorrelation: LorebookCorrelation | null;
-  regexCorrelation: RegexCorrelation | null;
-}): void {
+function renderHtml(data: LuaReportData): void {
   const { filePath, total, analyzePhase, collected, lorebookCorrelation, regexCorrelation } =
-    params;
+    data;
 
   const html = `<!doctype html>
 <html lang="en">

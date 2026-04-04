@@ -4,7 +4,7 @@ import {
   getLorebookEntriesFromCharx,
   getModuleLorebookEntries,
   getAllLorebookEntriesFromCharx,
-} from '../card/data';
+} from '../charx/data';
 import { buildFolderMap, resolveFolderName, type RisuCharbookEntry } from './folders';
 
 /**
@@ -151,11 +151,11 @@ export function analyzeLorebookStructure(entries: GenericRecord[]): LorebookStru
 
 /**
  * 캐릭터 카드 객체에서 로어북 구조를 분석합니다.
- * @param card - RisuAI 캐릭터 카드 객체
+ * @param charx - RisuAI 캐릭터 카드 객체
  * @returns 로어북 구조 분석 결과
  */
-export function analyzeLorebookStructureFromCard(card: unknown): LorebookStructureResult {
-  return analyzeLorebookStructure(getAllLorebookEntriesFromCharx(card));
+export function analyzeLorebookStructureFromCharx(charx: unknown): LorebookStructureResult {
+  return analyzeLorebookStructure(getAllLorebookEntriesFromCharx(charx));
 }
 
 /**
@@ -209,18 +209,18 @@ export function collectLorebookCBS(
 
 /**
  * 캐릭터 카드 객체(캐릭터 로어북 및 포함된 모듈 로어북)에서 모든 CBS 변수 연산을 수집합니다.
- * @param card - RisuAI 캐릭터 카드 객체
+ * @param charx - RisuAI 캐릭터 카드 객체
  * @returns 수집된 CBS 사용 데이터 배열
  */
-export function collectLorebookCBSFromCard(card: unknown): Array<{
+export function collectLorebookCBSFromCharx(charx: unknown): Array<{
   elementType: 'lorebook';
   elementName: string;
   reads: Set<string>;
   writes: Set<string>;
 }> {
   return [
-    ...collectLorebookCBS(getLorebookEntriesFromCharx(card)),
-    ...collectLorebookCBS(getModuleLorebookEntries(card), { prefix: '[module]' }),
+    ...collectLorebookCBS(getLorebookEntriesFromCharx(charx)),
+    ...collectLorebookCBS(getModuleLorebookEntries(charx), { prefix: '[module]' }),
   ];
 }
 

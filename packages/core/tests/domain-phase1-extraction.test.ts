@@ -6,7 +6,7 @@ import {
   analyzeLorebookStructure,
   buildLorebookRegexCorrelation,
   buildUnifiedCBSGraph,
-  collectRegexCBSFromCard,
+  collectRegexCBSFromCharx,
   parseDefaultVariablesJson,
   parseDefaultVariablesText,
 } from '@/domain';
@@ -26,7 +26,7 @@ describe('Phase 1-1 domain extraction', () => {
   });
 
   it('collects regex CBS operations from card custom scripts', () => {
-    const result = collectRegexCBSFromCard({
+    const result = collectRegexCBSFromCharx({
       data: {
         extensions: {
           risuai: {
