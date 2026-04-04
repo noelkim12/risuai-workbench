@@ -1,4 +1,4 @@
-import { ELEMENT_TYPES, MAX_VARS_IN_REPORT, type ElementType } from './constants';
+import { ELEMENT_TYPES, type ElementType } from './constants';
 import { extractCBSVarOps } from '../cbs/cbs';
 import {
   buildFolderMap as buildRisuFolderMap,
@@ -171,7 +171,7 @@ export function buildUnifiedCBSGraph(
     return a[0].localeCompare(b[0]);
   });
 
-  return new Map(sorted.slice(0, MAX_VARS_IN_REPORT));
+  return new Map(sorted);
 }
 
 /**

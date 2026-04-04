@@ -69,6 +69,20 @@ describe('Phase 1-1 domain extraction', () => {
     expect(correlation.sharedVars[0].direction).toBe('lorebook->regex');
   });
 
+  it('keeps all unified variables for downstream analyzers instead of truncating at domain level', () => {
+    const collected = Array.from({ length: 81 }, (_, index) => ({
+      elementType: 'prompt',
+      elementName: `prompt-${index}`,
+      reads: new Set<string>([`var_${index}`]),
+      writes: new Set<string>(),
+    }));
+
+    const graph = buildUnifiedCBSGraph(collected, {});
+
+    expect(graph.size).toBe(81);
+    expect(graph.has('var_80')).toBe(true);
+  });
+
   it('parses default variables from text and json payloads', () => {
     expect(parseDefaultVariablesText('a=1\nb\n')).toEqual({ a: '1', b: '' });
     expect(parseDefaultVariablesJson([{ key: 'x', value: 3 }, { name: 'y', value: null }])).toEqual({ x: '3', y: '' });
