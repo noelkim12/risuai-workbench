@@ -45,8 +45,33 @@ describe('charx extract integration', () => {
     expect(existsSync(path.join(outDir, 'analysis', 'charx-analysis.html'))).toBe(true);
 
     const analysisHtml = readFileSync(path.join(outDir, 'analysis', 'charx-analysis.html'), 'utf-8');
-    expect(analysisHtml).toContain('data-panel-id="charx-lorebook-graph"');
+    const tabOrder = Array.from(analysisHtml.matchAll(/<button type="button" class="tab-button[^"]*" data-tab="([^"]+)">/g)).map(
+      (match) => match[1],
+    );
+    const flowSectionIndex = analysisHtml.indexOf('data-tab="flow"');
+    const graphSectionIndex = analysisHtml.indexOf('data-tab="graph"');
+    const risksSectionIndex = analysisHtml.indexOf('data-tab="risks"');
+    const flowSection = analysisHtml.match(/<section class="section-card glass p-\[22px\] mb-5" data-tab="flow">[\s\S]*?<\/section>/)?.[0] ?? '';
+    const graphSection = analysisHtml.match(/<section class="section-card glass p-\[22px\] mb-5" data-tab="graph">[\s\S]*?<\/section>/)?.[0] ?? '';
+
+    expect(tabOrder).toEqual(['overview', 'flow', 'graph', 'risks', 'sources']);
+    expect(flowSectionIndex).toBeGreaterThan(-1);
+    expect(graphSectionIndex).toBeGreaterThan(flowSectionIndex);
+    expect(risksSectionIndex).toBeGreaterThan(graphSectionIndex);
+    expect(analysisHtml).toMatch(/data-tab="graph">[^<]+<\/button>/);
+    expect(analysisHtml).toContain('data-panel-id="charx-relationship-network"');
     expect(analysisHtml).toContain('data-library="force-graph"');
+    expect(flowSection).not.toContain('data-panel-id="charx-relationship-network"');
+    expect(graphSection).toContain('data-panel-id="charx-relationship-network"');
+    expect(analysisHtml).not.toContain('charx.action.reviewIsolated');
+    expect(analysisHtml).not.toContain('charx.highlight.noBridgedMsg');
+    expect(analysisHtml).not.toContain('charx.finding.noVariables');
+    expect(analysisHtml).not.toContain('charx.flow.collectSources');
+    expect(analysisHtml).not.toContain('shell.tab.graph');
+
+    const runtimeFlowPayload = analysisHtml.match(/flowchart TD[\s\S]*?(?=<\/script>)/)?.[0] ?? '';
+    expect(runtimeFlowPayload).toContain('flowchart TD');
+    expect(runtimeFlowPayload).not.toContain('[');
 
     const charx = JSON.parse(readFileSync(path.join(outDir, 'charx.json'), 'utf-8')) as {
       spec?: string;

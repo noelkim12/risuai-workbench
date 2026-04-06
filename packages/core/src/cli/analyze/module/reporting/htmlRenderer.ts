@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { buildLorebookGraphPanel } from '../../shared/force-graph-builders';
+import { buildLorebookStructureTree } from '@/domain/lorebook/structure';
+import { buildRelationshipNetworkPanel } from '../../shared/force-graph-builders';
 import { escapeHtml } from '../../../shared';
+import { collectRegexScriptInfosFromDir } from '../../shared/cross-cutting';
 import { buildChartPanel, buildDiagramPanel, buildFindingPanel, buildTablePanel } from '../../shared/view-model';
 import { renderHtmlReportShell } from '../../shared/html-report-shell';
 import { createSourceId, dedupeSources } from '../../shared/source-links';
@@ -63,7 +65,7 @@ function computeModuleScore(data: ModuleReportData): number {
 export function renderModuleHtml(data: ModuleReportData, outputDir: string, locale: Locale = 'ko'): void {
   const sources = buildSources(data);
   const score = computeModuleScore(data);
-  const panels = buildAllPanels(data, sources, locale);
+  const panels = buildAllPanels(data, sources, outputDir, locale);
 
   const doc: AnalysisVisualizationDoc = {
     artifactType: 'module',
@@ -158,7 +160,7 @@ function buildHighlights(data: ModuleReportData, locale: Locale) {
 
 // ── Panels ───────────────────────────────────────────────────────
 
-function buildAllPanels(data: ModuleReportData, sources: VisualizationSource[], locale: Locale): VisualizationPanel[] {
+function buildAllPanels(data: ModuleReportData, sources: VisualizationSource[], outputDir: string, locale: Locale): VisualizationPanel[] {
   const panels: VisualizationPanel[] = [];
 
   // === 개요 탭 ===
@@ -166,13 +168,14 @@ function buildAllPanels(data: ModuleReportData, sources: VisualizationSource[], 
   panels.push(buildVariableConnectivityChart(data, locale));
 
   // === 구조 탭 ===
-  const lorebookGraph = buildLorebookGraphPanel('module-lorebook-graph', {
+  const relationshipNetwork = buildRelationshipNetworkPanel('module-relationship-network', {
     lorebookStructure: data.lorebookStructure,
     lorebookRegexCorrelation: data.lorebookRegexCorrelation,
     lorebookCBS: data.collected.lorebookCBS,
     regexCBS: data.collected.regexCBS,
+    regexNodeNames: collectRegexScriptInfosFromDir(path.join(outputDir, 'regex'), '[module]').map((script) => script.name),
   }, locale, 'structure');
-  if (lorebookGraph) panels.push(lorebookGraph);
+  if (relationshipNetwork) panels.push(relationshipNetwork);
 
   if (data.lorebookStructure && data.lorebookStructure.entries.length > 0) {
     panels.push(buildLorebookTreePanel(data, locale));
@@ -290,24 +293,29 @@ function buildVariableConnectivityChart(data: ModuleReportData, locale: Locale):
 function buildLorebookTreePanel(data: ModuleReportData, locale: Locale): VisualizationPanel {
   const structure = data.lorebookStructure!;
   const lines: string[] = [];
-  const byFolder = new Map<string, typeof structure.entries>();
+  const { roots, rootEntries } = buildLorebookStructureTree(structure);
 
-  for (const entry of structure.entries) {
-    const folder = entry.folder ?? '(root)';
-    if (!byFolder.has(folder)) byFolder.set(folder, []);
-    byFolder.get(folder)!.push(entry);
-  }
-
-  for (const [folder, entries] of byFolder) {
-    lines.push(`📁 ${folder}`);
-    for (const entry of entries) {
+  const renderFolder = (folder: (typeof roots)[number], depth = 0): void => {
+    lines.push(`${'  '.repeat(depth)}📁 ${folder.name}`);
+    for (const entry of folder.entries) {
       const flags = [
         entry.constant ? '🔴 constant' : entry.selective ? '🟢 selective' : '🔵 normal',
         entry.hasCBS ? 'CBS' : '',
         !entry.enabled ? 'disabled' : '',
       ].filter(Boolean).join(' | ');
-      lines.push(`  └─ ${entry.name} [${flags}]`);
+      lines.push(`${'  '.repeat(depth + 1)}└─ ${entry.name} [${flags}]`);
     }
+    for (const child of folder.children) renderFolder(child, depth + 1);
+  };
+
+  for (const folder of roots) renderFolder(folder);
+  for (const entry of rootEntries) {
+    const flags = [
+      entry.constant ? '🔴 constant' : entry.selective ? '🟢 selective' : '🔵 normal',
+      entry.hasCBS ? 'CBS' : '',
+      !entry.enabled ? 'disabled' : '',
+    ].filter(Boolean).join(' | ');
+    lines.push(`└─ ${entry.name} [${flags}]`);
   }
 
   return buildDiagramPanel(
@@ -415,7 +423,7 @@ function buildNextActions(data: ModuleReportData, locale: Locale): string[] {
     }
   }
   if (data.lorebookStructure && data.lorebookStructure.entries.length >= 2) {
-    actions.push(t(locale, 'module.action.reviewLorebookGraph'));
+    actions.push(t(locale, 'module.action.reviewRelationshipNetwork'));
   }
   if (data.collected.luaCBS.length === 0) {
     actions.push(t(locale, 'module.action.noLuaState'));

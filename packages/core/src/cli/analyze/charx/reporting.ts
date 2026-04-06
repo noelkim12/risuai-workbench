@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { MAX_VARS_IN_REPORT, type LorebookStructureResult } from '@/domain';
+import { buildLorebookStructureTree } from '@/domain/lorebook/structure';
 import { mdRow } from '../../shared';
 import { type Locale, t } from '../shared/i18n';
 import {
@@ -322,25 +323,27 @@ function renderLorebookStructure(lorebookStructure: LorebookStructureResult, loc
     return out;
   }
 
-  const { folders, entries, stats, keywords } = lorebookStructure;
+  const { folders, stats, keywords } = lorebookStructure;
 
   if (folders.length > 0) {
+    const { roots, rootEntries } = buildLorebookStructureTree(lorebookStructure);
     out.push('### ' + t(locale, 'md.charx.folderTree'));
     out.push('');
-    for (const folder of folders) {
-      out.push(`- \uD83D\uDCC1 **${folder.name || folder.id || 'unknown'}**`);
-      const folderEntries = entries.filter((entry) => entry.folder === (folder.name || folder.id));
-      for (const entry of folderEntries) {
+
+    const renderFolder = (folder: (typeof roots)[number], depth = 0): void => {
+      out.push(`${'  '.repeat(depth)}- \uD83D\uDCC1 **${folder.name || folder.id || 'unknown'}**`);
+      for (const entry of folder.entries) {
         out.push(
-          `  - ${entry.name}${entry.constant ? ` _${t(locale, 'md.charx.constant')}_` : ''}${entry.enabled === false ? ` _${t(locale, 'md.charx.disabledEntry')}_` : ''}`,
+          `${'  '.repeat(depth + 1)}- ${entry.name}${entry.constant ? ` _${t(locale, 'md.charx.constant')}_` : ''}${entry.enabled === false ? ` _${t(locale, 'md.charx.disabledEntry')}_` : ''}`,
         );
       }
-    }
+      for (const child of folder.children) renderFolder(child, depth + 1);
+    };
 
-    const unfoldered = entries.filter((entry) => !entry.folder);
-    if (unfoldered.length > 0) {
+    for (const folder of roots) renderFolder(folder);
+    if (rootEntries.length > 0) {
       out.push(`- \uD83D\uDCC1 **_${t(locale, 'md.charx.noFolder')}_**`);
-      for (const entry of unfoldered) {
+      for (const entry of rootEntries) {
         out.push(
           `  - ${entry.name}${entry.constant ? ` _${t(locale, 'md.charx.constant')}_` : ''}${entry.enabled === false ? ` _${t(locale, 'md.charx.disabledEntry')}_` : ''}`,
         );

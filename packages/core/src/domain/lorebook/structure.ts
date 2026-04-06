@@ -5,14 +5,24 @@ import {
   getModuleLorebookEntries,
   getAllLorebookEntriesFromCharx,
 } from '../charx/data';
-import { buildFolderMap, resolveFolderName, type RisuCharbookEntry } from './folders';
+import {
+  buildFolderMap,
+  buildLorebookFolderPathMap,
+  getLorebookFolderKey,
+  resolveFolderName,
+  type RisuCharbookEntry,
+} from './folders';
 
 /**
  * 로어북 엔트리의 구조적 정보를 나타냅니다.
  */
 export interface LorebookStructureEntry {
+  /** 전체 폴더 경로를 포함한 고유 식별자 */
+  id: string;
   /** 엔트리 이름 */
   name: string;
+  /** 소속 폴더 키 (없을 경우 null) */
+  folderId: string | null;
   /** 소속 폴더 이름 (없을 경우 null) */
   folder: string | null;
   /** 활성화 키워드 목록 */
@@ -32,7 +42,7 @@ export interface LorebookStructureEntry {
  */
 export interface LorebookStructureResult {
   /** 폴더 목록 */
-  folders: Array<{ id: string; name: string }>;
+  folders: Array<{ id: string; name: string; path: string; parentId: string | null }>;
   /** 엔트리 목록 */
   entries: LorebookStructureEntry[];
   /** 분석 통계 */
@@ -74,6 +84,16 @@ const EMPTY_RESULT: LorebookStructureResult = {
   keywords: { all: [], overlaps: {} },
 };
 
+/** lorebook structure 트리용 folder node입니다. */
+export interface LorebookStructureFolderNode {
+  id: string;
+  name: string;
+  path: string;
+  parentId: string | null;
+  children: LorebookStructureFolderNode[];
+  entries: LorebookStructureEntry[];
+}
+
 /**
  * 로어북 엔트리 배열을 분석하여 폴더 구조, 통계, 키워드 중첩 등을 계산합니다.
  * @param entries - 로어북 엔트리 객체 배열
@@ -83,7 +103,20 @@ export function analyzeLorebookStructure(entries: GenericRecord[]): LorebookStru
   if (entries.length === 0) return EMPTY_RESULT;
 
   const folderMap = buildFolderMap(entries as unknown as RisuCharbookEntry[]);
-  const folders = Object.entries(folderMap).map(([id, name]) => ({ id, name }));
+  const folderPathMap = buildLorebookFolderPathMap(entries as unknown as RisuCharbookEntry[]);
+  const folders = entries
+    .filter((entry) => entry.mode === 'folder')
+    .flatMap((entry) => {
+      const folderId = getLorebookFolderKey(entry);
+      if (!folderId) return [];
+      const path = folderPathMap.get(folderId) || resolveFolderName(folderId, folderMap) || folderId;
+      return [{
+        id: folderId,
+        name: path.split('/').pop() || path,
+        path,
+        parentId: typeof entry.folder === 'string' ? entry.folder : null,
+      }];
+    });
   const regularEntries = entries.filter((entry) => entry.mode !== 'folder');
 
   const stats = {
@@ -111,17 +144,19 @@ export function analyzeLorebookStructure(entries: GenericRecord[]): LorebookStru
     if (hasCBS) stats.withCBS += 1;
 
     const entryName = getLorebookEntryName(entry, index);
+    const folderRef = typeof entry.folder === 'string' ? entry.folder : undefined;
+    const folder = folderRef ? folderPathMap.get(folderRef) || resolveFolderName(folderRef, folderMap) : null;
+    const entryId = folder ? `${folder}/${entryName}` : entryName;
     const keywords = normalizeKeywords(entry);
     for (const keyword of keywords) {
       if (!keywordMap.has(keyword)) keywordMap.set(keyword, []);
-      keywordMap.get(keyword)!.push(entryName);
+      keywordMap.get(keyword)!.push(entryId);
     }
 
-    const folderRef = typeof entry.folder === 'string' ? entry.folder : undefined;
-    const folder = resolveFolderName(folderRef, folderMap);
-
     return {
+      id: entryId,
       name: entryName,
+      folderId: folderRef || null,
       folder: folder || null,
       keywords,
       enabled: entry.enabled !== false,
@@ -183,6 +218,7 @@ export function collectLorebookCBS(
   if (entries.length === 0) return results;
 
   const folderMap = buildFolderMap(entries as unknown as RisuCharbookEntry[]);
+  const folderPathMap = buildLorebookFolderPathMap(entries as unknown as RisuCharbookEntry[]);
 
   entries.forEach((entry, index) => {
     if (entry.mode === 'folder') return;
@@ -192,7 +228,7 @@ export function collectLorebookCBS(
     if (reads.size === 0 && writes.size === 0) return;
 
     const folderRef = typeof entry.folder === 'string' ? entry.folder : undefined;
-    const folderName = resolveFolderName(folderRef, folderMap);
+    const folderName = folderRef ? folderPathMap.get(folderRef) || resolveFolderName(folderRef, folderMap) : null;
     const name = getLorebookEntryName(entry, index);
     const scoped = folderName ? `${folderName}/${name}` : name;
 
@@ -205,6 +241,45 @@ export function collectLorebookCBS(
   });
 
   return results;
+}
+
+/** 분석 결과의 flat folders/entries를 트리 구조로 재구성한다. */
+export function buildLorebookStructureTree(
+  structure: LorebookStructureResult,
+): { roots: LorebookStructureFolderNode[]; rootEntries: LorebookStructureEntry[] } {
+  const nodes = new Map<string, LorebookStructureFolderNode>();
+  for (const folder of structure.folders) {
+    nodes.set(folder.id, { ...folder, children: [], entries: [] });
+  }
+
+  for (const entry of structure.entries) {
+    if (!entry.folderId) continue;
+    const parent = nodes.get(entry.folderId);
+    if (parent) parent.entries.push(entry);
+  }
+
+  const roots: LorebookStructureFolderNode[] = [];
+  for (const folder of nodes.values()) {
+    if (folder.parentId && nodes.has(folder.parentId)) {
+      nodes.get(folder.parentId)!.children.push(folder);
+    } else {
+      roots.push(folder);
+    }
+  }
+
+  const sortFolders = (items: LorebookStructureFolderNode[]): void => {
+    items.sort((a, b) => a.path.localeCompare(b.path));
+    for (const item of items) {
+      item.entries.sort((a, b) => a.id.localeCompare(b.id));
+      sortFolders(item.children);
+    }
+  };
+  sortFolders(roots);
+
+  return {
+    roots,
+    rootEntries: structure.entries.filter((entry) => !entry.folderId).sort((a, b) => a.id.localeCompare(b.id)),
+  };
 }
 
 /**

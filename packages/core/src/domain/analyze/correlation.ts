@@ -2,6 +2,7 @@ import { ELEMENT_TYPES, type ElementType } from './constants';
 import { extractCBSVarOps } from '../cbs/cbs';
 import {
   buildFolderMap as buildRisuFolderMap,
+  buildLorebookFolderPathMap,
   resolveFolderName as resolveRisuFolderName,
 } from '../lorebook/folders';
 import {
@@ -266,12 +267,13 @@ export function extractLorebookCBSVariables(
   entries: any[],
 ): Map<string, { readers: Set<string>; writers: Set<string> }> {
   const folderMap = buildRisuFolderMap(entries as any);
+  const folderPathMap = buildLorebookFolderPathMap(entries as any);
   const vars = new Map<string, { readers: Set<string>; writers: Set<string> }>();
 
   for (const entry of entries) {
     if (entry.mode === 'folder' || !entry.content) continue;
     const folderName = entry.folder
-      ? resolveRisuFolderName(entry.folder, folderMap, (ref) => ref)
+      ? folderPathMap.get(entry.folder) || resolveRisuFolderName(entry.folder, folderMap, (ref) => ref)
       : null;
     const entryLabel = folderName ? `${folderName}/${entry.name}` : entry.name;
     const ops = extractCBSVarOps(String(entry.content));
@@ -337,6 +339,7 @@ export function buildLorebookCorrelationFromEntries(params: {
   const { entries, collected } = params;
   const cbsVars = extractLorebookCBSVariables(entries);
   const folderMap = buildRisuFolderMap(entries as any);
+  const folderPathMap = buildLorebookFolderPathMap(entries as any);
   const allVarNames = new Set([...collected.stateVars.keys(), ...cbsVars.keys()]);
 
   const correlations = [...allVarNames].sort().map((varName) => {
@@ -376,7 +379,7 @@ export function buildLorebookCorrelationFromEntries(params: {
   for (const entry of entries) {
     if (entry.mode === 'folder') continue;
     const folderName = entry.folder
-      ? resolveRisuFolderName(entry.folder, folderMap, (ref) => ref)
+      ? folderPathMap.get(entry.folder) || resolveRisuFolderName(entry.folder, folderMap, (ref) => ref)
       : null;
     const ops = extractCBSVarOps(entry.content || '');
     const usedVars = new Set([...ops.reads, ...ops.writes]);

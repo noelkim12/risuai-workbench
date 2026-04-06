@@ -23,6 +23,25 @@ describe('Phase 1-1 domain extraction', () => {
     expect(result.stats.totalFolders).toBe(1);
     expect(result.stats.withCBS).toBe(2);
     expect(result.keywords.all).toContain('alias');
+    expect(result.entries[0].id).toBe('Main Folder/Entry A');
+    expect(result.entries[0].folderId).toBe('f1');
+  });
+
+  it('preserves nested lorebook folder paths for downstream graphs and tree views', () => {
+    const result = analyzeLorebookStructure([
+      { mode: 'folder', keys: ['root-folder'], name: 'Root Folder' },
+      { mode: 'folder', keys: ['child-folder'], folder: 'root-folder', name: 'Child Folder' },
+      { mode: 'normal', folder: 'child-folder', name: 'Nested Entry', content: '{{setvar::nested}}' },
+    ]);
+
+    expect(result.folders).toEqual([
+      { id: 'root-folder', name: 'Root Folder', path: 'Root Folder', parentId: null },
+      { id: 'child-folder', name: 'Child Folder', path: 'Root Folder/Child Folder', parentId: 'root-folder' },
+    ]);
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0].folder).toBe('Root Folder/Child Folder');
+    expect(result.entries[0].id).toBe('Root Folder/Child Folder/Nested Entry');
+    expect(result.keywords.overlaps).toEqual({});
   });
 
   it('collects regex CBS operations from card custom scripts', () => {

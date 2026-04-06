@@ -163,6 +163,63 @@ export function buildLorebookFolderDirMap(
   return resolvedDirs;
 }
 
+/**
+ * lorebook 엔트리 배열에서 폴더 키별 전체 표시 경로를 계산한다.
+ *
+ * 추출 경로와 달리 UI 표시용이므로 sanitize는 하지 않지만, 같은 부모 아래에서
+ * 이름이 충돌하면 `_1`, `_2` 접미사로 안정적인 구분자를 붙인다.
+ */
+export function buildLorebookFolderPathMap(entries: any[]): Map<string, string> {
+  const folderEntriesByKey = new Map<string, any>();
+  const resolvedPaths = new Map<string, string>();
+  const resolving = new Set<string>();
+  const usedNamesByParent = new Map<string, Set<string>>();
+
+  for (const entry of entries) {
+    if (entry?.mode !== 'folder') continue;
+    const key = getLorebookFolderKey(entry);
+    if (!key) continue;
+    folderEntriesByKey.set(key, entry);
+  }
+
+  const allocatePath = (parentPath: string, rawName: string): string => {
+    const parentKey = toPosix(parentPath || '');
+    const used = usedNamesByParent.get(parentKey) || new Set<string>();
+    const base = String(rawName || '').trim() || 'unnamed folder';
+    let candidate = base;
+    let serial = 1;
+    while (used.has(candidate)) {
+      candidate = `${base}_${serial}`;
+      serial += 1;
+    }
+    used.add(candidate);
+    usedNamesByParent.set(parentKey, used);
+    return parentKey ? `${parentKey}/${candidate}` : candidate;
+  };
+
+  const resolvePathByKey = (folderKey: string | null): string => {
+    if (!folderKey) return '';
+    if (resolvedPaths.has(folderKey)) return resolvedPaths.get(folderKey)!;
+    if (resolving.has(folderKey)) return folderKey;
+
+    const entry = folderEntriesByKey.get(folderKey);
+    if (!entry) return folderKey;
+
+    resolving.add(folderKey);
+    const parentPath = entry.folder ? resolvePathByKey(entry.folder) : '';
+    const path = allocatePath(parentPath, entry.name || entry.comment || folderKey);
+    resolvedPaths.set(folderKey, path);
+    resolving.delete(folderKey);
+    return path;
+  };
+
+  for (const folderKey of folderEntriesByKey.keys()) {
+    resolvePathByKey(folderKey);
+  }
+
+  return resolvedPaths;
+}
+
 /** 추출될 로어북 아이템(폴더 또는 개별 엔트리)의 상세 정보 */
 export type LorebookExtractionEntry =
   | {

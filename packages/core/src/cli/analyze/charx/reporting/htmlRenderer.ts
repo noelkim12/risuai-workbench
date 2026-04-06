@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ELEMENT_TYPES, MAX_VARS_IN_REPORT } from '@/domain';
+import { buildLorebookStructureTree } from '@/domain/lorebook/structure';
 import { escapeHtml } from '../../../shared';
 import { renderHtmlReportShell } from '../../shared/html-report-shell';
 import { type Locale, t } from '../../shared/i18n';
-import { buildLorebookGraphPanel } from '../../shared/force-graph-builders';
+import { buildRelationshipNetworkPanel } from '../../shared/force-graph-builders';
 import { registerSource } from '../../shared/source-links';
+import { collectRegexScriptInfosFromDir } from '../../shared/cross-cutting';
 import {
   buildChartPanel,
   buildDiagramPanel,
@@ -14,8 +16,16 @@ import {
   buildTablePanel,
   createVisualizationDoc,
 } from '../../shared/view-model';
-import type { TablePanel, VisualizationSource } from '../../shared/visualization-types';
+import type { SectionDefinition, TablePanel, VisualizationSource } from '../../shared/visualization-types';
 import { type CharxReportData } from '../types';
+
+const CHARX_SECTIONS: SectionDefinition[] = [
+  { id: 'overview', labelKey: 'shell.tab.overview', descriptionKey: 'shell.section.overview.desc' },
+  { id: 'flow', labelKey: 'shell.tab.flow', descriptionKey: 'shell.section.flow.desc' },
+  { id: 'graph', labelKey: 'shell.tab.graph', descriptionKey: 'shell.section.graph.desc' },
+  { id: 'risks', labelKey: 'shell.tab.risks', descriptionKey: 'shell.section.risks.desc' },
+  { id: 'sources', labelKey: 'shell.tab.sources', descriptionKey: 'shell.section.sources.desc' },
+];
 
 /**
  * charx 분석 결과를 shared visualization shell 기반 HTML 리포트로 저장
@@ -27,7 +37,20 @@ export function renderHtml(data: CharxReportData, outputDir: string, locale: Loc
   const sources: VisualizationSource[] = [];
   const metrics = collectCharxMetrics(data, sources);
   const doc = createVisualizationDoc('charx', data.characterName);
+  const relationshipNetwork = buildRelationshipNetworkPanel(
+    'charx-relationship-network',
+    {
+      lorebookStructure: data.lorebookStructure,
+      lorebookRegexCorrelation: data.lorebookRegexCorrelation,
+      lorebookCBS: data.collected.lorebookCBS,
+      regexCBS: data.collected.regexCBS,
+      regexNodeNames: collectRegexScriptInfosFromDir(path.join(outputDir, 'regex')).map((script) => script.name),
+    },
+    locale,
+    'graph',
+  );
 
+  doc.sections = CHARX_SECTIONS;
   doc.summary.score = metrics.score;
   doc.summary.totals = [
     { label: t(locale, 'common.label.variables'), value: metrics.totalVariables },
@@ -105,6 +128,7 @@ export function renderHtml(data: CharxReportData, outputDir: string, locale: Loc
       280,
     ),
     buildDiagramPanel('variable-flow', t(locale, 'common.label.variableFlow'), 'text', buildVariableFlowText(data, locale), 'flow', 260),
+    ...(relationshipNetwork ? [relationshipNetwork] : []),
     buildFindingsPanel('charx-risks', t(locale, 'charx.panel.riskHighlights'), buildFindings(data, metrics, locale)),
     buildFindingsPanel('charx-dead-code', t(locale, 'charx.panel.deadCode'), buildDeadCodeFindings(data, locale)),
     buildTablePanel(
@@ -137,26 +161,6 @@ export function renderHtml(data: CharxReportData, outputDir: string, locale: Loc
       'sources',
     ),
   ];
-
-  const lorebookGraph = buildLorebookGraphPanel(
-    'charx-lorebook-graph',
-    {
-      lorebookStructure: data.lorebookStructure,
-      lorebookRegexCorrelation: data.lorebookRegexCorrelation,
-      lorebookCBS: data.collected.lorebookCBS,
-      regexCBS: data.collected.regexCBS,
-    },
-    locale,
-    'flow',
-  );
-  if (lorebookGraph) {
-    const flowIdx = doc.panels.findIndex((p) => p.id === 'variable-flow');
-    if (flowIdx >= 0) {
-      doc.panels.splice(flowIdx + 1, 0, lorebookGraph);
-    } else {
-      doc.panels.push(lorebookGraph);
-    }
-  }
 
   const outPath = path.join(outputDir, 'analysis');
   fs.mkdirSync(outPath, { recursive: true });
@@ -519,12 +523,18 @@ function buildBackgroundHtmlRows(data: CharxReportData, locale: Locale): TablePa
 }
 
 function buildRuntimeFlowDiagram(metrics: CharxMetricSummary, locale: Locale): string {
+  const collectLabel = t(locale, 'charx.flow.collectSources', metrics.totalVariables);
+  const correlateLabel = t(locale, 'charx.flow.correlateGraph');
+  const bridgedLabel = t(locale, 'charx.flow.bridgedVars', metrics.bridgedCount);
+  const isolatedLabel = t(locale, 'charx.flow.isolatedVars', metrics.isolatedCount);
+  const sharedLabel = t(locale, 'charx.flow.sharedVars', metrics.sharedVarCount);
+
   return [
     'flowchart TD',
-    `${t(locale, 'charx.flow.collect')}[${t(locale, 'charx.flow.collectSources', metrics.totalVariables)}] --> ${t(locale, 'charx.flow.correlate')}[${t(locale, 'charx.flow.correlateGraph')}]`,
-    `${t(locale, 'charx.flow.correlate')} --> ${t(locale, 'charx.flow.bridges')}[${t(locale, 'charx.flow.bridgedVars', metrics.bridgedCount)}]`,
-    `${t(locale, 'charx.flow.correlate')} --> ${t(locale, 'charx.flow.isolated')}[${t(locale, 'charx.flow.isolatedVars', metrics.isolatedCount)}]`,
-    `${t(locale, 'charx.flow.correlate')} --> ${t(locale, 'charx.flow.loreRegex')}[${t(locale, 'charx.flow.sharedVars', metrics.sharedVarCount)}]`,
+    `${collectLabel} --> ${correlateLabel}`,
+    `${correlateLabel} --> ${bridgedLabel}`,
+    `${correlateLabel} --> ${isolatedLabel}`,
+    `${correlateLabel} --> ${sharedLabel}`,
   ].join('\n');
 }
 
@@ -561,10 +571,11 @@ function buildTokenBudgetChart(data: CharxReportData, locale: Locale): Record<st
 }
 
 function buildLorebookStructureText(data: CharxReportData, locale: Locale): string {
-  const folders = data.lorebookStructure?.folders || [];
-  if (folders.length === 0) {
+  if (!data.lorebookStructure || data.lorebookStructure.stats.totalEntries === 0) {
     return t(locale, 'charx.empty.noLorebookFolders');
   }
+
+  const { roots, rootEntries } = buildLorebookStructureTree(data.lorebookStructure);
 
   const renderFolder = (folder: { name?: string; children?: unknown[]; entries?: Array<{ name: string; enabled?: boolean }> }, depth = 0): string[] => {
     const lines = [`${'  '.repeat(depth)}- ${folder.name || 'unnamed folder'}`];
@@ -583,7 +594,11 @@ function buildLorebookStructureText(data: CharxReportData, locale: Locale): stri
     return lines;
   };
 
-  return folders.flatMap((folder) => renderFolder(folder)).join('\n');
+  const lines = roots.flatMap((folder) => renderFolder(folder));
+  for (const entry of rootEntries) {
+    lines.push(`- • ${entry.name}${entry.enabled === false ? ' (disabled)' : ''}`);
+  }
+  return lines.join('\n');
 }
 
 function capitalize(value: string): string {
