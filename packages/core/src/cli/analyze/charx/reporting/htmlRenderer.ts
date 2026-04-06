@@ -2,10 +2,187 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ELEMENT_TYPES, MAX_VARS_IN_REPORT } from '@/domain';
 import { escapeHtml } from '../../../shared';
+import { renderHtmlReportShell } from '../../shared/html-report-shell';
+import { type Locale, t } from '../../shared/i18n';
+import { buildLorebookGraphPanel } from '../../shared/force-graph-builders';
+import { registerSource } from '../../shared/source-links';
+import {
+  buildChartPanel,
+  buildDiagramPanel,
+  buildFindingsPanel,
+  buildMetricGrid,
+  buildTablePanel,
+  createVisualizationDoc,
+} from '../../shared/view-model';
+import type { TablePanel, VisualizationSource } from '../../shared/visualization-types';
 import { type CharxReportData } from '../types';
 
-/** 수집·분석 데이터를 인터랙티브 HTML 리포트(Chart.js 차트 포함)로 렌더링하여 analysis/ 디렉토리에 저장한다. */
-export function renderHtml(data: CharxReportData, outputDir: string): void {
+/**
+ * charx 분석 결과를 shared visualization shell 기반 HTML 리포트로 저장
+ * @param data - charx 분석 결과
+ * @param outputDir - 분석 산출물 루트 디렉토리
+ * @param locale - 리포트 언어 설정
+ */
+export function renderHtml(data: CharxReportData, outputDir: string, locale: Locale = 'ko'): void {
+  const sources: VisualizationSource[] = [];
+  const metrics = collectCharxMetrics(data, sources);
+  const doc = createVisualizationDoc('charx', data.characterName);
+
+  doc.summary.score = metrics.score;
+  doc.summary.totals = [
+    { label: t(locale, 'common.label.variables'), value: metrics.totalVariables },
+    { label: t(locale, 'common.label.bridged'), value: metrics.bridgedCount, severity: metrics.bridgedCount > 0 ? 'info' : 'warning' },
+    { label: t(locale, 'common.label.isolated'), value: metrics.isolatedCount, severity: metrics.isolatedCount > metrics.bridgedCount ? 'warning' : 'info' },
+    { label: t(locale, 'common.label.lorebookEntries'), value: data.lorebookStructure?.stats?.totalEntries || 0 },
+    { label: t(locale, 'charx.label.sharedLbRx'), value: metrics.sharedVarCount, severity: metrics.sharedVarCount > 0 ? 'info' : 'warning' },
+    { label: t(locale, 'charx.label.defaultVariables'), value: Object.keys(data.defaultVariables || {}).length },
+    { label: t(locale, 'common.label.worstCaseTokens'), value: data.tokenBudget.totals.worstCaseTokens, severity: data.tokenBudget.warnings.some((warning) => warning.severity === 'error') ? 'error' : data.tokenBudget.warnings.length > 0 ? 'warning' : 'info' },
+  ];
+  doc.summary.highlights = buildSummaryHighlights(data, metrics, locale);
+  doc.summary.nextActions = buildNextActions(data, metrics, locale);
+  doc.sources = sources;
+  doc.panels = [
+    buildMetricGrid('charx-overview', t(locale, 'charx.panel.characterOverview'), [
+      { label: t(locale, 'charx.label.lorebookEntries'), value: data.lorebookStructure?.stats?.totalEntries || 0 },
+      { label: t(locale, 'charx.label.folders'), value: data.lorebookStructure?.stats?.totalFolders || 0 },
+      { label: t(locale, 'charx.label.withCBS'), value: data.lorebookStructure?.stats?.withCBS || 0 },
+      { label: t(locale, 'common.label.backgroundHtml'), value: data.htmlAnalysis?.cbsData ? t(locale, 'common.label.present') : t(locale, 'common.label.missing'), severity: data.htmlAnalysis?.cbsData ? 'info' : 'warning' },
+      { label: t(locale, 'charx.label.assetRefs'), value: data.htmlAnalysis?.assetRefs.length || 0 },
+      { label: t(locale, 'common.label.sharedVars'), value: metrics.sharedVarCount, severity: metrics.sharedVarCount > 0 ? 'info' : 'warning' },
+    ]),
+    buildChartPanel('element-distribution', t(locale, 'charx.chart.elementDistribution'), {
+      type: 'doughnut',
+      data: {
+        labels: Object.keys(metrics.elementCounts).map((label) => capitalize(label)),
+        datasets: [
+          {
+            data: Object.values(metrics.elementCounts),
+            backgroundColor: ['#60a5fa', '#34d399', '#f59e0b', '#f87171', '#a78bfa'],
+          },
+        ],
+      },
+      options: { plugins: { legend: { position: 'right' } } },
+    }),
+    buildChartPanel('variable-connectivity', t(locale, 'charx.chart.variableConnectivity'), {
+      type: 'bar',
+      data: {
+        labels: [t(locale, 'common.label.bridged'), t(locale, 'common.label.isolated')],
+        datasets: [
+          {
+            data: [metrics.bridgedCount, metrics.isolatedCount],
+            backgroundColor: ['#38bdf8', '#f59e0b'],
+          },
+        ],
+      },
+    }),
+    buildChartPanel('activation-modes', t(locale, 'charx.chart.activationModes'), {
+      type: 'bar',
+      data: {
+        labels: [t(locale, 'charx.chart.normal'), t(locale, 'charx.chart.constant'), t(locale, 'charx.chart.selective')],
+        datasets: [
+          {
+            data: [metrics.activationModes.normal, metrics.activationModes.constant, metrics.activationModes.selective],
+            backgroundColor: ['#34d399', '#f59e0b', '#60a5fa'],
+          },
+        ],
+      },
+    }),
+    buildChartPanel('token-budget', t(locale, 'common.label.tokenBudget'), buildTokenBudgetChart(data, locale)),
+    buildDiagramPanel(
+      'runtime-flow',
+      t(locale, 'charx.panel.runtimeFlow'),
+      'mermaid',
+      buildRuntimeFlowDiagram(metrics, locale),
+      'flow',
+      220,
+    ),
+    buildDiagramPanel(
+      'lorebook-structure',
+      t(locale, 'charx.panel.lorebookStructure'),
+      'text',
+      buildLorebookStructureText(data, locale),
+      'flow',
+      280,
+    ),
+    buildDiagramPanel('variable-flow', t(locale, 'common.label.variableFlow'), 'text', buildVariableFlowText(data, locale), 'flow', 260),
+    buildFindingsPanel('charx-risks', t(locale, 'charx.panel.riskHighlights'), buildFindings(data, metrics, locale)),
+    buildFindingsPanel('charx-dead-code', t(locale, 'charx.panel.deadCode'), buildDeadCodeFindings(data, locale)),
+    buildTablePanel(
+      'unified-variables',
+      t(locale, 'charx.panel.unifiedVars'),
+      [t(locale, 'common.table.variable'), t(locale, 'common.table.elements'), t(locale, 'common.table.direction'), t(locale, 'common.table.default'), t(locale, 'common.table.writers'), t(locale, 'common.table.readers')],
+      buildUnifiedVariableRows(data, sources, locale),
+      'sources',
+      t(locale, 'charx.filter.variables'),
+    ),
+    buildTablePanel(
+      'shared-variables',
+      t(locale, 'charx.panel.sharedVars'),
+      [t(locale, 'common.table.variable'), t(locale, 'common.table.direction'), t(locale, 'common.label.lorebookEntries'), t(locale, 'charx.table.regexScripts')],
+      buildSharedVariableRows(data, sources, locale),
+      'sources',
+    ),
+    buildTablePanel(
+      'default-variables',
+      t(locale, 'charx.panel.defaultVarsMapping'),
+      [t(locale, 'common.table.variable'), t(locale, 'charx.table.defaultValue'), t(locale, 'charx.table.usedBy')],
+      buildDefaultVariableRows(data, locale),
+      'sources',
+    ),
+    buildTablePanel(
+      'background-html',
+      t(locale, 'charx.panel.bgHtmlAnalysis'),
+      [t(locale, 'charx.table.variableAsset'), t(locale, 'charx.table.operation'), t(locale, 'charx.table.evidence')],
+      buildBackgroundHtmlRows(data, locale),
+      'sources',
+    ),
+  ];
+
+  const lorebookGraph = buildLorebookGraphPanel(
+    'charx-lorebook-graph',
+    {
+      lorebookStructure: data.lorebookStructure,
+      lorebookRegexCorrelation: data.lorebookRegexCorrelation,
+      lorebookCBS: data.collected.lorebookCBS,
+      regexCBS: data.collected.regexCBS,
+    },
+    locale,
+    'flow',
+  );
+  if (lorebookGraph) {
+    const flowIdx = doc.panels.findIndex((p) => p.id === 'variable-flow');
+    if (flowIdx >= 0) {
+      doc.panels.splice(flowIdx + 1, 0, lorebookGraph);
+    } else {
+      doc.panels.push(lorebookGraph);
+    }
+  }
+
+  const outPath = path.join(outputDir, 'analysis');
+  fs.mkdirSync(outPath, { recursive: true });
+  const { html, clientJs } = renderHtmlReportShell(doc, locale);
+  fs.writeFileSync(path.join(outPath, 'charx-analysis.html'), html, 'utf8');
+  fs.writeFileSync(path.join(outPath, 'report.js'), clientJs, 'utf8');
+}
+
+interface CharxMetricSummary {
+  totalVariables: number;
+  bridgedCount: number;
+  isolatedCount: number;
+  sharedVarCount: number;
+  unusedDefaultCount: number;
+  htmlReadCount: number;
+  htmlWriteCount: number;
+  score: number | null;
+  elementCounts: Record<string, number>;
+  activationModes: {
+    normal: number;
+    constant: number;
+    selective: number;
+  };
+}
+
+function collectCharxMetrics(data: CharxReportData, sources: VisualizationSource[]): CharxMetricSummary {
   const elementCounts: Record<string, number> = {
     [ELEMENT_TYPES.LOREBOOK]: 0,
     [ELEMENT_TYPES.REGEX]: 0,
@@ -16,215 +193,399 @@ export function renderHtml(data: CharxReportData, outputDir: string): void {
 
   let isolatedCount = 0;
   let bridgedCount = 0;
-  const unifiedVars = Array.from(data.unifiedGraph.values());
-
-  for (const entry of unifiedVars) {
+  for (const [varName, entry] of data.unifiedGraph.entries()) {
     if (entry.direction === 'isolated') isolatedCount += 1;
     if (entry.direction === 'bridged') bridgedCount += 1;
 
-    for (const type of Object.keys(entry.sources)) {
-      if (elementCounts[type] !== undefined) {
-        elementCounts[type] += 1;
+    for (const [elementType, source] of Object.entries(entry.sources)) {
+      if (elementCounts[elementType] !== undefined) {
+        elementCounts[elementType] += 1;
       }
+      for (const name of [...source.readers, ...source.writers]) {
+        registerSource(sources, name, elementType, name);
+      }
+      registerSource(sources, varName, 'variable', `variables/${varName}`);
     }
   }
 
-  const elementChartData = {
-    labels: Object.keys(elementCounts),
-    datasets: [
-      {
-        data: Object.values(elementCounts),
-        backgroundColor: ['#58a6ff', '#3fb950', '#d29922', '#f85149', '#8b949e'],
-      },
-    ],
-  };
-  const typeChartData = {
-    labels: ['Isolated', 'Bridged'],
-    datasets: [
-      {
-        label: 'Variables',
-        data: [isolatedCount, bridgedCount],
-        backgroundColor: ['#8b949e', '#58a6ff'],
-      },
-    ],
-  };
+  for (const entry of data.lorebookStructure?.entries || []) {
+    registerSource(sources, entry.name, 'lorebook-entry', entry.folder ? `lorebooks/${entry.folder}/${entry.name}` : `lorebooks/${entry.name}`);
+  }
+  for (const assetRef of data.htmlAnalysis?.assetRefs || []) {
+    registerSource(sources, assetRef, 'html-asset', assetRef);
+  }
 
-  const modes = data.lorebookStructure?.stats?.activationModes || {
+  const htmlReads = Array.from(data.htmlAnalysis?.cbsData?.reads || []);
+  const htmlWrites = Array.from(data.htmlAnalysis?.cbsData?.writes || []);
+  const activationModes = data.lorebookStructure?.stats?.activationModes || {
     normal: 0,
     constant: 0,
     selective: 0,
   };
-  const modeChartData = {
-    labels: ['Normal', 'Constant', 'Selective'],
-    datasets: [
-      {
-        label: 'Lorebook Entries',
-        data: [modes.normal || 0, modes.constant || 0, modes.selective || 0],
-        backgroundColor: ['#3fb950', '#d29922', '#58a6ff'],
-      },
-    ],
+  const unusedDefaultCount = Object.keys(data.defaultVariables || {}).filter(
+    (varName) => !data.unifiedGraph.has(varName),
+  ).length;
+  const totalVariables = data.unifiedGraph.size;
+  const score = totalVariables === 0 ? null : Math.max(0, Math.min(100, Math.round(((bridgedCount + data.lorebookRegexCorrelation.sharedVars.length) / Math.max(totalVariables, 1)) * 100)));
+
+  return {
+    totalVariables,
+    bridgedCount,
+    isolatedCount,
+    sharedVarCount: data.lorebookRegexCorrelation.sharedVars.length,
+    unusedDefaultCount,
+    htmlReadCount: htmlReads.length,
+    htmlWriteCount: htmlWrites.length,
+    score,
+    elementCounts,
+    activationModes,
   };
+}
 
-  const sortedVars = unifiedVars
-    .sort((a, b) => b.elementCount - a.elementCount)
-    .slice(0, MAX_VARS_IN_REPORT);
-  const varRows = sortedVars.length
-    ? sortedVars
-        .map((entry) => {
-          const elements = Object.keys(entry.sources)
-            .map((source) => `<span class="badge badge-${source}">${escapeHtml(source)}</span>`)
-            .join(' ');
-          const writers: string[] = [];
-          const readers: string[] = [];
+function buildSummaryHighlights(
+  data: CharxReportData,
+  metrics: CharxMetricSummary,
+  locale: Locale,
+): Array<{ title: string; message: string; severity: 'info' | 'warning' | 'error' }> {
+  const highlights: Array<{ title: string; message: string; severity: 'info' | 'warning' | 'error' }> = [];
 
-          for (const [type, src] of Object.entries(entry.sources)) {
-            if (src.writers.length > 0)
-              writers.push(`<b>${escapeHtml(type)}</b>: ${src.writers.map(escapeHtml).join(', ')}`);
-            if (src.readers.length > 0)
-              readers.push(`<b>${escapeHtml(type)}</b>: ${src.readers.map(escapeHtml).join(', ')}`);
-          }
+  highlights.push({
+    title: t(locale, 'charx.highlight.variableTopology'),
+    message:
+      metrics.bridgedCount > 0
+        ? t(locale, 'charx.highlight.bridgedMsg', metrics.bridgedCount)
+        : t(locale, 'charx.highlight.noBridgedMsg'),
+    severity: metrics.bridgedCount > 0 ? 'info' : 'warning',
+  });
 
-          return `
-      <tr class="var-row" data-name="${escapeHtml(entry.varName).toLowerCase()}">
-        <td><code>${escapeHtml(entry.varName)}</code></td>
-        <td>${elements}</td>
-        <td><span class="badge badge-${entry.direction}">${escapeHtml(entry.direction)}</span></td>
-        <td><code>${escapeHtml(entry.defaultValue)}</code></td>
-        <td class="small-text">${writers.join('<br>')}</td>
-        <td class="small-text">${readers.join('<br>')}</td>
-      </tr>`;
-        })
-        .join('')
-    : '<tr><td colspan="6" class="muted">No variables found.</td></tr>';
-
-  const sharedVars = data.lorebookRegexCorrelation?.sharedVars || [];
-  const sharedRows = sharedVars.length
-    ? sharedVars
-        .map(
-          (entry) => `
-      <tr>
-        <td><code>${escapeHtml(entry.varName)}</code></td>
-        <td class="small-text">${entry.lorebookEntries.map(escapeHtml).join(', ')}</td>
-        <td class="small-text">${entry.regexScripts.map(escapeHtml).join(', ')}</td>
-      </tr>`,
-        )
-        .join('')
-    : '<tr><td colspan="3" class="muted">No shared variables found.</td></tr>';
-
-  const renderFolder = (folder: {
-    name?: string;
-    children?: unknown[];
-    entries?: Array<{ name: string; enabled?: boolean }>;
-  }): string => {
-    const children = Array.isArray(folder.children)
-      ? folder.children
-          .filter(
-            (
-              child,
-            ): child is {
-              name?: string;
-              children?: unknown[];
-              entries?: Array<{ name: string; enabled?: boolean }>;
-            } => typeof child === 'object' && child !== null,
-          )
-          .map((child) => renderFolder(child))
-          .join('')
-      : '';
-    const entries = Array.isArray(folder.entries)
-      ? folder.entries
-          .map(
-            (entry) =>
-              `<li>📄 ${escapeHtml(entry.name)} ${entry.enabled === false ? '(disabled)' : ''}</li>`,
-          )
-          .join('')
-      : '';
-    return `<li>📁 <b>${escapeHtml(folder.name || 'unnamed')}</b><ul>${children}${entries}</ul></li>`;
-  };
-
-  const foldersHtml =
-    Array.isArray(data.lorebookStructure?.folders) && data.lorebookStructure.folders.length > 0
-      ? `<ul>${data.lorebookStructure.folders.map(renderFolder).join('')}</ul>`
-      : '<p class="muted">No folders found.</p>';
-
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Card Analysis: ${escapeHtml(data.characterName)}</title>
-  <style>
-    :root { --bg: #0d1117; --surface: #161b22; --border: #30363d; --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff; --green: #3fb950; --yellow: #d29922; --red: #f85149; }
-    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; padding: 20px; line-height: 1.5; }
-    .container { max-width: 1200px; margin: 0 auto; }
-    h1, h2, h3 { color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 8px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 30px; }
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-    th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
-    th { background: var(--surface); font-weight: 600; }
-    code { background: rgba(110,118,129,0.4); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 0.9em; }
-    .muted { color: var(--muted); }
-    .small-text { font-size: 0.85em; }
-    .badge { display: inline-block; padding: 2px 6px; border-radius: 12px; font-size: 0.75em; font-weight: 600; text-transform: uppercase; }
-    .badge-lorebook { background: rgba(88, 166, 255, 0.2); color: var(--accent); }
-    .badge-regex { background: rgba(63, 185, 80, 0.2); color: var(--green); }
-    .badge-lua { background: rgba(210, 153, 34, 0.2); color: var(--yellow); }
-    .badge-html { background: rgba(248, 81, 73, 0.2); color: var(--red); }
-    .badge-typescript { background: rgba(139, 148, 158, 0.2); color: var(--muted); }
-    .badge-isolated { background: rgba(139, 148, 158, 0.2); color: var(--muted); }
-    .badge-bridged { background: rgba(88, 166, 255, 0.2); color: var(--accent); }
-    input[type="text"] { background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 8px 12px; border-radius: 4px; width: 100%; box-sizing: border-box; margin-bottom: 16px; }
-    details { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 16px; }
-    summary { padding: 12px 16px; cursor: pointer; font-weight: 600; }
-    details > div { padding: 16px; border-top: 1px solid var(--border); }
-    ul { padding-left: 20px; }
-    li { margin-bottom: 4px; }
-    footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border); text-align: center; color: var(--muted); font-size: 0.9em; }
-    .chart-container { position: relative; height: 250px; width: 100%; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>Card Analysis: ${escapeHtml(data.characterName)}</h1>
-    <div class="grid">
-      <div class="card"><h3>Element Distribution</h3><div class="chart-container"><canvas id="elementChart"></canvas></div></div>
-      <div class="card"><h3>Variable Types</h3><div class="chart-container"><canvas id="typeChart"></canvas></div></div>
-      <div class="card"><h3>Lorebook Activation Modes</h3><div class="chart-container"><canvas id="modeChart"></canvas></div></div>
-    </div>
-    <h2>Unified Variables</h2>
-    <input type="text" id="varFilter" placeholder="Filter variables by name...">
-    <div style="overflow-x: auto;"><table><thead><tr><th>Variable</th><th>Elements</th><th>Direction</th><th>Default</th><th>Writers</th><th>Readers</th></tr></thead><tbody id="varTableBody">${varRows}</tbody></table></div>
-    <details><summary>Lorebook ↔ Regex Correlation</summary><div><p>Variables shared between Lorebook and Regex extensions.</p><div style="overflow-x: auto;"><table><thead><tr><th>Variable</th><th>Lorebook Entries</th><th>Regex Scripts</th></tr></thead><tbody>${sharedRows}</tbody></table></div></div></details>
-    <details><summary>Lorebook Structure</summary><div>${foldersHtml}</div></details>
-    <footer>Generated on ${new Date().toLocaleString()}</footer>
-  </div>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script>
-    const elementChartData = ${JSON.stringify(elementChartData).replace(/</g, '\\u003c')};
-    const typeChartData = ${JSON.stringify(typeChartData).replace(/</g, '\\u003c')};
-    const modeChartData = ${JSON.stringify(modeChartData).replace(/</g, '\\u003c')};
-    Chart.defaults.color = '#8b949e';
-    Chart.defaults.borderColor = '#30363d';
-    new Chart(document.getElementById('elementChart'), { type: 'doughnut', data: elementChartData, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } } });
-    new Chart(document.getElementById('typeChart'), { type: 'bar', data: typeChartData, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
-    new Chart(document.getElementById('modeChart'), { type: 'bar', data: modeChartData, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
-    document.getElementById('varFilter').addEventListener('input', function(event) {
-      const target = event.target;
-      if (!(target instanceof HTMLInputElement)) return;
-      const term = target.value.toLowerCase();
-      const rows = document.querySelectorAll('.var-row');
-      rows.forEach((row) => {
-        const name = row.getAttribute('data-name') || '';
-        row.style.display = name.includes(term) ? '' : 'none';
-      });
+  if (metrics.isolatedCount > 0) {
+    highlights.push({
+      title: t(locale, 'charx.highlight.isolatedVariables'),
+      message: t(locale, 'charx.highlight.isolatedMsg', metrics.isolatedCount),
+      severity: metrics.isolatedCount > metrics.bridgedCount ? 'warning' : 'info',
     });
-  </script>
-</body>
-</html>`;
-
-  const outPath = path.join(outputDir, 'analysis');
-  if (!fs.existsSync(outPath)) {
-    fs.mkdirSync(outPath, { recursive: true });
   }
-  fs.writeFileSync(path.join(outPath, 'charx-analysis.html'), html, 'utf8');
+
+  highlights.push({
+    title: t(locale, 'charx.highlight.lorebookRegexBridge'),
+    message:
+      metrics.sharedVarCount > 0
+        ? t(locale, 'charx.highlight.sharedVarsMsg', metrics.sharedVarCount)
+        : t(locale, 'charx.highlight.noSharedVarsMsg'),
+    severity: metrics.sharedVarCount > 0 ? 'info' : 'warning',
+  });
+
+  if (metrics.unusedDefaultCount > 0) {
+    highlights.push({
+      title: t(locale, 'charx.highlight.unusedDefaults'),
+      message: t(locale, 'charx.highlight.unusedDefaultsMsg', metrics.unusedDefaultCount),
+      severity: 'warning',
+    });
+  }
+
+  if (!data.htmlAnalysis?.cbsData && (data.htmlAnalysis?.assetRefs.length || 0) === 0) {
+    highlights.push({
+      title: t(locale, 'charx.highlight.backgroundHtml'),
+      message: t(locale, 'charx.highlight.noBgHtmlMsg'),
+      severity: 'info',
+    });
+  }
+
+  if (data.tokenBudget.warnings.length > 0) {
+    highlights.push({
+      title: t(locale, 'charx.highlight.tokenBudget'),
+      message: t(locale, 'charx.highlight.tokenBudgetMsg', data.tokenBudget.totals.worstCaseTokens),
+      severity: data.tokenBudget.warnings.some((warning) => warning.severity === 'error') ? 'error' : 'warning',
+    });
+  }
+
+  return highlights.slice(0, 4);
+}
+
+function buildNextActions(data: CharxReportData, metrics: CharxMetricSummary, locale: Locale): string[] {
+  const actions: string[] = [];
+
+  if (metrics.isolatedCount > metrics.bridgedCount) {
+    actions.push(t(locale, 'charx.action.reviewIsolated'));
+  }
+  if (data.tokenBudget.warnings.length > 0) {
+    actions.push(t(locale, 'charx.action.trimTokenBudget'));
+  }
+  if (metrics.sharedVarCount > 0) {
+    actions.push(t(locale, 'charx.action.inspectSharedVars'));
+  }
+  if (data.variableFlow.summary.withIssues > 0) {
+    actions.push(t(locale, 'charx.action.checkVariableFlow'));
+  }
+  if (metrics.unusedDefaultCount > 0) {
+    actions.push(t(locale, 'charx.action.trimUnusedDefaults'));
+  }
+  if (data.htmlAnalysis?.cbsData) {
+    actions.push(t(locale, 'charx.action.validateBgHtml'));
+  }
+  if (actions.length === 0) {
+    actions.push(t(locale, 'charx.action.noRisk'));
+  }
+
+  return actions;
+}
+
+function buildFindings(
+  data: CharxReportData,
+  metrics: CharxMetricSummary,
+  locale: Locale,
+): Array<{ severity: 'info' | 'warning' | 'error'; message: string; sourceIds: string[] }> {
+  const findings: Array<{ severity: 'info' | 'warning' | 'error'; message: string; sourceIds: string[] }> = [];
+
+  if (metrics.totalVariables === 0) {
+    findings.push({ severity: 'error', message: t(locale, 'charx.finding.noVariables'), sourceIds: [] });
+  }
+  if (metrics.isolatedCount > metrics.bridgedCount && metrics.totalVariables > 0) {
+    findings.push({
+      severity: 'warning',
+      message: t(locale, 'charx.finding.isolatedDominant', metrics.isolatedCount, metrics.totalVariables),
+      sourceIds: [],
+    });
+  }
+  if (metrics.sharedVarCount > 0) {
+    findings.push({
+      severity: 'info',
+      message: t(locale, 'charx.finding.sharedVars', metrics.sharedVarCount),
+      sourceIds: [],
+    });
+  }
+  if (metrics.unusedDefaultCount > 0) {
+    findings.push({
+      severity: 'warning',
+      message: t(locale, 'charx.finding.unusedDefaults', metrics.unusedDefaultCount),
+      sourceIds: [],
+    });
+  }
+  if (data.htmlAnalysis?.cbsData) {
+    findings.push({
+      severity: 'info',
+      message: t(locale, 'charx.finding.bgHtmlTouches', metrics.htmlReadCount, metrics.htmlWriteCount),
+      sourceIds: [],
+    });
+  }
+  if ((data.lorebookStructure?.stats?.enabledCount || 0) < (data.lorebookStructure?.stats?.totalEntries || 0)) {
+    findings.push({
+      severity: 'warning',
+      message: t(locale, 'charx.finding.disabledEntries', (data.lorebookStructure?.stats?.totalEntries || 0) - (data.lorebookStructure?.stats?.enabledCount || 0)),
+      sourceIds: [],
+    });
+  }
+  for (const warning of data.tokenBudget.warnings) {
+    findings.push({ severity: warning.severity, message: warning.message, sourceIds: [] });
+  }
+  if (data.variableFlow.summary.withIssues > 0) {
+    findings.push({
+      severity: 'warning',
+      message: t(locale, 'charx.finding.variableFlowIssues', data.variableFlow.summary.withIssues),
+      sourceIds: [],
+    });
+  }
+
+  return findings;
+}
+
+function buildDeadCodeFindings(
+  data: CharxReportData,
+  locale: Locale,
+): Array<{ severity: 'info' | 'warning' | 'error'; message: string; sourceIds: string[] }> {
+  return data.deadCode.findings.length > 0
+    ? data.deadCode.findings.map((finding) => ({
+        severity: finding.severity,
+        message: `${finding.type}: ${finding.message}`,
+        sourceIds: [],
+      }))
+    : [{ severity: 'info', message: t(locale, 'common.finding.noDeadCode'), sourceIds: [] }];
+}
+
+function buildUnifiedVariableRows(
+  data: CharxReportData,
+  sources: VisualizationSource[],
+  locale: Locale,
+): TablePanel['rows'] {
+  const entries = Array.from(data.unifiedGraph.entries())
+    .sort(([, a], [, b]) => b.elementCount - a.elementCount)
+    .slice(0, MAX_VARS_IN_REPORT);
+
+  if (entries.length === 0) {
+    return [{ cells: [t(locale, 'charx.empty.noVarsFound'), '—', '—', '—', '—', '—'] }];
+  }
+
+  return entries.map(([varName, entry]) => {
+    const elementBadges = Object.keys(entry.sources)
+      .map((elementType) => `<code>${escapeHtml(elementType)}</code>`)
+      .join(' ');
+    const writers = Object.entries(entry.sources)
+      .filter(([, source]) => source.writers.length > 0)
+      .map(([elementType, source]) => `<b>${escapeHtml(elementType)}</b>: ${source.writers.map((item) => escapeHtml(item)).join(', ')}`)
+      .join('<br>') || '—';
+    const readers = Object.entries(entry.sources)
+      .filter(([, source]) => source.readers.length > 0)
+      .map(([elementType, source]) => `<b>${escapeHtml(elementType)}</b>: ${source.readers.map((item) => escapeHtml(item)).join(', ')}`)
+      .join('<br>') || '—';
+    const sourceIds = sources.filter((source) => source.label === varName || source.label.includes(varName)).map((source) => source.id);
+
+    return {
+      cells: [
+        `<code>${escapeHtml(varName)}</code>`,
+        elementBadges || '—',
+        `<code>${escapeHtml(entry.direction)}</code>`,
+        `<code>${escapeHtml(entry.defaultValue)}</code>`,
+        writers,
+        readers,
+      ],
+      sourceIds,
+      severity: entry.direction === 'isolated' ? 'warning' : 'info',
+      searchText: [varName, ...Object.keys(entry.sources), entry.direction, entry.crossElementReaders.join(' '), entry.crossElementWriters.join(' ')].join(' '),
+    };
+  });
+}
+
+function buildSharedVariableRows(
+  data: CharxReportData,
+  sources: VisualizationSource[],
+  locale: Locale,
+): TablePanel['rows'] {
+  const rows = data.lorebookRegexCorrelation.sharedVars.map((entry) => ({
+    cells: [
+      `<code>${escapeHtml(entry.varName)}</code>`,
+      `<code>${escapeHtml(entry.direction)}</code>`,
+      escapeHtml(entry.lorebookEntries.join(', ') || '—'),
+      escapeHtml(entry.regexScripts.join(', ') || '—'),
+    ],
+    sourceIds: sources
+      .filter((source) => entry.lorebookEntries.includes(source.label) || entry.regexScripts.includes(source.label))
+      .map((source) => source.id),
+    severity: 'info' as const,
+    searchText: [entry.varName, ...entry.lorebookEntries, ...entry.regexScripts].join(' '),
+  }));
+
+  return rows.length > 0 ? rows : [{ cells: [t(locale, 'charx.empty.noSharedVars'), '—', '—', '—'] }];
+}
+
+function buildDefaultVariableRows(data: CharxReportData, locale: Locale): TablePanel['rows'] {
+  const keys = Object.keys(data.defaultVariables || {});
+  if (keys.length === 0) {
+    return [{ cells: [t(locale, 'charx.empty.noDefaultVars'), '—', '—'] }];
+  }
+
+  return keys.map((varName) => {
+    const entry = data.unifiedGraph.get(varName);
+    const usedBy = entry ? Object.keys(entry.sources).join(', ') || '—' : '—';
+    return {
+      cells: [
+        `<code>${escapeHtml(varName)}</code>`,
+        `<code>${escapeHtml(String(data.defaultVariables[varName]))}</code>`,
+        escapeHtml(usedBy),
+      ],
+      severity: entry ? 'info' : 'warning',
+      searchText: [varName, String(data.defaultVariables[varName]), usedBy].join(' '),
+    };
+  });
+}
+
+function buildBackgroundHtmlRows(data: CharxReportData, locale: Locale): TablePanel['rows'] {
+  const rows: TablePanel['rows'] = [];
+  const reads = Array.from(data.htmlAnalysis?.cbsData?.reads || []);
+  const writes = Array.from(data.htmlAnalysis?.cbsData?.writes || []);
+
+  for (const variable of reads) {
+    rows.push({
+      cells: [`<code>${escapeHtml(variable)}</code>`, t(locale, 'charx.html.read'), t(locale, 'charx.html.cbsAccess')],
+      severity: 'info',
+      searchText: `${variable} read html`,
+    });
+  }
+  for (const variable of writes) {
+    rows.push({
+      cells: [`<code>${escapeHtml(variable)}</code>`, reads.includes(variable) ? t(locale, 'charx.html.readWrite') : t(locale, 'charx.html.write'), t(locale, 'charx.html.cbsAccess')],
+      severity: 'warning',
+      searchText: `${variable} write html`,
+    });
+  }
+  for (const assetRef of data.htmlAnalysis?.assetRefs || []) {
+    rows.push({
+      cells: [escapeHtml(assetRef), t(locale, 'charx.html.asset'), t(locale, 'charx.html.assetRef')],
+      severity: 'info',
+      searchText: `${assetRef} asset html`,
+    });
+  }
+
+  return rows.length > 0 ? rows : [{ cells: [t(locale, 'charx.empty.noBgHtml'), '—', '—'] }];
+}
+
+function buildRuntimeFlowDiagram(metrics: CharxMetricSummary, locale: Locale): string {
+  return [
+    'flowchart TD',
+    `${t(locale, 'charx.flow.collect')}[${t(locale, 'charx.flow.collectSources', metrics.totalVariables)}] --> ${t(locale, 'charx.flow.correlate')}[${t(locale, 'charx.flow.correlateGraph')}]`,
+    `${t(locale, 'charx.flow.correlate')} --> ${t(locale, 'charx.flow.bridges')}[${t(locale, 'charx.flow.bridgedVars', metrics.bridgedCount)}]`,
+    `${t(locale, 'charx.flow.correlate')} --> ${t(locale, 'charx.flow.isolated')}[${t(locale, 'charx.flow.isolatedVars', metrics.isolatedCount)}]`,
+    `${t(locale, 'charx.flow.correlate')} --> ${t(locale, 'charx.flow.loreRegex')}[${t(locale, 'charx.flow.sharedVars', metrics.sharedVarCount)}]`,
+  ].join('\n');
+}
+
+function buildVariableFlowText(data: CharxReportData, locale: Locale): string {
+  const issueRows = data.variableFlow.variables
+    .filter((entry) => entry.issues.length > 0)
+    .slice(0, 10)
+    .map((entry) => `${entry.varName}: ${entry.issues.map((issue) => issue.type).join(', ')}`);
+
+  return [
+    t(locale, 'common.diagram.trackedVars', data.variableFlow.summary.totalVariables),
+    t(locale, 'common.diagram.varsWithIssues', data.variableFlow.summary.withIssues),
+    ...issueRows,
+  ].join('\n');
+}
+
+function buildTokenBudgetChart(data: CharxReportData, locale: Locale): Record<string, unknown> {
+  return {
+    type: 'bar',
+    data: {
+      labels: [t(locale, 'common.label.alwaysActive'), t(locale, 'common.label.conditional'), t(locale, 'common.label.worstCase')],
+      datasets: [
+        {
+          data: [
+            data.tokenBudget.totals.alwaysActiveTokens,
+            data.tokenBudget.totals.conditionalTokens,
+            data.tokenBudget.totals.worstCaseTokens,
+          ],
+          backgroundColor: ['#38bdf8', '#f59e0b', '#f87171'],
+        },
+      ],
+    },
+  };
+}
+
+function buildLorebookStructureText(data: CharxReportData, locale: Locale): string {
+  const folders = data.lorebookStructure?.folders || [];
+  if (folders.length === 0) {
+    return t(locale, 'charx.empty.noLorebookFolders');
+  }
+
+  const renderFolder = (folder: { name?: string; children?: unknown[]; entries?: Array<{ name: string; enabled?: boolean }> }, depth = 0): string[] => {
+    const lines = [`${'  '.repeat(depth)}- ${folder.name || 'unnamed folder'}`];
+    if (Array.isArray(folder.entries)) {
+      for (const entry of folder.entries) {
+        lines.push(`${'  '.repeat(depth + 1)}• ${entry.name}${entry.enabled === false ? ' (disabled)' : ''}`);
+      }
+    }
+    if (Array.isArray(folder.children)) {
+      for (const child of folder.children) {
+        if (typeof child === 'object' && child !== null) {
+          lines.push(...renderFolder(child as { name?: string; children?: unknown[]; entries?: Array<{ name: string; enabled?: boolean }> }, depth + 1));
+        }
+      }
+    }
+    return lines;
+  };
+
+  return folders.flatMap((folder) => renderFolder(folder)).join('\n');
+}
+
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }

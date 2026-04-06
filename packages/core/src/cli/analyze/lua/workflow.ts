@@ -2,11 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import luaparse from 'luaparse';
 import { type Chunk } from 'luaparse';
-import { type LuaASTNode } from '@/domain';
-import { RISUAI_API, LUA_STDLIB_CALLS } from '@/domain/analyze/lua-api';
-import { runCollectPhase } from '@/domain/analyze/lua-collector';
-import { runAnalyzePhase } from '@/domain/analyze/lua-analyzer';
-import { type CollectedData } from '@/domain/analyze/lua-analysis-types';
+import { type LuaASTNode } from '../../../domain';
+import { RISUAI_API, LUA_STDLIB_CALLS } from '../../../domain/analyze/lua-api';
+import { runCollectPhase } from '../../../domain/analyze/lua-collector';
+import { runAnalyzePhase } from '../../../domain/analyze/lua-analyzer';
+import { type CollectedData } from '../../../domain/analyze/lua-analysis-types';
+import { detectLocale } from '../shared/i18n';
 import { buildLorebookCorrelation, buildRegexCorrelation } from './correlation';
 import { runReporting } from './reporting';
 
@@ -27,11 +28,14 @@ export function runAnalyzeWorkflow(argv: readonly string[]): number {
   const htmlMode = !argv.includes('--no-html');
   const jsonMode = argv.includes('--json');
   const helpMode = argv.includes('-h') || argv.includes('--help') || argv.length === 0;
+  const locale = detectLocale(argv);
   const charxIdx = argv.indexOf('--charx');
   const cardIdx = argv.indexOf('--card');
   const flagIdx = charxIdx >= 0 ? charxIdx : cardIdx;
   const charxArg = flagIdx >= 0 ? argv[flagIdx + 1] : null;
-  const filePath = argv.find((value) => !value.startsWith('-') && value !== charxArg);
+  const localeIdx = argv.indexOf('--locale');
+  const localeArg = localeIdx >= 0 ? argv[localeIdx + 1] : null;
+  const filePath = argv.find((value) => !value.startsWith('-') && value !== charxArg && value !== localeArg);
 
   if (helpMode || !filePath) {
     console.log(HELP_TEXT);
@@ -129,6 +133,7 @@ export function runAnalyzeWorkflow(argv: readonly string[]): number {
       regexCorrelation,
     },
     { markdown: markdownMode, html: htmlMode },
+    locale,
   );
 
   return 0;

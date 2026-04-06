@@ -1,4 +1,11 @@
-import { type ElementCBSData, type UnifiedVarEntry } from '@/domain';
+import {
+  type DeadCodeResult,
+  type ElementCBSData,
+  type PromptChainResult,
+  type TokenBudgetResult,
+  type UnifiedVarEntry,
+  type VarFlowResult,
+} from '@/domain';
 
 export type { ElementCBSData, UnifiedVarEntry };
 
@@ -8,6 +15,9 @@ export interface PromptSource {
   text: string;
   reads: Set<string>;
   writes: Set<string>;
+  chainType: string;
+  sourcePath?: string;
+  order: number;
 }
 
 /** Phase 1 (COLLECT) 결과 — preset 디렉토리에서 수집한 데이터. */
@@ -25,4 +35,8 @@ export interface PresetReportData {
   presetName: string;
   collected: PresetCollectResult;
   unifiedGraph: Map<string, UnifiedVarEntry>;
+  tokenBudget: TokenBudgetResult;
+  variableFlow: VarFlowResult;
+  deadCode: DeadCodeResult;
+  promptChain: PromptChainResult;
 }

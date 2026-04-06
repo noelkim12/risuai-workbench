@@ -27,12 +27,17 @@ describe('preset analyze collectors and workflow', () => {
     fs.mkdirSync(path.join(tempDir, 'prompt_template'), { recursive: true });
     fs.writeFileSync(
       path.join(tempDir, 'prompt_template', '_order.json'),
-      `${JSON.stringify(['system.json'], null, 2)}\n`,
+      `${JSON.stringify(['system.json', 'followup.json'], null, 2)}\n`,
       'utf-8',
     );
     fs.writeFileSync(
       path.join(tempDir, 'prompt_template', 'system.json'),
       `${JSON.stringify({ name: 'system', text: '{{setvar::lang::ko}}', type: 'plain' }, null, 2)}\n`,
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'prompt_template', 'followup.json'),
+      `${JSON.stringify({ name: 'followup', text: '{{getvar::lang}} {{setvar::persona::guide}}', type: 'plain' }, null, 2)}\n`,
       'utf-8',
     );
 
@@ -97,15 +102,29 @@ describe('preset analyze collectors and workflow', () => {
   });
 
   it('writes preset analysis markdown report', () => {
-    const code = runAnalyzePresetWorkflow([tempDir]);
+    const code = runAnalyzePresetWorkflow([tempDir, '--locale', 'en']);
     expect(code).toBe(0);
     expect(fs.existsSync(path.join(tempDir, 'analysis', 'preset-analysis.md'))).toBe(true);
+    const markdown = fs.readFileSync(path.join(tempDir, 'analysis', 'preset-analysis.md'), 'utf-8');
+    expect(markdown).toContain('## Token Budget');
+    expect(markdown).toContain('## Variable Flow');
+    expect(markdown).toContain('## Dead Code Findings');
+    expect(markdown).toContain('## Prompt Chain');
   });
 
   it('writes preset analysis html report', () => {
-    const code = runAnalyzePresetWorkflow([tempDir]);
+    const code = runAnalyzePresetWorkflow([tempDir, '--locale', 'en']);
     expect(code).toBe(0);
     expect(fs.existsSync(path.join(tempDir, 'analysis', 'preset-analysis.html'))).toBe(true);
+    const html = fs.readFileSync(path.join(tempDir, 'analysis', 'preset-analysis.html'), 'utf-8');
+    expect(html).toContain('Token Budget');
+    expect(html).toContain('Variable Flow');
+    expect(html).toContain('Dead Code');
+    expect(html).toContain('Prompt Chain');
+    expect(html).toContain('Chain Token Distribution');
+    expect(html).toContain('Chain Steps Table');
+    expect(html).toContain('data-panel-id="preset-chain-dep-graph"');
+    expect(html).toContain('data-library="force-graph"');
   });
 
   it('runs preset-wide analysis automatically after extract', () => {

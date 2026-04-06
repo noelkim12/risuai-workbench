@@ -1,8 +1,11 @@
 import {
+  type DeadCodeResult,
   type ElementCBSData,
   type LorebookRegexCorrelation,
+  type TokenBudgetResult,
   type UnifiedVarEntry,
-} from '@/domain/analyze/correlation';
+  type VarFlowResult,
+} from '@/domain';
 import type { LorebookStructureResult } from '@/domain/lorebook/structure';
 
 export type { ElementCBSData, LorebookRegexCorrelation, UnifiedVarEntry };
@@ -45,4 +48,8 @@ export interface CharxReportData {
   lorebookStructure: LorebookStructureResult;
   defaultVariables: Record<string, string>;
   htmlAnalysis: HtmlResult;
+  tokenBudget: TokenBudgetResult;
+  variableFlow: VarFlowResult;
+  deadCode: DeadCodeResult;
+  collected: CollectResult;
 }

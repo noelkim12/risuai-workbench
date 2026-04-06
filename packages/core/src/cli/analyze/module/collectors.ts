@@ -96,7 +96,7 @@ function collectModuleRegexCBS(outputDir: string): ElementCBSData[] {
   const files = resolveOrderedFiles(regexDir, listJsonFilesRecursive(regexDir));
   const results: ElementCBSData[] = [];
 
-  for (const filePath of files) {
+  for (const [index, filePath] of files.entries()) {
     const raw = readJsonIfExists(filePath);
     if (!isRecord(raw)) continue;
 
@@ -123,6 +123,8 @@ function collectModuleRegexCBS(outputDir: string): ElementCBSData[] {
       elementName: `[module]/${baseName}`,
       reads,
       writes,
+      executionOrder:
+        typeof raw.order === 'number' && Number.isFinite(raw.order) ? raw.order : files.length - index,
     });
   }
 

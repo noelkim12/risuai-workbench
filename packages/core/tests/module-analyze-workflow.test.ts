@@ -129,15 +129,23 @@ describe('module analyze collectors and workflow', () => {
   });
 
   it('writes module analysis markdown report', () => {
-    const code = runAnalyzeModuleWorkflow([tempDir]);
+    const code = runAnalyzeModuleWorkflow([tempDir, '--locale', 'en']);
     expect(code).toBe(0);
     expect(fs.existsSync(path.join(tempDir, 'analysis', 'module-analysis.md'))).toBe(true);
+    const markdown = fs.readFileSync(path.join(tempDir, 'analysis', 'module-analysis.md'), 'utf-8');
+    expect(markdown).toContain('## Token Budget');
+    expect(markdown).toContain('## Variable Flow');
+    expect(markdown).toContain('## Dead Code Findings');
   });
 
   it('writes module analysis html report', () => {
-    const code = runAnalyzeModuleWorkflow([tempDir]);
+    const code = runAnalyzeModuleWorkflow([tempDir, '--locale', 'en']);
     expect(code).toBe(0);
     expect(fs.existsSync(path.join(tempDir, 'analysis', 'module-analysis.html'))).toBe(true);
+    const html = fs.readFileSync(path.join(tempDir, 'analysis', 'module-analysis.html'), 'utf-8');
+    expect(html).toContain('Token Consumption');
+    expect(html).toContain('Variable Flow Summary');
+    expect(html).toContain('Dead Code');
   });
 
   it('runs module-wide analysis automatically after extract', () => {

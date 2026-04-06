@@ -1,6 +1,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { buildUnifiedCBSGraph, type ElementCBSData } from '@/domain';
+import {
+  analyzePromptChain,
+  analyzeTokenBudget,
+  analyzeVariableFlow,
+  buildUnifiedCBSGraph,
+  detectDeadCode,
+  type ElementCBSData,
+} from '@/domain';
+import { detectLocale } from '../shared/i18n';
+import {
+  collectJsonTextFieldComponents,
+  collectNamedTextFileComponents,
+  collectRegexScriptInfosFromDir,
+  collectRegexTokenComponentsFromDir,
+} from '../shared/cross-cutting';
 import { collectPresetSources } from './collectors';
 import { renderPresetMarkdown } from './reporting';
 import { renderPresetHtml } from './reporting/htmlRenderer';
@@ -28,6 +42,7 @@ export function runAnalyzePresetWorkflow(argv: readonly string[]): number {
     return 0;
   }
 
+  const locale = detectLocale(argv);
   const outputDir = argv.find((arg) => !arg.startsWith('-'));
   if (!outputDir || !fs.existsSync(outputDir)) {
     console.error('\n  ❌ Target directory not found.\n');
@@ -53,21 +68,93 @@ export function runAnalyzePresetWorkflow(argv: readonly string[]): number {
       ...collected.regexCBS,
     ];
     const unifiedGraph = buildUnifiedCBSGraph(allCBS, {});
+    const tokenBudget = analyzeTokenBudget([
+      ...collectNamedTextFileComponents(path.join(outputDir, 'prompts'), 'prompt', [
+        'main.txt',
+        'jailbreak.txt',
+        'global_note.txt',
+      ]),
+      ...collectJsonTextFieldComponents(path.join(outputDir, 'prompt_template'), 'template', [
+        'text',
+        'content',
+        'prompt',
+      ]),
+      ...collectRegexTokenComponentsFromDir(path.join(outputDir, 'regex'), 'regex', '[preset]'),
+      ...fallbackPromptTokenComponents(outputDir, collected),
+    ]);
+    const variableFlow = analyzeVariableFlow(allCBS, {});
+    const promptChain = analyzePromptChain(buildPromptChainInputs(collected));
+    const deadCode = detectDeadCode(variableFlow, {
+      lorebookEntries: [],
+      regexScripts: collectRegexScriptInfosFromDir(path.join(outputDir, 'regex'), '[preset]'),
+    });
 
     const reportData: PresetReportData = {
       presetName,
       collected,
       unifiedGraph,
+      tokenBudget,
+      variableFlow,
+      deadCode,
+      promptChain,
     };
 
-    renderPresetMarkdown(reportData, outputDir);
-    renderPresetHtml(reportData, outputDir);
+    renderPresetMarkdown(reportData, outputDir, locale);
+    renderPresetHtml(reportData, outputDir, locale);
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`\n  ❌ Preset analysis failed: ${message}\n`);
     return 1;
   }
+}
+
+function fallbackPromptTokenComponents(
+  outputDir: string,
+  collected: ReturnType<typeof collectPresetSources>,
+): Array<{ category: string; name: string; text: string; alwaysActive: boolean }> {
+  if (fs.existsSync(path.join(outputDir, 'prompts')) || fs.existsSync(path.join(outputDir, 'prompt_template'))) {
+    return [];
+  }
+
+  const promptComponents = collected.prompts.map((prompt) => ({
+    category: 'prompt',
+    name: prompt.name,
+    text: prompt.text,
+    alwaysActive: true,
+  }));
+  const templateComponents = collected.promptTemplates.map((template) => ({
+    category: 'template',
+    name: template.name,
+    text: template.text,
+    alwaysActive: true,
+  }));
+
+  return promptComponents.length > 0 || templateComponents.length > 0
+    ? [...promptComponents, ...templateComponents]
+    : [];
+}
+
+function buildPromptChainInputs(
+  collected: ReturnType<typeof collectPresetSources>,
+): Array<{ name: string; text: string; type: string }> {
+  if (collected.promptTemplates.length > 0) {
+    return [...collected.promptTemplates]
+      .sort((left, right) => left.order - right.order)
+      .map((template) => ({
+        name: template.name,
+        text: template.text,
+        type: template.chainType,
+      }));
+  }
+
+  return [...collected.prompts]
+    .sort((left, right) => left.order - right.order)
+    .map((prompt) => ({
+      name: prompt.name,
+      text: prompt.text,
+      type: prompt.chainType,
+    }));
 }
 
 function toPromptElement(prompt: PromptSource): ElementCBSData {

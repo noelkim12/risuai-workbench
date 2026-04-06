@@ -209,7 +209,7 @@ function collectRegexCBSFromDir(regexDir: string): ElementCBSData[] {
   if (files.length === 0) return [];
 
   const results: ElementCBSData[] = [];
-  for (const filePath of files) {
+  for (const [index, filePath] of files.entries()) {
     const raw = readJsonIfExists(filePath);
     if (!isPlainObject(raw)) continue;
 
@@ -229,7 +229,13 @@ function collectRegexCBSFromDir(regexDir: string): ElementCBSData[] {
     }
 
     if (reads.size === 0 && writes.size === 0) continue;
-    results.push({ elementType: ELEMENT_TYPES.REGEX, elementName, reads, writes });
+    results.push({
+      elementType: ELEMENT_TYPES.REGEX,
+      elementName,
+      reads,
+      writes,
+      executionOrder: resolveExecutionOrder(raw, files.length - index),
+    });
   }
 
   return results;
@@ -256,10 +262,20 @@ function collectRegexCBSFromCharx(charx: unknown): ElementCBSData[] {
       (typeof script.name === 'string' && script.name) ||
       `unnamed-script-${i}`;
 
-    results.push({ elementType: ELEMENT_TYPES.REGEX, elementName, reads, writes });
+    results.push({
+      elementType: ELEMENT_TYPES.REGEX,
+      elementName,
+      reads,
+      writes,
+      executionOrder: resolveExecutionOrder(script, scripts.length - i),
+    });
   }
 
   return results;
+}
+
+function resolveExecutionOrder(record: Record<string, unknown>, fallback: number): number {
+  return typeof record.order === 'number' && Number.isFinite(record.order) ? record.order : fallback;
 }
 
 function parseDefaultVariablesText(raw: string): Record<string, string> {

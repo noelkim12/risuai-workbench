@@ -28,6 +28,8 @@ export interface ElementCBSData {
   readersByVar?: Record<string, string[]>;
   /** 변수별 세부 쓰기 주체 목록 (선택 사항) */
   writersByVar?: Record<string, string[]>;
+  /** 같은 phase 내부의 실행 순서 힌트. 큰 값이 먼저 실행됨 */
+  executionOrder?: number;
 }
 
 interface ElementSource {

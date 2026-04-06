@@ -7,6 +7,7 @@ import {
   type RegexCorrelation,
 } from '@/domain/analyze/lua-analysis-types';
 import { escapeHtml, mdRow } from '../../shared';
+import { type Locale, t } from '../shared/i18n';
 
 /** Lua 분석 리포터의 입력 데이터. 분석 Phase 결과와 상관관계 데이터를 포함한다. */
 export interface LuaReportData {
@@ -27,30 +28,31 @@ function bar(size: number, total: number): string {
 export function runReporting(
   data: LuaReportData,
   options: { markdown: boolean; html: boolean },
+  locale: Locale = 'ko',
 ): void {
   const { analyzePhase, collected, total, lorebookCorrelation, regexCorrelation } = data;
 
-  printSections(analyzePhase, total);
-  printTopFunctions(collected, total);
-  printSummary(analyzePhase, collected, total);
-  printCorrelationSummary(lorebookCorrelation, regexCorrelation);
+  printSections(analyzePhase, total, locale);
+  printTopFunctions(collected, total, locale);
+  printSummary(analyzePhase, collected, total, locale);
+  printCorrelationSummary(lorebookCorrelation, regexCorrelation, locale);
 
   if (options.markdown) {
-    renderMarkdown(data);
+    renderMarkdown(data, locale);
   }
 
   if (options.html) {
-    renderHtml(data);
+    renderHtml(data, locale);
   }
 }
 
-function printSections(analyzePhase: AnalyzePhaseResult, total: number): void {
+function printSections(analyzePhase: AnalyzePhaseResult, total: number, locale: Locale): void {
   console.log('  ════════════════════════════════════════');
-  console.log('  섹션 맵');
+  console.log('  ' + t(locale, 'lua.console.sectionMap'));
   console.log('  ────────────────────────────────────────');
 
   if (!analyzePhase.sectionMapSections.length) {
-    console.log('  (없음)');
+    console.log('  ' + t(locale, 'lua.console.none'));
     return;
   }
 
@@ -62,16 +64,16 @@ function printSections(analyzePhase: AnalyzePhaseResult, total: number): void {
   }
 }
 
-function printTopFunctions(collected: CollectedData, total: number): void {
+function printTopFunctions(collected: CollectedData, total: number, locale: Locale): void {
   const sorted = [...collected.functions].sort((a, b) => b.lineCount - a.lineCount).slice(0, 20);
 
   console.log('\n  ────────────────────────────────────────');
-  console.log(`  거대 함수 TOP ${sorted.length}`);
+  console.log('  ' + t(locale, 'lua.console.topFunctions', sorted.length));
   console.log('  ────────────────────────────────────────');
 
   for (const fn of sorted) {
     const pct = total > 0 ? ((fn.lineCount / total) * 100).toFixed(1) : '0.0';
-    const warn = fn.lineCount > 500 ? ' ⚠️  분할 권장' : fn.lineCount > 200 ? ' ⚡' : '';
+    const warn = fn.lineCount > 500 ? ' ⚠️  ' + t(locale, 'lua.console.splitRecommended') : fn.lineCount > 200 ? ' ⚡' : '';
     console.log(
       `  ${String(fn.lineCount).padStart(5)} (${pct}%)  ${fn.isLocal ? 'local ' : ''}${fn.displayName}${fn.isAsync ? ' async' : ''}  [${fn.startLine}~${fn.endLine}]${warn}`,
     );
@@ -82,18 +84,19 @@ function printSummary(
   analyzePhase: AnalyzePhaseResult,
   collected: CollectedData,
   total: number,
+  locale: Locale,
 ): void {
   console.log('\n  ────────────────────────────────────────');
-  console.log('  📊 요약');
+  console.log('  📊 ' + t(locale, 'lua.console.summary'));
   console.log(
     `     ${total} lines / ${collected.functions.length} functions / ${collected.handlers.length} handlers / ${collected.apiCalls.length} API calls`,
   );
   console.log(
-    `     500줄+ 함수: ${collected.functions.filter((f) => f.lineCount > 500).length}개 (분할 권장)`,
+    `     ${t(locale, 'lua.console.fn500')}: ${collected.functions.filter((f) => f.lineCount > 500).length}`,
   );
-  console.log(`     200줄+ 함수: ${collected.functions.filter((f) => f.lineCount > 200).length}개`);
+  console.log(`     ${t(locale, 'lua.console.fn200')}: ${collected.functions.filter((f) => f.lineCount > 200).length}`);
   console.log(
-    `     상태 변수: ${analyzePhase.stateOwnership.length}개 / 제안 모듈: ${analyzePhase.moduleGroups.length}개`,
+    `     ${t(locale, 'lua.console.stateVars')}: ${analyzePhase.stateOwnership.length} / ${t(locale, 'lua.console.suggestedModules')}: ${analyzePhase.moduleGroups.length}`,
   );
   console.log('');
 }
@@ -101,59 +104,60 @@ function printSummary(
 function printCorrelationSummary(
   lorebookCorrelation: LorebookCorrelation | null,
   regexCorrelation: RegexCorrelation | null,
+  locale: Locale,
 ): void {
   if (lorebookCorrelation) {
     console.log('  ════════════════════════════════════════');
-    console.log('  📚 Lua↔Lorebook 상관관계');
+    console.log('  📚 ' + t(locale, 'lua.console.lbCorrelation'));
     console.log('  ────────────────────────────────────────');
     console.log(
-      `     Lorebook: ${lorebookCorrelation.totalEntries}개 엔트리 / ${lorebookCorrelation.totalFolders}개 폴더`,
+      `     Lorebook: ${t(locale, 'lua.console.entries', lorebookCorrelation.totalEntries)} / ${t(locale, 'lua.console.folders', lorebookCorrelation.totalFolders)}`,
     );
     console.log(
-      `     Bridge 변수: ${lorebookCorrelation.bridgedVars.length}개 (Lua↔Lorebook 공유)`,
+      `     ${t(locale, 'lua.console.bridgeVars', lorebookCorrelation.bridgedVars.length)}`,
     );
     console.log(
-      `     Lua 전용: ${lorebookCorrelation.luaOnlyVars.length}개 / Lorebook 전용: ${lorebookCorrelation.lorebookOnlyVars.length}개`,
+      `     ${t(locale, 'lua.console.luaOnly', lorebookCorrelation.luaOnlyVars.length)} / ${t(locale, 'lua.console.lbOnly', lorebookCorrelation.lorebookOnlyVars.length)}`,
     );
     console.log('');
   }
 
   if (regexCorrelation) {
     console.log('  ════════════════════════════════════════');
-    console.log('  🔄 Lua↔Regex 상관관계');
+    console.log('  🔄 ' + t(locale, 'lua.console.rxCorrelation'));
     console.log('  ────────────────────────────────────────');
     console.log(
-      `     Regex: ${regexCorrelation.totalScripts}개 스크립트 / ${regexCorrelation.activeScripts}개 활성`,
+      `     Regex: ${t(locale, 'lua.console.scripts', regexCorrelation.totalScripts)} / ${t(locale, 'lua.console.active', regexCorrelation.activeScripts)}`,
     );
-    console.log(`     Bridge 변수: ${regexCorrelation.bridgedVars.length}개 (Lua↔Regex 공유)`);
+    console.log(`     ${t(locale, 'lua.console.bridgeVarsRx', regexCorrelation.bridgedVars.length)}`);
     console.log(
-      `     Lua 전용: ${regexCorrelation.luaOnlyVars.length}개 / Regex 전용: ${regexCorrelation.regexOnlyVars.length}개`,
+      `     ${t(locale, 'lua.console.luaOnly', regexCorrelation.luaOnlyVars.length)} / ${t(locale, 'lua.console.rxOnly', regexCorrelation.regexOnlyVars.length)}`,
     );
     console.log('');
   }
 }
 
-function renderMarkdown(data: LuaReportData): void {
+function renderMarkdown(data: LuaReportData, locale: Locale): void {
   const { filePath, total, analyzePhase, collected, lorebookCorrelation, regexCorrelation } =
     data;
   const filename = path.basename(filePath);
   const out: string[] = [];
 
-  out.push(`# ${filename} — Modularization Blueprint`);
+  out.push('# ' + t(locale, 'md.lua.title', filename));
   out.push('');
-  out.push('## Source Info');
-  out.push('| Metric | Value |');
+  out.push('## ' + t(locale, 'md.lua.sourceInfo'));
+  out.push(`| ${t(locale, 'common.table.metric')} | ${t(locale, 'common.table.value')} |`);
   out.push('|--------|-------|');
-  out.push(mdRow(['File', filename]));
-  out.push(mdRow(['Total Lines', String(total)]));
-  out.push(mdRow(['Functions (total)', String(collected.functions.length)]));
-  out.push(mdRow(['Event Handlers', String(collected.handlers.length)]));
-  out.push(mdRow(['State Variables', String(analyzePhase.stateOwnership.length)]));
-  out.push(mdRow(['Suggested Modules', String(analyzePhase.moduleGroups.length)]));
+  out.push(mdRow([t(locale, 'md.lua.file'), filename]));
+  out.push(mdRow([t(locale, 'md.lua.totalLines'), String(total)]));
+  out.push(mdRow([t(locale, 'md.lua.functionsTotal'), String(collected.functions.length)]));
+  out.push(mdRow([t(locale, 'md.lua.eventHandlers'), String(collected.handlers.length)]));
+  out.push(mdRow([t(locale, 'md.lua.stateVariables'), String(analyzePhase.stateOwnership.length)]));
+  out.push(mdRow([t(locale, 'md.lua.suggestedModules'), String(analyzePhase.moduleGroups.length)]));
   out.push('');
 
-  out.push('## State Variable Ownership');
-  out.push('| Variable | Owner Module | Read By | Written By | Cross-Module |');
+  out.push('## ' + t(locale, 'md.lua.stateOwnership'));
+  out.push(`| ${t(locale, 'common.table.variable')} | ${t(locale, 'md.lua.ownerModule')} | ${t(locale, 'md.lua.readBy')} | ${t(locale, 'md.lua.writtenBy')} | ${t(locale, 'md.lua.crossModule')} |`);
   out.push('|----------|-------------|---------|------------|--------------|');
   for (const state of analyzePhase.stateOwnership) {
     out.push(
@@ -162,7 +166,7 @@ function renderMarkdown(data: LuaReportData): void {
         state.ownerModule,
         state.readBy.join(', ') || '-',
         state.writers.join(', ') || '-',
-        state.crossModule ? 'Yes' : 'No',
+        state.crossModule ? t(locale, 'common.label.yes') : t(locale, 'common.label.no'),
       ]),
     );
   }
@@ -172,22 +176,22 @@ function renderMarkdown(data: LuaReportData): void {
   out.push('');
 
   if (lorebookCorrelation) {
-    out.push('## Lua↔Lorebook Correlation');
-    out.push('| Metric | Value |');
+    out.push('## ' + t(locale, 'md.lua.lbCorrelation'));
+    out.push(`| ${t(locale, 'common.table.metric')} | ${t(locale, 'common.table.value')} |`);
     out.push('|--------|-------|');
-    out.push(mdRow(['Bridged Vars', String(lorebookCorrelation.bridgedVars.length)]));
-    out.push(mdRow(['Lua Only Vars', String(lorebookCorrelation.luaOnlyVars.length)]));
-    out.push(mdRow(['Lorebook Only Vars', String(lorebookCorrelation.lorebookOnlyVars.length)]));
+    out.push(mdRow([t(locale, 'md.lua.bridgedVars'), String(lorebookCorrelation.bridgedVars.length)]));
+    out.push(mdRow([t(locale, 'md.lua.luaOnlyVars'), String(lorebookCorrelation.luaOnlyVars.length)]));
+    out.push(mdRow([t(locale, 'md.lua.lbOnlyVars'), String(lorebookCorrelation.lorebookOnlyVars.length)]));
     out.push('');
   }
 
   if (regexCorrelation) {
-    out.push('## Lua↔Regex Correlation');
-    out.push('| Metric | Value |');
+    out.push('## ' + t(locale, 'md.lua.rxCorrelation'));
+    out.push(`| ${t(locale, 'common.table.metric')} | ${t(locale, 'common.table.value')} |`);
     out.push('|--------|-------|');
-    out.push(mdRow(['Bridged Vars', String(regexCorrelation.bridgedVars.length)]));
-    out.push(mdRow(['Lua Only Vars', String(regexCorrelation.luaOnlyVars.length)]));
-    out.push(mdRow(['Regex Only Vars', String(regexCorrelation.regexOnlyVars.length)]));
+    out.push(mdRow([t(locale, 'md.lua.bridgedVars'), String(regexCorrelation.bridgedVars.length)]));
+    out.push(mdRow([t(locale, 'md.lua.luaOnlyVars'), String(regexCorrelation.luaOnlyVars.length)]));
+    out.push(mdRow([t(locale, 'md.lua.rxOnlyVars'), String(regexCorrelation.regexOnlyVars.length)]));
     out.push('');
   }
 
@@ -199,12 +203,12 @@ function renderMarkdown(data: LuaReportData): void {
   console.log(`  ✅ Markdown exported to ${mdPath}`);
 }
 
-function renderHtml(data: LuaReportData): void {
+function renderHtml(data: LuaReportData, locale: Locale): void {
   const { filePath, total, analyzePhase, collected, lorebookCorrelation, regexCorrelation } =
     data;
 
   const html = `<!doctype html>
-<html lang="en">
+<html lang="${locale}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -221,15 +225,15 @@ function renderHtml(data: LuaReportData): void {
 <body>
   <h1>${escapeHtml(path.basename(filePath))}</h1>
   <div class="grid">
-    <div class="card"><b>Total Lines</b><div>${total}</div></div>
-    <div class="card"><b>Functions</b><div>${collected.functions.length}</div></div>
-    <div class="card"><b>Handlers</b><div>${collected.handlers.length}</div></div>
-    <div class="card"><b>API Calls</b><div>${collected.apiCalls.length}</div></div>
-    <div class="card"><b>State Vars</b><div>${analyzePhase.stateOwnership.length}</div></div>
+    <div class="card"><b>${t(locale, 'lua.html.totalLines')}</b><div>${total}</div></div>
+    <div class="card"><b>${t(locale, 'lua.html.functions')}</b><div>${collected.functions.length}</div></div>
+    <div class="card"><b>${t(locale, 'lua.html.handlers')}</b><div>${collected.handlers.length}</div></div>
+    <div class="card"><b>${t(locale, 'lua.html.apiCalls')}</b><div>${collected.apiCalls.length}</div></div>
+    <div class="card"><b>${t(locale, 'lua.html.stateVarsCard')}</b><div>${analyzePhase.stateOwnership.length}</div></div>
   </div>
-  <h2>State Variables</h2>
+  <h2>${t(locale, 'lua.html.stateVars')}</h2>
   <table>
-    <thead><tr><th>Variable</th><th>Owner</th><th>Reads</th><th>Writes</th></tr></thead>
+    <thead><tr><th>${t(locale, 'common.table.variable')}</th><th>${t(locale, 'lua.html.owner')}</th><th>${t(locale, 'lua.html.reads')}</th><th>${t(locale, 'lua.html.writes')}</th></tr></thead>
     <tbody>
       ${
         analyzePhase.stateOwnership
@@ -237,14 +241,14 @@ function renderHtml(data: LuaReportData): void {
             (state) =>
               `<tr><td>${escapeHtml(state.key)}</td><td>${escapeHtml(state.ownerModule)}</td><td>${state.readBy.length}</td><td>${state.writers.length}</td></tr>`,
           )
-          .join('') || '<tr><td colspan="4">No state variables</td></tr>'
+          .join('') || `<tr><td colspan="4">${t(locale, 'lua.html.noStateVars')}</td></tr>`
       }
     </tbody>
   </table>
-  <h2>Correlation</h2>
+  <h2>${t(locale, 'lua.html.correlation')}</h2>
   <div class="grid">
-    <div class="card"><b>Lua↔Lorebook Bridged</b><div>${lorebookCorrelation?.bridgedVars.length || 0}</div></div>
-    <div class="card"><b>Lua↔Regex Bridged</b><div>${regexCorrelation?.bridgedVars.length || 0}</div></div>
+    <div class="card"><b>${t(locale, 'lua.html.lbBridged')}</b><div>${lorebookCorrelation?.bridgedVars.length || 0}</div></div>
+    <div class="card"><b>${t(locale, 'lua.html.rxBridged')}</b><div>${regexCorrelation?.bridgedVars.length || 0}</div></div>
   </div>
 </body>
 </html>`;
@@ -256,5 +260,4 @@ function renderHtml(data: LuaReportData): void {
   fs.writeFileSync(htmlPath, html, 'utf-8');
   console.log(`  ✅ HTML exported to ${htmlPath}`);
 }
-
 

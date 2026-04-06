@@ -66,8 +66,48 @@ export {
   MAX_SCRIPTS_IN_REPORT,
   ELEMENT_TYPES,
   CBS_OPS,
+  TOKEN_THRESHOLDS,
+  TOKEN_RATIOS,
+  PipelinePhase,
+  PHASE_MAP,
   type ElementType,
 } from './analyze/constants';
+export {
+  estimateTokens,
+  analyzeTokenBudget,
+  type TokenComponent,
+  type TokenBudgetResult,
+  type TokenBudgetWarning,
+} from './analyze/token-budget';
+export { analyzeVariableFlow } from './analyze/variable-flow';
+export type {
+  VarEvent,
+  VarFlowEntry,
+  VarFlowIssue,
+  VarFlowResult,
+} from './analyze/variable-flow-types';
+export {
+  detectDeadCode,
+  type DeadCodeFinding,
+  type DeadCodeResult,
+  type DeadCodeType,
+  type LorebookEntryInfo,
+  type RegexScriptInfo,
+} from './analyze/dead-code';
+export {
+  analyzeComposition,
+  type ArtifactInput,
+  type CompositionConflict,
+  type CompositionConflictType,
+  type CompositionInput,
+  type CompositionResult,
+} from './analyze/composition';
+export {
+  analyzePromptChain,
+  type PromptChainIssue,
+  type PromptChainLink,
+  type PromptChainResult,
+} from './analyze/prompt-chain';
 export {
   buildUnifiedCBSGraph,
   buildLorebookRegexCorrelation,

@@ -4,7 +4,7 @@ import { ensureDir, writeJson } from '@/node/fs-helpers';
 import { runAnalyzeWorkflow } from '@/cli/analyze/lua/workflow';
 import { runAnalyzeCharxWorkflow } from '@/cli/analyze/charx/workflow';
 import { getCharacterName } from '@/domain/charx/data';
-import { sanitizeFilename } from '@/utils/filenames';
+import { sanitizeFilename } from '../../../utils/filenames';
 import {
   phase1_parseCharx,
   phase2_extractLorebooks,

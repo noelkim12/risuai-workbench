@@ -1,4 +1,11 @@
-import { type ElementCBSData, type LorebookRegexCorrelation, type UnifiedVarEntry } from '@/domain';
+import {
+  type DeadCodeResult,
+  type ElementCBSData,
+  type LorebookRegexCorrelation,
+  type TokenBudgetResult,
+  type UnifiedVarEntry,
+  type VarFlowResult,
+} from '@/domain';
 import type { LorebookStructureResult } from '@/domain';
 
 export type { ElementCBSData, LorebookRegexCorrelation, UnifiedVarEntry };
@@ -25,4 +32,7 @@ export interface ModuleReportData {
   unifiedGraph: Map<string, UnifiedVarEntry>;
   lorebookRegexCorrelation: LorebookRegexCorrelation;
   lorebookStructure: LorebookStructureResult | null;
+  tokenBudget: TokenBudgetResult;
+  variableFlow: VarFlowResult;
+  deadCode: DeadCodeResult;
 }

@@ -19,7 +19,7 @@ import {
   isDir,
 } from '@/node/json-listing';
 import { toPosix } from '@/domain/lorebook/folders';
-import { sanitizeFilename } from '@/utils/filenames';
+import { sanitizeFilename } from '../../../utils/filenames';
 import { argValue, setNestedValue, classifyAssetExt, normalizeExt, fromPosix } from '../utils';
 
 const HELP_TEXT = `

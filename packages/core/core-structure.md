@@ -71,8 +71,13 @@ This is the pure logic center of the package. It should remain free of Node.js I
 - `src/domain/regex/scripts.ts`
   - regex script CBS extraction and default variable parsing
 - `src/domain/analyze/`
-  - `constants.ts`: report and element constants
+  - `constants.ts`: report constants, token heuristics, and analysis pipeline phases
   - `correlation.ts`: unified CBS graph building and lorebook/regex correlation
+  - `token-budget.ts`: heuristic token budget estimation across analyzer sources
+  - `variable-flow.ts`: pipeline-aware variable read/write flow analysis
+  - `dead-code.ts`: dead code detection for variables, lorebook, and regex
+  - `composition.ts`: multi-artifact compatibility/conflict analysis
+  - `prompt-chain.ts`: ordered prompt/template chain dependency analysis
   - `lua-helpers.ts`: Lua AST utility helpers shared by analysis flows
 - `src/domain/index.ts`
   - the public barrel for all pure domain helpers
@@ -126,7 +131,8 @@ This is the application layer. Each command has a tiny command module plus a wor
     - `lua/`: script-level Lua analysis workflow
     - `charx/`: character-wide analyzer
     - `module/`: module-wide analyzer, collectors, reporting
-    - `preset/`: preset-wide analyzer, collectors, reporting
+    - `preset/`: preset-wide analyzer, collectors, reporting, prompt-chain integration
+    - `compose/`: explicit composition analyzer for multi-artifact compatibility
     - `shared/`: visualization contract, HTML shell, analyzer view-model helpers
   - `analyze/charx/`
     - `workflow.ts`: end-to-end charx analysis orchestrator
@@ -193,6 +199,11 @@ The `tests/` directory focuses on package boundaries and workflow contracts.
   - `pack-character-roundtrip.test.ts`
   - `analyze-card-lorebook-manifest.test.ts`
   - `domain-phase1-extraction.test.ts`
+  - `token-budget.test.ts`
+  - `variable-flow.test.ts`
+  - `dead-code.test.ts`
+  - `composition-analysis.test.ts`
+  - `prompt-chain.test.ts`
 
 ## Build and Publish Notes
 

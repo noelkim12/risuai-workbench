@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { unzipSync } from 'fflate';
+import { Unzip, UnzipInflate } from 'fflate';
 
 let decodeMap: Buffer | null = null;
 
@@ -43,24 +43,65 @@ export function parseCharx(buf: Buffer): {
   moduleData: Buffer | null;
   assets: Record<string, Uint8Array>;
 } {
-  const unzipped = unzipSync(new Uint8Array(buf));
   const result = {
     card: null as any,
     moduleData: null as Buffer | null,
     assets: {} as Record<string, Uint8Array>,
   };
 
-  for (const filename of Object.keys(unzipped)) {
-    if (filename === 'charx.json') {
-      result.card = JSON.parse(Buffer.from(unzipped[filename]).toString('utf-8'));
-    } else if (filename === 'module.risum') {
-      result.moduleData = Buffer.from(unzipped[filename]);
-    } else {
-      result.assets[filename] = unzipped[filename];
-    }
+  const unzip = new Unzip();
+  unzip.register(UnzipInflate);
+  let pendingError: Error | null = null;
+
+  unzip.onfile = (file) => {
+    const chunks: Buffer[] = [];
+
+    file.ondata = (err, data, final) => {
+      if (err) {
+        pendingError = new Error(`CharX 엔트리 디코딩 실패 (${file.name}): ${err.message}`);
+        return;
+      }
+
+      if (data?.length) {
+        chunks.push(Buffer.from(data));
+      }
+
+      if (!final) return;
+
+      const content = Buffer.concat(chunks);
+      assignCharxEntry(result, file.name, content);
+    };
+
+    file.start();
+  };
+
+  unzip.push(new Uint8Array(buf), true);
+
+  if (pendingError) {
+    throw pendingError;
   }
 
   return result;
+}
+
+function assignCharxEntry(
+  result: { card: any; moduleData: Buffer | null; assets: Record<string, Uint8Array> },
+  filename: string,
+  content: Buffer,
+): void {
+  if (filename === 'charx.json' || filename === 'card.json') {
+    result.card = JSON.parse(content.toString('utf-8'));
+    return;
+  }
+
+  if (filename === 'module.risum') {
+    result.moduleData = content;
+    return;
+  }
+
+  if (!filename.endsWith('.json')) {
+    result.assets[filename] = content;
+  }
 }
 
 export function parseModuleRisum(buf: Buffer): any | null {

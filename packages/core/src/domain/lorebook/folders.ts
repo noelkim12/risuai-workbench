@@ -1,4 +1,4 @@
-import { sanitizeFilename } from '@/utils/filenames';
+import { sanitizeFilename } from '../../utils/filenames';
 
 /** RisuAI 캐릭터 북(로어북) 엔트리의 최소 구조 인터페이스 */
 export interface RisuCharbookEntry {

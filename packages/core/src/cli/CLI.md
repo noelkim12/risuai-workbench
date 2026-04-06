@@ -42,6 +42,9 @@ workflow 함수를 직접 import하여 등록한다. 별도의 래퍼 파일은 
 - `analyze/`: 통합 라우터 (`--type` flag + 자동 감지)
   - `analyze/lua/`: 파싱 → 수집 → 분석 → 상관관계 → 리포팅
   - `analyze/charx/`: COLLECT → CORRELATE → ANALYZE → REPORT 4-phase 파이프라인
+  - `analyze/module/`: artifact-wide module analyzer + cross-cutting analyzer 통합
+  - `analyze/preset/`: artifact-wide preset analyzer + prompt chain analyzer 통합
+  - `analyze/compose/`: explicit multi-artifact composition/conflict analyzer
 - `build/`: 옵션 파싱 → regex/lorebook 빌드 → 출력
 - `pack/`: 아티팩트 유형별 패킹 (현재 character만 구현)
 
@@ -103,11 +106,25 @@ src/cli/
 ├── analyze/
 │   ├── workflow.ts           통합 라우터 (--type + 자동 감지)
 │   ├── module/
-│   │   └── workflow.ts       모듈 분석 진입점 (Phase 2 stub)
+│   │   ├── workflow.ts       모듈 분석 오케스트레이션
+│   │   ├── collectors.ts     lorebook/regex/lua/html 수집기
+│   │   ├── reporting.ts      Markdown 리포트
+│   │   ├── reporting/
+│   │   │   └── htmlRenderer.ts  HTML 리포트
+│   │   └── types.ts          분석 전용 타입
 │   ├── preset/
-│   │   └── workflow.ts       프리셋 분석 진입점 (Phase 2 stub)
+│   │   ├── workflow.ts       프리셋 분석 오케스트레이션 + prompt chain 통합
+│   │   ├── collectors.ts     prompt/template/regex 수집기
+│   │   ├── reporting.ts      Markdown 리포트
+│   │   ├── reporting/
+│   │   │   └── htmlRenderer.ts  HTML 리포트
+│   │   └── types.ts          분석 전용 타입
 │   ├── compose/
-│   │   └── workflow.ts       조합 분석 진입점 (Phase 5 stub)
+│   │   ├── workflow.ts       조합 분석 오케스트레이션
+│   │   ├── reporting.ts      Markdown 리포트
+│   │   ├── reporting/
+│   │   │   └── htmlRenderer.ts  HTML 리포트
+│   │   └── types.ts          compose 리포트 타입
 │   ├── lua/
 │   │   ├── workflow.ts       Lua 분석 오케스트레이터
 │   │   ├── correlation.ts    lorebook/regex 상관관계

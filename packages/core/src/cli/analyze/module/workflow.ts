@@ -1,13 +1,25 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  analyzeTokenBudget,
+  analyzeVariableFlow,
+  detectDeadCode,
   analyzeLorebookStructure,
   buildLorebookRegexCorrelation,
   buildUnifiedCBSGraph,
   getModuleLorebookEntriesFromModule,
 } from '@/domain';
 import { readJsonIfExists } from '@/node/fs-helpers';
+import { detectLocale } from '../shared/i18n';
 import { runAnalyzeWorkflow as runLuaAnalyzeWorkflow } from '../lua/workflow';
+import {
+  collectLorebookEntryInfosFromDir,
+  collectLorebookTokenComponentsFromDir,
+  collectLuaTokenComponents,
+  collectRegexScriptInfosFromDir,
+  collectRegexTokenComponentsFromDir,
+  collectSingleFileTokenComponent,
+} from '../shared/cross-cutting';
 import { collectModuleCBS } from './collectors';
 import { renderModuleMarkdown } from './reporting';
 import { renderModuleHtml } from './reporting/htmlRenderer';
@@ -35,6 +47,7 @@ export function runAnalyzeModuleWorkflow(argv: readonly string[]): number {
     return 0;
   }
 
+  const locale = detectLocale(argv);
   const outputDir = argv.find((arg) => !arg.startsWith('-'));
   if (!outputDir || !fs.existsSync(outputDir)) {
     console.error('\n  ❌ Target directory not found.\n');
@@ -68,6 +81,22 @@ export function runAnalyzeModuleWorkflow(argv: readonly string[]): number {
       collected.lorebookCBS,
       collected.regexCBS,
     );
+    const tokenBudget = analyzeTokenBudget([
+      ...collectLorebookTokenComponentsFromDir(path.join(outputDir, 'lorebooks'), 'lorebook', '[module]'),
+      ...collectRegexTokenComponentsFromDir(path.join(outputDir, 'regex'), 'regex', '[module]'),
+      ...collectLuaTokenComponents(outputDir, 'lua'),
+      ...collectSingleFileTokenComponent(
+        path.join(outputDir, 'html', 'background.html'),
+        'html',
+        'background.html',
+        true,
+      ),
+    ]);
+    const variableFlow = analyzeVariableFlow(allCBS, {});
+    const deadCode = detectDeadCode(variableFlow, {
+      lorebookEntries: collectLorebookEntryInfosFromDir(path.join(outputDir, 'lorebooks'), '[module]'),
+      regexScripts: collectRegexScriptInfosFromDir(path.join(outputDir, 'regex'), '[module]'),
+    });
     const lorebookStructure = analyzeLorebookStructure(
       getModuleLorebookEntriesFromModule(moduleJson),
     );
@@ -78,10 +107,13 @@ export function runAnalyzeModuleWorkflow(argv: readonly string[]): number {
       unifiedGraph,
       lorebookRegexCorrelation,
       lorebookStructure,
+      tokenBudget,
+      variableFlow,
+      deadCode,
     };
 
-    renderModuleMarkdown(reportData, outputDir);
-    renderModuleHtml(reportData, outputDir);
+    renderModuleMarkdown(reportData, outputDir, locale);
+    renderModuleHtml(reportData, outputDir, locale);
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

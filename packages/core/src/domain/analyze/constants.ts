@@ -33,4 +33,41 @@ export const CBS_OPS = {
   WRITE: 'write',
 } as const;
 
+/** 토큰 예산 경고 기준값 */
+export const TOKEN_THRESHOLDS = {
+  INFO_WORST_CASE: 4000,
+  WARNING_WORST_CASE: 8000,
+  WARNING_SINGLE_COMPONENT: 2000,
+  ERROR_WORST_CASE: 16000,
+  ERROR_ALWAYS_ACTIVE: 8000,
+} as const;
+
+/** 문자 기반 토큰 추정 비율 */
+export const TOKEN_RATIOS = {
+  LATIN_CHARS_PER_TOKEN: 4,
+  CJK_CHARS_PER_TOKEN: 1,
+} as const;
+
+/** 분석용 런타임 phase 모델 */
+export enum PipelinePhase {
+  LUA_TRIGGER = 1,
+  DISPLAY_TRIGGER = 2,
+  CBS_EXPANSION = 4,
+  REGEX_SCRIPT = 5,
+  LOREBOOK_LOAD = 6,
+}
+
+/** element type → analysis phase 매핑 */
+export const PHASE_MAP: Record<string, PipelinePhase> = {
+  lua: PipelinePhase.LUA_TRIGGER,
+  typescript: PipelinePhase.LUA_TRIGGER,
+  prompt: PipelinePhase.CBS_EXPANSION,
+  template: PipelinePhase.CBS_EXPANSION,
+  character: PipelinePhase.CBS_EXPANSION,
+  html: PipelinePhase.CBS_EXPANSION,
+  variables: PipelinePhase.CBS_EXPANSION,
+  regex: PipelinePhase.REGEX_SCRIPT,
+  lorebook: PipelinePhase.LOREBOOK_LOAD,
+};
+
 export type ElementType = (typeof ELEMENT_TYPES)[keyof typeof ELEMENT_TYPES];

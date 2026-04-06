@@ -110,5 +110,5 @@ function isOptionValue(argv: readonly string[], value: string): boolean {
   const idx = argv.indexOf(value);
   if (idx <= 0) return false;
   const prev = argv[idx - 1];
-  return prev === '--type' || prev === '--card' || prev === '--charx' || prev === '--out';
+  return prev === '--type' || prev === '--card' || prev === '--charx' || prev === '--out' || prev === '--locale';
 }

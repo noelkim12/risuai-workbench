@@ -29,16 +29,24 @@ function collectPrompts(outputDir: string, presetJson: unknown): PromptSource[] 
   if (dirExists(promptsDir)) {
     const promptNames = ['main.txt', 'jailbreak.txt', 'global_note.txt'];
     return promptNames
-      .map((fileName) => {
+      .map((fileName, index) => {
         const text = readTextIfExists(path.join(promptsDir, fileName));
         if (!text) return null;
-        return buildPromptSource(fileName.replace(/\.txt$/u, ''), text);
+        return buildPromptSource(fileName.replace(/\.txt$/u, ''), text, {
+          chainType: fileName.replace(/\.txt$/u, ''),
+          sourcePath: `prompts/${fileName}`,
+          order: index,
+        });
       })
       .filter((source): source is PromptSource => source != null);
   }
 
-  return getPresetPromptTextsFromPreset(presetJson).map((entry) =>
-    buildPromptSource(entry.name, entry.text),
+  return getPresetPromptTextsFromPreset(presetJson).map((entry, index) =>
+    buildPromptSource(entry.name, entry.text, {
+      chainType: entry.name,
+      sourcePath: `prompts/${entry.name}.txt`,
+      order: index,
+    }),
   );
 }
 
@@ -46,19 +54,27 @@ function collectPromptTemplates(outputDir: string, presetJson: unknown): PromptS
   const templateDir = path.join(outputDir, 'prompt_template');
   if (dirExists(templateDir)) {
     const files = resolveOrderedFiles(templateDir, listJsonFilesRecursive(templateDir));
-    return files.map((filePath) => {
+    return files.map((filePath, index) => {
       const raw = readJsonIfExists(filePath);
       const record = isRecord(raw) ? raw : {};
       const fallbackName = path.basename(filePath, '.json');
       const name = typeof record.name === 'string' && record.name.length > 0 ? record.name : fallbackName;
       const text = readTemplateRuntimeText(record);
-      return buildPromptSource(name, text);
+      return buildPromptSource(name, text, {
+        chainType: typeof record.type === 'string' && record.type.length > 0 ? record.type : 'template',
+        sourcePath: `prompt_template/${path.basename(filePath)}`,
+        order: index,
+      });
     });
   }
 
   return getPresetPromptTemplateItemsFromPreset(presetJson).map((item, index) => {
     const name = typeof item.name === 'string' && item.name.length > 0 ? item.name : `template_${index + 1}`;
-    return buildPromptSource(name, readTemplateRuntimeText(item));
+    return buildPromptSource(name, readTemplateRuntimeText(item), {
+      chainType: typeof item.type === 'string' && item.type.length > 0 ? item.type : 'template',
+      sourcePath: `prompt_template/${name}.json`,
+      order: index,
+    });
   });
 }
 
@@ -67,7 +83,7 @@ function collectRegex(outputDir: string): ElementCBSData[] {
   if (!dirExists(regexDir)) return [];
 
   const files = resolveOrderedFiles(regexDir, listJsonFilesRecursive(regexDir));
-  return files.flatMap((filePath) => {
+  return files.flatMap((filePath, index) => {
     const raw = readJsonIfExists(filePath);
     if (!isRecord(raw)) return [];
 
@@ -88,19 +104,35 @@ function collectRegex(outputDir: string): ElementCBSData[] {
     if (reads.size === 0 && writes.size === 0) return [];
 
     return [
-      {
-        elementType: ELEMENT_TYPES.REGEX,
-        elementName: `[preset]/regex/${path.basename(filePath, '.json')}`,
-        reads,
-        writes,
-      },
-    ];
-  });
+        {
+          elementType: ELEMENT_TYPES.REGEX,
+          elementName: `[preset]/regex/${path.basename(filePath, '.json')}`,
+          reads,
+          writes,
+          executionOrder:
+            typeof raw.order === 'number' && Number.isFinite(raw.order)
+              ? raw.order
+              : files.length - index,
+        },
+      ];
+    });
 }
 
-function buildPromptSource(name: string, text: string): PromptSource {
+function buildPromptSource(
+  name: string,
+  text: string,
+  meta: { chainType: string; sourcePath?: string; order: number },
+): PromptSource {
   const ops = extractCBSVarOps(text);
-  return { name, text, reads: ops.reads, writes: ops.writes };
+  return {
+    name,
+    text,
+    reads: ops.reads,
+    writes: ops.writes,
+    chainType: meta.chainType,
+    sourcePath: meta.sourcePath,
+    order: meta.order,
+  };
 }
 
 function readTemplateRuntimeText(record: GenericRecord): string {

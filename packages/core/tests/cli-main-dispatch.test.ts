@@ -180,6 +180,43 @@ describe('src/cli main dispatcher integration', () => {
     expect(result.stdout).toContain('RisuAI Composition Analyzer');
   });
 
+  it('runs compose analysis and writes compose-analysis reports', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-core-analyze-compose-'));
+    const charxDir = path.join(tempDir, 'character_alice');
+    const moduleDir = path.join(tempDir, 'module_combat');
+
+    fs.mkdirSync(path.join(charxDir, 'lorebooks'), { recursive: true });
+    fs.mkdirSync(path.join(charxDir, 'variables'), { recursive: true });
+    fs.writeFileSync(
+      path.join(charxDir, 'charx.json'),
+      `${JSON.stringify({ data: { name: 'alice', character_book: { entries: [] }, extensions: { risuai: { customScripts: [] } } } }, null, 2)}\n`,
+      'utf-8',
+    );
+    fs.writeFileSync(path.join(charxDir, 'variables', 'default.json'), '{"mode":"story"}\n', 'utf-8');
+    fs.writeFileSync(
+      path.join(charxDir, 'lorebooks', 'entry.json'),
+      '{"name":"entry","keys":["battle"],"content":"{{setvar::mode::story}}"}\n',
+      'utf-8',
+    );
+
+    fs.mkdirSync(path.join(moduleDir, 'regex'), { recursive: true });
+    fs.writeFileSync(path.join(moduleDir, 'module.json'), '{"name":"combat"}\n', 'utf-8');
+    fs.writeFileSync(path.join(moduleDir, 'metadata.json'), '{"name":"combat"}\n', 'utf-8');
+    fs.writeFileSync(
+      path.join(moduleDir, 'regex', 'init.json'),
+      '{"in":"*battle*","out":"{{setvar::mode::battle}}"}\n',
+      'utf-8',
+    );
+
+    const result = runCli(['analyze', '--type', 'compose', charxDir, '--module', moduleDir]);
+
+    expect(result.status).toBe(0);
+    expect(fs.existsSync(path.join(charxDir, 'analysis', 'compose-analysis.md'))).toBe(true);
+    expect(fs.existsSync(path.join(charxDir, 'analysis', 'compose-analysis.html'))).toBe(true);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
   it('auto-detects module analysis from a directory with module.json', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-core-analyze-module-'));
     fs.writeFileSync(path.join(tempDir, 'module.json'), '{"name":"Module Stub"}\n', 'utf-8');
@@ -269,11 +306,19 @@ describe('src/cli main dispatcher integration', () => {
       'utf-8',
     );
 
-    const result = runCli(['analyze', '--type', 'charx', tempDir]);
+    const result = runCli(['analyze', '--type', 'charx', tempDir, '--locale', 'en']);
 
     expect(result.status).toBe(0);
     expect(fs.existsSync(path.join(tempDir, 'analysis', 'charx-analysis.md'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, 'analysis', 'charx-analysis.html'))).toBe(true);
+    const markdown = fs.readFileSync(path.join(tempDir, 'analysis', 'charx-analysis.md'), 'utf-8');
+    const html = fs.readFileSync(path.join(tempDir, 'analysis', 'charx-analysis.html'), 'utf-8');
+    expect(markdown).toContain('## Token Budget');
+    expect(markdown).toContain('## Variable Flow');
+    expect(markdown).toContain('## Dead Code Findings');
+    expect(html).toContain('Token Budget');
+    expect(html).toContain('Variable Flow');
+    expect(html).toContain('Dead Code');
     expect(fs.existsSync(path.join(tempDir, 'analysis', 'card-analysis.md'))).toBe(false);
     expect(fs.existsSync(path.join(tempDir, 'analysis', 'card-analysis.html'))).toBe(false);
 

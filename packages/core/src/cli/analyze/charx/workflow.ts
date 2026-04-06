@@ -1,12 +1,29 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  analyzeTokenBudget,
+  analyzeVariableFlow,
+  detectDeadCode,
+  getAllLorebookEntries,
+  getCustomScripts,
   analyzeLorebookStructureFromCharx,
   buildLorebookRegexCorrelation,
   buildUnifiedCBSGraph,
 } from '@/domain';
 import { ensureDir } from '@/node/fs-helpers';
+import { type Locale, detectLocale } from '../shared/i18n';
 import { safeCollect } from '../../shared';
+import {
+  buildLorebookEntryInfos,
+  buildRegexScriptInfos,
+  collectLorebookEntryInfosFromDir,
+  collectLorebookTokenComponentsFromDir,
+  collectLuaTokenComponents,
+  collectNamedTextFileComponents,
+  collectRegexScriptInfosFromDir,
+  collectRegexTokenComponentsFromDir,
+  collectSingleFileTokenComponent,
+} from '../shared/cross-cutting';
 import {
   collectHTMLCBS,
   collectLorebookCBS,
@@ -53,6 +70,7 @@ export function runAnalyzeCharxWorkflow(argv: readonly string[]): number {
   const helpMode = argv.includes('-h') || argv.includes('--help') || argv.length === 0;
   const noMarkdown = argv.includes('--no-markdown');
   const noHtml = argv.includes('--no-html');
+  const locale = detectLocale(argv);
   const outputDir = argv.find((arg) => !arg.startsWith('-'));
 
   if (helpMode || !outputDir) {
@@ -67,7 +85,7 @@ export function runAnalyzeCharxWorkflow(argv: readonly string[]): number {
   }
 
   try {
-    runMain(outputDir, charxJsonPath, { noMarkdown, noHtml });
+    runMain(outputDir, charxJsonPath, { noMarkdown, noHtml }, locale);
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -148,6 +166,7 @@ function runMain(
   outputDir: string,
   charxJsonPath: string,
   options: { noMarkdown: boolean; noHtml: boolean },
+  locale: Locale,
 ): void {
   console.log('\n  🐿️ RisuAI Character Card Analyzer\n');
 
@@ -176,6 +195,13 @@ function runMain(
   );
 
   console.log('\n  ═══ Phase 3: ANALYZE ═══');
+  const allCBSData = [
+    ...collected.lorebookCBS,
+    ...collected.regexCBS,
+    ...collected.tsCBS,
+    ...collected.luaCBS,
+    ...(collected.html.cbsData ? [collected.html.cbsData] : []),
+  ];
   const lorebookStructure = safeCollect(
     () => analyzeLorebookStructureFromCharx(charx),
     'Lorebook 구조 분석 실패',
@@ -192,8 +218,27 @@ function runMain(
       keywords: { all: [], overlaps: {} },
     },
   );
+  const tokenBudget = safeCollect(
+    () => analyzeTokenBudget(buildCharxTokenComponents(resolvedOutDir, charx)),
+    'Token budget 분석 실패',
+    { components: [], byCategory: {}, totals: { alwaysActiveTokens: 0, conditionalTokens: 0, worstCaseTokens: 0 }, warnings: [] },
+  );
+  const variableFlow = safeCollect(
+    () => analyzeVariableFlow(allCBSData, correlated.defaultVariables),
+    'Variable flow 분석 실패',
+    { variables: [], summary: { totalVariables: 0, withIssues: 0, byIssueType: {} } },
+  );
+  const deadCode = safeCollect(
+    () =>
+      detectDeadCode(variableFlow, {
+        lorebookEntries: buildCharxLorebookInfos(resolvedOutDir, charx),
+        regexScripts: buildCharxRegexInfos(resolvedOutDir, charx),
+      }),
+    'Dead code 분석 실패',
+    { findings: [], summary: { totalFindings: 0, byType: {}, bySeverity: {} } },
+  );
   console.log(
-    `     ✅ Lorebook: ${lorebookStructure.stats.totalEntries} entries, ${lorebookStructure.stats.totalFolders} folders`,
+    `     ✅ Lorebook: ${lorebookStructure.stats.totalEntries} entries, ${lorebookStructure.stats.totalFolders} folders · Tokens: ~${tokenBudget.totals.worstCaseTokens}`,
   );
 
   console.log('\n  ═══ Phase 4: REPORT ═══');
@@ -204,11 +249,15 @@ function runMain(
     ...correlated,
     lorebookStructure,
     htmlAnalysis: collected.html,
+    tokenBudget,
+    variableFlow,
+    deadCode,
+    collected,
   };
 
   if (!options.noMarkdown) {
     try {
-      renderMarkdown(reportData, resolvedOutDir);
+      renderMarkdown(reportData, resolvedOutDir, locale);
       console.log(
         `     ✅ charx-analysis.md → ${path.relative('.', path.join(analysisDir, 'charx-analysis.md'))}`,
       );
@@ -220,7 +269,7 @@ function runMain(
 
   if (!options.noHtml) {
     try {
-      renderHtml(reportData, resolvedOutDir);
+      renderHtml(reportData, resolvedOutDir, locale);
       console.log(
         `     ✅ charx-analysis.html → ${path.relative('.', path.join(analysisDir, 'charx-analysis.html'))}`,
       );
@@ -248,4 +297,86 @@ function resolveCharxName(charx: unknown): string {
   if (typeof record.data?.name === 'string' && record.data.name.length > 0) return record.data.name;
   if (typeof record.name === 'string' && record.name.length > 0) return record.name;
   return 'Unknown';
+}
+
+function buildCharxTokenComponents(
+  outputDir: string,
+  charx: unknown,
+): Array<{ category: string; name: string; text: string; alwaysActive: boolean }> {
+  const fromExtracted = [
+    ...collectNamedTextFileComponents(path.join(outputDir, 'character'), 'character', [
+      'description.txt',
+      'first_mes.txt',
+      'system_prompt.txt',
+      'post_history_instructions.txt',
+      'creator_notes.txt',
+      'additional_text.txt',
+    ]),
+    ...collectLorebookTokenComponentsFromDir(path.join(outputDir, 'lorebooks'), 'lorebook'),
+    ...collectRegexTokenComponentsFromDir(path.join(outputDir, 'regex'), 'regex'),
+    ...collectSingleFileTokenComponent(
+      path.join(outputDir, 'html', 'background.html'),
+      'html',
+      'background.html',
+      true,
+    ),
+    ...collectLuaTokenComponents(outputDir, 'lua'),
+    ...collectTstlTokenComponents(outputDir),
+  ];
+
+  return fromExtracted.length > 0 ? fromExtracted : buildFallbackCharxTokenComponents(charx);
+}
+
+function buildFallbackCharxTokenComponents(
+  charx: unknown,
+): Array<{ category: string; name: string; text: string; alwaysActive: boolean }> {
+  if (typeof charx !== 'object' || charx == null) return [];
+  const record = charx as { data?: Record<string, unknown> & { extensions?: { risuai?: Record<string, unknown> } } };
+  const data = record.data ?? {};
+  const risuai = data.extensions?.risuai ?? {};
+
+  const textFields = [
+    ['description', data.description],
+    ['first_mes', data.first_mes],
+    ['system_prompt', data.system_prompt],
+    ['post_history_instructions', data.post_history_instructions],
+    ['creator_notes', data.creator_notes],
+    ['additional_text', risuai.additionalText],
+  ];
+
+  return textFields.flatMap(([name, value]) =>
+    typeof value === 'string' && value.length > 0
+      ? [{ category: 'character', name: String(name), text: value, alwaysActive: true }]
+      : [],
+  );
+}
+
+function buildCharxLorebookInfos(outputDir: string, charx: unknown) {
+  const fromDir = collectLorebookEntryInfosFromDir(path.join(outputDir, 'lorebooks'));
+  return fromDir.length > 0 ? fromDir : buildLorebookEntryInfos(getAllLorebookEntries(charx));
+}
+
+function buildCharxRegexInfos(outputDir: string, charx: unknown) {
+  const fromDir = collectRegexScriptInfosFromDir(path.join(outputDir, 'regex'));
+  return fromDir.length > 0 ? fromDir : buildRegexScriptInfos(getCustomScripts(charx));
+}
+
+function collectTstlTokenComponents(
+  outputDir: string,
+): Array<{ category: string; name: string; text: string; alwaysActive: boolean }> {
+  let tstlDir = path.join(outputDir, '..', 'tstl');
+  if (!fs.existsSync(tstlDir)) {
+    tstlDir = path.join(outputDir, 'tstl');
+  }
+  if (!fs.existsSync(tstlDir)) return [];
+
+  return fs
+    .readdirSync(tstlDir)
+    .filter((fileName) => fileName.endsWith('.ts'))
+    .map((fileName) => ({
+      category: 'typescript',
+      name: fileName,
+      text: fs.readFileSync(path.join(tstlDir, fileName), 'utf-8'),
+      alwaysActive: false,
+    }));
 }
