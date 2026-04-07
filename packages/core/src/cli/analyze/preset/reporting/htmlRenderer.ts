@@ -45,10 +45,6 @@ function computePresetScore(data: PresetReportData): number {
   // Flow 이슈 (-15): issues × 5
   score -= Math.min(15, data.variableFlow.summary.withIssues * 5);
 
-  // Token budget (-10)
-  if (data.tokenBudget.warnings.some((w) => w.severity === 'error')) score -= 10;
-  else if (data.tokenBudget.warnings.some((w) => w.severity === 'warning')) score -= 5;
-
   // Model 설정 (-5)
   if (!data.collected.model) score -= 5;
 
@@ -79,9 +75,13 @@ export function renderPresetHtml(data: PresetReportData, outputDir: string, loca
 
   const analysisDir = path.join(outputDir, 'analysis');
   fs.mkdirSync(analysisDir, { recursive: true });
-  const { html, clientJs } = renderHtmlReportShell(doc, locale);
-  fs.writeFileSync(path.join(analysisDir, 'preset-analysis.html'), html, 'utf-8');
+  const reportBaseName = 'preset-analysis';
+  const { html, clientJs, assets } = renderHtmlReportShell(doc, { locale, reportBaseName });
+  fs.writeFileSync(path.join(analysisDir, `${reportBaseName}.html`), html, 'utf-8');
   fs.writeFileSync(path.join(analysisDir, 'report.js'), clientJs, 'utf-8');
+  for (const asset of assets) {
+    fs.writeFileSync(path.join(analysisDir, asset.fileName), asset.contents, 'utf-8');
+  }
 }
 
 // ── Summary totals ───────────────────────────────────────────────
@@ -94,7 +94,7 @@ function buildSummaryTotals(data: PresetReportData, locale: Locale) {
     {
       label: t(locale, 'preset.label.totalTokens'),
       value: data.promptChain.totalEstimatedTokens,
-      severity: data.tokenBudget.warnings.some((w) => w.severity === 'error') ? 'error' as const : data.tokenBudget.warnings.length > 0 ? 'warning' as const : 'info' as const,
+      severity: 'info' as const,
     },
     ...(data.promptChain.externalDeps.length > 0
       ? [{ label: t(locale, 'preset.label.externalDeps'), value: data.promptChain.externalDeps.length, severity: 'warning' as const }]
@@ -153,8 +153,6 @@ function buildAllPanels(data: PresetReportData, locale: Locale): VisualizationPa
     { label: t(locale, 'common.label.flowIssues'), value: data.variableFlow.summary.withIssues, severity: data.variableFlow.summary.withIssues > 0 ? 'warning' : 'info' },
     { label: t(locale, 'common.label.deadCode'), value: data.deadCode.summary.totalFindings, severity: data.deadCode.summary.totalFindings > 0 ? 'warning' : 'info' },
   ], 'overview'));
-
-  panels.push(buildChartPanel('preset-token-budget', t(locale, 'common.label.tokenBudget'), buildTokenBudgetChart(data, locale), 'overview'));
 
   // === 프롬프트 체인 탭 ===
   // Chain diagram (mermaid)
@@ -292,32 +290,10 @@ function buildAllPanels(data: PresetReportData, locale: Locale): VisualizationPa
     t(locale, 'preset.filter.promptChain'),
   ));
 
-  // Token consumption table
-  panels.push(buildTokenConsumptionTable(data, locale));
-
   return panels;
 }
 
 // ── Chart builders ───────────────────────────────────────────────
-
-function buildTokenBudgetChart(data: PresetReportData, locale: Locale): Record<string, unknown> {
-  return {
-    type: 'bar',
-    data: {
-      labels: [t(locale, 'common.label.alwaysActive'), t(locale, 'common.label.conditional'), t(locale, 'common.label.worstCase')],
-      datasets: [
-        {
-          data: [
-            data.tokenBudget.totals.alwaysActiveTokens,
-            data.tokenBudget.totals.conditionalTokens,
-            data.tokenBudget.totals.worstCaseTokens,
-          ],
-          backgroundColor: ['#38bdf8', '#f59e0b', '#f87171'],
-        },
-      ],
-    },
-  };
-}
 
 function buildPromptChainTokenChart(data: PresetReportData): Record<string, unknown> {
   return {
@@ -334,28 +310,6 @@ function buildPromptChainTokenChart(data: PresetReportData): Record<string, unkn
       ],
     },
   };
-}
-
-function buildTokenConsumptionTable(data: PresetReportData, locale: Locale): VisualizationPanel {
-  const sorted = [...data.tokenBudget.components].sort((a, b) => b.estimatedTokens - a.estimatedTokens);
-  const total = data.tokenBudget.totals.worstCaseTokens || 1;
-
-  return buildTablePanel(
-    'preset-token-consumption',
-    t(locale, 'preset.panel.tokenConsumption'),
-    [t(locale, 'preset.table.name'), t(locale, 'common.table.type'), t(locale, 'preset.table.tokens'), t(locale, 'module.table.percentage')],
-    sorted.map((c) => ({
-      cells: [
-        escapeHtml(c.name),
-        escapeHtml(c.category),
-        String(c.estimatedTokens),
-        `${Math.round((c.estimatedTokens / total) * 100)}%`,
-      ],
-      severity: c.estimatedTokens > total * 0.3 ? 'warning' as const : 'info' as const,
-      searchText: [c.name, c.category, String(c.estimatedTokens)].join(' '),
-    })),
-    'details',
-  );
 }
 
 // ── Diagrams ─────────────────────────────────────────────────────
@@ -418,9 +372,6 @@ function buildSources(data: PresetReportData): VisualizationSource[] {
 
 function buildNextActions(data: PresetReportData, locale: Locale): string[] {
   const actions: string[] = [];
-  if (data.tokenBudget.warnings.length > 0) {
-    actions.push(t(locale, 'preset.action.reviewTokens'));
-  }
   if (data.promptChain.externalDeps.length > 0) {
     actions.push(t(locale, 'preset.action.resolveExtDeps'));
   }
@@ -457,13 +408,6 @@ function buildFindings(data: PresetReportData, locale: Locale): Array<{ severity
   }
   if (data.unifiedGraph.size > 0) {
     findings.push({ severity: 'info', message: t(locale, 'preset.finding.cbsMapped', data.unifiedGraph.size), sourceIds: [] });
-  }
-  for (const warning of data.tokenBudget.warnings) {
-    findings.push({
-      severity: warning.severity,
-      message: `${warning.message} → ${t(locale, 'preset.finding.actionGuide.tokenBudget')}`,
-      sourceIds: [],
-    });
   }
   if (data.promptChain.externalDeps.length > 0) {
     findings.push({

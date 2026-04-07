@@ -7,6 +7,7 @@ import {
   resolveRisuFolderName,
   toPosix,
 } from '@/domain';
+import { analyzeLuaFile, type LuaAnalysisArtifact } from '@/domain/analyze/lua-core';
 import { dirExists, readJsonIfExists, readTextIfExists } from '@/node/fs-helpers';
 import { listJsonFilesRecursive, resolveOrderedFiles } from '@/node/json-listing';
 import { isPlainObject } from '../../shared';
@@ -424,6 +425,29 @@ export function collectTSCBS(outputDir: string): ElementCBSData[] {
     }
 
     return results;
+  } catch {
+    return [];
+  }
+}
+
+/** Lua 소스 파일에서 직접 분석 아티팩트를 생성한다. */
+export function loadLuaArtifacts(
+  outputDir: string,
+  charxJsonPath: string | null,
+): LuaAnalysisArtifact[] {
+  try {
+    const luaDir = path.join(outputDir, 'lua');
+    if (!fs.existsSync(luaDir)) return [];
+
+    const luaFiles = fs.readdirSync(luaDir).filter((file) => file.endsWith('.lua'));
+    if (luaFiles.length === 0) return [];
+
+    return luaFiles.map((file) =>
+      analyzeLuaFile({
+        filePath: path.join(luaDir, file),
+        charxArg: charxJsonPath,
+      }),
+    );
   } catch {
     return [];
   }

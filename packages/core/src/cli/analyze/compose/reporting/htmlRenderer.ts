@@ -87,9 +87,13 @@ export function renderComposeHtml(data: ComposeReportData, analysisDir: string, 
   ];
 
   fs.mkdirSync(analysisDir, { recursive: true });
-  const { html, clientJs } = renderHtmlReportShell(doc, locale);
-  fs.writeFileSync(path.join(analysisDir, 'compose-analysis.html'), html, 'utf-8');
+  const reportBaseName = 'compose-analysis';
+  const { html, clientJs, assets } = renderHtmlReportShell(doc, { locale, reportBaseName });
+  fs.writeFileSync(path.join(analysisDir, `${reportBaseName}.html`), html, 'utf-8');
   fs.writeFileSync(path.join(analysisDir, 'report.js'), clientJs, 'utf-8');
+  for (const asset of assets) {
+    fs.writeFileSync(path.join(analysisDir, asset.fileName), asset.contents, 'utf-8');
+  }
 }
 
 function buildConflictGraph(data: ComposeReportData): Record<string, unknown> {

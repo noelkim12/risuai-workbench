@@ -1,5 +1,6 @@
 import { escapeHtml } from '../../shared';
 import { type Locale, t } from './i18n';
+import { buildReportDataAsset, type ReportDataPanelPayload } from './report-data-asset';
 import { getReportClientJs } from './report-client-js';
 import { formatSourceLabels, resolveSource } from './source-links';
 import { severityBadge, severityClass } from './theme';
@@ -8,6 +9,7 @@ import type {
   ChartPanel,
   DiagramPanel,
   FindingsPanel,
+  HtmlReportRenderOptions,
   HtmlReportOutput,
   MetricGridPanel,
   SectionDefinition,
@@ -26,10 +28,11 @@ const DEFAULT_SECTIONS: ReadonlyArray<SectionDefinition> = [
 /**
  * visualization 문서를 HTML 리포트로 렌더링
  * @param doc - 렌더링할 visualization 문서
- * @param locale - 출력 언어
+ * @param options - 출력 언어 + report 파일명 옵션
  * @returns html (완성된 HTML 문서) + clientJs (외부 report.js 소스)
  */
-export function renderHtmlReportShell(doc: AnalysisVisualizationDoc, locale: Locale = 'ko'): HtmlReportOutput {
+export function renderHtmlReportShell(doc: AnalysisVisualizationDoc, options: HtmlReportRenderOptions): HtmlReportOutput {
+  const locale = options.locale ?? 'ko';
   const title = `${capitalize(doc.artifactType)} Analysis: ${doc.artifactName}`;
   const sections = doc.sections ?? DEFAULT_SECTIONS;
   const sectionHtml = sections.map((section) => renderSection(doc, section.id, t(locale, section.labelKey), section.descriptionKey, locale)).join('');
@@ -47,9 +50,23 @@ export function renderHtmlReportShell(doc: AnalysisVisualizationDoc, locale: Loc
     'shell.forceGraph.normal': t(locale, 'shell.forceGraph.normal'),
     'shell.forceGraph.selective': t(locale, 'shell.forceGraph.selective'),
     'shell.forceGraph.regex': t(locale, 'shell.forceGraph.regex'),
+    'shell.forceGraph.variable': t(locale, 'shell.forceGraph.variable'),
+    'shell.forceGraph.luaFunction': t(locale, 'shell.forceGraph.luaFunction'),
+    'shell.forceGraph.luaFunctionCore': t(locale, 'shell.forceGraph.luaFunctionCore'),
+    'shell.forceGraph.triggerKeyword': t(locale, 'shell.forceGraph.triggerKeyword'),
     'shell.forceGraph.edgeKeyword': t(locale, 'shell.forceGraph.edgeKeyword'),
     'shell.forceGraph.edgeVariable': t(locale, 'shell.forceGraph.edgeVariable'),
+    'shell.forceGraph.edgeLoreDirect': t(locale, 'shell.forceGraph.edgeLoreDirect'),
+    'shell.forceGraph.edgeTextMention': t(locale, 'shell.forceGraph.edgeTextMention'),
+    'shell.forceGraph.edgeLuaCall': t(locale, 'shell.forceGraph.edgeLuaCall'),
+    'shell.forceGraph.enterFullscreen': t(locale, 'shell.forceGraph.enterFullscreen'),
+    'shell.forceGraph.exitFullscreen': t(locale, 'shell.forceGraph.exitFullscreen'),
   };
+  const dataAsset = buildReportDataAsset({
+    reportBaseName: options.reportBaseName,
+    i18n: clientI18n,
+    panels: collectReportPanelPayloads(doc),
+  });
 
   const html = `<!DOCTYPE html>
 <html lang="${locale}">
@@ -189,6 +206,11 @@ export function renderHtmlReportShell(doc: AnalysisVisualizationDoc, locale: Loc
       .sev-chip[data-severity="error"].active { border-color: rgba(240, 96, 96, 0.5); @apply bg-accent-error/[0.08]; box-shadow: 0 0 20px rgba(240, 96, 96, 0.2); }
       .sev-chip[data-severity="warning"].active { border-color: rgba(240, 160, 48, 0.5); @apply bg-accent-warning/[0.08]; box-shadow: 0 0 20px rgba(240, 160, 48, 0.2); }
       .sev-chip[data-severity="info"].active { border-color: rgba(96, 165, 250, 0.5); @apply bg-accent-info/[0.08]; box-shadow: 0 0 20px rgba(96, 165, 250, 0.2); }
+      .panel-tool-button {
+        @apply inline-flex items-center gap-2 py-2 px-4 rounded-pill border border-border bg-[rgba(22,25,48,0.5)] text-text-muted cursor-pointer text-sm font-medium transition-all duration-200;
+      }
+      .panel-tool-button:hover { @apply border-text-muted/30 text-text; }
+      .panel-tool-button.active { @apply border-accent-info/40 text-text bg-accent-info/[0.08]; box-shadow: 0 0 20px rgba(96, 165, 250, 0.2); }
       /* JS-generated diagram classes */
       .diagram-flow { @apply flex flex-wrap gap-3.5 items-center; }
       .diagram-arrow { @apply text-text-muted text-xl; }
@@ -198,8 +220,78 @@ export function renderHtmlReportShell(doc: AnalysisVisualizationDoc, locale: Loc
       .cyto-stat strong { @apply block text-xl mb-1.5; }
       .force-graph-legend { @apply flex flex-wrap gap-3.5 pt-2.5 text-[0.82rem] text-text-muted; }
       .force-graph-legend span { @apply whitespace-nowrap; }
+      .force-graph-chip {
+        @apply inline-flex items-center gap-2 py-1.5 px-3 rounded-pill border border-border bg-[rgba(22,25,48,0.5)] text-text-muted cursor-pointer text-[0.82rem] font-medium transition-all duration-200;
+      }
+      .force-graph-chip:hover { @apply border-text-muted/30 text-text; }
+      .force-graph-chip.active { @apply text-text; box-shadow: 0 0 18px rgba(255,255,255,0.08); }
+      .force-graph-chip-dot { @apply inline-block w-2.5 h-2.5 rounded-full; }
+      .force-graph-chip[data-node-type="always-active"].active { border-color: rgba(248, 113, 113, 0.45); background: rgba(248, 113, 113, 0.08); }
+      .force-graph-chip[data-node-type="normal"].active { border-color: rgba(96, 165, 250, 0.45); background: rgba(96, 165, 250, 0.08); }
+      .force-graph-chip[data-node-type="selective"].active { border-color: rgba(52, 211, 153, 0.45); background: rgba(52, 211, 153, 0.08); }
+      .force-graph-chip[data-node-type="regex"].active { border-color: rgba(167, 139, 250, 0.45); background: rgba(167, 139, 250, 0.08); }
+      .force-graph-chip[data-node-type="lua-function"].active { border-color: rgba(45, 212, 191, 0.45); background: rgba(45, 212, 191, 0.08); }
+      .force-graph-chip[data-node-type="lua-function-core"].active { border-color: rgba(236, 72, 153, 0.45); background: rgba(236, 72, 153, 0.08); }
+      .force-graph-chip[data-node-type="trigger-keyword"].active { border-color: rgba(244, 63, 94, 0.45); background: rgba(244, 63, 94, 0.08); }
+      .force-graph-chip[data-node-type="variable"].active { border-color: rgba(251, 191, 36, 0.45); background: rgba(251, 191, 36, 0.08); }
+      .force-graph-chip[data-edge-type="keyword"].active { border-color: rgba(96, 165, 250, 0.45); background: rgba(96, 165, 250, 0.08); }
+      .force-graph-chip[data-edge-type="variable"].active { border-color: rgba(251, 191, 36, 0.45); background: rgba(251, 191, 36, 0.08); }
+      .force-graph-chip[data-edge-type="lore-direct"].active { border-color: rgba(45, 212, 191, 0.45); background: rgba(45, 212, 191, 0.08); }
+      .force-graph-chip[data-edge-type="text-mention"].active { border-color: rgba(244, 114, 182, 0.45); background: rgba(244, 114, 182, 0.08); }
+      .force-graph-chip[data-edge-type="lua-call"].active { border-color: rgba(129, 140, 248, 0.45); background: rgba(129, 140, 248, 0.08); }
       .diagram-fallback { @apply text-text-muted text-sm; }
       .chart-fallback { @apply text-text-muted text-sm; }
+      [data-force-graph-fullscreen-host="true"]:fullscreen {
+        width: 100%;
+        max-width: none;
+        min-height: 100vh;
+        border-radius: 0;
+        padding: 24px;
+        overflow: auto;
+        background: #090b14;
+      }
+      [data-force-graph-fullscreen-host="true"]:fullscreen [data-force-graph-surface="true"] {
+        min-height: calc(100vh - 136px) !important;
+      }
+      .node-details-modal[open] {
+        background: #0f111a;
+        border: 1px solid #1e293b;
+        border-radius: 8px;
+        color: #eaedf6;
+        padding: 16px;
+        box-sizing: border-box;
+        width: min(80vw, calc(100vw - 32px));
+        max-width: 80vw;
+        height: min(90vh, calc(100vh - 32px));
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      }
+      .node-details-modal::backdrop { background: rgba(0,0,0,0.6); backdrop-filter: blur(2px); }
+      .node-details-modal h3 { font-size: 16px; font-weight: 600; margin: 0 0 12px 0; border-bottom: 1px solid #1e293b; padding-bottom: 8px; color: #60a5fa; }
+      .node-details-list { list-style: none; padding: 0; margin: 0; font-size: 13px; line-height: 1.5; flex: 1 1 auto; overflow: auto; }
+      .node-details-list li { margin-bottom: 6px; word-break: break-word; }
+      .node-details-list li strong { color: #a0a8c4; display: inline-block; min-width: 110px; vertical-align: top; }
+      .node-details-pre {
+        margin: 6px 0 0;
+        padding: 10px 12px;
+        border-radius: 6px;
+        border: 1px solid #1e293b;
+        background: rgba(7, 11, 23, 0.95);
+        color: #dbe7ff;
+        white-space: pre-wrap;
+        word-break: break-word;
+        overflow-x: auto;
+        font-size: 12px;
+        line-height: 1.55;
+      }
+      .node-details-close {
+        margin-top: 16px; padding: 6px 12px; background: #1e293b; color: #eaedf6;
+        border: none; border-radius: 4px; cursor: pointer; float: right;
+      }
+      .node-details-close:hover { background: #334155; }
     }
     @layer components {
       .tab-button.active { @apply text-text border-b-accent-info; }
@@ -237,12 +329,18 @@ export function renderHtmlReportShell(doc: AnalysisVisualizationDoc, locale: Loc
     <footer class="mt-8 pt-5 border-t border-border text-text-muted text-sm text-center">${escapeHtml(t(locale, 'shell.footer', capitalize(doc.artifactType)))}</footer>
   </div>
 
-  <script id="report-i18n" type="application/json">${serializeForScript(clientI18n)}</script>
+  <dialog id="node-details-dialog" class="node-details-modal">
+    <h3 id="node-details-title" tabindex="-1">Node Details</h3>
+    <ul id="node-details-list" class="node-details-list"></ul>
+    <button id="node-details-close" class="node-details-close" type="button" data-node-details-close="true">Close</button>
+  </dialog>
+
+  <script src="./${escapeHtml(dataAsset.fileName)}"><\/script>
   <script src="./report.js"><\/script>
 </body>
 </html>`;
 
-  return { html, clientJs: getReportClientJs() };
+  return { html, clientJs: getReportClientJs(), assets: [dataAsset] };
 }
 
 function renderSection(doc: AnalysisVisualizationDoc, section: VisualizationSection, label: string, descriptionKey: string, locale: Locale): string {
@@ -279,16 +377,26 @@ function renderMetricPanel(panel: MetricGridPanel): string {
 }
 
 function renderChartPanel(panel: ChartPanel): string {
-  return `<article class="glass glass-gradient relative p-[22px] mb-[18px] last:mb-0" data-panel-kind="chart" data-panel-id="${escapeHtml(panel.id)}" data-library="chartjs"><div class="flex flex-wrap items-baseline justify-between gap-2.5 mb-4 relative"><div><h3 class="mb-0 tracking-tight before:content-['◆'] before:mr-2 before:text-[0.7em] before:opacity-40 before:align-middle">${escapeHtml(panel.title)}</h3>${panel.description ? `<p class="m-0 text-text-muted">${escapeHtml(panel.description)}</p>` : ''}</div>${severityBadge('info')}</div><div class="relative min-h-[260px] p-2 rounded-xl bg-[rgba(12,14,26,0.6)] border border-glass-border dot-grid" style="height:${panel.height ?? 300}px"><div class="chart-mount w-full" style="height:100%"></div><div class="chart-fallback text-text-muted text-sm"></div></div><script type="application/json" data-chart-config>${serializeForScript(panel.config)}</script></article>`;
+  return `<article class="glass glass-gradient relative p-[22px] mb-[18px] last:mb-0" data-panel-kind="chart" data-panel-id="${escapeHtml(panel.id)}" data-library="chartjs" data-report-payload-key="${escapeHtml(panel.id)}"><div class="flex flex-wrap items-baseline justify-between gap-2.5 mb-4 relative"><div><h3 class="mb-0 tracking-tight before:content-['◆'] before:mr-2 before:text-[0.7em] before:opacity-40 before:align-middle">${escapeHtml(panel.title)}</h3>${panel.description ? `<p class="m-0 text-text-muted">${escapeHtml(panel.description)}</p>` : ''}</div>${severityBadge('info')}</div><div class="relative min-h-[260px] p-2 rounded-xl bg-[rgba(12,14,26,0.6)] border border-glass-border dot-grid" style="height:${panel.height ?? 300}px"><div class="chart-mount w-full" style="height:100%"></div><div class="chart-fallback text-text-muted text-sm"></div></div></article>`;
 }
 
 function renderDiagramPanel(panel: DiagramPanel, locale: Locale): string {
+  const isRelationshipNetwork = isRelationshipNetworkPanel(panel);
   const fallback =
     panel.library === 'text'
       ? `<pre>${escapeHtml(typeof panel.payload === 'string' ? panel.payload : JSON.stringify(panel.payload, null, 2))}</pre>`
       : `<div class="diagram-fallback">${escapeHtml(t(locale, 'shell.diagram.fallback'))}</div>`;
+  const panelAttrs = isRelationshipNetwork
+    ? ' data-force-graph-mode="relationship-network" data-force-graph-fullscreen-host="true"'
+    : '';
+  const surfaceAttrs = isRelationshipNetwork ? ' data-force-graph-surface="true"' : '';
+  const headerActions = `${isRelationshipNetwork ? `<button type="button" class="panel-tool-button" data-force-graph-fullscreen-toggle="true">${escapeHtml(t(locale, 'shell.forceGraph.enterFullscreen'))}</button>` : ''}${severityBadge('info')}`;
 
-  return `<article class="glass glass-gradient relative p-[22px] mb-[18px] last:mb-0" data-panel-kind="diagram" data-panel-id="${escapeHtml(panel.id)}" data-library="${escapeHtml(panel.library)}"><div class="flex flex-wrap items-baseline justify-between gap-2.5 mb-4 relative"><div><h3 class="mb-0 tracking-tight before:content-['◆'] before:mr-2 before:text-[0.7em] before:opacity-40 before:align-middle">${escapeHtml(panel.title)}</h3>${panel.description ? `<p class="m-0 text-text-muted">${escapeHtml(panel.description)}</p>` : ''}</div>${severityBadge('info')}</div><div class="p-4 rounded-xl bg-[rgba(12,14,26,0.6)] border border-glass-border dot-grid" data-library="${escapeHtml(panel.library)}" style="min-height:${panel.height ?? 220}px"><div class="diagram-mount">${fallback}</div></div><script type="application/json" data-diagram-payload>${serializeForScript(panel.payload)}</script></article>`;
+  return `<article class="glass glass-gradient relative p-[22px] mb-[18px] last:mb-0" data-panel-kind="diagram" data-panel-id="${escapeHtml(panel.id)}" data-library="${escapeHtml(panel.library)}" data-report-payload-key="${escapeHtml(panel.id)}"${panelAttrs}><div class="flex flex-wrap items-baseline justify-between gap-2.5 mb-4 relative"><div><h3 class="mb-0 tracking-tight before:content-['◆'] before:mr-2 before:text-[0.7em] before:opacity-40 before:align-middle">${escapeHtml(panel.title)}</h3>${panel.description ? `<p class="m-0 text-text-muted">${escapeHtml(panel.description)}</p>` : ''}</div><div class="flex flex-wrap items-center gap-2">${headerActions}</div></div><div class="p-4 rounded-xl bg-[rgba(12,14,26,0.6)] border border-glass-border dot-grid" data-library="${escapeHtml(panel.library)}"${surfaceAttrs} style="min-height:${panel.height ?? 220}px"><div class="diagram-mount">${fallback}</div></div></article>`;
+}
+
+function isRelationshipNetworkPanel(panel: DiagramPanel): boolean {
+  return panel.library === 'force-graph' && (panel.id === 'charx-relationship-network' || panel.id === 'module-relationship-network');
 }
 
 function renderFindingsPanel(doc: AnalysisVisualizationDoc, panel: FindingsPanel, locale: Locale): string {
@@ -378,6 +486,22 @@ function serializeForScript(value: unknown): string {
     .replace(/\u2028/g, '\\u2028')
     .replace(/\u2029/g, '\\u2029')
     .replace(/<\/script/gi, '<\\/script');
+}
+
+function collectReportPanelPayloads(doc: AnalysisVisualizationDoc): Record<string, ReportDataPanelPayload> {
+  const panels: Record<string, ReportDataPanelPayload> = {};
+
+  for (const panel of doc.panels) {
+    if (panel.kind === 'chart') {
+      panels[panel.id] = { kind: 'chart', payload: panel.config };
+      continue;
+    }
+    if (panel.kind === 'diagram') {
+      panels[panel.id] = { kind: 'diagram', payload: panel.payload };
+    }
+  }
+
+  return panels;
 }
 
 function capitalize(value: string): string {

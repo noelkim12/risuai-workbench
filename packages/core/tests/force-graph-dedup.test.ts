@@ -271,6 +271,13 @@ describe('buildRelationshipNetworkPanel', () => {
           writes: new Set(['regexOnly']),
         },
       ],
+      regexScriptInfos: [
+        {
+          name: 'regex-script',
+          in: 'hello (.+)',
+          out: '{{setvar::regexOnly::$1}}',
+        },
+      ],
     };
 
     const panel = buildRelationshipNetworkPanel('panel', data, 'en' as Locale);
@@ -283,6 +290,7 @@ describe('buildRelationshipNetworkPanel', () => {
       'lb:Reader',
       'lb:Writer',
       'rx:regex-script',
+      'trig:signal',
       'var:readOnly',
       'var:regexOnly',
       'var:writeOnly',
@@ -292,6 +300,36 @@ describe('buildRelationshipNetworkPanel', () => {
       'regexOnly',
       'writeOnly',
     ]);
+    expect(payload.nodes).toContainEqual(
+      expect.objectContaining({
+        id: 'lb:Writer',
+        details: expect.objectContaining({
+          Name: 'Writer',
+          Keywords: 'signal',
+          'Expected vars': 'readOnly, writeOnly',
+        }),
+      }),
+    );
+    expect(payload.nodes).toContainEqual(
+      expect.objectContaining({
+        id: 'rx:regex-script',
+        details: expect.objectContaining({
+          Name: 'regex-script',
+          In: 'hello (.+)',
+          Out: '{{setvar::regexOnly::$1}}',
+          'Expected vars': 'regexOnly',
+        }),
+      }),
+    );
+    expect(payload.nodes).toContainEqual(
+      expect.objectContaining({
+        id: 'var:writeOnly',
+        details: expect.objectContaining({
+          Readers: 'Reader',
+          Writers: 'Writer',
+        }),
+      }),
+    );
     expect(payload.edges).toEqual(
       expect.arrayContaining([
         {

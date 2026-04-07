@@ -179,6 +179,7 @@ describe('compose workflow', () => {
     expect(code).toBe(0);
     expect(fs.existsSync(path.join(charxDir, 'analysis', 'compose-analysis.md'))).toBe(true);
     expect(fs.existsSync(path.join(charxDir, 'analysis', 'compose-analysis.html'))).toBe(true);
+    expect(fs.existsSync(path.join(charxDir, 'analysis', 'compose-analysis.data.js'))).toBe(true);
     const markdown = fs.readFileSync(path.join(charxDir, 'analysis', 'compose-analysis.md'), 'utf-8');
     const html = fs.readFileSync(path.join(charxDir, 'analysis', 'compose-analysis.html'), 'utf-8');
     expect(markdown).toContain('Composition Analysis Report');
@@ -187,5 +188,6 @@ describe('compose workflow', () => {
     expect(html).toContain('Compatibility Score');
     expect(html).toContain('Conflict Type Distribution');
     expect(html).toContain('Conflict Pairs');
+    expect(html).toContain('<script src="./compose-analysis.data.js"></script>');
   });
 });

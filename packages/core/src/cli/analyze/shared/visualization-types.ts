@@ -112,7 +112,21 @@ export interface AnalysisVisualizationDoc {
 }
 
 /** HTML 리포트 출력물 계약 */
+export interface HtmlReportAsset {
+  fileName: string;
+  contents: string;
+  kind: 'data-js';
+}
+
+/** HTML 리포트 렌더 옵션 */
+export interface HtmlReportRenderOptions {
+  locale?: 'en' | 'ko';
+  reportBaseName: string;
+}
+
+/** HTML 리포트 출력물 계약 */
 export interface HtmlReportOutput {
   html: string;
   clientJs: string;
+  assets: HtmlReportAsset[];
 }

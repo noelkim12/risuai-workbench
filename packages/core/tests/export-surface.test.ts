@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const packageDir = process.cwd();
@@ -28,6 +27,8 @@ describe('export surface (snapshot)', () => {
         "analyzeLorebookStructure",
         "analyzeLorebookStructureFromCard",
         "analyzeLorebookStructureFromCharx",
+        "analyzeLuaFile",
+        "analyzeLuaSource",
         "analyzePromptChain",
         "analyzeTokenBudget",
         "analyzeVariableFlow",

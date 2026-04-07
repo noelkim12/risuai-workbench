@@ -4,10 +4,10 @@ import { buildLorebookStructureTree } from '@/domain/lorebook/structure';
 import { buildRelationshipNetworkPanel } from '../../shared/force-graph-builders';
 import { escapeHtml } from '../../../shared';
 import { collectRegexScriptInfosFromDir } from '../../shared/cross-cutting';
-import { buildChartPanel, buildDiagramPanel, buildFindingPanel, buildTablePanel } from '../../shared/view-model';
+import { buildChartPanel, buildDiagramPanel, buildFindingPanel, buildMetricGrid, buildTablePanel } from '../../shared/view-model';
 import { renderHtmlReportShell } from '../../shared/html-report-shell';
 import { createSourceId, dedupeSources } from '../../shared/source-links';
-import type { AnalysisVisualizationDoc, SectionDefinition, VisualizationPanel, VisualizationSource } from '../../shared/visualization-types';
+import type { AnalysisVisualizationDoc, SectionDefinition, TablePanel, VisualizationPanel, VisualizationSource } from '../../shared/visualization-types';
 import type { ModuleReportData } from '../types';
 import { type Locale, t } from '../../shared/i18n';
 
@@ -52,10 +52,6 @@ function computeModuleScore(data: ModuleReportData): number {
   // Flow 이슈 (-15): issues × 5
   score -= Math.min(15, data.variableFlow.summary.withIssues * 5);
 
-  // Token budget (-10): error 경고 시
-  if (data.tokenBudget.warnings.some((w) => w.severity === 'error')) score -= 10;
-  else if (data.tokenBudget.warnings.some((w) => w.severity === 'warning')) score -= 5;
-
   return Math.max(0, Math.min(100, score));
 }
 
@@ -83,13 +79,17 @@ export function renderModuleHtml(data: ModuleReportData, outputDir: string, loca
 
   const analysisDir = path.join(outputDir, 'analysis');
   fs.mkdirSync(analysisDir, { recursive: true });
-  const { html, clientJs } = renderHtmlReportShell(doc, locale);
+  const reportBaseName = 'module-analysis';
+  const { html, clientJs, assets } = renderHtmlReportShell(doc, { locale, reportBaseName });
   fs.writeFileSync(
-    path.join(analysisDir, 'module-analysis.html'),
+    path.join(analysisDir, `${reportBaseName}.html`),
     html,
     'utf-8',
   );
   fs.writeFileSync(path.join(analysisDir, 'report.js'), clientJs, 'utf-8');
+  for (const asset of assets) {
+    fs.writeFileSync(path.join(analysisDir, asset.fileName), asset.contents, 'utf-8');
+  }
 }
 
 // ── Summary totals ───────────────────────────────────────────────
@@ -108,11 +108,6 @@ function buildSummaryTotals(data: ModuleReportData, locale: Locale) {
     { label: t(locale, 'module.label.components'), value: componentCount },
     { label: t(locale, 'module.label.totalVars'), value: totalVars },
     { label: t(locale, 'module.label.bridgedRatio'), value: `${bridgedPct}%`, severity: bridgedPct < 20 && totalVars > 3 ? 'warning' as const : 'info' as const },
-    {
-      label: t(locale, 'module.label.worstCaseTokens'),
-      value: data.tokenBudget.totals.worstCaseTokens,
-      severity: data.tokenBudget.warnings.some((w) => w.severity === 'error') ? 'error' as const : data.tokenBudget.warnings.length > 0 ? 'warning' as const : 'info' as const,
-    },
   ];
 }
 
@@ -144,17 +139,6 @@ function buildHighlights(data: ModuleReportData, locale: Locale) {
     }
   }
 
-  // Token budget (항상)
-  const worstK = Math.round(data.tokenBudget.totals.worstCaseTokens / 1000);
-  const largest = data.tokenBudget.components.length > 0
-    ? [...data.tokenBudget.components].sort((a, b) => b.estimatedTokens - a.estimatedTokens)[0]
-    : null;
-  highlights.push({
-    title: t(locale, 'charx.highlight.tokenBudget'),
-    message: t(locale, 'module.highlight.tokenBudgetTop', worstK, largest?.name ?? '—'),
-    severity: data.tokenBudget.warnings.some((w) => w.severity === 'error') ? 'error' : 'info',
-  });
-
   return highlights.slice(0, 3);
 }
 
@@ -168,24 +152,33 @@ function buildAllPanels(data: ModuleReportData, sources: VisualizationSource[], 
   panels.push(buildVariableConnectivityChart(data, locale));
 
   // === 구조 탭 ===
+  const regexScriptInfos = collectRegexScriptInfosFromDir(path.join(outputDir, 'regex'), '[module]');
   const relationshipNetwork = buildRelationshipNetworkPanel('module-relationship-network', {
-    lorebookStructure: data.lorebookStructure,
-    lorebookRegexCorrelation: data.lorebookRegexCorrelation,
-    lorebookCBS: data.collected.lorebookCBS,
-    regexCBS: data.collected.regexCBS,
-    regexNodeNames: collectRegexScriptInfosFromDir(path.join(outputDir, 'regex'), '[module]').map((script) => script.name),
-  }, locale, 'structure');
+      lorebookStructure: data.lorebookStructure,
+      lorebookActivationChain: data.lorebookActivationChain,
+      lorebookRegexCorrelation: data.lorebookRegexCorrelation,
+      lorebookCBS: data.collected.lorebookCBS,
+      regexCBS: data.collected.regexCBS,
+      regexNodeNames: regexScriptInfos.map((script) => script.name),
+      regexScriptInfos,
+      luaArtifacts: data.luaArtifacts ?? [],
+      textMentions: data.textMentions,
+    }, locale, 'structure');
   if (relationshipNetwork) panels.push(relationshipNetwork);
 
   if (data.lorebookStructure && data.lorebookStructure.entries.length > 0) {
     panels.push(buildLorebookTreePanel(data, locale));
   }
 
+  panels.push(buildActivationChainTable(data, locale));
+
   if (data.lorebookRegexCorrelation.sharedVars.length > 0) {
     panels.push(buildLbRxCorrelationTable(data, locale));
   }
 
   panels.push(buildRuntimeSnapshotPanel(data, locale));
+
+  panels.push(...buildLuaPanels(data, locale));
 
   // === 개선점 탭 ===
   panels.push(buildFindingPanel(
@@ -231,8 +224,6 @@ function buildAllPanels(data: ModuleReportData, sources: VisualizationSource[], 
     t(locale, 'charx.filter.variables'),
   ));
 
-  panels.push(buildTokenConsumptionTable(data, locale));
-
   return panels;
 }
 
@@ -268,6 +259,32 @@ function buildComponentDistributionChart(data: ModuleReportData, locale: Locale)
   return panel;
 }
 
+function buildActivationChainTable(data: ModuleReportData, locale: Locale): VisualizationPanel {
+  return buildTablePanel(
+    'module-activation-chain',
+    t(locale, 'md.charx.activationChain'),
+    [t(locale, 'md.charx.chainFlow'), t(locale, 'md.charx.chainStatus'), t(locale, 'md.charx.chainKeywords'), t(locale, 'md.charx.chainBlockedBy')],
+    data.lorebookActivationChain.edges.map((edge) => ({
+      cells: [
+        `${escapeHtml(edge.sourceId)} → ${escapeHtml(edge.targetId)}`,
+        escapeHtml(edge.status),
+        escapeHtml([...edge.matchedKeywords, ...edge.matchedSecondaryKeywords].join(', ') || '—'),
+        escapeHtml(edge.blockedBy.join(', ') || '—'),
+      ],
+      severity: edge.status === 'blocked' ? 'warning' : edge.status === 'partial' ? 'info' : undefined,
+      searchText: [
+        edge.sourceId,
+        edge.targetId,
+        edge.status,
+        ...edge.matchedKeywords,
+        ...edge.matchedSecondaryKeywords,
+        ...edge.blockedBy,
+      ].join(' '),
+    })),
+    'structure',
+  );
+}
+
 function buildVariableConnectivityChart(data: ModuleReportData, locale: Locale): VisualizationPanel {
   const bridged = Array.from(data.unifiedGraph.values()).filter((v) => v.direction === 'bridged').length;
   const isolated = data.unifiedGraph.size - bridged;
@@ -297,7 +314,7 @@ function buildLorebookTreePanel(data: ModuleReportData, locale: Locale): Visuali
 
   const renderFolder = (folder: (typeof roots)[number], depth = 0): void => {
     lines.push(`${'  '.repeat(depth)}📁 ${folder.name}`);
-    for (const entry of folder.entries) {
+    for (const entry of dedupeLorebookEntries(folder.entries)) {
       const flags = [
         entry.constant ? '🔴 constant' : entry.selective ? '🟢 selective' : '🔵 normal',
         entry.hasCBS ? 'CBS' : '',
@@ -309,7 +326,7 @@ function buildLorebookTreePanel(data: ModuleReportData, locale: Locale): Visuali
   };
 
   for (const folder of roots) renderFolder(folder);
-  for (const entry of rootEntries) {
+  for (const entry of dedupeLorebookEntries(rootEntries)) {
     const flags = [
       entry.constant ? '🔴 constant' : entry.selective ? '🟢 selective' : '🔵 normal',
       entry.hasCBS ? 'CBS' : '',
@@ -325,6 +342,15 @@ function buildLorebookTreePanel(data: ModuleReportData, locale: Locale): Visuali
     lines.join('\n'),
     'structure',
   );
+}
+
+function dedupeLorebookEntries<T extends { id: string }>(entries: T[]): T[] {
+  const seen = new Set<string>();
+  return entries.filter((entry) => {
+    if (seen.has(entry.id)) return false;
+    seen.add(entry.id);
+    return true;
+  });
 }
 
 function buildLbRxCorrelationTable(data: ModuleReportData, locale: Locale): VisualizationPanel {
@@ -357,28 +383,6 @@ function buildRuntimeSnapshotPanel(data: ModuleReportData, locale: Locale): Visu
 
 // ── Token consumption table ──────────────────────────────────────
 
-function buildTokenConsumptionTable(data: ModuleReportData, locale: Locale): VisualizationPanel {
-  const sorted = [...data.tokenBudget.components].sort((a, b) => b.estimatedTokens - a.estimatedTokens);
-  const total = data.tokenBudget.totals.worstCaseTokens || 1;
-
-  return buildTablePanel(
-    'module-token-consumption',
-    t(locale, 'module.panel.tokenConsumption'),
-    [t(locale, 'module.table.component'), t(locale, 'common.table.type'), t(locale, 'module.table.tokens'), t(locale, 'module.table.percentage')],
-    sorted.map((c) => ({
-      cells: [
-        escapeHtml(c.name),
-        escapeHtml(c.category),
-        String(c.estimatedTokens),
-        `${Math.round((c.estimatedTokens / total) * 100)}%`,
-      ],
-      severity: c.estimatedTokens > total * 0.3 ? 'warning' as const : 'info' as const,
-      searchText: [c.name, c.category, String(c.estimatedTokens)].join(' '),
-    })),
-    'details',
-  );
-}
-
 // ── Sources ──────────────────────────────────────────────────────
 
 function buildSources(data: ModuleReportData): VisualizationSource[] {
@@ -406,9 +410,6 @@ function buildSources(data: ModuleReportData): VisualizationSource[] {
 
 function buildNextActions(data: ModuleReportData, locale: Locale): string[] {
   const actions: string[] = [];
-  if (data.tokenBudget.warnings.length > 0) {
-    actions.push(t(locale, 'module.action.reviewTokens'));
-  }
   if (data.lorebookRegexCorrelation.summary.totalShared > 0) {
     actions.push(t(locale, 'module.action.reviewShared'));
   }
@@ -452,13 +453,6 @@ function buildFindings(data: ModuleReportData, locale: Locale): Array<{ severity
     findings.push({
       severity: 'info',
       message: `${t(locale, 'module.finding.sharedVars', data.lorebookRegexCorrelation.summary.totalShared)} → ${t(locale, 'module.finding.actionGuide.sharedVars')}`,
-      sourceIds: [],
-    });
-  }
-  for (const warning of data.tokenBudget.warnings) {
-    findings.push({
-      severity: warning.severity,
-      message: `${warning.message} → ${t(locale, 'module.finding.actionGuide.tokenBudget')}`,
       sourceIds: [],
     });
   }
@@ -510,4 +504,95 @@ function buildVariableFlowSummary(data: ModuleReportData, locale: Locale): strin
     t(locale, 'common.diagram.varsWithIssues', data.variableFlow.summary.withIssues),
     ...issueRows,
   ].join('\n');
+}
+
+/** module 리포트에 포함할 Lua 분석 패널들을 생성한다 */
+function buildLuaPanels(data: ModuleReportData, locale: Locale): VisualizationPanel[] {
+  const artifacts = data.luaArtifacts ?? [];
+  if (artifacts.length === 0) return [];
+
+  const panels: VisualizationPanel[] = [];
+
+  // 집계 메트릭
+  let totalFunctions = 0;
+  let totalStateVars = 0;
+  let totalHandlers = 0;
+  for (const artifact of artifacts) {
+    totalFunctions += artifact.collected.functions.length;
+    totalStateVars += artifact.collected.stateVars.size;
+    totalHandlers += artifact.collected.handlers.length;
+  }
+
+  // 개요 메트릭 그리드
+  panels.push(buildMetricGrid('module-lua-overview', t(locale, 'lua.panel.overview'), [
+    { label: t(locale, 'lua.metric.files'), value: artifacts.length },
+    { label: t(locale, 'lua.metric.functions'), value: totalFunctions },
+    { label: t(locale, 'lua.metric.stateVars'), value: totalStateVars },
+    { label: t(locale, 'lua.metric.handlers'), value: totalHandlers },
+  ], 'structure'));
+
+  // 상태 소유권 테이블
+  const stateRows: TablePanel['rows'] = [];
+  for (const artifact of artifacts) {
+    for (const [varName, stateVar] of artifact.collected.stateVars) {
+      stateRows.push({
+        cells: [
+          `<code>${escapeHtml(varName)}</code>`,
+          escapeHtml(artifact.baseName),
+          escapeHtml([...stateVar.readBy].join(', ') || '—'),
+          escapeHtml([...stateVar.writtenBy].join(', ') || '—'),
+        ],
+        searchText: [varName, artifact.baseName, ...stateVar.readBy, ...stateVar.writtenBy].join(' '),
+      });
+    }
+  }
+  if (stateRows.length > 0) {
+    panels.push(buildTablePanel(
+      'module-lua-state-ownership',
+      t(locale, 'lua.panel.stateOwnership'),
+      [t(locale, 'common.table.variable'), t(locale, 'lua.html.owner'), t(locale, 'lua.html.reads'), t(locale, 'lua.html.writes')],
+      stateRows,
+      'structure',
+    ));
+  }
+
+  // 상관관계 테이블 — 로어북 + 정규식 상관관계 결합
+  const correlationRows: TablePanel['rows'] = [];
+  for (const artifact of artifacts) {
+    if (artifact.lorebookCorrelation) {
+      for (const bridged of artifact.lorebookCorrelation.bridgedVars) {
+        correlationRows.push({
+          cells: [
+            `<code>${escapeHtml(bridged.varName)}</code>`,
+            escapeHtml(artifact.baseName),
+            t(locale, 'lua.html.lbBridged'),
+          ],
+          searchText: [bridged.varName, artifact.baseName, 'lorebook'].join(' '),
+        });
+      }
+    }
+    if (artifact.regexCorrelation) {
+      for (const bridged of artifact.regexCorrelation.bridgedVars) {
+        correlationRows.push({
+          cells: [
+            `<code>${escapeHtml(bridged.varName)}</code>`,
+            escapeHtml(artifact.baseName),
+            t(locale, 'lua.html.rxBridged'),
+          ],
+          searchText: [bridged.varName, artifact.baseName, 'regex'].join(' '),
+        });
+      }
+    }
+  }
+  if (correlationRows.length > 0) {
+    panels.push(buildTablePanel(
+      'module-lua-correlation',
+      t(locale, 'lua.panel.correlation'),
+      [t(locale, 'common.table.variable'), t(locale, 'lua.html.owner'), t(locale, 'lua.html.correlation')],
+      correlationRows,
+      'structure',
+    ));
+  }
+
+  return panels;
 }

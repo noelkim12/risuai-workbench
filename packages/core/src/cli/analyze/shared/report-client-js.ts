@@ -2,7 +2,6 @@
 export function getReportClientJs(): string {
   return `(() => {
       const docRoot = document;
-      const i18n = JSON.parse(document.getElementById('report-i18n').textContent || '{}');
 
       function parseJsonScript(selector, scope) {
         const el = scope.querySelector(selector);
@@ -12,6 +11,30 @@ export function getReportClientJs(): string {
         } catch {
           return null;
         }
+      }
+
+      function getReportDataBundle() {
+        var bundle = window.__RISU_REPORT_DATA__;
+        return bundle && typeof bundle === 'object' ? bundle : null;
+      }
+
+      function getI18n() {
+        var bundle = getReportDataBundle();
+        if (bundle && bundle.i18n && typeof bundle.i18n === 'object') return bundle.i18n;
+        var inline = document.getElementById('report-i18n');
+        return inline ? JSON.parse(inline.textContent || '{}') : {};
+      }
+
+      const i18n = getI18n();
+
+      function getPanelPayload(panel, expectedKind) {
+        var bundle = getReportDataBundle();
+        var key = panel.getAttribute('data-report-payload-key');
+        if (bundle && key && bundle.panels && bundle.panels[key] && bundle.panels[key].kind === expectedKind) {
+          return bundle.panels[key].payload;
+        }
+        if (expectedKind === 'chart') return parseJsonScript('[data-chart-config]', panel);
+        return parseJsonScript('[data-diagram-payload]', panel);
       }
 
       function setupTabs() {
@@ -51,7 +74,7 @@ export function getReportClientJs(): string {
         const root = scope || docRoot;
         root.querySelectorAll('[data-panel-kind="diagram"][data-library="force-graph"]').forEach((panel) => {
           if (!isVisibleForceGraphPanel(panel)) return;
-          const payload = parseJsonScript('[data-diagram-payload]', panel);
+          const payload = getPanelPayload(panel, 'diagram');
           const mount = panel.querySelector('.diagram-mount');
           if (!mount || payload == null || typeof payload !== 'object') return;
           initForceGraph(mount, payload);
@@ -67,6 +90,55 @@ export function getReportClientJs(): string {
             rafId = null;
           });
         });
+      }
+
+      function setupForceGraphControls() {
+        var panels = Array.from(docRoot.querySelectorAll('[data-force-graph-mode="relationship-network"]'));
+        var enterLabel = i18n['shell.forceGraph.enterFullscreen'] || 'Fullscreen';
+        var exitLabel = i18n['shell.forceGraph.exitFullscreen'] || 'Exit fullscreen';
+
+        function updateFullscreenButtons() {
+          panels.forEach(function(panel) {
+            var button = panel.querySelector('[data-force-graph-fullscreen-toggle="true"]');
+            if (!(button instanceof HTMLButtonElement)) return;
+            var isFullscreen = docRoot.fullscreenElement === panel;
+            button.textContent = isFullscreen ? exitLabel : enterLabel;
+            button.classList.toggle('active', isFullscreen);
+            button.setAttribute('aria-pressed', isFullscreen ? 'true' : 'false');
+          });
+        }
+
+        panels.forEach(function(panel) {
+          var button = panel.querySelector('[data-force-graph-fullscreen-toggle="true"]');
+          if (!(button instanceof HTMLButtonElement) || button.dataset.bound === 'true') return;
+          button.dataset.bound = 'true';
+          if (typeof panel.requestFullscreen !== 'function') {
+            button.hidden = true;
+            return;
+          }
+          button.addEventListener('click', function() {
+            if (docRoot.fullscreenElement === panel) {
+              if (typeof docRoot.exitFullscreen === 'function') {
+                docRoot.exitFullscreen().catch(function() {});
+              }
+              return;
+            }
+            if (docRoot.fullscreenElement && typeof docRoot.exitFullscreen === 'function') {
+              docRoot.exitFullscreen().catch(function() {});
+            }
+            panel.requestFullscreen().catch(function() {});
+          });
+        });
+
+        if (panels.length > 0 && docRoot.body && docRoot.body.dataset.forceGraphFullscreenBound !== 'true') {
+          docRoot.body.dataset.forceGraphFullscreenBound = 'true';
+          docRoot.addEventListener('fullscreenchange', function() {
+            updateFullscreenButtons();
+            renderVisibleForceGraphs();
+          });
+        }
+
+        updateFullscreenButtons();
       }
 
       function setupSeverityFilters() {
@@ -320,7 +392,7 @@ export function getReportClientJs(): string {
 
       function initCharts() {
         docRoot.querySelectorAll('[data-panel-kind="chart"]').forEach(function(panel) {
-          var payload = parseJsonScript('[data-chart-config]', panel);
+          var payload = getPanelPayload(panel, 'chart');
           var mount = panel.querySelector('.chart-mount');
           if (!payload || !mount) {
             renderChartFallback(panel, panel, i18n['shell.chart.missingPayload'] || 'Missing chart payload.');
@@ -380,7 +452,7 @@ export function getReportClientJs(): string {
       function initDiagrams() {
         docRoot.querySelectorAll('[data-panel-kind="diagram"]').forEach((panel) => {
           const library = panel.getAttribute('data-library') || 'text';
-          const payload = parseJsonScript('[data-diagram-payload]', panel);
+          const payload = getPanelPayload(panel, 'diagram');
           const mount = panel.querySelector('.diagram-mount');
           if (!mount || payload == null) return;
           if (library === 'mermaid' && typeof payload === 'string') {
@@ -398,11 +470,17 @@ export function getReportClientJs(): string {
 
       function initForceGraph(mount, data) {
         if (typeof d3 === 'undefined') { mount.innerHTML = '<p class="diagram-fallback">D3.js failed to load.</p>'; return; }
+        var panel = mount.closest('[data-panel-kind="diagram"]');
+        var isRelationshipNetwork = !!(panel && panel.getAttribute('data-force-graph-mode') === 'relationship-network');
         var nodes = Array.isArray(data.nodes) ? data.nodes.map(function(n) { return Object.assign({}, n); }) : [];
         var edges = Array.isArray(data.edges) ? data.edges.map(function(e) { return Object.assign({}, e); }) : [];
         if (nodes.length === 0) { mount.innerHTML = '<p class="diagram-fallback">' + (i18n['shell.forceGraph.empty'] || 'No graph data available.') + '</p>'; return; }
 
+        var isFullscreen = !!(panel && docRoot.fullscreenElement === panel);
         var graphH = Math.max(360, Math.min(nodes.length * 28, 620));
+        if (isFullscreen) {
+          graphH = Math.max(graphH, Math.floor((window.innerHeight || 900) * 0.76));
+        }
         var centerX = (mount.clientWidth || 720) / 2;
         var centerY = graphH / 2;
         var seedRadius = Math.max(24, Math.min(nodes.length * 8, 96));
@@ -423,9 +501,40 @@ export function getReportClientJs(): string {
         }
 
         function getNodeCircleRadius(node) {
-          if (node.type === 'variable') return 10;
-          if (node.type === 'regex') return 14;
-          return 18;
+          if (node.type === 'variable') return 7;
+          if (node.type === 'regex') return 16;
+          if (node.type === 'trigger-keyword') return 12;
+          if (node.type === 'lua-function') return 16;
+          if (node.type === 'lua-function-core') return 24;
+          return 20;
+        }
+
+        function getNodeShapeType(node) {
+          if (node.type === 'regex') return 'triangle';
+          if (node.type === 'lua-function' || node.type === 'lua-function-core') return 'square';
+          if (node.type === 'variable') return 'star';
+          if (node.type === 'trigger-keyword') return 'rect';
+          return 'circle';
+        }
+
+        function getNodeShapePath(node, radius) {
+          var shapeType = getNodeShapeType(node);
+          if (shapeType === 'rect') {
+            var halfWidth = Math.max(radius * 1.3, 14);
+            var halfHeight = Math.max(radius * 0.75, 9);
+            return 'M' + (-halfWidth) + ',' + (-halfHeight)
+              + 'L' + halfWidth + ',' + (-halfHeight)
+              + 'L' + halfWidth + ',' + halfHeight
+              + 'L' + (-halfWidth) + ',' + halfHeight
+              + 'Z';
+          }
+          var symbolType = d3.symbolCircle;
+          if (shapeType === 'triangle') symbolType = d3.symbolTriangle;
+          else if (shapeType === 'square') symbolType = d3.symbolSquare;
+          else if (shapeType === 'star') {
+            return d3.symbol().type(d3.symbolStar).size(Math.PI * radius * radius * 0.55)();
+          }
+          return d3.symbol().type(symbolType).size(Math.PI * radius * radius)();
         }
 
         nodes.forEach(function(node) {
@@ -441,6 +550,78 @@ export function getReportClientJs(): string {
 
         var hasUserZoomed = false;
         var isApplyingAutoFit = false;
+        var hoveredNodeId = null;
+        var visibleNodeIds = new Set();
+
+        function getRelationshipEdgeType(type) {
+          if (type === 'variable') return 'variable';
+          if (type === 'lore-direct') return 'lore-direct';
+          if (type === 'text-mention') return 'text-mention';
+          if (type === 'lua-call') return 'lua-call';
+          return 'keyword';
+        }
+
+        var legendEntries = [
+          { type: 'always-active', color: '#f87171', label: i18n['shell.forceGraph.alwaysActive'] || 'Lorebook · Always active' },
+          { type: 'selective', color: '#34d399', label: i18n['shell.forceGraph.selective'] || 'Lorebook · Selective' },
+          { type: 'normal', color: '#60a5fa', label: i18n['shell.forceGraph.normal'] || 'Lorebook · Standard' },
+          { type: 'regex', color: '#a78bfa', label: i18n['shell.forceGraph.regex'] || 'Regex script' },
+          { type: 'lua-function', color: '#2dd4bf', label: i18n['shell.forceGraph.luaFunction'] || 'Lua function' },
+          { type: 'lua-function-core', color: '#ec4899', label: i18n['shell.forceGraph.luaFunctionCore'] || 'Lua core function' },
+          { type: 'variable', color: '#fbbf24', label: i18n['shell.forceGraph.variable'] || 'Variable' },
+          { type: 'trigger-keyword', color: '#f43f5e', label: i18n['shell.forceGraph.triggerKeyword'] || 'Trigger keyword' },
+        ].filter(function(entry) {
+          return nodes.some(function(node) { return node.type === entry.type; });
+        });
+
+        var edgeLegendEntries = [
+          { type: 'keyword', color: 'rgba(96,165,250,0.7)', label: i18n['shell.forceGraph.edgeKeyword'] || 'Keyword activation' },
+          { type: 'variable', color: 'rgba(251,191,36,0.7)', label: i18n['shell.forceGraph.edgeVariable'] || 'Variable flow' },
+          { type: 'lore-direct', color: 'rgba(45,212,191,0.78)', label: i18n['shell.forceGraph.edgeLoreDirect'] || 'Lua direct lore access' },
+          { type: 'text-mention', color: 'rgba(244,114,182,0.72)', label: i18n['shell.forceGraph.edgeTextMention'] || 'Text mention' },
+          { type: 'lua-call', color: 'rgba(129,140,248,0.78)', label: i18n['shell.forceGraph.edgeLuaCall'] || 'Lua call flow' },
+        ].filter(function(entry) {
+          return edges.some(function(edge) { return getRelationshipEdgeType(edge.type) === entry.type; });
+        });
+
+        function getEdgeNodeId(value) {
+          return typeof value === 'object' && value ? value.id : value;
+        }
+
+        function getInitialActiveTypes() {
+          var defaultTypes = legendEntries.map(function(entry) { return entry.type; });
+          if (!isRelationshipNetwork || !panel) return new Set(defaultTypes);
+          var raw = panel.getAttribute('data-force-graph-active-types') || '';
+          var requested = raw
+            .split(',')
+            .map(function(type) { return type.trim(); })
+            .filter(Boolean);
+          var activeTypes = requested.length > 0
+            ? defaultTypes.filter(function(type) { return requested.includes(type); })
+            : defaultTypes;
+          if (activeTypes.length === 0) activeTypes = defaultTypes;
+          panel.setAttribute('data-force-graph-active-types', activeTypes.join(','));
+          return new Set(activeTypes);
+        }
+
+        function getInitialActiveEdgeTypes() {
+          var defaultTypes = edgeLegendEntries.map(function(entry) { return entry.type; });
+          if (!isRelationshipNetwork || !panel || defaultTypes.length === 0) return new Set(defaultTypes);
+          var raw = panel.getAttribute('data-force-graph-active-edge-types') || '';
+          var requested = raw
+            .split(',')
+            .map(function(type) { return type.trim(); })
+            .filter(Boolean);
+          var activeTypes = requested.length > 0
+            ? defaultTypes.filter(function(type) { return requested.includes(type); })
+            : defaultTypes;
+          if (activeTypes.length === 0) activeTypes = defaultTypes;
+          panel.setAttribute('data-force-graph-active-edge-types', activeTypes.join(','));
+          return new Set(activeTypes);
+        }
+
+        var activeNodeTypes = getInitialActiveTypes();
+        var activeEdgeTypes = getInitialActiveEdgeTypes();
 
         function fitGraph(animated) {
           if (nodes.length === 0) return;
@@ -494,6 +675,18 @@ export function getReportClientJs(): string {
           .attr('refX', 22).attr('refY', 0).attr('markerWidth', 6).attr('markerHeight', 6)
           .attr('orient', 'auto')
           .append('path').attr('d', 'M0,-4L8,0L0,4').attr('fill', 'rgba(251,191,36,0.5)');
+        defs.append('marker').attr('id', 'arrow-lore-direct').attr('viewBox', '0 -4 8 8')
+          .attr('refX', 22).attr('refY', 0).attr('markerWidth', 6).attr('markerHeight', 6)
+          .attr('orient', 'auto')
+          .append('path').attr('d', 'M0,-4L8,0L0,4').attr('fill', 'rgba(45,212,191,0.6)');
+        defs.append('marker').attr('id', 'arrow-text-mention').attr('viewBox', '0 -4 8 8')
+          .attr('refX', 22).attr('refY', 0).attr('markerWidth', 5).attr('markerHeight', 5)
+          .attr('orient', 'auto')
+          .append('path').attr('d', 'M0,-3L6,0L0,3').attr('fill', 'rgba(244,114,182,0.6)');
+        defs.append('marker').attr('id', 'arrow-lua-call').attr('viewBox', '0 -4 8 8')
+          .attr('refX', 22).attr('refY', 0).attr('markerWidth', 6).attr('markerHeight', 6)
+          .attr('orient', 'auto')
+          .append('path').attr('d', 'M0,-4L8,0L0,4L2,0Z').attr('fill', 'rgba(129,140,248,0.7)');
 
         var g = svg.append('g');
 
@@ -508,9 +701,34 @@ export function getReportClientJs(): string {
         var nodeGroup = g.append('g');
 
         var link = linkGroup.selectAll('line').data(edges).join('line')
-          .attr('stroke', function(d) { return d.type === 'variable' ? 'rgba(251,191,36,0.35)' : 'rgba(96,165,250,0.3)'; })
-          .attr('stroke-width', 1.2)
-          .attr('marker-end', function(d) { return d.type === 'variable' ? 'url(#arrow-var)' : 'url(#arrow-kw)'; });
+          .attr('stroke', function(d) {
+            var edgeType = getRelationshipEdgeType(d.type);
+            if (edgeType === 'variable') return 'rgba(251,191,36,0.35)';
+            if (edgeType === 'lore-direct') return 'rgba(45,212,191,0.45)';
+            if (edgeType === 'text-mention') return 'rgba(244,114,182,0.38)';
+            if (edgeType === 'lua-call') return 'rgba(129,140,248,0.45)';
+            return 'rgba(96,165,250,0.3)';
+          })
+          .attr('stroke-width', function(d) {
+            var edgeType = getRelationshipEdgeType(d.type);
+            if (edgeType === 'lua-call') return 1.6;
+            if (edgeType === 'text-mention') return 1.0;
+            return 1.2;
+          })
+          .attr('stroke-dasharray', function(d) {
+            var edgeType = getRelationshipEdgeType(d.type);
+            if (edgeType === 'text-mention') return '4 3';
+            if (edgeType === 'lua-call') return '6 2';
+            return 'none';
+          })
+          .attr('marker-end', function(d) {
+            var edgeType = getRelationshipEdgeType(d.type);
+            if (edgeType === 'variable') return 'url(#arrow-var)';
+            if (edgeType === 'lore-direct') return 'url(#arrow-lore-direct)';
+            if (edgeType === 'text-mention') return 'url(#arrow-text-mention)';
+            if (edgeType === 'lua-call') return 'url(#arrow-lua-call)';
+            return 'url(#arrow-kw)';
+          });
 
         var edgeLabel = edgeLabelGroup.selectAll('text').data(edges.filter(function(e) { return Boolean(e.label); })).join('text')
           .text(function(d) { return d.label; })
@@ -526,8 +744,8 @@ export function getReportClientJs(): string {
 
         var node = nodeGroup.selectAll('g').data(nodes).join('g').attr('cursor', 'grab');
 
-        node.append('circle')
-          .attr('r', function(d) { return d.__circleRadius || 18; })
+        node.append('path')
+          .attr('d', function(d) { return getNodeShapePath(d, d.__circleRadius || 18); })
           .attr('fill', function(d) { return d.color || '#60a5fa'; })
           .attr('opacity', 0.85)
           .attr('stroke', 'transparent')
@@ -553,37 +771,174 @@ export function getReportClientJs(): string {
           });
         });
 
+        function isNodeTypeVisible(nodeData) {
+          return !isRelationshipNetwork || activeNodeTypes.has(nodeData.type);
+        }
+
+        function isEdgeTypeVisible(edgeData) {
+          return !isRelationshipNetwork || activeEdgeTypes.has(getRelationshipEdgeType(edgeData.type));
+        }
+
+        function isFocusModeActive() {
+          return isRelationshipNetwork && legendEntries.length > 0 && activeNodeTypes.size < legendEntries.length;
+        }
+
+        function isEdgeVisible(edgeData) {
+          var sourceId = getEdgeNodeId(edgeData.source);
+          var targetId = getEdgeNodeId(edgeData.target);
+          return isEdgeTypeVisible(edgeData) && visibleNodeIds.has(sourceId) && visibleNodeIds.has(targetId);
+        }
+
+        function syncGraphVisibility() {
+          var nodeTypeVisibleIds = new Set(nodes.filter(isNodeTypeVisible).map(function(nodeData) { return nodeData.id; }));
+          if (isFocusModeActive()) {
+            visibleNodeIds = new Set();
+            edges.forEach(function(edgeData) {
+              if (!isEdgeTypeVisible(edgeData)) return;
+              var sourceId = getEdgeNodeId(edgeData.source);
+              var targetId = getEdgeNodeId(edgeData.target);
+              if (nodeTypeVisibleIds.has(sourceId)) visibleNodeIds.add(sourceId);
+              if (nodeTypeVisibleIds.has(targetId)) visibleNodeIds.add(targetId);
+            });
+          } else {
+            visibleNodeIds = nodeTypeVisibleIds;
+          }
+          var connected = hoveredNodeId ? new Set([hoveredNodeId]) : null;
+
+          if (connected) {
+            edges.forEach(function(edgeData) {
+              if (!isEdgeVisible(edgeData)) return;
+              var sourceId = getEdgeNodeId(edgeData.source);
+              var targetId = getEdgeNodeId(edgeData.target);
+              if (sourceId === hoveredNodeId) connected.add(targetId);
+              if (targetId === hoveredNodeId) connected.add(sourceId);
+            });
+          }
+
+          node.style('display', function(nodeData) {
+            return visibleNodeIds.has(nodeData.id) ? '' : 'none';
+          });
+
+          node.select('path')
+            .attr('opacity', function(nodeData) {
+              if (!visibleNodeIds.has(nodeData.id)) return 0;
+              if (!connected) return 0.85;
+              return connected.has(nodeData.id) ? 1 : 0.15;
+            })
+            .attr('stroke', function(nodeData) {
+              return hoveredNodeId === nodeData.id && visibleNodeIds.has(nodeData.id) ? '#fff' : 'transparent';
+            })
+            .attr('d', function(nodeData) {
+              var radius = nodeData.__circleRadius || 18;
+              return getNodeShapePath(nodeData, hoveredNodeId === nodeData.id && visibleNodeIds.has(nodeData.id) ? radius + 4 : radius);
+            });
+
+          node.select('text').attr('opacity', function(nodeData) {
+            if (!visibleNodeIds.has(nodeData.id)) return 0;
+            if (!connected) return 1;
+            return connected.has(nodeData.id) ? 1 : 0.15;
+          });
+
+          link
+            .style('display', function(edgeData) { return isEdgeVisible(edgeData) ? '' : 'none'; })
+            .attr('opacity', function(edgeData) {
+              if (!isEdgeVisible(edgeData)) return 0;
+              if (!connected) return 1;
+              var sourceId = getEdgeNodeId(edgeData.source);
+              var targetId = getEdgeNodeId(edgeData.target);
+              return (sourceId === hoveredNodeId || targetId === hoveredNodeId) ? 1 : 0.08;
+            })
+            .attr('stroke-width', function(edgeData) {
+              if (!isEdgeVisible(edgeData)) return 0;
+              if (!connected) return 1.2;
+              var sourceId = getEdgeNodeId(edgeData.source);
+              var targetId = getEdgeNodeId(edgeData.target);
+              return (sourceId === hoveredNodeId || targetId === hoveredNodeId) ? 2.5 : 1.2;
+            });
+
+          edgeLabel
+            .style('display', function(edgeData) { return isEdgeVisible(edgeData) ? '' : 'none'; })
+            .attr('opacity', function(edgeData) {
+              if (!isEdgeVisible(edgeData)) return 0;
+              if (!connected) return 0.82;
+              var sourceId = getEdgeNodeId(edgeData.source);
+              var targetId = getEdgeNodeId(edgeData.target);
+              return (sourceId === hoveredNodeId || targetId === hoveredNodeId) ? 1 : 0.08;
+            });
+        }
+
         node.on('mouseenter', function(event, d) {
-          var connected = new Set();
-          connected.add(d.id);
-          edges.forEach(function(e) {
-            var sid = typeof e.source === 'object' ? e.source.id : e.source;
-            var tid = typeof e.target === 'object' ? e.target.id : e.target;
-            if (sid === d.id) connected.add(tid);
-            if (tid === d.id) connected.add(sid);
-          });
-          node.select('circle').attr('opacity', function(n) { return connected.has(n.id) ? 1 : 0.15; });
-          node.select('text').attr('opacity', function(n) { return connected.has(n.id) ? 1 : 0.15; });
-          link.attr('opacity', function(e) {
-            var sid = typeof e.source === 'object' ? e.source.id : e.source;
-            var tid = typeof e.target === 'object' ? e.target.id : e.target;
-            return (sid === d.id || tid === d.id) ? 1 : 0.08;
-          }).attr('stroke-width', function(e) {
-            var sid = typeof e.source === 'object' ? e.source.id : e.source;
-            var tid = typeof e.target === 'object' ? e.target.id : e.target;
-            return (sid === d.id || tid === d.id) ? 2.5 : 1.2;
-          });
-          edgeLabel.attr('opacity', function(e) {
-            var sid = typeof e.source === 'object' ? e.source.id : e.source;
-            var tid = typeof e.target === 'object' ? e.target.id : e.target;
-            return (sid === d.id || tid === d.id) ? 1 : 0.08;
-          });
-          d3.select(this).select('circle').attr('stroke', '#fff').attr('r', function(n) { return (n.__circleRadius || 18) + 4; });
+          if (!visibleNodeIds.has(d.id)) return;
+          hoveredNodeId = d.id;
+          syncGraphVisibility();
         }).on('mouseleave', function() {
-          node.select('circle').attr('opacity', 0.85).attr('stroke', 'transparent').attr('r', function(n) { return n.__circleRadius || 18; });
-          node.select('text').attr('opacity', 1);
-          link.attr('opacity', 1).attr('stroke-width', 1.2);
-          edgeLabel.attr('opacity', 0.82);
+          hoveredNodeId = null;
+          syncGraphVisibility();
+        });
+
+        var dialog = document.getElementById('node-details-dialog');
+        var dialogTitle = document.getElementById('node-details-title');
+        var dialogList = document.getElementById('node-details-list');
+        var dialogClose = document.getElementById('node-details-close');
+
+        if (dialogClose && dialogClose.dataset.bound !== 'true') {
+          dialogClose.dataset.bound = 'true';
+          dialogClose.addEventListener('click', function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (dialog && typeof dialog.close === 'function') dialog.close('close-button');
+          });
+        }
+
+        function shouldRenderBlockValue(key, valueText) {
+          return key === 'Content'
+            || key === 'In'
+            || key === 'Out'
+            || key === 'Body'
+            || key === 'Expected vars'
+            || valueText.indexOf('\\n') >= 0
+            || valueText.length > 120;
+        }
+
+        node.on('click', function(event, d) {
+          if (!dialog || !visibleNodeIds.has(d.id)) return;
+          if (!dialogTitle || !dialogList) return;
+          dialogTitle.textContent = d.label || d.id;
+          dialogList.innerHTML = '';
+          if (d.details && typeof d.details === 'object') {
+            for (var key in d.details) {
+              if (!Object.prototype.hasOwnProperty.call(d.details, key) || !d.details[key]) continue;
+              var valueText = String(d.details[key]);
+              var li = document.createElement('li');
+              li.innerHTML = '<strong>' + escapeHtmlForClient(key) + '</strong>';
+              if (shouldRenderBlockValue(key, valueText)) {
+                var block = document.createElement('pre');
+                block.className = 'node-details-pre';
+                block.textContent = valueText;
+                li.appendChild(block);
+              } else {
+                li.insertAdjacentHTML('beforeend', ' ' + escapeHtmlForClient(valueText));
+              }
+              dialogList.appendChild(li);
+            }
+          }
+          if (dialogList.children.length === 0) {
+            var emptyLi = document.createElement('li');
+            emptyLi.textContent = 'No detailed information available.';
+            dialogList.appendChild(emptyLi);
+          }
+          if (typeof dialog.showModal === 'function' && !dialog.open) {
+            dialog.showModal();
+          }
+          dialog.scrollTop = 0;
+          dialogList.scrollTop = 0;
+          window.requestAnimationFrame(function() {
+            dialog.scrollTop = 0;
+            dialogList.scrollTop = 0;
+            if (dialogTitle && typeof dialogTitle.focus === 'function') {
+              dialogTitle.focus();
+            }
+          });
         });
 
         var simulation = d3.forceSimulation(nodes)
@@ -626,16 +981,88 @@ export function getReportClientJs(): string {
         node.call(drag);
         fitGraph(false);
 
-        var legendDiv = document.createElement('div');
-        legendDiv.className = 'force-graph-legend';
-        legendDiv.innerHTML = '<span style="color:#f87171">\u25cf ' + (i18n['shell.forceGraph.alwaysActive'] || 'Always active') + '</span>'
-          + '<span style="color:#60a5fa">\u25cf ' + (i18n['shell.forceGraph.normal'] || 'Normal') + '</span>'
-          + '<span style="color:#34d399">\u25cf ' + (i18n['shell.forceGraph.selective'] || 'Selective') + '</span>'
-          + '<span style="color:#a78bfa">\u25cf ' + (i18n['shell.forceGraph.regex'] || 'Regex') + '</span>'
-          + '<span style="color:#fbbf24">\u25cf ' + (i18n['shell.forceGraph.variable'] || 'Variable') + '</span>'
-          + '<span style="color:rgba(96,165,250,0.7)">— ' + (i18n['shell.forceGraph.edgeKeyword'] || 'Keyword activation') + '</span>'
-          + '<span style="color:rgba(251,191,36,0.7)">— ' + (i18n['shell.forceGraph.edgeVariable'] || 'Variable flow') + '</span>';
-        mount.appendChild(legendDiv);
+        function updateLegendChipState(chip, isActive) {
+          chip.dataset.active = isActive ? 'true' : 'false';
+          chip.classList.toggle('active', isActive);
+          chip.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        }
+
+        function buildLegendChip(entry, attributeName, isActive) {
+          var chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'force-graph-chip';
+          chip.setAttribute(attributeName, entry.type);
+          chip.innerHTML = '<span class="force-graph-chip-dot" style="background:' + escapeHtmlForClient(entry.color) + '"></span>' + escapeHtmlForClient(entry.label);
+          updateLegendChipState(chip, isActive);
+          return chip;
+        }
+
+        function renderLegend() {
+          var legendDiv = document.createElement('div');
+          legendDiv.className = 'force-graph-legend';
+
+          if (isRelationshipNetwork) {
+            legendDiv.setAttribute('data-force-graph-legend-filter', 'true');
+            legendEntries.forEach(function(entry) {
+              var chip = buildLegendChip(entry, 'data-node-type', activeNodeTypes.has(entry.type));
+              chip.addEventListener('click', function() {
+                if (activeNodeTypes.has(entry.type) && activeNodeTypes.size === 1) return;
+                if (activeNodeTypes.has(entry.type)) {
+                  activeNodeTypes.delete(entry.type);
+                } else {
+                  activeNodeTypes.add(entry.type);
+                }
+                if (panel) panel.setAttribute('data-force-graph-active-types', Array.from(activeNodeTypes).join(','));
+                legendDiv.querySelectorAll('[data-node-type]').forEach(function(item) {
+                  var type = item.getAttribute('data-node-type') || '';
+                  updateLegendChipState(item, activeNodeTypes.has(type));
+                });
+                hoveredNodeId = null;
+                syncGraphVisibility();
+              });
+              legendDiv.appendChild(chip);
+            });
+
+            edgeLegendEntries.forEach(function(entry) {
+              var chip = buildLegendChip(entry, 'data-edge-type', activeEdgeTypes.has(entry.type));
+              chip.addEventListener('click', function() {
+                if (activeEdgeTypes.has(entry.type) && activeEdgeTypes.size === 1) return;
+                if (activeEdgeTypes.has(entry.type)) {
+                  activeEdgeTypes.delete(entry.type);
+                } else {
+                  activeEdgeTypes.add(entry.type);
+                }
+                if (panel) panel.setAttribute('data-force-graph-active-edge-types', Array.from(activeEdgeTypes).join(','));
+                legendDiv.querySelectorAll('[data-edge-type]').forEach(function(item) {
+                  var type = item.getAttribute('data-edge-type') || '';
+                  updateLegendChipState(item, activeEdgeTypes.has(type));
+                });
+                hoveredNodeId = null;
+                syncGraphVisibility();
+              });
+              legendDiv.appendChild(chip);
+            });
+          } else {
+            legendDiv.innerHTML = '<span style="color:#f87171">\u25cf ' + (i18n['shell.forceGraph.alwaysActive'] || 'Always active') + '</span>'
+              + '<span style="color:#60a5fa">\u25cf ' + (i18n['shell.forceGraph.normal'] || 'Normal') + '</span>'
+              + '<span style="color:#34d399">\u25cf ' + (i18n['shell.forceGraph.selective'] || 'Selective') + '</span>'
+              + '<span style="color:#a78bfa">\u25cf ' + (i18n['shell.forceGraph.regex'] || 'Regex') + '</span>'
+              + '<span style="color:#2dd4bf">\u25cf ' + (i18n['shell.forceGraph.luaFunction'] || 'Lua function') + '</span>'
+              + '<span style="color:#ec4899">\u25cf ' + (i18n['shell.forceGraph.luaFunctionCore'] || 'Core Lua Function') + '</span>'
+              + '<span style="color:#f43f5e">\u25cf ' + (i18n['shell.forceGraph.triggerKeyword'] || 'Trigger Keyword') + '</span>'
+              + '<span style="color:#fbbf24">\u25cf ' + (i18n['shell.forceGraph.variable'] || 'Variable') + '</span>';
+            legendDiv.insertAdjacentHTML(
+              'beforeend',
+              '<span style="color:rgba(96,165,250,0.7)">— ' + (i18n['shell.forceGraph.edgeKeyword'] || 'Keyword activation') + '</span>'
+              + '<span style="color:rgba(251,191,36,0.7)">— ' + (i18n['shell.forceGraph.edgeVariable'] || 'Variable flow') + '</span>'
+              + '<span style="color:rgba(45,212,191,0.78)">— ' + (i18n['shell.forceGraph.edgeLoreDirect'] || 'Lua direct lore access') + '</span>',
+            );
+          }
+          mount.appendChild(legendDiv);
+        }
+
+        syncGraphVisibility();
+        renderLegend();
       }
 
       function escapeHtmlForClient(value) {
@@ -650,6 +1077,7 @@ export function getReportClientJs(): string {
       setupSeverityFilters();
       setupTableFilters();
       setupForceGraphRefresh();
+      setupForceGraphControls();
       initCharts();
       initDiagrams();
     })();`;

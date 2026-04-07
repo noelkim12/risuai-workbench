@@ -23,7 +23,6 @@ export function renderPresetMarkdown(data: PresetReportData, outputDir: string, 
   out.push(mdRow([t(locale, 'md.preset.uniqueCbsVars'), String(data.unifiedGraph.size)]));
   out.push('');
 
-  out.push(...renderTokenBudget(data, locale));
   out.push(...renderVariableFlow(data, locale));
   out.push(...renderDeadCode(data, locale));
   out.push(...renderPromptChain(data, locale));
@@ -89,27 +88,6 @@ export function renderPresetMarkdown(data: PresetReportData, outputDir: string, 
   const analysisDir = path.join(outputDir, 'analysis');
   fs.mkdirSync(analysisDir, { recursive: true });
   fs.writeFileSync(path.join(analysisDir, 'preset-analysis.md'), out.join('\n'), 'utf-8');
-}
-
-function renderTokenBudget(data: PresetReportData, locale: Locale): string[] {
-  const out = ['## ' + t(locale, 'md.charx.tokenBudget'), ''];
-  out.push('> ' + t(locale, 'md.charx.heuristic'), '');
-  out.push(`| ${t(locale, 'common.table.metric')} | ${t(locale, 'common.table.value')} |`);
-  out.push('|--------|-------|');
-  out.push(mdRow([t(locale, 'md.charx.alwaysActiveTokens'), String(data.tokenBudget.totals.alwaysActiveTokens)]));
-  out.push(mdRow([t(locale, 'md.charx.conditionalTokens'), String(data.tokenBudget.totals.conditionalTokens)]));
-  out.push(mdRow([t(locale, 'md.charx.worstCaseTokens'), String(data.tokenBudget.totals.worstCaseTokens)]));
-  out.push('');
-
-  if (data.tokenBudget.warnings.length > 0) {
-    out.push('### ' + t(locale, 'md.charx.budgetWarnings'), '');
-    data.tokenBudget.warnings.forEach((warning) => {
-      out.push(`- [${warning.severity}] ${warning.message}`);
-    });
-    out.push('');
-  }
-
-  return out;
 }
 
 function renderVariableFlow(data: PresetReportData, locale: Locale): string[] {

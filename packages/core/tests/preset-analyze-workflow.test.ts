@@ -106,7 +106,9 @@ describe('preset analyze collectors and workflow', () => {
     expect(code).toBe(0);
     expect(fs.existsSync(path.join(tempDir, 'analysis', 'preset-analysis.md'))).toBe(true);
     const markdown = fs.readFileSync(path.join(tempDir, 'analysis', 'preset-analysis.md'), 'utf-8');
-    expect(markdown).toContain('## Token Budget');
+    expect(markdown).not.toContain('## Token Budget');
+    expect(markdown).not.toContain('Worst-case tokens');
+    expect(markdown).not.toContain('최악 토큰');
     expect(markdown).toContain('## Variable Flow');
     expect(markdown).toContain('## Dead Code Findings');
     expect(markdown).toContain('## Prompt Chain');
@@ -116,8 +118,11 @@ describe('preset analyze collectors and workflow', () => {
     const code = runAnalyzePresetWorkflow([tempDir, '--locale', 'en']);
     expect(code).toBe(0);
     expect(fs.existsSync(path.join(tempDir, 'analysis', 'preset-analysis.html'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'preset-analysis.data.js'))).toBe(true);
     const html = fs.readFileSync(path.join(tempDir, 'analysis', 'preset-analysis.html'), 'utf-8');
-    expect(html).toContain('Token Budget');
+    expect(html).not.toContain('Token Budget');
+    expect(html).not.toContain('Worst-case tokens');
+    expect(html).not.toContain('최악 토큰 수');
     expect(html).toContain('Variable Flow');
     expect(html).toContain('Dead Code');
     expect(html).toContain('Prompt Chain');
@@ -125,6 +130,7 @@ describe('preset analyze collectors and workflow', () => {
     expect(html).toContain('Chain Steps Table');
     expect(html).toContain('data-panel-id="preset-chain-dep-graph"');
     expect(html).toContain('data-library="force-graph"');
+    expect(html).toContain('<script src="./preset-analysis.data.js"></script>');
   });
 
   it('runs preset-wide analysis automatically after extract', () => {
@@ -153,6 +159,7 @@ describe('preset analyze collectors and workflow', () => {
     expect(code).toBe(0);
     expect(fs.existsSync(path.join(outDir, 'analysis', 'preset-analysis.md'))).toBe(true);
     expect(fs.existsSync(path.join(outDir, 'analysis', 'preset-analysis.html'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'analysis', 'preset-analysis.data.js'))).toBe(true);
   });
 
   it('skips preset-wide analysis on --json-only extract', () => {

@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import {
   ELEMENT_TYPES,
@@ -7,20 +6,30 @@ import {
   type ElementCBSData,
   type GenericRecord,
 } from '@/domain';
+import type { LuaAnalysisArtifact } from '@/domain/analyze/lua-core';
 import { dirExists, readJsonIfExists } from '@/node/fs-helpers';
 import { listJsonFilesRecursive, resolveOrderedFiles } from '@/node/json-listing';
-import { collectHTMLCBS, importLuaAnalysis } from '../charx/collectors';
+import { collectHTMLCBS, importLuaAnalysis, loadLuaArtifacts } from '../charx/collectors';
 import type { ModuleCollectResult } from './types';
 
 /** 추출된 module 디렉토리에서 CBS 변수 연산 데이터를 수집한다. */
 export function collectModuleCBS(outputDir: string): ModuleCollectResult {
   const lorebookCBS = collectModuleLorebookCBS(outputDir);
   const regexCBS = collectModuleRegexCBS(outputDir);
-  const luaCBS = importLuaAnalysis(outputDir);
+  const luaArtifacts = loadLuaArtifactsForModule(outputDir);
+  const luaCBS =
+    luaArtifacts.length > 0
+      ? luaArtifacts.flatMap((artifact) => artifact.elementCbs)
+      : importLuaAnalysis(outputDir);
   const htmlCBS = collectHTMLCBS(null, outputDir).cbsData;
   const metadata = loadModuleMetadata(outputDir);
 
-  return { lorebookCBS, regexCBS, luaCBS, htmlCBS, metadata };
+  return { lorebookCBS, regexCBS, luaCBS, htmlCBS, metadata, luaArtifacts };
+}
+
+/** module 추출 디렉토리의 Lua 파일을 직접 분석해 아티팩트를 만든다. */
+export function loadLuaArtifactsForModule(outputDir: string): LuaAnalysisArtifact[] {
+  return loadLuaArtifacts(outputDir, null);
 }
 
 function collectModuleLorebookCBS(outputDir: string): ElementCBSData[] {

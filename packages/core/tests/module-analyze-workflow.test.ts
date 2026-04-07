@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { collectModuleCBS } from '@/cli/analyze/module/collectors';
-import { runAnalyzeModuleWorkflow } from '@/cli/analyze/module/workflow';
-import { runExtractWorkflow as runModuleExtractWorkflow } from '@/cli/extract/module/workflow';
+import { collectModuleCBS } from '../src/cli/analyze/module/collectors';
+import { runAnalyzeModuleWorkflow } from '../src/cli/analyze/module/workflow';
+import { runExtractWorkflow as runModuleExtractWorkflow } from '../src/cli/extract/module/workflow';
 
 describe('module analyze collectors and workflow', () => {
   let tempDir: string;
@@ -124,8 +124,38 @@ describe('module analyze collectors and workflow', () => {
 
   it('imports lua analysis and background html data from extracted module directory', () => {
     const result = collectModuleCBS(tempDir);
+    expect(result.luaArtifacts).toHaveLength(0);
     expect(result.luaCBS[0]?.reads.has('hp')).toBe(true);
     expect(result.htmlCBS?.writes.has('theme')).toBe(true);
+  });
+
+  it('loads lua artifacts directly from lua files without requiring sidecar analysis json', () => {
+    fs.rmSync(path.join(tempDir, 'lua', 'boot.analysis.json'));
+    fs.writeFileSync(
+      path.join(tempDir, 'lua', 'runtime.lua'),
+      `
+function runtime()
+  setChatVar('mana', '10')
+  return getChatVar('mode')
+end
+`,
+      'utf-8',
+    );
+
+    const result = collectModuleCBS(tempDir);
+
+    expect(result.luaArtifacts).toHaveLength(1);
+    expect(result.luaArtifacts[0]?.baseName).toBe('runtime');
+    expect(result.luaArtifacts[0]?.elementCbs[0]?.reads.has('mode')).toBe(true);
+    expect(result.luaArtifacts[0]?.elementCbs[0]?.writes.has('mana')).toBe(true);
+    expect(result.luaCBS).toHaveLength(1);
+    expect(result.luaCBS[0]?.reads.has('mode')).toBe(true);
+    expect(result.luaCBS[0]?.writes.has('mana')).toBe(true);
+    expect(result.luaCBS[0]?.reads.has('hp')).toBe(false);
+
+    const code = runAnalyzeModuleWorkflow([tempDir, '--locale', 'en']);
+    expect(code).toBe(0);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'module-analysis.md'))).toBe(true);
   });
 
   it('writes module analysis markdown report', () => {
@@ -133,7 +163,7 @@ describe('module analyze collectors and workflow', () => {
     expect(code).toBe(0);
     expect(fs.existsSync(path.join(tempDir, 'analysis', 'module-analysis.md'))).toBe(true);
     const markdown = fs.readFileSync(path.join(tempDir, 'analysis', 'module-analysis.md'), 'utf-8');
-    expect(markdown).toContain('## Token Budget');
+    expect(markdown).not.toContain('## Token Budget');
     expect(markdown).toContain('## Variable Flow');
     expect(markdown).toContain('## Dead Code Findings');
   });
@@ -142,10 +172,24 @@ describe('module analyze collectors and workflow', () => {
     const code = runAnalyzeModuleWorkflow([tempDir, '--locale', 'en']);
     expect(code).toBe(0);
     expect(fs.existsSync(path.join(tempDir, 'analysis', 'module-analysis.html'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'module-analysis.data.js'))).toBe(true);
     const html = fs.readFileSync(path.join(tempDir, 'analysis', 'module-analysis.html'), 'utf-8');
-    expect(html).toContain('Token Consumption');
     expect(html).toContain('Variable Flow Summary');
     expect(html).toContain('Dead Code');
+    expect(html).not.toContain('Token Budget');
+    expect(html).not.toContain('Token Consumption');
+    expect(html).not.toContain('Worst-case tokens');
+    expect(html).not.toContain('최악 토큰 수');
+    expect(html).toContain('<script src="./module-analysis.data.js"></script>');
+  });
+
+  it('writes module analysis markdown without worst-case token row', () => {
+    const code = runAnalyzeModuleWorkflow([tempDir, '--locale', 'en']);
+    expect(code).toBe(0);
+    const markdown = fs.readFileSync(path.join(tempDir, 'analysis', 'module-analysis.md'), 'utf-8');
+    expect(markdown).not.toContain('## Token Budget');
+    expect(markdown).not.toContain('Worst-case tokens');
+    expect(markdown).not.toContain('최악 토큰');
   });
 
   it('runs module-wide analysis automatically after extract', () => {
@@ -179,11 +223,20 @@ describe('module analyze collectors and workflow', () => {
     );
 
     const code = runModuleExtractWorkflow([sourcePath, '--out', outDir]);
+    const collected = collectModuleCBS(outDir);
 
     expect(code).toBe(0);
     expect(fs.existsSync(path.join(outDir, 'analysis', 'module-analysis.md'))).toBe(true);
     expect(fs.existsSync(path.join(outDir, 'analysis', 'module-analysis.html'))).toBe(true);
-    expect(fs.existsSync(path.join(outDir, 'lua', 'boot.analysis.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'analysis', 'module-analysis.data.js'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'lua', 'boot.lua'))).toBe(true);
+    expect(collected.luaArtifacts).toHaveLength(1);
+    expect(collected.luaArtifacts[0]?.baseName).toBe('boot');
+    expect(collected.luaCBS).toHaveLength(1);
+    expect(collected.luaCBS[0]?.elementName).toBe('boot');
+
+    const html = fs.readFileSync(path.join(outDir, 'analysis', 'module-analysis.html'), 'utf-8');
+    expect(html).toContain('Lua 개요');
   });
 
   it('skips module-wide analysis on --json-only extract', () => {

@@ -24,9 +24,9 @@ export function renderModuleMarkdown(data: ModuleReportData, outputDir: string, 
   out.push(mdRow([t(locale, 'md.module.uniqueCbsVars'), String(data.unifiedGraph.size)]));
   out.push('');
 
-  out.push(...renderTokenBudget(data, locale));
   out.push(...renderVariableFlow(data, locale));
   out.push(...renderDeadCode(data, locale));
+  out.push(...renderActivationChain(data, locale));
 
   out.push('## ' + t(locale, 'md.module.unifiedCbsVars'));
   out.push('');
@@ -87,30 +87,30 @@ export function renderModuleMarkdown(data: ModuleReportData, outputDir: string, 
     out.push('');
   }
 
-  const analysisDir = path.join(outputDir, 'analysis');
-  fs.mkdirSync(analysisDir, { recursive: true });
-  fs.writeFileSync(path.join(analysisDir, 'module-analysis.md'), out.join('\n'), 'utf-8');
-}
-
-function renderTokenBudget(data: ModuleReportData, locale: Locale): string[] {
-  const out = ['## ' + t(locale, 'md.charx.tokenBudget'), ''];
-  out.push('> ' + t(locale, 'md.charx.heuristic'), '');
-  out.push(`| ${t(locale, 'common.table.metric')} | ${t(locale, 'common.table.value')} |`);
-  out.push('|--------|-------|');
-  out.push(mdRow([t(locale, 'md.charx.alwaysActiveTokens'), String(data.tokenBudget.totals.alwaysActiveTokens)]));
-  out.push(mdRow([t(locale, 'md.charx.conditionalTokens'), String(data.tokenBudget.totals.conditionalTokens)]));
-  out.push(mdRow([t(locale, 'md.charx.worstCaseTokens'), String(data.tokenBudget.totals.worstCaseTokens)]));
-  out.push('');
-
-  if (data.tokenBudget.warnings.length > 0) {
-    out.push('### ' + t(locale, 'md.charx.budgetWarnings'), '');
-    data.tokenBudget.warnings.forEach((warning) => {
-      out.push(`- [${warning.severity}] ${warning.message}`);
-    });
+  // Lua 분석 요약
+  if (data.luaArtifacts && data.luaArtifacts.length > 0) {
+    out.push('## ' + t(locale, 'lua.panel.overview'));
+    out.push('');
+    let totalFunctions = 0;
+    let totalStateVars = 0;
+    let totalHandlers = 0;
+    for (const artifact of data.luaArtifacts) {
+      totalFunctions += artifact.collected.functions.length;
+      totalStateVars += artifact.collected.stateVars.size;
+      totalHandlers += artifact.collected.handlers.length;
+    }
+    out.push(`| ${t(locale, 'common.table.metric')} | ${t(locale, 'common.table.value')} |`);
+    out.push('|--------|-------|');
+    out.push(mdRow([t(locale, 'lua.metric.files'), String(data.luaArtifacts.length)]));
+    out.push(mdRow([t(locale, 'lua.metric.functions'), String(totalFunctions)]));
+    out.push(mdRow([t(locale, 'lua.metric.stateVars'), String(totalStateVars)]));
+    out.push(mdRow([t(locale, 'lua.metric.handlers'), String(totalHandlers)]));
     out.push('');
   }
 
-  return out;
+  const analysisDir = path.join(outputDir, 'analysis');
+  fs.mkdirSync(analysisDir, { recursive: true });
+  fs.writeFileSync(path.join(analysisDir, 'module-analysis.md'), out.join('\n'), 'utf-8');
 }
 
 function renderVariableFlow(data: ModuleReportData, locale: Locale): string[] {
@@ -148,6 +148,31 @@ function renderDeadCode(data: ModuleReportData, locale: Locale): string[] {
   data.deadCode.findings.forEach((finding) => {
     out.push(mdRow([finding.type, finding.severity, `${finding.elementType}:${finding.elementName}`, finding.message]));
   });
+  out.push('');
+  return out;
+}
+
+function renderActivationChain(data: ModuleReportData, locale: Locale): string[] {
+  const out = ['## ' + t(locale, 'md.charx.activationChain'), ''];
+  out.push(`| ${t(locale, 'common.table.metric')} | ${t(locale, 'common.table.value')} |`);
+  out.push('|--------|-------|');
+  out.push(mdRow([t(locale, 'md.charx.recursiveScanning'), String(data.lorebookActivationChain.summary.recursiveScanningEnabled)]));
+  out.push(mdRow([t(locale, 'md.charx.possibleChains'), String(data.lorebookActivationChain.summary.possibleEdges)]));
+  out.push(mdRow([t(locale, 'md.charx.partialChains'), String(data.lorebookActivationChain.summary.partialEdges)]));
+  out.push(mdRow([t(locale, 'md.charx.blockedChains'), String(data.lorebookActivationChain.summary.blockedEdges)]));
+  out.push('');
+
+  if (data.lorebookActivationChain.edges.length === 0) {
+    out.push('> ℹ️ ' + t(locale, 'md.charx.noActivationChains'), '');
+    return out;
+  }
+
+  out.push(`| ${t(locale, 'md.charx.chainFlow')} | ${t(locale, 'md.charx.chainStatus')} | ${t(locale, 'md.charx.chainKeywords')} | ${t(locale, 'md.charx.chainBlockedBy')} |`);
+  out.push('|------|--------|----------|------------|');
+  for (const edge of data.lorebookActivationChain.edges) {
+    const keywords = [...edge.matchedKeywords, ...edge.matchedSecondaryKeywords].join(', ') || '—';
+    out.push(mdRow([`${edge.sourceId} → ${edge.targetId}`, edge.status, keywords, edge.blockedBy.join(', ') || '—']));
+  }
   out.push('');
   return out;
 }

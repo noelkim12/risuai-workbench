@@ -1,12 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import type { LuaAnalysisArtifact } from '@/domain/analyze/lua-core';
 import {
+  analyzeTextMentions,
   analyzeTokenBudget,
   analyzeVariableFlow,
   detectDeadCode,
   getAllLorebookEntries,
   getCustomScripts,
   analyzeLorebookStructureFromCharx,
+  analyzeLorebookActivationChainsFromCharx,
   buildLorebookRegexCorrelation,
   buildUnifiedCBSGraph,
 } from '@/domain';
@@ -31,6 +34,7 @@ import {
   collectTSCBS,
   collectVariablesCBS,
   importLuaAnalysis,
+  loadLuaArtifacts,
 } from './collectors';
 import { renderMarkdown } from './reporting';
 import { renderHtml } from './reporting/htmlRenderer';
@@ -94,7 +98,7 @@ export function runAnalyzeCharxWorkflow(argv: readonly string[]): number {
   }
 }
 
-function runCollect(charx: unknown, resolvedOutDir: string): CollectResult {
+function runCollect(charx: unknown, resolvedOutDir: string, charxJsonPath: string): CollectResult {
   const lorebookCBS = safeCollect(
     () => collectLorebookCBS(charx, resolvedOutDir),
     'Lorebook CBS 수집 실패',
@@ -119,13 +123,17 @@ function runCollect(charx: unknown, resolvedOutDir: string): CollectResult {
     'TS CBS 수집 실패',
     [] as ElementCBSData[],
   );
-  const luaCBS = safeCollect(
-    () => importLuaAnalysis(resolvedOutDir),
-    'Lua 분석 임포트 실패',
-    [] as ElementCBSData[],
+  const luaArtifacts = safeCollect(
+    () => loadLuaArtifacts(resolvedOutDir, charxJsonPath),
+    'Lua 아티팩트 로드 실패',
+    [] as LuaAnalysisArtifact[],
   );
+  const luaCBS =
+    luaArtifacts.length > 0
+      ? luaArtifacts.flatMap((artifact) => artifact.elementCbs)
+      : safeCollect(() => importLuaAnalysis(resolvedOutDir), 'Lua 분석 임포트 실패', [] as ElementCBSData[]);
 
-  return { lorebookCBS, regexCBS, variables, html, tsCBS, luaCBS };
+  return { lorebookCBS, regexCBS, variables, html, tsCBS, luaCBS, luaArtifacts };
 }
 
 function runCorrelate(collected: CollectResult): CorrelateResult {
@@ -183,7 +191,7 @@ function runMain(
   }
 
   console.log('\n  ═══ Phase 1: COLLECT ═══');
-  const collected = runCollect(charx, resolvedOutDir);
+  const collected = runCollect(charx, resolvedOutDir, charxJsonPath);
   console.log(
     `     ✅ Lorebook: ${collected.lorebookCBS.length}, Regex: ${collected.regexCBS.length}, TS: ${collected.tsCBS.length}, Lua: ${collected.luaCBS.length}`,
   );
@@ -237,8 +245,52 @@ function runMain(
     'Dead code 분석 실패',
     { findings: [], summary: { totalFindings: 0, byType: {}, bySeverity: {} } },
   );
+  const lorebookActivationChain = safeCollect(
+    () => analyzeLorebookActivationChainsFromCharx(charx),
+    'Lorebook activation chain 분석 실패',
+    {
+      entries: [],
+      edges: [],
+      summary: {
+        totalEntries: 0,
+        possibleEdges: 0,
+        partialEdges: 0,
+        blockedEdges: 0,
+        recursiveScanningEnabled: true,
+      },
+    },
+  );
   console.log(
-    `     ✅ Lorebook: ${lorebookStructure.stats.totalEntries} entries, ${lorebookStructure.stats.totalFolders} folders · Tokens: ~${tokenBudget.totals.worstCaseTokens}`,
+      `     ✅ Lorebook: ${lorebookStructure.stats.totalEntries} entries, ${lorebookStructure.stats.totalFolders} folders`,
+  );
+
+  const allLuaApiNames = new Set<string>();
+  for (const artifact of collected.luaArtifacts) {
+    for (const fn of artifact.collected.functions) {
+      if (fn.name && fn.name !== '<top-level>') {
+        allLuaApiNames.add(fn.name);
+      }
+    }
+  }
+
+  const rawLorebookEntries = getAllLorebookEntries(charx) as Array<Record<string, unknown>>;
+  const textMentionEntries = rawLorebookEntries
+    .filter((e) => e.mode !== 'folder' && typeof e.content === 'string' && (e.content as string).length > 0)
+    .map((e, i) => {
+      const name = typeof e.name === 'string' && e.name ? e.name
+        : typeof e.comment === 'string' && e.comment ? e.comment
+        : `entry-${i}`;
+      return { id: lorebookStructure.entries[i]?.id ?? name, name, content: e.content as string };
+    });
+
+  const textMentions = safeCollect(
+    () => analyzeTextMentions(
+      textMentionEntries,
+      new Set(correlated.unifiedGraph.keys()),
+      allLuaApiNames,
+    ),
+    'Text mention 분석 실패',
+    [],
   );
 
   console.log('\n  ═══ Phase 4: REPORT ═══');
@@ -246,13 +298,16 @@ function runMain(
   const reportData: CharxReportData = {
     charx,
     characterName,
-    ...correlated,
-    lorebookStructure,
-    htmlAnalysis: collected.html,
-    tokenBudget,
+     ...correlated,
+     lorebookStructure,
+     lorebookActivationChain,
+     htmlAnalysis: collected.html,
+     tokenBudget,
     variableFlow,
     deadCode,
+    textMentions,
     collected,
+    luaArtifacts: collected.luaArtifacts,
   };
 
   if (!options.noMarkdown) {

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { MAX_VARS_IN_REPORT, type LorebookStructureResult } from '@/domain';
+import { MAX_VARS_IN_REPORT, type LorebookActivationChainResult, type LorebookStructureResult } from '@/domain';
 import { buildLorebookStructureTree } from '@/domain/lorebook/structure';
 import { mdRow } from '../../shared';
 import { type Locale, t } from '../shared/i18n';
@@ -26,10 +26,10 @@ export function renderMarkdown(data: CharxReportData, outputDir: string, locale:
     renderLorebookRegexCorrelation(data.lorebookRegexCorrelation, locale),
     renderDefaultVariablesMapping(data.defaultVariables, data.unifiedGraph, locale),
     renderHTMLAnalysis(data.htmlAnalysis, locale),
-    renderTokenBudget(data, locale),
     renderVariableFlow(data, locale),
     renderDeadCode(data, locale),
     renderLorebookStructure(data.lorebookStructure, locale),
+    renderLorebookActivationChain(data.lorebookActivationChain, locale),
     renderUnmappedVariables(data.unifiedGraph, locale),
   ];
 
@@ -62,8 +62,8 @@ function renderHeader(data: CharxReportData, locale: Locale): string[] {
     mdRow([t(locale, 'md.charx.cardName'), data.characterName || 'unknown']),
     mdRow([t(locale, 'md.charx.specVersion'), specVersion]),
     mdRow([t(locale, 'common.label.lorebookEntries'), String(data.lorebookStructure?.stats?.totalEntries || 0)]),
-    mdRow([t(locale, 'md.charx.regexScripts'), String(0)]),
-    mdRow([t(locale, 'md.charx.luaFiles'), String(0)]),
+    mdRow([t(locale, 'md.charx.regexScripts'), String(data.collected.regexCBS.length)]),
+    mdRow([t(locale, 'md.charx.luaFiles'), String(data.luaArtifacts?.length ?? 0)]),
     mdRow([t(locale, 'md.charx.htmlPresent'), hasHTML ? t(locale, 'common.label.yes') : t(locale, 'common.label.no')]),
     mdRow([t(locale, 'md.charx.variablesCount'), String(varCount)]),
     '',
@@ -255,25 +255,13 @@ function renderHTMLAnalysis(htmlAnalysis: HtmlResult, locale: Locale): string[] 
   return out;
 }
 
-function renderTokenBudget(data: CharxReportData, locale: Locale): string[] {
-  const out: string[] = ['## ' + t(locale, 'md.charx.tokenBudget'), ''];
-  out.push('> ' + t(locale, 'md.charx.heuristic'), '');
-  out.push(`| ${t(locale, 'common.table.metric')} | ${t(locale, 'common.table.value')} |`);
-  out.push('|--------|-------|');
-  out.push(mdRow([t(locale, 'md.charx.alwaysActiveTokens'), String(data.tokenBudget.totals.alwaysActiveTokens)]));
-  out.push(mdRow([t(locale, 'md.charx.conditionalTokens'), String(data.tokenBudget.totals.conditionalTokens)]));
-  out.push(mdRow([t(locale, 'md.charx.worstCaseTokens'), String(data.tokenBudget.totals.worstCaseTokens)]));
-  out.push('');
-
-  if (data.tokenBudget.warnings.length > 0) {
-    out.push('### ' + t(locale, 'md.charx.budgetWarnings'), '');
-    for (const warning of data.tokenBudget.warnings) {
-      out.push(`- [${warning.severity}] ${warning.message}`);
-    }
-    out.push('');
-  }
-
-  return out;
+function dedupeLorebookEntries<T extends { id: string }>(entries: T[]): T[] {
+  const seen = new Set<string>();
+  return entries.filter((entry) => {
+    if (seen.has(entry.id)) return false;
+    seen.add(entry.id);
+    return true;
+  });
 }
 
 function renderVariableFlow(data: CharxReportData, locale: Locale): string[] {
@@ -332,7 +320,7 @@ function renderLorebookStructure(lorebookStructure: LorebookStructureResult, loc
 
     const renderFolder = (folder: (typeof roots)[number], depth = 0): void => {
       out.push(`${'  '.repeat(depth)}- \uD83D\uDCC1 **${folder.name || folder.id || 'unknown'}**`);
-      for (const entry of folder.entries) {
+      for (const entry of dedupeLorebookEntries(folder.entries)) {
         out.push(
           `${'  '.repeat(depth + 1)}- ${entry.name}${entry.constant ? ` _${t(locale, 'md.charx.constant')}_` : ''}${entry.enabled === false ? ` _${t(locale, 'md.charx.disabledEntry')}_` : ''}`,
         );
@@ -341,9 +329,10 @@ function renderLorebookStructure(lorebookStructure: LorebookStructureResult, loc
     };
 
     for (const folder of roots) renderFolder(folder);
-    if (rootEntries.length > 0) {
+    const uniqueRootEntries = dedupeLorebookEntries(rootEntries);
+    if (uniqueRootEntries.length > 0) {
       out.push(`- \uD83D\uDCC1 **_${t(locale, 'md.charx.noFolder')}_**`);
-      for (const entry of rootEntries) {
+      for (const entry of uniqueRootEntries) {
         out.push(
           `  - ${entry.name}${entry.constant ? ` _${t(locale, 'md.charx.constant')}_` : ''}${entry.enabled === false ? ` _${t(locale, 'md.charx.disabledEntry')}_` : ''}`,
         );
@@ -380,6 +369,36 @@ function renderLorebookStructure(lorebookStructure: LorebookStructureResult, loc
     out.push('');
   }
 
+  return out;
+}
+
+function renderLorebookActivationChain(
+  activationChain: LorebookActivationChainResult,
+  locale: Locale,
+): string[] {
+  const out: string[] = ['## ' + t(locale, 'md.charx.activationChain'), ''];
+
+  out.push(`| ${t(locale, 'common.table.metric')} | ${t(locale, 'common.table.value')} |`);
+  out.push('|--------|-------|');
+  out.push(mdRow([t(locale, 'md.charx.recursiveScanning'), String(activationChain.summary.recursiveScanningEnabled)]));
+  out.push(mdRow([t(locale, 'md.charx.possibleChains'), String(activationChain.summary.possibleEdges)]));
+  out.push(mdRow([t(locale, 'md.charx.partialChains'), String(activationChain.summary.partialEdges)]));
+  out.push(mdRow([t(locale, 'md.charx.blockedChains'), String(activationChain.summary.blockedEdges)]));
+  out.push('');
+
+  if (activationChain.edges.length === 0) {
+    out.push('> ℹ️ ' + t(locale, 'md.charx.noActivationChains'), '');
+    return out;
+  }
+
+  out.push(`| ${t(locale, 'md.charx.chainFlow')} | ${t(locale, 'md.charx.chainStatus')} | ${t(locale, 'md.charx.chainKeywords')} | ${t(locale, 'md.charx.chainBlockedBy')} |`);
+  out.push('|------|--------|----------|------------|');
+  for (const edge of activationChain.edges) {
+    const keywords = [...edge.matchedKeywords, ...edge.matchedSecondaryKeywords].join(', ') || '—';
+    const blockedBy = edge.blockedBy.join(', ') || '—';
+    out.push(mdRow([`${edge.sourceId} → ${edge.targetId}`, edge.status, keywords, blockedBy]));
+  }
+  out.push('');
   return out;
 }
 

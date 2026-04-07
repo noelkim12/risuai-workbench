@@ -90,23 +90,6 @@ export function analyzeTokenBudget(components: TokenComponent[]): TokenBudgetRes
   const worstCaseTokens = alwaysActiveTokens + conditionalTokens;
 
   const warnings: TokenBudgetWarning[] = [];
-  if (worstCaseTokens > TOKEN_THRESHOLDS.ERROR_WORST_CASE) {
-    warnings.push({
-      severity: 'error',
-      message: `Worst-case token usage (~${worstCaseTokens}) exceeds ${TOKEN_THRESHOLDS.ERROR_WORST_CASE}. Context overflow is likely.`,
-    });
-  } else if (worstCaseTokens > TOKEN_THRESHOLDS.WARNING_WORST_CASE) {
-    warnings.push({
-      severity: 'warning',
-      message: `Worst-case token usage (~${worstCaseTokens}) exceeds ${TOKEN_THRESHOLDS.WARNING_WORST_CASE}. Consider trimming content.`,
-    });
-  } else if (worstCaseTokens > TOKEN_THRESHOLDS.INFO_WORST_CASE) {
-    warnings.push({
-      severity: 'info',
-      message: `Worst-case token usage (~${worstCaseTokens}) exceeds ${TOKEN_THRESHOLDS.INFO_WORST_CASE}.`,
-    });
-  }
-
   if (alwaysActiveTokens > TOKEN_THRESHOLDS.ERROR_ALWAYS_ACTIVE) {
     warnings.push({
       severity: 'error',

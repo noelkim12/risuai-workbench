@@ -220,6 +220,7 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
     const caller = currentFn(explicitParent);
     const callee = directCalleeName(node);
     if (!callee) return;
+    const args = callArgs(node);
 
     collected.calls.push({ caller, callee, line: lineStart(node) });
     if (!risuApi[callee]) return;
@@ -232,13 +233,15 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
       callee === 'setState' ||
       callee === 'getState'
     ) {
-      const key = strLit(callArgs(node)[1]);
-      const writeValue = callee === 'setChatVar' ? strLit(callArgs(node)[2]) : null;
+      const keyIndex = args.length >= 3 ? 1 : 0;
+      const key = strLit(args[keyIndex]);
+      const writeValue = callee === 'setChatVar' ? strLit(args[keyIndex + 1]) : null;
       if (key) addStateAccess(callee, key, caller, lineStart(node), writeValue);
     }
 
     if (callee === 'getLoreBooks' || callee === 'loadLoreBooks') {
-      const keyword = strLit(callArgs(node)[1]);
+      const keywordIndex = args.length >= 2 ? 1 : 0;
+      const keyword = strLit(args[keywordIndex]);
       if (keyword) {
         collected.loreApiCalls.push({
           apiName: callee,
@@ -388,6 +391,10 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
       for (const arg of callArgs(node)) walk(arg, explicitParent);
       return;
     }
+
+    // StringLiteral / StringCallExpression의 value는 코드가 아니므로 재귀 탐색하지 않는다.
+    // [[ ]] long string 내부 텍스트를 함수 선언으로 오인하는 것을 방지한다.
+    if (node.type === 'StringLiteral') return;
 
     for (const value of Object.values(node as unknown as Record<string, unknown>)) {
       if (!value) continue;

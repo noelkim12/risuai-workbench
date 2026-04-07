@@ -1,11 +1,14 @@
 import {
   type DeadCodeResult,
   type ElementCBSData,
+  type LorebookActivationChainResult,
   type LorebookRegexCorrelation,
   type TokenBudgetResult,
   type UnifiedVarEntry,
   type VarFlowResult,
 } from '@/domain';
+import type { LuaAnalysisArtifact } from '@/domain/analyze/lua-core';
+import type { TextMentionEdge } from '@/domain/analyze/text-mention';
 import type { LorebookStructureResult } from '@/domain';
 
 export type { ElementCBSData, LorebookRegexCorrelation, UnifiedVarEntry };
@@ -17,6 +20,7 @@ export interface ModuleCollectResult {
   luaCBS: ElementCBSData[];
   htmlCBS: ElementCBSData | null;
   metadata: Record<string, unknown>;
+  luaArtifacts: LuaAnalysisArtifact[];
 }
 
 /** Phase 2 (CORRELATE) 결과 — 통합 변수 그래프와 Lorebook↔Regex 상관관계. */
@@ -32,7 +36,10 @@ export interface ModuleReportData {
   unifiedGraph: Map<string, UnifiedVarEntry>;
   lorebookRegexCorrelation: LorebookRegexCorrelation;
   lorebookStructure: LorebookStructureResult | null;
+  lorebookActivationChain: LorebookActivationChainResult;
   tokenBudget: TokenBudgetResult;
   variableFlow: VarFlowResult;
   deadCode: DeadCodeResult;
+  textMentions: TextMentionEdge[];
+  luaArtifacts: LuaAnalysisArtifact[];
 }

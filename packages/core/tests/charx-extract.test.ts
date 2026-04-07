@@ -43,6 +43,7 @@ describe('charx extract integration', () => {
     expect(existsSync(path.join(outDir, 'html', 'background.html'))).toBe(true);
     expect(existsSync(path.join(outDir, 'analysis', 'charx-analysis.md'))).toBe(true);
     expect(existsSync(path.join(outDir, 'analysis', 'charx-analysis.html'))).toBe(true);
+    expect(existsSync(path.join(outDir, 'analysis', 'charx-analysis.data.js'))).toBe(true);
 
     const analysisHtml = readFileSync(path.join(outDir, 'analysis', 'charx-analysis.html'), 'utf-8');
     const tabOrder = Array.from(analysisHtml.matchAll(/<button type="button" class="tab-button[^"]*" data-tab="([^"]+)">/g)).map(
@@ -61,17 +62,26 @@ describe('charx extract integration', () => {
     expect(analysisHtml).toMatch(/data-tab="graph">[^<]+<\/button>/);
     expect(analysisHtml).toContain('data-panel-id="charx-relationship-network"');
     expect(analysisHtml).toContain('data-library="force-graph"');
+    expect(analysisHtml).not.toContain('Token Budget');
+    expect(analysisHtml).not.toContain('Worst-case Tokens');
+    expect(analysisHtml).not.toContain('최악 토큰 수');
     expect(flowSection).not.toContain('data-panel-id="charx-relationship-network"');
     expect(graphSection).toContain('data-panel-id="charx-relationship-network"');
+    expect(analysisHtml).toContain('<script src="./charx-analysis.data.js"></script>');
     expect(analysisHtml).not.toContain('charx.action.reviewIsolated');
     expect(analysisHtml).not.toContain('charx.highlight.noBridgedMsg');
     expect(analysisHtml).not.toContain('charx.finding.noVariables');
     expect(analysisHtml).not.toContain('charx.flow.collectSources');
     expect(analysisHtml).not.toContain('shell.tab.graph');
 
-    const runtimeFlowPayload = analysisHtml.match(/flowchart TD[\s\S]*?(?=<\/script>)/)?.[0] ?? '';
-    expect(runtimeFlowPayload).toContain('flowchart TD');
-    expect(runtimeFlowPayload).not.toContain('[');
+    const runtimeFlowPayload = readFileSync(path.join(outDir, 'analysis', 'charx-analysis.data.js'), 'utf-8');
+    const analysisMarkdown = readFileSync(path.join(outDir, 'analysis', 'charx-analysis.md'), 'utf-8');
+    const runtimeFlowMermaid = runtimeFlowPayload.match(/flowchart TD(?:\\n|\n)[^"']+/)?.[0] ?? '';
+    expect(runtimeFlowMermaid).toContain('flowchart TD');
+    expect(runtimeFlowMermaid).not.toContain('[');
+    expect(analysisMarkdown).not.toContain('## Token Budget');
+    expect(analysisMarkdown).not.toContain('Worst-case tokens');
+    expect(analysisMarkdown).not.toContain('최악 토큰');
 
     const charx = JSON.parse(readFileSync(path.join(outDir, 'charx.json'), 'utf-8')) as {
       spec?: string;

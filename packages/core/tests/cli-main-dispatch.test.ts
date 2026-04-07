@@ -213,6 +213,7 @@ describe('src/cli main dispatcher integration', () => {
     expect(result.status).toBe(0);
     expect(fs.existsSync(path.join(charxDir, 'analysis', 'compose-analysis.md'))).toBe(true);
     expect(fs.existsSync(path.join(charxDir, 'analysis', 'compose-analysis.html'))).toBe(true);
+    expect(fs.existsSync(path.join(charxDir, 'analysis', 'compose-analysis.data.js'))).toBe(true);
 
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
@@ -226,6 +227,7 @@ describe('src/cli main dispatcher integration', () => {
     expect(result.status).toBe(0);
     expect(fs.existsSync(path.join(tempDir, 'analysis', 'module-analysis.md'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, 'analysis', 'module-analysis.html'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'module-analysis.data.js'))).toBe(true);
 
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
@@ -239,6 +241,7 @@ describe('src/cli main dispatcher integration', () => {
     expect(result.status).toBe(0);
     expect(fs.existsSync(path.join(tempDir, 'analysis', 'preset-analysis.md'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, 'analysis', 'preset-analysis.html'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'preset-analysis.data.js'))).toBe(true);
 
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
@@ -313,10 +316,10 @@ describe('src/cli main dispatcher integration', () => {
     expect(fs.existsSync(path.join(tempDir, 'analysis', 'charx-analysis.html'))).toBe(true);
     const markdown = fs.readFileSync(path.join(tempDir, 'analysis', 'charx-analysis.md'), 'utf-8');
     const html = fs.readFileSync(path.join(tempDir, 'analysis', 'charx-analysis.html'), 'utf-8');
-    expect(markdown).toContain('## Token Budget');
+    expect(markdown).not.toContain('## Token Budget');
     expect(markdown).toContain('## Variable Flow');
     expect(markdown).toContain('## Dead Code Findings');
-    expect(html).toContain('Token Budget');
+    expect(html).not.toContain('Token Budget');
     expect(html).toContain('Variable Flow');
     expect(html).toContain('Dead Code');
     expect(fs.existsSync(path.join(tempDir, 'analysis', 'card-analysis.md'))).toBe(false);

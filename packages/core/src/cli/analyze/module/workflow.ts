@@ -1,17 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  analyzeTextMentions,
   analyzeTokenBudget,
   analyzeVariableFlow,
   detectDeadCode,
   analyzeLorebookStructure,
+  analyzeLorebookActivationChainsFromModule,
   buildLorebookRegexCorrelation,
   buildUnifiedCBSGraph,
   getModuleLorebookEntriesFromModule,
 } from '@/domain';
 import { readJsonIfExists } from '@/node/fs-helpers';
 import { detectLocale } from '../shared/i18n';
-import { runAnalyzeWorkflow as runLuaAnalyzeWorkflow } from '../lua/workflow';
 import {
   collectLorebookEntryInfosFromDir,
   collectLorebookTokenComponentsFromDir,
@@ -61,8 +62,6 @@ export function runAnalyzeModuleWorkflow(argv: readonly string[]): number {
   }
 
   try {
-    ensureLuaAnalysis(outputDir);
-
     const collected = collectModuleCBS(outputDir);
     const moduleJson = readJsonIfExists(moduleJsonPath);
     const moduleName =
@@ -100,6 +99,32 @@ export function runAnalyzeModuleWorkflow(argv: readonly string[]): number {
     const lorebookStructure = analyzeLorebookStructure(
       getModuleLorebookEntriesFromModule(moduleJson),
     );
+    const lorebookActivationChain = analyzeLorebookActivationChainsFromModule(moduleJson);
+
+    const allLuaApiNames = new Set<string>();
+    for (const artifact of collected.luaArtifacts) {
+      for (const fn of artifact.collected.functions) {
+        if (fn.name && fn.name !== '<top-level>') {
+          allLuaApiNames.add(fn.name);
+        }
+      }
+    }
+
+    const rawModuleEntries = getModuleLorebookEntriesFromModule(moduleJson) as Array<Record<string, unknown>>;
+    const textMentionEntries = rawModuleEntries
+      .filter((e) => e.mode !== 'folder' && typeof e.content === 'string' && (e.content as string).length > 0)
+      .map((e, i) => {
+        const name = typeof e.name === 'string' && e.name ? e.name
+          : typeof e.comment === 'string' && e.comment ? e.comment
+          : `entry-${i}`;
+        return { id: lorebookStructure?.entries[i]?.id ?? name, name, content: e.content as string };
+      });
+
+    const textMentions = analyzeTextMentions(
+      textMentionEntries,
+      new Set(unifiedGraph.keys()),
+      allLuaApiNames,
+    );
 
     const reportData: ModuleReportData = {
       moduleName,
@@ -107,9 +132,12 @@ export function runAnalyzeModuleWorkflow(argv: readonly string[]): number {
       unifiedGraph,
       lorebookRegexCorrelation,
       lorebookStructure,
+      lorebookActivationChain,
       tokenBudget,
       variableFlow,
       deadCode,
+      textMentions,
+      luaArtifacts: collected.luaArtifacts,
     };
 
     renderModuleMarkdown(reportData, outputDir, locale);
@@ -119,22 +147,5 @@ export function runAnalyzeModuleWorkflow(argv: readonly string[]): number {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`\n  ❌ Module analysis failed: ${message}\n`);
     return 1;
-  }
-}
-
-function ensureLuaAnalysis(outputDir: string): void {
-  const luaDir = path.join(outputDir, 'lua');
-  if (!fs.existsSync(luaDir)) return;
-
-  const luaFiles = fs.readdirSync(luaDir).filter((file) => file.endsWith('.lua'));
-  for (const luaFile of luaFiles) {
-    const luaPath = path.join(luaDir, luaFile);
-    const analysisPath = luaPath.replace(/\.lua$/u, '.analysis.json');
-    if (fs.existsSync(analysisPath)) continue;
-
-    const code = runLuaAnalyzeWorkflow([luaPath, '--json', '--no-markdown', '--no-html']);
-    if (code !== 0) {
-      console.error(`  ⚠️ Lua analyze failed: ${luaFile} — exit code ${code}`);
-    }
   }
 }

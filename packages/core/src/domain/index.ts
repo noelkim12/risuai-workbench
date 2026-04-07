@@ -52,6 +52,17 @@ export {
   type LorebookStructureResult,
 } from './lorebook/structure';
 export {
+  analyzeLorebookActivationChains,
+  analyzeLorebookActivationChainsFromCharx,
+  analyzeLorebookActivationChainsFromModule,
+  type LorebookActivationBlockReason,
+  type LorebookActivationChainResult,
+  type LorebookActivationEdge,
+  type LorebookActivationEdgeStatus,
+  type LorebookActivationEntry,
+  type LorebookRecursionMode,
+} from './lorebook/activation-chain';
+export {
   collectRegexCBSFromCharx,
   collectRegexCBSFromCharx as collectRegexCBSFromCard,
   collectRegexCBSFromScripts,
@@ -80,6 +91,7 @@ export {
   type TokenBudgetWarning,
 } from './analyze/token-budget';
 export { analyzeVariableFlow } from './analyze/variable-flow';
+export { analyzeTextMentions, type TextMentionEdge } from './analyze/text-mention';
 export type {
   VarEvent,
   VarFlowEntry,
@@ -135,6 +147,11 @@ export {
   type LuaASTNode,
 } from './analyze/lua-helpers';
 export { RISUAI_API, type ApiMeta, LUA_STDLIB_CALLS } from './analyze/lua-api';
+export {
+  analyzeLuaSource,
+  analyzeLuaFile,
+  type LuaAnalysisArtifact,
+} from './analyze/lua-core';
 export {
   type CollectedFunction,
   type CollectedStateVar,
