@@ -1,11 +1,23 @@
-import type { ElementCBSData, LorebookActivationChainResult, LorebookRegexCorrelation, PromptChainResult, RegexScriptInfo } from '@/domain';
+import type {
+  ElementCBSData,
+  LorebookActivationChainResult,
+  LorebookRegexCorrelation,
+  PromptChainResult,
+  RegexScriptInfo,
+} from '@/domain';
 import type { LuaAnalysisArtifact } from '@/domain/analyze/lua-core';
 import type { TextMentionEdge } from '@/domain/analyze/text-mention';
 import type { LorebookStructureResult } from '@/domain/lorebook/structure';
 import type { Locale } from './i18n';
 import { t } from './i18n';
 import { buildDiagramPanel } from './view-model';
-import type { VisualizationPanel } from './visualization-types';
+import type {
+  ForceGraphEdge,
+  ForceGraphGroup,
+  ForceGraphNode,
+  ForceGraphPayload,
+  VisualizationPanel,
+} from './visualization-types';
 
 /** 관계 네트워크(force-graph) builder 입력 데이터 */
 export interface LorebookGraphData {
@@ -35,14 +47,16 @@ export function buildRelationshipNetworkPanel(
       [entry.name, entry] as const,
     ]),
   );
-  const regexScriptInfos = new Map((data.regexScriptInfos ?? []).map((script) => [script.name, script] as const));
+  const regexScriptInfos = new Map(
+    (data.regexScriptInfos ?? []).map((script) => [script.name, script] as const),
+  );
   const lorebookUsage = buildElementUsageMap(data.lorebookCBS);
   const regexUsage = buildElementUsageMap(data.regexCBS);
   const variableDetails = new Map<string, { readers: Set<string>; writers: Set<string> }>();
   const variableNodeIndex = new Map<string, number>();
 
-  const nodes: Array<{ id: string; label: string; type: string; color: string; details?: Record<string, string> }> = [];
-  const edges: Array<{ source: string; target: string; type: string; label?: string }> = [];
+  const nodes: ForceGraphNode[] = [];
+  const edges: ForceGraphEdge[] = [];
   const luaFunctionNodeIds = new Map<string, string>();
   const triggerNodeIds = new Set<string>();
 
@@ -55,11 +69,12 @@ export function buildRelationshipNetworkPanel(
   function ensureVariableNode(varName: string): string {
     const variableId = `var:${varName}`;
     const detail = variableDetails.get(varName);
-    const node = {
+    const node: ForceGraphNode = {
       id: variableId,
       label: varName,
       type: 'variable',
       color: '#fbbf24',
+      layoutBand: 'variable',
       details: {
         Variable: varName,
         Readers: detail && detail.readers.size > 0 ? [...detail.readers].sort().join(', ') : '',
@@ -87,13 +102,19 @@ export function buildRelationshipNetworkPanel(
   }
 
   function registerVariableReader(varName: string, label: string): void {
-    const detail = variableDetails.get(varName) ?? { readers: new Set<string>(), writers: new Set<string>() };
+    const detail = variableDetails.get(varName) ?? {
+      readers: new Set<string>(),
+      writers: new Set<string>(),
+    };
     detail.readers.add(label);
     variableDetails.set(varName, detail);
   }
 
   function registerVariableWriter(varName: string, label: string): void {
-    const detail = variableDetails.get(varName) ?? { readers: new Set<string>(), writers: new Set<string>() };
+    const detail = variableDetails.get(varName) ?? {
+      readers: new Set<string>(),
+      writers: new Set<string>(),
+    };
     detail.writers.add(label);
     variableDetails.set(varName, detail);
   }
@@ -107,23 +128,58 @@ export function buildRelationshipNetworkPanel(
   }
 
   // Build nodes from lorebook entries
+  const LORE_NODE_COLORS: Record<string, string> = {
+    constant: '#f87171', // red — always active
+    keyword: '#60a5fa', // blue — single-key OR matching
+    keywordMulti: '#34d399', // green — primary + secondary AND matching
+    referenceOnly: '#94a3b8', // slate — no keys, reference-only (passive)
+  };
+  const LORE_ACTIVATION_LABELS: Record<string, string> = {
+    constant: 'Always active',
+    keyword: 'Keyword',
+    keywordMulti: 'Keyword (multi-key)',
+    referenceOnly: 'Reference-only',
+  };
+  const groupOrder = new Map<string, number>();
+  const groups: ForceGraphGroup[] = [];
+  let layoutRankCounter = 0;
+
+  function registerFolderGroup(folderPath: string): string {
+    const groupId = `folder:${folderPath}`;
+    if (!groupOrder.has(groupId)) {
+      groupOrder.set(groupId, groups.length);
+      groups.push({
+        id: groupId,
+        kind: 'lorebook-folder',
+        label: folderPath,
+        order: groups.length,
+      });
+    }
+    return groupId;
+  }
+
   for (const entry of data.lorebookStructure.entries) {
-      let color = '#60a5fa'; // normal
-      if (entry.constant) color = '#f87171'; // always-active
-      else if (entry.selective) color = '#34d399'; // selective
-      const type = entry.constant ? 'always-active' : entry.selective ? 'selective' : 'normal';
-      const scopedId = entry.id || entry.name;
-      const nodeId = `lb:${scopedId}`;
+    const mode = entry.activationMode;
+    const color = LORE_NODE_COLORS[mode] ?? '#60a5fa';
+    const scopedId = entry.id || entry.name;
+    const nodeId = `lb:${scopedId}`;
+    const folderPath = entry.folder || '(root)';
+    const groupId = registerFolderGroup(folderPath);
     nodes.push({
       id: nodeId,
       label: entry.name,
-      type,
+      type: mode,
       color,
+      groupId,
+      groupKind: 'lorebook-folder',
+      groupLabel: folderPath,
+      layoutBand: 'lorebook',
+      layoutRank: layoutRankCounter++,
       details: {
         Name: entry.name,
         Id: scopedId,
         Keywords: entry.keywords?.length ? entry.keywords.join(', ') : '',
-        Activation: entry.constant ? 'Constant' : entry.selective ? 'Selective' : 'Normal',
+        Activation: LORE_ACTIVATION_LABELS[mode] ?? mode,
         ...buildLorebookDetails(scopedId, entry.name, lorebookActivationEntries, lorebookUsage),
       },
     });
@@ -150,6 +206,7 @@ export function buildRelationshipNetworkPanel(
       label: regexName,
       type: 'regex',
       color: '#a78bfa',
+      layoutBand: 'regex',
       details: buildRegexDetails(regexName, regexScriptInfos.get(regexName), regexUsage),
     });
   }
@@ -161,7 +218,15 @@ export function buildRelationshipNetworkPanel(
       const triggerId = `trig:${keyword}`;
       if (!triggerNodeIds.has(triggerId)) {
         triggerNodeIds.add(triggerId);
-        nodes.push({ id: triggerId, label: `🔑 ${keyword}`, type: 'trigger-keyword', color: '#f43f5e', details: { Trigger: keyword } });
+        nodes.push({
+          id: triggerId,
+          label: `🔑 ${keyword}`,
+          type: 'trigger-keyword',
+          color: '#f43f5e',
+          layoutBand: 'trigger',
+          layoutRank: layoutRankCounter++,
+          details: { Trigger: keyword },
+        });
       }
       pushEdge(triggerId, `lb:${entry.id || entry.name}`, 'keyword', 'activate');
     }
@@ -179,7 +244,8 @@ export function buildRelationshipNetworkPanel(
   for (const shared of data.lorebookRegexCorrelation.sharedVars) {
     allVariableNames.add(shared.varName);
   }
-  for (const varName of data.lorebookRegexCorrelation.lorebookOnlyVars) allVariableNames.add(varName);
+  for (const varName of data.lorebookRegexCorrelation.lorebookOnlyVars)
+    allVariableNames.add(varName);
   for (const varName of data.lorebookRegexCorrelation.regexOnlyVars) allVariableNames.add(varName);
 
   // Edge type 1: lorebook activation chains. Prefer dedicated chain analysis when available;
@@ -188,10 +254,7 @@ export function buildRelationshipNetworkPanel(
     for (const edge of data.lorebookActivationChain.edges) {
       if (edge.status === 'blocked') continue;
       const edgeType = 'activation-chain';
-      const labelParts = [
-        ...edge.matchedKeywords,
-        ...edge.matchedSecondaryKeywords,
-      ];
+      const labelParts = [...edge.matchedKeywords, ...edge.matchedSecondaryKeywords];
       if (edge.status === 'partial' && edge.missingSecondaryKeywords.length > 0) {
         labelParts.push(`missing: ${edge.missingSecondaryKeywords.join(', ')}`);
       }
@@ -204,7 +267,11 @@ export function buildRelationshipNetworkPanel(
         for (const keyword of entryB.keywords) {
           if (!keyword) continue;
           const overlaps = data.lorebookStructure.keywords.overlaps;
-          if (overlaps[keyword] && overlaps[keyword].includes(entryA.id) && overlaps[keyword].includes(entryB.id)) {
+          if (
+            overlaps[keyword] &&
+            overlaps[keyword].includes(entryA.id) &&
+            overlaps[keyword].includes(entryB.id)
+          ) {
             pushEdge(`lb:${entryA.id}`, `lb:${entryB.id}`, 'keyword', keyword);
           }
         }
@@ -247,7 +314,13 @@ export function buildRelationshipNetworkPanel(
   /** Lua 함수 이름을 관계 네트워크 노드 ID로 변환한다. */
   function toLuaFunctionNodeId(baseName: string, functionName: string | null): string | null {
     if (!functionName || functionName === '<top-level>') return null;
-    return luaFunctionNodeIds.get(`${baseName}:${functionName}`) || null;
+    return (
+      luaFunctionNodeIds.get(`${baseName}:${functionName}`) ??
+      [...luaFunctionNodeIds.entries()].find(
+        ([key]) => key === `${baseName}:${functionName}` || key.endsWith(`:${functionName}`),
+      )?.[1] ??
+      null
+    );
   }
 
   // Edge type 2: variable flow via explicit variable nodes.
@@ -282,12 +355,15 @@ export function buildRelationshipNetworkPanel(
     for (const fn of artifact.collected.functions) {
       const fnId = `lua-fn:${artifact.baseName}:${fn.name}`;
       const normalizedName = String(fn.name || '').toLowerCase();
-      const isCore = ['listenedit', 'onoutput', 'oninput', 'onbuttonclick'].includes(normalizedName);
+      const isCore = ['listenedit', 'onoutput', 'oninput', 'onbuttonclick'].includes(
+        normalizedName,
+      );
       nodes.push({
         id: fnId,
         label: fn.displayName,
         type: isCore ? 'lua-function-core' : 'lua-function',
         color: isCore ? '#ec4899' : '#2dd4bf',
+        layoutBand: 'lua',
         details: {
           File: artifact.baseName,
           Function: fn.displayName,
@@ -370,6 +446,11 @@ export function buildRelationshipNetworkPanel(
           pushEdge(lbNodeId, fnId, 'text-mention');
         }
       }
+    } else if (mention.type === 'lorebook-mention') {
+      const targetNodeId = toLbNodeId(mention.target);
+      if (targetNodeId && targetNodeId !== lbNodeId) {
+        pushEdge(lbNodeId, targetNodeId, 'text-mention');
+      }
     }
   }
 
@@ -380,13 +461,7 @@ export function buildRelationshipNetworkPanel(
       if (!callerNodeId) continue;
 
       for (const callee of callees) {
-        let calleeNodeId: string | null = null;
-        for (const [key, fnId] of luaFunctionNodeIds.entries()) {
-          if (key.endsWith(`:${callee}`)) {
-            calleeNodeId = fnId;
-            break;
-          }
-        }
+        const calleeNodeId = toLuaFunctionNodeId(artifact.baseName, callee);
 
         if (calleeNodeId) {
           pushEdge(callerNodeId, calleeNodeId, 'lua-call');
@@ -398,7 +473,10 @@ export function buildRelationshipNetworkPanel(
   for (const varName of allVariableNames) ensureVariableNode(varName);
 
   // Dedupe edges while preserving all labels between the same nodes.
-  const edgeMap = new Map<string, { source: string; target: string; type: string; labels: Set<string> }>();
+  const edgeMap = new Map<
+    string,
+    { source: string; target: string; type: string; labels: Set<string> }
+  >();
   for (const edge of edges) {
     const key = `${edge.source}→${edge.target}:${edge.type}`;
     const existing = edgeMap.get(key);
@@ -428,11 +506,21 @@ export function buildRelationshipNetworkPanel(
     return true;
   });
 
+  const payload: ForceGraphPayload = {
+    nodes: uniqueNodes,
+    edges: uniqueEdges,
+    groups,
+    layout: {
+      strategy: 'grouped-deterministic-v1',
+      signatureSalt: 'relationship-network-v1',
+    },
+  };
+
   const panel = buildDiagramPanel(
     panelId,
     t(locale, 'module.panel.relationshipNetwork'),
     'force-graph',
-    { nodes: uniqueNodes, edges: uniqueEdges },
+    payload,
     section,
     Math.max(420, Math.min(uniqueNodes.length * 40, 800)),
   );
@@ -448,7 +536,10 @@ type ElementUsage = {
 function buildElementUsageMap(elements: ElementCBSData[]): Map<string, ElementUsage> {
   const usage = new Map<string, ElementUsage>();
   for (const element of elements) {
-    const current = usage.get(element.elementName) ?? { reads: new Set<string>(), writes: new Set<string>() };
+    const current = usage.get(element.elementName) ?? {
+      reads: new Set<string>(),
+      writes: new Set<string>(),
+    };
     for (const value of element.reads) current.reads.add(value);
     for (const value of element.writes) current.writes.add(value);
     usage.set(element.elementName, current);
@@ -459,13 +550,18 @@ function buildElementUsageMap(elements: ElementCBSData[]): Map<string, ElementUs
 function buildLorebookDetails(
   scopedId: string,
   name: string,
-  activationEntries: Map<string, NonNullable<LorebookGraphData['lorebookActivationChain']>['entries'][number]>,
+  activationEntries: Map<
+    string,
+    NonNullable<LorebookGraphData['lorebookActivationChain']>['entries'][number]
+  >,
   usage: Map<string, ElementUsage>,
 ): Record<string, string> {
   const activation = activationEntries.get(scopedId) ?? activationEntries.get(name);
   const entryUsage = usage.get(scopedId) ?? usage.get(name);
   return {
-    'Secondary keywords': activation?.secondaryKeywords?.length ? activation.secondaryKeywords.join(', ') : '',
+    'Secondary keywords': activation?.secondaryKeywords?.length
+      ? activation.secondaryKeywords.join(', ')
+      : '',
     Content: activation?.content ?? '',
     'Expected vars': formatExpectedVars(entryUsage?.reads, entryUsage?.writes),
     Reads: entryUsage?.reads.size ? [...entryUsage.reads].sort().join(', ') : '',
@@ -496,11 +592,18 @@ function formatExpectedVars(reads?: Set<string>, writes?: Set<string>): string {
   return values.size > 0 ? [...values].sort().join(', ') : '';
 }
 
-function extractLuaFunctionBody(artifact: LuaAnalysisArtifact, startLine: number, endLine: number): string {
+function extractLuaFunctionBody(
+  artifact: LuaAnalysisArtifact,
+  startLine: number,
+  endLine: number,
+): string {
   const source = artifact.sourceText;
   if (!source) return '';
   const lines = source.split('\n');
-  return lines.slice(Math.max(startLine - 1, 0), Math.max(endLine, startLine - 1)).join('\n').trim();
+  return lines
+    .slice(Math.max(startLine - 1, 0), Math.max(endLine, startLine - 1))
+    .join('\n')
+    .trim();
 }
 
 function displayLeafName(value: string): string {
@@ -538,7 +641,12 @@ export function buildPromptChainGraphPanel(
   }
 
   for (const regex of regexCBS) {
-    nodes.push({ id: `rx:${regex.elementName}`, label: regex.elementName, type: 'regex', color: '#a78bfa' });
+    nodes.push({
+      id: `rx:${regex.elementName}`,
+      label: regex.elementName,
+      type: 'regex',
+      color: '#a78bfa',
+    });
   }
 
   for (let i = 1; i < promptChain.chain.length; i++) {
@@ -565,7 +673,12 @@ export function buildPromptChainGraphPanel(
     for (const dep of link.unsatisfiedDeps) {
       const rxWriter = regexCBS.find((rx) => rx.elementName.includes(dep));
       if (rxWriter) {
-        edges.push({ source: `rx:${rxWriter.elementName}`, target: nodeId, type: 'unsatisfied', label: dep });
+        edges.push({
+          source: `rx:${rxWriter.elementName}`,
+          target: nodeId,
+          type: 'unsatisfied',
+          label: dep,
+        });
       }
     }
 

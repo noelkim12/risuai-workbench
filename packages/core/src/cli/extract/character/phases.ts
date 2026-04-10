@@ -13,12 +13,15 @@ import {
   writeJson,
   writeText,
   writeBinary,
+  writeBinaryAsync,
+  writeJsonAsync,
   uniquePath,
   parsePngChunks,
   stripPngTextChunks,
   executeLorebookPlan,
 } from '@/node';
-import { parseCharx, parseModuleRisum } from '../parsers';
+import { createLimiter } from '../../shared/concurrency';
+import { parseCharx, parseCharxAsync, parseModuleRisum } from '../parsers';
 
 export function phase1_parseCharx(inputPath: string): {
   charx: any;
@@ -129,6 +132,67 @@ export function phase1_parseCharx(inputPath: string): {
   throw new Error(`지원하지 않는 파일 포맷: ${ext} (지원: .charx, .png, .json)`);
 }
 
+/** phase1_parseCharx의 async 버전 — .charx ZIP 해제에 fflate async unzip 사용 (worker_threads) */
+export async function phase1_parseCharxAsync(inputPath: string): Promise<{
+  charx: any;
+  assetSources: Record<string, Uint8Array>;
+  mainImage: Buffer | null;
+}> {
+  const ext = path.extname(inputPath).toLowerCase();
+  const buf = fs.readFileSync(inputPath);
+
+  console.log('\n  📦 Phase 1: 캐릭터 카드 파싱');
+  console.log(`     입력: ${path.basename(inputPath)} (${(buf.length / 1024).toFixed(1)} KB)`);
+
+  if (ext === '.charx') {
+    console.log('     포맷: CharX (ZIP) — async unzip');
+    const { card: charx, moduleData, assets } = await parseCharxAsync(buf);
+    if (!charx) {
+      throw new Error('charx.json을 찾을 수 없습니다.');
+    }
+
+    console.log(`     spec: ${charx.spec || 'unknown'}`);
+    console.log(`     이름: ${charx.data?.name || 'unknown'}`);
+
+    if (moduleData) {
+      console.log(`     module.risum: ${(moduleData.length / 1024).toFixed(1)} KB`);
+      const mod = parseModuleRisum(moduleData);
+      if (mod) {
+        console.log(`     모듈 이름: ${mod.name || 'unknown'}`);
+
+        charx.data = charx.data || {};
+        charx.data.extensions = charx.data.extensions || {};
+        charx.data.extensions.risuai = charx.data.extensions.risuai || {};
+
+        if (mod.trigger && mod.trigger.length > 0) {
+          charx.data.extensions.risuai.triggerscript = mod.trigger;
+          console.log(`     triggerscript: ${mod.trigger.length}개 병합됨`);
+        }
+
+        if (mod.regex && mod.regex.length > 0) {
+          charx.data.extensions.risuai.customScripts = mod.regex;
+          console.log(`     customScripts: ${mod.regex.length}개 병합됨`);
+        }
+
+        if (mod.lorebook && mod.lorebook.length > 0) {
+          charx.data.extensions.risuai._moduleLorebook = mod.lorebook;
+          console.log(`     lorebook (module): ${mod.lorebook.length}개 병합됨`);
+        }
+      }
+    }
+
+    const assetCount = Object.keys(assets).length;
+    if (assetCount > 0) {
+      console.log(`     에셋: ${assetCount}개`);
+    }
+
+    return { charx, assetSources: assets, mainImage: null };
+  }
+
+  // PNG와 JSON은 ZIP 해제가 없으므로 sync와 동일
+  return phase1_parseCharx(inputPath);
+}
+
 export function phase2_extractLorebooks(charx: any, outputDir: string): number {
   console.log('\n  📚 Phase 2: Lorebook 추출');
 
@@ -138,11 +202,23 @@ export function phase2_extractLorebooks(charx: any, outputDir: string): number {
   const manifestEntries: any[] = [];
   const allocateDir = createLorebookDirAllocator();
   const usedRelPaths = new Set<string>();
+  const usedSemanticFingerprints = new Set<string>();
+  // character_book과 _moduleLorebook이 같은 folder key UUID를 공유할 수 있으므로
+  // folder key → relDir 매핑을 두 호출에 걸쳐 공유해야 `_1` 접미사가 붙은
+  // 중복 디렉토리가 생기지 않는다.
+  const sharedFolderDirMap = new Map<string, string>();
 
   const charBook = charx.data?.character_book;
   if (charBook && charBook.entries && charBook.entries.length > 0) {
     console.log(`     character_book.entries: ${charBook.entries.length}개`);
-    const plan = planLorebookExtraction(charBook.entries, 'character', allocateDir, usedRelPaths);
+    const plan = planLorebookExtraction(
+      charBook.entries,
+      'character',
+      allocateDir,
+      usedRelPaths,
+      sharedFolderDirMap,
+      usedSemanticFingerprints,
+    );
     const result = executeLorebookPlan(plan, lorebooksDir);
     count += result.count;
     manifestEntries.push(...result.manifestEntries);
@@ -152,7 +228,14 @@ export function phase2_extractLorebooks(charx: any, outputDir: string): number {
   const moduleLorebook = charx.data?.extensions?.risuai?._moduleLorebook;
   if (moduleLorebook && moduleLorebook.length > 0) {
     console.log(`     module lorebook: ${moduleLorebook.length}개`);
-    const plan = planLorebookExtraction(moduleLorebook, 'module', allocateDir, usedRelPaths);
+    const plan = planLorebookExtraction(
+      moduleLorebook,
+      'module',
+      allocateDir,
+      usedRelPaths,
+      sharedFolderDirMap,
+      usedSemanticFingerprints,
+    );
     const result = executeLorebookPlan(plan, lorebooksDir);
     count += result.count;
     manifestEntries.push(...result.manifestEntries);
@@ -386,6 +469,132 @@ export function phase5_extractAssets(
   }
 
   writeJson(path.join(assetsDir, 'manifest.json'), manifest);
+  const breakdown = Object.entries(subdirCounts)
+    .map(([dir, count]) => `${dir}: ${count}`)
+    .join(', ');
+  console.log(
+    `     ✅ ${manifest.extracted}개 추출 (${breakdown}), ${manifest.skipped}개 스킵 → ${path.relative('.', assetsDir)}/`,
+  );
+
+  return manifest.extracted;
+}
+
+/** phase5_extractAssets의 async 버전 — 에셋 I/O를 동시성 제한기로 병렬 처리 */
+export async function phase5_extractAssetsAsync(
+  charx: any,
+  outputDir: string,
+  assetSources: Record<string, Uint8Array>,
+  mainImage: Buffer | null,
+): Promise<number> {
+  const assets = charx.data?.assets;
+  if (assets == null) {
+    console.log('     (V2 카드 — assets 배열 없음)');
+    return 0;
+  }
+
+  if (assets.length === 0) {
+    console.log('     (에셋 없음)');
+    return 0;
+  }
+
+  console.log('\n  🖼️ Phase 5: 에셋 추출 (async)');
+  console.log(`     assets: ${assets.length}개`);
+
+  const assetsDir = path.join(outputDir, 'assets');
+  ensureDir(assetsDir);
+
+  const manifest: any = {
+    version: 1,
+    source_format: detectSourceFormat(assetSources),
+    total: assets.length,
+    extracted: 0,
+    skipped: 0,
+    assets: [],
+  };
+
+  const subdirCounts: Record<string, number> = {};
+  const writeJobs: Array<{ outPath: string; data: Buffer }> = [];
+
+  // Path allocation must be serial (uniquePath uses existsSync)
+  for (let i = 0; i < assets.length; i += 1) {
+    const asset = assets[i];
+    const resolved = resolveAssetUri(asset?.uri, assetSources as any);
+    const subdir = assetTypeToSubdir(asset?.type);
+    const entry: any = {
+      index: i,
+      original_uri: asset?.uri,
+      extracted_path: null,
+      status: 'skipped',
+      type: asset?.type || null,
+      name: asset?.name || null,
+      ext: asset?.ext || null,
+      subdir,
+      size_bytes: null,
+    };
+
+    if (resolved === null) {
+      entry.status = 'unresolved';
+      manifest.assets.push(entry);
+      manifest.skipped += 1;
+      continue;
+    }
+
+    if (resolved.type === 'remote') {
+      entry.status = 'remote';
+      manifest.assets.push(entry);
+      manifest.skipped += 1;
+      continue;
+    }
+
+    if (resolved.type === 'ccdefault') {
+      if (mainImage) {
+        const targetDir = path.join(assetsDir, subdir);
+        const ccExt = asset?.ext ? `.${String(asset.ext).replace(/^\./, '')}` : '.png';
+        const ccBaseName = sanitizeFilename(asset?.name || 'main');
+        const ccOutPath = uniquePath(targetDir, ccBaseName, ccExt);
+        writeJobs.push({ outPath: ccOutPath, data: mainImage });
+        entry.extracted_path = `${subdir}/${path.basename(ccOutPath)}`;
+        entry.status = 'extracted';
+        entry.size_bytes = mainImage.length;
+        manifest.extracted += 1;
+        subdirCounts[subdir] = (subdirCounts[subdir] || 0) + 1;
+      } else {
+        entry.status = 'pointer_to_main_image';
+        manifest.skipped += 1;
+      }
+      manifest.assets.push(entry);
+      continue;
+    }
+
+    if (!resolved.data) {
+      entry.status = 'unresolved';
+      manifest.assets.push(entry);
+      manifest.skipped += 1;
+      continue;
+    }
+
+    const targetDir = path.join(assetsDir, subdir);
+    const ext = asset?.ext
+      ? `.${String(asset.ext).replace(/^\./, '')}`
+      : guessMimeExt(resolved.metadata?.mime || '');
+    const baseName = sanitizeFilename(asset?.name || `asset_${i}`);
+    const outPath = uniquePath(targetDir, baseName, ext);
+    const buf = Buffer.from(resolved.data as any);
+    writeJobs.push({ outPath, data: buf });
+
+    entry.extracted_path = `${subdir}/${path.basename(outPath)}`;
+    entry.status = 'extracted';
+    entry.size_bytes = buf.length;
+    manifest.extracted += 1;
+    subdirCounts[subdir] = (subdirCounts[subdir] || 0) + 1;
+    manifest.assets.push(entry);
+  }
+
+  // Parallel writes with concurrency limiter
+  const limiter = createLimiter();
+  await limiter.map(writeJobs, (job) => writeBinaryAsync(job.outPath, job.data));
+
+  await writeJsonAsync(path.join(assetsDir, 'manifest.json'), manifest);
   const breakdown = Object.entries(subdirCounts)
     .map(([dir, count]) => `${dir}: ${count}`)
     .join(', ');

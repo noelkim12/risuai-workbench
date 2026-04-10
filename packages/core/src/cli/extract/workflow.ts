@@ -7,13 +7,13 @@ import { isModuleJson } from './parsers';
 const PRESET_ONLY_EXTENSIONS = new Set(['.preset', '.risupreset', '.risup']);
 const MODULE_ONLY_EXTENSIONS = new Set(['.risum']);
 
-export function runExtractWorkflow(argv: readonly string[]): number {
+export async function runExtractWorkflow(argv: readonly string[]): Promise<number> {
   const typeIdx = argv.indexOf('--type');
   const typeArg = typeIdx >= 0 ? argv[typeIdx + 1] : null;
   const stripType = (v: string) => v !== '--type' && v !== typeArg;
 
   if (typeArg === 'module') {
-    return runModuleExtract(argv.filter(stripType));
+    return await runModuleExtract(argv.filter(stripType));
   }
 
   if (typeArg === 'preset') {
@@ -21,7 +21,7 @@ export function runExtractWorkflow(argv: readonly string[]): number {
   }
 
   if (typeArg === 'character') {
-    return runCharacterExtract(argv.filter(stripType));
+    return await runCharacterExtract(argv.filter(stripType));
   }
 
   const filePath = argv.find(
@@ -36,14 +36,14 @@ export function runExtractWorkflow(argv: readonly string[]): number {
   if (filePath) {
     const ext = path.extname(filePath).toLowerCase();
     if (MODULE_ONLY_EXTENSIONS.has(ext)) {
-      return runModuleExtract(argv);
+      return await runModuleExtract(argv);
     }
     if (PRESET_ONLY_EXTENSIONS.has(ext)) {
       return runPresetExtract(argv);
     }
     if (ext === '.json') {
       if (isModuleJson(filePath)) {
-        return runModuleExtract(argv);
+        return await runModuleExtract(argv);
       }
       if (isPresetFile(filePath)) {
         return runPresetExtract(argv);
@@ -51,7 +51,7 @@ export function runExtractWorkflow(argv: readonly string[]): number {
     }
   }
 
-  return runCharacterExtract(argv);
+  return await runCharacterExtract(argv);
 }
 
 function isOptionValue(argv: readonly string[], value: string): boolean {

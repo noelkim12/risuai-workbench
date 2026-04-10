@@ -48,11 +48,59 @@ export interface ChartPanel extends VisualizationPanelBase {
   height?: number;
 }
 
+/** force-graph 노드 payload */
+export interface ForceGraphNode {
+  id: string;
+  label: string;
+  type: string;
+  color: string;
+  details?: Record<string, string>;
+  groupId?: string;
+  groupKind?: 'lorebook-folder' | 'domain-band';
+  groupLabel?: string;
+  layoutRank?: number;
+  layoutBand?: 'lorebook' | 'variable' | 'regex' | 'lua' | 'trigger';
+}
+
+/** force-graph 엣지 payload */
+export interface ForceGraphEdge {
+  source: string;
+  target: string;
+  type: string;
+  label?: string;
+}
+
+/** force-graph 의미 그룹 (로어북 폴더 등) */
+export interface ForceGraphGroup {
+  id: string;
+  kind: 'lorebook-folder';
+  label: string;
+  order: number;
+}
+
+/** force-graph payload — 관계 네트워크 v1 */
+export interface ForceGraphPayload {
+  nodes: ForceGraphNode[];
+  edges: ForceGraphEdge[];
+  groups?: ForceGraphGroup[];
+  layout?: {
+    strategy: 'grouped-deterministic-v1';
+    signatureSalt: 'relationship-network-v1';
+  };
+}
+
+/** structured Mermaid diagram payload */
+export interface MermaidDiagramPayload {
+  kind: 'mermaid';
+  definition: string;
+  fallbackText?: string;
+}
+
 /** Mermaid / Cytoscape / Text / Force-graph payload 패널 */
 export interface DiagramPanel extends VisualizationPanelBase {
   kind: 'diagram';
-  library: 'mermaid' | 'cytoscape' | 'text' | 'force-graph';
-  payload: string | Record<string, unknown>;
+  library: 'mermaid' | 'cytoscape' | 'text' | 'force-graph' | 'lua-flow';
+  payload: string | MermaidDiagramPayload | ForceGraphPayload | Record<string, unknown>;
   height?: number;
 }
 

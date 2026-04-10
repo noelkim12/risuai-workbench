@@ -6,11 +6,11 @@ import { runAnalyzeCharxWorkflow } from '@/cli/analyze/charx/workflow';
 import { getCharacterName } from '@/domain/charx/data';
 import { sanitizeFilename } from '../../../utils/filenames';
 import {
-  phase1_parseCharx,
+  phase1_parseCharxAsync,
   phase2_extractLorebooks,
   phase3_extractRegex,
   phase4_extractTriggerLua,
-  phase5_extractAssets,
+  phase5_extractAssetsAsync,
   phase6_extractBackgroundHTML,
   phase7_extractVariables,
   phase8_extractCharacterFields,
@@ -50,7 +50,7 @@ const HELP_TEXT = `
     node extract.js mychar.charx --json-only
 `;
 
-export function runExtractWorkflow(argv: readonly string[]): number {
+export async function runExtractWorkflow(argv: readonly string[]): Promise<number> {
   const helpMode = argv.includes('-h') || argv.includes('--help') || argv.length === 0;
   const jsonOnly = argv.includes('--json-only');
   const outIdx = argv.indexOf('--out');
@@ -71,7 +71,7 @@ export function runExtractWorkflow(argv: readonly string[]): number {
   }
 
   try {
-    runMain(filePath, outArg, jsonOnly);
+    await runMain(filePath, outArg, jsonOnly);
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -80,10 +80,16 @@ export function runExtractWorkflow(argv: readonly string[]): number {
   }
 }
 
-function runMain(filePath: string, outArg: string | null, jsonOnly: boolean): void {
+function fmt(ms: number): string {
+  return ms < 1000 ? `${ms.toFixed(0)}ms` : `${(ms / 1000).toFixed(2)}s`;
+}
+
+async function runMain(filePath: string, outArg: string | null, jsonOnly: boolean): Promise<void> {
+  const t0 = performance.now();
   console.log('\n  🐿️ RisuAI Character Card Extractor\n');
 
-  const { charx, assetSources, mainImage }: ParsedCharxResult = phase1_parseCharx(filePath);
+  let t = performance.now();
+  const { charx, assetSources, mainImage }: ParsedCharxResult = await phase1_parseCharxAsync(filePath);
   const safeName = sanitizeFilename(
     getCharacterName(charx),
     path.basename(filePath, path.extname(filePath)),
@@ -94,24 +100,47 @@ function runMain(filePath: string, outArg: string | null, jsonOnly: boolean): vo
   const charxJsonPath = path.join(resolvedOutDir, 'charx.json');
   writeJson(charxJsonPath, charx);
   console.log(`\n     ✅ charx.json → ${path.relative('.', charxJsonPath)}`);
+  console.log(`     ⏱  Phase 1: ${fmt(performance.now() - t)}`);
 
   if (jsonOnly) {
     console.log('\n  완료 (--json-only)\n');
     return;
   }
 
+  t = performance.now();
   phase2_extractLorebooks(charx, resolvedOutDir);
+  console.log(`     ⏱  Phase 2: ${fmt(performance.now() - t)}`);
+
+  t = performance.now();
   phase3_extractRegex(charx, resolvedOutDir);
+  console.log(`     ⏱  Phase 3: ${fmt(performance.now() - t)}`);
+
+  t = performance.now();
   phase4_extractTriggerLua(charx, resolvedOutDir);
-  phase5_extractAssets(charx, resolvedOutDir, assetSources, mainImage);
+  console.log(`     ⏱  Phase 4: ${fmt(performance.now() - t)}`);
+
+  t = performance.now();
+  await phase5_extractAssetsAsync(charx, resolvedOutDir, assetSources, mainImage);
+  console.log(`     ⏱  Phase 5 (assets): ${fmt(performance.now() - t)}`);
+
+  t = performance.now();
   phase6_extractBackgroundHTML(charx, resolvedOutDir);
   phase7_extractVariables(charx, resolvedOutDir);
   phase8_extractCharacterFields(charx, resolvedOutDir);
-  runLuaAnalysis(resolvedOutDir, charxJsonPath);
-  runCharxAnalysis(resolvedOutDir, charxJsonPath);
+  console.log(`     ⏱  Phase 6-8: ${fmt(performance.now() - t)}`);
 
+  t = performance.now();
+  runLuaAnalysis(resolvedOutDir, charxJsonPath);
+  console.log(`     ⏱  Phase 9 (lua analysis): ${fmt(performance.now() - t)}`);
+
+  t = performance.now();
+  runCharxAnalysis(resolvedOutDir, charxJsonPath);
+  console.log(`     ⏱  Phase 10 (charx analysis): ${fmt(performance.now() - t)}`);
+
+  const total = performance.now() - t0;
   console.log('\n  ────────────────────────────────────────');
   console.log(`  📊 추출 완료 → ${path.relative('.', resolvedOutDir)}/`);
+  console.log(`  ⏱  총 소요: ${fmt(total)}`);
   console.log('  ────────────────────────────────────────\n');
 }
 

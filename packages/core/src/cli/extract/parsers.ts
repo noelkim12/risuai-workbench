@@ -75,13 +75,32 @@ export function parseCharx(buf: Buffer): {
     file.start();
   };
 
-  unzip.push(new Uint8Array(buf), true);
+  // fflate Unzip은 push 호출 내부에서 onfile/ondata가 동기로 연쇄 호출되므로,
+  // 초대형 charx(수백 MB)를 한 번에 밀어넣으면 "Maximum call stack size exceeded"가 난다.
+  // 청크로 쪼개 push해 콜 스택이 각 청크 경계에서 풀리도록 한다.
+  const view = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+  const CHUNK = 1 << 20; // 1 MiB
+  for (let off = 0; off < view.length; off += CHUNK) {
+    const end = Math.min(off + CHUNK, view.length);
+    unzip.push(view.subarray(off, end), end === view.length);
+  }
 
   if (pendingError) {
     throw pendingError;
   }
 
   return result;
+}
+
+/** parseCharx의 async 래퍼 — 시그니처 호환용. 내부는 sync parseCharx 사용.
+ *  fflate async unzip()은 일부 charx ZIP 구조를 처리 못하므로 streaming Unzip 유지.
+ *  향후 worker_threads 래핑으로 진짜 비동기화 예정. */
+export async function parseCharxAsync(buf: Buffer): Promise<{
+  card: any;
+  moduleData: Buffer | null;
+  assets: Record<string, Uint8Array>;
+}> {
+  return parseCharx(buf);
 }
 
 function assignCharxEntry(

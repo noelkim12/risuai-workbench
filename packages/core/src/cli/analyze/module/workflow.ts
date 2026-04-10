@@ -110,20 +110,25 @@ export function runAnalyzeModuleWorkflow(argv: readonly string[]): number {
       }
     }
 
+    // NOTE: Must match lorebookStructure.entries filter (folders only) to
+    // keep positional indices aligned. See charx/workflow.ts for details.
     const rawModuleEntries = getModuleLorebookEntriesFromModule(moduleJson) as Array<Record<string, unknown>>;
     const textMentionEntries = rawModuleEntries
-      .filter((e) => e.mode !== 'folder' && typeof e.content === 'string' && (e.content as string).length > 0)
+      .filter((e) => e.mode !== 'folder')
       .map((e, i) => {
         const name = typeof e.name === 'string' && e.name ? e.name
           : typeof e.comment === 'string' && e.comment ? e.comment
           : `entry-${i}`;
-        return { id: lorebookStructure?.entries[i]?.id ?? name, name, content: e.content as string };
+        const content = typeof e.content === 'string' ? e.content : '';
+        const keys = Array.isArray(e.keys) ? (e.keys as unknown[]).filter((k): k is string => typeof k === 'string') : [];
+        return { id: lorebookStructure?.entries[i]?.id ?? name, name, content, keys };
       });
 
     const textMentions = analyzeTextMentions(
       textMentionEntries,
       new Set(unifiedGraph.keys()),
       allLuaApiNames,
+      textMentionEntries,
     );
 
     const reportData: ModuleReportData = {

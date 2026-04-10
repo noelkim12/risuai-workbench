@@ -15,7 +15,7 @@ import type { ModuleCollectResult } from './types';
 /** 추출된 module 디렉토리에서 CBS 변수 연산 데이터를 수집한다. */
 export function collectModuleCBS(outputDir: string): ModuleCollectResult {
   const lorebookCBS = collectModuleLorebookCBS(outputDir);
-  const regexCBS = collectModuleRegexCBS(outputDir);
+  const { regexCBS, regexScriptTotal } = collectModuleRegexCBS(outputDir);
   const luaArtifacts = loadLuaArtifactsForModule(outputDir);
   const luaCBS =
     luaArtifacts.length > 0
@@ -24,7 +24,7 @@ export function collectModuleCBS(outputDir: string): ModuleCollectResult {
   const htmlCBS = collectHTMLCBS(null, outputDir).cbsData;
   const metadata = loadModuleMetadata(outputDir);
 
-  return { lorebookCBS, regexCBS, luaCBS, htmlCBS, metadata, luaArtifacts };
+  return { lorebookCBS, regexCBS, regexScriptTotal, luaCBS, htmlCBS, metadata, luaArtifacts };
 }
 
 /** module 추출 디렉토리의 Lua 파일을 직접 분석해 아티팩트를 만든다. */
@@ -98,11 +98,12 @@ function collectLorebookFile(filePath: string, relPath: string): ElementCBSData[
   });
 }
 
-function collectModuleRegexCBS(outputDir: string): ElementCBSData[] {
+function collectModuleRegexCBS(outputDir: string): { regexCBS: ElementCBSData[]; regexScriptTotal: number } {
   const regexDir = path.join(outputDir, 'regex');
-  if (!dirExists(regexDir)) return [];
+  if (!dirExists(regexDir)) return { regexCBS: [], regexScriptTotal: 0 };
 
   const files = resolveOrderedFiles(regexDir, listJsonFilesRecursive(regexDir));
+  const regexScriptTotal = files.length;
   const results: ElementCBSData[] = [];
 
   for (const [index, filePath] of files.entries()) {
@@ -137,7 +138,7 @@ function collectModuleRegexCBS(outputDir: string): ElementCBSData[] {
     });
   }
 
-  return results;
+  return { regexCBS: results, regexScriptTotal };
 }
 
 function loadModuleMetadata(outputDir: string): Record<string, unknown> {

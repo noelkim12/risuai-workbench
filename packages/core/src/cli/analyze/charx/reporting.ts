@@ -345,9 +345,10 @@ function renderLorebookStructure(lorebookStructure: LorebookStructureResult, loc
   out.push('');
   out.push(`| ${t(locale, 'md.charx.mode')} | ${t(locale, 'md.charx.count')} |`);
   out.push('|------|-------|');
-  out.push(mdRow([t(locale, 'charx.chart.normal'), String(stats.activationModes.normal)]));
   out.push(mdRow([t(locale, 'charx.chart.constant'), String(stats.activationModes.constant)]));
-  out.push(mdRow([t(locale, 'charx.chart.selective'), String(stats.activationModes.selective)]));
+  out.push(mdRow([t(locale, 'charx.chart.keyword'), String(stats.activationModes.keyword)]));
+  out.push(mdRow([t(locale, 'charx.chart.keywordMulti'), String(stats.activationModes.keywordMulti)]));
+  out.push(mdRow([t(locale, 'charx.chart.referenceOnly'), String(stats.activationModes.referenceOnly)]));
   out.push(mdRow([t(locale, 'md.charx.enabled'), String(stats.enabledCount)]));
   out.push(mdRow([t(locale, 'md.charx.disabled'), String(stats.totalEntries - stats.enabledCount)]));
   out.push(mdRow([t(locale, 'md.charx.withCBS'), String(stats.withCBS)]));

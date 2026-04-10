@@ -17,6 +17,7 @@ export type { ElementCBSData, LorebookRegexCorrelation, UnifiedVarEntry };
 export interface ModuleCollectResult {
   lorebookCBS: ElementCBSData[];
   regexCBS: ElementCBSData[];
+  regexScriptTotal: number;
   luaCBS: ElementCBSData[];
   htmlCBS: ElementCBSData | null;
   metadata: Record<string, unknown>;

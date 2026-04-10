@@ -5,7 +5,8 @@ import { buildLorebookStructureTree } from '@/domain/lorebook/structure';
 import { escapeHtml } from '../../../shared';
 import { renderHtmlReportShell } from '../../shared/html-report-shell';
 import { type Locale, t } from '../../shared/i18n';
-import { buildRelationshipNetworkPanel } from '../../shared/force-graph-builders';
+import { buildLuaInteractionFlow } from '../../shared/lua-interaction-builder';
+import { buildRelationshipNetworkPanel } from '../../shared/relationship-network-builders';
 import { registerSource } from '../../shared/source-links';
 import { collectRegexScriptInfosFromDir } from '../../shared/cross-cutting';
 import {
@@ -22,6 +23,7 @@ import { type CharxReportData } from '../types';
 const CHARX_SECTIONS: SectionDefinition[] = [
   { id: 'overview', labelKey: 'shell.tab.overview', descriptionKey: 'shell.section.overview.desc' },
   { id: 'flow', labelKey: 'shell.tab.flow', descriptionKey: 'shell.section.flow.desc' },
+  { id: 'lua', labelKey: 'shell.tab.lua', descriptionKey: 'shell.section.lua.desc' },
   { id: 'graph', labelKey: 'shell.tab.graph', descriptionKey: 'shell.section.graph.desc' },
   { id: 'risks', labelKey: 'shell.tab.risks', descriptionKey: 'shell.section.risks.desc' },
   { id: 'sources', labelKey: 'shell.tab.sources', descriptionKey: 'shell.section.sources.desc' },
@@ -105,11 +107,21 @@ export function renderHtml(data: CharxReportData, outputDir: string, locale: Loc
     buildChartPanel('activation-modes', t(locale, 'charx.chart.activationModes'), {
       type: 'bar',
       data: {
-        labels: [t(locale, 'charx.chart.normal'), t(locale, 'charx.chart.constant'), t(locale, 'charx.chart.selective')],
+        labels: [
+          t(locale, 'charx.chart.constant'),
+          t(locale, 'charx.chart.keyword'),
+          t(locale, 'charx.chart.keywordMulti'),
+          t(locale, 'charx.chart.referenceOnly'),
+        ],
         datasets: [
           {
-            data: [metrics.activationModes.normal, metrics.activationModes.constant, metrics.activationModes.selective],
-            backgroundColor: ['#34d399', '#f59e0b', '#60a5fa'],
+            data: [
+              metrics.activationModes.constant,
+              metrics.activationModes.keyword,
+              metrics.activationModes.keywordMulti,
+              metrics.activationModes.referenceOnly,
+            ],
+            backgroundColor: ['#f87171', '#60a5fa', '#34d399', '#94a3b8'],
           },
         ],
       },
@@ -195,9 +207,10 @@ interface CharxMetricSummary {
   score: number | null;
   elementCounts: Record<string, number>;
   activationModes: {
-    normal: number;
     constant: number;
-    selective: number;
+    keyword: number;
+    keywordMulti: number;
+    referenceOnly: number;
   };
 }
 
@@ -237,9 +250,10 @@ function collectCharxMetrics(data: CharxReportData, sources: VisualizationSource
   const htmlReads = Array.from(data.htmlAnalysis?.cbsData?.reads || []);
   const htmlWrites = Array.from(data.htmlAnalysis?.cbsData?.writes || []);
   const activationModes = data.lorebookStructure?.stats?.activationModes || {
-    normal: 0,
     constant: 0,
-    selective: 0,
+    keyword: 0,
+    keywordMulti: 0,
+    referenceOnly: 0,
   };
   const unusedDefaultCount = Object.keys(data.defaultVariables || {}).filter(
     (varName) => !data.unifiedGraph.has(varName),
@@ -639,7 +653,17 @@ function buildLuaPanels(data: CharxReportData, locale: Locale): VisualizationPan
     { label: t(locale, 'lua.metric.functions'), value: totalFunctions },
     { label: t(locale, 'lua.metric.stateVars'), value: totalStateVars },
     { label: t(locale, 'lua.metric.handlers'), value: totalHandlers },
-  ], 'graph'));
+  ], 'lua'));
+
+  for (const artifact of artifacts) {
+    panels.push(buildDiagramPanel(
+      `charx-lua-flow-${artifact.baseName}`,
+      t(locale, 'lua.panel.flowchart', artifact.baseName),
+      'lua-flow',
+      buildLuaInteractionFlow(artifact, locale),
+      'lua',
+    ));
+  }
 
   // 상태 소유권 테이블
   const stateRows: TablePanel['rows'] = [];
@@ -662,7 +686,7 @@ function buildLuaPanels(data: CharxReportData, locale: Locale): VisualizationPan
       t(locale, 'lua.panel.stateOwnership'),
       [t(locale, 'common.table.variable'), t(locale, 'lua.html.owner'), t(locale, 'lua.html.reads'), t(locale, 'lua.html.writes')],
       stateRows,
-      'graph',
+      'lua',
     ));
   }
 
@@ -700,7 +724,7 @@ function buildLuaPanels(data: CharxReportData, locale: Locale): VisualizationPan
       t(locale, 'lua.panel.correlation'),
       [t(locale, 'common.table.variable'), t(locale, 'lua.html.owner'), t(locale, 'lua.html.correlation')],
       correlationRows,
-      'graph',
+      'lua',
     ));
   }
 

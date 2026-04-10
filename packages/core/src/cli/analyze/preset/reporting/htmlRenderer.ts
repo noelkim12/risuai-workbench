@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { buildChartPanel, buildDiagramPanel, buildFindingPanel, buildMetricGrid, buildTablePanel } from '../../shared/view-model';
-import { buildPromptChainGraphPanel } from '../../shared/force-graph-builders';
+import { buildPromptChainGraphPanel } from '../../shared/relationship-network-builders';
 import { escapeHtml } from '../../../shared';
 import { renderHtmlReportShell } from '../../shared/html-report-shell';
 import { createSourceId, dedupeSources } from '../../shared/source-links';

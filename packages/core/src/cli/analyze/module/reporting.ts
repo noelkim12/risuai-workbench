@@ -5,6 +5,8 @@ import { mdRow } from '../../shared';
 import { type Locale, t } from '../shared/i18n';
 import type { ModuleReportData } from './types';
 
+const MAX_WRITE_ONLY_DEAD_CODE = 12;
+
 /** module analysis Markdown report를 생성한다. */
 export function renderModuleMarkdown(data: ModuleReportData, outputDir: string, locale: Locale = 'ko'): void {
   const out: string[] = [];
@@ -18,7 +20,8 @@ export function renderModuleMarkdown(data: ModuleReportData, outputDir: string, 
   out.push('|--------|-------|');
   out.push(mdRow([t(locale, 'md.module.moduleName'), data.moduleName]));
   out.push(mdRow([t(locale, 'md.module.lorebookEntries'), String(data.collected.lorebookCBS.length)]));
-  out.push(mdRow([t(locale, 'md.module.regexScripts'), String(data.collected.regexCBS.length)]));
+  out.push(mdRow([t(locale, 'md.module.regexScriptsActive'), String(data.collected.regexCBS.length)]));
+  out.push(mdRow([t(locale, 'md.module.regexScriptFiles'), String(data.collected.regexScriptTotal)]));
   out.push(mdRow([t(locale, 'md.module.luaScripts'), String(data.collected.luaCBS.length)]));
   out.push(mdRow([t(locale, 'md.module.backgroundHtml'), data.collected.htmlCBS ? t(locale, 'common.label.yes') : t(locale, 'common.label.no')]));
   out.push(mdRow([t(locale, 'md.module.uniqueCbsVars'), String(data.unifiedGraph.size)]));
@@ -145,9 +148,25 @@ function renderDeadCode(data: ModuleReportData, locale: Locale): string[] {
 
   out.push(`| ${t(locale, 'common.table.type')} | ${t(locale, 'common.table.severity')} | ${t(locale, 'common.table.element')} | ${t(locale, 'common.table.message')} |`);
   out.push('|------|----------|---------|---------|');
-  data.deadCode.findings.forEach((finding) => {
+
+  let omittedWriteOnly = 0;
+  let shownWriteOnly = 0;
+  for (const finding of data.deadCode.findings) {
+    if (finding.type === 'write-only-variable') {
+      if (shownWriteOnly >= MAX_WRITE_ONLY_DEAD_CODE) {
+        omittedWriteOnly += 1;
+        continue;
+      }
+      shownWriteOnly += 1;
+    }
+
     out.push(mdRow([finding.type, finding.severity, `${finding.elementType}:${finding.elementName}`, finding.message]));
-  });
+  }
+
+  if (omittedWriteOnly > 0) {
+    out.push('> ℹ️ ' + t(locale, 'module.finding.writeOnlyOmitted', omittedWriteOnly));
+  }
+
   out.push('');
   return out;
 }

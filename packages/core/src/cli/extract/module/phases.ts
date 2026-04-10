@@ -11,9 +11,12 @@ import {
   writeJson,
   writeText,
   writeBinary,
+  writeBinaryAsync,
+  writeJsonAsync,
   uniquePath,
   executeLorebookPlan,
 } from '@/node';
+import { createLimiter } from '../../shared/concurrency';
 import { parseModuleRisumFull, parseModuleJson } from '../parsers';
 import type { ParsedModuleFull } from '../parsers';
 
@@ -270,6 +273,87 @@ export function phase5_extractAssets(
   }
 
   writeJson(path.join(assetsDir, 'manifest.json'), manifest);
+  console.log(
+    `     ✅ ${manifest.extracted}개 에셋 추출, ${manifest.skipped}개 스킵 → ${path.relative('.', assetsDir)}/`,
+  );
+  return manifest.extracted;
+}
+
+/** phase5_extractAssets의 async 버전 — 에셋 I/O를 동시성 제한기로 병렬 처리 */
+export async function phase5_extractAssetsAsync(
+  module: any,
+  outputDir: string,
+  assetBuffers: Buffer[],
+  sourceFormat: 'risum' | 'json',
+): Promise<number> {
+  console.log('\n  🖼️ Phase 5: 에셋 추출 (async)');
+
+  if (sourceFormat === 'json') {
+    console.log('     (JSON 소스 — 바이너리 에셋 버퍼 없음, 스킵)');
+    return 0;
+  }
+
+  const assets = module?.assets;
+  if (!Array.isArray(assets) || assets.length === 0) {
+    console.log('     (assets 없음)');
+    return 0;
+  }
+
+  console.log(`     module.assets: ${assets.length}개`);
+  const assetsDir = path.join(outputDir, 'assets');
+  ensureDir(assetsDir);
+
+  const manifest: {
+    version: number;
+    source_format: 'risum' | 'json';
+    total: number;
+    extracted: number;
+    skipped: number;
+    assets: Array<{
+      index: number;
+      name: string | null;
+      uri: string | null;
+      type: string | null;
+      extracted_path: string | null;
+      status: 'extracted' | 'missing_buffer';
+      size_bytes: number | null;
+    }>;
+  } = {
+    version: 1,
+    source_format: sourceFormat,
+    total: assets.length,
+    extracted: 0,
+    skipped: 0,
+    assets: [],
+  };
+
+  const writeJobs: Array<{ outPath: string; data: Buffer }> = [];
+
+  for (let i = 0; i < assets.length; i += 1) {
+    const tuple = assets[i];
+    const name = Array.isArray(tuple) ? tuple[0] : null;
+    const uri = Array.isArray(tuple) ? tuple[1] : null;
+    const type = Array.isArray(tuple) ? tuple[2] : null;
+
+    const buffer = assetBuffers[i];
+    if (!buffer) {
+      manifest.assets.push({ index: i, name, uri, type, extracted_path: null, status: 'missing_buffer', size_bytes: null });
+      manifest.skipped += 1;
+      continue;
+    }
+
+    const baseName = sanitizeFilename(name || `asset_${i}`);
+    const outPath = uniquePath(assetsDir, baseName, '.bin');
+    writeJobs.push({ outPath, data: buffer });
+
+    manifest.assets.push({ index: i, name, uri, type, extracted_path: path.basename(outPath), status: 'extracted', size_bytes: buffer.length });
+    manifest.extracted += 1;
+  }
+
+  const limiter = createLimiter();
+  await limiter.map(writeJobs, (job) => writeBinaryAsync(job.outPath, job.data));
+
+  await writeJsonAsync(path.join(assetsDir, 'manifest.json'), manifest);
   console.log(
     `     ✅ ${manifest.extracted}개 에셋 추출, ${manifest.skipped}개 스킵 → ${path.relative('.', assetsDir)}/`,
   );

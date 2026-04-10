@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { zipSync } from 'fflate';
+import { zipSync, zip, type AsyncZippable } from 'fflate';
 import { ensureDir } from '@/node/fs-helpers';
 import {
   PNG_1X1_TRANSPARENT,
@@ -20,6 +20,8 @@ import {
 } from '@/node/json-listing';
 import { toPosix } from '@/domain/lorebook/folders';
 import { sanitizeFilename } from '../../../utils/filenames';
+import { readFileAsync } from '@/node/fs-helpers';
+import { createLimiter } from '../../shared/concurrency';
 import { argValue, setNestedValue, classifyAssetExt, normalizeExt, fromPosix } from '../utils';
 
 const HELP_TEXT = `
@@ -449,6 +451,59 @@ function buildCharxBuffer(charx: any, inRoot: string): Buffer {
   return Buffer.from(zipSync(zipEntries, { level: 0 }));
 }
 
+async function buildCharxBufferAsync(charx: any, inRoot: string): Promise<Buffer> {
+  const work = structuredClone(charx);
+  const assetBlobs = await collectAssetBuffersAsync(work, inRoot);
+  const zipEntries: Record<string, Uint8Array | Buffer> = {};
+  const usedPaths = new Set<string>();
+
+  const assets = Array.isArray(work.data.assets) ? work.data.assets : [];
+  for (let i = 0; i < assets.length; i += 1) {
+    const asset = assets[i];
+    if (!asset || typeof asset !== 'object') continue;
+
+    const idx = i + 1;
+    const blob = assetBlobs.get(idx);
+    if (!blob) continue;
+
+    const uri = typeof asset.uri === 'string' ? asset.uri : '';
+    if (uri.startsWith('http://') || uri.startsWith('https://') || uri.startsWith('data:'))
+      continue;
+
+    const assetType = sanitizeFilename(asset.type || 'asset', 'asset').toLowerCase();
+    const extClass = classifyAssetExt(asset.ext || 'bin');
+    const ext = normalizeExt(asset.ext || 'bin');
+    const stem = sanitizeFilename(asset.name || `asset_${idx}`, `asset_${idx}`);
+
+    let rel = `assets/${assetType}/${extClass}/${stem}.${ext}`;
+    let serial = 1;
+    while (usedPaths.has(rel)) {
+      rel = `assets/${assetType}/${extClass}/${stem}_${serial}.${ext}`;
+      serial += 1;
+    }
+    usedPaths.add(rel);
+
+    asset.uri = `embeded://${toPosix(rel)}`;
+    zipEntries[toPosix(rel)] = new Uint8Array(blob);
+  }
+
+  const moduleObj = buildModuleFromCharx(work);
+  delete work.data.extensions.risuai.triggerscript;
+  delete work.data.extensions.risuai.customScripts;
+  delete work.data.extensions.risuai._moduleLorebook;
+
+  zipEntries['charx.json'] = Buffer.from(`${JSON.stringify(work, null, 2)}\n`, 'utf-8');
+  zipEntries['module.risum'] = encodeModuleRisum(moduleObj);
+
+  const data = await new Promise<Uint8Array>((resolve, reject) => {
+    zip(zipEntries as AsyncZippable, { level: 0 }, (err, result) => {
+      if (err) reject(err);
+      else resolve(result);
+    });
+  });
+  return Buffer.from(data);
+}
+
 function resolveCharxJsonPath(inRoot: string): string | null {
   const primary = path.join(inRoot, 'charx.json');
   if (fs.existsSync(primary)) return primary;
@@ -489,6 +544,56 @@ function collectAssetBuffers(charx: any, inRoot: string): Map<number, Buffer> {
     out.set(Number(rec.index) + 1, fs.readFileSync(filePath));
   }
 
+  for (let i = 0; i < (charx.data.assets || []).length; i += 1) {
+    const idx = i + 1;
+    if (out.has(idx)) continue;
+    const asset = charx.data.assets[i];
+    if (!asset || typeof asset.uri !== 'string') continue;
+
+    if (asset.uri.startsWith('embeded://') || asset.uri.startsWith('embedded://')) {
+      const rel = asset.uri.replace(/^embeded:\/\//, '').replace(/^embedded:\/\//, '');
+      const absolute = path.join(inRoot, rel);
+      if (fs.existsSync(absolute) && fs.statSync(absolute).isFile()) {
+        out.set(idx, fs.readFileSync(absolute));
+      }
+    }
+  }
+
+  return out;
+}
+
+async function collectAssetBuffersAsync(charx: any, inRoot: string): Promise<Map<number, Buffer>> {
+  const out = new Map<number, Buffer>();
+  const assetDir = path.join(inRoot, 'assets');
+  const manifestPath = path.join(assetDir, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) return out;
+
+  const manifest = readJson(manifestPath) as any;
+  if (!manifest || !Array.isArray(manifest.assets)) return out;
+
+  // Collect valid file reads
+  const readJobs: Array<{ index: number; filePath: string }> = [];
+  for (const rec of manifest.assets) {
+    if (!rec || typeof rec !== 'object') continue;
+    if (!Number.isFinite(rec.index)) continue;
+    if (typeof rec.extracted_path !== 'string' || rec.extracted_path.length === 0) continue;
+    const filePath = path.join(assetDir, rec.extracted_path);
+    if (!fs.existsSync(filePath)) continue;
+    readJobs.push({ index: Number(rec.index) + 1, filePath });
+  }
+
+  // Parallel reads
+  const limiter = createLimiter();
+  const results = await limiter.map(readJobs, async (job) => ({
+    index: job.index,
+    data: await readFileAsync(job.filePath),
+  }));
+
+  for (const result of results) {
+    out.set(result.index, result.data);
+  }
+
+  // Fallback for embedded assets not in manifest
   for (let i = 0; i < (charx.data.assets || []).length; i += 1) {
     const idx = i + 1;
     if (out.has(idx)) continue;

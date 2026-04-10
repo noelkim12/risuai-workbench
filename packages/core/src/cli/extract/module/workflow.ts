@@ -7,7 +7,7 @@ import {
   phase2_extractLorebooks,
   phase3_extractRegex,
   phase4_extractTriggerLua,
-  phase5_extractAssets,
+  phase5_extractAssetsAsync,
   phase6_extractBackgroundEmbedding,
   phase7_extractModuleIdentity,
 } from './phases';
@@ -41,7 +41,7 @@ export function isModuleFile(filePath: string): boolean {
   return path.extname(filePath).toLowerCase() === '.risum';
 }
 
-export function runExtractWorkflow(argv: readonly string[]): number {
+export async function runExtractWorkflow(argv: readonly string[]): Promise<number> {
   const helpMode = argv.includes('-h') || argv.includes('--help') || argv.length === 0;
   const jsonOnly = argv.includes('--json-only');
   const outIdx = argv.indexOf('--out');
@@ -62,7 +62,7 @@ export function runExtractWorkflow(argv: readonly string[]): number {
   }
 
   try {
-    runMain(filePath, outArg, jsonOnly);
+    await runMain(filePath, outArg, jsonOnly);
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -71,9 +71,15 @@ export function runExtractWorkflow(argv: readonly string[]): number {
   }
 }
 
-function runMain(filePath: string, outArg: string | null, jsonOnly: boolean): void {
+function fmt(ms: number): string {
+  return ms < 1000 ? `${ms.toFixed(0)}ms` : `${(ms / 1000).toFixed(2)}s`;
+}
+
+async function runMain(filePath: string, outArg: string | null, jsonOnly: boolean): Promise<void> {
+  const t0 = performance.now();
   console.log('\n  RisuAI Module Extractor\n');
 
+  let t = performance.now();
   const parsed = phase1_parseModule(filePath);
   const safeName = sanitizeOutputName(
     parsed.module?.name || path.basename(filePath, path.extname(filePath)),
@@ -85,22 +91,42 @@ function runMain(filePath: string, outArg: string | null, jsonOnly: boolean): vo
   const moduleJsonPath = path.join(resolvedOutDir, 'module.json');
   writeJson(moduleJsonPath, parsed.module);
   console.log(`\n     module.json -> ${path.relative('.', moduleJsonPath)}`);
+  console.log(`     ⏱  Phase 1: ${fmt(performance.now() - t)}`);
 
   if (jsonOnly) {
     console.log('\n  완료 (--json-only)\n');
     return;
   }
 
+  t = performance.now();
   phase2_extractLorebooks(parsed.module, resolvedOutDir);
+  console.log(`     ⏱  Phase 2: ${fmt(performance.now() - t)}`);
+
+  t = performance.now();
   phase3_extractRegex(parsed.module, resolvedOutDir);
+  console.log(`     ⏱  Phase 3: ${fmt(performance.now() - t)}`);
+
+  t = performance.now();
   phase4_extractTriggerLua(parsed.module, resolvedOutDir);
-  phase5_extractAssets(parsed.module, resolvedOutDir, parsed.assetBuffers, parsed.sourceFormat);
+  console.log(`     ⏱  Phase 4: ${fmt(performance.now() - t)}`);
+
+  t = performance.now();
+  await phase5_extractAssetsAsync(parsed.module, resolvedOutDir, parsed.assetBuffers, parsed.sourceFormat);
+  console.log(`     ⏱  Phase 5 (assets): ${fmt(performance.now() - t)}`);
+
+  t = performance.now();
   phase6_extractBackgroundEmbedding(parsed.module, resolvedOutDir);
   phase7_extractModuleIdentity(parsed.module, resolvedOutDir);
-  runModuleAnalysis(resolvedOutDir);
+  console.log(`     ⏱  Phase 6-7: ${fmt(performance.now() - t)}`);
 
+  t = performance.now();
+  runModuleAnalysis(resolvedOutDir);
+  console.log(`     ⏱  Phase 8 (analysis): ${fmt(performance.now() - t)}`);
+
+  const total = performance.now() - t0;
   console.log('\n  ────────────────────────────────────────');
   console.log(`  추출 완료 -> ${path.relative('.', resolvedOutDir)}/`);
+  console.log(`  ⏱  총 소요: ${fmt(total)}`);
   console.log('  ────────────────────────────────────────\n');
 }
 

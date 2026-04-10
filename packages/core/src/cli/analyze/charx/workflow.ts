@@ -219,7 +219,7 @@ function runMain(
       stats: {
         totalEntries: 0,
         totalFolders: 0,
-        activationModes: { normal: 0, constant: 0, selective: 0 },
+        activationModes: { constant: 0, keyword: 0, keywordMulti: 0, referenceOnly: 0 },
         enabledCount: 0,
         withCBS: 0,
       },
@@ -273,14 +273,22 @@ function runMain(
     }
   }
 
+  // NOTE: lorebookStructure.entries filters out only folders (see
+  // domain/lorebook/structure.ts), so we must apply the same filter here to
+  // keep the positional index aligned. Previously this also filtered out
+  // empty-content entries, which caused an index drift that mis-attributed
+  // text mentions to the wrong lorebook entry. analyzeTextMentions already
+  // skips empty content internally, so no extra filter is needed.
   const rawLorebookEntries = getAllLorebookEntries(charx) as Array<Record<string, unknown>>;
   const textMentionEntries = rawLorebookEntries
-    .filter((e) => e.mode !== 'folder' && typeof e.content === 'string' && (e.content as string).length > 0)
+    .filter((e) => e.mode !== 'folder')
     .map((e, i) => {
       const name = typeof e.name === 'string' && e.name ? e.name
         : typeof e.comment === 'string' && e.comment ? e.comment
         : `entry-${i}`;
-      return { id: lorebookStructure.entries[i]?.id ?? name, name, content: e.content as string };
+      const content = typeof e.content === 'string' ? e.content : '';
+      const keys = Array.isArray(e.keys) ? (e.keys as unknown[]).filter((k): k is string => typeof k === 'string') : [];
+      return { id: lorebookStructure.entries[i]?.id ?? name, name, content, keys };
     });
 
   const textMentions = safeCollect(
@@ -288,6 +296,7 @@ function runMain(
       textMentionEntries,
       new Set(correlated.unifiedGraph.keys()),
       allLuaApiNames,
+      textMentionEntries,
     ),
     'Text mention 분석 실패',
     [],

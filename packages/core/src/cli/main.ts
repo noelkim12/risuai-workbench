@@ -3,7 +3,7 @@ import { runPackWorkflow } from './pack/workflow';
 import { runAnalyzeWorkflow } from './analyze/workflow';
 import { runBuildWorkflow } from './build/workflow';
 
-type CommandRunner = (argv: readonly string[]) => number;
+type CommandRunner = (argv: readonly string[]) => number | Promise<number>;
 
 interface CommandDef {
   run: CommandRunner;
@@ -49,7 +49,7 @@ ${lines.join('\n')}
 `);
 }
 
-export function run(argv: readonly string[] = process.argv.slice(2)): number {
+export async function run(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
   const subcommand = argv[0];
   const rest = argv.slice(1);
 
@@ -69,5 +69,5 @@ export function run(argv: readonly string[] = process.argv.slice(2)): number {
 }
 
 if (require.main === module) {
-  process.exit(run());
+  run().then((code) => process.exit(code));
 }

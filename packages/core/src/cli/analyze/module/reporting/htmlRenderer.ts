@@ -1,14 +1,32 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { buildLorebookStructureTree } from '@/domain/lorebook/structure';
-import { buildRelationshipNetworkPanel } from '../../shared/force-graph-builders';
+import { buildLorebookStructureTree, type LorebookActivationMode } from '@/domain/lorebook/structure';
+
+function formatLorebookModeBadge(mode: LorebookActivationMode): string {
+  switch (mode) {
+    case 'constant':
+      return '🔴 always-active';
+    case 'keywordMulti':
+      return '🟢 keyword (multi)';
+    case 'referenceOnly':
+      return '⚪ reference-only';
+    case 'keyword':
+    default:
+      return '🔵 keyword';
+  }
+}
+import { buildRelationshipNetworkPanel } from '../../shared/relationship-network-builders';
 import { escapeHtml } from '../../../shared';
 import { collectRegexScriptInfosFromDir } from '../../shared/cross-cutting';
+import { buildLuaInteractionFlow } from '../../shared/lua-interaction-builder';
 import { buildChartPanel, buildDiagramPanel, buildFindingPanel, buildMetricGrid, buildTablePanel } from '../../shared/view-model';
 import { renderHtmlReportShell } from '../../shared/html-report-shell';
 import { createSourceId, dedupeSources } from '../../shared/source-links';
 import type { AnalysisVisualizationDoc, SectionDefinition, TablePanel, VisualizationPanel, VisualizationSource } from '../../shared/visualization-types';
 import type { ModuleReportData } from '../types';
+
+const MAX_WRITE_ONLY_DEAD_CODE = 12;
+
 import { type Locale, t } from '../../shared/i18n';
 
 // ── Section definitions (질문 기반) ───────────────────────────────
@@ -16,6 +34,7 @@ import { type Locale, t } from '../../shared/i18n';
 const MODULE_SECTIONS: SectionDefinition[] = [
   { id: 'overview', labelKey: 'shell.tab.overview', descriptionKey: 'shell.section.overview.desc' },
   { id: 'structure', labelKey: 'shell.tab.structure', descriptionKey: 'shell.section.structure.desc' },
+  { id: 'lua', labelKey: 'shell.tab.lua', descriptionKey: 'shell.section.lua.desc' },
   { id: 'improvements', labelKey: 'shell.tab.improvements', descriptionKey: 'shell.section.improvements.desc' },
   { id: 'details', labelKey: 'shell.tab.details', descriptionKey: 'shell.section.details.desc' },
 ];
@@ -316,7 +335,7 @@ function buildLorebookTreePanel(data: ModuleReportData, locale: Locale): Visuali
     lines.push(`${'  '.repeat(depth)}📁 ${folder.name}`);
     for (const entry of dedupeLorebookEntries(folder.entries)) {
       const flags = [
-        entry.constant ? '🔴 constant' : entry.selective ? '🟢 selective' : '🔵 normal',
+        formatLorebookModeBadge(entry.activationMode),
         entry.hasCBS ? 'CBS' : '',
         !entry.enabled ? 'disabled' : '',
       ].filter(Boolean).join(' | ');
@@ -468,13 +487,39 @@ function buildFindings(data: ModuleReportData, locale: Locale): Array<{ severity
 }
 
 function buildDeadCodeFindings(data: ModuleReportData, locale: Locale) {
-  return data.deadCode.findings.length > 0
-    ? data.deadCode.findings.map((finding) => ({
-        severity: finding.severity,
-        message: `${finding.type}: ${finding.message} → ${t(locale, 'module.finding.actionGuide.deadCode')}`,
-        sourceIds: [],
-      }))
-    : [{ severity: 'info' as const, message: t(locale, 'common.finding.noDeadCode'), sourceIds: [] }];
+  if (data.deadCode.findings.length === 0) {
+    return [{ severity: 'info' as const, message: t(locale, 'common.finding.noDeadCode'), sourceIds: [] }];
+  }
+
+  let omittedWriteOnly = 0;
+  let shownWriteOnly = 0;
+  const findings: Array<{ severity: 'info' | 'warning' | 'error'; message: string; sourceIds: string[] }> = [];
+
+  for (const finding of data.deadCode.findings) {
+    if (finding.type === 'write-only-variable') {
+      if (shownWriteOnly >= MAX_WRITE_ONLY_DEAD_CODE) {
+        omittedWriteOnly += 1;
+        continue;
+      }
+      shownWriteOnly += 1;
+    }
+
+    findings.push({
+      severity: finding.severity,
+      message: `${finding.type}: ${finding.message} → ${t(locale, 'module.finding.actionGuide.deadCode')}`,
+      sourceIds: [],
+    });
+  }
+
+  if (omittedWriteOnly > 0) {
+    findings.push({
+      severity: 'info',
+      message: t(locale, 'module.finding.writeOnlyOmitted', omittedWriteOnly),
+      sourceIds: [],
+    });
+  }
+
+  return findings;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -483,7 +528,7 @@ function buildFlowSummary(data: ModuleReportData, locale: Locale): string {
   return [
     t(locale, 'module.flow.collect'),
     `  ${t(locale, 'module.flow.lorebook', data.collected.lorebookCBS.length)}`,
-    `  ${t(locale, 'module.flow.regex', data.collected.regexCBS.length)}`,
+    `  ${t(locale, 'module.flow.regex', data.collected.regexCBS.length, data.collected.regexScriptTotal)}`,
     `  ${t(locale, 'module.flow.lua', data.collected.luaCBS.length)}`,
     `  ${t(locale, 'module.flow.html', data.collected.htmlCBS ? 1 : 0)}`,
     '',
@@ -529,7 +574,17 @@ function buildLuaPanels(data: ModuleReportData, locale: Locale): VisualizationPa
     { label: t(locale, 'lua.metric.functions'), value: totalFunctions },
     { label: t(locale, 'lua.metric.stateVars'), value: totalStateVars },
     { label: t(locale, 'lua.metric.handlers'), value: totalHandlers },
-  ], 'structure'));
+  ], 'lua'));
+
+  for (const artifact of artifacts) {
+    panels.push(buildDiagramPanel(
+      `module-lua-flow-${artifact.baseName}`,
+      t(locale, 'lua.panel.flowchart', artifact.baseName),
+      'lua-flow',
+      buildLuaInteractionFlow(artifact, locale),
+      'lua',
+    ));
+  }
 
   // 상태 소유권 테이블
   const stateRows: TablePanel['rows'] = [];
@@ -552,7 +607,7 @@ function buildLuaPanels(data: ModuleReportData, locale: Locale): VisualizationPa
       t(locale, 'lua.panel.stateOwnership'),
       [t(locale, 'common.table.variable'), t(locale, 'lua.html.owner'), t(locale, 'lua.html.reads'), t(locale, 'lua.html.writes')],
       stateRows,
-      'structure',
+      'lua',
     ));
   }
 
@@ -590,7 +645,7 @@ function buildLuaPanels(data: ModuleReportData, locale: Locale): VisualizationPa
       t(locale, 'lua.panel.correlation'),
       [t(locale, 'common.table.variable'), t(locale, 'lua.html.owner'), t(locale, 'lua.html.correlation')],
       correlationRows,
-      'structure',
+      'lua',
     ));
   }
 

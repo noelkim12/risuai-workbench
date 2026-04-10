@@ -1,10 +1,24 @@
-import type { HtmlReportAsset } from './visualization-types';
+import type { ForceGraphPayload, HtmlReportAsset, MermaidDiagramPayload } from './visualization-types';
+
+/** sidecar JS에 직렬화할 table row 항목 — cells/sourceLabelsHtml는 이미 escape된 trusted HTML */
+export interface ReportDataTableRow {
+  cells: string[];
+  severity?: string;
+  searchText?: string;
+  sourceLabelsHtml?: string;
+}
+
+/** sidecar JS에 직렬화할 table panel payload */
+export interface ReportDataTablePayload {
+  hasSourceColumn: boolean;
+  rows: ReportDataTableRow[];
+}
 
 /** sidecar JS에 직렬화할 report data bundle 패널 payload 항목 */
-export interface ReportDataPanelPayload {
-  kind: 'chart' | 'diagram';
-  payload: string | Record<string, unknown>;
-}
+export type ReportDataPanelPayload =
+  | { kind: 'chart'; payload: string | Record<string, unknown> }
+  | { kind: 'diagram'; payload: string | MermaidDiagramPayload | ForceGraphPayload | Record<string, unknown> }
+  | { kind: 'table'; payload: ReportDataTablePayload };
 
 /** sidecar JS에 직렬화할 analyzer report data bundle */
 export interface ReportDataBundle {
