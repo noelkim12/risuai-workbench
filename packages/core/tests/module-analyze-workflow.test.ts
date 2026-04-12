@@ -239,7 +239,72 @@ end
     expect(html).toContain('Lua 개요');
   });
 
-  it('skips module-wide analysis on --json-only extract', () => {
+
+
+  it('includes regex CBS count and total regex file count in markdown and html reports', () => {
+    const inactiveRegex = path.join(tempDir, 'regex', 'inactive_script.json');
+    fs.writeFileSync(inactiveRegex, `${JSON.stringify(
+      {
+        comment: 'inactive script',
+        in: 'hello',
+        out: 'hello',
+      },
+      null,
+      2,
+    )}
+`, 'utf-8');
+
+    const code = runAnalyzeModuleWorkflow([tempDir, '--locale', 'en']);
+    expect(code).toBe(0);
+
+    const markdown = fs.readFileSync(path.join(tempDir, 'analysis', 'module-analysis.md'), 'utf-8');
+    expect(markdown).toContain('| Regex Scripts (active) | 1 |');
+    expect(markdown).toContain('| Regex Script Files | 2 |');
+
+    const html = fs.readFileSync(path.join(tempDir, 'analysis', 'module-analysis.html'), 'utf-8');
+    expect(html).toContain('Variable Flow Summary');
+    expect(html).toContain('regex: 1 active / 2 files');
+  });
+
+  it('caps module dead-code write-only findings at 12 entries in markdown and html', () => {
+    const unusedDir = path.join(tempDir, 'lorebooks', 'unused');
+    fs.mkdirSync(unusedDir, { recursive: true });
+
+    for (let i = 0; i < 15; i++) {
+      fs.writeFileSync(
+        path.join(unusedDir, `unused_${i}.json`),
+        `${JSON.stringify(
+          {
+            comment: `unused-${i}`,
+            content: `{{setvar::dead_${i}::value_${i}}}`,
+          },
+          null,
+          2,
+        )}
+`,
+        'utf-8',
+      );
+    }
+
+    const code = runAnalyzeModuleWorkflow([tempDir, '--locale', 'en']);
+    expect(code).toBe(0);
+
+    const markdown = fs.readFileSync(path.join(tempDir, 'analysis', 'module-analysis.md'), 'utf-8');
+    const markdownRows = markdown
+      .split('
+')
+      .filter((line) => line.startsWith('| write-only-variable |'));
+    expect(markdownRows).toHaveLength(12);
+    expect(markdown).toContain('3 additional write-only findings were omitted for readability.');
+
+    const html = fs.readFileSync(path.join(tempDir, 'analysis', 'module-analysis.html'), 'utf-8');
+    const writeOnlyRowsHtml = Array.from(html.matchAll(/write-only-variable:/g)).length;
+    expect(writeOnlyRowsHtml).toBe(12);
+    expect(html).toContain('3 additional write-only findings were omitted for readability.');
+  });
+
+
+    it('skips module-wide analysis on --json-only extract', () => {
     const sourcePath = path.join(tempDir, 'module-json-only.json');
     const outDir = path.join(tempDir, 'json-only-module');
 

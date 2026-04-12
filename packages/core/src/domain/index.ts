@@ -1,5 +1,5 @@
 export { asRecord, type GenericRecord } from './types';
-export { extractCBSVarOps, type CBSVarOps } from './cbs/cbs';
+export * from './cbs'
 export {
   buildFolderMap as buildRisuFolderMap,
   resolveFolderName as resolveRisuFolderName,

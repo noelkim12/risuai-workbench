@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import fsp from 'node:fs/promises';
 import path from 'node:path';
 
 /** 디렉토리가 없으면 재귀적으로 생성합니다.
@@ -75,4 +76,33 @@ export function uniquePath(dir: string, baseName: string, ext: string): string {
     counter += 1;
   }
   return candidate;
+}
+
+// ── Async variants ─────────────────────────────────────────────────
+
+const createdDirs = new Set<string>();
+
+export async function ensureDirAsync(dirPath: string): Promise<void> {
+  if (createdDirs.has(dirPath)) return;
+  await fsp.mkdir(dirPath, { recursive: true });
+  createdDirs.add(dirPath);
+}
+
+export async function writeBinaryAsync(filePath: string, data: Buffer | Uint8Array): Promise<void> {
+  await ensureDirAsync(path.dirname(filePath));
+  await fsp.writeFile(filePath, data);
+}
+
+export async function writeJsonAsync(filePath: string, data: unknown): Promise<void> {
+  await ensureDirAsync(path.dirname(filePath));
+  await fsp.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+export async function writeTextAsync(filePath: string, content: string): Promise<void> {
+  await ensureDirAsync(path.dirname(filePath));
+  await fsp.writeFile(filePath, content, 'utf-8');
+}
+
+export async function readFileAsync(filePath: string): Promise<Buffer> {
+  return fsp.readFile(filePath);
 }

@@ -7,6 +7,11 @@ import {
   readJsonIfExists,
   readTextIfExists,
   dirExists,
+  ensureDirAsync,
+  writeBinaryAsync,
+  writeJsonAsync,
+  writeTextAsync,
+  readFileAsync,
 } from './fs-helpers';
 import {
   decodeCharacterJsonFromChunks,
@@ -68,4 +73,9 @@ export {
   encodeModuleRisum,
   encodeRPack,
   loadRPackEncodeMap,
+  ensureDirAsync,
+  writeBinaryAsync,
+  writeJsonAsync,
+  writeTextAsync,
+  readFileAsync,
 };

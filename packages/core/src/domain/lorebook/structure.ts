@@ -14,6 +14,16 @@ import {
 } from './folders';
 
 /**
+ * 로어북 엔트리의 활성화 방식을 4가지로 분류합니다.
+ *
+ * - `constant`: 항상 활성 (키워드 무관)
+ * - `keyword`: primary keys 하나 이상 — 일반 키워드 매칭
+ * - `keywordMulti`: `selective`이면서 secondary keys 존재 — primary AND secondary 매칭
+ * - `referenceOnly`: primary keys 없음 && constant 아님 — Lua/직접 참조로만 활성
+ */
+export type LorebookActivationMode = 'constant' | 'keyword' | 'keywordMulti' | 'referenceOnly';
+
+/**
  * 로어북 엔트리의 구조적 정보를 나타냅니다.
  */
 export interface LorebookStructureEntry {
@@ -33,6 +43,8 @@ export interface LorebookStructureEntry {
   constant: boolean;
   /** 선택적 활성화 여부 */
   selective: boolean;
+  /** 4-way 활성화 분류 */
+  activationMode: LorebookActivationMode;
   /** CBS 변수 포함 여부 */
   hasCBS: boolean;
 }
@@ -53,9 +65,14 @@ export interface LorebookStructureResult {
     totalFolders: number;
     /** 활성화 모드별 개수 */
     activationModes: {
-      normal: number;
+      /** 항상 활성 (constant) */
       constant: number;
-      selective: number;
+      /** primary 키워드 OR 매칭 */
+      keyword: number;
+      /** primary + secondary 키워드 AND 매칭 (selective) */
+      keywordMulti: number;
+      /** 키워드 없음 — Lua/직접 참조로만 활성 */
+      referenceOnly: number;
     };
     /** 활성화된 엔트리 수 */
     enabledCount: number;
@@ -77,7 +94,7 @@ const EMPTY_RESULT: LorebookStructureResult = {
   stats: {
     totalEntries: 0,
     totalFolders: 0,
-    activationModes: { normal: 0, constant: 0, selective: 0 },
+    activationModes: { constant: 0, keyword: 0, keywordMulti: 0, referenceOnly: 0 },
     enabledCount: 0,
     withCBS: 0,
   },
@@ -122,7 +139,7 @@ export function analyzeLorebookStructure(entries: GenericRecord[]): LorebookStru
   const stats = {
     totalEntries: 0,
     totalFolders: folders.length,
-    activationModes: { normal: 0, constant: 0, selective: 0 },
+    activationModes: { constant: 0, keyword: 0, keywordMulti: 0, referenceOnly: 0 },
     enabledCount: 0,
     withCBS: 0,
   };
@@ -132,9 +149,8 @@ export function analyzeLorebookStructure(entries: GenericRecord[]): LorebookStru
   const structured = regularEntries.map((entry, index) => {
     stats.totalEntries += 1;
 
-    if (entry.constant) stats.activationModes.constant += 1;
-    else if (entry.selective) stats.activationModes.selective += 1;
-    else stats.activationModes.normal += 1;
+    const activationMode = classifyLorebookActivation(entry);
+    stats.activationModes[activationMode] += 1;
 
     if (entry.enabled !== false) stats.enabledCount += 1;
 
@@ -162,6 +178,7 @@ export function analyzeLorebookStructure(entries: GenericRecord[]): LorebookStru
       enabled: entry.enabled !== false,
       constant: Boolean(entry.constant),
       selective: Boolean(entry.selective),
+      activationMode,
       hasCBS,
     };
   });
@@ -332,4 +349,38 @@ function normalizeKeywords(entry: GenericRecord): string[] {
 
   const values = Array.isArray(raw) ? raw : raw ? [raw] : [];
   return values.map((value) => String(value).trim()).filter((value) => value.length > 0);
+}
+
+/**
+ * 로어북 엔트리에서 보조 키워드(secondary keys) 목록을 정규화하여 반환합니다.
+ *
+ * RisuAI/ST 포맷의 다양한 필드 별칭(`secondkey`, `secondKey`, `secondkeys`,
+ * `secondaryKeys`)을 모두 탐색하며, 없으면 `data.*` 경로도 확인합니다.
+ */
+function normalizeSecondaryKeys(entry: GenericRecord): string[] {
+  const data = asRecord(entry.data);
+  const raw =
+    entry.secondkey ??
+    entry.secondKey ??
+    entry.secondkeys ??
+    entry.secondaryKeys ??
+    data?.secondkey ??
+    data?.secondKey ??
+    data?.secondkeys ??
+    data?.secondaryKeys;
+
+  const values = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  return values.map((value) => String(value).trim()).filter((value) => value.length > 0);
+}
+
+/**
+ * 로어북 엔트리의 활성화 방식을 4가지로 분류합니다.
+ * (정의는 상단 `LorebookActivationMode` 참조)
+ */
+export function classifyLorebookActivation(entry: GenericRecord): LorebookActivationMode {
+  if (entry.constant) return 'constant';
+  const primaryKeys = normalizeKeywords(entry);
+  if (primaryKeys.length === 0) return 'referenceOnly';
+  if (entry.selective && normalizeSecondaryKeys(entry).length > 0) return 'keywordMulti';
+  return 'keyword';
 }

@@ -624,6 +624,14 @@ export function phase7_extractPromptSettings(preset: ParsedPreset, outputDir: st
     console.log(`     ✅ instruct_settings.json (${Object.keys(instructSettings).length}개 필드)`);
   }
 
+  const promptTemplateToggle = data.customPromptTemplateToggle;
+  if (typeof promptTemplateToggle === 'string' && promptTemplateToggle.length > 0) {
+    const outPath = path.join(outputDir, 'toggle', 'prompt_template.risutoggle');
+    writeText(outPath, promptTemplateToggle);
+    count += 1;
+    console.log(`     ✅ ${path.relative('.', outPath)} (${promptTemplateToggle.length} chars)`);
+  }
+
   const schemaSettings = pickDefined(data, [
     'jsonSchemaEnabled',
     'jsonSchema',

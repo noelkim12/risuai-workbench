@@ -1,14 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import { buildRelationshipNetworkPanel } from '@/cli/analyze/shared/force-graph-builders';
+import { buildRelationshipNetworkPanel } from '@/cli/analyze/shared/relationship-network-builders';
 import type { LorebookRegexCorrelation } from '@/domain';
+import { analyzeLuaSource } from '@/domain/analyze/lua-core';
 import type { LorebookActivationChainResult } from '@/domain/lorebook/activation-chain';
 import type { LorebookStructureResult } from '@/domain/lorebook/structure';
 import type { LuaAnalysisArtifact } from '@/domain/analyze/lua-core';
 
 /** minimal lorebook structure so the builder does not early-return null */
 const lorebookStructure: LorebookStructureResult = {
-  entries: [{ id: 'e1', name: 'Entry1', keywords: ['hello'], constant: false, selective: false, position: 'after_char', content: 'test' }],
-  stats: { totalEntries: 1, alwaysActiveCount: 0, selectiveCount: 0, normalCount: 1, estimatedTokens: 10 },
+  entries: [
+    {
+      id: 'e1',
+      name: 'Entry1',
+      keywords: ['hello'],
+      constant: false,
+      selective: false,
+      position: 'after_char',
+      content: 'test',
+    },
+  ],
+  stats: {
+    totalEntries: 1,
+    alwaysActiveCount: 0,
+    selectiveCount: 0,
+    normalCount: 1,
+    estimatedTokens: 10,
+  },
   keywords: { all: ['hello'], duplicates: [], overlaps: {} },
   findings: [],
 };
@@ -48,7 +65,12 @@ const lorebookActivationChain: LorebookActivationChainResult = {
   },
 };
 
-function makeLuaArtifact(partial: Partial<LuaAnalysisArtifact> & { baseName: string; collected: Pick<LuaAnalysisArtifact['collected'], 'functions'> }): LuaAnalysisArtifact {
+function makeLuaArtifact(
+  partial: Partial<LuaAnalysisArtifact> & {
+    baseName: string;
+    collected: Pick<LuaAnalysisArtifact['collected'], 'functions'>;
+  },
+): LuaAnalysisArtifact {
   return {
     filePath: partial.filePath ?? `/tmp/${partial.baseName}.lua`,
     baseName: partial.baseName,
@@ -62,7 +84,27 @@ function makeLuaArtifact(partial: Partial<LuaAnalysisArtifact> & { baseName: str
       handlers: [],
       globalAccess: [],
     } as unknown as LuaAnalysisArtifact['collected'],
-    analyzePhase: { stateOwnership: [], functionRisks: [], unusedVars: [], deadCode: [], flowIssues: [], globalLeaks: [], handlerCoverage: [], handlerIssues: [], apiUsage: [] } as unknown as LuaAnalysisArtifact['analyzePhase'],
+    analyzePhase: {
+      commentSections: [],
+      sectionMapSections: [],
+      callGraph: new Map(),
+      calledBy: new Map(),
+      apiByCategory: new Map(),
+      moduleGroups: [],
+      moduleByFunction: new Map(),
+      stateOwnership: [],
+      registryVars: [],
+      rootFunctions: [],
+      getDescendants: () => [],
+      functionRisks: [],
+      unusedVars: [],
+      deadCode: [],
+      flowIssues: [],
+      globalLeaks: [],
+      handlerCoverage: [],
+      handlerIssues: [],
+      apiUsage: [],
+    } as unknown as LuaAnalysisArtifact['analyzePhase'],
     lorebookCorrelation: partial.lorebookCorrelation ?? null,
     regexCorrelation: partial.regexCorrelation ?? null,
     serialized: { stateVars: {}, functions: [], handlers: [], apiCalls: [] },
@@ -75,7 +117,18 @@ describe('relationship-network-lua', () => {
     const luaArtifacts = [
       makeLuaArtifact({
         baseName: 'trim',
-        sourceText: ['function onoutput()', '  return ct_Language', 'end', '', '', 'function setlanguage1()', '  ct_Language = "ko"', 'end', '', ''].join('\n'),
+        sourceText: [
+          'function onoutput()',
+          '  return ct_Language',
+          'end',
+          '',
+          '',
+          'function setlanguage1()',
+          '  ct_Language = "ko"',
+          'end',
+          '',
+          '',
+        ].join('\n'),
         collected: {
           functions: [
             {
@@ -183,8 +236,20 @@ describe('relationship-network-lua', () => {
     );
 
     const edges = payload.edges;
-    expect(edges).toContainEqual(expect.objectContaining({ source: 'var:ct_Language', target: 'lua-fn:trim:onoutput', type: 'variable' }));
-    expect(edges).toContainEqual(expect.objectContaining({ source: 'lua-fn:trim:setlanguage1', target: 'var:ct_Language', type: 'variable' }));
+    expect(edges).toContainEqual(
+      expect.objectContaining({
+        source: 'var:ct_Language',
+        target: 'lua-fn:trim:onoutput',
+        type: 'variable',
+      }),
+    );
+    expect(edges).toContainEqual(
+      expect.objectContaining({
+        source: 'lua-fn:trim:setlanguage1',
+        target: 'var:ct_Language',
+        type: 'variable',
+      }),
+    );
   });
 
   it('does NOT add lua file or lua variable nodes to the relationship network', () => {
@@ -198,10 +263,17 @@ describe('relationship-network-lua', () => {
               displayName: 'init',
               stateReads: new Set(['ct_Mode']),
               stateWrites: new Set(['ct_Mode']),
-              startLine: 1, endLine: 3, lineCount: 3,
-              isLocal: false, isAsync: false, params: [],
-              parentFunction: null, isListenEditHandler: false, listenEditEventType: null,
-              apiCategories: new Set(), apiNames: new Set(),
+              startLine: 1,
+              endLine: 3,
+              lineCount: 3,
+              isLocal: false,
+              isAsync: false,
+              params: [],
+              parentFunction: null,
+              isListenEditHandler: false,
+              listenEditEventType: null,
+              apiCategories: new Set(),
+              apiNames: new Set(),
             },
           ] as any,
         },
@@ -346,5 +418,84 @@ describe('relationship-network-lua', () => {
         label: 'activate',
       }),
     );
+  });
+
+  it('adds lua-call edges for preload-backed require flows', () => {
+    const artifact = analyzeLuaSource({
+      filePath: '/tmp/preload-network.lua',
+      source: [
+        "package.preload['pkg.alpha'] = function()",
+        '  local M = {}',
+        '  function M.run()',
+        '    return 1',
+        '  end',
+        '  return M',
+        'end',
+        '',
+        'function onInput()',
+        "  local alpha = require('pkg.alpha')",
+        '  return alpha.run()',
+        'end',
+      ].join('\n'),
+      charxArg: null,
+    });
+
+    const resolvedTarget = (artifact as any).collected.preloadModules?.[0]?.exportedMembers?.get(
+      'run',
+    );
+
+    const panel = buildRelationshipNetworkPanel(
+      'test-panel',
+      {
+        lorebookStructure,
+        lorebookActivationChain,
+        lorebookRegexCorrelation,
+        lorebookCBS: [],
+        regexCBS: [],
+        luaArtifacts: [artifact],
+      },
+      'en',
+    );
+
+    expect(panel).not.toBeNull();
+    expect(resolvedTarget).toBeTruthy();
+    const payload = panel!.payload as any;
+    expect(payload.edges).toContainEqual(
+      expect.objectContaining({
+        source: 'lua-fn:preload-network:oninput',
+        target: `lua-fn:preload-network:${resolvedTarget}`,
+        type: 'lua-call',
+      }),
+    );
+  });
+
+  it('does not create lua-call edges for unresolved require aliases', () => {
+    const artifact = analyzeLuaSource({
+      filePath: '/tmp/unresolved-network.lua',
+      source: [
+        'function onInput()',
+        "  local missing = require('pkg.missing')",
+        '  return missing.run()',
+        'end',
+      ].join('\n'),
+      charxArg: null,
+    });
+
+    const panel = buildRelationshipNetworkPanel(
+      'test-panel',
+      {
+        lorebookStructure,
+        lorebookActivationChain,
+        lorebookRegexCorrelation,
+        lorebookCBS: [],
+        regexCBS: [],
+        luaArtifacts: [artifact],
+      },
+      'en',
+    );
+
+    expect(panel).not.toBeNull();
+    const payload = panel!.payload as any;
+    expect(payload.edges).not.toContainEqual(expect.objectContaining({ type: 'lua-call' }));
   });
 });

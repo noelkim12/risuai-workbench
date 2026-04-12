@@ -1,11 +1,20 @@
 import { sanitizeFilename } from '../../utils/filenames';
 
-/** RisuAI 캐릭터 북(로어북) 엔트리의 최소 구조 인터페이스 */
+/** RisuAI 캐릭터 북(로어북) 엔트리의 최소 구조 인터페이스
+ *
+ * 주의: 로어북은 출처에 따라 두 가지 스키마가 공존한다.
+ * - Character book (V3 spec): `keys: [string, ...]` (배열) + `name`
+ * - RisuAI module lorebook (`_moduleLorebook`): `key: string` (단수) + `comment`
+ *
+ * 따라서 폴더 식별자나 이름을 얻는 유틸은 반드시 두 스키마를 모두 처리해야 한다.
+ */
 export interface RisuCharbookEntry {
   /** 엔트리 모드 (entry, folder 등) */
   mode: string;
-  /** 엔트리 키 목록 (폴더의 경우 [0]번 인덱스가 식별자가 됨) */
+  /** 엔트리 키 목록 (character_book 스키마: 폴더의 경우 [0]번 인덱스가 식별자) */
   keys?: string[];
+  /** 엔트리 키 (_moduleLorebook 스키마: 단일 문자열) */
+  key?: string;
   /** 엔트리 이름 */
   name?: string;
   /** 엔트리 설명/주석 */
@@ -38,10 +47,10 @@ export function buildFolderMap(
   const map: Record<string, string> = {};
 
   for (const entry of entries) {
-    if (entry.mode === 'folder' && entry.keys && entry.keys.length > 0) {
-      const folderKey = entry.keys[0];
-      map[folderKey] = nameTransform(entry.name || entry.comment || fallbackName);
-    }
+    if (entry.mode !== 'folder') continue;
+    const folderKey = getLorebookFolderKey(entry);
+    if (!folderKey) continue;
+    map[folderKey] = nameTransform(entry.name || entry.comment || fallbackName);
   }
 
   return map;
@@ -78,14 +87,25 @@ export function toPosix(value: string): string {
 /**
  * lorebook 엔트리에서 폴더 식별 키를 추출한다.
  *
- * RisuAI의 lorebook 폴더 시스템은 `mode: 'folder'` 엔트리의 `keys[0]`를
+ * RisuAI의 lorebook 폴더 시스템은 `mode: 'folder'` 엔트리의 식별자를
  * 다른 엔트리의 `folder` 필드에서 참조하는 방식으로 부모-자식 관계를 표현한다.
- * 이 함수는 해당 키를 추출하되, 유효하지 않으면 null을 반환한다.
+ *
+ * 스키마가 두 가지 공존한다:
+ * - character_book (V3 spec): `keys: [string, ...]` (배열, 첫 원소가 식별자)
+ * - `_moduleLorebook` (RisuAI internal): `key: string` (단수)
+ *
+ * 둘 다 지원하되, 유효한 문자열 키가 없으면 null을 반환한다.
  */
 export function getLorebookFolderKey(entry: any): string | null {
-  if (!entry || !Array.isArray(entry.keys) || entry.keys.length === 0) return null;
-  const key = entry.keys[0];
-  return typeof key === 'string' && key.length > 0 ? key : null;
+  if (!entry) return null;
+  if (Array.isArray(entry.keys) && entry.keys.length > 0) {
+    const key = entry.keys[0];
+    if (typeof key === 'string' && key.length > 0) return key;
+  }
+  if (typeof entry.key === 'string' && entry.key.length > 0) {
+    return entry.key;
+  }
+  return null;
 }
 
 /**
@@ -122,14 +142,19 @@ export function createLorebookDirAllocator(): (parentRelDir: string, rawName: st
  * 상대 디렉토리 경로를 반환한다.
  *
  * 내부적으로 재귀적 부모 탐색을 수행하며, 순환 참조가 감지되면 fallback 이름을 사용한다.
- * 결과 Map의 키는 폴더의 `keys[0]`, 값은 `lorebooks/` 기준 상대 경로이다.
+ * 결과 Map의 키는 폴더의 식별자(getLorebookFolderKey), 값은 `lorebooks/` 기준 상대 경로이다.
+ *
+ * `sharedResolvedDirs`가 제공되면 이 맵에 해석 결과를 누적·공유한다.
+ * 서로 다른 lorebook 소스(character_book / _moduleLorebook 등)를 순차 처리하면서
+ * 동일한 folder key를 만나면 같은 디렉토리로 수렴시키기 위해 사용한다.
  */
 export function buildLorebookFolderDirMap(
   entries: any[],
   allocateDir: (parentRelDir: string, rawName: string) => string,
+  sharedResolvedDirs?: Map<string, string>,
 ): Map<string, string> {
   const folderEntriesByKey = new Map<string, any>();
-  const resolvedDirs = new Map<string, string>();
+  const resolvedDirs = sharedResolvedDirs ?? new Map<string, string>();
   const resolving = new Set<string>();
 
   for (const entry of entries) {
@@ -249,6 +274,71 @@ export interface LorebookExtractionPlan {
   items: LorebookExtractionEntry[];
 }
 
+function normalizeLorebookKeys(entry: any): string[] {
+  if (Array.isArray(entry?.keys)) {
+    return entry.keys
+      .map((value: unknown) => String(value ?? '').trim())
+      .filter(Boolean);
+  }
+
+  const combined = [entry?.key, entry?.secondkey]
+    .filter((value): value is string => typeof value === 'string')
+    .flatMap((value) => value.split(','))
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  return combined;
+}
+
+function getLorebookCaseSensitive(entry: any): boolean {
+  if (typeof entry?.case_sensitive === 'boolean') return entry.case_sensitive;
+  if (typeof entry?.extensions?.risu_case_sensitive === 'boolean') return entry.extensions.risu_case_sensitive;
+  if (typeof entry?.extentions?.risu_case_sensitive === 'boolean') return entry.extentions.risu_case_sensitive;
+  return false;
+}
+
+function getLorebookUseRegex(entry: any): boolean {
+  if (typeof entry?.use_regex === 'boolean') return entry.use_regex;
+  if (typeof entry?.useRegex === 'boolean') return entry.useRegex;
+  return false;
+}
+
+function getLorebookInsertionOrder(entry: any): number {
+  if (typeof entry?.insertion_order === 'number') return entry.insertion_order;
+  if (typeof entry?.insertorder === 'number') return entry.insertorder;
+  return 0;
+}
+
+function getLorebookConstant(entry: any): boolean {
+  if (typeof entry?.constant === 'boolean') return entry.constant;
+  if (typeof entry?.alwaysActive === 'boolean') return entry.alwaysActive;
+  return false;
+}
+
+function getLorebookSemanticFingerprint(entry: any): string {
+  if (entry?.mode === 'folder') {
+    return JSON.stringify({
+      type: 'folder',
+      folderKey: getLorebookFolderKey(entry) ?? '',
+      label: String(entry?.name ?? entry?.comment ?? '').trim(),
+    });
+  }
+
+  return JSON.stringify({
+    type: 'entry',
+    mode: String(entry?.mode ?? ''),
+    folder: String(entry?.folder ?? ''),
+    label: String(entry?.name ?? entry?.comment ?? '').trim(),
+    keys: normalizeLorebookKeys(entry),
+    content: String(entry?.content ?? ''),
+    insertionOrder: getLorebookInsertionOrder(entry),
+    constant: getLorebookConstant(entry),
+    selective: Boolean(entry?.selective),
+    caseSensitive: getLorebookCaseSensitive(entry),
+    useRegex: getLorebookUseRegex(entry),
+  });
+}
+
 /**
  * lorebook 추출에서 실제 파일 I/O 없이 "무엇을 어디에 쓸지"만 계산한다.
  *
@@ -260,6 +350,8 @@ export function planLorebookExtraction(
   source: 'character' | 'module',
   allocateDir: (parentRelDir: string, rawName: string) => string,
   usedRelPaths?: Set<string>,
+  sharedFolderDirMap?: Map<string, string>,
+  usedSemanticFingerprints?: Set<string>,
 ): LorebookExtractionPlan {
   if (!Array.isArray(entries) || entries.length === 0) {
     return { items: [] };
@@ -269,20 +361,39 @@ export function planLorebookExtraction(
     nameTransform: sanitizeFilename,
     fallbackName: 'unnamed_folder',
   });
-  const folderDirMap = buildLorebookFolderDirMap(entries, allocateDir);
+  // sharedFolderDirMap가 주어지면 이전 호출에서 해석된 folder key → relDir 매핑을
+  // 재사용한다. 서로 다른 lorebook 소스(character_book과 _moduleLorebook 등)가
+  // 같은 folder key UUID를 공유하면 같은 디렉토리로 귀결되어 중복을 방지한다.
+  const folderDirMap = buildLorebookFolderDirMap(entries, allocateDir, sharedFolderDirMap);
   const used = usedRelPaths || new Set<string>();
+  const usedFingerprints = usedSemanticFingerprints || new Set<string>();
   const items: LorebookExtractionEntry[] = [];
+  // 이미 동일 folder key로 entry dedupe — 여러 소스가 같은 폴더를 중복 선언해도
+  // 실제 디렉토리는 한 번만 기록한다.
+  const emittedFolderKeys = new Set<string>();
+  if (sharedFolderDirMap) {
+    // 이전 호출에서 이미 folder 아이템이 emit된 키들을 스킵하기 위한 외부 표식은
+    // 호출자 책임. 여기서는 이 호출 내의 dedupe만 수행한다.
+  }
 
   for (let i = 0; i < entries.length; i += 1) {
     const entry = entries[i];
     const name = sanitizeFilename(entry.name || entry.comment || `entry_${i}`);
 
-    if (entry.mode === 'folder') { 
+    if (entry.mode === 'folder') {
+      const folderFingerprint = getLorebookSemanticFingerprint(entry);
+      if (usedFingerprints.has(folderFingerprint)) continue;
+
       const folderKey = getLorebookFolderKey(entry);
       const relDir =
         folderKey && folderDirMap.has(folderKey)
           ? folderDirMap.get(folderKey)!
           : allocateDir('', entry.name || entry.comment || `folder_${i}`);
+
+      // 같은 folder key가 여러 소스에 등장할 수 있으므로 dedupe.
+      if (folderKey && emittedFolderKeys.has(folderKey)) continue;
+      if (folderKey) emittedFolderKeys.add(folderKey);
+      usedFingerprints.add(folderFingerprint);
 
       items.push({
         type: 'folder',
@@ -299,6 +410,9 @@ export function planLorebookExtraction(
         ''
       : '';
 
+    const entryFingerprint = getLorebookSemanticFingerprint(entry);
+    if (usedFingerprints.has(entryFingerprint)) continue;
+
     let fileName = `${name}.json`;
     let relPath = relDir ? `${relDir}/${fileName}` : fileName;
     let serial = 1;
@@ -308,6 +422,7 @@ export function planLorebookExtraction(
       serial += 1;
     }
     used.add(relPath);
+    usedFingerprints.add(entryFingerprint);
 
     items.push({
       type: 'entry',

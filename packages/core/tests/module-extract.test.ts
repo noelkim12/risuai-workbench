@@ -11,6 +11,7 @@ import {
   phase5_extractAssets,
   phase6_extractBackgroundEmbedding,
   phase7_extractModuleIdentity,
+  phase8_extractModuleToggle,
 } from '@/cli/extract/module/phases';
 import { isModuleFile } from '@/cli/extract/module/workflow';
 import { isModuleJson } from '@/cli/extract/parsers';
@@ -73,7 +74,8 @@ describe('module extract', () => {
 
     const files = fs.readdirSync(lorebooksDir);
     const dataJsonFiles = files.filter(
-      (filename) => filename.endsWith('.json') && filename !== '_order.json' && filename !== 'manifest.json',
+      (filename) =>
+        filename.endsWith('.json') && filename !== '_order.json' && filename !== 'manifest.json',
     );
 
     expect(dataJsonFiles.length).toBeGreaterThanOrEqual(1);
@@ -100,7 +102,9 @@ describe('module extract', () => {
     expect(fs.existsSync(regexDir)).toBe(true);
 
     const files = fs.readdirSync(regexDir);
-    const dataJsonFiles = files.filter((filename) => filename.endsWith('.json') && filename !== '_order.json');
+    const dataJsonFiles = files.filter(
+      (filename) => filename.endsWith('.json') && filename !== '_order.json',
+    );
 
     expect(dataJsonFiles.length).toBeGreaterThanOrEqual(1);
     expect(fs.existsSync(path.join(regexDir, '_order.json'))).toBe(true);
@@ -204,6 +208,20 @@ describe('module extract', () => {
     });
   });
 
+  it('phase8_extractModuleToggle writes module toggle artifact when present', () => {
+    const module = {
+      name: 'module-toggle-name',
+      customModuleToggle: '<toggle condition="1 == 1"/>',
+    };
+
+    const count = phase8_extractModuleToggle(module, tmpDir);
+    const togglePath = path.join(tmpDir, 'toggle', 'module-toggle-name.risutoggle');
+
+    expect(count).toBe(1);
+    expect(fs.existsSync(togglePath)).toBe(true);
+    expect(fs.readFileSync(togglePath, 'utf-8')).toBe('<toggle condition="1 == 1"/>');
+  });
+
   it('isModuleFile only accepts .risum extension', () => {
     expect(isModuleFile('test.risum')).toBe(true);
     expect(isModuleFile('test.json')).toBe(false);
@@ -214,8 +232,16 @@ describe('module extract', () => {
     const moduleJsonPath = path.join(tmpDir, 'module.json');
     const charxJsonPath = path.join(tmpDir, 'charx.json');
 
-    fs.writeFileSync(moduleJsonPath, JSON.stringify({ type: 'risuModule', name: 'x', id: 'y' }), 'utf-8');
-    fs.writeFileSync(charxJsonPath, JSON.stringify({ spec: 'chara_card_v3', data: { name: 'char' } }), 'utf-8');
+    fs.writeFileSync(
+      moduleJsonPath,
+      JSON.stringify({ type: 'risuModule', name: 'x', id: 'y' }),
+      'utf-8',
+    );
+    fs.writeFileSync(
+      charxJsonPath,
+      JSON.stringify({ spec: 'chara_card_v3', data: { name: 'char' } }),
+      'utf-8',
+    );
 
     expect(Boolean(isModuleJson(moduleJsonPath))).toBe(true);
     expect(Boolean(isModuleJson(charxJsonPath))).toBe(false);

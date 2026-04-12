@@ -337,7 +337,15 @@ export async function phase5_extractAssetsAsync(
 
     const buffer = assetBuffers[i];
     if (!buffer) {
-      manifest.assets.push({ index: i, name, uri, type, extracted_path: null, status: 'missing_buffer', size_bytes: null });
+      manifest.assets.push({
+        index: i,
+        name,
+        uri,
+        type,
+        extracted_path: null,
+        status: 'missing_buffer',
+        size_bytes: null,
+      });
       manifest.skipped += 1;
       continue;
     }
@@ -346,7 +354,15 @@ export async function phase5_extractAssetsAsync(
     const outPath = uniquePath(assetsDir, baseName, '.bin');
     writeJobs.push({ outPath, data: buffer });
 
-    manifest.assets.push({ index: i, name, uri, type, extracted_path: path.basename(outPath), status: 'extracted', size_bytes: buffer.length });
+    manifest.assets.push({
+      index: i,
+      name,
+      uri,
+      type,
+      extracted_path: path.basename(outPath),
+      status: 'extracted',
+      size_bytes: buffer.length,
+    });
     manifest.extracted += 1;
   }
 
@@ -393,5 +409,21 @@ export function phase7_extractModuleIdentity(module: any, outputDir: string): nu
   const metadataPath = path.join(outputDir, 'metadata.json');
   writeJson(metadataPath, metadata);
   console.log(`     ✅ metadata.json → ${path.relative('.', metadataPath)}`);
+  return 1;
+}
+
+export function phase8_extractModuleToggle(module: any, outputDir: string): number {
+  console.log('\n  🧩 Phase 8: Module Toggle 추출');
+
+  const toggle = module?.customModuleToggle;
+  if (!toggle) {
+    console.log('     (customModuleToggle 없음)');
+    return 0;
+  }
+
+  const moduleName = sanitizeFilename(module?.name || 'module');
+  const outPath = path.join(outputDir, 'toggle', `${moduleName}.risutoggle`);
+  writeText(outPath, String(toggle));
+  console.log(`     ✅ ${path.relative('.', outPath)} -> ${toggle.length} chars`);
   return 1;
 }

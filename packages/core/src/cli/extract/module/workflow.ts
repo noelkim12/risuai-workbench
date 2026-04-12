@@ -10,6 +10,7 @@ import {
   phase5_extractAssetsAsync,
   phase6_extractBackgroundEmbedding,
   phase7_extractModuleIdentity,
+  phase8_extractModuleToggle,
 } from './phases';
 
 const HELP_TEXT = `
@@ -30,6 +31,7 @@ const HELP_TEXT = `
     5. 에셋 추출 (risum only) → assets/ + assets/manifest.json
     6. backgroundEmbedding 추출 → html/background.html
     7. 모듈 identity 추출 → metadata.json
+    8. module toggle 추출 → toggle/<moduleName>.risutoggle
 
   Examples:
     risu-core extract my_module.risum
@@ -111,17 +113,23 @@ async function runMain(filePath: string, outArg: string | null, jsonOnly: boolea
   console.log(`     ⏱  Phase 4: ${fmt(performance.now() - t)}`);
 
   t = performance.now();
-  await phase5_extractAssetsAsync(parsed.module, resolvedOutDir, parsed.assetBuffers, parsed.sourceFormat);
+  await phase5_extractAssetsAsync(
+    parsed.module,
+    resolvedOutDir,
+    parsed.assetBuffers,
+    parsed.sourceFormat,
+  );
   console.log(`     ⏱  Phase 5 (assets): ${fmt(performance.now() - t)}`);
 
   t = performance.now();
   phase6_extractBackgroundEmbedding(parsed.module, resolvedOutDir);
   phase7_extractModuleIdentity(parsed.module, resolvedOutDir);
-  console.log(`     ⏱  Phase 6-7: ${fmt(performance.now() - t)}`);
+  phase8_extractModuleToggle(parsed.module, resolvedOutDir);
+  console.log(`     ⏱  Phase 6-8: ${fmt(performance.now() - t)}`);
 
   t = performance.now();
   runModuleAnalysis(resolvedOutDir);
-  console.log(`     ⏱  Phase 8 (analysis): ${fmt(performance.now() - t)}`);
+  console.log(`     ⏱  Phase 9 (analysis): ${fmt(performance.now() - t)}`);
 
   const total = performance.now() - t0;
   console.log('\n  ────────────────────────────────────────');
@@ -139,7 +147,7 @@ function sanitizeOutputName(name: string): string {
 }
 
 function runModuleAnalysis(resolvedOutDir: string): void {
-  console.log('\n  ═══ Phase 8: Module Analysis ═══');
+  console.log('\n  ═══ Phase 9: Module Analysis ═══');
   const code = runAnalyzeModuleWorkflow([resolvedOutDir]);
   if (code !== 0) {
     console.error(`  ⚠️ module analyze 실행 실패: exit code ${code}`);

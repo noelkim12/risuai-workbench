@@ -68,6 +68,11 @@ export function phase1_parseCharx(inputPath: string): {
           charx.data.extensions.risuai._moduleLorebook = mod.lorebook;
           console.log(`     lorebook (module): ${mod.lorebook.length}개 병합됨`);
         }
+
+        if (typeof mod.customModuleToggle === 'string' && mod.customModuleToggle.length > 0) {
+          charx.data.extensions.risuai.customModuleToggle = mod.customModuleToggle;
+          console.log('     customModuleToggle: 병합됨');
+        }
       }
     }
 
@@ -177,6 +182,11 @@ export async function phase1_parseCharxAsync(inputPath: string): Promise<{
         if (mod.lorebook && mod.lorebook.length > 0) {
           charx.data.extensions.risuai._moduleLorebook = mod.lorebook;
           console.log(`     lorebook (module): ${mod.lorebook.length}개 병합됨`);
+        }
+
+        if (typeof mod.customModuleToggle === 'string' && mod.customModuleToggle.length > 0) {
+          charx.data.extensions.risuai.customModuleToggle = mod.customModuleToggle;
+          console.log('     customModuleToggle: 병합됨');
         }
       }
     }
@@ -689,8 +699,14 @@ export function phase8_extractCharacterFields(charx: any, outputDir: string): nu
   writeJson(path.join(characterDir, 'metadata.json'), metadata);
   fileCount += 1;
 
+  const moduleToggle = typeof risuai.customModuleToggle === 'string' ? risuai.customModuleToggle : '';
+  if (moduleToggle.length > 0) {
+    writeText(path.join(characterDir, 'module.risutoggle'), moduleToggle);
+    fileCount += 1;
+  }
+
   console.log(
-    `     텍스트: ${Object.keys(textFields).length}개, greetings: ${greetings.length}개, metadata: ${Object.keys(metadata).length}개 필드`,
+    `     텍스트: ${Object.keys(textFields).length}개, greetings: ${greetings.length}개, metadata: ${Object.keys(metadata).length}개 필드, customModuleToggle: ${moduleToggle ? 1 : 0}개`,
   );
   console.log(`     ✅ ${fileCount}개 파일 → ${path.relative('.', characterDir)}/`);
   return fileCount;

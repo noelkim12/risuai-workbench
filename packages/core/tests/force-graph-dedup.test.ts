@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildRelationshipNetworkPanel } from '@/cli/analyze/shared/force-graph-builders';
-import type { LorebookGraphData } from '@/cli/analyze/shared/force-graph-builders';
+import { buildRelationshipNetworkPanel } from '@/cli/analyze/shared/relationship-network-builders';
+import type { LorebookGraphData } from '@/cli/analyze/shared/relationship-network-builders';
 import type { Locale } from '@/cli/analyze/shared/i18n';
+import type { ForceGraphPayload } from '@/cli/analyze/shared/visualization-types';
 
 describe('buildRelationshipNetworkPanel', () => {
   it('deduplicates emitted node ids while routing lorebook-regex flow through a variable node', () => {
@@ -360,6 +361,73 @@ describe('buildRelationshipNetworkPanel', () => {
         },
       ]),
     );
+  });
+
+  it('emits folder grouping metadata for lorebook nodes without forcing non-lore nodes into folders', () => {
+    const data: LorebookGraphData = {
+      lorebookStructure: {
+        folders: [
+          { id: 'root-folder', name: 'Root Folder', path: 'Root Folder', parentId: null },
+          { id: 'child-folder', name: 'Child Folder', path: 'Root Folder/Child Folder', parentId: 'root-folder' },
+        ],
+        entries: [
+          {
+            id: 'Root Folder/Child Folder/Shared Entry',
+            name: 'Shared Entry',
+            folderId: 'child-folder',
+            folder: 'Root Folder/Child Folder',
+            keywords: [],
+            enabled: true,
+            constant: false,
+            selective: false,
+            hasCBS: true,
+          },
+        ],
+        stats: {
+          totalEntries: 1,
+          totalFolders: 2,
+          activationModes: { normal: 1, constant: 0, selective: 0 },
+          enabledCount: 1,
+          withCBS: 1,
+        },
+        keywords: { all: [], overlaps: {} },
+      },
+      lorebookRegexCorrelation: {
+        sharedVars: [],
+        lorebookOnlyVars: ['nestedVar'],
+        regexOnlyVars: [],
+        summary: { totalShared: 0, totalLBOnly: 1, totalRXOnly: 0 },
+      },
+      lorebookCBS: [
+        {
+          elementType: 'lorebook',
+          elementName: 'Root Folder/Child Folder/Shared Entry',
+          reads: new Set<string>(),
+          writes: new Set<string>(['nestedVar']),
+        },
+      ],
+      regexCBS: [],
+    };
+
+    const panel = buildRelationshipNetworkPanel('panel', data, 'en' as Locale);
+    const payload = panel?.payload as ForceGraphPayload;
+
+    expect(payload.groups).toEqual([
+      { id: 'folder:Root Folder/Child Folder', kind: 'lorebook-folder', label: 'Root Folder/Child Folder', order: 0 },
+    ]);
+    expect(payload.layout).toEqual({
+      strategy: 'grouped-deterministic-v1',
+      signatureSalt: 'relationship-network-v1',
+    });
+    expect(payload.nodes.find((node) => node.id === 'lb:Root Folder/Child Folder/Shared Entry')).toMatchObject({
+      groupId: 'folder:Root Folder/Child Folder',
+      groupKind: 'lorebook-folder',
+      groupLabel: 'Root Folder/Child Folder',
+      layoutBand: 'lorebook',
+    });
+    expect(payload.nodes.find((node) => node.id === 'var:nestedVar')).toMatchObject({
+      layoutBand: 'variable',
+    });
   });
 
   it('renders bidirectional shared vars as two-way edges around the variable node', () => {

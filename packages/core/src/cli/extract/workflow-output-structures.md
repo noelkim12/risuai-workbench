@@ -277,6 +277,8 @@ preset_<name>/
   formatting_order.json
   prompt_settings.json
   instruct_settings.json
+  toggle/
+    prompt_template.risutoggle
   schema_settings.json
   regex/
     <script>.json
@@ -312,6 +314,7 @@ Phase details:
   - NAI presets emit `provider/nai.json` from the original parameter object.
 - Prompt settings:
   - `formatting_order.json`, `prompt_settings.json`, `instruct_settings.json`, and `schema_settings.json` are all independent optional outputs.
+  - When `customPromptTemplateToggle` is a non-empty string, it is additionally written to `toggle/prompt_template.risutoggle` for dedicated editing/LSP workflows.
 - Regex and advanced:
   - `regex/` mirrors the character/module regex extraction pattern.
   - `advanced.json` groups separate-parameter config, flags, bias, stop strings, model tools, fallback models, dynamic output, and auto-suggest related fields.
@@ -321,8 +324,8 @@ Phase details:
 
 ## Quick comparison
 
-| Workflow | Full-run baseline | Common optional dirs | Notable special cases |
-| --- | --- | --- | --- |
-| Character | `charx.json`, `character/` | `lorebooks/`, `regex/`, `lua/`, `assets/`, `html/`, `variables/`, `analysis/` | default out dir is `character_<name>`; embedded `module.risum` can be merged; Lua and charx analysis run automatically |
-| Module | `module.json`, `metadata.json`, `analysis/` | `lorebooks/`, `regex/`, `lua/`, `assets/`, `html/` | default out dir is `module_<name>`; assets only for `.risum`; artifact-wide analysis runs automatically |
-| Preset | `preset.json`, `metadata.json`, `analysis/` | `prompts/`, `prompt_template/`, `provider/`, `regex/` | default out dir is `preset_<name>`; output shape depends heavily on detected preset type; artifact-wide analysis runs automatically |
+| Workflow  | Full-run baseline                           | Common optional dirs                                                          | Notable special cases                                                                                                               |
+| --------- | ------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Character | `charx.json`, `character/`                  | `lorebooks/`, `regex/`, `lua/`, `assets/`, `html/`, `variables/`, `analysis/` | default out dir is `character_<name>`; embedded `module.risum` can be merged; Lua and charx analysis run automatically              |
+| Module    | `module.json`, `metadata.json`, `analysis/` | `lorebooks/`, `regex/`, `lua/`, `assets/`, `html/`                            | default out dir is `module_<name>`; assets only for `.risum`; artifact-wide analysis runs automatically                             |
+| Preset    | `preset.json`, `metadata.json`, `analysis/` | `prompts/`, `prompt_template/`, `provider/`, `regex/`                         | default out dir is `preset_<name>`; output shape depends heavily on detected preset type; artifact-wide analysis runs automatically |

@@ -55,6 +55,30 @@ export interface CollectedCall {
   line: number;
 }
 
+/** `package.preload[...]`로 정의된 정적 모듈 정보 */
+export interface CollectedPreloadModule {
+  moduleName: string;
+  functionName: string;
+  exportedMembers: Map<string, string>;
+  line: number;
+}
+
+/** `local alias = require('...')` 바인딩 정보 */
+export interface CollectedRequireBinding {
+  localName: string;
+  moduleName: string;
+  containingFunction: string | null;
+  line: number;
+}
+
+/** require alias 기반 멤버 호출 정보 */
+export interface CollectedModuleMemberCall {
+  caller: string | null;
+  aliasName: string;
+  memberName: string;
+  line: number;
+}
+
 /**
  * API 호출 정보
  */
@@ -106,6 +130,9 @@ export interface CollectedData {
   /** 접두사로 분류된 함수 버킷 */
   prefixBuckets: Map<string, CollectedFunction[]>;
   loreApiCalls: CollectedLoreApiCall[];
+  preloadModules: CollectedPreloadModule[];
+  requireBindings: CollectedRequireBinding[];
+  moduleMemberCalls: CollectedModuleMemberCall[];
 }
 
 /**
@@ -156,6 +183,13 @@ export interface AnalyzePhaseResult {
   rootFunctions: CollectedFunction[];
   /** 특정 함수의 모든 하위 호출 함수를 조회 */
   getDescendants: (name: string) => CollectedFunction[];
+  resolvedModuleCalls: Array<{
+    caller: string;
+    callee: string;
+    moduleName: string;
+    memberName: string;
+    line: number;
+  }>;
 }
 
 /**

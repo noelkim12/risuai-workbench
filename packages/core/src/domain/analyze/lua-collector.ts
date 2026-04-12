@@ -36,10 +36,19 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
     functionIndexByName: new Map(),
     prefixBuckets: new Map(),
     loreApiCalls: [],
+    preloadModules: [],
+    requireBindings: [],
+    moduleMemberCalls: [],
   };
 
   const fnHandled = new Set<string>();
   const fnStack: Array<string | null> = [];
+  const pendingPreloadModules: Array<{
+    moduleName: string;
+    factoryStartLine: number;
+    line: number;
+    exportedMembers: Array<{ memberName: string; functionStartLine: number }>;
+  }> = [];
 
   const ensureFnIndex = (name: string): CollectedFunction[] => {
     if (!collected.functionIndexByName.has(name)) {
@@ -66,6 +75,80 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
 
   const currentFn = (explicitParent: string | null): string | null => {
     return explicitParent || fnStack[fnStack.length - 1] || null;
+  };
+
+  const extractPreloadModuleName = (
+    lhs: LuaASTNode | null,
+    rhs: LuaASTNode | null,
+  ): string | null => {
+    if (!lhs || !rhs || rhs.type !== 'FunctionDeclaration' || lhs.type !== 'IndexExpression')
+      return null;
+    if (exprName((lhs as any).base as LuaASTNode | undefined) !== 'package.preload') return null;
+    return strLit((lhs as any).index as LuaASTNode | undefined);
+  };
+
+  const collectPendingPreloadModule = (moduleName: string, factoryNode: LuaASTNode): void => {
+    const body = safeArray<LuaASTNode>((factoryNode as any).body);
+    const returnedTableName = body
+      .filter((statement): statement is LuaASTNode => Boolean(statement))
+      .flatMap((statement) => {
+        if (statement.type !== 'ReturnStatement') return [];
+        const firstArg = safeArray((statement as any).arguments)[0] as LuaASTNode | undefined;
+        return firstArg?.type === 'Identifier' && firstArg.name ? [firstArg.name] : [];
+      })[0];
+
+    const exportedMembers = returnedTableName
+      ? body.flatMap((statement) => {
+          if (statement?.type !== 'FunctionDeclaration') return [];
+          const identifier = (statement as any).identifier as LuaASTNode | undefined;
+          if (identifier?.type !== 'MemberExpression') return [];
+          const base = exprName((identifier as any).base as LuaASTNode | undefined);
+          const memberName = exprName((identifier as any).identifier as LuaASTNode | undefined);
+          if (!base || !memberName || base !== returnedTableName) return [];
+          return [{ memberName, functionStartLine: lineStart(statement) }];
+        })
+      : [];
+
+    pendingPreloadModules.push({
+      moduleName,
+      factoryStartLine: lineStart(factoryNode),
+      line: lineStart(factoryNode),
+      exportedMembers,
+    });
+  };
+
+  const maybeCollectRequireBinding = (
+    lhs: LuaASTNode | null,
+    rhs: LuaASTNode | null,
+    explicitParent: string | null,
+    isLocalAssign: boolean,
+  ): void => {
+    if (!isLocalAssign || !lhs || !rhs) return;
+    if (lhs.type !== 'Identifier' || directCalleeName(rhs) !== 'require') return;
+    const moduleName = strLit(callArgs(rhs)[0]);
+    if (!moduleName || !lhs.name) return;
+
+    collected.requireBindings.push({
+      localName: lhs.name,
+      moduleName,
+      containingFunction: currentFn(explicitParent),
+      line: lineStart(rhs),
+    });
+  };
+
+  const maybeCollectAliasMemberCall = (node: LuaASTNode, explicitParent: string | null): void => {
+    const base = (node as any).base as LuaASTNode | undefined;
+    if (base?.type !== 'MemberExpression' || (base as any).indexer !== '.') return;
+    const aliasNode = (base as any).base as LuaASTNode | undefined;
+    const memberNode = (base as any).identifier as LuaASTNode | undefined;
+    if (aliasNode?.type !== 'Identifier' || memberNode?.type !== 'Identifier') return;
+
+    collected.moduleMemberCalls.push({
+      caller: currentFn(explicitParent),
+      aliasName: aliasNode.name || '',
+      memberName: memberNode.name || '',
+      line: lineStart(node),
+    });
   };
 
   const registerFunction = (
@@ -218,11 +301,29 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
 
   const handleCallExpr = (node: LuaASTNode, explicitParent: string | null): void => {
     const caller = currentFn(explicitParent);
+    maybeCollectAliasMemberCall(node, explicitParent);
     const callee = directCalleeName(node);
     if (!callee) return;
     const args = callArgs(node);
 
     collected.calls.push({ caller, callee, line: lineStart(node) });
+
+    // pcall(fn, ...) / xpcall(fn, handler, ...)로 감싼 함수 호출은 call graph에서
+    // pcall 자체가 아니라 내부 함수 참조를 caller의 호출 대상으로 기록해야 한다.
+    // 그래야 relationship-network에서 onOutput → processCharacterTokens 같은 간선이 만들어진다.
+    if (callee === 'pcall' || callee === 'xpcall') {
+      const wrappedFn = exprName(args[0]);
+      if (wrappedFn) {
+        collected.calls.push({ caller, callee: wrappedFn, line: lineStart(node) });
+      }
+      if (callee === 'xpcall') {
+        const handlerFn = exprName(args[1]);
+        if (handlerFn) {
+          collected.calls.push({ caller, callee: handlerFn, line: lineStart(node) });
+        }
+      }
+    }
+
     if (!risuApi[callee]) return;
 
     addApiCall(callee, lineStart(node), caller);
@@ -318,6 +419,13 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
         const lhs = vars[i] as LuaASTNode;
         const rhs = init[i] as LuaASTNode;
         const targetName = assignName(lhs) || `fn_l${lineStart(rhs)}`;
+        const preloadModuleName = extractPreloadModuleName(lhs, rhs);
+
+        if (preloadModuleName) {
+          collectPendingPreloadModule(preloadModuleName, rhs);
+        }
+
+        maybeCollectRequireBinding(lhs, rhs, explicitParent, isLocalAssign);
 
         if (rhs?.type === 'FunctionDeclaration') {
           const rec = registerFunction(rhs, targetName, {
@@ -388,7 +496,16 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
     if (node.type === 'CallExpression') {
       handleCallExpr(node, explicitParent);
       walk((node as any).base as LuaASTNode, explicitParent);
-      for (const arg of callArgs(node)) walk(arg, explicitParent);
+      // 인라인 콜백(예: text:gsub(pat, function(...) end))으로 전달된 FunctionDeclaration은
+      // 독립 함수가 아니라 enclosing function의 일부로 취급되어야 한다.
+      // fnHandled에 미리 등록해 generic FunctionDeclaration 분기에서 새 노드로 집계되지 않게 한다.
+      // 그래도 body는 enclosing function 스택 위에서 계속 순회된다.
+      for (const arg of callArgs(node)) {
+        if (arg?.type === 'FunctionDeclaration') {
+          fnHandled.add(nodeKey(arg));
+        }
+        walk(arg, explicitParent);
+      }
       return;
     }
 
@@ -411,5 +528,28 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
   };
 
   walk(body, null);
+
+  const functionNameByStartLine = new Map(
+    collected.functions.map((fn) => [fn.startLine, fn.name] as const),
+  );
+
+  for (const pending of pendingPreloadModules) {
+    const exportedMembers = new Map<string, string>();
+    for (const member of pending.exportedMembers) {
+      const functionName = functionNameByStartLine.get(member.functionStartLine);
+      if (!functionName) continue;
+      exportedMembers.set(member.memberName, functionName);
+    }
+
+    collected.preloadModules.push({
+      moduleName: pending.moduleName,
+      functionName:
+        functionNameByStartLine.get(pending.factoryStartLine) ||
+        sanitizeName(`preload_${pending.moduleName}`, `preload_l${pending.line}`),
+      exportedMembers,
+      line: pending.line,
+    });
+  }
+
   return { collected };
 }

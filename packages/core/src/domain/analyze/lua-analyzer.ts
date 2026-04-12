@@ -41,6 +41,46 @@ export function runAnalyzePhase(params: {
     callGraph.get(call.caller)!.add(normalizedCallee);
   }
 
+  const preloadByModule = new Map(
+    collected.preloadModules.map((entry) => [entry.moduleName, entry] as const),
+  );
+  const requireBindingsByScope = new Map<string, Map<string, string>>();
+
+  for (const binding of collected.requireBindings) {
+    const scopeKey = binding.containingFunction || '<top-level>';
+    if (!requireBindingsByScope.has(scopeKey)) {
+      requireBindingsByScope.set(scopeKey, new Map());
+    }
+    requireBindingsByScope.get(scopeKey)!.set(binding.localName, binding.moduleName);
+  }
+
+  const resolvedModuleCalls: AnalyzePhaseResult['resolvedModuleCalls'] = [];
+  for (const moduleCall of collected.moduleMemberCalls) {
+    const caller = moduleCall.caller;
+    if (!caller) continue;
+
+    const scopeKey = caller || '<top-level>';
+    const moduleName = requireBindingsByScope.get(scopeKey)?.get(moduleCall.aliasName);
+    if (!moduleName) continue;
+
+    const resolvedCallee = preloadByModule
+      .get(moduleName)
+      ?.exportedMembers.get(moduleCall.memberName);
+    if (!resolvedCallee) continue;
+
+    if (!callGraph.has(caller)) {
+      callGraph.set(caller, new Set());
+    }
+    callGraph.get(caller)!.add(resolvedCallee);
+    resolvedModuleCalls.push({
+      caller,
+      callee: resolvedCallee,
+      moduleName,
+      memberName: moduleCall.memberName,
+      line: moduleCall.line,
+    });
+  }
+
   const calledBy = new Map<string, Set<string>>();
   for (const [caller, targets] of callGraph.entries()) {
     for (const target of targets) {
@@ -172,6 +212,7 @@ export function runAnalyzePhase(params: {
     registryVars,
     rootFunctions,
     getDescendants,
+    resolvedModuleCalls,
   };
 }
 

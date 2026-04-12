@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildRelationshipNetworkPanel } from '@/cli/analyze/shared/force-graph-builders';
+import { buildRelationshipNetworkPanel } from '@/cli/analyze/shared/relationship-network-builders';
 import { renderMarkdown } from '@/cli/analyze/charx/reporting';
 import { renderModuleMarkdown } from '@/cli/analyze/module/reporting';
 import type { CharxReportData } from '@/cli/analyze/charx/types';
@@ -116,6 +116,50 @@ function makeModuleReportData(): ModuleReportData {
 }
 
 describe('lorebook activation reporting', () => {
+  it('builds relationship-network lorebook text-mention edges from scoped entry ids', () => {
+    const panel = buildRelationshipNetworkPanel(
+      'test-panel',
+      {
+        lorebookStructure: {
+          folders: [{ id: 'folder-1', name: 'Folder 1', path: 'Folder 1', parentId: null }],
+          entries: [
+            { id: 'Alpha', name: 'Alpha', folderId: null, folder: null, keywords: ['alpha'], enabled: true, constant: false, selective: false, hasCBS: false },
+            { id: 'Folder 1/Beta', name: 'Beta', folderId: 'folder-1', folder: 'Folder 1', keywords: ['beta'], enabled: true, constant: false, selective: false, hasCBS: false },
+          ],
+          stats: {
+            totalEntries: 2,
+            totalFolders: 1,
+            activationModes: { normal: 2, constant: 0, selective: 0 },
+            enabledCount: 2,
+            withCBS: 0,
+          },
+          keywords: { all: ['alpha', 'beta'], overlaps: {} },
+        },
+        lorebookActivationChain: null,
+        lorebookRegexCorrelation: {
+          sharedVars: [],
+          lorebookOnlyVars: [],
+          regexOnlyVars: [],
+          summary: { totalShared: 0, totalLBOnly: 0, totalRXOnly: 0 },
+        },
+        lorebookCBS: [],
+        regexCBS: [],
+        textMentions: [{ sourceEntry: 'Alpha', target: 'Folder 1/Beta', type: 'lorebook-mention' }],
+      },
+      'en',
+    );
+
+    expect(panel).not.toBeNull();
+    const payload = panel!.payload as { edges: Array<{ source: string; target: string; type: string; label?: string }> };
+    expect(payload.edges).toContainEqual(
+      expect.objectContaining({
+        source: 'lb:Alpha',
+        target: 'lb:Folder 1/Beta',
+        type: 'text-mention',
+      }),
+    );
+  });
+
   it('builds relationship-network edges from activation-chain analysis', () => {
     const panel = buildRelationshipNetworkPanel(
       'test-panel',

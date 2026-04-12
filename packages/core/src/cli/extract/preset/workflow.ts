@@ -34,7 +34,7 @@ const HELP_TEXT = `
     4. 파라미터 추출 → parameters.json
     5. 모델 설정 추출 → model.json
     6. 프로바이더 설정 추출 → provider/ (ooba.json, nai.json, ain.json)
-    7. 프롬프트 세팅 추출 → prompt_settings.json, formatting_order.json 등
+    7. 프롬프트 세팅 추출 → prompt_settings.json, instruct_settings.json, toggle/prompt_template.risutoggle 등
     8. Regex & 고급 설정 추출 → regex/, advanced.json
 
   Examples:

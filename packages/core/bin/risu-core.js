@@ -18,5 +18,12 @@ try {
 
 // Delegate to the in-process CLI runner
 const argv = process.argv.slice(2);
-const exitCode = run(argv);
-process.exit(exitCode);
+const result = run(argv);
+if (result && typeof result.then === 'function') {
+  result.then((code) => process.exit(code)).catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+} else {
+  process.exit(result);
+}

@@ -12,6 +12,9 @@ describe('export surface (snapshot)', () => {
 
     expect(exportedKeys).toMatchInlineSnapshot(`
       [
+        "CBSBuiltinRegistry",
+        "CBSParser",
+        "CBSTokenizer",
         "CBS_OPS",
         "ELEMENT_TYPES",
         "LUA_STDLIB_CALLS",
@@ -23,13 +26,18 @@ describe('export surface (snapshot)', () => {
         "RISUAI_API",
         "TOKEN_RATIOS",
         "TOKEN_THRESHOLDS",
+        "TokenType",
         "analyzeComposition",
+        "analyzeLorebookActivationChains",
+        "analyzeLorebookActivationChainsFromCharx",
+        "analyzeLorebookActivationChainsFromModule",
         "analyzeLorebookStructure",
         "analyzeLorebookStructureFromCard",
         "analyzeLorebookStructureFromCharx",
         "analyzeLuaFile",
         "analyzeLuaSource",
         "analyzePromptChain",
+        "analyzeTextMentions",
         "analyzeTokenBudget",
         "analyzeVariableFlow",
         "asRecord",
@@ -53,6 +61,8 @@ describe('export surface (snapshot)', () => {
         "exprName",
         "extractCBSVarOps",
         "extractRegexScriptOps",
+        "formatHoverContent",
+        "generateDocumentation",
         "getAllLorebookEntries",
         "getCardName",
         "getCharacterBookEntries",
@@ -87,6 +97,7 @@ describe('export surface (snapshot)', () => {
         "strLit",
         "toModuleName",
         "toPosix",
+        "walkAST",
       ]
     `);
   });

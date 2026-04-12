@@ -273,6 +273,11 @@ function mergeCharacter(charx: any, inRoot: string): void {
     charx.data.alternate_greetings = greetings;
   }
 
+  const moduleTogglePath = path.join(characterDir, 'module.risutoggle');
+  if (fs.existsSync(moduleTogglePath)) {
+    charx.data.extensions.risuai.customModuleToggle = fs.readFileSync(moduleTogglePath, 'utf-8');
+  }
+
   const metadataPath = path.join(characterDir, 'metadata.json');
   if (!fs.existsSync(metadataPath)) return;
 
@@ -521,6 +526,10 @@ function buildModuleFromCharx(charx: any): Record<string, unknown> {
     trigger: Array.isArray(risu.triggerscript) ? risu.triggerscript : [],
     regex: Array.isArray(risu.customScripts) ? risu.customScripts : [],
     lorebook: Array.isArray(risu._moduleLorebook) ? risu._moduleLorebook : [],
+    customModuleToggle:
+      typeof risu.customModuleToggle === 'string' && risu.customModuleToggle.length > 0
+        ? risu.customModuleToggle
+        : undefined,
     assets: [],
   };
 }
