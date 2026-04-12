@@ -4,7 +4,7 @@ import {
   InsertTextFormat,
   TextDocumentPositionParams,
 } from 'vscode-languageserver/node'
-import { CBSBuiltinRegistry } from '../registry/builtins'
+import type { CBSBuiltinRegistry } from 'risu-workbench-core'
 
 export class CompletionProvider {
   constructor(private registry: CBSBuiltinRegistry) {}

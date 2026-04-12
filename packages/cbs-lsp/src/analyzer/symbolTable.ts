@@ -1,4 +1,4 @@
-import { Range } from '../lexer/tokens'
+import type { Range } from 'risu-workbench-core'
 
 export interface VariableSymbol {
   name: string

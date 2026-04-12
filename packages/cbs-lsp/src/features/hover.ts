@@ -1,6 +1,5 @@
 import { Hover, TextDocumentPositionParams } from 'vscode-languageserver/node'
-import { CBSBuiltinRegistry } from '../registry/builtins'
-import { formatHoverContent } from '../registry/documentation'
+import type { CBSBuiltinRegistry } from 'risu-workbench-core'
 
 export class HoverProvider {
   constructor(private registry: CBSBuiltinRegistry) {}

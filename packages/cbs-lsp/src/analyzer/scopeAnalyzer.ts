@@ -1,5 +1,5 @@
-import { CBSDocument } from '../parser/ast'
-import { walkAST } from '../parser/visitor'
+import type { CBSDocument } from 'risu-workbench-core'
+import { walkAST } from 'risu-workbench-core'
 import { SymbolTable } from './symbolTable'
 
 export class ScopeAnalyzer {

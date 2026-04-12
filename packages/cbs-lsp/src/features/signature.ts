@@ -2,7 +2,7 @@ import {
   SignatureHelp,
   SignatureHelpParams,
 } from 'vscode-languageserver/node'
-import { CBSBuiltinRegistry } from '../registry/builtins'
+import type { CBSBuiltinRegistry } from 'risu-workbench-core'
 
 export class SignatureHelpProvider {
   constructor(private registry: CBSBuiltinRegistry) {}

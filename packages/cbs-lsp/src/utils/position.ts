@@ -1,4 +1,4 @@
-import { Range, Position } from '../lexer/tokens'
+import type { Range, Position } from 'risu-workbench-core'
 import { Position as LSPPosition, Range as LSPRange } from 'vscode-languageserver/node'
 
 export function toLSPPosition(pos: Position): LSPPosition {

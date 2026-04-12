@@ -1,5 +1,4 @@
-import { CBSDocument, DiagnosticInfo } from '../parser/ast'
-import { CBSBuiltinRegistry } from '../registry/builtins'
+import type { CBSDocument, DiagnosticInfo, CBSBuiltinRegistry } from 'risu-workbench-core'
 
 export enum DiagnosticCode {
   // Errors
