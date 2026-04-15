@@ -19,6 +19,7 @@ import { collectPresetSources } from './collectors';
 import { renderPresetMarkdown } from './reporting';
 import { renderPresetHtml } from './reporting/htmlRenderer';
 import type { PresetReportData, PromptSource } from './types';
+import { runPresetWiki } from './wiki/workflow';
 
 const HELP_TEXT = `
   🐿️ RisuAI Preset Analyzer
@@ -30,12 +31,19 @@ const HELP_TEXT = `
     analysis/preset-analysis.html  Self-contained HTML report
 
   Options:
+    --wiki, -w    Generate wiki alongside markdown/html
+    --wiki-only   Generate wiki only
+    --wiki-root   Wiki output root (default: <parent>/wiki)
     --help, -h    Show this help
 `;
 
 /** preset analyze CLI 진입점. COLLECT → CORRELATE → REPORT 파이프라인을 실행한다. */
 export function runAnalyzePresetWorkflow(argv: readonly string[]): number {
   const helpMode = argv.length === 0 || argv.includes('-h') || argv.includes('--help');
+  const wiki = argv.includes('--wiki') || argv.includes('-w');
+  const wikiOnly = argv.includes('--wiki-only');
+  const wikiRootIdx = argv.indexOf('--wiki-root');
+  const wikiRoot = wikiRootIdx >= 0 ? argv[wikiRootIdx + 1] : undefined;
 
   if (helpMode) {
     console.log(HELP_TEXT);
@@ -74,6 +82,7 @@ export function runAnalyzePresetWorkflow(argv: readonly string[]): number {
   }
 
   try {
+    const resolvedOutDir = path.resolve(outputDir);
     const collected = collectPresetSources(outputDir);
     const presetName =
       typeof collected.metadata.name === 'string' && collected.metadata.name.length > 0
@@ -117,9 +126,25 @@ export function runAnalyzePresetWorkflow(argv: readonly string[]): number {
       promptChain,
     };
 
-    renderPresetMarkdown(reportData, outputDir, locale);
-    renderPresetHtml(reportData, outputDir, locale);
-    return 0;
+      if (!wikiOnly) {
+        renderPresetMarkdown(reportData, resolvedOutDir, locale);
+        renderPresetHtml(reportData, resolvedOutDir, locale);
+      }
+      if (wiki || wikiOnly) {
+        try {
+          runPresetWiki(reportData, {
+            extractDir: resolvedOutDir,
+            wikiRoot,
+          });
+          console.log(
+            `     ✅ wiki → ${path.relative('.', path.join(path.dirname(resolvedOutDir), 'wiki'))}/`,
+          );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.warn(`  ⚠️ wiki 생성 실패: ${message}`);
+        }
+      }
+      return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`\n  ❌ Preset analysis failed: ${message}\n`);

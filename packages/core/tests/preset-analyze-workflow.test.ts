@@ -152,6 +152,21 @@ type: editdisplay
     expect(html).toContain('<script src="./preset-analysis.data.js"></script>');
   });
 
+  it('supports --wiki-only and skips markdown/html analysis outputs', () => {
+    const wikiRoot = path.join(tempDir, 'wiki');
+
+    const code = runAnalyzePresetWorkflow([tempDir, '--wiki-only', '--wiki-root', wikiRoot, '--locale', 'en']);
+
+    expect(code).toBe(0);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'preset-analysis.md'))).toBe(false);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'preset-analysis.html'))).toBe(false);
+
+    const generatedDir = path.join(wikiRoot, 'artifacts', `preset_${path.basename(tempDir)}`, '_generated');
+    expect(fs.existsSync(path.join(generatedDir, 'overview.md'))).toBe(true);
+    expect(fs.existsSync(path.join(generatedDir, 'prompts.md'))).toBe(true);
+    expect(fs.existsSync(path.join(generatedDir, 'prompt-chain.md'))).toBe(true);
+  });
+
   it('runs preset-wide analysis automatically after extract', async () => {
     const sourcePath = path.join(tempDir, 'preset-source.json');
     const outDir = path.join(tempDir, 'extracted-preset');
