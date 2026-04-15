@@ -242,33 +242,35 @@ describe('parse/serialize round-trip', () => {
 });
 
 describe('extractVariablesFromCharx', () => {
-  it('returns null when extensions.risuai.defaultVariables is missing', () => {
+  it('returns null when data.extensions.risuai.defaultVariables is missing', () => {
     const upstream = {};
     expect(extractVariablesFromCharx(upstream, 'charx')).toBeNull();
   });
 
-  it('returns null when extensions is missing', () => {
+  it('returns null when data.extensions is missing', () => {
     const upstream = {};
     expect(extractVariablesFromCharx(upstream, 'charx')).toBeNull();
   });
 
-  it('returns null when risuai is missing', () => {
-    const upstream = { extensions: {} };
+  it('returns null when data.extensions.risuai is missing', () => {
+    const upstream = { data: { extensions: {} } };
     expect(extractVariablesFromCharx(upstream, 'charx')).toBeNull();
   });
 
   it('returns null when defaultVariables is null', () => {
-    const upstream = { extensions: { risuai: { defaultVariables: null as unknown as Record<string, string> } } };
+    const upstream = { data: { extensions: { risuai: { defaultVariables: null as unknown as Record<string, string> } } } };
     expect(extractVariablesFromCharx(upstream, 'charx')).toBeNull();
   });
 
   it('extracts variables from charx upstream', () => {
     const upstream = {
-      extensions: {
-        risuai: {
-          defaultVariables: {
-            var1: '1',
-            var2: 'test',
+      data: {
+        extensions: {
+          risuai: {
+            defaultVariables: {
+              var1: '1',
+              var2: 'test',
+            },
           },
         },
       },
@@ -281,13 +283,15 @@ describe('extractVariablesFromCharx', () => {
 
   it('converts non-string values to strings', () => {
     const upstream = {
-      extensions: {
-        risuai: {
-          defaultVariables: {
-            num: 123,
-            bool: true,
-            str: 'text',
-          } as unknown as Record<string, string>,
+      data: {
+        extensions: {
+          risuai: {
+            defaultVariables: {
+              num: 123,
+              bool: true,
+              str: 'text',
+            } as unknown as Record<string, string>,
+          },
         },
       },
     };
@@ -300,9 +304,11 @@ describe('extractVariablesFromCharx', () => {
 
   it('throws for module target', () => {
     const upstream = {
-      extensions: {
-        risuai: {
-          defaultVariables: { var1: '1' },
+      data: {
+        extensions: {
+          risuai: {
+            defaultVariables: { var1: '1' },
+          },
         },
       },
     };
@@ -312,9 +318,11 @@ describe('extractVariablesFromCharx', () => {
 
   it('throws for preset target', () => {
     const upstream = {
-      extensions: {
-        risuai: {
-          defaultVariables: { var1: '1' },
+      data: {
+        extensions: {
+          risuai: {
+            defaultVariables: { var1: '1' },
+          },
         },
       },
     };
