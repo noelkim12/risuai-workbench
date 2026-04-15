@@ -5,6 +5,7 @@ import { runAnalyzeCharxWorkflow as runCharxAnalyze } from './charx/workflow';
 import { runAnalyzeComposeWorkflow } from './compose/workflow';
 import { runAnalyzeModuleWorkflow } from './module/workflow';
 import { runAnalyzePresetWorkflow } from './preset/workflow';
+import { loadWorkspaceConfig } from './shared/wiki/workspace/workspace-yaml';
 
 const KNOWN_TYPES = ['lua', 'charx', 'module', 'preset', 'compose'] as const;
 
@@ -76,6 +77,10 @@ export function runAnalyzeWorkflow(argv: readonly string[]): number {
   if (helpMode) {
     console.log(HELP_TEXT);
     return 0;
+  }
+
+  if (argv.includes('--all')) {
+    return runAllArtifacts(argv);
   }
 
   const typeIdx = argv.indexOf('--type');
@@ -157,4 +162,46 @@ function isOptionValue(argv: readonly string[], value: string): boolean {
   if (idx <= 0) return false;
   const prev = argv[idx - 1];
   return prev === '--type' || prev === '--card' || prev === '--charx' || prev === '--out' || prev === '--locale';
+}
+
+function runAllArtifacts(argv: readonly string[]): number {
+  const wikiRootIdx = argv.indexOf('--wiki-root');
+  const explicitWikiRoot = wikiRootIdx >= 0 ? argv[wikiRootIdx + 1] : null;
+
+  const wikiRoot = explicitWikiRoot ? path.resolve(explicitWikiRoot) : path.join(process.cwd(), 'wiki');
+  const workspaceYaml = path.join(wikiRoot, 'workspace.yaml');
+
+  if (!fs.existsSync(workspaceYaml)) {
+    console.error(`\n  ❌ --all mode requires ${workspaceYaml} to declare artifacts.\n`);
+    return 1;
+  }
+
+  const workspace = loadWorkspaceConfig(wikiRoot);
+
+  if (workspace.artifacts.length === 0) {
+    console.error('\n  ❌ workspace.yaml has an empty artifacts list.\n');
+    return 1;
+  }
+
+  const workspaceRoot = path.dirname(wikiRoot);
+  for (const artifact of workspace.artifacts) {
+    const extractDir = path.isAbsolute(artifact.path)
+      ? artifact.path
+      : path.resolve(workspaceRoot, artifact.path);
+
+    const subArgv = [extractDir, ...argv.filter((value) => value !== '--all')];
+    switch (artifact.type) {
+      case 'character':
+        runCharxAnalyze(subArgv);
+        break;
+      case 'module':
+        runAnalyzeModuleWorkflow(subArgv);
+        break;
+      case 'preset':
+        runAnalyzePresetWorkflow(subArgv);
+        break;
+    }
+  }
+
+  return 0;
 }
