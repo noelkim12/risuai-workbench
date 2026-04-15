@@ -27,6 +27,7 @@ import { collectModuleCBS } from './collectors';
 import { renderModuleMarkdown } from './reporting';
 import { renderModuleHtml } from './reporting/htmlRenderer';
 import type { ModuleReportData } from './types';
+import { runModuleWiki } from './wiki/workflow';
 
 const HELP_TEXT = `
   🐿️ RisuAI Module Analyzer
@@ -38,12 +39,19 @@ const HELP_TEXT = `
     analysis/module-analysis.html  Self-contained HTML report
 
   Options:
-    --help, -h    Show this help
+    --wiki            Generate wiki alongside markdown/html
+    --wiki-only       Generate wiki only
+    --wiki-root PATH  Wiki output root (default: <parent>/wiki)
+    --help, -h        Show this help
 `;
 
 /** module analyze CLI 진입점. COLLECT → CORRELATE → REPORT 파이프라인을 실행한다. */
 export function runAnalyzeModuleWorkflow(argv: readonly string[]): number {
   const helpMode = argv.length === 0 || argv.includes('-h') || argv.includes('--help');
+  const wiki = argv.includes('--wiki');
+  const wikiOnly = argv.includes('--wiki-only');
+  const wikiRootIdx = argv.indexOf('--wiki-root');
+  const wikiRoot = wikiRootIdx >= 0 ? argv[wikiRootIdx + 1] : undefined;
 
   if (helpMode) {
     console.log(HELP_TEXT);
@@ -167,8 +175,16 @@ export function runAnalyzeModuleWorkflow(argv: readonly string[]): number {
       luaArtifacts: collected.luaArtifacts,
     };
 
-    renderModuleMarkdown(reportData, outputDir, locale);
-    renderModuleHtml(reportData, outputDir, locale);
+    if (!wikiOnly) {
+      renderModuleMarkdown(reportData, outputDir, locale);
+      renderModuleHtml(reportData, outputDir, locale);
+    }
+    if (wiki || wikiOnly) {
+      runModuleWiki(reportData, {
+        extractDir: outputDir,
+        wikiRoot,
+      });
+    }
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

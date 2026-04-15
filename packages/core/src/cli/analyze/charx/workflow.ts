@@ -54,6 +54,7 @@ import {
   type LorebookRegexCorrelation,
   type VariablesResult,
 } from './types';
+import { runCharxWiki } from './wiki/workflow';
 
 const HELP_TEXT = `
   🐿️ RisuAI Character Card Analyzer
@@ -63,6 +64,9 @@ const HELP_TEXT = `
   Options:
     --no-markdown     마크다운 리포트 생성 안 함
     --no-html         HTML 분석 시트 생성 안 함
+    --wiki            HTML/마크다운과 함께 wiki 생성
+    --wiki-only       HTML/마크다운 건너뛰고 wiki만 생성
+    --wiki-root PATH  wiki 출력 루트 경로 (기본: <parent>/wiki)
     -h, --help        도움말
 
   Phases:
@@ -81,6 +85,10 @@ export function runAnalyzeCharxWorkflow(argv: readonly string[]): number {
   const helpMode = argv.includes('-h') || argv.includes('--help') || argv.length === 0;
   const noMarkdown = argv.includes('--no-markdown');
   const noHtml = argv.includes('--no-html');
+  const wiki = argv.includes('--wiki');
+  const wikiOnly = argv.includes('--wiki-only');
+  const wikiRootIdx = argv.indexOf('--wiki-root');
+  const wikiRoot = wikiRootIdx >= 0 ? argv[wikiRootIdx + 1] : undefined;
   const locale = detectLocale(argv);
   const outputDir = argv.find((arg) => !arg.startsWith('-'));
 
@@ -109,7 +117,7 @@ export function runAnalyzeCharxWorkflow(argv: readonly string[]): number {
   }
 
   try {
-    runMain(outputDir, charxJsonPath, { noMarkdown, noHtml }, locale);
+    runMain(outputDir, charxJsonPath, { noMarkdown, noHtml, wiki, wikiOnly, wikiRoot }, locale);
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -193,7 +201,7 @@ function runCorrelate(collected: CollectResult): CorrelateResult {
 function runMain(
   outputDir: string,
   charxJsonPath: string | null,
-  options: { noMarkdown: boolean; noHtml: boolean },
+  options: { noMarkdown: boolean; noHtml: boolean; wiki: boolean; wikiOnly: boolean; wikiRoot?: string },
   locale: Locale,
 ): void {
   console.log('\n  🐿️ RisuAI Character Card Analyzer\n');
@@ -345,7 +353,7 @@ function runMain(
     luaArtifacts: collected.luaArtifacts,
   };
 
-  if (!options.noMarkdown) {
+  if (!options.noMarkdown && !options.wikiOnly) {
     try {
       renderMarkdown(reportData, resolvedOutDir, locale);
       console.log(
@@ -357,7 +365,7 @@ function runMain(
     }
   }
 
-  if (!options.noHtml) {
+  if (!options.noHtml && !options.wikiOnly) {
     try {
       renderHtml(reportData, resolvedOutDir, locale);
       console.log(
@@ -366,6 +374,21 @@ function runMain(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`  ⚠️ HTML 리포트 생성 실패: ${message}`);
+    }
+  }
+
+  if (options.wiki || options.wikiOnly) {
+    try {
+      runCharxWiki(reportData, {
+        extractDir: resolvedOutDir,
+        wikiRoot: options.wikiRoot,
+      });
+      console.log(
+        `     ✅ wiki → ${path.relative('.', path.join(path.dirname(resolvedOutDir), 'wiki'))}/`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`  ⚠️ wiki 생성 실패: ${message}`);
     }
   }
 
