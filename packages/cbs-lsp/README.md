@@ -6,7 +6,16 @@
 
 ---
 
-## 비전
+## 현재 구현 상태 (First-Cut)
+
+**현재 단계:** T15 완료 — CBS Fragment Mapping 및 라우팅 기반 구조 완성  
+**서버 상태:** Document sync 및 diagnostics 라우팅 활성화. Completion, hover 등은 스캐폴드되어 있으나 아직 미연결  
+**지원 파일:** `.risulorebook`, `.risuregex`, `.risuprompt`, `.risuhtml`, `.risulua` (CBS fragment mapping 지원)  
+**비지원:** `.risutoggle`, `.risuvar` (CBS 미포함 파일 — LSP 라우팅에서 제외)
+
+---
+
+## 비전 (목표 아키텍처)
 
 CBS LSP는 단순한 CBS 구문 언어 서버가 아닙니다. RisuAI의 lorebook, regex, Lua, variable이 형성하는 **유기적 관계 네트워크 전체를 실시간으로 분석**하고, 파일 경계를 넘나드는 언어 기능을 제공하는 **통합 아티팩트 LSP**입니다.
 
@@ -70,23 +79,30 @@ CBS LSP는 단순한 CBS 구문 언어 서버가 아닙니다. RisuAI의 loreboo
 
 ## Layer 1: Workspace Indexer
 
-### 대상 디렉토리 구조
+### 대상 디렉토리 구조 (Canonical Workspace)
 
 ```
 Workspace Root (추출된 .charx/.risum 디렉토리)
 ├── lorebooks/
 │   ├── 📖_기본설정/
-│   │   ├── 🎯_히로인.json      ← lorebook entry (CBS in content)
-│   │   └── 🌍_세계관.json
+│   │   ├── 🎯_히로인.risulorebook      ← lorebook entry (CBS in CONTENT)
+│   │   └── 🌍_세계관.risulorebook
 │   └── 📖_이벤트/
-│       └── ⚡_전투.json
+│       └── ⚡_전투.risulorebook
 ├── regex/
-│   ├── 감정표현.json            ← regex script (CBS in in/out)
-│   └── 변수처리.json
+│   ├── 감정표현.risuregex            ← regex script (CBS in IN/OUT)
+│   └── 변수처리.risuregex
 ├── lua/
-│   ├── main.lua                ← Lua source (setState/getState)
+│   ├── <charxName>.risulua           ← Lua source (setState/getState, target-name-based)
 │   └── utils.lua
-└── charx.json                  ← 메타데이터 (variables 기본값 등)
+├── html/
+│   └── background.risuhtml           ← Background HTML (CBS-bearing)
+├── variables/
+│   └── <charxName>.risuvar           ← Default variables (key=value, target-name-based)
+└── character/
+    └── metadata.json                 ← 메타데이터 (variables 기본값 등)
+
+**Note:** The canonical workspace uses `.risu*` artifacts as the editable source of truth. Root JSON files are not present in extracted workspaces.
 ```
 
 ### 구성요소
@@ -94,7 +110,7 @@ Workspace Root (추출된 .charx/.risum 디렉토리)
 **FileScanner**
 
 - workspace open 시 디렉토리 구조를 재귀 탐색
-- 파일 타입 판별: lorebook JSON, regex JSON, Lua, charx.json
+- 파일 타입 판별: `.risulorebook`, `.risuregex`, `.risulua`, `.risuhtml`, `.risuprompt`
 - `workspace/didChangeWatchedFiles` 이벤트로 변경 감지
 
 **ElementRegistry**
@@ -393,78 +409,78 @@ lorebook A에서 `{{setvar::hp::100}}`을 삭제하면:
 
 ## 구현 로드맵
 
-### Phase 0: 기반 정비
+### Phase 0: 기반 정비 ✅ 완료
 
 core에 공용 CBS 파서 디렉토리를 배치하고, cbs-lsp가 core를 의존하도록 설정합니다.
 
-| 작업 | 상세 |
-|------|------|
-| core에 CBS 파서 디렉토리 생성 | 기존 cbs-lsp scaffold의 lexer/parser/ast/visitor/registry를 core로 이동 |
-| cbs-lsp → core 의존성 추가 | `package.json`에 workspace dependency |
-| 기존 `extractCBSVarOps` 유지 | 파서 완성 전까지 regex 기반 추출 병행, 이후 교체 |
+| 작업 | 상세 | 상태 |
+|------|------|------|
+| core에 CBS 파서 디렉토리 생성 | 기존 cbs-lsp scaffold의 lexer/parser/ast/visitor/registry를 core로 이동 | ✅ 완료 |
+| cbs-lsp → core 의존성 추가 | `package.json`에 workspace dependency | ✅ 완료 |
+| 기존 `extractCBSVarOps` 유지 | 파서 완성 전까지 regex 기반 추출 병행, 이후 교체 | ✅ 완료 |
 
-### Phase 1: CBS 파서 구현 (core)
+### Phase 1: CBS 파서 구현 (core) 🚧 진행 중
 
 CBS_LSP_PLAN.md Phase 1~3의 내용을 core에서 구현합니다.
 
-| 작업 | 산출물 |
-|------|--------|
-| Tokenizer | `{{`, `}}`, `::`, 함수명, 인수, 블록, 주석, 수식 토큰화 |
-| Parser | 재귀 하강 파서 → Range 정보 포함 AST |
-| Builtin Registry | 107개 함수 + 별칭 175개 정적 레지스트리 |
-| `extractCBSVarOps` 교체 | AST 기반 변수 추출로 전환, analyze pipeline 자동 개선 |
+| 작업 | 산출물 | 상태 |
+|------|--------|------|
+| Tokenizer | `{{`, `}}`, `::`, 함수명, 인수, 블록, 주석, 수식 토큰화 | 🚧 스캐폴드 |
+| Parser | 재귀 하강 파서 → Range 정보 포함 AST | 🚧 스캐폴드 |
+| Builtin Registry | 107개 함수 + 별칭 175개 정적 레지스트리 | 🚧 스캐폴드 |
+| `extractCBSVarOps` 교체 | AST 기반 변수 추출로 전환, analyze pipeline 자동 개선 | ⏳ 대기 |
 
 **완료 기준:** 기존 analyze pipeline의 CBS 관련 테스트가 새 파서로도 통과
 
-### Phase 2: Workspace Indexer (Layer 1)
+### Phase 2: Workspace Indexer (Layer 1) ⏳ 대기
 
-| 작업 | 산출물 |
-|------|--------|
-| FileScanner | 디렉토리 재귀 탐색, 파일 타입 판별, watch 등록 |
-| ElementRegistry | lorebook/regex/lua 요소 중앙 저장소 |
-| UnifiedVariableGraph | core의 `buildUnifiedCBSGraph` + Lua stateVars 통합 |
-| IncrementalRebuilder | dirty tracking, 파일 단위 재분석, 그래프 부분 갱신 |
+| 작업 | 산출물 | 상태 |
+|------|--------|------|
+| FileScanner | 디렉토리 재귀 탐색, 파일 타입 판별, watch 등록 | ⏳ 대기 |
+| ElementRegistry | lorebook/regex/lua 요소 중앙 저장소 | ⏳ 대기 |
+| UnifiedVariableGraph | core의 `buildUnifiedCBSGraph` + Lua stateVars 통합 | ⏳ 대기 |
+| IncrementalRebuilder | dirty tracking, 파일 단위 재분석, 그래프 부분 갱신 | ⏳ 대기 |
 
 **완료 기준:** workspace open 시 변수 그래프 구축, 파일 변경 시 incremental 갱신
 
-### Phase 3: CBS Provider (Layer 2-A)
+### Phase 3: CBS Provider (Layer 2-A) ⏳ 대기
 
-| 작업 | 산출물 |
-|------|--------|
-| Embedded Extractor | JSON 필드에서 CBS 영역 추출, Range 변환 |
-| 단일 파일 기능 | completion, hover, diagnostics, signature, semantic tokens, folding, code actions |
-| Layer 3 연동 | cross-file 기능은 서비스 호출로 위임 |
+| 작업 | 산출물 | 상태 |
+|------|--------|------|
+| Embedded Extractor | JSON 필드에서 CBS 영역 추출, Range 변환 | ⏳ 대기 |
+| 단일 파일 기능 | completion, hover, diagnostics, signature, semantic tokens, folding, code actions | ⏳ 대기 |
+| Layer 3 연동 | cross-file 기능은 서비스 호출로 위임 | ⏳ 대기 |
 
 **완료 기준:** lorebook JSON 파일에서 `{{` 입력 시 자동완성, 구문 에러 진단, 호버 문서 동작
 
-### Phase 4: Cross-Element Services (Layer 3)
+### Phase 4: Cross-Element Services (Layer 3) ⏳ 대기
 
-| 작업 | 산출물 | 우선순위 |
-|------|--------|----------|
-| VariableFlowService | cross-file definition, references, rename, hover | A (최우선) |
-| LuaCBSBridgeService | Lua ↔ CBS 변수 통합, getLoreBooks 연동 | C |
-| ActivationChainService | 활성화 체인 진단, CodeLens, 순환 감지 | B |
+| 작업 | 산출물 | 우선순위 | 상태 |
+|------|--------|----------|------|
+| VariableFlowService | cross-file definition, references, rename, hover | A (최우선) | ⏳ 대기 |
+| LuaCBSBridgeService | Lua ↔ CBS 변수 통합, getLoreBooks 연동 | C | ⏳ 대기 |
+| ActivationChainService | 활성화 체인 진단, CodeLens, 순환 감지 | B | ⏳ 대기 |
 
 **완료 기준:** lorebook에서 `{{getvar::x}}` → regex/lua의 writer로 cross-file 점프 동작
 
-### Phase 5: Lua Provider (Layer 2-B)
+### Phase 5: Lua Provider (Layer 2-B) ⏳ 대기
 
-| 작업 | 산출물 |
-|------|--------|
-| LuaLS 프록시 | subprocess spawn, LSP 메시지 중계 |
-| Type Stubs | `setState`, `getState`, `getLoreBooks` 등 API 타입 정의 자동 생성 |
-| RisuAI Addon | 변수명 completion, API 인수 검증, cross-file hover |
-| Response Merger | LuaLS 결과 + RisuAI 결과를 합쳐서 클라이언트에 전달 |
+| 작업 | 산출물 | 상태 |
+|------|--------|------|
+| LuaLS 프록시 | subprocess spawn, LSP 메시지 중계 | ⏳ 대기 |
+| Type Stubs | `setState`, `getState`, `getLoreBooks` 등 API 타입 정의 자동 생성 | ⏳ 대기 |
+| RisuAI Addon | 변수명 completion, API 인수 검증, cross-file hover | ⏳ 대기 |
+| Response Merger | LuaLS 결과 + RisuAI 결과를 합쳐서 클라이언트에 전달 | ⏳ 대기 |
 
 **완료 기준:** `.lua` 파일에서 `setState("` 입력 시 변수 그래프 기반 변수명 제안
 
-### Phase 6: LSP Server 통합 + 테스트
+### Phase 6: LSP Server 통합 + 테스트 ⏳ 대기
 
-| 작업 | 산출물 |
-|------|--------|
-| Server 라우팅 | 파일 타입별 적절한 provider로 요청 분배 |
-| E2E 테스트 | 실제 추출 디렉토리 기반 통합 테스트 |
-| 성능 최적화 | 대형 캐릭터 카드 (100+ lorebook 엔트리) 벤치마크 |
+| 작업 | 산출물 | 상태 |
+|------|--------|------|
+| Server 라우팅 | 파일 타입별 적절한 provider로 요청 분배 | ✅ T15 완료 (기본 라우팅) |
+| E2E 테스트 | 실제 추출 디렉토리 기반 통합 테스트 | ⏳ 대기 |
+| 성능 최적화 | 대형 캐릭터 카드 (100+ lorebook 엔트리) 벤치마크 | ⏳ 대기 |
 
 ### 의존 관계 및 병렬화
 

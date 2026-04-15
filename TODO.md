@@ -4,6 +4,61 @@
 
 ### Done
 
+- [x] **Lorebook Path-Based Workspace Contract Migration (T16)**
+  - Modified: `packages/core/src/domain/custom-extension/extensions/lorebook.ts` — path-based `_order.json` parsing, folder key regeneration during pack
+  - Modified: `packages/core/src/cli/extract/character/phases.ts` — real directory lorebook extraction using planner/executor
+  - Modified: `packages/core/src/cli/extract/module/phases.ts` — real directory lorebook extraction for modules
+  - Modified: `packages/core/src/cli/pack/character/workflow.ts` — removed `_folders.json` dependency, path-based assembly
+  - Modified: `packages/core/src/cli/pack/module/workflow.ts` — removed `_folders.json` dependency, path-based assembly
+  - Modified: `packages/core/src/node/lorebook-io.ts` — updated executeLorebookPlan for path-based order
+  - Modified: `packages/core/tests/custom-extension/lorebook-canonical.test.ts` — path-based contract tests
+  - Modified: `packages/core/tests/lorebook-folder-layout.test.ts` — real directory assertions
+  - Modified: `packages/core/tests/charx-extract.test.ts` — path-based order validation
+  - Modified: `packages/core/src/cli/extract/workflow-output-structures.md` — documented path-based contract
+  - Workspace identity is now path-based: `lorebooks/<folder>/<entry>.risulorebook` + `_order.json` with folder paths
+  - `_folders.json` is no longer written during extract; folder keys are regenerated during pack/export
+- [x] **F2 Blocker Fix**: Lua/CBS documentation truthfulness alignment
+  - Modified: `docs/custom-extension/extensions/lua.md` — clarified first-cut full-file routing vs future AST parsing
+  - Modified: `docs/custom-extension/common/principles.md` — aligned CBS LSP source type mapping table with actual behavior
+  - Current implementation: `mapLuaToCbsFragments` returns `section: 'full'` fragment, LSP validates entire file content
+  - Future T15: Lua AST-based string-literal-only CBS fragment mapping (clearly marked as future/archival)
+- [x] **Final Wave Blocker Fix**: charx analyze/compose variable path fix
+  - Modified: `packages/core/src/cli/analyze/charx/collectors.ts` — `collectVariablesCBS()`
+  - Now reads from `variables/<sanitizedCharxName>.risuvar` (canonical charx workspace)
+  - Falls back to `variables/default.risuvar` for backward compatibility
+  - Added regression test: `composition-analysis.test.ts` — "reads charx variables from canonical .risuvar file with sanitized name"
+  - All 12 composition tests pass, unblocking Final Wave
+- [x] **Analyze Canonical Lua Support Fix**
+  - Modified: `packages/core/src/cli/analyze/charx/collectors.ts` — canonical `.risulua` discovery with legacy `.lua` fallback
+  - Modified: `packages/core/src/cli/analyze/compose/workflow.ts` — charx compose now prefers fresh Lua artifacts over sidecar-only import
+  - Modified: `packages/core/src/cli/analyze/workflow.ts` — top-level `analyze` auto-detect accepts `.risulua`
+  - Modified: `packages/core/src/cli/analyze/shared/cross-cutting.ts` — Lua token component collection matches canonical `.risulua`
+  - Added regression coverage: `packages/core/tests/module-analyze-workflow.test.ts`, `packages/core/tests/cli-main-dispatch.test.ts`, `packages/core/tests/composition-analysis.test.ts`
+  - Verified: `npx vitest run tests/module-analyze-workflow.test.ts`, `npx vitest run tests/cli-main-dispatch.test.ts`, `npx vitest run tests/composition-analysis.test.ts`, `npm --workspace packages/core run build`
+- [x] **Analyze Shared Canonical Migration Fix**
+  - Modified: `packages/core/src/cli/analyze/shared/cross-cutting.ts` — lorebook/regex dead-code and token-budget collectors now prefer canonical `.risulorebook` / `.risuregex` / `.risulua` with legacy fallback
+  - Canonical ordering now respects `_order.json` instead of drifting to alphabetical order
+  - Added regression coverage: `packages/core/tests/cross-cutting-canonical.test.ts`
+  - Verified: `npx vitest run tests/cross-cutting-canonical.test.ts`, `npx vitest run tests/module-analyze-workflow.test.ts`, `npx vitest run tests/composition-analysis.test.ts`, `npm --workspace packages/core run build`
+- [x] **Analyze Canonical Lorebook Folder Identity Fix**
+  - Modified: `packages/core/src/cli/analyze/charx/workflow.ts` — canonical analyze now reconstructs lorebook folder identity from current `lorebooks/` path layout instead of stale frontmatter `folder`
+  - Modified: `packages/core/src/domain/custom-extension/extensions/lorebook.ts` — nested parent folder derivation now uses the full relative directory path, not only the first path segment
+  - Added regression coverage: `packages/core/tests/charx-analyze-workflow.test.ts`
+  - Verified: `npx vitest run tests/charx-analyze-workflow.test.ts`, `npx vitest run tests/force-graph-dedup.test.ts`, `npx vitest run tests/lorebook-folder-layout.test.ts`, `npx vitest run tests/charx-extract.test.ts`, `npx vitest run tests/module-extract.test.ts`, `npx vitest run tests/pack-character-roundtrip.test.ts`, `npm --workspace packages/core run build`
+- [x] **Relationship Network Root Group Pin Fix**
+  - Modified: `packages/core/src/cli/analyze/shared/relationship-network-builders.ts` — root-level lorebooks no longer invent a fake `folder:(root)` pinned cluster
+  - Added regression coverage: `packages/core/tests/force-graph-dedup.test.ts` — root-level lorebooks must not receive `lorebook-folder` grouping metadata
+  - Verified: `npx vitest run tests/force-graph-dedup.test.ts`, `npx vitest run tests/analysis-visualization-contract.test.ts`, `npx vitest run tests/charx-analyze-workflow.test.ts`, `npm --workspace packages/core run build`
+- [x] **Relationship Network Hidden Trigger Physics Fix**
+  - Modified: `packages/core/src/cli/analyze/shared/report-shell/client.js` — relationship-network now builds render/simulation sets from the active visible node/edge types instead of letting default-hidden trigger nodes keep influencing layout off-screen
+  - Force-graph signature now includes active node/edge filter state, so legend toggles rebuild the graph with a matching simulation instead of only changing DOM visibility
+  - Added contract coverage: `packages/core/tests/analysis-visualization-contract.test.ts`
+  - Verified: `npx vitest run tests/analysis-visualization-contract.test.ts`, `npm --workspace packages/core run build`
+- [x] **F4 Blocker Fix**: Aligned T16 guard test with approved deferred scope
+  - Modified: `packages/core/tests/custom-extension/no-root-json-legacy-surface.test.ts`
+  - Test now allows deferred T16 wording (legacy/fallback/deferred) in active docs
+  - Still protects against root-JSON being presented as current standard
+  - All 10 tests pass, unblocking F4 approval
 - [x] 루트 `AGENTS.md` 추가 (TODO 업데이트/잔여 작업 리마인드 규칙 명시)
 - [x] `pack.js` 구현 (`png`, `charx`, `charx-jpg`)
 - [x] `lorebooks/manifest.json` 기반 lorebook 재구성
@@ -73,6 +128,10 @@
 
 - [ ] strict cover 모드 추가 여부 결정 (현재는 1x1 fallback)
 - [ ] `lua/*.lua -> triggerscript` 역변환 지원 여부 결정/설계
+
+#### Analyze Pipeline
+
+- [ ] custom extension analyze 후속 정리: reporting/preset-module fallback/legacy surface final cleanup (`docs/custom-extension-analyze-impact.md`)
 
 #### Architecture Restructure (source of truth: `docs/architecture-proposal.md`)
 
@@ -166,3 +225,15 @@
   - [ ] 완료 기준: 양방향 메시지 round-trip 검증
 - [ ] **3-4. `ui-mockup/` 퇴역**
   - [ ] webview 패키지로 이관 완료 확인 후 `ui-mockup/` 디렉토리 삭제
+
+---
+
+## Build Tooling Notes
+
+### 2025-04-14: tsc-alias resolution fix
+- **Problem**: `pnpm --dir packages/core build` failed with `sh: 1: tsc-alias: not found`
+- **Root cause**: Mixed npm/pnpm setup - npm installs deps at root, but pnpm package-local builds couldn't resolve the binary
+- **Fix**: Changed build scripts from `tsc-alias` to `npx tsc-alias` in:
+  - `packages/core/package.json`
+  - `packages/vscode/package.json`
+- **Result**: Both `npm --workspace` and `pnpm --dir` builds now work correctly

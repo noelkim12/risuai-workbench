@@ -13,7 +13,7 @@
   "dependencies": {
     "vscode-languageserver": "^9.0.1",
     "vscode-languageserver-textdocument": "^1.0.12",
-    "risu-workbench-core": "workspace:*"
+    "risu-workbench-core": "*"
   },
   "devDependencies": {
     "@types/node": "^20.x",
