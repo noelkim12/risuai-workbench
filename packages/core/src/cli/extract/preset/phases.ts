@@ -3,8 +3,23 @@ import { createDecipheriv, createHash } from 'node:crypto';
 import path from 'node:path';
 import { decode as decodeMsgpack } from 'msgpackr';
 import { decompressSync } from 'fflate';
-import { sanitizeFilename } from '@/domain';
-import { writeJson, writeText, uniquePath } from '@/node';
+
+import { writeJson, writeText } from '@/node';
+import {
+  extractPromptTemplateFromPreset,
+  serializePromptTemplateBundle,
+  serializePromptTemplateOrder,
+} from '@/domain/custom-extension/extensions/prompt-template';
+import {
+  buildRegexPath,
+  extractRegexFromPreset,
+  serializeRegexContent,
+} from '@/domain/custom-extension/extensions/regex';
+import {
+  buildTogglePath,
+  extractToggleFromPreset,
+  serializeToggleContent,
+} from '@/domain/custom-extension/extensions/toggle';
 import { decodeRPackData, initRPack } from '../parsers';
 
 // ─── Preset Type Detection ───────────────────────────────────────────────────
@@ -252,7 +267,7 @@ export function phase3_extractPromptTemplate(preset: ParsedPreset, outputDir: st
   console.log('\n  🧩 Phase 3: 프롬프트 템플릿 추출');
 
   const data = preset.raw;
-  let promptTemplate = data.promptTemplate as any[] | undefined;
+  let promptTemplate = extractPromptTemplateFromPreset(data, 'preset') ?? undefined;
 
   // ST preset: build promptTemplate from prompt_order
   if (preset.presetType === 'sillytavern' && !promptTemplate) {
@@ -265,62 +280,18 @@ export function phase3_extractPromptTemplate(preset: ParsedPreset, outputDir: st
   }
 
   const templateDir = path.join(outputDir, 'prompt_template');
-  const orderList: string[] = [];
+  const bundle = serializePromptTemplateBundle(promptTemplate, 'preset');
 
-  for (let i = 0; i < promptTemplate.length; i += 1) {
-    const item = promptTemplate[i];
-    if (!item || typeof item !== 'object') continue;
-
-    const displayName = getPromptItemDisplayName(item, i);
-    const fileLabel = makePromptTemplateFileLabel(displayName, i);
-    const baseName = fileLabel;
-    const outPath = uniquePath(templateDir, baseName, '.json');
-    writeJson(outPath, item);
-    orderList.push(path.basename(outPath));
+  for (const file of bundle.files) {
+    writeText(path.join(outputDir, file.path), file.rawContent);
   }
 
-  writeJson(path.join(templateDir, '_order.json'), orderList);
+  writeText(path.join(templateDir, '_order.json'), serializePromptTemplateOrder(bundle.order));
 
   console.log(`     ✅ ${promptTemplate.length}개 항목 → ${path.relative('.', templateDir)}/`);
 
   return promptTemplate.length;
 }
-
-function makePromptTemplateFileLabel(displayName: string, index: number): string {
-  const stripped = displayName.replace(/^[^\p{L}\p{N}]+/gu, '');
-  const slugSource = (stripped || displayName).replace(/[^\p{L}\p{N}]+/gu, '_');
-  return sanitizeFilename(slugSource, `prompt_${index + 1}`);
-}
-
-function getPromptItemDisplayName(item: Record<string, unknown>, index: number): string {
-  if (typeof item.name === 'string' && item.name.trim().length > 0) {
-    return item.name;
-  }
-
-  const type = typeof item.type === 'string' ? item.type : 'unknown';
-  const type2 = typeof item.type2 === 'string' ? item.type2 : null;
-
-  if (type === 'plain' || type === 'jailbreak' || type === 'cot') {
-    if (type2 === 'main') return 'main prompt';
-    if (type2 === 'globalNote') return 'global note';
-    if (type === 'jailbreak') return 'jailbreak';
-    if (type === 'cot') return 'chain of thought';
-    return 'plain prompt';
-  }
-
-  if (type === 'chat') return 'chat history';
-  if (type === 'persona') return 'persona';
-  if (type === 'description') return 'description';
-  if (type === 'authornote') return 'author note';
-  if (type === 'lorebook') return 'lorebook';
-  if (type === 'memory') return 'memory';
-  if (type === 'postEverything') return 'post everything';
-  if (type === 'chatML') return 'chatML';
-  if (type === 'cache') return 'cache point';
-
-  return `prompt_${index + 1}`;
-}
-
 function buildSTPromptTemplate(data: Record<string, unknown>): any[] {
   const promptOrder = data.prompt_order as any[];
   const prompts = data.prompts as any[];
@@ -612,7 +583,6 @@ export function phase7_extractPromptSettings(preset: ParsedPreset, outputDir: st
     'useInstructPrompt',
     'instructChatTemplate',
     'JinjaTemplate',
-    'customPromptTemplateToggle',
     'templateDefaultVariables',
     'promptPreprocess',
   ]);
@@ -624,10 +594,13 @@ export function phase7_extractPromptSettings(preset: ParsedPreset, outputDir: st
     console.log(`     ✅ instruct_settings.json (${Object.keys(instructSettings).length}개 필드)`);
   }
 
-  const promptTemplateToggle = data.customPromptTemplateToggle;
+  const promptTemplateToggle = extractToggleFromPreset(
+    { customPromptTemplateToggle: data.customPromptTemplateToggle as string | undefined },
+    'preset',
+  );
   if (typeof promptTemplateToggle === 'string' && promptTemplateToggle.length > 0) {
-    const outPath = path.join(outputDir, 'toggle', 'prompt_template.risutoggle');
-    writeText(outPath, promptTemplateToggle);
+    const outPath = path.join(outputDir, buildTogglePath('preset'));
+    writeText(outPath, serializeToggleContent(promptTemplateToggle));
     count += 1;
     console.log(`     ✅ ${path.relative('.', outPath)} (${promptTemplateToggle.length} chars)`);
   }
@@ -661,19 +634,32 @@ export function phase8_extractRegexAndAdvanced(preset: ParsedPreset, outputDir: 
   const data = preset.raw;
   let count = 0;
 
-  const regex = data.regex as any[] | undefined;
+  const regex = extractRegexFromPreset(
+    { presetRegex: (data.presetRegex as unknown) ?? (data.regex as unknown) },
+    'preset',
+  );
   if (Array.isArray(regex) && regex.length > 0) {
     const regexDir = path.join(outputDir, 'regex');
     const orderList: string[] = [];
+    const usedNames = new Set<string>();
 
     for (let i = 0; i < regex.length; i += 1) {
       const script = regex[i];
-      const name = sanitizeFilename(
-        (typeof script?.comment === 'string' && script.comment) || `regex_${i}`,
-      );
-      const outPath = uniquePath(regexDir, name, '.json');
-      writeJson(outPath, script);
-      orderList.push(path.basename(outPath));
+      const stem =
+        typeof script?.comment === 'string' && script.comment.length > 0 ? script.comment : `regex_${i}`;
+      const basePath = buildRegexPath('preset', stem);
+      const baseName = path.basename(basePath, '.risuregex');
+      let nextName = `${baseName}.risuregex`;
+      let suffix = 1;
+
+      while (usedNames.has(nextName)) {
+        nextName = `${baseName}_${suffix}.risuregex`;
+        suffix += 1;
+      }
+
+      usedNames.add(nextName);
+      writeText(path.join(regexDir, nextName), serializeRegexContent(script));
+      orderList.push(nextName);
     }
 
     if (orderList.length > 0) {

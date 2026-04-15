@@ -21,7 +21,7 @@
     "LICENSE*"
   ],
   "scripts": {
-    "build": "tsc && tsc-alias && pnpm run build:assets",
+    "build": "tsc && npx tsc-alias && pnpm run build:assets",
     "build:assets": "mkdir -p dist/cli/analyze/shared/report-shell && cp src/cli/analyze/shared/report-shell/template.html src/cli/analyze/shared/report-shell/client.js dist/cli/analyze/shared/report-shell/",
     "test": "vitest run",
     "lint": "eslint 'src/**/*.ts'",

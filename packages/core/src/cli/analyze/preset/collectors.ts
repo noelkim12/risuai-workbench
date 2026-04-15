@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import {
   ELEMENT_TYPES,
@@ -7,17 +8,22 @@ import {
   type ElementCBSData,
   type GenericRecord,
 } from '@/domain';
+import { parsePromptTemplateContent } from '@/domain/custom-extension/extensions/prompt-template';
+import { parseRegexContent } from '@/domain/custom-extension/extensions/regex';
 import { dirExists, readJsonIfExists, readTextIfExists } from '@/node/fs-helpers';
 import { listJsonFilesRecursive, resolveOrderedFiles } from '@/node/json-listing';
 import type { PresetCollectResult, PromptSource } from './types';
 
+type PromptTextCarrier = unknown;
+
 /** 추출된 preset 디렉토리에서 모든 분석 소스를 수집한다. */
 export function collectPresetSources(outputDir: string): PresetCollectResult {
+  const metadataJson = readJsonIfExists(path.join(outputDir, 'metadata.json'));
   const presetJson = readJsonIfExists(path.join(outputDir, 'preset.json'));
   const prompts = collectPrompts(outputDir, presetJson);
   const promptTemplates = collectPromptTemplates(outputDir, presetJson);
   const regexCBS = collectRegex(outputDir);
-  const metadata = isRecord(presetJson) ? presetJson : {};
+  const metadata = isRecord(metadataJson) ? metadataJson : isRecord(presetJson) ? presetJson : {};
   const model = asRecordOrNull(readJsonIfExists(path.join(outputDir, 'model.json')));
   const parameters = asRecordOrNull(readJsonIfExists(path.join(outputDir, 'parameters.json')));
 
@@ -53,6 +59,22 @@ function collectPrompts(outputDir: string, presetJson: unknown): PromptSource[] 
 function collectPromptTemplates(outputDir: string, presetJson: unknown): PromptSource[] {
   const templateDir = path.join(outputDir, 'prompt_template');
   if (dirExists(templateDir)) {
+    const canonicalFiles = listFilesWithSuffix(templateDir, '.risuprompt');
+    if (canonicalFiles.length > 0) {
+      const files = resolveOrderedFiles(templateDir, canonicalFiles);
+      return files.map((filePath, index) => {
+        const parsed = parsePromptTemplateContent(readTextIfExists(filePath));
+        const fallbackName = path.basename(filePath, '.risuprompt');
+        const name = typeof parsed.name === 'string' && parsed.name.length > 0 ? parsed.name : fallbackName;
+        const text = readTemplateRuntimeText(parsed);
+        return buildPromptSource(name, text, {
+          chainType: typeof parsed.type === 'string' && parsed.type.length > 0 ? parsed.type : 'template',
+          sourcePath: `prompt_template/${path.basename(filePath)}`,
+          order: index,
+        });
+      });
+    }
+
     const files = resolveOrderedFiles(templateDir, listJsonFilesRecursive(templateDir));
     return files.map((filePath, index) => {
       const raw = readJsonIfExists(filePath);
@@ -81,6 +103,30 @@ function collectPromptTemplates(outputDir: string, presetJson: unknown): PromptS
 function collectRegex(outputDir: string): ElementCBSData[] {
   const regexDir = path.join(outputDir, 'regex');
   if (!dirExists(regexDir)) return [];
+
+  const canonicalFiles = resolveOrderedFiles(regexDir, listFilesWithSuffix(regexDir, '.risuregex'));
+  if (canonicalFiles.length > 0) {
+    return canonicalFiles.flatMap((filePath, index) => {
+      const raw = parseRegexContent(readTextIfExists(filePath));
+      const inOps = extractCBSVarOps(raw.in);
+      const outOps = extractCBSVarOps(raw.out);
+      const flagOps = extractCBSVarOps(typeof raw.flag === 'string' ? raw.flag : '');
+      const reads = new Set<string>([...inOps.reads, ...outOps.reads, ...flagOps.reads]);
+      const writes = new Set<string>([...inOps.writes, ...outOps.writes, ...flagOps.writes]);
+
+      if (reads.size === 0 && writes.size === 0) return [];
+
+      return [
+        {
+          elementType: ELEMENT_TYPES.REGEX,
+          elementName: `[preset]/regex/${path.basename(filePath, '.risuregex')}`,
+          reads,
+          writes,
+          executionOrder: canonicalFiles.length - index,
+        },
+      ];
+    });
+  }
 
   const files = resolveOrderedFiles(regexDir, listJsonFilesRecursive(regexDir));
   return files.flatMap((filePath, index) => {
@@ -135,11 +181,17 @@ function buildPromptSource(
   };
 }
 
-function readTemplateRuntimeText(record: GenericRecord): string {
-  const preferredKeys = ['text', 'content', 'prompt'];
+function readTemplateRuntimeText(record: PromptTextCarrier): string {
+  if (typeof record !== 'object' || record === null) {
+    return '';
+  }
+
+  const carrier = record as Record<string, unknown>;
+  const preferredKeys = ['text', 'content', 'prompt', 'innerFormat', 'defaultText'];
   for (const key of preferredKeys) {
-    if (typeof record[key] === 'string') {
-      return record[key] as string;
+    const value = carrier[key];
+    if (typeof value === 'string') {
+      return value;
     }
   }
   return '';
@@ -162,4 +214,12 @@ function asRecordOrNull(value: unknown): Record<string, unknown> | null {
 
 function isRecord(value: unknown): value is GenericRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function listFilesWithSuffix(dir: string, suffix: string): string[] {
+  return fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(suffix))
+    .map((entry) => path.join(dir, entry.name))
+    .sort((left, right) => path.basename(left).localeCompare(path.basename(right)));
 }

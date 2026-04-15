@@ -24,18 +24,18 @@ const HELP_TEXT = `
 
   Options:
     --out <dir>     출력 디렉토리 (기본: ./preset_<name>)
-    --json-only     Phase 1만 실행 (preset.json만 출력)
+    --json-only     Phase 1만 실행 (metadata.json만 출력)
     -h, --help      도움말
 
   Phases:
     1. 프리셋 파싱 + 타입 감지 (RisuAI / NAI / SillyTavern)
     2. 프롬프트 추출 → prompts/ (main.txt, jailbreak.txt, global_note.txt)
-    3. 프롬프트 템플릿 추출 → prompt_template/ (item별 .json + _order.json)
+    3. 프롬프트 템플릿 추출 → prompt_template/ (*.risuprompt + _order.json)
     4. 파라미터 추출 → parameters.json
     5. 모델 설정 추출 → model.json
     6. 프로바이더 설정 추출 → provider/ (ooba.json, nai.json, ain.json)
     7. 프롬프트 세팅 추출 → prompt_settings.json, instruct_settings.json, toggle/prompt_template.risutoggle 등
-    8. Regex & 고급 설정 추출 → regex/, advanced.json
+    8. Regex & 고급 설정 추출 → regex/*.risuregex, advanced.json
 
   Examples:
     risu-core extract my_preset.json
@@ -106,10 +106,6 @@ function runMain(filePath: string, outArg: string | null, jsonOnly: boolean): vo
   const resolvedOutDir = path.resolve(outArg || defaultOutDir);
   ensureDir(resolvedOutDir);
 
-  const presetJsonPath = path.join(resolvedOutDir, 'preset.json');
-  writeJson(presetJsonPath, parsed.raw);
-  console.log(`\n     preset.json -> ${path.relative('.', presetJsonPath)}`);
-
   const metadataPath = path.join(resolvedOutDir, 'metadata.json');
   writeJson(metadataPath, {
     name: parsed.name,
@@ -118,7 +114,7 @@ function runMain(filePath: string, outArg: string | null, jsonOnly: boolean): vo
     import_format: parsed.importFormat,
     source_file: path.basename(filePath),
   });
-  console.log(`     metadata.json -> ${path.relative('.', metadataPath)}`);
+  console.log(`\n     metadata.json -> ${path.relative('.', metadataPath)}`);
 
   if (jsonOnly) {
     console.log('\n  완료 (--json-only)\n');

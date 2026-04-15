@@ -13,6 +13,13 @@ import {
   buildLorebookRegexCorrelation,
   buildUnifiedCBSGraph,
 } from '@/domain';
+import {
+  assembleLorebookCollection,
+  parseLorebookContent,
+  parseLorebookOrder,
+  type LorebookCanonicalFile,
+} from '@/domain/custom-extension/extensions/lorebook';
+import { parseRegexContent } from '@/domain/custom-extension/extensions/regex';
 import { ensureDir } from '@/node/fs-helpers';
 import { type Locale, detectLocale } from '../shared/i18n';
 import { safeCollect } from '../../shared';
@@ -82,9 +89,22 @@ export function runAnalyzeCharxWorkflow(argv: readonly string[]): number {
     return 0;
   }
 
+  // Check for canonical workspace markers
+  const hasCanonicalMarkers =
+    fs.existsSync(path.join(outputDir, 'character')) ||
+    fs.existsSync(path.join(outputDir, 'lorebooks')) ||
+    fs.existsSync(path.join(outputDir, 'regex'));
+
   const charxJsonPath = resolveCharxJsonPath(outputDir);
-  if (!charxJsonPath) {
-    console.error(`\n  ❌ charx.json을 찾을 수 없습니다: ${path.join(outputDir, 'charx.json')}\n`);
+
+  // Require either canonical markers or charx.json
+  if (!hasCanonicalMarkers && !charxJsonPath) {
+    console.error(`\n  ❌ Canonical charx workspace markers not found: ${outputDir}`);
+    console.error(`  Expected one of:`);
+    console.error(`    - character/ directory (canonical workspace)`);
+    console.error(`    - lorebooks/ directory (canonical workspace)`);
+    console.error(`    - regex/ directory (canonical workspace)`);
+    console.error(`    - charx.json (legacy workspace)\n`);
     return 1;
   }
 
@@ -98,7 +118,7 @@ export function runAnalyzeCharxWorkflow(argv: readonly string[]): number {
   }
 }
 
-function runCollect(charx: unknown, resolvedOutDir: string, charxJsonPath: string): CollectResult {
+function runCollect(charx: unknown, resolvedOutDir: string, charxJsonPath: string | null): CollectResult {
   const lorebookCBS = safeCollect(
     () => collectLorebookCBS(charx, resolvedOutDir),
     'Lorebook CBS 수집 실패',
@@ -172,7 +192,7 @@ function runCorrelate(collected: CollectResult): CorrelateResult {
 
 function runMain(
   outputDir: string,
-  charxJsonPath: string,
+  charxJsonPath: string | null,
   options: { noMarkdown: boolean; noHtml: boolean },
   locale: Locale,
 ): void {
@@ -183,11 +203,17 @@ function runMain(
   ensureDir(analysisDir);
 
   let charx: unknown;
-  try {
-    charx = JSON.parse(fs.readFileSync(charxJsonPath, 'utf8'));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`${path.basename(charxJsonPath)} 파싱 실패: ${message}`);
+  if (charxJsonPath && fs.existsSync(charxJsonPath)) {
+    // Legacy mode: read from charx.json
+    try {
+      charx = JSON.parse(fs.readFileSync(charxJsonPath, 'utf8'));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`${path.basename(charxJsonPath)} 파싱 실패: ${message}`);
+    }
+  } else {
+    // Canonical mode: build minimal charx structure for analysis
+    charx = buildMinimalCharxFromCanonical(resolvedOutDir);
   }
 
   console.log('\n  ═══ Phase 1: COLLECT ═══');
@@ -363,6 +389,194 @@ function resolveCharxName(charx: unknown): string {
   return 'Unknown';
 }
 
+/**
+ * Build minimal charx structure from canonical artifacts for analysis.
+ * This creates a skeleton charx object that allows existing analysis functions to work
+ * without requiring the full charx.json file.
+ */
+function buildMinimalCharxFromCanonical(outputDir: string): unknown {
+  // Read character metadata if available
+  const metadataPath = path.join(outputDir, 'character', 'metadata.json');
+  let name = 'Unknown';
+  if (fs.existsSync(metadataPath)) {
+    try {
+      const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8')) as { name?: string };
+      if (typeof metadata.name === 'string' && metadata.name.length > 0) {
+        name = metadata.name;
+      }
+    } catch {
+      // Ignore metadata parse errors
+    }
+  }
+
+  // Read lorebook entries from canonical .risulorebook files
+  const lorebookEntries = collectLorebookEntriesFromCanonical(outputDir);
+
+  // Read regex scripts from canonical .risuregex files
+  const customScripts = collectRegexScriptsFromCanonical(outputDir);
+
+  // Build minimal charx structure with populated lorebook and regex data
+  return {
+    spec: 'chara_card_v3',
+    data: {
+      name,
+      character_book: { entries: lorebookEntries },
+      extensions: {
+        risuai: {
+          customScripts,
+        },
+      },
+    },
+  };
+}
+
+/**
+ * Collect lorebook entries from canonical .risulorebook files.
+ * Converts canonical format to upstream charx format for analysis.
+ */
+function collectLorebookEntriesFromCanonical(outputDir: string): Array<Record<string, unknown>> {
+  const lorebooksDir = path.join(outputDir, 'lorebooks');
+  if (!fs.existsSync(lorebooksDir)) {
+    return [];
+  }
+
+  const files: LorebookCanonicalFile[] = [];
+
+  // Read all .risulorebook files recursively.
+  // The current directory/file layout is the canonical source of folder identity,
+  // so we intentionally ignore any stale frontmatter folder value here and let
+  // assembleLorebookCollection rebuild upstream folder references from relative paths.
+  const risuFiles = listRisuLorebookFilesRecursive(lorebooksDir);
+  for (const filePath of risuFiles) {
+    const content = fs.readFileSync(filePath, 'utf8');
+    if (!content) continue;
+
+    try {
+      const parsed = parseLorebookContent(content);
+      files.push({
+        relativePath: path.relative(lorebooksDir, filePath).replace(/\\/g, '/'),
+        content: {
+          ...parsed,
+          folder: undefined,
+        },
+      });
+    } catch {
+      // Ignore parse errors
+    }
+  }
+
+  const orderPath = path.join(lorebooksDir, '_order.json');
+  let declaredOrder: string[] | null = null;
+  if (fs.existsSync(orderPath)) {
+    try {
+      declaredOrder = parseLorebookOrder(fs.readFileSync(orderPath, 'utf8'));
+    } catch {
+      declaredOrder = null;
+    }
+  }
+
+  const assembled = assembleLorebookCollection(files, declaredOrder);
+  return assembled.map((entry) => {
+    const upstream: Record<string, unknown> = {
+      name: entry.name,
+      comment: entry.comment,
+      mode: entry.mode,
+      constant: entry.constant,
+      selective: entry.selective,
+      insertion_order: entry.insertion_order,
+      case_sensitive: entry.case_sensitive,
+      use_regex: entry.use_regex,
+      keys: entry.keys,
+      content: entry.content,
+      enabled: true,
+    };
+
+    if (entry.secondary_keys !== undefined) {
+      upstream.secondary_keys = entry.secondary_keys;
+    }
+    if (entry.folder !== undefined && entry.folder !== null) {
+      upstream.folder = entry.folder;
+    }
+
+    return upstream;
+  });
+}
+
+/**
+ * Collect regex scripts from canonical .risuregex files.
+ * Converts canonical format to upstream charx customScripts format for analysis.
+ */
+function collectRegexScriptsFromCanonical(outputDir: string): Array<Record<string, unknown>> {
+  const regexDir = path.join(outputDir, 'regex');
+  if (!fs.existsSync(regexDir)) {
+    return [];
+  }
+
+  const scripts: Array<Record<string, unknown>> = [];
+
+  // Read all .risuregex files recursively
+  const risuFiles = listRisuRegexFilesRecursive(regexDir);
+  for (const [index, filePath] of risuFiles.entries()) {
+    const content = fs.readFileSync(filePath, 'utf8');
+    if (!content) continue;
+
+    try {
+      const parsed = parseRegexContent(content);
+      const name = path.basename(filePath, '.risuregex');
+
+      // Convert canonical format to upstream charx format
+      scripts.push({
+        comment: parsed.comment || name,
+        name,
+        in: parsed.in,
+        out: parsed.out,
+        flag: parsed.flag,
+        ableFlag: parsed.ableFlag,
+        type: parsed.type,
+        order: risuFiles.length - index, // Reverse order for execution priority
+      });
+    } catch {
+      // Ignore parse errors
+    }
+  }
+
+  return scripts;
+}
+
+/** List all .risulorebook files recursively. */
+function listRisuLorebookFilesRecursive(rootDir: string): string[] {
+  const results: string[] = [];
+  const entries = fs.readdirSync(rootDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...listRisuLorebookFilesRecursive(fullPath));
+    } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.risulorebook')) {
+      results.push(fullPath);
+    }
+  }
+
+  return results.sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
+}
+
+/** List all .risuregex files recursively. */
+function listRisuRegexFilesRecursive(rootDir: string): string[] {
+  const results: string[] = [];
+  const entries = fs.readdirSync(rootDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...listRisuRegexFilesRecursive(fullPath));
+    } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.risuregex')) {
+      results.push(fullPath);
+    }
+  }
+
+  return results.sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
+}
+
 function buildCharxTokenComponents(
   outputDir: string,
   charx: unknown,
@@ -378,6 +592,13 @@ function buildCharxTokenComponents(
     ]),
     ...collectLorebookTokenComponentsFromDir(path.join(outputDir, 'lorebooks'), 'lorebook'),
     ...collectRegexTokenComponentsFromDir(path.join(outputDir, 'regex'), 'regex'),
+    // Canonical format: background.risuhtml (preferred), fallback to background.html
+    ...collectSingleFileTokenComponent(
+      path.join(outputDir, 'html', 'background.risuhtml'),
+      'html',
+      'background.risuhtml',
+      true,
+    ),
     ...collectSingleFileTokenComponent(
       path.join(outputDir, 'html', 'background.html'),
       'html',

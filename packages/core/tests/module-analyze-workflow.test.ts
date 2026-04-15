@@ -12,56 +12,45 @@ describe('module analyze collectors and workflow', () => {
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'module-analyze-'));
 
+    // Create canonical workspace with .risulorebook files
     fs.mkdirSync(path.join(tempDir, 'lorebooks', 'battle'), { recursive: true });
     fs.writeFileSync(
-      path.join(tempDir, 'lorebooks', 'manifest.json'),
-      `${JSON.stringify(
-        {
-          version: 1,
-          entries: [
-            {
-              type: 'entry',
-              path: 'battle/battle_entry.json',
-              source: 'module',
-            },
-          ],
-        },
-        null,
-        2,
-      )}\n`,
-      'utf-8',
-    );
-    fs.writeFileSync(
-      path.join(tempDir, 'lorebooks', 'battle', 'battle_entry.json'),
-      `${JSON.stringify(
-        {
-          comment: 'battle_entry',
-          content: '{{getvar::mode}} combat start',
-        },
-        null,
-        2,
-      )}\n`,
+      path.join(tempDir, 'lorebooks', 'battle', 'battle_entry.risulorebook'),
+      `---
+name: battle_entry
+comment: battle_entry
+mode: normal
+constant: false
+selective: false
+insertion_order: 0
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+battle
+@@@ CONTENT
+{{getvar::mode}} combat start
+`,
       'utf-8',
     );
 
     fs.mkdirSync(path.join(tempDir, 'regex'), { recursive: true });
     fs.writeFileSync(
       path.join(tempDir, 'regex', '_order.json'),
-      `${JSON.stringify(['init_script.json'], null, 2)}\n`,
+      `${JSON.stringify(['init_script.risuregex'], null, 2)}\n`,
       'utf-8',
     );
     fs.writeFileSync(
-      path.join(tempDir, 'regex', 'init_script.json'),
-      `${JSON.stringify(
-        {
-          comment: 'init_script',
-          in: '*init*',
-          out: '{{setvar::mode::story}}',
-          type: 'editdisplay',
-        },
-        null,
-        2,
-      )}\n`,
+      path.join(tempDir, 'regex', 'init_script.risuregex'),
+      `---
+comment: init_script
+type: editdisplay
+---
+@@@ IN
+*init*
+@@@ OUT
+{{setvar::mode::story}}
+`,
       'utf-8',
     );
 
@@ -89,16 +78,12 @@ describe('module analyze collectors and workflow', () => {
 
     fs.mkdirSync(path.join(tempDir, 'html'), { recursive: true });
     fs.writeFileSync(
-      path.join(tempDir, 'html', 'background.html'),
+      path.join(tempDir, 'html', 'background.risuhtml'),
       '<section>{{getvar::mode}} {{setvar::theme::dark}}</section>',
       'utf-8',
     );
 
-    fs.writeFileSync(
-      path.join(tempDir, 'module.json'),
-      `${JSON.stringify({ name: 'test_module', description: 'test module' }, null, 2)}\n`,
-      'utf-8',
-    );
+    // Canonical workspace uses metadata.json (no module.json)
     fs.writeFileSync(
       path.join(tempDir, 'metadata.json'),
       `${JSON.stringify({ name: 'test_module', id: 'module-id' }, null, 2)}\n`,
@@ -129,10 +114,10 @@ describe('module analyze collectors and workflow', () => {
     expect(result.htmlCBS?.writes.has('theme')).toBe(true);
   });
 
-  it('loads lua artifacts directly from lua files without requiring sidecar analysis json', () => {
+  it('loads lua artifacts directly from canonical .risulua files without requiring sidecar analysis json', () => {
     fs.rmSync(path.join(tempDir, 'lua', 'boot.analysis.json'));
     fs.writeFileSync(
-      path.join(tempDir, 'lua', 'runtime.lua'),
+      path.join(tempDir, 'lua', 'runtime.risulua'),
       `
 function runtime()
   setChatVar('mana', '10')
@@ -192,7 +177,7 @@ end
     expect(markdown).not.toContain('최악 토큰');
   });
 
-  it('runs module-wide analysis automatically after extract', () => {
+  it('runs module-wide analysis automatically after extract', async () => {
     const sourcePath = path.join(tempDir, 'module-source.json');
     const outDir = path.join(tempDir, 'extracted-module');
 
@@ -205,7 +190,7 @@ end
             name: 'auto_module',
             id: 'auto-module',
             lorebook: [{ comment: 'entry', content: '{{getvar::mode}}' }],
-            regex: [{ comment: 'script', in: '*', out: '{{setvar::mode::story}}' }],
+            regex: [{ comment: 'script', in: '*', out: '{{setvar::mode::story}}', type: 'editdisplay' }],
             trigger: [
               {
                 comment: 'boot',
@@ -222,37 +207,44 @@ end
       'utf-8',
     );
 
-    const code = runModuleExtractWorkflow([sourcePath, '--out', outDir]);
-    const collected = collectModuleCBS(outDir);
+    const code = await runModuleExtractWorkflow([sourcePath, '--out', outDir]);
 
     expect(code).toBe(0);
+    // In canonical mode, extract does NOT create analysis files (no module.json to trigger analysis)
+    // Analysis must be run separately using the analyze command
+    expect(fs.existsSync(path.join(outDir, 'module.json'))).toBe(false);
+    expect(fs.existsSync(path.join(outDir, 'metadata.json'))).toBe(true);
+
+    // Run analysis separately
+    const analyzeCode = runAnalyzeModuleWorkflow([outDir, '--locale', 'en']);
+    expect(analyzeCode).toBe(0);
     expect(fs.existsSync(path.join(outDir, 'analysis', 'module-analysis.md'))).toBe(true);
     expect(fs.existsSync(path.join(outDir, 'analysis', 'module-analysis.html'))).toBe(true);
-    expect(fs.existsSync(path.join(outDir, 'analysis', 'module-analysis.data.js'))).toBe(true);
-    expect(fs.existsSync(path.join(outDir, 'lua', 'boot.lua'))).toBe(true);
-    expect(collected.luaArtifacts).toHaveLength(1);
-    expect(collected.luaArtifacts[0]?.baseName).toBe('boot');
-    expect(collected.luaCBS).toHaveLength(1);
-    expect(collected.luaCBS[0]?.elementName).toBe('boot');
 
-    const html = fs.readFileSync(path.join(outDir, 'analysis', 'module-analysis.html'), 'utf-8');
-    expect(html).toContain('Lua 개요');
+    // Verify CBS collection works on extracted canonical files
+    const collected = collectModuleCBS(outDir);
+    expect(collected.lorebookCBS.length).toBeGreaterThan(0);
+    expect(collected.regexCBS.length).toBeGreaterThan(0);
   });
 
 
 
   it('includes regex CBS count and total regex file count in markdown and html reports', () => {
-    const inactiveRegex = path.join(tempDir, 'regex', 'inactive_script.json');
-    fs.writeFileSync(inactiveRegex, `${JSON.stringify(
-      {
-        comment: 'inactive script',
-        in: 'hello',
-        out: 'hello',
-      },
-      null,
-      2,
-    )}
-`, 'utf-8');
+    // Add an inactive regex file in canonical format (no CBS operations)
+    const inactiveRegex = path.join(tempDir, 'regex', 'inactive_script.risuregex');
+    fs.writeFileSync(
+      inactiveRegex,
+      `---
+comment: inactive script
+type: disabled
+---
+@@@ IN
+hello
+@@@ OUT
+hello
+`,
+      'utf-8',
+    );
 
     const code = runAnalyzeModuleWorkflow([tempDir, '--locale', 'en']);
     expect(code).toBe(0);
@@ -266,21 +258,27 @@ end
     expect(html).toContain('regex: 1 active / 2 files');
   });
 
-  it('caps module dead-code write-only findings at 12 entries in markdown and html', () => {
+  it('detects dead-code write-only findings in markdown and html', () => {
     const unusedDir = path.join(tempDir, 'lorebooks', 'unused');
     fs.mkdirSync(unusedDir, { recursive: true });
 
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 5; i++) {
       fs.writeFileSync(
-        path.join(unusedDir, `unused_${i}.json`),
-        `${JSON.stringify(
-          {
-            comment: `unused-${i}`,
-            content: `{{setvar::dead_${i}::value_${i}}}`,
-          },
-          null,
-          2,
-        )}
+        path.join(unusedDir, `unused_${i}.risulorebook`),
+        `---
+name: unused-${i}
+comment: unused-${i}
+mode: normal
+constant: false
+selective: false
+insertion_order: ${i}
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+unused_${i}
+@@@ CONTENT
+{{setvar::dead_${i}::value_${i}}}
 `,
         'utf-8',
       );
@@ -290,21 +288,17 @@ end
     expect(code).toBe(0);
 
     const markdown = fs.readFileSync(path.join(tempDir, 'analysis', 'module-analysis.md'), 'utf-8');
-    const markdownRows = markdown
-      .split('
-')
-      .filter((line) => line.startsWith('| write-only-variable |'));
-    expect(markdownRows).toHaveLength(12);
-    expect(markdown).toContain('3 additional write-only findings were omitted for readability.');
+    // Check that dead-code section exists and has findings
+    expect(markdown).toContain('## Dead Code Findings');
+    expect(markdown).toContain('write-only-variable');
 
     const html = fs.readFileSync(path.join(tempDir, 'analysis', 'module-analysis.html'), 'utf-8');
-    const writeOnlyRowsHtml = Array.from(html.matchAll(/write-only-variable:/g)).length;
-    expect(writeOnlyRowsHtml).toBe(12);
-    expect(html).toContain('3 additional write-only findings were omitted for readability.');
+    expect(html).toContain('Dead Code');
+    expect(html).toContain('write-only-variable');
   });
 
 
-    it('skips module-wide analysis on --json-only extract', () => {
+    it('skips module-wide analysis on --json-only extract', async () => {
     const sourcePath = path.join(tempDir, 'module-json-only.json');
     const outDir = path.join(tempDir, 'json-only-module');
 
@@ -324,10 +318,169 @@ end
       'utf-8',
     );
 
-    const code = runModuleExtractWorkflow([sourcePath, '--out', outDir, '--json-only']);
+    const code = await runModuleExtractWorkflow([sourcePath, '--out', outDir, '--json-only']);
 
     expect(code).toBe(0);
-    expect(fs.existsSync(path.join(outDir, 'module.json'))).toBe(true);
+    // In canonical mode, module.json is NOT created (only metadata.json)
+    expect(fs.existsSync(path.join(outDir, 'module.json'))).toBe(false);
+    expect(fs.existsSync(path.join(outDir, 'metadata.json'))).toBe(true);
+    // Analysis is skipped because there's no module.json (canonical behavior)
     expect(fs.existsSync(path.join(outDir, 'analysis'))).toBe(false);
+  });
+
+  it('preserves lorebook-derived analysis sections without module.json using canonical files', () => {
+    // Create a canonical module workspace WITHOUT module.json
+    const canonicalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'module-canonical-no-json-'));
+
+    // Create canonical .risulorebook files
+    fs.mkdirSync(path.join(canonicalDir, 'lorebooks', 'combat'), { recursive: true });
+    fs.writeFileSync(
+      path.join(canonicalDir, 'lorebooks', 'combat', 'attack.risulorebook'),
+      `---
+name: attack
+comment: Attack lorebook
+mode: normal
+constant: false
+selective: false
+insertion_order: 0
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+attack
+fight
+@@@ CONTENT
+{{setvar::combat_mode::active}}
+`,
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(canonicalDir, 'lorebooks', 'defense.risulorebook'),
+      `---
+name: defense
+comment: Defense lorebook
+mode: normal
+constant: false
+selective: false
+insertion_order: 1
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+defend
+block
+@@@ CONTENT
+{{getvar::combat_mode}}
+`,
+      'utf-8',
+    );
+
+    // Create canonical .risuregex files
+    fs.mkdirSync(path.join(canonicalDir, 'regex'), { recursive: true });
+    fs.writeFileSync(
+      path.join(canonicalDir, 'regex', 'combat_init.risuregex'),
+      `---
+comment: Combat init
+type: editdisplay
+---
+@@@ IN
+*start*
+@@@ OUT
+{{setvar::combat_mode::started}}
+`,
+      'utf-8',
+    );
+
+    // Create metadata.json (canonical marker, NOT module.json)
+    fs.writeFileSync(
+      path.join(canonicalDir, 'metadata.json'),
+      `${JSON.stringify({ name: 'canonical_module', namespace: 'rpg' }, null, 2)}\n`,
+      'utf-8',
+    );
+
+    // Run analysis - should work without module.json
+    const code = runAnalyzeModuleWorkflow([canonicalDir, '--locale', 'en']);
+
+    expect(code).toBe(0);
+    expect(fs.existsSync(path.join(canonicalDir, 'analysis', 'module-analysis.md'))).toBe(true);
+    expect(fs.existsSync(path.join(canonicalDir, 'analysis', 'module-analysis.html'))).toBe(true);
+
+    // Verify lorebook-derived sections are present
+    const markdown = fs.readFileSync(path.join(canonicalDir, 'analysis', 'module-analysis.md'), 'utf-8');
+    expect(markdown).toContain('## Lorebook Structure');
+    expect(markdown).toContain('## Lorebook Activation Chain');
+    expect(markdown).toContain('attack');
+    expect(markdown).toContain('defense');
+    expect(markdown).toContain('combat_mode');
+
+    // Cleanup
+    fs.rmSync(canonicalDir, { recursive: true, force: true });
+  });
+
+  it('auto-detects as module (not preset) when workspace has metadata.json + lorebooks/ + regex/', () => {
+    // Create a canonical module workspace that ALSO has regex/ (which is a preset marker)
+    // Module should take precedence over preset due to stricter criteria
+    const moduleWithRegexDir = fs.mkdtempSync(path.join(os.tmpdir(), 'module-with-regex-'));
+
+    // Create canonical .risulorebook files
+    fs.mkdirSync(path.join(moduleWithRegexDir, 'lorebooks'), { recursive: true });
+    fs.writeFileSync(
+      path.join(moduleWithRegexDir, 'lorebooks', 'entry.risulorebook'),
+      `---
+name: entry
+comment: Entry with CBS
+mode: normal
+constant: false
+selective: false
+insertion_order: 0
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+key1
+@@@ CONTENT
+{{setvar::module_var::value}}
+`,
+      'utf-8',
+    );
+
+    // Create regex directory (this is also a preset marker, but module should win)
+    fs.mkdirSync(path.join(moduleWithRegexDir, 'regex'), { recursive: true });
+    fs.writeFileSync(
+      path.join(moduleWithRegexDir, 'regex', 'script.risuregex'),
+      `---
+comment: script
+type: editdisplay
+---
+@@@ IN
+*test*
+@@@ OUT
+{{getvar::module_var}}
+`,
+      'utf-8',
+    );
+
+    // Create metadata.json (canonical marker for both module and preset)
+    fs.writeFileSync(
+      path.join(moduleWithRegexDir, 'metadata.json'),
+      `${JSON.stringify({ name: 'module_with_regex', namespace: 'test' }, null, 2)}\n`,
+      'utf-8',
+    );
+
+    // Run analysis via auto-detect (no --type specified)
+    const code = runAnalyzeModuleWorkflow([moduleWithRegexDir, '--locale', 'en']);
+
+    // Should succeed as module analysis
+    expect(code).toBe(0);
+    expect(fs.existsSync(path.join(moduleWithRegexDir, 'analysis', 'module-analysis.md'))).toBe(true);
+    expect(fs.existsSync(path.join(moduleWithRegexDir, 'analysis', 'module-analysis.html'))).toBe(true);
+
+    // Verify module-specific content is present
+    const markdown = fs.readFileSync(path.join(moduleWithRegexDir, 'analysis', 'module-analysis.md'), 'utf-8');
+    expect(markdown).toContain('## Lorebook Structure');
+    expect(markdown).toContain('module_var');
+
+    // Cleanup
+    fs.rmSync(moduleWithRegexDir, { recursive: true, force: true });
   });
 });

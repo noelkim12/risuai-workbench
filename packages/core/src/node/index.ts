@@ -37,6 +37,14 @@ import {
   isDir,
 } from './json-listing';
 import { encodeModuleRisum, encodeRPack, loadRPackEncodeMap } from './rpack';
+import {
+  discoverCustomExtensionWorkspace,
+  listCanonicalFilesByArtifact,
+  type DiscoveredCanonicalFile,
+  type DiscoveredMarkerFile,
+  type DiscoveredStructuredJsonFile,
+  type CustomExtensionWorkspaceDiscovery,
+} from './custom-extension-file-discovery';
 
 const parsePngChunks = parsePngTextChunks;
 
@@ -78,4 +86,10 @@ export {
   writeJsonAsync,
   writeTextAsync,
   readFileAsync,
+  discoverCustomExtensionWorkspace,
+  listCanonicalFilesByArtifact,
+  type DiscoveredCanonicalFile,
+  type DiscoveredMarkerFile,
+  type DiscoveredStructuredJsonFile,
+  type CustomExtensionWorkspaceDiscovery,
 };

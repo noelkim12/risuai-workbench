@@ -163,16 +163,21 @@ export function buildRelationshipNetworkPanel(
     const color = LORE_NODE_COLORS[mode] ?? '#60a5fa';
     const scopedId = entry.id || entry.name;
     const nodeId = `lb:${scopedId}`;
-    const folderPath = entry.folder || '(root)';
-    const groupId = registerFolderGroup(folderPath);
+    const folderPath = entry.folder || null;
+    const hasFolderGroup = typeof folderPath === 'string' && folderPath.length > 0;
+    const groupId = hasFolderGroup ? registerFolderGroup(folderPath) : undefined;
     nodes.push({
       id: nodeId,
       label: entry.name,
       type: mode,
       color,
-      groupId,
-      groupKind: 'lorebook-folder',
-      groupLabel: folderPath,
+      ...(groupId && hasFolderGroup
+        ? {
+            groupId,
+            groupKind: 'lorebook-folder' as const,
+            groupLabel: folderPath,
+          }
+        : {}),
       layoutBand: 'lorebook',
       layoutRank: layoutRankCounter++,
       details: {

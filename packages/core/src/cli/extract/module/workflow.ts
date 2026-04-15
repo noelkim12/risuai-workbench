@@ -1,16 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { runAnalyzeModuleWorkflow } from '@/cli/analyze/module/workflow';
-import { ensureDir, writeJson } from '@/node/fs-helpers';
+import { ensureDir } from '@/node/fs-helpers';
 import {
   phase1_parseModule,
   phase2_extractLorebooks,
   phase3_extractRegex,
-  phase4_extractTriggerLua,
+  phase4_extractLua,
   phase5_extractAssetsAsync,
   phase6_extractBackgroundEmbedding,
-  phase7_extractModuleIdentity,
-  phase8_extractModuleToggle,
+  phase7_extractVariables,
+  phase8_extractModuleIdentity,
+  phase9_extractModuleToggle,
 } from './phases';
 
 const HELP_TEXT = `
@@ -20,23 +21,22 @@ const HELP_TEXT = `
 
   Options:
     --out <dir>     출력 디렉토리 (기본: ./module_<name>)
-    --json-only     Phase 1만 실행 (module.json만 출력)
     -h, --help      도움말
 
   Phases:
-    1. 모듈 파싱 (.risum/.json) → module.json
-    2. lorebook 추출 → lorebooks/ + lorebooks/manifest.json + lorebooks/_order.json
-    3. regex 추출 → regex/ + regex/_order.json
-    4. triggerlua 스크립트 추출 → lua/
+    1. 모듈 파싱 (.risum/.json)
+    2. lorebook 추출 → lorebooks/*.risulorebook + lorebooks/_order.json + lorebooks/_folders.json
+    3. regex 추출 → regex/*.risuregex + regex/_order.json
+    4. triggerscript 추출 → lua/*.risulua
     5. 에셋 추출 (risum only) → assets/ + assets/manifest.json
-    6. backgroundEmbedding 추출 → html/background.html
-    7. 모듈 identity 추출 → metadata.json
-    8. module toggle 추출 → toggle/<moduleName>.risutoggle
+    6. backgroundEmbedding 추출 → html/background.risuhtml
+    7. module variables 추출 → variables/<moduleName>.risuvar
+    8. 모듈 identity 추출 → metadata.json
+    9. module toggle 추출 → toggle/<moduleName>.risutoggle
 
   Examples:
     risu-core extract my_module.risum
     risu-core extract my_module.json --out ./extracted
-    risu-core extract my_module.risum --json-only
 `;
 
 export function isModuleFile(filePath: string): boolean {
@@ -45,12 +45,11 @@ export function isModuleFile(filePath: string): boolean {
 
 export async function runExtractWorkflow(argv: readonly string[]): Promise<number> {
   const helpMode = argv.includes('-h') || argv.includes('--help') || argv.length === 0;
-  const jsonOnly = argv.includes('--json-only');
   const outIdx = argv.indexOf('--out');
   const outArg = outIdx >= 0 ? argv[outIdx + 1] : null;
   const filePath = argv.find(
     (value) =>
-      !value.startsWith('-') && value !== outArg && value !== '--out' && value !== '--json-only',
+      !value.startsWith('-') && value !== outArg && value !== '--out',
   );
 
   if (helpMode || !filePath) {
@@ -64,7 +63,7 @@ export async function runExtractWorkflow(argv: readonly string[]): Promise<numbe
   }
 
   try {
-    await runMain(filePath, outArg, jsonOnly);
+    await runMain(filePath, outArg);
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -77,7 +76,7 @@ function fmt(ms: number): string {
   return ms < 1000 ? `${ms.toFixed(0)}ms` : `${(ms / 1000).toFixed(2)}s`;
 }
 
-async function runMain(filePath: string, outArg: string | null, jsonOnly: boolean): Promise<void> {
+async function runMain(filePath: string, outArg: string | null): Promise<void> {
   const t0 = performance.now();
   console.log('\n  RisuAI Module Extractor\n');
 
@@ -90,15 +89,7 @@ async function runMain(filePath: string, outArg: string | null, jsonOnly: boolea
   const resolvedOutDir = path.resolve(outArg || defaultOutDir);
   ensureDir(resolvedOutDir);
 
-  const moduleJsonPath = path.join(resolvedOutDir, 'module.json');
-  writeJson(moduleJsonPath, parsed.module);
-  console.log(`\n     module.json -> ${path.relative('.', moduleJsonPath)}`);
   console.log(`     ⏱  Phase 1: ${fmt(performance.now() - t)}`);
-
-  if (jsonOnly) {
-    console.log('\n  완료 (--json-only)\n');
-    return;
-  }
 
   t = performance.now();
   phase2_extractLorebooks(parsed.module, resolvedOutDir);
@@ -109,7 +100,7 @@ async function runMain(filePath: string, outArg: string | null, jsonOnly: boolea
   console.log(`     ⏱  Phase 3: ${fmt(performance.now() - t)}`);
 
   t = performance.now();
-  phase4_extractTriggerLua(parsed.module, resolvedOutDir);
+  phase4_extractLua(parsed.module, resolvedOutDir);
   console.log(`     ⏱  Phase 4: ${fmt(performance.now() - t)}`);
 
   t = performance.now();
@@ -123,9 +114,10 @@ async function runMain(filePath: string, outArg: string | null, jsonOnly: boolea
 
   t = performance.now();
   phase6_extractBackgroundEmbedding(parsed.module, resolvedOutDir);
-  phase7_extractModuleIdentity(parsed.module, resolvedOutDir);
-  phase8_extractModuleToggle(parsed.module, resolvedOutDir);
-  console.log(`     ⏱  Phase 6-8: ${fmt(performance.now() - t)}`);
+  phase7_extractVariables(parsed.module, resolvedOutDir);
+  phase8_extractModuleIdentity(parsed.module, resolvedOutDir);
+  phase9_extractModuleToggle(parsed.module, resolvedOutDir);
+  console.log(`     ⏱  Phase 6-9: ${fmt(performance.now() - t)}`);
 
   t = performance.now();
   runModuleAnalysis(resolvedOutDir);
@@ -147,6 +139,11 @@ function sanitizeOutputName(name: string): string {
 }
 
 function runModuleAnalysis(resolvedOutDir: string): void {
+  if (!fs.existsSync(path.join(resolvedOutDir, 'module.json'))) {
+    console.log('  ⏭  canonical module extract에서는 module 분석을 건너뜁니다.');
+    return;
+  }
+
   console.log('\n  ═══ Phase 9: Module Analysis ═══');
   const code = runAnalyzeModuleWorkflow([resolvedOutDir]);
   if (code !== 0) {

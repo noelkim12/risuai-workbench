@@ -7,14 +7,21 @@ import {
   phase1_parseModule,
   phase2_extractLorebooks,
   phase3_extractRegex,
-  phase4_extractTriggerLua,
+  phase4_extractLua,
   phase5_extractAssets,
   phase6_extractBackgroundEmbedding,
-  phase7_extractModuleIdentity,
-  phase8_extractModuleToggle,
-} from '@/cli/extract/module/phases';
-import { isModuleFile } from '@/cli/extract/module/workflow';
-import { isModuleJson } from '@/cli/extract/parsers';
+  phase7_extractVariables,
+  phase8_extractModuleIdentity,
+  phase9_extractModuleToggle,
+} from '../src/cli/extract/module/phases';
+import {
+  isModuleFile,
+  runExtractWorkflow as runModuleExtractWorkflow,
+} from '../src/cli/extract/module/workflow';
+import { isModuleJson } from '../src/cli/extract/parsers';
+import { parseLorebookContent } from '../src/domain/custom-extension/extensions/lorebook';
+import { parseRegexContent } from '../src/domain/custom-extension/extensions/regex';
+import { parseVariableContent } from '../src/domain/custom-extension/extensions/variable';
 
 describe('module extract', () => {
   let tmpDir: string;
@@ -54,90 +61,108 @@ describe('module extract', () => {
     expect(() => phase1_parseModule(filePath)).toThrowError();
   });
 
-  it('phase2_extractLorebooks writes lorebook files and indexes', () => {
+  it('phase2_extractLorebooks writes canonical .risulorebook files and order markers', () => {
     const module = {
       lorebook: [
         {
-          name: 'entry1',
-          keys: ['key1'],
+          key: 'key1, key2',
+          secondkey: 'secondary',
           content: 'content1',
           comment: 'Entry 1',
+          mode: 'normal',
+          alwaysActive: true,
+          selective: false,
+          insertorder: 10,
+          useRegex: false,
         },
       ],
     };
 
     const count = phase2_extractLorebooks(module, tmpDir);
     const lorebooksDir = path.join(tmpDir, 'lorebooks');
+    const canonicalPath = path.join(lorebooksDir, 'Entry_1.risulorebook');
 
-    expect(count).toBeGreaterThanOrEqual(1);
-    expect(fs.existsSync(lorebooksDir)).toBe(true);
-
-    const files = fs.readdirSync(lorebooksDir);
-    const dataJsonFiles = files.filter(
-      (filename) =>
-        filename.endsWith('.json') && filename !== '_order.json' && filename !== 'manifest.json',
-    );
-
-    expect(dataJsonFiles.length).toBeGreaterThanOrEqual(1);
+    expect(count).toBe(1);
+    expect(fs.existsSync(canonicalPath)).toBe(true);
     expect(fs.existsSync(path.join(lorebooksDir, '_order.json'))).toBe(true);
-    expect(fs.existsSync(path.join(lorebooksDir, 'manifest.json'))).toBe(true);
+    expect(fs.existsSync(path.join(lorebooksDir, 'manifest.json'))).toBe(false);
+
+    const parsed = parseLorebookContent(fs.readFileSync(canonicalPath, 'utf-8'));
+    expect(parsed.comment).toBe('Entry 1');
+    expect(parsed.keys).toEqual(['key1', 'key2']);
+    expect(parsed.secondary_keys).toEqual(['secondary']);
+    expect(parsed.content).toBe('content1');
   });
 
-  it('phase3_extractRegex writes regex files and order index', () => {
+  it('phase2_extractLorebooks accepts stringified module lorebook bookVersion values from .risum payloads', () => {
+    const module = {
+      lorebook: [
+        {
+          key: 'key1',
+          content: 'content1',
+          comment: 'Entry 1',
+          mode: 'normal',
+          alwaysActive: false,
+          selective: false,
+          insertorder: 10,
+          useRegex: false,
+          bookVersion: '2',
+        },
+      ],
+    };
+
+    const count = phase2_extractLorebooks(module, tmpDir);
+    const canonicalPath = path.join(tmpDir, 'lorebooks', 'Entry_1.risulorebook');
+
+    expect(count).toBe(1);
+    expect(parseLorebookContent(fs.readFileSync(canonicalPath, 'utf-8')).book_version).toBe(2);
+  });
+
+  it('phase3_extractRegex writes canonical .risuregex files and order index', () => {
     const module = {
       regex: [
         {
           comment: 'test_regex',
           type: 'editdisplay',
-          findRegex: 'foo',
-          replaceString: 'bar',
+          in: 'foo',
+          out: 'bar',
         },
       ],
     };
 
     const count = phase3_extractRegex(module, tmpDir);
     const regexDir = path.join(tmpDir, 'regex');
+    const canonicalPath = path.join(regexDir, 'test_regex.risuregex');
 
     expect(count).toBe(1);
-    expect(fs.existsSync(regexDir)).toBe(true);
-
-    const files = fs.readdirSync(regexDir);
-    const dataJsonFiles = files.filter(
-      (filename) => filename.endsWith('.json') && filename !== '_order.json',
-    );
-
-    expect(dataJsonFiles.length).toBeGreaterThanOrEqual(1);
+    expect(fs.existsSync(canonicalPath)).toBe(true);
     expect(fs.existsSync(path.join(regexDir, '_order.json'))).toBe(true);
+    expect(
+      fs
+        .readdirSync(regexDir)
+        .filter((filename) => filename.endsWith('.json') && filename !== '_order.json'),
+    ).toEqual([]);
+
+    expect(parseRegexContent(fs.readFileSync(canonicalPath, 'utf-8'))).toEqual({
+      comment: 'test_regex',
+      type: 'editdisplay',
+      in: 'foo',
+      out: 'bar',
+    });
   });
 
-  it('phase4_extractTriggerLua writes lua scripts from triggerlua effects', () => {
+  it('phase4_extractLua writes one canonical .risulua file from module triggerscript', () => {
     const module = {
-      trigger: [
-        {
-          comment: 'test_trigger',
-          type: 'start',
-          effect: [
-            {
-              type: 'triggerlua',
-              code: 'print("hello")',
-            },
-          ],
-        },
-      ],
+      name: 'test module',
+      triggerscript: 'function onStart()\n  print("hello")\nend',
     };
 
-    const count = phase4_extractTriggerLua(module, tmpDir);
-    const luaDir = path.join(tmpDir, 'lua');
+    const count = phase4_extractLua(module, tmpDir);
+    const luaPath = path.join(tmpDir, 'lua', 'test_module.risulua');
 
     expect(count).toBe(1);
-    expect(fs.existsSync(luaDir)).toBe(true);
-
-    const luaFiles = fs.readdirSync(luaDir).filter((filename) => filename.endsWith('.lua'));
-    expect(luaFiles.length).toBe(1);
-
-    const luaContent = fs.readFileSync(path.join(luaDir, luaFiles[0]), 'utf-8');
-    expect(luaContent).toContain('-- Extracted from module trigger: test_trigger');
-    expect(luaContent).toContain('print("hello")');
+    expect(fs.existsSync(luaPath)).toBe(true);
+    expect(fs.readFileSync(luaPath, 'utf-8')).toBe(module.triggerscript);
   });
 
   it('phase5_extractAssets skips extraction for JSON source format', () => {
@@ -151,13 +176,13 @@ describe('module extract', () => {
     expect(fs.existsSync(path.join(tmpDir, 'assets'))).toBe(false);
   });
 
-  it('phase6_extractBackgroundEmbedding writes html file when embedding exists', () => {
+  it('phase6_extractBackgroundEmbedding writes canonical .risuhtml file when embedding exists', () => {
     const module = {
       backgroundEmbedding: '<div>test</div>',
     };
 
     const count = phase6_extractBackgroundEmbedding(module, tmpDir);
-    const backgroundPath = path.join(tmpDir, 'html', 'background.html');
+    const backgroundPath = path.join(tmpDir, 'html', 'background.risuhtml');
 
     expect(count).toBe(1);
     expect(fs.existsSync(backgroundPath)).toBe(true);
@@ -175,7 +200,27 @@ describe('module extract', () => {
     expect(fs.existsSync(path.join(tmpDir, 'html'))).toBe(false);
   });
 
-  it('phase7_extractModuleIdentity writes metadata fields', () => {
+  it('phase7_extractVariables writes canonical .risuvar content for module default variables', () => {
+    const module = {
+      name: 'module-name',
+      defaultVariables: {
+        hp: '100',
+        ct_generatedHTML: ' ',
+      },
+    };
+
+    const count = phase7_extractVariables(module, tmpDir);
+    const variablePath = path.join(tmpDir, 'variables', 'module-name.risuvar');
+
+    expect(count).toBe(1);
+    expect(fs.existsSync(variablePath)).toBe(true);
+    expect(parseVariableContent(fs.readFileSync(variablePath, 'utf-8'))).toEqual({
+      hp: '100',
+      ct_generatedHTML: ' ',
+    });
+  });
+
+  it('phase8_extractModuleIdentity writes metadata fields without duplicating customModuleToggle', () => {
     const module = {
       name: 'module-name',
       description: 'module-description',
@@ -186,9 +231,10 @@ describe('module extract', () => {
       mcp: {
         server: 'mcp-server',
       },
+      customModuleToggle: '<toggle>legacy</toggle>',
     };
 
-    const count = phase7_extractModuleIdentity(module, tmpDir);
+    const count = phase8_extractModuleIdentity(module, tmpDir);
     const metadataPath = path.join(tmpDir, 'metadata.json');
 
     expect(count).toBe(1);
@@ -206,20 +252,80 @@ describe('module extract', () => {
         server: 'mcp-server',
       },
     });
+    expect(metadata).not.toHaveProperty('customModuleToggle');
   });
 
-  it('phase8_extractModuleToggle writes module toggle artifact when present', () => {
+  it('phase9_extractModuleToggle writes module toggle artifact when present', () => {
     const module = {
       name: 'module-toggle-name',
       customModuleToggle: '<toggle condition="1 == 1"/>',
     };
 
-    const count = phase8_extractModuleToggle(module, tmpDir);
+    const count = phase9_extractModuleToggle(module, tmpDir);
     const togglePath = path.join(tmpDir, 'toggle', 'module-toggle-name.risutoggle');
 
     expect(count).toBe(1);
     expect(fs.existsSync(togglePath)).toBe(true);
     expect(fs.readFileSync(togglePath, 'utf-8')).toBe('<toggle condition="1 == 1"/>');
+  });
+
+  it('runExtractWorkflow emits canonical artifacts and omits module.json', async () => {
+    const filePath = path.join(tmpDir, 'source-module.json');
+    const outDir = path.join(tmpDir, 'out');
+    const payload = {
+      type: 'risuModule',
+      module: {
+        name: 'workflow-module',
+        description: 'workflow-description',
+        id: 'workflow-id',
+        lorebook: [
+          {
+            key: 'alpha',
+            secondkey: '',
+            content: 'Lore content',
+            comment: 'Lore Entry',
+            mode: 'normal',
+            alwaysActive: false,
+            selective: false,
+            insertorder: 1,
+            useRegex: false,
+          },
+        ],
+        regex: [
+          {
+            comment: 'workflow-regex',
+            type: 'editdisplay',
+            in: 'in',
+            out: 'out',
+          },
+        ],
+        triggerscript: 'function init()\n  return true\nend',
+        defaultVariables: {
+          score: '10',
+        },
+        backgroundEmbedding: '<div>workflow</div>',
+        customModuleToggle: '<toggle>workflow</toggle>',
+      },
+    };
+    fs.writeFileSync(filePath, JSON.stringify(payload), 'utf-8');
+
+    const exitCode = await runModuleExtractWorkflow([filePath, '--out', outDir]);
+
+    expect(exitCode).toBe(0);
+    expect(fs.existsSync(path.join(outDir, 'module.json'))).toBe(false);
+    expect(fs.existsSync(path.join(outDir, 'metadata.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'lorebooks', 'Lore_Entry.risulorebook'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'regex', 'workflow-regex.risuregex'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'lua', 'workflow-module.risulua'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'variables', 'workflow-module.risuvar'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'html', 'background.risuhtml'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'toggle', 'workflow-module.risutoggle'))).toBe(true);
+
+    const metadata = JSON.parse(fs.readFileSync(path.join(outDir, 'metadata.json'), 'utf-8')) as Record<
+      string,
+      unknown
+    >;
+    expect(metadata).not.toHaveProperty('customModuleToggle');
   });
 
   it('isModuleFile only accepts .risum extension', () => {

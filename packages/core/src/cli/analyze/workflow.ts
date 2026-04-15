@@ -8,6 +8,44 @@ import { runAnalyzePresetWorkflow } from './preset/workflow';
 
 const KNOWN_TYPES = ['lua', 'charx', 'module', 'preset', 'compose'] as const;
 
+/** Detect workspace type based on canonical markers instead of root JSON files. */
+function detectWorkspaceType(targetDir: string): 'charx' | 'module' | 'preset' | null {
+  // Check for module FIRST: metadata.json + lorebooks/ directory
+  // Module has stricter criteria and takes precedence over preset
+  if (
+    fs.existsSync(path.join(targetDir, 'metadata.json')) &&
+    fs.existsSync(path.join(targetDir, 'lorebooks'))
+  ) {
+    return 'module';
+  }
+
+  // Check for preset: metadata.json + at least one preset-bearing directory
+  // Valid preset markers: prompts/, prompt_template/, regex/, model.json, parameters.json
+  if (fs.existsSync(path.join(targetDir, 'metadata.json'))) {
+    const hasPresetMarkers =
+      fs.existsSync(path.join(targetDir, 'prompts')) ||
+      fs.existsSync(path.join(targetDir, 'prompt_template')) ||
+      fs.existsSync(path.join(targetDir, 'regex')) ||
+      fs.existsSync(path.join(targetDir, 'model.json')) ||
+      fs.existsSync(path.join(targetDir, 'parameters.json')) ||
+      fs.existsSync(path.join(targetDir, 'instruct_settings.json'));
+    if (hasPresetMarkers) {
+      return 'preset';
+    }
+  }
+
+  // Check for charx: character/ directory + lorebooks/ directory
+  if (
+    fs.existsSync(path.join(targetDir, 'character')) &&
+    fs.existsSync(path.join(targetDir, 'lorebooks'))
+  ) {
+    return 'charx';
+  }
+
+  // Root JSON fallback removed - canonical workspace detection only
+  return null;
+}
+
 const HELP_TEXT = `
   🐿️ risu-core analyze
 
@@ -15,15 +53,15 @@ const HELP_TEXT = `
 
   Types:
     lua           Lua 스크립트 정적 분석 (default for .lua files)
-    charx         캐릭터 카드 종합 분석 (default for directories with charx.json)
-    module        모듈 종합 분석 (default for directories with module.json)
-    preset        프리셋 종합 분석 (default for directories with preset.json)
+    charx         캐릭터 카드 종합 분석 (default for directories with canonical charx markers)
+    module        모듈 종합 분석 (default for directories with canonical module markers)
+    preset        프리셋 종합 분석 (default for directories with canonical preset markers)
     compose       아티팩트 조합 충돌 분석 (explicit only)
 
-  Auto-detection:
-    .lua file       → lua
-    directory       → module (module.json) / preset (preset.json) / charx (charx.json)
-    compose         → auto-detect 없음, --type compose로 명시
+  Auto-detection (canonical workspaces):
+    .lua/.risulua file → lua
+    directory          → detected by canonical markers (character/, lorebooks/, prompts/, metadata.json)
+    compose            → auto-detect 없음, --type compose로 명시
 
   Run 'risu-core analyze --type <type> --help' for type-specific help.
 `;
@@ -76,21 +114,29 @@ export function runAnalyzeWorkflow(argv: readonly string[]): number {
   );
 
   if (target) {
-    if (target.endsWith('.lua')) {
+    if (target.toLowerCase().endsWith('.lua') || target.toLowerCase().endsWith('.risulua')) {
       return runLuaAnalyze(argv);
     }
 
     try {
       const stat = fs.statSync(target);
       if (stat.isDirectory()) {
-        if (fs.existsSync(path.join(target, 'module.json'))) {
-          return runAnalyzeModuleWorkflow(argv);
-        }
-        if (fs.existsSync(path.join(target, 'preset.json'))) {
-          return runAnalyzePresetWorkflow(argv);
-        }
-        if (fs.existsSync(path.join(target, 'charx.json'))) {
-          return runCharxAnalyze(argv);
+        const detectedType = detectWorkspaceType(target);
+        switch (detectedType) {
+          case 'module':
+            return runAnalyzeModuleWorkflow(argv);
+          case 'preset':
+            return runAnalyzePresetWorkflow(argv);
+          case 'charx':
+            return runCharxAnalyze(argv);
+          default:
+            // No recognizable workspace markers found
+            console.error(`\n  ❌ Cannot detect workspace type for: ${target}`);
+            console.error(`  Expected canonical markers:`);
+            console.error(`    - Preset: metadata.json + prompts/ | prompt_template/ | regex/`);
+            console.error(`    - Module: metadata.json + lorebooks/`);
+            console.error(`    - Charx:  character/ + lorebooks/\n`);
+            return 1;
         }
       }
     } catch {

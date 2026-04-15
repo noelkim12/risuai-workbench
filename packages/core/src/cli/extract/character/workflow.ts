@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ensureDir, writeJson } from '@/node/fs-helpers';
+import { ensureDir } from '@/node/fs-helpers';
 import { runAnalyzeWorkflow } from '@/cli/analyze/lua/workflow';
 import { runAnalyzeCharxWorkflow } from '@/cli/analyze/charx/workflow';
 import { getCharacterName } from '@/domain/charx/data';
@@ -23,31 +23,36 @@ type ParsedCharxResult = {
 };
 
 const HELP_TEXT = `
-  🐿️ RisuAI Character Card Extractor
+  🐿️ RisuAI Character Card Extractor (canonical mode)
 
   Usage:  node extract.js <file.charx|file.png> [options]
 
   Options:
     --out <dir>     출력 디렉토리 (기본: ./character_<name>)
-    --json-only     Phase 1만 실행 (charx.json만 출력)
+    --json-only     (deprecated) Phase 1만 실행
     -h, --help      도움말
 
-  Phases:
-    1. 캐릭터 카드 파싱 → charx.json
-    2. globalLore 추출 → lorebooks/ + lorebooks/manifest.json
-    3. customscript(regex) 추출 → regex/
-    4. triggerlua 스크립트 추출 → lua/
+  Phases (canonical mode — no charx.json):
+    1. 캐릭터 카드 파싱 (internal)
+    2. lorebook 추출 → lorebooks/*.risulorebook + _order.json + _folders.json
+    3. regex 추출 → regex/*.risuregex + _order.json
+    4. triggerscript 추출 → lua/triggerscript.risulua
     5. 에셋 바이너리 추출 → assets/ + assets/manifest.json
-    6. backgroundHTML 추출 → html/background.html
-    7. defaultVariables 추출 → variables/default.txt + default.json
-    8. Character Card 추출 → character/ (identity, messages, prompting, metadata, extensions)
-    9. Lua 분석 (analyze.js)
-    10. 카드 종합 분석 (analyze-charx.js) → analysis/
+    6. backgroundHTML 추출 → html/background.risuhtml
+    7. defaultVariables 추출 → variables/default.risuvar
+    8. Character Card 추출 → character/*.txt + metadata.json + alternate_greetings.json
+    9. Lua 분석 (analyze.js) — deferred to T13
+    10. 카드 종합 분석 (analyze-charx.js) → analysis/ — deferred to T13
+
+  Notes:
+    - charx.json is NOT emitted in canonical mode
+    - All data is stored as canonical .risu* artifacts
+    - .risutoggle is NOT supported for charx (module/preset only)
+    - Charx analysis (Phase 10) is temporarily disabled pending T13 migration
 
   Examples:
     node extract.js mychar.charx
     node extract.js mychar.png --out ./other-dir
-    node extract.js mychar.charx --json-only
 `;
 
 export async function runExtractWorkflow(argv: readonly string[]): Promise<number> {
@@ -86,7 +91,7 @@ function fmt(ms: number): string {
 
 async function runMain(filePath: string, outArg: string | null, jsonOnly: boolean): Promise<void> {
   const t0 = performance.now();
-  console.log('\n  🐿️ RisuAI Character Card Extractor\n');
+  console.log('\n  🐿️ RisuAI Character Card Extractor (canonical)\n');
 
   let t = performance.now();
   const { charx, assetSources, mainImage }: ParsedCharxResult = await phase1_parseCharxAsync(filePath);
@@ -97,13 +102,14 @@ async function runMain(filePath: string, outArg: string | null, jsonOnly: boolea
   const defaultOutDir = `character_${safeName}`;
   const resolvedOutDir = path.resolve(outArg || defaultOutDir);
   ensureDir(resolvedOutDir);
-  const charxJsonPath = path.join(resolvedOutDir, 'charx.json');
-  writeJson(charxJsonPath, charx);
-  console.log(`\n     ✅ charx.json → ${path.relative('.', charxJsonPath)}`);
+
+  // Note: charx.json is NOT written in canonical mode
+  // All data is emitted as canonical .risu* artifacts only
+  console.log(`\n     ✅ Canonical extract mode — no charx.json`);
   console.log(`     ⏱  Phase 1: ${fmt(performance.now() - t)}`);
 
   if (jsonOnly) {
-    console.log('\n  완료 (--json-only)\n');
+    console.log('\n  ⚠️  --json-only is deprecated in canonical mode\n');
     return;
   }
 
@@ -129,13 +135,10 @@ async function runMain(filePath: string, outArg: string | null, jsonOnly: boolea
   phase8_extractCharacterFields(charx, resolvedOutDir);
   console.log(`     ⏱  Phase 6-8: ${fmt(performance.now() - t)}`);
 
-  t = performance.now();
-  runLuaAnalysis(resolvedOutDir, charxJsonPath);
-  console.log(`     ⏱  Phase 9 (lua analysis): ${fmt(performance.now() - t)}`);
-
-  t = performance.now();
-  runCharxAnalysis(resolvedOutDir, charxJsonPath);
-  console.log(`     ⏱  Phase 10 (charx analysis): ${fmt(performance.now() - t)}`);
+  // Analysis phases deferred to T13 (canonical workspace migration)
+  // Phase 9 (Lua analysis) and Phase 10 (charx analysis) are temporarily disabled
+  // because they depend on charx.json which is intentionally excluded in T12
+  console.log(`     ⏱  Phase 9-10 (analysis): deferred to T13`);
 
   const total = performance.now() - t0;
   console.log('\n  ────────────────────────────────────────');
@@ -144,30 +147,35 @@ async function runMain(filePath: string, outArg: string | null, jsonOnly: boolea
   console.log('  ────────────────────────────────────────\n');
 }
 
-function runLuaAnalysis(resolvedOutDir: string, charxJsonPath: string): void {
+function runLuaAnalysis(resolvedOutDir: string): void {
   const luaDir = path.join(resolvedOutDir, 'lua');
   if (!fs.existsSync(luaDir)) return;
 
-  const luaFiles = fs.readdirSync(luaDir).filter((file) => file.endsWith('.lua'));
+  // Look for canonical .risulua files
+  const luaFiles = fs.readdirSync(luaDir).filter((file) => file.endsWith('.risulua'));
   if (luaFiles.length === 0) return;
 
   console.log('\n  ═══ Phase 9: Lua Analysis ═══');
 
   for (const luaFile of luaFiles) {
     const luaPath = path.join(luaDir, luaFile);
-    const code = runAnalyzeWorkflow([luaPath, '--charx', charxJsonPath, '--json']);
+    // Note: --charx flag removed since charx.json no longer exists in canonical mode
+    const code = runAnalyzeWorkflow([luaPath, '--json']);
     if (code !== 0) {
       console.error(`  ⚠️ analyze.js 실행 실패: ${luaFile} — exit code ${code}`);
     }
   }
 }
 
-function runCharxAnalysis(resolvedOutDir: string, charxJsonPath: string): void {
-  if (!fs.existsSync(charxJsonPath)) return;
-
-  console.log('\n  ═══ Phase 10: Card Analysis ═══');
-  const code = runAnalyzeCharxWorkflow([resolvedOutDir]);
-  if (code !== 0) {
-    console.error(`  ⚠️ analyze-charx.js 실행 실패: exit code ${code}`);
-  }
+function runCharxAnalysis(resolvedOutDir: string): void {
+  // TEMPORARILY DISABLED - T13 migration required
+  // Charx analysis depends on charx.json which is intentionally excluded in T12 canonical mode.
+  // This functionality will be restored in T13 when analyze/compose/CLI detection migrates
+  // to work with canonical .risu* artifacts instead of charx.json.
+  //
+  // console.log('\n  ═══ Phase 10: Card Analysis ═══');
+  // const code = runAnalyzeCharxWorkflow([resolvedOutDir]);
+  // if (code !== 0) {
+  //   console.error(`  ⚠️ analyze-charx.js 실행 실패: exit code ${code}`);
+  // }
 }

@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import {
   ELEMENT_TYPES,
@@ -7,7 +8,9 @@ import {
   type GenericRecord,
 } from '@/domain';
 import type { LuaAnalysisArtifact } from '@/domain/analyze/lua-core';
-import { dirExists, readJsonIfExists } from '@/node/fs-helpers';
+import { parseLorebookContent } from '@/domain/custom-extension/extensions/lorebook';
+import { parseRegexContent } from '@/domain/custom-extension/extensions/regex';
+import { dirExists, readJsonIfExists, readTextIfExists } from '@/node/fs-helpers';
 import { listJsonFilesRecursive, resolveOrderedFiles } from '@/node/json-listing';
 import { collectHTMLCBS, importLuaAnalysis, loadLuaArtifacts } from '../charx/collectors';
 import type { ModuleCollectResult } from './types';
@@ -36,6 +39,19 @@ function collectModuleLorebookCBS(outputDir: string): ElementCBSData[] {
   const lorebooksDir = path.join(outputDir, 'lorebooks');
   if (!dirExists(lorebooksDir)) return [];
 
+  // First, try canonical .risulorebook files
+  const risuFiles = listRisuFilesRecursive(lorebooksDir, '.risulorebook');
+  if (risuFiles.length > 0) {
+    const files = resolveOrderedFiles(lorebooksDir, risuFiles);
+    const results: ElementCBSData[] = [];
+    for (const filePath of files) {
+      const relPosix = toPosix(path.relative(lorebooksDir, filePath));
+      results.push(...collectLorebookRisuFile(filePath, relPosix));
+    }
+    return results;
+  }
+
+  // Fallback to legacy manifest.json + JSON files approach
   const manifest = readJsonIfExists(path.join(lorebooksDir, 'manifest.json'));
   const files = listJsonFilesRecursive(lorebooksDir);
   const fileMap = new Map<string, string>();
@@ -102,6 +118,42 @@ function collectModuleRegexCBS(outputDir: string): { regexCBS: ElementCBSData[];
   const regexDir = path.join(outputDir, 'regex');
   if (!dirExists(regexDir)) return { regexCBS: [], regexScriptTotal: 0 };
 
+  // First, try canonical .risuregex files
+  const risuFiles = listRisuFilesRecursive(regexDir, '.risuregex');
+  if (risuFiles.length > 0) {
+    const files = resolveOrderedFiles(regexDir, risuFiles);
+    const results: ElementCBSData[] = [];
+    for (const [index, filePath] of files.entries()) {
+      const content = readTextIfExists(filePath);
+      if (!content) continue;
+
+      try {
+        const parsed = parseRegexContent(content);
+        const inOps = extractCBSVarOps(parsed.in);
+        const outOps = extractCBSVarOps(parsed.out);
+        const flagOps = extractCBSVarOps(typeof parsed.flag === 'string' ? parsed.flag : '');
+
+        const reads = new Set<string>([...inOps.reads, ...outOps.reads, ...flagOps.reads]);
+        const writes = new Set<string>([...inOps.writes, ...outOps.writes, ...flagOps.writes]);
+
+        if (reads.size === 0 && writes.size === 0) continue;
+
+        const baseName = path.basename(filePath, '.risuregex');
+        results.push({
+          elementType: ELEMENT_TYPES.REGEX,
+          elementName: `[module]/${baseName}`,
+          reads,
+          writes,
+          executionOrder: files.length - index,
+        });
+      } catch {
+        // Ignore parse errors
+      }
+    }
+    return { regexCBS: results, regexScriptTotal: files.length };
+  }
+
+  // Fallback to legacy JSON files
   const files = resolveOrderedFiles(regexDir, listJsonFilesRecursive(regexDir));
   const regexScriptTotal = files.length;
   const results: ElementCBSData[] = [];
@@ -169,4 +221,47 @@ function isManifestWithEntries(value: unknown): value is { entries: unknown[] } 
 
 function isRecord(value: unknown): value is GenericRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** List all files with a specific extension recursively. */
+function listRisuFilesRecursive(rootDir: string, extension: string): string[] {
+  const results: string[] = [];
+  const entries = fs.readdirSync(rootDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...listRisuFilesRecursive(fullPath, extension));
+    } else if (entry.isFile() && entry.name.toLowerCase().endsWith(extension)) {
+      results.push(fullPath);
+    }
+  }
+
+  return results.sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
+}
+
+/** Collect CBS data from a canonical .risulorebook file. */
+function collectLorebookRisuFile(filePath: string, relPath: string): ElementCBSData[] {
+  const content = readTextIfExists(filePath);
+  if (!content) return [];
+
+  try {
+    const parsed = parseLorebookContent(content);
+    const { reads, writes } = extractCBSVarOps(parsed.content || '');
+    if (reads.size === 0 && writes.size === 0) return [];
+
+    const baseName = relPath.toLowerCase().endsWith('.risulorebook')
+      ? relPath.slice(0, -13)
+      : relPath;
+    return [
+      {
+        elementType: ELEMENT_TYPES.LOREBOOK,
+        elementName: `[module]/${baseName}`,
+        reads,
+        writes,
+      },
+    ];
+  } catch {
+    return [];
+  }
 }

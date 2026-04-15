@@ -3,6 +3,8 @@ import path from 'node:path';
 import { type GenericRecord, type LorebookEntryInfo, type RegexScriptInfo, toPosix } from '@/domain';
 import { dirExists, readJsonIfExists, readTextIfExists } from '@/node/fs-helpers';
 import { listJsonFilesRecursive, resolveOrderedFiles } from '@/node/json-listing';
+import { parseLorebookContent, type LorebookContent } from '@/domain/custom-extension/extensions/lorebook';
+import { parseRegexContent, type RegexContent } from '@/domain/custom-extension/extensions/regex';
 
 type TokenBudgetComponent = {
   category: string;
@@ -46,28 +48,61 @@ export function buildLorebookEntryInfos(
   return infos;
 }
 
-/** 추출된 lorebooks 디렉토리에서 dead-code용 엔트리 메타를 수집 */
+/** Walk directory recursively and return absolute paths of files matching the predicate. */
+function walkFiles(rootDir: string, predicate: (name: string) => boolean): string[] {
+  const out: string[] = [];
+  const walk = (cur: string): void => {
+    const entries = fs.readdirSync(cur, { withFileTypes: true });
+    for (const entry of entries) {
+      const abs = path.join(cur, entry.name);
+      if (entry.isDirectory()) {
+        walk(abs);
+      } else if (entry.isFile() && predicate(entry.name)) {
+        out.push(abs);
+      }
+    }
+  };
+  walk(rootDir);
+  return out;
+}
+
+/** 추출된 lorebooks 디렉토리에서 dead-code용 엔트리 메타를 수집. Canonical .risulorebook 우선, JSON/manifest fallback. */
 export function collectLorebookEntryInfosFromDir(
   lorebooksDir: string,
   prefix?: string,
 ): LorebookEntryInfo[] {
   if (!dirExists(lorebooksDir)) return [];
 
-  const manifest = readJsonIfExists(path.join(lorebooksDir, 'manifest.json'));
-  const files = listJsonFilesRecursive(lorebooksDir);
+  // Canonical-first: prefer .risulorebook files, fallback to JSON
+  const risuFiles = walkFiles(lorebooksDir, (name) => name.toLowerCase().endsWith('.risulorebook'));
+  const jsonFiles = listJsonFilesRecursive(lorebooksDir);
+  const useCanonical = risuFiles.length > 0;
+
+  const files = useCanonical ? resolveOrderedFiles(lorebooksDir, risuFiles) : jsonFiles;
   const fileMap = new Map<string, string>();
-  for (const filePath of files) {
-    fileMap.set(toPosix(path.relative(lorebooksDir, filePath)), filePath);
+  for (const absPath of files) {
+    fileMap.set(toPosix(path.relative(lorebooksDir, absPath)), absPath);
   }
 
-  const orderedEntries = isManifestWithEntries(manifest)
-    ? manifest.entries
+  // Determine ordering: _order.json > manifest.json > alphabetical
+  let orderedEntries: string[] = useCanonical
+    ? files.map((filePath) => toPosix(path.relative(lorebooksDir, filePath)))
+    : [];
+
+  if (orderedEntries.length === 0 && !useCanonical) {
+    const manifest = readJsonIfExists(path.join(lorebooksDir, 'manifest.json'));
+    if (isManifestWithEntries(manifest)) {
+      orderedEntries = manifest.entries
         .filter((entry): entry is GenericRecord => isRecord(entry))
         .filter((entry) => entry.type === 'entry' && typeof entry.path === 'string' && entry.path.length > 0)
-        .map((entry) => toPosix(String(entry.path)))
-    : resolveOrderedFiles(lorebooksDir, files).map((filePath) =>
-        toPosix(path.relative(lorebooksDir, filePath)),
-      );
+        .map((entry) => toPosix(String(entry.path)));
+    }
+  }
+
+  if (orderedEntries.length === 0) {
+    // Alphabetical ordering as fallback
+    orderedEntries = [...fileMap.keys()].sort((a, b) => a.localeCompare(b));
+  }
 
   const used = new Set<string>();
   const infos: LorebookEntryInfo[] = [];
@@ -77,7 +112,7 @@ export function collectLorebookEntryInfosFromDir(
     const filePath = fileMap.get(relPath);
     if (!filePath) continue;
     used.add(relPath);
-    infos.push(...collectLorebookFileInfo(filePath, relPath, order, prefix));
+    infos.push(...collectLorebookFileInfo(filePath, relPath, order, prefix, useCanonical));
     order = infos.length;
   }
 
@@ -85,7 +120,7 @@ export function collectLorebookEntryInfosFromDir(
   for (const relPath of orphans) {
     const filePath = fileMap.get(relPath);
     if (!filePath) continue;
-    infos.push(...collectLorebookFileInfo(filePath, relPath, order, prefix));
+    infos.push(...collectLorebookFileInfo(filePath, relPath, order, prefix, useCanonical));
     order = infos.length;
   }
 
@@ -105,28 +140,54 @@ export function buildRegexScriptInfos(
   }));
 }
 
-/** 추출된 regex 디렉토리에서 dead-code용 스크립트 메타를 수집 */
+/** 추출된 regex 디렉토리에서 dead-code용 스크립트 메타를 수집. Canonical .risuregex 우선, JSON fallback. */
 export function collectRegexScriptInfosFromDir(regexDir: string, prefix?: string): RegexScriptInfo[] {
   if (!dirExists(regexDir)) return [];
 
-  const files = resolveOrderedFiles(regexDir, listJsonFilesRecursive(regexDir));
+  // Canonical-first: prefer .risuregex files, fallback to JSON
+  const risuFiles = walkFiles(regexDir, (name) => name.toLowerCase().endsWith('.risuregex'));
+  const jsonFiles = listJsonFilesRecursive(regexDir);
+  const useCanonical = risuFiles.length > 0;
+
+  const files = useCanonical ? resolveOrderedFiles(regexDir, risuFiles) : resolveOrderedFiles(regexDir, jsonFiles);
+
   const normalizedPrefix = prefix ? `${prefix}/` : '';
   return files.flatMap((filePath, index) => {
-    const raw = readJsonIfExists(filePath);
-    if (!isRecord(raw)) return [];
+    let content: RegexContent | null = null;
+
+    if (useCanonical) {
+      const raw = readTextIfExists(filePath);
+      if (raw) {
+        try {
+          content = parseRegexContent(raw);
+        } catch { /* ignore parse errors */ }
+      }
+    } else {
+      const raw = readJsonIfExists(filePath);
+      if (isRecord(raw)) {
+        content = {
+          comment: readStringField(raw, 'comment') || path.basename(filePath, '.json'),
+          type: 'editinput',
+          in: readStringField(raw, 'in'),
+          out: readStringField(raw, 'out'),
+        };
+      }
+    }
+
+    if (!content) return [];
 
     return [
       {
-        name: `${normalizedPrefix}${path.basename(filePath, '.json')}`,
-        in: readStringField(raw, 'in'),
-        out: readStringField(raw, 'out'),
+        name: `${normalizedPrefix}${content.comment || path.basename(filePath, useCanonical ? '.risuregex' : '.json')}`,
+        in: content.in,
+        out: content.out,
         order: index,
       } satisfies RegexScriptInfo & { order: number },
     ].map(({ order: _ignored, ...info }) => info);
   });
 }
 
-/** lua 디렉토리에서 토큰 예산용 source component를 수집 */
+/** lua 디렉토리에서 토큰 예산용 source component를 수집. Canonical .risulua 우선, .lua fallback. */
 export function collectLuaTokenComponents(
   outputDir: string,
   category: string,
@@ -134,18 +195,22 @@ export function collectLuaTokenComponents(
   const luaDir = path.join(outputDir, 'lua');
   if (!dirExists(luaDir)) return [];
 
-  return fs
-    .readdirSync(luaDir)
-    .filter((fileName) => fileName.endsWith('.lua'))
-    .map((fileName) => ({
-      category,
-      name: fileName,
-      text: readTextIfExists(path.join(luaDir, fileName)),
-      alwaysActive: false,
-    }));
+  const allFiles = fs.readdirSync(luaDir);
+  // Canonical .risulua files first, then fallback to .lua
+  const risuFiles = allFiles.filter((fileName) => fileName.toLowerCase().endsWith('.risulua'));
+  const luaFiles = risuFiles.length > 0
+    ? risuFiles
+    : allFiles.filter((fileName) => fileName.toLowerCase().endsWith('.lua'));
+
+  return luaFiles.map((fileName) => ({
+    category,
+    name: fileName,
+    text: readTextIfExists(path.join(luaDir, fileName)),
+    alwaysActive: false,
+  }));
 }
 
-/** 추출된 lorebook 디렉토리에서 토큰 예산용 텍스트를 수집 */
+/** 추출된 lorebook 디렉토리에서 토큰 예산용 텍스트를 수집. Canonical .risulorebook 우선, JSON fallback. */
 export function collectLorebookTokenComponentsFromDir(
   lorebooksDir: string,
   category: string,
@@ -153,15 +218,44 @@ export function collectLorebookTokenComponentsFromDir(
 ): TokenBudgetComponent[] {
   if (!dirExists(lorebooksDir)) return [];
 
-  const files = resolveOrderedFiles(lorebooksDir, listJsonFilesRecursive(lorebooksDir));
+  // Canonical-first: prefer .risulorebook files, fallback to JSON
+  const risuFiles = walkFiles(lorebooksDir, (name) => name.toLowerCase().endsWith('.risulorebook'));
+  const jsonFiles = listJsonFilesRecursive(lorebooksDir);
+  const useCanonical = risuFiles.length > 0;
+
+  const files = useCanonical ? resolveOrderedFiles(lorebooksDir, risuFiles) : resolveOrderedFiles(lorebooksDir, jsonFiles);
+
   const normalizedPrefix = prefix ? `${prefix}/` : '';
 
   return files.flatMap((filePath) => {
+    const relPath = toPosix(path.relative(lorebooksDir, filePath)).replace(/\.(json|risulorebook)$/u, '');
+
+    if (useCanonical) {
+      const raw = readTextIfExists(filePath);
+      if (!raw) return [];
+
+      let content: LorebookContent;
+      try {
+        content = parseLorebookContent(raw);
+      } catch {
+        return [];
+      }
+
+      if (content.mode === 'folder') return [];
+
+      return [{
+        category,
+        name: `${normalizedPrefix}${relPath}`,
+        text: content.content,
+        alwaysActive: content.constant,
+      }];
+    }
+
+    // Legacy JSON fallback
     const raw = readJsonIfExists(filePath);
     if (!raw) return [];
 
     const records = Array.isArray(raw) ? raw.filter(isRecord) : isRecord(raw) ? [raw] : [];
-    const relPath = toPosix(path.relative(lorebooksDir, filePath)).replace(/\.json$/u, '');
 
     return records.flatMap((record, index) => {
       if (record.mode === 'folder') return [];
@@ -179,7 +273,7 @@ export function collectLorebookTokenComponentsFromDir(
   });
 }
 
-/** 추출된 regex 디렉토리에서 토큰 예산용 텍스트를 수집 */
+/** 추출된 regex 디렉토리에서 토큰 예산용 텍스트를 수집. Canonical .risuregex 우선, JSON fallback. */
 export function collectRegexTokenComponentsFromDir(
   regexDir: string,
   category: string,
@@ -187,10 +281,34 @@ export function collectRegexTokenComponentsFromDir(
 ): TokenBudgetComponent[] {
   if (!dirExists(regexDir)) return [];
 
-  const files = resolveOrderedFiles(regexDir, listJsonFilesRecursive(regexDir));
+  // Canonical-first: prefer .risuregex files, fallback to JSON
+  const risuFiles = walkFiles(regexDir, (name) => name.toLowerCase().endsWith('.risuregex'));
+  const jsonFiles = listJsonFilesRecursive(regexDir);
+  const useCanonical = risuFiles.length > 0;
+
+  const files = useCanonical ? resolveOrderedFiles(regexDir, risuFiles) : resolveOrderedFiles(regexDir, jsonFiles);
+
   const normalizedPrefix = prefix ? `${prefix}/` : '';
 
   return files.flatMap((filePath) => {
+    if (useCanonical) {
+      const raw = readTextIfExists(filePath);
+      if (!raw) return [];
+
+      let content: RegexContent;
+      try {
+        content = parseRegexContent(raw);
+      } catch {
+        return [];
+      }
+
+      const name = `${normalizedPrefix}${content.comment || path.basename(filePath, '.risuregex')}`;
+      const text = [content.in, content.out, content.flag ?? ''].filter((v) => v.length > 0).join('\n');
+
+      return [{ category, name, text, alwaysActive: false }];
+    }
+
+    // Legacy JSON fallback
     const raw = readJsonIfExists(filePath);
     if (!isRecord(raw)) return [];
 
@@ -274,13 +392,42 @@ function collectLorebookFileInfo(
   relPath: string,
   startOrder: number,
   prefix?: string,
+  useCanonical = false,
 ): LorebookEntryInfo[] {
+  const baseName = relPath.toLowerCase().replace(/\.(json|risulorebook)$/u, '');
+  let order = startOrder;
+
+  if (useCanonical) {
+    const raw = readTextIfExists(filePath);
+    if (!raw) return [];
+
+    let content: LorebookContent;
+    try {
+      content = parseLorebookContent(raw);
+    } catch {
+      return [];
+    }
+
+    if (content.mode === 'folder') return [];
+
+    const scopedName = content.name || baseName;
+    const info: LorebookEntryInfo = {
+      name: prefix ? `${prefix}/${scopedName}` : scopedName,
+      keywords: content.keys,
+      insertionOrder: order,
+      enabled: true,
+      constant: content.constant,
+      selective: content.selective,
+      secondaryKeys: content.secondary_keys ?? [],
+    };
+    return [info];
+  }
+
+  // Legacy JSON fallback
   const raw = readJsonIfExists(filePath);
   if (!raw) return [];
 
   const records = Array.isArray(raw) ? raw.filter(isRecord) : isRecord(raw) ? [raw] : [];
-  const baseName = relPath.toLowerCase().endsWith('.json') ? relPath.slice(0, -5) : relPath;
-  let order = startOrder;
 
   return records.flatMap((record, index) => {
     if (record.mode === 'folder') return [];

@@ -4,7 +4,6 @@ import {
   sanitizeFilename,
   resolveAssetUri,
   guessMimeExt,
-  inferLuaFunctionName,
   createLorebookDirAllocator,
   planLorebookExtraction,
 } from '@/domain';
@@ -22,6 +21,30 @@ import {
 } from '@/node';
 import { createLimiter } from '../../shared/concurrency';
 import { parseCharx, parseCharxAsync, parseModuleRisum } from '../parsers';
+import {
+  extractLorebooksFromCharx,
+  serializeLorebookContent,
+} from '@/domain/custom-extension/extensions/lorebook';
+import {
+  extractRegexFromCharx,
+  serializeRegexContent,
+  type RegexContent,
+} from '@/domain/custom-extension/extensions/regex';
+import {
+  extractVariablesFromCharx,
+  serializeVariableContent,
+  type VariableContent,
+} from '@/domain/custom-extension/extensions/variable';
+import {
+  extractHtmlFromCharx,
+  serializeHtmlContent,
+  type HtmlContent,
+} from '@/domain/custom-extension/extensions/html';
+import {
+  extractLuaFromCharx,
+  serializeLuaContent,
+  type LuaContent,
+} from '@/domain/custom-extension/extensions/lua';
 
 export function phase1_parseCharx(inputPath: string): {
   charx: any;
@@ -69,10 +92,8 @@ export function phase1_parseCharx(inputPath: string): {
           console.log(`     lorebook (module): ${mod.lorebook.length}개 병합됨`);
         }
 
-        if (typeof mod.customModuleToggle === 'string' && mod.customModuleToggle.length > 0) {
-          charx.data.extensions.risuai.customModuleToggle = mod.customModuleToggle;
-          console.log('     customModuleToggle: 병합됨');
-        }
+        // Note: customModuleToggle is NOT merged into charx per T12 spec
+        // .risutoggle is module/preset only; charx workspaces exclude it
       }
     }
 
@@ -184,10 +205,8 @@ export async function phase1_parseCharxAsync(inputPath: string): Promise<{
           console.log(`     lorebook (module): ${mod.lorebook.length}개 병합됨`);
         }
 
-        if (typeof mod.customModuleToggle === 'string' && mod.customModuleToggle.length > 0) {
-          charx.data.extensions.risuai.customModuleToggle = mod.customModuleToggle;
-          console.log('     customModuleToggle: 병합됨');
-        }
+        // Note: customModuleToggle is NOT merged into charx per T12 spec
+        // .risutoggle is module/preset only; charx workspaces exclude it
       }
     }
 
@@ -204,94 +223,161 @@ export async function phase1_parseCharxAsync(inputPath: string): Promise<{
 }
 
 export function phase2_extractLorebooks(charx: any, outputDir: string): number {
-  console.log('\n  📚 Phase 2: Lorebook 추출');
+  console.log('\n  📚 Phase 2: Lorebook 추출 (canonical)');
 
   const lorebooksDir = path.join(outputDir, 'lorebooks');
-  let count = 0;
-  const orderList: string[] = [];
-  const manifestEntries: any[] = [];
-  const allocateDir = createLorebookDirAllocator();
-  const usedRelPaths = new Set<string>();
-  const usedSemanticFingerprints = new Set<string>();
-  // character_book과 _moduleLorebook이 같은 folder key UUID를 공유할 수 있으므로
-  // folder key → relDir 매핑을 두 호출에 걸쳐 공유해야 `_1` 접미사가 붙은
-  // 중복 디렉토리가 생기지 않는다.
-  const sharedFolderDirMap = new Map<string, string>();
+  ensureDir(lorebooksDir);
 
-  const charBook = charx.data?.character_book;
-  if (charBook && charBook.entries && charBook.entries.length > 0) {
-    console.log(`     character_book.entries: ${charBook.entries.length}개`);
-    const plan = planLorebookExtraction(
-      charBook.entries,
-      'character',
-      allocateDir,
-      usedRelPaths,
-      sharedFolderDirMap,
-      usedSemanticFingerprints,
-    );
-    const result = executeLorebookPlan(plan, lorebooksDir);
-    count += result.count;
-    manifestEntries.push(...result.manifestEntries);
-    orderList.push(...result.orderList);
-  }
-
-  const moduleLorebook = charx.data?.extensions?.risuai?._moduleLorebook;
-  if (moduleLorebook && moduleLorebook.length > 0) {
-    console.log(`     module lorebook: ${moduleLorebook.length}개`);
-    const plan = planLorebookExtraction(
-      moduleLorebook,
-      'module',
-      allocateDir,
-      usedRelPaths,
-      sharedFolderDirMap,
-      usedSemanticFingerprints,
-    );
-    const result = executeLorebookPlan(plan, lorebooksDir);
-    count += result.count;
-    manifestEntries.push(...result.manifestEntries);
-    orderList.push(...result.orderList);
-    delete charx.data.extensions.risuai._moduleLorebook;
-  }
-
-  if (manifestEntries.length > 0) {
-    writeJson(path.join(lorebooksDir, 'manifest.json'), { version: 1, entries: manifestEntries });
-  }
-
-  if (orderList.length > 0) {
-    writeJson(path.join(lorebooksDir, '_order.json'), orderList);
-  }
-
-  if (count === 0) {
+  // Extract canonical lorebooks from charx using verified adapter
+  const lorebooks = extractLorebooksFromCharx(charx, 'charx');
+  if (!lorebooks || lorebooks.length === 0) {
     console.log('     (lorebook 없음)');
-  } else {
-    console.log(`     ✅ ${count}개 lorebook → ${path.relative('.', lorebooksDir)}/`);
+    return 0;
   }
+
+  console.log(`     lorebook entries: ${lorebooks.length}개`);
+
+  // Use the planner/executor pattern for path-based lorebook extraction
+  const allocateDir = createLorebookDirAllocator();
+  const plan = planLorebookExtraction(lorebooks, 'character', allocateDir);
+
+  // Convert plan to use .risulorebook extension instead of .json
+  const convertedPlan = {
+    items: plan.items.map((item) => {
+      if (item.type === 'entry') {
+        return {
+          ...item,
+          relPath: item.relPath.replace(/\.json$/, '.risulorebook'),
+        };
+      }
+      return item;
+    }),
+  };
+
+  const { count, orderList } = executeLorebookPlan(convertedPlan, lorebooksDir);
+
+  // Write .risulorebook files with canonical format (not JSON)
+  for (const item of convertedPlan.items) {
+    if (item.type === 'entry') {
+      const outPath = path.join(lorebooksDir, item.relPath);
+      // Convert the raw entry data to canonical .risulorebook format
+      const canonicalContent = entryToCanonicalContent(item.data);
+      writeText(outPath, serializeLorebookContent(canonicalContent));
+    }
+  }
+
+  // Write _order.json with folder paths + file paths (path-based contract)
+  if (orderList.length > 0) {
+    // Build order list with folder paths included
+    const fullOrderList: string[] = [];
+    const emittedFolders = new Set<string>();
+
+    for (const item of convertedPlan.items) {
+      if (item.type === 'folder') {
+        if (!emittedFolders.has(item.relDir)) {
+          fullOrderList.push(item.relDir);
+          emittedFolders.add(item.relDir);
+        }
+      } else {
+        // Check if this entry is inside a folder
+        const parentDir = item.relPath.includes('/') ? item.relPath.split('/')[0] : null;
+        if (parentDir && !emittedFolders.has(parentDir)) {
+          fullOrderList.push(parentDir);
+          emittedFolders.add(parentDir);
+        }
+        fullOrderList.push(item.relPath);
+      }
+    }
+
+    writeJson(path.join(lorebooksDir, '_order.json'), fullOrderList);
+  }
+
+  console.log(`     ✅ ${count}개 lorebook → ${path.relative('.', lorebooksDir)}/`);
 
   return count;
 }
 
+/** Convert raw lorebook entry data to canonical LorebookContent format */
+function entryToCanonicalContent(entry: any): import('@/domain/custom-extension/extensions/lorebook').LorebookContent {
+  // Handle both character_book and module lorebook schemas
+  const keys = Array.isArray(entry.keys)
+    ? entry.keys
+    : typeof entry.key === 'string'
+      ? entry.key.split(',').map((k: string) => k.trim()).filter(Boolean)
+      : [];
+
+  const secondaryKeys = Array.isArray(entry.secondary_keys)
+    ? entry.secondary_keys
+    : typeof entry.secondkey === 'string' && entry.secondkey.trim()
+      ? entry.secondkey.split(',').map((k: string) => k.trim()).filter(Boolean)
+      : undefined;
+
+  const content: import('@/domain/custom-extension/extensions/lorebook').LorebookContent = {
+    name: entry.name || entry.comment || '',
+    comment: entry.comment || entry.name || '',
+    mode: entry.mode || 'normal',
+    constant: entry.constant ?? entry.alwaysActive ?? false,
+    selective: entry.selective ?? false,
+    insertion_order: entry.insertion_order ?? entry.insertorder ?? 0,
+    case_sensitive: entry.case_sensitive ?? entry.extensions?.risu_case_sensitive ?? false,
+    use_regex: entry.use_regex ?? entry.useRegex ?? false,
+    keys,
+    content: entry.content || '',
+  };
+
+  if (secondaryKeys && secondaryKeys.length > 0) {
+    content.secondary_keys = secondaryKeys;
+  }
+
+  if (entry.extensions && Object.keys(entry.extensions).length > 0) {
+    content.extensions = entry.extensions;
+  }
+
+  if (entry.book_version ?? entry.bookVersion) {
+    content.book_version = entry.book_version ?? entry.bookVersion;
+  }
+
+  if (entry.activation_percent ?? entry.activationPercent) {
+    content.activation_percent = entry.activation_percent ?? entry.activationPercent;
+  }
+
+  if (entry.id) {
+    content.id = entry.id;
+  }
+
+  return content;
+}
+
 export function phase3_extractRegex(charx: any, outputDir: string): number {
-  console.log('\n  🔧 Phase 3: Regex(customscript) 추출');
+  console.log('\n  🔧 Phase 3: Regex 추출 (canonical)');
 
   const regexDir = path.join(outputDir, 'regex');
-  const scripts = charx.data?.extensions?.risuai?.customScripts;
-  if (!scripts || scripts.length === 0) {
+  ensureDir(regexDir);
+
+  // Extract canonical regex from charx using verified adapter
+  const regexes = extractRegexFromCharx(charx, 'charx');
+  if (!regexes || regexes.length === 0) {
     console.log('     (customscript 없음)');
     return 0;
   }
 
-  console.log(`     customScripts: ${scripts.length}개`);
-  let count = 0;
+  console.log(`     customScripts: ${regexes.length}개`);
+
   const orderList: string[] = [];
-  for (let i = 0; i < scripts.length; i += 1) {
-    const script = scripts[i];
-    const name = sanitizeFilename(script.comment || `regex_${i}`);
-    const outPath = uniquePath(regexDir, name, '.json');
-    writeJson(outPath, script);
-    orderList.push(path.basename(outPath));
+  let count = 0;
+
+  for (let i = 0; i < regexes.length; i += 1) {
+    const content = regexes[i];
+    const stem = sanitizeFilename(content.comment || `regex_${i}`, `regex_${i}`);
+    const fileName = uniquePath(regexDir, stem, '.risuregex');
+    const relativePath = path.basename(fileName);
+
+    writeText(fileName, serializeRegexContent(content));
+    orderList.push(relativePath);
     count += 1;
   }
 
+  // Write _order.json
   if (orderList.length > 0) {
     writeJson(path.join(regexDir, '_order.json'), orderList);
   }
@@ -301,58 +387,49 @@ export function phase3_extractRegex(charx: any, outputDir: string): number {
 }
 
 export function phase4_extractTriggerLua(charx: any, outputDir: string): number {
-  console.log('\n  🌙 Phase 4: TriggerLua 스크립트 추출');
+  console.log('\n  🌙 Phase 4: TriggerLua 추출 (canonical)');
 
   const luaDir = path.join(outputDir, 'lua');
-  const triggers = charx.data?.extensions?.risuai?.triggerscript;
-  if (!triggers || triggers.length === 0) {
+  ensureDir(luaDir);
+
+  // Get triggerscript from charx - it's an array of trigger objects, not a string
+  const triggerscript = charx.data?.extensions?.risuai?.triggerscript;
+  if (!triggerscript || !Array.isArray(triggerscript) || triggerscript.length === 0) {
     console.log('     (triggerscript 없음)');
     return 0;
   }
 
-  console.log(`     triggerscript: ${triggers.length}개`);
-  let luaCount = 0;
-  let triggerCount = 0;
+  // Extract Lua code from trigger effects
+  // Each trigger has effects array, and effects with type 'triggerlua' contain Lua code
+  const luaParts: string[] = [];
+  for (const trigger of triggerscript) {
+    if (!trigger.effect || !Array.isArray(trigger.effect)) continue;
 
-  for (let i = 0; i < triggers.length; i += 1) {
-    const trigger = triggers[i];
-    const effects = trigger.effect || [];
-
-    for (let j = 0; j < effects.length; j += 1) {
-      const effect = effects[j];
-      if (effect.type === 'triggerlua' && effect.code) {
-        triggerCount += 1;
-        const baseName = sanitizeFilename(
-          trigger.comment || inferLuaFunctionName(effect.code) || `trigger_${i}`,
-        );
-        const name =
-          effects.filter((e: any) => e.type === 'triggerlua').length > 1
-            ? `${baseName}_${j}`
-            : baseName;
-        const outPath = uniquePath(luaDir, name, '.lua');
-
-        const header = [
-          `-- Extracted from triggerscript: ${trigger.comment || '(unnamed)'}`,
-          `-- Trigger type: ${trigger.type || 'unknown'}`,
-          `-- Low-level access: ${trigger.lowLevelAccess ? 'yes' : 'no'}`,
-          '',
-        ].join('\n');
-
-        writeText(outPath, header + effect.code);
-        luaCount += 1;
+    for (const effect of trigger.effect) {
+      if (effect.type === 'triggerlua' && typeof effect.code === 'string' && effect.code.length > 0) {
+        // Add comment with trigger info if available
+        if (trigger.comment) {
+          luaParts.push(`-- Trigger: ${trigger.comment}`);
+        }
+        luaParts.push(effect.code);
+        luaParts.push(''); // Empty line between code blocks
       }
     }
   }
 
-  if (luaCount === 0) {
-    console.log('     (triggerlua 없음 — triggercode 또는 다른 effect 타입만 존재)');
-  } else {
-    console.log(
-      `     ✅ ${luaCount}개 lua 스크립트 (${triggerCount}개 triggerlua effect) → ${path.relative('.', luaDir)}/`,
-    );
+  if (luaParts.length === 0) {
+    console.log('     (triggerlua effect 없음)');
+    return 0;
   }
 
-  return luaCount;
+  // Write as canonical .risulua file using target-name-based naming
+  const charxName = charx.data?.name || 'character';
+  const sanitizedName = sanitizeFilename(charxName, 'character');
+  const fileName = path.join(luaDir, `${sanitizedName}.risulua`);
+  writeText(fileName, luaParts.join('\n'));
+
+  console.log(`     ✅ ${triggerscript.length}개 trigger → ${path.relative('.', luaDir)}/${sanitizedName}.risulua`);
+  return 1;
 }
 
 function detectSourceFormat(assetSources: Record<string, Uint8Array>): string {
@@ -616,58 +693,61 @@ export async function phase5_extractAssetsAsync(
 }
 
 export function phase6_extractBackgroundHTML(charx: any, outputDir: string): number {
-  console.log('\n  🌐 Phase 6: BackgroundHTML 추출');
-  const html = charx.data?.extensions?.risuai?.backgroundHTML;
-  if (!html) {
+  console.log('\n  🌐 Phase 6: BackgroundHTML 추출 (canonical)');
+
+  const htmlDir = path.join(outputDir, 'html');
+  ensureDir(htmlDir);
+
+  // Extract canonical HTML from charx using verified adapter
+  const htmlContent = extractHtmlFromCharx(charx, 'charx');
+  if (!htmlContent) {
     console.log('     (backgroundHTML 없음)');
     return 0;
   }
-  const outPath = path.join(outputDir, 'html', 'background.html');
-  writeText(outPath, html);
-  console.log(`     ✅ html/background.html → ${path.relative('.', path.join(outputDir, 'html'))}`);
+
+  // Write as canonical .risuhtml file
+  const fileName = path.join(htmlDir, 'background.risuhtml');
+  writeText(fileName, serializeHtmlContent(htmlContent));
+
+  console.log(`     ✅ html/background.risuhtml → ${path.relative('.', htmlDir)}/`);
   return 1;
 }
 
 export function phase7_extractVariables(charx: any, outputDir: string): number {
-  console.log('\n  📋 Phase 7: DefaultVariables 추출');
-  const raw = charx.data?.extensions?.risuai?.defaultVariables;
-  if (!raw) {
+  console.log('\n  📋 Phase 7: DefaultVariables 추출 (canonical)');
+
+  const variablesDir = path.join(outputDir, 'variables');
+  ensureDir(variablesDir);
+
+  // Extract canonical variables from charx using verified adapter
+  const variables = extractVariablesFromCharx(charx, 'charx');
+  if (!variables) {
     console.log('     (defaultVariables 없음)');
     return 0;
   }
 
-  const txtPath = path.join(outputDir, 'variables', 'default.txt');
-  writeText(txtPath, raw);
+  // Write as canonical .risuvar file using target-name-based naming
+  const charxName = charx.data?.name || 'character';
+  const sanitizedName = sanitizeFilename(charxName, 'character');
+  const fileName = path.join(variablesDir, `${sanitizedName}.risuvar`);
+  writeText(fileName, serializeVariableContent(variables));
 
-  const parsed: Record<string, string> = {};
-  const lines = String(raw).split(/\r?\n/);
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    const eqIdx = line.indexOf('=');
-    if (eqIdx === -1) {
-      console.warn(`     ⚠️ = 없는 줄 (key만 저장): ${line}`);
-      parsed[line] = '';
-    } else {
-      parsed[line.slice(0, eqIdx)] = line.slice(eqIdx + 1);
-    }
-  }
-
-  const jsonPath = path.join(outputDir, 'variables', 'default.json');
-  writeJson(jsonPath, parsed);
-  const count = Object.keys(parsed).length;
+  const count = Object.keys(variables).length;
   console.log(
-    `     ✅ variables/default.txt + default.json (${count}개 변수) → ${path.relative('.', path.join(outputDir, 'variables'))}`,
+    `     ✅ variables/${sanitizedName}.risuvar (${count}개 변수) → ${path.relative('.', variablesDir)}/`,
   );
   return count;
 }
 
 export function phase8_extractCharacterFields(charx: any, outputDir: string): number {
-  console.log('\n  🧾 Phase 8: Character Card 추출');
+  console.log('\n  🧾 Phase 8: Character Card 추출 (canonical)');
 
   const data = charx.data || {};
   const risuai = data.extensions?.risuai || {};
   const characterDir = path.join(outputDir, 'character');
+  ensureDir(characterDir);
 
+  // Text fields as .txt files (canonical)
   const textFields: Record<string, string> = {
     'description.txt': data.description || '',
     'first_mes.txt': data.first_mes || '',
@@ -683,10 +763,12 @@ export function phase8_extractCharacterFields(charx: any, outputDir: string): nu
     fileCount += 1;
   }
 
+  // Alternate greetings as JSON (structured data)
   const greetings = Array.isArray(data.alternate_greetings) ? data.alternate_greetings : [];
   writeJson(path.join(characterDir, 'alternate_greetings.json'), greetings);
   fileCount += 1;
 
+  // Metadata as JSON (structured data)
   const metadata = {
     name: data.name || '',
     creator: data.creator || '',
@@ -699,14 +781,11 @@ export function phase8_extractCharacterFields(charx: any, outputDir: string): nu
   writeJson(path.join(characterDir, 'metadata.json'), metadata);
   fileCount += 1;
 
-  const moduleToggle = typeof risuai.customModuleToggle === 'string' ? risuai.customModuleToggle : '';
-  if (moduleToggle.length > 0) {
-    writeText(path.join(characterDir, 'module.risutoggle'), moduleToggle);
-    fileCount += 1;
-  }
+  // Note: .risutoggle is NOT emitted for charx per spec
+  // .risutoggle is module/preset only
 
   console.log(
-    `     텍스트: ${Object.keys(textFields).length}개, greetings: ${greetings.length}개, metadata: ${Object.keys(metadata).length}개 필드, customModuleToggle: ${moduleToggle ? 1 : 0}개`,
+    `     텍스트: ${Object.keys(textFields).length}개, greetings: ${greetings.length}개, metadata: ${Object.keys(metadata).length}개 필드`,
   );
   console.log(`     ✅ ${fileCount}개 파일 → ${path.relative('.', characterDir)}/`);
   return fileCount;

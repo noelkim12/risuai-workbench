@@ -430,6 +430,56 @@ describe('buildRelationshipNetworkPanel', () => {
     });
   });
 
+  it('does not invent a fake root folder group for root-level lorebooks', () => {
+    const data: LorebookGraphData = {
+      lorebookStructure: {
+        folders: [],
+        entries: [
+          {
+            id: 'Root Entry',
+            name: 'Root Entry',
+            folderId: null,
+            folder: null,
+            keywords: ['signal'],
+            enabled: true,
+            constant: false,
+            selective: false,
+            hasCBS: false,
+          },
+        ],
+        stats: {
+          totalEntries: 1,
+          totalFolders: 0,
+          activationModes: { normal: 1, constant: 0, selective: 0 },
+          enabledCount: 1,
+          withCBS: 0,
+        },
+        keywords: { all: ['signal'], overlaps: {} },
+      },
+      lorebookRegexCorrelation: {
+        sharedVars: [],
+        lorebookOnlyVars: [],
+        regexOnlyVars: [],
+        summary: { totalShared: 0, totalLBOnly: 0, totalRXOnly: 0 },
+      },
+      lorebookCBS: [],
+      regexCBS: [],
+    };
+
+    const panel = buildRelationshipNetworkPanel('panel', data, 'en' as Locale);
+    const payload = panel?.payload as ForceGraphPayload;
+    const loreNode = payload.nodes.find((node) => node.id === 'lb:Root Entry');
+
+    expect(payload.groups).toEqual([]);
+    expect(loreNode).toMatchObject({
+      id: 'lb:Root Entry',
+      layoutBand: 'lorebook',
+    });
+    expect(loreNode?.groupId).toBeUndefined();
+    expect(loreNode?.groupKind).toBeUndefined();
+    expect(loreNode?.groupLabel).toBeUndefined();
+  });
+
   it('renders bidirectional shared vars as two-way edges around the variable node', () => {
     const data: LorebookGraphData = {
       lorebookStructure: {

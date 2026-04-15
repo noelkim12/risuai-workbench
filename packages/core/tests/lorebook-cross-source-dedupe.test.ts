@@ -89,26 +89,26 @@ describe('lorebook cross-source dedupe', () => {
 
     const count = phase2_extractLorebooks(charx, outputDir);
     const lorebooksDir = path.join(outputDir, 'lorebooks');
-    const manifest = JSON.parse(readFileSync(path.join(lorebooksDir, 'manifest.json'), 'utf-8'));
     const order = JSON.parse(readFileSync(path.join(lorebooksDir, '_order.json'), 'utf-8'));
 
-    expect(count).toBe(2);
-    expect(existsSync(path.join(lorebooksDir, '🏙️길드_세력', '백련_길드.json'))).toBe(true);
-    expect(existsSync(path.join(lorebooksDir, '🏙️길드_세력', '백련_길드_1.json'))).toBe(false);
-    expect(readdirSync(path.join(lorebooksDir, '🏙️길드_세력'))).toEqual(['백련_길드.json']);
-    expect(manifest.entries).toEqual([
-      {
-        type: 'folder',
-        source: 'character',
-        dir: '🏙️길드_세력',
-        data: expect.objectContaining({ mode: 'folder', name: '🏙️길드/세력' }),
-      },
-      {
-        type: 'entry',
-        source: 'character',
-        path: '🏙️길드_세력/백련_길드.json',
-      },
+    // Path-based canonical format: 1 entry file inside a real directory
+    expect(count).toBe(1);
+    expect(existsSync(path.join(lorebooksDir, '🏙️길드_세력', '백련_길드.risulorebook'))).toBe(true);
+
+    // Verify _order.json lists folder + file paths
+    expect(order).toEqual([
+      '🏙️길드_세력',
+      '🏙️길드_세력/백련_길드.risulorebook',
     ]);
-    expect(order).toEqual(['🏙️길드_세력/백련_길드.json']);
+
+    // Verify the .risulorebook file contains the entry without leaking folder keys
+    const lorebookContent = readFileSync(
+      path.join(lorebooksDir, '🏙️길드_세력', '백련_길드.risulorebook'),
+      'utf-8'
+    );
+    expect(lorebookContent).toContain('name: 백련 길드');
+    expect(lorebookContent).not.toContain('folder:');
+    expect(lorebookContent).toContain('@@@ KEYS');
+    expect(lorebookContent).toContain('Baek ryeon');
   });
 });

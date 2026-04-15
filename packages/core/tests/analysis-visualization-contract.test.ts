@@ -862,8 +862,20 @@ describe('analysis visualization contract', () => {
     expect(clientJs).toContain('const forceGraphState = new Map();');
     expect(clientJs).toContain('function getForceGraphStateKey(panel) {');
     expect(clientJs).toContain('function ensureForceGraph(panel, mount, payload) {');
+    expect(clientJs).toContain('function buildForceGraphSignature(payload, panel) {');
+    expect(clientJs).toContain("var activeTypes = panel && panel.getAttribute ? (panel.getAttribute('data-force-graph-active-types') || '') : '';");
+    expect(clientJs).toContain("var activeEdgeTypes = panel && panel.getAttribute ? (panel.getAttribute('data-force-graph-active-edge-types') || '') : '';");
     expect(clientJs).toContain('function refreshForceGraphViewport(panel, mount) {');
     expect(clientJs).not.toContain('renderVisibleForceGraphs();\n            rafId = null;\n          });\n        }\n\n        function initForceGraph(mount, data) {');
+  });
+
+  it('rebuilds relationship-network force graphs when legend visibility changes and filters physics to visible nodes', () => {
+    const { clientJs } = renderShell();
+
+    expect(clientJs).toContain("nodes = allNodes.filter(function(node) {");
+    expect(clientJs).toContain("edges = allEdges.filter(function(edge) {");
+    expect(clientJs).toContain("ensureForceGraph(panel, mount, payload);");
+    expect(clientJs).not.toContain("hoveredNodeId = null;\n                syncGraphVisibility();");
   });
 
   it('uses grouped deterministic seeding for relationship-network graphs', () => {

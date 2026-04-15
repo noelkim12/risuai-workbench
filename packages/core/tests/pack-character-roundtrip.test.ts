@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { unzipSync, strFromU8 } from 'fflate';
-import { parseModuleRisum } from '@/cli/extract/parsers';
+import { parseModuleRisum } from '../src/cli/extract/parsers';
 
 const tempDirs: string[] = [];
 
@@ -14,68 +14,61 @@ afterEach(() => {
   }
 });
 
-describe('pack.js character round-trip', () => {
-  it('merges extracted character fields back into charx.json before packing', () => {
-    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-pack-character-'));
+describe('pack.js character round-trip (canonical mode)', () => {
+  it('packs from canonical artifacts without charx.json', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-pack-canonical-'));
     tempDirs.push(workDir);
 
     const characterDir = path.join(workDir, 'character');
     mkdirSync(characterDir, { recursive: true });
 
-    const sourceCharx = {
-      spec: 'chara_card_v3',
-      data: {
-        name: 'Original Name',
-        creator: 'Original Creator',
-        character_version: '1.0.0',
-        creation_date: '2024-01-01',
-        modification_date: '2024-01-02',
-        description: 'original description',
-        first_mes: 'original first',
-        system_prompt: 'original system',
-        post_history_instructions: 'original post history',
-        creator_notes: 'original notes',
-        alternate_greetings: ['original greeting'],
-        extensions: {
-          risuai: {
-            additionalText: 'original additional',
-            utilityBot: false,
-            lowLevelAccess: false,
-            customScripts: [],
-            triggerscript: [],
-            customModuleToggle: '<module-toggle><![CDATA[enabled]]></module-toggle>',
-          },
-        },
-      },
-    };
-
-    writeFileSync(path.join(workDir, 'charx.json'), `${JSON.stringify(sourceCharx, null, 2)}\n`, 'utf-8');
-    writeFileSync(path.join(characterDir, 'description.txt'), 'updated description', 'utf-8');
-    writeFileSync(path.join(characterDir, 'first_mes.txt'), 'updated first message', 'utf-8');
-    writeFileSync(path.join(characterDir, 'system_prompt.txt'), 'updated system prompt', 'utf-8');
-    writeFileSync(path.join(characterDir, 'post_history_instructions.txt'), 'updated post history', 'utf-8');
-    writeFileSync(path.join(characterDir, 'creator_notes.txt'), 'updated creator notes', 'utf-8');
-    writeFileSync(path.join(characterDir, 'additional_text.txt'), 'updated additional text', 'utf-8');
+    // Write canonical character artifacts (no charx.json needed)
+    writeFileSync(path.join(characterDir, 'description.txt'), 'canonical description', 'utf-8');
+    writeFileSync(path.join(characterDir, 'first_mes.txt'), 'canonical first message', 'utf-8');
+    writeFileSync(path.join(characterDir, 'system_prompt.txt'), 'canonical system prompt', 'utf-8');
+    writeFileSync(path.join(characterDir, 'post_history_instructions.txt'), 'canonical post history', 'utf-8');
+    writeFileSync(path.join(characterDir, 'creator_notes.txt'), 'canonical creator notes', 'utf-8');
+    writeFileSync(path.join(characterDir, 'additional_text.txt'), 'canonical additional text', 'utf-8');
     writeFileSync(
       path.join(characterDir, 'alternate_greetings.json'),
-      `${JSON.stringify(['hello there', 'general kenobi'], null, 2)}\n`,
+      `${JSON.stringify(['greeting one', 'greeting two'], null, 2)}\n`,
       'utf-8'
     );
     writeFileSync(
       path.join(characterDir, 'metadata.json'),
       `${JSON.stringify(
         {
-          name: 'Updated Name',
-          creator: 'Updated Creator',
-          character_version: '2.0.0',
-          creation_date: '2025-05-01',
-          modification_date: '2025-05-02',
-          utilityBot: true,
+          name: 'Canonical Character',
+          creator: 'Canonical Creator',
+          character_version: '1.0.0',
+          creation_date: '2025-01-01',
+          modification_date: '2025-01-02',
+          utilityBot: false,
           lowLevelAccess: true,
         },
         null,
         2
       )}\n`,
+      'utf-8'
+    );
+
+    // Note: module.risutoggle is NOT written for charx (module/preset only per spec)
+
+    // Write canonical lua file using target-name-based naming (sanitized)
+    const luaDir = path.join(workDir, 'lua');
+    mkdirSync(luaDir, { recursive: true });
+    writeFileSync(
+      path.join(luaDir, 'Canonical_Character.risulua'),
+      '-- Test Lua\nfunction test() end\n',
+      'utf-8'
+    );
+
+    // Write canonical variables file using target-name-based naming (sanitized)
+    const variablesDir = path.join(workDir, 'variables');
+    mkdirSync(variablesDir, { recursive: true });
+    writeFileSync(
+      path.join(variablesDir, 'Canonical_Character.risuvar'),
+      'testVar=value\n',
       'utf-8'
     );
 
@@ -92,77 +85,42 @@ describe('pack.js character round-trip', () => {
     const archive = unzipSync(readFileSync(outPath));
     const packedCharx = JSON.parse(strFromU8(archive['charx.json']));
 
-    expect(packedCharx.data.description).toBe('updated description');
-    expect(packedCharx.data.first_mes).toBe('updated first message');
-    expect(packedCharx.data.system_prompt).toBe('updated system prompt');
-    expect(packedCharx.data.post_history_instructions).toBe('updated post history');
-    expect(packedCharx.data.creator_notes).toBe('updated creator notes');
-    expect(packedCharx.data.extensions.risuai.additionalText).toBe('updated additional text');
-    expect(packedCharx.data.alternate_greetings).toEqual(['hello there', 'general kenobi']);
-    expect(packedCharx.data.name).toBe('Updated Name');
-    expect(packedCharx.data.creator).toBe('Updated Creator');
-    expect(packedCharx.data.character_version).toBe('2.0.0');
-    expect(packedCharx.data.creation_date).toBe('2025-05-01');
-    expect(packedCharx.data.modification_date).toBe('2025-05-02');
-    expect(packedCharx.data.extensions.risuai.utilityBot).toBe(true);
+    // Verify character fields from canonical artifacts
+    expect(packedCharx.spec).toBe('chara_card_v3');
+    expect(packedCharx.data.description).toBe('canonical description');
+    expect(packedCharx.data.first_mes).toBe('canonical first message');
+    expect(packedCharx.data.system_prompt).toBe('canonical system prompt');
+    expect(packedCharx.data.post_history_instructions).toBe('canonical post history');
+    expect(packedCharx.data.creator_notes).toBe('canonical creator notes');
+    expect(packedCharx.data.extensions.risuai.additionalText).toBe('canonical additional text');
+    expect(packedCharx.data.alternate_greetings).toEqual(['greeting one', 'greeting two']);
+    expect(packedCharx.data.name).toBe('Canonical Character');
+    expect(packedCharx.data.creator).toBe('Canonical Creator');
+    expect(packedCharx.data.character_version).toBe('1.0.0');
+    expect(packedCharx.data.creation_date).toBe('2025-01-01');
+    expect(packedCharx.data.modification_date).toBe('2025-01-02');
+    expect(packedCharx.data.extensions.risuai.utilityBot).toBe(false);
     expect(packedCharx.data.extensions.risuai.lowLevelAccess).toBe(true);
 
+    // Verify module.risum exists but customModuleToggle is NOT present for charx
     const module = parseModuleRisum(Buffer.from(archive['module.risum']));
-    expect(module.customModuleToggle).toBe('<module-toggle><![CDATA[enabled]]></module-toggle>');
+    expect(module.name).toBe('Canonical Character Module');
+    expect(module.customModuleToggle).toBeUndefined();
   });
-  it('merges module.risutoggle file into customModuleToggle during packing', () => {
-    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-pack-character-toggle-file-'));
+
+  it('ignores module.risutoggle for charx (module/preset only)', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-pack-charx-no-toggle-'));
     tempDirs.push(workDir);
 
     const characterDir = path.join(workDir, 'character');
     mkdirSync(characterDir, { recursive: true });
 
-    const sourceCharx = {
-      spec: 'chara_card_v3',
-      data: {
-        name: 'Pack Toggle Source',
-        creator: 'Source Creator',
-        character_version: '1.0.0',
-        creation_date: '2024-01-01',
-        modification_date: '2024-01-02',
-        description: 'description',
-        first_mes: 'first',
-        system_prompt: 'system',
-        post_history_instructions: 'post',
-        creator_notes: 'notes',
-        extensions: {
-          risuai: {
-            additionalText: 'original additional',
-            utilityBot: false,
-            lowLevelAccess: false,
-            customScripts: [],
-            triggerscript: [],
-          },
-        },
-      },
-    };
+    // Write canonical character artifacts
+    writeFileSync(path.join(characterDir, 'description.txt'), 'test description', 'utf-8');
+    writeFileSync(path.join(characterDir, 'metadata.json'), `${JSON.stringify({ name: 'Test Char' })}\n`, 'utf-8');
 
-    writeFileSync(path.join(workDir, 'charx.json'), `${JSON.stringify(sourceCharx, null, 2)}
-`, 'utf-8');
-    writeFileSync(
-      path.join(characterDir, 'metadata.json'),
-      `${JSON.stringify(
-        {
-          name: 'Updated Name',
-          creator: 'Updated Creator',
-          character_version: '2.0.0',
-          creation_date: '2025-05-01',
-          modification_date: '2025-05-02',
-          utilityBot: true,
-          lowLevelAccess: true,
-        },
-        null,
-        2,
-      )}
-`,
-      'utf-8'
-    );
-    writeFileSync(path.join(characterDir, 'module.risutoggle'), '<module-toggle>updated</module-toggle>', 'utf-8');
+    // Write module.risutoggle (should be ignored for charx per spec)
+    writeFileSync(path.join(characterDir, 'module.risutoggle'), '<module-toggle>should-be-ignored</module-toggle>', 'utf-8');
 
     const outPath = path.join(workDir, 'packed.charx');
     execFileSync(
@@ -177,6 +135,7 @@ describe('pack.js character round-trip', () => {
     const archive = unzipSync(readFileSync(outPath));
     const module = parseModuleRisum(Buffer.from(archive['module.risum']));
 
-    expect(module.customModuleToggle).toBe('<module-toggle>updated</module-toggle>');
+    // customModuleToggle should NOT be present for charx
+    expect(module.customModuleToggle).toBeUndefined();
   });
 });

@@ -124,7 +124,8 @@ describe('src/cli main dispatcher integration', () => {
 
     const expectedOutDir = path.join(tempDir, 'character_Default_Output_Character');
     expect(result.status).toBe(0);
-    expect(fs.existsSync(path.join(expectedOutDir, 'charx.json'))).toBe(true);
+    // In canonical mode, charx.json should NOT exist (only canonical artifacts)
+    expect(fs.existsSync(path.join(expectedOutDir, 'charx.json'))).toBe(false);
     expect(fs.existsSync(path.join(expectedOutDir, 'character', 'metadata.json'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, 'charx.json'))).toBe(false);
 
@@ -138,6 +139,36 @@ describe('src/cli main dispatcher integration', () => {
     expect(result.stdout).toContain('Character Card Packer');
     expect(result.stdout).toContain('node pack.js');
     expect(result.stderr).not.toContain('legacy-script-execution-blocked');
+  });
+
+  it('dispatches pack --format module to module packer', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-core-pack-module-'));
+
+    // Create minimal canonical module workspace
+    fs.mkdirSync(path.join(tempDir, 'lorebooks'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tempDir, 'metadata.json'),
+      `${JSON.stringify({ name: 'Module Pack Test', id: 'test-module' }, null, 2)}\n`,
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'lorebooks', '_order.json'),
+      '[]\n',
+      'utf-8',
+    );
+
+    const result = runCli(['pack', '--format', 'module', '--in', tempDir]);
+
+    if (result.status !== 0) {
+      console.log('STDOUT:', result.stdout);
+      console.log('STDERR:', result.stderr);
+    }
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('RisuAI Module Packer');
+    expect(fs.existsSync(path.join(tempDir, 'Module_Pack_Test_repack.json'))).toBe(true);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
   it('dispatches analyze to unified analyze router', () => {
@@ -185,26 +216,45 @@ describe('src/cli main dispatcher integration', () => {
     const charxDir = path.join(tempDir, 'character_alice');
     const moduleDir = path.join(tempDir, 'module_combat');
 
+    // Create canonical charx workspace
     fs.mkdirSync(path.join(charxDir, 'lorebooks'), { recursive: true });
-    fs.mkdirSync(path.join(charxDir, 'variables'), { recursive: true });
+    fs.mkdirSync(path.join(charxDir, 'character'), { recursive: true });
+    fs.writeFileSync(path.join(charxDir, 'character', 'metadata.json'), '{"name":"alice"}\n', 'utf-8');
     fs.writeFileSync(
-      path.join(charxDir, 'charx.json'),
-      `${JSON.stringify({ data: { name: 'alice', character_book: { entries: [] }, extensions: { risuai: { customScripts: [] } } } }, null, 2)}\n`,
-      'utf-8',
-    );
-    fs.writeFileSync(path.join(charxDir, 'variables', 'default.json'), '{"mode":"story"}\n', 'utf-8');
-    fs.writeFileSync(
-      path.join(charxDir, 'lorebooks', 'entry.json'),
-      '{"name":"entry","keys":["battle"],"content":"{{setvar::mode::story}}"}\n',
+      path.join(charxDir, 'lorebooks', 'entry.risulorebook'),
+      `---
+name: entry
+comment: entry
+mode: normal
+constant: false
+selective: false
+insertion_order: 0
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+battle
+@@@ CONTENT
+{{setvar::mode::story}}
+`,
       'utf-8',
     );
 
+    // Create canonical module workspace
     fs.mkdirSync(path.join(moduleDir, 'regex'), { recursive: true });
-    fs.writeFileSync(path.join(moduleDir, 'module.json'), '{"name":"combat"}\n', 'utf-8');
+    fs.mkdirSync(path.join(moduleDir, 'lorebooks'), { recursive: true });
     fs.writeFileSync(path.join(moduleDir, 'metadata.json'), '{"name":"combat"}\n', 'utf-8');
     fs.writeFileSync(
-      path.join(moduleDir, 'regex', 'init.json'),
-      '{"in":"*battle*","out":"{{setvar::mode::battle}}"}\n',
+      path.join(moduleDir, 'regex', 'init.risuregex'),
+      `---
+comment: init
+type: editdisplay
+---
+@@@ IN
+*battle*
+@@@ OUT
+{{setvar::mode::battle}}
+`,
       'utf-8',
     );
 
@@ -218,9 +268,10 @@ describe('src/cli main dispatcher integration', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('auto-detects module analysis from a directory with module.json', () => {
+  it('auto-detects module analysis from a canonical workspace', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-core-analyze-module-'));
-    fs.writeFileSync(path.join(tempDir, 'module.json'), '{"name":"Module Stub"}\n', 'utf-8');
+    fs.mkdirSync(path.join(tempDir, 'lorebooks'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'metadata.json'), '{"name":"Module Stub"}\n', 'utf-8');
 
     const result = runCli(['analyze', tempDir]);
 
@@ -232,9 +283,36 @@ describe('src/cli main dispatcher integration', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('auto-detects preset analysis from a directory with preset.json', () => {
+  it('auto-detects preset analysis from a canonical workspace', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-core-analyze-preset-'));
-    fs.writeFileSync(path.join(tempDir, 'preset.json'), '{"name":"Preset Stub"}\n', 'utf-8');
+    fs.mkdirSync(path.join(tempDir, 'prompts'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'metadata.json'), '{"name":"Preset Stub"}\n', 'utf-8');
+
+    const result = runCli(['analyze', tempDir]);
+
+    expect(result.status).toBe(0);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'preset-analysis.md'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'preset-analysis.html'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'preset-analysis.data.js'))).toBe(true);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('auto-detects preset analysis from prompt-template-only workspace', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-core-analyze-preset-pt-only-'));
+    // Create prompt-template-only preset (no prompts/ directory)
+    fs.mkdirSync(path.join(tempDir, 'prompt_template'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'metadata.json'), '{"name":"PromptTemplate Only Preset"}\n', 'utf-8');
+    fs.writeFileSync(
+      path.join(tempDir, 'prompt_template', '_order.json'),
+      '["system.risuprompt"]\n',
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'prompt_template', 'system.risuprompt'),
+      '---\nname: system\ntype: plain\ntype2: normal\nrole: system\n---\n@@@ TEXT\n{{setvar::test::value}}\n',
+      'utf-8',
+    );
 
     const result = runCli(['analyze', tempDir]);
 
@@ -288,6 +366,20 @@ describe('src/cli main dispatcher integration', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
+  it('auto-detects canonical .risulua input as lua analyze target', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-core-analyze-risulua-'));
+    const luaPath = path.join(tempDir, 'sample.risulua');
+
+    fs.writeFileSync(luaPath, 'local value = getState(chat, "foo")\n', 'utf-8');
+
+    const result = runCli(['analyze', luaPath, '--json', '--no-markdown', '--no-html']);
+
+    expect(result.status).toBe(0);
+    expect(fs.existsSync(path.join(tempDir, 'sample.analysis.json'))).toBe(true);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
   it('writes charx-analysis filenames for charx reports', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-core-analyze-charx-'));
     const charxPath = path.join(tempDir, 'charx.json');
@@ -328,31 +420,14 @@ describe('src/cli main dispatcher integration', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('rejects legacy card.json-only analyze directories', () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-core-analyze-legacy-cardjson-'));
-    const legacyJsonPath = path.join(tempDir, 'card.json');
+  it('rejects directories without canonical markers or charx.json', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-core-analyze-no-markers-'));
 
-    fs.writeFileSync(
-      legacyJsonPath,
-      `${JSON.stringify(
-        {
-          spec: 'chara_card_v3',
-          data: {
-            name: 'Legacy Character',
-            character_book: { entries: [] },
-            extensions: { risuai: { customScripts: [] } },
-          },
-        },
-        null,
-        2,
-      )}\n`,
-      'utf-8',
-    );
-
+    // Create an empty directory without any markers
     const result = runCli(['analyze', '--type', 'charx', tempDir]);
 
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('charx.json을 찾을 수 없습니다');
+    expect(result.stderr).toContain('Canonical charx workspace markers not found');
 
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
@@ -364,6 +439,99 @@ describe('src/cli main dispatcher integration', () => {
     expect(result.stderr).toContain('module');
     expect(result.stderr).toContain('preset');
     expect(result.stderr).toContain('compose');
+  });
+
+  it('analyzes canonical charx workspace without charx.json using .risulorebook files', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-core-analyze-charx-canonical-'));
+
+    // Create canonical charx workspace WITHOUT charx.json
+    fs.mkdirSync(path.join(tempDir, 'character'), { recursive: true });
+    fs.mkdirSync(path.join(tempDir, 'lorebooks'), { recursive: true });
+    fs.mkdirSync(path.join(tempDir, 'regex'), { recursive: true });
+
+    // Create character metadata
+    fs.writeFileSync(
+      path.join(tempDir, 'character', 'metadata.json'),
+      '{"name":"CanonicalChar"}\n',
+      'utf-8',
+    );
+
+    // Create canonical .risulorebook files
+    fs.writeFileSync(
+      path.join(tempDir, 'lorebooks', 'entry1.risulorebook'),
+      `---
+name: entry1
+comment: First entry
+mode: normal
+constant: false
+selective: false
+insertion_order: 0
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+key1
+key2
+@@@ CONTENT
+{{setvar::var1::value1}}
+`,
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'lorebooks', 'entry2.risulorebook'),
+      `---
+name: entry2
+comment: Second entry
+mode: normal
+constant: false
+selective: false
+insertion_order: 1
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+key3
+@@@ CONTENT
+{{getvar::var1}}
+`,
+      'utf-8',
+    );
+
+    // Create canonical .risuregex files
+    fs.writeFileSync(
+      path.join(tempDir, 'regex', 'script1.risuregex'),
+      `---
+comment: Script one
+type: editdisplay
+---
+@@@ IN
+*test*
+@@@ OUT
+{{setvar::var2::value2}}
+`,
+      'utf-8',
+    );
+
+    const result = runCli(['analyze', '--type', 'charx', tempDir, '--locale', 'en']);
+
+    expect(result.status).toBe(0);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'charx-analysis.md'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'charx-analysis.html'))).toBe(true);
+
+    // Verify CBS data from canonical files is present in the analysis
+    const markdown = fs.readFileSync(path.join(tempDir, 'analysis', 'charx-analysis.md'), 'utf-8');
+    expect(markdown).toContain('## Lorebook Structure');
+    expect(markdown).toContain('## Lorebook Activation Chain');
+    // CBS data should be detected from canonical files
+    expect(markdown).toContain('var1');
+    expect(markdown).toContain('var2');
+    expect(markdown).toContain('lorebook');
+    expect(markdown).toContain('regex');
+
+    // Verify charx.json was NOT created (canonical mode)
+    expect(fs.existsSync(path.join(tempDir, 'charx.json'))).toBe(false);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
   it('dispatches build to TypeScript command path', () => {

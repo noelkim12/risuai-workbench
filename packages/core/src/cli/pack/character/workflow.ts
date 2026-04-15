@@ -11,21 +11,38 @@ import {
   isJpeg,
 } from '@/node/png';
 import { encodeModuleRisum } from '@/node/rpack';
-import {
-  listJsonFilesRecursive,
-  listJsonFilesFlat,
-  resolveOrderedFiles,
-  readJson,
-  isDir,
-} from '@/node/json-listing';
+import { readJson, isDir } from '@/node/json-listing';
 import { toPosix } from '@/domain/lorebook/folders';
 import { sanitizeFilename } from '../../../utils/filenames';
 import { readFileAsync } from '@/node/fs-helpers';
 import { createLimiter } from '../../shared/concurrency';
-import { argValue, setNestedValue, classifyAssetExt, normalizeExt, fromPosix } from '../utils';
+import { argValue, setNestedValue, classifyAssetExt, normalizeExt } from '../utils';
+import { createBlankCharxV3 } from '@/domain/charx/blank-char';
+import {
+  parseLorebookContent,
+  parseLorebookOrder,
+  assembleLorebookCollection,
+  injectLorebooksIntoCharx,
+  type LorebookCanonicalFile,
+} from '@/domain/custom-extension/extensions/lorebook';
+import {
+  parseRegexContent,
+  injectRegexIntoCharx,
+  type RegexContent,
+} from '@/domain/custom-extension/extensions/regex';
+import {
+  parseVariableContent,
+} from '@/domain/custom-extension/extensions/variable';
+import {
+  parseHtmlContent,
+  injectHtmlIntoCharx,
+} from '@/domain/custom-extension/extensions/html';
+import {
+  parseLuaContent,
+} from '@/domain/custom-extension/extensions/lua';
 
 const HELP_TEXT = `
-  🐿️ RisuAI Character Card Packer
+  🐿️ RisuAI Character Card Packer (canonical mode)
 
   Usage: node pack.js [options]
 
@@ -37,10 +54,15 @@ const HELP_TEXT = `
     --name <name>       출력 파일명 기본값 (확장자 제외)
     -h, --help          도움말
 
-  Notes:
-    - charx.json이 필수 입력입니다.
-    - lorebooks/, regex/, assets/, html/, variables/, character/가 있으면 charx.json 위에 병합합니다.
-    - lua/*.lua는 자동 역변환하지 않습니다 (기존 charx.json의 triggerscript 유지).
+  Notes (canonical mode):
+    - charx.json is NOT required — pack builds from createBlankChar() + canonical overlays
+    - lorebooks/*.risulorebook → character_book.entries
+    - regex/*.risuregex → extensions.risuai.customScripts
+    - lua/<charxName>.risulua → triggerscript (target-name-based naming)
+    - html/background.risuhtml → extensions.risuai.backgroundHTML
+    - variables/<charxName>.risuvar → extensions.risuai.defaultVariables (target-name-based naming)
+    - character/*.txt, metadata.json → character fields
+    - .risutoggle is NOT supported for charx (module/preset only)
     - 현재는 chara_card_v3만 지원합니다.
     - cover를 지정하지 않으면 png/jpg는 1x1 fallback 이미지를 사용합니다.
 `;
@@ -82,38 +104,31 @@ export function runPackWorkflow(argv: readonly string[]): number {
 
 function runMain(options: PackOptions): void {
   const resolvedIn = path.resolve(options.inDir);
-  const charxPath = resolveCharxJsonPath(resolvedIn);
-  if (!charxPath) {
-    throw new Error(`charx.json을 찾을 수 없습니다: ${path.join(resolvedIn, 'charx.json')}`);
-  }
 
-  const charx = readJson(charxPath) as any;
-  if (!charx || charx.spec !== 'chara_card_v3') {
-    throw new Error('현재 pack.js는 spec=chara_card_v3 카드만 지원합니다.');
-  }
-
-  console.log('\n  🐿️ RisuAI Character Card Packer\n');
+  console.log('\n  🐿️ RisuAI Character Card Packer (canonical mode)\n');
   console.log(`  입력: ${path.relative('.', resolvedIn)}`);
 
-  const mergedCharx = mergeExtractedComponents(charx, resolvedIn);
+  // Build charx from createBlankChar() + canonical overlays
+  const charx = buildCharxFromCanonical(resolvedIn);
+
   const targetFormat = resolveTargetFormat(resolvedIn, options.formatArg);
   const { outPath, baseName } = resolveOutputPath({
     inRoot: resolvedIn,
     outArg: options.outArg,
     nameArg: options.nameArg,
-    charx: mergedCharx,
+    charx,
     format: targetFormat,
   });
   ensureDir(path.dirname(outPath));
 
   if (targetFormat === 'png') {
-    const pngBuf = buildPngCharxBuffer(mergedCharx, resolvedIn, options.coverArg);
+    const pngBuf = buildPngCharxBuffer(charx, resolvedIn, options.coverArg);
     fs.writeFileSync(outPath, pngBuf);
   } else if (targetFormat === 'charx') {
-    const charxBuf = buildCharxBuffer(mergedCharx, resolvedIn);
+    const charxBuf = buildCharxBuffer(charx, resolvedIn);
     fs.writeFileSync(outPath, charxBuf);
   } else if (targetFormat === 'charx-jpg') {
-    const charxBuf = buildCharxBuffer(mergedCharx, resolvedIn);
+    const charxBuf = buildCharxBuffer(charx, resolvedIn);
     const jpegCover = resolveCoverBytes(resolvedIn, options.coverArg, ['.jpg', '.jpeg'], JPEG_1X1);
     fs.writeFileSync(outPath, Buffer.concat([jpegCover, charxBuf]));
   } else {
@@ -124,131 +139,230 @@ function runMain(options: PackOptions): void {
   console.log(`  출력 이름: ${baseName}\n`);
 }
 
-function mergeExtractedComponents(charx: any, inRoot: string): any {
-  const next = structuredClone(charx);
-  next.data = next.data || {};
-  next.data.extensions = next.data.extensions || {};
-  next.data.extensions.risuai = next.data.extensions.risuai || {};
+/**
+ * Build charx from createBlankChar() + canonical artifact overlays.
+ * This is the canonical pack mode — no charx.json required.
+ */
+function buildCharxFromCanonical(inRoot: string): any {
+  // Start with blank charx V3 envelope
+  const charx = createBlankCharxV3();
 
-  mergeLorebooks(next, inRoot);
-  mergeRegex(next, inRoot);
-  mergeBackgroundHtml(next, inRoot);
-  mergeDefaultVariables(next, inRoot);
-  mergeCharacter(next, inRoot);
+  // Clear default trigger stubs from blank char — they should only be
+  // set if canonical workspace explicitly provides lua/triggerscript.risulua
+  clearDefaultTriggerStubs(charx);
 
-  return next;
+  // Overlay canonical artifacts
+  // IMPORTANT: mergeCharacterCanonical MUST run first to establish the character
+  // name from metadata.json, which is required for target-name-based filename
+  // resolution in mergeLuaCanonical and mergeVariablesCanonical
+  mergeCharacterCanonical(charx, inRoot);
+  mergeLorebooksCanonical(charx, inRoot);
+  mergeRegexCanonical(charx, inRoot);
+  mergeLuaCanonical(charx, inRoot);
+  mergeHtmlCanonical(charx, inRoot);
+  mergeVariablesCanonical(charx, inRoot);
+
+  return charx;
 }
 
-function mergeLorebooks(charx: any, inRoot: string): void {
+/**
+ * Clear default trigger stubs from blank charx.
+ * The createBlankChar() function creates default triggerscript entries that
+ * should not leak into packed output unless canonical workspace explicitly
+ * provides lua/triggerscript.risulua.
+ */
+function clearDefaultTriggerStubs(charx: any): void {
+  if (!charx.data) charx.data = {};
+  if (!charx.data.extensions) charx.data.extensions = {};
+  if (!charx.data.extensions.risuai) charx.data.extensions.risuai = {};
+
+  // Clear the default triggerscript array — it will be set by mergeLuaCanonical
+  // if lua/triggerscript.risulua exists, otherwise should remain empty
+  charx.data.extensions.risuai.triggerscript = [];
+}
+
+/**
+ * Merge canonical lorebooks from .risulorebook files.
+ * Uses the canonical assembler contract (assembleLorebookCollection) for
+ * proper ordering and folder reconstruction from path-based _order.json.
+ * Folder keys are regenerated at pack time from directory paths.
+ */
+function mergeLorebooksCanonical(charx: any, inRoot: string): void {
   const loreDir = path.join(inRoot, 'lorebooks');
   if (!isDir(loreDir)) return;
 
-  const rebuilt = readLorebookEntries(loreDir);
-  if (!rebuilt) return;
-
-  charx.data.character_book = charx.data.character_book || {};
-  charx.data.character_book.entries = rebuilt.characterEntries;
-
-  if (rebuilt.moduleEntries.length > 0) {
-    charx.data.extensions.risuai._moduleLorebook = rebuilt.moduleEntries;
-  } else {
-    delete charx.data.extensions.risuai._moduleLorebook;
+  // Read _order.json for file and folder ordering
+  const orderPath = path.join(loreDir, '_order.json');
+  let declaredOrder: string[] | null = null;
+  if (fs.existsSync(orderPath)) {
+    try {
+      declaredOrder = parseLorebookOrder(fs.readFileSync(orderPath, 'utf-8'));
+    } catch {
+      console.warn('  ⚠️ Failed to parse _order.json, using file discovery');
+    }
   }
+
+  // Discover all .risulorebook files recursively
+  const lorebookFiles = listFilesRecursiveBySuffix(loreDir, '.risulorebook');
+  if (lorebookFiles.length === 0 && (!declaredOrder || declaredOrder.length === 0)) return;
+
+  // Build canonical file list with relative paths
+  const files: LorebookCanonicalFile[] = lorebookFiles.map((absolutePath) => ({
+    relativePath: toPosix(path.relative(loreDir, absolutePath)),
+    content: parseLorebookContent(fs.readFileSync(absolutePath, 'utf-8')),
+  }));
+
+  // Use canonical assembler contract for ordering and folder reconstruction
+  // Folder entries are derived from parent directory paths in declaredOrder
+  const collection = assembleLorebookCollection(files, declaredOrder);
+
+  // Inject into charx
+  injectLorebooksIntoCharx(charx, collection, 'charx');
 }
 
-function readLorebookEntries(loreDir: string): { characterEntries: any[]; moduleEntries: any[] } {
-  const manifestPath = path.join(loreDir, 'manifest.json');
-
-  if (fs.existsSync(manifestPath)) {
-    const manifest = readJson(manifestPath) as any;
-    if (!manifest || !Array.isArray(manifest.entries)) {
-      throw new Error(`잘못된 lorebooks/manifest.json 형식: ${manifestPath}`);
-    }
-
-    const out = { characterEntries: [] as any[], moduleEntries: [] as any[] };
-    for (const item of manifest.entries) {
-      if (!item || typeof item !== 'object') continue;
-
-      if (item.type === 'folder') {
-        if (!item.data || typeof item.data !== 'object') continue;
-        if (item.source === 'module') out.moduleEntries.push(item.data);
-        else out.characterEntries.push(item.data);
-        continue;
-      }
-
-      if (item.type === 'entry' && typeof item.path === 'string' && item.path.length > 0) {
-        const filePath = path.join(loreDir, fromPosix(item.path));
-        if (!fs.existsSync(filePath)) {
-          console.warn(`  ⚠️ lorebooks/manifest.json 참조 파일 없음 (skip): ${item.path}`);
-          continue;
-        }
-
-        const entry = readJson(filePath);
-        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-          throw new Error(`잘못된 lorebook 엔트리 JSON: ${filePath}`);
-        }
-
-        if (item.source === 'module') out.moduleEntries.push(entry);
-        else out.characterEntries.push(entry);
-      }
-    }
-
-    return out;
-  }
-
-  const orderedFiles = resolveOrderedFiles(loreDir, listJsonFilesRecursive(loreDir));
-  if (orderedFiles.length === 0) return { characterEntries: [], moduleEntries: [] };
-
-  const fallbackEntries: any[] = [];
-  for (const abs of orderedFiles) {
-    const entry = readJson(abs);
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-      throw new Error(`잘못된 lorebook 엔트리 JSON: ${abs}`);
-    }
-    fallbackEntries.push(entry);
-  }
-
-  return { characterEntries: fallbackEntries, moduleEntries: [] };
-}
-
-function mergeRegex(charx: any, inRoot: string): void {
+/**
+ * Merge canonical regex from .risuregex files.
+ */
+function mergeRegexCanonical(charx: any, inRoot: string): void {
   const regexDir = path.join(inRoot, 'regex');
   if (!isDir(regexDir)) return;
 
-  const files = resolveOrderedFiles(regexDir, listJsonFilesFlat(regexDir));
-  if (files.length === 0) {
-    charx.data.extensions.risuai.customScripts = [];
-    return;
-  }
-
-  const scripts: any[] = [];
-  for (const abs of files) {
-    const raw = readJson(abs);
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-      throw new Error(`잘못된 regex JSON: ${abs}`);
+  // Read _order.json for file ordering
+  const orderPath = path.join(regexDir, '_order.json');
+  let orderedFiles: string[] = [];
+  if (fs.existsSync(orderPath)) {
+    try {
+      const orderContent = readJson(orderPath) as string[];
+      if (Array.isArray(orderContent)) {
+        orderedFiles = orderContent;
+      }
+    } catch {
+      console.warn('  ⚠️ Failed to parse regex _order.json');
     }
-    scripts.push(raw);
   }
 
-  charx.data.extensions.risuai.customScripts = scripts;
+  // Discover all .risuregex files (not JSON files)
+  const allFiles = fs
+    .readdirSync(regexDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.risuregex'))
+    .map((entry) => path.join(regexDir, entry.name))
+    .sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
+
+  const filesToProcess = orderedFiles.length > 0
+    ? orderedFiles.map((rel) => path.join(regexDir, rel)).filter((f) => fs.existsSync(f))
+    : allFiles;
+
+  if (filesToProcess.length === 0) return;
+
+  // Parse regex files
+  const regexes: RegexContent[] = [];
+  for (const filePath of filesToProcess) {
+    try {
+      const content = parseRegexContent(fs.readFileSync(filePath, 'utf-8'));
+      regexes.push(content);
+    } catch (error) {
+      console.warn(`  ⚠️ Failed to parse regex: ${path.basename(filePath)}`);
+    }
+  }
+
+  // Inject into charx
+  injectRegexIntoCharx(charx, regexes, 'charx');
 }
 
-function mergeBackgroundHtml(charx: any, inRoot: string): void {
-  const htmlPath = path.join(inRoot, 'html', 'background.html');
+/**
+ * Merge canonical Lua from .risulua file.
+ * Note: The canonical .risulua contains raw Lua code, but upstream charx
+ * expects triggerscript as an array of trigger objects. We wrap the Lua
+ * code in a standard trigger structure for round-trip compatibility.
+ * Uses target-name-based file naming: lua/<charxName>.risulua
+ */
+function mergeLuaCanonical(charx: any, inRoot: string): void {
+  // Determine the expected lua filename based on character name
+  const charxName = charx.data?.name || 'character';
+  const sanitizedName = sanitizeFilename(charxName, 'character');
+  const luaPath = path.join(inRoot, 'lua', `${sanitizedName}.risulua`);
+
+  if (!fs.existsSync(luaPath)) return;
+
+  try {
+    const luaCode = parseLuaContent(fs.readFileSync(luaPath, 'utf-8'));
+    // Ensure the extensions.risuai structure exists
+    if (!charx.data) charx.data = {};
+    if (!charx.data.extensions) charx.data.extensions = {};
+    if (!charx.data.extensions.risuai) charx.data.extensions.risuai = {};
+
+    // Wrap Lua code in proper triggerscript array structure
+    // This maintains compatibility with buildModuleFromCharx() which expects
+    // triggerscript to be an array it can pass to module.risum
+    charx.data.extensions.risuai.triggerscript = [
+      {
+        comment: 'Canonical Lua Trigger',
+        type: 'manual',
+        conditions: [],
+        effect: [
+          {
+            type: 'triggerlua',
+            code: luaCode,
+            indent: 0,
+          },
+        ],
+      },
+    ];
+  } catch (error) {
+    console.warn(`  ⚠️ Failed to parse ${sanitizedName}.risulua`);
+  }
+}
+
+/**
+ * Merge canonical HTML from .risuhtml file.
+ */
+function mergeHtmlCanonical(charx: any, inRoot: string): void {
+  const htmlPath = path.join(inRoot, 'html', 'background.risuhtml');
   if (!fs.existsSync(htmlPath)) return;
-  charx.data.extensions.risuai.backgroundHTML = fs.readFileSync(htmlPath, 'utf-8');
+
+  try {
+    const content = parseHtmlContent(fs.readFileSync(htmlPath, 'utf-8'));
+    injectHtmlIntoCharx(charx, content, 'charx');
+  } catch (error) {
+    console.warn('  ⚠️ Failed to parse background.risuhtml');
+  }
 }
 
-function mergeDefaultVariables(charx: any, inRoot: string): void {
-  const txtPath = path.join(inRoot, 'variables', 'default.txt');
-  if (!fs.existsSync(txtPath)) return;
-  charx.data.extensions.risuai.defaultVariables = fs.readFileSync(txtPath, 'utf-8');
+/**
+ * Merge canonical variables from .risuvar file.
+ * Uses target-name-based file naming: variables/<charxName>.risuvar
+ */
+function mergeVariablesCanonical(charx: any, inRoot: string): void {
+  // Determine the expected variables filename based on character name
+  const charxName = charx.data?.name || 'character';
+  const sanitizedName = sanitizeFilename(charxName, 'character');
+  const varPath = path.join(inRoot, 'variables', `${sanitizedName}.risuvar`);
+
+  if (!fs.existsSync(varPath)) return;
+
+  try {
+    const content = parseVariableContent(fs.readFileSync(varPath, 'utf-8'));
+    // Ensure the extensions.risuai structure exists
+    if (!charx.data) charx.data = {};
+    if (!charx.data.extensions) charx.data.extensions = {};
+    if (!charx.data.extensions.risuai) charx.data.extensions.risuai = {};
+    // Convert variables object to string format
+    const varLines = Object.entries(content).map(([key, value]) => `${key}=${value}`);
+    charx.data.extensions.risuai.defaultVariables = varLines.join('\n') + (varLines.length > 0 ? '\n' : '');
+  } catch (error) {
+    console.warn(`  ⚠️ Failed to parse ${sanitizedName}.risuvar`);
+  }
 }
 
-function mergeCharacter(charx: any, inRoot: string): void {
+/**
+ * Merge character fields from canonical text files and metadata.json.
+ * Note: .risutoggle is NOT supported for charx (module/preset only per spec).
+ */
+function mergeCharacterCanonical(charx: any, inRoot: string): void {
   const characterDir = path.join(inRoot, 'character');
   if (!isDir(characterDir)) return;
 
+  // Text fields as .txt files (canonical)
   const textFieldMap: Record<string, string[]> = {
     'description.txt': ['data', 'description'],
     'first_mes.txt': ['data', 'first_mes'],
@@ -264,6 +378,7 @@ function mergeCharacter(charx: any, inRoot: string): void {
     setNestedValue(charx, targetPath, fs.readFileSync(filePath, 'utf-8'));
   }
 
+  // Alternate greetings as JSON
   const greetingsPath = path.join(characterDir, 'alternate_greetings.json');
   if (fs.existsSync(greetingsPath)) {
     const greetings = readJson(greetingsPath);
@@ -273,11 +388,10 @@ function mergeCharacter(charx: any, inRoot: string): void {
     charx.data.alternate_greetings = greetings;
   }
 
-  const moduleTogglePath = path.join(characterDir, 'module.risutoggle');
-  if (fs.existsSync(moduleTogglePath)) {
-    charx.data.extensions.risuai.customModuleToggle = fs.readFileSync(moduleTogglePath, 'utf-8');
-  }
+  // Note: module.risutoggle is NOT read for charx per spec
+  // .risutoggle is module/preset only
 
+  // Metadata as JSON
   const metadataPath = path.join(characterDir, 'metadata.json');
   if (!fs.existsSync(metadataPath)) return;
 
@@ -446,9 +560,8 @@ function buildCharxBuffer(charx: any, inRoot: string): Buffer {
   }
 
   const moduleObj = buildModuleFromCharx(work);
-  delete work.data.extensions.risuai.triggerscript;
-  delete work.data.extensions.risuai.customScripts;
-  delete work.data.extensions.risuai._moduleLorebook;
+  // Note: We do NOT delete triggerscript/customScripts/_moduleLorebook from charx.json
+  // The module.risum is built from charx data, but charx.json retains all fields for round-trip fidelity
 
   zipEntries['charx.json'] = Buffer.from(`${JSON.stringify(work, null, 2)}\n`, 'utf-8');
   zipEntries['module.risum'] = encodeModuleRisum(moduleObj);
@@ -493,9 +606,8 @@ async function buildCharxBufferAsync(charx: any, inRoot: string): Promise<Buffer
   }
 
   const moduleObj = buildModuleFromCharx(work);
-  delete work.data.extensions.risuai.triggerscript;
-  delete work.data.extensions.risuai.customScripts;
-  delete work.data.extensions.risuai._moduleLorebook;
+  // Note: We do NOT delete triggerscript/customScripts/_moduleLorebook from charx.json
+  // The module.risum is built from charx data, but charx.json retains all fields for round-trip fidelity
 
   zipEntries['charx.json'] = Buffer.from(`${JSON.stringify(work, null, 2)}\n`, 'utf-8');
   zipEntries['module.risum'] = encodeModuleRisum(moduleObj);
@@ -509,13 +621,10 @@ async function buildCharxBufferAsync(charx: any, inRoot: string): Promise<Buffer
   return Buffer.from(data);
 }
 
-function resolveCharxJsonPath(inRoot: string): string | null {
-  const primary = path.join(inRoot, 'charx.json');
-  if (fs.existsSync(primary)) return primary;
-
-  return null;
-}
-
+/**
+ * Build module.risum content from charx data.
+ * Note: customModuleToggle is NOT included for charx per spec (.risutoggle is module/preset only).
+ */
 function buildModuleFromCharx(charx: any): Record<string, unknown> {
   const name = charx.data?.name || 'Character';
   const risu = charx.data?.extensions?.risuai || {};
@@ -526,10 +635,7 @@ function buildModuleFromCharx(charx: any): Record<string, unknown> {
     trigger: Array.isArray(risu.triggerscript) ? risu.triggerscript : [],
     regex: Array.isArray(risu.customScripts) ? risu.customScripts : [],
     lorebook: Array.isArray(risu._moduleLorebook) ? risu._moduleLorebook : [],
-    customModuleToggle:
-      typeof risu.customModuleToggle === 'string' && risu.customModuleToggle.length > 0
-        ? risu.customModuleToggle
-        : undefined,
+    // Note: customModuleToggle is NOT included for charx per spec
     assets: [],
   };
 }
@@ -618,6 +724,36 @@ async function collectAssetBuffersAsync(charx: any, inRoot: string): Promise<Map
     }
   }
 
+  return out;
+}
+
+/**
+ * Recursively list files with given suffix in a directory.
+ */
+function listFilesRecursiveBySuffix(rootDir: string, suffix: string): string[] {
+  if (!isDir(rootDir)) {
+    return [];
+  }
+
+  const out: string[] = [];
+  const walk = (currentDir: string): void => {
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    entries.sort((left, right) => left.name.localeCompare(right.name));
+
+    for (const entry of entries) {
+      const absolutePath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        walk(absolutePath);
+        continue;
+      }
+
+      if (entry.isFile() && entry.name.toLowerCase().endsWith(suffix)) {
+        out.push(absolutePath);
+      }
+    }
+  };
+
+  walk(rootDir);
   return out;
 }
 

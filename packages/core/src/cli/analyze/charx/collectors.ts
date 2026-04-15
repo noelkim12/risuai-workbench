@@ -6,8 +6,12 @@ import {
   buildRisuFolderMap,
   resolveRisuFolderName,
   toPosix,
+  sanitizeFilename,
 } from '@/domain';
-import { analyzeLuaFile, type LuaAnalysisArtifact } from '@/domain/analyze/lua-core';
+import { analyzeLuaSource, type LuaAnalysisArtifact } from '@/domain/analyze/lua-core';
+import { parseLorebookContent } from '@/domain/custom-extension/extensions/lorebook';
+import { parseRegexContent } from '@/domain/custom-extension/extensions/regex';
+import { parseVariableContent } from '@/domain/custom-extension/extensions/variable';
 import { dirExists, readJsonIfExists, readTextIfExists } from '@/node/fs-helpers';
 import { listJsonFilesRecursive, resolveOrderedFiles } from '@/node/json-listing';
 import { isPlainObject } from '../../shared';
@@ -41,12 +45,26 @@ export function collectLorebookCBS(charx: unknown, outputDir?: string): ElementC
 }
 
 function collectLorebookCBSFromDir(lorebooksDir: string): ElementCBSData[] {
+  // First, try canonical .risulorebook files
+  const risuFiles = listRisuFilesRecursive(lorebooksDir, '.risulorebook');
+  if (risuFiles.length > 0) {
+    const files = resolveOrderedFiles(lorebooksDir, risuFiles);
+    const results: ElementCBSData[] = [];
+    for (const filePath of files) {
+      const relPosix = toPosix(path.relative(lorebooksDir, filePath));
+      pushLorebookCBSFromRisuFile(results, filePath, relPosix);
+    }
+    return results;
+  }
+
+  // Fallback to legacy manifest.json approach
   const manifestPath = path.join(lorebooksDir, 'manifest.json');
   const manifest = readJsonIfExists(manifestPath);
   if (isPlainObject(manifest) && Array.isArray(manifest.entries)) {
     return collectLorebookCBSFromManifest(lorebooksDir, manifest.entries);
   }
 
+  // Fallback to legacy JSON files
   const files = resolveOrderedFiles(lorebooksDir, listJsonFilesRecursive(lorebooksDir));
   if (files.length === 0) return [];
 
@@ -206,6 +224,42 @@ export function collectRegexCBS(charx: unknown, outputDir?: string): ElementCBSD
 }
 
 function collectRegexCBSFromDir(regexDir: string): ElementCBSData[] {
+  // First, try canonical .risuregex files
+  const risuFiles = listRisuFilesRecursive(regexDir, '.risuregex');
+  if (risuFiles.length > 0) {
+    const files = resolveOrderedFiles(regexDir, risuFiles);
+    const results: ElementCBSData[] = [];
+    for (const [index, filePath] of files.entries()) {
+      const content = readTextIfExists(filePath);
+      if (!content) continue;
+
+      try {
+        const parsed = parseRegexContent(content);
+        const inOps = extractCBSVarOps(parsed.in);
+        const outOps = extractCBSVarOps(parsed.out);
+        const flagOps = extractCBSVarOps(typeof parsed.flag === 'string' ? parsed.flag : '');
+
+        const reads = new Set<string>([...inOps.reads, ...outOps.reads, ...flagOps.reads]);
+        const writes = new Set<string>([...inOps.writes, ...outOps.writes, ...flagOps.writes]);
+
+        if (reads.size === 0 && writes.size === 0) continue;
+
+        const elementName = path.basename(filePath, '.risuregex');
+        results.push({
+          elementType: ELEMENT_TYPES.REGEX,
+          elementName,
+          reads,
+          writes,
+          executionOrder: files.length - index,
+        });
+      } catch {
+        // Ignore parse errors
+      }
+    }
+    return results;
+  }
+
+  // Fallback to legacy JSON files
   const files = resolveOrderedFiles(regexDir, listJsonFilesRecursive(regexDir));
   if (files.length === 0) return [];
 
@@ -279,6 +333,47 @@ function resolveExecutionOrder(record: Record<string, unknown>, fallback: number
   return typeof record.order === 'number' && Number.isFinite(record.order) ? record.order : fallback;
 }
 
+/** List all files with a specific extension recursively. */
+function listRisuFilesRecursive(rootDir: string, extension: string): string[] {
+  const results: string[] = [];
+  const entries = fs.readdirSync(rootDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...listRisuFilesRecursive(fullPath, extension));
+    } else if (entry.isFile() && entry.name.toLowerCase().endsWith(extension)) {
+      results.push(fullPath);
+    }
+  }
+
+  return results.sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
+}
+
+/** Push CBS data from a canonical .risulorebook file. */
+function pushLorebookCBSFromRisuFile(
+  results: ElementCBSData[],
+  filePath: string,
+  relPosix: string,
+): void {
+  const content = readTextIfExists(filePath);
+  if (!content) return;
+
+  try {
+    const parsed = parseLorebookContent(content);
+    const { reads, writes } = extractCBSVarOps(parsed.content || '');
+    if (reads.size === 0 && writes.size === 0) return;
+
+    const baseName = relPosix.toLowerCase().endsWith('.risulorebook')
+      ? relPosix.slice(0, -13)
+      : relPosix;
+    const elementName = baseName;
+    results.push({ elementType: ELEMENT_TYPES.LOREBOOK, elementName, reads, writes });
+  } catch {
+    // Ignore parse errors
+  }
+}
+
 function parseDefaultVariablesText(raw: string): Record<string, string> {
   const variables: Record<string, string> = {};
   if (!raw.trim()) return variables;
@@ -324,16 +419,64 @@ function parseDefaultVariablesJson(raw: unknown): Record<string, string> {
   return variables;
 }
 
-/** defaultVariables를 JSON 또는 텍스트(key=value) 포맷에서 파싱한다. */
+/** charx 이름을 추출한다. */
+function resolveCharxNameFromCard(card: unknown): string {
+  if (typeof card !== 'object' || card == null) return 'character';
+  const record = card as { data?: { name?: unknown }; name?: unknown };
+  if (typeof record.data?.name === 'string' && record.data.name.length > 0) return record.data.name;
+  if (typeof record.name === 'string' && record.name.length > 0) return record.name;
+  return 'character';
+}
+
+/** defaultVariables를 JSON 또는 텍스트(key=value) 포맷에서 파싱한다.
+ *  Canonical charx workspaces: variables/<sanitizedCharxName>.risuvar
+ *  Fallback: variables/default.risuvar (backward compatibility)
+ *  Legacy: variables/default.json, variables/default.txt
+ */
 export function collectVariablesCBS(card: unknown, outputDir?: string): VariablesResult {
   if (outputDir) {
-    const jsonPath = path.join(outputDir, 'variables', 'default.json');
+    const variablesDir = path.join(outputDir, 'variables');
+
+    // Canonical charx workspace: try sanitized charx name first
+    const charxName = resolveCharxNameFromCard(card);
+    const sanitizedName = sanitizeFilename(charxName, 'character');
+    const namedRisuvarPath = path.join(variablesDir, `${sanitizedName}.risuvar`);
+
+    if (fs.existsSync(namedRisuvarPath)) {
+      const rawText = readTextIfExists(namedRisuvarPath);
+      if (rawText.trim()) {
+        try {
+          const parsed = parseVariableContent(rawText);
+          return { variables: parsed, cbsData: [] };
+        } catch {
+          // Fall through to next option
+        }
+      }
+    }
+
+    // Fallback: default.risuvar (backward compatibility)
+    const defaultRisuvarPath = path.join(variablesDir, 'default.risuvar');
+    if (fs.existsSync(defaultRisuvarPath)) {
+      const rawText = readTextIfExists(defaultRisuvarPath);
+      if (rawText.trim()) {
+        try {
+          const parsed = parseVariableContent(rawText);
+          return { variables: parsed, cbsData: [] };
+        } catch {
+          // Fall through to legacy formats
+        }
+      }
+    }
+
+    // Fallback to legacy JSON format
+    const jsonPath = path.join(variablesDir, 'default.json');
     const rawJson = readJsonIfExists(jsonPath);
     if (rawJson) {
       return { variables: parseDefaultVariablesJson(rawJson), cbsData: [] };
     }
 
-    const txtPath = path.join(outputDir, 'variables', 'default.txt');
+    // Fallback to legacy TXT format
+    const txtPath = path.join(variablesDir, 'default.txt');
     const rawText = readTextIfExists(txtPath);
     if (rawText.trim()) {
       return { variables: parseDefaultVariablesText(rawText), cbsData: [] };
@@ -375,6 +518,13 @@ function collectHTMLCBSFromString(html: string, elementName: string): HtmlResult
 /** backgroundHTML에서 CBS 변수 연산과 에셋 참조(src 속성, url() CSS)를 추출한다. */
 export function collectHTMLCBS(charx: unknown, outputDir?: string): HtmlResult {
   if (outputDir) {
+    // Canonical format: background.risuhtml (preferred)
+    const risuhtmlPath = path.join(outputDir, 'html', 'background.risuhtml');
+    const risuhtml = readTextIfExists(risuhtmlPath);
+    if (risuhtml) {
+      return collectHTMLCBSFromString(risuhtml, 'background.risuhtml');
+    }
+    // Legacy fallback: background.html
     const htmlPath = path.join(outputDir, 'html', 'background.html');
     const html = readTextIfExists(htmlPath);
     if (html) {
@@ -430,7 +580,7 @@ export function collectTSCBS(outputDir: string): ElementCBSData[] {
   }
 }
 
-/** Lua 소스 파일에서 직접 분석 아티팩트를 생성한다. */
+/** Lua 소스 파일에서 직접 분석 아티팩트를 생성한다. Canonical .risulua 우선, .lua fallback. */
 export function loadLuaArtifacts(
   outputDir: string,
   charxJsonPath: string | null,
@@ -439,15 +589,24 @@ export function loadLuaArtifacts(
     const luaDir = path.join(outputDir, 'lua');
     if (!fs.existsSync(luaDir)) return [];
 
-    const luaFiles = fs.readdirSync(luaDir).filter((file) => file.endsWith('.lua'));
+    // Canonical .risulua files first, then fallback to .lua
+    const allFiles = fs.readdirSync(luaDir);
+    const risuFiles = allFiles.filter((file) => file.toLowerCase().endsWith('.risulua'));
+    const luaFiles = risuFiles.length > 0
+      ? risuFiles
+      : allFiles.filter((file) => file.toLowerCase().endsWith('.lua'));
     if (luaFiles.length === 0) return [];
 
-    return luaFiles.map((file) =>
-      analyzeLuaFile({
-        filePath: path.join(luaDir, file),
-        charxArg: charxJsonPath,
-      }),
-    );
+    return luaFiles.map((file) => {
+      const filePath = path.join(luaDir, file);
+      const source = fs.readFileSync(filePath, 'utf-8');
+      let charxData: Record<string, unknown> | undefined;
+      if (charxJsonPath && fs.existsSync(charxJsonPath)) {
+        const raw = JSON.parse(fs.readFileSync(charxJsonPath, 'utf-8'));
+        charxData = raw as Record<string, unknown>;
+      }
+      return analyzeLuaSource({ filePath, source, charxData });
+    });
   } catch {
     return [];
   }

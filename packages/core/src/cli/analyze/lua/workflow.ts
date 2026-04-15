@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { analyzeLuaFile } from '@/domain/analyze/lua-core';
+import { analyzeLuaSource } from '@/domain/analyze/lua-core';
+import { parseCharxFile } from '@/node';
 import { detectLocale } from '../shared/i18n';
 import { runReporting } from './reporting';
 
@@ -40,9 +41,14 @@ export function runAnalyzeWorkflow(argv: readonly string[]): number {
     return 1;
   }
 
-  let luaArtifact: ReturnType<typeof analyzeLuaFile>;
+  let luaArtifact: ReturnType<typeof analyzeLuaSource>;
   try {
-    luaArtifact = analyzeLuaFile({ filePath, charxArg });
+    const source = fs.readFileSync(filePath, 'utf-8');
+    let charxData: Record<string, unknown> | undefined;
+    if (charxArg && fs.existsSync(charxArg)) {
+      charxData = parseCharxFile(charxArg) as Record<string, unknown>;
+    }
+    luaArtifact = analyzeLuaSource({ filePath, source, charxData });
   } catch (error) {
     const parseError = error as { line?: number; column?: number; message?: string };
     console.error(

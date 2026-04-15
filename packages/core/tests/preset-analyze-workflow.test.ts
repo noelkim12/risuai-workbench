@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { collectPresetSources } from '@/cli/analyze/preset/collectors';
-import { runAnalyzePresetWorkflow } from '@/cli/analyze/preset/workflow';
-import { runExtractWorkflow as runPresetExtractWorkflow } from '@/cli/extract/preset/workflow';
+import { collectPresetSources } from '../src/cli/analyze/preset/collectors';
+import { runAnalyzePresetWorkflow } from '../src/cli/analyze/preset/workflow';
+import { runExtractWorkflow as runPresetExtractWorkflow } from '../src/cli/extract/preset/workflow';
 
 describe('preset analyze collectors and workflow', () => {
   let tempDir: string;
@@ -24,45 +24,64 @@ describe('preset analyze collectors and workflow', () => {
       'utf-8',
     );
 
+    // Use canonical .risuprompt files instead of JSON
     fs.mkdirSync(path.join(tempDir, 'prompt_template'), { recursive: true });
     fs.writeFileSync(
       path.join(tempDir, 'prompt_template', '_order.json'),
-      `${JSON.stringify(['system.json', 'followup.json'], null, 2)}\n`,
+      `${JSON.stringify(['system.risuprompt', 'followup.risuprompt'], null, 2)}\n`,
       'utf-8',
     );
     fs.writeFileSync(
-      path.join(tempDir, 'prompt_template', 'system.json'),
-      `${JSON.stringify({ name: 'system', text: '{{setvar::lang::ko}}', type: 'plain' }, null, 2)}\n`,
+      path.join(tempDir, 'prompt_template', 'system.risuprompt'),
+      `---
+name: system
+type: plain
+type2: normal
+role: system
+---
+@@@ TEXT
+{{setvar::lang::ko}}
+`,
       'utf-8',
     );
     fs.writeFileSync(
-      path.join(tempDir, 'prompt_template', 'followup.json'),
-      `${JSON.stringify({ name: 'followup', text: '{{getvar::lang}} {{setvar::persona::guide}}', type: 'plain' }, null, 2)}\n`,
+      path.join(tempDir, 'prompt_template', 'followup.risuprompt'),
+      `---
+name: followup
+type: plain
+type2: normal
+role: system
+---
+@@@ TEXT
+{{getvar::lang}} {{setvar::persona::guide}}
+`,
       'utf-8',
     );
 
+    // Use canonical .risuregex files instead of JSON
     fs.mkdirSync(path.join(tempDir, 'regex'), { recursive: true });
     fs.writeFileSync(
       path.join(tempDir, 'regex', '_order.json'),
-      `${JSON.stringify(['post.json'], null, 2)}\n`,
+      `${JSON.stringify(['post.risuregex'], null, 2)}\n`,
       'utf-8',
     );
     fs.writeFileSync(
-      path.join(tempDir, 'regex', 'post.json'),
-      `${JSON.stringify(
-        {
-          comment: 'post',
-          in: '{{getvar::lang}}',
-          out: '{{setvar::persona::guide}}',
-        },
-        null,
-        2,
-      )}\n`,
+      path.join(tempDir, 'regex', 'post.risuregex'),
+      `---
+comment: post
+type: editdisplay
+---
+@@@ IN
+{{getvar::lang}}
+@@@ OUT
+{{setvar::persona::guide}}
+`,
       'utf-8',
     );
 
+    // Canonical workspace uses metadata.json (no preset.json)
     fs.writeFileSync(
-      path.join(tempDir, 'preset.json'),
+      path.join(tempDir, 'metadata.json'),
       `${JSON.stringify({ name: 'test_preset', description: 'test preset' }, null, 2)}\n`,
       'utf-8',
     );
@@ -133,7 +152,7 @@ describe('preset analyze collectors and workflow', () => {
     expect(html).toContain('<script src="./preset-analysis.data.js"></script>');
   });
 
-  it('runs preset-wide analysis automatically after extract', () => {
+  it('runs preset-wide analysis automatically after extract', async () => {
     const sourcePath = path.join(tempDir, 'preset-source.json');
     const outDir = path.join(tempDir, 'extracted-preset');
 
@@ -145,7 +164,7 @@ describe('preset analyze collectors and workflow', () => {
           mainPrompt: 'You are {{getvar::persona}}.',
           jailbreak: '{{setvar::tone::sharp}}',
           globalNote: 'Note {{getvar::lang}}',
-          promptTemplate: [{ name: 'system', text: '{{setvar::lang::ko}}', type: 'plain' }],
+          promptTemplate: [{ name: 'system', text: '{{setvar::lang::ko}}', type: 'plain', type2: 'normal', role: 'system' }],
           temperature: 0.7,
         },
         null,
@@ -154,7 +173,7 @@ describe('preset analyze collectors and workflow', () => {
       'utf-8',
     );
 
-    const code = runPresetExtractWorkflow([sourcePath, '--out', outDir]);
+    const code = await runPresetExtractWorkflow([sourcePath, '--out', outDir]);
 
     expect(code).toBe(0);
     expect(fs.existsSync(path.join(outDir, 'analysis', 'preset-analysis.md'))).toBe(true);
@@ -183,7 +202,48 @@ describe('preset analyze collectors and workflow', () => {
     const code = runPresetExtractWorkflow([sourcePath, '--out', outDir, '--json-only']);
 
     expect(code).toBe(0);
-    expect(fs.existsSync(path.join(outDir, 'preset.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'preset.json'))).toBe(false);
+    expect(fs.existsSync(path.join(outDir, 'metadata.json'))).toBe(true);
     expect(fs.existsSync(path.join(outDir, 'analysis'))).toBe(false);
+  });
+
+  it('analyzes prompt-template-only preset workspace without prompts/ directory', () => {
+    // Create a prompt-template-only preset workspace (no prompts/ directory)
+    const promptOnlyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'preset-prompt-only-'));
+
+    fs.mkdirSync(path.join(promptOnlyDir, 'prompt_template'), { recursive: true });
+    fs.writeFileSync(
+      path.join(promptOnlyDir, 'metadata.json'),
+      `${JSON.stringify({ name: 'prompt_only_preset' }, null, 2)}\n`,
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(promptOnlyDir, 'prompt_template', '_order.json'),
+      `${JSON.stringify(['system.risuprompt'], null, 2)}\n`,
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(promptOnlyDir, 'prompt_template', 'system.risuprompt'),
+      `---
+name: system
+type: plain
+type2: normal
+role: system
+---
+@@@ TEXT
+{{setvar::lang::ko}}
+`,
+      'utf-8',
+    );
+
+    // Should be detected as preset even without prompts/ directory
+    const code = runAnalyzePresetWorkflow([promptOnlyDir, '--locale', 'en']);
+
+    expect(code).toBe(0);
+    expect(fs.existsSync(path.join(promptOnlyDir, 'analysis', 'preset-analysis.md'))).toBe(true);
+    expect(fs.existsSync(path.join(promptOnlyDir, 'analysis', 'preset-analysis.html'))).toBe(true);
+
+    // Cleanup
+    fs.rmSync(promptOnlyDir, { recursive: true, force: true });
   });
 });

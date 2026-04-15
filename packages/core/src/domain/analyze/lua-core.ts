@@ -1,5 +1,3 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import luaparse, { type Chunk } from 'luaparse';
 import { asRecord } from '@/domain';
 import {
@@ -7,7 +5,6 @@ import {
   buildRegexCorrelationFromScripts,
   type ElementCBSData,
 } from '@/domain/analyze/correlation';
-import { parseCharxFile } from '@/node';
 import { LUA_STDLIB_CALLS, RISUAI_API } from './lua-api';
 import { runAnalyzePhase } from './lua-analyzer';
 import {
@@ -38,15 +35,24 @@ export interface LuaAnalysisArtifact {
   elementCbs: ElementCBSData[];
 }
 
+/** Extract basename from file path without using node:path */
+function getBasename(filePath: string): string {
+  // Handle both POSIX and Windows paths
+  const lastSepIndex = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
+  const filename = lastSepIndex >= 0 ? filePath.slice(lastSepIndex + 1) : filePath;
+  const lastDotIndex = filename.lastIndexOf('.');
+  return lastDotIndex > 0 ? filename.slice(0, lastDotIndex) : filename;
+}
+
 /** Lua 소스 코드를 분석하여 공유 가능한 분석 결과를 반환 */
 export function analyzeLuaSource(input: {
   filePath: string;
   source: string;
-  charxArg: string | null;
+  charxData?: Record<string, unknown> | null;
 }): LuaAnalysisArtifact {
-  const { filePath, source, charxArg } = input;
+  const { filePath, source, charxData } = input;
   const totalLines = source.split('\n').length;
-  const baseName = path.basename(filePath, path.extname(filePath));
+  const baseName = getBasename(filePath);
 
   const ast = luaparse.parse(source, {
     comments: true,
@@ -71,7 +77,7 @@ export function analyzeLuaSource(input: {
     luaStdlibCalls: LUA_STDLIB_CALLS,
   });
 
-  const { lorebookCorrelation, regexCorrelation } = buildCharxCorrelations({ charxArg, collected });
+  const { lorebookCorrelation, regexCorrelation } = buildCharxCorrelations({ charxData, collected });
 
   return {
     filePath,
@@ -87,41 +93,22 @@ export function analyzeLuaSource(input: {
   };
 }
 
-/** 파일 경로의 Lua 파일을 분석하여 공유 가능한 분석 결과를 반환 */
-export function analyzeLuaFile(input: {
-  filePath: string;
-  charxArg: string | null;
-}): LuaAnalysisArtifact {
-  const { filePath, charxArg } = input;
-  const source = fs.readFileSync(filePath, 'utf-8');
-  return analyzeLuaSource({ filePath, source, charxArg });
-}
-
 function buildCharxCorrelations(params: {
-  charxArg: string | null;
+  charxData?: Record<string, unknown> | null;
   collected: CollectedData;
 }): {
   lorebookCorrelation: LorebookCorrelation | null;
   regexCorrelation: RegexCorrelation | null;
 } {
-  const { charxArg, collected } = params;
-  if (!charxArg) {
+  const { charxData, collected } = params;
+  if (!charxData) {
     return {
       lorebookCorrelation: null,
       regexCorrelation: null,
     };
   }
 
-  if (!fs.existsSync(charxArg)) {
-    console.error(`  ⚠️  --charx 파일을 찾을 수 없습니다: ${charxArg}`);
-    return {
-      lorebookCorrelation: null,
-      regexCorrelation: null,
-    };
-  }
-
-  const charx = asRecord(parseCharxFile(charxArg));
-  const data = asRecord(charx?.data);
+  const data = asRecord(charxData);
 
   let lorebookCorrelation: LorebookCorrelation | null = null;
   const characterBook = asRecord(data?.character_book);
@@ -132,8 +119,6 @@ function buildCharxCorrelations(params: {
         entries,
         collected,
       });
-    } else {
-      console.log('  ⚠️  --charx: lorebook 엔트리가 없습니다.');
     }
   }
 
@@ -148,8 +133,6 @@ function buildCharxCorrelations(params: {
         collected,
         totalScripts: scripts.length,
       });
-    } else {
-      console.log('  ⚠️  --charx: regex(customScripts) 엔트리가 없습니다.');
     }
   }
 

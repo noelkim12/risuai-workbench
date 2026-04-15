@@ -1,5 +1,6 @@
 export { asRecord, type GenericRecord } from './types';
-export * from './cbs'
+export * from './cbs';
+export * from './custom-extension';
 export {
   buildFolderMap as buildRisuFolderMap,
   resolveFolderName as resolveRisuFolderName,
@@ -149,7 +150,6 @@ export {
 export { RISUAI_API, type ApiMeta, LUA_STDLIB_CALLS } from './analyze/lua-api';
 export {
   analyzeLuaSource,
-  analyzeLuaFile,
   type LuaAnalysisArtifact,
 } from './analyze/lua-core';
 export {

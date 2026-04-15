@@ -1,11 +1,25 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { sanitizeFilename, createLorebookDirAllocator, planLorebookExtraction } from '@/domain';
 import {
-  sanitizeFilename,
-  inferLuaFunctionName,
-  createLorebookDirAllocator,
-  planLorebookExtraction,
-} from '@/domain';
+  extractLorebooksFromModule,
+  serializeLorebookContent,
+  serializeLorebookOrder,
+} from '@/domain/custom-extension/extensions/lorebook';
+import { executeLorebookPlan } from '@/node/lorebook-io';
+import {
+  buildRegexPath,
+  extractRegexFromModule,
+  serializeRegexContent,
+} from '@/domain/custom-extension/extensions/regex';
+import { buildLuaPath, extractLuaFromModule } from '@/domain/custom-extension/extensions/lua';
+import { buildHtmlPath, extractHtmlFromModule } from '@/domain/custom-extension/extensions/html';
+import {
+  buildVariablePath,
+  extractVariablesFromModule,
+  serializeVariableContent,
+} from '@/domain/custom-extension/extensions/variable';
+import { buildTogglePath, extractToggleFromModule } from '@/domain/custom-extension/extensions/toggle';
 import {
   ensureDir,
   writeJson,
@@ -14,7 +28,6 @@ import {
   writeBinaryAsync,
   writeJsonAsync,
   uniquePath,
-  executeLorebookPlan,
 } from '@/node';
 import { createLimiter } from '../../shared/concurrency';
 import { parseModuleRisumFull, parseModuleJson } from '../parsers';
@@ -77,116 +90,176 @@ export function phase2_extractLorebooks(module: any, outputDir: string): number 
   console.log('\n  📚 Phase 2: Lorebook 추출');
 
   const lorebooksDir = path.join(outputDir, 'lorebooks');
-  const lorebook = module?.lorebook;
-  if (!Array.isArray(lorebook) || lorebook.length === 0) {
+  const lorebooks = extractLorebooksFromModule(module ?? {}, 'module');
+  if (!lorebooks || lorebooks.length === 0) {
     console.log('     (lorebook 없음)');
     return 0;
   }
 
-  console.log(`     module.lorebook: ${lorebook.length}개`);
-  const orderList: string[] = [];
-  const manifestEntries: any[] = [];
-  const allocateDir = createLorebookDirAllocator();
-  const plan = planLorebookExtraction(lorebook, 'module', allocateDir);
-  const result = executeLorebookPlan(plan, lorebooksDir);
-  const count = result.count;
-  manifestEntries.push(...result.manifestEntries);
-  orderList.push(...result.orderList);
+  console.log(`     module.lorebook: ${lorebooks.length}개`);
+  ensureDir(lorebooksDir);
 
-  if (manifestEntries.length > 0) {
-    writeJson(path.join(lorebooksDir, 'manifest.json'), { version: 1, entries: manifestEntries });
+  // Use the planner/executor pattern for path-based lorebook extraction
+  const allocateDir = createLorebookDirAllocator();
+  const plan = planLorebookExtraction(lorebooks, 'module', allocateDir);
+
+  // Convert plan to use .risulorebook extension instead of .json
+  const convertedPlan = {
+    items: plan.items.map((item) => {
+      if (item.type === 'entry') {
+        return {
+          ...item,
+          relPath: item.relPath.replace(/\.json$/, '.risulorebook'),
+        };
+      }
+      return item;
+    }),
+  };
+
+  const { count, orderList } = executeLorebookPlan(convertedPlan, lorebooksDir);
+
+  // Write .risulorebook files with canonical format (not JSON)
+  for (const item of convertedPlan.items) {
+    if (item.type === 'entry') {
+      const outPath = path.join(lorebooksDir, item.relPath);
+      // Convert the raw entry data to canonical .risulorebook format
+      const canonicalContent = entryToCanonicalContent(item.data);
+      writeText(outPath, serializeLorebookContent(canonicalContent));
+    }
   }
 
+  // Write _order.json with folder paths + file paths (path-based contract)
   if (orderList.length > 0) {
-    writeJson(path.join(lorebooksDir, '_order.json'), orderList);
+    // Build order list with folder paths included
+    const fullOrderList: string[] = [];
+    const emittedFolders = new Set<string>();
+
+    for (const item of convertedPlan.items) {
+      if (item.type === 'folder') {
+        if (!emittedFolders.has(item.relDir)) {
+          fullOrderList.push(item.relDir);
+          emittedFolders.add(item.relDir);
+        }
+      } else {
+        // Check if this entry is inside a folder
+        const parentDir = item.relPath.includes('/') ? item.relPath.split('/')[0] : null;
+        if (parentDir && !emittedFolders.has(parentDir)) {
+          fullOrderList.push(parentDir);
+          emittedFolders.add(parentDir);
+        }
+        fullOrderList.push(item.relPath);
+      }
+    }
+
+    writeText(path.join(lorebooksDir, '_order.json'), serializeLorebookOrder(fullOrderList));
   }
 
   console.log(`     ✅ ${count}개 lorebook → ${path.relative('.', lorebooksDir)}/`);
   return count;
 }
 
+/** Convert raw lorebook entry data to canonical LorebookContent format */
+function entryToCanonicalContent(entry: any): import('@/domain/custom-extension/extensions/lorebook').LorebookContent {
+  // Handle both character_book and module lorebook schemas
+  const keys = Array.isArray(entry.keys)
+    ? entry.keys
+    : typeof entry.key === 'string'
+      ? entry.key.split(',').map((k: string) => k.trim()).filter(Boolean)
+      : [];
+
+  const secondaryKeys = Array.isArray(entry.secondary_keys)
+    ? entry.secondary_keys
+    : typeof entry.secondkey === 'string' && entry.secondkey.trim()
+      ? entry.secondkey.split(',').map((k: string) => k.trim()).filter(Boolean)
+      : undefined;
+
+  const content: import('@/domain/custom-extension/extensions/lorebook').LorebookContent = {
+    name: entry.name || entry.comment || '',
+    comment: entry.comment || entry.name || '',
+    mode: entry.mode || 'normal',
+    constant: entry.constant ?? entry.alwaysActive ?? false,
+    selective: entry.selective ?? false,
+    insertion_order: entry.insertion_order ?? entry.insertorder ?? 0,
+    case_sensitive: entry.case_sensitive ?? entry.extensions?.risu_case_sensitive ?? false,
+    use_regex: entry.use_regex ?? entry.useRegex ?? false,
+    keys,
+    content: entry.content || '',
+  };
+
+  if (secondaryKeys && secondaryKeys.length > 0) {
+    content.secondary_keys = secondaryKeys;
+  }
+
+  if (entry.extensions && Object.keys(entry.extensions).length > 0) {
+    content.extensions = entry.extensions;
+  }
+
+  if (entry.book_version ?? entry.bookVersion) {
+    content.book_version = entry.book_version ?? entry.bookVersion;
+  }
+
+  if (entry.activation_percent ?? entry.activationPercent) {
+    content.activation_percent = entry.activation_percent ?? entry.activationPercent;
+  }
+
+  if (entry.id) {
+    content.id = entry.id;
+  }
+
+  return content;
+}
+
 export function phase3_extractRegex(module: any, outputDir: string): number {
   console.log('\n  🔧 Phase 3: Regex(customscript) 추출');
 
   const regexDir = path.join(outputDir, 'regex');
-  const scripts = module?.regex;
-  if (!Array.isArray(scripts) || scripts.length === 0) {
+  const scripts = extractRegexFromModule(module ?? {}, 'module');
+  if (!scripts || scripts.length === 0) {
     console.log('     (customscript 없음)');
     return 0;
   }
 
+  ensureDir(regexDir);
   console.log(`     module.regex: ${scripts.length}개`);
   let count = 0;
   const orderList: string[] = [];
   for (let i = 0; i < scripts.length; i += 1) {
     const script = scripts[i];
-    const name = sanitizeFilename(script?.comment || `regex_${i}`);
-    const outPath = uniquePath(regexDir, name, '.json');
-    writeJson(outPath, script);
+    const suggestedPath = buildRegexPath('module', script.comment || `regex_${i}`);
+    const outPath = uniquePath(
+      regexDir,
+      path.basename(suggestedPath, '.risuregex'),
+      '.risuregex',
+    );
+    writeText(outPath, serializeRegexContent(script));
     orderList.push(path.basename(outPath));
     count += 1;
   }
 
   if (orderList.length > 0) {
-    writeJson(path.join(regexDir, '_order.json'), orderList);
+    writeText(path.join(regexDir, '_order.json'), `${JSON.stringify(orderList, null, 2)}\n`);
   }
 
   console.log(`     ✅ ${count}개 regex → ${path.relative('.', regexDir)}/`);
   return count;
 }
 
-export function phase4_extractTriggerLua(module: any, outputDir: string): number {
-  console.log('\n  🌙 Phase 4: TriggerLua 스크립트 추출');
+export function phase4_extractLua(module: any, outputDir: string): number {
+  console.log('\n  🌙 Phase 4: Lua triggerscript 추출');
 
-  const luaDir = path.join(outputDir, 'lua');
-  const triggers = module?.trigger;
-  if (!Array.isArray(triggers) || triggers.length === 0) {
-    console.log('     (module trigger 없음)');
+  const lua = extractLuaFromModule(module ?? {}, 'module');
+  if (lua === null) {
+    console.log('     (module triggerscript 없음)');
     return 0;
   }
 
-  console.log(`     module.trigger: ${triggers.length}개`);
-  let luaCount = 0;
-  let triggerCount = 0;
-
-  for (let i = 0; i < triggers.length; i += 1) {
-    const trigger = triggers[i];
-    const effects = Array.isArray(trigger?.effect) ? trigger.effect : [];
-
-    for (let j = 0; j < effects.length; j += 1) {
-      const effect = effects[j];
-      if (effect?.type === 'triggerlua' && effect.code) {
-        triggerCount += 1;
-        const baseName = sanitizeFilename(
-          trigger.comment || inferLuaFunctionName(effect.code) || `trigger_${i}`,
-        );
-        const triggerLuaCount = effects.filter((e: any) => e?.type === 'triggerlua').length;
-        const name = triggerLuaCount > 1 ? `${baseName}_${j}` : baseName;
-        const outPath = uniquePath(luaDir, name, '.lua');
-
-        const header = [
-          `-- Extracted from module trigger: ${trigger.comment || '(unnamed)'}`,
-          `-- Trigger type: ${trigger.type || 'unknown'}`,
-          `-- Low-level access: ${trigger.lowLevelAccess || module?.lowLevelAccess ? 'yes' : 'no'}`,
-          '',
-        ].join('\n');
-
-        writeText(outPath, header + effect.code);
-        luaCount += 1;
-      }
-    }
-  }
-
-  if (luaCount === 0) {
-    console.log('     (triggerlua 없음 — triggercode 또는 다른 effect 타입만 존재)');
-  } else {
-    console.log(
-      `     ✅ ${luaCount}개 lua 스크립트 (${triggerCount}개 triggerlua effect) → ${path.relative('.', luaDir)}/`,
-    );
-  }
-
-  return luaCount;
+  const outPath = path.join(outputDir, buildLuaPath('module', resolveModuleTargetName(module)));
+  writeText(outPath, lua);
+  console.log(`     ✅ ${path.relative('.', outPath)} -> ${lua.length} chars`);
+  return 1;
 }
+
+export const phase4_extractTriggerLua = phase4_extractLua;
 
 export function phase5_extractAssets(
   module: any,
@@ -379,20 +452,35 @@ export async function phase5_extractAssetsAsync(
 export function phase6_extractBackgroundEmbedding(module: any, outputDir: string): number {
   console.log('\n  🌐 Phase 6: BackgroundEmbedding 추출');
 
-  const html = module?.backgroundEmbedding;
-  if (!html) {
+  const html = extractHtmlFromModule(module ?? {}, 'module');
+  if (html === null) {
     console.log('     (backgroundEmbedding 없음)');
     return 0;
   }
 
-  const outPath = path.join(outputDir, 'html', 'background.html');
+  const outPath = path.join(outputDir, buildHtmlPath('module'));
   writeText(outPath, html);
-  console.log(`     ✅ html/background.html → ${path.relative('.', path.join(outputDir, 'html'))}`);
+  console.log(`     ✅ ${path.relative('.', outPath)} → ${path.relative('.', path.join(outputDir, 'html'))}`);
   return 1;
 }
 
-export function phase7_extractModuleIdentity(module: any, outputDir: string): number {
-  console.log('\n  🧾 Phase 7: Module Identity 추출');
+export function phase7_extractVariables(module: any, outputDir: string): number {
+  console.log('\n  🧮 Phase 7: Module Variables 추출');
+
+  const variables = extractVariablesFromModule(module ?? {}, 'module');
+  if (variables === null) {
+    console.log('     (defaultVariables 없음)');
+    return 0;
+  }
+
+  const outPath = path.join(outputDir, buildVariablePath('module', resolveModuleTargetName(module)));
+  writeText(outPath, serializeVariableContent(variables));
+  console.log(`     ✅ ${path.relative('.', outPath)} -> ${Object.keys(variables).length} vars`);
+  return 1;
+}
+
+export function phase8_extractModuleIdentity(module: any, outputDir: string): number {
+  console.log('\n  🧾 Phase 8: Module Identity 추출');
 
   const metadata: Record<string, unknown> = {
     name: module?.name || '',
@@ -404,7 +492,7 @@ export function phase7_extractModuleIdentity(module: any, outputDir: string): nu
   if (typeof module?.lowLevelAccess === 'boolean') metadata.lowLevelAccess = module.lowLevelAccess;
   if (typeof module?.hideIcon === 'boolean') metadata.hideIcon = module.hideIcon;
   if (module?.mcp) metadata.mcp = module.mcp;
-  if (module?.customModuleToggle) metadata.customModuleToggle = module.customModuleToggle;
+  if (typeof module?.cjs === 'string' && module.cjs.length > 0) metadata.cjs = module.cjs;
 
   const metadataPath = path.join(outputDir, 'metadata.json');
   writeJson(metadataPath, metadata);
@@ -412,18 +500,26 @@ export function phase7_extractModuleIdentity(module: any, outputDir: string): nu
   return 1;
 }
 
-export function phase8_extractModuleToggle(module: any, outputDir: string): number {
-  console.log('\n  🧩 Phase 8: Module Toggle 추출');
+export const phase7_extractModuleIdentity = phase8_extractModuleIdentity;
 
-  const toggle = module?.customModuleToggle;
-  if (!toggle) {
+export function phase9_extractModuleToggle(module: any, outputDir: string): number {
+  console.log('\n  🧩 Phase 9: Module Toggle 추출');
+
+  const toggle = extractToggleFromModule(module ?? {}, 'module');
+  if (toggle === null) {
     console.log('     (customModuleToggle 없음)');
     return 0;
   }
 
-  const moduleName = sanitizeFilename(module?.name || 'module');
-  const outPath = path.join(outputDir, 'toggle', `${moduleName}.risutoggle`);
-  writeText(outPath, String(toggle));
+  const outPath = path.join(outputDir, buildTogglePath('module', resolveModuleTargetName(module)));
+  writeText(outPath, toggle);
   console.log(`     ✅ ${path.relative('.', outPath)} -> ${toggle.length} chars`);
   return 1;
+}
+
+export const phase8_extractModuleToggle = phase9_extractModuleToggle;
+
+function resolveModuleTargetName(module: any): string {
+  const name = typeof module?.name === 'string' ? module.name.trim() : '';
+  return name.length > 0 ? name : 'module';
 }

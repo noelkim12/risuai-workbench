@@ -44,8 +44,12 @@ export function encodeRPack(data: Buffer | string): Buffer {
 export function loadRPackEncodeMap(): Buffer {
   if (rpackEncodeMap) return rpackEncodeMap;
 
+  // Support both source (src/) and built (dist/) layouts
+  // src/node/rpack.ts → __dirname = src/node/ → up 2 levels = package root
+  // dist/node/rpack.js → __dirname = dist/node/ → up 2 levels = package root
   const candidates = [
     path.join(__dirname, 'rpack_map.bin'),
+    path.resolve(__dirname, '..', '..', 'assets', 'rpack_map.bin'),
     path.resolve(__dirname, '..', '..', '..', 'assets', 'rpack_map.bin'),
     path.join(process.cwd(), 'assets', 'rpack_map.bin'),
   ];

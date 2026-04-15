@@ -49,9 +49,27 @@ export function runAnalyzePresetWorkflow(argv: readonly string[]): number {
     return 1;
   }
 
-  const presetJsonPath = path.join(outputDir, 'preset.json');
-  if (!fs.existsSync(presetJsonPath)) {
-    console.error(`\n  ❌ preset.json을 찾을 수 없습니다: ${presetJsonPath}\n`);
+  // Check for canonical workspace markers or legacy preset.json
+  // Valid canonical markers: metadata.json + at least one of prompts/, prompt_template/, regex/, model.json, parameters.json
+  const hasMetadata = fs.existsSync(path.join(outputDir, 'metadata.json'));
+  const hasCanonicalPresetMarkers = hasMetadata && (
+    fs.existsSync(path.join(outputDir, 'prompts')) ||
+    fs.existsSync(path.join(outputDir, 'prompt_template')) ||
+    fs.existsSync(path.join(outputDir, 'regex')) ||
+    fs.existsSync(path.join(outputDir, 'model.json')) ||
+    fs.existsSync(path.join(outputDir, 'parameters.json')) ||
+    fs.existsSync(path.join(outputDir, 'instruct_settings.json'))
+  );
+  const hasLegacyPresetJson = fs.existsSync(path.join(outputDir, 'preset.json'));
+
+  if (!hasCanonicalPresetMarkers && !hasLegacyPresetJson) {
+    console.error(`\n  ❌ Canonical preset workspace markers not found: ${outputDir}`);
+    console.error(`  Expected one of:`);
+    console.error(`    - metadata.json + prompts/ directory (canonical workspace)`);
+    console.error(`    - metadata.json + prompt_template/ directory (canonical workspace)`);
+    console.error(`    - metadata.json + regex/ directory (canonical workspace)`);
+    console.error(`    - metadata.json + model.json/parameters.json (canonical workspace)`);
+    console.error(`    - preset.json (legacy workspace)\n`);
     return 1;
   }
 

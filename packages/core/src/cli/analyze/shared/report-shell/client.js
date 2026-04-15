@@ -86,14 +86,18 @@
         return (panel && panel.getAttribute && panel.getAttribute('data-panel-id')) || '';
       }
 
-      function buildForceGraphSignature(payload) {
+      function buildForceGraphSignature(payload, panel) {
         var nodes = Array.isArray(payload && payload.nodes) ? payload.nodes : [];
         var edges = Array.isArray(payload && payload.edges) ? payload.edges : [];
         var layout = payload && payload.layout ? JSON.stringify(payload.layout) : '';
+        var activeTypes = panel && panel.getAttribute ? (panel.getAttribute('data-force-graph-active-types') || '') : '';
+        var activeEdgeTypes = panel && panel.getAttribute ? (panel.getAttribute('data-force-graph-active-edge-types') || '') : '';
         return JSON.stringify({
           nodes: nodes.map(function(node) { return [node.id, node.type, node.groupId || '', node.layoutBand || '']; }),
           edges: edges.map(function(edge) { return [edge.source, edge.target, edge.type, edge.label || '']; }),
           layout: layout,
+          activeTypes: activeTypes,
+          activeEdgeTypes: activeEdgeTypes,
         });
       }
 
@@ -107,7 +111,7 @@
       function ensureForceGraph(panel, mount, payload) {
         if (typeof d3 === 'undefined') { mount.innerHTML = '<p class="diagram-fallback">D3.js failed to load.</p>'; return; }
         var stateKey = getForceGraphStateKey(panel);
-        var signature = buildForceGraphSignature(payload);
+        var signature = buildForceGraphSignature(payload, panel);
         var existing = forceGraphState.get(stateKey);
         if (existing && existing.signature === signature && existing.mount === mount && mount.contains(existing.svg && existing.svg.node())) {
           refreshForceGraphViewport(panel, mount);
@@ -1024,6 +1028,9 @@
         var edges = Array.isArray(payload.edges) ? payload.edges.map(function(e) { return Object.assign({}, e); }) : [];
         if (nodes.length === 0) { mount.innerHTML = '<p class="diagram-fallback">' + (i18n['shell.forceGraph.empty'] || 'No graph data available.') + '</p>'; return; }
 
+        var allNodes = nodes;
+        var allEdges = edges;
+
         var graphH = computeForceGraphHeight(panel, nodes.length);
         var centerX = (mount.clientWidth || 720) / 2;
         var centerY = graphH / 2;
@@ -1238,44 +1245,6 @@
           payload.__luaFlowActive = false;
         }
 
-        // Pre-index trigger-keyword → connected lorebook hosts for satellite
-        // clustering. Builder convention: keyword edges run trigger → lb.
-        var triggerHosts = new Map();
-        for (var ei = 0; ei < edges.length; ei++) {
-          var e = edges[ei];
-          if (e.type !== 'keyword') continue;
-          var sid = typeof e.source === 'object' && e.source ? e.source.id : e.source;
-          var tid = typeof e.target === 'object' && e.target ? e.target.id : e.target;
-          // Guard either direction just in case.
-          var triggerId = null, hostId = null;
-          if (typeof sid === 'string' && sid.indexOf('trig:') === 0) { triggerId = sid; hostId = tid; }
-          else if (typeof tid === 'string' && tid.indexOf('trig:') === 0) { triggerId = tid; hostId = sid; }
-          else continue;
-          var hostList = triggerHosts.get(triggerId);
-          if (!hostList) { hostList = []; triggerHosts.set(triggerId, hostList); }
-          hostList.push(hostId);
-        }
-        payload.__triggerHosts = triggerHosts;
-
-        buildInitialNodePositions(nodes, payload, centerX, centerY, graphH);
-        if (isRelationshipNetwork && payload.__folderDebug) {
-          var dbg = payload.__folderDebug;
-          panel.dataset.forceGraphFolderCount = String(dbg.folderCount);
-          panel.dataset.forceGraphLuaFileCount = String(dbg.luaFileCount);
-          panel.dataset.forceGraphLuaComponentCount = String(dbg.luaComponentCount);
-          panel.dataset.forceGraphLuaFlowActive = String(!!payload.__luaFlowActive);
-          panel.dataset.forceGraphClusterCount = String(dbg.clusterCount);
-          panel.dataset.forceGraphTotalLorebook = String(dbg.totalLorebook);
-          panel.dataset.forceGraphTotalLua = String(dbg.totalLua);
-          panel.dataset.forceGraphMaxFolderShare = dbg.maxFolderShare.toFixed(2);
-          if (dbg.clusterCount <= 1 || dbg.maxFolderShare > 0.85) {
-            // eslint-disable-next-line no-console
-            console.warn('[relationship-network] Cluster layout degenerate:', dbg,
-              dbg.clusterCount <= 1 ? '(no folder/lua-file structure to cluster by)' : '(one cluster holds >85% of pinnable nodes)');
-          }
-        }
-        mount.innerHTML = '';
-
         function splitLabelLines(value) {
           var text = String(value || '');
           text = text.replace(/[/]/g, '/​').replace(/_/g, '_​').replace(/ · /g, ' ·​ ');
@@ -1365,7 +1334,7 @@
           { type: 'variable', color: '#fbbf24', label: i18n['shell.forceGraph.variable'] || 'Variable' },
           { type: 'trigger-keyword', color: '#f43f5e', label: i18n['shell.forceGraph.triggerKeyword'] || 'Trigger keyword' },
         ].filter(function(entry) {
-          return nodes.some(function(node) { return node.type === entry.type; });
+          return allNodes.some(function(node) { return node.type === entry.type; });
         });
 
         var edgeLegendEntries = [
@@ -1428,6 +1397,55 @@
 
         var activeNodeTypes = getInitialActiveTypes();
         var activeEdgeTypes = getInitialActiveEdgeTypes();
+
+        nodes = allNodes.filter(function(node) {
+          return !isRelationshipNetwork || activeNodeTypes.has(node.type);
+        });
+        var visibleNodeIdsForRender = new Set(nodes.map(function(node) { return node.id; }));
+        edges = allEdges.filter(function(edge) {
+          var sourceId = getEdgeNodeId(edge.source);
+          var targetId = getEdgeNodeId(edge.target);
+          if (!visibleNodeIdsForRender.has(sourceId) || !visibleNodeIdsForRender.has(targetId)) return false;
+          return !isRelationshipNetwork || activeEdgeTypes.has(getRelationshipEdgeType(edge.type));
+        });
+
+        // Pre-index trigger-keyword → connected lorebook hosts for satellite
+        // clustering. Builder convention: keyword edges run trigger → lb.
+        var triggerHosts = new Map();
+        for (var ei = 0; ei < edges.length; ei++) {
+          var e = edges[ei];
+          if (e.type !== 'keyword') continue;
+          var sid = typeof e.source === 'object' && e.source ? e.source.id : e.source;
+          var tid = typeof e.target === 'object' && e.target ? e.target.id : e.target;
+          // Guard either direction just in case.
+          var triggerId = null, hostId = null;
+          if (typeof sid === 'string' && sid.indexOf('trig:') === 0) { triggerId = sid; hostId = tid; }
+          else if (typeof tid === 'string' && tid.indexOf('trig:') === 0) { triggerId = tid; hostId = sid; }
+          else continue;
+          var hostList = triggerHosts.get(triggerId);
+          if (!hostList) { hostList = []; triggerHosts.set(triggerId, hostList); }
+          hostList.push(hostId);
+        }
+        payload.__triggerHosts = triggerHosts;
+
+        buildInitialNodePositions(nodes, payload, centerX, centerY, graphH);
+        if (isRelationshipNetwork && payload.__folderDebug) {
+          var dbg = payload.__folderDebug;
+          panel.dataset.forceGraphFolderCount = String(dbg.folderCount);
+          panel.dataset.forceGraphLuaFileCount = String(dbg.luaFileCount);
+          panel.dataset.forceGraphLuaComponentCount = String(dbg.luaComponentCount);
+          panel.dataset.forceGraphLuaFlowActive = String(!!payload.__luaFlowActive);
+          panel.dataset.forceGraphClusterCount = String(dbg.clusterCount);
+          panel.dataset.forceGraphTotalLorebook = String(dbg.totalLorebook);
+          panel.dataset.forceGraphTotalLua = String(dbg.totalLua);
+          panel.dataset.forceGraphMaxFolderShare = dbg.maxFolderShare.toFixed(2);
+          if (dbg.clusterCount <= 1 || dbg.maxFolderShare > 0.85) {
+            // eslint-disable-next-line no-console
+            console.warn('[relationship-network] Cluster layout degenerate:', dbg,
+              dbg.clusterCount <= 1 ? '(no folder/lua-file structure to cluster by)' : '(one cluster holds >85% of pinnable nodes)');
+          }
+        }
+        mount.innerHTML = '';
 
         function fitGraph(animated) {
           if (nodes.length === 0) return;
@@ -1914,7 +1932,18 @@
           return force;
         }
 
-        var simulation = d3.forceSimulation(nodes)
+        // Filter simulation nodes/edges to exclude hidden types so they don't
+        // distort the layout. Legend toggles re-mount the graph, so the
+        // simulation always reflects the currently-visible set.
+        var simNodes = nodes.filter(function(n) { return activeNodeTypes.has(n.type); });
+        var visibleNodeIdsForSim = new Set(simNodes.map(function(n) { return n.id; }));
+        var simEdges = edges.filter(function(e) {
+          var sid = getEdgeNodeId(e.source);
+          var tid = getEdgeNodeId(e.target);
+          return visibleNodeIdsForSim.has(sid) && visibleNodeIdsForSim.has(tid);
+        });
+
+        var simulation = d3.forceSimulation(simNodes)
           .force('charge', d3.forceManyBody()
             .strength(function(d) {
               // Lorebook nodes are pinned, so charge on them is wasted CPU.
@@ -1923,7 +1952,7 @@
               return -160;
             })
             .distanceMax(380))
-          .force('link', d3.forceLink(edges).id(function(d) { return d.id; })
+          .force('link', d3.forceLink(simEdges).id(function(d) { return d.id; })
             .distance(function(e) {
               // Regex ↔ variable: pulled tight so the regex + its read/write
               // state form a readable micro-cluster. 40px means the variable
@@ -2033,7 +2062,7 @@
                   updateLegendChipState(item, activeNodeTypes.has(type));
                 });
                 hoveredNodeId = null;
-                syncGraphVisibility();
+                ensureForceGraph(panel, mount, payload);
               });
               legendDiv.appendChild(chip);
             });
@@ -2053,7 +2082,7 @@
                   updateLegendChipState(item, activeEdgeTypes.has(type));
                 });
                 hoveredNodeId = null;
-                syncGraphVisibility();
+                ensureForceGraph(panel, mount, payload);
               });
               legendDiv.appendChild(chip);
             });
