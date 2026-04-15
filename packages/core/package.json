@@ -32,7 +32,8 @@
   "dependencies": {
     "fflate": "^0.8.2",
     "luaparse": "^0.3.1",
-    "msgpackr": "^1.11.9"
+    "msgpackr": "^1.11.9",
+    "yaml": "^2.5.0"
   },
   "devDependencies": {
     "@types/node": "^25.3.5",
