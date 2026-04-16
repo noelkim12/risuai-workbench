@@ -388,6 +388,188 @@ describe('relationship-network-lua', () => {
     );
   });
 
+  it('adds direct lua-to-lorebook edges for getLoreBooksMain and upsertLocalLoreBook calls that resolve to entry names', () => {
+    const luaArtifacts = [
+      makeLuaArtifact({
+        baseName: 'lookup-main',
+        sourceText: [
+          'function syncLore(id)',
+          '  local entry = getLoreBooksMain(id, "Entry1")',
+          '  upsertLocalLoreBook(id, "Entry1", "body", {})',
+          '  return entry',
+          'end',
+        ].join('\n'),
+        collected: {
+          functions: [
+            {
+              name: 'syncLore',
+              displayName: 'syncLore',
+              stateReads: new Set(),
+              stateWrites: new Set(),
+              startLine: 1,
+              endLine: 5,
+              lineCount: 5,
+              isLocal: false,
+              isAsync: false,
+              params: ['id'],
+              parentFunction: null,
+              isListenEditHandler: false,
+              listenEditEventType: null,
+              apiCategories: new Set(['lore']),
+              apiNames: new Set(['getLoreBooksMain', 'upsertLocalLoreBook']),
+            },
+          ] as any,
+          loreApiCalls: [
+            {
+              apiName: 'getLoreBooksMain',
+              keyword: 'Entry1',
+              line: 2,
+              containingFunction: 'syncLore',
+            },
+            {
+              apiName: 'upsertLocalLoreBook',
+              keyword: 'Entry1',
+              line: 3,
+              containingFunction: 'syncLore',
+            },
+          ],
+        } as any,
+        lorebookCorrelation: {
+          correlations: [],
+          entryInfos: [],
+          loreApiCalls: [
+            {
+              apiName: 'getLoreBooksMain',
+              keyword: 'Entry1',
+              line: 2,
+              containingFunction: 'syncLore',
+            },
+            {
+              apiName: 'upsertLocalLoreBook',
+              keyword: 'Entry1',
+              line: 3,
+              containingFunction: 'syncLore',
+            },
+          ],
+          totalEntries: 1,
+          totalFolders: 0,
+          bridgedVars: [],
+          luaOnlyVars: [],
+          lorebookOnlyVars: [],
+        } as any,
+      }),
+    ];
+
+    const panel = buildRelationshipNetworkPanel(
+      'test-panel',
+      {
+        lorebookStructure,
+        lorebookActivationChain,
+        lorebookRegexCorrelation,
+        lorebookCBS: [],
+        regexCBS: [],
+        luaArtifacts,
+      },
+      'en',
+    );
+
+    expect(panel).not.toBeNull();
+    const payload = panel!.payload as any;
+    expect(payload.edges).toContainEqual({
+      source: 'lua-fn:lookup-main:syncLore',
+      target: 'lb:e1',
+      type: 'lore-direct',
+      label: 'Entry1',
+    });
+    expect(payload.nodes).toContainEqual(
+      expect.objectContaining({
+        id: 'lua-fn:lookup-main:syncLore',
+        details: expect.objectContaining({
+          APIs: 'getLoreBooksMain, upsertLocalLoreBook',
+          Body:
+            'function syncLore(id)\n  local entry = getLoreBooksMain(id, "Entry1")\n  upsertLocalLoreBook(id, "Entry1", "body", {})\n  return entry\nend',
+        }),
+      }),
+    );
+  });
+
+  it('adds lua-to-lorebook edges for loadLoreBooksMain bulk loads across available entries', () => {
+    const luaArtifacts = [
+      makeLuaArtifact({
+        baseName: 'load-main',
+        sourceText: ['function syncAll(id)', '  return loadLoreBooksMain(id, 512)', 'end'].join('\n'),
+        collected: {
+          functions: [
+            {
+              name: 'syncAll',
+              displayName: 'syncAll',
+              stateReads: new Set(),
+              stateWrites: new Set(),
+              startLine: 1,
+              endLine: 3,
+              lineCount: 3,
+              isLocal: false,
+              isAsync: false,
+              params: ['id'],
+              parentFunction: null,
+              isListenEditHandler: false,
+              listenEditEventType: null,
+              apiCategories: new Set(['lore']),
+              apiNames: new Set(['loadLoreBooksMain']),
+            },
+          ] as any,
+          loreApiCalls: [
+            {
+              apiName: 'loadLoreBooksMain',
+              keyword: null,
+              line: 2,
+              containingFunction: 'syncAll',
+            },
+          ],
+        } as any,
+        lorebookCorrelation: {
+          correlations: [],
+          entryInfos: [],
+          loreApiCalls: [
+            {
+              apiName: 'loadLoreBooksMain',
+              keyword: null,
+              line: 2,
+              containingFunction: 'syncAll',
+            },
+          ],
+          totalEntries: 1,
+          totalFolders: 0,
+          bridgedVars: [],
+          luaOnlyVars: [],
+          lorebookOnlyVars: [],
+        } as any,
+      }),
+    ];
+
+    const panel = buildRelationshipNetworkPanel(
+      'test-panel',
+      {
+        lorebookStructure,
+        lorebookActivationChain,
+        lorebookRegexCorrelation,
+        lorebookCBS: [],
+        regexCBS: [],
+        luaArtifacts,
+      },
+      'en',
+    );
+
+    expect(panel).not.toBeNull();
+    const payload = panel!.payload as any;
+    expect(payload.edges).toContainEqual({
+      source: 'lua-fn:load-main:syncAll',
+      target: 'lb:e1',
+      type: 'lore-direct',
+      label: 'loadLoreBooksMain',
+    });
+  });
+
   it('adds trigger keyword nodes with details for lorebook entry activation origins', () => {
     const panel = buildRelationshipNetworkPanel(
       'test-panel',

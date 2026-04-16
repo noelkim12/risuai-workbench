@@ -1,8 +1,14 @@
 import type { CharxReportData } from '../../../../charx/types';
 import type { RenderContext, WikiFile } from '../../types';
-import { serializeFrontmatter } from '../../markdown';
-import { toWikiSlug } from '../../slug';
-import { chainToEntity, chainToNotes } from '../../paths';
+import { buildTable, serializeFrontmatter } from '../../markdown';
+import { toLorebookEntrySlug } from '../../slug';
+import {
+  lorebookActivationChainToEntity,
+  lorebookActivationChainToNotes,
+  lorebookActivationIndexToChain,
+  resolveLorebookActivationChainPath,
+  resolveLorebookEntityPath,
+} from '../../paths';
 import type { LorebookActivationEdge } from '@/domain';
 
 /** Local alias for the domain type */
@@ -116,24 +122,96 @@ export function renderLorebookActivationChains(
       edges: data.lorebookActivationChain.edges as ActivationEdge[],
     });
     if (result.steps.length <= 1) continue;
-    files.push(renderOneChain(result, ctx));
+    files.push(renderOneChain(result, data, ctx));
   }
   return files;
 }
 
-function collectEntryPoints(data: CharxReportData): string[] {
-  const seen = new Set<string>();
-  for (const entry of data.lorebookStructure.entries) {
-    if (entry.mode === 'constant') seen.add(entry.name);
-  }
-  for (const edge of data.lorebookActivationChain.edges) {
-    seen.add(edge.sourceId);
-  }
-  return Array.from(seen);
+export function renderLorebookActivationIndex(
+  data: CharxReportData,
+  ctx: RenderContext,
+): WikiFile | null {
+  const entryPoints = collectEntryPoints(data);
+  if (entryPoints.length === 0) return null;
+
+  const rows = entryPoints.map((entryPoint) => {
+    const entry = resolveLorebookEntry(data, entryPoint);
+    const displayName = entry?.name ?? entryPoint;
+    const chainPath = resolveLorebookActivationChainPath(data.lorebookStructure.entries, entryPoint);
+    const outboundCount = data.lorebookActivationChain.edges.filter((edge) => edge.sourceId === entryPoint).length;
+
+    return {
+      displayName,
+      folder: entry?.folder ?? '(root)',
+      chainPath,
+      outboundCount,
+    };
+  });
+
+  const frontmatter = serializeFrontmatter({
+    source: 'generated',
+    'page-class': 'index',
+    artifact: ctx.artifactKey,
+    'artifact-type': ctx.artifactType,
+    'chain-type': 'lorebook-activation',
+    'total-chains': rows.length,
+    'generated-at': ctx.generatedAt,
+    generator: `risu-workbench/analyze/wiki@${ctx.generatorVersion}`,
+  });
+
+  const tableRows = rows
+    .sort((a, b) => a.chainPath.localeCompare(b.chainPath))
+    .map((row) => [
+      `[${row.displayName}](${lorebookActivationIndexToChain(row.chainPath)})`,
+      `\`${row.folder}\``,
+      String(row.outboundCount),
+    ]);
+
+  const lines: string[] = [
+    frontmatter.trimEnd(),
+    '',
+    '# Lorebook activation',
+    '',
+    `${rows.length} entry-point chain pages generated from lorebook activation edges and constant-entry roots.`,
+    '',
+    buildTable(['Entry point', 'Folder', 'Outbound edges'], tableRows),
+    '',
+  ];
+
+  return { relativePath: 'chains/lorebook-activation/_index.md', content: lines.join('\n') };
 }
 
-function renderOneChain(result: BfsResult, ctx: RenderContext): WikiFile {
-  const slug = toWikiSlug(result.entryPoint);
+function collectEntryPoints(data: CharxReportData): string[] {
+  const selectedByPath = new Map<string, { rawReference: string; outboundCount: number }>();
+
+  const consider = (rawReference: string) => {
+    const chainPath = resolveLorebookActivationChainPath(data.lorebookStructure.entries, rawReference);
+    const outboundCount = data.lorebookActivationChain.edges.filter((edge) => edge.sourceId === rawReference).length;
+    const existing = selectedByPath.get(chainPath);
+
+    if (!existing || outboundCount > existing.outboundCount) {
+      selectedByPath.set(chainPath, { rawReference, outboundCount });
+    }
+  };
+
+  for (const entry of data.lorebookStructure.entries) {
+    if (entry.activationMode === 'constant') consider(entry.id);
+  }
+  for (const edge of data.lorebookActivationChain.edges) {
+    consider(edge.sourceId);
+  }
+
+  return Array.from(selectedByPath.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([, value]) => value.rawReference);
+}
+
+function renderOneChain(result: BfsResult, data: CharxReportData, ctx: RenderContext): WikiFile {
+  const entry = resolveLorebookEntry(data, result.entryPoint);
+  const entryLabel = entry?.name ?? result.entryPoint;
+  const slug = toLorebookEntrySlug(entryLabel);
+  const relativePath = resolveLorebookActivationChainPath(data.lorebookStructure.entries, result.entryPoint);
+  const directEdges = data.lorebookActivationChain.edges.filter((edge) => edge.sourceId === result.entryPoint);
   const touchesVariables: string[] = [];
 
   const frontmatter = serializeFrontmatter({
@@ -142,7 +220,7 @@ function renderOneChain(result: BfsResult, ctx: RenderContext): WikiFile {
     artifact: ctx.artifactKey,
     'artifact-type': ctx.artifactType,
     'chain-type': 'lorebook-activation',
-    'entry-point': result.entryPoint,
+    'entry-point': entryLabel,
     hops: result.hops,
     'max-depth': result.maxDepth,
     'has-cycles': result.hasCycles,
@@ -156,29 +234,54 @@ function renderOneChain(result: BfsResult, ctx: RenderContext): WikiFile {
   const lines: string[] = [
     frontmatter.trimEnd(),
     '',
-    `# Chain: ${result.entryPoint} activation flow`,
+    `# Chain: ${entryLabel} activation flow`,
     '',
-    `**Entry point:** [\`${result.entryPoint}\`](${chainToEntity(slug)})`,
+    `**Entry point:** [\`${entryLabel}\`](${lorebookActivationChainToEntity(relativePath, resolveLorebookEntityPath(data.lorebookStructure.entries, result.entryPoint))})`,
     `**Hops:** ${result.hops} · **Cycles:** ${result.cycleCount}${result.hasCycles ? ' (resolved)' : ''}`,
     '',
     '## Walk',
     '',
+    'This section lists only the lorebook entries referenced directly from the entry point.',
+    '',
   ];
 
-  result.steps.forEach((step, idx) => {
-    const stepSlug = toWikiSlug(step.node);
-    if (idx === 0) {
-      lines.push(`### Step 1 — [${step.node}](${chainToEntity(stepSlug)}) activates`);
-    } else {
-      lines.push(
-        `### Step ${idx + 1} → [${step.node}](${chainToEntity(stepSlug)}) (${step.reason})`,
+  if (directEdges.length === 0) {
+    lines.push('- No direct lorebook-to-lorebook activation references found.', '');
+  } else {
+    directEdges.forEach((edge) => {
+      const targetEntry = resolveLorebookEntry(data, edge.targetId);
+      const targetLabel = targetEntry?.name ?? edge.targetId;
+      const targetPath = lorebookActivationChainToEntity(
+        relativePath,
+        resolveLorebookEntityPath(data.lorebookStructure.entries, edge.targetId),
       );
-    }
-    if (step.matchedKeywords.length > 0) {
-      lines.push(`- matched keywords: ${step.matchedKeywords.map((k) => `\`${k}\``).join(', ')}`);
-    }
-    lines.push('');
-  });
+      const reason =
+        edge.status === 'possible'
+          ? 'possible activation'
+          : edge.status === 'partial'
+            ? 'partial activation'
+            : 'blocked';
+
+      lines.push(`- [${targetLabel}](${targetPath}) — ${reason}`);
+      if (edge.matchedKeywords.length > 0) {
+        lines.push(`  - matched keywords: ${edge.matchedKeywords.map((k) => `\`${k}\``).join(', ')}`);
+      }
+      if (edge.matchedSecondaryKeywords.length > 0) {
+        lines.push(
+          `  - matched secondary keywords: ${edge.matchedSecondaryKeywords.map((k) => `\`${k}\``).join(', ')}`,
+        );
+      }
+      if (edge.missingSecondaryKeywords.length > 0) {
+        lines.push(
+          `  - missing secondary keywords: ${edge.missingSecondaryKeywords.map((k) => `\`${k}\``).join(', ')}`,
+        );
+      }
+      if (edge.blockedBy.length > 0) {
+        lines.push(`  - blocked by: ${edge.blockedBy.map((reasonCode) => `\`${reasonCode}\``).join(', ')}`);
+      }
+      lines.push('');
+    });
+  }
 
   if (result.hasCycles) {
     lines.push(
@@ -188,10 +291,27 @@ function renderOneChain(result: BfsResult, ctx: RenderContext): WikiFile {
   }
 
   lines.push('## Notes', '');
+  const notesPath = lorebookActivationChainToNotes(relativePath, `chains/${slug}-flow.md`);
   lines.push(
-    `See [\`${chainToNotes(`chains/${slug}-flow.md`)}\`](${chainToNotes(`chains/${slug}-flow.md`)}) for design intent. _(Optional.)_`,
+    `See [\`${notesPath}\`](${notesPath}) for design intent. _(Optional.)_`,
   );
   lines.push('');
 
-  return { relativePath: `chains/lorebook-activation/${slug}.md`, content: lines.join('\n') };
+  return { relativePath, content: lines.join('\n') };
+}
+
+function resolveLorebookEntry(
+  data: CharxReportData,
+  rawReference: string,
+): CharxReportData['lorebookStructure']['entries'][number] | undefined {
+  const entryName = rawReference.includes('/')
+    ? rawReference.slice(rawReference.lastIndexOf('/') + 1).trim()
+    : rawReference;
+
+  return data.lorebookStructure.entries.find(
+    (entry) =>
+      entry.id === rawReference ||
+      entry.name === rawReference ||
+      entry.name === entryName,
+  );
 }

@@ -78,7 +78,7 @@ export function generateSchemaMd(): string {
     '- ❌ Walk >2 hops in entity Relations.',
     '- ❌ Use wikilinks `[[...]]`. Use relative markdown links.',
     '- ❌ Cross artifact boundaries in chain walks.',
-    '- ❌ Emit content summaries, literal excerpts, or composition ratios in `_generated/`. Analyzer outputs only structural facts: counts, edges, metadata, named links.',
+    '- ❌ Emit content summaries, literal excerpts, or content proportions in `_generated/`. Analyzer outputs only structural facts: counts, edges, metadata, named links.',
     '',
     '**ALWAYS:**',
     '- ✅ Check `source:` frontmatter before editing any page.',

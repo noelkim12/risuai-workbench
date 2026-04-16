@@ -68,10 +68,18 @@ describe('wiki integration — alternate-hunters-v2', () => {
       'char_character_alternate-hunters-v2',
       '_generated/lorebook',
     );
-    const entities = fs
-      .readdirSync(entityDir)
-      .filter((fileName) => fileName !== '_index.md' && fileName.endsWith('.md'));
+    const entities = listFilesRecursive(entityDir).filter(
+      (filePath) => path.basename(filePath) !== '_index.md' && filePath.endsWith('.md'),
+    );
     expect(entities.length).toBeGreaterThan(50);
+
+    expect(
+      entities.some((filePath) =>
+        filePath.endsWith(
+          path.join('🌟이벤트_트리거', '🌟_이벤트_-_나쁜일.md'),
+        ),
+      ),
+    ).toBe(true);
   });
 
   it('contains no forbidden narrative phrases in _generated/', () => {

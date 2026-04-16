@@ -118,4 +118,45 @@ describe('analyzeLuaSource', () => {
       expect.arrayContaining([expect.objectContaining({ moduleName: 'pkg.missing' })]),
     );
   });
+
+  it('collects lore api calls for main lore APIs and preserves upsert target names', () => {
+    const result = analyzeLuaSource({
+      filePath: '/tmp/lore-main.lua',
+      source: [
+        'function inspectLore(id)',
+        '  local one = getLoreBooksMain(id, "Entry1")',
+        '  local active = loadLoreBooksMain(id, 512)',
+        '  upsertLocalLoreBook(id, "Entry1", "body", {})',
+        '  return one, active',
+        'end',
+      ].join('\n'),
+      charxArg: null,
+    });
+
+    expect(result.collected.loreApiCalls).toEqual([
+      {
+        apiName: 'getLoreBooksMain',
+        keyword: 'Entry1',
+        line: 2,
+        containingFunction: 'inspectlore',
+      },
+      {
+        apiName: 'loadLoreBooksMain',
+        keyword: null,
+        line: 3,
+        containingFunction: 'inspectlore',
+      },
+      {
+        apiName: 'upsertLocalLoreBook',
+        keyword: 'Entry1',
+        line: 4,
+        containingFunction: 'inspectlore',
+      },
+    ]);
+    expect(result.serialized.functions.find((fn) => fn.name === 'inspectlore')?.apiNames).toEqual([
+      'getLoreBooksMain',
+      'loadLoreBooksMain',
+      'upsertLocalLoreBook',
+    ]);
+  });
 });

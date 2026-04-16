@@ -32,6 +32,13 @@ export interface LorebookGraphData {
   textMentions?: TextMentionEdge[];
 }
 
+const DIRECT_LORE_ACCESS_API_NAMES = new Set([
+  'getLoreBooks',
+  'getLoreBooksMain',
+  'upsertLocalLoreBook',
+]);
+const BULK_LORE_LOAD_API_NAMES = new Set(['loadLoreBooks', 'loadLoreBooksMain']);
+
 /** lorebook/regex/variable 관계 네트워크 패널 생성 */
 export function buildRelationshipNetworkPanel(
   panelId: string,
@@ -395,15 +402,25 @@ export function buildRelationshipNetworkPanel(
     }
   }
 
-  // Edge type 4: direct Lua lore access via getLoreBooks exact-name lookup.
+  // Edge type 4: Lua lore access via exact-name lookups, upserts, or bulk-load APIs.
   for (const artifact of data.luaArtifacts ?? []) {
     const loreApiCalls = artifact.lorebookCorrelation?.loreApiCalls ?? [];
     for (const call of loreApiCalls) {
-      if (call.apiName !== 'getLoreBooks' || !call.keyword) continue;
       const luaNodeId = toLuaFunctionNodeId(artifact.baseName, call.containingFunction);
-      const lorebookNodeId = toLbNodeId(call.keyword);
-      if (!luaNodeId || !lorebookNodeId) continue;
-      pushEdge(luaNodeId, lorebookNodeId, 'lore-direct', call.keyword);
+      if (!luaNodeId) continue;
+
+      if (call.keyword && DIRECT_LORE_ACCESS_API_NAMES.has(call.apiName)) {
+        const lorebookNodeId = toLbNodeId(call.keyword);
+        if (!lorebookNodeId) continue;
+        pushEdge(luaNodeId, lorebookNodeId, 'lore-direct', call.keyword);
+        continue;
+      }
+
+      if (BULK_LORE_LOAD_API_NAMES.has(call.apiName)) {
+        for (const entry of data.lorebookStructure.entries) {
+          pushEdge(luaNodeId, `lb:${entry.id || entry.name}`, 'lore-direct', call.apiName);
+        }
+      }
     }
   }
 

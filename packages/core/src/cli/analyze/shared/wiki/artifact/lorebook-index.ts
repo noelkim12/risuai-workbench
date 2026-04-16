@@ -1,8 +1,9 @@
 import type { CharxReportData } from '../../../charx/types';
 import type { RenderContext, WikiFile } from '../types';
 import { serializeFrontmatter, buildTable } from '../markdown';
-import { toWikiSlug } from '../slug';
-import { lorebookIndexToNotes } from '../paths';
+import { toLorebookEntrySlug } from '../slug';
+import { buildLorebookEntityPath, lorebookIndexToNotes } from '../paths';
+import path from 'node:path';
 
 /**
  * Render lorebook/_index.md. Returns null when there are no entries.
@@ -64,13 +65,15 @@ export function renderLorebookIndex(data: CharxReportData, ctx: RenderContext): 
     const heading = folderName === '' ? '### Uncategorized' : `### ${folderName}`;
     lines.push(heading, '');
     for (const entry of entries) {
-      const slug = toWikiSlug(entry.name);
+      const slug = toLorebookEntrySlug(entry.name);
+      const targetPath = buildLorebookEntityPath(entry.folder, slug);
+      const relativeLink = path.posix.relative('lorebook', targetPath);
       const mode = entry.mode;
       const keywordHint =
         entry.keywords && entry.keywords.length > 0
           ? ` — triggers on ${entry.keywords.map((k) => `\`${k}\``).join(', ')}`
           : '';
-      lines.push(`- [${entry.name}](${slug}.md) — \`${mode}\`${keywordHint}`);
+      lines.push(`- [${entry.name}](${relativeLink}) — \`${mode}\`${keywordHint}`);
     }
     lines.push('');
   }
@@ -84,13 +87,19 @@ export function renderLorebookIndex(data: CharxReportData, ctx: RenderContext): 
   return { relativePath: 'lorebook/_index.md', content: lines.join('\n') };
 }
 
-function groupEntriesByFolder(data: CharxReportData): Map<string, Array<{ name: string; mode: string; keywords?: string[] }>> {
-  const groups = new Map<string, Array<{ name: string; mode: string; keywords?: string[] }>>();
+function groupEntriesByFolder(
+  data: CharxReportData,
+): Map<string, Array<{ name: string; folder?: string | null; mode: string; keywords?: string[] }>> {
+  const groups = new Map<
+    string,
+    Array<{ name: string; folder?: string | null; mode: string; keywords?: string[] }>
+  >();
   for (const entry of data.lorebookStructure.entries) {
     const folder = entry.folder ?? '';
     if (!groups.has(folder)) groups.set(folder, []);
     groups.get(folder)!.push({
       name: entry.name,
+      folder: entry.folder,
       mode: entry.activationMode,
       keywords: entry.keywords,
     });

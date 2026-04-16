@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { runAnalyzeWorkflow as runLuaAnalyze } from './lua/workflow';
 import { runAnalyzeCharxWorkflow as runCharxAnalyze } from './charx/workflow';
 import { runAnalyzeComposeWorkflow } from './compose/workflow';
 import { runAnalyzeModuleWorkflow } from './module/workflow';
@@ -8,6 +7,11 @@ import { runAnalyzePresetWorkflow } from './preset/workflow';
 import { loadWorkspaceConfig } from './shared/wiki/workspace/workspace-yaml';
 
 const KNOWN_TYPES = ['lua', 'charx', 'module', 'preset', 'compose'] as const;
+
+function runLuaAnalyze(argv: readonly string[]): number {
+  const luaWorkflow = require('./lua/workflow') as typeof import('./lua/workflow');
+  return luaWorkflow.runAnalyzeWorkflow(argv);
+}
 
 /** Detect workspace type based on canonical markers instead of root JSON files. */
 function detectWorkspaceType(targetDir: string): 'charx' | 'module' | 'preset' | null {

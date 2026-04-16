@@ -48,7 +48,11 @@ describe('wiki/artifact/overview', () => {
   });
 
   it('omits lua and regex links when those sections are empty', () => {
-    const file = renderOverview(minimalCharxReport(), ctx);
+    const withoutLuaOrRegex = minimalCharxReport();
+    withoutLuaOrRegex.luaArtifacts = [];
+    withoutLuaOrRegex.collected.regexCBS = [];
+
+    const file = renderOverview(withoutLuaOrRegex, ctx);
     expect(file.content).not.toContain('[lua.md]');
     expect(file.content).not.toContain('[regex.md]');
   });

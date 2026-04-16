@@ -1,16 +1,17 @@
 import type { CharxReportData } from '../../../../charx/types';
 import type { RenderContext, WikiFile } from '../../types';
 import { serializeFrontmatter } from '../../markdown';
-import { chainToConsolidated, chainToEntity, chainToNotes } from '../../paths';
+import { chainToConsolidated, chainToEntity, chainToNotes, resolveLorebookEntityPath } from '../../paths';
 import { toWikiSlug } from '../../slug';
 
 interface Call {
   caller: string;
+  apiName: string;
   keyword: string | null;
 }
 
 /**
- * Produce one chain file per Lua function that calls getLoreBooks.
+ * Produce one chain file per Lua function that touches lorebook APIs.
  * Each file lists every lorebook entry accessed by that function.
  */
 export function renderLuaLorebookAccessChains(
@@ -22,7 +23,7 @@ export function renderLuaLorebookAccessChains(
   const byCaller = groupBy(calls, (c) => c.caller);
 
   for (const [caller, callerCalls] of byCaller.entries()) {
-    files.push(renderOneCaller(caller, callerCalls, ctx));
+    files.push(renderOneCaller(caller, callerCalls, data, ctx));
   }
   return files;
 }
@@ -36,6 +37,7 @@ function collectCalls(data: CharxReportData): Call[] {
       // H1 drift: actual type uses containingFunction as caller, keyword can be null
       out.push({
         caller: call.containingFunction,
+        apiName: call.apiName,
         keyword: call.keyword,
       });
     }
@@ -53,7 +55,12 @@ function groupBy<T, K>(items: T[], keyFn: (item: T) => K): Map<K, T[]> {
   return out;
 }
 
-function renderOneCaller(caller: string, calls: Call[], ctx: RenderContext): WikiFile {
+function renderOneCaller(
+  caller: string,
+  calls: Call[],
+  data: CharxReportData,
+  ctx: RenderContext,
+): WikiFile {
   const slug = toWikiSlug(caller);
 
   const frontmatter = serializeFrontmatter({
@@ -88,10 +95,9 @@ function renderOneCaller(caller: string, calls: Call[], ctx: RenderContext): Wik
   for (const call of calls) {
     // H1 drift: no resolvedEntry field, use keyword directly (or 'unknown' if null)
     const target = call.keyword ?? '(unknown)';
-    const targetSlug = toWikiSlug(target);
     const keywordDisplay = call.keyword ? `\`${call.keyword}\`` : '(unknown)';
     lines.push(
-      `- [${target}](${chainToEntity(targetSlug)}) — called with keyword \`${keywordDisplay}\``,
+      `- [${target}](${chainToEntity(resolveLorebookEntityPath(data.lorebookStructure.entries, target))}) — via \`${call.apiName}\` with keyword ${keywordDisplay}`,
     );
   }
 

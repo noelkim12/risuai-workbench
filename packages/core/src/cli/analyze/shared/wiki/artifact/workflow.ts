@@ -6,8 +6,8 @@ import { renderLua } from './lua';
 import { renderRegex } from './regex';
 import { renderLorebookIndex } from './lorebook-index';
 import { renderLorebookEntities } from './lorebook-entity';
-import { renderLorebookActivationChains } from './chains/lorebook-activation';
-import { renderVariableFlowChains } from './chains/variable-flow';
+import { renderLorebookActivationChains, renderLorebookActivationIndex } from './chains/lorebook-activation';
+import { renderVariableFlowChains, renderVariableFlowIndex } from './chains/variable-flow';
 import { renderLuaLorebookAccessChains } from './chains/lua-lorebook-access';
 import { renderLuaCallgraphChains } from './chains/lua-callgraph';
 import { renderTextMentionsIndex } from './chains/text-mentions';
@@ -36,7 +36,9 @@ export function renderArtifactWiki(
   for (const file of renderLorebookEntities(data, ctx)) files.push(file);
 
   push(renderChainsIndex(data, ctx));
+  push(renderLorebookActivationIndex(data, ctx));
   for (const file of renderLorebookActivationChains(data, ctx)) files.push(file);
+  push(renderVariableFlowIndex(data, ctx));
   for (const file of renderVariableFlowChains(data, ctx)) files.push(file);
   for (const file of renderLuaLorebookAccessChains(data, ctx)) files.push(file);
   for (const file of renderLuaCallgraphChains(data, ctx)) files.push(file);

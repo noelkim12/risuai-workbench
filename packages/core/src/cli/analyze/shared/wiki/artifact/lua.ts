@@ -3,6 +3,10 @@ import type { RenderContext, WikiFile } from '../types';
 import { serializeFrontmatter } from '../markdown';
 import { consolidatedToNotes } from '../paths';
 
+function formatLoreAccessCall(apiName: string, keyword: string | null): string {
+  return keyword ? `\`${apiName}("${keyword}")\`` : `\`${apiName}\``;
+}
+
 /**
  * Render lua.md. Returns null when the artifact has no Lua files.
  *
@@ -10,7 +14,7 @@ import { consolidatedToNotes } from '../paths';
  *   - function name and source location
  *   - state reads/writes (if any)
  *   - internal callees (from callGraph)
- *   - getLoreBooks calls (if any)
+ *   - lorebook API calls (if any)
  */
 export function renderLua(data: CharxReportData, ctx: RenderContext): WikiFile | null {
   if (data.luaArtifacts.length === 0) return null;
@@ -54,7 +58,7 @@ export function renderLua(data: CharxReportData, ctx: RenderContext): WikiFile |
       ) ?? [];
       if (loreCalls.length > 0) {
         lines.push(
-          `- **getLoreBooks:** ${loreCalls.map((c) => `\`"${c.keyword}"\``).join(', ')}`,
+          `- **lore access:** ${loreCalls.map((c) => formatLoreAccessCall(c.apiName, c.keyword)).join(', ')}`,
         );
       }
       lines.push('');

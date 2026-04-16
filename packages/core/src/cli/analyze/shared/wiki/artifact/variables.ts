@@ -24,12 +24,25 @@ export function renderVariables(data: CharxReportData, ctx: RenderContext): Wiki
   const rows: string[][] = [];
   for (const [name, entry] of data.unifiedGraph.entries()) {
     const defaultValue = data.defaultVariables[name] ?? '';
-    const readers = entry.readers
-      .map((r) => `${r.elementName}`)
-      .join(', ');
-    const writers = entry.writers
-      .map((w) => `${w.elementName}`)
-      .join(', ');
+
+    // Aggregate readers and writers from all sources
+    const allReaders: string[] = [];
+    const allWriters: string[] = [];
+
+    for (const [elementType, source] of Object.entries(entry.sources).sort(([a], [b]) => a.localeCompare(b))) {
+      for (const reader of source.readers) {
+        allReaders.push(`${elementType}: ${reader}`);
+      }
+      for (const writer of source.writers) {
+        allWriters.push(`${elementType}: ${writer}`);
+      }
+    }
+
+    allReaders.sort((a, b) => a.localeCompare(b));
+    allWriters.sort((a, b) => a.localeCompare(b));
+
+    const readers = allReaders.join(', ') || '-';
+    const writers = allWriters.join(', ') || '-';
     const chainLink = `[${name}](chains/variable-flow/${name}.md)`;
     rows.push([`\`${name}\``, `\`${defaultValue}\``, readers, writers, chainLink]);
   }

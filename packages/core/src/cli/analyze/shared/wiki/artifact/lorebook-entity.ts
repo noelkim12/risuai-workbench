@@ -1,8 +1,13 @@
 import type { CharxReportData } from '../../../charx/types';
 import type { RenderContext, WikiFile } from '../types';
 import { serializeFrontmatter } from '../markdown';
-import { toWikiSlug } from '../slug';
+import { toLorebookEntrySlug } from '../slug';
 import {
+  buildLorebookEntityPath,
+  buildLorebookExtractPath,
+  buildLorebookNotesPath,
+  resolveLorebookActivationChainPath,
+  resolveLorebookEntityPath,
   entityToSiblingEntity,
   entityToConsolidated,
   entityToChain,
@@ -26,7 +31,7 @@ export function renderLorebookEntities(
   const extractDirName = path.basename(ctx.extractDir);
 
   for (const entry of entries) {
-    const slug = toWikiSlug(entry.name);
+    const slug = toLorebookEntrySlug(entry.name);
     const file = renderOneEntity(entry, data, ctx, extractDirName, slug);
     files.push(file);
   }
@@ -42,12 +47,19 @@ function renderOneEntity(
 ): WikiFile {
   const readsVars = collectReadsForEntry(entry.name, data);
   const writesVars = collectWritesForEntry(entry.name, data);
+  const activationEntriesById = new Map(
+    data.lorebookActivationChain.entries.map((activationEntry) => [activationEntry.id, activationEntry]),
+  );
+  const lorebookEntriesById = new Map(
+    data.lorebookStructure.entries.map((lorebookEntry) => [lorebookEntry.id, lorebookEntry]),
+  );
 
-  // Handle both fixture shape (mode) and real type (activationMode)
-  const activationMode = (entry as unknown as Record<string, string>).mode ?? entry.activationMode ?? 'keyword';
+  const activationMode = entry.activationMode;
   const folder = entry.folder ?? '';
   const keywords = entry.keywords ?? [];
-  const secondaryKeywords = (entry as unknown as Record<string, string[]>).secondaryKeywords ?? [];
+  const secondaryKeywords = activationEntriesById.get(entry.id)?.secondaryKeywords ?? [];
+  const entityRelativePath = buildLorebookEntityPath(entry.folder, slug);
+  const notesRelativePath = buildLorebookNotesPath(entry.folder, slug);
 
   const frontmatter = serializeFrontmatter({
     source: 'generated',
@@ -69,8 +81,9 @@ function renderOneEntity(
   const keywordList =
     keywords.map((k: string) => `\`${k}\``).join(', ') || '(none)';
   const sourcePath = entityToExtractSource(
+    entityRelativePath,
     extractDirName,
-    `lorebooks/${slug}.risulorebook`,
+    buildLorebookExtractPath(entry.folder, slug),
   );
 
   const lines: string[] = [
@@ -86,42 +99,39 @@ function renderOneEntity(
     '',
   ];
 
-  // Handle both fixture shape (from/to) and real type (sourceId/targetId)
   const edges = data.lorebookActivationChain.edges;
-  const outbound = edges.filter((e: unknown) => {
-    const edge = e as Record<string, string>;
-    return (edge.from ?? edge.sourceId) === entry.name;
-  });
+  const outbound = edges.filter((edge) => edge.sourceId === entry.id);
   if (outbound.length > 0) {
     lines.push('### Activates → (outbound activation chain)');
     for (const edge of outbound) {
-      const edgeRecord = edge as Record<string, string | string[]>;
-      const targetName = (edgeRecord.to ?? edgeRecord.targetId) as string;
-      const targetSlug = toWikiSlug(targetName);
-      const matchedKeywords = (edgeRecord.matchedKeywords ?? []) as string[];
+      const targetEntry = lorebookEntriesById.get(edge.targetId);
+      const targetName = targetEntry?.name ?? edge.targetId;
+      const targetPath = resolveLorebookEntityPath(data.lorebookStructure.entries, edge.targetId);
+      const matchedKeywords = edge.matchedKeywords;
       const keywordHint = matchedKeywords.length
         ? ` — matched keyword \`${matchedKeywords.join(', ')}\``
         : '';
-      lines.push(`- [${targetName}](${entityToSiblingEntity(targetSlug)})${keywordHint}`);
+      lines.push(
+        `- [${targetName}](${entityToSiblingEntity(entityRelativePath, targetPath)})${keywordHint}`,
+      );
     }
     lines.push('');
   }
 
-  const inbound = edges.filter((e: unknown) => {
-    const edge = e as Record<string, string>;
-    return (edge.to ?? edge.targetId) === entry.name;
-  });
+  const inbound = edges.filter((edge) => edge.targetId === entry.id);
   if (inbound.length > 0) {
     lines.push('### Activated by ← (inbound activation chain)');
     for (const edge of inbound) {
-      const edgeRecord = edge as Record<string, string | string[]>;
-      const sourceName = (edgeRecord.from ?? edgeRecord.sourceId) as string;
-      const sourceSlug = toWikiSlug(sourceName);
-      const matchedKeywords = (edgeRecord.matchedKeywords ?? []) as string[];
+      const sourceEntry = lorebookEntriesById.get(edge.sourceId);
+      const sourceName = sourceEntry?.name ?? edge.sourceId;
+      const sourcePath = resolveLorebookEntityPath(data.lorebookStructure.entries, edge.sourceId);
+      const matchedKeywords = edge.matchedKeywords;
       const keywordHint = matchedKeywords.length
         ? ` — keyword \`${matchedKeywords.join(', ')}\``
         : '';
-      lines.push(`- [${sourceName}](${entityToSiblingEntity(sourceSlug)})${keywordHint}`);
+      lines.push(
+        `- [${sourceName}](${entityToSiblingEntity(entityRelativePath, sourcePath)})${keywordHint}`,
+      );
     }
     lines.push('');
   }
@@ -130,7 +140,7 @@ function renderOneEntity(
     lines.push('### CBS variables');
     if (readsVars.length > 0) {
       lines.push(
-        `- **reads:** ${readsVars.map((v: string) => `\`${v}\``).join(', ')} — see [variables.md](${entityToConsolidated('variables')})`,
+        `- **reads:** ${readsVars.map((v: string) => `\`${v}\``).join(', ')} — see [variables.md](${entityToConsolidated(entityRelativePath, 'variables')})`,
       );
     }
     if (writesVars.length > 0) {
@@ -144,57 +154,52 @@ function renderOneEntity(
     lines.push('### Lua access');
     for (const call of luaAccess) {
       lines.push(
-        `- [\`${call.caller}\`](${entityToConsolidated('lua')}#${call.caller.toLowerCase()}) — direct via \`getLoreBooks("${call.keyword}")\``,
+        `- [\`${call.caller}\`](${entityToConsolidated(entityRelativePath, 'lua')}#${call.caller.toLowerCase()}) — direct via \`${call.apiName}("${call.keyword}")\``,
       );
     }
     lines.push('');
   }
 
-  // Handle both fixture shape (source) and real type (sourceEntry)
   const textMentions = data.textMentions.filter(
-    (m: unknown) => {
-      const mention = m as Record<string, string>;
-      return (mention.source ?? mention.sourceEntry) === entry.name && mention.type !== 'lorebook-mention';
-    },
+    (mention) => mention.sourceEntry === entry.id && mention.type !== 'lorebook-mention',
   );
   if (textMentions.length > 0) {
     lines.push('### Mentioned in content (plain text)');
     for (const mention of textMentions) {
-      const mentionRecord = mention as Record<string, string>;
-      if (mentionRecord.type === 'variable-mention') {
-        lines.push(`- variable \`${mentionRecord.target}\``);
-      } else if (mentionRecord.type === 'lua-mention') {
-        lines.push(`- Lua function \`${mentionRecord.target}\``);
+      if (mention.type === 'variable-mention') {
+        lines.push(`- variable \`${mention.target}\``);
+      } else if (mention.type === 'lua-mention') {
+        lines.push(`- Lua function \`${mention.target}\``);
       }
     }
     lines.push('');
   }
 
   lines.push('## Chains', '');
+  const activationChainPath = resolveLorebookActivationChainPath(data.lorebookStructure.entries, entry.id);
   lines.push(
-    `- Activation: [chains/lorebook-activation/${slug}](${entityToChain('lorebook-activation', slug)})`,
+    `- Activation: [${activationChainPath}](${entityToChain(entityRelativePath, 'lorebook-activation', activationChainPath)})`,
   );
   for (const varName of readsVars) {
     lines.push(
-      `- Variable flow: [chains/variable-flow/${varName}](${entityToChain('variable-flow', varName)})`,
+      `- Variable flow: [chains/variable-flow/${varName}](${entityToChain(entityRelativePath, 'variable-flow', varName)})`,
     );
   }
   lines.push('');
 
   lines.push('## Notes', '');
   lines.push(
-    `See [\`${entityToNotes(`lorebook/${slug}.md`)}\`](${entityToNotes(`lorebook/${slug}.md`)}) for narrative and design intent. _(Create this file to add human/LLM commentary.)_`,
+    `See [\`${entityToNotes(entityRelativePath, notesRelativePath)}\`](${entityToNotes(entityRelativePath, notesRelativePath)}) for narrative and design intent. _(Create this file to add human/LLM commentary.)_`,
   );
   lines.push('');
 
-  return { relativePath: `lorebook/${slug}.md`, content: lines.join('\n') };
+  return { relativePath: entityRelativePath, content: lines.join('\n') };
 }
 
 function collectReadsForEntry(entryName: string, data: CharxReportData): string[] {
   const result: string[] = [];
   for (const [varName, info] of data.unifiedGraph.entries()) {
-    const entry = info as unknown as Record<string, unknown>;
-    const sources = entry.sources as Record<string, { readers: string[]; writers: string[] }> | undefined;
+    const sources = info.sources;
     if (sources?.lorebook?.readers?.includes(entryName)) {
       result.push(varName);
     }
@@ -205,8 +210,7 @@ function collectReadsForEntry(entryName: string, data: CharxReportData): string[
 function collectWritesForEntry(entryName: string, data: CharxReportData): string[] {
   const result: string[] = [];
   for (const [varName, info] of data.unifiedGraph.entries()) {
-    const entry = info as unknown as Record<string, unknown>;
-    const sources = entry.sources as Record<string, { readers: string[]; writers: string[] }> | undefined;
+    const sources = info.sources;
     if (sources?.lorebook?.writers?.includes(entryName)) {
       result.push(varName);
     }
@@ -217,13 +221,17 @@ function collectWritesForEntry(entryName: string, data: CharxReportData): string
 function collectLuaAccessForEntry(
   entryName: string,
   data: CharxReportData,
-): Array<{ caller: string; keyword: string }> {
-  const result: Array<{ caller: string; keyword: string }> = [];
+): Array<{ caller: string; keyword: string; apiName: string }> {
+  const result: Array<{ caller: string; keyword: string; apiName: string }> = [];
   for (const artifact of data.luaArtifacts) {
     const calls = artifact.lorebookCorrelation?.loreApiCalls ?? [];
     for (const call of calls) {
-      if (call.keyword === entryName || (call as unknown as Record<string, string>).resolvedEntry === entryName) {
-        result.push({ caller: call.containingFunction, keyword: call.keyword ?? '' });
+      if (call.keyword === entryName) {
+        result.push({
+          caller: call.containingFunction,
+          keyword: call.keyword ?? '',
+          apiName: call.apiName,
+        });
       }
     }
   }

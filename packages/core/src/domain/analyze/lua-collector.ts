@@ -15,6 +15,9 @@ import {
 } from './lua-helpers';
 import { type ApiMeta, type CollectedData, type CollectedFunction } from './lua-analysis-types';
 
+const LOREBOOK_LOOKUP_APIS = new Set(['getLoreBooks', 'getLoreBooksMain']);
+const LOREBOOK_LOAD_APIS = new Set(['loadLoreBooks', 'loadLoreBooksMain']);
+
 /**
  * Lua AST를 순회하며 함수 정의, API 호출, 상태 변수 접근 등을 수집하는 1차 수집 단계
  *
@@ -340,7 +343,7 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
       if (key) addStateAccess(callee, key, caller, lineStart(node), writeValue);
     }
 
-    if (callee === 'getLoreBooks' || callee === 'loadLoreBooks') {
+    if (LOREBOOK_LOOKUP_APIS.has(callee)) {
       const keywordIndex = args.length >= 2 ? 1 : 0;
       const keyword = strLit(args[keywordIndex]);
       if (keyword) {
@@ -353,10 +356,21 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
       }
     }
 
-    if (callee === 'upsertLocalLoreBook') {
+    if (LOREBOOK_LOAD_APIS.has(callee)) {
       collected.loreApiCalls.push({
         apiName: callee,
         keyword: null,
+        line: lineStart(node),
+        containingFunction: caller || '<top-level>',
+      });
+    }
+
+    if (callee === 'upsertLocalLoreBook') {
+      const targetIndex = args.length >= 2 ? 1 : 0;
+      const targetName = strLit(args[targetIndex]);
+      collected.loreApiCalls.push({
+        apiName: callee,
+        keyword: targetName,
         line: lineStart(node),
         containingFunction: caller || '<top-level>',
       });

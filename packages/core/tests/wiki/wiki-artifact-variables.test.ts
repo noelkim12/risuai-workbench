@@ -49,4 +49,34 @@ describe('wiki/artifact/variables', () => {
     expect(file.content).toContain('## Notes');
     expect(file.content).toContain('../notes/variables.md');
   });
+
+  it('renders readers and writers deterministically across source ordering changes', () => {
+    const original = minimalCharxReport();
+    const reordered = minimalCharxReport();
+
+    reordered.unifiedGraph.set('hp', {
+      ...reordered.unifiedGraph.get('hp')!,
+      sources: {
+        lua: {
+          readers: ['listenerEdit'],
+          writers: ['applyDamage'],
+        },
+        lorebook: {
+          readers: ['상태창'],
+          writers: [],
+        },
+        regex: {
+          readers: ['relationship-check'],
+          writers: [],
+        },
+      },
+    });
+
+    const originalFile = renderVariables(original, ctx);
+    const reorderedFile = renderVariables(reordered, ctx);
+
+    expect(reorderedFile.content).toBe(originalFile.content);
+    expect(originalFile.content).toContain('lorebook: 상태창, lua: listenerEdit, regex: relationship-check');
+    expect(originalFile.content).toContain('lua: applyDamage');
+  });
 });

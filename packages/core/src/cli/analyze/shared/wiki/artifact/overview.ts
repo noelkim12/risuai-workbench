@@ -109,6 +109,6 @@ function countLuaCoreHandlers(data: CharxReportData): number {
 }
 
 function countChainEntryPoints(data: CharxReportData): number {
-  const fromNodes = new Set(data.lorebookActivationChain.edges.map((e) => e.from));
+  const fromNodes = new Set(data.lorebookActivationChain.edges.map((e) => e.sourceId));
   return fromNodes.size;
 }

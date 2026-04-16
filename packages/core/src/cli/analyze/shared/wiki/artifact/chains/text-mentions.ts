@@ -1,8 +1,7 @@
 import type { CharxReportData } from '../../../../charx/types';
 import type { RenderContext, WikiFile } from '../../types';
 import { serializeFrontmatter, buildTable } from '../../markdown';
-import { chainToEntity } from '../../paths';
-import { toWikiSlug } from '../../slug';
+import { chainToEntity, resolveLorebookEntityPath } from '../../paths';
 
 /**
  * Render a single chains/text-mentions/_index.md summarizing the textMentions
@@ -43,8 +42,10 @@ export function renderTextMentionsIndex(
   const sourceRows: string[][] = Array.from(bySource.entries())
     .sort((a, b) => b[1] - a[1])
     .map(([name, count]) => {
-      const slug = toWikiSlug(name);
-      return [`[${name}](${chainToEntity(slug)})`, String(count)];
+      return [
+        `[${name}](${chainToEntity(resolveLorebookEntityPath(data.lorebookStructure.entries, name))})`,
+        String(count),
+      ];
     });
 
   const lines: string[] = [

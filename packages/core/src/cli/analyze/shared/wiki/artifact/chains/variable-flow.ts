@@ -1,7 +1,7 @@
 import type { CharxReportData } from '../../../../charx/types';
 import type { RenderContext, WikiFile } from '../../types';
-import { serializeFrontmatter } from '../../markdown';
-import { chainToConsolidated, chainToEntity, chainToNotes } from '../../paths';
+import { buildTable, serializeFrontmatter } from '../../markdown';
+import { chainToConsolidated, chainToEntity, chainToNotes, resolveLorebookEntityPath } from '../../paths';
 import { toWikiSlug } from '../../slug';
 
 interface Endpoint {
@@ -23,6 +23,56 @@ export function renderVariableFlowChains(
     files.push(renderOneVariableFlow(varName, info, data, ctx));
   }
   return files;
+}
+
+export function renderVariableFlowIndex(
+  data: CharxReportData,
+  ctx: RenderContext,
+): WikiFile | null {
+  if (data.unifiedGraph.size === 0) return null;
+
+  const rows = Array.from(data.unifiedGraph.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([varName, info]) => {
+      const readerCount = Object.values(info.sources).reduce(
+        (count, source) => count + source.readers.length,
+        0,
+      );
+      const writerCount = Object.values(info.sources).reduce(
+        (count, source) => count + source.writers.length,
+        0,
+      );
+
+      return [
+        `[\`${varName}\`](./${toWikiSlug(varName)}.md)`,
+        String(readerCount),
+        String(writerCount),
+      ];
+    });
+
+  const frontmatter = serializeFrontmatter({
+    source: 'generated',
+    'page-class': 'index',
+    artifact: ctx.artifactKey,
+    'artifact-type': ctx.artifactType,
+    'chain-type': 'variable-flow',
+    'total-variables': data.unifiedGraph.size,
+    'generated-at': ctx.generatedAt,
+    generator: `risu-workbench/analyze/wiki@${ctx.generatorVersion}`,
+  });
+
+  const lines: string[] = [
+    frontmatter.trimEnd(),
+    '',
+    '# Variable flow',
+    '',
+    `${data.unifiedGraph.size} tracked variables with per-variable reader/writer breakdowns.`,
+    '',
+    buildTable(['Variable', 'Readers', 'Writers'], rows),
+    '',
+  ];
+
+  return { relativePath: 'chains/variable-flow/_index.md', content: lines.join('\n') };
 }
 
 function renderOneVariableFlow(
@@ -104,8 +154,8 @@ function renderOneVariableFlow(
 
   function formatEndpoint(el: Endpoint): string {
     if (el.elementType === 'lorebook') {
-      const entitySlug = toWikiSlug(el.elementName);
-      return `lorebook [${el.elementName}](${chainToEntity(entitySlug)})`;
+      const entityPath = resolveLorebookEntityPath(data.lorebookStructure.entries, el.elementName);
+      return `lorebook [${el.elementName}](${chainToEntity(entityPath)})`;
     }
     if (el.elementType === 'regex') {
       return `regex [\`${el.elementName}\`](${chainToConsolidated('regex.md')}#${el.elementName.toLowerCase()})`;
