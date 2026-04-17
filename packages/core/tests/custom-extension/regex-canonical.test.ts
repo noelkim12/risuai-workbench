@@ -12,9 +12,9 @@ import {
   REGEX_TYPES,
   RegexAdapterError,
   serializeRegexContent,
-  type RegexContent,
+  type CanonicalRegexEntry,
   type UpstreamRegexEntry,
-} from '../../src/domain/custom-extension/extensions/regex';
+} from '../../src/domain/regex';
 
 describe('regex canonical adapter', () => {
   describe('parseRegexContent', () => {
@@ -159,7 +159,7 @@ foo
 
   describe('serializeRegexContent', () => {
     it('serializes canonical content deterministically', () => {
-      const canonical: RegexContent = {
+      const canonical: CanonicalRegexEntry = {
         comment: '생각보기',
         type: 'editdisplay',
         ableFlag: false,
@@ -254,12 +254,13 @@ safe-$1
   });
 
   describe('type and target semantics', () => {
-    it('freezes the five accepted regex types', () => {
+    it('freezes the six accepted regex types', () => {
       expect(REGEX_TYPES).toEqual([
         'editinput',
         'editoutput',
         'editdisplay',
         'editprocess',
+        'edittrans',
         'disabled',
       ]);
     });
@@ -305,7 +306,7 @@ safe-$1
     });
 
     it('injects regex arrays back into upstream targets without materializing absent optionals', () => {
-      const canonical: RegexContent[] = [
+    const canonical: CanonicalRegexEntry[] = [
         {
           comment: 'strict-shape',
           type: 'editinput',
@@ -323,10 +324,10 @@ safe-$1
       ];
 
       const charx: {
-        data?: { extensions?: { risuai?: { customScripts?: RegexContent[] } } };
+      data?: { extensions?: { risuai?: { customScripts?: CanonicalRegexEntry[] } } };
       } = {};
-      const module: { regex?: RegexContent[] } = {};
-      const preset: { presetRegex?: RegexContent[] } = {};
+    const module: { regex?: CanonicalRegexEntry[] } = {};
+    const preset: { presetRegex?: CanonicalRegexEntry[] } = {};
 
       injectRegexIntoCharx(charx, canonical, 'charx');
       injectRegexIntoModule(module, canonical, 'module');

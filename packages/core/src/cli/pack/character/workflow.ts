@@ -28,8 +28,8 @@ import {
 import {
   parseRegexContent,
   injectRegexIntoCharx,
-  type RegexContent,
-} from '@/domain/custom-extension/extensions/regex';
+  type CanonicalRegexEntry,
+} from '@/domain/regex';
 import {
   parseVariableContent,
 } from '@/domain/custom-extension/extensions/variable';
@@ -255,7 +255,7 @@ function mergeRegexCanonical(charx: any, inRoot: string): void {
   if (filesToProcess.length === 0) return;
 
   // Parse regex files
-  const regexes: RegexContent[] = [];
+  const regexes: CanonicalRegexEntry[] = [];
   for (const filePath of filesToProcess) {
     try {
       const content = parseRegexContent(fs.readFileSync(filePath, 'utf-8'));

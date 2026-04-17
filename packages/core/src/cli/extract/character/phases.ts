@@ -28,8 +28,8 @@ import {
 import {
   extractRegexFromCharx,
   serializeRegexContent,
-  type RegexContent,
-} from '@/domain/custom-extension/extensions/regex';
+  type CanonicalRegexEntry,
+} from '@/domain/regex';
 import {
   extractVariablesFromCharx,
   serializeVariableContent,

@@ -1,43 +1,7 @@
-import { sanitizeFilename } from '../../../utils/filenames';
-import type { CustomExtensionTarget } from '../contracts';
-
-/** Accepted canonical regex types. */
-export const REGEX_TYPES = [
-  'editinput',
-  'editoutput',
-  'editdisplay',
-  'editprocess',
-  'disabled',
-] as const;
-
-/** Canonical regex type. */
-export type RegexType = (typeof REGEX_TYPES)[number];
-
-/** Canonical .risuregex entry. */
-export interface RegexContent {
-  /** Human-facing regex name/comment. */
-  comment: string;
-  /** Upstream regex type discriminator. */
-  type: RegexType;
-  /** Raw regex flag string, preserved exactly when present. */
-  flag?: string;
-  /** Raw ableFlag boolean, preserved exactly when present. */
-  ableFlag?: boolean;
-  /** `@@@ IN` section body. */
-  in: string;
-  /** `@@@ OUT` section body. */
-  out: string;
-}
-
-/** Upstream regex/customscript shape. */
-export interface UpstreamRegexEntry {
-  comment: string;
-  type: string;
-  flag?: string;
-  ableFlag?: boolean;
-  in: string;
-  out: string;
-}
+import { sanitizeFilename } from '../../utils/filenames';
+import type { CustomExtensionTarget } from '../custom-extension/contracts';
+import { REGEX_TYPES, type RegexType, type UpstreamRegexEntry } from './types';
+import type { CanonicalRegexEntry } from './contracts';
 
 const SUPPORTED_TARGETS: readonly CustomExtensionTarget[] = ['charx', 'module', 'preset'];
 
@@ -50,7 +14,7 @@ export class RegexAdapterError extends Error {
 }
 
 /** parseRegexContent parses one canonical .risuregex file. */
-export function parseRegexContent(rawContent: string): RegexContent {
+export function parseRegexContent(rawContent: string): CanonicalRegexEntry {
   const { frontmatter, body } = splitFrontmatter(rawContent);
   const metadata = parseFrontmatter(frontmatter);
   const sections = parseRegexSections(body);
@@ -66,7 +30,7 @@ export function parseRegexContent(rawContent: string): RegexContent {
 }
 
 /** serializeRegexContent serializes one canonical .risuregex file deterministically. */
-export function serializeRegexContent(content: RegexContent): string {
+export function serializeRegexContent(content: CanonicalRegexEntry): string {
   const normalized = normalizeRegexEntry(content, 'canonical regex content');
   const headerLines = [
     '---',
@@ -89,7 +53,7 @@ export function serializeRegexContent(content: RegexContent): string {
 export function extractRegexFromCharx(
   upstream: { data?: { extensions?: { risuai?: { customScripts?: unknown } } } },
   target: CustomExtensionTarget,
-): RegexContent[] | null {
+): CanonicalRegexEntry[] | null {
   assertExpectedTarget(target, 'charx');
   return normalizeRegexCollection(
     upstream.data?.extensions?.risuai?.customScripts,
@@ -101,7 +65,7 @@ export function extractRegexFromCharx(
 export function extractRegexFromModule(
   upstream: { regex?: unknown },
   target: CustomExtensionTarget,
-): RegexContent[] | null {
+): CanonicalRegexEntry[] | null {
   assertExpectedTarget(target, 'module');
   return normalizeRegexCollection(upstream.regex, 'module regex');
 }
@@ -110,7 +74,7 @@ export function extractRegexFromModule(
 export function extractRegexFromPreset(
   upstream: { presetRegex?: unknown },
   target: CustomExtensionTarget,
-): RegexContent[] | null {
+): CanonicalRegexEntry[] | null {
   assertExpectedTarget(target, 'preset');
   return normalizeRegexCollection(upstream.presetRegex, 'preset presetRegex');
 }
@@ -118,7 +82,7 @@ export function extractRegexFromPreset(
 /** injectRegexIntoCharx writes canonical regex entries into charx upstream shape. */
 export function injectRegexIntoCharx(
   upstream: { data?: { extensions?: { risuai?: { customScripts?: UpstreamRegexEntry[] } } } },
-  content: RegexContent[] | null,
+  content: CanonicalRegexEntry[] | null,
   target: CustomExtensionTarget,
 ): void {
   assertExpectedTarget(target, 'charx');
@@ -146,7 +110,7 @@ export function injectRegexIntoCharx(
 /** injectRegexIntoModule writes canonical regex entries into module upstream shape. */
 export function injectRegexIntoModule(
   upstream: { regex?: UpstreamRegexEntry[] },
-  content: RegexContent[] | null,
+  content: CanonicalRegexEntry[] | null,
   target: CustomExtensionTarget,
 ): void {
   assertExpectedTarget(target, 'module');
@@ -162,7 +126,7 @@ export function injectRegexIntoModule(
 /** injectRegexIntoPreset writes canonical regex entries into preset upstream shape. */
 export function injectRegexIntoPreset(
   upstream: { presetRegex?: UpstreamRegexEntry[] },
-  content: RegexContent[] | null,
+  content: CanonicalRegexEntry[] | null,
   target: CustomExtensionTarget,
 ): void {
   assertExpectedTarget(target, 'preset');
@@ -213,8 +177,8 @@ function splitFrontmatter(rawContent: string): { frontmatter: string; body: stri
   };
 }
 
-function parseFrontmatter(frontmatter: string): Pick<RegexContent, 'comment' | 'type' | 'flag' | 'ableFlag'> {
-  const parsed: Partial<Pick<RegexContent, 'comment' | 'type' | 'flag' | 'ableFlag'>> = {};
+function parseFrontmatter(frontmatter: string): Pick<CanonicalRegexEntry, 'comment' | 'type' | 'flag' | 'ableFlag'> {
+  const parsed: Partial<Pick<CanonicalRegexEntry, 'comment' | 'type' | 'flag' | 'ableFlag'>> = {};
   const seenKeys = new Set<string>();
 
   for (const line of frontmatter.split(/\r?\n/)) {
@@ -259,10 +223,10 @@ function parseFrontmatter(frontmatter: string): Pick<RegexContent, 'comment' | '
     throw new RegexAdapterError('Frontmatter must include required field "type".');
   }
 
-  return parsed as Pick<RegexContent, 'comment' | 'type' | 'flag' | 'ableFlag'>;
+  return parsed as Pick<CanonicalRegexEntry, 'comment' | 'type' | 'flag' | 'ableFlag'>;
 }
 
-function parseRegexSections(body: string): Pick<RegexContent, 'in' | 'out'> {
+function parseRegexSections(body: string): Pick<CanonicalRegexEntry, 'in' | 'out'> {
   const inMatch = /^@@@ IN(?:\r?\n|$)/.exec(body);
   if (!inMatch) {
     throw new RegexAdapterError('Expected body to begin with an @@@ IN section.');
@@ -354,7 +318,7 @@ function parseRegexType(value: string): RegexType {
   return value as RegexType;
 }
 
-function normalizeRegexCollection(collection: unknown, context: string): RegexContent[] | null {
+function normalizeRegexCollection(collection: unknown, context: string): CanonicalRegexEntry[] | null {
   if (collection === undefined || collection === null) {
     return null;
   }
@@ -366,7 +330,7 @@ function normalizeRegexCollection(collection: unknown, context: string): RegexCo
   return collection.map((entry, index) => normalizeRegexEntry(entry, `${context}[${index}]`));
 }
 
-function normalizeRegexEntry(entry: unknown, context: string): RegexContent {
+function normalizeRegexEntry(entry: unknown, context: string): CanonicalRegexEntry {
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
     throw new RegexAdapterError(`Expected ${context} to be an object.`);
   }
@@ -377,7 +341,7 @@ function normalizeRegexEntry(entry: unknown, context: string): RegexContent {
   const input = requireString(record.in, `${context}.in`);
   const output = requireString(record.out, `${context}.out`);
 
-  const normalized: RegexContent = {
+  const normalized: CanonicalRegexEntry = {
     comment,
     type,
     in: input,
@@ -395,7 +359,7 @@ function normalizeRegexEntry(entry: unknown, context: string): RegexContent {
   return normalized;
 }
 
-function toUpstreamRegexEntry(entry: RegexContent, context: string): UpstreamRegexEntry {
+function toUpstreamRegexEntry(entry: CanonicalRegexEntry, context: string): UpstreamRegexEntry {
   const normalized = normalizeRegexEntry(entry, context);
   return {
     comment: normalized.comment,

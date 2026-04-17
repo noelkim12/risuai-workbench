@@ -1,3 +1,10 @@
+export type {
+  CardData,
+  CharxData,
+  LorebookEntry,
+  RegexScript,
+  Variable,
+} from './contracts';
 export { asRecord, type GenericRecord } from '../types';
 import { asRecord, type GenericRecord } from '../types';
 

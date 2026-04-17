@@ -1,9 +1,10 @@
-// Extracted from template/src/lib/types/workbench.ts
+import type { RegexType } from '../regex';
 
+/** Root-package compatibility DTO for regex script summaries. */
 export interface RegexScript {
   id: string;
   comment: string;
-  type: 'editprocess' | 'editdisplay' | 'editoutput' | 'editinput';
+  type: RegexType;
   findRegex: string;
   replaceString: string;
   trimStrings?: string[];
@@ -11,6 +12,7 @@ export interface RegexScript {
   disabled?: boolean;
 }
 
+/** Root-package compatibility DTO for lorebook entry summaries. */
 export interface LorebookEntry {
   id: string;
   keys: string[];
@@ -24,12 +26,14 @@ export interface LorebookEntry {
   enabled: boolean;
 }
 
+/** Root-package compatibility DTO for variable declarations. */
 export interface Variable {
   name: string;
   value: string;
   source: 'card' | 'runtime';
 }
 
+/** Root-package compatibility DTO for card-shaped summary data. */
 export interface CharxData {
   name: string;
   creator: string;

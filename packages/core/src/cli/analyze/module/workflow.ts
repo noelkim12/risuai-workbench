@@ -12,7 +12,7 @@ import {
   getModuleLorebookEntriesFromModule,
 } from '@/domain';
 import { parseLorebookContent } from '@/domain/custom-extension/extensions/lorebook';
-import { parseRegexContent } from '@/domain/custom-extension/extensions/regex';
+import { parseRegexContent } from '@/domain/regex';
 import { readJsonIfExists } from '@/node/fs-helpers';
 import { detectLocale } from '../shared/i18n';
 import {

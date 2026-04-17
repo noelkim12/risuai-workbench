@@ -4,7 +4,7 @@ import { type GenericRecord, type LorebookEntryInfo, type RegexScriptInfo, toPos
 import { dirExists, readJsonIfExists, readTextIfExists } from '@/node/fs-helpers';
 import { listJsonFilesRecursive, resolveOrderedFiles } from '@/node/json-listing';
 import { parseLorebookContent, type LorebookContent } from '@/domain/custom-extension/extensions/lorebook';
-import { parseRegexContent, type RegexContent } from '@/domain/custom-extension/extensions/regex';
+import { parseRegexContent, type CanonicalRegexEntry } from '@/domain/regex';
 
 type TokenBudgetComponent = {
   category: string;
@@ -153,7 +153,7 @@ export function collectRegexScriptInfosFromDir(regexDir: string, prefix?: string
 
   const normalizedPrefix = prefix ? `${prefix}/` : '';
   return files.flatMap((filePath, index) => {
-    let content: RegexContent | null = null;
+    let content: CanonicalRegexEntry | null = null;
 
     if (useCanonical) {
       const raw = readTextIfExists(filePath);
@@ -295,7 +295,7 @@ export function collectRegexTokenComponentsFromDir(
       const raw = readTextIfExists(filePath);
       if (!raw) return [];
 
-      let content: RegexContent;
+  let content: CanonicalRegexEntry;
       try {
         content = parseRegexContent(raw);
       } catch {

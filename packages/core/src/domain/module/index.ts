@@ -1,3 +1,4 @@
+export type { MCPModule, RisuModule } from './contracts';
 import { asRecord, type GenericRecord } from '../types';
 
 /** 순수 module 객체에서 lorebook entry 배열을 반환한다. */

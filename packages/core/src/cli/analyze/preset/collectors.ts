@@ -9,7 +9,7 @@ import {
   type GenericRecord,
 } from '@/domain';
 import { parsePromptTemplateContent } from '@/domain/custom-extension/extensions/prompt-template';
-import { parseRegexContent } from '@/domain/custom-extension/extensions/regex';
+import { parseRegexContent } from '@/domain/regex';
 import { dirExists, readJsonIfExists, readTextIfExists } from '@/node/fs-helpers';
 import { listJsonFilesRecursive, resolveOrderedFiles } from '@/node/json-listing';
 import type { PresetCollectResult, PromptSource } from './types';

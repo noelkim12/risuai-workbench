@@ -20,6 +20,8 @@ export {
   getModuleRegexScriptsFromModule,
   getModuleTriggersFromModule,
   getModuleBackgroundEmbeddingFromModule,
+  type MCPModule,
+  type RisuModule,
 } from './module/index';
 export {
   getPresetPromptTextsFromPreset,
@@ -33,8 +35,13 @@ export {
   getAllLorebookEntriesFromCharx as getAllLorebookEntries,
   getCustomScriptsFromCharx as getCustomScripts,
   getDefaultVariablesRawFromCharx as getDefaultVariablesRaw,
+  type CardData,
+  type CharxData,
   type CharxStructure,
+  type LorebookEntry,
+  type RegexScript,
   type CharxStructure as CardLike,
+  type Variable,
 } from './charx/data';
 export {
   resolveAssetUri,
@@ -67,11 +74,25 @@ export {
   collectRegexCBSFromCharx,
   collectRegexCBSFromCharx as collectRegexCBSFromCard,
   collectRegexCBSFromScripts,
+  parseRegexContent,
+  serializeRegexContent,
+  extractRegexFromCharx,
+  extractRegexFromModule,
+  extractRegexFromPreset,
+  injectRegexIntoCharx,
+  injectRegexIntoModule,
+  injectRegexIntoPreset,
+  buildRegexPath,
+  REGEX_TYPES,
   extractRegexScriptOps,
   parseDefaultVariablesText,
   parseDefaultVariablesJson,
+  RegexAdapterError,
   type RegexScriptOps,
-} from './regex/scripts';
+  type CanonicalRegexEntry,
+  type RegexType,
+  type UpstreamRegexEntry,
+} from './regex';
 export {
   MAX_VARS_IN_REPORT,
   MAX_ENTRIES_IN_REPORT,

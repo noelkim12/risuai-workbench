@@ -39,6 +39,6 @@
     "@types/node": "^25.3.5",
     "tsc-alias": "^1.8.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "vitest": "^4.1.4"
   }
 }

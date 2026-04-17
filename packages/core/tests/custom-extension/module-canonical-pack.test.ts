@@ -8,7 +8,7 @@ import {
   serializeLorebookContent,
   serializeLorebookOrder,
 } from '../../src/domain/custom-extension/extensions/lorebook';
-import { serializeRegexContent } from '../../src/domain/custom-extension/extensions/regex';
+import { serializeRegexContent } from '../../src/domain/regex';
 import { serializeVariableContent } from '../../src/domain/custom-extension/extensions/variable';
 
 const tempDirs: string[] = [];

@@ -11,7 +11,7 @@ import {
   buildRegexPath,
   extractRegexFromModule,
   serializeRegexContent,
-} from '@/domain/custom-extension/extensions/regex';
+} from '@/domain/regex';
 import { buildLuaPath, extractLuaFromModule } from '@/domain/custom-extension/extensions/lua';
 import { buildHtmlPath, extractHtmlFromModule } from '@/domain/custom-extension/extensions/html';
 import {

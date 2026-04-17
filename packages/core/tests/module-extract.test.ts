@@ -20,7 +20,7 @@ import {
 } from '../src/cli/extract/module/workflow';
 import { isModuleJson } from '../src/cli/extract/parsers';
 import { parseLorebookContent } from '../src/domain/custom-extension/extensions/lorebook';
-import { parseRegexContent } from '../src/domain/custom-extension/extensions/regex';
+import { parseRegexContent } from '../src/domain/regex';
 import { parseVariableContent } from '../src/domain/custom-extension/extensions/variable';
 
 describe('module extract', () => {

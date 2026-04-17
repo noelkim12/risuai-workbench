@@ -10,7 +10,7 @@ import {
 } from '@/domain';
 import { analyzeLuaSource, type LuaAnalysisArtifact } from '@/domain/analyze/lua-core';
 import { parseLorebookContent } from '@/domain/custom-extension/extensions/lorebook';
-import { parseRegexContent } from '@/domain/custom-extension/extensions/regex';
+import { parseRegexContent } from '@/domain/regex';
 import { parseVariableContent } from '@/domain/custom-extension/extensions/variable';
 import { dirExists, readJsonIfExists, readTextIfExists } from '@/node/fs-helpers';
 import { listJsonFilesRecursive, resolveOrderedFiles } from '@/node/json-listing';

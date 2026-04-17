@@ -19,7 +19,7 @@ import {
   parseLorebookOrder,
   type LorebookCanonicalFile,
 } from '@/domain/custom-extension/extensions/lorebook';
-import { parseRegexContent } from '@/domain/custom-extension/extensions/regex';
+import { parseRegexContent } from '@/domain/regex';
 import { ensureDir } from '@/node/fs-helpers';
 import { type Locale, detectLocale } from '../shared/i18n';
 import { safeCollect } from '../../shared';

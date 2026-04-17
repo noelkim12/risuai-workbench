@@ -14,7 +14,7 @@ import {
   buildRegexPath,
   extractRegexFromPreset,
   serializeRegexContent,
-} from '@/domain/custom-extension/extensions/regex';
+} from '@/domain/regex';
 import {
   buildTogglePath,
   extractToggleFromPreset,

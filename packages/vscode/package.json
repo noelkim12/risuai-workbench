@@ -75,7 +75,7 @@
     }
   },
   "scripts": {
-    "build": "tsc && npx tsc-alias",
+    "build": "npm --prefix ../webview run build && tsc && npx tsc-alias && node ./scripts/copy-webview.mjs",
     "watch": "tsc --watch",
     "dev": "tsc && code --extensionDevelopmentPath=\"$PWD\"",
     "lint": "eslint 'src/**/*.ts'",

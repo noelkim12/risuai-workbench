@@ -18,8 +18,8 @@ import {
 import {
   injectRegexIntoPreset,
   parseRegexContent,
-  type RegexContent,
-} from '@/domain/custom-extension/extensions/regex';
+  type CanonicalRegexEntry,
+} from '@/domain/regex';
 import {
   injectToggleIntoPreset,
   parseToggleContent,
@@ -383,7 +383,7 @@ function mergeRegex(preset: MutablePreset, inRoot: string): void {
   if (files.length === 0) return;
 
   const regex = files.map((filePath) => parseRegexContent(fs.readFileSync(filePath, 'utf-8')));
-  const holder: { presetRegex?: RegexContent[] } = {};
+  const holder: { presetRegex?: CanonicalRegexEntry[] } = {};
   injectRegexIntoPreset(holder, regex, 'preset');
 
   if (holder.presetRegex) {

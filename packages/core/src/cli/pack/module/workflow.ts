@@ -11,7 +11,7 @@ import {
 import {
   injectRegexIntoModule,
   parseRegexContent,
-} from '@/domain/custom-extension/extensions/regex';
+} from '@/domain/regex';
 import {
   injectLuaIntoModule,
   parseLuaContent,

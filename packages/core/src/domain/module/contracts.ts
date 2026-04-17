@@ -1,9 +1,9 @@
-// RisuModule type definitions — extracted from risuai-pork/src/ts/process/modules.ts
-
+/** Root-package compatibility DTO for MCP module references. */
 export interface MCPModule {
   url: string;
 }
 
+/** Root-package compatibility DTO for upstream module-shaped data. */
 export interface RisuModule {
   name: string;
   description: string;
@@ -18,5 +18,5 @@ export interface RisuModule {
   namespace?: string;
   customModuleToggle?: string;
   mcp?: MCPModule;
-  cjs?: string; // 미사용 필드이나 호환성 유지
+  cjs?: string;
 }
