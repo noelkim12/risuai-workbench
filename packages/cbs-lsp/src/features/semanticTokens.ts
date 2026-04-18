@@ -1,26 +1,570 @@
+import type { BlockKind, BlockNode, MacroCallNode, Token } from 'risu-workbench-core';
+import { CBSBuiltinRegistry, TokenType } from 'risu-workbench-core';
+import { SemanticTokens, SemanticTokensParams } from 'vscode-languageserver/node';
+
 import {
-  SemanticTokens,
-  SemanticTokensParams,
-} from 'vscode-languageserver/node'
+  fragmentAnalysisService,
+  locateFragmentAtHostPosition,
+  type DocumentFragmentAnalysis,
+  type FragmentAnalysisRequest,
+  type FragmentAnalysisService,
+} from '../core';
+import { offsetToPosition, positionToOffset } from '../utils/position';
 
 export const SEMANTIC_TOKEN_TYPES = [
-  'function', // function names (char, user, setvar ...)
-  'variable', // variable names (in getvar/setvar args)
-  'keyword', // block keywords (#when, #each, :else, /)
-  'operator', // operators (::is, ::not, ::>, ?)
-  'string', // string arguments
-  'number', // number arguments
-  'comment', // {{// ...}}
-  'deprecated', // deprecated functions
-  'punctuation', // {{ }} ::
-] as const
+  'function',
+  'variable',
+  'keyword',
+  'operator',
+  'string',
+  'number',
+  'comment',
+  'deprecated',
+  'punctuation',
+] as const;
 
-export const SEMANTIC_TOKEN_MODIFIERS = ['deprecated', 'readonly'] as const
+export const SEMANTIC_TOKEN_MODIFIERS = ['deprecated', 'readonly'] as const;
+
+type SemanticTokenTypeName = (typeof SEMANTIC_TOKEN_TYPES)[number];
+type SemanticTokenModifierName = (typeof SEMANTIC_TOKEN_MODIFIERS)[number];
+
+interface TokenOffsetSpan {
+  startOffset: number;
+  endOffset: number;
+}
+
+interface HostSemanticTokenEntry {
+  line: number;
+  startChar: number;
+  length: number;
+  tokenType: number;
+  tokenModifiers: number;
+}
+
+const TOKEN_TYPE_INDEX = new Map(
+  SEMANTIC_TOKEN_TYPES.map((tokenType, index) => [tokenType, index]),
+);
+const TOKEN_MODIFIER_INDEX = new Map(
+  SEMANTIC_TOKEN_MODIFIERS.map((modifier, index) => [modifier, index]),
+);
+
+const PURE_MODE_BLOCKS = new Set<BlockKind>(['each', 'escape', 'pure', 'puredisplay', 'func']);
+const VARIABLE_ARGUMENT_BUILTINS = new Set([
+  'addvar',
+  'getglobalvar',
+  'gettempvar',
+  'getvar',
+  'setdefaultvar',
+  'setglobalvar',
+  'settempvar',
+  'setvar',
+  'slot',
+  'tempvar',
+]);
+const HEADER_OPERATORS = new Set([
+  'and',
+  'keep',
+  'legacy',
+  'not',
+  'or',
+  'toggle',
+  'var',
+  'is',
+  'isnot',
+  'vis',
+  'visnot',
+  'tis',
+  'tisnot',
+  '>',
+  '<',
+  '>=',
+  '<=',
+]);
+const MATH_OPERATORS = ['>=', '<=', '==', '!=', '+', '-', '*', '/', '%', '^', '<', '>', '(', ')'];
+const NUMBER_PATTERN = /^[+-]?\d+(?:\.\d+)?$/;
+
+function getTokenTypeIndex(tokenType: SemanticTokenTypeName): number {
+  return TOKEN_TYPE_INDEX.get(tokenType) ?? 0;
+}
+
+function getTokenModifierMask(modifiers: readonly SemanticTokenModifierName[] = []): number {
+  let mask = 0;
+
+  for (const modifier of modifiers) {
+    const bitIndex = TOKEN_MODIFIER_INDEX.get(modifier);
+    if (bitIndex === undefined) {
+      continue;
+    }
+
+    mask |= 1 << bitIndex;
+  }
+
+  return mask;
+}
+
+function createTokenSpan(text: string, token: Token): TokenOffsetSpan {
+  return {
+    startOffset: positionToOffset(text, token.range.start),
+    endOffset: positionToOffset(text, token.range.end),
+  };
+}
+
+function trimOffsetSpan(text: string, span: TokenOffsetSpan): TokenOffsetSpan | null {
+  let startOffset = span.startOffset;
+  let endOffset = span.endOffset;
+
+  while (startOffset < endOffset && /\s/u.test(text[startOffset] ?? '')) {
+    startOffset += 1;
+  }
+
+  while (endOffset > startOffset && /\s/u.test(text[endOffset - 1] ?? '')) {
+    endOffset -= 1;
+  }
+
+  if (endOffset <= startOffset) {
+    return null;
+  }
+
+  return { startOffset, endOffset };
+}
+
+function trimTokenSpan(text: string, token: Token): TokenOffsetSpan | null {
+  return trimOffsetSpan(text, createTokenSpan(text, token));
+}
+
+function getHeaderKeywordSpan(text: string, token: Token): TokenOffsetSpan | null {
+  const trimmed = trimTokenSpan(text, token);
+  if (!trimmed) {
+    return null;
+  }
+
+  let endOffset = trimmed.startOffset;
+  while (endOffset < trimmed.endOffset) {
+    const current = text[endOffset] ?? '';
+    if (/\s/u.test(current) || current === ':') {
+      break;
+    }
+    endOffset += 1;
+  }
+
+  if (endOffset <= trimmed.startOffset) {
+    return null;
+  }
+
+  return {
+    startOffset: trimmed.startOffset,
+    endOffset,
+  };
+}
+
+function isNumberLike(value: string): boolean {
+  return NUMBER_PATTERN.test(value.trim());
+}
+
+function findNearestBlock(path: readonly unknown[]): BlockNode | null {
+  for (let index = path.length - 1; index >= 0; index -= 1) {
+    const candidate = path[index];
+    if (candidate && typeof candidate === 'object' && (candidate as BlockNode).type === 'Block') {
+      return candidate as BlockNode;
+    }
+  }
+
+  return null;
+}
+
+function isPureModeBodyToken(
+  documentAnalysis: DocumentFragmentAnalysis,
+  documentText: string,
+  localSpan: TokenOffsetSpan,
+  hostStartOffset: number,
+): boolean {
+  const hostPosition = offsetToPosition(documentText, hostStartOffset);
+  const lookup = locateFragmentAtHostPosition(documentAnalysis, documentText, hostPosition);
+  if (!lookup) {
+    return false;
+  }
+
+  const nearestBlock = findNearestBlock(lookup.nodePath);
+  if (!nearestBlock || !PURE_MODE_BLOCKS.has(nearestBlock.kind)) {
+    return false;
+  }
+
+  const openEnd = positionToOffset(lookup.fragment.content, nearestBlock.openRange.end);
+  const closeStart = nearestBlock.closeRange
+    ? positionToOffset(lookup.fragment.content, nearestBlock.closeRange.start)
+    : lookup.fragment.content.length;
+
+  return localSpan.startOffset >= openEnd && localSpan.endOffset <= closeStart;
+}
+
+function emitHostOffsetRange(
+  entries: HostSemanticTokenEntry[],
+  documentText: string,
+  hostStartOffset: number,
+  hostEndOffset: number,
+  tokenType: SemanticTokenTypeName,
+  modifiers: readonly SemanticTokenModifierName[] = [],
+): void {
+  const startOffset = Math.max(0, Math.min(hostStartOffset, documentText.length));
+  const endOffset = Math.max(0, Math.min(hostEndOffset, documentText.length));
+
+  if (endOffset <= startOffset) {
+    return;
+  }
+
+  let cursor = startOffset;
+  while (cursor < endOffset) {
+    let lineEnd = cursor;
+    while (lineEnd < endOffset) {
+      const current = documentText[lineEnd];
+      if (current === '\r' || current === '\n') {
+        break;
+      }
+      lineEnd += 1;
+    }
+
+    if (lineEnd > cursor) {
+      const start = offsetToPosition(documentText, cursor);
+      entries.push({
+        line: start.line,
+        startChar: start.character,
+        length: lineEnd - cursor,
+        tokenType: getTokenTypeIndex(tokenType),
+        tokenModifiers: getTokenModifierMask(modifiers),
+      });
+    }
+
+    if (lineEnd >= endOffset) {
+      break;
+    }
+
+    if (documentText[lineEnd] === '\r' && documentText[lineEnd + 1] === '\n') {
+      cursor = lineEnd + 2;
+      continue;
+    }
+
+    cursor = lineEnd + 1;
+  }
+}
+
+function emitLocalOffsetRange(
+  entries: HostSemanticTokenEntry[],
+  documentText: string,
+  request: {
+    hostOffsetForLocal(localOffset: number): number | null;
+  },
+  localStartOffset: number,
+  localEndOffset: number,
+  tokenType: SemanticTokenTypeName,
+  modifiers: readonly SemanticTokenModifierName[] = [],
+): void {
+  const hostStartOffset = request.hostOffsetForLocal(localStartOffset);
+  const hostEndOffset = request.hostOffsetForLocal(localEndOffset);
+  if (hostStartOffset === null || hostEndOffset === null) {
+    return;
+  }
+
+  emitHostOffsetRange(entries, documentText, hostStartOffset, hostEndOffset, tokenType, modifiers);
+}
+
+function emitMathExpressionTokens(
+  entries: HostSemanticTokenEntry[],
+  documentText: string,
+  token: Token,
+  fragmentContent: string,
+  request: {
+    hostOffsetForLocal(localOffset: number): number | null;
+  },
+): void {
+  const span = createTokenSpan(fragmentContent, token);
+  const raw = fragmentContent.slice(span.startOffset, span.endOffset);
+  if (raw.length === 0) {
+    return;
+  }
+
+  if (raw[0] === '?') {
+    emitLocalOffsetRange(
+      entries,
+      documentText,
+      request,
+      span.startOffset,
+      span.startOffset + 1,
+      'operator',
+    );
+  }
+
+  let cursor = 1;
+  while (cursor < raw.length) {
+    const current = raw[cursor] ?? '';
+    if (/\s/u.test(current)) {
+      cursor += 1;
+      continue;
+    }
+
+    const numberMatch = raw.slice(cursor).match(/^[+-]?\d+(?:\.\d+)?/u);
+    if (numberMatch) {
+      emitLocalOffsetRange(
+        entries,
+        documentText,
+        request,
+        span.startOffset + cursor,
+        span.startOffset + cursor + numberMatch[0].length,
+        'number',
+      );
+      cursor += numberMatch[0].length;
+      continue;
+    }
+
+    const operator = MATH_OPERATORS.find((candidate) => raw.startsWith(candidate, cursor));
+    if (operator) {
+      emitLocalOffsetRange(
+        entries,
+        documentText,
+        request,
+        span.startOffset + cursor,
+        span.startOffset + cursor + operator.length,
+        'operator',
+      );
+      cursor += operator.length;
+      continue;
+    }
+
+    cursor += 1;
+  }
+}
+
+function classifyArgumentToken(
+  documentAnalysis: DocumentFragmentAnalysis,
+  documentText: string,
+  hostStartOffset: number,
+  token: Token,
+  registry: CBSBuiltinRegistry,
+): SemanticTokenTypeName {
+  const lookup = locateFragmentAtHostPosition(
+    documentAnalysis,
+    documentText,
+    offsetToPosition(documentText, hostStartOffset),
+  );
+  const trimmedValue = token.value.trim();
+
+  if (lookup?.nodeSpan?.owner.type === 'Block' && lookup.nodeSpan.category === 'block-header') {
+    return HEADER_OPERATORS.has(trimmedValue.toLowerCase())
+      ? 'operator'
+      : isNumberLike(trimmedValue)
+        ? 'number'
+        : 'string';
+  }
+
+  if (lookup?.nodeSpan?.owner.type === 'MacroCall' && lookup.nodeSpan.category === 'argument') {
+    const owner = lookup.nodeSpan.owner as MacroCallNode;
+    const builtin = registry.get(owner.name);
+    const argumentIndex = lookup.nodeSpan.argumentIndex ?? 0;
+    if (builtin && argumentIndex === 0 && VARIABLE_ARGUMENT_BUILTINS.has(builtin.name)) {
+      return 'variable';
+    }
+
+    return isNumberLike(trimmedValue) ? 'number' : 'string';
+  }
+
+  return isNumberLike(trimmedValue) ? 'number' : 'string';
+}
+
+function buildSemanticTokenData(entries: readonly HostSemanticTokenEntry[]): number[] {
+  const sorted = [...entries].sort(
+    (left, right) =>
+      left.line - right.line ||
+      left.startChar - right.startChar ||
+      left.length - right.length ||
+      left.tokenType - right.tokenType ||
+      left.tokenModifiers - right.tokenModifiers,
+  );
+
+  const data: number[] = [];
+  let previousLine = 0;
+  let previousCharacter = 0;
+
+  for (const entry of sorted) {
+    const deltaLine = entry.line - previousLine;
+    const deltaStart = deltaLine === 0 ? entry.startChar - previousCharacter : entry.startChar;
+
+    data.push(deltaLine, deltaStart, entry.length, entry.tokenType, entry.tokenModifiers);
+
+    previousLine = entry.line;
+    previousCharacter = entry.startChar;
+  }
+
+  return data;
+}
 
 export class SemanticTokensProvider {
-  provide(_params: SemanticTokensParams): SemanticTokens {
-    // TODO: Provide semantic tokens for enhanced syntax highlighting
-    // Walk the AST and emit tokens with appropriate types
-    return { data: [] }
+  constructor(
+    private readonly analysisService: FragmentAnalysisService = fragmentAnalysisService,
+    private readonly registry: CBSBuiltinRegistry = new CBSBuiltinRegistry(),
+  ) {}
+
+  provide(_params: SemanticTokensParams, request: FragmentAnalysisRequest): SemanticTokens {
+    const analysis = this.analysisService.analyzeDocument(request);
+    if (!analysis) {
+      return { data: [] };
+    }
+
+    const entries: HostSemanticTokenEntry[] = [];
+
+    for (const fragmentAnalysis of analysis.fragmentAnalyses) {
+      const hostOffsetForLocal = (localOffset: number): number | null =>
+        fragmentAnalysis.mapper.toHostOffset(localOffset);
+
+      for (const token of fragmentAnalysis.tokens) {
+        if (token.type === TokenType.EOF) {
+          continue;
+        }
+
+        const span = createTokenSpan(fragmentAnalysis.fragment.content, token);
+        const hostStartOffset = hostOffsetForLocal(span.startOffset);
+        if (hostStartOffset === null) {
+          continue;
+        }
+
+        if (isPureModeBodyToken(analysis, request.text, span, hostStartOffset)) {
+          emitLocalOffsetRange(
+            entries,
+            request.text,
+            { hostOffsetForLocal },
+            span.startOffset,
+            span.endOffset,
+            'string',
+          );
+          continue;
+        }
+
+        switch (token.type) {
+          case TokenType.OpenBrace:
+          case TokenType.CloseBrace:
+          case TokenType.ArgumentSeparator:
+            emitLocalOffsetRange(
+              entries,
+              request.text,
+              { hostOffsetForLocal },
+              span.startOffset,
+              span.endOffset,
+              'punctuation',
+            );
+            break;
+          case TokenType.Comment:
+            emitLocalOffsetRange(
+              entries,
+              request.text,
+              { hostOffsetForLocal },
+              span.startOffset,
+              span.endOffset,
+              'comment',
+            );
+            break;
+          case TokenType.MathExpression:
+            emitMathExpressionTokens(
+              entries,
+              request.text,
+              token,
+              fragmentAnalysis.fragment.content,
+              { hostOffsetForLocal },
+            );
+            break;
+          case TokenType.FunctionName: {
+            const builtin = this.registry.get(token.value);
+            const keywordSpan = trimTokenSpan(fragmentAnalysis.fragment.content, token);
+            if (!keywordSpan) {
+              break;
+            }
+
+            emitLocalOffsetRange(
+              entries,
+              request.text,
+              { hostOffsetForLocal },
+              keywordSpan.startOffset,
+              keywordSpan.endOffset,
+              builtin?.deprecated ? 'deprecated' : 'function',
+              builtin?.deprecated ? ['deprecated'] : [],
+            );
+            break;
+          }
+          case TokenType.BlockStart: {
+            const keywordSpan = getHeaderKeywordSpan(fragmentAnalysis.fragment.content, token);
+            if (!keywordSpan) {
+              break;
+            }
+            const builtin = this.registry.get(
+              fragmentAnalysis.fragment.content.slice(
+                keywordSpan.startOffset,
+                keywordSpan.endOffset,
+              ),
+            );
+
+            emitLocalOffsetRange(
+              entries,
+              request.text,
+              { hostOffsetForLocal },
+              keywordSpan.startOffset,
+              keywordSpan.endOffset,
+              builtin?.deprecated ? 'deprecated' : 'keyword',
+              builtin?.deprecated ? ['deprecated'] : [],
+            );
+            break;
+          }
+          case TokenType.BlockEnd:
+          case TokenType.ElseKeyword: {
+            const keywordSpan = trimTokenSpan(fragmentAnalysis.fragment.content, token);
+            if (!keywordSpan) {
+              break;
+            }
+
+            emitLocalOffsetRange(
+              entries,
+              request.text,
+              { hostOffsetForLocal },
+              keywordSpan.startOffset,
+              keywordSpan.endOffset,
+              'keyword',
+            );
+            break;
+          }
+          case TokenType.AngleBracketMacro: {
+            const keywordSpan = trimTokenSpan(fragmentAnalysis.fragment.content, token);
+            if (!keywordSpan) {
+              break;
+            }
+
+            emitLocalOffsetRange(
+              entries,
+              request.text,
+              { hostOffsetForLocal },
+              keywordSpan.startOffset,
+              keywordSpan.endOffset,
+              'function',
+            );
+            break;
+          }
+          case TokenType.Argument: {
+            const trimmedSpan = trimTokenSpan(fragmentAnalysis.fragment.content, token);
+            if (!trimmedSpan) {
+              break;
+            }
+
+            emitLocalOffsetRange(
+              entries,
+              request.text,
+              { hostOffsetForLocal },
+              trimmedSpan.startOffset,
+              trimmedSpan.endOffset,
+              classifyArgumentToken(analysis, request.text, hostStartOffset, token, this.registry),
+            );
+            break;
+          }
+          default:
+            break;
+        }
+      }
+    }
+
+    return { data: buildSemanticTokenData(entries) };
   }
 }

@@ -1,0 +1,360 @@
+import type { Definition, LocationLink, Position, TextDocumentPositionParams } from 'vscode-languageserver/node';
+import { CBSBuiltinRegistry } from 'risu-workbench-core';
+import { describe, expect, it } from 'vitest';
+
+import { FragmentAnalysisService } from '../../src/core';
+import { DefinitionProvider } from '../../src/features/definition';
+import { offsetToPosition } from '../../src/utils/position';
+import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
+
+function locateNthOffset(text: string, needle: string, occurrence: number = 0): number {
+  let fromIndex = 0;
+  let foundIndex = -1;
+
+  for (let index = 0; index <= occurrence; index += 1) {
+    foundIndex = text.indexOf(needle, fromIndex);
+    if (foundIndex === -1) {
+      break;
+    }
+
+    fromIndex = foundIndex + needle.length;
+  }
+
+  expect(foundIndex).toBeGreaterThanOrEqual(0);
+  return foundIndex;
+}
+
+function positionAt(
+  text: string,
+  needle: string,
+  characterOffset: number = 0,
+  occurrence: number = 0,
+): Position {
+  return offsetToPosition(text, locateNthOffset(text, needle, occurrence) + characterOffset);
+}
+
+function createProvider(
+  service: FragmentAnalysisService,
+  request: ReturnType<typeof createFixtureRequest>,
+): DefinitionProvider {
+  return new DefinitionProvider(new CBSBuiltinRegistry(), {
+    analysisService: service,
+    resolveRequest: ({ textDocument }) => (textDocument.uri === request.uri ? request : null),
+  });
+}
+
+function createParams(
+  request: ReturnType<typeof createFixtureRequest>,
+  position: Position,
+): TextDocumentPositionParams {
+  return {
+    textDocument: { uri: request.uri },
+    position,
+  };
+}
+
+function expectLocationLink(definition: Definition | null): LocationLink[] {
+  expect(definition).toBeDefined();
+  expect(definition).not.toBeNull();
+  expect(Array.isArray(definition)).toBe(true);
+  // After array check, cast via unknown to satisfy TypeScript
+  const links = definition as unknown as LocationLink[];
+  expect(links.length).toBeGreaterThan(0);
+  return links;
+}
+
+describe('DefinitionProvider', () => {
+  describe('getvar -> setvar definition resolution', () => {
+    it('resolves getvar to setvar definition in the same fragment', () => {
+      // Create a document with setvar followed by getvar
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{setvar::mood::happy}}{{getvar::mood}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+
+      // Position cursor on "mood" in getvar
+      const getvarIndex = modifiedText.indexOf('{{getvar::mood}}');
+      const moodOffset = getvarIndex + '{{getvar::'.length;
+      const position = offsetToPosition(modifiedText, moodOffset + 1); // Cursor on 'o' in mood
+
+      const definition = provider.provide(createParams(request, position));
+
+      const link = expectLocationLink(definition);
+      expect(link[0].targetUri).toBe(request.uri);
+      // The target range should point to the setvar definition
+      expect(link[0].targetRange).toBeDefined();
+    });
+
+    it('returns null for unresolved variable', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace('{{user}}', '{{getvar::undefined_var}}');
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+
+      const getvarIndex = modifiedText.indexOf('{{getvar::undefined_var}}');
+      const position = offsetToPosition(modifiedText, getvarIndex + '{{getvar::'.length + 5);
+
+      const definition = provider.provide(createParams(request, position));
+
+      expect(definition).toBeNull();
+    });
+
+    it('returns definition when cursor is on the definition token itself', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{setvar::mood::happy}}{{getvar::mood}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+
+      // Position cursor on "mood" in setvar (the definition site)
+      const setvarIndex = modifiedText.indexOf('{{setvar::mood::happy}}');
+      const moodOffset = setvarIndex + '{{setvar::'.length;
+      const position = offsetToPosition(modifiedText, moodOffset + 1);
+
+      const definition = provider.provide(createParams(request, position));
+
+      const link = expectLocationLink(definition);
+      // When on the definition itself, it should return that same range
+      expect(link[0].targetUri).toBe(request.uri);
+    });
+  });
+
+  describe('gettempvar -> settempvar definition resolution', () => {
+    it('resolves gettempvar to settempvar definition', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{settempvar::cache::value}}{{gettempvar::cache}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+
+      const gettempvarIndex = modifiedText.indexOf('{{gettempvar::cache}}');
+      const position = offsetToPosition(modifiedText, gettempvarIndex + '{{gettempvar::'.length + 2);
+
+      const definition = provider.provide(createParams(request, position));
+
+      const link = expectLocationLink(definition);
+      expect(link[0].targetUri).toBe(request.uri);
+    });
+
+    it('resolves tempvar to settempvar definition', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{settempvar::temp_val::123}}{{tempvar::temp_val}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+
+      const tempvarIndex = modifiedText.indexOf('{{tempvar::temp_val}}');
+      const position = offsetToPosition(modifiedText, tempvarIndex + '{{tempvar::'.length + 3);
+
+      const definition = provider.provide(createParams(request, position));
+
+      const link = expectLocationLink(definition);
+      expect(link[0].targetUri).toBe(request.uri);
+    });
+
+    it('returns null for unresolved temp variable', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace('{{user}}', '{{gettempvar::missing}}');
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+
+      const gettempvarIndex = modifiedText.indexOf('{{gettempvar::missing}}');
+      const position = offsetToPosition(modifiedText, gettempvarIndex + '{{gettempvar::'.length + 3);
+
+      const definition = provider.provide(createParams(request, position));
+
+      expect(definition).toBeNull();
+    });
+  });
+
+  describe('slot::name -> #each definition resolution', () => {
+    it('resolves slot variable to #each block declaration', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      // Use the correct #each syntax with "as" keyword
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{#each items as item}}{{slot::item}}{{/each}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+
+      const slotIndex = modifiedText.indexOf('{{slot::item}}');
+      const cursorOffset = slotIndex + '{{slot::'.length;
+      const position = offsetToPosition(modifiedText, cursorOffset);
+
+      const definition = provider.provide(createParams(request, position));
+
+      const link = expectLocationLink(definition);
+      expect(link[0].targetUri).toBe(request.uri);
+    });
+
+    it('returns null for slot outside #each block', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace('{{user}}', '{{slot::orphan}}');
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+
+      const slotIndex = modifiedText.indexOf('{{slot::orphan}}');
+      const position = offsetToPosition(modifiedText, slotIndex + '{{slot::'.length + 3);
+
+      const definition = provider.provide(createParams(request, position));
+
+      // slot outside #each should not resolve
+      expect(definition).toBeNull();
+    });
+  });
+
+  describe('global variables', () => {
+    it('returns null for getglobalvar (external scope)', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace('{{user}}', '{{getglobalvar::global_var}}');
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+
+      const getglobalvarIndex = modifiedText.indexOf('{{getglobalvar::global_var}}');
+      const position = offsetToPosition(
+        modifiedText,
+        getglobalvarIndex + '{{getglobalvar::'.length + 5,
+      );
+
+      const definition = provider.provide(createParams(request, position));
+
+      // Global variables are external, should return null
+      expect(definition).toBeNull();
+    });
+  });
+
+  describe('non-variable positions', () => {
+    it('returns null for builtin function names', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const request = createFixtureRequest(entry);
+      const provider = createProvider(new FragmentAnalysisService(), request);
+
+      // Position on "user" builtin
+      const position = positionAt(entry.text, '{{user}}', 2);
+
+      const definition = provider.provide(createParams(request, position));
+
+      // Builtins don't have definitions
+      expect(definition).toBeNull();
+    });
+
+    it('returns null for plain text', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const request = createFixtureRequest(entry);
+      const provider = createProvider(new FragmentAnalysisService(), request);
+
+      // Position on plain text "Hello"
+      const position = positionAt(entry.text, 'Hello', 2);
+
+      const definition = provider.provide(createParams(request, position));
+
+      expect(definition).toBeNull();
+    });
+
+    it('returns null outside CBS fragments', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const request = createFixtureRequest(entry);
+      const provider = createProvider(new FragmentAnalysisService(), request);
+
+      // Position in frontmatter (outside CBS fragment)
+      const position = positionAt(entry.text, 'name: entry', 2);
+
+      const definition = provider.provide(createParams(request, position));
+
+      expect(definition).toBeNull();
+    });
+  });
+
+  describe('addvar variable resolution', () => {
+    it('resolves getvar to addvar definition', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{addvar::counter::1}}{{getvar::counter}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+
+      const getvarIndex = modifiedText.indexOf('{{getvar::counter}}');
+      const position = offsetToPosition(modifiedText, getvarIndex + '{{getvar::'.length + 3);
+
+      const definition = provider.provide(createParams(request, position));
+
+      const link = expectLocationLink(definition);
+      expect(link[0].targetUri).toBe(request.uri);
+    });
+  });
+
+  describe('setdefaultvar variable resolution', () => {
+    it('resolves getvar to setdefaultvar definition', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{setdefaultvar::setting::default}}{{getvar::setting}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+
+      const getvarIndex = modifiedText.indexOf('{{getvar::setting}}');
+      const position = offsetToPosition(modifiedText, getvarIndex + '{{getvar::'.length + 3);
+
+      const definition = provider.provide(createParams(request, position));
+
+      const link = expectLocationLink(definition);
+      expect(link[0].targetUri).toBe(request.uri);
+    });
+  });
+
+  describe('single target behavior', () => {
+    it('returns only the first definition when multiple exist', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      // Multiple definitions of the same variable
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{setvar::multi::first}}{{setvar::multi::second}}{{getvar::multi}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+
+      const getvarIndex = modifiedText.indexOf('{{getvar::multi}}');
+      const position = offsetToPosition(modifiedText, getvarIndex + '{{getvar::'.length + 3);
+
+      const definition = provider.provide(createParams(request, position));
+
+      const link = expectLocationLink(definition);
+      // Should return exactly one target
+      expect(link.length).toBe(1);
+    });
+  });
+
+  describe('origin selection range', () => {
+    it('includes originSelectionRange in LocationLink', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{setvar::mood::happy}}{{getvar::mood}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+
+      const getvarIndex = modifiedText.indexOf('{{getvar::mood}}');
+      const position = offsetToPosition(modifiedText, getvarIndex + '{{getvar::'.length + 1);
+
+      const definition = provider.provide(createParams(request, position));
+
+      const link = expectLocationLink(definition);
+      // LocationLink should have originSelectionRange
+      expect(link[0].originSelectionRange).toBeDefined();
+    });
+  });
+});

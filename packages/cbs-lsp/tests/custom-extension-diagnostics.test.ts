@@ -1,10 +1,17 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   mapDocumentToCbsFragments,
   createDiagnosticForFragment,
   routeDiagnosticsForDocument,
-} from '../src/diagnostics-router'
-import type { CbsFragment } from 'risu-workbench-core'
+} from '../src/diagnostics-router';
+import { DiagnosticCode } from '../src/analyzer/diagnostics';
+import type { CbsFragment } from 'risu-workbench-core';
+import { fragmentAnalysisService } from '../src/core';
+import { createFixtureRequest, getFixtureCorpusEntry } from './fixtures/fixture-corpus';
+
+afterEach(() => {
+  fragmentAnalysisService.clearAll();
+});
 
 describe('custom-extension diagnostics', () => {
   describe('mapDocumentToCbsFragments', () => {
@@ -16,15 +23,15 @@ name: test_entry
 key1
 @@@ CONTENT
 Hello {{user}}, welcome!
-`
-      const result = mapDocumentToCbsFragments('/path/to/entry.risulorebook', content)
+`;
+      const result = mapDocumentToCbsFragments('/path/to/entry.risulorebook', content);
 
-      expect(result).not.toBeNull()
-      expect(result?.artifact).toBe('lorebook')
-      expect(result?.fragments).toHaveLength(1)
-      expect(result?.fragments[0].section).toBe('CONTENT')
-      expect(result?.fragments[0].content).toContain('{{user}}')
-    })
+      expect(result).not.toBeNull();
+      expect(result?.artifact).toBe('lorebook');
+      expect(result?.fragments).toHaveLength(1);
+      expect(result?.fragments[0].section).toBe('CONTENT');
+      expect(result?.fragments[0].content).toContain('{{user}}');
+    });
 
     it('maps regex IN and OUT sections to fragments', () => {
       const content = `---
@@ -35,21 +42,21 @@ type: plain
 Hello {{user}}
 @@@ OUT
 Hi there!
-`
-      const result = mapDocumentToCbsFragments('/path/to/script.risuregex', content)
+`;
+      const result = mapDocumentToCbsFragments('/path/to/script.risuregex', content);
 
-      expect(result).not.toBeNull()
-      expect(result?.artifact).toBe('regex')
-      expect(result?.fragments).toHaveLength(2)
+      expect(result).not.toBeNull();
+      expect(result?.artifact).toBe('regex');
+      expect(result?.fragments).toHaveLength(2);
 
-      const inFragment = result?.fragments.find(f => f.section === 'IN')
-      const outFragment = result?.fragments.find(f => f.section === 'OUT')
+      const inFragment = result?.fragments.find((f) => f.section === 'IN');
+      const outFragment = result?.fragments.find((f) => f.section === 'OUT');
 
-      expect(inFragment).toBeDefined()
-      expect(inFragment?.content).toContain('{{user}}')
-      expect(outFragment).toBeDefined()
-      expect(outFragment?.content).toBe('Hi there!')
-    })
+      expect(inFragment).toBeDefined();
+      expect(inFragment?.content).toContain('{{user}}');
+      expect(outFragment).toBeDefined();
+      expect(outFragment?.content).toBe('Hi there!');
+    });
 
     it('maps prompt TEXT section to fragments', () => {
       const content = `---
@@ -58,65 +65,65 @@ variant: plain
 @@@ TEXT
 System: {{system_prompt}}
 User: {{input}}
-`
-      const result = mapDocumentToCbsFragments('/path/to/prompt.risuprompt', content)
+`;
+      const result = mapDocumentToCbsFragments('/path/to/prompt.risuprompt', content);
 
-      expect(result).not.toBeNull()
-      expect(result?.artifact).toBe('prompt')
-      expect(result?.fragments).toHaveLength(1)
-      expect(result?.fragments[0].section).toBe('TEXT')
-    })
+      expect(result).not.toBeNull();
+      expect(result?.artifact).toBe('prompt');
+      expect(result?.fragments).toHaveLength(1);
+      expect(result?.fragments[0].section).toBe('TEXT');
+    });
 
     it('maps html full file to single fragment', () => {
       const content = `<div class="character">
   <h1>{{char}}</h1>
   <p>{{description}}</p>
-</div>`
-      const result = mapDocumentToCbsFragments('/path/to/background.risuhtml', content)
+</div>`;
+      const result = mapDocumentToCbsFragments('/path/to/background.risuhtml', content);
 
-      expect(result).not.toBeNull()
-      expect(result?.artifact).toBe('html')
-      expect(result?.fragments).toHaveLength(1)
-      expect(result?.fragments[0].section).toBe('full')
-      expect(result?.fragments[0].content).toBe(content)
-    })
+      expect(result).not.toBeNull();
+      expect(result?.artifact).toBe('html');
+      expect(result?.fragments).toHaveLength(1);
+      expect(result?.fragments[0].section).toBe('full');
+      expect(result?.fragments[0].content).toBe(content);
+    });
 
     it('maps lua full file to single fragment', () => {
       const content = `local name = "{{char}}"
 local greeting = "Hello, " .. name
-return greeting`
-      const result = mapDocumentToCbsFragments('/path/to/script.risulua', content)
+return greeting`;
+      const result = mapDocumentToCbsFragments('/path/to/script.risulua', content);
 
-      expect(result).not.toBeNull()
-      expect(result?.artifact).toBe('lua')
-      expect(result?.fragments).toHaveLength(1)
-      expect(result?.fragments[0].section).toBe('full')
-    })
+      expect(result).not.toBeNull();
+      expect(result?.artifact).toBe('lua');
+      expect(result?.fragments).toHaveLength(1);
+      expect(result?.fragments[0].section).toBe('full');
+    });
 
     it('returns null for toggle files (non-CBS)', () => {
-      const content = 'toggle_setting = true'
-      const result = mapDocumentToCbsFragments('/path/to/toggle.risutoggle', content)
+      const content = 'toggle_setting = true';
+      const result = mapDocumentToCbsFragments('/path/to/toggle.risutoggle', content);
 
-      expect(result).toBeNull()
-    })
+      expect(result).toBeNull();
+    });
 
     it('returns null for variable files (non-CBS)', () => {
-      const content = 'key1=value1\nkey2=value2'
-      const result = mapDocumentToCbsFragments('/path/to/vars.risuvar', content)
+      const content = 'key1=value1\nkey2=value2';
+      const result = mapDocumentToCbsFragments('/path/to/vars.risuvar', content);
 
-      expect(result).toBeNull()
-    })
+      expect(result).toBeNull();
+    });
 
     it('returns null for unknown extensions', () => {
-      const result = mapDocumentToCbsFragments('/path/to/file.txt', 'content')
-      expect(result).toBeNull()
-    })
+      const result = mapDocumentToCbsFragments('/path/to/file.txt', 'content');
+      expect(result).toBeNull();
+    });
 
     it('handles empty content gracefully', () => {
-      const result = mapDocumentToCbsFragments('/path/to/entry.risulorebook', '')
-      expect(result).not.toBeNull()
-      expect(result?.fragments).toHaveLength(0)
-    })
+      const result = mapDocumentToCbsFragments('/path/to/entry.risulorebook', '');
+      expect(result).not.toBeNull();
+      expect(result?.fragments).toHaveLength(0);
+    });
 
     it('handles lorebook without CONTENT section', () => {
       const content = `---
@@ -124,12 +131,12 @@ name: test_entry
 ---
 @@@ KEYS
 key1
-`
-      const result = mapDocumentToCbsFragments('/path/to/entry.risulorebook', content)
+`;
+      const result = mapDocumentToCbsFragments('/path/to/entry.risulorebook', content);
 
-      expect(result).not.toBeNull()
-      expect(result?.fragments).toHaveLength(0)
-    })
+      expect(result).not.toBeNull();
+      expect(result?.fragments).toHaveLength(0);
+    });
 
     it('handles regex with only IN section', () => {
       const content = `---
@@ -138,26 +145,26 @@ type: plain
 ---
 @@@ IN
 Hello {{user}}
-`
-      const result = mapDocumentToCbsFragments('/path/to/script.risuregex', content)
+`;
+      const result = mapDocumentToCbsFragments('/path/to/script.risuregex', content);
 
-      expect(result).not.toBeNull()
-      expect(result?.fragments).toHaveLength(1)
-      expect(result?.fragments[0].section).toBe('IN')
-    })
-  })
+      expect(result).not.toBeNull();
+      expect(result?.fragments).toHaveLength(1);
+      expect(result?.fragments[0].section).toBe('IN');
+    });
+  });
 
   describe('createDiagnosticForFragment', () => {
     it('creates diagnostic with correct range', () => {
       // Document: line 0-3 are headers, line 4 is the actual content
-      const documentContent = '---\nname: test\n---\n@@@ CONTENT\nHello {{user}}'
+      const documentContent = '---\nname: test\n---\n@@@ CONTENT\nHello {{user}}';
       // Fragment starts at position 31 (after "---\nname: test\n---\n@@@ CONTENT\n")
       const fragment: CbsFragment = {
         section: 'CONTENT',
         start: 31,
         end: 45,
         content: 'Hello {{user}}',
-      }
+      };
 
       const diagnostic = createDiagnosticForFragment(
         documentContent,
@@ -166,40 +173,77 @@ Hello {{user}}
         'error',
         'CBS001',
         6, // offset within fragment content - points to "{{user}}"
-        14 // end offset within fragment content
-      )
+        14, // end offset within fragment content
+      );
 
-      expect(diagnostic.message).toBe('Test message')
-      expect(diagnostic.code).toBe('CBS001')
-      expect(diagnostic.range.start.line).toBe(4) // Line 4 in document (0-indexed)
-      expect(diagnostic.range.start.character).toBe(6) // "{{user}}" starts at char 6 in line
-      expect(diagnostic.range.end.line).toBe(4)
-      expect(diagnostic.range.end.character).toBe(14)
-    })
+      expect(diagnostic.message).toBe('Test message');
+      expect(diagnostic.code).toBe('CBS001');
+      expect(diagnostic.range.start.line).toBe(4); // Line 4 in document (0-indexed)
+      expect(diagnostic.range.start.character).toBe(6); // "{{user}}" starts at char 6 in line
+      expect(diagnostic.range.end.line).toBe(4);
+      expect(diagnostic.range.end.character).toBe(14);
+    });
 
     it('defaults to error severity', () => {
-      const documentContent = 'test content'
+      const documentContent = 'test content';
       const fragment: CbsFragment = {
         section: 'CONTENT',
         start: 0,
         end: 12,
         content: 'test content',
-      }
+      };
 
       const diagnostic = createDiagnosticForFragment(
         documentContent,
         fragment,
         'Warning message',
         undefined,
-        'CBS100'
-      )
+        'CBS100',
+      );
 
-      expect(diagnostic.severity).toBe(1) // DiagnosticSeverity.Error = 1
-    })
-  })
+      expect(diagnostic.severity).toBe(1); // DiagnosticSeverity.Error = 1
+    });
+  });
 
   describe('routeDiagnosticsForDocument', () => {
-    it('routes diagnostics for lorebook with CBS content', () => {
+    it('routes structural diagnostics with canonical taxonomy codes', () => {
+      const unclosedMacroContent = `---
+name: test
+---
+@@@ KEYS
+key
+@@@ CONTENT
+Hello {{user
+`;
+      const unclosedBlockContent = `---
+name: test
+---
+@@@ KEYS
+key
+@@@ CONTENT
+{{#when::true}}Hello
+`;
+
+      const unclosedMacroDiagnostics = routeDiagnosticsForDocument(
+        '/path/to/entry.risulorebook',
+        unclosedMacroContent,
+        {},
+      );
+      const unclosedBlockDiagnostics = routeDiagnosticsForDocument(
+        '/path/to/entry.risulorebook',
+        unclosedBlockContent,
+        {},
+      );
+
+      expect(unclosedMacroDiagnostics.map((diagnostic) => diagnostic.code)).toContain(
+        DiagnosticCode.UnclosedMacro,
+      );
+      expect(unclosedBlockDiagnostics.map((diagnostic) => diagnostic.code)).toContain(
+        DiagnosticCode.UnclosedBlock,
+      );
+    });
+
+    it('routes parser and analyzer diagnostics without inventing router-only meanings', () => {
       const content = `---
 name: test
 ---
@@ -207,45 +251,102 @@ name: test
 key
 @@@ CONTENT
 {{unknown_function::arg}}
-`
-      const diagnostics = routeDiagnosticsForDocument(
-        '/path/to/entry.risulorebook',
-        content,
-        { checkUnknownFunctions: true }
-      )
+`;
+      const diagnostics = routeDiagnosticsForDocument('/path/to/entry.risulorebook', content, {
+        checkUnknownFunctions: true,
+      });
 
-      expect(diagnostics).toBeDefined()
-      expect(Array.isArray(diagnostics)).toBe(true)
-    })
+      expect(diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+        DiagnosticCode.UnknownFunction,
+      );
+    });
+
+    it('routes semantic warning diagnostics for deprecated blocks and legacy angle macros', () => {
+      const deprecatedBlockContent = `---
+name: test
+---
+@@@ KEYS
+key
+@@@ CONTENT
+{{#if true}}fallback{{/if}}
+`;
+      const legacyAngleContent = `---
+name: test
+---
+@@@ KEYS
+key
+@@@ CONTENT
+Hello <user>
+`;
+
+      const deprecatedDiagnostics = routeDiagnosticsForDocument(
+        '/path/to/entry.risulorebook',
+        deprecatedBlockContent,
+        {},
+      );
+      const legacyAngleDiagnostics = routeDiagnosticsForDocument(
+        '/path/to/entry.risulorebook',
+        legacyAngleContent,
+        {},
+      );
+
+      expect(deprecatedDiagnostics.map((diagnostic) => diagnostic.code)).toContain(
+        DiagnosticCode.DeprecatedFunction,
+      );
+      expect(legacyAngleDiagnostics.map((diagnostic) => diagnostic.code)).toContain(
+        DiagnosticCode.LegacyAngleBracket,
+      );
+    });
 
     it('returns empty array for toggle files', () => {
       const diagnostics = routeDiagnosticsForDocument(
         '/path/to/toggle.risutoggle',
         'toggle = true',
-        {}
-      )
+        {},
+      );
 
-      expect(diagnostics).toEqual([])
-    })
+      expect(diagnostics).toEqual([]);
+    });
 
     it('returns empty array for variable files', () => {
-      const diagnostics = routeDiagnosticsForDocument(
-        '/path/to/vars.risuvar',
-        'key=value',
-        {}
-      )
+      const diagnostics = routeDiagnosticsForDocument('/path/to/vars.risuvar', 'key=value', {});
 
-      expect(diagnostics).toEqual([])
-    })
+      expect(diagnostics).toEqual([]);
+    });
 
     it('returns empty array for unknown extensions', () => {
-      const diagnostics = routeDiagnosticsForDocument(
-        '/path/to/file.txt',
-        'content',
-        {}
-      )
+      const diagnostics = routeDiagnosticsForDocument('/path/to/file.txt', 'content', {});
 
-      expect(diagnostics).toEqual([])
-    })
-  })
-})
+      expect(diagnostics).toEqual([]);
+    });
+
+    it.each([
+      ['lorebook-wrong-argument-count', [DiagnosticCode.WrongArgumentCount]],
+      ['regex-missing-required-argument', [DiagnosticCode.MissingRequiredArgument]],
+      ['regex-deprecated-block', [DiagnosticCode.DeprecatedFunction]],
+      ['prompt-unknown-function', [DiagnosticCode.UnknownFunction]],
+      ['prompt-empty-block', [DiagnosticCode.EmptyBlock]],
+      ['prompt-legacy-angle', [DiagnosticCode.LegacyAngleBracket]],
+    ] as const)('routes adapter-backed diagnostics for fixture %s', (fixtureId, expectedCodes) => {
+      const entry = getFixtureCorpusEntry(fixtureId);
+      const analysis = fragmentAnalysisService.analyzeDocument(createFixtureRequest(entry, 9));
+      const routedDiagnostics = routeDiagnosticsForDocument(
+        entry.filePath,
+        entry.text,
+        {},
+        { uri: entry.uri, version: 9 },
+      );
+
+      expect(analysis).not.toBeNull();
+      expect(routedDiagnostics.map((diagnostic) => diagnostic.code)).toEqual(
+        analysis?.fragmentAnalyses.flatMap((fragmentAnalysis) =>
+          fragmentAnalysis.diagnostics.map((diagnostic) => diagnostic.code),
+        ),
+      );
+
+      for (const code of expectedCodes) {
+        expect(routedDiagnostics.map((diagnostic) => diagnostic.code)).toContain(code);
+      }
+    });
+  });
+});
