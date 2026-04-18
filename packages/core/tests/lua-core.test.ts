@@ -13,7 +13,7 @@ describe('analyzeLuaSource', () => {
           return getChatVar('ct_Language')
         end
       `,
-      charxArg: null,
+      charxData: null,
     });
 
     expect(result.collected.stateVars.get('ct_Language')?.writtenBy.has('setlanguage1')).toBe(true);
@@ -35,7 +35,7 @@ describe('analyzeLuaSource', () => {
           return getChatVar('ct_Language')
         end
       `,
-      charxArg: null,
+      charxData: null,
     });
 
     expect(result.serialized.stateVars.ct_Language).toBeDefined();
@@ -60,7 +60,7 @@ describe('analyzeLuaSource', () => {
         '  missing.run()',
         'end',
       ].join('\n'),
-      charxArg: null,
+      charxData: null,
     });
 
     const collected = result.collected as any;
@@ -130,7 +130,7 @@ describe('analyzeLuaSource', () => {
         '  return one, active',
         'end',
       ].join('\n'),
-      charxArg: null,
+      charxData: null,
     });
 
     expect(result.collected.loreApiCalls).toEqual([
@@ -158,5 +158,23 @@ describe('analyzeLuaSource', () => {
       'loadLoreBooksMain',
       'upsertLocalLoreBook',
     ]);
+  });
+
+  it('reads wrapper state keys from getState/setState calls with chat context arguments', () => {
+    const result = analyzeLuaSource({
+      filePath: '/tmp/module-wrapper.lua',
+      source: [
+        'function boot(chat)',
+        '  local current = getState(chat, "mode")',
+        '  setState(chat, "mana", current)',
+        'end',
+      ].join('\n'),
+      charxData: null,
+    });
+
+    expect(result.collected.stateVars.get('mode')?.readBy.has('boot')).toBe(true);
+    expect(result.collected.stateVars.get('mana')?.writtenBy.has('boot')).toBe(true);
+    expect(result.elementCbs[0]?.reads.has('mode')).toBe(true);
+    expect(result.elementCbs[0]?.writes.has('mana')).toBe(true);
   });
 });

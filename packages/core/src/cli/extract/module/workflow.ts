@@ -139,7 +139,12 @@ function sanitizeOutputName(name: string): string {
 }
 
 function runModuleAnalysis(resolvedOutDir: string): void {
-  if (!fs.existsSync(path.join(resolvedOutDir, 'module.json'))) {
+  const hasCanonicalMarkers =
+    fs.existsSync(path.join(resolvedOutDir, 'metadata.json')) &&
+    fs.existsSync(path.join(resolvedOutDir, 'lorebooks'));
+  const hasLegacyModuleJson = fs.existsSync(path.join(resolvedOutDir, 'module.json'));
+
+  if (!hasCanonicalMarkers && !hasLegacyModuleJson) {
     console.log('  ⏭  canonical module extract에서는 module 분석을 건너뜁니다.');
     return;
   }

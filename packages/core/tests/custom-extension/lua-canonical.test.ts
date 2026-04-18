@@ -187,7 +187,20 @@ end`;
   });
 
   describe('extractLuaFromModule', () => {
-    it('extracts triggerscript from module', () => {
+    it('extracts triggerlua code from module trigger array', () => {
+      const module = {
+        trigger: [
+          {
+            comment: 'init',
+            effect: [{ type: 'triggerlua', code: 'function init() return 1 end' }],
+          },
+        ],
+      };
+      const result = extractLuaFromModule(module, 'module');
+      expect(result).toBe('-- Trigger: init\nfunction init() return 1 end\n');
+    });
+
+    it('falls back to legacy module.triggerscript string', () => {
       const module = { triggerscript: 'function init() return 1 end' };
       const result = extractLuaFromModule(module, 'module');
       expect(result).toBe('function init() return 1 end');
@@ -259,22 +272,41 @@ end`;
   });
 
   describe('injectLuaIntoModule', () => {
-    it('injects triggerscript into module', () => {
-      const module: { triggerscript?: string } = {};
+    it('injects canonical lua into module trigger array', () => {
+      const module: { triggerscript?: string; trigger?: Array<Record<string, unknown>> } = {};
       injectLuaIntoModule(module, 'function init() end', 'module');
-      expect(module.triggerscript).toBe('function init() end');
+      expect(module.triggerscript).toBeUndefined();
+      expect(module.trigger).toEqual([
+        {
+          comment: 'Canonical Lua Trigger',
+          type: 'manual',
+          conditions: [],
+          effect: [{ type: 'triggerlua', code: 'function init() end' }],
+        },
+      ]);
     });
 
     it('deletes field when content is null', () => {
-      const module: { triggerscript?: string } = { triggerscript: 'old' };
+      const module: { triggerscript?: string; trigger?: Array<Record<string, unknown>> } = {
+        triggerscript: 'old',
+        trigger: [{ type: 'manual' }],
+      };
       injectLuaIntoModule(module, null, 'module');
       expect(module.triggerscript).toBeUndefined();
+      expect(module.trigger).toBeUndefined();
     });
 
     it('injects empty string triggerscript', () => {
-      const module: { triggerscript?: string } = {};
+      const module: { triggerscript?: string; trigger?: Array<Record<string, unknown>> } = {};
       injectLuaIntoModule(module, '', 'module');
-      expect(module.triggerscript).toBe('');
+      expect(module.trigger).toEqual([
+        {
+          comment: 'Canonical Lua Trigger',
+          type: 'manual',
+          conditions: [],
+          effect: [{ type: 'triggerlua', code: '' }],
+        },
+      ]);
     });
 
     it('rejects charx target for module injection', () => {
@@ -390,9 +422,16 @@ end`;
       expect(extracted).toBe(original);
 
       // Serialize and inject back
-      const newModule: { triggerscript?: string } = {};
+      const newModule: { triggerscript?: string; trigger?: Array<Record<string, unknown>> } = {};
       injectLuaIntoModule(newModule, extracted, 'module');
-      expect(newModule.triggerscript).toBe(original);
+      expect(newModule.trigger).toEqual([
+        {
+          comment: 'Canonical Lua Trigger',
+          type: 'manual',
+          conditions: [],
+          effect: [{ type: 'triggerlua', code: original }],
+        },
+      ]);
     });
 
     it('handles complex triggerscript with CBS placeholders', () => {
@@ -425,9 +464,16 @@ end`;
       const extracted = extractLuaFromModule(module, 'module');
       expect(extracted).toBe('');
 
-      const newModule: { triggerscript?: string } = {};
+      const newModule: { triggerscript?: string; trigger?: Array<Record<string, unknown>> } = {};
       injectLuaIntoModule(newModule, extracted, 'module');
-      expect(newModule.triggerscript).toBe('');
+      expect(newModule.trigger).toEqual([
+        {
+          comment: 'Canonical Lua Trigger',
+          type: 'manual',
+          conditions: [],
+          effect: [{ type: 'triggerlua', code: '' }],
+        },
+      ]);
     });
 
     it('preserves exact byte-for-byte content including all whitespace', () => {

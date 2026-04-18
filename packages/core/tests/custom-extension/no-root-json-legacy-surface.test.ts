@@ -301,7 +301,6 @@ describe('T16: No Root JSON Legacy Surface', () => {
         'lua.ts',
         'html.ts',
         'variable.ts',
-        'regex.ts',
         'prompt-template.ts',
         'lorebook.ts',
       ];
@@ -312,6 +311,12 @@ describe('T16: No Root JSON Legacy Surface', () => {
           `Extension adapter ${ext} should exist`,
         ).toBe(true);
       }
+
+      const regexAdapterPath = path.join(SRC_DIR, 'domain/regex/adapter.ts');
+      expect(
+        fs.existsSync(regexAdapterPath),
+        'Regex adapter should exist at domain/regex/adapter.ts after refactor',
+      ).toBe(true);
     });
   });
 });

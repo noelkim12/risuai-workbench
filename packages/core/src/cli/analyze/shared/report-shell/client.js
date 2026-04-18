@@ -81,6 +81,122 @@
       }
 
       const forceGraphState = new Map();
+      let activeForceGraphNodeMenu = null;
+      let activeForceGraphNodeMenuState = null;
+
+      function closeForceGraphNodeMenu() {
+        if (!(activeForceGraphNodeMenu instanceof HTMLElement)) return;
+        activeForceGraphNodeMenu.hidden = true;
+        activeForceGraphNodeMenu.style.display = 'none';
+        activeForceGraphNodeMenu.style.visibility = '';
+        activeForceGraphNodeMenu = null;
+        activeForceGraphNodeMenuState = null;
+      }
+
+      function activateForceGraphNodeMenuAction(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        var menuState = activeForceGraphNodeMenuState ? {
+          stateKey: activeForceGraphNodeMenuState.stateKey,
+          nodeId: activeForceGraphNodeMenuState.nodeId,
+        } : null;
+        closeForceGraphNodeMenu();
+        if (!menuState) return;
+        var state = forceGraphState.get(menuState.stateKey);
+        if (state && typeof state.gatherConnectedNodes === 'function') {
+          state.gatherConnectedNodes(menuState.nodeId);
+        }
+      }
+
+      function ensureForceGraphNodeMenu() {
+        var existing = document.body && document.body.querySelector('[data-force-graph-node-menu="true"]');
+        if (existing instanceof HTMLElement) return existing;
+        if (!document.body) return null;
+        var menu = document.createElement('div');
+        menu.hidden = true;
+        menu.setAttribute('role', 'menu');
+        menu.setAttribute('data-force-graph-node-menu', 'true');
+        menu.style.position = 'fixed';
+        menu.style.zIndex = '80';
+        menu.style.display = 'flex';
+        menu.style.flexDirection = 'column';
+        menu.style.gap = '6px';
+        menu.style.minWidth = '220px';
+        menu.style.padding = '8px';
+        menu.style.borderRadius = '14px';
+        menu.style.border = '1px solid rgba(148, 163, 184, 0.22)';
+        menu.style.background = 'rgba(9, 11, 20, 0.96)';
+        menu.style.boxShadow = '0 18px 36px rgba(0, 0, 0, 0.42)';
+        menu.style.backdropFilter = 'blur(12px)';
+
+        var action = document.createElement('button');
+        action.type = 'button';
+        action.setAttribute('role', 'menuitem');
+        action.setAttribute('data-force-graph-menu-action', 'gather-neighbors');
+        action.textContent = i18n['shell.forceGraph.pullConnectedCloser'] || 'Pull connected nodes closer';
+        action.style.width = '100%';
+        action.style.display = 'inline-flex';
+        action.style.alignItems = 'center';
+        action.style.justifyContent = 'flex-start';
+        action.style.gap = '8px';
+        action.style.padding = '10px 12px';
+        action.style.borderRadius = '12px';
+        action.style.border = '1px solid rgba(148, 163, 184, 0.18)';
+        action.style.background = 'rgba(22, 25, 48, 0.5)';
+        action.style.color = '#cbd5e1';
+        action.style.cursor = 'pointer';
+        action.style.fontSize = '0.875rem';
+        action.style.fontWeight = '500';
+        action.style.textAlign = 'left';
+        action.addEventListener('click', activateForceGraphNodeMenuAction);
+
+        menu.appendChild(action);
+        document.body.appendChild(menu);
+        return menu;
+      }
+
+      function openForceGraphNodeMenu(stateKey, nodeId, clientX, clientY) {
+        var menu = ensureForceGraphNodeMenu();
+        if (!(menu instanceof HTMLElement)) return;
+        if (activeForceGraphNodeMenu && activeForceGraphNodeMenu !== menu) {
+          closeForceGraphNodeMenu();
+        }
+        activeForceGraphNodeMenu = menu;
+        activeForceGraphNodeMenuState = { stateKey: stateKey, nodeId: nodeId };
+        menu.hidden = false;
+        menu.style.display = 'flex';
+        menu.style.visibility = 'hidden';
+        menu.style.left = '0px';
+        menu.style.top = '0px';
+        var menuWidth = menu.offsetWidth || 220;
+        var menuHeight = menu.offsetHeight || 52;
+        var viewportW = window.innerWidth || docRoot.documentElement.clientWidth || (menuWidth + 24);
+        var viewportH = window.innerHeight || docRoot.documentElement.clientHeight || (menuHeight + 24);
+        var left = Math.max(12, Math.min(clientX + 10, viewportW - menuWidth - 12));
+        var top = Math.max(12, Math.min(clientY + 10, viewportH - menuHeight - 12));
+        menu.style.left = left + 'px';
+        menu.style.top = top + 'px';
+        menu.style.visibility = 'visible';
+      }
+
+      function setupForceGraphNodeMenuDismiss() {
+        if (!docRoot.body || docRoot.body.dataset.forceGraphNodeMenuBound === 'true') return;
+        docRoot.body.dataset.forceGraphNodeMenuBound = 'true';
+        docRoot.addEventListener('pointerdown', function(event) {
+          if (!(activeForceGraphNodeMenu instanceof HTMLElement) || activeForceGraphNodeMenu.hidden) return;
+          if (activeForceGraphNodeMenu.contains(event.target)) return;
+          closeForceGraphNodeMenu();
+        }, true);
+        docRoot.addEventListener('keydown', function(event) {
+          if (event.key !== 'Escape') return;
+          if (!(activeForceGraphNodeMenu instanceof HTMLElement) || activeForceGraphNodeMenu.hidden) return;
+          event.preventDefault();
+          closeForceGraphNodeMenu();
+        });
+        docRoot.addEventListener('fullscreenchange', function() {
+          closeForceGraphNodeMenu();
+        });
+      }
 
       function getForceGraphStateKey(panel) {
         return (panel && panel.getAttribute && panel.getAttribute('data-panel-id')) || '';
@@ -117,6 +233,7 @@
           refreshForceGraphViewport(panel, mount);
           return;
         }
+        closeForceGraphNodeMenu();
         if (existing && existing.simulation && typeof existing.simulation.stop === 'function') {
           existing.simulation.stop();
         }
@@ -140,6 +257,7 @@
             // refreshes __anchorX/__anchorY/__anchorStrength).
             if (state.nodes && state.payload) {
               buildInitialNodePositions(state.nodes, state.payload, cx, cy, nextH);
+              if (typeof state.syncAnchorForces === 'function') state.syncAnchorForces();
             }
             state.simulation.alpha(0.15).restart();
           }
@@ -1429,6 +1547,8 @@
         payload.__triggerHosts = triggerHosts;
 
         buildInitialNodePositions(nodes, payload, centerX, centerY, graphH);
+        var nodeById = new Map();
+        nodes.forEach(function(nodeData) { nodeById.set(nodeData.id, nodeData); });
         if (isRelationshipNetwork && payload.__folderDebug) {
           var dbg = payload.__folderDebug;
           panel.dataset.forceGraphFolderCount = String(dbg.folderCount);
@@ -1492,6 +1612,25 @@
           .style('display', 'block')
           .style('border-radius', '8px')
           .style('background', '#0c0e1a');
+
+        function getRelationshipNodeEventData(target) {
+          if (!isRelationshipNetwork || !(target instanceof Element)) return null;
+          var nodeEl = target.closest('[data-force-graph-node="true"]');
+          if (!(nodeEl instanceof SVGGElement)) return null;
+          var nodeData = nodeEl.__data__;
+          return nodeData && visibleNodeIds.has(nodeData.id) ? nodeData : null;
+        }
+
+        var svgEl = svg.node();
+        if (svgEl instanceof SVGSVGElement) {
+          svgEl.addEventListener('contextmenu', function(event) {
+            var nodeData = getRelationshipNodeEventData(event.target);
+            if (!nodeData) return;
+            event.preventDefault();
+            event.stopPropagation();
+            openForceGraphNodeMenu(stateKey, nodeData.id, event.clientX, event.clientY);
+          }, true);
+        }
 
         var defs = svg.append('defs');
         defs.append('marker').attr('id', 'arrow-kw').attr('viewBox', '0 -4 8 8')
@@ -1603,7 +1742,9 @@
           .attr('pointer-events', 'none')
           .attr('opacity', 0.82);
 
-        var node = nodeGroup.selectAll('g').data(nodes).join('g').attr('cursor', 'grab');
+        var node = nodeGroup.selectAll('g').data(nodes).join('g')
+          .attr('cursor', 'grab')
+          .attr('data-force-graph-node', 'true');
 
         node.append('path')
           .attr('d', function(d) { return getNodeShapePath(d, d.__circleRadius || 18); })
@@ -1746,6 +1887,124 @@
             });
         }
 
+        function gatherConnectedNodes(nodeId) {
+          var focusNode = nodeById.get(nodeId);
+          if (!focusNode || !visibleNodeIds.has(nodeId)) return;
+          if (!Number.isFinite(focusNode.x) || !Number.isFinite(focusNode.y)) return;
+
+          function applyGatherLock(node, targetX, targetY, anchorStrength) {
+            node.__anchorX = targetX;
+            node.__anchorY = targetY;
+            node.__anchorStrength = Math.max(anchorStrength, Number.isFinite(node.__anchorStrength) ? node.__anchorStrength : 0);
+            node.x = targetX;
+            node.y = targetY;
+            node.vx = 0;
+            node.vy = 0;
+            if (node.__pinnedByLayout || node.fx != null || node.fy != null) {
+              node.fx = targetX;
+              node.fy = targetY;
+            }
+          }
+
+          var connectedIds = [];
+          edges.forEach(function(edgeData) {
+            if (!isEdgeVisible(edgeData)) return;
+            var sourceId = getEdgeNodeId(edgeData.source);
+            var targetId = getEdgeNodeId(edgeData.target);
+            if (sourceId === nodeId && visibleNodeIds.has(targetId)) connectedIds.push(targetId);
+            else if (targetId === nodeId && visibleNodeIds.has(sourceId)) connectedIds.push(sourceId);
+          });
+
+          var seen = new Set();
+          var movableNeighbors = connectedIds
+            .map(function(id) { return nodeById.get(id); })
+            .filter(function(neighbor) {
+              if (!neighbor || seen.has(neighbor.id)) return false;
+              seen.add(neighbor.id);
+              return true;
+            });
+
+          if (movableNeighbors.length === 0) return;
+
+          applyGatherLock(focusNode, focusNode.x, focusNode.y, 0.56);
+
+          var focusVisualRadius = focusNode.__visualRadius || focusNode.__radius || focusNode.__circleRadius || 24;
+          var maxNeighborVisualRadius = movableNeighbors.reduce(function(maxRadius, neighbor) {
+            var nextRadius = neighbor.__visualRadius || neighbor.__radius || neighbor.__circleRadius || 24;
+            return Math.max(maxRadius, nextRadius);
+          }, 24);
+          var slotGap = 20;
+          var ringGap = Math.max(maxNeighborVisualRadius * 0.9, 28);
+          var baseRadius = Math.max(focusVisualRadius + maxNeighborVisualRadius + 40, 110);
+          var stableNeighbors = movableNeighbors.map(function(neighbor) {
+            var dx = neighbor.x - focusNode.x;
+            var dy = neighbor.y - focusNode.y;
+            var angle = Math.atan2(dy, dx);
+            if (!Number.isFinite(angle)) angle = 0;
+            return {
+              node: neighbor,
+              angle: angle,
+              visualRadius: neighbor.__visualRadius || neighbor.__radius || neighbor.__circleRadius || 24,
+            };
+          }).sort(function(a, b) {
+            return a.angle - b.angle;
+          });
+          var angleVectorX = 0;
+          var angleVectorY = 0;
+          stableNeighbors.forEach(function(entry) {
+            angleVectorX += Math.cos(entry.angle);
+            angleVectorY += Math.sin(entry.angle);
+          });
+          var baseAngle = Math.atan2(angleVectorY, angleVectorX);
+          if (!Number.isFinite(baseAngle)) baseAngle = 0;
+          var rings = [];
+
+          stableNeighbors.forEach(function(entry) {
+            var slotWidth = (entry.visualRadius * 2) + slotGap;
+            var assignedRing = null;
+            rings.forEach(function(ring) {
+              if (assignedRing) return;
+              var circumference = 2 * Math.PI * ring.radius;
+              if ((ring.totalWidth + slotWidth) <= (circumference * 0.92)) {
+                assignedRing = ring;
+              }
+            });
+            if (!assignedRing) {
+              assignedRing = {
+                radius: baseRadius + (rings.length * ((maxNeighborVisualRadius * 2) + ringGap)),
+                totalWidth: 0,
+                entries: [],
+              };
+              rings.push(assignedRing);
+            }
+            assignedRing.entries.push({
+              node: entry.node,
+              slotWidth: slotWidth,
+              visualRadius: entry.visualRadius,
+            });
+            assignedRing.totalWidth += slotWidth;
+          });
+
+          rings.forEach(function(ring, ringIndex) {
+            var totalArc = ring.totalWidth / ring.radius;
+            var startAngle = baseAngle - (totalArc / 2) + (ringIndex * 0.18);
+            var consumedArc = 0;
+            ring.entries.forEach(function(entry) {
+              var slotArc = entry.slotWidth / ring.radius;
+              var angle = startAngle + consumedArc + (slotArc / 2);
+              var targetX = focusNode.x + Math.cos(angle) * ring.radius;
+              var targetY = focusNode.y + Math.sin(angle) * ring.radius;
+              applyGatherLock(entry.node, targetX, targetY, 0.92);
+              consumedArc += slotArc;
+            });
+          });
+
+          syncAnchorForces();
+          paintTick(true);
+          simulation.alpha(0.72).restart();
+          persistPositionsCache();
+        }
+
         node.on('mouseenter', function(event, d) {
           if (!visibleNodeIds.has(d.id)) return;
           hoveredNodeId = d.id;
@@ -1780,6 +2039,7 @@
         }
 
         node.on('click', function(event, d) {
+          closeForceGraphNodeMenu();
           if (!dialog || !visibleNodeIds.has(d.id)) return;
           if (!dialogTitle || !dialogList) return;
           dialogTitle.textContent = d.label || d.id;
@@ -1825,20 +2085,28 @@
         // per animation frame collapse into a single SVG repaint. Keeps paint
         // cost bounded to ~60fps regardless of d3-force internal tick rate.
         var paintRafScheduled = false;
-        function paintTick() {
+        function paintGraphNow() {
+          link
+            .attr('x1', function(d) { return d.source.x; })
+            .attr('y1', function(d) { return d.source.y; })
+            .attr('x2', function(d) { return d.target.x; })
+            .attr('y2', function(d) { return d.target.y; });
+          edgeLabel
+            .attr('x', function(d) { return (d.source.x + d.target.x) / 2; })
+            .attr('y', function(d) { return (d.source.y + d.target.y) / 2 - 6; });
+          node.attr('transform', function(d) { return 'translate(' + d.x + ',' + d.y + ')'; });
+        }
+
+        function paintTick(immediate) {
+          if (immediate) {
+            paintGraphNow();
+            return;
+          }
           if (paintRafScheduled) return;
           paintRafScheduled = true;
           window.requestAnimationFrame(function() {
             paintRafScheduled = false;
-            link
-              .attr('x1', function(d) { return d.source.x; })
-              .attr('y1', function(d) { return d.source.y; })
-              .attr('x2', function(d) { return d.target.x; })
-              .attr('y2', function(d) { return d.target.y; });
-            edgeLabel
-              .attr('x', function(d) { return (d.source.x + d.target.x) / 2; })
-              .attr('y', function(d) { return (d.source.y + d.target.y) / 2 - 6; });
-            node.attr('transform', function(d) { return 'translate(' + d.x + ',' + d.y + ')'; });
+            paintGraphNow();
           });
         }
         // positionsCache is only read when the graph settles or a drag ends,
@@ -1877,14 +2145,15 @@
           // owns trigger-keyword placement, and strong link force would only
           // tangle satellites with long straight chords.
           if (e.type === 'keyword') return 0.05;
-          // Regex ↔ variable: strong pull so a regex + all its variables
-          // visually clump as a tight read/write neighborhood.
-          if (e.type === 'variable' && isRegexVariableEdge(e)) return 0.6;
+          // Regex ↔ variable should stay semantically related, but too much
+          // tension makes variable nodes fight manual repositioning and keeps
+          // the whole graph overly rigid.
+          if (e.type === 'variable' && isRegexVariableEdge(e)) return 0.14;
           // Higher strengths so floating nodes (variable/lua/regex) converge
           // to their connected lorebook centroid in 200-ish pre-settle ticks.
           // These are the forces that do the "variable next to its heavy
           // caller" and "lua next to its host lorebook" placement.
-          if (e.type === 'variable') return 0.32;
+          if (e.type === 'variable') return 0.08;
           if (e.type === 'text-mention') return 0.32;
           if (e.type === 'lore-direct') return 0.4;
           if (e.type === 'lua-call') return 0.35;
@@ -1932,6 +2201,16 @@
           return force;
         }
 
+        function createAnchorForceX() {
+          return d3.forceX(function(d) { return Number.isFinite(d.__anchorX) ? d.__anchorX : centerX; })
+            .strength(function(d) { return Number.isFinite(d.__anchorStrength) ? d.__anchorStrength : 0.03; });
+        }
+
+        function createAnchorForceY() {
+          return d3.forceY(function(d) { return Number.isFinite(d.__anchorY) ? d.__anchorY : centerY; })
+            .strength(function(d) { return Number.isFinite(d.__anchorStrength) ? d.__anchorStrength : 0.03; });
+        }
+
         // Filter simulation nodes/edges to exclude hidden types so they don't
         // distort the layout. Legend toggles re-mount the graph, so the
         // simulation always reflects the currently-visible set.
@@ -1954,11 +2233,10 @@
             .distanceMax(380))
           .force('link', d3.forceLink(simEdges).id(function(d) { return d.id; })
             .distance(function(e) {
-              // Regex ↔ variable: pulled tight so the regex + its read/write
-              // state form a readable micro-cluster. 40px means the variable
-              // label ends up right next to the regex triangle.
-              if (e.type === 'variable' && isRegexVariableEdge(e)) return 40;
-              if (e.type === 'variable') return 110;
+               // Regex ↔ variable still clusters, but with more slack so
+               // variable nodes remain repositionable and labels breathe.
+               if (e.type === 'variable' && isRegexVariableEdge(e)) return 64;
+               if (e.type === 'variable') return 132;
               if (e.type === 'text-mention' || e.type === 'lore-direct') return 100;
               return 55;
             })
@@ -1966,8 +2244,8 @@
           // Per-node anchors for UN-pinned bands (variable/regex/lua/trigger).
           // Pinned lorebook nodes set __anchorStrength=0 so these forces are
           // no-ops on them anyway.
-          .force('groupX', d3.forceX(function(d) { return Number.isFinite(d.__anchorX) ? d.__anchorX : centerX; }).strength(function(d) { return Number.isFinite(d.__anchorStrength) ? d.__anchorStrength : 0.03; }))
-          .force('groupY', d3.forceY(function(d) { return Number.isFinite(d.__anchorY) ? d.__anchorY : centerY; }).strength(function(d) { return Number.isFinite(d.__anchorStrength) ? d.__anchorStrength : 0.03; }))
+          .force('groupX', createAnchorForceX())
+          .force('groupY', createAnchorForceY())
           // No radial force for variable/lua/regex — they are "floaters"
           // whose position comes from link equilibrium with connected pinned
           // lorebook nodes. This makes variable / lua nodes drift toward the
@@ -1979,6 +2257,11 @@
           .force('collide', d3.forceCollide(function(d) { return (d.__visualRadius || d.__radius || 24) + 4; }).strength(0.95))
           .alphaDecay(0.04)
           .stop();
+
+        function syncAnchorForces() {
+          simulation.force('groupX', createAnchorForceX());
+          simulation.force('groupY', createAnchorForceY());
+        }
 
         // Pre-settle the layout invisibly so the first paint is already calm.
         // More pre-ticks so cluster force has time to converge before paint.
@@ -1992,12 +2275,15 @@
           }
         });
 
+        var MANUAL_VARIABLE_ANCHOR_STRENGTH = 0.16;
+
         var drag = d3.drag()
           .on('start', function(event, d) {
+            closeForceGraphNodeMenu();
             // Lower alphaTarget (was 0.25) so the simulation stays cool during
             // drag. High heat during drag was the dominant source of GPU-compositor
             // pressure bleeding into other browser tabs.
-            if (!event.active) simulation.alphaTarget(0.1).restart();
+            if (!event.active) simulation.alphaTarget(0.02).restart();
             d.fx = d.x; d.fy = d.y;
             // Hide text nodes + keyword badges for the duration of the drag via
             // a single class toggle on the zoom root. See template.html
@@ -2014,6 +2300,20 @@
             // released so the force layout can re-settle them.
             if (d.__pinnedByLayout) {
               // fx/fy already equal drag position; leave them.
+            } else if (d.layoutBand === 'variable') {
+              var dropX = Number.isFinite(event.x) ? event.x : d.x;
+              var dropY = Number.isFinite(event.y) ? event.y : d.y;
+              d.x = dropX;
+              d.y = dropY;
+              d.vx = 0;
+              d.vy = 0;
+              d.__anchorX = dropX;
+              d.__anchorY = dropY;
+              d.__anchorStrength = Math.max(MANUAL_VARIABLE_ANCHOR_STRENGTH, Number.isFinite(d.__anchorStrength) ? d.__anchorStrength : 0);
+              syncAnchorForces();
+              d.fx = null;
+              d.fy = null;
+              simulation.alpha(Math.max(simulation.alpha(), 0.08)).restart();
             } else {
               d.fx = null; d.fy = null;
             }
@@ -2113,6 +2413,8 @@
           signature: signature,
           svg: svg,
           simulation: simulation,
+          gatherConnectedNodes: gatherConnectedNodes,
+          syncAnchorForces: syncAnchorForces,
           zoom: zoom,
           g: g,
           nodes: nodes,
@@ -2138,6 +2440,7 @@
       setupTableFilters();
       setupForceGraphRefresh();
       setupForceGraphControls();
+      setupForceGraphNodeMenuDismiss();
       initCharts();
       initDiagrams();
     })();

@@ -337,9 +337,13 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
       callee === 'setState' ||
       callee === 'getState'
     ) {
-      const keyIndex = args.length >= 3 ? 1 : 0;
+      const keyIndex = callee === 'setState' || callee === 'getState'
+        ? args.length >= 2 ? 1 : 0
+        : 0;
       const key = strLit(args[keyIndex]);
-      const writeValue = callee === 'setChatVar' ? strLit(args[keyIndex + 1]) : null;
+      const writeValue = callee === 'setChatVar' || callee === 'setState'
+        ? strLit(args[keyIndex + 1])
+        : null;
       if (key) addStateAccess(callee, key, caller, lineStart(node), writeValue);
     }
 

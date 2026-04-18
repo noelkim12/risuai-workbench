@@ -66,6 +66,84 @@ export interface LuaSource {
   source: string;
 }
 
+type ModuleLuaTriggerEffect = {
+  type?: string;
+  code?: string;
+};
+
+type ModuleLuaTrigger = {
+  comment?: string;
+  type?: string;
+  conditions?: unknown[];
+  effect?: ModuleLuaTriggerEffect[];
+};
+
+/**
+ * collectLuaSnippetsFromTriggers 함수.
+ * trigger 배열에서 triggerlua effect의 code를 canonical .risulua 본문으로 합침.
+ *
+ * @param triggers - module/charx upstream trigger 배열
+ * @returns 추출된 Lua 본문. 추출할 code가 없으면 null
+ */
+function collectLuaSnippetsFromTriggers(triggers: unknown): LuaContent | null {
+  if (!Array.isArray(triggers) || triggers.length === 0) {
+    return null;
+  }
+
+  const luaParts: string[] = [];
+  for (const trigger of triggers) {
+    const effectList = (trigger as ModuleLuaTrigger | null | undefined)?.effect;
+    if (!Array.isArray(effectList)) {
+      continue;
+    }
+
+    const comment = typeof (trigger as ModuleLuaTrigger).comment === 'string'
+      ? (trigger as ModuleLuaTrigger).comment
+      : '';
+
+    for (const effect of effectList) {
+      if (effect?.type !== 'triggerlua' || typeof effect.code !== 'string' || effect.code.length === 0) {
+        continue;
+      }
+
+      if (comment) {
+        luaParts.push(`-- Trigger: ${comment}`);
+      }
+      luaParts.push(effect.code);
+      luaParts.push('');
+    }
+  }
+
+  if (luaParts.length === 0) {
+    return null;
+  }
+
+  return parseLuaContent(luaParts.join('\n'));
+}
+
+/**
+ * buildModuleTriggerLua 함수.
+ * canonical .risulua 본문을 module upstream trigger 배열 한 건으로 감쌈.
+ *
+ * @param content - module trigger로 되돌릴 Lua 본문
+ * @returns upstream module.trigger 배열
+ */
+function buildModuleTriggerLua(content: LuaContent): ModuleLuaTrigger[] {
+  return [
+    {
+      comment: 'Canonical Lua Trigger',
+      type: 'manual',
+      conditions: [],
+      effect: [
+        {
+          type: 'triggerlua',
+          code: serializeLuaContent(content),
+        },
+      ],
+    },
+  ];
+}
+
 /**
  * Validates that there is exactly one Lua source.
  * Per spec: duplicate .risulua files must fail deterministically.
@@ -121,14 +199,14 @@ export function extractLuaFromCharx(
 
 /**
  * Extract Lua triggerscript content from upstream module format.
- * Per spec: reads from `triggerscript` field.
+ * Per spec: prefers `trigger[].effect[].code` with legacy `triggerscript` fallback.
  *
  * @param upstream - The upstream module data
  * @param target - Must be 'module'
  * @returns The Lua content, or null if not present
  */
 export function extractLuaFromModule(
-  upstream: { triggerscript?: string },
+  upstream: { triggerscript?: string; trigger?: unknown[] },
   target: CustomExtensionTarget
 ): LuaContent | null {
   assertSupportedTarget(target);
@@ -137,12 +215,17 @@ export function extractLuaFromModule(
     throw new LuaAdapterError(`Expected target "module", got "${target}"`);
   }
 
-  const content = upstream.triggerscript;
-  if (content === undefined || content === null) {
+  const extractedFromTrigger = collectLuaSnippetsFromTriggers(upstream.trigger);
+  if (extractedFromTrigger !== null) {
+    return extractedFromTrigger;
+  }
+
+  const legacyContent = upstream.triggerscript;
+  if (legacyContent === undefined || legacyContent === null) {
     return null;
   }
 
-  return parseLuaContent(content);
+  return parseLuaContent(legacyContent);
 }
 
 /**
@@ -173,14 +256,14 @@ export function injectLuaIntoCharx(
 
 /**
  * Inject Lua triggerscript content into upstream module format.
- * Per spec: writes to `triggerscript` field.
+ * Per spec: writes a single `trigger` entry with `triggerlua` effect.
  *
  * @param upstream - The upstream module data to mutate
  * @param content - The canonical Lua content
  * @param target - Must be 'module'
  */
 export function injectLuaIntoModule(
-  upstream: { triggerscript?: string },
+  upstream: { triggerscript?: string; trigger?: ModuleLuaTrigger[] },
   content: LuaContent | null,
   target: CustomExtensionTarget
 ): void {
@@ -192,8 +275,10 @@ export function injectLuaIntoModule(
 
   if (content === null) {
     delete upstream.triggerscript;
+    delete upstream.trigger;
   } else {
-    upstream.triggerscript = serializeLuaContent(content);
+    delete upstream.triggerscript;
+    upstream.trigger = buildModuleTriggerLua(content);
   }
 }
 

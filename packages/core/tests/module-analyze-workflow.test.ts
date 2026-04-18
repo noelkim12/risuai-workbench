@@ -210,21 +210,18 @@ end
     const code = await runModuleExtractWorkflow([sourcePath, '--out', outDir]);
 
     expect(code).toBe(0);
-    // In canonical mode, extract does NOT create analysis files (no module.json to trigger analysis)
-    // Analysis must be run separately using the analyze command
     expect(fs.existsSync(path.join(outDir, 'module.json'))).toBe(false);
     expect(fs.existsSync(path.join(outDir, 'metadata.json'))).toBe(true);
-
-    // Run analysis separately
-    const analyzeCode = runAnalyzeModuleWorkflow([outDir, '--locale', 'en']);
-    expect(analyzeCode).toBe(0);
     expect(fs.existsSync(path.join(outDir, 'analysis', 'module-analysis.md'))).toBe(true);
     expect(fs.existsSync(path.join(outDir, 'analysis', 'module-analysis.html'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'lua', 'auto_module.risulua'))).toBe(true);
 
     // Verify CBS collection works on extracted canonical files
     const collected = collectModuleCBS(outDir);
     expect(collected.lorebookCBS.length).toBeGreaterThan(0);
     expect(collected.regexCBS.length).toBeGreaterThan(0);
+    expect(collected.luaArtifacts).toHaveLength(1);
+    expect(collected.luaCBS[0]?.reads.has('mode')).toBe(true);
   });
 
 

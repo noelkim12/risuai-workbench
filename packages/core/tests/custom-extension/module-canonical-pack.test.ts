@@ -132,7 +132,6 @@ describe('module canonical pack workflow', () => {
       namespace: 'module.namespace',
       lowLevelAccess: true,
       hideIcon: false,
-      triggerscript: 'function init()\n  return true\nend',
       defaultVariables: {
         hp: '100',
         mana: '50',
@@ -140,6 +139,19 @@ describe('module canonical pack workflow', () => {
       backgroundEmbedding: '<style>.bg { color: red; }</style>',
       customModuleToggle: '<toggle>enabled</toggle>',
     });
+    expect(payload.module.trigger).toEqual([
+      {
+        comment: 'Canonical Lua Trigger',
+        type: 'manual',
+        conditions: [],
+        effect: [
+          {
+            type: 'triggerlua',
+            code: 'function init()\n  return true\nend',
+          },
+        ],
+      },
+    ]);
     expect(payload.module.regex).toEqual([
       {
         comment: 'display_filter',

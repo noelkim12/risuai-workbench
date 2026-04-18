@@ -151,10 +151,15 @@ describe('module extract', () => {
     });
   });
 
-  it('phase4_extractLua writes one canonical .risulua file from module triggerscript', () => {
+  it('phase4_extractLua writes one canonical .risulua file from module trigger array', () => {
     const module = {
       name: 'test module',
-      triggerscript: 'function onStart()\n  print("hello")\nend',
+      trigger: [
+        {
+          comment: 'onStart',
+          effect: [{ type: 'triggerlua', code: 'function onStart()\n  print("hello")\nend' }],
+        },
+      ],
     };
 
     const count = phase4_extractLua(module, tmpDir);
@@ -162,7 +167,9 @@ describe('module extract', () => {
 
     expect(count).toBe(1);
     expect(fs.existsSync(luaPath)).toBe(true);
-    expect(fs.readFileSync(luaPath, 'utf-8')).toBe(module.triggerscript);
+    expect(fs.readFileSync(luaPath, 'utf-8')).toBe(
+      '-- Trigger: onStart\nfunction onStart()\n  print("hello")\nend\n',
+    );
   });
 
   it('phase5_extractAssets skips extraction for JSON source format', () => {
@@ -299,7 +306,12 @@ describe('module extract', () => {
             out: 'out',
           },
         ],
-        triggerscript: 'function init()\n  return true\nend',
+        trigger: [
+          {
+            comment: 'init',
+            effect: [{ type: 'triggerlua', code: 'function init()\n  return true\nend' }],
+          },
+        ],
         defaultVariables: {
           score: '10',
         },
