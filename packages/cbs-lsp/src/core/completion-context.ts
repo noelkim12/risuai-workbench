@@ -1,6 +1,8 @@
 import { TokenType, type Range as CBSRange } from 'risu-workbench-core';
 import { positionToOffset } from '../utils/position';
+import { getCalcExpressionCompletionTarget, getCalcExpressionZone } from './calc-expression';
 import type { FragmentCursorLookupResult } from './fragment-locator';
+import { resolveActiveLocalFunctionContext } from './local-functions';
 
 export type CompletionTriggerContext =
   | { type: 'all-functions'; prefix: string; startOffset: number; endOffset: number }
@@ -15,7 +17,16 @@ export type CompletionTriggerContext =
       kind: 'chat' | 'temp';
     }
   | { type: 'metadata-keys'; prefix: string; startOffset: number; endOffset: number }
+  | { type: 'function-names'; prefix: string; startOffset: number; endOffset: number }
+  | { type: 'argument-indices'; prefix: string; startOffset: number; endOffset: number }
   | { type: 'when-operators'; prefix: string; startOffset: number; endOffset: number }
+  | {
+      type: 'calc-expression';
+      prefix: string;
+      startOffset: number;
+      endOffset: number;
+      referenceKind: 'chat' | 'global' | null;
+    }
   | { type: 'none' };
 
 /**
@@ -30,8 +41,20 @@ export type CompletionTriggerContext =
 export function detectCompletionTriggerContext(
   lookup: FragmentCursorLookupResult,
 ): CompletionTriggerContext {
-  const { fragmentLocalOffset, token, nodePath, fragmentAnalysis } = lookup;
+  const { fragmentLocalOffset, token, nodePath, nodeSpan, fragmentAnalysis } = lookup;
   const tokens = fragmentAnalysis.tokens;
+  const calcExpressionZone = getCalcExpressionZone(lookup);
+
+  if (calcExpressionZone) {
+    const target = getCalcExpressionCompletionTarget(calcExpressionZone, fragmentLocalOffset);
+    return {
+      type: 'calc-expression',
+      prefix: target.prefix,
+      startOffset: target.startOffset,
+      endOffset: target.endOffset,
+      referenceKind: target.referenceKind,
+    };
+  }
 
   // Helper to find parent macro from node path
   const findParentMacro = (): { name: string; range: CBSRange } | null => {
@@ -124,6 +147,132 @@ export function detectCompletionTriggerContext(
     return '';
   };
 
+  const detectCallFunctionContext = (): CompletionTriggerContext | null => {
+    const openBrace = findOpenBraceToken();
+    if (!openBrace) {
+      return null;
+    }
+
+    const functionNameToken = tokens[openBrace.index + 1];
+    const separatorToken = tokens[openBrace.index + 2];
+    if (
+      functionNameToken?.type !== TokenType.FunctionName ||
+      functionNameToken.value.toLowerCase() !== 'call' ||
+      separatorToken?.type !== TokenType.ArgumentSeparator
+    ) {
+      return null;
+    }
+
+    const separatorEnd = positionToOffset(fragmentAnalysis.fragment.content, separatorToken.range.end);
+    if (fragmentLocalOffset < separatorEnd) {
+      return null;
+    }
+
+    const separatorCount = tokens.filter((candidate) => {
+      if (candidate.type !== TokenType.ArgumentSeparator) {
+        return false;
+      }
+
+      const candidateStart = positionToOffset(fragmentAnalysis.fragment.content, candidate.range.start);
+      return candidateStart >= openBrace.offset && candidateStart < fragmentLocalOffset;
+    }).length;
+    if (separatorCount > 1) {
+      return null;
+    }
+
+    if (
+      token?.token.type === TokenType.Argument &&
+      nodeSpan?.category === 'argument' &&
+      nodeSpan.owner.type === 'MacroCall' &&
+      nodeSpan.owner.name.toLowerCase() === 'call' &&
+      nodeSpan.argumentIndex === 0
+    ) {
+      return {
+        type: 'function-names',
+        prefix: token.token.value.trim(),
+        startOffset: token.localStartOffset,
+        endOffset: fragmentLocalOffset,
+      };
+    }
+
+    return {
+      type: 'function-names',
+      prefix: '',
+      startOffset: separatorEnd,
+      endOffset: fragmentLocalOffset,
+    };
+  };
+
+  const detectArgumentReferenceContext = (): CompletionTriggerContext | null => {
+    const activeFunctionContext = resolveActiveLocalFunctionContext(lookup);
+    if (!activeFunctionContext || activeFunctionContext.declaration.parameters.length === 0) {
+      return null;
+    }
+
+    const openBrace = findOpenBraceToken();
+    if (!openBrace) {
+      return null;
+    }
+
+    const functionNameToken = tokens[openBrace.index + 1];
+    const separatorToken = tokens[openBrace.index + 2];
+    if (
+      functionNameToken?.type !== TokenType.FunctionName ||
+      functionNameToken.value.toLowerCase() !== 'arg' ||
+      separatorToken?.type !== TokenType.ArgumentSeparator
+    ) {
+      return null;
+    }
+
+    const separatorEnd = positionToOffset(fragmentAnalysis.fragment.content, separatorToken.range.end);
+    if (fragmentLocalOffset < separatorEnd) {
+      return null;
+    }
+
+    const separatorCount = tokens.filter((candidate) => {
+      if (candidate.type !== TokenType.ArgumentSeparator) {
+        return false;
+      }
+
+      const candidateStart = positionToOffset(fragmentAnalysis.fragment.content, candidate.range.start);
+      return candidateStart >= openBrace.offset && candidateStart < fragmentLocalOffset;
+    }).length;
+    if (separatorCount > 1) {
+      return null;
+    }
+
+    if (
+      token?.token.type === TokenType.Argument &&
+      nodeSpan?.owner.type === 'MacroCall' &&
+      nodeSpan.owner.name.toLowerCase() === 'arg' &&
+      nodeSpan.argumentIndex === 0
+    ) {
+      return {
+        type: 'argument-indices',
+        prefix: token.token.value.trim(),
+        startOffset: token.localStartOffset,
+        endOffset: fragmentLocalOffset,
+      };
+    }
+
+    return {
+      type: 'argument-indices',
+      prefix: '',
+      startOffset: separatorEnd,
+      endOffset: fragmentLocalOffset,
+    };
+  };
+
+  const callFunctionContext = detectCallFunctionContext();
+  if (callFunctionContext) {
+    return callFunctionContext;
+  }
+
+  const argumentReferenceContext = detectArgumentReferenceContext();
+  if (argumentReferenceContext) {
+    return argumentReferenceContext;
+  }
+
   // Determine context based on token type and node information
   if (token) {
     const tokenStart = positionToOffset(fragmentAnalysis.fragment.content, token.token.range.start);
@@ -208,6 +357,20 @@ export function detectCompletionTriggerContext(
               endOffset: fragmentLocalOffset,
             };
           }
+
+          if (
+            macroName === 'call' &&
+            nodeSpan?.category === 'argument' &&
+            nodeSpan.owner.type === 'MacroCall' &&
+            nodeSpan.argumentIndex === 0
+          ) {
+            return {
+              type: 'function-names',
+              prefix: token.token.type === TokenType.Argument ? token.token.value.trim() : '',
+              startOffset: token.token.type === TokenType.ArgumentSeparator ? tokenEnd : tokenStart,
+              endOffset: fragmentLocalOffset,
+            };
+          }
         }
       }
     }
@@ -267,6 +430,15 @@ export function detectCompletionTriggerContext(
             if (macroName === 'metadata') {
               return {
                 type: 'metadata-keys',
+                prefix: '',
+                startOffset: fragmentLocalOffset,
+                endOffset: fragmentLocalOffset,
+              };
+            }
+
+            if (macroName === 'call') {
+              return {
+                type: 'function-names',
                 prefix: '',
                 startOffset: fragmentLocalOffset,
                 endOffset: fragmentLocalOffset,
@@ -368,6 +540,17 @@ export function detectCompletionTriggerContext(
                 if (fragmentLocalOffset >= sepEnd) {
                   return {
                     type: 'metadata-keys',
+                    prefix: '',
+                    startOffset: sepEnd,
+                    endOffset: fragmentLocalOffset,
+                  };
+                }
+              }
+
+              if (funcName === 'call') {
+                if (fragmentLocalOffset >= sepEnd) {
+                  return {
+                    type: 'function-names',
                     prefix: '',
                     startOffset: sepEnd,
                     endOffset: fragmentLocalOffset,
@@ -596,6 +779,15 @@ export function detectCompletionTriggerContext(
               if (funcName === 'metadata') {
                 return {
                   type: 'metadata-keys',
+                  prefix: '',
+                  startOffset: sepEnd,
+                  endOffset: fragmentLocalOffset,
+                };
+              }
+
+              if (funcName === 'call') {
+                return {
+                  type: 'function-names',
                   prefix: '',
                   startOffset: sepEnd,
                   endOffset: fragmentLocalOffset,

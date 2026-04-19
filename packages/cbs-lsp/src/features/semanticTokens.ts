@@ -1,3 +1,4 @@
+import type { CancellationToken } from 'vscode-languageserver/node';
 import type { BlockKind, BlockNode, MacroCallNode, Token } from 'risu-workbench-core';
 import { CBSBuiltinRegistry, TokenType } from 'risu-workbench-core';
 import { SemanticTokens, SemanticTokensParams } from 'vscode-languageserver/node';
@@ -5,14 +6,18 @@ import { SemanticTokens, SemanticTokensParams } from 'vscode-languageserver/node
 import {
   fragmentAnalysisService,
   locateFragmentAtHostPosition,
+  resolveTokenMacroArgumentContext,
+  shouldSuppressPureModeFeatures,
   type DocumentFragmentAnalysis,
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
 } from '../core';
+import { isRequestCancelled } from '../request-cancellation';
 import { offsetToPosition, positionToOffset } from '../utils/position';
 
 export const SEMANTIC_TOKEN_TYPES = [
   'function',
+  'parameter',
   'variable',
   'keyword',
   'operator',
@@ -48,7 +53,6 @@ const TOKEN_MODIFIER_INDEX = new Map(
   SEMANTIC_TOKEN_MODIFIERS.map((modifier, index) => [modifier, index]),
 );
 
-const PURE_MODE_BLOCKS = new Set<BlockKind>(['each', 'escape', 'pure', 'puredisplay', 'func']);
 const VARIABLE_ARGUMENT_BUILTINS = new Set([
   'addvar',
   'getglobalvar',
@@ -159,42 +163,6 @@ function getHeaderKeywordSpan(text: string, token: Token): TokenOffsetSpan | nul
 
 function isNumberLike(value: string): boolean {
   return NUMBER_PATTERN.test(value.trim());
-}
-
-function findNearestBlock(path: readonly unknown[]): BlockNode | null {
-  for (let index = path.length - 1; index >= 0; index -= 1) {
-    const candidate = path[index];
-    if (candidate && typeof candidate === 'object' && (candidate as BlockNode).type === 'Block') {
-      return candidate as BlockNode;
-    }
-  }
-
-  return null;
-}
-
-function isPureModeBodyToken(
-  documentAnalysis: DocumentFragmentAnalysis,
-  documentText: string,
-  localSpan: TokenOffsetSpan,
-  hostStartOffset: number,
-): boolean {
-  const hostPosition = offsetToPosition(documentText, hostStartOffset);
-  const lookup = locateFragmentAtHostPosition(documentAnalysis, documentText, hostPosition);
-  if (!lookup) {
-    return false;
-  }
-
-  const nearestBlock = findNearestBlock(lookup.nodePath);
-  if (!nearestBlock || !PURE_MODE_BLOCKS.has(nearestBlock.kind)) {
-    return false;
-  }
-
-  const openEnd = positionToOffset(lookup.fragment.content, nearestBlock.openRange.end);
-  const closeStart = nearestBlock.closeRange
-    ? positionToOffset(lookup.fragment.content, nearestBlock.closeRange.start)
-    : lookup.fragment.content.length;
-
-  return localSpan.startOffset >= openEnd && localSpan.endOffset <= closeStart;
 }
 
 function emitHostOffsetRange(
@@ -334,18 +302,28 @@ function emitMathExpressionTokens(
 }
 
 function classifyArgumentToken(
-  documentAnalysis: DocumentFragmentAnalysis,
-  documentText: string,
-  hostStartOffset: number,
+  lookup: ReturnType<typeof locateFragmentAtHostPosition>,
   token: Token,
   registry: CBSBuiltinRegistry,
 ): SemanticTokenTypeName {
-  const lookup = locateFragmentAtHostPosition(
-    documentAnalysis,
-    documentText,
-    offsetToPosition(documentText, hostStartOffset),
-  );
   const trimmedValue = token.value.trim();
+  const tokenMacroContext = lookup ? resolveTokenMacroArgumentContext(lookup) : null;
+
+  if (lookup?.nodeSpan?.category === 'local-function-reference') {
+    return 'function';
+  }
+
+  if (lookup?.nodeSpan?.category === 'argument-reference') {
+    return 'parameter';
+  }
+
+  if (tokenMacroContext?.macroName === 'call' && tokenMacroContext.argumentIndex === 0) {
+    return 'function';
+  }
+
+  if (tokenMacroContext?.macroName === 'arg' && tokenMacroContext.argumentIndex === 0) {
+    return 'parameter';
+  }
 
   if (lookup?.nodeSpan?.owner.type === 'Block' && lookup.nodeSpan.category === 'block-header') {
     return HEADER_OPERATORS.has(trimmedValue.toLowerCase())
@@ -402,8 +380,16 @@ export class SemanticTokensProvider {
     private readonly registry: CBSBuiltinRegistry = new CBSBuiltinRegistry(),
   ) {}
 
-  provide(_params: SemanticTokensParams, request: FragmentAnalysisRequest): SemanticTokens {
-    const analysis = this.analysisService.analyzeDocument(request);
+  provide(
+    _params: SemanticTokensParams,
+    request: FragmentAnalysisRequest,
+    cancellationToken?: CancellationToken,
+  ): SemanticTokens {
+    if (isRequestCancelled(cancellationToken)) {
+      return { data: [] };
+    }
+
+    const analysis = this.analysisService.analyzeDocument(request, cancellationToken);
     if (!analysis) {
       return { data: [] };
     }
@@ -411,10 +397,18 @@ export class SemanticTokensProvider {
     const entries: HostSemanticTokenEntry[] = [];
 
     for (const fragmentAnalysis of analysis.fragmentAnalyses) {
+      if (isRequestCancelled(cancellationToken)) {
+        return { data: [] };
+      }
+
       const hostOffsetForLocal = (localOffset: number): number | null =>
         fragmentAnalysis.mapper.toHostOffset(localOffset);
 
       for (const token of fragmentAnalysis.tokens) {
+        if (isRequestCancelled(cancellationToken)) {
+          return { data: [] };
+        }
+
         if (token.type === TokenType.EOF) {
           continue;
         }
@@ -425,7 +419,13 @@ export class SemanticTokensProvider {
           continue;
         }
 
-        if (isPureModeBodyToken(analysis, request.text, span, hostStartOffset)) {
+        const lookup = locateFragmentAtHostPosition(
+          analysis,
+          request.text,
+          offsetToPosition(request.text, hostStartOffset),
+        );
+
+        if (lookup && shouldSuppressPureModeFeatures(lookup)) {
           emitLocalOffsetRange(
             entries,
             request.text,
@@ -552,12 +552,12 @@ export class SemanticTokensProvider {
             emitLocalOffsetRange(
               entries,
               request.text,
-              { hostOffsetForLocal },
-              trimmedSpan.startOffset,
-              trimmedSpan.endOffset,
-              classifyArgumentToken(analysis, request.text, hostStartOffset, token, this.registry),
-            );
-            break;
+                { hostOffsetForLocal },
+                trimmedSpan.startOffset,
+                trimmedSpan.endOffset,
+                classifyArgumentToken(lookup, token, this.registry),
+              );
+              break;
           }
           default:
             break;

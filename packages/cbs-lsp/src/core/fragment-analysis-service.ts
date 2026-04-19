@@ -1,4 +1,5 @@
 import * as core from 'risu-workbench-core';
+import type { CancellationToken } from 'vscode-languageserver/node';
 import type {
   CbsBearingArtifact,
   CbsFragment,
@@ -15,6 +16,13 @@ import { ScopeAnalyzer } from '../analyzer/scopeAnalyzer';
 import { SymbolTable } from '../analyzer/symbolTable';
 import { locateFragmentAtHostPosition, type FragmentCursorLookupResult } from './fragment-locator';
 import { createFragmentOffsetMapper, type FragmentOffsetMapper } from './fragment-position';
+import { isRequestCancelled } from '../request-cancellation';
+import {
+  createDocumentRecoveryState,
+  createFragmentRecoveryState,
+  type DocumentRecoveryState,
+  type FragmentRecoveryState,
+} from './recovery-contract';
 
 export type FragmentAnalysisVersion = number | string;
 
@@ -30,6 +38,7 @@ export interface FragmentAnalysisCacheMetadata {
   uri: string;
   version: FragmentAnalysisVersion;
   filePath: string;
+  textSignature: string;
 }
 
 export interface FragmentProviderLookupHooks {
@@ -37,6 +46,7 @@ export interface FragmentProviderLookupHooks {
   getDocument(): CBSDocument;
   getSymbolTable(): SymbolTable;
   getDiagnostics(): readonly DiagnosticInfo[];
+  getRecovery(): FragmentRecoveryState;
 }
 
 export interface FragmentDocumentAnalysis {
@@ -47,6 +57,7 @@ export interface FragmentDocumentAnalysis {
   document: CBSDocument;
   diagnostics: readonly DiagnosticInfo[];
   symbolTable: SymbolTable;
+  recovery: FragmentRecoveryState;
   mapper: FragmentOffsetMapper;
   providerLookup: FragmentProviderLookupHooks;
 }
@@ -59,7 +70,14 @@ export interface DocumentFragmentAnalysis {
   fragmentsBySection: ReadonlyMap<string, readonly FragmentDocumentAnalysis[]>;
   documents: readonly CBSDocument[];
   diagnostics: readonly DiagnosticInfo[];
+  recovery: DocumentRecoveryState;
   cache: FragmentAnalysisCacheMetadata;
+}
+
+interface FragmentReuseCandidate {
+  section: string;
+  contentSignature: string;
+  analysis: FragmentDocumentAnalysis;
 }
 
 export function createSyntheticDocumentVersion(text: string): string {
@@ -78,10 +96,18 @@ export class FragmentAnalysisService {
   private readonly diagnosticsEngine = new DiagnosticsEngine(new core.CBSBuiltinRegistry());
   private readonly scopeAnalyzer = new ScopeAnalyzer();
 
-  analyzeDocument(request: FragmentAnalysisRequest): DocumentFragmentAnalysis | null {
+  analyzeDocument(
+    request: FragmentAnalysisRequest,
+    cancellationToken?: CancellationToken,
+  ): DocumentFragmentAnalysis | null {
+    if (isRequestCancelled(cancellationToken)) {
+      return null;
+    }
+
     const cacheKey = this.createCacheKey(request.uri, request.version);
+    const textSignature = createSyntheticDocumentVersion(request.text);
     const cached = this.cache.get(cacheKey);
-    if (cached) {
+    if (cached && cached.cache.textSignature === textSignature) {
       return cached;
     }
 
@@ -92,9 +118,28 @@ export class FragmentAnalysisService {
     }
 
     const fragmentMap = core.mapToCbsFragments(artifact, request.text);
-    const fragmentAnalyses = fragmentMap.fragments.map((fragment, fragmentIndex) =>
-      this.analyzeFragment(fragment, fragmentIndex),
-    );
+    const previousAnalysis = this.getLatestCachedAnalysisForUri(request.uri, cacheKey);
+    const reuseCandidates = this.createFragmentReusePool(previousAnalysis, artifact);
+    const fragmentAnalyses: FragmentDocumentAnalysis[] = [];
+
+    for (const [fragmentIndex, fragment] of fragmentMap.fragments.entries()) {
+      if (isRequestCancelled(cancellationToken)) {
+        return null;
+      }
+
+      const reusedAnalysis = this.tryReuseFragmentAnalysis(reuseCandidates, fragment, fragmentIndex);
+      if (reusedAnalysis) {
+        fragmentAnalyses.push(reusedAnalysis);
+        continue;
+      }
+
+      fragmentAnalyses.push(this.analyzeFragment(fragment, fragmentIndex));
+    }
+
+    if (isRequestCancelled(cancellationToken)) {
+      return null;
+    }
+
     const sections = new Map<string, FragmentDocumentAnalysis[]>();
 
     for (const fragmentAnalysis of fragmentAnalyses) {
@@ -115,11 +160,15 @@ export class FragmentAnalysisService {
       fragmentsBySection: sections,
       documents: fragmentAnalyses.map((fragmentAnalysis) => fragmentAnalysis.document),
       diagnostics: fragmentAnalyses.flatMap((fragmentAnalysis) => fragmentAnalysis.diagnostics),
+      recovery: createDocumentRecoveryState(
+        fragmentAnalyses.map((fragmentAnalysis) => fragmentAnalysis.recovery),
+      ),
       cache: {
         key: cacheKey,
         uri: request.uri,
         version: request.version,
         filePath: request.filePath,
+        textSignature,
       },
     };
 
@@ -138,9 +187,18 @@ export class FragmentAnalysisService {
   locatePosition(
     request: FragmentAnalysisRequest,
     hostPosition: Position,
+    cancellationToken?: CancellationToken,
   ): FragmentCursorLookupResult | null {
-    const analysis = this.analyzeDocument(request);
+    if (isRequestCancelled(cancellationToken)) {
+      return null;
+    }
+
+    const analysis = this.analyzeDocument(request, cancellationToken);
     if (!analysis) {
+      return null;
+    }
+
+    if (isRequestCancelled(cancellationToken)) {
       return null;
     }
 
@@ -161,6 +219,106 @@ export class FragmentAnalysisService {
     this.cache.clear();
   }
 
+  private getLatestCachedAnalysisForUri(
+    uri: string,
+    preferredKey?: string,
+  ): DocumentFragmentAnalysis | null {
+    const preferred = preferredKey ? this.cache.get(preferredKey) ?? null : null;
+    if (preferred) {
+      return preferred;
+    }
+
+    let latest: DocumentFragmentAnalysis | null = null;
+
+    for (const analysis of this.cache.values()) {
+      if (analysis.cache.uri !== uri) {
+        continue;
+      }
+
+      latest = analysis;
+    }
+
+    return latest;
+  }
+
+  private createFragmentReusePool(
+    previousAnalysis: DocumentFragmentAnalysis | null,
+    artifact: CbsBearingArtifact,
+  ): Map<string, FragmentReuseCandidate[]> {
+    const pool = new Map<string, FragmentReuseCandidate[]>();
+    if (!previousAnalysis || previousAnalysis.artifact !== artifact) {
+      return pool;
+    }
+
+    for (const fragmentAnalysis of previousAnalysis.fragmentAnalyses) {
+      const contentSignature = createSyntheticDocumentVersion(fragmentAnalysis.fragment.content);
+      const key = this.createFragmentReuseKey(fragmentAnalysis.fragment.section, contentSignature);
+      const bucket = pool.get(key);
+      const candidate: FragmentReuseCandidate = {
+        section: fragmentAnalysis.fragment.section,
+        contentSignature,
+        analysis: fragmentAnalysis,
+      };
+
+      if (bucket) {
+        bucket.push(candidate);
+        continue;
+      }
+
+      pool.set(key, [candidate]);
+    }
+
+    return pool;
+  }
+
+  private tryReuseFragmentAnalysis(
+    reusePool: Map<string, FragmentReuseCandidate[]>,
+    fragment: CbsFragment,
+    fragmentIndex: number,
+  ): FragmentDocumentAnalysis | null {
+    const contentSignature = createSyntheticDocumentVersion(fragment.content);
+    const key = this.createFragmentReuseKey(fragment.section, contentSignature);
+    const bucket = reusePool.get(key);
+    const candidate = bucket?.shift();
+
+    if (!candidate) {
+      return null;
+    }
+
+    if (bucket && bucket.length === 0) {
+      reusePool.delete(key);
+    }
+
+    return this.cloneFragmentAnalysis(candidate.analysis, fragment, fragmentIndex);
+  }
+
+  private cloneFragmentAnalysis(
+    source: FragmentDocumentAnalysis,
+    fragment: CbsFragment,
+    fragmentIndex: number,
+  ): FragmentDocumentAnalysis {
+    const mapper = createFragmentOffsetMapper(fragment);
+
+    return {
+      fragment,
+      fragmentIndex,
+      tokens: source.tokens,
+      tokenizerDiagnostics: source.tokenizerDiagnostics,
+      document: source.document,
+      diagnostics: source.diagnostics,
+      symbolTable: source.symbolTable,
+      recovery: source.recovery,
+      mapper,
+      providerLookup: {
+        getTokens: () => source.tokens,
+        getDocument: () => source.document,
+        getSymbolTable: () => source.symbolTable,
+        getDiagnostics: () => source.diagnostics,
+        getRecovery: () => source.recovery,
+      },
+    };
+  }
+
   private analyzeFragment(fragment: CbsFragment, fragmentIndex: number): FragmentDocumentAnalysis {
     const tokenizer = new core.CBSTokenizer();
     const tokens = tokenizer.tokenize(fragment.content);
@@ -168,6 +326,7 @@ export class FragmentAnalysisService {
     const document = new core.CBSParser().parse(fragment.content);
     const symbolTable = this.scopeAnalyzer.analyze(document, fragment.content);
     const diagnostics = this.diagnosticsEngine.analyze(document, fragment.content, symbolTable);
+    const recovery = createFragmentRecoveryState(tokenizerDiagnostics, document);
     const mapper = createFragmentOffsetMapper(fragment);
 
     return {
@@ -178,18 +337,24 @@ export class FragmentAnalysisService {
       document,
       diagnostics,
       symbolTable,
+      recovery,
       mapper,
       providerLookup: {
         getTokens: () => tokens,
         getDocument: () => document,
         getSymbolTable: () => symbolTable,
         getDiagnostics: () => diagnostics,
+        getRecovery: () => recovery,
       },
     };
   }
 
   private createCacheKey(uri: string, version: FragmentAnalysisVersion): string {
     return `${uri}::${String(version)}`;
+  }
+
+  private createFragmentReuseKey(section: string, contentSignature: string): string {
+    return `${section}::${contentSignature}`;
   }
 
   private resolveArtifact(filePath: string): CbsBearingArtifact | null {

@@ -1,4 +1,5 @@
 import {
+  type CancellationToken,
   ParameterInformation,
   SignatureInformation,
   SignatureHelp,
@@ -18,9 +19,11 @@ import type {
 import {
   createSyntheticDocumentVersion,
   fragmentAnalysisService,
+  resolveActiveLocalFunctionContext,
   type FragmentAnalysisVersion,
   type FragmentAnalysisService,
 } from '../core';
+import { isRequestCancelled } from '../request-cancellation';
 import { positionToOffset } from '../utils/position';
 
 export interface SignatureHelpDocumentContext {
@@ -151,6 +154,57 @@ function createSignatureInformation(builtin: CBSBuiltinFunction): SignatureInfor
   };
 }
 
+/**
+ * createLocalFunctionSignatureInformation 함수.
+ * 로컬 `#func` 선언을 signature help 형태로 변환함.
+ *
+ * @param declaration - 현재 활성 로컬 함수 선언 정보
+ * @returns 로컬 함수용 signature information
+ */
+function createLocalFunctionSignatureInformation(declaration: {
+  name: string;
+  parameters: readonly string[];
+}): SignatureInformation {
+  const label = `#func ${declaration.name}(${declaration.parameters.join(', ')})`;
+  let searchFrom = 0;
+
+  return {
+    label,
+    documentation: `Local function signature for \`${declaration.name}\` invoked through \`{{call::...}}\`.`,
+    parameters: declaration.parameters.map((parameter) => {
+      const start = label.indexOf(parameter, searchFrom);
+      if (start >= 0) {
+        searchFrom = start + parameter.length;
+        return {
+          label: [start, start + parameter.length],
+          documentation: `Argument slot ${declaration.parameters.indexOf(parameter)} for local parameter \`${parameter}\`.`,
+        } satisfies ParameterInformation;
+      }
+
+      return {
+        label: parameter,
+        documentation: `Local parameter \`${parameter}\`.`,
+      } satisfies ParameterInformation;
+    }),
+  };
+}
+
+/**
+ * clampLocalFunctionParameterIndex 함수.
+ * 로컬 함수 파라미터 개수에 맞게 active parameter 범위를 제한함.
+ *
+ * @param activeParameter - 계산된 0-based 파라미터 인덱스
+ * @param parameterCount - 로컬 함수 파라미터 수
+ * @returns 안전하게 보정된 active parameter 인덱스
+ */
+function clampLocalFunctionParameterIndex(activeParameter: number, parameterCount: number): number {
+  if (parameterCount <= 0) {
+    return 0;
+  }
+
+  return Math.min(Math.max(activeParameter, 0), parameterCount - 1);
+}
+
 function createAnalysisRequest(
   params: SignatureHelpParams,
   context: SignatureHelpDocumentContext,
@@ -243,20 +297,63 @@ export class SignatureHelpProvider {
   provide(
     params: SignatureHelpParams,
     context?: SignatureHelpDocumentContext,
+    cancellationToken?: CancellationToken,
   ): SignatureHelp | null {
+    if (isRequestCancelled(cancellationToken)) {
+      return null;
+    }
+
     if (!context) {
       return null;
     }
 
     const request = createAnalysisRequest(params, context);
-    const lookup = this.analysisService.locatePosition(request, params.position as Position);
+    const lookup = this.analysisService.locatePosition(
+      request,
+      params.position as Position,
+      cancellationToken,
+    );
     if (!lookup) {
       return null;
+    }
+
+    if (isRequestCancelled(cancellationToken)) {
+      return null;
+    }
+
+    const activeLocalFunctionContext = resolveActiveLocalFunctionContext(lookup);
+    if (activeLocalFunctionContext?.source === 'call-macro') {
+      const ownerRange = resolveOwnerHeaderRange(lookup.nodeSpan);
+      if (!ownerRange) {
+        return null;
+      }
+
+      const signature = createLocalFunctionSignatureInformation(activeLocalFunctionContext.declaration);
+      const completedSeparators = countCompletedTopLevelSeparators(
+        lookup.fragmentAnalysis.tokens,
+        ownerRange,
+        lookup.fragmentLocalOffset,
+        lookup.fragment.content,
+      );
+      const rawActiveParameter = Math.max(0, completedSeparators - 2);
+
+      return {
+        signatures: [signature],
+        activeSignature: 0,
+        activeParameter: clampLocalFunctionParameterIndex(
+          rawActiveParameter,
+          activeLocalFunctionContext.declaration.parameters.length,
+        ),
+      };
     }
 
     const builtin = resolveBuiltinForPosition(this.registry, lookup.nodeSpan);
     const ownerRange = resolveOwnerHeaderRange(lookup.nodeSpan);
     if (!builtin || !ownerRange) {
+      return null;
+    }
+
+    if (isRequestCancelled(cancellationToken)) {
       return null;
     }
 

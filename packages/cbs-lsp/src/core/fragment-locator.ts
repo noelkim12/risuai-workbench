@@ -13,6 +13,7 @@ import type {
   DocumentFragmentAnalysis,
   FragmentDocumentAnalysis,
 } from './fragment-analysis-service';
+import type { FragmentRecoveryState } from './recovery-contract';
 
 type SpanRelation = 'strict' | 'boundary' | 'outside';
 
@@ -42,9 +43,11 @@ export type FragmentTokenSpanCategory =
 export type FragmentNodeSpanCategory =
   | 'macro-name'
   | 'argument'
+  | 'argument-reference'
   | 'block-header'
   | 'block-close'
   | 'block-else'
+  | 'local-function-reference'
   | 'node-range';
 
 export interface FragmentTokenLookup extends OffsetSpan {
@@ -68,6 +71,7 @@ export interface FragmentCursorLookupResult {
   fragmentLocalOffset: number;
   hostPosition: Position;
   hostOffset: number;
+  recovery: FragmentRecoveryState;
   token: FragmentTokenLookup | null;
   node: CBSNode | null;
   nodePath: readonly CBSNode[];
@@ -264,9 +268,15 @@ function buildNodeSpanLookup(
 
       const argumentSpan = getMacroArgumentSpan(content, candidate, offset);
       if (argumentSpan) {
+        const normalizedMacroName = candidate.name.toLowerCase().replace(/[\s_-]/gu, '');
         return {
           owner: candidate,
-          category: 'argument',
+          category:
+            argumentSpan.argumentIndex === 0 && normalizedMacroName === 'call'
+              ? 'local-function-reference'
+              : argumentSpan.argumentIndex === 0 && normalizedMacroName === 'arg'
+                ? 'argument-reference'
+                : 'argument',
           localRange: argumentSpan.localRange,
           localStartOffset: argumentSpan.localStartOffset,
           localEndOffset: argumentSpan.localEndOffset,
@@ -401,6 +411,7 @@ export function locateFragmentAtHostPosition(
     fragmentLocalOffset,
     hostPosition,
     hostOffset,
+    recovery: fragmentAnalysis.recovery,
     token,
     node: nodePath[nodePath.length - 1] ?? null,
     nodePath,

@@ -1,3 +1,4 @@
+import type { CancellationToken } from 'vscode-languageserver/node';
 import type { BlockKind, BlockNode, Range } from 'risu-workbench-core';
 import { walkAST } from 'risu-workbench-core';
 import { FoldingRange, FoldingRangeParams } from 'vscode-languageserver/node';
@@ -7,8 +8,16 @@ import {
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
 } from '../core';
+import { isRequestCancelled } from '../request-cancellation';
 
-const SUPPORTED_FOLDING_BLOCKS = new Set<BlockKind>(['when', 'each', 'escape', 'puredisplay']);
+const SUPPORTED_FOLDING_BLOCKS = new Set<BlockKind>([
+  'when',
+  'each',
+  'escape',
+  'pure',
+  'puredisplay',
+  'func',
+]);
 
 function createBlockFoldRange(block: BlockNode): Range | null {
   if (!block.closeRange || !SUPPORTED_FOLDING_BLOCKS.has(block.kind)) {
@@ -26,8 +35,16 @@ export class FoldingProvider {
     private readonly analysisService: FragmentAnalysisService = fragmentAnalysisService,
   ) {}
 
-  provide(_params: FoldingRangeParams, request: FragmentAnalysisRequest): FoldingRange[] {
-    const analysis = this.analysisService.analyzeDocument(request);
+  provide(
+    _params: FoldingRangeParams,
+    request: FragmentAnalysisRequest,
+    cancellationToken?: CancellationToken,
+  ): FoldingRange[] {
+    if (isRequestCancelled(cancellationToken)) {
+      return [];
+    }
+
+    const analysis = this.analysisService.analyzeDocument(request, cancellationToken);
     if (!analysis) {
       return [];
     }
@@ -35,8 +52,20 @@ export class FoldingProvider {
     const ranges: FoldingRange[] = [];
 
     for (const fragmentAnalysis of analysis.fragmentAnalyses) {
+      if (isRequestCancelled(cancellationToken)) {
+        return [];
+      }
+
+       if (!fragmentAnalysis.recovery.structureReliable) {
+        continue;
+      }
+
       walkAST(fragmentAnalysis.document.nodes, {
         visitBlock: (block) => {
+          if (isRequestCancelled(cancellationToken)) {
+            return;
+          }
+
           const localRange = createBlockFoldRange(block);
           if (!localRange) {
             return;

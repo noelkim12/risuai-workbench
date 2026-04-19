@@ -2,6 +2,7 @@ import type { Range } from 'risu-workbench-core';
 
 export type VariableSymbolKind = 'chat' | 'temp' | 'global' | 'loop';
 export type VariableSymbolScope = 'fragment' | 'block' | 'external';
+export type FunctionSymbolScope = 'fragment';
 
 export interface VariableSymbol {
   id: string;
@@ -19,11 +20,33 @@ export interface UndefinedVariableReference {
   range: Range;
 }
 
+export interface InvalidArgumentReference {
+  rawText: string;
+  index: number | null;
+  range: Range;
+  reason: 'outside-function' | 'out-of-range';
+  functionName?: string;
+  parameterCount?: number;
+}
+
+export interface FunctionSymbol {
+  id: string;
+  name: string;
+  scope: FunctionSymbolScope;
+  definitionRange?: Range;
+  definitionRanges: Range[];
+  references: Range[];
+  parameters: string[];
+}
+
 export class SymbolTable {
   private nextSymbolId = 0;
   private readonly variables: VariableSymbol[] = [];
   private readonly variablesByKey = new Map<string, VariableSymbol[]>();
   private readonly undefinedReferences: UndefinedVariableReference[] = [];
+  private readonly invalidArgumentReferences: InvalidArgumentReference[] = [];
+  private readonly functions: FunctionSymbol[] = [];
+  private readonly functionsByName = new Map<string, FunctionSymbol[]>();
 
   addDefinition(
     name: string,
@@ -62,6 +85,42 @@ export class SymbolTable {
     return symbol;
   }
 
+  addFunctionDefinition(
+    name: string,
+    range: Range,
+    parameters: readonly string[] = [],
+  ): FunctionSymbol {
+    const existing = this.findFunction(name, 'fragment');
+    if (existing) {
+      if (!this.hasRange(existing.definitionRanges, range)) {
+        existing.definitionRanges.push(range);
+      }
+
+      if (!existing.definitionRange) {
+        existing.definitionRange = range;
+      }
+
+      if (parameters.length > 0) {
+        existing.parameters = [...parameters];
+      }
+
+      return existing;
+    }
+
+    const symbol: FunctionSymbol = {
+      id: `function-${this.nextSymbolId++}`,
+      name,
+      scope: 'fragment',
+      definitionRange: range,
+      definitionRanges: [range],
+      references: [],
+      parameters: [...parameters],
+    };
+
+    this.registerFunction(symbol);
+    return symbol;
+  }
+
   ensureExternalSymbol(name: string, kind: Extract<VariableSymbolKind, 'global'>): VariableSymbol {
     const existing = this.findSymbol(name, kind, 'external');
     if (existing) {
@@ -97,6 +156,18 @@ export class SymbolTable {
     symbol.references.push(range);
   }
 
+  addFunctionReference(name: string, range: Range): void;
+  addFunctionReference(symbol: FunctionSymbol, range: Range): void;
+  addFunctionReference(symbolOrName: FunctionSymbol | string, range: Range): void {
+    const symbol =
+      typeof symbolOrName === 'string' ? this.getFunction(symbolOrName) : symbolOrName;
+    if (!symbol) {
+      return;
+    }
+
+    symbol.references.push(range);
+  }
+
   recordUndefinedReference(
     name: string,
     kind: UndefinedVariableReference['kind'],
@@ -107,6 +178,10 @@ export class SymbolTable {
       kind,
       range,
     });
+  }
+
+  recordInvalidArgumentReference(reference: InvalidArgumentReference): void {
+    this.invalidArgumentReferences.push(reference);
   }
 
   getVariable(name: string, kind?: VariableSymbolKind): VariableSymbol | undefined {
@@ -125,8 +200,24 @@ export class SymbolTable {
     return [...this.variables];
   }
 
+  getFunction(name: string): FunctionSymbol | undefined {
+    return this.getFunctions(name)[0];
+  }
+
+  getFunctions(name: string): FunctionSymbol[] {
+    return [...(this.functionsByName.get(name) ?? [])];
+  }
+
+  getAllFunctions(): FunctionSymbol[] {
+    return [...this.functions];
+  }
+
   getUndefinedReferences(): UndefinedVariableReference[] {
     return [...this.undefinedReferences];
+  }
+
+  getInvalidArgumentReferences(): InvalidArgumentReference[] {
+    return [...this.invalidArgumentReferences];
   }
 
   getUnusedVariables(): VariableSymbol[] {
@@ -148,6 +239,18 @@ export class SymbolTable {
     this.variablesByKey.set(key, [symbol]);
   }
 
+  private registerFunction(symbol: FunctionSymbol): void {
+    this.functions.push(symbol);
+
+    const existing = this.functionsByName.get(symbol.name);
+    if (existing) {
+      existing.push(symbol);
+      return;
+    }
+
+    this.functionsByName.set(symbol.name, [symbol]);
+  }
+
   private findSymbol(
     name: string,
     kind: VariableSymbolKind,
@@ -156,6 +259,10 @@ export class SymbolTable {
     return this.variablesByKey
       .get(this.createKey(name, kind))
       ?.find((variable) => variable.scope === scope);
+  }
+
+  private findFunction(name: string, scope: FunctionSymbolScope): FunctionSymbol | undefined {
+    return this.functionsByName.get(name)?.find((symbol) => symbol.scope === scope);
   }
 
   private createKey(name: string, kind: VariableSymbolKind): string {

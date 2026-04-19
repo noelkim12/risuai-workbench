@@ -1,4 +1,5 @@
 import {
+  type CancellationToken,
   WorkspaceEdit,
   RenameParams,
   TextDocumentPositionParams,
@@ -13,6 +14,7 @@ import {
   type FragmentAnalysisService,
   type FragmentCursorLookupResult,
 } from '../core';
+import { isRequestCancelled } from '../request-cancellation';
 
 // Variable macros that support rename (first argument is the variable name)
 const VARIABLE_MACRO_RULES = Object.freeze({
@@ -141,15 +143,26 @@ export class RenameProvider {
    * Prepare rename - validates if the cursor position allows renaming.
    * Returns the range of the symbol that would be renamed, or null if renaming is not allowed.
    */
-  prepareRename(params: TextDocumentPositionParams): PrepareRenameResult {
+  prepareRename(
+    params: TextDocumentPositionParams,
+    cancellationToken?: CancellationToken,
+  ): PrepareRenameResult {
+    if (isRequestCancelled(cancellationToken)) {
+      return { canRename: false, message: 'Request cancelled' };
+    }
+
     const request = this.resolveRequest(params);
     if (!request) {
       return { canRename: false, message: 'Cannot resolve document' };
     }
 
-    const lookup = this.analysisService.locatePosition(request, params.position);
+    const lookup = this.analysisService.locatePosition(request, params.position, cancellationToken);
     if (!lookup) {
       return { canRename: false, message: 'Position not within CBS fragment' };
+    }
+
+    if (isRequestCancelled(cancellationToken)) {
+      return { canRename: false, message: 'Request cancelled' };
     }
 
     return this.checkRenameEligibility(lookup);
@@ -159,14 +172,22 @@ export class RenameProvider {
    * Provide rename edits - produces a WorkspaceEdit for renaming a variable.
    * Only operates on the current fragment (single-document edit).
    */
-  provideRename(params: RenameParams): WorkspaceEdit | null {
+  provideRename(params: RenameParams, cancellationToken?: CancellationToken): WorkspaceEdit | null {
+    if (isRequestCancelled(cancellationToken)) {
+      return null;
+    }
+
     const request = this.resolveRequest(params);
     if (!request) {
       return null;
     }
 
-    const lookup = this.analysisService.locatePosition(request, params.position);
+    const lookup = this.analysisService.locatePosition(request, params.position, cancellationToken);
     if (!lookup) {
+      return null;
+    }
+
+    if (isRequestCancelled(cancellationToken)) {
       return null;
     }
 

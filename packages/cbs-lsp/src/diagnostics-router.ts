@@ -1,5 +1,5 @@
 import type { CbsFragment, CbsFragmentMap, DiagnosticInfo } from 'risu-workbench-core';
-import type { Diagnostic, DiagnosticSeverity } from 'vscode-languageserver';
+import type { Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity } from 'vscode-languageserver';
 
 import {
   createFragmentOffsetMapper,
@@ -84,43 +84,88 @@ export function createDiagnosticForFragment(
 
 function createDiagnosticForFragmentRange(
   documentContent: string,
+  documentUri: string,
   fragment: CbsFragment,
   mapper: FragmentOffsetMapper,
   diagnostic: DiagnosticInfo,
 ): Diagnostic {
   const range = mapper.toHostRange(documentContent, diagnostic.range);
+  const relatedInformation = mapRelatedInformation(
+    documentContent,
+    documentUri,
+    mapper,
+    diagnostic.relatedInformation,
+  );
 
   if (range) {
     return {
+      data: diagnostic.data,
       message: diagnostic.message,
       severity: SEVERITY_MAP[diagnostic.severity],
       code: diagnostic.code,
+      relatedInformation,
       range,
       source: 'risu-cbs',
     };
   }
 
-  return createDiagnosticForFragment(
+  return {
+    ...createDiagnosticForFragment(
     documentContent,
     fragment,
     diagnostic.message,
     diagnostic.severity,
     diagnostic.code,
-  );
+    ),
+    data: diagnostic.data,
+    relatedInformation,
+  };
 }
 
 function mapFragmentDiagnosticsToHost(
   documentContent: string,
+  documentUri: string,
   fragmentAnalysis: FragmentDocumentAnalysis,
 ): Diagnostic[] {
   return fragmentAnalysis.diagnostics.map((diagnostic) =>
     createDiagnosticForFragmentRange(
       documentContent,
+      documentUri,
       fragmentAnalysis.fragment,
       fragmentAnalysis.mapper,
       diagnostic,
     ),
   );
+}
+
+function mapRelatedInformation(
+  documentContent: string,
+  documentUri: string,
+  mapper: FragmentOffsetMapper,
+  relatedInformation: DiagnosticInfo['relatedInformation'],
+): DiagnosticRelatedInformation[] | undefined {
+  if (!relatedInformation || relatedInformation.length === 0) {
+    return undefined;
+  }
+
+  const mapped = relatedInformation
+    .map((entry) => {
+      const range = mapper.toHostRange(documentContent, entry.range);
+      if (!range) {
+        return null;
+      }
+
+      return {
+        message: entry.message,
+        location: {
+          uri: documentUri,
+          range,
+        },
+      } satisfies DiagnosticRelatedInformation;
+    })
+    .filter((entry): entry is DiagnosticRelatedInformation => entry !== null);
+
+  return mapped.length > 0 ? mapped : undefined;
 }
 
 /**
@@ -151,7 +196,8 @@ export function routeDiagnosticsForDocument(
     return [];
   }
 
+  const documentUri = context.uri ?? filePath;
   return analysis.fragmentAnalyses.flatMap((fragmentAnalysis) =>
-    mapFragmentDiagnosticsToHost(content, fragmentAnalysis),
+    mapFragmentDiagnosticsToHost(content, documentUri, fragmentAnalysis),
   );
 }

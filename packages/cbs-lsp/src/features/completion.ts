@@ -1,4 +1,5 @@
 import {
+  type CancellationToken,
   CompletionItem,
   CompletionItemKind,
   InsertTextFormat,
@@ -8,13 +9,17 @@ import {
 import type { CBSBuiltinRegistry, CBSBuiltinFunction } from 'risu-workbench-core';
 
 import {
+  collectLocalFunctionDeclarations,
   fragmentAnalysisService,
   detectCompletionTriggerContext,
+  resolveActiveLocalFunctionContext,
+  shouldSuppressPureModeFeatures,
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
   type FragmentCursorLookupResult,
   type CompletionTriggerContext,
 } from '../core';
+import { isRequestCancelled } from '../request-cancellation';
 
 export type CompletionRequestResolver = (
   params: TextDocumentPositionParams,
@@ -28,6 +33,12 @@ export interface CompletionProviderOptions {
 interface BlockSnippet {
   label: string;
   insertText: string;
+  detail: string;
+  documentation: string;
+}
+
+interface CalcOperatorCompletion {
+  label: string;
   detail: string;
   documentation: string;
 }
@@ -63,6 +74,18 @@ const BLOCK_SNIPPETS: readonly BlockSnippet[] = [
     detail: 'Pure display block snippet',
     documentation: 'Display content without evaluation.',
   },
+  {
+    label: 'pure-block',
+    insertText: '{{#pure}}\n\t${1:content}\n{{/pure}}',
+    detail: 'Pure block snippet',
+    documentation: 'Keep body text literal without evaluating nested CBS macros.',
+  },
+  {
+    label: 'func-block',
+    insertText: '{{#func ${1:name} ${2:param}}}\n\t${3:body}\n{{/func}}',
+    detail: 'Local function block snippet',
+    documentation: 'Declare a fragment-local reusable macro body for `{{call::...}}`.',
+  },
 ];
 
 const WHEN_OPERATORS = [
@@ -96,6 +119,89 @@ const METADATA_KEYS = [
   { name: 'bot', description: 'Bot name (alias for char)' },
 ];
 
+const CALC_OPERATORS: readonly CalcOperatorCompletion[] = [
+  {
+    label: '&&',
+    detail: 'Logical AND',
+    documentation: 'Combines two truthy/falsey numeric operands. Upstream evaluates truthy results as `1` and falsey as `0`.',
+  },
+  {
+    label: '||',
+    detail: 'Logical OR',
+    documentation: 'Returns a truthy numeric result when either side is truthy.',
+  },
+  {
+    label: '!',
+    detail: 'Logical NOT',
+    documentation: 'Negates the following operand inside the calc sublanguage.',
+  },
+  {
+    label: '==',
+    detail: 'Equality operator',
+    documentation: 'Compares two numeric operands for equality.',
+  },
+  {
+    label: '!=',
+    detail: 'Inequality operator',
+    documentation: 'Compares two numeric operands for inequality.',
+  },
+  {
+    label: '<=',
+    detail: 'Less-than-or-equal operator',
+    documentation: 'Checks whether the left operand is less than or equal to the right operand.',
+  },
+  {
+    label: '>=',
+    detail: 'Greater-than-or-equal operator',
+    documentation: 'Checks whether the left operand is greater than or equal to the right operand.',
+  },
+  {
+    label: '+',
+    detail: 'Addition operator',
+    documentation: 'Adds two numeric operands.',
+  },
+  {
+    label: '-',
+    detail: 'Subtraction operator',
+    documentation: 'Subtracts the right operand from the left operand. Unary minus is also supported.',
+  },
+  {
+    label: '*',
+    detail: 'Multiplication operator',
+    documentation: 'Multiplies two numeric operands.',
+  },
+  {
+    label: '/',
+    detail: 'Division operator',
+    documentation: 'Divides the left operand by the right operand.',
+  },
+  {
+    label: '%',
+    detail: 'Modulo operator',
+    documentation: 'Returns the remainder after division.',
+  },
+  {
+    label: '^',
+    detail: 'Exponent operator',
+    documentation: 'Raises the left operand to the power of the right operand.',
+  },
+  {
+    label: 'null',
+    detail: 'Null literal',
+    documentation: 'Upstream normalizes `null` to `0` before evaluating the expression.',
+  },
+  {
+    label: '(',
+    detail: 'Open grouping',
+    documentation: 'Starts a grouped sub-expression.',
+  },
+  {
+    label: ')',
+    detail: 'Close grouping',
+    documentation: 'Ends a grouped sub-expression.',
+  },
+];
+
 export class CompletionProvider {
   private readonly analysisService: FragmentAnalysisService;
 
@@ -109,19 +215,43 @@ export class CompletionProvider {
     this.resolveRequest = options.resolveRequest ?? (() => null);
   }
 
-  provide(params: TextDocumentPositionParams): CompletionItem[] {
+  provide(params: TextDocumentPositionParams, cancellationToken?: CancellationToken): CompletionItem[] {
+    if (isRequestCancelled(cancellationToken)) {
+      return [];
+    }
+
     const request = this.resolveRequest(params);
     if (!request) {
       return [];
     }
 
-    const lookup = this.analysisService.locatePosition(request, params.position);
+    const lookup = this.analysisService.locatePosition(request, params.position, cancellationToken);
     if (!lookup) {
+      return [];
+    }
+
+    if (isRequestCancelled(cancellationToken)) {
       return [];
     }
 
     const context = detectCompletionTriggerContext(lookup);
     if (context.type === 'none') {
+      return [];
+    }
+
+    if (!lookup.recovery.tokenContextReliable && lookup.token?.category === 'plain-text') {
+      return [];
+    }
+
+    if (!lookup.recovery.structureReliable && context.type === 'close-tag') {
+      return [];
+    }
+
+    if (
+      shouldSuppressPureModeFeatures(lookup) &&
+      context.type !== 'argument-indices' &&
+      context.type !== 'function-names'
+    ) {
       return [];
     }
 
@@ -139,6 +269,10 @@ export class CompletionProvider {
 
     if (!range) {
       return completions;
+    }
+
+    if (isRequestCancelled(cancellationToken)) {
+      return [];
     }
 
     const lspRange = LSPRange.create(
@@ -174,11 +308,85 @@ export class CompletionProvider {
         return this.buildVariableCompletions(context.prefix, context.kind, lookup);
       case 'metadata-keys':
         return this.buildMetadataCompletions(context.prefix);
+      case 'function-names':
+        return this.buildFunctionCompletions(context.prefix, lookup);
+      case 'argument-indices':
+        return this.buildArgumentIndexCompletions(context.prefix, lookup);
       case 'when-operators':
         return this.buildWhenOperatorCompletions(context.prefix);
+      case 'calc-expression':
+        return this.buildCalcExpressionCompletions(context.prefix, context.referenceKind, lookup);
       default:
         return [];
     }
+  }
+
+  private buildCalcExpressionCompletions(
+    prefix: string,
+    referenceKind: 'chat' | 'global' | null,
+    lookup: FragmentCursorLookupResult,
+  ): CompletionItem[] {
+    const symbolTable = lookup.fragmentAnalysis.providerLookup.getSymbolTable();
+    const variables = symbolTable.getAllVariables();
+    const normalizedPrefix = prefix.toLowerCase();
+
+    const variableCompletions = variables
+      .filter((variable) => {
+        if (referenceKind === 'chat') {
+          return variable.kind === 'chat' && variable.name.toLowerCase().startsWith(normalizedPrefix);
+        }
+
+        if (referenceKind === 'global') {
+          return (
+            variable.kind === 'global' && variable.name.toLowerCase().startsWith(normalizedPrefix)
+          );
+        }
+
+        return variable.name.toLowerCase().startsWith(normalizedPrefix);
+      })
+      .map((variable) => {
+        const marker = variable.kind === 'global' ? '@' : '$';
+        return {
+          label: `${marker}${variable.name}`,
+          kind: CompletionItemKind.Variable,
+          detail:
+            variable.kind === 'global'
+              ? 'Calc expression global variable'
+              : 'Calc expression chat variable',
+          documentation: {
+            kind: 'markdown',
+            value:
+              variable.kind === 'global'
+                ? `Reads global variable **${variable.name}** inside a calc expression. ` +
+                  'Non-numeric values evaluate as `0`.'
+                : `Reads chat variable **${variable.name}** inside a calc expression. ` +
+                  'Non-numeric values evaluate as `0`.',
+          },
+          insertText: referenceKind ? variable.name : `${marker}${variable.name}`,
+        } satisfies CompletionItem;
+      });
+
+    if (referenceKind) {
+      return variableCompletions;
+    }
+
+    const operatorCompletions = CALC_OPERATORS.filter((operator) =>
+      operator.label.toLowerCase().startsWith(normalizedPrefix),
+    ).map(
+      (operator) =>
+        ({
+          label: operator.label,
+          kind: operator.label === 'null' ? CompletionItemKind.Constant : CompletionItemKind.Operator,
+          detail: operator.detail,
+          documentation: {
+            kind: 'markdown',
+            value: operator.documentation,
+          },
+          insertText: operator.label,
+        }) satisfies CompletionItem,
+    );
+
+    return [...variableCompletions, ...operatorCompletions];
   }
 
   private buildAllFunctionCompletions(prefix: string): CompletionItem[] {
@@ -320,6 +528,83 @@ export class CompletionProvider {
       },
       insertText: v.name,
     }));
+  }
+
+  private buildFunctionCompletions(
+    prefix: string,
+    lookup: FragmentCursorLookupResult,
+  ): CompletionItem[] {
+    const symbolTable = lookup.fragmentAnalysis.providerLookup.getSymbolTable();
+    const symbolFunctions = symbolTable.getAllFunctions();
+    const functionCandidates =
+      symbolFunctions.length > 0
+        ? symbolFunctions.map((symbol) => ({
+            name: symbol.name,
+            parameters: symbol.parameters,
+            references: symbol.references.length,
+          }))
+        : collectLocalFunctionDeclarations(
+            lookup.fragmentAnalysis.document,
+            lookup.fragment.content,
+          ).map((declaration) => ({
+            name: declaration.name,
+            parameters: declaration.parameters,
+            references: 0,
+          }));
+
+    const functions = functionCandidates.filter((symbol) =>
+      symbol.name.toLowerCase().startsWith(prefix.toLowerCase()),
+    );
+
+    return functions.map((symbol) => ({
+      label: symbol.name,
+      kind: CompletionItemKind.Function,
+      detail: 'Local #func declaration',
+      documentation: {
+        kind: 'markdown',
+        value: [
+          `**Local function: ${symbol.name}**`,
+          '',
+          symbol.parameters.length > 0
+            ? `Parameters: ${symbol.parameters.map((parameter) => `\`${parameter}\``).join(', ')}`
+            : 'Parameters: inferred at runtime',
+          `Local calls: ${symbol.references}`,
+        ].join('\n'),
+      },
+      insertText: symbol.name,
+    }));
+  }
+
+  private buildArgumentIndexCompletions(
+    prefix: string,
+    lookup: FragmentCursorLookupResult,
+  ): CompletionItem[] {
+    const activeFunctionContext = resolveActiveLocalFunctionContext(lookup);
+    const declaration = activeFunctionContext?.declaration;
+    if (!declaration || declaration.parameters.length === 0) {
+      return [];
+    }
+
+    return declaration.parameters
+      .map((parameter, index) => ({ parameter, index }))
+      .filter(({ index }) => index.toString().startsWith(prefix.trim()))
+      .map(({ parameter, index }) => ({
+        label: index.toString(),
+        kind: CompletionItemKind.Constant,
+        detail: `0-based local argument slot for \`${parameter}\``,
+        documentation: {
+          kind: 'markdown',
+          value: [
+            `**Numbered argument reference: arg::${index}**`,
+            '',
+            `- Local function: \`${declaration.name}\``,
+            `- Parameter slot: ${index}`,
+            `- Parameter name: \`${parameter}\``,
+            '- Meaning: reads the matching call argument during `{{call::...}}` recursion.',
+          ].join('\n'),
+        },
+        insertText: index.toString(),
+      }));
   }
 
   private buildMetadataCompletions(prefix: string): CompletionItem[] {

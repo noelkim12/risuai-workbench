@@ -1,4 +1,4 @@
-import { Location, ReferenceParams } from 'vscode-languageserver/node';
+import { type CancellationToken, Location, ReferenceParams } from 'vscode-languageserver/node';
 import type { Range } from 'risu-workbench-core';
 
 import {
@@ -8,6 +8,7 @@ import {
   type FragmentCursorLookupResult,
 } from '../core';
 import type { VariableSymbol, VariableSymbolKind } from '../analyzer/symbolTable';
+import { isRequestCancelled } from '../request-cancellation';
 
 export type ReferencesRequestResolver = (
   params: ReferenceParams,
@@ -105,14 +106,22 @@ export class ReferencesProvider {
     this.resolveRequest = options.resolveRequest ?? (() => null);
   }
 
-  provide(params: ReferenceParams): Location[] {
+  provide(params: ReferenceParams, cancellationToken?: CancellationToken): Location[] {
+    if (isRequestCancelled(cancellationToken)) {
+      return [];
+    }
+
     const request = this.resolveRequest(params);
     if (!request) {
       return [];
     }
 
-    const lookup = this.analysisService.locatePosition(request, params.position);
+    const lookup = this.analysisService.locatePosition(request, params.position, cancellationToken);
     if (!lookup) {
+      return [];
+    }
+
+    if (isRequestCancelled(cancellationToken)) {
       return [];
     }
 

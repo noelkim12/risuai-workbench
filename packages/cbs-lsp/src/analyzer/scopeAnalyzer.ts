@@ -8,19 +8,27 @@ import {
 } from 'risu-workbench-core';
 
 import { offsetToPosition, positionToOffset } from '../utils/position';
+import { extractNumberedArgumentReference } from '../core/local-functions';
 import { extractEachLoopBinding } from './diagnostics';
-import { SymbolTable, type VariableSymbol, type VariableSymbolKind } from './symbolTable';
+import {
+  SymbolTable,
+  type FunctionSymbol,
+  type VariableSymbol,
+  type VariableSymbolKind,
+} from './symbolTable';
 
 type FragmentVariableKind = Extract<VariableSymbolKind, 'chat' | 'temp'>;
 
 interface FragmentDefinitionMaps {
   chat: Map<string, VariableSymbol>;
   temp: Map<string, VariableSymbol>;
+  func: Map<string, FunctionSymbol>;
 }
 
 interface ScopeFrame {
   parent: ScopeFrame | null;
   loopBindings: Map<string, VariableSymbol>;
+  activeFunction: FunctionSymbol | null;
 }
 
 const CHAT_VARIABLE_DEFINITION_MACROS = new Set(['setvar', 'setdefaultvar', 'addvar']);
@@ -36,6 +44,7 @@ export class ScopeAnalyzer {
     const fragmentDefinitions: FragmentDefinitionMaps = {
       chat: new Map(),
       temp: new Map(),
+      func: new Map(),
     };
 
     this.collectFragmentDefinitions(document.nodes, table, fragmentDefinitions, sourceText);
@@ -65,6 +74,7 @@ export class ScopeAnalyzer {
           }
           break;
         case 'Block':
+          this.collectBlockDefinitions(node, table, fragmentDefinitions, sourceText);
           this.collectFragmentDefinitions(node.condition, table, fragmentDefinitions, sourceText);
           this.collectFragmentDefinitions(
             this.getAnalyzableBodyNodes(node, sourceText),
@@ -80,6 +90,29 @@ export class ScopeAnalyzer {
           break;
       }
     }
+  }
+
+  private collectBlockDefinitions(
+    node: BlockNode,
+    table: SymbolTable,
+    fragmentDefinitions: FragmentDefinitionMaps,
+    sourceText: string,
+  ): void {
+    if (node.kind !== 'func' || sourceText.length === 0) {
+      return;
+    }
+
+    const functionDeclaration = this.extractFunctionDeclaration(node, sourceText);
+    if (!functionDeclaration) {
+      return;
+    }
+
+    const symbol = table.addFunctionDefinition(
+      functionDeclaration.name,
+      functionDeclaration.range,
+      functionDeclaration.parameters,
+    );
+    fragmentDefinitions.func.set(functionDeclaration.name, symbol);
   }
 
   private collectMacroDefinitions(
@@ -112,7 +145,7 @@ export class ScopeAnalyzer {
     for (const node of nodes) {
       switch (node.type) {
         case 'MacroCall':
-          this.collectMacroReferences(node, table, fragmentDefinitions, scope);
+          this.collectMacroReferences(node, table, fragmentDefinitions, scope, sourceText);
           for (const argument of node.arguments) {
             this.collectReferences(argument, table, fragmentDefinitions, scope, sourceText);
           }
@@ -131,6 +164,7 @@ export class ScopeAnalyzer {
     table: SymbolTable,
     fragmentDefinitions: FragmentDefinitionMaps,
     scope: ScopeFrame,
+    sourceText: string,
   ): void {
     const normalizedName = this.normalizeLookupKey(node.name);
 
@@ -164,6 +198,50 @@ export class ScopeAnalyzer {
       const loopSymbol = this.findLoopBinding(scope, identifier.text);
       if (loopSymbol) {
         table.addReference(loopSymbol, identifier.range);
+      }
+
+      return;
+    }
+
+    if (normalizedName === 'call') {
+      const identifier = this.extractStaticArgument(node, 0);
+      if (!identifier) {
+        return;
+      }
+
+      const functionSymbol = fragmentDefinitions.func.get(identifier.text);
+      if (functionSymbol) {
+        table.addFunctionReference(functionSymbol, identifier.range);
+      }
+
+      return;
+    }
+
+    if (normalizedName === 'arg') {
+      const reference = extractNumberedArgumentReference(node, sourceText);
+      if (!reference) {
+        return;
+      }
+
+      if (!scope.activeFunction) {
+        table.recordInvalidArgumentReference({
+          rawText: reference.rawText,
+          index: reference.index,
+          range: reference.range,
+          reason: 'outside-function',
+        });
+        return;
+      }
+
+      if (reference.index >= scope.activeFunction.parameters.length) {
+        table.recordInvalidArgumentReference({
+          rawText: reference.rawText,
+          index: reference.index,
+          range: reference.range,
+          reason: 'out-of-range',
+          functionName: scope.activeFunction.name,
+          parameterCount: scope.activeFunction.parameters.length,
+        });
       }
     }
   }
@@ -200,6 +278,26 @@ export class ScopeAnalyzer {
         bodyScope,
         sourceText,
       );
+      return;
+    }
+
+    if (node.kind === 'func') {
+      const bodyScope = this.createScopeFrame(scope);
+      const functionDeclaration = sourceText.length
+        ? this.extractFunctionDeclaration(node, sourceText)
+        : null;
+      bodyScope.activeFunction = functionDeclaration
+        ? fragmentDefinitions.func.get(functionDeclaration.name) ?? null
+        : null;
+
+      this.collectReferences(
+        this.getAnalyzableBodyNodes(node, sourceText),
+        table,
+        fragmentDefinitions,
+        bodyScope,
+        sourceText,
+      );
+
       return;
     }
 
@@ -408,6 +506,36 @@ export class ScopeAnalyzer {
     return {
       parent,
       loopBindings: new Map(),
+      activeFunction: null,
+    };
+  }
+
+  private extractFunctionDeclaration(
+    node: BlockNode,
+    sourceText: string,
+  ): { name: string; range: Range; parameters: string[] } | null {
+    const openStartOffset = positionToOffset(sourceText, node.openRange.start);
+    const openEndOffset = positionToOffset(sourceText, node.openRange.end);
+    const headerText = sourceText.slice(openStartOffset, openEndOffset);
+    const match = headerText.match(/^\{\{#func\s+([^\s}]+)(?:\s+([^}]+?))?\}\}$/u);
+    if (!match?.[1]) {
+      return null;
+    }
+
+    const name = match[1];
+    const nameStartOffset = openStartOffset + headerText.indexOf(name);
+    const parameters = (match[2] ?? '')
+      .split(/\s+/u)
+      .map((token) => token.trim())
+      .filter((token) => token.length > 0);
+
+    return {
+      name,
+      range: {
+        start: offsetToPosition(sourceText, nameStartOffset),
+        end: offsetToPosition(sourceText, nameStartOffset + name.length),
+      },
+      parameters,
     };
   }
 

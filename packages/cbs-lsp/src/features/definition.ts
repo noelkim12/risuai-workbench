@@ -1,13 +1,20 @@
-import { Definition, LocationLink, TextDocumentPositionParams } from 'vscode-languageserver/node';
+import {
+  type CancellationToken,
+  Definition,
+  LocationLink,
+  TextDocumentPositionParams,
+} from 'vscode-languageserver/node';
 import type { CBSBuiltinRegistry, Range } from 'risu-workbench-core';
 
 import {
+  collectLocalFunctionDeclarations,
   fragmentAnalysisService,
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
   type FragmentCursorLookupResult,
 } from '../core';
 import type { VariableSymbolKind } from '../analyzer/symbolTable';
+import { isRequestCancelled } from '../request-cancellation';
 
 export type DefinitionRequestResolver = (
   params: TextDocumentPositionParams,
@@ -94,6 +101,29 @@ function isVariablePosition(lookup: FragmentCursorLookupResult): {
   return null;
 }
 
+function isFunctionPosition(lookup: FragmentCursorLookupResult): { functionName: string } | null {
+  const tokenLookup = lookup.token;
+  const nodeSpan = lookup.nodeSpan;
+  if (!tokenLookup || !nodeSpan) {
+    return null;
+  }
+
+  if (
+    tokenLookup.category === 'argument' &&
+    nodeSpan.category === 'argument' &&
+    nodeSpan.owner.type === 'MacroCall' &&
+    nodeSpan.owner.name.toLowerCase() === 'call' &&
+    nodeSpan.argumentIndex === 0
+  ) {
+    const functionName = tokenLookup.token.value.trim();
+    if (functionName.length > 0) {
+      return { functionName };
+    }
+  }
+
+  return null;
+}
+
 function findFirstDefinitionRange(definitionRanges: readonly Range[]): Range | null {
   if (definitionRanges.length === 0) {
     return null;
@@ -125,39 +155,59 @@ export class DefinitionProvider {
     this.resolveRequest = options.resolveRequest ?? (() => null);
   }
 
-  provide(params: TextDocumentPositionParams): Definition | null {
+  provide(params: TextDocumentPositionParams, cancellationToken?: CancellationToken): Definition | null {
+    if (isRequestCancelled(cancellationToken)) {
+      return null;
+    }
+
     const request = this.resolveRequest(params);
     if (!request) {
       return null;
     }
 
-    const lookup = this.analysisService.locatePosition(request, params.position);
+    const lookup = this.analysisService.locatePosition(request, params.position, cancellationToken);
     if (!lookup) {
       return null;
     }
 
-    const variablePosition = isVariablePosition(lookup);
-    if (!variablePosition) {
+    if (isRequestCancelled(cancellationToken)) {
       return null;
     }
 
-    const { variableName, kind } = variablePosition;
-
-    // Get symbol from local fragment symbol table
     const symbolTable = lookup.fragmentAnalysis.providerLookup.getSymbolTable();
-    const symbol = symbolTable.getVariable(variableName, kind);
+    const variablePosition = isVariablePosition(lookup);
+    const functionPosition = variablePosition ? null : isFunctionPosition(lookup);
+    let targetRange: Range | null = null;
 
-    if (!symbol) {
+    if (variablePosition) {
+      const { variableName, kind } = variablePosition;
+      const symbol = symbolTable.getVariable(variableName, kind);
+      if (!symbol) {
+        return null;
+      }
+
+      if (symbol.scope === 'external' || kind === 'global') {
+        return null;
+      }
+
+      targetRange = findFirstDefinitionRange(symbol.definitionRanges);
+    } else if (functionPosition) {
+      const symbol = symbolTable.getFunction(functionPosition.functionName);
+      const fallbackDeclaration = collectLocalFunctionDeclarations(
+        lookup.fragmentAnalysis.document,
+        lookup.fragment.content,
+      ).find((candidate) => candidate.name === functionPosition.functionName);
+      if (!symbol && !fallbackDeclaration) {
+        return null;
+      }
+
+      targetRange = symbol
+        ? findFirstDefinitionRange(symbol.definitionRanges)
+        : fallbackDeclaration?.range ?? null;
+    } else {
       return null;
     }
 
-    // Return null for global variables (they're external, not locally defined)
-    if (symbol.scope === 'external' || kind === 'global') {
-      return null;
-    }
-
-    // Find the first definition range
-    const targetRange = findFirstDefinitionRange(symbol.definitionRanges);
     if (!targetRange) {
       return null;
     }
