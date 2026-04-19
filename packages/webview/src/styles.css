@@ -1,0 +1,136 @@
+:root {
+  color-scheme: dark;
+  --bg: #09090c;
+  --panel: rgba(21, 24, 34, 0.84);
+  --panel-border: rgba(133, 153, 255, 0.24);
+  --text: #f3f4ff;
+  --muted: #a8afc8;
+  --accent: #8ea2ff;
+  --accent-strong: #c7d2ff;
+  --glow: rgba(142, 162, 255, 0.32);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: 'Segoe UI', 'Noto Sans KR', sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top, rgba(142, 162, 255, 0.18), transparent 32%),
+    linear-gradient(180deg, #12141d 0%, var(--bg) 58%);
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.8), transparent);
+}
+
+.shell {
+  position: relative;
+  padding: 32px;
+  display: grid;
+  gap: 24px;
+}
+
+.hero,
+.card {
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 24px 80px -48px var(--glow);
+}
+
+.hero {
+  padding: 28px;
+  border-radius: 28px;
+}
+
+.eyebrow,
+.card-label {
+  margin: 0 0 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 11px;
+  color: var(--accent-strong);
+}
+
+.hero h1,
+.card strong {
+  margin: 0;
+  line-height: 1.1;
+}
+
+.hero h1 {
+  font-size: clamp(2rem, 5vw, 3.2rem);
+}
+
+.lede,
+.card p {
+  margin: 14px 0 0;
+  color: var(--muted);
+  max-width: 60ch;
+  line-height: 1.6;
+}
+
+.grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.card {
+  border-radius: 22px;
+  padding: 20px;
+}
+
+.card--signal {
+  background:
+    linear-gradient(135deg, rgba(142, 162, 255, 0.22), rgba(35, 39, 56, 0.92)),
+    var(--panel);
+}
+
+button {
+  margin-top: 18px;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 16px;
+  color: #0f1220;
+  background: linear-gradient(135deg, var(--accent-strong), var(--accent));
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 30px -20px var(--glow);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+@media (max-width: 640px) {
+  .shell {
+    padding: 18px;
+  }
+
+  .hero,
+  .card {
+    border-radius: 20px;
+  }
+}

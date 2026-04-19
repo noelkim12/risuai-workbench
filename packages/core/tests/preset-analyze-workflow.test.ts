@@ -1,0 +1,264 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { collectPresetSources } from '../src/cli/analyze/preset/collectors';
+import { runAnalyzePresetWorkflow } from '../src/cli/analyze/preset/workflow';
+import { runExtractWorkflow as runPresetExtractWorkflow } from '../src/cli/extract/preset/workflow';
+
+describe('preset analyze collectors and workflow', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'preset-analyze-'));
+
+    fs.mkdirSync(path.join(tempDir, 'prompts'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tempDir, 'prompts', 'main.txt'),
+      'You are {{getvar::persona}}. Respond in {{getvar::lang}}.',
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'prompts', 'jailbreak.txt'),
+      '{{setvar::tone::sharp}}',
+      'utf-8',
+    );
+
+    // Use canonical .risuprompt files instead of JSON
+    fs.mkdirSync(path.join(tempDir, 'prompt_template'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tempDir, 'prompt_template', '_order.json'),
+      `${JSON.stringify(['system.risuprompt', 'followup.risuprompt'], null, 2)}\n`,
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'prompt_template', 'system.risuprompt'),
+      `---
+name: system
+type: plain
+type2: normal
+role: system
+---
+@@@ TEXT
+{{setvar::lang::ko}}
+`,
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'prompt_template', 'followup.risuprompt'),
+      `---
+name: followup
+type: plain
+type2: normal
+role: system
+---
+@@@ TEXT
+{{getvar::lang}} {{setvar::persona::guide}}
+`,
+      'utf-8',
+    );
+
+    // Use canonical .risuregex files instead of JSON
+    fs.mkdirSync(path.join(tempDir, 'regex'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tempDir, 'regex', '_order.json'),
+      `${JSON.stringify(['post.risuregex'], null, 2)}\n`,
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'regex', 'post.risuregex'),
+      `---
+comment: post
+type: editdisplay
+---
+@@@ IN
+{{getvar::lang}}
+@@@ OUT
+{{setvar::persona::guide}}
+`,
+      'utf-8',
+    );
+
+    // Canonical workspace uses metadata.json (no preset.json)
+    fs.writeFileSync(
+      path.join(tempDir, 'metadata.json'),
+      `${JSON.stringify({ name: 'test_preset', description: 'test preset' }, null, 2)}\n`,
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'model.json'),
+      `${JSON.stringify({ apiType: 'openai', model: 'gpt-4.1' }, null, 2)}\n`,
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'parameters.json'),
+      `${JSON.stringify({ temperature: 0.7, maxContext: 8000 }, null, 2)}\n`,
+      'utf-8',
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('collects prompt sources from extracted preset directory', () => {
+    const result = collectPresetSources(tempDir);
+    expect(result.prompts.map((prompt) => prompt.name)).toContain('main');
+    expect(result.prompts.find((prompt) => prompt.name === 'main')?.reads.has('persona')).toBe(true);
+  });
+
+  it('collects prompt template sources', () => {
+    const result = collectPresetSources(tempDir);
+    expect(result.promptTemplates.length).toBeGreaterThan(0);
+    expect(result.promptTemplates[0]?.writes.has('lang')).toBe(true);
+  });
+
+  it('collects regex/model/parameter data from extracted preset directory', () => {
+    const result = collectPresetSources(tempDir);
+    expect(result.regexCBS[0]?.writes.has('persona')).toBe(true);
+    expect(result.model?.model).toBe('gpt-4.1');
+    expect(result.parameters?.maxContext).toBe(8000);
+  });
+
+  it('writes preset analysis markdown report', () => {
+    const code = runAnalyzePresetWorkflow([tempDir, '--locale', 'en']);
+    expect(code).toBe(0);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'preset-analysis.md'))).toBe(true);
+    const markdown = fs.readFileSync(path.join(tempDir, 'analysis', 'preset-analysis.md'), 'utf-8');
+    expect(markdown).not.toContain('## Token Budget');
+    expect(markdown).not.toContain('Worst-case tokens');
+    expect(markdown).not.toContain('최악 토큰');
+    expect(markdown).toContain('## Variable Flow');
+    expect(markdown).toContain('## Dead Code Findings');
+    expect(markdown).toContain('## Prompt Chain');
+  });
+
+  it('writes preset analysis html report', () => {
+    const code = runAnalyzePresetWorkflow([tempDir, '--locale', 'en']);
+    expect(code).toBe(0);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'preset-analysis.html'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'preset-analysis.data.js'))).toBe(true);
+    const html = fs.readFileSync(path.join(tempDir, 'analysis', 'preset-analysis.html'), 'utf-8');
+    expect(html).not.toContain('Token Budget');
+    expect(html).not.toContain('Worst-case tokens');
+    expect(html).not.toContain('최악 토큰 수');
+    expect(html).toContain('Variable Flow');
+    expect(html).toContain('Dead Code');
+    expect(html).toContain('Prompt Chain');
+    expect(html).toContain('Chain Token Distribution');
+    expect(html).toContain('Chain Steps Table');
+    expect(html).toContain('data-panel-id="preset-chain-dep-graph"');
+    expect(html).toContain('data-library="force-graph"');
+    expect(html).toContain('<script src="./preset-analysis.data.js"></script>');
+  });
+
+  it('supports --wiki-only and skips markdown/html analysis outputs', () => {
+    const wikiRoot = path.join(tempDir, 'wiki');
+
+    const code = runAnalyzePresetWorkflow([tempDir, '--wiki-only', '--wiki-root', wikiRoot, '--locale', 'en']);
+
+    expect(code).toBe(0);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'preset-analysis.md'))).toBe(false);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'preset-analysis.html'))).toBe(false);
+
+    const generatedDir = path.join(wikiRoot, 'artifacts', `preset_${path.basename(tempDir)}`, '_generated');
+    expect(fs.existsSync(path.join(generatedDir, 'overview.md'))).toBe(true);
+    expect(fs.existsSync(path.join(generatedDir, 'prompts.md'))).toBe(true);
+    expect(fs.existsSync(path.join(generatedDir, 'prompt-chain.md'))).toBe(true);
+  });
+
+  it('runs preset-wide analysis automatically after extract', async () => {
+    const sourcePath = path.join(tempDir, 'preset-source.json');
+    const outDir = path.join(tempDir, 'extracted-preset');
+
+    fs.writeFileSync(
+      sourcePath,
+      `${JSON.stringify(
+        {
+          name: 'auto_preset',
+          mainPrompt: 'You are {{getvar::persona}}.',
+          jailbreak: '{{setvar::tone::sharp}}',
+          globalNote: 'Note {{getvar::lang}}',
+          promptTemplate: [{ name: 'system', text: '{{setvar::lang::ko}}', type: 'plain', type2: 'normal', role: 'system' }],
+          temperature: 0.7,
+        },
+        null,
+        2,
+      )}\n`,
+      'utf-8',
+    );
+
+    const code = await runPresetExtractWorkflow([sourcePath, '--out', outDir]);
+
+    expect(code).toBe(0);
+    expect(fs.existsSync(path.join(outDir, 'analysis', 'preset-analysis.md'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'analysis', 'preset-analysis.html'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'analysis', 'preset-analysis.data.js'))).toBe(true);
+  });
+
+  it('skips preset-wide analysis on --json-only extract', () => {
+    const sourcePath = path.join(tempDir, 'preset-json-only.json');
+    const outDir = path.join(tempDir, 'json-only-preset');
+
+    fs.writeFileSync(
+      sourcePath,
+      `${JSON.stringify(
+        {
+          name: 'json_only_preset',
+          mainPrompt: 'hello',
+          temperature: 0.8,
+        },
+        null,
+        2,
+      )}\n`,
+      'utf-8',
+    );
+
+    const code = runPresetExtractWorkflow([sourcePath, '--out', outDir, '--json-only']);
+
+    expect(code).toBe(0);
+    expect(fs.existsSync(path.join(outDir, 'preset.json'))).toBe(false);
+    expect(fs.existsSync(path.join(outDir, 'metadata.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'analysis'))).toBe(false);
+  });
+
+  it('analyzes prompt-template-only preset workspace without prompts/ directory', () => {
+    // Create a prompt-template-only preset workspace (no prompts/ directory)
+    const promptOnlyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'preset-prompt-only-'));
+
+    fs.mkdirSync(path.join(promptOnlyDir, 'prompt_template'), { recursive: true });
+    fs.writeFileSync(
+      path.join(promptOnlyDir, 'metadata.json'),
+      `${JSON.stringify({ name: 'prompt_only_preset' }, null, 2)}\n`,
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(promptOnlyDir, 'prompt_template', '_order.json'),
+      `${JSON.stringify(['system.risuprompt'], null, 2)}\n`,
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(promptOnlyDir, 'prompt_template', 'system.risuprompt'),
+      `---
+name: system
+type: plain
+type2: normal
+role: system
+---
+@@@ TEXT
+{{setvar::lang::ko}}
+`,
+      'utf-8',
+    );
+
+    // Should be detected as preset even without prompts/ directory
+    const code = runAnalyzePresetWorkflow([promptOnlyDir, '--locale', 'en']);
+
+    expect(code).toBe(0);
+    expect(fs.existsSync(path.join(promptOnlyDir, 'analysis', 'preset-analysis.md'))).toBe(true);
+    expect(fs.existsSync(path.join(promptOnlyDir, 'analysis', 'preset-analysis.html'))).toBe(true);
+
+    // Cleanup
+    fs.rmSync(promptOnlyDir, { recursive: true, force: true });
+  });
+});

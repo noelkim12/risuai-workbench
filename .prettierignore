@@ -1,0 +1,8 @@
+dist/
+node_modules/
+*.tsbuildinfo
+package-lock.json
+pnpm-lock.yaml
+.tmp/
+.cache/
+assets/
