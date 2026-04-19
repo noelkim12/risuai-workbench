@@ -1,15 +1,31 @@
+import os from 'node:os';
+import path from 'node:path';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
+
 import type {
   CancellationToken,
+  CodeLens,
   CompletionItem,
+  Definition,
   Diagnostic,
+  DidChangeWatchedFilesParams,
+  DocumentFormattingParams,
   FoldingRange,
   Hover,
   InitializeParams,
   InitializeResult,
+  Location,
+  Range,
+  ReferenceParams,
+  RenameParams,
   SemanticTokens,
   SignatureHelp,
+  TextEdit,
+  TextDocumentPositionParams,
+  WorkspaceEdit,
 } from 'vscode-languageserver/node';
-import { TextDocumentSyncKind } from 'vscode-languageserver/node';
+import { FileChangeType, TextDocumentSyncKind } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as core from 'risu-workbench-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -17,8 +33,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSyntheticDocumentVersion, fragmentAnalysisService } from '../src/core';
 import { SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES } from '../src/features/semanticTokens';
 import { registerServer } from '../src/server';
-import { offsetToPosition } from '../src/utils/position';
+import { offsetToPosition, positionToOffset } from '../src/utils/position';
 import { getFixtureCorpusEntry } from './fixtures/fixture-corpus';
+
+const tempRoots: string[] = [];
 
 function createDisposable() {
   return {
@@ -28,6 +46,14 @@ function createDisposable() {
 
 function lorebookDocument(bodyLines: readonly string[]): string {
   return ['---', 'name: entry', '---', '@@@ CONTENT', ...bodyLines, ''].join('\n');
+}
+
+function promptDocument(bodyLines: readonly string[]): string {
+  return ['---', 'type: plain', '---', '@@@ TEXT', ...bodyLines, ''].join('\n');
+}
+
+function regexDocument(inLines: readonly string[], outLines: readonly string[]): string {
+  return ['---', 'name: regex', '---', '@@@ IN', ...inLines, '@@@ OUT', ...outLines, ''].join('\n');
 }
 
 function positionAt(
@@ -71,12 +97,36 @@ function getCompletionItems(
   return Array.isArray(result) ? result : result.items;
 }
 
+function applyTextEdits(text: string, edits: readonly TextEdit[]): string {
+  return [...edits]
+    .sort((left, right) => positionToOffset(text, right.range.start) - positionToOffset(text, left.range.start))
+    .reduce((currentText, edit) => {
+      const startOffset = positionToOffset(currentText, edit.range.start);
+      const endOffset = positionToOffset(currentText, edit.range.end);
+      return `${currentText.slice(0, startOffset)}${edit.newText}${currentText.slice(endOffset)}`;
+    }, text);
+}
+
 class FakeConnection {
   initializeHandler: ((params: InitializeParams) => InitializeResult) | null = null;
 
+  initializedHandler: ((params: Record<string, never>) => void) | null = null;
+
   shutdownHandler: (() => void | Promise<void>) | null = null;
 
+  executeCommandHandler: ((params: any) => void | Promise<void>) | null = null;
+
+  codeLensHandler: ((params: any, token?: CancellationToken) => CodeLens[]) | null = null;
+
   completionHandler: ((params: any, token?: CancellationToken) => CompletionItem[] | { items: CompletionItem[] }) | null = null;
+
+  definitionHandler: ((params: any, token?: CancellationToken) => Definition | null) | null = null;
+
+  referencesHandler: ((params: any, token?: CancellationToken) => Location[]) | null = null;
+
+  prepareRenameHandler: ((params: TextDocumentPositionParams, token?: CancellationToken) => Range | null) | null = null;
+
+  renameHandler: ((params: RenameParams, token?: CancellationToken) => WorkspaceEdit | null) | null = null;
 
   hoverHandler: ((params: any, token?: CancellationToken) => Hover | null) | null = null;
 
@@ -86,15 +136,26 @@ class FakeConnection {
 
   semanticTokensHandler: ((params: any, token?: CancellationToken) => SemanticTokens) | null = null;
 
+  watchedFilesHandler: ((params: DidChangeWatchedFilesParams) => void) | null = null;
+
   definitionRegistrations = 0;
 
   referencesRegistrations = 0;
+
+  prepareRenameRegistrations = 0;
 
   renameRegistrations = 0;
 
   formattingRegistrations = 0;
 
+  formattingHandler: ((params: DocumentFormattingParams, token?: CancellationToken) => TextEdit[]) | null =
+    null;
+
   readonly diagnostics: Array<{ uri: string; diagnostics: readonly Diagnostic[] }> = [];
+
+  readonly clientRegistrations: Array<{ method: string; registerOptions: unknown }> = [];
+
+  readonly requests: string[] = [];
 
   readonly traceMessages: Array<{ message: string; verbose?: string }> = [];
 
@@ -109,6 +170,13 @@ class FakeConnection {
   readonly console = {
     log: (message: string) => {
       this.consoleMessages.push(message);
+    },
+  };
+
+  readonly client = {
+    register: async (type: { method: string }, registerOptions?: unknown) => {
+      this.clientRegistrations.push({ method: type.method, registerOptions });
+      return createDisposable();
     },
   };
 
@@ -128,6 +196,21 @@ class FakeConnection {
 
   onShutdown(handler: () => void | Promise<void>) {
     this.shutdownHandler = handler;
+    return createDisposable();
+  }
+
+  onInitialized(handler: (params: Record<string, never>) => void) {
+    this.initializedHandler = handler;
+    return createDisposable();
+  }
+
+  onExecuteCommand(handler: (params: any) => void | Promise<void>) {
+    this.executeCommandHandler = handler;
+    return createDisposable();
+  }
+
+  onCodeLens(handler: (params: any, token?: CancellationToken) => CodeLens[]) {
+    this.codeLensHandler = handler;
     return createDisposable();
   }
 
@@ -151,24 +234,44 @@ class FakeConnection {
     return createDisposable();
   }
 
-  onDefinition() {
+  onDefinition(handler: (params: any, token?: CancellationToken) => Definition | null) {
+    this.definitionHandler = handler;
     this.definitionRegistrations += 1;
     return createDisposable();
   }
 
-  onReferences() {
+  onReferences(handler: (params: ReferenceParams, token?: CancellationToken) => Location[]) {
+    this.referencesHandler = handler;
     this.referencesRegistrations += 1;
     return createDisposable();
   }
 
-  onRenameRequest() {
+  onPrepareRename(handler: (params: TextDocumentPositionParams, token?: CancellationToken) => Range | null) {
+    this.prepareRenameHandler = handler;
+    this.prepareRenameRegistrations += 1;
+    return createDisposable();
+  }
+
+  onRenameRequest(handler: (params: RenameParams, token?: CancellationToken) => WorkspaceEdit | null) {
+    this.renameHandler = handler;
     this.renameRegistrations += 1;
     return createDisposable();
   }
 
-  onDocumentFormatting() {
+  onDocumentFormatting(handler: (params: DocumentFormattingParams, token?: CancellationToken) => TextEdit[]) {
+    this.formattingHandler = handler;
     this.formattingRegistrations += 1;
     return createDisposable();
+  }
+
+  onDidChangeWatchedFiles(handler: (params: DidChangeWatchedFilesParams) => void) {
+    this.watchedFilesHandler = handler;
+    return createDisposable();
+  }
+
+  sendRequest(type: { method: string } | string) {
+    this.requests.push(typeof type === 'string' ? type : type.method);
+    return Promise.resolve(undefined);
   }
 
   sendDiagnostics(params: { uri: string; diagnostics: readonly Diagnostic[] }) {
@@ -213,6 +316,10 @@ class FakeDocuments {
     return this.documents.get(uri);
   }
 
+  all() {
+    return [...this.documents.values()];
+  }
+
   listen() {
     return createDisposable();
   }
@@ -254,6 +361,25 @@ function getLastDiagnostics(connection: FakeConnection) {
   return diagnostics!;
 }
 
+function getLatestDiagnosticsForUri(connection: FakeConnection, uri: string) {
+  const diagnostics = [...connection.diagnostics].reverse().find((entry) => entry.uri === uri);
+  expect(diagnostics).toBeDefined();
+  return diagnostics!;
+}
+
+async function createWorkspaceRoot(): Promise<string> {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'cbs-lsp-server-integration-'));
+  tempRoots.push(root);
+  return root;
+}
+
+async function writeWorkspaceFile(root: string, relativePath: string, text: string): Promise<string> {
+  const absolutePath = path.join(root, relativePath);
+  await mkdir(path.dirname(absolutePath), { recursive: true });
+  await writeFile(absolutePath, text, 'utf8');
+  return pathToFileURL(absolutePath).href;
+}
+
 function createCancellationToken(cancelled: boolean = false): CancellationToken {
   return {
     isCancellationRequested: cancelled,
@@ -264,6 +390,10 @@ function createCancellationToken(cancelled: boolean = false): CancellationToken 
 afterEach(() => {
   vi.restoreAllMocks();
   fragmentAnalysisService.clearAll();
+});
+
+afterEach(async () => {
+  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
 describe('LSP server integration', () => {
@@ -283,7 +413,19 @@ describe('LSP server integration', () => {
           openClose: true,
           change: TextDocumentSyncKind.Incremental,
         },
+        codeLensProvider: {
+          resolveProvider: false,
+        },
         completionProvider: {},
+        definitionProvider: true,
+        documentFormattingProvider: true,
+        referencesProvider: true,
+        renameProvider: {
+          prepareProvider: true,
+        },
+        executeCommandProvider: {
+          commands: ['cbs-lsp.codelens.activationSummary'],
+        },
         hoverProvider: true,
         signatureHelpProvider: {
           triggerCharacters: [':'],
@@ -315,6 +457,12 @@ describe('LSP server integration', () => {
               },
             },
             featureAvailability: expect.objectContaining({
+              codelens: {
+                scope: 'local-only',
+                source: 'server-capability:codelens',
+                  detail:
+                    'CodeLens is active for routed lorebook documents, summarizes workspace activation edges for the current lorebook entry, and requests refresh after document or watched-file changes rebuild activation edges.',
+              },
               completion: {
                 scope: 'local-only',
                 source: 'server-capability:completion',
@@ -322,16 +470,28 @@ describe('LSP server integration', () => {
                   'Completion is active for routed CBS fragments and operates on the current document/fragment context only.',
               },
               definition: {
-                scope: 'deferred',
-                source: 'deferred-scope-contract:definition',
+                scope: 'local-first',
+                source: 'server-capability:definition',
                 detail:
-                  'Definition provider exists but server capability stays deferred until workspace-level cross-file resolution is available.',
+                  'Definition is active for routed CBS fragments, returns fragment-local definitions first, and appends workspace chat-variable writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
+              },
+              references: {
+                scope: 'local-first',
+                source: 'server-capability:references',
+                detail:
+                  'References are active for routed CBS fragments, return fragment-local read/write locations first, and append workspace chat-variable readers/writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
+              },
+              rename: {
+                scope: 'local-first',
+                source: 'server-capability:rename',
+                detail:
+                  'Rename is active for routed CBS fragments, keeps prepareRename rejection messages for malformed/unresolved/global/external positions, and applies fragment-local edits first before appending workspace chat-variable occurrences when VariableFlowService workspace state is available.',
               },
               formatting: {
-                scope: 'deferred',
-                source: 'deferred-scope-contract:formatting',
+                scope: 'local-only',
+                source: 'server-capability:formatting',
                 detail:
-                  'Formatting stays deferred until host-fragment patch semantics are safe for embedded CBS artifacts.',
+                  'Formatting is active for routed CBS fragments, produces fragment-local canonical text edits, and only promotes host edits that pass the shared host-fragment safety contract.',
               },
             }),
           },
@@ -362,10 +522,31 @@ describe('LSP server integration', () => {
               },
               {
                 key: 'definition',
-                scope: 'deferred',
-                source: 'deferred-scope-contract:definition',
+                scope: 'local-first',
+                source: 'server-capability:definition',
                 detail:
-                  'Definition provider exists but server capability stays deferred until workspace-level cross-file resolution is available.',
+                  'Definition is active for routed CBS fragments, returns fragment-local definitions first, and appends workspace chat-variable writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
+              },
+              {
+                key: 'references',
+                scope: 'local-first',
+                source: 'server-capability:references',
+                detail:
+                  'References are active for routed CBS fragments, return fragment-local read/write locations first, and append workspace chat-variable readers/writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
+              },
+              {
+                key: 'rename',
+                scope: 'local-first',
+                source: 'server-capability:rename',
+                detail:
+                  'Rename is active for routed CBS fragments, keeps prepareRename rejection messages for malformed/unresolved/global/external positions, and applies fragment-local edits first before appending workspace chat-variable occurrences when VariableFlowService workspace state is available.',
+              },
+              {
+                key: 'formatting',
+                scope: 'local-only',
+                source: 'server-capability:formatting',
+                detail:
+                  'Formatting is active for routed CBS fragments, produces fragment-local canonical text edits, and only promotes host edits that pass the shared host-fragment safety contract.',
               },
             ]),
           },
@@ -391,31 +572,489 @@ describe('LSP server integration', () => {
                 'Completion is active for routed CBS fragments and operates on the current document/fragment context only.',
             },
             definition: {
-              scope: 'deferred',
-              source: 'deferred-scope-contract:definition',
+              scope: 'local-first',
+              source: 'server-capability:definition',
               detail:
-                'Definition provider exists but server capability stays deferred until workspace-level cross-file resolution is available.',
+                'Definition is active for routed CBS fragments, returns fragment-local definitions first, and appends workspace chat-variable writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
+            },
+            references: {
+              scope: 'local-first',
+              source: 'server-capability:references',
+              detail:
+                'References are active for routed CBS fragments, return fragment-local read/write locations first, and append workspace chat-variable readers/writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
             },
             formatting: {
-              scope: 'deferred',
-              source: 'deferred-scope-contract:formatting',
+              scope: 'local-only',
+              source: 'server-capability:formatting',
               detail:
-                'Formatting stays deferred until host-fragment patch semantics are safe for embedded CBS artifacts.',
+                'Formatting is active for routed CBS fragments, produces fragment-local canonical text edits, and only promotes host edits that pass the shared host-fragment safety contract.',
             },
           }),
         },
       },
     });
 
+    expect(connection.codeLensHandler).not.toBeNull();
     expect(connection.completionHandler).not.toBeNull();
+    expect(connection.formattingHandler).not.toBeNull();
+    expect(connection.definitionHandler).not.toBeNull();
+    expect(connection.referencesHandler).not.toBeNull();
+    expect(connection.prepareRenameHandler).not.toBeNull();
+    expect(connection.renameHandler).not.toBeNull();
     expect(connection.hoverHandler).not.toBeNull();
     expect(connection.signatureHelpHandler).not.toBeNull();
     expect(connection.foldingRangesHandler).not.toBeNull();
     expect(connection.semanticTokensHandler).not.toBeNull();
-    expect(connection.definitionRegistrations).toBe(0);
-    expect(connection.referencesRegistrations).toBe(0);
-    expect(connection.renameRegistrations).toBe(0);
-    expect(connection.formattingRegistrations).toBe(0);
+    expect(connection.definitionRegistrations).toBe(1);
+    expect(connection.referencesRegistrations).toBe(1);
+    expect(connection.prepareRenameRegistrations).toBe(1);
+    expect(connection.renameRegistrations).toBe(1);
+    expect(connection.formattingRegistrations).toBe(1);
+  });
+
+  it('routes textDocument/formatting through the server seam and keeps edits inside CBS fragments', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const text = lorebookDocument(['Hello {{ user }} {{#if true}}yes{{:else}}no{{/}}']);
+    const uri = await writeWorkspaceFile(root, 'lorebooks/formatting.risulorebook', text);
+
+    registerServer(connection as any, documents as any);
+    documents.open(uri, text, 1);
+
+    const edits = connection.formattingHandler?.(
+      {
+        textDocument: { uri },
+        options: { tabSize: 2, insertSpaces: true },
+      },
+      createCancellationToken(false),
+    );
+
+    expect(edits).toHaveLength(1);
+    expect(applyTextEdits(text, edits ?? [])).toBe(
+      lorebookDocument(['Hello {{user}} {{#if::true}}yes{{:else}}no{{/if}}']),
+    );
+  });
+
+  it('keeps formatting on the no-op path for unsupported artifacts', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const text = 'enabled=true';
+    const uri = await writeWorkspaceFile(root, 'variables/ignored-toggle.risutoggle', text);
+
+    registerServer(connection as any, documents as any);
+    documents.open(uri, text, 1, 'plaintext');
+
+    const edits = connection.formattingHandler?.(
+      {
+        textDocument: { uri },
+        options: { tabSize: 2, insertSpaces: true },
+      },
+      createCancellationToken(false),
+    );
+
+    expect(edits).toEqual([]);
+  });
+
+  it('routes textDocument/definition through the server seam and returns local-first plus workspace writers', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const readerText = lorebookDocument([
+      '{{setvar::shared::happy}}',
+      '{{getvar::shared}}',
+    ]);
+    const writerText = promptDocument(['{{setvar::shared::from-workspace}}']);
+    const readerUri = await writeWorkspaceFile(root, 'lorebooks/reader.risulorebook', readerText);
+    const writerUri = await writeWorkspaceFile(root, 'prompt_template/writer.risuprompt', writerText);
+
+    registerServer(connection as any, documents as any);
+    documents.open(readerUri, readerText, 1);
+    documents.open(writerUri, writerText, 1);
+
+    const definition = connection.definitionHandler?.(
+      {
+        textDocument: { uri: readerUri },
+        position: positionAt(readerText, 'shared', 2, 1),
+      },
+      createCancellationToken(false),
+    );
+
+    expect(definition).not.toBeNull();
+    expect(definition).toEqual([
+      expect.objectContaining({
+        targetUri: readerUri,
+      }),
+      expect.objectContaining({
+        targetUri: writerUri,
+      }),
+    ]);
+  });
+
+  it('routes textDocument/references through the server seam and returns local-first plus workspace readers and writers', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const readerText = lorebookDocument([
+      '{{setvar::shared::happy}}',
+      '{{getvar::shared}}',
+    ]);
+    const writerText = promptDocument(['{{setvar::shared::from-workspace}}']);
+    const externalReaderText = promptDocument(['{{getvar::shared}}']);
+    const readerUri = await writeWorkspaceFile(root, 'lorebooks/reader.risulorebook', readerText);
+    const writerUri = await writeWorkspaceFile(root, 'prompt_template/writer.risuprompt', writerText);
+    const externalReaderUri = await writeWorkspaceFile(
+      root,
+      'prompt_template/reader.risuprompt',
+      externalReaderText,
+    );
+
+    registerServer(connection as any, documents as any);
+    documents.open(readerUri, readerText, 1);
+    documents.open(writerUri, writerText, 1);
+    documents.open(externalReaderUri, externalReaderText, 1);
+
+    const references = connection.referencesHandler?.(
+      {
+        textDocument: { uri: readerUri },
+        position: positionAt(readerText, 'shared', 2, 1),
+        context: { includeDeclaration: true },
+      },
+      createCancellationToken(false),
+    );
+
+    expect(references).not.toBeNull();
+    expect(references).toEqual([
+      expect.objectContaining({ uri: readerUri }),
+      expect.objectContaining({ uri: readerUri }),
+      expect.objectContaining({ uri: writerUri }),
+      expect.objectContaining({ uri: externalReaderUri }),
+    ]);
+  });
+
+  it('routes textDocument/prepareRename through the server seam and returns a host range plus provider rejection messages', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const renameText = lorebookDocument([
+      '{{setvar::shared::happy}}',
+      '{{getvar::shared}}',
+    ]);
+    const unresolvedText = lorebookDocument(['{{getvar::missing}}']);
+    const renameUri = await writeWorkspaceFile(root, 'lorebooks/rename.risulorebook', renameText);
+    const unresolvedUri = await writeWorkspaceFile(
+      root,
+      'lorebooks/unresolved.risulorebook',
+      unresolvedText,
+    );
+
+    registerServer(connection as any, documents as any);
+    documents.open(renameUri, renameText, 1);
+    documents.open(unresolvedUri, unresolvedText, 1);
+
+    const range = connection.prepareRenameHandler?.(
+      {
+        textDocument: { uri: renameUri },
+        position: positionAt(renameText, 'shared', 2, 1),
+      },
+      createCancellationToken(false),
+    );
+
+    expect(range).toEqual({
+      start: positionAt(renameText, 'shared', 0, 1),
+      end: positionAt(renameText, 'shared', 6, 1),
+    });
+
+    expect(() =>
+      connection.prepareRenameHandler?.(
+        {
+          textDocument: { uri: unresolvedUri },
+          position: positionAt(unresolvedText, 'missing', 1),
+        },
+        createCancellationToken(false),
+      ),
+    ).toThrow('Unresolved chat variable: missing');
+
+    expect(() =>
+      connection.prepareRenameHandler?.(
+        {
+          textDocument: { uri: renameUri },
+          position: { line: 1, character: 2 },
+        },
+        createCancellationToken(false),
+      ),
+    ).toThrow('Position not within CBS fragment');
+  });
+
+  it('routes textDocument/rename through the server seam and returns local-first plus workspace edits', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const readerText = lorebookDocument([
+      '{{setvar::shared::happy}}',
+      '{{getvar::shared}}',
+    ]);
+    const writerText = promptDocument(['{{setvar::shared::from-workspace}}']);
+    const readerUri = await writeWorkspaceFile(root, 'lorebooks/reader.risulorebook', readerText);
+    const writerUri = await writeWorkspaceFile(root, 'prompt_template/writer.risuprompt', writerText);
+
+    registerServer(connection as any, documents as any);
+    documents.open(readerUri, readerText, 1);
+    documents.open(writerUri, writerText, 1);
+
+    const edit = connection.renameHandler?.(
+      {
+        textDocument: { uri: readerUri },
+        position: positionAt(readerText, 'shared', 2, 1),
+        newName: 'emotion',
+      },
+      createCancellationToken(false),
+    );
+
+    expect(edit?.documentChanges).toEqual([
+      expect.objectContaining({
+        textDocument: expect.objectContaining({ uri: readerUri }),
+      }),
+      expect.objectContaining({
+        textDocument: expect.objectContaining({ uri: writerUri }),
+      }),
+    ]);
+  });
+
+  it('keeps rename on the no-op path when a same-URI workspace merge would touch a sibling fragment', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const regexText = regexDocument(['{{setvar::shared::one}}'], ['{{getvar::shared}}']);
+    const regexUri = await writeWorkspaceFile(root, 'regex/shared.risuregex', regexText);
+
+    registerServer(connection as any, documents as any);
+    documents.open(regexUri, regexText, 1);
+
+    const edit = connection.renameHandler?.(
+      {
+        textDocument: { uri: regexUri },
+        position: positionAt(regexText, 'shared', 1),
+        newName: 'renamed',
+      },
+      createCancellationToken(false),
+    );
+
+    expect(edit).toBeNull();
+  });
+
+  it('shows lorebook activation CodeLens summaries from ActivationChainService workspace state', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const alphaText = [
+      '---',
+      'name: Alpha',
+      'comment: Alpha',
+      'constant: false',
+      'selective: false',
+      'enabled: true',
+      'insertion_order: 0',
+      'case_sensitive: false',
+      'use_regex: false',
+      '---',
+      '@@@ KEYS',
+      'alpha',
+      '@@@ CONTENT',
+      'beta wakes the main chain, gamma only partially matches, and delta is blocked.',
+      '',
+    ].join('\n');
+    const betaText = [
+      '---',
+      'name: Beta',
+      'comment: Beta',
+      'constant: false',
+      'selective: false',
+      'enabled: true',
+      'insertion_order: 0',
+      'case_sensitive: false',
+      'use_regex: false',
+      '---',
+      '@@@ KEYS',
+      'beta',
+      '@@@ CONTENT',
+      'alpha closes the cycle.',
+      '',
+    ].join('\n');
+    const gammaText = [
+      '---',
+      'name: Gamma',
+      'comment: Gamma',
+      'constant: false',
+      'selective: true',
+      'enabled: true',
+      'insertion_order: 0',
+      'case_sensitive: false',
+      'use_regex: false',
+      '---',
+      '@@@ KEYS',
+      'gamma',
+      '@@@ SECONDARY_KEYS',
+      'omega',
+      '@@@ CONTENT',
+      'Gamma lore body.',
+      '',
+    ].join('\n');
+    const deltaText = [
+      '---',
+      'name: Delta',
+      'comment: Delta',
+      'constant: false',
+      'selective: false',
+      'enabled: true',
+      'insertion_order: 0',
+      'case_sensitive: false',
+      'use_regex: false',
+      '---',
+      '@@@ KEYS',
+      'delta',
+      '@@@ CONTENT',
+      '@@no_recursive_search',
+      'Delta lore body.',
+      '',
+    ].join('\n');
+    const alphaUri = await writeWorkspaceFile(root, 'lorebooks/alpha.risulorebook', alphaText);
+    await writeWorkspaceFile(root, 'lorebooks/beta.risulorebook', betaText);
+    await writeWorkspaceFile(root, 'lorebooks/gamma.risulorebook', gammaText);
+    await writeWorkspaceFile(root, 'lorebooks/delta.risulorebook', deltaText);
+
+    registerServer(connection as any, documents as any);
+    documents.open(alphaUri, alphaText, 1);
+
+    const codeLenses = connection.codeLensHandler?.({
+      textDocument: { uri: alphaUri },
+    });
+
+    expect(codeLenses?.map((lens) => lens.command?.title)).toEqual([
+      '1개 엔트리에 의해 활성화됨 | 1개 엔트리를 활성화',
+      '부분 매치: 들어옴 0 / 나감 1 | 차단: 들어옴 0 / 나감 1 | 순환 감지',
+    ]);
+  });
+
+  it('registers watched-file notifications and refreshes CodeLens after external lorebook create/change/delete events', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const alphaText = [
+      '---',
+      'name: Alpha',
+      'comment: Alpha',
+      'constant: false',
+      'selective: false',
+      'enabled: true',
+      'insertion_order: 0',
+      'case_sensitive: false',
+      'use_regex: false',
+      '---',
+      '@@@ KEYS',
+      'alpha',
+      '@@@ CONTENT',
+      'beta wakes the chain when a matching lorebook exists.',
+      '',
+    ].join('\n');
+    const betaText = [
+      '---',
+      'name: Beta',
+      'comment: Beta',
+      'constant: false',
+      'selective: false',
+      'enabled: true',
+      'insertion_order: 0',
+      'case_sensitive: false',
+      'use_regex: false',
+      '---',
+      '@@@ KEYS',
+      'beta',
+      '@@@ CONTENT',
+      'Beta lore body.',
+      '',
+    ].join('\n');
+    const betaChangedText = betaText.replace('\n@@@ KEYS\nbeta\n', '\n@@@ KEYS\ngamma\n');
+    const alphaUri = await writeWorkspaceFile(root, 'lorebooks/alpha.risulorebook', alphaText);
+    const betaAbsolutePath = path.join(root, 'lorebooks', 'beta.risulorebook');
+    const betaUri = pathToFileURL(betaAbsolutePath).href;
+
+    registerServer(connection as any, documents as any);
+    connection.initializeHandler?.({
+      capabilities: {
+        workspace: {
+          codeLens: { refreshSupport: true },
+          didChangeWatchedFiles: { dynamicRegistration: true },
+        },
+      },
+    } as InitializeParams);
+    connection.initializedHandler?.({});
+    documents.open(alphaUri, alphaText, 1);
+
+    expect(connection.clientRegistrations).toEqual([
+      {
+        method: 'workspace/didChangeWatchedFiles',
+        registerOptions: {
+          watchers: [
+            { globPattern: '**/*.risulorebook' },
+            { globPattern: '**/*.risuregex' },
+            { globPattern: '**/*.risuprompt' },
+            { globPattern: '**/*.risuhtml' },
+            { globPattern: '**/*.risulua' },
+          ],
+        },
+      },
+    ]);
+    expect(
+      connection.codeLensHandler?.({
+        textDocument: { uri: alphaUri },
+      })?.map((lens) => lens.command?.title),
+    ).toEqual(['0개 엔트리에 의해 활성화됨 | 0개 엔트리를 활성화']);
+
+    await writeWorkspaceFile(root, 'lorebooks/beta.risulorebook', betaText);
+    connection.watchedFilesHandler?.({
+      changes: [{ uri: betaUri, type: FileChangeType.Created }],
+    });
+
+    expect(connection.requests).toContain('workspace/codeLens/refresh');
+    expect(
+      connection.codeLensHandler?.({
+        textDocument: { uri: alphaUri },
+      })?.map((lens) => lens.command?.title),
+    ).toEqual(['0개 엔트리에 의해 활성화됨 | 1개 엔트리를 활성화']);
+
+    await writeWorkspaceFile(root, 'lorebooks/beta.risulorebook', betaChangedText);
+    connection.watchedFilesHandler?.({
+      changes: [{ uri: betaUri, type: FileChangeType.Changed }],
+    });
+
+    expect(connection.requests.filter((method) => method === 'workspace/codeLens/refresh')).toHaveLength(2);
+    expect(
+      connection.codeLensHandler?.({
+        textDocument: { uri: alphaUri },
+      })?.map((lens) => lens.command?.title),
+    ).toEqual(['0개 엔트리에 의해 활성화됨 | 0개 엔트리를 활성화']);
+
+    await rm(betaAbsolutePath);
+    connection.watchedFilesHandler?.({
+      changes: [{ uri: betaUri, type: FileChangeType.Deleted }],
+    });
+
+    expect(connection.requests.filter((method) => method === 'workspace/codeLens/refresh')).toHaveLength(3);
+    expect(
+      connection.codeLensHandler?.({
+        textDocument: { uri: alphaUri },
+      })?.map((lens) => lens.command?.title),
+    ).toEqual(['0개 엔트리에 의해 활성화됨 | 0개 엔트리를 활성화']);
+    expect(connection.traceMessages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ message: '[cbs-lsp:workspace] watch-registration-start' }),
+        expect.objectContaining({ message: '[cbs-lsp:workspace] watch-registration-end' }),
+        expect.objectContaining({ message: '[cbs-lsp:workspace] watched-files-change' }),
+        expect.objectContaining({ message: '[cbs-lsp:workspace] codelens-refresh-requested' }),
+      ]),
+    );
   });
 
   it('refreshes cached analysis on open/change, invalidates stale versions, and serves features from cache', () => {
@@ -518,6 +1157,85 @@ describe('LSP server integration', () => {
     expect(parseSpy).toHaveBeenCalledTimes(2);
   });
 
+  it('refreshes related workspace diagnostics when a writer relationship changes in another file', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const initialWriterText = promptDocument(['{{setvar::other::1}}']);
+    const writerWithSharedText = promptDocument(['{{setvar::shared::1}}']);
+    const readerText = ['---', 'comment: reader', 'type: plain', '---', '@@@ IN', '{{getvar::shared}}', ''].join(
+      '\n',
+    );
+    const writerUri = await writeWorkspaceFile(
+      root,
+      'prompt_template/writer.risuprompt',
+      initialWriterText,
+    );
+    const readerUri = await writeWorkspaceFile(root, 'regex/reader.risuregex', readerText);
+
+    registerServer(connection as any, documents as any);
+
+    documents.open(writerUri, initialWriterText, 1);
+    documents.open(readerUri, readerText, 1);
+
+    expect(
+      getLatestDiagnosticsForUri(connection, readerUri).diagnostics.some(
+        (diagnostic) => diagnostic.code === 'CBS101',
+      ),
+    ).toBe(true);
+
+    documents.change(writerUri, writerWithSharedText, 2);
+
+    expect(
+      getLatestDiagnosticsForUri(connection, readerUri).diagnostics.some(
+        (diagnostic) => diagnostic.code === 'CBS101',
+      ),
+    ).toBe(false);
+
+    documents.change(writerUri, initialWriterText, 3);
+
+    expect(
+      getLatestDiagnosticsForUri(connection, readerUri).diagnostics.some(
+        (diagnostic) => diagnostic.code === 'CBS101',
+      ),
+    ).toBe(true);
+  });
+
+  it('republishes affected diagnostics after external watched-file deletion removes a workspace writer', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const writerText = promptDocument(['{{setvar::shared::1}}']);
+    const readerText = ['---', 'comment: reader', 'type: plain', '---', '@@@ IN', '{{getvar::shared}}', ''].join(
+      '\n',
+    );
+    const writerRelativePath = 'prompt_template/writer.risuprompt';
+    const writerAbsolutePath = path.join(root, writerRelativePath);
+    const writerUri = await writeWorkspaceFile(root, writerRelativePath, writerText);
+    const readerUri = await writeWorkspaceFile(root, 'regex/reader.risuregex', readerText);
+
+    registerServer(connection as any, documents as any);
+    documents.open(readerUri, readerText, 1);
+
+    expect(
+      getLatestDiagnosticsForUri(connection, readerUri).diagnostics.some(
+        (diagnostic) => diagnostic.code === 'CBS101',
+      ),
+    ).toBe(false);
+
+    await rm(writerAbsolutePath);
+    connection.watchedFilesHandler?.({
+      changes: [{ uri: writerUri, type: FileChangeType.Deleted }],
+    });
+
+    expect(
+      getLatestDiagnosticsForUri(connection, readerUri).diagnostics.some(
+        (diagnostic) => diagnostic.code === 'CBS101',
+      ),
+    ).toBe(true);
+    expect(getLatestDiagnosticsForUri(connection, writerUri).diagnostics).toEqual([]);
+  });
+
   it('clears all cached analysis on shutdown', async () => {
     const connection = new FakeConnection();
     const documents = new FakeDocuments();
@@ -563,6 +1281,21 @@ describe('LSP server integration', () => {
       },
       createCancellationToken(false),
     );
+    connection.definitionHandler?.(
+      {
+        textDocument: { uri },
+        position: positionAt(text, 'mood', 2, 1),
+      },
+      createCancellationToken(false),
+    );
+    connection.referencesHandler?.(
+      {
+        textDocument: { uri },
+        position: positionAt(text, 'mood', 2, 1),
+        context: { includeDeclaration: true },
+      },
+      createCancellationToken(false),
+    );
     connection.signatureHelpHandler?.(
       {
         textDocument: { uri },
@@ -571,6 +1304,12 @@ describe('LSP server integration', () => {
       createCancellationToken(false),
     );
     connection.foldingRangesHandler?.(
+      {
+        textDocument: { uri },
+      },
+      createCancellationToken(false),
+    );
+    connection.codeLensHandler?.(
       {
         textDocument: { uri },
       },
@@ -594,8 +1333,12 @@ describe('LSP server integration', () => {
           expect.objectContaining({ message: '[cbs-lsp:server] document-open' }),
         expect.objectContaining({ message: '[cbs-lsp:diagnostics] start' }),
         expect.objectContaining({ message: '[cbs-lsp:diagnostics] end' }),
+        expect.objectContaining({ message: '[cbs-lsp:codelens] start' }),
+        expect.objectContaining({ message: '[cbs-lsp:codelens] end' }),
         expect.objectContaining({ message: '[cbs-lsp:completion] start' }),
         expect.objectContaining({ message: '[cbs-lsp:completion] end' }),
+        expect.objectContaining({ message: '[cbs-lsp:references] start' }),
+        expect.objectContaining({ message: '[cbs-lsp:references] end' }),
         expect.objectContaining({ message: '[cbs-lsp:hover] start' }),
         expect.objectContaining({ message: '[cbs-lsp:hover] end' }),
         expect.objectContaining({ message: '[cbs-lsp:signature] start' }),
@@ -633,6 +1376,13 @@ describe('LSP server integration', () => {
         ],
         features: expect.arrayContaining([
           {
+            key: 'codelens',
+            availabilityScope: 'local-only',
+            availabilitySource: 'server-capability:codelens',
+            availabilityDetail:
+              'CodeLens is active for routed lorebook documents, summarizes workspace activation edges for the current lorebook entry, and requests refresh after document or watched-file changes rebuild activation edges.',
+          },
+          {
             key: 'completion',
             availabilityScope: 'local-only',
             availabilitySource: 'server-capability:completion',
@@ -641,10 +1391,17 @@ describe('LSP server integration', () => {
           },
           {
             key: 'definition',
-            availabilityScope: 'deferred',
-            availabilitySource: 'deferred-scope-contract:definition',
+            availabilityScope: 'local-first',
+            availabilitySource: 'server-capability:definition',
             availabilityDetail:
-              'Definition provider exists but server capability stays deferred until workspace-level cross-file resolution is available.',
+              'Definition is active for routed CBS fragments, returns fragment-local definitions first, and appends workspace chat-variable writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
+          },
+          {
+            key: 'references',
+            availabilityScope: 'local-first',
+            availabilitySource: 'server-capability:references',
+            availabilityDetail:
+              'References are active for routed CBS fragments, return fragment-local read/write locations first, and append workspace chat-variable readers/writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
           },
         ]),
       },
@@ -687,6 +1444,16 @@ describe('LSP server integration', () => {
       ) ?? null,
     ).toBeNull();
     expect(
+      connection.referencesHandler?.(
+        {
+          textDocument: { uri },
+          position: positionAt(text, 'mood', 1, 1),
+          context: { includeDeclaration: true },
+        },
+        cancelledToken,
+      ) ?? [],
+    ).toEqual([]);
+    expect(
       connection.signatureHelpHandler?.(
         {
           textDocument: { uri },
@@ -697,6 +1464,14 @@ describe('LSP server integration', () => {
     ).toBeNull();
     expect(
       connection.foldingRangesHandler?.(
+        {
+          textDocument: { uri },
+        },
+        cancelledToken,
+      ) ?? [],
+    ).toEqual([]);
+    expect(
+      connection.codeLensHandler?.(
         {
           textDocument: { uri },
         },
@@ -762,6 +1537,11 @@ describe('LSP server integration', () => {
     ).toBeNull();
     expect(
       connection.foldingRangesHandler?.({
+        textDocument: { uri },
+      }) ?? [],
+    ).toEqual([]);
+    expect(
+      connection.codeLensHandler?.({
         textDocument: { uri },
       }) ?? [],
     ).toEqual([]);

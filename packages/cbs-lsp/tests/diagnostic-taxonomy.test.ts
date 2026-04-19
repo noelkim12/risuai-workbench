@@ -183,40 +183,10 @@ describe('diagnostic taxonomy contract', () => {
     ]);
   });
 
-  it('freezes deferred scope and current lua fragment-routing behavior', () => {
+  it('freezes remaining deferred scope and current lua fragment-routing behavior', () => {
     expect(DEFERRED_SCOPE_CONTRACT).toEqual({
-      deferredFeatures: [
-        'definition',
-        'references',
-        'rename',
-        'formatting',
-        'lua-ast-fragment-routing',
-      ],
+      deferredFeatures: ['lua-ast-fragment-routing'],
       featureAvailability: {
-        definition: {
-          scope: 'deferred',
-          source: 'deferred-scope-contract:definition',
-          detail:
-            'Definition provider exists but server capability stays deferred until workspace-level cross-file resolution is available.',
-        },
-        references: {
-          scope: 'deferred',
-          source: 'deferred-scope-contract:references',
-          detail:
-            'References provider exists but server capability stays deferred until workspace-level cross-file reference lookup is available.',
-        },
-        rename: {
-          scope: 'deferred',
-          source: 'deferred-scope-contract:rename',
-          detail:
-            'Rename provider exists but server capability stays deferred until workspace-aware multi-document edits are supported.',
-        },
-        formatting: {
-          scope: 'deferred',
-          source: 'deferred-scope-contract:formatting',
-          detail:
-            'Formatting stays deferred until host-fragment patch semantics are safe for embedded CBS artifacts.',
-        },
         'lua-ast-fragment-routing': {
           scope: 'deferred',
           source: 'deferred-scope-contract:lua-ast-fragment-routing',

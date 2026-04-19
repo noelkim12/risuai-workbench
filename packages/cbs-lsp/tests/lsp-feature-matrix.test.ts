@@ -1,12 +1,22 @@
 import type {
+  CodeLens,
   CompletionItem,
+  Definition,
   Diagnostic,
+  DocumentFormattingParams,
   FoldingRange,
   Hover,
   InitializeParams,
   InitializeResult,
+  Location,
+  Range,
+  ReferenceParams,
+  RenameParams,
   SemanticTokens,
   SignatureHelp,
+  TextEdit,
+  TextDocumentPositionParams,
+  WorkspaceEdit,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -99,14 +109,28 @@ class FakeConnection {
 
   shutdownHandler: (() => void | Promise<void>) | null = null;
 
+  executeCommandHandler: ((params: any) => void | Promise<void>) | null = null;
+
+  codeLensHandler: ((params: any) => CodeLens[]) | null = null;
+
   completionHandler: ((params: any) => CompletionItem[] | { items: CompletionItem[] }) | null =
     null;
+
+  definitionHandler: ((params: any) => Definition | null) | null = null;
+
+  referencesHandler: ((params: any) => Location[]) | null = null;
+
+  prepareRenameHandler: ((params: TextDocumentPositionParams) => Range | null) | null = null;
+
+  renameHandler: ((params: RenameParams) => WorkspaceEdit | null) | null = null;
 
   hoverHandler: ((params: any) => Hover | null) | null = null;
 
   signatureHelpHandler: ((params: any) => SignatureHelp | null) | null = null;
 
   foldingRangesHandler: ((params: any) => FoldingRange[]) | null = null;
+
+  formattingHandler: ((params: DocumentFormattingParams) => TextEdit[]) | null = null;
 
   semanticTokensHandler: ((params: any) => SemanticTokens) | null = null;
 
@@ -147,8 +171,38 @@ class FakeConnection {
     return createDisposable();
   }
 
+  onExecuteCommand(handler: (params: any) => void | Promise<void>) {
+    this.executeCommandHandler = handler;
+    return createDisposable();
+  }
+
+  onCodeLens(handler: (params: any) => CodeLens[]) {
+    this.codeLensHandler = handler;
+    return createDisposable();
+  }
+
   onCompletion(handler: (params: any) => CompletionItem[] | { items: CompletionItem[] }) {
     this.completionHandler = handler;
+    return createDisposable();
+  }
+
+  onDefinition(handler: (params: any) => Definition | null) {
+    this.definitionHandler = handler;
+    return createDisposable();
+  }
+
+  onReferences(handler: (params: ReferenceParams) => Location[]) {
+    this.referencesHandler = handler;
+    return createDisposable();
+  }
+
+  onPrepareRename(handler: (params: TextDocumentPositionParams) => Range | null) {
+    this.prepareRenameHandler = handler;
+    return createDisposable();
+  }
+
+  onRenameRequest(handler: (params: RenameParams) => WorkspaceEdit | null) {
+    this.renameHandler = handler;
     return createDisposable();
   }
 
@@ -164,6 +218,11 @@ class FakeConnection {
 
   onFoldingRanges(handler: (params: any) => FoldingRange[]) {
     this.foldingRangesHandler = handler;
+    return createDisposable();
+  }
+
+  onDocumentFormatting(handler: (params: DocumentFormattingParams) => TextEdit[]) {
+    this.formattingHandler = handler;
     return createDisposable();
   }
 

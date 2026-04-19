@@ -80,10 +80,10 @@ describe('DefinitionProvider', () => {
 
     expect(provider.availability).toEqual(DEFINITION_PROVIDER_AVAILABILITY);
     expect(provider.availability).toEqual({
-      scope: 'local-only',
-      source: 'definition-provider:fragment-symbol-table',
+      scope: 'local-first',
+      source: 'definition-provider:local-first-resolution',
       detail:
-        'Definition resolves only fragment-local variables, loop aliases, and local #func declarations; workspace/external symbols stay unavailable.',
+        'Definition resolves fragment-local variables, loop aliases, and local #func declarations first, then appends workspace chat-variable writers when VariableFlowService is available. Global and external symbols stay unavailable.',
     });
   });
 
@@ -467,6 +467,73 @@ describe('DefinitionProvider', () => {
       expect(links).toHaveLength(2);
       expect(links[0]?.targetUri).toBe(request.uri);
       expect(links[1]?.targetUri).toBe('file:///workspace/regex/mood.risuregex');
+    });
+
+    it('dedupes duplicate workspace writers and keeps workspace targets in stable URI/range order', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{setvar::mood::happy}}{{getvar::mood}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const baseProvider = createProvider(new FragmentAnalysisService(), request);
+      const baseLinks = expectLocationLink(
+        baseProvider.provide(createParams(request, positionAt(modifiedText, 'mood', 2, 1))),
+      );
+      const localTargetRange = baseLinks[0]!.targetRange;
+      const duplicateLocalWriter = createVariableOccurrence({
+        direction: 'write',
+        uri: request.uri,
+        relativePath: 'lorebooks/entry.risulorebook',
+        range: localTargetRange,
+        sourceName: 'setvar',
+        variableName: 'mood',
+      });
+      const laterWorkspaceWriter = createVariableOccurrence({
+        direction: 'write',
+        uri: 'file:///workspace/z-last.risuprompt',
+        relativePath: 'prompt_template/z-last.risuprompt',
+        range: {
+          start: { line: 9, character: 4 },
+          end: { line: 9, character: 8 },
+        },
+        artifact: 'prompt',
+        sourceName: 'setvar',
+        variableName: 'mood',
+      });
+      const earlierWorkspaceWriter = createVariableOccurrence({
+        direction: 'write',
+        uri: 'file:///workspace/a-first.risuregex',
+        relativePath: 'regex/a-first.risuregex',
+        range: {
+          start: { line: 2, character: 3 },
+          end: { line: 2, character: 7 },
+        },
+        artifact: 'regex',
+        sourceName: 'setvar',
+        variableName: 'mood',
+      });
+      const variableFlowService = createVariableFlowServiceStub({
+        queryVariable: (name) =>
+          name === 'mood'
+            ? createVariableFlowQueryResult(
+                'mood',
+                [laterWorkspaceWriter, duplicateLocalWriter, earlierWorkspaceWriter],
+                [],
+              )
+            : null,
+      });
+      const provider = createProvider(new FragmentAnalysisService(), request, variableFlowService);
+
+      const links = expectLocationLink(
+        provider.provide(createParams(request, positionAt(modifiedText, 'mood', 2, 1))),
+      );
+
+      expect(links.map((link) => link.targetUri)).toEqual([
+        request.uri,
+        'file:///workspace/a-first.risuregex',
+        'file:///workspace/z-last.risuprompt',
+      ]);
     });
 
     it('resolves a chat variable from workspace writers even without a local definition', () => {

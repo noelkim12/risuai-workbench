@@ -73,10 +73,10 @@ describe('ReferencesProvider', () => {
 
     expect(provider.availability).toEqual(REFERENCES_PROVIDER_AVAILABILITY);
     expect(provider.availability).toEqual({
-      scope: 'local-only',
-      source: 'references-provider:fragment-symbol-table',
+      scope: 'local-first',
+      source: 'references-provider:local-first-resolution',
       detail:
-        'References resolve only fragment-local variable and loop-alias symbols; globals and workspace-wide references stay unavailable.',
+        'References resolve fragment-local variable and loop-alias symbols first, then append workspace chat-variable readers/writers when VariableFlowService is available. Global and external symbols stay unavailable.',
     });
   });
 
@@ -363,6 +363,83 @@ describe('ReferencesProvider', () => {
       expect(locations[0]?.uri).toBe(request.uri);
       expect(locations.map((location) => location.uri)).toContain('file:///workspace/lorebooks/shared.risulorebook');
       expect(locations.map((location) => location.uri)).toContain('file:///workspace/regex/score.risuregex');
+    });
+
+    it('shares the local-first dedupe and stable ordering contract for merged locations', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{setvar::myScore::100}} and {{getvar::myScore}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const baseProvider = createProvider(new FragmentAnalysisService(), request);
+      const baseLocations = baseProvider.provide(
+        createParams(request, offsetToPosition(modifiedText, modifiedText.indexOf('myScore', 20)), true),
+      );
+      expect(baseLocations).toHaveLength(2);
+
+      const duplicateLocalWriter = createVariableOccurrence({
+        direction: 'write',
+        uri: request.uri,
+        relativePath: 'lorebooks/entry.risulorebook',
+        range: baseLocations[0]!.range,
+        sourceName: 'setvar',
+        variableName: 'myScore',
+      });
+      const duplicateLocalReader = createVariableOccurrence({
+        direction: 'read',
+        uri: request.uri,
+        relativePath: 'lorebooks/entry.risulorebook',
+        range: baseLocations[1]!.range,
+        sourceName: 'getvar',
+        variableName: 'myScore',
+      });
+      const laterWorkspaceWriter = createVariableOccurrence({
+        direction: 'write',
+        uri: 'file:///workspace/z-last.risuprompt',
+        relativePath: 'prompt_template/z-last.risuprompt',
+        range: {
+          start: { line: 8, character: 2 },
+          end: { line: 8, character: 9 },
+        },
+        artifact: 'prompt',
+        sourceName: 'setvar',
+        variableName: 'myScore',
+      });
+      const earlierWorkspaceReader = createVariableOccurrence({
+        direction: 'read',
+        uri: 'file:///workspace/a-first.risuregex',
+        relativePath: 'regex/a-first.risuregex',
+        range: {
+          start: { line: 1, character: 6 },
+          end: { line: 1, character: 13 },
+        },
+        artifact: 'regex',
+        sourceName: 'getvar',
+        variableName: 'myScore',
+      });
+      const variableFlowService = createVariableFlowServiceStub({
+        queryVariable: (name) =>
+          name === 'myScore'
+            ? createVariableFlowQueryResult(
+                'myScore',
+                [laterWorkspaceWriter, duplicateLocalWriter],
+                [duplicateLocalReader, earlierWorkspaceReader],
+              )
+            : null,
+      });
+      const provider = createProvider(new FragmentAnalysisService(), request, variableFlowService);
+
+      const locations = provider.provide(
+        createParams(request, offsetToPosition(modifiedText, modifiedText.indexOf('myScore', 20)), true),
+      );
+
+      expect(locations.map((location) => location.uri)).toEqual([
+        request.uri,
+        request.uri,
+        'file:///workspace/z-last.risuprompt',
+        'file:///workspace/a-first.risuregex',
+      ]);
     });
 
     it('omits workspace writers when includeDeclaration is false', () => {

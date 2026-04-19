@@ -1,10 +1,11 @@
 import type { Position, RenameParams, TextDocumentPositionParams, TextDocumentEdit } from 'vscode-languageserver/node';
 import { describe, expect, it } from 'vitest';
 
-import { FragmentAnalysisService } from '../../src/core';
+import { createSyntheticDocumentVersion, FragmentAnalysisService } from '../../src/core';
 import {
   RENAME_PROVIDER_AVAILABILITY,
   RenameProvider,
+  type RenameUriRequestResolver,
 } from '../../src/features/rename';
 import type { VariableFlowService } from '../../src/services';
 import { offsetToPosition } from '../../src/utils/position';
@@ -67,16 +68,53 @@ function positionAt(
   return offsetToPosition(text, locateNthOffset(text, needle, occurrence) + characterOffset);
 }
 
+/**
+ * rangeAt 함수.
+ * text 안의 needle occurrence를 host range로 변환함.
+ *
+ * @param text - host 문서 전문
+ * @param needle - 찾을 문자열
+ * @param occurrence - 같은 문자열의 occurrence index
+ * @returns needle 전체를 감싸는 range
+ */
+function rangeAt(text: string, needle: string, occurrence: number = 0) {
+  const startOffset = locateNthOffset(text, needle, occurrence);
+  return {
+    start: offsetToPosition(text, startOffset),
+    end: offsetToPosition(text, startOffset + needle.length),
+  };
+}
+
 function createProvider(
   service: FragmentAnalysisService,
   request: ReturnType<typeof createFixtureRequest>,
   variableFlowService?: VariableFlowService,
+  resolveUriRequest?: RenameUriRequestResolver,
 ): RenameProvider {
   return new RenameProvider({
     analysisService: service,
     resolveRequest: ({ textDocument }) => (textDocument.uri === request.uri ? request : null),
+    resolveUriRequest,
     variableFlowService,
   });
+}
+
+/**
+ * createSyntheticRequest 함수.
+ * 테스트용 workspace URI/text를 FragmentAnalysisRequest 형태로 만듦.
+ *
+ * @param uri - 대상 문서 URI
+ * @param filePath - artifact file path
+ * @param text - 문서 전문
+ * @returns synthetic fragment analysis request
+ */
+function createSyntheticRequest(uri: string, filePath: string, text: string) {
+  return {
+    uri,
+    version: createSyntheticDocumentVersion(text),
+    filePath,
+    text,
+  };
 }
 
 function createPositionParams(
@@ -107,10 +145,10 @@ describe('RenameProvider', () => {
 
     expect(provider.availability).toEqual(RENAME_PROVIDER_AVAILABILITY);
     expect(provider.availability).toEqual({
-      scope: 'local-only',
-      source: 'rename-provider:fragment-symbol-table',
+      scope: 'local-first',
+      source: 'rename-provider:local-first-variable-flow',
       detail:
-        'Rename is limited to fragment-local variable and loop-alias symbols; globals, external symbols, and workspace-wide edits stay unavailable.',
+        'Rename resolves fragment-local variable and loop-alias symbols first, appends workspace chat-variable occurrences when VariableFlowService is available, and still rejects global/external symbols.',
     });
   });
 
@@ -181,8 +219,11 @@ describe('RenameProvider', () => {
         expect(result.symbol).toBeDefined();
         expect(result.kind).toBe('loop');
       } else {
-        // If rename is rejected, it should be because the loop variable wasn't resolved
-        expect(result.message).toContain('Unresolved');
+        // Shared local-first cursor resolution can reject malformed slot usage
+        // either before binding lookup or after the loop symbol stays unresolved.
+        expect(['Cursor is not on a variable name', 'Unresolved loop variable: item']).toContain(
+          result.message,
+        );
       }
     });
   });
@@ -285,6 +326,44 @@ describe('RenameProvider', () => {
       expect(result.message).toContain('Unresolved');
     });
 
+    it('rejects external-scope chat variables', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const externalText = entry.text.replace('{{user}}', '{{getvar::shared}}');
+      const request = { ...createFixtureRequest(entry), text: externalText };
+      const service = new FragmentAnalysisService();
+      const provider = createProvider(service, request);
+      const position = positionAt(externalText, 'shared', 1);
+      const lookup = service.locatePosition(request, position);
+
+      expect(lookup).not.toBeNull();
+
+      lookup!.fragmentAnalysis.providerLookup
+        .getSymbolTable()
+        .addDefinition('shared', 'chat', lookup!.token!.localRange, { scope: 'external' });
+
+      const result = provider.prepareRename(createPositionParams(request, position));
+
+      expect(result.canRename).toBe(false);
+      expect(result.message).toBe('External variables cannot be renamed');
+    });
+
+    it('returns a host range for editor-facing prepareRename wiring', () => {
+      const entry = getFixtureCorpusEntry('lorebook-signature-happy');
+      const request = createFixtureRequest(entry);
+      const service = new FragmentAnalysisService();
+      const provider = createProvider(service, request);
+      const position = positionAt(entry.text, 'getvar::mood', 9);
+      const result = provider.prepareRename(createPositionParams(request, position));
+      const start = positionAt(entry.text, 'getvar::mood', 8);
+      const end = positionAt(entry.text, 'getvar::mood', 12);
+
+      expect(result.canRename).toBe(true);
+      expect(result.hostRange).toEqual({
+        start,
+        end,
+      });
+    });
+
     it('rejects cursor outside CBS fragment', () => {
       const entry = getFixtureCorpusEntry('lorebook-basic');
       const request = createFixtureRequest(entry);
@@ -296,6 +375,21 @@ describe('RenameProvider', () => {
       const result = provider.prepareRename(createPositionParams(request, position));
 
       expect(result.canRename).toBe(false);
+    });
+
+    it('rejects malformed fragments because host patches must no-op', () => {
+      const entry = getFixtureCorpusEntry('lorebook-setvar-macro');
+      const malformedText = entry.text.replace('{{setvar::mood::happy}}', '{{setvar::mood::happy');
+      const request = { ...createFixtureRequest(entry), text: malformedText };
+      const service = new FragmentAnalysisService();
+      const provider = createProvider(service, request);
+
+      const result = provider.prepareRename(
+        createPositionParams(request, positionAt(malformedText, 'mood', 1)),
+      );
+
+      expect(result.canRename).toBe(false);
+      expect(result.message).toBe('Malformed CBS fragment cannot be patched safely');
     });
   });
 
@@ -384,6 +478,12 @@ describe('RenameProvider', () => {
     it('adds workspace occurrences as multi-file document changes for chat variables', () => {
       const entry = getFixtureCorpusEntry('lorebook-signature-happy');
       const request = createFixtureRequest(entry);
+      const externalWriterText = 'local x = setState("mood", "sad")\nreturn x\n';
+      const externalWriterRequest = createSyntheticRequest(
+        'file:///workspace/lua/state.risulua',
+        '/workspace/lua/state.risulua',
+        externalWriterText,
+      );
       const localRead = createVariableOccurrence({
         direction: 'read',
         uri: request.uri,
@@ -413,7 +513,18 @@ describe('RenameProvider', () => {
             ? createVariableFlowQueryResult('mood', [externalWriter], [localRead])
             : null,
       });
-      const provider = createProvider(new FragmentAnalysisService(), request, variableFlowService);
+      const provider = createProvider(
+        new FragmentAnalysisService(),
+        request,
+        variableFlowService,
+        (uri) => {
+          if (uri === request.uri) {
+            return request;
+          }
+
+          return uri === externalWriterRequest.uri ? externalWriterRequest : null;
+        },
+      );
 
       const edit = provider.provideRename(
         createRenameParams(request, positionAt(entry.text, 'setvar::mood', 9), 'emotion'),
@@ -428,6 +539,132 @@ describe('RenameProvider', () => {
 
       expect(uris).toContain(request.uri);
       expect(uris).toContain('file:///workspace/lua/state.risulua');
+    });
+
+    it('dedupes duplicate workspace occurrences and keeps document changes in local-first stable order', () => {
+      const entry = getFixtureCorpusEntry('lorebook-signature-happy');
+      const request = createFixtureRequest(entry);
+      const baseProvider = createProvider(new FragmentAnalysisService(), request);
+      const baseEdit = baseProvider.provideRename(
+        createRenameParams(request, positionAt(entry.text, 'setvar::mood', 9), 'emotion'),
+      );
+      const localChange = getFirstTextDocumentEdit(baseEdit!);
+      const localDefinitionRange = localChange.edits[0]!.range;
+      const duplicateLocalOccurrence = createVariableOccurrence({
+        direction: 'write',
+        uri: request.uri,
+        relativePath: 'lorebooks/entry.risulorebook',
+        range: localDefinitionRange,
+        sourceName: 'setvar',
+        variableName: 'mood',
+      });
+      const laterWorkspaceOccurrence = createVariableOccurrence({
+        direction: 'write',
+        uri: 'file:///workspace/z-last.risulua',
+        relativePath: 'lua/z-last.risulua',
+        range: rangeAt('return setState("mood", "sad")\n', 'mood'),
+        artifact: 'lua',
+        sourceName: 'setState',
+        variableName: 'mood',
+      });
+      const earlierWorkspaceOccurrence = createVariableOccurrence({
+        direction: 'read',
+        uri: 'file:///workspace/a-first.risuprompt',
+        relativePath: 'prompt_template/a-first.risuprompt',
+        range: rangeAt(['---', 'type: plain', '---', '@@@ TEXT', '{{getvar::mood}}', ''].join('\n'), 'mood'),
+        artifact: 'prompt',
+        sourceName: 'getvar',
+        variableName: 'mood',
+      });
+      const promptRequest = createSyntheticRequest(
+        'file:///workspace/a-first.risuprompt',
+        '/workspace/prompt_template/a-first.risuprompt',
+        ['---', 'type: plain', '---', '@@@ TEXT', '{{getvar::mood}}', ''].join('\n'),
+      );
+      const luaRequest = createSyntheticRequest(
+        'file:///workspace/z-last.risulua',
+        '/workspace/lua/z-last.risulua',
+        'return setState("mood", "sad")\n',
+      );
+      const variableFlowService = createVariableFlowServiceStub({
+        queryVariable: (name) =>
+          name === 'mood'
+            ? createVariableFlowQueryResult(
+                'mood',
+                [laterWorkspaceOccurrence, duplicateLocalOccurrence],
+                [earlierWorkspaceOccurrence],
+              )
+            : null,
+      });
+      const provider = createProvider(
+        new FragmentAnalysisService(),
+        request,
+        variableFlowService,
+        (uri) => {
+          if (uri === request.uri) {
+            return request;
+          }
+
+          if (uri === promptRequest.uri) {
+            return promptRequest;
+          }
+
+          return uri === luaRequest.uri ? luaRequest : null;
+        },
+      );
+
+      const edit = provider.provideRename(
+        createRenameParams(request, positionAt(entry.text, 'setvar::mood', 9), 'emotion'),
+      );
+
+      expect(edit).not.toBeNull();
+      const documentChanges = (edit?.documentChanges ?? []).filter(isTextDocumentEdit);
+      expect(documentChanges.map((change) => change.textDocument.uri)).toEqual([
+        request.uri,
+        'file:///workspace/a-first.risuprompt',
+        'file:///workspace/z-last.risulua',
+      ]);
+    });
+
+    it('returns null when workspace merge would patch a sibling fragment in the same host document', () => {
+      const entry = getFixtureCorpusEntry('regex-basic');
+      const text = [
+        '---',
+        'name: regex',
+        '---',
+        '@@@ IN',
+        '{{setvar::shared::one}}',
+        '@@@ OUT',
+        '{{getvar::shared}}',
+        '',
+      ].join('\n');
+      const request = { ...createFixtureRequest(entry), text };
+      const provider = createProvider(
+        new FragmentAnalysisService(),
+        request,
+        createVariableFlowServiceStub({
+          queryVariable: (name) =>
+            name === 'shared'
+              ? createVariableFlowQueryResult('shared', [], [
+                  createVariableOccurrence({
+                    direction: 'read',
+                    uri: request.uri,
+                    relativePath: 'regex/shared.risuregex',
+                    range: rangeAt(text, 'shared', 1),
+                    artifact: 'regex',
+                    sourceName: 'getvar',
+                    variableName: 'shared',
+                  }),
+                ])
+              : null,
+        }),
+      );
+
+      const edit = provider.provideRename(
+        createRenameParams(request, positionAt(text, 'shared', 1), 'renamed'),
+      );
+
+      expect(edit).toBeNull();
     });
   });
 
@@ -493,17 +730,16 @@ describe('RenameProvider', () => {
       expect(lookup).not.toBeNull();
 
       const symbolTable = lookup!.fragmentAnalysis.providerLookup.getSymbolTable();
-      const defRange = {
-        start: { line: 0, character: 20 },
-        end: { line: 0, character: 24 },
-      };
-      const refRange = {
-        start: { line: 0, character: 45 },
-        end: { line: 0, character: 49 },
-      };
+      const defHostRange = rangeAt(entry.text, 'mood', 0);
+      const refHostRange = rangeAt(entry.text, 'mood', 1);
+      const defRange = lookup!.fragmentAnalysis.mapper.toLocalRange(request.text, defHostRange);
+      const refRange = lookup!.fragmentAnalysis.mapper.toLocalRange(request.text, refHostRange);
 
-      symbolTable.addDefinition('mood', 'chat', defRange);
-      symbolTable.addReference('mood', refRange, 'chat');
+      expect(defRange).not.toBeNull();
+      expect(refRange).not.toBeNull();
+
+      symbolTable.addDefinition('mood', 'chat', defRange!);
+      symbolTable.addReference('mood', refRange!, 'chat');
 
       const renameParams = createRenameParams(request, position, 'emotion');
       const edit = provider.provideRename(renameParams);

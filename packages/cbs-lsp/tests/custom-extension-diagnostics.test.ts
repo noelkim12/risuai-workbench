@@ -525,10 +525,10 @@ Hello <user>
           },
           {
             key: 'definition',
-            scope: 'deferred',
-            source: 'deferred-scope-contract:definition',
+            scope: 'local-first',
+            source: 'server-capability:definition',
             detail:
-              'Definition provider exists but server capability stays deferred until workspace-level cross-file resolution is available.',
+              'Definition is active for routed CBS fragments, returns fragment-local definitions first, and appends workspace chat-variable writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
           },
         ]),
       });

@@ -1,13 +1,15 @@
-import type { DocumentFormattingParams } from 'vscode-languageserver/node';
+import type { DocumentFormattingParams, TextEdit } from 'vscode-languageserver/node';
 import { describe, expect, it } from 'vitest';
 
+import { createSyntheticDocumentVersion } from '../../src/core';
 import {
   FORMATTING_PROVIDER_AVAILABILITY,
   FormattingProvider,
 } from '../../src/features/formatting';
-import { createFixtureRequest, getFixtureCorpusEntry, listFixtureCorpusEntries } from '../fixtures/fixture-corpus';
+import { positionToOffset } from '../../src/utils/position';
+import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
 
-function createParams(request: ReturnType<typeof createFixtureRequest>): DocumentFormattingParams {
+function createParams(request: { uri: string }): DocumentFormattingParams {
   return {
     textDocument: { uri: request.uri },
     options: {
@@ -17,184 +19,120 @@ function createParams(request: ReturnType<typeof createFixtureRequest>): Documen
   };
 }
 
-describe('FormattingProvider - Phase 4~5 Deferral Contract', () => {
-  it('exposes deferred availability honesty metadata', () => {
+function createRequestFromEntry(entryId: Parameters<typeof getFixtureCorpusEntry>[0], text: string) {
+  const entry = getFixtureCorpusEntry(entryId);
+  return {
+    uri: entry.uri,
+    version: createSyntheticDocumentVersion(text),
+    filePath: entry.filePath,
+    text,
+  };
+}
+
+function applyTextEdits(text: string, edits: readonly TextEdit[]): string {
+  return [...edits]
+    .sort((left, right) => {
+      const leftStart = positionToOffset(text, left.range.start);
+      const rightStart = positionToOffset(text, right.range.start);
+      return rightStart - leftStart;
+    })
+    .reduce((currentText, edit) => {
+      const startOffset = positionToOffset(currentText, edit.range.start);
+      const endOffset = positionToOffset(currentText, edit.range.end);
+      return `${currentText.slice(0, startOffset)}${edit.newText}${currentText.slice(endOffset)}`;
+    }, text);
+}
+
+describe('FormattingProvider', () => {
+  it('exposes active availability honesty metadata', () => {
     const provider = new FormattingProvider();
 
     expect(provider.availability).toEqual(FORMATTING_PROVIDER_AVAILABILITY);
     expect(provider.availability).toEqual({
-      scope: 'deferred',
-      source: 'formatting-provider:host-fragment-patch-semantics',
+      scope: 'local-only',
+      source: 'server-capability:formatting',
       detail:
-        'Formatting stays deferred until host-fragment patch semantics are safe for embedded CBS artifacts.',
+        'Formatting is active for routed CBS fragments, produces fragment-local canonical text edits, and only promotes host edits that pass the shared host-fragment safety contract.',
     });
   });
 
-  describe('contract: returns empty array (no-op) for all artifacts', () => {
-    it('returns [] for lorebook artifacts', () => {
-      const entry = getFixtureCorpusEntry('lorebook-basic');
-      const request = createFixtureRequest(entry);
-      const provider = new FormattingProvider();
-      const edits = provider.provide(createParams(request));
-
-      expect(edits).toEqual([]);
+  it('formats a lorebook CONTENT fragment without touching host frontmatter', () => {
+    const text = ['---', 'name: entry', '---', '@@@ CONTENT', 'Hello {{ user }} {{#if true}}yes{{:else}}no{{/}}', ''].join('\n');
+    const request = createRequestFromEntry('lorebook-basic', text);
+    const provider = new FormattingProvider({
+      resolveRequest: (uri) => (uri === request.uri ? request : null),
     });
 
-    it('returns [] for regex artifacts', () => {
-      const entry = getFixtureCorpusEntry('regex-basic');
-      const request = createFixtureRequest(entry);
-      const provider = new FormattingProvider();
-      const edits = provider.provide(createParams(request));
+    const edits = provider.provide(createParams(request));
 
-      expect(edits).toEqual([]);
-    });
-
-    it('returns [] for prompt artifacts', () => {
-      const entry = getFixtureCorpusEntry('prompt-basic');
-      const request = createFixtureRequest(entry);
-      const provider = new FormattingProvider();
-      const edits = provider.provide(createParams(request));
-
-      expect(edits).toEqual([]);
-    });
-
-    it('returns [] for html artifacts', () => {
-      const entry = getFixtureCorpusEntry('html-basic');
-      const request = createFixtureRequest(entry);
-      const provider = new FormattingProvider();
-      const edits = provider.provide(createParams(request));
-
-      expect(edits).toEqual([]);
-    });
-
-    it('returns [] for lua artifacts', () => {
-      const entry = getFixtureCorpusEntry('lua-basic');
-      const request = createFixtureRequest(entry);
-      const provider = new FormattingProvider();
-      const edits = provider.provide(createParams(request));
-
-      expect(edits).toEqual([]);
-    });
+    expect(edits).toHaveLength(1);
+    expect(applyTextEdits(request.text, edits)).toBe([
+      '---',
+      'name: entry',
+      '---',
+      '@@@ CONTENT',
+      'Hello {{user}} {{#if::true}}yes{{:else}}no{{/if}}',
+      '',
+    ].join('\n'));
   });
 
-  describe('regression: no formatting edits for host-risky artifacts', () => {
-    it('returns [] for .risuhtml (HTML with CBS fragments)', () => {
-      const entry = getFixtureCorpusEntry('html-basic');
-      const request = createFixtureRequest(entry);
-      const provider = new FormattingProvider();
-      const edits = provider.provide(createParams(request));
-
-      expect(edits).toEqual([]);
-      // Verify this is a host-risky artifact (HTML with embedded CBS)
-      expect(entry.artifact).toBe('html');
-      expect(entry.cbsBearing).toBe(true);
+  it('formats each fragment independently in a multi-fragment regex document', () => {
+    const text = [
+      '---',
+      'comment: rule',
+      'type: plain',
+      '---',
+      '@@@ IN',
+      '{{ user }}',
+      '@@@ OUT',
+      '{{#if ready}}ok{{/}}',
+      '',
+    ].join('\n');
+    const request = createRequestFromEntry('regex-basic', text);
+    const provider = new FormattingProvider({
+      resolveRequest: (uri) => (uri === request.uri ? request : null),
     });
 
-    it('returns [] for .risulua (Lua with CBS fragments)', () => {
-      const entry = getFixtureCorpusEntry('lua-basic');
-      const request = createFixtureRequest(entry);
-      const provider = new FormattingProvider();
-      const edits = provider.provide(createParams(request));
+    const edits = provider.provide(createParams(request));
 
-      expect(edits).toEqual([]);
-      // Verify this is a host-risky artifact (Lua with embedded CBS)
-      expect(entry.artifact).toBe('lua');
-      expect(entry.cbsBearing).toBe(true);
-    });
-
-    it('returns [] for malformed lorebook (unclosed macro)', () => {
-      const entry = getFixtureCorpusEntry('lorebook-unclosed-macro');
-      const request = createFixtureRequest(entry);
-      const provider = new FormattingProvider();
-      const edits = provider.provide(createParams(request));
-
-      expect(edits).toEqual([]);
-    });
-
-    it('returns [] for malformed html (unclosed macro)', () => {
-      const entry = getFixtureCorpusEntry('html-unclosed-macro');
-      const request = createFixtureRequest(entry);
-      const provider = new FormattingProvider();
-      const edits = provider.provide(createParams(request));
-
-      expect(edits).toEqual([]);
-    });
-
-    it('returns [] for malformed lua (unclosed macro)', () => {
-      const entry = getFixtureCorpusEntry('lua-unclosed-macro');
-      const request = createFixtureRequest(entry);
-      const provider = new FormattingProvider();
-      const edits = provider.provide(createParams(request));
-
-      expect(edits).toEqual([]);
-    });
+    expect(edits).toHaveLength(2);
+    expect(applyTextEdits(request.text, edits)).toBe([
+      '---',
+      'comment: rule',
+      'type: plain',
+      '---',
+      '@@@ IN',
+      '{{user}}',
+      '@@@ OUT',
+      '{{#if::ready}}ok{{/if}}',
+      '',
+    ].join('\n'));
   });
 
-  describe('regression: no formatting edits for edge cases', () => {
-    it('returns [] for empty lorebook document', () => {
-      const entry = getFixtureCorpusEntry('lorebook-empty-document');
-      const request = createFixtureRequest(entry);
-      const provider = new FormattingProvider();
-      const edits = provider.provide(createParams(request));
-
-      expect(edits).toEqual([]);
+  it('returns [] for malformed fragments so formatting stays on the no-op path', () => {
+    const request = createFixtureRequest(getFixtureCorpusEntry('lorebook-unclosed-macro'));
+    const provider = new FormattingProvider({
+      resolveRequest: (uri) => (uri === request.uri ? request : null),
     });
 
-    it('returns [] for lorebook without CONTENT section', () => {
-      const entry = getFixtureCorpusEntry('lorebook-no-content-section');
-      const request = createFixtureRequest(entry);
-      const provider = new FormattingProvider();
-      const edits = provider.provide(createParams(request));
-
-      expect(edits).toEqual([]);
-    });
-
-    it('returns [] for excluded toggle artifact', () => {
-      const entry = getFixtureCorpusEntry('toggle-excluded');
-      const request = createFixtureRequest(entry);
-      const provider = new FormattingProvider();
-      const edits = provider.provide(createParams(request));
-
-      expect(edits).toEqual([]);
-    });
-
-    it('returns [] for excluded variable artifact', () => {
-      const entry = getFixtureCorpusEntry('variable-excluded');
-      const request = createFixtureRequest(entry);
-      const provider = new FormattingProvider();
-      const edits = provider.provide(createParams(request));
-
-      expect(edits).toEqual([]);
-    });
+    expect(provider.provide(createParams(request))).toEqual([]);
   });
 
-  describe('contract: all CBS-bearing artifacts in corpus', () => {
-    const cbsBearingEntries = listFixtureCorpusEntries().filter((e) => e.cbsBearing);
+  it('returns [] for unsupported artifacts with no routed CBS fragment request', () => {
+    const request = createFixtureRequest(getFixtureCorpusEntry('toggle-excluded'));
+    const provider = new FormattingProvider({
+      resolveRequest: () => null,
+    });
 
-    it.each(cbsBearingEntries.map((e) => ({ id: e.id, entry: e })))(
-      'returns [] for $id (CBS-bearing)',
-      ({ entry }) => {
-        const request = createFixtureRequest(entry);
-        const provider = new FormattingProvider();
-        const edits = provider.provide(createParams(request));
-
-        expect(edits).toEqual([]);
-      },
-    );
+    expect(provider.provide(createParams(request))).toEqual([]);
   });
 
-  describe('contract: all artifacts in corpus (including non-CBS)', () => {
-    const allEntries = listFixtureCorpusEntries();
+  it('returns [] when the fragment is already in canonical format', () => {
+    const request = createFixtureRequest(getFixtureCorpusEntry('lorebook-basic'));
+    const provider = new FormattingProvider({
+      resolveRequest: (uri) => (uri === request.uri ? request : null),
+    });
 
-    it.each(allEntries.map((e) => ({ id: e.id, entry: e })))(
-      'returns [] for $id',
-      ({ entry }) => {
-        const request = createFixtureRequest(entry);
-        const provider = new FormattingProvider();
-        const edits = provider.provide(createParams(request));
-
-        expect(edits).toEqual([]);
-      },
-    );
+    expect(provider.provide(createParams(request))).toEqual([]);
   });
 });
