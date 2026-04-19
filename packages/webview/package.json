@@ -1,0 +1,19 @@
+{
+  "name": "risu-workbench-webview",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Vite 8-powered webview bundle for Risu Workbench",
+  "type": "module",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vite": "^8.0.0"
+  }
+}

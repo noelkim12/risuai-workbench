@@ -4,20 +4,41 @@
   "description": "Core engine for RisuAI character card workbench",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./node": "./dist/node/index.js"
+  },
   "bin": {
     "risu-core": "bin/risu-core.js"
   },
+  "files": [
+    "dist",
+    "!dist/runtime/**",
+    "bin",
+    "assets/rpack_map.bin",
+    "package.json",
+    "README*",
+    "LICENSE*"
+  ],
   "scripts": {
-    "build": "tsc",
-    "test": "vitest run"
+    "build": "tsc && npx tsc-alias && pnpm run build:assets",
+    "build:assets": "mkdir -p dist/cli/analyze/shared/report-shell && cp src/cli/analyze/shared/report-shell/template.html src/cli/analyze/shared/report-shell/client.js dist/cli/analyze/shared/report-shell/",
+    "test": "vitest run",
+    "lint": "eslint 'src/**/*.ts'",
+    "lint:fix": "eslint 'src/**/*.ts' --fix",
+    "format": "prettier --write 'src/**/*.ts'",
+    "format:check": "prettier --check 'src/**/*.ts'"
   },
   "dependencies": {
     "fflate": "^0.8.2",
-    "luaparse": "^0.3.1"
+    "luaparse": "^0.3.1",
+    "msgpackr": "^1.11.9",
+    "yaml": "^2.5.0"
   },
   "devDependencies": {
     "@types/node": "^25.3.5",
+    "tsc-alias": "^1.8.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "vitest": "^4.1.4"
   }
 }

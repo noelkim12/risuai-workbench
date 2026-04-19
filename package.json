@@ -15,7 +15,19 @@
   ],
   "author": "NOEL",
   "license": "MIT",
+  "scripts": {
+    "lint": "eslint 'packages/*/src/**/*.ts'",
+    "lint:fix": "eslint 'packages/*/src/**/*.ts' --fix",
+    "format": "prettier --write 'packages/*/src/**/*.ts' '*.{json,mjs}' '.prettierrc'",
+    "format:check": "prettier --check 'packages/*/src/**/*.ts'"
+  },
   "devDependencies": {
-    "luaparse": "^0.3.1"
+    "@eslint/js": "^9.28.0",
+    "eslint": "^9.28.0",
+    "eslint-config-prettier": "^10.1.5",
+    "luaparse": "^0.3.1",
+    "prettier": "^3.5.3",
+    "tsc-alias": "^1.8.0",
+    "typescript-eslint": "^8.33.1"
   }
 }

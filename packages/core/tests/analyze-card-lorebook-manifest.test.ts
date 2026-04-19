@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 const require = createRequire(import.meta.url);
-const { collectLorebookCBS } = require('../scripts/analyze-card/collectors.js');
+const { collectLorebookCBS } = require('../dist/cli/analyze/charx/collectors.js');
 
 const tempDirs: string[] = [];
 
@@ -15,7 +15,7 @@ afterEach(() => {
   }
 });
 
-describe('analyze-card lorebook manifest support', () => {
+describe('analyze-charx lorebook manifest support', () => {
   it('uses manifest source metadata when reading extracted lorebooks from disk', () => {
     const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-lorebook-cbs-'));
     tempDirs.push(workDir);
