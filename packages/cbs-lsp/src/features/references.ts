@@ -11,6 +11,7 @@ import {
 } from '../core';
 import type { VariableSymbol, VariableSymbolKind } from '../analyzer/symbolTable';
 import { isRequestCancelled } from '../request-cancellation';
+import type { VariableFlowService } from '../services';
 
 export type ReferencesRequestResolver = (
   params: ReferenceParams,
@@ -19,6 +20,15 @@ export type ReferencesRequestResolver = (
 export interface ReferencesProviderOptions {
   analysisService?: FragmentAnalysisService;
   resolveRequest?: ReferencesRequestResolver;
+  variableFlowService?: VariableFlowService;
+}
+
+function isCrossFileVariableKind(kind: VariableSymbolKind): kind is 'chat' {
+  return kind === 'chat';
+}
+
+function buildLocationKey(uri: string, range: Range): string {
+  return `${uri}:${range.start.line}:${range.start.character}-${range.end.line}:${range.end.character}`;
 }
 
 export const REFERENCES_PROVIDER_AVAILABILITY = createAgentMetadataAvailability(
@@ -109,11 +119,14 @@ export class ReferencesProvider {
 
   private readonly resolveRequest: ReferencesRequestResolver;
 
+  private readonly variableFlowService: VariableFlowService | null;
+
   readonly availability: AgentMetadataAvailabilityContract = REFERENCES_PROVIDER_AVAILABILITY;
 
   constructor(options: ReferencesProviderOptions = {}) {
     this.analysisService = options.analysisService ?? fragmentAnalysisService;
     this.resolveRequest = options.resolveRequest ?? (() => null);
+    this.variableFlowService = options.variableFlowService ?? null;
   }
 
   provide(params: ReferenceParams, cancellationToken?: CancellationToken): Location[] {
@@ -145,17 +158,44 @@ export class ReferencesProvider {
     // Get symbol from local fragment symbol table
     const symbolTable = lookup.fragmentAnalysis.providerLookup.getSymbolTable();
     const symbol = symbolTable.getVariable(variableName, kind);
+    const includeDeclaration = params.context?.includeDeclaration ?? false;
+    const locations: Location[] = [];
+    const seen = new Set<string>();
 
-    if (!symbol) {
-      return [];
+    if (symbol && symbol.kind !== 'global' && symbol.scope !== 'external') {
+      for (const location of this.buildLocations(symbol, lookup, request, includeDeclaration)) {
+        const key = buildLocationKey(location.uri, location.range);
+        if (seen.has(key)) {
+          continue;
+        }
+
+        seen.add(key);
+        locations.push(location);
+      }
     }
 
-    // Return [] for globals - they are external and not local to the fragment
-    if (symbol.kind === 'global' || symbol.scope === 'external') {
-      return [];
+    if (isCrossFileVariableKind(kind) && this.variableFlowService) {
+      const flowQuery = this.variableFlowService.queryVariable(variableName);
+      const occurrences = [
+        ...(includeDeclaration ? (flowQuery?.writers ?? []) : []),
+        ...(flowQuery?.readers ?? []),
+      ];
+
+      for (const occurrence of occurrences) {
+        const key = buildLocationKey(occurrence.uri, occurrence.hostRange);
+        if (seen.has(key)) {
+          continue;
+        }
+
+        seen.add(key);
+        locations.push({
+          uri: occurrence.uri,
+          range: occurrence.hostRange,
+        });
+      }
     }
 
-    return this.buildLocations(symbol, lookup, request, params.context?.includeDeclaration ?? false);
+    return locations;
   }
 
   private buildLocations(

@@ -134,18 +134,21 @@ describe('ElementRegistry', () => {
     expect(registry.getFileByUri(lorebookUri!)).toMatchObject({
       artifact: 'lorebook',
       analysisKind: 'cbs-fragments',
-      elementIds: [`${lorebookUri}#fragment:CONTENT`],
+      elementIds: [`${lorebookUri}#fragment:CONTENT:0`],
       graphSeedCount: 1,
     })
     expect(registry.getElementsByUri(lorebookUri!)).toMatchObject([
       {
-        id: `${lorebookUri}#fragment:CONTENT`,
+        id: `${lorebookUri}#fragment:CONTENT:0`,
         elementName: 'lorebooks/hero-entry.risulorebook#CONTENT',
         displayName: 'hero-entry.risulorebook#CONTENT',
         analysisKind: 'cbs-fragment',
+        fragmentIndex: 0,
         fragment: {
           section: 'CONTENT',
+          fragmentIndex: 0,
           content: '{{setvar::mood::happy}} {{getvar::hp}}',
+          hostRange: { start: expect.any(Number), end: expect.any(Number) },
         },
         cbs: {
           reads: ['hp'],
@@ -156,13 +159,15 @@ describe('ElementRegistry', () => {
 
     expect(registry.getElementsByArtifact('regex')).toMatchObject([
       {
-        id: `${regexUri}#fragment:IN`,
-        fragment: { section: 'IN' },
+        id: `${regexUri}#fragment:IN:0`,
+        fragmentIndex: 0,
+        fragment: { section: 'IN', fragmentIndex: 0 },
         cbs: { reads: ['mood'], writes: [] },
       },
       {
-        id: `${regexUri}#fragment:OUT`,
-        fragment: { section: 'OUT' },
+        id: `${regexUri}#fragment:OUT:1`,
+        fragmentIndex: 1,
+        fragment: { section: 'OUT', fragmentIndex: 1 },
         cbs: { reads: [], writes: ['reply'] },
       },
     ])
@@ -171,18 +176,23 @@ describe('ElementRegistry', () => {
       {
         artifact: 'prompt',
         fragmentSection: 'TEXT',
+        fragmentIndex: 0,
         cbs: { reads: ['persona'], writes: [] },
+        hostRange: { start: expect.any(Number), end: expect.any(Number) },
       },
       {
         artifact: 'prompt',
         fragmentSection: 'DEFAULT_TEXT',
+        fragmentIndex: 1,
         cbs: { reads: [], writes: [] },
+        hostRange: { start: expect.any(Number), end: expect.any(Number) },
       },
     ])
     expect(registry.getElementsByUri(htmlUri!)).toMatchObject([
       {
         artifact: 'html',
-        fragment: { section: 'full' },
+        fragmentIndex: 0,
+        fragment: { section: 'full', fragmentIndex: 0 },
         cbs: { reads: [], writes: ['theme'] },
       },
     ])
@@ -325,5 +335,143 @@ describe('ElementRegistry', () => {
         html: { files: 0, elements: 0, graphSeeds: 0 },
       },
     })
+  })
+
+  it('disambiguates duplicate fragment section names with deterministic index-based IDs', async () => {
+    const { scanResult, registry } = await buildRegistry([
+      {
+        artifact: 'lorebook',
+        fileName: 'duplicate-sections.risulorebook',
+        text: [
+          '---',
+          'name: duplicate-test',
+          '---',
+          '@@@ CONTENT',
+          '{{setvar::first::value1}}',
+          '@@@ CONTENT',
+          '{{setvar::second::value2}}',
+          '@@@ CONTENT',
+          '{{setvar::third::value3}}',
+          '',
+        ].join('\n'),
+      },
+    ])
+
+    const lorebookUri = scanResult.files[0]?.uri
+    expect(lorebookUri).toBeTruthy()
+
+    const elements = registry.getElementsByUri(lorebookUri!)
+    expect(elements).toHaveLength(3)
+
+    // Each duplicate section gets a unique ID with index disambiguation
+    expect(elements[0]).toMatchObject({
+      id: `${lorebookUri}#fragment:CONTENT:0`,
+      fragmentIndex: 0,
+      elementName: 'lorebooks/duplicate-sections.risulorebook#CONTENT',
+      fragment: {
+        section: 'CONTENT',
+        fragmentIndex: 0,
+        hostRange: { start: expect.any(Number), end: expect.any(Number) },
+      },
+      cbs: { writes: ['first'] },
+    })
+    expect(elements[1]).toMatchObject({
+      id: `${lorebookUri}#fragment:CONTENT:1`,
+      fragmentIndex: 1,
+      elementName: 'lorebooks/duplicate-sections.risulorebook#CONTENT',
+      fragment: {
+        section: 'CONTENT',
+        fragmentIndex: 1,
+        hostRange: { start: expect.any(Number), end: expect.any(Number) },
+      },
+      cbs: { writes: ['second'] },
+    })
+    expect(elements[2]).toMatchObject({
+      id: `${lorebookUri}#fragment:CONTENT:2`,
+      fragmentIndex: 2,
+      elementName: 'lorebooks/duplicate-sections.risulorebook#CONTENT',
+      fragment: {
+        section: 'CONTENT',
+        fragmentIndex: 2,
+        hostRange: { start: expect.any(Number), end: expect.any(Number) },
+      },
+      cbs: { writes: ['third'] },
+    })
+
+    // Graph seeds include explicit metadata for consumers
+    const seeds = registry.getGraphSeedsByUri(lorebookUri!)
+    expect(seeds).toHaveLength(3)
+    expect(seeds[0]).toMatchObject({
+      elementId: `${lorebookUri}#fragment:CONTENT:0`,
+      fragmentSection: 'CONTENT',
+      fragmentIndex: 0,
+      hostRange: { start: expect.any(Number), end: expect.any(Number) },
+    })
+    expect(seeds[1]).toMatchObject({
+      elementId: `${lorebookUri}#fragment:CONTENT:1`,
+      fragmentSection: 'CONTENT',
+      fragmentIndex: 1,
+      hostRange: { start: expect.any(Number), end: expect.any(Number) },
+    })
+    expect(seeds[2]).toMatchObject({
+      elementId: `${lorebookUri}#fragment:CONTENT:2`,
+      fragmentSection: 'CONTENT',
+      fragmentIndex: 2,
+      hostRange: { start: expect.any(Number), end: expect.any(Number) },
+    })
+
+    // Summary counts all elements correctly
+    expect(registry.getSnapshot().summary).toMatchObject({
+      totalFiles: 1,
+      totalElements: 3,
+      totalGraphSeeds: 3,
+      byArtifact: {
+        lorebook: { files: 1, elements: 3, graphSeeds: 3 },
+      },
+    })
+  })
+
+  it('exposes hostRange metadata for graph consumers to avoid elementName parsing', async () => {
+    const { scanResult, registry } = await buildRegistry([
+      {
+        artifact: 'lorebook',
+        fileName: 'host-range-test.risulorebook',
+        text: ['---', 'name: test', '---', '@@@ CONTENT', '{{getvar::x}}', ''].join('\n'),
+      },
+    ])
+
+    const lorebookUri = scanResult.files[0]?.uri
+    const elements = registry.getElementsByUri(lorebookUri!)
+    const seeds = registry.getGraphSeedsByUri(lorebookUri!)
+
+    expect(elements).toHaveLength(1)
+    expect(seeds).toHaveLength(1)
+
+    const element = elements[0]!
+    const seed = seeds[0]!
+
+    // Graph consumers can use explicit metadata instead of parsing elementName
+    expect(seed.fragmentSection).toBe('CONTENT')
+    expect(seed.fragmentIndex).toBe(0)
+    expect(seed.hostRange).toEqual({
+      start: expect.any(Number),
+      end: expect.any(Number),
+    })
+
+    // Host range matches fragment position
+    expect(seed.hostRange).toEqual(element.fragment!.hostRange)
+
+    // Lua files have null hostRange (entire file is the element)
+    const { registry: luaRegistry } = await buildRegistry([
+      {
+        artifact: 'lua',
+        fileName: 'test.risulua',
+        text: 'local x = getState("y")',
+      },
+    ])
+    const luaSeed = luaRegistry.getGraphSeeds()[0]!
+    expect(luaSeed.fragmentSection).toBeNull()
+    expect(luaSeed.fragmentIndex).toBe(-1)
+    expect(luaSeed.hostRange).toBeNull()
   })
 })

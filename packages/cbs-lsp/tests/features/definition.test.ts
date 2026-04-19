@@ -7,8 +7,14 @@ import {
   DEFINITION_PROVIDER_AVAILABILITY,
   DefinitionProvider,
 } from '../../src/features/definition';
+import type { VariableFlowService } from '../../src/services';
 import { offsetToPosition } from '../../src/utils/position';
 import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
+import {
+  createVariableFlowQueryResult,
+  createVariableFlowServiceStub,
+  createVariableOccurrence,
+} from './variable-flow-test-helpers';
 
 function locateNthOffset(text: string, needle: string, occurrence: number = 0): number {
   let fromIndex = 0;
@@ -39,10 +45,12 @@ function positionAt(
 function createProvider(
   service: FragmentAnalysisService,
   request: ReturnType<typeof createFixtureRequest>,
+  variableFlowService?: VariableFlowService,
 ): DefinitionProvider {
   return new DefinitionProvider(new CBSBuiltinRegistry(), {
     analysisService: service,
     resolveRequest: ({ textDocument }) => (textDocument.uri === request.uri ? request : null),
+    variableFlowService,
   });
 }
 
@@ -422,6 +430,73 @@ describe('DefinitionProvider', () => {
       const link = expectLocationLink(definition);
       // LocationLink should have originSelectionRange
       expect(link[0].originSelectionRange).toBeDefined();
+    });
+  });
+
+  describe('cross-file variable flow integration', () => {
+    it('merges workspace writer definitions after the local-first result', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{setvar::mood::happy}}{{getvar::mood}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const externalWriter = createVariableOccurrence({
+        direction: 'write',
+        uri: 'file:///workspace/regex/mood.risuregex',
+        relativePath: 'regex/mood.risuregex',
+        range: {
+          start: { line: 5, character: 10 },
+          end: { line: 5, character: 14 },
+        },
+        artifact: 'regex',
+        sourceName: 'setvar',
+        variableName: 'mood',
+      });
+      const variableFlowService = createVariableFlowServiceStub({
+        queryVariable: (name) =>
+          name === 'mood'
+            ? createVariableFlowQueryResult('mood', [externalWriter], [])
+            : null,
+      });
+      const provider = createProvider(new FragmentAnalysisService(), request, variableFlowService);
+
+      const definition = provider.provide(createParams(request, positionAt(modifiedText, 'mood', 2, 1)));
+
+      const links = expectLocationLink(definition);
+      expect(links).toHaveLength(2);
+      expect(links[0]?.targetUri).toBe(request.uri);
+      expect(links[1]?.targetUri).toBe('file:///workspace/regex/mood.risuregex');
+    });
+
+    it('resolves a chat variable from workspace writers even without a local definition', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace('{{user}}', '{{getvar::shared}}');
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const externalWriter = createVariableOccurrence({
+        direction: 'write',
+        uri: 'file:///workspace/lorebooks/shared.risulorebook',
+        relativePath: 'lorebooks/shared.risulorebook',
+        range: {
+          start: { line: 4, character: 12 },
+          end: { line: 4, character: 18 },
+        },
+        sourceName: 'setvar',
+        variableName: 'shared',
+      });
+      const variableFlowService = createVariableFlowServiceStub({
+        queryVariable: (name) =>
+          name === 'shared'
+            ? createVariableFlowQueryResult('shared', [externalWriter], [])
+            : null,
+      });
+      const provider = createProvider(new FragmentAnalysisService(), request, variableFlowService);
+
+      const definition = provider.provide(createParams(request, positionAt(modifiedText, 'shared', 2)));
+
+      const links = expectLocationLink(definition);
+      expect(links).toHaveLength(1);
+      expect(links[0]?.targetUri).toBe('file:///workspace/lorebooks/shared.risulorebook');
     });
   });
 });

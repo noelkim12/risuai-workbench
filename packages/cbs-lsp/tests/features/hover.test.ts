@@ -4,12 +4,18 @@ import { describe, expect, it } from 'vitest';
 
 import { type AgentMetadataEnvelope, FragmentAnalysisService } from '../../src/core';
 import { type AgentFriendlyHover, HoverProvider } from '../../src/features/hover';
+import type { VariableFlowService } from '../../src/services';
 import { offsetToPosition } from '../../src/utils/position';
 import {
   createFixtureRequest,
   getFixtureCorpusEntry,
   snapshotHoverResult,
 } from '../fixtures/fixture-corpus';
+import {
+  createVariableFlowQueryResult,
+  createVariableFlowServiceStub,
+  createVariableOccurrence,
+} from './variable-flow-test-helpers';
 
 function locateNthOffset(text: string, needle: string, occurrence: number = 0): number {
   let fromIndex = 0;
@@ -40,10 +46,12 @@ function positionAt(
 function createProvider(
   service: FragmentAnalysisService,
   request: ReturnType<typeof createFixtureRequest>,
+  variableFlowService?: VariableFlowService,
 ): HoverProvider {
   return new HoverProvider(new CBSBuiltinRegistry(), {
     analysisService: service,
     resolveRequest: ({ textDocument }) => (textDocument.uri === request.uri ? request : null),
+    variableFlowService,
   });
 }
 
@@ -96,6 +104,69 @@ describe('HoverProvider', () => {
       source: 'builtin-registry',
       detail: 'Hover resolved #if from the builtin registry as a callable CBS builtin.',
     });
+  });
+
+  it('adds workspace reader and writer summaries for persistent chat variables', () => {
+    const entry = getFixtureCorpusEntry('lorebook-setvar-macro');
+    const request = createFixtureRequest(entry);
+    const matchedOccurrence = createVariableOccurrence({
+      direction: 'write',
+      uri: request.uri,
+      relativePath: 'lorebooks/entry.risulorebook',
+      range: {
+        start: { line: 4, character: 10 },
+        end: { line: 4, character: 14 },
+      },
+      sourceName: 'setvar',
+      variableName: 'mood',
+    });
+    const externalWriter = createVariableOccurrence({
+      direction: 'write',
+      uri: 'file:///workspace/lua/state.risulua',
+      relativePath: 'lua/state.risulua',
+      range: {
+        start: { line: 0, character: 9 },
+        end: { line: 0, character: 13 },
+      },
+      artifact: 'lua',
+      sourceName: 'setState',
+      variableName: 'mood',
+    });
+    const externalReader = createVariableOccurrence({
+      direction: 'read',
+      uri: 'file:///workspace/regex/mood.risuregex',
+      relativePath: 'regex/mood.risuregex',
+      range: {
+        start: { line: 6, character: 7 },
+        end: { line: 6, character: 11 },
+      },
+      artifact: 'regex',
+      sourceName: 'getvar',
+      variableName: 'mood',
+    });
+    const workspaceQuery = createVariableFlowQueryResult(
+      'mood',
+      [matchedOccurrence, externalWriter],
+      [externalReader],
+      matchedOccurrence,
+    );
+    workspaceQuery.defaultValue = 'seeded';
+    const variableFlowService = createVariableFlowServiceStub({
+      queryAt: (uri) => (uri === request.uri ? workspaceQuery : null),
+    });
+    const provider = createProvider(new FragmentAnalysisService(), request, variableFlowService);
+
+    const hover = provider.provide(createParams(request, positionAt(entry.text, 'mood', 1)));
+    const markdown = expectMarkdownHover(hover);
+
+    expect(markdown).toContain('Workspace writers: 2');
+    expect(markdown).toContain('Workspace readers: 1');
+    expect(markdown).toContain('Default value: seeded');
+    expect(markdown).toContain('External writers:');
+    expect(markdown).toContain('lua/state.risulua');
+    expect(markdown).toContain('setState');
+    expect(markdown).toContain('External readers:');
+    expect(markdown).toContain('regex/mood.risuregex');
   });
 
   it('shows deterministic variable metadata and shared symbol details when available', () => {

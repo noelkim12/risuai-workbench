@@ -6,8 +6,14 @@ import {
   RENAME_PROVIDER_AVAILABILITY,
   RenameProvider,
 } from '../../src/features/rename';
+import type { VariableFlowService } from '../../src/services';
 import { offsetToPosition } from '../../src/utils/position';
 import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
+import {
+  createVariableFlowQueryResult,
+  createVariableFlowServiceStub,
+  createVariableOccurrence,
+} from './variable-flow-test-helpers';
 
 /**
  * Type guard to check if a document change is a TextDocumentEdit.
@@ -64,10 +70,12 @@ function positionAt(
 function createProvider(
   service: FragmentAnalysisService,
   request: ReturnType<typeof createFixtureRequest>,
+  variableFlowService?: VariableFlowService,
 ): RenameProvider {
   return new RenameProvider({
     analysisService: service,
     resolveRequest: ({ textDocument }) => (textDocument.uri === request.uri ? request : null),
+    variableFlowService,
   });
 }
 
@@ -371,6 +379,104 @@ describe('RenameProvider', () => {
       const edit = globalProvider.provideRename(renameParams);
 
       expect(edit).toBeNull();
+    });
+
+    it('adds workspace occurrences as multi-file document changes for chat variables', () => {
+      const entry = getFixtureCorpusEntry('lorebook-signature-happy');
+      const request = createFixtureRequest(entry);
+      const localRead = createVariableOccurrence({
+        direction: 'read',
+        uri: request.uri,
+        relativePath: 'lorebooks/entry.risulorebook',
+        range: {
+          start: { line: 4, character: 20 },
+          end: { line: 4, character: 24 },
+        },
+        sourceName: 'getvar',
+        variableName: 'mood',
+      });
+      const externalWriter = createVariableOccurrence({
+        direction: 'write',
+        uri: 'file:///workspace/lua/state.risulua',
+        relativePath: 'lua/state.risulua',
+        range: {
+          start: { line: 0, character: 10 },
+          end: { line: 0, character: 14 },
+        },
+        artifact: 'lua',
+        sourceName: 'setState',
+        variableName: 'mood',
+      });
+      const variableFlowService = createVariableFlowServiceStub({
+        queryVariable: (name) =>
+          name === 'mood'
+            ? createVariableFlowQueryResult('mood', [externalWriter], [localRead])
+            : null,
+      });
+      const provider = createProvider(new FragmentAnalysisService(), request, variableFlowService);
+
+      const edit = provider.provideRename(
+        createRenameParams(request, positionAt(entry.text, 'setvar::mood', 9), 'emotion'),
+      );
+
+      expect(edit).not.toBeNull();
+      const documentChanges = edit?.documentChanges ?? [];
+      const uris = documentChanges
+        .filter(isTextDocumentEdit)
+        .map((change) => change.textDocument.uri)
+        .sort();
+
+      expect(uris).toContain(request.uri);
+      expect(uris).toContain('file:///workspace/lua/state.risulua');
+    });
+  });
+
+  describe('cross-file variable flow integration', () => {
+    it('allows prepareRename for workspace-backed chat variables without a local definition', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace('{{user}}', '{{getvar::shared}}');
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const matchedOccurrence = createVariableOccurrence({
+        direction: 'read',
+        uri: request.uri,
+        relativePath: 'lorebooks/entry.risulorebook',
+        range: {
+          start: { line: 4, character: 10 },
+          end: { line: 4, character: 16 },
+        },
+        sourceName: 'getvar',
+        variableName: 'shared',
+      });
+      const externalWriter = createVariableOccurrence({
+        direction: 'write',
+        uri: 'file:///workspace/lorebooks/shared.risulorebook',
+        relativePath: 'lorebooks/shared.risulorebook',
+        range: {
+          start: { line: 5, character: 8 },
+          end: { line: 5, character: 14 },
+        },
+        sourceName: 'setvar',
+        variableName: 'shared',
+      });
+      const workspaceQuery = createVariableFlowQueryResult(
+        'shared',
+        [externalWriter],
+        [matchedOccurrence],
+        matchedOccurrence,
+      );
+      const variableFlowService = createVariableFlowServiceStub({
+        queryAt: (uri) => (uri === request.uri ? workspaceQuery : null),
+        queryVariable: (name) => (name === 'shared' ? workspaceQuery : null),
+      });
+      const provider = createProvider(new FragmentAnalysisService(), request, variableFlowService);
+
+      const result = provider.prepareRename(
+        createPositionParams(request, positionAt(modifiedText, 'shared', 2)),
+      );
+
+      expect(result.canRename).toBe(true);
+      expect(result.kind).toBe('chat');
+      expect(result.symbol).toBeUndefined();
     });
   });
 

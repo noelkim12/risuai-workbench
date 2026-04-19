@@ -34,6 +34,7 @@ import {
   type FragmentCursorLookupResult,
 } from '../core';
 import { isRequestCancelled } from '../request-cancellation';
+import type { VariableFlowQueryResult, VariableFlowService } from '../services';
 import { positionToOffset } from '../utils/position';
 import { isDocOnlyBuiltin } from 'risu-workbench-core';
 
@@ -44,6 +45,7 @@ export type HoverRequestResolver = (
 export interface HoverProviderOptions {
   analysisService?: FragmentAnalysisService;
   resolveRequest?: HoverRequestResolver;
+  variableFlowService?: VariableFlowService;
 }
 
 interface HoverTarget {
@@ -240,6 +242,13 @@ function formatParameterDefinitionSummary(
     .join(', ');
 }
 
+function formatWorkspaceOccurrenceSummary(
+  occurrence: VariableFlowQueryResult['occurrences'][number],
+): string {
+  const codeQuote = String.fromCharCode(96);
+  return `${occurrence.relativePath} — ${codeQuote}${occurrence.sourceName}${codeQuote}`;
+}
+
 function getTrimmedTokenOffsets(
   lookup: FragmentCursorLookupResult['token'],
 ): { localStartOffset: number; localEndOffset: number } | null {
@@ -299,12 +308,15 @@ export class HoverProvider {
 
   private readonly resolveRequest: HoverRequestResolver;
 
+  private readonly variableFlowService: VariableFlowService | null;
+
   constructor(
     private readonly registry: CBSBuiltinRegistry,
     options: HoverProviderOptions = {},
   ) {
     this.analysisService = options.analysisService ?? fragmentAnalysisService;
     this.resolveRequest = options.resolveRequest ?? (() => null);
+    this.variableFlowService = options.variableFlowService ?? null;
   }
 
   provide(
@@ -337,11 +349,15 @@ export class HoverProvider {
       return null;
     }
 
+    const workspaceVariableQuery = this.variableFlowService
+      ? this.variableFlowService.queryAt(request.uri, positionToOffset(request.text, params.position))
+      : null;
+
     const hoverTarget =
       this.buildBuiltinHover(lookup) ??
       this.buildCalcExpressionHover(lookup) ??
       this.buildSlotAliasHover(lookup) ??
-      this.buildVariableHover(lookup) ??
+      this.buildVariableHover(lookup, request.uri, workspaceVariableQuery) ??
       this.buildFunctionHover(lookup) ??
       this.buildWhenOperatorHover(lookup);
     if (!hoverTarget) {
@@ -527,7 +543,11 @@ export class HoverProvider {
     };
   }
 
-  private buildVariableHover(lookup: FragmentCursorLookupResult): HoverTarget | null {
+  private buildVariableHover(
+    lookup: FragmentCursorLookupResult,
+    currentUri: string,
+    workspaceVariableQuery: VariableFlowQueryResult | null,
+  ): HoverTarget | null {
     const tokenLookup = lookup.token;
     const nodeSpan = lookup.nodeSpan;
     const tokenMacroContext = resolveTokenMacroArgumentContext(lookup);
@@ -570,6 +590,42 @@ export class HoverProvider {
 
     if (symbol) {
       lines.push(`- Local references: ${symbol.references.length}`);
+    }
+
+    if (kind === 'chat' && workspaceVariableQuery?.variableName === variableName) {
+      const externalWriters = workspaceVariableQuery.writers.filter(
+        (occurrence) => occurrence.uri !== currentUri,
+      );
+      const externalReaders = workspaceVariableQuery.readers.filter(
+        (occurrence) => occurrence.uri !== currentUri,
+      );
+
+      lines.push(`- Workspace writers: ${workspaceVariableQuery.writers.length}`);
+      lines.push(`- Workspace readers: ${workspaceVariableQuery.readers.length}`);
+
+      if (workspaceVariableQuery.defaultValue) {
+        lines.push(`- Default value: ${workspaceVariableQuery.defaultValue}`);
+      }
+
+      if (externalWriters.length > 0) {
+        lines.push('- External writers:');
+        for (const writer of externalWriters) {
+          lines.push(`  - ${formatWorkspaceOccurrenceSummary(writer)}`);
+        }
+      }
+
+      if (externalReaders.length > 0) {
+        lines.push('- External readers:');
+        for (const reader of externalReaders) {
+          lines.push(`  - ${formatWorkspaceOccurrenceSummary(reader)}`);
+        }
+      }
+
+      if (workspaceVariableQuery.issues.length > 0) {
+        lines.push(
+          `- Workspace issues: ${workspaceVariableQuery.issues.map((entry) => entry.issue.type).join(', ')}`,
+        );
+      }
     }
 
     return {

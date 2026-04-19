@@ -18,6 +18,7 @@ import {
 } from '../core';
 import type { VariableSymbolKind } from '../analyzer/symbolTable';
 import { isRequestCancelled } from '../request-cancellation';
+import type { VariableFlowService } from '../services';
 
 export type DefinitionRequestResolver = (
   params: TextDocumentPositionParams,
@@ -26,6 +27,7 @@ export type DefinitionRequestResolver = (
 export interface DefinitionProviderOptions {
   analysisService?: FragmentAnalysisService;
   resolveRequest?: DefinitionRequestResolver;
+  variableFlowService?: VariableFlowService;
 }
 
 export const DEFINITION_PROVIDER_AVAILABILITY = createAgentMetadataAvailability(
@@ -162,10 +164,33 @@ function findFirstDefinitionRange(definitionRanges: readonly Range[]): Range | n
   return sorted[0] ?? null;
 }
 
+function isCrossFileVariableKind(kind: VariableSymbolKind): kind is 'chat' {
+  return kind === 'chat';
+}
+
+function buildDefinitionLocationLink(
+  targetUri: string,
+  targetRange: Range,
+  originSelectionRange?: Range | null,
+): LocationLink {
+  return {
+    targetUri,
+    targetRange,
+    targetSelectionRange: targetRange,
+    originSelectionRange: originSelectionRange ?? undefined,
+  };
+}
+
+function buildLocationKey(uri: string, range: Range): string {
+  return `${uri}:${range.start.line}:${range.start.character}-${range.end.line}:${range.end.character}`;
+}
+
 export class DefinitionProvider {
   private readonly analysisService: FragmentAnalysisService;
 
   private readonly resolveRequest: DefinitionRequestResolver;
+
+  private readonly variableFlowService: VariableFlowService | null;
 
   readonly availability: AgentMetadataAvailabilityContract = DEFINITION_PROVIDER_AVAILABILITY;
 
@@ -177,6 +202,7 @@ export class DefinitionProvider {
     void this._registry;
     this.analysisService = options.analysisService ?? fragmentAnalysisService;
     this.resolveRequest = options.resolveRequest ?? (() => null);
+    this.variableFlowService = options.variableFlowService ?? null;
   }
 
   provide(params: TextDocumentPositionParams, cancellationToken?: CancellationToken): Definition | null {
@@ -202,19 +228,22 @@ export class DefinitionProvider {
     const variablePosition = isVariablePosition(lookup);
     const functionPosition = variablePosition ? null : isFunctionPosition(lookup);
     let targetRange: Range | null = null;
+    let variableName: string | null = null;
+    let variableKind: VariableSymbolKind | null = null;
 
     if (variablePosition) {
-      const { variableName, kind, targetDefinitionRange } = variablePosition;
-      const symbol = symbolTable.getVariable(variableName, kind);
-      if (!symbol) {
+      const { variableName: resolvedVariableName, kind, targetDefinitionRange } = variablePosition;
+      variableName = resolvedVariableName;
+      variableKind = kind;
+
+      if (kind === 'global') {
         return null;
       }
 
-      if (symbol.scope === 'external' || kind === 'global') {
-        return null;
+      const symbol = symbolTable.getVariable(resolvedVariableName, kind);
+      if (symbol && symbol.scope !== 'external') {
+        targetRange = targetDefinitionRange ?? findFirstDefinitionRange(symbol.definitionRanges);
       }
-
-      targetRange = targetDefinitionRange ?? findFirstDefinitionRange(symbol.definitionRanges);
     } else if (functionPosition) {
       const symbol = symbolTable.getFunction(functionPosition.functionName);
       const fallbackDeclaration = collectLocalFunctionDeclarations(
@@ -233,13 +262,9 @@ export class DefinitionProvider {
     }
 
     if (!targetRange) {
-      return null;
-    }
-
-    // Map the local range to host range
-    const hostRange = lookup.fragmentAnalysis.mapper.toHostRange(request.text, targetRange);
-    if (!hostRange) {
-      return null;
+      if (!variableName || !variableKind || !isCrossFileVariableKind(variableKind)) {
+        return null;
+      }
     }
 
     // Build the origin selection range (the variable name at cursor position)
@@ -253,15 +278,35 @@ export class DefinitionProvider {
       );
     }
 
-    // Return as LocationLink array for richer navigation experience
-    const locationLink: LocationLink = {
-      targetUri: params.textDocument.uri,
-      targetRange: hostRange,
-      targetSelectionRange: hostRange,
-      originSelectionRange: originRange ?? undefined,
-    };
+    const links: LocationLink[] = [];
+    const seen = new Set<string>();
 
-    // Cast to Definition to satisfy TypeScript (LocationLink[] is a valid Definition)
-    return [locationLink] as unknown as Definition;
+    if (targetRange) {
+      const hostRange = lookup.fragmentAnalysis.mapper.toHostRange(request.text, targetRange);
+      if (hostRange) {
+        const key = buildLocationKey(params.textDocument.uri, hostRange);
+        seen.add(key);
+        links.push(buildDefinitionLocationLink(params.textDocument.uri, hostRange, originRange));
+      }
+    }
+
+    if (variableName && variableKind && isCrossFileVariableKind(variableKind) && this.variableFlowService) {
+      const flowQuery = this.variableFlowService.queryVariable(variableName);
+      for (const writer of flowQuery?.writers ?? []) {
+        const key = buildLocationKey(writer.uri, writer.hostRange);
+        if (seen.has(key)) {
+          continue;
+        }
+
+        seen.add(key);
+        links.push(buildDefinitionLocationLink(writer.uri, writer.hostRange, originRange));
+      }
+    }
+
+    if (links.length === 0) {
+      return null;
+    }
+
+    return links as unknown as Definition;
   }
 }

@@ -41,16 +41,29 @@ export interface ElementRegistryGraphSeed {
   artifactClass: WorkspaceFileArtifactClass;
   elementName: string;
   fragmentSection: string | null;
+  fragmentIndex: number;
   analysisKind: ElementRegistryElementAnalysisKind;
   cbs: ElementRegistryVariableAccess;
+  /**
+   * Host document range for this element.
+   * For fragments: the absolute position in the host document.
+   * For Lua files: null (entire file is the element).
+   */
+  hostRange: { start: number; end: number } | null;
 }
 
 export interface ElementRegistryFragmentDescriptor {
   section: string;
+  fragmentIndex: number;
   start: number;
   end: number;
   content: string;
   contentLength: number;
+  /**
+   * Host document range for rebasing.
+   * Same as start/end but explicitly named for graph consumers.
+   */
+  hostRange: { start: number; end: number };
 }
 
 interface ElementRegistryElementBase {
@@ -70,6 +83,11 @@ interface ElementRegistryElementBase {
 export interface ElementRegistryFragmentElement extends ElementRegistryElementBase {
   analysisKind: 'cbs-fragment';
   fragment: ElementRegistryFragmentDescriptor;
+  /**
+   * Fragment index within the file for deterministic disambiguation.
+   * Stable ordering based on host document position.
+   */
+  fragmentIndex: number;
 }
 
 export interface ElementRegistryLuaElement extends ElementRegistryElementBase {
@@ -199,15 +217,21 @@ function createElementName(relativePath: string, section?: string): string {
  * core fragment를 registry snapshot에 바로 넣을 수 있는 descriptor로 변환함.
  *
  * @param fragment - core fragment metadata
+ * @param fragmentIndex - stable ordering index for disambiguation
  * @returns registry용 fragment descriptor
  */
-function createFragmentDescriptor(fragment: CbsFragment): ElementRegistryFragmentDescriptor {
+function createFragmentDescriptor(
+  fragment: CbsFragment,
+  fragmentIndex: number,
+): ElementRegistryFragmentDescriptor {
   return {
     section: fragment.section,
+    fragmentIndex,
     start: fragment.start,
     end: fragment.end,
     content: fragment.content,
     contentLength: fragment.content.length,
+    hostRange: { start: fragment.start, end: fragment.end },
   };
 }
 
@@ -235,23 +259,36 @@ function createVariableAccess(
  *
  * @param file - 원본 scan file
  * @param fragment - 변환할 CBS fragment
+ * @param fragmentIndex - stable ordering index for disambiguation
  * @returns fragment element, graph seed, core seed tuple
  */
-function buildFragmentElement(file: WorkspaceScanFile, fragment: CbsFragment): BuiltRegistryFileRecord['elements'][number] & {
+function buildFragmentElement(
+  file: WorkspaceScanFile,
+  fragment: CbsFragment,
+  fragmentIndex: number,
+): BuiltRegistryFileRecord['elements'][number] & {
   elementCbsData: ElementCBSData;
 } {
   const ops = extractCBSVarOps(fragment.content);
   const elementName = createElementName(file.relativePath, fragment.section);
+  /**
+   * Deterministic element ID with fragment index disambiguation.
+   * Format: {uri}#fragment:{section}:{index}
+   * This ensures duplicate section names never collide.
+   */
+  const elementId = `${file.uri}#fragment:${fragment.section}:${fragmentIndex}`;
   const graphSeed: ElementRegistryGraphSeed = {
-    elementId: `${file.uri}#fragment:${fragment.section}`,
+    elementId,
     uri: file.uri,
     relativePath: file.relativePath,
     artifact: file.artifact,
     artifactClass: file.artifactClass,
     elementName,
     fragmentSection: fragment.section,
+    fragmentIndex,
     analysisKind: 'cbs-fragment',
     cbs: createVariableAccess(ops.reads, ops.writes),
+    hostRange: { start: fragment.start, end: fragment.end },
   };
 
   const elementCbsData: ElementCBSData = {
@@ -262,7 +299,7 @@ function buildFragmentElement(file: WorkspaceScanFile, fragment: CbsFragment): B
   };
 
   return {
-    id: graphSeed.elementId,
+    id: elementId,
     uri: file.uri,
     absolutePath: file.absolutePath,
     relativePath: file.relativePath,
@@ -271,7 +308,8 @@ function buildFragmentElement(file: WorkspaceScanFile, fragment: CbsFragment): B
     elementName,
     displayName: createDisplayName(file.relativePath, fragment.section),
     analysisKind: 'cbs-fragment',
-    fragment: createFragmentDescriptor(fragment),
+    fragment: createFragmentDescriptor(fragment, fragmentIndex),
+    fragmentIndex,
     cbs: graphSeed.cbs,
     graphSeed,
     elementCbsData,
@@ -307,8 +345,10 @@ function buildLuaFileRecord(file: WorkspaceScanFile): BuiltRegistryFileRecord {
       artifactClass: file.artifactClass,
       elementName,
       fragmentSection: null,
+      fragmentIndex: -1,
       analysisKind: 'lua-file',
       cbs: createVariableAccess(cbsSeed.reads, cbsSeed.writes),
+      hostRange: null,
     };
     const elementCbsData: ElementCBSData = {
       elementType: 'lua',
@@ -448,7 +488,22 @@ function buildRegistryFileRecord(file: WorkspaceScanFile): BuiltRegistryFileReco
     };
   }
 
-  const fragmentElements = file.fragmentMap.fragments.map((fragment) => buildFragmentElement(file, fragment));
+  /**
+   * Sort fragments by host position for deterministic ordering.
+   * This ensures fragmentIndex is stable across rebuilds.
+   */
+  const sortedFragments = [...file.fragmentMap.fragments].sort((left, right) => {
+    return (
+      left.start - right.start ||
+      left.end - right.end ||
+      left.section.localeCompare(right.section) ||
+      left.content.localeCompare(right.content)
+    );
+  });
+
+  const fragmentElements = sortedFragments.map((fragment, index) =>
+    buildFragmentElement(file, fragment, index),
+  );
 
   return {
     record: {

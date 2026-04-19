@@ -6,8 +6,14 @@ import {
   REFERENCES_PROVIDER_AVAILABILITY,
   ReferencesProvider,
 } from '../../src/features/references';
+import type { VariableFlowService } from '../../src/services';
 import { offsetToPosition } from '../../src/utils/position';
 import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
+import {
+  createVariableFlowQueryResult,
+  createVariableFlowServiceStub,
+  createVariableOccurrence,
+} from './variable-flow-test-helpers';
 
 function locateNthOffset(text: string, needle: string, occurrence: number = 0): number {
   let fromIndex = 0;
@@ -38,10 +44,12 @@ function positionAt(
 function createProvider(
   service: FragmentAnalysisService,
   request: ReturnType<typeof createFixtureRequest>,
+  variableFlowService?: VariableFlowService,
 ): ReferencesProvider {
   return new ReferencesProvider({
     analysisService: service,
     resolveRequest: ({ textDocument }) => (textDocument.uri === request.uri ? request : null),
+    variableFlowService,
   });
 }
 
@@ -305,6 +313,99 @@ describe('ReferencesProvider', () => {
 
       // Should return only the 2 references (no definition)
       expect(locations.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe('cross-file variable flow integration', () => {
+    it('merges workspace readers and declaration writers while keeping local locations first', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{setvar::myScore::100}} and {{getvar::myScore}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const externalWriter = createVariableOccurrence({
+        direction: 'write',
+        uri: 'file:///workspace/lorebooks/shared.risulorebook',
+        relativePath: 'lorebooks/shared.risulorebook',
+        range: {
+          start: { line: 4, character: 12 },
+          end: { line: 4, character: 19 },
+        },
+        sourceName: 'setvar',
+        variableName: 'myScore',
+      });
+      const externalReader = createVariableOccurrence({
+        direction: 'read',
+        uri: 'file:///workspace/regex/score.risuregex',
+        relativePath: 'regex/score.risuregex',
+        range: {
+          start: { line: 6, character: 8 },
+          end: { line: 6, character: 15 },
+        },
+        artifact: 'regex',
+        sourceName: 'getvar',
+        variableName: 'myScore',
+      });
+      const variableFlowService = createVariableFlowServiceStub({
+        queryVariable: (name) =>
+          name === 'myScore'
+            ? createVariableFlowQueryResult('myScore', [externalWriter], [externalReader])
+            : null,
+      });
+      const provider = createProvider(new FragmentAnalysisService(), request, variableFlowService);
+
+      const locations = provider.provide(
+        createParams(request, offsetToPosition(modifiedText, modifiedText.indexOf('myScore', 20)), true),
+      );
+
+      expect(locations.length).toBeGreaterThanOrEqual(4);
+      expect(locations[0]?.uri).toBe(request.uri);
+      expect(locations.map((location) => location.uri)).toContain('file:///workspace/lorebooks/shared.risulorebook');
+      expect(locations.map((location) => location.uri)).toContain('file:///workspace/regex/score.risuregex');
+    });
+
+    it('omits workspace writers when includeDeclaration is false', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace('{{user}}', '{{getvar::shared}}');
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const externalWriter = createVariableOccurrence({
+        direction: 'write',
+        uri: 'file:///workspace/lorebooks/shared.risulorebook',
+        relativePath: 'lorebooks/shared.risulorebook',
+        range: {
+          start: { line: 4, character: 10 },
+          end: { line: 4, character: 16 },
+        },
+        sourceName: 'setvar',
+        variableName: 'shared',
+      });
+      const externalReader = createVariableOccurrence({
+        direction: 'read',
+        uri: 'file:///workspace/regex/shared.risuregex',
+        relativePath: 'regex/shared.risuregex',
+        range: {
+          start: { line: 6, character: 9 },
+          end: { line: 6, character: 15 },
+        },
+        artifact: 'regex',
+        sourceName: 'getvar',
+        variableName: 'shared',
+      });
+      const variableFlowService = createVariableFlowServiceStub({
+        queryVariable: (name) =>
+          name === 'shared'
+            ? createVariableFlowQueryResult('shared', [externalWriter], [externalReader])
+            : null,
+      });
+      const provider = createProvider(new FragmentAnalysisService(), request, variableFlowService);
+
+      const locations = provider.provide(createParams(request, positionAt(modifiedText, 'shared', 2), false));
+
+      expect(locations.map((location) => location.uri)).toContain('file:///workspace/regex/shared.risuregex');
+      expect(locations.map((location) => location.uri)).not.toContain(
+        'file:///workspace/lorebooks/shared.risulorebook',
+      );
     });
   });
 

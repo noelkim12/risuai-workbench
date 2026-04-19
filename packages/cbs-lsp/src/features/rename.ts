@@ -17,6 +17,8 @@ import {
   type FragmentCursorLookupResult,
 } from '../core';
 import { isRequestCancelled } from '../request-cancellation';
+import type { VariableFlowService } from '../services';
+import { positionToOffset } from '../utils/position';
 
 // Variable macros that support rename (first argument is the variable name)
 const VARIABLE_MACRO_RULES = Object.freeze({
@@ -104,6 +106,7 @@ export type RenameRequestResolver = (
 export interface RenameProviderOptions {
   analysisService?: FragmentAnalysisService;
   resolveRequest?: RenameRequestResolver;
+  variableFlowService?: VariableFlowService;
 }
 
 export const RENAME_PROVIDER_AVAILABILITY = createAgentMetadataAvailability(
@@ -118,7 +121,16 @@ export interface PrepareRenameResult {
   range?: Range;
   symbol?: VariableSymbol;
   kind?: VariableSymbolKind;
+  variableName?: string;
   message?: string;
+}
+
+function isCrossFileVariableKind(kind: VariableSymbolKind): kind is 'chat' {
+  return kind === 'chat';
+}
+
+function buildRangeKey(uri: string, range: Range): string {
+  return `${uri}:${range.start.line}:${range.start.character}-${range.end.line}:${range.end.character}`;
 }
 
 // Global variable macros - NOT renameable
@@ -134,11 +146,14 @@ export class RenameProvider {
 
   private readonly resolveRequest: RenameRequestResolver;
 
+  private readonly variableFlowService: VariableFlowService | null;
+
   readonly availability: AgentMetadataAvailabilityContract = RENAME_PROVIDER_AVAILABILITY;
 
   constructor(options: RenameProviderOptions = {}) {
     this.analysisService = options.analysisService ?? fragmentAnalysisService;
     this.resolveRequest = options.resolveRequest ?? (() => null);
+    this.variableFlowService = options.variableFlowService ?? null;
   }
 
   /**
@@ -180,7 +195,7 @@ export class RenameProvider {
       return { availability: this.availability, canRename: false, message: 'Request cancelled' };
     }
 
-    return this.checkRenameEligibility(lookup);
+    return this.checkRenameEligibility(lookup, request, positionToOffset(request.text, params.position));
   }
 
   /**
@@ -206,33 +221,54 @@ export class RenameProvider {
       return null;
     }
 
-    const prepareResult = this.checkRenameEligibility(lookup);
-    if (!prepareResult.canRename || !prepareResult.symbol) {
+    const hostOffset = positionToOffset(request.text, params.position);
+    const prepareResult = this.checkRenameEligibility(lookup, request, hostOffset);
+    if (!prepareResult.canRename || !prepareResult.kind || !prepareResult.variableName) {
       return null;
     }
 
-    const { symbol } = prepareResult;
     const newName = params.newName;
     const mapper = lookup.fragmentAnalysis.mapper;
 
     // Collect all ranges to rename: definitions + references
     // All ranges must be mapped from fragment-local to host document coordinates
     const changes: Map<string, LSPRange[]> = new Map();
+    const seen = new Set<string>();
 
-    // Add all definition ranges (mapped to host coordinates)
-    for (const defRange of symbol.definitionRanges) {
-      const hostRange = mapper.toHostRange(request.text, defRange);
+    if (prepareResult.symbol) {
+      const { symbol } = prepareResult;
+
+      // Add all definition ranges (mapped to host coordinates)
+      for (const defRange of symbol.definitionRanges) {
+        const hostRange = mapper.toHostRange(request.text, defRange);
+        if (hostRange) {
+          this.addRange(changes, seen, params.textDocument.uri, hostRange);
+        }
+      }
+
+      // Add all reference ranges (mapped to host coordinates)
+      for (const refRange of symbol.references) {
+        const hostRange = mapper.toHostRange(request.text, refRange);
+        if (hostRange) {
+          this.addRange(changes, seen, params.textDocument.uri, hostRange);
+        }
+      }
+    } else if (prepareResult.range) {
+      const hostRange = mapper.toHostRange(request.text, prepareResult.range);
       if (hostRange) {
-        this.addRange(changes, params.textDocument.uri, hostRange);
+        this.addRange(changes, seen, params.textDocument.uri, hostRange);
       }
     }
 
-    // Add all reference ranges (mapped to host coordinates)
-    for (const refRange of symbol.references) {
-      const hostRange = mapper.toHostRange(request.text, refRange);
-      if (hostRange) {
-        this.addRange(changes, params.textDocument.uri, hostRange);
+    if (isCrossFileVariableKind(prepareResult.kind) && this.variableFlowService) {
+      const workspaceQuery = this.variableFlowService.queryVariable(prepareResult.variableName);
+      for (const occurrence of workspaceQuery?.occurrences ?? []) {
+        this.addRange(changes, seen, occurrence.uri, occurrence.hostRange);
       }
+    }
+
+    if (changes.size === 0) {
+      return null;
     }
 
     // Build WorkspaceEdit with document changes
@@ -258,7 +294,11 @@ export class RenameProvider {
    * Check if the cursor is on a valid renameable variable.
    * Returns the symbol and range if eligible, or an error message if not.
    */
-  private checkRenameEligibility(lookup: FragmentCursorLookupResult): PrepareRenameResult {
+  private checkRenameEligibility(
+    lookup: FragmentCursorLookupResult,
+    request: FragmentAnalysisRequest,
+    hostOffset: number,
+  ): PrepareRenameResult {
     const tokenLookup = lookup.token;
     const nodeSpan = lookup.nodeSpan;
 
@@ -284,6 +324,7 @@ export class RenameProvider {
         availability: this.availability,
         canRename: false,
         message: 'Global variables cannot be renamed',
+        variableName,
       };
     }
 
@@ -292,10 +333,24 @@ export class RenameProvider {
     const symbol = symbolTable.getVariable(variableName, kind);
 
     if (!symbol) {
+      if (isCrossFileVariableKind(kind) && this.variableFlowService) {
+        const workspaceQuery = this.variableFlowService.queryAt(request.uri, hostOffset);
+        if (workspaceQuery?.matchedOccurrence?.variableName === variableName) {
+          return {
+            availability: this.availability,
+            canRename: true,
+            range: tokenLookup.localRange,
+            kind,
+            variableName,
+          };
+        }
+      }
+
       return {
         availability: this.availability,
         canRename: false,
         message: `Unresolved ${kind} variable: ${variableName}`,
+        variableName,
       };
     }
 
@@ -305,6 +360,7 @@ export class RenameProvider {
         availability: this.availability,
         canRename: false,
         message: 'Global variables cannot be renamed',
+        variableName,
       };
     }
 
@@ -314,6 +370,7 @@ export class RenameProvider {
         availability: this.availability,
         canRename: false,
         message: 'External variables cannot be renamed',
+        variableName,
       };
     }
 
@@ -335,10 +392,22 @@ export class RenameProvider {
       range,
       symbol,
       kind,
+      variableName,
     };
   }
 
-  private addRange(changes: Map<string, LSPRange[]>, uri: string, range: Range): void {
+  private addRange(
+    changes: Map<string, LSPRange[]>,
+    seen: Set<string>,
+    uri: string,
+    range: Range,
+  ): void {
+    const key = buildRangeKey(uri, range);
+    if (seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
     const existing = changes.get(uri);
     const lspRange = LSPRange.create(
       range.start.line,
