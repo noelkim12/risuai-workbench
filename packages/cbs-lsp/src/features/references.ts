@@ -2,7 +2,9 @@ import { type CancellationToken, Location, ReferenceParams } from 'vscode-langua
 import type { Range } from 'risu-workbench-core';
 
 import {
+  createAgentMetadataAvailability,
   fragmentAnalysisService,
+  type AgentMetadataAvailabilityContract,
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
   type FragmentCursorLookupResult,
@@ -18,6 +20,12 @@ export interface ReferencesProviderOptions {
   analysisService?: FragmentAnalysisService;
   resolveRequest?: ReferencesRequestResolver;
 }
+
+export const REFERENCES_PROVIDER_AVAILABILITY = createAgentMetadataAvailability(
+  'local-only',
+  'references-provider:fragment-symbol-table',
+  'References resolve only fragment-local variable and loop-alias symbols; globals and workspace-wide references stay unavailable.',
+);
 
 const VARIABLE_MACRO_RULES = Object.freeze({
   addvar: { kind: 'chat', argumentIndex: 0 },
@@ -100,6 +108,8 @@ export class ReferencesProvider {
   private readonly analysisService: FragmentAnalysisService;
 
   private readonly resolveRequest: ReferencesRequestResolver;
+
+  readonly availability: AgentMetadataAvailabilityContract = REFERENCES_PROVIDER_AVAILABILITY;
 
   constructor(options: ReferencesProviderOptions = {}) {
     this.analysisService = options.analysisService ?? fragmentAnalysisService;

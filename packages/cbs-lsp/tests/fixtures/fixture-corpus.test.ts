@@ -35,6 +35,7 @@ describe('cbs-lsp fixture corpus', () => {
       'prompt',
       'html',
       'lua',
+      'lorebook',
     ]);
     expect(excluded.map((entry) => entry.artifact)).toEqual(['toggle', 'variable']);
 
@@ -98,6 +99,7 @@ describe('cbs-lsp fixture corpus', () => {
       service: [
         'lorebook-basic',
         'regex-basic',
+        'regex-recover-out-with-malformed-in-header',
         'prompt-basic',
         'html-basic',
         'lua-basic',
@@ -119,6 +121,7 @@ describe('cbs-lsp fixture corpus', () => {
 
     expect(listMatrixFixtures('service').map((entry) => entry.artifact)).toEqual([
       'lorebook',
+      'regex',
       'regex',
       'prompt',
       'html',

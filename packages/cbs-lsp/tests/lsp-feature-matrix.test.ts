@@ -97,6 +97,8 @@ function decodeSemanticTokenTexts(text: string, semanticTokens: SemanticTokens):
 class FakeConnection {
   initializeHandler: ((params: InitializeParams) => InitializeResult) | null = null;
 
+  shutdownHandler: (() => void | Promise<void>) | null = null;
+
   completionHandler: ((params: any) => CompletionItem[] | { items: CompletionItem[] }) | null =
     null;
 
@@ -110,6 +112,22 @@ class FakeConnection {
 
   readonly diagnostics: Array<{ uri: string; diagnostics: readonly Diagnostic[] }> = [];
 
+  readonly traceMessages: Array<{ message: string; verbose?: string }> = [];
+
+  readonly consoleMessages: string[] = [];
+
+  readonly tracer = {
+    log: (message: string, verbose?: string) => {
+      this.traceMessages.push({ message, verbose });
+    },
+  };
+
+  readonly console = {
+    log: (message: string) => {
+      this.consoleMessages.push(message);
+    },
+  };
+
   readonly languages = {
     semanticTokens: {
       on: (handler: (params: any) => SemanticTokens) => {
@@ -121,6 +139,11 @@ class FakeConnection {
 
   onInitialize(handler: (params: InitializeParams) => InitializeResult) {
     this.initializeHandler = handler;
+    return createDisposable();
+  }
+
+  onShutdown(handler: () => void | Promise<void>) {
+    this.shutdownHandler = handler;
     return createDisposable();
   }
 

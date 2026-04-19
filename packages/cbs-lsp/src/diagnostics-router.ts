@@ -2,9 +2,11 @@ import type { CbsFragment, CbsFragmentMap, DiagnosticInfo } from 'risu-workbench
 import type { Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity } from 'vscode-languageserver';
 
 import {
+  createNormalizedRuntimeAvailabilitySnapshot,
   createFragmentOffsetMapper,
   createSyntheticDocumentVersion,
   fragmentAnalysisService,
+  type NormalizedRuntimeAvailabilitySnapshot,
   type FragmentDocumentAnalysis,
   type FragmentOffsetMapper,
   type FragmentAnalysisVersion,
@@ -21,6 +23,27 @@ const SEVERITY_MAP: Record<'error' | 'warning' | 'info' | 'hint', DiagnosticSeve
 export interface DiagnosticDocumentContext {
   uri?: string;
   version?: FragmentAnalysisVersion;
+}
+
+export interface NormalizedHostDiagnosticRelatedInformationSnapshot {
+  message: string;
+  range: DiagnosticRelatedInformation['location']['range'];
+  uri: string;
+}
+
+export interface NormalizedHostDiagnosticSnapshot {
+  code: string | null;
+  data: Diagnostic['data'] | null;
+  message: string;
+  range: Diagnostic['range'];
+  relatedInformation: NormalizedHostDiagnosticRelatedInformationSnapshot[];
+  severity: DiagnosticSeverity | null;
+  source: string | null;
+}
+
+export interface NormalizedHostDiagnosticsEnvelopeSnapshot {
+  availability: NormalizedRuntimeAvailabilitySnapshot;
+  diagnostics: NormalizedHostDiagnosticSnapshot[];
 }
 
 /**
@@ -163,9 +186,89 @@ function mapRelatedInformation(
         },
       } satisfies DiagnosticRelatedInformation;
     })
-    .filter((entry): entry is DiagnosticRelatedInformation => entry !== null);
+    .filter((entry): entry is DiagnosticRelatedInformation => entry !== null)
+    .sort(compareRelatedInformationForHost);
 
   return mapped.length > 0 ? mapped : undefined;
+}
+
+function compareRelatedInformationForHost(
+  left: DiagnosticRelatedInformation,
+  right: DiagnosticRelatedInformation,
+): number {
+  return (
+    comparePositions(left.location.range.start, right.location.range.start) ||
+    comparePositions(left.location.range.end, right.location.range.end) ||
+    left.message.localeCompare(right.message)
+  );
+}
+
+function compareDiagnosticsForHost(left: Diagnostic, right: Diagnostic): number {
+  const leftCode = typeof left.code === 'string' ? left.code : String(left.code ?? '');
+  const rightCode = typeof right.code === 'string' ? right.code : String(right.code ?? '');
+
+  return (
+    compareNumbers(left.range.start.line, right.range.start.line) ||
+    compareNumbers(left.range.start.character, right.range.start.character) ||
+    compareNumbers(left.range.end.line, right.range.end.line) ||
+    compareNumbers(left.range.end.character, right.range.end.character) ||
+    compareNumbers(left.severity ?? 0, right.severity ?? 0) ||
+    leftCode.localeCompare(rightCode) ||
+    left.message.localeCompare(right.message)
+  );
+}
+
+function comparePositions(
+  left: Diagnostic['range']['start'],
+  right: Diagnostic['range']['start'],
+): number {
+  return compareNumbers(left.line, right.line) || compareNumbers(left.character, right.character);
+}
+
+function compareNumbers(left: number, right: number): number {
+  return left - right;
+}
+
+export function normalizeHostDiagnosticForSnapshot(
+  diagnostic: Diagnostic,
+): NormalizedHostDiagnosticSnapshot {
+  return {
+    code: diagnostic.code === undefined ? null : String(diagnostic.code),
+    data: diagnostic.data ?? null,
+    message: diagnostic.message,
+    range: diagnostic.range,
+    relatedInformation: [...(diagnostic.relatedInformation ?? [])]
+      .sort(compareRelatedInformationForHost)
+      .map((entry) => ({
+        message: entry.message,
+        range: entry.location.range,
+        uri: entry.location.uri,
+      })),
+    severity: diagnostic.severity ?? null,
+    source: diagnostic.source ?? null,
+  };
+}
+
+export function normalizeHostDiagnosticsForSnapshot(
+  diagnostics: readonly Diagnostic[],
+): NormalizedHostDiagnosticSnapshot[] {
+  return [...diagnostics].sort(compareDiagnosticsForHost).map(normalizeHostDiagnosticForSnapshot);
+}
+
+/**
+ * normalizeHostDiagnosticsEnvelopeForSnapshot 함수.
+ * host diagnostics normalized view에 공통 runtime availability contract를 함께 붙임.
+ *
+ * @param diagnostics - 정규화할 host diagnostics 배열
+ * @returns diagnostics와 availability snapshot을 함께 담은 deterministic JSON view
+ */
+export function normalizeHostDiagnosticsEnvelopeForSnapshot(
+  diagnostics: readonly Diagnostic[],
+): NormalizedHostDiagnosticsEnvelopeSnapshot {
+  return {
+    availability: createNormalizedRuntimeAvailabilitySnapshot(),
+    diagnostics: normalizeHostDiagnosticsForSnapshot(diagnostics),
+  };
 }
 
 /**
@@ -197,7 +300,7 @@ export function routeDiagnosticsForDocument(
   }
 
   const documentUri = context.uri ?? filePath;
-  return analysis.fragmentAnalyses.flatMap((fragmentAnalysis) =>
-    mapFragmentDiagnosticsToHost(content, documentUri, fragmentAnalysis),
-  );
+  return analysis.fragmentAnalyses
+    .flatMap((fragmentAnalysis) => mapFragmentDiagnosticsToHost(content, documentUri, fragmentAnalysis))
+    .sort(compareDiagnosticsForHost);
 }

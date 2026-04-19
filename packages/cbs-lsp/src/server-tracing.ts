@@ -20,6 +20,8 @@ export interface FeatureTraceDetails {
   [key: string]: number | string | boolean | null | undefined;
 }
 
+export type FeatureTracePayload = unknown;
+
 /**
  * formatFeatureTraceMessage 함수.
  * feature 이름과 phase를 사람이 읽기 쉬운 trace 메시지로 정리함.
@@ -70,6 +72,44 @@ export function traceFeature(
   connection.tracer.log(
     formatFeatureTraceMessage(feature, phase),
     formatFeatureTraceDetails(details),
+  );
+}
+
+function stableSerializeFeatureTracePayload(payload: FeatureTracePayload): string {
+  if (payload === null || typeof payload !== 'object') {
+    return JSON.stringify(payload);
+  }
+
+  if (Array.isArray(payload)) {
+    return `[${payload.map((entry) => stableSerializeFeatureTracePayload(entry)).join(',')}]`;
+  }
+
+  const entries = Object.entries(payload).sort(([left], [right]) => left.localeCompare(right));
+  return `{${entries
+    .map(
+      ([key, value]) => `${JSON.stringify(key)}:${stableSerializeFeatureTracePayload(value)}`,
+    )
+    .join(',')}}`;
+}
+
+/**
+ * traceFeaturePayload 함수.
+ * machine-readable JSON payload를 trace verbose 채널에 고정된 순서로 남김.
+ *
+ * @param connection - 활성 LSP connection
+ * @param feature - 기능 이름
+ * @param phase - trace phase 이름
+ * @param payload - JSON으로 읽을 수 있는 structured payload
+ */
+export function traceFeaturePayload(
+  connection: Connection,
+  feature: CbsLspFeatureName,
+  phase: string,
+  payload: FeatureTracePayload,
+): void {
+  connection.tracer.log(
+    formatFeatureTraceMessage(feature, phase),
+    stableSerializeFeatureTracePayload(payload),
   );
 }
 

@@ -1,4 +1,26 @@
-import { DiagnosticCode } from '../../src/analyzer/diagnostics';
+import type { CompletionItem, Diagnostic, Hover } from 'vscode-languageserver/node';
+import {
+  DIAGNOSTIC_TAXONOMY,
+  DiagnosticCode,
+  createDiagnosticRuleExplanation,
+  type DiagnosticOwner,
+  type DiagnosticRuleCategory,
+} from '../../src/analyzer/diagnostics';
+import type { AgentMetadataExplanationContract } from '../../src/core';
+import {
+  normalizeHostDiagnosticsEnvelopeForSnapshot,
+  normalizeHostDiagnosticsForSnapshot,
+  type NormalizedHostDiagnosticsEnvelopeSnapshot,
+  type NormalizedHostDiagnosticSnapshot,
+} from '../../src/diagnostics-router';
+import {
+  normalizeCompletionItemsForSnapshot,
+  type NormalizedCompletionItemSnapshot,
+} from '../../src/features/completion';
+import {
+  normalizeHoverForSnapshot,
+  type NormalizedHoverSnapshot,
+} from '../../src/features/hover';
 
 type Eol = '\n' | '\r\n';
 
@@ -17,6 +39,15 @@ export type FixtureCorpusSourceKind = 'inline-document';
 export type FixtureCorpusKind = 'representative' | 'excluded' | 'edge-case';
 export type FixtureMatrixArea = 'service' | 'remap' | 'locator' | 'diagnostic-taxonomy';
 
+export interface FixtureExpectedDiagnosticRule {
+  category: DiagnosticRuleCategory;
+  code: DiagnosticCode;
+  explanation: AgentMetadataExplanationContract;
+  meaning: string;
+  owner: DiagnosticOwner;
+  severity: 'error' | 'warning' | 'info';
+}
+
 // fixture 한 건의 최종 형태
 // 테스트가 바로 꺼내 쓸 수 있게 uri, filePath, 기대값까지 포함한 구조
 export interface FixtureCorpusEntry {
@@ -31,6 +62,7 @@ export interface FixtureCorpusEntry {
   uri: string;
   expectedSections: readonly string[];
   expectedDiagnosticCodes: readonly DiagnosticCode[];
+  expectedDiagnosticRules: readonly FixtureExpectedDiagnosticRule[];
   features: readonly string[];
   text: string;
 }
@@ -345,9 +377,39 @@ const fixtureCorpusSeeds: readonly FixtureCorpusSeed[] = [
     sourceKind: 'inline-document',
     relativePath: 'edge-invalid-math.risulorebook',
     expectedSections: ['CONTENT'],
-    expectedDiagnosticCodes: [DiagnosticCode.WrongArgumentCount],
+    expectedDiagnosticCodes: [DiagnosticCode.CalcExpressionOperatorSequence],
     features: ['taxonomy', 'analyzer-math'],
     text: lorebookDocument(['{{? 1 + }}']),
+  },
+  {
+    id: 'lorebook-invalid-calc-macro',
+    label: 'Lorebook with invalid calc macro argument',
+    kind: 'edge-case',
+    artifact: 'lorebook',
+    cbsBearing: true,
+    sourceKind: 'inline-document',
+    relativePath: 'edge-invalid-calc-macro.risulorebook',
+    expectedSections: ['CONTENT'],
+    expectedDiagnosticCodes: [DiagnosticCode.CalcExpressionOperatorSequence],
+    features: ['taxonomy', 'analyzer-math', 'calc-zone'],
+    text: lorebookDocument(['{{calc::1 + }}']),
+  },
+  {
+    id: 'lorebook-calc-expression-context',
+    label: 'Lorebook with shared calc expression context fixtures',
+    kind: 'representative',
+    artifact: 'lorebook',
+    cbsBearing: true,
+    sourceKind: 'inline-document',
+    relativePath: 'representative-calc-expression.risulorebook',
+    expectedSections: ['CONTENT'],
+    features: ['calc-zone', 'completion', 'hover'],
+    text: lorebookDocument([
+      '{{setvar::score::4}}',
+      '{{getglobalvar::bonus}}',
+      '{{? $score + @bonus}}',
+      '{{calc::$score + @bonus}}',
+    ]),
   },
   {
     id: 'lorebook-crlf',
@@ -384,6 +446,19 @@ const fixtureCorpusSeeds: readonly FixtureCorpusSeed[] = [
     expectedSections: ['IN', 'OUT'],
     features: ['duplicate-fragment-text', 'multi-fragment'],
     text: regexDocument(['{{user}}'], ['{{user}}']),
+  },
+  {
+    id: 'regex-recover-out-with-malformed-in-header',
+    label: 'Regex recovers OUT after malformed IN header',
+    kind: 'edge-case',
+    artifact: 'regex',
+    cbsBearing: true,
+    sourceKind: 'inline-document',
+    relativePath: 'edge-recover-out-only.risuregex',
+    expectedSections: ['OUT'],
+    expectedDiagnosticCodes: [DiagnosticCode.UnclosedMacro],
+    features: ['malformed-section', 'recovery', 'taxonomy'],
+    text: ['---', 'comment: recovery', 'type: plain', '---', '@@ IN', 'broken header', '@@@ OUT', '{{user'].join('\n'),
   },
   {
     id: 'regex-missing-required-argument',
@@ -620,12 +695,25 @@ const fixtureCorpusSeeds: readonly FixtureCorpusSeed[] = [
 export const CBS_LSP_FIXTURE_CORPUS: readonly FixtureCorpusEntry[] = Object.freeze(
   fixtureCorpusSeeds.map((entry) => {
     const filePath = `/fixtures/${entry.relativePath}`;
+    const expectedDiagnosticCodes = entry.expectedDiagnosticCodes ?? [];
 
     return {
       ...entry,
       filePath,
       uri: `file://${filePath}`,
-      expectedDiagnosticCodes: entry.expectedDiagnosticCodes ?? [],
+      expectedDiagnosticCodes,
+      expectedDiagnosticRules: expectedDiagnosticCodes.map((code) => {
+        const definition = DIAGNOSTIC_TAXONOMY[code];
+
+        return {
+          category: definition.category,
+          code: definition.code,
+          explanation: createDiagnosticRuleExplanation(definition.owner, definition.category),
+          meaning: definition.meaning,
+          owner: definition.owner,
+          severity: definition.severity,
+        } satisfies FixtureExpectedDiagnosticRule;
+      }),
     };
   }),
 );
@@ -636,6 +724,7 @@ const fixtureRedTestMatrix: Record<FixtureMatrixArea, readonly string[]> = {
   service: [
     'lorebook-basic',
     'regex-basic',
+    'regex-recover-out-with-malformed-in-header',
     'prompt-basic',
     'html-basic',
     'lua-basic',
@@ -722,4 +811,54 @@ export function createFixtureRequest(
     filePath: entry.filePath,
     text: entry.text,
   };
+}
+
+/**
+ * snapshotCompletionItems 함수.
+ * completion 목록을 deterministic ordering의 normalized JSON view로 변환함.
+ *
+ * @param items - snapshot/golden 비교용으로 정규화할 completion 목록
+ * @returns stable ordering과 stable field names를 가진 completion snapshot 배열
+ */
+export function snapshotCompletionItems(
+  items: readonly CompletionItem[],
+): NormalizedCompletionItemSnapshot[] {
+  return normalizeCompletionItemsForSnapshot(items);
+}
+
+/**
+ * snapshotHoverResult 함수.
+ * hover 결과 하나를 snapshot-friendly normalized JSON view로 변환함.
+ *
+ * @param hover - 정규화할 hover payload
+ * @returns stable field names를 가진 hover snapshot 또는 null
+ */
+export function snapshotHoverResult(hover: Hover | null): NormalizedHoverSnapshot | null {
+  return normalizeHoverForSnapshot(hover);
+}
+
+/**
+ * snapshotHostDiagnostics 함수.
+ * host LSP diagnostics 배열을 deterministic ordering의 normalized JSON view로 변환함.
+ *
+ * @param diagnostics - 정규화할 host diagnostics 배열
+ * @returns stable ordering과 relatedInformation shape를 가진 diagnostic snapshot 배열
+ */
+export function snapshotHostDiagnostics(
+  diagnostics: readonly Diagnostic[],
+): NormalizedHostDiagnosticSnapshot[] {
+  return normalizeHostDiagnosticsForSnapshot(diagnostics);
+}
+
+/**
+ * snapshotHostDiagnosticsEnvelope 함수.
+ * host diagnostics snapshot에 runtime availability contract를 함께 묶음.
+ *
+ * @param diagnostics - 정규화할 host diagnostics 배열
+ * @returns diagnostics + availability를 함께 담은 snapshot view
+ */
+export function snapshotHostDiagnosticsEnvelope(
+  diagnostics: readonly Diagnostic[],
+): NormalizedHostDiagnosticsEnvelopeSnapshot {
+  return normalizeHostDiagnosticsEnvelopeForSnapshot(diagnostics);
 }

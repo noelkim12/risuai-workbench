@@ -159,4 +159,65 @@ describe('SemanticTokensProvider', () => {
     expect(malformedDecoded.every((token) => token.length > 0)).toBe(true);
     expect(provider.provide(createParams(empty.uri), createFixtureRequest(empty)).data).toEqual([]);
   });
+
+  it('classifies call::name and arg::N with local-function-aware token types', () => {
+    const service = new FragmentAnalysisService();
+    const provider = new SemanticTokensProvider(service);
+    const text = [
+      '---',
+      'name: entry',
+      '---',
+      '@@@ CONTENT',
+      '{{#func greet user target}}Hello {{arg::1}}{{/func}}',
+      '{{call::greet::Noel::friend}}',
+      '',
+    ].join('\n');
+    const request = buildRequest('/fixtures/semantic-local-function.risulorebook', text);
+    const decoded = decodeSemanticTokens(provider.provide(createParams(request.uri), request).data, text);
+
+    expect(decoded).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: 'greet', type: 'function' }),
+        expect.objectContaining({ text: '1', type: 'parameter' }),
+      ]),
+    );
+  });
+
+  it('keeps documented special-case classifications for variable builtins, block operators, and pure-mode bodies', () => {
+    const service = new FragmentAnalysisService();
+    const provider = new SemanticTokensProvider(service);
+    const text = [
+      '---',
+      'name: entry',
+      '---',
+      '@@@ CONTENT',
+      '{{#when::score::is::10}}ok{{/}}',
+      '{{#each items as item}}{{slot::item}}{{setvar::hidden::1}}{{/each}}',
+      '{{#func greet user}}{{arg::0}}{{call::greet::Noel}}{{/func}}',
+      '',
+    ].join('\n');
+    const request = buildRequest('/fixtures/semantic-special-cases.risulorebook', text);
+    const decoded = decodeSemanticTokens(provider.provide(createParams(request.uri), request).data, text);
+
+    expect(decoded).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: 'score', type: 'string' }),
+        expect.objectContaining({ text: 'is', type: 'operator' }),
+        expect.objectContaining({ text: '10', type: 'number' }),
+        expect.objectContaining({ text: 'item', type: 'variable' }),
+        expect.objectContaining({ text: 'setvar', type: 'string' }),
+        expect.objectContaining({ text: 'hidden', type: 'string' }),
+        expect.objectContaining({ text: '1', type: 'string' }),
+        expect.objectContaining({ text: '0', type: 'parameter' }),
+        expect.objectContaining({ text: 'greet', type: 'function' }),
+      ]),
+    );
+
+    expect(decoded).not.toContainEqual(
+      expect.objectContaining({ text: 'setvar', type: 'function' }),
+    );
+    expect(decoded).not.toContainEqual(
+      expect.objectContaining({ text: 'hidden', type: 'variable' }),
+    );
+  });
 });

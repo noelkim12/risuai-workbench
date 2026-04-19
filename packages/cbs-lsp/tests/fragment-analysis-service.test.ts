@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as core from 'risu-workbench-core';
+import type { CancellationToken } from 'vscode-languageserver/node';
 
 import {
   createSyntheticDocumentVersion,
   FragmentAnalysisService,
   fragmentAnalysisService,
 } from '../src/core';
+import { DiagnosticCode } from '../src/analyzer/diagnostics';
 import { routeDiagnosticsForDocument } from '../src/diagnostics-router';
 import {
   createFixtureRequest,
@@ -21,6 +23,15 @@ const noFragmentServiceFixtures = serviceFixtures.filter(
   (entry) => entry.cbsBearing && entry.expectedSections.length === 0,
 );
 const excludedServiceFixtures = serviceFixtures.filter((entry) => !entry.cbsBearing);
+
+function createCancellationToken(cancelled: boolean = false): CancellationToken {
+  return {
+    isCancellationRequested: cancelled,
+    onCancellationRequested: () => ({
+      dispose() {},
+    }),
+  };
+}
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -50,6 +61,7 @@ describe('FragmentAnalysisService', () => {
         uri: entry.uri,
         version: 1,
         filePath: entry.filePath,
+        textSignature: createSyntheticDocumentVersion(entry.text),
       });
 
       const firstFragment = expected.fragments[0];
@@ -97,8 +109,79 @@ describe('FragmentAnalysisService', () => {
 
     expect(first).toBe(second);
     expect(nextVersion).not.toBe(first);
-    expect(service.getCachedAnalysis(request.uri, request.version)).toBeNull();
-    expect(service.getCachedAnalysis(request.uri, 8)).toBe(nextVersion);
+      expect(service.getCachedAnalysis(request.uri, request.version)).toBeNull();
+      expect(service.getCachedAnalysis(request.uri, 8)).toBe(nextVersion);
+    });
+
+  it('replaces stale cache entries when the same uri/version receives different text', () => {
+    const service = new FragmentAnalysisService();
+    const entry = getFixtureCorpusEntry('lorebook-basic');
+    const firstRequest = createFixtureRequest(entry, 7);
+    const secondText = entry.text.replace('{{user}}', '{{char}}');
+
+    const first = service.analyzeDocument(firstRequest);
+    const second = service.analyzeDocument({
+      ...firstRequest,
+      text: secondText,
+    });
+
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    expect(second).not.toBe(first);
+    expect(service.getCachedAnalysis(firstRequest.uri, firstRequest.version)).toBe(second);
+    expect(second?.cache.textSignature).toBe(createSyntheticDocumentVersion(secondText));
+  });
+
+  it('reuses unchanged fragment analyses across versions of a multi-fragment document', () => {
+    const service = new FragmentAnalysisService();
+    const parseSpy = vi.spyOn(core.CBSParser.prototype, 'parse');
+    const entry = getFixtureCorpusEntry('regex-basic');
+    const firstRequest = createFixtureRequest(entry, 1);
+    const secondText = entry.text.replace('Hello {{user}}', 'Hello there {{user}}');
+
+    const first = service.analyzeDocument(firstRequest);
+    const second = service.analyzeDocument({
+      ...firstRequest,
+      version: 2,
+      text: secondText,
+    });
+
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    expect(parseSpy).toHaveBeenCalledTimes(3);
+    expect(first?.fragmentAnalyses).toHaveLength(2);
+    expect(second?.fragmentAnalyses).toHaveLength(2);
+    expect(second?.fragmentAnalyses[0]).not.toBe(first?.fragmentAnalyses[0]);
+    expect(second?.fragmentAnalyses[1]).not.toBe(first?.fragmentAnalyses[1]);
+    expect(second?.fragmentAnalyses[1]?.document).toBe(first?.fragmentAnalyses[1]?.document);
+    expect(second?.fragmentAnalyses[1]?.tokens).toBe(first?.fragmentAnalyses[1]?.tokens);
+    expect(second?.fragmentAnalyses[1]?.symbolTable).toBe(first?.fragmentAnalyses[1]?.symbolTable);
+    expect(second?.fragmentAnalyses[1]?.fragment.content).toBe(first?.fragmentAnalyses[1]?.fragment.content);
+    expect(second?.fragmentAnalyses[0]?.document).not.toBe(first?.fragmentAnalyses[0]?.document);
+  });
+
+  it('reuses unchanged fragments even when their host offsets shift', () => {
+    const service = new FragmentAnalysisService();
+    const parseSpy = vi.spyOn(core.CBSParser.prototype, 'parse');
+    const entry = getFixtureCorpusEntry('regex-basic');
+    const firstRequest = createFixtureRequest(entry, 1);
+    const secondText = entry.text.replace('Hello {{user}}', 'Hello with a much longer prefix {{user}}');
+
+    const first = service.analyzeDocument(firstRequest);
+    const second = service.analyzeDocument({
+      ...firstRequest,
+      version: 2,
+      text: secondText,
+    });
+
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    expect(parseSpy).toHaveBeenCalledTimes(3);
+    expect(second?.fragmentAnalyses[1]?.document).toBe(first?.fragmentAnalyses[1]?.document);
+    expect(second?.fragmentAnalyses[1]?.fragment.start).not.toBe(first?.fragmentAnalyses[1]?.fragment.start);
+    expect(second?.fragmentAnalyses[1]?.mapper.toHostOffset(0)).toBe(
+      second?.fragmentAnalyses[1]?.fragment.start,
+    );
   });
 
   it.each(excludedServiceFixtures)(
@@ -129,6 +212,17 @@ describe('FragmentAnalysisService', () => {
     expect(service.getCachedAnalysis(`file://${filePath}`, version)).toBeNull();
   });
 
+  it('does not cache analysis when the request is already cancelled', () => {
+    const service = new FragmentAnalysisService();
+    const entry = getFixtureCorpusEntry('lorebook-basic');
+    const request = createFixtureRequest(entry, 5);
+
+    const analysis = service.analyzeDocument(request, createCancellationToken(true));
+
+    expect(analysis).toBeNull();
+    expect(service.getCachedAnalysis(request.uri, request.version)).toBeNull();
+  });
+
   it('routes diagnostics through the shared fragment analysis service seam', () => {
     const analyzeSpy = vi.spyOn(fragmentAnalysisService, 'analyzeDocument');
     const entry = getFixtureCorpusEntry('lorebook-unclosed-macro');
@@ -142,5 +236,74 @@ describe('FragmentAnalysisService', () => {
       filePath: entry.filePath,
       text: entry.text,
     });
+  });
+
+  it('keeps analyzing recovered fragments after malformed section headers', () => {
+    const service = new FragmentAnalysisService();
+    const entry = getFixtureCorpusEntry('regex-recover-out-with-malformed-in-header');
+    const analysis = service.analyzeDocument(createFixtureRequest(entry));
+    const diagnostics = routeDiagnosticsForDocument(entry.filePath, entry.text);
+
+    expect(analysis).not.toBeNull();
+    expect(analysis?.fragments).toHaveLength(1);
+    expect(analysis?.fragments[0]).toMatchObject({
+      section: 'OUT',
+      content: '{{user',
+    });
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).toContain(DiagnosticCode.UnclosedMacro);
+  });
+
+  it('summarizes shared recovery state for malformed fragments', () => {
+    const service = new FragmentAnalysisService();
+    const unclosedMacro = service.analyzeDocument(
+      createFixtureRequest(getFixtureCorpusEntry('lorebook-unclosed-macro')),
+    );
+    const unclosedBlock = service.analyzeDocument(
+      createFixtureRequest(getFixtureCorpusEntry('lorebook-unclosed-block')),
+    );
+
+    expect(unclosedMacro?.recovery).toEqual({
+      hasRecoveredFragments: true,
+      fragmentModes: ['token-recovery'],
+    });
+    expect(unclosedMacro?.fragmentAnalyses[0]?.recovery).toEqual({
+      mode: 'token-recovery',
+      hasSyntaxRecovery: true,
+      tokenContextReliable: false,
+      structureReliable: false,
+      hasTokenizerRecovery: true,
+      hasParserRecovery: false,
+      hasUnclosedMacro: true,
+      hasUnclosedBlock: false,
+      hasInvalidBlockNesting: false,
+      syntaxDiagnosticCodes: ['CBS001'],
+    });
+    expect(unclosedBlock?.recovery).toEqual({
+      hasRecoveredFragments: true,
+      fragmentModes: ['structure-recovery'],
+    });
+    expect(unclosedBlock?.fragmentAnalyses[0]?.recovery).toEqual({
+      mode: 'structure-recovery',
+      hasSyntaxRecovery: true,
+      tokenContextReliable: true,
+      structureReliable: false,
+      hasTokenizerRecovery: false,
+      hasParserRecovery: true,
+      hasUnclosedMacro: false,
+      hasUnclosedBlock: true,
+      hasInvalidBlockNesting: false,
+      syntaxDiagnosticCodes: ['CBS002'],
+    });
+  });
+
+  it('keeps malformed fragment diagnostics stable when the same content is reanalyzed under a new version', () => {
+    const service = new FragmentAnalysisService();
+    const entry = getFixtureCorpusEntry('lorebook-unclosed-macro');
+    const first = service.analyzeDocument(createFixtureRequest(entry, 1));
+    const second = service.analyzeDocument(createFixtureRequest(entry, 2));
+
+    expect(first?.fragmentAnalyses[0]?.diagnostics).toEqual(second?.fragmentAnalyses[0]?.diagnostics);
+    expect(first?.diagnostics).toEqual(second?.diagnostics);
+    expect(first?.recovery).toEqual(second?.recovery);
   });
 });

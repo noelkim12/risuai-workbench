@@ -19,7 +19,10 @@ import type {
 import {
   createSyntheticDocumentVersion,
   fragmentAnalysisService,
+  getCalcExpressionSublanguageDocumentation,
+  getCalcExpressionZone,
   resolveActiveLocalFunctionContext,
+  type LocalFunctionDeclaration,
   type FragmentAnalysisVersion,
   type FragmentAnalysisService,
 } from '../core';
@@ -155,49 +158,165 @@ function createSignatureInformation(builtin: CBSBuiltinFunction): SignatureInfor
 }
 
 /**
- * createLocalFunctionSignatureInformation 함수.
- * 로컬 `#func` 선언을 signature help 형태로 변환함.
+ * createNamedParameterInformation 함수.
+ * label substring 매칭 없이 문자열 label 기반 parameter information을 만듦.
  *
- * @param declaration - 현재 활성 로컬 함수 선언 정보
- * @returns 로컬 함수용 signature information
+ * @param label - 시그니처에서 보여줄 파라미터 라벨
+ * @param documentation - 파라미터 의미 설명
+ * @returns 문자열 label 기반 parameter information
  */
-function createLocalFunctionSignatureInformation(declaration: {
-  name: string;
-  parameters: readonly string[];
-}): SignatureInformation {
-  const label = `#func ${declaration.name}(${declaration.parameters.join(', ')})`;
-  let searchFrom = 0;
+function createNamedParameterInformation(
+  label: string,
+  documentation: string,
+): ParameterInformation {
+  return {
+    label,
+    documentation,
+  };
+}
+
+function formatRangeStart(range: Range): string {
+  return `line ${range.start.line + 1}, character ${range.start.character + 1}`;
+}
+
+/**
+ * createLocalCallSignatureInformation 함수.
+ * `{{call::funcName::...}}` 문맥을 위한 로컬 함수 호출 시그니처를 만듦.
+ *
+ * @param declaration - 현재 call macro가 가리키는 로컬 함수 선언 정보
+ * @returns 로컬 call macro용 signature information
+ */
+function createLocalCallSignatureInformation(
+  declaration: LocalFunctionDeclaration,
+): SignatureInformation {
+  const parameterLabels = [declaration.name, ...declaration.parameters];
+  const label = `call::${parameterLabels.join('::')}`;
 
   return {
     label,
-    documentation: `Local function signature for \`${declaration.name}\` invoked through \`{{call::...}}\`.`,
-    parameters: declaration.parameters.map((parameter) => {
-      const start = label.indexOf(parameter, searchFrom);
-      if (start >= 0) {
-        searchFrom = start + parameter.length;
-        return {
-          label: [start, start + parameter.length],
-          documentation: `Argument slot ${declaration.parameters.indexOf(parameter)} for local parameter \`${parameter}\`.`,
-        } satisfies ParameterInformation;
-      }
-
-      return {
-        label: parameter,
-        documentation: `Local parameter \`${parameter}\`.`,
-      } satisfies ParameterInformation;
-    }),
+    documentation: [
+      `Local function call for fragment-local \`#func ${declaration.name}\` declared at ${formatRangeStart(declaration.range)}.`,
+      'The first slot selects the local function name, and the remaining slots feed `arg::N` references inside the function body.',
+    ].join(' '),
+    parameters: [
+      createNamedParameterInformation(
+        declaration.name,
+        `Local function name slot. Resolves to fragment-local \`#func ${declaration.name}\` declared at ${formatRangeStart(declaration.range)}.`,
+      ),
+      ...declaration.parameters.map((parameter, index) => {
+        const parameterDeclaration = declaration.parameterDeclarations[index];
+        return createNamedParameterInformation(
+          parameter,
+          parameterDeclaration
+            ? `Call argument slot ${index} feeds local parameter \`${parameterDeclaration.name}\` declared at ${formatRangeStart(parameterDeclaration.range)}. The function body can read it via \`arg::${index}\`.`
+            : `Call argument slot ${index} feeds local parameter \`${parameter}\`. The function body can read it via \`arg::${index}\`.`,
+        );
+      }),
+    ],
   };
 }
 
 /**
- * clampLocalFunctionParameterIndex 함수.
- * 로컬 함수 파라미터 개수에 맞게 active parameter 범위를 제한함.
+ * createCalcExpressionSignatureInformation 함수.
+ * `{{? ...}}`와 `{{calc::...}}`가 공유하는 calc expression 전용 시그니처를 만듦.
+ *
+ * @returns calc expression sublanguage 전용 signature information
+ */
+function createCalcExpressionSignatureInformation(): SignatureInformation {
+  const calcDocumentation = getCalcExpressionSublanguageDocumentation();
+
+  return {
+    label: '{{? expression}} / {{calc::expression}}',
+    documentation: calcDocumentation.summary,
+    parameters: [
+      createNamedParameterInformation(
+        'expression',
+        [
+          calcDocumentation.summary,
+          calcDocumentation.variables,
+          calcDocumentation.operators,
+          calcDocumentation.coercion,
+        ].join(' '),
+      ),
+    ],
+  };
+}
+
+/**
+ * createEachBlockHeaderSignatureInformation 함수.
+ * `#each` block header 문맥 전용 시그니처를 만듦.
+ *
+ * @returns `#each` block header 의미를 설명하는 signature information
+ */
+function createEachBlockHeaderSignatureInformation(): SignatureInformation {
+  return {
+    label: '#each iteratorExpression as alias',
+    documentation: [
+      'Block header for fragment-local iteration.',
+      '`iteratorExpression` resolves the list or array source for the loop, and `alias` becomes the loop binding referenced through `slot::alias` inside the block body.',
+    ].join(' '),
+    parameters: [
+      createNamedParameterInformation(
+        'iteratorExpression',
+        'List or array expression consumed by the current `#each` block. Optional operators such as `keep` still belong to this iterator segment.',
+      ),
+      createNamedParameterInformation(
+        'alias',
+        'Loop binding name introduced by `as`. Inside the block body, `slot::alias` reads the current iterated item.',
+      ),
+    ],
+  };
+}
+
+/**
+ * createFuncBlockHeaderSignatureInformation 함수.
+ * `#func` block header 문맥 전용 시그니처를 만듦.
+ *
+ * @param declaration - 현재 헤더에서 읽어낸 로컬 함수 선언 정보
+ * @returns `#func` header 의미를 설명하는 signature information
+ */
+function createFuncBlockHeaderSignatureInformation(
+  declaration: Pick<LocalFunctionDeclaration, 'name' | 'parameters'> | null,
+): SignatureInformation {
+  const declaredParameters = declaration?.parameters ?? [];
+  const declaredSummary =
+    declaration && declaredParameters.length > 0
+      ? ` Current header slots: ${declaredParameters
+          .map((parameter, index) => `\`arg::${index}\` → \`${parameter}\``)
+          .join(', ')}.`
+      : declaration
+        ? ' Current header has no declared local parameters yet.'
+        : '';
+
+  return {
+    label: '#func functionName ...parameters',
+    documentation: [
+      'Block header that declares a fragment-local function callable through `{{call::functionName::...}}`.',
+      'The first slot declares the local function name. Each following space-separated token declares a local parameter exposed inside the body as `arg::0`, `arg::1`, and so on.',
+      declaredSummary,
+    ].join(''),
+    parameters: [
+      createNamedParameterInformation(
+        'functionName',
+        'Fragment-local function name. `{{call::functionName::...}}` resolves this slot to select which `#func` block to invoke.',
+      ),
+      createNamedParameterInformation(
+        '...parameters',
+        'Space-separated local parameter names. The first declared name maps to `arg::0`, the next to `arg::1`, and so on inside the `#func` body.',
+      ),
+    ],
+  };
+}
+
+/**
+ * clampExplicitParameterIndex 함수.
+ * 명시적으로 계산한 파라미터 개수에 맞춰 active parameter를 제한함.
  *
  * @param activeParameter - 계산된 0-based 파라미터 인덱스
- * @param parameterCount - 로컬 함수 파라미터 수
+ * @param parameterCount - 시그니처에 노출한 총 파라미터 수
  * @returns 안전하게 보정된 active parameter 인덱스
  */
-function clampLocalFunctionParameterIndex(activeParameter: number, parameterCount: number): number {
+function clampExplicitParameterIndex(activeParameter: number, parameterCount: number): number {
   if (parameterCount <= 0) {
     return 0;
   }
@@ -288,6 +407,143 @@ function resolveOwnerHeaderRange(
   return null;
 }
 
+/**
+ * parseLocalFunctionHeaderDeclaration 함수.
+ * `#func` block header 텍스트에서 함수 이름과 파라미터 목록을 읽어냄.
+ *
+ * @param headerRange - 현재 block header range
+ * @param content - fragment 원문 텍스트
+ * @returns 헤더에서 읽은 로컬 함수 선언 정보, 해석할 수 없으면 null
+ */
+function parseLocalFunctionHeaderDeclaration(
+  headerRange: Range,
+  content: string,
+): LocalFunctionDeclaration | null {
+  const headerStart = positionToOffset(content, headerRange.start);
+  const headerEnd = positionToOffset(content, headerRange.end);
+  const headerText = content.slice(headerStart, headerEnd);
+  const match = headerText.match(/^\{\{#func\s+([^\s}]+)(?:\s+([^}]+?))?\}\}$/u);
+  if (!match?.[1]) {
+    return null;
+  }
+
+  const name = match[1];
+  const rawParameterText = match[2]?.trim() ?? '';
+  const parameters = rawParameterText.length > 0 ? rawParameterText.split(/\s+/u) : [];
+
+  return {
+    name,
+    range: headerRange,
+    parameters,
+    parameterDeclarations: [],
+  };
+}
+
+/**
+ * resolveEachHeaderActiveParameter 함수.
+ * `#each iteratorExpression as alias` 헤더에서 현재 커서가 iterator/alias 중 어디에 있는지 계산함.
+ *
+ * @param ownerRange - `#each` block open range
+ * @param cursorOffset - fragment-local cursor offset
+ * @param content - fragment 원문 텍스트
+ * @returns 0-based active parameter index
+ */
+function resolveEachHeaderActiveParameter(
+  ownerRange: Range,
+  cursorOffset: number,
+  content: string,
+): number {
+  const headerStart = positionToOffset(content, ownerRange.start);
+  const headerEnd = positionToOffset(content, ownerRange.end);
+  const headerText = content.slice(headerStart, headerEnd);
+  const relativeCursor = Math.max(0, Math.min(cursorOffset - headerStart, headerText.length));
+  const aliasMarker = headerText.indexOf(' as ');
+
+  if (aliasMarker < 0) {
+    return 0;
+  }
+
+  return relativeCursor >= aliasMarker + ' as '.length ? 1 : 0;
+}
+
+/**
+ * resolveFuncHeaderActiveParameter 함수.
+ * `#func` block header에서 함수 이름 슬롯인지, 파라미터 슬롯인지 계산함.
+ *
+ * @param ownerRange - `#func` block open range
+ * @param cursorOffset - fragment-local cursor offset
+ * @param content - fragment 원문 텍스트
+ * @returns 0-based active parameter index
+ */
+function resolveFuncHeaderActiveParameter(
+  ownerRange: Range,
+  cursorOffset: number,
+  content: string,
+): number {
+  const headerStart = positionToOffset(content, ownerRange.start);
+  const headerEnd = positionToOffset(content, ownerRange.end);
+  const headerText = content.slice(headerStart, headerEnd);
+  const relativeCursor = Math.max(0, Math.min(cursorOffset - headerStart, headerText.length));
+  const nameAndParams = headerText.match(/^\{\{#func\s+(.+?)\}\}$/u)?.[1] ?? '';
+  const tokens = Array.from(nameAndParams.matchAll(/\S+/gu));
+  if (tokens.length === 0) {
+    return 0;
+  }
+
+  const firstParameter = tokens[1];
+  if (!firstParameter) {
+    return 0;
+  }
+
+  return relativeCursor >= (firstParameter.index ?? 0) + '#func '.length ? 1 : 0;
+}
+
+/**
+ * resolveCustomBlockHeaderSignatureHelp 함수.
+ * `#each` / `#func` block header 전용 signature help를 계산함.
+ *
+ * @param nodeSpan - locator가 계산한 현재 node span
+ * @param cursorOffset - fragment-local cursor offset
+ * @param content - fragment 원문 텍스트
+ * @returns 문맥 전용 signature help 정보, 없으면 null
+ */
+function resolveCustomBlockHeaderSignatureHelp(
+  nodeSpan: { owner: unknown; category: string } | null,
+  cursorOffset: number,
+  content: string,
+): { signature: SignatureInformation; activeParameter: number } | null {
+  if (
+    nodeSpan?.category !== 'block-header' ||
+    typeof nodeSpan.owner !== 'object' ||
+    nodeSpan.owner === null ||
+    !('type' in nodeSpan.owner) ||
+    nodeSpan.owner.type !== 'Block' ||
+    !('kind' in nodeSpan.owner) ||
+    !('openRange' in nodeSpan.owner)
+  ) {
+    return null;
+  }
+
+  const ownerRange = nodeSpan.owner.openRange as Range;
+  const kind = nodeSpan.owner.kind as BlockKind;
+  if (kind === 'each') {
+    return {
+      signature: createEachBlockHeaderSignatureInformation(),
+      activeParameter: resolveEachHeaderActiveParameter(ownerRange, cursorOffset, content),
+    };
+  }
+
+  if (kind === 'func') {
+    const declaration = parseLocalFunctionHeaderDeclaration(ownerRange, content);
+    return {
+      signature: createFuncBlockHeaderSignatureInformation(declaration),
+      activeParameter: resolveFuncHeaderActiveParameter(ownerRange, cursorOffset, content),
+    };
+  }
+
+  return null;
+}
+
 export class SignatureHelpProvider {
   constructor(
     private registry: CBSBuiltinRegistry,
@@ -321,6 +577,31 @@ export class SignatureHelpProvider {
       return null;
     }
 
+    const customBlockHeaderSignature = resolveCustomBlockHeaderSignatureHelp(
+      lookup.nodeSpan,
+      lookup.fragmentLocalOffset,
+      lookup.fragment.content,
+    );
+    if (customBlockHeaderSignature) {
+      return {
+        signatures: [customBlockHeaderSignature.signature],
+        activeSignature: 0,
+        activeParameter: clampExplicitParameterIndex(
+          customBlockHeaderSignature.activeParameter,
+          customBlockHeaderSignature.signature.parameters?.length ?? 0,
+        ),
+      };
+    }
+
+    const calcExpressionZone = getCalcExpressionZone(lookup);
+    if (calcExpressionZone) {
+      return {
+        signatures: [createCalcExpressionSignatureInformation()],
+        activeSignature: 0,
+        activeParameter: 0,
+      };
+    }
+
     const activeLocalFunctionContext = resolveActiveLocalFunctionContext(lookup);
     if (activeLocalFunctionContext?.source === 'call-macro') {
       const ownerRange = resolveOwnerHeaderRange(lookup.nodeSpan);
@@ -328,21 +609,21 @@ export class SignatureHelpProvider {
         return null;
       }
 
-      const signature = createLocalFunctionSignatureInformation(activeLocalFunctionContext.declaration);
+      const signature = createLocalCallSignatureInformation(activeLocalFunctionContext.declaration);
       const completedSeparators = countCompletedTopLevelSeparators(
         lookup.fragmentAnalysis.tokens,
         ownerRange,
         lookup.fragmentLocalOffset,
         lookup.fragment.content,
       );
-      const rawActiveParameter = Math.max(0, completedSeparators - 2);
+      const rawActiveParameter = Math.max(0, completedSeparators - 1);
 
       return {
         signatures: [signature],
         activeSignature: 0,
-        activeParameter: clampLocalFunctionParameterIndex(
+        activeParameter: clampExplicitParameterIndex(
           rawActiveParameter,
-          activeLocalFunctionContext.declaration.parameters.length,
+          activeLocalFunctionContext.declaration.parameters.length + 1,
         ),
       };
     }

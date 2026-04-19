@@ -2,7 +2,10 @@ import type { Position, ReferenceParams } from 'vscode-languageserver/node';
 import { describe, expect, it } from 'vitest';
 
 import { FragmentAnalysisService } from '../../src/core';
-import { ReferencesProvider } from '../../src/features/references';
+import {
+  REFERENCES_PROVIDER_AVAILABILITY,
+  ReferencesProvider,
+} from '../../src/features/references';
 import { offsetToPosition } from '../../src/utils/position';
 import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
 
@@ -57,6 +60,18 @@ function createParams(
 }
 
 describe('ReferencesProvider', () => {
+  it('exposes local-only availability honesty metadata', () => {
+    const provider = new ReferencesProvider();
+
+    expect(provider.availability).toEqual(REFERENCES_PROVIDER_AVAILABILITY);
+    expect(provider.availability).toEqual({
+      scope: 'local-only',
+      source: 'references-provider:fragment-symbol-table',
+      detail:
+        'References resolve only fragment-local variable and loop-alias symbols; globals and workspace-wide references stay unavailable.',
+    });
+  });
+
   describe('local-first resolution', () => {
     it('returns references only from current fragment', () => {
       // Create a document with setvar and getvar for the same variable

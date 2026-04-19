@@ -1,28 +1,41 @@
 import {
   type CancellationToken,
   Hover,
+  type MarkedString,
   MarkupKind,
+  type MarkupContent,
   TextDocumentPositionParams,
 } from 'vscode-languageserver/node';
-import { formatHoverContent, TokenType } from 'risu-workbench-core';
-import type { CBSBuiltinRegistry, Range } from 'risu-workbench-core';
-import { CALC_EXPRESSION_SUBLANGUAGE_LABEL } from '../core/calc-expression';
+import { formatHoverContent } from 'risu-workbench-core';
+import type { CBSBuiltinFunction, CBSBuiltinRegistry, Range } from 'risu-workbench-core';
+import {
+  CALC_EXPRESSION_SUBLANGUAGE_LABEL,
+  getCalcExpressionSublanguageDocumentation,
+} from '../core/calc-expression';
 
 import {
+  createAgentMetadataEnvelope,
+  createAgentMetadataExplanation,
   collectLocalFunctionDeclarations,
   fragmentAnalysisService,
   findCalcReferenceAtOffset,
+  resolveVisibleLoopBindingFromNodePath,
   getCalcExpressionZone,
   resolveTokenMacroArgumentContext,
   resolveActiveLocalFunctionContext,
   resolveLocalFunctionDeclaration,
   shouldSuppressPureModeFeatures,
+  isAgentMetadataEnvelope,
+  type AgentMetadataCategoryContract,
+  type AgentMetadataEnvelope,
+  type AgentMetadataExplanationContract,
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
   type FragmentCursorLookupResult,
 } from '../core';
 import { isRequestCancelled } from '../request-cancellation';
 import { positionToOffset } from '../utils/position';
+import { isDocOnlyBuiltin } from 'risu-workbench-core';
 
 export type HoverRequestResolver = (
   params: TextDocumentPositionParams,
@@ -34,10 +47,66 @@ export interface HoverProviderOptions {
 }
 
 interface HoverTarget {
+  data: AgentMetadataEnvelope;
   markdown: string;
   localStartOffset: number;
   localEndOffset: number;
 }
+
+export interface AgentFriendlyHover extends Hover {
+  data: AgentMetadataEnvelope;
+}
+
+export interface NormalizedHoverSnapshot {
+  contents: {
+    kind: string | null;
+    value: string;
+  };
+  data: AgentMetadataEnvelope | null;
+  range: Range | null;
+}
+
+function normalizeHoverContents(contents: Hover['contents']): NormalizedHoverSnapshot['contents'] {
+  if (typeof contents === 'string') {
+    return { kind: null, value: contents };
+  }
+
+  if (Array.isArray(contents)) {
+    return {
+      kind: null,
+      value: contents.map((entry) => (typeof entry === 'string' ? entry : entry.value)).join('\n'),
+    };
+  }
+
+  const markup = contents as MarkupContent | MarkedString;
+
+  if (typeof markup === 'string') {
+    return { kind: null, value: markup };
+  }
+
+  return {
+    kind: 'kind' in markup ? markup.kind : null,
+    value: markup.value,
+  };
+}
+
+export function normalizeHoverForSnapshot(hover: Hover | null): NormalizedHoverSnapshot | null {
+  if (!hover) {
+    return null;
+  }
+
+  const agentHover = hover as Partial<AgentFriendlyHover>;
+
+  return {
+    contents: normalizeHoverContents(hover.contents),
+    data: isAgentMetadataEnvelope(agentHover.data) ? agentHover.data : null,
+    range: hover.range ?? null,
+  };
+}
+
+const SLOT_MACRO_RULES = Object.freeze({
+  slot: { kind: 'loop', argumentIndex: 0 },
+} as const);
 
 const VARIABLE_MACRO_RULES = Object.freeze({
   addvar: { kind: 'chat', access: 'reads and writes via `addvar`' },
@@ -147,6 +216,30 @@ function formatOrdinal(value: number): string {
   return `${value}th`;
 }
 
+function formatParameterSlotSummary(
+  parameters: readonly { name: string }[],
+): string {
+  if (parameters.length === 0) {
+    return 'none declared';
+  }
+
+  return parameters
+    .map((parameter, index) => `\`arg::${index}\` → \`${parameter.name}\``)
+    .join(', ');
+}
+
+function formatParameterDefinitionSummary(
+  parameters: readonly { name: string; range: Range }[],
+): string {
+  if (parameters.length === 0) {
+    return 'none declared';
+  }
+
+  return parameters
+    .map((parameter) => `\`${parameter.name}\` (${formatRangeStart(parameter.range)})`)
+    .join(', ');
+}
+
 function getTrimmedTokenOffsets(
   lookup: FragmentCursorLookupResult['token'],
 ): { localStartOffset: number; localEndOffset: number } | null {
@@ -214,7 +307,10 @@ export class HoverProvider {
     this.resolveRequest = options.resolveRequest ?? (() => null);
   }
 
-  provide(params: TextDocumentPositionParams, cancellationToken?: CancellationToken): Hover | null {
+  provide(
+    params: TextDocumentPositionParams,
+    cancellationToken?: CancellationToken,
+  ): AgentFriendlyHover | null {
     if (isRequestCancelled(cancellationToken)) {
       return null;
     }
@@ -244,6 +340,7 @@ export class HoverProvider {
     const hoverTarget =
       this.buildBuiltinHover(lookup) ??
       this.buildCalcExpressionHover(lookup) ??
+      this.buildSlotAliasHover(lookup) ??
       this.buildVariableHover(lookup) ??
       this.buildFunctionHover(lookup) ??
       this.buildWhenOperatorHover(lookup);
@@ -266,6 +363,7 @@ export class HoverProvider {
         kind: MarkupKind.Markdown,
         value: hoverTarget.markdown,
       },
+      data: hoverTarget.data,
       range: range ?? undefined,
     };
   }
@@ -284,6 +382,20 @@ export class HoverProvider {
       }
 
       return {
+        data: this.createCategoryData({
+          category: builtin.isBlock || tokenLookup.category === 'else' ? 'block-keyword' : 'builtin',
+          kind:
+            tokenLookup.category === 'else'
+              ? 'else-keyword'
+              : isDocOnlyBuiltin(builtin)
+                ? 'documentation-only-builtin'
+                : 'callable-builtin',
+        }, this.getBuiltinExplanation(
+          builtin,
+          tokenLookup.category === 'else'
+            ? 'Hover resolved this token from the builtin registry as the special :else branch keyword.'
+            : undefined,
+        )),
         markdown: formatHoverContent(builtin),
         ...offsets,
       };
@@ -304,9 +416,114 @@ export class HoverProvider {
     }
 
     return {
+      data: this.createCategoryData({
+        category: builtin.isBlock ? 'block-keyword' : 'builtin',
+        kind: isDocOnlyBuiltin(builtin) ? 'documentation-only-builtin' : 'callable-builtin',
+      }, this.getBuiltinExplanation(builtin)),
       markdown: formatHoverContent(builtin),
       localStartOffset: keywordTarget.localStartOffset,
       localEndOffset: keywordTarget.localEndOffset,
+    };
+  }
+
+  private buildSlotAliasHover(lookup: FragmentCursorLookupResult): HoverTarget | null {
+    const tokenLookup = lookup.token;
+    const tokenMacroContext = resolveTokenMacroArgumentContext(lookup);
+    const nodeSpan = lookup.nodeSpan;
+    if (!tokenLookup || tokenLookup.category !== 'argument') {
+      return null;
+    }
+
+    const macroName = tokenMacroContext?.argumentIndex === 0
+      ? tokenMacroContext.macroName
+      : nodeSpan &&
+          nodeSpan.category === 'argument' &&
+          nodeSpan.argumentIndex === 0 &&
+          nodeSpan.owner.type === 'MacroCall'
+        ? nodeSpan.owner.name.toLowerCase()
+        : null;
+    const slotRule = macroName
+      ? SLOT_MACRO_RULES[macroName as keyof typeof SLOT_MACRO_RULES]
+      : null;
+    const bindingName = tokenLookup.token.value.trim();
+    const slotPrefix = lookup.fragment.content
+      .slice(Math.max(0, tokenLookup.localStartOffset - 'slot::'.length), tokenLookup.localStartOffset)
+      .toLowerCase();
+    const looksLikeSlotReference = slotPrefix === 'slot::';
+    if ((!slotRule && !looksLikeSlotReference) || bindingName.length === 0) {
+      return null;
+    }
+
+    const bindingMatch = resolveVisibleLoopBindingFromNodePath(
+      lookup.nodePath,
+      lookup.fragment.content,
+      bindingName,
+      lookup.fragmentLocalOffset,
+    );
+    if (!bindingMatch) {
+      return {
+        data: this.createCategoryData({
+          category: 'contextual-token',
+          kind: 'loop-alias',
+        }, this.createScopeExplanation(
+          'visible-loop-bindings',
+          'Hover used scope analysis to interpret this slot:: token as a missing loop alias reference.',
+        )),
+        markdown: [
+          `**Loop alias reference: ${bindingName}**`,
+          '',
+          `- Meaning: \`slot::${bindingName}\` tries to reference the active \`#each ... as ${bindingName}\` loop alias.`,
+          '- Status: no visible `#each` loop alias with that name is active at this position.',
+        ].join('\n'),
+        localStartOffset: tokenLookup.localStartOffset,
+        localEndOffset: tokenLookup.localEndOffset,
+      };
+    }
+
+    const { binding, scopeDepth } = bindingMatch;
+    const symbolTable = lookup.fragmentAnalysis.providerLookup.getSymbolTable();
+    const loopSymbol = symbolTable.getVariables(binding.bindingName, 'loop').find((candidate) => {
+      if (!candidate.definitionRange) {
+        return false;
+      }
+
+      return (
+        candidate.definitionRange.start.line === binding.bindingRange.start.line &&
+        candidate.definitionRange.start.character === binding.bindingRange.start.character &&
+        candidate.definitionRange.end.line === binding.bindingRange.end.line &&
+        candidate.definitionRange.end.character === binding.bindingRange.end.character
+      );
+    });
+    const scopeLabel = scopeDepth === 0
+      ? 'current `#each` block'
+      : scopeDepth === 1
+        ? 'outer `#each` block'
+        : `outer \
+\`#each\` block (${scopeDepth} levels up)`;
+    const lines = [`**Loop alias reference: ${binding.bindingName}**`, ''];
+
+    lines.push(
+      `- Meaning: \`slot::${binding.bindingName}\` points to the currently visible \`#each\` loop alias, not the builtin \`slot\` syntax entry itself.`,
+    );
+    lines.push(`- Bound by: \`#each ${binding.iteratorExpression} as ${binding.bindingName}\``);
+    lines.push(`- Scope: ${scopeLabel}`);
+    lines.push(`- Local definition: ${formatRangeStart(binding.bindingRange)}`);
+
+    if (loopSymbol) {
+      lines.push(`- Local references: ${loopSymbol.references.length}`);
+    }
+
+    return {
+      data: this.createCategoryData({
+        category: 'contextual-token',
+        kind: 'loop-alias',
+      }, this.createScopeExplanation(
+        'visible-loop-bindings',
+        'Hover resolved this slot:: token through visible #each loop bindings from scope analysis.',
+      )),
+      markdown: lines.join('\n'),
+      localStartOffset: tokenLookup.localStartOffset,
+      localEndOffset: tokenLookup.localEndOffset,
     };
   }
 
@@ -356,6 +573,18 @@ export class HoverProvider {
     }
 
     return {
+      data: this.createCategoryData({
+        category: 'variable',
+        kind:
+          kind === 'global'
+            ? 'global-variable'
+            : kind === 'temp'
+              ? 'temp-variable'
+              : 'chat-variable',
+      }, this.createScopeExplanation(
+        'variable-symbol-table',
+        'Hover resolved this variable through analyzed symbol-table entries for the current macro argument.',
+      )),
       markdown: lines.join('\n'),
       localStartOffset: tokenLookup.localStartOffset,
       localEndOffset: tokenLookup.localEndOffset,
@@ -367,6 +596,8 @@ export class HoverProvider {
     if (!calcZone) {
       return null;
     }
+
+    const calcDocumentation = getCalcExpressionSublanguageDocumentation();
 
     const calcReference = findCalcReferenceAtOffset(calcZone, lookup.fragmentLocalOffset);
     if (calcReference) {
@@ -381,6 +612,7 @@ export class HoverProvider {
       const lines = [
         `**Calc variable: ${calcReference.raw}**`,
         '',
+        `- Context: ${calcDocumentation.summary}`,
         `- Kind: ${kindLabel}`,
         `- Semantics: ${calcReference.kind === 'global' ? '`@name` reads a global variable' : '`$name` reads a chat variable'} and upstream coerces non-numeric values to \`0\`.`,
       ];
@@ -394,6 +626,13 @@ export class HoverProvider {
       }
 
       return {
+        data: this.createCategoryData({
+          category: 'variable',
+          kind: calcReference.kind === 'global' ? 'global-variable' : 'chat-variable',
+        }, this.createScopeExplanation(
+          'calc-expression-symbol-table',
+          'Hover resolved this calc reference through symbol-table lookup inside the shared expression sublanguage.',
+        )),
         markdown: lines.join('\n'),
         localStartOffset: calcReference.startOffset,
         localEndOffset: calcReference.endOffset,
@@ -401,14 +640,21 @@ export class HoverProvider {
     }
 
     return {
+      data: this.createCategoryData({
+        category: 'contextual-token',
+        kind: 'calc-expression-zone',
+      }, this.createContextualExplanation(
+        'calc-expression-context',
+        'Hover inferred that the cursor is inside the shared CBS expression sublanguage zone.',
+      )),
       markdown: [
         `**${CALC_EXPRESSION_SUBLANGUAGE_LABEL}**`,
         '',
-        `The \`{{? ...}}\` special form and \`{{calc::...}}\` first argument both use the same \`${CALC_EXPRESSION_SUBLANGUAGE_LABEL}\`.`,
+        calcDocumentation.summary,
         '',
-        '- Variables: `$name` for chat variables, `@name` for global variables',
-        '- Operators: `+ - * / ^ % < > <= >= == != ! && ||` and parentheses',
-        '- Coercion: `null` and non-numeric variable values evaluate as `0` upstream',
+        `- ${calcDocumentation.variables}`,
+        `- ${calcDocumentation.operators}`,
+        `- ${calcDocumentation.coercion}`,
       ].join('\n'),
       localStartOffset: calcZone.expressionStartOffset,
       localEndOffset: calcZone.expressionEndOffset,
@@ -444,32 +690,48 @@ export class HoverProvider {
       const endOffset = positionToOffset(lookup.fragment.content, symbol.definitionRange.end);
       return lookup.fragmentLocalOffset >= startOffset && lookup.fragmentLocalOffset <= endOffset;
     });
-    const declaration = functionSymbol
+    const fallbackDeclaration = collectLocalFunctionDeclarations(
+      lookup.fragmentAnalysis.document,
+      lookup.fragment.content,
+    ).find((candidate) => {
+      const startOffset = positionToOffset(lookup.fragment.content, candidate.range.start);
+      const endOffset = positionToOffset(lookup.fragment.content, candidate.range.end);
+      return lookup.fragmentLocalOffset >= startOffset && lookup.fragmentLocalOffset <= endOffset;
+    });
+    const declaration = fallbackDeclaration ?? (functionSymbol
       ? {
           name: functionSymbol.name,
           range: functionSymbol.definitionRange!,
           parameters: functionSymbol.parameters,
+          parameterDeclarations: functionSymbol.parameters.map((parameter, index) => ({
+            index,
+            name: parameter,
+            range: functionSymbol.definitionRange!,
+          })),
         }
-      : collectLocalFunctionDeclarations(
-          lookup.fragmentAnalysis.document,
-          lookup.fragment.content,
-        ).find((candidate) => {
-          const startOffset = positionToOffset(lookup.fragment.content, candidate.range.start);
-          const endOffset = positionToOffset(lookup.fragment.content, candidate.range.end);
-          return lookup.fragmentLocalOffset >= startOffset && lookup.fragmentLocalOffset <= endOffset;
-        });
+      : null);
     if (!declaration) {
       return null;
     }
 
     return {
+      data: this.createCategoryData({
+        category: 'contextual-token',
+        kind: 'local-function',
+      }, this.createContextualExplanation(
+        'local-function-declaration',
+        'Hover inferred a fragment-local #func declaration from the current block-header context.',
+      )),
       markdown: [
         `**Local function declaration: ${declaration.name}**`,
         '',
-        '- Meaning: defines a fragment-local reusable macro body for `{{call::...}}`.',
+        `- Meaning: \`#func ${declaration.name}\` declares a fragment-local reusable macro body that \`{{call::${declaration.name}::...}}\` can invoke.`,
+        `- Local definition: ${formatRangeStart(declaration.range)}`,
         declaration.parameters.length > 0
           ? `- Parameters: ${declaration.parameters.map((parameter) => `\`${parameter}\``).join(', ')}`
           : '- Parameters: inferred at runtime',
+        `- Parameter slots: ${formatParameterSlotSummary(declaration.parameterDeclarations)}`,
+        `- Parameter definitions: ${formatParameterDefinitionSummary(declaration.parameterDeclarations)}`,
         `- Local calls: ${functionSymbol?.references.length ?? 0}`,
       ].join('\n'),
       localStartOffset: positionToOffset(lookup.fragment.content, declaration.range.start),
@@ -524,6 +786,13 @@ export class HoverProvider {
     }
 
     return {
+      data: this.createCategoryData({
+        category: 'contextual-token',
+        kind: 'local-function',
+      }, this.createContextualExplanation(
+        'local-function-reference',
+        'Hover interpreted this token as a call:: local-function reference candidate.',
+      )),
       markdown: lines.join('\n'),
       localStartOffset: tokenLookup.localStartOffset,
       localEndOffset: tokenLookup.localEndOffset,
@@ -553,20 +822,22 @@ export class HoverProvider {
     };
 
     const activeFunctionContext = resolveActiveLocalFunctionContext(lookup);
-    const parameter = activeFunctionContext?.declaration.parameters[reference.index];
+    const parameterDeclaration = activeFunctionContext?.declaration.parameterDeclarations[reference.index];
     const lines = [`**Numbered argument reference: arg::${reference.rawText}**`, ''];
 
     lines.push(
-      `- Meaning: references the ${formatOrdinal(reference.index + 1)} call argument during local \`#func\` recursion.`,
+      `- Meaning: references the ${formatOrdinal(reference.index + 1)} call argument from the active local \`#func\` / \`{{call::...}}\` context.`,
     );
 
     if (!activeFunctionContext) {
       lines.push('- Status: outside a local `#func` / `call::` context.');
     } else {
       lines.push(`- Local function: \`${activeFunctionContext.declaration.name}\``);
+      lines.push(`- Local #func declaration: ${formatRangeStart(activeFunctionContext.declaration.range)}`);
       lines.push(`- Parameter slot: ${reference.index}`);
-      if (parameter) {
-        lines.push(`- Parameter name: \`${parameter}\``);
+      if (parameterDeclaration) {
+        lines.push(`- Parameter name: \`${parameterDeclaration.name}\``);
+        lines.push(`- Parameter definition: ${formatRangeStart(parameterDeclaration.range)}`);
       } else {
         lines.push(
           `- Status: current function only exposes ${activeFunctionContext.declaration.parameters.length} parameter(s).`,
@@ -575,6 +846,13 @@ export class HoverProvider {
     }
 
     return {
+      data: this.createCategoryData({
+        category: 'contextual-token',
+        kind: 'argument-index',
+      }, this.createContextualExplanation(
+        'active-local-function-context',
+        'Hover inferred an arg:: numbered parameter reference from the active local #func / call:: context.',
+      )),
       markdown: lines.join('\n'),
       localStartOffset: tokenLookup.localStartOffset,
       localEndOffset: tokenLookup.localEndOffset,
@@ -604,6 +882,13 @@ export class HoverProvider {
     }
 
     return {
+      data: this.createCategoryData({
+        category: 'contextual-token',
+        kind: 'when-operator',
+      }, this.createContextualExplanation(
+        'when-operator-context',
+        'Hover interpreted this token as a #when operator from the current block-header argument position.',
+      )),
       markdown: [
         `**#when operator: ${tokenLookup.token.value.trim()}**`,
         '',
@@ -616,5 +901,47 @@ export class HoverProvider {
       localStartOffset: tokenLookup.localStartOffset,
       localEndOffset: tokenLookup.localEndOffset,
     };
+  }
+
+  /**
+   * createCategoryData 함수.
+   * hover payload에 붙일 공통 category envelope를 생성함.
+   *
+   * @param category - hover 결과를 machine-readable하게 분류할 stable category 값
+   * @returns hover `data`에 그대로 넣을 envelope
+   */
+  private createCategoryData(
+    category: AgentMetadataCategoryContract,
+    explanation?: AgentMetadataExplanationContract,
+  ): AgentMetadataEnvelope {
+    return createAgentMetadataEnvelope(category, explanation);
+  }
+
+  private createContextualExplanation(
+    source: string,
+    detail: string,
+  ): AgentMetadataExplanationContract {
+    return createAgentMetadataExplanation('contextual-inference', source, detail);
+  }
+
+  private createScopeExplanation(
+    source: string,
+    detail: string,
+  ): AgentMetadataExplanationContract {
+    return createAgentMetadataExplanation('scope-analysis', source, detail);
+  }
+
+  private getBuiltinExplanation(
+    builtin: CBSBuiltinFunction,
+    detail?: string,
+  ): AgentMetadataExplanationContract {
+    return createAgentMetadataExplanation(
+      'registry-lookup',
+      'builtin-registry',
+      detail ??
+        (isDocOnlyBuiltin(builtin)
+          ? `Hover resolved ${builtin.name} from the builtin registry as a documentation-only CBS syntax entry.`
+          : `Hover resolved ${builtin.name} from the builtin registry as a callable CBS builtin.`),
+    );
   }
 }

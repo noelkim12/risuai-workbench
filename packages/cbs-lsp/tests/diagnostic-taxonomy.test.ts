@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CBSBuiltinRegistry } from 'risu-workbench-core';
 import {
   DEFERRED_SCOPE_CONTRACT,
   DIAGNOSTIC_TAXONOMY,
@@ -15,6 +16,7 @@ import { getFixtureCorpusEntry, listMatrixFixtures } from './fixtures/fixture-co
 describe('diagnostic taxonomy contract', () => {
   it('freezes exact meanings, owners, and severities for canonical codes', () => {
     expect(DIAGNOSTIC_TAXONOMY[DiagnosticCode.UnclosedMacro]).toEqual({
+      category: 'syntax',
       code: DiagnosticCode.UnclosedMacro,
       severity: 'error',
       owner: 'tokenizer',
@@ -22,6 +24,7 @@ describe('diagnostic taxonomy contract', () => {
     });
 
     expect(DIAGNOSTIC_TAXONOMY[DiagnosticCode.UnclosedBlock]).toEqual({
+      category: 'syntax',
       code: DiagnosticCode.UnclosedBlock,
       severity: 'error',
       owner: 'parser',
@@ -29,13 +32,53 @@ describe('diagnostic taxonomy contract', () => {
     });
 
     expect(DIAGNOSTIC_TAXONOMY[DiagnosticCode.UnknownFunction]).toEqual({
+      category: 'syntax',
       code: DiagnosticCode.UnknownFunction,
       severity: 'error',
       owner: 'parser',
       meaning: 'Unknown CBS function or block keyword',
     });
 
+    expect(DIAGNOSTIC_TAXONOMY[DiagnosticCode.CalcExpressionOperatorSequence]).toEqual({
+      category: 'expression',
+      code: DiagnosticCode.CalcExpressionOperatorSequence,
+      severity: 'error',
+      owner: 'analyzer',
+      meaning: 'CBS expression sublanguage has an invalid operator sequence',
+    });
+
+    expect(
+      DIAGNOSTIC_TAXONOMY[DiagnosticCode.CalcExpressionUnbalancedParentheses],
+    ).toEqual({
+      category: 'expression',
+      code: DiagnosticCode.CalcExpressionUnbalancedParentheses,
+      severity: 'error',
+      owner: 'analyzer',
+      meaning: 'CBS expression sublanguage has unbalanced parentheses',
+    });
+
+    expect(
+      DIAGNOSTIC_TAXONOMY[DiagnosticCode.CalcExpressionIncompleteReferenceToken],
+    ).toEqual({
+      category: 'expression',
+      code: DiagnosticCode.CalcExpressionIncompleteReferenceToken,
+      severity: 'error',
+      owner: 'analyzer',
+      meaning: 'CBS expression sublanguage contains an incomplete variable reference token',
+    });
+
+    expect(
+      DIAGNOSTIC_TAXONOMY[DiagnosticCode.CalcExpressionInvalidReferenceIdentifier],
+    ).toEqual({
+      category: 'expression',
+      code: DiagnosticCode.CalcExpressionInvalidReferenceIdentifier,
+      severity: 'error',
+      owner: 'analyzer',
+      meaning: 'CBS expression sublanguage contains an invalid variable reference identifier',
+    });
+
     expect(DIAGNOSTIC_TAXONOMY[DiagnosticCode.DeprecatedFunction]).toEqual({
+      category: 'compatibility',
       code: DiagnosticCode.DeprecatedFunction,
       severity: 'warning',
       owner: 'analyzer',
@@ -43,6 +86,7 @@ describe('diagnostic taxonomy contract', () => {
     });
 
     expect(DIAGNOSTIC_TAXONOMY[DiagnosticCode.LegacyAngleBracket]).toEqual({
+      category: 'compatibility',
       code: DiagnosticCode.LegacyAngleBracket,
       severity: 'warning',
       owner: 'analyzer',
@@ -58,6 +102,16 @@ describe('diagnostic taxonomy contract', () => {
         expect(diagnostics.map((diagnostic) => diagnostic.code)).toContain(code);
         expect(DIAGNOSTIC_TAXONOMY[code].meaning).toBeDefined();
       }
+
+      expect(
+        diagnostics
+          .map((diagnostic) => diagnostic.data)
+          .filter(
+            (data): data is { rule: unknown } =>
+              typeof data === 'object' && data !== null && 'rule' in data,
+          )
+          .map((data) => data.rule),
+      ).toEqual(expect.arrayContaining([...entry.expectedDiagnosticRules]));
     }
 
     expect(DIAGNOSTIC_TAXONOMY[DiagnosticCode.UnclosedMacro].meaning).toBe(
@@ -69,12 +123,64 @@ describe('diagnostic taxonomy contract', () => {
     expect(DIAGNOSTIC_TAXONOMY[DiagnosticCode.UnknownFunction].meaning).toBe(
       'Unknown CBS function or block keyword',
     );
+    expect(DIAGNOSTIC_TAXONOMY[DiagnosticCode.CalcExpressionOperatorSequence].meaning).toBe(
+      'CBS expression sublanguage has an invalid operator sequence',
+    );
+    expect(
+      DIAGNOSTIC_TAXONOMY[DiagnosticCode.CalcExpressionUnbalancedParentheses].meaning,
+    ).toBe('CBS expression sublanguage has unbalanced parentheses');
+    expect(
+      DIAGNOSTIC_TAXONOMY[DiagnosticCode.CalcExpressionIncompleteReferenceToken].meaning,
+    ).toBe('CBS expression sublanguage contains an incomplete variable reference token');
+    expect(
+      DIAGNOSTIC_TAXONOMY[DiagnosticCode.CalcExpressionInvalidReferenceIdentifier].meaning,
+    ).toBe('CBS expression sublanguage contains an invalid variable reference identifier');
     expect(DIAGNOSTIC_TAXONOMY[DiagnosticCode.DeprecatedFunction].meaning).toBe(
       'Deprecated CBS function or block',
     );
     expect(DIAGNOSTIC_TAXONOMY[DiagnosticCode.LegacyAngleBracket].meaning).toBe(
       'Legacy angle-bracket macro syntax',
     );
+  });
+
+  it('keeps malformed recovery router diagnostics stable across repeated versions of the same input', () => {
+    const filePath = '/fixtures/diagnostic-stability.risulorebook';
+    const content = [
+      '---',
+      'name: Stability',
+      'activationPercent: 100',
+      '---',
+      '@@@ CONTENT',
+      '{{setvar::mood::1}}{{setvar::mood::2}}{{getvar::missing}}{{user',
+    ].join('\n');
+
+    const first = routeDiagnosticsForDocument(filePath, content, {}, {
+      uri: 'file:///fixtures/diagnostic-stability.risulorebook',
+      version: 1,
+    });
+    const second = routeDiagnosticsForDocument(filePath, content, {}, {
+      uri: 'file:///fixtures/diagnostic-stability.risulorebook',
+      version: 2,
+    });
+
+    expect(first).toEqual(second);
+    expect(first.map((diagnostic) => diagnostic.code)).toEqual([
+      DiagnosticCode.UnusedVariable,
+      DiagnosticCode.UndefinedVariable,
+      DiagnosticCode.UnclosedMacro,
+    ]);
+    expect(first[0]?.relatedInformation).toEqual([
+      {
+        message: 'Additional unused definition #2 for "mood" appears here.',
+        location: {
+          uri: 'file:///fixtures/diagnostic-stability.risulorebook',
+          range: {
+            start: { line: 5, character: 29 },
+            end: { line: 5, character: 33 },
+          },
+        },
+      },
+    ]);
   });
 
   it('freezes deferred scope and current lua fragment-routing behavior', () => {
@@ -86,12 +192,44 @@ describe('diagnostic taxonomy contract', () => {
         'formatting',
         'lua-ast-fragment-routing',
       ],
+      featureAvailability: {
+        definition: {
+          scope: 'deferred',
+          source: 'deferred-scope-contract:definition',
+          detail:
+            'Definition provider exists but server capability stays deferred until workspace-level cross-file resolution is available.',
+        },
+        references: {
+          scope: 'deferred',
+          source: 'deferred-scope-contract:references',
+          detail:
+            'References provider exists but server capability stays deferred until workspace-level cross-file reference lookup is available.',
+        },
+        rename: {
+          scope: 'deferred',
+          source: 'deferred-scope-contract:rename',
+          detail:
+            'Rename provider exists but server capability stays deferred until workspace-aware multi-document edits are supported.',
+        },
+        formatting: {
+          scope: 'deferred',
+          source: 'deferred-scope-contract:formatting',
+          detail:
+            'Formatting stays deferred until host-fragment patch semantics are safe for embedded CBS artifacts.',
+        },
+        'lua-ast-fragment-routing': {
+          scope: 'deferred',
+          source: 'deferred-scope-contract:lua-ast-fragment-routing',
+          detail:
+            'Lua AST-specific fragment routing stays deferred while the current contract still uses full-document fragment routing.',
+        },
+      },
       luaRoutingMode: 'full-document-fragment',
     });
 
     const symbolTable = new SymbolTable();
-    expect(new DefinitionProvider().provide({} as never, symbolTable)).toBeNull();
-    expect(new ReferencesProvider().provide({} as never, symbolTable)).toEqual([]);
+    expect(new DefinitionProvider(new CBSBuiltinRegistry()).provide({} as never, undefined)).toBeNull();
+    expect(new ReferencesProvider().provide({} as never, undefined)).toEqual([]);
     expect(new RenameProvider().provide({} as never, symbolTable)).toBeNull();
     expect(new FormattingProvider().provide({} as never)).toEqual([]);
 

@@ -9,7 +9,9 @@ import type { Range } from 'risu-workbench-core';
 
 import { SymbolTable, VariableSymbol, VariableSymbolKind } from '../analyzer/symbolTable';
 import {
+  createAgentMetadataAvailability,
   fragmentAnalysisService,
+  type AgentMetadataAvailabilityContract,
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
   type FragmentCursorLookupResult,
@@ -104,7 +106,14 @@ export interface RenameProviderOptions {
   resolveRequest?: RenameRequestResolver;
 }
 
+export const RENAME_PROVIDER_AVAILABILITY = createAgentMetadataAvailability(
+  'local-only',
+  'rename-provider:fragment-symbol-table',
+  'Rename is limited to fragment-local variable and loop-alias symbols; globals, external symbols, and workspace-wide edits stay unavailable.',
+);
+
 export interface PrepareRenameResult {
+  availability: AgentMetadataAvailabilityContract;
   canRename: boolean;
   range?: Range;
   symbol?: VariableSymbol;
@@ -124,6 +133,8 @@ export class RenameProvider {
   private readonly analysisService: FragmentAnalysisService;
 
   private readonly resolveRequest: RenameRequestResolver;
+
+  readonly availability: AgentMetadataAvailabilityContract = RENAME_PROVIDER_AVAILABILITY;
 
   constructor(options: RenameProviderOptions = {}) {
     this.analysisService = options.analysisService ?? fragmentAnalysisService;
@@ -148,21 +159,25 @@ export class RenameProvider {
     cancellationToken?: CancellationToken,
   ): PrepareRenameResult {
     if (isRequestCancelled(cancellationToken)) {
-      return { canRename: false, message: 'Request cancelled' };
+      return { availability: this.availability, canRename: false, message: 'Request cancelled' };
     }
 
     const request = this.resolveRequest(params);
     if (!request) {
-      return { canRename: false, message: 'Cannot resolve document' };
+      return { availability: this.availability, canRename: false, message: 'Cannot resolve document' };
     }
 
     const lookup = this.analysisService.locatePosition(request, params.position, cancellationToken);
     if (!lookup) {
-      return { canRename: false, message: 'Position not within CBS fragment' };
+      return {
+        availability: this.availability,
+        canRename: false,
+        message: 'Position not within CBS fragment',
+      };
     }
 
     if (isRequestCancelled(cancellationToken)) {
-      return { canRename: false, message: 'Request cancelled' };
+      return { availability: this.availability, canRename: false, message: 'Request cancelled' };
     }
 
     return this.checkRenameEligibility(lookup);
@@ -248,13 +263,17 @@ export class RenameProvider {
     const nodeSpan = lookup.nodeSpan;
 
     if (!tokenLookup || !nodeSpan) {
-      return { canRename: false, message: 'No symbol at cursor position' };
+      return { availability: this.availability, canRename: false, message: 'No symbol at cursor position' };
     }
 
     // Use shared isVariablePosition logic for consistency with definition/references
     const variablePosition = isVariablePosition(lookup);
     if (!variablePosition) {
-      return { canRename: false, message: 'Cursor is not on a variable name' };
+      return {
+        availability: this.availability,
+        canRename: false,
+        message: 'Cursor is not on a variable name',
+      };
     }
 
     const { variableName, kind } = variablePosition;
@@ -262,6 +281,7 @@ export class RenameProvider {
     // Reject global variables
     if (kind === 'global') {
       return {
+        availability: this.availability,
         canRename: false,
         message: 'Global variables cannot be renamed',
       };
@@ -273,6 +293,7 @@ export class RenameProvider {
 
     if (!symbol) {
       return {
+        availability: this.availability,
         canRename: false,
         message: `Unresolved ${kind} variable: ${variableName}`,
       };
@@ -281,6 +302,7 @@ export class RenameProvider {
     // Check if it's a global scope symbol - NOT renameable
     if (symbol.kind === 'global') {
       return {
+        availability: this.availability,
         canRename: false,
         message: 'Global variables cannot be renamed',
       };
@@ -289,6 +311,7 @@ export class RenameProvider {
     // Check if it's an external scope symbol - NOT renameable
     if (symbol.scope === 'external') {
       return {
+        availability: this.availability,
         canRename: false,
         message: 'External variables cannot be renamed',
       };
@@ -307,6 +330,7 @@ export class RenameProvider {
     };
 
     return {
+      availability: this.availability,
       canRename: true,
       range,
       symbol,

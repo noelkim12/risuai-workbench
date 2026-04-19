@@ -1,6 +1,7 @@
 import {
   CBSTokenizer,
   TokenType,
+  isDocOnlyBuiltin,
   walkAST,
   type BlockNode,
   type CBSBuiltinFunction,
@@ -19,6 +20,19 @@ import {
   type CalcExpressionDiagnostic,
   validateCalcExpression,
 } from '../core/calc-expression';
+import {
+  createAgentMetadataExplanation,
+  type AgentMetadataAvailabilityContract,
+  type AgentMetadataExplanationContract,
+} from '../core/agent-metadata';
+import {
+  DEFERRED_SCOPE_CONTRACT,
+} from '../core/availability-contract';
+export { DEFERRED_SCOPE_CONTRACT } from '../core/availability-contract';
+export type {
+  DeferredFeatureAvailabilityMap,
+  DeferredScopeContract,
+} from '../core/availability-contract';
 import { offsetToPosition, positionToOffset } from '../utils/position';
 import {
   type InvalidArgumentReference,
@@ -26,7 +40,10 @@ import {
   type VariableSymbol,
   type SymbolTable,
 } from './symbolTable';
-import { PURE_MODE_BLOCKS } from '../core/pure-mode';
+import {
+  findEnclosingPureModeBlockAtRange,
+  isPureModeMacroAllowed,
+} from '../core/pure-mode';
 
 const WHEN_MODE_OPERATORS = new Set(['keep', 'legacy']);
 const WHEN_UNARY_OPERATORS = new Set(['not', 'toggle', 'var']);
@@ -226,6 +243,7 @@ export type DiagnosticRuleCategory =
 export interface DiagnosticRuleMetadata {
   category: DiagnosticRuleCategory;
   code: DiagnosticCode;
+  explanation?: AgentMetadataExplanationContract;
   owner: DiagnosticOwner;
   severity: DiagnosticInfo['severity'];
   meaning: string;
@@ -243,6 +261,7 @@ export interface DiagnosticQuickFixSuggestion {
 export interface DiagnosticQuickFix {
   title: string;
   editKind: DiagnosticQuickFixEditKind;
+  explanation?: AgentMetadataExplanationContract;
   replacement?: string;
   suggestions?: readonly DiagnosticQuickFixSuggestion[];
 }
@@ -251,6 +270,30 @@ export interface DiagnosticMachineData {
   rule: DiagnosticRuleMetadata;
   fixes?: readonly DiagnosticQuickFix[];
 }
+
+export function createDiagnosticRuleExplanation(
+  owner: DiagnosticOwner,
+  category: DiagnosticRuleCategory,
+): AgentMetadataExplanationContract {
+  return createAgentMetadataExplanation(
+    'diagnostic-taxonomy',
+    `diagnostic-taxonomy:${owner}:${category}`,
+    `Diagnostic taxonomy metadata from the ${owner} stage for the ${category} rule category.`,
+  );
+}
+
+function createDiagnosticFixExplanation(
+  source: string,
+  detail: string,
+): AgentMetadataExplanationContract {
+  return createAgentMetadataExplanation('diagnostic-taxonomy', source, detail);
+}
+
+const DIAGNOSTIC_SEVERITY_ORDER: Readonly<Record<DiagnosticInfo['severity'], number>> = {
+  error: 0,
+  warning: 1,
+  info: 2,
+};
 
 export const DIAGNOSTIC_TAXONOMY: Readonly<Record<DiagnosticCode, DiagnosticDefinition>> = {
   [DiagnosticCode.UnclosedMacro]: {
@@ -388,17 +431,6 @@ export const DIAGNOSTIC_TAXONOMY: Readonly<Record<DiagnosticCode, DiagnosticDefi
   },
 };
 
-export const DEFERRED_SCOPE_CONTRACT = Object.freeze({
-  deferredFeatures: [
-    'definition',
-    'references',
-    'rename',
-    'formatting',
-    'lua-ast-fragment-routing',
-  ] as const,
-  luaRoutingMode: 'full-document-fragment' as const,
-});
-
 export function getDiagnosticDefinition(code: string): DiagnosticDefinition | undefined {
   if (!Object.values(DiagnosticCode).includes(code as DiagnosticCode)) {
     return undefined;
@@ -428,15 +460,63 @@ export function normalizeDiagnosticInfo(diagnostic: DiagnosticInfo): DiagnosticI
   const definition = getDiagnosticDefinition(diagnostic.code);
 
   if (!definition) {
-    return diagnostic;
+    return {
+      ...diagnostic,
+      data: normalizeDiagnosticMachineData(
+        isDiagnosticMachineData(diagnostic.data) ? diagnostic.data : undefined,
+      ),
+      relatedInformation: normalizeRelatedInformation(diagnostic.relatedInformation),
+    };
   }
 
   return {
     ...diagnostic,
     code: definition.code,
-    data: createDiagnosticMachineData(definition.code, isDiagnosticMachineData(diagnostic.data) ? diagnostic.data : undefined),
+    data: createDiagnosticMachineData(
+      definition.code,
+      normalizeDiagnosticMachineData(
+        isDiagnosticMachineData(diagnostic.data) ? diagnostic.data : undefined,
+      ),
+    ),
+    relatedInformation: normalizeRelatedInformation(diagnostic.relatedInformation),
     severity: definition.severity,
   };
+}
+
+/**
+ * compareDiagnostics 함수.
+ * diagnostics payload를 문서 순서 우선으로 안정 정렬하기 위한 공용 comparator.
+ *
+ * @param left - 비교할 왼쪽 diagnostic
+ * @param right - 비교할 오른쪽 diagnostic
+ * @returns 정렬 우선순위 차이값
+ */
+export function compareDiagnostics(left: DiagnosticInfo, right: DiagnosticInfo): number {
+  return (
+    compareRanges(left.range, right.range) ||
+    compareNumbers(
+      DIAGNOSTIC_SEVERITY_ORDER[left.severity],
+      DIAGNOSTIC_SEVERITY_ORDER[right.severity],
+    ) ||
+    compareStrings(left.code, right.code) ||
+    compareStrings(left.message, right.message) ||
+    compareRelatedInformation(
+      left.relatedInformation ?? [],
+      right.relatedInformation ?? [],
+    ) ||
+    compareDiagnosticMachineData(left.data, right.data)
+  );
+}
+
+/**
+ * stabilizeDiagnostics 함수.
+ * diagnostics 배열 전체를 정규화한 뒤 deterministic order로 정렬함.
+ *
+ * @param diagnostics - 정렬/정규화할 diagnostics 배열
+ * @returns 안정화된 diagnostics 배열
+ */
+export function stabilizeDiagnostics(diagnostics: readonly DiagnosticInfo[]): DiagnosticInfo[] {
+  return diagnostics.map(normalizeDiagnosticInfo).sort(compareDiagnostics);
 }
 
 function isDiagnosticMachineData(value: unknown): value is DiagnosticMachineData {
@@ -463,10 +543,64 @@ function createDiagnosticMachineData(
   code: DiagnosticCode,
   data?: Omit<DiagnosticMachineData, 'rule'> | DiagnosticMachineData,
 ): DiagnosticMachineData {
+  const definition = DIAGNOSTIC_TAXONOMY[code];
+
   return {
-    fixes: data?.fixes,
-    rule: DIAGNOSTIC_TAXONOMY[code],
+    fixes: normalizeDiagnosticMachineData(data)?.fixes,
+    rule: {
+      ...definition,
+      explanation:
+        isDiagnosticMachineData(data) && data.rule.explanation
+          ? data.rule.explanation
+          : createDiagnosticRuleExplanation(definition.owner, definition.category),
+    },
   };
+}
+
+function normalizeDiagnosticMachineData(
+  data?: Omit<DiagnosticMachineData, 'rule'> | DiagnosticMachineData,
+): Omit<DiagnosticMachineData, 'rule'> | undefined {
+  const fixes = normalizeDiagnosticFixes(data?.fixes);
+
+  return fixes ? { fixes } : undefined;
+}
+
+function normalizeDiagnosticFixes(
+  fixes: readonly DiagnosticQuickFix[] | undefined,
+): readonly DiagnosticQuickFix[] | undefined {
+  if (!fixes || fixes.length === 0) {
+    return undefined;
+  }
+
+  return fixes
+    .map((fix) => ({
+      ...fix,
+      explanation: fix.explanation,
+      suggestions: normalizeDiagnosticSuggestions(fix.suggestions),
+    }))
+    .sort(compareDiagnosticQuickFixes);
+}
+
+function normalizeDiagnosticSuggestions(
+  suggestions: readonly DiagnosticQuickFixSuggestion[] | undefined,
+): readonly DiagnosticQuickFixSuggestion[] | undefined {
+  if (!suggestions || suggestions.length === 0) {
+    return undefined;
+  }
+
+  return [...suggestions].sort(compareDiagnosticSuggestions);
+}
+
+function normalizeRelatedInformation(
+  relatedInformation: readonly DiagnosticRelatedInfo[] | undefined,
+): DiagnosticRelatedInfo[] | undefined {
+  if (!relatedInformation || relatedInformation.length === 0) {
+    return undefined;
+  }
+
+  return [...relatedInformation].sort((left, right) => {
+    return compareRanges(left.range, right.range) || compareStrings(left.message, right.message);
+  });
 }
 
 function appendDiagnosticFixes(
@@ -489,10 +623,15 @@ function appendDiagnosticFixes(
   };
 }
 
-function createReplacementQuickFix(title: string, replacement: string): DiagnosticQuickFix {
+function createReplacementQuickFix(
+  title: string,
+  replacement: string,
+  explanation?: AgentMetadataExplanationContract,
+): DiagnosticQuickFix {
   return {
     title,
     editKind: 'replace',
+    explanation,
     replacement,
   };
 }
@@ -500,10 +639,12 @@ function createReplacementQuickFix(title: string, replacement: string): Diagnost
 function createSuggestionQuickFix(
   title: string,
   suggestions: readonly DiagnosticQuickFixSuggestion[],
+  explanation?: AgentMetadataExplanationContract,
 ): DiagnosticQuickFix {
   return {
     title,
     editKind: 'replace',
+    explanation,
     suggestions,
   };
 }
@@ -531,7 +672,7 @@ export class DiagnosticsEngine {
         this.collectDeprecatedDiagnostic(builtin, node.nameRange, diagnostics);
         this.collectArgumentDiagnostics(
           {
-            diagnosticTarget: `CBS function ${JSON.stringify(builtin.name)}`,
+            diagnosticTarget: this.formatBuiltinDiagnosticTarget(builtin),
             range: node.nameRange,
             actualCount: node.arguments.length,
             builtin,
@@ -553,10 +694,10 @@ export class DiagnosticsEngine {
           sourceText.length > 0
             ? extractBlockNameRange(node, sourceText) ?? node.openRange
             : node.openRange;
-
+        
         this.collectDeprecatedDiagnostic(builtin, blockNameRange, diagnostics);
         this.collectBlockArgumentDiagnostics(node, builtin, sourceText, diagnostics);
-        this.collectBlockStructuralDiagnostics(node, diagnostics);
+        this.collectBlockStructuralDiagnostics(node, builtin, diagnostics);
 
         if (sourceText.length > 0) {
           this.collectBlockHeaderDiagnostics(node, sourceText, diagnostics);
@@ -576,10 +717,14 @@ export class DiagnosticsEngine {
     }
 
     if (sourceText.length === 0) {
-      return diagnostics;
+      return stabilizeDiagnostics(diagnostics);
     }
 
-    return diagnostics.filter((diagnostic) => this.shouldKeepDiagnostic(document, sourceText, tokens, diagnostic));
+    return stabilizeDiagnostics(
+      diagnostics.filter((diagnostic) =>
+        this.shouldKeepDiagnostic(document, sourceText, tokens, diagnostic),
+      ),
+    );
   }
 
   /**
@@ -598,74 +743,25 @@ export class DiagnosticsEngine {
     tokens: ReturnType<CBSTokenizer['tokenize']>,
     diagnostic: DiagnosticInfo,
   ): boolean {
-    const pureBlock = this.findEnclosingPureModeBlock(document.nodes, sourceText, diagnostic.range);
+    const pureBlock = findEnclosingPureModeBlockAtRange({
+      nodes: document.nodes.filter((node): node is BlockNode => node.type === 'Block'),
+      sourceText,
+      targetRange: diagnostic.range,
+    });
     if (!pureBlock) {
       return true;
     }
 
     const macroContext = this.resolveMacroArgumentContextAtRange(tokens, sourceText, diagnostic.range);
-    if (!macroContext || macroContext.argumentIndex !== 0) {
+    if (!macroContext) {
       return false;
     }
 
-    if (pureBlock.kind === 'func') {
-      return macroContext.macroName === 'arg' || macroContext.macroName === 'call';
-    }
-
-    if (pureBlock.kind === 'each') {
-      return macroContext.macroName === 'slot';
-    }
-
-    return false;
-  }
-
-  /**
-   * findEnclosingPureModeBlock 함수.
-   * diagnostic range를 감싸는 pure-mode block body를 AST 기준으로 찾음.
-   *
-   * @param nodes - 검색할 CBS AST 노드 목록
-   * @param sourceText - fragment 원문 텍스트
-   * @param range - 검사할 diagnostic range
-   * @returns range를 감싸는 pure-mode block, 없으면 null
-   */
-  private findEnclosingPureModeBlock(
-    nodes: readonly CBSNode[],
-    sourceText: string,
-    range: Range,
-  ): BlockNode | null {
-    const targetOffset = positionToOffset(sourceText, range.start);
-
-    for (const node of nodes) {
-      if (node.type !== 'Block') {
-        continue;
-      }
-
-      const nestedMatch = this.findEnclosingPureModeBlock(node.body, sourceText, range);
-      if (nestedMatch) {
-        return nestedMatch;
-      }
-
-      if (node.elseBody) {
-        const elseMatch = this.findEnclosingPureModeBlock(node.elseBody, sourceText, range);
-        if (elseMatch) {
-          return elseMatch;
-        }
-      }
-
-      if (!PURE_MODE_BLOCKS.has(node.kind)) {
-        continue;
-      }
-
-      const openEndOffset = positionToOffset(sourceText, node.openRange.end);
-      const closeStartOffset = node.closeRange
-        ? positionToOffset(sourceText, node.closeRange.start)
-        : sourceText.length;
-      if (targetOffset >= openEndOffset && targetOffset <= closeStartOffset) {
-        return node;
-      }
-    }
-
-    return null;
+    return isPureModeMacroAllowed(
+      pureBlock.kind,
+      macroContext.macroName,
+      macroContext.argumentIndex,
+    );
   }
 
   /**
@@ -755,6 +851,10 @@ export class DiagnosticsEngine {
                 createReplacementQuickFix(
                   `Replace with ${JSON.stringify(builtin.deprecated.replacement)}`,
                   builtin.deprecated.replacement,
+                  createDiagnosticFixExplanation(
+                    `registry-deprecated:${this.normalizeLookupKey(builtin.name)}:${builtin.deprecated.replacement}`,
+                    `Registry deprecation metadata marks ${builtin.name} as replaceable with ${builtin.deprecated.replacement}.`,
+                  ),
                 ),
               ],
             }
@@ -813,7 +913,7 @@ export class DiagnosticsEngine {
 
     this.collectArgumentDiagnostics(
       {
-        diagnosticTarget: `CBS block ${JSON.stringify(builtin.name)}`,
+        diagnosticTarget: this.formatBuiltinDiagnosticTarget(builtin),
         range: node.openRange,
         actualCount,
         builtin,
@@ -822,7 +922,11 @@ export class DiagnosticsEngine {
     );
   }
 
-  private collectBlockStructuralDiagnostics(node: BlockNode, diagnostics: DiagnosticInfo[]): void {
+  private collectBlockStructuralDiagnostics(
+    node: BlockNode,
+    builtin: CBSBuiltinFunction,
+    diagnostics: DiagnosticInfo[],
+  ): void {
     if (this.hasMeaningfulNodes(node.body) || this.hasMeaningfulNodes(node.elseBody)) {
       return;
     }
@@ -831,9 +935,21 @@ export class DiagnosticsEngine {
       createDiagnosticInfo(
         DiagnosticCode.EmptyBlock,
         node.openRange,
-        `CBS block ${JSON.stringify(`#${node.kind}`)} has an empty body`,
+        `${this.formatBuiltinDiagnosticTarget(builtin)} has an empty body`,
       ),
     );
+  }
+
+  private formatBuiltinDiagnosticTarget(builtin: CBSBuiltinFunction): string {
+    if (isDocOnlyBuiltin(builtin)) {
+      return builtin.isBlock
+        ? `Documentation-only CBS block syntax ${JSON.stringify(builtin.name)}`
+        : `Documentation-only CBS syntax entry ${JSON.stringify(builtin.name)}`;
+    }
+
+    return builtin.isBlock
+      ? `Callable CBS block builtin ${JSON.stringify(builtin.name)}`
+      : `Callable CBS builtin ${JSON.stringify(builtin.name)}`;
   }
 
   private collectBlockHeaderDiagnostics(
@@ -1172,6 +1288,10 @@ export class DiagnosticsEngine {
             createReplacementQuickFix(
               `Replace with shorter alias ${JSON.stringify(preferredAlias)}`,
               preferredAlias,
+              createDiagnosticFixExplanation(
+                `registry-alias:${this.normalizeLookupKey(usedName)}:${preferredAlias}:${this.normalizeLookupKey(builtin.name)}`,
+                `Builtin alias metadata exposes ${preferredAlias} as a shorter canonical alias for ${usedName}.`,
+              ),
             ),
           ],
         },
@@ -1195,10 +1315,12 @@ export class DiagnosticsEngine {
           .getSuggestions(rawName)
           .map((builtin) => [this.normalizeLookupKey(builtin.name), builtin] as const),
       ).values(),
-    ).map((builtin) => ({
-      value: builtin.name,
-      detail: builtin.description,
-    } satisfies DiagnosticQuickFixSuggestion));
+    )
+      .map((builtin) => ({
+        value: builtin.name,
+        detail: builtin.description,
+      } satisfies DiagnosticQuickFixSuggestion))
+      .sort(compareDiagnosticSuggestions);
 
     if (suggestions.length === 0) {
       return diagnostic;
@@ -1209,12 +1331,23 @@ export class DiagnosticsEngine {
         createReplacementQuickFix(
           `Replace with ${JSON.stringify(suggestions[0].value)}`,
           suggestions[0].value,
+          createDiagnosticFixExplanation(
+            `registry-suggestion:${this.normalizeLookupKey(rawName)}:single:${this.normalizeLookupKey(suggestions[0].value)}`,
+            `Registry suggestions resolved a single canonical builtin replacement for the unknown name ${rawName}.`,
+          ),
         ),
       ]);
     }
 
     return appendDiagnosticFixes(diagnostic, [
-      createSuggestionQuickFix('Replace with a known CBS builtin', suggestions),
+      createSuggestionQuickFix(
+        'Replace with a known CBS builtin',
+        suggestions,
+        createDiagnosticFixExplanation(
+          `registry-suggestion:${this.normalizeLookupKey(rawName)}:multiple:${suggestions.length}`,
+          `Registry suggestions found ${suggestions.length} viable builtin replacements for the unknown name ${rawName}.`,
+        ),
+      ),
     ]);
   }
 
@@ -1333,13 +1466,15 @@ export class DiagnosticsEngine {
       return undefined;
     }
 
-    const secondaryDefinitions = symbol.definitionRanges.filter(
+    const secondaryDefinitions = symbol.definitionRanges
+      .filter(
       (range) =>
         range.start.line !== symbol.definitionRange?.start.line ||
         range.start.character !== symbol.definitionRange?.start.character ||
         range.end.line !== symbol.definitionRange?.end.line ||
         range.end.character !== symbol.definitionRange?.end.character,
-    );
+      )
+      .sort(compareRanges);
 
     if (secondaryDefinitions.length === 0) {
       return undefined;
@@ -1436,10 +1571,110 @@ export class DiagnosticsEngine {
               createReplacementQuickFix(
                 `Migrate to {{${token.value}}}`,
                 `{{${token.value}}}`,
+                createDiagnosticFixExplanation(
+                  `syntax-migration:angle-bracket:{{${token.value}}}`,
+                  'Legacy angle-bracket syntax can be migrated directly to the equivalent double-brace CBS macro.',
+                ),
               ),
             ],
           },
         ),
       );
   }
+}
+
+function compareDiagnosticSuggestions(
+  left: DiagnosticQuickFixSuggestion,
+  right: DiagnosticQuickFixSuggestion,
+): number {
+  return compareStrings(left.value, right.value) || compareStrings(left.detail ?? '', right.detail ?? '');
+}
+
+function compareDiagnosticQuickFixes(left: DiagnosticQuickFix, right: DiagnosticQuickFix): number {
+  return (
+    compareStrings(left.title, right.title) ||
+    compareStrings(left.editKind, right.editKind) ||
+    compareStrings(left.replacement ?? '', right.replacement ?? '') ||
+    compareStrings(left.explanation?.reason ?? '', right.explanation?.reason ?? '') ||
+    compareStrings(left.explanation?.source ?? '', right.explanation?.source ?? '') ||
+    compareStrings(left.explanation?.detail ?? '', right.explanation?.detail ?? '') ||
+    compareSuggestionLists(left.suggestions, right.suggestions)
+  );
+}
+
+function compareDiagnosticMachineData(left: unknown, right: unknown): number {
+  const leftMachineData = isDiagnosticMachineData(left) ? left : undefined;
+  const rightMachineData = isDiagnosticMachineData(right) ? right : undefined;
+
+  if (!leftMachineData && !rightMachineData) {
+    return 0;
+  }
+
+  if (!leftMachineData) {
+    return -1;
+  }
+
+  if (!rightMachineData) {
+    return 1;
+  }
+
+  return compareFixLists(leftMachineData.fixes, rightMachineData.fixes);
+}
+
+function compareRelatedInformation(
+  left: readonly DiagnosticRelatedInfo[],
+  right: readonly DiagnosticRelatedInfo[],
+): number {
+  return compareArrays(left, right, (leftEntry, rightEntry) => {
+    return compareRanges(leftEntry.range, rightEntry.range) || compareStrings(leftEntry.message, rightEntry.message);
+  });
+}
+
+function compareSuggestionLists(
+  left: readonly DiagnosticQuickFixSuggestion[] | undefined,
+  right: readonly DiagnosticQuickFixSuggestion[] | undefined,
+): number {
+  return compareArrays(left ?? [], right ?? [], compareDiagnosticSuggestions);
+}
+
+function compareFixLists(
+  left: readonly DiagnosticQuickFix[] | undefined,
+  right: readonly DiagnosticQuickFix[] | undefined,
+): number {
+  return compareArrays(left ?? [], right ?? [], compareDiagnosticQuickFixes);
+}
+
+function compareRanges(left: Range, right: Range): number {
+  return (
+    comparePositions(left.start, right.start) || comparePositions(left.end, right.end)
+  );
+}
+
+function comparePositions(left: Range['start'], right: Range['start']): number {
+  return compareNumbers(left.line, right.line) || compareNumbers(left.character, right.character);
+}
+
+function compareArrays<T>(
+  left: readonly T[],
+  right: readonly T[],
+  compareItems: (leftItem: T, rightItem: T) => number,
+): number {
+  const sharedLength = Math.min(left.length, right.length);
+
+  for (let index = 0; index < sharedLength; index += 1) {
+    const result = compareItems(left[index]!, right[index]!);
+    if (result !== 0) {
+      return result;
+    }
+  }
+
+  return compareNumbers(left.length, right.length);
+}
+
+function compareStrings(left: string, right: string): number {
+  return left.localeCompare(right);
+}
+
+function compareNumbers(left: number, right: number): number {
+  return left - right;
 }

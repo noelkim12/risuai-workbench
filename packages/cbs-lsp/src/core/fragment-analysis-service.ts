@@ -91,6 +91,23 @@ export function createSyntheticDocumentVersion(text: string): string {
   return `text:${text.length}:${(hash >>> 0).toString(16)}`;
 }
 
+/**
+ * compareFragmentsForStableOrder 함수.
+ * fragment 분석 순서를 host 문서 기준으로 안정 고정함.
+ *
+ * @param left - 비교할 왼쪽 fragment
+ * @param right - 비교할 오른쪽 fragment
+ * @returns 정렬 우선순위 차이값
+ */
+function compareFragmentsForStableOrder(left: CbsFragment, right: CbsFragment): number {
+  return (
+    left.start - right.start ||
+    left.end - right.end ||
+    left.section.localeCompare(right.section) ||
+    left.content.localeCompare(right.content)
+  );
+}
+
 export class FragmentAnalysisService {
   private readonly cache = new Map<string, DocumentFragmentAnalysis>();
   private readonly diagnosticsEngine = new DiagnosticsEngine(new core.CBSBuiltinRegistry());
@@ -118,11 +135,12 @@ export class FragmentAnalysisService {
     }
 
     const fragmentMap = core.mapToCbsFragments(artifact, request.text);
+    const fragments = [...fragmentMap.fragments].sort(compareFragmentsForStableOrder);
     const previousAnalysis = this.getLatestCachedAnalysisForUri(request.uri, cacheKey);
     const reuseCandidates = this.createFragmentReusePool(previousAnalysis, artifact);
     const fragmentAnalyses: FragmentDocumentAnalysis[] = [];
 
-    for (const [fragmentIndex, fragment] of fragmentMap.fragments.entries()) {
+    for (const [fragmentIndex, fragment] of fragments.entries()) {
       if (isRequestCancelled(cancellationToken)) {
         return null;
       }
@@ -155,7 +173,7 @@ export class FragmentAnalysisService {
     const analysis: DocumentFragmentAnalysis = {
       artifact,
       fragmentMap,
-      fragments: fragmentMap.fragments,
+      fragments,
       fragmentAnalyses,
       fragmentsBySection: sections,
       documents: fragmentAnalyses.map((fragmentAnalysis) => fragmentAnalysis.document),

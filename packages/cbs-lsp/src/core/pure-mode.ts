@@ -13,6 +13,12 @@ export interface TokenMacroArgumentContext {
   argumentIndex: number;
 }
 
+export interface PureModeRangeLookupContext {
+  nodes: readonly BlockNode[];
+  sourceText: string;
+  targetRange: { start: { line: number; character: number } };
+}
+
 export const PURE_MODE_BLOCKS = new Set<BlockKind>(['each', 'escape', 'pure', 'puredisplay', 'func']);
 
 const PURE_MODE_ALLOWED_MACROS: Readonly<Record<BlockKind, readonly string[]>> = {
@@ -25,6 +31,24 @@ const PURE_MODE_ALLOWED_MACROS: Readonly<Record<BlockKind, readonly string[]>> =
   puredisplay: [],
   when: [],
 };
+
+/**
+ * isPureModeMacroAllowed 함수.
+ * pure-mode block body 안에서 예외적으로 허용되는 macro argument인지 공용 계약으로 판정함.
+ *
+ * @param blockKind - 현재 pure-mode block kind
+ * @param macroName - 검사할 macro 이름
+ * @param argumentIndex - 검사할 argument 슬롯 번호
+ * @returns 현재 pure-mode block 안에서 기능을 유지해야 하면 true
+ */
+export function isPureModeMacroAllowed(
+  blockKind: BlockKind,
+  macroName: string,
+  argumentIndex: number,
+): boolean {
+  const allowedMacros = PURE_MODE_ALLOWED_MACROS[blockKind] ?? [];
+  return argumentIndex === 0 && allowedMacros.includes(macroName);
+}
 
 /**
  * resolveTokenMacroArgumentContext 함수.
@@ -104,6 +128,53 @@ export function findEnclosingPureModeBlock(
 }
 
 /**
+ * findEnclosingPureModeBlockAtRange 함수.
+ * diagnostic처럼 range 기반 consumer가 pure-mode body 문맥을 같은 계약으로 찾도록 공용 판정을 제공함.
+ *
+ * @param context - 검색할 노드 목록, 원문, 대상 range를 묶은 문맥
+ * @returns range 시작점을 감싸는 pure-mode block, 없으면 null
+ */
+export function findEnclosingPureModeBlockAtRange(
+  context: PureModeRangeLookupContext,
+): BlockNode | null {
+  const targetOffset = positionToOffset(context.sourceText, context.targetRange.start);
+
+  const visit = (nodes: readonly BlockNode[]): BlockNode | null => {
+    for (const node of nodes) {
+      const nestedBodyBlocks = node.body.filter((child): child is BlockNode => child.type === 'Block');
+      const nestedMatch = visit(nestedBodyBlocks);
+      if (nestedMatch) {
+        return nestedMatch;
+      }
+
+      if (node.elseBody) {
+        const elseBlocks = node.elseBody.filter((child): child is BlockNode => child.type === 'Block');
+        const elseMatch = visit(elseBlocks);
+        if (elseMatch) {
+          return elseMatch;
+        }
+      }
+
+      if (!PURE_MODE_BLOCKS.has(node.kind)) {
+        continue;
+      }
+
+      const openEndOffset = positionToOffset(context.sourceText, node.openRange.end);
+      const closeStartOffset = node.closeRange
+        ? positionToOffset(context.sourceText, node.closeRange.start)
+        : context.sourceText.length;
+      if (targetOffset >= openEndOffset && targetOffset <= closeStartOffset) {
+        return node;
+      }
+    }
+
+    return null;
+  };
+
+  return visit(context.nodes);
+}
+
+/**
  * shouldSuppressPureModeFeatures 함수.
  * pure-mode body 안에서 대부분의 feature를 억제하고, block별 예외 token만 살려둠.
  *
@@ -121,6 +192,9 @@ export function shouldSuppressPureModeFeatures(lookup: FragmentCursorLookupResul
     return true;
   }
 
-  const allowedMacros = PURE_MODE_ALLOWED_MACROS[pureBlock.kind] ?? [];
-  return !(tokenContext.argumentIndex === 0 && allowedMacros.includes(tokenContext.macroName));
+  return !isPureModeMacroAllowed(
+    pureBlock.kind,
+    tokenContext.macroName,
+    tokenContext.argumentIndex,
+  );
 }

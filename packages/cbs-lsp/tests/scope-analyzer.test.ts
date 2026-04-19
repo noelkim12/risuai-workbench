@@ -82,4 +82,17 @@ describe('ScopeAnalyzer', () => {
       }),
     ]);
   });
+
+  it('collects local #func declarations and call:: references in the same fragment', () => {
+    const table = analyzeScope('{{#func greet user}}Hello{{/func}}{{call::greet::Noel}}');
+
+    expect(table.getFunction('greet')).toMatchObject({
+      name: 'greet',
+      scope: 'fragment',
+      parameters: ['user'],
+      definitionRanges: expect.any(Array),
+      references: expect.any(Array),
+    });
+    expect(table.getFunction('greet')?.references).toHaveLength(1);
+  });
 });

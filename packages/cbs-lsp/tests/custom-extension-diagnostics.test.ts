@@ -7,7 +7,12 @@ import {
 import { DiagnosticCode } from '../src/analyzer/diagnostics';
 import type { CbsFragment } from 'risu-workbench-core';
 import { fragmentAnalysisService } from '../src/core';
-import { createFixtureRequest, getFixtureCorpusEntry } from './fixtures/fixture-corpus';
+import {
+  createFixtureRequest,
+  getFixtureCorpusEntry,
+  snapshotHostDiagnosticsEnvelope,
+  snapshotHostDiagnostics,
+} from './fixtures/fixture-corpus';
 
 afterEach(() => {
   fragmentAnalysisService.clearAll();
@@ -152,6 +157,18 @@ Hello {{user}}
       expect(result?.fragments).toHaveLength(1);
       expect(result?.fragments[0].section).toBe('IN');
     });
+
+    it('recovers valid regex OUT section after malformed IN header', () => {
+      const entry = getFixtureCorpusEntry('regex-recover-out-with-malformed-in-header');
+      const result = mapDocumentToCbsFragments(entry.filePath, entry.text);
+
+      expect(result).not.toBeNull();
+      expect(result?.fragments).toHaveLength(1);
+      expect(result?.fragments[0]).toMatchObject({
+        section: 'OUT',
+        content: '{{user',
+      });
+    });
   });
 
   describe('createDiagnosticForFragment', () => {
@@ -261,6 +278,32 @@ key
       );
     });
 
+    it('maps fragment-local related information into LSP relatedInformation payloads', () => {
+      const content = `---
+name: test
+---
+@@@ CONTENT
+{{setvar::mood::1}}{{setvar::mood::2}}
+`;
+      const diagnostics = routeDiagnosticsForDocument('/path/to/entry.risulorebook', content, {});
+      const diagnostic = diagnostics.find(
+        (candidate) => candidate.code === DiagnosticCode.UnusedVariable,
+      );
+
+      expect(diagnostic?.relatedInformation).toEqual([
+        {
+          message: 'Additional unused definition #2 for "mood" appears here.',
+          location: {
+            uri: '/path/to/entry.risulorebook',
+            range: {
+              start: { line: 4, character: 29 },
+              end: { line: 4, character: 33 },
+            },
+          },
+        },
+      ]);
+    });
+
     it('routes semantic warning diagnostics for deprecated blocks and legacy angle macros', () => {
       const deprecatedBlockContent = `---
 name: test
@@ -295,6 +338,76 @@ Hello <user>
       );
       expect(legacyAngleDiagnostics.map((diagnostic) => diagnostic.code)).toContain(
         DiagnosticCode.LegacyAngleBracket,
+      );
+      expect(
+        deprecatedDiagnostics.find((diagnostic) => diagnostic.code === DiagnosticCode.DeprecatedFunction)
+          ?.data,
+      ).toEqual({
+        rule: {
+          category: 'compatibility',
+          code: DiagnosticCode.DeprecatedFunction,
+          explanation: {
+            reason: 'diagnostic-taxonomy',
+            source: 'diagnostic-taxonomy:analyzer:compatibility',
+            detail:
+              'Diagnostic taxonomy metadata from the analyzer stage for the compatibility rule category.',
+          },
+          owner: 'analyzer',
+          severity: 'warning',
+          meaning: 'Deprecated CBS function or block',
+        },
+        fixes: [
+          {
+            title: 'Replace with "#when"',
+            editKind: 'replace',
+            explanation: {
+              reason: 'diagnostic-taxonomy',
+              source: 'registry-deprecated:#if:#when',
+              detail: 'Registry deprecation metadata marks #if as replaceable with #when.',
+            },
+            replacement: '#when',
+          },
+        ],
+      });
+      expect(
+        legacyAngleDiagnostics.find((diagnostic) => diagnostic.code === DiagnosticCode.LegacyAngleBracket)
+          ?.data,
+      ).toEqual({
+        rule: {
+          category: 'compatibility',
+          code: DiagnosticCode.LegacyAngleBracket,
+          explanation: {
+            reason: 'diagnostic-taxonomy',
+            source: 'diagnostic-taxonomy:analyzer:compatibility',
+            detail:
+              'Diagnostic taxonomy metadata from the analyzer stage for the compatibility rule category.',
+          },
+          owner: 'analyzer',
+          severity: 'warning',
+          meaning: 'Legacy angle-bracket macro syntax',
+        },
+        fixes: [
+          {
+            title: 'Migrate to {{user}}',
+            editKind: 'replace',
+            explanation: {
+              reason: 'diagnostic-taxonomy',
+              source: 'syntax-migration:angle-bracket:{{user}}',
+              detail:
+                'Legacy angle-bracket syntax can be migrated directly to the equivalent double-brace CBS macro.',
+            },
+            replacement: '{{user}}',
+          },
+        ],
+      });
+    });
+
+    it('keeps routing diagnostics for recovered regex fragments after malformed section headers', () => {
+      const entry = getFixtureCorpusEntry('regex-recover-out-with-malformed-in-header');
+      const diagnostics = routeDiagnosticsForDocument(entry.filePath, entry.text, {});
+
+      expect(diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+        DiagnosticCode.UnclosedMacro,
       );
     });
 
@@ -347,6 +460,78 @@ Hello <user>
       for (const code of expectedCodes) {
         expect(routedDiagnostics.map((diagnostic) => diagnostic.code)).toContain(code);
       }
+    });
+
+    it('builds a deterministic normalized snapshot view for host diagnostics payloads', () => {
+      const entry = getFixtureCorpusEntry('lorebook-wrong-argument-count');
+      const diagnostics = routeDiagnosticsForDocument(entry.filePath, entry.text, {});
+
+      const forward = snapshotHostDiagnostics(diagnostics);
+      const reversed = snapshotHostDiagnostics([...diagnostics].reverse());
+
+      expect(reversed).toEqual(forward);
+      expect(forward).toContainEqual(
+        expect.objectContaining({
+          code: DiagnosticCode.WrongArgumentCount,
+          data: {
+            rule: expect.objectContaining({
+              category: 'symbol',
+              code: DiagnosticCode.WrongArgumentCount,
+              explanation: {
+                reason: 'diagnostic-taxonomy',
+                source: 'diagnostic-taxonomy:analyzer:symbol',
+                detail:
+                  'Diagnostic taxonomy metadata from the analyzer stage for the symbol rule category.',
+              },
+            }),
+            fixes: undefined,
+          },
+          message: expect.stringContaining('expects 1 argument, but received 2'),
+          source: 'risu-cbs',
+        }),
+      );
+    });
+
+    it('exposes the shared runtime availability contract in the normalized host diagnostics envelope', () => {
+      const entry = getFixtureCorpusEntry('lorebook-wrong-argument-count');
+      const diagnostics = routeDiagnosticsForDocument(entry.filePath, entry.text, {});
+      const envelope = snapshotHostDiagnosticsEnvelope(diagnostics);
+
+      expect(envelope.diagnostics).toEqual(snapshotHostDiagnostics(diagnostics));
+      expect(envelope.availability).toEqual({
+        artifacts: [
+          {
+            key: 'risutoggle',
+            scope: 'workspace-disabled',
+            source: 'document-router:risutoggle',
+            detail:
+              '`.risutoggle` artifacts do not carry CBS fragments, so CBS LSP routing stays disabled for them.',
+          },
+          {
+            key: 'risuvar',
+            scope: 'workspace-disabled',
+            source: 'document-router:risuvar',
+            detail:
+              '`.risuvar` artifacts do not carry CBS fragments, so CBS LSP routing stays disabled for them.',
+          },
+        ],
+        features: expect.arrayContaining([
+          {
+            key: 'completion',
+            scope: 'local-only',
+            source: 'server-capability:completion',
+            detail:
+              'Completion is active for routed CBS fragments and operates on the current document/fragment context only.',
+          },
+          {
+            key: 'definition',
+            scope: 'deferred',
+            source: 'deferred-scope-contract:definition',
+            detail:
+              'Definition provider exists but server capability stays deferred until workspace-level cross-file resolution is available.',
+          },
+        ]),
+      });
     });
   });
 });

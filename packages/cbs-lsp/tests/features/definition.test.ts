@@ -3,7 +3,10 @@ import { CBSBuiltinRegistry } from 'risu-workbench-core';
 import { describe, expect, it } from 'vitest';
 
 import { FragmentAnalysisService } from '../../src/core';
-import { DefinitionProvider } from '../../src/features/definition';
+import {
+  DEFINITION_PROVIDER_AVAILABILITY,
+  DefinitionProvider,
+} from '../../src/features/definition';
 import { offsetToPosition } from '../../src/utils/position';
 import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
 
@@ -64,6 +67,18 @@ function expectLocationLink(definition: Definition | null): LocationLink[] {
 }
 
 describe('DefinitionProvider', () => {
+  it('exposes local-only availability honesty metadata', () => {
+    const provider = new DefinitionProvider(new CBSBuiltinRegistry());
+
+    expect(provider.availability).toEqual(DEFINITION_PROVIDER_AVAILABILITY);
+    expect(provider.availability).toEqual({
+      scope: 'local-only',
+      source: 'definition-provider:fragment-symbol-table',
+      detail:
+        'Definition resolves only fragment-local variables, loop aliases, and local #func declarations; workspace/external symbols stay unavailable.',
+    });
+  });
+
   describe('getvar -> setvar definition resolution', () => {
     it('resolves getvar to setvar definition in the same fragment', () => {
       // Create a document with setvar followed by getvar
@@ -209,6 +224,58 @@ describe('DefinitionProvider', () => {
       const definition = provider.provide(createParams(request, position));
 
       // slot outside #each should not resolve
+      expect(definition).toBeNull();
+    });
+
+    it('resolves shadowed slot::item to the innermost visible #each alias', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{#each items as item}}{{#each others as item}}{{slot::item}}{{/each}}{{/each}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const slotOffset = locateNthOffset(modifiedText, '{{slot::item}}');
+
+      const definition = provider.provide(
+        createParams(request, offsetToPosition(modifiedText, slotOffset + '{{slot::'.length + 1)),
+      );
+
+      const link = expectLocationLink(definition);
+      expect(link[0].targetUri).toBe(request.uri);
+
+      const innerAliasOffset = modifiedText.indexOf('others as item') + 'others as '.length;
+      expect(link[0].targetRange.start).toEqual(offsetToPosition(modifiedText, innerAliasOffset));
+    });
+  });
+
+  describe('call::name -> #func definition resolution', () => {
+    it('resolves call::name to the local #func declaration', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{#func greet user}}Hello{{/func}}{{call::greet::Noel}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+
+      const definition = provider.provide(createParams(request, positionAt(modifiedText, 'greet', 2, 1)));
+
+      const link = expectLocationLink(definition);
+      expect(link[0].targetUri).toBe(request.uri);
+      const declarationOffset = modifiedText.indexOf('greet');
+      const expectedStart = offsetToPosition(modifiedText, declarationOffset);
+      expect(link[0].targetRange.start).toEqual(expectedStart);
+    });
+
+    it('returns null for unresolved call::name references', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace('{{user}}', '{{call::missing}}');
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+
+      const definition = provider.provide(createParams(request, positionAt(modifiedText, 'missing', 2)));
+
       expect(definition).toBeNull();
     });
   });

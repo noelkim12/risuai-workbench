@@ -7,8 +7,11 @@ import {
 import type { CBSBuiltinRegistry, Range } from 'risu-workbench-core';
 
 import {
+  createAgentMetadataAvailability,
   collectLocalFunctionDeclarations,
   fragmentAnalysisService,
+  resolveVisibleLoopBindingFromNodePath,
+  type AgentMetadataAvailabilityContract,
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
   type FragmentCursorLookupResult,
@@ -24,6 +27,12 @@ export interface DefinitionProviderOptions {
   analysisService?: FragmentAnalysisService;
   resolveRequest?: DefinitionRequestResolver;
 }
+
+export const DEFINITION_PROVIDER_AVAILABILITY = createAgentMetadataAvailability(
+  'local-only',
+  'definition-provider:fragment-symbol-table',
+  'Definition resolves only fragment-local variables, loop aliases, and local #func declarations; workspace/external symbols stay unavailable.',
+);
 
 const VARIABLE_MACRO_RULES = Object.freeze({
   addvar: { kind: 'chat', argumentIndex: 0 },
@@ -43,6 +52,7 @@ const SLOT_MACRO_RULES = Object.freeze({
 function isVariablePosition(lookup: FragmentCursorLookupResult): {
   variableName: string;
   kind: VariableSymbolKind;
+  targetDefinitionRange?: Range;
 } | null {
   const tokenLookup = lookup.token;
   const nodeSpan = lookup.nodeSpan;
@@ -67,13 +77,19 @@ function isVariablePosition(lookup: FragmentCursorLookupResult): {
     // Check for slot::name inside #each blocks
     const slotRule = SLOT_MACRO_RULES[macroName as keyof typeof SLOT_MACRO_RULES];
     if (slotRule && nodeSpan.argumentIndex === slotRule.argumentIndex && variableName.length > 0) {
-      // Verify we're inside an #each block by checking the node path
-      const isInsideEachBlock = lookup.nodePath.some(
-        (node) => node.type === 'Block' && node.kind === 'each',
+      const bindingMatch = resolveVisibleLoopBindingFromNodePath(
+        lookup.nodePath,
+        lookup.fragment.content,
+        variableName,
+        lookup.fragmentLocalOffset,
       );
 
-      if (isInsideEachBlock) {
-        return { variableName, kind: slotRule.kind };
+      if (bindingMatch) {
+        return {
+          variableName,
+          kind: slotRule.kind,
+          targetDefinitionRange: bindingMatch.binding.bindingRange,
+        };
       }
     }
   }
@@ -84,17 +100,23 @@ function isVariablePosition(lookup: FragmentCursorLookupResult): {
   // In this case, check if we're inside an #each block and the token
   // looks like a slot variable reference (single word argument).
   if (tokenLookup.category === 'argument') {
-    const isInsideEachBlock = lookup.nodePath.some(
-      (node) => node.type === 'Block' && node.kind === 'each',
+    const variableName = tokenLookup.token.value.trim();
+    const slotPrefix = lookup.fragment.content
+      .slice(Math.max(0, tokenLookup.localStartOffset - 'slot::'.length), tokenLookup.localStartOffset)
+      .toLowerCase();
+    const bindingMatch = resolveVisibleLoopBindingFromNodePath(
+      lookup.nodePath,
+      lookup.fragment.content,
+      variableName,
+      lookup.fragmentLocalOffset,
     );
 
-    if (isInsideEachBlock) {
-      const variableName = tokenLookup.token.value.trim();
-      // Check if this variable exists as a loop variable in the symbol table
-      // This handles the case where slot::variable is parsed as plain text
-      if (variableName.length > 0) {
-        return { variableName, kind: 'loop' };
-      }
+    if (slotPrefix === 'slot::' && bindingMatch) {
+      return {
+        variableName,
+        kind: 'loop',
+        targetDefinitionRange: bindingMatch.binding.bindingRange,
+      };
     }
   }
 
@@ -110,7 +132,7 @@ function isFunctionPosition(lookup: FragmentCursorLookupResult): { functionName:
 
   if (
     tokenLookup.category === 'argument' &&
-    nodeSpan.category === 'argument' &&
+    (nodeSpan.category === 'argument' || nodeSpan.category === 'local-function-reference') &&
     nodeSpan.owner.type === 'MacroCall' &&
     nodeSpan.owner.name.toLowerCase() === 'call' &&
     nodeSpan.argumentIndex === 0
@@ -144,6 +166,8 @@ export class DefinitionProvider {
   private readonly analysisService: FragmentAnalysisService;
 
   private readonly resolveRequest: DefinitionRequestResolver;
+
+  readonly availability: AgentMetadataAvailabilityContract = DEFINITION_PROVIDER_AVAILABILITY;
 
   constructor(
     private readonly _registry: CBSBuiltinRegistry,
@@ -180,7 +204,7 @@ export class DefinitionProvider {
     let targetRange: Range | null = null;
 
     if (variablePosition) {
-      const { variableName, kind } = variablePosition;
+      const { variableName, kind, targetDefinitionRange } = variablePosition;
       const symbol = symbolTable.getVariable(variableName, kind);
       if (!symbol) {
         return null;
@@ -190,7 +214,7 @@ export class DefinitionProvider {
         return null;
       }
 
-      targetRange = findFirstDefinitionRange(symbol.definitionRanges);
+      targetRange = targetDefinitionRange ?? findFirstDefinitionRange(symbol.definitionRanges);
     } else if (functionPosition) {
       const symbol = symbolTable.getFunction(functionPosition.functionName);
       const fallbackDeclaration = collectLocalFunctionDeclarations(

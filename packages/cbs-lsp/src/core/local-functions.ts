@@ -12,6 +12,13 @@ export interface LocalFunctionDeclaration {
   name: string;
   range: Range;
   parameters: string[];
+  parameterDeclarations: LocalFunctionParameterDeclaration[];
+}
+
+export interface LocalFunctionParameterDeclaration {
+  index: number;
+  name: string;
+  range: Range;
 }
 
 export interface ActiveLocalFunctionContext {
@@ -148,6 +155,13 @@ function extractLocalFunctionDeclaration(
 
   const name = match[1];
   const nameStartOffset = openStartOffset + headerText.indexOf(name);
+  const parameterDeclarations = collectParameterDeclarations(
+    sourceText,
+    openStartOffset,
+    headerText,
+    name,
+    match[2] ?? '',
+  );
 
   return {
     name,
@@ -155,11 +169,53 @@ function extractLocalFunctionDeclaration(
       start: offsetToPosition(sourceText, nameStartOffset),
       end: offsetToPosition(sourceText, nameStartOffset + name.length),
     },
-    parameters: (match[2] ?? '')
-      .split(/\s+/u)
-      .map((token) => token.trim())
-      .filter((token) => token.length > 0),
+    parameters: parameterDeclarations.map((parameter) => parameter.name),
+    parameterDeclarations,
   };
+}
+
+/**
+ * collectParameterDeclarations 함수.
+ * `#func` 헤더에서 각 파라미터 이름과 정의 위치를 추출함.
+ *
+ * @param headerText - `{{#func ...}}` 전체 헤더 텍스트
+ * @param headerStartOffset - fragment 안에서 헤더 시작 오프셋
+ * @param functionName - 이미 파싱된 로컬 함수 이름
+ * @param rawParameterText - 함수 이름 뒤에 이어지는 원본 파라미터 구간
+ * @returns 선언 순서와 위치가 보존된 파라미터 정의 목록
+ */
+function collectParameterDeclarations(
+  sourceText: string,
+  headerStartOffset: number,
+  headerText: string,
+  functionName: string,
+  rawParameterText: string,
+): LocalFunctionParameterDeclaration[] {
+  if (rawParameterText.length === 0) {
+    return [];
+  }
+
+  const functionNameStart = headerText.indexOf(functionName);
+  const searchStart = functionNameStart >= 0 ? functionNameStart + functionName.length : 0;
+  const rawParameterStart = headerText.indexOf(rawParameterText, searchStart);
+  if (rawParameterStart < 0) {
+    return [];
+  }
+
+  return Array.from(rawParameterText.matchAll(/\S+/gu)).map((parameterMatch, index) => {
+    const parameterName = parameterMatch[0] ?? '';
+    const parameterRelativeStart = parameterMatch.index ?? 0;
+    const parameterStartOffset = headerStartOffset + rawParameterStart + parameterRelativeStart;
+
+    return {
+      index,
+      name: parameterName,
+      range: {
+        start: offsetToPosition(sourceText, parameterStartOffset),
+        end: offsetToPosition(sourceText, parameterStartOffset + parameterName.length),
+      },
+    } satisfies LocalFunctionParameterDeclaration;
+  });
 }
 
 /**

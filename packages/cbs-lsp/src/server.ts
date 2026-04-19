@@ -18,7 +18,15 @@ import {
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 
-import { fragmentAnalysisService, type FragmentAnalysisRequest } from './core';
+import {
+  ACTIVE_FEATURE_AVAILABILITY,
+  EXCLUDED_ARTIFACT_AVAILABILITY,
+  createCbsRuntimeAvailabilityContract,
+  createNormalizedRuntimeAvailabilitySnapshot,
+  createRuntimeAvailabilityTracePayload,
+  fragmentAnalysisService,
+  type FragmentAnalysisRequest,
+} from './core';
 import { shouldRouteForDiagnostics } from './document-router';
 import { routeDiagnosticsForDocument } from './diagnostics-router';
 import { CompletionProvider } from './features/completion';
@@ -31,7 +39,12 @@ import {
 } from './features/semanticTokens';
 import { SignatureHelpProvider } from './features/signature';
 import { isRequestCancelled } from './request-cancellation';
-import { logFeature, traceFeature, type CbsLspFeatureName } from './server-tracing';
+import {
+  logFeature,
+  traceFeature,
+  traceFeaturePayload,
+  type CbsLspFeatureName,
+} from './server-tracing';
 
 function shouldSkipRequest(cancellationToken: CancellationToken | undefined): boolean {
   return isRequestCancelled(cancellationToken);
@@ -119,6 +132,8 @@ function publishDiagnosticsForDocument(connection: Connection, document: TextDoc
 }
 
 export function createInitializeResult(): InitializeResult {
+  const runtimeAvailability = createCbsRuntimeAvailabilityContract();
+
   return {
     capabilities: {
       textDocumentSync: {
@@ -137,6 +152,14 @@ export function createInitializeResult(): InitializeResult {
           tokenModifiers: [...SEMANTIC_TOKEN_MODIFIERS],
         },
         full: true,
+      },
+    },
+    experimental: {
+      cbs: {
+        availability: runtimeAvailability,
+        availabilitySnapshot: createNormalizedRuntimeAvailabilitySnapshot(),
+        excludedArtifacts: runtimeAvailability.excludedArtifacts,
+        featureAvailability: runtimeAvailability.featureAvailability,
       },
     },
   };
@@ -172,6 +195,9 @@ export function registerServer(
         signature: Boolean(result.capabilities.signatureHelpProvider),
         folding: Boolean(result.capabilities.foldingRangeProvider),
         semanticTokens: Boolean(result.capabilities.semanticTokensProvider),
+      });
+      traceFeaturePayload(connection, 'server', 'availability-contract', {
+        availability: createRuntimeAvailabilityTracePayload(),
       });
       return result;
     },

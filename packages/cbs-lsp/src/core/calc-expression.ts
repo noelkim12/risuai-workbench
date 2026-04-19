@@ -8,6 +8,13 @@ import type { FragmentCursorLookupResult } from './fragment-locator';
 export type CalcExpressionZoneKind = 'inline' | 'macro-argument';
 export type CalcExpressionReferenceKind = 'chat' | 'global';
 export const CALC_EXPRESSION_SUBLANGUAGE_LABEL = 'CBS expression sublanguage';
+
+export interface CalcExpressionSublanguageDocumentation {
+  summary: string;
+  variables: string;
+  operators: string;
+  coercion: string;
+}
 export type CalcExpressionDiagnosticKind =
   | 'empty-expression'
   | 'unbalanced-parentheses'
@@ -44,6 +51,22 @@ export interface CalcExpressionDiagnostic {
   message: string;
   startOffset: number;
   endOffset: number;
+}
+
+/**
+ * getCalcExpressionSublanguageDocumentation 함수.
+ * `{{? ...}}`와 `{{calc::...}}`가 공유하는 calc expression 설명 문구를 반환함.
+ *
+ * @returns hover/signature/diagnostics에서 공용으로 재사용할 calc sublanguage 설명
+ */
+export function getCalcExpressionSublanguageDocumentation(): CalcExpressionSublanguageDocumentation {
+  return {
+    summary:
+      `This is not regular CBS argument syntax. The \`{{? ...}}\` inline form and the expression argument of \`{{calc::...}}\` both use the same \`${CALC_EXPRESSION_SUBLANGUAGE_LABEL}\`.`,
+    variables: 'Variables: `$name` for chat variables, `@name` for global variables',
+    operators: 'Operators: `+ - * / ^ % < > <= >= == != ! && ||` and parentheses',
+    coercion: 'Coercion: `null` and non-numeric variable values evaluate as `0` upstream',
+  };
 }
 
 interface CalcExpressionToken {

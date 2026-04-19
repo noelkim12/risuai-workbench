@@ -6,10 +6,14 @@ import type {
 import { CBSBuiltinRegistry } from 'risu-workbench-core';
 import { describe, expect, it } from 'vitest';
 
-import { FragmentAnalysisService } from '../../src/core';
+import { type AgentMetadataEnvelope, FragmentAnalysisService } from '../../src/core';
 import { CompletionProvider } from '../../src/features/completion';
 import { offsetToPosition } from '../../src/utils/position';
-import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
+import {
+  createFixtureRequest,
+  getFixtureCorpusEntry,
+  snapshotCompletionItems,
+} from '../fixtures/fixture-corpus';
 
 function locateNthOffset(text: string, needle: string, occurrence: number = 0): number {
   let fromIndex = 0;
@@ -71,6 +75,14 @@ function expectNoCompletionLabels(completions: CompletionItem[], ...unexpectedLa
   }
 }
 
+function extractCompletionCategory(completion: CompletionItem | undefined) {
+  return (completion?.data as AgentMetadataEnvelope | undefined)?.cbs.category;
+}
+
+function extractCompletionExplanation(completion: CompletionItem | undefined) {
+  return (completion?.data as AgentMetadataEnvelope | undefined)?.cbs.explanation;
+}
+
 describe('CompletionProvider', () => {
   describe('trigger context: {{ (all functions)', () => {
     it('offers all function names after {{', () => {
@@ -116,6 +128,351 @@ describe('CompletionProvider', () => {
       const ifCompletion = completions.find((c) => c.label === '#if');
       expect(ifCompletion).toBeDefined();
       expect(ifCompletion?.deprecated).toBe(true);
+    });
+
+    it('labels documentation-only syntax entries differently from callable builtins', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const request = createFixtureRequest(entry);
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(createParams(request, positionAt(entry.text, '{{', 2)));
+
+      for (const label of ['#when', '#each', 'slot', '#pure', '#puredisplay', '#escape']) {
+        const completion = completions.find((item) => item.label === label);
+
+        expect(completion?.detail).toContain('Documentation-only');
+        expect(completion?.documentation).toEqual({
+          kind: 'markdown',
+          value: expect.stringContaining('not a general runtime callback builtin'),
+        });
+      }
+
+      for (const label of ['getvar', 'setvar']) {
+        const completion = completions.find((item) => item.label === label);
+
+        expect(completion?.detail).toContain('Callable builtin');
+        expect(completion?.documentation).toEqual({
+          kind: 'markdown',
+          value: expect.stringContaining('available as a runtime CBS builtin'),
+        });
+      }
+    });
+
+    it('attaches stable machine-readable categories to builtin and block keyword completions', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const request = createFixtureRequest(entry);
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(createParams(request, positionAt(entry.text, '{{', 2)));
+
+      expect(extractCompletionCategory(completions.find((item) => item.label === 'getvar'))).toEqual({
+        category: 'builtin',
+        kind: 'callable-builtin',
+      });
+      expect(extractCompletionCategory(completions.find((item) => item.label === '#when'))).toEqual({
+        category: 'block-keyword',
+        kind: 'documentation-only-builtin',
+      });
+      expect(extractCompletionExplanation(completions.find((item) => item.label === 'getvar'))).toEqual({
+        reason: 'registry-lookup',
+        source: 'builtin-registry',
+        detail: 'Completion surfaced this item from the builtin registry as a callable CBS builtin.',
+      });
+    });
+
+    it('builds a deterministic normalized snapshot view for completion payloads', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const request = createFixtureRequest(entry);
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(createParams(request, positionAt(entry.text, '{{', 2)));
+
+      const forward = snapshotCompletionItems(completions);
+      const reversed = snapshotCompletionItems([...completions].reverse());
+
+      expect(reversed).toEqual(forward);
+      expect(forward.find((item) => item.label === '#when')).toEqual(
+        expect.objectContaining({
+          data: {
+            cbs: {
+              category: {
+                category: 'block-keyword',
+                kind: 'documentation-only-builtin',
+              },
+              explanation: {
+                reason: 'registry-lookup',
+                source: 'builtin-registry',
+                detail:
+                  'Completion surfaced this item from the builtin registry as a documentation-only CBS syntax entry.',
+              },
+            },
+          },
+          detail: 'Documentation-only block syntax',
+          documentation: expect.stringContaining('not a general runtime callback builtin'),
+          kind: 7,
+          label: '#when',
+        }),
+      );
+    });
+  });
+
+  describe('trigger context: calc expression zones', () => {
+    it('offers calc variable completions inside the {{? ...}} inline form', () => {
+      const entry = getFixtureCorpusEntry('lorebook-calc-expression-context');
+      const request = createFixtureRequest(entry);
+      const modifiedText = entry.text.replace('{{? $score + @bonus}}', '{{? $sc + @bo}}');
+      const modifiedRequest = { ...request, text: modifiedText };
+      const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
+        analysisService: new FragmentAnalysisService(),
+        resolveRequest: ({ textDocument }) =>
+          textDocument.uri === modifiedRequest.uri ? modifiedRequest : null,
+      });
+      const completions = provider.provide(
+        createParams(modifiedRequest, offsetToPosition(modifiedText, modifiedText.indexOf('$sc') + 3)),
+      );
+
+      expectCompletionLabels(completions, '$score');
+      expectNoCompletionLabels(completions, 'setvar', '#when');
+    });
+
+    it('treats the first {{calc::...}} argument as the same expression zone', () => {
+      const entry = getFixtureCorpusEntry('lorebook-calc-expression-context');
+      const request = createFixtureRequest(entry);
+      const modifiedText = entry.text.replace('{{calc::$score + @bonus}}', '{{calc::$sc + @bo}}');
+      const modifiedRequest = { ...request, text: modifiedText };
+      const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
+        analysisService: new FragmentAnalysisService(),
+        resolveRequest: ({ textDocument }) =>
+          textDocument.uri === modifiedRequest.uri ? modifiedRequest : null,
+      });
+
+      const variableCompletions = provider.provide(
+        createParams(modifiedRequest, offsetToPosition(modifiedText, modifiedText.indexOf('$sc') + 3)),
+      );
+      const operatorCompletions = provider.provide(
+        createParams(modifiedRequest, offsetToPosition(modifiedText, modifiedText.indexOf(' + ') + 1)),
+      );
+
+      expectCompletionLabels(variableCompletions, '$score');
+      expectCompletionLabels(operatorCompletions, '&&', 'null');
+      expectNoCompletionLabels(variableCompletions, 'setvar', 'getvar');
+    });
+
+    it('replaces partial operator prefixes instead of appending duplicate operator text', () => {
+      const entry = getFixtureCorpusEntry('lorebook-calc-expression-context');
+      const request = createFixtureRequest(entry);
+      const modifiedText = entry.text.replace('{{calc::$score + @bonus}}', '{{calc::=}}');
+      const modifiedRequest = { ...request, text: modifiedText };
+      const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
+        analysisService: new FragmentAnalysisService(),
+        resolveRequest: ({ textDocument }) =>
+          textDocument.uri === modifiedRequest.uri ? modifiedRequest : null,
+      });
+      const operatorOffset = modifiedText.indexOf('{{calc::=}}') + '{{calc::='.length;
+      const completions = provider.provide(
+        createParams(modifiedRequest, offsetToPosition(modifiedText, operatorOffset)),
+      );
+      const equalityCompletion = completions.find((completion) => completion.label === '==');
+
+      expect(equalityCompletion?.textEdit).toEqual({
+        range: {
+          start: offsetToPosition(modifiedText, operatorOffset - 1),
+          end: offsetToPosition(modifiedText, operatorOffset),
+        },
+        newText: '==',
+      });
+    });
+  });
+
+  describe('trigger context: {{call:: (local function names)', () => {
+    it('offers local #func declarations after call::', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{#func greet user}}Hello{{/func}}{{call::}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(
+          request,
+          offsetToPosition(modifiedText, modifiedText.indexOf('{{call::}}') + '{{call::'.length),
+        ),
+      );
+
+      expectCompletionLabels(completions, 'greet');
+      expectNoCompletionLabels(completions, 'getvar', '#when');
+      expect(extractCompletionCategory(completions.find((item) => item.label === 'greet'))).toEqual({
+        category: 'contextual-token',
+        kind: 'local-function',
+      });
+    });
+
+    it('filters local #func names by typed prefix inside complete macros', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{#func greet user}}Hello{{/func}}{{#func grant target}}Hi{{/func}}{{call::gr}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(
+          request,
+          offsetToPosition(modifiedText, modifiedText.indexOf('{{call::gr}}') + '{{call::gr'.length),
+        ),
+      );
+
+      expectCompletionLabels(completions, 'greet', 'grant');
+    });
+
+    it('documents the call:: function-name slot and downstream arg mapping for local #func completions', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{#func greet user target}}Hello{{/func}}{{call::}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(
+          request,
+          offsetToPosition(modifiedText, modifiedText.indexOf('{{call::}}') + '{{call::'.length),
+        ),
+      );
+      const greetCompletion = completions.find((completion) => completion.label === 'greet');
+
+      expect(greetCompletion?.detail).toBe('Local #func declaration for the first call:: slot');
+      expect(greetCompletion?.documentation).toEqual({
+        kind: 'markdown',
+        value: expect.stringContaining('insert this into the first `call::` slot'),
+      });
+      expect(greetCompletion?.documentation).toEqual({
+        kind: 'markdown',
+        value: expect.stringContaining('`arg::0` → `user`, `arg::1` → `target`'),
+      });
+    });
+  });
+
+  describe('trigger context: {{arg:: (numbered local argument slots)', () => {
+    it('offers 0-based parameter slots inside a local #func body', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{#func greet user target}}Hello {{arg::}}{{/func}}{{call::greet::Noel::friend}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(
+          request,
+          offsetToPosition(modifiedText, modifiedText.indexOf('{{arg::}}') + '{{arg::'.length),
+        ),
+      );
+
+      expectCompletionLabels(completions, '0', '1');
+      expect(completions.find((completion) => completion.label === '0')?.detail).toContain(
+        'Numbered argument reference',
+      );
+      expect(completions.find((completion) => completion.label === '0')?.detail).toContain('user');
+      expect(completions.find((completion) => completion.label === '1')?.detail).toContain('target');
+      expect(completions.find((completion) => completion.label === '1')?.documentation).toEqual({
+        kind: 'markdown',
+        value: expect.stringContaining(
+          'references the 2nd call argument from the active local `#func` / `{{call::...}}` context',
+        ),
+      });
+      expect(completions.find((completion) => completion.label === '1')?.documentation).toEqual({
+        kind: 'markdown',
+        value: expect.stringContaining('Parameter definition: line'),
+      });
+    });
+
+    it('does not expose arg:: slot completions outside a local #func / call:: context', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace('{{user}}', '{{arg::}}');
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(
+          request,
+          offsetToPosition(modifiedText, modifiedText.indexOf('{{arg::}}') + '{{arg::'.length),
+        ),
+      );
+
+      expect(completions).toEqual([]);
+    });
+  });
+
+  describe('trigger context: {{slot:: (loop aliases only)', () => {
+    it('offers the current #each alias and does not mix in general variable completions', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{setvar::entry::chat}}{{#each items as entry}}{{slot::}}{{/each}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(
+          request,
+          offsetToPosition(modifiedText, modifiedText.indexOf('{{slot::}}') + '{{slot::'.length),
+        ),
+      );
+
+      expect(completions.map((completion) => completion.label)).toEqual(['entry']);
+      expect(completions[0]?.detail).toContain('Current #each loop alias');
+      expectNoCompletionLabels(completions, 'getvar', '#when');
+    });
+
+    it('orders nested #each aliases from current scope to outer scope', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{#each items as outer}}{{#each others as inner}}{{slot::}}{{/each}}{{/each}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(
+          request,
+          offsetToPosition(modifiedText, modifiedText.indexOf('{{slot::}}') + '{{slot::'.length),
+        ),
+      );
+
+      expect(completions.map((completion) => completion.label)).toEqual(['inner', 'outer']);
+      expect(completions[0]?.preselect).toBe(true);
+      expect(completions[1]?.detail).toContain('Outer #each loop alias');
+    });
+
+    it('falls back to valid outer aliases during malformed inner #each recovery without leaking generic variables', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{setvar::outer::chat}}{{#each items as outer}}{{#each broken}}{{slot::}}{{/each}}{{/each}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(
+          request,
+          offsetToPosition(modifiedText, modifiedText.indexOf('{{slot::}}') + '{{slot::'.length),
+        ),
+      );
+
+      expect(completions.map((completion) => completion.label)).toEqual(['outer']);
+      expectNoCompletionLabels(completions, 'getvar', '#each');
+    });
+
+    it('returns no slot alias completions when the current malformed #each scope has no recoverable alias', () => {
+      const entry = getFixtureCorpusEntry('prompt-malformed-each-header');
+      const request = createFixtureRequest(entry);
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(
+          request,
+          offsetToPosition(entry.text, entry.text.indexOf('{{slot::item}}') + '{{slot::'.length),
+        ),
+      );
+
+      expect(completions).toEqual([]);
     });
   });
 
@@ -193,7 +550,32 @@ describe('CompletionProvider', () => {
         'each-block',
         'escape-block',
         'puredisplay-block',
+        'pure-block',
+        'func-block',
       );
+      expect(extractCompletionCategory(completions.find((item) => item.label === 'when-block'))).toEqual({
+        category: 'snippet',
+        kind: 'block-snippet',
+      });
+    });
+
+    it('keeps block-only completion wording aligned with documentation-only metadata', () => {
+      const entry = getFixtureCorpusEntry('regex-block-header');
+      const request = createFixtureRequest(entry);
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(request, positionAt(entry.text, '{{#when', 3)),
+      );
+
+      for (const label of ['#when', '#each', '#escape', '#pure', '#puredisplay']) {
+        const completion = completions.find((item) => item.label === label);
+
+        expect(completion?.detail).toBe('Documentation-only block syntax');
+        expect(completion?.documentation).toEqual({
+          kind: 'markdown',
+          value: expect.stringContaining('not a general runtime callback builtin'),
+        });
+      }
     });
 
     it('snippets have Snippet kind', () => {
@@ -208,6 +590,35 @@ describe('CompletionProvider', () => {
       expect(snippet).toBeDefined();
       expect(snippet?.kind).toBe(15); // CompletionItemKind.Snippet
     });
+
+    it('suppresses general CBS completions inside puredisplay bodies', () => {
+      const text = [
+        '---',
+        'name: pure-completion',
+        '---',
+        '@@@ CONTENT',
+        '{{#puredisplay}}',
+        '{{',
+        '{{/puredisplay}}',
+        '',
+      ].join('\n');
+      const request = {
+        uri: 'file:///fixtures/pure-completion.risulorebook',
+        version: 1,
+        filePath: '/fixtures/pure-completion.risulorebook',
+        text,
+      };
+      const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
+        analysisService: new FragmentAnalysisService(),
+        resolveRequest: ({ textDocument }) => (textDocument.uri === request.uri ? request : null),
+      });
+
+      expect(
+        provider.provide(
+          createParams(request, offsetToPosition(text, text.indexOf('{{', text.indexOf('{{#puredisplay}}') + 1) + 2)),
+        ),
+      ).toEqual([]);
+    });
   });
 
   describe('trigger context: {{: (:else)', () => {
@@ -220,6 +631,10 @@ describe('CompletionProvider', () => {
       );
 
       expectCompletionLabels(completions, ':else');
+      expect(extractCompletionCategory(completions.find((item) => item.label === ':else'))).toEqual({
+        category: 'block-keyword',
+        kind: 'else-keyword',
+      });
     });
   });
 
@@ -335,6 +750,16 @@ describe('CompletionProvider', () => {
       expect(completions.length).toBeGreaterThan(0);
       expect(completions.some((c) => c.label === 'mood')).toBe(true);
       expect(completions.every((c) => c.kind === 6)).toBe(true); // CompletionItemKind.Variable = 6
+      expect(extractCompletionCategory(completions.find((item) => item.label === 'mood'))).toEqual({
+        category: 'variable',
+        kind: 'chat-variable',
+      });
+      expect(extractCompletionExplanation(completions.find((item) => item.label === 'mood'))).toEqual({
+        reason: 'scope-analysis',
+        source: 'chat-variable-symbol-table',
+        detail:
+          'Completion resolved this candidate from analyzed chat/global variable definitions in the current fragment.',
+      });
     });
 
     it('filters chat variables by prefix when typing', () => {

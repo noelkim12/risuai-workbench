@@ -2,7 +2,10 @@ import type { Position, RenameParams, TextDocumentPositionParams, TextDocumentEd
 import { describe, expect, it } from 'vitest';
 
 import { FragmentAnalysisService } from '../../src/core';
-import { RenameProvider } from '../../src/features/rename';
+import {
+  RENAME_PROVIDER_AVAILABILITY,
+  RenameProvider,
+} from '../../src/features/rename';
 import { offsetToPosition } from '../../src/utils/position';
 import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
 
@@ -91,6 +94,18 @@ function createRenameParams(
 }
 
 describe('RenameProvider', () => {
+  it('exposes local-only availability honesty metadata', () => {
+    const provider = new RenameProvider();
+
+    expect(provider.availability).toEqual(RENAME_PROVIDER_AVAILABILITY);
+    expect(provider.availability).toEqual({
+      scope: 'local-only',
+      source: 'rename-provider:fragment-symbol-table',
+      detail:
+        'Rename is limited to fragment-local variable and loop-alias symbols; globals, external symbols, and workspace-wide edits stay unavailable.',
+    });
+  });
+
   describe('prepareRename - success cases', () => {
     it('allows renaming chat variable via setvar', () => {
       const entry = getFixtureCorpusEntry('lorebook-setvar-macro');
@@ -102,6 +117,7 @@ describe('RenameProvider', () => {
       const position = positionAt(entry.text, 'mood', 1);
       const result = provider.prepareRename(createPositionParams(request, position));
 
+      expect(result.availability).toEqual(RENAME_PROVIDER_AVAILABILITY);
       expect(result.canRename).toBe(true);
       expect(result.symbol).toBeDefined();
       expect(result.kind).toBe('chat');
@@ -183,6 +199,7 @@ describe('RenameProvider', () => {
         createPositionParams(globalRequest, position),
       );
 
+      expect(result.availability).toEqual(RENAME_PROVIDER_AVAILABILITY);
       expect(result.canRename).toBe(false);
       expect(result.message).toContain('Global');
     });

@@ -1,5 +1,10 @@
+/**
+ * CBS semantic token provider and mapping contract.
+ * @file packages/cbs-lsp/src/features/semanticTokens.ts
+ */
+
 import type { CancellationToken } from 'vscode-languageserver/node';
-import type { BlockKind, BlockNode, MacroCallNode, Token } from 'risu-workbench-core';
+import type { MacroCallNode, Token } from 'risu-workbench-core';
 import { CBSBuiltinRegistry, TokenType } from 'risu-workbench-core';
 import { SemanticTokens, SemanticTokensParams } from 'vscode-languageserver/node';
 
@@ -8,7 +13,6 @@ import {
   locateFragmentAtHostPosition,
   resolveTokenMacroArgumentContext,
   shouldSuppressPureModeFeatures,
-  type DocumentFragmentAnalysis,
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
 } from '../core';
@@ -33,6 +37,26 @@ export const SEMANTIC_TOKEN_MODIFIERS = ['deprecated', 'readonly'] as const;
 type SemanticTokenTypeName = (typeof SEMANTIC_TOKEN_TYPES)[number];
 type SemanticTokenModifierName = (typeof SEMANTIC_TOKEN_MODIFIERS)[number];
 
+/**
+ * CBS semantic token mapping overview.
+ *
+ * | CBS parser token / syntax | LSP token type | Modifier | Why |
+ * | --- | --- | --- | --- |
+ * | `FunctionName` | `function` | - | 일반 builtin / macro 이름 |
+ * | deprecated `FunctionName`, deprecated `BlockStart` | `deprecated` | `deprecated` | deprecated builtin을 별도 색상 버킷과 modifier 둘 다로 드러냄 |
+ * | `BlockStart`, `BlockEnd`, `ElseKeyword` | `keyword` | - | block header / close / `:else`는 CBS 구조 키워드 |
+ * | `OpenBrace`, `CloseBrace`, `ArgumentSeparator` | `punctuation` | - | `{{`, `}}`, `::` 같은 구문 경계 |
+ * | `Comment` | `comment` | - | `{{// ...}}` 주석 |
+ * | `AngleBracketMacro` | `function` | - | `<user>`, `<char>` 같은 placeholder macro |
+ * | `MathExpression` | `operator`, `number` | - | expression sublanguage 내부에서 숫자/연산자만 다시 토큰화 |
+ * | `Argument` | `variable` / `function` / `parameter` / `operator` / `number` / `string` | - | 아래 특수 분류 규칙에 따라 문맥별로 재분류 |
+ *
+ * Argument 예외 규칙 요약:
+ * - variable-name builtin 첫 인수(`setvar`, `getvar`, `slot` 등)는 문자열 literal이 아니라 변수 namespace 이름이라서 `variable`로 본다.
+ * - block header(`#when`, `#each`, `#func` ...) 안 인수는 operator / literal을 구분해야 하므로 `is`, `and`, `>=` 같은 값만 `operator`로 올린다.
+ * - pure-mode body는 대부분 "실행되는 CBS 구문"이 아니라 raw body text에 가깝기 때문에 `string`으로 낮춘다. 다만 `slot::name`, `call::name`, `arg::N`의 첫 인수처럼 pure-mode 안에서도 실제 심볼 링크를 형성하는 토큰만 예외적으로 유지한다.
+ */
+
 interface TokenOffsetSpan {
   startOffset: number;
   endOffset: number;
@@ -53,6 +77,8 @@ const TOKEN_MODIFIER_INDEX = new Map(
   SEMANTIC_TOKEN_MODIFIERS.map((modifier, index) => [modifier, index]),
 );
 
+// 첫 인수가 "문자열 값"이 아니라 CBS 변수 namespace 이름인 builtin들.
+// semantic token도 string이 아니라 variable로 보여야 hover/diagnostics/completion 해석과 같은 의미가 된다.
 const VARIABLE_ARGUMENT_BUILTINS = new Set([
   'addvar',
   'getglobalvar',
@@ -65,6 +91,9 @@ const VARIABLE_ARGUMENT_BUILTINS = new Set([
   'slot',
   'tempvar',
 ]);
+
+// block header 안에서는 literal과 operator가 같은 Argument 토큰으로 들어온다.
+// `#when::score::is::10`의 `is`, `and`, `>=` 같은 값만 operator로 올리고 나머지는 string/number로 남긴다.
 const HEADER_OPERATORS = new Set([
   'and',
   'keep',
@@ -309,6 +338,8 @@ function classifyArgumentToken(
   const trimmedValue = token.value.trim();
   const tokenMacroContext = lookup ? resolveTokenMacroArgumentContext(lookup) : null;
 
+  // `call::name` / `arg::N`는 일반 문자열 인수가 아니라 로컬 심볼 참조다.
+  // fragment locator가 같은 의미를 hover/signature/definition에도 쓰므로 semantic token도 같은 카테고리를 따른다.
   if (lookup?.nodeSpan?.category === 'local-function-reference') {
     return 'function';
   }
@@ -325,6 +356,15 @@ function classifyArgumentToken(
     return 'parameter';
   }
 
+  if (
+    tokenMacroContext?.argumentIndex === 0 &&
+    VARIABLE_ARGUMENT_BUILTINS.has(tokenMacroContext.macroName)
+  ) {
+    return 'variable';
+  }
+
+  // block header argument는 parser 관점에서는 전부 Argument지만,
+  // editor에서는 condition operator와 literal을 구분해야 읽기 쉽다.
   if (lookup?.nodeSpan?.owner.type === 'Block' && lookup.nodeSpan.category === 'block-header') {
     return HEADER_OPERATORS.has(trimmedValue.toLowerCase())
       ? 'operator'
@@ -333,6 +373,7 @@ function classifyArgumentToken(
         : 'string';
   }
 
+  // variable builtin의 첫 인수는 quoted string이 아니라 변수/slot 식별자 역할을 한다.
   if (lookup?.nodeSpan?.owner.type === 'MacroCall' && lookup.nodeSpan.category === 'argument') {
     const owner = lookup.nodeSpan.owner as MacroCallNode;
     const builtin = registry.get(owner.name);
@@ -426,6 +467,9 @@ export class SemanticTokensProvider {
         );
 
         if (lookup && shouldSuppressPureModeFeatures(lookup)) {
+          // pure-mode body 안의 대부분의 토큰은 실제 CBS syntax highlight보다 raw body text로 보이는 편이 맞다.
+          // 단, pure-mode helper가 허용한 첫 인수(`slot::name`, `call::name`, `arg::N`)는 위 lookup 단계에서 억제되지 않고
+          // 아래 classifyArgumentToken으로 내려가서 variable/function/parameter 의미를 유지한다.
           emitLocalOffsetRange(
             entries,
             request.text,

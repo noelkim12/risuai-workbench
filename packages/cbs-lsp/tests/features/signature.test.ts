@@ -176,4 +176,118 @@ describe('SignatureHelpProvider', () => {
     expect(getParameterLabel(emptyTrailingSignature, 1)).toBe('value');
     expect(malformedSeparatorSignature.activeParameter).toBe(0);
   });
+
+  it('tracks local #func parameter slots for call:: signature help', () => {
+    const registry = new CBSBuiltinRegistry();
+    const provider = new SignatureHelpProvider(registry, new FragmentAnalysisService());
+    const document = createTestDocument(
+      'signature-local-call.risulorebook',
+      lorebookDocument([
+        '{{#func greet user target}}Hello {{arg::1}}{{/func}}{{call::greet::Noel::friend}}',
+      ]),
+    );
+
+    const signature = expectSignature(provideAt(provider, document, 'friend', 2));
+
+    expect(signature.signatures[0]?.label).toBe('call::greet::user::target');
+    expect(signature.signatures[0]?.documentation).toContain(
+      'Local function call for fragment-local `#func greet` declared at line',
+    );
+    expect(signature.activeParameter).toBe(2);
+    expect(getParameterLabel(signature, 2)).toBe('target');
+    expect(signature.signatures[0]?.parameters?.[0]?.documentation).toContain(
+      'Local function name slot. Resolves to fragment-local `#func greet` declared at line',
+    );
+    expect(signature.signatures[0]?.parameters?.[2]?.documentation).toContain(
+      'Call argument slot 1 feeds local parameter `target` declared at line',
+    );
+    expect(signature.signatures[0]?.parameters?.[2]?.documentation).toContain(
+      '`arg::1`',
+    );
+  });
+
+  it('describes #each block headers with separate iterator and alias slots', () => {
+    const registry = new CBSBuiltinRegistry();
+    const provider = new SignatureHelpProvider(registry, new FragmentAnalysisService());
+    const document = createTestDocument(
+      'signature-each-header.risulorebook',
+      lorebookDocument(['{{#each items as item}}{{slot::item}}{{/each}}']),
+    );
+
+    const iteratorSignature = expectSignature(provideAt(provider, document, 'items', 2));
+    const aliasSignature = expectSignature(provideAt(provider, document, 'item', 2, 1));
+
+    expect(iteratorSignature.signatures[0]?.label).toBe('#each iteratorExpression as alias');
+    expect(iteratorSignature.activeParameter).toBe(0);
+    expect(getParameterLabel(iteratorSignature, 0)).toBe('iteratorExpression');
+    expect(iteratorSignature.signatures[0]?.parameters?.[0]?.documentation).toContain(
+      'List or array expression consumed by the current `#each` block',
+    );
+
+    expect(aliasSignature.activeParameter).toBe(1);
+    expect(getParameterLabel(aliasSignature, 1)).toBe('alias');
+    expect(aliasSignature.signatures[0]?.documentation).toContain(
+      '`slot::alias` inside the block body',
+    );
+    expect(aliasSignature.signatures[0]?.parameters?.[1]?.documentation).toContain(
+      'Loop binding name introduced by `as`',
+    );
+  });
+
+  it('describes #func block headers with function-name and parameter-slot semantics', () => {
+    const registry = new CBSBuiltinRegistry();
+    const provider = new SignatureHelpProvider(registry, new FragmentAnalysisService());
+    const document = createTestDocument(
+      'signature-func-header.risulorebook',
+      lorebookDocument(['{{#func greet user target}}Hello{{/func}}{{call::greet::Noel::friend}}']),
+    );
+
+    const functionNameSignature = expectSignature(provideAt(provider, document, 'greet', 2));
+    const parameterSignature = expectSignature(provideAt(provider, document, 'target', 2));
+
+    expect(functionNameSignature.signatures[0]?.label).toBe('#func functionName ...parameters');
+    expect(functionNameSignature.activeParameter).toBe(0);
+    expect(getParameterLabel(functionNameSignature, 0)).toBe('functionName');
+    expect(functionNameSignature.signatures[0]?.parameters?.[0]?.documentation).toContain(
+      '`{{call::functionName::...}}` resolves this slot',
+    );
+
+    expect(parameterSignature.activeParameter).toBe(1);
+    expect(getParameterLabel(parameterSignature, 1)).toBe('...parameters');
+    expect(parameterSignature.signatures[0]?.documentation).toContain(
+      '`arg::0` → `user`, `arg::1` → `target`',
+    );
+    expect(parameterSignature.signatures[0]?.parameters?.[1]?.documentation).toContain(
+      'Space-separated local parameter names',
+    );
+  });
+
+  it('uses the same calc expression sublanguage signature wording for inline and macro forms', () => {
+    const registry = new CBSBuiltinRegistry();
+    const provider = new SignatureHelpProvider(registry, new FragmentAnalysisService());
+    const corpusEntry = getFixtureCorpusEntry('lorebook-calc-expression-context');
+    const document: TestDocument = {
+      filePath: corpusEntry.filePath,
+      text: corpusEntry.text,
+      uri: corpusEntry.uri,
+      version: 1,
+    };
+
+    const inlineSignature = expectSignature(provideAt(provider, document, '+', 0, 0));
+    const macroSignature = expectSignature(provideAt(provider, document, '+', 0, 1));
+
+    expect(inlineSignature).toEqual(macroSignature);
+    expect(inlineSignature.signatures[0]?.label).toBe('{{? expression}} / {{calc::expression}}');
+    expect(inlineSignature.activeParameter).toBe(0);
+    expect(getParameterLabel(inlineSignature, 0)).toBe('expression');
+    expect(inlineSignature.signatures[0]?.documentation).toContain(
+      'This is not regular CBS argument syntax.',
+    );
+    expect(inlineSignature.signatures[0]?.documentation).toContain(
+      'both use the same `CBS expression sublanguage`',
+    );
+    expect(inlineSignature.signatures[0]?.parameters?.[0]?.documentation).toContain(
+      'Variables: `$name` for chat variables, `@name` for global variables',
+    );
+  });
 });

@@ -19,6 +19,7 @@ export type CompletionTriggerContext =
   | { type: 'metadata-keys'; prefix: string; startOffset: number; endOffset: number }
   | { type: 'function-names'; prefix: string; startOffset: number; endOffset: number }
   | { type: 'argument-indices'; prefix: string; startOffset: number; endOffset: number }
+  | { type: 'slot-aliases'; prefix: string; startOffset: number; endOffset: number }
   | { type: 'when-operators'; prefix: string; startOffset: number; endOffset: number }
   | {
       type: 'calc-expression';
@@ -147,6 +148,18 @@ export function detectCompletionTriggerContext(
     return '';
   };
 
+  const getTypedTokenPrefix = (): string => {
+    if (!token || fragmentLocalOffset <= token.localStartOffset) {
+      return '';
+    }
+
+    const typedLength = Math.min(
+      token.token.value.length,
+      Math.max(0, fragmentLocalOffset - token.localStartOffset),
+    );
+    return token.token.value.slice(0, typedLength).trim();
+  };
+
   const detectCallFunctionContext = (): CompletionTriggerContext | null => {
     const openBrace = findOpenBraceToken();
     if (!openBrace) {
@@ -189,7 +202,7 @@ export function detectCompletionTriggerContext(
     ) {
       return {
         type: 'function-names',
-        prefix: token.token.value.trim(),
+        prefix: getTypedTokenPrefix(),
         startOffset: token.localStartOffset,
         endOffset: fragmentLocalOffset,
       };
@@ -204,11 +217,6 @@ export function detectCompletionTriggerContext(
   };
 
   const detectArgumentReferenceContext = (): CompletionTriggerContext | null => {
-    const activeFunctionContext = resolveActiveLocalFunctionContext(lookup);
-    if (!activeFunctionContext || activeFunctionContext.declaration.parameters.length === 0) {
-      return null;
-    }
-
     const openBrace = findOpenBraceToken();
     if (!openBrace) {
       return null;
@@ -241,6 +249,11 @@ export function detectCompletionTriggerContext(
       return null;
     }
 
+    const activeFunctionContext = resolveActiveLocalFunctionContext(lookup);
+    if (!activeFunctionContext || activeFunctionContext.declaration.parameters.length === 0) {
+      return { type: 'none' };
+    }
+
     if (
       token?.token.type === TokenType.Argument &&
       nodeSpan?.owner.type === 'MacroCall' &&
@@ -249,7 +262,7 @@ export function detectCompletionTriggerContext(
     ) {
       return {
         type: 'argument-indices',
-        prefix: token.token.value.trim(),
+        prefix: getTypedTokenPrefix(),
         startOffset: token.localStartOffset,
         endOffset: fragmentLocalOffset,
       };
@@ -262,6 +275,67 @@ export function detectCompletionTriggerContext(
       endOffset: fragmentLocalOffset,
     };
   };
+
+  const detectSlotAliasContext = (): CompletionTriggerContext | null => {
+    const openBrace = findOpenBraceToken();
+    if (!openBrace) {
+      return null;
+    }
+
+    const functionNameToken = tokens[openBrace.index + 1];
+    const separatorToken = tokens[openBrace.index + 2];
+    if (
+      functionNameToken?.type !== TokenType.FunctionName ||
+      functionNameToken.value.toLowerCase() !== 'slot' ||
+      separatorToken?.type !== TokenType.ArgumentSeparator
+    ) {
+      return null;
+    }
+
+    const separatorEnd = positionToOffset(fragmentAnalysis.fragment.content, separatorToken.range.end);
+    if (fragmentLocalOffset < separatorEnd) {
+      return null;
+    }
+
+    const separatorCount = tokens.filter((candidate) => {
+      if (candidate.type !== TokenType.ArgumentSeparator) {
+        return false;
+      }
+
+      const candidateStart = positionToOffset(fragmentAnalysis.fragment.content, candidate.range.start);
+      return candidateStart >= openBrace.offset && candidateStart < fragmentLocalOffset;
+    }).length;
+    if (separatorCount > 1) {
+      return null;
+    }
+
+    if (
+      token?.token.type === TokenType.Argument &&
+      nodeSpan?.category === 'argument' &&
+      nodeSpan.owner.type === 'MacroCall' &&
+      nodeSpan.owner.name.toLowerCase() === 'slot' &&
+      nodeSpan.argumentIndex === 0
+    ) {
+      return {
+        type: 'slot-aliases',
+        prefix: getTypedTokenPrefix(),
+        startOffset: token.localStartOffset,
+        endOffset: fragmentLocalOffset,
+      };
+    }
+
+    return {
+      type: 'slot-aliases',
+      prefix: '',
+      startOffset: separatorEnd,
+      endOffset: fragmentLocalOffset,
+    };
+  };
+
+  const slotAliasContext = detectSlotAliasContext();
+  if (slotAliasContext) {
+    return slotAliasContext;
+  }
 
   const callFunctionContext = detectCallFunctionContext();
   if (callFunctionContext) {

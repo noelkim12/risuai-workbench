@@ -1,4 +1,5 @@
 import type {
+  CancellationToken,
   CompletionItem,
   Diagnostic,
   FoldingRange,
@@ -13,7 +14,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as core from 'risu-workbench-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { fragmentAnalysisService } from '../src/core';
+import { createSyntheticDocumentVersion, fragmentAnalysisService } from '../src/core';
 import { SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES } from '../src/features/semanticTokens';
 import { registerServer } from '../src/server';
 import { offsetToPosition } from '../src/utils/position';
@@ -73,16 +74,17 @@ function getCompletionItems(
 class FakeConnection {
   initializeHandler: ((params: InitializeParams) => InitializeResult) | null = null;
 
-  completionHandler: ((params: any) => CompletionItem[] | { items: CompletionItem[] }) | null =
-    null;
+  shutdownHandler: (() => void | Promise<void>) | null = null;
 
-  hoverHandler: ((params: any) => Hover | null) | null = null;
+  completionHandler: ((params: any, token?: CancellationToken) => CompletionItem[] | { items: CompletionItem[] }) | null = null;
 
-  signatureHelpHandler: ((params: any) => SignatureHelp | null) | null = null;
+  hoverHandler: ((params: any, token?: CancellationToken) => Hover | null) | null = null;
 
-  foldingRangesHandler: ((params: any) => FoldingRange[]) | null = null;
+  signatureHelpHandler: ((params: any, token?: CancellationToken) => SignatureHelp | null) | null = null;
 
-  semanticTokensHandler: ((params: any) => SemanticTokens) | null = null;
+  foldingRangesHandler: ((params: any, token?: CancellationToken) => FoldingRange[]) | null = null;
+
+  semanticTokensHandler: ((params: any, token?: CancellationToken) => SemanticTokens) | null = null;
 
   definitionRegistrations = 0;
 
@@ -94,9 +96,25 @@ class FakeConnection {
 
   readonly diagnostics: Array<{ uri: string; diagnostics: readonly Diagnostic[] }> = [];
 
+  readonly traceMessages: Array<{ message: string; verbose?: string }> = [];
+
+  readonly consoleMessages: string[] = [];
+
+  readonly tracer = {
+    log: (message: string, verbose?: string) => {
+      this.traceMessages.push({ message, verbose });
+    },
+  };
+
+  readonly console = {
+    log: (message: string) => {
+      this.consoleMessages.push(message);
+    },
+  };
+
   readonly languages = {
     semanticTokens: {
-      on: (handler: (params: any) => SemanticTokens) => {
+      on: (handler: (params: any, token?: CancellationToken) => SemanticTokens) => {
         this.semanticTokensHandler = handler;
         return createDisposable();
       },
@@ -108,22 +126,27 @@ class FakeConnection {
     return createDisposable();
   }
 
-  onCompletion(handler: (params: any) => CompletionItem[] | { items: CompletionItem[] }) {
+  onShutdown(handler: () => void | Promise<void>) {
+    this.shutdownHandler = handler;
+    return createDisposable();
+  }
+
+  onCompletion(handler: (params: any, token?: CancellationToken) => CompletionItem[] | { items: CompletionItem[] }) {
     this.completionHandler = handler;
     return createDisposable();
   }
 
-  onHover(handler: (params: any) => Hover | null) {
+  onHover(handler: (params: any, token?: CancellationToken) => Hover | null) {
     this.hoverHandler = handler;
     return createDisposable();
   }
 
-  onSignatureHelp(handler: (params: any) => SignatureHelp | null) {
+  onSignatureHelp(handler: (params: any, token?: CancellationToken) => SignatureHelp | null) {
     this.signatureHelpHandler = handler;
     return createDisposable();
   }
 
-  onFoldingRanges(handler: (params: any) => FoldingRange[]) {
+  onFoldingRanges(handler: (params: any, token?: CancellationToken) => FoldingRange[]) {
     this.foldingRangesHandler = handler;
     return createDisposable();
   }
@@ -155,6 +178,10 @@ class FakeConnection {
 
   listen() {
     return undefined;
+  }
+
+  async shutdown() {
+    await this.shutdownHandler?.();
   }
 }
 
@@ -227,6 +254,13 @@ function getLastDiagnostics(connection: FakeConnection) {
   return diagnostics!;
 }
 
+function createCancellationToken(cancelled: boolean = false): CancellationToken {
+  return {
+    isCancellationRequested: cancelled,
+    onCancellationRequested: () => createDisposable(),
+  };
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   fragmentAnalysisService.clearAll();
@@ -261,6 +295,114 @@ describe('LSP server integration', () => {
             tokenModifiers: [...SEMANTIC_TOKEN_MODIFIERS],
           },
           full: true,
+        },
+      },
+      experimental: {
+        cbs: {
+          availability: {
+            excludedArtifacts: {
+              risutoggle: {
+                scope: 'workspace-disabled',
+                source: 'document-router:risutoggle',
+                detail:
+                  '`.risutoggle` artifacts do not carry CBS fragments, so CBS LSP routing stays disabled for them.',
+              },
+              risuvar: {
+                scope: 'workspace-disabled',
+                source: 'document-router:risuvar',
+                detail:
+                  '`.risuvar` artifacts do not carry CBS fragments, so CBS LSP routing stays disabled for them.',
+              },
+            },
+            featureAvailability: expect.objectContaining({
+              completion: {
+                scope: 'local-only',
+                source: 'server-capability:completion',
+                detail:
+                  'Completion is active for routed CBS fragments and operates on the current document/fragment context only.',
+              },
+              definition: {
+                scope: 'deferred',
+                source: 'deferred-scope-contract:definition',
+                detail:
+                  'Definition provider exists but server capability stays deferred until workspace-level cross-file resolution is available.',
+              },
+              formatting: {
+                scope: 'deferred',
+                source: 'deferred-scope-contract:formatting',
+                detail:
+                  'Formatting stays deferred until host-fragment patch semantics are safe for embedded CBS artifacts.',
+              },
+            }),
+          },
+          availabilitySnapshot: {
+            artifacts: [
+              {
+                key: 'risutoggle',
+                scope: 'workspace-disabled',
+                source: 'document-router:risutoggle',
+                detail:
+                  '`.risutoggle` artifacts do not carry CBS fragments, so CBS LSP routing stays disabled for them.',
+              },
+              {
+                key: 'risuvar',
+                scope: 'workspace-disabled',
+                source: 'document-router:risuvar',
+                detail:
+                  '`.risuvar` artifacts do not carry CBS fragments, so CBS LSP routing stays disabled for them.',
+              },
+            ],
+            features: expect.arrayContaining([
+              {
+                key: 'completion',
+                scope: 'local-only',
+                source: 'server-capability:completion',
+                detail:
+                  'Completion is active for routed CBS fragments and operates on the current document/fragment context only.',
+              },
+              {
+                key: 'definition',
+                scope: 'deferred',
+                source: 'deferred-scope-contract:definition',
+                detail:
+                  'Definition provider exists but server capability stays deferred until workspace-level cross-file resolution is available.',
+              },
+            ]),
+          },
+          excludedArtifacts: {
+            risutoggle: {
+              scope: 'workspace-disabled',
+              source: 'document-router:risutoggle',
+              detail:
+                '`.risutoggle` artifacts do not carry CBS fragments, so CBS LSP routing stays disabled for them.',
+            },
+            risuvar: {
+              scope: 'workspace-disabled',
+              source: 'document-router:risuvar',
+              detail:
+                '`.risuvar` artifacts do not carry CBS fragments, so CBS LSP routing stays disabled for them.',
+            },
+          },
+          featureAvailability: expect.objectContaining({
+            completion: {
+              scope: 'local-only',
+              source: 'server-capability:completion',
+              detail:
+                'Completion is active for routed CBS fragments and operates on the current document/fragment context only.',
+            },
+            definition: {
+              scope: 'deferred',
+              source: 'deferred-scope-contract:definition',
+              detail:
+                'Definition provider exists but server capability stays deferred until workspace-level cross-file resolution is available.',
+            },
+            formatting: {
+              scope: 'deferred',
+              source: 'deferred-scope-contract:formatting',
+              detail:
+                'Formatting stays deferred until host-fragment patch semantics are safe for embedded CBS artifacts.',
+            },
+          }),
         },
       },
     });
@@ -343,6 +485,234 @@ describe('LSP server integration', () => {
 
     expect(fragmentAnalysisService.getCachedAnalysis(uri, 2)).toBeNull();
     expect(getLastDiagnostics(connection).diagnostics).toEqual([]);
+  });
+
+  it('invalidates stale feature and diagnostics cache when text changes without a version bump', () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const parseSpy = vi.spyOn(core.CBSParser.prototype, 'parse');
+    const uri = 'file:///fixtures/server-same-version-cache.risulorebook';
+    const version1Text = lorebookDocument(['Hello {{user}}']);
+    const changedSameVersionText = lorebookDocument(['Hello {{char}}']);
+
+    registerServer(connection as any, documents as any);
+    documents.open(uri, version1Text, 1);
+
+    const firstHover = connection.hoverHandler?.({
+      textDocument: { uri },
+      position: positionAt(version1Text, 'user', 1),
+    });
+    expect(getHoverMarkdown(firstHover ?? null)).toContain('**user**');
+    expect(parseSpy).toHaveBeenCalledTimes(1);
+
+    documents.change(uri, changedSameVersionText, 1);
+
+    const secondHover = connection.hoverHandler?.({
+      textDocument: { uri },
+      position: positionAt(changedSameVersionText, 'char', 1),
+    });
+    expect(getHoverMarkdown(secondHover ?? null)).toContain('**char**');
+    expect(fragmentAnalysisService.getCachedAnalysis(uri, 1)?.cache.textSignature).toBe(
+      createSyntheticDocumentVersion(changedSameVersionText),
+    );
+    expect(parseSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('clears all cached analysis on shutdown', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const uri = 'file:///fixtures/server-shutdown-cache.risulorebook';
+    const text = lorebookDocument(['Hello {{user}}']);
+
+    registerServer(connection as any, documents as any);
+    documents.open(uri, text, 1);
+
+    expect(fragmentAnalysisService.getCachedAnalysis(uri, 1)).not.toBeNull();
+
+    await connection.shutdown();
+
+    expect(fragmentAnalysisService.getCachedAnalysis(uri, 1)).toBeNull();
+  });
+
+  it('emits feature-scoped trace and log messages per request path', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const uri = 'file:///fixtures/server-trace-paths.risulorebook';
+    const text = lorebookDocument([
+      '{{setvar::mood::happy}}',
+      '{{#when::mood::is::happy}}',
+      'visible',
+      '{{/}}',
+    ]);
+
+    registerServer(connection as any, documents as any);
+    connection.initializeHandler?.({ capabilities: {} } as InitializeParams);
+    documents.open(uri, text, 1);
+
+    connection.completionHandler?.(
+      {
+        textDocument: { uri },
+        position: positionAt(text, '{{setvar', 2),
+      },
+      createCancellationToken(false),
+    );
+    connection.hoverHandler?.(
+      {
+        textDocument: { uri },
+        position: positionAt(text, '#when', 2),
+      },
+      createCancellationToken(false),
+    );
+    connection.signatureHelpHandler?.(
+      {
+        textDocument: { uri },
+        position: positionAt(text, 'happy', 2),
+      },
+      createCancellationToken(false),
+    );
+    connection.foldingRangesHandler?.(
+      {
+        textDocument: { uri },
+      },
+      createCancellationToken(false),
+    );
+    connection.semanticTokensHandler?.(
+      {
+        textDocument: { uri },
+      },
+      createCancellationToken(false),
+    );
+
+    await connection.shutdown();
+
+    expect(connection.consoleMessages).toContain('[cbs-lsp:server] initialize textDocumentSync=2');
+    expect(connection.consoleMessages).toContain('[cbs-lsp:server] shutdown');
+      expect(connection.traceMessages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ message: '[cbs-lsp:server] initialize' }),
+          expect.objectContaining({ message: '[cbs-lsp:server] availability-contract' }),
+          expect.objectContaining({ message: '[cbs-lsp:server] document-open' }),
+        expect.objectContaining({ message: '[cbs-lsp:diagnostics] start' }),
+        expect.objectContaining({ message: '[cbs-lsp:diagnostics] end' }),
+        expect.objectContaining({ message: '[cbs-lsp:completion] start' }),
+        expect.objectContaining({ message: '[cbs-lsp:completion] end' }),
+        expect.objectContaining({ message: '[cbs-lsp:hover] start' }),
+        expect.objectContaining({ message: '[cbs-lsp:hover] end' }),
+        expect.objectContaining({ message: '[cbs-lsp:signature] start' }),
+        expect.objectContaining({ message: '[cbs-lsp:signature] end' }),
+        expect.objectContaining({ message: '[cbs-lsp:folding] start' }),
+        expect.objectContaining({ message: '[cbs-lsp:folding] end' }),
+        expect.objectContaining({ message: '[cbs-lsp:semanticTokens] start' }),
+        expect.objectContaining({ message: '[cbs-lsp:semanticTokens] end' }),
+        expect.objectContaining({ message: '[cbs-lsp:server] shutdown' }),
+      ]),
+    );
+
+    const availabilityTrace = connection.traceMessages.find(
+      (entry) => entry.message === '[cbs-lsp:server] availability-contract',
+    );
+
+    expect(availabilityTrace?.verbose).toBeDefined();
+    expect(JSON.parse(availabilityTrace?.verbose ?? '{}')).toEqual({
+      availability: {
+        artifacts: [
+          {
+            key: 'risutoggle',
+            availabilityScope: 'workspace-disabled',
+            availabilitySource: 'document-router:risutoggle',
+            availabilityDetail:
+              '`.risutoggle` artifacts do not carry CBS fragments, so CBS LSP routing stays disabled for them.',
+          },
+          {
+            key: 'risuvar',
+            availabilityScope: 'workspace-disabled',
+            availabilitySource: 'document-router:risuvar',
+            availabilityDetail:
+              '`.risuvar` artifacts do not carry CBS fragments, so CBS LSP routing stays disabled for them.',
+          },
+        ],
+        features: expect.arrayContaining([
+          {
+            key: 'completion',
+            availabilityScope: 'local-only',
+            availabilitySource: 'server-capability:completion',
+            availabilityDetail:
+              'Completion is active for routed CBS fragments and operates on the current document/fragment context only.',
+          },
+          {
+            key: 'definition',
+            availabilityScope: 'deferred',
+            availabilitySource: 'deferred-scope-contract:definition',
+            availabilityDetail:
+              'Definition provider exists but server capability stays deferred until workspace-level cross-file resolution is available.',
+          },
+        ]),
+      },
+    });
+  });
+
+  it('returns no-op results for cancelled requests without refreshing analysis', () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const parseSpy = vi.spyOn(core.CBSParser.prototype, 'parse');
+    const uri = 'file:///fixtures/server-cancelled-request.risulorebook';
+    const text = lorebookDocument(['{{setvar::mood::happy}}', '{{getvar::mood}}']);
+    const cancelledToken = createCancellationToken(true);
+
+    registerServer(connection as any, documents as any);
+    documents.open(uri, text, 1);
+
+    expect(parseSpy).toHaveBeenCalledTimes(1);
+
+    fragmentAnalysisService.clearAll();
+
+    expect(
+      getCompletionItems(
+        connection.completionHandler?.(
+          {
+            textDocument: { uri },
+            position: positionAt(text, '{{getvar::mood', '{{getvar::mood'.length),
+          },
+          cancelledToken,
+        ),
+      ),
+    ).toEqual([]);
+    expect(
+      connection.hoverHandler?.(
+        {
+          textDocument: { uri },
+          position: positionAt(text, 'mood', 1, 1),
+        },
+        cancelledToken,
+      ) ?? null,
+    ).toBeNull();
+    expect(
+      connection.signatureHelpHandler?.(
+        {
+          textDocument: { uri },
+          position: positionAt(text, 'happy', 2),
+        },
+        cancelledToken,
+      ) ?? null,
+    ).toBeNull();
+    expect(
+      connection.foldingRangesHandler?.(
+        {
+          textDocument: { uri },
+        },
+        cancelledToken,
+      ) ?? [],
+    ).toEqual([]);
+    expect(
+      connection.semanticTokensHandler?.(
+        {
+          textDocument: { uri },
+        },
+        cancelledToken,
+      ) ?? { data: [] },
+    ).toEqual({ data: [] });
+    expect(parseSpy).toHaveBeenCalledTimes(1);
+    expect(fragmentAnalysisService.getCachedAnalysis(uri, 1)).toBeNull();
   });
 
   it.each([

@@ -163,6 +163,35 @@ describe('fragment locator', () => {
     expectBlock(resolved.nodeSpan, 'when');
   });
 
+  it('carries shared recovery state into cursor lookups for malformed fragments', () => {
+    const service = new FragmentAnalysisService();
+    const unclosedBlock = getFixtureCorpusEntry('lorebook-unclosed-block');
+    const unclosedMacro = getFixtureCorpusEntry('lorebook-unclosed-macro');
+
+    const blockLookup = expectLookup(
+      service.locatePosition(
+        createFixtureRequest(unclosedBlock),
+        positionAt(unclosedBlock.text, 'Hello', 1),
+      ),
+    );
+    const macroLookup = expectLookup(
+      service.locatePosition(
+        createFixtureRequest(unclosedMacro),
+        positionAt(unclosedMacro.text, 'user', 1),
+      ),
+    );
+
+    expect(blockLookup.recovery.mode).toBe('structure-recovery');
+    expect(blockLookup.recovery.tokenContextReliable).toBe(true);
+    expect(blockLookup.recovery.structureReliable).toBe(false);
+    expect(blockLookup.fragmentAnalysis.providerLookup.getRecovery()).toBe(blockLookup.recovery);
+
+    expect(macroLookup.recovery.mode).toBe('token-recovery');
+    expect(macroLookup.recovery.tokenContextReliable).toBe(false);
+    expect(macroLookup.recovery.structureReliable).toBe(false);
+    expect(macroLookup.token?.category).toBe('plain-text');
+  });
+
   it.each([
     {
       label: 'lorebook frontmatter',

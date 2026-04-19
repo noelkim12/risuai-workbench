@@ -1,4 +1,15 @@
-import { TextEdit, DocumentFormattingParams } from 'vscode-languageserver/node'
+import { TextEdit, DocumentFormattingParams } from 'vscode-languageserver/node';
+
+import {
+  createAgentMetadataAvailability,
+  type AgentMetadataAvailabilityContract,
+} from '../core';
+
+export const FORMATTING_PROVIDER_AVAILABILITY = createAgentMetadataAvailability(
+  'deferred',
+  'formatting-provider:host-fragment-patch-semantics',
+  'Formatting stays deferred until host-fragment patch semantics are safe for embedded CBS artifacts.',
+);
 
 /**
  * Formatting Provider - Phase 4~5 Deferral Contract
@@ -24,9 +35,11 @@ import { TextEdit, DocumentFormattingParams } from 'vscode-languageserver/node'
  * Future phases will implement actual formatting when host-fragment safety is guaranteed.
  */
 export class FormattingProvider {
+  readonly availability: AgentMetadataAvailabilityContract = FORMATTING_PROVIDER_AVAILABILITY;
+
   provide(_params: DocumentFormattingParams): TextEdit[] {
     // Phase 4~5: Formatting deferred - return no edits (no-op)
     // This is the conservative contract until host-fragment patch semantics are defined.
-    return []
+    return [];
   }
 }

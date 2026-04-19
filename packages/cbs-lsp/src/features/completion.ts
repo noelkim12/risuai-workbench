@@ -3,22 +3,36 @@ import {
   CompletionItem,
   CompletionItemKind,
   InsertTextFormat,
+  type InsertReplaceEdit,
+  type MarkupContent,
   TextDocumentPositionParams,
   Range as LSPRange,
+  type TextEdit,
 } from 'vscode-languageserver/node';
-import type { CBSBuiltinRegistry, CBSBuiltinFunction } from 'risu-workbench-core';
+import {
+  isDocOnlyBuiltin,
+  type CBSBuiltinRegistry,
+  type CBSBuiltinFunction,
+} from 'risu-workbench-core';
 
 import {
+  createAgentMetadataEnvelope,
+  createAgentMetadataExplanation,
   collectLocalFunctionDeclarations,
   fragmentAnalysisService,
   detectCompletionTriggerContext,
   resolveActiveLocalFunctionContext,
   shouldSuppressPureModeFeatures,
+  isAgentMetadataEnvelope,
+  type AgentMetadataEnvelope,
+  type AgentMetadataCategoryContract,
+  type AgentMetadataExplanationContract,
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
   type FragmentCursorLookupResult,
   type CompletionTriggerContext,
 } from '../core';
+import { collectVisibleLoopBindingsFromNodePath } from '../analyzer/scopeAnalyzer';
 import { isRequestCancelled } from '../request-cancellation';
 
 export type CompletionRequestResolver = (
@@ -202,6 +216,162 @@ const CALC_OPERATORS: readonly CalcOperatorCompletion[] = [
   },
 ];
 
+function formatOrdinal(value: number): string {
+  const mod10 = value % 10;
+  const mod100 = value % 100;
+  if (mod10 === 1 && mod100 !== 11) {
+    return `${value}st`;
+  }
+  if (mod10 === 2 && mod100 !== 12) {
+    return `${value}nd`;
+  }
+  if (mod10 === 3 && mod100 !== 13) {
+    return `${value}rd`;
+  }
+  return `${value}th`;
+}
+
+export interface NormalizedCompletionTextEditSnapshot {
+  insert: LSPRange | null;
+  newText: string;
+  range: LSPRange | null;
+  replace: LSPRange | null;
+}
+
+export interface NormalizedCompletionItemSnapshot {
+  data: AgentMetadataEnvelope | null;
+  deprecated: boolean;
+  detail: string | null;
+  documentation: string | null;
+  insertText: string | null;
+  insertTextFormat: InsertTextFormat | null;
+  kind: CompletionItemKind | null;
+  label: string;
+  preselect: boolean;
+  sortText: string | null;
+  textEdit: NormalizedCompletionTextEditSnapshot | null;
+}
+
+function compareStrings(left: string | null, right: string | null): number {
+  return (left ?? '').localeCompare(right ?? '');
+}
+
+function compareBooleans(left: boolean, right: boolean): number {
+  return Number(left) - Number(right);
+}
+
+function compareNumbers(left: number | null, right: number | null): number {
+  return (left ?? -1) - (right ?? -1);
+}
+
+function comparePositions(
+  left: LSPRange['start'] | null | undefined,
+  right: LSPRange['start'] | null | undefined,
+): number {
+  return (
+    compareNumbers(left?.line ?? null, right?.line ?? null) ||
+    compareNumbers(left?.character ?? null, right?.character ?? null)
+  );
+}
+
+function compareRanges(left: LSPRange | null, right: LSPRange | null): number {
+  return comparePositions(left?.start, right?.start) || comparePositions(left?.end, right?.end);
+}
+
+function normalizeMarkupContent(documentation: CompletionItem['documentation']): string | null {
+  if (typeof documentation === 'string') {
+    return documentation;
+  }
+
+  if (Array.isArray(documentation)) {
+    return documentation.map((entry) => (typeof entry === 'string' ? entry : entry.value)).join('\n');
+  }
+
+  return (documentation as MarkupContent | undefined)?.value ?? null;
+}
+
+function normalizeTextEdit(
+  textEdit: CompletionItem['textEdit'],
+): NormalizedCompletionTextEditSnapshot | null {
+  if (!textEdit) {
+    return null;
+  }
+
+  const edit = textEdit as TextEdit | InsertReplaceEdit;
+
+  return {
+    insert: 'insert' in edit ? edit.insert : null,
+    newText: edit.newText,
+    range: 'range' in edit ? edit.range : null,
+    replace: 'replace' in edit ? edit.replace : null,
+  };
+}
+
+function compareNormalizedCompletionTextEdits(
+  left: NormalizedCompletionTextEditSnapshot | null,
+  right: NormalizedCompletionTextEditSnapshot | null,
+): number {
+  return (
+    compareStrings(left?.newText ?? null, right?.newText ?? null) ||
+    compareRanges(left?.range ?? null, right?.range ?? null) ||
+    compareRanges(left?.insert ?? null, right?.insert ?? null) ||
+    compareRanges(left?.replace ?? null, right?.replace ?? null)
+  );
+}
+
+function compareAgentMetadata(
+  left: AgentMetadataEnvelope | null,
+  right: AgentMetadataEnvelope | null,
+): number {
+  return (
+    compareStrings(left?.cbs.category.category ?? null, right?.cbs.category.category ?? null) ||
+    compareStrings(left?.cbs.category.kind ?? null, right?.cbs.category.kind ?? null)
+  );
+}
+
+function compareNormalizedCompletionSnapshots(
+  left: NormalizedCompletionItemSnapshot,
+  right: NormalizedCompletionItemSnapshot,
+): number {
+  return (
+    compareStrings(left.sortText, right.sortText) ||
+    compareStrings(left.label, right.label) ||
+    compareNumbers(left.kind, right.kind) ||
+    compareStrings(left.detail, right.detail) ||
+    compareStrings(left.documentation, right.documentation) ||
+    compareStrings(left.insertText, right.insertText) ||
+    compareNumbers(left.insertTextFormat, right.insertTextFormat) ||
+    compareBooleans(left.deprecated, right.deprecated) ||
+    compareBooleans(left.preselect, right.preselect) ||
+    compareNormalizedCompletionTextEdits(left.textEdit, right.textEdit) ||
+    compareAgentMetadata(left.data, right.data)
+  );
+}
+
+export function normalizeCompletionItemForSnapshot(
+  item: CompletionItem,
+): NormalizedCompletionItemSnapshot {
+  return {
+    data: isAgentMetadataEnvelope(item.data) ? item.data : null,
+    deprecated: item.deprecated ?? false,
+    detail: item.detail ?? null,
+    documentation: normalizeMarkupContent(item.documentation),
+    insertText: item.insertText ?? null,
+    insertTextFormat: item.insertTextFormat ?? null,
+    kind: item.kind ?? null,
+    label: item.label,
+    preselect: item.preselect ?? false,
+    sortText: item.sortText ?? null,
+    textEdit: normalizeTextEdit(item.textEdit),
+  };
+}
+
+export function normalizeCompletionItemsForSnapshot(
+  items: readonly CompletionItem[],
+): NormalizedCompletionItemSnapshot[] {
+  return [...items].map(normalizeCompletionItemForSnapshot).sort(compareNormalizedCompletionSnapshots);
+}
+
 export class CompletionProvider {
   private readonly analysisService: FragmentAnalysisService;
 
@@ -250,7 +420,8 @@ export class CompletionProvider {
     if (
       shouldSuppressPureModeFeatures(lookup) &&
       context.type !== 'argument-indices' &&
-      context.type !== 'function-names'
+      context.type !== 'function-names' &&
+      context.type !== 'slot-aliases'
     ) {
       return [];
     }
@@ -312,6 +483,8 @@ export class CompletionProvider {
         return this.buildFunctionCompletions(context.prefix, lookup);
       case 'argument-indices':
         return this.buildArgumentIndexCompletions(context.prefix, lookup);
+      case 'slot-aliases':
+        return this.buildSlotAliasCompletions(context.prefix, lookup);
       case 'when-operators':
         return this.buildWhenOperatorCompletions(context.prefix);
       case 'calc-expression':
@@ -349,6 +522,15 @@ export class CompletionProvider {
         return {
           label: `${marker}${variable.name}`,
           kind: CompletionItemKind.Variable,
+          data: this.createCategoryData({
+            category: 'variable',
+            kind: variable.kind === 'global' ? 'global-variable' : 'chat-variable',
+          }, this.createScopeExplanation(
+            'calc-expression-symbol-table',
+            variable.kind === 'global'
+              ? 'Calc completion resolved this candidate from the analyzed global variable symbol table.'
+              : 'Calc completion resolved this candidate from the analyzed chat variable symbol table.',
+          )),
           detail:
             variable.kind === 'global'
               ? 'Calc expression global variable'
@@ -377,6 +559,13 @@ export class CompletionProvider {
         ({
           label: operator.label,
           kind: operator.label === 'null' ? CompletionItemKind.Constant : CompletionItemKind.Operator,
+          data: this.createCategoryData({
+            category: 'expression-operator',
+            kind: 'calc-operator',
+          }, this.createContextualExplanation(
+            'calc-expression-operator-context',
+            'Calc completion inferred an operator slot from the shared CBS expression sublanguage context.',
+          )),
           detail: operator.detail,
           documentation: {
             kind: 'markdown',
@@ -396,7 +585,8 @@ export class CompletionProvider {
     return filtered.map((fn) => ({
       label: fn.name,
       kind: fn.isBlock ? CompletionItemKind.Class : CompletionItemKind.Function,
-      detail: fn.isBlock ? 'Block function' : 'Function',
+      data: this.createCategoryData(this.getBuiltinCategory(fn), this.getBuiltinExplanation(fn)),
+      detail: this.formatFunctionDetail(fn),
       documentation: {
         kind: 'markdown',
         value: this.formatFunctionDocumentation(fn),
@@ -424,7 +614,8 @@ export class CompletionProvider {
     const completions: CompletionItem[] = filtered.map((fn) => ({
       label: fn.name,
       kind: CompletionItemKind.Class,
-      detail: 'Block function',
+      data: this.createCategoryData(this.getBuiltinCategory(fn), this.getBuiltinExplanation(fn)),
+      detail: this.formatFunctionDetail(fn),
       documentation: {
         kind: 'markdown',
         value: this.formatFunctionDocumentation(fn),
@@ -439,6 +630,13 @@ export class CompletionProvider {
         completions.push({
           label: snippet.label,
           kind: CompletionItemKind.Snippet,
+          data: this.createCategoryData({
+            category: 'snippet',
+            kind: 'block-snippet',
+          }, this.createContextualExplanation(
+            'block-snippet-library',
+            'Block completion appended an editor snippet from the static CBS block snippet set.',
+          )),
           detail: snippet.detail,
           documentation: {
             kind: 'markdown',
@@ -463,6 +661,13 @@ export class CompletionProvider {
       {
         label: ':else',
         kind: CompletionItemKind.Keyword,
+        data: this.createCategoryData({
+          category: 'block-keyword',
+          kind: 'else-keyword',
+        }, this.createContextualExplanation(
+          'else-keyword-context',
+          'Completion inferred a live :else branch position from the current CBS block structure.',
+        )),
         detail: 'Else keyword',
         documentation: {
           kind: 'markdown',
@@ -486,6 +691,13 @@ export class CompletionProvider {
         return {
           label: `/${nameWithoutHash}`,
           kind: CompletionItemKind.Keyword,
+          data: this.createCategoryData({
+            category: 'block-keyword',
+            kind: 'block-close',
+          }, this.createContextualExplanation(
+            'block-close-context',
+            'Completion inferred a block close candidate from the open block context at the cursor.',
+          )),
           detail: `Close ${nameWithoutHash} block`,
           insertText: `/${nameWithoutHash}`,
         };
@@ -497,6 +709,13 @@ export class CompletionProvider {
       {
         label: `/${normalizedKind}`,
         kind: CompletionItemKind.Keyword,
+        data: this.createCategoryData({
+          category: 'block-keyword',
+          kind: 'block-close',
+        }, this.createContextualExplanation(
+          'block-close-context',
+          'Completion inferred the matching block close tag from the active open block kind.',
+        )),
         detail: `Close ${normalizedKind} block`,
         insertText: `/${normalizedKind}`,
         preselect: true,
@@ -521,6 +740,22 @@ export class CompletionProvider {
     return matchingVars.map((v) => ({
       label: v.name,
       kind: CompletionItemKind.Variable,
+      data: this.createCategoryData({
+        category: 'variable',
+        kind:
+          v.kind === 'global'
+            ? 'global-variable'
+            : v.kind === 'temp'
+              ? 'temp-variable'
+              : v.kind === 'loop'
+                ? 'chat-variable'
+                : 'chat-variable',
+      }, this.createScopeExplanation(
+        kind === 'temp' ? 'temp-variable-symbol-table' : 'chat-variable-symbol-table',
+        kind === 'temp'
+          ? 'Completion resolved this candidate from analyzed temp-variable definitions in the current fragment.'
+          : 'Completion resolved this candidate from analyzed chat/global variable definitions in the current fragment.',
+      )),
       detail: kind === 'chat' ? 'Chat variable' : 'Temp variable',
       documentation: {
         kind: 'markdown',
@@ -559,15 +794,28 @@ export class CompletionProvider {
     return functions.map((symbol) => ({
       label: symbol.name,
       kind: CompletionItemKind.Function,
-      detail: 'Local #func declaration',
+      data: this.createCategoryData({
+        category: 'contextual-token',
+        kind: 'local-function',
+      }, this.createContextualExplanation(
+        'local-function-context',
+        'Completion inferred a local #func target from the first call:: slot context.',
+      )),
+      detail: 'Local #func declaration for the first call:: slot',
       documentation: {
         kind: 'markdown',
         value: [
           `**Local function: ${symbol.name}**`,
           '',
+          '- Meaning: insert this into the first `call::` slot to choose which fragment-local `#func` declaration to invoke.',
           symbol.parameters.length > 0
             ? `Parameters: ${symbol.parameters.map((parameter) => `\`${parameter}\``).join(', ')}`
-            : 'Parameters: inferred at runtime',
+            : 'Parameters: declared later or inferred at runtime',
+          symbol.parameters.length > 0
+            ? `Argument slots: ${symbol.parameters
+                .map((parameter, index) => `\`arg::${index}\` → \`${parameter}\``)
+                .join(', ')}`
+            : 'Argument slots: no local parameter names are declared yet.',
           `Local calls: ${symbol.references}`,
         ].join('\n'),
       },
@@ -585,13 +833,25 @@ export class CompletionProvider {
       return [];
     }
 
+    const normalizedPrefix = prefix.trim();
+
     return declaration.parameters
       .map((parameter, index) => ({ parameter, index }))
-      .filter(({ index }) => index.toString().startsWith(prefix.trim()))
-      .map(({ parameter, index }) => ({
+      .filter(({ index }) => index.toString().startsWith(normalizedPrefix))
+      .map(({ parameter, index }) => {
+        const parameterDeclaration = declaration.parameterDeclarations[index];
+
+        return {
         label: index.toString(),
         kind: CompletionItemKind.Constant,
-        detail: `0-based local argument slot for \`${parameter}\``,
+        data: this.createCategoryData({
+          category: 'contextual-token',
+          kind: 'argument-index',
+        }, this.createContextualExplanation(
+          'active-local-function-context',
+          'Completion inferred numbered arg:: slots from the active local #func / call:: context.',
+        )),
+        detail: `Numbered argument reference for \`${parameter}\` in the active local #func / {{call::...}} context`,
         documentation: {
           kind: 'markdown',
           value: [
@@ -600,10 +860,56 @@ export class CompletionProvider {
             `- Local function: \`${declaration.name}\``,
             `- Parameter slot: ${index}`,
             `- Parameter name: \`${parameter}\``,
-            '- Meaning: reads the matching call argument during `{{call::...}}` recursion.',
+            parameterDeclaration
+              ? `- Parameter definition: line ${parameterDeclaration.range.start.line + 1}, character ${parameterDeclaration.range.start.character + 1}`
+              : '- Parameter definition: declared in the active local function header',
+            `- Meaning: references the ${formatOrdinal(index + 1)} call argument from the active local \`#func\` / \`{{call::...}}\` context.`,
           ].join('\n'),
         },
         insertText: index.toString(),
+      } satisfies CompletionItem;
+      });
+  }
+
+  private buildSlotAliasCompletions(
+    prefix: string,
+    lookup: FragmentCursorLookupResult,
+  ): CompletionItem[] {
+    const visibleBindings = collectVisibleLoopBindingsFromNodePath(
+      lookup.nodePath,
+      lookup.fragment.content,
+      lookup.fragmentLocalOffset,
+    );
+    const normalizedPrefix = prefix.trim().toLowerCase();
+
+    return visibleBindings
+      .filter((binding) => binding.bindingName.toLowerCase().startsWith(normalizedPrefix))
+      .map((binding, index) => ({
+        label: binding.bindingName,
+        kind: CompletionItemKind.Variable,
+        data: this.createCategoryData({
+          category: 'contextual-token',
+          kind: 'loop-alias',
+        }, this.createScopeExplanation(
+          'visible-loop-bindings',
+          'Completion resolved a visible #each loop alias from scope analysis rather than general variables.',
+        )),
+        detail: index === 0 ? 'Current #each loop alias' : 'Outer #each loop alias',
+        documentation: {
+          kind: 'markdown',
+          value: [
+            `**Loop alias: ${binding.bindingName}**`,
+            '',
+            `- Source: \`#each ${binding.iteratorExpression} as ${binding.bindingName}\``,
+            index === 0
+              ? '- Scope: current `#each` block'
+              : '- Scope: outer `#each` block still visible from the current cursor',
+            '- Policy: `slot::` completion only offers loop aliases, never general variables.',
+          ].join('\n'),
+        },
+        insertText: binding.bindingName,
+        preselect: index === 0,
+        sortText: `${index.toString().padStart(2, '0')}-${binding.bindingName}`,
       }));
   }
 
@@ -615,6 +921,13 @@ export class CompletionProvider {
     return filtered.map((k) => ({
       label: k.name,
       kind: CompletionItemKind.Property,
+      data: this.createCategoryData({
+        category: 'metadata-key',
+        kind: 'metadata-property',
+      }, this.createContextualExplanation(
+        'metadata-key-catalog',
+        'Completion matched a key from the static CBS metadata property catalog.',
+      )),
       detail: 'Metadata key',
       documentation: {
         kind: 'markdown',
@@ -632,6 +945,13 @@ export class CompletionProvider {
     return filtered.map((op) => ({
       label: op.name,
       kind: CompletionItemKind.Operator,
+      data: this.createCategoryData({
+        category: 'contextual-token',
+        kind: 'when-operator',
+      }, this.createContextualExplanation(
+        'when-operator-context',
+        'Completion inferred a #when operator position from the current block-header operator slot.',
+      )),
       detail: 'When operator',
       documentation: {
         kind: 'markdown',
@@ -654,6 +974,14 @@ export class CompletionProvider {
     );
   }
 
+  private formatFunctionDetail(fn: CBSBuiltinFunction): string {
+    if (isDocOnlyBuiltin(fn)) {
+      return fn.isBlock ? 'Documentation-only block syntax' : 'Documentation-only syntax entry';
+    }
+
+    return fn.isBlock ? 'Callable block builtin' : 'Callable builtin function';
+  }
+
   private formatFunctionDocumentation(fn: CBSBuiltinFunction): string {
     const lines: string[] = [];
 
@@ -664,6 +992,13 @@ export class CompletionProvider {
       }
       lines.push('');
     }
+
+    lines.push(
+      isDocOnlyBuiltin(fn)
+        ? '**Documentation-only syntax entry:** visible in editor docs and completion, but not a general runtime callback builtin.'
+        : '**Callable builtin:** available as a runtime CBS builtin.',
+    );
+    lines.push('');
 
     lines.push(fn.description);
 
@@ -683,5 +1018,57 @@ export class CompletionProvider {
     }
 
     return lines.join('\n');
+  }
+
+  /**
+   * createCategoryData 함수.
+   * completion item data 필드에 붙일 공통 category envelope를 생성함.
+   *
+   * @param category - completion 항목을 machine-readable하게 분류할 stable category 값
+   * @returns completion item `data`에 그대로 넣을 envelope
+   */
+  private createCategoryData(
+    category: AgentMetadataCategoryContract,
+    explanation?: AgentMetadataExplanationContract,
+  ) {
+    return createAgentMetadataEnvelope(category, explanation);
+  }
+
+  private createContextualExplanation(
+    source: string,
+    detail: string,
+  ): AgentMetadataExplanationContract {
+    return createAgentMetadataExplanation('contextual-inference', source, detail);
+  }
+
+  private createScopeExplanation(
+    source: string,
+    detail: string,
+  ): AgentMetadataExplanationContract {
+    return createAgentMetadataExplanation('scope-analysis', source, detail);
+  }
+
+  /**
+   * getBuiltinCategory 함수.
+   * registry builtin을 block keyword vs callable builtin 기준의 stable category로 변환함.
+   *
+   * @param fn - completion/hover에 노출할 registry builtin 항목
+   * @returns agent-friendly category contract
+   */
+  private getBuiltinCategory(fn: CBSBuiltinFunction): AgentMetadataCategoryContract {
+    return {
+      category: fn.isBlock ? 'block-keyword' : 'builtin',
+      kind: isDocOnlyBuiltin(fn) ? 'documentation-only-builtin' : 'callable-builtin',
+    };
+  }
+
+  private getBuiltinExplanation(fn: CBSBuiltinFunction): AgentMetadataExplanationContract {
+    return createAgentMetadataExplanation(
+      'registry-lookup',
+      'builtin-registry',
+      isDocOnlyBuiltin(fn)
+        ? 'Completion surfaced this item from the builtin registry as a documentation-only CBS syntax entry.'
+        : 'Completion surfaced this item from the builtin registry as a callable CBS builtin.',
+    );
   }
 }

@@ -1,7 +1,10 @@
 import type { DocumentFormattingParams } from 'vscode-languageserver/node';
 import { describe, expect, it } from 'vitest';
 
-import { FormattingProvider } from '../../src/features/formatting';
+import {
+  FORMATTING_PROVIDER_AVAILABILITY,
+  FormattingProvider,
+} from '../../src/features/formatting';
 import { createFixtureRequest, getFixtureCorpusEntry, listFixtureCorpusEntries } from '../fixtures/fixture-corpus';
 
 function createParams(request: ReturnType<typeof createFixtureRequest>): DocumentFormattingParams {
@@ -15,6 +18,18 @@ function createParams(request: ReturnType<typeof createFixtureRequest>): Documen
 }
 
 describe('FormattingProvider - Phase 4~5 Deferral Contract', () => {
+  it('exposes deferred availability honesty metadata', () => {
+    const provider = new FormattingProvider();
+
+    expect(provider.availability).toEqual(FORMATTING_PROVIDER_AVAILABILITY);
+    expect(provider.availability).toEqual({
+      scope: 'deferred',
+      source: 'formatting-provider:host-fragment-patch-semantics',
+      detail:
+        'Formatting stays deferred until host-fragment patch semantics are safe for embedded CBS artifacts.',
+    });
+  });
+
   describe('contract: returns empty array (no-op) for all artifacts', () => {
     it('returns [] for lorebook artifacts', () => {
       const entry = getFixtureCorpusEntry('lorebook-basic');
