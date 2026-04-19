@@ -143,6 +143,86 @@ end
     expect(fs.existsSync(path.join(tempDir, 'analysis', 'module-analysis.md'))).toBe(true);
   });
 
+  it('loads triggerId-based setChatVar/getChatVar access from canonical .risulua files', () => {
+    fs.rmSync(path.join(tempDir, 'lua', 'boot.analysis.json'));
+    fs.writeFileSync(
+      path.join(tempDir, 'lua', 'runtime.risulua'),
+      `
+function runtime(triggerId)
+  setChatVar(triggerId, 'mana', '10')
+  return getChatVar(triggerId, 'mode')
+end
+`,
+      'utf-8',
+    );
+
+    const result = collectModuleCBS(tempDir);
+
+    expect(result.luaArtifacts).toHaveLength(1);
+    expect(result.luaArtifacts[0]?.elementCbs[0]?.reads.has('mode')).toBe(true);
+    expect(result.luaArtifacts[0]?.elementCbs[0]?.writes.has('mana')).toBe(true);
+    expect(result.luaCBS[0]?.reads.has('mode')).toBe(true);
+    expect(result.luaCBS[0]?.writes.has('mana')).toBe(true);
+  });
+
+  it('emits relationship-network bridge edges into module analysis data for lorebook↔lua and lua↔regex flows', () => {
+    fs.rmSync(path.join(tempDir, 'lua', 'boot.analysis.json'));
+    fs.writeFileSync(
+      path.join(tempDir, 'lorebooks', 'battle', 'battle_entry.risulorebook'),
+      `---
+name: battle_entry
+comment: battle_entry
+mode: normal
+constant: false
+selective: false
+insertion_order: 0
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+battle
+@@@ CONTENT
+{{setvar::mode::combat}}
+`,
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'regex', 'init_script.risuregex'),
+      `---
+comment: init_script
+type: editdisplay
+---
+@@@ IN
+*init*
+@@@ OUT
+{{getvar::mana}}
+`,
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'lua', 'runtime.risulua'),
+      `
+function runtime()
+  local currentMode = getChatVar('mode')
+  if currentMode then
+    setChatVar('mana', '10')
+  end
+  return currentMode
+end
+`,
+      'utf-8',
+    );
+
+    const code = runAnalyzeModuleWorkflow([tempDir, '--locale', 'en']);
+    expect(code).toBe(0);
+
+    const dataJs = fs.readFileSync(path.join(tempDir, 'analysis', 'module-analysis.data.js'), 'utf-8');
+    expect(dataJs).toContain('lb-lua-bridge');
+    expect(dataJs).toContain('lua-regex-bridge');
+    expect(dataJs).toContain('mode');
+    expect(dataJs).toContain('mana');
+  });
+
   it('writes module analysis markdown report', () => {
     const code = runAnalyzeModuleWorkflow([tempDir, '--locale', 'en']);
     expect(code).toBe(0);

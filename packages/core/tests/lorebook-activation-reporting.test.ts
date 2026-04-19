@@ -51,7 +51,24 @@ function makeCharxReportData(): CharxReportData {
   return {
     charx: {},
     characterName: 'Alice',
-    unifiedGraph: new Map(),
+    unifiedGraph: new Map([
+      [
+        'bridge_var',
+        {
+          varName: 'bridge_var',
+          sources: {
+            lorebook: { readers: ['Alpha'], writers: ['Alpha'] },
+            lua: { readers: ['runtime'], writers: ['runtime'] },
+            regex: { readers: ['matcher'], writers: [] },
+          },
+          defaultValue: null,
+          elementCount: 3,
+          direction: 'bridged',
+          crossElementWriters: ['lorebook', 'lua'],
+          crossElementReaders: ['lorebook', 'lua', 'regex'],
+        },
+      ],
+    ]),
     lorebookRegexCorrelation: {
       sharedVars: [],
       lorebookOnlyVars: [],
@@ -76,7 +93,14 @@ function makeCharxReportData(): CharxReportData {
       variables: { variables: {}, cbsData: [] },
       html: { cbsData: null, assetRefs: [] },
       tsCBS: [],
-      luaCBS: [],
+      luaCBS: [
+        {
+          elementType: 'lua',
+          elementName: 'runtime',
+          reads: new Set(['bridge_var']),
+          writes: new Set(['bridge_var']),
+        },
+      ],
       luaArtifacts: [],
     },
     luaArtifacts: [],
@@ -94,7 +118,24 @@ function makeModuleReportData(): ModuleReportData {
       metadata: {},
       luaArtifacts: [],
     },
-    unifiedGraph: new Map(),
+    unifiedGraph: new Map([
+      [
+        'bridge_var',
+        {
+          varName: 'bridge_var',
+          sources: {
+            lorebook: { readers: ['Alpha'], writers: ['Alpha'] },
+            lua: { readers: ['runtime'], writers: ['runtime'] },
+            regex: { readers: ['matcher'], writers: [] },
+          },
+          defaultValue: null,
+          elementCount: 3,
+          direction: 'bridged',
+          crossElementWriters: ['lorebook', 'lua'],
+          crossElementReaders: ['lorebook', 'lua', 'regex'],
+        },
+      ],
+    ]),
     lorebookRegexCorrelation: {
       sharedVars: [],
       lorebookOnlyVars: [],
@@ -197,6 +238,8 @@ describe('lorebook activation reporting', () => {
     const markdown = fs.readFileSync(path.join(outputDir, 'analysis', 'charx-analysis.md'), 'utf8');
     expect(markdown).toContain('Alpha → Beta');
     expect(markdown).toContain('possible');
+    expect(markdown).toContain('## Lorebook ↔ Lua Correlation');
+    expect(markdown).toContain('bridge_var');
   });
 
   it('renders activation-chain summary into module markdown reports', () => {
@@ -206,6 +249,8 @@ describe('lorebook activation reporting', () => {
     const markdown = fs.readFileSync(path.join(outputDir, 'analysis', 'module-analysis.md'), 'utf8');
     expect(markdown).toContain('Alpha → Beta');
     expect(markdown).toContain('possible');
+    expect(markdown).toContain('## Lorebook ↔ Lua Correlation');
+    expect(markdown).toContain('bridge_var');
   });
 
   it('does not render duplicate lorebook entries twice in folder trees', () => {

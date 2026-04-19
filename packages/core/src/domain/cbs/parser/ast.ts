@@ -55,9 +55,16 @@ export interface CBSDocument {
   diagnostics: DiagnosticInfo[];
 }
 
+export interface DiagnosticRelatedInfo {
+  message: string;
+  range: Range;
+}
+
 export interface DiagnosticInfo {
   message: string;
   range: Range;
   severity: 'error' | 'warning' | 'info';
   code: string;
+  relatedInformation?: DiagnosticRelatedInfo[];
+  data?: unknown;
 }

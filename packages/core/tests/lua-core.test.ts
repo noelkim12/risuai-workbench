@@ -177,4 +177,22 @@ describe('analyzeLuaSource', () => {
     expect(result.elementCbs[0]?.reads.has('mode')).toBe(true);
     expect(result.elementCbs[0]?.writes.has('mana')).toBe(true);
   });
+
+  it('reads setChatVar/getChatVar keys when triggerId is passed as the first argument', () => {
+    const result = analyzeLuaSource({
+      filePath: '/tmp/module-trigger.lua',
+      source: [
+        'function boot(triggerId)',
+        '  local current = getChatVar(triggerId, "mode")',
+        '  setChatVar(triggerId, "mana", current)',
+        'end',
+      ].join('\n'),
+      charxData: null,
+    });
+
+    expect(result.collected.stateVars.get('mode')?.readBy.has('boot')).toBe(true);
+    expect(result.collected.stateVars.get('mana')?.writtenBy.has('boot')).toBe(true);
+    expect(result.elementCbs[0]?.reads.has('mode')).toBe(true);
+    expect(result.elementCbs[0]?.writes.has('mana')).toBe(true);
+  });
 });

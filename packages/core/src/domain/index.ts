@@ -145,7 +145,10 @@ export {
 export {
   buildUnifiedCBSGraph,
   buildLorebookRegexCorrelation,
+  buildElementPairCorrelationFromUnifiedGraph,
   type ElementCBSData,
+  type ElementPairCorrelation,
+  type ElementPairSharedVar,
   type UnifiedVarEntry,
   type LorebookRegexSharedVar,
   type LorebookRegexCorrelation,

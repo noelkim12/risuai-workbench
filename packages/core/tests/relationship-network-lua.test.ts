@@ -602,6 +602,113 @@ describe('relationship-network-lua', () => {
     );
   });
 
+  it('adds direct bridge edges for lorebook↔lua and lua↔regex variable links', () => {
+    const luaArtifacts = [
+      makeLuaArtifact({
+        baseName: 'bridge',
+        collected: {
+          functions: [
+            {
+              name: 'runtime',
+              displayName: 'runtime',
+              stateReads: new Set(['loreToLua']),
+              stateWrites: new Set(['luaToRegex']),
+              startLine: 1,
+              endLine: 4,
+              lineCount: 4,
+              isLocal: false,
+              isAsync: false,
+              params: [],
+              parentFunction: null,
+              isListenEditHandler: false,
+              listenEditEventType: null,
+              apiCategories: new Set(),
+              apiNames: new Set(),
+            },
+          ] as any,
+        },
+      }),
+    ];
+
+    const panel = buildRelationshipNetworkPanel(
+      'test-panel',
+      {
+        lorebookStructure,
+        lorebookActivationChain,
+        lorebookRegexCorrelation,
+        unifiedGraph: new Map([
+          [
+            'loreToLua',
+            {
+              varName: 'loreToLua',
+              sources: {
+                lorebook: { readers: [], writers: ['Entry1'] },
+                lua: { readers: ['runtime'], writers: [] },
+              },
+              defaultValue: null,
+              elementCount: 2,
+              direction: 'bridged',
+              crossElementWriters: ['lorebook'],
+              crossElementReaders: ['lua'],
+            },
+          ],
+          [
+            'luaToRegex',
+            {
+              varName: 'luaToRegex',
+              sources: {
+                lua: { readers: [], writers: ['runtime'] },
+                regex: { readers: ['matcher'], writers: [] },
+              },
+              defaultValue: null,
+              elementCount: 2,
+              direction: 'bridged',
+              crossElementWriters: ['lua'],
+              crossElementReaders: ['regex'],
+            },
+          ],
+        ]),
+        lorebookCBS: [
+          {
+            elementType: 'lorebook',
+            elementName: 'Entry1',
+            reads: new Set(),
+            writes: new Set(['loreToLua']),
+          },
+        ],
+        regexCBS: [
+          {
+            elementType: 'regex',
+            elementName: 'matcher',
+            reads: new Set(['luaToRegex']),
+            writes: new Set(),
+          },
+        ],
+        luaArtifacts,
+      },
+      'en',
+    );
+
+    expect(panel).not.toBeNull();
+    const payload = panel!.payload as any;
+    expect(payload.edges).toContainEqual(
+      expect.objectContaining({
+        source: 'lb:e1',
+        target: 'lua-fn:bridge:runtime',
+        type: 'lb-lua-bridge',
+        label: 'loreToLua',
+      }),
+    );
+    expect(payload.edges).toContainEqual(
+      expect.objectContaining({
+        source: 'lua-fn:bridge:runtime',
+        target: 'rx:matcher',
+        type: 'lua-regex-bridge',
+        label: 'luaToRegex',
+      }),
+    );
+  });
+
   it('adds lua-call edges for preload-backed require flows', () => {
     const artifact = analyzeLuaSource({
       filePath: '/tmp/preload-network.lua',

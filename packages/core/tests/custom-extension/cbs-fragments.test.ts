@@ -343,6 +343,29 @@ type: editdisplay
       expect(outFragment.content).toContain('{{#if');
       expect(outFragment.content).toContain('{{/if}}');
     });
+
+    it('recovers a valid OUT section even when IN section is missing', () => {
+      const content = `---
+comment: Recovery
+type: editdisplay
+---
+@@ IN
+broken header that should be ignored
+@@@ OUT
+{{getvar::recovered}}
+`;
+
+      const result = mapRegexToCbsFragments(content);
+
+      expect(result.fragments).toHaveLength(1);
+      expect(result.fragments[0]).toMatchObject({
+        section: 'OUT',
+        content: '{{getvar::recovered}}',
+      });
+      expect(content.slice(result.fragments[0].start, result.fragments[0].end)).toBe(
+        result.fragments[0].content,
+      );
+    });
   });
 
   describe('mapPromptToCbsFragments', () => {
@@ -463,6 +486,25 @@ role: system
 
       const extractedContent = content.slice(fragment.start, fragment.end);
       expect(extractedContent).toBe(fragment.content);
+    });
+
+    it('recovers later valid prompt sections after a malformed earlier header', () => {
+      const content = `---
+type: plain
+---
+@@ TEXT
+broken text header
+@@@ DEFAULT_TEXT
+Recovered fallback
+`;
+
+      const result = mapPromptToCbsFragments(content);
+
+      expect(result.fragments).toHaveLength(1);
+      expect(result.fragments[0]).toMatchObject({
+        section: 'DEFAULT_TEXT',
+        content: 'Recovered fallback',
+      });
     });
   });
 

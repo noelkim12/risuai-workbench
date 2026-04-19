@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ELEMENT_TYPES, MAX_VARS_IN_REPORT } from '@/domain';
+import {
+  ELEMENT_TYPES,
+  MAX_VARS_IN_REPORT,
+  buildElementPairCorrelationFromUnifiedGraph,
+} from '@/domain';
 import { buildLorebookStructureTree } from '@/domain/lorebook/structure';
 import { escapeHtml } from '../../../shared';
 import { renderHtmlReportShell } from '../../shared/html-report-shell';
@@ -46,6 +50,7 @@ export function renderHtml(data: CharxReportData, outputDir: string, locale: Loc
       lorebookStructure: data.lorebookStructure,
       lorebookActivationChain: data.lorebookActivationChain,
       lorebookRegexCorrelation: data.lorebookRegexCorrelation,
+      unifiedGraph: data.unifiedGraph,
       lorebookCBS: data.collected.lorebookCBS,
       regexCBS: data.collected.regexCBS,
       regexNodeNames: regexScriptInfos.map((script) => script.name),
@@ -170,6 +175,24 @@ export function renderHtml(data: CharxReportData, outputDir: string, locale: Loc
       'sources',
     ),
     buildTablePanel(
+      'lorebook-lua-variables',
+      t(locale, 'charx.panel.lorebookLuaCorrelation'),
+      [t(locale, 'common.table.variable'), t(locale, 'common.table.direction'), t(locale, 'common.label.lorebookEntries'), t(locale, 'common.label.luaFiles')],
+      buildElementPairRows(data, sources, 'lorebook', 'lua').length > 0
+        ? buildElementPairRows(data, sources, 'lorebook', 'lua')
+        : [{ cells: [t(locale, 'charx.empty.noSharedVars'), '—', '—', '—'] }],
+      'sources',
+    ),
+    buildTablePanel(
+      'lua-regex-variables',
+      t(locale, 'charx.panel.luaRegexCorrelation'),
+      [t(locale, 'common.table.variable'), t(locale, 'common.table.direction'), t(locale, 'common.label.luaFiles'), t(locale, 'charx.table.regexScripts')],
+      buildElementPairRows(data, sources, 'lua', 'regex').length > 0
+        ? buildElementPairRows(data, sources, 'lua', 'regex')
+        : [{ cells: [t(locale, 'charx.empty.noSharedVars'), '—', '—', '—'] }],
+      'sources',
+    ),
+    buildTablePanel(
       'default-variables',
       t(locale, 'charx.panel.defaultVarsMapping'),
       [t(locale, 'common.table.variable'), t(locale, 'charx.table.defaultValue'), t(locale, 'charx.table.usedBy')],
@@ -201,6 +224,8 @@ interface CharxMetricSummary {
   bridgedCount: number;
   isolatedCount: number;
   sharedVarCount: number;
+  sharedLbLuaCount: number;
+  sharedLuaRegexCount: number;
   unusedDefaultCount: number;
   htmlReadCount: number;
   htmlWriteCount: number;
@@ -258,6 +283,16 @@ function collectCharxMetrics(data: CharxReportData, sources: VisualizationSource
   const unusedDefaultCount = Object.keys(data.defaultVariables || {}).filter(
     (varName) => !data.unifiedGraph.has(varName),
   ).length;
+  const lorebookLuaCorrelation = buildElementPairCorrelationFromUnifiedGraph(
+    data.unifiedGraph,
+    'lorebook',
+    'lua',
+  );
+  const luaRegexCorrelation = buildElementPairCorrelationFromUnifiedGraph(
+    data.unifiedGraph,
+    'lua',
+    'regex',
+  );
   const totalVariables = data.unifiedGraph.size;
   const score = totalVariables === 0 ? null : Math.max(0, Math.min(100, Math.round(((bridgedCount + data.lorebookRegexCorrelation.sharedVars.length) / Math.max(totalVariables, 1)) * 100)));
 
@@ -266,6 +301,8 @@ function collectCharxMetrics(data: CharxReportData, sources: VisualizationSource
     bridgedCount,
     isolatedCount,
     sharedVarCount: data.lorebookRegexCorrelation.sharedVars.length,
+    sharedLbLuaCount: lorebookLuaCorrelation.summary.totalShared,
+    sharedLuaRegexCount: luaRegexCorrelation.summary.totalShared,
     unusedDefaultCount,
     htmlReadCount: htmlReads.length,
     htmlWriteCount: htmlWrites.length,
@@ -307,6 +344,22 @@ function buildSummaryHighlights(
         : t(locale, 'charx.highlight.noSharedVarsMsg'),
     severity: metrics.sharedVarCount > 0 ? 'info' : 'warning',
   });
+
+  if (metrics.sharedLbLuaCount > 0) {
+    highlights.push({
+      title: t(locale, 'charx.highlight.lorebookLuaBridge'),
+      message: t(locale, 'charx.highlight.lbLuaSharedVarsMsg', metrics.sharedLbLuaCount),
+      severity: 'info',
+    });
+  }
+
+  if (metrics.sharedLuaRegexCount > 0) {
+    highlights.push({
+      title: t(locale, 'charx.highlight.luaRegexBridge'),
+      message: t(locale, 'charx.highlight.luaRegexSharedVarsMsg', metrics.sharedLuaRegexCount),
+      severity: 'info',
+    });
+  }
 
   if (metrics.unusedDefaultCount > 0) {
     highlights.push({
@@ -393,6 +446,20 @@ function buildFindings(
     findings.push({
       severity: 'info',
       message: t(locale, 'charx.finding.sharedVars', metrics.sharedVarCount),
+      sourceIds: [],
+    });
+  }
+  if (metrics.sharedLbLuaCount > 0) {
+    findings.push({
+      severity: 'info',
+      message: t(locale, 'charx.finding.sharedLbLuaVars', metrics.sharedLbLuaCount),
+      sourceIds: [],
+    });
+  }
+  if (metrics.sharedLuaRegexCount > 0) {
+    findings.push({
+      severity: 'info',
+      message: t(locale, 'charx.finding.sharedLuaRegexVars', metrics.sharedLuaRegexCount),
       sourceIds: [],
     });
   }
@@ -506,6 +573,28 @@ function buildSharedVariableRows(
   return rows.length > 0 ? rows : [{ cells: [t(locale, 'charx.empty.noSharedVars'), '—', '—', '—'] }];
 }
 
+function buildElementPairRows(
+  data: CharxReportData,
+  sources: VisualizationSource[],
+  leftType: string,
+  rightType: string,
+): TablePanel['rows'] {
+  const correlation = buildElementPairCorrelationFromUnifiedGraph(data.unifiedGraph, leftType, rightType);
+  return correlation.sharedVars.map((entry) => ({
+    cells: [
+      `<code>${escapeHtml(entry.varName)}</code>`,
+      `<code>${escapeHtml(entry.direction)}</code>`,
+      escapeHtml(entry.leftElements.join(', ') || '—'),
+      escapeHtml(entry.rightElements.join(', ') || '—'),
+    ],
+    sourceIds: sources
+      .filter((source) => entry.leftElements.includes(source.label) || entry.rightElements.includes(source.label))
+      .map((source) => source.id),
+    severity: 'info' as const,
+    searchText: [entry.varName, entry.direction, ...entry.leftElements, ...entry.rightElements].join(' '),
+  }));
+}
+
 function buildDefaultVariableRows(data: CharxReportData, locale: Locale): TablePanel['rows'] {
   const keys = Object.keys(data.defaultVariables || {});
   if (keys.length === 0) {
@@ -563,6 +652,8 @@ function buildRuntimeFlowDiagram(metrics: CharxMetricSummary, locale: Locale): s
   const bridgedLabel = t(locale, 'charx.flow.bridgedVars', metrics.bridgedCount);
   const isolatedLabel = t(locale, 'charx.flow.isolatedVars', metrics.isolatedCount);
   const sharedLabel = t(locale, 'charx.flow.sharedVars', metrics.sharedVarCount);
+  const lorebookLuaLabel = t(locale, 'charx.flow.lbLuaShared', metrics.sharedLbLuaCount);
+  const luaRegexLabel = t(locale, 'charx.flow.luaRegexShared', metrics.sharedLuaRegexCount);
 
   return [
     'flowchart TD',
@@ -570,6 +661,8 @@ function buildRuntimeFlowDiagram(metrics: CharxMetricSummary, locale: Locale): s
     `${correlateLabel} --> ${bridgedLabel}`,
     `${correlateLabel} --> ${isolatedLabel}`,
     `${correlateLabel} --> ${sharedLabel}`,
+    `${correlateLabel} --> ${lorebookLuaLabel}`,
+    `${correlateLabel} --> ${luaRegexLabel}`,
   ].join('\n');
 }
 

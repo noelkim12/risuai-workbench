@@ -86,6 +86,169 @@ export function isNonCbsArtifact(artifact: CustomExtensionArtifact): boolean {
   return (NON_CBS_ARTIFACTS as readonly CustomExtensionArtifact[]).includes(artifact);
 }
 
+interface SectionHeaderMatch {
+  name: string;
+  markerStart: number;
+  contentStart: number;
+}
+
+interface SectionExtractionOptions {
+  stripLeadingNewline?: boolean;
+  stripTrailingNewline?: boolean;
+}
+
+/**
+ * getCustomExtensionBodyStart 함수.
+ * custom-extension frontmatter 뒤에서 실제 section 탐색을 시작할 offset을 계산함.
+ * frontmatter가 malformed여도 body 전체에서 recovery를 계속 시도함.
+ *
+ * @param rawContent - 원본 custom-extension 문서 문자열
+ * @returns section 탐색을 시작할 body offset
+ */
+function getCustomExtensionBodyStart(rawContent: string): number {
+  const frontmatterMatch = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.exec(rawContent);
+  return frontmatterMatch ? frontmatterMatch[0].length : 0;
+}
+
+/**
+ * collectSectionHeaders 함수.
+ * body 영역에서 strict한 `@@@ SECTION` 헤더만 수집하고 순서를 유지함.
+ * malformed 헤더는 건너뛰고 뒤의 유효한 헤더 recovery를 돕는다.
+ *
+ * @param rawContent - 원본 custom-extension 문서 문자열
+ * @param bodyStart - frontmatter 이후 body 시작 offset
+ * @returns 발견된 section 헤더 목록
+ */
+function collectSectionHeaders(rawContent: string, bodyStart: number): SectionHeaderMatch[] {
+  const sectionRegex = /^@@@ ([A-Z_]+)(?:\r?\n|$)/gm;
+  const headers: SectionHeaderMatch[] = [];
+
+  let match: RegExpExecArray | null = sectionRegex.exec(rawContent);
+  while (match !== null) {
+    if (match.index >= bodyStart) {
+      headers.push({
+        name: match[1],
+        markerStart: match.index,
+        contentStart: match.index + match[0].length,
+      });
+    }
+    match = sectionRegex.exec(rawContent);
+  }
+
+  return headers;
+}
+
+/**
+ * normalizeFragmentSlice 함수.
+ * structural newline만 걷어내고 fragment range와 content를 함께 정규화함.
+ *
+ * @param rawContent - 원본 custom-extension 문서 문자열
+ * @param start - 후보 content 시작 offset
+ * @param end - 후보 content 종료 offset
+ * @param options - leading/trailing structural newline 제거 옵션
+ * @returns 정규화된 fragment range/content, 비어 있으면 null
+ */
+function normalizeFragmentSlice(
+  rawContent: string,
+  start: number,
+  end: number,
+  options: SectionExtractionOptions = {},
+): Pick<CbsFragment, 'start' | 'end' | 'content'> | null {
+  let normalizedStart = start;
+  let normalizedEnd = end;
+  const {
+    stripLeadingNewline = false,
+    stripTrailingNewline = true,
+  } = options;
+
+  if (stripLeadingNewline) {
+    if (rawContent.startsWith('\r\n', normalizedStart)) {
+      normalizedStart += 2;
+    } else if (rawContent.startsWith('\n', normalizedStart)) {
+      normalizedStart += 1;
+    }
+  }
+
+  if (stripTrailingNewline) {
+    if (
+      normalizedEnd - normalizedStart >= 2 &&
+      rawContent.slice(normalizedEnd - 2, normalizedEnd) === '\r\n'
+    ) {
+      normalizedEnd -= 2;
+    } else if (
+      normalizedEnd - normalizedStart >= 1 &&
+      rawContent[normalizedEnd - 1] === '\n'
+    ) {
+      normalizedEnd -= 1;
+    }
+  }
+
+  if (normalizedEnd <= normalizedStart) {
+    return null;
+  }
+
+  return {
+    start: normalizedStart,
+    end: normalizedEnd,
+    content: rawContent.slice(normalizedStart, normalizedEnd),
+  };
+}
+
+/**
+ * mapStructuredSectionsToFragments 함수.
+ * line-based section 헤더를 기준으로 target CBS section만 best-effort로 fragment로 추출함.
+ * malformed section이 끼어 있어도 뒤의 유효 section recovery를 계속 유지한다.
+ *
+ * @param artifact - 현재 매핑 중인 custom-extension artifact 종류
+ * @param rawContent - 원본 custom-extension 문서 문자열
+ * @param targetSections - CBS-bearing section 이름 집합
+ * @param options - section별 structural newline 정규화 옵션
+ * @returns 추출된 fragment map
+ */
+function mapStructuredSectionsToFragments(
+  artifact: 'lorebook' | 'regex' | 'prompt',
+  rawContent: string,
+  targetSections: readonly string[],
+  options: Partial<Record<string, SectionExtractionOptions>> = {},
+): CbsFragmentMap {
+  const bodyStart = getCustomExtensionBodyStart(rawContent);
+  const headers = collectSectionHeaders(rawContent, bodyStart);
+  const targetSectionSet = new Set(targetSections);
+  const fragments: CbsFragment[] = [];
+
+  for (let index = 0; index < headers.length; index += 1) {
+    const header = headers[index];
+    if (!targetSectionSet.has(header.name)) {
+      continue;
+    }
+
+    const nextHeaderStart = headers[index + 1]?.markerStart ?? rawContent.length;
+    const normalized = normalizeFragmentSlice(
+      rawContent,
+      header.contentStart,
+      nextHeaderStart,
+      options[header.name],
+    );
+
+    if (!normalized) {
+      continue;
+    }
+
+    fragments.push({
+      section: header.name,
+      start: normalized.start,
+      end: normalized.end,
+      content: normalized.content,
+    });
+  }
+
+  return {
+    artifact,
+    fragments,
+    fileLength: rawContent.length,
+  };
+}
+
 /**
  * Map a .risulorebook file to CBS fragments.
  * Only the @@@ CONTENT section is CBS-bearing.
@@ -95,50 +258,12 @@ export function isNonCbsArtifact(artifact: CustomExtensionArtifact): boolean {
  * @returns CbsFragmentMap with CONTENT section fragment
  */
 export function mapLorebookToCbsFragments(rawContent: string): CbsFragmentMap {
-  const fragments: CbsFragment[] = [];
-
-  // Find frontmatter boundaries
-  const frontmatterMatch = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.exec(rawContent);
-  const bodyStart = frontmatterMatch ? frontmatterMatch[0].length : 0;
-
-  // Find @@@ CONTENT section
-  const contentMarker = '@@@ CONTENT';
-  const contentIdx = rawContent.indexOf(contentMarker, bodyStart);
-
-  if (contentIdx !== -1) {
-    const contentStart = contentIdx + contentMarker.length;
-    // Content extends to end of file (no following section)
-    let contentEnd = rawContent.length;
-
-    // Strip structural trailing newline for content extraction
-    let content = rawContent.slice(contentStart, contentEnd);
-    if (content.startsWith('\r\n')) {
-      content = content.slice(2);
-    } else if (content.startsWith('\n')) {
-      content = content.slice(1);
-    }
-
-    // Trim trailing newlines for accurate end position
-    const originalLength = content.length;
-    content = content.replace(/\r?\n$/, '');
-    const trimmedLength = content.length;
-    const trailingOffset = originalLength - trimmedLength;
-
-    if (content.length > 0) {
-      fragments.push({
-        section: 'CONTENT',
-        start: contentStart + (contentIdx === contentStart - contentMarker.length ? 0 : 0) + (rawContent.slice(contentStart).startsWith('\r\n') ? 2 : rawContent.slice(contentStart).startsWith('\n') ? 1 : 0),
-        end: contentEnd - trailingOffset,
-        content,
-      });
-    }
-  }
-
-  return {
-    artifact: 'lorebook',
-    fragments,
-    fileLength: rawContent.length,
-  };
+  return mapStructuredSectionsToFragments('lorebook', rawContent, ['CONTENT'], {
+    CONTENT: {
+      stripLeadingNewline: true,
+      stripTrailingNewline: true,
+    },
+  });
 }
 
 /**
@@ -150,90 +275,16 @@ export function mapLorebookToCbsFragments(rawContent: string): CbsFragmentMap {
  * @returns CbsFragmentMap with IN and OUT section fragments
  */
 export function mapRegexToCbsFragments(rawContent: string): CbsFragmentMap {
-  const fragments: CbsFragment[] = [];
-
-  // Find frontmatter boundaries
-  const frontmatterMatch = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.exec(rawContent);
-  const bodyStart = frontmatterMatch ? frontmatterMatch[0].length : 0;
-
-  // Find @@@ IN section
-  const inMarker = '@@@ IN';
-  const outMarker = '@@@ OUT';
-  const inIdx = rawContent.indexOf(inMarker, bodyStart);
-  const outIdx = rawContent.indexOf(outMarker, bodyStart);
-
-  // Extract IN section if present
-  if (inIdx !== -1) {
-    const inStart = inIdx + inMarker.length;
-    // IN content ends at OUT marker or end of file
-    const inContentRaw = outIdx !== -1 && outIdx > inIdx
-      ? rawContent.slice(inStart, outIdx)
-      : rawContent.slice(inStart);
-    let inContent = inContentRaw;
-
-    // Strip leading newline
-    if (inContent.startsWith('\r\n')) {
-      inContent = inContent.slice(2);
-    } else if (inContent.startsWith('\n')) {
-      inContent = inContent.slice(1);
-    }
-
-    // Calculate accurate positions
-    const inContentStart = inStart + (inContentRaw.length - inContent.length);
-
-    // Strip trailing newline from content
-    let inContentStripped = inContent;
-    if (inContentStripped.endsWith('\r\n')) {
-      inContentStripped = inContentStripped.slice(0, -2);
-    } else if (inContentStripped.endsWith('\n')) {
-      inContentStripped = inContentStripped.slice(0, -1);
-    }
-
-    if (inContentStripped.length > 0) {
-      fragments.push({
-        section: 'IN',
-        start: inContentStart,
-        end: inContentStart + inContentStripped.length,
-        content: inContentStripped,
-      });
-    }
-  }
-
-  // Extract OUT section if present
-  if (outIdx !== -1 && inIdx !== -1 && outIdx > inIdx) {
-    const outStart = outIdx + outMarker.length;
-    let outContent = rawContent.slice(outStart);
-
-    // Strip leading newline
-    if (outContent.startsWith('\r\n')) {
-      outContent = outContent.slice(2);
-    } else if (outContent.startsWith('\n')) {
-      outContent = outContent.slice(1);
-    }
-
-    // Strip trailing newline
-    let outContentStripped = outContent;
-    if (outContentStripped.endsWith('\r\n')) {
-      outContentStripped = outContentStripped.slice(0, -2);
-    } else if (outContentStripped.endsWith('\n')) {
-      outContentStripped = outContentStripped.slice(0, -1);
-    }
-
-    if (outContentStripped.length > 0) {
-      fragments.push({
-        section: 'OUT',
-        start: outStart + (outContent.length - outContentStripped.length),
-        end: outStart + (outContent.length - outContentStripped.length) + outContentStripped.length,
-        content: outContentStripped,
-      });
-    }
-  }
-
-  return {
-    artifact: 'regex',
-    fragments,
-    fileLength: rawContent.length,
-  };
+  return mapStructuredSectionsToFragments('regex', rawContent, ['IN', 'OUT'], {
+    IN: {
+      stripLeadingNewline: true,
+      stripTrailingNewline: true,
+    },
+    OUT: {
+      stripLeadingNewline: true,
+      stripTrailingNewline: true,
+    },
+  });
 }
 
 /**
@@ -245,63 +296,25 @@ export function mapRegexToCbsFragments(rawContent: string): CbsFragmentMap {
  * @returns CbsFragmentMap with applicable section fragments
  */
 export function mapPromptToCbsFragments(rawContent: string): CbsFragmentMap {
-  const fragments: CbsFragment[] = [];
-
-  // Find frontmatter boundaries
-  const frontmatterMatch = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.exec(rawContent);
-  const bodyStart = frontmatterMatch ? frontmatterMatch[0].length : 0;
-
-  // Parse body sections
-  const sectionRegex = /^@@@ ([A-Z_]+)(?:\r?\n|$)/gm;
-  const sections: Array<{ name: string; start: number; end: number }> = [];
-
-  let match: RegExpExecArray | null = sectionRegex.exec(rawContent);
-  while (match !== null) {
-    if (match.index >= bodyStart) {
-      sections.push({
-        name: match[1],
-        start: match.index,
-        end: match.index + match[0].length,
-      });
-    }
-    match = sectionRegex.exec(rawContent);
-  }
-
-  // CBS-bearing section names
-  const cbsSectionNames = ['TEXT', 'INNER_FORMAT', 'DEFAULT_TEXT'];
-
-  for (let i = 0; i < sections.length; i++) {
-    const section = sections[i];
-    if (!cbsSectionNames.includes(section.name)) {
-      continue;
-    }
-
-    const contentStart = section.end;
-    const contentEnd = i + 1 < sections.length ? sections[i + 1].start : rawContent.length;
-    let content = rawContent.slice(contentStart, contentEnd);
-
-    // Strip structural trailing newline
-    if (content.endsWith('\r\n')) {
-      content = content.slice(0, -2);
-    } else if (content.endsWith('\n')) {
-      content = content.slice(0, -1);
-    }
-
-    if (content.length > 0) {
-      fragments.push({
-        section: section.name,
-        start: contentStart,
-        end: contentStart + content.length,
-        content,
-      });
-    }
-  }
-
-  return {
-    artifact: 'prompt',
-    fragments,
-    fileLength: rawContent.length,
-  };
+  return mapStructuredSectionsToFragments(
+    'prompt',
+    rawContent,
+    ['TEXT', 'INNER_FORMAT', 'DEFAULT_TEXT'],
+    {
+      TEXT: {
+        stripLeadingNewline: false,
+        stripTrailingNewline: true,
+      },
+      INNER_FORMAT: {
+        stripLeadingNewline: false,
+        stripTrailingNewline: true,
+      },
+      DEFAULT_TEXT: {
+        stripLeadingNewline: false,
+        stripTrailingNewline: true,
+      },
+    },
+  );
 }
 
 /**

@@ -24,6 +24,13 @@ describe('extractCBSVarOps', () => {
     expect(Array.from(result.writes).sort()).toEqual(['varName']);
   });
 
+  it('adds setdefaultvar names to writes', () => {
+    const result = extractCBSVarOps('{{setdefaultvar::varName::fallback}}');
+
+    expect(Array.from(result.reads).sort()).toEqual([]);
+    expect(Array.from(result.writes).sort()).toEqual(['varName']);
+  });
+
   it('returns empty read and write sets for an empty string', () => {
     const result = extractCBSVarOps('');
 

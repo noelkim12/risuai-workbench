@@ -4,7 +4,9 @@ import type {
   LorebookRegexCorrelation,
   PromptChainResult,
   RegexScriptInfo,
+  UnifiedVarEntry,
 } from '@/domain';
+import { buildElementPairCorrelationFromUnifiedGraph } from '@/domain';
 import type { LuaAnalysisArtifact } from '@/domain/analyze/lua-core';
 import type { TextMentionEdge } from '@/domain/analyze/text-mention';
 import type { LorebookStructureResult } from '@/domain/lorebook/structure';
@@ -24,6 +26,7 @@ export interface LorebookGraphData {
   lorebookStructure: LorebookStructureResult | null;
   lorebookActivationChain?: LorebookActivationChainResult | null;
   lorebookRegexCorrelation: LorebookRegexCorrelation;
+  unifiedGraph?: Map<string, UnifiedVarEntry>;
   lorebookCBS: ElementCBSData[];
   regexCBS: ElementCBSData[];
   regexNodeNames?: string[];
@@ -65,6 +68,8 @@ export function buildRelationshipNetworkPanel(
   const nodes: ForceGraphNode[] = [];
   const edges: ForceGraphEdge[] = [];
   const luaFunctionNodeIds = new Map<string, string>();
+  const luaFunctionDisplayNodeIds = new Map<string, string[]>();
+  const luaArtifactFunctionNodeIds = new Map<string, string[]>();
   const triggerNodeIds = new Set<string>();
 
   /** 같은 source/target/type edge에 여러 상관 label을 집계한다. */
@@ -335,6 +340,63 @@ export function buildRelationshipNetworkPanel(
     );
   }
 
+  /**
+   * resolveLuaFunctionNodeIds 함수.
+   * unified graph에서 온 Lua 함수 표시 이름을 관계 네트워크 노드 ID 목록으로 변환함.
+   *
+   * @param functionName - unified graph readers/writers에 기록된 Lua 함수 표시 이름
+   * @returns 매칭된 Lua 함수 노드 ID 목록
+   */
+  function resolveLuaFunctionNodeIds(functionName: string): string[] {
+    return luaFunctionDisplayNodeIds.get(functionName) ?? [];
+  }
+
+  /**
+   * resolveLuaBridgeNodeIds 함수.
+   * unified graph의 Lua element label(baseName 또는 displayName)을 실제 함수 노드 ID로 변환함.
+   *
+   * @param labels - unified graph에 기록된 Lua source label 목록
+   * @param varName - bridge를 만드는 변수 이름
+   * @param access - 해당 side에서 필요한 접근 타입(read/write)
+   * @returns bridge edge에 사용할 Lua 함수 노드 ID 목록
+   */
+  function resolveLuaBridgeNodeIds(
+    labels: string[],
+    varName: string,
+    access: 'read' | 'write' | 'any',
+  ): string[] {
+    const resolved = new Set<string>();
+
+    for (const label of labels) {
+      for (const nodeId of resolveLuaFunctionNodeIds(label)) {
+        resolved.add(nodeId);
+      }
+
+      const artifact = (data.luaArtifacts ?? []).find((item) => item.baseName === label);
+      if (!artifact) {
+        continue;
+      }
+
+      const matchingNodeIds = artifact.collected.functions
+        .filter((fn) =>
+          access === 'read'
+            ? fn.stateReads.has(varName)
+            : access === 'write'
+              ? fn.stateWrites.has(varName)
+              : fn.stateReads.has(varName) || fn.stateWrites.has(varName),
+        )
+        .map((fn) => toLuaFunctionNodeId(artifact.baseName, fn.name))
+        .filter((nodeId): nodeId is string => Boolean(nodeId));
+
+      const fallbackNodeIds = luaArtifactFunctionNodeIds.get(artifact.baseName) ?? [];
+      for (const nodeId of matchingNodeIds.length > 0 ? matchingNodeIds : fallbackNodeIds) {
+        resolved.add(nodeId);
+      }
+    }
+
+    return [...resolved];
+  }
+
   // Edge type 2: variable flow via explicit variable nodes.
   for (const lorebook of data.lorebookCBS) {
     const lorebookNodeId = toLbNodeId(lorebook.elementName);
@@ -389,6 +451,12 @@ export function buildRelationshipNetworkPanel(
         },
       });
       luaFunctionNodeIds.set(`${artifact.baseName}:${fn.name}`, fnId);
+      const existingDisplayIds = luaFunctionDisplayNodeIds.get(fn.displayName) ?? [];
+      existingDisplayIds.push(fnId);
+      luaFunctionDisplayNodeIds.set(fn.displayName, existingDisplayIds);
+      const existingArtifactIds = luaArtifactFunctionNodeIds.get(artifact.baseName) ?? [];
+      existingArtifactIds.push(fnId);
+      luaArtifactFunctionNodeIds.set(artifact.baseName, existingArtifactIds);
       for (const varName of fn.stateReads) {
         registerVariableReader(varName, fn.displayName);
         ensureVariableNode(varName);
@@ -401,6 +469,84 @@ export function buildRelationshipNetworkPanel(
       }
     }
   }
+
+  /**
+   * pushPairBridgeEdges 함수.
+   * unified graph pair correlation을 direct bridge edge로 relationship-network에 투영함.
+   *
+   * @param leftType - 상관관계 좌측 element type
+   * @param rightType - 상관관계 우측 element type
+   * @param edgeType - force-graph edge type
+   */
+  function pushPairBridgeEdges(leftType: string, rightType: string, edgeType: string): void {
+    if (!data.unifiedGraph) return;
+
+    const correlation = buildElementPairCorrelationFromUnifiedGraph(
+      data.unifiedGraph,
+      leftType,
+      rightType,
+    );
+
+    const resolveNodeIds = (elementType: string, labels: string[]): string[] => {
+      if (elementType === 'lorebook') {
+        return labels
+          .map((label) => toLbNodeId(label))
+          .filter((nodeId): nodeId is string => Boolean(nodeId));
+      }
+      if (elementType === 'regex') {
+        return labels.map((label) => `rx:${label}`);
+      }
+      return [];
+    };
+
+    for (const sharedVar of correlation.sharedVars) {
+      const leftNodeIds =
+        leftType === 'lua'
+          ? resolveLuaBridgeNodeIds(
+              sharedVar.leftElements,
+              sharedVar.varName,
+              sharedVar.direction === 'bidirectional'
+                ? 'any'
+                : sharedVar.direction === `${rightType}->${leftType}`
+                  ? 'read'
+                  : 'write',
+            )
+          : resolveNodeIds(leftType, sharedVar.leftElements);
+      const rightNodeIds =
+        rightType === 'lua'
+          ? resolveLuaBridgeNodeIds(
+              sharedVar.rightElements,
+              sharedVar.varName,
+              sharedVar.direction === 'bidirectional'
+                ? 'any'
+                : sharedVar.direction === `${leftType}->${rightType}`
+                  ? 'read'
+                  : 'write',
+            )
+          : resolveNodeIds(rightType, sharedVar.rightElements);
+
+      if (sharedVar.direction === `${leftType}->${rightType}` || sharedVar.direction === 'bidirectional') {
+        for (const leftNodeId of leftNodeIds) {
+          for (const rightNodeId of rightNodeIds) {
+            if (leftNodeId === rightNodeId) continue;
+            pushEdge(leftNodeId, rightNodeId, edgeType, sharedVar.varName);
+          }
+        }
+      }
+
+      if (sharedVar.direction === `${rightType}->${leftType}` || sharedVar.direction === 'bidirectional') {
+        for (const rightNodeId of rightNodeIds) {
+          for (const leftNodeId of leftNodeIds) {
+            if (leftNodeId === rightNodeId) continue;
+            pushEdge(rightNodeId, leftNodeId, edgeType, sharedVar.varName);
+          }
+        }
+      }
+    }
+  }
+
+  pushPairBridgeEdges('lorebook', 'lua', 'lb-lua-bridge');
+  pushPairBridgeEdges('lua', 'regex', 'lua-regex-bridge');
 
   // Edge type 4: Lua lore access via exact-name lookups, upserts, or bulk-load APIs.
   for (const artifact of data.luaArtifacts ?? []) {

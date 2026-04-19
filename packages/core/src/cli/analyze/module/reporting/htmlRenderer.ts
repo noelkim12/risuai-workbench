@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { buildElementPairCorrelationFromUnifiedGraph } from '@/domain';
 import { buildLorebookStructureTree, type LorebookActivationMode } from '@/domain/lorebook/structure';
 
 function formatLorebookModeBadge(mode: LorebookActivationMode): string {
@@ -134,12 +135,38 @@ function buildSummaryTotals(data: ModuleReportData, locale: Locale) {
 
 function buildHighlights(data: ModuleReportData, locale: Locale) {
   const highlights: AnalysisVisualizationDoc['summary']['highlights'] = [];
+  const lorebookLuaCorrelation = buildElementPairCorrelationFromUnifiedGraph(
+    data.unifiedGraph,
+    'lorebook',
+    'lua',
+  );
+  const luaRegexCorrelation = buildElementPairCorrelationFromUnifiedGraph(
+    data.unifiedGraph,
+    'lua',
+    'regex',
+  );
 
   // LB↔Regex 공유
   if (data.lorebookRegexCorrelation.summary.totalShared > 0) {
     highlights.push({
       title: t(locale, 'module.highlight.sharedVars'),
       message: t(locale, 'module.highlight.lbRxShared', data.collected.lorebookCBS.length, data.collected.regexCBS.length, data.lorebookRegexCorrelation.summary.totalShared),
+      severity: 'info',
+    });
+  }
+
+  if (lorebookLuaCorrelation.summary.totalShared > 0) {
+    highlights.push({
+      title: t(locale, 'module.highlight.lorebookLuaBridge'),
+      message: t(locale, 'module.highlight.lbLuaShared', lorebookLuaCorrelation.summary.totalShared),
+      severity: 'info',
+    });
+  }
+
+  if (luaRegexCorrelation.summary.totalShared > 0) {
+    highlights.push({
+      title: t(locale, 'module.highlight.luaRegexBridge'),
+      message: t(locale, 'module.highlight.luaRegexShared', luaRegexCorrelation.summary.totalShared),
       severity: 'info',
     });
   }
@@ -176,6 +203,7 @@ function buildAllPanels(data: ModuleReportData, sources: VisualizationSource[], 
       lorebookStructure: data.lorebookStructure,
       lorebookActivationChain: data.lorebookActivationChain,
       lorebookRegexCorrelation: data.lorebookRegexCorrelation,
+      unifiedGraph: data.unifiedGraph,
       lorebookCBS: data.collected.lorebookCBS,
       regexCBS: data.collected.regexCBS,
       regexNodeNames: regexScriptInfos.map((script) => script.name),
@@ -193,6 +221,38 @@ function buildAllPanels(data: ModuleReportData, sources: VisualizationSource[], 
 
   if (data.lorebookRegexCorrelation.sharedVars.length > 0) {
     panels.push(buildLbRxCorrelationTable(data, locale));
+  }
+  const lorebookLuaCorrelation = buildElementPairCorrelationFromUnifiedGraph(
+    data.unifiedGraph,
+    'lorebook',
+    'lua',
+  );
+  if (lorebookLuaCorrelation.summary.totalShared > 0) {
+    panels.push(
+      buildElementPairTable(
+        'module-lb-lua-correlation',
+        t(locale, 'module.panel.lbLuaCorrelation'),
+        lorebookLuaCorrelation,
+        t(locale, 'common.label.lorebookEntries'),
+        t(locale, 'common.label.luaFiles'),
+      ),
+    );
+  }
+  const luaRegexCorrelation = buildElementPairCorrelationFromUnifiedGraph(
+    data.unifiedGraph,
+    'lua',
+    'regex',
+  );
+  if (luaRegexCorrelation.summary.totalShared > 0) {
+    panels.push(
+      buildElementPairTable(
+        'module-lua-rx-correlation',
+        t(locale, 'module.panel.luaRegexCorrelation'),
+        luaRegexCorrelation,
+        t(locale, 'common.label.luaFiles'),
+        t(locale, 'charx.table.regexScripts'),
+      ),
+    );
   }
 
   panels.push(buildRuntimeSnapshotPanel(data, locale));
@@ -400,6 +460,30 @@ function buildRuntimeSnapshotPanel(data: ModuleReportData, locale: Locale): Visu
   );
 }
 
+function buildElementPairTable(
+  id: string,
+  title: string,
+  correlation: ReturnType<typeof buildElementPairCorrelationFromUnifiedGraph>,
+  leftLabel: string,
+  rightLabel: string,
+): VisualizationPanel {
+  return buildTablePanel(
+    id,
+    title,
+    ['Variable', 'Direction', leftLabel, rightLabel],
+    correlation.sharedVars.map((shared) => ({
+      cells: [
+        `<code>${escapeHtml(shared.varName)}</code>`,
+        escapeHtml(shared.direction),
+        escapeHtml(shared.leftElements.join(', ') || '—'),
+        escapeHtml(shared.rightElements.join(', ') || '—'),
+      ],
+      searchText: [shared.varName, shared.direction, ...shared.leftElements, ...shared.rightElements].join(' '),
+    })),
+    'structure',
+  );
+}
+
 // ── Token consumption table ──────────────────────────────────────
 
 // ── Sources ──────────────────────────────────────────────────────
@@ -429,8 +513,21 @@ function buildSources(data: ModuleReportData): VisualizationSource[] {
 
 function buildNextActions(data: ModuleReportData, locale: Locale): string[] {
   const actions: string[] = [];
+  const lorebookLuaCorrelation = buildElementPairCorrelationFromUnifiedGraph(
+    data.unifiedGraph,
+    'lorebook',
+    'lua',
+  );
+  const luaRegexCorrelation = buildElementPairCorrelationFromUnifiedGraph(
+    data.unifiedGraph,
+    'lua',
+    'regex',
+  );
   if (data.lorebookRegexCorrelation.summary.totalShared > 0) {
     actions.push(t(locale, 'module.action.reviewShared'));
+  }
+  if (lorebookLuaCorrelation.summary.totalShared > 0 || luaRegexCorrelation.summary.totalShared > 0) {
+    actions.push(t(locale, 'module.action.inspectLuaBridge'));
   }
   if (data.variableFlow.summary.withIssues > 0) {
     actions.push(t(locale, 'module.action.inspectFlow'));
@@ -461,6 +558,16 @@ function buildNextActions(data: ModuleReportData, locale: Locale): string[] {
 
 function buildFindings(data: ModuleReportData, locale: Locale): Array<{ severity: 'info' | 'warning' | 'error'; message: string; sourceIds: string[] }> {
   const findings: Array<{ severity: 'info' | 'warning' | 'error'; message: string; sourceIds: string[] }> = [];
+  const lorebookLuaCorrelation = buildElementPairCorrelationFromUnifiedGraph(
+    data.unifiedGraph,
+    'lorebook',
+    'lua',
+  );
+  const luaRegexCorrelation = buildElementPairCorrelationFromUnifiedGraph(
+    data.unifiedGraph,
+    'lua',
+    'regex',
+  );
 
   if (data.collected.lorebookCBS.length === 0) {
     findings.push({ severity: 'warning', message: t(locale, 'module.finding.noLorebookCbs'), sourceIds: [] });
@@ -472,6 +579,20 @@ function buildFindings(data: ModuleReportData, locale: Locale): Array<{ severity
     findings.push({
       severity: 'info',
       message: `${t(locale, 'module.finding.sharedVars', data.lorebookRegexCorrelation.summary.totalShared)} → ${t(locale, 'module.finding.actionGuide.sharedVars')}`,
+      sourceIds: [],
+    });
+  }
+  if (lorebookLuaCorrelation.summary.totalShared > 0) {
+    findings.push({
+      severity: 'info',
+      message: t(locale, 'module.finding.sharedLbLuaVars', lorebookLuaCorrelation.summary.totalShared),
+      sourceIds: [],
+    });
+  }
+  if (luaRegexCorrelation.summary.totalShared > 0) {
+    findings.push({
+      severity: 'info',
+      message: t(locale, 'module.finding.sharedLuaRegexVars', luaRegexCorrelation.summary.totalShared),
       sourceIds: [],
     });
   }
@@ -525,6 +646,16 @@ function buildDeadCodeFindings(data: ModuleReportData, locale: Locale) {
 // ── Helpers ──────────────────────────────────────────────────────
 
 function buildFlowSummary(data: ModuleReportData, locale: Locale): string {
+  const lorebookLuaCorrelation = buildElementPairCorrelationFromUnifiedGraph(
+    data.unifiedGraph,
+    'lorebook',
+    'lua',
+  );
+  const luaRegexCorrelation = buildElementPairCorrelationFromUnifiedGraph(
+    data.unifiedGraph,
+    'lua',
+    'regex',
+  );
   return [
     t(locale, 'module.flow.collect'),
     `  ${t(locale, 'module.flow.lorebook', data.collected.lorebookCBS.length)}`,
@@ -535,6 +666,8 @@ function buildFlowSummary(data: ModuleReportData, locale: Locale): string {
     t(locale, 'module.flow.correlate'),
     `  ${t(locale, 'module.flow.unifiedVars', data.unifiedGraph.size)}`,
     `  ${t(locale, 'module.flow.sharedLbRx', data.lorebookRegexCorrelation.summary.totalShared)}`,
+    `  ${t(locale, 'module.flow.sharedLbLua', lorebookLuaCorrelation.summary.totalShared)}`,
+    `  ${t(locale, 'module.flow.sharedLuaRegex', luaRegexCorrelation.summary.totalShared)}`,
   ].join('\n');
 }
 

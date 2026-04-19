@@ -1435,6 +1435,8 @@
 
         function getRelationshipEdgeType(type) {
           if (type === 'variable') return 'variable';
+          if (type === 'lb-lua-bridge') return 'lb-lua-bridge';
+          if (type === 'lua-regex-bridge') return 'lua-regex-bridge';
           if (type === 'lore-direct') return 'lore-direct';
           if (type === 'text-mention') return 'text-mention';
           if (type === 'lua-call') return 'lua-call';
@@ -1458,6 +1460,8 @@
         var edgeLegendEntries = [
           { type: 'keyword', color: 'rgba(96,165,250,0.7)', label: i18n['shell.forceGraph.edgeKeyword'] || 'Keyword activation' },
           { type: 'variable', color: 'rgba(251,191,36,0.7)', label: i18n['shell.forceGraph.edgeVariable'] || 'Variable flow' },
+          { type: 'lb-lua-bridge', color: 'rgba(16,185,129,0.82)', label: i18n['shell.forceGraph.edgeLbLuaBridge'] || 'Lorebook ↔ Lua bridge' },
+          { type: 'lua-regex-bridge', color: 'rgba(168,85,247,0.82)', label: i18n['shell.forceGraph.edgeLuaRegexBridge'] || 'Lua ↔ Regex bridge' },
           { type: 'lore-direct', color: 'rgba(45,212,191,0.78)', label: i18n['shell.forceGraph.edgeLoreDirect'] || 'Lua direct lore access' },
           { type: 'text-mention', color: 'rgba(244,114,182,0.72)', label: i18n['shell.forceGraph.edgeTextMention'] || 'Text mention' },
           { type: 'lua-call', color: 'rgba(129,140,248,0.78)', label: i18n['shell.forceGraph.edgeLuaCall'] || 'Lua call flow' },
@@ -1641,6 +1645,14 @@
           .attr('refX', 22).attr('refY', 0).attr('markerWidth', 6).attr('markerHeight', 6)
           .attr('orient', 'auto')
           .append('path').attr('d', 'M0,-4L8,0L0,4').attr('fill', 'rgba(251,191,36,0.5)');
+        defs.append('marker').attr('id', 'arrow-lb-lua-bridge').attr('viewBox', '0 -4 8 8')
+          .attr('refX', 22).attr('refY', 0).attr('markerWidth', 6).attr('markerHeight', 6)
+          .attr('orient', 'auto')
+          .append('path').attr('d', 'M0,-4L8,0L0,4').attr('fill', 'rgba(16,185,129,0.6)');
+        defs.append('marker').attr('id', 'arrow-lua-regex-bridge').attr('viewBox', '0 -4 8 8')
+          .attr('refX', 22).attr('refY', 0).attr('markerWidth', 6).attr('markerHeight', 6)
+          .attr('orient', 'auto')
+          .append('path').attr('d', 'M0,-4L8,0L0,4').attr('fill', 'rgba(168,85,247,0.6)');
         defs.append('marker').attr('id', 'arrow-lore-direct').attr('viewBox', '0 -4 8 8')
           .attr('refX', 22).attr('refY', 0).attr('markerWidth', 6).attr('markerHeight', 6)
           .attr('orient', 'auto')
@@ -1703,6 +1715,8 @@
           .attr('stroke', function(d) {
             var edgeType = getRelationshipEdgeType(d.type);
             if (edgeType === 'variable') return 'rgba(251,191,36,0.35)';
+            if (edgeType === 'lb-lua-bridge') return 'rgba(16,185,129,0.5)';
+            if (edgeType === 'lua-regex-bridge') return 'rgba(168,85,247,0.5)';
             if (edgeType === 'lore-direct') return 'rgba(45,212,191,0.45)';
             if (edgeType === 'text-mention') return 'rgba(244,114,182,0.38)';
             if (edgeType === 'lua-call') return 'rgba(129,140,248,0.45)';
@@ -1710,12 +1724,15 @@
           })
           .attr('stroke-width', function(d) {
             var edgeType = getRelationshipEdgeType(d.type);
+            if (edgeType === 'lb-lua-bridge' || edgeType === 'lua-regex-bridge') return 1.4;
             if (edgeType === 'lua-call') return 1.6;
             if (edgeType === 'text-mention') return 1.0;
             return 1.2;
           })
           .attr('stroke-dasharray', function(d) {
             var edgeType = getRelationshipEdgeType(d.type);
+            if (edgeType === 'lb-lua-bridge') return '2 2';
+            if (edgeType === 'lua-regex-bridge') return '3 2';
             if (edgeType === 'text-mention') return '4 3';
             if (edgeType === 'lua-call') return '6 2';
             return 'none';
@@ -1723,6 +1740,8 @@
           .attr('marker-end', function(d) {
             var edgeType = getRelationshipEdgeType(d.type);
             if (edgeType === 'variable') return 'url(#arrow-var)';
+            if (edgeType === 'lb-lua-bridge') return 'url(#arrow-lb-lua-bridge)';
+            if (edgeType === 'lua-regex-bridge') return 'url(#arrow-lua-regex-bridge)';
             if (edgeType === 'lore-direct') return 'url(#arrow-lore-direct)';
             if (edgeType === 'text-mention') return 'url(#arrow-text-mention)';
             if (edgeType === 'lua-call') return 'url(#arrow-lua-call)';
@@ -2154,6 +2173,8 @@
           // These are the forces that do the "variable next to its heavy
           // caller" and "lua next to its host lorebook" placement.
           if (e.type === 'variable') return 0.08;
+          if (e.type === 'lb-lua-bridge') return 0.2;
+          if (e.type === 'lua-regex-bridge') return 0.18;
           if (e.type === 'text-mention') return 0.32;
           if (e.type === 'lore-direct') return 0.4;
           if (e.type === 'lua-call') return 0.35;
@@ -2235,9 +2256,11 @@
             .distance(function(e) {
                // Regex ↔ variable still clusters, but with more slack so
                // variable nodes remain repositionable and labels breathe.
-               if (e.type === 'variable' && isRegexVariableEdge(e)) return 64;
-               if (e.type === 'variable') return 132;
-              if (e.type === 'text-mention' || e.type === 'lore-direct') return 100;
+          if (e.type === 'variable' && isRegexVariableEdge(e)) return 64;
+          if (e.type === 'variable') return 132;
+          if (e.type === 'lb-lua-bridge') return 92;
+          if (e.type === 'lua-regex-bridge') return 84;
+          if (e.type === 'text-mention' || e.type === 'lore-direct') return 100;
               return 55;
             })
             .strength(linkStrengthFor))

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { MAX_VARS_IN_REPORT } from '@/domain';
+import { MAX_VARS_IN_REPORT, buildElementPairCorrelationFromUnifiedGraph } from '@/domain';
 import { mdRow } from '../../shared';
 import { type Locale, t } from '../shared/i18n';
 import type { ModuleReportData } from './types';
@@ -80,6 +80,25 @@ export function renderModuleMarkdown(data: ModuleReportData, outputDir: string, 
     }
     out.push('');
   }
+
+  out.push(
+    ...renderElementPairCorrelation(
+      t(locale, 'md.module.lbLuaCorrelation'),
+      buildElementPairCorrelationFromUnifiedGraph(data.unifiedGraph, 'lorebook', 'lua'),
+      t(locale, 'common.label.lorebookEntries'),
+      t(locale, 'common.label.luaFiles'),
+      locale,
+    ),
+  );
+  out.push(
+    ...renderElementPairCorrelation(
+      t(locale, 'md.module.luaRegexCorrelation'),
+      buildElementPairCorrelationFromUnifiedGraph(data.unifiedGraph, 'lua', 'regex'),
+      t(locale, 'common.label.luaFiles'),
+      t(locale, 'md.module.regexScripts'),
+      locale,
+    ),
+  );
 
   if (data.lorebookStructure) {
     out.push('## ' + t(locale, 'md.module.lorebookStructure'));
@@ -191,6 +210,35 @@ function renderActivationChain(data: ModuleReportData, locale: Locale): string[]
   for (const edge of data.lorebookActivationChain.edges) {
     const keywords = [...edge.matchedKeywords, ...edge.matchedSecondaryKeywords].join(', ') || '—';
     out.push(mdRow([`${edge.sourceId} → ${edge.targetId}`, edge.status, keywords, edge.blockedBy.join(', ') || '—']));
+  }
+  out.push('');
+  return out;
+}
+
+function renderElementPairCorrelation(
+  title: string,
+  correlation: ReturnType<typeof buildElementPairCorrelationFromUnifiedGraph>,
+  leftLabel: string,
+  rightLabel: string,
+  locale: Locale,
+): string[] {
+  const out = [`## ${title}`, ''];
+  if (correlation.summary.totalShared === 0) {
+    out.push('> ℹ️ ' + t(locale, 'common.finding.noData'), '');
+    return out;
+  }
+
+  out.push(`| ${t(locale, 'common.table.variable')} | ${t(locale, 'common.table.direction')} | ${leftLabel} | ${rightLabel} |`);
+  out.push('|----------|-----------|------------------|---------------|');
+  for (const shared of correlation.sharedVars) {
+    out.push(
+      mdRow([
+        `\`${shared.varName}\``,
+        shared.direction,
+        shared.leftElements.join(', ') || '—',
+        shared.rightElements.join(', ') || '—',
+      ]),
+    );
   }
   out.push('');
   return out;

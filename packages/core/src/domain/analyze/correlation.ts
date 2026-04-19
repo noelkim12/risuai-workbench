@@ -93,6 +93,28 @@ export interface LorebookRegexCorrelation {
   };
 }
 
+/** 두 element type 사이의 공유 변수 상관관계 항목 */
+export interface ElementPairSharedVar {
+  varName: string;
+  direction: string;
+  leftElements: string[];
+  rightElements: string[];
+}
+
+/** 통합 그래프에서 계산한 두 element type 사이의 상관관계 요약 */
+export interface ElementPairCorrelation {
+  leftType: string;
+  rightType: string;
+  sharedVars: ElementPairSharedVar[];
+  leftOnlyVars: string[];
+  rightOnlyVars: string[];
+  summary: {
+    totalShared: number;
+    totalLeftOnly: number;
+    totalRightOnly: number;
+  };
+}
+
 /**
  * 수집된 모든 CBS 데이터를 바탕으로 통합된 CBS 변수 그래프를 빌드합니다.
  * @param allCollected - 수집된 각 엘리먼트의 CBS 사용 데이터 배열
@@ -253,6 +275,68 @@ export function buildLorebookRegexCorrelation(
       totalShared: sharedVars.length,
       totalLBOnly: lorebookOnlyVars.length,
       totalRXOnly: regexOnlyVars.length,
+    },
+  };
+}
+
+/**
+ * 통합 그래프에서 임의의 두 element type 사이의 공유 변수 상관관계를 계산한다.
+ *
+ * @param unifiedGraph - buildUnifiedCBSGraph 결과
+ * @param leftType - 좌측 element type
+ * @param rightType - 우측 element type
+ * @returns 좌우 타입 간 공유/단독 변수 및 방향성 요약
+ */
+export function buildElementPairCorrelationFromUnifiedGraph(
+  unifiedGraph: Map<string, UnifiedVarEntry> | null | undefined,
+  leftType: string,
+  rightType: string,
+): ElementPairCorrelation {
+  const leftVars = new Set<string>();
+  const rightVars = new Set<string>();
+  const sharedVars: ElementPairSharedVar[] = [];
+
+  for (const [varName, entry] of unifiedGraph ?? []) {
+    const leftSource = entry.sources[leftType];
+    const rightSource = entry.sources[rightType];
+
+    if (leftSource) leftVars.add(varName);
+    if (rightSource) rightVars.add(varName);
+    if (!leftSource || !rightSource) continue;
+
+    const hasLeftRead = leftSource.readers.length > 0;
+    const hasLeftWrite = leftSource.writers.length > 0;
+    const hasRightRead = rightSource.readers.length > 0;
+    const hasRightWrite = rightSource.writers.length > 0;
+
+    let direction = 'bidirectional';
+    if (hasLeftWrite && hasRightRead && !hasRightWrite && !hasLeftRead) {
+      direction = `${leftType}->${rightType}`;
+    } else if (hasRightWrite && hasLeftRead && !hasLeftWrite && !hasRightRead) {
+      direction = `${rightType}->${leftType}`;
+    }
+
+    sharedVars.push({
+      varName,
+      direction,
+      leftElements: unique([...leftSource.readers, ...leftSource.writers]),
+      rightElements: unique([...rightSource.readers, ...rightSource.writers]),
+    });
+  }
+
+  const leftOnlyVars = [...leftVars].filter((varName) => !rightVars.has(varName)).sort();
+  const rightOnlyVars = [...rightVars].filter((varName) => !leftVars.has(varName)).sort();
+
+  return {
+    leftType,
+    rightType,
+    sharedVars: sharedVars.sort((a, b) => sortCorrelationDirection(a.direction, b.direction)),
+    leftOnlyVars,
+    rightOnlyVars,
+    summary: {
+      totalShared: sharedVars.length,
+      totalLeftOnly: leftOnlyVars.length,
+      totalRightOnly: rightOnlyVars.length,
     },
   };
 }
@@ -543,16 +627,29 @@ function sortElementTypes(a: string, b: string): number {
   return aIndex - bIndex;
 }
 
-function sortCorrelationDirection(
-  a: LorebookRegexSharedVar['direction'],
-  b: LorebookRegexSharedVar['direction'],
-): number {
-  const order: Record<LorebookRegexSharedVar['direction'], number> = {
-    bidirectional: 0,
-    'lorebook->regex': 1,
-    'regex->lorebook': 2,
-  };
-  return order[a] - order[b];
+function sortCorrelationDirection(a: string, b: string): number {
+  const order = new Map<string, number>([
+    ['bidirectional', 0],
+    ['lorebook->regex', 1],
+    ['regex->lorebook', 2],
+  ]);
+
+  const aOrder = order.get(a);
+  const bOrder = order.get(b);
+
+  if (aOrder !== undefined && bOrder !== undefined) {
+    return aOrder - bOrder;
+  }
+
+  if (aOrder !== undefined) {
+    return -1;
+  }
+
+  if (bOrder !== undefined) {
+    return 1;
+  }
+
+  return a.localeCompare(b);
 }
 
 function unique(values: string[]): string[] {

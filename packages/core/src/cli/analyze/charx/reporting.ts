@@ -1,6 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { MAX_VARS_IN_REPORT, type LorebookActivationChainResult, type LorebookStructureResult } from '@/domain';
+import {
+  MAX_VARS_IN_REPORT,
+  buildElementPairCorrelationFromUnifiedGraph,
+  type ElementPairCorrelation,
+  type LorebookActivationChainResult,
+  type LorebookStructureResult,
+} from '@/domain';
 import { buildLorebookStructureTree } from '@/domain/lorebook/structure';
 import { mdRow } from '../../shared';
 import { type Locale, t } from '../shared/i18n';
@@ -24,6 +30,20 @@ export function renderMarkdown(data: CharxReportData, outputDir: string, locale:
     renderUnifiedCBSGraph(data.unifiedGraph, locale),
     renderCrossElementSummary(data.unifiedGraph, locale),
     renderLorebookRegexCorrelation(data.lorebookRegexCorrelation, locale),
+    renderElementPairCorrelation(
+      t(locale, 'md.charx.lbLuaCorrelation'),
+      buildElementPairCorrelationFromUnifiedGraph(data.unifiedGraph, 'lorebook', 'lua'),
+      t(locale, 'common.label.lorebookEntries'),
+      t(locale, 'common.label.luaFiles'),
+      locale,
+    ),
+    renderElementPairCorrelation(
+      t(locale, 'md.charx.luaRegexCorrelation'),
+      buildElementPairCorrelationFromUnifiedGraph(data.unifiedGraph, 'lua', 'regex'),
+      t(locale, 'common.label.luaFiles'),
+      t(locale, 'md.charx.regexScripts'),
+      locale,
+    ),
     renderDefaultVariablesMapping(data.defaultVariables, data.unifiedGraph, locale),
     renderHTMLAnalysis(data.htmlAnalysis, locale),
     renderVariableFlow(data, locale),
@@ -187,6 +207,38 @@ function renderOnlyVarsList(title: string, vars: string[], locale: Locale): stri
     ...vars.map((variable) => `- \`${variable}\``),
     '',
   ];
+}
+
+function renderElementPairCorrelation(
+  title: string,
+  correlation: ElementPairCorrelation,
+  leftLabel: string,
+  rightLabel: string,
+  locale: Locale,
+): string[] {
+  const out: string[] = [`## ${title}`, ''];
+
+  if (correlation.summary.totalShared === 0) {
+    out.push('> ℹ️ ' + t(locale, 'common.finding.noData'));
+    out.push('');
+    return out;
+  }
+
+  out.push(`| ${t(locale, 'common.table.variable')} | ${t(locale, 'common.table.direction')} | ${leftLabel} | ${rightLabel} |`);
+  out.push('|----------|-----------|------------------|---------------|');
+  for (const shared of correlation.sharedVars) {
+    out.push(
+      mdRow([
+        `\`${shared.varName}\``,
+        shared.direction,
+        shared.leftElements.join(', ') || '—',
+        shared.rightElements.join(', ') || '—',
+      ]),
+    );
+  }
+
+  out.push('');
+  return out;
 }
 
 function renderDefaultVariablesMapping(
