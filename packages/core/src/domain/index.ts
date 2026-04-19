@@ -187,6 +187,7 @@ export {
   type CorrelationEntry,
   type LorebookCorrelation,
   type RegexCorrelation,
+  type StateAccessOccurrence,
 } from './analyze/lua-analysis-types';
 export { runCollectPhase } from './analyze/lua-collector';
 export { runAnalyzePhase } from './analyze/lua-analyzer';

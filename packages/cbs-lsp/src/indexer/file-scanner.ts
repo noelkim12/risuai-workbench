@@ -4,6 +4,7 @@
  */
 
 import { readdir, readFile } from 'node:fs/promises';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -21,6 +22,7 @@ export interface WorkspaceScanFile {
   uri: string;
   absolutePath: string;
   relativePath: string;
+  text: string;
   artifact: CustomExtensionArtifact;
   artifactClass: WorkspaceFileArtifactClass;
   cbsBearingArtifact: boolean;
@@ -52,6 +54,13 @@ interface DiscoveredWorkspaceFile {
   absolutePath: string;
   relativePath: string;
   artifact: CustomExtensionArtifact;
+}
+
+export interface WorkspaceScanFileFromTextOptions {
+  workspaceRoot: string;
+  absolutePath: string;
+  text: string;
+  artifact?: CustomExtensionArtifact;
 }
 
 /**
@@ -161,6 +170,64 @@ function compareDirectoryEntries(left: string, right: string): number {
 }
 
 /**
+ * createWorkspaceScanFileFromText 함수.
+ * in-memory text를 Layer 1 scan entry shape로 정규화함.
+ *
+ * @param options - workspace root, absolute path, source text
+ * @returns fragment map까지 포함한 workspace scan file entry
+ */
+export function createWorkspaceScanFileFromText(
+  options: WorkspaceScanFileFromTextOptions,
+): WorkspaceScanFile {
+  const artifact = options.artifact ?? parseCustomExtensionArtifactFromPath(options.absolutePath);
+  const fragmentMap = mapToCbsFragments(artifact, options.text);
+  const cbsBearingArtifact = isCbsBearingArtifact(artifact);
+
+  return {
+    uri: pathToFileURL(options.absolutePath).href,
+    absolutePath: options.absolutePath,
+    relativePath: toPosixRelativePath(path.relative(options.workspaceRoot, options.absolutePath)),
+    text: options.text,
+    artifact,
+    artifactClass: cbsBearingArtifact ? 'cbs-bearing' : 'non-cbs',
+    cbsBearingArtifact,
+    hasCbsFragments: fragmentMap.fragments.length > 0,
+    fragmentCount: fragmentMap.fragments.length,
+    fragmentSections: fragmentMap.fragments.map((fragment) => fragment.section),
+    fragmentMap,
+  };
+}
+
+/**
+ * buildWorkspaceScanResult 함수.
+ * scan file 배열을 deterministic workspace scan result로 묶음.
+ *
+ * @param workspaceRoot - 스캔 대상 workspace root
+ * @param files - workspace file entry 목록
+ * @returns 정렬/집계가 완료된 workspace scan result
+ */
+export function buildWorkspaceScanResult(
+  workspaceRoot: string,
+  files: readonly WorkspaceScanFile[],
+): WorkspaceScanResult {
+  const sortedFiles = [...files].sort(compareWorkspaceScanFiles);
+  const filesByArtifact = createFilesByArtifact(sortedFiles);
+  const cbsBearingFiles = sortedFiles.filter((file) => file.cbsBearingArtifact);
+  const nonCbsFiles = sortedFiles.filter((file) => !file.cbsBearingArtifact);
+  const filesWithCbsFragments = sortedFiles.filter((file) => file.hasCbsFragments);
+
+  return {
+    rootPath: workspaceRoot,
+    files: sortedFiles,
+    filesByArtifact,
+    cbsBearingFiles,
+    nonCbsFiles,
+    filesWithCbsFragments,
+    summary: createWorkspaceScanSummary(sortedFiles),
+  };
+}
+
+/**
  * FileScanner 클래스.
  * workspace canonical `.risu*` 파일을 수집하고 artifact/fragment 상태를 Layer 1 공용 계약으로 정리함.
  */
@@ -176,22 +243,7 @@ export class FileScanner {
   async scan(): Promise<WorkspaceScanResult> {
     const discoveredFiles = await this.collectWorkspaceFiles(this.workspaceRoot);
     const files = await Promise.all(discoveredFiles.map((file) => this.scanDiscoveredFile(file)));
-    files.sort(compareWorkspaceScanFiles);
-
-    const filesByArtifact = createFilesByArtifact(files);
-    const cbsBearingFiles = files.filter((file) => file.cbsBearingArtifact);
-    const nonCbsFiles = files.filter((file) => !file.cbsBearingArtifact);
-    const filesWithCbsFragments = files.filter((file) => file.hasCbsFragments);
-
-    return {
-      rootPath: this.workspaceRoot,
-      files,
-      filesByArtifact,
-      cbsBearingFiles,
-      nonCbsFiles,
-      filesWithCbsFragments,
-      summary: createWorkspaceScanSummary(files),
-    };
+    return buildWorkspaceScanResult(this.workspaceRoot, files);
   }
 
   /**
@@ -258,22 +310,55 @@ export class FileScanner {
    */
   private async scanDiscoveredFile(file: DiscoveredWorkspaceFile): Promise<WorkspaceScanFile> {
     const text = await readFile(file.absolutePath, 'utf8');
-    const fragmentMap = mapToCbsFragments(file.artifact, text);
-    const cbsBearingArtifact = isCbsBearingArtifact(file.artifact);
-
-    return {
-      uri: pathToFileURL(file.absolutePath).href,
+    return createWorkspaceScanFileFromText({
+      workspaceRoot: this.workspaceRoot,
       absolutePath: file.absolutePath,
-      relativePath: file.relativePath,
+      text,
       artifact: file.artifact,
-      artifactClass: cbsBearingArtifact ? 'cbs-bearing' : 'non-cbs',
-      cbsBearingArtifact,
-      hasCbsFragments: fragmentMap.fragments.length > 0,
-      fragmentCount: fragmentMap.fragments.length,
-      fragmentSections: fragmentMap.fragments.map((fragment) => fragment.section),
-      fragmentMap,
-    };
+    });
   }
+}
+
+function collectWorkspaceFilesSync(
+  workspaceRoot: string,
+  currentPath: string,
+): DiscoveredWorkspaceFile[] {
+  const entries = readdirSync(currentPath, { withFileTypes: true });
+  entries.sort((left, right) => compareDirectoryEntries(left.name, right.name));
+
+  const discoveredFiles: DiscoveredWorkspaceFile[] = [];
+
+  for (const entry of entries) {
+    const absolutePath = path.join(currentPath, entry.name);
+
+    if (entry.isDirectory()) {
+      discoveredFiles.push(...collectWorkspaceFilesSync(workspaceRoot, absolutePath));
+      continue;
+    }
+
+    if (!entry.isFile()) {
+      continue;
+    }
+
+    let artifact: CustomExtensionArtifact | null = null;
+    try {
+      artifact = parseCustomExtensionArtifactFromPath(absolutePath);
+    } catch {
+      artifact = null;
+    }
+
+    if (!artifact) {
+      continue;
+    }
+
+    discoveredFiles.push({
+      absolutePath,
+      relativePath: toPosixRelativePath(path.relative(workspaceRoot, absolutePath)),
+      artifact,
+    });
+  }
+
+  return discoveredFiles;
 }
 
 /**
@@ -285,4 +370,25 @@ export class FileScanner {
  */
 export async function scanWorkspaceFiles(workspaceRoot: string): Promise<WorkspaceScanResult> {
   return new FileScanner(workspaceRoot).scan();
+}
+
+/**
+ * scanWorkspaceFilesSync 함수.
+ * server가 현재 open document overlay와 함께 즉시 workspace snapshot을 만들 때 쓰는 sync helper.
+ *
+ * @param workspaceRoot - 스캔할 workspace root 절대 경로
+ * @returns deterministic workspace scan result
+ */
+export function scanWorkspaceFilesSync(workspaceRoot: string): WorkspaceScanResult {
+  const discoveredFiles = collectWorkspaceFilesSync(workspaceRoot, workspaceRoot);
+  const files = discoveredFiles.map((file) =>
+    createWorkspaceScanFileFromText({
+      workspaceRoot,
+      absolutePath: file.absolutePath,
+      text: readFileSync(file.absolutePath, 'utf8'),
+      artifact: file.artifact,
+    }),
+  );
+
+  return buildWorkspaceScanResult(workspaceRoot, files);
 }

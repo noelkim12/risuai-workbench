@@ -10,6 +10,12 @@ import {
   type FragmentCursorLookupResult,
 } from '../core';
 import type { VariableSymbol, VariableSymbolKind } from '../analyzer/symbolTable';
+import {
+  isCrossFileVariableKind,
+  mergeLocalFirstSegments,
+  resolveVariablePosition,
+  type LocalFirstRangeEntry,
+} from './local-first-contract';
 import { isRequestCancelled } from '../request-cancellation';
 import type { VariableFlowService } from '../services';
 
@@ -23,96 +29,11 @@ export interface ReferencesProviderOptions {
   variableFlowService?: VariableFlowService;
 }
 
-function isCrossFileVariableKind(kind: VariableSymbolKind): kind is 'chat' {
-  return kind === 'chat';
-}
-
-function buildLocationKey(uri: string, range: Range): string {
-  return `${uri}:${range.start.line}:${range.start.character}-${range.end.line}:${range.end.character}`;
-}
-
 export const REFERENCES_PROVIDER_AVAILABILITY = createAgentMetadataAvailability(
-  'local-only',
-  'references-provider:fragment-symbol-table',
-  'References resolve only fragment-local variable and loop-alias symbols; globals and workspace-wide references stay unavailable.',
+  'local-first',
+  'references-provider:local-first-resolution',
+  'References resolve fragment-local variable and loop-alias symbols first, then append workspace chat-variable readers/writers when VariableFlowService is available. Global and external symbols stay unavailable.',
 );
-
-const VARIABLE_MACRO_RULES = Object.freeze({
-  addvar: { kind: 'chat', argumentIndex: 0 },
-  getglobalvar: { kind: 'global', argumentIndex: 0 },
-  gettempvar: { kind: 'temp', argumentIndex: 0 },
-  getvar: { kind: 'chat', argumentIndex: 0 },
-  setdefaultvar: { kind: 'chat', argumentIndex: 0 },
-  settempvar: { kind: 'temp', argumentIndex: 0 },
-  setvar: { kind: 'chat', argumentIndex: 0 },
-  tempvar: { kind: 'temp', argumentIndex: 0 },
-} as const);
-
-const SLOT_MACRO_RULES = Object.freeze({
-  slot: { kind: 'loop', argumentIndex: 0 },
-} as const);
-
-/**
- * Determines if the cursor position is on a variable reference.
- * Uses the same contract as DefinitionProvider for consistency.
- */
-function isVariablePosition(lookup: FragmentCursorLookupResult): {
-  variableName: string;
-  kind: VariableSymbolKind;
-} | null {
-  const tokenLookup = lookup.token;
-  const nodeSpan = lookup.nodeSpan;
-  if (!tokenLookup || !nodeSpan) {
-    return null;
-  }
-
-  // Check for variable macros (getvar, setvar, etc.)
-  if (
-    tokenLookup.category === 'argument' &&
-    nodeSpan.category === 'argument' &&
-    nodeSpan.owner.type === 'MacroCall'
-  ) {
-    const macroName = nodeSpan.owner.name.toLowerCase();
-    const rule = VARIABLE_MACRO_RULES[macroName as keyof typeof VARIABLE_MACRO_RULES];
-    const variableName = tokenLookup.token.value.trim();
-
-    if (rule && nodeSpan.argumentIndex === rule.argumentIndex && variableName.length > 0) {
-      return { variableName, kind: rule.kind };
-    }
-
-    // Check for slot::name inside #each blocks
-    const slotRule = SLOT_MACRO_RULES[macroName as keyof typeof SLOT_MACRO_RULES];
-    if (slotRule && nodeSpan.argumentIndex === slotRule.argumentIndex && variableName.length > 0) {
-      // Verify we're inside an #each block by checking the node path
-      const isInsideEachBlock = lookup.nodePath.some(
-        (node) => node.type === 'Block' && node.kind === 'each',
-      );
-
-      if (isInsideEachBlock) {
-        return { variableName, kind: slotRule.kind };
-      }
-    }
-  }
-
-  // Handle edge case: when parser treats #each body as plain text,
-  // the node span may show as 'node-range' with PlainText owner,
-  // but the token still shows as 'argument' with the variable name.
-  // In this case, check if we're inside an #each block.
-  if (tokenLookup.category === 'argument') {
-    const isInsideEachBlock = lookup.nodePath.some(
-      (node) => node.type === 'Block' && node.kind === 'each',
-    );
-
-    if (isInsideEachBlock) {
-      const variableName = tokenLookup.token.value.trim();
-      if (variableName.length > 0) {
-        return { variableName, kind: 'loop' };
-      }
-    }
-  }
-
-  return null;
-}
 
 export class ReferencesProvider {
   private readonly analysisService: FragmentAnalysisService;
@@ -148,7 +69,7 @@ export class ReferencesProvider {
       return [];
     }
 
-    const variablePosition = isVariablePosition(lookup);
+    const variablePosition = resolveVariablePosition(lookup);
     if (!variablePosition) {
       return [];
     }
@@ -159,43 +80,40 @@ export class ReferencesProvider {
     const symbolTable = lookup.fragmentAnalysis.providerLookup.getSymbolTable();
     const symbol = symbolTable.getVariable(variableName, kind);
     const includeDeclaration = params.context?.includeDeclaration ?? false;
-    const locations: Location[] = [];
-    const seen = new Set<string>();
+    const localSegments: LocalFirstRangeEntry[][] = [];
 
     if (symbol && symbol.kind !== 'global' && symbol.scope !== 'external') {
-      for (const location of this.buildLocations(symbol, lookup, request, includeDeclaration)) {
-        const key = buildLocationKey(location.uri, location.range);
-        if (seen.has(key)) {
-          continue;
-        }
-
-        seen.add(key);
-        locations.push(location);
+      const localLocations = this.buildLocations(symbol, lookup, request, includeDeclaration);
+      if (includeDeclaration) {
+        localSegments.push(localLocations.definitions);
       }
+      localSegments.push(localLocations.references);
     }
 
+    const workspaceSegments: LocalFirstRangeEntry[][] = [];
     if (isCrossFileVariableKind(kind) && this.variableFlowService) {
       const flowQuery = this.variableFlowService.queryVariable(variableName);
-      const occurrences = [
-        ...(includeDeclaration ? (flowQuery?.writers ?? []) : []),
-        ...(flowQuery?.readers ?? []),
-      ];
+      if (includeDeclaration) {
+        workspaceSegments.push(
+          (flowQuery?.writers ?? []).map((occurrence) => ({
+            uri: occurrence.uri,
+            range: occurrence.hostRange,
+          })),
+        );
+      }
 
-      for (const occurrence of occurrences) {
-        const key = buildLocationKey(occurrence.uri, occurrence.hostRange);
-        if (seen.has(key)) {
-          continue;
-        }
-
-        seen.add(key);
-        locations.push({
+      workspaceSegments.push(
+        (flowQuery?.readers ?? []).map((occurrence) => ({
           uri: occurrence.uri,
           range: occurrence.hostRange,
-        });
-      }
+        })),
+      );
     }
 
-    return locations;
+    return mergeLocalFirstSegments([...localSegments, ...workspaceSegments]).map((entry) => ({
+      uri: entry.uri,
+      range: entry.range,
+    }));
   }
 
   private buildLocations(
@@ -203,16 +121,16 @@ export class ReferencesProvider {
     lookup: FragmentCursorLookupResult,
     request: FragmentAnalysisRequest,
     includeDeclaration: boolean,
-  ): Location[] {
+  ): { definitions: LocalFirstRangeEntry[]; references: LocalFirstRangeEntry[] } {
     const mapper = lookup.fragmentAnalysis.mapper;
-    const locations: Location[] = [];
+    const definitions: LocalFirstRangeEntry[] = [];
+    const references: LocalFirstRangeEntry[] = [];
 
-    // Add definitions first if includeDeclaration is true
     if (includeDeclaration) {
       for (const defRange of symbol.definitionRanges) {
         const hostRange = this.toHostRange(mapper, request.text, defRange);
         if (hostRange) {
-          locations.push({
+          definitions.push({
             uri: request.uri,
             range: hostRange,
           });
@@ -220,18 +138,17 @@ export class ReferencesProvider {
       }
     }
 
-    // Add references
     for (const refRange of symbol.references) {
       const hostRange = this.toHostRange(mapper, request.text, refRange);
       if (hostRange) {
-        locations.push({
+        references.push({
           uri: request.uri,
           range: hostRange,
         });
       }
     }
 
-    return locations;
+    return { definitions, references };
   }
 
   private toHostRange(

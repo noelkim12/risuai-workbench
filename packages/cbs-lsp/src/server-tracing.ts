@@ -7,8 +7,14 @@ import type { Connection } from 'vscode-languageserver/node';
 
 export type CbsLspFeatureName =
   | 'server'
+  | 'workspace'
   | 'diagnostics'
+  | 'codelens'
   | 'completion'
+  | 'formatting'
+  | 'definition'
+  | 'references'
+  | 'rename'
   | 'hover'
   | 'signature'
   | 'folding'

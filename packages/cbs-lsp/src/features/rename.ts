@@ -10,114 +10,48 @@ import type { Range } from 'risu-workbench-core';
 import { SymbolTable, VariableSymbol, VariableSymbolKind } from '../analyzer/symbolTable';
 import {
   createAgentMetadataAvailability,
+  createHostFragmentKey,
   fragmentAnalysisService,
+  remapFragmentLocalPatchesToHost,
   type AgentMetadataAvailabilityContract,
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
   type FragmentCursorLookupResult,
+  validateHostFragmentPatchEdits,
 } from '../core';
+import {
+  isCrossFileVariableKind,
+  mergeLocalFirstSegments,
+  resolveVariablePosition,
+  type LocalFirstRangeEntry,
+} from './local-first-contract';
 import { isRequestCancelled } from '../request-cancellation';
 import type { VariableFlowService } from '../services';
 import { positionToOffset } from '../utils/position';
-
-// Variable macros that support rename (first argument is the variable name)
-const VARIABLE_MACRO_RULES = Object.freeze({
-  addvar: { kind: 'chat', argumentIndex: 0 },
-  getglobalvar: { kind: 'global', argumentIndex: 0 },
-  gettempvar: { kind: 'temp', argumentIndex: 0 },
-  getvar: { kind: 'chat', argumentIndex: 0 },
-  setdefaultvar: { kind: 'chat', argumentIndex: 0 },
-  setglobalvar: { kind: 'global', argumentIndex: 0 },
-  settempvar: { kind: 'temp', argumentIndex: 0 },
-  setvar: { kind: 'chat', argumentIndex: 0 },
-  tempvar: { kind: 'temp', argumentIndex: 0 },
-} as const);
-
-const SLOT_MACRO_RULES = Object.freeze({
-  slot: { kind: 'loop', argumentIndex: 0 },
-} as const);
-
-/**
- * Determines if the cursor position is on a variable reference.
- * Uses the same contract as DefinitionProvider and ReferencesProvider for consistency.
- */
-function isVariablePosition(lookup: FragmentCursorLookupResult): {
-  variableName: string;
-  kind: VariableSymbolKind;
-} | null {
-  const tokenLookup = lookup.token;
-  const nodeSpan = lookup.nodeSpan;
-  if (!tokenLookup || !nodeSpan) {
-    return null;
-  }
-
-  // Check for variable macros (getvar, setvar, etc.)
-  if (
-    tokenLookup.category === 'argument' &&
-    nodeSpan.category === 'argument' &&
-    nodeSpan.owner.type === 'MacroCall'
-  ) {
-    const macroName = nodeSpan.owner.name.toLowerCase();
-    const rule = VARIABLE_MACRO_RULES[macroName as keyof typeof VARIABLE_MACRO_RULES];
-    const variableName = tokenLookup.token.value.trim();
-
-    if (rule && nodeSpan.argumentIndex === rule.argumentIndex && variableName.length > 0) {
-      return { variableName, kind: rule.kind };
-    }
-
-    // Check for slot::name inside #each blocks
-    const slotRule = SLOT_MACRO_RULES[macroName as keyof typeof SLOT_MACRO_RULES];
-    if (slotRule && nodeSpan.argumentIndex === slotRule.argumentIndex && variableName.length > 0) {
-      // Verify we're inside an #each block by checking the node path
-      const isInsideEachBlock = lookup.nodePath.some(
-        (node) => node.type === 'Block' && node.kind === 'each',
-      );
-
-      if (isInsideEachBlock) {
-        return { variableName, kind: slotRule.kind };
-      }
-    }
-  }
-
-  // Handle edge case: when parser treats #each body as plain text,
-  // the node span may show as 'node-range' with PlainText owner,
-  // but the token still shows as 'argument' with the variable name.
-  // In this case, check if we're inside an #each block.
-  if (tokenLookup.category === 'argument') {
-    const isInsideEachBlock = lookup.nodePath.some(
-      (node) => node.type === 'Block' && node.kind === 'each',
-    );
-
-    if (isInsideEachBlock) {
-      const variableName = tokenLookup.token.value.trim();
-      if (variableName.length > 0) {
-        return { variableName, kind: 'loop' };
-      }
-    }
-  }
-
-  return null;
-}
 
 export type RenameRequestResolver = (
   params: TextDocumentPositionParams,
 ) => FragmentAnalysisRequest | null;
 
+export type RenameUriRequestResolver = (uri: string) => FragmentAnalysisRequest | null;
+
 export interface RenameProviderOptions {
   analysisService?: FragmentAnalysisService;
   resolveRequest?: RenameRequestResolver;
+  resolveUriRequest?: RenameUriRequestResolver;
   variableFlowService?: VariableFlowService;
 }
 
 export const RENAME_PROVIDER_AVAILABILITY = createAgentMetadataAvailability(
-  'local-only',
-  'rename-provider:fragment-symbol-table',
-  'Rename is limited to fragment-local variable and loop-alias symbols; globals, external symbols, and workspace-wide edits stay unavailable.',
+  'local-first',
+  'rename-provider:local-first-variable-flow',
+  'Rename resolves fragment-local variable and loop-alias symbols first, appends workspace chat-variable occurrences when VariableFlowService is available, and still rejects global/external symbols.',
 );
 
 export interface PrepareRenameResult {
   availability: AgentMetadataAvailabilityContract;
   canRename: boolean;
+  hostRange?: LSPRange;
   range?: Range;
   symbol?: VariableSymbol;
   kind?: VariableSymbolKind;
@@ -125,26 +59,12 @@ export interface PrepareRenameResult {
   message?: string;
 }
 
-function isCrossFileVariableKind(kind: VariableSymbolKind): kind is 'chat' {
-  return kind === 'chat';
-}
-
-function buildRangeKey(uri: string, range: Range): string {
-  return `${uri}:${range.start.line}:${range.start.character}-${range.end.line}:${range.end.character}`;
-}
-
-// Global variable macros - NOT renameable
-const GLOBAL_VARIABLE_MACROS = new Set([
-  'setglobalvar',
-  'getglobalvar',
-  'globalvar',
-  'setdefaultvar',
-]);
-
 export class RenameProvider {
   private readonly analysisService: FragmentAnalysisService;
 
   private readonly resolveRequest: RenameRequestResolver;
+
+  private readonly resolveUriRequest: RenameUriRequestResolver;
 
   private readonly variableFlowService: VariableFlowService | null;
 
@@ -153,13 +73,15 @@ export class RenameProvider {
   constructor(options: RenameProviderOptions = {}) {
     this.analysisService = options.analysisService ?? fragmentAnalysisService;
     this.resolveRequest = options.resolveRequest ?? (() => null);
+    this.resolveUriRequest =
+      options.resolveUriRequest ??
+      ((uri) => this.resolveRequest({ textDocument: { uri }, position: { line: 0, character: 0 } }));
     this.variableFlowService = options.variableFlowService ?? null;
   }
 
   /**
-   * Deferred contract compatibility method.
-   * Returns null as rename is deferred to full workspace analysis.
-   * This method exists only to satisfy the DEFERRED_SCOPE_CONTRACT test.
+   * Legacy compatibility helper.
+   * The active server path uses prepareRename/provideRename, and this no-op stays only for old deferred-contract tests.
    */
   provide(_params: TextDocumentPositionParams, _symbolTable: SymbolTable): WorkspaceEdit | null {
     return null;
@@ -228,42 +150,92 @@ export class RenameProvider {
     }
 
     const newName = params.newName;
-    const mapper = lookup.fragmentAnalysis.mapper;
 
     // Collect all ranges to rename: definitions + references
     // All ranges must be mapped from fragment-local to host document coordinates
-    const changes: Map<string, LSPRange[]> = new Map();
-    const seen = new Set<string>();
+    const localDefinitionEntries: LocalFirstRangeEntry[] = [];
+    const localReferenceEntries: LocalFirstRangeEntry[] = [];
+
+    const pushValidatedLocalEntries = (ranges: readonly Range[], target: LocalFirstRangeEntry[]): boolean => {
+      const remapped = remapFragmentLocalPatchesToHost(
+        request,
+        lookup.fragmentAnalysis,
+        ranges.map((range) => ({ range, newText: newName })),
+      );
+      if (!remapped.ok) {
+        return false;
+      }
+
+      for (const edit of remapped.edits) {
+        target.push({ uri: edit.uri, range: edit.range });
+      }
+
+      return true;
+    };
 
     if (prepareResult.symbol) {
       const { symbol } = prepareResult;
 
-      // Add all definition ranges (mapped to host coordinates)
-      for (const defRange of symbol.definitionRanges) {
-        const hostRange = mapper.toHostRange(request.text, defRange);
-        if (hostRange) {
-          this.addRange(changes, seen, params.textDocument.uri, hostRange);
-        }
+      if (!pushValidatedLocalEntries(symbol.definitionRanges, localDefinitionEntries)) {
+        return null;
       }
 
-      // Add all reference ranges (mapped to host coordinates)
-      for (const refRange of symbol.references) {
-        const hostRange = mapper.toHostRange(request.text, refRange);
-        if (hostRange) {
-          this.addRange(changes, seen, params.textDocument.uri, hostRange);
-        }
+      if (!pushValidatedLocalEntries(symbol.references, localReferenceEntries)) {
+        return null;
       }
     } else if (prepareResult.range) {
-      const hostRange = mapper.toHostRange(request.text, prepareResult.range);
-      if (hostRange) {
-        this.addRange(changes, seen, params.textDocument.uri, hostRange);
+      if (!pushValidatedLocalEntries([prepareResult.range], localDefinitionEntries)) {
+        return null;
       }
     }
 
+    const workspaceEntries: LocalFirstRangeEntry[] = [];
     if (isCrossFileVariableKind(prepareResult.kind) && this.variableFlowService) {
       const workspaceQuery = this.variableFlowService.queryVariable(prepareResult.variableName);
       for (const occurrence of workspaceQuery?.occurrences ?? []) {
-        this.addRange(changes, seen, occurrence.uri, occurrence.hostRange);
+        workspaceEntries.push({ uri: occurrence.uri, range: occurrence.hostRange });
+      }
+    }
+
+    const mergedEntries = mergeLocalFirstSegments([
+      localDefinitionEntries,
+      localReferenceEntries,
+      workspaceEntries,
+    ]);
+
+    const validatedPatchSet = validateHostFragmentPatchEdits(
+      this.analysisService,
+      mergedEntries.map((entry) => ({
+        uri: entry.uri,
+        range: entry.range,
+        newText: newName,
+      })),
+      {
+        resolveRequestForUri: this.resolveUriRequest,
+        allowedFragmentKeysByUri: new Map([
+          [params.textDocument.uri, new Set([createHostFragmentKey(lookup.fragmentAnalysis)])],
+        ]),
+      },
+    );
+
+    if (!validatedPatchSet.ok) {
+      return null;
+    }
+
+    const changes: Map<string, LSPRange[]> = new Map();
+    for (const entry of validatedPatchSet.edits) {
+      const existing = changes.get(entry.uri);
+      const lspRange = LSPRange.create(
+        entry.range.start.line,
+        entry.range.start.character,
+        entry.range.end.line,
+        entry.range.end.character,
+      );
+
+      if (existing) {
+        existing.push(lspRange);
+      } else {
+        changes.set(entry.uri, [lspRange]);
       }
     }
 
@@ -299,6 +271,14 @@ export class RenameProvider {
     request: FragmentAnalysisRequest,
     hostOffset: number,
   ): PrepareRenameResult {
+    if (lookup.fragmentAnalysis.recovery.hasSyntaxRecovery) {
+      return {
+        availability: this.availability,
+        canRename: false,
+        message: 'Malformed CBS fragment cannot be patched safely',
+      };
+    }
+
     const tokenLookup = lookup.token;
     const nodeSpan = lookup.nodeSpan;
 
@@ -307,7 +287,7 @@ export class RenameProvider {
     }
 
     // Use shared isVariablePosition logic for consistency with definition/references
-    const variablePosition = isVariablePosition(lookup);
+    const variablePosition = resolveVariablePosition(lookup);
     if (!variablePosition) {
       return {
         availability: this.availability,
@@ -317,6 +297,15 @@ export class RenameProvider {
     }
 
     const { variableName, kind } = variablePosition;
+    const hostRange = lookup.fragmentAnalysis.mapper.toHostRange(request.text, tokenLookup.localRange);
+
+    if (!hostRange) {
+      return {
+        availability: this.availability,
+        canRename: false,
+        message: 'Position not within CBS fragment',
+      };
+    }
 
     // Reject global variables
     if (kind === 'global') {
@@ -335,10 +324,14 @@ export class RenameProvider {
     if (!symbol) {
       if (isCrossFileVariableKind(kind) && this.variableFlowService) {
         const workspaceQuery = this.variableFlowService.queryAt(request.uri, hostOffset);
-        if (workspaceQuery?.matchedOccurrence?.variableName === variableName) {
+        if (
+          workspaceQuery?.matchedOccurrence?.variableName === variableName &&
+          workspaceQuery.writers.length > 0
+        ) {
           return {
             availability: this.availability,
             canRename: true,
+            hostRange,
             range: tokenLookup.localRange,
             kind,
             variableName,
@@ -389,38 +382,12 @@ export class RenameProvider {
     return {
       availability: this.availability,
       canRename: true,
+      hostRange,
       range,
       symbol,
       kind,
       variableName,
     };
-  }
-
-  private addRange(
-    changes: Map<string, LSPRange[]>,
-    seen: Set<string>,
-    uri: string,
-    range: Range,
-  ): void {
-    const key = buildRangeKey(uri, range);
-    if (seen.has(key)) {
-      return;
-    }
-
-    seen.add(key);
-    const existing = changes.get(uri);
-    const lspRange = LSPRange.create(
-      range.start.line,
-      range.start.character,
-      range.end.line,
-      range.end.character,
-    );
-
-    if (existing) {
-      existing.push(lspRange);
-    } else {
-      changes.set(uri, [lspRange]);
-    }
   }
 
   /**

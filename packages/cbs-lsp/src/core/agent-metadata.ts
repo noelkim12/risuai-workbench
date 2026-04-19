@@ -46,7 +46,11 @@ export interface AgentMetadataExplanationContract {
   detail: string;
 }
 
-export type AgentMetadataAvailabilityScope = 'local-only' | 'deferred' | 'workspace-disabled';
+export type AgentMetadataAvailabilityScope =
+  | 'local-only'
+  | 'local-first'
+  | 'deferred'
+  | 'workspace-disabled';
 
 export interface AgentMetadataAvailabilityContract {
   scope: AgentMetadataAvailabilityScope;
@@ -66,7 +70,7 @@ export interface AgentMetadataEnvelope {
  * createAgentMetadataAvailability 함수.
  * feature/provider availability honesty contract를 생성함.
  *
- * @param scope - local-only/deferred/workspace-disabled 중 현재 availability 범위
+ * @param scope - local-only/local-first/deferred/workspace-disabled 중 현재 availability 범위
  * @param source - availability 판단의 source label
  * @param detail - 현재 범위가 왜 그런지 설명하는 안정적인 문구
  * @returns payload/capability/readme가 공통으로 재사용할 availability contract

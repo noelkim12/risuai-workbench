@@ -6,6 +6,8 @@ export * from './completion-context';
 export * from './calc-expression';
 export * from './agent-metadata';
 export * from './availability-contract';
+export * from './cbs-formatter';
+export * from './host-fragment-patch';
 export * from './local-functions';
 export * from './pure-mode';
 export * from '../analyzer/scopeAnalyzer';

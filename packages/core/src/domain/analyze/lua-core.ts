@@ -31,6 +31,15 @@ export interface LuaAnalysisArtifact {
     functions: Array<Record<string, unknown>>;
     handlers: unknown[];
     apiCalls: unknown[];
+    stateAccessOccurrences: Array<{
+      key: string;
+      direction: 'read' | 'write';
+      apiName: string;
+      containingFunction: string;
+      line: number;
+      argStart: number;
+      argEnd: number;
+    }>;
   };
   elementCbs: ElementCBSData[];
 }
@@ -180,6 +189,7 @@ function serializeCollected(collected: CollectedData): LuaAnalysisArtifact['seri
     functions,
     handlers: collected.handlers,
     apiCalls: collected.apiCalls,
+    stateAccessOccurrences: collected.stateAccessOccurrences,
   };
 }
 

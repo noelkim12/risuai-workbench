@@ -10,20 +10,21 @@ import {
 } from './agent-metadata';
 
 export interface ActiveFeatureAvailabilityMap {
+  codelens: AgentMetadataAvailabilityContract;
   completion: AgentMetadataAvailabilityContract;
+  definition: AgentMetadataAvailabilityContract;
   diagnostics: AgentMetadataAvailabilityContract;
+  formatting: AgentMetadataAvailabilityContract;
   folding: AgentMetadataAvailabilityContract;
   hover: AgentMetadataAvailabilityContract;
+  references: AgentMetadataAvailabilityContract;
+  rename: AgentMetadataAvailabilityContract;
   semanticTokens: AgentMetadataAvailabilityContract;
   signature: AgentMetadataAvailabilityContract;
 }
 
 export interface DeferredFeatureAvailabilityMap {
-  definition: AgentMetadataAvailabilityContract;
-  formatting: AgentMetadataAvailabilityContract;
   'lua-ast-fragment-routing': AgentMetadataAvailabilityContract;
-  references: AgentMetadataAvailabilityContract;
-  rename: AgentMetadataAvailabilityContract;
 }
 
 export interface ExcludedArtifactAvailabilityMap {
@@ -52,15 +53,30 @@ export interface NormalizedRuntimeAvailabilitySnapshot {
 }
 
 export const ACTIVE_FEATURE_AVAILABILITY = Object.freeze({
+  codelens: createAgentMetadataAvailability(
+    'local-only',
+    'server-capability:codelens',
+    'CodeLens is active for routed lorebook documents, summarizes workspace activation edges for the current lorebook entry, and requests refresh after document or watched-file changes rebuild activation edges.',
+  ),
   completion: createAgentMetadataAvailability(
     'local-only',
     'server-capability:completion',
     'Completion is active for routed CBS fragments and operates on the current document/fragment context only.',
   ),
+  definition: createAgentMetadataAvailability(
+    'local-first',
+    'server-capability:definition',
+    'Definition is active for routed CBS fragments, returns fragment-local definitions first, and appends workspace chat-variable writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
+  ),
   diagnostics: createAgentMetadataAvailability(
     'local-only',
     'server-capability:diagnostics',
     'Diagnostics are active for routed CBS fragments and report results within the current document only.',
+  ),
+  formatting: createAgentMetadataAvailability(
+    'local-only',
+    'server-capability:formatting',
+    'Formatting is active for routed CBS fragments, produces fragment-local canonical text edits, and only promotes host edits that pass the shared host-fragment safety contract.',
   ),
   folding: createAgentMetadataAvailability(
     'local-only',
@@ -71,6 +87,16 @@ export const ACTIVE_FEATURE_AVAILABILITY = Object.freeze({
     'local-only',
     'server-capability:hover',
     'Hover is active for routed CBS fragments and describes symbols visible from the current document context only.',
+  ),
+  references: createAgentMetadataAvailability(
+    'local-first',
+    'server-capability:references',
+    'References are active for routed CBS fragments, return fragment-local read/write locations first, and append workspace chat-variable readers/writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
+  ),
+  rename: createAgentMetadataAvailability(
+    'local-first',
+    'server-capability:rename',
+    'Rename is active for routed CBS fragments, keeps prepareRename rejection messages for malformed/unresolved/global/external positions, and applies fragment-local edits first before appending workspace chat-variable occurrences when VariableFlowService workspace state is available.',
   ),
   semanticTokens: createAgentMetadataAvailability(
     'local-only',
@@ -99,37 +125,13 @@ export const EXCLUDED_ARTIFACT_AVAILABILITY = Object.freeze({
 
 export const DEFERRED_SCOPE_CONTRACT = Object.freeze({
   deferredFeatures: [
-    'definition',
-    'references',
-    'rename',
-    'formatting',
     'lua-ast-fragment-routing',
   ] as const,
   featureAvailability: {
-    definition: createAgentMetadataAvailability(
-      'deferred',
-      'deferred-scope-contract:definition',
-      'Definition provider exists but server capability stays deferred until workspace-level cross-file resolution is available.',
-    ),
-    formatting: createAgentMetadataAvailability(
-      'deferred',
-      'deferred-scope-contract:formatting',
-      'Formatting stays deferred until host-fragment patch semantics are safe for embedded CBS artifacts.',
-    ),
     'lua-ast-fragment-routing': createAgentMetadataAvailability(
       'deferred',
       'deferred-scope-contract:lua-ast-fragment-routing',
       'Lua AST-specific fragment routing stays deferred while the current contract still uses full-document fragment routing.',
-    ),
-    references: createAgentMetadataAvailability(
-      'deferred',
-      'deferred-scope-contract:references',
-      'References provider exists but server capability stays deferred until workspace-level cross-file reference lookup is available.',
-    ),
-    rename: createAgentMetadataAvailability(
-      'deferred',
-      'deferred-scope-contract:rename',
-      'Rename provider exists but server capability stays deferred until workspace-aware multi-document edits are supported.',
     ),
   },
   luaRoutingMode: 'full-document-fragment' as const,

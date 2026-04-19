@@ -57,6 +57,40 @@ describe('CBSBuiltinRegistry', () => {
     expect(registry.get('__')?.internalOnly).toBe(true);
   });
 
+  it('classifies documentation-only syntax entries in the registry source of truth', () => {
+    const registry = new CBSBuiltinRegistry();
+
+    expect(registry.get('#when')?.docOnly).toBe(true);
+    expect(registry.get('#each')?.docOnly).toBe(true);
+    expect(registry.get(':each')?.docOnly).toBe(true);
+    expect(registry.get('slot')?.docOnly).toBe(true);
+    expect(registry.get('#pure')?.docOnly).toBe(true);
+    expect(registry.get('#puredisplay')?.docOnly).toBe(true);
+    expect(registry.get('#escape')?.docOnly).toBe(true);
+    expect(registry.get(':else')?.docOnly).toBe(true);
+    expect(registry.get('getvar')?.docOnly).toBeUndefined();
+  });
+
+  it('reuses docOnly classification through dedicated registry helpers', () => {
+    const registry = new CBSBuiltinRegistry();
+
+    expect(registry.isDocOnly('#when')).toBe(true);
+    expect(registry.isDocOnly(':each')).toBe(true);
+    expect(registry.isDocOnly('slot')).toBe(true);
+    expect(registry.isDocOnly('getvar')).toBe(false);
+    expect(registry.getDocOnly().map((fn) => fn.name)).toEqual(
+      expect.arrayContaining([
+        '#each',
+        '#escape',
+        '#pure',
+        '#puredisplay',
+        '#when',
+        ':else',
+        'slot',
+      ]),
+    );
+  });
+
   it('filters populated builtins by category metadata', () => {
     const registry = new CBSBuiltinRegistry();
 

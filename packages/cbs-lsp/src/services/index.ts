@@ -4,3 +4,4 @@
  */
 
 export * from './variable-flow-service';
+export * from './activation-chain-service';

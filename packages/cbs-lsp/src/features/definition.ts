@@ -10,13 +10,18 @@ import {
   createAgentMetadataAvailability,
   collectLocalFunctionDeclarations,
   fragmentAnalysisService,
-  resolveVisibleLoopBindingFromNodePath,
   type AgentMetadataAvailabilityContract,
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
   type FragmentCursorLookupResult,
 } from '../core';
 import type { VariableSymbolKind } from '../analyzer/symbolTable';
+import {
+  isCrossFileVariableKind,
+  mergeLocalFirstSegments,
+  resolveVariablePosition,
+  type LocalFirstRangeEntry,
+} from './local-first-contract';
 import { isRequestCancelled } from '../request-cancellation';
 import type { VariableFlowService } from '../services';
 
@@ -31,99 +36,10 @@ export interface DefinitionProviderOptions {
 }
 
 export const DEFINITION_PROVIDER_AVAILABILITY = createAgentMetadataAvailability(
-  'local-only',
-  'definition-provider:fragment-symbol-table',
-  'Definition resolves only fragment-local variables, loop aliases, and local #func declarations; workspace/external symbols stay unavailable.',
+  'local-first',
+  'definition-provider:local-first-resolution',
+  'Definition resolves fragment-local variables, loop aliases, and local #func declarations first, then appends workspace chat-variable writers when VariableFlowService is available. Global and external symbols stay unavailable.',
 );
-
-const VARIABLE_MACRO_RULES = Object.freeze({
-  addvar: { kind: 'chat', argumentIndex: 0 },
-  getglobalvar: { kind: 'global', argumentIndex: 0 },
-  gettempvar: { kind: 'temp', argumentIndex: 0 },
-  getvar: { kind: 'chat', argumentIndex: 0 },
-  setdefaultvar: { kind: 'chat', argumentIndex: 0 },
-  settempvar: { kind: 'temp', argumentIndex: 0 },
-  setvar: { kind: 'chat', argumentIndex: 0 },
-  tempvar: { kind: 'temp', argumentIndex: 0 },
-} as const);
-
-const SLOT_MACRO_RULES = Object.freeze({
-  slot: { kind: 'loop', argumentIndex: 0 },
-} as const);
-
-function isVariablePosition(lookup: FragmentCursorLookupResult): {
-  variableName: string;
-  kind: VariableSymbolKind;
-  targetDefinitionRange?: Range;
-} | null {
-  const tokenLookup = lookup.token;
-  const nodeSpan = lookup.nodeSpan;
-  if (!tokenLookup || !nodeSpan) {
-    return null;
-  }
-
-  // Check for variable macros (getvar, setvar, etc.)
-  if (
-    tokenLookup.category === 'argument' &&
-    nodeSpan.category === 'argument' &&
-    nodeSpan.owner.type === 'MacroCall'
-  ) {
-    const macroName = nodeSpan.owner.name.toLowerCase();
-    const rule = VARIABLE_MACRO_RULES[macroName as keyof typeof VARIABLE_MACRO_RULES];
-    const variableName = tokenLookup.token.value.trim();
-
-    if (rule && nodeSpan.argumentIndex === rule.argumentIndex && variableName.length > 0) {
-      return { variableName, kind: rule.kind };
-    }
-
-    // Check for slot::name inside #each blocks
-    const slotRule = SLOT_MACRO_RULES[macroName as keyof typeof SLOT_MACRO_RULES];
-    if (slotRule && nodeSpan.argumentIndex === slotRule.argumentIndex && variableName.length > 0) {
-      const bindingMatch = resolveVisibleLoopBindingFromNodePath(
-        lookup.nodePath,
-        lookup.fragment.content,
-        variableName,
-        lookup.fragmentLocalOffset,
-      );
-
-      if (bindingMatch) {
-        return {
-          variableName,
-          kind: slotRule.kind,
-          targetDefinitionRange: bindingMatch.binding.bindingRange,
-        };
-      }
-    }
-  }
-
-  // Handle edge case: when parser treats #each body as plain text,
-  // the node span may show as 'node-range' with PlainText owner,
-  // but the token still shows as 'argument' with the variable name.
-  // In this case, check if we're inside an #each block and the token
-  // looks like a slot variable reference (single word argument).
-  if (tokenLookup.category === 'argument') {
-    const variableName = tokenLookup.token.value.trim();
-    const slotPrefix = lookup.fragment.content
-      .slice(Math.max(0, tokenLookup.localStartOffset - 'slot::'.length), tokenLookup.localStartOffset)
-      .toLowerCase();
-    const bindingMatch = resolveVisibleLoopBindingFromNodePath(
-      lookup.nodePath,
-      lookup.fragment.content,
-      variableName,
-      lookup.fragmentLocalOffset,
-    );
-
-    if (slotPrefix === 'slot::' && bindingMatch) {
-      return {
-        variableName,
-        kind: 'loop',
-        targetDefinitionRange: bindingMatch.binding.bindingRange,
-      };
-    }
-  }
-
-  return null;
-}
 
 function isFunctionPosition(lookup: FragmentCursorLookupResult): { functionName: string } | null {
   const tokenLookup = lookup.token;
@@ -164,10 +80,6 @@ function findFirstDefinitionRange(definitionRanges: readonly Range[]): Range | n
   return sorted[0] ?? null;
 }
 
-function isCrossFileVariableKind(kind: VariableSymbolKind): kind is 'chat' {
-  return kind === 'chat';
-}
-
 function buildDefinitionLocationLink(
   targetUri: string,
   targetRange: Range,
@@ -179,10 +91,6 @@ function buildDefinitionLocationLink(
     targetSelectionRange: targetRange,
     originSelectionRange: originSelectionRange ?? undefined,
   };
-}
-
-function buildLocationKey(uri: string, range: Range): string {
-  return `${uri}:${range.start.line}:${range.start.character}-${range.end.line}:${range.end.character}`;
 }
 
 export class DefinitionProvider {
@@ -225,7 +133,7 @@ export class DefinitionProvider {
     }
 
     const symbolTable = lookup.fragmentAnalysis.providerLookup.getSymbolTable();
-    const variablePosition = isVariablePosition(lookup);
+    const variablePosition = resolveVariablePosition(lookup);
     const functionPosition = variablePosition ? null : isFunctionPosition(lookup);
     let targetRange: Range | null = null;
     let variableName: string | null = null;
@@ -278,30 +186,26 @@ export class DefinitionProvider {
       );
     }
 
-    const links: LocationLink[] = [];
-    const seen = new Set<string>();
+    const localEntries: LocalFirstRangeEntry[] = [];
 
     if (targetRange) {
       const hostRange = lookup.fragmentAnalysis.mapper.toHostRange(request.text, targetRange);
       if (hostRange) {
-        const key = buildLocationKey(params.textDocument.uri, hostRange);
-        seen.add(key);
-        links.push(buildDefinitionLocationLink(params.textDocument.uri, hostRange, originRange));
+        localEntries.push({ uri: params.textDocument.uri, range: hostRange });
       }
     }
 
+    const workspaceEntries: LocalFirstRangeEntry[] = [];
     if (variableName && variableKind && isCrossFileVariableKind(variableKind) && this.variableFlowService) {
       const flowQuery = this.variableFlowService.queryVariable(variableName);
       for (const writer of flowQuery?.writers ?? []) {
-        const key = buildLocationKey(writer.uri, writer.hostRange);
-        if (seen.has(key)) {
-          continue;
-        }
-
-        seen.add(key);
-        links.push(buildDefinitionLocationLink(writer.uri, writer.hostRange, originRange));
+        workspaceEntries.push({ uri: writer.uri, range: writer.hostRange });
       }
     }
+
+    const links = mergeLocalFirstSegments([localEntries, workspaceEntries]).map((entry) =>
+      buildDefinitionLocationLink(entry.uri, entry.range, originRange),
+    );
 
     if (links.length === 0) {
       return null;

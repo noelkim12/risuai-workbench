@@ -1,6 +1,11 @@
 import type { CbsFragment, CbsFragmentMap, DiagnosticInfo } from 'risu-workbench-core';
-import type { Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity } from 'vscode-languageserver';
+import { DiagnosticSeverity, type Diagnostic, type DiagnosticRelatedInformation } from 'vscode-languageserver';
 
+import {
+  createDiagnosticRuleExplanation,
+  DiagnosticCode,
+  getDiagnosticDefinition,
+} from './analyzer/diagnostics';
 import {
   createNormalizedRuntimeAvailabilitySnapshot,
   createFragmentOffsetMapper,
@@ -11,6 +16,7 @@ import {
   type FragmentOffsetMapper,
   type FragmentAnalysisVersion,
 } from './core';
+import type { VariableFlowIssueMatch, VariableFlowService } from './services/variable-flow-service';
 
 /** Severity mapping from string to LSP DiagnosticSeverity */
 const SEVERITY_MAP: Record<'error' | 'warning' | 'info' | 'hint', DiagnosticSeverity> = {
@@ -229,6 +235,145 @@ function compareNumbers(left: number, right: number): number {
   return left - right;
 }
 
+function sortHostDiagnostics(diagnostics: readonly Diagnostic[]): Diagnostic[] {
+  return [...diagnostics].sort(compareDiagnosticsForHost);
+}
+
+function mapWorkspaceIssueToDiagnosticCode(issueType: VariableFlowIssueMatch['issue']['type']): DiagnosticCode | null {
+  switch (issueType) {
+    case 'uninitialized-read':
+      return DiagnosticCode.UndefinedVariable;
+    case 'write-only':
+      return DiagnosticCode.UnusedVariable;
+    default:
+      return null;
+  }
+}
+
+function shouldAttachOccurrenceToWorkspaceIssue(
+  issueType: VariableFlowIssueMatch['issue']['type'],
+  direction: 'read' | 'write',
+): boolean {
+  if (issueType === 'uninitialized-read') {
+    return direction === 'read';
+  }
+
+  if (issueType === 'write-only') {
+    return direction === 'write';
+  }
+
+  return false;
+}
+
+function mapWorkspaceIssueSeverity(
+  severity: VariableFlowIssueMatch['issue']['severity'],
+): DiagnosticSeverity {
+  switch (severity) {
+    case 'error':
+      return DiagnosticSeverity.Error;
+    case 'warning':
+      return DiagnosticSeverity.Warning;
+    case 'info':
+      return DiagnosticSeverity.Information;
+    default:
+      return DiagnosticSeverity.Hint;
+  }
+}
+
+function createWorkspaceIssueRelatedInformation(
+  currentOccurrenceId: string,
+  issueMatch: VariableFlowIssueMatch,
+): DiagnosticRelatedInformation[] | undefined {
+  const relatedInformation = issueMatch.occurrences
+    .filter((occurrence) => occurrence.occurrenceId !== currentOccurrenceId)
+    .map((occurrence) => ({
+      message: `Workspace ${occurrence.direction} via ${occurrence.sourceName} in ${occurrence.relativePath}`,
+      location: {
+        uri: occurrence.uri,
+        range: occurrence.hostRange,
+      },
+    }))
+    .sort(compareRelatedInformationForHost);
+
+  return relatedInformation.length > 0 ? relatedInformation : undefined;
+}
+
+function createWorkspaceIssueMachineData(
+  code: DiagnosticCode,
+  severity: VariableFlowIssueMatch['issue']['severity'],
+  issueType: VariableFlowIssueMatch['issue']['type'],
+): Diagnostic['data'] | undefined {
+  const definition = getDiagnosticDefinition(code);
+  if (!definition) {
+    return undefined;
+  }
+
+  return {
+    rule: {
+      ...definition,
+      severity,
+      explanation: createDiagnosticRuleExplanation(definition.owner, definition.category),
+    },
+    workspaceIssue: {
+      kind: issueType,
+      source: 'variable-flow-service',
+    },
+  };
+}
+
+export function createWorkspaceVariableDiagnosticsForUri(
+  uri: string,
+  variableFlowService: VariableFlowService,
+): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  const seen = new Set<string>();
+  const variableNames = [...new Set(variableFlowService.getGraph().getOccurrencesByUri(uri).map((occ) => occ.variableName))]
+    .sort((left, right) => left.localeCompare(right));
+
+  for (const variableName of variableNames) {
+    for (const issueMatch of variableFlowService.getIssues(variableName)) {
+      const code = mapWorkspaceIssueToDiagnosticCode(issueMatch.issue.type);
+      if (!code) {
+        continue;
+      }
+
+      const localOccurrences = issueMatch.occurrences.filter(
+        (occurrence) =>
+          occurrence.uri === uri &&
+          shouldAttachOccurrenceToWorkspaceIssue(issueMatch.issue.type, occurrence.direction),
+      );
+
+      for (const occurrence of localOccurrences) {
+        const diagnosticKey = [
+          code,
+          issueMatch.issue.type,
+          occurrence.occurrenceId,
+          issueMatch.issue.message,
+        ].join(':');
+        if (seen.has(diagnosticKey)) {
+          continue;
+        }
+        seen.add(diagnosticKey);
+
+        diagnostics.push({
+          code,
+          data: createWorkspaceIssueMachineData(code, issueMatch.issue.severity, issueMatch.issue.type),
+          message: issueMatch.issue.message,
+          range: occurrence.hostRange,
+          relatedInformation: createWorkspaceIssueRelatedInformation(
+            occurrence.occurrenceId,
+            issueMatch,
+          ),
+          severity: mapWorkspaceIssueSeverity(issueMatch.issue.severity),
+          source: 'risu-cbs',
+        });
+      }
+    }
+  }
+
+  return sortHostDiagnostics(diagnostics);
+}
+
 export function normalizeHostDiagnosticForSnapshot(
   diagnostic: Diagnostic,
 ): NormalizedHostDiagnosticSnapshot {
@@ -252,7 +397,7 @@ export function normalizeHostDiagnosticForSnapshot(
 export function normalizeHostDiagnosticsForSnapshot(
   diagnostics: readonly Diagnostic[],
 ): NormalizedHostDiagnosticSnapshot[] {
-  return [...diagnostics].sort(compareDiagnosticsForHost).map(normalizeHostDiagnosticForSnapshot);
+  return sortHostDiagnostics(diagnostics).map(normalizeHostDiagnosticForSnapshot);
 }
 
 /**
@@ -300,7 +445,10 @@ export function routeDiagnosticsForDocument(
   }
 
   const documentUri = context.uri ?? filePath;
-  return analysis.fragmentAnalyses
+  return sortHostDiagnostics(
+    analysis.fragmentAnalyses
     .flatMap((fragmentAnalysis) => mapFragmentDiagnosticsToHost(content, documentUri, fragmentAnalysis))
-    .sort(compareDiagnosticsForHost);
+  );
 }
+
+export { sortHostDiagnostics };

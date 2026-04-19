@@ -6,6 +6,7 @@ export interface CBSBuiltinFunction {
   descriptionKo?: string;
   arguments: ArgumentDef[];
   isBlock: boolean;
+  docOnly?: boolean;
   deprecated?: { message: string; replacement?: string };
   internalOnly?: boolean;
   returnType: 'string' | 'number' | 'boolean' | 'array' | 'object' | 'void';
@@ -43,6 +44,7 @@ interface RawBuiltinFunction {
   name: string;
   aliases: string[];
   description: string;
+  docOnly?: boolean;
   deprecated?: { message: string; replacement?: string };
   internalOnly?: boolean;
 }
@@ -1073,18 +1075,21 @@ const RAW_UPSTREAM_BUILTINS: ReadonlyArray<RawBuiltinFunction> = [
   {
     name: '#when',
     aliases: [],
+    docOnly: true,
     description:
       'Conditional statement for CBS. 1 and "true" are truty, and otherwise false.\n\nIt can add operators to condition:\n\nBasic operators:\n{{#when::A::and::B}}...{{/when}} - checks if both conditions are true.\n{{#when::A::or::B}}...{{/when}} - checks if at least one condition is true.\n{{#when::A::is::B}}...{{/when}} - checks if A is equal to B.\n{{#when::A::isnot::B}}...{{/when}} - checks if A is not equal to B.\n{{#when::A::>::B}}...{{/when}} - checks if A is greater than B.\n{{#when::A::<::B}}...{{/when}} - checks if A is less than B.\n{{#when::A::>=::B}}...{{/when}} - checks if A is greater than or equal to B.\n{{#when::A::<=::B}}...{{/when}} - checks if A is less than or equal to B.\n{{#when::not::A}}...{{/when}} - negates condition, so it will be true if A is false.\n\nAdvanced operators:\n{{#when::keep::A}}...{{/when}} - keeps whitespace inside the block without trimming.\n{{#when::legacy::A}}...{{/when}} - legacy whitespace handling, so it will handle like deprecated #if.\n{{#when::var::A}}...{{/when}} - checks if variable A is truthy.\n{{#when::A::vis::B}}...{{/when}} - checks if variable A is equal to literal B.\n{{#when::A::visnot::B}}...{{/when}} - checks if variable A is not equal to literal B.\n{{#when::toggle::togglename}}...{{/when}} - checks if toggle is enabled.\n{{#when::A::tis::B}}...{{/when}} - checks if toggle A is equal to literal B.\n{{#when::A::tisnot::B}}...{{/when}} - checks if toggle A is not equal to literal B.\n\noperators can be combined like:\n{{#when::keep::not::condition}}...{{/when}}\n{{#when::keep::condition1::and::condition2}}...{{/when}}\n\nYou can use whitespace instead of "::" if there is no operators, like:\n{{#when condition}}...{{/when}}\n\nUsage:: {{#when condition}}...{{/when}} or {{#when::not::condition}}...{{/when}}\n',
   },
   {
     name: ':else',
     aliases: [],
+    docOnly: true,
     description:
       "Else statement for CBS. Must be used inside {{#when}}. if {{#when}} is multiline, :else must be on line without additional string. if {{#when}} is used with operator 'legacy', it will not work.\n\nUsage:: {{#when condition}}...{{:else}}...{{/when}} or {{#when::not::condition}}...{{:else}}...{{/when}}",
   },
   {
     name: '#pure',
     aliases: [],
+    docOnly: true,
     description:
       'displays content without any CBS processing. Useful for displaying raw HTML or other content without parsing.\n\nUsage:: {{#puredisplay}}...{{/puredisplay}}',
     deprecated: {
@@ -1096,24 +1101,28 @@ const RAW_UPSTREAM_BUILTINS: ReadonlyArray<RawBuiltinFunction> = [
   {
     name: '#puredisplay',
     aliases: [],
+    docOnly: true,
     description:
       'displays content without any CBS processing. Useful for displaying raw HTML or other content without parsing.\n\nUsage:: {{#puredisplay}}...{{/puredisplay}}',
   },
   {
     name: '#escape',
     aliases: [],
+    docOnly: true,
     description:
       'Escapes curly braces and parentheses, treating content as literal text. Useful for displaying CBS syntax without evaluation.\n\nOperators:\n{{#escape::keep}} - keeps whitespace inside the block without trimming.\n\nUsage:: {{#escape}}...{{/escape}}',
   },
   {
     name: '#each',
     aliases: [':each'],
+    docOnly: true,
     description:
       'Iterates over an array.\n\nOperators:\n{{#each::keep A as V}} - keeps whitespace inside the block without trimming.\n\nUsage:: {{#each A as V}} ... {{slot::V}} ... {{/each}}',
   },
   {
     name: 'slot',
     aliases: [],
+    docOnly: true,
     description:
       'Used in various CBS functions to access specific slots or properties.\n\nUsage:: {{slot::propertyName}} or {{slot}}, depending on context.',
   },
@@ -1694,11 +1703,25 @@ function toBuiltinFunction(rawBuiltin: RawBuiltinFunction): CBSBuiltinFunction {
     description: rawBuiltin.description,
     arguments: resolveArguments(rawBuiltin),
     isBlock: rawBuiltin.name.startsWith('#'),
+    docOnly: rawBuiltin.docOnly,
     deprecated: resolveDeprecated(rawBuiltin.name, rawBuiltin.deprecated),
     internalOnly: rawBuiltin.internalOnly,
     returnType: resolveReturnType(rawBuiltin.name),
     category: resolveCategory(rawBuiltin.name),
   };
+}
+
+/**
+ * isDocOnlyBuiltin 함수.
+ * completion/hover에는 노출할 수 있지만 일반 runtime callback builtin은 아닌 항목인지 판별함.
+ *
+ * @param builtin - 분류할 builtin metadata
+ * @returns docOnly source-of-truth 메타가 설정된 항목인지 여부
+ */
+export function isDocOnlyBuiltin(
+  builtin: CBSBuiltinFunction | null | undefined,
+): builtin is CBSBuiltinFunction & { docOnly: true } {
+  return builtin?.docOnly === true;
 }
 
 /** CBS builtin registry with normalized canonical and alias lookup */
@@ -1724,9 +1747,30 @@ export class CBSBuiltinRegistry {
     return this.getAll().filter((builtin) => builtin.category === category);
   }
 
+  /**
+   * getDocOnly 함수.
+   * 문서용으로만 노출되는 CBS 구문 항목을 source-of-truth 기준으로 반환함.
+   *
+   * @returns docOnly builtin 목록
+   */
+  getDocOnly(): CBSBuiltinFunction[] {
+    return this.getAll().filter((builtin) => isDocOnlyBuiltin(builtin));
+  }
+
   has(name: string): boolean {
     const normalizedName = normalizeLookupKey(name);
     return this.functions.has(normalizedName) || this.aliasMap.has(normalizedName);
+  }
+
+  /**
+   * isDocOnly 함수.
+   * 이름이나 alias lookup 결과가 문서용 항목인지 빠르게 확인함.
+   *
+   * @param name - canonical name 또는 alias
+   * @returns lookup 결과가 docOnly builtin인지 여부
+   */
+  isDocOnly(name: string): boolean {
+    return isDocOnlyBuiltin(this.get(name));
   }
 
   getSuggestions(partial: string): CBSBuiltinFunction[] {

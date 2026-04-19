@@ -242,6 +242,40 @@ export class VariableFlowService {
   }
 
   /**
+   * getRelatedUris 함수.
+   * 변수 하나와 연결된 workspace URI 집합을 stable ordering으로 조회함.
+   *
+   * @param variableName - 영향을 추적할 변수 이름
+   * @returns 해당 변수의 reader/writer가 존재하는 URI 목록
+   */
+  getRelatedUris(variableName: string): readonly string[] {
+    return this.queryVariable(variableName)?.node.uris ?? [];
+  }
+
+  /**
+   * collectAffectedUris 함수.
+   * 주어진 문서 URI들에 등장하는 변수와 연결된 관련 문서 URI 전체를 모음.
+   *
+   * @param uris - 변경 전후 비교의 기준이 되는 문서 URI 목록
+   * @returns 관련 문서를 포함한 dedupe/stable URI 목록
+   */
+  collectAffectedUris(uris: readonly string[]): readonly string[] {
+    const affectedUris = new Set<string>();
+
+    for (const uri of uris) {
+      affectedUris.add(uri);
+
+      for (const occurrence of this.graph.getOccurrencesByUri(uri)) {
+        for (const relatedUri of this.getRelatedUris(occurrence.variableName)) {
+          affectedUris.add(relatedUri);
+        }
+      }
+    }
+
+    return [...affectedUris].sort((left, right) => left.localeCompare(right));
+  }
+
+  /**
    * buildIssueMatches 함수.
    * core issue event를 Layer 1 occurrence와 다시 연결해 provider가 바로 쓸 수 있게 만듦.
    *

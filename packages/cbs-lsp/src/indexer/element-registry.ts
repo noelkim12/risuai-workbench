@@ -107,6 +107,7 @@ export interface ElementRegistryFileRecord {
   uri: string;
   absolutePath: string;
   relativePath: string;
+  text: string;
   artifact: CustomExtensionArtifact;
   artifactClass: WorkspaceFileArtifactClass;
   cbsBearingArtifact: boolean;
@@ -387,6 +388,7 @@ function buildLuaFileRecord(file: WorkspaceScanFile): BuiltRegistryFileRecord {
         uri: file.uri,
         absolutePath: file.absolutePath,
         relativePath: file.relativePath,
+        text: file.text,
         artifact: file.artifact,
         artifactClass: file.artifactClass,
         cbsBearingArtifact: file.cbsBearingArtifact,
@@ -409,6 +411,7 @@ function buildLuaFileRecord(file: WorkspaceScanFile): BuiltRegistryFileRecord {
         uri: file.uri,
         absolutePath: file.absolutePath,
         relativePath: file.relativePath,
+        text: file.text,
         artifact: file.artifact,
         artifactClass: file.artifactClass,
         cbsBearingArtifact: file.cbsBearingArtifact,
@@ -442,6 +445,7 @@ function buildRegistryFileRecord(file: WorkspaceScanFile): BuiltRegistryFileReco
         uri: file.uri,
         absolutePath: file.absolutePath,
         relativePath: file.relativePath,
+        text: file.text,
         artifact: file.artifact,
         artifactClass: file.artifactClass,
         cbsBearingArtifact: file.cbsBearingArtifact,
@@ -470,6 +474,7 @@ function buildRegistryFileRecord(file: WorkspaceScanFile): BuiltRegistryFileReco
         uri: file.uri,
         absolutePath: file.absolutePath,
         relativePath: file.relativePath,
+        text: file.text,
         artifact: file.artifact,
         artifactClass: file.artifactClass,
         cbsBearingArtifact: file.cbsBearingArtifact,
@@ -510,6 +515,7 @@ function buildRegistryFileRecord(file: WorkspaceScanFile): BuiltRegistryFileReco
       uri: file.uri,
       absolutePath: file.absolutePath,
       relativePath: file.relativePath,
+      text: file.text,
       artifact: file.artifact,
       artifactClass: file.artifactClass,
       cbsBearingArtifact: file.cbsBearingArtifact,

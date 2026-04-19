@@ -1,4 +1,4 @@
-import { CBSBuiltinFunction } from './builtins'
+import { CBSBuiltinFunction, isDocOnlyBuiltin } from './builtins'
 
 export interface FunctionDocumentation {
   signature: string
@@ -50,6 +50,13 @@ export function formatHoverContent(fn: CBSBuiltinFunction): string {
   lines.push('```cbs')
   lines.push(doc.signature)
   lines.push('```')
+
+  if (isDocOnlyBuiltin(fn)) {
+    lines.push('')
+    lines.push(
+      '**Documentation-only syntax entry:** visible in editor docs and completion, but not a general runtime callback builtin.',
+    )
+  }
 
   if (fn.deprecated) {
     lines.push('')
