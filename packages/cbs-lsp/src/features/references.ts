@@ -16,7 +16,7 @@ import {
   resolveVariablePosition,
   type LocalFirstRangeEntry,
 } from './local-first-contract';
-import { isRequestCancelled } from '../request-cancellation';
+import { isRequestCancelled } from '../utils/request-cancellation';
 import type { VariableFlowService } from '../services';
 
 export type ReferencesRequestResolver = (

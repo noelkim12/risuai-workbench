@@ -26,7 +26,8 @@ import {
   type FragmentAnalysisVersion,
   type FragmentAnalysisService,
 } from '../core';
-import { isRequestCancelled } from '../request-cancellation';
+import { CbsLspTextHelper } from '../helpers/text-helper';
+import { isRequestCancelled } from '../utils/request-cancellation';
 import { positionToOffset } from '../utils/position';
 
 export interface SignatureHelpDocumentContext {
@@ -175,10 +176,6 @@ function createNamedParameterInformation(
   };
 }
 
-function formatRangeStart(range: Range): string {
-  return `line ${range.start.line + 1}, character ${range.start.character + 1}`;
-}
-
 /**
  * createLocalCallSignatureInformation 함수.
  * `{{call::funcName::...}}` 문맥을 위한 로컬 함수 호출 시그니처를 만듦.
@@ -195,20 +192,20 @@ function createLocalCallSignatureInformation(
   return {
     label,
     documentation: [
-      `Local function call for fragment-local \`#func ${declaration.name}\` declared at ${formatRangeStart(declaration.range)}.`,
+      `Local function call for fragment-local \`#func ${declaration.name}\` declared at ${CbsLspTextHelper.formatRangeStart(declaration.range)}.`,
       'The first slot selects the local function name, and the remaining slots feed `arg::N` references inside the function body.',
     ].join(' '),
     parameters: [
       createNamedParameterInformation(
         declaration.name,
-        `Local function name slot. Resolves to fragment-local \`#func ${declaration.name}\` declared at ${formatRangeStart(declaration.range)}.`,
+        `Local function name slot. Resolves to fragment-local \`#func ${declaration.name}\` declared at ${CbsLspTextHelper.formatRangeStart(declaration.range)}.`,
       ),
       ...declaration.parameters.map((parameter, index) => {
         const parameterDeclaration = declaration.parameterDeclarations[index];
         return createNamedParameterInformation(
           parameter,
           parameterDeclaration
-            ? `Call argument slot ${index} feeds local parameter \`${parameterDeclaration.name}\` declared at ${formatRangeStart(parameterDeclaration.range)}. The function body can read it via \`arg::${index}\`.`
+            ? `Call argument slot ${index} feeds local parameter \`${parameterDeclaration.name}\` declared at ${CbsLspTextHelper.formatRangeStart(parameterDeclaration.range)}. The function body can read it via \`arg::${index}\`.`
             : `Call argument slot ${index} feeds local parameter \`${parameter}\`. The function body can read it via \`arg::${index}\`.`,
         );
       }),

@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { afterEach, describe, expect, it } from 'vitest'
 import { getCustomExtensionArtifactContract, type CustomExtensionArtifact } from 'risu-workbench-core'
 
-import { ElementRegistry, FileScanner, UnifiedVariableGraph } from '../../src/indexer'
+import { buildOccurrencesForUri, createWorkspaceScanFileFromText, ElementRegistry, FileScanner, UnifiedVariableGraph } from '../../src/indexer'
 
 type WorkspaceFileSeed = {
   artifact: CustomExtensionArtifact
@@ -497,6 +497,59 @@ describe('UnifiedVariableGraph Layer 1 Contract', () => {
       // Test position outside any occurrence returns null
       const outsideResult = graph.findOccurrenceAt(lorebookUri!, 0)
       expect(outsideResult.occurrence).toBeNull()
+    })
+  })
+
+  describe('Incremental URI updates', () => {
+    it('replaces only the changed URI occurrences and preserves unaffected files', async () => {
+      const { root, graph, registry, scanResult } = await buildGraph([
+        {
+          artifact: 'lorebook',
+          fileName: 'writer.risulorebook',
+          text: ['---', 'name: writer', '---', '@@@ CONTENT', '{{setvar::mood::happy}}', ''].join('\n'),
+        },
+        {
+          artifact: 'regex',
+          fileName: 'reader.risuregex',
+          text: ['---', 'comment: reader', 'type: plain', '---', '@@@ IN', '{{getvar::mood}}', ''].join('\n'),
+        },
+      ])
+
+      const writerUri = scanResult.files.find((file) => file.relativePath === 'lorebooks/writer.risulorebook')?.uri
+      const readerUri = scanResult.files.find((file) => file.relativePath === 'regex/reader.risuregex')?.uri
+
+      expect(writerUri).toBeTruthy()
+      expect(readerUri).toBeTruthy()
+      expect(graph.getVariable('mood')?.occurrenceCount).toBe(2)
+
+      registry.upsertFile(
+        createWorkspaceScanFileFromText({
+          workspaceRoot: root,
+          absolutePath: path.join(root, 'lorebooks/writer.risulorebook'),
+          text: ['---', 'name: writer', '---', '@@@ CONTENT', '{{setvar::energy::full}}', ''].join('\n'),
+        }),
+      )
+      graph.replaceOccurrencesForUri(writerUri!, buildOccurrencesForUri(registry, writerUri!))
+
+      expect(graph.hasVariable('mood')).toBe(true)
+      expect(graph.getVariable('mood')).toMatchObject({
+        readers: [expect.objectContaining({ uri: readerUri })],
+        writers: [],
+      })
+      expect(graph.getVariable('energy')).toMatchObject({
+        writers: [expect.objectContaining({ uri: writerUri })],
+      })
+      expect(graph.getOccurrencesByUri(readerUri!)).toMatchObject([
+        expect.objectContaining({ variableName: 'mood', direction: 'read' }),
+      ])
+
+      registry.removeFile(readerUri!)
+      graph.removeUri(readerUri!)
+
+      expect(graph.getOccurrencesByUri(readerUri!)).toEqual([])
+      expect(graph.getVariable('mood')).toBeNull()
+      expect(graph.getVariable('energy')?.writers).toHaveLength(1)
+      expect(graph.getOccurrenceCount()).toBe(1)
     })
   })
 

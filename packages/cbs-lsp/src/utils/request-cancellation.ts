@@ -1,6 +1,6 @@
 /**
  * LSP request cancellation helpers.
- * @file packages/cbs-lsp/src/request-cancellation.ts
+ * @file packages/cbs-lsp/src/utils/request-cancellation.ts
  */
 
 import type { CancellationToken } from 'vscode-languageserver/node';

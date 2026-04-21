@@ -1,3 +1,8 @@
+/**
+ * CBS fragment 진단을 host document diagnostics와 snapshot view로 변환하는 유틸 모음.
+ * @file packages/cbs-lsp/src/utils/diagnostics-router.ts
+ */
+
 import type { CbsFragment, CbsFragmentMap, DiagnosticInfo } from 'risu-workbench-core';
 import { DiagnosticSeverity, type Diagnostic, type DiagnosticRelatedInformation } from 'vscode-languageserver';
 
@@ -5,7 +10,7 @@ import {
   createDiagnosticRuleExplanation,
   DiagnosticCode,
   getDiagnosticDefinition,
-} from './analyzer/diagnostics';
+} from '../analyzer/diagnostics';
 import {
   createNormalizedRuntimeAvailabilitySnapshot,
   createFragmentOffsetMapper,
@@ -15,10 +20,15 @@ import {
   type FragmentDocumentAnalysis,
   type FragmentOffsetMapper,
   type FragmentAnalysisVersion,
-} from './core';
-import type { VariableFlowIssueMatch, VariableFlowService } from './services/variable-flow-service';
+} from '../core';
+import type { VariableFlowIssueMatch, VariableFlowService } from '../services/variable-flow-service';
+import { positionToOffset } from './position';
+import type { FragmentAnalysisRequest } from '../core';
 
-/** Severity mapping from string to LSP DiagnosticSeverity */
+/**
+ * SEVERITY_MAP 상수.
+ * analyzer severity 문자열을 LSP DiagnosticSeverity enum으로 정규화함.
+ */
 const SEVERITY_MAP: Record<'error' | 'warning' | 'info' | 'hint', DiagnosticSeverity> = {
   error: 1, // DiagnosticSeverity.Error
   warning: 2, // DiagnosticSeverity.Warning
@@ -53,12 +63,13 @@ export interface NormalizedHostDiagnosticsEnvelopeSnapshot {
 }
 
 /**
- * Map a document to CBS fragments using core fragment mapping.
- * Returns null for non-CBS files (toggle, variable) and unknown extensions.
+ * mapDocumentToCbsFragments 함수.
+ * 문서 텍스트를 fragment analysis service에 태워 CBS fragment map만 추출함.
  *
- * @param filePath - The document file path
- * @param content - The document content
- * @returns CbsFragmentMap with fragments and metadata, or null if not applicable
+ * @param filePath - fragment 분석 대상으로 볼 문서 경로
+ * @param content - fragment를 추출할 원문 텍스트
+ * @param context - URI/version을 덮어쓸 선택적 문서 문맥
+ * @returns CBS-bearing 문서면 fragment map, 아니면 null
  */
 export function mapDocumentToCbsFragments(
   filePath: string,
@@ -76,17 +87,17 @@ export function mapDocumentToCbsFragments(
 }
 
 /**
- * Create a diagnostic for a specific range within a CBS fragment.
- * Note: This requires the original document content to compute correct positions.
+ * createDiagnosticForFragment 함수.
+ * fragment 내부 offset 범위를 host document Diagnostic으로 승격함.
  *
- * @param documentContent - The full document content (needed for correct line/char calculation)
- * @param fragment - The CBS fragment containing the range
- * @param message - The diagnostic message
- * @param severity - The severity level ('error', 'warning', 'info', 'hint')
- * @param code - The diagnostic code (e.g., 'CBS001')
- * @param startOffset - Start offset within the fragment content (0-indexed)
- * @param endOffset - End offset within the fragment content (0-indexed, exclusive)
- * @returns Diagnostic object for LSP
+ * @param documentContent - host range 계산에 쓸 전체 문서 텍스트
+ * @param fragment - 진단 범위가 속한 CBS fragment
+ * @param message - 사용자에게 보여줄 진단 메시지
+ * @param severity - LSP severity로 바꿀 진단 심각도 문자열
+ * @param code - 붙일 diagnostic code
+ * @param startOffset - fragment content 내부 시작 offset
+ * @param endOffset - fragment content 내부 끝 offset(exclusive)
+ * @returns host document 좌표 기준 LSP Diagnostic
  */
 export function createDiagnosticForFragment(
   documentContent: string,
@@ -111,6 +122,17 @@ export function createDiagnosticForFragment(
   };
 }
 
+/**
+ * createDiagnosticForFragmentRange 함수.
+ * analyzer DiagnosticInfo 한 건을 host range와 relatedInformation이 붙은 LSP Diagnostic으로 바꿈.
+ *
+ * @param documentContent - host range rebasing 기준이 되는 전체 문서 텍스트
+ * @param documentUri - 결과 diagnostic이 가리킬 host document URI
+ * @param fragment - analyzer 진단이 속한 CBS fragment
+ * @param mapper - fragment↔host offset 매핑기
+ * @param diagnostic - host diagnostic으로 승격할 analyzer 진단
+ * @returns host document 기준 LSP Diagnostic 한 건
+ */
 function createDiagnosticForFragmentRange(
   documentContent: string,
   documentUri: string,
@@ -151,6 +173,15 @@ function createDiagnosticForFragmentRange(
   };
 }
 
+/**
+ * mapFragmentDiagnosticsToHost 함수.
+ * fragment analysis 결과의 diagnostics 배열을 host document diagnostics 배열로 변환함.
+ *
+ * @param documentContent - host range rebasing 기준이 되는 전체 문서 텍스트
+ * @param documentUri - 결과 diagnostics가 속할 host document URI
+ * @param fragmentAnalysis - fragment 단위 analyzer 결과
+ * @returns host document에 바로 publish할 Diagnostic 배열
+ */
 function mapFragmentDiagnosticsToHost(
   documentContent: string,
   documentUri: string,
@@ -167,6 +198,16 @@ function mapFragmentDiagnosticsToHost(
   );
 }
 
+/**
+ * mapRelatedInformation 함수.
+ * fragment-local relatedInformation을 host document URI/range 기준 정보로 다시 매핑함.
+ *
+ * @param documentContent - host range rebasing 기준이 되는 전체 문서 텍스트
+ * @param documentUri - relatedInformation이 가리킬 host document URI
+ * @param mapper - fragment↔host offset 매핑기
+ * @param relatedInformation - analyzer가 낸 fragment-local related information 목록
+ * @returns host document 기준 relatedInformation 배열, 없으면 undefined
+ */
 function mapRelatedInformation(
   documentContent: string,
   documentUri: string,
@@ -198,6 +239,14 @@ function mapRelatedInformation(
   return mapped.length > 0 ? mapped : undefined;
 }
 
+/**
+ * compareRelatedInformationForHost 함수.
+ * relatedInformation 목록을 host range와 message 기준으로 안정적으로 정렬함.
+ *
+ * @param left - 비교할 왼쪽 related information
+ * @param right - 비교할 오른쪽 related information
+ * @returns 정렬 순서를 위한 비교값
+ */
 function compareRelatedInformationForHost(
   left: DiagnosticRelatedInformation,
   right: DiagnosticRelatedInformation,
@@ -209,6 +258,14 @@ function compareRelatedInformationForHost(
   );
 }
 
+/**
+ * compareDiagnosticsForHost 함수.
+ * host diagnostics를 range/severity/code/message 순으로 deterministic 정렬함.
+ *
+ * @param left - 비교할 왼쪽 diagnostic
+ * @param right - 비교할 오른쪽 diagnostic
+ * @returns 정렬 순서를 위한 비교값
+ */
 function compareDiagnosticsForHost(left: Diagnostic, right: Diagnostic): number {
   const leftCode = typeof left.code === 'string' ? left.code : String(left.code ?? '');
   const rightCode = typeof right.code === 'string' ? right.code : String(right.code ?? '');
@@ -224,6 +281,14 @@ function compareDiagnosticsForHost(left: Diagnostic, right: Diagnostic): number 
   );
 }
 
+/**
+ * comparePositions 함수.
+ * LSP position 두 개를 line/character 기준으로 비교함.
+ *
+ * @param left - 비교할 왼쪽 position
+ * @param right - 비교할 오른쪽 position
+ * @returns 정렬 순서를 위한 비교값
+ */
 function comparePositions(
   left: Diagnostic['range']['start'],
   right: Diagnostic['range']['start'],
@@ -231,14 +296,36 @@ function comparePositions(
   return compareNumbers(left.line, right.line) || compareNumbers(left.character, right.character);
 }
 
+/**
+ * compareNumbers 함수.
+ * 숫자 오름차순 정렬에 쓸 기본 비교값을 계산함.
+ *
+ * @param left - 비교할 왼쪽 숫자
+ * @param right - 비교할 오른쪽 숫자
+ * @returns left-right 차이값
+ */
 function compareNumbers(left: number, right: number): number {
   return left - right;
 }
 
+/**
+ * sortHostDiagnostics 함수.
+ * host diagnostics 배열을 snapshot/test 친화적인 고정 순서로 정렬함.
+ *
+ * @param diagnostics - 정렬할 diagnostics 배열
+ * @returns 복사 후 정렬된 diagnostics 배열
+ */
 function sortHostDiagnostics(diagnostics: readonly Diagnostic[]): Diagnostic[] {
   return [...diagnostics].sort(compareDiagnosticsForHost);
 }
 
+/**
+ * mapWorkspaceIssueToDiagnosticCode 함수.
+ * variable-flow issue 타입을 공개 CBS diagnostic code로 대응시킴.
+ *
+ * @param issueType - workspace variable-flow issue 종류
+ * @returns 대응되는 CBS diagnostic code, 없으면 null
+ */
 function mapWorkspaceIssueToDiagnosticCode(issueType: VariableFlowIssueMatch['issue']['type']): DiagnosticCode | null {
   switch (issueType) {
     case 'uninitialized-read':
@@ -247,9 +334,17 @@ function mapWorkspaceIssueToDiagnosticCode(issueType: VariableFlowIssueMatch['is
       return DiagnosticCode.UnusedVariable;
     default:
       return null;
-  }
+    }
 }
 
+/**
+ * shouldAttachOccurrenceToWorkspaceIssue 함수.
+ * workspace issue를 현재 occurrence 방향에 붙여야 하는지 결정함.
+ *
+ * @param issueType - workspace variable-flow issue 종류
+ * @param direction - 현재 occurrence의 read/write 방향
+ * @returns 이 occurrence에 diagnostic을 붙여야 하면 true
+ */
 function shouldAttachOccurrenceToWorkspaceIssue(
   issueType: VariableFlowIssueMatch['issue']['type'],
   direction: 'read' | 'write',
@@ -265,6 +360,13 @@ function shouldAttachOccurrenceToWorkspaceIssue(
   return false;
 }
 
+/**
+ * mapWorkspaceIssueSeverity 함수.
+ * variable-flow issue severity를 LSP severity enum으로 변환함.
+ *
+ * @param severity - workspace issue severity 문자열
+ * @returns 대응되는 LSP DiagnosticSeverity 값
+ */
 function mapWorkspaceIssueSeverity(
   severity: VariableFlowIssueMatch['issue']['severity'],
 ): DiagnosticSeverity {
@@ -277,9 +379,17 @@ function mapWorkspaceIssueSeverity(
       return DiagnosticSeverity.Information;
     default:
       return DiagnosticSeverity.Hint;
-  }
+    }
 }
 
+/**
+ * createWorkspaceIssueRelatedInformation 함수.
+ * 같은 workspace issue의 다른 occurrence들을 relatedInformation 목록으로 묶음.
+ *
+ * @param currentOccurrenceId - 현재 diagnostic이 대표하는 occurrence ID
+ * @param issueMatch - related occurrence가 포함된 workspace issue 매치 결과
+ * @returns 현재 occurrence를 제외한 relatedInformation 배열, 없으면 undefined
+ */
 function createWorkspaceIssueRelatedInformation(
   currentOccurrenceId: string,
   issueMatch: VariableFlowIssueMatch,
@@ -298,6 +408,15 @@ function createWorkspaceIssueRelatedInformation(
   return relatedInformation.length > 0 ? relatedInformation : undefined;
 }
 
+/**
+ * createWorkspaceIssueMachineData 함수.
+ * workspace variable-flow issue를 diagnostic.data의 machine-readable metadata로 정규화함.
+ *
+ * @param code - issue에 대응되는 diagnostic code
+ * @param severity - workspace issue severity 문자열
+ * @param issueType - workspace issue 종류
+ * @returns diagnostic.data에 실을 rule/workspaceIssue 메타데이터
+ */
 function createWorkspaceIssueMachineData(
   code: DiagnosticCode,
   severity: VariableFlowIssueMatch['issue']['severity'],
@@ -321,6 +440,14 @@ function createWorkspaceIssueMachineData(
   };
 }
 
+/**
+ * createWorkspaceVariableDiagnosticsForUri 함수.
+ * 한 URI에 속한 variable-flow 이슈를 host diagnostics 배열로 변환함.
+ *
+ * @param uri - workspace issue를 진단으로 만들 대상 문서 URI
+ * @param variableFlowService - cross-file variable occurrence와 issue를 조회할 서비스
+ * @returns 현재 URI에 attach 가능한 workspace variable diagnostics 배열
+ */
 export function createWorkspaceVariableDiagnosticsForUri(
   uri: string,
   variableFlowService: VariableFlowService,
@@ -374,6 +501,13 @@ export function createWorkspaceVariableDiagnosticsForUri(
   return sortHostDiagnostics(diagnostics);
 }
 
+/**
+ * normalizeHostDiagnosticForSnapshot 함수.
+ * LSP Diagnostic 한 건을 deterministic snapshot 비교용 평탄 구조로 바꿈.
+ *
+ * @param diagnostic - snapshot view로 정규화할 host diagnostic
+ * @returns stable field shape를 가진 normalized diagnostic
+ */
 export function normalizeHostDiagnosticForSnapshot(
   diagnostic: Diagnostic,
 ): NormalizedHostDiagnosticSnapshot {
@@ -394,6 +528,13 @@ export function normalizeHostDiagnosticForSnapshot(
   };
 }
 
+/**
+ * normalizeHostDiagnosticsForSnapshot 함수.
+ * host diagnostics 배열 전체를 정렬 후 normalized snapshot 배열로 바꿈.
+ *
+ * @param diagnostics - 정규화할 host diagnostics 배열
+ * @returns deterministic ordering이 적용된 normalized diagnostics 배열
+ */
 export function normalizeHostDiagnosticsForSnapshot(
   diagnostics: readonly Diagnostic[],
 ): NormalizedHostDiagnosticSnapshot[] {
@@ -417,14 +558,14 @@ export function normalizeHostDiagnosticsEnvelopeForSnapshot(
 }
 
 /**
- * Route diagnostics for a document.
- * Maps the document to CBS fragments and returns diagnostics array.
- * Returns empty array for non-CBS files.
+ * routeDiagnosticsForDocument 함수.
+ * 문서 전체를 분석해서 host document에 publish할 CBS diagnostics 배열을 만듦.
  *
- * @param filePath - The document file path
- * @param content - The document content
- * @param options - Diagnostic options (e.g., checkUnknownFunctions)
- * @returns Array of diagnostics for the document
+ * @param filePath - diagnostics를 계산할 문서 경로
+ * @param content - analyzer에 넘길 현재 문서 텍스트
+ * @param options - 기존 호출부와의 호환을 유지하는 예약 옵션 슬롯
+ * @param context - URI/version을 덮어쓸 선택적 문서 문맥
+ * @returns non-CBS면 빈 배열, 아니면 host range 기준 Diagnostic 배열
  */
 export function routeDiagnosticsForDocument(
   filePath: string,
@@ -439,7 +580,6 @@ export function routeDiagnosticsForDocument(
     text: content,
   });
 
-  // Return empty array for non-CBS files or empty fragments
   if (!analysis || analysis.fragmentAnalyses.length === 0) {
     return [];
   }
@@ -452,3 +592,72 @@ export function routeDiagnosticsForDocument(
 }
 
 export { sortHostDiagnostics };
+
+/**
+ * shouldKeepLocalSymbolDiagnostic 함수.
+ * workspace readers/writers가 있으면 local-only 변수 진단을 억제할지 판단함.
+ *
+ * @param diagnostic - 현재 문서에서 계산된 local diagnostic
+ * @param request - diagnostic이 속한 fragment analysis request
+ * @param variableFlowService - cross-file variable 관계를 조회할 Layer 3 서비스
+ * @returns local diagnostic를 그대로 유지해야 하면 true
+ */
+export function shouldKeepLocalSymbolDiagnostic(
+  diagnostic: Diagnostic,
+  request: FragmentAnalysisRequest,
+  variableFlowService: VariableFlowService,
+): boolean {
+  if (
+    diagnostic.code !== DiagnosticCode.UndefinedVariable &&
+    diagnostic.code !== DiagnosticCode.UnusedVariable
+  ) {
+    return true;
+  }
+
+  const variableQuery = variableFlowService.queryAt(
+    request.uri,
+    positionToOffset(request.text, diagnostic.range.start),
+  );
+
+  if (!variableQuery) {
+    return true;
+  }
+
+  if (diagnostic.code === DiagnosticCode.UndefinedVariable) {
+    return variableQuery.writers.length === 0 && variableQuery.defaultValue === null;
+  }
+
+  return variableQuery.readers.length === 0;
+}
+
+export interface AssembleDiagnosticsOptions {
+  localDiagnostics: Diagnostic[];
+  workspaceVariableFlowService: VariableFlowService | null;
+  request: FragmentAnalysisRequest;
+}
+
+/**
+ * assembleDiagnosticsForRequest 함수.
+ * local diagnostics와 workspace-level diagnostics를 병합해 정렬된 최종 diagnostics 배열을 만듦.
+ * 이 함수는 순수/순수-유사한 diagnostics 조립 로직만 담당하며, server orchestration이나 transport와는 분리됨.
+ *
+ * @param options - 조립에 필요한 local diagnostics, workspace service, request 정보
+ * @returns 필터링 및 병합, 정렬이 완료된 diagnostics 배열
+ */
+export function assembleDiagnosticsForRequest(
+  options: AssembleDiagnosticsOptions,
+): Diagnostic[] {
+  const { localDiagnostics, workspaceVariableFlowService, request } = options;
+
+  const filteredLocalDiagnostics = workspaceVariableFlowService
+    ? localDiagnostics.filter((diagnostic) =>
+        shouldKeepLocalSymbolDiagnostic(diagnostic, request, workspaceVariableFlowService),
+      )
+    : localDiagnostics;
+
+  const workspaceDiagnostics = workspaceVariableFlowService
+    ? createWorkspaceVariableDiagnosticsForUri(request.uri, workspaceVariableFlowService)
+    : [];
+
+  return sortHostDiagnostics([...filteredLocalDiagnostics, ...workspaceDiagnostics]);
+}

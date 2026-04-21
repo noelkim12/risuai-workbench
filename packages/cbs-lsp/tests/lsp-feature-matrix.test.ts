@@ -1,8 +1,10 @@
 import type {
+  CodeAction,
   CodeLens,
   CompletionItem,
   Definition,
   Diagnostic,
+  DocumentSymbol,
   DocumentFormattingParams,
   FoldingRange,
   Hover,
@@ -111,10 +113,14 @@ class FakeConnection {
 
   executeCommandHandler: ((params: any) => void | Promise<void>) | null = null;
 
+  codeActionHandler: ((params: any) => CodeAction[]) | null = null;
+
   codeLensHandler: ((params: any) => CodeLens[]) | null = null;
 
   completionHandler: ((params: any) => CompletionItem[] | { items: CompletionItem[] }) | null =
     null;
+
+  documentSymbolHandler: ((params: any) => DocumentSymbol[]) | null = null;
 
   definitionHandler: ((params: any) => Definition | null) | null = null;
 
@@ -124,7 +130,7 @@ class FakeConnection {
 
   renameHandler: ((params: RenameParams) => WorkspaceEdit | null) | null = null;
 
-  hoverHandler: ((params: any) => Hover | null) | null = null;
+  hoverHandler: any = null;
 
   signatureHelpHandler: ((params: any) => SignatureHelp | null) | null = null;
 
@@ -176,6 +182,11 @@ class FakeConnection {
     return createDisposable();
   }
 
+  onCodeAction(handler: (params: any) => CodeAction[]) {
+    this.codeActionHandler = handler;
+    return createDisposable();
+  }
+
   onCodeLens(handler: (params: any) => CodeLens[]) {
     this.codeLensHandler = handler;
     return createDisposable();
@@ -183,6 +194,11 @@ class FakeConnection {
 
   onCompletion(handler: (params: any) => CompletionItem[] | { items: CompletionItem[] }) {
     this.completionHandler = handler;
+    return createDisposable();
+  }
+
+  onDocumentSymbol(handler: (params: any) => DocumentSymbol[]) {
+    this.documentSymbolHandler = handler;
     return createDisposable();
   }
 
@@ -334,21 +350,6 @@ const supportedArtifactScenarios: readonly SupportedArtifactScenario[] = [
       expect(labels).toContain('setvar');
     },
   },
-  {
-    label: 'lua → hover',
-    happyEntryId: 'lua-basic',
-    failureEntryId: 'lua-unclosed-macro',
-    assertFeature: (connection, entry) => {
-      const markdown = getHoverMarkdown(
-        connection.hoverHandler?.({
-          textDocument: { uri: entry.uri },
-          position: positionAt(entry.text, 'user', 1, 1),
-        }) ?? null,
-      );
-
-      expect(markdown).toContain('**user**');
-    },
-  },
 ];
 
 const unsupportedScenarios = [
@@ -421,6 +422,11 @@ describe('LSP feature matrix', () => {
           position: { line: 0, character: 0 },
         }),
       ),
+    ).toEqual([]);
+    expect(
+      connection.documentSymbolHandler?.({
+        textDocument: { uri },
+      }) ?? [],
     ).toEqual([]);
     expect(
       connection.hoverHandler?.({

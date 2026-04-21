@@ -2,7 +2,7 @@ import type { CbsFragment, Range } from 'risu-workbench-core';
 import { describe, expect, it } from 'vitest';
 
 import { createFragmentOffsetMapper } from '../src/core';
-import { createDiagnosticForFragment, mapDocumentToCbsFragments } from '../src/diagnostics-router';
+import { createDiagnosticForFragment, mapDocumentToCbsFragments } from '../src/utils/diagnostics-router';
 import { getFixtureCorpusEntry } from './fixtures/fixture-corpus';
 
 function getFragment(

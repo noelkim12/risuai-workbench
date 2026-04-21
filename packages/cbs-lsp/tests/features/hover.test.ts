@@ -181,7 +181,7 @@ describe('HoverProvider', () => {
 
     const symbolTable = lookup!.fragmentAnalysis.providerLookup.getSymbolTable();
     symbolTable.addDefinition('mood', 'chat', lookup!.nodeSpan!.localRange);
-    symbolTable.addReference('mood', lookup!.nodeSpan!.localRange, 'chat');
+    symbolTable.tryAddVariableReferenceByName('mood', lookup!.nodeSpan!.localRange, 'chat');
 
     const provider = createProvider(service, request);
     const hover = provider.provide(createParams(request, position));
@@ -219,8 +219,8 @@ describe('HoverProvider', () => {
     const tempRange = { start: { line: 1, character: 0 }, end: { line: 1, character: 4 } };
     symbolTable.addDefinition('mood', 'chat', chatRange);
     symbolTable.addDefinition('mood', 'temp', tempRange);
-    symbolTable.addReference('mood', chatRange, 'chat');
-    symbolTable.addReference('mood', tempRange, 'temp');
+    symbolTable.tryAddVariableReferenceByName('mood', chatRange, 'chat');
+    symbolTable.tryAddVariableReferenceByName('mood', tempRange, 'temp');
 
     const provider = createProvider(service, request);
     const hover = provider.provide(createParams(request, position));
@@ -246,8 +246,8 @@ describe('HoverProvider', () => {
     const tempRange = { start: { line: 1, character: 0 }, end: { line: 1, character: 7 } };
     symbolTable.addDefinition('counter', 'chat', chatRange);
     symbolTable.addDefinition('counter', 'temp', tempRange);
-    symbolTable.addReference('counter', chatRange, 'chat');
-    symbolTable.addReference('counter', tempRange, 'temp');
+    symbolTable.tryAddVariableReferenceByName('counter', chatRange, 'chat');
+    symbolTable.tryAddVariableReferenceByName('counter', tempRange, 'temp');
 
     const provider = createProvider(service, request);
     const hover = provider.provide(createParams(request, position));

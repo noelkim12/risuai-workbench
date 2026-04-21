@@ -16,7 +16,7 @@ import {
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
 } from '../core';
-import { isRequestCancelled } from '../request-cancellation';
+import { isRequestCancelled } from '../utils/request-cancellation';
 import { offsetToPosition, positionToOffset } from '../utils/position';
 
 export const SEMANTIC_TOKEN_TYPES = [

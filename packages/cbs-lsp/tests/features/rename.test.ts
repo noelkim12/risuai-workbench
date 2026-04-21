@@ -739,7 +739,7 @@ describe('RenameProvider', () => {
       expect(refRange).not.toBeNull();
 
       symbolTable.addDefinition('mood', 'chat', defRange!);
-      symbolTable.addReference('mood', refRange!, 'chat');
+      symbolTable.tryAddVariableReferenceByName('mood', refRange!, 'chat');
 
       const renameParams = createRenameParams(request, position, 'emotion');
       const edit = provider.provideRename(renameParams);

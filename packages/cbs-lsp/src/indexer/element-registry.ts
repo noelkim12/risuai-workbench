@@ -595,46 +595,55 @@ export class ElementRegistry {
       this.elementsByArtifact.set(artifact, []);
     }
 
-    const files: ElementRegistryFileRecord[] = [];
-    const elements: ElementRegistryElement[] = [];
-    const graphSeeds: ElementRegistryGraphSeed[] = [];
-    const byArtifact = createArtifactSummaryRecord();
-
     for (const file of scanResult.files) {
-      const built = buildRegistryFileRecord(file);
-
-      files.push(built.record);
-      elements.push(...built.elements);
-      graphSeeds.push(...built.graphSeeds);
-      this.filesByUri.set(built.record.uri, built.record);
-      this.filesByArtifact.get(file.artifact)?.push(built.record);
-      this.elementsByUri.set(built.record.uri, built.elements);
-      this.elementsByArtifact.get(file.artifact)?.push(...built.elements);
-      this.graphSeedsByUri.set(built.record.uri, built.graphSeeds);
-      this.elementCbsDataByUri.set(built.record.uri, built.elementCbsData);
-      if (built.luaArtifact) {
-        this.luaArtifactsByUri.set(built.record.uri, built.luaArtifact);
-      }
-
-      byArtifact[file.artifact].files += 1;
-      byArtifact[file.artifact].elements += built.elements.length;
-      byArtifact[file.artifact].graphSeeds += built.graphSeeds.length;
+      this.upsertFile(file);
     }
 
-    this.snapshot = {
-      rootPath: scanResult.rootPath,
-      files,
-      elements,
-      graphSeeds,
-      summary: {
-        totalFiles: files.length,
-        totalElements: elements.length,
-        totalGraphSeeds: graphSeeds.length,
-        byArtifact,
-      },
-    };
+    return this.rebuildSnapshot();
+  }
 
-    return this.snapshot;
+  /**
+   * upsertFile 함수.
+   * 단일 scan file 변경만 registry에 부분 반영하고 snapshot을 다시 고정함.
+   *
+   * @param file - 최신 workspace scan file entry
+   * @returns 갱신된 file record
+   */
+  upsertFile(file: WorkspaceScanFile): ElementRegistryFileRecord {
+    const built = buildRegistryFileRecord(file);
+    this.removeFileFromIndexes(built.record.uri);
+
+    this.filesByUri.set(built.record.uri, built.record);
+    this.filesByArtifact.get(file.artifact)?.push(built.record);
+    this.elementsByUri.set(built.record.uri, built.elements);
+    this.elementsByArtifact.get(file.artifact)?.push(...built.elements);
+    this.graphSeedsByUri.set(built.record.uri, built.graphSeeds);
+    this.elementCbsDataByUri.set(built.record.uri, built.elementCbsData);
+
+    if (built.luaArtifact) {
+      this.luaArtifactsByUri.set(built.record.uri, built.luaArtifact);
+    }
+
+    this.rebuildSnapshot();
+    return built.record;
+  }
+
+  /**
+   * removeFile 함수.
+   * URI 하나를 registry에서 제거하고 snapshot을 다시 고정함.
+   *
+   * @param uri - 제거할 file URI
+   * @returns 실제로 제거된 파일이 있었는지 여부
+   */
+  removeFile(uri: string): boolean {
+    const didExist = this.filesByUri.has(uri);
+    if (!didExist) {
+      return false;
+    }
+
+    this.removeFileFromIndexes(uri);
+    this.rebuildSnapshot();
+    return true;
   }
 
   /**
@@ -752,6 +761,79 @@ export class ElementRegistry {
    */
   getRootPath(): string {
     return this.rootPath;
+  }
+
+  /**
+   * removeFileFromIndexes 함수.
+   * 특정 URI의 기존 file/element/graph index를 모두 제거함.
+   *
+   * @param uri - 제거할 file URI
+   */
+  private removeFileFromIndexes(uri: string): void {
+    const previousRecord = this.filesByUri.get(uri);
+    if (!previousRecord) {
+      return;
+    }
+
+    this.filesByUri.delete(uri);
+    this.elementsByUri.delete(uri);
+    this.graphSeedsByUri.delete(uri);
+    this.elementCbsDataByUri.delete(uri);
+    this.luaArtifactsByUri.delete(uri);
+
+    const artifactFiles = this.filesByArtifact.get(previousRecord.artifact);
+    if (artifactFiles) {
+      this.filesByArtifact.set(
+        previousRecord.artifact,
+        artifactFiles.filter((record) => record.uri !== uri),
+      );
+    }
+
+    const artifactElements = this.elementsByArtifact.get(previousRecord.artifact);
+    if (artifactElements) {
+      this.elementsByArtifact.set(
+        previousRecord.artifact,
+        artifactElements.filter((element) => element.uri !== uri),
+      );
+    }
+  }
+
+  /**
+   * rebuildSnapshot 함수.
+   * 현재 index map들을 기반으로 stable snapshot/summary를 다시 계산함.
+   *
+   * @returns 최신 registry snapshot
+   */
+  private rebuildSnapshot(): ElementRegistrySnapshot {
+    const files = [...this.filesByUri.values()].sort((left, right) =>
+      left.relativePath.localeCompare(right.relativePath) || left.absolutePath.localeCompare(right.absolutePath),
+    );
+    const elements = files.flatMap((file) => this.getElementsByUri(file.uri));
+    const graphSeeds = files.flatMap((file) => this.getGraphSeedsByUri(file.uri));
+    const byArtifact = createArtifactSummaryRecord();
+
+    for (const file of files) {
+      const elementList = this.getElementsByUri(file.uri);
+      const seedList = this.getGraphSeedsByUri(file.uri);
+      byArtifact[file.artifact].files += 1;
+      byArtifact[file.artifact].elements += elementList.length;
+      byArtifact[file.artifact].graphSeeds += seedList.length;
+    }
+
+    this.snapshot = {
+      rootPath: this.rootPath,
+      files,
+      elements,
+      graphSeeds,
+      summary: {
+        totalFiles: files.length,
+        totalElements: elements.length,
+        totalGraphSeeds: graphSeeds.length,
+        byArtifact,
+      },
+    };
+
+    return this.snapshot;
   }
 }
 

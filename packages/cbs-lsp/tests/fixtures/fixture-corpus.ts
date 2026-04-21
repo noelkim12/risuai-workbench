@@ -1,4 +1,4 @@
-import type { CompletionItem, Diagnostic, Hover } from 'vscode-languageserver/node';
+import type { CodeAction, CompletionItem, Diagnostic, Hover } from 'vscode-languageserver/node';
 import {
   DIAGNOSTIC_TAXONOMY,
   DiagnosticCode,
@@ -12,7 +12,7 @@ import {
   normalizeHostDiagnosticsForSnapshot,
   type NormalizedHostDiagnosticsEnvelopeSnapshot,
   type NormalizedHostDiagnosticSnapshot,
-} from '../../src/diagnostics-router';
+} from '../../src/utils/diagnostics-router';
 import {
   normalizeCompletionItemsForSnapshot,
   type NormalizedCompletionItemSnapshot,
@@ -21,6 +21,19 @@ import {
   normalizeHoverForSnapshot,
   type NormalizedHoverSnapshot,
 } from '../../src/features/hover';
+import {
+  normalizeCodeActionsEnvelopeForSnapshot,
+  normalizeCodeActionsForSnapshot,
+  type NormalizedCodeActionsEnvelopeSnapshot,
+  type NormalizedCodeActionSnapshot,
+} from '../../src/features/code-actions-snapshot';
+
+export interface NormalizedProviderBundleSnapshot {
+  codeActions: NormalizedCodeActionSnapshot[];
+  completion: NormalizedCompletionItemSnapshot[];
+  diagnostics: NormalizedHostDiagnosticSnapshot[];
+  hover: NormalizedHoverSnapshot | null;
+}
 
 type Eol = '\n' | '\r\n';
 
@@ -861,4 +874,64 @@ export function snapshotHostDiagnosticsEnvelope(
   diagnostics: readonly Diagnostic[],
 ): NormalizedHostDiagnosticsEnvelopeSnapshot {
   return normalizeHostDiagnosticsEnvelopeForSnapshot(diagnostics);
+}
+
+/**
+ * snapshotCodeActions 함수.
+ * code action 목록을 deterministic ordering의 normalized JSON view로 변환함.
+ *
+ * @param actions - 정규화할 code action 목록
+ * @returns linked diagnostic/edit/no-op 정보를 포함한 stable snapshot 배열
+ */
+export function snapshotCodeActions(
+  actions: readonly CodeAction[],
+): NormalizedCodeActionSnapshot[] {
+  return normalizeCodeActionsForSnapshot(actions);
+}
+
+/**
+ * snapshotCodeActionsEnvelope 함수.
+ * code action snapshot에 runtime availability contract를 함께 묶음.
+ *
+ * @param actions - 정규화할 code action 목록
+ * @returns code action + availability를 함께 담은 snapshot view
+ */
+export function snapshotCodeActionsEnvelope(
+  actions: readonly CodeAction[],
+): NormalizedCodeActionsEnvelopeSnapshot {
+  return normalizeCodeActionsEnvelopeForSnapshot(actions);
+}
+
+/**
+ * snapshotProviderBundle 함수.
+ * 같은 문서 상태에서 여러 provider 결과를 snapshot/golden 친화적인 하나의 JSON shape로 묶음.
+ *
+ * @param bundle - completion/hover/diagnostics/code action 원본 payload 묶음
+ * @returns stable field names와 deterministic ordering을 가진 provider bundle snapshot
+ */
+export function snapshotProviderBundle(bundle: {
+  codeActions: readonly CodeAction[];
+  completion: readonly CompletionItem[];
+  diagnostics: readonly Diagnostic[];
+  hover: Hover | null;
+}): NormalizedProviderBundleSnapshot {
+  return {
+    codeActions: snapshotCodeActions(bundle.codeActions),
+    completion: snapshotCompletionItems(bundle.completion),
+    diagnostics: snapshotHostDiagnostics(bundle.diagnostics),
+    hover: snapshotHoverResult(bundle.hover),
+  };
+}
+
+/**
+ * serializeProviderBundleForGolden 함수.
+ * normalized provider bundle을 stable indentation의 JSON 문자열로 직렬화함.
+ *
+ * @param bundle - 직렬화할 normalized provider bundle snapshot
+ * @returns golden 비교용 deterministic JSON 문자열
+ */
+export function serializeProviderBundleForGolden(
+  bundle: NormalizedProviderBundleSnapshot,
+): string {
+  return JSON.stringify(bundle, null, 2);
 }

@@ -174,6 +174,49 @@ function createMalformedFragmentProblem(
 }
 
 /**
+ * isRecoverySafeFragmentInsertion 함수.
+ * syntax recovery가 있는 fragment에서도 허용 가능한 close-tag insertion 형태인지 확인함.
+ *
+ * @param fragmentAnalysis - 대상 fragment 분석 결과
+ * @param edit - fragment-local edit
+ * @returns fragment 끝 zero-width insertion이면 true
+ */
+function isRecoverySafeFragmentInsertion(
+  fragmentAnalysis: FragmentDocumentAnalysis,
+  edit: FragmentLocalPatchEdit,
+): boolean {
+  const startOffset = positionToOffset(fragmentAnalysis.fragment.content, edit.range.start);
+  const endOffset = positionToOffset(fragmentAnalysis.fragment.content, edit.range.end);
+
+  return startOffset === fragmentAnalysis.fragment.content.length && endOffset === startOffset;
+}
+
+/**
+ * isRecoverySafeHostInsertion 함수.
+ * syntax recovery가 있는 fragment의 host edit가 fragment 끝 insertion인지 확인함.
+ *
+ * @param requestText - host document 전문
+ * @param fragmentAnalysis - 대상 fragment 분석 결과
+ * @param range - host document 기준 edit range
+ * @returns fragment 끝 zero-width insertion이면 true
+ */
+function isRecoverySafeHostInsertion(
+  requestText: string,
+  fragmentAnalysis: FragmentDocumentAnalysis,
+  range: Range,
+): boolean {
+  const localRange = fragmentAnalysis.mapper.toLocalRange(requestText, range);
+  if (!localRange) {
+    return false;
+  }
+
+  return isRecoverySafeFragmentInsertion(fragmentAnalysis, {
+    range: localRange,
+    newText: '',
+  });
+}
+
+/**
  * remapFragmentLocalPatchesToHost 함수.
  * fragment-local edit를 host document edit로 remap하면서 안전 경계를 먼저 검증함.
  *
@@ -187,7 +230,10 @@ export function remapFragmentLocalPatchesToHost(
   fragmentAnalysis: FragmentDocumentAnalysis,
   edits: readonly FragmentLocalPatchEdit[],
 ): HostFragmentPatchValidationResult {
-  if (fragmentAnalysis.recovery.hasSyntaxRecovery) {
+  if (
+    fragmentAnalysis.recovery.hasSyntaxRecovery &&
+    !edits.every((edit) => isRecoverySafeFragmentInsertion(fragmentAnalysis, edit))
+  ) {
     return {
       ok: false,
       edits: [],
@@ -296,7 +342,10 @@ export function validateHostFragmentPatchEdits(
       continue;
     }
 
-    if (owningFragment.recovery.hasSyntaxRecovery) {
+    if (
+      owningFragment.recovery.hasSyntaxRecovery &&
+      !isRecoverySafeHostInsertion(request.text, owningFragment, edit.range)
+    ) {
       problems.push(createMalformedFragmentProblem(edit.uri, owningFragment));
       continue;
     }

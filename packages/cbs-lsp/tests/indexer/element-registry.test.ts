@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { afterEach, describe, expect, it } from 'vitest'
 import { getCustomExtensionArtifactContract, type CustomExtensionArtifact } from 'risu-workbench-core'
 
-import { ElementRegistry, FileScanner } from '../../src/indexer'
+import { createWorkspaceScanFileFromText, ElementRegistry, FileScanner } from '../../src/indexer'
 
 type WorkspaceFileSeed = {
   artifact: CustomExtensionArtifact
@@ -473,5 +473,61 @@ describe('ElementRegistry', () => {
     expect(luaSeed.fragmentSection).toBeNull()
     expect(luaSeed.fragmentIndex).toBe(-1)
     expect(luaSeed.hostRange).toBeNull()
+  })
+
+  it('updates and removes a single file without rebuilding the whole registry instance', async () => {
+    const { root, scanResult, registry } = await buildRegistry([
+      {
+        artifact: 'lorebook',
+        fileName: 'hero.risulorebook',
+        text: ['---', 'name: hero', '---', '@@@ CONTENT', '{{setvar::mood::happy}}', ''].join('\n'),
+      },
+      {
+        artifact: 'regex',
+        fileName: 'flow.risuregex',
+        text: ['---', 'comment: flow', 'type: plain', '---', '@@@ IN', '{{getvar::mood}}', ''].join('\n'),
+      },
+    ])
+
+    const heroUri = scanResult.files.find((file) => file.relativePath === 'lorebooks/hero.risulorebook')?.uri
+    const regexUri = scanResult.files.find((file) => file.relativePath === 'regex/flow.risuregex')?.uri
+
+    expect(heroUri).toBeTruthy()
+    expect(regexUri).toBeTruthy()
+    expect(registry.getSnapshot().summary.totalFiles).toBe(2)
+    expect(registry.getElementsByUri(regexUri!)).toMatchObject([
+      expect.objectContaining({ cbs: { reads: ['mood'], writes: [] } }),
+    ])
+
+    registry.upsertFile(
+      createWorkspaceScanFileFromText({
+        workspaceRoot: root,
+        absolutePath: path.join(root, 'lorebooks/hero.risulorebook'),
+        text: ['---', 'name: hero', '---', '@@@ CONTENT', '{{setvar::energy::boost}}', ''].join('\n'),
+      }),
+    )
+
+    expect(registry.getFileByUri(heroUri!)).toMatchObject({
+      graphSeedCount: 1,
+      analysisKind: 'cbs-fragments',
+    })
+    expect(registry.getElementsByUri(heroUri!)).toMatchObject([
+      expect.objectContaining({ cbs: { reads: [], writes: ['energy'] } }),
+    ])
+    expect(registry.getElementsByUri(regexUri!)).toMatchObject([
+      expect.objectContaining({ cbs: { reads: ['mood'], writes: [] } }),
+    ])
+
+    expect(registry.removeFile(regexUri!)).toBe(true)
+    expect(registry.getFileByUri(regexUri!)).toBeNull()
+    expect(registry.getElementsByUri(regexUri!)).toEqual([])
+    expect(registry.getSnapshot().summary).toMatchObject({
+      totalFiles: 1,
+      totalElements: 1,
+      byArtifact: {
+        lorebook: { files: 1, elements: 1, graphSeeds: 1 },
+        regex: { files: 0, elements: 0, graphSeeds: 0 },
+      },
+    })
   })
 })

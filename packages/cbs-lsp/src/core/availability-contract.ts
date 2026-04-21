@@ -10,13 +10,16 @@ import {
 } from './agent-metadata';
 
 export interface ActiveFeatureAvailabilityMap {
+  codeAction: AgentMetadataAvailabilityContract;
   codelens: AgentMetadataAvailabilityContract;
   completion: AgentMetadataAvailabilityContract;
   definition: AgentMetadataAvailabilityContract;
   diagnostics: AgentMetadataAvailabilityContract;
+  documentSymbol: AgentMetadataAvailabilityContract;
   formatting: AgentMetadataAvailabilityContract;
   folding: AgentMetadataAvailabilityContract;
   hover: AgentMetadataAvailabilityContract;
+  luaHover: AgentMetadataAvailabilityContract;
   references: AgentMetadataAvailabilityContract;
   rename: AgentMetadataAvailabilityContract;
   semanticTokens: AgentMetadataAvailabilityContract;
@@ -24,12 +27,32 @@ export interface ActiveFeatureAvailabilityMap {
 }
 
 export interface DeferredFeatureAvailabilityMap {
+  'lua-completion': AgentMetadataAvailabilityContract;
+  'lua-diagnostics': AgentMetadataAvailabilityContract;
   'lua-ast-fragment-routing': AgentMetadataAvailabilityContract;
 }
 
 export interface ExcludedArtifactAvailabilityMap {
   risutoggle: AgentMetadataAvailabilityContract;
   risuvar: AgentMetadataAvailabilityContract;
+}
+
+export type LuaLsCompanionStatus = 'unavailable' | 'stopped' | 'starting' | 'ready' | 'crashed';
+
+export type LuaLsCompanionHealth = 'unavailable' | 'idle' | 'healthy' | 'degraded';
+
+export interface LuaLsCompanionRuntime {
+  key: 'luals';
+  status: LuaLsCompanionStatus;
+  health: LuaLsCompanionHealth;
+  transport: 'stdio';
+  executablePath: string | null;
+  pid: number | null;
+  detail: string;
+}
+
+export interface CompanionRuntimeMap {
+  luals: LuaLsCompanionRuntime;
 }
 
 export interface DeferredScopeContract {
@@ -39,6 +62,7 @@ export interface DeferredScopeContract {
 }
 
 export interface CbsRuntimeAvailabilityContract {
+  companions: CompanionRuntimeMap;
   excludedArtifacts: ExcludedArtifactAvailabilityMap;
   featureAvailability: ActiveFeatureAvailabilityMap & DeferredFeatureAvailabilityMap;
 }
@@ -49,10 +73,16 @@ export interface NormalizedAvailabilitySnapshotEntry extends AgentMetadataAvaila
 
 export interface NormalizedRuntimeAvailabilitySnapshot {
   artifacts: NormalizedAvailabilitySnapshotEntry[];
+  companions: LuaLsCompanionRuntime[];
   features: NormalizedAvailabilitySnapshotEntry[];
 }
 
 export const ACTIVE_FEATURE_AVAILABILITY = Object.freeze({
+  codeAction: createAgentMetadataAvailability(
+    'local-only',
+    'server-capability:codeAction',
+    'Code actions are active for routed CBS fragments, reuse diagnostics metadata for quick fixes and guidance, and only promote automatic host edits that pass the shared host-fragment safety contract.',
+  ),
   codelens: createAgentMetadataAvailability(
     'local-only',
     'server-capability:codelens',
@@ -73,6 +103,11 @@ export const ACTIVE_FEATURE_AVAILABILITY = Object.freeze({
     'server-capability:diagnostics',
     'Diagnostics are active for routed CBS fragments and report results within the current document only.',
   ),
+  documentSymbol: createAgentMetadataAvailability(
+    'local-only',
+    'server-capability:documentSymbol',
+    'Document symbols are active for routed CBS fragments, expose fragment-local outline structure, and group multi-fragment documents by CBS-bearing section containers only.',
+  ),
   formatting: createAgentMetadataAvailability(
     'local-only',
     'server-capability:formatting',
@@ -86,7 +121,12 @@ export const ACTIVE_FEATURE_AVAILABILITY = Object.freeze({
   hover: createAgentMetadataAvailability(
     'local-only',
     'server-capability:hover',
-    'Hover is active for routed CBS fragments and describes symbols visible from the current document context only.',
+    'Hover is active for routed CBS fragments and describes symbols visible from the current CBS document context only.',
+  ),
+  luaHover: createAgentMetadataAvailability(
+    'local-only',
+    'lua-provider:hover-proxy',
+    'Lua hover is active for `.risulua` documents by forwarding `textDocument/hover` to the LuaLS companion using the mirrored virtual Lua document when the sidecar is ready. If LuaLS is unavailable or still starting, the server returns no Lua hover result and leaves CBS capabilities unchanged.',
   ),
   references: createAgentMetadataAvailability(
     'local-first',
@@ -128,6 +168,16 @@ export const DEFERRED_SCOPE_CONTRACT = Object.freeze({
     'lua-ast-fragment-routing',
   ] as const,
   featureAvailability: {
+    'lua-completion': createAgentMetadataAvailability(
+      'deferred',
+      'deferred-scope-contract:lua-completion',
+      'Lua completion proxy stays deferred until the minimal LuaLS hover seam is expanded into editor completion request routing.',
+    ),
+    'lua-diagnostics': createAgentMetadataAvailability(
+      'deferred',
+      'deferred-scope-contract:lua-diagnostics',
+      'Lua diagnostics proxy stays deferred until the server forwards LuaLS diagnostics notifications into host `publishDiagnostics` plumbing.',
+    ),
     'lua-ast-fragment-routing': createAgentMetadataAvailability(
       'deferred',
       'deferred-scope-contract:lua-ast-fragment-routing',
@@ -138,13 +188,41 @@ export const DEFERRED_SCOPE_CONTRACT = Object.freeze({
 }) satisfies DeferredScopeContract;
 
 /**
+ * createLuaLsCompanionRuntime 함수.
+ * LuaLS sidecar runtime 상태를 availability/trace에서 재사용할 canonical shape로 만듦.
+ *
+ * @param overrides - 상태별 override 필드
+ * @returns LuaLS companion runtime snapshot
+ */
+export function createLuaLsCompanionRuntime(
+  overrides: Partial<LuaLsCompanionRuntime> = {},
+): LuaLsCompanionRuntime {
+  return {
+    detail:
+      'LuaLS sidecar is not running yet. The process foundation can probe availability, but Lua document routing/proxy features remain deferred until later checklist items land.',
+    executablePath: null,
+    health: 'unavailable',
+    key: 'luals',
+    pid: null,
+    status: 'unavailable',
+    transport: 'stdio',
+    ...overrides,
+  };
+}
+
+/**
  * createCbsRuntimeAvailabilityContract 함수.
  * initialize result와 normalized payload가 재사용할 공통 runtime-facing availability view를 생성함.
  *
  * @returns active/deferred/workspace-disabled 상태를 한곳에 모은 계약
  */
-export function createCbsRuntimeAvailabilityContract(): CbsRuntimeAvailabilityContract {
+export function createCbsRuntimeAvailabilityContract(
+  lualsRuntime: LuaLsCompanionRuntime = createLuaLsCompanionRuntime(),
+): CbsRuntimeAvailabilityContract {
   return {
+    companions: {
+      luals: lualsRuntime,
+    },
     excludedArtifacts: EXCLUDED_ARTIFACT_AVAILABILITY,
     featureAvailability: {
       ...ACTIVE_FEATURE_AVAILABILITY,
@@ -184,13 +262,16 @@ function createNormalizedAvailabilityEntries(
  *
  * @returns artifacts/features availability를 정렬한 snapshot-friendly view
  */
-export function createNormalizedRuntimeAvailabilitySnapshot(): NormalizedRuntimeAvailabilitySnapshot {
-  const contract = createCbsRuntimeAvailabilityContract();
+export function createNormalizedRuntimeAvailabilitySnapshot(
+  lualsRuntime: LuaLsCompanionRuntime = createLuaLsCompanionRuntime(),
+): NormalizedRuntimeAvailabilitySnapshot {
+  const contract = createCbsRuntimeAvailabilityContract(lualsRuntime);
 
   return {
     artifacts: createNormalizedAvailabilityEntries(
       contract.excludedArtifacts as unknown as Record<string, AgentMetadataAvailabilityContract>,
     ),
+    companions: Object.values(contract.companions).sort((left, right) => left.key.localeCompare(right.key)),
     features: createNormalizedAvailabilityEntries(
       contract.featureAvailability as unknown as Record<string, AgentMetadataAvailabilityContract>,
     ),
@@ -206,6 +287,7 @@ export interface AvailabilityTraceEntry {
 
 export interface RuntimeAvailabilityTracePayload {
   artifacts: AvailabilityTraceEntry[];
+  companions: LuaLsCompanionRuntime[];
   features: AvailabilityTraceEntry[];
 }
 
@@ -226,11 +308,14 @@ function createAvailabilityTraceEntries(
  *
  * @returns availabilityScope/source/detail 필드를 가진 trace payload
  */
-export function createRuntimeAvailabilityTracePayload(): RuntimeAvailabilityTracePayload {
-  const snapshot = createNormalizedRuntimeAvailabilitySnapshot();
+export function createRuntimeAvailabilityTracePayload(
+  lualsRuntime: LuaLsCompanionRuntime = createLuaLsCompanionRuntime(),
+): RuntimeAvailabilityTracePayload {
+  const snapshot = createNormalizedRuntimeAvailabilitySnapshot(lualsRuntime);
 
   return {
     artifacts: createAvailabilityTraceEntries(snapshot.artifacts),
+    companions: snapshot.companions,
     features: createAvailabilityTraceEntries(snapshot.features),
   };
 }

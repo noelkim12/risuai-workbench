@@ -16,7 +16,7 @@ import { ScopeAnalyzer } from '../analyzer/scopeAnalyzer';
 import { SymbolTable } from '../analyzer/symbolTable';
 import { locateFragmentAtHostPosition, type FragmentCursorLookupResult } from './fragment-locator';
 import { createFragmentOffsetMapper, type FragmentOffsetMapper } from './fragment-position';
-import { isRequestCancelled } from '../request-cancellation';
+import { isRequestCancelled } from '../utils/request-cancellation';
 import {
   createDocumentRecoveryState,
   createFragmentRecoveryState,
@@ -342,8 +342,9 @@ export class FragmentAnalysisService {
     const tokens = tokenizer.tokenize(fragment.content);
     const tokenizerDiagnostics = tokenizer.getDiagnostics();
     const document = new core.CBSParser().parse(fragment.content);
-    const symbolTable = this.scopeAnalyzer.analyze(document, fragment.content);
-    const diagnostics = this.diagnosticsEngine.analyze(document, fragment.content, symbolTable);
+    const scopeAnalysis = this.scopeAnalyzer.analyze(document, fragment.content);
+    const { symbolTable } = scopeAnalysis;
+    const diagnostics = this.diagnosticsEngine.analyze(document, fragment.content, scopeAnalysis);
     const recovery = createFragmentRecoveryState(tokenizerDiagnostics, document);
     const mapper = createFragmentOffsetMapper(fragment);
 

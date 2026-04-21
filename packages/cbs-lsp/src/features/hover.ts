@@ -12,6 +12,7 @@ import {
   CALC_EXPRESSION_SUBLANGUAGE_LABEL,
   getCalcExpressionSublanguageDocumentation,
 } from '../core/calc-expression';
+import { CbsLspTextHelper } from '../helpers/text-helper';
 
 import {
   createAgentMetadataEnvelope,
@@ -33,7 +34,7 @@ import {
   type FragmentAnalysisService,
   type FragmentCursorLookupResult,
 } from '../core';
-import { isRequestCancelled } from '../request-cancellation';
+import { isRequestCancelled } from '../utils/request-cancellation';
 import type { VariableFlowQueryResult, VariableFlowService } from '../services';
 import { positionToOffset } from '../utils/position';
 import { isDocOnlyBuiltin } from 'risu-workbench-core';
@@ -199,25 +200,6 @@ const WHEN_OPERATOR_DOCS = Object.freeze({
   },
 } as const);
 
-function formatRangeStart(range: Range): string {
-  return `line ${range.start.line + 1}, character ${range.start.character + 1}`;
-}
-
-function formatOrdinal(value: number): string {
-  const mod10 = value % 10;
-  const mod100 = value % 100;
-  if (mod10 === 1 && mod100 !== 11) {
-    return `${value}st`;
-  }
-  if (mod10 === 2 && mod100 !== 12) {
-    return `${value}nd`;
-  }
-  if (mod10 === 3 && mod100 !== 13) {
-    return `${value}rd`;
-  }
-  return `${value}th`;
-}
-
 function formatParameterSlotSummary(
   parameters: readonly { name: string }[],
 ): string {
@@ -238,7 +220,10 @@ function formatParameterDefinitionSummary(
   }
 
   return parameters
-    .map((parameter) => `\`${parameter.name}\` (${formatRangeStart(parameter.range)})`)
+    .map(
+      (parameter) =>
+        `\`${parameter.name}\` (${CbsLspTextHelper.formatRangeStart(parameter.range)})`,
+    )
     .join(', ');
 }
 
@@ -523,7 +508,7 @@ export class HoverProvider {
     );
     lines.push(`- Bound by: \`#each ${binding.iteratorExpression} as ${binding.bindingName}\``);
     lines.push(`- Scope: ${scopeLabel}`);
-    lines.push(`- Local definition: ${formatRangeStart(binding.bindingRange)}`);
+    lines.push(`- Local definition: ${CbsLspTextHelper.formatRangeStart(binding.bindingRange)}`);
 
     if (loopSymbol) {
       lines.push(`- Local references: ${loopSymbol.references.length}`);
@@ -585,7 +570,7 @@ export class HoverProvider {
     ];
 
     if (symbol?.definitionRange) {
-      lines.push(`- Local definition: ${formatRangeStart(symbol.definitionRange)}`);
+      lines.push(`- Local definition: ${CbsLspTextHelper.formatRangeStart(symbol.definitionRange)}`);
     }
 
     if (symbol) {
@@ -674,7 +659,7 @@ export class HoverProvider {
       ];
 
       if (symbol?.definitionRange) {
-        lines.push(`- Local definition: ${formatRangeStart(symbol.definitionRange)}`);
+        lines.push(`- Local definition: ${CbsLspTextHelper.formatRangeStart(symbol.definitionRange)}`);
       }
 
       if (symbol) {
@@ -782,7 +767,7 @@ export class HoverProvider {
         `**Local function declaration: ${declaration.name}**`,
         '',
         `- Meaning: \`#func ${declaration.name}\` declares a fragment-local reusable macro body that \`{{call::${declaration.name}::...}}\` can invoke.`,
-        `- Local definition: ${formatRangeStart(declaration.range)}`,
+        `- Local definition: ${CbsLspTextHelper.formatRangeStart(declaration.range)}`,
         declaration.parameters.length > 0
           ? `- Parameters: ${declaration.parameters.map((parameter) => `\`${parameter}\``).join(', ')}`
           : '- Parameters: inferred at runtime',
@@ -836,7 +821,7 @@ export class HoverProvider {
         );
       }
       if (definitionRange) {
-        lines.push(`- Local definition: ${formatRangeStart(definitionRange)}`);
+        lines.push(`- Local definition: ${CbsLspTextHelper.formatRangeStart(definitionRange)}`);
       }
       lines.push(`- Local calls: ${functionSymbol?.references.length ?? 0}`);
     }
@@ -882,18 +867,18 @@ export class HoverProvider {
     const lines = [`**Numbered argument reference: arg::${reference.rawText}**`, ''];
 
     lines.push(
-      `- Meaning: references the ${formatOrdinal(reference.index + 1)} call argument from the active local \`#func\` / \`{{call::...}}\` context.`,
+      `- Meaning: references the ${CbsLspTextHelper.formatOrdinal(reference.index + 1)} call argument from the active local \`#func\` / \`{{call::...}}\` context.`,
     );
 
     if (!activeFunctionContext) {
       lines.push('- Status: outside a local `#func` / `call::` context.');
     } else {
       lines.push(`- Local function: \`${activeFunctionContext.declaration.name}\``);
-      lines.push(`- Local #func declaration: ${formatRangeStart(activeFunctionContext.declaration.range)}`);
+      lines.push(`- Local #func declaration: ${CbsLspTextHelper.formatRangeStart(activeFunctionContext.declaration.range)}`);
       lines.push(`- Parameter slot: ${reference.index}`);
       if (parameterDeclaration) {
         lines.push(`- Parameter name: \`${parameterDeclaration.name}\``);
-        lines.push(`- Parameter definition: ${formatRangeStart(parameterDeclaration.range)}`);
+        lines.push(`- Parameter definition: ${CbsLspTextHelper.formatRangeStart(parameterDeclaration.range)}`);
       } else {
         lines.push(
           `- Status: current function only exposes ${activeFunctionContext.declaration.parameters.length} parameter(s).`,

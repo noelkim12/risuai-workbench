@@ -6,7 +6,7 @@ import {
   DiagnosticCode,
 } from '../src/analyzer/diagnostics';
 import { SymbolTable } from '../src/analyzer/symbolTable';
-import { routeDiagnosticsForDocument, mapDocumentToCbsFragments } from '../src/diagnostics-router';
+import { routeDiagnosticsForDocument, mapDocumentToCbsFragments } from '../src/utils/diagnostics-router';
 import { DefinitionProvider } from '../src/features/definition';
 import { FormattingProvider } from '../src/features/formatting';
 import { ReferencesProvider } from '../src/features/references';
@@ -187,6 +187,18 @@ describe('diagnostic taxonomy contract', () => {
     expect(DEFERRED_SCOPE_CONTRACT).toEqual({
       deferredFeatures: ['lua-ast-fragment-routing'],
       featureAvailability: {
+        'lua-completion': {
+          scope: 'deferred',
+          source: 'deferred-scope-contract:lua-completion',
+          detail:
+            'Lua completion proxy stays deferred until the minimal LuaLS hover seam is expanded into editor completion request routing.',
+        },
+        'lua-diagnostics': {
+          scope: 'deferred',
+          source: 'deferred-scope-contract:lua-diagnostics',
+          detail:
+            'Lua diagnostics proxy stays deferred until the server forwards LuaLS diagnostics notifications into host `publishDiagnostics` plumbing.',
+        },
         'lua-ast-fragment-routing': {
           scope: 'deferred',
           source: 'deferred-scope-contract:lua-ast-fragment-routing',

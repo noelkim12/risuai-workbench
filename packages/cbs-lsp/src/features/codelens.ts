@@ -15,7 +15,7 @@ import {
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
 } from '../core';
-import { isRequestCancelled } from '../request-cancellation';
+import { isRequestCancelled } from '../utils/request-cancellation';
 import type { ActivationChainQueryResult, ActivationChainService } from '../services';
 
 export const ACTIVATION_CHAIN_CODELENS_COMMAND = 'cbs-lsp.codelens.activationSummary';

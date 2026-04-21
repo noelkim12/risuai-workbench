@@ -33,7 +33,8 @@ import {
   type CompletionTriggerContext,
 } from '../core';
 import { collectVisibleLoopBindingsFromNodePath } from '../analyzer/scopeAnalyzer';
-import { isRequestCancelled } from '../request-cancellation';
+import { CbsLspTextHelper } from '../helpers/text-helper';
+import { isRequestCancelled } from '../utils/request-cancellation';
 
 export type CompletionRequestResolver = (
   params: TextDocumentPositionParams,
@@ -215,21 +216,6 @@ const CALC_OPERATORS: readonly CalcOperatorCompletion[] = [
     documentation: 'Ends a grouped sub-expression.',
   },
 ];
-
-function formatOrdinal(value: number): string {
-  const mod10 = value % 10;
-  const mod100 = value % 100;
-  if (mod10 === 1 && mod100 !== 11) {
-    return `${value}st`;
-  }
-  if (mod10 === 2 && mod100 !== 12) {
-    return `${value}nd`;
-  }
-  if (mod10 === 3 && mod100 !== 13) {
-    return `${value}rd`;
-  }
-  return `${value}th`;
-}
 
 export interface NormalizedCompletionTextEditSnapshot {
   insert: LSPRange | null;
@@ -863,7 +849,7 @@ export class CompletionProvider {
             parameterDeclaration
               ? `- Parameter definition: line ${parameterDeclaration.range.start.line + 1}, character ${parameterDeclaration.range.start.character + 1}`
               : '- Parameter definition: declared in the active local function header',
-            `- Meaning: references the ${formatOrdinal(index + 1)} call argument from the active local \`#func\` / \`{{call::...}}\` context.`,
+            `- Meaning: references the ${CbsLspTextHelper.formatOrdinal(index + 1)} call argument from the active local \`#func\` / \`{{call::...}}\` context.`,
           ].join('\n'),
         },
         insertText: index.toString(),

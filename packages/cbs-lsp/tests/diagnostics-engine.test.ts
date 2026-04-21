@@ -13,7 +13,7 @@ import {
   DiagnosticsEngine,
 } from '../src/analyzer/diagnostics';
 import { ScopeAnalyzer } from '../src/analyzer/scopeAnalyzer';
-import { routeDiagnosticsForDocument } from '../src/diagnostics-router';
+import { routeDiagnosticsForDocument } from '../src/utils/diagnostics-router';
 import { getFixtureCorpusEntry } from './fixtures/fixture-corpus';
 
 const diagnosticsEngine = new DiagnosticsEngine(new CBSBuiltinRegistry());
@@ -425,8 +425,8 @@ describe('DiagnosticsEngine', () => {
     const source =
       '{{setvar::used::1}}{{getvar::used}}{{setvar::unused::1}}{{settempvar::temp::x}}{{gettempvar::missing}}{{#each items as entry}}{{slot::entry}}{{/each}}{{#each items as orphan}}plain{{/each}}';
     const document = new CBSParser().parse(source);
-    const symbolTable = scopeAnalyzer.analyze(document, source);
-    const diagnostics = diagnosticsEngine.analyze(document, source, symbolTable);
+    const scopeAnalysis = scopeAnalyzer.analyze(document, source);
+    const diagnostics = diagnosticsEngine.analyze(document, source, scopeAnalysis);
 
     expect(diagnostics.map((diagnostic) => diagnostic.code)).toContain(
       DiagnosticCode.UndefinedVariable,
@@ -476,8 +476,8 @@ type: plain
   it('reports arg::N misuse outside a local #func body', () => {
     const source = '{{arg::0}}{{#func greet user}}{{arg::1}}{{/func}}{{call::greet::Noel}}';
     const document = new CBSParser().parse(source);
-    const symbolTable = scopeAnalyzer.analyze(document, source);
-    const diagnostics = diagnosticsEngine.analyze(document, source, symbolTable);
+    const scopeAnalysis = scopeAnalyzer.analyze(document, source);
+    const diagnostics = diagnosticsEngine.analyze(document, source, scopeAnalysis);
 
     expect(diagnostics).toContainEqual(
       expect.objectContaining({
@@ -500,8 +500,8 @@ type: plain
       '{{call::greet::Noel}}',
     ].join('');
     const document = new CBSParser().parse(source);
-    const symbolTable = scopeAnalyzer.analyze(document, source);
-    const diagnostics = diagnosticsEngine.analyze(document, source, symbolTable);
+    const scopeAnalysis = scopeAnalyzer.analyze(document, source);
+    const diagnostics = diagnosticsEngine.analyze(document, source, scopeAnalysis);
 
     expect(diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
       DiagnosticCode.UnusedVariable,
@@ -520,8 +520,8 @@ type: plain
   it('attaches secondary definition ranges to unused variable diagnostics', () => {
     const source = '{{setvar::mood::1}}{{setvar::mood::2}}';
     const document = new CBSParser().parse(source);
-    const symbolTable = scopeAnalyzer.analyze(document, source);
-    const diagnostics = diagnosticsEngine.analyze(document, source, symbolTable);
+    const scopeAnalysis = scopeAnalyzer.analyze(document, source);
+    const diagnostics = diagnosticsEngine.analyze(document, source, scopeAnalysis);
     const diagnostic = diagnostics.find(
       (candidate) => candidate.code === DiagnosticCode.UnusedVariable,
     );
@@ -541,9 +541,9 @@ type: plain
     const source = '{{setvar::mood::1}}{{setvar::mood::2}}{{getvar::missing}}{{user';
     const analyze = () => {
       const document = new CBSParser().parse(source);
-      const symbolTable = scopeAnalyzer.analyze(document, source);
+      const scopeAnalysis = scopeAnalyzer.analyze(document, source);
 
-      return diagnosticsEngine.analyze(document, source, symbolTable);
+      return diagnosticsEngine.analyze(document, source, scopeAnalysis);
     };
 
     const first = analyze();

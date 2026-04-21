@@ -3,8 +3,11 @@ import {
   mapDocumentToCbsFragments,
   createDiagnosticForFragment,
   routeDiagnosticsForDocument,
-} from '../src/diagnostics-router';
+  shouldKeepLocalSymbolDiagnostic,
+  assembleDiagnosticsForRequest,
+} from '../src/utils/diagnostics-router';
 import { DiagnosticCode } from '../src/analyzer/diagnostics';
+import type { VariableFlowService } from '../src/services';
 import type { CbsFragment } from 'risu-workbench-core';
 import { fragmentAnalysisService } from '../src/core';
 import {
@@ -438,6 +441,8 @@ Hello <user>
       ['regex-missing-required-argument', [DiagnosticCode.MissingRequiredArgument]],
       ['regex-deprecated-block', [DiagnosticCode.DeprecatedFunction]],
       ['prompt-unknown-function', [DiagnosticCode.UnknownFunction]],
+      ['prompt-invalid-when-operator', [DiagnosticCode.UnknownFunction]],
+      ['prompt-malformed-each-header', [DiagnosticCode.MissingRequiredArgument]],
       ['prompt-empty-block', [DiagnosticCode.EmptyBlock]],
       ['prompt-legacy-angle', [DiagnosticCode.LegacyAngleBracket]],
     ] as const)('routes adapter-backed diagnostics for fixture %s', (fixtureId, expectedCodes) => {
@@ -515,6 +520,18 @@ Hello <user>
               '`.risuvar` artifacts do not carry CBS fragments, so CBS LSP routing stays disabled for them.',
           },
         ],
+        companions: [
+          {
+            key: 'luals',
+            status: 'unavailable',
+            health: 'unavailable',
+            transport: 'stdio',
+            executablePath: null,
+            pid: null,
+            detail:
+              'LuaLS sidecar is not running yet. The process foundation can probe availability, but Lua document routing/proxy features remain deferred until later checklist items land.',
+          },
+        ],
         features: expect.arrayContaining([
           {
             key: 'completion',
@@ -532,6 +549,218 @@ Hello <user>
           },
         ]),
       });
+    });
+  });
+
+  describe('shouldKeepLocalSymbolDiagnostic', () => {
+    it('keeps non-symbol diagnostics unchanged', () => {
+      const diagnostic = {
+        code: DiagnosticCode.UnknownFunction,
+        message: 'Unknown function',
+        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 10 } },
+        severity: 1,
+        source: 'risu-cbs',
+      };
+      const request = {
+        uri: 'file:///test.risulorebook',
+        version: 1,
+        filePath: '/test.risulorebook',
+        text: '{{unknown}}',
+      };
+      const mockVariableFlowService = {
+        queryAt: () => null,
+      } as unknown as VariableFlowService;
+
+      expect(shouldKeepLocalSymbolDiagnostic(diagnostic, request, mockVariableFlowService)).toBe(true);
+    });
+
+    it('keeps CBS101 (UndefinedVariable) when no workspace writers exist', () => {
+      const diagnostic = {
+        code: DiagnosticCode.UndefinedVariable,
+        message: 'Variable "x" is not defined',
+        range: { start: { line: 0, character: 2 }, end: { line: 0, character: 11 } },
+        severity: 1,
+        source: 'risu-cbs',
+      };
+      const request = {
+        uri: 'file:///test.risulorebook',
+        version: 1,
+        filePath: '/test.risulorebook',
+        text: '{{getvar::x}}',
+      };
+      const mockVariableFlowService = {
+        queryAt: () => ({ writers: [], defaultValue: null }),
+      } as unknown as VariableFlowService;
+
+      expect(shouldKeepLocalSymbolDiagnostic(diagnostic, request, mockVariableFlowService)).toBe(true);
+    });
+
+    it('suppresses CBS101 (UndefinedVariable) when workspace writers exist', () => {
+      const diagnostic = {
+        code: DiagnosticCode.UndefinedVariable,
+        message: 'Variable "x" is not defined',
+        range: { start: { line: 0, character: 2 }, end: { line: 0, character: 11 } },
+        severity: 1,
+        source: 'risu-cbs',
+      };
+      const request = {
+        uri: 'file:///test.risulorebook',
+        version: 1,
+        filePath: '/test.risulorebook',
+        text: '{{getvar::x}}',
+      };
+      const mockVariableFlowService = {
+        queryAt: () => ({ writers: [{ uri: 'file:///other.risulorebook' }], defaultValue: null }),
+      } as unknown as VariableFlowService;
+
+      expect(shouldKeepLocalSymbolDiagnostic(diagnostic, request, mockVariableFlowService)).toBe(false);
+    });
+
+    it('keeps CBS102 (UnusedVariable) when no workspace readers exist', () => {
+      const diagnostic = {
+        code: DiagnosticCode.UnusedVariable,
+        message: 'Variable "x" is unused',
+        range: { start: { line: 0, character: 2 }, end: { line: 0, character: 11 } },
+        severity: 2,
+        source: 'risu-cbs',
+      };
+      const request = {
+        uri: 'file:///test.risulorebook',
+        version: 1,
+        filePath: '/test.risulorebook',
+        text: '{{setvar::x::1}}',
+      };
+      const mockVariableFlowService = {
+        queryAt: () => ({ readers: [] }),
+      } as unknown as VariableFlowService;
+
+      expect(shouldKeepLocalSymbolDiagnostic(diagnostic, request, mockVariableFlowService)).toBe(true);
+    });
+
+    it('suppresses CBS102 (UnusedVariable) when workspace readers exist', () => {
+      const diagnostic = {
+        code: DiagnosticCode.UnusedVariable,
+        message: 'Variable "x" is unused',
+        range: { start: { line: 0, character: 2 }, end: { line: 0, character: 11 } },
+        severity: 2,
+        source: 'risu-cbs',
+      };
+      const request = {
+        uri: 'file:///test.risulorebook',
+        version: 1,
+        filePath: '/test.risulorebook',
+        text: '{{setvar::x::1}}',
+      };
+      const mockVariableFlowService = {
+        queryAt: () => ({ readers: [{ uri: 'file:///other.risulorebook' }] }),
+      } as unknown as VariableFlowService;
+
+      expect(shouldKeepLocalSymbolDiagnostic(diagnostic, request, mockVariableFlowService)).toBe(false);
+    });
+  });
+
+  describe('assembleDiagnosticsForRequest', () => {
+    it('returns local diagnostics unchanged when no workspace service provided', () => {
+      const localDiagnostics = [
+        {
+          code: DiagnosticCode.UnknownFunction,
+          message: 'Unknown function',
+          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 10 } },
+          severity: 1,
+          source: 'risu-cbs',
+        },
+      ];
+      const request = {
+        uri: 'file:///test.risulorebook',
+        version: 1,
+        filePath: '/test.risulorebook',
+        text: '{{unknown}}',
+      };
+
+      const result = assembleDiagnosticsForRequest({
+        localDiagnostics,
+        workspaceVariableFlowService: null,
+        request,
+      });
+
+      expect(result).toEqual(localDiagnostics);
+    });
+
+    it('filters local diagnostics and merges workspace diagnostics', () => {
+      const localDiagnostics = [
+        {
+          code: DiagnosticCode.UndefinedVariable,
+          message: 'Variable "x" is not defined',
+          range: { start: { line: 0, character: 2 }, end: { line: 0, character: 11 } },
+          severity: 1,
+          source: 'risu-cbs',
+        },
+        {
+          code: DiagnosticCode.UnknownFunction,
+          message: 'Unknown function',
+          range: { start: { line: 1, character: 0 }, end: { line: 1, character: 10 } },
+          severity: 1,
+          source: 'risu-cbs',
+        },
+      ];
+      const request = {
+        uri: 'file:///test.risulorebook',
+        version: 1,
+        filePath: '/test.risulorebook',
+        text: '{{getvar::x}}\n{{unknown}}',
+      };
+
+      // Mock VariableFlowService that suppresses the UndefinedVariable diagnostic
+      const mockVariableFlowService = {
+        queryAt: () => ({ writers: [{ uri: 'file:///other.risulorebook' }], defaultValue: null }),
+        getGraph: () => ({ getOccurrencesByUri: () => [] }),
+        getIssues: () => [],
+      } as unknown as VariableFlowService;
+
+      const result = assembleDiagnosticsForRequest({
+        localDiagnostics,
+        workspaceVariableFlowService: mockVariableFlowService,
+        request,
+      });
+
+      // Should only contain the UnknownFunction diagnostic (UndefinedVariable is suppressed)
+      expect(result).toHaveLength(1);
+      expect(result[0].code).toBe(DiagnosticCode.UnknownFunction);
+    });
+
+    it('produces deterministically sorted diagnostics', () => {
+      const localDiagnostics = [
+        {
+          code: DiagnosticCode.UnusedVariable,
+          message: 'Unused var',
+          range: { start: { line: 1, character: 0 }, end: { line: 1, character: 5 } },
+          severity: 2,
+          source: 'risu-cbs',
+        },
+        {
+          code: DiagnosticCode.UnknownFunction,
+          message: 'Unknown function',
+          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 10 } },
+          severity: 1,
+          source: 'risu-cbs',
+        },
+      ];
+      const request = {
+        uri: 'file:///test.risulorebook',
+        version: 1,
+        filePath: '/test.risulorebook',
+        text: '{{unknown}}\n{{setvar::a::1}}',
+      };
+
+      const result = assembleDiagnosticsForRequest({
+        localDiagnostics,
+        workspaceVariableFlowService: null,
+        request,
+      });
+
+      // Should be sorted by range (line 0 before line 1)
+      expect(result[0].code).toBe(DiagnosticCode.UnknownFunction);
+      expect(result[1].code).toBe(DiagnosticCode.UnusedVariable);
     });
   });
 });

@@ -1,340 +1,142 @@
-import path from 'node:path';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+/**
+ * CBS language server bootstrap, lifecycle wiring, and workspace refresh orchestration entry.
+ * Runtime entry flows from 
+ * `packages/cbs-lsp/src/cli.ts` `executeCli()` 
+ * -> `startServer()` 
+ * -> `registerServer()` 
+ * -> `connection.listen()`.
+ * @file packages/cbs-lsp/src/server.ts
+ */
 
 import {
   CBSBuiltinRegistry,
-  getCustomExtensionArtifactContract,
-  parseCustomExtensionArtifactFromPath,
 } from 'risu-workbench-core';
 import {
-  type CancellationToken,
+  CodeActionKind,
   CodeLensRefreshRequest,
-  type CodeLensParams,
   createConnection,
-  type CompletionParams,
   type Connection,
-  type Definition,
-  type DefinitionParams,
-  type DocumentFormattingParams,
   DidChangeWatchedFilesNotification,
   type DidChangeWatchedFilesParams,
   type ExecuteCommandParams,
   FileChangeType,
-  type FoldingRangeParams,
-  type HoverParams,
   type InitializeParams,
   type InitializeResult,
-  LSPErrorCodes,
-  type Location,
-  type Range as LSPRange,
-  type ReferenceParams,
-  type RenameParams,
-  ResponseError,
   ProposedFeatures,
-  type SemanticTokensParams,
-  type SignatureHelpParams,
-  TextEdit,
-  type TextDocumentPositionParams,
   TextDocuments,
   TextDocumentSyncKind,
-  type WorkspaceEdit,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 
 import {
   createCbsRuntimeAvailabilityContract,
-  createSyntheticDocumentVersion,
+  type LuaLsCompanionRuntime,
   createNormalizedRuntimeAvailabilitySnapshot,
   createRuntimeAvailabilityTracePayload,
   fragmentAnalysisService,
   type FragmentAnalysisRequest,
 } from './core';
-import { shouldRouteForDiagnostics } from './document-router';
-import { DiagnosticCode } from './analyzer/diagnostics';
+
 import {
-  createWorkspaceVariableDiagnosticsForUri,
+  assembleDiagnosticsForRequest,
   routeDiagnosticsForDocument,
-  sortHostDiagnostics,
-} from './diagnostics-router';
+} from './utils/diagnostics-router';
 import { CompletionProvider } from './features/completion';
 import {
   ACTIVATION_CHAIN_CODELENS_COMMAND,
   CodeLensProvider,
 } from './features/codelens';
-import { DefinitionProvider } from './features/definition';
+import { CodeActionProvider } from './features/codeActions';
+import { DocumentSymbolProvider } from './features/documentSymbol';
 import { FormattingProvider } from './features/formatting';
 import { FoldingProvider } from './features/folding';
 import { HoverProvider } from './features/hover';
-import { RenameProvider } from './features/rename';
-import { ReferencesProvider } from './features/references';
 import {
   SemanticTokensProvider,
   SEMANTIC_TOKEN_MODIFIERS,
   SEMANTIC_TOKEN_TYPES,
 } from './features/semanticTokens';
 import { SignatureHelpProvider } from './features/signature';
+
+
 import {
-  buildWorkspaceScanResult,
-  createWorkspaceScanFileFromText,
-  ElementRegistry,
-  scanWorkspaceFilesSync,
-  UnifiedVariableGraph,
-  type WorkspaceScanResult,
-} from './indexer';
-import { isRequestCancelled } from './request-cancellation';
-import { ActivationChainService, VariableFlowService } from './services';
-import { positionToOffset } from './utils/position';
+  type CbsLspRuntimeConfigOverrides,
+  resolveRuntimeConfig,
+} from './config/runtime-config';
 import {
+  ServerFeatureRegistrar,
+  type ServerFeatureRegistrarProviders,
+} from './helpers/server-helper';
+import {
+  createDefaultWorkspaceClientState,
+  createFragmentRequest,
+  createIncrementalWorkspaceDiagnosticsState,
+  createWatchedFilesRegistrationOptions,
+  createWorkspaceDiagnosticsState,
+  readWorkspaceClientState,
+  resolveRequestForWorkspaceUri,
+  resolveWorkspaceActivationChainService,
+  resolveWorkspaceStateForUri,
+  resolveWorkspaceVariableFlowService,
+  WATCHED_FILE_GLOB_PATTERNS,
+  type WorkspaceClientState,
+  type WorkspaceDiagnosticsState,
+  type WorkspaceRefreshReason,
+} from './helpers/server-workspace-helper';
+import { CbsLspPathHelper } from './helpers/path-helper';
+import {
+  configureServerTracing,
   logFeature,
-  traceFeature,
+  traceFeatureRequest,
+  traceFeatureResult,
   traceFeaturePayload,
-  type CbsLspFeatureName,
-} from './server-tracing';
+} from './utils/server-tracing';
+import {
+  createLuaLsProcessManager,
+  type LuaLsProcessEvent,
+  type LuaLsProcessManager,
+} from './providers/lua/lualsProcess';
+import {
+  createLuaLsDocumentRouter,
+  shouldRouteDocumentToLuaLs,
+} from './providers/lua/lualsDocuments';
+import { createLuaLsProxy } from './providers/lua/lualsProxy';
 
-function shouldSkipRequest(cancellationToken: CancellationToken | undefined): boolean {
-  return isRequestCancelled(cancellationToken);
-}
-
-function traceFeatureRequest(
-  connection: Connection,
-  feature: CbsLspFeatureName,
-  phase: string,
-  details?: Record<string, number | string | boolean | null | undefined>,
-): void {
-  traceFeature(connection, feature, phase, details);
-}
-
-function traceRequestResult(
-  connection: Connection,
-  feature: CbsLspFeatureName,
-  phase: string,
-  details?: Record<string, number | string | boolean | null | undefined>,
-): void {
-  traceFeature(connection, feature, phase, details);
-}
-
-function createRenameRequestError(message: string): ResponseError<void> {
-  return new ResponseError(-32600 as typeof LSPErrorCodes.ServerCancelled, message);
-}
-
-function resolvePrepareRenameResponse(result: {
-  canRename: boolean;
-  hostRange?: LSPRange;
-  message?: string;
-}): LSPRange | null {
-  if (result.canRename && result.hostRange) {
-    return result.hostRange;
-  }
-
-  if (result.message === 'Request cancelled') {
-    return null;
-  }
-
-  throw createRenameRequestError(result.message ?? 'Rename is not available at the current position.');
-}
-
-function getFilePathFromUri(uri: string): string {
-  if (!uri.startsWith('file://')) {
-    return uri;
-  }
-
-  try {
-    return fileURLToPath(uri);
-  } catch {
-    return uri.replace(/^file:\/\//u, '');
-  }
-}
-
-interface WorkspaceDiagnosticsState {
-  rootPath: string;
-  scanResult: WorkspaceScanResult;
-  registry: ElementRegistry;
-  graph: UnifiedVariableGraph;
-  variableFlowService: VariableFlowService;
-  activationChainService: ActivationChainService;
-}
-
-interface WorkspaceClientState {
-  codeLensRefreshSupport: boolean;
-  watchedFilesDynamicRegistration: boolean;
-  watchedFilesRelativePatternSupport: boolean;
-}
-
-type WorkspaceRefreshReason =
-  | 'document-open'
-  | 'document-change'
-  | 'document-close'
-  | 'watched-file-create'
-  | 'watched-file-change'
-  | 'watched-file-delete';
-
-const WATCHED_FILE_GLOB_PATTERNS = Object.freeze([
-  '**/*.risulorebook',
-  '**/*.risuregex',
-  '**/*.risuprompt',
-  '**/*.risuhtml',
-  '**/*.risulua',
-]);
-
-function createDefaultWorkspaceClientState(): WorkspaceClientState {
-  return {
-    codeLensRefreshSupport: false,
-    watchedFilesDynamicRegistration: false,
-    watchedFilesRelativePatternSupport: false,
+/**
+ * traceLuaLsProcessEvent 함수.
+ * LuaLS sidecar runtime event를 server trace/log 채널로 승격함.
+ *
+ * @param connection - trace/log를 남길 활성 LSP connection
+ * @param event - LuaLS process manager가 방출한 runtime event
+ */
+function traceLuaLsProcessEvent(connection: Connection, event: LuaLsProcessEvent): void {
+  const payload = {
+    ...event.runtime,
+    stderrLine: event.stderrLine,
   };
-}
 
-function readWorkspaceClientState(params: InitializeParams): WorkspaceClientState {
-  const workspaceCapabilities = params.capabilities.workspace;
+  traceFeaturePayload(connection, 'lua', event.type, payload);
 
-  return {
-    codeLensRefreshSupport: workspaceCapabilities?.codeLens?.refreshSupport ?? false,
-    watchedFilesDynamicRegistration:
-      workspaceCapabilities?.didChangeWatchedFiles?.dynamicRegistration ?? false,
-    watchedFilesRelativePatternSupport:
-      workspaceCapabilities?.didChangeWatchedFiles?.relativePatternSupport ?? false,
-  };
-}
-
-function createWatchedFilesRegistrationOptions() {
-  return {
-    watchers: WATCHED_FILE_GLOB_PATTERNS.map((globPattern) => ({ globPattern })),
-  };
-}
-
-function createFragmentRequest(document: TextDocument): FragmentAnalysisRequest | null {
-  const filePath = getFilePathFromUri(document.uri);
-  if (!shouldRouteForDiagnostics(filePath)) {
-    fragmentAnalysisService.clearUri(document.uri);
-    return null;
-  }
-
-  return {
-    uri: document.uri,
-    version: document.version,
-    filePath,
-    text: document.getText(),
-  };
-}
-
-function createRequestResolver(documents: TextDocuments<TextDocument>) {
-  return (uri: string): FragmentAnalysisRequest | null => {
-    const document = documents.get(uri);
-    if (!document) {
-      return null;
-    }
-
-    return createFragmentRequest(document);
-  };
-}
-
-function getAllDocuments(documents: TextDocuments<TextDocument>): readonly TextDocument[] {
-  const candidate = documents as TextDocuments<TextDocument> & {
-    all?: () => readonly TextDocument[];
-  };
-  return candidate.all?.() ?? [];
-}
-
-function resolveWorkspaceRootFromFilePath(filePath: string): string | null {
-  try {
-    const artifact = parseCustomExtensionArtifactFromPath(filePath);
-    const contract = getCustomExtensionArtifactContract(artifact);
-    const normalizedPath = path.normalize(filePath);
-    const segments = normalizedPath.split(path.sep);
-    const directoryIndex = segments.lastIndexOf(contract.directory);
-
-    if (directoryIndex <= 0) {
-      return null;
-    }
-
-    const rootPath = segments.slice(0, directoryIndex).join(path.sep);
-    return rootPath.length > 0 ? rootPath : path.sep;
-  } catch {
-    return null;
+  if (event.type === 'initialized' || event.type === 'unavailable' || event.type === 'crashed') {
+    logFeature(connection, 'lua', event.type, {
+      health: event.runtime.health,
+      status: event.runtime.status,
+    });
   }
 }
 
-function applyOpenDocumentOverrides(
-  scanResult: WorkspaceScanResult,
-  documents: readonly TextDocument[],
-): WorkspaceScanResult {
-  const filesByUri = new Map(scanResult.files.map((file) => [file.uri, file]));
 
-  for (const document of documents) {
-    const filePath = getFilePathFromUri(document.uri);
-    if (resolveWorkspaceRootFromFilePath(filePath) !== scanResult.rootPath) {
-      continue;
-    }
-
-    try {
-      const file = createWorkspaceScanFileFromText({
-        workspaceRoot: scanResult.rootPath,
-        absolutePath: filePath,
-        text: document.getText(),
-      });
-      filesByUri.set(file.uri, file);
-    } catch {
-      continue;
-    }
-  }
-
-  return buildWorkspaceScanResult(scanResult.rootPath, [...filesByUri.values()]);
-}
-
-function createWorkspaceDiagnosticsState(
-  rootPath: string,
-  documents: TextDocuments<TextDocument>,
-): WorkspaceDiagnosticsState | null {
-  try {
-    const baseScanResult = scanWorkspaceFilesSync(rootPath);
-    const scanResult = applyOpenDocumentOverrides(baseScanResult, getAllDocuments(documents));
-    const registry = ElementRegistry.fromScanResult(scanResult);
-    const graph = UnifiedVariableGraph.fromRegistry(registry);
-    const variableFlowService = new VariableFlowService({ graph, registry });
-    const activationChainService = ActivationChainService.fromRegistry(registry);
-
-    return {
-      rootPath,
-      scanResult,
-      registry,
-      graph,
-      variableFlowService,
-      activationChainService,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function resolveRequestForWorkspaceUri(
-  uri: string,
-  documents: TextDocuments<TextDocument>,
-  workspaceState: WorkspaceDiagnosticsState | null,
-): FragmentAnalysisRequest | null {
-  const openDocument = documents.get(uri);
-  if (openDocument) {
-    return createFragmentRequest(openDocument);
-  }
-
-  const fileRecord = workspaceState?.registry.getFileByUri(uri);
-  if (!fileRecord || !shouldRouteForDiagnostics(fileRecord.absolutePath)) {
-    return null;
-  }
-
-  try {
-    const text = readFileSync(fileRecord.absolutePath, 'utf8');
-    return {
-      uri,
-      version: createSyntheticDocumentVersion(text),
-      filePath: fileRecord.absolutePath,
-      text,
-    };
-  } catch {
-    return null;
-  }
-}
-
+/**
+ * publishDiagnosticsForUri 함수.
+ * local diagnostics와 workspace-level diagnostics를 병합해 한 URI에 publish함.
+ * server.ts는 orchestration(요청 해석, trace, lifecycle timing, transport)만 담당하고,
+ * diagnostics 조립/필터/병합은 diagnostics-router.ts의 assembleDiagnosticsForRequest에 위임함.
+ *
+ * @param connection - diagnostics를 publish할 LSP connection
+ * @param documents - 현재 열려 있는 text document manager
+ * @param uri - diagnostics를 계산할 대상 문서 URI
+ * @param workspaceState - cross-file variable 정보를 제공할 workspace state
+ */
 function publishDiagnosticsForUri(
   connection: Connection,
   documents: TextDocuments<TextDocument>,
@@ -356,19 +158,16 @@ function publishDiagnosticsForUri(
     uri: request.uri,
     version: request.version,
   });
+
   const localDiagnostics = routeDiagnosticsForDocument(request.filePath, request.text, {}, request);
-  const filteredLocalDiagnostics = workspaceState
-    ? localDiagnostics.filter((diagnostic) =>
-        shouldKeepLocalSymbolDiagnostic(diagnostic, request, workspaceState.variableFlowService),
-      )
-    : localDiagnostics;
-  const diagnostics = sortHostDiagnostics([
-    ...filteredLocalDiagnostics,
-    ...(workspaceState
-      ? createWorkspaceVariableDiagnosticsForUri(uri, workspaceState.variableFlowService)
-      : []),
-  ]);
-  traceRequestResult(connection, 'diagnostics', 'end', {
+  // 로컬 심볼 진단은 워크스페이스 변수 흐름 상태와 비교해 필터링된 후 병합됨 (중복/충돌 진단 억제)
+  const diagnostics = assembleDiagnosticsForRequest({
+    localDiagnostics,
+    workspaceVariableFlowService: workspaceState?.variableFlowService ?? null,
+    request,
+  });
+
+  traceFeatureResult(connection, 'diagnostics', 'end', {
     uri: request.uri,
     version: request.version,
     count: diagnostics.length,
@@ -376,34 +175,15 @@ function publishDiagnosticsForUri(
   connection.sendDiagnostics({ uri: request.uri, diagnostics });
 }
 
-function shouldKeepLocalSymbolDiagnostic(
-  diagnostic: import('vscode-languageserver').Diagnostic,
-  request: FragmentAnalysisRequest,
-  variableFlowService: VariableFlowService,
-): boolean {
-  if (
-    diagnostic.code !== DiagnosticCode.UndefinedVariable &&
-    diagnostic.code !== DiagnosticCode.UnusedVariable
-  ) {
-    return true;
-  }
-
-  const variableQuery = variableFlowService.queryAt(
-    request.uri,
-    positionToOffset(request.text, diagnostic.range.start),
-  );
-
-  if (!variableQuery) {
-    return true;
-  }
-
-  if (diagnostic.code === DiagnosticCode.UndefinedVariable) {
-    return variableQuery.writers.length === 0 && variableQuery.defaultValue === null;
-  }
-
-  return variableQuery.readers.length === 0;
-}
-
+/**
+ * collectAffectedUris 함수.
+ * 변경 URI 전후 상태를 비교해 다시 publish해야 할 diagnostics 대상을 수집함.
+ *
+ * @param changedUri - 직접 변경된 문서 URI
+ * @param previousState - 변경 전 workspace state
+ * @param nextState - 변경 후 workspace state
+ * @returns diagnostics 영향을 받는 URI 목록
+ */
 function collectAffectedUris(
   changedUri: string,
   previousState: WorkspaceDiagnosticsState | null,
@@ -424,26 +204,28 @@ function collectAffectedUris(
   return [...affected].sort((left, right) => left.localeCompare(right));
 }
 
-function resolveWorkspaceActivationChainService(
-  uri: string,
-  workspaceStateByRoot: ReadonlyMap<string, WorkspaceDiagnosticsState>,
-): ActivationChainService | null {
-  const workspaceRoot = resolveWorkspaceRootFromFilePath(getFilePathFromUri(uri));
-  return workspaceRoot ? workspaceStateByRoot.get(workspaceRoot)?.activationChainService ?? null : null;
-}
 
-function resolveWorkspaceVariableFlowService(
-  uri: string,
-  workspaceStateByRoot: ReadonlyMap<string, WorkspaceDiagnosticsState>,
-): VariableFlowService | null {
-  const workspaceRoot = resolveWorkspaceRootFromFilePath(getFilePathFromUri(uri));
-  return workspaceRoot ? workspaceStateByRoot.get(workspaceRoot)?.variableFlowService ?? null : null;
-}
-
+/**
+ * isLorebookUriInState 함수.
+ * 특정 URI가 현재 workspace state에서 lorebook artifact인지 확인함.
+ *
+ * @param state - 조회할 workspace state
+ * @param uri - artifact 타입을 확인할 문서 URI
+ * @returns lorebook artifact이면 true
+ */
 function isLorebookUriInState(state: WorkspaceDiagnosticsState | null, uri: string): boolean {
   return state?.registry.getFileByUri(uri)?.artifact === 'lorebook';
 }
 
+/**
+ * collectAffectedCodeLensUris 함수.
+ * activation-chain 변화로 다시 계산해야 할 lorebook CodeLens 대상을 모음.
+ *
+ * @param changedUris - 직접 변경된 문서 URI 목록
+ * @param previousState - 변경 전 workspace state
+ * @param nextState - 변경 후 workspace state
+ * @returns CodeLens refresh가 필요한 lorebook URI 목록
+ */
 function collectAffectedCodeLensUris(
   changedUris: readonly string[],
   previousState: WorkspaceDiagnosticsState | null,
@@ -466,6 +248,15 @@ function collectAffectedCodeLensUris(
   return [...affected].sort((left, right) => left.localeCompare(right));
 }
 
+/**
+ * requestCodeLensRefresh 함수.
+ * 조건이 맞을 때만 workspace/codeLens/refresh 요청을 보냄.
+ *
+ * @param connection - refresh request를 보낼 LSP connection
+ * @param workspaceClientState - client capability 지원 상태
+ * @param reason - 이번 refresh가 발생한 원인
+ * @param affectedUris - 영향을 받은 lorebook URI 목록
+ */
 function requestCodeLensRefresh(
   connection: Connection,
   workspaceClientState: WorkspaceClientState,
@@ -497,18 +288,34 @@ function requestCodeLensRefresh(
   void connection.sendRequest(CodeLensRefreshRequest.type);
 }
 
+/**
+ * refreshWorkspaceStateForUris 함수.
+ * 변경 URI가 속한 workspace를 다시 빌드하고 diagnostics/CodeLens 후속 작업까지 연결함.
+ * Flow: 이전 workspace snapshot에서 영향 범위를 먼저 모으고, 새 snapshot을 rebuild한 뒤, 갱신 후 영향 범위를 다시 합쳐 publish/refresh 대상을 확정함.
+ *
+ * @param connection - diagnostics/trace/request를 보낼 LSP connection
+ * @param documents - 현재 열려 있는 text document manager
+ * @param workspaceStateByRoot - rootPath 기준 workspace state 맵
+ * @param workspaceClientState - client capability 지원 상태
+ * @param luaLsDocumentRouter - workspace Lua mirror를 동기화할 router
+ * @param changedUris - 갱신을 유발한 문서 URI 목록
+ * @param reason - open/change/close 또는 watched-file 기반 refresh 원인
+ */
 function refreshWorkspaceStateForUris(
   connection: Connection,
   documents: TextDocuments<TextDocument>,
   workspaceStateByRoot: Map<string, WorkspaceDiagnosticsState>,
   workspaceClientState: WorkspaceClientState,
+  luaLsDocumentRouter: ReturnType<typeof createLuaLsDocumentRouter>,
   changedUris: readonly string[],
   reason: WorkspaceRefreshReason,
 ): void {
   const workspaceRoots = [
     ...new Set(
       changedUris
-        .map((uri) => resolveWorkspaceRootFromFilePath(getFilePathFromUri(uri)))
+        .map((uri) =>
+          CbsLspPathHelper.resolveWorkspaceRootFromFilePath(CbsLspPathHelper.getFilePathFromUri(uri)),
+        )
         .filter((value): value is string => value !== null),
     ),
   ].sort((left, right) => left.localeCompare(right));
@@ -517,29 +324,57 @@ function refreshWorkspaceStateForUris(
 
   for (const workspaceRoot of workspaceRoots) {
     const workspaceChangedUris = changedUris
-      .filter((uri) => resolveWorkspaceRootFromFilePath(getFilePathFromUri(uri)) === workspaceRoot)
+      .filter(
+        (uri) =>
+          CbsLspPathHelper.resolveWorkspaceRootFromFilePath(
+            CbsLspPathHelper.getFilePathFromUri(uri),
+          ) === workspaceRoot,
+      )
       .sort((left, right) => left.localeCompare(right));
+    // 변경을 적용하기 전 snapshot이다. 삭제/이동처럼 "예전 상태에만 존재하던" 영향 URI를 잡는 기준으로 쓴다.
     const previousState = workspaceStateByRoot.get(workspaceRoot) ?? null;
-    const nextState = createWorkspaceDiagnosticsState(workspaceRoot, documents);
+    const affectedUris = new Set<string>();
+
+    // old graph/service 기준 영향을 먼저 모아야, 이번 변경으로 사라진 reader/writer/activation 관계도 republish 대상에 포함할 수 있다.
+    for (const uri of workspaceChangedUris) {
+      for (const affectedUri of collectAffectedUris(uri, previousState, null)) {
+        affectedUris.add(affectedUri);
+      }
+      for (const affectedUri of collectAffectedCodeLensUris([uri], previousState, null)) {
+        affectedCodeLensUris.add(affectedUri);
+      }
+    }
+
+    // 변경을 반영한 뒤 publish/router sync에 사용할 새 snapshot이다.
+    // 기존 state가 있으면 incremental rebuild를, 없으면 full workspace scan을 선택한다.
+    const nextState = previousState
+      ? createIncrementalWorkspaceDiagnosticsState(previousState, documents, workspaceChangedUris)
+      : createWorkspaceDiagnosticsState(workspaceRoot, documents);
+    const refreshMode = previousState ? 'incremental' : 'full';
 
     traceFeatureRequest(connection, 'workspace', 'state-rebuild-start', {
       rootPath: workspaceRoot,
       reason,
       changedUris: workspaceChangedUris.length,
+      mode: refreshMode,
     });
 
+    // nextState가 있으면 새 workspace snapshot을 map/Lua mirror에 설치하고,
+    // 없으면 이번 rebuild 뒤에 유지할 state가 없다는 뜻이므로 기존 snapshot과 mirror를 함께 정리한다.
     if (nextState) {
       workspaceStateByRoot.set(workspaceRoot, nextState);
+      luaLsDocumentRouter.syncWorkspaceDocuments(workspaceRoot, nextState.scanResult.files);
     } else {
       workspaceStateByRoot.delete(workspaceRoot);
+      luaLsDocumentRouter.clearWorkspaceDocuments(workspaceRoot);
     }
 
-    const affectedUris = new Set<string>();
+    // new graph/service 기준 영향을 다시 모아야, 새 writer/reader/activation chain이 만들어낸 후속 URI도 함께 republish할 수 있다.
     for (const uri of workspaceChangedUris) {
-      for (const affectedUri of collectAffectedUris(uri, previousState, nextState)) {
+      for (const affectedUri of collectAffectedUris(uri, null, nextState)) {
         affectedUris.add(affectedUri);
       }
-      for (const affectedUri of collectAffectedCodeLensUris([uri], previousState, nextState)) {
+      for (const affectedUri of collectAffectedCodeLensUris([uri], null, nextState)) {
         affectedCodeLensUris.add(affectedUri);
       }
     }
@@ -547,9 +382,13 @@ function refreshWorkspaceStateForUris(
     traceFeatureRequest(connection, 'workspace', 'state-rebuild-end', {
       rootPath: workspaceRoot,
       reason,
+      mode: refreshMode,
       affectedDiagnosticsUris: affectedUris.size,
       affectedCodeLensUris: [...affectedCodeLensUris].filter(
-        (uri) => resolveWorkspaceRootFromFilePath(getFilePathFromUri(uri)) === workspaceRoot,
+        (uri) =>
+          CbsLspPathHelper.resolveWorkspaceRootFromFilePath(
+            CbsLspPathHelper.getFilePathFromUri(uri),
+          ) === workspaceRoot,
       ).length,
       rebuilt: nextState !== null,
     });
@@ -567,18 +406,39 @@ function refreshWorkspaceStateForUris(
   );
 }
 
+/**
+ * refreshWorkspaceDiagnostics 함수.
+ * 문서 open/change/close 이벤트를 standalone/workspace 경로로 분기해 진단을 갱신함.
+ *
+ * @param connection - diagnostics/trace를 보낼 LSP connection
+ * @param documents - 현재 열려 있는 text document manager
+ * @param workspaceStateByRoot - rootPath 기준 workspace state 맵
+ * @param workspaceClientState - client capability 지원 상태
+ * @param luaLsDocumentRouter - LuaLS mirror 동기화를 담당하는 router
+ * @param document - 방금 lifecycle 이벤트가 발생한 문서
+ * @param reason - open/change/close 중 현재 문서 이벤트 종류
+ */
 function refreshWorkspaceDiagnostics(
   connection: Connection,
   documents: TextDocuments<TextDocument>,
   workspaceStateByRoot: Map<string, WorkspaceDiagnosticsState>,
   workspaceClientState: WorkspaceClientState,
+  luaLsDocumentRouter: ReturnType<typeof createLuaLsDocumentRouter>,
   document: TextDocument,
   reason: 'open' | 'change' | 'close',
 ): void {
-  const filePath = getFilePathFromUri(document.uri);
-  const workspaceRoot = resolveWorkspaceRootFromFilePath(filePath);
+  const filePath = CbsLspPathHelper.getFilePathFromUri(document.uri);
+  const workspaceRoot = CbsLspPathHelper.resolveWorkspaceRootFromFilePath(filePath);
 
   if (!workspaceRoot) {
+    if (shouldRouteDocumentToLuaLs(filePath)) {
+      if (reason === 'close') {
+        luaLsDocumentRouter.closeStandaloneDocument(document.uri);
+      } else {
+        luaLsDocumentRouter.syncStandaloneDocument(document);
+      }
+    }
+
     if (reason === 'close') {
       fragmentAnalysisService.clearUri(document.uri);
       connection.sendDiagnostics({ uri: document.uri, diagnostics: [] });
@@ -598,6 +458,7 @@ function refreshWorkspaceDiagnostics(
     documents,
     workspaceStateByRoot,
     workspaceClientState,
+    luaLsDocumentRouter,
     [document.uri],
     reason === 'open'
       ? 'document-open'
@@ -607,8 +468,17 @@ function refreshWorkspaceDiagnostics(
   );
 }
 
-export function createInitializeResult(): InitializeResult {
-  const runtimeAvailability = createCbsRuntimeAvailabilityContract();
+/**
+ * createInitializeResult 함수.
+ * 현재 LuaLS runtime 상태를 바탕으로 LSP capability와 experimental availability를 구성함.
+ *
+ * @param luaLsRuntime - initialize 시점 LuaLS companion runtime 스냅샷
+ * @returns capability와 availability payload가 들어 있는 initialize result
+ */
+export function createInitializeResult(
+  luaLsRuntime: LuaLsCompanionRuntime,
+): InitializeResult {
+  const runtimeAvailability = createCbsRuntimeAvailabilityContract(luaLsRuntime);
 
   return {
     capabilities: {
@@ -619,8 +489,12 @@ export function createInitializeResult(): InitializeResult {
       codeLensProvider: {
         resolveProvider: false,
       },
+      codeActionProvider: {
+        codeActionKinds: [CodeActionKind.QuickFix],
+      },
       completionProvider: {},
       definitionProvider: true,
+      documentSymbolProvider: true,
       documentFormattingProvider: true,
       referencesProvider: true,
       renameProvider: {
@@ -645,7 +519,7 @@ export function createInitializeResult(): InitializeResult {
     experimental: {
       cbs: {
         availability: runtimeAvailability,
-        availabilitySnapshot: createNormalizedRuntimeAvailabilitySnapshot(),
+        availabilitySnapshot: createNormalizedRuntimeAvailabilitySnapshot(luaLsRuntime),
         excludedArtifacts: runtimeAvailability.excludedArtifacts,
         featureAvailability: runtimeAvailability.featureAvailability,
       },
@@ -653,69 +527,256 @@ export function createInitializeResult(): InitializeResult {
   };
 }
 
-export function registerServer(
+export interface ServerRegistrationOptions {
+  createLuaLsProcessManager?: () => LuaLsProcessManager;
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+  runtimeConfig?: CbsLspRuntimeConfigOverrides;
+}
+
+export interface ServerStartOptions {
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+  runtimeConfig?: CbsLspRuntimeConfigOverrides;
+}
+
+interface ServerRuntimeState {
+  luaLsRootPath: string | null;
+  resolvedRuntimeConfig: ReturnType<typeof resolveRuntimeConfig>;
+  workspaceClientState: WorkspaceClientState;
+}
+
+interface ServerRegistrationContext {
+  connection: Connection;
+  documents: TextDocuments<TextDocument>;
+  luaLsDocumentRouter: ReturnType<typeof createLuaLsDocumentRouter>;
+  luaLsProcessManager: LuaLsProcessManager;
+  luaLsProxy: ReturnType<typeof createLuaLsProxy>;
+  options: ServerRegistrationOptions;
+  providers: ServerFeatureRegistrarProviders;
+  registry: CBSBuiltinRegistry;
+  workspaceStateByRoot: Map<string, WorkspaceDiagnosticsState>;
+}
+
+/**
+ * createServerRuntimeState 함수.
+ * register helper들이 공유할 mutable runtime state 기본값을 만듦.
+ *
+ * @param options - 초기 runtime config를 해석할 서버 등록 옵션
+ * @returns tracing이 적용된 초기 runtime state
+ */
+function createServerRuntimeState(options: ServerRegistrationOptions): ServerRuntimeState {
+  const resolvedRuntimeConfig = resolveRuntimeConfig({
+    cwd: options.cwd,
+    env: options.env,
+    overrides: options.runtimeConfig,
+  });
+  configureServerTracing(resolvedRuntimeConfig.config.logLevel);
+
+  return {
+    luaLsRootPath: null,
+    resolvedRuntimeConfig,
+    workspaceClientState: createDefaultWorkspaceClientState(),
+  };
+}
+
+/**
+ * createTracedLuaLsProcessManager 함수.
+ * LuaLS runtime event가 server trace/log로 연결된 process manager를 준비함.
+ *
+ * @param connection - LuaLS event를 기록할 LSP connection
+ * @param options - 서버 등록 시 전달된 process factory 옵션
+ * @returns trace wiring이 완료된 LuaLS process manager
+ */
+function createTracedLuaLsProcessManager(
+  connection: Connection,
+  options: ServerRegistrationOptions,
+): LuaLsProcessManager {
+  return (
+    options.createLuaLsProcessManager?.() ??
+    createLuaLsProcessManager({
+      onEvent: (event) => {
+        traceLuaLsProcessEvent(connection, event);
+      },
+    })
+  );
+}
+
+/**
+ * createServerFeatureProviders 함수.
+ * registerServer 안에서 재사용할 provider 인스턴스를 한 번에 생성함.
+ *
+ * @param documents - 현재 열려 있는 text document manager
+ * @param registry - builtin/source-of-truth registry 인스턴스
+ * @param workspaceStateByRoot - workspace service lookup에 사용할 상태 맵
+ * @returns reusable feature provider와 request resolver 묶음
+ */
+function createServerFeatureProviders(
+  documents: TextDocuments<TextDocument>,
+  registry: CBSBuiltinRegistry,
+  workspaceStateByRoot: Map<string, WorkspaceDiagnosticsState>
+): ServerFeatureRegistrarProviders {
+  const resolveRequest = (uri: string): FragmentAnalysisRequest | null => {
+    const document = documents.get(uri);
+    return document ? createFragmentRequest(document) : null;
+  };
+
+  return {
+    codeActionProvider: new CodeActionProvider({
+      analysisService: fragmentAnalysisService,
+      resolveRequest,
+    }),
+    codeLensProvider: new CodeLensProvider({
+      analysisService: fragmentAnalysisService,
+      resolveActivationChainService: (uri) =>
+        resolveWorkspaceActivationChainService(uri, workspaceStateByRoot),
+      resolveRequest: ({ textDocument }) => resolveRequest(textDocument.uri),
+    }),
+    completionProvider: new CompletionProvider(registry, {
+      analysisService: fragmentAnalysisService,
+      resolveRequest: ({ textDocument }) => resolveRequest(textDocument.uri),
+    }),
+    documentSymbolProvider: new DocumentSymbolProvider(fragmentAnalysisService),
+    foldingProvider: new FoldingProvider(fragmentAnalysisService),
+    formattingProvider: new FormattingProvider({
+      analysisService: fragmentAnalysisService,
+      resolveRequest,
+    }),
+    hoverProvider: new HoverProvider(registry, {
+      analysisService: fragmentAnalysisService,
+      resolveRequest: ({ textDocument }) => resolveRequest(textDocument.uri),
+    }),
+    resolveRequest,
+    semanticTokensProvider: new SemanticTokensProvider(fragmentAnalysisService, registry),
+    signatureHelpProvider: new SignatureHelpProvider(registry, fragmentAnalysisService),
+  };
+}
+
+/**
+ * createServerRegistrationContext 함수.
+ * register helper들이 공유할 connection/state/provider 묶음을 만듦.
+ *
+ * @param connection - handler를 연결할 LSP connection
+ * @param documents - open/change/close lifecycle을 공유할 text document manager
+ * @param options - 서버 등록 시 전달된 옵션
+ * @returns helper 등록 단계가 공유할 context 객체
+ */
+function createServerRegistrationContext(
   connection: Connection,
   documents: TextDocuments<TextDocument>,
-): void {
+  options: ServerRegistrationOptions,
+): ServerRegistrationContext {
   const workspaceStateByRoot = new Map<string, WorkspaceDiagnosticsState>();
-  let workspaceClientState = createDefaultWorkspaceClientState();
   const registry = new CBSBuiltinRegistry();
-  const resolveRequest = createRequestResolver(documents);
-  const codeLensProvider = new CodeLensProvider({
-    analysisService: fragmentAnalysisService,
-    resolveActivationChainService: (uri) =>
-      resolveWorkspaceActivationChainService(uri, workspaceStateByRoot),
-    resolveRequest: ({ textDocument }) => resolveRequest(textDocument.uri),
-  });
-  const completionProvider = new CompletionProvider(registry, {
-    analysisService: fragmentAnalysisService,
-    resolveRequest: ({ textDocument }) => resolveRequest(textDocument.uri),
-  });
-  const hoverProvider = new HoverProvider(registry, {
-    analysisService: fragmentAnalysisService,
-    resolveRequest: ({ textDocument }) => resolveRequest(textDocument.uri),
-  });
-  const formattingProvider = new FormattingProvider({
-    analysisService: fragmentAnalysisService,
-    resolveRequest,
-  });
-  const signatureHelpProvider = new SignatureHelpProvider(registry, fragmentAnalysisService);
-  const foldingProvider = new FoldingProvider(fragmentAnalysisService);
-  const semanticTokensProvider = new SemanticTokensProvider(fragmentAnalysisService, registry);
+  const luaLsProcessManager = createTracedLuaLsProcessManager(connection, options);
+  const luaLsDocumentRouter = createLuaLsDocumentRouter(luaLsProcessManager);
+  const luaLsProxy = createLuaLsProxy(luaLsProcessManager);
 
-  connection.onInitialize(
-    (params: InitializeParams): InitializeResult => {
-      workspaceClientState = readWorkspaceClientState(params);
-      const result = createInitializeResult();
-      logFeature(connection, 'server', 'initialize', {
-        textDocumentSync: TextDocumentSyncKind.Incremental,
-      });
-      traceFeatureRequest(connection, 'server', 'initialize', {
-        codeLens: Boolean(result.capabilities.codeLensProvider),
-        codeLensRefreshSupport: workspaceClientState.codeLensRefreshSupport,
-        completion: Boolean(result.capabilities.completionProvider),
-        definition: Boolean(result.capabilities.definitionProvider),
-        formatting: Boolean(result.capabilities.documentFormattingProvider),
-        references: Boolean(result.capabilities.referencesProvider),
-        rename: Boolean(result.capabilities.renameProvider),
-        hover: Boolean(result.capabilities.hoverProvider),
-        signature: Boolean(result.capabilities.signatureHelpProvider),
-        folding: Boolean(result.capabilities.foldingRangeProvider),
-        semanticTokens: Boolean(result.capabilities.semanticTokensProvider),
-        watchedFilesDynamicRegistration: workspaceClientState.watchedFilesDynamicRegistration,
-      });
-      traceFeaturePayload(connection, 'server', 'availability-contract', {
-        availability: createRuntimeAvailabilityTracePayload(),
-      });
-      return result;
-    },
+  return {
+    connection,
+    documents,
+    luaLsDocumentRouter,
+    luaLsProcessManager,
+    luaLsProxy,
+    options,
+    providers: createServerFeatureProviders(documents, registry, workspaceStateByRoot),
+    registry,
+    workspaceStateByRoot,
+  };
+}
+
+/**
+ * resolveInitializeRootPath 함수.
+ * initialize payload와 runtime override를 합쳐 LuaLS/workspace root를 결정함.
+ *
+ * @param params - 현재 initialize payload
+ * @param runtimeConfig - precedence가 반영된 runtime config 결과
+ * @returns 최종 workspace root 경로 또는 null
+ */
+function resolveInitializeRootPath(
+  params: InitializeParams,
+  runtimeConfig: ReturnType<typeof resolveRuntimeConfig>,
+): string | null {
+  return (
+    runtimeConfig.config.workspacePath ??
+    (params.workspaceFolders?.[0]?.uri
+        ? CbsLspPathHelper.getFilePathFromUri(params.workspaceFolders[0].uri)
+        : params.rootUri
+          ? CbsLspPathHelper.getFilePathFromUri(params.rootUri)
+          : null)
   );
+}
+
+/**
+ * registerServerLifecycleHandlers 함수.
+ * initialize/initialized/shutdown와 watched-files registration lifecycle을 등록함.
+ * Flow: initialize에서 runtime/capability를 확정하고, initialized에서 sidecar/watcher를 붙이고, shutdown에서 상태를 정리함.
+ *
+ * @param context - connection, process manager, provider가 담긴 등록 context
+ * @param runtimeState - initialize 이후 갱신되는 mutable runtime 상태
+ */
+function registerServerLifecycleHandlers(
+  context: ServerRegistrationContext,
+  runtimeState: ServerRuntimeState,
+): void {
+  const { connection, luaLsProcessManager, options } = context;
+
+  connection.onInitialize((params: InitializeParams): InitializeResult => {
+    // initialize payload를 runtime/client state로 해석하고 capability + availability snapshot을 확정함.
+    runtimeState.resolvedRuntimeConfig = resolveRuntimeConfig({
+      cwd: options.cwd,
+      env: options.env,
+      initializationOptions: params.initializationOptions,
+      overrides: options.runtimeConfig,
+    });
+    configureServerTracing(runtimeState.resolvedRuntimeConfig.config.logLevel);
+    runtimeState.workspaceClientState = readWorkspaceClientState(params);
+    runtimeState.luaLsRootPath = resolveInitializeRootPath(params, runtimeState.resolvedRuntimeConfig);
+
+    const luaLsRuntime = luaLsProcessManager.prepareForInitialize({
+      overrideExecutablePath: runtimeState.resolvedRuntimeConfig.config.luaLsExecutablePath,
+      rootPath: runtimeState.luaLsRootPath,
+    });
+    const result = createInitializeResult(luaLsRuntime);
+
+    logFeature(connection, 'server', 'initialize', {
+      textDocumentSync: TextDocumentSyncKind.Incremental,
+    });
+    traceFeatureRequest(connection, 'server', 'initialize', {
+      codeLens: Boolean(result.capabilities.codeLensProvider),
+      codeAction: Boolean(result.capabilities.codeActionProvider),
+      codeLensRefreshSupport: runtimeState.workspaceClientState.codeLensRefreshSupport,
+      completion: Boolean(result.capabilities.completionProvider),
+      definition: Boolean(result.capabilities.definitionProvider),
+      documentSymbol: Boolean(result.capabilities.documentSymbolProvider),
+      formatting: Boolean(result.capabilities.documentFormattingProvider),
+      references: Boolean(result.capabilities.referencesProvider),
+      rename: Boolean(result.capabilities.renameProvider),
+      hover: Boolean(result.capabilities.hoverProvider),
+      signature: Boolean(result.capabilities.signatureHelpProvider),
+      folding: Boolean(result.capabilities.foldingRangeProvider),
+      logLevel: runtimeState.resolvedRuntimeConfig.config.logLevel,
+      semanticTokens: Boolean(result.capabilities.semanticTokensProvider),
+      watchedFilesDynamicRegistration: runtimeState.workspaceClientState.watchedFilesDynamicRegistration,
+      workspaceOverride: Boolean(runtimeState.resolvedRuntimeConfig.config.workspacePath),
+    });
+    traceFeaturePayload(connection, 'server', 'availability-contract', {
+      availability: createRuntimeAvailabilityTracePayload(luaLsRuntime),
+      runtimeConfig: runtimeState.resolvedRuntimeConfig.config,
+      runtimeConfigSources: runtimeState.resolvedRuntimeConfig.sources,
+    });
+
+    return result;
+  });
+
   const initializedConnection = connection as Connection & {
     onInitialized?: (handler: () => void) => unknown;
   };
-
   initializedConnection.onInitialized?.(() => {
-    if (!workspaceClientState.watchedFilesDynamicRegistration) {
+    // initialize에서 확정된 root/client capability를 기준으로 LuaLS sidecar와 watched-file 구독을 시작함.
+    void luaLsProcessManager.start({ rootPath: runtimeState.luaLsRootPath }).catch(() => undefined);
+
+    if (!runtimeState.workspaceClientState.watchedFilesDynamicRegistration) {
       traceFeatureRequest(connection, 'workspace', 'watch-registration-skip', {
         dynamicRegistration: false,
       });
@@ -723,307 +784,78 @@ export function registerServer(
     }
 
     traceFeatureRequest(connection, 'workspace', 'watch-registration-start', {
-      relativePatternSupport: workspaceClientState.watchedFilesRelativePatternSupport,
+      relativePatternSupport: runtimeState.workspaceClientState.watchedFilesRelativePatternSupport,
       watcherCount: WATCHED_FILE_GLOB_PATTERNS.length,
     });
     void connection.client
       .register(DidChangeWatchedFilesNotification.type, createWatchedFilesRegistrationOptions())
       .then(() => {
+        // dynamic watched-files registration이 성공했음을 trace로 남김.
         traceFeatureRequest(connection, 'workspace', 'watch-registration-end', {
           watcherCount: WATCHED_FILE_GLOB_PATTERNS.length,
         });
       })
       .catch(() => {
+        // watched-files registration 실패를 trace로 남겨 이후 운영 디버깅 근거를 유지함.
         traceFeatureRequest(connection, 'workspace', 'watch-registration-failed', {
           watcherCount: WATCHED_FILE_GLOB_PATTERNS.length,
         });
       });
   });
-  connection.onExecuteCommand((_params: ExecuteCommandParams) => undefined);
-  connection.onShutdown(() => {
+
+  connection.onExecuteCommand((_params: ExecuteCommandParams) => {
+    // executeCommand surface는 현재 capability contract 유지용 placeholder로만 남겨둠.
+    return undefined;
+  });
+  connection.onShutdown(async () => {
+    // sidecar와 fragment cache를 정리하고 shutdown trace/log를 남김.
+    await luaLsProcessManager.shutdown();
     logFeature(connection, 'server', 'shutdown');
     traceFeatureRequest(connection, 'server', 'shutdown');
     fragmentAnalysisService.clearAll();
   });
+}
 
-  connection.onCompletion((params: CompletionParams, cancellationToken) => {
-    traceFeatureRequest(connection, 'completion', 'start', {
-      uri: params.textDocument.uri,
-      cancelled: shouldSkipRequest(cancellationToken),
-    });
-    if (shouldSkipRequest(cancellationToken)) {
-      traceRequestResult(connection, 'completion', 'cancelled', {
-        uri: params.textDocument.uri,
-      });
-      return [];
-    }
+/**
+ * registerFeatureHandlers 함수.
+ * request/response 기반 LSP feature handler들을 connection에 등록함.
+ * Flow: 각 handler가 trace 시작 → cancellation gate → provider delegation → trace 종료 순서를 공통으로 따름.
+ *
+ * @param context - connection, workspace state, provider가 담긴 등록 context
+ */
+function registerFeatureHandlers(context: ServerRegistrationContext): void {
+  new ServerFeatureRegistrar({
+    connection: context.connection,
+    luaLsProxy: context.luaLsProxy,
+    providers: context.providers,
+    registry: context.registry,
+    resolveWorkspaceRequest: (uri) =>
+      resolveRequestForWorkspaceUri(
+        uri,
+        context.documents,
+        resolveWorkspaceStateForUri(uri, context.workspaceStateByRoot),
+      ),
+    resolveWorkspaceVariableFlowService: (uri) =>
+      resolveWorkspaceVariableFlowService(uri, context.workspaceStateByRoot),
+  }).registerAll();
+}
 
-    const result = completionProvider.provide(params, cancellationToken);
-    traceRequestResult(connection, 'completion', 'end', {
-      uri: params.textDocument.uri,
-      count: result.length,
-    });
-    return result;
-  });
-  connection.onDocumentFormatting((
-    params: DocumentFormattingParams,
-    cancellationToken,
-  ): TextEdit[] => {
-    traceFeatureRequest(connection, 'formatting', 'start', {
-      uri: params.textDocument.uri,
-      cancelled: shouldSkipRequest(cancellationToken),
-    });
-    if (shouldSkipRequest(cancellationToken)) {
-      traceRequestResult(connection, 'formatting', 'cancelled', {
-        uri: params.textDocument.uri,
-      });
-      return [];
-    }
-
-    const result = formattingProvider.provide(params);
-    traceRequestResult(connection, 'formatting', 'end', {
-      uri: params.textDocument.uri,
-      count: result.length,
-    });
-    return result;
-  });
-  connection.onDefinition((params: DefinitionParams, cancellationToken): Definition | null => {
-    traceFeatureRequest(connection, 'definition', 'start', {
-      uri: params.textDocument.uri,
-      cancelled: shouldSkipRequest(cancellationToken),
-    });
-    if (shouldSkipRequest(cancellationToken)) {
-      traceRequestResult(connection, 'definition', 'cancelled', {
-        uri: params.textDocument.uri,
-      });
-      return null;
-    }
-
-    const provider = new DefinitionProvider(registry, {
-      analysisService: fragmentAnalysisService,
-      resolveRequest: ({ textDocument }) => resolveRequest(textDocument.uri),
-      variableFlowService:
-        resolveWorkspaceVariableFlowService(params.textDocument.uri, workspaceStateByRoot) ?? undefined,
-    });
-    const result = provider.provide(params, cancellationToken);
-    const count = Array.isArray(result) ? result.length : result ? 1 : 0;
-    traceRequestResult(connection, 'definition', 'end', {
-      uri: params.textDocument.uri,
-      count,
-    });
-    return result;
-  });
-  connection.onReferences((params: ReferenceParams, cancellationToken): Location[] => {
-    traceFeatureRequest(connection, 'references', 'start', {
-      uri: params.textDocument.uri,
-      cancelled: shouldSkipRequest(cancellationToken),
-    });
-    if (shouldSkipRequest(cancellationToken)) {
-      traceRequestResult(connection, 'references', 'cancelled', {
-        uri: params.textDocument.uri,
-      });
-      return [];
-    }
-
-    const provider = new ReferencesProvider({
-      analysisService: fragmentAnalysisService,
-      resolveRequest: ({ textDocument }) => resolveRequest(textDocument.uri),
-      variableFlowService:
-        resolveWorkspaceVariableFlowService(params.textDocument.uri, workspaceStateByRoot) ?? undefined,
-    });
-    const result = provider.provide(params, cancellationToken);
-    traceRequestResult(connection, 'references', 'end', {
-      uri: params.textDocument.uri,
-      count: result.length,
-    });
-    return result;
-  });
-  connection.onPrepareRename((
-    params: TextDocumentPositionParams,
-    cancellationToken,
-  ): LSPRange | null => {
-    traceFeatureRequest(connection, 'rename', 'prepare-start', {
-      uri: params.textDocument.uri,
-      cancelled: shouldSkipRequest(cancellationToken),
-    });
-    if (shouldSkipRequest(cancellationToken)) {
-      traceRequestResult(connection, 'rename', 'prepare-cancelled', {
-        uri: params.textDocument.uri,
-      });
-      return null;
-    }
-
-    const provider = new RenameProvider({
-      analysisService: fragmentAnalysisService,
-      resolveRequest: ({ textDocument }) => resolveRequest(textDocument.uri),
-      resolveUriRequest: (uri) =>
-        resolveRequestForWorkspaceUri(
-          uri,
-          documents,
-          resolveWorkspaceRootFromFilePath(getFilePathFromUri(uri))
-            ? workspaceStateByRoot.get(resolveWorkspaceRootFromFilePath(getFilePathFromUri(uri))!) ?? null
-            : null,
-        ),
-      variableFlowService:
-        resolveWorkspaceVariableFlowService(params.textDocument.uri, workspaceStateByRoot) ?? undefined,
-    });
-    const prepareResult = provider.prepareRename(params, cancellationToken);
-    const response = resolvePrepareRenameResponse(prepareResult);
-    traceRequestResult(connection, 'rename', 'prepare-end', {
-      uri: params.textDocument.uri,
-      canRename: prepareResult.canRename,
-    });
-    return response;
-  });
-  connection.onRenameRequest((params: RenameParams, cancellationToken): WorkspaceEdit | null => {
-    traceFeatureRequest(connection, 'rename', 'start', {
-      uri: params.textDocument.uri,
-      cancelled: shouldSkipRequest(cancellationToken),
-    });
-    if (shouldSkipRequest(cancellationToken)) {
-      traceRequestResult(connection, 'rename', 'cancelled', {
-        uri: params.textDocument.uri,
-      });
-      return null;
-    }
-
-    const provider = new RenameProvider({
-      analysisService: fragmentAnalysisService,
-      resolveRequest: ({ textDocument }) => resolveRequest(textDocument.uri),
-      resolveUriRequest: (uri) =>
-        resolveRequestForWorkspaceUri(
-          uri,
-          documents,
-          resolveWorkspaceRootFromFilePath(getFilePathFromUri(uri))
-            ? workspaceStateByRoot.get(resolveWorkspaceRootFromFilePath(getFilePathFromUri(uri))!) ?? null
-            : null,
-        ),
-      variableFlowService:
-        resolveWorkspaceVariableFlowService(params.textDocument.uri, workspaceStateByRoot) ?? undefined,
-    });
-    const prepareResult = provider.prepareRename(params, cancellationToken);
-    if (!prepareResult.canRename) {
-      if (prepareResult.message === 'Request cancelled') {
-        traceRequestResult(connection, 'rename', 'cancelled', {
-          uri: params.textDocument.uri,
-        });
-        return null;
-      }
-
-      throw createRenameRequestError(
-        prepareResult.message ?? 'Rename is not available at the current position.',
-      );
-    }
-
-    const result = provider.provideRename(params, cancellationToken);
-    traceRequestResult(connection, 'rename', 'end', {
-      uri: params.textDocument.uri,
-      documentChanges: result?.documentChanges?.length ?? 0,
-    });
-    return result;
-  });
-  connection.onCodeLens((params: CodeLensParams, cancellationToken) => {
-    traceFeatureRequest(connection, 'codelens', 'start', {
-      uri: params.textDocument.uri,
-      cancelled: shouldSkipRequest(cancellationToken),
-    });
-    if (shouldSkipRequest(cancellationToken)) {
-      traceRequestResult(connection, 'codelens', 'cancelled', {
-        uri: params.textDocument.uri,
-      });
-      return [];
-    }
-
-    const result = codeLensProvider.provide(params, cancellationToken);
-    traceRequestResult(connection, 'codelens', 'end', {
-      uri: params.textDocument.uri,
-      count: result.length,
-    });
-    return result;
-  });
-  connection.onHover((params: HoverParams, cancellationToken) => {
-    traceFeatureRequest(connection, 'hover', 'start', {
-      uri: params.textDocument.uri,
-      cancelled: shouldSkipRequest(cancellationToken),
-    });
-    if (shouldSkipRequest(cancellationToken)) {
-      traceRequestResult(connection, 'hover', 'cancelled', {
-        uri: params.textDocument.uri,
-      });
-      return null;
-    }
-
-    const result = hoverProvider.provide(params, cancellationToken);
-    traceRequestResult(connection, 'hover', 'end', {
-      uri: params.textDocument.uri,
-      hasResult: result !== null,
-    });
-    return result;
-  });
-  connection.onSignatureHelp((params: SignatureHelpParams, cancellationToken) => {
-    traceFeatureRequest(connection, 'signature', 'start', {
-      uri: params.textDocument.uri,
-      cancelled: shouldSkipRequest(cancellationToken),
-    });
-    if (shouldSkipRequest(cancellationToken)) {
-      traceRequestResult(connection, 'signature', 'cancelled', {
-        uri: params.textDocument.uri,
-      });
-      return null;
-    }
-
-    const request = resolveRequest(params.textDocument.uri);
-    const result = request ? signatureHelpProvider.provide(params, request, cancellationToken) : null;
-    traceRequestResult(connection, 'signature', 'end', {
-      uri: params.textDocument.uri,
-      hasResult: result !== null,
-    });
-    return result;
-  });
-  connection.onFoldingRanges((params: FoldingRangeParams, cancellationToken) => {
-    traceFeatureRequest(connection, 'folding', 'start', {
-      uri: params.textDocument.uri,
-      cancelled: shouldSkipRequest(cancellationToken),
-    });
-    if (shouldSkipRequest(cancellationToken)) {
-      traceRequestResult(connection, 'folding', 'cancelled', {
-        uri: params.textDocument.uri,
-      });
-      return [];
-    }
-
-    const request = resolveRequest(params.textDocument.uri);
-    const result = request ? foldingProvider.provide(params, request, cancellationToken) : [];
-    traceRequestResult(connection, 'folding', 'end', {
-      uri: params.textDocument.uri,
-      count: result.length,
-    });
-    return result;
-  });
-  connection.languages.semanticTokens.on((params: SemanticTokensParams, cancellationToken) => {
-    traceFeatureRequest(connection, 'semanticTokens', 'start', {
-      uri: params.textDocument.uri,
-      cancelled: shouldSkipRequest(cancellationToken),
-    });
-    if (shouldSkipRequest(cancellationToken)) {
-      traceRequestResult(connection, 'semanticTokens', 'cancelled', {
-        uri: params.textDocument.uri,
-      });
-      return { data: [] };
-    }
-
-    const request = resolveRequest(params.textDocument.uri);
-    const result = request
-      ? semanticTokensProvider.provide(params, request, cancellationToken)
-      : { data: [] };
-    traceRequestResult(connection, 'semanticTokens', 'end', {
-      uri: params.textDocument.uri,
-      count: result.data.length,
-    });
-    return result;
-  });
+/**
+ * registerDocumentLifecycleHandlers 함수.
+ * open/change/close 문서 이벤트를 diagnostics/workspace refresh 경로에 연결함.
+ * Flow: 문서 lifecycle 이벤트를 trace로 남기고 refreshWorkspaceDiagnostics로 위임함.
+ *
+ * @param context - connection, workspace state, Lua router가 담긴 등록 context
+ * @param runtimeState - 최신 client capability가 담긴 mutable runtime 상태
+ */
+function registerDocumentLifecycleHandlers(
+  context: ServerRegistrationContext,
+  runtimeState: ServerRuntimeState,
+): void {
+  const { connection, documents, luaLsDocumentRouter, workspaceStateByRoot } = context;
 
   documents.onDidOpen((event) => {
+    // open된 문서를 standalone/workspace 진단 루프에 편입시킴.
     traceFeatureRequest(connection, 'server', 'document-open', {
       uri: event.document.uri,
       version: event.document.version,
@@ -1032,13 +864,15 @@ export function registerServer(
       connection,
       documents,
       workspaceStateByRoot,
-      workspaceClientState,
+      runtimeState.workspaceClientState,
+      luaLsDocumentRouter,
       event.document,
       'open',
     );
   });
 
   documents.onDidChangeContent((event) => {
+    // 변경된 문서를 기준으로 diagnostics/workspace graph를 다시 갱신함.
     traceFeatureRequest(connection, 'server', 'document-change', {
       uri: event.document.uri,
       version: event.document.version,
@@ -1047,13 +881,15 @@ export function registerServer(
       connection,
       documents,
       workspaceStateByRoot,
-      workspaceClientState,
+      runtimeState.workspaceClientState,
+      luaLsDocumentRouter,
       event.document,
       'change',
     );
   });
 
   documents.onDidClose((event) => {
+    // 닫힌 문서를 cache/router/workspace refresh 경로에서 정리함.
     traceFeatureRequest(connection, 'server', 'document-close', {
       uri: event.document.uri,
       version: event.document.version,
@@ -1062,19 +898,38 @@ export function registerServer(
       connection,
       documents,
       workspaceStateByRoot,
-      workspaceClientState,
+      runtimeState.workspaceClientState,
+      luaLsDocumentRouter,
       event.document,
       'close',
     );
   });
+}
 
+/**
+ * registerWatchedFilesHandlers 함수.
+ * workspace watched-file 변경을 grouped refresh reason으로 다시 분배함.
+ * Flow: 관련 없는 변경을 걸러내고, 남은 URI를 reason별로 묶어 workspace rebuild 경로로 전달함.
+ *
+ * @param context - connection, workspace state, Lua router가 담긴 등록 context
+ * @param runtimeState - 최신 client capability가 담긴 mutable runtime 상태
+ */
+function registerWatchedFilesHandlers(
+  context: ServerRegistrationContext,
+  runtimeState: ServerRuntimeState,
+): void {
+  const { connection, documents, luaLsDocumentRouter, workspaceStateByRoot } = context;
   const watchedFilesConnection = connection as Connection & {
     onDidChangeWatchedFiles?: (handler: (params: DidChangeWatchedFilesParams) => void) => unknown;
   };
 
   watchedFilesConnection.onDidChangeWatchedFiles?.((params: DidChangeWatchedFilesParams) => {
+    // workspace 외부 파일 변경을 refresh reason별 URI 묶음으로 재분배해 rebuild 경로에 태움.
     const relevantChanges = params.changes.filter(
-      (change) => resolveWorkspaceRootFromFilePath(getFilePathFromUri(change.uri)) !== null,
+      (change) =>
+        CbsLspPathHelper.resolveWorkspaceRootFromFilePath(
+          CbsLspPathHelper.getFilePathFromUri(change.uri),
+        ) !== null,
     );
     if (relevantChanges.length === 0) {
       traceFeatureRequest(connection, 'workspace', 'watched-files-skip', {
@@ -1109,7 +964,8 @@ export function registerServer(
         connection,
         documents,
         workspaceStateByRoot,
-        workspaceClientState,
+        runtimeState.workspaceClientState,
+        luaLsDocumentRouter,
         [...uris].sort((left, right) => left.localeCompare(right)),
         reason,
       );
@@ -1117,15 +973,41 @@ export function registerServer(
   });
 }
 
-export function startServer(): void {
+/**
+ * registerServer 함수.
+ * LSP connection에 CBS language server lifecycle과 feature handler를 한 번에 등록함.
+ * Flow: runtime config 해석 → LuaLS/process 및 provider 준비 → initialize/initialized/shutdown 등록 → feature/document/workspace handler 등록.
+ *
+ * @param connection - initialize, request, notification handler를 연결할 LSP connection
+ * @param documents - open/change/close lifecycle을 공유할 text document manager
+ * @param options - standalone runtime config, env, LuaLS process factory 같은 서버 등록 옵션
+ */
+export function registerServer(
+  connection: Connection,
+  documents: TextDocuments<TextDocument>,
+  options: ServerRegistrationOptions = {},
+): void {
+  const runtimeState = createServerRuntimeState(options);
+  const context = createServerRegistrationContext(connection, documents, options);
+
+  registerServerLifecycleHandlers(context, runtimeState);
+  registerFeatureHandlers(context);
+  registerDocumentLifecycleHandlers(context, runtimeState);
+  registerWatchedFilesHandlers(context, runtimeState);
+}
+
+/**
+ * startServer 함수.
+ * CBS language server stdio transport를 초기화하고 listen 상태로 진입함.
+ *
+ * @param options - standalone startup에 적용할 env/runtime config 옵션
+ * @returns 반환값 없음
+ */
+export function startServer(options: ServerStartOptions = {}): void {
   const connection = createConnection(ProposedFeatures.all);
   const documents = new TextDocuments(TextDocument);
 
-  registerServer(connection, documents);
+  registerServer(connection, documents, options);
   documents.listen(connection);
   connection.listen();
-}
-
-if (require.main === module) {
-  startServer();
 }

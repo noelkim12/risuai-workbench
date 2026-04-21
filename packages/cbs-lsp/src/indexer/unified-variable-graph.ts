@@ -16,7 +16,6 @@
  * @file packages/cbs-lsp/src/indexer/unified-variable-graph.ts
  */
 
-import fs from 'node:fs';
 import type {
   Range,
   CustomExtensionArtifact,
@@ -320,13 +319,18 @@ export interface FindOccurrenceResult {
  * UnifiedVariableOccurrence) belongs to Task 5.
  */
 export class UnifiedVariableGraph {
-  private readonly snapshot: UnifiedVariableGraphSnapshot;
+  private snapshot: UnifiedVariableGraphSnapshot;
+
+  private readonly occurrencesByUriIndex = new Map<string, UnifiedVariableOccurrence[]>();
+
+  private readonly occurrencesById = new Map<UnifiedVariableOccurrenceId, UnifiedVariableOccurrence>();
 
   /**
    * Private constructor. Use fromSnapshot() or build() factory methods.
    */
   private constructor(snapshot: UnifiedVariableGraphSnapshot) {
     this.snapshot = snapshot;
+    this.hydrateOccurrenceIndexes(snapshot);
   }
 
   /**
@@ -620,6 +624,144 @@ export class UnifiedVariableGraph {
   getOccurrenceCount(): number {
     return this.snapshot.totalOccurrences;
   }
+
+  /**
+   * replaceOccurrencesForUri 함수.
+   * 특정 URI의 occurrence만 교체하고 graph snapshot을 다시 계산함.
+   *
+   * @param uri - 부분 갱신할 file URI
+   * @param occurrences - 해당 URI의 최신 occurrence 목록
+   */
+  replaceOccurrencesForUri(uri: string, occurrences: readonly UnifiedVariableOccurrence[]): void {
+    this.occurrencesByUriIndex.delete(uri);
+
+    for (const [occurrenceId, occurrence] of this.occurrencesById.entries()) {
+      if (occurrence.uri === uri) {
+        this.occurrencesById.delete(occurrenceId);
+      }
+    }
+
+    if (occurrences.length > 0) {
+      const nextOccurrences = [...occurrences];
+      this.occurrencesByUriIndex.set(uri, nextOccurrences);
+      for (const occurrence of nextOccurrences) {
+        this.occurrencesById.set(occurrence.occurrenceId, occurrence);
+      }
+    }
+
+    this.snapshot = buildSnapshotFromOccurrences(this.snapshot.rootPath, this.occurrencesById.values());
+    this.hydrateOccurrenceIndexes(this.snapshot);
+  }
+
+  /**
+   * removeUri 함수.
+   * 특정 URI의 occurrence를 graph에서 제거함.
+   *
+   * @param uri - 제거할 file URI
+   */
+  removeUri(uri: string): void {
+    this.replaceOccurrencesForUri(uri, []);
+  }
+
+  /**
+   * hydrateOccurrenceIndexes 함수.
+   * snapshot에서 URI/id lookup cache를 다시 구성함.
+   *
+   * @param snapshot - 현재 graph snapshot
+   */
+  private hydrateOccurrenceIndexes(snapshot: UnifiedVariableGraphSnapshot): void {
+    this.occurrencesByUriIndex.clear();
+    this.occurrencesById.clear();
+
+    for (const variable of snapshot.variables) {
+      for (const occurrence of [...variable.readers, ...variable.writers]) {
+        const existing = this.occurrencesByUriIndex.get(occurrence.uri);
+        if (existing) {
+          existing.push(occurrence);
+        } else {
+          this.occurrencesByUriIndex.set(occurrence.uri, [occurrence]);
+        }
+
+        this.occurrencesById.set(occurrence.occurrenceId, occurrence);
+      }
+    }
+
+    for (const [uri, occurrences] of this.occurrencesByUriIndex.entries()) {
+      occurrences.sort((left, right) => left.occurrenceId.localeCompare(right.occurrenceId));
+      this.occurrencesByUriIndex.set(uri, occurrences);
+    }
+  }
+}
+
+/**
+ * buildSnapshotFromOccurrences 함수.
+ * occurrence iterable에서 canonical graph snapshot을 다시 계산함.
+ *
+ * @param rootPath - workspace root path
+ * @param occurrences - snapshot에 포함할 전체 occurrence iterable
+ * @returns serialization-friendly graph snapshot
+ */
+function buildSnapshotFromOccurrences(
+  rootPath: string,
+  occurrences: Iterable<UnifiedVariableOccurrence>,
+): UnifiedVariableGraphSnapshot {
+  const allOccurrences = [...occurrences];
+  const sortedOccurrences = sortOccurrencesDeterministically(allOccurrences);
+  const occurrencesByVariable = groupOccurrencesByVariable(sortedOccurrences);
+  const variableNodes: UnifiedVariableNode[] = [];
+  const variableIndex: Record<string, UnifiedVariableNode> = {};
+
+  for (const [variableName, variableOccurrences] of occurrencesByVariable) {
+    const readers = variableOccurrences.filter((occurrence) => occurrence.direction === 'read');
+    const writers = variableOccurrences.filter((occurrence) => occurrence.direction === 'write');
+    const uris = [...new Set(variableOccurrences.map((occurrence) => occurrence.uri))].sort();
+    const artifacts = [...new Set(variableOccurrences.map((occurrence) => occurrence.artifact))].sort();
+    const node: UnifiedVariableNode = {
+      name: variableName,
+      readers,
+      writers,
+      occurrenceCount: variableOccurrences.length,
+      artifacts,
+      uris,
+    };
+
+    variableNodes.push(node);
+    variableIndex[variableName] = node;
+  }
+
+  const occurrencesByUri: Record<string, UnifiedVariableOccurrenceId[]> = {};
+  const occurrencesByElementId: Record<string, UnifiedVariableOccurrenceId[]> = {};
+
+  for (const occurrence of sortedOccurrences) {
+    if (!occurrencesByUri[occurrence.uri]) {
+      occurrencesByUri[occurrence.uri] = [];
+    }
+    occurrencesByUri[occurrence.uri].push(occurrence.occurrenceId);
+
+    if (!occurrencesByElementId[occurrence.elementId]) {
+      occurrencesByElementId[occurrence.elementId] = [];
+    }
+    occurrencesByElementId[occurrence.elementId].push(occurrence.occurrenceId);
+  }
+
+  for (const uri of Object.keys(occurrencesByUri)) {
+    occurrencesByUri[uri].sort();
+  }
+  for (const elementId of Object.keys(occurrencesByElementId)) {
+    occurrencesByElementId[elementId].sort();
+  }
+
+  return {
+    rootPath,
+    variables: variableNodes,
+    totalVariables: variableNodes.length,
+    totalOccurrences: sortedOccurrences.length,
+    variableIndex,
+    occurrencesByUri,
+    occurrencesByElementId,
+    buildTimestamp: Date.now(),
+    schemaVersion: '1.0.0',
+  };
 }
 
 /**
@@ -988,18 +1130,52 @@ function extractLuaOccurrencesFromElement(
 }
 
 /**
- * Read host document content from file system.
- * Uses the absolute path from the registry file record.
+ * buildOccurrencesForUri 함수.
+ * registry의 단일 URI만 다시 읽어 부분 갱신용 occurrence 목록을 계산함.
  *
- * @param absolutePath - The absolute file path
- * @returns The file content as string, or null if read fails
+ * @param registry - source-of-truth registry
+ * @param uri - 부분 갱신할 file URI
+ * @returns 해당 URI의 최신 occurrence 목록
  */
-function readHostDocumentContent(absolutePath: string): string | null {
-  try {
-    return fs.readFileSync(absolutePath, 'utf-8');
-  } catch {
-    return null;
+export function buildOccurrencesForUri(
+  registry: ElementRegistry,
+  uri: string,
+): readonly UnifiedVariableOccurrence[] {
+  const file = registry.getFileByUri(uri);
+  if (!file || shouldExcludeArtifact(file.artifact) || !file.cbsBearingArtifact) {
+    return [];
   }
+
+  if (file.artifact !== 'lua' && !file.hasCbsFragments) {
+    return [];
+  }
+
+  const hostDocumentContent = file.text;
+  const elements = registry.getElementsByUri(file.uri);
+  const occurrences: UnifiedVariableOccurrence[] = [];
+
+  for (const element of elements) {
+    if (element.analysisKind === 'cbs-fragment') {
+      occurrences.push(
+        ...extractCbsOccurrencesFromFragment(element as ElementRegistryFragmentElement, hostDocumentContent),
+      );
+      continue;
+    }
+
+    const luaElement = element as ElementRegistryLuaElement;
+    const luaArtifact = registry.getLuaArtifactByUri(file.uri);
+    if (!luaArtifact) {
+      continue;
+    }
+
+    for (const stateOcc of luaArtifact.serialized.stateAccessOccurrences) {
+      occurrences.push(
+        buildLuaUnifiedOccurrence(stateOcc, luaElement.graphSeed, luaArtifact.sourceText ?? hostDocumentContent),
+      );
+    }
+  }
+
+  return sortOccurrencesDeterministically(occurrences);
 }
 
 /**
@@ -1025,55 +1201,11 @@ function buildOccurrencesFromRegistry(registry: ElementRegistry): {
   const snapshot = registry.getSnapshot();
 
   for (const file of snapshot.files) {
-    // Skip excluded artifacts
-    if (shouldExcludeArtifact(file.artifact)) {
-      continue;
-    }
-
-    // Skip files without CBS fragments for non-Lua artifacts
-    if (file.artifact !== 'lua' && !file.hasCbsFragments) {
-      continue;
-    }
-
-    // Skip non-CBS artifacts
-    if (!file.cbsBearingArtifact) {
-      continue;
-    }
-
-    // Read the host document content for proper range rebasing
-    const hostDocumentContent = readHostDocumentContent(file.absolutePath);
-    if (!hostDocumentContent) {
-      // Skip files that can't be read
-      continue;
-    }
-
-    const elements = registry.getElementsByUri(file.uri);
-
-    for (const element of elements) {
-      if (element.analysisKind === 'cbs-fragment') {
-        const fragmentElement = element as ElementRegistryFragmentElement;
-
-        // Extract CBS occurrences with proper host-document range rebasing
-        const fragmentOccurrences = extractCbsOccurrencesFromFragment(
-          fragmentElement,
-          hostDocumentContent,
-        );
-
-        cbsOccurrences.push(...fragmentOccurrences);
-      } else if (element.analysisKind === 'lua-file') {
-        const luaElement = element as ElementRegistryLuaElement;
-        const luaArtifact = registry.getLuaArtifactByUri(file.uri);
-
-        if (luaArtifact) {
-          for (const stateOcc of luaArtifact.serialized.stateAccessOccurrences) {
-            const unifiedOcc = buildLuaUnifiedOccurrence(
-              stateOcc,
-              luaElement.graphSeed,
-              luaArtifact.sourceText ?? hostDocumentContent,
-            );
-            luaOccurrences.push(unifiedOcc);
-          }
-        }
+    for (const occurrence of buildOccurrencesForUri(registry, file.uri)) {
+      if (occurrence.sourceKind === 'lua-state-api') {
+        luaOccurrences.push(occurrence);
+      } else {
+        cbsOccurrences.push(occurrence);
       }
     }
   }

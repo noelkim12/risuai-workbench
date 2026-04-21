@@ -5,7 +5,7 @@ import {
   shouldRouteForDiagnostics,
   SUPPORTED_CBS_EXTENSIONS,
   EXPLICITLY_IGNORED_EXTENSIONS,
-} from '../src/document-router'
+} from '../src/utils/document-router'
 
 describe('custom-extension routing', () => {
   describe('supported CBS-bearing files', () => {

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   routeDiagnosticsForDocument,
   mapDocumentToCbsFragments,
-} from '../../src/diagnostics-router';
+} from '../../src/utils/diagnostics-router';
 import {
   CBS_LSP_FIXTURE_CORPUS,
   FIXTURE_RED_TEST_MATRIX,

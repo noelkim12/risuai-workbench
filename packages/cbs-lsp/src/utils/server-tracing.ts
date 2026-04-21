@@ -5,12 +5,22 @@
 
 import type { Connection } from 'vscode-languageserver/node';
 
+import type { CbsLspLogLevel } from '../config/runtime-config';
+
+/**
+ * CbsLspFeatureName 타입.
+ * cbs-lsp server trace/log에서 쓰는 feature scope 이름을 고정함.
+ */
 export type CbsLspFeatureName =
   | 'server'
   | 'workspace'
+  | 'lua'
+  | 'luaProxy'
   | 'diagnostics'
+  | 'codeAction'
   | 'codelens'
   | 'completion'
+  | 'documentSymbol'
   | 'formatting'
   | 'definition'
   | 'references'
@@ -20,13 +30,60 @@ export type CbsLspFeatureName =
   | 'folding'
   | 'semanticTokens';
 
+/**
+ * FeatureTraceDetails 타입.
+ * key=value trace에 붙일 경량 메타데이터 필드를 표현함.
+ */
 export interface FeatureTraceDetails {
   uri?: string;
-  version?: number | string;
+  version?: number | string | null;
   [key: string]: number | string | boolean | null | undefined;
 }
 
+/**
+ * FeatureTracePayload 타입.
+ * stable JSON trace로 직렬화할 structured payload를 나타냄.
+ */
 export type FeatureTracePayload = unknown;
+
+const LOG_LEVEL_RANK: Record<CbsLspLogLevel, number> = {
+  error: 0,
+  warn: 1,
+  info: 2,
+  debug: 3,
+};
+
+let currentServerLogLevel: CbsLspLogLevel = 'debug';
+
+/**
+ * configureServerTracing 함수.
+ * server trace/log helper가 따를 현재 log level gate를 갱신함.
+ *
+ * @param logLevel - 이후 trace/log emission 판단에 사용할 runtime log level
+ */
+export function configureServerTracing(logLevel: CbsLspLogLevel): void {
+  currentServerLogLevel = logLevel;
+}
+
+/**
+ * shouldEmitTrace 함수.
+ * 현재 log level에서 verbose trace를 내보낼지 판별함.
+ *
+ * @returns tracer.log 호출을 허용해야 하면 true
+ */
+function shouldEmitTrace(): boolean {
+  return LOG_LEVEL_RANK[currentServerLogLevel] >= LOG_LEVEL_RANK.debug;
+}
+
+/**
+ * shouldEmitLog 함수.
+ * 현재 log level에서 운영 로그를 내보낼지 판별함.
+ *
+ * @returns console.log 호출을 허용해야 하면 true
+ */
+function shouldEmitLog(): boolean {
+  return LOG_LEVEL_RANK[currentServerLogLevel] >= LOG_LEVEL_RANK.info;
+}
 
 /**
  * formatFeatureTraceMessage 함수.
@@ -75,12 +132,59 @@ export function traceFeature(
   phase: string,
   details?: FeatureTraceDetails,
 ): void {
+  if (!shouldEmitTrace()) {
+    return;
+  }
+
   connection.tracer.log(
     formatFeatureTraceMessage(feature, phase),
     formatFeatureTraceDetails(details),
   );
 }
 
+/**
+ * traceFeatureRequest 함수.
+ * request 시작/중간 phase를 semantic alias로 분리해 남김.
+ *
+ * @param connection - 활성 LSP connection
+ * @param feature - 기능 이름
+ * @param phase - trace phase 이름
+ * @param details - 선택적 상세 정보
+ */
+export function traceFeatureRequest(
+  connection: Connection,
+  feature: CbsLspFeatureName,
+  phase: string,
+  details?: FeatureTraceDetails,
+): void {
+  traceFeature(connection, feature, phase, details);
+}
+
+/**
+ * traceFeatureResult 함수.
+ * request 종료/취소 결과 phase를 semantic alias로 분리해 남김.
+ *
+ * @param connection - 활성 LSP connection
+ * @param feature - 기능 이름
+ * @param phase - trace phase 이름
+ * @param details - 선택적 상세 정보
+ */
+export function traceFeatureResult(
+  connection: Connection,
+  feature: CbsLspFeatureName,
+  phase: string,
+  details?: FeatureTraceDetails,
+): void {
+  traceFeature(connection, feature, phase, details);
+}
+
+/**
+ * stableSerializeFeatureTracePayload 함수.
+ * nested payload를 key order가 고정된 JSON 문자열로 직렬화함.
+ *
+ * @param payload - stable trace로 남길 structured payload
+ * @returns key 순서가 고정된 JSON 문자열
+ */
 function stableSerializeFeatureTracePayload(payload: FeatureTracePayload): string {
   if (payload === null || typeof payload !== 'object') {
     return JSON.stringify(payload);
@@ -113,6 +217,10 @@ export function traceFeaturePayload(
   phase: string,
   payload: FeatureTracePayload,
 ): void {
+  if (!shouldEmitTrace()) {
+    return;
+  }
+
   connection.tracer.log(
     formatFeatureTraceMessage(feature, phase),
     stableSerializeFeatureTracePayload(payload),
@@ -134,6 +242,10 @@ export function logFeature(
   message: string,
   details?: FeatureTraceDetails,
 ): void {
+  if (!shouldEmitLog()) {
+    return;
+  }
+
   const verboseDetails = formatFeatureTraceDetails(details);
   const suffix = verboseDetails ? ` ${verboseDetails}` : '';
   connection.console.log(`${formatFeatureTraceMessage(feature, message)}${suffix}`);
