@@ -17,6 +17,7 @@ import {
   type LuaLsCompanionRuntime,
 } from '../core';
 import { SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES } from '../features/semanticTokens';
+import { LSP_POSITION_ENCODING } from '../utils/position';
 import { createExecuteCommandProvider } from './commands';
 
 /**
@@ -40,6 +41,7 @@ export function createInitializeResult(
 
   return {
     capabilities: {
+      positionEncoding: LSP_POSITION_ENCODING,
       textDocumentSync: {
         openClose: true,
         change: TextDocumentSyncKind.Incremental,

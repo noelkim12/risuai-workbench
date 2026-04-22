@@ -52,7 +52,7 @@ import {
   type LuaLsRoutedDocument,
 } from '../src/providers/lua/lualsDocuments';
 import { normalizeLuaHoverForSnapshot } from '../src/providers/lua/lualsProxy';
-import { offsetToPosition, positionToOffset } from '../src/utils/position';
+import { LSP_POSITION_ENCODING, offsetToPosition, positionToOffset } from '../src/utils/position';
 import {
   getFixtureCorpusEntry,
   serializeCodeLensesEnvelopeForGolden,
@@ -222,6 +222,33 @@ function applyTextEdits(text: string, edits: readonly TextEdit[]): string {
       const endOffset = positionToOffset(currentText, edit.range.end);
       return `${currentText.slice(0, startOffset)}${edit.newText}${currentText.slice(endOffset)}`;
     }, text);
+}
+
+function decodeSemanticTokenTexts(data: number[], text: string) {
+  const decoded: Array<{ line: number; startChar: number; length: number; text: string }> = [];
+  let line = 0;
+  let startChar = 0;
+
+  for (let index = 0; index < data.length; index += 5) {
+    const deltaLine = data[index];
+    const deltaStart = data[index + 1];
+    const length = data[index + 2];
+
+    line += deltaLine;
+    startChar = deltaLine === 0 ? startChar + deltaStart : deltaStart;
+
+    decoded.push({
+      line,
+      startChar,
+      length,
+      text: text.slice(
+        positionToOffset(text, { line, character: startChar }),
+        positionToOffset(text, { line, character: startChar + length }),
+      ),
+    });
+  }
+
+  return decoded;
 }
 
 class FakeConnection {
@@ -638,6 +665,7 @@ describe('LSP server integration', () => {
 
     expect(initializeResult).toEqual({
       capabilities: {
+        positionEncoding: LSP_POSITION_ENCODING,
         textDocumentSync: {
           openClose: true,
           change: TextDocumentSyncKind.Incremental,
@@ -1184,10 +1212,80 @@ describe('LSP server integration', () => {
     expect(initializeResult?.capabilities.codeActionProvider).toEqual({
       codeActionKinds: ['quickfix'],
     });
+    expect(initializeResult?.capabilities.positionEncoding).toBe(LSP_POSITION_ENCODING);
     expect(initializeResult?.capabilities.renameProvider).toEqual({
       prepareProvider: true,
     });
     expect(initializeResult?.capabilities.executeCommandProvider).toBeUndefined();
+  });
+
+  it('keeps diagnostics, hover, rename, and semantic token ranges aligned for mixed Hangul and emoji text', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const uri = 'file:///fixtures/server-unicode-range.risulorebook';
+    const text = lorebookDocument([
+      '한🙂 {{setvar::기분::행복}}',
+      '{{getvar::기분}}',
+      '{{gettempvar::없음}}',
+    ]);
+
+    registerServer(connection as any, documents as any);
+    connection.initializeHandler?.({ capabilities: {} } as InitializeParams);
+    documents.open(uri, text, 1);
+
+    const diagnostics = getLastDiagnostics(connection).diagnostics;
+    const undefinedDiagnostic = diagnostics.find((diagnostic) => diagnostic.code === 'CBS101');
+
+    expect(undefinedDiagnostic?.range).toEqual({
+      start: positionAt(text, '없음', 0),
+      end: positionAt(text, '없음', '없음'.length),
+    });
+
+    const hover = await connection.hoverHandler?.(
+      {
+        textDocument: { uri },
+        position: positionAt(text, '기분', 1, 1),
+      },
+      createCancellationToken(false),
+    );
+
+    expect(getHoverMarkdown(hover ?? null)).toContain('기분');
+
+    const renameRange = connection.prepareRenameHandler?.(
+      {
+        textDocument: { uri },
+        position: positionAt(text, '기분', 1, 1),
+      },
+      createCancellationToken(false),
+    );
+
+    expect(renameRange).toEqual({
+      start: positionAt(text, '기분', 0, 1),
+      end: positionAt(text, '기분', '기분'.length, 1),
+    });
+
+    const semanticTokens = connection.semanticTokensHandler?.(
+      {
+        textDocument: { uri },
+      },
+      createCancellationToken(false),
+    );
+    const decodedTokens = decodeSemanticTokenTexts(semanticTokens?.data ?? [], text);
+
+    expect(decodedTokens).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          line: 4,
+          startChar: positionAt(text, '기분', 0, 0).character,
+          text: '기분',
+        }),
+        expect.objectContaining({
+          line: 5,
+          startChar: positionAt(text, '기분', 0, 1).character,
+          text: '기분',
+        }),
+      ]),
+    );
   });
 
   it('includes diagnostics version only when the client advertises version support', () => {

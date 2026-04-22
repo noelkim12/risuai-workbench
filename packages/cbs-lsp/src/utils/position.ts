@@ -7,6 +7,13 @@ import type { Position, Range } from 'risu-workbench-core';
 import { Position as LSPPosition, Range as LSPRange } from 'vscode-languageserver/node';
 
 /**
+ * cbs-lsp가 advertise하는 LSP position encoding.
+ * position.ts의 모든 line/character 계산은 JavaScript string index를 그대로 따라가므로 UTF-16 code unit 기준입니다.
+ * 3.17 capability negotiation도 이 기준만 지원하며, UTF-16을 받지 않는 client는 compatibility boundary 밖으로 문서화합니다.
+ */
+export const LSP_POSITION_ENCODING = 'utf-16' as const;
+
+/**
  * CursorState 타입.
  * offset 순회 중 현재 line/character 좌표를 함께 들고 다니는 내부 상태를 표현함.
  */
@@ -99,10 +106,10 @@ export function isPositionInRange(pos: Position, range: Range): boolean {
 
 /**
  * offsetToPosition 함수.
- * 텍스트 offset을 CRLF/LF를 고려한 line/character 좌표로 바꿈.
+ * UTF-16 code unit offset을 CRLF/LF를 고려한 line/character 좌표로 바꿈.
  *
  * @param text - offset 기준이 되는 원문 텍스트
- * @param offset - position으로 바꿀 문자 offset
+ * @param offset - position으로 바꿀 UTF-16 code unit offset
  * @returns clamp된 offset이 가리키는 Position
  */
 export function offsetToPosition(text: string, offset: number): Position {
@@ -121,11 +128,11 @@ export function offsetToPosition(text: string, offset: number): Position {
 
 /**
  * positionToOffset 함수.
- * line/character 좌표를 원문 텍스트의 문자 offset으로 역변환함.
+ * line/character 좌표를 원문 텍스트의 UTF-16 code unit offset으로 역변환함.
  *
  * @param text - position 기준이 되는 원문 텍스트
- * @param pos - offset으로 바꿀 line/character 좌표
- * @returns 가능한 가장 가까운 문자 경계 offset
+ * @param pos - offset으로 바꿀 UTF-16 line/character 좌표
+ * @returns 가능한 가장 가까운 UTF-16 code unit 경계 offset
  */
 export function positionToOffset(text: string, pos: Position): number {
   const targetLine = Math.max(0, pos.line);
