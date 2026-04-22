@@ -7,6 +7,7 @@ import type {
   CancellationToken,
   DocumentSymbol,
   DocumentSymbolParams,
+  Range as LspRange,
   SymbolKind,
 } from 'vscode-languageserver/node';
 import {
@@ -15,16 +16,47 @@ import {
 import type { BlockKind, BlockNode, CBSNode } from 'risu-workbench-core';
 
 import {
+  ACTIVE_FEATURE_AVAILABILITY,
+  createAgentMetadataExplanation,
+  createCbsAgentProtocolMarker,
+  createNormalizedRuntimeAvailabilitySnapshot,
   fragmentAnalysisService,
+  type AgentMetadataExplanationContract,
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
   type FragmentDocumentAnalysis,
+  type NormalizedRuntimeAvailabilitySnapshot,
 } from '../core';
 import { CbsLspTextHelper } from '../helpers/text-helper';
 import { isRequestCancelled } from '../utils/request-cancellation';
 
 const OUTLINE_BLOCK_KINDS = new Set<BlockKind>(['when', 'each', 'escape', 'puredisplay', 'func']);
 const FRAGMENT_CONTAINER_KIND = LspSymbolKind.Namespace;
+const DOCUMENT_SYMBOL_SNAPSHOT_PROVENANCE = Object.freeze(
+  createAgentMetadataExplanation(
+    'contextual-inference',
+    'document-symbol:outline-builder',
+    'Document symbol snapshots are derived from routed CBS fragment AST blocks, keep host selection/range coordinates, and add section containers only when multiple CBS-bearing fragments exist in the same host document.',
+  ),
+);
+
+export interface NormalizedDocumentSymbolSnapshot {
+  children: NormalizedDocumentSymbolSnapshot[];
+  fragmentContainer: boolean;
+  name: string;
+  range: LspRange;
+  section: string | null;
+  selectionRange: LspRange;
+  symbolKind: string;
+}
+
+export interface NormalizedDocumentSymbolsEnvelopeSnapshot {
+  schema: string;
+  schemaVersion: string;
+  availability: NormalizedRuntimeAvailabilitySnapshot;
+  provenance: AgentMetadataExplanationContract;
+  symbols: NormalizedDocumentSymbolSnapshot[];
+}
 
 /**
  * getSupportedBlockSymbolKind 함수.
@@ -178,6 +210,193 @@ function collectDocumentSymbolsFromNodes(
 }
 
 /**
+ * normalizeDocumentSymbolForSnapshot 함수.
+ * DocumentSymbol 한 건을 agent/golden 친화적인 stable JSON shape로 정규화함.
+ *
+ * @param symbol - 정규화할 outline symbol
+ * @returns deterministic field names와 child ordering을 가진 snapshot node
+ */
+export function normalizeDocumentSymbolForSnapshot(
+  symbol: DocumentSymbol,
+): NormalizedDocumentSymbolSnapshot {
+  const children = normalizeDocumentSymbolsForSnapshot(symbol.children ?? []);
+  const fragmentContainer = isFragmentContainerSymbol(symbol);
+
+  return {
+    children,
+    fragmentContainer,
+    name: symbol.name,
+    range: symbol.range,
+    section: fragmentContainer ? normalizeFragmentSectionName(symbol.name) : null,
+    selectionRange: symbol.selectionRange,
+    symbolKind: normalizeDocumentSymbolKindForSnapshot(symbol.kind),
+  };
+}
+
+/**
+ * normalizeDocumentSymbolsForSnapshot 함수.
+ * DocumentSymbol 배열 전체를 deterministic ordering의 normalized tree로 정규화함.
+ *
+ * @param symbols - 정규화할 outline symbol 목록
+ * @returns stable ordering을 가진 normalized symbol tree
+ */
+export function normalizeDocumentSymbolsForSnapshot(
+  symbols: readonly DocumentSymbol[],
+): NormalizedDocumentSymbolSnapshot[] {
+  return [...symbols].map(normalizeDocumentSymbolForSnapshot).sort(compareNormalizedDocumentSymbols);
+}
+
+/**
+ * normalizeDocumentSymbolsEnvelopeForSnapshot 함수.
+ * document symbol normalized tree에 shared availability/provenance envelope를 붙임.
+ *
+ * @param symbols - 정규화할 outline symbol 목록
+ * @returns schema/version과 availability/provenance를 포함한 snapshot envelope
+ */
+export function normalizeDocumentSymbolsEnvelopeForSnapshot(
+  symbols: readonly DocumentSymbol[],
+): NormalizedDocumentSymbolsEnvelopeSnapshot {
+  return {
+    ...createCbsAgentProtocolMarker(),
+    availability: createNormalizedRuntimeAvailabilitySnapshot(),
+    provenance: DOCUMENT_SYMBOL_SNAPSHOT_PROVENANCE,
+    symbols: normalizeDocumentSymbolsForSnapshot(symbols),
+  };
+}
+
+/**
+ * isFragmentContainerSymbol 함수.
+ * document symbol이 multi-fragment section container인지 판별함.
+ *
+ * @param symbol - 판별할 outline symbol
+ * @returns section container이면 true
+ */
+function isFragmentContainerSymbol(symbol: DocumentSymbol): boolean {
+  return symbol.kind === FRAGMENT_CONTAINER_KIND;
+}
+
+/**
+ * normalizeFragmentSectionName 함수.
+ * container label에서 section grouping key만 떼어냄.
+ *
+ * @param name - 원본 container label
+ * @returns 중복 suffix를 제거한 section 이름
+ */
+function normalizeFragmentSectionName(name: string): string {
+  return name.replace(/\s+\[\d+\]$/u, '');
+}
+
+/**
+ * normalizeDocumentSymbolKindForSnapshot 함수.
+ * LSP numeric SymbolKind를 agent가 바로 읽을 string label로 고정함.
+ *
+ * @param kind - LSP SymbolKind 값
+ * @returns stable string label
+ */
+function normalizeDocumentSymbolKindForSnapshot(kind: SymbolKind): string {
+  switch (kind) {
+    case LspSymbolKind.Function:
+      return 'function';
+    case LspSymbolKind.Array:
+      return 'array';
+    case LspSymbolKind.Object:
+      return 'object';
+    case LspSymbolKind.String:
+      return 'string';
+    case LspSymbolKind.Namespace:
+      return 'namespace';
+    default:
+      return `symbol-kind:${kind}`;
+  }
+}
+
+/**
+ * compareNormalizedDocumentSymbols 함수.
+ * normalized outline snapshot의 deterministic ordering을 비교함.
+ *
+ * @param left - 왼쪽 symbol snapshot
+ * @param right - 오른쪽 symbol snapshot
+ * @returns 정렬 비교값
+ */
+function compareNormalizedDocumentSymbols(
+  left: NormalizedDocumentSymbolSnapshot,
+  right: NormalizedDocumentSymbolSnapshot,
+): number {
+  return (
+    compareRanges(left.selectionRange, right.selectionRange) ||
+    compareRanges(left.range, right.range) ||
+    compareStrings(left.section, right.section) ||
+    compareBooleans(left.fragmentContainer, right.fragmentContainer) ||
+    compareStrings(left.name, right.name) ||
+    compareStrings(left.symbolKind, right.symbolKind) ||
+    compareStrings(JSON.stringify(left.children), JSON.stringify(right.children))
+  );
+}
+
+/**
+ * compareRanges 함수.
+ * LSP range 둘의 정렬 순서를 비교함.
+ *
+ * @param left - 왼쪽 range
+ * @param right - 오른쪽 range
+ * @returns 정렬 비교값
+ */
+function compareRanges(left: LspRange | null, right: LspRange | null): number {
+  return comparePositions(left?.start ?? null, right?.start ?? null) || comparePositions(left?.end ?? null, right?.end ?? null);
+}
+
+/**
+ * comparePositions 함수.
+ * LSP position 둘의 정렬 순서를 비교함.
+ *
+ * @param left - 왼쪽 position
+ * @param right - 오른쪽 position
+ * @returns 정렬 비교값
+ */
+function comparePositions(
+  left: { line: number; character: number } | null,
+  right: { line: number; character: number } | null,
+): number {
+  return compareNumbers(left?.line ?? null, right?.line ?? null) || compareNumbers(left?.character ?? null, right?.character ?? null);
+}
+
+/**
+ * compareStrings 함수.
+ * null-safe 문자열 비교를 수행함.
+ *
+ * @param left - 왼쪽 문자열
+ * @param right - 오른쪽 문자열
+ * @returns 정렬 비교값
+ */
+function compareStrings(left: string | null, right: string | null): number {
+  return (left ?? '').localeCompare(right ?? '');
+}
+
+/**
+ * compareNumbers 함수.
+ * null-safe 숫자 비교를 수행함.
+ *
+ * @param left - 왼쪽 숫자
+ * @param right - 오른쪽 숫자
+ * @returns 정렬 비교값
+ */
+function compareNumbers(left: number | null, right: number | null): number {
+  return (left ?? Number.NEGATIVE_INFINITY) - (right ?? Number.NEGATIVE_INFINITY);
+}
+
+/**
+ * compareBooleans 함수.
+ * false를 true보다 먼저 두는 stable boolean 비교를 수행함.
+ *
+ * @param left - 왼쪽 boolean
+ * @param right - 오른쪽 boolean
+ * @returns 정렬 비교값
+ */
+function compareBooleans(left: boolean, right: boolean): number {
+  return Number(left) - Number(right);
+}
+
+/**
  * DocumentSymbolProvider 클래스.
  * routed CBS fragment의 top-level block 구조를 outline tree로 변환함.
  */
@@ -264,3 +483,6 @@ export class DocumentSymbolProvider {
     return symbols;
   }
 }
+
+export const DOCUMENT_SYMBOL_SNAPSHOT_AVAILABILITY = ACTIVE_FEATURE_AVAILABILITY.documentSymbol;
+export const DOCUMENT_SYMBOL_SNAPSHOT_PROVENANCE_CONTRACT = DOCUMENT_SYMBOL_SNAPSHOT_PROVENANCE;

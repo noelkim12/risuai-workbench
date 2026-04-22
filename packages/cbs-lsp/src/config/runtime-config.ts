@@ -63,6 +63,12 @@ interface BootstrapConfigValues {
   workspacePath?: string | null;
 }
 
+interface RuntimeConfigBootstrap {
+  cli: BootstrapConfigValues;
+  env: BootstrapConfigValues;
+  initialize: BootstrapConfigValues;
+}
+
 type RuntimeValueSource = CbsLspRuntimeConfigSources['logLevel'];
 type RuntimeLayerSource = Exclude<RuntimeValueSource, 'default'>;
 type ConfigFilePathSource = CbsLspRuntimeConfigSources['configFilePath'];
@@ -84,11 +90,9 @@ interface ResolvedConfigFilePath {
 }
 
 interface ResolveConfigFilePathOptions {
-  cliConfigPath?: string | null;
   cwd: string;
-  env: NodeJS.ProcessEnv;
   exists: (filePath: string) => boolean;
-  initializationConfigPath?: string | null;
+  bootstrap: RuntimeConfigBootstrap;
   workspaceCandidates: readonly (string | null | undefined)[];
 }
 
@@ -250,27 +254,63 @@ function parseRuntimeConfigValues(
 }
 
 /**
- * createCliLayer 함수.
- * CLI override를 runtime layer와 bootstrap 값으로 분리해 정규화한다.
+ * createCliBootstrapValues 함수.
+ * CLI override에서 config discovery 전에 필요한 bootstrap 값만 추출한다.
  *
  * @param overrides - CLI에서 받은 override 집합
  * @param cwd - CLI 상대 경로를 해석할 기준 작업 디렉터리
- * @returns runtime 병합용 layer와 config path bootstrap 값
+ * @returns CLI source의 bootstrap 후보 값
+ */
+function createCliBootstrapValues(
+  overrides: CbsLspRuntimeConfigOverrides | undefined,
+  cwd: string,
+): BootstrapConfigValues {
+  return {
+    configPath: parseOptionalPathSetting(overrides?.configPath, cwd),
+    workspacePath: parseOptionalPathSetting(overrides?.workspacePath, cwd),
+  };
+}
+
+/**
+ * createCliLayer 함수.
+ * CLI override를 runtime 병합용 layer로 정규화한다.
+ *
+ * @param overrides - CLI에서 받은 override 집합
+ * @param cwd - CLI 상대 경로를 해석할 기준 작업 디렉터리
+ * @returns cli source가 붙은 runtime layer
  */
 function createCliLayer(
   overrides: CbsLspRuntimeConfigOverrides | undefined,
   cwd: string,
-): { configPath?: string | null; layer: RuntimeConfigLayer } {
+): RuntimeConfigLayer {
   return {
-    configPath: parseOptionalPathSetting(overrides?.configPath, cwd),
-    layer: {
-      source: 'cli',
-      values: {
-        logLevel: overrides?.logLevel,
-        luaLsExecutablePath: parseOptionalPathSetting(overrides?.luaLsExecutablePath, cwd),
-        workspacePath: parseOptionalPathSetting(overrides?.workspacePath, cwd),
-      },
+    source: 'cli',
+    values: {
+      logLevel: overrides?.logLevel,
+      luaLsExecutablePath: parseOptionalPathSetting(overrides?.luaLsExecutablePath, cwd),
+      workspacePath: parseOptionalPathSetting(overrides?.workspacePath, cwd),
     },
+  };
+}
+
+/**
+ * createEnvBootstrapValues 함수.
+ * env에서 config discovery 전에 필요한 bootstrap 값만 추출한다.
+ *
+ * @param env - process env 또는 테스트에서 주입한 env
+ * @param cwd - env 상대 경로를 해석할 기준 작업 디렉터리
+ * @returns env source의 bootstrap 후보 값
+ */
+function createEnvBootstrapValues(
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+): BootstrapConfigValues {
+  return {
+    configPath: parseOptionalPathSetting(
+      env.CBS_LSP_CONFIG ?? env.CBS_LANGUAGE_SERVER_CONFIG,
+      cwd,
+    ),
+    workspacePath: parseOptionalPathSetting(env.CBS_LSP_WORKSPACE, cwd),
   };
 }
 
@@ -312,6 +352,23 @@ function createInitializationLayer(
 }
 
 /**
+ * createRuntimeConfigBootstrap 함수.
+ * config file bootstrap 단계가 참조할 source별 후보값을 한 번에 정리한다.
+ *
+ * @param context - resolveRuntimeConfig에서 만든 공통 loader/context
+ * @returns CLI/env/initialize bootstrap 후보 묶음
+ */
+function createRuntimeConfigBootstrap(
+  context: RuntimeConfigContext,
+): RuntimeConfigBootstrap {
+  return {
+    cli: createCliBootstrapValues(context.overrides, context.cwd),
+    env: createEnvBootstrapValues(context.env, context.cwd),
+    initialize: parseBootstrapConfigValues(context.initializationOptions, context.cwd),
+  };
+}
+
+/**
  * discoverConfigPath 함수.
  * 명시 config path가 없을 때 workspace 후보와 cwd 주변의 기본 파일명을 순서대로 탐색한다.
  *
@@ -346,32 +403,22 @@ function discoverConfigPath(
  * resolveExplicitConfigPath 함수.
  * config file path bootstrap 값을 CLI → env → initialize 순서로 해석한다.
  *
- * @param cliConfigPath - CLI override에서 정규화한 config path 값
- * @param env - process env 또는 테스트에서 주입한 env
- * @param initializationConfigPath - initialize option에서 읽은 config path 값
- * @param cwd - env 상대 경로를 절대 경로로 해석할 기준 작업 디렉터리
+ * @param bootstrap - CLI/env/initialize source별 bootstrap 후보 묶음
  * @returns 명시적으로 선택된 config path와 source, 없으면 undefined
  */
 function resolveExplicitConfigPath(
-  cliConfigPath: string | null | undefined,
-  env: NodeJS.ProcessEnv,
-  initializationConfigPath: string | null | undefined,
-  cwd: string,
+  bootstrap: RuntimeConfigBootstrap,
 ): { path: string | null; source: ExplicitConfigFilePathSource } | undefined {
-  if (cliConfigPath !== undefined) {
-    return { path: cliConfigPath, source: 'cli' };
+  if (bootstrap.cli.configPath !== undefined) {
+    return { path: bootstrap.cli.configPath, source: 'cli' };
   }
 
-  const envConfigPath = parseOptionalPathSetting(
-    env.CBS_LSP_CONFIG ?? env.CBS_LANGUAGE_SERVER_CONFIG,
-    cwd,
-  );
-  if (envConfigPath !== undefined) {
-    return { path: envConfigPath, source: 'env' };
+  if (bootstrap.env.configPath !== undefined) {
+    return { path: bootstrap.env.configPath, source: 'env' };
   }
 
-  if (initializationConfigPath !== undefined) {
-    return { path: initializationConfigPath, source: 'initialize' };
+  if (bootstrap.initialize.configPath !== undefined) {
+    return { path: bootstrap.initialize.configPath, source: 'initialize' };
   }
 
   return undefined;
@@ -387,12 +434,7 @@ function resolveExplicitConfigPath(
 function resolveConfigFilePath(
   options: ResolveConfigFilePathOptions,
 ): ResolvedConfigFilePath {
-  const explicitConfigPath = resolveExplicitConfigPath(
-    options.cliConfigPath,
-    options.env,
-    options.initializationConfigPath,
-    options.cwd,
-  );
+  const explicitConfigPath = resolveExplicitConfigPath(options.bootstrap);
   if (explicitConfigPath) {
     return explicitConfigPath;
   }
@@ -484,10 +526,7 @@ export function resolveRuntimeConfig(
   options: RuntimeConfigLoaderOptions = {},
 ): ResolvedCbsLspRuntimeConfig {
   const context = createRuntimeConfigContext(options);
-  const initializationBootstrap = parseBootstrapConfigValues(
-    context.initializationOptions,
-    context.cwd,
-  );
+  const bootstrap = createRuntimeConfigBootstrap(context);
   const cliLayer = createCliLayer(context.overrides, context.cwd);
   const envLayer = createEnvLayer(context.env, context.cwd);
   const initializationLayer = createInitializationLayer(
@@ -495,19 +534,17 @@ export function resolveRuntimeConfig(
     context.cwd,
   );
   const configFile = resolveConfigFilePath({
-    cliConfigPath: cliLayer.configPath,
+    bootstrap,
     cwd: context.cwd,
-    env: context.env,
     exists: context.exists,
-    initializationConfigPath: initializationBootstrap.configPath,
     workspaceCandidates: [
-      cliLayer.layer.values.workspacePath,
-      envLayer.values.workspacePath,
-      initializationBootstrap.workspacePath,
+      bootstrap.cli.workspacePath,
+      bootstrap.env.workspacePath,
+      bootstrap.initialize.workspacePath,
     ],
   });
   const configLayer = loadConfigFileLayer(configFile.path, context.exists, context.readFile);
-  const runtimeLayers = [cliLayer.layer, envLayer, configLayer, initializationLayer] as const;
+  const runtimeLayers = [cliLayer, envLayer, configLayer, initializationLayer] as const;
 
   const logLevel = resolveField(runtimeLayers, (values) => values.logLevel, DEFAULT_LOG_LEVEL);
   const workspacePath = resolveField(runtimeLayers, (values) => values.workspacePath, null);

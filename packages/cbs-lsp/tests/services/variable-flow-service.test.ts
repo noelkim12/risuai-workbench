@@ -12,6 +12,7 @@ import { getCustomExtensionArtifactContract, type CustomExtensionArtifact } from
 
 import { ElementRegistry, FileScanner, UnifiedVariableGraph } from '../../src/indexer';
 import { VariableFlowService } from '../../src/services';
+import { snapshotLayer3Queries } from '../fixtures/fixture-corpus';
 
 type WorkspaceFileSeed = {
   artifact: CustomExtensionArtifact;
@@ -116,8 +117,42 @@ describe('VariableFlowService', () => {
     expect(result?.occurrences).toHaveLength(3);
     expect(result?.readers.map((entry) => entry.artifact)).toEqual(['lorebook', 'regex']);
     expect(result?.writers.map((entry) => entry.artifact)).toEqual(['lua']);
+    expect(result?.occurrences.map((entry) => entry.occurrenceId)).toEqual(
+      [...(result?.occurrences.map((entry) => entry.occurrenceId) ?? [])].sort((left, right) =>
+        left.localeCompare(right),
+      ),
+    );
     expect(result?.flowEntry?.varName).toBe('mood');
     expect(result?.issues).toEqual([]);
+    expect(result?.defaultValue).toBeNull();
+    expect(result?.matchedOccurrence).toBeNull();
+
+    const snapshot = snapshotLayer3Queries({ activationChain: null, variableFlow: result ?? null });
+    expect(snapshot).toMatchObject({
+      schema: 'cbs-lsp-agent-contract',
+      schemaVersion: '1.0.0',
+      contract: {
+        layer: 'layer3',
+        stability: 'stable-public-read-contract',
+        trust: {
+          agentsMayTrustSnapshotDirectly: true,
+          stableForCrossFileReasoning: true,
+        },
+        nullableFields: {
+          envelope: ['activationChain', 'variableFlow'],
+          variableFlow: ['flowEntry', 'defaultValue', 'matchedOccurrence'],
+        },
+        deterministicOrdering: {
+          variableOccurrences: 'occurrenceId',
+          variableReadersWriters: 'uri -> hostStartOffset -> hostEndOffset -> occurrenceId',
+        },
+      },
+      variableFlow: {
+        schema: 'cbs-lsp-agent-contract',
+        schemaVersion: '1.0.0',
+      },
+      activationChain: null,
+    });
   });
 
   it('maps phase-order-risk issues back to the matching cross-file occurrences', async () => {

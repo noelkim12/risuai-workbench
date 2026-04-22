@@ -29,6 +29,14 @@ export type AgentMetadataKind =
   | 'block-snippet'
   | 'calc-operator';
 
+export const CBS_AGENT_PROTOCOL_SCHEMA = 'cbs-lsp-agent-contract';
+export const CBS_AGENT_PROTOCOL_VERSION = '1.0.0';
+
+export interface CbsAgentProtocolMarker {
+  schema: typeof CBS_AGENT_PROTOCOL_SCHEMA;
+  schemaVersion: typeof CBS_AGENT_PROTOCOL_VERSION;
+}
+
 export interface AgentMetadataCategoryContract {
   category: AgentMetadataCategory;
   kind: AgentMetadataKind;
@@ -60,9 +68,24 @@ export interface AgentMetadataAvailabilityContract {
 
 export interface AgentMetadataEnvelope {
   cbs: {
+    schema: typeof CBS_AGENT_PROTOCOL_SCHEMA;
+    schemaVersion: typeof CBS_AGENT_PROTOCOL_VERSION;
     availability?: AgentMetadataAvailabilityContract;
     category: AgentMetadataCategoryContract;
     explanation?: AgentMetadataExplanationContract;
+  };
+}
+
+/**
+ * createCbsAgentProtocolMarker 함수.
+ * agent-facing public payload가 공유할 stable schema/version marker를 생성함.
+ *
+ * @returns 공통 schema/version marker
+ */
+export function createCbsAgentProtocolMarker(): CbsAgentProtocolMarker {
+  return {
+    schema: CBS_AGENT_PROTOCOL_SCHEMA,
+    schemaVersion: CBS_AGENT_PROTOCOL_VERSION,
   };
 }
 
@@ -122,6 +145,7 @@ export function createAgentMetadataEnvelope(
 ): AgentMetadataEnvelope {
   return {
     cbs: {
+      ...createCbsAgentProtocolMarker(),
       availability,
       category,
       explanation,
@@ -157,7 +181,13 @@ export function isAgentMetadataEnvelope(value: unknown): value is AgentMetadataE
     }
   }
 
-  if (!category || typeof category.category !== 'string' || typeof category.kind !== 'string') {
+  if (
+    envelope.cbs?.schema !== CBS_AGENT_PROTOCOL_SCHEMA ||
+    envelope.cbs?.schemaVersion !== CBS_AGENT_PROTOCOL_VERSION ||
+    !category ||
+    typeof category.category !== 'string' ||
+    typeof category.kind !== 'string'
+  ) {
     return false;
   }
 

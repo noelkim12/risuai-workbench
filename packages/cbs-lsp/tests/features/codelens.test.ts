@@ -15,6 +15,11 @@ import { CodeLensProvider } from '../../src/features/codelens';
 import { fragmentAnalysisService } from '../../src/core';
 import { ElementRegistry, FileScanner } from '../../src/indexer';
 import { ActivationChainService } from '../../src/services';
+import {
+  createFixtureRequest,
+  getFixtureCorpusEntry,
+  snapshotCodeLensesEnvelope,
+} from '../fixtures/fixture-corpus';
 
 type WorkspaceFileSeed = {
   artifact: CustomExtensionArtifact;
@@ -54,40 +59,6 @@ async function writeWorkspaceFile(root: string, seed: WorkspaceFileSeed): Promis
   return pathToFileURL(absolutePath).href;
 }
 
-/**
- * lorebookText 함수.
- * activation chain fixture용 canonical lorebook 텍스트를 조립함.
- *
- * @param options - lorebook frontmatter와 content seed
- * @returns `.risulorebook` fixture text
- */
-function lorebookText(options: {
-  name: string;
-  keys: readonly string[];
-  content: string;
-  secondaryKeys?: readonly string[];
-  selective?: boolean;
-}): string {
-  return [
-    '---',
-    `name: ${options.name}`,
-    `comment: ${options.name}`,
-    'constant: false',
-    `selective: ${String(options.selective ?? false)}`,
-    'enabled: true',
-    'insertion_order: 0',
-    'case_sensitive: false',
-    'use_regex: false',
-    '---',
-    '@@@ KEYS',
-    ...options.keys,
-    ...(options.secondaryKeys ? ['@@@ SECONDARY_KEYS', ...options.secondaryKeys] : []),
-    '@@@ CONTENT',
-    options.content,
-    '',
-  ].join('\n');
-}
-
 afterEach(async () => {
   fragmentAnalysisService.clearAll();
   await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -96,11 +67,11 @@ afterEach(async () => {
 describe('CodeLensProvider', () => {
   it('counts only possible edges in the primary summary and moves partial/blocked/cycle state to detail lens', async () => {
     const root = await createWorkspaceRoot();
-    const alphaText = lorebookText({
-      name: 'Alpha',
-      keys: ['alpha'],
-      content: 'beta wakes the main chain, gamma only partially matches, and delta is blocked.',
-    });
+    const alphaEntry = getFixtureCorpusEntry('lorebook-activation-alpha');
+    const betaEntry = getFixtureCorpusEntry('lorebook-activation-beta');
+    const gammaEntry = getFixtureCorpusEntry('lorebook-activation-gamma');
+    const deltaEntry = getFixtureCorpusEntry('lorebook-activation-delta');
+    const alphaText = alphaEntry.text;
     const alphaUri = await writeWorkspaceFile(root, {
       artifact: 'lorebook',
       fileName: 'alpha.risulorebook',
@@ -109,31 +80,17 @@ describe('CodeLensProvider', () => {
     await writeWorkspaceFile(root, {
       artifact: 'lorebook',
       fileName: 'beta.risulorebook',
-      text: lorebookText({
-        name: 'Beta',
-        keys: ['beta'],
-        content: 'alpha closes the cycle.',
-      }),
+      text: betaEntry.text,
     });
     await writeWorkspaceFile(root, {
       artifact: 'lorebook',
       fileName: 'gamma.risulorebook',
-      text: lorebookText({
-        name: 'Gamma',
-        keys: ['gamma'],
-        secondaryKeys: ['omega'],
-        selective: true,
-        content: 'Gamma lore body.',
-      }),
+      text: gammaEntry.text,
     });
     await writeWorkspaceFile(root, {
       artifact: 'lorebook',
       fileName: 'delta.risulorebook',
-      text: lorebookText({
-        name: 'Delta',
-        keys: ['delta'],
-        content: '@@no_recursive_search\nDelta lore body.',
-      }),
+      text: deltaEntry.text,
     });
 
     const scanResult = await new FileScanner(root).scan();
@@ -155,10 +112,76 @@ describe('CodeLensProvider', () => {
     });
 
     expect(codeLenses).toHaveLength(2);
-    expect(codeLenses[0]?.command?.title).toBe('1개 엔트리에 의해 활성화됨 | 1개 엔트리를 활성화');
-    expect(codeLenses[1]?.command?.title).toBe(
-      '부분 매치: 들어옴 0 / 나감 1 | 차단: 들어옴 0 / 나감 1 | 순환 감지',
-    );
+    expect(snapshotCodeLensesEnvelope(codeLenses)).toEqual({
+      schema: 'cbs-lsp-agent-contract',
+      schemaVersion: '1.0.0',
+      availability: expect.objectContaining({
+        features: expect.arrayContaining([
+          expect.objectContaining({
+            key: 'codelens',
+            scope: 'local-only',
+          }),
+        ]),
+      }),
+      provenance: {
+        detail:
+          'CodeLens snapshots normalize lorebook activation summary/detail lenses into stable command, count, cycle, and refresh semantics without requiring title string parsing.',
+        reason: 'contextual-inference',
+        source: 'codelens:activation-summary',
+      },
+      codeLenses: [
+        {
+          command: {
+            command: 'cbs-lsp.codelens.activationSummary',
+            kind: 'detail',
+            mode: 'no-op',
+            uri: alphaUri,
+          },
+          counts: {
+            incoming: { blocked: 0, partial: 0, possible: 1 },
+            outgoing: { blocked: 1, partial: 1, possible: 1 },
+          },
+          cycle: {
+            count: 1,
+            hasCycles: true,
+          },
+          lensKind: 'detail',
+          lensState: 'active',
+          range: expect.any(Object),
+          semantics: {
+            detailStatuses: ['partial', 'blocked'],
+            refreshTriggers: ['document-sync', 'watched-files'],
+            summaryStatuses: ['possible'],
+          },
+          title: '부분 매치: 들어옴 0 / 나감 1 | 차단: 들어옴 0 / 나감 1 | 순환 감지',
+        },
+        {
+          command: {
+            command: 'cbs-lsp.codelens.activationSummary',
+            kind: 'summary',
+            mode: 'no-op',
+            uri: alphaUri,
+          },
+          counts: {
+            incoming: { blocked: 0, partial: 0, possible: 1 },
+            outgoing: { blocked: 1, partial: 1, possible: 1 },
+          },
+          cycle: {
+            count: 1,
+            hasCycles: true,
+          },
+          lensKind: 'summary',
+          lensState: 'active',
+          range: expect.any(Object),
+          semantics: {
+            detailStatuses: ['partial', 'blocked'],
+            refreshTriggers: ['document-sync', 'watched-files'],
+            summaryStatuses: ['possible'],
+          },
+          title: '1개 엔트리에 의해 활성화됨 | 1개 엔트리를 활성화',
+        },
+      ],
+    });
   });
 
   it('returns no CodeLens for non-workspace or non-lorebook requests', () => {
@@ -171,6 +194,23 @@ describe('CodeLensProvider', () => {
     expect(
       provider.provide({
         textDocument: { uri: 'file:///fixtures/no-workspace.risulorebook' },
+      }),
+    ).toEqual([]);
+  });
+
+  it('returns no CodeLens when the lorebook has no CONTENT fragment to anchor the lens', () => {
+    const entry = getFixtureCorpusEntry('lorebook-no-content-section');
+    const provider = new CodeLensProvider({
+      analysisService: fragmentAnalysisService,
+      resolveActivationChainService: () => ({
+        queryByUri: () => null,
+      } as ActivationChainService),
+      resolveRequest: () => createFixtureRequest(entry),
+    });
+
+    expect(
+      provider.provide({
+        textDocument: { uri: entry.uri },
       }),
     ).toEqual([]);
   });

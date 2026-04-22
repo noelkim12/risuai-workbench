@@ -8,6 +8,8 @@ import {
   type CodeAction,
   type CodeActionParams,
   type CodeLensParams,
+  type CompletionItem,
+  type CompletionList,
   type CompletionParams,
   type Connection,
   type Definition,
@@ -35,6 +37,7 @@ import { fragmentAnalysisService, type FragmentAnalysisRequest } from '../core';
 import { CodeActionProvider } from '../features/codeActions';
 import { CodeLensProvider } from '../features/codelens';
 import { CompletionProvider } from '../features/completion';
+import type { LuaLsCompanionController } from '../controllers/LuaLsCompanionController';
 import { DefinitionProvider } from '../features/definition';
 import { DocumentSymbolProvider } from '../features/documentSymbol';
 import { FoldingProvider } from '../features/folding';
@@ -44,10 +47,9 @@ import { ReferencesProvider } from '../features/references';
 import { RenameProvider } from '../features/rename';
 import { SemanticTokensProvider } from '../features/semanticTokens';
 import { SignatureHelpProvider } from '../features/signature';
+import { RequestHandlerRunner } from '../handlers/RequestHandlerRunner';
 import { CbsLspPathHelper } from './path-helper';
 import { shouldRouteDocumentToLuaLs } from '../providers/lua/lualsDocuments';
-import { createLuaLsProxy } from '../providers/lua/lualsProxy';
-import { isRequestCancelled } from '../utils/request-cancellation';
 import { traceFeatureRequest, traceFeatureResult } from '../utils/server-tracing';
 import { VariableFlowService } from '../services';
 
@@ -66,7 +68,7 @@ export interface ServerFeatureRegistrarProviders {
 
 export interface ServerFeatureRegistrarContext {
   connection: Connection;
-  luaLsProxy: ReturnType<typeof createLuaLsProxy>;
+  luaLsProxy: Pick<LuaLsCompanionController, 'getRuntime' | 'provideCompletion' | 'provideHover'>;
   providers: ServerFeatureRegistrarProviders;
   registry: CBSBuiltinRegistry;
   resolveWorkspaceRequest: (uri: string) => FragmentAnalysisRequest | null;
@@ -81,7 +83,7 @@ export interface ServerFeatureRegistrarContext {
  * @returns 요청 처리를 바로 중단해야 하면 true
  */
 function shouldSkipRequest(cancellationToken: CancellationToken | undefined): boolean {
-  return isRequestCancelled(cancellationToken);
+  return cancellationToken?.isCancellationRequested ?? false;
 }
 
 /**
@@ -92,7 +94,7 @@ function shouldSkipRequest(cancellationToken: CancellationToken | undefined): bo
  * @returns rename request에서 throw할 ResponseError 인스턴스
  */
 function createRenameRequestError(message: string): ResponseError<void> {
-  return new ResponseError(-32600 as typeof LSPErrorCodes.ServerCancelled, message);
+  return new ResponseError(LSPErrorCodes.RequestFailed, message);
 }
 
 /**
@@ -131,8 +133,9 @@ export class ServerFeatureRegistrar {
   private readonly foldingProvider: FoldingProvider;
   private readonly formattingProvider: FormattingProvider;
   private readonly hoverProvider: HoverProvider;
-  private readonly luaLsProxy: ReturnType<typeof createLuaLsProxy>;
+  private readonly luaLsProxy: Pick<LuaLsCompanionController, 'getRuntime' | 'provideCompletion' | 'provideHover'>;
   private readonly registry: CBSBuiltinRegistry;
+  private readonly requestRunner: RequestHandlerRunner;
   private readonly resolveRequest: (uri: string) => FragmentAnalysisRequest | null;
   private readonly resolveWorkspaceRequest: (uri: string) => FragmentAnalysisRequest | null;
   private readonly resolveWorkspaceVariableFlowServiceByUri: (uri: string) => VariableFlowService | null;
@@ -149,6 +152,7 @@ export class ServerFeatureRegistrar {
     this.connection = context.connection;
     this.luaLsProxy = context.luaLsProxy;
     this.registry = context.registry;
+    this.requestRunner = new RequestHandlerRunner(context.connection);
     this.codeActionProvider = context.providers.codeActionProvider;
     this.codeLensProvider = context.providers.codeLensProvider;
     this.completionProvider = context.providers.completionProvider;
@@ -210,201 +214,200 @@ export class ServerFeatureRegistrar {
 
   private registerCodeActionHandler(): void {
     this.connection.onCodeAction((params: CodeActionParams, cancellationToken): CodeAction[] => {
-      traceFeatureRequest(this.connection, 'codeAction', 'start', {
-        uri: params.textDocument.uri,
-        cancelled: shouldSkipRequest(cancellationToken),
-        diagnostics: params.context.diagnostics.length,
+      return this.requestRunner.runSync({
+        empty: [],
+        feature: 'codeAction',
+        getUri: (requestParams) => requestParams.textDocument.uri,
+        params,
+        run: () => this.codeActionProvider.provide(params),
+        startDetails: (requestParams) => ({
+          diagnostics: requestParams.context.diagnostics.length,
+        }),
+        summarize: (result) => ({ count: result.length }),
+        token: cancellationToken,
       });
-      if (shouldSkipRequest(cancellationToken)) {
-        traceFeatureResult(this.connection, 'codeAction', 'cancelled', { uri: params.textDocument.uri });
-        return [];
-      }
-
-      const result = this.codeActionProvider.provide(params);
-      traceFeatureResult(this.connection, 'codeAction', 'end', {
-        uri: params.textDocument.uri,
-        count: result.length,
-      });
-      return result;
     });
   }
 
   private registerCompletionHandler(): void {
     this.connection.onCompletion((params: CompletionParams, cancellationToken) => {
-      traceFeatureRequest(this.connection, 'completion', 'start', {
-        uri: params.textDocument.uri,
-        cancelled: shouldSkipRequest(cancellationToken),
-      });
-      if (shouldSkipRequest(cancellationToken)) {
-        traceFeatureResult(this.connection, 'completion', 'cancelled', { uri: params.textDocument.uri });
-        return [];
+      const filePath = CbsLspPathHelper.getFilePathFromUri(params.textDocument.uri);
+
+      if (shouldRouteDocumentToLuaLs(filePath)) {
+        return this.requestRunner.runAsync<
+          CompletionParams,
+          CompletionItem[] | CompletionList
+        >({
+          empty: [],
+          feature: 'completion',
+          getUri: (requestParams) => requestParams.textDocument.uri,
+          params,
+          run: () => {
+            traceFeatureRequest(this.connection, 'luaProxy', 'completion-start', {
+              uri: params.textDocument.uri,
+              companionStatus: this.luaLsProxy.getRuntime().status,
+            });
+            return this.luaLsProxy.provideCompletion(params, cancellationToken);
+          },
+          summarize: (result) => {
+            const count = Array.isArray(result) ? result.length : result.items.length;
+            traceFeatureResult(this.connection, 'luaProxy', 'completion-end', {
+              uri: params.textDocument.uri,
+              companionStatus: this.luaLsProxy.getRuntime().status,
+              count,
+            });
+            return {
+              count,
+              source: 'luaProxy',
+            };
+          },
+          token: cancellationToken,
+        });
       }
 
-      const result = this.completionProvider.provide(params, cancellationToken);
-      traceFeatureResult(this.connection, 'completion', 'end', {
-        uri: params.textDocument.uri,
-        count: result.length,
+      return this.requestRunner.runSync({
+        empty: [],
+        feature: 'completion',
+        getUri: (requestParams) => requestParams.textDocument.uri,
+        params,
+        run: () => this.completionProvider.provide(params, cancellationToken),
+        summarize: (result) => ({ count: result.length }),
+        token: cancellationToken,
       });
-      return result;
     });
   }
 
   private registerDocumentSymbolHandler(): void {
     this.connection.onDocumentSymbol((params: DocumentSymbolParams, cancellationToken): DocumentSymbol[] => {
-      traceFeatureRequest(this.connection, 'documentSymbol', 'start', {
-        uri: params.textDocument.uri,
-        cancelled: shouldSkipRequest(cancellationToken),
+      return this.requestRunner.runSync({
+        empty: [],
+        feature: 'documentSymbol',
+        getUri: (requestParams) => requestParams.textDocument.uri,
+        params,
+        run: () => {
+          const request = this.resolveRequest(params.textDocument.uri);
+          return request ? this.documentSymbolProvider.provide(params, request, cancellationToken) : [];
+        },
+        summarize: (result) => ({ count: result.length }),
+        token: cancellationToken,
       });
-      if (shouldSkipRequest(cancellationToken)) {
-        traceFeatureResult(this.connection, 'documentSymbol', 'cancelled', { uri: params.textDocument.uri });
-        return [];
-      }
-
-      const request = this.resolveRequest(params.textDocument.uri);
-      const result = request ? this.documentSymbolProvider.provide(params, request, cancellationToken) : [];
-      traceFeatureResult(this.connection, 'documentSymbol', 'end', {
-        uri: params.textDocument.uri,
-        count: result.length,
-      });
-      return result;
     });
   }
 
   private registerFormattingHandler(): void {
     this.connection.onDocumentFormatting((params: DocumentFormattingParams, cancellationToken): TextEdit[] => {
-      traceFeatureRequest(this.connection, 'formatting', 'start', {
-        uri: params.textDocument.uri,
-        cancelled: shouldSkipRequest(cancellationToken),
+      return this.requestRunner.runSync({
+        empty: [],
+        feature: 'formatting',
+        getUri: (requestParams) => requestParams.textDocument.uri,
+        params,
+        run: () => this.formattingProvider.provide(params),
+        summarize: (result) => ({ count: result.length }),
+        token: cancellationToken,
       });
-      if (shouldSkipRequest(cancellationToken)) {
-        traceFeatureResult(this.connection, 'formatting', 'cancelled', { uri: params.textDocument.uri });
-        return [];
-      }
-
-      const result = this.formattingProvider.provide(params);
-      traceFeatureResult(this.connection, 'formatting', 'end', {
-        uri: params.textDocument.uri,
-        count: result.length,
-      });
-      return result;
     });
   }
 
   private registerDefinitionHandler(): void {
     this.connection.onDefinition((params: DefinitionParams, cancellationToken): Definition | null => {
-      traceFeatureRequest(this.connection, 'definition', 'start', {
-        uri: params.textDocument.uri,
-        cancelled: shouldSkipRequest(cancellationToken),
+      return this.requestRunner.runSync({
+        empty: null,
+        feature: 'definition',
+        getUri: (requestParams) => requestParams.textDocument.uri,
+        params,
+        run: () => this.createDefinitionProvider(params.textDocument.uri).provide(params, cancellationToken),
+        summarize: (result) => ({
+          count: Array.isArray(result) ? result.length : result ? 1 : 0,
+        }),
+        token: cancellationToken,
       });
-      if (shouldSkipRequest(cancellationToken)) {
-        traceFeatureResult(this.connection, 'definition', 'cancelled', { uri: params.textDocument.uri });
-        return null;
-      }
-
-      const result = this.createDefinitionProvider(params.textDocument.uri).provide(params, cancellationToken);
-      const count = Array.isArray(result) ? result.length : result ? 1 : 0;
-      traceFeatureResult(this.connection, 'definition', 'end', {
-        uri: params.textDocument.uri,
-        count,
-      });
-      return result;
     });
   }
 
   private registerReferencesHandler(): void {
     this.connection.onReferences((params: ReferenceParams, cancellationToken): Location[] => {
-      traceFeatureRequest(this.connection, 'references', 'start', {
-        uri: params.textDocument.uri,
-        cancelled: shouldSkipRequest(cancellationToken),
+      return this.requestRunner.runSync({
+        empty: [],
+        feature: 'references',
+        getUri: (requestParams) => requestParams.textDocument.uri,
+        params,
+        run: () => this.createReferencesProvider(params.textDocument.uri).provide(params, cancellationToken),
+        summarize: (result) => ({ count: result.length }),
+        token: cancellationToken,
       });
-      if (shouldSkipRequest(cancellationToken)) {
-        traceFeatureResult(this.connection, 'references', 'cancelled', { uri: params.textDocument.uri });
-        return [];
-      }
-
-      const result = this.createReferencesProvider(params.textDocument.uri).provide(params, cancellationToken);
-      traceFeatureResult(this.connection, 'references', 'end', {
-        uri: params.textDocument.uri,
-        count: result.length,
-      });
-      return result;
     });
   }
 
   private registerPrepareRenameHandler(): void {
     this.connection.onPrepareRename((params: TextDocumentPositionParams, cancellationToken): LSPRange | null => {
-      traceFeatureRequest(this.connection, 'rename', 'prepare-start', {
-        uri: params.textDocument.uri,
-        cancelled: shouldSkipRequest(cancellationToken),
-      });
-      if (shouldSkipRequest(cancellationToken)) {
-        traceFeatureResult(this.connection, 'rename', 'prepare-cancelled', { uri: params.textDocument.uri });
-        return null;
-      }
-
-      const prepareResult = this.createRenameProvider(params.textDocument.uri).prepareRename(
+      return this.requestRunner.runSync({
+        empty: {
+          canRename: false,
+          response: null as LSPRange | null,
+        },
+        feature: 'rename',
+        getUri: (requestParams) => requestParams.textDocument.uri,
         params,
-        cancellationToken,
-      );
-      const response = resolvePrepareRenameResponse(prepareResult);
-      traceFeatureResult(this.connection, 'rename', 'prepare-end', {
-        uri: params.textDocument.uri,
-        canRename: prepareResult.canRename,
-      });
-      return response;
+        phases: {
+          start: 'prepare-start',
+          cancelled: 'prepare-cancelled',
+          end: 'prepare-end',
+        },
+        run: () => {
+          const prepareResult = this.createRenameProvider(params.textDocument.uri).prepareRename(
+            params,
+            cancellationToken,
+          );
+          return {
+            canRename: prepareResult.canRename,
+            response: resolvePrepareRenameResponse(prepareResult),
+          };
+        },
+        summarize: (result) => ({ canRename: result.canRename }),
+        token: cancellationToken,
+      }).response;
     });
   }
 
   private registerRenameHandler(): void {
     this.connection.onRenameRequest((params: RenameParams, cancellationToken): WorkspaceEdit | null => {
-      traceFeatureRequest(this.connection, 'rename', 'start', {
-        uri: params.textDocument.uri,
-        cancelled: shouldSkipRequest(cancellationToken),
+      return this.requestRunner.runSync({
+        empty: null,
+        feature: 'rename',
+        getUri: (requestParams) => requestParams.textDocument.uri,
+        params,
+        run: () => {
+          const provider = this.createRenameProvider(params.textDocument.uri);
+          const prepareResult = provider.prepareRename(params, cancellationToken);
+          if (!prepareResult.canRename) {
+            if (prepareResult.message === 'Request cancelled') {
+              return null;
+            }
+
+            throw createRenameRequestError(
+              prepareResult.message ?? 'Rename is not available at the current position.',
+            );
+          }
+
+          return provider.provideRename(params, cancellationToken);
+        },
+        summarize: (result) => ({ documentChanges: result?.documentChanges?.length ?? 0 }),
+        token: cancellationToken,
       });
-      if (shouldSkipRequest(cancellationToken)) {
-        traceFeatureResult(this.connection, 'rename', 'cancelled', { uri: params.textDocument.uri });
-        return null;
-      }
-
-      const provider = this.createRenameProvider(params.textDocument.uri);
-      const prepareResult = provider.prepareRename(params, cancellationToken);
-      if (!prepareResult.canRename) {
-        if (prepareResult.message === 'Request cancelled') {
-          traceFeatureResult(this.connection, 'rename', 'cancelled', { uri: params.textDocument.uri });
-          return null;
-        }
-
-        throw createRenameRequestError(
-          prepareResult.message ?? 'Rename is not available at the current position.',
-        );
-      }
-
-      const result = provider.provideRename(params, cancellationToken);
-      traceFeatureResult(this.connection, 'rename', 'end', {
-        uri: params.textDocument.uri,
-        documentChanges: result?.documentChanges?.length ?? 0,
-      });
-      return result;
     });
   }
 
   private registerCodeLensHandler(): void {
     this.connection.onCodeLens((params: CodeLensParams, cancellationToken) => {
-      traceFeatureRequest(this.connection, 'codelens', 'start', {
-        uri: params.textDocument.uri,
-        cancelled: shouldSkipRequest(cancellationToken),
+      return this.requestRunner.runSync({
+        empty: [],
+        feature: 'codelens',
+        getUri: (requestParams) => requestParams.textDocument.uri,
+        params,
+        run: () => this.codeLensProvider.provide(params, cancellationToken),
+        summarize: (result) => ({ count: result.length }),
+        token: cancellationToken,
       });
-      if (shouldSkipRequest(cancellationToken)) {
-        traceFeatureResult(this.connection, 'codelens', 'cancelled', { uri: params.textDocument.uri });
-        return [];
-      }
-
-      const result = this.codeLensProvider.provide(params, cancellationToken);
-      traceFeatureResult(this.connection, 'codelens', 'end', {
-        uri: params.textDocument.uri,
-        count: result.length,
-      });
-      return result;
     });
   }
 
@@ -452,66 +455,54 @@ export class ServerFeatureRegistrar {
 
   private registerSignatureHelpHandler(): void {
     this.connection.onSignatureHelp((params: SignatureHelpParams, cancellationToken) => {
-      traceFeatureRequest(this.connection, 'signature', 'start', {
-        uri: params.textDocument.uri,
-        cancelled: shouldSkipRequest(cancellationToken),
+      return this.requestRunner.runSync({
+        empty: null,
+        feature: 'signature',
+        getUri: (requestParams) => requestParams.textDocument.uri,
+        params,
+        run: () => {
+          const request = this.resolveRequest(params.textDocument.uri);
+          return request ? this.signatureHelpProvider.provide(params, request, cancellationToken) : null;
+        },
+        summarize: (result) => ({ hasResult: result !== null }),
+        token: cancellationToken,
       });
-      if (shouldSkipRequest(cancellationToken)) {
-        traceFeatureResult(this.connection, 'signature', 'cancelled', { uri: params.textDocument.uri });
-        return null;
-      }
-
-      const request = this.resolveRequest(params.textDocument.uri);
-      const result = request ? this.signatureHelpProvider.provide(params, request, cancellationToken) : null;
-      traceFeatureResult(this.connection, 'signature', 'end', {
-        uri: params.textDocument.uri,
-        hasResult: result !== null,
-      });
-      return result;
     });
   }
 
   private registerFoldingHandler(): void {
     this.connection.onFoldingRanges((params: FoldingRangeParams, cancellationToken) => {
-      traceFeatureRequest(this.connection, 'folding', 'start', {
-        uri: params.textDocument.uri,
-        cancelled: shouldSkipRequest(cancellationToken),
+      return this.requestRunner.runSync({
+        empty: [],
+        feature: 'folding',
+        getUri: (requestParams) => requestParams.textDocument.uri,
+        params,
+        run: () => {
+          const request = this.resolveRequest(params.textDocument.uri);
+          return request ? this.foldingProvider.provide(params, request, cancellationToken) : [];
+        },
+        summarize: (result) => ({ count: result.length }),
+        token: cancellationToken,
       });
-      if (shouldSkipRequest(cancellationToken)) {
-        traceFeatureResult(this.connection, 'folding', 'cancelled', { uri: params.textDocument.uri });
-        return [];
-      }
-
-      const request = this.resolveRequest(params.textDocument.uri);
-      const result = request ? this.foldingProvider.provide(params, request, cancellationToken) : [];
-      traceFeatureResult(this.connection, 'folding', 'end', {
-        uri: params.textDocument.uri,
-        count: result.length,
-      });
-      return result;
     });
   }
 
   private registerSemanticTokensHandler(): void {
     this.connection.languages.semanticTokens.on((params: SemanticTokensParams, cancellationToken) => {
-      traceFeatureRequest(this.connection, 'semanticTokens', 'start', {
-        uri: params.textDocument.uri,
-        cancelled: shouldSkipRequest(cancellationToken),
+      return this.requestRunner.runSync({
+        empty: { data: [] },
+        feature: 'semanticTokens',
+        getUri: (requestParams) => requestParams.textDocument.uri,
+        params,
+        run: () => {
+          const request = this.resolveRequest(params.textDocument.uri);
+          return request
+            ? this.semanticTokensProvider.provide(params, request, cancellationToken)
+            : { data: [] };
+        },
+        summarize: (result) => ({ count: result.data.length }),
+        token: cancellationToken,
       });
-      if (shouldSkipRequest(cancellationToken)) {
-        traceFeatureResult(this.connection, 'semanticTokens', 'cancelled', { uri: params.textDocument.uri });
-        return { data: [] };
-      }
-
-      const request = this.resolveRequest(params.textDocument.uri);
-      const result = request
-        ? this.semanticTokensProvider.provide(params, request, cancellationToken)
-        : { data: [] };
-      traceFeatureResult(this.connection, 'semanticTokens', 'end', {
-        uri: params.textDocument.uri,
-        count: result.data.length,
-      });
-      return result;
     });
   }
 }

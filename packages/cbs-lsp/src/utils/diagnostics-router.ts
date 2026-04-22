@@ -12,6 +12,8 @@ import {
   getDiagnosticDefinition,
 } from '../analyzer/diagnostics';
 import {
+  createCbsAgentProtocolMarker,
+  createLuaLsCompanionRuntime,
   createNormalizedRuntimeAvailabilitySnapshot,
   createFragmentOffsetMapper,
   createSyntheticDocumentVersion,
@@ -20,6 +22,8 @@ import {
   type FragmentDocumentAnalysis,
   type FragmentOffsetMapper,
   type FragmentAnalysisVersion,
+  type LuaLsCompanionRuntime,
+  type RuntimeOperatorContractOptions,
 } from '../core';
 import type { VariableFlowIssueMatch, VariableFlowService } from '../services/variable-flow-service';
 import { positionToOffset } from './position';
@@ -58,6 +62,8 @@ export interface NormalizedHostDiagnosticSnapshot {
 }
 
 export interface NormalizedHostDiagnosticsEnvelopeSnapshot {
+  schema: string;
+  schemaVersion: string;
   availability: NormalizedRuntimeAvailabilitySnapshot;
   diagnostics: NormalizedHostDiagnosticSnapshot[];
 }
@@ -550,9 +556,12 @@ export function normalizeHostDiagnosticsForSnapshot(
  */
 export function normalizeHostDiagnosticsEnvelopeForSnapshot(
   diagnostics: readonly Diagnostic[],
+  lualsRuntime: LuaLsCompanionRuntime = createLuaLsCompanionRuntime(),
+  operatorOptions: RuntimeOperatorContractOptions = {},
 ): NormalizedHostDiagnosticsEnvelopeSnapshot {
   return {
-    availability: createNormalizedRuntimeAvailabilitySnapshot(),
+    ...createCbsAgentProtocolMarker(),
+    availability: createNormalizedRuntimeAvailabilitySnapshot(lualsRuntime, operatorOptions),
     diagnostics: normalizeHostDiagnosticsForSnapshot(diagnostics),
   };
 }

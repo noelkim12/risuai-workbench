@@ -4,18 +4,30 @@
  */
 
 import { EventEmitter } from 'node:events';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { PassThrough } from 'node:stream';
 
+import type { Diagnostic } from 'vscode-languageserver/node';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  DEFAULT_LUALS_EXECUTABLE_CANDIDATES,
   createLuaLsProcessManager,
+  type LuaLsPublishDiagnosticsEvent,
   resolveLuaLsExecutablePathSync,
   type LuaLsProcessEvent,
   type LuaLsSpawnedProcess,
+  type LuaLsTransportNotificationHandler,
   type LuaLsTransport,
 } from '../../src/providers/lua/lualsProcess';
 import type { LuaLsRoutedDocument } from '../../src/providers/lua/lualsDocuments';
+import {
+  createLuaLsShadowDocumentUri,
+  createLuaLsShadowWorkspace,
+} from '../../src/providers/lua/lualsShadowWorkspace';
 
 class FakeLuaLsChildProcess extends EventEmitter {
   exitCode: number | null = null;
@@ -44,6 +56,8 @@ class FakeLuaLsChildProcess extends EventEmitter {
 }
 
 class FakeLuaLsTransport implements LuaLsTransport {
+  private notificationHandler: LuaLsTransportNotificationHandler = () => undefined;
+
   readonly notifications: Array<{ method: string; params: unknown }> = [];
 
   readonly requests: Array<{ method: string; params: unknown }> = [];
@@ -58,23 +72,35 @@ class FakeLuaLsTransport implements LuaLsTransport {
     this.notifications.push({ method, params });
   }
 
+  onNotification(handler: LuaLsTransportNotificationHandler): void {
+    this.notificationHandler = handler;
+  }
+
   request<TResult>(method: string, params: unknown): Promise<TResult> {
     this.requests.push({ method, params });
     return this.requestHandler(method, params) as Promise<TResult>;
+  }
+
+  emitNotification(method: string, params: unknown): void {
+    this.notificationHandler({ method, params });
   }
 }
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
+
+const SHADOW_ROOT = mkdtempSync(path.join(tmpdir(), 'cbs-lsp-test-shadow-'));
 
 function createLuaLsRoutedDocument(
   overrides: Partial<LuaLsRoutedDocument> = {},
 ): LuaLsRoutedDocument {
+  const sourceFilePath = '/workspace/lua/companion.risulua';
   return {
     sourceUri: 'file:///workspace/lua/companion.risulua',
-    sourceFilePath: '/workspace/lua/companion.risulua',
-    transportUri: 'risu-luals:///workspace/lua/companion.risulua.lua',
+    sourceFilePath,
+    transportUri: createLuaLsShadowDocumentUri(sourceFilePath, SHADOW_ROOT),
     languageId: 'lua',
     rootPath: '/workspace',
     version: 1,
@@ -113,7 +139,16 @@ describe('LuaLsProcessManager', () => {
       health: 'unavailable',
       status: 'unavailable',
     });
+    expect(runtime.detail).toContain('--luals-path');
+    expect(runtime.detail).toContain('lua-language-server');
     expect(events.at(-1)?.type).toBe('unavailable');
+  });
+
+  it('exports the default PATH candidates used by the compatibility contract', () => {
+    expect(DEFAULT_LUALS_EXECUTABLE_CANDIDATES).toEqual([
+      'lua-language-server',
+      'lua-language-server.exe',
+    ]);
   });
 
   it('spawns, initializes, health-checks, and shuts down through a mock transport', async () => {
@@ -132,6 +167,7 @@ describe('LuaLsProcessManager', () => {
     });
     const events: LuaLsProcessEvent[] = [];
     const manager = createLuaLsProcessManager({
+      createShadowWorkspace: () => createLuaLsShadowWorkspace(SHADOW_ROOT),
       createTransport: {
         create: () => fakeTransport,
       },
@@ -185,6 +221,7 @@ describe('LuaLsProcessManager', () => {
   it('marks the runtime as crashed when the sidecar exits unexpectedly', async () => {
     const fakeChild = new FakeLuaLsChildProcess();
     const manager = createLuaLsProcessManager({
+      createShadowWorkspace: () => createLuaLsShadowWorkspace(SHADOW_ROOT),
       createTransport: {
         create: () => new FakeLuaLsTransport(async () => ({ capabilities: {} })),
       },
@@ -202,6 +239,54 @@ describe('LuaLsProcessManager', () => {
     });
   });
 
+  it('schedules a bounded automatic restart after unexpected crashes', async () => {
+    vi.useFakeTimers();
+
+    const firstChild = new FakeLuaLsChildProcess();
+    const secondChild = new FakeLuaLsChildProcess();
+    const spawnedChildren = [firstChild, secondChild];
+    const events: LuaLsProcessEvent[] = [];
+    const manager = createLuaLsProcessManager({
+      createShadowWorkspace: () => createLuaLsShadowWorkspace(SHADOW_ROOT),
+      createTransport: {
+        create: () => new FakeLuaLsTransport(async () => ({ capabilities: {} })),
+      },
+      onEvent: (event) => {
+        events.push(event);
+      },
+      resolveExecutablePath: () => '/mock/bin/lua-language-server',
+      restartBackoffMs: [25],
+      spawnProcess: () => spawnedChildren.shift() as unknown as LuaLsSpawnedProcess,
+    });
+
+    manager.prepareForInitialize({ rootPath: '/workspace' });
+    await manager.start({ rootPath: '/workspace' });
+    firstChild.emitCrash(9);
+
+    expect(manager.getRuntime()).toMatchObject({
+      health: 'degraded',
+      status: 'crashed',
+    });
+    expect(manager.getRestartPolicy()).toEqual({
+      attemptsRemaining: 0,
+      lastStartRootPath: '/workspace',
+      maxAttempts: 1,
+      mode: 'automatic-on-crash',
+      nextDelayMs: 25,
+    });
+
+    await vi.advanceTimersByTimeAsync(25);
+
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['crashed', 'restart-scheduled', 'restart-attempt', 'initialized']),
+    );
+    expect(manager.getRuntime()).toMatchObject({
+      health: 'healthy',
+      status: 'ready',
+    });
+    expect(manager.getRuntime().detail).toContain('automatic restart attempt');
+  });
+
   it('flushes queued Lua document mirrors on startup and forwards didChange/didClose notifications', async () => {
     const fakeChild = new FakeLuaLsChildProcess();
     const fakeTransport = new FakeLuaLsTransport(async (method) => {
@@ -217,6 +302,7 @@ describe('LuaLsProcessManager', () => {
       throw new Error(`Unexpected request: ${method}`);
     });
     const manager = createLuaLsProcessManager({
+      createShadowWorkspace: () => createLuaLsShadowWorkspace(SHADOW_ROOT),
       createTransport: {
         create: () => fakeTransport,
       },
@@ -230,6 +316,10 @@ describe('LuaLsProcessManager', () => {
       text: 'local mood = getState("nextMood")\n',
       version: 2,
     });
+    const shadowTransportUri = createLuaLsShadowDocumentUri(
+      openedDocument.sourceFilePath,
+      SHADOW_ROOT,
+    );
 
     manager.prepareForInitialize({ rootPath: '/workspace' });
     manager.syncDocument(openedDocument);
@@ -252,7 +342,7 @@ describe('LuaLsProcessManager', () => {
         settings: {
           Lua: {
             diagnostics: {
-              validScheme: ['file', 'risu-luals'],
+              enableScheme: ['file', 'risu-luals'],
             },
           },
         },
@@ -262,7 +352,7 @@ describe('LuaLsProcessManager', () => {
       method: 'textDocument/didOpen',
       params: {
         textDocument: {
-          uri: openedDocument.transportUri,
+          uri: shadowTransportUri,
           languageId: 'lua',
           version: 1,
           text: openedDocument.text,
@@ -273,7 +363,7 @@ describe('LuaLsProcessManager', () => {
       method: 'textDocument/didChange',
       params: {
         textDocument: {
-          uri: changedDocument.transportUri,
+          uri: shadowTransportUri,
           version: 2,
         },
         contentChanges: [
@@ -287,9 +377,74 @@ describe('LuaLsProcessManager', () => {
       method: 'textDocument/didClose',
       params: {
         textDocument: {
-          uri: openedDocument.transportUri,
+          uri: shadowTransportUri,
         },
       },
     });
+  });
+
+  it('maps LuaLS diagnostics notifications back to source URIs and clears them after crashes', async () => {
+    const fakeChild = new FakeLuaLsChildProcess();
+    const fakeTransport = new FakeLuaLsTransport(async (method) => {
+      if (method === 'initialize') {
+        return { capabilities: {} };
+      }
+
+      throw new Error(`Unexpected request: ${method}`);
+    });
+    const published: LuaLsPublishDiagnosticsEvent[] = [];
+    const manager = createLuaLsProcessManager({
+      createShadowWorkspace: () => createLuaLsShadowWorkspace(SHADOW_ROOT),
+      createTransport: {
+        create: () => fakeTransport,
+      },
+      resolveExecutablePath: () => '/mock/bin/lua-language-server',
+      spawnProcess: () => fakeChild as unknown as LuaLsSpawnedProcess,
+    });
+    const openedDocument = createLuaLsRoutedDocument();
+    const shadowTransportUri = createLuaLsShadowDocumentUri(
+      openedDocument.sourceFilePath,
+      SHADOW_ROOT,
+    );
+    const diagnostics: Diagnostic[] = [
+      {
+        message: 'Undefined global `missingValue`',
+        range: {
+          start: { line: 0, character: 13 },
+          end: { line: 0, character: 25 },
+        },
+        severity: 1,
+        source: 'LuaLS',
+      },
+    ];
+
+    manager.onPublishDiagnostics((event) => {
+      published.push(event);
+    });
+    manager.prepareForInitialize({ rootPath: '/workspace' });
+    manager.syncDocument(openedDocument);
+    await manager.start({ rootPath: '/workspace' });
+
+    fakeTransport.emitNotification('textDocument/publishDiagnostics', {
+      uri: shadowTransportUri,
+      version: 1,
+      diagnostics,
+    });
+    fakeChild.emitCrash(9);
+
+    expect(published).toEqual([
+      {
+        diagnostics,
+        sourceUri: openedDocument.sourceUri,
+        transportUri: shadowTransportUri,
+        version: 1,
+      },
+      {
+        diagnostics: [],
+        sourceUri: openedDocument.sourceUri,
+        transportUri: shadowTransportUri,
+        version: 1,
+      },
+    ]);
   });
 });

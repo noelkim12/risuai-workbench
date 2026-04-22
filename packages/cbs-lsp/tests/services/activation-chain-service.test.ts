@@ -12,6 +12,7 @@ import { getCustomExtensionArtifactContract, type CustomExtensionArtifact } from
 
 import { ElementRegistry, FileScanner } from '../../src/indexer';
 import { ActivationChainService } from '../../src/services';
+import { snapshotLayer3Queries } from '../fixtures/fixture-corpus';
 
 type WorkspaceFileSeed = {
   artifact: CustomExtensionArtifact;
@@ -145,10 +146,49 @@ describe('ActivationChainService', () => {
     expect(betaQuery).not.toBeNull();
     expect(betaQuery?.incoming).toHaveLength(1);
     expect(betaQuery?.possibleIncoming).toHaveLength(1);
+    expect(betaQuery?.partialIncoming).toEqual([]);
+    expect(betaQuery?.blockedIncoming).toEqual([]);
     expect(betaQuery?.incoming[0]?.entry.id).toBe('Alpha');
     expect(betaQuery?.incoming[0]?.edge.matchedKeywords).toEqual(['beta']);
+    expect(betaQuery?.incoming[0]?.uri).toContain('/lorebooks/alpha.risulorebook');
+    expect(betaQuery?.incoming[0]?.relativePath).toBe('lorebooks/alpha.risulorebook');
     expect(alphaQuery?.outgoing).toHaveLength(1);
     expect(alphaQuery?.possibleOutgoing[0]?.entry.id).toBe('Beta');
+
+    const snapshot = snapshotLayer3Queries({ activationChain: betaQuery ?? null, variableFlow: null });
+    expect(snapshot).toMatchObject({
+      schema: 'cbs-lsp-agent-contract',
+      schemaVersion: '1.0.0',
+      contract: {
+        layer: 'layer3',
+        stability: 'stable-public-read-contract',
+        nullableFields: {
+          envelope: ['activationChain', 'variableFlow'],
+          activationMatch: ['uri', 'relativePath'],
+        },
+        alwaysPresentButMayBeEmpty: {
+          activationArrays: [
+            'incoming',
+            'outgoing',
+            'possibleIncoming',
+            'possibleOutgoing',
+            'partialIncoming',
+            'partialOutgoing',
+            'blockedIncoming',
+            'blockedOutgoing',
+          ],
+        },
+        deterministicOrdering: {
+          activationMatchLists: 'status(possible -> partial -> blocked) -> entry.id -> relativePath',
+          activationCycleSteps: 'BFS traversal order',
+        },
+      },
+      activationChain: {
+        schema: 'cbs-lsp-agent-contract',
+        schemaVersion: '1.0.0',
+      },
+      variableFlow: null,
+    });
   });
 
   it('preserves partial matches and missing secondary keywords in query results', async () => {
@@ -211,6 +251,68 @@ describe('ActivationChainService', () => {
     expect(alphaQuery?.cycle.hasCycles).toBe(true);
     expect(alphaQuery?.cycle.cycleCount).toBeGreaterThan(0);
     expect(alphaQuery?.cycle.steps.map((step) => step.entryId)).toEqual(['Alpha', 'Beta']);
+  });
+
+  it('keeps incoming matches in shared stable status/id/path order', async () => {
+    const { service } = await buildService([
+      {
+        artifact: 'lorebook',
+        fileName: 'alpha.risulorebook',
+        text: lorebookText({
+          name: 'Alpha',
+          keys: ['alpha'],
+          content: 'delta beta gamma fallback are all referenced here.',
+        }),
+      },
+      {
+        artifact: 'lorebook',
+        fileName: 'omega.risulorebook',
+        text: lorebookText({
+          name: 'Omega',
+          keys: ['omega'],
+          content: 'gamma is present but no backup token exists.',
+        }),
+      },
+      {
+        artifact: 'lorebook',
+        fileName: 'beta.risulorebook',
+        text: lorebookText({
+          name: 'Beta',
+          keys: ['beta'],
+          content: 'Beta lore body',
+        }),
+      },
+      {
+        artifact: 'lorebook',
+        fileName: 'delta.risulorebook',
+        text: lorebookText({
+          name: 'Delta',
+          keys: ['delta'],
+          content: 'Delta lore body',
+        }),
+      },
+      {
+        artifact: 'lorebook',
+        fileName: 'gamma.risulorebook',
+        text: lorebookText({
+          name: 'Gamma',
+          keys: ['gamma'],
+          secondaryKeys: ['fallback'],
+          selective: true,
+          content: 'Selective gamma lore body',
+        }),
+      },
+    ]);
+
+    const gammaQuery = service.queryEntry('Gamma');
+
+    expect(gammaQuery?.incoming.map((entry) => `${entry.edge.status}:${entry.entry.id}:${entry.relativePath}`)).toEqual([
+      'possible:Alpha:lorebooks/alpha.risulorebook',
+      'partial:Omega:lorebooks/omega.risulorebook',
+    ]);
+    expect(gammaQuery?.possibleIncoming.map((entry) => entry.entry.id)).toEqual(['Alpha']);
+    expect(gammaQuery?.partialIncoming.map((entry) => entry.entry.id)).toEqual(['Omega']);
+    expect(gammaQuery?.blockedIncoming).toEqual([]);
   });
 
   it('resolves lorebook uri and cursor offset back to the same activation query result', async () => {

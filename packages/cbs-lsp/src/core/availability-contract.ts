@@ -4,7 +4,9 @@
  */
 
 import {
+  createCbsAgentProtocolMarker,
   createAgentMetadataAvailability,
+  type CbsAgentProtocolMarker,
   type AgentMetadataAvailabilityContract,
   type AgentMetadataAvailabilityScope,
 } from './agent-metadata';
@@ -19,6 +21,8 @@ export interface ActiveFeatureAvailabilityMap {
   formatting: AgentMetadataAvailabilityContract;
   folding: AgentMetadataAvailabilityContract;
   hover: AgentMetadataAvailabilityContract;
+  'lua-completion': AgentMetadataAvailabilityContract;
+  'lua-diagnostics': AgentMetadataAvailabilityContract;
   luaHover: AgentMetadataAvailabilityContract;
   references: AgentMetadataAvailabilityContract;
   rename: AgentMetadataAvailabilityContract;
@@ -27,8 +31,6 @@ export interface ActiveFeatureAvailabilityMap {
 }
 
 export interface DeferredFeatureAvailabilityMap {
-  'lua-completion': AgentMetadataAvailabilityContract;
-  'lua-diagnostics': AgentMetadataAvailabilityContract;
   'lua-ast-fragment-routing': AgentMetadataAvailabilityContract;
 }
 
@@ -61,21 +63,119 @@ export interface DeferredScopeContract {
   luaRoutingMode: 'full-document-fragment';
 }
 
+export type RuntimeOperatorInstallMode = 'global' | 'local-devDependency' | 'npx';
+
+export type RuntimeOperatorWorkspaceRootSource =
+  | 'document-artifact-path'
+  | 'initialize.rootUri'
+  | 'initialize.workspaceFolders[0]'
+  | 'none'
+  | 'runtime-config.workspacePath';
+
+export type RuntimeOperatorFailureModeKey =
+  | 'luals-unavailable'
+  | 'multi-root-reduced'
+  | 'watched-files-client-unsupported'
+  | 'workspace-root-unresolved';
+
+export interface RuntimeOperatorInstallContract {
+  binaryName: 'cbs-language-server';
+  installModes: readonly RuntimeOperatorInstallMode[];
+  pathRequirement: 'required-for-global';
+  transport: 'stdio';
+  detail: string;
+}
+
+export interface RuntimeOperatorWorkspaceContract {
+  documentFallbackSource: 'document-artifact-path';
+  initializeWorkspaceFolderCount: number;
+  multiRootMode: 'first-workspace-folder';
+  resolvedWorkspaceRoot: string | null;
+  resolvedWorkspaceRootSource: RuntimeOperatorWorkspaceRootSource;
+  startupSelectionOrder: readonly RuntimeOperatorWorkspaceRootSource[];
+  detail: string;
+}
+
+export interface RuntimeOperatorDocsContract {
+  agentIntegration: 'packages/cbs-lsp/docs/AGENT_INTEGRATION.md';
+  compatibility: 'packages/cbs-lsp/docs/COMPATIBILITY.md';
+  lualsCompanion: 'packages/cbs-lsp/docs/LUALS_COMPANION.md';
+  readme: 'packages/cbs-lsp/README.md';
+  standaloneUsage: 'packages/cbs-lsp/docs/STANDALONE_USAGE.md';
+  troubleshooting: 'packages/cbs-lsp/docs/TROUBLESHOOTING.md';
+  vscodeClient: 'packages/vscode/README.md';
+}
+
+export interface RuntimeOperatorFailureModeContract {
+  active: boolean;
+  detail: string;
+  key: RuntimeOperatorFailureModeKey;
+  recovery: string;
+  severity: 'info' | 'warning';
+}
+
+export interface RuntimeOperatorContract {
+  docs: RuntimeOperatorDocsContract;
+  failureModes: RuntimeOperatorFailureModeContract[];
+  install: RuntimeOperatorInstallContract;
+  workspace: RuntimeOperatorWorkspaceContract;
+}
+
+export interface RuntimeOperatorContractOptions {
+  initializeWorkspaceFolderCount?: number;
+  resolvedWorkspaceRoot?: string | null;
+  resolvedWorkspaceRootSource?: RuntimeOperatorWorkspaceRootSource;
+  watchedFilesDynamicRegistration?: boolean;
+}
+
 export interface CbsRuntimeAvailabilityContract {
   companions: CompanionRuntimeMap;
   excludedArtifacts: ExcludedArtifactAvailabilityMap;
   featureAvailability: ActiveFeatureAvailabilityMap & DeferredFeatureAvailabilityMap;
+  operator: RuntimeOperatorContract;
 }
 
 export interface NormalizedAvailabilitySnapshotEntry extends AgentMetadataAvailabilityContract {
   key: string;
 }
 
-export interface NormalizedRuntimeAvailabilitySnapshot {
+export interface NormalizedRuntimeAvailabilitySnapshot extends CbsAgentProtocolMarker {
   artifacts: NormalizedAvailabilitySnapshotEntry[];
   companions: LuaLsCompanionRuntime[];
   features: NormalizedAvailabilitySnapshotEntry[];
+  operator: RuntimeOperatorContract;
 }
+
+export const CBS_RUNTIME_AVAILABILITY_REQUEST_METHOD = 'cbs/runtimeAvailability';
+
+export interface RuntimeAvailabilityRequestParams {
+  refresh?: 'current-session';
+}
+
+const RUNTIME_OPERATOR_DOCS = Object.freeze({
+  agentIntegration: 'packages/cbs-lsp/docs/AGENT_INTEGRATION.md',
+  compatibility: 'packages/cbs-lsp/docs/COMPATIBILITY.md',
+  lualsCompanion: 'packages/cbs-lsp/docs/LUALS_COMPANION.md',
+  readme: 'packages/cbs-lsp/README.md',
+  standaloneUsage: 'packages/cbs-lsp/docs/STANDALONE_USAGE.md',
+  troubleshooting: 'packages/cbs-lsp/docs/TROUBLESHOOTING.md',
+  vscodeClient: 'packages/vscode/README.md',
+}) satisfies RuntimeOperatorDocsContract;
+
+const RUNTIME_OPERATOR_INSTALL = Object.freeze({
+  binaryName: 'cbs-language-server',
+  installModes: ['local-devDependency', 'npx', 'global'] as const,
+  pathRequirement: 'required-for-global',
+  transport: 'stdio',
+  detail:
+    'Use a repo-pinned local install, ephemeral `npx`, or a global install with `cbs-language-server` available on PATH. All supported entry modes attach over stdio.',
+}) satisfies RuntimeOperatorInstallContract;
+
+const DEFAULT_STARTUP_SELECTION_ORDER = Object.freeze([
+  'runtime-config.workspacePath',
+  'initialize.workspaceFolders[0]',
+  'initialize.rootUri',
+]) satisfies readonly RuntimeOperatorWorkspaceRootSource[];
 
 export const ACTIVE_FEATURE_AVAILABILITY = Object.freeze({
   codeAction: createAgentMetadataAvailability(
@@ -126,7 +226,17 @@ export const ACTIVE_FEATURE_AVAILABILITY = Object.freeze({
   luaHover: createAgentMetadataAvailability(
     'local-only',
     'lua-provider:hover-proxy',
-    'Lua hover is active for `.risulua` documents by forwarding `textDocument/hover` to the LuaLS companion using the mirrored virtual Lua document when the sidecar is ready. If LuaLS is unavailable or still starting, the server returns no Lua hover result and leaves CBS capabilities unchanged.',
+      'Lua hover is active for `.risulua` documents by forwarding `textDocument/hover` to the LuaLS companion using the mirrored virtual Lua document when the sidecar is ready. If LuaLS is unavailable or still starting, the server returns no Lua hover result and leaves CBS capabilities unchanged.',
+  ),
+  'lua-completion': createAgentMetadataAvailability(
+    'local-only',
+    'lua-provider:completion-proxy',
+    'Lua completion is active for `.risulua` documents by forwarding `textDocument/completion` to the LuaLS companion using the mirrored virtual Lua document when the sidecar is ready. If LuaLS is unavailable, crashed, or still starting, the server returns no Lua completion items and leaves CBS capabilities unchanged.',
+  ),
+  'lua-diagnostics': createAgentMetadataAvailability(
+    'local-only',
+    'lua-provider:diagnostics-proxy',
+    'Lua diagnostics are active for `.risulua` documents by forwarding LuaLS `textDocument/publishDiagnostics` notifications from mirrored virtual Lua documents into host `publishDiagnostics`. If LuaLS is unavailable, crashed, or still starting, the server clears Lua diagnostics for affected documents and leaves CBS capabilities unchanged.',
   ),
   references: createAgentMetadataAvailability(
     'local-first',
@@ -168,16 +278,6 @@ export const DEFERRED_SCOPE_CONTRACT = Object.freeze({
     'lua-ast-fragment-routing',
   ] as const,
   featureAvailability: {
-    'lua-completion': createAgentMetadataAvailability(
-      'deferred',
-      'deferred-scope-contract:lua-completion',
-      'Lua completion proxy stays deferred until the minimal LuaLS hover seam is expanded into editor completion request routing.',
-    ),
-    'lua-diagnostics': createAgentMetadataAvailability(
-      'deferred',
-      'deferred-scope-contract:lua-diagnostics',
-      'Lua diagnostics proxy stays deferred until the server forwards LuaLS diagnostics notifications into host `publishDiagnostics` plumbing.',
-    ),
     'lua-ast-fragment-routing': createAgentMetadataAvailability(
       'deferred',
       'deferred-scope-contract:lua-ast-fragment-routing',
@@ -199,7 +299,7 @@ export function createLuaLsCompanionRuntime(
 ): LuaLsCompanionRuntime {
   return {
     detail:
-      'LuaLS sidecar is not running yet. The process foundation can probe availability, but Lua document routing/proxy features remain deferred until later checklist items land.',
+      'LuaLS sidecar is not running yet. Mirrored `.risulua` hover/completion stay unavailable until the companion becomes ready, while CBS fragment features keep running normally.',
     executablePath: null,
     health: 'unavailable',
     key: 'luals',
@@ -207,6 +307,86 @@ export function createLuaLsCompanionRuntime(
     status: 'unavailable',
     transport: 'stdio',
     ...overrides,
+  };
+}
+
+function createRuntimeOperatorFailureModes(
+  lualsRuntime: LuaLsCompanionRuntime,
+  options: Required<RuntimeOperatorContractOptions>,
+): RuntimeOperatorFailureModeContract[] {
+  return [
+    {
+      active: options.resolvedWorkspaceRoot === null,
+      detail:
+        'No startup workspace root was resolved during initialize. The server can still open standalone documents, but workspace graph features stay inactive until a canonical `.risu*` artifact path reveals a root or the client provides an explicit workspace override.',
+      key: 'workspace-root-unresolved',
+      recovery:
+        'Pass `--workspace`, set `CBS_LSP_WORKSPACE`, add `workspace` to runtime config, or send `initialize.workspaceFolders/rootUri` before relying on workspace graph features.',
+      severity: 'warning',
+    },
+    {
+      active: options.initializeWorkspaceFolderCount > 1,
+      detail:
+        'When multiple workspace folders are supplied, cbs-lsp currently selects only `initialize.workspaceFolders[0]` as the startup root. Additional folders are ignored until explicit multi-root orchestration lands.',
+      key: 'multi-root-reduced',
+      recovery:
+        'Use a single canonical workspace root per server process, or start one cbs-lsp instance per extracted workspace until multi-root support becomes first-class.',
+      severity: 'info',
+    },
+    {
+      active: options.watchedFilesDynamicRegistration === false,
+      detail:
+        'The client does not advertise dynamic watched-file registration, so external workspace file changes are not pushed to the server. Open/change/close events for active documents still refresh diagnostics and graph state.',
+      key: 'watched-files-client-unsupported',
+      recovery:
+        'Prefer clients that support `workspace/didChangeWatchedFiles` dynamic registration, or reopen affected documents after out-of-band file changes.',
+      severity: 'info',
+    },
+    {
+      active: lualsRuntime.status === 'unavailable' || lualsRuntime.status === 'crashed',
+      detail:
+        'LuaLS is unavailable or unhealthy, so `.risulua` companion features degrade to CBS-only behavior. CBS fragment features continue to run without the Lua sidecar.',
+      key: 'luals-unavailable',
+      recovery:
+        'Install LuaLS, ensure the executable is on PATH or pass `--luals-path`. After a crash, cbs-lsp retries the sidecar automatically with bounded backoff; if the companion stays degraded after the retry budget, restart or reinitialize the server.',
+      severity: 'warning',
+    },
+  ];
+}
+
+/**
+ * createRuntimeOperatorContract 함수.
+ * standalone 설치/실행/실패 모드를 runtime payload에서 재사용할 operator 계약으로 정리함.
+ *
+ * @param lualsRuntime - 현재 LuaLS sidecar runtime 상태
+ * @param options - workspace root 선택과 watched-files 지원 같은 운영 스냅샷
+ * @returns 문서/initialize/trace가 공유할 operator UX 계약
+ */
+export function createRuntimeOperatorContract(
+  lualsRuntime: LuaLsCompanionRuntime = createLuaLsCompanionRuntime(),
+  options: RuntimeOperatorContractOptions = {},
+): RuntimeOperatorContract {
+  const normalizedOptions: Required<RuntimeOperatorContractOptions> = {
+    initializeWorkspaceFolderCount: options.initializeWorkspaceFolderCount ?? 0,
+    resolvedWorkspaceRoot: options.resolvedWorkspaceRoot ?? null,
+    resolvedWorkspaceRootSource: options.resolvedWorkspaceRootSource ?? 'none',
+    watchedFilesDynamicRegistration: options.watchedFilesDynamicRegistration ?? false,
+  };
+
+  return {
+    docs: RUNTIME_OPERATOR_DOCS,
+    failureModes: createRuntimeOperatorFailureModes(lualsRuntime, normalizedOptions),
+    install: RUNTIME_OPERATOR_INSTALL,
+    workspace: {
+      detail:
+        'Startup root selection prefers runtime-config workspace overrides, then the first initialize workspace folder, then legacy rootUri. If initialize leaves the root unresolved, opened canonical `.risu*` artifact paths can still derive a workspace root for workspace graph features.',
+      documentFallbackSource: 'document-artifact-path',
+      initializeWorkspaceFolderCount: normalizedOptions.initializeWorkspaceFolderCount,
+      multiRootMode: 'first-workspace-folder',
+      resolvedWorkspaceRoot: normalizedOptions.resolvedWorkspaceRoot,
+      resolvedWorkspaceRootSource: normalizedOptions.resolvedWorkspaceRootSource,
+      startupSelectionOrder: DEFAULT_STARTUP_SELECTION_ORDER,
+    },
   };
 }
 
@@ -218,6 +398,7 @@ export function createLuaLsCompanionRuntime(
  */
 export function createCbsRuntimeAvailabilityContract(
   lualsRuntime: LuaLsCompanionRuntime = createLuaLsCompanionRuntime(),
+  operatorOptions: RuntimeOperatorContractOptions = {},
 ): CbsRuntimeAvailabilityContract {
   return {
     companions: {
@@ -228,6 +409,7 @@ export function createCbsRuntimeAvailabilityContract(
       ...ACTIVE_FEATURE_AVAILABILITY,
       ...DEFERRED_SCOPE_CONTRACT.featureAvailability,
     },
+    operator: createRuntimeOperatorContract(lualsRuntime, operatorOptions),
   };
 }
 
@@ -264,10 +446,12 @@ function createNormalizedAvailabilityEntries(
  */
 export function createNormalizedRuntimeAvailabilitySnapshot(
   lualsRuntime: LuaLsCompanionRuntime = createLuaLsCompanionRuntime(),
+  operatorOptions: RuntimeOperatorContractOptions = {},
 ): NormalizedRuntimeAvailabilitySnapshot {
-  const contract = createCbsRuntimeAvailabilityContract(lualsRuntime);
+  const contract = createCbsRuntimeAvailabilityContract(lualsRuntime, operatorOptions);
 
   return {
+    ...createCbsAgentProtocolMarker(),
     artifacts: createNormalizedAvailabilityEntries(
       contract.excludedArtifacts as unknown as Record<string, AgentMetadataAvailabilityContract>,
     ),
@@ -275,6 +459,7 @@ export function createNormalizedRuntimeAvailabilitySnapshot(
     features: createNormalizedAvailabilityEntries(
       contract.featureAvailability as unknown as Record<string, AgentMetadataAvailabilityContract>,
     ),
+    operator: contract.operator,
   };
 }
 
@@ -285,10 +470,11 @@ export interface AvailabilityTraceEntry {
   key: string;
 }
 
-export interface RuntimeAvailabilityTracePayload {
+export interface RuntimeAvailabilityTracePayload extends CbsAgentProtocolMarker {
   artifacts: AvailabilityTraceEntry[];
   companions: LuaLsCompanionRuntime[];
   features: AvailabilityTraceEntry[];
+  operator: RuntimeOperatorContract;
 }
 
 function createAvailabilityTraceEntries(
@@ -310,12 +496,15 @@ function createAvailabilityTraceEntries(
  */
 export function createRuntimeAvailabilityTracePayload(
   lualsRuntime: LuaLsCompanionRuntime = createLuaLsCompanionRuntime(),
+  operatorOptions: RuntimeOperatorContractOptions = {},
 ): RuntimeAvailabilityTracePayload {
-  const snapshot = createNormalizedRuntimeAvailabilitySnapshot(lualsRuntime);
+  const snapshot = createNormalizedRuntimeAvailabilitySnapshot(lualsRuntime, operatorOptions);
 
   return {
+    ...createCbsAgentProtocolMarker(),
     artifacts: createAvailabilityTraceEntries(snapshot.artifacts),
     companions: snapshot.companions,
     features: createAvailabilityTraceEntries(snapshot.features),
+    operator: snapshot.operator,
   };
 }

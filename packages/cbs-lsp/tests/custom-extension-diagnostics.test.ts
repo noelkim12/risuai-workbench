@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { DiagnosticSeverity, type Diagnostic } from 'vscode-languageserver/node';
 import {
   mapDocumentToCbsFragments,
   createDiagnosticForFragment,
@@ -504,6 +505,8 @@ Hello <user>
 
       expect(envelope.diagnostics).toEqual(snapshotHostDiagnostics(diagnostics));
       expect(envelope.availability).toEqual({
+        schema: 'cbs-lsp-agent-contract',
+        schemaVersion: '1.0.0',
         artifacts: [
           {
             key: 'risutoggle',
@@ -529,7 +532,7 @@ Hello <user>
             executablePath: null,
             pid: null,
             detail:
-              'LuaLS sidecar is not running yet. The process foundation can probe availability, but Lua document routing/proxy features remain deferred until later checklist items land.',
+        'LuaLS sidecar is not running yet. Mirrored `.risulua` hover/completion stay unavailable until the companion becomes ready, while CBS fragment features keep running normally.',
           },
         ],
         features: expect.arrayContaining([
@@ -548,17 +551,32 @@ Hello <user>
               'Definition is active for routed CBS fragments, returns fragment-local definitions first, and appends workspace chat-variable writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
           },
         ]),
+        operator: expect.objectContaining({
+          docs: {
+            agentIntegration: 'packages/cbs-lsp/docs/AGENT_INTEGRATION.md',
+            compatibility: 'packages/cbs-lsp/docs/COMPATIBILITY.md',
+            lualsCompanion: 'packages/cbs-lsp/docs/LUALS_COMPANION.md',
+            readme: 'packages/cbs-lsp/README.md',
+            standaloneUsage: 'packages/cbs-lsp/docs/STANDALONE_USAGE.md',
+            troubleshooting: 'packages/cbs-lsp/docs/TROUBLESHOOTING.md',
+            vscodeClient: 'packages/vscode/README.md',
+          },
+          workspace: expect.objectContaining({
+            resolvedWorkspaceRoot: null,
+            resolvedWorkspaceRootSource: 'none',
+          }),
+        }),
       });
     });
   });
 
   describe('shouldKeepLocalSymbolDiagnostic', () => {
     it('keeps non-symbol diagnostics unchanged', () => {
-      const diagnostic = {
+      const diagnostic: Diagnostic = {
         code: DiagnosticCode.UnknownFunction,
         message: 'Unknown function',
         range: { start: { line: 0, character: 0 }, end: { line: 0, character: 10 } },
-        severity: 1,
+        severity: DiagnosticSeverity.Error,
         source: 'risu-cbs',
       };
       const request = {
@@ -575,11 +593,11 @@ Hello <user>
     });
 
     it('keeps CBS101 (UndefinedVariable) when no workspace writers exist', () => {
-      const diagnostic = {
+      const diagnostic: Diagnostic = {
         code: DiagnosticCode.UndefinedVariable,
         message: 'Variable "x" is not defined',
         range: { start: { line: 0, character: 2 }, end: { line: 0, character: 11 } },
-        severity: 1,
+        severity: DiagnosticSeverity.Error,
         source: 'risu-cbs',
       };
       const request = {
@@ -596,11 +614,11 @@ Hello <user>
     });
 
     it('suppresses CBS101 (UndefinedVariable) when workspace writers exist', () => {
-      const diagnostic = {
+      const diagnostic: Diagnostic = {
         code: DiagnosticCode.UndefinedVariable,
         message: 'Variable "x" is not defined',
         range: { start: { line: 0, character: 2 }, end: { line: 0, character: 11 } },
-        severity: 1,
+        severity: DiagnosticSeverity.Error,
         source: 'risu-cbs',
       };
       const request = {
@@ -617,11 +635,11 @@ Hello <user>
     });
 
     it('keeps CBS102 (UnusedVariable) when no workspace readers exist', () => {
-      const diagnostic = {
+      const diagnostic: Diagnostic = {
         code: DiagnosticCode.UnusedVariable,
         message: 'Variable "x" is unused',
         range: { start: { line: 0, character: 2 }, end: { line: 0, character: 11 } },
-        severity: 2,
+        severity: DiagnosticSeverity.Warning,
         source: 'risu-cbs',
       };
       const request = {
@@ -638,11 +656,11 @@ Hello <user>
     });
 
     it('suppresses CBS102 (UnusedVariable) when workspace readers exist', () => {
-      const diagnostic = {
+      const diagnostic: Diagnostic = {
         code: DiagnosticCode.UnusedVariable,
         message: 'Variable "x" is unused',
         range: { start: { line: 0, character: 2 }, end: { line: 0, character: 11 } },
-        severity: 2,
+        severity: DiagnosticSeverity.Warning,
         source: 'risu-cbs',
       };
       const request = {
@@ -661,12 +679,12 @@ Hello <user>
 
   describe('assembleDiagnosticsForRequest', () => {
     it('returns local diagnostics unchanged when no workspace service provided', () => {
-      const localDiagnostics = [
+      const localDiagnostics: Diagnostic[] = [
         {
           code: DiagnosticCode.UnknownFunction,
           message: 'Unknown function',
           range: { start: { line: 0, character: 0 }, end: { line: 0, character: 10 } },
-          severity: 1,
+          severity: DiagnosticSeverity.Error,
           source: 'risu-cbs',
         },
       ];
@@ -687,19 +705,19 @@ Hello <user>
     });
 
     it('filters local diagnostics and merges workspace diagnostics', () => {
-      const localDiagnostics = [
+      const localDiagnostics: Diagnostic[] = [
         {
           code: DiagnosticCode.UndefinedVariable,
           message: 'Variable "x" is not defined',
           range: { start: { line: 0, character: 2 }, end: { line: 0, character: 11 } },
-          severity: 1,
+          severity: DiagnosticSeverity.Error,
           source: 'risu-cbs',
         },
         {
           code: DiagnosticCode.UnknownFunction,
           message: 'Unknown function',
           range: { start: { line: 1, character: 0 }, end: { line: 1, character: 10 } },
-          severity: 1,
+          severity: DiagnosticSeverity.Error,
           source: 'risu-cbs',
         },
       ];
@@ -729,19 +747,19 @@ Hello <user>
     });
 
     it('produces deterministically sorted diagnostics', () => {
-      const localDiagnostics = [
+      const localDiagnostics: Diagnostic[] = [
         {
           code: DiagnosticCode.UnusedVariable,
           message: 'Unused var',
           range: { start: { line: 1, character: 0 }, end: { line: 1, character: 5 } },
-          severity: 2,
+          severity: DiagnosticSeverity.Warning,
           source: 'risu-cbs',
         },
         {
           code: DiagnosticCode.UnknownFunction,
           message: 'Unknown function',
           range: { start: { line: 0, character: 0 }, end: { line: 0, character: 10 } },
-          severity: 1,
+          severity: DiagnosticSeverity.Error,
           source: 'risu-cbs',
         },
       ];

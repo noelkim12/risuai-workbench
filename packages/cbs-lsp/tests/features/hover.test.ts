@@ -320,7 +320,7 @@ describe('HoverProvider', () => {
         value: expect.stringContaining('**Documentation-only syntax entry:**'),
       },
       data: {
-        cbs: {
+        cbs: expect.objectContaining({
           category: {
             category: 'block-keyword',
             kind: 'documentation-only-builtin',
@@ -330,7 +330,7 @@ describe('HoverProvider', () => {
             source: 'builtin-registry',
             detail: 'Hover resolved #when from the builtin registry as a documentation-only CBS syntax entry.',
           },
-        },
+        }),
       },
       range: {
         start: { line: 5, character: 2 },

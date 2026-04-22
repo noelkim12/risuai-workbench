@@ -2,23 +2,68 @@
   "name": "cbs-language-server",
   "version": "0.1.0",
   "description": "Language Server Protocol implementation for CBS (Curly Braced Syntax)",
+  "bin": {
+    "cbs-language-server": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "default": "./dist/cli.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "docs",
+    "package.json",
+    "README*",
+    "LICENSE*"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "main": "dist/server.js",
   "types": "dist/server.d.ts",
   "scripts": {
     "build": "tsc -p .",
     "watch": "tsc -w -p .",
     "test": "vitest run",
+    "test:product-matrix": "vitest run tests/standalone/stdio-server.test.ts tests/e2e/extracted-workspace.test.ts tests/perf/large-workspace.test.ts",
+    "test:product-matrix:luals": "CBS_LSP_RUN_LUALS_INTEGRATION=true vitest run tests/standalone/stdio-server.test.ts tests/providers/luals-integration.test.ts",
+    "test:release-pipeline": "vitest run tests/standalone/release-pipeline.test.ts",
+    "test:luals-integration": "CBS_LSP_RUN_LUALS_INTEGRATION=true vitest run tests/providers/luals-integration.test.ts",
     "test:watch": "vitest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/risuai/risu-workbench.git",
+    "directory": "packages/cbs-lsp"
   },
   "dependencies": {
     "vscode-languageserver": "^9.0.1",
     "vscode-languageserver-textdocument": "^1.0.12",
-    "risu-workbench-core": "*"
+    "risu-workbench-core": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^20.x",
     "typescript": "^5.3.0",
     "vitest": "^4.1.4"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "homepage": "https://github.com/risuai/risu-workbench/tree/main/packages/cbs-lsp",
+  "bugs": {
+    "url": "https://github.com/risuai/risu-workbench/issues"
+  }
 }

@@ -6,7 +6,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createLuaLsCompanionRuntime } from '../../src/core';
-import { createLuaLsProxy } from '../../src/providers/lua/lualsProxy';
+import {
+  createLuaLsProxy,
+  normalizeLuaHoverEnvelopeForSnapshot,
+} from '../../src/providers/lua/lualsProxy';
 
 describe('LuaLsProxy', () => {
   it('rewrites source URIs to mirrored Lua transport URIs for hover requests', async () => {
@@ -54,7 +57,59 @@ describe('LuaLsProxy', () => {
       'textDocument/hover',
       {
         textDocument: {
-          uri: 'risu-luals:///workspace/lua/companion.risulua.lua',
+          uri: expect.stringContaining('/workspace/lua/companion.risulua.lua'),
+        },
+        position: {
+          line: 0,
+          character: 7,
+        },
+      },
+      1500,
+    );
+  });
+
+  it('rewrites source URIs to mirrored Lua transport URIs for completion requests', async () => {
+    const requestSpy = vi.fn();
+    const request = async <TResult>(
+      method: string,
+      params: unknown,
+      timeoutMs?: number,
+    ): Promise<TResult | null> => {
+      requestSpy(method, params, timeoutMs);
+      return {
+        isIncomplete: false,
+        items: [{ label: 'getState', kind: 3 }],
+      } as TResult;
+    };
+    const proxy = createLuaLsProxy({
+      getRuntime: () =>
+        createLuaLsCompanionRuntime({
+          executablePath: '/mock/luals',
+          health: 'healthy',
+          status: 'ready',
+        }),
+      request,
+    });
+
+    const completion = await proxy.provideCompletion({
+      textDocument: {
+        uri: 'file:///workspace/lua/companion.risulua',
+      },
+      position: {
+        line: 0,
+        character: 7,
+      },
+    });
+
+    expect(completion).toEqual({
+      isIncomplete: false,
+      items: [{ label: 'getState', kind: 3 }],
+    });
+    expect(requestSpy).toHaveBeenCalledWith(
+      'textDocument/completion',
+      {
+        textDocument: {
+          uri: expect.stringContaining('/workspace/lua/companion.risulua.lua'),
         },
         position: {
           line: 0,
@@ -105,5 +160,83 @@ describe('LuaLsProxy', () => {
     expect(cancelledHover).toBeNull();
     expect(failedHover).toBeNull();
     expect(requestSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('builds a stable normalized snapshot envelope for live and unavailable Lua hover states', () => {
+    const readyRuntime = createLuaLsCompanionRuntime({
+      detail: 'LuaLS sidecar finished initialize/initialized handshake and is healthy.',
+      executablePath: '/mock/luals',
+      health: 'healthy',
+      status: 'ready',
+    });
+
+    expect(
+      normalizeLuaHoverEnvelopeForSnapshot(
+        {
+          contents: {
+            kind: 'markdown',
+            value: '```lua\nlocal user: string\n```',
+          },
+          range: {
+            start: { line: 0, character: 6 },
+            end: { line: 0, character: 10 },
+          },
+        },
+        readyRuntime,
+      ),
+    ).toEqual({
+      schema: 'cbs-lsp-agent-contract',
+      schemaVersion: '1.0.0',
+      availability: expect.objectContaining({
+        companions: [readyRuntime],
+        features: expect.arrayContaining([
+          expect.objectContaining({
+            key: 'luaHover',
+            scope: 'local-only',
+            source: 'lua-provider:hover-proxy',
+          }),
+          expect.objectContaining({
+            key: 'lua-completion',
+            scope: 'local-only',
+            source: 'lua-provider:completion-proxy',
+          }),
+          expect.objectContaining({
+            key: 'lua-diagnostics',
+            scope: 'local-only',
+            source: 'lua-provider:diagnostics-proxy',
+          }),
+        ]),
+      }),
+      hover: {
+        contents: {
+          kind: 'markdown',
+          value: '```lua\nlocal user: string\n```',
+        },
+        range: {
+          start: { line: 0, character: 6 },
+          end: { line: 0, character: 10 },
+        },
+      },
+      provenance: {
+        reason: 'contextual-inference',
+        source: 'lua-provider:hover-proxy',
+        detail:
+          'Lua hover snapshots normalize live LuaLS hover responses from mirrored `.risulua` documents, preserve range/content deterministically, and keep deferred Lua completion/diagnostics boundaries visible through the shared availability envelope.',
+      },
+    });
+
+    expect(normalizeLuaHoverEnvelopeForSnapshot(null)).toEqual(
+      expect.objectContaining({
+        availability: expect.objectContaining({
+          companions: [
+            expect.objectContaining({
+              health: 'unavailable',
+              status: 'unavailable',
+            }),
+          ],
+        }),
+        hover: null,
+      }),
+    );
   });
 });

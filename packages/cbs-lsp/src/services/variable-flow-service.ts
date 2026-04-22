@@ -5,6 +5,7 @@
 
 import type { VarEvent, VarFlowEntry, VarFlowIssue, VarFlowResult } from 'risu-workbench-core';
 
+import { createCbsAgentProtocolMarker, type CbsAgentProtocolMarker } from '../core';
 import {
   buildDerivedFlowResult,
   type ElementRegistry,
@@ -39,7 +40,7 @@ export interface VariableFlowIssueMatch {
  * @param defaultValue - defaultVariables에서 온 기본값 또는 null
  * @param matchedOccurrence - 위치 기반 질의일 때 cursor가 가리킨 occurrence
  */
-export interface VariableFlowQueryResult {
+export interface VariableFlowQueryResult extends CbsAgentProtocolMarker {
   variableName: string;
   node: UnifiedVariableNode;
   occurrences: readonly UnifiedVariableOccurrence[];
@@ -171,6 +172,7 @@ export class VariableFlowService {
     const issues = flowEntry ? this.buildIssueMatches(node, flowEntry) : [];
 
     return {
+      ...createCbsAgentProtocolMarker(),
       variableName,
       node,
       occurrences: this.graph.getOccurrencesForVariable(variableName),

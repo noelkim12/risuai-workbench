@@ -1,9 +1,7 @@
 /**
- * LuaLS document routing helpers and workspace session mirror.
+ * LuaLS document routing helpers and shadow-workspace mirror.
  * @file packages/cbs-lsp/src/providers/lua/lualsDocuments.ts
  */
-
-import { pathToFileURL, URL } from 'node:url';
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
 
@@ -12,9 +10,10 @@ import { CbsLspPathHelper } from '../../helpers/path-helper';
 import type { WorkspaceScanFile } from '../../indexer';
 import { getArtifactTypeFromPath } from '../../utils/document-router';
 import type { LuaLsProcessManager } from './lualsProcess';
-
-const LUALS_VIRTUAL_SCHEME = 'risu-luals';
-const LUALS_VIRTUAL_EXTENSION = '.lua';
+import {
+  createLuaLsShadowDocumentUri,
+  isLuaLsShadowDocumentUri,
+} from './lualsShadowWorkspace';
 
 export interface LuaLsRoutedDocument {
   sourceUri: string;
@@ -44,25 +43,24 @@ export function shouldRouteDocumentToLuaLs(filePath: string): boolean {
 
 /**
  * isLuaLsVirtualDocumentUri 함수.
- * LuaLS mirror용 virtual URI인지 확인함.
+ * LuaLS shadow workspace URI인지 확인함.
  *
  * @param uri - 검사할 transport URI
- * @returns risu-luals scheme 사용 여부
+ * @returns shadow file:// URI 사용 여부
  */
 export function isLuaLsVirtualDocumentUri(uri: string): boolean {
-  return uri.startsWith(`${LUALS_VIRTUAL_SCHEME}://`);
+  return isLuaLsShadowDocumentUri(uri);
 }
 
 /**
  * createLuaLsTransportUri 함수.
- * `.risulua` source URI를 LuaLS가 Lua 문서로 볼 수 있는 virtual URI로 바꾼다.
+ * `.risulua` source URI를 LuaLS가 실제 file:// 문서로 읽는 shadow `.lua` URI로 바꾼다.
  *
  * @param sourceFilePath - 원본 `.risulua` 절대 경로
- * @returns `.lua` suffix를 가진 risu-luals URI
+ * @returns temp shadow root 아래 canonical `.lua` file:// URI
  */
 export function createLuaLsTransportUri(sourceFilePath: string): string {
-  const sourcePathname = pathToFileURL(sourceFilePath).pathname;
-  return new URL(`${sourcePathname}${LUALS_VIRTUAL_EXTENSION}`, `${LUALS_VIRTUAL_SCHEME}:///`).href;
+  return createLuaLsShadowDocumentUri(sourceFilePath);
 }
 
 /**

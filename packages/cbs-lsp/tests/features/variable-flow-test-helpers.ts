@@ -5,6 +5,7 @@
 
 import type { CustomExtensionArtifact, Range } from 'risu-workbench-core';
 
+import { createCbsAgentProtocolMarker } from '../../src/core';
 import type {
   UnifiedVariableNode,
   UnifiedVariableOccurrence,
@@ -90,6 +91,7 @@ export function createVariableFlowQueryResult(
   };
 
   return {
+    ...createCbsAgentProtocolMarker(),
     variableName,
     node,
     occurrences,

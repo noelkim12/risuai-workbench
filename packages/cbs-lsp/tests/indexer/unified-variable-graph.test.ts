@@ -793,7 +793,8 @@ describe('UnifiedVariableGraph Layer 1 Contract', () => {
       const variableNames = snapshot.variables.map((v) => v.name)
       expect(variableNames).toEqual(['apple', 'mango', 'zebra'])
 
-      // Verify schema version
+      // Verify schema marker
+      expect(snapshot.schema).toBe('cbs-lsp-agent-contract')
       expect(snapshot.schemaVersion).toBe('1.0.0')
 
       // Verify counts match

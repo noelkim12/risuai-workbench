@@ -33,6 +33,7 @@ import * as core from 'risu-workbench-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  CBS_RUNTIME_AVAILABILITY_REQUEST_METHOD,
   createLuaLsCompanionRuntime,
   createSyntheticDocumentVersion,
   fragmentAnalysisService,
@@ -40,13 +41,22 @@ import {
 import { SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES } from '../src/features/semanticTokens';
 import { ElementRegistry, UnifiedVariableGraph } from '../src/indexer';
 import { registerServer } from '../src/server';
-import type { LuaLsProcessManager } from '../src/providers/lua/lualsProcess';
+import type {
+  LuaLsProcessManager,
+  LuaLsPublishDiagnosticsEvent,
+} from '../src/providers/lua/lualsProcess';
 import { createLuaLsTransportUri } from '../src/providers/lua/lualsDocuments';
 import { offsetToPosition, positionToOffset } from '../src/utils/position';
 import {
   getFixtureCorpusEntry,
+  serializeCodeLensesEnvelopeForGolden,
+  serializeDocumentSymbolsEnvelopeForGolden,
   serializeProviderBundleForGolden,
   snapshotCodeActionsEnvelope,
+  snapshotCodeLensesEnvelope,
+  snapshotDocumentSymbolsEnvelope,
+  snapshotHostDiagnosticsEnvelope,
+  snapshotLuaHoverEnvelope,
   snapshotProviderBundle,
 } from './fixtures/fixture-corpus';
 
@@ -58,7 +68,15 @@ function createDisposable() {
   };
 }
 
-function createLuaLsProcessManagerStub(overrides: Partial<LuaLsProcessManager> = {}): LuaLsProcessManager {
+type TestLuaLsProcessManagerStub = LuaLsProcessManager & {
+  emitPublishDiagnostics: (event: LuaLsPublishDiagnosticsEvent) => void;
+};
+
+function createLuaLsProcessManagerStub(
+  overrides: Partial<LuaLsProcessManager> = {},
+): TestLuaLsProcessManagerStub {
+  const diagnosticsListeners = new Set<(event: LuaLsPublishDiagnosticsEvent) => void>();
+
   return {
     checkHealth: vi.fn(() =>
       createLuaLsCompanionRuntime({
@@ -77,6 +95,12 @@ function createLuaLsProcessManagerStub(overrides: Partial<LuaLsProcessManager> =
         status: 'stopped',
       }),
     ),
+    onPublishDiagnostics: vi.fn((listener: (event: LuaLsPublishDiagnosticsEvent) => void) => {
+      diagnosticsListeners.add(listener);
+      return () => {
+        diagnosticsListeners.delete(listener);
+      };
+    }),
     prepareForInitialize: vi.fn(() =>
       createLuaLsCompanionRuntime({
         detail:
@@ -104,9 +128,14 @@ function createLuaLsProcessManagerStub(overrides: Partial<LuaLsProcessManager> =
         status: 'ready',
       }),
     ),
+    emitPublishDiagnostics: (event: LuaLsPublishDiagnosticsEvent) => {
+      for (const listener of diagnosticsListeners) {
+        listener(event);
+      }
+    },
     syncDocument: vi.fn(),
     ...overrides,
-  } as unknown as LuaLsProcessManager;
+  } as unknown as TestLuaLsProcessManagerStub;
 }
 
 function lorebookDocument(bodyLines: readonly string[]): string {
@@ -185,7 +214,7 @@ class FakeConnection {
 
   codeLensHandler: ((params: any, token?: CancellationToken) => CodeLens[]) | null = null;
 
-  completionHandler: ((params: any, token?: CancellationToken) => CompletionItem[] | { items: CompletionItem[] }) | null = null;
+  completionHandler: ((params: any, token?: CancellationToken) => CompletionItem[] | { items: CompletionItem[] } | Promise<CompletionItem[] | { items: CompletionItem[] }>) | null = null;
 
   documentSymbolHandler: ((params: any, token?: CancellationToken) => DocumentSymbol[]) | null = null;
 
@@ -220,7 +249,9 @@ class FakeConnection {
   formattingHandler: ((params: DocumentFormattingParams, token?: CancellationToken) => TextEdit[]) | null =
     null;
 
-  readonly diagnostics: Array<{ uri: string; diagnostics: readonly Diagnostic[] }> = [];
+  readonly customRequestHandlers = new Map<string, (params: unknown) => unknown | Promise<unknown>>();
+
+  readonly diagnostics: Array<{ uri: string; version?: number; diagnostics: readonly Diagnostic[] }> = [];
 
   readonly clientRegistrations: Array<{ method: string; registerOptions: unknown }> = [];
 
@@ -288,7 +319,7 @@ class FakeConnection {
     return createDisposable();
   }
 
-  onCompletion(handler: (params: any, token?: CancellationToken) => CompletionItem[] | { items: CompletionItem[] }) {
+  onCompletion(handler: (params: any, token?: CancellationToken) => CompletionItem[] | { items: CompletionItem[] } | Promise<CompletionItem[] | { items: CompletionItem[] }>) {
     this.completionHandler = handler;
     return createDisposable();
   }
@@ -348,12 +379,26 @@ class FakeConnection {
     return createDisposable();
   }
 
+  onRequest(method: string, handler: (params: unknown) => unknown | Promise<unknown>) {
+    this.customRequestHandlers.set(method, handler);
+    return createDisposable();
+  }
+
+  async handleRequest(method: string, params: unknown = null) {
+    const handler = this.customRequestHandlers.get(method);
+    if (!handler) {
+      throw new Error(`No request handler registered for ${method}`);
+    }
+
+    return handler(params);
+  }
+
   sendRequest(type: { method: string } | string) {
     this.requests.push(typeof type === 'string' ? type : type.method);
     return Promise.resolve(undefined);
   }
 
-  sendDiagnostics(params: { uri: string; diagnostics: readonly Diagnostic[] }) {
+  sendDiagnostics(params: { uri: string; version?: number; diagnostics: readonly Diagnostic[] }) {
     this.diagnostics.push(params);
     return Promise.resolve();
   }
@@ -517,10 +562,18 @@ function captureProviderBundle(options: {
       },
       createCancellationToken(false),
     ) ?? [];
+  const documentSymbols =
+    options.connection.documentSymbolHandler?.(
+      {
+        textDocument: { uri: options.uri },
+      },
+      createCancellationToken(false),
+    ) ?? [];
   const snapshot = snapshotProviderBundle({
     codeActions,
     completion,
     diagnostics: options.diagnostics,
+    documentSymbols,
     hover,
   });
 
@@ -529,6 +582,7 @@ function captureProviderBundle(options: {
       codeActions,
       completion,
       diagnostics: options.diagnostics,
+      documentSymbols,
       hover,
     },
     serialized: serializeProviderBundleForGolden(snapshot),
@@ -568,20 +622,13 @@ describe('LSP server integration', () => {
         codeLensProvider: {
           resolveProvider: false,
         },
-        codeActionProvider: {
-          codeActionKinds: ['quickfix'],
-        },
+        codeActionProvider: true,
         completionProvider: {},
         definitionProvider: true,
         documentSymbolProvider: true,
         documentFormattingProvider: true,
         referencesProvider: true,
-        renameProvider: {
-          prepareProvider: true,
-        },
-        executeCommandProvider: {
-          commands: ['cbs-lsp.codelens.activationSummary'],
-        },
+        renameProvider: true,
         hoverProvider: true,
         signatureHelpProvider: {
           triggerCharacters: [':'],
@@ -644,16 +691,16 @@ describe('LSP server integration', () => {
                   'Completion is active for routed CBS fragments and operates on the current document/fragment context only.',
               },
               'lua-completion': {
-                scope: 'deferred',
-                source: 'deferred-scope-contract:lua-completion',
+                scope: 'local-only',
+                source: 'lua-provider:completion-proxy',
                 detail:
-                  'Lua completion proxy stays deferred until the minimal LuaLS hover seam is expanded into editor completion request routing.',
+                  'Lua completion is active for `.risulua` documents by forwarding `textDocument/completion` to the LuaLS companion using the mirrored virtual Lua document when the sidecar is ready. If LuaLS is unavailable, crashed, or still starting, the server returns no Lua completion items and leaves CBS capabilities unchanged.',
               },
               'lua-diagnostics': {
-                scope: 'deferred',
-                source: 'deferred-scope-contract:lua-diagnostics',
+                scope: 'local-only',
+                source: 'lua-provider:diagnostics-proxy',
                 detail:
-                  'Lua diagnostics proxy stays deferred until the server forwards LuaLS diagnostics notifications into host `publishDiagnostics` plumbing.',
+                  'Lua diagnostics are active for `.risulua` documents by forwarding LuaLS `textDocument/publishDiagnostics` notifications from mirrored virtual Lua documents into host `publishDiagnostics`. If LuaLS is unavailable, crashed, or still starting, the server clears Lua diagnostics for affected documents and leaves CBS capabilities unchanged.',
               },
               luaHover: {
                 scope: 'local-only',
@@ -692,8 +739,32 @@ describe('LSP server integration', () => {
                   'Formatting is active for routed CBS fragments, produces fragment-local canonical text edits, and only promotes host edits that pass the shared host-fragment safety contract.',
               },
             }),
+            operator: expect.objectContaining({
+              docs: {
+                agentIntegration: 'packages/cbs-lsp/docs/AGENT_INTEGRATION.md',
+                compatibility: 'packages/cbs-lsp/docs/COMPATIBILITY.md',
+                lualsCompanion: 'packages/cbs-lsp/docs/LUALS_COMPANION.md',
+                readme: 'packages/cbs-lsp/README.md',
+                standaloneUsage: 'packages/cbs-lsp/docs/STANDALONE_USAGE.md',
+                troubleshooting: 'packages/cbs-lsp/docs/TROUBLESHOOTING.md',
+                vscodeClient: 'packages/vscode/README.md',
+              },
+              install: expect.objectContaining({
+                binaryName: 'cbs-language-server',
+                installModes: ['local-devDependency', 'npx', 'global'],
+                pathRequirement: 'required-for-global',
+                transport: 'stdio',
+              }),
+              workspace: expect.objectContaining({
+                initializeWorkspaceFolderCount: 0,
+                resolvedWorkspaceRoot: null,
+                resolvedWorkspaceRootSource: 'none',
+              }),
+            }),
           },
           availabilitySnapshot: {
+            schema: 'cbs-lsp-agent-contract',
+            schemaVersion: '1.0.0',
             artifacts: [
               {
                 key: 'risutoggle',
@@ -739,17 +810,17 @@ describe('LSP server integration', () => {
               },
               {
                 key: 'lua-completion',
-                scope: 'deferred',
-                source: 'deferred-scope-contract:lua-completion',
+                scope: 'local-only',
+                source: 'lua-provider:completion-proxy',
                 detail:
-                  'Lua completion proxy stays deferred until the minimal LuaLS hover seam is expanded into editor completion request routing.',
+                  'Lua completion is active for `.risulua` documents by forwarding `textDocument/completion` to the LuaLS companion using the mirrored virtual Lua document when the sidecar is ready. If LuaLS is unavailable, crashed, or still starting, the server returns no Lua completion items and leaves CBS capabilities unchanged.',
               },
               {
                 key: 'lua-diagnostics',
-                scope: 'deferred',
-                source: 'deferred-scope-contract:lua-diagnostics',
+                scope: 'local-only',
+                source: 'lua-provider:diagnostics-proxy',
                 detail:
-                  'Lua diagnostics proxy stays deferred until the server forwards LuaLS diagnostics notifications into host `publishDiagnostics` plumbing.',
+                  'Lua diagnostics are active for `.risulua` documents by forwarding LuaLS `textDocument/publishDiagnostics` notifications from mirrored virtual Lua documents into host `publishDiagnostics`. If LuaLS is unavailable, crashed, or still starting, the server clears Lua diagnostics for affected documents and leaves CBS capabilities unchanged.',
               },
               {
                 key: 'luaHover',
@@ -794,6 +865,11 @@ describe('LSP server integration', () => {
                   'Formatting is active for routed CBS fragments, produces fragment-local canonical text edits, and only promotes host edits that pass the shared host-fragment safety contract.',
               },
             ]),
+            operator: expect.objectContaining({
+              workspace: expect.objectContaining({
+                resolvedWorkspaceRootSource: 'none',
+              }),
+            }),
           },
           excludedArtifacts: {
             risutoggle: {
@@ -809,7 +885,7 @@ describe('LSP server integration', () => {
                 '`.risuvar` artifacts do not carry CBS fragments, so CBS LSP routing stays disabled for them.',
             },
           },
-            featureAvailability: expect.objectContaining({
+          featureAvailability: expect.objectContaining({
             codeAction: {
               scope: 'local-only',
               source: 'server-capability:codeAction',
@@ -845,6 +921,17 @@ describe('LSP server integration', () => {
               source: 'server-capability:formatting',
               detail:
                 'Formatting is active for routed CBS fragments, produces fragment-local canonical text edits, and only promotes host edits that pass the shared host-fragment safety contract.',
+              },
+            }),
+          operator: expect.objectContaining({
+            docs: {
+              agentIntegration: 'packages/cbs-lsp/docs/AGENT_INTEGRATION.md',
+              compatibility: 'packages/cbs-lsp/docs/COMPATIBILITY.md',
+              lualsCompanion: 'packages/cbs-lsp/docs/LUALS_COMPANION.md',
+              readme: 'packages/cbs-lsp/README.md',
+              standaloneUsage: 'packages/cbs-lsp/docs/STANDALONE_USAGE.md',
+              troubleshooting: 'packages/cbs-lsp/docs/TROUBLESHOOTING.md',
+              vscodeClient: 'packages/vscode/README.md',
             },
           }),
         },
@@ -869,6 +956,142 @@ describe('LSP server integration', () => {
     expect(connection.prepareRenameRegistrations).toBe(1);
     expect(connection.renameRegistrations).toBe(1);
     expect(connection.formattingRegistrations).toBe(1);
+  });
+
+  it('exposes the runtime availability snapshot through a custom LSP request', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    let runtime = createLuaLsCompanionRuntime({
+      detail:
+        'LuaLS executable was resolved and the sidecar is ready to start after the main LSP server finishes initialization.',
+      executablePath: '/mock/luals',
+      health: 'idle',
+      status: 'stopped',
+    });
+    const luaLsManager = createLuaLsProcessManagerStub({
+      getRuntime: vi.fn(() => runtime),
+      prepareForInitialize: vi.fn(() => runtime),
+      start: vi.fn(async () => {
+        runtime = createLuaLsCompanionRuntime({
+          detail: 'LuaLS sidecar finished initialize/initialized handshake and is healthy.',
+          executablePath: '/mock/luals',
+          health: 'healthy',
+          status: 'ready',
+        });
+        return runtime;
+      }),
+    });
+
+    registerServer(connection as any, documents as any, {
+      createLuaLsProcessManager: () => luaLsManager,
+    });
+
+    connection.initializeHandler?.({ capabilities: {} } as InitializeParams);
+    const beforeStart = await connection.handleRequest(CBS_RUNTIME_AVAILABILITY_REQUEST_METHOD);
+
+    expect(beforeStart).toEqual(
+      expect.objectContaining({
+        schema: 'cbs-lsp-agent-contract',
+        schemaVersion: '1.0.0',
+        companions: [expect.objectContaining({ status: 'stopped', health: 'idle' })],
+        operator: expect.objectContaining({
+          workspace: expect.objectContaining({
+            resolvedWorkspaceRoot: null,
+            resolvedWorkspaceRootSource: 'none',
+          }),
+        }),
+      }),
+    );
+
+    connection.initializedHandler?.({});
+    await Promise.resolve();
+
+    const afterStart = await connection.handleRequest(CBS_RUNTIME_AVAILABILITY_REQUEST_METHOD);
+
+    expect(afterStart).toEqual(
+      expect.objectContaining({
+        companions: [
+          expect.objectContaining({
+            status: 'ready',
+            health: 'healthy',
+            detail: 'LuaLS sidecar finished initialize/initialized handshake and is healthy.',
+          }),
+        ],
+      }),
+    );
+    expect(connection.traceMessages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ message: '[cbs-lsp:server] runtime-availability-query-start' }),
+        expect.objectContaining({ message: '[cbs-lsp:server] runtime-availability-query-payload' }),
+        expect.objectContaining({ message: '[cbs-lsp:server] runtime-availability-query-end' }),
+      ]),
+    );
+  });
+
+  it('advertises richer capability options only when the client supports them', () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const luaLsManager = createLuaLsProcessManagerStub();
+
+    registerServer(connection as any, documents as any, {
+      createLuaLsProcessManager: () => luaLsManager,
+    });
+
+    const initializeResult = connection.initializeHandler?.({
+      capabilities: {
+        textDocument: {
+          codeAction: {
+            codeActionLiteralSupport: {
+              codeActionKind: {
+                valueSet: [CodeActionKind.QuickFix],
+              },
+            },
+          },
+          publishDiagnostics: {
+            versionSupport: true,
+          },
+          rename: {
+            prepareSupport: true,
+          },
+        },
+      },
+    } as InitializeParams);
+
+    expect(initializeResult?.capabilities.codeActionProvider).toEqual({
+      codeActionKinds: ['quickfix'],
+    });
+    expect(initializeResult?.capabilities.renameProvider).toEqual({
+      prepareProvider: true,
+    });
+    expect(initializeResult?.capabilities.executeCommandProvider).toBeUndefined();
+  });
+
+  it('includes diagnostics version only when the client advertises version support', () => {
+    const unsupportedConnection = new FakeConnection();
+    const supportedConnection = new FakeConnection();
+    const unsupportedDocuments = new FakeDocuments();
+    const supportedDocuments = new FakeDocuments();
+    const uri = 'file:///fixtures/server-versioned-diagnostics.risulorebook';
+    const text = lorebookDocument(['{{setvar::mood::happy}}', '{{getvar::mood}}']);
+
+    registerServer(unsupportedConnection as any, unsupportedDocuments as any);
+    unsupportedConnection.initializeHandler?.({ capabilities: {} } as InitializeParams);
+    unsupportedDocuments.open(uri, text, 7);
+
+    registerServer(supportedConnection as any, supportedDocuments as any);
+    supportedConnection.initializeHandler?.({
+      capabilities: {
+        textDocument: {
+          publishDiagnostics: {
+            versionSupport: true,
+          },
+        },
+      },
+    } as InitializeParams);
+    supportedDocuments.open(uri, text, 7);
+
+    expect(getLastDiagnostics(unsupportedConnection).version).toBeUndefined();
+    expect(getLastDiagnostics(supportedConnection).version).toBe(7);
   });
 
   it('connects the LuaLS sidecar manager to initialize, initialized, and shutdown lifecycle hooks', async () => {
@@ -969,6 +1192,39 @@ describe('LSP server integration', () => {
     ]);
   });
 
+  it('reports operator workspace policy and active failure modes through initialize payloads', () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+
+    registerServer(connection as any, documents as any);
+
+    const initializeResult = connection.initializeHandler?.({
+      capabilities: {},
+      workspaceFolders: [
+        { uri: pathToFileURL('/workspace/primary').toString(), name: 'primary' },
+        { uri: pathToFileURL('/workspace/secondary').toString(), name: 'secondary' },
+      ],
+    } as InitializeParams);
+
+    const operator = initializeResult?.experimental?.cbs?.operator;
+
+    expect(operator?.workspace).toEqual(
+      expect.objectContaining({
+        initializeWorkspaceFolderCount: 2,
+        multiRootMode: 'first-workspace-folder',
+        resolvedWorkspaceRoot: '/workspace/primary',
+        resolvedWorkspaceRootSource: 'initialize.workspaceFolders[0]',
+      }),
+    );
+    expect(operator?.failureModes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'multi-root-reduced', active: true }),
+        expect.objectContaining({ key: 'watched-files-client-unsupported', active: true }),
+        expect.objectContaining({ key: 'workspace-root-unresolved', active: false }),
+      ]),
+    );
+  });
+
   it('routes standalone .risulua open/change/close through the LuaLS document mirror', () => {
     const connection = new FakeConnection();
     const documents = new FakeDocuments();
@@ -988,7 +1244,7 @@ describe('LSP server integration', () => {
     expect(luaLsManager.syncDocument).toHaveBeenNthCalledWith(1, {
       sourceUri: uri,
       sourceFilePath: '/tmp/standalone.risulua',
-      transportUri: 'risu-luals:///tmp/standalone.risulua.lua',
+      transportUri: expect.stringContaining('/tmp/standalone.risulua.lua'),
       languageId: 'lua',
       rootPath: null,
       version: 1,
@@ -997,7 +1253,7 @@ describe('LSP server integration', () => {
     expect(luaLsManager.syncDocument).toHaveBeenNthCalledWith(2, {
       sourceUri: uri,
       sourceFilePath: '/tmp/standalone.risulua',
-      transportUri: 'risu-luals:///tmp/standalone.risulua.lua',
+      transportUri: expect.stringContaining('/tmp/standalone.risulua.lua'),
       languageId: 'lua',
       rootPath: null,
       version: 2,
@@ -1022,9 +1278,9 @@ describe('LSP server integration', () => {
       request: async <TResult>(method: string, params: unknown): Promise<TResult | null> => {
         requestSpy(method, params);
         expect(method).toBe('textDocument/hover');
-        expect(params).toEqual({
+        expect(params).toMatchObject({
           textDocument: {
-            uri: 'risu-luals:///tmp/hover.risulua.lua',
+            uri: expect.stringContaining('/tmp/hover.risulua.lua'),
           },
           position: {
             line: 0,
@@ -1059,12 +1315,242 @@ describe('LSP server integration', () => {
     );
 
     expect(getHoverMarkdown(hover ?? null)).toContain('local user: string');
+    expect(snapshotLuaHoverEnvelope(hover ?? null, luaLsManager.getRuntime())).toEqual({
+      schema: 'cbs-lsp-agent-contract',
+      schemaVersion: '1.0.0',
+      availability: expect.objectContaining({
+        companions: [
+          expect.objectContaining({
+            executablePath: '/mock/luals',
+            health: 'healthy',
+            status: 'ready',
+          }),
+        ],
+        features: expect.arrayContaining([
+          expect.objectContaining({
+            key: 'luaHover',
+            scope: 'local-only',
+            source: 'lua-provider:hover-proxy',
+          }),
+          expect.objectContaining({
+            key: 'lua-completion',
+            scope: 'local-only',
+          }),
+          expect.objectContaining({
+            key: 'lua-diagnostics',
+            scope: 'local-only',
+          }),
+        ]),
+      }),
+      hover: {
+        contents: {
+          kind: 'markdown',
+          value: '```lua\nlocal user: string\n```',
+        },
+        range: null,
+      },
+      provenance: {
+        reason: 'contextual-inference',
+        source: 'lua-provider:hover-proxy',
+        detail:
+          'Lua hover snapshots normalize live LuaLS hover responses from mirrored `.risulua` documents, preserve range/content deterministically, and keep deferred Lua completion/diagnostics boundaries visible through the shared availability envelope.',
+      },
+    });
     expect(requestSpy).toHaveBeenCalledTimes(1);
     expect(connection.traceMessages).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ message: '[cbs-lsp:luaProxy] hover-start' }),
         expect.objectContaining({ message: '[cbs-lsp:luaProxy] hover-end' }),
       ]),
+    );
+  });
+
+  it('routes .risulua completion through the LuaLS proxy seam and keeps trace output honest', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const requestSpy = vi.fn();
+    const luaLsManager = createLuaLsProcessManagerStub({
+      getRuntime: vi.fn(() =>
+        createLuaLsCompanionRuntime({
+          detail: 'LuaLS sidecar finished initialize/initialized handshake and is healthy.',
+          executablePath: '/mock/luals',
+          health: 'healthy',
+          status: 'ready',
+        }),
+      ),
+      request: async <TResult>(method: string, params: unknown): Promise<TResult | null> => {
+        requestSpy(method, params);
+        expect(method).toBe('textDocument/completion');
+        expect(params).toMatchObject({
+          textDocument: {
+            uri: expect.stringContaining('/tmp/completion.risulua.lua'),
+          },
+          position: {
+            line: 0,
+            character: 7,
+          },
+        });
+
+        return {
+          isIncomplete: false,
+          items: [{ label: 'getState' }],
+        } as TResult;
+      },
+    });
+    const uri = 'file:///tmp/completion.risulua';
+    const text = 'local user = getState("user")\nreturn user\n';
+
+    registerServer(connection as any, documents as any, {
+      createLuaLsProcessManager: () => luaLsManager,
+    });
+    connection.initializeHandler?.({ capabilities: {} } as InitializeParams);
+    connection.initializedHandler?.({});
+    documents.open(uri, text, 1, 'lua');
+
+    const completion = await connection.completionHandler?.(
+      {
+        textDocument: { uri },
+        position: positionAt(text, 'user', 1),
+      },
+      createCancellationToken(false),
+    );
+
+    expect(getCompletionItems(completion ?? null)).toEqual([{ label: 'getState' }]);
+    expect(requestSpy).toHaveBeenCalledTimes(1);
+    expect(connection.traceMessages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ message: '[cbs-lsp:luaProxy] completion-start' }),
+        expect.objectContaining({ message: '[cbs-lsp:luaProxy] completion-end' }),
+      ]),
+    );
+  });
+
+  it('publishes `.risulua` diagnostics through the LuaLS sidecar seam and starts unavailable by default', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    let runtime = createLuaLsCompanionRuntime({
+      detail: 'LuaLS executable was not found on PATH.',
+      health: 'unavailable',
+      status: 'unavailable',
+    });
+    const luaLsManager = createLuaLsProcessManagerStub({
+      getRuntime: vi.fn(() => runtime),
+      prepareForInitialize: vi.fn(() => runtime),
+      start: vi.fn(async () => runtime),
+    });
+    const uri = 'file:///tmp/diagnostics.risulua';
+    const text = 'local mood = missingValue\nreturn mood\n';
+
+    registerServer(connection as any, documents as any, {
+      createLuaLsProcessManager: () => luaLsManager,
+    });
+    connection.initializeHandler?.({
+      capabilities: {
+        textDocument: {
+          publishDiagnostics: {
+            versionSupport: true,
+          },
+        },
+      },
+    } as InitializeParams);
+    connection.initializedHandler?.({});
+    documents.open(uri, text, 1, 'lua');
+
+    const unavailableDiagnostics = [...connection.diagnostics].reverse().find((entry) => entry.uri === uri);
+    expect(snapshotHostDiagnosticsEnvelope(unavailableDiagnostics?.diagnostics ?? [], runtime)).toEqual(
+      expect.objectContaining({
+        availability: expect.objectContaining({
+          companions: [
+            expect.objectContaining({
+              health: 'unavailable',
+              status: 'unavailable',
+            }),
+          ],
+          features: expect.arrayContaining([
+            expect.objectContaining({
+              key: 'lua-diagnostics',
+              scope: 'local-only',
+              source: 'lua-provider:diagnostics-proxy',
+            }),
+          ]),
+        }),
+        diagnostics: [],
+      }),
+    );
+
+    runtime = createLuaLsCompanionRuntime({
+      detail: 'LuaLS sidecar finished initialize/initialized handshake and is healthy.',
+      executablePath: '/mock/luals',
+      health: 'healthy',
+      status: 'ready',
+    });
+    luaLsManager.emitPublishDiagnostics({
+      diagnostics: [
+        {
+          message: 'Undefined global `missingValue`',
+          range: {
+            start: { line: 0, character: 13 },
+            end: { line: 0, character: 25 },
+          },
+          severity: 1,
+          source: 'LuaLS',
+        },
+      ],
+      sourceUri: uri,
+      transportUri: expect.stringContaining('/tmp/diagnostics.risulua.lua'),
+      version: 1,
+    });
+
+    const liveDiagnostics = [...connection.diagnostics].reverse().find(
+      (entry) => entry.uri === uri && entry.diagnostics.length === 1,
+    );
+    expect(liveDiagnostics).toEqual({
+      uri,
+      version: 1,
+      diagnostics: [
+        {
+          message: 'Undefined global `missingValue`',
+          range: {
+            start: { line: 0, character: 13 },
+            end: { line: 0, character: 25 },
+          },
+          severity: 1,
+          source: 'LuaLS',
+        },
+      ],
+    });
+    expect(snapshotHostDiagnosticsEnvelope(liveDiagnostics?.diagnostics ?? [], runtime)).toEqual(
+      expect.objectContaining({
+        availability: expect.objectContaining({
+          companions: [
+            expect.objectContaining({
+              health: 'healthy',
+              status: 'ready',
+            }),
+          ],
+          features: expect.arrayContaining([
+            expect.objectContaining({
+              key: 'lua-diagnostics',
+              scope: 'local-only',
+              source: 'lua-provider:diagnostics-proxy',
+            }),
+          ]),
+        }),
+        diagnostics: [
+          {
+            code: null,
+            data: null,
+            message: 'Undefined global `missingValue`',
+            range: {
+              start: { line: 0, character: 13 },
+              end: { line: 0, character: 25 },
+            },
+            relatedInformation: [],
+            severity: 1,
+            source: 'LuaLS',
+          },
+        ],
+      }),
     );
   });
 
@@ -1130,6 +1616,68 @@ describe('LSP server integration', () => {
         ],
       }),
     ]);
+
+    const snapshot = snapshotDocumentSymbolsEnvelope(symbols ?? []);
+
+    expect(snapshot).toEqual({
+      schema: 'cbs-lsp-agent-contract',
+      schemaVersion: '1.0.0',
+      availability: expect.objectContaining({
+        features: expect.arrayContaining([
+          expect.objectContaining({
+            key: 'documentSymbol',
+            scope: 'local-only',
+            source: 'server-capability:documentSymbol',
+          }),
+        ]),
+      }),
+      provenance: {
+        reason: 'contextual-inference',
+        source: 'document-symbol:outline-builder',
+        detail:
+          'Document symbol snapshots are derived from routed CBS fragment AST blocks, keep host selection/range coordinates, and add section containers only when multiple CBS-bearing fragments exist in the same host document.',
+      },
+      symbols: [
+        {
+          children: [
+            expect.objectContaining({
+              name: '#when::ready',
+              fragmentContainer: false,
+              section: null,
+              symbolKind: 'object',
+            }),
+          ],
+          fragmentContainer: true,
+          name: 'IN',
+          range: expect.objectContaining({}),
+          section: 'IN',
+          selectionRange: expect.objectContaining({}),
+          symbolKind: 'namespace',
+        },
+        {
+          children: [
+            expect.objectContaining({
+              name: '#each items as item',
+              fragmentContainer: false,
+              section: null,
+              symbolKind: 'array',
+            }),
+          ],
+          fragmentContainer: true,
+          name: 'OUT',
+          range: expect.objectContaining({}),
+          section: 'OUT',
+          selectionRange: expect.objectContaining({}),
+          symbolKind: 'namespace',
+        },
+      ],
+    });
+
+    expect(serializeDocumentSymbolsEnvelopeForGolden(snapshot)).toBe(
+      serializeDocumentSymbolsEnvelopeForGolden(
+        snapshotDocumentSymbolsEnvelope([...(symbols ?? [])].reverse()),
+      ),
+    );
   });
 
   it('routes textDocument/codeAction through the server seam and returns safe quick fixes plus guidance actions', async () => {
@@ -1156,6 +1704,8 @@ describe('LSP server integration', () => {
     );
 
     expect(snapshotCodeActionsEnvelope(deprecatedActions ?? [])).toEqual({
+      schema: 'cbs-lsp-agent-contract',
+      schemaVersion: '1.0.0',
       availability: expect.objectContaining({
         features: expect.arrayContaining([
           expect.objectContaining({
@@ -1198,6 +1748,8 @@ describe('LSP server integration', () => {
     );
 
     expect(snapshotCodeActionsEnvelope(slotActions ?? [])).toEqual({
+      schema: 'cbs-lsp-agent-contract',
+      schemaVersion: '1.0.0',
       availability: expect.objectContaining({
         features: expect.arrayContaining([
           expect.objectContaining({
@@ -1444,77 +1996,10 @@ describe('LSP server integration', () => {
     const connection = new FakeConnection();
     const documents = new FakeDocuments();
     const root = await createWorkspaceRoot();
-    const alphaText = [
-      '---',
-      'name: Alpha',
-      'comment: Alpha',
-      'constant: false',
-      'selective: false',
-      'enabled: true',
-      'insertion_order: 0',
-      'case_sensitive: false',
-      'use_regex: false',
-      '---',
-      '@@@ KEYS',
-      'alpha',
-      '@@@ CONTENT',
-      'beta wakes the main chain, gamma only partially matches, and delta is blocked.',
-      '',
-    ].join('\n');
-    const betaText = [
-      '---',
-      'name: Beta',
-      'comment: Beta',
-      'constant: false',
-      'selective: false',
-      'enabled: true',
-      'insertion_order: 0',
-      'case_sensitive: false',
-      'use_regex: false',
-      '---',
-      '@@@ KEYS',
-      'beta',
-      '@@@ CONTENT',
-      'alpha closes the cycle.',
-      '',
-    ].join('\n');
-    const gammaText = [
-      '---',
-      'name: Gamma',
-      'comment: Gamma',
-      'constant: false',
-      'selective: true',
-      'enabled: true',
-      'insertion_order: 0',
-      'case_sensitive: false',
-      'use_regex: false',
-      '---',
-      '@@@ KEYS',
-      'gamma',
-      '@@@ SECONDARY_KEYS',
-      'omega',
-      '@@@ CONTENT',
-      'Gamma lore body.',
-      '',
-    ].join('\n');
-    const deltaText = [
-      '---',
-      'name: Delta',
-      'comment: Delta',
-      'constant: false',
-      'selective: false',
-      'enabled: true',
-      'insertion_order: 0',
-      'case_sensitive: false',
-      'use_regex: false',
-      '---',
-      '@@@ KEYS',
-      'delta',
-      '@@@ CONTENT',
-      '@@no_recursive_search',
-      'Delta lore body.',
-      '',
-    ].join('\n');
+    const alphaText = getFixtureCorpusEntry('lorebook-activation-alpha').text;
+    const betaText = getFixtureCorpusEntry('lorebook-activation-beta').text;
+    const gammaText = getFixtureCorpusEntry('lorebook-activation-gamma').text;
+    const deltaText = getFixtureCorpusEntry('lorebook-activation-delta').text;
     const alphaUri = await writeWorkspaceFile(root, 'lorebooks/alpha.risulorebook', alphaText);
     await writeWorkspaceFile(root, 'lorebooks/beta.risulorebook', betaText);
     await writeWorkspaceFile(root, 'lorebooks/gamma.risulorebook', gammaText);
@@ -1527,10 +2012,36 @@ describe('LSP server integration', () => {
       textDocument: { uri: alphaUri },
     });
 
-    expect(codeLenses?.map((lens) => lens.command?.title)).toEqual([
-      '1개 엔트리에 의해 활성화됨 | 1개 엔트리를 활성화',
-      '부분 매치: 들어옴 0 / 나감 1 | 차단: 들어옴 0 / 나감 1 | 순환 감지',
-    ]);
+    expect(codeLenses).toBeTruthy();
+    expect(serializeCodeLensesEnvelopeForGolden(snapshotCodeLensesEnvelope(codeLenses ?? []))).toContain(
+      '"source": "codelens:activation-summary"',
+    );
+    expect(snapshotCodeLensesEnvelope(codeLenses ?? [])).toMatchObject({
+      schema: 'cbs-lsp-agent-contract',
+      schemaVersion: '1.0.0',
+      codeLenses: [
+        expect.objectContaining({
+          lensKind: 'detail',
+          command: expect.objectContaining({
+            kind: 'detail',
+            mode: 'no-op',
+            uri: alphaUri,
+          }),
+        }),
+        expect.objectContaining({
+          lensKind: 'summary',
+          command: expect.objectContaining({
+            kind: 'summary',
+            mode: 'no-op',
+            uri: alphaUri,
+          }),
+        }),
+      ],
+      provenance: expect.objectContaining({
+        reason: 'contextual-inference',
+        source: 'codelens:activation-summary',
+      }),
+    });
   });
 
   it('registers watched-file notifications and refreshes CodeLens after external lorebook create/change/delete events', async () => {
@@ -1865,6 +2376,7 @@ describe('LSP server integration', () => {
         codeActions: [...version1Bundle.raw.codeActions].reverse(),
         completion: [...version1Bundle.raw.completion].reverse(),
         diagnostics: [...version1Bundle.raw.diagnostics].reverse(),
+        documentSymbols: [...version1Bundle.raw.documentSymbols].reverse(),
         hover: version1Bundle.raw.hover,
       }),
     );
@@ -1877,7 +2389,7 @@ describe('LSP server integration', () => {
           kind: 6,
           label: 'mood',
           data: {
-            cbs: {
+            cbs: expect.objectContaining({
               category: {
                 category: 'variable',
                 kind: 'chat-variable',
@@ -1888,7 +2400,7 @@ describe('LSP server integration', () => {
                 detail:
                   'Completion resolved this candidate from analyzed chat/global variable definitions in the current fragment.',
               },
-            },
+            }),
           },
         }),
       ]),
@@ -1897,7 +2409,7 @@ describe('LSP server integration', () => {
       expect.objectContaining({
         contents: expect.objectContaining({ value: expect.stringContaining('**Variable: mood**') }),
         data: {
-          cbs: {
+          cbs: expect.objectContaining({
             category: {
               category: 'variable',
               kind: 'chat-variable',
@@ -1908,7 +2420,7 @@ describe('LSP server integration', () => {
               detail:
                 'Hover resolved this variable through analyzed symbol-table entries for the current macro argument.',
             },
-          },
+          }),
         },
       }),
     );
@@ -1957,6 +2469,14 @@ describe('LSP server integration', () => {
     );
     expect(version2Bundle.snapshot.diagnostics).toEqual([]);
     expect(version2Bundle.snapshot.codeActions).toEqual([]);
+    expect(version2Bundle.snapshot.documentSymbols).toEqual([
+      expect.objectContaining({
+        name: '#when::true',
+        fragmentContainer: false,
+        section: null,
+        symbolKind: 'object',
+      }),
+    ]);
   });
 
   it('refreshes related workspace diagnostics when a writer relationship changes in another file', async () => {
@@ -2237,87 +2757,98 @@ describe('LSP server integration', () => {
     expect(availabilityTrace?.verbose).toBeDefined();
     expect(JSON.parse(availabilityTrace?.verbose ?? '{}')).toEqual(
       expect.objectContaining({
-      availability: {
-        artifacts: [
-          {
-            key: 'risutoggle',
-            availabilityScope: 'workspace-disabled',
-            availabilitySource: 'document-router:risutoggle',
-            availabilityDetail:
-              '`.risutoggle` artifacts do not carry CBS fragments, so CBS LSP routing stays disabled for them.',
-          },
-          {
-            key: 'risuvar',
-            availabilityScope: 'workspace-disabled',
-            availabilitySource: 'document-router:risuvar',
-            availabilityDetail:
-              '`.risuvar` artifacts do not carry CBS fragments, so CBS LSP routing stays disabled for them.',
-          },
-        ],
-        companions: [
-          {
-            key: 'luals',
-            status: 'stopped',
-            health: 'idle',
-            transport: 'stdio',
-            executablePath: '/mock/luals',
-            pid: null,
-            detail:
-              'LuaLS executable was resolved and the sidecar is ready to start after the main LSP server finishes initialization.',
-          },
-        ],
-        features: expect.arrayContaining([
-          {
-            key: 'codelens',
-            availabilityScope: 'local-only',
-            availabilitySource: 'server-capability:codelens',
-            availabilityDetail:
-              'CodeLens is active for routed lorebook documents, summarizes workspace activation edges for the current lorebook entry, and requests refresh after document or watched-file changes rebuild activation edges.',
-          },
-          {
-            key: 'completion',
-            availabilityScope: 'local-only',
-            availabilitySource: 'server-capability:completion',
-            availabilityDetail:
-              'Completion is active for routed CBS fragments and operates on the current document/fragment context only.',
-          },
-          {
-            key: 'luaHover',
-            availabilityScope: 'local-only',
-            availabilitySource: 'lua-provider:hover-proxy',
-            availabilityDetail:
-              'Lua hover is active for `.risulua` documents by forwarding `textDocument/hover` to the LuaLS companion using the mirrored virtual Lua document when the sidecar is ready. If LuaLS is unavailable or still starting, the server returns no Lua hover result and leaves CBS capabilities unchanged.',
-          },
-          {
-            key: 'lua-diagnostics',
-            availabilityScope: 'deferred',
-            availabilitySource: 'deferred-scope-contract:lua-diagnostics',
-            availabilityDetail:
-              'Lua diagnostics proxy stays deferred until the server forwards LuaLS diagnostics notifications into host `publishDiagnostics` plumbing.',
-          },
-          {
-            key: 'lua-completion',
-            availabilityScope: 'deferred',
-            availabilitySource: 'deferred-scope-contract:lua-completion',
-            availabilityDetail:
-              'Lua completion proxy stays deferred until the minimal LuaLS hover seam is expanded into editor completion request routing.',
-          },
-          {
-            key: 'definition',
-            availabilityScope: 'local-first',
-            availabilitySource: 'server-capability:definition',
-            availabilityDetail:
-              'Definition is active for routed CBS fragments, returns fragment-local definitions first, and appends workspace chat-variable writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
-          },
-          {
-            key: 'references',
-            availabilityScope: 'local-first',
-            availabilitySource: 'server-capability:references',
-            availabilityDetail:
-              'References are active for routed CBS fragments, return fragment-local read/write locations first, and append workspace chat-variable readers/writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
-          },
-        ]),
-      },
+        availability: expect.objectContaining({
+          artifacts: [
+            {
+              key: 'risutoggle',
+              availabilityScope: 'workspace-disabled',
+              availabilitySource: 'document-router:risutoggle',
+              availabilityDetail:
+                '`.risutoggle` artifacts do not carry CBS fragments, so CBS LSP routing stays disabled for them.',
+            },
+            {
+              key: 'risuvar',
+              availabilityScope: 'workspace-disabled',
+              availabilitySource: 'document-router:risuvar',
+              availabilityDetail:
+                '`.risuvar` artifacts do not carry CBS fragments, so CBS LSP routing stays disabled for them.',
+            },
+          ],
+          companions: [
+            {
+              key: 'luals',
+              status: 'stopped',
+              health: 'idle',
+              transport: 'stdio',
+              executablePath: '/mock/luals',
+              pid: null,
+              detail:
+                'LuaLS executable was resolved and the sidecar is ready to start after the main LSP server finishes initialization.',
+            },
+          ],
+          features: expect.arrayContaining([
+            {
+              key: 'codelens',
+              availabilityScope: 'local-only',
+              availabilitySource: 'server-capability:codelens',
+              availabilityDetail:
+                'CodeLens is active for routed lorebook documents, summarizes workspace activation edges for the current lorebook entry, and requests refresh after document or watched-file changes rebuild activation edges.',
+            },
+            {
+              key: 'completion',
+              availabilityScope: 'local-only',
+              availabilitySource: 'server-capability:completion',
+              availabilityDetail:
+                'Completion is active for routed CBS fragments and operates on the current document/fragment context only.',
+            },
+            {
+              key: 'luaHover',
+              availabilityScope: 'local-only',
+              availabilitySource: 'lua-provider:hover-proxy',
+              availabilityDetail:
+                'Lua hover is active for `.risulua` documents by forwarding `textDocument/hover` to the LuaLS companion using the mirrored virtual Lua document when the sidecar is ready. If LuaLS is unavailable or still starting, the server returns no Lua hover result and leaves CBS capabilities unchanged.',
+            },
+            {
+              key: 'lua-diagnostics',
+              availabilityScope: 'local-only',
+              availabilitySource: 'lua-provider:diagnostics-proxy',
+              availabilityDetail:
+                'Lua diagnostics are active for `.risulua` documents by forwarding LuaLS `textDocument/publishDiagnostics` notifications from mirrored virtual Lua documents into host `publishDiagnostics`. If LuaLS is unavailable, crashed, or still starting, the server clears Lua diagnostics for affected documents and leaves CBS capabilities unchanged.',
+            },
+            {
+              key: 'lua-completion',
+              availabilityScope: 'local-only',
+              availabilitySource: 'lua-provider:completion-proxy',
+              availabilityDetail:
+                'Lua completion is active for `.risulua` documents by forwarding `textDocument/completion` to the LuaLS companion using the mirrored virtual Lua document when the sidecar is ready. If LuaLS is unavailable, crashed, or still starting, the server returns no Lua completion items and leaves CBS capabilities unchanged.',
+            },
+            {
+              key: 'definition',
+              availabilityScope: 'local-first',
+              availabilitySource: 'server-capability:definition',
+              availabilityDetail:
+                'Definition is active for routed CBS fragments, returns fragment-local definitions first, and appends workspace chat-variable writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
+            },
+            {
+              key: 'references',
+              availabilityScope: 'local-first',
+              availabilitySource: 'server-capability:references',
+              availabilityDetail:
+                'References are active for routed CBS fragments, return fragment-local read/write locations first, and append workspace chat-variable readers/writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
+            },
+          ]),
+          operator: expect.objectContaining({
+            docs: {
+              agentIntegration: 'packages/cbs-lsp/docs/AGENT_INTEGRATION.md',
+              compatibility: 'packages/cbs-lsp/docs/COMPATIBILITY.md',
+              lualsCompanion: 'packages/cbs-lsp/docs/LUALS_COMPANION.md',
+              readme: 'packages/cbs-lsp/README.md',
+              standaloneUsage: 'packages/cbs-lsp/docs/STANDALONE_USAGE.md',
+              troubleshooting: 'packages/cbs-lsp/docs/TROUBLESHOOTING.md',
+              vscodeClient: 'packages/vscode/README.md',
+            },
+          }),
+        }),
       }),
     );
   });

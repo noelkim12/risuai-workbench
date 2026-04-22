@@ -191,7 +191,7 @@ describe('CompletionProvider', () => {
       expect(forward.find((item) => item.label === '#when')).toEqual(
         expect.objectContaining({
           data: {
-            cbs: {
+            cbs: expect.objectContaining({
               category: {
                 category: 'block-keyword',
                 kind: 'documentation-only-builtin',
@@ -202,7 +202,7 @@ describe('CompletionProvider', () => {
                 detail:
                   'Completion surfaced this item from the builtin registry as a documentation-only CBS syntax entry.',
               },
-            },
+            }),
           },
           detail: 'Documentation-only block syntax',
           documentation: expect.stringContaining('not a general runtime callback builtin'),

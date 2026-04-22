@@ -41,6 +41,7 @@ export interface WorkspaceDiagnosticsState {
 
 export interface WorkspaceClientState {
   codeLensRefreshSupport: boolean;
+  publishDiagnosticsVersionSupport: boolean;
   watchedFilesDynamicRegistration: boolean;
   watchedFilesRelativePatternSupport: boolean;
 }
@@ -70,6 +71,7 @@ export const WATCHED_FILE_GLOB_PATTERNS = Object.freeze([
 export function createDefaultWorkspaceClientState(): WorkspaceClientState {
   return {
     codeLensRefreshSupport: false,
+    publishDiagnosticsVersionSupport: false,
     watchedFilesDynamicRegistration: false,
     watchedFilesRelativePatternSupport: false,
   };
@@ -87,6 +89,8 @@ export function readWorkspaceClientState(params: InitializeParams): WorkspaceCli
 
   return {
     codeLensRefreshSupport: workspaceCapabilities?.codeLens?.refreshSupport ?? false,
+    publishDiagnosticsVersionSupport:
+      params.capabilities.textDocument?.publishDiagnostics?.versionSupport ?? false,
     watchedFilesDynamicRegistration:
       workspaceCapabilities?.didChangeWatchedFiles?.dynamicRegistration ?? false,
     watchedFilesRelativePatternSupport:

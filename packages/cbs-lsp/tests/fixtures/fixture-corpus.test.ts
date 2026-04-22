@@ -10,6 +10,10 @@ import {
   getFixtureCorpusEntry,
   listFixtureCorpusEntries,
   listMatrixFixtures,
+  snapshotCodeLensesEnvelope,
+  snapshotDocumentSymbolsEnvelope,
+  snapshotLayer3Queries,
+  snapshotProviderBundle,
 } from './fixture-corpus';
 
 describe('cbs-lsp fixture corpus', () => {
@@ -164,5 +168,76 @@ describe('cbs-lsp fixture corpus', () => {
         expect(codes).toContain(expectedCode);
       }
     }
+  });
+
+  it('stamps provider bundle snapshots with the shared agent protocol marker', () => {
+    const snapshot = snapshotProviderBundle({
+      codeActions: [],
+      codeLenses: [],
+      completion: [],
+      diagnostics: [],
+      documentSymbols: [],
+      hover: null,
+    });
+
+    expect(snapshot).toMatchObject({
+      schema: 'cbs-lsp-agent-contract',
+      schemaVersion: '1.0.0',
+    });
+  });
+
+  it('stamps document symbol envelopes with the shared protocol marker and metadata contract', () => {
+    const snapshot = snapshotDocumentSymbolsEnvelope([]);
+
+    expect(snapshot).toMatchObject({
+      schema: 'cbs-lsp-agent-contract',
+      schemaVersion: '1.0.0',
+      provenance: {
+        reason: 'contextual-inference',
+        source: 'document-symbol:outline-builder',
+      },
+      availability: expect.objectContaining({
+        features: expect.arrayContaining([
+          expect.objectContaining({ key: 'documentSymbol' }),
+        ]),
+      }),
+    });
+  });
+
+  it('stamps CodeLens envelopes with the shared protocol marker and metadata contract', () => {
+    const snapshot = snapshotCodeLensesEnvelope([]);
+
+    expect(snapshot).toMatchObject({
+      schema: 'cbs-lsp-agent-contract',
+      schemaVersion: '1.0.0',
+      provenance: {
+        reason: 'contextual-inference',
+        source: 'codelens:activation-summary',
+      },
+      availability: expect.objectContaining({
+        features: expect.arrayContaining([
+          expect.objectContaining({ key: 'codelens' }),
+        ]),
+      }),
+    });
+  });
+
+  it('stamps Layer 3 query envelopes with the shared contract descriptor', () => {
+    const snapshot = snapshotLayer3Queries({ activationChain: null, variableFlow: null });
+
+    expect(snapshot).toMatchObject({
+      schema: 'cbs-lsp-agent-contract',
+      schemaVersion: '1.0.0',
+      contract: {
+        layer: 'layer3',
+        stability: 'stable-public-read-contract',
+        intendedConsumers: ['agent', 'cli', 'mcp', 'tests'],
+        surfaces: {
+          helper: 'snapshotLayer3Queries',
+        },
+      },
+      activationChain: null,
+      variableFlow: null,
+    });
   });
 });

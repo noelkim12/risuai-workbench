@@ -140,7 +140,7 @@ class FakeConnection {
 
   semanticTokensHandler: ((params: any) => SemanticTokens) | null = null;
 
-  readonly diagnostics: Array<{ uri: string; diagnostics: readonly Diagnostic[] }> = [];
+  readonly diagnostics: Array<{ uri: string; version?: number; diagnostics: readonly Diagnostic[] }> = [];
 
   readonly traceMessages: Array<{ message: string; verbose?: string }> = [];
 
@@ -242,7 +242,7 @@ class FakeConnection {
     return createDisposable();
   }
 
-  sendDiagnostics(params: { uri: string; diagnostics: readonly Diagnostic[] }) {
+  sendDiagnostics(params: { uri: string; version?: number; diagnostics: readonly Diagnostic[] }) {
     this.diagnostics.push(params);
     return Promise.resolve();
   }

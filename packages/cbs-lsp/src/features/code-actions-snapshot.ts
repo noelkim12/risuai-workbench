@@ -6,6 +6,7 @@
 import type { CodeAction, Range as LspRange, TextEdit, WorkspaceEdit } from 'vscode-languageserver/node';
 
 import {
+  createCbsAgentProtocolMarker,
   createNormalizedRuntimeAvailabilitySnapshot,
   type NormalizedRuntimeAvailabilitySnapshot,
 } from '../core';
@@ -35,6 +36,8 @@ export interface NormalizedCodeActionSnapshot {
 }
 
 export interface NormalizedCodeActionsEnvelopeSnapshot {
+  schema: string;
+  schemaVersion: string;
   actions: NormalizedCodeActionSnapshot[];
   availability: NormalizedRuntimeAvailabilitySnapshot;
 }
@@ -88,6 +91,7 @@ export function normalizeCodeActionsEnvelopeForSnapshot(
   actions: readonly CodeAction[],
 ): NormalizedCodeActionsEnvelopeSnapshot {
   return {
+    ...createCbsAgentProtocolMarker(),
     actions: normalizeCodeActionsForSnapshot(actions),
     availability: createNormalizedRuntimeAvailabilitySnapshot(),
   };

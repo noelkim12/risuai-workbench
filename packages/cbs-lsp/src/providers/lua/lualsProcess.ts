@@ -14,20 +14,29 @@ import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
-import { type InitializeParams } from 'vscode-languageserver/node';
+import { type Diagnostic, type InitializeParams } from 'vscode-languageserver/node';
 
 import {
   createLuaLsCompanionRuntime,
   type LuaLsCompanionRuntime,
 } from '../../core/availability-contract';
 import type { LuaLsRoutedDocument } from './lualsDocuments';
+import {
+  createLuaLsShadowWorkspace,
+  type LuaLsShadowWorkspace,
+} from './lualsShadowWorkspace';
 
 const DEFAULT_HEALTH_CHECK_INTERVAL_MS = 30_000;
 const DEFAULT_INITIALIZE_TIMEOUT_MS = 5_000;
+const DEFAULT_RESTART_BACKOFF_MS = Object.freeze([1_000, 3_000]);
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 3_000;
 const DEFAULT_STDERR_RING_BUFFER_LIMIT = 20;
 const DEFAULT_PROXY_REQUEST_TIMEOUT_MS = 1_500;
-const LUALS_PATH_CANDIDATES = Object.freeze([
+/**
+ * LuaLS 기본 executable candidate 목록.
+ * compatibility matrix와 runtime contract가 같은 binary expectation을 재사용할 때의 source of truth입니다.
+ */
+export const DEFAULT_LUALS_EXECUTABLE_CANDIDATES = Object.freeze([
   'lua-language-server',
   'lua-language-server.exe',
 ]);
@@ -59,6 +68,9 @@ export interface LuaLsProcessEvent {
     | 'initialize-start'
     | 'initialized'
     | 'health-check'
+    | 'restart-attempt'
+    | 'restart-gave-up'
+    | 'restart-scheduled'
     | 'stderr'
     | 'crashed'
     | 'shutdown-start'
@@ -67,16 +79,46 @@ export interface LuaLsProcessEvent {
   stderrLine?: string;
 }
 
+export interface LuaLsRestartPolicyStatus {
+  attemptsRemaining: number;
+  lastStartRootPath: string | null;
+  maxAttempts: number;
+  mode: 'automatic-on-crash';
+  nextDelayMs: number | null;
+}
+
 export interface LuaLsSpawnedProcess extends ChildProcessWithoutNullStreams {}
 
 export interface LuaLsTransport {
   dispose(): void;
   notify(method: string, params: unknown): void;
+  onNotification(handler: LuaLsTransportNotificationHandler): void;
   request<TResult>(method: string, params: unknown, timeoutMs: number): Promise<TResult>;
+}
+
+export interface LuaLsTransportNotification {
+  method: string;
+  params: unknown;
+}
+
+export type LuaLsTransportNotificationHandler = (notification: LuaLsTransportNotification) => void;
+
+export interface LuaLsPublishDiagnosticsParams {
+  diagnostics: readonly Diagnostic[];
+  uri: string;
+  version?: number;
+}
+
+export interface LuaLsPublishDiagnosticsEvent {
+  diagnostics: readonly Diagnostic[];
+  sourceUri: string;
+  transportUri: string;
+  version?: number;
 }
 
 interface ManagedLuaLsDocument {
   languageId: 'lua';
+  sourceFilePath: string;
   sourceUri: string;
   text: string;
   transportUri: string;
@@ -88,6 +130,7 @@ export interface LuaLsTransportFactory {
 }
 
 export interface LuaLsProcessManagerOptions {
+  createShadowWorkspace?: () => LuaLsShadowWorkspace;
   cwd?: string;
   createTransport?: LuaLsTransportFactory;
   env?: NodeJS.ProcessEnv;
@@ -96,6 +139,7 @@ export interface LuaLsProcessManagerOptions {
   onEvent?: (event: LuaLsProcessEvent) => void;
   processId?: number;
   resolveExecutablePath?: (options: LuaLsExecutableResolutionOptions) => string | null;
+  restartBackoffMs?: readonly number[];
   shutdownTimeoutMs?: number;
   spawnProcess?: (
     command: string,
@@ -138,7 +182,7 @@ export function resolveLuaLsExecutablePathSync(
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
 
-  for (const candidate of options.candidates ?? LUALS_PATH_CANDIDATES) {
+    for (const candidate of options.candidates ?? DEFAULT_LUALS_EXECUTABLE_CANDIDATES) {
     if (path.isAbsolute(candidate) && exists(candidate)) {
       return candidate;
     }
@@ -161,6 +205,8 @@ export function resolveLuaLsExecutablePathSync(
 class LuaLsStdioTransport implements LuaLsTransport {
   private nextRequestId = 0;
 
+  private notificationHandler: LuaLsTransportNotificationHandler = () => undefined;
+
   private readonly pendingRequests = new Map<number, PendingJsonRpcRequest<unknown>>();
 
   private stdoutBuffer = Buffer.alloc(0);
@@ -181,6 +227,10 @@ class LuaLsStdioTransport implements LuaLsTransport {
 
   notify(method: string, params: unknown): void {
     this.writeMessage({ jsonrpc: '2.0', method, params });
+  }
+
+  onNotification(handler: LuaLsTransportNotificationHandler): void {
+    this.notificationHandler = handler;
   }
 
   request<TResult>(method: string, params: unknown, timeoutMs: number): Promise<TResult> {
@@ -240,7 +290,19 @@ class LuaLsStdioTransport implements LuaLsTransport {
   };
 
   private handleMessage(payload: unknown): void {
-    if (!payload || typeof payload !== 'object' || !('id' in payload)) {
+    if (!payload || typeof payload !== 'object') {
+      return;
+    }
+
+    if ('method' in payload && typeof payload.method === 'string' && !('id' in payload)) {
+      this.notificationHandler({
+        method: payload.method,
+        params: (payload as { params?: unknown }).params ?? null,
+      });
+      return;
+    }
+
+    if (!('id' in payload)) {
       return;
     }
 
@@ -290,11 +352,27 @@ export class LuaLsProcessManager {
 
   private readonly onEvent: (event: LuaLsProcessEvent) => void;
 
+  private readonly publishDiagnosticsListeners = new Set<
+    (event: LuaLsPublishDiagnosticsEvent) => void
+  >();
+
   private readonly processId: number;
+
+  private readonly restartBackoffMs: readonly number[];
+
+  private restartTimer: NodeJS.Timeout | null = null;
+
+  private restartTimerDelayMs: number | null = null;
+
+  private lastStartOptions: LuaLsProcessStartOptions = { rootPath: null };
+
+  private restartAttemptIndex = 0;
 
   private readonly resolveExecutablePath: (options: LuaLsExecutableResolutionOptions) => string | null;
 
   private readonly shutdownTimeoutMs: number;
+
+  private readonly shadowWorkspace: LuaLsShadowWorkspace;
 
   private readonly spawnProcess: NonNullable<LuaLsProcessManagerOptions['spawnProcess']>;
 
@@ -317,7 +395,9 @@ export class LuaLsProcessManager {
     this.onEvent = options.onEvent ?? (() => undefined);
     this.processId = options.processId ?? process.pid;
     this.resolveExecutablePath = options.resolveExecutablePath ?? resolveLuaLsExecutablePathSync;
+    this.restartBackoffMs = options.restartBackoffMs ?? DEFAULT_RESTART_BACKOFF_MS;
     this.shutdownTimeoutMs = options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS;
+    this.shadowWorkspace = options.createShadowWorkspace?.() ?? createLuaLsShadowWorkspace();
     this.spawnProcess = options.spawnProcess ?? ((command, args, spawnOptions) => spawn(command, args, spawnOptions));
     this.stderrRingBufferLimit = options.stderrRingBufferLimit ?? DEFAULT_STDERR_RING_BUFFER_LIMIT;
     this.transportFactory =
@@ -332,6 +412,22 @@ export class LuaLsProcessManager {
    */
   getRuntime(): LuaLsCompanionRuntime {
     return this.runtime;
+  }
+
+  /**
+   * getRestartPolicy 함수.
+   * 현재 sidecar 자동 재기동 정책과 다음 시도 상태를 요약함.
+   *
+   * @returns 현재 restart policy snapshot
+   */
+  getRestartPolicy(): LuaLsRestartPolicyStatus {
+    return {
+      attemptsRemaining: Math.max(this.restartBackoffMs.length - this.restartAttemptIndex, 0),
+      lastStartRootPath: this.lastStartOptions.rootPath ?? null,
+      maxAttempts: this.restartBackoffMs.length,
+      mode: 'automatic-on-crash',
+      nextDelayMs: this.restartTimerDelayMs,
+    };
   }
 
   /**
@@ -356,6 +452,20 @@ export class LuaLsProcessManager {
   }
 
   /**
+   * onPublishDiagnostics 함수.
+   * LuaLS `textDocument/publishDiagnostics` notification을 host publish loop에서 소비할 수 있게 구독함.
+   *
+   * @param listener - source URI 기준 diagnostics payload를 받을 리스너
+   * @returns 구독 해제 함수
+   */
+  onPublishDiagnostics(listener: (event: LuaLsPublishDiagnosticsEvent) => void): () => void {
+    this.publishDiagnosticsListeners.add(listener);
+    return () => {
+      this.publishDiagnosticsListeners.delete(listener);
+    };
+  }
+
+  /**
    * syncDocument 함수.
    * 현재 Lua 문서를 canonical mirror 상태로 저장하고, transport가 준비됐으면 didOpen/didChange를 전달함.
    *
@@ -364,9 +474,10 @@ export class LuaLsProcessManager {
   syncDocument(document: LuaLsRoutedDocument): void {
     const nextDocument: ManagedLuaLsDocument = {
       languageId: document.languageId,
+      sourceFilePath: document.sourceFilePath,
       sourceUri: document.sourceUri,
       text: document.text,
-      transportUri: document.transportUri,
+      transportUri: this.shadowWorkspace.syncDocument(document.sourceFilePath, document.text),
       version: document.version,
     };
     const previousDocument = this.synchronizedDocuments.get(document.sourceUri);
@@ -408,12 +519,25 @@ export class LuaLsProcessManager {
     }
 
     this.synchronizedDocuments.delete(sourceUri);
+    this.shadowWorkspace.closeDocument(previousDocument.sourceFilePath);
 
     if (!this.isTransportReady()) {
+      this.emitPublishDiagnostics({
+        diagnostics: [],
+        sourceUri: previousDocument.sourceUri,
+        transportUri: previousDocument.transportUri,
+        version: typeof previousDocument.version === 'number' ? previousDocument.version : undefined,
+      });
       return;
     }
 
     this.notifyDidClose(previousDocument);
+    this.emitPublishDiagnostics({
+      diagnostics: [],
+      sourceUri: previousDocument.sourceUri,
+      transportUri: previousDocument.transportUri,
+      version: typeof previousDocument.version === 'number' ? previousDocument.version : undefined,
+    });
   }
 
   /**
@@ -424,6 +548,9 @@ export class LuaLsProcessManager {
    * @returns initialize 시점 availability에 넣을 runtime 상태
    */
   prepareForInitialize(options: LuaLsProcessPrepareOptions = {}): LuaLsCompanionRuntime {
+    this.cancelScheduledRestart();
+    this.restartAttemptIndex = 0;
+    this.lastStartOptions = { rootPath: options.rootPath ?? null };
     const nextExecutablePath = this.resolveExecutablePath({
       cwd: this.options.cwd,
       env: this.options.env,
@@ -432,9 +559,10 @@ export class LuaLsProcessManager {
     this.executablePath = nextExecutablePath;
 
     if (!nextExecutablePath) {
+      this.clearAllPublishedDiagnostics();
       this.runtime = createLuaLsCompanionRuntime({
         detail:
-          'LuaLS executable was not found from override path or PATH, so the sidecar stays unavailable while CBS features continue normally.',
+          'LuaLS executable was not found from `--luals-path` override or PATH candidates (`lua-language-server`, `lua-language-server.exe`), so the sidecar stays unavailable while CBS features continue normally.',
         executablePath: null,
         health: 'unavailable',
         status: 'unavailable',
@@ -462,6 +590,9 @@ export class LuaLsProcessManager {
    * @returns 시작 이후의 runtime 상태
    */
   async start(options: LuaLsProcessStartOptions = {}): Promise<LuaLsCompanionRuntime> {
+    this.lastStartOptions = { rootPath: options.rootPath ?? null };
+    this.cancelScheduledRestart();
+
     if (!this.executablePath) {
       return this.prepareForInitialize({ rootPath: options.rootPath ?? null });
     }
@@ -488,6 +619,7 @@ export class LuaLsProcessManager {
 
       this.childProcess = childProcess;
       this.transport = this.transportFactory.create(childProcess);
+      this.transport.onNotification(this.handleTransportNotification);
       this.attachProcessObservers(childProcess);
 
       this.runtime = createLuaLsCompanionRuntime({
@@ -506,7 +638,7 @@ export class LuaLsProcessManager {
         settings: {
           Lua: {
             diagnostics: {
-              validScheme: [...LUALS_VALID_SCHEMES],
+              enableScheme: [...LUALS_VALID_SCHEMES],
             },
           },
         },
@@ -514,12 +646,16 @@ export class LuaLsProcessManager {
       this.initialized = true;
       this.flushSynchronizedDocuments();
       this.runtime = createLuaLsCompanionRuntime({
-        detail: 'LuaLS sidecar finished initialize/initialized handshake and is healthy.',
+        detail:
+          this.restartAttemptIndex > 0
+            ? 'LuaLS sidecar recovered after an automatic restart attempt and is healthy again.'
+            : 'LuaLS sidecar finished initialize/initialized handshake and is healthy.',
         executablePath: this.executablePath,
         health: 'healthy',
         pid: childProcess.pid ?? null,
         status: 'ready',
       });
+      this.restartAttemptIndex = 0;
       this.startHealthChecks();
       this.emit('initialized');
       return this.runtime;
@@ -562,6 +698,8 @@ export class LuaLsProcessManager {
    */
   async shutdown(): Promise<LuaLsCompanionRuntime> {
     this.shutdownRequested = true;
+    this.cancelScheduledRestart();
+    this.restartAttemptIndex = 0;
     this.stopHealthChecks();
     this.emit('shutdown-start');
 
@@ -569,6 +707,7 @@ export class LuaLsProcessManager {
     const transport = this.transport;
     this.transport = null;
     this.childProcess = null;
+    this.clearAllPublishedDiagnostics();
 
     if (transport && childProcess) {
       try {
@@ -620,18 +759,14 @@ export class LuaLsProcessManager {
       this.transport?.dispose();
       this.transport = null;
       this.childProcess = null;
-      this.runtime = createLuaLsCompanionRuntime({
-        detail: `LuaLS sidecar exited unexpectedly before routing/proxy features could use it (code=${String(code)}, signal=${String(signal)}).`,
-        executablePath: this.executablePath,
-        health: 'degraded',
-        status: 'crashed',
-      });
-      this.emit('crashed');
+      this.markCrashed(
+        `LuaLS sidecar exited unexpectedly before routing/proxy features could use it (code=${String(code)}, signal=${String(signal)}).`,
+      );
     });
   }
 
   private createInitializeParams(rootPath: string | null): InitializeParams {
-    const rootUri = rootPath ? pathToFileURL(rootPath).href : null;
+    const shadowRootUri = pathToFileURL(this.shadowWorkspace.rootPath).href;
     return {
       capabilities: {},
       clientInfo: {
@@ -639,12 +774,12 @@ export class LuaLsProcessManager {
         version: '0.1.0',
       },
       processId: this.processId,
-      rootUri,
-      workspaceFolders: rootUri && rootPath
+      rootUri: shadowRootUri,
+      workspaceFolders: rootPath
         ? [
             {
-              name: path.basename(rootPath),
-              uri: rootUri,
+              name: `${path.basename(rootPath)}-luals-shadow`,
+              uri: shadowRootUri,
             },
           ]
         : null,
@@ -665,14 +800,22 @@ export class LuaLsProcessManager {
     this.childProcess = null;
     this.initialized = false;
     const detail = error instanceof Error ? error.message : 'Unknown LuaLS start failure.';
-    this.runtime = createLuaLsCompanionRuntime({
-      detail: `LuaLS sidecar could not finish startup: ${detail}`,
-      executablePath: this.executablePath,
-      health: 'degraded',
-      status: 'crashed',
-    });
-    this.emit('crashed');
+    this.markCrashed(`LuaLS sidecar could not finish startup: ${detail}`);
     return this.runtime;
+  }
+
+  /**
+   * restart 함수.
+   * 현재 lifecycle을 정리한 뒤 동일한 rootPath로 LuaLS sidecar를 다시 시작함.
+   *
+   * @param options - 재기동에 사용할 root path override
+   * @returns restart 이후 runtime 상태
+   */
+  async restart(options: LuaLsProcessStartOptions = {}): Promise<LuaLsCompanionRuntime> {
+    await this.shutdown();
+    this.shutdownRequested = false;
+    this.restartAttemptIndex = 0;
+    return this.start({ rootPath: options.rootPath ?? this.lastStartOptions.rootPath ?? null });
   }
 
   private readonly handleStderrChunk = (chunk: Buffer | string): void => {
@@ -711,6 +854,85 @@ export class LuaLsProcessManager {
    */
   private isTransportReady(): boolean {
     return Boolean(this.transport) && this.initialized;
+  }
+
+  /**
+   * markCrashed 함수.
+   * crash detail을 runtime에 반영하고 자동 재기동 정책을 이어 붙임.
+   *
+   * @param detail - 현재 crash/failure를 설명할 detail 문구
+   */
+  private markCrashed(detail: string): void {
+    this.clearAllPublishedDiagnostics();
+    this.runtime = createLuaLsCompanionRuntime({
+      detail,
+      executablePath: this.executablePath,
+      health: 'degraded',
+      status: 'crashed',
+    });
+    this.emit('crashed');
+    this.scheduleRestart();
+  }
+
+  /**
+   * cancelScheduledRestart 함수.
+   * 예약된 자동 재기동 타이머를 정리함.
+   */
+  private cancelScheduledRestart(): void {
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
+
+    this.restartTimerDelayMs = null;
+  }
+
+  /**
+   * scheduleRestart 함수.
+   * crash 뒤 자동 재기동 정책이 남아 있으면 다음 시도를 예약함.
+   */
+  private scheduleRestart(): void {
+    if (this.shutdownRequested || !this.executablePath) {
+      this.cancelScheduledRestart();
+      return;
+    }
+
+    const nextDelayMs = this.restartBackoffMs[this.restartAttemptIndex] ?? null;
+    if (nextDelayMs === null) {
+      this.cancelScheduledRestart();
+      this.runtime = createLuaLsCompanionRuntime({
+        detail:
+          `${this.runtime.detail} Automatic restart attempts are exhausted, so restart or reinitialize the server after fixing LuaLS.`,
+        executablePath: this.executablePath,
+        health: 'degraded',
+        status: 'crashed',
+      });
+      this.emit('restart-gave-up');
+      return;
+    }
+
+    const attemptNumber = this.restartAttemptIndex + 1;
+    const maxAttempts = this.restartBackoffMs.length;
+    this.restartAttemptIndex += 1;
+    this.restartTimerDelayMs = nextDelayMs;
+    this.runtime = createLuaLsCompanionRuntime({
+      detail:
+        `${this.runtime.detail} Scheduling automatic restart attempt ${attemptNumber}/${maxAttempts} in ${nextDelayMs}ms.`,
+      executablePath: this.executablePath,
+      health: 'degraded',
+      status: 'crashed',
+    });
+    this.emit('restart-scheduled');
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = null;
+      this.restartTimerDelayMs = null;
+      if (this.shutdownRequested) {
+        return;
+      }
+
+      this.emit('restart-attempt');
+      void this.start({ rootPath: this.lastStartOptions.rootPath ?? null }).catch(() => undefined);
+    }, nextDelayMs);
   }
 
   /**
@@ -778,6 +1000,107 @@ export class LuaLsProcessManager {
         uri: document.transportUri,
       },
     });
+  }
+
+  /**
+   * handleTransportNotification 함수.
+   * LuaLS가 보내는 notification 중 host diagnostics publish에 필요한 payload만 가로챔.
+   *
+   * @param notification - LuaLS transport에서 수신한 notification
+   */
+  private readonly handleTransportNotification = (notification: LuaLsTransportNotification): void => {
+    if (notification.method !== 'textDocument/publishDiagnostics') {
+      return;
+    }
+
+    const payload = this.parsePublishDiagnostics(notification.params);
+    if (!payload) {
+      return;
+    }
+
+    const document = this.findSynchronizedDocumentByTransportUri(payload.uri);
+    if (!document) {
+      return;
+    }
+
+    this.emitPublishDiagnostics({
+      diagnostics: payload.diagnostics,
+      sourceUri: document.sourceUri,
+      transportUri: payload.uri,
+      version: payload.version,
+    });
+  };
+
+  /**
+   * emitPublishDiagnostics 함수.
+   * source URI 기준 Lua diagnostics payload를 현재 구독자들에게 브로드캐스트함.
+   *
+   * @param event - host publishDiagnostics로 승격할 Lua diagnostics payload
+   */
+  private emitPublishDiagnostics(event: LuaLsPublishDiagnosticsEvent): void {
+    for (const listener of this.publishDiagnosticsListeners) {
+      listener(event);
+    }
+  }
+
+  /**
+   * clearAllPublishedDiagnostics 함수.
+   * sidecar가 unavailable/crashed/shutdown 상태로 내려갈 때 남아 있는 Lua diagnostics를 비움.
+   */
+  private clearAllPublishedDiagnostics(): void {
+    for (const document of this.synchronizedDocuments.values()) {
+      this.emitPublishDiagnostics({
+        diagnostics: [],
+        sourceUri: document.sourceUri,
+        transportUri: document.transportUri,
+        version: typeof document.version === 'number' ? document.version : undefined,
+      });
+    }
+  }
+
+  /**
+   * findSynchronizedDocumentByTransportUri 함수.
+    * LuaLS shadow file:// URI를 현재 source `.risulua` 문서로 역매핑함.
+   *
+   * @param transportUri - LuaLS가 보낸 mirrored Lua document URI
+   * @returns source URI를 찾았으면 synced document, 없으면 null
+   */
+  private findSynchronizedDocumentByTransportUri(transportUri: string): ManagedLuaLsDocument | null {
+    for (const document of this.synchronizedDocuments.values()) {
+      if (document.transportUri === transportUri) {
+        return document;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * parsePublishDiagnostics 함수.
+   * LuaLS diagnostics notification payload를 최소한의 shape 검증과 함께 정규화함.
+   *
+   * @param params - transport notification params
+   * @returns host publish로 승격 가능한 diagnostics payload, 아니면 null
+   */
+  private parsePublishDiagnostics(params: unknown): LuaLsPublishDiagnosticsParams | null {
+    if (!params || typeof params !== 'object') {
+      return null;
+    }
+
+    const payload = params as {
+      diagnostics?: unknown;
+      uri?: unknown;
+      version?: unknown;
+    };
+    if (typeof payload.uri !== 'string' || !Array.isArray(payload.diagnostics)) {
+      return null;
+    }
+
+    return {
+      diagnostics: payload.diagnostics as Diagnostic[],
+      uri: payload.uri,
+      version: typeof payload.version === 'number' ? payload.version : undefined,
+    };
   }
 }
 

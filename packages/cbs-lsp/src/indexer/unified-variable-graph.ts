@@ -33,6 +33,10 @@ import type {
   ElementRegistryFragmentElement,
   ElementRegistryLuaElement,
 } from './element-registry';
+import {
+  createCbsAgentProtocolMarker,
+  type CbsAgentProtocolMarker,
+} from '../core/agent-metadata';
 import { createFragmentOffsetMapper } from '../core/fragment-position';
 
 /**
@@ -217,7 +221,7 @@ export interface UnifiedVariableNode {
  * This is the public read-only shape exposed to consumers.
  * No Maps or Sets are used - only plain objects and arrays for easy serialization.
  */
-export interface UnifiedVariableGraphSnapshot {
+export interface UnifiedVariableGraphSnapshot extends CbsAgentProtocolMarker {
   /**
    * The workspace root path used to build this graph.
    */
@@ -261,10 +265,6 @@ export interface UnifiedVariableGraphSnapshot {
    */
   buildTimestamp: number;
 
-  /**
-   * Version identifier for the graph schema.
-   */
-  schemaVersion: string;
 }
 
 /**
@@ -429,6 +429,7 @@ export class UnifiedVariableGraph {
     }
 
     const snapshot: UnifiedVariableGraphSnapshot = {
+      ...createCbsAgentProtocolMarker(),
       rootPath: options.rootPath,
       variables: variableNodes,
       totalVariables: variableNodes.length,
@@ -437,7 +438,6 @@ export class UnifiedVariableGraph {
       occurrencesByUri,
       occurrencesByElementId,
       buildTimestamp: Date.now(),
-      schemaVersion: '1.0.0',
     };
 
     return new UnifiedVariableGraph(snapshot);
@@ -752,6 +752,7 @@ function buildSnapshotFromOccurrences(
   }
 
   return {
+    ...createCbsAgentProtocolMarker(),
     rootPath,
     variables: variableNodes,
     totalVariables: variableNodes.length,
@@ -760,7 +761,6 @@ function buildSnapshotFromOccurrences(
     occurrencesByUri,
     occurrencesByElementId,
     buildTimestamp: Date.now(),
-    schemaVersion: '1.0.0',
   };
 }
 

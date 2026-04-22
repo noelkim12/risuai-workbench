@@ -5,7 +5,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { afterEach, describe, expect, it } from 'vitest'
 import { getCustomExtensionArtifactContract, type CustomExtensionArtifact } from 'risu-workbench-core'
 
-import { createWorkspaceScanFileFromText, ElementRegistry, FileScanner } from '../../src/indexer'
+import { createWorkspaceScanFileFromText, ElementRegistry, FileScanner, UnifiedVariableGraph } from '../../src/indexer'
+import { snapshotLayer1Contracts } from '../fixtures/fixture-corpus'
 
 type WorkspaceFileSeed = {
   artifact: CustomExtensionArtifact
@@ -128,6 +129,50 @@ describe('ElementRegistry', () => {
         toggle: { files: 0, elements: 0, graphSeeds: 0 },
         variable: { files: 0, elements: 0, graphSeeds: 0 },
         html: { files: 1, elements: 1, graphSeeds: 1 },
+      },
+    })
+
+    const contractSnapshot = snapshotLayer1Contracts(
+      registry.getSnapshot(),
+      UnifiedVariableGraph.fromRegistry(registry).getSnapshot(),
+    )
+    expect(contractSnapshot).toMatchObject({
+      schema: 'cbs-lsp-agent-contract',
+      schemaVersion: '1.0.0',
+      contract: {
+        layer: 'layer1',
+        stability: 'stable-public-read-contract',
+        trust: {
+          agentsMayTrustSnapshotDirectly: true,
+          stableForWorkspaceReasoning: true,
+          writeCapabilitiesIncluded: false,
+        },
+        stableFields: {
+          registrySnapshot: ['rootPath', 'files', 'elements', 'graphSeeds', 'summary'],
+          graphSnapshot: [
+            'rootPath',
+            'variables',
+            'totalVariables',
+            'totalOccurrences',
+            'variableIndex',
+            'occurrencesByUri',
+            'occurrencesByElementId',
+            'buildTimestamp',
+          ],
+          runtimeDerivedFields: ['graph.buildTimestamp'],
+        },
+        deterministicOrdering: {
+          registryFiles: 'relativePath -> absolutePath',
+          graphOccurrences: 'variableName -> uri -> hostStartOffset -> hostEndOffset -> occurrenceId',
+        },
+      },
+      registry: {
+        schema: 'cbs-lsp-agent-contract',
+        schemaVersion: '1.0.0',
+      },
+      graph: {
+        schema: 'cbs-lsp-agent-contract',
+        schemaVersion: '1.0.0',
       },
     })
 

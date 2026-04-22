@@ -12,6 +12,7 @@ import type {
 } from 'risu-workbench-core';
 import { analyzeLorebookActivationChains } from 'risu-workbench-core';
 
+import { createCbsAgentProtocolMarker, type CbsAgentProtocolMarker } from '../core';
 import type { ElementRegistry, ElementRegistryFileRecord } from '../indexer';
 
 type ActivationCycleVisitReason = 'possible activation' | 'partial activation';
@@ -82,7 +83,7 @@ export interface ActivationChainEntryMatch {
  * @param blockedOutgoing - outgoing 중 blocked status만 모은 목록
  * @param cycle - 현재 entry를 시작점으로 한 BFS cycle summary
  */
-export interface ActivationChainQueryResult {
+export interface ActivationChainQueryResult extends CbsAgentProtocolMarker {
   entry: LorebookActivationEntry;
   file: ElementRegistryFileRecord;
   incoming: readonly ActivationChainEntryMatch[];
@@ -198,6 +199,7 @@ export class ActivationChainService {
     const outgoing = this.outgoingByEntryId.get(entryId) ?? [];
 
     return {
+      ...createCbsAgentProtocolMarker(),
       entry,
       file,
       incoming,

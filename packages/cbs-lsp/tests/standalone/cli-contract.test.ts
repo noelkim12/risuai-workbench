@@ -13,6 +13,10 @@ interface PackageManifest {
   version: string;
   bin?: Record<string, string>;
   exports?: Record<string, string | { types?: string; default?: string }>;
+  files?: string[];
+  engines?: {
+    node?: string;
+  };
 }
 
 const packageRoot = process.cwd();
@@ -69,6 +73,10 @@ describe.sequential('cbs-language-server standalone CLI contract', () => {
       types: './dist/cli.d.ts',
       default: './dist/cli.js',
     });
+    expect(manifest.engines?.node).toBe('>=20');
+    expect(manifest.files).toEqual(
+      expect.arrayContaining(['dist', 'docs', 'package.json', 'README*']),
+    );
   });
 
   it('shows help for --help', () => {
@@ -77,6 +85,8 @@ describe.sequential('cbs-language-server standalone CLI contract', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('CBS Language Server CLI');
     expect(result.stdout).toContain('cbs-language-server --stdio');
+    expect(result.stdout).toContain('cbs-language-server report availability');
+    expect(result.stdout).toContain('cbs-language-server query variable sharedVar --workspace ./workspace');
     expect(result.stdout).toContain('--config');
     expect(result.stdout).toContain('--log-level');
   });

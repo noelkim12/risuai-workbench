@@ -14,6 +14,8 @@ import {
   type LuaAnalysisArtifact,
 } from 'risu-workbench-core';
 
+import { createCbsAgentProtocolMarker, type CbsAgentProtocolMarker } from '../core';
+
 import type {
   WorkspaceFileArtifactClass,
   WorkspaceScanFile,
@@ -133,7 +135,7 @@ export interface ElementRegistrySummary {
   byArtifact: Readonly<Record<CustomExtensionArtifact, ElementRegistryArtifactSummary>>;
 }
 
-export interface ElementRegistrySnapshot {
+export interface ElementRegistrySnapshot extends CbsAgentProtocolMarker {
   rootPath: string;
   files: readonly ElementRegistryFileRecord[];
   elements: readonly ElementRegistryElement[];
@@ -541,6 +543,7 @@ function buildRegistryFileRecord(file: WorkspaceScanFile): BuiltRegistryFileReco
 export class ElementRegistry {
   private rootPath = '';
   private snapshot: ElementRegistrySnapshot = {
+    ...createCbsAgentProtocolMarker(),
     rootPath: '',
     files: [],
     elements: [],
@@ -821,6 +824,7 @@ export class ElementRegistry {
     }
 
     this.snapshot = {
+      ...createCbsAgentProtocolMarker(),
       rootPath: this.rootPath,
       files,
       elements,

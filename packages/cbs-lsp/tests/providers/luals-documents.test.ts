@@ -3,6 +3,7 @@
  * @file packages/cbs-lsp/tests/providers/luals-documents.test.ts
  */
 
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 
@@ -10,13 +11,13 @@ import { createSyntheticDocumentVersion } from '../../src/core/fragment-analysis
 import { createWorkspaceScanFileFromText } from '../../src/indexer';
 import {
   createLuaLsDocumentRouter,
-  createLuaLsTransportUri,
   createLuaLsRoutedDocumentFromTextDocument,
   shouldRouteDocumentToLuaLs,
 } from '../../src/providers/lua/lualsDocuments';
+import { createLuaLsShadowDocumentUri } from '../../src/providers/lua/lualsShadowWorkspace';
 
 describe('lualsDocuments', () => {
-  it('maps .risulua documents to deterministic LuaLS virtual URIs', () => {
+  it('maps .risulua documents to deterministic LuaLS shadow file URIs', () => {
     const document = TextDocument.create(
       'file:///workspace/lua/trigger.risulua',
       'lua',
@@ -25,18 +26,21 @@ describe('lualsDocuments', () => {
     );
 
     expect(shouldRouteDocumentToLuaLs('/workspace/lua/trigger.risulua')).toBe(true);
-    expect(createLuaLsTransportUri('/workspace/lua/trigger.risulua')).toBe(
-      'risu-luals:///workspace/lua/trigger.risulua.lua',
-    );
     expect(createLuaLsRoutedDocumentFromTextDocument(document, '/workspace')).toEqual({
       sourceUri: 'file:///workspace/lua/trigger.risulua',
       sourceFilePath: '/workspace/lua/trigger.risulua',
-      transportUri: 'risu-luals:///workspace/lua/trigger.risulua.lua',
+      transportUri: createLuaLsShadowDocumentUri('/workspace/lua/trigger.risulua'),
       languageId: 'lua',
       rootPath: '/workspace',
       version: 3,
       text: 'local mood = getState("mood")\n',
     });
+  });
+
+  it('produces file:// transport URIs that LuaLS recognizes as workspace documents', () => {
+    const transportUri = createLuaLsShadowDocumentUri('/workspace/lua/trigger.risulua');
+    expect(transportUri).toMatch(/^file:\/\//u);
+    expect(transportUri).toContain('.lua');
   });
 
   it('syncs workspace lua files and closes removed mirror documents', () => {
@@ -58,7 +62,7 @@ describe('lualsDocuments', () => {
     expect(processManager.syncDocument).toHaveBeenCalledWith({
       sourceUri: workspaceLuaFile.uri,
       sourceFilePath: '/workspace/lua/trigger.risulua',
-      transportUri: 'risu-luals:///workspace/lua/trigger.risulua.lua',
+      transportUri: createLuaLsShadowDocumentUri('/workspace/lua/trigger.risulua'),
       languageId: 'lua',
       rootPath: '/workspace',
       version: createSyntheticDocumentVersion('local mood = getState("mood")\n'),
