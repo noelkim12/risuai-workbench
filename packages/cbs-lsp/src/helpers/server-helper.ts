@@ -218,6 +218,19 @@ export class ServerFeatureRegistrar {
     });
   }
 
+  private createHoverProvider(uri: string): HoverProvider {
+    const variableFlowService = this.resolveWorkspaceVariableFlowServiceByUri(uri);
+    if (!variableFlowService) {
+      return this.hoverProvider;
+    }
+
+    return new HoverProvider(this.registry, {
+      analysisService: fragmentAnalysisService,
+      resolveRequest: ({ textDocument }) => this.resolveRequest(textDocument.uri),
+      variableFlowService,
+    });
+  }
+
   private registerCodeActionHandler(): void {
     this.connection.onCodeAction((params: CodeActionParams, cancellationToken): CodeAction[] => {
       return this.requestRunner.runSync({
@@ -472,7 +485,10 @@ export class ServerFeatureRegistrar {
         });
       }
 
-      const result = this.hoverProvider.provide(params, cancellationToken);
+      const result = this.createHoverProvider(params.textDocument.uri).provide(
+        params,
+        cancellationToken,
+      );
       traceFeatureResult(this.connection, 'hover', 'end', {
         uri: params.textDocument.uri,
         hasResult: result !== null,

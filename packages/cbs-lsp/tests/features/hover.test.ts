@@ -151,6 +151,26 @@ describe('HoverProvider', () => {
       matchedOccurrence,
     );
     workspaceQuery.defaultValue = 'seeded';
+    workspaceQuery.issues = [
+      {
+        issue: {
+          type: 'uninitialized-read',
+          severity: 'warning',
+          message: 'Variable may be read before initialization.',
+          events: [],
+        },
+        occurrences: [externalReader],
+      },
+      {
+        issue: {
+          type: 'phase-order-risk',
+          severity: 'warning',
+          message: 'Execution order may vary across files.',
+          events: [],
+        },
+        occurrences: [externalWriter],
+      },
+    ];
     const variableFlowService = createVariableFlowServiceStub({
       queryAt: (uri) => (uri === request.uri ? workspaceQuery : null),
     });
@@ -162,11 +182,42 @@ describe('HoverProvider', () => {
     expect(markdown).toContain('Workspace writers: 2');
     expect(markdown).toContain('Workspace readers: 1');
     expect(markdown).toContain('Default value: seeded');
+    expect(markdown).toContain('Representative writers:');
+    expect(markdown).toContain('lorebooks/entry.risulorebook (line 5, character 11)');
+    expect(markdown).toContain('lua/state.risulua (line 1, character 10)');
     expect(markdown).toContain('External writers:');
     expect(markdown).toContain('lua/state.risulua');
     expect(markdown).toContain('setState');
     expect(markdown).toContain('External readers:');
     expect(markdown).toContain('regex/mood.risuregex');
+    expect(markdown).toContain('Workspace issues:');
+    expect(markdown).toContain('uninitialized-read [warning]: Variable may be read before initialization.');
+    expect(markdown).toContain('phase-order-risk [warning]: Execution order may vary across files.');
+  });
+
+  it('keeps local-only variable hover when workspace state is absent', () => {
+    const entry = getFixtureCorpusEntry('lorebook-setvar-macro');
+    const request = createFixtureRequest(entry);
+    const service = new FragmentAnalysisService();
+    const position = positionAt(entry.text, 'mood', 1);
+    const lookup = service.locatePosition(request, position);
+
+    expect(lookup).not.toBeNull();
+
+    const symbolTable = lookup!.fragmentAnalysis.providerLookup.getSymbolTable();
+    symbolTable.addDefinition('mood', 'chat', lookup!.nodeSpan!.localRange);
+    symbolTable.tryAddVariableReferenceByName('mood', lookup!.nodeSpan!.localRange, 'chat');
+
+    const provider = createProvider(service, request);
+    const hover = provider.provide(createParams(request, position));
+    const markdown = expectMarkdownHover(hover);
+
+    expect(markdown).toContain('Local definition:');
+    expect(markdown).toContain('Local references: 1');
+    expect(markdown).not.toContain('Workspace writers:');
+    expect(markdown).not.toContain('Workspace readers:');
+    expect(markdown).not.toContain('Representative writers:');
+    expect(markdown).not.toContain('Workspace issues:');
   });
 
   it('shows deterministic variable metadata and shared symbol details when available', () => {

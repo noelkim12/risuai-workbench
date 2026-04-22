@@ -2147,6 +2147,35 @@ describe('LSP server integration', () => {
     ]);
   });
 
+  it('routes textDocument/hover through the server seam and merges workspace variable summaries by request URI', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const readerText = lorebookDocument(['{{getvar::shared}}']);
+    const writerText = promptDocument(['{{setvar::shared::from-workspace}}']);
+    const readerUri = await writeWorkspaceFile(root, 'lorebooks/reader.risulorebook', readerText);
+    const writerUri = await writeWorkspaceFile(root, 'prompt_template/writer.risuprompt', writerText);
+
+    registerServer(connection as any, documents as any);
+    documents.open(readerUri, readerText, 1);
+    documents.open(writerUri, writerText, 1);
+
+    const hover = connection.hoverHandler?.(
+      {
+        textDocument: { uri: readerUri },
+        position: positionAt(readerText, 'shared', 1),
+      },
+      createCancellationToken(false),
+    );
+    const markdown = getHoverMarkdown(hover ?? null);
+
+    expect(markdown).toContain('**Variable: shared**');
+    expect(markdown).toContain('Workspace writers: 1');
+    expect(markdown).toContain('Workspace readers: 1');
+    expect(markdown).toContain('Representative writers:');
+    expect(markdown).toContain('prompt_template/writer.risuprompt (line 5, character 11)');
+  });
+
   it('keeps rename on the no-op path when a same-URI workspace merge would touch a sibling fragment', async () => {
     const connection = new FakeConnection();
     const documents = new FakeDocuments();

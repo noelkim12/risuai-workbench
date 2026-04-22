@@ -231,7 +231,32 @@ function formatWorkspaceOccurrenceSummary(
   occurrence: VariableFlowQueryResult['occurrences'][number],
 ): string {
   const codeQuote = String.fromCharCode(96);
-  return `${occurrence.relativePath} — ${codeQuote}${occurrence.sourceName}${codeQuote}`;
+  return `${occurrence.relativePath} (${CbsLspTextHelper.formatRangeStart(occurrence.hostRange)}) — ${codeQuote}${occurrence.sourceName}${codeQuote}`;
+}
+
+function pickRepresentativeOccurrences<T extends VariableFlowQueryResult['occurrences'][number]>(
+  occurrences: readonly T[],
+  limit: number = 3,
+): readonly T[] {
+  return [...occurrences]
+    .sort(
+      (left, right) =>
+        left.relativePath.localeCompare(right.relativePath) ||
+        left.hostStartOffset - right.hostStartOffset ||
+        left.sourceName.localeCompare(right.sourceName),
+    )
+    .slice(0, limit);
+}
+
+function formatWorkspaceIssueSummary(
+  issueMatch: VariableFlowQueryResult['issues'][number],
+): string {
+  const representativeOccurrence = pickRepresentativeOccurrences(issueMatch.occurrences, 1)[0] ?? null;
+  const locationSuffix = representativeOccurrence
+    ? ` — ${formatWorkspaceOccurrenceSummary(representativeOccurrence)}`
+    : '';
+
+  return `${issueMatch.issue.type} [${issueMatch.issue.severity}]: ${issueMatch.issue.message}${locationSuffix}`;
 }
 
 function getTrimmedTokenOffsets(
@@ -584,12 +609,20 @@ export class HoverProvider {
       const externalReaders = workspaceVariableQuery.readers.filter(
         (occurrence) => occurrence.uri !== currentUri,
       );
+      const representativeWriters = pickRepresentativeOccurrences(workspaceVariableQuery.writers);
 
       lines.push(`- Workspace writers: ${workspaceVariableQuery.writers.length}`);
       lines.push(`- Workspace readers: ${workspaceVariableQuery.readers.length}`);
 
       if (workspaceVariableQuery.defaultValue) {
         lines.push(`- Default value: ${workspaceVariableQuery.defaultValue}`);
+      }
+
+      if (representativeWriters.length > 0) {
+        lines.push('- Representative writers:');
+        for (const writer of representativeWriters) {
+          lines.push(`  - ${formatWorkspaceOccurrenceSummary(writer)}`);
+        }
       }
 
       if (externalWriters.length > 0) {
@@ -607,9 +640,10 @@ export class HoverProvider {
       }
 
       if (workspaceVariableQuery.issues.length > 0) {
-        lines.push(
-          `- Workspace issues: ${workspaceVariableQuery.issues.map((entry) => entry.issue.type).join(', ')}`,
-        );
+        lines.push('- Workspace issues:');
+        for (const issue of workspaceVariableQuery.issues) {
+          lines.push(`  - ${formatWorkspaceIssueSummary(issue)}`);
+        }
       }
     }
 
