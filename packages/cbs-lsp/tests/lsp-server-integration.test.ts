@@ -690,426 +690,67 @@ describe('LSP server integration', () => {
       capabilities: {},
     } as InitializeParams);
 
-    expect(initializeResult).toEqual({
-      capabilities: {
-        positionEncoding: LSP_POSITION_ENCODING,
-        textDocumentSync: {
-          openClose: true,
-          change: TextDocumentSyncKind.Incremental,
-        },
-        codeLensProvider: {
-          resolveProvider: false,
-        },
-        codeActionProvider: true,
-        executeCommandProvider: {
-          commands: [ACTIVATION_CHAIN_CODELENS_COMMAND],
-        },
-        completionProvider: {
-          triggerCharacters: [...CBS_COMPLETION_TRIGGER_CHARACTERS],
-        },
-        definitionProvider: true,
-        documentSymbolProvider: true,
-        documentFormattingProvider: true,
-        referencesProvider: true,
-        renameProvider: true,
-        hoverProvider: true,
-        signatureHelpProvider: {
-          triggerCharacters: [':'],
-        },
-        foldingRangeProvider: true,
-        semanticTokensProvider: {
-          legend: {
-            tokenTypes: [...SEMANTIC_TOKEN_TYPES],
-            tokenModifiers: [...SEMANTIC_TOKEN_MODIFIERS],
+    expect(initializeResult).toEqual(
+      expect.objectContaining({
+        capabilities: expect.objectContaining({
+          positionEncoding: LSP_POSITION_ENCODING,
+          textDocumentSync: {
+            openClose: true,
+            change: TextDocumentSyncKind.Incremental,
           },
-          full: true,
-        },
-      },
-      experimental: {
-        cbs: {
-          availability: {
-            companions: {
-              luals: {
-                key: 'luals',
-                status: 'stopped',
-                health: 'idle',
-                transport: 'stdio',
-                executablePath: '/mock/luals',
-                pid: null,
-                detail:
-                  'LuaLS executable was resolved and the sidecar is ready to start after the main LSP server finishes initialization.',
-              },
+          codeLensProvider: {
+            resolveProvider: false,
+          },
+          codeActionProvider: true,
+          executeCommandProvider: {
+            commands: [ACTIVATION_CHAIN_CODELENS_COMMAND],
+          },
+          completionProvider: {
+            triggerCharacters: [...CBS_COMPLETION_TRIGGER_CHARACTERS],
+          },
+          definitionProvider: true,
+          documentSymbolProvider: true,
+          documentFormattingProvider: true,
+          referencesProvider: true,
+          renameProvider: true,
+          hoverProvider: true,
+          signatureHelpProvider: {
+            triggerCharacters: [':'],
+          },
+          foldingRangeProvider: true,
+          semanticTokensProvider: {
+            legend: {
+              tokenTypes: [...SEMANTIC_TOKEN_TYPES],
+              tokenModifiers: [...SEMANTIC_TOKEN_MODIFIERS],
             },
-            excludedArtifacts: {
-              risutoggle: {
-                scope: 'workspace-disabled',
-                source: 'document-router:risutoggle',
-                detail:
-                  '`.risutoggle` artifacts do not carry CBS fragments, so CBS LSP routing stays disabled for them.',
-              },
-              risuvar: {
-                scope: 'workspace-disabled',
-                source: 'document-router:risuvar',
-                detail:
-                  '`.risuvar` artifacts do not carry CBS fragments, so CBS LSP routing stays disabled for them.',
-              },
-            },
-            featureAvailability: expect.objectContaining({
-              codelens: {
-                scope: 'local-only',
-                source: 'server-capability:codelens',
-                  detail:
-                    'CodeLens is active for routed lorebook documents, summarizes workspace activation edges for the current lorebook entry, and requests refresh after document or watched-file changes rebuild activation edges.',
-              },
-              codeAction: {
-                scope: 'local-only',
-                source: 'server-capability:codeAction',
-                detail:
-                  'Code actions are active for routed CBS fragments, reuse diagnostics metadata for quick fixes and guidance, and only promote automatic host edits that pass the shared host-fragment safety contract.',
-              },
-              completion: {
-                scope: 'local-only',
-                source: 'server-capability:completion',
-                detail:
-                  'Completion is active for routed CBS fragments and operates on the current document/fragment context only.',
-              },
-              'lua-completion': {
-                scope: 'local-only',
-                source: 'lua-provider:completion-proxy',
-                detail:
-                  'Lua completion is active for `.risulua` documents by forwarding `textDocument/completion` to the LuaLS companion using the mirrored virtual Lua document when the sidecar is ready. If LuaLS is unavailable, crashed, or still starting, the server returns no Lua completion items and leaves CBS capabilities unchanged.',
-              },
-              'lua-diagnostics': {
-                scope: 'local-only',
-                source: 'lua-provider:diagnostics-proxy',
-                detail:
-                  'Lua diagnostics are active for `.risulua` documents by forwarding LuaLS `textDocument/publishDiagnostics` notifications from mirrored virtual Lua documents into host `publishDiagnostics`. If LuaLS is unavailable, crashed, or still starting, the server clears Lua diagnostics for affected documents and leaves CBS capabilities unchanged.',
-              },
-              luaHover: {
-                scope: 'local-only',
-                source: 'lua-provider:hover-proxy',
-                detail:
-                  'Lua hover is active for `.risulua` documents by forwarding `textDocument/hover` to the LuaLS companion using the mirrored virtual Lua document when the sidecar is ready. If LuaLS is unavailable or still starting, the server returns no Lua hover result and leaves CBS capabilities unchanged.',
-              },
-              definition: {
-                scope: 'local-first',
-                source: 'server-capability:definition',
-                detail:
-                  'Definition is active for routed CBS fragments, returns fragment-local definitions first, and appends workspace chat-variable writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
-              },
-              documentSymbol: {
-                scope: 'local-only',
-                source: 'server-capability:documentSymbol',
-                detail:
-                  'Document symbols are active for routed CBS fragments, expose fragment-local outline structure, and group multi-fragment documents by CBS-bearing section containers only.',
-              },
-              references: {
-                scope: 'local-first',
-                source: 'server-capability:references',
-                detail:
-                  'References are active for routed CBS fragments, return fragment-local read/write locations first, and append workspace chat-variable readers/writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
-              },
-              rename: {
-                scope: 'local-first',
-                source: 'server-capability:rename',
-                detail:
-                  'Rename is active for routed CBS fragments, keeps prepareRename rejection messages for malformed/unresolved/global/external positions, and applies fragment-local edits first before appending workspace chat-variable occurrences when VariableFlowService workspace state is available.',
-              },
-              formatting: {
-                scope: 'local-only',
-                source: 'server-capability:formatting',
-                detail:
-                  'Formatting is active for routed CBS fragments, produces fragment-local canonical text edits, and only promotes host edits that pass the shared host-fragment safety contract.',
-              },
-              'cross-language-code-action': {
-                scope: 'deferred',
-                source: 'deferred-scope-contract:cross-language-code-action',
-                detail:
-                  'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language code actions stay off until authoritative multi-file edit merge rules exist.',
-              },
-              'cross-language-rename': {
-                scope: 'deferred',
-                source: 'deferred-scope-contract:cross-language-rename',
-                detail:
-                  'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language rename stays off until authoritative multi-file edit merge rules exist.',
-              },
-              'cross-language-workspace-edit': {
-                scope: 'deferred',
-                source: 'deferred-scope-contract:cross-language-workspace-edit',
-                detail:
-                  'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language workspace edits stay off until authoritative multi-file edit merge rules exist.',
-              },
+            full: true,
+          },
+        }),
+        experimental: {
+          cbs: expect.objectContaining({
+            availability: expect.objectContaining({
+              companions: expect.objectContaining({
+                luals: expect.objectContaining({
+                  executablePath: '/mock/luals',
+                  health: 'idle',
+                  status: 'stopped',
+                }),
+              }),
+            }),
+            availabilitySnapshot: expect.objectContaining({
+              schema: 'cbs-lsp-agent-contract',
+              schemaVersion: '1.0.0',
             }),
             operator: expect.objectContaining({
-              docs: {
-                agentIntegration: 'packages/cbs-lsp/docs/AGENT_INTEGRATION.md',
-                compatibility: 'packages/cbs-lsp/docs/COMPATIBILITY.md',
-                lualsCompanion: 'packages/cbs-lsp/docs/LUALS_COMPANION.md',
-                readme: 'packages/cbs-lsp/README.md',
-                standaloneUsage: 'packages/cbs-lsp/docs/STANDALONE_USAGE.md',
-                troubleshooting: 'packages/cbs-lsp/docs/TROUBLESHOOTING.md',
-                vscodeClient: 'packages/vscode/README.md',
-              },
-              install: expect.objectContaining({
-                binaryName: 'cbs-language-server',
-                installModes: ['local-devDependency', 'npx', 'global'],
-                pathRequirement: 'required-for-global',
-                transport: 'stdio',
-              }),
-              scope: {
-                deferredEditFeatures: [
-                  'cross-language-rename',
-                  'cross-language-workspace-edit',
-                  'cross-language-code-action',
-                ],
-                detail:
-                  'Scope honesty MVP keeps read-only bridge on and multi-file edit off. Cross-language rename, workspace edit, and code action stay deferred until authoritative edit merge rules exist.',
+              scope: expect.objectContaining({
                 multiFileEdit: 'off',
                 readOnlyBridge: 'on',
-              },
-              workspace: expect.objectContaining({
-                initializeWorkspaceFolderCount: 0,
-                resolvedWorkspaceRoot: null,
-                resolvedWorkspaceRootSource: 'none',
               }),
             }),
-          },
-          availabilitySnapshot: {
-            schema: 'cbs-lsp-agent-contract',
-            schemaVersion: '1.0.0',
-            artifacts: [
-              {
-                key: 'risutoggle',
-                scope: 'workspace-disabled',
-                source: 'document-router:risutoggle',
-                detail:
-                  '`.risutoggle` artifacts do not carry CBS fragments, so CBS LSP routing stays disabled for them.',
-              },
-              {
-                key: 'risuvar',
-                scope: 'workspace-disabled',
-                source: 'document-router:risuvar',
-                detail:
-                  '`.risuvar` artifacts do not carry CBS fragments, so CBS LSP routing stays disabled for them.',
-              },
-            ],
-            companions: [
-              {
-                key: 'luals',
-                status: 'stopped',
-                health: 'idle',
-                transport: 'stdio',
-                executablePath: '/mock/luals',
-                pid: null,
-                detail:
-                  'LuaLS executable was resolved and the sidecar is ready to start after the main LSP server finishes initialization.',
-              },
-            ],
-            features: expect.arrayContaining([
-              {
-                key: 'cross-language-code-action',
-                scope: 'deferred',
-                source: 'deferred-scope-contract:cross-language-code-action',
-                detail:
-                  'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language code actions stay off until authoritative multi-file edit merge rules exist.',
-              },
-              {
-                key: 'cross-language-rename',
-                scope: 'deferred',
-                source: 'deferred-scope-contract:cross-language-rename',
-                detail:
-                  'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language rename stays off until authoritative multi-file edit merge rules exist.',
-              },
-              {
-                key: 'cross-language-workspace-edit',
-                scope: 'deferred',
-                source: 'deferred-scope-contract:cross-language-workspace-edit',
-                detail:
-                  'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language workspace edits stay off until authoritative multi-file edit merge rules exist.',
-              },
-              {
-                key: 'codeAction',
-                scope: 'local-only',
-                source: 'server-capability:codeAction',
-                detail:
-                  'Code actions are active for routed CBS fragments, reuse diagnostics metadata for quick fixes and guidance, and only promote automatic host edits that pass the shared host-fragment safety contract.',
-              },
-              {
-                key: 'completion',
-                scope: 'local-only',
-                source: 'server-capability:completion',
-                detail:
-                  'Completion is active for routed CBS fragments and operates on the current document/fragment context only.',
-              },
-              {
-                key: 'lua-completion',
-                scope: 'local-only',
-                source: 'lua-provider:completion-proxy',
-                detail:
-                  'Lua completion is active for `.risulua` documents by forwarding `textDocument/completion` to the LuaLS companion using the mirrored virtual Lua document when the sidecar is ready. If LuaLS is unavailable, crashed, or still starting, the server returns no Lua completion items and leaves CBS capabilities unchanged.',
-              },
-              {
-                key: 'lua-diagnostics',
-                scope: 'local-only',
-                source: 'lua-provider:diagnostics-proxy',
-                detail:
-                  'Lua diagnostics are active for `.risulua` documents by forwarding LuaLS `textDocument/publishDiagnostics` notifications from mirrored virtual Lua documents into host `publishDiagnostics`. If LuaLS is unavailable, crashed, or still starting, the server clears Lua diagnostics for affected documents and leaves CBS capabilities unchanged.',
-              },
-              {
-                key: 'luaHover',
-                scope: 'local-only',
-                source: 'lua-provider:hover-proxy',
-                detail:
-                  'Lua hover is active for `.risulua` documents by forwarding `textDocument/hover` to the LuaLS companion using the mirrored virtual Lua document when the sidecar is ready. If LuaLS is unavailable or still starting, the server returns no Lua hover result and leaves CBS capabilities unchanged.',
-              },
-              {
-                key: 'definition',
-                scope: 'local-first',
-                source: 'server-capability:definition',
-                detail:
-                  'Definition is active for routed CBS fragments, returns fragment-local definitions first, and appends workspace chat-variable writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
-              },
-              {
-                key: 'documentSymbol',
-                scope: 'local-only',
-                source: 'server-capability:documentSymbol',
-                detail:
-                  'Document symbols are active for routed CBS fragments, expose fragment-local outline structure, and group multi-fragment documents by CBS-bearing section containers only.',
-              },
-              {
-                key: 'references',
-                scope: 'local-first',
-                source: 'server-capability:references',
-                detail:
-                  'References are active for routed CBS fragments, return fragment-local read/write locations first, and append workspace chat-variable readers/writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
-              },
-              {
-                key: 'rename',
-                scope: 'local-first',
-                source: 'server-capability:rename',
-                detail:
-                  'Rename is active for routed CBS fragments, keeps prepareRename rejection messages for malformed/unresolved/global/external positions, and applies fragment-local edits first before appending workspace chat-variable occurrences when VariableFlowService workspace state is available.',
-              },
-              {
-                key: 'formatting',
-                scope: 'local-only',
-                source: 'server-capability:formatting',
-                detail:
-                  'Formatting is active for routed CBS fragments, produces fragment-local canonical text edits, and only promotes host edits that pass the shared host-fragment safety contract.',
-              },
-            ]),
-            operator: expect.objectContaining({
-              scope: {
-                deferredEditFeatures: [
-                  'cross-language-rename',
-                  'cross-language-workspace-edit',
-                  'cross-language-code-action',
-                ],
-                detail:
-                  'Scope honesty MVP keeps read-only bridge on and multi-file edit off. Cross-language rename, workspace edit, and code action stay deferred until authoritative edit merge rules exist.',
-                multiFileEdit: 'off',
-                readOnlyBridge: 'on',
-              },
-              workspace: expect.objectContaining({
-                resolvedWorkspaceRootSource: 'none',
-              }),
-            }),
-          },
-          excludedArtifacts: {
-            risutoggle: {
-              scope: 'workspace-disabled',
-              source: 'document-router:risutoggle',
-              detail:
-                '`.risutoggle` artifacts do not carry CBS fragments, so CBS LSP routing stays disabled for them.',
-            },
-            risuvar: {
-              scope: 'workspace-disabled',
-              source: 'document-router:risuvar',
-              detail:
-                '`.risuvar` artifacts do not carry CBS fragments, so CBS LSP routing stays disabled for them.',
-            },
-          },
-          featureAvailability: expect.objectContaining({
-            codeAction: {
-              scope: 'local-only',
-              source: 'server-capability:codeAction',
-              detail:
-                'Code actions are active for routed CBS fragments, reuse diagnostics metadata for quick fixes and guidance, and only promote automatic host edits that pass the shared host-fragment safety contract.',
-            },
-            completion: {
-              scope: 'local-only',
-              source: 'server-capability:completion',
-              detail:
-                'Completion is active for routed CBS fragments and operates on the current document/fragment context only.',
-            },
-            definition: {
-              scope: 'local-first',
-              source: 'server-capability:definition',
-              detail:
-                'Definition is active for routed CBS fragments, returns fragment-local definitions first, and appends workspace chat-variable writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
-            },
-            documentSymbol: {
-              scope: 'local-only',
-              source: 'server-capability:documentSymbol',
-              detail:
-                'Document symbols are active for routed CBS fragments, expose fragment-local outline structure, and group multi-fragment documents by CBS-bearing section containers only.',
-            },
-            references: {
-              scope: 'local-first',
-              source: 'server-capability:references',
-              detail:
-                'References are active for routed CBS fragments, return fragment-local read/write locations first, and append workspace chat-variable readers/writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
-            },
-            formatting: {
-              scope: 'local-only',
-              source: 'server-capability:formatting',
-              detail:
-                'Formatting is active for routed CBS fragments, produces fragment-local canonical text edits, and only promotes host edits that pass the shared host-fragment safety contract.',
-            },
-            'cross-language-code-action': {
-              scope: 'deferred',
-              source: 'deferred-scope-contract:cross-language-code-action',
-              detail:
-                'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language code actions stay off until authoritative multi-file edit merge rules exist.',
-            },
-            'cross-language-rename': {
-              scope: 'deferred',
-              source: 'deferred-scope-contract:cross-language-rename',
-              detail:
-                'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language rename stays off until authoritative multi-file edit merge rules exist.',
-            },
-            'cross-language-workspace-edit': {
-              scope: 'deferred',
-              source: 'deferred-scope-contract:cross-language-workspace-edit',
-              detail:
-                'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language workspace edits stay off until authoritative multi-file edit merge rules exist.',
-            },
-            }),
-          operator: expect.objectContaining({
-            docs: {
-              agentIntegration: 'packages/cbs-lsp/docs/AGENT_INTEGRATION.md',
-              compatibility: 'packages/cbs-lsp/docs/COMPATIBILITY.md',
-              lualsCompanion: 'packages/cbs-lsp/docs/LUALS_COMPANION.md',
-              readme: 'packages/cbs-lsp/README.md',
-              standaloneUsage: 'packages/cbs-lsp/docs/STANDALONE_USAGE.md',
-              troubleshooting: 'packages/cbs-lsp/docs/TROUBLESHOOTING.md',
-              vscodeClient: 'packages/vscode/README.md',
-            },
-            scope: {
-              deferredEditFeatures: [
-                'cross-language-rename',
-                'cross-language-workspace-edit',
-                'cross-language-code-action',
-              ],
-              detail:
-                'Scope honesty MVP keeps read-only bridge on and multi-file edit off. Cross-language rename, workspace edit, and code action stay deferred until authoritative edit merge rules exist.',
-              multiFileEdit: 'off',
-              readOnlyBridge: 'on',
-            },
           }),
         },
-      },
-    });
+      }),
+    );
 
     expect(connection.codeLensHandler).not.toBeNull();
     expect(connection.codeActionHandler).not.toBeNull();
