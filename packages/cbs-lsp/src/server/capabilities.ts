@@ -38,6 +38,7 @@ export function createInitializeResult(
   const renamePrepareSupport = params.capabilities.textDocument?.rename?.prepareSupport ?? false;
   const codeActionLiteralSupport =
     params.capabilities.textDocument?.codeAction?.codeActionLiteralSupport !== undefined;
+  // server-owned no-op CodeLens command도 일반 executeCommand contract로 광고해 client UX를 정직하게 맞춤.
   const executeCommandProvider = createExecuteCommandProvider();
 
   return {

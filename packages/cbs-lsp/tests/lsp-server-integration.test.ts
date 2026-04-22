@@ -28,7 +28,13 @@ import type {
   TextDocumentPositionParams,
   WorkspaceEdit,
 } from 'vscode-languageserver/node';
-import { CodeActionKind, FileChangeType, TextDocumentSyncKind } from 'vscode-languageserver/node';
+import {
+  CodeActionKind,
+  FileChangeType,
+  LSPErrorCodes,
+  ResponseError,
+  TextDocumentSyncKind,
+} from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as core from 'risu-workbench-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -39,6 +45,7 @@ import {
   createSyntheticDocumentVersion,
   fragmentAnalysisService,
 } from '../src/core';
+import { ACTIVATION_CHAIN_CODELENS_COMMAND } from '../src/features/codelens';
 import { CBS_COMPLETION_TRIGGER_CHARACTERS } from '../src/features/completion';
 import { SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES } from '../src/features/semanticTokens';
 import { ElementRegistry, UnifiedVariableGraph } from '../src/indexer';
@@ -694,6 +701,9 @@ describe('LSP server integration', () => {
           resolveProvider: false,
         },
         codeActionProvider: true,
+        executeCommandProvider: {
+          commands: [ACTIVATION_CHAIN_CODELENS_COMMAND],
+        },
         completionProvider: {
           triggerCharacters: [...CBS_COMPLETION_TRIGGER_CHARACTERS],
         },
@@ -1114,11 +1124,45 @@ describe('LSP server integration', () => {
     expect(connection.signatureHelpHandler).not.toBeNull();
     expect(connection.foldingRangesHandler).not.toBeNull();
     expect(connection.semanticTokensHandler).not.toBeNull();
+    expect(connection.executeCommandHandler).not.toBeNull();
     expect(connection.definitionRegistrations).toBe(1);
     expect(connection.referencesRegistrations).toBe(1);
     expect(connection.prepareRenameRegistrations).toBe(1);
     expect(connection.renameRegistrations).toBe(1);
     expect(connection.formattingRegistrations).toBe(1);
+  });
+
+  it('owns the lorebook CodeLens command through executeCommandProvider as a no-op', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+
+    registerServer(connection as any, documents as any);
+    connection.initializeHandler?.({ capabilities: {} } as InitializeParams);
+
+    await expect(
+      connection.executeCommandHandler?.({
+        command: ACTIVATION_CHAIN_CODELENS_COMMAND,
+        arguments: [{ kind: 'summary', uri: 'file:///fixtures/alpha.risulorebook' }],
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it('rejects unknown executeCommand requests after registering the CodeLens no-op command', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+
+    registerServer(connection as any, documents as any);
+    connection.initializeHandler?.({ capabilities: {} } as InitializeParams);
+
+    await expect(
+      connection.executeCommandHandler?.({
+        command: 'cbs-lsp.unknownCommand',
+        arguments: [],
+      }),
+    ).rejects.toMatchObject<ResponseError>({
+      code: LSPErrorCodes.RequestFailed,
+      message: 'Unsupported server command: cbs-lsp.unknownCommand',
+    });
   });
 
   it('exposes the runtime availability snapshot through a custom LSP request', async () => {
@@ -1238,7 +1282,9 @@ describe('LSP server integration', () => {
     expect(initializeResult?.capabilities.renameProvider).toEqual({
       prepareProvider: true,
     });
-    expect(initializeResult?.capabilities.executeCommandProvider).toBeUndefined();
+    expect(initializeResult?.capabilities.executeCommandProvider).toEqual({
+      commands: [ACTIVATION_CHAIN_CODELENS_COMMAND],
+    });
   });
 
   it('keeps diagnostics, hover, rename, and semantic token ranges aligned for mixed Hangul and emoji text', async () => {
@@ -2513,6 +2559,7 @@ describe('LSP server integration', () => {
         expect.objectContaining({
           lensKind: 'detail',
           command: expect.objectContaining({
+            command: ACTIVATION_CHAIN_CODELENS_COMMAND,
             kind: 'detail',
             mode: 'no-op',
             uri: alphaUri,
@@ -2521,6 +2568,7 @@ describe('LSP server integration', () => {
         expect.objectContaining({
           lensKind: 'summary',
           command: expect.objectContaining({
+            command: ACTIVATION_CHAIN_CODELENS_COMMAND,
             kind: 'summary',
             mode: 'no-op',
             uri: alphaUri,

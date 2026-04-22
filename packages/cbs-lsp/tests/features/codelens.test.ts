@@ -11,7 +11,10 @@ import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { getCustomExtensionArtifactContract, type CustomExtensionArtifact } from 'risu-workbench-core';
 
-import { CodeLensProvider } from '../../src/features/codelens';
+import {
+  ACTIVATION_CHAIN_CODELENS_COMMAND,
+  CodeLensProvider,
+} from '../../src/features/codelens';
 import { fragmentAnalysisService } from '../../src/core';
 import { ElementRegistry, FileScanner } from '../../src/indexer';
 import { ActivationChainService } from '../../src/services';
@@ -132,7 +135,7 @@ describe('CodeLensProvider', () => {
       codeLenses: [
         {
           command: {
-            command: 'cbs-lsp.codelens.activationSummary',
+            command: ACTIVATION_CHAIN_CODELENS_COMMAND,
             kind: 'detail',
             mode: 'no-op',
             uri: alphaUri,
@@ -157,7 +160,7 @@ describe('CodeLensProvider', () => {
         },
         {
           command: {
-            command: 'cbs-lsp.codelens.activationSummary',
+            command: ACTIVATION_CHAIN_CODELENS_COMMAND,
             kind: 'summary',
             mode: 'no-op',
             uri: alphaUri,

@@ -3,6 +3,7 @@
  * @file packages/cbs-lsp/src/server/commands.ts
  */
 
+import { ACTIVATION_CHAIN_CODELENS_COMMAND } from '../features/codelens';
 import {
   LSPErrorCodes,
   ResponseError,
@@ -13,7 +14,19 @@ import {
 
 type ExecuteCommandHandler = (params: ExecuteCommandParams) => unknown | Promise<unknown>;
 
-const COMMAND_HANDLERS = new Map<string, ExecuteCommandHandler>();
+/**
+ * createActivationSummaryNoOpHandler 함수.
+ * informational CodeLens click이 unknown command UX로 번지지 않도록 server-owned no-op을 제공함.
+ *
+ * @returns 항상 null을 반환하는 executeCommand handler
+ */
+function createActivationSummaryNoOpHandler(): ExecuteCommandHandler {
+  return async () => null;
+}
+
+const COMMAND_HANDLERS = new Map<string, ExecuteCommandHandler>([
+  [ACTIVATION_CHAIN_CODELENS_COMMAND, createActivationSummaryNoOpHandler()],
+]);
 
 /**
  * createExecuteCommandProvider 함수.

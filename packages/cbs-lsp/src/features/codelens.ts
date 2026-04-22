@@ -112,12 +112,12 @@ export interface NormalizedCodeLensesEnvelopeSnapshot {
 
 /**
  * createCodeLensCommand 함수.
- * informational CodeLens가 렌더링될 수 있도록 no-op command payload를 만듦.
+ * informational CodeLens가 server-owned no-op command로 렌더링되도록 payload를 만듦.
  *
  * @param title - editor에 표시할 CodeLens 문구
  * @param uri - CodeLens가 붙는 lorebook 문서 URI
  * @param kind - summary/detail 중 어떤 lens인지 구분하는 식별자
- * @returns executeCommandProvider가 받는 안정적인 command payload
+ * @returns executeCommandProvider가 소유하는 안정적인 no-op command payload
  */
 function createCodeLensCommand(
   title: string,
