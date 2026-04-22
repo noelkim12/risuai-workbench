@@ -5,7 +5,12 @@
 
 import type { VarEvent, VarFlowEntry, VarFlowIssue, VarFlowResult } from 'risu-workbench-core';
 
-import { createCbsAgentProtocolMarker, type CbsAgentProtocolMarker } from '../core';
+import {
+  createAgentMetadataWorkspaceSnapshot,
+  createCbsAgentProtocolMarker,
+  type AgentMetadataWorkspaceSnapshotContract,
+  type CbsAgentProtocolMarker,
+} from '../core';
 import {
   buildDerivedFlowResult,
   type ElementRegistry,
@@ -24,6 +29,12 @@ import {
 export interface VariableFlowIssueMatch {
   issue: VarFlowIssue;
   occurrences: readonly UnifiedVariableOccurrence[];
+}
+
+export interface WorkspaceSnapshotState {
+  rootPath: string;
+  snapshotVersion: number;
+  documentVersions: ReadonlyMap<string, string | number>;
 }
 
 /**
@@ -64,6 +75,7 @@ export interface VariableFlowServiceCreateOptions {
   graph: UnifiedVariableGraph;
   registry: ElementRegistry;
   defaultVariables?: Readonly<Record<string, string>>;
+  workspaceSnapshot?: WorkspaceSnapshotState | null;
 }
 
 /**
@@ -94,6 +106,8 @@ export class VariableFlowService {
 
   private readonly flowByVariable: ReadonlyMap<string, VarFlowEntry>;
 
+  private readonly workspaceSnapshot: WorkspaceSnapshotState | null;
+
   constructor(options: VariableFlowServiceCreateOptions) {
     this.graph = options.graph;
     this.registry = options.registry;
@@ -104,6 +118,7 @@ export class VariableFlowService {
     this.flowByVariable = new Map(
       this.flowResult.variables.map((entry) => [entry.varName, entry] as const),
     );
+    this.workspaceSnapshot = options.workspaceSnapshot ?? null;
   }
 
   /**
@@ -122,6 +137,52 @@ export class VariableFlowService {
       registry,
       graph: options.graph ?? UnifiedVariableGraph.fromRegistry(registry),
       defaultVariables: options.defaultVariables,
+      workspaceSnapshot: null,
+    });
+  }
+
+  /**
+   * getWorkspaceSnapshot 함수.
+   * 현재 service가 기반한 workspace snapshot metadata를 조회함.
+   *
+   * @returns snapshot freshness 판정에 쓸 workspace snapshot 또는 null
+   */
+  getWorkspaceSnapshot(): WorkspaceSnapshotState | null {
+    return this.workspaceSnapshot;
+  }
+
+  /**
+   * getWorkspaceFreshness 함수.
+   * 현재 request version이 service가 들고 있는 workspace snapshot과 일치하는지 판정함.
+   *
+   * @param request - freshness를 확인할 현재 요청 URI/version
+   * @returns provider metadata에 실을 workspace snapshot freshness marker 또는 null
+   */
+  getWorkspaceFreshness(request: {
+    uri: string;
+    version: string | number;
+  }): AgentMetadataWorkspaceSnapshotContract | null {
+    if (!this.workspaceSnapshot) {
+      return null;
+    }
+
+    const trackedDocumentVersion = this.workspaceSnapshot.documentVersions.get(request.uri) ?? null;
+    const freshness =
+      trackedDocumentVersion === null || trackedDocumentVersion === request.version ? 'fresh' : 'stale';
+    const detail =
+      freshness === 'fresh'
+        ? trackedDocumentVersion === null
+          ? `Workspace snapshot v${this.workspaceSnapshot.snapshotVersion} has no open-document override for this URI, so workspace-aware results use the installed snapshot as-is.`
+          : `Workspace snapshot v${this.workspaceSnapshot.snapshotVersion} matches the current document version ${request.version}, so cross-file workspace results are safe to merge.`
+        : `Workspace snapshot v${this.workspaceSnapshot.snapshotVersion} still tracks document version ${trackedDocumentVersion} while the current request uses version ${request.version}, so cross-file workspace results must degrade to fragment-local output.`;
+
+    return createAgentMetadataWorkspaceSnapshot({
+      detail,
+      freshness,
+      requestVersion: request.version,
+      rootPath: this.workspaceSnapshot.rootPath,
+      snapshotVersion: this.workspaceSnapshot.snapshotVersion,
+      trackedDocumentVersion,
     });
   }
 

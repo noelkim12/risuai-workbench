@@ -215,6 +215,7 @@ export class WorkspaceRefreshController {
             ) === workspaceRoot,
         ).length,
         rebuilt: nextState !== null,
+        snapshotVersion: nextState?.workspaceSnapshot.snapshotVersion ?? null,
       });
 
       for (const uri of [...affectedUris].sort((left, right) => left.localeCompare(right))) {
@@ -410,6 +411,7 @@ export class WorkspaceRefreshController {
             ) === workspaceRoot,
         ).length,
         rebuilt: nextState !== null,
+        snapshotVersion: nextState?.workspaceSnapshot.snapshotVersion ?? null,
       });
 
       for (const uri of [...affectedUris].sort((left, right) => left.localeCompare(right))) {

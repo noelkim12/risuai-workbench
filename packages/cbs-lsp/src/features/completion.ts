@@ -18,6 +18,7 @@ import {
 import {
   createAgentMetadataEnvelope,
   createAgentMetadataExplanation,
+  createStaleWorkspaceAvailability,
   collectLocalFunctionDeclarations,
   fragmentAnalysisService,
   detectCompletionTriggerContext,
@@ -27,13 +28,15 @@ import {
   type AgentMetadataEnvelope,
   type AgentMetadataCategoryContract,
   type AgentMetadataExplanationContract,
+  type AgentMetadataAvailabilityContract,
+  type AgentMetadataWorkspaceSnapshotContract,
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
   type FragmentCursorLookupResult,
   type CompletionTriggerContext,
 } from '../core';
 import { collectVisibleLoopBindingsFromNodePath } from '../analyzer/scopeAnalyzer';
-import type { VariableFlowService } from '../services';
+import type { VariableFlowService, WorkspaceSnapshotState } from '../services';
 import { CbsLspTextHelper } from '../helpers/text-helper';
 import { isRequestCancelled } from '../utils/request-cancellation';
 
@@ -45,6 +48,7 @@ export interface CompletionProviderOptions {
   analysisService?: FragmentAnalysisService;
   resolveRequest?: CompletionRequestResolver;
   variableFlowService?: VariableFlowService;
+  workspaceSnapshot?: WorkspaceSnapshotState | null;
 }
 
 /**
@@ -373,6 +377,8 @@ export class CompletionProvider {
 
   private readonly variableFlowService: VariableFlowService | null;
 
+  private readonly workspaceSnapshot: WorkspaceSnapshotState | null;
+
   constructor(
     private readonly registry: CBSBuiltinRegistry,
     options: CompletionProviderOptions = {},
@@ -380,6 +386,7 @@ export class CompletionProvider {
     this.analysisService = options.analysisService ?? fragmentAnalysisService;
     this.resolveRequest = options.resolveRequest ?? (() => null);
     this.variableFlowService = options.variableFlowService ?? null;
+    this.workspaceSnapshot = options.workspaceSnapshot ?? null;
   }
 
   provide(params: TextDocumentPositionParams, cancellationToken?: CancellationToken): CompletionItem[] {
@@ -423,7 +430,8 @@ export class CompletionProvider {
       return [];
     }
 
-    const completions = this.buildCompletions(context, lookup);
+    const workspaceFreshness = this.getWorkspaceFreshness(request);
+    const completions = this.buildCompletions(context, lookup, workspaceFreshness);
     if (completions.length === 0) {
       return [];
     }
@@ -462,6 +470,7 @@ export class CompletionProvider {
   private buildCompletions(
     context: CompletionTriggerContext,
     lookup: FragmentCursorLookupResult,
+    workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null,
   ): CompletionItem[] {
     switch (context.type) {
       case 'all-functions':
@@ -473,7 +482,7 @@ export class CompletionProvider {
       case 'close-tag':
         return this.buildCloseTagCompletion(context.blockKind);
       case 'variable-names':
-        return this.buildVariableCompletions(context.prefix, context.kind, lookup);
+        return this.buildVariableCompletions(context.prefix, context.kind, lookup, workspaceFreshness);
       case 'metadata-keys':
         return this.buildMetadataCompletions(context.prefix);
       case 'function-names':
@@ -485,7 +494,12 @@ export class CompletionProvider {
       case 'when-operators':
         return this.buildWhenOperatorCompletions(context.prefix);
       case 'calc-expression':
-        return this.buildCalcExpressionCompletions(context.prefix, context.referenceKind, lookup);
+        return this.buildCalcExpressionCompletions(
+          context.prefix,
+          context.referenceKind,
+          lookup,
+          workspaceFreshness,
+        );
       default:
         return [];
     }
@@ -495,6 +509,7 @@ export class CompletionProvider {
     prefix: string,
     referenceKind: 'chat' | 'global' | null,
     lookup: FragmentCursorLookupResult,
+    workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null,
   ): CompletionItem[] {
     const symbolTable = lookup.fragmentAnalysis.providerLookup.getSymbolTable();
     const variables = symbolTable.getAllVariables();
@@ -519,15 +534,22 @@ export class CompletionProvider {
         return {
           label: `${marker}${variable.name}`,
           kind: CompletionItemKind.Variable,
-          data: this.createCategoryData({
-            category: 'variable',
-            kind: variable.kind === 'global' ? 'global-variable' : 'chat-variable',
-          }, this.createScopeExplanation(
-            'calc-expression-symbol-table',
+          data: this.createCategoryData(
+            {
+              category: 'variable',
+              kind: variable.kind === 'global' ? 'global-variable' : 'chat-variable',
+            },
+            this.createScopeExplanation(
+              'calc-expression-symbol-table',
+              variable.kind === 'global'
+                ? 'Calc completion resolved this candidate from the analyzed global variable symbol table.'
+                : 'Calc completion resolved this candidate from the analyzed chat variable symbol table.',
+            ),
             variable.kind === 'global'
-              ? 'Calc completion resolved this candidate from the analyzed global variable symbol table.'
-              : 'Calc completion resolved this candidate from the analyzed chat variable symbol table.',
-          )),
+              ? undefined
+              : this.getStaleWorkspaceAvailability(workspaceFreshness, 'completion'),
+            variable.kind === 'global' ? undefined : (workspaceFreshness ?? undefined),
+          ),
           detail:
             variable.kind === 'global'
               ? 'Calc expression global variable'
@@ -548,13 +570,13 @@ export class CompletionProvider {
     const workspaceVariableCompletions =
       referenceKind === 'global'
         ? []
-        : this.buildWorkspaceChatVariableCompletions({
-            existingLabels: new Set(localVariableCompletions.map((completion) => completion.label)),
-            insertBareName: referenceKind === 'chat',
-            labelPrefix: '$',
-            prefix,
-            usage: 'calc-expression',
-          });
+          : this.buildWorkspaceChatVariableCompletions({
+              existingLabels: new Set(localVariableCompletions.map((completion) => completion.label)),
+              insertBareName: referenceKind === 'chat',
+              labelPrefix: '$',
+              prefix,
+              usage: 'calc-expression',
+            }, workspaceFreshness);
 
     if (referenceKind) {
       return [...localVariableCompletions, ...workspaceVariableCompletions];
@@ -735,6 +757,7 @@ export class CompletionProvider {
     prefix: string,
     kind: 'chat' | 'temp',
     lookup: FragmentCursorLookupResult,
+    workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null,
   ): CompletionItem[] {
     const symbolTable = lookup.fragmentAnalysis.providerLookup.getSymbolTable();
     const variables = symbolTable.getAllVariables();
@@ -750,22 +773,29 @@ export class CompletionProvider {
         ({
           label: v.name,
           kind: CompletionItemKind.Variable,
-          data: this.createCategoryData({
-            category: 'variable',
-            kind:
-              v.kind === 'global'
-                ? 'global-variable'
-                : v.kind === 'temp'
-                  ? 'temp-variable'
-                  : v.kind === 'loop'
-                    ? 'chat-variable'
-                    : 'chat-variable',
-          }, this.createScopeExplanation(
-            kind === 'temp' ? 'temp-variable-symbol-table' : 'chat-variable-symbol-table',
-            kind === 'temp'
-              ? 'Completion resolved this candidate from analyzed temp-variable definitions in the current fragment.'
-              : 'Completion resolved this candidate from analyzed chat-variable definitions in the current fragment.',
-          )),
+          data: this.createCategoryData(
+            {
+              category: 'variable',
+              kind:
+                v.kind === 'global'
+                  ? 'global-variable'
+                  : v.kind === 'temp'
+                    ? 'temp-variable'
+                    : v.kind === 'loop'
+                      ? 'chat-variable'
+                      : 'chat-variable',
+            },
+            this.createScopeExplanation(
+              kind === 'temp' ? 'temp-variable-symbol-table' : 'chat-variable-symbol-table',
+              kind === 'temp'
+                ? 'Completion resolved this candidate from analyzed temp-variable definitions in the current fragment.'
+                : 'Completion resolved this candidate from analyzed chat-variable definitions in the current fragment.',
+            ),
+            kind === 'chat'
+              ? this.getStaleWorkspaceAvailability(workspaceFreshness, 'completion')
+              : undefined,
+            kind === 'chat' ? (workspaceFreshness ?? undefined) : undefined,
+          ),
           detail: kind === 'chat' ? 'Chat variable' : 'Temp variable',
           documentation: {
             kind: 'markdown',
@@ -785,7 +815,7 @@ export class CompletionProvider {
       labelPrefix: '',
       prefix,
       usage: 'macro-argument',
-    });
+    }, workspaceFreshness);
 
     return [...localCompletions, ...workspaceCompletions];
   }
@@ -803,8 +833,8 @@ export class CompletionProvider {
     labelPrefix: '' | '$';
     prefix: string;
     usage: 'macro-argument' | 'calc-expression';
-  }): CompletionItem[] {
-    if (!this.variableFlowService) {
+  }, workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null): CompletionItem[] {
+    if (!this.variableFlowService || workspaceFreshness?.freshness === 'stale') {
       return [];
     }
 
@@ -868,6 +898,8 @@ export class CompletionProvider {
                 ? 'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local `$var` symbols.'
                 : 'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local chat-variable symbols.',
             ),
+            undefined,
+            workspaceFreshness ?? undefined,
           ),
           detail,
           documentation: {
@@ -1145,8 +1177,34 @@ export class CompletionProvider {
   private createCategoryData(
     category: AgentMetadataCategoryContract,
     explanation?: AgentMetadataExplanationContract,
+    availability?: AgentMetadataAvailabilityContract,
+    workspace?: AgentMetadataWorkspaceSnapshotContract,
   ) {
-    return createAgentMetadataEnvelope(category, explanation);
+    return createAgentMetadataEnvelope(category, explanation, availability, workspace);
+  }
+
+  private getWorkspaceFreshness(
+    request: FragmentAnalysisRequest,
+  ): AgentMetadataWorkspaceSnapshotContract | null {
+    if (!this.variableFlowService || !this.workspaceSnapshot) {
+      return null;
+    }
+
+    return this.variableFlowService.getWorkspaceFreshness({
+      uri: request.uri,
+      version: request.version,
+    });
+  }
+
+  private getStaleWorkspaceAvailability(
+    workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null,
+    feature: 'completion' | 'hover',
+  ): AgentMetadataAvailabilityContract | undefined {
+    if (workspaceFreshness?.freshness !== 'stale') {
+      return undefined;
+    }
+
+    return createStaleWorkspaceAvailability(feature, workspaceFreshness.detail);
   }
 
   private createContextualExplanation(

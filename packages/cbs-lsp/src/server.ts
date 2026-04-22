@@ -641,8 +641,17 @@ function registerFeatureHandlers(context: ServerRegistrationContext): void {
         context.documents,
         context.workspaceStateRepository.getByUri(uri),
       ),
-    resolveWorkspaceVariableFlowService: (uri) =>
-      context.workspaceStateRepository.getByUri(uri)?.variableFlowService ?? null,
+    resolveWorkspaceVariableFlowContext: (uri) => {
+      const workspaceState = context.workspaceStateRepository.getByUri(uri);
+      if (!workspaceState) {
+        return null;
+      }
+
+      return {
+        variableFlowService: workspaceState.variableFlowService,
+        workspaceSnapshot: workspaceState.workspaceSnapshot,
+      };
+    },
   }).registerAll();
 }
 

@@ -57,7 +57,7 @@ import {
   mergeLuaCompletionResponse,
 } from '../providers/lua/responseMerger';
 import { traceFeatureRequest, traceFeatureResult } from '../utils/server-tracing';
-import { VariableFlowService } from '../services';
+import { VariableFlowService, type WorkspaceSnapshotState } from '../services';
 
 export interface ServerFeatureRegistrarProviders {
   codeActionProvider: CodeActionProvider;
@@ -78,7 +78,10 @@ export interface ServerFeatureRegistrarContext {
   providers: ServerFeatureRegistrarProviders;
   registry: CBSBuiltinRegistry;
   resolveWorkspaceRequest: (uri: string) => FragmentAnalysisRequest | null;
-  resolveWorkspaceVariableFlowService: (uri: string) => VariableFlowService | null;
+  resolveWorkspaceVariableFlowContext: (uri: string) => {
+    variableFlowService: VariableFlowService;
+    workspaceSnapshot: WorkspaceSnapshotState;
+  } | null;
 }
 
 /**
@@ -144,7 +147,10 @@ export class ServerFeatureRegistrar {
   private readonly requestRunner: RequestHandlerRunner;
   private readonly resolveRequest: (uri: string) => FragmentAnalysisRequest | null;
   private readonly resolveWorkspaceRequest: (uri: string) => FragmentAnalysisRequest | null;
-  private readonly resolveWorkspaceVariableFlowServiceByUri: (uri: string) => VariableFlowService | null;
+  private readonly resolveWorkspaceVariableFlowContextByUri: (uri: string) => {
+    variableFlowService: VariableFlowService;
+    workspaceSnapshot: WorkspaceSnapshotState;
+  } | null;
   private readonly semanticTokensProvider: SemanticTokensProvider;
   private readonly signatureHelpProvider: SignatureHelpProvider;
 
@@ -168,7 +174,7 @@ export class ServerFeatureRegistrar {
     this.hoverProvider = context.providers.hoverProvider;
     this.resolveRequest = context.providers.resolveRequest;
     this.resolveWorkspaceRequest = context.resolveWorkspaceRequest;
-    this.resolveWorkspaceVariableFlowServiceByUri = context.resolveWorkspaceVariableFlowService;
+    this.resolveWorkspaceVariableFlowContextByUri = context.resolveWorkspaceVariableFlowContext;
     this.semanticTokensProvider = context.providers.semanticTokensProvider;
     this.signatureHelpProvider = context.providers.signatureHelpProvider;
   }
@@ -194,53 +200,58 @@ export class ServerFeatureRegistrar {
   }
 
   private createDefinitionProvider(uri: string): DefinitionProvider {
+    const workspaceContext = this.resolveWorkspaceVariableFlowContextByUri(uri);
     return new DefinitionProvider(this.registry, {
       analysisService: fragmentAnalysisService,
       resolveRequest: ({ textDocument }) => this.resolveRequest(textDocument.uri),
-      variableFlowService: this.resolveWorkspaceVariableFlowServiceByUri(uri) ?? undefined,
+      variableFlowService: workspaceContext?.variableFlowService,
     });
   }
 
   private createReferencesProvider(uri: string): ReferencesProvider {
+    const workspaceContext = this.resolveWorkspaceVariableFlowContextByUri(uri);
     return new ReferencesProvider({
       analysisService: fragmentAnalysisService,
       resolveRequest: ({ textDocument }) => this.resolveRequest(textDocument.uri),
-      variableFlowService: this.resolveWorkspaceVariableFlowServiceByUri(uri) ?? undefined,
+      variableFlowService: workspaceContext?.variableFlowService,
     });
   }
 
   private createRenameProvider(uri: string): RenameProvider {
+    const workspaceContext = this.resolveWorkspaceVariableFlowContextByUri(uri);
     return new RenameProvider({
       analysisService: fragmentAnalysisService,
       resolveRequest: ({ textDocument }) => this.resolveRequest(textDocument.uri),
       resolveUriRequest: (targetUri) => this.resolveWorkspaceRequest(targetUri),
-      variableFlowService: this.resolveWorkspaceVariableFlowServiceByUri(uri) ?? undefined,
+      variableFlowService: workspaceContext?.variableFlowService,
     });
   }
 
   private createHoverProvider(uri: string): HoverProvider {
-    const variableFlowService = this.resolveWorkspaceVariableFlowServiceByUri(uri);
-    if (!variableFlowService) {
+    const workspaceContext = this.resolveWorkspaceVariableFlowContextByUri(uri);
+    if (!workspaceContext) {
       return this.hoverProvider;
     }
 
     return new HoverProvider(this.registry, {
       analysisService: fragmentAnalysisService,
       resolveRequest: ({ textDocument }) => this.resolveRequest(textDocument.uri),
-      variableFlowService,
+      variableFlowService: workspaceContext.variableFlowService,
+      workspaceSnapshot: workspaceContext.workspaceSnapshot,
     });
   }
 
   private createCompletionProvider(uri: string): CompletionProvider {
-    const variableFlowService = this.resolveWorkspaceVariableFlowServiceByUri(uri);
-    if (!variableFlowService) {
+    const workspaceContext = this.resolveWorkspaceVariableFlowContextByUri(uri);
+    if (!workspaceContext) {
       return this.completionProvider;
     }
 
     return new CompletionProvider(this.registry, {
       analysisService: fragmentAnalysisService,
       resolveRequest: ({ textDocument }) => this.resolveRequest(textDocument.uri),
-      variableFlowService,
+      variableFlowService: workspaceContext.variableFlowService,
+      workspaceSnapshot: workspaceContext.workspaceSnapshot,
     });
   }
 
@@ -276,9 +287,9 @@ export class ServerFeatureRegistrar {
           params,
           run: async () => {
             const workspaceRequest = this.resolveWorkspaceRequest(params.textDocument.uri);
-            const workspaceVariableFlowService = this.resolveWorkspaceVariableFlowServiceByUri(
+            const workspaceVariableFlowService = this.resolveWorkspaceVariableFlowContextByUri(
               params.textDocument.uri,
-            );
+            )?.variableFlowService ?? null;
             traceFeatureRequest(this.connection, 'luaProxy', 'completion-start', {
               uri: params.textDocument.uri,
               companionStatus: this.luaLsProxy.getRuntime().status,
@@ -473,9 +484,9 @@ export class ServerFeatureRegistrar {
         });
 
         const workspaceRequest = this.resolveRequest(params.textDocument.uri);
-        const workspaceVariableFlowService = this.resolveWorkspaceVariableFlowServiceByUri(
+        const workspaceVariableFlowService = this.resolveWorkspaceVariableFlowContextByUri(
           params.textDocument.uri,
-        );
+        )?.variableFlowService ?? null;
 
         return this.luaLsProxy.provideHover(params, cancellationToken).then((result) => {
           const overlayMarkdown = buildLuaStateHoverOverlayMarkdown({

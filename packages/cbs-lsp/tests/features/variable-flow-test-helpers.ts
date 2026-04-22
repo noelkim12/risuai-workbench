@@ -10,7 +10,12 @@ import type {
   UnifiedVariableNode,
   UnifiedVariableOccurrence,
 } from '../../src/indexer';
-import type { VariableFlowQueryResult, VariableFlowService } from '../../src/services';
+import type {
+  VariableFlowQueryResult,
+  VariableFlowService,
+  WorkspaceSnapshotState,
+} from '../../src/services';
+import { createAgentMetadataWorkspaceSnapshot } from '../../src/core';
 
 export interface VariableOccurrenceSeed {
   variableName?: string;
@@ -27,6 +32,7 @@ export interface VariableFlowServiceStubOptions {
   getAllVariableNames?: () => readonly string[];
   queryVariable?: (variableName: string) => VariableFlowQueryResult | null;
   queryAt?: (uri: string, hostOffset: number) => VariableFlowQueryResult | null;
+  workspaceSnapshot?: WorkspaceSnapshotState | null;
 }
 
 /**
@@ -119,5 +125,28 @@ export function createVariableFlowServiceStub(
     getAllVariableNames: options.getAllVariableNames ?? (() => []),
     queryVariable: options.queryVariable ?? (() => null),
     queryAt: options.queryAt ?? (() => null),
+    getWorkspaceFreshness: ({ uri, version }: { uri: string; version: number }) => {
+      const snapshot = options.workspaceSnapshot;
+      if (!snapshot) {
+        return null;
+      }
+
+      const trackedDocumentVersion = snapshot.documentVersions.get(uri) ?? null;
+      const freshness =
+        trackedDocumentVersion === null || trackedDocumentVersion === version ? 'fresh' : 'stale';
+
+      return createAgentMetadataWorkspaceSnapshot({
+        detail:
+          freshness === 'fresh'
+            ? `Workspace snapshot v${snapshot.snapshotVersion} matches the current request.`
+            : `Workspace snapshot v${snapshot.snapshotVersion} still tracks document version ${trackedDocumentVersion} while the current request uses version ${version}, so cross-file workspace results must degrade to fragment-local output.`,
+        freshness,
+        requestVersion: version,
+        rootPath: snapshot.rootPath,
+        snapshotVersion: snapshot.snapshotVersion,
+        trackedDocumentVersion,
+      });
+    },
+    getWorkspaceSnapshot: () => options.workspaceSnapshot ?? null,
   } as unknown as VariableFlowService;
 }

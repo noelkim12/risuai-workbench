@@ -167,6 +167,8 @@ export interface RuntimeAvailabilityRequestParams {
   refresh?: 'current-session';
 }
 
+export type WorkspaceAwareInteractiveFeature = 'completion' | 'hover';
+
 const RUNTIME_OPERATOR_DOCS = Object.freeze({
   agentIntegration: 'packages/cbs-lsp/docs/AGENT_INTEGRATION.md',
   compatibility: 'packages/cbs-lsp/docs/COMPATIBILITY.md',
@@ -191,6 +193,21 @@ const DEFAULT_STARTUP_SELECTION_ORDER = Object.freeze([
   'initialize.workspaceFolders[0]',
   'initialize.rootUri',
 ]) satisfies readonly RuntimeOperatorWorkspaceRootSource[];
+
+/**
+ * createStaleWorkspaceAvailability 함수.
+ * workspace snapshot freshness mismatch 때문에 cross-file 결과를 억제할 때 쓸 공통 availability contract를 생성함.
+ *
+ * @param feature - stale workspace 영향을 받는 interactive feature 이름
+ * @param detail - 왜 local-only degrade가 되었는지 설명하는 안정적인 문구
+ * @returns stale workspace fallback을 설명하는 availability contract
+ */
+export function createStaleWorkspaceAvailability(
+  feature: WorkspaceAwareInteractiveFeature,
+  detail: string,
+): AgentMetadataAvailabilityContract {
+  return createAgentMetadataAvailability('local-only', `workspace-snapshot:${feature}`, detail);
+}
 
 export const ACTIVE_FEATURE_AVAILABILITY = Object.freeze({
   codeAction: createAgentMetadataAvailability(

@@ -13,6 +13,8 @@ import type { WorkspaceDiagnosticsState } from '../helpers/server-workspace-help
 export class WorkspaceStateRepository {
   private readonly workspaceStateByRoot = new Map<string, WorkspaceDiagnosticsState>();
 
+  private readonly workspaceSnapshotVersionByRoot = new Map<string, number>();
+
   /**
    * listRoots 함수.
    * 현재 저장된 workspace root 목록을 deterministic ordering으로 반환함.
@@ -57,6 +59,12 @@ export class WorkspaceStateRepository {
    */
   replace(rootPath: string, state: WorkspaceDiagnosticsState | null): void {
     if (state) {
+      const nextSnapshotVersion = (this.workspaceSnapshotVersionByRoot.get(rootPath) ?? 0) + 1;
+      this.workspaceSnapshotVersionByRoot.set(rootPath, nextSnapshotVersion);
+      state.workspaceSnapshot = {
+        ...state.workspaceSnapshot,
+        snapshotVersion: nextSnapshotVersion,
+      };
       this.workspaceStateByRoot.set(rootPath, state);
       return;
     }
@@ -70,5 +78,6 @@ export class WorkspaceStateRepository {
    */
   clear(): void {
     this.workspaceStateByRoot.clear();
+    this.workspaceSnapshotVersionByRoot.clear();
   }
 }

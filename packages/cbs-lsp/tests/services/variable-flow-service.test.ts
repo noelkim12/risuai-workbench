@@ -239,4 +239,45 @@ describe('VariableFlowService', () => {
     expect(result?.defaultValue).toBe('from-defaults');
     expect(result?.issues.some((entry) => entry.issue.type === 'uninitialized-read')).toBe(false);
   });
+
+  it('reports workspace freshness markers for matching and stale open-document versions', async () => {
+    const { graph, registry, root, scanResult, service } = await buildService([
+      {
+        artifact: 'prompt',
+        fileName: 'writer.risuprompt',
+        text: ['---', 'type: plain', '---', '@@@ TEXT', '{{setvar::shared::1}}', ''].join('\n'),
+      },
+    ]);
+    const writerUri = scanResult.files[0]?.uri;
+
+    expect(writerUri).toBeTruthy();
+
+    expect(service.getWorkspaceFreshness({ uri: writerUri!, version: 0 })).toBeNull();
+
+    const workspaceAwareService = new VariableFlowService({
+      graph,
+      registry,
+      workspaceSnapshot: {
+        rootPath: root,
+        snapshotVersion: 9,
+        documentVersions: new Map([[writerUri!, 2]]),
+      },
+    });
+
+    expect(workspaceAwareService.getWorkspaceFreshness({ uri: writerUri!, version: 2 })).toEqual(
+      expect.objectContaining({
+        freshness: 'fresh',
+        snapshotVersion: 9,
+        trackedDocumentVersion: 2,
+      }),
+    );
+    expect(workspaceAwareService.getWorkspaceFreshness({ uri: writerUri!, version: 4 })).toEqual(
+      expect.objectContaining({
+        freshness: 'stale',
+        snapshotVersion: 9,
+        trackedDocumentVersion: 2,
+        requestVersion: 4,
+      }),
+    );
+  });
 });

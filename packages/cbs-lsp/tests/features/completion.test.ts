@@ -11,7 +11,7 @@ import {
   CBS_COMPLETION_TRIGGER_CHARACTERS,
   CompletionProvider,
 } from '../../src/features/completion';
-import type { VariableFlowService } from '../../src/services';
+import type { VariableFlowService, WorkspaceSnapshotState } from '../../src/services';
 import { offsetToPosition } from '../../src/utils/position';
 import {
   createFixtureRequest,
@@ -54,11 +54,13 @@ function createProvider(
   service: FragmentAnalysisService,
   request: ReturnType<typeof createFixtureRequest>,
   variableFlowService?: VariableFlowService,
+  workspaceSnapshot?: WorkspaceSnapshotState | null,
 ): CompletionProvider {
   return new CompletionProvider(new CBSBuiltinRegistry(), {
     analysisService: service,
     resolveRequest: ({ textDocument }) => (textDocument.uri === request.uri ? request : null),
     variableFlowService,
+    workspaceSnapshot,
   });
 }
 
@@ -140,6 +142,25 @@ function createWorkspaceChatVariableService(...variableNames: string[]): Variabl
       );
     },
   });
+}
+
+/**
+ * createWorkspaceSnapshot 함수.
+ * provider 테스트에서 현재 request와 비교할 workspace snapshot version map을 조립함.
+ *
+ * @param request - snapshot 기준 URI/version을 제공할 현재 request
+ * @param trackedDocumentVersion - workspace snapshot이 기억하는 문서 version
+ * @returns workspace freshness 판정에 주입할 snapshot metadata
+ */
+function createWorkspaceSnapshot(
+  request: ReturnType<typeof createFixtureRequest>,
+  trackedDocumentVersion: number,
+): WorkspaceSnapshotState {
+  return {
+    rootPath: '/workspace',
+    snapshotVersion: 7,
+    documentVersions: new Map([[request.uri, trackedDocumentVersion]]),
+  };
 }
 
 describe('CompletionProvider', () => {
@@ -370,6 +391,66 @@ describe('CompletionProvider', () => {
         detail:
           'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local `$var` symbols.',
       });
+    });
+
+    it('degrades calc expression completion to local-only metadata when the workspace snapshot is stale', () => {
+      const entry = getFixtureCorpusEntry('lorebook-calc-expression-context');
+      const request = createFixtureRequest(entry);
+      const modifiedText = entry.text.replace('{{? $score + @bonus}}', '{{? $}}');
+      const modifiedRequest = { ...request, text: modifiedText, version: 2 };
+      const workspaceSnapshot = createWorkspaceSnapshot(modifiedRequest, 1);
+      const provider = createProvider(
+        new FragmentAnalysisService(),
+        modifiedRequest,
+        createVariableFlowServiceStub({
+          getAllVariableNames: () => ['shared', 'score'],
+          queryVariable: (variableName) =>
+            ['shared', 'score'].includes(variableName)
+              ? createVariableFlowQueryResult(
+                  variableName,
+                  [
+                    createVariableOccurrence({
+                      direction: 'write',
+                      uri: `file:///workspace/${variableName}.risuprompt`,
+                      relativePath: `prompt_template/${variableName}.risuprompt`,
+                      range: {
+                        start: { line: 4, character: 11 },
+                        end: { line: 4, character: 11 + variableName.length },
+                      },
+                      sourceName: 'setvar',
+                      variableName,
+                    }),
+                  ],
+                  [],
+                )
+              : null,
+          workspaceSnapshot,
+        }),
+        workspaceSnapshot,
+      );
+      const completions = provider.provide(
+        createParams(modifiedRequest, offsetToPosition(modifiedText, modifiedText.indexOf('{{? $') + 4)),
+      );
+
+      expectCompletionLabels(completions, '$score');
+      expectNoCompletionLabels(completions, '$shared');
+      expect(completions.find((completion) => completion.label === '$score')?.data).toEqual(
+        expect.objectContaining({
+          cbs: expect.objectContaining({
+            availability: {
+              scope: 'local-only',
+              source: 'workspace-snapshot:completion',
+              detail: expect.stringContaining('Workspace snapshot v7 still tracks document version 1'),
+            },
+            workspace: expect.objectContaining({
+              freshness: 'stale',
+              snapshotVersion: 7,
+              requestVersion: 2,
+              trackedDocumentVersion: 1,
+            }),
+          }),
+        }),
+      );
     });
 
     it('does not mix workspace chat variables into @global expression completion', () => {
@@ -969,6 +1050,72 @@ describe('CompletionProvider', () => {
         detail:
           'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local chat-variable symbols.',
       });
+    });
+
+    it('keeps only fragment-local chat candidates when the workspace snapshot is stale', () => {
+      const entry = getFixtureCorpusEntry('lorebook-setvar-macro');
+      const request = createFixtureRequest(entry);
+      const modifiedText = entry.text.replace('}}', '}}{{getvar::}}');
+      const modifiedRequest = { ...request, text: modifiedText, version: 4 };
+      const workspaceSnapshot = createWorkspaceSnapshot(modifiedRequest, 3);
+      const provider = createProvider(
+        new FragmentAnalysisService(),
+        modifiedRequest,
+        createVariableFlowServiceStub({
+          getAllVariableNames: () => ['shared', 'mood'],
+          queryVariable: (variableName) => {
+            if (!['shared', 'mood'].includes(variableName)) {
+              return null;
+            }
+
+            return createVariableFlowQueryResult(
+              variableName,
+              [
+                createVariableOccurrence({
+                  direction: 'write',
+                  uri: `file:///workspace/${variableName}.risuprompt`,
+                  relativePath: `prompt_template/${variableName}.risuprompt`,
+                  range: {
+                    start: { line: 4, character: 11 },
+                    end: { line: 4, character: 11 + variableName.length },
+                  },
+                  sourceName: 'setvar',
+                  variableName,
+                }),
+              ],
+              [],
+            );
+          },
+          workspaceSnapshot,
+        }),
+        workspaceSnapshot,
+      );
+      const completions = provider.provide(
+        createParams(
+          modifiedRequest,
+          offsetToPosition(modifiedText, modifiedText.indexOf('{{getvar::') + '{{getvar::'.length),
+        ),
+      );
+
+      expectCompletionLabels(completions, 'mood');
+      expectNoCompletionLabels(completions, 'shared');
+      expect(completions.find((completion) => completion.label === 'mood')?.data).toEqual(
+        expect.objectContaining({
+          cbs: expect.objectContaining({
+            availability: {
+              scope: 'local-only',
+              source: 'workspace-snapshot:completion',
+              detail: expect.stringContaining('current request uses version 4'),
+            },
+            workspace: expect.objectContaining({
+              freshness: 'stale',
+              snapshotVersion: 7,
+              requestVersion: 4,
+              trackedDocumentVersion: 3,
+            }),
+          }),
+        }),
+      );
     });
 
     it('offers the same workspace chat candidates for setvar first-argument completion', () => {

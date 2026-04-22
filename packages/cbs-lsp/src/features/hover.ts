@@ -17,6 +17,7 @@ import { CbsLspTextHelper } from '../helpers/text-helper';
 import {
   createAgentMetadataEnvelope,
   createAgentMetadataExplanation,
+  createStaleWorkspaceAvailability,
   collectLocalFunctionDeclarations,
   fragmentAnalysisService,
   findCalcReferenceAtOffset,
@@ -30,12 +31,18 @@ import {
   type AgentMetadataCategoryContract,
   type AgentMetadataEnvelope,
   type AgentMetadataExplanationContract,
+  type AgentMetadataAvailabilityContract,
+  type AgentMetadataWorkspaceSnapshotContract,
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
   type FragmentCursorLookupResult,
 } from '../core';
 import { isRequestCancelled } from '../utils/request-cancellation';
-import type { VariableFlowQueryResult, VariableFlowService } from '../services';
+import type {
+  VariableFlowQueryResult,
+  VariableFlowService,
+  WorkspaceSnapshotState,
+} from '../services';
 import { positionToOffset } from '../utils/position';
 import { isDocOnlyBuiltin } from 'risu-workbench-core';
 
@@ -47,6 +54,7 @@ export interface HoverProviderOptions {
   analysisService?: FragmentAnalysisService;
   resolveRequest?: HoverRequestResolver;
   variableFlowService?: VariableFlowService;
+  workspaceSnapshot?: WorkspaceSnapshotState | null;
 }
 
 interface HoverTarget {
@@ -320,6 +328,8 @@ export class HoverProvider {
 
   private readonly variableFlowService: VariableFlowService | null;
 
+  private readonly workspaceSnapshot: WorkspaceSnapshotState | null;
+
   constructor(
     private readonly registry: CBSBuiltinRegistry,
     options: HoverProviderOptions = {},
@@ -327,6 +337,7 @@ export class HoverProvider {
     this.analysisService = options.analysisService ?? fragmentAnalysisService;
     this.resolveRequest = options.resolveRequest ?? (() => null);
     this.variableFlowService = options.variableFlowService ?? null;
+    this.workspaceSnapshot = options.workspaceSnapshot ?? null;
   }
 
   provide(
@@ -359,15 +370,17 @@ export class HoverProvider {
       return null;
     }
 
-    const workspaceVariableQuery = this.variableFlowService
-      ? this.variableFlowService.queryAt(request.uri, positionToOffset(request.text, params.position))
-      : null;
+    const workspaceFreshness = this.getWorkspaceFreshness(request);
+    const workspaceVariableQuery =
+      this.variableFlowService && workspaceFreshness?.freshness !== 'stale'
+        ? this.variableFlowService.queryAt(request.uri, positionToOffset(request.text, params.position))
+        : null;
 
     const hoverTarget =
       this.buildBuiltinHover(lookup) ??
       this.buildCalcExpressionHover(lookup) ??
       this.buildSlotAliasHover(lookup) ??
-      this.buildVariableHover(lookup, request.uri, workspaceVariableQuery) ??
+      this.buildVariableHover(lookup, request.uri, workspaceVariableQuery, workspaceFreshness) ??
       this.buildFunctionHover(lookup) ??
       this.buildWhenOperatorHover(lookup);
     if (!hoverTarget) {
@@ -557,6 +570,7 @@ export class HoverProvider {
     lookup: FragmentCursorLookupResult,
     currentUri: string,
     workspaceVariableQuery: VariableFlowQueryResult | null,
+    workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null,
   ): HoverTarget | null {
     const tokenLookup = lookup.token;
     const nodeSpan = lookup.nodeSpan;
@@ -648,18 +662,25 @@ export class HoverProvider {
     }
 
     return {
-      data: this.createCategoryData({
-        category: 'variable',
-        kind:
-          kind === 'global'
-            ? 'global-variable'
-            : kind === 'temp'
-              ? 'temp-variable'
-              : 'chat-variable',
-      }, this.createScopeExplanation(
-        'variable-symbol-table',
-        'Hover resolved this variable through analyzed symbol-table entries for the current macro argument.',
-      )),
+      data: this.createCategoryData(
+        {
+          category: 'variable',
+          kind:
+            kind === 'global'
+              ? 'global-variable'
+              : kind === 'temp'
+                ? 'temp-variable'
+                : 'chat-variable',
+        },
+        this.createScopeExplanation(
+          'variable-symbol-table',
+          'Hover resolved this variable through analyzed symbol-table entries for the current macro argument.',
+        ),
+        kind === 'chat'
+          ? this.getStaleWorkspaceAvailability(workspaceFreshness, 'hover')
+          : undefined,
+        kind === 'chat' ? (workspaceFreshness ?? undefined) : undefined,
+      ),
       markdown: lines.join('\n'),
       localStartOffset: tokenLookup.localStartOffset,
       localEndOffset: tokenLookup.localEndOffset,
@@ -988,8 +1009,34 @@ export class HoverProvider {
   private createCategoryData(
     category: AgentMetadataCategoryContract,
     explanation?: AgentMetadataExplanationContract,
+    availability?: AgentMetadataAvailabilityContract,
+    workspace?: AgentMetadataWorkspaceSnapshotContract,
   ): AgentMetadataEnvelope {
-    return createAgentMetadataEnvelope(category, explanation);
+    return createAgentMetadataEnvelope(category, explanation, availability, workspace);
+  }
+
+  private getWorkspaceFreshness(
+    request: FragmentAnalysisRequest,
+  ): AgentMetadataWorkspaceSnapshotContract | null {
+    if (!this.variableFlowService || !this.workspaceSnapshot) {
+      return null;
+    }
+
+    return this.variableFlowService.getWorkspaceFreshness({
+      uri: request.uri,
+      version: request.version,
+    });
+  }
+
+  private getStaleWorkspaceAvailability(
+    workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null,
+    feature: 'completion' | 'hover',
+  ): AgentMetadataAvailabilityContract | undefined {
+    if (workspaceFreshness?.freshness !== 'stale') {
+      return undefined;
+    }
+
+    return createStaleWorkspaceAvailability(feature, workspaceFreshness.detail);
   }
 
   private createContextualExplanation(

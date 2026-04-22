@@ -66,6 +66,17 @@ export interface AgentMetadataAvailabilityContract {
   detail: string;
 }
 
+export type AgentMetadataWorkspaceFreshness = 'fresh' | 'stale';
+
+export interface AgentMetadataWorkspaceSnapshotContract extends CbsAgentProtocolMarker {
+  rootPath: string;
+  snapshotVersion: number;
+  requestVersion: string | number;
+  trackedDocumentVersion: string | number | null;
+  freshness: AgentMetadataWorkspaceFreshness;
+  detail: string;
+}
+
 export interface AgentMetadataEnvelope {
   cbs: {
     schema: typeof CBS_AGENT_PROTOCOL_SCHEMA;
@@ -73,6 +84,7 @@ export interface AgentMetadataEnvelope {
     availability?: AgentMetadataAvailabilityContract;
     category: AgentMetadataCategoryContract;
     explanation?: AgentMetadataExplanationContract;
+    workspace?: AgentMetadataWorkspaceSnapshotContract;
   };
 }
 
@@ -132,6 +144,22 @@ export function createAgentMetadataExplanation(
 }
 
 /**
+ * createAgentMetadataWorkspaceSnapshot 함수.
+ * workspace-aware provider가 현재 snapshot freshness를 data envelope에 실을 때 쓰는 공통 구조를 생성함.
+ *
+ * @param workspace - 현재 요청과 비교한 workspace snapshot freshness 정보
+ * @returns completion/hover payload에 붙일 workspace snapshot contract
+ */
+export function createAgentMetadataWorkspaceSnapshot(
+  workspace: Omit<AgentMetadataWorkspaceSnapshotContract, keyof CbsAgentProtocolMarker>,
+): AgentMetadataWorkspaceSnapshotContract {
+  return {
+    ...createCbsAgentProtocolMarker(),
+    ...workspace,
+  };
+}
+
+/**
  * createAgentMetadataEnvelope 함수.
  * provider payload에 붙일 공통 agent metadata envelope를 생성함.
  *
@@ -142,6 +170,7 @@ export function createAgentMetadataEnvelope(
   category: AgentMetadataCategoryContract,
   explanation?: AgentMetadataExplanationContract,
   availability?: AgentMetadataAvailabilityContract,
+  workspace?: AgentMetadataWorkspaceSnapshotContract,
 ): AgentMetadataEnvelope {
   return {
     cbs: {
@@ -149,6 +178,7 @@ export function createAgentMetadataEnvelope(
       availability,
       category,
       explanation,
+      workspace,
     },
   };
 }
@@ -169,6 +199,7 @@ export function isAgentMetadataEnvelope(value: unknown): value is AgentMetadataE
   const availability = envelope.cbs?.availability;
   const category = envelope.cbs?.category;
   const explanation = envelope.cbs?.explanation;
+  const workspace = envelope.cbs?.workspace;
 
   if (availability) {
     const validAvailability =
@@ -192,12 +223,48 @@ export function isAgentMetadataEnvelope(value: unknown): value is AgentMetadataE
   }
 
   if (!explanation) {
+    if (!workspace) {
+      return true;
+    }
+
+    return (
+      workspace.schema === CBS_AGENT_PROTOCOL_SCHEMA &&
+      workspace.schemaVersion === CBS_AGENT_PROTOCOL_VERSION &&
+      typeof workspace.rootPath === 'string' &&
+      typeof workspace.snapshotVersion === 'number' &&
+      (typeof workspace.requestVersion === 'number' || typeof workspace.requestVersion === 'string') &&
+      (workspace.trackedDocumentVersion === null ||
+        typeof workspace.trackedDocumentVersion === 'number' ||
+        typeof workspace.trackedDocumentVersion === 'string') &&
+      typeof workspace.freshness === 'string' &&
+      typeof workspace.detail === 'string'
+    );
+  }
+
+  const validExplanation = (
+    typeof explanation.reason === 'string' &&
+    typeof explanation.source === 'string' &&
+    typeof explanation.detail === 'string'
+  );
+
+  if (!validExplanation) {
+    return false;
+  }
+
+  if (!workspace) {
     return true;
   }
 
   return (
-    typeof explanation.reason === 'string' &&
-    typeof explanation.source === 'string' &&
-    typeof explanation.detail === 'string'
+    workspace.schema === CBS_AGENT_PROTOCOL_SCHEMA &&
+    workspace.schemaVersion === CBS_AGENT_PROTOCOL_VERSION &&
+    typeof workspace.rootPath === 'string' &&
+    typeof workspace.snapshotVersion === 'number' &&
+    (typeof workspace.requestVersion === 'number' || typeof workspace.requestVersion === 'string') &&
+    (workspace.trackedDocumentVersion === null ||
+      typeof workspace.trackedDocumentVersion === 'number' ||
+      typeof workspace.trackedDocumentVersion === 'string') &&
+    typeof workspace.freshness === 'string' &&
+    typeof workspace.detail === 'string'
   );
 }

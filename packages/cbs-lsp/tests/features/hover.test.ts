@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { type AgentMetadataEnvelope, FragmentAnalysisService } from '../../src/core';
 import { type AgentFriendlyHover, HoverProvider } from '../../src/features/hover';
-import type { VariableFlowService } from '../../src/services';
+import type { VariableFlowService, WorkspaceSnapshotState } from '../../src/services';
 import { offsetToPosition } from '../../src/utils/position';
 import {
   createFixtureRequest,
@@ -47,11 +47,13 @@ function createProvider(
   service: FragmentAnalysisService,
   request: ReturnType<typeof createFixtureRequest>,
   variableFlowService?: VariableFlowService,
+  workspaceSnapshot?: WorkspaceSnapshotState | null,
 ): HoverProvider {
   return new HoverProvider(new CBSBuiltinRegistry(), {
     analysisService: service,
     resolveRequest: ({ textDocument }) => (textDocument.uri === request.uri ? request : null),
     variableFlowService,
+    workspaceSnapshot,
   });
 }
 
@@ -81,6 +83,25 @@ function extractHoverCategory(hover: Hover | null) {
 
 function extractHoverExplanation(hover: Hover | null) {
   return ((hover as AgentFriendlyHover | null)?.data as AgentMetadataEnvelope | undefined)?.cbs.explanation;
+}
+
+/**
+ * createWorkspaceSnapshot 함수.
+ * hover 테스트에서 request version과 비교할 workspace snapshot metadata를 구성함.
+ *
+ * @param request - 현재 hover request
+ * @param trackedDocumentVersion - workspace snapshot이 기억하는 문서 version
+ * @returns workspace freshness 판정용 snapshot metadata
+ */
+function createWorkspaceSnapshot(
+  request: ReturnType<typeof createFixtureRequest>,
+  trackedDocumentVersion: number,
+): WorkspaceSnapshotState {
+  return {
+    rootPath: '/workspace',
+    snapshotVersion: 11,
+    documentVersions: new Map([[request.uri, trackedDocumentVersion]]),
+  };
 }
 
 describe('HoverProvider', () => {
@@ -218,6 +239,84 @@ describe('HoverProvider', () => {
     expect(markdown).not.toContain('Workspace readers:');
     expect(markdown).not.toContain('Representative writers:');
     expect(markdown).not.toContain('Workspace issues:');
+  });
+
+  it('degrades to fragment-local hover metadata when the workspace snapshot is stale', () => {
+    const entry = getFixtureCorpusEntry('lorebook-setvar-macro');
+    const request = createFixtureRequest(entry);
+    const staleRequest = { ...request, version: 5 };
+    const workspaceSnapshot = createWorkspaceSnapshot(staleRequest, 4);
+    const matchedOccurrence = createVariableOccurrence({
+      direction: 'write',
+      uri: staleRequest.uri,
+      relativePath: 'lorebooks/entry.risulorebook',
+      range: {
+        start: { line: 4, character: 10 },
+        end: { line: 4, character: 14 },
+      },
+      sourceName: 'setvar',
+      variableName: 'mood',
+    });
+    const variableFlowService = createVariableFlowServiceStub({
+      queryAt: (uri) =>
+        uri === staleRequest.uri
+          ? createVariableFlowQueryResult(
+              'mood',
+              [
+                matchedOccurrence,
+                createVariableOccurrence({
+                  direction: 'write',
+                  uri: 'file:///workspace/lua/state.risulua',
+                  relativePath: 'lua/state.risulua',
+                  range: {
+                    start: { line: 0, character: 9 },
+                    end: { line: 0, character: 13 },
+                  },
+                  artifact: 'lua',
+                  sourceName: 'setState',
+                  variableName: 'mood',
+                }),
+              ],
+              [],
+              matchedOccurrence,
+            )
+          : null,
+      workspaceSnapshot,
+    });
+    const service = new FragmentAnalysisService();
+    const position = positionAt(entry.text, 'mood', 1);
+    const lookup = service.locatePosition(staleRequest, position);
+
+    expect(lookup).not.toBeNull();
+    const symbolTable = lookup!.fragmentAnalysis.providerLookup.getSymbolTable();
+    symbolTable.addDefinition('mood', 'chat', lookup!.nodeSpan!.localRange);
+    symbolTable.tryAddVariableReferenceByName('mood', lookup!.nodeSpan!.localRange, 'chat');
+
+    const provider = createProvider(service, staleRequest, variableFlowService, workspaceSnapshot);
+    const hover = provider.provide(createParams(staleRequest, position));
+    const markdown = expectMarkdownHover(hover);
+
+    expect(markdown).toContain('Local definition:');
+    expect(markdown).toContain('Local references: 1');
+    expect(markdown).not.toContain('Workspace writers:');
+    expect(markdown).not.toContain('lua/state.risulua');
+    expect((hover as AgentFriendlyHover | null)?.data).toEqual(
+      expect.objectContaining({
+        cbs: expect.objectContaining({
+          availability: {
+            scope: 'local-only',
+            source: 'workspace-snapshot:hover',
+            detail: expect.stringContaining('Workspace snapshot v11 still tracks document version 4'),
+          },
+          workspace: expect.objectContaining({
+            freshness: 'stale',
+            snapshotVersion: 11,
+            requestVersion: 5,
+            trackedDocumentVersion: 4,
+          }),
+        }),
+      }),
+    );
   });
 
   it('shows deterministic variable metadata and shared symbol details when available', () => {

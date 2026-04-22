@@ -26,11 +26,12 @@ import {
   UnifiedVariableGraph,
   type WorkspaceScanResult,
 } from '../indexer';
-import { ActivationChainService, VariableFlowService } from '../services';
+import { ActivationChainService, VariableFlowService, type WorkspaceSnapshotState } from '../services';
 import { CbsLspPathHelper } from './path-helper';
 
 export interface WorkspaceDiagnosticsState {
   rootPath: string;
+  workspaceSnapshot: WorkspaceSnapshotState;
   scanResult: WorkspaceScanResult;
   registry: ElementRegistry;
   graph: UnifiedVariableGraph;
@@ -148,6 +149,32 @@ function getAllDocuments(documents: TextDocuments<TextDocument>): readonly TextD
 }
 
 /**
+ * collectWorkspaceDocumentVersions 함수.
+ * 현재 workspace root 아래에서 열려 있는 문서 version snapshot을 수집함.
+ *
+ * @param rootPath - version을 수집할 workspace root 경로
+ * @param documents - 현재 열려 있는 text document 목록
+ * @returns URI 기준 열린 문서 version 맵
+ */
+function collectWorkspaceDocumentVersions(
+  rootPath: string,
+  documents: readonly TextDocument[],
+): ReadonlyMap<string, number> {
+  const versions = new Map<string, number>();
+
+  for (const document of documents) {
+    const filePath = CbsLspPathHelper.getFilePathFromUri(document.uri);
+    if (CbsLspPathHelper.resolveWorkspaceRootFromFilePath(filePath) !== rootPath) {
+      continue;
+    }
+
+    versions.set(document.uri, document.version);
+  }
+
+  return versions;
+}
+
+/**
  * applyOpenDocumentOverrides 함수.
  * 파일 스캔 결과 위에 현재 editor의 unsaved 문서 내용을 덮어씀.
  *
@@ -195,20 +222,27 @@ export function createWorkspaceDiagnosticsState(
   documents: TextDocuments<TextDocument>,
 ): WorkspaceDiagnosticsState | null {
   try {
+    const openDocuments = getAllDocuments(documents);
     const baseScanResult = scanWorkspaceFilesSync(rootPath);
-    const scanResult = applyOpenDocumentOverrides(baseScanResult, getAllDocuments(documents));
+    const scanResult = applyOpenDocumentOverrides(baseScanResult, openDocuments);
     const registry = ElementRegistry.fromScanResult(scanResult);
     const graph = UnifiedVariableGraph.fromRegistry(registry);
+    const workspaceSnapshot: WorkspaceSnapshotState = {
+      rootPath,
+      snapshotVersion: 0,
+      documentVersions: collectWorkspaceDocumentVersions(rootPath, openDocuments),
+    };
     const incrementalRebuilder = new IncrementalRebuilder({
       scanResult,
       registry,
       graph,
     });
-    const variableFlowService = new VariableFlowService({ graph, registry });
+    const variableFlowService = new VariableFlowService({ graph, registry, workspaceSnapshot });
     const activationChainService = ActivationChainService.fromRegistry(registry);
 
     return {
       rootPath,
+      workspaceSnapshot,
       scanResult,
       registry,
       graph,
@@ -240,11 +274,21 @@ export function createIncrementalWorkspaceDiagnosticsState(
     resolveOpenDocument: (uri) => documents.get(uri) ?? null,
   });
   const { scanResult, registry, graph } = rebuildResult;
-  const variableFlowService = new VariableFlowService({ graph, registry });
+  const workspaceSnapshot: WorkspaceSnapshotState = {
+    rootPath: previousState.rootPath,
+    snapshotVersion: previousState.workspaceSnapshot.snapshotVersion,
+    documentVersions: collectWorkspaceDocumentVersions(previousState.rootPath, getAllDocuments(documents)),
+  };
+  const variableFlowService = new VariableFlowService({
+    graph,
+    registry,
+    workspaceSnapshot,
+  });
   const activationChainService = ActivationChainService.fromRegistry(registry);
 
   return {
     rootPath: previousState.rootPath,
+    workspaceSnapshot,
     scanResult,
     registry,
     graph,
