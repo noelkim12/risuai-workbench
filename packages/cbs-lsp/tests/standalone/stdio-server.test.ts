@@ -1,6 +1,15 @@
 /**
  * Product-level stdio server matrix tests.
  * @file packages/cbs-lsp/tests/standalone/stdio-server.test.ts
+ *
+ * Execution conditions:
+ * - Real LuaLS tests require CBS_LSP_RUN_LUALS_INTEGRATION=true and CBS_LSP_LUALS_PATH
+ * - Diagnostics smoke requires shadow-file workspace with proper Lua.workspace.library injection
+ *
+ * Failure recovery:
+ * - If LuaLS tests fail: Check companion is running with `report availability`
+ * - If diagnostics empty: Verify shadow files exist and workspace/library config is injected
+ * - See docs/LUALS_COMPANION.md and docs/TROUBLESHOOTING.md for detailed recovery steps
  */
 
 import path from 'node:path';
@@ -46,6 +55,21 @@ interface JsonRpcResponseMessage {
 interface JsonRpcNotificationRecord {
   method: string;
   params: unknown;
+}
+
+interface DiagnosticsNotificationParams {
+  diagnostics: Array<{
+    code?: string | number;
+    message: string;
+    range: {
+      end: { character: number; line: number };
+      start: { character: number; line: number };
+    };
+    severity?: number;
+    source?: string;
+  }>;
+  uri: string;
+  version?: number;
 }
 
 const RUN_REAL_LUALS_PRODUCT_MATRIX = ['1', 'true'].includes(
@@ -457,6 +481,51 @@ async function requestReferencesUntil(
   throw new Error(`Timed out waiting for references to satisfy the expected workspace condition. stderr: ${client.getStderr()}`);
 }
 
+/**
+ * waitForDiagnosticsUntil 함수.
+ * textDocument/publishDiagnostics notification이 non-empty payload로 도착할 때까지 기다림.
+ *
+ * @param client - stdio JSON-RPC client
+ * @param uri - diagnostics 대상 문서 URI
+ * @param predicate - diagnostics 배열이 만족해야 할 조건
+ * @param timeoutMs - 최대 대기 시간
+ * @returns non-empty diagnostics params
+ */
+async function waitForDiagnosticsUntil(
+  client: StdioLspClient,
+  uri: string,
+  predicate: (diagnostics: DiagnosticsNotificationParams['diagnostics']) => boolean = (diagnostics) => diagnostics.length > 0,
+  timeoutMs: number = 20_000,
+): Promise<DiagnosticsNotificationParams> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    try {
+      const params = await client.waitForNotification(
+        'textDocument/publishDiagnostics',
+        (notificationParams): boolean => {
+          if (!notificationParams || typeof notificationParams !== 'object') {
+            return false;
+          }
+          const p = notificationParams as { uri?: string; diagnostics?: unknown };
+          return p.uri === uri && Array.isArray(p.diagnostics);
+        },
+        500,
+      ) as DiagnosticsNotificationParams;
+
+      if (predicate(params.diagnostics)) {
+        return params;
+      }
+    } catch {
+      // Timeout on single wait, continue polling
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  throw new Error(`Timed out waiting for non-empty diagnostics for ${uri}. stderr: ${client.getStderr()}`);
+}
+
 beforeAll(() => {
   ensureBuiltPackage();
 });
@@ -657,6 +726,73 @@ describe.runIf(RUN_REAL_LUALS_PRODUCT_MATRIX && Boolean(REAL_LUALS_PATH)).sequen
       const hover = await requestHoverUntilReady(client, uri, text);
 
       expect(getHoverMarkdown(hover)).toContain('greeting');
+
+      await client.shutdown();
+      const exitCode = await client.waitForExit(20_000);
+      expect(exitCode).toBe(0);
+    }, 30_000);
+
+    it('receives non-empty LuaLS diagnostics via shadow-file workspace over stdio', async () => {
+      const root = await createWorkspaceRoot('cbs-lsp-stdio-luals-diag-', tempRoots);
+      // Use Lua code with intentional issues to trigger diagnostics
+      const luaTextWithIssues = 'local x = 1\nlocal x = 2\nreturn x\n';
+      const absolutePath = await writeWorkspaceFile(root, 'lua/diagnostics.risulua', luaTextWithIssues);
+      const uri = pathToFileURL(absolutePath).toString();
+      const client = createStdioClient([
+        '--stdio',
+        '--workspace',
+        root,
+        '--luals-path',
+        REAL_LUALS_PATH!,
+      ]);
+
+      const initializeResult = (await client.request('initialize', {
+        processId: null,
+        rootUri: pathToFileURL(root).toString(),
+        workspaceFolders: [{ uri: pathToFileURL(root).toString(), name: 'fixture' }],
+        capabilities: {},
+      }, 20_000)) as {
+        experimental?: {
+          cbs?: {
+            availability?: {
+              companions?: {
+                luals?: {
+                  executablePath?: string | null;
+                  status?: string;
+                };
+              };
+            };
+          };
+        };
+      };
+
+      expect(initializeResult.experimental?.cbs?.availability?.companions?.luals).toMatchObject({
+        executablePath: REAL_LUALS_PATH,
+        status: 'stopped',
+      });
+
+      client.notify('initialized', {});
+      client.notify('textDocument/didOpen', {
+        textDocument: {
+          uri,
+          languageId: 'lua',
+          version: 1,
+          text: luaTextWithIssues,
+        },
+      });
+
+      // Wait for non-empty diagnostics from LuaLS via shadow-file workspace
+      const diagnostics = await waitForDiagnosticsUntil(client, uri, (diagnostics) => diagnostics.length > 0, 20_000);
+
+      expect(diagnostics.uri).toBe(uri);
+      expect(diagnostics.diagnostics.length).toBeGreaterThan(0);
+      expect(diagnostics.diagnostics[0]).toMatchObject({
+        message: expect.any(String),
+        range: {
+          end: { character: expect.any(Number), line: expect.any(Number) },
+          start: { character: expect.any(Number), line: expect.any(Number) },
+        },
+      });
 
       await client.shutdown();
       const exitCode = await client.waitForExit(20_000);

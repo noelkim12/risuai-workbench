@@ -25,6 +25,7 @@ import {
   createLuaLsShadowWorkspace,
   type LuaLsShadowWorkspace,
 } from './lualsShadowWorkspace';
+import { createLuaLsWorkspaceConfiguration } from './lualsWorkspace';
 
 const DEFAULT_HEALTH_CHECK_INTERVAL_MS = 30_000;
 const DEFAULT_INITIALIZE_TIMEOUT_MS = 5_000;
@@ -49,6 +50,7 @@ export interface LuaLsProcessPrepareOptions {
 
 export interface LuaLsProcessStartOptions {
   rootPath?: string | null;
+  stubRootPaths?: readonly string[] | null;
 }
 
 export interface LuaLsExecutableResolutionOptions {
@@ -550,7 +552,10 @@ export class LuaLsProcessManager {
   prepareForInitialize(options: LuaLsProcessPrepareOptions = {}): LuaLsCompanionRuntime {
     this.cancelScheduledRestart();
     this.restartAttemptIndex = 0;
-    this.lastStartOptions = { rootPath: options.rootPath ?? null };
+    this.lastStartOptions = {
+      rootPath: options.rootPath ?? null,
+      stubRootPaths: this.lastStartOptions.stubRootPaths ?? [],
+    };
     const nextExecutablePath = this.resolveExecutablePath({
       cwd: this.options.cwd,
       env: this.options.env,
@@ -590,7 +595,10 @@ export class LuaLsProcessManager {
    * @returns 시작 이후의 runtime 상태
    */
   async start(options: LuaLsProcessStartOptions = {}): Promise<LuaLsCompanionRuntime> {
-    this.lastStartOptions = { rootPath: options.rootPath ?? null };
+    this.lastStartOptions = {
+      rootPath: options.rootPath ?? null,
+      stubRootPaths: options.stubRootPaths ?? this.lastStartOptions.stubRootPaths ?? [],
+    };
     this.cancelScheduledRestart();
 
     if (!this.executablePath) {
@@ -634,16 +642,8 @@ export class LuaLsProcessManager {
       this.emit('initialize-start');
       await this.transport.request('initialize', this.createInitializeParams(options.rootPath ?? null), this.initializeTimeoutMs);
       this.transport.notify('initialized', {});
-      this.transport.notify('workspace/didChangeConfiguration', {
-        settings: {
-          Lua: {
-            diagnostics: {
-              enableScheme: [...LUALS_VALID_SCHEMES],
-            },
-          },
-        },
-      });
       this.initialized = true;
+      this.refreshWorkspaceConfiguration(this.lastStartOptions);
       this.flushSynchronizedDocuments();
       this.runtime = createLuaLsCompanionRuntime({
         detail:
@@ -815,7 +815,37 @@ export class LuaLsProcessManager {
     await this.shutdown();
     this.shutdownRequested = false;
     this.restartAttemptIndex = 0;
-    return this.start({ rootPath: options.rootPath ?? this.lastStartOptions.rootPath ?? null });
+    return this.start({
+      rootPath: options.rootPath ?? this.lastStartOptions.rootPath ?? null,
+      stubRootPaths: options.stubRootPaths ?? this.lastStartOptions.stubRootPaths ?? [],
+    });
+  }
+
+  /**
+   * refreshWorkspaceConfiguration 함수.
+   * 현재 shadow root와 future stub root를 LuaLS `workspace/didChangeConfiguration`으로 다시 주입함.
+   *
+   * @param options - 재주입할 workspace root 및 future stub root 경로
+   */
+  refreshWorkspaceConfiguration(options: LuaLsProcessStartOptions = {}): void {
+    this.lastStartOptions = {
+      rootPath: options.rootPath ?? this.lastStartOptions.rootPath ?? null,
+      stubRootPaths: options.stubRootPaths ?? this.lastStartOptions.stubRootPaths ?? [],
+    };
+
+    if (!this.isTransportReady()) {
+      return;
+    }
+
+    this.transport?.notify(
+      'workspace/didChangeConfiguration',
+      createLuaLsWorkspaceConfiguration({
+        diagnosticsEnableSchemes: LUALS_VALID_SCHEMES,
+        rootPath: this.lastStartOptions.rootPath ?? null,
+        shadowRootPath: this.shadowWorkspace.rootPath,
+        stubRootPaths: this.lastStartOptions.stubRootPaths ?? [],
+      }),
+    );
   }
 
   private readonly handleStderrChunk = (chunk: Buffer | string): void => {
@@ -931,7 +961,10 @@ export class LuaLsProcessManager {
       }
 
       this.emit('restart-attempt');
-      void this.start({ rootPath: this.lastStartOptions.rootPath ?? null }).catch(() => undefined);
+      void this.start({
+        rootPath: this.lastStartOptions.rootPath ?? null,
+        stubRootPaths: this.lastStartOptions.stubRootPaths ?? [],
+      }).catch(() => undefined);
     }, nextDelayMs);
   }
 

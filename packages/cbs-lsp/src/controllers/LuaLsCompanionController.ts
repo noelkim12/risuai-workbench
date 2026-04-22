@@ -12,6 +12,7 @@ import type {
   HoverParams,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
+import { pathToFileURL } from 'node:url';
 
 import type { LuaLsCompanionRuntime } from '../core';
 import type { WorkspaceScanFile } from '../indexer';
@@ -28,6 +29,10 @@ import {
   type LuaLsRestartPolicyStatus,
 } from '../providers/lua/lualsProcess';
 import { createLuaLsProxy, type LuaLsProxy } from '../providers/lua/lualsProxy';
+import {
+  createRisuAiLuaTypeStubWorkspace,
+  type RisuAiLuaTypeStubWorkspace,
+} from '../providers/lua/typeStubs';
 
 /**
  * LuaLsCompanionController 클래스.
@@ -48,15 +53,59 @@ export class LuaLsCompanionController {
 
   private readonly proxy: LuaLsProxy;
 
+  private readonly typeStubWorkspace: RisuAiLuaTypeStubWorkspace;
+
   /**
    * constructor 함수.
    * process manager 위에 document router와 hover proxy를 함께 구성함.
    *
    * @param processManager - LuaLS sidecar lifecycle manager
+   * @param typeStubWorkspace - generated RisuAI Lua stub workspace helper
    */
-  constructor(private readonly processManager: LuaLsProcessManager) {
+  constructor(
+    private readonly processManager: LuaLsProcessManager,
+    typeStubWorkspace: RisuAiLuaTypeStubWorkspace = createRisuAiLuaTypeStubWorkspace(),
+  ) {
+    this.typeStubWorkspace = typeStubWorkspace;
+    this.typeStubWorkspace.syncRuntimeStub();
     this.documentRouter = createLuaLsDocumentRouter(processManager);
     this.proxy = createLuaLsProxy(processManager);
+  }
+
+  /**
+   * withInjectedStubRoots 함수.
+   * generated RisuAI stub file path를 caller option에 병합하고 같은 stub를 shadow workspace mirrored document로도 반영해 LuaLS companion lifecycle이 항상 같은 runtime symbol surface를 보게 함.
+   *
+   * @param options - 원본 LuaLS start/refresh/restart 옵션
+   * @returns generated stub file path가 포함된 start option
+   */
+  private withInjectedStubRoots(options: LuaLsProcessStartOptions = {}): LuaLsProcessStartOptions {
+    const runtimeStubFilePath = this.typeStubWorkspace.syncRuntimeStub();
+    this.syncGeneratedRuntimeStubDocument(runtimeStubFilePath);
+    return {
+      ...options,
+      stubRootPaths: [
+        ...new Set([runtimeStubFilePath, ...(options.stubRootPaths ?? [])]),
+      ],
+    };
+  }
+
+  /**
+   * syncGeneratedRuntimeStubDocument 함수.
+   * generated runtime stub를 LuaLS shadow workspace에도 mirrored document로 반영해 real companion이 same-workspace symbol index를 재사용하게 함.
+   *
+   * @param runtimeStubFilePath - 현재 generated runtime stub 절대 경로
+   */
+  private syncGeneratedRuntimeStubDocument(runtimeStubFilePath: string): void {
+    this.processManager.syncDocument({
+      sourceUri: pathToFileURL(runtimeStubFilePath).href,
+      sourceFilePath: runtimeStubFilePath,
+      transportUri: pathToFileURL(runtimeStubFilePath).href,
+      languageId: 'lua',
+      rootPath: null,
+      version: 'risu-runtime-stub-v1',
+      text: this.typeStubWorkspace.getRuntimeStubContents(),
+    });
   }
 
   /**
@@ -117,7 +166,7 @@ export class LuaLsCompanionController {
    * @returns 시작 이후 runtime 상태
    */
   start(rootPath: string | null): Promise<LuaLsCompanionRuntime> {
-    return this.processManager.start({ rootPath });
+    return this.processManager.start(this.withInjectedStubRoots({ rootPath }));
   }
 
   /**
@@ -128,7 +177,17 @@ export class LuaLsCompanionController {
    * @returns restart 이후 runtime 상태
    */
   restart(options: LuaLsProcessStartOptions = {}): Promise<LuaLsCompanionRuntime> {
-    return this.processManager.restart(options);
+    return this.processManager.restart(this.withInjectedStubRoots(options));
+  }
+
+  /**
+   * refreshWorkspaceConfiguration 함수.
+   * workspace rebuild 뒤에도 shadow root와 generated stub file path library 경로를 LuaLS에 다시 주입함.
+   *
+   * @param options - 재주입할 workspace root 및 stub file path 경로
+   */
+  refreshWorkspaceConfiguration(options: LuaLsProcessStartOptions = {}): void {
+    this.processManager.refreshWorkspaceConfiguration(this.withInjectedStubRoots(options));
   }
 
   /**
@@ -219,6 +278,7 @@ export class LuaLsCompanionController {
  */
 export function createLuaLsCompanionController(
   processManager: LuaLsProcessManager = createLuaLsProcessManager(),
+  typeStubWorkspace?: RisuAiLuaTypeStubWorkspace,
 ): LuaLsCompanionController {
-  return new LuaLsCompanionController(processManager);
+  return new LuaLsCompanionController(processManager, typeStubWorkspace);
 }

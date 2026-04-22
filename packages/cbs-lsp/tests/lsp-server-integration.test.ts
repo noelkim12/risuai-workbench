@@ -43,9 +43,14 @@ import { ElementRegistry, UnifiedVariableGraph } from '../src/indexer';
 import { registerServer } from '../src/server';
 import type {
   LuaLsProcessManager,
+  LuaLsProcessPrepareOptions,
   LuaLsPublishDiagnosticsEvent,
+  LuaLsProcessStartOptions,
 } from '../src/providers/lua/lualsProcess';
-import { createLuaLsTransportUri } from '../src/providers/lua/lualsDocuments';
+import {
+  createLuaLsTransportUri,
+  type LuaLsRoutedDocument,
+} from '../src/providers/lua/lualsDocuments';
 import { offsetToPosition, positionToOffset } from '../src/utils/position';
 import {
   getFixtureCorpusEntry,
@@ -68,12 +73,28 @@ function createDisposable() {
   };
 }
 
-type TestLuaLsProcessManagerStub = LuaLsProcessManager & {
+interface TestLuaLsProcessManagerStub {
+  checkHealth: () => ReturnType<typeof createLuaLsCompanionRuntime>;
+  closeDocument: (sourceUri: string) => void;
   emitPublishDiagnostics: (event: LuaLsPublishDiagnosticsEvent) => void;
-};
+  getRuntime: () => ReturnType<typeof createLuaLsCompanionRuntime>;
+  onPublishDiagnostics: (
+    listener: (event: LuaLsPublishDiagnosticsEvent) => void,
+  ) => () => void;
+  prepareForInitialize: (
+    options?: LuaLsProcessPrepareOptions,
+  ) => ReturnType<typeof createLuaLsCompanionRuntime>;
+  refreshWorkspaceConfiguration: (options?: LuaLsProcessStartOptions) => void;
+  request: (method: string, params?: unknown, timeoutMs?: number) => Promise<unknown>;
+  shutdown: () => Promise<ReturnType<typeof createLuaLsCompanionRuntime>>;
+  start: (
+    options?: LuaLsProcessStartOptions,
+  ) => Promise<ReturnType<typeof createLuaLsCompanionRuntime>>;
+  syncDocument: (document: LuaLsRoutedDocument) => void;
+}
 
 function createLuaLsProcessManagerStub(
-  overrides: Partial<LuaLsProcessManager> = {},
+  overrides: Partial<TestLuaLsProcessManagerStub> = {},
 ): TestLuaLsProcessManagerStub {
   const diagnosticsListeners = new Set<(event: LuaLsPublishDiagnosticsEvent) => void>();
 
@@ -111,6 +132,7 @@ function createLuaLsProcessManagerStub(
       }),
     ),
     request: async () => null,
+    refreshWorkspaceConfiguration: vi.fn(),
     shutdown: vi.fn(async () =>
       createLuaLsCompanionRuntime({
         detail: 'LuaLS sidecar lifecycle was shut down cleanly with the server.',
@@ -606,7 +628,7 @@ describe('LSP server integration', () => {
     const luaLsManager = createLuaLsProcessManagerStub();
 
     registerServer(connection as any, documents as any, {
-      createLuaLsProcessManager: () => luaLsManager,
+      createLuaLsProcessManager: (() => luaLsManager) as unknown as () => LuaLsProcessManager,
     });
 
     const initializeResult = connection.initializeHandler?.({
@@ -983,7 +1005,7 @@ describe('LSP server integration', () => {
     });
 
     registerServer(connection as any, documents as any, {
-      createLuaLsProcessManager: () => luaLsManager,
+      createLuaLsProcessManager: (() => luaLsManager) as unknown as () => LuaLsProcessManager,
     });
 
     connection.initializeHandler?.({ capabilities: {} } as InitializeParams);
@@ -1034,7 +1056,7 @@ describe('LSP server integration', () => {
     const luaLsManager = createLuaLsProcessManagerStub();
 
     registerServer(connection as any, documents as any, {
-      createLuaLsProcessManager: () => luaLsManager,
+      createLuaLsProcessManager: (() => luaLsManager) as unknown as () => LuaLsProcessManager,
     });
 
     const initializeResult = connection.initializeHandler?.({
@@ -1100,7 +1122,7 @@ describe('LSP server integration', () => {
     const luaLsManager = createLuaLsProcessManagerStub();
 
     registerServer(connection as any, documents as any, {
-      createLuaLsProcessManager: () => luaLsManager,
+      createLuaLsProcessManager: (() => luaLsManager) as unknown as () => LuaLsProcessManager,
     });
 
     const initializeResult = connection.initializeHandler?.({
@@ -1139,7 +1161,7 @@ describe('LSP server integration', () => {
     const lorebookUri = await writeWorkspaceFile(root, 'lorebooks/entry.risulorebook', lorebookText);
 
     registerServer(connection as any, documents as any, {
-      createLuaLsProcessManager: () => luaLsManager,
+      createLuaLsProcessManager: (() => luaLsManager) as unknown as () => LuaLsProcessManager,
     });
 
     documents.open(lorebookUri, lorebookText, 1);
@@ -1153,6 +1175,9 @@ describe('LSP server integration', () => {
       version: createSyntheticDocumentVersion(luaText),
       text: luaText,
     });
+    expect(luaLsManager.refreshWorkspaceConfiguration).toHaveBeenCalledWith({
+      rootPath: root,
+    });
   });
 
   it('applies runtime config precedence before initialize options when preparing standalone startup', () => {
@@ -1161,7 +1186,7 @@ describe('LSP server integration', () => {
     const luaLsManager = createLuaLsProcessManagerStub();
 
     registerServer(connection as any, documents as any, {
-      createLuaLsProcessManager: () => luaLsManager,
+      createLuaLsProcessManager: (() => luaLsManager) as unknown as () => LuaLsProcessManager,
       runtimeConfig: {
         logLevel: 'info',
         luaLsExecutablePath: '/cli/lua-language-server',
@@ -1234,7 +1259,7 @@ describe('LSP server integration', () => {
     const changedText = 'local mood = getState("nextMood")\n';
 
     registerServer(connection as any, documents as any, {
-      createLuaLsProcessManager: () => luaLsManager,
+      createLuaLsProcessManager: (() => luaLsManager) as unknown as () => LuaLsProcessManager,
     });
 
     documents.open(uri, initialText, 1, 'lua');
@@ -1300,7 +1325,7 @@ describe('LSP server integration', () => {
     const text = 'local user = "hi"\nreturn user\n';
 
     registerServer(connection as any, documents as any, {
-      createLuaLsProcessManager: () => luaLsManager,
+      createLuaLsProcessManager: (() => luaLsManager) as unknown as () => LuaLsProcessManager,
     });
     connection.initializeHandler?.({ capabilities: {} } as InitializeParams);
     connection.initializedHandler?.({});
@@ -1401,7 +1426,7 @@ describe('LSP server integration', () => {
     const text = 'local user = getState("user")\nreturn user\n';
 
     registerServer(connection as any, documents as any, {
-      createLuaLsProcessManager: () => luaLsManager,
+      createLuaLsProcessManager: (() => luaLsManager) as unknown as () => LuaLsProcessManager,
     });
     connection.initializeHandler?.({ capabilities: {} } as InitializeParams);
     connection.initializedHandler?.({});
@@ -1442,7 +1467,7 @@ describe('LSP server integration', () => {
     const text = 'local mood = missingValue\nreturn mood\n';
 
     registerServer(connection as any, documents as any, {
-      createLuaLsProcessManager: () => luaLsManager,
+      createLuaLsProcessManager: (() => luaLsManager) as unknown as () => LuaLsProcessManager,
     });
     connection.initializeHandler?.({
       capabilities: {
@@ -2089,7 +2114,7 @@ describe('LSP server integration', () => {
     const luaLsManager = createLuaLsProcessManagerStub();
 
     registerServer(connection as any, documents as any, {
-      createLuaLsProcessManager: () => luaLsManager,
+      createLuaLsProcessManager: (() => luaLsManager) as unknown as () => LuaLsProcessManager,
     });
     connection.initializeHandler?.({
       capabilities: {
@@ -2661,7 +2686,7 @@ describe('LSP server integration', () => {
     const luaLsManager = createLuaLsProcessManagerStub();
 
     registerServer(connection as any, documents as any, {
-      createLuaLsProcessManager: () => luaLsManager,
+      createLuaLsProcessManager: (() => luaLsManager) as unknown as () => LuaLsProcessManager,
     });
     connection.initializeHandler?.({ capabilities: {} } as InitializeParams);
     documents.open(uri, text, 1);

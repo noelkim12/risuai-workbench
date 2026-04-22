@@ -187,12 +187,6 @@ describe('diagnostic taxonomy contract', () => {
     expect(DEFERRED_SCOPE_CONTRACT).toEqual({
       deferredFeatures: ['lua-ast-fragment-routing'],
       featureAvailability: {
-        'lua-diagnostics': {
-          scope: 'deferred',
-          source: 'deferred-scope-contract:lua-diagnostics',
-          detail:
-            'Lua diagnostics proxy stays deferred until the server forwards LuaLS diagnostics notifications into host `publishDiagnostics` plumbing.',
-        },
         'lua-ast-fragment-routing': {
           scope: 'deferred',
           source: 'deferred-scope-contract:lua-ast-fragment-routing',

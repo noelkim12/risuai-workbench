@@ -28,6 +28,7 @@ import {
   createLuaLsShadowDocumentUri,
   createLuaLsShadowWorkspace,
 } from '../../src/providers/lua/lualsShadowWorkspace';
+import { createLuaLsWorkspaceConfiguration } from '../../src/providers/lua/lualsWorkspace';
 
 class FakeLuaLsChildProcess extends EventEmitter {
   exitCode: number | null = null;
@@ -338,15 +339,11 @@ describe('LuaLsProcessManager', () => {
     ]);
     expect(fakeTransport.notifications[1]).toEqual({
       method: 'workspace/didChangeConfiguration',
-      params: {
-        settings: {
-          Lua: {
-            diagnostics: {
-              enableScheme: ['file', 'risu-luals'],
-            },
-          },
-        },
-      },
+      params: createLuaLsWorkspaceConfiguration({
+        diagnosticsEnableSchemes: ['file', 'risu-luals'],
+        rootPath: '/workspace',
+        shadowRootPath: SHADOW_ROOT,
+      }),
     });
     expect(fakeTransport.notifications[2]).toEqual({
       method: 'textDocument/didOpen',
@@ -444,6 +441,63 @@ describe('LuaLsProcessManager', () => {
         sourceUri: openedDocument.sourceUri,
         transportUri: shadowTransportUri,
         version: 1,
+      },
+    ]);
+  });
+
+  it('reinjects workspace/library configuration after startup refreshes', async () => {
+    const fakeChild = new FakeLuaLsChildProcess();
+    const fakeTransport = new FakeLuaLsTransport(async (method) => {
+      if (method === 'initialize') {
+        return { capabilities: {} };
+      }
+
+      if (method === 'shutdown') {
+        fakeChild.kill();
+        return null;
+      }
+
+      throw new Error(`Unexpected request: ${method}`);
+    });
+    const manager = createLuaLsProcessManager({
+      createShadowWorkspace: () => createLuaLsShadowWorkspace(SHADOW_ROOT),
+      createTransport: {
+        create: () => fakeTransport,
+      },
+      healthCheckIntervalMs: 60_000,
+      resolveExecutablePath: () => '/mock/bin/lua-language-server',
+      shutdownTimeoutMs: 50,
+      spawnProcess: () => fakeChild as unknown as LuaLsSpawnedProcess,
+    });
+
+    manager.prepareForInitialize({ rootPath: '/workspace' });
+    await manager.start({ rootPath: '/workspace' });
+    manager.refreshWorkspaceConfiguration({
+      rootPath: '/workspace',
+      stubRootPaths: ['.generated/luals-stubs', '/workspace/vendor/luals'],
+    });
+
+    const didChangeConfigurationNotifications = fakeTransport.notifications.filter(
+      (entry) => entry.method === 'workspace/didChangeConfiguration',
+    );
+
+    expect(didChangeConfigurationNotifications).toEqual([
+      {
+        method: 'workspace/didChangeConfiguration',
+        params: createLuaLsWorkspaceConfiguration({
+          diagnosticsEnableSchemes: ['file', 'risu-luals'],
+          rootPath: '/workspace',
+          shadowRootPath: SHADOW_ROOT,
+        }),
+      },
+      {
+        method: 'workspace/didChangeConfiguration',
+        params: createLuaLsWorkspaceConfiguration({
+          diagnosticsEnableSchemes: ['file', 'risu-luals'],
+          rootPath: '/workspace',
+          shadowRootPath: SHADOW_ROOT,
+          stubRootPaths: ['.generated/luals-stubs', '/workspace/vendor/luals'],
+        }),
       },
     ]);
   });

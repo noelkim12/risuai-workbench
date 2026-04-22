@@ -273,6 +273,9 @@ export class WorkspaceRefreshController {
       this.workspaceStateRepository.replace(workspaceRoot, nextState);
       if (nextState) {
         this.luaLsCompanionController.syncWorkspaceDocuments(workspaceRoot, nextState.scanResult.files);
+        this.luaLsCompanionController.refreshWorkspaceConfiguration({
+          rootPath: workspaceRoot,
+        });
       } else {
         this.luaLsCompanionController.clearWorkspaceDocuments(workspaceRoot);
       }
