@@ -11,12 +11,18 @@ import {
   CBS_COMPLETION_TRIGGER_CHARACTERS,
   CompletionProvider,
 } from '../../src/features/completion';
+import type { VariableFlowService } from '../../src/services';
 import { offsetToPosition } from '../../src/utils/position';
 import {
   createFixtureRequest,
   getFixtureCorpusEntry,
   snapshotCompletionItems,
 } from '../fixtures/fixture-corpus';
+import {
+  createVariableFlowQueryResult,
+  createVariableFlowServiceStub,
+  createVariableOccurrence,
+} from './variable-flow-test-helpers';
 
 function locateNthOffset(text: string, needle: string, occurrence: number = 0): number {
   let fromIndex = 0;
@@ -47,10 +53,12 @@ function positionAt(
 function createProvider(
   service: FragmentAnalysisService,
   request: ReturnType<typeof createFixtureRequest>,
+  variableFlowService?: VariableFlowService,
 ): CompletionProvider {
   return new CompletionProvider(new CBSBuiltinRegistry(), {
     analysisService: service,
     resolveRequest: ({ textDocument }) => (textDocument.uri === request.uri ? request : null),
+    variableFlowService,
   });
 }
 
@@ -84,6 +92,54 @@ function extractCompletionCategory(completion: CompletionItem | undefined) {
 
 function extractCompletionExplanation(completion: CompletionItem | undefined) {
   return (completion?.data as AgentMetadataEnvelope | undefined)?.cbs.explanation;
+}
+
+/**
+ * createWorkspaceChatVariableService 함수.
+ * completion 테스트에서 workspace persistent chat variable graph 후보를 흉내 내는 Layer 3 stub을 만듦.
+ *
+ * @param variableNames - workspace graph에 있다고 가정할 chat variable 이름 목록
+ * @returns CompletionProvider에 주입할 VariableFlowService stub
+ */
+function createWorkspaceChatVariableService(...variableNames: string[]): VariableFlowService {
+  return createVariableFlowServiceStub({
+    getAllVariableNames: () => variableNames,
+    queryVariable: (variableName) => {
+      if (!variableNames.includes(variableName)) {
+        return null;
+      }
+
+      return createVariableFlowQueryResult(
+        variableName,
+        [
+          createVariableOccurrence({
+            direction: 'write',
+            uri: `file:///workspace/${variableName}.risuprompt`,
+            relativePath: `prompt_template/${variableName}.risuprompt`,
+            range: {
+              start: { line: 4, character: 11 },
+              end: { line: 4, character: 11 + variableName.length },
+            },
+            sourceName: 'setvar',
+            variableName,
+          }),
+        ],
+        [
+          createVariableOccurrence({
+            direction: 'read',
+            uri: `file:///workspace/${variableName}-reader.risulorebook`,
+            relativePath: `lorebooks/${variableName}-reader.risulorebook`,
+            range: {
+              start: { line: 4, character: 11 },
+              end: { line: 4, character: 11 + variableName.length },
+            },
+            sourceName: 'getvar',
+            variableName,
+          }),
+        ],
+      );
+    },
+  });
 }
 
 describe('CompletionProvider', () => {
@@ -283,6 +339,55 @@ describe('CompletionProvider', () => {
       expectCompletionLabels(variableCompletions, '$score');
       expectCompletionLabels(operatorCompletions, '&&', 'null');
       expectNoCompletionLabels(variableCompletions, 'setvar', 'getvar');
+    });
+
+    it('appends workspace chat variables after fragment-local $var candidates', () => {
+      const entry = getFixtureCorpusEntry('lorebook-calc-expression-context');
+      const request = createFixtureRequest(entry);
+      const modifiedText = entry.text.replace('{{? $score + @bonus}}', '{{? $}}');
+      const modifiedRequest = { ...request, text: modifiedText };
+      const provider = createProvider(
+        new FragmentAnalysisService(),
+        modifiedRequest,
+        createWorkspaceChatVariableService('shared', 'score'),
+      );
+      const completions = provider.provide(
+        createParams(modifiedRequest, offsetToPosition(modifiedText, modifiedText.indexOf('{{? $') + 4)),
+      );
+
+      const scoreIndex = completions.findIndex((completion) => completion.label === '$score');
+      const sharedIndex = completions.findIndex((completion) => completion.label === '$shared');
+
+      expectCompletionLabels(completions, '$score', '$shared', '@bonus');
+      expect(scoreIndex).toBeGreaterThanOrEqual(0);
+      expect(sharedIndex).toBeGreaterThan(scoreIndex);
+      expect(completions.find((completion) => completion.label === '$shared')?.detail).toBe(
+        'Workspace chat variable for calc expression',
+      );
+      expect(extractCompletionExplanation(completions.find((completion) => completion.label === '$shared'))).toEqual({
+        reason: 'scope-analysis',
+        source: 'workspace-chat-variable-graph:calc-expression',
+        detail:
+          'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local `$var` symbols.',
+      });
+    });
+
+    it('does not mix workspace chat variables into @global expression completion', () => {
+      const entry = getFixtureCorpusEntry('lorebook-calc-expression-context');
+      const request = createFixtureRequest(entry);
+      const modifiedText = entry.text.replace('{{calc::$score + @bonus}}', '{{calc::@bo}}');
+      const modifiedRequest = { ...request, text: modifiedText };
+      const provider = createProvider(
+        new FragmentAnalysisService(),
+        modifiedRequest,
+        createWorkspaceChatVariableService('shared'),
+      );
+      const completions = provider.provide(
+        createParams(modifiedRequest, offsetToPosition(modifiedText, modifiedText.indexOf('@bo') + 3)),
+      );
+
+      expectCompletionLabels(completions, '@bonus');
+      expectNoCompletionLabels(completions, '$shared');
     });
 
     it('replaces partial operator prefixes instead of appending duplicate operator text', () => {
@@ -828,9 +933,65 @@ describe('CompletionProvider', () => {
       expect(extractCompletionExplanation(completions.find((item) => item.label === 'mood'))).toEqual({
         reason: 'scope-analysis',
         source: 'chat-variable-symbol-table',
-        detail:
-          'Completion resolved this candidate from analyzed chat/global variable definitions in the current fragment.',
+        detail: 'Completion resolved this candidate from analyzed chat-variable definitions in the current fragment.',
       });
+    });
+
+    it('appends workspace chat variables after fragment-local chat candidates and keeps sources distinct', () => {
+      const entry = getFixtureCorpusEntry('lorebook-setvar-macro');
+      const request = createFixtureRequest(entry);
+      const modifiedText = entry.text.replace('}}', '}}{{getvar::}}');
+      const modifiedRequest = { ...request, text: modifiedText };
+      const provider = createProvider(
+        new FragmentAnalysisService(),
+        modifiedRequest,
+        createWorkspaceChatVariableService('shared', 'mood'),
+      );
+      const completions = provider.provide(
+        createParams(
+          modifiedRequest,
+          offsetToPosition(modifiedText, modifiedText.indexOf('{{getvar::') + '{{getvar::'.length),
+        ),
+      );
+
+      const moodIndex = completions.findIndex((completion) => completion.label === 'mood');
+      const sharedIndex = completions.findIndex((completion) => completion.label === 'shared');
+      const sharedCompletion = completions.find((completion) => completion.label === 'shared');
+
+      expectCompletionLabels(completions, 'mood', 'shared');
+      expect(moodIndex).toBeGreaterThanOrEqual(0);
+      expect(sharedIndex).toBeGreaterThan(moodIndex);
+      expect(sharedCompletion?.detail).toBe('Workspace chat variable');
+      expect(sharedCompletion?.sortText).toBe('zzzz-workspace-shared');
+      expect(extractCompletionExplanation(sharedCompletion)).toEqual({
+        reason: 'scope-analysis',
+        source: 'workspace-chat-variable-graph:macro-argument',
+        detail:
+          'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local chat-variable symbols.',
+      });
+    });
+
+    it('offers the same workspace chat candidates for setvar first-argument completion', () => {
+      const entry = getFixtureCorpusEntry('lorebook-setvar-macro');
+      const request = createFixtureRequest(entry);
+      const modifiedText = entry.text.replace('}}', '}}{{setvar::}}');
+      const modifiedRequest = { ...request, text: modifiedText };
+      const provider = createProvider(
+        new FragmentAnalysisService(),
+        modifiedRequest,
+        createWorkspaceChatVariableService('shared'),
+      );
+      const completions = provider.provide(
+        createParams(
+          modifiedRequest,
+          offsetToPosition(modifiedText, modifiedText.indexOf('{{setvar::') + '{{setvar::'.length),
+        ),
+      );
+
+      expectCompletionLabels(completions, 'mood', 'shared');
+      expect(completions.find((completion) => completion.label === 'shared')?.detail).toBe(
+        'Workspace chat variable',
+      );
     });
 
     it('filters chat variables by prefix when typing', () => {
@@ -908,6 +1069,26 @@ describe('CompletionProvider', () => {
       expect(completions.length).toBeGreaterThan(0);
       expect(completions.some((c) => c.label === 'cache')).toBe(true);
       expect(completions.every((c) => c.kind === 6)).toBe(true); // CompletionItemKind.Variable = 6
+    });
+
+    it('does not mix workspace chat variables into temp-variable completion', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const tempText = entry.text.replace('{{user}}', '{{settempvar::cache::value}}{{gettempvar::}}');
+      const tempRequest = { ...createFixtureRequest(entry), text: tempText };
+      const provider = createProvider(
+        new FragmentAnalysisService(),
+        tempRequest,
+        createWorkspaceChatVariableService('shared'),
+      );
+      const completions = provider.provide(
+        createParams(
+          tempRequest,
+          offsetToPosition(tempText, tempText.indexOf('{{gettempvar::') + '{{gettempvar::'.length),
+        ),
+      );
+
+      expectCompletionLabels(completions, 'cache');
+      expectNoCompletionLabels(completions, 'shared');
     });
 
     it('returns no completions for incomplete gettempvar syntax', () => {

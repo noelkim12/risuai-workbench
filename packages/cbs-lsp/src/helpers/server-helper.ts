@@ -231,6 +231,19 @@ export class ServerFeatureRegistrar {
     });
   }
 
+  private createCompletionProvider(uri: string): CompletionProvider {
+    const variableFlowService = this.resolveWorkspaceVariableFlowServiceByUri(uri);
+    if (!variableFlowService) {
+      return this.completionProvider;
+    }
+
+    return new CompletionProvider(this.registry, {
+      analysisService: fragmentAnalysisService,
+      resolveRequest: ({ textDocument }) => this.resolveRequest(textDocument.uri),
+      variableFlowService,
+    });
+  }
+
   private registerCodeActionHandler(): void {
     this.connection.onCodeAction((params: CodeActionParams, cancellationToken): CodeAction[] => {
       return this.requestRunner.runSync({
@@ -300,7 +313,7 @@ export class ServerFeatureRegistrar {
         feature: 'completion',
         getUri: (requestParams) => requestParams.textDocument.uri,
         params,
-        run: () => this.completionProvider.provide(params, cancellationToken),
+        run: () => this.createCompletionProvider(params.textDocument.uri).provide(params, cancellationToken),
         summarize: (result) => ({ count: result.length }),
         token: cancellationToken,
       });

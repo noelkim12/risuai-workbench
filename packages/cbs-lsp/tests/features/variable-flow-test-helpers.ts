@@ -24,6 +24,7 @@ export interface VariableOccurrenceSeed {
 }
 
 export interface VariableFlowServiceStubOptions {
+  getAllVariableNames?: () => readonly string[];
   queryVariable?: (variableName: string) => VariableFlowQueryResult | null;
   queryAt?: (uri: string, hostOffset: number) => VariableFlowQueryResult | null;
 }
@@ -115,6 +116,7 @@ export function createVariableFlowServiceStub(
   options: VariableFlowServiceStubOptions,
 ): VariableFlowService {
   return {
+    getAllVariableNames: options.getAllVariableNames ?? (() => []),
     queryVariable: options.queryVariable ?? (() => null),
     queryAt: options.queryAt ?? (() => null),
   } as unknown as VariableFlowService;

@@ -2176,6 +2176,47 @@ describe('LSP server integration', () => {
     expect(markdown).toContain('prompt_template/writer.risuprompt (line 5, character 11)');
   });
 
+  it('routes CBS completion through the server seam and appends workspace chat variables after local candidates', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const readerText = lorebookDocument(['{{setvar::localOnly::ready}}', '{{getvar::}}']);
+    const writerText = promptDocument(['{{setvar::shared::from-workspace}}']);
+    const readerUri = await writeWorkspaceFile(root, 'lorebooks/completion-reader.risulorebook', readerText);
+    await writeWorkspaceFile(root, 'prompt_template/completion-writer.risuprompt', writerText);
+
+    registerServer(connection as any, documents as any);
+    documents.open(readerUri, readerText, 1);
+
+    const completionItems = getCompletionItems(
+      connection.completionHandler?.(
+        {
+          textDocument: { uri: readerUri },
+          position: positionAt(readerText, '{{getvar::', '{{getvar::'.length),
+        },
+        createCancellationToken(false),
+      ),
+    );
+    const localIndex = completionItems.findIndex((item) => item.label === 'localOnly');
+    const workspaceIndex = completionItems.findIndex((item) => item.label === 'shared');
+    const workspaceCompletion = completionItems.find((item) => item.label === 'shared');
+
+    expect(localIndex).toBeGreaterThanOrEqual(0);
+    expect(workspaceIndex).toBeGreaterThan(localIndex);
+    expect(workspaceCompletion).toMatchObject({
+      detail: 'Workspace chat variable',
+      sortText: 'zzzz-workspace-shared',
+      data: {
+        cbs: expect.objectContaining({
+          explanation: expect.objectContaining({
+            reason: 'scope-analysis',
+            source: 'workspace-chat-variable-graph:macro-argument',
+          }),
+        }),
+      },
+    });
+  });
+
   it('keeps rename on the no-op path when a same-URI workspace merge would touch a sibling fragment', async () => {
     const connection = new FakeConnection();
     const documents = new FakeDocuments();
@@ -2605,8 +2646,7 @@ describe('LSP server integration', () => {
               explanation: {
                 reason: 'scope-analysis',
                 source: 'chat-variable-symbol-table',
-                detail:
-                  'Completion resolved this candidate from analyzed chat/global variable definitions in the current fragment.',
+                detail: 'Completion resolved this candidate from analyzed chat-variable definitions in the current fragment.',
               },
             }),
           },

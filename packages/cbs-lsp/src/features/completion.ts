@@ -33,6 +33,7 @@ import {
   type CompletionTriggerContext,
 } from '../core';
 import { collectVisibleLoopBindingsFromNodePath } from '../analyzer/scopeAnalyzer';
+import type { VariableFlowService } from '../services';
 import { CbsLspTextHelper } from '../helpers/text-helper';
 import { isRequestCancelled } from '../utils/request-cancellation';
 
@@ -43,6 +44,7 @@ export type CompletionRequestResolver = (
 export interface CompletionProviderOptions {
   analysisService?: FragmentAnalysisService;
   resolveRequest?: CompletionRequestResolver;
+  variableFlowService?: VariableFlowService;
 }
 
 /**
@@ -369,12 +371,15 @@ export class CompletionProvider {
 
   private readonly resolveRequest: CompletionRequestResolver;
 
+  private readonly variableFlowService: VariableFlowService | null;
+
   constructor(
     private readonly registry: CBSBuiltinRegistry,
     options: CompletionProviderOptions = {},
   ) {
     this.analysisService = options.analysisService ?? fragmentAnalysisService;
     this.resolveRequest = options.resolveRequest ?? (() => null);
+    this.variableFlowService = options.variableFlowService ?? null;
   }
 
   provide(params: TextDocumentPositionParams, cancellationToken?: CancellationToken): CompletionItem[] {
@@ -495,7 +500,7 @@ export class CompletionProvider {
     const variables = symbolTable.getAllVariables();
     const normalizedPrefix = prefix.toLowerCase();
 
-    const variableCompletions = variables
+    const localVariableCompletions = variables
       .filter((variable) => {
         if (referenceKind === 'chat') {
           return variable.kind === 'chat' && variable.name.toLowerCase().startsWith(normalizedPrefix);
@@ -540,8 +545,19 @@ export class CompletionProvider {
         } satisfies CompletionItem;
       });
 
+    const workspaceVariableCompletions =
+      referenceKind === 'global'
+        ? []
+        : this.buildWorkspaceChatVariableCompletions({
+            existingLabels: new Set(localVariableCompletions.map((completion) => completion.label)),
+            insertBareName: referenceKind === 'chat',
+            labelPrefix: '$',
+            prefix,
+            usage: 'calc-expression',
+          });
+
     if (referenceKind) {
-      return variableCompletions;
+      return [...localVariableCompletions, ...workspaceVariableCompletions];
     }
 
     const operatorCompletions = CALC_OPERATORS.filter((operator) =>
@@ -567,7 +583,7 @@ export class CompletionProvider {
         }) satisfies CompletionItem,
     );
 
-    return [...variableCompletions, ...operatorCompletions];
+    return [...localVariableCompletions, ...workspaceVariableCompletions, ...operatorCompletions];
   }
 
   private buildAllFunctionCompletions(prefix: string): CompletionItem[] {
@@ -725,36 +741,143 @@ export class CompletionProvider {
 
     const matchingVars = variables.filter(
       (v) =>
-        (kind === 'chat' ? v.kind === 'chat' || v.kind === 'global' : v.kind === 'temp') &&
+        (kind === 'chat' ? v.kind === 'chat' : v.kind === 'temp') &&
         v.name.toLowerCase().startsWith(prefix.toLowerCase()),
     );
 
-    return matchingVars.map((v) => ({
-      label: v.name,
-      kind: CompletionItemKind.Variable,
-      data: this.createCategoryData({
-        category: 'variable',
-        kind:
-          v.kind === 'global'
-            ? 'global-variable'
-            : v.kind === 'temp'
-              ? 'temp-variable'
-              : v.kind === 'loop'
-                ? 'chat-variable'
-                : 'chat-variable',
-      }, this.createScopeExplanation(
-        kind === 'temp' ? 'temp-variable-symbol-table' : 'chat-variable-symbol-table',
-        kind === 'temp'
-          ? 'Completion resolved this candidate from analyzed temp-variable definitions in the current fragment.'
-          : 'Completion resolved this candidate from analyzed chat/global variable definitions in the current fragment.',
-      )),
-      detail: kind === 'chat' ? 'Chat variable' : 'Temp variable',
-      documentation: {
-        kind: 'markdown',
-        value: `Variable **${v.name}** (${v.kind})\n\n- Definitions: ${v.definitionRanges.length}\n- References: ${v.references.length}`,
-      },
-      insertText: v.name,
-    }));
+    const localCompletions = matchingVars.map(
+      (v) =>
+        ({
+          label: v.name,
+          kind: CompletionItemKind.Variable,
+          data: this.createCategoryData({
+            category: 'variable',
+            kind:
+              v.kind === 'global'
+                ? 'global-variable'
+                : v.kind === 'temp'
+                  ? 'temp-variable'
+                  : v.kind === 'loop'
+                    ? 'chat-variable'
+                    : 'chat-variable',
+          }, this.createScopeExplanation(
+            kind === 'temp' ? 'temp-variable-symbol-table' : 'chat-variable-symbol-table',
+            kind === 'temp'
+              ? 'Completion resolved this candidate from analyzed temp-variable definitions in the current fragment.'
+              : 'Completion resolved this candidate from analyzed chat-variable definitions in the current fragment.',
+          )),
+          detail: kind === 'chat' ? 'Chat variable' : 'Temp variable',
+          documentation: {
+            kind: 'markdown',
+            value: `Variable **${v.name}** (${v.kind})\n\n- Definitions: ${v.definitionRanges.length}\n- References: ${v.references.length}`,
+          },
+          insertText: v.name,
+        }) satisfies CompletionItem,
+    );
+
+    if (kind !== 'chat') {
+      return localCompletions;
+    }
+
+    const workspaceCompletions = this.buildWorkspaceChatVariableCompletions({
+      existingLabels: new Set(localCompletions.map((completion) => completion.label)),
+      insertBareName: true,
+      labelPrefix: '',
+      prefix,
+      usage: 'macro-argument',
+    });
+
+    return [...localCompletions, ...workspaceCompletions];
+  }
+
+  /**
+   * buildWorkspaceChatVariableCompletions 함수.
+   * 현재 fragment-local 후보 뒤에 붙일 workspace persistent chat variable completion item을 생성함.
+   *
+   * @param options - prefix, insertion mode, local dedupe 정보
+   * @returns workspace chat variable completion item 배열
+   */
+  private buildWorkspaceChatVariableCompletions(options: {
+    existingLabels: ReadonlySet<string>;
+    insertBareName: boolean;
+    labelPrefix: '' | '$';
+    prefix: string;
+    usage: 'macro-argument' | 'calc-expression';
+  }): CompletionItem[] {
+    if (!this.variableFlowService) {
+      return [];
+    }
+
+    const normalizedPrefix = options.prefix.toLowerCase();
+
+    return this.variableFlowService
+      .getAllVariableNames()
+      .filter((variableName) => {
+        if (!variableName.toLowerCase().startsWith(normalizedPrefix)) {
+          return false;
+        }
+
+        const query = this.variableFlowService?.queryVariable(variableName);
+        if (!query || query.writers.length === 0) {
+          return false;
+        }
+
+        return !options.existingLabels.has(`${options.labelPrefix}${variableName}`);
+      })
+      .map((variableName) => {
+        const query = this.variableFlowService?.queryVariable(variableName);
+        const readerCount = query?.readers.length ?? 0;
+        const writerCount = query?.writers.length ?? 0;
+        const label = `${options.labelPrefix}${variableName}`;
+        const detail =
+          options.usage === 'calc-expression'
+            ? 'Workspace chat variable for calc expression'
+            : 'Workspace chat variable';
+        const documentation =
+          options.usage === 'calc-expression'
+            ? [
+                `**Workspace chat variable:** \`${variableName}\``,
+                '',
+                '- Source: workspace persistent chat-variable graph',
+                '- Usage: append after fragment-local `$var` candidates inside the shared CBS expression sublanguage.',
+                `- Workspace readers: ${readerCount}`,
+                `- Workspace writers: ${writerCount}`,
+              ].join('\n')
+            : [
+                `**Workspace chat variable:** \`${variableName}\``,
+                '',
+                '- Source: workspace persistent chat-variable graph',
+                '- Usage: append after fragment-local `getvar` / `setvar` candidates so local symbols stay first.',
+                `- Workspace readers: ${readerCount}`,
+                `- Workspace writers: ${writerCount}`,
+              ].join('\n');
+
+        return {
+          label,
+          kind: CompletionItemKind.Variable,
+          data: this.createCategoryData(
+            {
+              category: 'variable',
+              kind: 'chat-variable',
+            },
+            this.createScopeExplanation(
+              options.usage === 'calc-expression'
+                ? 'workspace-chat-variable-graph:calc-expression'
+                : 'workspace-chat-variable-graph:macro-argument',
+              options.usage === 'calc-expression'
+                ? 'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local `$var` symbols.'
+                : 'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local chat-variable symbols.',
+            ),
+          ),
+          detail,
+          documentation: {
+            kind: 'markdown',
+            value: documentation,
+          },
+          insertText: options.insertBareName ? variableName : label,
+          sortText: `zzzz-workspace-${variableName}`,
+        } satisfies CompletionItem;
+      });
   }
 
   private buildFunctionCompletions(
