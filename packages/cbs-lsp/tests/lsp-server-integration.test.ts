@@ -51,6 +51,7 @@ import {
   createLuaLsTransportUri,
   type LuaLsRoutedDocument,
 } from '../src/providers/lua/lualsDocuments';
+import { normalizeLuaHoverForSnapshot } from '../src/providers/lua/lualsProxy';
 import { offsetToPosition, positionToOffset } from '../src/utils/position';
 import {
   getFixtureCorpusEntry,
@@ -1143,7 +1144,9 @@ describe('LSP server integration', () => {
     connection.initializedHandler?.({});
     await Promise.resolve();
 
-    expect(luaLsManager.start).toHaveBeenCalledWith({ rootPath: '/workspace-root' });
+    expect(luaLsManager.start).toHaveBeenCalledWith(
+      expect.objectContaining({ rootPath: '/workspace-root' }),
+    );
 
     await connection.shutdown();
 
@@ -1175,9 +1178,11 @@ describe('LSP server integration', () => {
       version: createSyntheticDocumentVersion(luaText),
       text: luaText,
     });
-    expect(luaLsManager.refreshWorkspaceConfiguration).toHaveBeenCalledWith({
-      rootPath: root,
-    });
+    expect(luaLsManager.refreshWorkspaceConfiguration).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rootPath: root,
+      }),
+    );
   });
 
   it('applies runtime config precedence before initialize options when preparing standalone startup', () => {
@@ -1442,12 +1447,127 @@ describe('LSP server integration', () => {
 
     expect(getCompletionItems(completion ?? null)).toEqual([{ label: 'getState' }]);
     expect(requestSpy).toHaveBeenCalledTimes(1);
-    expect(connection.traceMessages).toEqual(
+  expect(connection.traceMessages).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ message: '[cbs-lsp:luaProxy] completion-start' }),
         expect.objectContaining({ message: '[cbs-lsp:luaProxy] completion-end' }),
       ]),
     );
+  });
+
+  it('merges VariableGraph state-key overlay completions into `.risulua` LuaLS results for getState string arguments', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const luaText = 'local user = getState("sh")\nreturn user\n';
+    const writerText = promptDocument(['{{setvar::shared::ready}}', '{{setvar::shadow::ok}}']);
+    const luaUri = await writeWorkspaceFile(root, 'lua/completion.risulua', luaText);
+    await writeWorkspaceFile(root, 'prompt_template/writer.risuprompt', writerText);
+    const requestSpy = vi.fn(async () => {
+      return {
+        isIncomplete: false,
+        items: [{ label: 'getState(' }, { label: 'getLoreBooks(' }],
+      } as CompletionList;
+    });
+    const luaLsManager = createLuaLsProcessManagerStub({
+      getRuntime: vi.fn(() =>
+        createLuaLsCompanionRuntime({
+          detail: 'LuaLS sidecar is ready to serve proxied completion requests.',
+          executablePath: '/mock/luals',
+          health: 'healthy',
+          status: 'ready',
+        }),
+      ),
+      request: requestSpy,
+    });
+
+    registerServer(connection as any, documents as any, {
+      createLuaLsProcessManager: (() => luaLsManager) as unknown as () => LuaLsProcessManager,
+    });
+    documents.open(luaUri, luaText, 1, 'lua');
+
+    const completion = await connection.completionHandler?.(
+      {
+        textDocument: { uri: luaUri },
+        position: positionAt(luaText, 'sh', 2),
+      },
+      createCancellationToken(false),
+    );
+
+    expect(getCompletionItems(completion ?? null).map((item) => item.label)).toEqual([
+      'shadow',
+      'shared',
+      'getState(',
+      'getLoreBooks(',
+    ]);
+    expect(requestSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('merges read-only cross-language bridge hover into `.risulua` LuaLS hover for getState string arguments', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const luaText = 'local mood = getState("shared")\nreturn mood\n';
+    const writerText = promptDocument(['{{setvar::shared::ready}}']);
+    const readerText = promptDocument(['{{getvar::shared}}']);
+    const luaUri = await writeWorkspaceFile(root, 'lua/hover-bridge.risulua', luaText);
+    await writeWorkspaceFile(root, 'prompt_template/writer.risuprompt', writerText);
+    await writeWorkspaceFile(root, 'prompt_template/reader.risuprompt', readerText);
+    const requestSpy = vi.fn(async () => {
+      return {
+        contents: {
+          kind: 'markdown',
+          value: '```lua\nlocal mood: string\n```',
+        },
+      };
+    });
+    const luaLsManager = createLuaLsProcessManagerStub({
+      getRuntime: vi.fn(() =>
+        createLuaLsCompanionRuntime({
+          detail: 'LuaLS sidecar is ready to serve proxied hover requests.',
+          executablePath: '/mock/luals',
+          health: 'healthy',
+          status: 'ready',
+        }),
+      ),
+      request: requestSpy,
+    });
+
+    registerServer(connection as any, documents as any, {
+      createLuaLsProcessManager: (() => luaLsManager) as unknown as () => LuaLsProcessManager,
+    });
+    documents.open(luaUri, luaText, 1, 'lua');
+
+    const hover = await connection.hoverHandler?.(
+      {
+        textDocument: { uri: luaUri },
+        position: positionAt(luaText, 'shared', 2),
+      },
+      createCancellationToken(false),
+    );
+
+    expect(normalizeLuaHoverForSnapshot(hover ?? null)).toEqual({
+      contents: {
+        kind: 'markdown',
+        value: expect.stringContaining('**Workspace state bridge:** `shared`'),
+      },
+      range: null,
+    });
+    expect(normalizeLuaHoverForSnapshot(hover ?? null)?.contents.value).toContain(
+      '```lua\nlocal mood: string\n```',
+    );
+    expect(normalizeLuaHoverForSnapshot(hover ?? null)?.contents.value).toContain(
+      'Current Lua access: reads via `getState`',
+    );
+    expect(normalizeLuaHoverForSnapshot(hover ?? null)?.contents.value).toContain('Lua writers: 0');
+    expect(normalizeLuaHoverForSnapshot(hover ?? null)?.contents.value).toContain('CBS writers: 1');
+    expect(normalizeLuaHoverForSnapshot(hover ?? null)?.contents.value).toContain(
+      'prompt_template/writer.risuprompt',
+    );
+    expect(normalizeLuaHoverForSnapshot(hover ?? null)?.contents.value).toContain(
+      'Workspace issues: uninitialized-read, phase-order-risk',
+    );
+    expect(requestSpy).toHaveBeenCalledTimes(1);
   });
 
   it('publishes `.risulua` diagnostics through the LuaLS sidecar seam and starts unavailable by default', async () => {

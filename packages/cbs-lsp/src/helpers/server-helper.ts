@@ -50,6 +50,12 @@ import { SignatureHelpProvider } from '../features/signature';
 import { RequestHandlerRunner } from '../handlers/RequestHandlerRunner';
 import { CbsLspPathHelper } from './path-helper';
 import { shouldRouteDocumentToLuaLs } from '../providers/lua/lualsDocuments';
+import {
+  buildLuaStateHoverOverlayMarkdown,
+  buildLuaStateNameOverlayCompletions,
+  mergeLuaHoverResponse,
+  mergeLuaCompletionResponse,
+} from '../providers/lua/responseMerger';
 import { traceFeatureRequest, traceFeatureResult } from '../utils/server-tracing';
 import { VariableFlowService } from '../services';
 
@@ -242,12 +248,23 @@ export class ServerFeatureRegistrar {
           feature: 'completion',
           getUri: (requestParams) => requestParams.textDocument.uri,
           params,
-          run: () => {
+          run: async () => {
+            const workspaceRequest = this.resolveWorkspaceRequest(params.textDocument.uri);
+            const workspaceVariableFlowService = this.resolveWorkspaceVariableFlowServiceByUri(
+              params.textDocument.uri,
+            );
             traceFeatureRequest(this.connection, 'luaProxy', 'completion-start', {
               uri: params.textDocument.uri,
               companionStatus: this.luaLsProxy.getRuntime().status,
             });
-            return this.luaLsProxy.provideCompletion(params, cancellationToken);
+            const luaCompletion = await this.luaLsProxy.provideCompletion(params, cancellationToken);
+            const overlay = buildLuaStateNameOverlayCompletions({
+              params,
+              request: workspaceRequest,
+              variableFlowService: workspaceVariableFlowService,
+            });
+
+            return mergeLuaCompletionResponse(luaCompletion, overlay);
           },
           summarize: (result) => {
             const count = Array.isArray(result) ? result.length : result.items.length;
@@ -429,18 +446,29 @@ export class ServerFeatureRegistrar {
           companionStatus: this.luaLsProxy.getRuntime().status,
         });
 
+        const workspaceRequest = this.resolveRequest(params.textDocument.uri);
+        const workspaceVariableFlowService = this.resolveWorkspaceVariableFlowServiceByUri(
+          params.textDocument.uri,
+        );
+
         return this.luaLsProxy.provideHover(params, cancellationToken).then((result) => {
+          const overlayMarkdown = buildLuaStateHoverOverlayMarkdown({
+            params,
+            request: workspaceRequest,
+            variableFlowService: workspaceVariableFlowService,
+          });
+          const mergedHover = mergeLuaHoverResponse(result, overlayMarkdown);
           traceFeatureResult(this.connection, 'luaProxy', 'hover-end', {
             uri: params.textDocument.uri,
             companionStatus: this.luaLsProxy.getRuntime().status,
-            hasResult: result !== null,
+            hasResult: mergedHover !== null,
           });
           traceFeatureResult(this.connection, 'hover', 'end', {
             uri: params.textDocument.uri,
-            hasResult: result !== null,
+            hasResult: mergedHover !== null,
             source: 'luaProxy',
           });
-          return result;
+          return mergedHover;
         });
       }
 
