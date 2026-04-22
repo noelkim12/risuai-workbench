@@ -14,6 +14,7 @@ import {
 import {
   createConnection,
   type Connection,
+  type DidChangeConfigurationParams,
   DidChangeWatchedFilesNotification,
   type DidChangeWatchedFilesParams,
   type InitializeParams,
@@ -45,7 +46,9 @@ import { SignatureHelpProvider } from './features/signature';
 
 
 import {
+  collectRuntimeConfigReloadGuidance,
   type CbsLspRuntimeConfigOverrides,
+  diffResolvedRuntimeConfig,
   resolveRuntimeConfig,
 } from './config/runtime-config';
 import {
@@ -72,6 +75,7 @@ import {
   traceFeatureRequest,
   traceFeaturePayload,
   traceFeatureResult,
+  warnFeature,
 } from './utils/server-tracing';
 import { createInitializeResult } from './server/capabilities';
 import { registerExecuteCommandHandler } from './server/commands';
@@ -119,8 +123,11 @@ export interface ServerStartOptions {
 }
 
 interface ServerRuntimeState {
+  initializeParams: InitializeParams | null;
   initializeWorkspaceRoot: ResolvedInitializeWorkspaceRoot;
   resolvedRuntimeConfig: ReturnType<typeof resolveRuntimeConfig>;
+  runtimeSettings: unknown;
+  serverInitialized: boolean;
   workspaceClientState: WorkspaceClientState;
 }
 
@@ -156,14 +163,39 @@ function createServerRuntimeState(options: ServerRegistrationOptions): ServerRun
   configureServerTracing(resolvedRuntimeConfig.config.logLevel);
 
   return {
+    initializeParams: null,
     initializeWorkspaceRoot: {
       rootPath: null,
       source: 'none',
       workspaceFolderCount: 0,
     },
     resolvedRuntimeConfig,
+    runtimeSettings: undefined,
+    serverInitialized: false,
     workspaceClientState: createDefaultWorkspaceClientState(),
   };
+}
+
+/**
+ * shouldRestartLuaLsForConfigReload 함수.
+ * runtime config reload 결과가 LuaLS companion 재기동까지 필요한지 판별함.
+ *
+ * @param previousRuntimeConfig - 변경 전 resolved runtime config
+ * @param nextRuntimeConfig - 변경 후 resolved runtime config
+ * @param previousWorkspaceRoot - 변경 전 initialize/runtime 기준 workspace root
+ * @param nextWorkspaceRoot - 변경 후 initialize/runtime 기준 workspace root
+ * @returns executable 또는 root가 바뀌어 재기동이 필요하면 true
+ */
+function shouldRestartLuaLsForConfigReload(
+  previousRuntimeConfig: ReturnType<typeof resolveRuntimeConfig>,
+  nextRuntimeConfig: ReturnType<typeof resolveRuntimeConfig>,
+  previousWorkspaceRoot: string | null,
+  nextWorkspaceRoot: string | null,
+): boolean {
+  return (
+    previousRuntimeConfig.config.luaLsExecutablePath !== nextRuntimeConfig.config.luaLsExecutablePath ||
+    previousWorkspaceRoot !== nextWorkspaceRoot
+  );
 }
 
 /**
@@ -398,11 +430,14 @@ function registerAgentQueryHandlers(
 function registerServerLifecycleHandlers(
   context: ServerRegistrationContext,
   runtimeState: ServerRuntimeState,
+  workspaceRefreshController: WorkspaceRefreshController,
 ): void {
   const { connection, luaLsCompanionController, options } = context;
 
   connection.onInitialize((params: InitializeParams): InitializeResult => {
     // initialize payload를 runtime/client state로 해석하고 capability + availability snapshot을 확정함.
+    runtimeState.initializeParams = params;
+    runtimeState.runtimeSettings = params.initializationOptions;
     runtimeState.resolvedRuntimeConfig = resolveRuntimeConfig({
       cwd: options.cwd,
       env: options.env,
@@ -469,6 +504,7 @@ function registerServerLifecycleHandlers(
   };
   initializedConnection.onInitialized?.(() => {
     // initialize에서 확정된 root/client capability를 기준으로 LuaLS sidecar와 watched-file 구독을 시작함.
+    runtimeState.serverInitialized = true;
     void luaLsCompanionController.start(runtimeState.initializeWorkspaceRoot.rootPath).catch(() => undefined);
 
     if (!runtimeState.workspaceClientState.watchedFilesDynamicRegistration) {
@@ -498,9 +534,88 @@ function registerServerLifecycleHandlers(
       });
   });
 
+  const configurationConnection = connection as Connection & {
+    onDidChangeConfiguration?: (
+      handler: (params: DidChangeConfigurationParams) => void,
+    ) => unknown;
+  };
+  configurationConnection.onDidChangeConfiguration?.((params: DidChangeConfigurationParams) => {
+    const previousRuntimeConfig = runtimeState.resolvedRuntimeConfig;
+    const previousWorkspaceRoot = runtimeState.initializeWorkspaceRoot.rootPath;
+
+    traceFeaturePayload(connection, 'server', 'config-reload-start', {
+      previousRuntimeConfig: previousRuntimeConfig.config,
+      settings: params.settings ?? null,
+    });
+
+    runtimeState.runtimeSettings = params.settings;
+
+    let nextRuntimeConfig: ReturnType<typeof resolveRuntimeConfig>;
+    try {
+      nextRuntimeConfig = resolveRuntimeConfig({
+        cwd: options.cwd,
+        env: options.env,
+        initializationOptions: runtimeState.runtimeSettings,
+        overrides: options.runtimeConfig,
+      });
+    } catch (error) {
+      warnFeature(connection, 'server', 'config-reload-failed', {
+        reason: error instanceof Error ? error.message : 'unknown',
+      });
+      return;
+    }
+
+    const nextWorkspaceRoot = resolveInitializeWorkspaceRoot(
+      runtimeState.initializeParams ?? ({ capabilities: {} } as InitializeParams),
+      nextRuntimeConfig,
+    );
+    const diff = diffResolvedRuntimeConfig(previousRuntimeConfig, nextRuntimeConfig);
+    const guidance = collectRuntimeConfigReloadGuidance(params.settings);
+
+    runtimeState.resolvedRuntimeConfig = nextRuntimeConfig;
+    runtimeState.initializeWorkspaceRoot = nextWorkspaceRoot;
+    configureServerTracing(nextRuntimeConfig.config.logLevel);
+
+    logFeature(connection, 'server', 'config-reload', {
+      changedFields: diff.changedFields.length,
+      logLevel: nextRuntimeConfig.config.logLevel,
+      workspaceRoot: nextWorkspaceRoot.rootPath,
+    });
+
+    if (guidance.length > 0) {
+      for (const entry of guidance) {
+        warnFeature(connection, 'server', 'config-guidance', {
+          key: entry.key,
+          message: entry.message,
+        });
+      }
+    }
+
+    workspaceRefreshController.refreshTrackedWorkspaces('configuration-change');
+
+    const requiresRestart = shouldRestartLuaLsForConfigReload(
+      previousRuntimeConfig,
+      nextRuntimeConfig,
+      previousWorkspaceRoot,
+      nextWorkspaceRoot.rootPath,
+    );
+
+    void luaLsCompanionController
+      .reloadRuntimeConfiguration({
+        overrideExecutablePath: nextRuntimeConfig.config.luaLsExecutablePath,
+        refreshExecutablePath:
+          previousRuntimeConfig.config.luaLsExecutablePath !==
+          nextRuntimeConfig.config.luaLsExecutablePath,
+        restart: runtimeState.serverInitialized && requiresRestart,
+        rootPath: nextWorkspaceRoot.rootPath,
+      })
+      .catch(() => undefined);
+  });
+
   connection.onShutdown(async () => {
     // sidecar와 fragment cache를 정리하고 shutdown trace/log를 남김.
     await luaLsCompanionController.shutdown();
+    runtimeState.serverInitialized = false;
     logFeature(connection, 'server', 'shutdown');
     traceFeatureRequest(connection, 'server', 'shutdown');
     fragmentAnalysisService.clearAll();
@@ -632,7 +747,7 @@ export function registerServer(
     workspaceStateRepository: context.workspaceStateRepository,
   });
 
-  registerServerLifecycleHandlers(context, runtimeState);
+  registerServerLifecycleHandlers(context, runtimeState, workspaceRefreshController);
   registerAgentQueryHandlers(context, runtimeState);
   registerFeatureHandlers(context);
   registerDocumentLifecycleHandlers(context, workspaceRefreshController);

@@ -86,6 +86,16 @@ function shouldEmitLog(): boolean {
 }
 
 /**
+ * shouldEmitWarn 함수.
+ * 현재 log level에서 warning 성격 운영 로그를 내보낼지 판별함.
+ *
+ * @returns console.log 호출을 허용해야 하면 true
+ */
+function shouldEmitWarn(): boolean {
+  return LOG_LEVEL_RANK[currentServerLogLevel] >= LOG_LEVEL_RANK.warn;
+}
+
+/**
  * formatFeatureTraceMessage 함수.
  * feature 이름과 phase를 사람이 읽기 쉬운 trace 메시지로 정리함.
  *
@@ -243,6 +253,30 @@ export function logFeature(
   details?: FeatureTraceDetails,
 ): void {
   if (!shouldEmitLog()) {
+    return;
+  }
+
+  const verboseDetails = formatFeatureTraceDetails(details);
+  const suffix = verboseDetails ? ` ${verboseDetails}` : '';
+  connection.console.log(`${formatFeatureTraceMessage(feature, message)}${suffix}`);
+}
+
+/**
+ * warnFeature 함수.
+ * connection console을 통해 warning 성격의 운영 가이드를 남김.
+ *
+ * @param connection - 활성 LSP connection
+ * @param feature - 기능 이름
+ * @param message - 기록할 warning/guidance 메시지
+ * @param details - 선택적 상세 정보
+ */
+export function warnFeature(
+  connection: Connection,
+  feature: CbsLspFeatureName,
+  message: string,
+  details?: FeatureTraceDetails,
+): void {
+  if (!shouldEmitWarn()) {
     return;
   }
 

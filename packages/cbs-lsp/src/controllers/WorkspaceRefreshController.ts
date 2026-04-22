@@ -155,6 +155,80 @@ export class WorkspaceRefreshController {
   }
 
   /**
+   * refreshTrackedWorkspaces 함수.
+   * 설정 변경처럼 changed URI 없이도 현재 추적 중인 workspace snapshot 전체를 다시 빌드하고 diagnostics/CodeLens/LuaLS 후속 작업을 연결함.
+   *
+   * @param reason - 전체 rebuild를 유발한 refresh 원인
+   */
+  refreshTrackedWorkspaces(reason: WorkspaceRefreshReason = 'configuration-change'): void {
+    const workspaceRoots = this.workspaceStateRepository.listRoots();
+    if (workspaceRoots.length === 0) {
+      traceFeatureRequest(this.connection, 'workspace', 'state-rebuild-skip', {
+        reason,
+        roots: 0,
+      });
+      return;
+    }
+
+    const affectedCodeLensUris = new Set<string>();
+
+    for (const workspaceRoot of workspaceRoots) {
+      const previousState = this.workspaceStateRepository.getByRoot(workspaceRoot);
+      const previousUris = this.collectWorkspaceStateUris(previousState);
+      const nextState = createWorkspaceDiagnosticsState(workspaceRoot, this.documents);
+      const nextUris = this.collectWorkspaceStateUris(nextState);
+      const affectedUris = new Set<string>([...previousUris, ...nextUris]);
+
+      traceFeatureRequest(this.connection, 'workspace', 'state-rebuild-start', {
+        rootPath: workspaceRoot,
+        reason,
+        changedUris: 0,
+        mode: 'full',
+      });
+
+      this.workspaceStateRepository.replace(workspaceRoot, nextState);
+      if (nextState) {
+        this.luaLsCompanionController.syncWorkspaceDocuments(workspaceRoot, nextState.scanResult.files);
+        this.luaLsCompanionController.refreshWorkspaceConfiguration({
+          rootPath: workspaceRoot,
+        });
+      } else {
+        this.luaLsCompanionController.clearWorkspaceDocuments(workspaceRoot);
+      }
+
+      for (const uri of this.collectWorkspaceCodeLensUris(previousState)) {
+        affectedCodeLensUris.add(uri);
+      }
+      for (const uri of this.collectWorkspaceCodeLensUris(nextState)) {
+        affectedCodeLensUris.add(uri);
+      }
+
+      traceFeatureRequest(this.connection, 'workspace', 'state-rebuild-end', {
+        rootPath: workspaceRoot,
+        reason,
+        mode: 'full',
+        affectedDiagnosticsUris: affectedUris.size,
+        affectedCodeLensUris: [...affectedCodeLensUris].filter(
+          (uri) =>
+            CbsLspPathHelper.resolveWorkspaceRootFromFilePath(
+              CbsLspPathHelper.getFilePathFromUri(uri),
+            ) === workspaceRoot,
+        ).length,
+        rebuilt: nextState !== null,
+      });
+
+      for (const uri of [...affectedUris].sort((left, right) => left.localeCompare(right))) {
+        this.diagnosticsPublisher.publish(uri, nextState);
+      }
+    }
+
+    this.codeLensRefreshScheduler.schedule(
+      reason,
+      [...affectedCodeLensUris].sort((left, right) => left.localeCompare(right)),
+    );
+  }
+
+  /**
    * collectAffectedUris 함수.
    * 변경 URI 전후 상태를 비교해 다시 publish해야 할 diagnostics 대상을 수집함.
    *
@@ -181,6 +255,23 @@ export class WorkspaceRefreshController {
     }
 
     return [...affected].sort((left, right) => left.localeCompare(right));
+  }
+
+  /**
+   * collectWorkspaceStateUris 함수.
+   * workspace snapshot 전체 rebuild 후 다시 publish해야 할 diagnostics 대상 URI를 수집함.
+   *
+   * @param state - URI를 읽어올 workspace snapshot
+   * @returns snapshot이 담고 있는 전체 문서 URI 목록
+   */
+  private collectWorkspaceStateUris(state: WorkspaceDiagnosticsState | null): readonly string[] {
+    if (!state) {
+      return [];
+    }
+
+    return state.scanResult.files
+      .map((file) => file.uri)
+      .sort((left, right) => left.localeCompare(right));
   }
 
   /**
@@ -212,6 +303,24 @@ export class WorkspaceRefreshController {
     }
 
     return [...affected].sort((left, right) => left.localeCompare(right));
+  }
+
+  /**
+   * collectWorkspaceCodeLensUris 함수.
+   * workspace snapshot 전체에서 CodeLens refresh 대상으로 다시 알려야 할 lorebook URI를 수집함.
+   *
+   * @param state - lorebook URI를 읽어올 workspace snapshot
+   * @returns 현재 snapshot이 보유한 lorebook URI 목록
+   */
+  private collectWorkspaceCodeLensUris(state: WorkspaceDiagnosticsState | null): readonly string[] {
+    if (!state) {
+      return [];
+    }
+
+    return state.scanResult.files
+      .filter((file) => file.artifact === 'lorebook')
+      .map((file) => file.uri)
+      .sort((left, right) => left.localeCompare(right));
   }
 
   /**

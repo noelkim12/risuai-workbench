@@ -50,6 +50,7 @@ export type WorkspaceRefreshReason =
   | 'document-open'
   | 'document-change'
   | 'document-close'
+  | 'configuration-change'
   | 'watched-file-create'
   | 'watched-file-change'
   | 'watched-file-delete';

@@ -48,6 +48,13 @@ export interface LuaLsCompanionSubsystemStatus {
   runtime: LuaLsCompanionRuntime;
 }
 
+export interface LuaLsCompanionRuntimeReloadOptions {
+  overrideExecutablePath: string | null;
+  refreshExecutablePath: boolean;
+  restart: boolean;
+  rootPath: string | null;
+}
+
 export class LuaLsCompanionController {
   private readonly documentRouter: LuaLsDocumentRouter;
 
@@ -188,6 +195,43 @@ export class LuaLsCompanionController {
    */
   refreshWorkspaceConfiguration(options: LuaLsProcessStartOptions = {}): void {
     this.processManager.refreshWorkspaceConfiguration(this.withInjectedStubRoots(options));
+  }
+
+  /**
+   * reloadRuntimeConfiguration 함수.
+   * server runtime config 변경을 LuaLS executable 재해석, restart, workspace/library 재주입 경로로 승격한다.
+   *
+   * @param options - executable/root 변경 여부와 restart 필요성을 담은 reload 옵션
+   * @returns 변경 후 LuaLS companion runtime 상태
+   */
+  async reloadRuntimeConfiguration(
+    options: LuaLsCompanionRuntimeReloadOptions,
+  ): Promise<LuaLsCompanionRuntime> {
+    if (options.refreshExecutablePath) {
+      const preparedRuntime = this.prepareForInitialize({
+        overrideExecutablePath: options.overrideExecutablePath,
+        rootPath: options.rootPath,
+      });
+
+      if (!options.restart || preparedRuntime.status === 'unavailable') {
+        return preparedRuntime;
+      }
+
+      return this.restart({
+        rootPath: options.rootPath,
+      });
+    }
+
+    if (options.restart) {
+      return this.restart({
+        rootPath: options.rootPath,
+      });
+    }
+
+    this.refreshWorkspaceConfiguration({
+      rootPath: options.rootPath,
+    });
+    return this.getRuntime();
   }
 
   /**

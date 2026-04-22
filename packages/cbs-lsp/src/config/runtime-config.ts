@@ -27,6 +27,18 @@ export interface ResolvedCbsLspRuntimeConfig {
   sources: CbsLspRuntimeConfigSources;
 }
 
+export type RuntimeConfigField = keyof CbsLspRuntimeConfig;
+
+export interface RuntimeConfigDiffResult {
+  changedFields: readonly RuntimeConfigField[];
+}
+
+export interface RuntimeConfigReloadGuidance {
+  key: 'diagnostics' | 'formatting';
+  message: string;
+  value: unknown;
+}
+
 export interface CbsLspRuntimeConfigOverrides {
   configPath?: string | null;
   logLevel?: CbsLspLogLevel;
@@ -129,6 +141,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * getCbsConfigRoot 함수.
+ * initialize/configuration payload에서 cbs 최상위 설정 블록을 찾는다.
+ *
+ * @param value - initialize option 또는 didChangeConfiguration payload의 최상위 값
+ * @returns `cbs` 블록이 있으면 그 값, 없으면 입력값 자신을 record로 정규화한 결과
+ */
+function getCbsConfigRoot(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return isRecord(value.cbs) ? value.cbs : value;
+}
+
+/**
  * createRuntimeConfigContext 함수.
  * 런타임 설정 로더가 재사용할 기본 의존성과 입력값을 한 곳으로 정리한다.
  *
@@ -196,12 +223,63 @@ function parseOptionalPathSetting(
  * @returns cbs.runtimeConfig 우선 fallback 규칙이 반영된 root object
  */
 function getRuntimeConfigRoot(value: unknown): Record<string, unknown> {
-  if (!isRecord(value)) {
-    return {};
-  }
+  const cbsRoot = getCbsConfigRoot(value);
+  return isRecord(cbsRoot.runtimeConfig) ? cbsRoot.runtimeConfig : cbsRoot;
+}
 
-  const rawCbs = isRecord(value.cbs) ? value.cbs : value;
-  return isRecord(rawCbs.runtimeConfig) ? rawCbs.runtimeConfig : rawCbs;
+/**
+ * diffResolvedRuntimeConfig 함수.
+ * 이전/다음 runtime config를 비교해 실제로 바뀐 필드만 추린다.
+ *
+ * @param previous - 변경 전 resolved runtime config
+ * @param next - 변경 후 resolved runtime config
+ * @returns 변경된 runtime config 필드 목록
+ */
+export function diffResolvedRuntimeConfig(
+  previous: ResolvedCbsLspRuntimeConfig,
+  next: ResolvedCbsLspRuntimeConfig,
+): RuntimeConfigDiffResult {
+  const changedFields = (Object.keys(previous.config) as RuntimeConfigField[]).filter(
+    (field) => previous.config[field] !== next.config[field],
+  );
+
+  return {
+    changedFields,
+  };
+}
+
+/**
+ * collectRuntimeConfigReloadGuidance 함수.
+ * didChangeConfiguration payload 안의 현재 미지원 hot-reload 옵션을 감지해 운영 가이드를 만든다.
+ *
+ * @param value - client가 보낸 configuration payload
+ * @returns 명시적으로 안내해야 할 immutable/unsupported 설정 목록
+ */
+export function collectRuntimeConfigReloadGuidance(
+  value: unknown,
+): readonly RuntimeConfigReloadGuidance[] {
+  const cbsRoot = getCbsConfigRoot(value);
+  const runtimeRoot = getRuntimeConfigRoot(value);
+  const guidance: RuntimeConfigReloadGuidance[] = [];
+  const appendGuidance = (key: RuntimeConfigReloadGuidance['key'], candidate: unknown): void => {
+    if (candidate === undefined) {
+      return;
+    }
+
+    guidance.push({
+      key,
+      message:
+        key === 'diagnostics'
+          ? 'Diagnostics options are acknowledged during configuration reload, but CBS host diagnostics policy is still fixed at runtime and cannot be hot-swapped yet.'
+          : 'Formatting options are acknowledged during configuration reload, but the canonical formatter contract is still fixed at runtime and cannot be hot-swapped yet.',
+      value: candidate,
+    });
+  };
+
+  appendGuidance('diagnostics', cbsRoot.diagnostics ?? runtimeRoot.diagnostics);
+  appendGuidance('formatting', cbsRoot.formatting ?? runtimeRoot.formatting);
+
+  return guidance;
 }
 
 /**

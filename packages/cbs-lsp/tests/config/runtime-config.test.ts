@@ -5,7 +5,11 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { resolveRuntimeConfig } from '../../src/config/runtime-config';
+import {
+  collectRuntimeConfigReloadGuidance,
+  diffResolvedRuntimeConfig,
+  resolveRuntimeConfig,
+} from '../../src/config/runtime-config';
 
 describe('resolveRuntimeConfig', () => {
   it('applies CLI > env > config file > initialize option precedence per field', () => {
@@ -139,5 +143,65 @@ describe('resolveRuntimeConfig', () => {
         readFile: () => '{not-json}',
       }),
     ).toThrow('Failed to load CBS LSP config file: /workspace/broken.json');
+  });
+
+  it('reports only the runtime config fields that actually changed during reload', () => {
+    const previous = resolveRuntimeConfig({
+      cwd: '/workspace',
+      initializationOptions: {
+        cbs: {
+          logLevel: 'debug',
+          workspace: './alpha',
+        },
+      },
+    });
+    const next = resolveRuntimeConfig({
+      cwd: '/workspace',
+      initializationOptions: {
+        cbs: {
+          logLevel: 'info',
+          workspace: './beta',
+        },
+      },
+    });
+
+    expect(diffResolvedRuntimeConfig(previous, next)).toEqual({
+      changedFields: ['logLevel', 'workspacePath'],
+    });
+  });
+
+  it('collects runtime reload guidance for diagnostics and formatting payloads that are not hot-reloadable yet', () => {
+    expect(
+      collectRuntimeConfigReloadGuidance({
+        cbs: {
+          runtimeConfig: {
+            logLevel: 'info',
+          },
+          diagnostics: {
+            mode: 'strict',
+          },
+          formatting: {
+            style: 'canonical',
+          },
+        },
+      }),
+    ).toEqual([
+      {
+        key: 'diagnostics',
+        message:
+          'Diagnostics options are acknowledged during configuration reload, but CBS host diagnostics policy is still fixed at runtime and cannot be hot-swapped yet.',
+        value: {
+          mode: 'strict',
+        },
+      },
+      {
+        key: 'formatting',
+        message:
+          'Formatting options are acknowledged during configuration reload, but the canonical formatter contract is still fixed at runtime and cannot be hot-swapped yet.',
+        value: {
+          style: 'canonical',
+        },
+      },
+    ]);
   });
 });

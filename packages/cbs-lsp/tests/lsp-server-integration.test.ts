@@ -10,6 +10,7 @@ import type {
   CompletionItem,
   Definition,
   Diagnostic,
+  DidChangeConfigurationParams,
   DocumentSymbol,
   DidChangeWatchedFilesParams,
   DocumentFormattingParams,
@@ -87,6 +88,9 @@ interface TestLuaLsProcessManagerStub {
     options?: LuaLsProcessPrepareOptions,
   ) => ReturnType<typeof createLuaLsCompanionRuntime>;
   refreshWorkspaceConfiguration: (options?: LuaLsProcessStartOptions) => void;
+  restart: (
+    options?: LuaLsProcessStartOptions,
+  ) => Promise<ReturnType<typeof createLuaLsCompanionRuntime>>;
   request: (method: string, params?: unknown, timeoutMs?: number) => Promise<unknown>;
   shutdown: () => Promise<ReturnType<typeof createLuaLsCompanionRuntime>>;
   start: (
@@ -135,6 +139,14 @@ function createLuaLsProcessManagerStub(
     ),
     request: async () => null,
     refreshWorkspaceConfiguration: vi.fn(),
+    restart: vi.fn(async () =>
+      createLuaLsCompanionRuntime({
+        detail: 'LuaLS sidecar finished initialize/initialized handshake and is healthy.',
+        executablePath: '/mock/luals',
+        health: 'healthy',
+        status: 'ready',
+      }),
+    ),
     shutdown: vi.fn(async () =>
       createLuaLsCompanionRuntime({
         detail: 'LuaLS sidecar lifecycle was shut down cleanly with the server.',
@@ -287,6 +299,8 @@ class FakeConnection {
 
   watchedFilesHandler: ((params: DidChangeWatchedFilesParams) => void) | null = null;
 
+  didChangeConfigurationHandler: ((params: DidChangeConfigurationParams) => void) | null = null;
+
   definitionRegistrations = 0;
 
   referencesRegistrations = 0;
@@ -427,6 +441,11 @@ class FakeConnection {
 
   onDidChangeWatchedFiles(handler: (params: DidChangeWatchedFilesParams) => void) {
     this.watchedFilesHandler = handler;
+    return createDisposable();
+  }
+
+  onDidChangeConfiguration(handler: (params: DidChangeConfigurationParams) => void) {
+    this.didChangeConfigurationHandler = handler;
     return createDisposable();
   }
 
@@ -1422,6 +1441,82 @@ describe('LSP server integration', () => {
     expect(connection.consoleMessages).toEqual([
       '[cbs-lsp:server] initialize textDocumentSync=2',
     ]);
+  });
+
+  it('reloads runtime config from workspace/didChangeConfiguration, leaves guidance for immutable options, and refreshes tracked workspaces', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const lorebookText = lorebookDocument(['{{getvar::mood}}']);
+    const lorebookUri = await writeWorkspaceFile(root, 'lorebooks/config-reload.risulorebook', lorebookText);
+    const luaLsManager = createLuaLsProcessManagerStub();
+
+    registerServer(connection as any, documents as any, {
+      createLuaLsProcessManager: (() => luaLsManager) as unknown as () => LuaLsProcessManager,
+    });
+    connection.initializeHandler?.({
+      capabilities: {
+        workspace: {
+          codeLens: { refreshSupport: true },
+          didChangeWatchedFiles: { dynamicRegistration: true },
+        },
+      },
+      rootUri: pathToFileURL(root).toString(),
+    } as InitializeParams);
+    connection.initializedHandler?.({});
+    documents.open(lorebookUri, lorebookText, 1);
+
+    const diagnosticsCountBeforeReload = connection.diagnostics.filter(
+      (entry) => entry.uri === lorebookUri,
+    ).length;
+
+    connection.didChangeConfigurationHandler?.({
+      settings: {
+        cbs: {
+          runtimeConfig: {
+            logLevel: 'info',
+            luaLs: {
+              executablePath: '/reconfigured/lua-language-server',
+            },
+            workspace: '/reconfigured/workspace',
+          },
+          diagnostics: {
+            mode: 'strict',
+          },
+          formatting: {
+            style: 'canonical',
+          },
+        },
+      },
+    });
+
+    expect(luaLsManager.prepareForInitialize).toHaveBeenLastCalledWith({
+      overrideExecutablePath: '/reconfigured/lua-language-server',
+      rootPath: '/reconfigured/workspace',
+    });
+    expect(luaLsManager.restart).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        rootPath: '/reconfigured/workspace',
+      }),
+    );
+    expect(connection.requests).toContain('workspace/codeLens/refresh');
+    expect(connection.diagnostics.filter((entry) => entry.uri === lorebookUri)).toHaveLength(
+      diagnosticsCountBeforeReload + 1,
+    );
+    expect(connection.consoleMessages).toEqual(
+      expect.arrayContaining([
+        '[cbs-lsp:server] config-reload changedFields=3 logLevel=info workspaceRoot=/reconfigured/workspace',
+        expect.stringContaining('[cbs-lsp:server] config-guidance key=diagnostics'),
+        expect.stringContaining('[cbs-lsp:server] config-guidance key=formatting'),
+      ]),
+    );
+
+    const traceCountAfterReload = connection.traceMessages.length;
+    connection.watchedFilesHandler?.({
+      changes: [{ uri: lorebookUri, type: FileChangeType.Changed }],
+    });
+
+    expect(connection.traceMessages).toHaveLength(traceCountAfterReload);
   });
 
   it('reports operator workspace policy and active failure modes through initialize payloads', () => {
