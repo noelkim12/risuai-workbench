@@ -761,6 +761,24 @@ describe('LSP server integration', () => {
                 detail:
                   'Formatting is active for routed CBS fragments, produces fragment-local canonical text edits, and only promotes host edits that pass the shared host-fragment safety contract.',
               },
+              'cross-language-code-action': {
+                scope: 'deferred',
+                source: 'deferred-scope-contract:cross-language-code-action',
+                detail:
+                  'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language code actions stay off until authoritative multi-file edit merge rules exist.',
+              },
+              'cross-language-rename': {
+                scope: 'deferred',
+                source: 'deferred-scope-contract:cross-language-rename',
+                detail:
+                  'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language rename stays off until authoritative multi-file edit merge rules exist.',
+              },
+              'cross-language-workspace-edit': {
+                scope: 'deferred',
+                source: 'deferred-scope-contract:cross-language-workspace-edit',
+                detail:
+                  'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language workspace edits stay off until authoritative multi-file edit merge rules exist.',
+              },
             }),
             operator: expect.objectContaining({
               docs: {
@@ -778,6 +796,17 @@ describe('LSP server integration', () => {
                 pathRequirement: 'required-for-global',
                 transport: 'stdio',
               }),
+              scope: {
+                deferredEditFeatures: [
+                  'cross-language-rename',
+                  'cross-language-workspace-edit',
+                  'cross-language-code-action',
+                ],
+                detail:
+                  'Scope honesty MVP keeps read-only bridge on and multi-file edit off. Cross-language rename, workspace edit, and code action stay deferred until authoritative edit merge rules exist.',
+                multiFileEdit: 'off',
+                readOnlyBridge: 'on',
+              },
               workspace: expect.objectContaining({
                 initializeWorkspaceFolderCount: 0,
                 resolvedWorkspaceRoot: null,
@@ -817,6 +846,27 @@ describe('LSP server integration', () => {
               },
             ],
             features: expect.arrayContaining([
+              {
+                key: 'cross-language-code-action',
+                scope: 'deferred',
+                source: 'deferred-scope-contract:cross-language-code-action',
+                detail:
+                  'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language code actions stay off until authoritative multi-file edit merge rules exist.',
+              },
+              {
+                key: 'cross-language-rename',
+                scope: 'deferred',
+                source: 'deferred-scope-contract:cross-language-rename',
+                detail:
+                  'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language rename stays off until authoritative multi-file edit merge rules exist.',
+              },
+              {
+                key: 'cross-language-workspace-edit',
+                scope: 'deferred',
+                source: 'deferred-scope-contract:cross-language-workspace-edit',
+                detail:
+                  'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language workspace edits stay off until authoritative multi-file edit merge rules exist.',
+              },
               {
                 key: 'codeAction',
                 scope: 'local-only',
@@ -889,6 +939,17 @@ describe('LSP server integration', () => {
               },
             ]),
             operator: expect.objectContaining({
+              scope: {
+                deferredEditFeatures: [
+                  'cross-language-rename',
+                  'cross-language-workspace-edit',
+                  'cross-language-code-action',
+                ],
+                detail:
+                  'Scope honesty MVP keeps read-only bridge on and multi-file edit off. Cross-language rename, workspace edit, and code action stay deferred until authoritative edit merge rules exist.',
+                multiFileEdit: 'off',
+                readOnlyBridge: 'on',
+              },
               workspace: expect.objectContaining({
                 resolvedWorkspaceRootSource: 'none',
               }),
@@ -944,7 +1005,25 @@ describe('LSP server integration', () => {
               source: 'server-capability:formatting',
               detail:
                 'Formatting is active for routed CBS fragments, produces fragment-local canonical text edits, and only promotes host edits that pass the shared host-fragment safety contract.',
-              },
+            },
+            'cross-language-code-action': {
+              scope: 'deferred',
+              source: 'deferred-scope-contract:cross-language-code-action',
+              detail:
+                'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language code actions stay off until authoritative multi-file edit merge rules exist.',
+            },
+            'cross-language-rename': {
+              scope: 'deferred',
+              source: 'deferred-scope-contract:cross-language-rename',
+              detail:
+                'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language rename stays off until authoritative multi-file edit merge rules exist.',
+            },
+            'cross-language-workspace-edit': {
+              scope: 'deferred',
+              source: 'deferred-scope-contract:cross-language-workspace-edit',
+              detail:
+                'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language workspace edits stay off until authoritative multi-file edit merge rules exist.',
+            },
             }),
           operator: expect.objectContaining({
             docs: {
@@ -955,6 +1034,17 @@ describe('LSP server integration', () => {
               standaloneUsage: 'packages/cbs-lsp/docs/STANDALONE_USAGE.md',
               troubleshooting: 'packages/cbs-lsp/docs/TROUBLESHOOTING.md',
               vscodeClient: 'packages/vscode/README.md',
+            },
+            scope: {
+              deferredEditFeatures: [
+                'cross-language-rename',
+                'cross-language-workspace-edit',
+                'cross-language-code-action',
+              ],
+              detail:
+                'Scope honesty MVP keeps read-only bridge on and multi-file edit off. Cross-language rename, workspace edit, and code action stay deferred until authoritative edit merge rules exist.',
+              multiFileEdit: 'off',
+              readOnlyBridge: 'on',
             },
           }),
         },
@@ -1018,6 +1108,17 @@ describe('LSP server integration', () => {
         schemaVersion: '1.0.0',
         companions: [expect.objectContaining({ status: 'stopped', health: 'idle' })],
         operator: expect.objectContaining({
+          scope: {
+            deferredEditFeatures: [
+              'cross-language-rename',
+              'cross-language-workspace-edit',
+              'cross-language-code-action',
+            ],
+            detail:
+              'Scope honesty MVP keeps read-only bridge on and multi-file edit off. Cross-language rename, workspace edit, and code action stay deferred until authoritative edit merge rules exist.',
+            multiFileEdit: 'off',
+            readOnlyBridge: 'on',
+          },
           workspace: expect.objectContaining({
             resolvedWorkspaceRoot: null,
             resolvedWorkspaceRootSource: 'none',
@@ -2981,6 +3082,27 @@ describe('LSP server integration', () => {
               availabilityDetail:
                 'References are active for routed CBS fragments, return fragment-local read/write locations first, and append workspace chat-variable readers/writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
             },
+            {
+              key: 'cross-language-code-action',
+              availabilityScope: 'deferred',
+              availabilitySource: 'deferred-scope-contract:cross-language-code-action',
+              availabilityDetail:
+                'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language code actions stay off until authoritative multi-file edit merge rules exist.',
+            },
+            {
+              key: 'cross-language-rename',
+              availabilityScope: 'deferred',
+              availabilitySource: 'deferred-scope-contract:cross-language-rename',
+              availabilityDetail:
+                'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language rename stays off until authoritative multi-file edit merge rules exist.',
+            },
+            {
+              key: 'cross-language-workspace-edit',
+              availabilityScope: 'deferred',
+              availabilitySource: 'deferred-scope-contract:cross-language-workspace-edit',
+              availabilityDetail:
+                'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language workspace edits stay off until authoritative multi-file edit merge rules exist.',
+            },
           ]),
           operator: expect.objectContaining({
             docs: {
@@ -2991,6 +3113,17 @@ describe('LSP server integration', () => {
               standaloneUsage: 'packages/cbs-lsp/docs/STANDALONE_USAGE.md',
               troubleshooting: 'packages/cbs-lsp/docs/TROUBLESHOOTING.md',
               vscodeClient: 'packages/vscode/README.md',
+            },
+            scope: {
+              deferredEditFeatures: [
+                'cross-language-rename',
+                'cross-language-workspace-edit',
+                'cross-language-code-action',
+              ],
+              detail:
+                'Scope honesty MVP keeps read-only bridge on and multi-file edit off. Cross-language rename, workspace edit, and code action stay deferred until authoritative edit merge rules exist.',
+              multiFileEdit: 'off',
+              readOnlyBridge: 'on',
             },
           }),
         }),

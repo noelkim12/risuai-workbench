@@ -447,6 +447,8 @@ function registerServerLifecycleHandlers(
       logLevel: runtimeState.resolvedRuntimeConfig.config.logLevel,
       semanticTokens: Boolean(result.capabilities.semanticTokensProvider),
       startupWorkspaceRootSource: runtimeState.initializeWorkspaceRoot.source,
+      readOnlyBridge: result.experimental?.cbs?.operator.scope.readOnlyBridge,
+      multiFileEdit: result.experimental?.cbs?.operator.scope.multiFileEdit,
       workspaceFolderCount: runtimeState.initializeWorkspaceRoot.workspaceFolderCount,
       watchedFilesDynamicRegistration: runtimeState.workspaceClientState.watchedFilesDynamicRegistration,
       workspaceOverride: Boolean(runtimeState.resolvedRuntimeConfig.config.workspacePath),

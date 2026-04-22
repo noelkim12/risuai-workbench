@@ -185,8 +185,31 @@ describe('diagnostic taxonomy contract', () => {
 
   it('freezes remaining deferred scope and current lua fragment-routing behavior', () => {
     expect(DEFERRED_SCOPE_CONTRACT).toEqual({
-      deferredFeatures: ['lua-ast-fragment-routing'],
+      deferredFeatures: [
+        'cross-language-code-action',
+        'cross-language-rename',
+        'cross-language-workspace-edit',
+        'lua-ast-fragment-routing',
+      ],
       featureAvailability: {
+        'cross-language-code-action': {
+          scope: 'deferred',
+          source: 'deferred-scope-contract:cross-language-code-action',
+          detail:
+            'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language code actions stay off until authoritative multi-file edit merge rules exist.',
+        },
+        'cross-language-rename': {
+          scope: 'deferred',
+          source: 'deferred-scope-contract:cross-language-rename',
+          detail:
+            'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language rename stays off until authoritative multi-file edit merge rules exist.',
+        },
+        'cross-language-workspace-edit': {
+          scope: 'deferred',
+          source: 'deferred-scope-contract:cross-language-workspace-edit',
+          detail:
+            'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language workspace edits stay off until authoritative multi-file edit merge rules exist.',
+        },
         'lua-ast-fragment-routing': {
           scope: 'deferred',
           source: 'deferred-scope-contract:lua-ast-fragment-routing',

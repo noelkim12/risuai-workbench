@@ -31,6 +31,9 @@ export interface ActiveFeatureAvailabilityMap {
 }
 
 export interface DeferredFeatureAvailabilityMap {
+  'cross-language-code-action': AgentMetadataAvailabilityContract;
+  'cross-language-rename': AgentMetadataAvailabilityContract;
+  'cross-language-workspace-edit': AgentMetadataAvailabilityContract;
   'lua-ast-fragment-routing': AgentMetadataAvailabilityContract;
 }
 
@@ -118,7 +121,19 @@ export interface RuntimeOperatorContract {
   docs: RuntimeOperatorDocsContract;
   failureModes: RuntimeOperatorFailureModeContract[];
   install: RuntimeOperatorInstallContract;
+  scope: RuntimeOperatorScopeContract;
   workspace: RuntimeOperatorWorkspaceContract;
+}
+
+export interface RuntimeOperatorScopeContract {
+  deferredEditFeatures: readonly [
+    'cross-language-rename',
+    'cross-language-workspace-edit',
+    'cross-language-code-action',
+  ];
+  detail: string;
+  multiFileEdit: 'off';
+  readOnlyBridge: 'on';
 }
 
 export interface RuntimeOperatorContractOptions {
@@ -275,9 +290,27 @@ export const EXCLUDED_ARTIFACT_AVAILABILITY = Object.freeze({
 
 export const DEFERRED_SCOPE_CONTRACT = Object.freeze({
   deferredFeatures: [
+    'cross-language-code-action',
+    'cross-language-rename',
+    'cross-language-workspace-edit',
     'lua-ast-fragment-routing',
   ] as const,
   featureAvailability: {
+    'cross-language-code-action': createAgentMetadataAvailability(
+      'deferred',
+      'deferred-scope-contract:cross-language-code-action',
+      'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language code actions stay off until authoritative multi-file edit merge rules exist.',
+    ),
+    'cross-language-rename': createAgentMetadataAvailability(
+      'deferred',
+      'deferred-scope-contract:cross-language-rename',
+      'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language rename stays off until authoritative multi-file edit merge rules exist.',
+    ),
+    'cross-language-workspace-edit': createAgentMetadataAvailability(
+      'deferred',
+      'deferred-scope-contract:cross-language-workspace-edit',
+      'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language workspace edits stay off until authoritative multi-file edit merge rules exist.',
+    ),
     'lua-ast-fragment-routing': createAgentMetadataAvailability(
       'deferred',
       'deferred-scope-contract:lua-ast-fragment-routing',
@@ -377,6 +410,17 @@ export function createRuntimeOperatorContract(
     docs: RUNTIME_OPERATOR_DOCS,
     failureModes: createRuntimeOperatorFailureModes(lualsRuntime, normalizedOptions),
     install: RUNTIME_OPERATOR_INSTALL,
+    scope: {
+      deferredEditFeatures: [
+        'cross-language-rename',
+        'cross-language-workspace-edit',
+        'cross-language-code-action',
+      ],
+      detail:
+        'Scope honesty MVP keeps read-only bridge on and multi-file edit off. Cross-language rename, workspace edit, and code action stay deferred until authoritative edit merge rules exist.',
+      multiFileEdit: 'off',
+      readOnlyBridge: 'on',
+    },
     workspace: {
       detail:
         'Startup root selection prefers runtime-config workspace overrides, then the first initialize workspace folder, then legacy rootUri. If initialize leaves the root unresolved, opened canonical `.risu*` artifact paths can still derive a workspace root for workspace graph features.',

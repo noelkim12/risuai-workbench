@@ -37,6 +37,17 @@ describe('createRuntimeOperatorContract', () => {
       detail:
         'Use a repo-pinned local install, ephemeral `npx`, or a global install with `cbs-language-server` available on PATH. All supported entry modes attach over stdio.',
     });
+    expect(contract.scope).toEqual({
+      deferredEditFeatures: [
+        'cross-language-rename',
+        'cross-language-workspace-edit',
+        'cross-language-code-action',
+      ],
+      detail:
+        'Scope honesty MVP keeps read-only bridge on and multi-file edit off. Cross-language rename, workspace edit, and code action stay deferred until authoritative edit merge rules exist.',
+      multiFileEdit: 'off',
+      readOnlyBridge: 'on',
+    });
     expect(contract.workspace).toEqual({
       detail:
         'Startup root selection prefers runtime-config workspace overrides, then the first initialize workspace folder, then legacy rootUri. If initialize leaves the root unresolved, opened canonical `.risu*` artifact paths can still derive a workspace root for workspace graph features.',
@@ -105,6 +116,17 @@ describe('createRuntimeAvailabilityTracePayload', () => {
       troubleshooting: 'packages/cbs-lsp/docs/TROUBLESHOOTING.md',
       vscodeClient: 'packages/vscode/README.md',
     });
+    expect(payload.operator.scope).toEqual({
+      deferredEditFeatures: [
+        'cross-language-rename',
+        'cross-language-workspace-edit',
+        'cross-language-code-action',
+      ],
+      detail:
+        'Scope honesty MVP keeps read-only bridge on and multi-file edit off. Cross-language rename, workspace edit, and code action stay deferred until authoritative edit merge rules exist.',
+      multiFileEdit: 'off',
+      readOnlyBridge: 'on',
+    });
     expect(payload.schema).toBe('cbs-lsp-agent-contract');
     expect(payload.schemaVersion).toBe('1.0.0');
     expect(payload.operator.failureModes).toEqual(
@@ -112,6 +134,25 @@ describe('createRuntimeAvailabilityTracePayload', () => {
         expect.objectContaining({
           key: 'workspace-root-unresolved',
           active: true,
+        }),
+      ]),
+    );
+    expect(payload.features).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: 'cross-language-rename',
+          availabilityScope: 'deferred',
+          availabilitySource: 'deferred-scope-contract:cross-language-rename',
+        }),
+        expect.objectContaining({
+          key: 'cross-language-workspace-edit',
+          availabilityScope: 'deferred',
+          availabilitySource: 'deferred-scope-contract:cross-language-workspace-edit',
+        }),
+        expect.objectContaining({
+          key: 'cross-language-code-action',
+          availabilityScope: 'deferred',
+          availabilitySource: 'deferred-scope-contract:cross-language-code-action',
         }),
       ]),
     );
