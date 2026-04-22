@@ -45,6 +45,12 @@ export interface CompletionProviderOptions {
   resolveRequest?: CompletionRequestResolver;
 }
 
+/**
+ * CBS_COMPLETION_TRIGGER_CHARACTERS 상수.
+ * CBS/Lua 입력 흐름에서 자동 completion을 재요청해야 하는 핵심 trigger 문자 집합.
+ */
+export const CBS_COMPLETION_TRIGGER_CHARACTERS = ['{', ':', '#', '/', '?', '<', '"'] as const;
+
 interface BlockSnippet {
   label: string;
   insertText: string;

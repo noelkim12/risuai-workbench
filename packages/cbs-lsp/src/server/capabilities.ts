@@ -16,6 +16,7 @@ import {
   type RuntimeOperatorContractOptions,
   type LuaLsCompanionRuntime,
 } from '../core';
+import { CBS_COMPLETION_TRIGGER_CHARACTERS } from '../features/completion';
 import { SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES } from '../features/semanticTokens';
 import { LSP_POSITION_ENCODING } from '../utils/position';
 import { createExecuteCommandProvider } from './commands';
@@ -54,7 +55,9 @@ export function createInitializeResult(
             codeActionKinds: [CodeActionKind.QuickFix],
           }
         : true,
-      completionProvider: {},
+      completionProvider: {
+        triggerCharacters: [...CBS_COMPLETION_TRIGGER_CHARACTERS],
+      },
       definitionProvider: true,
       documentSymbolProvider: true,
       documentFormattingProvider: true,

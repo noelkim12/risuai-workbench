@@ -20,6 +20,8 @@
 | Workspace shape | initialize 시 root 미해결, 이후 canonical `.risu*` 문서 경로로 root 역산 가능 | Degraded | 서버는 먼저 standalone/CBS-local 기능으로 시작하고, root를 알게 되면 workspace graph 기능을 다시 붙입니다. failure mode key는 `workspace-root-unresolved`입니다. | `--workspace`, `CBS_LSP_WORKSPACE`, runtime config, `workspaceFolders`/`rootUri`, 또는 canonical `.risu*` 문서 open으로 root를 명시하세요. |
 | Workspace shape | multi-root workspace | Degraded | 현재는 `workspaceFolders[0]`만 startup root로 사용하고 나머지는 무시합니다. failure mode key는 `multi-root-reduced`입니다. | workspace마다 프로세스를 분리하거나, canonical root를 첫 번째 folder로 보내세요. |
 | Workspace shape | client without watched-file dynamic registration | Degraded | open/change/close 기반 갱신만 동작하고 외부 파일 변경 push는 비활성화됩니다. failure mode key는 `watched-files-client-unsupported`입니다. | watched-file dynamic registration을 지원하는 client를 쓰거나, 외부 변경 후 문서를 다시 열어 주세요. |
+| LSP position encoding | client omits `general.positionEncodings` or includes `utf-16` | Supported | 서버는 initialize result에 `capabilities.positionEncoding = 'utf-16'`를 명시하고, `position.ts`/fragment remap/semantic token 계산도 JavaScript string index 기반 UTF-16 code unit 좌표를 그대로 사용합니다. 한글은 BMP 1 code unit, 이모지/서로게이트 페어는 2 code unit 기준으로 range를 계산합니다. | 별도 설정 없이 UTF-16 좌표를 그대로 소비하면 됩니다. |
+| LSP position encoding | client advertises only `utf-8` / `utf-32` and excludes `utf-16` | Unsupported | cbs-lsp는 현재 UTF-16 한 가지 좌표 체계만 구현/광고합니다. non-UTF-16 client와의 on-the-fly range 재인코딩은 아직 없습니다. | UTF-16을 지원하는 client를 사용하거나, client 쪽 position encoding 설정을 UTF-16으로 맞추세요. |
 | Workspace shape | productized multi-root aggregation | Unsupported | 여러 workspace folder를 하나의 graph/service surface로 합치는 orchestration은 아직 없습니다. | 현재는 first-workspace-folder policy를 전제로 운영합니다. |
 | VS Code client attach | standalone-first (`local-devDependency` / `npx` / `global`) + embedded dev fallback | Supported | 공식 `packages/vscode` client는 public `cbs-language-server` surface를 먼저 소비하고, `auto + local-devDependency`에서만 monorepo embedded module fallback을 사용합니다. | 일반 사용자는 standalone mode를 기준으로 운영하고, embedded fallback은 monorepo 개발 보조 수단으로만 사용하세요. |
 | VS Code client attach | invalid explicit path override | Unsupported | explicit `risuWorkbench.cbs.server.path`가 잘못되면 client는 silent fallback 대신 resolution failure UX를 띄웁니다. | path override를 비우거나 유효한 executable로 수정하세요. |
@@ -28,6 +30,7 @@
 
 - **지원 보장선**: Node 20+, single extracted workspace, user-installed LuaLS companion.
 - **정직한 degraded mode**: LuaLS 미설치/충돌, startup root 미해결, multi-root 축소, watched-file 미지원은 모두 서버를 죽이지 않고 runtime payload failure mode로 노출합니다.
+- **좌표 계약**: initialize capability와 내부 offset/position 계산은 모두 UTF-16 code unit 기준으로 고정합니다. UTF-16을 받지 않는 client는 현재 범위 밖입니다.
 - **의도적 비지원**: embedded LuaLS, auto-download, productized multi-root aggregation, Node 20 미만.
 - **VS Code client 경계**: 공식 client는 standalone-first contract를 따르고, explicit path override 오류는 fallback으로 숨기지 않습니다.
 

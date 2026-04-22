@@ -38,6 +38,7 @@ import {
   createSyntheticDocumentVersion,
   fragmentAnalysisService,
 } from '../src/core';
+import { CBS_COMPLETION_TRIGGER_CHARACTERS } from '../src/features/completion';
 import { SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES } from '../src/features/semanticTokens';
 import { ElementRegistry, UnifiedVariableGraph } from '../src/indexer';
 import { registerServer } from '../src/server';
@@ -674,7 +675,9 @@ describe('LSP server integration', () => {
           resolveProvider: false,
         },
         codeActionProvider: true,
-        completionProvider: {},
+        completionProvider: {
+          triggerCharacters: [...CBS_COMPLETION_TRIGGER_CHARACTERS],
+        },
         definitionProvider: true,
         documentSymbolProvider: true,
         documentFormattingProvider: true,
@@ -1689,6 +1692,54 @@ describe('LSP server integration', () => {
       {
         textDocument: { uri: luaUri },
         position: positionAt(luaText, 'sh', 2),
+      },
+      createCancellationToken(false),
+    );
+
+    expect(getCompletionItems(completion ?? null).map((item) => item.label)).toEqual([
+      'shadow',
+      'shared',
+      'getState(',
+      'getLoreBooks(',
+    ]);
+    expect(requestSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps `.risulua` state-key completion candidates stable when completion is triggered from the opening quote', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const luaText = 'local user = getState("shared")\nreturn user\n';
+    const writerText = promptDocument(['{{setvar::shared::ready}}', '{{setvar::shadow::ok}}']);
+    const luaUri = await writeWorkspaceFile(root, 'lua/completion-trigger.risulua', luaText);
+    await writeWorkspaceFile(root, 'prompt_template/writer-trigger.risuprompt', writerText);
+    const requestSpy = vi.fn(async () => {
+      return {
+        isIncomplete: false,
+        items: [{ label: 'getState(' }, { label: 'getLoreBooks(' }],
+      } as CompletionList;
+    });
+    const luaLsManager = createLuaLsProcessManagerStub({
+      getRuntime: vi.fn(() =>
+        createLuaLsCompanionRuntime({
+          detail: 'LuaLS sidecar is ready to serve proxied completion requests.',
+          executablePath: '/mock/luals',
+          health: 'healthy',
+          status: 'ready',
+        }),
+      ),
+      request: requestSpy,
+    });
+
+    registerServer(connection as any, documents as any, {
+      createLuaLsProcessManager: (() => luaLsManager) as unknown as () => LuaLsProcessManager,
+    });
+    documents.open(luaUri, luaText, 1, 'lua');
+
+    const completion = await connection.completionHandler?.(
+      {
+        textDocument: { uri: luaUri },
+        position: positionAt(luaText, '"', 1),
       },
       createCancellationToken(false),
     );

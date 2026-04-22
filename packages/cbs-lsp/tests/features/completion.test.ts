@@ -7,7 +7,10 @@ import { CBSBuiltinRegistry } from 'risu-workbench-core';
 import { describe, expect, it } from 'vitest';
 
 import { type AgentMetadataEnvelope, FragmentAnalysisService } from '../../src/core';
-import { CompletionProvider } from '../../src/features/completion';
+import {
+  CBS_COMPLETION_TRIGGER_CHARACTERS,
+  CompletionProvider,
+} from '../../src/features/completion';
 import { offsetToPosition } from '../../src/utils/position';
 import {
   createFixtureRequest,
@@ -84,6 +87,12 @@ function extractCompletionExplanation(completion: CompletionItem | undefined) {
 }
 
 describe('CompletionProvider', () => {
+  describe('advertised trigger characters', () => {
+    it('covers CBS macro, block, expression, and Lua string-key entry points', () => {
+      expect([...CBS_COMPLETION_TRIGGER_CHARACTERS]).toEqual(['{', ':', '#', '/', '?', '<', '"']);
+    });
+  });
+
   describe('trigger context: {{ (all functions)', () => {
     it('offers all function names after {{', () => {
       const entry = getFixtureCorpusEntry('lorebook-basic');
@@ -214,6 +223,27 @@ describe('CompletionProvider', () => {
   });
 
   describe('trigger context: calc expression zones', () => {
+    it('offers calc completions immediately after the {{? trigger character', () => {
+      const entry = getFixtureCorpusEntry('lorebook-calc-expression-context');
+      const request = createFixtureRequest(entry);
+      const modifiedText = entry.text.replace('{{? $score + @bonus}}', '{{? }}');
+      const modifiedRequest = { ...request, text: modifiedText };
+      const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
+        analysisService: new FragmentAnalysisService(),
+        resolveRequest: ({ textDocument }) =>
+          textDocument.uri === modifiedRequest.uri ? modifiedRequest : null,
+      });
+      const completions = provider.provide(
+        createParams(
+          modifiedRequest,
+          offsetToPosition(modifiedText, modifiedText.indexOf('{{?') + '{{?'.length),
+        ),
+      );
+
+      expectCompletionLabels(completions, '$score', '@bonus', '&&', '<=');
+      expectNoCompletionLabels(completions, 'setvar', '#when');
+    });
+
     it('offers calc variable completions inside the {{? ...}} inline form', () => {
       const entry = getFixtureCorpusEntry('lorebook-calc-expression-context');
       const request = createFixtureRequest(entry);
@@ -282,6 +312,25 @@ describe('CompletionProvider', () => {
   });
 
   describe('trigger context: {{call:: (local function names)', () => {
+    it('offers local #func declarations immediately after the :: trigger', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{#func greet user}}Hello{{/func}}{{call::}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(
+          request,
+          offsetToPosition(modifiedText, modifiedText.indexOf('{{call::') + '{{call::'.length),
+        ),
+      );
+
+      expectCompletionLabels(completions, 'greet');
+      expectNoCompletionLabels(completions, 'getvar', '#when');
+    });
+
     it('offers local #func declarations after call::', () => {
       const entry = getFixtureCorpusEntry('lorebook-basic');
       const modifiedText = entry.text.replace(
@@ -639,6 +688,28 @@ describe('CompletionProvider', () => {
   });
 
   describe('trigger context: {{/ (close tags)', () => {
+    it('offers close-tag completions immediately after the / trigger character', () => {
+      const entry = getFixtureCorpusEntry('regex-block-header');
+      const request = createFixtureRequest(entry);
+
+      const modifiedText = entry.text.replace('{{/when}}', '{{/}}');
+      const modifiedRequest = { ...request, text: modifiedText };
+      const modifiedProvider = new CompletionProvider(new CBSBuiltinRegistry(), {
+        analysisService: new FragmentAnalysisService(),
+        resolveRequest: () => modifiedRequest,
+      });
+
+      const completions = modifiedProvider.provide(
+        createParams(
+          modifiedRequest,
+          offsetToPosition(modifiedText, modifiedText.indexOf('{{/') + '{{/'.length),
+        ),
+      );
+
+      expectCompletionLabels(completions, '/when');
+      expectNoCompletionLabels(completions, '#when', 'user');
+    });
+
     it('offers matching close tag for open block', () => {
       const entry = getFixtureCorpusEntry('regex-block-header');
       const request = createFixtureRequest(entry);
