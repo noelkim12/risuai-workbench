@@ -17,8 +17,10 @@ import type {
   Range,
   ReferenceParams,
   RenameParams,
+  SelectionRange,
   SemanticTokens,
   SignatureHelp,
+  SymbolInformation,
   TextEdit,
   TextDocumentPositionParams,
   WorkspaceEdit,
@@ -139,6 +141,10 @@ class FakeConnection {
 
   inlayHintHandler: ((params: any) => InlayHint[]) | null = null;
 
+  selectionRangesHandler: ((params: any) => SelectionRange[]) | null = null;
+
+  workspaceSymbolHandler: ((params: any) => SymbolInformation[]) | null = null;
+
   signatureHelpHandler: ((params: any) => SignatureHelp | null) | null = null;
 
   foldingRangesHandler: ((params: any) => FoldingRange[]) | null = null;
@@ -219,6 +225,16 @@ class FakeConnection {
 
   onDocumentHighlight(handler: (params: any) => DocumentHighlight[]) {
     this.documentHighlightHandler = handler;
+    return createDisposable();
+  }
+
+  onSelectionRanges(handler: (params: any) => SelectionRange[]) {
+    this.selectionRangesHandler = handler;
+    return createDisposable();
+  }
+
+  onWorkspaceSymbol(handler: (params: any) => SymbolInformation[]) {
+    this.workspaceSymbolHandler = handler;
     return createDisposable();
   }
 

@@ -34,9 +34,11 @@ import {
   ResponseError,
   type SemanticTokensParams,
   type SignatureHelpParams,
+  type SymbolInformation,
   TextEdit,
   type TextDocumentPositionParams,
   type WorkspaceEdit,
+  type WorkspaceSymbolParams,
   type CancellationToken,
 } from 'vscode-languageserver/node';
 
@@ -48,6 +50,7 @@ import type { LuaLsCompanionController } from '../controllers/LuaLsCompanionCont
 import { DefinitionProvider } from '../features/definition';
 import { DocumentHighlightProvider } from '../features/documentHighlight';
 import { DocumentSymbolProvider } from '../features/documentSymbol';
+import { WorkspaceSymbolProvider } from '../features/workspaceSymbol';
 import { FoldingProvider } from '../features/folding';
 import { FormattingProvider } from '../features/formatting';
 import { HoverProvider } from '../features/hover';
@@ -83,6 +86,7 @@ export interface ServerFeatureRegistrarProviders {
   resolveRequest: (uri: string) => FragmentAnalysisRequest | null;
   semanticTokensProvider: SemanticTokensProvider;
   signatureHelpProvider: SignatureHelpProvider;
+  workspaceSymbolProvider: WorkspaceSymbolProvider;
 }
 
 export interface ServerFeatureRegistrarContext {
@@ -169,6 +173,7 @@ export class ServerFeatureRegistrar {
   } | null;
   private readonly semanticTokensProvider: SemanticTokensProvider;
   private readonly signatureHelpProvider: SignatureHelpProvider;
+  private readonly workspaceSymbolProvider: WorkspaceSymbolProvider;
 
   /**
    * constructor 함수.
@@ -196,6 +201,7 @@ export class ServerFeatureRegistrar {
     this.resolveWorkspaceVariableFlowContextByUri = context.resolveWorkspaceVariableFlowContext;
     this.semanticTokensProvider = context.providers.semanticTokensProvider;
     this.signatureHelpProvider = context.providers.signatureHelpProvider;
+    this.workspaceSymbolProvider = context.providers.workspaceSymbolProvider;
   }
 
   /**
@@ -207,6 +213,7 @@ export class ServerFeatureRegistrar {
     this.registerCompletionHandler();
     this.registerDocumentHighlightHandler();
     this.registerDocumentSymbolHandler();
+    this.registerWorkspaceSymbolHandler();
     this.registerFormattingHandler();
     this.registerRangeFormattingHandler();
     this.registerDefinitionHandler();
@@ -365,6 +372,25 @@ export class ServerFeatureRegistrar {
           const request = this.resolveRequest(params.textDocument.uri);
           return request ? this.documentSymbolProvider.provide(params, request, cancellationToken) : [];
         },
+        summarize: (result) => ({ count: result.length }),
+        token: cancellationToken,
+      });
+    });
+  }
+
+  private registerWorkspaceSymbolHandler(): void {
+    const workspaceSymbolConnection = this.connection as Connection & {
+      onWorkspaceSymbol?: (
+        handler: (params: WorkspaceSymbolParams, cancellationToken: CancellationToken) => SymbolInformation[],
+      ) => unknown;
+    };
+    workspaceSymbolConnection.onWorkspaceSymbol?.((params, cancellationToken): SymbolInformation[] => {
+      return this.requestRunner.runSync({
+        empty: [],
+        feature: 'workspaceSymbol',
+        getUri: () => 'workspace://symbol',
+        params,
+        run: () => this.workspaceSymbolProvider.provide(params, cancellationToken),
         summarize: (result) => ({ count: result.length }),
         token: cancellationToken,
       });

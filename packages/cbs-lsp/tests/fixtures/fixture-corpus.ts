@@ -1,4 +1,12 @@
-import type { CodeAction, CodeLens, CompletionItem, Diagnostic, DocumentSymbol, Hover } from 'vscode-languageserver/node';
+import type {
+  CodeAction,
+  CodeLens,
+  CompletionItem,
+  Diagnostic,
+  DocumentSymbol,
+  Hover,
+  SymbolInformation,
+} from 'vscode-languageserver/node';
 import {
   DIAGNOSTIC_TAXONOMY,
   DiagnosticCode,
@@ -43,6 +51,12 @@ import {
   type NormalizedDocumentSymbolsEnvelopeSnapshot,
   type NormalizedDocumentSymbolSnapshot,
 } from '../../src/features/documentSymbol';
+import {
+  normalizeWorkspaceSymbolsEnvelopeForSnapshot,
+  normalizeWorkspaceSymbolsForSnapshot,
+  type NormalizedWorkspaceSymbolsEnvelopeSnapshot,
+  type NormalizedWorkspaceSymbolSnapshot,
+} from '../../src/features/workspaceSymbol';
 import {
   normalizeCodeLensesEnvelopeForSnapshot,
   normalizeCodeLensesForSnapshot,
@@ -1137,6 +1151,32 @@ export function snapshotDocumentSymbolsEnvelope(
 }
 
 /**
+ * snapshotWorkspaceSymbols 함수.
+ * workspace symbol 결과를 deterministic ordering의 normalized snapshot 배열로 변환함.
+ *
+ * @param symbols - 정규화할 workspace symbol 목록
+ * @returns stable workspace symbol snapshot 배열
+ */
+export function snapshotWorkspaceSymbols(
+  symbols: readonly SymbolInformation[],
+): NormalizedWorkspaceSymbolSnapshot[] {
+  return normalizeWorkspaceSymbolsForSnapshot(symbols);
+}
+
+/**
+ * snapshotWorkspaceSymbolsEnvelope 함수.
+ * workspace symbol snapshot에 shared availability/provenance envelope를 붙임.
+ *
+ * @param symbols - 정규화할 workspace symbol 목록
+ * @returns schema/version과 availability/provenance를 포함한 snapshot view
+ */
+export function snapshotWorkspaceSymbolsEnvelope(
+  symbols: readonly SymbolInformation[],
+): NormalizedWorkspaceSymbolsEnvelopeSnapshot {
+  return normalizeWorkspaceSymbolsEnvelopeForSnapshot(symbols);
+}
+
+/**
  * snapshotProviderBundle 함수.
  * 같은 문서 상태에서 여러 provider 결과를 snapshot/golden 친화적인 하나의 JSON shape로 묶음.
  *
@@ -1210,6 +1250,19 @@ export function serializeCodeLensesEnvelopeForGolden(
  */
 export function serializeDocumentSymbolsEnvelopeForGolden(
   snapshot: NormalizedDocumentSymbolsEnvelopeSnapshot,
+): string {
+  return JSON.stringify(snapshot, null, 2);
+}
+
+/**
+ * serializeWorkspaceSymbolsEnvelopeForGolden 함수.
+ * workspace symbol envelope snapshot을 deterministic JSON 문자열로 직렬화함.
+ *
+ * @param snapshot - 직렬화할 workspace symbol envelope
+ * @returns golden 비교용 deterministic JSON 문자열
+ */
+export function serializeWorkspaceSymbolsEnvelopeForGolden(
+  snapshot: NormalizedWorkspaceSymbolsEnvelopeSnapshot,
 ): string {
   return JSON.stringify(snapshot, null, 2);
 }

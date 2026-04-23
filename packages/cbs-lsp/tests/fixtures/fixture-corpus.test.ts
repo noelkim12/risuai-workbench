@@ -12,6 +12,7 @@ import {
   listMatrixFixtures,
   snapshotCodeLensesEnvelope,
   snapshotDocumentSymbolsEnvelope,
+  snapshotWorkspaceSymbolsEnvelope,
   snapshotLayer3Queries,
   snapshotProviderBundle,
 } from './fixture-corpus';
@@ -199,6 +200,24 @@ describe('cbs-lsp fixture corpus', () => {
       availability: expect.objectContaining({
         features: expect.arrayContaining([
           expect.objectContaining({ key: 'documentSymbol' }),
+        ]),
+      }),
+    });
+  });
+
+  it('stamps workspace symbol envelopes with the shared protocol marker and metadata contract', () => {
+    const snapshot = snapshotWorkspaceSymbolsEnvelope([]);
+
+    expect(snapshot).toMatchObject({
+      schema: 'cbs-lsp-agent-contract',
+      schemaVersion: '1.0.0',
+      provenance: {
+        reason: 'contextual-inference',
+        source: 'workspace-symbol:workspace-builder',
+      },
+      availability: expect.objectContaining({
+        features: expect.arrayContaining([
+          expect.objectContaining({ key: 'workspaceSymbol' }),
         ]),
       }),
     });

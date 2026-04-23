@@ -16,21 +16,23 @@ import type {
     DocumentHighlight,
     DocumentRangeFormattingParams,
     DocumentSymbol,
-    FoldingRange,
-    Hover,
-    InlayHint,
-    InitializeParams,
-    InitializeResult,
+  FoldingRange,
+  Hover,
+  InlayHint,
+  InitializeParams,
+  InitializeResult,
     Location,
     Range,
     ReferenceParams,
     RenameParams,
     SelectionRange,
     SemanticTokens,
-    SignatureHelp,
+  SignatureHelp,
   TextEdit,
   TextDocumentPositionParams,
   WorkspaceEdit,
+  WorkspaceSymbolParams,
+  SymbolInformation,
 } from 'vscode-languageserver/node';
 import {
   CodeActionKind,
@@ -71,12 +73,14 @@ import {
   serializeCodeLensesEnvelopeForGolden,
   serializeDocumentSymbolsEnvelopeForGolden,
   serializeProviderBundleForGolden,
+  serializeWorkspaceSymbolsEnvelopeForGolden,
   snapshotCodeActionsEnvelope,
   snapshotCodeLensesEnvelope,
   snapshotDocumentSymbolsEnvelope,
   snapshotHostDiagnosticsEnvelope,
   snapshotLuaHoverEnvelope,
   snapshotProviderBundle,
+  snapshotWorkspaceSymbolsEnvelope,
 } from './fixtures/fixture-corpus';
 
 const tempRoots: string[] = [];
@@ -306,6 +310,8 @@ class FakeConnection {
 
   documentSymbolHandler: ((params: any, token?: CancellationToken) => DocumentSymbol[]) | null = null;
 
+  workspaceSymbolHandler: ((params: WorkspaceSymbolParams, token?: CancellationToken) => SymbolInformation[]) | null = null;
+
   definitionHandler: ((params: any, token?: CancellationToken) => Definition | null) | null = null;
 
   referencesHandler: ((params: any, token?: CancellationToken) => Location[]) | null = null;
@@ -431,6 +437,11 @@ class FakeConnection {
 
   onDocumentSymbol(handler: (params: any, token?: CancellationToken) => DocumentSymbol[]) {
     this.documentSymbolHandler = handler;
+    return createDisposable();
+  }
+
+  onWorkspaceSymbol(handler: (params: WorkspaceSymbolParams, token?: CancellationToken) => SymbolInformation[]) {
+    this.workspaceSymbolHandler = handler;
     return createDisposable();
   }
 
@@ -762,6 +773,7 @@ describe('LSP server integration', () => {
           definitionProvider: true,
           documentHighlightProvider: true,
           documentSymbolProvider: true,
+          workspaceSymbolProvider: true,
           documentFormattingProvider: true,
           documentRangeFormattingProvider: true,
           selectionRangeProvider: true,
@@ -813,6 +825,7 @@ describe('LSP server integration', () => {
     expect(connection.completionHandler).not.toBeNull();
     expect(connection.documentHighlightHandler).not.toBeNull();
     expect(connection.documentSymbolHandler).not.toBeNull();
+    expect(connection.workspaceSymbolHandler).not.toBeNull();
     expect(connection.formattingHandler).not.toBeNull();
     expect(connection.rangeFormattingHandler).not.toBeNull();
     expect(connection.definitionHandler).not.toBeNull();
@@ -1955,6 +1968,117 @@ describe('LSP server integration', () => {
     expect(serializeDocumentSymbolsEnvelopeForGolden(snapshot)).toBe(
       serializeDocumentSymbolsEnvelopeForGolden(
         snapshotDocumentSymbolsEnvelope([...(symbols ?? [])].reverse()),
+      ),
+    );
+  });
+
+  it('routes workspace/symbol through the server seam and exposes deterministic workspace-wide symbols', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const lorebookUri = await writeWorkspaceFile(
+      root,
+      'lorebooks/hero.risulorebook',
+      lorebookDocument(['{{setvar::affection::10}}', '{{#func greetHero target}}Hello{{/func}}']),
+    );
+    await writeWorkspaceFile(
+      root,
+      'prompts/dialog.risuprompt',
+      ['---', 'type: plain', '---', '@@@ TEXT', '{{getvar::affection}}', '@@@ INNER_FORMAT', 'plain', ''].join('\n'),
+    );
+
+    registerServer(connection as any, documents as any);
+    documents.open(lorebookUri, lorebookDocument(['{{setvar::affection::10}}', '{{#func greetHero target}}Hello{{/func}}']), 1);
+    connection.initializeHandler?.({
+      capabilities: {},
+      workspaceFolders: [{ uri: pathToFileURL(root).href, name: 'primary' }],
+    } as InitializeParams);
+    connection.initializedHandler?.({});
+    await Promise.resolve();
+
+    const symbols = connection.workspaceSymbolHandler?.(
+      { query: 'gh' },
+      createCancellationToken(false),
+    );
+    const affectionSymbols = connection.workspaceSymbolHandler?.(
+      { query: 'aff' },
+      createCancellationToken(false),
+    );
+
+    expect(symbols).toEqual([
+      expect.objectContaining({
+        name: 'greetHero',
+        containerName: 'lorebooks/hero.risulorebook#CONTENT',
+      }),
+    ]);
+    expect(affectionSymbols).toEqual([
+      expect.objectContaining({
+        name: 'affection',
+        containerName: 'lorebooks/hero.risulorebook',
+      }),
+    ]);
+
+    const snapshot = snapshotWorkspaceSymbolsEnvelope(connection.workspaceSymbolHandler?.(
+      { query: '' },
+      createCancellationToken(false),
+    ) ?? []);
+
+    expect(snapshot).toEqual({
+      schema: 'cbs-lsp-agent-contract',
+      schemaVersion: '1.0.0',
+      availability: expect.objectContaining({
+        features: expect.arrayContaining([
+          expect.objectContaining({
+            key: 'workspaceSymbol',
+            scope: 'local-first',
+            source: 'server-capability:workspaceSymbol',
+          }),
+        ]),
+      }),
+      provenance: {
+        reason: 'contextual-inference',
+        source: 'workspace-symbol:workspace-builder',
+        detail:
+          'Workspace symbol snapshots are derived from ElementRegistry, UnifiedVariableGraph, ActivationChainService, and fragment analysis. They expose workspace-wide variables, CBS local functions, lorebook entries, and prompt sections while preserving deterministic prefix/fuzzy query ordering.',
+      },
+      symbols: expect.arrayContaining([
+        expect.objectContaining({
+          name: 'affection',
+          containerName: 'lorebooks/hero.risulorebook',
+          symbolKind: 'variable',
+          uri: lorebookUri,
+        }),
+        expect.objectContaining({
+          name: 'greetHero',
+          containerName: 'lorebooks/hero.risulorebook#CONTENT',
+          symbolKind: 'function',
+          uri: lorebookUri,
+        }),
+        expect.objectContaining({
+          name: 'entry',
+          containerName: 'lorebooks/hero.risulorebook',
+          symbolKind: 'namespace',
+          uri: lorebookUri,
+        }),
+        expect.objectContaining({
+          name: 'TEXT',
+          containerName: 'prompts/dialog.risuprompt',
+          symbolKind: 'module',
+        }),
+        expect.objectContaining({
+          name: 'INNER_FORMAT',
+          containerName: 'prompts/dialog.risuprompt',
+          symbolKind: 'module',
+        }),
+      ]),
+    });
+
+    expect(serializeWorkspaceSymbolsEnvelopeForGolden(snapshot)).toBe(
+      serializeWorkspaceSymbolsEnvelopeForGolden(
+        snapshotWorkspaceSymbolsEnvelope([...(connection.workspaceSymbolHandler?.(
+          { query: '' },
+          createCancellationToken(false),
+        ) ?? [])].reverse()),
       ),
     );
   });

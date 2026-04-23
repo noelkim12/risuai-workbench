@@ -62,6 +62,7 @@ export function createInitializeResult(
       definitionProvider: true,
       documentHighlightProvider: true,
       documentSymbolProvider: true,
+      workspaceSymbolProvider: true,
       documentFormattingProvider: true,
       documentRangeFormattingProvider: true,
       selectionRangeProvider: true,

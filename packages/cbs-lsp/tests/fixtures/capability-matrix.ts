@@ -46,6 +46,7 @@ interface CapabilityMatrixSnapshot {
       positionEncoding: string;
       renameProvider: boolean | { prepareProvider: true };
       selectionRangeProvider: boolean;
+      workspaceSymbolProvider: boolean;
     };
   experimental: {
     activeFailureModes: readonly string[];
@@ -228,6 +229,7 @@ export function snapshotCapabilityMatrixFixture(
           ? initializeResult.capabilities.renameProvider
           : { prepareProvider: true },
       selectionRangeProvider: Boolean(initializeResult.capabilities.selectionRangeProvider),
+      workspaceSymbolProvider: Boolean(initializeResult.capabilities.workspaceSymbolProvider),
     },
     experimental: {
       activeFailureModes: summarizeActiveFailureModes(availabilitySnapshot.operator.failureModes),
@@ -303,6 +305,7 @@ export const CAPABILITY_MATRIX_FIXTURES = Object.freeze<readonly CapabilityMatri
         positionEncoding: LSP_POSITION_ENCODING,
         renameProvider: true,
         selectionRangeProvider: true,
+        workspaceSymbolProvider: true,
       },
       experimental: {
         activeFailureModes: ['luals-unavailable', 'watched-files-client-unsupported', 'workspace-root-unresolved'],
@@ -400,6 +403,7 @@ export const CAPABILITY_MATRIX_FIXTURES = Object.freeze<readonly CapabilityMatri
           prepareProvider: true,
         },
         selectionRangeProvider: true,
+        workspaceSymbolProvider: true,
       },
       experimental: {
         activeFailureModes: ['watched-files-client-unsupported', 'workspace-root-unresolved'],
@@ -508,6 +512,7 @@ export const CAPABILITY_MATRIX_FIXTURES = Object.freeze<readonly CapabilityMatri
           prepareProvider: true,
         },
         selectionRangeProvider: true,
+        workspaceSymbolProvider: true,
       },
       experimental: {
         activeFailureModes: ['multi-root-reduced'],

@@ -23,14 +23,15 @@ export interface ActiveFeatureAvailabilityMap {
   folding: AgentMetadataAvailabilityContract;
   hover: AgentMetadataAvailabilityContract;
   inlayHint: AgentMetadataAvailabilityContract;
+  references: AgentMetadataAvailabilityContract;
+  rename: AgentMetadataAvailabilityContract;
   selectionRange: AgentMetadataAvailabilityContract;
+  semanticTokens: AgentMetadataAvailabilityContract;
+  signature: AgentMetadataAvailabilityContract;
+  workspaceSymbol: AgentMetadataAvailabilityContract;
   'lua-completion': AgentMetadataAvailabilityContract;
   'lua-diagnostics': AgentMetadataAvailabilityContract;
   luaHover: AgentMetadataAvailabilityContract;
-  references: AgentMetadataAvailabilityContract;
-  rename: AgentMetadataAvailabilityContract;
-  semanticTokens: AgentMetadataAvailabilityContract;
-  signature: AgentMetadataAvailabilityContract;
 }
 
 export interface DeferredFeatureAvailabilityMap {
@@ -307,6 +308,11 @@ export const ACTIVE_FEATURE_AVAILABILITY = Object.freeze({
     'local-only',
     'server-capability:signature',
     'Signature help is active for routed CBS fragments and uses the current document context only.',
+  ),
+  workspaceSymbol: createAgentMetadataAvailability(
+    'local-first',
+    'server-capability:workspaceSymbol',
+    'Workspace symbols are active when a workspace root is resolved, expose variables from UnifiedVariableGraph, local functions from ElementRegistry Lua artifacts, lorebook entries from ActivationChainService, and prompt sections from ElementRegistry fragments. In multi-root or unresolved-root scenarios the result set degrades to available workspace state only.',
   ),
 }) satisfies ActiveFeatureAvailabilityMap;
 

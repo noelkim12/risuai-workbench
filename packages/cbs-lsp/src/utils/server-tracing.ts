@@ -32,7 +32,8 @@ export type CbsLspFeatureName =
    | 'selectionRange'
    | 'signature'
    | 'folding'
-   | 'semanticTokens';
+    | 'semanticTokens'
+    | 'workspaceSymbol';
 
 /**
  * FeatureTraceDetails 타입.

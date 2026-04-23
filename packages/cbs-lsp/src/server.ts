@@ -39,6 +39,7 @@ import { CodeActionProvider } from './features/codeActions';
 import { CodeLensRefreshScheduler } from './controllers/CodeLensRefreshScheduler';
 import { DocumentHighlightProvider } from './features/documentHighlight';
 import { DocumentSymbolProvider } from './features/documentSymbol';
+import { WorkspaceSymbolProvider } from './features/workspaceSymbol';
 import { FormattingProvider } from './features/formatting';
 import { FoldingProvider } from './features/folding';
 import { HoverProvider } from './features/hover';
@@ -262,6 +263,12 @@ function createServerFeatureProviders(
       resolveRequest: ({ textDocument }) => resolveRequest(textDocument.uri),
     }),
     documentSymbolProvider: new DocumentSymbolProvider(fragmentAnalysisService),
+    workspaceSymbolProvider: new WorkspaceSymbolProvider({
+      resolveWorkspaceStates: () => {
+        const roots = workspaceStateRepository.listRoots();
+        return roots.map((root) => workspaceStateRepository.getByRoot(root)).filter((state): state is NonNullable<typeof state> => state != null);
+      },
+    }),
     foldingProvider: new FoldingProvider(fragmentAnalysisService),
     formattingProvider: new FormattingProvider({
       analysisService: fragmentAnalysisService,
