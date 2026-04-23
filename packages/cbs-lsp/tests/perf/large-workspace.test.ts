@@ -6,8 +6,10 @@
 import { performance } from 'node:perf_hooks';
 import { rm } from 'node:fs/promises';
 
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
+import { FragmentAnalysisService } from '../../src/core';
+import { SemanticTokensProvider } from '../../src/features/semanticTokens';
 import {
   createWorkspaceRoot,
   ensureBuiltPackage,
@@ -90,16 +92,13 @@ async function createLargeWorkspace(pairCount: number): Promise<string> {
   return root;
 }
 
-beforeAll(() => {
-  ensureBuiltPackage();
-});
-
 afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
 describe.sequential('cbs-language-server large workspace product matrix', () => {
   it('keeps large extracted workspace report/query flows within a practical regression budget', async () => {
+    ensureBuiltPackage();
     const pairCount = 80;
     const root = await createLargeWorkspace(pairCount);
 
@@ -132,5 +131,36 @@ describe.sequential('cbs-language-server large workspace product matrix', () => 
     expect(query.query.variableFlow.writers.length).toBeGreaterThan(0);
     expect(reportDurationMs).toBeLessThan(20_000);
     expect(queryDurationMs).toBeLessThan(10_000);
+  });
+
+  it('keeps semantic token range payloads meaningfully smaller than full-document payloads on large CBS documents', () => {
+    const provider = new SemanticTokensProvider(new FragmentAnalysisService());
+    const bodyLines = Array.from({ length: 240 }, (_value, index) => {
+      return `{{setvar::shared_${index}::${index}}} {{#when::shared_${index}::is::${index}}}ok{{:else}}no{{/}}`;
+    });
+    const text = ['---', 'name: perf-range', '---', '@@@ CONTENT', ...bodyLines, ''].join('\n');
+    const request = {
+      uri: 'file:///fixtures/perf-semantic-range.risulorebook',
+      version: 1,
+      filePath: '/fixtures/perf-semantic-range.risulorebook',
+      text,
+    };
+
+    const fullPayload = provider.provide({ textDocument: { uri: request.uri } }, request).data;
+    const rangePayload = provider.provideRange(
+      {
+        textDocument: { uri: request.uri },
+        range: {
+          start: { line: 4, character: 0 },
+          end: { line: 10, character: 0 },
+        },
+      },
+      request,
+    ).data;
+
+    expect(fullPayload.length).toBeGreaterThan(0);
+    expect(rangePayload.length).toBeGreaterThan(0);
+    expect(rangePayload.length).toBeLessThan(fullPayload.length);
+    expect(fullPayload.length / rangePayload.length).toBeGreaterThan(10);
   });
 });

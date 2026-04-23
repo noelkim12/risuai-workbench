@@ -85,6 +85,7 @@ export function createInitializeResult(
           tokenModifiers: [...SEMANTIC_TOKEN_MODIFIERS],
         },
         full: true,
+        range: true,
       },
     },
     experimental: {

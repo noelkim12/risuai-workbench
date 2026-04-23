@@ -33,6 +33,7 @@ import {
   type RenameParams,
   ResponseError,
   type SemanticTokensParams,
+  type SemanticTokensRangeParams,
   type SignatureHelpParams,
   type SymbolInformation,
   TextEdit,
@@ -227,6 +228,7 @@ export class ServerFeatureRegistrar {
     this.registerSignatureHelpHandler();
     this.registerFoldingHandler();
     this.registerSemanticTokensHandler();
+    this.registerSemanticTokensRangeHandler();
   }
 
   private createDefinitionProvider(uri: string): DefinitionProvider {
@@ -674,6 +676,25 @@ export class ServerFeatureRegistrar {
           const request = this.resolveRequest(params.textDocument.uri);
           return request
             ? this.semanticTokensProvider.provide(params, request, cancellationToken)
+            : { data: [] };
+        },
+        summarize: (result) => ({ count: result.data.length }),
+        token: cancellationToken,
+      });
+    });
+  }
+
+  private registerSemanticTokensRangeHandler(): void {
+    this.connection.languages.semanticTokens.onRange((params: SemanticTokensRangeParams, cancellationToken) => {
+      return this.requestRunner.runSync({
+        empty: { data: [] },
+        feature: 'semanticTokensRange',
+        getUri: (requestParams) => requestParams.textDocument.uri,
+        params,
+        run: () => {
+          const request = this.resolveRequest(params.textDocument.uri);
+          return request
+            ? this.semanticTokensProvider.provideRange(params, request, cancellationToken)
             : { data: [] };
         },
         summarize: (result) => ({ count: result.data.length }),

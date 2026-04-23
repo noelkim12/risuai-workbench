@@ -332,6 +332,8 @@ class FakeConnection {
 
   semanticTokensHandler: ((params: any, token?: CancellationToken) => SemanticTokens) | null = null;
 
+  semanticTokensRangeHandler: ((params: any, token?: CancellationToken) => SemanticTokens) | null = null;
+
   watchedFilesHandler: ((params: DidChangeWatchedFilesParams) => void) | null = null;
 
   didChangeConfigurationHandler: ((params: DidChangeConfigurationParams) => void) | null = null;
@@ -395,6 +397,10 @@ class FakeConnection {
     semanticTokens: {
       on: (handler: (params: any, token?: CancellationToken) => SemanticTokens) => {
         this.semanticTokensHandler = handler;
+        return createDisposable();
+      },
+      onRange: (handler: (params: any, token?: CancellationToken) => SemanticTokens) => {
+        this.semanticTokensRangeHandler = handler;
         return createDisposable();
       },
     },
@@ -791,6 +797,7 @@ describe('LSP server integration', () => {
               tokenModifiers: [...SEMANTIC_TOKEN_MODIFIERS],
             },
             full: true,
+            range: true,
           },
         }),
         experimental: {
@@ -837,6 +844,7 @@ describe('LSP server integration', () => {
     expect(connection.signatureHelpHandler).not.toBeNull();
     expect(connection.foldingRangesHandler).not.toBeNull();
     expect(connection.semanticTokensHandler).not.toBeNull();
+    expect(connection.semanticTokensRangeHandler).not.toBeNull();
     expect(connection.executeCommandHandler).not.toBeNull();
     expect(connection.definitionRegistrations).toBe(1);
     expect(connection.referencesRegistrations).toBe(1);
@@ -2881,6 +2889,59 @@ describe('LSP server integration', () => {
     expect(fragmentAnalysisService.getCachedAnalysis(uri, 2)).not.toBeNull();
   });
 
+  it('routes textDocument/semanticTokens/range through the server seam and keeps the subset aligned with full tokens', () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const uri = 'file:///fixtures/server-semantic-range.risuregex';
+    const text = regexDocument(
+      ['{{setvar::mood::42}}', '{{#when::mood::is::42}}yes{{:else}}no{{/}}'],
+      ['{{#if true}}legacy{{/if}}'],
+    );
+
+    registerServer(connection as any, documents as any);
+    documents.open(uri, text, 1);
+
+    const fullTokens = decodeSemanticTokenTexts(
+      connection.semanticTokensHandler?.(
+        {
+          textDocument: { uri },
+        },
+        createCancellationToken(false),
+      )?.data ?? [],
+      text,
+    );
+    const rangeTokens = decodeSemanticTokenTexts(
+      connection.semanticTokensRangeHandler?.(
+        {
+          textDocument: { uri },
+          range: {
+            start: positionAt(text, '{{setvar', 0),
+            end: positionAt(text, '{{#when::mood::is::42}}yes{{:else}}no{{/}}', '{{#when::mood::is::42}}yes{{:else}}no{{/}}'.length),
+          },
+        },
+        createCancellationToken(false),
+      )?.data ?? [],
+      text,
+    );
+
+    const fullKeys = new Set(fullTokens.map((token) => `${token.line}:${token.startChar}:${token.length}:${token.text}`));
+
+    expect(rangeTokens.length).toBeGreaterThan(0);
+    expect(rangeTokens.length).toBeLessThan(fullTokens.length);
+    expect(rangeTokens.every((token) => fullKeys.has(`${token.line}:${token.startChar}:${token.length}:${token.text}`))).toBe(true);
+    expect(rangeTokens).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: 'setvar' }),
+        expect.objectContaining({ text: 'mood' }),
+        expect.objectContaining({ text: '42' }),
+        expect.objectContaining({ text: '#when' }),
+      ]),
+    );
+    expect(rangeTokens).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ text: '#if' })]),
+    );
+  });
+
   it('builds deterministic multi-provider snapshots from one cached document state and replaces stale snapshots after same-version text changes', () => {
     const connection = new FakeConnection();
     const documents = new FakeDocuments();
@@ -3262,6 +3323,16 @@ describe('LSP server integration', () => {
       },
       createCancellationToken(false),
     );
+    connection.semanticTokensRangeHandler?.(
+      {
+        textDocument: { uri },
+        range: {
+          start: { line: 4, character: 0 },
+          end: { line: 5, character: 0 },
+        },
+      },
+      createCancellationToken(false),
+    );
 
     await connection.shutdown();
 
@@ -3288,6 +3359,8 @@ describe('LSP server integration', () => {
         expect.objectContaining({ message: '[cbs-lsp:folding] end' }),
         expect.objectContaining({ message: '[cbs-lsp:semanticTokens] start' }),
         expect.objectContaining({ message: '[cbs-lsp:semanticTokens] end' }),
+        expect.objectContaining({ message: '[cbs-lsp:semanticTokensRange] start' }),
+        expect.objectContaining({ message: '[cbs-lsp:semanticTokensRange] end' }),
         expect.objectContaining({ message: '[cbs-lsp:server] shutdown' }),
       ]),
     );
@@ -3505,6 +3578,18 @@ describe('LSP server integration', () => {
         cancelledToken,
       ) ?? { data: [] },
     ).toEqual({ data: [] });
+    expect(
+      connection.semanticTokensRangeHandler?.(
+        {
+          textDocument: { uri },
+          range: {
+            start: { line: 4, character: 0 },
+            end: { line: 5, character: 0 },
+          },
+        },
+        cancelledToken,
+      ) ?? { data: [] },
+    ).toEqual({ data: [] });
     expect(parseSpy).toHaveBeenCalledTimes(1);
     expect(fragmentAnalysisService.getCachedAnalysis(uri, 1)).toBeNull();
   });
@@ -3567,6 +3652,15 @@ describe('LSP server integration', () => {
     expect(
       connection.semanticTokensHandler?.({
         textDocument: { uri },
+      }) ?? { data: [] },
+    ).toEqual({ data: [] });
+    expect(
+      connection.semanticTokensRangeHandler?.({
+        textDocument: { uri },
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 0 },
+        },
       }) ?? { data: [] },
     ).toEqual({ data: [] });
   });

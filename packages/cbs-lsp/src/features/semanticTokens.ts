@@ -6,7 +6,11 @@
 import type { CancellationToken } from 'vscode-languageserver/node';
 import type { MacroCallNode, Token } from 'risu-workbench-core';
 import { CBSBuiltinRegistry, TokenType } from 'risu-workbench-core';
-import { SemanticTokens, SemanticTokensParams } from 'vscode-languageserver/node';
+import {
+  SemanticTokens,
+  SemanticTokensParams,
+  SemanticTokensRangeParams,
+} from 'vscode-languageserver/node';
 
 import {
   fragmentAnalysisService,
@@ -388,6 +392,39 @@ function classifyArgumentToken(
   return isNumberLike(trimmedValue) ? 'number' : 'string';
 }
 
+/**
+ * entryIntersectsRange 함수.
+ * 단일 라인 semantic token entry가 LSP range와 교차하는지 판별함.
+ *
+ * @param entry - host semantic token entry
+ * @param range - LSP line/character range
+ * @returns 교차하면 true
+ */
+function entryIntersectsRange(
+  entry: HostSemanticTokenEntry,
+  range: { start: { line: number; character: number }; end: { line: number; character: number } },
+): boolean {
+  const entryEndChar = entry.startChar + entry.length;
+
+  // Token ends before range starts
+  if (
+    entry.line < range.start.line ||
+    (entry.line === range.start.line && entryEndChar <= range.start.character)
+  ) {
+    return false;
+  }
+
+  // Token starts after range ends
+  if (
+    entry.line > range.end.line ||
+    (entry.line === range.end.line && entry.startChar >= range.end.character)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 function buildSemanticTokenData(entries: readonly HostSemanticTokenEntry[]): number[] {
   const sorted = [...entries].sort(
     (left, right) =>
@@ -426,20 +463,70 @@ export class SemanticTokensProvider {
     request: FragmentAnalysisRequest,
     cancellationToken?: CancellationToken,
   ): SemanticTokens {
+    const entries = this.collectEntries(request, cancellationToken);
+    return { data: buildSemanticTokenData(entries) };
+  }
+
+  /**
+   * provideRange 함수.
+   * 요청된 host-visible range에 교차하는 semantic token subset을 반환함.
+   *
+   * @param params - range 기반 semantic tokens 요청 파라미터
+   * @param request - fragment analysis 요청
+   * @param cancellationToken - 취소 토큰
+   * @returns range와 교차하는 token만 포함한 semantic tokens
+   */
+  provideRange(
+    params: SemanticTokensRangeParams,
+    request: FragmentAnalysisRequest,
+    cancellationToken?: CancellationToken,
+  ): SemanticTokens {
+    const entries = this.collectEntries(request, cancellationToken, params.range);
+    return { data: buildSemanticTokenData(entries) };
+  }
+
+  /**
+   * collectEntries 함수.
+   * full/range provider가 공통으로 재사용하는 host semantic token entry 목록을 수집함.
+   *
+   * @param request - fragment analysis 요청
+   * @param cancellationToken - 취소 토큰
+   * @param visibleRange - 있으면 해당 host range와 교차하는 fragment/token만 남김
+   * @returns host document 기준 semantic token entry 목록
+   */
+  private collectEntries(
+    request: FragmentAnalysisRequest,
+    cancellationToken?: CancellationToken,
+    visibleRange?: SemanticTokensRangeParams['range'],
+  ): HostSemanticTokenEntry[] {
     if (isRequestCancelled(cancellationToken)) {
-      return { data: [] };
+      return [];
     }
 
     const analysis = this.analysisService.analyzeDocument(request, cancellationToken);
     if (!analysis) {
-      return { data: [] };
+      return [];
     }
+
+    const visibleRangeStartOffset = visibleRange
+      ? positionToOffset(request.text, visibleRange.start)
+      : null;
+    const visibleRangeEndOffset = visibleRange ? positionToOffset(request.text, visibleRange.end) : null;
 
     const entries: HostSemanticTokenEntry[] = [];
 
     for (const fragmentAnalysis of analysis.fragmentAnalyses) {
       if (isRequestCancelled(cancellationToken)) {
-        return { data: [] };
+        return [];
+      }
+
+      if (
+        visibleRangeStartOffset !== null &&
+        visibleRangeEndOffset !== null &&
+        (fragmentAnalysis.fragment.end <= visibleRangeStartOffset ||
+          fragmentAnalysis.fragment.start >= visibleRangeEndOffset)
+      ) {
+        continue;
       }
 
       const hostOffsetForLocal = (localOffset: number): number | null =>
@@ -447,7 +534,7 @@ export class SemanticTokensProvider {
 
       for (const token of fragmentAnalysis.tokens) {
         if (isRequestCancelled(cancellationToken)) {
-          return { data: [] };
+          return [];
         }
 
         if (token.type === TokenType.EOF) {
@@ -596,12 +683,12 @@ export class SemanticTokensProvider {
             emitLocalOffsetRange(
               entries,
               request.text,
-                { hostOffsetForLocal },
-                trimmedSpan.startOffset,
-                trimmedSpan.endOffset,
-                classifyArgumentToken(lookup, token, this.registry),
-              );
-              break;
+              { hostOffsetForLocal },
+              trimmedSpan.startOffset,
+              trimmedSpan.endOffset,
+              classifyArgumentToken(lookup, token, this.registry),
+            );
+            break;
           }
           default:
             break;
@@ -609,6 +696,10 @@ export class SemanticTokensProvider {
       }
     }
 
-    return { data: buildSemanticTokenData(entries) };
+    if (!visibleRange) {
+      return entries;
+    }
+
+    return entries.filter((entry) => entryIntersectsRange(entry, visibleRange));
   }
 }

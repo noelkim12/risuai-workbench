@@ -155,6 +155,8 @@ class FakeConnection {
 
   semanticTokensHandler: ((params: any) => SemanticTokens) | null = null;
 
+  semanticTokensRangeHandler: ((params: any) => SemanticTokens) | null = null;
+
   readonly diagnostics: Array<{ uri: string; version?: number; diagnostics: readonly Diagnostic[] }> = [];
 
   readonly traceMessages: Array<{ message: string; verbose?: string }> = [];
@@ -183,6 +185,10 @@ class FakeConnection {
     semanticTokens: {
       on: (handler: (params: any) => SemanticTokens) => {
         this.semanticTokensHandler = handler;
+        return createDisposable();
+      },
+      onRange: (handler: (params: any) => SemanticTokens) => {
+        this.semanticTokensRangeHandler = handler;
         return createDisposable();
       },
     },

@@ -33,6 +33,7 @@ export type CbsLspFeatureName =
    | 'signature'
    | 'folding'
     | 'semanticTokens'
+    | 'semanticTokensRange'
     | 'workspaceSymbol';
 
 /**

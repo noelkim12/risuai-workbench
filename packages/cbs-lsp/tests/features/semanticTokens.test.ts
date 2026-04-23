@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SemanticTokensParams } from 'vscode-languageserver/node';
+import type { SemanticTokensParams, SemanticTokensRangeParams } from 'vscode-languageserver/node';
 
 import { FragmentAnalysisService } from '../../src/core';
 import {
@@ -22,6 +22,16 @@ interface DecodedSemanticToken {
 function createParams(uri: string): SemanticTokensParams {
   return {
     textDocument: { uri },
+  };
+}
+
+function createRangeParams(
+  uri: string,
+  range: SemanticTokensRangeParams['range'],
+): SemanticTokensRangeParams {
+  return {
+    textDocument: { uri },
+    range,
   };
 }
 
@@ -77,6 +87,17 @@ function expectSorted(tokens: readonly DecodedSemanticToken[]): void {
       (current.line === previous.line && current.startChar >= previous.startChar);
     expect(isSorted).toBe(true);
   }
+}
+
+function createTokenSignature(token: DecodedSemanticToken): string {
+  return [
+    token.line,
+    token.startChar,
+    token.length,
+    token.type,
+    token.modifiers.join(','),
+    token.text,
+  ].join(':');
 }
 
 describe('SemanticTokensProvider', () => {
@@ -218,6 +239,57 @@ describe('SemanticTokensProvider', () => {
     );
     expect(decoded).not.toContainEqual(
       expect.objectContaining({ text: 'hidden', type: 'variable' }),
+    );
+  });
+
+  it('returns a visible-range subset that stays classification-identical to the full provider', () => {
+    const service = new FragmentAnalysisService();
+    const provider = new SemanticTokensProvider(service);
+    const text = [
+      '---',
+      'comment: semantic tokens range',
+      'type: plain',
+      '---',
+      '@@@ IN',
+      '{{// note}}',
+      '{{setvar::mood::42}}',
+      '{{#when::score::is::10}}ok{{:else}}no{{/}}',
+      '@@@ OUT',
+      '{{#if true}}legacy{{/if}}',
+      '',
+    ].join('\n');
+    const request = buildRequest('/fixtures/semantic-provider-range.risuregex', text);
+    const fullDecoded = decodeSemanticTokens(provider.provide(createParams(request.uri), request).data, text);
+    const rangeDecoded = decodeSemanticTokens(
+      provider.provideRange(
+        createRangeParams(request.uri, {
+          start: { line: 6, character: 0 },
+          end: { line: 8, character: 0 },
+        }),
+        request,
+      ).data,
+      text,
+    );
+
+    const fullSignatures = new Set(fullDecoded.map(createTokenSignature));
+
+    expect(rangeDecoded.length).toBeGreaterThan(0);
+    expect(rangeDecoded.every((token) => token.line >= 6 && token.line < 8)).toBe(true);
+    expect(rangeDecoded.every((token) => fullSignatures.has(createTokenSignature(token)))).toBe(true);
+    expect(rangeDecoded).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: 'setvar', type: 'function', line: 6 }),
+        expect.objectContaining({ text: 'mood', type: 'variable', line: 6 }),
+        expect.objectContaining({ text: '42', type: 'number', line: 6 }),
+        expect.objectContaining({ text: '#when', type: 'keyword', line: 7 }),
+        expect.objectContaining({ text: 'is', type: 'operator', line: 7 }),
+      ]),
+    );
+    expect(rangeDecoded).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: '// note' }),
+        expect.objectContaining({ text: '#if' }),
+      ]),
     );
   });
 });
