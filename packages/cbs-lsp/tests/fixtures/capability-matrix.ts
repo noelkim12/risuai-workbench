@@ -36,7 +36,9 @@ interface CapabilityMatrixSnapshot {
     codeActionLiteralSupport: boolean;
     codeLensRefreshSupport: boolean;
     prepareRenameSupport: boolean;
+    publishDiagnosticsVersionSupport: boolean;
     watchedFilesDynamicRegistration: boolean;
+    watchedFilesRelativePatternSupport: boolean;
   };
     standard: {
       codeActionProvider: boolean | { codeActionKinds: readonly string[]; resolveProvider?: boolean };
@@ -90,6 +92,127 @@ export interface CapabilityMatrixFixture {
   id: string;
   params: InitializeParams;
   runtime: LuaLsCompanionRuntime;
+}
+
+/**
+ * createNeovimMinimumCapabilities 함수.
+ * nvim-lspconfig가 보통 보내는 최소 client capability payload를 만듦.
+ *
+ * @returns Neovim 최소 프로파일용 client capabilities
+ */
+function createNeovimMinimumCapabilities(): InitializeParams['capabilities'] {
+  return {
+    textDocument: {
+      codeAction: {
+        codeActionLiteralSupport: {
+          codeActionKind: {
+            valueSet: [CodeActionKind.QuickFix],
+          },
+        },
+      },
+      publishDiagnostics: {
+        versionSupport: true,
+      },
+      rename: {
+        prepareSupport: true,
+      },
+    },
+    workspace: {
+      didChangeWatchedFiles: {
+        dynamicRegistration: true,
+      },
+    },
+  };
+}
+
+/**
+ * createZedMinimumCapabilities 함수.
+ * Zed가 보내는 최소 client capability payload를 만듦.
+ *
+ * @returns Zed 최소 프로파일용 client capabilities
+ */
+function createZedMinimumCapabilities(): InitializeParams['capabilities'] {
+  return {
+    textDocument: {
+      codeAction: {
+        codeActionLiteralSupport: {
+          codeActionKind: {
+            valueSet: [CodeActionKind.QuickFix],
+          },
+        },
+      },
+      publishDiagnostics: {
+        versionSupport: true,
+      },
+      rename: {
+        prepareSupport: true,
+      },
+    },
+    workspace: {
+      codeLens: {
+        refreshSupport: true,
+      },
+      didChangeWatchedFiles: {
+        dynamicRegistration: true,
+        relativePatternSupport: true,
+      },
+    },
+  };
+}
+
+/**
+ * createEmacsMinimumCapabilities 함수.
+ * Eglot/Emacs가 보통 보내는 최소 client capability payload를 만듦.
+ *
+ * @returns Emacs 최소 프로파일용 client capabilities
+ */
+function createEmacsMinimumCapabilities(): InitializeParams['capabilities'] {
+  return {
+    textDocument: {
+      codeAction: {
+        codeActionLiteralSupport: {
+          codeActionKind: {
+            valueSet: [CodeActionKind.QuickFix],
+          },
+        },
+      },
+    },
+  };
+}
+
+/**
+ * createVsCodeFamilyMinimumCapabilities 함수.
+ * VS Code-family(Cursor, VS Code 등)가 보내는 최소 client capability payload를 만듦.
+ *
+ * @returns VS Code-family 최소 프로파일용 client capabilities
+ */
+function createVsCodeFamilyMinimumCapabilities(): InitializeParams['capabilities'] {
+  return {
+    textDocument: {
+      codeAction: {
+        codeActionLiteralSupport: {
+          codeActionKind: {
+            valueSet: [CodeActionKind.QuickFix],
+          },
+        },
+      },
+      publishDiagnostics: {
+        versionSupport: true,
+      },
+      rename: {
+        prepareSupport: true,
+      },
+    },
+    workspace: {
+      codeLens: {
+        refreshSupport: true,
+      },
+      didChangeWatchedFiles: {
+        dynamicRegistration: true,
+        relativePatternSupport: true,
+      },
+    },
+  };
 }
 
 const FEATURE_SCOPE_KEYS = Object.freeze([
@@ -210,7 +333,9 @@ export function snapshotCapabilityMatrixFixture(
         fixture.params.capabilities.textDocument?.codeAction?.codeActionLiteralSupport !== undefined,
       codeLensRefreshSupport: clientState.codeLensRefreshSupport,
       prepareRenameSupport: fixture.params.capabilities.textDocument?.rename?.prepareSupport ?? false,
+      publishDiagnosticsVersionSupport: clientState.publishDiagnosticsVersionSupport,
       watchedFilesDynamicRegistration: clientState.watchedFilesDynamicRegistration,
+      watchedFilesRelativePatternSupport: clientState.watchedFilesRelativePatternSupport,
     },
     standard: {
       codeActionProvider:
@@ -303,7 +428,9 @@ export const CAPABILITY_MATRIX_FIXTURES = Object.freeze<readonly CapabilityMatri
         codeActionLiteralSupport: false,
         codeLensRefreshSupport: false,
         prepareRenameSupport: false,
+        publishDiagnosticsVersionSupport: false,
         watchedFilesDynamicRegistration: false,
+        watchedFilesRelativePatternSupport: false,
       },
       standard: {
         codeActionProvider: {
@@ -402,7 +529,9 @@ export const CAPABILITY_MATRIX_FIXTURES = Object.freeze<readonly CapabilityMatri
         codeActionLiteralSupport: true,
         codeLensRefreshSupport: false,
         prepareRenameSupport: true,
+        publishDiagnosticsVersionSupport: false,
         watchedFilesDynamicRegistration: false,
+        watchedFilesRelativePatternSupport: false,
       },
       standard: {
         codeActionProvider: {
@@ -514,7 +643,364 @@ export const CAPABILITY_MATRIX_FIXTURES = Object.freeze<readonly CapabilityMatri
         codeActionLiteralSupport: true,
         codeLensRefreshSupport: true,
         prepareRenameSupport: true,
+        publishDiagnosticsVersionSupport: false,
         watchedFilesDynamicRegistration: true,
+        watchedFilesRelativePatternSupport: false,
+      },
+      standard: {
+        codeActionProvider: {
+          codeActionKinds: ['quickfix'],
+          resolveProvider: true,
+        },
+        codeActionResolveProvider: true,
+        completionResolveProvider: true,
+        completionTriggerCharacters: [...CBS_COMPLETION_TRIGGER_CHARACTERS],
+        executeCommandCommands: [ACTIVATION_CHAIN_CODELENS_COMMAND],
+        inlayHintProvider: true,
+        positionEncoding: LSP_POSITION_ENCODING,
+        renameProvider: {
+          prepareProvider: true,
+        },
+        selectionRangeProvider: true,
+        workspaceSymbolProvider: true,
+      },
+      experimental: {
+        activeFailureModes: ['multi-root-reduced'],
+        featureScopes: {
+          codeAction: 'local-only',
+          codelens: 'local-only',
+          inlayHint: 'local-only',
+          rename: 'local-first',
+          luaHover: 'local-only',
+          'lua-completion': 'local-only',
+          'lua-diagnostics': 'local-only',
+        },
+        luals: {
+          executablePath: '/mock/luals',
+          health: 'healthy',
+          status: 'ready',
+        },
+        workspace: {
+          initializeWorkspaceFolderCount: 2,
+          resolvedWorkspaceRootSource: 'initialize.workspaceFolders[0]',
+        },
+      },
+      trace: {
+        availability: {
+          activeFailureModes: ['multi-root-reduced'],
+          companionStatus: 'ready',
+          featureScopes: {
+            codeAction: 'local-only',
+            codelens: 'local-only',
+            inlayHint: 'local-only',
+            rename: 'local-first',
+            luaHover: 'local-only',
+            'lua-completion': 'local-only',
+            'lua-diagnostics': 'local-only',
+          },
+          schema: 'cbs-lsp-agent-contract',
+          schemaVersion: '1.0.0',
+        },
+        initialize: {
+          codeAction: true,
+          codeLens: true,
+          codeLensRefreshSupport: true,
+          multiFileEdit: 'off',
+          readOnlyBridge: 'on',
+          rename: true,
+          startupWorkspaceRootSource: 'initialize.workspaceFolders[0]',
+          watchedFilesDynamicRegistration: true,
+          workspaceFolderCount: 2,
+        },
+      },
+    },
+  },
+  {
+    id: 'neovim-minimum-luals-ready',
+    params: {
+      capabilities: createNeovimMinimumCapabilities(),
+      workspaceFolders: [{ uri: 'file:///workspace/neovim', name: 'neovim' }],
+    } as InitializeParams,
+    runtime: createLuaLsCompanionRuntime({
+      detail: 'LuaLS sidecar finished initialize/initialized handshake and is healthy.',
+      executablePath: '/mock/luals',
+      health: 'healthy',
+      status: 'ready',
+    }),
+    expectedSnapshot: {
+      caseId: 'neovim-minimum-luals-ready',
+      client: {
+        codeActionLiteralSupport: true,
+        codeLensRefreshSupport: false,
+        prepareRenameSupport: true,
+        publishDiagnosticsVersionSupport: true,
+        watchedFilesDynamicRegistration: true,
+        watchedFilesRelativePatternSupport: false,
+      },
+      standard: {
+        codeActionProvider: {
+          codeActionKinds: ['quickfix'],
+          resolveProvider: true,
+        },
+        codeActionResolveProvider: true,
+        completionResolveProvider: true,
+        completionTriggerCharacters: [...CBS_COMPLETION_TRIGGER_CHARACTERS],
+        executeCommandCommands: [ACTIVATION_CHAIN_CODELENS_COMMAND],
+        inlayHintProvider: true,
+        positionEncoding: LSP_POSITION_ENCODING,
+        renameProvider: {
+          prepareProvider: true,
+        },
+        selectionRangeProvider: true,
+        workspaceSymbolProvider: true,
+      },
+      experimental: {
+        activeFailureModes: [],
+        featureScopes: {
+          codeAction: 'local-only',
+          codelens: 'local-only',
+          inlayHint: 'local-only',
+          rename: 'local-first',
+          luaHover: 'local-only',
+          'lua-completion': 'local-only',
+          'lua-diagnostics': 'local-only',
+        },
+        luals: {
+          executablePath: '/mock/luals',
+          health: 'healthy',
+          status: 'ready',
+        },
+        workspace: {
+          initializeWorkspaceFolderCount: 1,
+          resolvedWorkspaceRootSource: 'initialize.workspaceFolders[0]',
+        },
+      },
+      trace: {
+        availability: {
+          activeFailureModes: [],
+          companionStatus: 'ready',
+          featureScopes: {
+            codeAction: 'local-only',
+            codelens: 'local-only',
+            inlayHint: 'local-only',
+            rename: 'local-first',
+            luaHover: 'local-only',
+            'lua-completion': 'local-only',
+            'lua-diagnostics': 'local-only',
+          },
+          schema: 'cbs-lsp-agent-contract',
+          schemaVersion: '1.0.0',
+        },
+        initialize: {
+          codeAction: true,
+          codeLens: true,
+          codeLensRefreshSupport: false,
+          multiFileEdit: 'off',
+          readOnlyBridge: 'on',
+          rename: true,
+          startupWorkspaceRootSource: 'initialize.workspaceFolders[0]',
+          watchedFilesDynamicRegistration: true,
+          workspaceFolderCount: 1,
+        },
+      },
+    },
+  },
+  {
+    id: 'zed-minimum-luals-ready',
+    params: {
+      capabilities: createZedMinimumCapabilities(),
+      workspaceFolders: [{ uri: 'file:///workspace/zed', name: 'zed' }],
+    } as InitializeParams,
+    runtime: createLuaLsCompanionRuntime({
+      detail: 'LuaLS sidecar finished initialize/initialized handshake and is healthy.',
+      executablePath: '/mock/luals',
+      health: 'healthy',
+      status: 'ready',
+    }),
+    expectedSnapshot: {
+      caseId: 'zed-minimum-luals-ready',
+      client: {
+        codeActionLiteralSupport: true,
+        codeLensRefreshSupport: true,
+        prepareRenameSupport: true,
+        publishDiagnosticsVersionSupport: true,
+        watchedFilesDynamicRegistration: true,
+        watchedFilesRelativePatternSupport: true,
+      },
+      standard: {
+        codeActionProvider: {
+          codeActionKinds: ['quickfix'],
+          resolveProvider: true,
+        },
+        codeActionResolveProvider: true,
+        completionResolveProvider: true,
+        completionTriggerCharacters: [...CBS_COMPLETION_TRIGGER_CHARACTERS],
+        executeCommandCommands: [ACTIVATION_CHAIN_CODELENS_COMMAND],
+        inlayHintProvider: true,
+        positionEncoding: LSP_POSITION_ENCODING,
+        renameProvider: {
+          prepareProvider: true,
+        },
+        selectionRangeProvider: true,
+        workspaceSymbolProvider: true,
+      },
+      experimental: {
+        activeFailureModes: [],
+        featureScopes: {
+          codeAction: 'local-only',
+          codelens: 'local-only',
+          inlayHint: 'local-only',
+          rename: 'local-first',
+          luaHover: 'local-only',
+          'lua-completion': 'local-only',
+          'lua-diagnostics': 'local-only',
+        },
+        luals: {
+          executablePath: '/mock/luals',
+          health: 'healthy',
+          status: 'ready',
+        },
+        workspace: {
+          initializeWorkspaceFolderCount: 1,
+          resolvedWorkspaceRootSource: 'initialize.workspaceFolders[0]',
+        },
+      },
+      trace: {
+        availability: {
+          activeFailureModes: [],
+          companionStatus: 'ready',
+          featureScopes: {
+            codeAction: 'local-only',
+            codelens: 'local-only',
+            inlayHint: 'local-only',
+            rename: 'local-first',
+            luaHover: 'local-only',
+            'lua-completion': 'local-only',
+            'lua-diagnostics': 'local-only',
+          },
+          schema: 'cbs-lsp-agent-contract',
+          schemaVersion: '1.0.0',
+        },
+        initialize: {
+          codeAction: true,
+          codeLens: true,
+          codeLensRefreshSupport: true,
+          multiFileEdit: 'off',
+          readOnlyBridge: 'on',
+          rename: true,
+          startupWorkspaceRootSource: 'initialize.workspaceFolders[0]',
+          watchedFilesDynamicRegistration: true,
+          workspaceFolderCount: 1,
+        },
+      },
+    },
+  },
+  {
+    id: 'emacs-minimum-luals-unavailable',
+    params: {
+      capabilities: createEmacsMinimumCapabilities(),
+    } as InitializeParams,
+    runtime: createLuaLsCompanionRuntime(),
+    expectedSnapshot: {
+      caseId: 'emacs-minimum-luals-unavailable',
+      client: {
+        codeActionLiteralSupport: true,
+        codeLensRefreshSupport: false,
+        prepareRenameSupport: false,
+        publishDiagnosticsVersionSupport: false,
+        watchedFilesDynamicRegistration: false,
+        watchedFilesRelativePatternSupport: false,
+      },
+      standard: {
+        codeActionProvider: {
+          codeActionKinds: ['quickfix'],
+          resolveProvider: true,
+        },
+        codeActionResolveProvider: true,
+        completionResolveProvider: true,
+        completionTriggerCharacters: [...CBS_COMPLETION_TRIGGER_CHARACTERS],
+        executeCommandCommands: [ACTIVATION_CHAIN_CODELENS_COMMAND],
+        inlayHintProvider: true,
+        positionEncoding: LSP_POSITION_ENCODING,
+        renameProvider: true,
+        selectionRangeProvider: true,
+        workspaceSymbolProvider: true,
+      },
+      experimental: {
+        activeFailureModes: ['luals-unavailable', 'watched-files-client-unsupported', 'workspace-root-unresolved'],
+        featureScopes: {
+          codeAction: 'local-only',
+          codelens: 'local-only',
+          inlayHint: 'local-only',
+          rename: 'local-first',
+          luaHover: 'local-only',
+          'lua-completion': 'local-only',
+          'lua-diagnostics': 'local-only',
+        },
+        luals: {
+          executablePath: null,
+          health: 'unavailable',
+          status: 'unavailable',
+        },
+        workspace: {
+          initializeWorkspaceFolderCount: 0,
+          resolvedWorkspaceRootSource: 'none',
+        },
+      },
+      trace: {
+        availability: {
+          activeFailureModes: ['luals-unavailable', 'watched-files-client-unsupported', 'workspace-root-unresolved'],
+          companionStatus: 'unavailable',
+          featureScopes: {
+            codeAction: 'local-only',
+            codelens: 'local-only',
+            inlayHint: 'local-only',
+            rename: 'local-first',
+            luaHover: 'local-only',
+            'lua-completion': 'local-only',
+            'lua-diagnostics': 'local-only',
+          },
+          schema: 'cbs-lsp-agent-contract',
+          schemaVersion: '1.0.0',
+        },
+        initialize: {
+          codeAction: true,
+          codeLens: true,
+          codeLensRefreshSupport: false,
+          multiFileEdit: 'off',
+          readOnlyBridge: 'on',
+          rename: true,
+          startupWorkspaceRootSource: 'none',
+          watchedFilesDynamicRegistration: false,
+          workspaceFolderCount: 0,
+        },
+      },
+    },
+  },
+  {
+    id: 'vscode-family-minimum-luals-ready',
+    params: {
+      capabilities: createVsCodeFamilyMinimumCapabilities(),
+      workspaceFolders: [
+        { uri: 'file:///workspace/vscode-primary', name: 'vscode-primary' },
+        { uri: 'file:///workspace/vscode-secondary', name: 'vscode-secondary' },
+      ],
+    } as InitializeParams,
+    runtime: createLuaLsCompanionRuntime({
+      detail: 'LuaLS sidecar finished initialize/initialized handshake and is healthy.',
+      executablePath: '/mock/luals',
+      health: 'healthy',
+      status: 'ready',
+    }),
+    expectedSnapshot: {
+      caseId: 'vscode-family-minimum-luals-ready',
+      client: {
+        codeActionLiteralSupport: true,
+        codeLensRefreshSupport: true,
+        prepareRenameSupport: true,
+        publishDiagnosticsVersionSupport: true,
+        watchedFilesDynamicRegistration: true,
+        watchedFilesRelativePatternSupport: true,
       },
       standard: {
         codeActionProvider: {

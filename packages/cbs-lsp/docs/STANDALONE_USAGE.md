@@ -88,6 +88,19 @@ client가 `workspace/didChangeWatchedFiles` dynamic registration을 지원하면
 
 지원하지 않으면 open/change/close 문서 이벤트만 refresh에 사용되며, 이 상태는 `watched-files-client-unsupported` failure mode로 노출됩니다.
 
+## Client capability degradation
+
+서버는 동일한 core capability set을 항상 광고하지만, client capability payload와 workspace 구성에 따라 일부 기능은 graceful degradation으로 전환됩니다. 이 전환은 silent failure가 아니라 `experimental.cbs.operator.failureModes`와 trace payload에 명확히 노출됩니다.
+
+대표 client profile별 degradation 경로:
+
+- **Neovim minimum** — `watchedFilesDynamicRegistration` + `codeActionLiteralSupport` + `prepareRename` + `publishDiagnostics.versionSupport`가 있으면 LuaLS companion ready 상태에서 failure mode가 활성화되지 않습니다.
+- **Zed minimum** — Neovim 조합에 `codeLens.refreshSupport` + `relativePatternSupport`를 추가합니다. LuaLS ready 상태에서도 failure mode가 활성화되지 않습니다.
+- **Emacs minimum** — `codeActionLiteralSupport`만 존재하고 `workspaceFolders`/`watchedFiles`/`prepareRename`/`publishDiagnostics.versionSupport`가 없으면 `luals-unavailable`, `watched-files-client-unsupported`, `workspace-root-unresolved` failure mode가 함께 노출됩니다.
+- **VS Code-family minimum** — Zed 조합과 동일한 capability에 multi-root `workspaceFolders`를 내면 `multi-root-reduced` failure mode가 활성화됩니다.
+
+각 profile의 initialize payload snapshot과 expected capability/availability 매트릭스는 `packages/cbs-lsp/tests/fixtures/capability-matrix.ts`와 `tests/capability-matrix.test.ts`에서 source-of-truth로 고정되어 있습니다.
+
 ## LuaLS companion fallback
 
 LuaLS executable이 PATH에 없거나 `--luals-path`가 잘못되어도 서버 전체는 실패하지 않습니다.

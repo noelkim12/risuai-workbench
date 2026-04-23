@@ -30,6 +30,12 @@
 | Workspace shape | productized multi-root aggregation | Unsupported | 여러 workspace folder를 하나의 graph/service surface로 합치는 orchestration은 아직 없습니다. | 현재는 first-workspace-folder policy를 전제로 운영합니다. |
 | VS Code client attach | standalone-first (`local-devDependency` / `npx` / `global`) + embedded dev fallback | Supported | 공식 `packages/vscode` client는 public `cbs-language-server` surface를 먼저 소비하고, `auto + local-devDependency`에서만 monorepo embedded module fallback을 사용합니다. | 일반 사용자는 standalone mode를 기준으로 운영하고, embedded fallback은 monorepo 개발 보조 수단으로만 사용하세요. |
 | VS Code client attach | invalid explicit path override | Unsupported | explicit `risuWorkbench.cbs.server.path`가 잘못되면 client는 silent fallback 대신 resolution failure UX를 띄웁니다. | path override를 비우거나 유효한 executable로 수정하세요. |
+| Client capability profile | Neovim minimum (nvim-lspconfig representative) + LuaLS ready | Supported | watched-file dynamic registration, codeAction literal support, prepareRename, publishDiagnostics versionSupport를 활용합니다. codeLens refresh와 relativePattern은 없지만 이 조합에서는 추가 failure mode가 활성화되지 않습니다. | LuaLS companion이 healthy하면 full capability를 사용할 수 있습니다. |
+| Client capability profile | Zed minimum (Zed editor representative) + LuaLS ready | Supported | Neovim profile에 codeLens refresh와 watched-file relativePatternSupport를 추가합니다. 이 조합에서도 failure mode가 활성화되지 않습니다. | LuaLS companion이 healthy하면 full capability를 사용할 수 있습니다. |
+| Client capability profile | Emacs minimum (Eglot representative) without workspace/LuaLS | Degraded | codeAction literal support만 있고 watched-file dynamic registration, prepareRename, publishDiagnostics versionSupport, codeLens refresh, workspaceFolders가 없습니다. `luals-unavailable`, `watched-files-client-unsupported`, `workspace-root-unresolved`가 함께 활성화될 수 있습니다. | workspaceFolders와 watched-file dynamic registration을 활성화하거나, `--workspace`/`CBS_LSP_WORKSPACE`로 root를 명시하세요. |
+| Client capability profile | VS Code-family minimum (VS Code/Cursor representative) + LuaLS ready | Degraded | Zed profile과 동일한 capability에 multi-root workspaceFolders를 보냅니다. `multi-root-reduced` failure mode가 활성화됩니다. | single extracted workspace로 `workspaceFolders[0]`를 canonical root로 맞추거나, 프로세스당 하나의 workspace folder를 사용하세요. |
+
+> **Note on representative profiles**: 위 profile은 테스트 fixture에서 사용하는 minimum capability snapshot이며, 실제 client payload는 더 많은 capability를 포함할 수 있습니다. fixture 기준 광고 결과와 graceful degradation 경로는 `packages/cbs-lsp/tests/fixtures/capability-matrix.ts`와 `tests/capability-matrix.test.ts`에서 source-of-truth로 고정되어 있습니다.
 
 ## Operator summary
 
