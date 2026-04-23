@@ -54,10 +54,12 @@ export function createInitializeResult(
       codeActionProvider: codeActionLiteralSupport
         ? {
             codeActionKinds: [CodeActionKind.QuickFix],
+            resolveProvider: true,
           }
-        : true,
+        : { resolveProvider: true },
       completionProvider: {
         triggerCharacters: [...CBS_COMPLETION_TRIGGER_CHARACTERS],
+        resolveProvider: true,
       },
       definitionProvider: true,
       documentHighlightProvider: true,

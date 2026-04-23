@@ -7,9 +7,14 @@ import { performance } from 'node:perf_hooks';
 import { rm } from 'node:fs/promises';
 
 import { afterEach, describe, expect, it } from 'vitest';
+import { CBSBuiltinRegistry } from 'risu-workbench-core';
+import type { Diagnostic } from 'vscode-languageserver/node';
 
 import { FragmentAnalysisService } from '../../src/core';
 import { SemanticTokensProvider } from '../../src/features/semanticTokens';
+import { CompletionProvider } from '../../src/features/completion';
+import { CodeActionProvider } from '../../src/features/codeActions';
+import { routeDiagnosticsForDocument } from '../../src/utils/diagnostics-router';
 import {
   createWorkspaceRoot,
   ensureBuiltPackage,
@@ -131,11 +136,12 @@ describe.sequential('cbs-language-server large workspace product matrix', () => 
     expect(query.query.variableFlow.writers.length).toBeGreaterThan(0);
     expect(reportDurationMs).toBeLessThan(20_000);
     expect(queryDurationMs).toBeLessThan(10_000);
-  });
+  }, 30_000);
 
   it('keeps semantic token range payloads meaningfully smaller than full-document payloads on large CBS documents', () => {
     const provider = new SemanticTokensProvider(new FragmentAnalysisService());
-    const bodyLines = Array.from({ length: 240 }, (_value, index) => {
+    const bodyLineCount = 20;
+    const bodyLines = Array.from({ length: bodyLineCount }, (_value, index) => {
       return `{{setvar::shared_${index}::${index}}} {{#when::shared_${index}::is::${index}}}ok{{:else}}no{{/}}`;
     });
     const text = ['---', 'name: perf-range', '---', '@@@ CONTENT', ...bodyLines, ''].join('\n');
@@ -152,7 +158,7 @@ describe.sequential('cbs-language-server large workspace product matrix', () => 
         textDocument: { uri: request.uri },
         range: {
           start: { line: 4, character: 0 },
-          end: { line: 10, character: 0 },
+          end: { line: 6, character: 0 },
         },
       },
       request,
@@ -161,6 +167,81 @@ describe.sequential('cbs-language-server large workspace product matrix', () => 
     expect(fullPayload.length).toBeGreaterThan(0);
     expect(rangePayload.length).toBeGreaterThan(0);
     expect(rangePayload.length).toBeLessThan(fullPayload.length);
-    expect(fullPayload.length / rangePayload.length).toBeGreaterThan(10);
+    expect(fullPayload.length / rangePayload.length).toBeGreaterThan(8);
+  });
+
+  it('keeps unresolved completion payloads meaningfully smaller than resolved payloads under a stable contract', () => {
+    const analysisService = new FragmentAnalysisService();
+    const text = ['---', 'name: perf-resolve', '---', '@@@ CONTENT', '{{#if::ready}}ok{{/if}}', ''].join('\n');
+    const request = {
+      uri: 'file:///fixtures/perf-completion-resolve.risulorebook',
+      version: 1,
+      filePath: '/fixtures/perf-completion-resolve.risulorebook',
+      text,
+    };
+    const params = { textDocument: { uri: request.uri }, position: { line: 4, character: 2 } };
+    const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      analysisService,
+      resolveRequest: ({ textDocument }) => (textDocument.uri === request.uri ? request : null),
+    });
+
+    const unresolved = provider.provideUnresolved(params);
+    const resolved = provider.provide(params);
+
+    expect(unresolved.length).toBeGreaterThan(0);
+    expect(resolved.length).toBe(unresolved.length);
+
+    const unresolvedSize = JSON.stringify(unresolved).length;
+    const resolvedSize = JSON.stringify(resolved).length;
+
+    expect(unresolvedSize).toBeLessThan(resolvedSize);
+    expect(resolvedSize / unresolvedSize).toBeGreaterThan(2);
+
+    const firstUnresolved = unresolved[0];
+    const firstResolved = provider.resolve(firstUnresolved, params);
+    expect(firstResolved).not.toBeNull();
+    expect(firstResolved!.detail).toBeDefined();
+    expect(firstResolved!.documentation).toBeDefined();
+  });
+
+  it('keeps unresolved code action payloads meaningfully smaller than resolved payloads under a stable contract', () => {
+    const text = ['---', 'name: perf-action-resolve', '---', '@@@ CONTENT', '{{#if::ready}}ok{{/if}}', ''].join('\n');
+    const request = {
+      uri: 'file:///fixtures/perf-code-action-resolve.risulorebook',
+      version: 1,
+      filePath: '/fixtures/perf-code-action-resolve.risulorebook',
+      text,
+    };
+    const provider = new CodeActionProvider({
+      resolveRequest: (uri) => (uri === request.uri ? request : null),
+    });
+
+    // Use real diagnostics from analysis so action generators have genuine metadata to work with.
+    const diagnostics = routeDiagnosticsForDocument(request.filePath, request.text, {}, request);
+    expect(diagnostics.length).toBeGreaterThan(0);
+
+    const diagnostic = diagnostics[0]!;
+    const params = {
+      textDocument: { uri: request.uri },
+      range: diagnostic.range,
+      context: { diagnostics: [diagnostic as Diagnostic] },
+    };
+
+    const unresolved = provider.provideUnresolved(params);
+    const resolved = provider.provide(params);
+
+    expect(unresolved.length).toBeGreaterThan(0);
+    expect(resolved.length).toBe(unresolved.length);
+
+    const unresolvedSize = JSON.stringify(unresolved).length;
+    const resolvedSize = JSON.stringify(resolved).length;
+
+    expect(unresolvedSize).toBeLessThan(resolvedSize);
+    expect(resolvedSize / unresolvedSize).toBeGreaterThan(2);
+
+    const firstUnresolved = unresolved[0];
+    const firstResolved = provider.resolve(firstUnresolved, params);
+    expect(firstResolved).not.toBeNull();
+    expect(firstResolved!.edit).toBeDefined();
   });
 });

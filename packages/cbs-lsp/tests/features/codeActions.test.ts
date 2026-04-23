@@ -315,4 +315,129 @@ describe('CodeActionProvider', () => {
       ),
     ).toEqual([]);
   });
+
+  describe('lazy-resolve contract', () => {
+    it('provideUnresolved omits edit payload', () => {
+      const request = createInlineRequest(
+        '/virtual/lorebooks/deprecated.risulorebook',
+        lorebookDocument('{{#if true}}fallback{{/if}}'),
+      );
+      const provider = createProvider(request);
+      const diagnostics = routeDiagnosticsForDocument(request.filePath, request.text, {}, request);
+      const params = createParams(request, [getDiagnosticByCode(diagnostics, DiagnosticCode.DeprecatedFunction)]);
+      const unresolved = provider.provideUnresolved(params);
+
+      expect(unresolved.length).toBeGreaterThan(0);
+      const snapshots = snapshotCodeActions(unresolved);
+      expect(snapshots.every((snapshot) => !snapshot.resolved)).toBe(true);
+      for (const action of unresolved) {
+        expect(action.title).toBeDefined();
+        expect(action.kind).toBeDefined();
+        expect(action.data.cbs.diagnosticCode).toBeDefined();
+        expect(action.data.cbs.actionType).toBeDefined();
+        expect(action.data.cbs.uri).toBe(params.textDocument.uri);
+      }
+    });
+
+    it('resolve restores edit payload from an unresolved action', () => {
+      const request = createInlineRequest(
+        '/virtual/lorebooks/deprecated.risulorebook',
+        lorebookDocument('{{#if true}}fallback{{/if}}'),
+      );
+      const provider = createProvider(request);
+      const diagnostics = routeDiagnosticsForDocument(request.filePath, request.text, {}, request);
+      const params = createParams(request, [getDiagnosticByCode(diagnostics, DiagnosticCode.DeprecatedFunction)]);
+      const unresolved = provider.provideUnresolved(params);
+
+      expect(unresolved.length).toBeGreaterThan(0);
+      const firstUnresolved = unresolved[0]!;
+      const resolved = provider.resolve(firstUnresolved, params);
+
+      expect(resolved).not.toBeNull();
+      expect(resolved!.title).toBe(firstUnresolved.title);
+      expect(resolved!.edit).toBeDefined();
+    });
+
+    it('snapshot marks unresolved actions as resolved: false and resolved as resolved: true', () => {
+      const request = createInlineRequest(
+        '/virtual/lorebooks/deprecated.risulorebook',
+        lorebookDocument('{{#if true}}fallback{{/if}}'),
+      );
+      const provider = createProvider(request);
+      const diagnostics = routeDiagnosticsForDocument(request.filePath, request.text, {}, request);
+      const params = createParams(request, [getDiagnosticByCode(diagnostics, DiagnosticCode.DeprecatedFunction)]);
+      const unresolved = provider.provideUnresolved(params);
+      const resolved = provider.provide(params);
+
+      const unresolvedSnapshot = snapshotCodeActions(unresolved);
+      const resolvedSnapshot = snapshotCodeActions(resolved);
+
+      expect(unresolvedSnapshot.length).toBeGreaterThan(0);
+      expect(resolvedSnapshot.length).toBeGreaterThan(0);
+      expect(unresolvedSnapshot[0]!.resolved).toBe(false);
+      expect(resolvedSnapshot[0]!.resolved).toBe(true);
+    });
+
+    it('resolve returns null when the unresolved action does not match any current result', () => {
+      const request = createInlineRequest(
+        '/virtual/lorebooks/deprecated.risulorebook',
+        lorebookDocument('{{#if true}}fallback{{/if}}'),
+      );
+      const provider = createProvider(request);
+      const diagnostics = routeDiagnosticsForDocument(request.filePath, request.text, {}, request);
+      const params = createParams(request, [getDiagnosticByCode(diagnostics, DiagnosticCode.DeprecatedFunction)]);
+      const orphan: import('../../src/features/codeActions').UnresolvedCodeAction = {
+        title: 'Nonexistent fake action',
+        kind: CodeActionKind.QuickFix,
+        diagnostics: params.context.diagnostics,
+        isPreferred: false,
+        data: {
+          cbs: {
+            schema: 'cbs-lsp-agent-contract',
+            schemaVersion: '1.0.0',
+            diagnosticCode: DiagnosticCode.DeprecatedFunction,
+            actionType: 'replacement',
+            uri: params.textDocument.uri,
+          },
+        },
+      };
+
+      expect(provider.resolve(orphan, params)).toBeNull();
+    });
+
+    it('resolve returns null when the unresolved action was produced for a different uri', () => {
+      const request = createInlineRequest(
+        '/virtual/lorebooks/deprecated.risulorebook',
+        lorebookDocument('{{#if true}}fallback{{/if}}'),
+      );
+      const provider = createProvider(request);
+      const diagnostics = routeDiagnosticsForDocument(request.filePath, request.text, {}, request);
+      const params = createParams(request, [getDiagnosticByCode(diagnostics, DiagnosticCode.DeprecatedFunction)]);
+      const unresolved = provider.provideUnresolved(params);
+
+      expect(unresolved.length).toBeGreaterThan(0);
+      const mismatchedParams = {
+        textDocument: { uri: 'file:///other/document.risulorebook' },
+        range: params.range,
+        context: params.context,
+      };
+      expect(provider.resolve(unresolved[0]!, mismatchedParams)).toBeNull();
+    });
+
+    it('provideUnresolved preserves guidance actions with noop actionType', () => {
+      const request = createInlineRequest(
+        '/virtual/prompt/arg-misuse.risuprompt',
+        promptDocument('{{arg::2}}'),
+      );
+      const provider = createProvider(request);
+      const diagnostics = routeDiagnosticsForDocument(request.filePath, request.text, {}, request);
+      const unresolved = provider.provideUnresolved(
+        createParams(request, [getDiagnosticByCode(diagnostics, DiagnosticCode.WrongArgumentCount)]),
+      );
+
+      const guidance = unresolved.find((action) => action.title.includes('{{arg::N}}'));
+      expect(guidance).toBeDefined();
+      expect(guidance!.data.cbs.actionType).toBe('guidance');
+    });
+  });
 });

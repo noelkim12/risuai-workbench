@@ -39,7 +39,9 @@ interface CapabilityMatrixSnapshot {
     watchedFilesDynamicRegistration: boolean;
   };
     standard: {
-      codeActionProvider: boolean | { codeActionKinds: readonly string[] };
+      codeActionProvider: boolean | { codeActionKinds: readonly string[]; resolveProvider?: boolean };
+      codeActionResolveProvider: boolean;
+      completionResolveProvider: boolean;
       completionTriggerCharacters: readonly string[];
       executeCommandCommands: readonly string[];
       inlayHintProvider: boolean;
@@ -216,7 +218,13 @@ export function snapshotCapabilityMatrixFixture(
           ? initializeResult.capabilities.codeActionProvider
           : {
               codeActionKinds: initializeResult.capabilities.codeActionProvider?.codeActionKinds ?? [],
+              resolveProvider: initializeResult.capabilities.codeActionProvider?.resolveProvider ?? false,
             },
+      codeActionResolveProvider:
+        (typeof initializeResult.capabilities.codeActionProvider === 'object' &&
+          initializeResult.capabilities.codeActionProvider?.resolveProvider === true) ?? false,
+      completionResolveProvider:
+        initializeResult.capabilities.completionProvider?.resolveProvider === true,
       completionTriggerCharacters:
         initializeResult.capabilities.completionProvider?.triggerCharacters ??
         CBS_COMPLETION_TRIGGER_CHARACTERS,
@@ -298,7 +306,12 @@ export const CAPABILITY_MATRIX_FIXTURES = Object.freeze<readonly CapabilityMatri
         watchedFilesDynamicRegistration: false,
       },
       standard: {
-        codeActionProvider: true,
+        codeActionProvider: {
+          codeActionKinds: [],
+          resolveProvider: true,
+        },
+        codeActionResolveProvider: true,
+        completionResolveProvider: true,
         completionTriggerCharacters: [...CBS_COMPLETION_TRIGGER_CHARACTERS],
         executeCommandCommands: [ACTIVATION_CHAIN_CODELENS_COMMAND],
         inlayHintProvider: true,
@@ -394,7 +407,10 @@ export const CAPABILITY_MATRIX_FIXTURES = Object.freeze<readonly CapabilityMatri
       standard: {
         codeActionProvider: {
           codeActionKinds: ['quickfix'],
+          resolveProvider: true,
         },
+        codeActionResolveProvider: true,
+        completionResolveProvider: true,
         completionTriggerCharacters: [...CBS_COMPLETION_TRIGGER_CHARACTERS],
         executeCommandCommands: [ACTIVATION_CHAIN_CODELENS_COMMAND],
         inlayHintProvider: true,
@@ -503,7 +519,10 @@ export const CAPABILITY_MATRIX_FIXTURES = Object.freeze<readonly CapabilityMatri
       standard: {
         codeActionProvider: {
           codeActionKinds: ['quickfix'],
+          resolveProvider: true,
         },
+        codeActionResolveProvider: true,
+        completionResolveProvider: true,
         completionTriggerCharacters: [...CBS_COMPLETION_TRIGGER_CHARACTERS],
         executeCommandCommands: [ACTIVATION_CHAIN_CODELENS_COMMAND],
         inlayHintProvider: true,

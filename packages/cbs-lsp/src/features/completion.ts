@@ -8,6 +8,7 @@ import {
   TextDocumentPositionParams,
   Range as LSPRange,
   type TextEdit,
+  type Position,
 } from 'vscode-languageserver/node';
 import {
   isDocOnlyBuiltin,
@@ -16,6 +17,8 @@ import {
 } from 'risu-workbench-core';
 
 import {
+  CBS_AGENT_PROTOCOL_SCHEMA,
+  CBS_AGENT_PROTOCOL_VERSION,
   createAgentMetadataEnvelope,
   createAgentMetadataExplanation,
   createStaleWorkspaceAvailability,
@@ -50,6 +53,32 @@ export interface CompletionProviderOptions {
   variableFlowService?: VariableFlowService;
   workspaceSnapshot?: WorkspaceSnapshotState | null;
 }
+
+/**
+ * Minimal unresolved completion item data payload.
+ * Carries stable category contract plus request context (uri/position) for strong resolve matching.
+ * Explanation, workspace snapshot, detail, documentation are deferred to resolve.
+ */
+export interface UnresolvedCompletionItemData {
+  cbs: {
+    schema: typeof CBS_AGENT_PROTOCOL_SCHEMA;
+    schemaVersion: typeof CBS_AGENT_PROTOCOL_VERSION;
+    category: AgentMetadataCategoryContract;
+    uri: string;
+    position: Position;
+  };
+}
+
+/**
+ * Lightweight unresolved completion item shape.
+ * Heavy fields (detail, documentation, explanation, workspace snapshot) are omitted and restored by resolve.
+ */
+export type UnresolvedCompletionItem = Omit<
+  CompletionItem,
+  'detail' | 'documentation' | 'data'
+> & {
+  data: UnresolvedCompletionItemData;
+};
 
 /**
  * CBS_COMPLETION_TRIGGER_CHARACTERS 상수.
@@ -246,6 +275,7 @@ export interface NormalizedCompletionItemSnapshot {
   kind: CompletionItemKind | null;
   label: string;
   preselect: boolean;
+  resolved: boolean;
   sortText: string | null;
   textEdit: NormalizedCompletionTextEditSnapshot | null;
 }
@@ -335,6 +365,7 @@ function compareNormalizedCompletionSnapshots(
     compareStrings(left.sortText, right.sortText) ||
     compareStrings(left.label, right.label) ||
     compareNumbers(left.kind, right.kind) ||
+    compareBooleans(left.resolved, right.resolved) ||
     compareStrings(left.detail, right.detail) ||
     compareStrings(left.documentation, right.documentation) ||
     compareStrings(left.insertText, right.insertText) ||
@@ -349,8 +380,18 @@ function compareNormalizedCompletionSnapshots(
 export function normalizeCompletionItemForSnapshot(
   item: CompletionItem,
 ): NormalizedCompletionItemSnapshot {
+  const hasDetail = item.detail !== undefined && item.detail !== null && item.detail !== '';
+  const hasDocumentation =
+    item.documentation !== undefined &&
+    item.documentation !== null &&
+    normalizeMarkupContent(item.documentation) !== null;
+  const envelope = isAgentMetadataEnvelope(item.data) ? item.data : null;
+  const hasHeavyData =
+    envelope !== null &&
+    (envelope.cbs.explanation !== undefined || envelope.cbs.workspace !== undefined);
+
   return {
-    data: isAgentMetadataEnvelope(item.data) ? item.data : null,
+    data: envelope,
     deprecated: item.deprecated ?? false,
     detail: item.detail ?? null,
     documentation: normalizeMarkupContent(item.documentation),
@@ -359,6 +400,7 @@ export function normalizeCompletionItemForSnapshot(
     kind: item.kind ?? null,
     label: item.label,
     preselect: item.preselect ?? false,
+    resolved: hasDetail || hasDocumentation || hasHeavyData,
     sortText: item.sortText ?? null,
     textEdit: normalizeTextEdit(item.textEdit),
   };
@@ -368,6 +410,47 @@ export function normalizeCompletionItemsForSnapshot(
   items: readonly CompletionItem[],
 ): NormalizedCompletionItemSnapshot[] {
   return [...items].map(normalizeCompletionItemForSnapshot).sort(compareNormalizedCompletionSnapshots);
+}
+
+/**
+ * stripCompletionItemToUnresolved 함수.
+ * fully resolved completion item에서 heavy field를 제거해 lightweight unresolved item을 만듦.
+ * deferred field: detail, documentation, data.explanation, data.workspace.
+ * request context (uri, position)를 data에 추가해 resolve matching을 강화함.
+ *
+ * @param item - 원본 resolved completion item
+ * @param uri - 요청 문서 URI
+ * @param position - 요청 cursor position
+ * @returns heavy field가 제거된 unresolved completion item
+ */
+export function stripCompletionItemToUnresolved(
+  item: CompletionItem,
+  uri: string,
+  position: Position,
+): UnresolvedCompletionItem {
+  const envelope = isAgentMetadataEnvelope(item.data)
+    ? item.data
+    : createAgentMetadataEnvelope({ category: 'builtin', kind: 'callable-builtin' });
+
+  return {
+    label: item.label,
+    kind: item.kind,
+    insertText: item.insertText,
+    insertTextFormat: item.insertTextFormat,
+    preselect: item.preselect,
+    sortText: item.sortText,
+    deprecated: item.deprecated,
+    textEdit: item.textEdit,
+    data: {
+      cbs: {
+        schema: CBS_AGENT_PROTOCOL_SCHEMA,
+        schemaVersion: CBS_AGENT_PROTOCOL_VERSION,
+        category: envelope.cbs.category,
+        uri,
+        position,
+      },
+    },
+  };
 }
 
 export class CompletionProvider {
@@ -465,6 +548,63 @@ export class CompletionProvider {
         newText: item.insertText ?? item.label,
       },
     }));
+  }
+
+  /**
+   * provideUnresolved 함수.
+   * lightweight unresolved completion item 목록을 반환함.
+   * detail, documentation, explanation detail, workspace snapshot 같은 heavy field는 생략되며
+   * resolve 호출로 복원됨.
+   *
+   * @param params - LSP completion request
+   * @param cancellationToken - optional cancellation token
+   * @returns unresolved completion item 목록
+   */
+  provideUnresolved(
+    params: TextDocumentPositionParams,
+    cancellationToken?: CancellationToken,
+  ): UnresolvedCompletionItem[] {
+    const resolved = this.provide(params, cancellationToken);
+    return resolved.map((item) =>
+      stripCompletionItemToUnresolved(item, params.textDocument.uri, params.position),
+    );
+  }
+
+  /**
+   * resolve 함수.
+   * unresolved completion item의 deferred field를 복원해 fully resolved item을 반환함.
+   * label + kind + category + sortText + insertText + request context(uri/position)를
+   * 복합 키로 사용해 모호한 matching을 방지함.
+   *
+   * @param item - unresolved completion item
+   * @param params - LSP completion request (동일 문서 위치)
+   * @param cancellationToken - optional cancellation token
+   * @returns resolved completion item
+   */
+  resolve(
+    item: UnresolvedCompletionItem,
+    params: TextDocumentPositionParams,
+    cancellationToken?: CancellationToken,
+  ): CompletionItem | null {
+    if (
+      item.data.cbs.uri !== params.textDocument.uri ||
+      item.data.cbs.position.line !== params.position.line ||
+      item.data.cbs.position.character !== params.position.character
+    ) {
+      return null;
+    }
+
+    const resolvedList = this.provide(params, cancellationToken);
+    const match = resolvedList.find(
+      (resolved) =>
+        resolved.label === item.label &&
+        resolved.kind === item.kind &&
+        (resolved.data as AgentMetadataEnvelope | undefined)?.cbs?.category?.category ===
+          item.data.cbs.category.category &&
+        resolved.sortText === item.sortText &&
+        resolved.insertText === item.insertText,
+    );
+    return match ?? null;
   }
 
   private buildCompletions(

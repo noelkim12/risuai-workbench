@@ -32,6 +32,7 @@ export interface NormalizedCodeActionSnapshot {
   isPreferred: boolean;
   kind: string | null;
   linkedDiagnostics: NormalizedHostDiagnosticSnapshot[];
+  resolved: boolean;
   title: string;
 }
 
@@ -63,6 +64,7 @@ export function normalizeCodeActionForSnapshot(
     linkedDiagnostics: [...(action.diagnostics ?? [])]
       .map(normalizeHostDiagnosticForSnapshot)
       .sort(compareNormalizedCodeActionDiagnostic),
+    resolved: action.edit !== undefined,
     title: action.title,
   };
 }
@@ -174,6 +176,7 @@ function compareNormalizedCodeActions(
     compareStrings(left.title, right.title) ||
     compareStrings(left.kind, right.kind) ||
     compareBooleans(left.isPreferred, right.isPreferred) ||
+    compareBooleans(left.resolved, right.resolved) ||
     compareBooleans(left.hasEdit, right.hasEdit) ||
     compareBooleans(left.isNoopGuidance, right.isNoopGuidance) ||
     compareNormalizedCodeActionDiagnostics(left.linkedDiagnostics, right.linkedDiagnostics) ||

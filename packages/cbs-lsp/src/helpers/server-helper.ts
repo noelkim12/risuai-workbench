@@ -44,9 +44,9 @@ import {
 } from 'vscode-languageserver/node';
 
 import { fragmentAnalysisService, type FragmentAnalysisRequest } from '../core';
-import { CodeActionProvider } from '../features/codeActions';
+import { CodeActionProvider, type UnresolvedCodeAction } from '../features/codeActions';
 import { CodeLensProvider } from '../features/codelens';
-import { CompletionProvider } from '../features/completion';
+import { CompletionProvider, type UnresolvedCompletionItem } from '../features/completion';
 import type { LuaLsCompanionController } from '../controllers/LuaLsCompanionController';
 import { DefinitionProvider } from '../features/definition';
 import { DocumentHighlightProvider } from '../features/documentHighlight';
@@ -211,7 +211,9 @@ export class ServerFeatureRegistrar {
    */
   registerAll(): void {
     this.registerCodeActionHandler();
+    this.registerCodeActionResolveHandler();
     this.registerCompletionHandler();
+    this.registerCompletionResolveHandler();
     this.registerDocumentHighlightHandler();
     this.registerDocumentSymbolHandler();
     this.registerWorkspaceSymbolHandler();
@@ -294,11 +296,82 @@ export class ServerFeatureRegistrar {
         feature: 'codeAction',
         getUri: (requestParams) => requestParams.textDocument.uri,
         params,
-        run: () => this.codeActionProvider.provide(params),
+        run: () => {
+          const unresolved = this.codeActionProvider.provideUnresolved(params);
+          return unresolved.map((action) => ({
+            ...action,
+            data: {
+              ...action.data,
+              cbs: {
+                ...action.data.cbs,
+                uri: params.textDocument.uri,
+              },
+            },
+          })) as CodeAction[];
+        },
         startDetails: (requestParams) => ({
           diagnostics: requestParams.context.diagnostics.length,
         }),
         summarize: (result) => ({ count: result.length }),
+        token: cancellationToken,
+      });
+    });
+  }
+
+  private registerCodeActionResolveHandler(): void {
+    this.connection.onCodeActionResolve((action: CodeAction, cancellationToken): CodeAction => {
+      const actionData = action.data as { cbs?: { uri?: string } } | undefined;
+      const uri = actionData?.cbs?.uri;
+
+      if (!uri) {
+        return action;
+      }
+
+      return this.requestRunner.runSync({
+        empty: action,
+        feature: 'codeActionResolve',
+        getUri: () => uri,
+        params: action,
+        run: () => {
+          const unresolved = action as UnresolvedCodeAction;
+          const params: CodeActionParams = {
+            textDocument: { uri },
+            range: action.diagnostics?.[0]?.range ?? { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } },
+            context: { diagnostics: action.diagnostics ?? [] },
+          };
+          const resolved = this.codeActionProvider.resolve(unresolved, params);
+          return resolved ?? action;
+        },
+        summarize: (result) => ({ resolved: result !== action }),
+        token: cancellationToken,
+      });
+    });
+  }
+
+  private registerCompletionResolveHandler(): void {
+    this.connection.onCompletionResolve((item: CompletionItem, cancellationToken): CompletionItem => {
+      const itemData = item.data as { cbs?: { uri?: string; position?: { line: number; character: number } } } | undefined;
+      const uri = itemData?.cbs?.uri;
+
+      if (!uri) {
+        return item;
+      }
+
+      return this.requestRunner.runSync({
+        empty: item,
+        feature: 'completionResolve',
+        getUri: () => uri,
+        params: item,
+        run: () => {
+          const unresolved = item as UnresolvedCompletionItem;
+          const provider = this.createCompletionProvider(uri);
+          const resolved = provider.resolve(unresolved, {
+            textDocument: { uri },
+            position: itemData?.cbs?.position ?? { line: 0, character: 0 },
+          }, cancellationToken);
+          return resolved ?? item;
+        },
+        summarize: (result) => ({ resolved: result !== item }),
         token: cancellationToken,
       });
     });
@@ -356,7 +429,21 @@ export class ServerFeatureRegistrar {
         feature: 'completion',
         getUri: (requestParams) => requestParams.textDocument.uri,
         params,
-        run: () => this.createCompletionProvider(params.textDocument.uri).provide(params, cancellationToken),
+        run: () => {
+          const provider = this.createCompletionProvider(params.textDocument.uri);
+          const unresolved = provider.provideUnresolved(params, cancellationToken);
+          return unresolved.map((completionItem) => ({
+            ...completionItem,
+            data: {
+              ...completionItem.data,
+              cbs: {
+                ...completionItem.data.cbs,
+                uri: params.textDocument.uri,
+                position: params.position,
+              },
+            },
+          })) as CompletionItem[];
+        },
         summarize: (result) => ({ count: result.length }),
         token: cancellationToken,
       });

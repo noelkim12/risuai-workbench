@@ -8,6 +8,7 @@ import type {
   CodeAction,
   CodeLens,
   CompletionItem,
+  CompletionList,
   Definition,
   Diagnostic,
   DidChangeConfigurationParams,
@@ -233,9 +234,9 @@ function getHoverMarkdown(hover: Hover | null): string | null {
 }
 
 function getCompletionItems(
-  result: CompletionItem[] | { items: CompletionItem[] } | null | undefined,
+  result: CompletionItem[] | { items: CompletionItem[] } | Promise<CompletionItem[] | { items: CompletionItem[] }> | null | undefined,
 ) {
-  if (!result) {
+  if (!result || result instanceof Promise) {
     return [];
   }
 
@@ -302,9 +303,13 @@ class FakeConnection {
 
   codeActionHandler: ((params: any, token?: CancellationToken) => CodeAction[]) | null = null;
 
+  codeActionResolveHandler: ((action: CodeAction, token?: CancellationToken) => CodeAction) | null = null;
+
   codeLensHandler: ((params: any, token?: CancellationToken) => CodeLens[]) | null = null;
 
   completionHandler: ((params: any, token?: CancellationToken) => CompletionItem[] | { items: CompletionItem[] } | Promise<CompletionItem[] | { items: CompletionItem[] }>) | null = null;
+
+  completionResolveHandler: ((item: CompletionItem, token?: CancellationToken) => CompletionItem) | null = null;
 
   documentHighlightHandler: ((params: any, token?: CancellationToken) => DocumentHighlight[]) | null = null;
 
@@ -431,6 +436,11 @@ class FakeConnection {
     return createDisposable();
   }
 
+  onCodeActionResolve(handler: (action: CodeAction, token?: CancellationToken) => CodeAction) {
+    this.codeActionResolveHandler = handler;
+    return createDisposable();
+  }
+
   onCodeLens(handler: (params: any, token?: CancellationToken) => CodeLens[]) {
     this.codeLensHandler = handler;
     return createDisposable();
@@ -438,6 +448,11 @@ class FakeConnection {
 
   onCompletion(handler: (params: any, token?: CancellationToken) => CompletionItem[] | { items: CompletionItem[] } | Promise<CompletionItem[] | { items: CompletionItem[] }>) {
     this.completionHandler = handler;
+    return createDisposable();
+  }
+
+  onCompletionResolve(handler: (item: CompletionItem, token?: CancellationToken) => CompletionItem) {
+    this.completionResolveHandler = handler;
     return createDisposable();
   }
 
@@ -769,12 +784,15 @@ describe('LSP server integration', () => {
           codeLensProvider: {
             resolveProvider: false,
           },
-          codeActionProvider: true,
+          codeActionProvider: {
+            resolveProvider: true,
+          },
           executeCommandProvider: {
             commands: [ACTIVATION_CHAIN_CODELENS_COMMAND],
           },
           completionProvider: {
             triggerCharacters: [...CBS_COMPLETION_TRIGGER_CHARACTERS],
+            resolveProvider: true,
           },
           definitionProvider: true,
           documentHighlightProvider: true,
@@ -829,7 +847,9 @@ describe('LSP server integration', () => {
     expect(connection.codeLensHandler).not.toBeNull();
     expect(connection.selectionRangesHandler).not.toBeNull();
     expect(connection.codeActionHandler).not.toBeNull();
+    expect(connection.codeActionResolveHandler).not.toBeNull();
     expect(connection.completionHandler).not.toBeNull();
+    expect(connection.completionResolveHandler).not.toBeNull();
     expect(connection.documentHighlightHandler).not.toBeNull();
     expect(connection.documentSymbolHandler).not.toBeNull();
     expect(connection.workspaceSymbolHandler).not.toBeNull();
@@ -999,6 +1019,7 @@ describe('LSP server integration', () => {
 
     expect(initializeResult?.capabilities.codeActionProvider).toEqual({
       codeActionKinds: ['quickfix'],
+      resolveProvider: true,
     });
     expect(initializeResult?.capabilities.positionEncoding).toBe(LSP_POSITION_ENCODING);
     expect(initializeResult?.capabilities.renameProvider).toEqual({
@@ -2196,11 +2217,14 @@ describe('LSP server integration', () => {
       }),
       actions: expect.arrayContaining([
         expect.objectContaining({
+          edit: null,
           title: 'Replace with "#when"',
           kind: CodeActionKind.QuickFix,
-          hasEdit: true,
+          hasEdit: false,
           isNoopGuidance: false,
-          linkedDiagnostics: [expect.objectContaining({ source: 'risu-cbs' })],
+          isPreferred: true,
+          resolved: false,
+          linkedDiagnostics: [expect.objectContaining({ code: 'CBS100', source: 'risu-cbs' })],
         }),
       ]),
     });
@@ -2212,7 +2236,13 @@ describe('LSP server integration', () => {
     );
 
     const deprecatedAction = deprecatedActions?.find((action) => action.title === 'Replace with "#when"');
-    expect(applyTextEdits(deprecatedText, deprecatedAction?.edit?.changes?.[deprecatedUri] ?? [])).toBe(
+    expect(deprecatedAction?.edit).toBeUndefined();
+
+    const resolvedDeprecatedAction = connection.codeActionResolveHandler?.(
+      deprecatedAction!,
+      createCancellationToken(false),
+    );
+    expect(applyTextEdits(deprecatedText, resolvedDeprecatedAction?.edit?.changes?.[deprecatedUri] ?? [])).toBe(
       lorebookDocument(['{{#when true}}fallback{{/when}}']),
     );
 
@@ -2239,15 +2269,13 @@ describe('LSP server integration', () => {
       }),
       actions: [
         {
-          edit: {
-            changes: null,
-            documentChangesCount: 0,
-          },
-          hasEdit: true,
-          isNoopGuidance: true,
+          edit: null,
+          hasEdit: false,
+          isNoopGuidance: false,
           isPreferred: false,
           kind: CodeActionKind.QuickFix,
           linkedDiagnostics: [expect.objectContaining({ source: 'risu-cbs' })],
+          resolved: false,
           title: 'Explain: {{slot::name}} only works inside {{#each ... as name}} blocks',
         },
       ],
@@ -2257,10 +2285,20 @@ describe('LSP server integration', () => {
       expect.arrayContaining([
         expect.objectContaining({
           title: 'Explain: {{slot::name}} only works inside {{#each ... as name}} blocks',
-          edit: { changes: {} },
         }),
       ]),
     );
+
+    const slotAction = slotActions?.find(
+      (action) => action.title === 'Explain: {{slot::name}} only works inside {{#each ... as name}} blocks',
+    );
+    expect(slotAction?.edit).toBeUndefined();
+
+    const resolvedSlotAction = connection.codeActionResolveHandler?.(slotAction!, createCancellationToken(false));
+    expect(resolvedSlotAction).toMatchObject({
+      title: 'Explain: {{slot::name}} only works inside {{#each ... as name}} blocks',
+      edit: { changes: {} },
+    });
   });
 
   it('keeps formatting on the no-op path for unsupported artifacts', async () => {
@@ -2506,8 +2544,20 @@ describe('LSP server integration', () => {
     expect(localIndex).toBeGreaterThanOrEqual(0);
     expect(workspaceIndex).toBeGreaterThan(localIndex);
     expect(workspaceCompletion).toMatchObject({
-      detail: 'Workspace chat variable',
       sortText: 'zzzz-workspace-shared',
+      data: {
+        cbs: expect.objectContaining({
+          uri: readerUri,
+          category: expect.objectContaining({ category: 'variable' }),
+        }),
+      },
+    });
+    expect(workspaceCompletion?.detail).toBeUndefined();
+
+    const resolved = connection.completionResolveHandler?.(workspaceCompletion!, createCancellationToken(false));
+    expect(resolved).toMatchObject({
+      label: 'shared',
+      detail: 'Workspace chat variable',
       data: {
         cbs: expect.objectContaining({
           explanation: expect.objectContaining({
@@ -2992,22 +3042,34 @@ describe('LSP server integration', () => {
         expect.objectContaining({
           kind: 6,
           label: 'mood',
+          resolved: false,
           data: {
             cbs: expect.objectContaining({
               category: {
                 category: 'variable',
                 kind: 'chat-variable',
               },
-              explanation: {
-                reason: 'scope-analysis',
-                source: 'chat-variable-symbol-table',
-                detail: 'Completion resolved this candidate from analyzed chat-variable definitions in the current fragment.',
-              },
+              uri,
             }),
           },
         }),
       ]),
     );
+
+    const moodCompletion = version1Bundle.raw.completion.find((item) => item.label === 'mood');
+    const resolvedMood = connection.completionResolveHandler?.(moodCompletion!, createCancellationToken(false));
+    expect(resolvedMood).toMatchObject({
+      label: 'mood',
+      detail: 'Chat variable',
+      data: {
+        cbs: expect.objectContaining({
+          explanation: expect.objectContaining({
+            reason: 'scope-analysis',
+            source: 'chat-variable-symbol-table',
+          }),
+        }),
+      },
+    });
     expect(version1Bundle.snapshot.hover).toEqual(
       expect.objectContaining({
         contents: expect.objectContaining({ value: expect.stringContaining('**Variable: mood**') }),
@@ -3030,12 +3092,24 @@ describe('LSP server integration', () => {
     expect(version1Bundle.snapshot.diagnostics).toHaveLength(1);
     expect(version1Bundle.snapshot.codeActions).toEqual([
       expect.objectContaining({
-        hasEdit: true,
+        hasEdit: false,
         isNoopGuidance: false,
         kind: CodeActionKind.QuickFix,
         title: 'Replace with "#when"',
       }),
     ]);
+
+    const version1Action = version1Bundle.raw.codeActions.find(
+      (action) => action.title === 'Replace with "#when"',
+    );
+    const resolvedVersion1Action = connection.codeActionResolveHandler?.(
+      version1Action!,
+      createCancellationToken(false),
+    );
+    expect(resolvedVersion1Action).toMatchObject({
+      title: 'Replace with "#when"',
+      edit: expect.any(Object),
+    });
 
     documents.change(uri, changedSameVersionText, 1);
 

@@ -1517,4 +1517,115 @@ describe('CompletionProvider', () => {
       expect(elseSnippet?.insertText).toContain('{{:else}}');
     });
   });
+
+  describe('lazy-resolve contract', () => {
+    it('provideUnresolved omits detail, documentation, and heavy data fields', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const request = createFixtureRequest(entry);
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const params = createParams(request, positionAt(entry.text, '{{', 2));
+      const unresolved = provider.provideUnresolved(params);
+
+      expect(unresolved.length).toBeGreaterThan(0);
+      const snapshots = snapshotCompletionItems(unresolved);
+      expect(snapshots.every((snapshot) => !snapshot.resolved)).toBe(true);
+      for (const item of unresolved) {
+        expect(item.label).toBeDefined();
+        expect(item.kind).toBeDefined();
+        expect(item.data.cbs.category).toBeDefined();
+        expect(item.data.cbs.uri).toBe(params.textDocument.uri);
+        expect(item.data.cbs.position).toEqual(params.position);
+      }
+    });
+
+    it('resolve restores deferred fields from an unresolved item', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const request = createFixtureRequest(entry);
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const params = createParams(request, positionAt(entry.text, '{{', 2));
+      const unresolved = provider.provideUnresolved(params);
+
+      expect(unresolved.length).toBeGreaterThan(0);
+      const firstUnresolved = unresolved[0]!;
+      const resolved = provider.resolve(firstUnresolved, params);
+
+      expect(resolved).not.toBeNull();
+      expect(resolved!.label).toBe(firstUnresolved.label);
+      expect(resolved!.detail).toBeDefined();
+      expect(resolved!.documentation).toBeDefined();
+      expect(resolved!.data).toEqual(
+        expect.objectContaining({
+          cbs: expect.objectContaining({
+            category: firstUnresolved.data.cbs.category,
+          }),
+        }),
+      );
+    });
+
+    it('resolve preserves textEdit from the resolved item', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const request = createFixtureRequest(entry);
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const params = createParams(request, positionAt(entry.text, '{{', 2));
+      const unresolved = provider.provideUnresolved(params);
+      const resolved = provider.resolve(unresolved[0]!, params);
+
+      expect(resolved).not.toBeNull();
+      expect(resolved!.textEdit).toBeDefined();
+    });
+
+    it('snapshot marks unresolved items as resolved: false and resolved items as resolved: true', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const request = createFixtureRequest(entry);
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const params = createParams(request, positionAt(entry.text, '{{', 2));
+      const unresolved = provider.provideUnresolved(params);
+      const resolved = provider.provide(params);
+
+      const unresolvedSnapshot = snapshotCompletionItems(unresolved);
+      const resolvedSnapshot = snapshotCompletionItems(resolved);
+
+      expect(unresolvedSnapshot.length).toBeGreaterThan(0);
+      expect(resolvedSnapshot.length).toBeGreaterThan(0);
+      expect(unresolvedSnapshot[0]!.resolved).toBe(false);
+      expect(resolvedSnapshot[0]!.resolved).toBe(true);
+    });
+
+    it('resolve returns null when the unresolved item does not match any current result', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const request = createFixtureRequest(entry);
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const params = createParams(request, positionAt(entry.text, '{{', 2));
+      const orphan = {
+        label: 'nonexistent-fake-label',
+        kind: 1 as import('vscode-languageserver/node').CompletionItemKind,
+        data: {
+          cbs: {
+            schema: 'cbs-lsp-agent-contract' as const,
+            schemaVersion: '1.0.0' as const,
+            category: { category: 'builtin' as const, kind: 'callable-builtin' as const },
+            uri: params.textDocument.uri,
+            position: params.position,
+          },
+        },
+      };
+
+      expect(provider.resolve(orphan, params)).toBeNull();
+    });
+
+    it('resolve returns null when the unresolved item was produced for a different uri/position', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const request = createFixtureRequest(entry);
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const params = createParams(request, positionAt(entry.text, '{{', 2));
+      const unresolved = provider.provideUnresolved(params);
+
+      expect(unresolved.length).toBeGreaterThan(0);
+      const mismatchedParams = {
+        textDocument: { uri: 'file:///other/document.risulorebook' },
+        position: params.position,
+      };
+      expect(provider.resolve(unresolved[0]!, mismatchedParams)).toBeNull();
+    });
+  });
 });

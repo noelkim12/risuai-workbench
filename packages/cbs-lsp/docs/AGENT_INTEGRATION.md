@@ -13,7 +13,7 @@
 
 `cbs-language-server --stdio`는 일반 LSP client처럼 붙는 public surface입니다.
 
-- completion / hover / diagnostics / rename / formatting / code actions / document symbols / workspace symbols / CodeLens 같은 editor-style 기능이 필요할 때 사용합니다.
+- completion / hover / diagnostics / rename / formatting / code actions / document symbols / workspace symbols / CodeLens 같은 editor-style 기능이 필요할 때 사용합니다. completion과 code action은 `completionItem/resolve`와 `codeAction/resolve`로 detail/documentation/edit를 지연 로드하므로, 대량 목록 수신 후 필요 항목만 개별 resolve하면 payload를 절약할 수 있습니다.
 - workspace graph가 잡히면 definition / references / rename은 `local-first` contract로 현재 fragment 결과 뒤에 workspace chat-variable 정보를 덧붙입니다.
 - LuaLS companion이 ready면 `.risulua` hover/completion도 같은 stdio 세션에서 프록시됩니다.
 - agent가 현재 세션의 runtime/operator 상태만 다시 읽고 싶다면 custom request `cbs/runtimeAvailability`를 호출하면 됩니다. 이 요청은 `experimental.cbs.availabilitySnapshot` / CLI `report availability`와 같은 normalized snapshot shape를, 현재 세션의 LuaLS/runtime 상태 기준으로 다시 반환합니다.

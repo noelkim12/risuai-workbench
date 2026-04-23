@@ -120,10 +120,14 @@ class FakeConnection {
 
   codeActionHandler: ((params: any) => CodeAction[]) | null = null;
 
+  codeActionResolveHandler: ((action: CodeAction) => CodeAction) | null = null;
+
   codeLensHandler: ((params: any) => CodeLens[]) | null = null;
 
   completionHandler: ((params: any) => CompletionItem[] | { items: CompletionItem[] }) | null =
     null;
+
+  completionResolveHandler: ((item: CompletionItem) => CompletionItem) | null = null;
 
   documentHighlightHandler: ((params: any) => DocumentHighlight[]) | null = null;
 
@@ -214,6 +218,11 @@ class FakeConnection {
     return createDisposable();
   }
 
+  onCodeActionResolve(handler: (action: CodeAction) => CodeAction) {
+    this.codeActionResolveHandler = handler;
+    return createDisposable();
+  }
+
   onCodeLens(handler: (params: any) => CodeLens[]) {
     this.codeLensHandler = handler;
     return createDisposable();
@@ -221,6 +230,11 @@ class FakeConnection {
 
   onCompletion(handler: (params: any) => CompletionItem[] | { items: CompletionItem[] }) {
     this.completionHandler = handler;
+    return createDisposable();
+  }
+
+  onCompletionResolve(handler: (item: CompletionItem) => CompletionItem) {
+    this.completionResolveHandler = handler;
     return createDisposable();
   }
 

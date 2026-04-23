@@ -40,6 +40,30 @@ export interface CodeActionProviderOptions {
   resolveRequest?: CodeActionRequestResolver;
 }
 
+/**
+ * Minimal unresolved code action data payload.
+ * diagnostic code, action 식별자, 요청 URI를 담아 resolve 시 edit를 재구성하고
+ * request context를 검증할 수 있게 함.
+ */
+export interface UnresolvedCodeActionData {
+  cbs: {
+    schema: 'cbs-lsp-agent-contract';
+    schemaVersion: '1.0.0';
+    diagnosticCode: string | number | undefined;
+    actionType: 'replacement' | 'close-tag' | 'guidance' | 'unknown';
+    replacement: string | null;
+    uri: string;
+  };
+}
+
+/**
+ * Lightweight unresolved code action shape.
+ * edit payload는 생략되며 resolve 호출로 복원됨.
+ */
+export type UnresolvedCodeAction = Omit<CodeAction, 'edit' | 'data'> & {
+  data: UnresolvedCodeActionData;
+};
+
 const WHEN_OPERATOR_CANDIDATES = Object.freeze([
   'and',
   'is',
@@ -127,6 +151,99 @@ export class CodeActionProvider {
     }
 
     return dedupeCodeActions(actions);
+  }
+
+  /**
+   * provideUnresolved 함수.
+   * lightweight unresolved code action 목록을 반환함.
+   * edit payload 같은 heavy field는 생략되며 resolve 호출로 복원됨.
+   *
+   * @param params - LSP code action request
+   * @returns unresolved code action 목록
+   */
+  provideUnresolved(params: CodeActionParams): UnresolvedCodeAction[] {
+    const resolved = this.provide(params);
+    return resolved.map((action) => stripCodeActionToUnresolved(action, params.textDocument.uri));
+  }
+
+  /**
+   * resolve 함수.
+   * unresolved code action의 deferred edit payload를 복원해 fully resolved action을 반환함.
+   * title + kind + isPreferred + diagnosticCode + request URI를 복합 키로 사용해
+   * 모호한 matching을 방지함.
+   *
+   * @param action - unresolved code action
+   * @param params - LSP code action request (동일 문서 상태)
+   * @returns resolved code action
+   */
+  resolve(action: UnresolvedCodeAction, params: CodeActionParams): CodeAction | null {
+    if (action.data.cbs.uri !== params.textDocument.uri) {
+      return null;
+    }
+
+    const resolvedList = this.provide(params);
+    const match = resolvedList.find(
+      (resolved) =>
+        resolved.title === action.title &&
+        resolved.kind === action.kind &&
+        resolved.isPreferred === action.isPreferred &&
+        resolved.diagnostics?.[0]?.code === action.data.cbs.diagnosticCode,
+    );
+    if (match) {
+      return match;
+    }
+
+    const unresolvedDiagnostic = action.diagnostics?.[0];
+    if (!unresolvedDiagnostic) {
+      return null;
+    }
+
+    const request = this.resolveRequest(action.data.cbs.uri);
+    if (!request) {
+      return null;
+    }
+
+    const analysis = this.analysisService.analyzeDocument(request);
+    if (!analysis || analysis.fragmentAnalyses.length === 0) {
+      return null;
+    }
+
+    const fragmentAnalysis = this.findOwningFragmentAnalysis(request, analysis.fragmentAnalyses, unresolvedDiagnostic.range);
+    if (!fragmentAnalysis) {
+      return null;
+    }
+
+    const localRange = fragmentAnalysis.mapper.toLocalRange(request.text, unresolvedDiagnostic.range as Range);
+    if (!localRange) {
+      return null;
+    }
+
+    switch (action.data.cbs.actionType) {
+      case 'replacement': {
+        const replacement = action.data.cbs.replacement ?? parseQuotedMessageValue(action.title);
+        if (!replacement) {
+          return null;
+        }
+
+        return this.createReplacementAction(
+          request,
+          unresolvedDiagnostic,
+          fragmentAnalysis,
+          localRange,
+          {
+            title: action.title,
+            replacement,
+            isPreferred: action.isPreferred,
+          },
+        );
+      }
+      case 'close-tag':
+        return this.createMissingCloseTagAction(request, unresolvedDiagnostic, fragmentAnalysis, localRange);
+      case 'guidance':
+        return createNoopGuidanceAction(action.title, unresolvedDiagnostic);
+      default:
+        return null;
+    }
   }
 
   /**
@@ -544,6 +661,58 @@ export class CodeActionProvider {
 
     return edits;
   }
+}
+
+/**
+ * stripCodeActionToUnresolved 함수.
+ * fully resolved code action에서 edit를 제거하고 lightweight unresolved action을 만듦.
+ * request URI를 data에 추가해 resolve matching을 강화함.
+ *
+ * @param action - 원본 resolved code action
+ * @param uri - 요청 문서 URI
+ * @returns edit가 제거된 unresolved code action
+ */
+export function stripCodeActionToUnresolved(
+  action: CodeAction,
+  uri: string,
+): UnresolvedCodeAction {
+  const firstDiagnostic = action.diagnostics?.[0];
+  const actionType: UnresolvedCodeActionData['cbs']['actionType'] =
+    action.edit && Object.keys(action.edit.changes ?? {}).length === 0
+        ? 'guidance'
+      : action.title.startsWith('Insert missing')
+        ? 'close-tag'
+        : action.title.startsWith('Replace')
+          ? 'replacement'
+          : 'unknown';
+  const replacement =
+    actionType === 'replacement'
+      ? Object.values(action.edit?.changes ?? {})[0]?.[0]?.newText ?? null
+      : null;
+
+  return {
+    title: action.title,
+    kind: action.kind,
+    diagnostics: action.diagnostics?.map((diagnostic) => ({
+      range: diagnostic.range,
+      severity: diagnostic.severity,
+      code: diagnostic.code,
+      message: diagnostic.message,
+      source: diagnostic.source,
+      relatedInformation: diagnostic.relatedInformation,
+    })),
+    isPreferred: action.isPreferred,
+    data: {
+      cbs: {
+        schema: 'cbs-lsp-agent-contract',
+        schemaVersion: '1.0.0',
+        diagnosticCode: firstDiagnostic?.code,
+        actionType,
+        replacement,
+        uri,
+      },
+    },
+  };
 }
 
 /**
