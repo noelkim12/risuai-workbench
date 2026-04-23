@@ -1,5 +1,7 @@
 /**
  * CBS AST를 canonical fragment text로 직렬화하는 formatter 유틸.
+ * 현재 contract는 pretty formatter가 아니라 canonical serializer이며,
+ * 들여쓰기/줄바꿈/tabSize 옵션 반영 같은 editor polish는 보장하지 않는다.
  * @file packages/cbs-lsp/src/core/cbs-formatter.ts
  */
 
@@ -78,6 +80,8 @@ function printNode(node: CBSNode): string {
 /**
  * formatCbsDocument 함수.
  * parser가 만든 CBS document를 canonical fragment text로 재직렬화함.
+ * macro spacing, shorthand close tag 같은 구조적 표기만 canonicalize하며,
+ * block indentation이나 option-aware pretty layout은 의도적으로 수행하지 않음.
  *
  * @param document - format 대상 CBS document
  * @returns canonical CBS fragment text

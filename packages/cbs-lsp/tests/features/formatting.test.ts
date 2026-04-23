@@ -109,6 +109,24 @@ describe('FormattingProvider', () => {
     ].join('\n'));
   });
 
+  it('rewrites pure blocks structurally but keeps the pure body text untouched', () => {
+    const text = ['@@@ CONTENT', '{{#puredisplay}}  {{ user }}', '{{/}}', ''].join('\n');
+    const request = createRequestFromEntry('lorebook-basic', text);
+    const provider = new FormattingProvider({
+      resolveRequest: (uri) => (uri === request.uri ? request : null),
+    });
+
+    const edits = provider.provide(createParams(request));
+
+    expect(edits).toHaveLength(1);
+    expect(applyTextEdits(request.text, edits)).toBe([
+      '@@@ CONTENT',
+      '{{#puredisplay}}  {{ user }}',
+      '{{/puredisplay}}',
+      '',
+    ].join('\n'));
+  });
+
   it('returns [] for malformed fragments so formatting stays on the no-op path', () => {
     const request = createFixtureRequest(getFixtureCorpusEntry('lorebook-unclosed-macro'));
     const provider = new FormattingProvider({

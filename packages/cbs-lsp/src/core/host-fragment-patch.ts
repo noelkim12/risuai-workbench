@@ -1,5 +1,7 @@
 /**
  * Host 문서에 반영할 CBS fragment patch 안전 계약.
+ * formatting/rename/code action이 rewrite 대신 no-op으로 degrade해야 하는 경계도
+ * 이 모듈이 source of truth로 고정한다.
  * @file packages/cbs-lsp/src/core/host-fragment-patch.ts
  */
 

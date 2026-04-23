@@ -1,5 +1,7 @@
 /**
  * CBS fragment-local formatting provider.
+ * 현재 contract는 routed fragment용 canonical serializer + safe no-op 경계이며,
+ * pretty formatter나 option-aware layout engine은 아직 제공하지 않음.
  * @file packages/cbs-lsp/src/features/formatting.ts
  */
 
@@ -59,6 +61,7 @@ function isTextChangingEdit(hostText: string, edit: TextEdit): boolean {
  * Formatting Provider.
  * 현재 문서의 CBS fragment만 canonical formatting text로 재직렬화하고,
  * 공용 host-fragment patch validator를 통과한 edit만 host 문서 edit로 승격함.
+ * malformed fragment, unrouted artifact, unsupported host edit는 모두 safe no-op으로 유지함.
  */
 export class FormattingProvider {
   private readonly analysisService: FragmentAnalysisService;
