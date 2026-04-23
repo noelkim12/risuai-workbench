@@ -62,6 +62,7 @@ export function createInitializeResult(
       definitionProvider: true,
       documentSymbolProvider: true,
       documentFormattingProvider: true,
+      documentRangeFormattingProvider: true,
       referencesProvider: true,
       renameProvider: renamePrepareSupport
         ? {

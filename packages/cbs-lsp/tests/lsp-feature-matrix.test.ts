@@ -6,6 +6,7 @@ import type {
   Diagnostic,
   DocumentSymbol,
   DocumentFormattingParams,
+  DocumentRangeFormattingParams,
   FoldingRange,
   Hover,
   InitializeParams,
@@ -138,6 +139,8 @@ class FakeConnection {
 
   formattingHandler: ((params: DocumentFormattingParams) => TextEdit[]) | null = null;
 
+  rangeFormattingHandler: ((params: DocumentRangeFormattingParams) => TextEdit[]) | null = null;
+
   semanticTokensHandler: ((params: any) => SemanticTokens) | null = null;
 
   readonly diagnostics: Array<{ uri: string; version?: number; diagnostics: readonly Diagnostic[] }> = [];
@@ -239,6 +242,11 @@ class FakeConnection {
 
   onDocumentFormatting(handler: (params: DocumentFormattingParams) => TextEdit[]) {
     this.formattingHandler = handler;
+    return createDisposable();
+  }
+
+  onDocumentRangeFormatting(handler: (params: DocumentRangeFormattingParams) => TextEdit[]) {
+    this.rangeFormattingHandler = handler;
     return createDisposable();
   }
 

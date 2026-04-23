@@ -125,7 +125,7 @@ function comparePatchEdits(left: HostFragmentPatchEdit, right: HostFragmentPatch
 }
 
 /**
- * findOwningFragmentAnalysis 함수.
+ * findOwningHostFragmentAnalysis 함수.
  * host range를 완전히 감싸는 fragment 분석 결과를 찾음.
  *
  * @param requestText - host 문서 전문
@@ -133,7 +133,7 @@ function comparePatchEdits(left: HostFragmentPatchEdit, right: HostFragmentPatch
  * @param range - host document 기준 edit range
  * @returns edit를 소유하는 fragment 분석 결과
  */
-function findOwningFragmentAnalysis(
+export function findOwningHostFragmentAnalysis(
   requestText: string,
   fragmentAnalyses: readonly FragmentDocumentAnalysis[],
   range: Range,
@@ -334,7 +334,7 @@ export function validateHostFragmentPatchEdits(
       continue;
     }
 
-    const owningFragment = findOwningFragmentAnalysis(request.text, analysis.fragmentAnalyses, edit.range);
+    const owningFragment = findOwningHostFragmentAnalysis(request.text, analysis.fragmentAnalyses, edit.range);
     if (!owningFragment) {
       problems.push({
         code: 'outside-fragment',

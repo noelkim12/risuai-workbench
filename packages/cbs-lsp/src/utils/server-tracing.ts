@@ -22,6 +22,7 @@ export type CbsLspFeatureName =
   | 'completion'
   | 'documentSymbol'
   | 'formatting'
+  | 'rangeFormatting'
   | 'definition'
   | 'references'
   | 'rename'

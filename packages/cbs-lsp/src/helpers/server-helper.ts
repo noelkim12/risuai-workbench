@@ -17,6 +17,7 @@ import {
   type DocumentSymbol,
   type DocumentSymbolParams,
   type DocumentFormattingParams,
+  type DocumentRangeFormattingParams,
   type FoldingRangeParams,
   type HoverParams,
   LSPErrorCodes,
@@ -188,6 +189,7 @@ export class ServerFeatureRegistrar {
     this.registerCompletionHandler();
     this.registerDocumentSymbolHandler();
     this.registerFormattingHandler();
+    this.registerRangeFormattingHandler();
     this.registerDefinitionHandler();
     this.registerReferencesHandler();
     this.registerPrepareRenameHandler();
@@ -356,6 +358,23 @@ export class ServerFeatureRegistrar {
         getUri: (requestParams) => requestParams.textDocument.uri,
         params,
         run: () => this.formattingProvider.provide(params),
+        summarize: (result) => ({ count: result.length }),
+        token: cancellationToken,
+      });
+    });
+  }
+
+  private registerRangeFormattingHandler(): void {
+    this.connection.onDocumentRangeFormatting((
+      params: DocumentRangeFormattingParams,
+      cancellationToken,
+    ): TextEdit[] => {
+      return this.requestRunner.runSync({
+        empty: [],
+        feature: 'rangeFormatting',
+        getUri: (requestParams) => requestParams.textDocument.uri,
+        params,
+        run: () => this.formattingProvider.provideRange(params),
         summarize: (result) => ({ count: result.length }),
         token: cancellationToken,
       });

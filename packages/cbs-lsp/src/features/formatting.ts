@@ -1,19 +1,26 @@
 /**
  * CBS fragment-local formatting provider.
  * 현재 contract는 routed fragment용 canonical serializer + safe no-op 경계이며,
+ * range formatting도 선택 영역 자체가 아니라 owning fragment canonicalization만 허용한다.
  * pretty formatter나 option-aware layout engine은 아직 제공하지 않음.
  * @file packages/cbs-lsp/src/features/formatting.ts
  */
 
-import { TextEdit, DocumentFormattingParams } from 'vscode-languageserver/node';
+import {
+  TextEdit,
+  DocumentFormattingParams,
+  type DocumentRangeFormattingParams,
+} from 'vscode-languageserver/node';
 
 import {
   ACTIVE_FEATURE_AVAILABILITY,
   createHostFragmentKey,
+  findOwningHostFragmentAnalysis,
   formatCbsDocument,
   fragmentAnalysisService,
   remapFragmentLocalPatchesToHost,
   type AgentMetadataAvailabilityContract,
+  type FragmentDocumentAnalysis,
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
   validateHostFragmentPatchEdits,
@@ -55,6 +62,69 @@ function isTextChangingEdit(hostText: string, edit: TextEdit): boolean {
   const startOffset = positionToOffset(hostText, edit.range.start);
   const endOffset = positionToOffset(hostText, edit.range.end);
   return hostText.slice(startOffset, endOffset) !== edit.newText;
+}
+
+/**
+ * collectValidatedFormattingEdits 함수.
+ * 지정된 fragment 집합만 canonical formatting 대상으로 삼아 host-safe edit를 계산함.
+ *
+ * @param request - 현재 host 문서 분석 요청
+ * @param analysisService - host patch validator에 재사용할 분석 서비스
+ * @param resolveRequest - host URI를 request로 되돌리는 resolver
+ * @param fragmentAnalyses - formatting 대상으로 허용된 fragment 분석 목록
+ * @returns host-fragment safety contract를 통과한 TextEdit 목록
+ */
+function collectValidatedFormattingEdits(
+  request: FragmentAnalysisRequest,
+  analysisService: FragmentAnalysisService,
+  resolveRequest: FormattingRequestResolver,
+  fragmentAnalyses: readonly FragmentDocumentAnalysis[],
+): TextEdit[] {
+  const candidateEdits = fragmentAnalyses.flatMap((fragmentAnalysis) => {
+    const formattedText = formatCbsDocument(fragmentAnalysis.document);
+    if (formattedText === fragmentAnalysis.fragment.content) {
+      return [];
+    }
+
+    const remapped = remapFragmentLocalPatchesToHost(request, fragmentAnalysis, [
+      {
+        range: createWholeFragmentRange(fragmentAnalysis.fragment.content),
+        newText: formattedText,
+      },
+    ]);
+
+    return remapped.ok ? remapped.edits : [];
+  });
+
+  if (candidateEdits.length === 0) {
+    return [];
+  }
+
+  const validated = validateHostFragmentPatchEdits(
+    analysisService,
+    candidateEdits.map((edit) => ({
+      uri: edit.uri,
+      range: edit.range,
+      newText: edit.newText,
+    })),
+    {
+      resolveRequestForUri: resolveRequest,
+      allowedFragmentKeysByUri: new Map([
+        [request.uri, new Set(fragmentAnalyses.map((fragmentAnalysis) => createHostFragmentKey(fragmentAnalysis)))],
+      ]),
+    },
+  );
+
+  if (!validated.ok) {
+    return [];
+  }
+
+  return validated.edits
+    .map((edit) => ({
+      range: edit.range,
+      newText: edit.newText,
+    }))
+    .filter((edit) => isTextChangingEdit(request.text, edit));
 }
 
 /**
@@ -101,53 +171,50 @@ export class FormattingProvider {
       return [];
     }
 
-    const candidateEdits = analysis.fragmentAnalyses.flatMap((fragmentAnalysis) => {
-      const formattedText = formatCbsDocument(fragmentAnalysis.document);
-      if (formattedText === fragmentAnalysis.fragment.content) {
-        return [];
-      }
-
-      const remapped = remapFragmentLocalPatchesToHost(request, fragmentAnalysis, [
-        {
-          range: createWholeFragmentRange(fragmentAnalysis.fragment.content),
-          newText: formattedText,
-        },
-      ]);
-
-      return remapped.ok ? remapped.edits : [];
-    });
-
-    if (candidateEdits.length === 0) {
-      return [];
-    }
-
-    const validated = validateHostFragmentPatchEdits(
+    return collectValidatedFormattingEdits(
+      request,
       this.analysisService,
-      candidateEdits.map((edit) => ({
-        uri: edit.uri,
-        range: edit.range,
-        newText: edit.newText,
-      })),
-      {
-        resolveRequestForUri: this.resolveRequest,
-        allowedFragmentKeysByUri: new Map([
-          [
-            request.uri,
-            new Set(analysis.fragmentAnalyses.map((fragmentAnalysis) => createHostFragmentKey(fragmentAnalysis))),
-          ],
-        ]),
-      },
+      this.resolveRequest,
+      analysis.fragmentAnalyses,
     );
+  }
 
-    if (!validated.ok) {
+  /**
+   * provideRange 함수.
+   * 선택 range가 정확히 하나의 CBS fragment 안에 있을 때만 owning fragment canonical edit를 반환함.
+   *
+   * @param params - editor range formatting request
+   * @returns host-fragment safety contract를 통과한 TextEdit 목록
+   */
+  provideRange(params: DocumentRangeFormattingParams): TextEdit[] {
+    if (!params.textDocument?.uri) {
       return [];
     }
 
-    return validated.edits
-      .map((edit) => ({
-        range: edit.range,
-        newText: edit.newText,
-      }))
-      .filter((edit) => isTextChangingEdit(request.text, edit));
+    const request = this.resolveRequest(params.textDocument.uri);
+    if (!request) {
+      return [];
+    }
+
+    const analysis = this.analysisService.analyzeDocument(request);
+    if (!analysis || analysis.fragmentAnalyses.length === 0) {
+      return [];
+    }
+
+    const owningFragment = findOwningHostFragmentAnalysis(
+      request.text,
+      analysis.fragmentAnalyses,
+      params.range,
+    );
+    if (!owningFragment) {
+      return [];
+    }
+
+    return collectValidatedFormattingEdits(
+      request,
+      this.analysisService,
+      this.resolveRequest,
+      [owningFragment],
+    );
   }
 }

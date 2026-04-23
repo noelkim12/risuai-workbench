@@ -11,9 +11,10 @@ import type {
   Definition,
   Diagnostic,
   DidChangeConfigurationParams,
-  DocumentSymbol,
   DidChangeWatchedFilesParams,
   DocumentFormattingParams,
+  DocumentRangeFormattingParams,
+  DocumentSymbol,
   FoldingRange,
   Hover,
   InitializeParams,
@@ -318,7 +319,12 @@ class FakeConnection {
 
   formattingRegistrations = 0;
 
+  rangeFormattingRegistrations = 0;
+
   formattingHandler: ((params: DocumentFormattingParams, token?: CancellationToken) => TextEdit[]) | null =
+    null;
+
+  rangeFormattingHandler: ((params: DocumentRangeFormattingParams, token?: CancellationToken) => TextEdit[]) | null =
     null;
 
   readonly customRequestHandlers = new Map<string, (params: unknown) => unknown | Promise<unknown>>();
@@ -443,6 +449,14 @@ class FakeConnection {
   onDocumentFormatting(handler: (params: DocumentFormattingParams, token?: CancellationToken) => TextEdit[]) {
     this.formattingHandler = handler;
     this.formattingRegistrations += 1;
+    return createDisposable();
+  }
+
+  onDocumentRangeFormatting(
+    handler: (params: DocumentRangeFormattingParams, token?: CancellationToken) => TextEdit[],
+  ) {
+    this.rangeFormattingHandler = handler;
+    this.rangeFormattingRegistrations += 1;
     return createDisposable();
   }
 
@@ -711,6 +725,7 @@ describe('LSP server integration', () => {
           definitionProvider: true,
           documentSymbolProvider: true,
           documentFormattingProvider: true,
+          documentRangeFormattingProvider: true,
           referencesProvider: true,
           renameProvider: true,
           hoverProvider: true,
@@ -757,6 +772,7 @@ describe('LSP server integration', () => {
     expect(connection.completionHandler).not.toBeNull();
     expect(connection.documentSymbolHandler).not.toBeNull();
     expect(connection.formattingHandler).not.toBeNull();
+    expect(connection.rangeFormattingHandler).not.toBeNull();
     expect(connection.definitionHandler).not.toBeNull();
     expect(connection.referencesHandler).not.toBeNull();
     expect(connection.prepareRenameHandler).not.toBeNull();
@@ -771,6 +787,7 @@ describe('LSP server integration', () => {
     expect(connection.prepareRenameRegistrations).toBe(1);
     expect(connection.renameRegistrations).toBe(1);
     expect(connection.formattingRegistrations).toBe(1);
+    expect(connection.rangeFormattingRegistrations).toBe(1);
   });
 
   it('owns the lorebook CodeLens command through executeCommandProvider as a no-op', async () => {
@@ -1753,6 +1770,48 @@ describe('LSP server integration', () => {
     expect(applyTextEdits(text, edits ?? [])).toBe(
       lorebookDocument(['Hello {{user}} {{#if::true}}yes{{:else}}no{{/if}}']),
     );
+  });
+
+  it('routes textDocument/rangeFormatting through the server seam only for a single owning fragment', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const text = regexDocument(['{{ user }}'], ['{{#if ready}}ok{{/}}']);
+    const uri = await writeWorkspaceFile(root, 'regex/range-formatting.risuregex', text);
+
+    registerServer(connection as any, documents as any);
+    documents.open(uri, text, 1);
+
+    const singleFragmentEdits = connection.rangeFormattingHandler?.(
+      {
+        textDocument: { uri },
+        range: {
+          start: positionAt(text, '{{ user }}'),
+          end: positionAt(text, '{{ user }}', '{{ user }}'.length),
+        },
+        options: { tabSize: 2, insertSpaces: true },
+      },
+      createCancellationToken(false),
+    );
+
+    expect(singleFragmentEdits).toHaveLength(1);
+    expect(applyTextEdits(text, singleFragmentEdits ?? [])).toBe(
+      regexDocument(['{{user}}'], ['{{#if ready}}ok{{/}}']),
+    );
+
+    const crossFragmentEdits = connection.rangeFormattingHandler?.(
+      {
+        textDocument: { uri },
+        range: {
+          start: positionAt(text, '{{ user }}'),
+          end: positionAt(text, '{{#if ready}}ok{{/}}', '{{#if ready}}ok{{/}}'.length),
+        },
+        options: { tabSize: 2, insertSpaces: true },
+      },
+      createCancellationToken(false),
+    );
+
+    expect(crossFragmentEdits).toEqual([]);
   });
 
   it('routes textDocument/documentSymbol through the server seam and exposes fragment-aware outline symbols', async () => {
