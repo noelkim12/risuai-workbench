@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { registerCoreCommands } from './commands';
+import { startCbsLanguageClient, stopCbsLanguageClient } from './lsp/cbsLanguageClient';
 import { RisuTreeProvider } from './providers/tree-provider';
 import { AnalysisService } from './services/analysis-service';
 import { CardService } from './services/card-service';
@@ -17,8 +18,12 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(treeView);
   context.subscriptions.push(registerCoreCommands(context, cardService, analysisService));
+
+  // Start CBS language client for .risu* files
+  startCbsLanguageClient(context);
 }
 
-export function deactivate() {
+export async function deactivate() {
   console.log('risu-workbench-vscode extension deactivated');
+  await stopCbsLanguageClient();
 }

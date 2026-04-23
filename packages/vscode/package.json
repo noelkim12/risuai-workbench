@@ -15,9 +15,46 @@
     "onCommand:risuWorkbench.analyzeLua",
     "onCommand:risuWorkbench.inspectCard",
     "onCommand:risuWorkbench.openCardPanel",
-    "onView:risuWorkbench.cards"
+    "onView:risuWorkbench.cards",
+    "onLanguage:risulorebook",
+    "onLanguage:risuregex",
+    "onLanguage:risuprompt",
+    "onLanguage:risuhtml",
+    "onLanguage:risulua"
   ],
   "contributes": {
+    "languages": [
+      {
+        "id": "risulorebook",
+        "extensions": [
+          ".risulorebook"
+        ]
+      },
+      {
+        "id": "risuregex",
+        "extensions": [
+          ".risuregex"
+        ]
+      },
+      {
+        "id": "risuprompt",
+        "extensions": [
+          ".risuprompt"
+        ]
+      },
+      {
+        "id": "risuhtml",
+        "extensions": [
+          ".risuhtml"
+        ]
+      },
+      {
+        "id": "risulua",
+        "extensions": [
+          ".risulua"
+        ]
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {
@@ -72,19 +109,54 @@
           "group": "inline"
         }
       ]
+    },
+    "configuration": {
+      "title": "Risu Workbench",
+      "properties": {
+        "risuWorkbench.cbs.server.launchMode": {
+          "type": "string",
+          "scope": "window",
+          "enum": [
+            "auto",
+            "embedded",
+            "standalone"
+          ],
+          "default": "auto",
+          "markdownDescription": "How the CBS language client resolves `cbs-language-server`. `auto` tries the selected standalone install strategy first, then falls back to the embedded monorepo server module when available."
+        },
+        "risuWorkbench.cbs.server.installMode": {
+          "type": "string",
+          "scope": "window",
+          "enum": [
+            "local-devDependency",
+            "npx",
+            "global"
+          ],
+          "default": "local-devDependency",
+          "markdownDescription": "Standalone attach strategy for `cbs-language-server`. `local-devDependency` resolves `<workspace>/node_modules/.bin/cbs-language-server`, `npx` runs `npx cbs-language-server --stdio`, and `global` runs `cbs-language-server --stdio` from PATH."
+        },
+        "risuWorkbench.cbs.server.path": {
+          "type": "string",
+          "scope": "window",
+          "default": "",
+          "markdownDescription": "Optional explicit path to the `cbs-language-server` executable. Relative paths resolve from the first workspace folder when available, otherwise from the extension root."
+        }
+      }
     }
   },
   "scripts": {
     "build": "npm --prefix ../webview run build && tsc && npx tsc-alias && node ./scripts/copy-webview.mjs",
     "watch": "tsc --watch",
     "dev": "tsc && code --extensionDevelopmentPath=\"$PWD\"",
+    "verify:cbs-client": "node ./scripts/verify-cbs-client.mjs",
     "lint": "eslint 'src/**/*.ts'",
     "lint:fix": "eslint 'src/**/*.ts' --fix",
     "format": "prettier --write 'src/**/*.ts'",
     "format:check": "prettier --check 'src/**/*.ts'"
   },
   "dependencies": {
-    "risu-workbench-core": "*"
+    "risu-workbench-core": "^0.1.0",
+    "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {
     "@types/vscode": "^1.96.0",
