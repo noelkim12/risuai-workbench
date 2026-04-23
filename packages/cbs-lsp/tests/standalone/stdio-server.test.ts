@@ -52,6 +52,12 @@ interface JsonRpcResponseMessage {
   result?: unknown;
 }
 
+interface JsonRpcResponseRecord {
+  error?: JsonRpcResponseMessage['error'];
+  id: number | null;
+  result?: unknown;
+}
+
 interface JsonRpcNotificationRecord {
   method: string;
   params: unknown;
@@ -137,6 +143,8 @@ function getHoverMarkdown(hover: unknown): string | null {
 class StdioLspClient {
   private readonly notifications: JsonRpcNotificationRecord[] = [];
 
+  private readonly orphanResponses: JsonRpcResponseRecord[] = [];
+
   private readonly notificationWaiters: Array<{
     method: string;
     predicate: (params: unknown) => boolean;
@@ -153,6 +161,13 @@ class StdioLspClient {
       timer: ReturnType<typeof setTimeout>;
     }
   >();
+
+  private readonly responseWaiters: Array<{
+    predicate: (response: JsonRpcResponseRecord) => boolean;
+    reject: (error: Error) => void;
+    resolve: (response: JsonRpcResponseRecord) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }> = [];
 
   private nextId = 1;
 
@@ -190,6 +205,15 @@ class StdioLspClient {
         clearTimeout(waiter.timer);
         waiter.reject(error);
       }
+
+      while (this.responseWaiters.length > 0) {
+        const waiter = this.responseWaiters.shift();
+        if (!waiter) {
+          continue;
+        }
+        clearTimeout(waiter.timer);
+        waiter.reject(error);
+      }
     };
 
     this.child.once('exit', exitHandler);
@@ -208,21 +232,30 @@ class StdioLspClient {
    * @returns 서버가 돌려준 JSON-RPC result
    */
   request(method: string, params: unknown, timeoutMs: number = 10_000): Promise<unknown> {
-    const id = this.nextId++;
+    const prepared = this.prepareRequest(method, params, timeoutMs);
+    this.writeMessage(prepared.message);
+    return prepared.response;
+  }
 
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pendingRequests.delete(id);
-        reject(
-          new Error(
-            `Timed out waiting for JSON-RPC response: ${method}. stderr: ${this.getStderr()}`,
-          ),
-        );
-      }, timeoutMs);
-
-      this.pendingRequests.set(id, { resolve, reject, timer });
-      this.writeMessage({ id, jsonrpc: '2.0', method, params } satisfies JsonRpcRequestMessage);
-    });
+  /**
+   * requestChunked 함수.
+   * request frame을 여러 stdin chunk로 쪼개 보내면서 응답을 기다림.
+   *
+   * @param method - 호출할 LSP method
+   * @param params - method에 전달할 params payload
+   * @param splitOffsets - frame을 자를 byte 경계 목록
+   * @param timeoutMs - 응답을 기다릴 최대 시간
+   * @returns 서버가 돌려준 JSON-RPC result
+   */
+  async requestChunked(
+    method: string,
+    params: unknown,
+    splitOffsets: readonly number[],
+    timeoutMs: number = 10_000,
+  ): Promise<unknown> {
+    const prepared = this.prepareRequest(method, params, timeoutMs);
+    await this.writeFrameInChunks(this.encodeMessage(prepared.message), splitOffsets);
+    return prepared.response;
   }
 
   /**
@@ -234,6 +267,76 @@ class StdioLspClient {
    */
   notify(method: string, params: unknown): void {
     this.writeMessage({ jsonrpc: '2.0', method, params } satisfies JsonRpcNotificationMessage);
+  }
+
+  /**
+   * notifyChunked 함수.
+   * notification frame을 여러 stdin chunk로 쪼개 전송함.
+   *
+   * @param method - 호출할 LSP notification method
+   * @param params - notification payload
+   * @param splitOffsets - frame을 자를 byte 경계 목록
+   */
+  async notifyChunked(method: string, params: unknown, splitOffsets: readonly number[]): Promise<void> {
+    await this.writeFrameInChunks(
+      this.encodeMessage({ jsonrpc: '2.0', method, params } satisfies JsonRpcNotificationMessage),
+      splitOffsets,
+    );
+  }
+
+  /**
+   * waitForResponse 함수.
+   * pending request와 연결되지 않은 JSON-RPC response를 predicate 기준으로 기다림.
+   *
+   * @param predicate - 응답 payload를 필터링할 조건
+   * @param timeoutMs - 응답을 기다릴 최대 시간
+   * @returns 조건을 통과한 response record
+   */
+  waitForResponse(
+    predicate: (response: JsonRpcResponseRecord) => boolean,
+    timeoutMs: number = 10_000,
+  ): Promise<JsonRpcResponseRecord> {
+    const existingIndex = this.orphanResponses.findIndex((response) => predicate(response));
+    if (existingIndex >= 0) {
+      const [response] = this.orphanResponses.splice(existingIndex, 1);
+      return Promise.resolve(response);
+    }
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const index = this.responseWaiters.findIndex((waiter) => waiter.resolve === resolve);
+        if (index >= 0) {
+          this.responseWaiters.splice(index, 1);
+        }
+        reject(new Error(`Timed out waiting for orphan JSON-RPC response. stderr: ${this.getStderr()}`));
+      }, timeoutMs);
+
+      this.responseWaiters.push({ predicate, resolve, reject, timer });
+    });
+  }
+
+  /**
+   * sendBatch 함수.
+   * 여러 JSON-RPC frame을 한 번의 stdin write로 붙여 보내 transport batching을 재현함.
+   *
+   * @param messages - 순서대로 직렬화할 JSON-RPC message 목록
+   */
+  sendBatch(messages: ReadonlyArray<JsonRpcRequestMessage | JsonRpcNotificationMessage>): void {
+    const frame = Buffer.concat(messages.map((message) => this.encodeMessage(message)));
+    this.child.stdin.write(frame);
+  }
+
+  /**
+   * sendRawFrame 함수.
+   * 이미 직렬화한 body를 원하는 Content-Length와 함께 직접 전송함.
+   *
+   * @param rawBody - frame body로 보낼 raw JSON text
+   * @param contentLength - header에 넣을 Content-Length 값. 기본값은 raw body 길이
+   */
+  sendRawFrame(rawBody: string, contentLength: number = Buffer.byteLength(rawBody, 'utf8')): void {
+    const body = Buffer.from(rawBody, 'utf8');
+    const header = Buffer.from(`Content-Length: ${contentLength}\r\n\r\n`, 'utf8');
+    this.child.stdin.write(Buffer.concat([header, body]));
   }
 
   /**
@@ -282,6 +385,21 @@ class StdioLspClient {
   async shutdown(): Promise<void> {
     await this.request('shutdown', null, 20_000);
     this.notify('exit', undefined);
+  }
+
+  /**
+   * shutdownChunked 함수.
+   * shutdown request와 exit notification을 chunked transport로 전송함.
+   *
+   * @param requestSplitOffsets - shutdown request frame을 자를 byte 경계 목록
+   * @param exitSplitOffsets - exit notification frame을 자를 byte 경계 목록
+   */
+  async shutdownChunked(
+    requestSplitOffsets: readonly number[],
+    exitSplitOffsets: readonly number[],
+  ): Promise<void> {
+    await this.requestChunked('shutdown', null, requestSplitOffsets, 20_000);
+    await this.notifyChunked('exit', undefined, exitSplitOffsets);
   }
 
   /**
@@ -367,6 +485,11 @@ class StdioLspClient {
     if ('id' in message) {
       const pending = this.pendingRequests.get(message.id ?? -1);
       if (!pending) {
+        this.queueOrphanResponse({
+          error: message.error,
+          id: message.id,
+          result: message.result,
+        });
         return;
       }
 
@@ -396,9 +519,87 @@ class StdioLspClient {
   }
 
   private writeMessage(message: JsonRpcRequestMessage | JsonRpcNotificationMessage): void {
+    this.child.stdin.write(this.encodeMessage(message));
+  }
+
+  /**
+   * prepareRequest 함수.
+   * request id/promise를 먼저 준비해서 batched transport에서도 같은 pending map을 재사용하게 함.
+   *
+   * @param method - 호출할 LSP method
+   * @param params - method에 전달할 params payload
+   * @param timeoutMs - 응답을 기다릴 최대 시간
+   * @returns 직렬화 전 message와 응답 promise 묶음
+   */
+  prepareRequest(
+    method: string,
+    params: unknown,
+    timeoutMs: number = 10_000,
+  ): {
+    message: JsonRpcRequestMessage;
+    response: Promise<unknown>;
+  } {
+    const id = this.nextId++;
+    const message = { id, jsonrpc: '2.0', method, params } satisfies JsonRpcRequestMessage;
+
+    const response = new Promise<unknown>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingRequests.delete(id);
+        reject(
+          new Error(
+            `Timed out waiting for JSON-RPC response: ${method}. stderr: ${this.getStderr()}`,
+          ),
+        );
+      }, timeoutMs);
+
+      this.pendingRequests.set(id, { resolve, reject, timer });
+    });
+
+    return { message, response };
+  }
+
+  private encodeMessage(message: JsonRpcRequestMessage | JsonRpcNotificationMessage): Buffer {
     const body = Buffer.from(JSON.stringify(message), 'utf8');
     const header = Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'utf8');
-    this.child.stdin.write(Buffer.concat([header, body]));
+    return Buffer.concat([header, body]);
+  }
+
+  private async writeFrameInChunks(frame: Buffer, splitOffsets: readonly number[]): Promise<void> {
+    const boundaries = Array.from(new Set(splitOffsets))
+      .filter((offset) => Number.isInteger(offset) && offset > 0 && offset < frame.length)
+      .sort((left, right) => left - right);
+    const slices: Buffer[] = [];
+    let previous = 0;
+
+    for (const boundary of boundaries) {
+      slices.push(frame.subarray(previous, boundary));
+      previous = boundary;
+    }
+    slices.push(frame.subarray(previous));
+
+    for (const slice of slices) {
+      await new Promise<void>((resolve, reject) => {
+        this.child.stdin.write(slice, (error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+    }
+  }
+
+  private queueOrphanResponse(response: JsonRpcResponseRecord): void {
+    const waiterIndex = this.responseWaiters.findIndex((waiter) => waiter.predicate(response));
+    if (waiterIndex >= 0) {
+      const [waiter] = this.responseWaiters.splice(waiterIndex, 1);
+      clearTimeout(waiter.timer);
+      waiter.resolve(response);
+      return;
+    }
+
+    this.orphanResponses.push(response);
   }
 }
 
@@ -667,6 +868,168 @@ describe.sequential('cbs-language-server stdio product matrix', () => {
     });
     await client.shutdown();
 
+    const exitCode = await client.waitForExit(20_000);
+    expect(exitCode).toBe(0);
+  }, 30_000);
+
+  it('accepts chunked Content-Length frames for initialize, didOpen, completion, and shutdown over stdio', async () => {
+    const root = await createWorkspaceRoot('cbs-lsp-stdio-chunked-', tempRoots);
+    const text = lorebookDocument(['{{setvar::shared::ready}}', '{{getvar::shared}}']);
+    const absolutePath = await writeWorkspaceFile(root, 'lorebooks/chunked.risulorebook', text);
+    const uri = pathToFileURL(absolutePath).toString();
+    const client = createStdioClient([
+      '--stdio',
+      '--workspace',
+      root,
+      '--luals-path',
+      path.join(root, 'missing', 'lua-language-server'),
+    ]);
+
+    const initializeResult = (await client.requestChunked('initialize', {
+      processId: null,
+      rootUri: pathToFileURL(root).toString(),
+      workspaceFolders: [{ uri: pathToFileURL(root).toString(), name: 'fixture' }],
+      capabilities: {},
+    }, [2, 19, 41], 20_000)) as {
+      capabilities?: {
+        completionProvider?: { triggerCharacters?: string[] };
+        textDocumentSync?: { openClose?: boolean };
+      };
+    };
+
+    expect(initializeResult.capabilities?.textDocumentSync?.openClose).toBe(true);
+    expect(initializeResult.capabilities?.completionProvider?.triggerCharacters).toEqual(
+      expect.arrayContaining(['{', ':']),
+    );
+
+    await client.notifyChunked('initialized', {}, [1, 17]);
+    await client.notifyChunked('textDocument/didOpen', {
+      textDocument: {
+        uri,
+        languageId: 'plaintext',
+        version: 1,
+        text,
+      },
+    }, [5, 31, 63]);
+
+    const completion = (await client.requestChunked('textDocument/completion', {
+      textDocument: { uri },
+      position: positionAt(text, 'getvar', 8),
+    }, [1, 23, 57], 20_000)) as
+      | { items?: Array<{ label?: string }> }
+      | Array<{ label?: string }>
+      | null;
+
+    const items = Array.isArray(completion) ? completion : completion?.items ?? [];
+    expect(items.map((item) => item.label)).toContain('shared');
+
+    await client.shutdownChunked([1, 15, 33], [1, 9]);
+    const exitCode = await client.waitForExit(20_000);
+    expect(exitCode).toBe(0);
+  }, 30_000);
+
+  it('accepts batched stdio frames and returns initialize/completion/shutdown responses in order', async () => {
+    const root = await createWorkspaceRoot('cbs-lsp-stdio-batched-', tempRoots);
+    const text = lorebookDocument(['{{setvar::shared::ready}}', '{{getvar::shared}}']);
+    const absolutePath = await writeWorkspaceFile(root, 'lorebooks/batched.risulorebook', text);
+    const uri = pathToFileURL(absolutePath).toString();
+    const client = createStdioClient([
+      '--stdio',
+      '--workspace',
+      root,
+      '--luals-path',
+      path.join(root, 'missing', 'lua-language-server'),
+    ]);
+
+    const initializeRequest = client.prepareRequest('initialize', {
+      processId: null,
+      rootUri: pathToFileURL(root).toString(),
+      workspaceFolders: [{ uri: pathToFileURL(root).toString(), name: 'fixture' }],
+      capabilities: {},
+    }, 20_000);
+    const completionRequest = client.prepareRequest('textDocument/completion', {
+      textDocument: { uri },
+      position: positionAt(text, 'getvar', 8),
+    }, 20_000);
+    const shutdownRequest = client.prepareRequest('shutdown', null, 20_000);
+
+    client.sendBatch([
+      initializeRequest.message,
+      { jsonrpc: '2.0', method: 'initialized', params: {} },
+      {
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+          textDocument: {
+            uri,
+            languageId: 'plaintext',
+            version: 1,
+            text,
+          },
+        },
+      },
+      completionRequest.message,
+      shutdownRequest.message,
+    ]);
+
+    const initializeResult = (await initializeRequest.response) as {
+      capabilities?: {
+        completionProvider?: { triggerCharacters?: string[] };
+        textDocumentSync?: { openClose?: boolean };
+      };
+    };
+    expect(initializeResult.capabilities?.textDocumentSync?.openClose).toBe(true);
+    expect(initializeResult.capabilities?.completionProvider?.triggerCharacters).toEqual(
+      expect.arrayContaining(['{', ':']),
+    );
+
+    const completion = (await completionRequest.response) as
+      | { items?: Array<{ label?: string }> }
+      | Array<{ label?: string }>
+      | null;
+    const items = Array.isArray(completion) ? completion : completion?.items ?? [];
+    expect(items.map((item) => item.label)).toContain('shared');
+
+    await shutdownRequest.response;
+    client.notify('exit', undefined);
+    const exitCode = await client.waitForExit(20_000);
+    expect(exitCode).toBe(0);
+  }, 30_000);
+
+  it('keeps a safe shutdown path after malformed JSON and accepts an explicit parse error response when emitted', async () => {
+    const root = await createWorkspaceRoot('cbs-lsp-stdio-malformed-', tempRoots);
+    const client = createStdioClient([
+      '--stdio',
+      '--workspace',
+      root,
+      '--luals-path',
+      path.join(root, 'missing', 'lua-language-server'),
+    ]);
+
+    await client.request('initialize', {
+      processId: null,
+      rootUri: pathToFileURL(root).toString(),
+      workspaceFolders: [{ uri: pathToFileURL(root).toString(), name: 'fixture' }],
+      capabilities: {},
+    }, 20_000);
+    client.notify('initialized', {});
+
+    client.sendRawFrame('{"jsonrpc":"2.0","id":99,"method":"broken",');
+
+    const parseError = await client
+      .waitForResponse(
+        (response) => response.id === null && response.error?.code === -32700,
+        1_000,
+      )
+      .catch(() => null);
+    if (parseError) {
+      expect(parseError.error).toMatchObject({
+        code: -32700,
+        message: expect.stringContaining('Parse error'),
+      });
+    }
+
+    await client.shutdown();
     const exitCode = await client.waitForExit(20_000);
     expect(exitCode).toBe(0);
   }, 30_000);
