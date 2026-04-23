@@ -1,5 +1,10 @@
 /**
  * Official VS Code client boundary E2E checks for the CBS language client.
+ *
+ * This file is a **client-layer concern only**. It validates launch resolution,
+ * boundary snapshot, and client-side integration scripts — not the LSP server
+ * itself. Server-level stdio validation with real extracted workspaces lives in
+ * `packages/cbs-lsp/tests/e2e/extracted-workspace.test.ts`.
  * @file packages/vscode/tests/e2e/extension-client.test.ts
  */
 
@@ -80,6 +85,19 @@ test('separates standalone server validation from official VS Code client integr
   assert.match(packageJson.scripts?.['test:e2e:cbs-client'] ?? '', /test:e2e:cbs-client:boundary/);
   assert.match(packageJson.scripts?.['test:e2e:cbs-client'] ?? '', /test:e2e:cbs-client:runtime/);
   assert.match(packageJson.scripts?.['verify:cbs-client'] ?? '', /test:e2e:cbs-client/);
+});
+
+test('does not overlap with server stdio E2E — client scripts are separate from cbs-lsp test:e2e:standalone', () => {
+  const packageJson = readPackageJson();
+
+  // Client-side scripts must not directly invoke server-side stdio E2E
+  const clientScripts = packageJson.scripts?.['test:e2e:cbs-client'] ?? '';
+  assert.equal(clientScripts.includes('cbs-lsp'), false);
+  assert.equal(clientScripts.includes('stdio-server'), false);
+  assert.equal(clientScripts.includes('extracted-workspace'), false);
+
+  // Server-side standalone E2E must exist in cbs-lsp, not here
+  assert.equal(packageJson.scripts?.['test:e2e:standalone'] === undefined, true);
 });
 
 test('keeps the official client boundary on standalone stdio when a workspace local binary exists', () => {
