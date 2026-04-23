@@ -23,6 +23,7 @@ export interface ActiveFeatureAvailabilityMap {
   folding: AgentMetadataAvailabilityContract;
   hover: AgentMetadataAvailabilityContract;
   inlayHint: AgentMetadataAvailabilityContract;
+  selectionRange: AgentMetadataAvailabilityContract;
   'lua-completion': AgentMetadataAvailabilityContract;
   'lua-diagnostics': AgentMetadataAvailabilityContract;
   luaHover: AgentMetadataAvailabilityContract;
@@ -266,6 +267,11 @@ export const ACTIVE_FEATURE_AVAILABILITY = Object.freeze({
     'local-only',
     'server-capability:inlayHint',
     'Inlay hints are active for routed CBS fragments, show parameter names for setvar/getvar/call/arg, block header labels for #when/#each/#func, and never widen into workspace-wide hints.',
+  ),
+  selectionRange: createAgentMetadataAvailability(
+    'local-only',
+    'server-capability:selectionRange',
+    'Selection ranges are active for routed CBS fragments, expand within the current fragment only, and follow the hierarchy: token span -> macro call -> block body -> block whole.',
   ),
   luaHover: createAgentMetadataAvailability(
     'local-only',

@@ -23,15 +23,16 @@ export type CbsLspFeatureName =
    | 'documentSymbol'
    | 'documentHighlight'
    | 'formatting'
-  | 'rangeFormatting'
-  | 'definition'
-  | 'references'
-  | 'rename'
-  | 'hover'
-  | 'inlayHint'
-  | 'signature'
-  | 'folding'
-  | 'semanticTokens';
+   | 'rangeFormatting'
+   | 'definition'
+   | 'references'
+   | 'rename'
+   | 'hover'
+   | 'inlayHint'
+   | 'selectionRange'
+   | 'signature'
+   | 'folding'
+   | 'semanticTokens';
 
 /**
  * FeatureTraceDetails 타입.

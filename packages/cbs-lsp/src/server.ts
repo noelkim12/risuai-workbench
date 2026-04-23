@@ -43,6 +43,7 @@ import { FormattingProvider } from './features/formatting';
 import { FoldingProvider } from './features/folding';
 import { HoverProvider } from './features/hover';
 import { InlayHintProvider } from './features/inlayHint';
+import { SelectionRangeProvider } from './features/selectionRange';
 import { SemanticTokensProvider } from './features/semanticTokens';
 import { SignatureHelpProvider } from './features/signature';
 
@@ -271,6 +272,10 @@ function createServerFeatureProviders(
       resolveRequest: ({ textDocument }) => resolveRequest(textDocument.uri),
     }),
     inlayHintProvider: new InlayHintProvider({
+      analysisService: fragmentAnalysisService,
+      resolveRequest: ({ textDocument }) => resolveRequest(textDocument.uri),
+    }),
+    selectionRangeProvider: new SelectionRangeProvider({
       analysisService: fragmentAnalysisService,
       resolveRequest: ({ textDocument }) => resolveRequest(textDocument.uri),
     }),

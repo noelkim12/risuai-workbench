@@ -38,14 +38,15 @@ interface CapabilityMatrixSnapshot {
     prepareRenameSupport: boolean;
     watchedFilesDynamicRegistration: boolean;
   };
-  standard: {
-    codeActionProvider: boolean | { codeActionKinds: readonly string[] };
-    completionTriggerCharacters: readonly string[];
-    executeCommandCommands: readonly string[];
-    inlayHintProvider: boolean;
-    positionEncoding: string;
-    renameProvider: boolean | { prepareProvider: true };
-  };
+    standard: {
+      codeActionProvider: boolean | { codeActionKinds: readonly string[] };
+      completionTriggerCharacters: readonly string[];
+      executeCommandCommands: readonly string[];
+      inlayHintProvider: boolean;
+      positionEncoding: string;
+      renameProvider: boolean | { prepareProvider: true };
+      selectionRangeProvider: boolean;
+    };
   experimental: {
     activeFailureModes: readonly string[];
     featureScopes: Record<FeatureScopeKey, string>;
@@ -226,6 +227,7 @@ export function snapshotCapabilityMatrixFixture(
         typeof initializeResult.capabilities.renameProvider === 'boolean'
           ? initializeResult.capabilities.renameProvider
           : { prepareProvider: true },
+      selectionRangeProvider: Boolean(initializeResult.capabilities.selectionRangeProvider),
     },
     experimental: {
       activeFailureModes: summarizeActiveFailureModes(availabilitySnapshot.operator.failureModes),
@@ -300,6 +302,7 @@ export const CAPABILITY_MATRIX_FIXTURES = Object.freeze<readonly CapabilityMatri
         inlayHintProvider: true,
         positionEncoding: LSP_POSITION_ENCODING,
         renameProvider: true,
+        selectionRangeProvider: true,
       },
       experimental: {
         activeFailureModes: ['luals-unavailable', 'watched-files-client-unsupported', 'workspace-root-unresolved'],
@@ -396,6 +399,7 @@ export const CAPABILITY_MATRIX_FIXTURES = Object.freeze<readonly CapabilityMatri
         renameProvider: {
           prepareProvider: true,
         },
+        selectionRangeProvider: true,
       },
       experimental: {
         activeFailureModes: ['watched-files-client-unsupported', 'workspace-root-unresolved'],
@@ -503,6 +507,7 @@ export const CAPABILITY_MATRIX_FIXTURES = Object.freeze<readonly CapabilityMatri
         renameProvider: {
           prepareProvider: true,
         },
+        selectionRangeProvider: true,
       },
       experimental: {
         activeFailureModes: ['multi-root-reduced'],

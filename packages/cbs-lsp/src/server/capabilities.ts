@@ -64,6 +64,7 @@ export function createInitializeResult(
       documentSymbolProvider: true,
       documentFormattingProvider: true,
       documentRangeFormattingProvider: true,
+      selectionRangeProvider: true,
       referencesProvider: true,
       renameProvider: renamePrepareSupport
         ? {

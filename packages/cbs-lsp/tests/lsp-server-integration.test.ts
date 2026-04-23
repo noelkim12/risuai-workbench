@@ -13,20 +13,21 @@ import type {
   DidChangeConfigurationParams,
   DidChangeWatchedFilesParams,
   DocumentFormattingParams,
-  DocumentHighlight,
-  DocumentRangeFormattingParams,
-  DocumentSymbol,
-  FoldingRange,
-  Hover,
-  InlayHint,
-  InitializeParams,
-  InitializeResult,
-  Location,
-  Range,
-  ReferenceParams,
-  RenameParams,
-  SemanticTokens,
-  SignatureHelp,
+    DocumentHighlight,
+    DocumentRangeFormattingParams,
+    DocumentSymbol,
+    FoldingRange,
+    Hover,
+    InlayHint,
+    InitializeParams,
+    InitializeResult,
+    Location,
+    Range,
+    ReferenceParams,
+    RenameParams,
+    SelectionRange,
+    SemanticTokens,
+    SignatureHelp,
   TextEdit,
   TextDocumentPositionParams,
   WorkspaceEdit,
@@ -274,6 +275,18 @@ function decodeSemanticTokenTexts(data: number[], text: string) {
   return decoded;
 }
 
+function flattenSelectionRangeChain(selectionRange: SelectionRange | undefined): Range[] {
+  const ranges: Range[] = [];
+  let current = selectionRange;
+
+  while (current) {
+    ranges.push(current.range);
+    current = current.parent;
+  }
+
+  return ranges;
+}
+
 class FakeConnection {
   initializeHandler: ((params: InitializeParams) => InitializeResult) | null = null;
 
@@ -304,6 +317,8 @@ class FakeConnection {
   hoverHandler: any = null;
 
   inlayHintHandler: ((params: any, token?: CancellationToken) => InlayHint[]) | null = null;
+
+  selectionRangesHandler: ((params: any, token?: CancellationToken) => SelectionRange[]) | null = null;
 
   signatureHelpHandler: ((params: any, token?: CancellationToken) => SignatureHelp | null) | null = null;
 
@@ -421,6 +436,11 @@ class FakeConnection {
 
   onDocumentHighlight(handler: (params: any, token?: CancellationToken) => DocumentHighlight[]) {
     this.documentHighlightHandler = handler;
+    return createDisposable();
+  }
+
+  onSelectionRanges(handler: (params: any, token?: CancellationToken) => SelectionRange[]) {
+    this.selectionRangesHandler = handler;
     return createDisposable();
   }
 
@@ -744,6 +764,7 @@ describe('LSP server integration', () => {
           documentSymbolProvider: true,
           documentFormattingProvider: true,
           documentRangeFormattingProvider: true,
+          selectionRangeProvider: true,
           referencesProvider: true,
           renameProvider: true,
           hoverProvider: true,
@@ -787,6 +808,7 @@ describe('LSP server integration', () => {
     );
 
     expect(connection.codeLensHandler).not.toBeNull();
+    expect(connection.selectionRangesHandler).not.toBeNull();
     expect(connection.codeActionHandler).not.toBeNull();
     expect(connection.completionHandler).not.toBeNull();
     expect(connection.documentHighlightHandler).not.toBeNull();
@@ -1976,6 +1998,33 @@ describe('LSP server integration', () => {
     expect(labels).toContain('func:');
     expect(labels).toContain('arg::0 \u2192 name:');
     expect(labels).toContain('arg::1 \u2192 greeting:');
+  });
+
+  it('routes textDocument/selectionRange through the server seam and keeps the chain fragment-safe', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const text = lorebookDocument(['{{#when::true}}Hello {{user}}{{/when}}']);
+    const uri = await writeWorkspaceFile(root, 'lorebooks/selection-range.risulorebook', text);
+
+    registerServer(connection as any, documents as any);
+    documents.open(uri, text, 1);
+
+    const result = connection.selectionRangesHandler?.(
+      {
+        textDocument: { uri },
+        positions: [positionAt(text, 'user', 1, 0)],
+      },
+      createCancellationToken(false),
+    );
+
+    expect(result).toHaveLength(1);
+    const chain = flattenSelectionRangeChain(result?.[0]);
+    expect(chain).toHaveLength(4);
+    expect(chain[0]!.start.line).toBeGreaterThanOrEqual(4);
+    expect(chain.at(-1)!.start.line).toBe(4);
+    expect(chain.at(-1)!.start.character).toBeLessThan(chain[0]!.start.character);
+    expect(chain.at(-1)!.end.character).toBeGreaterThan(chain[0]!.end.character);
   });
 
   it('routes textDocument/codeAction through the server seam and returns safe quick fixes plus guidance actions', async () => {

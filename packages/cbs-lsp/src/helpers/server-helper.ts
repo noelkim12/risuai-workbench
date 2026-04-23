@@ -26,6 +26,8 @@ import {
   type InlayHintParams,
   LSPErrorCodes,
   type Location,
+  type SelectionRange,
+  type SelectionRangeParams,
   type Range as LSPRange,
   type ReferenceParams,
   type RenameParams,
@@ -52,6 +54,7 @@ import { HoverProvider } from '../features/hover';
 import { InlayHintProvider } from '../features/inlayHint';
 import { ReferencesProvider } from '../features/references';
 import { RenameProvider } from '../features/rename';
+import { SelectionRangeProvider } from '../features/selectionRange';
 import { SemanticTokensProvider } from '../features/semanticTokens';
 import { SignatureHelpProvider } from '../features/signature';
 import { RequestHandlerRunner } from '../handlers/RequestHandlerRunner';
@@ -76,6 +79,7 @@ export interface ServerFeatureRegistrarProviders {
   formattingProvider: FormattingProvider;
   hoverProvider: HoverProvider;
   inlayHintProvider: InlayHintProvider;
+  selectionRangeProvider: SelectionRangeProvider;
   resolveRequest: (uri: string) => FragmentAnalysisRequest | null;
   semanticTokensProvider: SemanticTokensProvider;
   signatureHelpProvider: SignatureHelpProvider;
@@ -153,6 +157,7 @@ export class ServerFeatureRegistrar {
   private readonly formattingProvider: FormattingProvider;
   private readonly hoverProvider: HoverProvider;
   private readonly inlayHintProvider: InlayHintProvider;
+  private readonly selectionRangeProvider: SelectionRangeProvider;
   private readonly luaLsProxy: Pick<LuaLsCompanionController, 'getRuntime' | 'provideCompletion' | 'provideHover'>;
   private readonly registry: CBSBuiltinRegistry;
   private readonly requestRunner: RequestHandlerRunner;
@@ -185,6 +190,7 @@ export class ServerFeatureRegistrar {
     this.formattingProvider = context.providers.formattingProvider;
     this.hoverProvider = context.providers.hoverProvider;
     this.inlayHintProvider = context.providers.inlayHintProvider;
+    this.selectionRangeProvider = context.providers.selectionRangeProvider;
     this.resolveRequest = context.providers.resolveRequest;
     this.resolveWorkspaceRequest = context.resolveWorkspaceRequest;
     this.resolveWorkspaceVariableFlowContextByUri = context.resolveWorkspaceVariableFlowContext;
@@ -210,6 +216,7 @@ export class ServerFeatureRegistrar {
     this.registerCodeLensHandler();
     this.registerHoverHandler();
     this.registerInlayHintHandler();
+    this.registerSelectionRangeHandler();
     this.registerSignatureHelpHandler();
     this.registerFoldingHandler();
     this.registerSemanticTokensHandler();
@@ -386,6 +393,20 @@ export class ServerFeatureRegistrar {
         getUri: (requestParams) => requestParams.textDocument.uri,
         params,
         run: () => this.formattingProvider.provide(params),
+        summarize: (result) => ({ count: result.length }),
+        token: cancellationToken,
+      });
+    });
+  }
+
+  private registerSelectionRangeHandler(): void {
+    this.connection.onSelectionRanges((params: SelectionRangeParams, cancellationToken): SelectionRange[] => {
+      return this.requestRunner.runSync({
+        empty: [],
+        feature: 'selectionRange',
+        getUri: (requestParams) => requestParams.textDocument.uri,
+        params,
+        run: () => this.selectionRangeProvider.provide(params, cancellationToken),
         summarize: (result) => ({ count: result.length }),
         token: cancellationToken,
       });
