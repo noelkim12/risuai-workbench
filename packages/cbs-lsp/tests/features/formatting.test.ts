@@ -1,13 +1,20 @@
 import type { DocumentFormattingParams, TextEdit } from 'vscode-languageserver/node';
 import { describe, expect, it } from 'vitest';
 
-import { createSyntheticDocumentVersion } from '../../src/core';
+import { createSyntheticDocumentVersion, FragmentAnalysisService } from '../../src/core';
 import {
   FORMATTING_PROVIDER_AVAILABILITY,
   FormattingProvider,
 } from '../../src/features/formatting';
-import { positionToOffset } from '../../src/utils/position';
-import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
+import {
+  createFixtureRequest,
+  getFixtureCorpusEntry,
+  listFormattingContractFixtures,
+} from '../fixtures/fixture-corpus';
+import {
+  applyTextEdits,
+  assertHostTextOutsideFragmentsUnchanged,
+} from '../helpers/formatting-contract';
 
 function createParams(request: { uri: string }): DocumentFormattingParams {
   return {
@@ -29,18 +36,57 @@ function createRequestFromEntry(entryId: Parameters<typeof getFixtureCorpusEntry
   };
 }
 
-function applyTextEdits(text: string, edits: readonly TextEdit[]): string {
-  return [...edits]
-    .sort((left, right) => {
-      const leftStart = positionToOffset(text, left.range.start);
-      const rightStart = positionToOffset(text, right.range.start);
-      return rightStart - leftStart;
-    })
-    .reduce((currentText, edit) => {
-      const startOffset = positionToOffset(currentText, edit.range.start);
-      const endOffset = positionToOffset(currentText, edit.range.end);
-      return `${currentText.slice(0, startOffset)}${edit.newText}${currentText.slice(endOffset)}`;
-    }, text);
+/**
+ * formatRequest 함수.
+ * request 하나를 FormattingProvider로 실행해 host edit와 최종 텍스트를 함께 반환함.
+ *
+ * @param request - formatting 대상 host 문서 요청
+ * @returns provider가 생성한 edit와 적용 후 텍스트
+ */
+function formatRequest(request: { uri: string; version: number | string; filePath: string; text: string }): {
+  edits: TextEdit[];
+  text: string;
+} {
+  const provider = new FormattingProvider({
+    resolveRequest: (uri) => (uri === request.uri ? request : null),
+  });
+
+  const edits = provider.provide(createParams(request));
+  return {
+    edits,
+    text: applyTextEdits(request.text, edits),
+  };
+}
+
+/**
+ * assertFormattingGoldenContract 함수.
+ * formatting fixture가 idempotency와 fragment 바깥 host text 불변 계약을 지키는지 공통 검증함.
+ *
+ * @param request - 검증할 fixture request
+ */
+function assertFormattingGoldenContract(request: {
+  uri: string;
+  version: number | string;
+  filePath: string;
+  text: string;
+}) {
+  const analysisService = new FragmentAnalysisService();
+  const firstPass = formatRequest(request);
+  const firstPassRequest = {
+    ...request,
+    version: createSyntheticDocumentVersion(firstPass.text),
+    text: firstPass.text,
+  };
+  const secondPass = formatRequest(firstPassRequest);
+
+  assertHostTextOutsideFragmentsUnchanged(request, firstPassRequest, analysisService);
+  expect(secondPass.text).toBe(firstPass.text);
+
+  if (firstPass.edits.length === 0) {
+    expect(firstPass.text).toBe(request.text);
+  }
+
+  expect(secondPass.edits).toEqual([]);
 }
 
 describe('FormattingProvider', () => {
@@ -153,4 +199,10 @@ describe('FormattingProvider', () => {
 
     expect(provider.provide(createParams(request))).toEqual([]);
   });
+
+  for (const fixture of listFormattingContractFixtures()) {
+    it(`preserves idempotency and host text invariants for ${fixture.coverage} fixture ${fixture.entry.id}`, () => {
+      assertFormattingGoldenContract(createFixtureRequest(fixture.entry));
+    });
+  }
 });

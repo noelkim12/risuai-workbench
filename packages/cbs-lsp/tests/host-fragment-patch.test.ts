@@ -9,6 +9,10 @@ import {
 } from '../src/core';
 import { offsetToPosition } from '../src/utils/position';
 import { createFixtureRequest, getFixtureCorpusEntry } from './fixtures/fixture-corpus';
+import {
+  applyTextEdits,
+  assertHostTextOutsideFragmentsUnchanged,
+} from './helpers/formatting-contract';
 
 /**
  * createRegexRequest 함수.
@@ -86,6 +90,15 @@ describe('host-fragment patch safety contract', () => {
         range: createHostRangeAtNeedle(request.text, 'mood'),
       }),
     ]);
+
+    const patchedText = applyTextEdits(request.text, result.edits);
+    const patchedRequest = {
+      ...request,
+      version: createSyntheticDocumentVersion(patchedText),
+      text: patchedText,
+    };
+
+    assertHostTextOutsideFragmentsUnchanged(request, patchedRequest, service);
   });
 
   it('rejects malformed fragments with a no-op patch policy', () => {

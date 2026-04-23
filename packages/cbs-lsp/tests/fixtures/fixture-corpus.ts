@@ -81,6 +81,7 @@ export type FixtureCorpusArtifact =
 export type FixtureCorpusSourceKind = 'inline-document';
 export type FixtureCorpusKind = 'representative' | 'excluded' | 'edge-case';
 export type FixtureMatrixArea = 'service' | 'remap' | 'locator' | 'diagnostic-taxonomy';
+export type FormattingContractCoverage = 'single-fragment' | 'multi-fragment' | 'pure-mode' | 'malformed' | 'unicode';
 
 export interface FixtureExpectedDiagnosticRule {
   category: DiagnosticRuleCategory;
@@ -108,6 +109,11 @@ export interface FixtureCorpusEntry {
   expectedDiagnosticRules: readonly FixtureExpectedDiagnosticRule[];
   features: readonly string[];
   text: string;
+}
+
+export interface FormattingContractFixtureCase {
+  coverage: FormattingContractCoverage;
+  entry: FixtureCorpusEntry;
 }
 
 interface FixtureCorpusSeed {
@@ -434,6 +440,18 @@ const fixtureCorpusSeeds: readonly FixtureCorpusSeed[] = [
     }),
   },
   {
+    id: 'lorebook-puredisplay-formatting',
+    label: 'Lorebook puredisplay formatting contract fixture',
+    kind: 'edge-case',
+    artifact: 'lorebook',
+    cbsBearing: true,
+    sourceKind: 'inline-document',
+    relativePath: 'format-puredisplay.risulorebook',
+    expectedSections: ['CONTENT'],
+    features: ['pure-mode', 'formatting'],
+    text: lorebookDocument(['{{#puredisplay}}  {{ user }}', '{{/}}']),
+  },
+  {
     id: 'lorebook-unclosed-macro',
     label: 'Malformed lorebook with unclosed macro',
     kind: 'edge-case',
@@ -577,6 +595,18 @@ const fixtureCorpusSeeds: readonly FixtureCorpusSeed[] = [
     expectedSections: ['CONTENT'],
     features: ['utf16', 'surrogate-pair'],
     text: lorebookDocument(['🙂{{user}}']),
+  },
+  {
+    id: 'lorebook-utf16-formatting',
+    label: 'Lorebook UTF-16 formatting contract fixture',
+    kind: 'edge-case',
+    artifact: 'lorebook',
+    cbsBearing: true,
+    sourceKind: 'inline-document',
+    relativePath: 'format-utf16.risulorebook',
+    expectedSections: ['CONTENT'],
+    features: ['utf16', 'surrogate-pair', 'formatting'],
+    text: lorebookDocument(['🙂{{ user }}']),
   },
   {
     id: 'regex-duplicate-fragments',
@@ -861,6 +891,14 @@ export const CBS_LSP_FIXTURE_CORPUS: readonly FixtureCorpusEntry[] = Object.free
   }),
 );
 
+const FORMATTING_CONTRACT_FIXTURE_IDS = [
+  ['single-fragment', 'lorebook-basic'],
+  ['multi-fragment', 'regex-basic'],
+  ['pure-mode', 'lorebook-puredisplay-formatting'],
+  ['malformed', 'lorebook-unclosed-macro'],
+  ['unicode', 'lorebook-utf16-formatting'],
+] as const satisfies readonly [FormattingContractCoverage, string][];
+
 // red test matrix
 // 어떤 fixture가 어떤 테스트 축을 대표하는지 고정하는 표
 const fixtureRedTestMatrix: Record<FixtureMatrixArea, readonly string[]> = {
@@ -913,6 +951,19 @@ export function listFixtureCorpusEntries(kind?: FixtureCorpusKind): readonly Fix
  */
 export function listMatrixFixtures(area: FixtureMatrixArea): readonly FixtureCorpusEntry[] {
   return FIXTURE_RED_TEST_MATRIX[area].map((id) => getFixtureCorpusEntry(id));
+}
+
+/**
+ * listFormattingContractFixtures 함수.
+ * formatting golden test에서 공통 invariants를 검증할 fixture matrix를 반환함.
+ *
+ * @returns coverage 라벨과 fixture entry를 함께 담은 formatting contract fixture 목록
+ */
+export function listFormattingContractFixtures(): readonly FormattingContractFixtureCase[] {
+  return FORMATTING_CONTRACT_FIXTURE_IDS.map(([coverage, id]) => ({
+    coverage,
+    entry: getFixtureCorpusEntry(id),
+  }));
 }
 
 /**
