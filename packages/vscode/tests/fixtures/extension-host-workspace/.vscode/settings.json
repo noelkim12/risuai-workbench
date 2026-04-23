@@ -1,5 +1,5 @@
 {
-  "risuWorkbench.cbs.server.launchMode": "standalone",
+  "risuWorkbench.cbs.server.launchMode": "auto",
   "risuWorkbench.cbs.server.installMode": "local-devDependency",
-  "risuWorkbench.cbs.server.path": "/home/noel/projects/workspace/risuai-workbench-workspace/risuai-workbench/packages/cbs-lsp/dist/cli.js"
+  "risuWorkbench.cbs.server.path": ""
 }

@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { runTests } from '@vscode/test-electron';
@@ -14,6 +15,10 @@ const SYSTEM_ASOUND_LIB_CANDIDATES = [
   '/usr/lib/x86_64-linux-gnu/libasound.so.2',
   '/lib/x86_64-linux-gnu/libasound.so.2',
 ];
+
+const RUNTIME_SCENARIOS = ['standalone', 'embedded'] as const;
+
+type RuntimeScenarioName = (typeof RUNTIME_SCENARIOS)[number];
 
 /**
  * assertPathExists 함수.
@@ -60,14 +65,68 @@ function resolveRuntimeLibraryPath(packageRoot: string): string | undefined {
  * ensureWritableRuntimeDir 함수.
  * Electron/VS Code가 IPC socket과 runtime 파일을 쓸 수 있는 XDG runtime 디렉토리를 준비함.
  *
- * @param packageRoot - `packages/vscode` 루트 경로
  * @returns child process가 사용할 writable runtime directory
  */
-function ensureWritableRuntimeDir(packageRoot: string): string {
-  const runtimeDir = path.join(packageRoot, '.vscode-test', 'xdg-runtime');
+function ensureWritableRuntimeDir(): string {
+  const runtimeDir = path.join(os.tmpdir(), `rwv-rt-${process.pid}`);
   mkdirSync(runtimeDir, { recursive: true });
   chmodSync(runtimeDir, 0o700);
   return runtimeDir;
+}
+
+/**
+ * createScenarioUserDataDir 함수.
+ * runtime E2E 시나리오별 VS Code user-data 디렉토리를 분리해 상태 누수를 줄임.
+ *
+ * @param scenario - 실행할 runtime 시나리오 이름
+ * @returns 해당 시나리오 전용 user-data 디렉토리 경로
+ */
+function createScenarioUserDataDir(scenario: RuntimeScenarioName): string {
+  const userDataDir = path.join(os.tmpdir(), `rwv-${scenario}-${process.pid}`);
+  mkdirSync(userDataDir, { recursive: true });
+  return userDataDir;
+}
+
+/**
+ * runRuntimeScenario 함수.
+ * 하나의 runtime 시나리오를 fresh Extension Development Host에서 실행함.
+ *
+ * @param extensionDevelopmentPath - extension development 경로
+ * @param extensionTestsPath - compiled extension-host suite 경로
+ * @param workspacePath - runtime fixture workspace 경로
+ * @param scenario - 실행할 runtime 시나리오 이름
+ */
+async function runRuntimeScenario(
+  extensionDevelopmentPath: string,
+  extensionTestsPath: string,
+  workspacePath: string,
+  scenario: RuntimeScenarioName,
+): Promise<void> {
+  const previousScenario = process.env.CBS_RUNTIME_SCENARIO;
+  process.env.CBS_RUNTIME_SCENARIO = scenario;
+
+  try {
+    await runTests({
+      extensionDevelopmentPath,
+      extensionTestsPath,
+      launchArgs: [
+        workspacePath,
+        '--disable-extensions',
+        '--disable-workspace-trust',
+        '--skip-release-notes',
+        '--skip-welcome',
+        '--user-data-dir',
+        createScenarioUserDataDir(scenario),
+      ],
+    });
+  } finally {
+    if (previousScenario === undefined) {
+      delete process.env.CBS_RUNTIME_SCENARIO;
+      return;
+    }
+
+    process.env.CBS_RUNTIME_SCENARIO = previousScenario;
+  }
 }
 
 /**
@@ -92,7 +151,7 @@ async function main(): Promise<void> {
   assertPathExists(workspacePath, 'Extension-host workspace fixture');
 
   const runtimeLibraryPath = resolveRuntimeLibraryPath(packageRoot);
-  const runtimeDir = ensureWritableRuntimeDir(packageRoot);
+  const runtimeDir = ensureWritableRuntimeDir();
   if (runtimeLibraryPath) {
     process.env.LD_LIBRARY_PATH = process.env.LD_LIBRARY_PATH
       ? `${runtimeLibraryPath}:${process.env.LD_LIBRARY_PATH}`
@@ -100,17 +159,14 @@ async function main(): Promise<void> {
   }
   process.env.XDG_RUNTIME_DIR = runtimeDir;
 
-  await runTests({
-    extensionDevelopmentPath,
-    extensionTestsPath,
-    launchArgs: [
+  for (const scenario of RUNTIME_SCENARIOS) {
+    await runRuntimeScenario(
+      extensionDevelopmentPath,
+      extensionTestsPath,
       workspacePath,
-      '--disable-extensions',
-      '--disable-workspace-trust',
-      '--skip-release-notes',
-      '--skip-welcome',
-    ],
-  });
+      scenario,
+    );
+  }
 }
 
 void main().catch((error: unknown) => {

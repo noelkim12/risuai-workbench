@@ -88,10 +88,10 @@ export function defaultCbsLanguageServerSettings(): CbsLanguageServerSettings {
  * monorepo 개발 환경에서만 존재하는 embedded server module 경로를 계산함.
  *
  * @param extensionRootPath - VS Code extension root 경로
- * @returns embedded `server.js` 예상 경로
+ * @returns embedded `embedded.js` 예상 경로
  */
 export function getEmbeddedCbsServerModulePath(extensionRootPath: string): string {
-  return path.join(extensionRootPath, '..', 'cbs-lsp', 'dist', 'server.js');
+  return path.join(extensionRootPath, '..', 'cbs-lsp', 'dist', 'embedded.js');
 }
 
 /**
@@ -180,7 +180,7 @@ export function resolveCbsLanguageServerLaunch(
       `${standaloneLaunch.detail} Embedded dev module was also not found at ${embeddedModulePath}.`,
     kind: 'failure',
     recovery:
-      'Install `cbs-language-server` in the workspace, switch to `npx`/`global`, set `risuWorkbench.cbs.server.path`, or open the monorepo workspace that contains `packages/cbs-lsp/dist/server.js`.',
+      'Install `cbs-language-server` in the workspace, switch to `npx`/`global`, set `risuWorkbench.cbs.server.path`, or open the monorepo workspace that contains `packages/cbs-lsp/dist/embedded.js`.',
   };
 }
 

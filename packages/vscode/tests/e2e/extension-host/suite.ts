@@ -6,14 +6,35 @@
 import assert from 'node:assert/strict';
 import { chmodSync, existsSync } from 'node:fs';
 import path from 'node:path';
+import process from 'node:process';
 
 import * as vscode from 'vscode';
 
 import type { RisuWorkbenchExtensionApi } from '../../../src/extension';
+import { getEmbeddedCbsServerModulePath } from '../../../src/lsp/cbsLanguageServerLaunch';
 
 const EXTENSION_ID = 'risuai.risu-workbench-vscode';
 const HOVER_FIXTURE_NAME = 'runtime-hover.risuhtml';
 const HOVER_NEEDLE = '{{getvar::mood}}';
+
+interface WorkspaceServerSettings {
+  installMode: 'global' | 'local-devDependency' | 'npx';
+  launchMode: 'auto' | 'embedded' | 'standalone';
+  path: string;
+}
+
+interface RuntimeScenario {
+  expectedLaunchKind: 'embedded' | 'standalone';
+  expectedTransport: 'ipc' | 'stdio';
+  name: 'embedded-fallback' | 'standalone-explicit-path';
+  settings: WorkspaceServerSettings;
+}
+
+const DEFAULT_WORKSPACE_SERVER_SETTINGS: WorkspaceServerSettings = {
+  installMode: 'local-devDependency',
+  launchMode: 'auto',
+  path: '',
+};
 
 /**
  * sleep 함수.
@@ -54,11 +75,7 @@ function toHoverText(hover: vscode.Hover): string {
  * @param settings - runtime suite가 강제할 CBS client launch 설정
  */
 async function updateWorkspaceServerSettings(
-  settings: {
-    installMode: 'global' | 'local-devDependency' | 'npx';
-    launchMode: 'auto' | 'embedded' | 'standalone';
-    path: string;
-  },
+  settings: WorkspaceServerSettings,
 ): Promise<void> {
   const config = vscode.workspace.getConfiguration('risuWorkbench.cbs.server');
   await config.update('launchMode', settings.launchMode, vscode.ConfigurationTarget.Workspace);
@@ -78,6 +95,55 @@ function resolveStandaloneCliPath(extensionPath: string): string {
   assert.ok(existsSync(cliPath), `Built standalone CLI not found: ${cliPath}`);
   chmodSync(cliPath, 0o755);
   return cliPath;
+}
+
+/**
+ * resolveEmbeddedServerModulePath 함수.
+ * embedded fallback runtime suite가 붙을 built server module absolute path를 계산함.
+ *
+ * @param extensionPath - 현재 VS Code extension 개발 경로
+ * @returns embedded fallback이 사용할 server module 절대 경로
+ */
+function resolveEmbeddedServerModulePath(extensionPath: string): string {
+  const modulePath = getEmbeddedCbsServerModulePath(extensionPath);
+  assert.ok(existsSync(modulePath), `Built embedded server module not found: ${modulePath}`);
+  return modulePath;
+}
+
+/**
+ * getRuntimeScenario 함수.
+ * extension-host suite가 현재 프로세스에서 실행할 runtime launch 시나리오를 계산함.
+ *
+ * @param extensionPath - 현재 VS Code extension 개발 경로
+ * @returns launch 설정과 기대 launch kind/transport를 담은 runtime 시나리오
+ */
+function getRuntimeScenario(extensionPath: string): RuntimeScenario {
+  const requestedScenario = process.env.CBS_RUNTIME_SCENARIO ?? 'embedded';
+
+  if (requestedScenario === 'standalone') {
+    return {
+      expectedLaunchKind: 'standalone',
+      expectedTransport: 'stdio',
+      name: 'standalone-explicit-path',
+      settings: {
+        installMode: 'local-devDependency',
+        launchMode: 'standalone',
+        path: resolveStandaloneCliPath(extensionPath),
+      },
+    };
+  }
+
+  if (requestedScenario === 'embedded') {
+    resolveEmbeddedServerModulePath(extensionPath);
+    return {
+      expectedLaunchKind: 'embedded',
+      expectedTransport: 'ipc',
+      name: 'embedded-fallback',
+      settings: { ...DEFAULT_WORKSPACE_SERVER_SETTINGS },
+    };
+  }
+
+  throw new Error(`Unsupported CBS runtime scenario: ${requestedScenario}`);
 }
 
 /**
@@ -131,12 +197,8 @@ async function runRuntimeRoundtrip(): Promise<void> {
   const extension = vscode.extensions.getExtension<RisuWorkbenchExtensionApi>(EXTENSION_ID);
   assert.ok(extension, `Extension not found: ${EXTENSION_ID}`);
 
-  const standaloneCliPath = resolveStandaloneCliPath(extension.extensionPath);
-  await updateWorkspaceServerSettings({
-    installMode: 'local-devDependency',
-    launchMode: 'standalone',
-    path: standaloneCliPath,
-  });
+  const scenario = getRuntimeScenario(extension.extensionPath);
+  await updateWorkspaceServerSettings(scenario.settings);
   const api = await extension.activate();
   await api.awaitCbsLanguageClientReady();
 
@@ -144,7 +206,8 @@ async function runRuntimeRoundtrip(): Promise<void> {
   assert.equal(startedState.isStarted, true);
   assert.ok(startedState.client, 'Expected live LanguageClient instance');
   assert.ok(startedState.outputChannel, 'Expected output channel to exist while client is running');
-  assert.equal(startedState.boundarySnapshot?.launchPlan.kind, 'standalone');
+  assert.equal(startedState.boundarySnapshot?.launchPlan.kind, scenario.expectedLaunchKind);
+  assert.equal(startedState.boundarySnapshot?.transport, scenario.expectedTransport);
 
   const fixtureUri = getWorkspaceFixtureUri();
   const document = await vscode.workspace.openTextDocument(fixtureUri);
@@ -170,15 +233,17 @@ async function runRuntimeRoundtrip(): Promise<void> {
  */
 export async function run(): Promise<void> {
   const extension = vscode.extensions.getExtension<RisuWorkbenchExtensionApi>(EXTENSION_ID);
+  const scenario = process.env.CBS_RUNTIME_SCENARIO ?? 'embedded';
   try {
     await runRuntimeRoundtrip();
   } catch (error) {
-    console.error('[cbs-client-runtime] suite failed', error);
+    console.error(`[cbs-client-runtime] suite failed (${scenario})`, error);
     throw error;
   } finally {
     if (extension?.isActive) {
       await extension.exports.stopCbsLanguageClient();
     }
+    await updateWorkspaceServerSettings(DEFAULT_WORKSPACE_SERVER_SETTINGS);
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   }
 }

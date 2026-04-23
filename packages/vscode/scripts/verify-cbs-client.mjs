@@ -48,6 +48,13 @@ const {
   resolveCbsLanguageServerLaunch,
 } = require(builtLaunchResolverPath);
 
+const extensionRoot = join(__dirname, '..');
+const embeddedServerModule = getEmbeddedCbsServerModulePath(extensionRoot);
+if (!existsSync(embeddedServerModule)) {
+  fail(`CBS embedded server module not found at: ${embeddedServerModule}`);
+}
+pass(`CBS embedded server module exists: ${embeddedServerModule}`);
+
 const builtBoundaryPath = join(__dirname, '..', 'dist', 'lsp', 'cbsLanguageClientBoundary.js');
 if (!existsSync(builtBoundaryPath)) {
   fail(`Built CBS language client boundary not found at: ${builtBoundaryPath}. Run the vscode package build first.`);
@@ -58,12 +65,6 @@ const {
   buildCbsClientBoundarySnapshot,
   CBS_DOCUMENT_SELECTORS,
 } = require(builtBoundaryPath);
-
-const embeddedServerModule = join(__dirname, '..', '..', 'cbs-lsp', 'dist', 'server.js');
-if (!existsSync(embeddedServerModule)) {
-  fail(`CBS embedded server module not found at: ${embeddedServerModule}`);
-}
-pass(`CBS embedded server module exists: ${embeddedServerModule}`);
 
 // Read and parse the language client boundary source (where selectors live)
 const boundarySourcePath = join(__dirname, '..', 'src', 'lsp', 'cbsLanguageClientBoundary.ts');
@@ -218,7 +219,6 @@ if (!packageJson.scripts?.['verify:cbs-client']) {
 }
 pass('package.json exposes verify:cbs-client script');
 
-const extensionRoot = join(__dirname, '..');
 const workspaceRoot = join(__dirname, '..', '..', '..', 'playground');
 const extensionEmbeddedPath = getEmbeddedCbsServerModulePath(extensionRoot);
 const workspaceLocalBinaryPath = getWorkspaceLocalCbsBinaryPath(workspaceRoot);
