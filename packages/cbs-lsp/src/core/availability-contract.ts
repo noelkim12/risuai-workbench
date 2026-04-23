@@ -22,6 +22,7 @@ export interface ActiveFeatureAvailabilityMap {
   formatting: AgentMetadataAvailabilityContract;
   folding: AgentMetadataAvailabilityContract;
   hover: AgentMetadataAvailabilityContract;
+  inlayHint: AgentMetadataAvailabilityContract;
   'lua-completion': AgentMetadataAvailabilityContract;
   'lua-diagnostics': AgentMetadataAvailabilityContract;
   luaHover: AgentMetadataAvailabilityContract;
@@ -260,6 +261,11 @@ export const ACTIVE_FEATURE_AVAILABILITY = Object.freeze({
     'local-only',
     'server-capability:hover',
     'Hover is active for routed CBS fragments and describes symbols visible from the current CBS document context only.',
+  ),
+  inlayHint: createAgentMetadataAvailability(
+    'local-only',
+    'server-capability:inlayHint',
+    'Inlay hints are active for routed CBS fragments, show parameter names for setvar/getvar/call/arg, block header labels for #when/#each/#func, and never widen into workspace-wide hints.',
   ),
   luaHover: createAgentMetadataAvailability(
     'local-only',

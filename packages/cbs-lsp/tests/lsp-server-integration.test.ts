@@ -18,6 +18,7 @@ import type {
   DocumentSymbol,
   FoldingRange,
   Hover,
+  InlayHint,
   InitializeParams,
   InitializeResult,
   Location,
@@ -302,6 +303,8 @@ class FakeConnection {
 
   hoverHandler: any = null;
 
+  inlayHintHandler: ((params: any, token?: CancellationToken) => InlayHint[]) | null = null;
+
   signatureHelpHandler: ((params: any, token?: CancellationToken) => SignatureHelp | null) | null = null;
 
   foldingRangesHandler: ((params: any, token?: CancellationToken) => FoldingRange[]) | null = null;
@@ -362,6 +365,12 @@ class FakeConnection {
   };
 
   readonly languages = {
+    inlayHint: {
+      on: (handler: (params: any, token?: CancellationToken) => InlayHint[]) => {
+        this.inlayHintHandler = handler;
+        return createDisposable();
+      },
+    },
     semanticTokens: {
       on: (handler: (params: any, token?: CancellationToken) => SemanticTokens) => {
         this.semanticTokensHandler = handler;
@@ -738,6 +747,7 @@ describe('LSP server integration', () => {
           referencesProvider: true,
           renameProvider: true,
           hoverProvider: true,
+          inlayHintProvider: true,
           signatureHelpProvider: {
             triggerCharacters: [':'],
           },
@@ -788,6 +798,7 @@ describe('LSP server integration', () => {
     expect(connection.prepareRenameHandler).not.toBeNull();
     expect(connection.renameHandler).not.toBeNull();
     expect(connection.hoverHandler).not.toBeNull();
+    expect(connection.inlayHintHandler).not.toBeNull();
     expect(connection.signatureHelpHandler).not.toBeNull();
     expect(connection.foldingRangesHandler).not.toBeNull();
     expect(connection.semanticTokensHandler).not.toBeNull();
@@ -1924,6 +1935,47 @@ describe('LSP server integration', () => {
         snapshotDocumentSymbolsEnvelope([...(symbols ?? [])].reverse()),
       ),
     );
+  });
+
+  it('routes textDocument/inlayHint through the server seam and exposes fragment-safe parameter hints', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const text = lorebookDocument([
+      '{{setvar::mood::happy}}{{getvar::mood}}',
+      '{{#when mood}}active{{/when}}',
+      '{{#each items as item}}{{slot::item}}{{/each}}',
+      '{{#func greet name greeting}}{{arg::0}}{{arg::1}}{{/func}}',
+      '{{call::greet::Noel::hi}}',
+    ]);
+    const uri = await writeWorkspaceFile(root, 'lorebooks/inlay.risulorebook', text);
+
+    registerServer(connection as any, documents as any);
+    documents.open(uri, text, 1);
+
+    const inlayHints = connection.inlayHintHandler?.(
+      {
+        textDocument: { uri },
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 999, character: 999 },
+        },
+      },
+      createCancellationToken(false),
+    );
+
+    expect(inlayHints).toBeTruthy();
+    const labels = inlayHints?.map((hint) => hint.label) ?? [];
+    expect(labels).toContain('name:');
+    expect(labels).toContain('value:');
+    expect(labels).toContain('condition:');
+    expect(labels).toContain('iterator:');
+    expect(labels).toContain('alias:');
+    expect(labels).toContain('arg::0 \u2192 name:');
+    expect(labels).toContain('arg::1 \u2192 greeting:');
+    expect(labels).toContain('func:');
+    expect(labels).toContain('arg::0 \u2192 name:');
+    expect(labels).toContain('arg::1 \u2192 greeting:');
   });
 
   it('routes textDocument/codeAction through the server seam and returns safe quick fixes plus guidance actions', async () => {

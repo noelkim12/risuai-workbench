@@ -24,6 +24,7 @@ import { LSP_POSITION_ENCODING } from '../../src/utils/position';
 type FeatureScopeKey =
   | 'codeAction'
   | 'codelens'
+  | 'inlayHint'
   | 'rename'
   | 'luaHover'
   | 'lua-completion'
@@ -41,6 +42,7 @@ interface CapabilityMatrixSnapshot {
     codeActionProvider: boolean | { codeActionKinds: readonly string[] };
     completionTriggerCharacters: readonly string[];
     executeCommandCommands: readonly string[];
+    inlayHintProvider: boolean;
     positionEncoding: string;
     renameProvider: boolean | { prepareProvider: true };
   };
@@ -89,6 +91,7 @@ export interface CapabilityMatrixFixture {
 const FEATURE_SCOPE_KEYS = Object.freeze([
   'codeAction',
   'codelens',
+  'inlayHint',
   'rename',
   'luaHover',
   'lua-completion',
@@ -217,6 +220,7 @@ export function snapshotCapabilityMatrixFixture(
         CBS_COMPLETION_TRIGGER_CHARACTERS,
       executeCommandCommands:
         initializeResult.capabilities.executeCommandProvider?.commands ?? [],
+      inlayHintProvider: Boolean(initializeResult.capabilities.inlayHintProvider),
       positionEncoding: initializeResult.capabilities.positionEncoding ?? LSP_POSITION_ENCODING,
       renameProvider:
         typeof initializeResult.capabilities.renameProvider === 'boolean'
@@ -293,6 +297,7 @@ export const CAPABILITY_MATRIX_FIXTURES = Object.freeze<readonly CapabilityMatri
         codeActionProvider: true,
         completionTriggerCharacters: [...CBS_COMPLETION_TRIGGER_CHARACTERS],
         executeCommandCommands: [ACTIVATION_CHAIN_CODELENS_COMMAND],
+        inlayHintProvider: true,
         positionEncoding: LSP_POSITION_ENCODING,
         renameProvider: true,
       },
@@ -301,6 +306,7 @@ export const CAPABILITY_MATRIX_FIXTURES = Object.freeze<readonly CapabilityMatri
         featureScopes: {
           codeAction: 'local-only',
           codelens: 'local-only',
+          inlayHint: 'local-only',
           rename: 'local-first',
           luaHover: 'local-only',
           'lua-completion': 'local-only',
@@ -323,6 +329,7 @@ export const CAPABILITY_MATRIX_FIXTURES = Object.freeze<readonly CapabilityMatri
           featureScopes: {
             codeAction: 'local-only',
             codelens: 'local-only',
+            inlayHint: 'local-only',
             rename: 'local-first',
             luaHover: 'local-only',
             'lua-completion': 'local-only',
@@ -384,6 +391,7 @@ export const CAPABILITY_MATRIX_FIXTURES = Object.freeze<readonly CapabilityMatri
         },
         completionTriggerCharacters: [...CBS_COMPLETION_TRIGGER_CHARACTERS],
         executeCommandCommands: [ACTIVATION_CHAIN_CODELENS_COMMAND],
+        inlayHintProvider: true,
         positionEncoding: LSP_POSITION_ENCODING,
         renameProvider: {
           prepareProvider: true,
@@ -394,6 +402,7 @@ export const CAPABILITY_MATRIX_FIXTURES = Object.freeze<readonly CapabilityMatri
         featureScopes: {
           codeAction: 'local-only',
           codelens: 'local-only',
+          inlayHint: 'local-only',
           rename: 'local-first',
           luaHover: 'local-only',
           'lua-completion': 'local-only',
@@ -416,6 +425,7 @@ export const CAPABILITY_MATRIX_FIXTURES = Object.freeze<readonly CapabilityMatri
           featureScopes: {
             codeAction: 'local-only',
             codelens: 'local-only',
+            inlayHint: 'local-only',
             rename: 'local-first',
             luaHover: 'local-only',
             'lua-completion': 'local-only',
@@ -488,6 +498,7 @@ export const CAPABILITY_MATRIX_FIXTURES = Object.freeze<readonly CapabilityMatri
         },
         completionTriggerCharacters: [...CBS_COMPLETION_TRIGGER_CHARACTERS],
         executeCommandCommands: [ACTIVATION_CHAIN_CODELENS_COMMAND],
+        inlayHintProvider: true,
         positionEncoding: LSP_POSITION_ENCODING,
         renameProvider: {
           prepareProvider: true,
@@ -498,6 +509,7 @@ export const CAPABILITY_MATRIX_FIXTURES = Object.freeze<readonly CapabilityMatri
         featureScopes: {
           codeAction: 'local-only',
           codelens: 'local-only',
+          inlayHint: 'local-only',
           rename: 'local-first',
           luaHover: 'local-only',
           'lua-completion': 'local-only',
@@ -520,6 +532,7 @@ export const CAPABILITY_MATRIX_FIXTURES = Object.freeze<readonly CapabilityMatri
           featureScopes: {
             codeAction: 'local-only',
             codelens: 'local-only',
+            inlayHint: 'local-only',
             rename: 'local-first',
             luaHover: 'local-only',
             'lua-completion': 'local-only',

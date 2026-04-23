@@ -28,6 +28,7 @@ export type CbsLspFeatureName =
   | 'references'
   | 'rename'
   | 'hover'
+  | 'inlayHint'
   | 'signature'
   | 'folding'
   | 'semanticTokens';

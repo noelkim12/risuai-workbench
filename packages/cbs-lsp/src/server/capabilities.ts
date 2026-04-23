@@ -72,6 +72,7 @@ export function createInitializeResult(
         : true,
       ...(executeCommandProvider ? { executeCommandProvider } : {}),
       hoverProvider: true,
+      inlayHintProvider: true,
       signatureHelpProvider: {
         triggerCharacters: [':'],
       },

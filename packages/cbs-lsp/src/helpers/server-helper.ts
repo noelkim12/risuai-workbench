@@ -22,6 +22,8 @@ import {
   type DocumentRangeFormattingParams,
   type FoldingRangeParams,
   type HoverParams,
+  type InlayHint,
+  type InlayHintParams,
   LSPErrorCodes,
   type Location,
   type Range as LSPRange,
@@ -47,6 +49,7 @@ import { DocumentSymbolProvider } from '../features/documentSymbol';
 import { FoldingProvider } from '../features/folding';
 import { FormattingProvider } from '../features/formatting';
 import { HoverProvider } from '../features/hover';
+import { InlayHintProvider } from '../features/inlayHint';
 import { ReferencesProvider } from '../features/references';
 import { RenameProvider } from '../features/rename';
 import { SemanticTokensProvider } from '../features/semanticTokens';
@@ -72,6 +75,7 @@ export interface ServerFeatureRegistrarProviders {
   foldingProvider: FoldingProvider;
   formattingProvider: FormattingProvider;
   hoverProvider: HoverProvider;
+  inlayHintProvider: InlayHintProvider;
   resolveRequest: (uri: string) => FragmentAnalysisRequest | null;
   semanticTokensProvider: SemanticTokensProvider;
   signatureHelpProvider: SignatureHelpProvider;
@@ -148,6 +152,7 @@ export class ServerFeatureRegistrar {
   private readonly foldingProvider: FoldingProvider;
   private readonly formattingProvider: FormattingProvider;
   private readonly hoverProvider: HoverProvider;
+  private readonly inlayHintProvider: InlayHintProvider;
   private readonly luaLsProxy: Pick<LuaLsCompanionController, 'getRuntime' | 'provideCompletion' | 'provideHover'>;
   private readonly registry: CBSBuiltinRegistry;
   private readonly requestRunner: RequestHandlerRunner;
@@ -179,6 +184,7 @@ export class ServerFeatureRegistrar {
     this.foldingProvider = context.providers.foldingProvider;
     this.formattingProvider = context.providers.formattingProvider;
     this.hoverProvider = context.providers.hoverProvider;
+    this.inlayHintProvider = context.providers.inlayHintProvider;
     this.resolveRequest = context.providers.resolveRequest;
     this.resolveWorkspaceRequest = context.resolveWorkspaceRequest;
     this.resolveWorkspaceVariableFlowContextByUri = context.resolveWorkspaceVariableFlowContext;
@@ -203,6 +209,7 @@ export class ServerFeatureRegistrar {
     this.registerRenameHandler();
     this.registerCodeLensHandler();
     this.registerHoverHandler();
+    this.registerInlayHintHandler();
     this.registerSignatureHelpHandler();
     this.registerFoldingHandler();
     this.registerSemanticTokensHandler();
@@ -558,6 +565,20 @@ export class ServerFeatureRegistrar {
         hasResult: result !== null,
       });
       return result;
+    });
+  }
+
+  private registerInlayHintHandler(): void {
+    this.connection.languages.inlayHint.on((params: InlayHintParams, cancellationToken): InlayHint[] => {
+      return this.requestRunner.runSync({
+        empty: [],
+        feature: 'inlayHint',
+        getUri: (requestParams) => requestParams.textDocument.uri,
+        params,
+        run: () => this.inlayHintProvider.provide(params, cancellationToken),
+        summarize: (result) => ({ count: result.length }),
+        token: cancellationToken,
+      });
     });
   }
 

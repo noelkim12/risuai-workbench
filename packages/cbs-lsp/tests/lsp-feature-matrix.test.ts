@@ -10,6 +10,7 @@ import type {
   DocumentRangeFormattingParams,
   FoldingRange,
   Hover,
+  InlayHint,
   InitializeParams,
   InitializeResult,
   Location,
@@ -136,6 +137,8 @@ class FakeConnection {
 
   hoverHandler: any = null;
 
+  inlayHintHandler: ((params: any) => InlayHint[]) | null = null;
+
   signatureHelpHandler: ((params: any) => SignatureHelp | null) | null = null;
 
   foldingRangesHandler: ((params: any) => FoldingRange[]) | null = null;
@@ -165,6 +168,12 @@ class FakeConnection {
   };
 
   readonly languages = {
+    inlayHint: {
+      on: (handler: (params: any) => InlayHint[]) => {
+        this.inlayHintHandler = handler;
+        return createDisposable();
+      },
+    },
     semanticTokens: {
       on: (handler: (params: any) => SemanticTokens) => {
         this.semanticTokensHandler = handler;
