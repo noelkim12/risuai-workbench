@@ -1,26 +1,26 @@
 # core 문서 공통 원칙
 
-이 문서는 `docs/core/`의 canonical wording page다. `packages/core` 관련 문서를 새로 쓰거나 고칠 때는 이 페이지를 먼저 기준으로 잡고, 세부 계약은 각 target 문서와 subtree 인덱스에서 이어서 읽는다.
+이 문서는 `docs/core/` 하위 문서에서 사용하는 표준 용어 및 문구 가이드입니다. `packages/core` 관련 문서를 새로 작성하거나 수정할 때는 이 페이지를 최우선 기준으로 삼으며, 상세 명세는 각 대상(Target) 문서와 하위 트리 인덱스를 순차적으로 참조하십시오.
 
-## source of truth
+## 신뢰 기준 (Source of Truth)
 
-- 문서 truth는 코드와 테스트를 따라간다. 현재 기준 파일은 `../../../packages/core/package.json`, `../../../packages/core/src/index.ts`, `../../../packages/core/src/node/index.ts`, `../../../packages/core/src/domain/index.ts`, `../../../packages/core/src/cli/main.ts`다.
-- 엔트리포인트 계약은 `../../../packages/core/tests/root-entry-contract.test.ts`, `../../../packages/core/tests/node-entry.test.ts`, `../../../packages/core/tests/domain-node-structure.test.ts`, `../../../packages/core/tests/export-surface.test.ts`, `../../../packages/core/tests/cli-main-dispatch.test.ts`가 고정한다.
-- `../../../packages/core/core-structure-ko.md`는 구조 설명의 좋은 요약이지만, 공개 계약 판단은 항상 코드와 테스트가 우선이다.
-- 미래 희망사항, refactor 아이디어, leaf 문서 예정 내용은 현재 계약처럼 쓰지 않는다.
+- 문서가 보증하는 사실은 실제 코드와 테스트 결과를 근거로 합니다. 현재 기준 파일은 `../../../packages/core/package.json`, `../../../packages/core/src/index.ts`, `../../../packages/core/src/node/index.ts`, `../../../packages/core/src/domain/index.ts`, `../../../packages/core/src/cli/main.ts`입니다.
+- 엔트리포인트 명세는 `../../../packages/core/tests/root-entry-contract.test.ts`, `../../../packages/core/tests/node-entry.test.ts`, `../../../packages/core/tests/domain-node-structure.test.ts`, `../../../packages/core/tests/export-surface.test.ts`, `../../../packages/core/tests/cli-main-dispatch.test.ts`에서 확정합니다.
+- `../../../packages/core/core-structure-ko.md`는 전체 구조를 파악하기 좋은 요약본이지만, 공개 명세에 대한 최종 판단은 항상 코드와 테스트가 우선합니다.
+- 미래의 희망 사항, 리팩터링 아이디어, 작성 예정인 하위 문서의 내용은 확정된 명세처럼 기술하지 않습니다.
 
 ## 문서 경계
 
-`docs/core/`는 아래 네 층으로 나눈다.
+`docs/core/`는 아래 네 계층으로 구성합니다.
 
-| 층 | 역할 | 이 폴더의 현재 문서 |
+| 계층 | 역할 | 주요 문서 |
 |---|---|---|
-| common | 공통 용어, 경계 문장, 작성 규칙, evidence 규칙 | `principles.md`, `testing-and-evidence.md` |
-| targets | 공개 엔트리포인트의 보장 범위와 라우팅 | `../targets/root-browser.md`, `../targets/node-entry.md`, `../targets/cli.md` |
-| domains | 순수 도메인 subtree 인덱스와 leaf 분리 기준 | `../domains/analyze/README.md` |
-| node | Node 전용 subtree 인덱스와 leaf 분리 기준 | `../node/README.md` |
+| common | 공통 용어, 문구 템플릿, 작성 규칙, 근거(Evidence) 작성 가이드 | `principles.md`, `testing-and-evidence.md` |
+| targets | 공개 엔트리포인트의 보장 범위와 라우팅 명세 | `../targets/root-browser.md`, `../targets/node-entry.md`, `../targets/cli.md` |
+| domains | 순수 도메인 하위 트리 인덱스 및 리프 분리 기준 | `../domains/analyze/README.md` |
+| node | Node.js 전용 하위 트리 인덱스 및 리프 분리 기준 | `../node/README.md` |
 
-target 문서는 entrypoint 보장과 routing만 다룬다. leaf 의미론, 알고리즘 세부, 개별 helper 스펙은 later leaf page로 넘긴다.
+대상(Target) 문서는 엔트리포인트 보장 범위와 라우팅만을 다룹니다. 리프(Leaf) 수준의 상세 의미론, 알고리즘 세부 사항, 개별 헬퍼 명세는 하위 리프 페이지에서 상세히 기술합니다.
 
 ## 현재 패키지 경계
 

@@ -1,45 +1,46 @@
-# text-mention
+# 텍스트 언급 분석 (Text Mention)
 
-이 페이지는 lorebook 본문에서 plain text 언급을 찾는 `text-mention` analyzer만 설명합니다.
+이 페이지는 로어북 본문에서 평문(Plain Text) 형태의 언급 내역을 탐색하는 텍스트 언급 분석기(Text Mention Analyzer) 명세만을 다룹니다.
 
-## 현재 public surface
+## 현재 공개 인터페이스
 
-- root browser entry에서 다시 export되는 surface는 `analyzeTextMentions`, `TextMentionEdge`입니다.
+- 루트 브라우저 엔트리에서 재내보내기되는 인터페이스는 `analyzeTextMentions` 함수와 `TextMentionEdge` 타입입니다.
 - 근거는 [`../../../../packages/core/src/domain/index.ts`](../../../../packages/core/src/domain/index.ts), [`../../targets/root-browser.md`](../../targets/root-browser.md), [`../../../../packages/core/tests/export-surface.test.ts`](../../../../packages/core/tests/export-surface.test.ts)입니다.
 
-## 현재 truth
+## 현재 구현 명세
 
-- `analyzeTextMentions(entries, variables, functions, lorebookEntries?)`는 lorebook content를 스캔해 세 종류 edge를 만듭니다.
-  - `variable-mention`
-  - `lua-mention`
-  - `lorebook-mention`
-- 변수명, 함수명, lorebook term은 길이 3 미만이면 오탐 방지를 위해 제외합니다.
-- 정규식은 `\b` 대신 `(^|[^a-zA-Z0-9_]) ... (?=[^a-zA-Z0-9_]|$)` 형태를 써서 한글과 유니코드 텍스트에서 경계를 잡습니다.
-- lorebook mention은 entry name과 `keys[]`를 모두 searchable term으로 씁니다.
-- 같은 term이 여러 entry를 가리키면 ambiguous로 보고 그 term은 버립니다.
-- 같은 source entry에서 같은 target으로 중복 edge가 생기지 않도록 dedupe합니다.
-- 자기 자신을 가리키는 lorebook mention은 만들지 않습니다.
+- `analyzeTextMentions(entries, variables, functions, lorebookEntries?)` 함수는 로어북 내용을 스캔하여 다음 세 가지 유형의 연결선(Edge)을 생성합니다.
+  - `variable-mention`: 변수 이름 언급
+  - `lua-mention`: Lua 함수 이름 언급
+  - `lorebook-mention`: 다른 로어북 엔트리 이름 또는 키워드 언급
+- 변수명, 함수명, 로어북 용어의 길이가 3자 미만인 경우, 오탐 방지를 위해 분석 대상에서 제외합니다.
+- 정규식 분석 시 단어 경계(`\b`) 대신 `(^|[^a-zA-Z0-9_]) ... (?=[^a-zA-Z0-9_]|$)` 패턴을 사용하여 한글 및 유니코드 텍스트의 경계를 정확히 식별합니다.
+- 로어북 언급 분석 시 엔트리 이름과 `keys[]` 배열 전체를 검색 대상 용어로 사용합니다.
+- 동일한 용어가 여러 엔트리를 동시에 가리키는 경우(Ambiguous), 모호성 제거를 위해 해당 연결은 무시합니다.
+- 동일한 출처 엔트리에서 동일한 대상으로 향하는 중복 연결선은 하나로 통합(Dedupe)합니다.
+- 자기 자신을 가리키는 로어북 언급은 생성하지 않습니다.
 
-## 출력 계약
+## 출력 명세 (Contract)
 
-`TextMentionEdge`는 아래 필드만 가집니다.
+`TextMentionEdge`는 다음과 같은 필드로 구성됩니다.
 
-- `sourceEntry`
-- `target`
-- `type`
+- `sourceEntry`: 언급이 발생한 출처 엔트리
+- `target`: 언급된 대상 이름
+- `type`: 언급 유형
 
-이 analyzer는 mention 위치, count, score를 반환하지 않습니다.
+이 분석기는 언급된 구체적인 위치, 횟수, 가중치 점수 등은 반환하지 않습니다.
 
 ## 현재 사용 위치
 
-- charx analyze workflow와 module analyze workflow가 lorebook, lua, 변수 집합을 모은 뒤 이 analyzer를 호출합니다.
-- relationship network와 wiki chain 문서가 이 결과를 소비합니다.
+- 캐릭터 및 모듈 분석 워크플로우에서 로어북, Lua, 변수 집합을 수집한 후 이 분석기를 호출합니다.
+- 관계 네트워크(Relationship Network) 및 Wiki 체인 문서에서 이 결과를 소비합니다.
 - 근거는 [`../../../../packages/core/src/cli/analyze/charx/workflow.ts`](../../../../packages/core/src/cli/analyze/charx/workflow.ts), [`../../../../packages/core/src/cli/analyze/module/workflow.ts`](../../../../packages/core/src/cli/analyze/module/workflow.ts), [`../../../../packages/core/src/cli/analyze/shared/relationship-network-builders.ts`](../../../../packages/core/src/cli/analyze/shared/relationship-network-builders.ts)입니다.
 
 ## 범위 경계
 
-- CBS `getvar` / `setvar` 자체 추출은 text-mention 범위가 아니라 correlation, variable-flow 계열 범위입니다.
-- 이 analyzer는 plain text mention만 다룹니다. activation chain 판정이나 실제 cross-artifact dependency를 단독으로 보장하지 않습니다.
+- CBS `getvar` / `setvar` 매크로 자체의 추출은 이 분석기의 범위가 아니며, 상관관계(Correlation) 및 변수 흐름 분석 계열에서 담당합니다.
+- 이 분석기는 순수 텍스트 언급만을 다룹니다. 활성화 체인(Activation Chain) 판정이나 실제 아티팩트 간 의존성을 단독으로 보증하지 않습니다.
+
 
 ## evidence anchors
 

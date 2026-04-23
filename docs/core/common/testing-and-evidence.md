@@ -1,46 +1,46 @@
-# core 문서 testing and evidence 규칙
+# core 문서 검증 및 근거(Evidence) 규칙
 
-이 문서는 `docs/core/` 페이지가 문장을 코드와 테스트에 어떻게 묶어야 하는지 정한다. 목표는 과장 없는 현재 truth다.
+이 문서는 `docs/core/` 하위 페이지에서 기술하는 문장을 코드와 테스트에 어떻게 결합해야 하는지 정의합니다. 목표는 과장 없는 '있는 그대로의 사실'을 기록하는 것입니다.
 
 ## 기본 원칙
 
-- 구현 근거와 테스트 근거를 같이 쓴다.
-- 구현만 있고 테스트가 없으면 `현재 구현`, `코드 기준`처럼 적는다.
-- 테스트까지 있으면 `고정한다`, `검증한다`, `보장 범위`처럼 적을 수 있다.
-- 아직 없는 동작, 미래 리팩터링 의도, 희망사항은 계약처럼 쓰지 않는다.
+- 구현 근거와 테스트 근거를 병기합니다.
+- 구현만 존재하고 테스트가 없는 경우 `현재 구현상`, `코드 기준` 등으로 명시합니다.
+- 테스트가 뒷받침되는 경우 `확정한다`, `검증한다`, `보장 범위` 등의 표현을 사용할 수 있습니다.
+- 아직 구현되지 않은 동작, 미래의 리팩터링 의도, 희망 사항은 확정된 명세처럼 기술하지 않습니다.
 
 ## 근거 우선순위
 
-| 근거 종류 | 문서에서의 쓰임 |
+| 근거 종류 | 활용 범위 |
 |---|---|
-| `packages/core/package.json`, `src/index.ts`, `src/node/index.ts`, `src/cli/main.ts` | public entry, bin, routing, 현재 export 경로 설명 |
-| workflow 구현 파일 | 커맨드별 라우팅, 옵션 해석, auto-detect, phase 위임 설명 |
-| `packages/core/tests/*` | help text, exit code, export surface, 대표 경계 검증 |
-| 보조 구조 문서 | 배경 설명 정도만 허용, public truth 판정은 불가 |
+| `packages/core/package.json`, `src/index.ts`, `src/node/index.ts`, `src/cli/main.ts` | 공개 엔트리, 바이너리, 라우팅, 현재 내보내기(Export) 경로 명시 |
+| 워크플로우 구현 파일 | 커맨드별 라우팅, 옵션 해석, 자동 감지(Auto-detect), 단계(Phase) 위임 상세 |
+| `packages/core/tests/*` | 도움말 텍스트, 종료 코드(Exit code), 내보내기 인터페이스, 주요 경계 검증 |
+| 보조 구조 문서 | 배경 설명 용도로만 제한적 허용 (공개 명세 판정 근거로는 사용 불가) |
 
 ## 문장 작성 규칙
 
-### 이렇게 쓴다
+### 권장 사례
 
-- `packages/core/src/cli/main.ts`는 현재 `extract`, `pack`, `analyze`, `build`, `scaffold`를 디스패치한다.
-- `packages/core/tests/cli-main-dispatch.test.ts`는 top-level help, unknown command, 대표 서브커맨드 진입을 검증한다.
-- `packages/core/src/cli/analyze/workflow.ts` 기준 `compose`는 auto-detect 없이 `--type compose`로만 들어간다.
+- `packages/core/src/cli/main.ts`는 현재 `extract`, `pack`, `analyze`, `build`, `scaffold`를 디스패치합니다.
+- `packages/core/tests/cli-main-dispatch.test.ts`는 최상위 도움말, 알 수 없는 명령어 처리, 주요 서브커맨드 진입 여부를 검증합니다.
+- `packages/core/src/cli/analyze/workflow.ts` 기준 `compose`는 자동 감지 없이 `--type compose` 옵션을 통해서만 실행됩니다.
 
-### 이렇게 쓰지 않는다
+### 지양 사례
 
 - `CLI는 모든 워크플로우를 안정적으로 문서화한다.`
-- `analyze는 어떤 workspace도 자동 판별한다.`
-- `node entry는 모든 Node helper를 완전히 보장한다.`
+- `analyze는 어떤 작업 공간(Workspace)도 자동으로 판별한다.`
+- `node 엔트리는 모든 Node 헬퍼를 완벽히 보장한다.`
 
-위 세 문장은 코드나 테스트가 직접 증명하지 않거나 범위가 너무 넓다.
+위 문장들은 코드나 테스트가 직접 증명하지 못하거나, 보장 범위가 지나치게 포괄적입니다.
 
-## claim 등급
+## 주장(Claim) 등급
 
-| 등급 | 언제 쓰나 | 예시 |
+| 등급 | 사용 시점 | 예시 |
 |---|---|---|
-| 구현 관찰 | 코드만 확인했을 때 | `현재 구현은 ...` |
-| 테스트 고정 | 테스트가 직접 확인할 때 | `...를 검증한다` |
-| 문서 경계 | 이 페이지가 일부러 다루지 않을 때 | `이 페이지는 ...를 다루지 않는다` |
+| 구현 관찰 | 코드 레벨에서만 확인된 사실 | `현재 구현은 ...` |
+| 테스트 확정 | 테스트 코드가 직접 검증하는 사실 | `...를 검증한다`, `...를 확정한다` |
+| 문서 경계 | 의도적으로 범위를 제한할 때 | `이 페이지는 ...를 다루지 않는다` |
 
 ## 테스트를 anchor로 거는 방식
 

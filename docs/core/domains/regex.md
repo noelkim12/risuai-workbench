@@ -1,44 +1,44 @@
-# regex domain
+# 정규식 도메인 (Regex Domain)
 
-이 문서는 `packages/core/src/domain/regex/`의 순수 regex canonical adapter와 CBS variable helper만 다룬다.
+이 문서는 `packages/core/src/domain/regex/`에 정의된 순수 정규식 표준 어댑터(Canonical Adapter) 및 CBS 변수 헬퍼 명세만을 다룹니다.
 
-## 이 페이지가 맡는 범위
+## 이 페이지가 담당하는 범위
 
-- `.risuregex` 한 파일을 canonical object로 parse, serialize 하는 helper
-- charx, module, preset upstream shape와 canonical regex 배열 사이의 순수 inject, extract
-- regex script 안 CBS read/write 추출
-- defaultVariables raw payload를 text, json에서 평평한 맵으로 읽는 helper
+- `.risuregex` 단일 파일을 표준 객체로 파싱(Parse) 및 직렬화(Serialize)하는 헬퍼
+- 캐릭터/모듈/프리셋의 상위(Upstream) 형상과 표준 정규식 배열 간의 순수 주입(Inject) 및 추출(Extract) 로직
+- 정규식 스크립트 내 CBS 읽기/쓰기 내역 추출
+- 기본 변수(`defaultVariables`) 원본 데이터를 텍스트나 JSON으로부터 평탄화된 맵(Flat Map)으로 읽어들이는 헬퍼
 
-## current truth
+## 구현 명세 (Current Truth)
 
-- root export는 `parseRegexContent`, `serializeRegexContent`, `extractRegexFromCharx`, `extractRegexFromModule`, `extractRegexFromPreset`, `injectRegexIntoCharx`, `injectRegexIntoModule`, `injectRegexIntoPreset`, `buildRegexPath`, `extractRegexScriptOps`, `collectRegexCBSFromScripts`, `parseDefaultVariablesText`, `parseDefaultVariablesJson`를 다시 노출한다.
-- accepted regex type은 현재 여섯 개다. `editinput`, `editoutput`, `editdisplay`, `editprocess`, `edittrans`, `disabled`.
-- canonical regex entry는 `comment`, `type`, optional `flag`, optional `ableFlag`, `in`, `out`으로 고정된다.
-- preset bridge는 extract 때 `presetRegex`, pack 쪽 canonical 문서에서는 payload `regex`로 이어지는 비대칭이 있다.
+- 루트 내보내기는 `parseRegexContent`, `serializeRegexContent`, `extractRegexFromCharx`, `extractRegexFromModule`, `extractRegexFromPreset`, `injectRegexIntoCharx`, `injectRegexIntoModule`, `injectRegexIntoPreset`, `buildRegexPath`, `extractRegexScriptOps`, `collectRegexCBSFromScripts`, `parseDefaultVariablesText`, `parseDefaultVariablesJson` 함수를 노출합니다.
+- 현재 지원하는 정규식 타입은 `editinput`, `editoutput`, `editdisplay`, `editprocess`, `edittrans`, `disabled`의 6종입니다.
+- 표준 정규식 엔트리는 `comment`, `type`, 선택적인 `flag` 및 `ableFlag`, `in`, `out` 필드로 구성됩니다.
+- 프리셋 브리지(Preset Bridge) 처리 시, 추출 단계에서는 `presetRegex`를 사용하고 패키징 단계의 표준 문서에서는 페이로드 `regex`로 연결되는 비대칭 구조가 존재합니다.
 
-## notable exported surface
+## 주요 공개 인터페이스
 
-| 축 | 현재 public 예시 |
+| 구분 | 주요 인터페이스 예시 |
 |---|---|
-| canonical file adapter | `parseRegexContent`, `serializeRegexContent`, `CanonicalRegexEntry`, `RegexAdapterError` |
-| upstream bridge | `extractRegexFromCharx`, `extractRegexFromModule`, `extractRegexFromPreset`, `injectRegexIntoCharx`, `injectRegexIntoModule`, `injectRegexIntoPreset` |
-| naming | `buildRegexPath`, `REGEX_TYPES` |
-| CBS helper | `extractRegexScriptOps`, `collectRegexCBSFromCharx`, `collectRegexCBSFromScripts` |
-| variable parsing | `parseDefaultVariablesText`, `parseDefaultVariablesJson` |
+| 표준 파일 어댑터 | `parseRegexContent`, `serializeRegexContent`, `CanonicalRegexEntry` |
+| 상위 브리지 (Upstream Bridge) | `extractRegexFromCharx`, `extractRegexFromModule`, `injectRegexIntoCharx` |
+| 명명 및 타입 | `buildRegexPath`, `REGEX_TYPES` |
+| CBS 헬퍼 | `extractRegexScriptOps`, `collectRegexCBSFromCharx` |
+| 변수 파싱 | `parseDefaultVariablesText`, `parseDefaultVariablesJson` |
 
-## 현재 코드가 고정하는 것
+## 현재 구현 확정 사항
 
-- frontmatter는 required `comment`, `type`만 허용하고, 모르는 key는 reject한다.
-- `@@@ IN`, `@@@ OUT` 둘 다 있어야 한다.
-- absent optional field와 explicit default는 다르게 보존한다.
-- `buildRegexPath`는 sanitize된 stem으로 `regex/<stem>.risuregex`를 만든다.
-- regex script CBS 추출은 `in`, `out`, `flag`를 먼저 보고, 비어 있으면 `script`, `content` fallback을 본다.
+- 프론트매터(Frontmatter)는 필수 항목인 `comment`, `type`만을 허용하며, 알 수 없는 키가 포함된 경우 거부(Reject)합니다.
+- `@@@ IN` 및 `@@@ OUT` 마커가 모두 존재해야 합니다.
+- 누락된 선택적 필드(Optional field)와 명시적으로 지정된 기본값은 서로 다르게 구분하여 보존합니다.
+- `buildRegexPath`는 정제된 스템(Stem) 이름을 사용하여 `regex/<stem>.risuregex` 경로를 생성합니다.
+- 정규식 스크립트의 CBS 추출 시 `in`, `out`, `flag` 필드를 우선적으로 탐색하며, 비어 있는 경우 `script` 또는 `content` 필드를 폴백(Fallback)으로 참조합니다.
 
-## scope boundary
+## 범위 명세 (Scope Boundary)
 
-- regex directory ordering과 `_order.json` workspace layout 설명은 [`../../custom-extension/extensions/regex.md`](../../custom-extension/extensions/regex.md)가 맡는다.
-- regex를 실제 파일로 extract, pack 하는 CLI workflow는 이 페이지 범위가 아니다.
-- lorebook, lua와의 correlation report는 [`./analyze/README.md`](./analyze/README.md) 이후 문서가 맡는다.
+- 정규식 디렉토리 순서 지정 및 `_order.json` 워크스페이스 레이아웃에 대한 설명은 [`../../custom-extension/extensions/regex.md`](../../custom-extension/extensions/regex.md)에서 담당합니다.
+- 정규식을 실제 파일로 추출하거나 패키징하는 CLI 워크플로우는 이 문서의 범위가 아닙니다.
+- 로어북 및 Lua와의 상관관계 리포트(Correlation Report) 분석은 [`./analyze/README.md`](./analyze/README.md) 및 하위 문서에서 담당합니다.
 
 ## evidence anchors
 

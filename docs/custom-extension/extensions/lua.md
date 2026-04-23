@@ -1,47 +1,48 @@
-# `.risulua`
+# Lua 표준 (.risulua)
 
-`lua`는 charx / module이 사용하는 canonical singleton artifact다. 현재 구현은 upstream `triggerscript`를 function 단위로 쪼개지 않고 **파일 전체를 그대로 보존**한다.
+`.risulua`는 캐릭터 카드(charx)와 모듈(module)에서 사용하는 표준 단일 파일(Singleton) 아티팩트 명세입니다. 현재 구현은 상위의 `triggerscript` 데이터를 함수 단위로 분할하지 않고 **파일 전체를 원본 그대로 보존**하는 방식을 채택하고 있습니다.
 
-## 지원 대상 / 위치
+## 지원 범위 및 위치
 
-- 지원 대상: `charx`, `module`
-- 미지원 대상: `preset`
-- 디렉토리: `lua/`
-- suffix: `.risulua`
-- stem policy: target name 기반 singleton
+- **지원 대상**: 캐릭터 카드(`charx`), 모듈(`module`)
+- **미지원 대상**: 프리셋(`preset`)
+- **파일 위치**: `lua/` 디렉토리
+- **확장자**: `.risulua`
+- **파일명 규칙**: 대상 이름(Target name) 기반의 단일 파일로 생성됩니다.
 
-## 형식
+## 표준 파일 형식 (Format)
 
-- 파일 전체가 raw Lua source다.
-- 별도 frontmatter나 section marker가 없다.
-- parse / serialize는 identity transform을 기본으로 한다.
+- 파일의 내용 전체가 가공되지 않은 Lua 소스 코드입니다.
+- 별도의 프론트매터(YAML)나 섹션 마커(`@@@`)를 사용하지 않습니다.
+- 파싱 및 직렬화 시 데이터의 변형 없이 있는 그대로를 유지(Identity transform)합니다.
 
-## CBS 해석 (현재 truth)
+## CBS 분석 영역 (현재 구현 명세)
 
-- 현재 `cbs-fragments.ts` 기준 `.risulua`는 **파일 전체를 단일 CBS fragment**로 본다.
-- 즉 현재 LSP truth는 "Lua AST 기반 string-literal 추출"이 아니라 **full-file first-cut routing**이다.
-- future T15/T15+에서 literal-only fragment extraction을 하더라도, 그것은 아직 active contract가 아니다.
+- **전체 분석**: 현재 `cbs-fragments.ts` 기준, `.risulua` 파일은 **파일 전체를 단일한 CBS 조각**으로 간주합니다.
+- **라우팅 정책**: 현재의 LSP 서비스는 Lua AST 분석을 통한 문자열 리터럴 추출이 아닌, 파일 전체를 대상으로 하는 1차 라우팅(First-cut routing) 방식을 사용합니다.
+- **향후 계획**: 리터럴 단위의 정밀한 조각 추출(Literal-only fragment extraction) 기능은 향후 고도화 단계에서 지원될 예정입니다.
 
-## upstream 매핑
+## 상위(Upstream) 필드 매핑
 
-| target | upstream surface |
+| 대상 | 매핑되는 상위 인터페이스 |
 |---|---|
-| charx | `triggerscript` |
-| module | module trigger/lua payload |
+| 캐릭터 카드 | `triggerscript` 필드 |
+| 모듈 | 모듈 내 트리거(Trigger) 및 Lua 페이로드 영역 |
 
-## singleton / 오류 규칙
+## 단일 파일 원칙 및 오류 규칙
 
-- target당 `.risulua`는 하나만 허용한다.
-- duplicate source는 자동 병합하지 않고 오류로 처리한다.
-- preset에서 `.risulua`를 authoring surface로 쓰는 것은 계약 위반이다.
+- **중복 금지**: 대상당 단 하나의 `.risulua` 파일만 허용됩니다.
+- **오류 처리**: 동일한 대상 내에 중복된 소스가 발견될 경우 자동 병합을 시도하지 않고 오류로 처리합니다.
+- **사용 제한**: 프리셋 대상에서 `.risulua` 파일을 편집 인터페이스로 사용하는 것은 표준 계약 위반으로 간주됩니다.
 
-## 예시
+## 작성 예시
 
 ```lua
 function onInput()
   if {{getvar::flag}} == "1" then
-    return "ok"
+    return "성공"
   end
-  return "fallback"
+  return "폴백"
 end
 ```
+

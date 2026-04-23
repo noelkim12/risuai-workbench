@@ -1,45 +1,45 @@
-# lorebook domain
+# 로어북 도메인 (Lorebook Domain)
 
-이 문서는 `packages/core/src/domain/lorebook/`가 맡는 순수 lorebook 구조 분석과 activation chain 분석만 다룬다.
+이 문서는 `packages/core/src/domain/lorebook/`가 담당하는 순수 로어북 구조 분석 및 활성화 체인(Activation Chain) 분석 명세만을 다룹니다.
 
-## 이 페이지가 맡는 범위
+## 이 페이지가 담당하는 범위
 
-- lorebook entry 배열을 구조 정보로 정규화하는 helper
-- folder path, keyword overlap, activation mode 계산
-- lorebook content 안의 정적 activation chain 가능성 계산
-- lorebook content의 CBS read/write 수집
+- 로어북 엔트리 배열을 구조 정보로 정규화하는 헬퍼
+- 폴더 경로, 키워드 중첩(Overlap), 활성화 모드 계산 로직
+- 로어북 내용(Content) 내의 정적 활성화 체인 발생 가능성 계산
+- 로어북 내용의 CBS 읽기/쓰기 발생 내역 수집
 
-## current truth
+## 구현 명세 (Current Truth)
 
-- root export는 `analyzeLorebookStructure`, `analyzeLorebookStructureFromCharx`, `collectLorebookCBS`, `analyzeLorebookActivationChains`, `analyzeLorebookActivationChainsFromCharx`, `analyzeLorebookActivationChainsFromModule`를 다시 노출한다.
-- structure 분석은 folder entry와 regular entry를 나눠서 `folders`, `entries`, `stats`, `keywords`를 만든다.
-- activation mode는 `constant`, `keyword`, `keywordMulti`, `referenceOnly` 네 가지다.
-- chain 분석은 실제 runtime 실행이 아니라 content 안 keyword hit를 바탕으로 한 static 가능성 분석이다.
-- chain edge status는 `possible`, `partial`, `blocked`다.
+- 루트 내보내기는 `analyzeLorebookStructure`, `analyzeLorebookStructureFromCharx`, `collectLorebookCBS`, `analyzeLorebookActivationChains`, `analyzeLorebookActivationChainsFromCharx`, `analyzeLorebookActivationChainsFromModule` 함수를 노출합니다.
+- 구조 분석은 폴더 엔트리와 일반 엔트리를 구분하여 `folders`, `entries`, `stats`, `keywords` 데이터를 생성합니다.
+- 활성화 모드는 `constant`, `keyword`, `keywordMulti`, `referenceOnly`의 네 가지로 정의됩니다.
+- 체인 분석은 실제 런타임 실행 결과가 아닌, 내용 내 키워드 매칭을 바탕으로 한 정적 발생 가능성 분석입니다.
+- 체인 에지의 상태(Edge Status)는 `possible`, `partial`, `blocked`로 분류됩니다.
 
-## notable exported surface
+## 주요 공개 인터페이스
 
-| 축 | 현재 public 예시 |
+| 구분 | 주요 인터페이스 예시 |
 |---|---|
-| structure | `analyzeLorebookStructure`, `LorebookStructureEntry`, `LorebookStructureResult` |
-| CBS collection | `collectLorebookCBS`, `collectLorebookCBSFromCharx`, `collectLorebookCBSFromCard` |
-| activation chain | `analyzeLorebookActivationChains`, `analyzeLorebookActivationChainsFromCharx`, `analyzeLorebookActivationChainsFromModule` |
-| chain types | `LorebookActivationEntry`, `LorebookActivationEdge`, `LorebookActivationChainResult` |
-| folder helpers | `buildRisuFolderMap`, `resolveRisuFolderName`, `buildLorebookFolderDirMap`, `planLorebookExtraction` |
+| 구조 분석 | `analyzeLorebookStructure`, `LorebookStructureEntry`, `LorebookStructureResult` |
+| CBS 수집 | `collectLorebookCBS`, `collectLorebookCBSFromCharx`, `collectLorebookCBSFromCard` |
+| 활성화 체인 | `analyzeLorebookActivationChains`, `analyzeLorebookActivationChainsFromCharx` |
+| 체인 관련 타입 | `LorebookActivationEntry`, `LorebookActivationEdge`, `LorebookActivationChainResult` |
+| 폴더 관련 헬퍼 | `buildRisuFolderMap`, `resolveRisuFolderName`, `planLorebookExtraction` |
 
-## 현재 코드가 고정하는 것
+## 현재 구현 확정 사항
 
-- structure 분석은 nested folder path를 `Root/Child/Entry` 같은 path id로 보존한다.
-- lorebook content 안 `extractCBSVarOps` 결과가 있으면 `hasCBS`, `collectLorebookCBS`에 반영된다.
-- activation chain은 `@@recursive`, `@@unrecursive`, `@@no_recursive_search` directive를 읽는다.
-- selective lorebook은 secondary key가 빠지면 `partial`로 남는다.
-- charx 입력은 `character_book.recursive_scanning` 값을 읽어 global recursive scanning on/off를 반영한다.
+- 구조 분석은 중첩된 폴더 경로를 `Root/Child/Entry` 형태의 경로 식별자(Path ID)로 보존합니다.
+- 로어북 내용 중 `extractCBSVarOps` 분석 결과가 존재하는 경우, 이를 `hasCBS` 및 `collectLorebookCBS` 결과에 반영합니다.
+- 활성화 체인 분석 시 `@@recursive`, `@@unrecursive`, `@@no_recursive_search` 지시어(Directive)를 해석합니다.
+- 선택적 로어북(Selective Lorebook)은 보조 키(Secondary Key)가 누락된 경우 `partial` 상태로 유지됩니다.
+- 캐릭터 카드 입력 시 `character_book.recursive_scanning` 값을 참조하여 전역 재귀 스캔의 활성화 여부를 반영합니다.
 
-## scope boundary
+## 범위 명세 (Scope Boundary)
 
-- `.risulorebook` canonical 파일 포맷과 round-trip 규칙은 여기서 소유하지 않는다. [`../../custom-extension/extensions/lorebook.md`](../../custom-extension/extensions/lorebook.md)를 본다.
-- lorebook extract/pack workflow와 on-disk layout은 pure domain 범위가 아니다.
-- lorebook과 regex, lua를 엮는 상관관계 그래프는 [`./analyze/README.md`](./analyze/README.md) 이후 문서가 맡는다.
+- `.risulorebook` 표준 파일 포맷 및 왕복 규칙은 이 문서의 소관이 아닙니다. 상세 사항은 [`../../custom-extension/extensions/lorebook.md`](../../custom-extension/extensions/lorebook.md)를 참조하십시오.
+- 로어북 추출/패키징 워크플로우 및 디스크 레이아웃은 순수 도메인 계층의 범위를 벗어납니다.
+- 로어북과 정규식, Lua를 결합한 상관관계 그래프 분석은 [`./analyze/README.md`](./analyze/README.md) 및 하위 문서에서 담당합니다.
 
 ## evidence anchors
 

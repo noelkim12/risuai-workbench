@@ -1,40 +1,40 @@
-# charx domain
+# 캐릭터 도메인 (Charx Domain)
 
-이 문서는 `packages/core/src/domain/charx/`의 순수 card-shaped object helper만 다룬다. PNG, disk, archive parsing은 의도적으로 밖에 둔다.
+이 문서는 `packages/core/src/domain/charx/`에 정의된 순수 카드 형상 객체(Card-shaped Object) 헬퍼만을 다룹니다. PNG 처리, 디스크 입출력, 아카이브 파싱 로직은 의도적으로 제외합니다.
 
-## 이 페이지가 맡는 범위
+## 이 페이지가 담당하는 범위
 
-- charx object에서 이름, lorebook, module lorebook, regex, defaultVariables raw를 읽는 helper
-- root-package compatibility DTO 타입
-- blank character, blank v3 envelope 생성 helper
+- 캐릭터 카드 객체에서 이름, 로어북, 모듈 로어북, 정규식, 기본 변수 원본(Raw) 데이터를 읽는 헬퍼
+- 루트 패키지 호환을 위한 DTO 타입 정의
+- 빈 캐릭터 및 빈 V3 엔벨로프(Envelope) 생성 헬퍼
 
-## current truth
+## 구현 명세 (Current Truth)
 
-- `data.ts`는 `getCharacterName`, `getLorebookEntriesFromCharx`, `getModuleLorebookEntries`, `getAllLorebookEntriesFromCharx`, `getCustomScriptsFromCharx`, `getDefaultVariablesRawFromCharx`를 제공한다.
-- `getCharacterName`은 `data.name`을 우선하고, 없으면 root `name`, 둘 다 없으면 `Unknown`을 돌려준다.
-- lorebook helper는 `character_book.entries`와 `extensions.risuai._moduleLorebook`를 분리해서 읽고, 통합 helper도 따로 둔다.
-- `blank-char.ts`는 upstream 기본값을 채운 blank character와 v3 envelope 생성 helper를 둔다.
+- `data.ts`는 `getCharacterName`, `getLorebookEntriesFromCharx`, `getModuleLorebookEntries`, `getAllLorebookEntriesFromCharx`, `getCustomScriptsFromCharx`, `getDefaultVariablesRawFromCharx` 함수를 제공합니다.
+- `getCharacterName`은 `data.name` 필드를 우선적으로 참조하며, 없을 경우 루트 `name`을, 둘 다 없을 경우 `Unknown`을 반환합니다.
+- 로어북 헬퍼는 `character_book.entries`와 `extensions.risuai._moduleLorebook`를 분리하여 읽으며, 이를 통합하여 읽는 전용 헬퍼를 별도로 제공합니다.
+- `blank-char.ts`는 상위(Upstream) 기본값을 채운 빈 캐릭터 및 V3 엔벨로프 생성 헬퍼를 포함합니다.
 
-## notable exported surface
+## 주요 공개 인터페이스
 
-| 축 | 현재 public 예시 |
+| 구분 | 주요 인터페이스 예시 |
 |---|---|
-| safe read helpers | `getCharxName`, `getCardName`, `getCharacterBookEntries`, `getModuleLorebookEntries`, `getAllLorebookEntries` |
-| regex, variable raw | `getCustomScripts`, `getDefaultVariablesRaw` |
-| types | `CardData`, `CharxData`, `CharxStructure`, `LorebookEntry`, `RegexScript`, `Variable` |
+| 안전한 읽기 헬퍼 | `getCharxName`, `getCardName`, `getCharacterBookEntries`, `getModuleLorebookEntries`, `getAllLorebookEntries` |
+| 정규식 및 변수 원본 | `getCustomScripts`, `getDefaultVariablesRaw` |
+| 주요 타입 | `CardData`, `CharxData`, `CharxStructure`, `LorebookEntry`, `RegexScript`, `Variable` |
 
-## 현재 코드가 고정하는 것
+## 현재 구현 확정 사항
 
-- helper는 object shape read만 한다. decode, unzip, image metadata, PNG text chunk parsing은 하지 않는다.
-- module lorebook은 charx 내부 extension field에 들어와도 별도 helper로 읽는다.
-- defaultVariables는 normalized map이 아니라 raw payload 그대로 반환한다.
-- blank builder는 upstream 기본값과 chara_card_v3 envelope shape를 mirror하려고 한다.
+- 헬퍼는 객체 형상의 읽기 작업만을 수행합니다. 디코딩, 압축 해제, 이미지 메타데이터 처리, PNG 텍스트 청크 파싱은 수행하지 않습니다.
+- 모듈 로어북은 캐릭터 카드 내부의 익스텐션 필드에 위치하더라도 전용 헬퍼를 통해 읽어들입니다.
+- 기본 변수(`defaultVariables`)는 정규화된 맵 형식이 아닌 원본 페이로드(Raw Payload) 그대로를 반환합니다.
+- 빈 카드 생성기(Blank Builder)는 상위 기본값 및 `chara_card_v3` 엔벨로프 형상을 미러링하도록 설계되었습니다.
 
-## scope boundary
+## 범위 명세 (Scope Boundary)
 
-- `.charx` 파일 열기, PNG text chunk decode, card file sniffing, disk I/O는 [`../node/README.md`](../node/README.md)와 node entry 문서가 맡는다.
-- canonical workspace layout과 `character/`, `lorebooks/`, `regex/`, `lua/`, `variables/`, `html/` ownership은 [`../../custom-extension/targets/charx.md`](../../custom-extension/targets/charx.md)를 본다.
-- 이 페이지는 PNG parsing contract를 새로 만들지 않는다.
+- `.charx` 파일 열기, PNG 텍스트 청크 디코딩, 카드 파일 식별(Sniffing), 디스크 I/O는 [`../node/README.md`](../node/README.md) 및 Node 엔트리 문서에서 담당합니다.
+- 표준 워크스페이스 레이아웃 및 `character/`, `lorebooks/`, `regex/`, `lua/`, `variables/`, `html/` 소유권 규칙은 [`../../custom-extension/targets/charx.md`](../../custom-extension/targets/charx.md)를 참조하십시오.
+- 이 페이지는 PNG 파싱 명세를 별도로 정의하지 않습니다.
 
 ## evidence anchors
 

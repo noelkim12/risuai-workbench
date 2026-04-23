@@ -1,21 +1,19 @@
-# root JSON 제거 개요
+# 루트 JSON 제거 방침 개요
 
-이 문서는 복구 호환용 상위 개요다. 현재 활성 규칙은 [`common/root-json-removal.md`](common/root-json-removal.md)에 둔다.
+이 문서는 이전 버전과의 경로 호환성을 위해 유지되는 상위 개요 문서입니다. 현재 적용되는 실제 규칙은 [**공통 원칙: 루트 JSON 제거**](common/root-json-removal.md) 문서를 참조하십시오.
 
-## 왜 이 파일이 남아 있나
+## 문서가 유지되는 이유
 
-- 세션 기록과 notepad에 따르면 한 시점의 active docs는 이 루트 경로를 직접 참조했다.
-- 이후 공통 정책 문서를 `common/` 아래로 정리한 흔적이 있어서, 현재는 `common/root-json-removal.md`를 source of truth로 둔다.
+- **기존 참조 보존**: 과거의 문서들 중 일부가 이 루트 경로를 직접 참조하고 있어, 문서 구조 재편 과정에서 링크 호환성을 유지하기 위해 남겨두었습니다.
+- **정책의 단일화**: 현재 모든 공통 정책은 `common/` 디렉토리 하위로 통합되었으며, `common/root-json-removal.md` 파일이 신뢰 기준(Source of Truth)입니다.
 
-## 현재 읽는 법
+## 문서 참조 시 주의 사항
 
-- canonical-first 원칙, 미편집 필드 정책, pack 재조립 흐름은 `common/root-json-removal.md`를 본다.
-- 이 파일은 옛 링크를 살리고, 문서 구조 복구 과정에서 경로 호환성을 유지하기 위한 entry point다.
-- 따라서 여기서 root JSON를 언급하더라도 active workspace authoring source를 설명하는 문맥이 아니라 legacy or deferred reference 문맥으로 읽어야 한다.
+- **표준 우선 원칙**: 표준 편집 우선(Canonical-first) 원칙, 미편집 필드 보존 정책, 패키징 재조립 흐름은 공통 원칙 문서를 우선적으로 확인하십시오.
+- **용어 정의**: 이 문서에서 루트 JSON을 언급하더라도, 이는 현재의 활성 워크스페이스 소스가 아닌 **레거시 또는 지연된 참조** 문맥으로 이해해야 합니다.
 
-## 현재 구현 메모
+## 현재 구현 관련 메모
 
-- root JSON는 활성 authoring source가 아니다.
-- analyze / compose 쪽에는 T13/T16 defer 범위의 legacy or deferred fallback 설명이 일부 남아 있을 수 있다.
-- archive 문서와 binary output은 예외다.
-- binary output에서 `charx.json` 같은 이름이 보일 수 있어도, 그것은 internal compatibility behavior이지 workspace authoring truth는 아니다.
+- **활성 소스**: 루트 JSON 파일은 더 이상 활성 편집 소스가 아닙니다.
+- **폴백 설명**: 분석 및 구성 분석 도구에는 기술적 지연 사유(T13/T16)로 인해 레거시 폴백에 대한 설명이 일부 남아 있을 수 있습니다.
+- **내부 호환성**: 최종 바이너리 출력물에서 `charx.json`과 같은 명칭이 관찰될 수 있으나, 이는 내부 호환성을 위한 동작일 뿐 워크스페이스 편집의 기준이 되지는 않습니다.

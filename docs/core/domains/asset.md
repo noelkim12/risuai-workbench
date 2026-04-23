@@ -1,39 +1,39 @@
-# asset domain
+# 에셋 도메인 (Asset Domain)
 
-이 문서는 `packages/core/src/domain/asset/asset-uri.ts` 한 파일이 맡는 URI 해석과 mime 확장자 추론만 다룬다.
+이 문서는 `packages/core/src/domain/asset/asset-uri.ts` 파일이 담당하는 URI 해석 및 MIME 확장자 추론 명세만을 다룹니다.
 
-## 이 페이지가 맡는 범위
+## 이 페이지가 담당하는 범위
 
-- asset URI string을 pure data descriptor로 바꾸는 helper
-- mime string에서 파일 확장자를 추정하는 helper
+- 에셋 URI 문자열을 순수 데이터 기술자(Pure Data Descriptor)로 변환하는 헬퍼
+- MIME 문자열로부터 파일 확장자를 추정하는 헬퍼
 
-## current truth
+## 구현 명세 (Current Truth)
 
-- root export는 현재 `resolveAssetUri`, `guessMimeExt`, `AssetDict`, `ResolvedAsset`를 다시 노출한다.
-- `resolveAssetUri`는 `__asset:`, `embeded://`, `embedded://`, `ccdefault:`, `data:...;base64,...`, `http://`, `https://`를 인식한다.
-- return type은 실제 fetch 결과가 아니라 `{ data, type, metadata }` shape다.
-- `data:` URI는 최대 50MB payload guard를 두고, 넘치면 `null`을 돌려준다.
+- 루트 내보내기(Root Export)는 현재 `resolveAssetUri`, `guessMimeExt`, `AssetDict`, `ResolvedAsset`을 노출합니다.
+- `resolveAssetUri`는 `__asset:`, `embeded://`, `embedded://`, `ccdefault:`, `data:...;base64,...`, `http://`, `https://` 형식을 인식합니다.
+- 반환 타입은 실제 가져오기(Fetch) 결과가 아닌 `{ data, type, metadata }` 형상(Shape)을 가집니다.
+- `data:` URI 처리 시 최대 50MB의 페이로드 가드(Payload Guard)를 적용하며, 이를 초과할 경우 `null`을 반환합니다.
 
-## notable exported surface
+## 주요 공개 인터페이스
 
-| 축 | 현재 public 예시 |
+| 구분 | 주요 인터페이스 예시 |
 |---|---|
-| URI resolve | `resolveAssetUri`, `ResolvedAsset` |
-| support dict | `AssetDict` |
-| mime extension | `guessMimeExt` |
+| URI 해석 (Resolve) | `resolveAssetUri`, `ResolvedAsset` |
+| 지원 딕셔너리 | `AssetDict` |
+| MIME 확장자 | `guessMimeExt` |
 
-## 현재 코드가 고정하는 것
+## 현재 구현 확정 사항
 
-- `__asset:`는 asset index lookup으로 해석한다.
-- `embeded://` 오탈자와 `embedded://` 둘 다 같은 embedded path로 받는다.
-- remote URL은 실제 download를 하지 않고 `type: 'remote'`, `metadata.url`만 돌려준다.
-- 알 수 없는 mime은 `.bin`으로 떨어진다.
+- `__asset:` 접두사는 에셋 인덱스 조회(Asset Index Lookup)로 해석합니다.
+- `embeded://` (오탈자 포함)와 `embedded://` 형식을 모두 동일한 내장 경로로 처리합니다.
+- 원격 URL(Remote URL)은 실제 다운로드를 수행하지 않고 `type: 'remote'`, `metadata.url` 정보만을 반환합니다.
+- 식별할 수 없는 MIME 타입은 기본적으로 `.bin` 확장자로 추론합니다.
 
-## scope boundary
+## 범위 명세 (Scope Boundary)
 
-- 이 helper는 파일 저장, asset extraction, manifest assembly를 하지 않는다.
-- remote fetch, cache, filesystem write는 pure domain 범위 밖이다.
-- module asset workspace layout은 [`../../custom-extension/targets/module.md`](../../custom-extension/targets/module.md)와 node/CLI 흐름이 맡는다.
+- 이 헬퍼는 파일 저장, 에셋 추출, 매니페스트 조립(Manifest Assembly) 기능을 수행하지 않습니다.
+- 원격 데이터 가져오기, 캐싱, 파일 시스템 쓰기는 순수 도메인 계층의 범위를 벗어납니다.
+- 모듈 에셋 워크스페이스 레이아웃은 [`../../custom-extension/targets/module.md`](../../custom-extension/targets/module.md) 및 Node/CLI 워크플로우에서 담당합니다.
 
 ## evidence anchors
 

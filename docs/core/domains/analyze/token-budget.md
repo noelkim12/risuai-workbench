@@ -1,45 +1,45 @@
-# token-budget
+# 토큰 예산 분석 (Token Budget)
 
-이 페이지는 `packages/core/src/domain/analyze/token-budget.ts`가 다루는 토큰 예산 analyzer만 설명합니다. CLI 리포트 배치나 HTML 셸 구조는 여기서 다루지 않습니다.
+이 페이지는 `packages/core/src/domain/analyze/token-budget.ts`에 정의된 토큰 예산 분석기(Token Budget Analyzer)의 명세만을 다룹니다. CLI 리포트의 배치 방식이나 HTML 셸 구조는 이 문서의 범위가 아닙니다.
 
-## 현재 public surface
+## 현재 공개 인터페이스
 
-- root browser entry에서 다시 export되는 surface는 `estimateTokens`, `analyzeTokenBudget`, `TokenComponent`, `TokenBudgetResult`, `TokenBudgetWarning`입니다. 근거는 [`../../../../packages/core/src/domain/index.ts`](../../../../packages/core/src/domain/index.ts), [`../../targets/root-browser.md`](../../targets/root-browser.md), [`../../../../packages/core/tests/export-surface.test.ts`](../../../../packages/core/tests/export-surface.test.ts)입니다.
-- 현재 CLI analyze에서는 charx, module, preset workflow가 이 analyzer를 호출합니다. 근거는 [`../../../../packages/core/src/cli/analyze/charx/workflow.ts`](../../../../packages/core/src/cli/analyze/charx/workflow.ts), [`../../../../packages/core/src/cli/analyze/module/workflow.ts`](../../../../packages/core/src/cli/analyze/module/workflow.ts), [`../../../../packages/core/src/cli/analyze/preset/workflow.ts`](../../../../packages/core/src/cli/analyze/preset/workflow.ts)입니다.
+- 루트 브라우저 엔트리에서 재내보내기되는 인터페이스는 `estimateTokens`, `analyzeTokenBudget` 함수와 `TokenComponent`, `TokenBudgetResult`, `TokenBudgetWarning` 타입입니다. 근거는 [`../../../../packages/core/src/domain/index.ts`](../../../../packages/core/src/domain/index.ts), [`../../targets/root-browser.md`](../../targets/root-browser.md), [`../../../../packages/core/tests/export-surface.test.ts`](../../../../packages/core/tests/export-surface.test.ts)입니다.
+- 현재 CLI 분석 과정에서는 캐릭터, 모듈, 프리셋 워크플로우가 이 분석기를 호출합니다. 근거는 [`../../../../packages/core/src/cli/analyze/charx/workflow.ts`](../../../../packages/core/src/cli/analyze/charx/workflow.ts), [`../../../../packages/core/src/cli/analyze/module/workflow.ts`](../../../../packages/core/src/cli/analyze/module/workflow.ts), [`../../../../packages/core/src/cli/analyze/preset/workflow.ts`](../../../../packages/core/src/cli/analyze/preset/workflow.ts)입니다.
 
-## 현재 truth
+## 현재 구현 명세
 
-- `estimateTokens(text)`는 모델 호출 없이 방향성 추정치만 계산합니다.
-- CBS 매크로는 `\{\{...\}\}` 패턴으로 먼저 제거합니다.
-- CJK 문자는 `TOKEN_RATIOS.CJK_CHARS_PER_TOKEN`, 그 외 문자는 `TOKEN_RATIOS.LATIN_CHARS_PER_TOKEN` 비율로 나눠 반올림합니다.
-- `analyzeTokenBudget(components)`는 컴포넌트별 추정치, category 집계, always-active / conditional / worst-case 합계를 함께 반환합니다.
-- 경고는 현재 두 종류뿐입니다. always-active 총량이 `TOKEN_THRESHOLDS.ERROR_ALWAYS_ACTIVE`를 넘으면 `error`, 단일 컴포넌트가 `TOKEN_THRESHOLDS.WARNING_SINGLE_COMPONENT`를 넘으면 `warning`입니다.
+- `estimateTokens(text)` 함수는 실제 모델 호출 없이 정해진 비율에 따른 방향성 추정치만을 계산합니다.
+- CBS 매크로는 `\{\{...\}\}` 패턴을 사용하여 분석 전 단계에서 먼저 제거합니다.
+- CJK(한중일) 문자는 `TOKEN_RATIOS.CJK_CHARS_PER_TOKEN`, 그 외 문자는 `TOKEN_RATIOS.LATIN_CHARS_PER_TOKEN` 비율을 적용하여 나누고 결과값을 반올림합니다.
+- `analyzeTokenBudget(components)` 함수는 컴포넌트별 추정치, 카테고리별 집계, 상시 활성(Always-active)/조건부(Conditional)/최악의 경우(Worst-case) 합산 결과를 반환합니다.
+- 현재 두 종류의 경고를 생성합니다. 상시 활성 토큰 총량이 `TOKEN_THRESHOLDS.ERROR_ALWAYS_ACTIVE`를 초과하면 `error`, 단일 컴포넌트가 `TOKEN_THRESHOLDS.WARNING_SINGLE_COMPONENT`를 초과하면 `warning`으로 판정합니다.
 
 ## 입력과 출력
 
 ### 입력
 
-`TokenComponent`는 아래 필드를 가집니다.
+`TokenComponent`는 다음과 같은 필드로 구성됩니다.
 
-- `category`, `name`, `text`
-- `alwaysActive`, 항상 켜지는 텍스트인지 여부
+- `category`, `name`, `text`: 컴포넌트 메타데이터 및 텍스트 내용
+- `alwaysActive`: 해당 텍스트가 조건 없이 항상 포함되는지 여부
 
 ### 출력
 
-`TokenBudgetResult`는 아래 구조를 고정합니다.
+`TokenBudgetResult`는 다음과 같은 구조를 확정합니다.
 
-- `components`, 컴포넌트별 `estimatedTokens`
-- `byCategory`, category별 count / total / always-active 합계
-- `totals`, `alwaysActiveTokens`, `conditionalTokens`, `worstCaseTokens`
-- `warnings`, `severity`, `message`, optional `component`
+- `components`: 각 컴포넌트별 `estimatedTokens` 추정치
+- `byCategory`: 카테고리별 개수, 합계, 상시 활성 토큰 합계 집계 정보
+- `totals`: `alwaysActiveTokens`, `conditionalTokens`, `worstCaseTokens` 전체 합계
+- `warnings`: `severity`, `message`, 선택적인 대상 `component` 정보
 
-이 페이지는 각 CLI report가 이 값을 어떻게 배치하는지까지는 보장하지 않습니다.
+이 페이지는 개별 CLI 리포트가 위 값들을 시각적으로 배치하는 방식에 대해서는 보장하지 않습니다.
 
 ## 범위 경계
 
-- 이 analyzer는 텍스트 길이 기반 추정만 다룹니다. 실제 모델 tokenizer 정확도는 보장하지 않습니다.
-- lorebook 활성화 확률, prompt chain dependency, dead code 판정은 여기서 다루지 않습니다.
-- threshold 상수의 source of truth는 [`../../../../packages/core/src/domain/analyze/constants.ts`](../../../../packages/core/src/domain/analyze/constants.ts)입니다.
+- 이 분석기는 텍스트 길이에 기반한 추정치만을 다룹니다. 실제 LLM 모델별 토크나이저(Tokenizer)와의 정확한 일치 여부는 보장하지 않습니다.
+- 로어북 활성화 확률, 프롬프트 체인 의존성, 데드 코드 판정은 이 분석기의 소관이 아닙니다.
+- 임계값 상수의 신뢰 기준(Source of Truth)은 [`../../../../packages/core/src/domain/analyze/constants.ts`](../../../../packages/core/src/domain/analyze/constants.ts)입니다.
 
 ## evidence anchors
 

@@ -1,12 +1,12 @@
 # core 문서 인덱스
 
-이 폴더는 `packages/core`의 공개 경계와 하위 subtree를, 필요한 페이지만 읽어도 되도록 나눈 개발 문서다. 문서 truth는 코드와 테스트를 따라가며, 이 폴더는 `packages/core` 문서를 찾는 첫 진입점으로 쓴다.
+이 폴더는 `packages/core`의 공개 경계와 하위 트리를, 필요한 페이지만 발췌하여 읽을 수 있도록 구성한 개발 문서입니다. 문서의 신뢰 기준(Source of Truth)은 코드와 테스트를 따르며, 이 폴더는 `packages/core` 문서를 탐색하는 기본 진입점입니다.
 
 ## 이 문서는 왜 나뉘었나
 
-- `packages/core`는 root browser entry, `./node` subpath, `risu-core` CLI, domain subtree, Node helper subtree가 함께 있어서 한 파일에 다 넣으면 진입 비용이 커진다.
-- 작업 종류에 따라 읽어야 할 근거가 다르다. export 경계 수정은 entry 문서가 먼저고, analyze 의미론은 subtree와 leaf가 먼저다.
-- 공통 문체와 evidence 규칙은 `common/`으로 올리고, entry boundary는 `targets/`, 세부 의미론은 `domains/`와 `node/`로 나눠 두어 leaf 문서가 중복 설명을 줄이게 했다.
+- `packages/core`는 루트 브라우저 엔트리, `./node` 하위 경로, `risu-core` CLI, 도메인 하위 트리, Node 헬퍼 하위 트리가 공존하므로, 한 파일에 모든 내용을 담기에는 진입 비용이 큽니다.
+- 작업 성격에 따라 참조해야 할 근거가 다릅니다. 내보내기(Export) 경계 수정 시에는 엔트리 문서를, 분석 의미론 확인 시에는 하위 트리 및 리프(Leaf) 문서를 우선 참조해야 합니다.
+- 공통 문체와 근거(Evidence) 작성 규칙은 `common/`으로 일원화하고, 엔트리 경계는 `targets/`, 세부 의미론은 `domains/`와 `node/`로 분리하여 중복 설명을 최소화했습니다.
 
 ## 디렉토리 구조
 

@@ -1,73 +1,71 @@
-# charx target
+# 캐릭터 카드 대상 (Charx Target)
 
-`charx`는 lorebook / regex / lua / variable / html를 소유하는 canonical target이다.
+`charx`는 로어북, 정규식, Lua, 변수, HTML 아티팩트를 포함하는 표준 캐릭터 카드 대상 명세입니다.
 
-## canonical layout
+## 표준 워크스페이스 구조 (Canonical Layout)
 
 ```text
-<charx>/
+<캐릭터_루트>/
 ├── character/
-│   ├── description.txt
-│   ├── first_mes.txt
-│   ├── system_prompt.txt
-│   ├── post_history_instructions.txt
-│   ├── creator_notes.txt
-│   ├── additional_text.txt
-│   ├── alternate_greetings.json
-│   └── metadata.json
+│   ├── description.txt (캐릭터 묘사)
+│   ├── first_mes.txt (첫 메시지)
+│   ├── system_prompt.txt (시스템 프롬프트)
+│   ├── post_history_instructions.txt (대화 로그 후속 지침)
+│   ├── creator_notes.txt (제작자 노트)
+│   ├── additional_text.txt (추가 텍스트)
+│   ├── alternate_greetings.json (대체 인사말)
+│   └── metadata.json (구조화 메타데이터)
 ├── lorebooks/
-│   ├── _order.json
-│   └── <folder...>/<entry>.risulorebook
+│   ├── _order.json (로어북 정렬 순서)
+│   └── <폴더...>/<엔트리>.risulorebook
 ├── regex/
-│   ├── _order.json
+│   ├── _order.json (정규식 정렬 순서)
 │   └── *.risuregex
 ├── lua/
-│   └── <target-name>.risulua
+│   └── <대상_이름>.risulua (대상 이름 기반 싱글톤)
 ├── variables/
-│   └── <target-name>.risuvar
+│   └── <대상_이름>.risuvar (대상 이름 기반 싱글톤)
 └── html/
-    └── background.risuhtml
+    └── background.risuhtml (고정파일명)
 ```
 
-- `character/`는 charx pack이 직접 읽는 실제 payload subtree다.
-- `lua/`와 `variables/` 파일명은 임의 placeholder가 아니라 character metadata의 `name`을 sanitize한 target-name 기반 규칙을 따른다.
-- `html/background.risuhtml`만 fixed filename이다.
+- **핵심 데이터**: `character/` 디렉토리는 패키징 시 직접 참조되는 실제 페이로드(Payload) 하위 트리입니다.
+- **파일명 규칙**: `lua/` 및 `variables/` 디렉토리 내의 파일명은 임의의 이름이 아닌, 캐릭터 메타데이터의 `name` 필드를 정제(Sanitize)한 '대상 이름' 규칙을 따릅니다.
+- **고정 파일**: `html/background.risuhtml`은 예외적으로 파일명이 고정되어 있습니다.
 
-## artifact ownership
+## 아티팩트 소유권 및 매핑 명세
 
-| artifact | upstream field |
+| 아티팩트 종류 | 매핑되는 상위(Upstream) 필드 |
 |---|---|
-| character payload files | `data.description`, `data.first_mes`, `data.system_prompt`, `data.post_history_instructions`, `data.creator_notes`, `data.extensions.risuai.additionalText`, `data.alternate_greetings` |
-| character metadata | `data.name`, `data.creator`, `data.character_version`, `data.creation_date`, `data.modification_date`, `data.extensions.risuai.utilityBot`, `data.extensions.risuai.lowLevelAccess` |
-| lorebook | `char_book` + lorebook 관련 extension field |
-| regex | `extensions.risuai.customScripts` |
-| lua | `triggerscript` |
-| variable | `extensions.risuai.defaultVariables` |
-| html | `extensions.risuai.backgroundHTML` |
+| 캐릭터 페이로드 파일 | `data` 하위의 `description`, `first_mes`, `system_prompt`, `post_history_instructions`, `creator_notes`, `extensions.risuai.additionalText`, `alternate_greetings` |
+| 캐릭터 메타데이터 | `data` 하위의 `name`, `creator`, `character_version`, `creation_date`, `modification_date`, `extensions.risuai.utilityBot`, `extensions.risuai.lowLevelAccess` |
+| 로어북 | `char_book` 및 로어북 관련 확장(Extension) 필드 전체 |
+| 정규식 | `extensions.risuai.customScripts` 필드 |
+| Lua | `triggerscript` 필드 |
+| 변수 설정 | `extensions.risuai.defaultVariables` 필드 |
+| HTML | `extensions.risuai.backgroundHTML` 필드 |
 
-`character/metadata.json`은 구조화 메타데이터 surface이고, `character/*.txt` 및 `character/alternate_greetings.json`은 payload artifact surface다. 둘을 같은 계층에 두더라도 pack에서 맡는 역할은 다르다.
+> **참고**: `character/metadata.json`은 구조화된 메타데이터 편집을 위한 인터페이스이며, `character/*.txt` 파일들은 실제 데이터 페이로드 인터페이스입니다. 두 부류의 파일은 동일 계층에 위치하더라도 패키징 시의 역할은 엄격히 분리됩니다.
 
-## metadata 메모
+## 메타데이터 관리 원칙
 
-payload가 아닌 구조화 메타데이터는 `character/metadata.json`이나 별도 structured surface가 소유한다. charx pack이 현재 읽는 메타데이터 필드는 아래와 같다.
+데이터 페이로드가 아닌 구조화된 메타데이터는 `character/metadata.json` 또는 지정된 별도 인터페이스에서 소유합니다. 캐릭터 카드 패키징 시 참조하는 주요 메타데이터 필드는 다음과 같습니다.
 
-### string fields
+### 문자열 필드
+- `name` (캐릭터 이름)
+- `creator` (제작자)
+- `character_version` (캐릭터 버전)
+- `creation_date` (생성일)
+- `modification_date` (수정일)
 
-- `name`
-- `creator`
-- `character_version`
-- `creation_date`
-- `modification_date`
+### 불리언(Boolean) 필드
+- `utilityBot` (유틸리티 봇 여부)
+- `lowLevelAccess` (저수준 접근 허용 여부)
 
-### boolean fields
+위 항목들은 로어북이나 정규식 같은 데이터 페이로드 영역이 아닌 구조화 메타데이터 영역에서 설명되어야 합니다. 캐릭터 카드는 `.risutoggle` 아티팩트를 지원하지 않으므로 토글 소유권을 이 대상으로 확장해서는 안 됩니다.
 
-- `utilityBot`
-- `lowLevelAccess`
+## 루트 JSON 제거 및 호환성 방침
 
-이 항목들은 lorebook/regex/lua 같은 payload surface가 아니라 구조화 메타데이터 쪽에서 설명해야 한다. charx는 `.risutoggle`을 읽지 않으므로 toggle ownership을 여기로 확장하면 안 된다.
-
-## root JSON 제거 메모
-
-- 활성 authoring source는 `charx.json`이 아니다.
-- 다만 T16 defer 범위 때문에 analyze/legacy 설명 문맥에서는 `charx.json` fallback을 archive / deferred note로만 언급할 수 있다.
-- pack은 canonical artifacts와 defaults overlay를 기준으로 재조립한다.
+- **편집 인터페이스**: 현재 유효한 편집 소스는 `charx.json`이 아닙니다.
+- **지연된 범위**: 분석이나 레거시 호환성 설명 문맥에서만 `charx.json` 폴백(Fallback)을 아카이브 또는 지연된 메모로 언급할 수 있습니다.
+- **재조립 규칙**: 패키징 워크플로우는 워크스페이스 내의 표준 아티팩트와 기본값 오버레이를 기준으로 캐릭터 카드를 최종 재조립합니다.

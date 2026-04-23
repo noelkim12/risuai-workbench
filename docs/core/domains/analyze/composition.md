@@ -1,43 +1,43 @@
-# composition
+# 구성 분석 (Composition)
 
-이 페이지는 여러 아티팩트를 한 번에 비교하는 composition analyzer만 설명합니다.
+이 페이지는 여러 아티팩트를 통합 비교하는 구성 분석기(Composition Analyzer)의 명세만을 다룹니다.
 
-## 현재 public surface
+## 현재 공개 인터페이스
 
-- root browser entry에서 다시 export되는 surface는 `analyzeComposition`과 `ArtifactInput`, `CompositionInput`, `CompositionResult`, `CompositionConflict`, `CompositionConflictType`입니다.
+- 루트 브라우저 엔트리에서 재내보내기되는 인터페이스는 `analyzeComposition` 함수와 `ArtifactInput`, `CompositionInput`, `CompositionResult`, `CompositionConflict`, `CompositionConflictType` 타입입니다.
 - 근거는 [`../../../../packages/core/src/domain/index.ts`](../../../../packages/core/src/domain/index.ts), [`../../targets/root-browser.md`](../../targets/root-browser.md), [`../../../../packages/core/tests/export-surface.test.ts`](../../../../packages/core/tests/export-surface.test.ts)입니다.
 
-## 현재 truth
+## 현재 구현 명세
 
-- 입력은 optional `charx`, `modules[]`, optional `preset`입니다.
-- analyzer는 모든 artifact의 `elements`와 `defaultVariables`를 합쳐 `mergedVariableFlow`를 만든 뒤, 조합 충돌을 별도로 수집합니다.
-- 현재 충돌 타입은 여섯 가지입니다.
-  - `variable-name-collision`, 서로 다른 artifact가 같은 변수에 다른 default를 쓰는 경우
-  - `variable-overwrite-race`, merged flow에서 여러 artifact writer가 같은 변수를 덮는 경우
-  - `regex-order-conflict`, 같은 `in` pattern이 여러 artifact에 있는 경우
-  - `lorebook-keyword-collision`, 같은 lorebook keyword가 여러 artifact에 있는 경우
-  - `namespace-missing`, module이 namespace 없이 global variable을 write하는 경우
-  - `cbs-function-deprecation`, 타입은 정의돼 있지만 현재 구현에서 생성하지 않음
-- `compatibilityScore`는 100에서 `error * 20`, `warning * 5`, `info * 1`을 뺀 뒤 0 아래로 내려가지 않게 clamp합니다.
+- 입력으로 선택적인 `charx`, `modules[]`, `preset`을 받습니다.
+- 분석기는 모든 아티팩트의 요소(Elements)와 기본 변수(Default Variables)를 병합하여 `mergedVariableFlow`를 생성한 후, 조합 과정에서의 충돌 사항을 별도로 수집합니다.
+- 현재 감지하는 충돌 타입은 다음과 같습니다.
+  - `variable-name-collision`: 서로 다른 아티팩트가 동일한 변수에 서로 다른 기본값을 정의한 경우
+  - `variable-overwrite-race`: 병합된 흐름에서 여러 아티팩트의 작성자(Writer)가 동일한 변수를 덮어쓰는 경우
+  - `regex-order-conflict`: 동일한 `in` 패턴이 여러 아티팩트에서 발견되는 경우
+  - `lorebook-keyword-collision`: 동일한 로어북 키워드가 여러 아티팩트에서 발견되는 경우
+  - `namespace-missing`: 모듈이 네임스페이스(Namespace) 지정 없이 전역 변수를 작성하는 경우
+  - `cbs-function-deprecation`: 타입은 정의되어 있으나 현재 구현에서 생성하지 않는 경우
+- `compatibilityScore`는 100점 만점에서 `error * 20`, `warning * 5`, `info * 1` 점을 차감하며, 0점 미만으로 내려가지 않도록 제한(Clamp)합니다.
 
 ## 입력과 출력
 
-- `ArtifactInput`은 artifact 이름, 타입, `elements`, `defaultVariables`를 기본으로 가집니다.
-- lorebook collision 계산에는 optional `lorebookKeywords`를 씁니다.
-- regex collision 계산에는 optional `regexPatterns`를 씁니다.
-- namespace 경고는 module artifact의 optional `namespace`를 봅니다.
-- 결과 `CompositionResult`는 artifact 요약, `conflicts[]`, `mergedVariableFlow`, `summary`를 반환합니다.
+- `ArtifactInput`은 아티팩트 이름, 타입, 요소 리스트, 기본 변수 맵을 포함합니다.
+- 로어북 충돌 계산에는 선택적인 `lorebookKeywords` 필드를 사용합니다.
+- 정규식 충돌 계산에는 선택적인 `regexPatterns` 필드를 사용합니다.
+- 네임스페이스 경고는 모듈 아티팩트의 선택적인 `namespace` 필드를 참조합니다.
+- 최종 결과물인 `CompositionResult`는 아티팩트 요약, 충돌 목록(`conflicts[]`), 병합된 변수 흐름(`mergedVariableFlow`), 요약 정보(`summary`)를 반환합니다.
 
-## CLI와의 현재 연결
+## CLI와의 연결
 
-- compose는 analyze CLI에서 auto-detect 대상이 아닙니다. `--type compose`로 명시해야 합니다.
-- compose workflow는 markdown, html, data.js 산출물을 만듭니다. 이 페이지는 그 산출물의 레이아웃이 아니라 analyzer contract만 다룹니다.
+- `compose` 명령어는 분석 CLI에서 자동 감지 대상이 아닙니다. 반드시 `--type compose` 옵션으로 명시해야 합니다.
+- 구성 분석 워크플로우는 Markdown, HTML, `data.js` 형태의 산출물을 생성합니다. 이 페이지는 산출물의 레이아웃이 아닌 분석기 명세(Contract)만을 다룹니다.
 - 근거는 [`../../../../packages/core/src/cli/analyze/workflow.ts`](../../../../packages/core/src/cli/analyze/workflow.ts), [`../../../../packages/core/tests/composition-analysis.test.ts`](../../../../packages/core/tests/composition-analysis.test.ts)입니다.
 
 ## 범위 경계
 
-- 개별 artifact 내부의 CBS 흐름 자체는 [`./variable-flow.md`](./variable-flow.md) 범위입니다.
-- lorebook, regex, lua 간 pair correlation 계산은 [`./correlation.md`](./correlation.md) 범위입니다.
+- 개별 아티팩트 내부의 CBS 흐름 분석은 [`./variable-flow.md`](./variable-flow.md)의 영역입니다.
+- 로어북, 정규식, Lua 간의 쌍별 상관관계(Pair Correlation) 계산은 [`./correlation.md`](./correlation.md)의 영역입니다.
 
 ## evidence anchors
 

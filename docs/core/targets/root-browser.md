@@ -1,44 +1,45 @@
-# root browser entry
+# 루트 브라우저 엔트리 (Root Browser Entry)
 
-이 문서는 `risu-workbench-core` root import의 현재 보장 범위와 라우팅만 다룬다. 개별 domain leaf 의미론은 여기서 늘리지 않는다.
+이 문서는 `risu-workbench-core` 루트 임포트(Import)의 현재 보장 범위와 라우팅만을 다룹니다. 개별 도메인 리프(Leaf)의 상세 의미론은 이 문서에서 다루지 않습니다.
 
-## 현재 계약
+## 현재 명세
 
-- `packages/core/package.json`의 `exports["."]`는 `./dist/index.js`다.
-- `packages/core/src/index.ts`는 현재 `./domain`만 다시 export한다.
-- 따라서 root entry는 browser-safe public surface로 읽는다.
-- `packages/core/tests/root-entry-contract.test.ts`는 pure domain export가 존재하고 `parseCardFile`, `ensureDir`, `writeJson`, `writeBinary`, `parsePngTextChunks` 같은 Node helper가 root에 나오지 않는다는 점을 고정한다.
-- `packages/core/tests/export-surface.test.ts`는 root entry의 실제 exported key set snapshot을 고정한다.
+- `packages/core/package.json`의 `exports["."]`는 `./dist/index.js`를 가리킵니다.
+- `packages/core/src/index.ts`는 현재 `./domain`만을 다시 내보냅니다(Re-export).
+- 따라서 루트 엔트리는 브라우저 환경에서 안전하게 사용할 수 있는 공개 인터페이스(Public Surface)로 정의합니다.
+- `packages/core/tests/root-entry-contract.test.ts`는 순수 도메인 내보내기가 존재하며, `parseCardFile`, `ensureDir`, `writeJson`, `writeBinary`, `parsePngTextChunks`와 같은 Node.js 전용 헬퍼가 루트에 노출되지 않음을 보증합니다.
+- `packages/core/tests/export-surface.test.ts`는 루트 엔트리의 실제 내보내기 키 집합 스냅샷을 확정합니다.
 
-## routing
+## 라우팅 (Routing)
 
 ```text
-consumer import 'risu-workbench-core'
+소비자 임포트 'risu-workbench-core'
   -> package.json exports["."]
   -> dist/index.js
   -> src/index.ts
   -> src/domain/index.ts
-  -> 각 domain leaf module
+  -> 각 도메인 리프 모듈
 ```
 
-문서에서 root entry를 설명할 때는 이 경로를 기본 라우팅으로 쓴다.
+문서에서 루트 엔트리를 설명할 때는 위 경로를 기본 라우팅으로 사용합니다.
 
-## 이 entry가 보장하는 것
+## 이 엔트리가 보장하는 사항
 
-- 순수 domain helper와 타입 중심 public surface
-- 브라우저 안전 import 경계
-- analyze 관련 helper를 포함한 domain barrel 재export
+- 순수 도메인 헬퍼 및 타입 중심의 공개 인터페이스
+- 브라우저 환경에서 안전한 임포트 경계
+- 분석(Analyze) 관련 헬퍼를 포함한 도메인 배럴(Barrel) 재내보내기
 
-현재 `src/domain/index.ts`에는 CBS, custom-extension, lorebook, regex, analyze, asset, charx/module/preset helper가 함께 모여 있다. 다만 이 페이지는 "무엇이 root로 다시 export되는가"까지만 다루고, 각 helper의 세부 의미론은 각 subtree 문서로 넘긴다.
+현재 `src/domain/index.ts`에는 CBS, 커스텀 익스텐션, 로어북, 정규식, 분석, 에셋, 캐릭터/모듈/프리셋 헬퍼가 집약되어 있습니다. 다만, 이 페이지는 "무엇이 루트로 재내보내기되는가"에 집중하며, 각 헬퍼의 상세 의미론은 해당 하위 트리 문서에서 다룹니다.
 
-## 이 entry가 보장하지 않는 것
+## 이 엔트리가 보장하지 않는 사항
 
-- filesystem I/O helper
-- PNG/card parsing helper
-- custom-extension workspace discovery의 Node runtime 동작
+- 파일 시스템 I/O 헬퍼
+- PNG/카드 파싱 헬퍼
+- 커스텀 익스텐션 워크스페이스 탐색의 Node.js 런타임 동작
 - CLI 서브커맨드 동작
 
-이런 내용은 [`node-entry`](node-entry.md)나 [`../node/README.md`](../node/README.md)로 보낸다.
+위 내용은 [`node-entry`](node-entry.md) 또는 [`../node/README.md`](../node/README.md)를 참조하십시오.
+
 
 ## 언제 이 페이지를 먼저 읽나
 

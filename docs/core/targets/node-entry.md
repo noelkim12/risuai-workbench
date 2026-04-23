@@ -1,46 +1,46 @@
-# node entry
+# Node 엔트리 (Node Entry)
 
-이 문서는 `risu-workbench-core/node` subpath의 현재 보장 범위와 라우팅만 다룬다. Node helper 내부 의미론은 leaf 문서에서 풀고, 여기서는 public entry boundary만 고정한다.
+이 문서는 `risu-workbench-core/node` 하위 경로의 현재 보장 범위와 라우팅만을 다룹니다. Node.js 헬퍼 내부의 상세 의미론은 리프 문서에서 다루며, 여기서는 공개 엔트리 경계만을 확정합니다.
 
-## 현재 계약
+## 현재 명세
 
-- `packages/core/package.json`의 `exports["./node"]`는 `./dist/node/index.js`다.
-- public import 경로는 `risu-workbench-core/node`다.
-- `packages/core/src/node/index.ts`는 Node 전용 helper를 묶어 다시 export한다.
-- `packages/core/tests/node-entry.test.ts`는 subpath export 선언과 built node entry의 대표 helper 노출을 검증한다.
-- `packages/core/tests/export-surface.test.ts`는 node entry의 실제 exported key set snapshot을 고정한다.
-- `packages/core/tests/domain-node-structure.test.ts`는 `parseCardFile`, `parseCharxFile`, `ensureDir` 같은 helper가 node entry에 있고 domain entry에는 없다는 점을 같이 검증한다.
+- `packages/core/package.json`의 `exports["./node"]`는 `./dist/node/index.js`를 가리킵니다.
+- 공개 임포트 경로는 `risu-workbench-core/node`입니다.
+- `packages/core/src/node/index.ts`는 Node.js 전용 헬퍼를 집약하여 다시 내보냅니다(Re-export).
+- `packages/core/tests/node-entry.test.ts`는 하위 경로 내보내기 선언과 빌드된 Node 엔트리에서 `stripPngTextChunks`가 노출되는지 검증합니다.
+- `packages/core/tests/export-surface.test.ts`는 Node 엔트리의 실제 내보내기 키 집합 스냅샷을 확정합니다.
+- `packages/core/tests/domain-node-structure.test.ts`는 `parseCardFile`, `parseCharxFile`, `ensureDir`와 같은 헬퍼가 Node 엔트리에만 존재하고 도메인 엔트리에는 노출되지 않음을 검증합니다.
 
-## routing
+## 라우팅 (Routing)
 
 ```text
-consumer import 'risu-workbench-core/node'
+소비자 임포트 'risu-workbench-core/node'
   -> package.json exports["./node"]
   -> dist/node/index.js
   -> src/node/index.ts
-  -> 각 Node adapter module
+  -> 각 Node 어댑터 모듈
 ```
 
-CLI는 별도 경로다. `risu-core` 바이너리는 `src/cli/main.ts`로 들어가며, `./node` subpath를 그대로 대신하지 않는다. CLI 경계는 [`cli.md`](cli.md)에서 따로 다룬다.
+CLI는 별도의 경로를 사용합니다. `risu-core` 바이너리는 `src/cli/main.ts`를 진입점으로 하며, `./node` 하위 경로를 대체하지 않습니다. CLI 경계는 [`cli.md`](cli.md)에서 별도로 다룹니다.
 
-## 이 entry가 보장하는 것
+## 이 엔트리가 보장하는 사항
 
-- filesystem helper access
-- PNG/card parsing helper access
-- lorebook/json listing helper access
-- rpack encode helper access
-- custom-extension workspace discovery helper access
+- 파일 시스템 헬퍼 접근 권한 제공
+- PNG/카드 파싱 헬퍼 API 제공
+- 로어북/JSON 리스팅 헬퍼 API 제공
+- rpack 인코딩 헬퍼 API 제공
+- 커스텀 익스텐션 워크스페이스 탐색 헬퍼 API 제공
 
-현재 export 묶음의 자세한 목록은 [`../node/README.md`](../node/README.md)에 정리한다.
+현재 내보내기 목록의 상세 리스트는 [`../node/README.md`](../node/README.md)에서 확인할 수 있습니다.
 
-## 이 entry가 보장하지 않는 것
+## 이 엔트리가 보장하지 않는 사항
 
-- browser-safe import surface
-- pure domain helper의 전체 의미론 설명
-- CLI command dispatch와 help text contract
-- analyze workflow의 세부 라우팅 규칙
+- 브라우저 환경에서의 안전한 임포트 인터페이스
+- 순수 도메인 헬퍼의 상세 의미론 설명
+- CLI 명령어 디스패치 및 도움말 텍스트 명세
+- 분석(Analyze) 워크플로우의 상세 라우팅 규칙
 
-그 내용은 [`root-browser`](root-browser.md), [`../domains/analyze/README.md`](../domains/analyze/README.md), `packages/core/src/cli/main.ts`, `packages/core/src/cli/analyze/workflow.ts`에서 다룬다.
+위 내용은 [`root-browser`](root-browser.md), [`../domains/analyze/README.md`](../domains/analyze/README.md), `packages/core/src/cli/main.ts`, `packages/core/src/cli/analyze/workflow.ts`를 참조하십시오.
 
 ## 언제 이 페이지를 먼저 읽나
 

@@ -1,44 +1,44 @@
-# cbs domain
+# CBS 도메인 (CBS Domain)
 
-이 문서는 `packages/core/src/domain/cbs/`가 맡는 순수 CBS parsing, AST, builtin metadata 범위만 다룬다.
+이 문서는 `packages/core/src/domain/cbs/`가 담당하는 순수 CBS 파싱(Parsing), AST(Abstract Syntax Tree), 내장 함수 메타데이터 범위를 다룹니다.
 
-## 이 페이지가 맡는 범위
+## 이 페이지가 담당하는 범위
 
-- root browser entry를 통해 노출되는 CBS 순수 도메인 surface
-- CBS text를 token, AST, diagnostic으로 읽는 parser 계층
-- builtin registry와 hover용 문서화 helper
-- CBS 변수 read/write occurrence 추출
+- 루트 브라우저 엔트리를 통해 노출되는 CBS 순수 도메인 인터페이스
+- CBS 텍스트를 토큰, AST, 진단(Diagnostic) 정보로 해석하는 파서(Parser) 계층
+- 내장 함수 레지스트리(Builtin Registry) 및 호버(Hover)용 문서화 헬퍼
+- CBS 변수의 읽기/쓰기 발생 내역(Occurrence) 추출
 
-## current truth
+## 구현 명세 (Current Truth)
 
-- `packages/core/src/domain/cbs/index.ts`는 `cbs.ts`, parser 하위 모듈, builtin registry, documentation helper를 한 번에 다시 export한다.
-- `cbs.ts`의 현재 public 핵심은 `extractCBSVariableOccurrences`, `extractCBSVarOps`, `CBSVariableOccurrence`, `CBSVarOps`다.
-- parser surface의 중심은 `CBSParser`와 AST/token/visitor 타입이다.
-- builtin surface는 `CBSBuiltinRegistry`와 builtin metadata source of truth다. `docOnly`, alias, deprecated replacement, category, argument metadata까지 registry가 들고 있다.
-- `documentation.ts`는 registry metadata에서 signature와 hover markdown을 만든다. 예시 본문은 아직 TODO 상태다.
+- `packages/core/src/domain/cbs/index.ts`는 `cbs.ts`, 파서 하위 모듈, 내장 함수 레지스트리, 문서화 헬퍼를 통합하여 재내보내기합니다.
+- `cbs.ts`의 주요 공개 기능은 `extractCBSVariableOccurrences`, `extractCBSVarOps`, `CBSVariableOccurrence`, `CBSVarOps`입니다.
+- 파서 인터페이스의 중심은 `CBSParser` 클래스와 AST/토큰/비지터(Visitor) 타입 정의입니다.
+- 내장 함수 인터페이스는 `CBSBuiltinRegistry`와 내장 함수 메타데이터 신뢰 기준(Source of Truth)을 포함합니다. 레지스트리는 `docOnly` 여부, 별칭, 지원 중단에 따른 대체 함수, 카테고리, 인자 메타데이터 정보를 관리합니다.
+- `documentation.ts`는 레지스트리 메타데이터로부터 시그니처 및 호버용 Markdown 내용을 생성합니다.
 
-## notable exported surface
+## 주요 공개 인터페이스
 
-| 축 | 현재 public 예시 |
+| 구분 | 주요 인터페이스 예시 |
 |---|---|
-| 변수 occurrence | `extractCBSVariableOccurrences`, `extractCBSVarOps` |
-| parser | `CBSParser`, token/AST/parser/visitor export |
-| builtin registry | `CBSBuiltinRegistry`, builtin metadata helper |
-| documentation helper | `generateDocumentation`, `formatHoverContent` |
+| 변수 발생 내역 | `extractCBSVariableOccurrences`, `extractCBSVarOps` |
+| 파서 (Parser) | `CBSParser`, 토큰/AST/파서/비지터 내보내기 |
+| 내장 함수 레지스트리 | `CBSBuiltinRegistry`, 내장 함수 메타데이터 헬퍼 |
+| 문서화 헬퍼 | `generateDocumentation`, `formatHoverContent` |
 
-## 현재 코드가 고정하는 것
+## 현재 구현 확정 사항
 
-- `extractCBSVariableOccurrences`는 `getvar`, `setvar`, `addvar`, `setdefaultvar`만 추적한다.
-- 정적 plain text key만 occurrence로 인정한다. 동적 key는 건너뛴다.
-- parser가 실패하면 regex fallback으로 valid occurrence recovery를 시도한다.
-- `CBSParser`는 nested macro, `#when`, `#each`, `#func`, pure-mode block, deprecated block spelling을 AST에서 보존한다.
-- builtin registry는 case-insensitive lookup, alias lookup, printable-name normalization, `docOnly` 분류를 같이 제공한다.
+- `extractCBSVariableOccurrences`는 `getvar`, `setvar`, `addvar`, `setdefaultvar`만을 추적합니다.
+- 정적 평문 키(Static Plain Text Key)만을 발생 내역으로 인정하며, 동적 키 접근은 분석 대상에서 제외합니다.
+- 파싱 실패 시, 정규식 폴백(Regex Fallback)을 통해 유효한 발생 내역의 복구를 시도합니다.
+- `CBSParser`는 중첩된 매크로, `#when`, `#each`, `#func`, 순수 모드(Pure-mode) 블록, 지원 중단된 블록 표기법을 AST 수준에서 보존합니다.
+- 내장 함수 레지스트리는 대소문자 구분 없는 조회, 별칭 조회, 출력 이름 정규화, `docOnly` 분류 기능을 제공합니다.
 
-## scope boundary
+## 범위 명세 (Scope Boundary)
 
-- 이 페이지는 CBS를 어디서 읽는지, 즉 lorebook/regex/prompt/html/lua 파일별 fragment routing은 자세히 다루지 않는다. 그 경계는 [`./custom-extension.md`](./custom-extension.md)와 각 artifact 문서로 보낸다.
-- LSP provider, completion, hover payload shape는 `packages/core` 범위가 아니다.
-- analyze 상관관계 그래프에서 CBS를 어떻게 소비하는지는 [`./analyze/README.md`](./analyze/README.md) 이후 문서가 맡는다.
+- 이 페이지는 CBS 구문을 어디서 읽어들이는지(로어북/정규식/프롬프트 등 파일별 조각 라우팅)에 대해서는 상세히 다루지 않습니다. 해당 경계는 [`./custom-extension.md`](./custom-extension.md) 및 각 아티팩트 문서에서 정의합니다.
+- LSP 프로바이더, 코드 완성(Completion), 호버 페이로드 형상은 `packages/core`의 범위를 벗어납니다.
+- 분석 상관관계 그래프에서 CBS가 소비되는 방식은 [`./analyze/README.md`](./analyze/README.md) 및 하위 문서에서 담당합니다.
 
 ## evidence anchors
 

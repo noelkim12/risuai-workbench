@@ -1,72 +1,60 @@
-# root JSON 제거와 canonical-first 원칙
+# 루트 JSON 제거 및 표준 우선 원칙
 
-이 문서는 `charx.json`, `module.json`, `preset.json` 같은 root JSON sidecar를 canonical emitted and authoring workspace surface로 보지 않는 현재 방침을 정리한다.
+이 문서는 `charx.json`, `module.json`, `preset.json`과 같은 루트 JSON 파일을 표준 편집 워크스페이스의 구성 요소로 인정하지 않는 현재의 운영 방침을 정의합니다.
 
 ## 핵심 원칙
 
-- 활성 authoring surface는 root JSON이 아니라 canonical `.risu*` 파일 + `metadata.json`이다.
-- root JSON 언급이 문서에 남아 있더라도, 그것이 곧 현재 표준을 뜻하지는 않는다. 남아 있다면 legacy, deferred, archive, 경로 호환 맥락을 붙인다.
-- archive 문서, 테스트 fixture, binary serialization은 예외가 될 수 있지만, 활성 문서는 canonical-first를 기본으로 설명해야 한다.
+- **표준 인터페이스**: 활성 편집 인터페이스는 루트 JSON이 아닌, 표준 `.risu*` 아티팩트 파일과 `metadata.json`의 조합입니다.
+- **용어 정의**: 문서 내에 루트 JSON에 대한 언급이 남아 있더라도, 이는 현재의 표준을 의미하지 않습니다. 해당 언급은 반드시 **레거시(Legacy)**, **지연(Deferred)**, **아카이브(Archive)** 또는 **경로 호환성** 문맥으로 해석되어야 합니다.
+- **기술 기준**: 아카이브 문서, 테스트 픽스처(Fixture), 바이너리 직렬화 과정은 예외일 수 있으나, 모든 활성 가이드 문서는 **표준 우선(Canonical-first)** 원칙을 기반으로 작성되어야 합니다.
 
 ## 현재 구현 상태
 
-| 영역 | 현재 상태 |
-|---|---|
-| extract / pack canonical authoring | canonical-first |
-| analyze runtime detection | canonical-first가 기본이지만 T16 defer 범위의 legacy or deferred fallback 설명이 일부 남아 있음 |
-| archive 문서 | root JSON 자유롭게 언급 가능 |
-| binary output (`.charx`, `.risum`) | 내부 직렬화로 `charx.json` 같은 엔트리를 쓸 수 있지만 workspace authoring source는 아님 |
+| 영역 | 현재 상태 | 비고 |
+|---|---|---|
+| 추출/패키징 표준 편집 | **표준 우선** | `.risu*` 파일 및 메타데이터 중심 |
+| 분석 런타임 탐색 | **표준 우선 (기본)** | 기술적 사유(T16)로 레거시 폴백 설명이 일부 잔존함 |
+| 아카이브 문서 | 제한 없음 | 자유로운 루트 JSON 언급 가능 |
+| 바이너리 출력물 (`.charx`, `.risum`) | 내부 호환성 유지 | 최종 직렬화 시 내부 엔트리로 활용될 수 있으나 편집 소스는 아님 |
 
-<a id="2-미편집-필드-정책"></a>
-## 2. 미편집 필드 정책
+## 미편집 필드 보존 정책
 
-- canonical workspace는 사용자가 직접 authoring 하는 표면만 소유한다.
-- 미편집 필드는 extract 시 별도 `.risu*` surface로 내리지 않을 수 있다.
-- 이 경우 pack 단계는 upstream default/template overlay와 metadata를 이용해 필요한 필드를 다시 구성한다.
-- 따라서 canonical에 안 보이는 필드가 곧 누락 버그라는 뜻은 아니다. 문서에서 intentional unedited인지 design bug인지 먼저 구분해야 한다.
+- **편집 권한의 집중**: 표준 워크스페이스는 사용자가 워크벤치에서 직접 편집하는 인터페이스만을 소유합니다.
+- **필드 전개 제한**: 편집이 불필요한 필드는 추출 시 별도의 `.risu*` 파일로 생성되지 않을 수 있습니다.
+- **재구성 흐름**: 이 경우 패키징 단계에서 상위 기본값(Upstream Default), 템플릿 오버레이 및 메타데이터 정보를 활용하여 필요한 필드 전체를 다시 구성합니다.
+- **데이터 유실 판정**: 따라서 워크스페이스에서 특정 필드가 보이지 않는다고 해서 이를 곧바로 데이터 유실 버그로 판단해서는 안 됩니다. 해당 차이가 '의도적인 미편집(Intentional unedited)'인지 '설계상의 버그(Design bug)'인지 우선 확인하십시오.
 
-### 이 정책이 필요한 이유
+### 정책 도입 배경
+- **신뢰 기준 일원화**: 루트 JSON을 병행 유지할 경우 표준 아티팩트 파일과의 이중 신뢰 기준(Double source of truth) 문제가 발생합니다.
+- **검증 단순화**: 편집 가능한 페이로드와 런타임 전용/파생 필드를 분리함으로써 왕복 변환 검증의 복잡도를 낮춥니다.
+- **테스트 예측 가능성**: 테스트 결과 및 차이점(Diff) 분류의 일관성을 확보할 수 있습니다.
 
-- root JSON를 그대로 남겨두면 canonical `.risu*` surface와 이중 source of truth가 생긴다.
-- workbench가 주로 편집하는 payload와 upstream runtime-only/derived field를 분리해야 round-trip 검증이 단순해진다.
-- 테스트와 diff 분류가 예측 가능해진다.
+## 패키징 재조립 워크플로우
 
-<a id="pack-재조립-흐름"></a>
-## pack 재조립 흐름
-
-pack은 대략 아래 순서로 생각한다.
+패키징 엔진은 대략 다음과 같은 순서로 최종 결과물을 조립합니다.
 
 ```text
-default/template base 준비
-→ metadata.json overlay
-→ 각 canonical .risu* artifact parse / inject
-→ target-specific envelope 재구성
-→ binary/output serialization
+기본값/템플릿 베이스(Base) 준비
+→ metadata.json 오버레이(Overlay) 적용
+→ 각 표준 .risu* 아티팩트 파싱 및 주입
+→ 대상별 전용 엔벨로프(Envelope) 재구성
+→ 바이너리 최종 직렬화
 ```
 
-이 흐름에서 중요한 점은 다음과 같다.
+이 흐름의 주요 특징은 다음과 같습니다.
+- 루트 JSON 파일을 읽어 현재의 표준처럼 병합하지 않으며, 오직 표준 아티팩트만을 원천 소스로 참조합니다.
+- 모든 아티팩트는 전용 어댑터 명세를 통해 안전하게 주입됩니다.
+- 최종 바이너리 내부에 내부 호환성을 위한 엔트리명이 보일 수 있으나, 이는 워크스페이스 편집 표준과는 무관합니다.
 
-- root JSON sidecar를 읽어서 현재 표준처럼 병합하는 것이 아니라, canonical artifact를 먼저 읽는다.
-- lorebook / regex / prompt / lua / toggle / variable / html는 각 adapter contract를 통해 주입된다.
-- binary 산출물 안에 `charx.json` 같은 이름이 등장할 수 있어도, 그것은 workspace 표준이 아니라 최종 직렬화 형식이며 internal compatibility behavior다.
+## 기술적 지연 범위 관련 공지 (T13, T16)
 
-## deferred 범위 (T13, T16)
+- **T13 (분석/구성 마이그레이션)**: 일부 워크플로우 설명에 레거시 설명이 남아 있을 수 있습니다.
+- **T16 (루트 JSON 완전 제거)**: 엄격한 제거 정책 중 일부가 승인 범위 밖으로 지연되어 있습니다.
 
-- **T13**: analyze/compose migration은 아직 일부 standalone workflow/legacy 설명을 남긴다.
-- **T16**: strict root-JSON eradication은 승인 범위 밖으로 defer된 부분이 있다.
-
-즉, 현재 문서는 두 가지를 동시에 만족해야 한다.
-
-1. canonical-first가 현재 표준이라고 분명히 말할 것
-2. defer된 fallback/legacy surface가 남아 있으면 그 사실을 숨기지 말 것
-3. binary/internal compatibility behavior를 workspace authoring과 섞어 설명하지 말 것
-
-## 활성 문서 작성 규칙
-
-- root JSON를 "현재 표준"처럼 소개하지 않는다.
-- root JSON를 언급해야 한다면 `legacy`, `fallback`, `deferred`, `archive`, `binary output` 맥락을 붙인다.
-- structured JSON는 discovery 대상일 수 있어도 canonical artifact와 같은 active authoring contract라고 과장하지 않는다.
-- archive 문서(`../custom-extension-design.md`, `../custom-extension-design.backup.md`)는 예외로 둔다.
+따라서 현재의 문서는 다음 세 가지를 동시에 충족해야 합니다.
+1. 표준 우선(Canonical-first) 원칙이 프로젝트의 현행 표준임을 명확히 기술할 것.
+2. 지연된 레거시 인터페이스가 존재할 경우 그 사실과 문맥을 정직하게 명시할 것.
+3. 내부 호환성 동작을 사용자의 편집 규칙과 혼동하지 않도록 분리하여 설명할 것.
 
 ## 관련 문서
 

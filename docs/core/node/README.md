@@ -1,35 +1,35 @@
-# node subtree
+# Node.js 하위 트리 (Node Subtree)
 
-이 문서는 `packages/core/src/node/` 인덱스다. Node 전용 surface의 현재 경계와 leaf 탐색 순서를 여기서 고정한다.
+이 문서는 `packages/core/src/node/` 인덱스입니다. Node.js 전용 인터페이스의 현재 경계와 하위 리프(Leaf) 문서 탐색 순서를 정의합니다.
 
-## 이 subtree가 맡는 범위
+## 이 하위 트리가 담당하는 범위
 
-- `packages/core/src/node/`는 Node 런타임 의존 어댑터를 둔다.
-- public import 경로는 `risu-workbench-core/node`이며, 계약 요약은 [`../targets/node-entry.md`](../targets/node-entry.md)에 둔다.
-- 이 페이지는 Node subtree 내부의 파일군과 현재 leaf 페이지 연결을 정한다.
-- pure domain 의미론은 여기서 소유하지 않는다. 그런 내용은 [`../targets/root-browser.md`](../targets/root-browser.md)나 domain leaf 문서로 보낸다.
+- `packages/core/src/node/`는 Node.js 런타임 의존 어댑터를 포함합니다.
+- 공개 임포트 경로는 `risu-workbench-core/node`이며, 명세 요약은 [`../targets/node-entry.md`](../targets/node-entry.md)를 참조하십시오.
+- 이 페이지는 Node.js 하위 트리 내부의 파일군과 현재 리프 페이지 간의 연결 구조를 정의합니다.
+- 순수 도메인 의미론은 여기서 다루지 않습니다. 해당 내용은 [`../targets/root-browser.md`](../targets/root-browser.md) 또는 도메인 리프 문서를 참조하십시오.
 
-## 현재 export 묶음
+## 현재 내보내기 인터페이스
 
-`packages/core/src/node/index.ts` 기준 현재 Node entry는 아래 묶음을 다시 export한다.
+`packages/core/src/node/index.ts` 기준, 현재 Node 엔트리는 아래와 같은 기능들을 재내보내기합니다.
 
-| 묶음 | 현재 export 예시 |
+| 분류 | 주요 함수/상수 예시 |
 |---|---|
-| filesystem helper | `ensureDir`, `writeJson`, `writeText`, `writeBinary`, `uniquePath`, async variants, `readFileAsync` |
-| PNG/card parsing | `parsePngTextChunks`, `stripPngTextChunks`, `decodeCharacterJsonFromChunks`, `parseCharxFile`, `parseCardFile`, PNG/JPEG constants |
-| lorebook/json listing | `executeLorebookPlan`, `listJsonFilesRecursive`, `listJsonFilesFlat`, `resolveOrderedFiles`, `readJson`, `isDir` |
-| packaging | `encodeModuleRisum`, `encodeRPack`, `loadRPackEncodeMap` |
-| custom-extension workspace discovery | `discoverCustomExtensionWorkspace`, `listCanonicalFilesByArtifact`와 discovery types |
+| 파일 시스템 헬퍼 | `ensureDir`, `writeJson`, `writeText`, `writeBinary`, `uniquePath`, 비동기 변체, `readFileAsync` |
+| PNG/카드 파싱 | `parsePngTextChunks`, `stripPngTextChunks`, `decodeCharacterJsonFromChunks`, `parseCharxFile`, `parseCardFile`, PNG/JPEG 관련 상수 |
+| 로어북/JSON 리스팅 | `executeLorebookPlan`, `listJsonFilesRecursive`, `listJsonFilesFlat`, `resolveOrderedFiles`, `readJson`, `isDir` |
+| 패키징 (Packaging) | `encodeModuleRisum`, `encodeRPack`, `loadRPackEncodeMap` |
+| 커스텀 익스텐션 탐색 | `discoverCustomExtensionWorkspace`, `listCanonicalFilesByArtifact` 및 탐색 타입 정의 |
 
-정확한 exported key set은 `../../packages/core/tests/export-surface.test.ts` snapshot이 고정한다.
+정확한 내보내기 키 집합은 `../../packages/core/tests/export-surface.test.ts` 스냅샷에서 확정합니다.
 
-## 현재 보장 범위
+## 공개 엔트리 보장 명세
 
-- `../../packages/core/package.json`은 `./node` subpath export를 공개한다.
-- `../../packages/core/tests/node-entry.test.ts`는 이 subpath가 실제로 선언되어 있고 built node entry에서 `stripPngTextChunks`를 노출하는지 확인한다.
-- `../../packages/core/tests/domain-node-structure.test.ts`는 Node 전용 helper가 domain entry에 섞이지 않는다는 점을 같이 확인한다.
+- `../../packages/core/package.json`은 `./node` 하위 경로 내보내기를 공개합니다.
+- `../../packages/core/tests/node-entry.test.ts`는 이 하위 경로가 실제 선언되어 있으며 빌드된 Node 엔트리에서 `stripPngTextChunks`를 정상적으로 노출하는지 검증합니다.
+- `../../packages/core/tests/domain-node-structure.test.ts`는 Node.js 전용 헬퍼가 도메인 엔트리에 혼입되지 않음을 검증합니다.
 
-이 셋이 현재 Node boundary 설명의 핵심 근거다.
+위 세 가지 사항이 현재 Node.js 경계 명세의 핵심 근거입니다.
 
 ## 현재 leaf 페이지
 
