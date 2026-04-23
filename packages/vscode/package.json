@@ -146,9 +146,11 @@
   },
   "scripts": {
     "build": "npm --prefix ../webview run build && tsc && npx tsc-alias && node ./scripts/copy-webview.mjs",
+    "build:test:e2e": "tsc -p ./tsconfig.tests.json",
     "watch": "tsc --watch",
     "dev": "tsc && code --extensionDevelopmentPath=\"$PWD\"",
-    "verify:cbs-client": "node ./scripts/verify-cbs-client.mjs",
+    "test:e2e:cbs-client": "npm run build && npm run build:test:e2e && node --test ./dist-tests/tests/e2e/extension-client.test.js",
+    "verify:cbs-client": "node ./scripts/verify-cbs-client.mjs && npm run test:e2e:cbs-client",
     "lint": "eslint 'src/**/*.ts'",
     "lint:fix": "eslint 'src/**/*.ts' --fix",
     "format": "prettier --write 'src/**/*.ts'",
