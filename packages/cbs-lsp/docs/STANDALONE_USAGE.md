@@ -54,7 +54,7 @@ cbs-language-server --stdio
 - `launchMode = "embedded"` — monorepo 개발용 `packages/cbs-lsp/dist/server.js` IPC launch를 강제합니다.
 - `installMode = "local-devDependency"` / `"npx"` / `"global"`는 standalone attach command를 어떻게 구성할지만 바꿉니다.
 - `path`는 explicit executable override이며, 상대 경로는 first workspace folder 기준으로 해석합니다.
-- `npm run --workspace risu-workbench-vscode verify:cbs-client`는 standalone / embedded / invalid override / multi-root reduced 경계를 built official client boundary 기준으로 검증합니다. 이 verify loop는 VS Code-family initialize preview에서 `workspaceFolders` 전체가 유지되는지와, launch resolver가 first workspace folder만 path/cwd 기준으로 삼는지를 함께 고정합니다.
+- `npm run --workspace risu-workbench-vscode verify:cbs-client`는 boundary suite로 standalone / embedded / invalid override / multi-root reduced 경계를 built official client boundary 기준으로 검증하고, runtime suite로 explicit standalone path override가 실제 LanguageClient initialize → didOpen → hover → shutdown cleanup loop를 유지하는지까지 함께 고정합니다. 이 verify loop는 VS Code-family initialize preview에서 `workspaceFolders` 전체가 유지되는지와, launch resolver가 first workspace folder만 path/cwd 기준으로 삼는지를 같이 확인합니다.
 
 ## Runtime config precedence
 

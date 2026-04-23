@@ -149,7 +149,9 @@
     "build:test:e2e": "tsc -p ./tsconfig.tests.json",
     "watch": "tsc --watch",
     "dev": "tsc && code --extensionDevelopmentPath=\"$PWD\"",
-    "test:e2e:cbs-client": "npm run build && npm run build:test:e2e && node --test ./dist-tests/tests/e2e/extension-client.test.js",
+    "test:e2e:cbs-client:boundary": "npm run build && npm run build:test:e2e && node --test ./dist-tests/tests/e2e/extension-client.test.js",
+    "test:e2e:cbs-client:runtime": "npm run build && npm run build:test:e2e && node ./dist-tests/tests/e2e/run-extension-runtime-tests.js",
+    "test:e2e:cbs-client": "npm run test:e2e:cbs-client:boundary && npm run test:e2e:cbs-client:runtime",
     "verify:cbs-client": "node ./scripts/verify-cbs-client.mjs && npm run test:e2e:cbs-client",
     "lint": "eslint 'src/**/*.ts'",
     "lint:fix": "eslint 'src/**/*.ts' --fix",
@@ -161,6 +163,7 @@
     "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {
+    "@vscode/test-electron": "^2.5.2",
     "@types/vscode": "^1.96.0",
     "tsc-alias": "^1.8.0",
     "typescript": "^5.7.0"

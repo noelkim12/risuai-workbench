@@ -73,8 +73,12 @@ function loadBuiltLaunchModule(): BuiltLaunchModule {
 test('separates standalone server validation from official VS Code client integration scripts', () => {
   const packageJson = readPackageJson();
 
+  assert.equal(packageJson.scripts?.['test:e2e:cbs-client:boundary'] !== undefined, true);
+  assert.equal(packageJson.scripts?.['test:e2e:cbs-client:runtime'] !== undefined, true);
   assert.equal(packageJson.scripts?.['test:e2e:cbs-client'] !== undefined, true);
   assert.equal(packageJson.scripts?.['verify:cbs-client'] !== undefined, true);
+  assert.match(packageJson.scripts?.['test:e2e:cbs-client'] ?? '', /test:e2e:cbs-client:boundary/);
+  assert.match(packageJson.scripts?.['test:e2e:cbs-client'] ?? '', /test:e2e:cbs-client:runtime/);
   assert.match(packageJson.scripts?.['verify:cbs-client'] ?? '', /test:e2e:cbs-client/);
 });
 

@@ -29,6 +29,8 @@ export {
 
 let client: LanguageClient | undefined;
 let outputChannel: vscode.OutputChannel | undefined;
+let lastBoundarySnapshot: CbsClientBoundarySnapshot | undefined;
+let clientReadyPromise: Promise<void> | undefined;
 
 /**
  * Start the CBS language client.
@@ -48,6 +50,7 @@ export function startCbsLanguageClient(context: vscode.ExtensionContext): void {
         fsPath: workspaceFolder.uri.fsPath,
       })) ?? [],
   });
+  lastBoundarySnapshot = boundarySnapshot;
 
   const launchPlan = boundarySnapshot.launchPlan;
 
@@ -80,6 +83,7 @@ export function startCbsLanguageClient(context: vscode.ExtensionContext): void {
   );
 
   void client.start();
+  clientReadyPromise = createClientReadyPromise(client);
 }
 
 /**
@@ -90,6 +94,8 @@ export async function stopCbsLanguageClient(): Promise<void> {
   if (!client) {
     outputChannel?.dispose();
     outputChannel = undefined;
+    lastBoundarySnapshot = undefined;
+    clientReadyPromise = undefined;
     return;
   }
 
@@ -97,6 +103,40 @@ export async function stopCbsLanguageClient(): Promise<void> {
   client = undefined;
   outputChannel?.dispose();
   outputChannel = undefined;
+  lastBoundarySnapshot = undefined;
+  clientReadyPromise = undefined;
+}
+
+/**
+ * createClientReadyPromise 함수.
+ * LanguageClient가 실제 running state에 도달할 때 resolve되는 promise를 만듦.
+ *
+ * @param currentClient - readiness를 기다릴 live LanguageClient 인스턴스
+ * @returns running state 또는 startup failure를 반영하는 promise
+ */
+function createClientReadyPromise(currentClient: LanguageClient): Promise<void> {
+  if (currentClient.isRunning()) {
+    return Promise.resolve();
+  }
+
+  return new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      stateSubscription.dispose();
+      reject(new Error('Timed out while waiting for the CBS language client to reach running state.'));
+    }, 30_000);
+
+    const settle = (callback: () => void): void => {
+      clearTimeout(timeout);
+      stateSubscription.dispose();
+      callback();
+    };
+
+    const stateSubscription = currentClient.onDidChangeState(() => {
+      if (currentClient.isRunning()) {
+        settle(resolve);
+      }
+    });
+  });
 }
 
 /**
@@ -210,4 +250,51 @@ async function handleLaunchFailure(
   if (selection === 'Open Settings') {
     await vscode.commands.executeCommand('workbench.action.openSettings', 'risuWorkbench.cbs.server');
   }
+}
+
+/**
+ * Runtime state snapshot of the CBS language client.
+ * Observable seam for extension-host tests.
+ */
+export interface CbsLanguageClientRuntimeState {
+  /** The active LanguageClient instance, or undefined if not started / stopped. */
+  client: LanguageClient | undefined;
+  /** The output channel used by the client, or undefined if not created / disposed. */
+  outputChannel: vscode.OutputChannel | undefined;
+  /** The last boundary snapshot computed at start time. */
+  boundarySnapshot: CbsClientBoundarySnapshot | undefined;
+  /** Whether the client instance exists (does not guarantee ready state). */
+  isStarted: boolean;
+  /** The readiness promise captured when the client was launched. Tests can await this to detect running state or startup failure. */
+  clientReadyPromise: Promise<void> | undefined;
+}
+
+/**
+ * Get the current runtime state of the CBS language client.
+ * Safe to call at any time; returns undefined fields when stopped.
+ *
+ * @returns Current runtime state snapshot
+ */
+export function getCbsLanguageClientRuntimeState(): CbsLanguageClientRuntimeState {
+  return {
+    client,
+    outputChannel,
+    boundarySnapshot: lastBoundarySnapshot,
+    isStarted: client !== undefined,
+    clientReadyPromise,
+  };
+}
+
+/**
+ * Await until the CBS language client is ready.
+ * Resolves immediately if no client is running (e.g. launch failure).
+ * Rejects if the client start promise rejects.
+ *
+ * @returns Promise that resolves when the client has started
+ */
+export async function awaitCbsLanguageClientReady(): Promise<void> {
+  if (!clientReadyPromise) {
+    return;
+  }
+  await clientReadyPromise;
 }

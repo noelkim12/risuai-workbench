@@ -1,11 +1,27 @@
 import * as vscode from 'vscode';
 import { registerCoreCommands } from './commands';
-import { startCbsLanguageClient, stopCbsLanguageClient } from './lsp/cbsLanguageClient';
+import {
+  awaitCbsLanguageClientReady,
+  getCbsLanguageClientRuntimeState,
+  startCbsLanguageClient,
+  stopCbsLanguageClient,
+  type CbsLanguageClientRuntimeState,
+} from './lsp/cbsLanguageClient';
 import { RisuTreeProvider } from './providers/tree-provider';
 import { AnalysisService } from './services/analysis-service';
 import { CardService } from './services/card-service';
 
-export function activate(context: vscode.ExtensionContext) {
+/**
+ * Official VS Code extension API surface.
+ * Exposes runtime-test helpers from the live extension module instance.
+ */
+export interface RisuWorkbenchExtensionApi {
+  awaitCbsLanguageClientReady: () => Promise<void>;
+  getCbsLanguageClientRuntimeState: () => CbsLanguageClientRuntimeState;
+  stopCbsLanguageClient: () => Promise<void>;
+}
+
+export function activate(context: vscode.ExtensionContext): RisuWorkbenchExtensionApi {
   console.log('risu-workbench-vscode extension activated');
 
   const cardService = new CardService();
@@ -18,9 +34,15 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(treeView);
   context.subscriptions.push(registerCoreCommands(context, cardService, analysisService));
-
+  
   // Start CBS language client for .risu* files
   startCbsLanguageClient(context);
+
+  return {
+    awaitCbsLanguageClientReady,
+    getCbsLanguageClientRuntimeState,
+    stopCbsLanguageClient,
+  };
 }
 
 export async function deactivate() {
