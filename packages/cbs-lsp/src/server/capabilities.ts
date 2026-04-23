@@ -60,6 +60,7 @@ export function createInitializeResult(
         triggerCharacters: [...CBS_COMPLETION_TRIGGER_CHARACTERS],
       },
       definitionProvider: true,
+      documentHighlightProvider: true,
       documentSymbolProvider: true,
       documentFormattingProvider: true,
       documentRangeFormattingProvider: true,

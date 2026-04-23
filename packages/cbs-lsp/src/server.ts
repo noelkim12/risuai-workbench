@@ -37,6 +37,7 @@ import { CompletionProvider } from './features/completion';
 import { CodeLensProvider } from './features/codelens';
 import { CodeActionProvider } from './features/codeActions';
 import { CodeLensRefreshScheduler } from './controllers/CodeLensRefreshScheduler';
+import { DocumentHighlightProvider } from './features/documentHighlight';
 import { DocumentSymbolProvider } from './features/documentSymbol';
 import { FormattingProvider } from './features/formatting';
 import { FoldingProvider } from './features/folding';
@@ -251,6 +252,10 @@ function createServerFeatureProviders(
       resolveRequest: ({ textDocument }) => resolveRequest(textDocument.uri),
     }),
     completionProvider: new CompletionProvider(registry, {
+      analysisService: fragmentAnalysisService,
+      resolveRequest: ({ textDocument }) => resolveRequest(textDocument.uri),
+    }),
+    documentHighlightProvider: new DocumentHighlightProvider({
       analysisService: fragmentAnalysisService,
       resolveRequest: ({ textDocument }) => resolveRequest(textDocument.uri),
     }),

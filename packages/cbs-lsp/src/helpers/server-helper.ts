@@ -14,6 +14,8 @@ import {
   type Connection,
   type Definition,
   type DefinitionParams,
+  type DocumentHighlight,
+  type DocumentHighlightParams,
   type DocumentSymbol,
   type DocumentSymbolParams,
   type DocumentFormattingParams,
@@ -40,6 +42,7 @@ import { CodeLensProvider } from '../features/codelens';
 import { CompletionProvider } from '../features/completion';
 import type { LuaLsCompanionController } from '../controllers/LuaLsCompanionController';
 import { DefinitionProvider } from '../features/definition';
+import { DocumentHighlightProvider } from '../features/documentHighlight';
 import { DocumentSymbolProvider } from '../features/documentSymbol';
 import { FoldingProvider } from '../features/folding';
 import { FormattingProvider } from '../features/formatting';
@@ -64,6 +67,7 @@ export interface ServerFeatureRegistrarProviders {
   codeActionProvider: CodeActionProvider;
   codeLensProvider: CodeLensProvider;
   completionProvider: CompletionProvider;
+  documentHighlightProvider: DocumentHighlightProvider;
   documentSymbolProvider: DocumentSymbolProvider;
   foldingProvider: FoldingProvider;
   formattingProvider: FormattingProvider;
@@ -139,6 +143,7 @@ export class ServerFeatureRegistrar {
   private readonly codeLensProvider: CodeLensProvider;
   private readonly completionProvider: CompletionProvider;
   private readonly connection: Connection;
+  private readonly documentHighlightProvider: DocumentHighlightProvider;
   private readonly documentSymbolProvider: DocumentSymbolProvider;
   private readonly foldingProvider: FoldingProvider;
   private readonly formattingProvider: FormattingProvider;
@@ -169,6 +174,7 @@ export class ServerFeatureRegistrar {
     this.codeActionProvider = context.providers.codeActionProvider;
     this.codeLensProvider = context.providers.codeLensProvider;
     this.completionProvider = context.providers.completionProvider;
+    this.documentHighlightProvider = context.providers.documentHighlightProvider;
     this.documentSymbolProvider = context.providers.documentSymbolProvider;
     this.foldingProvider = context.providers.foldingProvider;
     this.formattingProvider = context.providers.formattingProvider;
@@ -187,6 +193,7 @@ export class ServerFeatureRegistrar {
   registerAll(): void {
     this.registerCodeActionHandler();
     this.registerCompletionHandler();
+    this.registerDocumentHighlightHandler();
     this.registerDocumentSymbolHandler();
     this.registerFormattingHandler();
     this.registerRangeFormattingHandler();
@@ -344,6 +351,20 @@ export class ServerFeatureRegistrar {
           const request = this.resolveRequest(params.textDocument.uri);
           return request ? this.documentSymbolProvider.provide(params, request, cancellationToken) : [];
         },
+        summarize: (result) => ({ count: result.length }),
+        token: cancellationToken,
+      });
+    });
+  }
+
+  private registerDocumentHighlightHandler(): void {
+    this.connection.onDocumentHighlight((params: DocumentHighlightParams, cancellationToken): DocumentHighlight[] => {
+      return this.requestRunner.runSync({
+        empty: [],
+        feature: 'documentHighlight',
+        getUri: (requestParams) => requestParams.textDocument.uri,
+        params,
+        run: () => this.documentHighlightProvider.provide(params, cancellationToken),
         summarize: (result) => ({ count: result.length }),
         token: cancellationToken,
       });

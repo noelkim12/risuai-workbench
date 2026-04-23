@@ -13,6 +13,7 @@ import type {
   DidChangeConfigurationParams,
   DidChangeWatchedFilesParams,
   DocumentFormattingParams,
+  DocumentHighlight,
   DocumentRangeFormattingParams,
   DocumentSymbol,
   FoldingRange,
@@ -287,6 +288,8 @@ class FakeConnection {
 
   completionHandler: ((params: any, token?: CancellationToken) => CompletionItem[] | { items: CompletionItem[] } | Promise<CompletionItem[] | { items: CompletionItem[] }>) | null = null;
 
+  documentHighlightHandler: ((params: any, token?: CancellationToken) => DocumentHighlight[]) | null = null;
+
   documentSymbolHandler: ((params: any, token?: CancellationToken) => DocumentSymbol[]) | null = null;
 
   definitionHandler: ((params: any, token?: CancellationToken) => Definition | null) | null = null;
@@ -404,6 +407,11 @@ class FakeConnection {
 
   onDocumentSymbol(handler: (params: any, token?: CancellationToken) => DocumentSymbol[]) {
     this.documentSymbolHandler = handler;
+    return createDisposable();
+  }
+
+  onDocumentHighlight(handler: (params: any, token?: CancellationToken) => DocumentHighlight[]) {
+    this.documentHighlightHandler = handler;
     return createDisposable();
   }
 
@@ -723,6 +731,7 @@ describe('LSP server integration', () => {
             triggerCharacters: [...CBS_COMPLETION_TRIGGER_CHARACTERS],
           },
           definitionProvider: true,
+          documentHighlightProvider: true,
           documentSymbolProvider: true,
           documentFormattingProvider: true,
           documentRangeFormattingProvider: true,
@@ -770,6 +779,7 @@ describe('LSP server integration', () => {
     expect(connection.codeLensHandler).not.toBeNull();
     expect(connection.codeActionHandler).not.toBeNull();
     expect(connection.completionHandler).not.toBeNull();
+    expect(connection.documentHighlightHandler).not.toBeNull();
     expect(connection.documentSymbolHandler).not.toBeNull();
     expect(connection.formattingHandler).not.toBeNull();
     expect(connection.rangeFormattingHandler).not.toBeNull();

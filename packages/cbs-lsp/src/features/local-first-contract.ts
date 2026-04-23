@@ -6,7 +6,12 @@
 import type { Range } from 'risu-workbench-core';
 
 import {
+  extractNumberedArgumentReference,
+  resolveActiveLocalFunctionContext,
+  resolveTokenMacroArgumentContext,
   resolveVisibleLoopBindingFromNodePath,
+  type LocalFunctionDeclaration,
+  type LocalFunctionParameterDeclaration,
   type FragmentCursorLookupResult,
 } from '../core';
 import type { VariableSymbolKind } from '../analyzer/symbolTable';
@@ -20,6 +25,17 @@ export interface ResolvedVariablePosition {
   variableName: string;
   kind: VariableSymbolKind;
   targetDefinitionRange?: Range;
+}
+
+export interface ResolvedFunctionPosition {
+  functionName: string;
+}
+
+export interface ResolvedArgumentPosition {
+  argumentIndex: number;
+  declaration: LocalFunctionDeclaration;
+  parameterDeclaration?: LocalFunctionParameterDeclaration;
+  referenceRange: Range;
 }
 
 const VARIABLE_MACRO_RULES = Object.freeze({
@@ -214,4 +230,81 @@ export function resolveVariablePosition(
   }
 
   return null;
+}
+
+/**
+ * resolveFunctionPosition 함수.
+ * `call::name` local #func reference cursor를 fragment-local 함수 이름으로 해석함.
+ *
+ * @param lookup - fragment cursor lookup 결과
+ * @returns 함수 이름이 해석되면 local function position 정보
+ */
+export function resolveFunctionPosition(
+  lookup: FragmentCursorLookupResult,
+): ResolvedFunctionPosition | null {
+  const tokenLookup = lookup.token;
+  const nodeSpan = lookup.nodeSpan;
+  if (!tokenLookup || !nodeSpan) {
+    return null;
+  }
+
+  if (
+    tokenLookup.category === 'argument' &&
+    (nodeSpan.category === 'argument' || nodeSpan.category === 'local-function-reference') &&
+    nodeSpan.owner.type === 'MacroCall' &&
+    nodeSpan.owner.name.toLowerCase() === 'call' &&
+    nodeSpan.argumentIndex === 0
+  ) {
+    const functionName = tokenLookup.token.value.trim();
+    if (functionName.length > 0) {
+      return { functionName };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * resolveArgumentPosition 함수.
+ * `arg::N` cursor를 활성 local `#func` 문맥의 numbered parameter reference로 해석함.
+ *
+ * @param lookup - fragment cursor lookup 결과
+ * @returns active local function context 안의 numbered argument 정보
+ */
+export function resolveArgumentPosition(
+  lookup: FragmentCursorLookupResult,
+): ResolvedArgumentPosition | null {
+  const tokenLookup = lookup.token;
+  const tokenMacroContext = resolveTokenMacroArgumentContext(lookup);
+  if (!tokenLookup || !tokenMacroContext) {
+    return null;
+  }
+
+  if (tokenMacroContext.macroName !== 'arg' || tokenMacroContext.argumentIndex !== 0) {
+    return null;
+  }
+
+  const nodeSpan = lookup.nodeSpan;
+  const reference =
+    nodeSpan?.owner.type === 'MacroCall'
+      ? extractNumberedArgumentReference(nodeSpan.owner, lookup.fragment.content)
+      : null;
+  const parsedIndex = tokenLookup.token.value.trim();
+  if (!reference && !/^\d+$/u.test(parsedIndex)) {
+    return null;
+  }
+
+  const activeContext = resolveActiveLocalFunctionContext(lookup);
+  if (!activeContext) {
+    return null;
+  }
+
+  const argumentIndex = reference?.index ?? Number.parseInt(parsedIndex, 10);
+
+  return {
+    argumentIndex,
+    declaration: activeContext.declaration,
+    parameterDeclaration: activeContext.declaration.parameterDeclarations[argumentIndex],
+    referenceRange: reference?.range ?? tokenLookup.localRange,
+  };
 }

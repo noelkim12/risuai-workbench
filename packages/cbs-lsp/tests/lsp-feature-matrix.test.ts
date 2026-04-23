@@ -4,6 +4,7 @@ import type {
   CompletionItem,
   Definition,
   Diagnostic,
+  DocumentHighlight,
   DocumentSymbol,
   DocumentFormattingParams,
   DocumentRangeFormattingParams,
@@ -121,6 +122,8 @@ class FakeConnection {
   completionHandler: ((params: any) => CompletionItem[] | { items: CompletionItem[] }) | null =
     null;
 
+  documentHighlightHandler: ((params: any) => DocumentHighlight[]) | null = null;
+
   documentSymbolHandler: ((params: any) => DocumentSymbol[]) | null = null;
 
   definitionHandler: ((params: any) => Definition | null) | null = null;
@@ -202,6 +205,11 @@ class FakeConnection {
 
   onDocumentSymbol(handler: (params: any) => DocumentSymbol[]) {
     this.documentSymbolHandler = handler;
+    return createDisposable();
+  }
+
+  onDocumentHighlight(handler: (params: any) => DocumentHighlight[]) {
+    this.documentHighlightHandler = handler;
     return createDisposable();
   }
 

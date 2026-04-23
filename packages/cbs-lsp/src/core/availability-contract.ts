@@ -17,6 +17,7 @@ export interface ActiveFeatureAvailabilityMap {
   completion: AgentMetadataAvailabilityContract;
   definition: AgentMetadataAvailabilityContract;
   diagnostics: AgentMetadataAvailabilityContract;
+  documentHighlight: AgentMetadataAvailabilityContract;
   documentSymbol: AgentMetadataAvailabilityContract;
   formatting: AgentMetadataAvailabilityContract;
   folding: AgentMetadataAvailabilityContract;
@@ -234,6 +235,11 @@ export const ACTIVE_FEATURE_AVAILABILITY = Object.freeze({
     'local-only',
     'server-capability:diagnostics',
     'Diagnostics are active for routed CBS fragments and report results within the current document only.',
+  ),
+  documentHighlight: createAgentMetadataAvailability(
+    'local-only',
+    'server-capability:documentHighlight',
+    'Document highlights are active for routed CBS fragments, classify fragment-local read/write occurrences for the current symbol, and never widen into workspace-wide references.',
   ),
   documentSymbol: createAgentMetadataAvailability(
     'local-only',
