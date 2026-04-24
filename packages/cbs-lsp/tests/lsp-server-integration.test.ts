@@ -14,20 +14,21 @@ import type {
   DidChangeConfigurationParams,
   DidChangeWatchedFilesParams,
   DocumentFormattingParams,
-    DocumentHighlight,
-    DocumentRangeFormattingParams,
-    DocumentSymbol,
+  DocumentHighlight,
+  DocumentOnTypeFormattingParams,
+  DocumentRangeFormattingParams,
+  DocumentSymbol,
   FoldingRange,
   Hover,
   InlayHint,
   InitializeParams,
   InitializeResult,
-    Location,
-    Range,
-    ReferenceParams,
-    RenameParams,
-    SelectionRange,
-    SemanticTokens,
+  Location,
+  Range,
+  ReferenceParams,
+  RenameParams,
+  SelectionRange,
+  SemanticTokens,
   SignatureHelp,
   TextEdit,
   TextDocumentPositionParams,
@@ -39,7 +40,6 @@ import {
   CodeActionKind,
   FileChangeType,
   LSPErrorCodes,
-  ResponseError,
   TextDocumentSyncKind,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
@@ -355,11 +355,15 @@ class FakeConnection {
 
   rangeFormattingRegistrations = 0;
 
+  onTypeFormattingRegistrations = 0;
+
   formattingHandler: ((params: DocumentFormattingParams, token?: CancellationToken) => TextEdit[]) | null =
     null;
 
   rangeFormattingHandler: ((params: DocumentRangeFormattingParams, token?: CancellationToken) => TextEdit[]) | null =
     null;
+
+  onTypeFormattingHandler: ((params: DocumentOnTypeFormattingParams, token?: CancellationToken) => TextEdit[]) | null = null;
 
   readonly customRequestHandlers = new Map<string, (params: unknown) => unknown | Promise<unknown>>();
 
@@ -526,6 +530,14 @@ class FakeConnection {
   ) {
     this.rangeFormattingHandler = handler;
     this.rangeFormattingRegistrations += 1;
+    return createDisposable();
+  }
+
+  onDocumentOnTypeFormatting(
+    handler: (params: DocumentOnTypeFormattingParams, token?: CancellationToken) => TextEdit[],
+  ) {
+    this.onTypeFormattingHandler = handler;
+    this.onTypeFormattingRegistrations += 1;
     return createDisposable();
   }
 
@@ -800,6 +812,9 @@ describe('LSP server integration', () => {
           workspaceSymbolProvider: true,
           documentFormattingProvider: true,
           documentRangeFormattingProvider: true,
+          documentOnTypeFormattingProvider: {
+            firstTriggerCharacter: '\n',
+          },
           selectionRangeProvider: true,
           referencesProvider: true,
           renameProvider: true,
@@ -855,6 +870,7 @@ describe('LSP server integration', () => {
     expect(connection.workspaceSymbolHandler).not.toBeNull();
     expect(connection.formattingHandler).not.toBeNull();
     expect(connection.rangeFormattingHandler).not.toBeNull();
+    expect(connection.onTypeFormattingHandler).not.toBeNull();
     expect(connection.definitionHandler).not.toBeNull();
     expect(connection.referencesHandler).not.toBeNull();
     expect(connection.prepareRenameHandler).not.toBeNull();
@@ -872,6 +888,7 @@ describe('LSP server integration', () => {
     expect(connection.renameRegistrations).toBe(1);
     expect(connection.formattingRegistrations).toBe(1);
     expect(connection.rangeFormattingRegistrations).toBe(1);
+    expect(connection.onTypeFormattingRegistrations).toBe(1);
   });
 
   it('owns the lorebook CodeLens command through executeCommandProvider as a no-op', async () => {
@@ -901,7 +918,7 @@ describe('LSP server integration', () => {
         command: 'cbs-lsp.unknownCommand',
         arguments: [],
       }),
-    ).rejects.toMatchObject<ResponseError>({
+    ).rejects.toMatchObject({
       code: LSPErrorCodes.RequestFailed,
       message: 'Unsupported server command: cbs-lsp.unknownCommand',
     });
@@ -1853,6 +1870,21 @@ describe('LSP server integration', () => {
 
     expect(edits).toHaveLength(1);
     expect(applyTextEdits(text, edits ?? [])).toBe(
+      lorebookDocument(['Hello {{user}} {{#if::true}}yes{{:else}}no{{/if}}']),
+    );
+
+    const onTypeEdits = connection.onTypeFormattingHandler?.(
+      {
+        textDocument: { uri },
+        position: positionAt(text, '{{ user }}'),
+        ch: '\n',
+        options: { tabSize: 2, insertSpaces: true },
+      },
+      createCancellationToken(false),
+    );
+
+    expect(onTypeEdits).toHaveLength(1);
+    expect(applyTextEdits(text, onTypeEdits ?? [])).toBe(
       lorebookDocument(['Hello {{user}} {{#if::true}}yes{{:else}}no{{/if}}']),
     );
   });

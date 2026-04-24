@@ -26,6 +26,7 @@ export type CbsLspFeatureName =
   | 'documentHighlight'
   | 'formatting'
   | 'rangeFormatting'
+  | 'formattingOnType'
   | 'definition'
   | 'references'
   | 'rename'

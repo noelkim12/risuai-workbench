@@ -20,6 +20,7 @@ import {
   type DocumentSymbolParams,
   type DocumentFormattingParams,
   type DocumentRangeFormattingParams,
+  type DocumentOnTypeFormattingParams,
   type FoldingRangeParams,
   type HoverParams,
   type InlayHint,
@@ -55,6 +56,7 @@ import { WorkspaceSymbolProvider } from '../features/workspaceSymbol';
 import { FoldingProvider } from '../features/folding';
 import { FormattingProvider } from '../features/formatting';
 import { HoverProvider } from '../features/hover';
+import { OnTypeFormattingProvider } from '../features/onTypeFormatting';
 import { InlayHintProvider } from '../features/inlayHint';
 import { ReferencesProvider } from '../features/references';
 import { RenameProvider } from '../features/rename';
@@ -82,6 +84,7 @@ export interface ServerFeatureRegistrarProviders {
   foldingProvider: FoldingProvider;
   formattingProvider: FormattingProvider;
   hoverProvider: HoverProvider;
+  onTypeFormattingProvider?: OnTypeFormattingProvider;
   inlayHintProvider: InlayHintProvider;
   selectionRangeProvider: SelectionRangeProvider;
   resolveRequest: (uri: string) => FragmentAnalysisRequest | null;
@@ -162,6 +165,7 @@ export class ServerFeatureRegistrar {
   private readonly formattingProvider: FormattingProvider;
   private readonly hoverProvider: HoverProvider;
   private readonly inlayHintProvider: InlayHintProvider;
+  private readonly onTypeFormattingProvider: OnTypeFormattingProvider | undefined;
   private readonly selectionRangeProvider: SelectionRangeProvider;
   private readonly luaLsProxy: Pick<LuaLsCompanionController, 'getRuntime' | 'provideCompletion' | 'provideHover'>;
   private readonly registry: CBSBuiltinRegistry;
@@ -196,6 +200,7 @@ export class ServerFeatureRegistrar {
     this.formattingProvider = context.providers.formattingProvider;
     this.hoverProvider = context.providers.hoverProvider;
     this.inlayHintProvider = context.providers.inlayHintProvider;
+    this.onTypeFormattingProvider = context.providers.onTypeFormattingProvider;
     this.selectionRangeProvider = context.providers.selectionRangeProvider;
     this.resolveRequest = context.providers.resolveRequest;
     this.resolveWorkspaceRequest = context.resolveWorkspaceRequest;
@@ -219,6 +224,7 @@ export class ServerFeatureRegistrar {
     this.registerWorkspaceSymbolHandler();
     this.registerFormattingHandler();
     this.registerRangeFormattingHandler();
+    this.registerOnTypeFormattingHandler();
     this.registerDefinitionHandler();
     this.registerReferencesHandler();
     this.registerPrepareRenameHandler();
@@ -539,6 +545,23 @@ export class ServerFeatureRegistrar {
         getUri: (requestParams) => requestParams.textDocument.uri,
         params,
         run: () => this.formattingProvider.provideRange(params),
+        summarize: (result) => ({ count: result.length }),
+        token: cancellationToken,
+      });
+    });
+  }
+
+  private registerOnTypeFormattingHandler(): void {
+    this.connection.onDocumentOnTypeFormatting((
+      params: DocumentOnTypeFormattingParams,
+      cancellationToken,
+    ): TextEdit[] => {
+      return this.requestRunner.runSync({
+        empty: [],
+        feature: 'formattingOnType',
+        getUri: (requestParams) => requestParams.textDocument.uri,
+        params,
+        run: () => this.onTypeFormattingProvider?.provide(params) ?? [],
         summarize: (result) => ({ count: result.length }),
         token: cancellationToken,
       });

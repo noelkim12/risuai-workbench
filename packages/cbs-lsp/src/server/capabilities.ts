@@ -67,6 +67,9 @@ export function createInitializeResult(
       workspaceSymbolProvider: true,
       documentFormattingProvider: true,
       documentRangeFormattingProvider: true,
+      documentOnTypeFormattingProvider: {
+        firstTriggerCharacter: '\n',
+      },
       selectionRangeProvider: true,
       referencesProvider: true,
       renameProvider: renamePrepareSupport

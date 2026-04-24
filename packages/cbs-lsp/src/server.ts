@@ -43,6 +43,7 @@ import { WorkspaceSymbolProvider } from './features/workspaceSymbol';
 import { FormattingProvider } from './features/formatting';
 import { FoldingProvider } from './features/folding';
 import { HoverProvider } from './features/hover';
+import { OnTypeFormattingProvider } from './features/onTypeFormatting';
 import { InlayHintProvider } from './features/inlayHint';
 import { SelectionRangeProvider } from './features/selectionRange';
 import { SemanticTokensProvider } from './features/semanticTokens';
@@ -243,6 +244,11 @@ function createServerFeatureProviders(
     return document ? createFragmentRequest(document) : null;
   };
 
+  const formattingProvider = new FormattingProvider({
+    analysisService: fragmentAnalysisService,
+    resolveRequest,
+  });
+
   return {
     codeActionProvider: new CodeActionProvider({
       analysisService: fragmentAnalysisService,
@@ -270,8 +276,10 @@ function createServerFeatureProviders(
       },
     }),
     foldingProvider: new FoldingProvider(fragmentAnalysisService),
-    formattingProvider: new FormattingProvider({
+    formattingProvider,
+    onTypeFormattingProvider: new OnTypeFormattingProvider({
       analysisService: fragmentAnalysisService,
+      formattingProvider,
       resolveRequest,
     }),
     hoverProvider: new HoverProvider(registry, {

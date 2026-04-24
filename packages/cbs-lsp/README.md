@@ -414,7 +414,7 @@ CBS Provider는 파일 전체를 바로 tokenize/parse하지 않고, 먼저 arti
 | Go-to-Definition | provider는 local-first로 현재 fragment를 해석한 뒤, `VariableFlowService`가 있으면 workspace writer URI를 병합한다. 서버 capability도 현재 활성화됨 | Layer 3 CrossRef |
 | Find References | provider는 local-first reference 목록 뒤에 `VariableFlowService` readers/writers를 병합하며, 서버 capability도 현재 활성화되어 있다 | Layer 3 CrossRef |
 | Rename | provider는 local symbol rename edit 뒤에 `VariableFlowService` occurrence를 dedupe해서 multi-file `WorkspaceEdit`를 만들고, shared `host-fragment-patch` contract로 host-range ownership / same-URI fragment window / malformed no-op을 검증한 뒤만 edit를 반환한다 | Layer 3 CrossRef |
-| Formatting | document formatting은 routed CBS fragment를 canonical serializer로 다시 써서 macro spacing / shorthand close tag 같은 구조적 표기만 정리한다. pure block body는 pretty-print하지 않으며, malformed fragment / unsupported artifact / fragmentless host는 safe no-op으로 남는다 | core 파서 + fragment analysis + host-fragment-patch |
+| Formatting | document/range formatting은 routed CBS fragment를 canonical serializer로 다시 써서 macro spacing / shorthand close tag 같은 구조적 표기만 정리한다. on-type formatting은 `\n` trigger만 광고하고 단일 안정 CBS fragment 내부에서 line-local canonical edit만 반환한다. pure block body는 pretty-print하지 않으며, malformed fragment / unsupported artifact / fragmentless host는 safe no-op으로 남는다 | core 파서 + fragment analysis + host-fragment-patch |
 | Folding | `#when`, `#each` 블록 접기 | core 파서 |
 | Document Symbols | provider는 routed CBS fragment의 top-level block/function header를 outline tree로 노출하고, multi-fragment 문서에서는 section container 아래에 child symbol을 붙인다 | core 파서 + fragment analysis |
 | Document Highlight | provider는 현재 fragment 안에서 `getvar/setvar`, local `#func`/`call::name`, `arg::N`, `slot::alias` read/write occurrence를 즉시 강조한다 | core 파서 + fragment analysis + symbol table |
@@ -423,11 +423,12 @@ CBS Provider는 파일 전체를 바로 tokenize/parse하지 않고, 먼저 arti
 
 ### Formatting contract
 
-현재 `textDocument/formatting`은 세 가지 경계를 분리해서 이해해야 합니다.
+현재 `textDocument/formatting` / `textDocument/rangeFormatting` / `textDocument/onTypeFormatting`은 세 가지 경계를 분리해서 이해해야 합니다.
 
 - **canonical serializer (현재 구현)**: clean CBS fragment를 다시 파싱한 뒤 안정적인 canonical text shape로 재직렬화합니다. `{{ user }}` → `{{user}}`, `{{#if ready}}...{{/}}` → `{{#if::ready}}...{{/if}}` 같은 구조적 normalization이 여기에 속합니다.
-- **pretty formatter (현재 미구현)**: block indentation, line wrapping, `tabSize` / `insertSpaces` 반영, on-type formatting 같은 editor polish는 아직 제공하지 않습니다. formatting request의 option은 protocol 호환용으로만 받고, 현재 출력 모양을 바꾸는 레이아웃 엔진으로 쓰지 않습니다.
-- **safe no-op (현재 구현)**: malformed fragment, unsupported artifact, routed fragment 0개 문서, shared `host-fragment-patch` contract를 통과하지 못하는 host edit는 모두 `[]`로 degrade합니다. multi-fragment host에서는 canonical text가 실제로 달라진 fragment만 rewrite합니다.
+- **on-type vertical slice (현재 구현)**: `documentOnTypeFormattingProvider`는 safe trigger로 `\n`만 광고합니다. 현재 formatter가 pretty layout engine이 아니라 canonical serializer이므로 `}` / `/` 같은 block-close trigger는 과한 rewrite 위험 때문에 광고하지 않습니다. 요청 위치가 단일 clean CBS fragment 내부이고, 반환 edit가 현재 줄 또는 다음 줄과 교차할 때만 line-local edit를 반환합니다.
+- **pretty formatter (현재 미구현)**: block indentation, line wrapping, `tabSize` / `insertSpaces` 반영 같은 editor polish는 아직 제공하지 않습니다. formatting request의 option은 protocol 호환용으로만 받고, 현재 출력 모양을 바꾸는 레이아웃 엔진으로 쓰지 않습니다.
+- **safe no-op (현재 구현)**: malformed fragment, unsupported artifact, routed fragment 0개 문서, shared `host-fragment-patch` contract를 통과하지 못하는 host edit는 모두 `[]`로 degrade합니다. multi-fragment host에서는 document formatting만 canonical text가 실제로 달라진 routed fragment를 rewrite하며, range/on-type formatting은 단일 fragment 내부 요청이 아니면 no-op입니다.
 
 특히 pure block(`{{#puredisplay}}...{{/puredisplay}}`)은 body text를 pretty-print하지 않습니다. 현재 formatter는 block marker를 canonicalize할 수는 있지만, pure body 내부의 공백/줄바꿈은 사용자 작성 그대로 유지합니다.
 
