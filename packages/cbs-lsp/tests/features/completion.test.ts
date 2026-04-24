@@ -294,6 +294,16 @@ describe('CompletionProvider', () => {
       ).toMatch(/^{{#when /);
     });
 
+    it('replaces an auto-closed {{#each}} header when applying each-block snippet', () => {
+      const request = createInlineCompletionRequest('{{#each}}');
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(createParams(request, offsetToPosition(request.text, 7)));
+
+      expect(
+        applyCompletionTextEdit(request.text, completions.find((item) => item.label === 'each-block')),
+      ).toBe('{{#each ${1:array} as ${2:item}}}\n\t{{slot::${2:item}}}\n{{/each}}');
+    });
+
     it('offers all function names after {{', () => {
       const entry = getFixtureCorpusEntry('lorebook-basic');
       const request = createFixtureRequest(entry);

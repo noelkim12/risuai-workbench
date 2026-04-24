@@ -242,6 +242,23 @@ describe('CBSParser', () => {
     ]);
   });
 
+  it('accepts legacy #if close tags for #if_pure blocks', () => {
+    const document = parse('{{#if_pure 1}}pure{{/if}}');
+
+    expect(snapshotNodes(document.nodes)).toEqual([
+      {
+        type: 'Block',
+        kind: 'if_pure',
+        operators: [],
+        condition: [{ type: 'PlainText', value: '1' }],
+        body: [{ type: 'PlainText', value: 'pure' }],
+        elseBody: undefined,
+        hasClose: true,
+      },
+    ]);
+    expect(snapshotDiagnostics(document)).toEqual([]);
+  });
+
   it.each([
     [
       '#each items as item',

@@ -37,6 +37,10 @@ const BLOCK_KIND_BY_NAME = new Map<string, BlockKind>([
   ['func', 'func'],
 ]);
 
+const BLOCK_CLOSE_ALIASES = new Map<BlockKind, ReadonlySet<BlockKind>>([
+  ['if_pure', new Set<BlockKind>(['if'])],
+]);
+
 export class CBSParser {
   private input = '';
   private tokens: Token[] = [];
@@ -581,7 +585,11 @@ export class CBSParser {
     actual: { kind?: BlockKind; shorthand: boolean },
     expected: BlockKind,
   ): boolean {
-    return actual.shorthand || actual.kind === expected;
+    if (actual.shorthand || actual.kind === expected) {
+      return true;
+    }
+
+    return actual.kind ? (BLOCK_CLOSE_ALIASES.get(expected)?.has(actual.kind) ?? false) : false;
   }
 
   private consumeElseMacro(): void {

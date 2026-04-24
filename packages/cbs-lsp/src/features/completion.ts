@@ -288,6 +288,105 @@ function normalizeCompletionTextEditNewText(
   return newText;
 }
 
+interface CompletionTextEditPlan {
+  startOffset: number;
+  endOffset: number;
+  newText: string;
+}
+
+type RangedCompletionTriggerContext = Extract<
+  CompletionTriggerContext,
+  { startOffset: number; endOffset: number }
+>;
+
+/**
+ * createCompletionTextEditPlan 함수.
+ * completion item별 fragment-local replacement 범위와 삽입 텍스트를 계산함.
+ *
+ * @param item - textEdit를 붙일 completion item
+ * @param context - 현재 completion trigger context
+ * @param fragmentText - range 계산 기준이 되는 fragment-local 원문
+ * @returns item에 적용할 replacement offset과 newText
+ */
+function createCompletionTextEditPlan(
+  item: CompletionItem,
+  context: RangedCompletionTriggerContext,
+  fragmentText: string,
+): CompletionTextEditPlan {
+  const newText = item.insertText ?? item.label;
+  if (
+    context.type !== 'block-functions' ||
+    item.kind !== CompletionItemKind.Snippet ||
+    !newText.startsWith('{{')
+  ) {
+    return {
+      startOffset: context.startOffset,
+      endOffset: context.endOffset,
+      newText: normalizeCompletionTextEditNewText(item, context),
+    };
+  }
+
+  const replacementStartOffset = findBlockSnippetReplacementStartOffset(fragmentText, context);
+  if (replacementStartOffset === null) {
+    return {
+      startOffset: context.startOffset,
+      endOffset: context.endOffset,
+      newText: normalizeCompletionTextEditNewText(item, context),
+    };
+  }
+
+  return {
+    startOffset: replacementStartOffset,
+    endOffset: getBlockSnippetReplacementEndOffset(fragmentText, context.endOffset),
+    newText,
+  };
+}
+
+/**
+ * findBlockSnippetReplacementStartOffset 함수.
+ * block snippet이 기존 `{{#...}}` header 전체를 갈아끼울 수 있도록 여는 `{{` 위치를 찾음.
+ *
+ * @param fragmentText - fragment-local 원문
+ * @param context - block-functions completion context
+ * @returns snippet replacement 시작 offset 또는 찾지 못한 경우 null
+ */
+function findBlockSnippetReplacementStartOffset(
+  fragmentText: string,
+  context: RangedCompletionTriggerContext,
+): number | null {
+  const searchEndOffset = Math.max(0, Math.min(context.startOffset, fragmentText.length));
+  const openBraceOffset = fragmentText.lastIndexOf('{{', searchEndOffset);
+  if (openBraceOffset === -1) {
+    return null;
+  }
+
+  const headerPrefix = fragmentText.slice(openBraceOffset + 2, context.endOffset);
+  if (!headerPrefix.startsWith('#')) {
+    return null;
+  }
+
+  return openBraceOffset;
+}
+
+/**
+ * getBlockSnippetReplacementEndOffset 함수.
+ * cursor 직후 auto-close `}}`가 있으면 snippet 교체 범위에 포함함.
+ *
+ * @param fragmentText - fragment-local 원문
+ * @param contextEndOffset - 기존 completion context 종료 offset
+ * @returns snippet replacement 종료 offset
+ */
+function getBlockSnippetReplacementEndOffset(
+  fragmentText: string,
+  contextEndOffset: number,
+): number {
+  if (fragmentText.slice(contextEndOffset, contextEndOffset + 2) === '}}') {
+    return contextEndOffset + 2;
+  }
+
+  return contextEndOffset;
+}
+
 export interface NormalizedCompletionTextEditSnapshot {
   insert: LSPRange | null;
   newText: string;
@@ -576,20 +675,36 @@ export class CompletionProvider {
       return [];
     }
 
-    const lspRange = LSPRange.create(
-      range.start.line,
-      range.start.character,
-      range.end.line,
-      range.end.character,
-    );
+    return completions.map((item) => {
+      const textEditPlan = createCompletionTextEditPlan(item, context, lookup.fragment.content);
+      const itemRange =
+        textEditPlan.startOffset === context.startOffset && textEditPlan.endOffset === context.endOffset
+          ? range
+          : lookup.fragmentAnalysis.mapper.toHostRangeFromOffsets(
+              request.text,
+              textEditPlan.startOffset,
+              textEditPlan.endOffset,
+            );
 
-    return completions.map((item) => ({
-      ...item,
-      textEdit: {
-        range: lspRange,
-        newText: normalizeCompletionTextEditNewText(item, context),
-      },
-    }));
+      if (!itemRange) {
+        return item;
+      }
+
+      const lspRange = LSPRange.create(
+        itemRange.start.line,
+        itemRange.start.character,
+        itemRange.end.line,
+        itemRange.end.character,
+      );
+
+      return {
+        ...item,
+        textEdit: {
+          range: lspRange,
+          newText: textEditPlan.newText,
+        },
+      };
+    });
   }
 
   /**

@@ -18,9 +18,7 @@ import type {
   CbsClientBoundarySnapshot,
   CbsClientBoundaryInputs,
 } from '../../src/lsp/cbsLanguageClientBoundary';
-import type {
-  CbsLanguageServerSettings,
-} from '../../src/lsp/cbsLanguageServerLaunch';
+import type { CbsLanguageServerSettings } from '../../src/lsp/cbsLanguageServerLaunch';
 
 const packageRoot = process.cwd();
 const localRequire = createRequire(__filename);
@@ -40,6 +38,12 @@ interface BuiltLaunchModule {
 }
 
 interface BuiltAutoSuggestModule {
+  getCbsAutoCloseText: (input: {
+    insertedText: string;
+    languageId: string;
+    linePrefix: string;
+    lineSuffix: string;
+  }) => string | null;
   shouldTriggerCbsAutoSuggest: (input: {
     insertedText: string;
     languageId: string;
@@ -76,7 +80,9 @@ function readLanguageConfiguration(): {
   brackets?: string[][];
   surroundingPairs?: string[][];
 } {
-  return JSON.parse(readFileSync(path.join(packageRoot, 'language-configuration.json'), 'utf8')) as {
+  return JSON.parse(
+    readFileSync(path.join(packageRoot, 'language-configuration.json'), 'utf8'),
+  ) as {
     autoClosingPairs?: string[][];
     brackets?: string[][];
     surroundingPairs?: string[][];
@@ -194,7 +200,10 @@ test('keeps imported CBS syntax-extension legacy assets available without provid
     'src/cbs/legacy/core/formatter.ts',
     'src/cbs/legacy/providers/bracketPairProvider.ts',
   ]) {
-    assert.ok(existsSync(path.join(packageRoot, relativePath)), `Expected imported asset: ${relativePath}`);
+    assert.ok(
+      existsSync(path.join(packageRoot, relativePath)),
+      `Expected imported asset: ${relativePath}`,
+    );
   }
 });
 
@@ -208,7 +217,9 @@ test('treats CBS double braces as bracket pair without auto-closing them over LS
     false,
   );
   assert.equal(
-    languageConfiguration.autoClosingPairs?.some(([open, close]) => open === '{{' && close === '}}'),
+    languageConfiguration.autoClosingPairs?.some(
+      ([open, close]) => open === '{{' && close === '}}',
+    ),
     false,
   );
 });
@@ -266,6 +277,74 @@ test('detects double-open-brace CBS prefixes for explicit VS Code suggest fallba
   );
 });
 
+test('returns CBS block close text after a block opener is completed', () => {
+  const autoSuggest = loadBuiltAutoSuggestModule();
+
+  assert.equal(
+    autoSuggest.getCbsAutoCloseText({
+      insertedText: '}',
+      languageId: 'risuhtml',
+      linePrefix: '{{#if}}',
+      lineSuffix: '',
+    }),
+    '{{/if}}',
+  );
+  assert.equal(
+    autoSuggest.getCbsAutoCloseText({
+      insertedText: '}',
+      languageId: 'risuprompt',
+      linePrefix: '{{#each cards as card}}',
+      lineSuffix: 'card body',
+    }),
+    '{{/each}}',
+  );
+  assert.equal(
+    autoSuggest.getCbsAutoCloseText({
+      insertedText: '}}',
+      languageId: 'risulorebook',
+      linePrefix: '{{#if {{getvar::enabled}}}}',
+      lineSuffix: '',
+    }),
+    '{{/if}}',
+  );
+  assert.equal(
+    autoSuggest.getCbsAutoCloseText({
+      insertedText: '}',
+      languageId: 'typescript',
+      linePrefix: '{{#if}}',
+      lineSuffix: '',
+    }),
+    null,
+  );
+  assert.equal(
+    autoSuggest.getCbsAutoCloseText({
+      insertedText: '}',
+      languageId: 'risuhtml',
+      linePrefix: '{{getvar::flag}}',
+      lineSuffix: '',
+    }),
+    null,
+  );
+  assert.equal(
+    autoSuggest.getCbsAutoCloseText({
+      insertedText: '}',
+      languageId: 'risuhtml',
+      linePrefix: '{{#if}}',
+      lineSuffix: ' {{/if}}',
+    }),
+    null,
+  );
+  assert.equal(
+    autoSuggest.getCbsAutoCloseText({
+      insertedText: '{{/if}}',
+      languageId: 'risuhtml',
+      linePrefix: '{{#if}}{{/if}}',
+      lineSuffix: '',
+    }),
+    null,
+  );
+});
+
 test('keeps the official client boundary on standalone stdio when a workspace local binary exists', () => {
   const boundary = loadBuiltBoundaryModule();
   const launch = loadBuiltLaunchModule();
@@ -285,10 +364,7 @@ test('keeps the official client boundary on standalone stdio when a workspace lo
   assert.equal(snapshot.launchPlan.kind, 'standalone');
   assert.equal(snapshot.transport, 'stdio');
   assert.equal(snapshot.forwardedWorkspaceRootPath, workspaceRoot);
-  assert.deepEqual(
-    snapshot.clientOptions.documentSelector,
-    boundary.CBS_DOCUMENT_SELECTORS,
-  );
+  assert.deepEqual(snapshot.clientOptions.documentSelector, boundary.CBS_DOCUMENT_SELECTORS);
   assert.ok(
     snapshot.clientOptions.documentSelector.some(
       (selector) => 'language' in selector && selector.language === 'risuhtml',
@@ -357,5 +433,8 @@ test('preserves VS Code-family multi-root initialize preview while reducing laun
   assert.equal(snapshot.initializePayloadPreview.rootPath, firstWorkspaceRoot);
   assert.equal(snapshot.initializePayloadPreview.workspaceFolders?.length, 2);
   assert.equal(snapshot.initializePayloadPreview.workspaceFolders?.[0]?.fsPath, firstWorkspaceRoot);
-  assert.equal(snapshot.initializePayloadPreview.workspaceFolders?.[1]?.fsPath, secondWorkspaceRoot);
+  assert.equal(
+    snapshot.initializePayloadPreview.workspaceFolders?.[1]?.fsPath,
+    secondWorkspaceRoot,
+  );
 });
