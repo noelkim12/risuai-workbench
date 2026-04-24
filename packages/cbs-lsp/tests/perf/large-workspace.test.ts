@@ -4,7 +4,9 @@
  */
 
 import { performance } from 'node:perf_hooks';
+import path from 'node:path';
 import { rm } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { CBSBuiltinRegistry } from 'risu-workbench-core';
@@ -15,12 +17,16 @@ import { SemanticTokensProvider } from '../../src/features/semanticTokens';
 import { CompletionProvider } from '../../src/features/completion';
 import { CodeActionProvider } from '../../src/features/codeActions';
 import { routeDiagnosticsForDocument } from '../../src/utils/diagnostics-router';
+import type { ChildProcessWithoutNullStreams } from 'node:child_process';
+
 import {
   createWorkspaceRoot,
   ensureBuiltPackage,
   runCliJson,
+  spawnCliProcess,
   writeWorkspaceFile,
 } from '../product/test-helpers';
+import { StdioLspClient } from '../product/stdio-helpers';
 
 interface Layer1ReportPayload {
   graph: {
@@ -97,9 +103,23 @@ async function createLargeWorkspace(pairCount: number): Promise<string> {
   return root;
 }
 
+const childProcesses = new Set<ChildProcessWithoutNullStreams>();
+
 afterEach(async () => {
+  for (const child of childProcesses) {
+    if (child.exitCode === null) {
+      child.kill('SIGTERM');
+    }
+  }
+  childProcesses.clear();
   await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
+
+function createStdioClientWithTracking(args: readonly string[]): StdioLspClient {
+  const child = spawnCliProcess(args);
+  childProcesses.add(child);
+  return new StdioLspClient(child);
+}
 
 describe.sequential('cbs-language-server large workspace product matrix', () => {
   it('keeps large extracted workspace report/query flows within a practical regression budget', async () => {
@@ -244,4 +264,196 @@ describe.sequential('cbs-language-server large workspace product matrix', () => 
     expect(firstResolved).not.toBeNull();
     expect(firstResolved!.edit).toBeDefined();
   });
+
+  it('keeps standalone server cold-start within a practical budget', async () => {
+    ensureBuiltPackage();
+    const pairCount = 20;
+    const root = await createLargeWorkspace(pairCount);
+
+    const spawnStart = performance.now();
+    const client = createStdioClientWithTracking([
+      '--stdio',
+      '--workspace',
+      root,
+      '--luals-path',
+      path.join(root, 'missing', 'lua-language-server'),
+    ]);
+
+    const initializeResult = (await client.request('initialize', {
+      processId: null,
+      rootUri: pathToFileURL(root).toString(),
+      workspaceFolders: [{ uri: pathToFileURL(root).toString(), name: 'perf' }],
+      capabilities: {},
+    }, 20_000)) as { capabilities?: unknown };
+    const coldStartMs = performance.now() - spawnStart;
+
+    expect(initializeResult.capabilities).toBeDefined();
+    expect(coldStartMs).toBeLessThan(10_000);
+
+    client.notify('initialized', {});
+    await client.shutdown();
+    const exitCode = await client.waitForExit(10_000);
+    expect(exitCode).toBe(0);
+  }, 30_000);
+
+  it('keeps incremental document rebuild within a practical budget', async () => {
+    ensureBuiltPackage();
+    const pairCount = 20;
+    const root = await createLargeWorkspace(pairCount);
+    const firstEntryPath = path.join(root, 'lorebooks/entry-0.risulorebook');
+    const firstEntryUri = pathToFileURL(firstEntryPath).toString();
+    const originalText = [
+      '---',
+      'name: Entry0',
+      'comment: perf',
+      'constant: false',
+      'selective: false',
+      'enabled: true',
+      'insertion_order: 0',
+      'case_sensitive: false',
+      'use_regex: false',
+      '---',
+      '@@@ KEYS',
+      'entry-0',
+      '@@@ CONTENT',
+      '{{setvar::shared_0::ready}} reader-0',
+      '',
+    ].join('\n');
+    const changedText = [
+      '---',
+      'name: Entry0',
+      'comment: perf',
+      'constant: false',
+      'selective: false',
+      'enabled: true',
+      'insertion_order: 0',
+      'case_sensitive: false',
+      'use_regex: false',
+      '---',
+      '@@@ KEYS',
+      'entry-0',
+      '@@@ CONTENT',
+      '{{setvar::shared_0::changed}} reader-0',
+      '',
+    ].join('\n');
+
+    const client = createStdioClientWithTracking([
+      '--stdio',
+      '--workspace',
+      root,
+      '--luals-path',
+      path.join(root, 'missing', 'lua-language-server'),
+    ]);
+
+    await client.request('initialize', {
+      processId: null,
+      rootUri: pathToFileURL(root).toString(),
+      workspaceFolders: [{ uri: pathToFileURL(root).toString(), name: 'perf' }],
+      capabilities: {},
+    }, 20_000);
+    client.notify('initialized', {});
+
+    client.notify('textDocument/didOpen', {
+      textDocument: {
+        uri: firstEntryUri,
+        languageId: 'plaintext',
+        version: 1,
+        text: originalText,
+      },
+    });
+
+    // Wait for the first empty-diagnostics notification to confirm the document is analyzed.
+    const firstDiagnostics = await client.waitForNotification(
+      'textDocument/publishDiagnostics',
+      (params: unknown) => (params as { uri: string }).uri === firstEntryUri,
+      20_000,
+    );
+    expect((firstDiagnostics as { diagnostics: unknown[] }).diagnostics).toEqual([]);
+
+    const changeStart = performance.now();
+    client.notify('textDocument/didChange', {
+      textDocument: { uri: firstEntryUri, version: 2 },
+      contentChanges: [{ text: changedText }],
+    });
+
+    // Use a completion request as the signal that incremental re-analysis is complete.
+    // This avoids notification race conditions and still measures the incremental rebuild cost accurately.
+    const completion = (await client.request('textDocument/completion', {
+      textDocument: { uri: firstEntryUri },
+      position: { line: 8, character: 2 },
+    }, 20_000)) as { items?: Array<{ label: string }> } | Array<{ label: string }> | null;
+    const incrementalRebuildMs = performance.now() - changeStart;
+
+    expect(completion).toBeDefined();
+    expect(incrementalRebuildMs).toBeLessThan(5_000);
+
+    await client.shutdown();
+    const exitCode = await client.waitForExit(10_000);
+    expect(exitCode).toBe(0);
+  }, 45_000);
+
+  it('keeps stdio client attach cost within a practical budget', async () => {
+    ensureBuiltPackage();
+    const pairCount = 20;
+    const root = await createLargeWorkspace(pairCount);
+    const firstEntryPath = path.join(root, 'lorebooks/entry-0.risulorebook');
+    const firstEntryUri = pathToFileURL(firstEntryPath).toString();
+    const firstEntryText = [
+      '---',
+      'name: Entry0',
+      'comment: perf',
+      'constant: false',
+      'selective: false',
+      'enabled: true',
+      'insertion_order: 0',
+      'case_sensitive: false',
+      'use_regex: false',
+      '---',
+      '@@@ KEYS',
+      'entry-0',
+      '@@@ CONTENT',
+      '{{setvar::shared_0::ready}} reader-0',
+      '',
+    ].join('\n');
+
+    const attachStart = performance.now();
+    const client = createStdioClientWithTracking([
+      '--stdio',
+      '--workspace',
+      root,
+      '--luals-path',
+      path.join(root, 'missing', 'lua-language-server'),
+    ]);
+
+    await client.request('initialize', {
+      processId: null,
+      rootUri: pathToFileURL(root).toString(),
+      workspaceFolders: [{ uri: pathToFileURL(root).toString(), name: 'perf' }],
+      capabilities: {},
+    }, 20_000);
+    client.notify('initialized', {});
+
+    client.notify('textDocument/didOpen', {
+      textDocument: {
+        uri: firstEntryUri,
+        languageId: 'plaintext',
+        version: 1,
+        text: firstEntryText,
+      },
+    });
+
+    const firstDiagnostics = await client.waitForNotification(
+      'textDocument/publishDiagnostics',
+      (params: unknown) => (params as { uri: string }).uri === firstEntryUri,
+      20_000,
+    );
+    const clientAttachMs = performance.now() - attachStart;
+
+    expect((firstDiagnostics as { diagnostics: unknown[] }).diagnostics).toEqual([]);
+    expect(clientAttachMs).toBeLessThan(15_000);
+
+    await client.shutdown();
+    const exitCode = await client.waitForExit(10_000);
+    expect(exitCode).toBe(0);
+  }, 45_000);
 });

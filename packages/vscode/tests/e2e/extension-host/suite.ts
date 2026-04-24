@@ -5,6 +5,7 @@
 
 import assert from 'node:assert/strict';
 import { chmodSync, existsSync } from 'node:fs';
+import { performance } from 'node:perf_hooks';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -199,10 +200,13 @@ async function runRuntimeRoundtrip(): Promise<void> {
 
   const scenario = getRuntimeScenario(extension.extensionPath);
   await updateWorkspaceServerSettings(scenario.settings);
+  const attachStart = performance.now();
   const api = await extension.activate();
   await api.awaitCbsLanguageClientReady();
+  const attachMs = performance.now() - attachStart;
 
   const startedState = api.getCbsLanguageClientRuntimeState();
+  assert.ok(attachMs < 15_000, `Official client attach took ${attachMs.toFixed(0)}ms, exceeding 15000ms budget`);
   assert.equal(startedState.isStarted, true);
   assert.ok(startedState.client, 'Expected live LanguageClient instance');
   assert.ok(startedState.outputChannel, 'Expected output channel to exist while client is running');
