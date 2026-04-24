@@ -496,30 +496,7 @@ export class UnifiedVariableGraph {
    * @returns Array of UnifiedVariableOccurrence objects in that document
    */
   getOccurrencesByUri(uri: string): readonly UnifiedVariableOccurrence[] {
-    const occurrenceIds = this.snapshot.occurrencesByUri[uri];
-    if (!occurrenceIds || occurrenceIds.length === 0) {
-      return [];
-    }
-
-    // Collect all occurrences from variable nodes
-    const occurrences: UnifiedVariableOccurrence[] = [];
-    const idSet = new Set(occurrenceIds);
-
-    for (const variable of this.snapshot.variables) {
-      for (const occ of variable.readers) {
-        if (occ.uri === uri && idSet.has(occ.occurrenceId)) {
-          occurrences.push(occ);
-        }
-      }
-      for (const occ of variable.writers) {
-        if (occ.uri === uri && idSet.has(occ.occurrenceId)) {
-          occurrences.push(occ);
-        }
-      }
-    }
-
-    // Sort deterministically by occurrenceId for stable results
-    return occurrences.sort((a, b) => a.occurrenceId.localeCompare(b.occurrenceId));
+    return [...(this.occurrencesByUriIndex.get(uri) ?? [])];
   }
 
   /**
@@ -534,8 +511,8 @@ export class UnifiedVariableGraph {
    * @returns The found occurrence result
    */
   findOccurrenceAt(uri: string, hostOffset: number): FindOccurrenceResult {
-    const occurrenceIds = this.snapshot.occurrencesByUri[uri];
-    if (!occurrenceIds || occurrenceIds.length === 0) {
+    const uriOccurrences = this.occurrencesByUriIndex.get(uri);
+    if (!uriOccurrences || uriOccurrences.length === 0) {
       return { occurrence: null, variableNode: null, isExactMatch: false };
     }
 
@@ -546,21 +523,22 @@ export class UnifiedVariableGraph {
       rangeSize: number;
     }> = [];
 
-    for (const variable of this.snapshot.variables) {
-      // Check both readers and writers
-      const allOccurrences = [...variable.readers, ...variable.writers];
-      for (const occurrence of allOccurrences) {
-        if (occurrence.uri !== uri) continue;
-
-        const { hostStartOffset, hostEndOffset } = occurrence;
-        if (hostOffset >= hostStartOffset && hostOffset < hostEndOffset) {
-          containingOccurrences.push({
-            occurrence,
-            variableNode: variable,
-            rangeSize: hostEndOffset - hostStartOffset,
-          });
-        }
+    for (const occurrence of uriOccurrences) {
+      const { hostStartOffset, hostEndOffset } = occurrence;
+      if (hostOffset < hostStartOffset || hostOffset >= hostEndOffset) {
+        continue;
       }
+
+      const variableNode = this.snapshot.variableIndex[occurrence.variableName];
+      if (!variableNode) {
+        continue;
+      }
+
+      containingOccurrences.push({
+        occurrence,
+        variableNode,
+        rangeSize: hostEndOffset - hostStartOffset,
+      });
     }
 
     if (containingOccurrences.length === 0) {

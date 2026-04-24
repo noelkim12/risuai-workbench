@@ -563,6 +563,8 @@ export class ElementRegistry {
   private readonly elementCbsDataByUri = new Map<string, readonly ElementCBSData[]>();
   private readonly luaArtifactsByUri = new Map<string, LuaAnalysisArtifact>();
 
+  private isBatchRebuilding = false;
+
   constructor(scanResult: WorkspaceScanResult) {
     this.rebuild(scanResult);
   }
@@ -598,8 +600,13 @@ export class ElementRegistry {
       this.elementsByArtifact.set(artifact, []);
     }
 
-    for (const file of scanResult.files) {
-      this.upsertFile(file);
+    this.isBatchRebuilding = true;
+    try {
+      for (const file of scanResult.files) {
+        this.upsertFile(file);
+      }
+    } finally {
+      this.isBatchRebuilding = false;
     }
 
     return this.rebuildSnapshot();
@@ -627,7 +634,9 @@ export class ElementRegistry {
       this.luaArtifactsByUri.set(built.record.uri, built.luaArtifact);
     }
 
-    this.rebuildSnapshot();
+    if (!this.isBatchRebuilding) {
+      this.rebuildSnapshot();
+    }
     return built.record;
   }
 

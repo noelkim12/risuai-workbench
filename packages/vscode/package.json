@@ -28,33 +28,107 @@
         "id": "risulorebook",
         "extensions": [
           ".risulorebook"
-        ]
+        ],
+        "configuration": "./language-configuration.json"
       },
       {
         "id": "risuregex",
         "extensions": [
           ".risuregex"
-        ]
+        ],
+        "configuration": "./language-configuration.json"
       },
       {
         "id": "risuprompt",
         "extensions": [
           ".risuprompt"
-        ]
+        ],
+        "configuration": "./language-configuration.json"
       },
       {
         "id": "risuhtml",
         "extensions": [
           ".risuhtml"
-        ]
+        ],
+        "configuration": "./language-configuration.json"
       },
       {
         "id": "risulua",
         "extensions": [
           ".risulua"
-        ]
+        ],
+        "configuration": "./language-configuration.json"
       }
     ],
+    "grammars": [
+      {
+        "language": "risulorebook",
+        "scopeName": "source.risulorebook",
+        "path": "./syntaxes/risulorebook.tmLanguage.json"
+      },
+      {
+        "language": "risuregex",
+        "scopeName": "source.risuregex",
+        "path": "./syntaxes/risuregex.tmLanguage.json"
+      },
+      {
+        "language": "risuprompt",
+        "scopeName": "source.risuprompt",
+        "path": "./syntaxes/risuprompt.tmLanguage.json"
+      },
+      {
+        "language": "risuhtml",
+        "scopeName": "source.risuhtml",
+        "path": "./syntaxes/risuhtml.tmLanguage.json"
+      },
+      {
+        "language": "risulua",
+        "scopeName": "source.risulua",
+        "path": "./syntaxes/risulua.tmLanguage.json"
+      }
+    ],
+    "configurationDefaults": {
+      "[risulorebook]": {
+        "editor.quickSuggestions": {
+          "comments": false,
+          "other": true,
+          "strings": true
+        },
+        "editor.suggestOnTriggerCharacters": true
+      },
+      "[risuregex]": {
+        "editor.quickSuggestions": {
+          "comments": false,
+          "other": true,
+          "strings": true
+        },
+        "editor.suggestOnTriggerCharacters": true
+      },
+      "[risuprompt]": {
+        "editor.quickSuggestions": {
+          "comments": false,
+          "other": true,
+          "strings": true
+        },
+        "editor.suggestOnTriggerCharacters": true
+      },
+      "[risuhtml]": {
+        "editor.quickSuggestions": {
+          "comments": false,
+          "other": true,
+          "strings": true
+        },
+        "editor.suggestOnTriggerCharacters": true
+      },
+      "[risulua]": {
+        "editor.quickSuggestions": {
+          "comments": false,
+          "other": true,
+          "strings": true
+        },
+        "editor.suggestOnTriggerCharacters": true
+      }
+    },
     "viewsContainers": {
       "activitybar": [
         {

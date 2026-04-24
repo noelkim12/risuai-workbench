@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/services/variable-flow-service.ts
  */
 
-import type { VarEvent, VarFlowEntry, VarFlowIssue, VarFlowResult } from 'risu-workbench-core';
+import type { Range, VarEvent, VarFlowEntry, VarFlowIssue, VarFlowResult } from 'risu-workbench-core';
 
 import {
   createAgentMetadataWorkspaceSnapshot,
@@ -18,6 +18,76 @@ import {
   type UnifiedVariableNode,
   type UnifiedVariableOccurrence,
 } from '../indexer';
+import { offsetToPosition } from '../utils/position';
+
+export interface DefaultVariableDefinitionLocation {
+  uri: string;
+  relativePath: string;
+  variableName: string;
+  value: string;
+  range: Range;
+}
+
+/**
+ * collectDefaultVariableDefinitions 함수.
+ * registry에 포함된 `.risuvar` 파일의 `key=value` 행을 definition target으로 정규화함.
+ *
+ * @param registry - workspace file snapshot을 제공하는 registry
+ * @returns 변수명별 기본 변수 key 위치 목록
+ */
+function collectDefaultVariableDefinitions(
+  registry: ElementRegistry,
+): ReadonlyMap<string, readonly DefaultVariableDefinitionLocation[]> {
+  const definitions = new Map<string, DefaultVariableDefinitionLocation[]>();
+
+  for (const file of registry.getFilesByArtifact('variable')) {
+    let lineStartOffset = 0;
+    const lines = file.text.split(/\n/);
+    for (const line of lines) {
+      const trimmedStart = line.search(/\S/);
+      const equalsIndex = line.indexOf('=');
+      const isComment = trimmedStart !== -1 && line.slice(trimmedStart).startsWith('#');
+
+      if (equalsIndex > 0 && !isComment) {
+        const rawName = line.slice(0, equalsIndex).trim();
+        if (rawName.length > 0) {
+          const keyStartInLine = line.indexOf(rawName);
+          const keyStartOffset = lineStartOffset + keyStartInLine;
+          const keyEndOffset = keyStartOffset + rawName.length;
+          const location: DefaultVariableDefinitionLocation = {
+            uri: file.uri,
+            relativePath: file.relativePath,
+            variableName: rawName,
+            value: line.slice(equalsIndex + 1),
+            range: {
+              start: offsetToPosition(file.text, keyStartOffset),
+              end: offsetToPosition(file.text, keyEndOffset),
+            },
+          };
+          const bucket = definitions.get(rawName) ?? [];
+          bucket.push(location);
+          definitions.set(rawName, bucket);
+        }
+      }
+
+      lineStartOffset += line.length + 1;
+    }
+  }
+
+  return new Map(
+    [...definitions.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([variableName, locations]) => [
+        variableName,
+        [...locations].sort(
+          (left, right) =>
+            left.uri.localeCompare(right.uri) ||
+            left.range.start.line - right.range.start.line ||
+            left.range.start.character - right.range.start.character,
+        ),
+      ]),
+  );
+}
 
 /**
  * VariableFlowIssueMatch 타입.
@@ -108,6 +178,8 @@ export class VariableFlowService {
 
   private readonly workspaceSnapshot: WorkspaceSnapshotState | null;
 
+  private readonly defaultVariableDefinitions: ReadonlyMap<string, readonly DefaultVariableDefinitionLocation[]>;
+
   constructor(options: VariableFlowServiceCreateOptions) {
     this.graph = options.graph;
     this.registry = options.registry;
@@ -119,6 +191,7 @@ export class VariableFlowService {
       this.flowResult.variables.map((entry) => [entry.varName, entry] as const),
     );
     this.workspaceSnapshot = options.workspaceSnapshot ?? null;
+    this.defaultVariableDefinitions = collectDefaultVariableDefinitions(this.registry);
   }
 
   /**
@@ -213,7 +286,23 @@ export class VariableFlowService {
    * @returns graph에 등록된 전체 변수 이름 목록
    */
   getAllVariableNames(): readonly string[] {
-    return this.graph.getAllVariableNames();
+    return [
+      ...new Set([
+        ...this.graph.getAllVariableNames(),
+        ...this.defaultVariableDefinitions.keys(),
+      ]),
+    ].sort((left, right) => left.localeCompare(right));
+  }
+
+  /**
+   * getDefaultVariableDefinitions 함수.
+   * `.risuvar` 기본 변수 파일에 선언된 key 위치를 definition target으로 조회함.
+   *
+   * @param variableName - 조회할 기본 변수 이름
+   * @returns 기본 변수 파일 내 key range 목록
+   */
+  getDefaultVariableDefinitions(variableName: string): readonly DefaultVariableDefinitionLocation[] {
+    return this.defaultVariableDefinitions.get(variableName) ?? [];
   }
 
   /**

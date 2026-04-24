@@ -201,6 +201,9 @@ export class DefinitionProvider {
       for (const writer of flowQuery?.writers ?? []) {
         workspaceEntries.push({ uri: writer.uri, range: writer.hostRange });
       }
+      for (const defaultDefinition of this.variableFlowService.getDefaultVariableDefinitions(variableName)) {
+        workspaceEntries.push({ uri: defaultDefinition.uri, range: defaultDefinition.range });
+      }
     }
 
     const links = mergeLocalFirstSegments([localEntries, workspaceEntries]).map((entry) =>

@@ -7,6 +7,7 @@ import type {
   DocumentHighlight,
   DocumentSymbol,
   DocumentFormattingParams,
+  DocumentOnTypeFormattingParams,
   DocumentRangeFormattingParams,
   FoldingRange,
   Hover,
@@ -157,6 +158,8 @@ class FakeConnection {
 
   rangeFormattingHandler: ((params: DocumentRangeFormattingParams) => TextEdit[]) | null = null;
 
+  onTypeFormattingHandler: ((params: DocumentOnTypeFormattingParams) => TextEdit[]) | null = null;
+
   semanticTokensHandler: ((params: any) => SemanticTokens) | null = null;
 
   semanticTokensRangeHandler: ((params: any) => SemanticTokens) | null = null;
@@ -300,6 +303,11 @@ class FakeConnection {
 
   onDocumentRangeFormatting(handler: (params: DocumentRangeFormattingParams) => TextEdit[]) {
     this.rangeFormattingHandler = handler;
+    return createDisposable();
+  }
+
+  onDocumentOnTypeFormatting(handler: (params: DocumentOnTypeFormattingParams) => TextEdit[]) {
+    this.onTypeFormattingHandler = handler;
     return createDisposable();
   }
 

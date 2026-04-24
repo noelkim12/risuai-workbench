@@ -19,7 +19,7 @@ import {
 const TRANSPORT_STDIO = 0;
 const TRANSPORT_IPC = 1;
 
-type DocumentSelector = Array<{ scheme: string; pattern: string }>;
+type DocumentSelector = Array<{ scheme: string; pattern: string } | { language: string }>;
 
 type ServerOptions =
   | {
@@ -43,6 +43,11 @@ export const CBS_DOCUMENT_SELECTORS: DocumentSelector = [
   { scheme: 'file', pattern: '**/*.risuprompt' },
   { scheme: 'file', pattern: '**/*.risuhtml' },
   { scheme: 'file', pattern: '**/*.risulua' },
+  { language: 'risulorebook' },
+  { language: 'risuregex' },
+  { language: 'risuprompt' },
+  { language: 'risuhtml' },
+  { language: 'risulua' },
 ];
 
 /**

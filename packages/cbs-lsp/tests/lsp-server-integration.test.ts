@@ -895,7 +895,10 @@ describe('LSP server integration', () => {
     const connection = new FakeConnection();
     const documents = new FakeDocuments();
 
-    registerServer(connection as any, documents as any);
+    registerServer(
+      connection as unknown as Parameters<typeof registerServer>[0],
+      documents as unknown as Parameters<typeof registerServer>[1],
+    );
     connection.initializeHandler?.({ capabilities: {} } as InitializeParams);
 
     await expect(
@@ -2385,6 +2388,37 @@ describe('LSP server integration', () => {
       }),
       expect.objectContaining({
         targetUri: writerUri,
+      }),
+    ]);
+  });
+
+  it('routes textDocument/definition from getvar arguments to .risuvar default variable keys', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const readerText = lorebookDocument(['{{getvar::tea}}']);
+    const variableText = 'tea=1\nasd=3\n';
+    const readerUri = await writeWorkspaceFile(root, 'lorebooks/reader.risulorebook', readerText);
+    const variableUri = await writeWorkspaceFile(root, 'variables/defaults.risuvar', variableText);
+
+    registerServer(connection as any, documents as any);
+    documents.open(readerUri, readerText, 1);
+
+    const definition = connection.definitionHandler?.(
+      {
+        textDocument: { uri: readerUri },
+        position: positionAt(readerText, 'tea', 1),
+      },
+      createCancellationToken(false),
+    );
+
+    expect(definition).toEqual([
+      expect.objectContaining({
+        targetUri: variableUri,
+        targetRange: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 3 },
+        },
       }),
     ]);
   });

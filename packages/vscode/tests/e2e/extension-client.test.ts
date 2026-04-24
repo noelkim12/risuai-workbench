@@ -39,15 +39,47 @@ interface BuiltLaunchModule {
   getWorkspaceLocalCbsBinaryPath: (workspaceRootPath: string, platform?: NodeJS.Platform) => string;
 }
 
+interface BuiltAutoSuggestModule {
+  shouldTriggerCbsAutoSuggest: (input: {
+    insertedText: string;
+    languageId: string;
+    linePrefix: string;
+  }) => boolean;
+}
+
 /**
  * readPackageJson 함수.
  * package.json을 읽어 script surface를 검증하기 쉬운 JSON으로 반환함.
  *
  * @returns 현재 vscode package manifest
  */
-function readPackageJson(): { scripts?: Record<string, string> } {
+function readPackageJson(): {
+  contributes?: {
+    configurationDefaults?: Record<string, Record<string, unknown>>;
+    grammars?: Array<{ language?: string; path?: string; scopeName?: string }>;
+    languages?: Array<{ configuration?: string; id?: string }>;
+  };
+  scripts?: Record<string, string>;
+} {
   return JSON.parse(readFileSync(path.join(packageRoot, 'package.json'), 'utf8')) as {
+    contributes?: {
+      configurationDefaults?: Record<string, Record<string, unknown>>;
+      grammars?: Array<{ language?: string; path?: string; scopeName?: string }>;
+      languages?: Array<{ configuration?: string; id?: string }>;
+    };
     scripts?: Record<string, string>;
+  };
+}
+
+function readLanguageConfiguration(): {
+  autoClosingPairs?: string[][];
+  brackets?: string[][];
+  surroundingPairs?: string[][];
+} {
+  return JSON.parse(readFileSync(path.join(packageRoot, 'language-configuration.json'), 'utf8')) as {
+    autoClosingPairs?: string[][];
+    brackets?: string[][];
+    surroundingPairs?: string[][];
   };
 }
 
@@ -75,6 +107,18 @@ function loadBuiltLaunchModule(): BuiltLaunchModule {
   return localRequire(modulePath) as BuiltLaunchModule;
 }
 
+/**
+ * loadBuiltAutoSuggestModule 함수.
+ * build 산출물에서 CBS 자동 suggest predicate를 불러옴.
+ *
+ * @returns built auto suggest module exports
+ */
+function loadBuiltAutoSuggestModule(): BuiltAutoSuggestModule {
+  const modulePath = path.join(packageRoot, 'dist', 'completion', 'cbsAutoSuggestCore.js');
+  assert.ok(existsSync(modulePath), `Built auto suggest module not found: ${modulePath}`);
+  return localRequire(modulePath) as BuiltAutoSuggestModule;
+}
+
 test('separates standalone server validation from official VS Code client integration scripts', () => {
   const packageJson = readPackageJson();
 
@@ -100,6 +144,128 @@ test('does not overlap with server stdio E2E — client scripts are separate fro
   assert.equal(packageJson.scripts?.['test:e2e:standalone'] === undefined, true);
 });
 
+test('enables trigger-character suggestions by default for CBS-bearing languages', () => {
+  const packageJson = readPackageJson();
+  const defaults = packageJson.contributes?.configurationDefaults ?? {};
+
+  for (const languageId of ['risulorebook', 'risuregex', 'risuprompt', 'risuhtml', 'risulua']) {
+    const languageDefaults = defaults[`[${languageId}]`];
+    const quickSuggestions = languageDefaults?.['editor.quickSuggestions'] as
+      | { comments?: boolean; other?: boolean; strings?: boolean }
+      | undefined;
+
+    assert.equal(languageDefaults?.['editor.suggestOnTriggerCharacters'], true);
+    assert.equal(quickSuggestions?.other, true);
+    assert.equal(quickSuggestions?.strings, true);
+  }
+});
+
+test('attaches language configuration to every CBS-bearing language', () => {
+  const packageJson = readPackageJson();
+  const languages = packageJson.contributes?.languages ?? [];
+
+  for (const languageId of ['risulorebook', 'risuregex', 'risuprompt', 'risuhtml', 'risulua']) {
+    const language = languages.find((candidate) => candidate.id === languageId);
+
+    assert.equal(language?.configuration, './language-configuration.json');
+  }
+});
+
+test('contributes CBS TextMate grammars for every CBS-bearing language', () => {
+  const packageJson = readPackageJson();
+  const grammars = packageJson.contributes?.grammars ?? [];
+
+  for (const languageId of ['risulorebook', 'risuregex', 'risuprompt', 'risuhtml', 'risulua']) {
+    const grammar = grammars.find((candidate) => candidate.language === languageId);
+    const grammarPath = path.join(packageRoot, grammar?.path ?? '');
+
+    assert.equal(grammar?.scopeName, `source.${languageId}`);
+    assert.equal(grammar?.path, `./syntaxes/${languageId}.tmLanguage.json`);
+    assert.ok(existsSync(grammarPath), `Expected grammar file for ${languageId}`);
+  }
+});
+
+test('keeps imported CBS syntax-extension legacy assets available without provider duplication', () => {
+  for (const relativePath of [
+    'src/cbs/legacy/core/cbsDatabase.ts',
+    'src/cbs/legacy/core/completionEngine.ts',
+    'src/cbs/legacy/core/signatureEngine.ts',
+    'src/cbs/legacy/core/parser.ts',
+    'src/cbs/legacy/core/formatter.ts',
+    'src/cbs/legacy/providers/bracketPairProvider.ts',
+  ]) {
+    assert.ok(existsSync(path.join(packageRoot, relativePath)), `Expected imported asset: ${relativePath}`);
+  }
+});
+
+test('treats CBS double braces as bracket pair without auto-closing them over LSP completions', () => {
+  const languageConfiguration = readLanguageConfiguration();
+
+  assert.deepEqual(languageConfiguration.brackets?.[0], ['{{', '}}']);
+  assert.deepEqual(languageConfiguration.surroundingPairs?.[0], ['{{', '}}']);
+  assert.equal(
+    languageConfiguration.brackets?.some(([open, close]) => open === '{' && close === '}'),
+    false,
+  );
+  assert.equal(
+    languageConfiguration.autoClosingPairs?.some(([open, close]) => open === '{{' && close === '}}'),
+    false,
+  );
+});
+
+test('detects double-open-brace CBS prefixes for explicit VS Code suggest fallback', () => {
+  const autoSuggest = loadBuiltAutoSuggestModule();
+
+  assert.equal(
+    autoSuggest.shouldTriggerCbsAutoSuggest({
+      insertedText: '{',
+      languageId: 'risuhtml',
+      linePrefix: '{{',
+    }),
+    true,
+  );
+  assert.equal(
+    autoSuggest.shouldTriggerCbsAutoSuggest({
+      insertedText: '{',
+      languageId: 'typescript',
+      linePrefix: '{{',
+    }),
+    false,
+  );
+  assert.equal(
+    autoSuggest.shouldTriggerCbsAutoSuggest({
+      insertedText: 'x',
+      languageId: 'risuhtml',
+      linePrefix: '{{x',
+    }),
+    false,
+  );
+  assert.equal(
+    autoSuggest.shouldTriggerCbsAutoSuggest({
+      insertedText: ':',
+      languageId: 'risulorebook',
+      linePrefix: '{{getvar::',
+    }),
+    true,
+  );
+  assert.equal(
+    autoSuggest.shouldTriggerCbsAutoSuggest({
+      insertedText: ':',
+      languageId: 'risuprompt',
+      linePrefix: '{{call::',
+    }),
+    true,
+  );
+  assert.equal(
+    autoSuggest.shouldTriggerCbsAutoSuggest({
+      insertedText: ':',
+      languageId: 'typescript',
+      linePrefix: '{{getvar::',
+    }),
+    false,
+  );
+});
+
 test('keeps the official client boundary on standalone stdio when a workspace local binary exists', () => {
   const boundary = loadBuiltBoundaryModule();
   const launch = loadBuiltLaunchModule();
@@ -122,6 +288,12 @@ test('keeps the official client boundary on standalone stdio when a workspace lo
   assert.deepEqual(
     snapshot.clientOptions.documentSelector,
     boundary.CBS_DOCUMENT_SELECTORS,
+  );
+  assert.ok(
+    snapshot.clientOptions.documentSelector.some(
+      (selector) => 'language' in selector && selector.language === 'risuhtml',
+    ),
+    'Expected language-based selectors so untitled risuhtml documents can receive CBS completions',
   );
   assert.equal(snapshot.clientOptions.fileWatcherPattern, '**/.risu*');
 });

@@ -123,6 +123,7 @@ export function createVariableFlowServiceStub(
 ): VariableFlowService {
   return {
     getAllVariableNames: options.getAllVariableNames ?? (() => []),
+    getDefaultVariableDefinitions: () => [],
     queryVariable: options.queryVariable ?? (() => null),
     queryAt: options.queryAt ?? (() => null),
     getWorkspaceFreshness: ({ uri, version }: { uri: string; version: number }) => {

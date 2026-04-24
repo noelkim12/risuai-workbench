@@ -259,6 +259,35 @@ const CALC_OPERATORS: readonly CalcOperatorCompletion[] = [
   },
 ];
 
+function canCompleteFromRecoveredPlainTextContext(context: CompletionTriggerContext): boolean {
+  return context.type !== 'none' && context.type !== 'close-tag';
+}
+
+function normalizeCompletionTextEditNewText(
+  item: CompletionItem,
+  context: CompletionTriggerContext,
+): string {
+  const newText = item.insertText ?? item.label;
+  if (
+    context.type === 'block-functions' &&
+    item.kind === CompletionItemKind.Class &&
+    context.prefix.startsWith('#') &&
+    newText.startsWith('#')
+  ) {
+    return newText.slice(1);
+  }
+
+  if (
+    context.type === 'block-functions' &&
+    item.kind === CompletionItemKind.Snippet &&
+    newText.startsWith('{{')
+  ) {
+    return newText.slice(2);
+  }
+
+  return newText;
+}
+
 export interface NormalizedCompletionTextEditSnapshot {
   insert: LSPRange | null;
   newText: string;
@@ -474,6 +503,14 @@ export class CompletionProvider {
   }
 
   provide(params: TextDocumentPositionParams, cancellationToken?: CancellationToken): CompletionItem[] {
+    return this.provideInternal(params, cancellationToken, false);
+  }
+
+  private provideInternal(
+    params: TextDocumentPositionParams,
+    cancellationToken: CancellationToken | undefined,
+    unresolvedOnly: boolean,
+  ): CompletionItem[] {
     if (isRequestCancelled(cancellationToken)) {
       return [];
     }
@@ -497,7 +534,11 @@ export class CompletionProvider {
       return [];
     }
 
-    if (!lookup.recovery.tokenContextReliable && lookup.token?.category === 'plain-text') {
+    if (
+      !lookup.recovery.tokenContextReliable &&
+      lookup.token?.category === 'plain-text' &&
+      !canCompleteFromRecoveredPlainTextContext(context)
+    ) {
       return [];
     }
 
@@ -515,7 +556,7 @@ export class CompletionProvider {
     }
 
     const workspaceFreshness = this.getWorkspaceFreshness(request);
-    const completions = this.buildCompletions(context, lookup, workspaceFreshness);
+    const completions = this.buildCompletions(context, lookup, workspaceFreshness, unresolvedOnly);
     if (completions.length === 0) {
       return [];
     }
@@ -546,7 +587,7 @@ export class CompletionProvider {
       ...item,
       textEdit: {
         range: lspRange,
-        newText: item.insertText ?? item.label,
+        newText: normalizeCompletionTextEditNewText(item, context),
       },
     }));
   }
@@ -565,7 +606,7 @@ export class CompletionProvider {
     params: TextDocumentPositionParams,
     cancellationToken?: CancellationToken,
   ): UnresolvedCompletionItem[] {
-    const resolved = this.provide(params, cancellationToken);
+    const resolved = this.provideInternal(params, cancellationToken, true);
     return resolved.map((item) =>
       stripCompletionItemToUnresolved(item, params.textDocument.uri, params.position),
     );
@@ -612,12 +653,13 @@ export class CompletionProvider {
     context: CompletionTriggerContext,
     lookup: FragmentCursorLookupResult,
     workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null,
+    unresolvedOnly: boolean,
   ): CompletionItem[] {
     switch (context.type) {
       case 'all-functions':
-        return this.buildAllFunctionCompletions(context.prefix);
+        return this.buildAllFunctionCompletions(context.prefix, unresolvedOnly);
       case 'block-functions':
-        return this.buildBlockFunctionCompletions(context.prefix);
+        return this.buildBlockFunctionCompletions(context.prefix, unresolvedOnly);
       case 'else-keyword':
         return this.buildElseCompletion();
       case 'close-tag':
@@ -749,25 +791,14 @@ export class CompletionProvider {
     return [...localVariableCompletions, ...workspaceVariableCompletions, ...operatorCompletions];
   }
 
-  private buildAllFunctionCompletions(prefix: string): CompletionItem[] {
+  private buildAllFunctionCompletions(prefix: string, unresolvedOnly: boolean): CompletionItem[] {
     const allFunctions = this.registry.getAll();
     const filtered = this.filterByPrefix(allFunctions, prefix);
 
-    return filtered.map((fn) => ({
-      label: fn.name,
-      kind: fn.isBlock ? CompletionItemKind.Class : CompletionItemKind.Function,
-      data: this.createCategoryData(this.getBuiltinCategory(fn), this.getBuiltinExplanation(fn)),
-      detail: this.formatFunctionDetail(fn),
-      documentation: {
-        kind: 'markdown',
-        value: this.formatFunctionDocumentation(fn),
-      },
-      insertText: fn.name,
-      deprecated: fn.deprecated !== undefined,
-    }));
+    return filtered.map((fn) => this.buildBuiltinCompletionItem(fn, unresolvedOnly));
   }
 
-  private buildBlockFunctionCompletions(prefix: string): CompletionItem[] {
+  private buildBlockFunctionCompletions(prefix: string, unresolvedOnly: boolean): CompletionItem[] {
     const allFunctions = this.registry.getAll();
     const blockFunctions = allFunctions.filter((fn) => fn.isBlock);
     // Strip leading # from prefix for comparison since registry stores names with # (e.g., "#when")
@@ -782,44 +813,77 @@ export class CompletionProvider {
       );
     });
 
-    const completions: CompletionItem[] = filtered.map((fn) => ({
+    const completions: CompletionItem[] = filtered.map((fn) =>
+      this.buildBuiltinCompletionItem(fn, unresolvedOnly),
+    );
+
+    // Add block snippets
+    for (const snippet of BLOCK_SNIPPETS) {
+      if (snippet.label.toLowerCase().startsWith(lowerSearchPrefix)) {
+        const item: CompletionItem = {
+          label: snippet.label,
+          kind: CompletionItemKind.Snippet,
+          data: this.createCategoryData(
+            {
+              category: 'snippet',
+              kind: 'block-snippet',
+            },
+            unresolvedOnly
+              ? undefined
+              : this.createContextualExplanation(
+                  'block-snippet-library',
+                  'Block completion appended an editor snippet from the static CBS block snippet set.',
+                ),
+          ),
+          insertText: snippet.insertText,
+          insertTextFormat: InsertTextFormat.Snippet,
+        };
+
+        completions.push(
+          unresolvedOnly
+            ? item
+            : {
+                ...item,
+                detail: snippet.detail,
+                documentation: {
+                  kind: 'markdown',
+                  value: snippet.documentation,
+                },
+              },
+        );
+      }
+    }
+
+    return completions;
+  }
+
+  private buildBuiltinCompletionItem(
+    fn: CBSBuiltinFunction,
+    unresolvedOnly: boolean,
+  ): CompletionItem {
+    const item: CompletionItem = {
       label: fn.name,
-      kind: CompletionItemKind.Class,
-      data: this.createCategoryData(this.getBuiltinCategory(fn), this.getBuiltinExplanation(fn)),
+      kind: fn.isBlock ? CompletionItemKind.Class : CompletionItemKind.Function,
+      data: this.createCategoryData(
+        this.getBuiltinCategory(fn),
+        unresolvedOnly ? undefined : this.getBuiltinExplanation(fn),
+      ),
+      insertText: fn.name,
+      deprecated: fn.deprecated !== undefined,
+    };
+
+    if (unresolvedOnly) {
+      return item;
+    }
+
+    return {
+      ...item,
       detail: this.formatFunctionDetail(fn),
       documentation: {
         kind: 'markdown',
         value: this.formatFunctionDocumentation(fn),
       },
-      insertText: fn.name,
-      deprecated: fn.deprecated !== undefined,
-    }));
-
-    // Add block snippets
-    for (const snippet of BLOCK_SNIPPETS) {
-      if (snippet.label.toLowerCase().startsWith(prefix.toLowerCase())) {
-        completions.push({
-          label: snippet.label,
-          kind: CompletionItemKind.Snippet,
-          data: this.createCategoryData({
-            category: 'snippet',
-            kind: 'block-snippet',
-          }, this.createContextualExplanation(
-            'block-snippet-library',
-            'Block completion appended an editor snippet from the static CBS block snippet set.',
-          )),
-          detail: snippet.detail,
-          documentation: {
-            kind: 'markdown',
-            value: snippet.documentation,
-          },
-          insertText: snippet.insertText,
-          insertTextFormat: InsertTextFormat.Snippet,
-        });
-      }
-    }
-
-    return completions;
+    };
   }
 
   private buildElseCompletion(): CompletionItem[] {
@@ -981,24 +1045,22 @@ export class CompletionProvider {
 
     const normalizedPrefix = options.prefix.toLowerCase();
 
-    return this.variableFlowService
-      .getAllVariableNames()
-      .filter((variableName) => {
-        if (!variableName.toLowerCase().startsWith(normalizedPrefix)) {
-          return false;
-        }
+    return this.variableFlowService.getAllVariableNames().flatMap((variableName) => {
+      if (!variableName.toLowerCase().startsWith(normalizedPrefix)) {
+        return [];
+      }
 
-        const query = this.variableFlowService?.queryVariable(variableName);
-        if (!query || query.writers.length === 0) {
-          return false;
-        }
+      if (options.existingLabels.has(`${options.labelPrefix}${variableName}`)) {
+        return [];
+      }
 
-        return !options.existingLabels.has(`${options.labelPrefix}${variableName}`);
-      })
-      .map((variableName) => {
-        const query = this.variableFlowService?.queryVariable(variableName);
-        const readerCount = query?.readers.length ?? 0;
-        const writerCount = query?.writers.length ?? 0;
+      const query = this.variableFlowService?.queryVariable(variableName);
+      if (!query || query.writers.length === 0) {
+        return [];
+      }
+
+      const readerCount = query.readers.length;
+      const writerCount = query.writers.length;
         const label = `${options.labelPrefix}${variableName}`;
         const detail =
           options.usage === 'calc-expression'

@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import { CBSBracketPairHighlighter } from './cbs/legacy/providers/bracketPairProvider';
+import { registerCbsAutoSuggestTrigger } from './completion/cbsAutoSuggest';
 import { registerCoreCommands } from './commands';
 import {
   awaitCbsLanguageClientReady,
@@ -31,9 +33,29 @@ export function activate(context: vscode.ExtensionContext): RisuWorkbenchExtensi
   const treeView = vscode.window.createTreeView('risuWorkbench.cards', {
     treeDataProvider: treeProvider,
   });
+  const bracketHighlighter = new CBSBracketPairHighlighter();
 
   context.subscriptions.push(treeView);
+  context.subscriptions.push(bracketHighlighter);
   context.subscriptions.push(registerCoreCommands(context, cardService, analysisService));
+  registerCbsAutoSuggestTrigger(context);
+
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      bracketHighlighter.updateActiveEditor(editor);
+    }),
+    vscode.workspace.onDidChangeTextDocument((event) => {
+      const editor = vscode.window.activeTextEditor;
+      if (editor && event.document === editor.document) {
+        bracketHighlighter.updateActiveEditor(editor);
+      }
+    }),
+    vscode.window.onDidChangeTextEditorSelection((event) => {
+      bracketHighlighter.updateActiveEditor(event.textEditor);
+    }),
+  );
+
+  bracketHighlighter.updateActiveEditor(vscode.window.activeTextEditor);
   
   // Start CBS language client for .risu* files
   startCbsLanguageClient(context);

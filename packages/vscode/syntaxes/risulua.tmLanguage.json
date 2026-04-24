@@ -1,0 +1,340 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "risulua",
+  "scopeName": "source.risulua",
+  "patterns": [
+    {
+      "include": "#cbs-comment"
+    },
+    {
+      "include": "#cbs-else"
+    },
+    {
+      "include": "#cbs-block-open"
+    },
+    {
+      "include": "#cbs-block-close"
+    },
+    {
+      "include": "#cbs-math-expression"
+    },
+    {
+      "include": "#cbs-function-call"
+    },
+    {
+      "include": "#markdown-content"
+    }
+  ],
+  "repository": {
+    "cbs-comment": {
+      "name": "comment.line.cbs",
+      "match": "(\\{\\{)(//)([^}]*)(\\}\\})",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.comment.begin.cbs"
+        },
+        "2": {
+          "name": "keyword.operator.comment.cbs"
+        },
+        "3": {
+          "name": "comment.line.content.cbs"
+        },
+        "4": {
+          "name": "punctuation.definition.comment.end.cbs"
+        }
+      }
+    },
+    "cbs-else": {
+      "name": "keyword.control.else.cbs",
+      "match": "(\\{\\{)(:else)(\\}\\})",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.else.begin.cbs"
+        },
+        "2": {
+          "name": "keyword.control.else.cbs"
+        },
+        "3": {
+          "name": "punctuation.definition.else.end.cbs"
+        }
+      }
+    },
+    "cbs-block-open": {
+      "name": "meta.block.open.cbs",
+      "begin": "(\\{\\{)(#)([a-zA-Z_][a-zA-Z0-9_]*)",
+      "end": "(\\}\\})",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.block.begin.cbs"
+        },
+        "2": {
+          "name": "keyword.control.block.cbs"
+        },
+        "3": {
+          "name": "entity.name.function.block.cbs"
+        }
+      },
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.block.begin.cbs"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#cbs-comment"
+        },
+        {
+          "include": "#cbs-else"
+        },
+        {
+          "include": "#cbs-block-open"
+        },
+        {
+          "include": "#cbs-math-expression"
+        },
+        {
+          "include": "#cbs-function-call"
+        },
+        {
+          "include": "#cbs-block-argument"
+        }
+      ]
+    },
+    "cbs-block-close": {
+      "name": "meta.block.close.cbs",
+      "match": "(\\{\\{)(/(?:[a-zA-Z_][a-zA-Z0-9_]*)?)(\\}\\})",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.block.end.cbs"
+        },
+        "2": {
+          "name": "keyword.control.block.cbs"
+        },
+        "3": {
+          "name": "punctuation.definition.block.end.cbs"
+        }
+      }
+    },
+    "cbs-block-argument": {
+      "name": "string.unquoted.argument.cbs",
+      "match": "\\s+[^{}]+"
+    },
+    "cbs-math-expression": {
+      "name": "meta.math.expression.cbs",
+      "begin": "(\\{\\{)(\\?)\\s*",
+      "end": "(\\}\\})",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.expression.begin.cbs"
+        },
+        "2": {
+          "name": "keyword.operator.math.cbs"
+        }
+      },
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.expression.end.cbs"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#cbs-comment"
+        },
+        {
+          "include": "#cbs-block-open"
+        },
+        {
+          "include": "#cbs-math-expression"
+        },
+        {
+          "include": "#cbs-function-call"
+        },
+        {
+          "include": "#math-operators"
+        },
+        {
+          "include": "#numbers"
+        }
+      ]
+    },
+    "cbs-function-call": {
+      "name": "meta.function.call.cbs",
+      "begin": "(\\{\\{)(?![#/?:])",
+      "end": "(\\}\\})",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.function.begin.cbs"
+        }
+      },
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.function.end.cbs"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#cbs-comment"
+        },
+        {
+          "include": "#cbs-block-open"
+        },
+        {
+          "include": "#cbs-math-expression"
+        },
+        {
+          "include": "#cbs-function-call"
+        },
+        {
+          "include": "#function-names"
+        },
+        {
+          "include": "#argument-separator"
+        },
+        {
+          "include": "#function-arguments"
+        }
+      ]
+    },
+    "function-names": {
+      "patterns": [
+        {
+          "name": "entity.name.function.data.cbs",
+          "match": "\\b(previous_char_chat|previouscharchat|lastcharmessage|previous_user_chat|previoususerchat|lastusermessage|char|bot|user|personality|char_persona|charpersona|description|char_desc|chardesc|scenario|example_dialogue|example_message|exampledialogue|examplemessage|persona|user_persona|userpersona|main_prompt|system_prompt|systemprompt|mainprompt|lorebook|world_info|worldinfo|history|messages|user_history|user_messages|userhistory|usermessages|char_history|char_messages|charhistory|charmessages|ujb|global_note|system_note|globalnote|systemnote|role|lastmessage|lastmessageid|lastmessageindex)\\b"
+        },
+        {
+          "name": "entity.name.function.variable.cbs",
+          "match": "\\b(tempvar|gettempvar|settempvar|getvar|setvar|addvar|setdefaultvar|getglobalvar|return)\\b"
+        },
+        {
+          "name": "entity.name.function.logic.cbs",
+          "match": "\\b(equal|not_equal|notequal|greater|less|greater_equal|greaterequal|less_equal|lessequal|and|or|not|all|any|iserror)\\b"
+        },
+        {
+          "name": "entity.name.function.string.cbs",
+          "match": "\\b(startswith|endswith|contains|replace|split|join|spread|trim|length|lower|upper|capitalize|tonumber|reverse)\\b"
+        },
+        {
+          "name": "entity.name.function.array.cbs",
+          "match": "\\b(arraylength|array_length|arrayelement|array_element|arrayshift|array_shift|arraypop|array_pop|arraypush|array_push|arraysplice|array_splice|arrayassert|array_assert|makearray|array|a|make_array|filter|range)\\b"
+        },
+        {
+          "name": "entity.name.function.dict.cbs",
+          "match": "\\b(dictelement|dict_element|objectelement|object_element|object_assert|dict_assert|dictassert|objectassert|makedict|dict|d|make_dict|makeobject|object|o|make_object|element|ele)\\b"
+        },
+        {
+          "name": "entity.name.function.math.cbs",
+          "match": "\\b(calc|round|floor|ceil|abs|remaind|pow|min|max|sum|average|fixnum|fix_num|fixnumber|fix_number|randint|dice|fromhex|tohex)\\b"
+        },
+        {
+          "name": "entity.name.function.time.cbs",
+          "match": "\\b(message_time|messagetime|message_date|messagedate|message_unixtime_array|messageunixtimearray|unixtime|time|date|isotime|isodate|message_idle_duration|messageidleduration|idle_duration|idleduration|datetimeformat|date_time_format)\\b"
+        },
+        {
+          "name": "entity.name.function.media.cbs",
+          "match": "\\b(asset|emotion|audio|bg|video|video-img|path|raw|image|img|bgm|inlay|inlayed|inlayeddata|risu|file|button|emotionlist|assetlist|chardisplayasset|source|position)\\b"
+        },
+        {
+          "name": "entity.name.function.random.cbs",
+          "match": "\\b(random|pick|roll|rollp|hash)\\b"
+        },
+        {
+          "name": "entity.name.function.encryption.cbs",
+          "match": "\\b(xor|xorencrypt|xorencode|xore|xordecrypt|xordecode|xord|crypt|crypto|caesar|encrypt|decrypt)\\b"
+        },
+        {
+          "name": "entity.name.function.control.cbs",
+          "match": "\\b(hiddenkey|trigger_id|triggerid|jb|jailbreak|jbtoggled)\\b"
+        },
+        {
+          "name": "entity.name.function.system.cbs",
+          "match": "\\b(chat_index|chatindex|first_msg_index|firstmessageindex|firstmsgindex|blank|none|br|newline|cbr|cnl|cnewline|model|axmodel|isfirstmsg|is_first_msg|is_first_message|isfirstmessage|maxcontext|prefill_supported|prefillsupported|prefill|screen_width|screenwidth|screen_height|screenheight|decbo|displayescapedcurlybracketopen|decbc|displayescapedcurlybracketclose|bo|ddecbo|doubledisplayescapedcurlybracketopen|bc|ddecbc|doubledisplayescapedcurlybracketclose|displayescapedbracketopen|debo|displayescapedbracketclose|debc|displayescapedanglebracketopen|deabo|displayescapedanglebracketclose|deabc|displayescapedcolon|dec|displayescapedsemicolon|comment|metadata|module_enabled|moduleenabled|module_assetlist|moduleassetlist|unicode_encode|unicodeencode|unicode_decode|unicodedecode|u|unicodedecodefromhex|ue|unicodeencodefromhex|previous_chat_log|slot|\\?)\\b"
+        }
+      ]
+    },
+    "argument-separator": {
+      "name": "punctuation.separator.argument.cbs",
+      "match": "::"
+    },
+    "function-arguments": {
+      "patterns": [
+        {
+          "include": "#cbs-block-open"
+        },
+        {
+          "include": "#cbs-math-expression"
+        },
+        {
+          "include": "#cbs-function-call"
+        },
+        {
+          "include": "#numbers"
+        },
+        {
+          "include": "#strings"
+        },
+        {
+          "name": "variable.parameter.cbs",
+          "match": "[^:{}]+"
+        }
+      ]
+    },
+    "math-operators": {
+      "name": "keyword.operator.arithmetic.cbs",
+      "match": "\\+|-|\\*|/|\\^|%|<|>|<=|>=|==|!=|&&|\\|\\||!"
+    },
+    "numbers": {
+      "name": "constant.numeric.cbs",
+      "match": "\\b\\d+(\\.\\d+)?\\b"
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.cbs",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.cbs",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.cbs",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.cbs",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "markdown-content": {
+      "patterns": [
+        {
+          "name": "markup.heading.markdown",
+          "match": "^#{1,6}\\s+.*$"
+        },
+        {
+          "name": "markup.bold.markdown",
+          "match": "\\*\\*[^*]+\\*\\*"
+        },
+        {
+          "name": "markup.italic.markdown",
+          "match": "\\*[^*]+\\*"
+        },
+        {
+          "name": "markup.list.markdown",
+          "match": "^\\s*[-*+]\\s+"
+        },
+        {
+          "name": "markup.list.numbered.markdown",
+          "match": "^\\s*\\d+\\.\\s+"
+        }
+      ]
+    }
+  }
+}

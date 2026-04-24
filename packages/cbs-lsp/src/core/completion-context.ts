@@ -160,6 +160,95 @@ export function detectCompletionTriggerContext(
     return token.token.value.slice(0, typedLength).trim();
   };
 
+  const detectPlainTextMacroPrefixContext = (): CompletionTriggerContext | null => {
+    if (!token || token.token.type !== TokenType.PlainText) {
+      return null;
+    }
+
+    const typedLength = Math.min(
+      token.token.value.length,
+      Math.max(0, fragmentLocalOffset - token.localStartOffset),
+    );
+    const typedText = token.token.value.slice(0, typedLength);
+    const macroStart = typedText.lastIndexOf('{{');
+    if (macroStart === -1) {
+      return null;
+    }
+
+    const prefix = typedText.slice(macroStart + 2);
+    const startOffset = token.localStartOffset + macroStart;
+    const argumentSeparatorIndex = prefix.indexOf('::');
+    if (argumentSeparatorIndex !== -1) {
+      const functionName = prefix.slice(0, argumentSeparatorIndex).trim().toLowerCase();
+      const argumentPrefix = prefix.slice(argumentSeparatorIndex + 2);
+      const argumentStartOffset = startOffset + 2 + argumentSeparatorIndex + 2;
+
+      if (functionName === 'getvar' || functionName === 'setvar' || functionName === 'addvar') {
+        return {
+          type: 'variable-names',
+          prefix: argumentPrefix,
+          startOffset: argumentStartOffset,
+          endOffset: fragmentLocalOffset,
+          kind: 'chat',
+        };
+      }
+
+      if (functionName === 'gettempvar' || functionName === 'settempvar' || functionName === 'tempvar') {
+        return {
+          type: 'variable-names',
+          prefix: argumentPrefix,
+          startOffset: argumentStartOffset,
+          endOffset: fragmentLocalOffset,
+          kind: 'temp',
+        };
+      }
+
+      if (functionName === 'metadata') {
+        return {
+          type: 'metadata-keys',
+          prefix: argumentPrefix,
+          startOffset: argumentStartOffset,
+          endOffset: fragmentLocalOffset,
+        };
+      }
+
+      if (functionName === 'call') {
+        return {
+          type: 'function-names',
+          prefix: argumentPrefix,
+          startOffset: argumentStartOffset,
+          endOffset: fragmentLocalOffset,
+        };
+      }
+    }
+
+    if (prefix.startsWith('#')) {
+      return {
+        type: 'block-functions',
+        prefix: prefix.slice(1),
+        startOffset: startOffset + 2,
+        endOffset: fragmentLocalOffset,
+      };
+    }
+
+    if (prefix.startsWith('/')) {
+      return {
+        type: 'close-tag',
+        prefix: prefix.slice(1),
+        startOffset: startOffset + 3,
+        endOffset: fragmentLocalOffset,
+        blockKind: findOpenBlockKind() ?? '',
+      };
+    }
+
+    return {
+      type: 'all-functions',
+      prefix,
+      startOffset: startOffset + 2,
+      endOffset: fragmentLocalOffset,
+    };
+  };
+
   const detectCallFunctionContext = (): CompletionTriggerContext | null => {
     const openBrace = findOpenBraceToken();
     if (!openBrace) {
@@ -468,6 +557,47 @@ export function detectCompletionTriggerContext(
     if (token.token.type === TokenType.CloseBrace) {
       const openBrace = findOpenBraceToken();
       if (openBrace !== null) {
+        const previousToken = tokens[token.tokenIndex - 1];
+        const blockStartToken = tokens[openBrace.index + 1];
+        if (previousToken?.type === TokenType.BlockStart) {
+          const blockStartEnd = positionToOffset(
+            fragmentAnalysis.fragment.content,
+            previousToken.range.end,
+          );
+          if (fragmentLocalOffset === blockStartEnd) {
+            return {
+              type: 'block-functions',
+              prefix: previousToken.value,
+              startOffset: openBrace.offset + 3,
+              endOffset: fragmentLocalOffset,
+            };
+          }
+        }
+
+        if (blockStartToken?.type === TokenType.BlockStart && previousToken?.type === TokenType.FunctionName) {
+          const previousTokenEnd = positionToOffset(
+            fragmentAnalysis.fragment.content,
+            previousToken.range.end,
+          );
+          if (fragmentLocalOffset === previousTokenEnd) {
+            return {
+              type: 'block-functions',
+              prefix: `${blockStartToken.value}${previousToken.value}`,
+              startOffset: openBrace.offset + 3,
+              endOffset: fragmentLocalOffset,
+            };
+          }
+        }
+
+        if (fragmentLocalOffset === openBrace.offset + 2 && fragmentLocalOffset <= tokenStart) {
+          return {
+            type: 'all-functions',
+            prefix: '',
+            startOffset: openBrace.offset + 2,
+            endOffset: fragmentLocalOffset,
+          };
+        }
+
         // Check if we're in a macro argument context (for variable/metadata completion)
         const parentMacro = findParentMacro();
         if (parentMacro) {
@@ -538,6 +668,11 @@ export function detectCompletionTriggerContext(
     // 1. There's an OpenBrace before this PlainText (complete macro before incomplete text)
     // 2. The PlainText itself starts with {{ (unclosed macro treated as PlainText by tokenizer)
     if (token.token.type === TokenType.PlainText) {
+      const plainTextMacroPrefixContext = detectPlainTextMacroPrefixContext();
+      if (plainTextMacroPrefixContext) {
+        return plainTextMacroPrefixContext;
+      }
+
       // Scenario 1: Check if there's an OpenBrace token before this PlainText
       const openBrace = findOpenBraceToken();
       if (openBrace !== null) {
@@ -671,7 +806,7 @@ export function detectCompletionTriggerContext(
       if (openBrace !== null) {
         return {
           type: 'block-functions',
-          prefix: '',
+          prefix: token.token.value.slice(0, Math.max(0, fragmentLocalOffset - token.localStartOffset)),
           startOffset: openBrace.offset + 3,
           endOffset: fragmentLocalOffset,
         };
