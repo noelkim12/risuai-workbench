@@ -168,6 +168,35 @@ function createWorkspaceChatVariableService(...variableNames: string[]): Variabl
 }
 
 /**
+ * createDefaultOnlyVariableService 함수.
+ * `.risuvar` 기본 변수 key만 있는 workspace completion 후보를 흉내 냄.
+ *
+ * @param variableNames - 기본 변수 파일에 있다고 가정할 chat variable 이름 목록
+ * @returns CompletionProvider에 주입할 VariableFlowService stub
+ */
+function createDefaultOnlyVariableService(...variableNames: string[]): VariableFlowService {
+  return createVariableFlowServiceStub({
+    getAllVariableNames: () => variableNames,
+    getDefaultVariableDefinitions: (variableName) =>
+      variableNames.includes(variableName)
+        ? [
+            {
+              uri: `file:///workspace/variables/defaults.risuvar`,
+              relativePath: 'variables/defaults.risuvar',
+              variableName,
+              value: '1',
+              range: {
+                start: { line: 0, character: 0 },
+                end: { line: 0, character: variableName.length },
+              },
+            },
+          ]
+        : [],
+    queryVariable: () => null,
+  });
+}
+
+/**
  * createWorkspaceSnapshot 함수.
  * provider 테스트에서 현재 request와 비교할 workspace snapshot version map을 조립함.
  *
@@ -1148,6 +1177,25 @@ describe('CompletionProvider', () => {
       });
     });
 
+    it('offers variable names inside nested getvar calls in #if inline math conditions', () => {
+      const request = createInlineCompletionRequest(
+        '{{setvar::ct_Language::1}}{{#if {{? {{getvar::}} == 1}}}}ok{{/if}}',
+      );
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const cursorOffset = request.text.indexOf('{{getvar::') + '{{getvar::'.length;
+
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(request.text, cursorOffset)),
+      );
+
+      expect(completions.length).toBeGreaterThan(0);
+      expectCompletionLabels(completions, 'ct_Language');
+      expect(extractCompletionCategory(completions.find((item) => item.label === 'ct_Language'))).toEqual({
+        category: 'variable',
+        kind: 'chat-variable',
+      });
+    });
+
     it('appends workspace chat variables after fragment-local chat candidates and keeps sources distinct', () => {
       const entry = getFixtureCorpusEntry('lorebook-setvar-macro');
       const request = createFixtureRequest(entry);
@@ -1319,6 +1367,106 @@ describe('CompletionProvider', () => {
       expect(completions.find((completion) => completion.label === 'shared')?.detail).toBe(
         'Workspace chat variable',
       );
+    });
+
+    it('offers chat variables for setdefaultvar first-argument completion', () => {
+      const entry = getFixtureCorpusEntry('lorebook-setvar-macro');
+      const request = createFixtureRequest(entry);
+      const modifiedText = entry.text.replace('}}', '}}{{setdefaultvar::}}');
+      const modifiedRequest = { ...request, text: modifiedText };
+      const provider = createProvider(
+        new FragmentAnalysisService(),
+        modifiedRequest,
+        createWorkspaceChatVariableService('shared'),
+      );
+
+      const completions = provider.provide(
+        createParams(
+          modifiedRequest,
+          offsetToPosition(modifiedText, modifiedText.indexOf('{{setdefaultvar::') + '{{setdefaultvar::'.length),
+        ),
+      );
+
+      expectCompletionLabels(completions, 'mood', 'shared');
+    });
+
+    it('does not offer variable completions for setvar value arguments', () => {
+      const entry = getFixtureCorpusEntry('lorebook-setvar-macro');
+      const request = createFixtureRequest(entry);
+      const modifiedText = entry.text.replace('}}', '}}{{setvar::mood::}}');
+      const modifiedRequest = { ...request, text: modifiedText };
+      const provider = createProvider(
+        new FragmentAnalysisService(),
+        modifiedRequest,
+        createWorkspaceChatVariableService('shared'),
+      );
+
+      const completions = provider.provide(
+        createParams(
+          modifiedRequest,
+          offsetToPosition(modifiedText, modifiedText.indexOf('{{setvar::mood::') + '{{setvar::mood::'.length),
+        ),
+      );
+
+      expectNoCompletionLabels(completions, 'mood', 'shared');
+    });
+
+    it('offers global variables for getglobalvar first-argument completion', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace('{{user}}', '{{getglobalvar::world}}{{getglobalvar::}}');
+      const modifiedRequest = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
+        analysisService: new FragmentAnalysisService(),
+        resolveRequest: () => modifiedRequest,
+      });
+
+      const completions = provider.provide(
+        createParams(
+          modifiedRequest,
+          offsetToPosition(modifiedText, modifiedText.lastIndexOf('{{getglobalvar::') + '{{getglobalvar::'.length),
+        ),
+      );
+
+      expectCompletionLabels(completions, 'world');
+    });
+
+    it('offers global variables for setglobalvar first-argument completion', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace('{{user}}', '{{getglobalvar::world}}{{setglobalvar::}}');
+      const modifiedRequest = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
+        analysisService: new FragmentAnalysisService(),
+        resolveRequest: () => modifiedRequest,
+      });
+
+      const completions = provider.provide(
+        createParams(
+          modifiedRequest,
+          offsetToPosition(modifiedText, modifiedText.indexOf('{{setglobalvar::') + '{{setglobalvar::'.length),
+        ),
+      );
+
+      expectCompletionLabels(completions, 'world');
+    });
+
+    it('offers .risuvar default-only variables for chat variable argument completion', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace('{{user}}', '{{getvar::}}');
+      const modifiedRequest = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(
+        new FragmentAnalysisService(),
+        modifiedRequest,
+        createDefaultOnlyVariableService('tea'),
+      );
+
+      const completions = provider.provide(
+        createParams(
+          modifiedRequest,
+          offsetToPosition(modifiedText, modifiedText.indexOf('{{getvar::') + '{{getvar::'.length),
+        ),
+      );
+
+      expectCompletionLabels(completions, 'tea');
     });
 
     it('filters chat variables by prefix when typing', () => {

@@ -123,10 +123,17 @@ export class AnalyzableBodyResolver {
     switch (node.type) {
       case 'PlainText':
       case 'Comment':
+        return {
+          ...node,
+          range: this.rebaseRange(node.range, localSource, hostSource, startOffset),
+        };
       case 'MathExpr':
         return {
           ...node,
           range: this.rebaseRange(node.range, localSource, hostSource, startOffset),
+          children: node.children.map((child) =>
+            this.rebaseNode(child, localSource, hostSource, startOffset),
+          ),
         };
       case 'MacroCall':
         return {

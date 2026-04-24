@@ -37,7 +37,11 @@ export function collectMathExpressionDiagnostics(
     return [];
   }
 
-  return [createCalcExpressionDiagnostic(error, expression.range, sourceText)];
+  return [
+    expression.isRangeStable
+      ? createCalcExpressionDiagnostic(error, expression.range, sourceText)
+      : createDiagnosticInfo(mapCalcExpressionDiagnosticCode(error.kind), expression.range, error.message),
+  ];
 }
 
 /**
@@ -76,7 +80,6 @@ export function collectCalcExpressionArgumentDiagnostics(
 function extractStaticMacroArgument(
   node: MacroCallNode,
   argumentIndex: number,
-  sourceText: string,
 ): { text: string; range: Range; isRangeStable: boolean } | null {
   const segment = node.arguments[argumentIndex];
   if (!segment || segment.length === 0) {
@@ -90,7 +93,7 @@ function extractStaticMacroArgument(
   }
 
   return {
-    text: segment.map((child) => serializeCalcExpressionNode(child, sourceText)).join(''),
+    text: segment.map((child) => serializeCalcExpressionNode(child)).join(''),
     range: {
       start: firstNode.range.start,
       end: lastNode.range.end,
@@ -99,10 +102,10 @@ function extractStaticMacroArgument(
   };
 }
 
-function serializeCalcExpressionNode(node: CBSNode, sourceText: string): string {
+function serializeCalcExpressionNode(node: CBSNode): string {
   switch (node.type) {
     case 'PlainText':
-      return sliceRange(sourceText, node.range);
+      return node.value;
     case 'Comment':
       return '';
     default:
@@ -115,7 +118,7 @@ function extractCalcExpressionArgument(
   argumentIndex: number,
   sourceText: string,
 ): { text: string; range: Range; isRangeStable: boolean } | null {
-  const staticArgument = extractStaticMacroArgument(node, argumentIndex, sourceText);
+  const staticArgument = extractStaticMacroArgument(node, argumentIndex);
   if (staticArgument) {
     return staticArgument;
   }
@@ -154,7 +157,7 @@ function extractEmptyFirstCalcArgumentRange(node: MacroCallNode, sourceText: str
 function extractInlineMathExpression(
   node: MathExprNode,
   sourceText: string,
-): { text: string; range: Range } {
+): { text: string; range: Range; isRangeStable: boolean } {
   const raw = sliceRange(sourceText, node.range);
   const rangeStartOffset = positionToOffset(sourceText, node.range.start);
   const rangeEndOffset = positionToOffset(sourceText, node.range.end);
@@ -163,11 +166,12 @@ function extractInlineMathExpression(
   const expressionEndOffset = Math.max(expressionStartOffset, rangeEndOffset - 2);
 
   return {
-    text: node.expression,
+    text: node.children.map((child) => serializeCalcExpressionNode(child)).join(''),
     range: {
       start: offsetToPosition(sourceText, expressionStartOffset),
       end: offsetToPosition(sourceText, expressionEndOffset),
     },
+    isRangeStable: node.children.every((child) => child.type === 'PlainText'),
   };
 }
 

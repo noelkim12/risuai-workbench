@@ -106,6 +106,15 @@ describe('ScopeAnalyzer', () => {
     expect(table.getFunction('greet')?.references).toHaveLength(1);
   });
 
+  it('collects variable references nested in #if inline math conditions', () => {
+    const { symbolTable: table, issues } = analyzeScope(
+      '{{setvar::ct_Language::1}}{{#if {{? {{getvar::ct_Language}} == 1}}}}ok{{/if}}',
+    );
+
+    expect(table.getVariable('ct_Language', 'chat')?.references).toHaveLength(1);
+    expect(issues.getUndefinedReferences()).toEqual([]);
+  });
+
   it('keeps the active function visible inside nested #each scopes', () => {
     const { issues } = analyzeScope('{{#func greet name}}{{#each users as user}}{{arg::0}}{{/each}}{{/func}}');
 

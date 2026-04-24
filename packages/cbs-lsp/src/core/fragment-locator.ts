@@ -173,6 +173,8 @@ function getChildNodeGroups(node: CBSNode): readonly (readonly CBSNode[])[] {
       return node.elseBody
         ? [node.condition, node.body, node.elseBody]
         : [node.condition, node.body];
+    case 'MathExpr':
+      return [node.children];
     default:
       return [];
   }

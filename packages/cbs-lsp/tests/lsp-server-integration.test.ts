@@ -2892,9 +2892,8 @@ describe('LSP server integration', () => {
     );
     const completionLabels = completionItems.map((item) => item.label);
 
-    // Incomplete syntax (unclosed {{getvar::en) is treated as PlainText by tokenizer
-    // Per architectural rule: no raw token value parsing, so no completions offered
-    expect(completionLabels.length).toBe(0);
+    // PlainText recovery keeps variable-name completion available for an unclosed macro prefix.
+    expect(completionLabels).toEqual(['energy']);
     expect(parseSpy).toHaveBeenCalledTimes(2);
 
     documents.close(uri);

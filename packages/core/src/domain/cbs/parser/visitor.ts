@@ -40,6 +40,7 @@ export function walkAST(nodes: CBSNode[], visitor: CBSVisitor): void {
         break
       case 'MathExpr':
         visitor.visitMathExpr?.(node)
+        walkAST(node.children, visitor)
         break
     }
   }

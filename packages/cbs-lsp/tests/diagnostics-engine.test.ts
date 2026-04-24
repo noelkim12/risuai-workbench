@@ -319,6 +319,27 @@ describe('DiagnosticsEngine', () => {
     ).toContain('incomplete operator sequence');
   });
 
+  it('treats nested macros as operands in inline math diagnostics', () => {
+    const source = '{{? {{getvar::ct_Language}} == 1}}';
+    const document = new CBSParser().parse(source);
+    const diagnostics = diagnosticsEngine.analyze(document, source);
+
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      DiagnosticCode.CalcExpressionUnsupportedToken,
+    );
+    expect(diagnostics).toEqual([]);
+  });
+
+  it('does not flag nested inline math conditions in #if block headers', () => {
+    const source = '{{#if {{? {{getvar::ct_Deck_Level}} <= 2}}}}ok{{/if}}';
+    const document = new CBSParser().parse(source);
+    const diagnostics = diagnosticsEngine.analyze(document, source);
+
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      DiagnosticCode.CalcExpressionUnsupportedToken,
+    );
+  });
+
   it('classifies unmatched calc parentheses with a parenthesis-specific diagnostic and range', () => {
     const source = '{{? (1 + 2 }}';
     const document = new CBSParser().parse(source);

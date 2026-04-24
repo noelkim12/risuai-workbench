@@ -88,6 +88,9 @@ export class DefinitionCollector {
             this.collectNodes(node.elseBody);
           }
           break;
+        case 'MathExpr':
+          this.collectNodes(node.children);
+          break;
         default:
           break;
       }

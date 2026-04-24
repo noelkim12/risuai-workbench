@@ -960,7 +960,7 @@ export class CompletionProvider {
 
   private buildVariableCompletions(
     prefix: string,
-    kind: 'chat' | 'temp',
+    kind: 'chat' | 'temp' | 'global',
     lookup: FragmentCursorLookupResult,
     workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null,
   ): CompletionItem[] {
@@ -969,7 +969,7 @@ export class CompletionProvider {
 
     const matchingVars = variables.filter(
       (v) =>
-        (kind === 'chat' ? v.kind === 'chat' : v.kind === 'temp') &&
+        v.kind === kind &&
         v.name.toLowerCase().startsWith(prefix.toLowerCase()),
     );
 
@@ -991,17 +991,23 @@ export class CompletionProvider {
                       : 'chat-variable',
             },
             this.createScopeExplanation(
-              kind === 'temp' ? 'temp-variable-symbol-table' : 'chat-variable-symbol-table',
+              kind === 'temp'
+                ? 'temp-variable-symbol-table'
+                : kind === 'global'
+                  ? 'global-variable-symbol-table'
+                  : 'chat-variable-symbol-table',
               kind === 'temp'
                 ? 'Completion resolved this candidate from analyzed temp-variable definitions in the current fragment.'
-                : 'Completion resolved this candidate from analyzed chat-variable definitions in the current fragment.',
+                : kind === 'global'
+                  ? 'Completion resolved this candidate from analyzed global-variable references in the current fragment.'
+                  : 'Completion resolved this candidate from analyzed chat-variable definitions in the current fragment.',
             ),
             kind === 'chat'
               ? this.getStaleWorkspaceAvailability(workspaceFreshness, 'completion')
               : undefined,
             kind === 'chat' ? (workspaceFreshness ?? undefined) : undefined,
           ),
-          detail: kind === 'chat' ? 'Chat variable' : 'Temp variable',
+          detail: kind === 'chat' ? 'Chat variable' : kind === 'temp' ? 'Temp variable' : 'Global variable',
           documentation: {
             kind: 'markdown',
             value: `Variable **${v.name}** (${v.kind})\n\n- Definitions: ${v.definitionRanges.length}\n- References: ${v.references.length}`,
@@ -1055,12 +1061,13 @@ export class CompletionProvider {
       }
 
       const query = this.variableFlowService?.queryVariable(variableName);
-      if (!query || query.writers.length === 0) {
+      const defaultDefinitions = this.variableFlowService?.getDefaultVariableDefinitions(variableName) ?? [];
+      if ((!query || query.writers.length === 0) && defaultDefinitions.length === 0) {
         return [];
       }
 
-      const readerCount = query.readers.length;
-      const writerCount = query.writers.length;
+      const readerCount = query?.readers.length ?? 0;
+      const writerCount = (query?.writers.length ?? 0) + defaultDefinitions.length;
         const label = `${options.labelPrefix}${variableName}`;
         const detail =
           options.usage === 'calc-expression'

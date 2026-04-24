@@ -67,6 +67,9 @@ export class ReferenceCollector {
         case 'Block':
           this.collectBlockReferences(node, scope);
           break;
+        case 'MathExpr':
+          this.collectNodes(node.children, scope);
+          break;
         default:
           break;
       }

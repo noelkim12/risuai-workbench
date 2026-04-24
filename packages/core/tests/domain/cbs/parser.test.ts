@@ -15,7 +15,7 @@ type NodeSnapshot =
       hasClose: boolean;
     }
   | { type: 'Comment'; value: string }
-  | { type: 'MathExpr'; expression: string };
+  | { type: 'MathExpr'; expression: string; children: NodeSnapshot[] };
 
 type DiagnosticSnapshot = {
   code: string;
@@ -60,11 +60,10 @@ function snapshotNodes(nodes: CBSNode[]): NodeSnapshot[] {
         return {
           type: 'MathExpr',
           expression: node.expression,
+          children: snapshotNodes(node.children),
         };
     }
 
-    const exhaustive: never = node;
-    throw new Error(`Unhandled node type: ${String(exhaustive)}`);
   });
 }
 
@@ -166,6 +165,56 @@ describe('CBSParser', () => {
         hasClose: true,
       },
     ]);
+  });
+
+  it('parses nested CBS macros inside inline math expressions', () => {
+    const document = parse('{{? {{getvar::ct_Language}} == 1}}');
+
+    expect(snapshotNodes(document.nodes)).toEqual([
+      {
+        type: 'MathExpr',
+        expression: '{{getvar::ct_Language}} == 1',
+        children: [
+          {
+            type: 'MacroCall',
+            name: 'getvar',
+            arguments: [[{ type: 'PlainText', value: 'ct_Language' }]],
+          },
+          { type: 'PlainText', value: ' == 1' },
+        ],
+      },
+    ]);
+    expect(snapshotDiagnostics(document)).toEqual([]);
+  });
+
+  it('parses nested math expressions inside #if block headers', () => {
+    const document = parse('{{#if {{? {{getvar::ct_Deck_Level}} <= 2}}}}ok{{/if}}');
+
+    expect(snapshotNodes(document.nodes)).toEqual([
+      {
+        type: 'Block',
+        kind: 'if',
+        operators: [],
+        condition: [
+          {
+            type: 'MathExpr',
+            expression: '{{getvar::ct_Deck_Level}} <= 2',
+            children: [
+              {
+                type: 'MacroCall',
+                name: 'getvar',
+                arguments: [[{ type: 'PlainText', value: 'ct_Deck_Level' }]],
+              },
+              { type: 'PlainText', value: ' <= 2' },
+            ],
+          },
+        ],
+        body: [{ type: 'PlainText', value: 'ok' }],
+        elseBody: undefined,
+        hasClose: true,
+      },
+    ]);
+    expect(snapshotDiagnostics(document)).toEqual([]);
   });
 
   it('retains deprecated block spellings in the AST instead of remapping them', () => {

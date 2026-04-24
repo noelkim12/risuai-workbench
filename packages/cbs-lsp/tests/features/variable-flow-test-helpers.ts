@@ -29,6 +29,7 @@ export interface VariableOccurrenceSeed {
 }
 
 export interface VariableFlowServiceStubOptions {
+  getDefaultVariableDefinitions?: (variableName: string) => ReturnType<VariableFlowService['getDefaultVariableDefinitions']>;
   getAllVariableNames?: () => readonly string[];
   queryVariable?: (variableName: string) => VariableFlowQueryResult | null;
   queryAt?: (uri: string, hostOffset: number) => VariableFlowQueryResult | null;
@@ -123,7 +124,7 @@ export function createVariableFlowServiceStub(
 ): VariableFlowService {
   return {
     getAllVariableNames: options.getAllVariableNames ?? (() => []),
-    getDefaultVariableDefinitions: () => [],
+    getDefaultVariableDefinitions: options.getDefaultVariableDefinitions ?? (() => []),
     queryVariable: options.queryVariable ?? (() => null),
     queryAt: options.queryAt ?? (() => null),
     getWorkspaceFreshness: ({ uri, version }: { uri: string; version: number }) => {

@@ -15,6 +15,8 @@ import {
   type FragmentCursorLookupResult,
 } from '../core';
 import type { VariableSymbolKind } from '../analyzer/symbolTable';
+import { normalizeLookupKey } from '../analyzer/scope/lookup-key';
+import { getVariableMacroArgumentKind } from '../analyzer/scope/scope-macro-rules';
 
 export interface LocalFirstRangeEntry {
   uri: string;
@@ -37,18 +39,6 @@ export interface ResolvedArgumentPosition {
   parameterDeclaration?: LocalFunctionParameterDeclaration;
   referenceRange: Range;
 }
-
-const VARIABLE_MACRO_RULES = Object.freeze({
-  addvar: { kind: 'chat', argumentIndex: 0 },
-  getglobalvar: { kind: 'global', argumentIndex: 0 },
-  gettempvar: { kind: 'temp', argumentIndex: 0 },
-  getvar: { kind: 'chat', argumentIndex: 0 },
-  setdefaultvar: { kind: 'chat', argumentIndex: 0 },
-  setglobalvar: { kind: 'global', argumentIndex: 0 },
-  settempvar: { kind: 'temp', argumentIndex: 0 },
-  setvar: { kind: 'chat', argumentIndex: 0 },
-  tempvar: { kind: 'temp', argumentIndex: 0 },
-} as const);
 
 const SLOT_MACRO_RULES = Object.freeze({
   slot: { kind: 'loop', argumentIndex: 0 },
@@ -179,14 +169,19 @@ export function resolveVariablePosition(
   if (
     tokenLookup.category === 'argument' &&
     nodeSpan.category === 'argument' &&
-    nodeSpan.owner.type === 'MacroCall'
+    nodeSpan.owner.type === 'MacroCall' &&
+    typeof nodeSpan.argumentIndex === 'number'
   ) {
     const macroName = nodeSpan.owner.name.toLowerCase();
     const variableName = tokenLookup.token.value.trim();
-    const rule = VARIABLE_MACRO_RULES[macroName as keyof typeof VARIABLE_MACRO_RULES];
+    const argumentIndex = nodeSpan.argumentIndex;
+    const variableKind = getVariableMacroArgumentKind(
+      normalizeLookupKey(macroName),
+      argumentIndex,
+    );
 
-    if (rule && nodeSpan.argumentIndex === rule.argumentIndex && variableName.length > 0) {
-      return { variableName, kind: rule.kind };
+    if (variableKind && variableName.length > 0) {
+      return { variableName, kind: variableKind };
     }
 
     const slotRule = SLOT_MACRO_RULES[macroName as keyof typeof SLOT_MACRO_RULES];

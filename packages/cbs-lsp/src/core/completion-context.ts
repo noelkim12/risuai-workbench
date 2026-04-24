@@ -1,4 +1,9 @@
 import { TokenType, type Range as CBSRange } from 'risu-workbench-core';
+import { normalizeLookupKey } from '../analyzer/scope/lookup-key';
+import {
+  getVariableMacroArgumentKind,
+  type ScopeVariableArgumentKind,
+} from '../analyzer/scope/scope-macro-rules';
 import { positionToOffset } from '../utils/position';
 import { getCalcExpressionCompletionTarget, getCalcExpressionZone } from './calc-expression';
 import type { FragmentCursorLookupResult } from './fragment-locator';
@@ -14,7 +19,7 @@ export type CompletionTriggerContext =
       prefix: string;
       startOffset: number;
       endOffset: number;
-      kind: 'chat' | 'temp';
+      kind: ScopeVariableArgumentKind;
     }
   | { type: 'metadata-keys'; prefix: string; startOffset: number; endOffset: number }
   | { type: 'function-names'; prefix: string; startOffset: number; endOffset: number }
@@ -160,6 +165,46 @@ export function detectCompletionTriggerContext(
     return token.token.value.slice(0, typedLength).trim();
   };
 
+  const createVariableArgumentContext = (
+    macroName: string,
+    argumentIndex: number,
+    prefix: string,
+    startOffset: number,
+    endOffset: number,
+  ): CompletionTriggerContext | null => {
+    const kind = getVariableMacroArgumentKind(normalizeLookupKey(macroName), argumentIndex);
+    if (!kind) {
+      return null;
+    }
+
+    return {
+      type: 'variable-names',
+      prefix,
+      startOffset,
+      endOffset,
+      kind,
+    };
+  };
+
+  const inferArgumentIndexFromOpenBrace = (openBraceIndex: number): number => {
+    const openBrace = tokens[openBraceIndex];
+    if (!openBrace) {
+      return 0;
+    }
+
+    const openBraceOffset = positionToOffset(fragmentAnalysis.fragment.content, openBrace.range.start);
+    const separatorCount = tokens.filter((candidate) => {
+      if (candidate.type !== TokenType.ArgumentSeparator) {
+        return false;
+      }
+
+      const candidateStart = positionToOffset(fragmentAnalysis.fragment.content, candidate.range.start);
+      return candidateStart >= openBraceOffset && candidateStart < fragmentLocalOffset;
+    }).length;
+
+    return Math.max(0, separatorCount - 1);
+  };
+
   const detectPlainTextMacroPrefixContext = (): CompletionTriggerContext | null => {
     if (!token || token.token.type !== TokenType.PlainText) {
       return null;
@@ -182,25 +227,16 @@ export function detectCompletionTriggerContext(
       const functionName = prefix.slice(0, argumentSeparatorIndex).trim().toLowerCase();
       const argumentPrefix = prefix.slice(argumentSeparatorIndex + 2);
       const argumentStartOffset = startOffset + 2 + argumentSeparatorIndex + 2;
+      const variableContext = createVariableArgumentContext(
+        functionName,
+        0,
+        argumentPrefix,
+        argumentStartOffset,
+        fragmentLocalOffset,
+      );
 
-      if (functionName === 'getvar' || functionName === 'setvar' || functionName === 'addvar') {
-        return {
-          type: 'variable-names',
-          prefix: argumentPrefix,
-          startOffset: argumentStartOffset,
-          endOffset: fragmentLocalOffset,
-          kind: 'chat',
-        };
-      }
-
-      if (functionName === 'gettempvar' || functionName === 'settempvar' || functionName === 'tempvar') {
-        return {
-          type: 'variable-names',
-          prefix: argumentPrefix,
-          startOffset: argumentStartOffset,
-          endOffset: fragmentLocalOffset,
-          kind: 'temp',
-        };
+      if (variableContext) {
+        return variableContext;
       }
 
       if (functionName === 'metadata') {
@@ -486,28 +522,23 @@ export function detectCompletionTriggerContext(
         );
 
         if (fragmentLocalOffset > macroNameStart) {
-          if (macroName === 'getvar' || macroName === 'setvar' || macroName === 'addvar') {
-            const prefixStart =
-              token.token.type === TokenType.ArgumentSeparator ? tokenEnd : tokenStart;
-            return {
-              type: 'variable-names',
-              prefix: '',
-              startOffset: prefixStart,
-              endOffset: fragmentLocalOffset,
-              kind: 'chat',
-            };
-          }
-
-          if (macroName === 'gettempvar' || macroName === 'settempvar' || macroName === 'tempvar') {
-            const prefixStart =
-              token.token.type === TokenType.ArgumentSeparator ? tokenEnd : tokenStart;
-            return {
-              type: 'variable-names',
-              prefix: '',
-              startOffset: prefixStart,
-              endOffset: fragmentLocalOffset,
-              kind: 'temp',
-            };
+          if (
+            nodeSpan?.category === 'argument' &&
+            nodeSpan.owner.type === 'MacroCall' &&
+            typeof nodeSpan.argumentIndex === 'number'
+          ) {
+            const argumentIndex = nodeSpan.argumentIndex;
+            const prefixStart = token.token.type === TokenType.ArgumentSeparator ? tokenEnd : tokenStart;
+            const variableContext = createVariableArgumentContext(
+              macroName,
+              argumentIndex,
+              token.token.type === TokenType.Argument ? getTypedTokenPrefix() : '',
+              prefixStart,
+              fragmentLocalOffset,
+            );
+            if (variableContext) {
+              return variableContext;
+            }
           }
 
           if (macroName === 'metadata') {
@@ -608,26 +639,16 @@ export function detectCompletionTriggerContext(
           );
 
           if (fragmentLocalOffset > macroNameStart) {
-            // Check for variable macros (getvar, setvar, addvar)
-            if (macroName === 'getvar' || macroName === 'setvar' || macroName === 'addvar') {
-              return {
-                type: 'variable-names',
-                prefix: '',
-                startOffset: fragmentLocalOffset,
-                endOffset: fragmentLocalOffset,
-                kind: 'chat',
-              };
-            }
-
-            // Check for temp variable macros
-            if (macroName === 'gettempvar' || macroName === 'settempvar' || macroName === 'tempvar') {
-              return {
-                type: 'variable-names',
-                prefix: '',
-                startOffset: fragmentLocalOffset,
-                endOffset: fragmentLocalOffset,
-                kind: 'temp',
-              };
+            const openBraceIndex = openBrace.index;
+            const variableContext = createVariableArgumentContext(
+              macroName,
+              inferArgumentIndexFromOpenBrace(openBraceIndex),
+              '',
+              fragmentLocalOffset,
+              fragmentLocalOffset,
+            );
+            if (variableContext) {
+              return variableContext;
             }
 
             // Check for metadata macro
@@ -719,30 +740,16 @@ export function detectCompletionTriggerContext(
                 separatorToken.range.end,
               );
 
-              if (funcName === 'getvar' || funcName === 'setvar' || funcName === 'addvar') {
-                if (fragmentLocalOffset >= sepEnd) {
-                  return {
-                    type: 'variable-names',
-                    prefix: '',
-                    startOffset: sepEnd,
-                    endOffset: fragmentLocalOffset,
-                    kind: 'chat',
-                  };
-                }
-              }
-              if (
-                funcName === 'gettempvar' ||
-                funcName === 'settempvar' ||
-                funcName === 'tempvar'
-              ) {
-                if (fragmentLocalOffset >= sepEnd) {
-                  return {
-                    type: 'variable-names',
-                    prefix: '',
-                    startOffset: sepEnd,
-                    endOffset: fragmentLocalOffset,
-                    kind: 'temp',
-                  };
+              if (fragmentLocalOffset >= sepEnd) {
+                const variableContext = createVariableArgumentContext(
+                  funcName,
+                  inferArgumentIndexFromOpenBrace(openBrace.index),
+                  '',
+                  sepEnd,
+                  fragmentLocalOffset,
+                );
+                if (variableContext) {
+                  return variableContext;
                 }
               }
               if (funcName === 'metadata') {
@@ -827,27 +834,16 @@ export function detectCompletionTriggerContext(
             separatorToken.range.end,
           );
 
-          if (funcName === 'getvar' || funcName === 'setvar' || funcName === 'addvar') {
-            if (fragmentLocalOffset >= sepEnd) {
-              return {
-                type: 'variable-names',
-                prefix: '',
-                startOffset: sepEnd,
-                endOffset: fragmentLocalOffset,
-                kind: 'chat',
-              };
-            }
-          }
-
-          if (funcName === 'gettempvar' || funcName === 'settempvar' || funcName === 'tempvar') {
-            if (fragmentLocalOffset >= sepEnd) {
-              return {
-                type: 'variable-names',
-                prefix: '',
-                startOffset: sepEnd,
-                endOffset: fragmentLocalOffset,
-                kind: 'temp',
-              };
+          if (fragmentLocalOffset >= sepEnd) {
+            const variableContext = createVariableArgumentContext(
+              funcName,
+              inferArgumentIndexFromOpenBrace(openBrace.index),
+              '',
+              sepEnd,
+              fragmentLocalOffset,
+            );
+            if (variableContext) {
+              return variableContext;
             }
           }
 
@@ -963,27 +959,15 @@ export function detectCompletionTriggerContext(
             );
 
             if (fragmentLocalOffset >= sepEnd) {
-              if (funcName === 'getvar' || funcName === 'setvar' || funcName === 'addvar') {
-                return {
-                  type: 'variable-names',
-                  prefix: '',
-                  startOffset: sepEnd,
-                  endOffset: fragmentLocalOffset,
-                  kind: 'chat',
-                };
-              }
-              if (
-                funcName === 'gettempvar' ||
-                funcName === 'settempvar' ||
-                funcName === 'tempvar'
-              ) {
-                return {
-                  type: 'variable-names',
-                  prefix: '',
-                  startOffset: sepEnd,
-                  endOffset: fragmentLocalOffset,
-                  kind: 'temp',
-                };
+              const variableContext = createVariableArgumentContext(
+                funcName,
+                inferArgumentIndexFromOpenBrace(openBrace.index),
+                '',
+                sepEnd,
+                fragmentLocalOffset,
+              );
+              if (variableContext) {
+                return variableContext;
               }
               if (funcName === 'metadata') {
                 return {
