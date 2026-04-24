@@ -71,6 +71,15 @@ describe('CBSBuiltinRegistry', () => {
     expect(registry.get('getvar')?.docOnly).toBeUndefined();
   });
 
+  it('classifies contextual syntax entries in the registry source of truth', () => {
+    const registry = new CBSBuiltinRegistry();
+
+    expect(registry.get('slot')?.contextual).toBe(true);
+    expect(registry.get('position')?.contextual).toBe(true);
+    expect(registry.get('#when')?.contextual).toBeUndefined();
+    expect(registry.get('getvar')?.contextual).toBeUndefined();
+  });
+
   it('reuses docOnly classification through dedicated registry helpers', () => {
     const registry = new CBSBuiltinRegistry();
 
@@ -88,6 +97,18 @@ describe('CBSBuiltinRegistry', () => {
         ':else',
         'slot',
       ]),
+    );
+  });
+
+  it('reuses contextual classification through dedicated registry helpers', () => {
+    const registry = new CBSBuiltinRegistry();
+
+    expect(registry.isContextual('slot')).toBe(true);
+    expect(registry.isContextual('position')).toBe(true);
+    expect(registry.isContextual('getvar')).toBe(false);
+    expect(registry.isContextual('#when')).toBe(false);
+    expect(registry.getContextual().map((fn) => fn.name)).toEqual(
+      expect.arrayContaining(['slot', 'position']),
     );
   });
 

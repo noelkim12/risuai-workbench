@@ -7,6 +7,7 @@ export interface CBSBuiltinFunction {
   arguments: ArgumentDef[];
   isBlock: boolean;
   docOnly?: boolean;
+  contextual?: boolean;
   deprecated?: { message: string; replacement?: string };
   internalOnly?: boolean;
   returnType: 'string' | 'number' | 'boolean' | 'array' | 'object' | 'void';
@@ -45,6 +46,7 @@ interface RawBuiltinFunction {
   aliases: string[];
   description: string;
   docOnly?: boolean;
+  contextual?: boolean;
   deprecated?: { message: string; replacement?: string };
   internalOnly?: boolean;
 }
@@ -1123,14 +1125,16 @@ const RAW_UPSTREAM_BUILTINS: ReadonlyArray<RawBuiltinFunction> = [
     name: 'slot',
     aliases: [],
     docOnly: true,
+    contextual: true,
     description:
       'Used in various CBS functions to access specific slots or properties.\n\nUsage:: {{slot::propertyName}} or {{slot}}, depending on context.',
   },
   {
     name: 'position',
     aliases: [],
+    contextual: true,
     description:
-      'Defines the position which can be used in various features such as @@position <positionName> decorator.\n\nUsage:: {{position::positionName}}',
+      'Defines the position which can be used in various features such as @@position decorator.\n\nUsage:: {{position::positionName}}',
   },
 ];
 
@@ -1704,6 +1708,7 @@ function toBuiltinFunction(rawBuiltin: RawBuiltinFunction): CBSBuiltinFunction {
     arguments: resolveArguments(rawBuiltin),
     isBlock: rawBuiltin.name.startsWith('#'),
     docOnly: rawBuiltin.docOnly,
+    contextual: rawBuiltin.contextual,
     deprecated: resolveDeprecated(rawBuiltin.name, rawBuiltin.deprecated),
     internalOnly: rawBuiltin.internalOnly,
     returnType: resolveReturnType(rawBuiltin.name),
@@ -1722,6 +1727,19 @@ export function isDocOnlyBuiltin(
   builtin: CBSBuiltinFunction | null | undefined,
 ): builtin is CBSBuiltinFunction & { docOnly: true } {
   return builtin?.docOnly === true;
+}
+
+/**
+ * isContextualBuiltin 함수.
+ * 특정 문맥에서만 의미를 가지는 contextual builtin인지 판별함.
+ *
+ * @param builtin - 분류할 builtin metadata
+ * @returns contextual source-of-truth 메타가 설정된 항목인지 여부
+ */
+export function isContextualBuiltin(
+  builtin: CBSBuiltinFunction | null | undefined,
+): builtin is CBSBuiltinFunction & { contextual: true } {
+  return builtin?.contextual === true;
 }
 
 /** CBS builtin registry with normalized canonical and alias lookup */
@@ -1757,6 +1775,16 @@ export class CBSBuiltinRegistry {
     return this.getAll().filter((builtin) => isDocOnlyBuiltin(builtin));
   }
 
+  /**
+   * getContextual 함수.
+   * 특정 문맥에서만 의미를 가지는 contextual builtin 항목을 source-of-truth 기준으로 반환함.
+   *
+   * @returns contextual builtin 목록
+   */
+  getContextual(): CBSBuiltinFunction[] {
+    return this.getAll().filter((builtin) => isContextualBuiltin(builtin));
+  }
+
   has(name: string): boolean {
     const normalizedName = normalizeLookupKey(name);
     return this.functions.has(normalizedName) || this.aliasMap.has(normalizedName);
@@ -1771,6 +1799,17 @@ export class CBSBuiltinRegistry {
    */
   isDocOnly(name: string): boolean {
     return isDocOnlyBuiltin(this.get(name));
+  }
+
+  /**
+   * isContextual 함수.
+   * 이름이나 alias lookup 결과가 contextual 항목인지 빠르게 확인함.
+   *
+   * @param name - canonical name 또는 alias
+   * @returns lookup 결과가 contextual builtin인지 여부
+   */
+  isContextual(name: string): boolean {
+    return isContextualBuiltin(this.get(name));
   }
 
   getSuggestions(partial: string): CBSBuiltinFunction[] {

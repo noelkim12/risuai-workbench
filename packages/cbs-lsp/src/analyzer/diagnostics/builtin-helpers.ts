@@ -7,6 +7,7 @@ import {
   CbsLspTextHelper,
 } from '../../helpers/text-helper';
 import {
+  isContextualBuiltin,
   isDocOnlyBuiltin,
   type CBSBuiltinFunction,
   type CBSNode,
@@ -56,6 +57,12 @@ export function formatExpectedArgumentCount(
  * @returns 문서용/실행 가능 builtin을 구분한 대상 설명 문자열
  */
 export function formatBuiltinDiagnosticTarget(builtin: CBSBuiltinFunction): string {
+  if (isContextualBuiltin(builtin)) {
+    return builtin.isBlock
+      ? `Contextual CBS block syntax ${JSON.stringify(builtin.name)}`
+      : `Contextual CBS syntax entry ${JSON.stringify(builtin.name)}`;
+  }
+
   if (isDocOnlyBuiltin(builtin)) {
     return builtin.isBlock
       ? `Documentation-only CBS block syntax ${JSON.stringify(builtin.name)}`

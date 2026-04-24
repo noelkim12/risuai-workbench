@@ -15,6 +15,7 @@ export type AgentMetadataCategory =
 export type AgentMetadataKind =
   | 'callable-builtin'
   | 'documentation-only-builtin'
+  | 'contextual-builtin'
   | 'block-close'
   | 'else-keyword'
   | 'chat-variable'

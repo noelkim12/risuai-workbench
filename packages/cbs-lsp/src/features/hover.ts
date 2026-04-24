@@ -44,7 +44,7 @@ import type {
   WorkspaceSnapshotState,
 } from '../services';
 import { positionToOffset } from '../utils/position';
-import { isDocOnlyBuiltin } from 'risu-workbench-core';
+import { isContextualBuiltin, isDocOnlyBuiltin } from 'risu-workbench-core';
 
 export type HoverRequestResolver = (
   params: TextDocumentPositionParams,
@@ -426,9 +426,7 @@ export class HoverProvider {
           kind:
             tokenLookup.category === 'else'
               ? 'else-keyword'
-              : isDocOnlyBuiltin(builtin)
-                ? 'documentation-only-builtin'
-                : 'callable-builtin',
+              : this.resolveBuiltinKind(builtin),
         }, this.getBuiltinExplanation(
           builtin,
           tokenLookup.category === 'else'
@@ -457,7 +455,7 @@ export class HoverProvider {
     return {
       data: this.createCategoryData({
         category: builtin.isBlock ? 'block-keyword' : 'builtin',
-        kind: isDocOnlyBuiltin(builtin) ? 'documentation-only-builtin' : 'callable-builtin',
+        kind: this.resolveBuiltinKind(builtin),
       }, this.getBuiltinExplanation(builtin)),
       markdown: formatHoverContent(builtin),
       localStartOffset: keywordTarget.localStartOffset,
@@ -1060,10 +1058,25 @@ export class HoverProvider {
     return createAgentMetadataExplanation(
       'registry-lookup',
       'builtin-registry',
-      detail ??
-        (isDocOnlyBuiltin(builtin)
-          ? `Hover resolved ${builtin.name} from the builtin registry as a documentation-only CBS syntax entry.`
-          : `Hover resolved ${builtin.name} from the builtin registry as a callable CBS builtin.`),
+      detail ?? this.resolveBuiltinDetail(builtin),
     );
+  }
+
+  private resolveBuiltinKind(builtin: CBSBuiltinFunction): AgentMetadataCategoryContract['kind'] {
+    if (isContextualBuiltin(builtin)) {
+      return 'contextual-builtin';
+    }
+
+    return isDocOnlyBuiltin(builtin) ? 'documentation-only-builtin' : 'callable-builtin';
+  }
+
+  private resolveBuiltinDetail(builtin: CBSBuiltinFunction): string {
+    if (isContextualBuiltin(builtin)) {
+      return `Hover resolved ${builtin.name} from the builtin registry as a contextual CBS syntax entry.`;
+    }
+
+    return isDocOnlyBuiltin(builtin)
+      ? `Hover resolved ${builtin.name} from the builtin registry as a documentation-only CBS syntax entry.`
+      : `Hover resolved ${builtin.name} from the builtin registry as a callable CBS builtin.`;
   }
 }

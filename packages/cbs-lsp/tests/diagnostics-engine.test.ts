@@ -137,7 +137,7 @@ describe('DiagnosticsEngine', () => {
       (candidate) => candidate.code === DiagnosticCode.WrongArgumentCount,
     );
 
-    expect(slotDiagnostic?.message).toContain('Documentation-only CBS syntax entry "slot"');
+    expect(slotDiagnostic?.message).toContain('Contextual CBS syntax entry "slot"');
 
     const whenSource = '{{#when}}body{{/when}}';
     const whenDiagnostics = diagnosticsEngine.analyze(new CBSParser().parse(whenSource), whenSource);

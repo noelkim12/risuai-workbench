@@ -222,7 +222,7 @@ describe('CompletionProvider', () => {
       const provider = createProvider(new FragmentAnalysisService(), request);
       const completions = provider.provide(createParams(request, positionAt(entry.text, '{{', 2)));
 
-      for (const label of ['#when', '#each', 'slot', '#pure', '#puredisplay', '#escape']) {
+      for (const label of ['#when', '#each', '#pure', '#puredisplay', '#escape']) {
         const completion = completions.find((item) => item.label === label);
 
         expect(completion?.detail).toContain('Documentation-only');
@@ -241,6 +241,42 @@ describe('CompletionProvider', () => {
           value: expect.stringContaining('available as a runtime CBS builtin'),
         });
       }
+    });
+
+    it('labels contextual syntax entries differently from both doc-only and callable builtins', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const request = createFixtureRequest(entry);
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(createParams(request, positionAt(entry.text, '{{', 2)));
+
+      const slotCompletion = completions.find((item) => item.label === 'slot');
+
+      expect(slotCompletion?.detail).toContain('Contextual');
+      expect(slotCompletion?.documentation).toEqual({
+        kind: 'markdown',
+        value: expect.stringContaining('only meaningful in specific syntactic contexts'),
+      });
+      expect(extractCompletionCategory(slotCompletion)).toEqual({
+        category: 'builtin',
+        kind: 'contextual-builtin',
+      });
+      expect(extractCompletionExplanation(slotCompletion)).toEqual({
+        reason: 'registry-lookup',
+        source: 'builtin-registry',
+        detail: 'Completion surfaced this item from the builtin registry as a contextual CBS syntax entry.',
+      });
+
+      const positionCompletion = completions.find((item) => item.label === 'position');
+
+      expect(positionCompletion?.detail).toContain('Contextual');
+      expect(positionCompletion?.documentation).toEqual({
+        kind: 'markdown',
+        value: expect.stringContaining('only meaningful in specific syntactic contexts'),
+      });
+      expect(extractCompletionCategory(positionCompletion)).toEqual({
+        category: 'builtin',
+        kind: 'contextual-builtin',
+      });
     });
 
     it('attaches stable machine-readable categories to builtin and block keyword completions', () => {

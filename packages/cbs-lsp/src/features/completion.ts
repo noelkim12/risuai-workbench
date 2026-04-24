@@ -11,6 +11,7 @@ import {
   type Position,
 } from 'vscode-languageserver/node';
 import {
+  isContextualBuiltin,
   isDocOnlyBuiltin,
   type CBSBuiltinRegistry,
   type CBSBuiltinFunction,
@@ -1262,6 +1263,10 @@ export class CompletionProvider {
   }
 
   private formatFunctionDetail(fn: CBSBuiltinFunction): string {
+    if (isContextualBuiltin(fn)) {
+      return fn.isBlock ? 'Contextual block syntax' : 'Contextual syntax entry';
+    }
+
     if (isDocOnlyBuiltin(fn)) {
       return fn.isBlock ? 'Documentation-only block syntax' : 'Documentation-only syntax entry';
     }
@@ -1280,11 +1285,17 @@ export class CompletionProvider {
       lines.push('');
     }
 
-    lines.push(
-      isDocOnlyBuiltin(fn)
-        ? '**Documentation-only syntax entry:** visible in editor docs and completion, but not a general runtime callback builtin.'
-        : '**Callable builtin:** available as a runtime CBS builtin.',
-    );
+    if (isContextualBuiltin(fn)) {
+      lines.push(
+        '**Contextual syntax entry:** visible in editor docs and completion, but only meaningful in specific syntactic contexts.',
+      );
+    } else if (isDocOnlyBuiltin(fn)) {
+      lines.push(
+        '**Documentation-only syntax entry:** visible in editor docs and completion, but not a general runtime callback builtin.',
+      );
+    } else {
+      lines.push('**Callable builtin:** available as a runtime CBS builtin.');
+    }
     lines.push('');
 
     lines.push(fn.description);
@@ -1371,17 +1382,24 @@ export class CompletionProvider {
   private getBuiltinCategory(fn: CBSBuiltinFunction): AgentMetadataCategoryContract {
     return {
       category: fn.isBlock ? 'block-keyword' : 'builtin',
-      kind: isDocOnlyBuiltin(fn) ? 'documentation-only-builtin' : 'callable-builtin',
+      kind: isContextualBuiltin(fn)
+        ? 'contextual-builtin'
+        : isDocOnlyBuiltin(fn)
+          ? 'documentation-only-builtin'
+          : 'callable-builtin',
     };
   }
 
   private getBuiltinExplanation(fn: CBSBuiltinFunction): AgentMetadataExplanationContract {
-    return createAgentMetadataExplanation(
-      'registry-lookup',
-      'builtin-registry',
-      isDocOnlyBuiltin(fn)
-        ? 'Completion surfaced this item from the builtin registry as a documentation-only CBS syntax entry.'
-        : 'Completion surfaced this item from the builtin registry as a callable CBS builtin.',
-    );
+    let detail: string;
+    if (isContextualBuiltin(fn)) {
+      detail = 'Completion surfaced this item from the builtin registry as a contextual CBS syntax entry.';
+    } else if (isDocOnlyBuiltin(fn)) {
+      detail = 'Completion surfaced this item from the builtin registry as a documentation-only CBS syntax entry.';
+    } else {
+      detail = 'Completion surfaced this item from the builtin registry as a callable CBS builtin.';
+    }
+
+    return createAgentMetadataExplanation('registry-lookup', 'builtin-registry', detail);
   }
 }

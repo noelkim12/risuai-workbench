@@ -530,27 +530,40 @@ describe('HoverProvider', () => {
     const builtinSlotOffset = locateNthOffset(modifiedText, '{{slot::orphan}}');
     const referenceSlotOffset = locateNthOffset(modifiedText, '{{slot::item}}');
 
-    const builtinMarkdown = expectMarkdownHover(
-      provider.provide(createParams(request, offsetToPosition(modifiedText, builtinSlotOffset + 3))),
+    const builtinHover = provider.provide(
+      createParams(request, offsetToPosition(modifiedText, builtinSlotOffset + 3)),
     );
-    const referenceMarkdown = expectMarkdownHover(
-      provider.provide(
+    const referenceHover = provider.provide(
         createParams(
           request,
           offsetToPosition(modifiedText, referenceSlotOffset + '{{slot::'.length + 1),
         ),
-      ),
     );
+    const builtinMarkdown = expectMarkdownHover(builtinHover);
+    const referenceMarkdown = expectMarkdownHover(referenceHover);
 
     expect(builtinMarkdown).toContain('**slot**');
-    expect(builtinMarkdown).toContain('**Documentation-only syntax entry:**');
+    expect(builtinMarkdown).toContain('**Contextual syntax entry:**');
+    expect(extractHoverCategory(builtinHover)).toEqual({
+      category: 'builtin',
+      kind: 'contextual-builtin',
+    });
+    expect(extractHoverExplanation(builtinHover)).toEqual({
+      reason: 'registry-lookup',
+      source: 'builtin-registry',
+      detail: 'Hover resolved slot from the builtin registry as a contextual CBS syntax entry.',
+    });
 
     expect(referenceMarkdown).toContain('**Loop alias reference: item**');
     expect(referenceMarkdown).toContain('points to the currently visible `#each` loop alias');
     expect(referenceMarkdown).toContain('Bound by: `#each items as item`');
     expect(referenceMarkdown).toContain('Scope: current `#each` block');
     expect(referenceMarkdown).toContain('Local definition:');
-    expect(referenceMarkdown).not.toContain('**Documentation-only syntax entry:**');
+    expect(referenceMarkdown).not.toContain('**Contextual syntax entry:**');
+    expect(extractHoverCategory(referenceHover)).toEqual({
+      category: 'contextual-token',
+      kind: 'loop-alias',
+    });
   });
 
   it('uses the innermost visible #each binding for shadowed slot::item hover', () => {
