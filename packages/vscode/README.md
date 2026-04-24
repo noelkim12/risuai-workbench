@@ -42,6 +42,8 @@ client는 resolution 실패를 silent no-op으로 숨기지 않습니다.
 
 이 client 레이어는 `packages/cbs-lsp`의 standalone server 검증(`test:e2e:standalone`, `test:perf:standalone`) 위에 별도로 올라갑니다. static boundary suite는 아래 4가지 launch/failure 시나리오를 built output 기준으로 고정하고, runtime suite는 standalone explicit path override와 auto embedded fallback 둘 다에서 실제 LanguageClient 경로가 initialize→didOpen→hover→shutdown을 왕복하는지까지 확인합니다.
 
+Standalone server 자체의 stdio smoke, real extracted workspace E2E, large-workspace perf budget은 `packages/cbs-lsp`가 소유합니다. 이 패키지의 E2E는 공식 VS Code client가 public server surface를 어떻게 선택하고 붙는지, 그리고 Extension Host 안에서 실제 `LanguageClient` lifecycle이 깨지지 않는지만 검증합니다.
+
 - standalone `local-devDependency` — first workspace folder를 launch cwd/root로 전달하고, stdio transport + CBS selector/file watcher contract를 유지합니다.
 - auto embedded fallback — standalone preflight가 실패할 때만 monorepo embedded IPC module로 내려갑니다.
 - invalid explicit path override — silent fallback 없이 error message / Output / Settings 복구 UX를 노출합니다.

@@ -605,6 +605,46 @@ export async function requestHoverUntilReady(client: StdioLspClient, uri: string
 }
 
 /**
+ * requestCompletionUntilReady 함수.
+ * opt-in real LuaLS matrix에서 sidecar startup이 끝날 때까지 completion roundtrip을 재시도함.
+ *
+ * @param client - 요청을 보낼 stdio JSON-RPC client
+ * @param uri - completion 대상 문서 URI
+ * @param text - completion 대상 문서 텍스트
+ * @param needle - cursor를 둘 토큰
+ * @param characterOffset - 토큰 시작점에서 추가 문자 오프셋
+ * @param predicate - completion item 배열이 만족해야 할 조건
+ * @returns predicate를 만족한 completion item 배열
+ */
+export async function requestCompletionUntilReady(
+  client: StdioLspClient,
+  uri: string,
+  text: string,
+  needle: string,
+  characterOffset: number,
+  predicate: (items: Array<{ label?: string }>) => boolean,
+): Promise<Array<{ label?: string }>> {
+  const deadline = Date.now() + 20_000;
+
+  while (Date.now() < deadline) {
+    const completion = (await client.request('textDocument/completion', {
+      textDocument: { uri },
+      position: positionAt(text, needle, characterOffset),
+    }, 20_000)) as { items?: Array<{ label?: string }> } | Array<{ label?: string }> | null;
+
+    const items = Array.isArray(completion) ? completion : completion?.items ?? [];
+
+    if (predicate(items)) {
+      return items;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  throw new Error(`Timed out waiting for real LuaLS completion response. stderr: ${client.getStderr()}`);
+}
+
+/**
  * requestReferencesUntil 함수.
  * workspace refresh가 끝날 때까지 references 결과를 재시도하며 기대 조건을 기다림.
  *

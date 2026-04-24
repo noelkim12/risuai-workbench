@@ -31,6 +31,7 @@ import {
   StdioLspClient,
   getHoverMarkdown,
   positionAt,
+  requestCompletionUntilReady,
   requestHoverUntilReady,
   requestReferencesUntil,
   waitForDiagnosticsUntil,
@@ -433,6 +434,77 @@ describe.runIf(RUN_REAL_LUALS_PRODUCT_MATRIX && Boolean(REAL_LUALS_PATH)).sequen
       const hover = await requestHoverUntilReady(client, uri, text);
 
       expect(getHoverMarkdown(hover)).toContain('greeting');
+
+      await client.shutdown();
+      const exitCode = await client.waitForExit(20_000);
+      expect(exitCode).toBe(0);
+    }, 30_000);
+
+    it('answers completion for generated RisuAI stub symbols over stdio for .risulua documents', async () => {
+      const root = await createWorkspaceRoot('cbs-lsp-stdio-luals-completion-', tempRoots);
+      const luaText = 'local runtimeValue = get\n';
+      const absolutePath = await writeWorkspaceFile(root, 'lua/stub-completion.risulua', luaText);
+      const uri = pathToFileURL(absolutePath).toString();
+      const client = createStdioClientWithTracking([
+        '--stdio',
+        '--workspace',
+        root,
+        '--luals-path',
+        REAL_LUALS_PATH!,
+      ]);
+
+      const initializeResult = (await client.request('initialize', {
+        processId: null,
+        rootUri: pathToFileURL(root).toString(),
+        workspaceFolders: [{ uri: pathToFileURL(root).toString(), name: 'fixture' }],
+        capabilities: {},
+      }, 20_000)) as {
+        experimental?: {
+          cbs?: {
+            availability?: {
+              companions?: {
+                luals?: {
+                  executablePath?: string | null;
+                  status?: string;
+                };
+              };
+            };
+          };
+        };
+      };
+
+      expect(initializeResult.experimental?.cbs?.availability?.companions?.luals).toMatchObject({
+        executablePath: REAL_LUALS_PATH,
+        status: 'stopped',
+      });
+
+      client.notify('initialized', {});
+      client.notify('textDocument/didOpen', {
+        textDocument: {
+          uri,
+          languageId: 'lua',
+          version: 1,
+          text: luaText,
+        },
+      });
+
+      const completionItems = await requestCompletionUntilReady(
+        client,
+        uri,
+        luaText,
+        'get',
+        3,
+        (items) =>
+          items.some((item) => item.label?.startsWith('getState')) &&
+          items.some((item) => item.label?.startsWith('getLoreBooks')),
+      );
+
+      expect(completionItems.map((item) => item.label)).toEqual(
+        expect.arrayContaining([
+          expect.stringMatching(/^getState\(/u),
+          expect.stringMatching(/^getLoreBooks\(/u),
+        ]),
+      );
 
       await client.shutdown();
       const exitCode = await client.waitForExit(20_000);
