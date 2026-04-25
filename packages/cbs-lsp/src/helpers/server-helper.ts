@@ -37,6 +37,7 @@ import {
   ResponseError,
   type SemanticTokensParams,
   type SemanticTokensRangeParams,
+  type SignatureHelp,
   type SignatureHelpParams,
   type SymbolInformation,
   TextEdit,
@@ -101,7 +102,16 @@ export interface ServerFeatureRegistrarContext {
   connection: Connection;
   luaLsProxy: Pick<
     LuaLsCompanionController,
-    'getRuntime' | 'prepareRename' | 'provideCompletion' | 'provideDefinition' | 'provideHover' | 'provideRename'
+    | 'getRuntime'
+    | 'prepareRename'
+    | 'provideCompletion'
+    | 'provideDefinition'
+    | 'provideDocumentHighlight'
+    | 'provideDocumentSymbol'
+    | 'provideHover'
+    | 'provideReferences'
+    | 'provideRename'
+    | 'provideSignatureHelp'
   >;
   providers: ServerFeatureRegistrarProviders;
   registry: CBSBuiltinRegistry;
@@ -315,10 +325,7 @@ export class ServerFeatureRegistrar {
   private readonly inlayHintProvider: InlayHintProvider;
   private readonly onTypeFormattingProvider: OnTypeFormattingProvider | undefined;
   private readonly selectionRangeProvider: SelectionRangeProvider;
-  private readonly luaLsProxy: Pick<
-    LuaLsCompanionController,
-    'getRuntime' | 'prepareRename' | 'provideCompletion' | 'provideDefinition' | 'provideHover' | 'provideRename'
-  >;
+  private readonly luaLsProxy: ServerFeatureRegistrarContext['luaLsProxy'];
   private readonly registry: CBSBuiltinRegistry;
   private readonly requestRunner: RequestHandlerRunner;
   private readonly resolveRequest: (uri: string) => FragmentAnalysisRequest | null;
@@ -693,7 +700,38 @@ export class ServerFeatureRegistrar {
   }
 
   private registerDocumentSymbolHandler(): void {
-    this.connection.onDocumentSymbol((params: DocumentSymbolParams, cancellationToken): DocumentSymbol[] => {
+    this.connection.onDocumentSymbol((params: DocumentSymbolParams, cancellationToken) => {
+      const filePath = CbsLspPathHelper.getFilePathFromUri(params.textDocument.uri);
+      const routedToLuaLs = shouldRouteDocumentToLuaLs(filePath);
+      const routingRequest = routedToLuaLs ? this.resolveRequest(params.textDocument.uri) : null;
+      const skipLuaLsProxy = routedToLuaLs && shouldSkipLuaLsProxyForRequest(routingRequest, filePath);
+
+      if (routedToLuaLs) {
+        return this.requestRunner.runAsync<DocumentSymbolParams, DocumentSymbol[]>({
+          empty: [],
+          feature: 'documentSymbol',
+          getUri: (requestParams) => requestParams.textDocument.uri,
+          params,
+          recoverOnError: true,
+          run: async () => {
+            const cbsSymbols = routingRequest
+              ? this.documentSymbolProvider.provide(params, routingRequest, cancellationToken)
+              : [];
+            if (skipLuaLsProxy) {
+              return cbsSymbols;
+            }
+
+            const luaSymbols = await this.luaLsProxy.provideDocumentSymbol(params, cancellationToken);
+            return [...cbsSymbols, ...luaSymbols];
+          },
+          summarize: (result) => ({
+            count: result.length,
+            source: skipLuaLsProxy ? 'luaProxySkipped' : 'cbsAndLuaProxy',
+          }),
+          token: cancellationToken,
+        });
+      }
+
       return this.requestRunner.runSync({
         empty: [],
         feature: 'documentSymbol',
@@ -729,7 +767,44 @@ export class ServerFeatureRegistrar {
   }
 
   private registerDocumentHighlightHandler(): void {
-    this.connection.onDocumentHighlight((params: DocumentHighlightParams, cancellationToken): DocumentHighlight[] => {
+    this.connection.onDocumentHighlight((params: DocumentHighlightParams, cancellationToken) => {
+      const filePath = CbsLspPathHelper.getFilePathFromUri(params.textDocument.uri);
+      const routedToLuaLs = shouldRouteDocumentToLuaLs(filePath);
+      const routingRequest = routedToLuaLs ? this.resolveRequest(params.textDocument.uri) : null;
+      const skipLuaLsProxy = routedToLuaLs && shouldSkipLuaLsProxyForRequest(routingRequest, filePath);
+
+      if (routedToLuaLs) {
+        return this.requestRunner.runAsync<DocumentHighlightParams, DocumentHighlight[]>({
+          empty: [],
+          feature: 'documentHighlight',
+          getUri: (requestParams) => requestParams.textDocument.uri,
+          params,
+          recoverOnError: true,
+          run: async () => {
+            const cbsHighlights = this.documentHighlightProvider.provide(params, cancellationToken);
+            if (
+              cbsHighlights.length > 0 &&
+              routingRequest &&
+              isPositionInsideCbsMacro(routingRequest.text, params.position)
+            ) {
+              return cbsHighlights;
+            }
+
+            if (skipLuaLsProxy) {
+              return cbsHighlights;
+            }
+
+            const luaHighlights = await this.luaLsProxy.provideDocumentHighlight(params, cancellationToken);
+            return [...cbsHighlights, ...luaHighlights];
+          },
+          summarize: (result) => ({
+            count: result.length,
+            source: skipLuaLsProxy ? 'luaProxySkipped' : 'cbsAndLuaProxy',
+          }),
+          token: cancellationToken,
+        });
+      }
+
       return this.requestRunner.runSync({
         empty: [],
         feature: 'documentHighlight',
@@ -858,7 +933,47 @@ export class ServerFeatureRegistrar {
   }
 
   private registerReferencesHandler(): void {
-    this.connection.onReferences((params: ReferenceParams, cancellationToken): Location[] => {
+    this.connection.onReferences((params: ReferenceParams, cancellationToken) => {
+      const filePath = CbsLspPathHelper.getFilePathFromUri(params.textDocument.uri);
+      const routedToLuaLs = shouldRouteDocumentToLuaLs(filePath);
+      const routingRequest = routedToLuaLs ? this.resolveRequest(params.textDocument.uri) : null;
+      const skipLuaLsProxy = routedToLuaLs && shouldSkipLuaLsProxyForRequest(routingRequest, filePath);
+
+      if (routedToLuaLs) {
+        return this.requestRunner.runAsync<ReferenceParams, Location[]>({
+          empty: [],
+          feature: 'references',
+          getUri: (requestParams) => requestParams.textDocument.uri,
+          params,
+          recoverOnError: true,
+          run: async () => {
+            const cbsReferences = this.createReferencesProvider(params.textDocument.uri).provide(
+              params,
+              cancellationToken,
+            );
+            if (
+              cbsReferences.length > 0 &&
+              routingRequest &&
+              isPositionInsideCbsMacro(routingRequest.text, params.position)
+            ) {
+              return cbsReferences;
+            }
+
+            if (skipLuaLsProxy) {
+              return cbsReferences;
+            }
+
+            const luaReferences = await this.luaLsProxy.provideReferences(params, cancellationToken);
+            return [...cbsReferences, ...luaReferences];
+          },
+          summarize: (result) => ({
+            count: result.length,
+            source: skipLuaLsProxy ? 'luaProxySkipped' : 'cbsAndLuaProxy',
+          }),
+          token: cancellationToken,
+        });
+      }
+
       return this.requestRunner.runSync({
         empty: [],
         feature: 'references',
@@ -1118,6 +1233,45 @@ export class ServerFeatureRegistrar {
 
   private registerSignatureHelpHandler(): void {
     this.connection.onSignatureHelp((params: SignatureHelpParams, cancellationToken) => {
+      const filePath = CbsLspPathHelper.getFilePathFromUri(params.textDocument.uri);
+      const routedToLuaLs = shouldRouteDocumentToLuaLs(filePath);
+      const routingRequest = routedToLuaLs ? this.resolveRequest(params.textDocument.uri) : null;
+      const skipLuaLsProxy = routedToLuaLs && shouldSkipLuaLsProxyForRequest(routingRequest, filePath);
+
+      if (routedToLuaLs) {
+        return this.requestRunner.runAsync<SignatureHelpParams, SignatureHelp | null>({
+          empty: null,
+          feature: 'signature',
+          getUri: (requestParams) => requestParams.textDocument.uri,
+          params,
+          recoverOnError: true,
+          run: async () => {
+            const cbsSignature = routingRequest
+              ? this.signatureHelpProvider.provide(params, routingRequest, cancellationToken)
+              : null;
+            if (
+              cbsSignature &&
+              routingRequest &&
+              isPositionInsideCbsMacro(routingRequest.text, params.position)
+            ) {
+              return cbsSignature;
+            }
+
+            if (skipLuaLsProxy) {
+              return cbsSignature;
+            }
+
+            const luaSignature = await this.luaLsProxy.provideSignatureHelp(params, cancellationToken);
+            return luaSignature ?? cbsSignature;
+          },
+          summarize: (result) => ({
+            hasResult: result !== null,
+            source: skipLuaLsProxy ? 'luaProxySkipped' : 'cbsAndLuaProxy',
+          }),
+          token: cancellationToken,
+        });
+      }
+
       return this.requestRunner.runSync({
         empty: null,
         feature: 'signature',

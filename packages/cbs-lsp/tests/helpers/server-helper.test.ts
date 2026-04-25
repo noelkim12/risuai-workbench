@@ -11,9 +11,17 @@ import type {
   Connection,
   Definition,
   DefinitionParams,
+  DocumentHighlight,
+  DocumentHighlightParams,
+  DocumentSymbol,
+  DocumentSymbolParams,
   HoverParams,
+  Location,
   Range as LSPRange,
+  ReferenceParams,
   RenameParams,
+  SignatureHelp,
+  SignatureHelpParams,
   TextDocumentPositionParams,
   WorkspaceEdit,
 } from 'vscode-languageserver/node';
@@ -40,6 +48,26 @@ type DefinitionHandler = (
 
 type HoverHandler = (params: HoverParams, cancellationToken?: CancellationToken) => unknown;
 
+type DocumentSymbolHandler = (
+  params: DocumentSymbolParams,
+  cancellationToken?: CancellationToken,
+) => DocumentSymbol[] | Promise<DocumentSymbol[]>;
+
+type DocumentHighlightHandler = (
+  params: DocumentHighlightParams,
+  cancellationToken?: CancellationToken,
+) => DocumentHighlight[] | Promise<DocumentHighlight[]>;
+
+type ReferencesHandler = (
+  params: ReferenceParams,
+  cancellationToken?: CancellationToken,
+) => Location[] | Promise<Location[]>;
+
+type SignatureHelpHandler = (
+  params: SignatureHelpParams,
+  cancellationToken?: CancellationToken,
+) => SignatureHelp | null | Promise<SignatureHelp | null>;
+
 type PrepareRenameHandler = (
   params: TextDocumentPositionParams,
   cancellationToken?: CancellationToken,
@@ -60,15 +88,23 @@ function createConnectionStub(): {
   connection: Connection;
   getCompletionHandler: () => CompletionHandler;
   getDefinitionHandler: () => DefinitionHandler;
+  getDocumentHighlightHandler: () => DocumentHighlightHandler;
+  getDocumentSymbolHandler: () => DocumentSymbolHandler;
   getHoverHandler: () => HoverHandler;
   getPrepareRenameHandler: () => PrepareRenameHandler;
+  getReferencesHandler: () => ReferencesHandler;
   getRenameHandler: () => RenameHandler;
+  getSignatureHelpHandler: () => SignatureHelpHandler;
 } {
   let completionHandler: CompletionHandler | null = null;
   let definitionHandler: DefinitionHandler | null = null;
+  let documentHighlightHandler: DocumentHighlightHandler | null = null;
+  let documentSymbolHandler: DocumentSymbolHandler | null = null;
   let hoverHandler: HoverHandler | null = null;
   let prepareRenameHandler: PrepareRenameHandler | null = null;
+  let referencesHandler: ReferencesHandler | null = null;
   let renameHandler: RenameHandler | null = null;
+  let signatureHelpHandler: SignatureHelpHandler | null = null;
   const connection = {
     console: {
       log: vi.fn(),
@@ -83,6 +119,12 @@ function createConnectionStub(): {
     onDefinition: vi.fn((handler: DefinitionHandler) => {
       definitionHandler = handler;
     }),
+    onDocumentHighlight: vi.fn((handler: DocumentHighlightHandler) => {
+      documentHighlightHandler = handler;
+    }),
+    onDocumentSymbol: vi.fn((handler: DocumentSymbolHandler) => {
+      documentSymbolHandler = handler;
+    }),
     onHover: vi.fn((handler: HoverHandler) => {
       hoverHandler = handler;
     }),
@@ -91,6 +133,12 @@ function createConnectionStub(): {
     }),
     onRenameRequest: vi.fn((handler: RenameHandler) => {
       renameHandler = handler;
+    }),
+    onReferences: vi.fn((handler: ReferencesHandler) => {
+      referencesHandler = handler;
+    }),
+    onSignatureHelp: vi.fn((handler: SignatureHelpHandler) => {
+      signatureHelpHandler = handler;
     }),
   } as unknown as Connection;
 
@@ -108,6 +156,18 @@ function createConnectionStub(): {
       }
       return definitionHandler;
     },
+    getDocumentHighlightHandler: () => {
+      if (!documentHighlightHandler) {
+        throw new Error('Document highlight handler was not registered.');
+      }
+      return documentHighlightHandler;
+    },
+    getDocumentSymbolHandler: () => {
+      if (!documentSymbolHandler) {
+        throw new Error('Document symbol handler was not registered.');
+      }
+      return documentSymbolHandler;
+    },
     getHoverHandler: () => {
       if (!hoverHandler) {
         throw new Error('Hover handler was not registered.');
@@ -120,11 +180,23 @@ function createConnectionStub(): {
       }
       return prepareRenameHandler;
     },
+    getReferencesHandler: () => {
+      if (!referencesHandler) {
+        throw new Error('References handler was not registered.');
+      }
+      return referencesHandler;
+    },
     getRenameHandler: () => {
       if (!renameHandler) {
         throw new Error('Rename handler was not registered.');
       }
       return renameHandler;
+    },
+    getSignatureHelpHandler: () => {
+      if (!signatureHelpHandler) {
+        throw new Error('Signature help handler was not registered.');
+      }
+      return signatureHelpHandler;
     },
   };
 }
@@ -155,8 +227,12 @@ function createRegistrarContext(
           },
         ]),
       } as unknown as ServerFeatureRegistrarContext['providers']['completionProvider'],
-      documentHighlightProvider: {} as ServerFeatureRegistrarContext['providers']['documentHighlightProvider'],
-      documentSymbolProvider: {} as ServerFeatureRegistrarContext['providers']['documentSymbolProvider'],
+      documentHighlightProvider: {
+        provide: vi.fn(() => []),
+      } as unknown as ServerFeatureRegistrarContext['providers']['documentHighlightProvider'],
+      documentSymbolProvider: {
+        provide: vi.fn(() => []),
+      } as unknown as ServerFeatureRegistrarContext['providers']['documentSymbolProvider'],
       foldingProvider: {} as ServerFeatureRegistrarContext['providers']['foldingProvider'],
       formattingProvider: {} as ServerFeatureRegistrarContext['providers']['formattingProvider'],
       hoverProvider: {
@@ -166,7 +242,9 @@ function createRegistrarContext(
       resolveRequest: () => request,
       selectionRangeProvider: {} as ServerFeatureRegistrarContext['providers']['selectionRangeProvider'],
       semanticTokensProvider: {} as ServerFeatureRegistrarContext['providers']['semanticTokensProvider'],
-      signatureHelpProvider: {} as ServerFeatureRegistrarContext['providers']['signatureHelpProvider'],
+      signatureHelpProvider: {
+        provide: vi.fn(() => null),
+      } as unknown as ServerFeatureRegistrarContext['providers']['signatureHelpProvider'],
       workspaceSymbolProvider: {} as ServerFeatureRegistrarContext['providers']['workspaceSymbolProvider'],
     },
     registry: {} as ServerFeatureRegistrarContext['registry'],
@@ -408,6 +486,113 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
           edits: [{ range: renameRange, newText: 'renamedGreeting' }],
         },
       ],
+    });
+  });
+
+  it('proxies LuaLS document symbols, highlights, references, and signatures for small .risulua Lua symbols', async () => {
+    const connectionFixture = createConnectionStub();
+    const request: FragmentAnalysisRequest = {
+      uri: 'file:///workspace/lua/small.risulua',
+      filePath: '/workspace/lua/small.risulua',
+      version: 1,
+      text: 'local function greet(name)\n  return name\nend\ngreet("Risu")\n',
+    };
+    const luaLsProxy = {
+      getRuntime: vi.fn(() => ({ status: 'ready' })),
+      provideCompletion: vi.fn(async () => []),
+      provideDefinition: vi.fn(async () => null),
+      provideDocumentHighlight: vi.fn(async () => [
+        {
+          range: {
+            start: { line: 3, character: 0 },
+            end: { line: 3, character: 5 },
+          },
+        },
+      ]),
+      provideDocumentSymbol: vi.fn(async () => [
+        {
+          name: 'greet',
+          kind: 12,
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 2, character: 3 },
+          },
+          selectionRange: {
+            start: { line: 0, character: 15 },
+            end: { line: 0, character: 20 },
+          },
+        },
+      ]),
+      provideHover: vi.fn(async () => null),
+      provideReferences: vi.fn(async () => [
+        {
+          uri: request.uri,
+          range: {
+            start: { line: 3, character: 0 },
+            end: { line: 3, character: 5 },
+          },
+        },
+      ]),
+      provideSignatureHelp: vi.fn(async () => ({
+        activeParameter: 0,
+        activeSignature: 0,
+        signatures: [{ label: 'greet(name)' }],
+      })),
+      prepareRename: vi.fn(async () => null),
+      provideRename: vi.fn(async () => null),
+    } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
+    const registrar = new ServerFeatureRegistrar({
+      ...createRegistrarContext(request, luaLsProxy),
+      connection: connectionFixture.connection,
+    });
+    (registrar as unknown as { registerDocumentSymbolHandler: () => void }).registerDocumentSymbolHandler();
+    (registrar as unknown as { registerDocumentHighlightHandler: () => void }).registerDocumentHighlightHandler();
+    (registrar as unknown as { registerReferencesHandler: () => void }).registerReferencesHandler();
+    (registrar as unknown as { registerSignatureHelpHandler: () => void }).registerSignatureHelpHandler();
+
+    const textDocument = { uri: request.uri };
+    const position = { line: 3, character: 2 };
+    const symbols = await connectionFixture.getDocumentSymbolHandler()({ textDocument });
+    const highlights = await connectionFixture.getDocumentHighlightHandler()({ textDocument, position });
+    const references = await connectionFixture.getReferencesHandler()({
+      textDocument,
+      position,
+      context: { includeDeclaration: true },
+    });
+    const signature = await connectionFixture.getSignatureHelpHandler()({ textDocument, position });
+
+    expect(luaLsProxy.provideDocumentSymbol).toHaveBeenCalledOnce();
+    expect(luaLsProxy.provideDocumentHighlight).toHaveBeenCalledOnce();
+    expect(luaLsProxy.provideReferences).toHaveBeenCalledOnce();
+    expect(luaLsProxy.provideSignatureHelp).toHaveBeenCalledOnce();
+    expect(symbols).toEqual([
+      {
+        name: 'greet',
+        kind: 12,
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 2, character: 3 },
+        },
+        selectionRange: {
+          start: { line: 0, character: 15 },
+          end: { line: 0, character: 20 },
+        },
+      },
+    ]);
+    expect(highlights).toHaveLength(1);
+    expect(references).toEqual([
+      {
+        uri: request.uri,
+        range: {
+          start: { line: 3, character: 0 },
+          end: { line: 3, character: 5 },
+        },
+      },
+    ]);
+    expect(signature).toEqual({
+      activeParameter: 0,
+      activeSignature: 0,
+      signatures: [{ label: 'greet(name)' }],
     });
   });
 });
