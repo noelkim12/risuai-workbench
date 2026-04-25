@@ -14,7 +14,10 @@ import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
-import { type Diagnostic, type InitializeParams } from 'vscode-languageserver/node';
+import {
+  type Diagnostic,
+  type InitializeParams,
+} from 'vscode-languageserver/node';
 
 import {
   createLuaLsCompanionRuntime,
@@ -774,7 +777,53 @@ export class LuaLsProcessManager {
   private createInitializeParams(rootPath: string | null): InitializeParams {
     const shadowRootUri = pathToFileURL(this.shadowWorkspace.rootPath).href;
     return {
-      capabilities: {},
+      capabilities: {
+        textDocument: {
+          completion: {
+            completionItem: {
+              documentationFormat: ['markdown', 'plaintext'],
+              snippetSupport: true,
+            },
+            contextSupport: true,
+          },
+          definition: {
+            linkSupport: true,
+          },
+          documentHighlight: {},
+          documentSymbol: {
+            hierarchicalDocumentSymbolSupport: true,
+          },
+          hover: {
+            contentFormat: ['markdown', 'plaintext'],
+          },
+          publishDiagnostics: {
+            relatedInformation: true,
+            versionSupport: true,
+          },
+          references: {},
+          rename: {
+            prepareSupport: true,
+          },
+          signatureHelp: {
+            signatureInformation: {
+              documentationFormat: ['markdown', 'plaintext'],
+              parameterInformation: {
+                labelOffsetSupport: true,
+              },
+            },
+          },
+          synchronization: {
+            didSave: false,
+            dynamicRegistration: false,
+            willSave: false,
+            willSaveWaitUntil: false,
+          },
+        },
+        workspace: {
+          configuration: true,
+          workspaceFolders: true,
+        },
+      },
       clientInfo: {
         name: 'cbs-language-server',
         version: '0.1.0',

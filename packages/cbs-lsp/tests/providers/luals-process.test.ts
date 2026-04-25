@@ -201,6 +201,25 @@ describe('LuaLsProcessManager', () => {
       status: 'stopped',
     });
     expect(fakeTransport.requests.map((entry) => entry.method)).toEqual(['initialize', 'shutdown']);
+    expect(fakeTransport.requests[0]?.params).toMatchObject({
+      capabilities: {
+        textDocument: {
+          completion: expect.any(Object),
+          definition: expect.any(Object),
+          documentHighlight: expect.any(Object),
+          documentSymbol: expect.any(Object),
+          hover: expect.any(Object),
+          publishDiagnostics: expect.any(Object),
+          references: expect.any(Object),
+          rename: expect.any(Object),
+          signatureHelp: expect.any(Object),
+        },
+        workspace: {
+          configuration: true,
+          workspaceFolders: true,
+        },
+      },
+    });
     expect(fakeTransport.notifications.map((entry) => entry.method)).toEqual([
       'initialized',
       'workspace/didChangeConfiguration',
