@@ -284,6 +284,10 @@ function collectEachHeaderDiagnostics(
     return [];
   }
 
+  if (!containsEachAliasKeyword(headerText)) {
+    return [];
+  }
+
   return [
     createDiagnosticInfo(
       DiagnosticCode.MissingRequiredArgument,
@@ -291,6 +295,17 @@ function collectEachHeaderDiagnostics(
       'CBS block "#each" requires an `as <item>` loop binding',
     ),
   ];
+}
+
+/**
+ * containsEachAliasKeyword 함수.
+ * #each header가 optional `as` alias 구문을 시도했는지 확인함.
+ *
+ * @param headerText - operator prefix를 제거한 #each header 본문
+ * @returns `as` keyword가 standalone token으로 있으면 true
+ */
+function containsEachAliasKeyword(headerText: string): boolean {
+  return /(?:^|\s)as(?:\s|$)/i.test(headerText);
 }
 
 function appendAliasAvailabilityDiagnostic(

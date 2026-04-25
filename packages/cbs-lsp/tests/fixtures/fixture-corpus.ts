@@ -821,14 +821,14 @@ const fixtureCorpusSeeds: readonly FixtureCorpusSeed[] = [
   },
   {
     id: 'prompt-malformed-each-header',
-    label: 'Prompt with malformed #each header diagnostic',
+    label: 'Prompt with #each header without alias',
     kind: 'edge-case',
     artifact: 'prompt',
     cbsBearing: true,
     sourceKind: 'inline-document',
     relativePath: 'edge-malformed-each-header.risuprompt',
     expectedSections: ['TEXT'],
-    expectedDiagnosticCodes: [DiagnosticCode.MissingRequiredArgument],
+    expectedDiagnosticCodes: [],
     features: ['taxonomy', 'analyzer-each'],
     text: promptDocument({
       TEXT: '{{#each items}}{{slot::item}}{{/each}}',

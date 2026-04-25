@@ -270,6 +270,38 @@ test('detects double-open-brace CBS prefixes for explicit VS Code suggest fallba
   assert.equal(
     autoSuggest.shouldTriggerCbsAutoSuggest({
       insertedText: ':',
+      languageId: 'risulorebook',
+      linePrefix: '{{#when::',
+    }),
+    true,
+  );
+  assert.equal(
+    autoSuggest.shouldTriggerCbsAutoSuggest({
+      insertedText: ':',
+      languageId: 'risulorebook',
+      linePrefix: '{{#when::keep::var1::',
+    }),
+    true,
+  );
+  assert.equal(
+    autoSuggest.shouldTriggerCbsAutoSuggest({
+      insertedText: ':',
+      languageId: 'risuhtml',
+      linePrefix: '{{#when::{{getvar::el_popup}}::',
+    }),
+    true,
+  );
+  assert.equal(
+    autoSuggest.shouldTriggerCbsAutoSuggest({
+      insertedText: ':',
+      languageId: 'risuhtml',
+      linePrefix: '{{#when::ready}}::',
+    }),
+    false,
+  );
+  assert.equal(
+    autoSuggest.shouldTriggerCbsAutoSuggest({
+      insertedText: ':',
       languageId: 'typescript',
       linePrefix: '{{getvar::',
     }),

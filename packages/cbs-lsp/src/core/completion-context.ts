@@ -186,6 +186,67 @@ export function detectCompletionTriggerContext(
     };
   };
 
+  const detectEachIteratorContext = (): CompletionTriggerContext | null => {
+    if (nodeSpan?.category !== 'block-header') {
+      return null;
+    }
+
+    let eachBlock = nodeSpan.owner.type === 'Block' && nodeSpan.owner.kind === 'each'
+      ? nodeSpan.owner
+      : null;
+    if (!eachBlock) {
+      for (let index = nodePath.length - 1; index >= 0; index -= 1) {
+        const candidate = nodePath[index];
+        if (candidate.type === 'Block' && candidate.kind === 'each') {
+          eachBlock = candidate;
+          break;
+        }
+      }
+    }
+
+    if (!eachBlock) {
+      return null;
+    }
+
+    const openStartOffset = positionToOffset(fragmentAnalysis.fragment.content, eachBlock.openRange.start);
+    const openEndOffset = positionToOffset(fragmentAnalysis.fragment.content, eachBlock.openRange.end);
+    const headerStartOffset = openStartOffset + 2;
+    const headerEndOffset = Math.max(headerStartOffset, openEndOffset - 2);
+    if (fragmentLocalOffset < headerStartOffset || fragmentLocalOffset > headerEndOffset) {
+      return null;
+    }
+
+    const headerRaw = fragmentAnalysis.fragment.content.slice(headerStartOffset, headerEndOffset);
+    const headerMatch = /^(\s*#each\b)/iu.exec(headerRaw);
+    if (!headerMatch) {
+      return null;
+    }
+
+    const blockNameEnd = headerMatch[1]?.length ?? 0;
+    const cursorOffsetInHeader = Math.max(0, fragmentLocalOffset - headerStartOffset);
+    if (cursorOffsetInHeader < blockNameEnd) {
+      return null;
+    }
+
+    const tailBeforeCursor = headerRaw.slice(blockNameEnd, cursorOffsetInHeader);
+    const iteratorMatch = /^(\s*)(\S*)$/u.exec(tailBeforeCursor);
+    if (!iteratorMatch) {
+      return null;
+    }
+
+    const leadingWhitespaceLength = iteratorMatch[1]?.length ?? 0;
+    const prefix = iteratorMatch[2] ?? '';
+    const startOffset = headerStartOffset + blockNameEnd + leadingWhitespaceLength;
+
+    return {
+      type: 'variable-names',
+      prefix,
+      startOffset,
+      endOffset: fragmentLocalOffset,
+      kind: 'chat',
+    };
+  };
+
   const inferArgumentIndexFromOpenBrace = (openBraceIndex: number): number => {
     const openBrace = tokens[openBraceIndex];
     if (!openBrace) {
@@ -470,6 +531,11 @@ export function detectCompletionTriggerContext(
   const argumentReferenceContext = detectArgumentReferenceContext();
   if (argumentReferenceContext) {
     return argumentReferenceContext;
+  }
+
+  const eachIteratorContext = detectEachIteratorContext();
+  if (eachIteratorContext) {
+    return eachIteratorContext;
   }
 
   // Determine context based on token type and node information

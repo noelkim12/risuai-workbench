@@ -173,7 +173,10 @@ describe('CodeActionProvider', () => {
   });
 
   it('returns explanation-only no-op actions for slot misuse diagnostics', () => {
-    const request = createFixtureRequest(getFixtureCorpusEntry('prompt-malformed-each-header'));
+    const request = createInlineRequest(
+      '/virtual/prompt/malformed-each-alias.risuprompt',
+      promptDocument('{{#each items as}}{{slot::item}}{{/each}}'),
+    );
     const provider = createProvider(request);
     const diagnostics = routeDiagnosticsForDocument(request.filePath, request.text, {}, request);
     const actions = provider.provide(

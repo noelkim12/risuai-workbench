@@ -1,7 +1,8 @@
-import type {
-  CompletionItem,
-  Position,
-  TextDocumentPositionParams,
+import type { CompletionItem } from 'vscode-languageserver/node';
+import {
+  InsertTextFormat,
+  type Position,
+  type TextDocumentPositionParams,
 } from 'vscode-languageserver/node';
 import { CBSBuiltinRegistry } from 'risu-workbench-core';
 import { describe, expect, it, vi } from 'vitest';
@@ -99,16 +100,21 @@ function expectNoCompletionLabels(completions: CompletionItem[], ...unexpectedLa
 
 function applyCompletionTextEdit(text: string, completion: CompletionItem | undefined): string {
   expect(completion?.textEdit).toBeDefined();
-  const textEdit = completion?.textEdit as { range: { start: Position; end: Position }; newText: string };
+  const textEdit = completion?.textEdit as {
+    range: { start: Position; end: Position };
+    newText: string;
+  };
   const startOffset = locateOffsetFromPosition(text, textEdit.range.start);
   const endOffset = locateOffsetFromPosition(text, textEdit.range.end);
   return `${text.slice(0, startOffset)}${textEdit.newText}${text.slice(endOffset)}`;
 }
 
 function locateOffsetFromPosition(text: string, position: Position): number {
-  return text.split('\n').slice(0, position.line).join('\n').length +
+  return (
+    text.split('\n').slice(0, position.line).join('\n').length +
     (position.line === 0 ? 0 : 1) +
-    position.character;
+    position.character
+  );
 }
 
 function extractCompletionCategory(completion: CompletionItem | undefined) {
@@ -226,16 +232,34 @@ describe('CompletionProvider', () => {
     it('offers all function names for an unclosed bare {{ macro prefix', () => {
       const request = createInlineCompletionRequest('{{');
       const provider = createProvider(new FragmentAnalysisService(), request);
-      const completions = provider.provide(createParams(request, offsetToPosition(request.text, 2)));
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(request.text, 2)),
+      );
 
       expect(completions.length).toBeGreaterThan(0);
       expectCompletionLabels(completions, 'user', 'char', 'setvar', 'getvar', '#when', '#each');
     });
 
+    it('returns root {{ completions without running fragment analysis', () => {
+      const request = createInlineCompletionRequest('{{us');
+      const service = new FragmentAnalysisService();
+      const locateSpy = vi.spyOn(service, 'locatePosition');
+      const provider = createProvider(service, request);
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(request.text, 4)),
+      );
+
+      expect(completions.length).toBeGreaterThan(0);
+      expectCompletionLabels(completions, 'user');
+      expect(locateSpy).not.toHaveBeenCalled();
+    });
+
     it('keeps auto-closed {{}} cursor-middle completions on function names, not close tags', () => {
       const request = createInlineCompletionRequest('{{}}');
       const provider = createProvider(new FragmentAnalysisService(), request);
-      const completions = provider.provide(createParams(request, offsetToPosition(request.text, 2)));
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(request.text, 2)),
+      );
 
       expect(completions.length).toBeGreaterThan(0);
       expectCompletionLabels(completions, 'user', 'char', 'setvar', 'getvar', '#when', '#each');
@@ -245,63 +269,206 @@ describe('CompletionProvider', () => {
     it('offers block snippets for an unclosed {{# block prefix', () => {
       const request = createInlineCompletionRequest('{{#');
       const provider = createProvider(new FragmentAnalysisService(), request);
-      const completions = provider.provide(createParams(request, offsetToPosition(request.text, 3)));
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(request.text, 3)),
+      );
 
       expect(completions.length).toBeGreaterThan(0);
       expectCompletionLabels(completions, '#when', '#each', '#pure', '#escape');
       expectNoCompletionLabels(completions, 'user', 'char', 'getvar');
     });
 
+    it('returns {{# block completions without running fragment analysis', () => {
+      const request = createInlineCompletionRequest('{{#w');
+      const service = new FragmentAnalysisService();
+      const locateSpy = vi.spyOn(service, 'locatePosition');
+      const provider = createProvider(service, request);
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(request.text, 4)),
+      );
+
+      expect(completions.length).toBeGreaterThan(0);
+      expectCompletionLabels(completions, '#when', 'when-block');
+      expect(locateSpy).not.toHaveBeenCalled();
+    });
+
     it('applies {{# block function completions without duplicating the typed # prefix', () => {
       const request = createInlineCompletionRequest('{{#');
       const provider = createProvider(new FragmentAnalysisService(), request);
-      const completions = provider.provide(createParams(request, offsetToPosition(request.text, 3)));
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(request.text, 3)),
+      );
 
-      expect(applyCompletionTextEdit(request.text, completions.find((item) => item.label === '#when'))).toBe('{{#when');
+      expect(
+        applyCompletionTextEdit(
+          request.text,
+          completions.find((item) => item.label === '#when'),
+        ),
+      ).toBe('{{#when::${1:condition}}}');
     });
 
     it('applies partial {{#w block function completions without duplicating the typed prefix', () => {
       const request = createInlineCompletionRequest('{{#w');
       const provider = createProvider(new FragmentAnalysisService(), request);
-      const completions = provider.provide(createParams(request, offsetToPosition(request.text, 4)));
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(request.text, 4)),
+      );
 
-      expect(applyCompletionTextEdit(request.text, completions.find((item) => item.label === '#when'))).toBe('{{#when');
+      expect(
+        applyCompletionTextEdit(
+          request.text,
+          completions.find((item) => item.label === '#when'),
+        ),
+      ).toBe('{{#when::${1:condition}}}');
     });
 
     it('applies auto-closed {{#}} block function completions without duplicating the # prefix', () => {
       const request = createInlineCompletionRequest('{{#}}');
       const provider = createProvider(new FragmentAnalysisService(), request);
-      const completions = provider.provide(createParams(request, offsetToPosition(request.text, 3)));
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(request.text, 3)),
+      );
 
-      expect(applyCompletionTextEdit(request.text, completions.find((item) => item.label === '#when'))).toBe('{{#when}}');
+      expect(
+        applyCompletionTextEdit(
+          request.text,
+          completions.find((item) => item.label === '#when'),
+        ),
+      ).toBe('{{#when::${1:condition}}}');
     });
 
     it('applies auto-closed {{#w}} block function completions without duplicating the typed prefix', () => {
       const request = createInlineCompletionRequest('{{#w}}');
       const provider = createProvider(new FragmentAnalysisService(), request);
-      const completions = provider.provide(createParams(request, offsetToPosition(request.text, 4)));
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(request.text, 4)),
+      );
 
-      expect(applyCompletionTextEdit(request.text, completions.find((item) => item.label === '#when'))).toBe('{{#when}}');
+      expect(
+        applyCompletionTextEdit(
+          request.text,
+          completions.find((item) => item.label === '#when'),
+        ),
+      ).toBe('{{#when::${1:condition}}}');
     });
 
     it('applies {{# block snippets without duplicating opening braces', () => {
       const request = createInlineCompletionRequest('{{#');
       const provider = createProvider(new FragmentAnalysisService(), request);
-      const completions = provider.provide(createParams(request, offsetToPosition(request.text, 3)));
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(request.text, 3)),
+      );
 
       expect(
-        applyCompletionTextEdit(request.text, completions.find((item) => item.label === 'when-block')),
+        applyCompletionTextEdit(
+          request.text,
+          completions.find((item) => item.label === 'when-block'),
+        ),
       ).toMatch(/^{{#when /);
     });
 
     it('replaces an auto-closed {{#each}} header when applying each-block snippet', () => {
       const request = createInlineCompletionRequest('{{#each}}');
       const provider = createProvider(new FragmentAnalysisService(), request);
-      const completions = provider.provide(createParams(request, offsetToPosition(request.text, 7)));
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(request.text, 7)),
+      );
 
       expect(
-        applyCompletionTextEdit(request.text, completions.find((item) => item.label === 'each-block')),
+        applyCompletionTextEdit(
+          request.text,
+          completions.find((item) => item.label === 'each-block'),
+        ),
       ).toBe('{{#each ${1:array} as ${2:item}}}\n\t{{slot::${2:item}}}\n{{/each}}');
+      expect(completions.find((item) => item.label === 'each-block')?.filterText).toBe('{{#each');
+    });
+
+    it('applies no-argument builtin completions as closed full macro snippets', () => {
+      const request = createInlineCompletionRequest('{{us}}');
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(request.text, '{{us'.length)),
+      );
+      const completion = completions.find((item) => item.label === 'user');
+
+      expect(completion?.filterText).toBe('{{user');
+      expect(completion?.insertTextFormat).toBe(InsertTextFormat.Snippet);
+      expect(completion?.insertText).toBe('{{user}}');
+      expect(applyCompletionTextEdit(request.text, completion)).toBe('{{user}}');
+    });
+
+    it('applies bare {{ no-argument builtin selections as closed full macro snippets', () => {
+      const request = createInlineCompletionRequest('{{');
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(request.text, '{{'.length)),
+      );
+
+      expect(
+        applyCompletionTextEdit(
+          request.text,
+          completions.find((item) => item.label === 'char'),
+        ),
+      ).toBe('{{char}}');
+    });
+
+    it('applies cursor-middle {{}} no-argument builtin selections without duplicating close braces', () => {
+      const request = createInlineCompletionRequest('{{}}');
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(request.text, '{{'.length)),
+      );
+
+      expect(
+        applyCompletionTextEdit(
+          request.text,
+          completions.find((item) => item.label === 'user'),
+        ),
+      ).toBe('{{user}}');
+    });
+
+    it('applies argument-bearing inline builtin completions as polished full macro snippets', () => {
+      const request = createInlineCompletionRequest('{{greaterequal}}');
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(request.text, '{{greaterequal'.length)),
+      );
+      const completion = completions.find((item) => item.label === 'greaterequal');
+
+      expect(completion?.filterText).toBe('{{greaterequal');
+      expect(completion?.insertTextFormat).toBe(InsertTextFormat.Snippet);
+      expect(completion?.insertText).toBe('{{greaterequal::${1:a}::${2:b}}}');
+      expect(applyCompletionTextEdit(request.text, completion)).toBe(
+        '{{greaterequal::${1:a}::${2:b}}}',
+      );
+    });
+
+    it('applies #when builtin completion as a condition snippet without duplicating braces', () => {
+      const request = createInlineCompletionRequest('{{#when}}');
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(request.text, '{{#when'.length)),
+      );
+      const completion = completions.find((item) => item.label === '#when');
+
+      expect(completion?.filterText).toBe('{{#when');
+      expect(completion?.insertTextFormat).toBe(InsertTextFormat.Snippet);
+      expect(applyCompletionTextEdit(request.text, completion)).toBe('{{#when::${1:condition}}}');
+    });
+
+    it('applies #each builtin completion as an iterable/key slot snippet', () => {
+      const request = createInlineCompletionRequest('{{#each}}');
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(request.text, '{{#each'.length)),
+      );
+      const completion = completions.find((item) => item.label === '#each');
+
+      expect(completion?.filterText).toBe('{{#each');
+      expect(completion?.insertTextFormat).toBe(InsertTextFormat.Snippet);
+      expect(applyCompletionTextEdit(request.text, completion)).toBe(
+        '{{#each ${1:iterable} ${2:key}}}{{slot::${2:key}}}{{/each}}',
+      );
     });
 
     it('offers all function names after {{', () => {
@@ -396,7 +563,8 @@ describe('CompletionProvider', () => {
       expect(extractCompletionExplanation(slotCompletion)).toEqual({
         reason: 'registry-lookup',
         source: 'builtin-registry',
-        detail: 'Completion surfaced this item from the builtin registry as a contextual CBS syntax entry.',
+        detail:
+          'Completion surfaced this item from the builtin registry as a contextual CBS syntax entry.',
       });
 
       const positionCompletion = completions.find((item) => item.label === 'position');
@@ -418,18 +586,25 @@ describe('CompletionProvider', () => {
       const provider = createProvider(new FragmentAnalysisService(), request);
       const completions = provider.provide(createParams(request, positionAt(entry.text, '{{', 2)));
 
-      expect(extractCompletionCategory(completions.find((item) => item.label === 'getvar'))).toEqual({
+      expect(
+        extractCompletionCategory(completions.find((item) => item.label === 'getvar')),
+      ).toEqual({
         category: 'builtin',
         kind: 'callable-builtin',
       });
-      expect(extractCompletionCategory(completions.find((item) => item.label === '#when'))).toEqual({
-        category: 'block-keyword',
-        kind: 'documentation-only-builtin',
-      });
-      expect(extractCompletionExplanation(completions.find((item) => item.label === 'getvar'))).toEqual({
+      expect(extractCompletionCategory(completions.find((item) => item.label === '#when'))).toEqual(
+        {
+          category: 'block-keyword',
+          kind: 'documentation-only-builtin',
+        },
+      );
+      expect(
+        extractCompletionExplanation(completions.find((item) => item.label === 'getvar')),
+      ).toEqual({
         reason: 'registry-lookup',
         source: 'builtin-registry',
-        detail: 'Completion surfaced this item from the builtin registry as a callable CBS builtin.',
+        detail:
+          'Completion surfaced this item from the builtin registry as a callable CBS builtin.',
       });
     });
 
@@ -501,7 +676,10 @@ describe('CompletionProvider', () => {
           textDocument.uri === modifiedRequest.uri ? modifiedRequest : null,
       });
       const completions = provider.provide(
-        createParams(modifiedRequest, offsetToPosition(modifiedText, modifiedText.indexOf('$sc') + 3)),
+        createParams(
+          modifiedRequest,
+          offsetToPosition(modifiedText, modifiedText.indexOf('$sc') + 3),
+        ),
       );
 
       expectCompletionLabels(completions, '$score');
@@ -520,10 +698,16 @@ describe('CompletionProvider', () => {
       });
 
       const variableCompletions = provider.provide(
-        createParams(modifiedRequest, offsetToPosition(modifiedText, modifiedText.indexOf('$sc') + 3)),
+        createParams(
+          modifiedRequest,
+          offsetToPosition(modifiedText, modifiedText.indexOf('$sc') + 3),
+        ),
       );
       const operatorCompletions = provider.provide(
-        createParams(modifiedRequest, offsetToPosition(modifiedText, modifiedText.indexOf(' + ') + 1)),
+        createParams(
+          modifiedRequest,
+          offsetToPosition(modifiedText, modifiedText.indexOf(' + ') + 1),
+        ),
       );
 
       expectCompletionLabels(variableCompletions, '$score');
@@ -542,7 +726,10 @@ describe('CompletionProvider', () => {
         createWorkspaceChatVariableService('shared', 'score'),
       );
       const completions = provider.provide(
-        createParams(modifiedRequest, offsetToPosition(modifiedText, modifiedText.indexOf('{{? $') + 4)),
+        createParams(
+          modifiedRequest,
+          offsetToPosition(modifiedText, modifiedText.indexOf('{{? $') + 4),
+        ),
       );
 
       const scoreIndex = completions.findIndex((completion) => completion.label === '$score');
@@ -554,7 +741,11 @@ describe('CompletionProvider', () => {
       expect(completions.find((completion) => completion.label === '$shared')?.detail).toBe(
         'Workspace chat variable for calc expression',
       );
-      expect(extractCompletionExplanation(completions.find((completion) => completion.label === '$shared'))).toEqual({
+      expect(
+        extractCompletionExplanation(
+          completions.find((completion) => completion.label === '$shared'),
+        ),
+      ).toEqual({
         reason: 'scope-analysis',
         source: 'workspace-chat-variable-graph:calc-expression',
         detail:
@@ -598,7 +789,10 @@ describe('CompletionProvider', () => {
         workspaceSnapshot,
       );
       const completions = provider.provide(
-        createParams(modifiedRequest, offsetToPosition(modifiedText, modifiedText.indexOf('{{? $') + 4)),
+        createParams(
+          modifiedRequest,
+          offsetToPosition(modifiedText, modifiedText.indexOf('{{? $') + 4),
+        ),
       );
 
       expectCompletionLabels(completions, '$score');
@@ -609,7 +803,9 @@ describe('CompletionProvider', () => {
             availability: {
               scope: 'local-only',
               source: 'workspace-snapshot:completion',
-              detail: expect.stringContaining('Workspace snapshot v7 still tracks document version 1'),
+              detail: expect.stringContaining(
+                'Workspace snapshot v7 still tracks document version 1',
+              ),
             },
             workspace: expect.objectContaining({
               freshness: 'stale',
@@ -633,7 +829,10 @@ describe('CompletionProvider', () => {
         createWorkspaceChatVariableService('shared'),
       );
       const completions = provider.provide(
-        createParams(modifiedRequest, offsetToPosition(modifiedText, modifiedText.indexOf('@bo') + 3)),
+        createParams(
+          modifiedRequest,
+          offsetToPosition(modifiedText, modifiedText.indexOf('@bo') + 3),
+        ),
       );
 
       expectCompletionLabels(completions, '@bonus');
@@ -703,10 +902,12 @@ describe('CompletionProvider', () => {
 
       expectCompletionLabels(completions, 'greet');
       expectNoCompletionLabels(completions, 'getvar', '#when');
-      expect(extractCompletionCategory(completions.find((item) => item.label === 'greet'))).toEqual({
-        category: 'contextual-token',
-        kind: 'local-function',
-      });
+      expect(extractCompletionCategory(completions.find((item) => item.label === 'greet'))).toEqual(
+        {
+          category: 'contextual-token',
+          kind: 'local-function',
+        },
+      );
     });
 
     it('filters local #func names by typed prefix inside complete macros', () => {
@@ -720,7 +921,10 @@ describe('CompletionProvider', () => {
       const completions = provider.provide(
         createParams(
           request,
-          offsetToPosition(modifiedText, modifiedText.indexOf('{{call::gr}}') + '{{call::gr'.length),
+          offsetToPosition(
+            modifiedText,
+            modifiedText.indexOf('{{call::gr}}') + '{{call::gr'.length,
+          ),
         ),
       );
 
@@ -776,7 +980,9 @@ describe('CompletionProvider', () => {
         'Numbered argument reference',
       );
       expect(completions.find((completion) => completion.label === '0')?.detail).toContain('user');
-      expect(completions.find((completion) => completion.label === '1')?.detail).toContain('target');
+      expect(completions.find((completion) => completion.label === '1')?.detail).toContain(
+        'target',
+      );
       expect(completions.find((completion) => completion.label === '1')?.documentation).toEqual({
         kind: 'markdown',
         value: expect.stringContaining(
@@ -957,7 +1163,9 @@ describe('CompletionProvider', () => {
         'pure-block',
         'func-block',
       );
-      expect(extractCompletionCategory(completions.find((item) => item.label === 'when-block'))).toEqual({
+      expect(
+        extractCompletionCategory(completions.find((item) => item.label === 'when-block')),
+      ).toEqual({
         category: 'snippet',
         kind: 'block-snippet',
       });
@@ -1019,7 +1227,10 @@ describe('CompletionProvider', () => {
 
       expect(
         provider.provide(
-          createParams(request, offsetToPosition(text, text.indexOf('{{', text.indexOf('{{#puredisplay}}') + 1) + 2)),
+          createParams(
+            request,
+            offsetToPosition(text, text.indexOf('{{', text.indexOf('{{#puredisplay}}') + 1) + 2),
+          ),
         ),
       ).toEqual([]);
     });
@@ -1035,10 +1246,12 @@ describe('CompletionProvider', () => {
       );
 
       expectCompletionLabels(completions, ':else');
-      expect(extractCompletionCategory(completions.find((item) => item.label === ':else'))).toEqual({
-        category: 'block-keyword',
-        kind: 'else-keyword',
-      });
+      expect(extractCompletionCategory(completions.find((item) => item.label === ':else'))).toEqual(
+        {
+          category: 'block-keyword',
+          kind: 'else-keyword',
+        },
+      );
     });
   });
 
@@ -1149,6 +1362,17 @@ describe('CompletionProvider', () => {
   });
 
   describe('trigger context: {{getvar:: (variable names)', () => {
+    it('falls back to fragment analysis for argument completions', () => {
+      const request = createInlineCompletionRequest('{{getvar::');
+      const service = new FragmentAnalysisService();
+      const locateSpy = vi.spyOn(service, 'locatePosition');
+      const provider = createProvider(service, request);
+
+      provider.provide(createParams(request, offsetToPosition(request.text, '{{getvar::'.length)));
+
+      expect(locateSpy).toHaveBeenCalled();
+    });
+
     it('offers defined chat variables after getvar:: in complete macro', () => {
       // Create a document with setvar defining a variable, then complete getvar macro
       const entry = getFixtureCorpusEntry('lorebook-setvar-macro');
@@ -1180,10 +1404,13 @@ describe('CompletionProvider', () => {
         category: 'variable',
         kind: 'chat-variable',
       });
-      expect(extractCompletionExplanation(completions.find((item) => item.label === 'mood'))).toEqual({
+      expect(
+        extractCompletionExplanation(completions.find((item) => item.label === 'mood')),
+      ).toEqual({
         reason: 'scope-analysis',
         source: 'chat-variable-symbol-table',
-        detail: 'Completion resolved this candidate from analyzed chat-variable definitions in the current fragment.',
+        detail:
+          'Completion resolved this candidate from analyzed chat-variable definitions in the current fragment.',
       });
     });
 
@@ -1200,7 +1427,9 @@ describe('CompletionProvider', () => {
 
       expect(completions.length).toBeGreaterThan(0);
       expectCompletionLabels(completions, 'ct_Language');
-      expect(extractCompletionCategory(completions.find((item) => item.label === 'ct_Language'))).toEqual({
+      expect(
+        extractCompletionCategory(completions.find((item) => item.label === 'ct_Language')),
+      ).toEqual({
         category: 'variable',
         kind: 'chat-variable',
       });
@@ -1280,7 +1509,10 @@ describe('CompletionProvider', () => {
       const completions = provider.provide(
         createParams(
           modifiedRequest,
-          offsetToPosition(modifiedText, modifiedText.indexOf('{{getvar::sh') + '{{getvar::sh'.length),
+          offsetToPosition(
+            modifiedText,
+            modifiedText.indexOf('{{getvar::sh') + '{{getvar::sh'.length,
+          ),
         ),
       );
 
@@ -1379,6 +1611,44 @@ describe('CompletionProvider', () => {
       );
     });
 
+    it('offers chat variables for #each iterator expression completion', () => {
+      const request = createInlineCompletionRequest('{{setvar::items::[]}}{{#each it}}{{/each}}');
+      const provider = createProvider(
+        new FragmentAnalysisService(),
+        request,
+        createWorkspaceChatVariableService('itemBag'),
+      );
+      const position = offsetToPosition(
+        request.text,
+        request.text.indexOf('{{#each it') + '{{#each it'.length,
+      );
+
+      const completions = provider.provide(createParams(request, position));
+
+      expectCompletionLabels(completions, 'items', 'itemBag');
+      expectNoCompletionLabels(completions, 'setvar', '#when');
+      expect(completions.find((completion) => completion.label === 'itemBag')?.detail).toBe(
+        'Workspace chat variable',
+      );
+    });
+
+    it('offers all chat variables at an empty #each iterator position', () => {
+      const request = createInlineCompletionRequest('{{setvar::items::[]}}{{#each }}{{/each}}');
+      const provider = createProvider(
+        new FragmentAnalysisService(),
+        request,
+        createWorkspaceChatVariableService('inventory'),
+      );
+      const cursorOffset = request.text.indexOf('{{#each ') + '{{#each '.length;
+
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(request.text, cursorOffset)),
+      );
+
+      expectCompletionLabels(completions, 'items', 'inventory');
+      expectNoCompletionLabels(completions, 'setvar', '#when');
+    });
+
     it('offers chat variables for setdefaultvar first-argument completion', () => {
       const entry = getFixtureCorpusEntry('lorebook-setvar-macro');
       const request = createFixtureRequest(entry);
@@ -1393,7 +1663,10 @@ describe('CompletionProvider', () => {
       const completions = provider.provide(
         createParams(
           modifiedRequest,
-          offsetToPosition(modifiedText, modifiedText.indexOf('{{setdefaultvar::') + '{{setdefaultvar::'.length),
+          offsetToPosition(
+            modifiedText,
+            modifiedText.indexOf('{{setdefaultvar::') + '{{setdefaultvar::'.length,
+          ),
         ),
       );
 
@@ -1414,7 +1687,10 @@ describe('CompletionProvider', () => {
       const completions = provider.provide(
         createParams(
           modifiedRequest,
-          offsetToPosition(modifiedText, modifiedText.indexOf('{{setvar::mood::') + '{{setvar::mood::'.length),
+          offsetToPosition(
+            modifiedText,
+            modifiedText.indexOf('{{setvar::mood::') + '{{setvar::mood::'.length,
+          ),
         ),
       );
 
@@ -1423,7 +1699,10 @@ describe('CompletionProvider', () => {
 
     it('offers global variables for getglobalvar first-argument completion', () => {
       const entry = getFixtureCorpusEntry('lorebook-basic');
-      const modifiedText = entry.text.replace('{{user}}', '{{getglobalvar::world}}{{getglobalvar::}}');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{getglobalvar::world}}{{getglobalvar::}}',
+      );
       const modifiedRequest = { ...createFixtureRequest(entry), text: modifiedText };
       const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
         analysisService: new FragmentAnalysisService(),
@@ -1433,7 +1712,10 @@ describe('CompletionProvider', () => {
       const completions = provider.provide(
         createParams(
           modifiedRequest,
-          offsetToPosition(modifiedText, modifiedText.lastIndexOf('{{getglobalvar::') + '{{getglobalvar::'.length),
+          offsetToPosition(
+            modifiedText,
+            modifiedText.lastIndexOf('{{getglobalvar::') + '{{getglobalvar::'.length,
+          ),
         ),
       );
 
@@ -1442,7 +1724,10 @@ describe('CompletionProvider', () => {
 
     it('offers global variables for setglobalvar first-argument completion', () => {
       const entry = getFixtureCorpusEntry('lorebook-basic');
-      const modifiedText = entry.text.replace('{{user}}', '{{getglobalvar::world}}{{setglobalvar::}}');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{getglobalvar::world}}{{setglobalvar::}}',
+      );
       const modifiedRequest = { ...createFixtureRequest(entry), text: modifiedText };
       const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
         analysisService: new FragmentAnalysisService(),
@@ -1452,7 +1737,10 @@ describe('CompletionProvider', () => {
       const completions = provider.provide(
         createParams(
           modifiedRequest,
-          offsetToPosition(modifiedText, modifiedText.indexOf('{{setglobalvar::') + '{{setglobalvar::'.length),
+          offsetToPosition(
+            modifiedText,
+            modifiedText.indexOf('{{setglobalvar::') + '{{setglobalvar::'.length,
+          ),
         ),
       );
 
@@ -1556,7 +1844,10 @@ describe('CompletionProvider', () => {
       const entry = getFixtureCorpusEntry('lorebook-basic');
 
       // Create text with settempvar defining a variable, then complete gettempvar macro
-      const tempText = entry.text.replace('{{user}}', '{{settempvar::cache::value}}{{gettempvar::}}');
+      const tempText = entry.text.replace(
+        '{{user}}',
+        '{{settempvar::cache::value}}{{gettempvar::}}',
+      );
       const tempRequest = { ...createFixtureRequest(entry), text: tempText };
       const tempProvider = new CompletionProvider(new CBSBuiltinRegistry(), {
         analysisService: new FragmentAnalysisService(),
@@ -1579,7 +1870,10 @@ describe('CompletionProvider', () => {
 
     it('does not mix workspace chat variables into temp-variable completion', () => {
       const entry = getFixtureCorpusEntry('lorebook-basic');
-      const tempText = entry.text.replace('{{user}}', '{{settempvar::cache::value}}{{gettempvar::}}');
+      const tempText = entry.text.replace(
+        '{{user}}',
+        '{{settempvar::cache::value}}{{gettempvar::}}',
+      );
       const tempRequest = { ...createFixtureRequest(entry), text: tempText };
       const provider = createProvider(
         new FragmentAnalysisService(),

@@ -443,7 +443,6 @@ Hello <user>
       ['regex-deprecated-block', [DiagnosticCode.DeprecatedFunction]],
       ['prompt-unknown-function', [DiagnosticCode.UnknownFunction]],
       ['prompt-invalid-when-operator', [DiagnosticCode.UnknownFunction]],
-      ['prompt-malformed-each-header', [DiagnosticCode.MissingRequiredArgument]],
       ['prompt-empty-block', [DiagnosticCode.EmptyBlock]],
       ['prompt-legacy-angle', [DiagnosticCode.LegacyAngleBracket]],
     ] as const)('routes adapter-backed diagnostics for fixture %s', (fixtureId, expectedCodes) => {

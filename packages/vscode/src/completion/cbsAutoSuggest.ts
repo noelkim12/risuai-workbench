@@ -62,6 +62,41 @@ function getLineSuffixAtPosition(document: vscode.TextDocument, position: vscode
  * @param context - extension lifecycle disposable을 보관할 VS Code context
  */
 export function registerCbsAutoSuggestTrigger(context: vscode.ExtensionContext): void {
+  let pendingSuggestTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastSuggestKey = '';
+
+  /**
+   * scheduleCbsSuggest 함수.
+   * 동일 문서 버전 + 위치에서 중복 triggerSuggest를 방지하고 debounce 처리함.
+   *
+   * @param document - 변경이 반영된 VS Code 문서
+   * @param position - suggestion을 트리거할 문서 위치
+   */
+  function scheduleCbsSuggest(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+  ): void {
+    const key = `${document.uri.toString()}:${document.version}:${position.line}:${position.character}`;
+    if (key === lastSuggestKey) {
+      return;
+    }
+    lastSuggestKey = key;
+    if (pendingSuggestTimer) {
+      clearTimeout(pendingSuggestTimer);
+    }
+    pendingSuggestTimer = setTimeout(() => {
+      pendingSuggestTimer = undefined;
+      const activeEditor = vscode.window.activeTextEditor;
+      if (!activeEditor || activeEditor.document !== document) {
+        return;
+      }
+      if (!activeEditor.selection.active.isEqual(position)) {
+        return;
+      }
+      void vscode.commands.executeCommand('editor.action.triggerSuggest');
+    }, 25);
+  }
+
   const disposable = vscode.workspace.onDidChangeTextDocument((event) => {
     const editor = vscode.window.activeTextEditor;
     if (!editor || editor.document !== event.document) {
@@ -95,14 +130,19 @@ export function registerCbsAutoSuggestTrigger(context: vscode.ExtensionContext):
           linePrefix,
         })
       ) {
-        void vscode.commands.executeCommand('editor.action.triggerSuggest');
-        setTimeout(() => {
-          void vscode.commands.executeCommand('editor.action.triggerSuggest');
-        }, 0);
+        scheduleCbsSuggest(event.document, changeEndPosition);
         return;
       }
     }
   });
 
-  context.subscriptions.push(disposable);
+  const wrappedDisposable = new vscode.Disposable(() => {
+    if (pendingSuggestTimer) {
+      clearTimeout(pendingSuggestTimer);
+      pendingSuggestTimer = undefined;
+    }
+    disposable.dispose();
+  });
+
+  context.subscriptions.push(wrappedDisposable);
 }

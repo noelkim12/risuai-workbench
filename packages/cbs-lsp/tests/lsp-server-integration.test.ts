@@ -676,6 +676,10 @@ async function writeWorkspaceFile(root: string, relativePath: string, text: stri
   return pathToFileURL(absolutePath).href;
 }
 
+async function waitForDocumentChangeRefresh(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 170));
+}
+
 function createCancellationToken(cancelled: boolean = false): CancellationToken {
   return {
     isCancellationRequested: cancelled,
@@ -1561,6 +1565,59 @@ describe('LSP server integration', () => {
     );
   });
 
+  it('keeps CBS hover and completion available in .risulua when LuaLS is unavailable', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const requestSpy = vi.fn(async () => null);
+    const luaLsManager = createLuaLsProcessManagerStub({
+      getRuntime: vi.fn(() =>
+        createLuaLsCompanionRuntime({
+          detail: 'LuaLS executable was not found on PATH.',
+          executablePath: null,
+          health: 'unavailable',
+          status: 'unavailable',
+        }),
+      ),
+      request: requestSpy,
+    });
+    const uri = 'file:///tmp/cbs-fallback.risulua';
+    const text = 'local cbs = "{{user}}"\nlocal next = "{{"\n';
+
+    registerServer(connection as any, documents as any, {
+      createLuaLsProcessManager: (() => luaLsManager) as unknown as () => LuaLsProcessManager,
+    });
+    connection.initializeHandler?.({ capabilities: {} } as InitializeParams);
+    connection.initializedHandler?.({});
+    documents.open(uri, text, 1, 'lua');
+
+    const hover = await connection.hoverHandler?.(
+      {
+        textDocument: { uri },
+        position: positionAt(text, 'user', 1),
+      },
+      createCancellationToken(false),
+    );
+    const completion = await connection.completionHandler?.(
+      {
+        textDocument: { uri },
+        position: positionAt(text, '{{', 2, 1),
+      },
+      createCancellationToken(false),
+    );
+    const completionLabels = getCompletionItems(completion ?? null).map((item) => item.label);
+
+    expect(getHoverMarkdown(hover ?? null)).toContain('**user**');
+    expect(completionLabels).toEqual(expect.arrayContaining(['user', 'char', 'getvar']));
+    expect(requestSpy).toHaveBeenCalledTimes(2);
+    expect(connection.traceMessages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ message: '[cbs-lsp:completion] build' }),
+        expect.objectContaining({ message: '[cbs-lsp:luaProxy] completion-start' }),
+        expect.objectContaining({ message: '[cbs-lsp:luaProxy] hover-start' }),
+      ]),
+    );
+  });
+
   it('merges VariableGraph state-key overlay completions into `.risulua` LuaLS results for getState string arguments', async () => {
     const connection = new FakeConnection();
     const documents = new FakeDocuments();
@@ -2220,7 +2277,7 @@ describe('LSP server integration', () => {
     const documents = new FakeDocuments();
     const root = await createWorkspaceRoot();
     const deprecatedText = lorebookDocument(['{{#if true}}fallback{{/if}}']);
-    const slotText = promptDocument(['{{#each items}}{{slot::item}}{{/each}}']);
+    const slotText = promptDocument(['{{slot::item}}']);
     const deprecatedUri = await writeWorkspaceFile(root, 'lorebooks/deprecated.risulorebook', deprecatedText);
     const slotUri = await writeWorkspaceFile(root, 'prompt_template/slot.risuprompt', slotText);
 
@@ -3249,6 +3306,7 @@ describe('LSP server integration', () => {
     ).toBe(true);
 
     documents.change(writerUri, writerWithSharedText, 2);
+    await waitForDocumentChangeRefresh();
 
     expect(
       getLatestDiagnosticsForUri(connection, readerUri).diagnostics.some(
@@ -3257,6 +3315,7 @@ describe('LSP server integration', () => {
     ).toBe(false);
 
     documents.change(writerUri, initialWriterText, 3);
+    await waitForDocumentChangeRefresh();
 
     expect(
       getLatestDiagnosticsForUri(connection, readerUri).diagnostics.some(
@@ -3327,6 +3386,7 @@ describe('LSP server integration', () => {
     fullGraphSpy.mockClear();
 
     documents.change(writerUri, changedWriterText, 2);
+    await waitForDocumentChangeRefresh();
     expect(
       getLatestDiagnosticsForUri(connection, readerUri).diagnostics.some(
         (diagnostic) => diagnostic.code === 'CBS101',

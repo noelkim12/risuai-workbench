@@ -210,8 +210,17 @@ describe('DiagnosticsEngine', () => {
     );
   });
 
-  it('validates malformed #each headers as missing required arguments', () => {
+  it('accepts #each headers without optional as bindings', () => {
     const { diagnostics } = analyzeFixture('prompt-malformed-each-header', 'TEXT');
+
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      DiagnosticCode.MissingRequiredArgument,
+    );
+  });
+
+  it('validates malformed #each as bindings as missing required arguments', () => {
+    const source = '{{#each items as}}{{slot::item}}{{/each}}';
+    const diagnostics = diagnosticsEngine.analyze(new CBSParser().parse(source), source);
     const diagnostic = diagnostics.find(
       (candidate) => candidate.code === DiagnosticCode.MissingRequiredArgument,
     );

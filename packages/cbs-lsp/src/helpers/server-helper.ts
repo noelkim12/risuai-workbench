@@ -22,11 +22,13 @@ import {
   type DocumentRangeFormattingParams,
   type DocumentOnTypeFormattingParams,
   type FoldingRangeParams,
+  type Hover,
   type HoverParams,
   type InlayHint,
   type InlayHintParams,
   LSPErrorCodes,
   type Location,
+  MarkupKind,
   type SelectionRange,
   type SelectionRangeParams,
   type Range as LSPRange,
@@ -148,6 +150,69 @@ function resolvePrepareRenameResponse(result: {
   }
 
   throw createRenameRequestError(result.message ?? 'Rename is not available at the current position.');
+}
+
+/**
+ * normalizeHoverContentsMarkdown 함수.
+ * LSP hover contents를 markdown 병합용 문자열로 정규화함.
+ *
+ * @param contents - LSP Hover.contents payload
+ * @returns markdown 문자열 또는 빈 문자열
+ */
+function normalizeHoverContentsMarkdown(contents: Hover['contents']): string {
+  if (typeof contents === 'string') {
+    return contents;
+  }
+
+  if (Array.isArray(contents)) {
+    return contents
+      .map((entry) => normalizeHoverContentsMarkdown(entry))
+      .filter(Boolean)
+      .join('\n\n');
+  }
+
+  if (typeof contents === 'object' && contents !== null) {
+    const record = contents as Record<string, unknown>;
+    if (typeof record.value === 'string') {
+      return record.value;
+    }
+
+    if (typeof record.language === 'string' && typeof record.value === 'string') {
+      return `\`\`\`${record.language}\n${record.value}\n\`\`\``;
+    }
+  }
+
+  return '';
+}
+
+/**
+ * mergeCbsAndLuaHover 함수.
+ * `.risulua`에서 LuaLS hover와 CBS hover가 둘 다 있을 때 markdown 섹션으로 합침.
+ *
+ * @param cbsHover - CBS provider가 계산한 hover 결과
+ * @param luaHover - LuaLS proxy와 RisuAI overlay가 계산한 hover 결과
+ * @returns 둘 중 하나 또는 병합된 hover 결과
+ */
+function mergeCbsAndLuaHover(cbsHover: Hover | null, luaHover: Hover | null): Hover | null {
+  if (!luaHover) {
+    return cbsHover;
+  }
+
+  if (!cbsHover) {
+    return luaHover;
+  }
+
+  const cbsMarkdown = normalizeHoverContentsMarkdown(cbsHover.contents);
+  const luaMarkdown = normalizeHoverContentsMarkdown(luaHover.contents);
+
+  return {
+    ...luaHover,
+    contents: {
+      kind: MarkupKind.Markdown,
+      value: [cbsMarkdown, luaMarkdown].filter(Boolean).join('\n\n---\n\n'),
+    },
+    range: cbsHover.range ?? luaHover.range,
+  };
 }
 
 /**
@@ -295,6 +360,33 @@ export class ServerFeatureRegistrar {
     });
   }
 
+  /**
+   * provideCbsCompletionItems 함수.
+   * 현재 URI에 맞는 CBS completion provider 결과에 resolve payload를 보강함.
+   *
+   * @param params - completion 요청 파라미터
+   * @param cancellationToken - 취소 여부를 확인할 토큰
+   * @returns CBS completion 후보 목록
+   */
+  private provideCbsCompletionItems(
+    params: CompletionParams,
+    cancellationToken?: CancellationToken,
+  ): CompletionItem[] {
+    const provider = this.createCompletionProvider(params.textDocument.uri);
+    const unresolved = provider.provideUnresolved(params, cancellationToken);
+    return unresolved.map((completionItem) => ({
+      ...completionItem,
+      data: {
+        ...completionItem.data,
+        cbs: {
+          ...completionItem.data.cbs,
+          uri: params.textDocument.uri,
+          position: params.position,
+        },
+      },
+    })) as CompletionItem[];
+  }
+
   private registerCodeActionHandler(): void {
     this.connection.onCodeAction((params: CodeActionParams, cancellationToken): CodeAction[] => {
       return this.requestRunner.runSync({
@@ -363,21 +455,30 @@ export class ServerFeatureRegistrar {
         return item;
       }
 
+      let resolveDurationMs = 0;
       return this.requestRunner.runSync({
         empty: item,
         feature: 'completionResolve',
         getUri: () => uri,
         params: item,
         run: () => {
+          const startTime = performance.now();
           const unresolved = item as UnresolvedCompletionItem;
           const provider = this.createCompletionProvider(uri);
           const resolved = provider.resolve(unresolved, {
             textDocument: { uri },
             position: itemData?.cbs?.position ?? { line: 0, character: 0 },
           }, cancellationToken);
-          return resolved ?? item;
+          const result = resolved ?? item;
+          resolveDurationMs = Math.round(performance.now() - startTime);
+          traceFeatureResult(this.connection, 'completionResolve', 'build', {
+            uri,
+            durationMs: resolveDurationMs,
+            resolved: result !== item,
+          });
+          return result;
         },
-        summarize: (result) => ({ resolved: result !== item }),
+        summarize: (result) => ({ resolved: result !== item, durationMs: resolveDurationMs }),
         token: cancellationToken,
       });
     });
@@ -397,10 +498,19 @@ export class ServerFeatureRegistrar {
           getUri: (requestParams) => requestParams.textDocument.uri,
           params,
           run: async () => {
+            const startTime = performance.now();
+            const cbsCompletion = this.provideCbsCompletionItems(params, cancellationToken);
+            const cbsDurationMs = Math.round(performance.now() - startTime);
             const workspaceRequest = this.resolveWorkspaceRequest(params.textDocument.uri);
             const workspaceVariableFlowService = this.resolveWorkspaceVariableFlowContextByUri(
               params.textDocument.uri,
             )?.variableFlowService ?? null;
+            traceFeatureResult(this.connection, 'completion', 'build', {
+              uri: params.textDocument.uri,
+              durationMs: cbsDurationMs,
+              count: cbsCompletion.length,
+              source: 'cbsFallback',
+            });
             traceFeatureRequest(this.connection, 'luaProxy', 'completion-start', {
               uri: params.textDocument.uri,
               companionStatus: this.luaLsProxy.getRuntime().status,
@@ -412,7 +522,10 @@ export class ServerFeatureRegistrar {
               variableFlowService: workspaceVariableFlowService,
             });
 
-            return mergeLuaCompletionResponse(luaCompletion, overlay);
+            return mergeLuaCompletionResponse(
+              mergeLuaCompletionResponse(luaCompletion, overlay),
+              cbsCompletion,
+            );
           },
           summarize: (result) => {
             const count = Array.isArray(result) ? result.length : result.items.length;
@@ -430,27 +543,24 @@ export class ServerFeatureRegistrar {
         });
       }
 
+      let completionDurationMs = 0;
       return this.requestRunner.runSync({
         empty: [],
         feature: 'completion',
         getUri: (requestParams) => requestParams.textDocument.uri,
         params,
         run: () => {
-          const provider = this.createCompletionProvider(params.textDocument.uri);
-          const unresolved = provider.provideUnresolved(params, cancellationToken);
-          return unresolved.map((completionItem) => ({
-            ...completionItem,
-            data: {
-              ...completionItem.data,
-              cbs: {
-                ...completionItem.data.cbs,
-                uri: params.textDocument.uri,
-                position: params.position,
-              },
-            },
-          })) as CompletionItem[];
+          const startTime = performance.now();
+          const result = this.provideCbsCompletionItems(params, cancellationToken);
+          completionDurationMs = Math.round(performance.now() - startTime);
+          traceFeatureResult(this.connection, 'completion', 'build', {
+            uri: params.textDocument.uri,
+            durationMs: completionDurationMs,
+            count: result.length,
+          });
+          return result;
         },
-        summarize: (result) => ({ count: result.length }),
+        summarize: (result) => ({ count: result.length, durationMs: completionDurationMs }),
         token: cancellationToken,
       });
     });
@@ -684,6 +794,10 @@ export class ServerFeatureRegistrar {
       }
 
       if (shouldRouteDocumentToLuaLs(filePath)) {
+        const cbsHover = this.createHoverProvider(params.textDocument.uri).provide(
+          params,
+          cancellationToken,
+        );
         traceFeatureRequest(this.connection, 'luaProxy', 'hover-start', {
           uri: params.textDocument.uri,
           companionStatus: this.luaLsProxy.getRuntime().status,
@@ -700,7 +814,8 @@ export class ServerFeatureRegistrar {
             request: workspaceRequest,
             variableFlowService: workspaceVariableFlowService,
           });
-          const mergedHover = mergeLuaHoverResponse(result, overlayMarkdown);
+          const luaHover = mergeLuaHoverResponse(result, overlayMarkdown);
+          const mergedHover = mergeCbsAndLuaHover(cbsHover, luaHover);
           traceFeatureResult(this.connection, 'luaProxy', 'hover-end', {
             uri: params.textDocument.uri,
             companionStatus: this.luaLsProxy.getRuntime().status,
@@ -709,7 +824,7 @@ export class ServerFeatureRegistrar {
           traceFeatureResult(this.connection, 'hover', 'end', {
             uri: params.textDocument.uri,
             hasResult: mergedHover !== null,
-            source: 'luaProxy',
+            source: cbsHover ? 'luaProxy+cbsFallback' : 'luaProxy',
           });
           return mergedHover;
         });

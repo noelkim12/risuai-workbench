@@ -22,6 +22,9 @@
       "include": "#cbs-function-call"
     },
     {
+      "include": "source.lua"
+    },
+    {
       "include": "#markdown-content"
     }
   ],

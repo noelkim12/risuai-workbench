@@ -15,7 +15,7 @@ import {
   type WorkspaceRefreshReason,
 } from '../helpers/server-workspace-helper';
 import { shouldRouteDocumentToLuaLs } from '../providers/lua/lualsDocuments';
-import { traceFeaturePayload, traceFeatureRequest } from '../utils/server-tracing';
+import { traceFeaturePayload, traceFeatureRequest, traceFeatureResult } from '../utils/server-tracing';
 import { CodeLensRefreshScheduler } from './CodeLensRefreshScheduler';
 import { DiagnosticsPublisher } from './DiagnosticsPublisher';
 import { LuaLsCompanionController } from './LuaLsCompanionController';
@@ -26,10 +26,13 @@ export interface WorkspaceRefreshControllerOptions {
   codeLensRefreshScheduler: CodeLensRefreshScheduler;
   connection: Connection;
   diagnosticsPublisher: DiagnosticsPublisher;
+  documentChangeDebounceMs?: number;
   documents: TextDocuments<TextDocument>;
   luaLsCompanionController: LuaLsCompanionController;
   workspaceStateRepository: WorkspaceStateRepository;
 }
+
+const DEFAULT_DOCUMENT_CHANGE_DEBOUNCE_MS = 150;
 
 /**
  * WorkspaceRefreshController 클래스.
@@ -42,11 +45,17 @@ export class WorkspaceRefreshController {
 
   private readonly diagnosticsPublisher: DiagnosticsPublisher;
 
+  private readonly documentChangeDebounceMs: number;
+
   private readonly documents: TextDocuments<TextDocument>;
 
   private readonly luaLsCompanionController: LuaLsCompanionController;
 
   private readonly workspaceStateRepository: WorkspaceStateRepository;
+
+  private pendingDocumentChangeTimer: ReturnType<typeof setTimeout> | undefined;
+
+  private readonly pendingDocumentChangeUris = new Set<string>();
 
   /**
    * constructor 함수.
@@ -58,6 +67,7 @@ export class WorkspaceRefreshController {
     this.codeLensRefreshScheduler = options.codeLensRefreshScheduler;
     this.connection = options.connection;
     this.diagnosticsPublisher = options.diagnosticsPublisher;
+    this.documentChangeDebounceMs = options.documentChangeDebounceMs ?? DEFAULT_DOCUMENT_CHANGE_DEBOUNCE_MS;
     this.documents = options.documents;
     this.luaLsCompanionController = options.luaLsCompanionController;
     this.workspaceStateRepository = options.workspaceStateRepository;
@@ -95,14 +105,13 @@ export class WorkspaceRefreshController {
       fragmentAnalysisService.clearUri(document.uri);
     }
 
-    this.refreshWorkspaceUris(
-      [document.uri],
-      reason === 'open'
-        ? 'document-open'
-        : reason === 'change'
-          ? 'document-change'
-          : 'document-close',
-    );
+    if (reason === 'change') {
+      this.scheduleDocumentChangeRefresh(document.uri);
+      return;
+    }
+
+    this.flushPendingDocumentChangeRefresh();
+    this.refreshWorkspaceUris([document.uri], reason === 'open' ? 'document-open' : 'document-close');
   }
 
   /**
@@ -112,6 +121,8 @@ export class WorkspaceRefreshController {
    * @param params - watched-file 변경 payload
    */
   refreshWatchedFiles(params: DidChangeWatchedFilesParams): void {
+    this.flushPendingDocumentChangeRefresh();
+
     const relevantChanges = params.changes.filter(
       (change) =>
         CbsLspPathHelper.resolveWorkspaceRootFromFilePath(
@@ -161,6 +172,8 @@ export class WorkspaceRefreshController {
    * @param reason - 전체 rebuild를 유발한 refresh 원인
    */
   refreshTrackedWorkspaces(reason: WorkspaceRefreshReason = 'configuration-change'): void {
+    this.flushPendingDocumentChangeRefresh();
+
     const workspaceRoots = this.workspaceStateRepository.listRoots();
     if (workspaceRoots.length === 0) {
       traceFeatureRequest(this.connection, 'workspace', 'state-rebuild-skip', {
@@ -175,16 +188,18 @@ export class WorkspaceRefreshController {
     for (const workspaceRoot of workspaceRoots) {
       const previousState = this.workspaceStateRepository.getByRoot(workspaceRoot);
       const previousUris = this.collectWorkspaceStateUris(previousState);
-      const nextState = createWorkspaceDiagnosticsState(workspaceRoot, this.documents);
-      const nextUris = this.collectWorkspaceStateUris(nextState);
-      const affectedUris = new Set<string>([...previousUris, ...nextUris]);
 
+      const rebuildStart = performance.now();
       traceFeatureRequest(this.connection, 'workspace', 'state-rebuild-start', {
         rootPath: workspaceRoot,
         reason,
         changedUris: 0,
         mode: 'full',
       });
+
+      const nextState = createWorkspaceDiagnosticsState(workspaceRoot, this.documents);
+      const nextUris = this.collectWorkspaceStateUris(nextState);
+      const affectedUris = new Set<string>([...previousUris, ...nextUris]);
 
       this.workspaceStateRepository.replace(workspaceRoot, nextState);
       if (nextState) {
@@ -203,10 +218,11 @@ export class WorkspaceRefreshController {
         affectedCodeLensUris.add(uri);
       }
 
-      traceFeatureRequest(this.connection, 'workspace', 'state-rebuild-end', {
+      traceFeatureResult(this.connection, 'workspace', 'state-rebuild-end', {
         rootPath: workspaceRoot,
         reason,
         mode: 'full',
+        durationMs: Math.round(performance.now() - rebuildStart),
         affectedDiagnosticsUris: affectedUris.size,
         affectedCodeLensUris: [...affectedCodeLensUris].filter(
           (uri) =>
@@ -227,6 +243,63 @@ export class WorkspaceRefreshController {
       reason,
       [...affectedCodeLensUris].sort((left, right) => left.localeCompare(right)),
     );
+  }
+
+  /**
+   * flushDocumentChangeRefresh 함수.
+   * 테스트와 lifecycle boundary에서 누적된 document-change refresh를 즉시 실행함.
+   */
+  flushDocumentChangeRefresh(): void {
+    this.flushPendingDocumentChangeRefresh();
+  }
+
+  /**
+   * scheduleDocumentChangeRefresh 함수.
+   * 빠른 타이핑 중 workspace rebuild/diagnostics가 completion을 막지 않도록 document-change를 debounce함.
+   *
+   * @param uri - 변경된 문서 URI
+   */
+  private scheduleDocumentChangeRefresh(uri: string): void {
+    this.pendingDocumentChangeUris.add(uri);
+    if (this.pendingDocumentChangeTimer) {
+      clearTimeout(this.pendingDocumentChangeTimer);
+    }
+
+    traceFeatureRequest(this.connection, 'workspace', 'document-change-refresh-scheduled', {
+      uri,
+      pendingUris: this.pendingDocumentChangeUris.size,
+      debounceMs: this.documentChangeDebounceMs,
+    });
+
+    this.pendingDocumentChangeTimer = setTimeout(() => {
+      this.pendingDocumentChangeTimer = undefined;
+      this.flushPendingDocumentChangeRefresh();
+    }, this.documentChangeDebounceMs);
+  }
+
+  /**
+   * flushPendingDocumentChangeRefresh 함수.
+   * debounce 중인 document-change URI 묶음을 한 번의 workspace refresh로 처리함.
+   */
+  private flushPendingDocumentChangeRefresh(): void {
+    if (this.pendingDocumentChangeTimer) {
+      clearTimeout(this.pendingDocumentChangeTimer);
+      this.pendingDocumentChangeTimer = undefined;
+    }
+
+    if (this.pendingDocumentChangeUris.size === 0) {
+      return;
+    }
+
+    const uris = [...this.pendingDocumentChangeUris].sort((left, right) => left.localeCompare(right));
+    this.pendingDocumentChangeUris.clear();
+
+    traceFeatureRequest(this.connection, 'workspace', 'document-change-refresh-flush', {
+      changedUris: uris.length,
+      debounceMs: this.documentChangeDebounceMs,
+    });
+
+    this.refreshWorkspaceUris(uris, 'document-change');
   }
 
   /**
@@ -368,17 +441,18 @@ export class WorkspaceRefreshController {
         }
       }
 
-      const nextState = previousState
-        ? createIncrementalWorkspaceDiagnosticsState(previousState, this.documents, workspaceChangedUris)
-        : createWorkspaceDiagnosticsState(workspaceRoot, this.documents);
       const refreshMode = previousState ? 'incremental' : 'full';
-
+      const rebuildStart = performance.now();
       traceFeatureRequest(this.connection, 'workspace', 'state-rebuild-start', {
         rootPath: workspaceRoot,
         reason,
         changedUris: workspaceChangedUris.length,
         mode: refreshMode,
       });
+
+      const nextState = previousState
+        ? createIncrementalWorkspaceDiagnosticsState(previousState, this.documents, workspaceChangedUris)
+        : createWorkspaceDiagnosticsState(workspaceRoot, this.documents);
 
       this.workspaceStateRepository.replace(workspaceRoot, nextState);
       if (nextState) {
@@ -399,10 +473,11 @@ export class WorkspaceRefreshController {
         }
       }
 
-      traceFeatureRequest(this.connection, 'workspace', 'state-rebuild-end', {
+      traceFeatureResult(this.connection, 'workspace', 'state-rebuild-end', {
         rootPath: workspaceRoot,
         reason,
         mode: refreshMode,
+        durationMs: Math.round(performance.now() - rebuildStart),
         affectedDiagnosticsUris: affectedUris.size,
         affectedCodeLensUris: [...affectedCodeLensUris].filter(
           (uri) =>

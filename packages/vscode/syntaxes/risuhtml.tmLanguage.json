@@ -22,6 +22,9 @@
       "include": "#cbs-function-call"
     },
     {
+      "include": "text.html.basic"
+    },
+    {
       "include": "#markdown-content"
     }
   ],

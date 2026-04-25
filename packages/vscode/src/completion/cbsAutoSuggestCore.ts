@@ -26,6 +26,7 @@ export interface CbsAutoCloseInput {
 
 const CBS_ARGUMENT_COMPLETION_PREFIX_PATTERN =
   /\{\{\s*(?:getvar|setvar|addvar|gettempvar|settempvar|tempvar|metadata|call)::[^{}]*$/i;
+const CBS_WHEN_BLOCK_OPEN_PATTERN = /^\{\{\s*#when(?=$|[\s:}])/i;
 const CBS_AUTO_CLOSE_BLOCK_NAMES = new Set([
   'if',
   'if_pure',
@@ -38,6 +39,44 @@ const CBS_AUTO_CLOSE_BLOCK_NAMES = new Set([
 ]);
 const CBS_BLOCK_OPEN_NAME_PATTERN = /^#([a-z_][\w]*)(?=$|[\s:}])/i;
 const CBS_CLOSE_TAG_SUFFIX_PATTERN = /\{\{\/[a-z_][\w]*\}\}$/i;
+
+/**
+ * hasOpenCbsWhenArgumentPrefix 함수.
+ * 커서 앞 줄 prefix가 아직 닫히지 않은 #when header argument 영역인지 확인함.
+ *
+ * @param linePrefix - 같은 줄 시작부터 커서 직전까지의 텍스트
+ * @returns #when header 안에서 `::` 뒤 suggestion이 필요하면 true
+ */
+function hasOpenCbsWhenArgumentPrefix(linePrefix: string): boolean {
+  let whenOpenIndex = linePrefix.lastIndexOf('{{#when');
+  if (whenOpenIndex === -1) {
+    whenOpenIndex = linePrefix.lastIndexOf('{{ #when');
+  }
+  if (whenOpenIndex === -1) {
+    return false;
+  }
+
+  const whenPrefix = linePrefix.slice(whenOpenIndex);
+  if (!CBS_WHEN_BLOCK_OPEN_PATTERN.test(whenPrefix)) {
+    return false;
+  }
+
+  let depth = 0;
+  for (let index = 0; index < whenPrefix.length; index += 1) {
+    const pair = whenPrefix.slice(index, index + 2);
+    if (pair === '{{') {
+      depth += 1;
+      index += 1;
+      continue;
+    }
+    if (pair === '}}') {
+      depth = Math.max(0, depth - 1);
+      index += 1;
+    }
+  }
+
+  return depth > 0 && whenPrefix.includes('::');
+}
 
 /**
  * shouldTriggerCbsAutoSuggest 함수.
@@ -57,7 +96,8 @@ export function shouldTriggerCbsAutoSuggest(input: CbsAutoSuggestInput): boolean
 
   return (
     input.insertedText.includes(':') &&
-    CBS_ARGUMENT_COMPLETION_PREFIX_PATTERN.test(input.linePrefix)
+    (CBS_ARGUMENT_COMPLETION_PREFIX_PATTERN.test(input.linePrefix) ||
+      hasOpenCbsWhenArgumentPrefix(input.linePrefix))
   );
 }
 

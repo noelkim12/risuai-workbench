@@ -55,6 +55,19 @@ export interface CompletionProviderOptions {
   workspaceSnapshot?: WorkspaceSnapshotState | null;
 }
 
+export interface CompletionResolveKey {
+  source: 'builtin' | 'workspace-variable' | 'local-variable' | 'snippet' | 'unknown';
+  name: string;
+  /** For builtins: the canonical function name for registry lookup */
+  canonicalName?: string;
+  /** For workspace variables: the variable name */
+  variableName?: string;
+}
+
+export type CompletionItemDataEnvelope = Omit<AgentMetadataEnvelope, 'cbs'> & {
+  cbs: AgentMetadataEnvelope['cbs'] & {};
+};
+
 /**
  * Minimal unresolved completion item data payload.
  * Carries stable category contract plus request context (uri/position) for strong resolve matching.
@@ -74,10 +87,9 @@ export interface UnresolvedCompletionItemData {
  * Lightweight unresolved completion item shape.
  * Heavy fields (detail, documentation, explanation, workspace snapshot) are omitted and restored by resolve.
  */
-export type UnresolvedCompletionItem = Omit<
-  CompletionItem,
-  'detail' | 'documentation' | 'data'
-> & {
+export type UnresolvedCompletionItem = Omit<CompletionItem, 'detail' | 'documentation' | 'data'> & {
+  detail?: CompletionItem['detail'];
+  documentation?: CompletionItem['documentation'];
   data: UnresolvedCompletionItemData;
 };
 
@@ -99,6 +111,29 @@ interface CalcOperatorCompletion {
   detail: string;
   documentation: string;
 }
+
+interface CheapRootCompletionContext {
+  kind: 'all-functions' | 'block-functions';
+  prefix: string;
+  macroStartCharacter: number;
+  prefixStartCharacter: number;
+  cursorCharacter: number;
+  replaceEndCharacter: number;
+  line: number;
+}
+
+const CBS_SECTIONED_ARTIFACT_EXTENSIONS = new Set(['.risulorebook', '.risuregex', '.risuprompt']);
+
+const CBS_FAST_PATH_SECTION_MARKERS = new Set([
+  'CONTENT',
+  'IN',
+  'OUT',
+  'TEXT',
+  'INNER_FORMAT',
+  'DEFAULT_TEXT',
+]);
+
+const CBS_ROOT_PREFIX_PATTERN = /^#?[a-z_]*$/i;
 
 const BLOCK_SNIPPETS: readonly BlockSnippet[] = [
   {
@@ -180,7 +215,8 @@ const CALC_OPERATORS: readonly CalcOperatorCompletion[] = [
   {
     label: '&&',
     detail: 'Logical AND',
-    documentation: 'Combines two truthy/falsey numeric operands. Upstream evaluates truthy results as `1` and falsey as `0`.',
+    documentation:
+      'Combines two truthy/falsey numeric operands. Upstream evaluates truthy results as `1` and falsey as `0`.',
   },
   {
     label: '||',
@@ -220,7 +256,8 @@ const CALC_OPERATORS: readonly CalcOperatorCompletion[] = [
   {
     label: '-',
     detail: 'Subtraction operator',
-    documentation: 'Subtracts the right operand from the left operand. Unary minus is also supported.',
+    documentation:
+      'Subtracts the right operand from the left operand. Unary minus is also supported.',
   },
   {
     label: '*',
@@ -294,6 +331,24 @@ interface CompletionTextEditPlan {
   newText: string;
 }
 
+const SNIPPET_PLACEHOLDER_ESCAPE_PATTERN = /[\\}$]/g;
+
+const POLISHED_ARGUMENT_LABELS: Readonly<Record<string, string>> = {
+  amount: 'amount',
+  condition: 'condition',
+  conditionSegments: 'condition',
+  defaultValue: 'default',
+  iteratorExpression: 'iterable',
+  operator: 'operator',
+  positionName: 'position',
+  propertyName: 'property',
+  target: 'target',
+  value: 'value',
+  variableName: 'variable',
+};
+
+const FULL_MACRO_FILTER_TEXT_PATTERN = /^\{\{[^\s:}]+/;
+
 type RangedCompletionTriggerContext = Extract<
   CompletionTriggerContext,
   { startOffset: number; endOffset: number }
@@ -314,6 +369,20 @@ function createCompletionTextEditPlan(
   fragmentText: string,
 ): CompletionTextEditPlan {
   const newText = item.insertText ?? item.label;
+  if (isFullMacroSnippetCompletion(item, newText)) {
+    const replacementStartOffset = findFullMacroSnippetReplacementStartOffset(
+      fragmentText,
+      context,
+    );
+    if (replacementStartOffset !== null) {
+      return {
+        startOffset: replacementStartOffset,
+        endOffset: getFullMacroSnippetReplacementEndOffset(fragmentText, context.endOffset),
+        newText,
+      };
+    }
+  }
+
   if (
     context.type !== 'block-functions' ||
     item.kind !== CompletionItemKind.Snippet ||
@@ -340,6 +409,166 @@ function createCompletionTextEditPlan(
     endOffset: getBlockSnippetReplacementEndOffset(fragmentText, context.endOffset),
     newText,
   };
+}
+
+/**
+ * isFullMacroSnippetCompletion 함수.
+ * `{{...}}` 전체를 포함하는 snippet completion인지 판별함.
+ *
+ * @param item - completion item
+ * @param newText - item이 삽입하려는 실제 문자열
+ * @returns full CBS macro snippet이면 true
+ */
+function isFullMacroSnippetCompletion(
+  item: CompletionItem,
+  newText: string | number,
+): newText is string {
+  return (
+    item.insertTextFormat === InsertTextFormat.Snippet &&
+    typeof newText === 'string' &&
+    newText.startsWith('{{')
+  );
+}
+
+/**
+ * findFullMacroSnippetReplacementStartOffset 함수.
+ * full macro snippet이 기존 `{{...}}` 전체를 교체하도록 여는 `{{` 위치를 찾음.
+ *
+ * @param fragmentText - fragment-local 원문
+ * @param context - completion trigger context
+ * @returns replacement 시작 offset 또는 찾지 못한 경우 null
+ */
+function findFullMacroSnippetReplacementStartOffset(
+  fragmentText: string,
+  context: RangedCompletionTriggerContext,
+): number | null {
+  const searchEndOffset = Math.max(0, Math.min(context.startOffset, fragmentText.length));
+  const openBraceOffset = fragmentText.lastIndexOf('{{', searchEndOffset);
+  if (openBraceOffset === -1) {
+    return null;
+  }
+
+  const prefix = fragmentText.slice(openBraceOffset, context.endOffset);
+  if (!prefix.startsWith('{{')) {
+    return null;
+  }
+
+  return openBraceOffset;
+}
+
+/**
+ * getFullMacroSnippetReplacementEndOffset 함수.
+ * cursor 뒤에 자동 삽입된 `}}`가 있으면 full snippet 교체 범위에 포함함.
+ *
+ * @param fragmentText - fragment-local 원문
+ * @param contextEndOffset - 기존 completion context 종료 offset
+ * @returns replacement 종료 offset
+ */
+function getFullMacroSnippetReplacementEndOffset(
+  fragmentText: string,
+  contextEndOffset: number,
+): number {
+  if (fragmentText.slice(contextEndOffset, contextEndOffset + 2) === '}}') {
+    return contextEndOffset + 2;
+  }
+
+  return contextEndOffset;
+}
+
+/**
+ * createBuiltinSnippetInsertText 함수.
+ * CBS builtin을 suggest 선택만으로 완성되는 full macro snippet 문자열로 변환함.
+ *
+ * @param fn - snippet을 만들 builtin function metadata
+ * @returns snippet insertText
+ */
+function createBuiltinSnippetInsertText(fn: CBSBuiltinFunction): string {
+  if (fn.arguments.length === 0) {
+    return `{{${fn.name}}}`;
+  }
+
+  if (fn.name === '#each') {
+    return '{{#each ${1:iterable} ${2:key}}}{{slot::${2:key}}}{{/each}}';
+  }
+
+  if (fn.name === '#when') {
+    return '{{#when::${1:condition}}}';
+  }
+
+  if (fn.isBlock) {
+    const name = fn.name.startsWith('#') ? fn.name.slice(1) : fn.name;
+    const placeholders = fn.arguments.map((argument, index) =>
+      createSnippetPlaceholder(argument.name, index),
+    );
+    const headerSuffix = placeholders.length > 0 ? ` ${placeholders.join(' ')}` : '';
+    return `{{#${name}${headerSuffix}}}\n\t$${fn.arguments.length + 1}\n{{/${name}}}`;
+  }
+
+  const argumentSnippet = fn.arguments
+    .map((argument, index) => `::${createSnippetPlaceholder(argument.name, index, fn)}`)
+    .join('');
+  return `{{${fn.name}${argumentSnippet}}}`;
+}
+
+/**
+ * createFullMacroFilterText 함수.
+ * full macro snippet의 client-side filtering에 필요한 최소 prefix 문자열만 추출함.
+ *
+ * @param insertText - `{{...}}`로 시작하는 snippet insertText
+ * @returns VS Code filtering에 사용할 compact prefix
+ */
+function createFullMacroFilterText(insertText: string): string {
+  return FULL_MACRO_FILTER_TEXT_PATTERN.exec(insertText)?.[0] ?? insertText;
+}
+
+/**
+ * createSnippetPlaceholder 함수.
+ * registry argument name을 VS Code snippet placeholder로 변환함.
+ *
+ * @param argumentName - registry에 기록된 원본 argument name
+ * @param index - 0-based argument 위치
+ * @param fn - 필요 시 function category/name까지 참고할 builtin metadata
+ * @returns `${n:label}` 형태의 snippet placeholder
+ */
+function createSnippetPlaceholder(
+  argumentName: string,
+  index: number,
+  fn?: CBSBuiltinFunction,
+): string {
+  const label = polishArgumentLabel(argumentName, index, fn);
+  return `\${${index + 1}:${escapeSnippetPlaceholderLabel(label)}}`;
+}
+
+/**
+ * polishArgumentLabel 함수.
+ * 자동완성 placeholder에 노출할 argument label을 짧고 자연스러운 이름으로 다듬음.
+ *
+ * @param argumentName - registry에 기록된 원본 argument name
+ * @param index - 0-based argument 위치
+ * @param fn - function category/name metadata
+ * @returns 사용자에게 보여줄 placeholder label
+ */
+function polishArgumentLabel(argumentName: string, index: number, fn?: CBSBuiltinFunction): string {
+  if (/^arg\d+$/i.test(argumentName)) {
+    if (fn?.category === 'comparison') {
+      return String.fromCharCode('a'.charCodeAt(0) + index);
+    }
+
+    return `value${index + 1}`;
+  }
+
+  return POLISHED_ARGUMENT_LABELS[argumentName] ?? argumentName;
+}
+
+/**
+ * escapeSnippetPlaceholderLabel 함수.
+ * snippet placeholder label 안에서 특별한 의미를 갖는 문자를 escape함.
+ *
+ * @param label - escape할 placeholder label
+ * @returns VS Code snippet placeholder에 안전한 label
+ */
+function escapeSnippetPlaceholderLabel(label: string): string {
+  return label.replace(SNIPPET_PLACEHOLDER_ESCAPE_PATTERN, '\\$&');
 }
 
 /**
@@ -399,6 +628,7 @@ export interface NormalizedCompletionItemSnapshot {
   deprecated: boolean;
   detail: string | null;
   documentation: string | null;
+  filterText: string | null;
   insertText: string | null;
   insertTextFormat: InsertTextFormat | null;
   kind: CompletionItemKind | null;
@@ -441,7 +671,9 @@ function normalizeMarkupContent(documentation: CompletionItem['documentation']):
   }
 
   if (Array.isArray(documentation)) {
-    return documentation.map((entry) => (typeof entry === 'string' ? entry : entry.value)).join('\n');
+    return documentation
+      .map((entry) => (typeof entry === 'string' ? entry : entry.value))
+      .join('\n');
   }
 
   return (documentation as MarkupContent | undefined)?.value ?? null;
@@ -497,6 +729,7 @@ function compareNormalizedCompletionSnapshots(
     compareBooleans(left.resolved, right.resolved) ||
     compareStrings(left.detail, right.detail) ||
     compareStrings(left.documentation, right.documentation) ||
+    compareStrings(left.filterText, right.filterText) ||
     compareStrings(left.insertText, right.insertText) ||
     compareNumbers(left.insertTextFormat, right.insertTextFormat) ||
     compareBooleans(left.deprecated, right.deprecated) ||
@@ -524,6 +757,7 @@ export function normalizeCompletionItemForSnapshot(
     deprecated: item.deprecated ?? false,
     detail: item.detail ?? null,
     documentation: normalizeMarkupContent(item.documentation),
+    filterText: item.filterText ?? null,
     insertText: item.insertText ?? null,
     insertTextFormat: item.insertTextFormat ?? null,
     kind: item.kind ?? null,
@@ -538,7 +772,9 @@ export function normalizeCompletionItemForSnapshot(
 export function normalizeCompletionItemsForSnapshot(
   items: readonly CompletionItem[],
 ): NormalizedCompletionItemSnapshot[] {
-  return [...items].map(normalizeCompletionItemForSnapshot).sort(compareNormalizedCompletionSnapshots);
+  return [...items]
+    .map(normalizeCompletionItemForSnapshot)
+    .sort(compareNormalizedCompletionSnapshots);
 }
 
 /**
@@ -557,15 +793,25 @@ export function stripCompletionItemToUnresolved(
   uri: string,
   position: Position,
 ): UnresolvedCompletionItem {
-  const envelope = isAgentMetadataEnvelope(item.data)
-    ? item.data
-    : createAgentMetadataEnvelope({ category: 'builtin', kind: 'callable-builtin' });
+  const fallbackEnvelope = createAgentMetadataEnvelope({
+    category: 'builtin',
+    kind: 'callable-builtin',
+  });
+  const envelope: CompletionItemDataEnvelope = isAgentMetadataEnvelope(item.data)
+    ? (item.data as CompletionItemDataEnvelope)
+    : {
+        ...fallbackEnvelope,
+        cbs: {
+          ...fallbackEnvelope.cbs,
+        },
+      };
 
   return {
     label: item.label,
     kind: item.kind,
-    insertText: item.insertText,
+    insertText: item.textEdit ? undefined : item.insertText,
     insertTextFormat: item.insertTextFormat,
+    filterText: item.filterText,
     preselect: item.preselect,
     sortText: item.sortText,
     deprecated: item.deprecated,
@@ -601,7 +847,10 @@ export class CompletionProvider {
     this.workspaceSnapshot = options.workspaceSnapshot ?? null;
   }
 
-  provide(params: TextDocumentPositionParams, cancellationToken?: CancellationToken): CompletionItem[] {
+  provide(
+    params: TextDocumentPositionParams,
+    cancellationToken?: CancellationToken,
+  ): CompletionItem[] {
     return this.provideInternal(params, cancellationToken, false);
   }
 
@@ -617,6 +866,15 @@ export class CompletionProvider {
     const request = this.resolveRequest(params);
     if (!request) {
       return [];
+    }
+
+    const fastRootCompletions = this.provideCheapRootCompletions(
+      request,
+      params.position,
+      unresolvedOnly,
+    );
+    if (fastRootCompletions) {
+      return fastRootCompletions;
     }
 
     const lookup = this.analysisService.locatePosition(request, params.position, cancellationToken);
@@ -678,7 +936,8 @@ export class CompletionProvider {
     return completions.map((item) => {
       const textEditPlan = createCompletionTextEditPlan(item, context, lookup.fragment.content);
       const itemRange =
-        textEditPlan.startOffset === context.startOffset && textEditPlan.endOffset === context.endOffset
+        textEditPlan.startOffset === context.startOffset &&
+        textEditPlan.endOffset === context.endOffset
           ? range
           : lookup.fragmentAnalysis.mapper.toHostRangeFromOffsets(
               request.text,
@@ -743,6 +1002,7 @@ export class CompletionProvider {
     params: TextDocumentPositionParams,
     cancellationToken?: CancellationToken,
   ): CompletionItem | null {
+    void cancellationToken;
     if (
       item.data.cbs.uri !== params.textDocument.uri ||
       item.data.cbs.position.line !== params.position.line ||
@@ -751,17 +1011,505 @@ export class CompletionProvider {
       return null;
     }
 
-    const resolvedList = this.provide(params, cancellationToken);
-    const match = resolvedList.find(
-      (resolved) =>
-        resolved.label === item.label &&
-        resolved.kind === item.kind &&
-        (resolved.data as AgentMetadataEnvelope | undefined)?.cbs?.category?.category ===
-          item.data.cbs.category.category &&
-        resolved.sortText === item.sortText &&
-        resolved.insertText === item.insertText,
+    const resolveKey = this.deriveResolveKey(item);
+    if (!resolveKey) {
+      return null;
+    }
+
+    switch (resolveKey.source) {
+      case 'builtin':
+        return this.hydrateBuiltinItem(item, resolveKey);
+      case 'workspace-variable':
+        return this.hydrateWorkspaceVariableItem(item, params, resolveKey);
+      case 'local-variable':
+        return this.hydrateLocalVariableItem(item, resolveKey);
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * deriveResolveKey 함수.
+   * unresolved payload를 키우지 않도록 기존 category/label/sortText에서 hydrate 경로를 파생함.
+   *
+   * @param item - resolve 요청으로 받은 unresolved completion item
+   * @returns hydrate 가능한 resolve key 또는 없으면 null
+   */
+  private deriveResolveKey(item: UnresolvedCompletionItem): CompletionResolveKey | null {
+    const category = item.data.cbs.category;
+    if (
+      (category.category === 'builtin' ||
+        (category.category === 'block-keyword' &&
+          (category.kind === 'callable-builtin' ||
+            category.kind === 'documentation-only-builtin' ||
+            category.kind === 'contextual-builtin'))) &&
+      this.registry.get(item.label)
+    ) {
+      return {
+        source: 'builtin',
+        name: item.label,
+        canonicalName: item.label,
+      };
+    }
+
+    if (category.category !== 'variable') {
+      return null;
+    }
+
+    if (item.sortText?.startsWith('zzzz-workspace-')) {
+      const variableName = item.sortText.slice('zzzz-workspace-'.length);
+      return {
+        source: 'workspace-variable',
+        name: variableName,
+        variableName,
+      };
+    }
+
+    if (
+      category.kind === 'chat-variable' ||
+      category.kind === 'temp-variable' ||
+      category.kind === 'global-variable'
+    ) {
+      return {
+        source: 'local-variable',
+        name: item.label.replace(/^[$@]/, ''),
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * hydrateBuiltinItem 함수.
+   * resolveKey의 registry key로 builtin을 직접 조회해 detail/documentation/explanation을 채움.
+   *
+   * @param item - hydrate할 unresolved completion item
+   * @param resolveKey - builtin registry 조회에 사용할 resolve key
+   * @returns builtin heavy field가 채워진 completion item
+   */
+  private hydrateBuiltinItem(
+    item: UnresolvedCompletionItem,
+    resolveKey: CompletionResolveKey,
+  ): CompletionItem | null {
+    const fn = this.registry.get(resolveKey.canonicalName ?? resolveKey.name);
+    if (!fn) {
+      return null;
+    }
+
+    return {
+      ...item,
+      detail: this.formatFunctionDetail(fn),
+      documentation: {
+        kind: 'markdown',
+        value: this.formatFunctionDocumentation(fn),
+      },
+      data: this.createCategoryData(
+        item.data.cbs.category,
+        this.getBuiltinExplanation(fn),
+        undefined,
+        undefined,
+      ),
+    };
+  }
+
+  /**
+   * hydrateLocalVariableItem 함수.
+   * fragment-local 변수 completion의 lightweight metadata를 기존 category/label에서 복원함.
+   *
+   * @param item - hydrate할 unresolved completion item
+   * @param resolveKey - label에서 파생한 local variable resolve key
+   * @returns local variable heavy field가 채워진 completion item
+   */
+  private hydrateLocalVariableItem(
+    item: UnresolvedCompletionItem,
+    resolveKey: CompletionResolveKey,
+  ): CompletionItem {
+    const variableName = resolveKey.name;
+    const categoryKind = item.data.cbs.category.kind;
+    const isCalcExpression = item.label.startsWith('$') || item.label.startsWith('@');
+    const isGlobal = categoryKind === 'global-variable' || item.label.startsWith('@');
+    const isTemp = categoryKind === 'temp-variable';
+
+    if (isCalcExpression) {
+      return {
+        ...item,
+        detail: isGlobal ? 'Calc expression global variable' : 'Calc expression chat variable',
+        documentation: {
+          kind: 'markdown',
+          value: isGlobal
+            ? `Reads global variable **${variableName}** inside a calc expression. Non-numeric values evaluate as \`0\`.`
+            : `Reads chat variable **${variableName}** inside a calc expression. Non-numeric values evaluate as \`0\`.`,
+        },
+        data: this.createCategoryData(
+          item.data.cbs.category,
+          this.createScopeExplanation(
+            'calc-expression-symbol-table',
+            isGlobal
+              ? 'Calc completion resolved this candidate from the analyzed global variable symbol table.'
+              : 'Calc completion resolved this candidate from the analyzed chat variable symbol table.',
+          ),
+        ),
+      };
+    }
+
+    return {
+      ...item,
+      detail: isTemp ? 'Temp variable' : isGlobal ? 'Global variable' : 'Chat variable',
+      documentation: {
+        kind: 'markdown',
+        value: `Variable **${variableName}** (${isTemp ? 'temp' : isGlobal ? 'global' : 'chat'})`,
+      },
+      data: this.createCategoryData(
+        item.data.cbs.category,
+        this.createScopeExplanation(
+          isTemp
+            ? 'temp-variable-symbol-table'
+            : isGlobal
+              ? 'global-variable-symbol-table'
+              : 'chat-variable-symbol-table',
+          isTemp
+            ? 'Completion resolved this candidate from analyzed temp-variable definitions in the current fragment.'
+            : isGlobal
+              ? 'Completion resolved this candidate from analyzed global-variable references in the current fragment.'
+              : 'Completion resolved this candidate from analyzed chat-variable definitions in the current fragment.',
+        ),
+      ),
+    };
+  }
+
+  /**
+   * hydrateWorkspaceVariableItem 함수.
+   * workspace variable graph를 직접 조회해 변수 completion의 detail/documentation/workspace metadata를 채움.
+   *
+   * @param item - hydrate할 unresolved completion item
+   * @param params - resolve 요청의 문서 위치 정보
+   * @param resolveKey - workspace variable 이름을 담은 resolve key
+   * @returns workspace variable heavy field가 채워진 completion item
+   */
+  private hydrateWorkspaceVariableItem(
+    item: UnresolvedCompletionItem,
+    params: TextDocumentPositionParams,
+    resolveKey: CompletionResolveKey,
+  ): CompletionItem | null {
+    if (!this.variableFlowService) {
+      return null;
+    }
+
+    const variableName = resolveKey.variableName ?? resolveKey.name;
+    const query = this.variableFlowService.queryVariable(variableName);
+    const defaultDefinitions = this.variableFlowService.getDefaultVariableDefinitions(variableName);
+    if ((!query || query.writers.length === 0) && defaultDefinitions.length === 0) {
+      return null;
+    }
+
+    const readerCount = query?.readers.length ?? 0;
+    const writerCount = (query?.writers.length ?? 0) + defaultDefinitions.length;
+    const isCalcExpression = item.label.startsWith('$');
+    const detail = isCalcExpression
+      ? 'Workspace chat variable for calc expression'
+      : 'Workspace chat variable';
+    const documentation = isCalcExpression
+      ? [
+          `**Workspace chat variable:** \`${variableName}\``,
+          '',
+          '- Source: workspace persistent chat-variable graph',
+          '- Usage: append after fragment-local `$var` candidates inside the shared CBS expression sublanguage.',
+          `- Workspace readers: ${readerCount}`,
+          `- Workspace writers: ${writerCount}`,
+        ].join('\n')
+      : [
+          `**Workspace chat variable:** \`${variableName}\``,
+          '',
+          '- Source: workspace persistent chat-variable graph',
+          '- Usage: append after fragment-local `getvar` / `setvar` candidates so local symbols stay first.',
+          `- Workspace readers: ${readerCount}`,
+          `- Workspace writers: ${writerCount}`,
+        ].join('\n');
+
+    return {
+      ...item,
+      detail,
+      documentation: {
+        kind: 'markdown',
+        value: documentation,
+      },
+      data: this.createCategoryData(
+        item.data.cbs.category,
+        this.createScopeExplanation(
+          isCalcExpression
+            ? 'workspace-chat-variable-graph:calc-expression'
+            : 'workspace-chat-variable-graph:macro-argument',
+          isCalcExpression
+            ? 'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local `$var` symbols.'
+            : 'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local chat-variable symbols.',
+        ),
+        undefined,
+        this.getResolveWorkspaceSnapshot(params),
+      ),
+    };
+  }
+
+  /**
+   * getResolveWorkspaceSnapshot 함수.
+   * resolve 요청에서 사용할 수 있는 workspace snapshot metadata를 생성함.
+   *
+   * @param params - resolve 요청의 문서 위치 정보
+   * @returns resolve metadata에 실을 workspace snapshot 또는 없으면 undefined
+   */
+  private getResolveWorkspaceSnapshot(
+    params: TextDocumentPositionParams,
+  ): AgentMetadataWorkspaceSnapshotContract | undefined {
+    const snapshot = this.variableFlowService?.getWorkspaceSnapshot() ?? this.workspaceSnapshot;
+    if (!snapshot) {
+      return undefined;
+    }
+
+    const trackedDocumentVersion = snapshot.documentVersions.get(params.textDocument.uri) ?? null;
+    const requestVersion = trackedDocumentVersion ?? 'resolve';
+    return {
+      schema: CBS_AGENT_PROTOCOL_SCHEMA,
+      schemaVersion: CBS_AGENT_PROTOCOL_VERSION,
+      rootPath: snapshot.rootPath,
+      snapshotVersion: snapshot.snapshotVersion,
+      requestVersion,
+      trackedDocumentVersion,
+      freshness: 'fresh',
+      detail:
+        trackedDocumentVersion === null
+          ? `Workspace snapshot v${snapshot.snapshotVersion} has no open-document override for this URI, so resolve uses the installed snapshot as-is.`
+          : `Workspace snapshot v${snapshot.snapshotVersion} tracks document version ${trackedDocumentVersion}, so resolve uses the current workspace variable graph snapshot.`,
+    };
+  }
+
+  /**
+   * provideCheapRootCompletions 함수.
+   * 단순 `{{` / `{{#` root completion은 fragment 분석 없이 현재 줄 prefix만 보고 즉시 후보를 생성함.
+   *
+   * @param request - completion 요청의 문서 텍스트와 경로 정보
+   * @param position - completion을 요청한 cursor 위치
+   * @param unresolvedOnly - heavy field 생략 여부
+   * @returns cheap root completion 후보 또는 full analysis로 넘겨야 하면 null
+   */
+  private provideCheapRootCompletions(
+    request: FragmentAnalysisRequest,
+    position: Position,
+    unresolvedOnly: boolean,
+  ): CompletionItem[] | null {
+    const context = this.detectCheapRootCompletionContext(request, position);
+    if (!context) {
+      return null;
+    }
+
+    const completions =
+      context.kind === 'block-functions'
+        ? this.buildBlockFunctionCompletions(context.prefix, unresolvedOnly)
+        : this.buildAllFunctionCompletions(context.prefix, unresolvedOnly);
+
+    return completions.map((item) => this.applyCheapRootTextEdit(item, context));
+  }
+
+  /**
+   * detectCheapRootCompletionContext 함수.
+   * parser가 필요 없는 current-line CBS root prefix만 엄격히 감지함.
+   *
+   * @param request - completion 요청의 문서 텍스트와 경로 정보
+   * @param position - completion을 요청한 cursor 위치
+   * @returns cheap root context 또는 안전하지 않으면 null
+   */
+  private detectCheapRootCompletionContext(
+    request: FragmentAnalysisRequest,
+    position: Position,
+  ): CheapRootCompletionContext | null {
+    if (!this.canUseCheapRootFastPath(request, position)) {
+      return null;
+    }
+
+    if (this.isInsideCheapPureBlock(request.text, position)) {
+      return null;
+    }
+
+    const line = this.getLineTextAtPosition(request.text, position);
+    if (line === null || position.character > line.length) {
+      return null;
+    }
+
+    const prefixText = line.slice(0, position.character);
+    const macroStartCharacter = prefixText.lastIndexOf('{{');
+    if (macroStartCharacter === -1) {
+      return null;
+    }
+
+    const typedPrefix = prefixText.slice(macroStartCharacter + 2);
+    if (!CBS_ROOT_PREFIX_PATTERN.test(typedPrefix) || typedPrefix.startsWith('/')) {
+      return null;
+    }
+
+    const suffix = line.slice(position.character);
+    const replaceEndCharacter = suffix.startsWith('}}')
+      ? position.character + 2
+      : position.character;
+
+    return {
+      kind: typedPrefix.startsWith('#') ? 'block-functions' : 'all-functions',
+      prefix: typedPrefix,
+      macroStartCharacter,
+      prefixStartCharacter: macroStartCharacter + 2,
+      cursorCharacter: position.character,
+      replaceEndCharacter,
+      line: position.line,
+    };
+  }
+
+  /**
+   * canUseCheapRootFastPath 함수.
+   * sectioned artifact에서는 현재 offset이 CBS-bearing section 안에 있을 때만 fast path를 허용함.
+   *
+   * @param request - completion 요청의 문서 텍스트와 경로 정보
+   * @param position - completion을 요청한 cursor 위치
+   * @returns cheap root fast path를 써도 안전하면 true
+   */
+  private canUseCheapRootFastPath(request: FragmentAnalysisRequest, position: Position): boolean {
+    const normalizedPath = request.filePath.toLowerCase();
+    const isSectionedArtifact = [...CBS_SECTIONED_ARTIFACT_EXTENSIONS].some((extension) =>
+      normalizedPath.endsWith(extension),
     );
-    return match ?? null;
+    if (!isSectionedArtifact) {
+      return true;
+    }
+
+    const linesBeforeCursor = request.text.split(/\r\n|\r|\n/).slice(0, position.line + 1);
+    for (let index = linesBeforeCursor.length - 1; index >= 0; index -= 1) {
+      const markerMatch = /^@@@\s+([A-Z_]+)/i.exec(linesBeforeCursor[index]?.trim() ?? '');
+      if (!markerMatch) {
+        continue;
+      }
+
+      return CBS_FAST_PATH_SECTION_MARKERS.has(markerMatch[1]!.toUpperCase());
+    }
+
+    return false;
+  }
+
+  /**
+   * getLineTextAtPosition 함수.
+   * 문서 텍스트에서 지정 line의 전체 문자열을 추출함.
+   *
+   * @param text - completion 대상 문서 텍스트
+   * @param position - line을 지정하는 cursor 위치
+   * @returns 해당 line 텍스트 또는 범위를 벗어나면 null
+   */
+  private getLineTextAtPosition(text: string, position: Position): string | null {
+    const lines = text.split(/\r\n|\r|\n/);
+    return lines[position.line] ?? null;
+  }
+
+  /**
+   * isInsideCheapPureBlock 함수.
+   * root fast path가 pure/puredisplay body suppression을 우회하지 않도록 cursor 전 text를 가볍게 스캔함.
+   *
+   * @param text - completion 대상 문서 텍스트
+   * @param position - completion을 요청한 cursor 위치
+   * @returns cursor가 pure 계열 block body 안에 있으면 true
+   */
+  private isInsideCheapPureBlock(text: string, position: Position): boolean {
+    const offset = this.offsetAtPosition(text, position);
+    if (offset === null) {
+      return false;
+    }
+
+    const beforeCursor = text.slice(0, offset);
+    const pureBlockPattern = /\{\{\s*(#puredisplay|#pure|\/puredisplay|\/pure)\b[^}]*\}\}/gi;
+    let depth = 0;
+    for (const match of beforeCursor.matchAll(pureBlockPattern)) {
+      const marker = match[1]?.toLowerCase();
+      if (marker === '#pure' || marker === '#puredisplay') {
+        depth += 1;
+      } else if (marker === '/pure' || marker === '/puredisplay') {
+        depth = Math.max(0, depth - 1);
+      }
+    }
+
+    return depth > 0;
+  }
+
+  /**
+   * offsetAtPosition 함수.
+   * fast path 보조 판단용으로 Position을 문서 offset으로 변환함.
+   *
+   * @param text - completion 대상 문서 텍스트
+   * @param position - 변환할 cursor 위치
+   * @returns 문서 offset 또는 범위를 벗어나면 null
+   */
+  private offsetAtPosition(text: string, position: Position): number | null {
+    let line = 0;
+    let character = 0;
+    for (let offset = 0; offset <= text.length; offset += 1) {
+      if (line === position.line && character === position.character) {
+        return offset;
+      }
+
+      if (offset === text.length) {
+        break;
+      }
+
+      const char = text[offset];
+      if (char === '\r') {
+        if (text[offset + 1] === '\n') {
+          offset += 1;
+        }
+        line += 1;
+        character = 0;
+      } else if (char === '\n') {
+        line += 1;
+        character = 0;
+      } else {
+        character += 1;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * applyCheapRootTextEdit 함수.
+   * cheap root completion item에 host 문서 기준 textEdit range를 직접 부여함.
+   *
+   * @param item - textEdit을 적용할 completion item
+   * @param context - current-line cheap root context
+   * @returns textEdit이 설정된 completion item
+   */
+  private applyCheapRootTextEdit(
+    item: CompletionItem,
+    context: CheapRootCompletionContext,
+  ): CompletionItem {
+    const newText = typeof item.insertText === 'string' ? item.insertText : item.label;
+    const isSnippet =
+      this.isBlockSnippetCompletion(item) || isFullMacroSnippetCompletion(item, newText);
+    const startCharacter = isSnippet ? context.macroStartCharacter : context.prefixStartCharacter;
+    const endCharacter = isSnippet ? context.replaceEndCharacter : context.cursorCharacter;
+
+    return {
+      ...item,
+      textEdit: {
+        range: LSPRange.create(context.line, startCharacter, context.line, endCharacter),
+        newText,
+      },
+    };
+  }
+
+  /**
+   * isBlockSnippetCompletion 함수.
+   * block snippet은 `{{`까지 포함한 template라서 root prefix 전체를 교체해야 하는지 판별함.
+   *
+   * @param item - completion item
+   * @returns block snippet completion이면 true
+   */
+  private isBlockSnippetCompletion(item: CompletionItem): boolean {
+    const envelope = isAgentMetadataEnvelope(item.data) ? item.data : null;
+    return (
+      envelope?.cbs.category.category === 'snippet' &&
+      envelope.cbs.category.kind === 'block-snippet'
+    );
   }
 
   private buildCompletions(
@@ -780,7 +1528,12 @@ export class CompletionProvider {
       case 'close-tag':
         return this.buildCloseTagCompletion(context.blockKind);
       case 'variable-names':
-        return this.buildVariableCompletions(context.prefix, context.kind, lookup, workspaceFreshness);
+        return this.buildVariableCompletions(
+          context.prefix,
+          context.kind,
+          lookup,
+          workspaceFreshness,
+        );
       case 'metadata-keys':
         return this.buildMetadataCompletions(context.prefix);
       case 'function-names':
@@ -816,7 +1569,9 @@ export class CompletionProvider {
     const localVariableCompletions = variables
       .filter((variable) => {
         if (referenceKind === 'chat') {
-          return variable.kind === 'chat' && variable.name.toLowerCase().startsWith(normalizedPrefix);
+          return (
+            variable.kind === 'chat' && variable.name.toLowerCase().startsWith(normalizedPrefix)
+          );
         }
 
         if (referenceKind === 'global') {
@@ -868,13 +1623,18 @@ export class CompletionProvider {
     const workspaceVariableCompletions =
       referenceKind === 'global'
         ? []
-          : this.buildWorkspaceChatVariableCompletions({
-              existingLabels: new Set(localVariableCompletions.map((completion) => completion.label)),
+        : this.buildWorkspaceChatVariableCompletions(
+            {
+              existingLabels: new Set(
+                localVariableCompletions.map((completion) => completion.label),
+              ),
               insertBareName: referenceKind === 'chat',
               labelPrefix: '$',
               prefix,
               usage: 'calc-expression',
-            }, workspaceFreshness);
+            },
+            workspaceFreshness,
+          );
 
     if (referenceKind) {
       return [...localVariableCompletions, ...workspaceVariableCompletions];
@@ -886,14 +1646,18 @@ export class CompletionProvider {
       (operator) =>
         ({
           label: operator.label,
-          kind: operator.label === 'null' ? CompletionItemKind.Constant : CompletionItemKind.Operator,
-          data: this.createCategoryData({
-            category: 'expression-operator',
-            kind: 'calc-operator',
-          }, this.createContextualExplanation(
-            'calc-expression-operator-context',
-            'Calc completion inferred an operator slot from the shared CBS expression sublanguage context.',
-          )),
+          kind:
+            operator.label === 'null' ? CompletionItemKind.Constant : CompletionItemKind.Operator,
+          data: this.createCategoryData(
+            {
+              category: 'expression-operator',
+              kind: 'calc-operator',
+            },
+            this.createContextualExplanation(
+              'calc-expression-operator-context',
+              'Calc completion inferred an operator slot from the shared CBS expression sublanguage context.',
+            ),
+          ),
           detail: operator.detail,
           documentation: {
             kind: 'markdown',
@@ -949,9 +1713,12 @@ export class CompletionProvider {
                   'block-snippet-library',
                   'Block completion appended an editor snippet from the static CBS block snippet set.',
                 ),
+            undefined,
+            undefined,
           ),
           insertText: snippet.insertText,
           insertTextFormat: InsertTextFormat.Snippet,
+          filterText: createFullMacroFilterText(snippet.insertText),
         };
 
         completions.push(
@@ -976,14 +1743,19 @@ export class CompletionProvider {
     fn: CBSBuiltinFunction,
     unresolvedOnly: boolean,
   ): CompletionItem {
+    const snippetInsertText = createBuiltinSnippetInsertText(fn);
     const item: CompletionItem = {
       label: fn.name,
       kind: fn.isBlock ? CompletionItemKind.Class : CompletionItemKind.Function,
+      filterText: createFullMacroFilterText(snippetInsertText),
       data: this.createCategoryData(
         this.getBuiltinCategory(fn),
         unresolvedOnly ? undefined : this.getBuiltinExplanation(fn),
+        undefined,
+        undefined,
       ),
-      insertText: fn.name,
+      insertText: snippetInsertText ?? fn.name,
+      insertTextFormat: snippetInsertText ? InsertTextFormat.Snippet : undefined,
       deprecated: fn.deprecated !== undefined,
     };
 
@@ -1011,13 +1783,16 @@ export class CompletionProvider {
       {
         label: ':else',
         kind: CompletionItemKind.Keyword,
-        data: this.createCategoryData({
-          category: 'block-keyword',
-          kind: 'else-keyword',
-        }, this.createContextualExplanation(
-          'else-keyword-context',
-          'Completion inferred a live :else branch position from the current CBS block structure.',
-        )),
+        data: this.createCategoryData(
+          {
+            category: 'block-keyword',
+            kind: 'else-keyword',
+          },
+          this.createContextualExplanation(
+            'else-keyword-context',
+            'Completion inferred a live :else branch position from the current CBS block structure.',
+          ),
+        ),
         detail: 'Else keyword',
         documentation: {
           kind: 'markdown',
@@ -1041,13 +1816,16 @@ export class CompletionProvider {
         return {
           label: `/${nameWithoutHash}`,
           kind: CompletionItemKind.Keyword,
-          data: this.createCategoryData({
-            category: 'block-keyword',
-            kind: 'block-close',
-          }, this.createContextualExplanation(
-            'block-close-context',
-            'Completion inferred a block close candidate from the open block context at the cursor.',
-          )),
+          data: this.createCategoryData(
+            {
+              category: 'block-keyword',
+              kind: 'block-close',
+            },
+            this.createContextualExplanation(
+              'block-close-context',
+              'Completion inferred a block close candidate from the open block context at the cursor.',
+            ),
+          ),
           detail: `Close ${nameWithoutHash} block`,
           insertText: `/${nameWithoutHash}`,
         };
@@ -1059,13 +1837,16 @@ export class CompletionProvider {
       {
         label: `/${normalizedKind}`,
         kind: CompletionItemKind.Keyword,
-        data: this.createCategoryData({
-          category: 'block-keyword',
-          kind: 'block-close',
-        }, this.createContextualExplanation(
-          'block-close-context',
-          'Completion inferred the matching block close tag from the active open block kind.',
-        )),
+        data: this.createCategoryData(
+          {
+            category: 'block-keyword',
+            kind: 'block-close',
+          },
+          this.createContextualExplanation(
+            'block-close-context',
+            'Completion inferred the matching block close tag from the active open block kind.',
+          ),
+        ),
         detail: `Close ${normalizedKind} block`,
         insertText: `/${normalizedKind}`,
         preselect: true,
@@ -1083,9 +1864,7 @@ export class CompletionProvider {
     const variables = symbolTable.getAllVariables();
 
     const matchingVars = variables.filter(
-      (v) =>
-        v.kind === kind &&
-        v.name.toLowerCase().startsWith(prefix.toLowerCase()),
+      (v) => v.kind === kind && v.name.toLowerCase().startsWith(prefix.toLowerCase()),
     );
 
     const localCompletions = matchingVars.map(
@@ -1122,7 +1901,12 @@ export class CompletionProvider {
               : undefined,
             kind === 'chat' ? (workspaceFreshness ?? undefined) : undefined,
           ),
-          detail: kind === 'chat' ? 'Chat variable' : kind === 'temp' ? 'Temp variable' : 'Global variable',
+          detail:
+            kind === 'chat'
+              ? 'Chat variable'
+              : kind === 'temp'
+                ? 'Temp variable'
+                : 'Global variable',
           documentation: {
             kind: 'markdown',
             value: `Variable **${v.name}** (${v.kind})\n\n- Definitions: ${v.definitionRanges.length}\n- References: ${v.references.length}`,
@@ -1135,13 +1919,16 @@ export class CompletionProvider {
       return localCompletions;
     }
 
-    const workspaceCompletions = this.buildWorkspaceChatVariableCompletions({
-      existingLabels: new Set(localCompletions.map((completion) => completion.label)),
-      insertBareName: true,
-      labelPrefix: '',
-      prefix,
-      usage: 'macro-argument',
-    }, workspaceFreshness);
+    const workspaceCompletions = this.buildWorkspaceChatVariableCompletions(
+      {
+        existingLabels: new Set(localCompletions.map((completion) => completion.label)),
+        insertBareName: true,
+        labelPrefix: '',
+        prefix,
+        usage: 'macro-argument',
+      },
+      workspaceFreshness,
+    );
 
     return [...localCompletions, ...workspaceCompletions];
   }
@@ -1153,13 +1940,16 @@ export class CompletionProvider {
    * @param options - prefix, insertion mode, local dedupe 정보
    * @returns workspace chat variable completion item 배열
    */
-  private buildWorkspaceChatVariableCompletions(options: {
-    existingLabels: ReadonlySet<string>;
-    insertBareName: boolean;
-    labelPrefix: '' | '$';
-    prefix: string;
-    usage: 'macro-argument' | 'calc-expression';
-  }, workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null): CompletionItem[] {
+  private buildWorkspaceChatVariableCompletions(
+    options: {
+      existingLabels: ReadonlySet<string>;
+      insertBareName: boolean;
+      labelPrefix: '' | '$';
+      prefix: string;
+      usage: 'macro-argument' | 'calc-expression';
+    },
+    workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null,
+  ): CompletionItem[] {
     if (!this.variableFlowService || workspaceFreshness?.freshness === 'stale') {
       return [];
     }
@@ -1176,65 +1966,66 @@ export class CompletionProvider {
       }
 
       const query = this.variableFlowService?.queryVariable(variableName);
-      const defaultDefinitions = this.variableFlowService?.getDefaultVariableDefinitions(variableName) ?? [];
+      const defaultDefinitions =
+        this.variableFlowService?.getDefaultVariableDefinitions(variableName) ?? [];
       if ((!query || query.writers.length === 0) && defaultDefinitions.length === 0) {
         return [];
       }
 
       const readerCount = query?.readers.length ?? 0;
       const writerCount = (query?.writers.length ?? 0) + defaultDefinitions.length;
-        const label = `${options.labelPrefix}${variableName}`;
-        const detail =
-          options.usage === 'calc-expression'
-            ? 'Workspace chat variable for calc expression'
-            : 'Workspace chat variable';
-        const documentation =
-          options.usage === 'calc-expression'
-            ? [
-                `**Workspace chat variable:** \`${variableName}\``,
-                '',
-                '- Source: workspace persistent chat-variable graph',
-                '- Usage: append after fragment-local `$var` candidates inside the shared CBS expression sublanguage.',
-                `- Workspace readers: ${readerCount}`,
-                `- Workspace writers: ${writerCount}`,
-              ].join('\n')
-            : [
-                `**Workspace chat variable:** \`${variableName}\``,
-                '',
-                '- Source: workspace persistent chat-variable graph',
-                '- Usage: append after fragment-local `getvar` / `setvar` candidates so local symbols stay first.',
-                `- Workspace readers: ${readerCount}`,
-                `- Workspace writers: ${writerCount}`,
-              ].join('\n');
+      const label = `${options.labelPrefix}${variableName}`;
+      const detail =
+        options.usage === 'calc-expression'
+          ? 'Workspace chat variable for calc expression'
+          : 'Workspace chat variable';
+      const documentation =
+        options.usage === 'calc-expression'
+          ? [
+              `**Workspace chat variable:** \`${variableName}\``,
+              '',
+              '- Source: workspace persistent chat-variable graph',
+              '- Usage: append after fragment-local `$var` candidates inside the shared CBS expression sublanguage.',
+              `- Workspace readers: ${readerCount}`,
+              `- Workspace writers: ${writerCount}`,
+            ].join('\n')
+          : [
+              `**Workspace chat variable:** \`${variableName}\``,
+              '',
+              '- Source: workspace persistent chat-variable graph',
+              '- Usage: append after fragment-local `getvar` / `setvar` candidates so local symbols stay first.',
+              `- Workspace readers: ${readerCount}`,
+              `- Workspace writers: ${writerCount}`,
+            ].join('\n');
 
-        return {
-          label,
-          kind: CompletionItemKind.Variable,
-          data: this.createCategoryData(
-            {
-              category: 'variable',
-              kind: 'chat-variable',
-            },
-            this.createScopeExplanation(
-              options.usage === 'calc-expression'
-                ? 'workspace-chat-variable-graph:calc-expression'
-                : 'workspace-chat-variable-graph:macro-argument',
-              options.usage === 'calc-expression'
-                ? 'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local `$var` symbols.'
-                : 'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local chat-variable symbols.',
-            ),
-            undefined,
-            workspaceFreshness ?? undefined,
-          ),
-          detail,
-          documentation: {
-            kind: 'markdown',
-            value: documentation,
+      return {
+        label,
+        kind: CompletionItemKind.Variable,
+        data: this.createCategoryData(
+          {
+            category: 'variable',
+            kind: 'chat-variable',
           },
-          insertText: options.insertBareName ? variableName : label,
-          sortText: `zzzz-workspace-${variableName}`,
-        } satisfies CompletionItem;
-      });
+          this.createScopeExplanation(
+            options.usage === 'calc-expression'
+              ? 'workspace-chat-variable-graph:calc-expression'
+              : 'workspace-chat-variable-graph:macro-argument',
+            options.usage === 'calc-expression'
+              ? 'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local `$var` symbols.'
+              : 'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local chat-variable symbols.',
+          ),
+          undefined,
+          workspaceFreshness ?? undefined,
+        ),
+        detail,
+        documentation: {
+          kind: 'markdown',
+          value: documentation,
+        },
+        insertText: options.insertBareName ? variableName : label,
+        sortText: `zzzz-workspace-${variableName}`,
+      } satisfies CompletionItem;
+    });
   }
 
   private buildFunctionCompletions(
@@ -1266,13 +2057,16 @@ export class CompletionProvider {
     return functions.map((symbol) => ({
       label: symbol.name,
       kind: CompletionItemKind.Function,
-      data: this.createCategoryData({
-        category: 'contextual-token',
-        kind: 'local-function',
-      }, this.createContextualExplanation(
-        'local-function-context',
-        'Completion inferred a local #func target from the first call:: slot context.',
-      )),
+      data: this.createCategoryData(
+        {
+          category: 'contextual-token',
+          kind: 'local-function',
+        },
+        this.createContextualExplanation(
+          'local-function-context',
+          'Completion inferred a local #func target from the first call:: slot context.',
+        ),
+      ),
       detail: 'Local #func declaration for the first call:: slot',
       documentation: {
         kind: 'markdown',
@@ -1314,32 +2108,35 @@ export class CompletionProvider {
         const parameterDeclaration = declaration.parameterDeclarations[index];
 
         return {
-        label: index.toString(),
-        kind: CompletionItemKind.Constant,
-        data: this.createCategoryData({
-          category: 'contextual-token',
-          kind: 'argument-index',
-        }, this.createContextualExplanation(
-          'active-local-function-context',
-          'Completion inferred numbered arg:: slots from the active local #func / call:: context.',
-        )),
-        detail: `Numbered argument reference for \`${parameter}\` in the active local #func / {{call::...}} context`,
-        documentation: {
-          kind: 'markdown',
-          value: [
-            `**Numbered argument reference: arg::${index}**`,
-            '',
-            `- Local function: \`${declaration.name}\``,
-            `- Parameter slot: ${index}`,
-            `- Parameter name: \`${parameter}\``,
-            parameterDeclaration
-              ? `- Parameter definition: line ${parameterDeclaration.range.start.line + 1}, character ${parameterDeclaration.range.start.character + 1}`
-              : '- Parameter definition: declared in the active local function header',
-            `- Meaning: references the ${CbsLspTextHelper.formatOrdinal(index + 1)} call argument from the active local \`#func\` / \`{{call::...}}\` context.`,
-          ].join('\n'),
-        },
-        insertText: index.toString(),
-      } satisfies CompletionItem;
+          label: index.toString(),
+          kind: CompletionItemKind.Constant,
+          data: this.createCategoryData(
+            {
+              category: 'contextual-token',
+              kind: 'argument-index',
+            },
+            this.createContextualExplanation(
+              'active-local-function-context',
+              'Completion inferred numbered arg:: slots from the active local #func / call:: context.',
+            ),
+          ),
+          detail: `Numbered argument reference for \`${parameter}\` in the active local #func / {{call::...}} context`,
+          documentation: {
+            kind: 'markdown',
+            value: [
+              `**Numbered argument reference: arg::${index}**`,
+              '',
+              `- Local function: \`${declaration.name}\``,
+              `- Parameter slot: ${index}`,
+              `- Parameter name: \`${parameter}\``,
+              parameterDeclaration
+                ? `- Parameter definition: line ${parameterDeclaration.range.start.line + 1}, character ${parameterDeclaration.range.start.character + 1}`
+                : '- Parameter definition: declared in the active local function header',
+              `- Meaning: references the ${CbsLspTextHelper.formatOrdinal(index + 1)} call argument from the active local \`#func\` / \`{{call::...}}\` context.`,
+            ].join('\n'),
+          },
+          insertText: index.toString(),
+        } satisfies CompletionItem;
       });
   }
 
@@ -1359,13 +2156,16 @@ export class CompletionProvider {
       .map((binding, index) => ({
         label: binding.bindingName,
         kind: CompletionItemKind.Variable,
-        data: this.createCategoryData({
-          category: 'contextual-token',
-          kind: 'loop-alias',
-        }, this.createScopeExplanation(
-          'visible-loop-bindings',
-          'Completion resolved a visible #each loop alias from scope analysis rather than general variables.',
-        )),
+        data: this.createCategoryData(
+          {
+            category: 'contextual-token',
+            kind: 'loop-alias',
+          },
+          this.createScopeExplanation(
+            'visible-loop-bindings',
+            'Completion resolved a visible #each loop alias from scope analysis rather than general variables.',
+          ),
+        ),
         detail: index === 0 ? 'Current #each loop alias' : 'Outer #each loop alias',
         documentation: {
           kind: 'markdown',
@@ -1393,13 +2193,16 @@ export class CompletionProvider {
     return filtered.map((k) => ({
       label: k.name,
       kind: CompletionItemKind.Property,
-      data: this.createCategoryData({
-        category: 'metadata-key',
-        kind: 'metadata-property',
-      }, this.createContextualExplanation(
-        'metadata-key-catalog',
-        'Completion matched a key from the static CBS metadata property catalog.',
-      )),
+      data: this.createCategoryData(
+        {
+          category: 'metadata-key',
+          kind: 'metadata-property',
+        },
+        this.createContextualExplanation(
+          'metadata-key-catalog',
+          'Completion matched a key from the static CBS metadata property catalog.',
+        ),
+      ),
       detail: 'Metadata key',
       documentation: {
         kind: 'markdown',
@@ -1417,13 +2220,16 @@ export class CompletionProvider {
     return filtered.map((op) => ({
       label: op.name,
       kind: CompletionItemKind.Operator,
-      data: this.createCategoryData({
-        category: 'contextual-token',
-        kind: 'when-operator',
-      }, this.createContextualExplanation(
-        'when-operator-context',
-        'Completion inferred a #when operator position from the current block-header operator slot.',
-      )),
+      data: this.createCategoryData(
+        {
+          category: 'contextual-token',
+          kind: 'when-operator',
+        },
+        this.createContextualExplanation(
+          'when-operator-context',
+          'Completion inferred a #when operator position from the current block-header operator slot.',
+        ),
+      ),
       detail: 'When operator',
       documentation: {
         kind: 'markdown',
@@ -1514,8 +2320,14 @@ export class CompletionProvider {
     explanation?: AgentMetadataExplanationContract,
     availability?: AgentMetadataAvailabilityContract,
     workspace?: AgentMetadataWorkspaceSnapshotContract,
-  ) {
-    return createAgentMetadataEnvelope(category, explanation, availability, workspace);
+  ): CompletionItemDataEnvelope {
+    const envelope = createAgentMetadataEnvelope(category, explanation, availability, workspace);
+    return {
+      ...envelope,
+      cbs: {
+        ...envelope.cbs,
+      },
+    };
   }
 
   private getWorkspaceFreshness(
@@ -1549,10 +2361,7 @@ export class CompletionProvider {
     return createAgentMetadataExplanation('contextual-inference', source, detail);
   }
 
-  private createScopeExplanation(
-    source: string,
-    detail: string,
-  ): AgentMetadataExplanationContract {
+  private createScopeExplanation(source: string, detail: string): AgentMetadataExplanationContract {
     return createAgentMetadataExplanation('scope-analysis', source, detail);
   }
 
@@ -1577,9 +2386,11 @@ export class CompletionProvider {
   private getBuiltinExplanation(fn: CBSBuiltinFunction): AgentMetadataExplanationContract {
     let detail: string;
     if (isContextualBuiltin(fn)) {
-      detail = 'Completion surfaced this item from the builtin registry as a contextual CBS syntax entry.';
+      detail =
+        'Completion surfaced this item from the builtin registry as a contextual CBS syntax entry.';
     } else if (isDocOnlyBuiltin(fn)) {
-      detail = 'Completion surfaced this item from the builtin registry as a documentation-only CBS syntax entry.';
+      detail =
+        'Completion surfaced this item from the builtin registry as a documentation-only CBS syntax entry.';
     } else {
       detail = 'Completion surfaced this item from the builtin registry as a callable CBS builtin.';
     }
