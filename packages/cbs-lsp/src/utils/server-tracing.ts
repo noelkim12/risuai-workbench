@@ -3,6 +3,8 @@
  * @file packages/cbs-lsp/src/server-tracing.ts
  */
 
+import { appendFileSync, mkdirSync } from 'node:fs';
+import path from 'node:path';
 import type { Connection } from 'vscode-languageserver/node';
 
 import type { CbsLspLogLevel } from '../config/runtime-config';
@@ -63,6 +65,18 @@ const LOG_LEVEL_RANK: Record<CbsLspLogLevel, number> = {
 };
 
 let currentServerLogLevel: CbsLspLogLevel = 'debug';
+let currentTimelineLogPath: string | null = null;
+
+/**
+ * configureServerTimelineLog 함수.
+ * request/feature 흐름을 JSONL 파일로 남길 durable timeline 경로를 설정함.
+ *
+ * @param filePath - timeline JSONL 파일 경로, 비어 있으면 파일 로그 비활성화
+ */
+export function configureServerTimelineLog(filePath: string | null | undefined): void {
+  const normalized = typeof filePath === 'string' ? filePath.trim() : '';
+  currentTimelineLogPath = normalized.length > 0 ? normalized : null;
+}
 
 /**
  * configureServerTracing 함수.
@@ -72,6 +86,45 @@ let currentServerLogLevel: CbsLspLogLevel = 'debug';
  */
 export function configureServerTracing(logLevel: CbsLspLogLevel): void {
   currentServerLogLevel = logLevel;
+}
+
+/**
+ * appendTimelineEntry 함수.
+ * Output/tracer와 같은 feature event를 append-only JSONL timeline에 기록함.
+ *
+ * @param level - timeline event level
+ * @param feature - 기능 이름
+ * @param phase - feature 내부 phase 이름
+ * @param details - 선택적 상세 정보
+ */
+function appendTimelineEntry(
+  level: 'trace' | 'info' | 'warn',
+  feature: CbsLspFeatureName,
+  phase: string,
+  details?: FeatureTraceDetails,
+): void {
+  if (!currentTimelineLogPath) {
+    return;
+  }
+
+  try {
+    mkdirSync(path.dirname(currentTimelineLogPath), { recursive: true });
+    appendFileSync(
+      currentTimelineLogPath,
+      `${JSON.stringify({
+        ts: new Date().toISOString(),
+        pid: process.pid,
+        level,
+        feature,
+        phase,
+        details: details ?? {},
+      })}\n`,
+      'utf8',
+    );
+  } catch (error) {
+    void error;
+    // Timeline logging must never break LSP request handling.
+  }
 }
 
 /**
@@ -151,6 +204,8 @@ export function traceFeature(
   phase: string,
   details?: FeatureTraceDetails,
 ): void {
+  appendTimelineEntry('trace', feature, phase, details);
+
   if (!shouldEmitTrace()) {
     return;
   }
@@ -261,6 +316,8 @@ export function logFeature(
   message: string,
   details?: FeatureTraceDetails,
 ): void {
+  appendTimelineEntry('info', feature, message, details);
+
   if (!shouldEmitLog()) {
     return;
   }
@@ -285,6 +342,8 @@ export function warnFeature(
   message: string,
   details?: FeatureTraceDetails,
 ): void {
+  appendTimelineEntry('warn', feature, message, details);
+
   if (!shouldEmitWarn()) {
     return;
   }

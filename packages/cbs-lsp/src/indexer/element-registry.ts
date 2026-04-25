@@ -16,10 +16,11 @@ import {
 
 import { createCbsAgentProtocolMarker, type CbsAgentProtocolMarker } from '../core';
 
-import type {
-  WorkspaceFileArtifactClass,
-  WorkspaceScanFile,
-  WorkspaceScanResult,
+import {
+  MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH,
+  type WorkspaceFileArtifactClass,
+  type WorkspaceScanFile,
+  type WorkspaceScanResult,
 } from './file-scanner';
 
 export type ElementRegistryFileAnalysisKind =
@@ -329,6 +330,13 @@ function buildFragmentElement(
 function buildLuaFileRecord(file: WorkspaceScanFile): BuiltRegistryFileRecord {
   try {
     const source = file.fragmentMap.fragments[0]?.content ?? '';
+    if (file.indexTextTruncated) {
+      return buildSkippedLuaFileRecord(
+        file,
+        `Lua analysis skipped because source exceeds ${MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH} characters.`,
+      );
+    }
+
     const luaArtifact = analyzeLuaSource({
       filePath: file.absolutePath,
       source,
@@ -431,6 +439,39 @@ function buildLuaFileRecord(file: WorkspaceScanFile): BuiltRegistryFileRecord {
       luaArtifact: null,
     };
   }
+}
+
+/**
+ * buildSkippedLuaFileRecord 함수.
+ * 과대 `.risulua`를 workspace graph 분석에서 제외하되 file record는 유지함.
+ *
+ * @param file - 원본 scan file
+ * @param reason - 분석을 건너뛴 이유
+ * @returns graph seed 없는 lua registry record
+ */
+function buildSkippedLuaFileRecord(file: WorkspaceScanFile, reason: string): BuiltRegistryFileRecord {
+  return {
+    record: {
+      uri: file.uri,
+      absolutePath: file.absolutePath,
+      relativePath: file.relativePath,
+      text: file.text,
+      artifact: file.artifact,
+      artifactClass: file.artifactClass,
+      cbsBearingArtifact: file.cbsBearingArtifact,
+      hasCbsFragments: file.hasCbsFragments,
+      fragmentCount: file.fragmentCount,
+      fragmentSections: file.fragmentSections,
+      analysisKind: 'lua-file',
+      elementIds: [],
+      graphSeedCount: 0,
+      analysisError: reason,
+    },
+    elements: [],
+    graphSeeds: [],
+    elementCbsData: [],
+    luaArtifact: null,
+  };
 }
 
 /**

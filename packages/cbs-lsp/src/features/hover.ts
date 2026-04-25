@@ -49,6 +49,7 @@ import type {
 } from '../services';
 import { positionToOffset } from '../utils/position';
 import { isContextualBuiltin, isDocOnlyBuiltin } from 'risu-workbench-core';
+import { resolveVariablePosition } from './local-first-contract';
 
 export type HoverRequestResolver = (
   params: TextDocumentPositionParams,
@@ -516,7 +517,8 @@ export class HoverProvider {
     const workspaceFreshness = this.getWorkspaceFreshness(request);
     const workspaceVariableQuery =
       this.variableFlowService && workspaceFreshness?.freshness !== 'stale'
-        ? this.variableFlowService.queryAt(
+        ? this.resolveWorkspaceVariableQuery(
+            lookup,
             request.uri,
             positionToOffset(request.text, params.position),
           )
@@ -557,6 +559,33 @@ export class HoverProvider {
       data: hoverTarget.data,
       range: range ?? undefined,
     };
+  }
+
+  /**
+   * resolveWorkspaceVariableQuery 메서드.
+   * Layer 1 occurrence가 없는 `.risulua` CBS 인자도 이름 기반 query로 보강함.
+   *
+   * @param lookup - 현재 cursor의 fragment lookup 결과
+   * @param uri - 현재 host document URI
+   * @param hostOffset - 현재 host document offset
+   * @returns workspace variable query 결과 또는 null
+   */
+  private resolveWorkspaceVariableQuery(
+    lookup: FragmentCursorLookupResult,
+    uri: string,
+    hostOffset: number,
+  ): VariableFlowQueryResult | null {
+    const positionQuery = this.variableFlowService?.queryAt(uri, hostOffset) ?? null;
+    if (positionQuery) {
+      return positionQuery;
+    }
+
+    const variablePosition = resolveVariablePosition(lookup);
+    if (!variablePosition || variablePosition.kind !== 'chat') {
+      return null;
+    }
+
+    return this.variableFlowService?.queryVariable(variablePosition.variableName) ?? null;
   }
 
   /**

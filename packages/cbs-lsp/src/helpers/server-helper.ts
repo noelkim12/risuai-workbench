@@ -67,6 +67,7 @@ import { SemanticTokensProvider } from '../features/semanticTokens';
 import { SignatureHelpProvider } from '../features/signature';
 import { RequestHandlerRunner } from '../handlers/RequestHandlerRunner';
 import { CbsLspPathHelper } from './path-helper';
+import { MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH } from '../indexer';
 import { shouldRouteDocumentToLuaLs } from '../providers/lua/lualsDocuments';
 import {
   buildLuaStateHoverOverlayMarkdown,
@@ -74,7 +75,7 @@ import {
   mergeLuaHoverResponse,
   mergeLuaCompletionResponse,
 } from '../providers/lua/responseMerger';
-import { traceFeatureRequest, traceFeatureResult } from '../utils/server-tracing';
+import { logFeature, traceFeatureRequest, traceFeatureResult } from '../utils/server-tracing';
 import { VariableFlowService, type WorkspaceSnapshotState } from '../services';
 
 export interface ServerFeatureRegistrarProviders {
@@ -116,6 +117,17 @@ export interface ServerFeatureRegistrarContext {
  */
 function shouldSkipRequest(cancellationToken: CancellationToken | undefined): boolean {
   return cancellationToken?.isCancellationRequested ?? false;
+}
+
+/**
+ * shouldSkipLuaLsProxyForRequest 함수.
+ * oversized `.risulua` request에서 LuaLS proxy timeout 경로를 막음.
+ *
+ * @param request - 현재 문서의 fragment analysis request
+ * @returns LuaLS proxy 호출을 건너뛰어야 하면 true
+ */
+export function shouldSkipLuaLsProxyForRequest(request: FragmentAnalysisRequest | null): boolean {
+  return (request?.text.length ?? 0) > MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH;
 }
 
 /**
@@ -487,8 +499,17 @@ export class ServerFeatureRegistrar {
   private registerCompletionHandler(): void {
     this.connection.onCompletion((params: CompletionParams, cancellationToken) => {
       const filePath = CbsLspPathHelper.getFilePathFromUri(params.textDocument.uri);
+      const routedToLuaLs = shouldRouteDocumentToLuaLs(filePath);
+      const routingRequest = routedToLuaLs ? this.resolveRequest(params.textDocument.uri) : null;
+      const skipLuaLsProxy = routedToLuaLs && shouldSkipLuaLsProxyForRequest(routingRequest);
+      logFeature(this.connection, 'completion', 'start', {
+        uri: params.textDocument.uri,
+        routedToLuaLs,
+        luaProxySkipped: skipLuaLsProxy,
+      });
 
-      if (shouldRouteDocumentToLuaLs(filePath)) {
+      if (routedToLuaLs) {
+        let luaCompletionDurationMs = 0;
         return this.requestRunner.runAsync<
           CompletionParams,
           CompletionItem[] | CompletionList
@@ -497,11 +518,12 @@ export class ServerFeatureRegistrar {
           feature: 'completion',
           getUri: (requestParams) => requestParams.textDocument.uri,
           params,
+          recoverOnError: true,
           run: async () => {
             const startTime = performance.now();
             const cbsCompletion = this.provideCbsCompletionItems(params, cancellationToken);
             const cbsDurationMs = Math.round(performance.now() - startTime);
-            const workspaceRequest = this.resolveWorkspaceRequest(params.textDocument.uri);
+            const workspaceRequest = skipLuaLsProxy ? null : this.resolveWorkspaceRequest(params.textDocument.uri);
             const workspaceVariableFlowService = this.resolveWorkspaceVariableFlowContextByUri(
               params.textDocument.uri,
             )?.variableFlowService ?? null;
@@ -511,11 +533,27 @@ export class ServerFeatureRegistrar {
               count: cbsCompletion.length,
               source: 'cbsFallback',
             });
-            traceFeatureRequest(this.connection, 'luaProxy', 'completion-start', {
+            logFeature(this.connection, 'completion', 'build', {
               uri: params.textDocument.uri,
-              companionStatus: this.luaLsProxy.getRuntime().status,
+              durationMs: cbsDurationMs,
+              count: cbsCompletion.length,
+              source: 'cbsFallback',
             });
-            const luaCompletion = await this.luaLsProxy.provideCompletion(params, cancellationToken);
+            let luaCompletion: CompletionItem[] | CompletionList = [];
+            if (skipLuaLsProxy) {
+              traceFeatureResult(this.connection, 'luaProxy', 'completion-skipped', {
+                uri: params.textDocument.uri,
+                reason: 'oversized',
+              });
+            } else {
+              traceFeatureRequest(this.connection, 'luaProxy', 'completion-start', {
+                uri: params.textDocument.uri,
+                companionStatus: this.luaLsProxy.getRuntime().status,
+              });
+              const luaCompletionStartTime = performance.now();
+              luaCompletion = await this.luaLsProxy.provideCompletion(params, cancellationToken);
+              luaCompletionDurationMs = Math.round(performance.now() - luaCompletionStartTime);
+            }
             const overlay = buildLuaStateNameOverlayCompletions({
               params,
               request: workspaceRequest,
@@ -533,10 +571,18 @@ export class ServerFeatureRegistrar {
               uri: params.textDocument.uri,
               companionStatus: this.luaLsProxy.getRuntime().status,
               count,
+              durationMs: luaCompletionDurationMs,
             });
-            return {
+            logFeature(this.connection, 'luaProxy', 'completion-end', {
+              uri: params.textDocument.uri,
+              companionStatus: this.luaLsProxy.getRuntime().status,
               count,
-              source: 'luaProxy',
+              durationMs: luaCompletionDurationMs,
+            });
+              return {
+                count,
+                durationMs: luaCompletionDurationMs,
+              source: skipLuaLsProxy ? 'luaProxySkipped' : 'luaProxy',
             };
           },
           token: cancellationToken,
@@ -549,11 +595,17 @@ export class ServerFeatureRegistrar {
         feature: 'completion',
         getUri: (requestParams) => requestParams.textDocument.uri,
         params,
+        recoverOnError: true,
         run: () => {
           const startTime = performance.now();
           const result = this.provideCbsCompletionItems(params, cancellationToken);
           completionDurationMs = Math.round(performance.now() - startTime);
           traceFeatureResult(this.connection, 'completion', 'build', {
+            uri: params.textDocument.uri,
+            durationMs: completionDurationMs,
+            count: result.length,
+          });
+          logFeature(this.connection, 'completion', 'build', {
             uri: params.textDocument.uri,
             durationMs: completionDurationMs,
             count: result.length,
@@ -784,20 +836,47 @@ export class ServerFeatureRegistrar {
   private registerHoverHandler(): void {
     this.connection.onHover((params: HoverParams, cancellationToken) => {
       const filePath = CbsLspPathHelper.getFilePathFromUri(params.textDocument.uri);
+      const routedToLuaLs = shouldRouteDocumentToLuaLs(filePath);
+      const routingRequest = routedToLuaLs ? this.resolveRequest(params.textDocument.uri) : null;
+      const skipLuaLsProxy = routedToLuaLs && shouldSkipLuaLsProxyForRequest(routingRequest);
       traceFeatureRequest(this.connection, 'hover', 'start', {
         uri: params.textDocument.uri,
         cancelled: shouldSkipRequest(cancellationToken),
+        luaProxySkipped: skipLuaLsProxy,
       });
       if (shouldSkipRequest(cancellationToken)) {
         traceFeatureResult(this.connection, 'hover', 'cancelled', { uri: params.textDocument.uri });
         return null;
       }
 
-      if (shouldRouteDocumentToLuaLs(filePath)) {
+      if (routedToLuaLs) {
         const cbsHover = this.createHoverProvider(params.textDocument.uri).provide(
           params,
           cancellationToken,
         );
+
+        if (cbsHover) {
+          traceFeatureResult(this.connection, 'hover', 'end', {
+            uri: params.textDocument.uri,
+            hasResult: true,
+            source: 'cbsFallback',
+          });
+          return cbsHover;
+        }
+
+        if (skipLuaLsProxy) {
+          traceFeatureResult(this.connection, 'luaProxy', 'hover-skipped', {
+            uri: params.textDocument.uri,
+            reason: 'oversized',
+          });
+          traceFeatureResult(this.connection, 'hover', 'end', {
+            uri: params.textDocument.uri,
+            hasResult: false,
+            source: 'luaProxySkipped',
+          });
+          return null;
+        }
+
         traceFeatureRequest(this.connection, 'luaProxy', 'hover-start', {
           uri: params.textDocument.uri,
           companionStatus: this.luaLsProxy.getRuntime().status,
@@ -824,7 +903,7 @@ export class ServerFeatureRegistrar {
           traceFeatureResult(this.connection, 'hover', 'end', {
             uri: params.textDocument.uri,
             hasResult: mergedHover !== null,
-            source: cbsHover ? 'luaProxy+cbsFallback' : 'luaProxy',
+            source: 'luaProxy',
           });
           return mergedHover;
         });

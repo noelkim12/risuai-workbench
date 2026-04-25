@@ -23,6 +23,7 @@ import {
   type LuaLsTransportNotificationHandler,
   type LuaLsTransport,
 } from '../../src/providers/lua/lualsProcess';
+import { MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH } from '../../src/indexer';
 import type { LuaLsRoutedDocument } from '../../src/providers/lua/lualsDocuments';
 import {
   createLuaLsShadowDocumentUri,
@@ -371,6 +372,54 @@ describe('LuaLsProcessManager', () => {
       },
     });
     expect(fakeTransport.notifications[4]).toEqual({
+      method: 'textDocument/didClose',
+      params: {
+        textDocument: {
+          uri: shadowTransportUri,
+        },
+      },
+    });
+  });
+
+  it('closes an existing mirror instead of writing oversized Lua text to the shadow workspace', async () => {
+    const fakeChild = new FakeLuaLsChildProcess();
+    const fakeTransport = new FakeLuaLsTransport(async (method) => {
+      if (method === 'initialize') {
+        return { capabilities: {} };
+      }
+
+      throw new Error(`Unexpected request: ${method}`);
+    });
+    const manager = createLuaLsProcessManager({
+      createShadowWorkspace: () => createLuaLsShadowWorkspace(SHADOW_ROOT),
+      createTransport: {
+        create: () => fakeTransport,
+      },
+      resolveExecutablePath: () => '/mock/bin/lua-language-server',
+      spawnProcess: () => fakeChild as unknown as LuaLsSpawnedProcess,
+    });
+    const openedDocument = createLuaLsRoutedDocument();
+    const oversizedDocument = createLuaLsRoutedDocument({
+      text: 'x'.repeat(MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH + 1),
+      version: 2,
+    });
+    const shadowTransportUri = createLuaLsShadowDocumentUri(
+      openedDocument.sourceFilePath,
+      SHADOW_ROOT,
+    );
+
+    manager.prepareForInitialize({ rootPath: '/workspace' });
+    manager.syncDocument(openedDocument);
+    await manager.start({ rootPath: '/workspace' });
+    manager.syncDocument(oversizedDocument);
+
+    expect(fakeTransport.notifications.map((entry) => entry.method)).toEqual([
+      'initialized',
+      'workspace/didChangeConfiguration',
+      'textDocument/didOpen',
+      'textDocument/didClose',
+    ]);
+    expect(fakeTransport.notifications[3]).toEqual({
       method: 'textDocument/didClose',
       params: {
         textDocument: {

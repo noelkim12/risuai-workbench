@@ -383,6 +383,22 @@ describe('CompletionProvider', () => {
       expect(completions.find((item) => item.label === 'each-block')?.filterText).toBe('{{#each');
     });
 
+    it('offers bare {{ completions inside .risuregex IN fragments without full analysis', () => {
+      const baseRequest = createFixtureRequest(getFixtureCorpusEntry('regex-block-header'));
+      const text = baseRequest.text.replace('{{#when::score::is::10}}win{{/}}', '{{');
+      const request = { ...baseRequest, text };
+      const service = new FragmentAnalysisService();
+      const locateSpy = vi.spyOn(service, 'locatePosition');
+      const provider = createProvider(service, request);
+      const completions = provider.provide(
+        createParams(request, positionAt(text, '{{', 2)),
+      );
+
+      expect(completions.length).toBeGreaterThan(0);
+      expectCompletionLabels(completions, 'user', 'char', 'setvar', 'getvar', '#when', '#each');
+      expect(locateSpy).not.toHaveBeenCalled();
+    });
+
     it('applies no-argument builtin completions as closed full macro snippets', () => {
       const request = createInlineCompletionRequest('{{us}}');
       const provider = createProvider(new FragmentAnalysisService(), request);
@@ -1469,7 +1485,7 @@ describe('CompletionProvider', () => {
       });
     });
 
-    it('queries each matching workspace chat-variable candidate only once', () => {
+    it('builds workspace chat-variable candidates from cached summaries without per-candidate queries', () => {
       const entry = getFixtureCorpusEntry('lorebook-setvar-macro');
       const request = createFixtureRequest(entry);
       const modifiedText = entry.text.replace('}}', '}}{{getvar::sh}}');
@@ -1502,6 +1518,29 @@ describe('CompletionProvider', () => {
         modifiedRequest,
         createVariableFlowServiceStub({
           getAllVariableNames: () => ['shared', 'shadow', 'mood'],
+          getVariableCompletionSummaries: () => [
+            {
+              name: 'shared',
+              readerCount: 0,
+              writerCount: 1,
+              defaultDefinitionCount: 0,
+              hasWritableSource: true,
+            },
+            {
+              name: 'shadow',
+              readerCount: 0,
+              writerCount: 0,
+              defaultDefinitionCount: 0,
+              hasWritableSource: false,
+            },
+            {
+              name: 'mood',
+              readerCount: 0,
+              writerCount: 1,
+              defaultDefinitionCount: 0,
+              hasWritableSource: true,
+            },
+          ],
           queryVariable,
         }),
       );
@@ -1517,9 +1556,7 @@ describe('CompletionProvider', () => {
       );
 
       expectCompletionLabels(completions, 'shared');
-      expect(queryVariable).toHaveBeenCalledTimes(2);
-      expect(queryVariable).toHaveBeenCalledWith('shared');
-      expect(queryVariable).toHaveBeenCalledWith('shadow');
+      expect(queryVariable).not.toHaveBeenCalled();
     });
 
     it('keeps only fragment-local chat candidates when the workspace snapshot is stale', () => {

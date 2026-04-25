@@ -40,7 +40,7 @@ import {
   type CompletionTriggerContext,
 } from '../core';
 import { collectVisibleLoopBindingsFromNodePath } from '../analyzer/scopeAnalyzer';
-import type { VariableFlowService, WorkspaceSnapshotState } from '../services';
+import type { VariableCompletionSummary, VariableFlowService, WorkspaceSnapshotState } from '../services';
 import { CbsLspTextHelper } from '../helpers/text-helper';
 import { isRequestCancelled } from '../utils/request-cancellation';
 
@@ -1960,47 +1960,25 @@ export class CompletionProvider {
 
     const normalizedPrefix = options.prefix.toLowerCase();
 
-    return this.variableFlowService.getAllVariableNames().flatMap((variableName) => {
-      if (!variableName.toLowerCase().startsWith(normalizedPrefix)) {
+    return this.variableFlowService.getVariableCompletionSummaries().flatMap((summary) => {
+      if (!summary.name.toLowerCase().startsWith(normalizedPrefix)) {
         return [];
       }
 
-      if (options.existingLabels.has(`${options.labelPrefix}${variableName}`)) {
+      if (options.existingLabels.has(`${options.labelPrefix}${summary.name}`)) {
         return [];
       }
 
-      const query = this.variableFlowService?.queryVariable(variableName);
-      const defaultDefinitions =
-        this.variableFlowService?.getDefaultVariableDefinitions(variableName) ?? [];
-      if ((!query || query.writers.length === 0) && defaultDefinitions.length === 0) {
+      if (!summary.hasWritableSource) {
         return [];
       }
 
-      const readerCount = query?.readers.length ?? 0;
-      const writerCount = (query?.writers.length ?? 0) + defaultDefinitions.length;
-      const label = `${options.labelPrefix}${variableName}`;
+      const label = `${options.labelPrefix}${summary.name}`;
       const detail =
         options.usage === 'calc-expression'
           ? 'Workspace chat variable for calc expression'
           : 'Workspace chat variable';
-      const documentation =
-        options.usage === 'calc-expression'
-          ? [
-              `**Workspace chat variable:** \`${variableName}\``,
-              '',
-              '- Source: workspace persistent chat-variable graph',
-              '- Usage: append after fragment-local `$var` candidates inside the shared CBS expression sublanguage.',
-              `- Workspace readers: ${readerCount}`,
-              `- Workspace writers: ${writerCount}`,
-            ].join('\n')
-          : [
-              `**Workspace chat variable:** \`${variableName}\``,
-              '',
-              '- Source: workspace persistent chat-variable graph',
-              '- Usage: append after fragment-local `getvar` / `setvar` candidates so local symbols stay first.',
-              `- Workspace readers: ${readerCount}`,
-              `- Workspace writers: ${writerCount}`,
-            ].join('\n');
+      const documentation = this.formatWorkspaceVariableDocumentation(summary, options.usage);
 
       return {
         label,
@@ -2026,10 +2004,42 @@ export class CompletionProvider {
           kind: 'markdown',
           value: documentation,
         },
-        insertText: options.insertBareName ? variableName : label,
-        sortText: `zzzz-workspace-${variableName}`,
+        insertText: options.insertBareName ? summary.name : label,
+        sortText: `zzzz-workspace-${summary.name}`,
       } satisfies CompletionItem;
     });
+  }
+
+  /**
+   * formatWorkspaceVariableDocumentation 함수.
+   * workspace variable summary만으로 completion documentation을 생성함.
+   *
+   * @param summary - completion 후보용 lightweight variable summary
+   * @param usage - macro argument 또는 calc expression 후보 문맥
+   * @returns markdown documentation 문자열
+   */
+  private formatWorkspaceVariableDocumentation(
+    summary: VariableCompletionSummary,
+    usage: 'macro-argument' | 'calc-expression',
+  ): string {
+    const writerCount = summary.writerCount + summary.defaultDefinitionCount;
+    return usage === 'calc-expression'
+      ? [
+          `**Workspace chat variable:** \`${summary.name}\``,
+          '',
+          '- Source: workspace persistent chat-variable graph',
+          '- Usage: append after fragment-local `$var` candidates inside the shared CBS expression sublanguage.',
+          `- Workspace readers: ${summary.readerCount}`,
+          `- Workspace writers: ${writerCount}`,
+        ].join('\n')
+      : [
+          `**Workspace chat variable:** \`${summary.name}\``,
+          '',
+          '- Source: workspace persistent chat-variable graph',
+          '- Usage: append after fragment-local `getvar` / `setvar` candidates so local symbols stay first.',
+          `- Workspace readers: ${summary.readerCount}`,
+          `- Workspace writers: ${writerCount}`,
+        ].join('\n');
   }
 
   private buildFunctionCompletions(

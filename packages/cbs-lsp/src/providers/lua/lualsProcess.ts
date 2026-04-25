@@ -20,6 +20,7 @@ import {
   createLuaLsCompanionRuntime,
   type LuaLsCompanionRuntime,
 } from '../../core/availability-contract';
+import { MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH } from '../../indexer';
 import type { LuaLsRoutedDocument } from './lualsDocuments';
 import {
   createLuaLsShadowWorkspace,
@@ -474,6 +475,11 @@ export class LuaLsProcessManager {
    * @param document - LuaLS session에 반영할 routed Lua document
    */
   syncDocument(document: LuaLsRoutedDocument): void {
+    if (document.text.length > MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH) {
+      this.closeDocument(document.sourceUri);
+      return;
+    }
+
     const nextDocument: ManagedLuaLsDocument = {
       languageId: document.languageId,
       sourceFilePath: document.sourceFilePath,

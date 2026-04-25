@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 
 import { createSyntheticDocumentVersion } from '../../src/core/fragment-analysis-service';
-import { createWorkspaceScanFileFromText } from '../../src/indexer';
+import { MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH, createWorkspaceScanFileFromText } from '../../src/indexer';
 import {
   createLuaLsDocumentRouter,
   createLuaLsRoutedDocumentFromTextDocument,
@@ -69,5 +69,75 @@ describe('lualsDocuments', () => {
       text: 'local mood = getState("mood")\n',
     });
     expect(processManager.closeDocument).toHaveBeenCalledWith(workspaceLuaFile.uri);
+  });
+
+  it('skips oversized workspace lua files before LuaLS shadow sync', () => {
+    const processManager = {
+      closeDocument: vi.fn(),
+      syncDocument: vi.fn(),
+    };
+    const router = createLuaLsDocumentRouter(processManager);
+    const workspaceLuaFile = createWorkspaceScanFileFromText({
+      workspaceRoot: '/workspace',
+      absolutePath: '/workspace/lua/huge.risulua',
+      text: 'x'.repeat(MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH + 1),
+      artifact: 'lua',
+    });
+
+    const stats = router.syncWorkspaceDocuments('/workspace', [workspaceLuaFile]);
+
+    expect(stats).toMatchObject({
+      luaFileCount: 0,
+      oversizedSkipped: 1,
+      syncedCount: 0,
+    });
+    expect(processManager.syncDocument).not.toHaveBeenCalled();
+  });
+
+  it('closes a previous workspace LuaLS mirror when a file becomes oversized', () => {
+    const processManager = {
+      closeDocument: vi.fn(),
+      syncDocument: vi.fn(),
+    };
+    const router = createLuaLsDocumentRouter(processManager);
+    const normalLuaFile = createWorkspaceScanFileFromText({
+      workspaceRoot: '/workspace',
+      absolutePath: '/workspace/lua/trigger.risulua',
+      text: 'return getState("mood")',
+      artifact: 'lua',
+    });
+    const oversizedLuaFile = createWorkspaceScanFileFromText({
+      workspaceRoot: '/workspace',
+      absolutePath: '/workspace/lua/trigger.risulua',
+      text: 'x'.repeat(MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH + 1),
+      artifact: 'lua',
+    });
+
+    router.syncWorkspaceDocuments('/workspace', [normalLuaFile]);
+    const stats = router.syncWorkspaceDocuments('/workspace', [oversizedLuaFile]);
+
+    expect(stats).toMatchObject({
+      luaFileCount: 0,
+      oversizedSkipped: 1,
+      closedCount: 1,
+    });
+    expect(processManager.closeDocument).toHaveBeenCalledWith(normalLuaFile.uri);
+  });
+
+  it('closes an existing standalone LuaLS mirror when the document grows past the sync limit', () => {
+    const processManager = {
+      closeDocument: vi.fn(),
+      syncDocument: vi.fn(),
+    };
+    const router = createLuaLsDocumentRouter(processManager);
+    const sourceUri = 'file:///workspace/lua/trigger.risulua';
+
+    router.syncStandaloneDocument(TextDocument.create(sourceUri, 'lua', 1, 'return getState("mood")'));
+    router.syncStandaloneDocument(
+      TextDocument.create(sourceUri, 'lua', 2, 'x'.repeat(MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH + 1)),
+    );
+
+    expect(processManager.syncDocument).toHaveBeenCalledTimes(1);
+    expect(processManager.closeDocument).toHaveBeenCalledWith(sourceUri);
   });
 });

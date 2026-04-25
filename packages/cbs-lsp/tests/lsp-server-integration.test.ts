@@ -1,6 +1,6 @@
 import os from 'node:os';
 import path from 'node:path';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 import type {
@@ -1581,7 +1581,7 @@ describe('LSP server integration', () => {
       request: requestSpy,
     });
     const uri = 'file:///tmp/cbs-fallback.risulua';
-    const text = 'local cbs = "{{user}}"\nlocal next = "{{"\n';
+    const text = 'local cbs = "{{user}} {{getvar::ct_NoStretchSpeech}}"\nlocal next = "{{"\n';
 
     registerServer(connection as any, documents as any, {
       createLuaLsProcessManager: (() => luaLsManager) as unknown as () => LuaLsProcessManager,
@@ -1597,6 +1597,13 @@ describe('LSP server integration', () => {
       },
       createCancellationToken(false),
     );
+    const functionHover = await connection.hoverHandler?.(
+      {
+        textDocument: { uri },
+        position: positionAt(text, 'getvar', 1),
+      },
+      createCancellationToken(false),
+    );
     const completion = await connection.completionHandler?.(
       {
         textDocument: { uri },
@@ -1607,13 +1614,14 @@ describe('LSP server integration', () => {
     const completionLabels = getCompletionItems(completion ?? null).map((item) => item.label);
 
     expect(getHoverMarkdown(hover ?? null)).toContain('**user**');
+    expect(getHoverMarkdown(functionHover ?? null)).toContain('getvar');
     expect(completionLabels).toEqual(expect.arrayContaining(['user', 'char', 'getvar']));
-    expect(requestSpy).toHaveBeenCalledTimes(2);
+    expect(requestSpy).toHaveBeenCalledTimes(1);
     expect(connection.traceMessages).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ message: '[cbs-lsp:completion] build' }),
         expect.objectContaining({ message: '[cbs-lsp:luaProxy] completion-start' }),
-        expect.objectContaining({ message: '[cbs-lsp:luaProxy] hover-start' }),
+        expect.objectContaining({ message: '[cbs-lsp:hover] end' }),
       ]),
     );
   });
@@ -2478,6 +2486,52 @@ describe('LSP server integration', () => {
         },
       }),
     ]);
+  });
+
+  it('resolves `.risulua` CBS function variable arguments against workspace defaults', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const luaText = 'local cbs = "{{getvar::ct_NoStretchSpeech}}"\n';
+    const variableText = 'ct_NoStretchSpeech=true\n';
+    const luaUri = await writeWorkspaceFile(root, 'lua/reader.risulua', luaText);
+    const variableUri = await writeWorkspaceFile(root, 'variables/defaults.risuvar', variableText);
+
+    registerServer(connection as any, documents as any);
+    documents.open(luaUri, luaText, 1, 'lua');
+
+    const definition = connection.definitionHandler?.(
+      {
+        textDocument: { uri: luaUri },
+        position: positionAt(luaText, 'ct_NoStretchSpeech', 1),
+      },
+      createCancellationToken(false),
+    );
+    const hover = await connection.hoverHandler?.(
+      {
+        textDocument: { uri: luaUri },
+        position: positionAt(luaText, 'ct_NoStretchSpeech', 1),
+      },
+      createCancellationToken(false),
+    );
+    const latestDiagnostics = [...connection.diagnostics]
+      .reverse()
+      .find((entry) => entry.uri === luaUri)?.diagnostics ?? [];
+
+    expect(definition).toEqual([
+      expect.objectContaining({
+        targetUri: variableUri,
+        targetRange: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 'ct_NoStretchSpeech'.length },
+        },
+      }),
+    ]);
+    expect(getHoverMarkdown(hover ?? null)).toContain('**Variable: ct_NoStretchSpeech**');
+    expect(getHoverMarkdown(hover ?? null)).toContain('- Default value: true');
+    expect(latestDiagnostics.map((diagnostic) => diagnostic.message)).not.toContain(
+      'CBS variable "ct_NoStretchSpeech" is referenced without a local definition',
+    );
   });
 
   it('routes textDocument/references through the server seam and returns local-first plus workspace readers and writers', async () => {
@@ -3697,6 +3751,50 @@ describe('LSP server integration', () => {
         }),
       }),
     );
+  });
+
+  it('writes request events to a durable timeline log when configured', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'cbs-lsp-timeline-'));
+    const timelineLogPath = path.join(root, 'timeline.jsonl');
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const uri = 'file:///fixtures/server-timeline.risuregex';
+    const text = regexDocument(['{{'], ['fallback']);
+
+    registerServer(connection as any, documents as any, {
+      env: {
+        ...process.env,
+        CBS_LSP_TIMELINE_LOG: timelineLogPath,
+      },
+    });
+    connection.initializeHandler?.({ capabilities: {} } as InitializeParams);
+    documents.open(uri, text, 1);
+
+    const completion = connection.completionHandler?.(
+      {
+        textDocument: { uri },
+        position: positionAt(text, '{{', 2),
+      },
+      createCancellationToken(false),
+    ) as CompletionItem[] | undefined;
+
+    expect(completion?.length).toBeGreaterThan(0);
+
+    const timeline = (await readFile(timelineLogPath, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { feature: string; phase: string; details: Record<string, unknown> });
+
+    expect(timeline).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ feature: 'completion', phase: 'start' }),
+        expect.objectContaining({ feature: 'completion', phase: 'build' }),
+        expect.objectContaining({ feature: 'completion', phase: 'end' }),
+      ]),
+    );
+    expect(timeline.some((entry) => entry.details.uri === uri)).toBe(true);
+
+    await rm(root, { recursive: true, force: true });
   });
 
   it('returns no-op results for cancelled requests without refreshing analysis', () => {

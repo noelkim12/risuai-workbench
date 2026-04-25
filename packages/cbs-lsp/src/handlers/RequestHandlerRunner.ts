@@ -9,6 +9,7 @@ import { isRequestCancelled } from '../utils/request-cancellation';
 import {
   traceFeatureRequest,
   traceFeatureResult,
+  warnFeature,
   type CbsLspFeatureName,
   type FeatureTraceDetails,
 } from '../utils/server-tracing';
@@ -25,6 +26,7 @@ interface RunnerOptions<TParams, TResult> {
   getUri: (params: TParams) => string;
   params: TParams;
   phases?: RunnerPhases;
+  recoverOnError?: boolean;
   run: () => TResult;
   startDetails?: (params: TParams) => FeatureTraceDetails | undefined;
   summarize?: (result: TResult) => FeatureTraceDetails | undefined;
@@ -71,12 +73,24 @@ export class RequestHandlerRunner {
       return options.empty;
     }
 
-    const result = options.run();
-    traceFeatureResult(this.connection, options.feature, options.phases?.end ?? 'end', {
-      uri,
-      ...options.summarize?.(result),
-    });
-    return result;
+    try {
+      const result = options.run();
+      traceFeatureResult(this.connection, options.feature, options.phases?.end ?? 'end', {
+        uri,
+        ...options.summarize?.(result),
+      });
+      return result;
+    } catch (error) {
+      this.logFailure(options.feature, uri, error);
+      traceFeatureResult(this.connection, options.feature, options.phases?.end ?? 'end', {
+        uri,
+        error: this.formatErrorMessage(error),
+      });
+      if (!options.recoverOnError) {
+        throw error;
+      }
+      return options.empty;
+    }
   }
 
   /**
@@ -102,11 +116,57 @@ export class RequestHandlerRunner {
       return options.empty;
     }
 
-    const result = await options.run();
-    traceFeatureResult(this.connection, options.feature, options.phases?.end ?? 'end', {
+    try {
+      const result = await options.run();
+      traceFeatureResult(this.connection, options.feature, options.phases?.end ?? 'end', {
+        uri,
+        ...options.summarize?.(result),
+      });
+      return result;
+    } catch (error) {
+      this.logFailure(options.feature, uri, error);
+      traceFeatureResult(this.connection, options.feature, options.phases?.end ?? 'end', {
+        uri,
+        error: this.formatErrorMessage(error),
+      });
+      if (!options.recoverOnError) {
+        throw error;
+      }
+      return options.empty;
+    }
+  }
+
+  /**
+   * logFailure 함수.
+   * handler 실패를 운영 로그에 남겨 LSP request가 열린 채 멈춘 것처럼 보이지 않게 함.
+   *
+   * @param feature - 실패한 feature 이름
+   * @param uri - 요청 대상 문서 URI
+   * @param error - handler에서 던져진 원본 오류
+   */
+  private logFailure(feature: CbsLspFeatureName, uri: string, error: unknown): void {
+    warnFeature(this.connection, feature, 'error', {
       uri,
-      ...options.summarize?.(result),
+      error: this.formatErrorMessage(error),
     });
-    return result;
+  }
+
+  /**
+   * formatErrorMessage 함수.
+   * unknown 오류 값을 trace/log에 넣을 수 있는 짧은 문자열로 정규화함.
+   *
+   * @param error - handler에서 던져진 원본 오류
+   * @returns 사람이 읽을 수 있는 오류 메시지
+   */
+  private formatErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    if (typeof error === 'string') {
+      return error;
+    }
+
+    return 'Unknown request handler error';
   }
 }

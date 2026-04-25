@@ -135,7 +135,7 @@ function createServerOptions(
       },
       debug: {
         module: launchPlan.modulePath,
-        options: { execArgv: ['--nolazy', '--inspect=6009'] },
+        options: { execArgv: ['--nolazy', '--inspect=0'] },
         transport: TRANSPORT_IPC,
       },
     };

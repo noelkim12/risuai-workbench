@@ -12,6 +12,7 @@ import { resolveRequestForWorkspaceUri } from '../helpers/server-workspace-helpe
 import type { LuaLsPublishDiagnosticsEvent } from '../providers/lua/lualsProcess';
 import {
   assembleDiagnosticsForRequest,
+  type DiagnosticsFallbackTraceStats,
   routeDiagnosticsForDocument,
 } from '../utils/diagnostics-router';
 import { traceFeatureRequest, traceFeatureResult } from '../utils/server-tracing';
@@ -70,7 +71,15 @@ export class DiagnosticsPublisher {
     });
 
     const localDiagnostics = routeDiagnosticsForDocument(request.filePath, request.text, {}, request);
+    const fallbackTraceStats: DiagnosticsFallbackTraceStats = {
+      attempts: 0,
+      hits: 0,
+      misses: 0,
+      durationMs: 0,
+      byCode: {},
+    };
     const diagnostics = assembleDiagnosticsForRequest({
+      fallbackTraceStats,
       localDiagnostics,
       workspaceVariableFlowService: workspaceState?.variableFlowService ?? null,
       request,
@@ -80,6 +89,11 @@ export class DiagnosticsPublisher {
       uri: request.uri,
       version: request.version,
       count: diagnostics.length,
+      fallbackAttempts: fallbackTraceStats.attempts,
+      fallbackHits: fallbackTraceStats.hits,
+      fallbackMisses: fallbackTraceStats.misses,
+      fallbackDurationMs: Math.round(fallbackTraceStats.durationMs),
+      fallbackCodes: JSON.stringify(fallbackTraceStats.byCode),
     });
 
     this.connection.sendDiagnostics({

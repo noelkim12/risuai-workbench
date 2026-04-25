@@ -4,7 +4,37 @@
  */
 
 import * as vscode from 'vscode';
+import {
+  appendCbsLanguageClientOutputLine,
+  getCbsLanguageClientRuntimeState,
+} from '../lsp/cbsLanguageClient';
 import { getCbsAutoCloseText, shouldTriggerCbsAutoSuggest } from './cbsAutoSuggestCore';
+
+/**
+ * getCbsClientStateLabel 함수.
+ * auto suggest 로그에 붙일 CBS LanguageClient 실행 상태를 짧게 정리함.
+ *
+ * @returns started/running 상태 요약 문자열
+ */
+function getCbsClientStateLabel(): string {
+  const state = getCbsLanguageClientRuntimeState();
+  return `clientStarted=${String(state.isStarted)} clientRunning=${String(state.client?.isRunning() ?? false)}`;
+}
+
+/**
+ * logCbsAutoSuggest 함수.
+ * CBS auto suggest fallback의 주요 분기를 Output channel에 남김.
+ *
+ * @param phase - auto suggest 처리 단계 이름
+ * @param details - key=value 형태로 붙일 상세 정보
+ */
+function logCbsAutoSuggest(phase: string, details: Record<string, string | number | boolean>): void {
+  const renderedDetails = Object.entries(details)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(' ');
+  const suffix = renderedDetails ? ` ${renderedDetails}` : '';
+  appendCbsLanguageClientOutputLine(`[CBS Client:autoSuggest] ${phase} ${getCbsClientStateLabel()}${suffix}`);
+}
 
 /**
  * getChangedRangeEndPosition 함수.
@@ -92,6 +122,12 @@ export function registerCbsAutoSuggestTrigger(context: vscode.ExtensionContext):
   function scheduleCbsSuggest(document: vscode.TextDocument, position: vscode.Position): void {
     const key = `${document.uri.toString()}:${document.version}:${position.line}:${position.character}`;
     if (key === lastSuggestKey) {
+      logCbsAutoSuggest('skip-duplicate', {
+        character: position.character,
+        languageId: document.languageId,
+        line: position.line,
+        version: document.version,
+      });
       return;
     }
     lastSuggestKey = key;
@@ -102,13 +138,39 @@ export function registerCbsAutoSuggestTrigger(context: vscode.ExtensionContext):
       pendingSuggestTimer = undefined;
       const activeEditor = vscode.window.activeTextEditor;
       if (!activeEditor || activeEditor.document !== document) {
+        logCbsAutoSuggest('skip-inactive-editor', {
+          character: position.character,
+          languageId: document.languageId,
+          line: position.line,
+          version: document.version,
+        });
         return;
       }
       if (!activeEditor.selection.active.isEqual(position)) {
+        logCbsAutoSuggest('skip-selection-moved', {
+          actualCharacter: activeEditor.selection.active.character,
+          actualLine: activeEditor.selection.active.line,
+          character: position.character,
+          languageId: document.languageId,
+          line: position.line,
+          version: document.version,
+        });
         return;
       }
+      logCbsAutoSuggest('triggerSuggest', {
+        character: position.character,
+        languageId: document.languageId,
+        line: position.line,
+        version: document.version,
+      });
       void vscode.commands.executeCommand('editor.action.triggerSuggest');
     }, 25);
+    logCbsAutoSuggest('scheduled', {
+      character: position.character,
+      languageId: document.languageId,
+      line: position.line,
+      version: document.version,
+    });
   }
 
   const disposable = vscode.workspace.onDidChangeTextDocument((event) => {
@@ -131,6 +193,13 @@ export function registerCbsAutoSuggestTrigger(context: vscode.ExtensionContext):
         lineSuffix,
       });
       if (autoCloseText) {
+        logCbsAutoSuggest('auto-close', {
+          character: changeEndPosition.character,
+          languageId: event.document.languageId,
+          line: changeEndPosition.line,
+          textLength: autoCloseText.length,
+          version: event.document.version,
+        });
         void editor.insertSnippet(
           new vscode.SnippetString(`$0${autoCloseText}`),
           changeEndPosition,
@@ -146,6 +215,13 @@ export function registerCbsAutoSuggestTrigger(context: vscode.ExtensionContext):
           linePrefix,
         })
       ) {
+        logCbsAutoSuggest('predicate-hit', {
+          character: changeEndPosition.character,
+          insertedLength: change.text.length,
+          languageId: event.document.languageId,
+          line: changeEndPosition.line,
+          version: event.document.version,
+        });
         scheduleCbsSuggest(event.document, changeEndPosition);
         return;
       }

@@ -18,6 +18,8 @@ import type { LuaLsCompanionRuntime } from '../core';
 import type { WorkspaceScanFile } from '../indexer';
 import {
   createLuaLsDocumentRouter,
+  type LuaLsWorkspaceSyncOptions,
+  type LuaLsWorkspaceSyncStats,
   type LuaLsDocumentRouter,
 } from '../providers/lua/lualsDocuments';
 import {
@@ -261,8 +263,12 @@ export class LuaLsCompanionController {
    * @param rootPath - 동기화할 workspace root
    * @param files - 현재 workspace scan file 목록
    */
-  syncWorkspaceDocuments(rootPath: string, files: readonly WorkspaceScanFile[]): void {
-    this.documentRouter.syncWorkspaceDocuments(rootPath, files);
+  syncWorkspaceDocuments(
+    rootPath: string,
+    files: readonly WorkspaceScanFile[],
+    options: LuaLsWorkspaceSyncOptions = {},
+  ): LuaLsWorkspaceSyncStats {
+    return this.documentRouter.syncWorkspaceDocuments(rootPath, files, options);
   }
 
   /**

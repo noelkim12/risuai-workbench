@@ -23,6 +23,8 @@ export interface WorkspaceScanFile {
   absolutePath: string;
   relativePath: string;
   text: string;
+  originalTextLength?: number;
+  indexTextTruncated?: boolean;
   artifact: CustomExtensionArtifact;
   artifactClass: WorkspaceFileArtifactClass;
   cbsBearingArtifact: boolean;
@@ -56,12 +58,31 @@ interface DiscoveredWorkspaceFile {
   artifact: CustomExtensionArtifact;
 }
 
+const IGNORED_WORKSPACE_DIRECTORY_NAMES = new Set([
+  '.git',
+  '.hg',
+  '.svn',
+  '.cache',
+  '.next',
+  '.nuxt',
+  '.turbo',
+  '.vscode-test',
+  'coverage',
+  'dist',
+  'dist-tests',
+  'graphify-out',
+  'node_modules',
+  'out',
+]);
+
 export interface WorkspaceScanFileFromTextOptions {
   workspaceRoot: string;
   absolutePath: string;
   text: string;
   artifact?: CustomExtensionArtifact;
 }
+
+export const MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH = 512 * 1024;
 
 /**
  * compareWorkspaceScanFiles 함수.
@@ -170,6 +191,17 @@ function compareDirectoryEntries(left: string, right: string): number {
 }
 
 /**
+ * shouldSkipWorkspaceDirectory 함수.
+ * 대형 dependency/build/cache 디렉토리는 canonical artifact scan에서 제외함.
+ *
+ * @param directoryName - 탐색 중인 디렉토리 basename
+ * @returns 재귀 탐색을 건너뛰어야 하면 true
+ */
+function shouldSkipWorkspaceDirectory(directoryName: string): boolean {
+  return IGNORED_WORKSPACE_DIRECTORY_NAMES.has(directoryName);
+}
+
+/**
  * createWorkspaceScanFileFromText 함수.
  * in-memory text를 Layer 1 scan entry shape로 정규화함.
  *
@@ -180,14 +212,18 @@ export function createWorkspaceScanFileFromText(
   options: WorkspaceScanFileFromTextOptions,
 ): WorkspaceScanFile {
   const artifact = options.artifact ?? parseCustomExtensionArtifactFromPath(options.absolutePath);
-  const fragmentMap = mapToCbsFragments(artifact, options.text);
+  const indexTextTruncated = artifact === 'lua' && options.text.length > MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH;
+  const text = indexTextTruncated ? '' : options.text;
+  const fragmentMap = mapToCbsFragments(artifact, text);
   const cbsBearingArtifact = isCbsBearingArtifact(artifact);
 
   return {
     uri: pathToFileURL(options.absolutePath).href,
     absolutePath: options.absolutePath,
     relativePath: toPosixRelativePath(path.relative(options.workspaceRoot, options.absolutePath)),
-    text: options.text,
+    text,
+    originalTextLength: options.text.length,
+    indexTextTruncated,
     artifact,
     artifactClass: cbsBearingArtifact ? 'cbs-bearing' : 'non-cbs',
     cbsBearingArtifact,
@@ -263,6 +299,10 @@ export class FileScanner {
       const absolutePath = path.join(currentPath, entry.name);
 
       if (entry.isDirectory()) {
+        if (shouldSkipWorkspaceDirectory(entry.name)) {
+          continue;
+        }
+
         discoveredFiles.push(...(await this.collectWorkspaceFiles(absolutePath)));
         continue;
       }
@@ -332,6 +372,10 @@ function collectWorkspaceFilesSync(
     const absolutePath = path.join(currentPath, entry.name);
 
     if (entry.isDirectory()) {
+      if (shouldSkipWorkspaceDirectory(entry.name)) {
+        continue;
+      }
+
       discoveredFiles.push(...collectWorkspaceFilesSync(workspaceRoot, absolutePath));
       continue;
     }

@@ -22,14 +22,18 @@ import {
   createAgentMetadataExplanation,
   type FragmentAnalysisRequest,
 } from '../../core';
-import type { VariableFlowQueryResult, VariableFlowService } from '../../services';
+import type {
+  VariableCompletionSummary,
+  VariableFlowQueryResult,
+  VariableFlowService,
+} from '../../services';
 import { offsetToPosition, positionToOffset } from '../../utils/position';
 
 type LuaCompletionResponse = CompletionItem[] | CompletionList;
 type LuaHoverResponse = Hover | null;
 type LuaStateOverlayService = Pick<
   VariableFlowService,
-  'getAllVariableNames' | 'queryAt' | 'queryVariable'
+  'getAllVariableNames' | 'getVariableCompletionSummaries' | 'queryAt' | 'queryVariable'
 >;
 type LuaStateOverlayQuery = Pick<VariableFlowQueryResult, 'matchedOccurrence'>;
 
@@ -263,45 +267,34 @@ export function buildLuaStateNameOverlayCompletions(
 
   const normalizedPrefix = editRange.prefix.toLowerCase();
   return context.variableFlowService
-    .getAllVariableNames()
-    .filter((variableName) => {
-      if (!variableName.toLowerCase().startsWith(normalizedPrefix)) {
+    .getVariableCompletionSummaries()
+    .filter((summary) => {
+      if (!summary.name.toLowerCase().startsWith(normalizedPrefix)) {
         return false;
       }
 
-      const variableQuery = context.variableFlowService?.queryVariable(variableName);
-      const occurrenceCount = variableQuery?.occurrences.length ?? 0;
-      if (variableName === editRange.currentValue && occurrenceCount <= 1) {
+      const occurrenceCount = summary.readerCount + summary.writerCount;
+      if (summary.name === editRange.currentValue && occurrenceCount <= 1) {
         return false;
       }
 
       return true;
     })
-    .map((variableName) => {
-      const variableQuery = context.variableFlowService?.queryVariable(variableName);
-      const readerCount = variableQuery?.readers.length ?? 0;
-      const writerCount = variableQuery?.writers.length ?? 0;
-
+    .map((summary) => {
       return {
-        label: variableName,
+        label: summary.name,
         kind: CompletionItemKind.Variable,
         detail: 'Workspace state key',
         documentation: {
           kind: 'markdown',
-          value: [
-            `**Workspace state key:** \`${variableName}\``,
-            '',
-            '- Source: VariableGraph read-only bridge overlay',
-            `- Workspace readers: ${readerCount}`,
-            `- Workspace writers: ${writerCount}`,
-          ].join('\n'),
+          value: formatLuaStateSummaryDocumentation(summary),
         },
-        insertText: variableName,
+        insertText: summary.name,
         insertTextFormat: InsertTextFormat.PlainText,
-        sortText: `0000-${variableName}`,
+        sortText: `0000-${summary.name}`,
         textEdit: {
           range: editRange.replacementRange,
-          newText: variableName,
+          newText: summary.name,
         },
         data: createAgentMetadataEnvelope(
           {
@@ -316,6 +309,23 @@ export function buildLuaStateNameOverlayCompletions(
         ),
       } satisfies CompletionItem;
     });
+}
+
+/**
+ * formatLuaStateSummaryDocumentation 함수.
+ * Lua state key completion 문서를 lightweight variable summary에서 만듦.
+ *
+ * @param summary - completion 후보용 lightweight variable summary
+ * @returns markdown documentation 문자열
+ */
+function formatLuaStateSummaryDocumentation(summary: VariableCompletionSummary): string {
+  return [
+    `**Workspace state key:** \`${summary.name}\``,
+    '',
+    '- Source: VariableGraph read-only bridge overlay',
+    `- Workspace readers: ${summary.readerCount}`,
+    `- Workspace writers: ${summary.writerCount + summary.defaultDefinitionCount}`,
+  ].join('\n');
 }
 
 /**

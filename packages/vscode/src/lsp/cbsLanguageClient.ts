@@ -1,4 +1,5 @@
 import process from 'node:process';
+import path from 'node:path';
 import * as vscode from 'vscode';
 import {
   LanguageClient,
@@ -62,8 +63,11 @@ export function startCbsLanguageClient(context: vscode.ExtensionContext): void {
   }
 
   output.appendLine(`[CBS Language Server] ${launchPlan.detail}`);
+  const timelineLogPath = createCbsTimelineLogPath(context);
+  process.env.CBS_LSP_TIMELINE_LOG = timelineLogPath;
+  output.appendLine(`[CBS Language Server] Timeline log: ${timelineLogPath}`);
 
-  const serverOptions = createServerOptions(launchPlan);
+  const serverOptions = createServerOptions(launchPlan, timelineLogPath);
 
   const clientOptions: LanguageClientOptions = {
     documentSelector: boundarySnapshot.clientOptions.documentSelector,
@@ -166,22 +170,52 @@ function readCbsLanguageServerSettings(): CbsLanguageServerSettings {
  * @param launchPlan - standalone 또는 embedded launch resolution 결과
  * @returns LanguageClient에 전달할 server options
  */
-function createServerOptions(launchPlan: Exclude<CbsLanguageServerLaunchPlan, CbsLaunchFailure>): ServerOptions {
+function createServerOptions(
+  launchPlan: Exclude<CbsLanguageServerLaunchPlan, CbsLaunchFailure>,
+  timelineLogPath: string,
+): ServerOptions {
+  const env = createCbsServerEnv(timelineLogPath);
   if (launchPlan.kind === 'embedded') {
     return {
       run: {
         module: launchPlan.modulePath,
+        options: { env },
         transport: TransportKind.ipc,
       },
       debug: {
         module: launchPlan.modulePath,
         transport: TransportKind.ipc,
-        options: { execArgv: ['--nolazy', '--inspect=6009'] },
+        options: { env, execArgv: ['--nolazy', '--inspect=0'] },
       },
     };
   }
 
-  return createStandaloneExecutable(launchPlan);
+  return createStandaloneExecutable(launchPlan, timelineLogPath);
+}
+
+/**
+ * createCbsTimelineLogPath 함수.
+ * Extension Host 로그 디렉터리 아래 CBS LSP timeline 파일 경로를 만듦.
+ *
+ * @param context - VS Code extension context
+ * @returns 서버에 전달할 JSONL timeline 파일 경로
+ */
+function createCbsTimelineLogPath(context: vscode.ExtensionContext): string {
+  return path.join(context.logUri.fsPath, 'cbs-lsp', 'timeline.jsonl');
+}
+
+/**
+ * createCbsServerEnv 함수.
+ * CBS LSP child process에 넘길 환경 변수와 timeline log 경로를 병합함.
+ *
+ * @param timelineLogPath - 서버가 append할 timeline JSONL 파일 경로
+ * @returns 기존 process.env를 보존한 CBS server env
+ */
+function createCbsServerEnv(timelineLogPath: string): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    CBS_LSP_TIMELINE_LOG: timelineLogPath,
+  };
 }
 
 /**
@@ -191,17 +225,22 @@ function createServerOptions(launchPlan: Exclude<CbsLanguageServerLaunchPlan, Cb
  * @param launchPlan - standalone launch resolution 결과
  * @returns standalone executable server options
  */
-function createStandaloneExecutable(launchPlan: Exclude<CbsLanguageServerLaunchPlan, CbsLaunchFailure | { kind: 'embedded' }>): Executable {
+function createStandaloneExecutable(
+  launchPlan: Exclude<CbsLanguageServerLaunchPlan, CbsLaunchFailure | { kind: 'embedded' }>,
+  timelineLogPath: string,
+): Executable {
+  const env = createCbsServerEnv(timelineLogPath);
+
   return {
     args: [...launchPlan.args],
     command: launchPlan.command,
     options: launchPlan.cwd
       ? {
           cwd: launchPlan.cwd,
-          env: process.env,
+          env,
         }
       : {
-          env: process.env,
+          env,
         },
     transport: TransportKind.stdio,
   };
@@ -216,6 +255,16 @@ function createStandaloneExecutable(launchPlan: Exclude<CbsLanguageServerLaunchP
 function getOrCreateOutputChannel(): vscode.OutputChannel {
   outputChannel ??= vscode.window.createOutputChannel('CBS Language Server');
   return outputChannel;
+}
+
+/**
+ * appendCbsLanguageClientOutputLine 함수.
+ * CBS language client와 관련된 운영 로그를 공용 Output channel에 기록함.
+ *
+ * @param message - Output channel에 남길 한 줄 메시지
+ */
+export function appendCbsLanguageClientOutputLine(message: string): void {
+  getOrCreateOutputChannel().appendLine(message);
 }
 
 /**

@@ -7,7 +7,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 
 import { createSyntheticDocumentVersion } from '../../core';
 import { CbsLspPathHelper } from '../../helpers/path-helper';
-import type { WorkspaceScanFile } from '../../indexer';
+import { MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH, type WorkspaceScanFile } from '../../indexer';
 import { getArtifactTypeFromPath } from '../../utils/document-router';
 import type { LuaLsProcessManager } from './lualsProcess';
 import {
@@ -23,6 +23,21 @@ export interface LuaLsRoutedDocument {
   rootPath: string | null;
   version: number | string;
   text: string;
+}
+
+export interface LuaLsWorkspaceSyncOptions {
+  prioritySourceUris?: readonly string[];
+}
+
+export interface LuaLsWorkspaceSyncStats {
+  totalFiles: number;
+  luaFileCount: number;
+  oversizedSkipped: number;
+  unchangedSkipped: number;
+  syncedCount: number;
+  closedCount: number;
+  deferredCount: number;
+  shadowDurationMs: number;
 }
 
 interface LuaLsDocumentRouterProcessManager {
@@ -111,6 +126,28 @@ export function createLuaLsRoutedDocumentFromWorkspaceFile(
 }
 
 /**
+ * shouldSkipLuaLsDocumentText 함수.
+ * LuaLS mirror에 보내기엔 큰 source text인지 판별함.
+ *
+ * @param text - LuaLS로 mirror하려는 Lua source text
+ * @returns size guard에 걸리면 true
+ */
+function shouldSkipLuaLsDocumentText(text: string): boolean {
+  return text.length > MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH;
+}
+
+/**
+ * shouldSkipWorkspaceLuaFileForLuaLs 함수.
+ * workspace scan에서 이미 축소된 거대 `.risulua`를 LuaLS bulk sync에서 제외함.
+ *
+ * @param file - workspace scan file entry
+ * @returns LuaLS sync를 건너뛰어야 하면 true
+ */
+function shouldSkipWorkspaceLuaFileForLuaLs(file: WorkspaceScanFile): boolean {
+  return Boolean(file.indexTextTruncated) || shouldSkipLuaLsDocumentText(file.text);
+}
+
+/**
  * compareLuaLsDocuments 함수.
  * routed document payload가 실제로 바뀌었는지 판단함.
  *
@@ -137,6 +174,8 @@ export class LuaLsDocumentRouter {
 
   private readonly workspaceDocumentsByRoot = new Map<string, Map<string, LuaLsRoutedDocument>>();
 
+  private readonly deferredWorkspaceSyncTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
   constructor(
     private readonly processManager: LuaLsDocumentRouterProcessManager,
   ) {}
@@ -153,8 +192,17 @@ export class LuaLsDocumentRouter {
       return;
     }
 
-    const routedDocument = createLuaLsRoutedDocumentFromTextDocument(document, null);
     const previousDocument = this.standaloneDocuments.get(document.uri);
+    const routedDocument = createLuaLsRoutedDocumentFromTextDocument(document, null);
+
+    if (shouldSkipLuaLsDocumentText(routedDocument.text)) {
+      if (previousDocument) {
+        this.standaloneDocuments.delete(document.uri);
+        this.processManager.closeDocument(document.uri);
+      }
+      return;
+    }
+
     this.standaloneDocuments.set(document.uri, routedDocument);
 
     if (previousDocument && compareLuaLsDocuments(previousDocument, routedDocument)) {
@@ -186,10 +234,21 @@ export class LuaLsDocumentRouter {
    * @param rootPath - 동기화할 workspace root
    * @param files - 현재 workspace scan file 목록
    */
-  syncWorkspaceDocuments(rootPath: string, files: readonly WorkspaceScanFile[]): void {
+  syncWorkspaceDocuments(
+    rootPath: string,
+    files: readonly WorkspaceScanFile[],
+    options: LuaLsWorkspaceSyncOptions = {},
+  ): LuaLsWorkspaceSyncStats {
+    const startedAt = performance.now();
     const nextDocuments = new Map<string, LuaLsRoutedDocument>();
+    let oversizedSkipped = 0;
     for (const file of files) {
       if (!shouldRouteDocumentToLuaLs(file.absolutePath)) {
+        continue;
+      }
+
+      if (shouldSkipWorkspaceLuaFileForLuaLs(file)) {
+        oversizedSkipped += 1;
         continue;
       }
 
@@ -200,27 +259,116 @@ export class LuaLsDocumentRouter {
     }
 
     const previousDocuments = this.workspaceDocumentsByRoot.get(rootPath) ?? new Map();
+    const prioritySourceUris = new Set(options.prioritySourceUris ?? []);
+    const shouldDeferNonPriority = prioritySourceUris.size > 0;
+    let unchangedSkipped = 0;
+    let syncedCount = 0;
+    let closedCount = 0;
+    let deferredCount = 0;
+
     for (const sourceUri of previousDocuments.keys()) {
       if (!nextDocuments.has(sourceUri)) {
         this.processManager.closeDocument(sourceUri);
+        closedCount += 1;
       }
     }
 
     for (const [sourceUri, routedDocument] of nextDocuments) {
+      if (shouldDeferNonPriority && !prioritySourceUris.has(sourceUri)) {
+        deferredCount += 1;
+        continue;
+      }
+
       const previousDocument = previousDocuments.get(sourceUri);
       if (previousDocument && compareLuaLsDocuments(previousDocument, routedDocument)) {
+        unchangedSkipped += 1;
         continue;
       }
 
       this.processManager.syncDocument(routedDocument);
+      syncedCount += 1;
     }
 
     if (nextDocuments.size === 0) {
+      this.cancelDeferredWorkspaceSync(rootPath);
       this.workspaceDocumentsByRoot.delete(rootPath);
-      return;
+      return {
+        totalFiles: files.length,
+        luaFileCount: 0,
+        oversizedSkipped,
+        unchangedSkipped,
+        syncedCount,
+        closedCount,
+        deferredCount,
+        shadowDurationMs: Math.round(performance.now() - startedAt),
+      };
     }
 
     this.workspaceDocumentsByRoot.set(rootPath, nextDocuments);
+    if (deferredCount > 0) {
+      this.scheduleDeferredWorkspaceSync(rootPath, nextDocuments, prioritySourceUris);
+    } else {
+      this.cancelDeferredWorkspaceSync(rootPath);
+    }
+
+    return {
+      totalFiles: files.length,
+      luaFileCount: nextDocuments.size,
+      oversizedSkipped,
+      unchangedSkipped,
+      syncedCount,
+      closedCount,
+      deferredCount,
+      shadowDurationMs: Math.round(performance.now() - startedAt),
+    };
+  }
+
+  /**
+   * scheduleDeferredWorkspaceSync 함수.
+   * 열린 `.risulua` 외 나머지 workspace Lua 파일 mirror는 다음 tick에 배치 sync함.
+   *
+   * @param rootPath - 동기화할 workspace root
+   * @param nextDocuments - 현재 scan 기준 Lua routed document 목록
+   * @param prioritySourceUris - 즉시 sync가 끝난 열린 문서 URI 집합
+   */
+  private scheduleDeferredWorkspaceSync(
+    rootPath: string,
+    nextDocuments: ReadonlyMap<string, LuaLsRoutedDocument>,
+    prioritySourceUris: ReadonlySet<string>,
+  ): void {
+    const existingTimer = this.deferredWorkspaceSyncTimers.get(rootPath);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+
+    const timer = setTimeout(() => {
+      this.deferredWorkspaceSyncTimers.delete(rootPath);
+      const latestDocuments = this.workspaceDocumentsByRoot.get(rootPath) ?? nextDocuments;
+      for (const [sourceUri, routedDocument] of latestDocuments) {
+        if (prioritySourceUris.has(sourceUri)) {
+          continue;
+        }
+
+        this.processManager.syncDocument(routedDocument);
+      }
+    }, 0);
+    this.deferredWorkspaceSyncTimers.set(rootPath, timer);
+  }
+
+  /**
+   * cancelDeferredWorkspaceSync 함수.
+   * root별로 예약된 deferred LuaLS workspace sync를 취소함.
+   *
+   * @param rootPath - deferred sync를 취소할 workspace root
+   */
+  private cancelDeferredWorkspaceSync(rootPath: string): void {
+    const existingTimer = this.deferredWorkspaceSyncTimers.get(rootPath);
+    if (!existingTimer) {
+      return;
+    }
+
+    clearTimeout(existingTimer);
+    this.deferredWorkspaceSyncTimers.delete(rootPath);
   }
 
   /**
@@ -238,6 +386,8 @@ export class LuaLsDocumentRouter {
     for (const sourceUri of previousDocuments.keys()) {
       this.processManager.closeDocument(sourceUri);
     }
+
+    this.cancelDeferredWorkspaceSync(rootPath);
 
     this.workspaceDocumentsByRoot.delete(rootPath);
   }

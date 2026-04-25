@@ -134,6 +134,18 @@ export interface VariableFlowQueryResult extends CbsAgentProtocolMarker {
 }
 
 /**
+ * VariableCompletionSummary 타입.
+ * completion 후보 생성에 필요한 최소 변수 flow 정보를 담음.
+ */
+export interface VariableCompletionSummary {
+  name: string;
+  readerCount: number;
+  writerCount: number;
+  defaultDefinitionCount: number;
+  hasWritableSource: boolean;
+}
+
+/**
  * VariableFlowServiceCreateOptions 타입.
  * service 구성에 필요한 graph, registry, default variable seed를 전달함.
  *
@@ -180,6 +192,8 @@ export class VariableFlowService {
 
   private readonly defaultVariableDefinitions: ReadonlyMap<string, readonly DefaultVariableDefinitionLocation[]>;
 
+  private readonly variableCompletionSummaries: readonly VariableCompletionSummary[];
+
   constructor(options: VariableFlowServiceCreateOptions) {
     this.graph = options.graph;
     this.registry = options.registry;
@@ -192,6 +206,7 @@ export class VariableFlowService {
     );
     this.workspaceSnapshot = options.workspaceSnapshot ?? null;
     this.defaultVariableDefinitions = collectDefaultVariableDefinitions(this.registry);
+    this.variableCompletionSummaries = this.buildVariableCompletionSummaries();
   }
 
   /**
@@ -295,6 +310,16 @@ export class VariableFlowService {
   }
 
   /**
+   * getVariableCompletionSummaries 함수.
+   * completion 후보 생성에 필요한 최소 변수 summary를 캐시에서 반환함.
+   *
+   * @returns stable ordering이 적용된 lightweight variable summary 목록
+   */
+  getVariableCompletionSummaries(): readonly VariableCompletionSummary[] {
+    return this.variableCompletionSummaries;
+  }
+
+  /**
    * getDefaultVariableDefinitions 함수.
    * `.risuvar` 기본 변수 파일에 선언된 key 위치를 definition target으로 조회함.
    *
@@ -306,6 +331,28 @@ export class VariableFlowService {
   }
 
   /**
+   * buildVariableCompletionSummaries 함수.
+   * workspace completion이 queryVariable N회 없이 후보를 만들 수 있게 최소 summary를 선계산함.
+   *
+   * @returns 변수명별 completion summary 목록
+   */
+  private buildVariableCompletionSummaries(): readonly VariableCompletionSummary[] {
+    return this.getAllVariableNames().map((name) => {
+      const node = this.graph.getVariable(name);
+      const defaultDefinitionCount = this.defaultVariableDefinitions.get(name)?.length ?? 0;
+      const writerCount = node?.writers.length ?? 0;
+
+      return {
+        name,
+        readerCount: node?.readers.length ?? 0,
+        writerCount,
+        defaultDefinitionCount,
+        hasWritableSource: writerCount > 0 || defaultDefinitionCount > 0,
+      } satisfies VariableCompletionSummary;
+    });
+  }
+
+  /**
    * queryVariable 함수.
    * 변수 이름 하나에 대한 cross-file readers/writers/issues 묶음을 조회함.
    *
@@ -314,24 +361,52 @@ export class VariableFlowService {
    */
   queryVariable(variableName: string): VariableFlowQueryResult | null {
     const node = this.graph.getVariable(variableName);
-    if (!node) {
+    const defaultDefinitions = this.defaultVariableDefinitions.get(variableName) ?? [];
+    if (!node && defaultDefinitions.length === 0 && this.defaultVariables[variableName] === undefined) {
       return null;
     }
 
+    const resolvedNode = node ?? this.createDefaultOnlyVariableNode(variableName, defaultDefinitions);
     const flowEntry = this.flowByVariable.get(variableName) ?? null;
-    const issues = flowEntry ? this.buildIssueMatches(node, flowEntry) : [];
+    const issues = flowEntry ? this.buildIssueMatches(resolvedNode, flowEntry) : [];
+    const defaultValue =
+      flowEntry?.defaultValue ?? this.defaultVariables[variableName] ?? defaultDefinitions[0]?.value ?? null;
 
     return {
       ...createCbsAgentProtocolMarker(),
       variableName,
-      node,
-      occurrences: this.graph.getOccurrencesForVariable(variableName),
-      readers: node.readers,
-      writers: node.writers,
+      node: resolvedNode,
+      occurrences: node ? this.graph.getOccurrencesForVariable(variableName) : [],
+      readers: resolvedNode.readers,
+      writers: resolvedNode.writers,
       flowEntry,
       issues,
-      defaultValue: flowEntry?.defaultValue ?? this.defaultVariables[variableName] ?? null,
+      defaultValue,
       matchedOccurrence: null,
+    };
+  }
+
+  /**
+   * createDefaultOnlyVariableNode 함수.
+   * `.risuvar` key만 있는 변수를 workspace query 결과로 표현함.
+   *
+   * @param variableName - 기본 변수 key 이름
+   * @param defaultDefinitions - 해당 key가 선언된 `.risuvar` 위치 목록
+   * @returns occurrence 없이 기본 변수 파일 소속만 담은 graph node shape
+   */
+  private createDefaultOnlyVariableNode(
+    variableName: string,
+    defaultDefinitions: readonly DefaultVariableDefinitionLocation[],
+  ): UnifiedVariableNode {
+    return {
+      name: variableName,
+      readers: [],
+      writers: [],
+      occurrenceCount: 0,
+      artifacts: defaultDefinitions.length > 0 ? ['variable'] : [],
+      uris: [...new Set(defaultDefinitions.map((definition) => definition.uri))].sort((left, right) =>
+        left.localeCompare(right),
+      ),
     };
   }
 

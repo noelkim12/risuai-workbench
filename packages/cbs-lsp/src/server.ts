@@ -76,6 +76,7 @@ import { WorkspaceStateRepository } from './controllers/WorkspaceStateRepository
 import { CbsLspPathHelper } from './helpers/path-helper';
 import {
   configureServerTracing,
+  configureServerTimelineLog,
   logFeature,
   traceFeatureRequest,
   traceFeaturePayload,
@@ -160,6 +161,7 @@ interface ServerRegistrationContext {
  * @returns tracing이 적용된 초기 runtime state
  */
 function createServerRuntimeState(options: ServerRegistrationOptions): ServerRuntimeState {
+  configureServerTimelineLog(options.env?.CBS_LSP_TIMELINE_LOG ?? options.env?.CBS_LSP_TIMELINE_LOG_PATH);
   const resolvedRuntimeConfig = resolveRuntimeConfig({
     cwd: options.cwd,
     env: options.env,
@@ -474,6 +476,7 @@ function registerServerLifecycleHandlers(
       initializationOptions: params.initializationOptions,
       overrides: options.runtimeConfig,
     });
+    configureServerTimelineLog(options.env?.CBS_LSP_TIMELINE_LOG ?? options.env?.CBS_LSP_TIMELINE_LOG_PATH);
     configureServerTracing(runtimeState.resolvedRuntimeConfig.config.logLevel);
     runtimeState.workspaceClientState = readWorkspaceClientState(params);
     runtimeState.initializeWorkspaceRoot = resolveInitializeWorkspaceRoot(

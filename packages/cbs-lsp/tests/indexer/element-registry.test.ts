@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { afterEach, describe, expect, it } from 'vitest'
 import { getCustomExtensionArtifactContract, type CustomExtensionArtifact } from 'risu-workbench-core'
 
-import { createWorkspaceScanFileFromText, ElementRegistry, FileScanner, UnifiedVariableGraph } from '../../src/indexer'
+import { createWorkspaceScanFileFromText, ElementRegistry, FileScanner, MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH, UnifiedVariableGraph } from '../../src/indexer'
 import { snapshotLayer1Contracts } from '../fixtures/fixture-corpus'
 
 type WorkspaceFileSeed = {
@@ -317,6 +317,35 @@ describe('ElementRegistry', () => {
     })
     expect([...registry.getAllElementCbsData()[0]!.reads]).toEqual(['mood'])
     expect([...registry.getAllElementCbsData()[0]!.writes]).toEqual(['reply'])
+  })
+
+  it('keeps oversized lua files as queryable records without running Lua analysis', async () => {
+    const { scanResult, registry } = await buildRegistry([
+      {
+        artifact: 'lua',
+        fileName: 'huge-script.risulua',
+        text: 'x'.repeat(MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH + 1),
+      },
+    ])
+
+    const luaUri = scanResult.files[0]?.uri
+    expect(luaUri).toBeTruthy()
+    expect(scanResult.files[0]).toMatchObject({
+      artifact: 'lua',
+      indexTextTruncated: true,
+      originalTextLength: MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH + 1,
+      text: '',
+    })
+    expect(registry.getFileByUri(luaUri!)).toMatchObject({
+      artifact: 'lua',
+      analysisKind: 'lua-file',
+      elementIds: [],
+      graphSeedCount: 0,
+      analysisError: `Lua analysis skipped because source exceeds ${MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH} characters.`,
+    })
+    expect(registry.getElementsByUri(luaUri!)).toEqual([])
+    expect(registry.getGraphSeedsByUri(luaUri!)).toEqual([])
+    expect(registry.getLuaArtifactByUri(luaUri!)).toBeNull()
   })
 
   it('keeps non-CBS and no-fragment files queryable without inventing fake elements', async () => {

@@ -57,6 +57,11 @@ export class WorkspaceRefreshController {
 
   private readonly pendingDocumentChangeUris = new Set<string>();
 
+  private pendingDocumentOpenTimer: ReturnType<typeof setTimeout> | undefined;
+
+  private readonly pendingDocumentOpenUris = new Set<string>();
+
+
   /**
    * constructor 함수.
    * workspace refresh에 필요한 state owner와 후속 controller를 보관함.
@@ -111,7 +116,14 @@ export class WorkspaceRefreshController {
     }
 
     this.flushPendingDocumentChangeRefresh();
-    this.refreshWorkspaceUris([document.uri], reason === 'open' ? 'document-open' : 'document-close');
+    if (reason === 'open') {
+      this.publishLocalFirstDocumentOpen(document.uri, workspaceRoot);
+      this.scheduleDocumentOpenRefresh(document.uri);
+      return;
+    }
+
+    this.flushPendingDocumentOpenRefresh();
+    this.refreshWorkspaceUris([document.uri], 'document-close');
   }
 
   /**
@@ -122,6 +134,7 @@ export class WorkspaceRefreshController {
    */
   refreshWatchedFiles(params: DidChangeWatchedFilesParams): void {
     this.flushPendingDocumentChangeRefresh();
+    this.flushPendingDocumentOpenRefresh();
 
     const relevantChanges = params.changes.filter(
       (change) =>
@@ -173,6 +186,7 @@ export class WorkspaceRefreshController {
    */
   refreshTrackedWorkspaces(reason: WorkspaceRefreshReason = 'configuration-change'): void {
     this.flushPendingDocumentChangeRefresh();
+    this.flushPendingDocumentOpenRefresh();
 
     const workspaceRoots = this.workspaceStateRepository.listRoots();
     if (workspaceRoots.length === 0) {
@@ -203,7 +217,21 @@ export class WorkspaceRefreshController {
 
       this.workspaceStateRepository.replace(workspaceRoot, nextState);
       if (nextState) {
-        this.luaLsCompanionController.syncWorkspaceDocuments(workspaceRoot, nextState.scanResult.files);
+        const luaSyncStats = this.luaLsCompanionController.syncWorkspaceDocuments(
+          workspaceRoot,
+          nextState.scanResult.files,
+        );
+        traceFeatureResult(this.connection, 'luaProxy', 'workspace-sync', {
+          rootPath: workspaceRoot,
+          reason,
+          totalFiles: luaSyncStats.totalFiles,
+          luaFileCount: luaSyncStats.luaFileCount,
+          oversizedSkipped: luaSyncStats.oversizedSkipped,
+          unchangedSkipped: luaSyncStats.unchangedSkipped,
+          syncedCount: luaSyncStats.syncedCount,
+          deferredCount: luaSyncStats.deferredCount,
+          shadowDurationMs: luaSyncStats.shadowDurationMs,
+        });
         this.luaLsCompanionController.refreshWorkspaceConfiguration({
           rootPath: workspaceRoot,
         });
@@ -275,6 +303,66 @@ export class WorkspaceRefreshController {
       this.pendingDocumentChangeTimer = undefined;
       this.flushPendingDocumentChangeRefresh();
     }, this.documentChangeDebounceMs);
+  }
+
+  /**
+   * publishLocalFirstDocumentOpen 함수.
+   * 첫 didOpen에서 full rebuild 전에도 현재 문서 local diagnostics를 즉시 publish함.
+   *
+   * @param uri - 열린 문서 URI
+   * @param workspaceRoot - 문서가 속한 workspace root
+   */
+  private publishLocalFirstDocumentOpen(uri: string, workspaceRoot: string): void {
+    this.diagnosticsPublisher.publish(uri, this.workspaceStateRepository.getByRoot(workspaceRoot));
+  }
+
+  /**
+   * scheduleDocumentOpenRefresh 함수.
+   * 첫 didOpen full rebuild를 다음 tick으로 분리해 completion/hover local path를 먼저 열어둠.
+   *
+   * @param uri - 열린 문서 URI
+   */
+  private scheduleDocumentOpenRefresh(uri: string): void {
+    this.pendingDocumentOpenUris.add(uri);
+    if (this.pendingDocumentOpenTimer) {
+      return;
+    }
+
+    traceFeatureRequest(this.connection, 'workspace', 'document-open-refresh-scheduled', {
+      uri,
+      pendingUris: this.pendingDocumentOpenUris.size,
+      deferMs: 0,
+    });
+
+    this.pendingDocumentOpenTimer = setTimeout(() => {
+      this.pendingDocumentOpenTimer = undefined;
+      this.flushPendingDocumentOpenRefresh();
+    }, 0);
+  }
+
+  /**
+   * flushPendingDocumentOpenRefresh 함수.
+   * deferred document-open URI 묶음을 한 번의 workspace refresh로 처리함.
+   */
+  private flushPendingDocumentOpenRefresh(): void {
+    if (this.pendingDocumentOpenTimer) {
+      clearTimeout(this.pendingDocumentOpenTimer);
+      this.pendingDocumentOpenTimer = undefined;
+    }
+
+    if (this.pendingDocumentOpenUris.size === 0) {
+      return;
+    }
+
+    const uris = [...this.pendingDocumentOpenUris].sort((left, right) => left.localeCompare(right));
+    this.pendingDocumentOpenUris.clear();
+
+    traceFeatureRequest(this.connection, 'workspace', 'document-open-refresh-flush', {
+      changedUris: uris.length,
+      deferMs: 0,
+    });
+
+    this.refreshWorkspaceUris(uris, 'document-open');
   }
 
   /**
@@ -456,7 +544,22 @@ export class WorkspaceRefreshController {
 
       this.workspaceStateRepository.replace(workspaceRoot, nextState);
       if (nextState) {
-        this.luaLsCompanionController.syncWorkspaceDocuments(workspaceRoot, nextState.scanResult.files);
+        const luaSyncStats = this.luaLsCompanionController.syncWorkspaceDocuments(
+          workspaceRoot,
+          nextState.scanResult.files,
+          reason === 'document-open' ? { prioritySourceUris: workspaceChangedUris } : {},
+        );
+        traceFeatureResult(this.connection, 'luaProxy', 'workspace-sync', {
+          rootPath: workspaceRoot,
+          reason,
+          totalFiles: luaSyncStats.totalFiles,
+          luaFileCount: luaSyncStats.luaFileCount,
+          oversizedSkipped: luaSyncStats.oversizedSkipped,
+          unchangedSkipped: luaSyncStats.unchangedSkipped,
+          syncedCount: luaSyncStats.syncedCount,
+          deferredCount: luaSyncStats.deferredCount,
+          shadowDurationMs: luaSyncStats.shadowDurationMs,
+        });
         this.luaLsCompanionController.refreshWorkspaceConfiguration({
           rootPath: workspaceRoot,
         });

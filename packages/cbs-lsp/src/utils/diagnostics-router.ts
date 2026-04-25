@@ -25,9 +25,27 @@ import {
   type LuaLsCompanionRuntime,
   type RuntimeOperatorContractOptions,
 } from '../core';
-import type { VariableFlowIssueMatch, VariableFlowService } from '../services/variable-flow-service';
+import type {
+  VariableFlowIssueMatch,
+  VariableFlowQueryResult,
+  VariableFlowService,
+} from '../services/variable-flow-service';
 import { positionToOffset } from './position';
 import type { FragmentAnalysisRequest } from '../core';
+import { resolveVariablePosition } from '../features/local-first-contract';
+
+export interface DiagnosticsFallbackTraceStats {
+  attempts: number;
+  hits: number;
+  misses: number;
+  durationMs: number;
+  byCode: Record<string, number>;
+}
+
+interface DiagnosticFallbackMemo {
+  readonly cache: Map<string, VariableFlowQueryResult | null>;
+  readonly stats: DiagnosticsFallbackTraceStats;
+}
 
 /**
  * SEVERITY_MAP 상수.
@@ -615,6 +633,7 @@ export function shouldKeepLocalSymbolDiagnostic(
   diagnostic: Diagnostic,
   request: FragmentAnalysisRequest,
   variableFlowService: VariableFlowService,
+  fallbackMemo?: DiagnosticFallbackMemo,
 ): boolean {
   if (
     diagnostic.code !== DiagnosticCode.UndefinedVariable &&
@@ -623,10 +642,11 @@ export function shouldKeepLocalSymbolDiagnostic(
     return true;
   }
 
-  const variableQuery = variableFlowService.queryAt(
-    request.uri,
-    positionToOffset(request.text, diagnostic.range.start),
-  );
+  const variableQuery =
+    variableFlowService.queryAt(
+      request.uri,
+      positionToOffset(request.text, diagnostic.range.start),
+    ) ?? resolveDiagnosticVariableQuery(diagnostic, request, variableFlowService, fallbackMemo);
 
   if (!variableQuery) {
     return true;
@@ -639,10 +659,118 @@ export function shouldKeepLocalSymbolDiagnostic(
   return variableQuery.readers.length === 0;
 }
 
+/**
+ * resolveDiagnosticVariableQuery 함수.
+ * Graph occurrence가 없는 `.risulua` CBS macro 인자 진단을 이름 기반 workspace query로 보강함.
+ *
+ * @param diagnostic - local symbol diagnostic 한 건
+ * @param request - 진단이 발생한 host document 분석 요청
+ * @param variableFlowService - workspace 변수 흐름 조회 서비스
+ * @returns workspace variable query 결과 또는 null
+ */
+function resolveDiagnosticVariableQuery(
+  diagnostic: Diagnostic,
+  request: FragmentAnalysisRequest,
+  variableFlowService: VariableFlowService,
+  fallbackMemo?: DiagnosticFallbackMemo,
+): VariableFlowQueryResult | null {
+  if (!shouldAttemptDiagnosticVariableFallback(diagnostic, request)) {
+    return null;
+  }
+
+  const code = String(diagnostic.code ?? 'unknown');
+  const cacheKey = [
+    request.uri,
+    request.version,
+    code,
+    diagnostic.range.start.line,
+    diagnostic.range.start.character,
+    diagnostic.range.end.line,
+    diagnostic.range.end.character,
+  ].join(':');
+
+  if (fallbackMemo?.cache.has(cacheKey)) {
+    return fallbackMemo.cache.get(cacheKey) ?? null;
+  }
+
+  const startedAt = performance.now();
+  if (fallbackMemo) {
+    fallbackMemo.stats.attempts += 1;
+    fallbackMemo.stats.byCode[code] = (fallbackMemo.stats.byCode[code] ?? 0) + 1;
+  }
+
+  const lookup = fragmentAnalysisService.locatePosition(request, diagnostic.range.start);
+  if (!lookup) {
+    recordDiagnosticFallbackResult(fallbackMemo, cacheKey, null, startedAt);
+    return null;
+  }
+
+  const variablePosition = resolveVariablePosition(lookup);
+  if (!variablePosition || variablePosition.kind !== 'chat') {
+    recordDiagnosticFallbackResult(fallbackMemo, cacheKey, null, startedAt);
+    return null;
+  }
+
+  const result = variableFlowService.queryVariable(variablePosition.variableName);
+  recordDiagnosticFallbackResult(fallbackMemo, cacheKey, result, startedAt);
+  return result;
+}
+
+/**
+ * shouldAttemptDiagnosticVariableFallback 함수.
+ * `.risulua` CBS chat variable argument 진단에만 이름 기반 fallback을 허용함.
+ *
+ * @param diagnostic - fallback 후보 local diagnostic
+ * @param request - 진단이 발생한 host document 분석 요청
+ * @returns fallback을 시도해도 되는 조건이면 true
+ */
+function shouldAttemptDiagnosticVariableFallback(
+  diagnostic: Diagnostic,
+  request: FragmentAnalysisRequest,
+): boolean {
+  if (
+    diagnostic.code !== DiagnosticCode.UndefinedVariable &&
+    diagnostic.code !== DiagnosticCode.UnusedVariable
+  ) {
+    return false;
+  }
+
+  return request.filePath.toLowerCase().endsWith('.risulua');
+}
+
+/**
+ * recordDiagnosticFallbackResult 함수.
+ * diagnostics publish 한 번의 fallback cache와 tracing stats를 갱신함.
+ *
+ * @param fallbackMemo - publish-scope fallback memoization 상태
+ * @param cacheKey - URI/version/range/code 기반 fallback key
+ * @param result - fallback query 결과
+ * @param startedAt - fallback 시작 시각
+ */
+function recordDiagnosticFallbackResult(
+  fallbackMemo: DiagnosticFallbackMemo | undefined,
+  cacheKey: string,
+  result: VariableFlowQueryResult | null,
+  startedAt: number,
+): void {
+  if (!fallbackMemo) {
+    return;
+  }
+
+  fallbackMemo.cache.set(cacheKey, result);
+  fallbackMemo.stats.durationMs += performance.now() - startedAt;
+  if (result) {
+    fallbackMemo.stats.hits += 1;
+  } else {
+    fallbackMemo.stats.misses += 1;
+  }
+}
+
 export interface AssembleDiagnosticsOptions {
   localDiagnostics: Diagnostic[];
   workspaceVariableFlowService: VariableFlowService | null;
   request: FragmentAnalysisRequest;
+  fallbackTraceStats?: DiagnosticsFallbackTraceStats;
 }
 
 /**
@@ -657,10 +785,16 @@ export function assembleDiagnosticsForRequest(
   options: AssembleDiagnosticsOptions,
 ): Diagnostic[] {
   const { localDiagnostics, workspaceVariableFlowService, request } = options;
+  const fallbackMemo = options.fallbackTraceStats
+    ? {
+        cache: new Map<string, VariableFlowQueryResult | null>(),
+        stats: options.fallbackTraceStats,
+      }
+    : undefined;
 
   const filteredLocalDiagnostics = workspaceVariableFlowService
     ? localDiagnostics.filter((diagnostic) =>
-        shouldKeepLocalSymbolDiagnostic(diagnostic, request, workspaceVariableFlowService),
+        shouldKeepLocalSymbolDiagnostic(diagnostic, request, workspaceVariableFlowService, fallbackMemo),
       )
     : localDiagnostics;
 

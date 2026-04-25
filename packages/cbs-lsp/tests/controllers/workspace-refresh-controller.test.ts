@@ -35,7 +35,16 @@ function createLuaLsCompanionStub(): LuaLsCompanionController {
   return {
     clearWorkspaceDocuments: vi.fn(),
     refreshWorkspaceConfiguration: vi.fn(),
-    syncWorkspaceDocuments: vi.fn(),
+    syncWorkspaceDocuments: vi.fn(() => ({
+      totalFiles: 0,
+      luaFileCount: 0,
+      oversizedSkipped: 0,
+      unchangedSkipped: 0,
+      syncedCount: 0,
+      closedCount: 0,
+      deferredCount: 0,
+      shadowDurationMs: 0,
+    })),
   } as unknown as LuaLsCompanionController;
 }
 
@@ -114,6 +123,22 @@ describe('WorkspaceRefreshController', () => {
 
       controller.refreshDocumentLifecycle(document, 'close');
       expect(diagnosticsPublisher.publish).toHaveBeenCalled();
+    } finally {
+      rmSync(path.dirname(rootPath), { recursive: true, force: true });
+    }
+  });
+
+  it('publishes local diagnostics immediately and defers first document-open workspace refresh', () => {
+    vi.useFakeTimers();
+    const { controller, diagnosticsPublisher, document, rootPath } = createControllerFixture(50);
+
+    try {
+      controller.refreshDocumentLifecycle(document, 'open');
+      expect(diagnosticsPublisher.publish).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(0);
+      expect(diagnosticsPublisher.publish).toHaveBeenCalled();
+      expect(vi.mocked(diagnosticsPublisher.publish).mock.calls.length).toBeGreaterThan(1);
     } finally {
       rmSync(path.dirname(rootPath), { recursive: true, force: true });
     }

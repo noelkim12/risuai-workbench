@@ -31,6 +31,7 @@ export interface VariableOccurrenceSeed {
 export interface VariableFlowServiceStubOptions {
   getDefaultVariableDefinitions?: (variableName: string) => ReturnType<VariableFlowService['getDefaultVariableDefinitions']>;
   getAllVariableNames?: () => readonly string[];
+  getVariableCompletionSummaries?: () => ReturnType<VariableFlowService['getVariableCompletionSummaries']>;
   queryVariable?: (variableName: string) => VariableFlowQueryResult | null;
   queryAt?: (uri: string, hostOffset: number) => VariableFlowQueryResult | null;
   workspaceSnapshot?: WorkspaceSnapshotState | null;
@@ -124,6 +125,24 @@ export function createVariableFlowServiceStub(
 ): VariableFlowService {
   return {
     getAllVariableNames: options.getAllVariableNames ?? (() => []),
+    getGraph: () => ({
+      getOccurrencesByUri: () => [],
+    }),
+    getVariableCompletionSummaries:
+      options.getVariableCompletionSummaries ??
+      (() =>
+        (options.getAllVariableNames?.() ?? []).map((name) => {
+          const query = options.queryVariable?.(name) ?? null;
+          const defaultDefinitionCount = options.getDefaultVariableDefinitions?.(name).length ?? 0;
+
+          return {
+            name,
+            readerCount: query?.readers.length ?? 0,
+            writerCount: query?.writers.length ?? 0,
+            defaultDefinitionCount,
+            hasWritableSource: (query?.writers.length ?? 0) > 0 || defaultDefinitionCount > 0,
+          };
+        })),
     getDefaultVariableDefinitions: options.getDefaultVariableDefinitions ?? (() => []),
     queryVariable: options.queryVariable ?? (() => null),
     queryAt: options.queryAt ?? (() => null),

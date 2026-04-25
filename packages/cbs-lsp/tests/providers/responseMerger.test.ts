@@ -7,6 +7,10 @@ import {
   mergeLuaHoverResponse,
   mergeLuaCompletionResponse,
 } from '../../src/providers/lua/responseMerger';
+import {
+  createVariableFlowQueryResult,
+  createVariableOccurrence,
+} from '../features/variable-flow-test-helpers';
 
 describe('Lua responseMerger', () => {
   it('builds VariableGraph-backed overlay completions for getState string arguments', () => {
@@ -20,23 +24,70 @@ describe('Lua responseMerger', () => {
         text,
         uri: 'file:///tmp/test.risulua',
       },
-      variableFlowService: {
-        getAllVariableNames: () => ['shared', 'shadow', 'alpha'],
-        queryAt: () => ({
-          variableName: 'shared',
-          matchedOccurrence: {
-            sourceKind: 'lua-state-api',
-            sourceName: 'getState',
-            variableName: 'shared',
-            hostStartOffset: 22,
-            hostEndOffset: 26,
-          },
-        }),
-        queryVariable: (variableName: string) => ({
-          occurrences: variableName === 'shared' ? [{}, {}, {}] : [{}, {}],
-          readers: variableName === 'shared' ? [{}, {}] : [],
-          writers: variableName === 'shared' ? [{}] : [{}],
-        }),
+        variableFlowService: {
+          getAllVariableNames: () => ['shared', 'shadow', 'alpha'],
+          getVariableCompletionSummaries: () => [
+            {
+              name: 'shared',
+              readerCount: 2,
+              writerCount: 1,
+              defaultDefinitionCount: 0,
+              hasWritableSource: true,
+            },
+            {
+              name: 'shadow',
+              readerCount: 0,
+              writerCount: 1,
+              defaultDefinitionCount: 0,
+              hasWritableSource: true,
+            },
+            {
+              name: 'alpha',
+              readerCount: 0,
+              writerCount: 1,
+              defaultDefinitionCount: 0,
+              hasWritableSource: true,
+            },
+          ],
+          queryAt: () =>
+            createVariableFlowQueryResult('shared', [], [], createVariableOccurrence({
+              artifact: 'lua',
+              direction: 'read',
+              uri: 'file:///tmp/test.risulua',
+              relativePath: 'lua/test.risulua',
+              range: {
+                start: { line: 0, character: 22 },
+                end: { line: 0, character: 26 },
+              },
+              sourceName: 'getState',
+              variableName: 'shared',
+            })),
+          queryVariable: (variableName: string) =>
+            createVariableFlowQueryResult(
+              variableName,
+              [
+                createVariableOccurrence({
+                  direction: 'write',
+                  uri: `file:///workspace/${variableName}.risuprompt`,
+                  relativePath: `prompt_template/${variableName}.risuprompt`,
+                  range: { start: { line: 0, character: 0 }, end: { line: 0, character: variableName.length } },
+                  sourceName: 'setvar',
+                  variableName,
+                }),
+              ],
+              variableName === 'shared'
+                ? [
+                    createVariableOccurrence({
+                      direction: 'read',
+                      uri: `file:///workspace/${variableName}.risuprompt`,
+                      relativePath: `prompt_template/${variableName}.risuprompt`,
+                      range: { start: { line: 1, character: 0 }, end: { line: 1, character: variableName.length } },
+                      sourceName: 'getvar',
+                      variableName,
+                    }),
+                  ]
+                : [],
+            ),
       },
     });
 
@@ -65,18 +116,30 @@ describe('Lua responseMerger', () => {
         text,
         uri: 'file:///tmp/test.risulua',
       },
-      variableFlowService: {
-        getAllVariableNames: () => ['shared'],
-        queryAt: () => ({
-          variableName: 'shared',
-          matchedOccurrence: {
-            sourceKind: 'lua-state-api',
-            sourceName: 'getChatVar',
-            variableName: 'shared',
-            hostStartOffset: 24,
-            hostEndOffset: 28,
-          },
-        }),
+        variableFlowService: {
+          getAllVariableNames: () => ['shared'],
+          getVariableCompletionSummaries: () => [
+            {
+              name: 'shared',
+              readerCount: 0,
+              writerCount: 1,
+              defaultDefinitionCount: 0,
+              hasWritableSource: true,
+            },
+          ],
+          queryAt: () =>
+            createVariableFlowQueryResult('shared', [], [], createVariableOccurrence({
+              artifact: 'lua',
+              direction: 'read',
+              uri: 'file:///tmp/test.risulua',
+              relativePath: 'lua/test.risulua',
+              range: {
+                start: { line: 0, character: 24 },
+                end: { line: 0, character: 28 },
+              },
+              sourceName: 'getChatVar',
+              variableName: 'shared',
+            })),
         queryVariable: () => null,
       },
     });
@@ -95,9 +158,18 @@ describe('Lua responseMerger', () => {
         text,
         uri: 'file:///tmp/test.risulua',
       },
-      variableFlowService: {
-        getAllVariableNames: () => ['shared'],
-        queryAt: () => ({
+        variableFlowService: {
+          getAllVariableNames: () => ['shared'],
+          getVariableCompletionSummaries: () => [
+            {
+              name: 'shared',
+              readerCount: 1,
+              writerCount: 1,
+              defaultDefinitionCount: 0,
+              hasWritableSource: true,
+            },
+          ],
+          queryAt: () => ({
           variableName: 'shared',
           occurrences: [],
           readers: [],
