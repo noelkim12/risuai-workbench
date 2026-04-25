@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { afterEach, describe, expect, it } from 'vitest'
 import { getCustomExtensionArtifactContract, type CustomExtensionArtifact } from 'risu-workbench-core'
 
-import { createWorkspaceScanFileFromText, ElementRegistry, FileScanner, MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH, UnifiedVariableGraph } from '../../src/indexer'
+import { buildWorkspaceScanResult, createWorkspaceScanFileFromText, ElementRegistry, FileScanner, MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH, UnifiedVariableGraph } from '../../src/indexer'
 import { snapshotLayer1Contracts } from '../fixtures/fixture-corpus'
 
 type WorkspaceFileSeed = {
@@ -319,12 +319,22 @@ describe('ElementRegistry', () => {
     expect([...registry.getAllElementCbsData()[0]!.writes]).toEqual(['reply'])
   })
 
-  it('keeps oversized lua files as queryable records without running Lua analysis', async () => {
+  it('keeps oversized lua files queryable with lightweight state API occurrences', async () => {
+    const luaText = [
+      'local chat = getCurrentChat()'.padEnd(120, ' '),
+      '-- getState(chat, "commentedOut")',
+      'local mood = getState(chat, "oversizedMood")',
+      'setState(chat, "oversizedReply", mood)',
+      'setChatVar("directWrite", "ok")',
+      'local directRead = getChatVar("directRead")',
+      'return mood',
+      'x'.repeat(MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH),
+    ].join('\n')
     const { scanResult, registry } = await buildRegistry([
       {
         artifact: 'lua',
         fileName: 'huge-script.risulua',
-        text: 'x'.repeat(MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH + 1),
+        text: luaText,
       },
     ])
 
@@ -333,19 +343,117 @@ describe('ElementRegistry', () => {
     expect(scanResult.files[0]).toMatchObject({
       artifact: 'lua',
       indexTextTruncated: true,
-      originalTextLength: MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH + 1,
+      originalTextLength: luaText.length,
       text: '',
     })
     expect(registry.getFileByUri(luaUri!)).toMatchObject({
       artifact: 'lua',
       analysisKind: 'lua-file',
-      elementIds: [],
-      graphSeedCount: 0,
-      analysisError: `Lua analysis skipped because source exceeds ${MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH} characters.`,
+      elementIds: [`${luaUri}#lua`],
+      graphSeedCount: 1,
+      analysisError: `Lua full analysis skipped because source exceeds ${MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH} characters; lightweight state API scan indexed 4 static occurrence(s).`,
     })
-    expect(registry.getElementsByUri(luaUri!)).toEqual([])
-    expect(registry.getGraphSeedsByUri(luaUri!)).toEqual([])
-    expect(registry.getLuaArtifactByUri(luaUri!)).toBeNull()
+    expect(registry.getElementsByUri(luaUri!)).toMatchObject([
+      {
+        id: `${luaUri}#lua`,
+        lua: {
+          functionNames: [],
+          stateVariableNames: ['directRead', 'directWrite', 'oversizedMood', 'oversizedReply'],
+        },
+      },
+    ])
+    expect(registry.getGraphSeedsByUri(luaUri!)).toMatchObject([
+      {
+        artifact: 'lua',
+        analysisKind: 'lua-file',
+        cbs: {
+          reads: ['directRead', 'oversizedMood'],
+          writes: ['directWrite', 'oversizedReply'],
+        },
+      },
+    ])
+    expect(registry.getLuaArtifactByUri(luaUri!)).toMatchObject({
+      baseName: 'huge-script',
+      serialized: {
+        stateAccessOccurrences: expect.arrayContaining([
+          expect.objectContaining({ apiName: 'getState', key: 'oversizedMood', direction: 'read' }),
+          expect.objectContaining({ apiName: 'setState', key: 'oversizedReply', direction: 'write' }),
+          expect.objectContaining({ apiName: 'setChatVar', key: 'directWrite', direction: 'write' }),
+          expect.objectContaining({ apiName: 'getChatVar', key: 'directRead', direction: 'read' }),
+        ]),
+      },
+    })
+
+    const graph = UnifiedVariableGraph.fromRegistry(registry)
+    expect(graph.getVariable('commentedOut')).toBeNull()
+    expect(graph.getVariable('oversizedMood')?.readers).toMatchObject([
+      {
+        sourceKind: 'lua-state-api',
+        sourceName: 'getState',
+        artifact: 'lua',
+        relativePath: 'lua/huge-script.risulua',
+      },
+    ])
+    expect(graph.getVariable('oversizedReply')?.writers).toMatchObject([
+      {
+        sourceKind: 'lua-state-api',
+        sourceName: 'setState',
+        artifact: 'lua',
+        hostRange: {
+          start: { line: 3, character: 16 },
+          end: { line: 3, character: 30 },
+        },
+      },
+    ])
+  })
+
+  it('indexes oversized lua state accesses from compact wasm-compatible scan records', () => {
+    const uri = 'file:///workspace/lua/oversized.risulua'
+    const source = 'local mood = getState("wasmMood")\nsetChatVar("wasmReply", mood)\n'
+    const scanResult = buildWorkspaceScanResult('/workspace', [
+      {
+        uri,
+        absolutePath: '/workspace/lua/oversized.risulua',
+        relativePath: 'lua/oversized.risulua',
+        artifact: 'lua',
+        artifactClass: 'cbs-bearing',
+        cbsBearingArtifact: true,
+        text: '',
+        originalTextLength: source.length,
+        indexTextTruncated: true,
+        lightweightLuaSourceText: source,
+        lightweightLuaStateAccessOccurrences: [
+          {
+            apiName: 'getState',
+            key: 'wasmMood',
+            direction: 'read',
+            argStart: source.indexOf('wasmMood'),
+            argEnd: source.indexOf('wasmMood') + 'wasmMood'.length,
+            line: 1,
+            containingFunction: '<top-level>',
+          },
+          {
+            apiName: 'setChatVar',
+            key: 'wasmReply',
+            direction: 'write',
+            argStart: source.indexOf('wasmReply'),
+            argEnd: source.indexOf('wasmReply') + 'wasmReply'.length,
+            line: 2,
+            containingFunction: '<top-level>',
+          },
+        ],
+        fragmentMap: { artifact: 'lua', fragments: [], fileLength: source.length },
+        hasCbsFragments: false,
+        fragmentCount: 0,
+        fragmentSections: [],
+      },
+    ])
+    const registry = new ElementRegistry(scanResult)
+
+    expect(registry.getLuaArtifactByUri(uri)?.serialized.stateAccessOccurrences).toMatchObject([
+      { apiName: 'getState', key: 'wasmMood', direction: 'read' },
+      { apiName: 'setChatVar', key: 'wasmReply', direction: 'write' },
+    ])
   })
 
   it('keeps non-CBS and no-fragment files queryable without inventing fake elements', async () => {

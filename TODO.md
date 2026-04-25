@@ -1,239 +1,96 @@
 # TODO
 
-## Repack/Extract 정책 체크리스트
+완료 이력과 운영 메모는 `FIN.md`로 옮겼습니다. 더 오래된 상세 아카이브는 `../docs/todo-done-archive.md`를 참고하면 됩니다.
 
-### Done
+### Done (2026-04-26)
 
-- [x] **Lorebook Path-Based Workspace Contract Migration (T16)**
-  - Modified: `packages/core/src/domain/custom-extension/extensions/lorebook.ts` — path-based `_order.json` parsing, folder key regeneration during pack
-  - Modified: `packages/core/src/cli/extract/character/phases.ts` — real directory lorebook extraction using planner/executor
-  - Modified: `packages/core/src/cli/extract/module/phases.ts` — real directory lorebook extraction for modules
-  - Modified: `packages/core/src/cli/pack/character/workflow.ts` — removed `_folders.json` dependency, path-based assembly
-  - Modified: `packages/core/src/cli/pack/module/workflow.ts` — removed `_folders.json` dependency, path-based assembly
-  - Modified: `packages/core/src/node/lorebook-io.ts` — updated executeLorebookPlan for path-based order
-  - Modified: `packages/core/tests/custom-extension/lorebook-canonical.test.ts` — path-based contract tests
-  - Modified: `packages/core/tests/lorebook-folder-layout.test.ts` — real directory assertions
-  - Modified: `packages/core/tests/charx-extract.test.ts` — path-based order validation
-  - Modified: `packages/core/src/cli/extract/workflow-output-structures.md` — documented path-based contract
-  - Workspace identity is now path-based: `lorebooks/<folder>/<entry>.risulorebook` + `_order.json` with folder paths
-  - `_folders.json` is no longer written during extract; folder keys are regenerated during pack/export
-- [x] **F2 Blocker Fix**: Lua/CBS documentation truthfulness alignment
-  - Modified: `docs/custom-extension/extensions/lua.md` — clarified first-cut full-file routing vs future AST parsing
-  - Modified: `docs/custom-extension/common/principles.md` — aligned CBS LSP source type mapping table with actual behavior
-  - Current implementation: `mapLuaToCbsFragments` returns `section: 'full'` fragment, LSP validates entire file content
-  - Future T15: Lua AST-based string-literal-only CBS fragment mapping (clearly marked as future/archival)
-- [x] **Final Wave Blocker Fix**: charx analyze/compose variable path fix
-  - Modified: `packages/core/src/cli/analyze/charx/collectors.ts` — `collectVariablesCBS()`
-  - Now reads from `variables/<sanitizedCharxName>.risuvar` (canonical charx workspace)
-  - Falls back to `variables/default.risuvar` for backward compatibility
-  - Added regression test: `composition-analysis.test.ts` — "reads charx variables from canonical .risuvar file with sanitized name"
-  - All 12 composition tests pass, unblocking Final Wave
-- [x] **Analyze Canonical Lua Support Fix**
-  - Modified: `packages/core/src/cli/analyze/charx/collectors.ts` — canonical `.risulua` discovery with legacy `.lua` fallback
-  - Modified: `packages/core/src/cli/analyze/compose/workflow.ts` — charx compose now prefers fresh Lua artifacts over sidecar-only import
-  - Modified: `packages/core/src/cli/analyze/workflow.ts` — top-level `analyze` auto-detect accepts `.risulua`
-  - Modified: `packages/core/src/cli/analyze/shared/cross-cutting.ts` — Lua token component collection matches canonical `.risulua`
-  - Added regression coverage: `packages/core/tests/module-analyze-workflow.test.ts`, `packages/core/tests/cli-main-dispatch.test.ts`, `packages/core/tests/composition-analysis.test.ts`
-  - Verified: `npx vitest run tests/module-analyze-workflow.test.ts`, `npx vitest run tests/cli-main-dispatch.test.ts`, `npx vitest run tests/composition-analysis.test.ts`, `npm --workspace packages/core run build`
-- [x] **Analyze Shared Canonical Migration Fix**
-  - Modified: `packages/core/src/cli/analyze/shared/cross-cutting.ts` — lorebook/regex dead-code and token-budget collectors now prefer canonical `.risulorebook` / `.risuregex` / `.risulua` with legacy fallback
-  - Canonical ordering now respects `_order.json` instead of drifting to alphabetical order
-  - Added regression coverage: `packages/core/tests/cross-cutting-canonical.test.ts`
-  - Verified: `npx vitest run tests/cross-cutting-canonical.test.ts`, `npx vitest run tests/module-analyze-workflow.test.ts`, `npx vitest run tests/composition-analysis.test.ts`, `npm --workspace packages/core run build`
-- [x] **Analyze Canonical Lorebook Folder Identity Fix**
-  - Modified: `packages/core/src/cli/analyze/charx/workflow.ts` — canonical analyze now reconstructs lorebook folder identity from current `lorebooks/` path layout instead of stale frontmatter `folder`
-  - Modified: `packages/core/src/domain/custom-extension/extensions/lorebook.ts` — nested parent folder derivation now uses the full relative directory path, not only the first path segment
-  - Added regression coverage: `packages/core/tests/charx-analyze-workflow.test.ts`
-  - Verified: `npx vitest run tests/charx-analyze-workflow.test.ts`, `npx vitest run tests/force-graph-dedup.test.ts`, `npx vitest run tests/lorebook-folder-layout.test.ts`, `npx vitest run tests/charx-extract.test.ts`, `npx vitest run tests/module-extract.test.ts`, `npx vitest run tests/pack-character-roundtrip.test.ts`, `npm --workspace packages/core run build`
-- [x] **Relationship Network Root Group Pin Fix**
-  - Modified: `packages/core/src/cli/analyze/shared/relationship-network-builders.ts` — root-level lorebooks no longer invent a fake `folder:(root)` pinned cluster
-  - Added regression coverage: `packages/core/tests/force-graph-dedup.test.ts` — root-level lorebooks must not receive `lorebook-folder` grouping metadata
-  - Verified: `npx vitest run tests/force-graph-dedup.test.ts`, `npx vitest run tests/analysis-visualization-contract.test.ts`, `npx vitest run tests/charx-analyze-workflow.test.ts`, `npm --workspace packages/core run build`
-- [x] **Relationship Network Hidden Trigger Physics Fix**
-  - Modified: `packages/core/src/cli/analyze/shared/report-shell/client.js` — relationship-network now builds render/simulation sets from the active visible node/edge types instead of letting default-hidden trigger nodes keep influencing layout off-screen
-  - Force-graph signature now includes active node/edge filter state, so legend toggles rebuild the graph with a matching simulation instead of only changing DOM visibility
-  - Added contract coverage: `packages/core/tests/analysis-visualization-contract.test.ts`
-  - Verified: `npx vitest run tests/analysis-visualization-contract.test.ts`, `npm --workspace packages/core run build`
-- [x] **F4 Blocker Fix**: Aligned T16 guard test with approved deferred scope
-  - Modified: `packages/core/tests/custom-extension/no-root-json-legacy-surface.test.ts`
-  - Test now allows deferred T16 wording (legacy/fallback/deferred) in active docs
-  - Still protects against root-JSON being presented as current standard
-  - All 10 tests pass, unblocking F4 approval
-- [x] 루트 `AGENTS.md` 추가 (TODO 업데이트/잔여 작업 리마인드 규칙 명시)
-- [x] `pack.js` 구현 (`png`, `charx`, `charx-jpg`)
-- [x] `lorebooks/manifest.json` 기반 lorebook 재구성
-- [x] `regex/_order.json` 기반 customScripts 재구성
-- [x] `module.risum` 재생성 로직 추가
-- [x] 현재 제한사항 문서화 (`docs/what_we_extract.md`, `template/AGENT.md`, `pack --help`)
-- [x] `template/scripts/analyze-card/correlators.js` 추가 (`buildUnifiedCBSGraph` 구현, 브리지/정렬/트렁케이션)
-- [x] `analyze-card.js` 종합 분석기 구현 (4-phase pipeline: collect → correlate → analyze → report)
-- [x] `analyze-card/collectors.js` — lorebook/regex/variables/HTML/TS/Lua CBS 수집기
-- [x] `analyze-card/collectors.js` — card.json 대신 추출 폴더(lorebooks/ regex/ variables/ html/) 우선 읽기 + card.json fallback
-- [x] `analyze-card/constants.js` — MAX_* 상수, ELEMENT_TYPES, CBS_OPS
-- [x] `analyze-card/correlators.js` — unified CBS graph + lorebook-regex 상관관계
-- [x] `analyze-card/lorebook-analyzer.js` — 폴더 트리, 활성화 통계, 키워드 분석
-- [x] `analyze-card/reporting.js` — 8섹션 Markdown 리포트 생성기
-- [x] `analyze-card/reporting/htmlRenderer.js` — Chart.js 포함 자체완결 HTML 리포트
-- [x] `analyze-card/reporting/htmlRenderer.js` — sharedVars 키 불일치(`lorebookEntries`/`regexScripts`) 대응 패치
-- [x] `extract.js` Phase 9 통합 (analyze-card.js 자동 실행, non-fatal)
-- [x] `extract.js` Lua 분석 호출에 `--json` 추가 (lua/*.analysis.json 자동 생성)
-- [x] `phase4_extractTriggerLua` 파일명 fallback 개선 (comment 없으면 Lua 함수명 추론 사용)
-- [x] `extract.js` Phase 8 Character Card 추출 추가 (`character/` 8개 파일: 6x `.txt` 텍스트 필드 + `alternate_greetings.json` + `metadata.json`)
-- [x] `packages/core` preset extract 추가 (`extract/preset/` + `.risup/.risupreset` 바이너리 디코드 지원)
-- [x] `packages/core` preset `prompt_template/` 계약 정리 (`<label>.json` + `_order.json`, 번호 prefix 제거)
-- [x] `packages/core` module extract 추가 (`extract/module/phases.ts`, `extract/module/workflow.ts`)
-- [x] `packages/core/tests/module-extract.test.ts` 추가 (module extract phase1-7 + 라우팅 판별 통합 테스트)
-- [x] `extract.js` Phase 5 에셋 타입별 서브디렉토리 분리 (`assets/icons/`, `assets/additional/`, `assets/emotions/`, `assets/other/`)
-- [x] `analyze-card` Unified Variables에서 Lua writer/reader를 파일명 대신 `writtenBy`/`readBy` owner로 표시
-- [x] core 테스트 전략 문서 추가 (`docs/core-test-strategy.md`)
-- [x] `packages/core/scripts` 파이프라인 분석 문서 추가 (`../docs/core-scripts-pipeline.md`)
-- [x] extract 파이프라인 문서 갱신 (`../docs/core-scripts-pipeline.md`에 Phase 8 Character Card 추출 반영)
-- [x] `pack.js` Character Card round-trip 병합 지원 (`character/` -> `card.json`)
-- [x] lorebook 폴더를 실제 디렉토리로 추출하고 raw metadata는 `lorebooks/manifest.json`에 보존
-- [x] `lorebooks/manifest.json` 정책 확정 (extract always writes manifest, build/pack manifest-first)
-- [x] repack contract & validation 문서화 (`../docs/repack-contract-validation.md`)
-- [x] `packages/core/structure.md` 구조 문서 추가
-- [x] `packages/core/core-structure-ko.md` 한글 번역 문서 추가
-- [x] **Monorepo Restructure (Tasks 1-15)**
-  - [x] Task 1: Root monorepo configuration (package.json, workspaces)
-  - [x] Task 2: packages/core scaffold + package.json
-  - [x] Task 3: Core types extraction from workbench.ts
-  - [x] Task 4: shared/ TypeScript conversion (4 files)
-  - [x] Task 5: packages/core tsconfig.json setup
-  - [x] Task 6: Copy extract pipeline to core
-  - [x] Task 7: Copy pack.js + rpack_map.bin to core
-  - [x] Task 8: Copy analyze pipeline + fix luaparse path
-  - [x] Task 9: Copy analyze-card pipeline to core
-  - [x] Task 10: Copy build-components.js + shared/ JS to core
-  - [x] Task 11: Core CLI entry point + index.ts
-  - [x] Task 12: packages/vscode scaffold
-  - [x] Task 13: Root .gitignore update
-- [x] Task 14: vitest setup for packages/core
-- [x] Task 15: TODO.md update + root test.js cleanup
-- [x] `packages/core/src/shared/phase-helpers.ts` 분해 이관 완료 (lorebook 순수 계획은 `domain/lorebook/folders.ts`, 실행 I/O는 `node/lorebook-io.ts`, 소비자 phase는 plan+execute로 전환)
-- [x] `packages/core` Task 9 완료: `cli/analyze` 순수 로직 domain 추출 (`lua-collector.ts`, `lua-analyzer.ts`, correlation 순수 로직 분리)
+- [x] LuaLS merge 경로를 붙인 뒤 `.risulua`의 `{{getvar::ct_tempvar}}` 같은 CBS variable argument 위치에서 hover/go to definition이 LuaLS proxy 대기/merge 경로에 묶여 체감상 죽던 회귀를 수정함. `server-helper.ts`의 `.risulua` hover/definition routing에서 CBS provider 결과가 있고 cursor가 실제 `{{...}}` CBS macro 내부일 때는 LuaLS를 기다리지 않고 CBS 결과를 즉시 반환하게 좁혔고, macro 밖 Lua `getState("...")` 같은 Lua state bridge 문맥은 계속 LuaLS merge/fallback을 타도록 `isPositionInsideCbsMacro()` gate를 추가함. 회귀 테스트는 실제 사용자 형태인 `{{getvar::ct_tempvar}}`와 `variables/defaults.risuvar` default key를 사용하도록 갱신하고 async definition handler를 실제처럼 await하며 workspace refresh 이후 hover default value와 `.risuvar` definition target을 검증하게 보강함. 수정 파일 LSP diagnostics, `server-helper.test.ts` 9개, `lsp-server-integration.test.ts`의 `ct_tempvar` targeted test, cbs-lsp build 검증을 완료함
+- [x] VS Code에서 `sumneko.lua` 확장이 이미 LuaLS를 실행 중이어도 CBS LSP sidecar는 별도 child process라 같은 LSP transport를 재사용할 수 없고, 기존 구현은 명시 `risuWorkbench.cbs.server.luaLsPath` 또는 PATH의 `lua-language-server`만 보던 문제를 보강함. VS Code client가 explicit `luaLsPath`가 비어 있을 때 `Lua.misc.executablePath` 설정과 설치된 `sumneko.lua` extension의 `server/bin/lua-language-server` 계열 경로를 자동 탐색해 `CBS_LSP_LUALS_PATH`로 넘기도록 했으며, 현재 환경에서 발견된 `/home/noel/.vscode-server/extensions/sumneko.lua-3.18.2-linux-x64/server/bin/lua-language-server` 같은 remote extension bundle 경로도 잡을 수 있게 함. verify script에 sumneko auto-discovery drift guard를 추가했고 수정 파일 LSP diagnostics, VS Code build, CBS client verify script, e2e boundary test 18개 검증을 완료함
+- [x] `.risulua`를 `lua`로 file association했을 때 extension activation은 되지만 VS Code LanguageClient `documentSelector`가 `languageId=lua` 문서에 실제로 attach하지 않아 LuaLS hover/go to definition/rename/completion 요청 자체가 CBS LSP로 전달되지 않던 누락을 수정함. `CBS_DOCUMENT_SELECTORS`에 일반 Lua 전체가 아니라 `{ language: 'lua', scheme: 'file', pattern: '**/*.risulua' }` 필터를 추가해 `.risulua` 파일만 호환 attach되게 했고, boundary E2E와 verify script가 이 selector drift를 잡도록 보강함. 또한 `cbs/runtimeAvailability`를 client startup 후 조회해 Output channel에 LuaLS sidecar status/health/executable과 unavailable recovery를 출력하게 하여, LuaLS 미설치/PATH 누락/sidecar crash가 더 이상 조용한 실패로 보이지 않게 함. 수정 파일 LSP diagnostics, VS Code build, e2e boundary test 18개, CBS client verify script 검증을 완료함
+- [x] VS Code에서 한 파일에 `lua`와 `risulua` language id를 동시에 부여할 수 없기 때문에, 사용자가 `files.associations`로 `*.risulua`를 `lua`로 연결해도 CBS client가 같이 살아나는 호환 경로를 추가함. 기본 `.risulua -> risulua` association은 유지하되 `onLanguage:lua`와 `workspaceContains:**/*.risulua` activation event를 추가해 Lua association 상태에서도 extension/CBS LanguageClient가 시작되게 했고, 기존 file-pattern document selector(`**/*.risulua`)가 LSP attach를 담당하게 유지함. 또한 client-side CBS auto suggest와 bracket pair decoration이 `languageId=lua`라도 파일명이 `.risulua`이면 CBS 문서로 취급하도록 보강했으며, activation/association/auto-suggest 회귀 테스트와 verify script drift guard를 추가하고 수정 파일 LSP diagnostics, VS Code build, e2e boundary test 18개, CBS client verify script 검증을 완료함
+- [x] `.risulua` LuaLS sidecar 라우팅을 고쳤는데도 VS Code에서 hover/go to definition/rename이 계속 비활성처럼 보이던 런타임 원인을 추가 조사해, VS Code extension 설정에서 LuaLS executable path를 CBS server로 전달하는 경로가 없던 문제를 수정함. `risuWorkbench.cbs.server.luaLsPath` 설정을 `package.json`에 추가하고, `cbsLanguageClient.ts`가 이를 `CBS_LSP_LUALS_PATH` env로 standalone/embedded CBS server 프로세스에 전달하게 했으며, pure boundary snapshot도 같은 env forwarding 계약을 반영하도록 갱신함. Extension-host test settings, boundary E2E, verify script도 새 설정을 포함하도록 보강했고 VS Code build, CBS LSP build, VS Code boundary test 15개, CBS client verify script 검증을 완료함. 실제 Extension Development Host에서는 `cbs-lsp`/`vscode` rebuild 뒤 기존 server process가 새 코드를 자동으로 물지 않으므로 window reload 또는 Extension Host 재시작이 필요함
+- [x] `.risulua`에서 LuaLS sidecar가 순수 Lua local function/variable에 대해 hover는 일부만, go to definition/rename은 전혀 제공하지 못하던 라우팅 문제를 수정함. `LuaLsProxy`에 `textDocument/definition`, `textDocument/prepareRename`, `textDocument/rename` 프록시를 추가하고 shadow `.lua` URI로 들어온 LuaLS 결과를 원본 `.risulua` URI로 되돌리게 했으며, `LuaLsCompanionController` subsystem status를 definition/rename live surface로 갱신함. `ServerFeatureRegistrar`는 `.risulua` definition을 CBS+LuaLS 병합으로 처리하고, rename은 CBS rename 불가 시 LuaLS rename으로 fallback하며, hover는 CBS 결과가 있어도 LuaLS hover를 함께 조회해 병합하도록 변경함. LuaLS proxy URI remap 테스트, server-helper definition/hover/rename routing 회귀 테스트, controller surface contract 테스트를 보강했고 수정 파일 LSP diagnostics, LuaLS provider/helper targeted tests, cbs-lsp build 검증을 완료함
+
+### Done (2026-04-25)
+
+- [x] CBS variable go to definition이 hover summary처럼 workspace writer뿐 아니라 reader 위치까지 함께 반환하도록 확장함. `DefinitionProvider`의 workspace target 병합 경로와 oversized `.risulua` fast path가 `VariableFlowService.queryVariable()`의 writers/readers를 모두 `LocationLink` target으로 변환하게 했고, availability contract wording도 writers/readers로 갱신함. definition feature test와 server seam integration test에 reader 포함 회귀를 추가했으며 수정 파일 LSP diagnostics, targeted definition test, definition integration test, availability snapshot tests, cbs-lsp build 검증을 완료함
+- [x] CBS variable hover tooltip에 표시되는 external reader/writer(`.risulorebook`, `.risuregex`, `.risulua` 등) 위치가 텍스트로만 보이고 클릭해도 VS Code에서 정확한 위치로 이동하지 못하던 문제를 수정함. `HoverProvider`가 workspace occurrence 위치를 `file://...#line,char` 링크 대신 `command:risuWorkbench.cbs.openOccurrence?...` 링크로 렌더링하게 바꾸고, VS Code client는 trusted markdown을 해당 command 하나로만 제한해 허용하며 command handler가 local `file:` URI와 range를 검증한 뒤 `openTextDocument`/`showTextDocument`로 정확한 selection을 열도록 보강함. Oracle review에서 지적한 arbitrary URI scheme 리스크를 `file:` scheme guard로 닫았고, hover markdown command URI 회귀 테스트·VS Code command contribution boundary test·수정 파일 LSP diagnostics·hover/definition targeted test·cbs-lsp build·VS Code build·VS Code boundary test 검증을 완료함
+- [x] hover와 같은 oversized `.risulua` CBS variable argument 경계에서 `{{getvar::ct_memory}}`의 `ct_memory` go to definition이 full fragment analysis empty guard 때문에 `.risuvar` default key나 workspace writer로 이동하지 못하던 문제를 보강함. `DefinitionProvider`에 oversized `.risulua` current-line fast path를 추가해 첫 번째 chat variable macro 인자만 `VariableFlowService`의 writer/default definition target으로 연결하고, macro 판별은 `getVariableMacroArgumentKind()` source-of-truth를 재사용하게 했으며 global/temp/value-slot/local-only 문맥은 추측하지 않게 유지함. Oracle review에서 지적한 target 없음 fallback 리스크도 fast path가 인자를 인식한 경우 즉시 `null`로 끝나도록 고정했고, oversized default `.risuvar` definition·workspace writer definition·missing target no-analysis·value-slot/no-chat 무추측 회귀 테스트, 수정 파일 LSP diagnostics, definition targeted test, hover+definition targeted test, cbs-lsp build 검증을 완료함
+- [x] oversized `.risulua`에서 CBS builtin hover fast path가 `{{getvar::ct_memory}}`의 `getvar` macro name만 처리하고 `ct_memory` 같은 첫 번째 chat variable 인자는 full fragment analysis가 비어 hover가 사라지던 후속 회귀를 수정함. `HoverProvider`에 bounded current-line variable argument hover fast path를 추가해 `getvar`/`setvar` 등 chat variable macro 첫 인자만 보수적으로 tooltip을 만들고, global/temp/local-only 문맥은 full analysis 없이 추측하지 않게 유지함. Oracle review에서 지적된 1MiB 이후 뒤쪽 line 실패 리스크도 cursor 주변 line 추출 방식으로 고쳤으며 정상 `.risulua` string literal hover·oversized 뒤쪽 line hover·non-chat oversized 무추측 회귀 테스트, 수정 파일 LSP diagnostics, hover targeted test, cbs-lsp build 검증을 완료함
+- [x] oversized `.risulua` CBS fast path 추가 전 CBS 인자 문맥을 core parser/tokenizer, completion context/provider, scope macro rules, diagnostics, hover/definition/signature, variable-flow, oversized guards 기준으로 재전수조사함. `metadata::` 첫 번째 인자는 current-line prefix만으로 안전하게 판별 가능하고 정적 catalog만 쓰는 문맥이라 `CompletionProvider`의 oversized macro-argument fast path에 추가해 `{{metadata::mo}}`에서 `mobile` 같은 metadata key 후보를 full fragment analysis 없이 반환하도록 보강함. 또한 `equal`/`greaterequal`/`less`/`and`/`contains` 같은 comparison/logical value 인자도 nested CBS 값을 받는다는 점을 반영해 workspace chat variable 후보를 bare name이 아니라 `{{getvar::name}}` value expression으로 삽입하게 추가함. `call::`/`arg::`/`slot::`/temp/global variable 인자처럼 local scope 또는 fragment symbol table이 필요한 문맥은 거대 `.risulua`에서 추측하지 않고 빈 completion으로 즉시 종료하도록 고정해 `locatePosition()` 우회를 유지함. Oracle review에서 지적된 current-line scan 상한 리스크도 1MiB cap과 cap 초과 시 빈 completion 종료 회귀 테스트로 닫았으며, 수정 파일 LSP diagnostics·oversized completion/fast-path boundary targeted test·`.risulua` CBS integration filtered test·large-workspace perf test·cbs-lsp build 검증을 완료함
+- [x] oversized `.risulua` CBS fast path 작성 방식을 다음 작업자가 이어받을 수 있도록 handoff 문서 `docs/superpowers/plans/2026-04-25-oversized-risulua-fast-path-handoff.md`를 작성함. full analysis를 대체하지 않는 gate 원칙, bounded current-line scan만 허용하는 성능 계약, 안전한 문맥 판별 기준, lightweight 후보 소스, textEdit range 정책, stale workspace metadata 정책, 필수 unit/integration/perf/build 검증 루프, `split()` 회귀·operator-only `#when`·value argument 오탐 같은 자주 생기는 실수를 정리함
+- [x] 512KiB 초과 `.risulua`의 oversized completion fast path에서 `{{#when::...}}` segment 인자도 operator와 workspace chat variable 후보를 함께 반환하도록 보강함. `{{#when::`와 `{{#when::mood::` 같은 현재 줄 prefix를 bounded scan으로 판별해 `is`/`and`/`or` 등 operator와 `mood`/`target`/`score` 같은 variable 후보를 동시에 제공하며, 일반 파일은 기존 fragment analysis 기반 `when-operators` 경로를 유지함. completion targeted test·`.risulua` CBS integration filtered test·large-workspace perf test·cbs-lsp build·수정 파일 LSP diagnostics 검증을 완료함
+- [x] `packages/vscode/lua-sample/super-huge.risulua`처럼 512KiB를 넘는 `.risulua`에서 full CBS fragment analysis가 의도적으로 empty analysis로 축소된 뒤 `{{getvar::}}` 같은 CBS variable argument 위치의 Trigger Suggest가 `No suggestions`로 끝나던 경계를 보강함. `CompletionProvider`가 oversized `.risulua`의 현재 줄에서 안전한 `{{getvar::...`/`{{setvar::...` 계열 변수 인자 prefix만 bounded fast path로 판별해 workspace chat variable summary 후보를 반환하게 했고, 정식 fragment 분석은 계속 건너뛰어 oversized guard를 유지함. completion targeted test·`.risulua` CBS integration filtered test·large-workspace perf test·cbs-lsp build·수정 파일 LSP diagnostics 검증을 완료했으며, `lsp-server-integration.test.ts` 전체 실행의 workspace-state 관련 기존 실패 18건은 기존 `#### Backlog` remain task와 같은 범위로 재확인함
+- [x] `.risulua`에서 `{{getvar::}}` 같은 CBS variable argument 영역과 `#when` operator 영역의 trigger suggestion이 퍼포먼스 개선 이후 비정상 동작할 수 있는 원인을 조사하고, graphify code graph·completion provider/context·server routing·기존 테스트 커버리지를 대조해 수정 계획 문서 `docs/superpowers/plans/2026-04-25-risulua-cbs-argument-suggestions.md`를 작성함. 주요 리스크를 cheap root fast path 경계, `.risulua` string literal fragment mapping, cached analysis/locatePosition 재사용, `addvar` coverage gap, workspace freshness gating으로 정리하고 테스트 우선 수정 순서를 확정함
+- [x] `.risulua` CBS string literal 안의 `{{getvar::}}`/`{{addvar::}}` variable argument completion과 `{{#when::...::}}` operator+variable completion 회귀를 테스트 우선으로 보강함. `completion.test.ts`의 cheap root fast path boundary, `addvar` first/value argument, unclosed `{{getvar::mo`/`{{setvar::mood::`/`{{addvar::mood::` live typing recovery 회귀를 통과시켜 `::`/`?`/`:` argument/operator 문맥이 fragment analysis로 넘어가고 PlainText recovery가 실제 argument index를 유지하는 정책을 고정했으며, 빈 `{{calc::}}` 첫 인자는 `completion-context.ts`에서 close-tag가 아닌 calc-expression으로 분류하게 보강함. 실제 `.risulua`에서 `{{getvar::` 입력 직후 workspace snapshot이 stale이 되어 workspace 변수 후보가 숨겨지던 원인을 확인하고 macro-argument completion에서는 stale snapshot 후보도 보여주되 metadata로 stale 상태를 유지하게 `CompletionProvider`를 조정함. `lsp-server-integration.test.ts`의 `.risulua` string literal CBS argument/operator routing, stale snapshot workspace variable visibility, cached `getvar`/`#when` completion reuse 테스트와 `large-workspace.test.ts`의 oversized `.risulua` fragment-dependent completion guard도 확인함. 수정 파일 LSP diagnostics·completion targeted test·risulua-cbs integration targeted test·cached integration targeted test·large-workspace perf test·cbs-lsp build 검증을 완료함
+- [x] Rust/WASM Lua lexical indexing kernel을 CBS LSP `.risulua` 분석 경로에 연결함. WASM analyzer가 Lua short/long string literal range, CBS marker 여부, 정적 `getState`/`setState`/`getChatVar`/`setChatVar` key occurrence를 compact record로 반환하고, TypeScript adapter/backend가 WASM lazy-load와 `luaparse` fallback을 관리하게 했으며, `.risulua` CBS fragment mapping을 full-file이 아닌 CBS-bearing string literal content range 기반으로 전환함. `FragmentAnalysisService.analyzeDocument()` 실제 provider 경로가 WASM literal range를 동기 lazy-load로 사용하고, oversized guard는 WASM/fallback/full-file mapping보다 먼저 실행되도록 유지함. wasm/core/cbs-lsp targeted tests와 build 검증을 완료함
+- [x] 512KiB 초과 `.risulua`에서 completion은 복구됐지만 CBS 함수 hover와 Lua `getState`/`setState` 변수 flow가 비어 보이던 후속 회귀를 수정함. oversized `.risulua`는 여전히 full `mapToCbsFragments()`/`analyzeLuaSource()`를 타지 않게 유지하면서, `HoverProvider`가 현재 줄의 CBS builtin 이름만 bounded fast path로 tooltip을 만들게 했고, `FileScanner`가 원문을 `text: ''`로 유지하되 정적 `getState`/`setState`/`getChatVar`/`setChatVar` 문자열 key occurrence만 lightweight scan으로 보존해 `ElementRegistry`와 `UnifiedVariableGraph`에 `lua-state-api` read/write로 반영되게 함. 수정 파일 LSP diagnostics·element-registry/large-workspace regression tests·hover/completion feature tests·server-helper/LuaLS guard tests·cbs-lsp build 검증을 완료함
+- [x] `packages/vscode/lua-sample/super-huge.risulua`처럼 512KiB를 넘는 `.risulua`에서 CBS LSP request가 통째로 사라져 completion이 빈 응답처럼 보이던 회귀를 수정함. `createFragmentRequest()`가 oversized `.risulua`도 `FragmentAnalysisRequest`로 유지하게 되돌리고, 기존 `FragmentAnalysisService` oversized guard가 parser/tokenizer 없는 empty analysis를 반환하게 해 full-file CBS 분석은 계속 차단하면서 `{{` cheap root completion은 즉시 응답하도록 정리함. `tests/perf/large-workspace.test.ts`에 실제 `super-huge.risulua` 샘플 기반 runtime budget 회귀 테스트를 추가해 request 유지, empty analysis, `user` completion, 250ms 예산을 고정했으며 수정 파일 LSP diagnostics·targeted perf test·completion/LuaLS guard tests·cbs-lsp build 검증을 완료함
+- [x] 거대 `.risulua`를 한 번 열면 VS Code/CBS LSP가 먹통이 되는 문제의 즉시 방어선을 추가함. `packages/cbs-lsp`에 공용 oversized Lua guard를 추가해 opened-document `createFragmentRequest()`가 512KiB 초과 `.risulua`를 provider 분석 요청으로 만들지 않게 했고, `FragmentAnalysisService` 직접 호출 경로도 parser/tokenizer를 태우지 않는 empty analysis로 빠르게 반환하게 보강함. `createFragmentRequest()`가 `null`을 반환하는 routed `.risulua`도 LuaLS proxy skip으로 취급해 기존 oversized LuaLS timeout guard가 우회되지 않게 했으며, `packages/vscode` legacy CBS bracket pair highlighter와 autoSuggest fallback은 `.risulua`가 같은 threshold를 넘으면 `document.getText()`/suffix scan 없이 decoration·suggest trigger를 건너뛰도록 수정함. oversized `.risulua` fragment request/analysis/LuaLS skip/autoSuggest skip 회귀 테스트를 추가했으며 수정 파일 LSP diagnostics·targeted cbs-lsp tests·cbs-lsp build·VS Code build·VS Code boundary test·`npm run wasm:check` 검증을 완료함
+- [x] `feat/architecture-rework` 기반 별도 worktree `../risuai-workbench-rust-wasm`에서 Rust WASM Lua analyzer 테스트환경을 구성함. `packages/lua-analyzer-wasm`에 `wasm-bindgen` 기반 `analyze_lua(source, options_json) -> string` 초기 API, compact JSON envelope 반환, Rust unit test, wasm-bindgen Node test, generated `pkg` 로드 smoke test, package README/LICENSE를 추가했고 루트에 `wasm:build`/`wasm:test:rust`/`wasm:test:wasm`/`wasm:smoke`/`wasm:check` 스크립트를 연결함. `npm run wasm:check`로 Rust unit 2건, wasm Node test 1건, Node smoke test 통과를 확인함
+- [x] Rust WASM 기반 Lua analyzer 도입을 별도 worktree에서 실험하기 위한 계획 문서 `docs/rust-wasm-plan.md`를 생성함. 거대 `.risulua` 병목의 현재 방어 범위와 남은 runtime CBS provider 병목을 정리하고, Rust WASM의 목표/비목표, 신규 `packages/lua-analyzer-wasm` 후보 구조, WASM compact result API, `.risulua` string literal 기반 CBS fragment 전환, state API occurrence 추출, backend fallback 정책, 성능·패키징 검증 계획, worktree/PR 분할 전략을 단계별로 문서화함
+- [x] 거대 `.risulua` 문제 후속 리서치를 위해 `docs/research/enomous-risulua-problem.md` 조사 노트를 생성함. 실제 문제 workspace(`chikan-train-latest`, `merry-sisters-final-1`)의 파일 수·크기·라인 수 메트릭, CBS LSP 병목 경로, 512KiB oversized guard 적용 내역, 관련 테스트와 검증 명령, VS Code/TypeScript/LuaLS/clangd/ESLint의 대형 파일 대응 선례, 후속 리서치 질문을 한 문서에 정리함
+- [x] 거대 `.risulua`가 포함된 charx workspace에서 CBS LSP가 workspace indexing/LuaLS mirror sync와 request proxy timeout에 오래 묶이는 문제를 완화함. Layer 1 `FileScanner`가 512KiB 초과 Lua source를 index text에서 제외하되 원본 길이와 truncation flag를 scan record에 남기고, `ElementRegistry`는 해당 flag를 보고 `analyzeLuaSource()`를 건너뛰어 queryable file record만 유지하도록 수정함. LuaLS document router/process도 같은 기준으로 workspace bulk sync·standalone open document·shadow `.lua` write를 방어하고 `oversizedSkipped` 통계를 timeline trace에 포함하도록 보강했으며, deferred LuaLS sync timer가 stale oversized 문서를 나중에 다시 sync하지 않도록 취소 경로를 정리함. 또한 hover/completion request path에서도 현재 문서 text가 oversized면 LuaLS proxy 호출을 건너뛰어 CBS/local-only 결과로 즉시 끝나게 했고, Oracle review에서 지적된 timeout 잔존 리스크를 회귀 테스트로 닫음. 수정 파일 LSP diagnostics·server-helper/element-registry/luals-documents/luals-process/workspace-refresh targeted tests·cbs-lsp build 검증을 완료함
+- [x] Extension Development Host에서 CBS completion이 Output에는 `start`만 반복되고 suggest widget은 loading에 머무는 상황을 추적하기 위해 CBS LSP durable timeline JSONL 로그를 추가함. VS Code client가 `context.logUri/cbs-lsp/timeline.jsonl` 경로를 `CBS_LSP_TIMELINE_LOG`로 embedded/standalone server에 전달하고, server tracing 공통 hook이 `trace`/`info`/`warn` event를 append-only JSONL로 남기도록 보강함. 또한 completion handler 예외 시에는 timeline/Output에 `error`와 `end`를 남기고 빈 completion 응답으로 복구해 request가 열린 채 남지 않도록 좁게 방어했으며, `.risuregex` `@@@ IN` 내부 bare `{{` fast path와 timeline 파일 기록 회귀 테스트를 추가함. 수정 파일 LSP diagnostics·신규 targeted test·cbs-lsp build·VS Code build 검증을 완료했고, 기존 넓은 `lsp-server-integration.test.ts` 전체 실행은 workspace-state 관련 기존 실패 18건을 별도 remain risk로 확인함
+- [x] CBS completion 디버깅이 Output 없이 눈가리고 진행되던 문제를 줄이기 위해 `packages/vscode` client-side auto-suggest fallback에 운영 로그를 추가함. `{{`/`::` predicate hit, debounce schedule, duplicate skip, inactive editor/selection moved skip, auto-close short-circuit, 실제 `editor.action.triggerSuggest` 실행 시점을 모두 `CBS Language Server` Output channel에 남기고, 각 로그에 `clientStarted`/`clientRunning` 상태와 languageId·문서 version·cursor 위치를 함께 기록하도록 보강함. 수정 파일 LSP diagnostics·VS Code build·CBS client boundary test 12개 검증을 완료함
+- [x] `packages/vscode` embedded CBS Language Server debug launch가 `--inspect=6009`를 하드코딩해 VS Code Extension Development Host를 여러 개 띄우면 inspector 포트 충돌이 나던 문제를 수정함. embedded debug `execArgv`를 `--inspect=0`으로 바꿔 Node가 사용 가능한 inspector 포트를 자동 선택하도록 했고, 수정 파일 LSP diagnostics·VS Code build·CBS client boundary test 12개 검증을 완료함
+- [x] CBS LSP completion 지연 조사에서 Output에 completion 로그가 전혀 보이지 않는 원인을 구분할 수 있도록 `completion start` 운영 로그를 추가함. 이제 completion 요청이 서버에 도착하는 즉시 `[cbs-lsp:completion] start ... routedToLuaLs=...`가 출력되며, 이후 `build`/`luaProxy completion-end` duration 로그가 따라오므로 서버 미도달과 서버 내부 병목을 구분할 수 있음. 수정 파일 LSP diagnostics·completion/responseMerger/luals-proxy targeted test·cbs-lsp build·large-workspace perf test 검증을 완료함
+- [x] CBS LSP 성능 개선이 실제 VS Code 런타임에서 체감되지 않는 원인을 후속 조사함. 현재 VS Code client는 workspace local `cbs-language-server` binary가 없으면 monorepo 개발용 `packages/cbs-lsp/dist/embedded.js`를 runtime path로 직접 로드하므로, `cbs-lsp` rebuild 뒤에도 이미 떠 있는 Extension Host/CBS server 프로세스는 자동으로 새 코드를 물지 않는다는 점을 확인함. 기존 `traceFeatureResult()`는 VS Code client trace 설정 없이는 Output에 보이지 않는 `connection.tracer.log()` 경로라, completion/Lua proxy duration을 `connection.console.log()` 운영 로그로도 내보내 Output > CBS Language Server에서 바로 확인할 수 있게 보강했으며 luals-proxy/completion/responseMerger targeted test·cbs-lsp build·large-workspace perf test 검증을 완료함
+- [x] CBS LSP trigger suggest 체감 지연을 줄이기 위해 `VariableFlowService`에 cached lightweight completion summary를 추가하고, workspace chat variable completion 및 Lua `getState`/`setState` overlay completion이 후보마다 `queryVariable()`/default definition lookup을 반복하지 않도록 수정함. diagnostics fallback은 `.risulua`의 CBS101/CBS102 chat macro argument로 제한하고 publish-scope memoization·duration/count/code별 tracing을 추가했으며, 첫 `didOpen` full rebuild는 deferred job으로 분리해 local diagnostics가 먼저 publish되도록 바꿈. LuaLS workspace sync는 열린 `.risulua`를 우선 sync하고 나머지는 deferred batch로 넘기며 total/lua/skipped/synced/deferred/shadow duration tracing을 추가함. completion/responseMerger/diagnostics/workspace refresh/LuaLS targeted test·large-workspace perf test·cbs-lsp build 검증을 완료함
+- [x] CBS LSP workspace indexing이 VS Code extension host/개발 repo처럼 큰 workspace에서 `node_modules`, `dist`, `graphify-out`, cache/build 산출물까지 재귀 순회해 startup과 auto suggest를 지연시키던 문제를 완화함. Layer 1 `FileScanner`의 async/sync scan 모두 dependency/build/cache 디렉토리를 건너뛰게 하고, `node_modules` 안의 `.risu*` 파일을 무시하는 회귀 테스트를 추가했으며 file-scanner/controller targeted test·lsp-server integration test·cbs-lsp build 검증을 완료함
+- [x] `.risulua` hover 라우팅에서 CBS hover 대상(`{{user}}`, `{{getvar::...}}` 등)이 있어도 LuaLS hover proxy 응답을 기다리느라 VS Code에서 툴팁이 사라질 수 있던 문제를 수정함. `.risulua` 문서에서 CBS provider가 hover를 만든 경우에는 LuaLS 요청을 건너뛰고 즉시 CBS hover를 반환하도록 `server-helper.ts`를 보강했으며, LuaLS unavailable 상태에서도 builtin/function CBS hover가 LuaLS 요청 없이 반환되는 회귀 테스트를 갱신함. cbs-lsp integration targeted test·cbs-lsp build 검증을 완료함
+- [x] `.risulua` 안의 CBS function 인자(`{{getvar::ct_NoStretchSpeech}}` 등)가 Layer 1 occurrence에 없더라도 이름 기반 workspace/default variable query로 보강되도록 수정함. `.risuvar` default-only 변수를 `VariableFlowService.queryVariable()`이 빈 occurrence node로 반환하게 하고, hover/diagnostics local-first 경로가 `resolveVariablePosition()` fallback으로 기본값을 찾아 `CBS variable "..." is referenced without a local definition` 오진을 억제하도록 보강했으며 `.risulua` definition/hover/diagnostics 회귀 테스트를 추가함. cbs-lsp integration targeted test·variable-flow service test·completion feature test·diagnostics-engine test·cbs-lsp build 검증을 완료함
+- [x] CBS LSP `#each` shorthand/regular header의 정적 iterator source가 chat variable read처럼 definition/references/document highlight와 Layer 1 graph에 잡히도록 보강함. `extractEachLoopBinding`에 iterator range를 추가하고 `{{#each var1 key}}`에서 `var1`은 chat variable read, `key`/`slot::key`는 기존 loop alias로 유지되게 scope/reference/local-first/core occurrence 추출을 정리했으며 관련 feature/scope/indexer 회귀 테스트를 추가함
+- [x] CBS LSP hover에서 `{{#each var1 key}}{{slot::key}}{{/each}}` 형태의 shorthand each 구문이 `var1`과 `slot` hover를 표시하지 않던 문제를 수정함. `#each` block header의 iterator를 chat variable hover로 해석하고, `#each A key` alias shorthand를 scope binding 추출에 반영했으며, pure-mode body 안에서도 허용된 `slot` macro 이름 자체는 builtin hover가 유지되도록 보강함. `{{#each items as}}` malformed 진단 회귀를 막기 위해 `as`를 shorthand alias로 인정하지 않게 좁혔고, hover 회귀 테스트를 추가했으며 수정 파일 LSP diagnostics·Prettier check·affected cbs-lsp tests·cbs-lsp 전체 테스트·cbs-lsp build 검증을 완료함
+- [x] `packages/vscode` CBS block auto-close가 이미 `{{#if condition}} {{/if}}` 또는 `{{#if condition}}\n\n{{/if}}`로 닫힌 statement의 condition 내부에서 `{{...}}` CBS completion을 마무리할 때 `{{/if}}`를 중복 삽입하던 문제를 수정함. 커서 뒤 같은 줄의 남은 block header 닫힘 `}}`뿐 아니라 다음 줄의 기존 close tag까지 `documentSuffix`로 감지해 자동 close를 건너뛰도록 `cbsAutoSuggest`/`cbsAutoSuggestCore`를 보강하고, 같은 줄·멀티라인 close tag 회귀 테스트를 추가했으며 수정 파일 LSP diagnostics·Prettier check·VS Code build·client boundary test 12개 검증을 완료함
+- [x] CBS LSP `#when`/문서용 block body가 공백만 포함할 때 CBS103 empty body 진단을 내던 문제를 수정함. 구조 진단의 `PlainText` body 판정을 trim 기반이 아니라 원문 길이 기반으로 좁혀 사용자가 의도적으로 남긴 공백을 body 존재로 취급하도록 바꾸고, `{{#when::ct_generatedHTML::vis::A}} {{/when}}` 회귀 테스트를 추가했으며 수정 파일 LSP diagnostics·diagnostics-engine targeted test·cbs-lsp build 검증을 완료함
+- [x] CBS LSP `#when` header completion에서 `{{#when::arg1::arg2::arg3}}`의 각 segment 위치가 operator 후보만 반환하던 문제를 수정함. `when-operators` context가 operator 후보와 Risu chat variable 후보를 함께 반환하도록 `CompletionProvider`에 segment completion builder를 추가하고, `{{#when::`, `{{#when::mood::`, `{{#when::mood::is::` 위치 모두에서 operator와 workspace variable이 같이 뜨는 회귀 테스트를 추가했으며 수정 파일 LSP diagnostics·completion targeted test·cbs-lsp 전체 테스트·cbs-lsp build 검증을 완료함
+- [x] CBS LSP `#when` header operator diagnostics가 중첩 CBS macro 내부의 `::`를 top-level segment 구분자로 오인해 `{{and::{{equal::...}}}}` 같은 유효한 complex condition에서 `Invalid #when operator "{{equal"` CBS003을 내던 문제를 수정함. block header segment splitter가 `{{`/`}}` depth를 추적해 최상위 `::`만 분리하도록 보강하고, nested `and`/`equal`/`getglobalvar` 조건 회귀 테스트를 추가했으며 수정 파일 LSP diagnostics·diagnostics-engine targeted test·cbs-lsp 전체 테스트·cbs-lsp build 검증을 완료함
+- [x] `packages/vscode` CBS auto suggest fallback이 `{{#when::...}}` header argument 영역 전반에서도 `::` 입력 직후 suggestion을 다시 열도록 확장함. `{{#when::`, `{{#when::keep::var1::`, `{{#when::{{getvar::el_popup}}::`처럼 keep modifier·다중 segment·중첩 CBS macro 뒤에서도 열린 `#when` header depth를 추적해 trigger하고, 이미 닫힌 `{{#when::ready}}::` 뒤에서는 오작동하지 않도록 회귀 테스트를 추가했으며 수정 파일 LSP diagnostics·VS Code build·client boundary test 12개 검증을 완료함
+- [x] CBS LSP builtin completion에서 CBS function/block syntax가 suggest 선택만으로 full macro snippet으로 자동완성되도록 개선하고, VS Code client-side filtering이 full macro `textEdit` 범위 때문에 후보를 숨기지 않도록 compact `filterText`를 추가함. 인자가 없는 `user`/`char` 계열은 `{{user}}`/`{{char}}`, `{{greaterequal}}` 계열은 `{{greaterequal::${1:a}::${2:b}}}`, `{{#when}}`은 `{{#when::${1:condition}}}`, `{{#each}}`는 `{{#each ${1:iterable} ${2:key}}}{{slot::${2:key}}}{{/each}}` 형태로 들어가며, unresolved payload에서는 `textEdit.newText`와 중복되는 `insertText`를 생략해 payload budget을 유지함. 수정 파일 LSP diagnostics·completion targeted test·large-workspace perf targeted test·cbs-lsp build·cbs-lsp 전체 테스트·VS Code build·수정 파일 Prettier 검증을 완료함
+- [x] `packages/vscode`의 `.risulorebook`, `.risuregex`, `.risuprompt` TextMate grammar에 custom extension front matter highlighting을 추가함. 선두 `---` delimiter, `key: value` field, boolean/null/number/string/object-like value, `@@@ SECTION` marker를 별도 scope로 분리했으며 수정 syntax JSON 파일 LSP diagnostics·JSON parse smoke·VS Code build 검증을 완료함
+- [x] `packages/vscode`의 `.risulua`, `.risuhtml`, `.risulorebook` TextMate grammar가 CBS 전용 highlighting 이후 각각 VS Code 내장 Lua(`source.lua`), HTML(`text.html.basic`), Markdown(`text.html.markdown`) grammar를 fallback으로 include하도록 보강함. 수정 syntax JSON 파일 diagnostics·JSON parse smoke·VS Code build 검증을 완료함
+- [x] `.risulua` hover/completion 라우팅에서 LuaLS companion이 없거나 빈 응답을 돌려도 CBS provider 결과가 유지되도록 `server-helper.ts`의 Lua proxy 경로에 CBS fallback/merge를 추가함. `.risulua` 문서의 `{{user}}` hover와 `{{` root completion이 LuaLS unavailable 상태에서도 CBS builtin 후보를 반환하는 `lsp-server-integration.test.ts` 회귀 테스트를 추가했으며 수정 파일 LSP diagnostics·cbs-lsp integration targeted test·cbs-lsp build 검증을 완료함
+- [x] CBS LSP completion에서 `{{#each A B}}{{/each}}`의 iterator 위치(`A`)가 `Block` header로만 분류되어 variable completion으로 이어지지 않던 문제를 수정함. `CompletionTriggerContext`가 `#each` open header의 첫 iterator 표현식 범위를 직접 계산해 chat-variable completion을 반환하도록 보강했고, prefix가 있는 `{{#each it}}`와 빈 iterator 위치 `{{#each }}` 회귀 테스트를 추가함. alias 생략 허용 정책 이후 stale해진 codeAction integration fixture도 `{{slot::item}}` 단독 오용 케이스로 갱신했으며 수정 파일 LSP diagnostics·completion targeted test·cbs-lsp 전체 테스트·cbs-lsp build·VS Code build 검증을 완료함
+- [x] CBS `#each` block header에서 `as <item>` alias를 생략한 `{{#each items}}` 구문도 유효하게 취급하도록 parser 회귀 케이스와 LSP block-header 진단 정책을 보강함. core parser pure-mode 테스트에 alias 생략 케이스를 추가하고, cbs-lsp 진단은 `as` keyword를 실제로 시도했지만 alias가 깨진 경우만 `MissingRequiredArgument`를 내도록 좁혔으며, 기존 malformed fixture를 alias 생략 허용 fixture로 갱신함. 수정 파일 LSP diagnostics·core parser targeted test·cbs-lsp diagnostics/codeActions/references/rename targeted test·core build·cbs-lsp build 검증을 완료함
+- [x] CBS LSP completion 반응성 3차 개선으로 `WorkspaceRefreshController`의 `document-change` workspace rebuild/diagnostics 경로를 150ms debounce하도록 변경해 새 입력 직후 completion 요청이 동기 incremental rebuild 뒤에 줄 서던 병목을 줄임. open/close/watched-file/configuration refresh는 기존처럼 즉시 처리하되, close/watched/configuration 경계에서는 pending document-change refresh를 먼저 flush해 상태 손실을 방지함. `flushDocumentChangeRefresh()` 테스트 seam과 `tests/controllers/workspace-refresh-controller.test.ts`를 추가해 change 직후 diagnostics publish가 즉시 실행되지 않고 debounce 이후 실행되는 정책과 close 전 flush 정책을 고정했으며, 기존 integration test도 debounce 이후 diagnostics를 확인하도록 조정함. 수정 파일 LSP diagnostics·controller/integration targeted test·cbs-lsp build·cbs-lsp 전체 테스트·VS Code build 검증을 완료함
+- [x] CBS LSP completion 2차 개선으로 `{{` / `{{foo` / `{{#` / `{{#w` root prefix 전용 fast path를 `CompletionProvider`에 추가해 해당 문맥에서는 `analysisService.locatePosition()`과 fragment diagnostics 분석을 거치지 않고 builtin/block/snippet 후보를 즉시 반환하도록 최적화함. current-line cheap detector는 sectioned artifact에서 CBS-bearing section만 허용하고 pure/puredisplay body, `{{getvar::` 같은 argument completion, `{{?` calc, `{{/` close tag, `{{:` else 문맥은 기존 full analysis로 fallback하도록 보수적으로 제한했으며, fast path textEdit이 `{{us`→`{{user`, `{{#w`→`{{#when`처럼 prefix를 중복하지 않도록 보정함. completion fast path hit/fallback 회귀 테스트를 추가했고 수정 파일 LSP diagnostics·completion/payload targeted test·cbs-lsp build·cbs-lsp 전체 테스트·VS Code build 검증을 완료함
+- [x] CBS LSP `CompletionProvider.resolve()`가 단일 completion item hydrate를 위해 `provide()`/`provideInternal()` 전체 분석 경로를 다시 실행하지 않도록 수정함. unresolved payload 크기 회귀를 피하기 위해 별도 `resolveKey` 직렬화 없이 기존 category/label/sortText에서 hydrate 경로를 파생하고, builtin은 registry lookup으로, workspace chat variable은 `VariableFlowService.queryVariable()`과 default variable definition 조회로, local variable은 category 기반 lightweight metadata로 detail/documentation/explanation/workspace metadata를 직접 복원하며, hydrate 불가능한 항목은 기존처럼 `null`을 반환하도록 정리함
+- [x] cbs-lsp completion handler와 completion resolve handler에 `performance.now()` 기반 duration tracing을 추가함. `server-helper.ts`의 `registerCompletionHandler` CBS path와 `registerCompletionResolveHandler`에서 completion list/resolve 결과 생성 시간을 측정해 `traceFeatureResult`로 `durationMs`를 기록하고, `RequestHandlerRunner`의 `summarize` end trace에도 `durationMs`를 포함함. `WorkspaceRefreshController.ts`의 `refreshTrackedWorkspaces`와 `refreshWorkspaceUris`에서 `state-rebuild-start`가 실제 rebuild 호출 **이후**에 기록되던 버그를 rebuild **이전**으로 이동시키고, `state-rebuild-end`에 `durationMs`를 추가함. 수정 파일 LSP diagnostics·cbs-lsp build·cbs-lsp 전체 테스트 검증을 완료함
+- [x] `packages/vscode/src/completion/cbsAutoSuggest.ts`의 중복 `editor.action.triggerSuggest` 호출을 debounced `scheduleCbsSuggest`로 교체하고, 동일 document version + position 기준 재요청 guard를 추가해 `{{` 입력 시 3~5회 동시 completion request를 유발하던 request storm을 제거함. auto-close 로직과 predicate는 그대로 유지했고, extension dispose 시 pending timer를 정리하는 wrappedDisposable을 추가했으며 수정 파일 LSP diagnostics·VS Code build 검증을 완료함
+- [x] CBS 개발자 확인에 따라 `{{#if_pure}}`가 공식적으로 `{{/if}}`로도 닫히는 문법을 core parser에 반영함. `if_pure` close alias로 `/if`를 허용해 기존 `{{/if_pure}}`·`{{/}}` 경로와 함께 진단 없이 닫히도록 수정하고, `packages/core/tests/domain/cbs/parser.test.ts`에 회귀 테스트를 추가했으며 수정 파일 LSP diagnostics·core parser targeted test·core build·cbs-lsp build 검증을 완료함. 기존 조사 결과도 `{{/if}}` 공식 close alias를 누락한 것으로 정정함
+- [x] `packages/vscode` CBS auto suggest fallback에 block opener auto-close를 추가해 `{{#if}}`/`{{#each ...}}`/중첩 CBS 조건이 들어간 `{{#if {{getvar::enabled}}}}` 입력 직후 `{{/if}}` 같은 close tag가 자동 삽입되도록 했고, 자동 삽입된 close tag 변경 이벤트가 다시 auto-close를 반복하던 재귀 버그를 close-tag suffix guard로 차단했으며 수정 파일 LSP diagnostics·VS Code build·client boundary test 12개·수정 파일 Prettier 검증을 완료함
+- [x] CBS LSP block snippet completion에서 `{{#each}}`처럼 auto-close된 block header 위에 `each-block`을 적용할 때 `{{##each...` / trailing `}}`가 중복되던 textEdit range 버그를 수정함. block snippet은 여는 `{{`부터 cursor 직후 `}}`까지 header 전체를 교체하고, 일반 block function completion은 기존 prefix replacement 동작을 유지하도록 분리했으며 completion 회귀 테스트·수정 파일 LSP diagnostics·cbs-lsp build 검증을 완료함
+
+### Done (2026-04-24)
+
+- [x] `packages/vscode` CBS 자동 suggest fallback이 active selection 대신 실제 `TextDocumentContentChangeEvent` 변경 끝점 기준으로 line prefix를 계산하도록 보강해 `{{` 입력 직후 `editor.action.triggerSuggest`가 입력 위치 기준으로 안정적으로 열리게 했고, 수정 파일 LSP diagnostics·VS Code build·client boundary test 11개·수정 파일 prettier 검증을 완료함
+- [x] CBS tokenizer/parser가 `{{#if {{? {{getvar::ct_Language}} == 1}}}}` / `{{#if {{? {{getvar::ct_Deck_Level}} <= 2}}}}`처럼 block header 안 inline math expression에 중첩된 CBS macro token을 보존하도록 수정하고, `MathExpr` child AST를 visitor·fragment locator·scope collector·calc diagnostics가 순회/직렬화하게 해 inner `getvar` collector/autocomplete와 inline math diagnostics 오진을 함께 복구했으며 core tokenizer/parser/extract 회귀, cbs-lsp diagnostics/fragment-locator/scope/completion/integration 전체 테스트, core/cbs-lsp/VS Code build 검증을 완료함
+- [x] VS Code CBS completion이 `{{`와 `::` 입력 직후 suggest widget을 더 안정적으로 열도록 client-side fallback을 보강하고, CBS LSP가 닫히지 않은 `{{getvar::` / `{{gettempvar::` / `{{metadata::` / `{{call::` 상태에서도 PlainText recovery context로 후보를 반환하도록 수정했으며, 변수명이 쓰이는 CBS macro 인수 위치를 scope analyzer 규칙 기준으로 통합해 `setdefaultvar`/global variable 인수에서도 suggestion·definition 규칙이 일관되게 동작하게 했고, `getvar` 계열 ctrl+click이 `.risuvar` 기본 변수 key로 다시 이동할 수 있도록 definition target을 복구하고 completion/definition/server seam/VS Code client boundary test를 검증함
+- [x] `risu-cbs-syntax-highlighter`의 TextMate grammar를 Risu 언어별 grammar로 가져오고, CBS function database/completion/signature/parser/formatter core 및 double-brace bracket highlighter provider를 `packages/vscode/src/cbs/legacy`에 통합했으며, LSP와 중복되는 completion/hover/signature provider는 등록하지 않고 bracket decorator만 활성화하는 방식으로 VS Code build·boundary test·CBS LSP 회귀 검증을 완료함
+- [x] Risu CBS 언어에서 `{{` 입력 직후 수동 `Trigger Suggest` 없이 자동 suggestion이 뜨도록 VS Code `configurationDefaults`에 `editor.suggestOnTriggerCharacters`와 문자열/일반 `quickSuggestions` 기본값을 추가하고, `{{` 입력 감지 시 `editor.action.triggerSuggest`를 호출하는 client-side fallback 및 `{{`/`}}` double-brace bracket language configuration을 보강했으며 predicate/manifest 테스트·VS Code build/e2e 검증을 완료함
+- [x] CBS LSP initial completion latency를 줄이기 위해 `provideUnresolved()`가 `{{`/`{{#` 후보 생성 시 builtin detail/documentation/explanation을 먼저 만들고 버리던 경로를 lightweight builder로 분리하고, formatter 미호출 회귀 테스트·completion/integration/VS Code boundary 검증을 완료함
+- [x] CBS LSP autocomplete 반응성을 높이기 위해 `ElementRegistry.rebuild()`의 파일별 eager snapshot rebuild를 배치 1회 rebuild로 줄이고, `UnifiedVariableGraph`의 URI occurrence/position 조회가 기존 cache를 바로 쓰도록 바꿨으며, workspace chat-variable completion의 중복 `queryVariable()` 호출을 제거하고 `{{}}` cursor-middle completion 회귀 및 feature-matrix on-type formatting test seam을 보강한 뒤 cbs-lsp 전체 테스트·빌드를 완료함
+- [x] VS Code CBS completion이 `{{`/`{{#`처럼 아직 닫히지 않은 macro prefix에서도 후보를 내도록 plain-text recovery context 감지를 보강하고, untitled/language-mode 문서에도 LSP client가 붙도록 `packages/vscode` document selector에 language 기반 selector를 추가했으며 completion/boundary 회귀 테스트와 빌드 검증을 함께 완료함
+- [x] cbs-lsp LuaLS sidecar vertical slice를 재판정해 real-binary diagnostics/hover/completion roundtrip이 현재 코드 기준 충족됐음을 checklist에 반영하고, standalone stdio product matrix에 generated RisuAI stub completion smoke를 추가했으며 README/LuaLS companion 문서와 TODO evidence를 함께 갱신함
+- [x] core CBS builtin registry에 `contextual` 메타를 추가해 `slot`/`position`을 source-of-truth 기준으로 분류하고, `isContextualBuiltin`/`getContextual`/`isContextual` helper를 추가함. cbs-lsp completion/hover/diagnostics가 `contextual-builtin` kind를 같은 기준으로 읽도록 정리하고, 관련 회귀 테스트·checklist Evidence·TODO를 함께 갱신함
+- [x] cbs-lsp client capability degraded matrix에 Neovim / Zed / Emacs / VS Code-family 최소 profile을 추가하고, fixture snapshot·capability/availability 회귀 테스트·COMPATIBILITY.md graceful degradation 문구·STANDALONE_USAGE.md client profile 섹션·CBS checklist Evidence·TODO를 함께 갱신함
+- [x] `packages/vscode` CBS client boundary에 pure snapshot seam과 product-level `verify:cbs-client` 회귀 루프를 추가해 standalone local-devDependency / embedded fallback / invalid path override failure UX / multi-root reduced initialize preview를 built output 기준으로 고정했고, `packages/vscode/README.md`, `packages/cbs-lsp/docs/COMPATIBILITY.md`, `packages/cbs-lsp/docs/STANDALONE_USAGE.md`, `packages/cbs-lsp/checklist/CBS_CHECKLIST.md`를 같은 wording으로 갱신함
+- [x] `packages/vscode` extension-host runtime E2E를 standalone explicit path override 전용에서 scenario matrix로 확장해 auto embedded fallback까지 실제 `LanguageClient` initialize → didOpen → hover → shutdown cleanup 경로를 고정했고, fixture workspace 기본 설정·VS Code client 문서·CBS checklist Evidence를 함께 갱신함
+- [x] `packages/cbs-lsp/src/embedded.ts` IPC bootstrap entry를 추가하고 `packages/vscode` embedded fallback source-of-truth를 `dist/embedded.js`로 바로잡아, boundary snapshot에만 있던 monorepo fallback이 실제 extension-host runtime에서도 부팅되도록 복구함
+- [x] `packages/vscode`에 extension-host runtime client E2E를 추가해 explicit standalone path override 기준 real `LanguageClient` initialize → didOpen → hover → shutdown cleanup 경로를 `@vscode/test-electron`으로 고정하고, boundary snapshot/failure-UX suite와 분리된 `test:e2e:cbs-client:runtime`·README·CBS checklist Evidence를 함께 갱신함
+- [x] standalone server 검증을 `packages/cbs-lsp`의 `test:e2e:standalone` + `test:perf:standalone`로 분리하고, official VS Code client 검증을 `packages/vscode/tests/e2e/extension-client.test.ts` + `test:e2e:cbs-client`로 승격해 `verify:cbs-client`/README/CBS checklist wording이 같은 검증 레이어를 가리키도록 정리함
+- [x] `packages/vscode/src/lsp/cbsLanguageClient.ts`에 minimal runtime-test seam을 추가해 `getCbsLanguageClientRuntimeState()`/`awaitCbsLanguageClientReady()`로 extension-host 테스트가 client readiness·boundary snapshot·cleanup 상태를 관찰하고 검증할 수 있도록 함
+- [x] cbs-lsp real extracted workspace E2E를 standalone stdio interface 기준으로 먼저 구현하고, VS Code client E2E를 별도 client-layer concern으로 분리. `packages/cbs-lsp/tests/e2e/extracted-workspace.test.ts`에 stdio LSP E2E를 추가해 initialize→didOpen→diagnostics→cross-file references→completion→hover→workspace symbol→custom availability→shutdown 경로를 real extracted workspace로 검증하고, `packages/cbs-lsp/tests/product/stdio-helpers.ts`에 shared `StdioLspClient`를 추출해 `stdio-server.test.ts`와 재사용하게 함. `packages/vscode/tests/e2e/extension-client.test.ts`에 client-layer separation test를 추가해 서버/클라이언트 검증 경계가 명확히 분리됨을 고정하고, `packages/cbs-lsp/checklist/CBS_CHECKLIST.md` 5.6.2 항목을 완료 처리함
+- [x] cbs-lsp checklist 5.6.2 large workspace benchmark를 완료 처리하고, `packages/cbs-lsp/tests/perf/large-workspace.test.ts`에 standalone server cold-start / incremental rebuild / official client attach cost를 분리 측정하는 stdio 기준 회귀 테스트를 추가함. `packages/cbs-lsp/checklist/CBS_CHECKLIST.md` 5.6.2 항목을 `[done]`로 전환하고 Evidence·touchpoint를 갱신함
+- [x] cbs-lsp checklist 5.6.2 official client attach coverage gap을 닫음. `packages/cbs-lsp/tests/perf/large-workspace.test.ts`의 `official client attach cost` 블록 이름을 `stdio client attach cost`로 바로잡아 stdio 시뮬레이션과 공식 VS Code client 경계를 명확히 분리하고, 실제 official client attach 검증은 `packages/vscode/tests/e2e/extension-host/suite.ts`의 `@vscode/test-electron` 기반 real Extension Development Host LanguageClient 왕복에서 `performance.now()`로 attach/readiness 비용을 측정·검증하도록 추가함. `CBS_CHECKLIST.md` Evidence를 실제 official client runtime E2E를 명확히 인용하도록 갱신함
+- [x] cbs-lsp checklist 5.5의 stale `[future]` editor integration E2E 항목을 현재 코드 기준으로 재판정해 완료 처리하고, standalone server 검증(`test:e2e:standalone`, `test:perf:standalone`)과 official VS Code client 검증(`test:e2e:cbs-client:boundary`, `test:e2e:cbs-client:runtime`)의 책임 경계를 `CBS_CHECKLIST.md`, `packages/cbs-lsp/README.md`, `packages/vscode/README.md`에 같은 wording으로 다시 고정함
+- [x] cbs-lsp `textDocument/onTypeFormatting` vertical slice를 현재 코드 기준으로 재판정해 신규 구현하고, newline-only capability/handler/provider를 단일 clean CBS fragment 내부로 제한했으며 multi-fragment/non-CBS/malformed/recovery safe no-op 정책을 feature·integration test와 README/COMPATIBILITY/checklist Evidence에 함께 고정함
+
 ### Remaining
 
-#### Repack Contract & Validation
+#### Backlog
 
-- [x] 병합 우선순위(contract) 문서화 (`card.json` vs 추출 컴포넌트)
-- [x] `--out` 경로 해석 규칙 문서화 (파일 경로 vs 디렉토리)
-- [x] `pack -> extract` 검증 체크리스트 문서화
-
-#### Lorebook & Regex Policy
-
-- [ ] regex 파일 누락/불일치 시 에러 정책 문서화
-
-#### Format Support Decisions
-
-- [ ] strict cover 모드 추가 여부 결정 (현재는 1x1 fallback)
-- [ ] `lua/*.lua -> triggerscript` 역변환 지원 여부 결정/설계
-
-#### Analyze Pipeline
-
-- [ ] custom extension analyze 후속 정리: reporting/preset-module fallback/legacy surface final cleanup (`docs/custom-extension-analyze-impact.md`)
-
-#### Architecture Restructure (source of truth: `docs/architecture-proposal.md`)
-
-- [x] `template/` 퇴역 결정 반영: 루트 역할을 scaffold 패키지에서 workspace/product 루트로 재정의
-- [x] `bin/create.js`, `template/`, README의 scaffold 흐름 제거/축소 계획 수립
-- [x] 구조 제안 문서 작성 (`docs/architecture-proposal.md`)
-- [x] 프로젝트 철학/제품 방향성 Octto 세션 및 설계 문서 작성 (`../docs/plans/2026-03-17-risuai-workbench-philosophy-design.md`)
-- [x] 프로젝트 정체성 정교화 Octto 세션 및 설계 문서 작성 (`docs/plans/2026-03-18-risuai-workbench-identity-design.md`)
-
-##### Phase 1: Core 내부 정리 (domain/node/cli 분리, scripts/ 제거)
-
-- [x] 1차 계약 테스트 보강 (package root import smoke, CLI smoke, 실제 workflow seam 고정)
-- [x] `src/shared` ↔ `scripts/shared` helper parity 정리 (`risu-api`, `extract-helpers` 중심)
-- [x] **1-1. `src/domain/` 생성 + 순수 로직 분리**
-  - [x] `src/domain/index.ts` + 초기 pure helper 모듈 생성 (`card/cbs.ts`, `card/filenames.ts`, `card/asset-uri.ts`, `lorebook/folders.ts`, `analyze/lua-helpers.ts`)
-  - [x] 기존 `src/shared/*` 중 순수 helper를 domain 구현으로 이관하고 shared는 compatibility facade로 유지
-  - [x] `src/shared/`에서 Node.js 의존성 없는 순수 로직을 `src/domain/`으로 이동
-  - [x] `domain/card/` — CardData 파싱, CBS 분석
-  - [x] `domain/lorebook/` — lorebook 구조 분석
-  - [x] `domain/regex/` — regex script 처리
-  - [x] `domain/analyze/` — 분석 로직 (상관관계, 통계)
-  - [x] 완료 기준: domain/ 내 모든 함수가 Node.js import 0
-- [x] **1-2. `src/node/` 정비 (I/O 어댑터 전용)**
-  - [x] `src/node/fs-helpers.ts`, `src/node/png.ts`, `src/node/card-io.ts` 추가
-  - [x] `src/node/index.ts`를 node/domain 기반의 단일 explicit compatibility/export surface로 정리 (`legacy` 중간 레이어 없이 유지)
-  - [x] `tests/domain-node-structure.test.ts` 추가로 Phase 1 domain/node 경계 스모크 고정
-  - [x] `node/fs-helpers.ts` — ensureDir, writeJson, writeText, writeBinary
-  - [x] `node/png.ts` — PNG chunk 파싱 (Buffer 의존)
-  - [x] `node/card-io.ts` — parseCardFile (fs + fflate)
-  - [x] 완료 기준: node/가 domain/에만 의존, 역방향 의존 없음
-- [x] **1-3. `src/cli/` 생성 + scripts/*.js 로직 TS 이관**
-  - [x] `cli/main.ts` — subcommand dispatcher (bin/risu-core.js의 로직 흡수)
-  - [x] `cli/extract.ts` ← `scripts/extract.js` + `scripts/extract/phases.js`, `parsers.js`
-  - [x] `cli/pack.ts` ← `scripts/pack.js`
-  - [x] `cli/analyze.ts` ← `scripts/analyze.js` + `scripts/analyze/*.js`
-  - [x] `cli/analyze-card.ts` ← `scripts/analyze-card.js` + `scripts/analyze-card/*.js`
-  - [x] `cli/build.ts` ← `scripts/build-components.js`
-  - [x] 이관 원칙: JS→TS 변환, strict mode, I/O는 node/ 사용, 순수 로직은 domain/ 사용
-  - [x] 이관 전 각 커맨드별 integration test 작성 (현재 동작 고정)
-  - [x] 완료 기준: 모든 CLI 커맨드가 src/cli/에서 동작, 기존 테스트 통과
-- [x] **1-4. `bin/risu-core.js` → `dist/cli/main.js` 직접 호출**
-  - [x] `execSync` 제거, 같은 프로세스에서 `require('../dist/cli/main').run()` 호출
-  - [x] 완료 기준: `risu-core extract/pack/analyze` 등 기존 CLI 동일 동작
-- [x] **1-5. `scripts/shared/` bridge 삭제**
-  - [x] `scripts/shared/risu-api.js` 삭제
-  - [x] `scripts/shared/extract-helpers.js` 삭제
-  - [x] `scripts/shared/analyze-helpers.js` 삭제
-  - [x] `scripts/shared/uri-resolver.js` 삭제
-- [x] **1-6. `scripts/` 폴더 삭제**
-  - [x] 모든 직접 구현체 이관 확인 후 `scripts/` 디렉토리 제거
-  - [x] `scripts/rpack_map.bin` → `src/node/` 또는 `assets/`로 이동
-  - [x] `scripts/package.json` 삭제
-- [x] **1-7. barrel export 정비 + 계약 테스트 최종 보강**
-  - [x] `src/index.ts` — types + domain만 export (브라우저 safe)
-  - [x] `src/node/index.ts` — Node.js I/O 전용 export
-  - [x] package.json exports 필드 확인: `"."` = types+domain, `"./node"` = I/O
-  - [x] CLI smoke + domain unit + node integration 전체 통과 확인
-
-##### Phase 2: VSCode Extension 구조 확장
-
-- [x] **2-1. `services/` 계층 도입 (core import 시작)**
-  - [x] `services/card-service.ts` — core domain + node를 조합하는 서비스
-  - [x] `services/analysis-service.ts` — 분석 기능 서비스
-  - [x] 완료 기준: core `"."`, `"./node"` import 정상 동작
-- [x] **2-2. `providers/` 도입 (VSCode UI 제공자)**
-  - [x] `providers/tree-provider.ts` — TreeView 제공자
-  - [ ] `providers/codelens-provider.ts` — CodeLens 제공자 (필요시)
-  - [x] 완료 기준: VSCode UI 제공자 1개 이상 동작
-- [x] **2-3. `commands/` 도입 (command palette 바인딩)**
-  - [x] extract, pack, analyze 등 핵심 기능 command palette 연동
-  - [x] 완료 기준: command palette에서 core 기능 호출 가능
-- [x] **2-4. `panels/` 도입 (webview host 준비)**
-  - [x] `panels/card-panel.ts` — webview panel skeleton + 메시지 라우팅 준비
-  - [x] 완료 기준: 빈 webview panel 생성 가능
-
-##### Phase 3: Contracts + Webview
-
-- [ ] **3-1. `packages/contracts/` 생성**
-  - [ ] `contracts/src/messages.ts` — Extension ↔ Webview 메시지 프로토콜 (discriminated union)
-  - [ ] `contracts/src/ui-types.ts` — PanelState, TreeItemData 등 공유 UI 타입
-  - [ ] `contracts/src/index.ts` — barrel export
-  - [ ] `contracts/package.json` — 의존성 0, 순수 타입만
-  - [ ] 완료 기준: typed message map 존재, vscode + webview 양쪽에서 import 가능
-- [ ] **3-2. `packages/webview/` 생성 (ui-mockup/ 승격)**
-  - [ ] webview UI 프레임워크 선정 + vite 빌드 설정
-  - [ ] contracts import 연동
-  - [ ] `messaging.ts` — postMessage wrapper (contracts 기반 typed 통신)
-  - [ ] 완료 기준: vite 빌드 + contracts import 동작
-- [ ] **3-3. Extension ↔ Webview postMessage 연동**
-  - [ ] vscode panels/ → webview 양방향 typed 메시지 전달
-  - [ ] 완료 기준: 양방향 메시지 round-trip 검증
-- [ ] **3-4. `ui-mockup/` 퇴역**
-  - [ ] webview 패키지로 이관 완료 확인 후 `ui-mockup/` 디렉토리 삭제
-
----
-
-## Build Tooling Notes
-
-### 2025-04-14: tsc-alias resolution fix
-- **Problem**: `pnpm --dir packages/core build` failed with `sh: 1: tsc-alias: not found`
-- **Root cause**: Mixed npm/pnpm setup - npm installs deps at root, but pnpm package-local builds couldn't resolve the binary
-- **Fix**: Changed build scripts from `tsc-alias` to `npx tsc-alias` in:
-  - `packages/core/package.json`
-  - `packages/vscode/package.json`
-- **Result**: Both `npm --workspace` and `pnpm --dir` builds now work correctly
+- [ ] CBS LSP integration suite의 workspace-state 관련 기존 실패 18건을 별도 조사하기. 이번 timeline targeted tests와 build는 통과했지만 `npm run --workspace cbs-language-server test -- tests/features/completion.test.ts tests/lsp-server-integration.test.ts` 전체 실행에서는 LuaLS workspace sync, workspace variable flow, activation CodeLens, watched-file refresh 기대값이 현재 작업트리와 맞지 않는 실패가 남아 있음
+- [ ] `tests/custom-extension-diagnostics.test.ts`의 `maps lua full file to single fragment` 기대값을 현재 Rust/WASM Lua string fragment mapping(`lua-string:1`) 정책에 맞게 재판정하기. 이번 definition targeted 검증 중 전체 custom-extension diagnostics 실행에서 기존 기대값 `full`과 현재 구현값이 불일치하는 것을 확인했으며, 변경한 availability snapshot 케이스는 별도 targeted test로 통과함
+- [ ] `.risulua` CBS 인자에서 default-only `.risuvar` 변수까지 rename/references 표면을 definition/hover와 같은 수준으로 확장할지 검토하기. 현재 사용자 요청 범위였던 definition·hover·diagnostics는 보강됐지만, 후속 context review에서 rename provider의 `queryAt` 기반 eligibility와 references provider의 default definition 포함 여부는 별도 일관성 개선 후보로 남음

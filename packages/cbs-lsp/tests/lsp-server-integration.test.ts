@@ -38,6 +38,7 @@ import type {
 } from 'vscode-languageserver/node';
 import {
   CodeActionKind,
+  CompletionItemKind,
   FileChangeType,
   LSPErrorCodes,
   TextDocumentSyncKind,
@@ -1626,6 +1627,90 @@ describe('LSP server integration', () => {
     );
   });
 
+  it('risulua-cbs routes CBS variable argument completion inside .risulua string literals when LuaLS is unavailable', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const uri = 'file:///tmp/risulua-cbs-getvar-completion.risulua';
+    const text = 'local cbs = "{{setvar::mood::happy}} {{getvar::}}"\n';
+
+    registerServer(connection as any, documents as any);
+    documents.open(uri, text, 1, 'lua');
+
+    const completionItems = getCompletionItems(
+      await connection.completionHandler?.(
+        {
+          textDocument: { uri },
+          position: positionAt(text, '{{getvar::', '{{getvar::'.length),
+        },
+        createCancellationToken(false),
+      ),
+    );
+
+    expect(completionItems.some((item) => item.label === 'mood')).toBe(true);
+    expect(completionItems.every((item) => item.kind === CompletionItemKind.Variable)).toBe(true);
+  });
+
+  it('risulua-cbs routes CBS #when operator completion inside .risulua string literals when LuaLS is unavailable', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const uri = 'file:///tmp/risulua-cbs-when-completion.risulua';
+    const text = 'local cbs = "{{setvar::mood::happy}} {{#when::mood::}}ok{{/}}"\n';
+
+    registerServer(connection as any, documents as any);
+    documents.open(uri, text, 1, 'lua');
+
+    const completionItems = getCompletionItems(
+      await connection.completionHandler?.(
+        {
+          textDocument: { uri },
+          position: positionAt(text, '{{#when::mood::', '{{#when::mood::'.length),
+        },
+        createCancellationToken(false),
+      ),
+    );
+
+    expect(completionItems.some((item) => item.label === 'is')).toBe(true);
+    expect(completionItems.some((item) => item.label === 'isnot')).toBe(true);
+    expect(completionItems.some((item) => item.label === 'mood')).toBe(true);
+  });
+
+  it('risulua-cbs keeps workspace variable completions visible while .risulua text is ahead of the workspace snapshot', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const root = await createWorkspaceRoot();
+    const uri = await writeWorkspaceFile(
+      root,
+      'lua/completion-stale.risulua',
+      'local cbs = "{{getvar::}}"\n',
+    );
+    await writeWorkspaceFile(
+      root,
+      'prompt_template/completion-writer.risuprompt',
+      promptDocument(['{{setvar::shared::from-workspace}}']),
+    );
+
+    registerServer(connection as any, documents as any);
+    documents.open(uri, 'local cbs = "{{getvar::}}"\n', 1, 'lua');
+    await waitForDocumentChangeRefresh();
+
+    const changedText = 'local cbs = "{{getvar::}}" -- typing keeps document newer than snapshot\n';
+    documents.change(uri, changedText, 2, 'lua');
+
+    const completionItems = getCompletionItems(
+      await connection.completionHandler?.(
+        {
+          textDocument: { uri },
+          position: positionAt(changedText, '{{getvar::', '{{getvar::'.length),
+        },
+        createCancellationToken(false),
+      ),
+    );
+    const sharedCompletion = completionItems.find((item) => item.label === 'shared');
+
+    expect(sharedCompletion).toBeDefined();
+    expect(sharedCompletion?.sortText).toBe('zzzz-workspace-shared');
+  });
+
   it('merges VariableGraph state-key overlay completions into `.risulua` LuaLS results for getState string arguments', async () => {
     const connection = new FakeConnection();
     const documents = new FakeDocuments();
@@ -2422,7 +2507,7 @@ describe('LSP server integration', () => {
     expect(edits).toEqual([]);
   });
 
-  it('routes textDocument/definition through the server seam and returns local-first plus workspace writers', async () => {
+  it('routes textDocument/definition through the server seam and returns local-first plus workspace writers and readers', async () => {
     const connection = new FakeConnection();
     const documents = new FakeDocuments();
     const root = await createWorkspaceRoot();
@@ -2431,12 +2516,20 @@ describe('LSP server integration', () => {
       '{{getvar::shared}}',
     ]);
     const writerText = promptDocument(['{{setvar::shared::from-workspace}}']);
+    const externalReaderText = promptDocument(['{{getvar::shared}}']);
     const readerUri = await writeWorkspaceFile(root, 'lorebooks/reader.risulorebook', readerText);
     const writerUri = await writeWorkspaceFile(root, 'prompt_template/writer.risuprompt', writerText);
+    const externalReaderUri = await writeWorkspaceFile(
+      root,
+      'prompt_template/z-external-reader.risuprompt',
+      externalReaderText,
+    );
 
     registerServer(connection as any, documents as any);
     documents.open(readerUri, readerText, 1);
     documents.open(writerUri, writerText, 1);
+    documents.open(externalReaderUri, externalReaderText, 1);
+    await waitForDocumentChangeRefresh();
 
     const definition = connection.definitionHandler?.(
       {
@@ -2452,7 +2545,13 @@ describe('LSP server integration', () => {
         targetUri: readerUri,
       }),
       expect.objectContaining({
+        targetUri: readerUri,
+      }),
+      expect.objectContaining({
         targetUri: writerUri,
+      }),
+      expect.objectContaining({
+        targetUri: externalReaderUri,
       }),
     ]);
   });
@@ -2468,6 +2567,7 @@ describe('LSP server integration', () => {
 
     registerServer(connection as any, documents as any);
     documents.open(readerUri, readerText, 1);
+    await waitForDocumentChangeRefresh();
 
     const definition = connection.definitionHandler?.(
       {
@@ -2478,6 +2578,9 @@ describe('LSP server integration', () => {
     );
 
     expect(definition).toEqual([
+      expect.objectContaining({
+        targetUri: readerUri,
+      }),
       expect.objectContaining({
         targetUri: variableUri,
         targetRange: {
@@ -2492,25 +2595,26 @@ describe('LSP server integration', () => {
     const connection = new FakeConnection();
     const documents = new FakeDocuments();
     const root = await createWorkspaceRoot();
-    const luaText = 'local cbs = "{{getvar::ct_NoStretchSpeech}}"\n';
-    const variableText = 'ct_NoStretchSpeech=true\n';
+    const luaText = 'local cbs = "{{getvar::ct_tempvar}}"\n';
+    const variableText = 'ct_tempvar=true\n';
     const luaUri = await writeWorkspaceFile(root, 'lua/reader.risulua', luaText);
     const variableUri = await writeWorkspaceFile(root, 'variables/defaults.risuvar', variableText);
 
     registerServer(connection as any, documents as any);
     documents.open(luaUri, luaText, 1, 'lua');
+    await waitForDocumentChangeRefresh();
 
-    const definition = connection.definitionHandler?.(
+    const definition = await Promise.resolve(connection.definitionHandler?.(
       {
         textDocument: { uri: luaUri },
-        position: positionAt(luaText, 'ct_NoStretchSpeech', 1),
+        position: positionAt(luaText, 'ct_tempvar', 1),
       },
       createCancellationToken(false),
-    );
+    ) as unknown);
     const hover = await connection.hoverHandler?.(
       {
         textDocument: { uri: luaUri },
-        position: positionAt(luaText, 'ct_NoStretchSpeech', 1),
+        position: positionAt(luaText, 'ct_tempvar', 1),
       },
       createCancellationToken(false),
     );
@@ -2523,14 +2627,14 @@ describe('LSP server integration', () => {
         targetUri: variableUri,
         targetRange: {
           start: { line: 0, character: 0 },
-          end: { line: 0, character: 'ct_NoStretchSpeech'.length },
+          end: { line: 0, character: 'ct_tempvar'.length },
         },
       }),
     ]);
-    expect(getHoverMarkdown(hover ?? null)).toContain('**Variable: ct_NoStretchSpeech**');
+    expect(getHoverMarkdown(hover ?? null)).toContain('**Variable: ct_tempvar**');
     expect(getHoverMarkdown(hover ?? null)).toContain('- Default value: true');
     expect(latestDiagnostics.map((diagnostic) => diagnostic.message)).not.toContain(
-      'CBS variable "ct_NoStretchSpeech" is referenced without a local definition',
+      'CBS variable "ct_tempvar" is referenced without a local definition',
     );
   });
 
@@ -3042,6 +3146,80 @@ describe('LSP server integration', () => {
       createSyntheticDocumentVersion(changedSameVersionText),
     );
     expect(parseSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('reuses cached analysis without losing getvar argument completion context', () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const parseSpy = vi.spyOn(core.CBSParser.prototype, 'parse');
+    const uri = 'file:///fixtures/server-cached-getvar-completion.risulorebook';
+    const text = lorebookDocument(['{{setvar::mood::happy}}', '{{getvar::}}']);
+
+    registerServer(connection as any, documents as any);
+    documents.open(uri, text, 1);
+
+    const firstCompletion = getCompletionItems(
+      connection.completionHandler?.(
+        {
+          textDocument: { uri },
+          position: positionAt(text, '{{getvar::', '{{getvar::'.length),
+        },
+        createCancellationToken(false),
+      ),
+    );
+    const parseCountAfterFirstCompletion = parseSpy.mock.calls.length;
+
+    const secondCompletion = getCompletionItems(
+      connection.completionHandler?.(
+        {
+          textDocument: { uri },
+          position: positionAt(text, '{{getvar::', '{{getvar::'.length),
+        },
+        createCancellationToken(false),
+      ),
+    );
+
+    expect(firstCompletion.some((item) => item.label === 'mood')).toBe(true);
+    expect(secondCompletion.some((item) => item.label === 'mood')).toBe(true);
+    expect(parseSpy.mock.calls.length).toBe(parseCountAfterFirstCompletion);
+  });
+
+  it('reuses cached analysis without losing #when operator completion context', () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const parseSpy = vi.spyOn(core.CBSParser.prototype, 'parse');
+    const uri = 'file:///fixtures/server-cached-when-completion.risulorebook';
+    const text = lorebookDocument(['{{setvar::mood::happy}}', '{{#when::mood::}}ok{{/}}']);
+
+    registerServer(connection as any, documents as any);
+    documents.open(uri, text, 1);
+
+    const firstCompletion = getCompletionItems(
+      connection.completionHandler?.(
+        {
+          textDocument: { uri },
+          position: positionAt(text, '{{#when::mood::', '{{#when::mood::'.length),
+        },
+        createCancellationToken(false),
+      ),
+    );
+    const parseCountAfterFirstCompletion = parseSpy.mock.calls.length;
+
+    const secondCompletion = getCompletionItems(
+      connection.completionHandler?.(
+        {
+          textDocument: { uri },
+          position: positionAt(text, '{{#when::mood::', '{{#when::mood::'.length),
+        },
+        createCancellationToken(false),
+      ),
+    );
+
+    expect(firstCompletion.some((item) => item.label === 'is')).toBe(true);
+    expect(firstCompletion.some((item) => item.label === 'mood')).toBe(true);
+    expect(secondCompletion.some((item) => item.label === 'is')).toBe(true);
+    expect(secondCompletion.some((item) => item.label === 'mood')).toBe(true);
+    expect(parseSpy.mock.calls.length).toBe(parseCountAfterFirstCompletion);
   });
 
   it('reuses one cached analysis across completion, hover, folding, and document symbols for the same version', async () => {
@@ -3695,7 +3873,7 @@ describe('LSP server integration', () => {
               availabilityScope: 'local-first',
               availabilitySource: 'server-capability:definition',
               availabilityDetail:
-                'Definition is active for routed CBS fragments, returns fragment-local definitions first, and appends workspace chat-variable writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
+        'Definition is active for routed CBS fragments, returns fragment-local definitions first, and appends workspace chat-variable writers/readers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
             },
             {
               key: 'references',

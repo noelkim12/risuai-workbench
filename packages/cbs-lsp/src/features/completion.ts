@@ -39,10 +39,12 @@ import {
   type FragmentCursorLookupResult,
   type CompletionTriggerContext,
 } from '../core';
+import { getVariableMacroArgumentKind } from '../analyzer/scope/scope-macro-rules';
 import { collectVisibleLoopBindingsFromNodePath } from '../analyzer/scopeAnalyzer';
 import type { VariableCompletionSummary, VariableFlowService, WorkspaceSnapshotState } from '../services';
 import { CbsLspTextHelper } from '../helpers/text-helper';
 import { isRequestCancelled } from '../utils/request-cancellation';
+import { shouldSkipOversizedLuaText } from '../utils/oversized-lua';
 
 export type CompletionRequestResolver = (
   params: TextDocumentPositionParams,
@@ -122,6 +124,58 @@ interface CheapRootCompletionContext {
   line: number;
 }
 
+interface CheapMacroArgumentCompletionContext {
+  type: 'variable-names';
+  kind: ScopeMacroArgumentCompletionKind;
+  prefix: string;
+  startCharacter: number;
+  endCharacter: number;
+  line: number;
+}
+
+interface CheapWhenSegmentCompletionContext {
+  type: 'when-segment';
+  prefix: string;
+  startCharacter: number;
+  endCharacter: number;
+  line: number;
+}
+
+interface CheapMetadataKeyCompletionContext {
+  type: 'metadata-keys';
+  prefix: string;
+  startCharacter: number;
+  endCharacter: number;
+  line: number;
+}
+
+interface CheapUnsupportedArgumentCompletionContext {
+  type: 'unsupported-argument';
+  prefix: string;
+  startCharacter: number;
+  endCharacter: number;
+  line: number;
+}
+
+interface CheapNestedChatValueCompletionContext {
+  type: 'nested-chat-value';
+  prefix: string;
+  startCharacter: number;
+  endCharacter: number;
+  line: number;
+}
+
+type CheapMacroSegmentCompletionContext =
+  | CheapMacroArgumentCompletionContext
+  | CheapWhenSegmentCompletionContext
+  | CheapMetadataKeyCompletionContext
+  | CheapUnsupportedArgumentCompletionContext
+  | CheapNestedChatValueCompletionContext;
+
+type ScopeMacroArgumentCompletionKind = NonNullable<
+  ReturnType<typeof getVariableMacroArgumentKind>
+>;
+
 const CBS_SECTIONED_ARTIFACT_EXTENSIONS = new Set(['.risulorebook', '.risuregex', '.risuprompt']);
 
 const CBS_FAST_PATH_SECTION_MARKERS = new Set([
@@ -134,6 +188,43 @@ const CBS_FAST_PATH_SECTION_MARKERS = new Set([
 ]);
 
 const CBS_ROOT_PREFIX_PATTERN = /^#?[a-z_]*$/i;
+
+const MAX_OVERSIZED_MACRO_ARGUMENT_LINE_SCAN_LENGTH = 1024 * 1024;
+
+const CBS_OVERSIZED_KNOWN_ARGUMENT_MACROS = new Set([
+  'addvar',
+  'arg',
+  'calc',
+  'call',
+  'getglobalvar',
+  'gettempvar',
+  'getvar',
+  'metadata',
+  'setdefaultvar',
+  'setglobalvar',
+  'settempvar',
+  'setvar',
+  'slot',
+  'tempvar',
+]);
+
+const CBS_OVERSIZED_NESTED_CHAT_VALUE_MACROS = new Set([
+  'all',
+  'and',
+  'any',
+  'contains',
+  'endswith',
+  'equal',
+  'greater',
+  'greaterequal',
+  'iserror',
+  'less',
+  'lessequal',
+  'not',
+  'notequal',
+  'or',
+  'startswith',
+]);
 
 const BLOCK_SNIPPETS: readonly BlockSnippet[] = [
   {
@@ -877,6 +968,14 @@ export class CompletionProvider {
       return fastRootCompletions;
     }
 
+    const fastMacroArgumentCompletions = this.provideCheapMacroArgumentCompletions(
+      request,
+      params.position,
+    );
+    if (fastMacroArgumentCompletions) {
+      return fastMacroArgumentCompletions;
+    }
+
     const lookup = this.analysisService.locatePosition(request, params.position, cancellationToken);
     if (!lookup) {
       return [];
@@ -1309,6 +1408,261 @@ export class CompletionProvider {
   }
 
   /**
+   * provideCheapMacroArgumentCompletions 함수.
+   * oversized `.risulua`는 full fragment analysis를 일부러 비우므로, 현재 줄의 단순 CBS 변수 인자만
+   * bounded fast path로 복구해 workspace 변수 후보를 계속 노출함.
+   *
+   * @param request - completion 요청의 문서 텍스트와 경로 정보
+   * @param position - completion을 요청한 cursor 위치
+   * @returns oversized `.risulua` macro argument 후보 또는 일반 분석 경로로 넘겨야 하면 null
+   */
+  private provideCheapMacroArgumentCompletions(
+    request: FragmentAnalysisRequest,
+    position: Position,
+  ): CompletionItem[] | null {
+    const isOversizedLua = shouldSkipOversizedLuaText(request.filePath, request.text.length);
+    const context = this.detectCheapMacroArgumentCompletionContext(request, position);
+    if (!context) {
+      return isOversizedLua ? [] : null;
+    }
+
+    const workspaceFreshness = this.getWorkspaceFreshness(request);
+    const completions = this.buildCheapMacroArgumentCompletions(context, workspaceFreshness);
+
+    if (completions.length === 0) {
+      return [];
+    }
+
+    return completions.map((item) => {
+      const newText = typeof item.insertText === 'string' ? item.insertText : item.label;
+      return {
+        ...item,
+        textEdit: {
+          range: LSPRange.create(
+            context.line,
+            context.startCharacter,
+            context.line,
+            context.endCharacter,
+          ),
+          newText,
+        },
+      } satisfies CompletionItem;
+    });
+  }
+
+  /**
+   * buildCheapMacroArgumentCompletions 함수.
+   * oversized `.risulua`에서 current-line만으로 안전하게 판별된 CBS 인자 후보를 생성함.
+   * 정적 catalog 또는 workspace summary만 사용하고 fragment/scope 분석은 호출하지 않음.
+   *
+   * @param context - current-line cheap macro argument context
+   * @param workspaceFreshness - workspace graph 후보 freshness metadata
+   * @returns fast path completion 후보 목록
+   */
+  private buildCheapMacroArgumentCompletions(
+    context: CheapMacroSegmentCompletionContext,
+    workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null,
+  ): CompletionItem[] {
+    if (context.type === 'metadata-keys') {
+      return this.buildMetadataCompletions(context.prefix);
+    }
+
+    if (context.type === 'unsupported-argument') {
+      return [];
+    }
+
+    if (context.type === 'nested-chat-value') {
+      return this.buildNestedChatValueCompletions(context.prefix, workspaceFreshness);
+    }
+
+    if (context.type === 'when-segment') {
+      return [
+        ...this.buildWhenOperatorCompletions(context.prefix),
+        ...this.buildWorkspaceChatVariableCompletions(
+          {
+            existingLabels: new Set(),
+            insertBareName: true,
+            labelPrefix: '',
+            prefix: context.prefix,
+            usage: 'macro-argument',
+          },
+          workspaceFreshness,
+        ),
+      ];
+    }
+
+    if (context.kind !== 'chat') {
+      return [];
+    }
+
+    return this.buildWorkspaceChatVariableCompletions(
+      {
+        existingLabels: new Set(),
+        insertBareName: true,
+        labelPrefix: '',
+        prefix: context.prefix,
+        usage: 'macro-argument',
+      },
+      workspaceFreshness,
+    );
+  }
+
+  /**
+   * buildNestedChatValueCompletions 함수.
+   * `{{equal::...}}` 같은 evaluated value slot에서 workspace chat variable을 nested `getvar` macro로 삽입함.
+   *
+   * @param prefix - 현재 value segment에 사용자가 입력한 변수명 prefix
+   * @param workspaceFreshness - workspace graph 후보 freshness metadata
+   * @returns nested `{{getvar::name}}` completion 후보 목록
+   */
+  private buildNestedChatValueCompletions(
+    prefix: string,
+    workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null,
+  ): CompletionItem[] {
+    return this.buildWorkspaceChatVariableCompletions(
+      {
+        existingLabels: new Set(),
+        insertBareName: false,
+        labelPrefix: '',
+        prefix,
+        usage: 'nested-chat-value',
+      },
+      workspaceFreshness,
+    );
+  }
+
+  /**
+   * detectCheapMacroArgumentCompletionContext 함수.
+   * parser/tokenizer 없이 현재 줄 prefix만으로 안전하게 판별 가능한 oversized `.risulua` CBS 변수 인자를 찾음.
+   *
+   * @param request - completion 요청의 문서 텍스트와 경로 정보
+   * @param position - completion을 요청한 cursor 위치
+   * @returns 현재 macro argument completion context 또는 fast path 대상이 아니면 null
+   */
+  private detectCheapMacroArgumentCompletionContext(
+    request: FragmentAnalysisRequest,
+    position: Position,
+  ): CheapMacroSegmentCompletionContext | null {
+    if (!shouldSkipOversizedLuaText(request.filePath, request.text.length)) {
+      return null;
+    }
+
+    const line = this.getLineTextAtPosition(
+      request.text,
+      position,
+      MAX_OVERSIZED_MACRO_ARGUMENT_LINE_SCAN_LENGTH,
+    );
+    if (line === null || position.character > line.length) {
+      return null;
+    }
+
+    const prefixText = line.slice(0, position.character);
+    const macroStartCharacter = prefixText.lastIndexOf('{{');
+    if (macroStartCharacter === -1) {
+      return null;
+    }
+
+    const closeBeforeMacro = prefixText.lastIndexOf('}}');
+    if (closeBeforeMacro > macroStartCharacter) {
+      return null;
+    }
+
+    const macroPrefix = prefixText.slice(macroStartCharacter + 2);
+    if (macroPrefix.includes('{{') || macroPrefix.startsWith('/')) {
+      return null;
+    }
+
+    const lastArgumentSeparatorIndex = macroPrefix.lastIndexOf('::');
+    if (lastArgumentSeparatorIndex === -1) {
+      return null;
+    }
+
+    const segmentStartCharacter = macroStartCharacter + 2 + lastArgumentSeparatorIndex + 2;
+    if (/^#when(?=$|[\s:}])/i.test(macroPrefix)) {
+      return {
+        type: 'when-segment',
+        prefix: macroPrefix.slice(lastArgumentSeparatorIndex + 2),
+        startCharacter: segmentStartCharacter,
+        endCharacter: position.character,
+        line: position.line,
+      };
+    }
+
+    if (macroPrefix.startsWith('#')) {
+      return null;
+    }
+
+    const macroName = macroPrefix.slice(0, macroPrefix.indexOf('::')).trim().toLowerCase();
+    if (!/^[a-z_][\w]*$/i.test(macroName)) {
+      return null;
+    }
+
+    let argumentIndex = 0;
+    for (let index = 0; index < lastArgumentSeparatorIndex; index += 1) {
+      if (macroPrefix.slice(index, index + 2) !== '::') {
+        continue;
+      }
+
+      argumentIndex += 1;
+      index += 1;
+    }
+
+    if (macroName === 'metadata' && argumentIndex === 0) {
+      return {
+        type: 'metadata-keys',
+        prefix: macroPrefix.slice(lastArgumentSeparatorIndex + 2),
+        startCharacter: segmentStartCharacter,
+        endCharacter: position.character,
+        line: position.line,
+      };
+    }
+
+    if (CBS_OVERSIZED_NESTED_CHAT_VALUE_MACROS.has(macroName)) {
+      return {
+        type: 'nested-chat-value',
+        prefix: macroPrefix.slice(lastArgumentSeparatorIndex + 2),
+        startCharacter: segmentStartCharacter,
+        endCharacter: position.character,
+        line: position.line,
+      };
+    }
+
+    const kind = getVariableMacroArgumentKind(macroName, argumentIndex);
+    if (!kind) {
+      if (CBS_OVERSIZED_KNOWN_ARGUMENT_MACROS.has(macroName)) {
+        return {
+          type: 'unsupported-argument',
+          prefix: macroPrefix.slice(lastArgumentSeparatorIndex + 2),
+          startCharacter: segmentStartCharacter,
+          endCharacter: position.character,
+          line: position.line,
+        };
+      }
+
+      return null;
+    }
+
+    if (kind !== 'chat') {
+      return {
+        type: 'unsupported-argument',
+        prefix: macroPrefix.slice(lastArgumentSeparatorIndex + 2),
+        startCharacter: segmentStartCharacter,
+        endCharacter: position.character,
+        line: position.line,
+      };
+    }
+
+    return {
+      type: 'variable-names',
+      kind,
+      prefix: macroPrefix.slice(lastArgumentSeparatorIndex + 2),
+      startCharacter: segmentStartCharacter,
+      endCharacter: position.character,
+      line: position.line,
+    };
+  }
+
+  /**
    * detectCheapRootCompletionContext 함수.
    * parser가 필요 없는 current-line CBS root prefix만 엄격히 감지함.
    *
@@ -1340,6 +1694,10 @@ export class CompletionProvider {
     }
 
     const typedPrefix = prefixText.slice(macroStartCharacter + 2);
+    if (typedPrefix.includes('::') || typedPrefix.includes('?') || typedPrefix.startsWith(':')) {
+      return null;
+    }
+
     if (!CBS_ROOT_PREFIX_PATTERN.test(typedPrefix) || typedPrefix.startsWith('/')) {
       return null;
     }
@@ -1396,11 +1754,43 @@ export class CompletionProvider {
    *
    * @param text - completion 대상 문서 텍스트
    * @param position - line을 지정하는 cursor 위치
-   * @returns 해당 line 텍스트 또는 범위를 벗어나면 null
+   * @param maxScannedCharacters - 이 문자 수를 넘겨야만 line을 찾을 수 있으면 null을 반환함
+   * @returns 해당 line 텍스트 또는 범위를 벗어나거나 scan cap을 넘으면 null
    */
-  private getLineTextAtPosition(text: string, position: Position): string | null {
-    const lines = text.split(/\r\n|\r|\n/);
-    return lines[position.line] ?? null;
+  private getLineTextAtPosition(
+    text: string,
+    position: Position,
+    maxScannedCharacters: number = Number.POSITIVE_INFINITY,
+  ): string | null {
+    let currentLine = 0;
+    let lineStart = 0;
+
+    for (let offset = 0; offset < text.length; offset += 1) {
+      if (offset > maxScannedCharacters) {
+        return null;
+      }
+
+      const char = text[offset];
+      if (char !== '\r' && char !== '\n') {
+        continue;
+      }
+
+      if (currentLine === position.line) {
+        return position.character <= offset - lineStart ? text.slice(lineStart, offset) : null;
+      }
+
+      if (char === '\r' && text[offset + 1] === '\n') {
+        offset += 1;
+      }
+      currentLine += 1;
+      lineStart = offset + 1;
+    }
+
+    if (currentLine !== position.line) {
+      return null;
+    }
+
+    return position.character <= text.length - lineStart ? text.slice(lineStart) : null;
   }
 
   /**
@@ -1950,11 +2340,14 @@ export class CompletionProvider {
       insertBareName: boolean;
       labelPrefix: '' | '$';
       prefix: string;
-      usage: 'macro-argument' | 'calc-expression';
+      usage: 'macro-argument' | 'calc-expression' | 'nested-chat-value';
     },
     workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null,
   ): CompletionItem[] {
-    if (!this.variableFlowService || workspaceFreshness?.freshness === 'stale') {
+    if (
+      !this.variableFlowService ||
+      (workspaceFreshness?.freshness === 'stale' && options.usage === 'calc-expression')
+    ) {
       return [];
     }
 
@@ -1977,8 +2370,15 @@ export class CompletionProvider {
       const detail =
         options.usage === 'calc-expression'
           ? 'Workspace chat variable for calc expression'
+          : options.usage === 'nested-chat-value'
+            ? 'Workspace chat variable as nested value'
           : 'Workspace chat variable';
       const documentation = this.formatWorkspaceVariableDocumentation(summary, options.usage);
+      const insertText = options.usage === 'nested-chat-value'
+        ? `{{getvar::${summary.name}}}`
+        : options.insertBareName
+          ? summary.name
+          : label;
 
       return {
         label,
@@ -1989,12 +2389,8 @@ export class CompletionProvider {
             kind: 'chat-variable',
           },
           this.createScopeExplanation(
-            options.usage === 'calc-expression'
-              ? 'workspace-chat-variable-graph:calc-expression'
-              : 'workspace-chat-variable-graph:macro-argument',
-            options.usage === 'calc-expression'
-              ? 'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local `$var` symbols.'
-              : 'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local chat-variable symbols.',
+            this.getWorkspaceVariableCompletionSource(options.usage),
+            this.getWorkspaceVariableCompletionExplanation(options.usage),
           ),
           undefined,
           workspaceFreshness ?? undefined,
@@ -2004,10 +2400,38 @@ export class CompletionProvider {
           kind: 'markdown',
           value: documentation,
         },
-        insertText: options.insertBareName ? summary.name : label,
+        insertText,
         sortText: `zzzz-workspace-${summary.name}`,
       } satisfies CompletionItem;
     });
+  }
+
+  private getWorkspaceVariableCompletionSource(
+    usage: 'macro-argument' | 'calc-expression' | 'nested-chat-value',
+  ): string {
+    if (usage === 'calc-expression') {
+      return 'workspace-chat-variable-graph:calc-expression';
+    }
+
+    if (usage === 'nested-chat-value') {
+      return 'workspace-chat-variable-graph:nested-chat-value';
+    }
+
+    return 'workspace-chat-variable-graph:macro-argument';
+  }
+
+  private getWorkspaceVariableCompletionExplanation(
+    usage: 'macro-argument' | 'calc-expression' | 'nested-chat-value',
+  ): string {
+    if (usage === 'calc-expression') {
+      return 'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local `$var` symbols.';
+    }
+
+    if (usage === 'nested-chat-value') {
+      return 'Completion resolved this candidate from workspace persistent chat-variable graph entries and inserts it as a nested getvar value expression.';
+    }
+
+    return 'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local chat-variable symbols.';
   }
 
   /**
@@ -2020,9 +2444,20 @@ export class CompletionProvider {
    */
   private formatWorkspaceVariableDocumentation(
     summary: VariableCompletionSummary,
-    usage: 'macro-argument' | 'calc-expression',
+    usage: 'macro-argument' | 'calc-expression' | 'nested-chat-value',
   ): string {
     const writerCount = summary.writerCount + summary.defaultDefinitionCount;
+    if (usage === 'nested-chat-value') {
+      return [
+        `**Workspace chat variable:** \`${summary.name}\``,
+        '',
+        '- Source: workspace persistent chat-variable graph',
+        '- Usage: insert as a nested `getvar` value expression inside comparison/logical CBS arguments.',
+        `- Workspace readers: ${summary.readerCount}`,
+        `- Workspace writers: ${writerCount}`,
+      ].join('\n');
+    }
+
     return usage === 'calc-expression'
       ? [
           `**Workspace chat variable:** \`${summary.name}\``,

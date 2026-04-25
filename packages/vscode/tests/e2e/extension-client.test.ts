@@ -24,7 +24,7 @@ const packageRoot = process.cwd();
 const localRequire = createRequire(__filename);
 
 interface BuiltClientBoundaryModule {
-  CBS_DOCUMENT_SELECTORS: ReadonlyArray<{ pattern: string; scheme: string }>;
+  CBS_DOCUMENT_SELECTORS: ReadonlyArray<{ language?: string; pattern?: string; scheme?: string }>;
   buildCbsClientBoundarySnapshot: (
     inputs: CbsClientBoundaryInputs,
     exists?: (filePath: string) => boolean,
@@ -40,15 +40,22 @@ interface BuiltLaunchModule {
 interface BuiltAutoSuggestModule {
   getCbsAutoCloseText: (input: {
     documentSuffix?: string;
+    fileName?: string;
     insertedText: string;
     languageId: string;
     linePrefix: string;
     lineSuffix: string;
   }) => string | null;
   shouldTriggerCbsAutoSuggest: (input: {
+    fileName?: string;
     insertedText: string;
     languageId: string;
     linePrefix: string;
+  }) => boolean;
+  shouldSkipCbsAutoSuggestForDocument: (input: {
+    documentLength: number;
+    fileName?: string;
+    languageId: string;
   }) => boolean;
 }
 
@@ -59,18 +66,22 @@ interface BuiltAutoSuggestModule {
  * @returns 현재 vscode package manifest
  */
 function readPackageJson(): {
+  activationEvents?: string[];
   contributes?: {
     configurationDefaults?: Record<string, Record<string, unknown>>;
     grammars?: Array<{ language?: string; path?: string; scopeName?: string }>;
-    languages?: Array<{ configuration?: string; id?: string }>;
+    languages?: Array<{ configuration?: string; extensions?: string[]; id?: string }>;
+    commands?: Array<{ command?: string; title?: string }>;
   };
   scripts?: Record<string, string>;
 } {
   return JSON.parse(readFileSync(path.join(packageRoot, 'package.json'), 'utf8')) as {
+    activationEvents?: string[];
     contributes?: {
       configurationDefaults?: Record<string, Record<string, unknown>>;
       grammars?: Array<{ language?: string; path?: string; scopeName?: string }>;
-      languages?: Array<{ configuration?: string; id?: string }>;
+      languages?: Array<{ configuration?: string; extensions?: string[]; id?: string }>;
+      commands?: Array<{ command?: string; title?: string }>;
     };
     scripts?: Record<string, string>;
   };
@@ -138,6 +149,30 @@ test('separates standalone server validation from official VS Code client integr
   assert.match(packageJson.scripts?.['verify:cbs-client'] ?? '', /test:e2e:cbs-client/);
 });
 
+test('contributes CBS occurrence navigation command for trusted hover links', () => {
+  const packageJson = readPackageJson();
+  const commands = packageJson.contributes?.commands ?? [];
+
+  assert.ok(
+    commands.some((command) => command.command === 'risuWorkbench.cbs.openOccurrence'),
+    'Expected CBS occurrence navigation command contribution',
+  );
+});
+
+test('activates when risulua files are manually associated as Lua', () => {
+  const packageJson = readPackageJson();
+  const activationEvents = packageJson.activationEvents ?? [];
+
+  assert.ok(
+    activationEvents.includes('onLanguage:lua'),
+    'Expected Lua activation so *.risulua files associated as lua still start the CBS client',
+  );
+  assert.ok(
+    activationEvents.includes('workspaceContains:**/*.risulua'),
+    'Expected workspaceContains activation for folders with risulua files',
+  );
+});
+
 test('does not overlap with server stdio E2E — client scripts are separate from cbs-lsp test:e2e:standalone', () => {
   const packageJson = readPackageJson();
 
@@ -176,6 +211,17 @@ test('attaches language configuration to every CBS-bearing language', () => {
 
     assert.equal(language?.configuration, './language-configuration.json');
   }
+});
+
+test('associates .risulua with the risulua language by default', () => {
+  const packageJson = readPackageJson();
+  const languages = packageJson.contributes?.languages ?? [];
+  const risulua = languages.find((candidate) => candidate.id === 'risulua');
+
+  assert.ok(
+    risulua?.extensions?.includes('.risulua'),
+    'Expected default .risulua file association to remain registered',
+  );
 });
 
 test('contributes CBS TextMate grammars for every CBS-bearing language', () => {
@@ -310,6 +356,65 @@ test('detects double-open-brace CBS prefixes for explicit VS Code suggest fallba
   );
 });
 
+test('skips explicit VS Code suggest fallback for oversized risulua documents', () => {
+  const autoSuggest = loadBuiltAutoSuggestModule();
+
+  assert.equal(
+    autoSuggest.shouldSkipCbsAutoSuggestForDocument({
+      documentLength: 512 * 1024 + 1,
+      languageId: 'risulua',
+    }),
+    true,
+  );
+  assert.equal(
+    autoSuggest.shouldSkipCbsAutoSuggestForDocument({
+      documentLength: 512 * 1024,
+      languageId: 'risulua',
+    }),
+    false,
+  );
+  assert.equal(
+    autoSuggest.shouldSkipCbsAutoSuggestForDocument({
+      documentLength: 512 * 1024 + 1,
+      languageId: 'risuhtml',
+    }),
+    false,
+  );
+});
+
+test('keeps CBS auto suggest active when a risulua file is manually associated as Lua', () => {
+  const autoSuggest = loadBuiltAutoSuggestModule();
+  const fileName = path.join(packageRoot, 'example.risulua');
+
+  assert.equal(
+    autoSuggest.shouldTriggerCbsAutoSuggest({
+      fileName,
+      insertedText: '{',
+      languageId: 'lua',
+      linePrefix: '{{',
+    }),
+    true,
+  );
+  assert.equal(
+    autoSuggest.getCbsAutoCloseText({
+      fileName,
+      insertedText: '}',
+      languageId: 'lua',
+      linePrefix: '{{#if condition}}',
+      lineSuffix: '',
+    }),
+    '{{/if}}',
+  );
+  assert.equal(
+    autoSuggest.shouldSkipCbsAutoSuggestForDocument({
+      documentLength: 512 * 1024 + 1,
+      fileName,
+      languageId: 'lua',
+    }),
+    true,
+  );
+});
+
 test('returns CBS block close text after a block opener is completed', () => {
   const autoSuggest = loadBuiltAutoSuggestModule();
 
@@ -423,7 +528,49 @@ test('keeps the official client boundary on standalone stdio when a workspace lo
     ),
     'Expected language-based selectors so untitled risuhtml documents can receive CBS completions',
   );
+  assert.ok(
+    snapshot.clientOptions.documentSelector.some(
+      (selector) =>
+        'language' in selector &&
+        'scheme' in selector &&
+        'pattern' in selector &&
+        selector.language === 'lua' &&
+        selector.scheme === 'file' &&
+        selector.pattern === '**/*.risulua',
+    ),
+    'Expected a Lua language selector scoped to .risulua files for manual file association compatibility',
+  );
   assert.equal(snapshot.clientOptions.fileWatcherPattern, '**/.risu*');
+});
+
+test('forwards configured LuaLS executable path to CBS server environment', () => {
+  const boundary = loadBuiltBoundaryModule();
+  const launch = loadBuiltLaunchModule();
+  const extensionRoot = packageRoot;
+  const workspaceRoot = path.join(packageRoot, '..', '..', 'playground');
+  const localBinaryPath = launch.getWorkspaceLocalCbsBinaryPath(workspaceRoot);
+  const luaLsPath = path.join(workspaceRoot, 'tools', 'lua-language-server');
+
+  const snapshot = boundary.buildCbsClientBoundarySnapshot(
+    {
+      extensionPath: extensionRoot,
+      settings: {
+        ...launch.defaultCbsLanguageServerSettings(),
+        luaLsPath,
+      },
+      workspaceFolders: [{ fsPath: workspaceRoot }],
+    },
+    (filePath) => filePath === localBinaryPath,
+  );
+
+  assert.equal(snapshot.launchPlan.kind, 'standalone');
+  if (snapshot.serverOptions && 'options' in snapshot.serverOptions) {
+    assert.equal(snapshot.serverOptions.options?.env.CBS_LSP_LUALS_PATH, luaLsPath);
+  } else if (snapshot.serverOptions && 'run' in snapshot.serverOptions) {
+    assert.equal(snapshot.serverOptions.run.options?.env.CBS_LSP_LUALS_PATH, luaLsPath);
+  } else {
+    assert.fail('Expected server options to include LuaLS env forwarding');
+  }
 });
 
 test('keeps auto-mode embedded fallback and failure UX in the official client boundary layer', () => {

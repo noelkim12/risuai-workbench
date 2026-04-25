@@ -207,12 +207,42 @@ describe('HoverProvider', () => {
     expect(markdown).toContain('Default value: seeded');
     expect(markdown).toContain('Representative writers:');
     expect(markdown).toContain('lorebooks/entry.risulorebook (line 5, character 11)');
+    expect(markdown).toContain(
+      `[lorebooks/entry.risulorebook (line 5, character 11)](command:risuWorkbench.cbs.openOccurrence?${encodeURIComponent(
+        JSON.stringify([
+          {
+            range: matchedOccurrence.hostRange,
+            uri: request.uri,
+          },
+        ]),
+      )})`,
+    );
     expect(markdown).toContain('lua/state.risulua (line 1, character 10)');
     expect(markdown).toContain('External writers:');
     expect(markdown).toContain('lua/state.risulua');
+    expect(markdown).toContain(
+      `[lua/state.risulua (line 1, character 10)](command:risuWorkbench.cbs.openOccurrence?${encodeURIComponent(
+        JSON.stringify([
+          {
+            range: externalWriter.hostRange,
+            uri: externalWriter.uri,
+          },
+        ]),
+      )})`,
+    );
     expect(markdown).toContain('setState');
     expect(markdown).toContain('External readers:');
     expect(markdown).toContain('regex/mood.risuregex');
+    expect(markdown).toContain(
+      `[regex/mood.risuregex (line 7, character 8)](command:risuWorkbench.cbs.openOccurrence?${encodeURIComponent(
+        JSON.stringify([
+          {
+            range: externalReader.hostRange,
+            uri: externalReader.uri,
+          },
+        ]),
+      )})`,
+    );
     expect(markdown).toContain('Workspace issues:');
     expect(markdown).toContain(
       'uninitialized-read [warning]: Variable may be read before initialization.',
@@ -245,6 +275,71 @@ describe('HoverProvider', () => {
     expect(markdown).not.toContain('Workspace readers:');
     expect(markdown).not.toContain('Representative writers:');
     expect(markdown).not.toContain('Workspace issues:');
+  });
+
+  it('resolves variable argument hover inside .risulua CBS string literals', () => {
+    const text = 'local cbs = "{{getvar::ct_memory}}"\n';
+    const request = {
+      uri: 'file:///workspace/lua/vars.risulua',
+      version: 1,
+      filePath: '/workspace/lua/vars.risulua',
+      text,
+    };
+    const provider = createProvider(new FragmentAnalysisService(), request);
+
+    const hover = provider.provide(createParams(request, positionAt(text, 'ct_memory', 1)));
+    const markdown = expectMarkdownHover(hover);
+
+    expect(markdown).toContain('**Variable: ct_memory**');
+    expect(markdown).toContain('Kind: persistent chat variable');
+    expect(markdown).toContain('Access: reads via `getvar`');
+    expect(extractHoverCategory(hover)).toEqual({
+      category: 'variable',
+      kind: 'chat-variable',
+    });
+  });
+
+  it('recovers oversized .risulua variable argument hover from bounded current-line context', () => {
+    const filler = '-- filler line keeps this lua file beyond the old document-start scan cap\n'.repeat(22000);
+    const text = `${filler}local cbs = "{{getvar::ct_memory}}"\n`;
+    const request = {
+      uri: 'file:///workspace/oversized-hover.risulua',
+      version: 1,
+      filePath: '/workspace/oversized-hover.risulua',
+      text,
+    };
+    const provider = createProvider(new FragmentAnalysisService(), request);
+
+    const hover = provider.provide(createParams(request, positionAt(text, 'ct_memory', 1)));
+    const markdown = expectMarkdownHover(hover);
+
+    expect(markdown).toContain('**Variable: ct_memory**');
+    expect(markdown).toContain('Kind: persistent chat variable');
+    expect(markdown).toContain('Access: reads via `getvar`');
+    expect(extractHoverExplanation(hover)).toEqual({
+      reason: 'scope-analysis',
+      source: 'oversized-risulua-current-line',
+      detail:
+        'Hover resolved this chat variable argument from a bounded current-line oversized .risulua fast path without full CBS analysis.',
+    });
+  });
+
+  it('does not guess non-chat oversized .risulua variable argument hover without full analysis', () => {
+    const filler = '-- filler line keeps this lua file above the oversized guard threshold\n'.repeat(9000);
+    const text = `${filler}local cbs = "{{getglobalvar::ct_memory}}{{gettempvar::ct_memory}}"\n`;
+    const request = {
+      uri: 'file:///workspace/oversized-non-chat-hover.risulua',
+      version: 1,
+      filePath: '/workspace/oversized-non-chat-hover.risulua',
+      text,
+    };
+    const provider = createProvider(new FragmentAnalysisService(), request);
+
+    const globalHover = provider.provide(createParams(request, positionAt(text, 'ct_memory', 1, 0)));
+    const tempHover = provider.provide(createParams(request, positionAt(text, 'ct_memory', 1, 1)));
+
+    expect(globalHover).toBeNull();
+    expect(tempHover).toBeNull();
   });
 
   it('degrades to fragment-local hover metadata when the workspace snapshot is stale', () => {

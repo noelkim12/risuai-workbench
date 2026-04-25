@@ -8,7 +8,11 @@ import {
   appendCbsLanguageClientOutputLine,
   getCbsLanguageClientRuntimeState,
 } from '../lsp/cbsLanguageClient';
-import { getCbsAutoCloseText, shouldTriggerCbsAutoSuggest } from './cbsAutoSuggestCore';
+import {
+  getCbsAutoCloseText,
+  shouldSkipCbsAutoSuggestForDocument,
+  shouldTriggerCbsAutoSuggest,
+} from './cbsAutoSuggestCore';
 
 /**
  * getCbsClientStateLabel 함수.
@@ -69,6 +73,21 @@ function getChangedRangeEndPosition(
  */
 function getLinePrefixAtPosition(document: vscode.TextDocument, position: vscode.Position): string {
   return document.getText(new vscode.Range(new vscode.Position(position.line, 0), position));
+}
+
+/**
+ * getDocumentLengthWithoutFullRead 함수.
+ * full document 문자열 복사 없이 VS Code 문서 길이를 character offset 기준으로 계산함.
+ *
+ * @param document - 길이를 확인할 문서
+ * @returns 문서 전체 character offset 길이
+ */
+function getDocumentLengthWithoutFullRead(document: vscode.TextDocument): number {
+  if (document.lineCount === 0) {
+    return 0;
+  }
+
+  return document.offsetAt(document.lineAt(document.lineCount - 1).range.end);
 }
 
 /**
@@ -179,6 +198,20 @@ export function registerCbsAutoSuggestTrigger(context: vscode.ExtensionContext):
       return;
     }
 
+    if (
+      shouldSkipCbsAutoSuggestForDocument({
+        documentLength: getDocumentLengthWithoutFullRead(event.document),
+        fileName: event.document.fileName,
+        languageId: event.document.languageId,
+      })
+    ) {
+      logCbsAutoSuggest('skip-oversized-risulua', {
+        languageId: event.document.languageId,
+        version: event.document.version,
+      });
+      return;
+    }
+
     for (const change of event.contentChanges) {
       const changeEndPosition = getChangedRangeEndPosition(change);
       const linePrefix = getLinePrefixAtPosition(event.document, changeEndPosition);
@@ -187,6 +220,7 @@ export function registerCbsAutoSuggestTrigger(context: vscode.ExtensionContext):
 
       const autoCloseText = getCbsAutoCloseText({
         documentSuffix,
+        fileName: event.document.fileName,
         insertedText: change.text,
         languageId: event.document.languageId,
         linePrefix,
@@ -210,6 +244,7 @@ export function registerCbsAutoSuggestTrigger(context: vscode.ExtensionContext):
 
       if (
         shouldTriggerCbsAutoSuggest({
+          fileName: event.document.fileName,
           insertedText: change.text,
           languageId: event.document.languageId,
           linePrefix,

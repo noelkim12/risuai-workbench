@@ -1,6 +1,6 @@
 import type { Definition, LocationLink, Position, TextDocumentPositionParams } from 'vscode-languageserver/node';
 import { CBSBuiltinRegistry } from 'risu-workbench-core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { FragmentAnalysisService } from '../../src/core';
 import {
@@ -83,7 +83,7 @@ describe('DefinitionProvider', () => {
       scope: 'local-first',
       source: 'definition-provider:local-first-resolution',
       detail:
-        'Definition resolves fragment-local variables, loop aliases, and local #func declarations first, then appends workspace chat-variable writers when VariableFlowService is available. Global and external symbols stay unavailable.',
+      'Definition resolves fragment-local variables, loop aliases, and local #func declarations first, then appends workspace chat-variable writers/readers when VariableFlowService is available. Global and external symbols stay unavailable.',
     });
   });
 
@@ -450,7 +450,7 @@ describe('DefinitionProvider', () => {
   });
 
   describe('cross-file variable flow integration', () => {
-    it('merges workspace writer definitions after the local-first result', () => {
+    it('merges workspace writer and reader targets after the local-first result', () => {
       const entry = getFixtureCorpusEntry('lorebook-basic');
       const modifiedText = entry.text.replace(
         '{{user}}',
@@ -469,10 +469,22 @@ describe('DefinitionProvider', () => {
         sourceName: 'setvar',
         variableName: 'mood',
       });
+      const externalReader = createVariableOccurrence({
+        direction: 'read',
+        uri: 'file:///workspace/prompt/mood.risuprompt',
+        relativePath: 'prompt_template/mood.risuprompt',
+        range: {
+          start: { line: 7, character: 2 },
+          end: { line: 7, character: 6 },
+        },
+        artifact: 'prompt',
+        sourceName: 'getvar',
+        variableName: 'mood',
+      });
       const variableFlowService = createVariableFlowServiceStub({
         queryVariable: (name) =>
           name === 'mood'
-            ? createVariableFlowQueryResult('mood', [externalWriter], [])
+            ? createVariableFlowQueryResult('mood', [externalWriter], [externalReader])
             : null,
       });
       const provider = createProvider(new FragmentAnalysisService(), request, variableFlowService);
@@ -480,9 +492,13 @@ describe('DefinitionProvider', () => {
       const definition = provider.provide(createParams(request, positionAt(modifiedText, 'mood', 2, 1)));
 
       const links = expectLocationLink(definition);
-      expect(links).toHaveLength(2);
+      expect(links).toHaveLength(3);
       expect(links[0]?.targetUri).toBe(request.uri);
-      expect(links[1]?.targetUri).toBe('file:///workspace/regex/mood.risuregex');
+      expect(links.map((link) => link.targetUri)).toEqual([
+        request.uri,
+        'file:///workspace/prompt/mood.risuprompt',
+        'file:///workspace/regex/mood.risuregex',
+      ]);
     });
 
     it('dedupes duplicate workspace writers and keeps workspace targets in stable URI/range order', () => {
@@ -552,11 +568,100 @@ describe('DefinitionProvider', () => {
       ]);
     });
 
-    it('resolves a chat variable from workspace writers even without a local definition', () => {
+    it('resolves a chat variable from workspace readers even without a local definition', () => {
       const entry = getFixtureCorpusEntry('lorebook-basic');
       const modifiedText = entry.text.replace('{{user}}', '{{getvar::shared}}');
       const request = { ...createFixtureRequest(entry), text: modifiedText };
-      const externalWriter = createVariableOccurrence({
+      const externalReader = createVariableOccurrence({
+        direction: 'read',
+        uri: 'file:///workspace/lorebooks/shared.risulorebook',
+        relativePath: 'lorebooks/shared.risulorebook',
+        range: {
+          start: { line: 4, character: 12 },
+          end: { line: 4, character: 18 },
+        },
+        sourceName: 'getvar',
+        variableName: 'shared',
+      });
+      const variableFlowService = createVariableFlowServiceStub({
+        queryVariable: (name) =>
+          name === 'shared'
+            ? createVariableFlowQueryResult('shared', [], [externalReader])
+            : null,
+      });
+      const provider = createProvider(new FragmentAnalysisService(), request, variableFlowService);
+
+      const definition = provider.provide(createParams(request, positionAt(modifiedText, 'shared', 2)));
+
+      const links = expectLocationLink(definition);
+      expect(links).toHaveLength(1);
+      expect(links[0]?.targetUri).toBe('file:///workspace/lorebooks/shared.risulorebook');
+    });
+
+    it('recovers oversized .risulua variable argument definition from workspace defaults', () => {
+      const filler = '-- filler line keeps this lua file beyond the old document-start scan cap\n'.repeat(22000);
+      const text = `${filler}local cbs = "{{getvar::ct_memory}}"\n`;
+      const request = {
+        uri: 'file:///workspace/lua/oversized.risulua',
+        version: 1,
+        filePath: '/workspace/lua/oversized.risulua',
+        text,
+      };
+      const variableUri = 'file:///workspace/variables/defaults.risuvar';
+      const service = new FragmentAnalysisService();
+      const locateSpy = vi.spyOn(service, 'locatePosition');
+      const provider = createProvider(
+        service,
+        request,
+        createVariableFlowServiceStub({
+          getDefaultVariableDefinitions: (name) =>
+            name === 'ct_memory'
+              ? [
+                  {
+                    uri: variableUri,
+                    relativePath: 'variables/defaults.risuvar',
+                    variableName: 'ct_memory',
+                    value: 'seed',
+                    range: {
+                      start: { line: 0, character: 0 },
+                      end: { line: 0, character: 'ct_memory'.length },
+                    },
+                  },
+                ]
+              : [],
+        }),
+      );
+
+      const definition = provider.provide(createParams(request, positionAt(text, 'ct_memory', 1)));
+
+      expect(locateSpy).not.toHaveBeenCalled();
+      const links = expectLocationLink(definition);
+      expect(links).toHaveLength(1);
+      expect(links[0]).toEqual(
+        expect.objectContaining({
+          targetUri: variableUri,
+          targetRange: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 'ct_memory'.length },
+          },
+          originSelectionRange: {
+            start: { line: 22000, character: 'local cbs = "{{getvar::'.length },
+            end: { line: 22000, character: 'local cbs = "{{getvar::ct_memory'.length },
+          },
+        }),
+      );
+    });
+
+    it('recovers oversized .risulua variable argument definition from workspace writers and readers', () => {
+      const filler = '-- filler line keeps this lua file above the oversized guard threshold\n'.repeat(9000);
+      const text = `${filler}local cbs = "{{getvar::shared}}"\n`;
+      const request = {
+        uri: 'file:///workspace/lua/oversized-writer.risulua',
+        version: 1,
+        filePath: '/workspace/lua/oversized-writer.risulua',
+        text,
+      };
+      const writer = createVariableOccurrence({
         direction: 'write',
         uri: 'file:///workspace/lorebooks/shared.risulorebook',
         relativePath: 'lorebooks/shared.risulorebook',
@@ -567,19 +672,126 @@ describe('DefinitionProvider', () => {
         sourceName: 'setvar',
         variableName: 'shared',
       });
-      const variableFlowService = createVariableFlowServiceStub({
-        queryVariable: (name) =>
-          name === 'shared'
-            ? createVariableFlowQueryResult('shared', [externalWriter], [])
-            : null,
+      const reader = createVariableOccurrence({
+        direction: 'read',
+        uri: 'file:///workspace/regex/shared.risuregex',
+        relativePath: 'regex/shared.risuregex',
+        range: {
+          start: { line: 2, character: 6 },
+          end: { line: 2, character: 12 },
+        },
+        sourceName: 'getvar',
+        variableName: 'shared',
       });
-      const provider = createProvider(new FragmentAnalysisService(), request, variableFlowService);
+      const service = new FragmentAnalysisService();
+      const locateSpy = vi.spyOn(service, 'locatePosition');
+      const provider = createProvider(
+        service,
+        request,
+        createVariableFlowServiceStub({
+          queryVariable: (name) =>
+            name === 'shared' ? createVariableFlowQueryResult('shared', [writer], [reader]) : null,
+        }),
+      );
 
-      const definition = provider.provide(createParams(request, positionAt(modifiedText, 'shared', 2)));
+      const definition = provider.provide(createParams(request, positionAt(text, 'shared', 1)));
 
+      expect(locateSpy).not.toHaveBeenCalled();
       const links = expectLocationLink(definition);
-      expect(links).toHaveLength(1);
-      expect(links[0]?.targetUri).toBe('file:///workspace/lorebooks/shared.risulorebook');
+      expect(links).toHaveLength(2);
+      expect(links.map((link) => link.targetUri)).toEqual([
+        'file:///workspace/lorebooks/shared.risulorebook',
+        'file:///workspace/regex/shared.risuregex',
+      ]);
+    });
+
+    it('returns null without full analysis when oversized .risulua variable target has no workspace definition', () => {
+      const filler = '-- filler line keeps this lua file above the oversized guard threshold\n'.repeat(9000);
+      const text = `${filler}local cbs = "{{getvar::missing}}"\n`;
+      const request = {
+        uri: 'file:///workspace/lua/oversized-missing.risulua',
+        version: 1,
+        filePath: '/workspace/lua/oversized-missing.risulua',
+        text,
+      };
+      const service = new FragmentAnalysisService();
+      const locateSpy = vi.spyOn(service, 'locatePosition');
+      const provider = createProvider(service, request, createVariableFlowServiceStub({}));
+
+      const definition = provider.provide(createParams(request, positionAt(text, 'missing', 1)));
+
+      expect(definition).toBeNull();
+      expect(locateSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not guess oversized .risulua value-slot definitions', () => {
+      const filler = '-- filler line keeps this lua file above the oversized guard threshold\n'.repeat(9000);
+      const text = `${filler}local cbs = "{{setvar::ct_memory::value}}"\n`;
+      const request = {
+        uri: 'file:///workspace/lua/oversized-value-slot.risulua',
+        version: 1,
+        filePath: '/workspace/lua/oversized-value-slot.risulua',
+        text,
+      };
+      const service = new FragmentAnalysisService();
+      const provider = createProvider(
+        service,
+        request,
+        createVariableFlowServiceStub({
+          getDefaultVariableDefinitions: () => [
+            {
+              uri: 'file:///workspace/variables/defaults.risuvar',
+              relativePath: 'variables/defaults.risuvar',
+              variableName: 'value',
+              value: 'seed',
+              range: {
+                start: { line: 0, character: 0 },
+                end: { line: 0, character: 'value'.length },
+              },
+            },
+          ],
+        }),
+      );
+
+      const definition = provider.provide(createParams(request, positionAt(text, 'value', 1)));
+
+      expect(definition).toBeNull();
+    });
+
+    it('does not guess non-chat oversized .risulua variable argument definitions', () => {
+      const filler = '-- filler line keeps this lua file above the oversized guard threshold\n'.repeat(9000);
+      const text = `${filler}local cbs = "{{getglobalvar::ct_memory}}{{gettempvar::ct_memory}}"\n`;
+      const request = {
+        uri: 'file:///workspace/lua/oversized-non-chat.risulua',
+        version: 1,
+        filePath: '/workspace/lua/oversized-non-chat.risulua',
+        text,
+      };
+      const service = new FragmentAnalysisService();
+      const provider = createProvider(
+        service,
+        request,
+        createVariableFlowServiceStub({
+          getDefaultVariableDefinitions: () => [
+            {
+              uri: 'file:///workspace/variables/defaults.risuvar',
+              relativePath: 'variables/defaults.risuvar',
+              variableName: 'ct_memory',
+              value: 'seed',
+              range: {
+                start: { line: 0, character: 0 },
+                end: { line: 0, character: 'ct_memory'.length },
+              },
+            },
+          ],
+        }),
+      );
+
+      const globalDefinition = provider.provide(createParams(request, positionAt(text, 'ct_memory', 1, 0)));
+      const tempDefinition = provider.provide(createParams(request, positionAt(text, 'ct_memory', 1, 1)));
+
+      expect(globalDefinition).toBeNull();
+      expect(tempDefinition).toBeNull();
     });
   });
 });

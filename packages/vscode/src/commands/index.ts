@@ -3,6 +3,15 @@ import { CardPanel } from '../panels/card-panel';
 import { AnalysisService } from '../services/analysis-service';
 import { CardService } from '../services/card-service';
 import { CoreCliService } from '../services/core-cli-service';
+import { CBS_OCCURRENCE_NAVIGATION_COMMAND } from '../lsp/cbsLanguageClient';
+
+interface CbsOccurrenceNavigationTarget {
+  uri?: string;
+  range?: {
+    start?: { line?: number; character?: number };
+    end?: { line?: number; character?: number };
+  };
+}
 
 export function registerCoreCommands(
   context: vscode.ExtensionContext,
@@ -98,9 +107,40 @@ export function registerCoreCommands(
     vscode.commands.registerCommand('risuWorkbench.openCardPanel', () => {
       CardPanel.createOrShow(context);
     }),
+    vscode.commands.registerCommand(
+      CBS_OCCURRENCE_NAVIGATION_COMMAND,
+      async (target?: CbsOccurrenceNavigationTarget) => {
+        await openCbsOccurrence(target);
+      },
+    ),
   ];
 
   return vscode.Disposable.from(...commands, output);
+}
+
+async function openCbsOccurrence(target?: CbsOccurrenceNavigationTarget): Promise<void> {
+  if (!target?.uri || !target.range?.start) {
+    void vscode.window.showWarningMessage('CBS occurrence location is unavailable.');
+    return;
+  }
+
+  const targetUri = vscode.Uri.parse(target.uri);
+  if (targetUri.scheme !== 'file') {
+    void vscode.window.showWarningMessage('CBS occurrence navigation only supports local file targets.');
+    return;
+  }
+
+  const startLine = Math.max(0, target.range.start.line ?? 0);
+  const startCharacter = Math.max(0, target.range.start.character ?? 0);
+  const endLine = Math.max(startLine, target.range.end?.line ?? startLine);
+  const endCharacter = Math.max(0, target.range.end?.character ?? startCharacter);
+  const selection = new vscode.Range(
+    new vscode.Position(startLine, startCharacter),
+    new vscode.Position(endLine, endCharacter),
+  );
+
+  const document = await vscode.workspace.openTextDocument(targetUri);
+  await vscode.window.showTextDocument(document, { selection });
 }
 
 function workspaceRoot(): string | undefined {

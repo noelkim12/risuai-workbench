@@ -529,7 +529,7 @@ describe('CompletionProvider', () => {
 
       const ifCompletion = completions.find((c) => c.label === '#if');
       expect(ifCompletion).toBeDefined();
-      expect(ifCompletion?.deprecated).toBe(true);
+      expect(ifCompletion?.['deprecated']).toBe(true);
     });
 
     it('labels documentation-only syntax entries differently from callable builtins', () => {
@@ -1118,7 +1118,6 @@ describe('CompletionProvider', () => {
     it('finds #when when typing {{#w (typed prefix with #)', () => {
       const entry = getFixtureCorpusEntry('regex-block-header');
       const request = createFixtureRequest(entry);
-      const provider = createProvider(new FragmentAnalysisService(), request);
 
       // Simulate typing {{#w - cursor right after {{#w
       const modifiedText = entry.text.replace('{{#when', '{{#w');
@@ -1377,6 +1376,280 @@ describe('CompletionProvider', () => {
     });
   });
 
+  describe('cheap root fast path boundaries', () => {
+    it.each([
+      ['{{getvar::', '{{getvar::'.length, 'mood'],
+      ['{{setvar::', '{{setvar::'.length, 'mood'],
+      ['{{addvar::', '{{addvar::'.length, 'mood'],
+    ])('does not intercept %s variable argument completion', (source, cursorOffset, expectedLabel) => {
+      const request = createInlineCompletionRequest(`{{setvar::mood::happy}}${source}`);
+      const service = new FragmentAnalysisService();
+      const locateSpy = vi.spyOn(service, 'locatePosition');
+      const provider = createProvider(service, request, createWorkspaceChatVariableService('shared'));
+
+      const completions = provider.provide(
+        createParams(
+          request,
+          offsetToPosition(request.text, '{{setvar::mood::happy}}'.length + cursorOffset),
+        ),
+      );
+
+      expect(locateSpy).toHaveBeenCalled();
+      expectCompletionLabels(completions, expectedLabel, 'shared');
+      expectNoCompletionLabels(completions, 'getvar', 'setvar', '#when');
+    });
+
+    it('does not intercept #when segment completion after ::', () => {
+      const request = createInlineCompletionRequest(
+        '{{setvar::mood::happy}}{{#when::mood::}}ok{{/}}',
+      );
+      const service = new FragmentAnalysisService();
+      const locateSpy = vi.spyOn(service, 'locatePosition');
+      const provider = createProvider(service, request, createWorkspaceChatVariableService('target'));
+      const cursorOffset = request.text.indexOf('{{#when::mood::') + '{{#when::mood::'.length;
+
+      const completions = provider.provide(createParams(request, offsetToPosition(request.text, cursorOffset)));
+
+      expect(locateSpy).toHaveBeenCalled();
+      expectCompletionLabels(completions, 'is', 'isnot', 'and', 'or', 'target');
+      expectNoCompletionLabels(completions, 'getvar', 'setvar');
+    });
+
+    it('does not intercept calc expression completion after calc::', () => {
+      const request = createInlineCompletionRequest('{{setvar::mood::happy}}{{calc::}}');
+      const service = new FragmentAnalysisService();
+      const locateSpy = vi.spyOn(service, 'locatePosition');
+      const provider = createProvider(service, request, createWorkspaceChatVariableService('score'));
+      const cursorOffset = request.text.indexOf('{{calc::') + '{{calc::'.length;
+
+      const completions = provider.provide(createParams(request, offsetToPosition(request.text, cursorOffset)));
+
+      expect(locateSpy).toHaveBeenCalled();
+      expectCompletionLabels(completions, '$mood', '$score', '&&', 'null');
+      expectNoCompletionLabels(completions, 'getvar', '#when');
+    });
+
+    it('recovers oversized .risulua variable argument completion from bounded current-line context', () => {
+      const filler = '-- filler line keeps this lua file above the oversized guard threshold\n'.repeat(9000);
+      const text = `${filler}local cbs = "{{getvar::}}"\n`;
+      const request = {
+        uri: 'file:///workspace/oversized-argument.risulua',
+        version: 1,
+        filePath: '/workspace/oversized-argument.risulua',
+        text,
+      };
+      const service = new FragmentAnalysisService();
+      const locateSpy = vi.spyOn(service, 'locatePosition');
+      const provider = createProvider(
+        service,
+        request,
+        createWorkspaceChatVariableService('shared', 'shadow'),
+      );
+      const cursorOffset = text.indexOf('{{getvar::') + '{{getvar::'.length;
+      const cursorPosition = offsetToPosition(text, cursorOffset);
+      const splitSpy = vi.spyOn(String.prototype, 'split');
+
+      try {
+        const completions = provider.provide(createParams(request, cursorPosition));
+
+        expect(locateSpy).not.toHaveBeenCalled();
+        expect(splitSpy).not.toHaveBeenCalled();
+        expectCompletionLabels(completions, 'shared', 'shadow');
+        expectNoCompletionLabels(completions, 'getvar', 'setvar', '#when');
+        expect(completions.find((completion) => completion.label === 'shared')?.textEdit).toEqual({
+          range: {
+            start: cursorPosition,
+            end: cursorPosition,
+          },
+          newText: 'shared',
+        });
+      } finally {
+        splitSpy.mockRestore();
+      }
+    });
+
+    it('recovers oversized .risulua #when segment completion with operators and variables', () => {
+      const filler = '-- filler line keeps this lua file above the oversized guard threshold\n'.repeat(9000);
+      const text = `${filler}local cbs = "{{#when::mood::}}ok{{/}}"\n`;
+      const request = {
+        uri: 'file:///workspace/oversized-when.risulua',
+        version: 1,
+        filePath: '/workspace/oversized-when.risulua',
+        text,
+      };
+      const service = new FragmentAnalysisService();
+      const locateSpy = vi.spyOn(service, 'locatePosition');
+      const provider = createProvider(
+        service,
+        request,
+        createWorkspaceChatVariableService('mood', 'target', 'score'),
+      );
+      const segmentPrefixes = ['{{#when::', '{{#when::mood::'];
+
+      for (const segmentPrefix of segmentPrefixes) {
+        const cursorOffset = text.indexOf(segmentPrefix) + segmentPrefix.length;
+        const cursorPosition = offsetToPosition(text, cursorOffset);
+        const completions = provider.provide(createParams(request, cursorPosition));
+
+        expect(locateSpy).not.toHaveBeenCalled();
+        expectCompletionLabels(completions, 'is', 'and', 'or', 'mood', 'target', 'score');
+        expectNoCompletionLabels(completions, 'getvar', 'setvar', '#when');
+        expect(completions.find((completion) => completion.label === 'is')?.textEdit).toEqual({
+          range: {
+            start: cursorPosition,
+            end: cursorPosition,
+          },
+          newText: 'is',
+        });
+      }
+    });
+
+    it('recovers oversized .risulua metadata key completion from static catalog context', () => {
+      const filler = '-- filler line keeps this lua file above the oversized guard threshold\n'.repeat(9000);
+      const text = `${filler}local cbs = "{{metadata::mo}}"\n`;
+      const request = {
+        uri: 'file:///workspace/oversized-metadata.risulua',
+        version: 1,
+        filePath: '/workspace/oversized-metadata.risulua',
+        text,
+      };
+      const service = new FragmentAnalysisService();
+      const locateSpy = vi.spyOn(service, 'locatePosition');
+      const provider = createProvider(service, request, createWorkspaceChatVariableService('mobile'));
+      const cursorOffset = text.indexOf('{{metadata::mo') + '{{metadata::mo'.length;
+      const cursorPosition = offsetToPosition(text, cursorOffset);
+      const splitSpy = vi.spyOn(String.prototype, 'split');
+
+      try {
+        const completions = provider.provide(createParams(request, cursorPosition));
+
+        expect(locateSpy).not.toHaveBeenCalled();
+        expect(splitSpy).not.toHaveBeenCalled();
+        expectCompletionLabels(completions, 'mobile');
+        expectNoCompletionLabels(completions, 'getvar', 'setvar', '#when');
+        expect(completions.find((completion) => completion.label === 'mobile')?.textEdit).toEqual({
+          range: {
+            start: offsetToPosition(text, cursorOffset - 'mo'.length),
+            end: cursorPosition,
+          },
+          newText: 'mobile',
+        });
+      } finally {
+        splitSpy.mockRestore();
+      }
+    });
+
+    it('recovers oversized .risulua comparison value completion as nested getvar expressions', () => {
+      const filler = '-- filler line keeps this lua file above the oversized guard threshold\n'.repeat(9000);
+      const text = `${filler}local cbs = "{{equal::mo::happy}}{{greaterequal::sc::10}}"\n`;
+      const request = {
+        uri: 'file:///workspace/oversized-comparison-values.risulua',
+        version: 1,
+        filePath: '/workspace/oversized-comparison-values.risulua',
+        text,
+      };
+      const service = new FragmentAnalysisService();
+      const locateSpy = vi.spyOn(service, 'locatePosition');
+      const provider = createProvider(
+        service,
+        request,
+        createWorkspaceChatVariableService('mood', 'score', 'target'),
+      );
+
+      const equalCursorOffset = text.indexOf('{{equal::mo') + '{{equal::mo'.length;
+      const equalCursorPosition = offsetToPosition(text, equalCursorOffset);
+      const equalCompletions = provider.provide(createParams(request, equalCursorPosition));
+      const moodCompletion = equalCompletions.find((completion) => completion.label === 'mood');
+
+      expect(locateSpy).not.toHaveBeenCalled();
+      expectCompletionLabels(equalCompletions, 'mood');
+      expectNoCompletionLabels(equalCompletions, 'score', 'getvar', '#when');
+      expect(moodCompletion?.insertText).toBe('{{getvar::mood}}');
+      expect(moodCompletion?.textEdit).toEqual({
+        range: {
+          start: offsetToPosition(text, equalCursorOffset - 'mo'.length),
+          end: equalCursorPosition,
+        },
+        newText: '{{getvar::mood}}',
+      });
+
+      const comparisonCursorOffset = text.indexOf('{{greaterequal::sc') + '{{greaterequal::sc'.length;
+      const comparisonCompletions = provider.provide(
+        createParams(request, offsetToPosition(text, comparisonCursorOffset)),
+      );
+
+      expectCompletionLabels(comparisonCompletions, 'score');
+      expect(comparisonCompletions.find((completion) => completion.label === 'score')?.textEdit).toEqual({
+        range: {
+          start: offsetToPosition(text, comparisonCursorOffset - 'sc'.length),
+          end: offsetToPosition(text, comparisonCursorOffset),
+        },
+        newText: '{{getvar::score}}',
+      });
+    });
+
+    it('does not guess local-only oversized .risulua argument contexts without scope analysis', () => {
+      const filler = '-- filler line keeps this lua file above the oversized guard threshold\n'.repeat(9000);
+      const text = `${filler}local cbs = "{{call::}}{{arg::}}{{slot::}}{{gettempvar::}}{{getglobalvar::}}"\n`;
+      const request = {
+        uri: 'file:///workspace/oversized-local-only-arguments.risulua',
+        version: 1,
+        filePath: '/workspace/oversized-local-only-arguments.risulua',
+        text,
+      };
+      const service = new FragmentAnalysisService();
+      const locateSpy = vi.spyOn(service, 'locatePosition');
+      const provider = createProvider(
+        service,
+        request,
+        createWorkspaceChatVariableService('shared', 'target'),
+      );
+
+      for (const macroPrefix of [
+        '{{call::',
+        '{{arg::',
+        '{{slot::',
+        '{{gettempvar::',
+        '{{getglobalvar::',
+      ]) {
+        const completions = provider.provide(
+          createParams(request, offsetToPosition(text, text.indexOf(macroPrefix) + macroPrefix.length)),
+        );
+
+        expect(completions).toEqual([]);
+      }
+
+      expect(locateSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not fall back to full analysis when oversized current-line lookup exceeds scan cap', () => {
+      const filler = '-- filler line keeps this lua file beyond the bounded scan cap\n'.repeat(22000);
+      const text = `${filler}local cbs = "{{metadata::mo}}"\n`;
+      const request = {
+        uri: 'file:///workspace/oversized-far-line.risulua',
+        version: 1,
+        filePath: '/workspace/oversized-far-line.risulua',
+        text,
+      };
+      const service = new FragmentAnalysisService();
+      const locateSpy = vi.spyOn(service, 'locatePosition');
+      const provider = createProvider(service, request, createWorkspaceChatVariableService('mobile'));
+      const splitSpy = vi.spyOn(String.prototype, 'split');
+
+      try {
+        const completions = provider.provide(
+          createParams(request, { line: 22000, character: 'local cbs = "{{metadata::mo'.length }),
+        );
+
+        expect(completions).toEqual([]);
+        expect(locateSpy).not.toHaveBeenCalled();
+        expect(splitSpy).not.toHaveBeenCalled();
+      } finally {
+        splitSpy.mockRestore();
+      }
+    });
+  });
+
   describe('trigger context: {{getvar:: (variable names)', () => {
     it('falls back to fragment analysis for argument completions', () => {
       const request = createInlineCompletionRequest('{{getvar::');
@@ -1559,7 +1832,23 @@ describe('CompletionProvider', () => {
       expect(queryVariable).not.toHaveBeenCalled();
     });
 
-    it('keeps only fragment-local chat candidates when the workspace snapshot is stale', () => {
+    it('keeps unclosed getvar first-argument recovery on variable-name completions', () => {
+      const request = createInlineCompletionRequest('{{setvar::mood::happy}}{{getvar::mo');
+      const provider = createProvider(
+        new FragmentAnalysisService(),
+        request,
+        createWorkspaceChatVariableService('shared'),
+      );
+
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(request.text, request.text.length)),
+      );
+
+      expectCompletionLabels(completions, 'mood');
+      expectNoCompletionLabels(completions, 'getvar', '#when');
+    });
+
+    it('keeps workspace chat candidates available with stale metadata while typing ahead of the snapshot', () => {
       const entry = getFixtureCorpusEntry('lorebook-setvar-macro');
       const request = createFixtureRequest(entry);
       const modifiedText = entry.text.replace('}}', '}}{{getvar::}}');
@@ -1604,8 +1893,7 @@ describe('CompletionProvider', () => {
         ),
       );
 
-      expectCompletionLabels(completions, 'mood');
-      expectNoCompletionLabels(completions, 'shared');
+      expectCompletionLabels(completions, 'mood', 'shared');
       expect(completions.find((completion) => completion.label === 'mood')?.data).toEqual(
         expect.objectContaining({
           cbs: expect.objectContaining({
@@ -1617,6 +1905,17 @@ describe('CompletionProvider', () => {
             workspace: expect.objectContaining({
               freshness: 'stale',
               snapshotVersion: 7,
+              requestVersion: 4,
+              trackedDocumentVersion: 3,
+            }),
+          }),
+        }),
+      );
+      expect(completions.find((completion) => completion.label === 'shared')?.data).toEqual(
+        expect.objectContaining({
+          cbs: expect.objectContaining({
+            workspace: expect.objectContaining({
+              freshness: 'stale',
               requestVersion: 4,
               trackedDocumentVersion: 3,
             }),
@@ -1732,6 +2031,69 @@ describe('CompletionProvider', () => {
       );
 
       expectNoCompletionLabels(completions, 'mood', 'shared');
+    });
+
+    it('does not offer variable completions for unclosed setvar value arguments', () => {
+      const request = createInlineCompletionRequest('{{setvar::mood::happy}}{{setvar::mood::');
+      const provider = createProvider(
+        new FragmentAnalysisService(),
+        request,
+        createWorkspaceChatVariableService('shared'),
+      );
+
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(request.text, request.text.length)),
+      );
+
+      expectNoCompletionLabels(completions, 'mood', 'shared');
+    });
+
+    describe('trigger context: {{addvar:: (chat variable names)', () => {
+      it('offers fragment-local and workspace chat variables for addvar first-argument completion', () => {
+        const request = createInlineCompletionRequest('{{setvar::mood::happy}}{{addvar::}}');
+        const provider = createProvider(
+          new FragmentAnalysisService(),
+          request,
+          createWorkspaceChatVariableService('shared'),
+        );
+        const cursorOffset = request.text.indexOf('{{addvar::') + '{{addvar::'.length;
+
+        const completions = provider.provide(createParams(request, offsetToPosition(request.text, cursorOffset)));
+
+        expectCompletionLabels(completions, 'mood', 'shared');
+        expect(completions.find((completion) => completion.label === 'shared')?.sortText).toBe(
+          'zzzz-workspace-shared',
+        );
+      });
+
+      it('does not offer chat variables for addvar value arguments', () => {
+        const request = createInlineCompletionRequest('{{setvar::mood::happy}}{{addvar::mood::}}');
+        const provider = createProvider(
+          new FragmentAnalysisService(),
+          request,
+          createWorkspaceChatVariableService('shared'),
+        );
+        const cursorOffset = request.text.indexOf('{{addvar::mood::') + '{{addvar::mood::'.length;
+
+        const completions = provider.provide(createParams(request, offsetToPosition(request.text, cursorOffset)));
+
+        expectNoCompletionLabels(completions, 'mood', 'shared');
+      });
+
+      it('does not offer chat variables for unclosed addvar value arguments', () => {
+        const request = createInlineCompletionRequest('{{setvar::mood::happy}}{{addvar::mood::');
+        const provider = createProvider(
+          new FragmentAnalysisService(),
+          request,
+          createWorkspaceChatVariableService('shared'),
+        );
+
+        const completions = provider.provide(
+          createParams(request, offsetToPosition(request.text, request.text.length)),
+        );
+
+        expectNoCompletionLabels(completions, 'mood', 'shared');
+      });
     });
 
     it('offers global variables for getglobalvar first-argument completion', () => {

@@ -531,7 +531,7 @@ Hello <user>
             executablePath: null,
             pid: null,
             detail:
-        'LuaLS sidecar is not running yet. Mirrored `.risulua` hover/completion stay unavailable until the companion becomes ready, while CBS fragment features keep running normally.',
+              'LuaLS sidecar is not running yet. Mirrored `.risulua` hover/completion stay unavailable until the companion becomes ready, while CBS fragment features keep running normally.',
           },
         ],
         features: expect.arrayContaining([
@@ -547,7 +547,7 @@ Hello <user>
             scope: 'local-first',
             source: 'server-capability:definition',
             detail:
-              'Definition is active for routed CBS fragments, returns fragment-local definitions first, and appends workspace chat-variable writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
+              'Definition is active for routed CBS fragments, returns fragment-local definitions first, and appends workspace chat-variable writers/readers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
           },
         ]),
         operator: expect.objectContaining({

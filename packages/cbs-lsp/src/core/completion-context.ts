@@ -286,11 +286,24 @@ export function detectCompletionTriggerContext(
     const argumentSeparatorIndex = prefix.indexOf('::');
     if (argumentSeparatorIndex !== -1) {
       const functionName = prefix.slice(0, argumentSeparatorIndex).trim().toLowerCase();
-      const argumentPrefix = prefix.slice(argumentSeparatorIndex + 2);
-      const argumentStartOffset = startOffset + 2 + argumentSeparatorIndex + 2;
+      const lastArgumentSeparatorIndex = prefix.lastIndexOf('::');
+      const argumentPrefix = prefix.slice(lastArgumentSeparatorIndex + 2);
+      const argumentStartOffset = startOffset + 2 + lastArgumentSeparatorIndex + 2;
+      const argumentIndex = prefix.slice(0, lastArgumentSeparatorIndex).split('::').length - 1;
+
+      if (functionName === 'calc' && argumentIndex === 0) {
+        return {
+          type: 'calc-expression',
+          prefix: argumentPrefix,
+          startOffset: argumentStartOffset,
+          endOffset: fragmentLocalOffset,
+          referenceKind: null,
+        };
+      }
+
       const variableContext = createVariableArgumentContext(
         functionName,
-        0,
+        argumentIndex,
         argumentPrefix,
         argumentStartOffset,
         fragmentLocalOffset,
@@ -300,7 +313,7 @@ export function detectCompletionTriggerContext(
         return variableContext;
       }
 
-      if (functionName === 'metadata') {
+      if (functionName === 'metadata' && argumentIndex === 0) {
         return {
           type: 'metadata-keys',
           prefix: argumentPrefix,
@@ -309,7 +322,7 @@ export function detectCompletionTriggerContext(
         };
       }
 
-      if (functionName === 'call') {
+      if (functionName === 'call' && argumentIndex === 0) {
         return {
           type: 'function-names',
           prefix: argumentPrefix,
@@ -317,6 +330,7 @@ export function detectCompletionTriggerContext(
           endOffset: fragmentLocalOffset,
         };
       }
+
     }
 
     if (prefix.startsWith('#')) {
@@ -717,6 +731,16 @@ export function detectCompletionTriggerContext(
               return variableContext;
             }
 
+            if (macroName === 'calc') {
+              return {
+                type: 'calc-expression',
+                prefix: '',
+                startOffset: fragmentLocalOffset,
+                endOffset: fragmentLocalOffset,
+                referenceKind: null,
+              };
+            }
+
             // Check for metadata macro
             if (macroName === 'metadata') {
               return {
@@ -733,6 +757,16 @@ export function detectCompletionTriggerContext(
                 prefix: '',
                 startOffset: fragmentLocalOffset,
                 endOffset: fragmentLocalOffset,
+              };
+            }
+
+            if (macroName === 'calc') {
+              return {
+                type: 'calc-expression',
+                prefix: '',
+                startOffset: fragmentLocalOffset,
+                endOffset: fragmentLocalOffset,
+                referenceKind: null,
               };
             }
           }
@@ -818,6 +852,17 @@ export function detectCompletionTriggerContext(
                   return variableContext;
                 }
               }
+
+              if (funcName === 'calc' && fragmentLocalOffset >= sepEnd) {
+                return {
+                  type: 'calc-expression',
+                  prefix: '',
+                  startOffset: sepEnd,
+                  endOffset: fragmentLocalOffset,
+                  referenceKind: null,
+                };
+              }
+
               if (funcName === 'metadata') {
                 if (fragmentLocalOffset >= sepEnd) {
                   return {
@@ -836,6 +881,18 @@ export function detectCompletionTriggerContext(
                     prefix: '',
                     startOffset: sepEnd,
                     endOffset: fragmentLocalOffset,
+                  };
+                }
+              }
+
+              if (funcName === 'calc') {
+                if (fragmentLocalOffset >= sepEnd) {
+                  return {
+                    type: 'calc-expression',
+                    prefix: '',
+                    startOffset: sepEnd,
+                    endOffset: fragmentLocalOffset,
+                    referenceKind: null,
                   };
                 }
               }

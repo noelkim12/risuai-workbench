@@ -28,6 +28,7 @@ export type CbsLanguageServerLaunchMode = (typeof CBS_LANGUAGE_SERVER_LAUNCH_MOD
 export interface CbsLanguageServerSettings {
   installMode: CbsLanguageServerInstallMode;
   launchMode: CbsLanguageServerLaunchMode;
+  luaLsPath: string;
   pathOverride: string;
 }
 
@@ -79,6 +80,7 @@ export function defaultCbsLanguageServerSettings(): CbsLanguageServerSettings {
   return {
     installMode: 'local-devDependency',
     launchMode: 'auto',
+    luaLsPath: '',
     pathOverride: '',
   };
 }
@@ -206,6 +208,7 @@ function normalizeSettings(settings: CbsLanguageServerSettings): CbsLanguageServ
   return {
     installMode: settings.installMode,
     launchMode: settings.launchMode,
+    luaLsPath: settings.luaLsPath.trim(),
     pathOverride: settings.pathOverride.trim(),
   };
 }

@@ -9,12 +9,18 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   CUSTOM_EXTENSION_ARTIFACTS,
+  analyzeLuaWithWasm,
   isCbsBearingArtifact,
   mapToCbsFragments,
   parseCustomExtensionArtifactFromPath,
   type CbsFragmentMap,
   type CustomExtensionArtifact,
+  type LuaWasmStateAccess,
+  type StateAccessOccurrence,
 } from 'risu-workbench-core';
+
+import { MAX_LUA_ANALYSIS_TEXT_LENGTH } from '../utils/oversized-lua';
+import { scanLuaStateAccessOccurrences } from '../utils/lua-state-access-scanner';
 
 export type WorkspaceFileArtifactClass = 'cbs-bearing' | 'non-cbs';
 
@@ -25,6 +31,8 @@ export interface WorkspaceScanFile {
   text: string;
   originalTextLength?: number;
   indexTextTruncated?: boolean;
+  lightweightLuaSourceText?: string;
+  lightweightLuaStateAccessOccurrences?: readonly StateAccessOccurrence[];
   artifact: CustomExtensionArtifact;
   artifactClass: WorkspaceFileArtifactClass;
   cbsBearingArtifact: boolean;
@@ -80,9 +88,10 @@ export interface WorkspaceScanFileFromTextOptions {
   absolutePath: string;
   text: string;
   artifact?: CustomExtensionArtifact;
+  lightweightLuaStateAccessOccurrences?: readonly StateAccessOccurrence[];
 }
 
-export const MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH = 512 * 1024;
+export const MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH = MAX_LUA_ANALYSIS_TEXT_LENGTH;
 
 /**
  * compareWorkspaceScanFiles 함수.
@@ -201,6 +210,62 @@ function shouldSkipWorkspaceDirectory(directoryName: string): boolean {
   return IGNORED_WORKSPACE_DIRECTORY_NAMES.has(directoryName);
 }
 
+function convertWasmStateAccesses(
+  accesses: readonly LuaWasmStateAccess[],
+): readonly StateAccessOccurrence[] {
+  return accesses.map((access) => ({
+    apiName: access.apiName,
+    key: access.key,
+    direction: access.direction,
+    argStart: access.argStartUtf16,
+    argEnd: access.argEndUtf16,
+    line: access.line,
+    containingFunction: access.containingFunction,
+  }));
+}
+
+async function scanLuaStateAccessesWithWasm(
+  text: string,
+): Promise<readonly StateAccessOccurrence[] | undefined> {
+  const fallbackOccurrences = scanLuaStateAccessOccurrences(text);
+  try {
+    const result = await analyzeLuaWithWasm(text, {
+      includeStringLiterals: false,
+      includeStateAccesses: true,
+    });
+    return result.ok
+      ? mergeStateAccessOccurrences(convertWasmStateAccesses(result.stateAccesses), fallbackOccurrences)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function mergeStateAccessOccurrences(
+  primary: readonly StateAccessOccurrence[],
+  fallback: readonly StateAccessOccurrence[],
+): readonly StateAccessOccurrence[] {
+  const seen = new Set<string>();
+  const merged: StateAccessOccurrence[] = [];
+
+  for (const occurrence of [...primary, ...fallback]) {
+    const key = [
+      occurrence.apiName,
+      occurrence.direction,
+      occurrence.key,
+      occurrence.argStart,
+      occurrence.argEnd,
+    ].join('\0');
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    merged.push(occurrence);
+  }
+
+  return merged;
+}
+
 /**
  * createWorkspaceScanFileFromText 함수.
  * in-memory text를 Layer 1 scan entry shape로 정규화함.
@@ -214,6 +279,13 @@ export function createWorkspaceScanFileFromText(
   const artifact = options.artifact ?? parseCustomExtensionArtifactFromPath(options.absolutePath);
   const indexTextTruncated = artifact === 'lua' && options.text.length > MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH;
   const text = indexTextTruncated ? '' : options.text;
+  // Keep this JS scanner as the fallback path. The Rust/WASM adapter replaces this
+  // value when compact scan records are available, but oversized files must never
+  // fall back to full Lua/CBS parsing on WASM load failure.
+  const lightweightLuaStateAccessOccurrences = indexTextTruncated
+    ? (options.lightweightLuaStateAccessOccurrences ?? scanLuaStateAccessOccurrences(options.text))
+    : [];
+  const lightweightLuaSourceText = indexTextTruncated ? options.text : undefined;
   const fragmentMap = mapToCbsFragments(artifact, text);
   const cbsBearingArtifact = isCbsBearingArtifact(artifact);
 
@@ -224,6 +296,8 @@ export function createWorkspaceScanFileFromText(
     text,
     originalTextLength: options.text.length,
     indexTextTruncated,
+    lightweightLuaSourceText,
+    lightweightLuaStateAccessOccurrences,
     artifact,
     artifactClass: cbsBearingArtifact ? 'cbs-bearing' : 'non-cbs',
     cbsBearingArtifact,
@@ -350,11 +424,16 @@ export class FileScanner {
    */
   private async scanDiscoveredFile(file: DiscoveredWorkspaceFile): Promise<WorkspaceScanFile> {
     const text = await readFile(file.absolutePath, 'utf8');
+    const lightweightLuaStateAccessOccurrences =
+      file.artifact === 'lua' && text.length > MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH
+        ? await scanLuaStateAccessesWithWasm(text)
+        : undefined;
     return createWorkspaceScanFileFromText({
       workspaceRoot: this.workspaceRoot,
       absolutePath: file.absolutePath,
       text,
       artifact: file.artifact,
+      lightweightLuaStateAccessOccurrences,
     });
   }
 }

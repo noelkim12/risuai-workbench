@@ -46,8 +46,8 @@ describe('LuaLsCompanionController', () => {
         nextDelayMs: null,
       },
       routing: {
-        deferredSurfaces: ['definition', 'signature'],
-        liveSurfaces: ['completion', 'diagnostics', 'hover'],
+        deferredSurfaces: ['signature'],
+        liveSurfaces: ['completion', 'definition', 'diagnostics', 'hover', 'rename'],
         mirrorMode: 'shadow-file-workspace-and-standalone-risulua',
       },
       runtime: expect.objectContaining({

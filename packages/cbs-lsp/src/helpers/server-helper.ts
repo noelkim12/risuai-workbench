@@ -77,6 +77,7 @@ import {
 } from '../providers/lua/responseMerger';
 import { logFeature, traceFeatureRequest, traceFeatureResult } from '../utils/server-tracing';
 import { VariableFlowService, type WorkspaceSnapshotState } from '../services';
+import { isLuaArtifactPath } from '../utils/oversized-lua';
 
 export interface ServerFeatureRegistrarProviders {
   codeActionProvider: CodeActionProvider;
@@ -98,7 +99,10 @@ export interface ServerFeatureRegistrarProviders {
 
 export interface ServerFeatureRegistrarContext {
   connection: Connection;
-  luaLsProxy: Pick<LuaLsCompanionController, 'getRuntime' | 'provideCompletion' | 'provideHover'>;
+  luaLsProxy: Pick<
+    LuaLsCompanionController,
+    'getRuntime' | 'prepareRename' | 'provideCompletion' | 'provideDefinition' | 'provideHover' | 'provideRename'
+  >;
   providers: ServerFeatureRegistrarProviders;
   registry: CBSBuiltinRegistry;
   resolveWorkspaceRequest: (uri: string) => FragmentAnalysisRequest | null;
@@ -126,8 +130,15 @@ function shouldSkipRequest(cancellationToken: CancellationToken | undefined): bo
  * @param request - 현재 문서의 fragment analysis request
  * @returns LuaLS proxy 호출을 건너뛰어야 하면 true
  */
-export function shouldSkipLuaLsProxyForRequest(request: FragmentAnalysisRequest | null): boolean {
-  return (request?.text.length ?? 0) > MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH;
+export function shouldSkipLuaLsProxyForRequest(
+  request: FragmentAnalysisRequest | null,
+  filePath?: string,
+): boolean {
+  if (!request) {
+    return filePath ? isLuaArtifactPath(filePath) : false;
+  }
+
+  return request.text.length > MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH;
 }
 
 /**
@@ -228,6 +239,66 @@ function mergeCbsAndLuaHover(cbsHover: Hover | null, luaHover: Hover | null): Ho
 }
 
 /**
+ * mergeDefinitions 함수.
+ * CBS와 LuaLS definition 응답을 같은 LSP Definition 배열로 합치고 중복 target을 제거함.
+ *
+ * @param cbsDefinition - CBS provider definition 결과
+ * @param luaDefinition - LuaLS proxy definition 결과
+ * @returns 병합된 definition 결과
+ */
+function mergeDefinitions(cbsDefinition: Definition | null, luaDefinition: Definition | null): Definition | null {
+  const entries = [cbsDefinition, luaDefinition]
+    .flatMap((definition) => {
+      if (!definition) {
+        return [];
+      }
+
+      return Array.isArray(definition) ? definition : [definition];
+    });
+
+  if (entries.length === 0) {
+    return null;
+  }
+
+  const seen = new Set<string>();
+  const merged = entries.filter((entry) => {
+    const uri = 'targetUri' in entry ? String(entry.targetUri) : entry.uri;
+    const range = ('targetRange' in entry ? entry.targetRange : entry.range) as LSPRange;
+    const key = `${uri}:${range.start.line}:${range.start.character}:${range.end.line}:${range.end.character}`;
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+
+  return merged as Definition;
+}
+
+function isPositionInsideCbsMacro(text: string, position: LSPRange['start']): boolean {
+  const lines = text.split(/\n/u);
+  const line = lines[position.line];
+  if (line === undefined || position.character > line.length) {
+    return false;
+  }
+
+  const prefix = line.slice(0, position.character);
+  const macroStart = prefix.lastIndexOf('{{');
+  if (macroStart === -1) {
+    return false;
+  }
+
+  const closeBeforeMacro = prefix.lastIndexOf('}}');
+  if (closeBeforeMacro > macroStart) {
+    return false;
+  }
+
+  const macroEnd = line.indexOf('}}', macroStart + 2);
+  return macroEnd === -1 || position.character <= macroEnd + 2;
+}
+
+/**
  * ServerFeatureRegistrar 클래스.
  * request/response 기반 feature callback 등록과 workspace-aware provider 조합을 한 객체에 모음.
  */
@@ -244,7 +315,10 @@ export class ServerFeatureRegistrar {
   private readonly inlayHintProvider: InlayHintProvider;
   private readonly onTypeFormattingProvider: OnTypeFormattingProvider | undefined;
   private readonly selectionRangeProvider: SelectionRangeProvider;
-  private readonly luaLsProxy: Pick<LuaLsCompanionController, 'getRuntime' | 'provideCompletion' | 'provideHover'>;
+  private readonly luaLsProxy: Pick<
+    LuaLsCompanionController,
+    'getRuntime' | 'prepareRename' | 'provideCompletion' | 'provideDefinition' | 'provideHover' | 'provideRename'
+  >;
   private readonly registry: CBSBuiltinRegistry;
   private readonly requestRunner: RequestHandlerRunner;
   private readonly resolveRequest: (uri: string) => FragmentAnalysisRequest | null;
@@ -501,7 +575,7 @@ export class ServerFeatureRegistrar {
       const filePath = CbsLspPathHelper.getFilePathFromUri(params.textDocument.uri);
       const routedToLuaLs = shouldRouteDocumentToLuaLs(filePath);
       const routingRequest = routedToLuaLs ? this.resolveRequest(params.textDocument.uri) : null;
-      const skipLuaLsProxy = routedToLuaLs && shouldSkipLuaLsProxyForRequest(routingRequest);
+      const skipLuaLsProxy = routedToLuaLs && shouldSkipLuaLsProxyForRequest(routingRequest, filePath);
       logFeature(this.connection, 'completion', 'start', {
         uri: params.textDocument.uri,
         routedToLuaLs,
@@ -731,7 +805,44 @@ export class ServerFeatureRegistrar {
   }
 
   private registerDefinitionHandler(): void {
-    this.connection.onDefinition((params: DefinitionParams, cancellationToken): Definition | null => {
+    this.connection.onDefinition((params: DefinitionParams, cancellationToken) => {
+      const filePath = CbsLspPathHelper.getFilePathFromUri(params.textDocument.uri);
+      const routedToLuaLs = shouldRouteDocumentToLuaLs(filePath);
+      const routingRequest = routedToLuaLs ? this.resolveRequest(params.textDocument.uri) : null;
+      const skipLuaLsProxy = routedToLuaLs && shouldSkipLuaLsProxyForRequest(routingRequest, filePath);
+
+      if (routedToLuaLs) {
+        return this.requestRunner.runAsync<DefinitionParams, Definition | null>({
+          empty: null,
+          feature: 'definition',
+          getUri: (requestParams) => requestParams.textDocument.uri,
+          params,
+          recoverOnError: true,
+          run: async () => {
+            const cbsDefinition = this.createDefinitionProvider(params.textDocument.uri).provide(
+              params,
+              cancellationToken,
+            );
+
+            if (cbsDefinition && routingRequest && isPositionInsideCbsMacro(routingRequest.text, params.position)) {
+              return cbsDefinition;
+            }
+
+            if (skipLuaLsProxy) {
+              return cbsDefinition;
+            }
+
+            const luaDefinition = await this.luaLsProxy.provideDefinition(params, cancellationToken);
+            return mergeDefinitions(cbsDefinition, luaDefinition);
+          },
+          summarize: (result) => ({
+            count: Array.isArray(result) ? result.length : result ? 1 : 0,
+            source: skipLuaLsProxy ? 'luaProxySkipped' : 'cbsAndLuaProxy',
+          }),
+          token: cancellationToken,
+        });
+      }
+
       return this.requestRunner.runSync({
         empty: null,
         feature: 'definition',
@@ -761,7 +872,47 @@ export class ServerFeatureRegistrar {
   }
 
   private registerPrepareRenameHandler(): void {
-    this.connection.onPrepareRename((params: TextDocumentPositionParams, cancellationToken): LSPRange | null => {
+    this.connection.onPrepareRename((params: TextDocumentPositionParams, cancellationToken) => {
+      const filePath = CbsLspPathHelper.getFilePathFromUri(params.textDocument.uri);
+      const routedToLuaLs = shouldRouteDocumentToLuaLs(filePath);
+      const routingRequest = routedToLuaLs ? this.resolveRequest(params.textDocument.uri) : null;
+      const skipLuaLsProxy = routedToLuaLs && shouldSkipLuaLsProxyForRequest(routingRequest, filePath);
+
+      if (routedToLuaLs) {
+        return this.requestRunner.runAsync<
+          TextDocumentPositionParams,
+          LSPRange | { placeholder: string; range: LSPRange } | null
+        >({
+          empty: null,
+          feature: 'rename',
+          getUri: (requestParams) => requestParams.textDocument.uri,
+          params,
+          phases: {
+            start: 'prepare-start',
+            cancelled: 'prepare-cancelled',
+            end: 'prepare-end',
+          },
+          recoverOnError: true,
+          run: async () => {
+            const prepareResult = this.createRenameProvider(params.textDocument.uri).prepareRename(
+              params,
+              cancellationToken,
+            );
+            if (prepareResult.canRename && prepareResult.hostRange) {
+              return prepareResult.hostRange;
+            }
+
+            if (skipLuaLsProxy || prepareResult.message === 'Request cancelled') {
+              return null;
+            }
+
+            return this.luaLsProxy.prepareRename(params, cancellationToken);
+          },
+          summarize: (result) => ({ canRename: result !== null }),
+          token: cancellationToken,
+        });
+      }
+
       return this.requestRunner.runSync({
         empty: {
           canRename: false,
@@ -792,7 +943,37 @@ export class ServerFeatureRegistrar {
   }
 
   private registerRenameHandler(): void {
-    this.connection.onRenameRequest((params: RenameParams, cancellationToken): WorkspaceEdit | null => {
+    this.connection.onRenameRequest((params: RenameParams, cancellationToken) => {
+      const filePath = CbsLspPathHelper.getFilePathFromUri(params.textDocument.uri);
+      const routedToLuaLs = shouldRouteDocumentToLuaLs(filePath);
+      const routingRequest = routedToLuaLs ? this.resolveRequest(params.textDocument.uri) : null;
+      const skipLuaLsProxy = routedToLuaLs && shouldSkipLuaLsProxyForRequest(routingRequest, filePath);
+
+      if (routedToLuaLs) {
+        return this.requestRunner.runAsync<RenameParams, WorkspaceEdit | null>({
+          empty: null,
+          feature: 'rename',
+          getUri: (requestParams) => requestParams.textDocument.uri,
+          params,
+          recoverOnError: true,
+          run: async () => {
+            const provider = this.createRenameProvider(params.textDocument.uri);
+            const prepareResult = provider.prepareRename(params, cancellationToken);
+            if (prepareResult.canRename) {
+              return provider.provideRename(params, cancellationToken);
+            }
+
+            if (skipLuaLsProxy || prepareResult.message === 'Request cancelled') {
+              return null;
+            }
+
+            return this.luaLsProxy.provideRename(params, cancellationToken);
+          },
+          summarize: (result) => ({ documentChanges: result?.documentChanges?.length ?? 0 }),
+          token: cancellationToken,
+        });
+      }
+
       return this.requestRunner.runSync({
         empty: null,
         feature: 'rename',
@@ -838,7 +1019,7 @@ export class ServerFeatureRegistrar {
       const filePath = CbsLspPathHelper.getFilePathFromUri(params.textDocument.uri);
       const routedToLuaLs = shouldRouteDocumentToLuaLs(filePath);
       const routingRequest = routedToLuaLs ? this.resolveRequest(params.textDocument.uri) : null;
-      const skipLuaLsProxy = routedToLuaLs && shouldSkipLuaLsProxyForRequest(routingRequest);
+      const skipLuaLsProxy = routedToLuaLs && shouldSkipLuaLsProxyForRequest(routingRequest, filePath);
       traceFeatureRequest(this.connection, 'hover', 'start', {
         uri: params.textDocument.uri,
         cancelled: shouldSkipRequest(cancellationToken),
@@ -855,11 +1036,11 @@ export class ServerFeatureRegistrar {
           cancellationToken,
         );
 
-        if (cbsHover) {
+        if (cbsHover && routingRequest && isPositionInsideCbsMacro(routingRequest.text, params.position)) {
           traceFeatureResult(this.connection, 'hover', 'end', {
             uri: params.textDocument.uri,
             hasResult: true,
-            source: 'cbsFallback',
+            source: 'cbs',
           });
           return cbsHover;
         }
@@ -871,10 +1052,10 @@ export class ServerFeatureRegistrar {
           });
           traceFeatureResult(this.connection, 'hover', 'end', {
             uri: params.textDocument.uri,
-            hasResult: false,
+            hasResult: cbsHover !== null,
             source: 'luaProxySkipped',
           });
-          return null;
+          return cbsHover;
         }
 
         traceFeatureRequest(this.connection, 'luaProxy', 'hover-start', {

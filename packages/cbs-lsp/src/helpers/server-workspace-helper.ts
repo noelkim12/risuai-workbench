@@ -126,11 +126,13 @@ export function createFragmentRequest(document: TextDocument): FragmentAnalysisR
     return null;
   }
 
+  const text = document.getText();
+
   return {
     uri: document.uri,
     version: document.version,
     filePath,
-    text: document.getText(),
+    text,
   };
 }
 

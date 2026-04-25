@@ -19,12 +19,18 @@ import {
 const TRANSPORT_STDIO = 0;
 const TRANSPORT_IPC = 1;
 
-type DocumentSelector = Array<{ scheme: string; pattern: string } | { language: string }>;
+type DocumentSelector = Array<
+  { language: string } | { language: string; pattern: string; scheme: string } | { pattern: string; scheme: string }
+>;
 
 type ServerOptions =
   | {
-      run: { module: string; transport: number };
-      debug: { module: string; transport: number; options?: { execArgv: string[] } };
+      run: { module: string; options?: { env: NodeJS.ProcessEnv }; transport: number };
+      debug: {
+        module: string;
+        transport: number;
+        options?: { env?: NodeJS.ProcessEnv; execArgv: string[] };
+      };
     }
   | {
       args: readonly string[];
@@ -43,6 +49,7 @@ export const CBS_DOCUMENT_SELECTORS: DocumentSelector = [
   { scheme: 'file', pattern: '**/*.risuprompt' },
   { scheme: 'file', pattern: '**/*.risuhtml' },
   { scheme: 'file', pattern: '**/*.risulua' },
+  { language: 'lua', scheme: 'file', pattern: '**/*.risulua' },
   { language: 'risulorebook' },
   { language: 'risuregex' },
   { language: 'risuprompt' },
@@ -126,16 +133,19 @@ function toInitializeWorkspaceFolders(
  */
 function createServerOptions(
   launchPlan: Exclude<CbsLanguageServerLaunchPlan, { kind: 'failure' }>,
+  settings: CbsLanguageServerSettings,
 ): ServerOptions {
+  const env = createBoundaryServerEnv(settings);
   if (launchPlan.kind === 'embedded') {
     return {
       run: {
         module: launchPlan.modulePath,
+        options: { env },
         transport: TRANSPORT_IPC,
       },
       debug: {
         module: launchPlan.modulePath,
-        options: { execArgv: ['--nolazy', '--inspect=0'] },
+        options: { env, execArgv: ['--nolazy', '--inspect=0'] },
         transport: TRANSPORT_IPC,
       },
     };
@@ -145,10 +155,27 @@ function createServerOptions(
     args: [...launchPlan.args],
     command: launchPlan.command,
     options: launchPlan.cwd
-      ? { cwd: launchPlan.cwd, env: process.env }
-      : { env: process.env },
+      ? { cwd: launchPlan.cwd, env }
+      : { env },
     transport: TRANSPORT_STDIO,
   };
+}
+
+/**
+ * createBoundaryServerEnv 함수.
+ * 순수 boundary snapshot에서도 실제 client와 같은 LuaLS env forwarding 계약을 재현함.
+ *
+ * @param settings - VS Code CBS server settings
+ * @returns server process env preview
+ */
+function createBoundaryServerEnv(settings: CbsLanguageServerSettings): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  const luaLsPath = settings.luaLsPath.trim();
+  if (luaLsPath.length > 0) {
+    env.CBS_LSP_LUALS_PATH = luaLsPath;
+  }
+
+  return env;
 }
 
 /**
@@ -202,7 +229,7 @@ export function buildCbsClientBoundarySnapshot(
     };
   }
 
-  const serverOptions = createServerOptions(launchPlan);
+  const serverOptions = createServerOptions(launchPlan, inputs.settings);
   const transport = launchPlan.kind === 'standalone' ? 'stdio' : 'ipc';
 
   return {

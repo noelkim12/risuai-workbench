@@ -1,0 +1,18 @@
+[package]
+name = "lua-analyzer-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "Rust WASM Lua analyzer kernel for RisuAI workbench experiments"
+license = "MIT"
+repository = "https://github.com/risuai/risu-workbench"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wasm-bindgen = "0.2"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"

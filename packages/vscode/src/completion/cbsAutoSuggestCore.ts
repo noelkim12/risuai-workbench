@@ -12,6 +12,7 @@ const CBS_LANGUAGE_IDS = new Set([
 ]);
 
 export interface CbsAutoSuggestInput {
+  fileName?: string;
   insertedText: string;
   languageId: string;
   linePrefix: string;
@@ -19,11 +20,20 @@ export interface CbsAutoSuggestInput {
 
 export interface CbsAutoCloseInput {
   documentSuffix?: string;
+  fileName?: string;
   insertedText: string;
   languageId: string;
   linePrefix: string;
   lineSuffix: string;
 }
+
+export interface CbsAutoSuggestDocumentInput {
+  documentLength: number;
+  fileName?: string;
+  languageId: string;
+}
+
+export const MAX_RISULUA_AUTO_SUGGEST_TEXT_LENGTH = 512 * 1024;
 
 const CBS_ARGUMENT_COMPLETION_PREFIX_PATTERN =
   /\{\{\s*(?:getvar|setvar|addvar|gettempvar|settempvar|tempvar|metadata|call)::[^{}]*$/i;
@@ -40,6 +50,18 @@ const CBS_AUTO_CLOSE_BLOCK_NAMES = new Set([
 ]);
 const CBS_BLOCK_OPEN_NAME_PATTERN = /^#([a-z_][\w]*)(?=$|[\s:}])/i;
 const CBS_CLOSE_TAG_SUFFIX_PATTERN = /\{\{\/[a-z_][\w]*\}\}$/i;
+
+function isRisuluaFileName(fileName: string | undefined): boolean {
+  return (fileName ?? '').toLowerCase().endsWith('.risulua');
+}
+
+function isCbsDocumentInput(input: { fileName?: string; languageId: string }): boolean {
+  return CBS_LANGUAGE_IDS.has(input.languageId) || (input.languageId === 'lua' && isRisuluaFileName(input.fileName));
+}
+
+function isRisuluaDocumentInput(input: { fileName?: string; languageId: string }): boolean {
+  return input.languageId === 'risulua' || isRisuluaFileName(input.fileName);
+}
 
 /**
  * hasCbsBlockBoundaryAhead 함수.
@@ -111,7 +133,7 @@ function hasOpenCbsWhenArgumentPrefix(linePrefix: string): boolean {
  * @returns CBS suggestion을 명시적으로 트리거해야 하면 true
  */
 export function shouldTriggerCbsAutoSuggest(input: CbsAutoSuggestInput): boolean {
-  if (!CBS_LANGUAGE_IDS.has(input.languageId)) {
+  if (!isCbsDocumentInput(input)) {
     return false;
   }
 
@@ -127,6 +149,17 @@ export function shouldTriggerCbsAutoSuggest(input: CbsAutoSuggestInput): boolean
 }
 
 /**
+ * shouldSkipCbsAutoSuggestForDocument 함수.
+ * 거대 `.risulua`에서 client-side suggest fallback이 추가 텍스트를 읽지 않게 막음.
+ *
+ * @param input - 문서 언어와 전체 character 길이
+ * @returns auto suggest fallback을 건너뛰어야 하면 true
+ */
+export function shouldSkipCbsAutoSuggestForDocument(input: CbsAutoSuggestDocumentInput): boolean {
+  return isRisuluaDocumentInput(input) && input.documentLength > MAX_RISULUA_AUTO_SUGGEST_TEXT_LENGTH;
+}
+
+/**
  * getCbsAutoCloseText 함수.
  * CBS block open 구문이 닫히는 순간 붙일 close tag를 계산함.
  *
@@ -134,7 +167,7 @@ export function shouldTriggerCbsAutoSuggest(input: CbsAutoSuggestInput): boolean
  * @returns 자동 삽입할 close tag, 대상이 아니면 null
  */
 export function getCbsAutoCloseText(input: CbsAutoCloseInput): string | null {
-  if (!CBS_LANGUAGE_IDS.has(input.languageId) || !input.insertedText.includes('}')) {
+  if (!isCbsDocumentInput(input) || !input.insertedText.includes('}')) {
     return null;
   }
 

@@ -21,6 +21,7 @@ const HOVER_NEEDLE = '{{getvar::mood}}';
 interface WorkspaceServerSettings {
   installMode: 'global' | 'local-devDependency' | 'npx';
   launchMode: 'auto' | 'embedded' | 'standalone';
+  luaLsPath: string;
   path: string;
 }
 
@@ -34,6 +35,7 @@ interface RuntimeScenario {
 const DEFAULT_WORKSPACE_SERVER_SETTINGS: WorkspaceServerSettings = {
   installMode: 'local-devDependency',
   launchMode: 'auto',
+  luaLsPath: '',
   path: '',
 };
 
@@ -81,6 +83,7 @@ async function updateWorkspaceServerSettings(
   const config = vscode.workspace.getConfiguration('risuWorkbench.cbs.server');
   await config.update('launchMode', settings.launchMode, vscode.ConfigurationTarget.Workspace);
   await config.update('installMode', settings.installMode, vscode.ConfigurationTarget.Workspace);
+  await config.update('luaLsPath', settings.luaLsPath, vscode.ConfigurationTarget.Workspace);
   await config.update('path', settings.path, vscode.ConfigurationTarget.Workspace);
 }
 
@@ -129,6 +132,7 @@ function getRuntimeScenario(extensionPath: string): RuntimeScenario {
       settings: {
         installMode: 'local-devDependency',
         launchMode: 'standalone',
+        luaLsPath: '',
         path: resolveStandaloneCliPath(extensionPath),
       },
     };

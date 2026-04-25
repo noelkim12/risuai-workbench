@@ -232,7 +232,7 @@ export const ACTIVE_FEATURE_AVAILABILITY = Object.freeze({
   definition: createAgentMetadataAvailability(
     'local-first',
     'server-capability:definition',
-    'Definition is active for routed CBS fragments, returns fragment-local definitions first, and appends workspace chat-variable writers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
+    'Definition is active for routed CBS fragments, returns fragment-local definitions first, and appends workspace chat-variable writers/readers when VariableFlowService workspace state is available. Global and external symbols stay unavailable.',
   ),
   diagnostics: createAgentMetadataAvailability(
     'local-only',

@@ -11,7 +11,7 @@ import {
   TextDocumentPositionParams,
 } from 'vscode-languageserver/node';
 import { formatHoverContent } from 'risu-workbench-core';
-import type { BlockNode, CBSBuiltinFunction, CBSBuiltinRegistry, Range } from 'risu-workbench-core';
+import type { BlockNode, CBSBuiltinFunction, CBSBuiltinRegistry, Position, Range } from 'risu-workbench-core';
 import {
   CALC_EXPRESSION_SUBLANGUAGE_LABEL,
   getCalcExpressionSublanguageDocumentation,
@@ -42,6 +42,7 @@ import {
   type FragmentCursorLookupResult,
 } from '../core';
 import { isRequestCancelled } from '../utils/request-cancellation';
+import { shouldSkipOversizedLuaText } from '../utils/oversized-lua';
 import type {
   VariableFlowQueryResult,
   VariableFlowService,
@@ -50,6 +51,8 @@ import type {
 import { positionToOffset } from '../utils/position';
 import { isContextualBuiltin, isDocOnlyBuiltin } from 'risu-workbench-core';
 import { resolveVariablePosition } from './local-first-contract';
+
+const MAX_OVERSIZED_HOVER_LINE_SCAN_LENGTH = 1024 * 1024;
 
 export type HoverRequestResolver = (
   params: TextDocumentPositionParams,
@@ -285,7 +288,33 @@ function formatWorkspaceOccurrenceSummary(
   occurrence: VariableFlowQueryResult['occurrences'][number],
 ): string {
   const codeQuote = String.fromCharCode(96);
-  return `${occurrence.relativePath} (${CbsLspTextHelper.formatRangeStart(occurrence.hostRange)}) — ${codeQuote}${occurrence.sourceName}${codeQuote}`;
+  const locationLabel = `${occurrence.relativePath} (${CbsLspTextHelper.formatRangeStart(occurrence.hostRange)})`;
+  return `${formatWorkspaceOccurrenceLink(occurrence, locationLabel)} — ${codeQuote}${occurrence.sourceName}${codeQuote}`;
+}
+
+function formatWorkspaceOccurrenceLink(
+  occurrence: VariableFlowQueryResult['occurrences'][number],
+  label: string,
+): string {
+  return `[${escapeMarkdownLinkLabel(label)}](${formatFileMarkdownLinkTarget(occurrence)})`;
+}
+
+function escapeMarkdownLinkLabel(label: string): string {
+  return label.replace(/[\\\[\]]/gu, (character) => `\\${character}`);
+}
+
+function formatFileMarkdownLinkTarget(
+  occurrence: VariableFlowQueryResult['occurrences'][number],
+): string {
+  const args = encodeURIComponent(
+    JSON.stringify([
+      {
+        range: occurrence.hostRange,
+        uri: occurrence.uri,
+      },
+    ]),
+  );
+  return `command:risuWorkbench.cbs.openOccurrence?${args}`;
 }
 
 /**
@@ -497,6 +526,11 @@ export class HoverProvider {
       return null;
     }
 
+    const oversizedHover = this.provideOversizedLuaHover(request, params.position);
+    if (oversizedHover) {
+      return oversizedHover;
+    }
+
     const lookup = this.analysisService.locatePosition(request, params.position, cancellationToken);
     if (!lookup) {
       return null;
@@ -559,6 +593,274 @@ export class HoverProvider {
       data: hoverTarget.data,
       range: range ?? undefined,
     };
+  }
+
+  private provideOversizedLuaHover(
+    request: FragmentAnalysisRequest,
+    position: Position,
+  ): AgentFriendlyHover | null {
+    return (
+      this.provideOversizedLuaVariableArgumentHover(request, position) ??
+      this.provideOversizedLuaBuiltinHover(request, position)
+    );
+  }
+
+  private provideOversizedLuaVariableArgumentHover(
+    request: FragmentAnalysisRequest,
+    position: Position,
+  ): AgentFriendlyHover | null {
+    if (!shouldSkipOversizedLuaText(request.filePath, request.text.length)) {
+      return null;
+    }
+
+    const target = this.detectCurrentLineVariableArgumentTarget(request.text, position);
+    if (!target) {
+      return null;
+    }
+
+    const workspaceFreshness = this.getWorkspaceFreshness(request);
+    const workspaceVariableQuery =
+      this.variableFlowService && workspaceFreshness?.freshness !== 'stale'
+        ? this.variableFlowService.queryVariable(target.name)
+        : null;
+    const lines = [
+      `**Variable: ${target.name}**`,
+      '',
+      `- Kind: ${VARIABLE_KIND_LABELS.chat}`,
+      `- Access: ${target.access}`,
+    ];
+
+    this.appendWorkspaceVariableSummary(
+      lines,
+      target.name,
+      'chat',
+      request.uri,
+      workspaceVariableQuery,
+    );
+
+    return {
+      contents: {
+        kind: MarkupKind.Markdown,
+        value: lines.join('\n'),
+      },
+      data: this.createCategoryData(
+        {
+          category: 'variable',
+          kind: 'chat-variable',
+        },
+        this.createScopeExplanation(
+          'oversized-risulua-current-line',
+          'Hover resolved this chat variable argument from a bounded current-line oversized .risulua fast path without full CBS analysis.',
+        ),
+        this.getStaleWorkspaceAvailability(workspaceFreshness, 'hover'),
+        workspaceFreshness ?? undefined,
+      ),
+      range: {
+        start: { line: position.line, character: target.startCharacter },
+        end: { line: position.line, character: target.endCharacter },
+      },
+    };
+  }
+
+  private provideOversizedLuaBuiltinHover(
+    request: FragmentAnalysisRequest,
+    position: Position,
+  ): AgentFriendlyHover | null {
+    if (!shouldSkipOversizedLuaText(request.filePath, request.text.length)) {
+      return null;
+    }
+
+    const target = this.detectCurrentLineBuiltinTarget(request.text, position);
+    if (!target) {
+      return null;
+    }
+
+    const builtin = this.registry.get(target.name);
+    if (!builtin) {
+      return null;
+    }
+
+    return {
+      contents: {
+        kind: MarkupKind.Markdown,
+        value: formatHoverContent(builtin),
+      },
+      data: this.createCategoryData(
+        {
+          category: builtin.isBlock ? 'block-keyword' : 'builtin',
+          kind: this.resolveBuiltinKind(builtin),
+        },
+        this.getBuiltinExplanation(
+          builtin,
+          `Hover resolved ${builtin.name} from a bounded current-line oversized .risulua fast path without full CBS analysis.`,
+        ),
+      ),
+      range: {
+        start: { line: position.line, character: target.startCharacter },
+        end: { line: position.line, character: target.endCharacter },
+      },
+    };
+  }
+
+  private detectCurrentLineBuiltinTarget(
+    text: string,
+    position: Position,
+  ): { name: string; startCharacter: number; endCharacter: number } | null {
+    const offset = positionToOffset(text, position);
+    if (offset < 0 || offset > text.length) {
+      return null;
+    }
+
+    const lineStartOffset = Math.max(text.lastIndexOf('\n', Math.max(0, offset - 1)) + 1, 0);
+    const rawLineEndOffset = text.indexOf('\n', offset);
+    const lineEndOffset = rawLineEndOffset === -1 ? text.length : rawLineEndOffset;
+    const line = text.slice(lineStartOffset, lineEndOffset).replace(/\r$/u, '');
+    if (position.character > line.length) {
+      return null;
+    }
+
+    const beforeCursor = line.slice(0, position.character);
+    const macroStartCharacter = beforeCursor.lastIndexOf('{{');
+    if (macroStartCharacter === -1) {
+      return null;
+    }
+
+    const closeCharacter = line.indexOf('}}', macroStartCharacter + 2);
+    if (closeCharacter !== -1 && position.character > closeCharacter + 2) {
+      return null;
+    }
+
+    const macroBodyEnd = closeCharacter === -1 ? line.length : closeCharacter;
+    const macroBody = line.slice(macroStartCharacter + 2, macroBodyEnd);
+    const match = /^(\s*)([#:]?[A-Za-z_][A-Za-z0-9_]*|\/[A-Za-z_][A-Za-z0-9_]*)/u.exec(macroBody);
+    if (!match) {
+      return null;
+    }
+
+    const leadingWhitespaceLength = match[1]?.length ?? 0;
+    const name = match[2] ?? '';
+    const startCharacter = macroStartCharacter + 2 + leadingWhitespaceLength;
+    const endCharacter = startCharacter + name.length;
+    if (position.character < startCharacter || position.character > endCharacter) {
+      return null;
+    }
+
+    return { name, startCharacter, endCharacter };
+  }
+
+  private detectCurrentLineVariableArgumentTarget(
+    text: string,
+    position: Position,
+  ): { name: string; access: string; startCharacter: number; endCharacter: number } | null {
+    const line = this.getLineTextAtPosition(
+      text,
+      position,
+      MAX_OVERSIZED_HOVER_LINE_SCAN_LENGTH,
+    );
+    if (line === null || position.character > line.length) {
+      return null;
+    }
+
+    const prefixText = line.slice(0, position.character);
+    const macroStartCharacter = prefixText.lastIndexOf('{{');
+    if (macroStartCharacter === -1) {
+      return null;
+    }
+
+    const closeBeforeMacro = prefixText.lastIndexOf('}}');
+    if (closeBeforeMacro > macroStartCharacter) {
+      return null;
+    }
+
+    const closeCharacter = line.indexOf('}}', macroStartCharacter + 2);
+    if (closeCharacter !== -1 && position.character > closeCharacter + 2) {
+      return null;
+    }
+
+    const macroBodyEndCharacter = closeCharacter === -1 ? line.length : closeCharacter;
+    const macroBody = line.slice(macroStartCharacter + 2, macroBodyEndCharacter);
+    const macroPrefix = line.slice(macroStartCharacter + 2, position.character);
+    if (macroPrefix.includes('{{') || macroPrefix.startsWith('/')) {
+      return null;
+    }
+
+    const lastArgumentSeparatorIndex = macroPrefix.lastIndexOf('::');
+    if (lastArgumentSeparatorIndex === -1) {
+      return null;
+    }
+
+    const macroName = macroPrefix.slice(0, macroPrefix.indexOf('::')).trim().toLowerCase();
+    if (!/^[a-z_][\w]*$/iu.test(macroName)) {
+      return null;
+    }
+
+    let argumentIndex = 0;
+    for (let index = 0; index < lastArgumentSeparatorIndex; index += 1) {
+      if (macroPrefix.slice(index, index + 2) !== '::') {
+        continue;
+      }
+
+      argumentIndex += 1;
+      index += 1;
+    }
+
+    if (argumentIndex !== 0) {
+      return null;
+    }
+
+    const rule = VARIABLE_MACRO_RULES[macroName as keyof typeof VARIABLE_MACRO_RULES];
+    if (!rule || rule.kind !== 'chat') {
+      return null;
+    }
+
+    const segmentStartCharacter = macroStartCharacter + 2 + lastArgumentSeparatorIndex + 2;
+    const nextArgumentSeparatorIndex = macroBody.indexOf('::', lastArgumentSeparatorIndex + 2);
+    const segmentEndCharacter =
+      nextArgumentSeparatorIndex === -1
+        ? macroBodyEndCharacter
+        : macroStartCharacter + 2 + nextArgumentSeparatorIndex;
+    const rawSegment = line.slice(segmentStartCharacter, segmentEndCharacter);
+    const leadingWhitespaceLength = rawSegment.length - rawSegment.trimStart().length;
+    const trailingWhitespaceLength = rawSegment.length - rawSegment.trimEnd().length;
+    const startCharacter = segmentStartCharacter + leadingWhitespaceLength;
+    const endCharacter = segmentEndCharacter - trailingWhitespaceLength;
+
+    if (position.character < startCharacter || position.character > endCharacter) {
+      return null;
+    }
+
+    const name = line.slice(startCharacter, endCharacter);
+    if (name.length === 0) {
+      return null;
+    }
+
+    return {
+      name,
+      access: rule.access,
+      startCharacter,
+      endCharacter,
+    };
+  }
+
+  private getLineTextAtPosition(
+    text: string,
+    position: Position,
+    maxScannedCharacters: number,
+  ): string | null {
+    const offset = positionToOffset(text, position);
+    if (offset < 0 || offset > text.length) {
+      return null;
+    }
+
+    const lineStartOffset = Math.max(text.lastIndexOf('\n', Math.max(0, offset - 1)) + 1, 0);
+    const rawLineEndOffset = text.indexOf('\n', offset);
+    const lineEndOffset = rawLineEndOffset === -1 ? text.length : rawLineEndOffset;
+    if (lineEndOffset - lineStartOffset > maxScannedCharacters) {
+      return null;
+    }
+
+    const line = text.slice(lineStartOffset, lineEndOffset).replace(/\r$/u, '');
+    return position.character <= line.length ? line : null;
   }
 
   /**
@@ -880,6 +1182,44 @@ export class HoverProvider {
       lines.push(`- Local references: ${symbol.references.length}`);
     }
 
+    this.appendWorkspaceVariableSummary(
+      lines,
+      variableName,
+      kind,
+      currentUri,
+      workspaceVariableQuery,
+    );
+
+    return {
+      data: this.createCategoryData(
+        {
+          category: 'variable',
+          kind:
+            kind === 'global'
+              ? 'global-variable'
+              : kind === 'temp'
+                ? 'temp-variable'
+                : 'chat-variable',
+        },
+        this.createScopeExplanation('variable-symbol-table', explanationDetail),
+        kind === 'chat'
+          ? this.getStaleWorkspaceAvailability(workspaceFreshness, 'hover')
+          : undefined,
+        kind === 'chat' ? (workspaceFreshness ?? undefined) : undefined,
+      ),
+      markdown: lines.join('\n'),
+      localStartOffset,
+      localEndOffset,
+    };
+  }
+
+  private appendWorkspaceVariableSummary(
+    lines: string[],
+    variableName: string,
+    kind: VariableKind,
+    currentUri: string,
+    workspaceVariableQuery: VariableFlowQueryResult | null,
+  ): void {
     if (kind === 'chat' && workspaceVariableQuery?.variableName === variableName) {
       const externalWriters = workspaceVariableQuery.writers.filter(
         (occurrence) => occurrence.uri !== currentUri,
@@ -924,28 +1264,6 @@ export class HoverProvider {
         }
       }
     }
-
-    return {
-      data: this.createCategoryData(
-        {
-          category: 'variable',
-          kind:
-            kind === 'global'
-              ? 'global-variable'
-              : kind === 'temp'
-                ? 'temp-variable'
-                : 'chat-variable',
-        },
-        this.createScopeExplanation('variable-symbol-table', explanationDetail),
-        kind === 'chat'
-          ? this.getStaleWorkspaceAvailability(workspaceFreshness, 'hover')
-          : undefined,
-        kind === 'chat' ? (workspaceFreshness ?? undefined) : undefined,
-      ),
-      markdown: lines.join('\n'),
-      localStartOffset,
-      localEndOffset,
-    };
   }
 
   /**

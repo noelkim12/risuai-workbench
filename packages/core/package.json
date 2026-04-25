@@ -39,6 +39,7 @@
     "directory": "packages/core"
   },
   "dependencies": {
+    "@risuai/lua-analyzer-wasm": "file:../lua-analyzer-wasm",
     "fflate": "^0.8.2",
     "luaparse": "^0.3.1",
     "msgpackr": "^1.11.9",

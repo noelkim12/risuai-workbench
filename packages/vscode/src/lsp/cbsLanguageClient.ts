@@ -1,5 +1,6 @@
 import process from 'node:process';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import * as vscode from 'vscode';
 import {
   LanguageClient,
@@ -32,6 +33,28 @@ let client: LanguageClient | undefined;
 let outputChannel: vscode.OutputChannel | undefined;
 let lastBoundarySnapshot: CbsClientBoundarySnapshot | undefined;
 let clientReadyPromise: Promise<void> | undefined;
+
+export const CBS_OCCURRENCE_NAVIGATION_COMMAND = 'risuWorkbench.cbs.openOccurrence';
+
+export const CBS_MARKDOWN_TRUSTED_COMMANDS = [CBS_OCCURRENCE_NAVIGATION_COMMAND] as const;
+
+const CBS_RUNTIME_AVAILABILITY_REQUEST_METHOD = 'cbs/runtimeAvailability';
+
+interface CbsRuntimeAvailabilitySnapshot {
+  companions?: Array<{
+    detail?: string;
+    executablePath?: string | null;
+    health?: string;
+    status?: string;
+  }>;
+  failureModes?: Array<{
+    active?: boolean;
+    detail?: string;
+    key?: string;
+    recovery?: string;
+    severity?: string;
+  }>;
+}
 
 /**
  * Start the CBS language client.
@@ -67,10 +90,13 @@ export function startCbsLanguageClient(context: vscode.ExtensionContext): void {
   process.env.CBS_LSP_TIMELINE_LOG = timelineLogPath;
   output.appendLine(`[CBS Language Server] Timeline log: ${timelineLogPath}`);
 
-  const serverOptions = createServerOptions(launchPlan, timelineLogPath);
+  const serverOptions = createServerOptions(launchPlan, timelineLogPath, settings);
 
   const clientOptions: LanguageClientOptions = {
     documentSelector: boundarySnapshot.clientOptions.documentSelector,
+    markdown: {
+      isTrusted: { enabledCommands: CBS_MARKDOWN_TRUSTED_COMMANDS },
+    },
     outputChannel: output,
     synchronize: {
       fileEvents: vscode.workspace.createFileSystemWatcher(boundarySnapshot.clientOptions.fileWatcherPattern),
@@ -85,9 +111,17 @@ export function startCbsLanguageClient(context: vscode.ExtensionContext): void {
     serverOptions,
     clientOptions,
   );
+  const currentClient = client;
 
-  void client.start();
-  clientReadyPromise = createClientReadyPromise(client);
+  void currentClient.start();
+  clientReadyPromise = createClientReadyPromise(currentClient);
+  void clientReadyPromise
+    .then(() => reportCbsRuntimeAvailability(currentClient, output))
+    .catch((error: unknown) => {
+      output.appendLine(
+        `[CBS Language Server] Could not query runtime availability: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
 }
 
 /**
@@ -143,6 +177,40 @@ function createClientReadyPromise(currentClient: LanguageClient): Promise<void> 
   });
 }
 
+async function reportCbsRuntimeAvailability(
+  currentClient: LanguageClient,
+  output: vscode.OutputChannel,
+): Promise<void> {
+  const snapshot = await currentClient.sendRequest<CbsRuntimeAvailabilitySnapshot>(
+    CBS_RUNTIME_AVAILABILITY_REQUEST_METHOD,
+    {},
+  );
+  const luaLsRuntime = snapshot.companions?.find((companion) => companion.status !== undefined);
+  if (!luaLsRuntime) {
+    return;
+  }
+
+  const status = luaLsRuntime.status ?? 'unknown';
+  const executablePath = luaLsRuntime.executablePath ?? 'not resolved';
+  output.appendLine(
+    `[CBS Language Server] LuaLS sidecar status=${status} health=${luaLsRuntime.health ?? 'unknown'} executable=${executablePath}`,
+  );
+
+  if (status !== 'unavailable' && status !== 'crashed') {
+    return;
+  }
+
+  const luaLsFailure = snapshot.failureModes?.find(
+    (failureMode) => failureMode.active && failureMode.key === 'luals-unavailable',
+  );
+  const detail = luaLsFailure?.detail ?? luaLsRuntime.detail ?? 'LuaLS sidecar is unavailable.';
+  const recovery =
+    luaLsFailure?.recovery ??
+    'Install lua-language-server, add it to PATH, or set risuWorkbench.cbs.server.luaLsPath.';
+  output.appendLine(`[CBS Language Server] LuaLS unavailable: ${detail}`);
+  output.appendLine(`[CBS Language Server] LuaLS recovery: ${recovery}`);
+}
+
 /**
  * readCbsLanguageServerSettings 함수.
  * VS Code configuration을 launch resolver가 쓰는 shape로 읽어 옴.
@@ -152,6 +220,7 @@ function createClientReadyPromise(currentClient: LanguageClient): Promise<void> 
 function readCbsLanguageServerSettings(): CbsLanguageServerSettings {
   const defaults = defaultCbsLanguageServerSettings();
   const config = vscode.workspace.getConfiguration('risuWorkbench.cbs.server');
+  const configuredLuaLsPath = config.get<string>('luaLsPath', defaults.luaLsPath) ?? defaults.luaLsPath;
   return {
     installMode:
       config.get<CbsLanguageServerSettings['installMode']>('installMode', defaults.installMode) ??
@@ -160,7 +229,33 @@ function readCbsLanguageServerSettings(): CbsLanguageServerSettings {
       config.get<CbsLanguageServerSettings['launchMode']>('launchMode', defaults.launchMode) ??
       defaults.launchMode,
     pathOverride: config.get<string>('path', defaults.pathOverride) ?? defaults.pathOverride,
+    luaLsPath: configuredLuaLsPath.trim() || discoverLuaLsExecutablePath() || defaults.luaLsPath,
   };
+}
+
+function discoverLuaLsExecutablePath(): string | null {
+  const configuredSumnekoPath = vscode.workspace
+    .getConfiguration('Lua.misc')
+    .get<string>('executablePath', '')
+    .trim();
+  if (configuredSumnekoPath && existsSync(configuredSumnekoPath)) {
+    return configuredSumnekoPath;
+  }
+
+  const extensionPath = vscode.extensions.getExtension('sumneko.lua')?.extensionPath;
+  if (!extensionPath) {
+    return null;
+  }
+
+  const executableName = process.platform === 'win32' ? 'lua-language-server.exe' : 'lua-language-server';
+  const candidates = [
+    path.join(extensionPath, 'server', 'bin', executableName),
+    path.join(extensionPath, 'server', 'bin-Linux', executableName),
+    path.join(extensionPath, 'server', 'bin-macOS', executableName),
+    path.join(extensionPath, 'server', 'bin-Windows', executableName),
+  ];
+
+  return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 
 /**
@@ -173,8 +268,9 @@ function readCbsLanguageServerSettings(): CbsLanguageServerSettings {
 function createServerOptions(
   launchPlan: Exclude<CbsLanguageServerLaunchPlan, CbsLaunchFailure>,
   timelineLogPath: string,
+  settings: CbsLanguageServerSettings,
 ): ServerOptions {
-  const env = createCbsServerEnv(timelineLogPath);
+  const env = createCbsServerEnv(timelineLogPath, settings);
   if (launchPlan.kind === 'embedded') {
     return {
       run: {
@@ -190,7 +286,7 @@ function createServerOptions(
     };
   }
 
-  return createStandaloneExecutable(launchPlan, timelineLogPath);
+  return createStandaloneExecutable(launchPlan, timelineLogPath, settings);
 }
 
 /**
@@ -211,11 +307,21 @@ function createCbsTimelineLogPath(context: vscode.ExtensionContext): string {
  * @param timelineLogPath - 서버가 append할 timeline JSONL 파일 경로
  * @returns 기존 process.env를 보존한 CBS server env
  */
-function createCbsServerEnv(timelineLogPath: string): NodeJS.ProcessEnv {
-  return {
+function createCbsServerEnv(
+  timelineLogPath: string,
+  settings: CbsLanguageServerSettings,
+): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     CBS_LSP_TIMELINE_LOG: timelineLogPath,
   };
+
+  const luaLsPath = settings.luaLsPath.trim();
+  if (luaLsPath.length > 0) {
+    env.CBS_LSP_LUALS_PATH = luaLsPath;
+  }
+
+  return env;
 }
 
 /**
@@ -228,8 +334,9 @@ function createCbsServerEnv(timelineLogPath: string): NodeJS.ProcessEnv {
 function createStandaloneExecutable(
   launchPlan: Exclude<CbsLanguageServerLaunchPlan, CbsLaunchFailure | { kind: 'embedded' }>,
   timelineLogPath: string,
+  settings: CbsLanguageServerSettings,
 ): Executable {
-  const env = createCbsServerEnv(timelineLogPath);
+  const env = createCbsServerEnv(timelineLogPath, settings);
 
   return {
     args: [...launchPlan.args],

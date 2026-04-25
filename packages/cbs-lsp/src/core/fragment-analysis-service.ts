@@ -6,6 +6,7 @@ import type {
   CbsFragmentMap,
   CBSDocument,
   DiagnosticInfo,
+  LuaWasmAnalyzeResult,
   Position,
   Token,
   TokenizerDiagnostic,
@@ -17,6 +18,7 @@ import { SymbolTable } from '../analyzer/symbolTable';
 import { locateFragmentAtHostPosition, type FragmentCursorLookupResult } from './fragment-locator';
 import { createFragmentOffsetMapper, type FragmentOffsetMapper } from './fragment-position';
 import { isRequestCancelled } from '../utils/request-cancellation';
+import { shouldSkipOversizedLuaText } from '../utils/oversized-lua';
 import {
   createDocumentRecoveryState,
   createFragmentRecoveryState,
@@ -110,8 +112,33 @@ function compareFragmentsForStableOrder(left: CbsFragment, right: CbsFragment): 
 
 export class FragmentAnalysisService {
   private readonly cache = new Map<string, DocumentFragmentAnalysis>();
+  private readonly luaWasmScanCache = new Map<string, LuaWasmAnalyzeResult>();
   private readonly diagnosticsEngine = new DiagnosticsEngine(new core.CBSBuiltinRegistry());
   private readonly scopeAnalyzer = new ScopeAnalyzer();
+
+  async prepareDocumentAnalysis(request: FragmentAnalysisRequest): Promise<void> {
+    const artifact = this.resolveArtifact(request.filePath);
+    if (artifact !== 'lua' || shouldSkipOversizedLuaText(request.filePath, request.text.length)) {
+      return;
+    }
+
+    const textSignature = createSyntheticDocumentVersion(request.text);
+    if (this.luaWasmScanCache.has(textSignature)) {
+      return;
+    }
+
+    try {
+      const result = await core.analyzeLuaWithWasm(request.text, {
+        includeStringLiterals: true,
+        includeStateAccesses: false,
+      });
+      if (result.ok) {
+        this.luaWasmScanCache.set(textSignature, result);
+      }
+    } catch {
+      // Missing or failed WASM keeps the existing non-oversized full-file mapper fallback.
+    }
+  }
 
   analyzeDocument(
     request: FragmentAnalysisRequest,
@@ -121,20 +148,29 @@ export class FragmentAnalysisService {
       return null;
     }
 
-    const cacheKey = this.createCacheKey(request.uri, request.version);
-    const textSignature = createSyntheticDocumentVersion(request.text);
-    const cached = this.cache.get(cacheKey);
-    if (cached && cached.cache.textSignature === textSignature) {
-      return cached;
-    }
-
     const artifact = this.resolveArtifact(request.filePath);
     if (!artifact) {
       this.clearUri(request.uri);
       return null;
     }
 
-    const fragmentMap = core.mapToCbsFragments(artifact, request.text);
+    const cacheKey = this.createCacheKey(request.uri, request.version);
+    const textSignature = shouldSkipOversizedLuaText(request.filePath, request.text.length)
+      ? `oversized-lua:${request.text.length}`
+      : createSyntheticDocumentVersion(request.text);
+    const cached = this.cache.get(cacheKey);
+    if (cached && cached.cache.textSignature === textSignature) {
+      return cached;
+    }
+
+    if (shouldSkipOversizedLuaText(request.filePath, request.text.length)) {
+      const analysis = this.createEmptyAnalysis(request, artifact, cacheKey, textSignature);
+      this.clearUri(request.uri, cacheKey);
+      this.cache.set(cacheKey, analysis);
+      return analysis;
+    }
+
+    const fragmentMap = this.getFragmentMap(artifact, request.text, textSignature);
     const fragments = [...fragmentMap.fragments].sort(compareFragmentsForStableOrder);
     const previousAnalysis = this.getLatestCachedAnalysisForUri(request.uri, cacheKey);
     const reuseCandidates = this.createFragmentReusePool(previousAnalysis, artifact);
@@ -235,6 +271,37 @@ export class FragmentAnalysisService {
 
   clearAll(): void {
     this.cache.clear();
+    this.luaWasmScanCache.clear();
+  }
+
+  private getFragmentMap(
+    artifact: CbsBearingArtifact,
+    text: string,
+    textSignature: string,
+  ): CbsFragmentMap {
+    if (artifact !== 'lua') {
+      return core.mapToCbsFragments(artifact, text);
+    }
+
+    const cachedWasmResult = this.luaWasmScanCache.get(textSignature);
+    if (cachedWasmResult?.ok) {
+      return core.mapLuaWasmStringLiteralsToCbsFragments(text, cachedWasmResult.stringLiterals);
+    }
+
+    try {
+      const wasmResult = core.analyzeLuaWithWasmSync(text, {
+        includeStringLiterals: true,
+        includeStateAccesses: false,
+      });
+      if (wasmResult.ok) {
+        this.luaWasmScanCache.set(textSignature, wasmResult);
+        return core.mapLuaWasmStringLiteralsToCbsFragments(text, wasmResult.stringLiterals);
+      }
+    } catch {
+      // Missing or failed WASM keeps the existing non-oversized full-file mapper fallback.
+    }
+
+    return core.mapToCbsFragments(artifact, text);
   }
 
   private getLatestCachedAnalysisForUri(
@@ -287,6 +354,45 @@ export class FragmentAnalysisService {
     }
 
     return pool;
+  }
+
+  /**
+   * createEmptyAnalysis 함수.
+   * full parse를 건너뛴 문서를 provider-safe empty analysis로 표현함.
+   *
+   * @param request - 분석 요청 원본
+   * @param artifact - 라우팅된 CBS-bearing artifact
+   * @param cacheKey - 현재 URI/version cache key
+   * @param textSignature - cache invalidation에 쓸 lightweight signature
+   * @returns fragment가 없는 document analysis
+   */
+  private createEmptyAnalysis(
+    request: FragmentAnalysisRequest,
+    artifact: CbsBearingArtifact,
+    cacheKey: string,
+    textSignature: string,
+  ): DocumentFragmentAnalysis {
+    return {
+      artifact,
+      fragmentMap: {
+        artifact,
+        fragments: [],
+        fileLength: request.text.length,
+      },
+      fragments: [],
+      fragmentAnalyses: [],
+      fragmentsBySection: new Map(),
+      documents: [],
+      diagnostics: [],
+      recovery: createDocumentRecoveryState([]),
+      cache: {
+        key: cacheKey,
+        uri: request.uri,
+        version: request.version,
+        filePath: request.filePath,
+        textSignature,
+      },
+    };
   }
 
   private tryReuseFragmentAnalysis(

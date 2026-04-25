@@ -177,6 +177,29 @@ export {
   type LuaAnalysisArtifact,
 } from './analyze/lua-core';
 export {
+  analyzeLuaWithWasmSync,
+  analyzeLuaWithWasm,
+  loadLuaAnalyzerWasm,
+  loadLuaAnalyzerWasmSync,
+  normalizeLuaWasmResult,
+} from './analyze/lua-wasm-adapter';
+export {
+  analyzeLuaWithBackend,
+  type LuaAnalysisBackendKind,
+  type LuaAnalysisBackendRequest,
+  type LuaBackendAnalysisResult,
+} from './analyze/lua-analysis-backend';
+export type {
+  LuaWasmAccessDirection,
+  LuaWasmAnalyzeOptions,
+  LuaWasmAnalyzeResult,
+  LuaWasmApiName,
+  LuaWasmDiagnostic,
+  LuaWasmQuoteKind,
+  LuaWasmStateAccess,
+  LuaWasmStringLiteral,
+} from './analyze/lua-wasm-types';
+export {
   type CollectedFunction,
   type CollectedStateVar,
   type CollectedCall,

@@ -120,6 +120,106 @@ describe('LuaLsProxy', () => {
     );
   });
 
+  it('rewrites source URIs to mirrored Lua transport URIs and maps definition results back', async () => {
+    const requestSpy = vi.fn();
+    const request = async <TResult>(
+      method: string,
+      params: unknown,
+      timeoutMs?: number,
+    ): Promise<TResult | null> => {
+      requestSpy(method, params, timeoutMs);
+      const transportUri = (params as { textDocument: { uri: string } }).textDocument.uri;
+      return [{
+        uri: transportUri,
+        range: {
+          start: { line: 0, character: 6 },
+          end: { line: 0, character: 13 },
+        },
+      }] as TResult;
+    };
+    const proxy = createLuaLsProxy({
+      getRuntime: () => createLuaLsCompanionRuntime({ status: 'ready', health: 'healthy' }),
+      request,
+    });
+
+    const definition = await proxy.provideDefinition({
+      textDocument: { uri: 'file:///workspace/lua/companion.risulua' },
+      position: { line: 1, character: 9 },
+    });
+
+    expect(definition).toEqual([
+      {
+        uri: 'file:///workspace/lua/companion.risulua',
+        range: {
+          start: { line: 0, character: 6 },
+          end: { line: 0, character: 13 },
+        },
+      },
+    ]);
+    expect(requestSpy).toHaveBeenCalledWith(
+      'textDocument/definition',
+      {
+        textDocument: {
+          uri: expect.stringContaining('/workspace/lua/companion.risulua.lua'),
+        },
+        position: { line: 1, character: 9 },
+      },
+      1500,
+    );
+  });
+
+  it('maps LuaLS rename workspace edits from shadow URI back to source URI', async () => {
+    const request = async <TResult>(
+      _method: string,
+      params: unknown,
+    ): Promise<TResult | null> => {
+      const transportUri = (params as { textDocument: { uri: string } }).textDocument.uri;
+      return {
+        documentChanges: [
+          {
+            textDocument: { uri: transportUri, version: null },
+            edits: [
+              {
+                range: {
+                  start: { line: 0, character: 6 },
+                  end: { line: 0, character: 13 },
+                },
+                newText: 'renamed',
+              },
+            ],
+          },
+        ],
+      } as TResult;
+    };
+    const proxy = createLuaLsProxy({
+      getRuntime: () => createLuaLsCompanionRuntime({ status: 'ready', health: 'healthy' }),
+      request,
+    });
+
+    const edit = await proxy.provideRename({
+      textDocument: { uri: 'file:///workspace/lua/companion.risulua' },
+      position: { line: 0, character: 8 },
+      newName: 'renamed',
+    });
+
+    expect(edit).toEqual({
+      documentChanges: [
+        {
+          textDocument: { uri: 'file:///workspace/lua/companion.risulua', version: null },
+          edits: [
+            {
+              range: {
+                start: { line: 0, character: 6 },
+                end: { line: 0, character: 13 },
+              },
+              newText: 'renamed',
+            },
+          ],
+        },
+      ],
+    });
+  });
+
   it('returns null when the request is cancelled or the companion request fails', async () => {
     const requestSpy = vi.fn();
     const request = async <TResult>(): Promise<TResult | null> => {

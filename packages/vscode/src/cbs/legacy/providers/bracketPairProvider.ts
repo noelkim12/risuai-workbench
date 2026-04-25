@@ -6,9 +6,38 @@
 import * as vscode from 'vscode';
 
 const RISU_CBS_LANGUAGE_IDS = new Set(['risulorebook', 'risuregex', 'risuprompt', 'risuhtml', 'risulua']);
+const MAX_RISULUA_BRACKET_DECORATION_TEXT_LENGTH = 512 * 1024;
 
 function isRisuCbsDocument(document: vscode.TextDocument): boolean {
-    return RISU_CBS_LANGUAGE_IDS.has(document.languageId);
+    return RISU_CBS_LANGUAGE_IDS.has(document.languageId) ||
+        (document.languageId === 'lua' && document.fileName.toLowerCase().endsWith('.risulua'));
+}
+
+/**
+ * getDocumentLengthWithoutFullRead 함수.
+ * VS Code document API로 전체 문자열을 복사하지 않고 문서 길이를 계산함.
+ *
+ * @param document - 길이를 확인할 editor 문서
+ * @returns 문서 전체 character offset 길이
+ */
+function getDocumentLengthWithoutFullRead(document: vscode.TextDocument): number {
+    if (document.lineCount === 0) {
+        return 0;
+    }
+
+    return document.offsetAt(document.lineAt(document.lineCount - 1).range.end);
+}
+
+/**
+ * shouldSkipBracketPairDecorations 함수.
+ * 거대 `.risulua`에서 client-side full document bracket scan을 건너뛸지 판단함.
+ *
+ * @param document - 현재 editor 문서
+ * @returns decoration full scan을 건너뛰어야 하면 true
+ */
+function shouldSkipBracketPairDecorations(document: vscode.TextDocument): boolean {
+    return (document.languageId === 'risulua' || document.fileName.toLowerCase().endsWith('.risulua')) &&
+        getDocumentLengthWithoutFullRead(document) > MAX_RISULUA_BRACKET_DECORATION_TEXT_LENGTH;
 }
 
 /**
@@ -70,6 +99,11 @@ export class CBSBracketPairProvider {
      */
     public updateDecorations(editor: vscode.TextEditor): void {
         if (!editor || !isRisuCbsDocument(editor.document)) {
+            return;
+        }
+
+        if (shouldSkipBracketPairDecorations(editor.document)) {
+            this.clearDecorations(editor);
             return;
         }
 
@@ -190,6 +224,12 @@ export class CBSBracketPairHighlighter {
      */
     public updateActiveEditor(editor: vscode.TextEditor | undefined): void {
         if (!editor || !isRisuCbsDocument(editor.document)) {
+            return;
+        }
+
+        if (shouldSkipBracketPairDecorations(editor.document)) {
+            this.bracketPairProvider.clearDecorations(editor);
+            editor.setDecorations(this.currentPairDecorationType, []);
             return;
         }
 

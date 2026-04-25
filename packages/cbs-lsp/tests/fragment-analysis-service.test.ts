@@ -7,6 +7,7 @@ import {
   FragmentAnalysisService,
   fragmentAnalysisService,
 } from '../src/core';
+import { MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH } from '../src/indexer';
 import { DiagnosticCode } from '../src/analyzer/diagnostics';
 import { routeDiagnosticsForDocument } from '../src/utils/diagnostics-router';
 import {
@@ -277,6 +278,34 @@ describe('FragmentAnalysisService', () => {
 
     expect(analysis).toBeNull();
     expect(service.getCachedAnalysis(`file://${filePath}`, version)).toBeNull();
+  });
+
+  it('returns lightweight empty analysis for oversized .risulua without parsing CBS', () => {
+    const service = new FragmentAnalysisService();
+    const parseSpy = vi.spyOn(core.CBSParser.prototype, 'parse');
+    const text = `{{user}}${'x'.repeat(MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH + 1)}`;
+    const request = {
+      uri: 'file:///workspace/lua/huge.risulua',
+      version: 1,
+      filePath: '/workspace/lua/huge.risulua',
+      text,
+    };
+
+    const analysis = service.analyzeDocument(request);
+    const lookup = service.locatePosition(request, { line: 0, character: 2 });
+
+    expect(analysis).not.toBeNull();
+    expect(analysis?.artifact).toBe('lua');
+    expect(analysis?.fragmentMap).toEqual({
+      artifact: 'lua',
+      fragments: [],
+      fileLength: text.length,
+    });
+    expect(analysis?.fragmentAnalyses).toEqual([]);
+    expect(analysis?.diagnostics).toEqual([]);
+    expect(analysis?.cache.textSignature).toBe(`oversized-lua:${text.length}`);
+    expect(lookup).toBeNull();
+    expect(parseSpy).not.toHaveBeenCalled();
   });
 
   it('does not cache analysis when the request is already cancelled', () => {

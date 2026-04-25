@@ -8,11 +8,18 @@ import type {
   CompletionItem,
   CompletionList,
   CompletionParams,
+  Definition,
+  DefinitionParams,
   Hover,
   HoverParams,
+  Location,
+  LocationLink,
   MarkedString,
   MarkupContent,
   Range as LspRange,
+  RenameParams,
+  TextDocumentPositionParams,
+  WorkspaceEdit,
 } from 'vscode-languageserver/node';
 
 import {
@@ -30,6 +37,8 @@ import { createLuaLsTransportUri } from './lualsDocuments';
 
 const DEFAULT_LUALS_HOVER_TIMEOUT_MS = 1_500;
 const DEFAULT_LUALS_COMPLETION_TIMEOUT_MS = 1_500;
+const DEFAULT_LUALS_DEFINITION_TIMEOUT_MS = 1_500;
+const DEFAULT_LUALS_RENAME_TIMEOUT_MS = 1_500;
 const LUA_HOVER_SNAPSHOT_PROVENANCE = Object.freeze(
   createAgentMetadataExplanation(
     'contextual-inference',
@@ -87,6 +96,129 @@ function normalizeLuaHoverContents(contents: Hover['contents']): NormalizedLuaHo
   return {
     kind: 'kind' in markup ? markup.kind : null,
     value: markup.value,
+  };
+}
+
+/**
+ * isLocationLink 함수.
+ * LuaLS definition 응답 항목이 LocationLink shape인지 좁힘.
+ *
+ * @param value - 검사할 definition entry
+ * @returns LocationLink이면 true
+ */
+function isLocationLink(value: Location | LocationLink): value is LocationLink {
+  return 'targetUri' in value;
+}
+
+/**
+ * remapLuaLsLocationUri 함수.
+ * 현재 source 문서에 대응하는 shadow URI를 원본 `.risulua` URI로 되돌림.
+ *
+ * @param uri - LuaLS가 반환한 URI
+ * @param sourceUri - 원본 `.risulua` URI
+ * @param transportUri - LuaLS shadow `.lua` URI
+ * @returns 원본 URI로 되돌린 URI
+ */
+function remapLuaLsLocationUri(uri: string, sourceUri: string, transportUri: string): string {
+  return uri === transportUri ? sourceUri : uri;
+}
+
+/**
+ * remapLuaLsDefinitionResult 함수.
+ * LuaLS definition 응답에 포함된 current shadow document URI를 source URI로 되돌림.
+ *
+ * @param definition - LuaLS definition 응답
+ * @param sourceUri - 원본 `.risulua` URI
+ * @param transportUri - LuaLS shadow `.lua` URI
+ * @returns VS Code client가 열 수 있는 source URI 기준 definition 응답
+ */
+function remapLuaLsDefinitionResult(
+  definition: Definition | null,
+  sourceUri: string,
+  transportUri: string,
+): Definition | null {
+  if (!definition) {
+    return null;
+  }
+
+  const entries = Array.isArray(definition) ? definition : [definition];
+  const remapped = entries.map((entry) => {
+    if (isLocationLink(entry)) {
+      return {
+        ...entry,
+        targetUri: remapLuaLsLocationUri(entry.targetUri, sourceUri, transportUri),
+      };
+    }
+
+    return {
+      ...entry,
+      uri: remapLuaLsLocationUri(entry.uri, sourceUri, transportUri),
+    };
+  });
+
+  return Array.isArray(definition) ? remapped as Definition : remapped[0] as Definition;
+}
+
+/**
+ * remapLuaLsWorkspaceEdit 함수.
+ * LuaLS rename WorkspaceEdit 안의 current shadow document URI를 원본 `.risulua` URI로 되돌림.
+ *
+ * @param edit - LuaLS rename 응답
+ * @param sourceUri - 원본 `.risulua` URI
+ * @param transportUri - LuaLS shadow `.lua` URI
+ * @returns source URI 기준 WorkspaceEdit
+ */
+function remapLuaLsWorkspaceEdit(
+  edit: WorkspaceEdit | null,
+  sourceUri: string,
+  transportUri: string,
+): WorkspaceEdit | null {
+  if (!edit) {
+    return null;
+  }
+
+  const changes = edit.changes
+    ? Object.fromEntries(
+        Object.entries(edit.changes).map(([uri, edits]) => [
+          remapLuaLsLocationUri(uri, sourceUri, transportUri),
+          edits,
+        ]),
+      )
+    : undefined;
+
+  const documentChanges = edit.documentChanges?.map((change) => {
+    if ('textDocument' in change) {
+      return {
+        ...change,
+        textDocument: {
+          ...change.textDocument,
+          uri: remapLuaLsLocationUri(change.textDocument.uri, sourceUri, transportUri),
+        },
+      };
+    }
+
+    if ('uri' in change) {
+      return {
+        ...change,
+        uri: remapLuaLsLocationUri(change.uri, sourceUri, transportUri),
+      };
+    }
+
+    if ('kind' in change && change.kind === 'rename') {
+      return {
+        ...change,
+        oldUri: remapLuaLsLocationUri(change.oldUri, sourceUri, transportUri),
+        newUri: remapLuaLsLocationUri(change.newUri, sourceUri, transportUri),
+      };
+    }
+
+    return change;
+  });
+
+  return {
+    ...edit,
+    ...(changes ? { changes } : {}),
+    ...(documentChanges ? { documentChanges } : {}),
   };
 }
 
@@ -216,6 +348,114 @@ export class LuaLsProxy {
         },
         DEFAULT_LUALS_HOVER_TIMEOUT_MS,
       );
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * provideDefinition 함수.
+   * source `.risulua` URI를 shadow `.lua` file:// URI로 바꿔 LuaLS `textDocument/definition` 요청을 전달함.
+   *
+   * @param params - host LSP definition params
+   * @param cancellationToken - 취소 여부를 확인할 선택적 토큰
+   * @returns LuaLS definition 결과, 준비되지 않았거나 실패하면 null
+   */
+  async provideDefinition(
+    params: DefinitionParams,
+    cancellationToken?: CancellationToken,
+  ): Promise<Definition | null> {
+    if (cancellationToken?.isCancellationRequested) {
+      return null;
+    }
+
+    const sourceUri = params.textDocument.uri;
+    const transportUri = createLuaLsTransportUri(CbsLspPathHelper.getFilePathFromUri(sourceUri));
+
+    try {
+      const definition = await this.client.request<Definition>(
+        'textDocument/definition',
+        {
+          ...params,
+          textDocument: {
+            uri: transportUri,
+          },
+        },
+        DEFAULT_LUALS_DEFINITION_TIMEOUT_MS,
+      );
+      return remapLuaLsDefinitionResult(definition, sourceUri, transportUri);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * prepareRename 함수.
+   * LuaLS `textDocument/prepareRename`을 shadow 문서로 프록시함.
+   *
+   * @param params - host LSP prepareRename params
+   * @param cancellationToken - 취소 여부를 확인할 선택적 토큰
+   * @returns LuaLS prepareRename 결과, 실패하면 null
+   */
+  async prepareRename(
+    params: TextDocumentPositionParams,
+    cancellationToken?: CancellationToken,
+  ): Promise<LspRange | { placeholder: string; range: LspRange } | null> {
+    if (cancellationToken?.isCancellationRequested) {
+      return null;
+    }
+
+    const transportUri = createLuaLsTransportUri(
+      CbsLspPathHelper.getFilePathFromUri(params.textDocument.uri),
+    );
+
+    try {
+      return await this.client.request<LspRange | { placeholder: string; range: LspRange }>(
+        'textDocument/prepareRename',
+        {
+          ...params,
+          textDocument: {
+            uri: transportUri,
+          },
+        },
+        DEFAULT_LUALS_RENAME_TIMEOUT_MS,
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * provideRename 함수.
+   * LuaLS `textDocument/rename` 응답 안의 shadow URI를 원본 `.risulua` URI로 되돌림.
+   *
+   * @param params - host LSP rename params
+   * @param cancellationToken - 취소 여부를 확인할 선택적 토큰
+   * @returns source URI 기준 WorkspaceEdit, 실패하면 null
+   */
+  async provideRename(
+    params: RenameParams,
+    cancellationToken?: CancellationToken,
+  ): Promise<WorkspaceEdit | null> {
+    if (cancellationToken?.isCancellationRequested) {
+      return null;
+    }
+
+    const sourceUri = params.textDocument.uri;
+    const transportUri = createLuaLsTransportUri(CbsLspPathHelper.getFilePathFromUri(sourceUri));
+
+    try {
+      const edit = await this.client.request<WorkspaceEdit>(
+        'textDocument/rename',
+        {
+          ...params,
+          textDocument: {
+            uri: transportUri,
+          },
+        },
+        DEFAULT_LUALS_RENAME_TIMEOUT_MS,
+      );
+      return remapLuaLsWorkspaceEdit(edit, sourceUri, transportUri);
     } catch {
       return null;
     }

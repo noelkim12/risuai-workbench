@@ -5,17 +5,21 @@
 
 import { performance } from 'node:perf_hooks';
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CBSBuiltinRegistry } from 'risu-workbench-core';
 import type { Diagnostic } from 'vscode-languageserver/node';
+import { TextDocument } from 'vscode-languageserver-textdocument';
 
 import { FragmentAnalysisService } from '../../src/core';
 import { SemanticTokensProvider } from '../../src/features/semanticTokens';
 import { CompletionProvider } from '../../src/features/completion';
+import { HoverProvider } from '../../src/features/hover';
 import { CodeActionProvider } from '../../src/features/codeActions';
+import { createFragmentRequest } from '../../src/helpers/server-workspace-helper';
 import {
   assembleDiagnosticsForRequest,
   routeDiagnosticsForDocument,
@@ -111,6 +115,30 @@ async function createLargeWorkspace(pairCount: number): Promise<string> {
 }
 
 const childProcesses = new Set<ChildProcessWithoutNullStreams>();
+
+function findPositionAfterFirstMacroStart(text: string): { line: number; character: number } {
+  const offset = text.indexOf('{{');
+  expect(offset).toBeGreaterThanOrEqual(0);
+
+  const before = text.slice(0, offset);
+  const lines = before.split(/\r\n|\r|\n/);
+  return {
+    line: lines.length - 1,
+    character: lines.at(-1)!.length + 2,
+  };
+}
+
+function findPositionAfterNeedle(text: string, needle: string, characterOffset: number): { line: number; character: number } {
+  const offset = text.indexOf(needle);
+  expect(offset).toBeGreaterThanOrEqual(0);
+
+  const before = text.slice(0, offset);
+  const lines = before.split(/\r\n|\r|\n/);
+  return {
+    line: lines.length - 1,
+    character: lines.at(-1)!.length + characterOffset,
+  };
+}
 
 afterEach(async () => {
   for (const child of childProcesses) {
@@ -351,6 +379,108 @@ describe.sequential('cbs-language-server large workspace product matrix', () => 
     expect(fallbackTraceStats.attempts).toBeLessThanOrEqual(localDiagnostics.length);
     expect(queryVariable.mock.calls.length).toBeLessThanOrEqual(localDiagnostics.length);
     expect(durationMs).toBeLessThan(250);
+  });
+
+  it('keeps oversized .risulua routed for cheap CBS runtime completion without full analysis', () => {
+    const samplePath = path.resolve(
+      __dirname,
+      '../../..',
+      'vscode/lua-sample/super-huge.risulua',
+    );
+    const text = readFileSync(samplePath, 'utf8');
+    const uri = pathToFileURL(samplePath).toString();
+    const document = TextDocument.create(uri, 'risulua', 1, text);
+    const request = createFragmentRequest(document);
+    const position = findPositionAfterFirstMacroStart(text);
+
+    expect(request).not.toBeNull();
+
+    const analysisService = new FragmentAnalysisService();
+    const analysisStart = performance.now();
+    const analysis = analysisService.analyzeDocument(request!);
+    const analysisDurationMs = performance.now() - analysisStart;
+
+    expect(analysis?.fragments).toEqual([]);
+    expect(analysis?.diagnostics).toEqual([]);
+    expect(analysisDurationMs).toBeLessThan(250);
+
+    const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      analysisService,
+      resolveRequest: ({ textDocument }) => (textDocument.uri === uri ? request : null),
+    });
+    const completionStart = performance.now();
+    const completions = provider.provide({ textDocument: { uri }, position });
+    const completionDurationMs = performance.now() - completionStart;
+
+    expect(completions.map((item) => item.label)).toContain('user');
+    expect(completionDurationMs).toBeLessThan(250);
+
+    const hoverProvider = new HoverProvider(new CBSBuiltinRegistry(), {
+      analysisService,
+      resolveRequest: ({ textDocument }) => (textDocument.uri === uri ? request : null),
+    });
+    const hoverStart = performance.now();
+    const hover = hoverProvider.provide({
+      textDocument: { uri },
+      position: findPositionAfterNeedle(text, '{{user}}', '{{'.length),
+    });
+    const hoverDurationMs = performance.now() - hoverStart;
+    const hoverMarkdown = hover?.contents as { value?: string } | undefined;
+
+    expect(hoverMarkdown?.value).toContain('**user**');
+    expect(hoverDurationMs).toBeLessThan(250);
+  });
+
+  it('returns quickly for fragment-dependent CBS completions in oversized .risulua documents', () => {
+    const samplePath = path.resolve(
+      __dirname,
+      '../../..',
+      'vscode/lua-sample/super-huge.risulua',
+    );
+    const sampleText = readFileSync(samplePath, 'utf8');
+    const injectedPrefix = 'local cbs_arg_completion_guard = "{{getvar::}}"\n';
+    const text = sampleText.includes('{{getvar::') ? sampleText : `${injectedPrefix}${sampleText}`;
+    const uri = pathToFileURL(samplePath).toString();
+    const document = TextDocument.create(uri, 'risulua', 1, text);
+    const request = createFragmentRequest(document);
+
+    expect(request).not.toBeNull();
+
+    const analysisService = new FragmentAnalysisService();
+    const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      analysisService,
+      resolveRequest: ({ textDocument }) => (textDocument.uri === uri ? request : null),
+    });
+    const start = performance.now();
+    const completionItems = provider.provide({
+      textDocument: { uri },
+      position: findPositionAfterNeedle(text, '{{getvar::', '{{getvar::'.length),
+    });
+    const durationMs = performance.now() - start;
+
+    expect(durationMs).toBeLessThan(250);
+    expect(completionItems).toEqual([]);
+  });
+
+  it('keeps CBS runtime analysis scoped to Lua string literals when wasm literal ranges are available', async () => {
+    const source = [
+      'local plain = "no cbs here"',
+      'local macro = "hello {{user}}"',
+      'local luaCode = getState("mood")',
+    ].join('\n');
+    const request = {
+      uri: 'file:///workspace/scoped.risulua',
+      filePath: '/workspace/scoped.risulua',
+      version: 1,
+      text: source,
+    };
+    const service = new FragmentAnalysisService();
+
+    const analysis = service.analyzeDocument(request);
+
+    expect(analysis?.fragmentMap.fragments.length).toBeLessThanOrEqual(1);
+    expect(analysis?.fragmentMap.fragments[0]?.content).toContain('{{user}}');
+    expect(analysis?.fragmentMap.fragments[0]?.content).not.toContain('getState');
   });
 
   it('keeps standalone server cold-start within a practical budget', async () => {

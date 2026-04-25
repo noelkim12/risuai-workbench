@@ -20,7 +20,9 @@
     "onLanguage:risuregex",
     "onLanguage:risuprompt",
     "onLanguage:risuhtml",
-    "onLanguage:risulua"
+    "onLanguage:risulua",
+    "onLanguage:lua",
+    "workspaceContains:**/*.risulua"
   ],
   "contributes": {
     "languages": [
@@ -166,6 +168,10 @@
       {
         "command": "risuWorkbench.openCardPanel",
         "title": "Risu Workbench: Open Card Panel"
+      },
+      {
+        "command": "risuWorkbench.cbs.openOccurrence",
+        "title": "Risu Workbench: Open CBS Occurrence"
       }
     ],
     "menus": {
@@ -214,6 +220,12 @@
           "scope": "window",
           "default": "",
           "markdownDescription": "Optional explicit path to the `cbs-language-server` executable. Relative paths resolve from the first workspace folder when available, otherwise from the extension root."
+        },
+        "risuWorkbench.cbs.server.luaLsPath": {
+          "type": "string",
+          "scope": "window",
+          "default": "",
+          "markdownDescription": "Optional explicit path to the `lua-language-server` executable used by the CBS LuaLS sidecar for `.risulua` hover, completion, go to definition, and rename. If empty, the server searches PATH for `lua-language-server`."
         }
       }
     }

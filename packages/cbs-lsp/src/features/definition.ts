@@ -4,7 +4,7 @@ import {
   LocationLink,
   TextDocumentPositionParams,
 } from 'vscode-languageserver/node';
-import type { CBSBuiltinRegistry, Range } from 'risu-workbench-core';
+import type { CBSBuiltinRegistry, Position, Range } from 'risu-workbench-core';
 
 import {
   createAgentMetadataAvailability,
@@ -24,6 +24,16 @@ import {
 } from './local-first-contract';
 import { isRequestCancelled } from '../utils/request-cancellation';
 import type { VariableFlowService } from '../services';
+import { shouldSkipOversizedLuaText } from '../utils/oversized-lua';
+import { positionToOffset } from '../utils/position';
+import { getVariableMacroArgumentKind } from '../analyzer/scope/scope-macro-rules';
+
+const MAX_OVERSIZED_DEFINITION_LINE_SCAN_LENGTH = 1024 * 1024;
+
+interface OversizedDefinitionResult {
+  definition: Definition | null;
+  handled: boolean;
+}
 
 export type DefinitionRequestResolver = (
   params: TextDocumentPositionParams,
@@ -38,8 +48,21 @@ export interface DefinitionProviderOptions {
 export const DEFINITION_PROVIDER_AVAILABILITY = createAgentMetadataAvailability(
   'local-first',
   'definition-provider:local-first-resolution',
-  'Definition resolves fragment-local variables, loop aliases, and local #func declarations first, then appends workspace chat-variable writers when VariableFlowService is available. Global and external symbols stay unavailable.',
+  'Definition resolves fragment-local variables, loop aliases, and local #func declarations first, then appends workspace chat-variable writers/readers when VariableFlowService is available. Global and external symbols stay unavailable.',
 );
+
+function appendWorkspaceVariableEntries(
+  entries: LocalFirstRangeEntry[],
+  flowQuery: ReturnType<VariableFlowService['queryVariable']>,
+): void {
+  for (const writer of flowQuery?.writers ?? []) {
+    entries.push({ uri: writer.uri, range: writer.hostRange });
+  }
+
+  for (const reader of flowQuery?.readers ?? []) {
+    entries.push({ uri: reader.uri, range: reader.hostRange });
+  }
+}
 
 function isFunctionPosition(lookup: FragmentCursorLookupResult): { functionName: string } | null {
   const tokenLookup = lookup.token;
@@ -123,6 +146,14 @@ export class DefinitionProvider {
       return null;
     }
 
+    const oversizedDefinition = this.provideOversizedLuaVariableDefinition(
+      request,
+      params.position,
+    );
+    if (oversizedDefinition.handled) {
+      return oversizedDefinition.definition;
+    }
+
     const lookup = this.analysisService.locatePosition(request, params.position, cancellationToken);
     if (!lookup) {
       return null;
@@ -198,9 +229,7 @@ export class DefinitionProvider {
     const workspaceEntries: LocalFirstRangeEntry[] = [];
     if (variableName && variableKind && isCrossFileVariableKind(variableKind) && this.variableFlowService) {
       const flowQuery = this.variableFlowService.queryVariable(variableName);
-      for (const writer of flowQuery?.writers ?? []) {
-        workspaceEntries.push({ uri: writer.uri, range: writer.hostRange });
-      }
+      appendWorkspaceVariableEntries(workspaceEntries, flowQuery);
       for (const defaultDefinition of this.variableFlowService.getDefaultVariableDefinitions(variableName)) {
         workspaceEntries.push({ uri: defaultDefinition.uri, range: defaultDefinition.range });
       }
@@ -215,5 +244,143 @@ export class DefinitionProvider {
     }
 
     return links as unknown as Definition;
+  }
+
+  private provideOversizedLuaVariableDefinition(
+    request: FragmentAnalysisRequest,
+    position: Position,
+  ): OversizedDefinitionResult {
+    if (!this.variableFlowService || !shouldSkipOversizedLuaText(request.filePath, request.text.length)) {
+      return { definition: null, handled: false };
+    }
+
+    const target = this.detectCurrentLineVariableArgumentTarget(request.text, position);
+    if (!target) {
+      return { definition: null, handled: false };
+    }
+
+    const originRange: Range = {
+      start: { line: position.line, character: target.startCharacter },
+      end: { line: position.line, character: target.endCharacter },
+    };
+    const workspaceEntries: LocalFirstRangeEntry[] = [];
+    const flowQuery = this.variableFlowService.queryVariable(target.name);
+    appendWorkspaceVariableEntries(workspaceEntries, flowQuery);
+
+    for (const defaultDefinition of this.variableFlowService.getDefaultVariableDefinitions(target.name)) {
+      workspaceEntries.push({ uri: defaultDefinition.uri, range: defaultDefinition.range });
+    }
+
+    const links = mergeLocalFirstSegments([workspaceEntries]).map((entry) =>
+      buildDefinitionLocationLink(entry.uri, entry.range, originRange),
+    );
+
+    return {
+      definition: links.length > 0 ? (links as unknown as Definition) : null,
+      handled: true,
+    };
+  }
+
+  private detectCurrentLineVariableArgumentTarget(
+    text: string,
+    position: Position,
+  ): { name: string; startCharacter: number; endCharacter: number } | null {
+    const line = this.getLineTextAtPosition(
+      text,
+      position,
+      MAX_OVERSIZED_DEFINITION_LINE_SCAN_LENGTH,
+    );
+    if (line === null || position.character > line.length) {
+      return null;
+    }
+
+    const prefixText = line.slice(0, position.character);
+    const macroStartCharacter = prefixText.lastIndexOf('{{');
+    if (macroStartCharacter === -1) {
+      return null;
+    }
+
+    const closeBeforeMacro = prefixText.lastIndexOf('}}');
+    if (closeBeforeMacro > macroStartCharacter) {
+      return null;
+    }
+
+    const closeCharacter = line.indexOf('}}', macroStartCharacter + 2);
+    if (closeCharacter !== -1 && position.character > closeCharacter + 2) {
+      return null;
+    }
+
+    const macroBodyEndCharacter = closeCharacter === -1 ? line.length : closeCharacter;
+    const macroBody = line.slice(macroStartCharacter + 2, macroBodyEndCharacter);
+    const macroPrefix = line.slice(macroStartCharacter + 2, position.character);
+    if (macroPrefix.includes('{{') || macroPrefix.startsWith('/')) {
+      return null;
+    }
+
+    const lastArgumentSeparatorIndex = macroPrefix.lastIndexOf('::');
+    if (lastArgumentSeparatorIndex === -1) {
+      return null;
+    }
+
+    const macroName = macroPrefix.slice(0, macroPrefix.indexOf('::')).trim().toLowerCase();
+
+    let argumentIndex = 0;
+    for (let index = 0; index < lastArgumentSeparatorIndex; index += 1) {
+      if (macroPrefix.slice(index, index + 2) !== '::') {
+        continue;
+      }
+
+      argumentIndex += 1;
+      index += 1;
+    }
+
+    if (argumentIndex !== 0) {
+      return null;
+    }
+
+    const variableKind = getVariableMacroArgumentKind(macroName, argumentIndex);
+    if (variableKind !== 'chat') {
+      return null;
+    }
+
+    const segmentStartCharacter = macroStartCharacter + 2 + lastArgumentSeparatorIndex + 2;
+    const nextArgumentSeparatorIndex = macroBody.indexOf('::', lastArgumentSeparatorIndex + 2);
+    const segmentEndCharacter =
+      nextArgumentSeparatorIndex === -1
+        ? macroBodyEndCharacter
+        : macroStartCharacter + 2 + nextArgumentSeparatorIndex;
+    const rawSegment = line.slice(segmentStartCharacter, segmentEndCharacter);
+    const leadingWhitespaceLength = rawSegment.length - rawSegment.trimStart().length;
+    const trailingWhitespaceLength = rawSegment.length - rawSegment.trimEnd().length;
+    const startCharacter = segmentStartCharacter + leadingWhitespaceLength;
+    const endCharacter = segmentEndCharacter - trailingWhitespaceLength;
+
+    if (position.character < startCharacter || position.character > endCharacter) {
+      return null;
+    }
+
+    const name = line.slice(startCharacter, endCharacter);
+    return name.length > 0 ? { name, startCharacter, endCharacter } : null;
+  }
+
+  private getLineTextAtPosition(
+    text: string,
+    position: Position,
+    maxScannedCharacters: number,
+  ): string | null {
+    const offset = positionToOffset(text, position);
+    if (offset < 0 || offset > text.length) {
+      return null;
+    }
+
+    const lineStartOffset = Math.max(text.lastIndexOf('\n', Math.max(0, offset - 1)) + 1, 0);
+    const rawLineEndOffset = text.indexOf('\n', offset);
+    const lineEndOffset = rawLineEndOffset === -1 ? text.length : rawLineEndOffset;
+    if (lineEndOffset - lineStartOffset > maxScannedCharacters) {
+      return null;
+    }
+
+    const line = text.slice(lineStartOffset, lineEndOffset).replace(/\r$/u, '');
+    return position.character <= line.length ? line : null;
   }
 }

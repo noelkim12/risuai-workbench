@@ -1,3 +1,4 @@
+import type { LuaWasmStringLiteral } from '../analyze/lua-wasm-types';
 import type { CustomExtensionArtifact } from './contracts';
 
 /**
@@ -359,6 +360,35 @@ export function mapLuaToCbsFragments(rawContent: string): CbsFragmentMap {
         content: rawContent,
       },
     ],
+    fileLength: rawContent.length,
+  };
+}
+
+/**
+ * Map WASM-scanned Lua string literal content ranges to CBS fragments.
+ * Only literals with CBS markers are exposed; this keeps .risulua CBS parsing
+ * scoped to string literal contents instead of the whole Lua source.
+ *
+ * @param rawContent - The raw .risulua source text
+ * @param stringLiterals - Compact string literal records from the Rust/WASM scanner
+ * @returns CbsFragmentMap with one fragment per CBS-bearing string literal content range
+ */
+export function mapLuaWasmStringLiteralsToCbsFragments(
+  rawContent: string,
+  stringLiterals: readonly LuaWasmStringLiteral[],
+): CbsFragmentMap {
+  const fragments = stringLiterals
+    .filter((literal) => literal.hasCbsMarker)
+    .map((literal, index) => ({
+      section: `lua-string:${index + 1}`,
+      start: literal.contentStartUtf16,
+      end: literal.contentEndUtf16,
+      content: rawContent.slice(literal.contentStartUtf16, literal.contentEndUtf16),
+    }));
+
+  return {
+    artifact: 'lua',
+    fragments,
     fileLength: rawContent.length,
   };
 }

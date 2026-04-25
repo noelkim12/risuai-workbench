@@ -22,6 +22,7 @@ const EXPECTED_SELECTORS = [
   '**/*.risuhtml',
   '**/*.risulua',
 ];
+const EXPECTED_PATTERN_SELECTOR_COUNT = EXPECTED_SELECTORS.length + 1;
 
 const EXIT_SUCCESS = 0;
 const EXIT_FAILURE = 1;
@@ -103,15 +104,19 @@ if (foundSelectors.length !== EXPECTED_SELECTORS.length) {
   fail(`Missing selectors: ${missing.join(', ')}`);
 }
 
-// Check for unexpected selectors (only the 5 expected ones)
+if (!selectorsBlock.includes("language: 'lua'") || !selectorsBlock.includes("pattern: '**/*.risulua'")) {
+  fail('Missing Lua-language .risulua compatibility selector');
+}
+
+// Check for unexpected pattern selectors (5 file selectors + lua-language .risulua compatibility selector)
 const allPatternMatches = selectorsBlock.match(/\*\/\*\.\w+/g) || [];
-if (allPatternMatches.length !== EXPECTED_SELECTORS.length) {
+if (allPatternMatches.length !== EXPECTED_PATTERN_SELECTOR_COUNT) {
   fail(
-    `Unexpected selector count: found ${allPatternMatches.length}, expected ${EXPECTED_SELECTORS.length}`,
+    `Unexpected selector count: found ${allPatternMatches.length}, expected ${EXPECTED_PATTERN_SELECTOR_COUNT}`,
   );
 }
 
-pass(`Document selectors match exactly: ${EXPECTED_SELECTORS.join(', ')}`);
+pass(`Document selectors include CBS file patterns and Lua-language .risulua compatibility selector`);
 
 if (!boundarySource.includes('resolveCbsLanguageServerLaunch')) {
   fail('cbsLanguageClientBoundary.ts does not use the shared launch resolver');
@@ -176,6 +181,13 @@ for (const event of languageActivations) {
 }
 pass('package.json has activation events for all 5 CBS-bearing languages');
 
+for (const event of ['onLanguage:lua', 'workspaceContains:**/*.risulua']) {
+  if (!activationEvents.includes(event)) {
+    fail(`Missing Lua-compatible risulua activation event: ${event}`);
+  }
+}
+pass('package.json activates when .risulua files are manually associated as Lua');
+
 // Verify vscode-languageclient dependency
 const deps = packageJson.dependencies || {};
 if (!deps['vscode-languageclient']) {
@@ -205,6 +217,7 @@ const requiredConfigurationKeys = [
   'risuWorkbench.cbs.server.launchMode',
   'risuWorkbench.cbs.server.installMode',
   'risuWorkbench.cbs.server.path',
+  'risuWorkbench.cbs.server.luaLsPath',
 ];
 
 for (const key of requiredConfigurationKeys) {
@@ -213,6 +226,21 @@ for (const key of requiredConfigurationKeys) {
   }
 }
 pass(`package.json exposes CBS client settings: ${requiredConfigurationKeys.join(', ')}`);
+
+if (!clientSource.includes('CBS_LSP_LUALS_PATH')) {
+  fail('cbsLanguageClient.ts does not forward configured LuaLS path via CBS_LSP_LUALS_PATH');
+}
+pass('cbsLanguageClient.ts forwards configured LuaLS path to CBS server env');
+
+if (!clientSource.includes('cbs/runtimeAvailability') || !clientSource.includes('LuaLS sidecar status=')) {
+  fail('cbsLanguageClient.ts does not surface LuaLS runtime availability in the Output channel');
+}
+pass('cbsLanguageClient.ts surfaces LuaLS runtime availability in the Output channel');
+
+if (!clientSource.includes("getConfiguration('Lua.misc')") || !clientSource.includes("getExtension('sumneko.lua')")) {
+  fail('cbsLanguageClient.ts does not auto-discover LuaLS from the installed sumneko.lua extension');
+}
+pass('cbsLanguageClient.ts auto-discovers LuaLS from the installed sumneko.lua extension');
 
 if (!packageJson.scripts?.['verify:cbs-client']) {
   fail('Missing verify:cbs-client script in package.json');

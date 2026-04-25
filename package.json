@@ -16,6 +16,11 @@
   "author": "NOEL",
   "license": "MIT",
   "scripts": {
+    "wasm:build": "npm --workspace @risuai/lua-analyzer-wasm run build:wasm",
+    "wasm:test:rust": "npm --workspace @risuai/lua-analyzer-wasm run test:rust",
+    "wasm:test:wasm": "npm --workspace @risuai/lua-analyzer-wasm run test:wasm",
+    "wasm:smoke": "npm --workspace @risuai/lua-analyzer-wasm run test:smoke",
+    "wasm:check": "npm --workspace @risuai/lua-analyzer-wasm run test",
     "graph:build": "node ./scripts/graph/run-graphify.mjs build",
     "graph:mcp": "node ./scripts/graph/run-graphify.mjs mcp",
     "graph:review:build": "node ./scripts/graph/run-code-review-graph.mjs build",

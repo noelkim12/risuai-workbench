@@ -8,6 +8,7 @@ import {
   mapPromptToCbsFragments,
   mapHtmlToCbsFragments,
   mapLuaToCbsFragments,
+  mapLuaWasmStringLiteralsToCbsFragments,
   mapNonCbsToFragments,
   getCbsArtifactExtension,
   isCbsBearingFile,
@@ -567,6 +568,52 @@ end
 
       expect(result.fragments[0].content).toContain('{{#if');
       expect(result.fragments[0].content).toContain('{{/if}}');
+    });
+  });
+
+  describe('mapLuaWasmStringLiteralsToCbsFragments', () => {
+    it('maps only CBS-bearing Lua string literal contents to fragments', () => {
+      const source = 'local a = "plain"\nlocal b = "hello {{user}}"\n';
+      const cbsContentStart = source.indexOf('hello {{user}}');
+      const cbsContentEnd = cbsContentStart + 'hello {{user}}'.length;
+      const plainContentStart = source.indexOf('plain');
+      const plainContentEnd = plainContentStart + 'plain'.length;
+
+      const fragmentMap = mapLuaWasmStringLiteralsToCbsFragments(source, [
+        {
+          startUtf16: plainContentStart - 1,
+          endUtf16: plainContentEnd + 1,
+          contentStartUtf16: plainContentStart,
+          contentEndUtf16: plainContentEnd,
+          startByte: plainContentStart - 1,
+          endByte: plainContentEnd + 1,
+          contentStartByte: plainContentStart,
+          contentEndByte: plainContentEnd,
+          quoteKind: 'double',
+          hasCbsMarker: false,
+        },
+        {
+          startUtf16: cbsContentStart - 1,
+          endUtf16: cbsContentEnd + 1,
+          contentStartUtf16: cbsContentStart,
+          contentEndUtf16: cbsContentEnd,
+          startByte: cbsContentStart - 1,
+          endByte: cbsContentEnd + 1,
+          contentStartByte: cbsContentStart,
+          contentEndByte: cbsContentEnd,
+          quoteKind: 'double',
+          hasCbsMarker: true,
+        },
+      ]);
+
+      expect(fragmentMap.artifact).toBe('lua');
+      expect(fragmentMap.fragments).toHaveLength(1);
+      expect(fragmentMap.fragments[0]).toMatchObject({
+        section: 'lua-string:1',
+        start: cbsContentStart,
+        end: cbsContentEnd,
+        content: 'hello {{user}}',
+      });
     });
   });
 

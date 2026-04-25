@@ -8,8 +8,14 @@ import type {
   CompletionItem,
   CompletionList,
   CompletionParams,
+  Definition,
+  DefinitionParams,
   Hover,
   HoverParams,
+  Range as LspRange,
+  RenameParams,
+  TextDocumentPositionParams,
+  WorkspaceEdit,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { pathToFileURL } from 'node:url';
@@ -43,8 +49,8 @@ import {
 export interface LuaLsCompanionSubsystemStatus {
   restartPolicy: LuaLsRestartPolicyStatus;
   routing: {
-    deferredSurfaces: readonly ['definition', 'signature'];
-    liveSurfaces: readonly ['completion', 'diagnostics', 'hover'];
+    deferredSurfaces: readonly ['signature'];
+    liveSurfaces: readonly ['completion', 'definition', 'diagnostics', 'hover', 'rename'];
     mirrorMode: 'workspace-and-standalone-risulua' | 'shadow-file-workspace-and-standalone-risulua';
   };
   runtime: LuaLsCompanionRuntime;
@@ -137,8 +143,8 @@ export class LuaLsCompanionController {
     return {
       restartPolicy: this.processManager.getRestartPolicy(),
       routing: {
-        deferredSurfaces: ['definition', 'signature'],
-        liveSurfaces: ['completion', 'diagnostics', 'hover'],
+        deferredSurfaces: ['signature'],
+        liveSurfaces: ['completion', 'definition', 'diagnostics', 'hover', 'rename'],
         mirrorMode: 'shadow-file-workspace-and-standalone-risulua',
       },
       runtime: this.getRuntime(),
@@ -291,6 +297,51 @@ export class LuaLsCompanionController {
    */
   provideHover(params: HoverParams, cancellationToken?: CancellationToken): Promise<Hover | null> {
     return this.proxy.provideHover(params, cancellationToken);
+  }
+
+  /**
+   * provideDefinition 함수.
+   * `.risulua` 문서 definition을 LuaLS proxy로 전달함.
+   *
+   * @param params - host LSP definition params
+   * @param cancellationToken - 취소 여부를 확인할 선택적 토큰
+   * @returns source URI 기준 definition 결과 또는 null
+   */
+  provideDefinition(
+    params: DefinitionParams,
+    cancellationToken?: CancellationToken,
+  ): Promise<Definition | null> {
+    return this.proxy.provideDefinition(params, cancellationToken);
+  }
+
+  /**
+   * prepareRename 함수.
+   * `.risulua` 문서 prepareRename을 LuaLS proxy로 전달함.
+   *
+   * @param params - host LSP prepareRename params
+   * @param cancellationToken - 취소 여부를 확인할 선택적 토큰
+   * @returns LuaLS prepareRename 결과 또는 null
+   */
+  prepareRename(
+    params: TextDocumentPositionParams,
+    cancellationToken?: CancellationToken,
+  ): Promise<LspRange | { placeholder: string; range: LspRange } | null> {
+    return this.proxy.prepareRename(params, cancellationToken);
+  }
+
+  /**
+   * provideRename 함수.
+   * `.risulua` 문서 rename을 LuaLS proxy로 전달함.
+   *
+   * @param params - host LSP rename params
+   * @param cancellationToken - 취소 여부를 확인할 선택적 토큰
+   * @returns source URI 기준 WorkspaceEdit 또는 null
+   */
+  provideRename(
+    params: RenameParams,
+    cancellationToken?: CancellationToken,
+  ): Promise<WorkspaceEdit | null> {
+    return this.proxy.provideRename(params, cancellationToken);
   }
 
   /**

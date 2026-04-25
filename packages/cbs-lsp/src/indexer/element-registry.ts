@@ -9,6 +9,8 @@ import {
   analyzeLuaSource,
   extractCBSVarOps,
   type CbsFragment,
+  type CollectedData,
+  type CollectedStateVar,
   type CustomExtensionArtifact,
   type ElementCBSData,
   type LuaAnalysisArtifact,
@@ -331,10 +333,7 @@ function buildLuaFileRecord(file: WorkspaceScanFile): BuiltRegistryFileRecord {
   try {
     const source = file.fragmentMap.fragments[0]?.content ?? '';
     if (file.indexTextTruncated) {
-      return buildSkippedLuaFileRecord(
-        file,
-        `Lua analysis skipped because source exceeds ${MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH} characters.`,
-      );
+      return buildLightweightLuaFileRecord(file);
     }
 
     const luaArtifact = analyzeLuaSource({
@@ -441,15 +440,91 @@ function buildLuaFileRecord(file: WorkspaceScanFile): BuiltRegistryFileRecord {
   }
 }
 
-/**
- * buildSkippedLuaFileRecord 함수.
- * 과대 `.risulua`를 workspace graph 분석에서 제외하되 file record는 유지함.
- *
- * @param file - 원본 scan file
- * @param reason - 분석을 건너뛴 이유
- * @returns graph seed 없는 lua registry record
- */
-function buildSkippedLuaFileRecord(file: WorkspaceScanFile, reason: string): BuiltRegistryFileRecord {
+function buildLightweightLuaFileRecord(file: WorkspaceScanFile): BuiltRegistryFileRecord {
+  const stateAccessOccurrences = [...(file.lightweightLuaStateAccessOccurrences ?? [])];
+  const baseName = path.basename(file.absolutePath, path.extname(file.absolutePath));
+  const stateVars = createLightweightStateVars(stateAccessOccurrences);
+  const collected = createLightweightCollectedData(stateVars, stateAccessOccurrences);
+  const luaArtifact: LuaAnalysisArtifact = {
+    filePath: file.absolutePath,
+    baseName,
+    sourceText: file.lightweightLuaSourceText,
+    totalLines: 0,
+    collected,
+    analyzePhase: {
+      commentSections: [],
+      sectionMapSections: [],
+      callGraph: new Map(),
+      calledBy: new Map(),
+      apiByCategory: new Map(),
+      moduleGroups: [],
+      moduleByFunction: new Map(),
+      stateOwnership: [],
+      registryVars: [],
+      rootFunctions: [],
+      getDescendants: () => [],
+      resolvedModuleCalls: [],
+    },
+    lorebookCorrelation: null,
+    regexCorrelation: null,
+    serialized: {
+      stateVars: serializeLightweightStateVars(stateVars),
+      functions: [],
+      handlers: [],
+      apiCalls: [],
+      stateAccessOccurrences,
+    },
+    elementCbs: [buildLightweightElementCbs(file.relativePath, stateVars)],
+  };
+  const cbsSeed = luaArtifact.elementCbs[0] ?? {
+    elementType: 'lua',
+    elementName: file.relativePath,
+    reads: new Set<string>(),
+    writes: new Set<string>(),
+  };
+  const elementName = createElementName(file.relativePath);
+  const graphSeed: ElementRegistryGraphSeed = {
+    elementId: `${file.uri}#lua`,
+    uri: file.uri,
+    relativePath: file.relativePath,
+    artifact: file.artifact,
+    artifactClass: file.artifactClass,
+    elementName,
+    fragmentSection: null,
+    fragmentIndex: -1,
+    analysisKind: 'lua-file',
+    cbs: createVariableAccess(cbsSeed.reads, cbsSeed.writes),
+    hostRange: null,
+  };
+  const elementCbsData: ElementCBSData = {
+    elementType: 'lua',
+    elementName,
+    reads: new Set(graphSeed.cbs.reads),
+    writes: new Set(graphSeed.cbs.writes),
+  };
+  const element: ElementRegistryLuaElement = {
+    id: graphSeed.elementId,
+    uri: file.uri,
+    absolutePath: file.absolutePath,
+    relativePath: file.relativePath,
+    artifact: file.artifact,
+    artifactClass: file.artifactClass,
+    elementName,
+    displayName: createDisplayName(file.relativePath),
+    analysisKind: 'lua-file',
+    fragment: null,
+    cbs: graphSeed.cbs,
+    graphSeed,
+    lua: {
+      baseName,
+      totalLines: 0,
+      functionNames: [],
+      stateVariableNames: Object.keys(luaArtifact.serialized.stateVars).sort((left, right) =>
+        left.localeCompare(right),
+      ),
+    },
+  };
+
   return {
     record: {
       uri: file.uri,
@@ -463,14 +538,115 @@ function buildSkippedLuaFileRecord(file: WorkspaceScanFile, reason: string): Bui
       fragmentCount: file.fragmentCount,
       fragmentSections: file.fragmentSections,
       analysisKind: 'lua-file',
-      elementIds: [],
-      graphSeedCount: 0,
-      analysisError: reason,
+      elementIds: [element.id],
+      graphSeedCount: 1,
+      analysisError: `Lua full analysis skipped because source exceeds ${MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH} characters; lightweight state API scan indexed ${stateAccessOccurrences.length} static occurrence(s).`,
     },
-    elements: [],
-    graphSeeds: [],
-    elementCbsData: [],
-    luaArtifact: null,
+    elements: [element],
+    graphSeeds: [graphSeed],
+    elementCbsData: [elementCbsData],
+    luaArtifact,
+  };
+}
+
+function createLightweightStateVars(
+  occurrences: readonly LuaAnalysisArtifact['serialized']['stateAccessOccurrences'][number][],
+): Map<string, CollectedStateVar> {
+  const stateVars = new Map<string, CollectedStateVar>();
+  for (const occurrence of occurrences) {
+    const existing = stateVars.get(occurrence.key) ?? {
+      key: occurrence.key,
+      readBy: new Set<string>(),
+      writtenBy: new Set<string>(),
+      apis: new Set<string>(),
+      firstWriteValue: null,
+      firstWriteFunction: null,
+      firstWriteLine: 0,
+      hasDualWrite: false,
+    };
+
+    existing.apis.add(occurrence.apiName);
+    if (occurrence.direction === 'read') {
+      existing.readBy.add(occurrence.containingFunction);
+    } else {
+      existing.writtenBy.add(occurrence.containingFunction);
+      if (!existing.firstWriteFunction) {
+        existing.firstWriteFunction = occurrence.containingFunction;
+        existing.firstWriteLine = occurrence.line;
+      }
+    }
+
+    stateVars.set(occurrence.key, existing);
+  }
+  return stateVars;
+}
+
+function createLightweightCollectedData(
+  stateVars: Map<string, CollectedStateVar>,
+  stateAccessOccurrences: LuaAnalysisArtifact['serialized']['stateAccessOccurrences'],
+): CollectedData {
+  return {
+    functions: [],
+    calls: [],
+    apiCalls: stateAccessOccurrences.map((occurrence) => ({
+      apiName: occurrence.apiName,
+      category: 'state',
+      access: 'lightweight-static-scan',
+      rw: occurrence.direction,
+      line: occurrence.line,
+      containingFunction: occurrence.containingFunction,
+    })),
+    handlers: [],
+    dataTables: [],
+    stateVars,
+    functionIndexByName: new Map(),
+    prefixBuckets: new Map(),
+    loreApiCalls: [],
+    preloadModules: [],
+    requireBindings: [],
+    moduleMemberCalls: [],
+    stateAccessOccurrences: [...stateAccessOccurrences],
+  };
+}
+
+function serializeLightweightStateVars(
+  stateVars: ReadonlyMap<string, CollectedStateVar>,
+): LuaAnalysisArtifact['serialized']['stateVars'] {
+  const serialized: LuaAnalysisArtifact['serialized']['stateVars'] = {};
+  for (const [key, value] of stateVars) {
+    serialized[key] = {
+      key: value.key,
+      readBy: [...value.readBy].sort(),
+      writtenBy: [...value.writtenBy].sort(),
+      apis: [...value.apis].sort(),
+      firstWriteValue: value.firstWriteValue,
+      firstWriteFunction: value.firstWriteFunction,
+      firstWriteLine: value.firstWriteLine,
+      hasDualWrite: value.hasDualWrite,
+    };
+  }
+  return serialized;
+}
+
+function buildLightweightElementCbs(
+  elementName: string,
+  stateVars: ReadonlyMap<string, CollectedStateVar>,
+): ElementCBSData {
+  const reads = new Set<string>();
+  const writes = new Set<string>();
+  for (const [key, stateVar] of stateVars) {
+    if (stateVar.readBy.size > 0) {
+      reads.add(key);
+    }
+    if (stateVar.writtenBy.size > 0) {
+      writes.add(key);
+    }
+  }
+  return {
+    elementType: 'lua',
+    elementName,
+    reads,
+    writes,
   };
 }
 
