@@ -220,6 +220,118 @@ describe('LuaLsProxy', () => {
     });
   });
 
+  it('proxies Lua references, document highlights, document symbols, and signature help for risulua mirrors', async () => {
+    const requestSpy = vi.fn();
+    const request = async <TResult>(method: string, params: unknown): Promise<TResult | null> => {
+      requestSpy(method, params);
+      const transportUri = (params as { textDocument: { uri: string } }).textDocument.uri;
+      if (method === 'textDocument/references') {
+        return [
+          {
+            uri: transportUri,
+            range: {
+              start: { line: 0, character: 6 },
+              end: { line: 0, character: 13 },
+            },
+          },
+        ] as TResult;
+      }
+
+      if (method === 'textDocument/documentHighlight') {
+        return [
+          {
+            range: {
+              start: { line: 1, character: 7 },
+              end: { line: 1, character: 14 },
+            },
+          },
+        ] as TResult;
+      }
+
+      if (method === 'textDocument/documentSymbol') {
+        return [
+          {
+            name: 'greeting',
+            kind: 12,
+            range: {
+              start: { line: 0, character: 0 },
+              end: { line: 1, character: 14 },
+            },
+            selectionRange: {
+              start: { line: 0, character: 6 },
+              end: { line: 0, character: 14 },
+            },
+          },
+        ] as TResult;
+      }
+
+      return {
+        activeParameter: 0,
+        activeSignature: 0,
+        signatures: [{ label: 'print(value)' }],
+      } as TResult;
+    };
+    const proxy = createLuaLsProxy({
+      getRuntime: () => createLuaLsCompanionRuntime({ status: 'ready', health: 'healthy' }),
+      request,
+    });
+    const textDocument = { uri: 'file:///workspace/lua/companion.risulua' };
+    const position = { line: 1, character: 9 };
+
+    const references = await proxy.provideReferences({ textDocument, position, context: { includeDeclaration: true } });
+    const highlights = await proxy.provideDocumentHighlight({ textDocument, position });
+    const symbols = await proxy.provideDocumentSymbol({ textDocument });
+    const signature = await proxy.provideSignatureHelp({ textDocument, position });
+
+    expect(references).toEqual([
+      {
+        uri: 'file:///workspace/lua/companion.risulua',
+        range: {
+          start: { line: 0, character: 6 },
+          end: { line: 0, character: 13 },
+        },
+      },
+    ]);
+    expect(highlights).toEqual([
+      {
+        range: {
+          start: { line: 1, character: 7 },
+          end: { line: 1, character: 14 },
+        },
+      },
+    ]);
+    expect(symbols).toHaveLength(1);
+    expect(signature).toEqual({
+      activeParameter: 0,
+      activeSignature: 0,
+      signatures: [{ label: 'print(value)' }],
+    });
+    expect(requestSpy).toHaveBeenCalledWith(
+      'textDocument/references',
+      expect.objectContaining({
+        textDocument: { uri: expect.stringContaining('/workspace/lua/companion.risulua.lua') },
+      }),
+    );
+    expect(requestSpy).toHaveBeenCalledWith(
+      'textDocument/documentHighlight',
+      expect.objectContaining({
+        textDocument: { uri: expect.stringContaining('/workspace/lua/companion.risulua.lua') },
+      }),
+    );
+    expect(requestSpy).toHaveBeenCalledWith(
+      'textDocument/documentSymbol',
+      expect.objectContaining({
+        textDocument: { uri: expect.stringContaining('/workspace/lua/companion.risulua.lua') },
+      }),
+    );
+    expect(requestSpy).toHaveBeenCalledWith(
+      'textDocument/signatureHelp',
+      expect.objectContaining({
+        textDocument: { uri: expect.stringContaining('/workspace/lua/companion.risulua.lua') },
+      }),
+    );
+  });
+
   it('returns null when the request is cancelled or the companion request fails', async () => {
     const requestSpy = vi.fn();
     const request = async <TResult>(): Promise<TResult | null> => {

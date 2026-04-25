@@ -10,6 +10,10 @@ import type {
   CompletionParams,
   Definition,
   DefinitionParams,
+  DocumentHighlight,
+  DocumentHighlightParams,
+  DocumentSymbol,
+  DocumentSymbolParams,
   Hover,
   HoverParams,
   Location,
@@ -18,6 +22,9 @@ import type {
   MarkupContent,
   Range as LspRange,
   RenameParams,
+  ReferenceParams,
+  SignatureHelp,
+  SignatureHelpParams,
   TextDocumentPositionParams,
   WorkspaceEdit,
 } from 'vscode-languageserver/node';
@@ -38,7 +45,11 @@ import { createLuaLsTransportUri } from './lualsDocuments';
 const DEFAULT_LUALS_HOVER_TIMEOUT_MS = 1_500;
 const DEFAULT_LUALS_COMPLETION_TIMEOUT_MS = 1_500;
 const DEFAULT_LUALS_DEFINITION_TIMEOUT_MS = 1_500;
+const DEFAULT_LUALS_DOCUMENT_HIGHLIGHT_TIMEOUT_MS = 1_500;
+const DEFAULT_LUALS_DOCUMENT_SYMBOL_TIMEOUT_MS = 1_500;
+const DEFAULT_LUALS_REFERENCES_TIMEOUT_MS = 1_500;
 const DEFAULT_LUALS_RENAME_TIMEOUT_MS = 1_500;
+const DEFAULT_LUALS_SIGNATURE_TIMEOUT_MS = 1_500;
 const LUA_HOVER_SNAPSHOT_PROVENANCE = Object.freeze(
   createAgentMetadataExplanation(
     'contextual-inference',
@@ -157,6 +168,30 @@ function remapLuaLsDefinitionResult(
   });
 
   return Array.isArray(definition) ? remapped as Definition : remapped[0] as Definition;
+}
+
+/**
+ * remapLuaLsLocations 함수.
+ * LuaLS location 배열에 포함된 current shadow document URI를 source URI로 되돌림.
+ *
+ * @param locations - LuaLS location 응답
+ * @param sourceUri - 원본 `.risulua` URI
+ * @param transportUri - LuaLS shadow `.lua` URI
+ * @returns source URI 기준 location 배열
+ */
+function remapLuaLsLocations(
+  locations: Location[] | null,
+  sourceUri: string,
+  transportUri: string,
+): Location[] {
+  if (!locations) {
+    return [];
+  }
+
+  return locations.map((location) => ({
+    ...location,
+    uri: remapLuaLsLocationUri(location.uri, sourceUri, transportUri),
+  }));
 }
 
 /**
@@ -384,6 +419,154 @@ export class LuaLsProxy {
         DEFAULT_LUALS_DEFINITION_TIMEOUT_MS,
       );
       return remapLuaLsDefinitionResult(definition, sourceUri, transportUri);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * provideReferences 함수.
+   * source `.risulua` URI를 shadow `.lua` file:// URI로 바꿔 LuaLS `textDocument/references` 요청을 전달함.
+   *
+   * @param params - host LSP references params
+   * @param cancellationToken - 취소 여부를 확인할 선택적 토큰
+   * @returns source URI 기준 LuaLS reference location 배열, 실패하면 빈 배열
+   */
+  async provideReferences(
+    params: ReferenceParams,
+    cancellationToken?: CancellationToken,
+  ): Promise<Location[]> {
+    if (cancellationToken?.isCancellationRequested) {
+      return [];
+    }
+
+    const sourceUri = params.textDocument.uri;
+    const transportUri = createLuaLsTransportUri(CbsLspPathHelper.getFilePathFromUri(sourceUri));
+
+    try {
+      const references = await this.client.request<Location[]>(
+        'textDocument/references',
+        {
+          ...params,
+          textDocument: {
+            uri: transportUri,
+          },
+        },
+        DEFAULT_LUALS_REFERENCES_TIMEOUT_MS,
+      );
+      return remapLuaLsLocations(references, sourceUri, transportUri);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * provideDocumentHighlight 함수.
+   * source `.risulua` URI를 shadow `.lua` file:// URI로 바꿔 LuaLS `textDocument/documentHighlight` 요청을 전달함.
+   *
+   * @param params - host LSP document highlight params
+   * @param cancellationToken - 취소 여부를 확인할 선택적 토큰
+   * @returns LuaLS document highlight 배열, 실패하면 빈 배열
+   */
+  async provideDocumentHighlight(
+    params: DocumentHighlightParams,
+    cancellationToken?: CancellationToken,
+  ): Promise<DocumentHighlight[]> {
+    if (cancellationToken?.isCancellationRequested) {
+      return [];
+    }
+
+    const transportUri = createLuaLsTransportUri(
+      CbsLspPathHelper.getFilePathFromUri(params.textDocument.uri),
+    );
+
+    try {
+      return (
+        (await this.client.request<DocumentHighlight[]>(
+          'textDocument/documentHighlight',
+          {
+            ...params,
+            textDocument: {
+              uri: transportUri,
+            },
+          },
+          DEFAULT_LUALS_DOCUMENT_HIGHLIGHT_TIMEOUT_MS,
+        )) ?? []
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * provideDocumentSymbol 함수.
+   * source `.risulua` URI를 shadow `.lua` file:// URI로 바꿔 LuaLS `textDocument/documentSymbol` 요청을 전달함.
+   *
+   * @param params - host LSP document symbol params
+   * @param cancellationToken - 취소 여부를 확인할 선택적 토큰
+   * @returns LuaLS document symbol 배열, 실패하면 빈 배열
+   */
+  async provideDocumentSymbol(
+    params: DocumentSymbolParams,
+    cancellationToken?: CancellationToken,
+  ): Promise<DocumentSymbol[]> {
+    if (cancellationToken?.isCancellationRequested) {
+      return [];
+    }
+
+    const transportUri = createLuaLsTransportUri(
+      CbsLspPathHelper.getFilePathFromUri(params.textDocument.uri),
+    );
+
+    try {
+      return (
+        (await this.client.request<DocumentSymbol[]>(
+          'textDocument/documentSymbol',
+          {
+            ...params,
+            textDocument: {
+              uri: transportUri,
+            },
+          },
+          DEFAULT_LUALS_DOCUMENT_SYMBOL_TIMEOUT_MS,
+        )) ?? []
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * provideSignatureHelp 함수.
+   * source `.risulua` URI를 shadow `.lua` file:// URI로 바꿔 LuaLS `textDocument/signatureHelp` 요청을 전달함.
+   *
+   * @param params - host LSP signature help params
+   * @param cancellationToken - 취소 여부를 확인할 선택적 토큰
+   * @returns LuaLS signature help 결과, 실패하면 null
+   */
+  async provideSignatureHelp(
+    params: SignatureHelpParams,
+    cancellationToken?: CancellationToken,
+  ): Promise<SignatureHelp | null> {
+    if (cancellationToken?.isCancellationRequested) {
+      return null;
+    }
+
+    const transportUri = createLuaLsTransportUri(
+      CbsLspPathHelper.getFilePathFromUri(params.textDocument.uri),
+    );
+
+    try {
+      return await this.client.request<SignatureHelp>(
+        'textDocument/signatureHelp',
+        {
+          ...params,
+          textDocument: {
+            uri: transportUri,
+          },
+        },
+        DEFAULT_LUALS_SIGNATURE_TIMEOUT_MS,
+      );
     } catch {
       return null;
     }

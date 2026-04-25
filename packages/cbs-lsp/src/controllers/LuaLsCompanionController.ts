@@ -10,10 +10,18 @@ import type {
   CompletionParams,
   Definition,
   DefinitionParams,
+  DocumentHighlight,
+  DocumentHighlightParams,
+  DocumentSymbol,
+  DocumentSymbolParams,
   Hover,
   HoverParams,
+  Location,
   Range as LspRange,
+  ReferenceParams,
   RenameParams,
+  SignatureHelp,
+  SignatureHelpParams,
   TextDocumentPositionParams,
   WorkspaceEdit,
 } from 'vscode-languageserver/node';
@@ -49,8 +57,18 @@ import {
 export interface LuaLsCompanionSubsystemStatus {
   restartPolicy: LuaLsRestartPolicyStatus;
   routing: {
-    deferredSurfaces: readonly ['signature'];
-    liveSurfaces: readonly ['completion', 'definition', 'diagnostics', 'hover', 'rename'];
+    deferredSurfaces: readonly [];
+    liveSurfaces: readonly [
+      'completion',
+      'definition',
+      'diagnostics',
+      'documentHighlight',
+      'documentSymbol',
+      'hover',
+      'references',
+      'rename',
+      'signature',
+    ];
     mirrorMode: 'workspace-and-standalone-risulua' | 'shadow-file-workspace-and-standalone-risulua';
   };
   runtime: LuaLsCompanionRuntime;
@@ -143,8 +161,18 @@ export class LuaLsCompanionController {
     return {
       restartPolicy: this.processManager.getRestartPolicy(),
       routing: {
-        deferredSurfaces: ['signature'],
-        liveSurfaces: ['completion', 'definition', 'diagnostics', 'hover', 'rename'],
+        deferredSurfaces: [],
+        liveSurfaces: [
+          'completion',
+          'definition',
+          'diagnostics',
+          'documentHighlight',
+          'documentSymbol',
+          'hover',
+          'references',
+          'rename',
+          'signature',
+        ],
         mirrorMode: 'shadow-file-workspace-and-standalone-risulua',
       },
       runtime: this.getRuntime(),
@@ -312,6 +340,63 @@ export class LuaLsCompanionController {
     cancellationToken?: CancellationToken,
   ): Promise<Definition | null> {
     return this.proxy.provideDefinition(params, cancellationToken);
+  }
+
+  /**
+   * provideReferences 함수.
+   * `.risulua` 문서 references를 LuaLS proxy로 전달함.
+   *
+   * @param params - host LSP references params
+   * @param cancellationToken - 취소 여부를 확인할 선택적 토큰
+   * @returns source URI 기준 LuaLS references 또는 빈 배열
+   */
+  provideReferences(params: ReferenceParams, cancellationToken?: CancellationToken): Promise<Location[]> {
+    return this.proxy.provideReferences(params, cancellationToken);
+  }
+
+  /**
+   * provideDocumentHighlight 함수.
+   * `.risulua` 문서 document highlight를 LuaLS proxy로 전달함.
+   *
+   * @param params - host LSP document highlight params
+   * @param cancellationToken - 취소 여부를 확인할 선택적 토큰
+   * @returns LuaLS document highlight 또는 빈 배열
+   */
+  provideDocumentHighlight(
+    params: DocumentHighlightParams,
+    cancellationToken?: CancellationToken,
+  ): Promise<DocumentHighlight[]> {
+    return this.proxy.provideDocumentHighlight(params, cancellationToken);
+  }
+
+  /**
+   * provideDocumentSymbol 함수.
+   * `.risulua` 문서 document symbol을 LuaLS proxy로 전달함.
+   *
+   * @param params - host LSP document symbol params
+   * @param cancellationToken - 취소 여부를 확인할 선택적 토큰
+   * @returns LuaLS document symbol 또는 빈 배열
+   */
+  provideDocumentSymbol(
+    params: DocumentSymbolParams,
+    cancellationToken?: CancellationToken,
+  ): Promise<DocumentSymbol[]> {
+    return this.proxy.provideDocumentSymbol(params, cancellationToken);
+  }
+
+  /**
+   * provideSignatureHelp 함수.
+   * `.risulua` 문서 signature help를 LuaLS proxy로 전달함.
+   *
+   * @param params - host LSP signature help params
+   * @param cancellationToken - 취소 여부를 확인할 선택적 토큰
+   * @returns LuaLS signature help 또는 null
+   */
+  provideSignatureHelp(
+    params: SignatureHelpParams,
+    cancellationToken?: CancellationToken,
+  ): Promise<SignatureHelp | null> {
+    return this.proxy.provideSignatureHelp(params, cancellationToken);
   }
 
   /**
