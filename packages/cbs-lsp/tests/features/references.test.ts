@@ -487,6 +487,39 @@ describe('ReferencesProvider', () => {
   });
 
   describe('loop and slot variable support', () => {
+    it('returns shorthand #each iterator source as a chat variable read', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{setvar::var1::ready}}{{#each var1 key}}{{slot::key}}{{/each}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+
+      const references = provider.provide(createParams(request, positionAt(modifiedText, 'var1 key', 1)));
+
+      expect(references).toHaveLength(1);
+      expect(references[0].range.start).toEqual(positionAt(modifiedText, 'var1 key', 0));
+    });
+
+    it('includes the local writer before the shorthand #each iterator read when requested', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{setvar::var1::ready}}{{#each var1 key}}{{slot::key}}{{/each}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+
+      const references = provider.provide(
+        createParams(request, positionAt(modifiedText, 'var1 key', 1), true),
+      );
+
+      expect(references).toHaveLength(2);
+      expect(references[0].range.start).toEqual(positionAt(modifiedText, 'var1', 0, 0));
+      expect(references[1].range.start).toEqual(positionAt(modifiedText, 'var1 key', 0));
+    });
+
     it('resolves slot variable references inside #each blocks', () => {
       const entry = getFixtureCorpusEntry('lorebook-basic');
       // Create an each block with slot reference

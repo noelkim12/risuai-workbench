@@ -39,6 +39,7 @@ interface BuiltLaunchModule {
 
 interface BuiltAutoSuggestModule {
   getCbsAutoCloseText: (input: {
+    documentSuffix?: string;
     insertedText: string;
     languageId: string;
     linePrefix: string;
@@ -363,6 +364,25 @@ test('returns CBS block close text after a block opener is completed', () => {
       languageId: 'risuhtml',
       linePrefix: '{{#if}}',
       lineSuffix: ' {{/if}}',
+    }),
+    null,
+  );
+  assert.equal(
+    autoSuggest.getCbsAutoCloseText({
+      insertedText: '}}',
+      languageId: 'risuhtml',
+      linePrefix: '{{#if {{getvar::condition}}',
+      lineSuffix: '}} {{/if}}',
+    }),
+    null,
+  );
+  assert.equal(
+    autoSuggest.getCbsAutoCloseText({
+      documentSuffix: '\n\n{{/if}}',
+      insertedText: '}}',
+      languageId: 'risuhtml',
+      linePrefix: '{{#if {{getvar::condition}}}}',
+      lineSuffix: '',
     }),
     null,
   );

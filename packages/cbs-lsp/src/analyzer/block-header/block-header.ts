@@ -35,8 +35,18 @@ export interface BlockHeaderInfo {
 
 export interface EachLoopBinding {
   iteratorExpression: string;
+  iteratorRange: Range;
   bindingName: string;
   bindingRange: Range;
+}
+
+interface EachLoopHeaderParts {
+  iteratorExpression: string;
+  iteratorStartIndex: number;
+  iteratorEndIndex: number;
+  bindingName: string;
+  bindingStartIndex: number;
+  bindingEndIndex: number;
 }
 
 /**
@@ -56,10 +66,45 @@ export function parseBlockHeaderSegments(rawTail: string): string[] {
     return [trimmedStart.trim()];
   }
 
-  return trimmedStart
-    .slice(2)
-    .split('::')
-    .map((segment) => segment.trim());
+  return splitTopLevelBlockHeaderSegments(trimmedStart.slice(2)).map((segment) => segment.trim());
+}
+
+/**
+ * splitTopLevelBlockHeaderSegments 함수.
+ * 중첩 CBS macro 내부의 `::`는 보존하고 header 최상위 구분자만 분리함.
+ *
+ * @param tail - 선행 `::`를 제거한 block header tail 문자열
+ * @returns 최상위 `::` 기준으로 분리된 header 세그먼트 배열
+ */
+function splitTopLevelBlockHeaderSegments(tail: string): string[] {
+  const segments: string[] = [];
+  let depth = 0;
+  let segmentStart = 0;
+
+  for (let index = 0; index < tail.length; index += 1) {
+    const pair = tail.slice(index, index + 2);
+    if (pair === '{{') {
+      depth += 1;
+      index += 1;
+      continue;
+    }
+
+    if (pair === '}}') {
+      depth = Math.max(0, depth - 1);
+      index += 1;
+      continue;
+    }
+
+    if (pair === '::' && depth === 0) {
+      segments.push(tail.slice(segmentStart, index));
+      segmentStart = index + 2;
+      index += 1;
+    }
+  }
+
+  segments.push(tail.slice(segmentStart));
+
+  return segments;
 }
 
 /**
@@ -167,16 +212,16 @@ export function extractEachLoopBinding(
     return null;
   }
 
-  const asMatch = headerText.match(/^(.*?)\s+as\s+(.+)$/i);
-  if (!asMatch) {
+  const parts = parseEachLoopHeaderParts(headerText);
+  if (!parts) {
     return null;
   }
 
-  const iteratorExpression = asMatch[1]?.trim() ?? '';
-  const bindingName = asMatch[2]?.trim() ?? '';
+  const { iteratorExpression, bindingName } = parts;
   if (
     iteratorExpression.length === 0 ||
     bindingName.length === 0 ||
+    bindingName.toLowerCase() === 'as' ||
     !LOOP_VARIABLE_NAME_PATTERN.test(bindingName)
   ) {
     return null;
@@ -184,20 +229,94 @@ export function extractEachLoopBinding(
 
   const rawHeader = CbsLspTextHelper.extractRangeText(sourceText, node.openRange);
   const openOffset = positionToOffset(sourceText, node.openRange.start);
-  const bindingStartIndex = rawHeader.lastIndexOf(bindingName);
-  if (bindingStartIndex === -1) {
+  const headerTextStartIndex = rawHeader.indexOf(headerText);
+  if (headerTextStartIndex === -1) {
     return null;
   }
 
+  const iteratorStartIndex = headerTextStartIndex + parts.iteratorStartIndex;
+  const iteratorEndIndex = headerTextStartIndex + parts.iteratorEndIndex;
+  const bindingStartIndex = headerTextStartIndex + parts.bindingStartIndex;
+  const bindingEndIndex = headerTextStartIndex + parts.bindingEndIndex;
+  if (rawHeader.slice(bindingStartIndex, bindingEndIndex) !== bindingName) {
+    return null;
+  }
+
+  const iteratorStartOffset = openOffset + iteratorStartIndex;
+  const iteratorEndOffset = openOffset + iteratorEndIndex;
   const bindingStartOffset = openOffset + bindingStartIndex;
-  const bindingEndOffset = bindingStartOffset + bindingName.length;
+  const bindingEndOffset = openOffset + bindingEndIndex;
 
   return {
     iteratorExpression,
+    iteratorRange: {
+      start: offsetToPosition(sourceText, iteratorStartOffset),
+      end: offsetToPosition(sourceText, iteratorEndOffset),
+    },
     bindingName,
     bindingRange: {
       start: offsetToPosition(sourceText, bindingStartOffset),
       end: offsetToPosition(sourceText, bindingEndOffset),
     },
   };
+}
+
+/**
+ * parseEachLoopHeaderParts 함수.
+ * `#each` header tail에서 iterator 표현식과 alias의 header-local 범위를 분리함.
+ *
+ * @param headerText - mode/operator를 제거한 `#each` header tail
+ * @returns iterator/alias 텍스트와 header-local offset 묶음, 파싱 불가 시 null
+ */
+function parseEachLoopHeaderParts(headerText: string): EachLoopHeaderParts | null {
+  const asMatch = headerText.match(/^(.*?)\s+as\s+(.+)$/iu);
+  if (asMatch?.[1] && asMatch[2]) {
+    const rawIterator = asMatch[1];
+    const rawBinding = asMatch[2];
+    const iteratorLeading = rawIterator.length - rawIterator.trimStart().length;
+    const iteratorTrailing = rawIterator.length - rawIterator.trimEnd().length;
+    const bindingLeading = rawBinding.length - rawBinding.trimStart().length;
+    const bindingTrailing = rawBinding.length - rawBinding.trimEnd().length;
+    const bindingSegmentStart = asMatch[0].length - rawBinding.length;
+
+    return {
+      iteratorExpression: rawIterator.trim(),
+      iteratorStartIndex: iteratorLeading,
+      iteratorEndIndex: rawIterator.length - iteratorTrailing,
+      bindingName: rawBinding.trim(),
+      bindingStartIndex: bindingSegmentStart + bindingLeading,
+      bindingEndIndex: bindingSegmentStart + rawBinding.length - bindingTrailing,
+    };
+  }
+
+  const shorthandMatch = headerText.match(/^(\S+)\s+(\S+)$/u);
+  if (!shorthandMatch?.[1] || !shorthandMatch[2]) {
+    return null;
+  }
+
+  const iteratorStartIndex = headerText.indexOf(shorthandMatch[1]);
+  const bindingStartIndex = headerText.lastIndexOf(shorthandMatch[2]);
+  if (iteratorStartIndex === -1 || bindingStartIndex === -1) {
+    return null;
+  }
+
+  return {
+    iteratorExpression: shorthandMatch[1],
+    iteratorStartIndex,
+    iteratorEndIndex: iteratorStartIndex + shorthandMatch[1].length,
+    bindingName: shorthandMatch[2],
+    bindingStartIndex,
+    bindingEndIndex: bindingStartIndex + shorthandMatch[2].length,
+  };
+}
+
+/**
+ * isStaticEachIteratorIdentifier 함수.
+ * `#each` iterator source를 chat variable read로 안전하게 볼 수 있는지 판별함.
+ *
+ * @param iteratorExpression - `#each` header에서 추출한 iterator source 표현식
+ * @returns 단일 정적 identifier이면 true
+ */
+export function isStaticEachIteratorIdentifier(iteratorExpression: string): boolean {
+  return LOOP_VARIABLE_NAME_PATTERN.test(iteratorExpression.trim());
 }

@@ -65,6 +65,16 @@ describe('ScopeAnalyzer', () => {
     expect(table.getUnusedVariables()).toEqual([]);
   });
 
+  it('records shorthand #each iterator source as a chat variable read while preserving the loop alias', () => {
+    const result = analyzeScope('{{setvar::var1::ready}}{{#each var1 key}}{{slot::key}}{{/each}}');
+    const { symbolTable: table, issues } = result;
+
+    expect(table.getVariable('var1', 'chat')?.references).toHaveLength(1);
+    expect(table.getVariables('key', 'loop')).toHaveLength(1);
+    expect(table.getVariable('key', 'loop')?.references).toHaveLength(1);
+    expect(issues.getUndefinedReferences()).toEqual([]);
+  });
+
   it('records unresolved local references and unused loop bindings from symbol data', () => {
     const result = analyzeScope(
       '{{getvar::missing}}{{gettempvar::cache}}{{#each items as entry}}plain{{/each}}',

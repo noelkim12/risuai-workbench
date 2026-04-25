@@ -140,6 +140,20 @@ describe('DocumentHighlightProvider', () => {
     expect(countHighlightsByKind(highlights, DocumentHighlightKind.Read)).toBe(2);
   });
 
+  it('highlights shorthand #each iterator source with local chat variable writes', () => {
+    const entry = getFixtureCorpusEntry('lorebook-basic');
+    const text = entry.text.replace(
+      '{{user}}',
+      '{{setvar::var1::ready}}{{#each var1 key}}{{slot::key}}{{/each}}',
+    );
+    const request = { ...createFixtureRequest(entry), text };
+    const highlights = createProvider(request).provide(createParams(request, positionAt(text, 'var1 key', 1)));
+
+    expect(highlights).toHaveLength(2);
+    expect(countHighlightsByKind(highlights, DocumentHighlightKind.Write)).toBe(1);
+    expect(countHighlightsByKind(highlights, DocumentHighlightKind.Read)).toBe(1);
+  });
+
   it('keeps same-name symbols in other fragments out of the highlight result', () => {
     const text = [
       '---',

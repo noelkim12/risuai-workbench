@@ -8,10 +8,15 @@ import {
   type CBSDocument,
   type CBSNode,
   type MacroCallNode,
+  type Range,
 } from 'risu-workbench-core';
 
 import { extractNumberedArgumentReference } from '../../core/local-functions';
-import { extractEachLoopBinding, extractFunctionDeclaration } from '../block-header';
+import {
+  extractEachLoopBinding,
+  extractFunctionDeclaration,
+  isStaticEachIteratorIdentifier,
+} from '../block-header';
 import { ScopeIssueStore, SymbolTable } from '../symbolTable';
 import { AnalyzableBodyResolver } from './analyzable-body-resolver';
 import type { FragmentDefinitionMaps } from './definition-collector';
@@ -124,6 +129,7 @@ export class ReferenceCollector {
       const bodyScope = createScopeFrame(scope);
       const loopBinding = this.sourceText.length > 0 ? extractEachLoopBinding(node, this.sourceText) : null;
       if (loopBinding) {
+        this.collectEachIteratorReference(loopBinding.iteratorExpression, loopBinding.iteratorRange);
         const loopSymbol = this.table.addDefinition(loopBinding.bindingName, 'loop', loopBinding.bindingRange, {
           scope: 'block',
           allowDuplicate: true,
@@ -155,6 +161,26 @@ export class ReferenceCollector {
     if (node.elseBody) {
       this.collectNodes(node.elseBody, scope);
     }
+  }
+
+  /**
+   * collectEachIteratorReference 함수.
+   * 정적 `#each` iterator source를 fragment-local chat variable read로 기록함.
+   *
+   * @param iteratorExpression - `#each` header의 iterator source 표현식
+   * @param iteratorRange - iterator source가 차지하는 fragment-local 범위
+   */
+  private collectEachIteratorReference(iteratorExpression: string, iteratorRange: Range): void {
+    if (!isStaticEachIteratorIdentifier(iteratorExpression)) {
+      return;
+    }
+
+    const symbol = this.fragmentDefinitions.chat.get(iteratorExpression);
+    if (!symbol) {
+      return;
+    }
+
+    this.table.addVariableReference(symbol, iteratorRange);
   }
 
   /**

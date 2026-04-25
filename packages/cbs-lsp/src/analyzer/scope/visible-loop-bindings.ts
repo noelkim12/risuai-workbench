@@ -125,7 +125,12 @@ function collectVisibleLoopBindingsFromSource(
     }
 
     frames.push({
-      binding: extractEachLoopBindingFromMacroText(match[0], rawMacro, match.index ?? 0, sourceText),
+      binding: extractEachLoopBindingFromMacroText(
+        match[0],
+        rawMacro,
+        match.index ?? 0,
+        sourceText,
+      ),
     });
   }
 
@@ -167,26 +172,35 @@ function extractEachLoopBindingFromMacroText(
   }
 
   const asMatch = headerText.match(/^(.*?)\s+as\s+(.+)$/i);
-  if (!asMatch) {
-    return null;
-  }
-
-  const iteratorExpression = asMatch[1]?.trim() ?? '';
-  const bindingName = asMatch[2]?.trim() ?? '';
-  if (!iteratorExpression || !bindingName || !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(bindingName)) {
+  const shorthandMatch = asMatch ? null : headerText.match(/^(\S+)\s+(\S+)$/u);
+  const iteratorExpression = (asMatch?.[1] ?? shorthandMatch?.[1] ?? '').trim();
+  const bindingName = (asMatch?.[2] ?? shorthandMatch?.[2] ?? '').trim();
+  if (
+    !iteratorExpression ||
+    !bindingName ||
+    bindingName.toLowerCase() === 'as' ||
+    !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(bindingName)
+  ) {
     return null;
   }
 
   const bindingIndex = fullMacroText.lastIndexOf(bindingName);
-  if (bindingIndex === -1) {
+  const iteratorIndex = fullMacroText.indexOf(iteratorExpression);
+  if (bindingIndex === -1 || iteratorIndex === -1) {
     return null;
   }
 
+  const iteratorStartOffset = macroStartOffset + iteratorIndex;
+  const iteratorEndOffset = iteratorStartOffset + iteratorExpression.length;
   const bindingStartOffset = macroStartOffset + bindingIndex;
   const bindingEndOffset = bindingStartOffset + bindingName.length;
 
   return {
     iteratorExpression,
+    iteratorRange: {
+      start: offsetToPosition(sourceText, iteratorStartOffset),
+      end: offsetToPosition(sourceText, iteratorEndOffset),
+    },
     bindingName,
     bindingRange: {
       start: offsetToPosition(sourceText, bindingStartOffset),

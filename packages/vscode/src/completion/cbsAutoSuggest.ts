@@ -56,6 +56,23 @@ function getLineSuffixAtPosition(document: vscode.TextDocument, position: vscode
 }
 
 /**
+ * getDocumentSuffixAtPosition 함수.
+ * 지정 위치 뒤의 문서 suffix를 추출해 다음 줄의 기존 close tag까지 확인함.
+ *
+ * @param document - 변경이 반영된 VS Code 문서
+ * @param position - suffix 시작점으로 사용할 문서 위치
+ * @returns position부터 문서 끝까지의 텍스트
+ */
+function getDocumentSuffixAtPosition(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+): string {
+  const lastLine = document.lineAt(document.lineCount - 1);
+
+  return document.getText(new vscode.Range(position, lastLine.range.end));
+}
+
+/**
  * registerCbsAutoSuggestTrigger 함수.
  * `{{` 입력 직후 VS Code suggest widget을 명시적으로 열어 다문자 CBS prefix를 보완함.
  *
@@ -72,10 +89,7 @@ export function registerCbsAutoSuggestTrigger(context: vscode.ExtensionContext):
    * @param document - 변경이 반영된 VS Code 문서
    * @param position - suggestion을 트리거할 문서 위치
    */
-  function scheduleCbsSuggest(
-    document: vscode.TextDocument,
-    position: vscode.Position,
-  ): void {
+  function scheduleCbsSuggest(document: vscode.TextDocument, position: vscode.Position): void {
     const key = `${document.uri.toString()}:${document.version}:${position.line}:${position.character}`;
     if (key === lastSuggestKey) {
       return;
@@ -107,8 +121,10 @@ export function registerCbsAutoSuggestTrigger(context: vscode.ExtensionContext):
       const changeEndPosition = getChangedRangeEndPosition(change);
       const linePrefix = getLinePrefixAtPosition(event.document, changeEndPosition);
       const lineSuffix = getLineSuffixAtPosition(event.document, changeEndPosition);
+      const documentSuffix = getDocumentSuffixAtPosition(event.document, changeEndPosition);
 
       const autoCloseText = getCbsAutoCloseText({
+        documentSuffix,
         insertedText: change.text,
         languageId: event.document.languageId,
         linePrefix,

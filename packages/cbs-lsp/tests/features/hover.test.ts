@@ -78,11 +78,13 @@ function expectMarkdownHover(hover: Hover | null): string {
 }
 
 function extractHoverCategory(hover: Hover | null) {
-  return ((hover as AgentFriendlyHover | null)?.data as AgentMetadataEnvelope | undefined)?.cbs.category;
+  return ((hover as AgentFriendlyHover | null)?.data as AgentMetadataEnvelope | undefined)?.cbs
+    .category;
 }
 
 function extractHoverExplanation(hover: Hover | null) {
-  return ((hover as AgentFriendlyHover | null)?.data as AgentMetadataEnvelope | undefined)?.cbs.explanation;
+  return ((hover as AgentFriendlyHover | null)?.data as AgentMetadataEnvelope | undefined)?.cbs
+    .explanation;
 }
 
 /**
@@ -212,8 +214,12 @@ describe('HoverProvider', () => {
     expect(markdown).toContain('External readers:');
     expect(markdown).toContain('regex/mood.risuregex');
     expect(markdown).toContain('Workspace issues:');
-    expect(markdown).toContain('uninitialized-read [warning]: Variable may be read before initialization.');
-    expect(markdown).toContain('phase-order-risk [warning]: Execution order may vary across files.');
+    expect(markdown).toContain(
+      'uninitialized-read [warning]: Variable may be read before initialization.',
+    );
+    expect(markdown).toContain(
+      'phase-order-risk [warning]: Execution order may vary across files.',
+    );
   });
 
   it('keeps local-only variable hover when workspace state is absent', () => {
@@ -306,7 +312,9 @@ describe('HoverProvider', () => {
           availability: {
             scope: 'local-only',
             source: 'workspace-snapshot:hover',
-            detail: expect.stringContaining('Workspace snapshot v11 still tracks document version 4'),
+            detail: expect.stringContaining(
+              'Workspace snapshot v11 still tracks document version 4',
+            ),
           },
           workspace: expect.objectContaining({
             freshness: 'stale',
@@ -478,7 +486,8 @@ describe('HoverProvider', () => {
           explanation: {
             reason: 'registry-lookup',
             source: 'builtin-registry',
-            detail: 'Hover resolved #when from the builtin registry as a documentation-only CBS syntax entry.',
+            detail:
+              'Hover resolved #when from the builtin registry as a documentation-only CBS syntax entry.',
           },
         }),
       },
@@ -534,10 +543,10 @@ describe('HoverProvider', () => {
       createParams(request, offsetToPosition(modifiedText, builtinSlotOffset + 3)),
     );
     const referenceHover = provider.provide(
-        createParams(
-          request,
-          offsetToPosition(modifiedText, referenceSlotOffset + '{{slot::'.length + 1),
-        ),
+      createParams(
+        request,
+        offsetToPosition(modifiedText, referenceSlotOffset + '{{slot::'.length + 1),
+      ),
     );
     const builtinMarkdown = expectMarkdownHover(builtinHover);
     const referenceMarkdown = expectMarkdownHover(referenceHover);
@@ -566,6 +575,46 @@ describe('HoverProvider', () => {
     });
   });
 
+  it('describes #each shorthand iterator variables and slot builtin prefixes', () => {
+    const entry = getFixtureCorpusEntry('lorebook-basic');
+    const modifiedText = entry.text.replace('{{user}}', '{{#each var1 key}}{{slot::key}}{{/each}}');
+    const request = { ...createFixtureRequest(entry), text: modifiedText };
+    const provider = createProvider(new FragmentAnalysisService(), request);
+    const slotOffset = locateNthOffset(modifiedText, '{{slot::key}}');
+
+    const iteratorHover = provider.provide(
+      createParams(request, positionAt(modifiedText, 'var1', 1)),
+    );
+    const slotBuiltinHover = provider.provide(
+      createParams(request, offsetToPosition(modifiedText, slotOffset + 3)),
+    );
+    const slotAliasHover = provider.provide(
+      createParams(request, offsetToPosition(modifiedText, slotOffset + '{{slot::'.length + 1)),
+    );
+    const iteratorMarkdown = expectMarkdownHover(iteratorHover);
+    const slotBuiltinMarkdown = expectMarkdownHover(slotBuiltinHover);
+    const slotAliasMarkdown = expectMarkdownHover(slotAliasHover);
+
+    expect(iteratorMarkdown).toContain('**Variable: var1**');
+    expect(iteratorMarkdown).toContain('Kind: persistent chat variable');
+    expect(iteratorMarkdown).toContain('Access: reads as the `#each` iterator source');
+    expect(extractHoverCategory(iteratorHover)).toEqual({
+      category: 'variable',
+      kind: 'chat-variable',
+    });
+
+    expect(slotBuiltinMarkdown).toContain('**slot**');
+    expect(slotBuiltinMarkdown).toContain('**Contextual syntax entry:**');
+    expect(extractHoverCategory(slotBuiltinHover)).toEqual({
+      category: 'builtin',
+      kind: 'contextual-builtin',
+    });
+
+    expect(slotAliasMarkdown).toContain('**Loop alias reference: key**');
+    expect(slotAliasMarkdown).toContain('Bound by: `#each var1 as key`');
+    expect(slotAliasMarkdown).toContain('Scope: current `#each` block');
+  });
+
   it('uses the innermost visible #each binding for shadowed slot::item hover', () => {
     const entry = getFixtureCorpusEntry('lorebook-basic');
     const modifiedText = entry.text.replace(
@@ -579,12 +628,18 @@ describe('HoverProvider', () => {
 
     const innerReferenceMarkdown = expectMarkdownHover(
       provider.provide(
-        createParams(request, offsetToPosition(modifiedText, innerSlotOffset + '{{slot::'.length + 1)),
+        createParams(
+          request,
+          offsetToPosition(modifiedText, innerSlotOffset + '{{slot::'.length + 1),
+        ),
       ),
     );
     const outerReferenceMarkdown = expectMarkdownHover(
       provider.provide(
-        createParams(request, offsetToPosition(modifiedText, outerSlotOffset + '{{slot::'.length + 1)),
+        createParams(
+          request,
+          offsetToPosition(modifiedText, outerSlotOffset + '{{slot::'.length + 1),
+        ),
       ),
     );
 
@@ -691,7 +746,9 @@ describe('HoverProvider', () => {
     const markdown = expectMarkdownHover(hover);
 
     expect(markdown).toContain('**Numbered argument reference: arg::1**');
-    expect(markdown).toContain('references the 2nd call argument from the active local `#func` / `{{call::...}}` context');
+    expect(markdown).toContain(
+      'references the 2nd call argument from the active local `#func` / `{{call::...}}` context',
+    );
     expect(markdown).toContain('Local function: `greet`');
     expect(markdown).toContain('Local #func declaration:');
     expect(markdown).toContain('Parameter name: `target`');

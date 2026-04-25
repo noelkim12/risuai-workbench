@@ -2034,6 +2034,34 @@ describe('CompletionProvider', () => {
 
       expectCompletionLabels(completions, '>', '<', '>=', '<=');
     });
+
+    it('offers operators and Risu variables in every #when segment position', () => {
+      const request = createInlineCompletionRequest('{{#when::mood::is::target}}ok{{/}}');
+      const variableFlowService = createWorkspaceChatVariableService('mood', 'target', 'score');
+      const provider = createProvider(
+        new FragmentAnalysisService(),
+        request,
+        variableFlowService,
+      );
+
+      for (const segmentPrefix of ['{{#when::', '{{#when::mood::', '{{#when::mood::is::']) {
+        const completions = provider.provide(
+          createParams(request, offsetToPosition(request.text, segmentPrefix.length)),
+        );
+
+        expectCompletionLabels(completions, 'is', 'and', 'or', 'mood', 'target', 'score');
+        expect(extractCompletionCategory(completions.find((item) => item.label === 'is'))).toEqual({
+          category: 'contextual-token',
+          kind: 'when-operator',
+        });
+        expect(
+          extractCompletionCategory(completions.find((item) => item.label === 'mood')),
+        ).toEqual({
+          category: 'variable',
+          kind: 'chat-variable',
+        });
+      }
+    });
   });
 
   describe('replacement ranges', () => {

@@ -407,6 +407,44 @@ describe('UnifiedVariableGraph Layer 1 Contract', () => {
       expect(outsideResult.isExactMatch).toBe(false)
     })
 
+    it('indexes shorthand #each iterator source as a CBS read occurrence', async () => {
+      const { graph, scanResult } = await buildGraph([
+        {
+          artifact: 'lorebook',
+          fileName: 'each-iterator.risulorebook',
+          text: [
+            '---',
+            'name: each-iterator',
+            '---',
+            '@@@ CONTENT',
+            '{{setvar::var1::ready}}{{#each var1 key}}{{slot::key}}{{/each}}',
+            '',
+          ].join('\n'),
+        },
+      ])
+
+      const lorebookUri = scanResult.files[0]?.uri
+      expect(lorebookUri).toBeTruthy()
+
+      const var1Node = graph.getVariable('var1')
+      expect(var1Node).not.toBeNull()
+      expect(var1Node!.writers.length).toBe(1)
+      expect(var1Node!.readers).toEqual([
+        expect.objectContaining({
+          direction: 'read',
+          sourceKind: 'cbs-macro',
+          sourceName: '#each',
+          variableName: 'var1',
+        }),
+      ])
+
+      const eachRead = var1Node!.readers[0]!
+      const readResult = graph.findOccurrenceAt(lorebookUri!, eachRead.hostStartOffset + 1)
+      expect(readResult.occurrence).not.toBeNull()
+      expect(readResult.occurrence!.occurrenceId).toBe(eachRead.occurrenceId)
+      expect(readResult.occurrence!.direction).toBe('read')
+    })
+
     it('returns the correct occurrence for Lua-backed examples', async () => {
       const { graph, scanResult } = await buildGraph([
         {

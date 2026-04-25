@@ -15,8 +15,10 @@ import {
   type FragmentCursorLookupResult,
 } from '../core';
 import type { VariableSymbolKind } from '../analyzer/symbolTable';
+import { extractEachLoopBinding, isStaticEachIteratorIdentifier } from '../analyzer/block-header';
 import { normalizeLookupKey } from '../analyzer/scope/lookup-key';
 import { getVariableMacroArgumentKind } from '../analyzer/scope/scope-macro-rules';
+import { positionToOffset } from '../utils/position';
 
 export interface LocalFirstRangeEntry {
   uri: string;
@@ -166,6 +168,17 @@ export function resolveVariablePosition(
     return null;
   }
 
+  if (nodeSpan.category === 'block-header' && nodeSpan.owner.type === 'Block' && nodeSpan.owner.kind === 'each') {
+    const loopBinding = extractEachLoopBinding(nodeSpan.owner, lookup.fragment.content);
+    if (
+      loopBinding &&
+      isStaticEachIteratorIdentifier(loopBinding.iteratorExpression) &&
+      rangeContainsFragmentOffset(loopBinding.iteratorRange, lookup.fragment.content, lookup.fragmentLocalOffset)
+    ) {
+      return { variableName: loopBinding.iteratorExpression, kind: 'chat' };
+    }
+  }
+
   if (
     tokenLookup.category === 'argument' &&
     nodeSpan.category === 'argument' &&
@@ -225,6 +238,22 @@ export function resolveVariablePosition(
   }
 
   return null;
+}
+
+/**
+ * rangeContainsFragmentOffset 함수.
+ * fragment-local range가 현재 cursor offset을 포함하는지 확인함.
+ *
+ * @param range - fragment-local range
+ * @param fragmentContent - offset 계산 기준 fragment 원문
+ * @param offset - 검사할 fragment-local offset
+ * @returns range 내부이면 true
+ */
+function rangeContainsFragmentOffset(range: Range, fragmentContent: string, offset: number): boolean {
+  const startOffset = positionToOffset(fragmentContent, range.start);
+  const endOffset = positionToOffset(fragmentContent, range.end);
+
+  return offset >= startOffset && offset < endOffset;
 }
 
 /**

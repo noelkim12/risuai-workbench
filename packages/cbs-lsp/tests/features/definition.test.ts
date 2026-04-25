@@ -200,6 +200,22 @@ describe('DefinitionProvider', () => {
   });
 
   describe('slot::name -> #each definition resolution', () => {
+    it('resolves shorthand #each iterator source to a local chat variable definition', () => {
+      const entry = getFixtureCorpusEntry('lorebook-basic');
+      const modifiedText = entry.text.replace(
+        '{{user}}',
+        '{{setvar::var1::ready}}{{#each var1 key}}{{slot::key}}{{/each}}',
+      );
+      const request = { ...createFixtureRequest(entry), text: modifiedText };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+
+      const definition = provider.provide(createParams(request, positionAt(modifiedText, 'var1 key', 1)));
+
+      const link = expectLocationLink(definition);
+      expect(link[0].targetUri).toBe(request.uri);
+      expect(link[0].targetRange.start).toEqual(positionAt(modifiedText, 'var1', 0, 0));
+    });
+
     it('resolves slot variable to #each block declaration', () => {
       const entry = getFixtureCorpusEntry('lorebook-basic');
       // Use the correct #each syntax with "as" keyword

@@ -170,6 +170,25 @@ describe('DiagnosticsEngine', () => {
     expect(diagnostic?.message).toContain('Invalid #when operator');
   });
 
+  it('accepts nested CBS macro conditions in #when headers', () => {
+    const source =
+      '{{#when::{{and::{{equal::{{getglobalvar::toggle_lang}}::1}}::{{equal::{{getglobalvar::toggle_PC}}::1}}}}::is::1}}body{{/when}}';
+    const diagnostics = diagnosticsEngine.analyze(new CBSParser().parse(source), source);
+
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      DiagnosticCode.UnknownFunction,
+    );
+  });
+
+  it('does not report CBS103 when #when body contains whitespace', () => {
+    const source = '{{#when::ct_generatedHTML::vis::A}} {{/when}}';
+    const diagnostics = diagnosticsEngine.analyze(new CBSParser().parse(source), source);
+
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      DiagnosticCode.EmptyBlock,
+    );
+  });
+
   it('adds suggestion metadata to unknown builtin diagnostics from the shared registry', () => {
     const source = '{{us}}';
     const diagnostics = diagnosticsEngine.analyze(new CBSParser().parse(source), source);

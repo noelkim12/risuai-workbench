@@ -1543,7 +1543,11 @@ export class CompletionProvider {
       case 'slot-aliases':
         return this.buildSlotAliasCompletions(context.prefix, lookup);
       case 'when-operators':
-        return this.buildWhenOperatorCompletions(context.prefix);
+        return this.buildWhenSegmentCompletions(
+          context.prefix,
+          lookup,
+          workspaceFreshness,
+        );
       case 'calc-expression':
         return this.buildCalcExpressionCompletions(
           context.prefix,
@@ -2210,6 +2214,26 @@ export class CompletionProvider {
       },
       insertText: k.name,
     }));
+  }
+
+  /**
+   * buildWhenSegmentCompletions 함수.
+   * #when header segment에서 operator와 chat variable 후보를 함께 생성함.
+   *
+   * @param prefix - 현재 segment에서 이미 입력한 prefix
+   * @param lookup - fragment-local symbol table과 분석 결과
+   * @param workspaceFreshness - workspace graph 후보 사용 가능 상태
+   * @returns #when segment에 표시할 completion item 목록
+   */
+  private buildWhenSegmentCompletions(
+    prefix: string,
+    lookup: FragmentCursorLookupResult,
+    workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null,
+  ): CompletionItem[] {
+    return [
+      ...this.buildWhenOperatorCompletions(prefix),
+      ...this.buildVariableCompletions(prefix, 'chat', lookup, workspaceFreshness),
+    ];
   }
 
   private buildWhenOperatorCompletions(prefix: string): CompletionItem[] {

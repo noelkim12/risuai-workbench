@@ -76,7 +76,7 @@ export function formatBuiltinDiagnosticTarget(builtin: CBSBuiltinFunction): stri
 
 /**
  * hasMeaningfulNodes 함수.
- * comment/whitespace만 남은 node 배열인지 검사해 구조 진단의 빈 본문 판정을 돕음.
+ * comment만 남은 node 배열인지 검사해 구조 진단의 빈 본문 판정을 돕음.
  *
  * @param nodes - 검사할 CBS node 배열
  * @param sourceText - plain text trim 판정에 쓸 선택적 원문
@@ -97,10 +97,10 @@ export function hasMeaningfulNodes(
 
     if (node.type === 'PlainText') {
       if (sourceText) {
-        return sliceRange(sourceText, node.range).trim().length > 0;
+        return sliceRange(sourceText, node.range).length > 0;
       }
 
-      return node.value.trim().length > 0;
+      return node.value.length > 0;
     }
 
     return true;

@@ -1,4 +1,4 @@
-import type { CBSNode } from './parser/ast';
+import type { BlockNode, CBSNode } from './parser/ast';
 import { CBSParser } from './parser/parser';
 import type { Position, Range } from './parser/tokens';
 import { walkAST } from './parser/visitor';
@@ -29,8 +29,8 @@ export interface CBSVariableOccurrence {
   variableName: string;
   /** 접근 방향 (읽기/쓰기) */
   direction: CBSVariableDirection;
-  /** CBS 연산 종류 (getvar, setvar, addvar, setdefaultvar) */
-  operation: 'getvar' | 'setvar' | 'addvar' | 'setdefaultvar';
+  /** CBS 연산 종류 (getvar, setvar, addvar, setdefaultvar, #each) */
+  operation: 'getvar' | 'setvar' | 'addvar' | 'setdefaultvar' | '#each';
   /** 변수 키가 위치한 텍스트 범위 (첫 번째 인자의 전체 범위) */
   range: Range;
   /** 변수 키 값이 시작하는 위치 (PlainText 노드 내에서 trim 전 시작) */
@@ -41,6 +41,7 @@ export interface CBSVariableOccurrence {
 
 const COMPATIBLE_VAR_OPS = new Set(['getvar', 'setvar', 'addvar', 'setdefaultvar']);
 const VAR_OP_FALLBACK_PATTERN = /\{\{(getvar|setvar|addvar|setdefaultvar)::([^}:]+)/g;
+const STATIC_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 
 /**
  * 텍스트에서 CBS 변수 발생(occurrence) 메타데이터를 추출
@@ -90,6 +91,21 @@ export function extractCBSVariableOccurrences(text: string): CBSVariableOccurren
           keyEnd,
         });
       },
+      visitBlock(node) {
+        if (node.kind !== 'each') return;
+
+        const iteratorResult = extractStaticEachIteratorWithRange(text, lineStarts, node);
+        if (!iteratorResult) return;
+
+        occurrences.push({
+          variableName: iteratorResult.key,
+          direction: 'read',
+          operation: '#each',
+          range: iteratorResult.range,
+          keyStart: iteratorResult.keyStart,
+          keyEnd: iteratorResult.keyEnd,
+        });
+      },
     });
 
     return occurrences;
@@ -129,6 +145,123 @@ interface StaticPlainTextResult {
   range: Range;
   keyStart: Position;
   keyEnd: Position;
+}
+
+interface EachIteratorHeaderParts {
+  iteratorExpression: string;
+  iteratorStartIndex: number;
+  iteratorEndIndex: number;
+}
+
+/**
+ * 정적 #each iterator source와 정확한 범위를 추출
+ * 동적 표현식이나 다중 토큰 표현식은 variable read로 기록하지 않음
+ */
+function extractStaticEachIteratorWithRange(
+  text: string,
+  lineStarts: number[],
+  node: BlockNode,
+): StaticPlainTextResult | null {
+  const openStartIndex = positionToIndex(lineStarts, node.openRange.start);
+  const rawHeader = readRangeText(text, lineStarts, node.openRange);
+  const headerText = extractEachHeaderText(rawHeader);
+  if (!headerText) return null;
+
+  const parts = parseEachIteratorHeaderParts(headerText);
+  if (!parts || !STATIC_IDENTIFIER_PATTERN.test(parts.iteratorExpression)) return null;
+
+  const headerTextStartIndex = rawHeader.indexOf(headerText);
+  if (headerTextStartIndex === -1) return null;
+
+  const iteratorStartIndex = openStartIndex + headerTextStartIndex + parts.iteratorStartIndex;
+  const iteratorEndIndex = openStartIndex + headerTextStartIndex + parts.iteratorEndIndex;
+  const keyStart = indexToPosition(lineStarts, iteratorStartIndex);
+  const keyEnd = indexToPosition(lineStarts, iteratorEndIndex);
+
+  return {
+    key: parts.iteratorExpression,
+    range: { start: keyStart, end: keyEnd },
+    keyStart,
+    keyEnd,
+  };
+}
+
+/**
+ * #each open header에서 mode/operator를 제거한 tail text를 추출
+ */
+function extractEachHeaderText(rawHeader: string): string | null {
+  const headerStart = rawHeader.match(/^\{\{\s*#each\b/iu);
+  if (!headerStart) return null;
+
+  const innerEnd = rawHeader.replace(/\}\}\s*$/u, '').length;
+  const rawTail = rawHeader.slice(headerStart[0].length, innerEnd);
+  const segments = parseEachHeaderSegments(rawTail);
+  let segmentIndex = 0;
+  while (segmentIndex < segments.length && segments[segmentIndex].trim().toLowerCase() === 'keep') {
+    segmentIndex += 1;
+  }
+
+  return segments.slice(segmentIndex).join('::').trim();
+}
+
+/**
+ * #each header tail을 최상위 `::` 단위로 분리
+ */
+function parseEachHeaderSegments(rawTail: string): string[] {
+  const trimmedStart = rawTail.trimStart();
+  if (trimmedStart.length === 0) return [];
+  if (!trimmedStart.startsWith('::')) return [trimmedStart.trim()];
+
+  const tail = trimmedStart.slice(2);
+  const segments: string[] = [];
+  let depth = 0;
+  let segmentStart = 0;
+
+  for (let index = 0; index < tail.length; index += 1) {
+    const pair = tail.slice(index, index + 2);
+    if (pair === '{{') {
+      depth += 1;
+      index += 1;
+      continue;
+    }
+
+    if (pair === '}}') {
+      depth = Math.max(0, depth - 1);
+      index += 1;
+      continue;
+    }
+
+    if (pair === '::' && depth === 0) {
+      segments.push(tail.slice(segmentStart, index));
+      segmentStart = index + 2;
+      index += 1;
+    }
+  }
+
+  segments.push(tail.slice(segmentStart));
+  return segments.map((segment) => segment.trim());
+}
+
+/**
+ * #each header tail에서 iterator source의 header-local 범위를 계산
+ */
+function parseEachIteratorHeaderParts(headerText: string): EachIteratorHeaderParts | null {
+  const asMatch = headerText.match(/^(.*?)\s+as\s+(.+)$/iu);
+  const rawIterator = asMatch?.[1] ?? headerText.match(/^(\S+)(?:\s+\S+)?$/u)?.[1] ?? '';
+  if (!rawIterator) return null;
+
+  const iteratorStartIndex = headerText.indexOf(rawIterator);
+  if (iteratorStartIndex === -1) return null;
+
+  const iteratorExpression = rawIterator.trim();
+  const leadingSpaces = rawIterator.length - rawIterator.trimStart().length;
+  const trailingSpaces = rawIterator.length - rawIterator.trimEnd().length;
+
+  return {
+    iteratorExpression,
+    iteratorStartIndex: iteratorStartIndex + leadingSpaces,
+    iteratorEndIndex: iteratorStartIndex + rawIterator.length - trailingSpaces,
+  };
 }
 
 /**

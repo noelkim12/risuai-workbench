@@ -18,13 +18,14 @@
 
 import type {
   Range,
+  BlockNode,
   CustomExtensionArtifact,
   CBSVariableOccurrence,
   StateAccessOccurrence,
   ElementCBSData,
   VarFlowResult,
 } from 'risu-workbench-core';
-import { extractCBSVariableOccurrences, analyzeVariableFlow } from 'risu-workbench-core';
+import { CBSParser, extractCBSVariableOccurrences, analyzeVariableFlow } from 'risu-workbench-core';
 import type { WorkspaceFileArtifactClass } from './file-scanner';
 import type {
   ElementRegistry,
@@ -38,6 +39,7 @@ import {
   type CbsAgentProtocolMarker,
 } from '../core/agent-metadata';
 import { createFragmentOffsetMapper } from '../core/fragment-position';
+import { extractEachLoopBinding, isStaticEachIteratorIdentifier } from '../analyzer/block-header';
 
 /**
  * Source kind for variable occurrences.
@@ -1085,10 +1087,69 @@ function extractCbsOccurrencesFromFragment(
 ): UnifiedVariableOccurrence[] {
   const fragmentContent = element.fragment.content;
   const cbsOccurrences = extractCBSVariableOccurrences(fragmentContent);
-
-  return cbsOccurrences.map((cbsOcc) =>
+  const unifiedOccurrences = cbsOccurrences.map((cbsOcc) =>
     buildCbsUnifiedOccurrence(cbsOcc, element.graphSeed, element, fragmentContent, hostDocumentContent),
   );
+
+  for (const eachOccurrence of extractEachIteratorCbsOccurrences(fragmentContent)) {
+    const unifiedOccurrence = buildCbsUnifiedOccurrence(
+      eachOccurrence,
+      element.graphSeed,
+      element,
+      fragmentContent,
+      hostDocumentContent,
+    );
+    const alreadyIndexed = unifiedOccurrences.some(
+      (candidate) => candidate.occurrenceId === unifiedOccurrence.occurrenceId,
+    );
+    if (!alreadyIndexed) {
+      unifiedOccurrences.push(unifiedOccurrence);
+    }
+  }
+
+  return unifiedOccurrences;
+}
+
+/**
+ * extractEachIteratorCbsOccurrences 함수.
+ * core dist가 아직 block iterator read를 내지 않는 환경에서도 Layer 1 read metadata를 보강함.
+ *
+ * @param fragmentContent - 분석할 CBS fragment 원문
+ * @returns 정적 `#each` iterator source read occurrence 목록
+ */
+function extractEachIteratorCbsOccurrences(fragmentContent: string): CBSVariableOccurrence[] {
+  const document = new CBSParser().parse(fragmentContent);
+  const occurrences: CBSVariableOccurrence[] = [];
+
+  const visitBlock = (node: BlockNode): void => {
+    if (node.kind === 'each') {
+      const binding = extractEachLoopBinding(node, fragmentContent);
+      if (binding && isStaticEachIteratorIdentifier(binding.iteratorExpression)) {
+        occurrences.push({
+          variableName: binding.iteratorExpression,
+          direction: 'read',
+          operation: '#each',
+          range: binding.iteratorRange,
+          keyStart: binding.iteratorRange.start,
+          keyEnd: binding.iteratorRange.end,
+        } as unknown as CBSVariableOccurrence);
+      }
+    }
+
+    for (const child of [...node.condition, ...node.body, ...(node.elseBody ?? [])]) {
+      if (child.type === 'Block') {
+        visitBlock(child);
+      }
+    }
+  };
+
+  for (const node of document.nodes) {
+    if (node.type === 'Block') {
+      visitBlock(node);
+    }
+  }
+
+  return occurrences;
 }
 
 /**

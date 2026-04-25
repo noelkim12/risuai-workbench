@@ -18,6 +18,7 @@ export interface CbsAutoSuggestInput {
 }
 
 export interface CbsAutoCloseInput {
+  documentSuffix?: string;
   insertedText: string;
   languageId: string;
   linePrefix: string;
@@ -39,6 +40,30 @@ const CBS_AUTO_CLOSE_BLOCK_NAMES = new Set([
 ]);
 const CBS_BLOCK_OPEN_NAME_PATTERN = /^#([a-z_][\w]*)(?=$|[\s:}])/i;
 const CBS_CLOSE_TAG_SUFFIX_PATTERN = /\{\{\/[a-z_][\w]*\}\}$/i;
+
+/**
+ * hasCbsBlockBoundaryAhead 함수.
+ * 커서 뒤에 이미 닫힌 block header나 대응 close tag가 있는지 확인함.
+ *
+ * @param lineSuffix - 커서 직후부터 같은 줄 끝까지의 텍스트
+ * @param documentSuffix - 커서 직후부터 문서 끝까지의 텍스트
+ * @param closeText - block opener에 대응하는 close tag 텍스트
+ * @returns 자동 close tag를 추가하지 않아야 하는 block 경계가 있으면 true
+ */
+function hasCbsBlockBoundaryAhead(
+  lineSuffix: string,
+  documentSuffix: string | undefined,
+  closeText: string,
+): boolean {
+  const trimmedSuffix = lineSuffix.trimStart();
+  const trimmedDocumentSuffix = documentSuffix?.trimStart() ?? '';
+
+  return (
+    trimmedSuffix.startsWith(closeText) ||
+    trimmedSuffix.startsWith('}}') ||
+    trimmedDocumentSuffix.startsWith(closeText)
+  );
+}
 
 /**
  * hasOpenCbsWhenArgumentPrefix 함수.
@@ -105,7 +130,7 @@ export function shouldTriggerCbsAutoSuggest(input: CbsAutoSuggestInput): boolean
  * getCbsAutoCloseText 함수.
  * CBS block open 구문이 닫히는 순간 붙일 close tag를 계산함.
  *
- * @param input - 문서 언어와 방금 입력된 텍스트, 커서 주변 한 줄 텍스트
+ * @param input - 문서 언어와 방금 입력된 텍스트, 커서 주변 텍스트
  * @returns 자동 삽입할 close tag, 대상이 아니면 null
  */
 export function getCbsAutoCloseText(input: CbsAutoCloseInput): string | null {
@@ -134,7 +159,7 @@ export function getCbsAutoCloseText(input: CbsAutoCloseInput): string | null {
   }
 
   const closeText = `{{/${blockName}}}`;
-  if (input.lineSuffix.trimStart().startsWith(closeText)) {
+  if (hasCbsBlockBoundaryAhead(input.lineSuffix, input.documentSuffix, closeText)) {
     return null;
   }
 

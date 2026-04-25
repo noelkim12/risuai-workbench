@@ -19,7 +19,13 @@ export interface PureModeRangeLookupContext {
   targetRange: { start: { line: number; character: number } };
 }
 
-export const PURE_MODE_BLOCKS = new Set<BlockKind>(['each', 'escape', 'pure', 'puredisplay', 'func']);
+export const PURE_MODE_BLOCKS = new Set<BlockKind>([
+  'each',
+  'escape',
+  'pure',
+  'puredisplay',
+  'func',
+]);
 
 const PURE_MODE_ALLOWED_MACROS: Readonly<Record<BlockKind, readonly string[]>> = {
   each: ['slot'],
@@ -48,6 +54,37 @@ export function isPureModeMacroAllowed(
 ): boolean {
   const allowedMacros = PURE_MODE_ALLOWED_MACROS[blockKind] ?? [];
   return argumentIndex === 0 && allowedMacros.includes(macroName);
+}
+
+/**
+ * isPureModeMacroNameAllowed 함수.
+ * pure-mode block body 안에서 허용 macro 이름 자체의 feature 유지 여부를 판정함.
+ *
+ * @param blockKind - 현재 pure-mode block kind
+ * @param macroName - 검사할 macro 이름
+ * @returns 현재 pure-mode block 안에서 macro 이름 feature를 유지해야 하면 true
+ */
+function isPureModeMacroNameAllowed(blockKind: BlockKind, macroName: string): boolean {
+  const allowedMacros = PURE_MODE_ALLOWED_MACROS[blockKind] ?? [];
+  return allowedMacros.includes(macroName);
+}
+
+/**
+ * resolveTokenMacroNameContext 함수.
+ * 현재 커서가 macro 이름 token 위에 있는지 token stream 기준으로 해석함.
+ *
+ * @param lookup - fragment locator가 계산한 현재 커서 문맥
+ * @returns macro 이름, 아니면 null
+ */
+function resolveTokenMacroNameContext(
+  lookup: Pick<FragmentCursorLookupResult, 'token'>,
+): string | null {
+  const tokenLookup = lookup.token;
+  if (!tokenLookup || tokenLookup.category !== 'macro-name') {
+    return null;
+  }
+
+  return tokenLookup.token.value.toLowerCase();
 }
 
 /**
@@ -141,14 +178,18 @@ export function findEnclosingPureModeBlockAtRange(
 
   const visit = (nodes: readonly BlockNode[]): BlockNode | null => {
     for (const node of nodes) {
-      const nestedBodyBlocks = node.body.filter((child): child is BlockNode => child.type === 'Block');
+      const nestedBodyBlocks = node.body.filter(
+        (child): child is BlockNode => child.type === 'Block',
+      );
       const nestedMatch = visit(nestedBodyBlocks);
       if (nestedMatch) {
         return nestedMatch;
       }
 
       if (node.elseBody) {
-        const elseBlocks = node.elseBody.filter((child): child is BlockNode => child.type === 'Block');
+        const elseBlocks = node.elseBody.filter(
+          (child): child is BlockNode => child.type === 'Block',
+        );
         const elseMatch = visit(elseBlocks);
         if (elseMatch) {
           return elseMatch;
@@ -188,13 +229,14 @@ export function shouldSuppressPureModeFeatures(lookup: FragmentCursorLookupResul
   }
 
   const tokenContext = resolveTokenMacroArgumentContext(lookup);
-  if (!tokenContext) {
-    return true;
+  if (tokenContext) {
+    return !isPureModeMacroAllowed(
+      pureBlock.kind,
+      tokenContext.macroName,
+      tokenContext.argumentIndex,
+    );
   }
 
-  return !isPureModeMacroAllowed(
-    pureBlock.kind,
-    tokenContext.macroName,
-    tokenContext.argumentIndex,
-  );
+  const macroName = resolveTokenMacroNameContext(lookup);
+  return !macroName || !isPureModeMacroNameAllowed(pureBlock.kind, macroName);
 }
