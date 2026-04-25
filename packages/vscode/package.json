@@ -56,9 +56,7 @@
       },
       {
         "id": "risulua",
-        "extensions": [
-          ".risulua"
-        ],
+        "extensions": [],
         "configuration": "./language-configuration.json"
       }
     ],
@@ -87,9 +85,19 @@
         "language": "risulua",
         "scopeName": "source.risulua",
         "path": "./syntaxes/risulua.tmLanguage.json"
+      },
+      {
+        "scopeName": "source.lua.risu-cbs.injection",
+        "path": "./syntaxes/risulua-cbs-injection.tmLanguage.json",
+        "injectTo": [
+          "source.lua"
+        ]
       }
     ],
     "configurationDefaults": {
+      "files.associations": {
+        "*.risulua": "lua"
+      },
       "[risulorebook]": {
         "editor.quickSuggestions": {
           "comments": false,

@@ -69,7 +69,7 @@ function readPackageJson(): {
   activationEvents?: string[];
   contributes?: {
     configurationDefaults?: Record<string, Record<string, unknown>>;
-    grammars?: Array<{ language?: string; path?: string; scopeName?: string }>;
+    grammars?: Array<{ injectTo?: string[]; language?: string; path?: string; scopeName?: string }>;
     languages?: Array<{ configuration?: string; extensions?: string[]; id?: string }>;
     commands?: Array<{ command?: string; title?: string }>;
   };
@@ -79,7 +79,7 @@ function readPackageJson(): {
     activationEvents?: string[];
     contributes?: {
       configurationDefaults?: Record<string, Record<string, unknown>>;
-      grammars?: Array<{ language?: string; path?: string; scopeName?: string }>;
+      grammars?: Array<{ injectTo?: string[]; language?: string; path?: string; scopeName?: string }>;
       languages?: Array<{ configuration?: string; extensions?: string[]; id?: string }>;
       commands?: Array<{ command?: string; title?: string }>;
     };
@@ -213,15 +213,14 @@ test('attaches language configuration to every CBS-bearing language', () => {
   }
 });
 
-test('associates .risulua with the risulua language by default', () => {
+test('associates .risulua with lua by default so native LuaLS can attach', () => {
   const packageJson = readPackageJson();
+  const defaults = packageJson.contributes?.configurationDefaults ?? {};
   const languages = packageJson.contributes?.languages ?? [];
   const risulua = languages.find((candidate) => candidate.id === 'risulua');
 
-  assert.ok(
-    risulua?.extensions?.includes('.risulua'),
-    'Expected default .risulua file association to remain registered',
-  );
+  assert.deepEqual(risulua?.extensions ?? [], []);
+  assert.equal((defaults['files.associations'] as Record<string, string> | undefined)?.['*.risulua'], 'lua');
 });
 
 test('contributes CBS TextMate grammars for every CBS-bearing language', () => {
@@ -236,6 +235,21 @@ test('contributes CBS TextMate grammars for every CBS-bearing language', () => {
     assert.equal(grammar?.path, `./syntaxes/${languageId}.tmLanguage.json`);
     assert.ok(existsSync(grammarPath), `Expected grammar file for ${languageId}`);
   }
+});
+
+test('injects CBS TextMate grammar into Lua for default risulua-as-lua editing', () => {
+  const packageJson = readPackageJson();
+  const grammars = packageJson.contributes?.grammars ?? [];
+  const injection = grammars.find(
+    (candidate) => candidate.scopeName === 'source.lua.risu-cbs.injection',
+  );
+
+  assert.deepEqual(injection?.injectTo, ['source.lua']);
+  assert.equal(injection?.path, './syntaxes/risulua-cbs-injection.tmLanguage.json');
+  assert.ok(
+    existsSync(path.join(packageRoot, injection?.path ?? '')),
+    'Expected Lua CBS injection grammar file to exist',
+  );
 });
 
 test('keeps imported CBS syntax-extension legacy assets available without provider duplication', () => {
