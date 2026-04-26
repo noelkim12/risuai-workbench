@@ -15,6 +15,8 @@
     "onCommand:risuWorkbench.analyzeLua",
     "onCommand:risuWorkbench.inspectCard",
     "onCommand:risuWorkbench.openCardPanel",
+    "onCommand:risuWorkbench.generateLuaStubs",
+    "onCommand:risuWorkbench.cbs.showActivationLinks",
     "onView:risuWorkbench.cards",
     "onLanguage:risulorebook",
     "onLanguage:risuregex",
@@ -31,6 +33,10 @@
         "extensions": [
           ".risulorebook"
         ],
+        "icon": {
+          "light": "./resources/icon/risulorebook.svg",
+          "dark": "./resources/icon/risulorebook.svg"
+        },
         "configuration": "./language-configuration.json"
       },
       {
@@ -38,6 +44,10 @@
         "extensions": [
           ".risuregex"
         ],
+        "icon": {
+          "light": "./resources/icon/risuregex.svg",
+          "dark": "./resources/icon/risuregex.svg"
+        },
         "configuration": "./language-configuration.json"
       },
       {
@@ -45,6 +55,10 @@
         "extensions": [
           ".risuprompt"
         ],
+        "icon": {
+          "light": "./resources/icon/risuprompt.svg",
+          "dark": "./resources/icon/risuprompt.svg"
+        },
         "configuration": "./language-configuration.json"
       },
       {
@@ -52,11 +66,41 @@
         "extensions": [
           ".risuhtml"
         ],
+        "icon": {
+          "light": "./resources/icon/risuhtml.svg",
+          "dark": "./resources/icon/risuhtml.svg"
+        },
         "configuration": "./language-configuration.json"
       },
       {
         "id": "risulua",
         "extensions": [],
+        "icon": {
+          "light": "./resources/icon/risulua.svg",
+          "dark": "./resources/icon/risulua.svg"
+        },
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "risuvar",
+        "extensions": [
+          ".risuvar"
+        ],
+        "icon": {
+          "light": "./resources/icon/risuvar.svg",
+          "dark": "./resources/icon/risuvar.svg"
+        },
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "risutoggle",
+        "extensions": [
+          ".risutoggle"
+        ],
+        "icon": {
+          "light": "./resources/icon/risutoggle.svg",
+          "dark": "./resources/icon/risutoggle.svg"
+        },
         "configuration": "./language-configuration.json"
       }
     ],
@@ -98,6 +142,79 @@
       "files.associations": {
         "*.risulua": "lua"
       },
+      "Lua.diagnostics.globals": [
+        "LLM",
+        "LLMMain",
+        "Promise",
+        "addChat",
+        "alertConfirm",
+        "alertError",
+        "alertInput",
+        "alertNormal",
+        "alertSelect",
+        "async",
+        "axLLM",
+        "axLLMMain",
+        "callListenMain",
+        "cbs",
+        "cutChat",
+        "generateImage",
+        "getAuthorsNote",
+        "getBackgroundEmbedding",
+        "getCharacterFirstMessage",
+        "getCharacterImage",
+        "getCharacterImageMain",
+        "getCharacterLastMessage",
+        "getChat",
+        "getChatLength",
+        "getChatMain",
+        "getChatVar",
+        "getDescription",
+        "getFullChat",
+        "getFullChatMain",
+        "getGlobalVar",
+        "getLoreBooks",
+        "getLoreBooksMain",
+        "getName",
+        "getPersonaDescription",
+        "getPersonaImage",
+        "getPersonaImageMain",
+        "getPersonaName",
+        "getState",
+        "getTokens",
+        "getUserLastMessage",
+        "hash",
+        "insertChat",
+        "json",
+        "listenEdit",
+        "loadLoreBooks",
+        "loadLoreBooksMain",
+        "log",
+        "logMain",
+        "onButtonClick",
+        "onInput",
+        "onOutput",
+        "onStart",
+        "reloadChat",
+        "reloadDisplay",
+        "removeChat",
+        "request",
+        "setBackgroundEmbedding",
+        "setCharacterFirstMessage",
+        "setChat",
+        "setChatRole",
+        "setChatVar",
+        "setDescription",
+        "setFullChat",
+        "setFullChatMain",
+        "setName",
+        "setState",
+        "similarity",
+        "simpleLLM",
+        "sleep",
+        "stopChat",
+        "upsertLocalLoreBook"
+      ],
       "[risulorebook]": {
         "editor.quickSuggestions": {
           "comments": false,
@@ -178,8 +295,16 @@
         "title": "Risu Workbench: Open Card Panel"
       },
       {
+        "command": "risuWorkbench.generateLuaStubs",
+        "title": "Risu Workbench: Generate LuaLS Stubs"
+      },
+      {
         "command": "risuWorkbench.cbs.openOccurrence",
         "title": "Risu Workbench: Open CBS Occurrence"
+      },
+      {
+        "command": "risuWorkbench.cbs.showActivationLinks",
+        "title": "Risu Workbench: Show Lorebook Activation Links"
       }
     ],
     "menus": {
