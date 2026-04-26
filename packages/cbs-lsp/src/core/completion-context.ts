@@ -301,6 +301,15 @@ export function detectCompletionTriggerContext(
         };
       }
 
+      if (functionName === '#when') {
+        return {
+          type: 'when-operators',
+          prefix: argumentPrefix,
+          startOffset: argumentStartOffset,
+          endOffset: fragmentLocalOffset,
+        };
+      }
+
       const variableContext = createVariableArgumentContext(
         functionName,
         argumentIndex,

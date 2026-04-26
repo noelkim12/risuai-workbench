@@ -136,6 +136,7 @@ interface CheapMacroArgumentCompletionContext {
 interface CheapWhenSegmentCompletionContext {
   type: 'when-segment';
   prefix: string;
+  previousSegments: readonly string[];
   startCharacter: number;
   endCharacter: number;
   line: number;
@@ -323,6 +324,12 @@ const CALC_OPERATORS: readonly CalcOperatorCompletion[] = [
     label: '==',
     detail: 'Equality operator',
     documentation: 'Compares two numeric operands for equality.',
+  },
+  {
+    label: '=',
+    detail: 'Equality operator',
+    documentation:
+      'Compares two numeric operands for equality. Upstream also accepts this single-character equality token directly.',
   },
   {
     label: '!=',
@@ -1476,6 +1483,10 @@ export class CompletionProvider {
     }
 
     if (context.type === 'when-segment') {
+      if (this.isToggleNameWhenSegment(context.previousSegments)) {
+        return this.buildWorkspaceToggleNameCompletions(context.prefix);
+      }
+
       return [
         ...this.buildWhenOperatorCompletions(context.prefix),
         ...this.buildWorkspaceChatVariableCompletions(
@@ -1582,6 +1593,11 @@ export class CompletionProvider {
       return {
         type: 'when-segment',
         prefix: macroPrefix.slice(lastArgumentSeparatorIndex + 2),
+        previousSegments: macroPrefix
+          .slice(0, lastArgumentSeparatorIndex)
+          .split('::')
+          .slice(1)
+          .map((segment) => segment.trim()),
         startCharacter: segmentStartCharacter,
         endCharacter: position.character,
         line: position.line,
@@ -1935,6 +1951,7 @@ export class CompletionProvider {
       case 'when-operators':
         return this.buildWhenSegmentCompletions(
           context.prefix,
+          context.startOffset,
           lookup,
           workspaceFreshness,
         );
@@ -2309,6 +2326,16 @@ export class CompletionProvider {
         }) satisfies CompletionItem,
     );
 
+    if (kind === 'global') {
+      return [
+        ...localCompletions,
+        ...this.buildWorkspaceToggleGlobalVariableCompletions(
+          prefix,
+          new Set(localCompletions.map((completion) => completion.label)),
+        ),
+      ];
+    }
+
     if (kind !== 'chat') {
       return localCompletions;
     }
@@ -2325,6 +2352,63 @@ export class CompletionProvider {
     );
 
     return [...localCompletions, ...workspaceCompletions];
+  }
+
+  /**
+   * buildWorkspaceToggleGlobalVariableCompletions 함수.
+   * risutoggle key에서 파생되는 `toggle_<name>` globalvar completion 후보를 생성함.
+   *
+   * @param prefix - 현재 globalvar 인자 prefix
+   * @param existingLabels - fragment-local global 후보와 중복 방지용 label 집합
+   * @returns risutoggle 기반 globalvar completion item 목록
+   */
+  private buildWorkspaceToggleGlobalVariableCompletions(
+    prefix: string,
+    existingLabels: ReadonlySet<string>,
+  ): CompletionItem[] {
+    if (!this.variableFlowService) {
+      return [];
+    }
+
+    const normalizedPrefix = prefix.toLowerCase();
+
+    return this.variableFlowService.getToggleCompletionSummaries().flatMap((summary) => {
+      if (!summary.globalVariableName.toLowerCase().startsWith(normalizedPrefix)) {
+        return [];
+      }
+
+      if (existingLabels.has(summary.globalVariableName)) {
+        return [];
+      }
+
+      return {
+        label: summary.globalVariableName,
+        kind: CompletionItemKind.Variable,
+        data: this.createCategoryData(
+          {
+            category: 'variable',
+            kind: 'global-variable',
+          },
+          this.createScopeExplanation(
+            'risutoggle-globalvar-index',
+            'Completion resolved this candidate from `.risutoggle` keys exposed as `toggle_<name>` global variables.',
+          ),
+        ),
+        detail: 'Risutoggle global variable',
+        documentation: {
+          kind: 'markdown',
+          value: [
+            `**Risutoggle global variable:** \`${summary.globalVariableName}\``,
+            '',
+            `- Toggle name: \`${summary.name}\``,
+            '- Usage: `{{getglobalvar::toggle_<toggleName>}}` reads the selected/toggled value.',
+            `- Definitions: ${summary.definitionCount}`,
+          ].join('\n'),
+        },
+        insertText: summary.globalVariableName,
+        sortText: `zzzz-risutoggle-global-${summary.globalVariableName}`,
+      } satisfies CompletionItem;
+    });
   }
 
   /**
@@ -2672,13 +2756,105 @@ export class CompletionProvider {
    */
   private buildWhenSegmentCompletions(
     prefix: string,
+    startOffset: number,
     lookup: FragmentCursorLookupResult,
     workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null,
   ): CompletionItem[] {
+    const previousSegments = this.getWhenSegmentsBeforeOffset(lookup, startOffset);
+    if (this.isToggleNameWhenSegment(previousSegments)) {
+      return this.buildWorkspaceToggleNameCompletions(prefix);
+    }
+
     return [
       ...this.buildWhenOperatorCompletions(prefix),
       ...this.buildVariableCompletions(prefix, 'chat', lookup, workspaceFreshness),
     ];
+  }
+
+  /**
+   * getWhenSegmentsBeforeOffset 함수.
+   * 현재 #when segment 앞에 있는 top-level segment 목록을 단순 DSL 기준으로 추출함.
+   *
+   * @param lookup - fragment content와 cursor 정보를 담은 lookup 결과
+   * @param startOffset - 현재 completion segment 시작 offset
+   * @returns 현재 segment 앞의 #when segment 목록
+   */
+  private getWhenSegmentsBeforeOffset(
+    lookup: FragmentCursorLookupResult,
+    startOffset: number,
+  ): readonly string[] {
+    const content = lookup.fragment.content;
+    const headerPrefix = content.slice(0, Math.max(0, startOffset));
+    const whenStart = headerPrefix.lastIndexOf('{{#when');
+    if (whenStart === -1) {
+      return [];
+    }
+
+    return headerPrefix
+      .slice(whenStart + '{{#when'.length)
+      .split('::')
+      .filter((segment, index) => index > 0 || segment.trim().length > 0)
+      .map((segment) => segment.trim())
+      .filter((segment) => segment.length > 0);
+  }
+
+  /**
+   * isToggleNameWhenSegment 함수.
+   * `{{#when::toggle::...}}`의 toggle 이름 argument 위치인지 판별함.
+   *
+   * @param previousSegments - 현재 segment 앞의 #when segment 목록
+   * @returns 직전 segment가 unary `toggle` operator이면 true
+   */
+  private isToggleNameWhenSegment(previousSegments: readonly string[]): boolean {
+    return previousSegments[previousSegments.length - 1]?.toLowerCase() === 'toggle';
+  }
+
+  /**
+   * buildWorkspaceToggleNameCompletions 함수.
+   * `#when::toggle::` 인자에서 risutoggle 원본 key 이름을 completion 후보로 생성함.
+   *
+   * @param prefix - 현재 toggle 이름 prefix
+   * @returns risutoggle 원본 이름 completion item 목록
+   */
+  private buildWorkspaceToggleNameCompletions(prefix: string): CompletionItem[] {
+    if (!this.variableFlowService) {
+      return [];
+    }
+
+    const normalizedPrefix = prefix.toLowerCase();
+    return this.variableFlowService.getToggleCompletionSummaries().flatMap((summary) => {
+      if (!summary.name.toLowerCase().startsWith(normalizedPrefix)) {
+        return [];
+      }
+
+      return {
+        label: summary.name,
+        kind: CompletionItemKind.Property,
+        data: this.createCategoryData(
+          {
+            category: 'contextual-token',
+            kind: 'when-operator',
+          },
+          this.createContextualExplanation(
+            'risutoggle-name-index',
+            'Completion inferred a #when toggle argument and resolved the candidate from `.risutoggle` keys.',
+          ),
+        ),
+        detail: 'Risutoggle name',
+        documentation: {
+          kind: 'markdown',
+          value: [
+            `**Risutoggle:** \`${summary.name}\``,
+            '',
+            '- Usage: `{{#when::toggle::<toggleName>}}...{{/when}}` checks this registered toggle.',
+            `- Globalvar alias: \`${summary.globalVariableName}\``,
+            `- Definitions: ${summary.definitionCount}`,
+          ].join('\n'),
+        },
+        insertText: summary.name,
+        sortText: `zzzz-risutoggle-name-${summary.name}`,
+      } satisfies CompletionItem;
+    });
   }
 
   private buildWhenOperatorCompletions(prefix: string): CompletionItem[] {

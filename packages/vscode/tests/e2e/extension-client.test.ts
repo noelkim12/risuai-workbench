@@ -59,6 +59,34 @@ interface BuiltAutoSuggestModule {
   }) => boolean;
 }
 
+interface BuiltCodeLensTooltipModule {
+  applyCbsCodeLensActivationTooltip: <T extends { command?: { tooltip?: string }; data?: unknown }>(
+    codeLens: T,
+  ) => T;
+  extractCbsCodeLensActivationTooltip: (data: unknown) => string | null;
+}
+
+interface BuiltActivationCodeLensModule {
+  CBS_ACTIVATION_SUMMARY_COMMAND: string;
+  buildCbsActivationQuickPickItems: (payload: unknown) => Array<{
+    description?: string;
+    detail?: string;
+    kind: 'entry' | 'separator';
+    label: string;
+    target?: { uri?: string };
+  }>;
+}
+
+interface BuiltRisuLuaStubsModule {
+  RISU_LUALS_STUB_COMMAND: string;
+  getWorkspaceRisuLuaStubFilePath: (workspaceRootPath: string) => string;
+  getWorkspaceRisuLuaStubRootPath: (workspaceRootPath: string) => string;
+  mergeLuaWorkspaceLibrary: (
+    currentValue: unknown,
+    stubRootPath: string,
+  ) => string[] | Record<string, boolean>;
+}
+
 /**
  * readPackageJson 함수.
  * package.json을 읽어 script surface를 검증하기 쉬운 JSON으로 반환함.
@@ -70,7 +98,13 @@ function readPackageJson(): {
   contributes?: {
     configurationDefaults?: Record<string, Record<string, unknown>>;
     grammars?: Array<{ injectTo?: string[]; language?: string; path?: string; scopeName?: string }>;
-    languages?: Array<{ configuration?: string; extensions?: string[]; id?: string }>;
+    iconThemes?: Array<{ id?: string; label?: string; path?: string }>;
+    languages?: Array<{
+      configuration?: string;
+      extensions?: string[];
+      icon?: { dark?: string; light?: string };
+      id?: string;
+    }>;
     commands?: Array<{ command?: string; title?: string }>;
   };
   scripts?: Record<string, string>;
@@ -79,8 +113,19 @@ function readPackageJson(): {
     activationEvents?: string[];
     contributes?: {
       configurationDefaults?: Record<string, Record<string, unknown>>;
-      grammars?: Array<{ injectTo?: string[]; language?: string; path?: string; scopeName?: string }>;
-      languages?: Array<{ configuration?: string; extensions?: string[]; id?: string }>;
+      grammars?: Array<{
+        injectTo?: string[];
+        language?: string;
+        path?: string;
+        scopeName?: string;
+      }>;
+      iconThemes?: Array<{ id?: string; label?: string; path?: string }>;
+      languages?: Array<{
+        configuration?: string;
+        extensions?: string[];
+        icon?: { dark?: string; light?: string };
+        id?: string;
+      }>;
       commands?: Array<{ command?: string; title?: string }>;
     };
     scripts?: Record<string, string>;
@@ -137,6 +182,42 @@ function loadBuiltAutoSuggestModule(): BuiltAutoSuggestModule {
   return localRequire(modulePath) as BuiltAutoSuggestModule;
 }
 
+/**
+ * loadBuiltCodeLensTooltipModule 함수.
+ * build 산출물에서 CBS CodeLens tooltip helper를 불러옴.
+ *
+ * @returns built CodeLens tooltip module exports
+ */
+function loadBuiltCodeLensTooltipModule(): BuiltCodeLensTooltipModule {
+  const modulePath = path.join(packageRoot, 'dist', 'lsp', 'cbsCodeLensTooltip.js');
+  assert.ok(existsSync(modulePath), `Built CodeLens tooltip module not found: ${modulePath}`);
+  return localRequire(modulePath) as BuiltCodeLensTooltipModule;
+}
+
+/**
+ * loadBuiltActivationCodeLensModule 함수.
+ * build 산출물에서 CBS activation CodeLens popup helper를 불러옴.
+ *
+ * @returns built activation CodeLens helper module exports
+ */
+function loadBuiltActivationCodeLensModule(): BuiltActivationCodeLensModule {
+  const modulePath = path.join(packageRoot, 'dist', 'lsp', 'cbsActivationCodeLens.js');
+  assert.ok(existsSync(modulePath), `Built activation CodeLens module not found: ${modulePath}`);
+  return localRequire(modulePath) as BuiltActivationCodeLensModule;
+}
+
+/**
+ * loadBuiltRisuLuaStubsModule 함수.
+ * build 산출물에서 native LuaLS stub installer helper를 불러옴.
+ *
+ * @returns built RisuAI LuaLS stub helper exports
+ */
+function loadBuiltRisuLuaStubsModule(): BuiltRisuLuaStubsModule {
+  const modulePath = path.join(packageRoot, 'dist', 'luals', 'risuLuaStubsCore.js');
+  assert.ok(existsSync(modulePath), `Built RisuAI LuaLS stubs module not found: ${modulePath}`);
+  return localRequire(modulePath) as BuiltRisuLuaStubsModule;
+}
+
 test('separates standalone server validation from official VS Code client integration scripts', () => {
   const packageJson = readPackageJson();
 
@@ -157,6 +238,125 @@ test('contributes CBS occurrence navigation command for trusted hover links', ()
     commands.some((command) => command.command === 'risuWorkbench.cbs.openOccurrence'),
     'Expected CBS occurrence navigation command contribution',
   );
+});
+
+test('contributes activation CodeLens popup command for clickable entry links', () => {
+  const packageJson = readPackageJson();
+  const activation = loadBuiltActivationCodeLensModule();
+  const commands = packageJson.contributes?.commands ?? [];
+  const activationEvents = packageJson.activationEvents ?? [];
+
+  assert.equal(activation.CBS_ACTIVATION_SUMMARY_COMMAND, 'risuWorkbench.cbs.showActivationLinks');
+  assert.ok(
+    commands.some((command) => command.command === activation.CBS_ACTIVATION_SUMMARY_COMMAND),
+    'Expected activation CodeLens popup command contribution',
+  );
+  assert.ok(
+    activationEvents.includes(`onCommand:${activation.CBS_ACTIVATION_SUMMARY_COMMAND}`),
+    'Expected activation event for CodeLens popup command',
+  );
+});
+
+test('contributes native LuaLS stub generation command', () => {
+  const packageJson = readPackageJson();
+  const stubs = loadBuiltRisuLuaStubsModule();
+  const commands = packageJson.contributes?.commands ?? [];
+  const activationEvents = packageJson.activationEvents ?? [];
+
+  assert.equal(stubs.RISU_LUALS_STUB_COMMAND, 'risuWorkbench.generateLuaStubs');
+  assert.ok(
+    commands.some((command) => command.command === stubs.RISU_LUALS_STUB_COMMAND),
+    'Expected native LuaLS stub generation command contribution',
+  );
+  assert.ok(
+    activationEvents.includes(`onCommand:${stubs.RISU_LUALS_STUB_COMMAND}`),
+    'Expected activation event for native LuaLS stub generation command',
+  );
+});
+
+test('builds deterministic native LuaLS stub paths and library settings', () => {
+  const stubs = loadBuiltRisuLuaStubsModule();
+  const workspaceRootPath = path.join('/tmp', 'risu-workspace');
+  const stubRootPath = stubs.getWorkspaceRisuLuaStubRootPath(workspaceRootPath);
+
+  assert.equal(stubRootPath, path.join(workspaceRootPath, '.vscode', 'risu-stubs'));
+  assert.equal(
+    stubs.getWorkspaceRisuLuaStubFilePath(workspaceRootPath),
+    path.join(stubRootPath, 'risu-runtime.lua'),
+  );
+  assert.deepEqual(stubs.mergeLuaWorkspaceLibrary(['/existing', stubRootPath], stubRootPath), [
+    '/existing',
+    stubRootPath,
+  ]);
+  assert.deepEqual(stubs.mergeLuaWorkspaceLibrary({ '/existing': true }, stubRootPath), {
+    '/existing': true,
+    [stubRootPath]: true,
+  });
+});
+
+test('builds activation CodeLens popup items from server command payloads', () => {
+  const activation = loadBuiltActivationCodeLensModule();
+  const items = activation.buildCbsActivationQuickPickItems({
+    activation: {
+      incoming: [
+        {
+          entryName: 'Beta',
+          matchedKeywords: ['alpha'],
+          relativePath: 'lorebooks/beta.risulorebook',
+          link: { arguments: [{ uri: 'file:///tmp/beta.risulorebook' }] },
+        },
+      ],
+      outgoing: [],
+    },
+  });
+
+  assert.deepEqual(items[0], { kind: 'separator', label: '활성화하는 엔트리' });
+  assert.equal(items[1].label, 'Beta');
+  assert.equal(items[1].description, 'lorebooks/beta.risulorebook');
+  assert.equal(items[1].detail, '매칭 키워드: alpha');
+  assert.equal(items[1].target?.uri, 'file:///tmp/beta.risulorebook');
+  assert.deepEqual(items[2], { kind: 'separator', label: '활성화시킨 엔트리' });
+  assert.equal(items[3].label, '없음');
+});
+
+test('extracts activation CodeLens tooltip metadata from server data payloads', () => {
+  const tooltip = loadBuiltCodeLensTooltipModule();
+  const data = {
+    schema: 'cbs-lsp-agent-contract',
+    lens: {
+      activation: {
+        plainText: '활성화하는 엔트리\n- Beta',
+      },
+    },
+  };
+
+  assert.equal(tooltip.extractCbsCodeLensActivationTooltip(data), '활성화하는 엔트리\n- Beta');
+  assert.equal(tooltip.extractCbsCodeLensActivationTooltip({ schema: 'other' }), null);
+  assert.equal(
+    tooltip.extractCbsCodeLensActivationTooltip({ schema: 'cbs-lsp-agent-contract' }),
+    null,
+  );
+  assert.equal(
+    tooltip.extractCbsCodeLensActivationTooltip({
+      schema: 'cbs-lsp-agent-contract',
+      lens: { activation: { plainText: '' } },
+    }),
+    null,
+  );
+  assert.equal(
+    tooltip.extractCbsCodeLensActivationTooltip({
+      schema: 'cbs-lsp-agent-contract',
+      lens: { activation: { plainText: 1 } },
+    }),
+    null,
+  );
+
+  const codeLens = tooltip.applyCbsCodeLensActivationTooltip({
+    command: { tooltip: 'old' },
+    data,
+  });
+  assert.equal(codeLens.command?.tooltip, '활성화하는 엔트리\n- Beta');
+  assert.deepEqual(tooltip.applyCbsCodeLensActivationTooltip({ data }), { data });
 });
 
 test('activates when risulua files are manually associated as Lua', () => {
@@ -213,14 +413,59 @@ test('attaches language configuration to every CBS-bearing language', () => {
   }
 });
 
+test('contributes Risu language icons without overriding the active file icon theme', () => {
+  const packageJson = readPackageJson();
+  const languages = packageJson.contributes?.languages ?? [];
+  const expectedIcons = new Map([
+    ['risuhtml', './resources/icon/risuhtml.svg'],
+    ['risulorebook', './resources/icon/risulorebook.svg'],
+    ['risulua', './resources/icon/risulua.svg'],
+    ['risuprompt', './resources/icon/risuprompt.svg'],
+    ['risuregex', './resources/icon/risuregex.svg'],
+    ['risutoggle', './resources/icon/risutoggle.svg'],
+    ['risuvar', './resources/icon/risuvar.svg'],
+  ]);
+
+  assert.deepEqual(packageJson.contributes?.iconThemes ?? [], []);
+
+  for (const [languageId, iconPath] of expectedIcons) {
+    const language = languages.find((candidate) => candidate.id === languageId);
+
+    assert.equal(language?.icon?.light, iconPath);
+    assert.equal(language?.icon?.dark, iconPath);
+    assert.ok(existsSync(path.join(packageRoot, iconPath)), `Expected SVG asset for ${languageId}`);
+  }
+});
+
 test('associates .risulua with lua by default so native LuaLS can attach', () => {
   const packageJson = readPackageJson();
   const defaults = packageJson.contributes?.configurationDefaults ?? {};
   const languages = packageJson.contributes?.languages ?? [];
   const risulua = languages.find((candidate) => candidate.id === 'risulua');
+  const luaDiagnosticGlobals = defaults['Lua.diagnostics.globals'] as unknown as
+    | string[]
+    | undefined;
 
   assert.deepEqual(risulua?.extensions ?? [], []);
-  assert.equal((defaults['files.associations'] as Record<string, string> | undefined)?.['*.risulua'], 'lua');
+  assert.equal(
+    (defaults['files.associations'] as Record<string, string> | undefined)?.['*.risulua'],
+    'lua',
+  );
+  for (const globalName of [
+    'log',
+    'getState',
+    'setState',
+    'LLM',
+    'listenEdit',
+    'json',
+    'Promise',
+    'onInput',
+  ]) {
+    assert.ok(
+      luaDiagnosticGlobals?.includes(globalName),
+      `Expected native LuaLS globals to include ${globalName}`,
+    );
+  }
 });
 
 test('contributes CBS TextMate grammars for every CBS-bearing language', () => {

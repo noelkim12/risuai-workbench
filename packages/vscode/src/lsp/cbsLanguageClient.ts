@@ -15,6 +15,7 @@ import {
   type CbsLanguageServerLaunchPlan,
   type CbsLanguageServerSettings,
 } from './cbsLanguageServerLaunch';
+import { applyCbsCodeLensActivationTooltip } from './cbsCodeLensTooltip';
 import {
   buildCbsClientBoundarySnapshot,
   CBS_DOCUMENT_SELECTORS,
@@ -97,14 +98,18 @@ export function startCbsLanguageClient(context: vscode.ExtensionContext): void {
     markdown: {
       isTrusted: { enabledCommands: CBS_MARKDOWN_TRUSTED_COMMANDS },
     },
+    middleware: createCbsCodeLensTooltipMiddleware(),
     outputChannel: output,
     synchronize: {
-      fileEvents: vscode.workspace.createFileSystemWatcher(boundarySnapshot.clientOptions.fileWatcherPattern),
+      fileEvents: vscode.workspace.createFileSystemWatcher(
+        boundarySnapshot.clientOptions.fileWatcherPattern,
+      ),
     },
     traceOutputChannel: output,
   };
 
-  // CodeLens command ownership stays on the server as an advertised no-op, so the VS Code client does not register a local shim.
+  // Server-advertised executeCommand ids are reserved for languageclient proxy commands;
+  // activation CodeLens UI uses a separate risuWorkbench.* command to avoid duplicate registration.
   client = new LanguageClient(
     'cbs-language-server',
     'CBS Language Server',
@@ -122,6 +127,25 @@ export function startCbsLanguageClient(context: vscode.ExtensionContext): void {
         `[CBS Language Server] Could not query runtime availability: ${error instanceof Error ? error.message : String(error)}`,
       );
     });
+}
+
+/**
+ * createCbsCodeLensTooltipMiddleware 함수.
+ * LSP CodeLens.data의 activation tooltip을 VS Code command tooltip로 복원함.
+ *
+ * @returns LanguageClient CodeLens middleware
+ */
+function createCbsCodeLensTooltipMiddleware(): NonNullable<LanguageClientOptions['middleware']> {
+  return {
+    async provideCodeLenses(document, token, next) {
+      const lenses = await next(document, token);
+      return lenses?.map(applyCbsCodeLensActivationTooltip);
+    },
+    async resolveCodeLens(codeLens, token, next) {
+      const resolved = await next(codeLens, token);
+      return resolved ? applyCbsCodeLensActivationTooltip(resolved) : resolved;
+    },
+  };
 }
 
 /**
@@ -160,7 +184,9 @@ function createClientReadyPromise(currentClient: LanguageClient): Promise<void> 
   return new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(() => {
       stateSubscription.dispose();
-      reject(new Error('Timed out while waiting for the CBS language client to reach running state.'));
+      reject(
+        new Error('Timed out while waiting for the CBS language client to reach running state.'),
+      );
     }, 30_000);
 
     const settle = (callback: () => void): void => {
@@ -220,7 +246,8 @@ async function reportCbsRuntimeAvailability(
 function readCbsLanguageServerSettings(): CbsLanguageServerSettings {
   const defaults = defaultCbsLanguageServerSettings();
   const config = vscode.workspace.getConfiguration('risuWorkbench.cbs.server');
-  const configuredLuaLsPath = config.get<string>('luaLsPath', defaults.luaLsPath) ?? defaults.luaLsPath;
+  const configuredLuaLsPath =
+    config.get<string>('luaLsPath', defaults.luaLsPath) ?? defaults.luaLsPath;
   return {
     installMode:
       config.get<CbsLanguageServerSettings['installMode']>('installMode', defaults.installMode) ??
@@ -247,7 +274,8 @@ function discoverLuaLsExecutablePath(): string | null {
     return null;
   }
 
-  const executableName = process.platform === 'win32' ? 'lua-language-server.exe' : 'lua-language-server';
+  const executableName =
+    process.platform === 'win32' ? 'lua-language-server.exe' : 'lua-language-server';
   const candidates = [
     path.join(extensionPath, 'server', 'bin', executableName),
     path.join(extensionPath, 'server', 'bin-Linux', executableName),
@@ -404,7 +432,10 @@ async function handleLaunchFailure(
   }
 
   if (selection === 'Open Settings') {
-    await vscode.commands.executeCommand('workbench.action.openSettings', 'risuWorkbench.cbs.server');
+    await vscode.commands.executeCommand(
+      'workbench.action.openSettings',
+      'risuWorkbench.cbs.server',
+    );
   }
 }
 

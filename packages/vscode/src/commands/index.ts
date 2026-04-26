@@ -3,7 +3,14 @@ import { CardPanel } from '../panels/card-panel';
 import { AnalysisService } from '../services/analysis-service';
 import { CardService } from '../services/card-service';
 import { CoreCliService } from '../services/core-cli-service';
+import {
+  buildCbsActivationQuickPickItems,
+  CBS_ACTIVATION_SUMMARY_COMMAND,
+  type CbsActivationCodeLensPayload,
+  type CbsActivationQuickPickItemModel,
+} from '../lsp/cbsActivationCodeLens';
 import { CBS_OCCURRENCE_NAVIGATION_COMMAND } from '../lsp/cbsLanguageClient';
+import { RISU_LUALS_STUB_COMMAND, installRisuLuaWorkspaceStubs } from '../luals/risuLuaStubs';
 
 interface CbsOccurrenceNavigationTarget {
   uri?: string;
@@ -107,15 +114,80 @@ export function registerCoreCommands(
     vscode.commands.registerCommand('risuWorkbench.openCardPanel', () => {
       CardPanel.createOrShow(context);
     }),
+    vscode.commands.registerCommand(RISU_LUALS_STUB_COMMAND, async () => {
+      await generateRisuLuaStubs(output);
+    }),
     vscode.commands.registerCommand(
       CBS_OCCURRENCE_NAVIGATION_COMMAND,
       async (target?: CbsOccurrenceNavigationTarget) => {
         await openCbsOccurrence(target);
       },
     ),
+    vscode.commands.registerCommand(
+      CBS_ACTIVATION_SUMMARY_COMMAND,
+      async (payload?: CbsActivationCodeLensPayload) => {
+        await showCbsActivationSummary(payload);
+      },
+    ),
   ];
 
   return vscode.Disposable.from(...commands, output);
+}
+
+async function generateRisuLuaStubs(output: vscode.OutputChannel): Promise<void> {
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+  if (!workspaceFolder) {
+    void vscode.window.showWarningMessage(
+      'Open a workspace folder before generating RisuAI Lua stubs.',
+    );
+    return;
+  }
+
+  try {
+    const result = await installRisuLuaWorkspaceStubs(workspaceFolder);
+    output.appendLine(`[Risu Workbench] Generated RisuAI LuaLS stub: ${result.stubFilePath}`);
+    output.appendLine(`[Risu Workbench] Added Lua.workspace.library path: ${result.stubRootPath}`);
+    void vscode.window.showInformationMessage(
+      'RisuAI LuaLS stubs generated. Reload the Lua language server if hover does not update immediately.',
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    output.appendLine(`[Risu Workbench] Failed to generate RisuAI LuaLS stubs: ${message}`);
+    void vscode.window.showErrorMessage(`Failed to generate RisuAI LuaLS stubs: ${message}`);
+  }
+}
+
+async function showCbsActivationSummary(payload?: CbsActivationCodeLensPayload): Promise<void> {
+  const items = buildCbsActivationQuickPickItems(payload).map(toVsCodeActivationQuickPickItem);
+  const selected = await vscode.window.showQuickPick(items, {
+    title: 'Lorebook activation links',
+    placeHolder: '이동할 활성화 관계 엔트리를 선택하세요.',
+    ignoreFocusOut: false,
+  });
+
+  if (!selected?.target) {
+    return;
+  }
+
+  await openCbsOccurrence(selected.target);
+}
+
+function toVsCodeActivationQuickPickItem(
+  item: CbsActivationQuickPickItemModel,
+): vscode.QuickPickItem & { target?: CbsOccurrenceNavigationTarget } {
+  if (item.kind === 'separator') {
+    return {
+      kind: vscode.QuickPickItemKind.Separator,
+      label: item.label,
+    };
+  }
+
+  return {
+    label: item.label,
+    description: item.description,
+    detail: item.detail,
+    target: item.target,
+  };
 }
 
 async function openCbsOccurrence(target?: CbsOccurrenceNavigationTarget): Promise<void> {
@@ -126,7 +198,9 @@ async function openCbsOccurrence(target?: CbsOccurrenceNavigationTarget): Promis
 
   const targetUri = vscode.Uri.parse(target.uri);
   if (targetUri.scheme !== 'file') {
-    void vscode.window.showWarningMessage('CBS occurrence navigation only supports local file targets.');
+    void vscode.window.showWarningMessage(
+      'CBS occurrence navigation only supports local file targets.',
+    );
     return;
   }
 

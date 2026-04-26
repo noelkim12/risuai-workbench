@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/services/variable-flow-service.ts
  */
 
-import type { Range, VarEvent, VarFlowEntry, VarFlowIssue, VarFlowResult } from 'risu-workbench-core';
+import { parseToggleDefinitions, type Range, type VarEvent, type VarFlowEntry, type VarFlowIssue, type VarFlowResult } from 'risu-workbench-core';
 
 import {
   createAgentMetadataWorkspaceSnapshot,
@@ -25,6 +25,14 @@ export interface DefaultVariableDefinitionLocation {
   relativePath: string;
   variableName: string;
   value: string;
+  range: Range;
+}
+
+export interface ToggleDefinitionLocation {
+  uri: string;
+  relativePath: string;
+  toggleName: string;
+  globalVariableName: string;
   range: Range;
 }
 
@@ -79,6 +87,51 @@ function collectDefaultVariableDefinitions(
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([variableName, locations]) => [
         variableName,
+        [...locations].sort(
+          (left, right) =>
+            left.uri.localeCompare(right.uri) ||
+            left.range.start.line - right.range.start.line ||
+            left.range.start.character - right.range.start.character,
+        ),
+      ]),
+  );
+}
+
+/**
+ * collectToggleDefinitions 함수.
+ * registry에 포함된 `.risutoggle` 파일의 toggle key를 원본 이름과 `toggle_` globalvar 이름으로 정규화함.
+ *
+ * @param registry - workspace file snapshot을 제공하는 registry
+ * @returns toggle 이름별 정의 위치 목록
+ */
+function collectToggleDefinitions(
+  registry: ElementRegistry,
+): ReadonlyMap<string, readonly ToggleDefinitionLocation[]> {
+  const definitions = new Map<string, ToggleDefinitionLocation[]>();
+
+  for (const file of registry.getFilesByArtifact('toggle')) {
+    for (const definition of parseToggleDefinitions(file.text)) {
+      const location: ToggleDefinitionLocation = {
+        uri: file.uri,
+        relativePath: file.relativePath,
+        toggleName: definition.name,
+        globalVariableName: definition.globalVariableName,
+        range: {
+          start: offsetToPosition(file.text, definition.startOffset),
+          end: offsetToPosition(file.text, definition.endOffset),
+        },
+      };
+      const bucket = definitions.get(definition.name) ?? [];
+      bucket.push(location);
+      definitions.set(definition.name, bucket);
+    }
+  }
+
+  return new Map(
+    [...definitions.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([toggleName, locations]) => [
+        toggleName,
         [...locations].sort(
           (left, right) =>
             left.uri.localeCompare(right.uri) ||
@@ -145,6 +198,12 @@ export interface VariableCompletionSummary {
   hasWritableSource: boolean;
 }
 
+export interface ToggleCompletionSummary {
+  name: string;
+  globalVariableName: string;
+  definitionCount: number;
+}
+
 /**
  * VariableFlowServiceCreateOptions 타입.
  * service 구성에 필요한 graph, registry, default variable seed를 전달함.
@@ -192,7 +251,11 @@ export class VariableFlowService {
 
   private readonly defaultVariableDefinitions: ReadonlyMap<string, readonly DefaultVariableDefinitionLocation[]>;
 
+  private readonly toggleDefinitions: ReadonlyMap<string, readonly ToggleDefinitionLocation[]>;
+
   private readonly variableCompletionSummaries: readonly VariableCompletionSummary[];
+
+  private readonly toggleCompletionSummaries: readonly ToggleCompletionSummary[];
 
   constructor(options: VariableFlowServiceCreateOptions) {
     this.graph = options.graph;
@@ -206,7 +269,9 @@ export class VariableFlowService {
     );
     this.workspaceSnapshot = options.workspaceSnapshot ?? null;
     this.defaultVariableDefinitions = collectDefaultVariableDefinitions(this.registry);
+    this.toggleDefinitions = collectToggleDefinitions(this.registry);
     this.variableCompletionSummaries = this.buildVariableCompletionSummaries();
+    this.toggleCompletionSummaries = this.buildToggleCompletionSummaries();
   }
 
   /**
@@ -320,6 +385,16 @@ export class VariableFlowService {
   }
 
   /**
+   * getToggleCompletionSummaries 함수.
+   * `.risutoggle` 정의에서 CBS completion에 필요한 원본 toggle/globalvar 후보를 반환함.
+   *
+   * @returns stable ordering이 적용된 toggle completion summary 목록
+   */
+  getToggleCompletionSummaries(): readonly ToggleCompletionSummary[] {
+    return this.toggleCompletionSummaries;
+  }
+
+  /**
    * getDefaultVariableDefinitions 함수.
    * `.risuvar` 기본 변수 파일에 선언된 key 위치를 definition target으로 조회함.
    *
@@ -328,6 +403,31 @@ export class VariableFlowService {
    */
   getDefaultVariableDefinitions(variableName: string): readonly DefaultVariableDefinitionLocation[] {
     return this.defaultVariableDefinitions.get(variableName) ?? [];
+  }
+
+  /**
+   * getToggleDefinitions 함수.
+   * `.risutoggle` 파일에 선언된 toggle key 위치를 조회함.
+   *
+   * @param toggleName - 조회할 원본 toggle 이름
+   * @returns toggle 파일 내 key range 목록
+   */
+  getToggleDefinitions(toggleName: string): readonly ToggleDefinitionLocation[] {
+    return this.toggleDefinitions.get(toggleName) ?? [];
+  }
+
+  /**
+   * getToggleGlobalVariableDefinitions 함수.
+   * `toggle_<name>` globalvar 후보에 대응하는 risutoggle 정의 위치를 조회함.
+   *
+   * @param globalVariableName - 조회할 파생 globalvar 이름
+   * @returns toggle 파일 내 key range 목록
+   */
+  getToggleGlobalVariableDefinitions(globalVariableName: string): readonly ToggleDefinitionLocation[] {
+    const toggleName = globalVariableName.startsWith('toggle_')
+      ? globalVariableName.slice('toggle_'.length)
+      : globalVariableName;
+    return this.getToggleDefinitions(toggleName);
   }
 
   /**
@@ -350,6 +450,20 @@ export class VariableFlowService {
         hasWritableSource: writerCount > 0 || defaultDefinitionCount > 0,
       } satisfies VariableCompletionSummary;
     });
+  }
+
+  /**
+   * buildToggleCompletionSummaries 함수.
+   * risutoggle 원본 이름과 `toggle_` globalvar 이름을 completion 후보용 summary로 변환함.
+   *
+   * @returns toggle completion summary 목록
+   */
+  private buildToggleCompletionSummaries(): readonly ToggleCompletionSummary[] {
+    return [...this.toggleDefinitions.entries()].map(([name, definitions]) => ({
+      name,
+      globalVariableName: definitions[0]?.globalVariableName ?? `toggle_${name}`,
+      definitionCount: definitions.length,
+    }));
   }
 
   /**

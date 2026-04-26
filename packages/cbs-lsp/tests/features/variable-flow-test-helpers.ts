@@ -32,6 +32,7 @@ export interface VariableFlowServiceStubOptions {
   getDefaultVariableDefinitions?: (variableName: string) => ReturnType<VariableFlowService['getDefaultVariableDefinitions']>;
   getAllVariableNames?: () => readonly string[];
   getVariableCompletionSummaries?: () => ReturnType<VariableFlowService['getVariableCompletionSummaries']>;
+  getToggleCompletionSummaries?: () => ReturnType<VariableFlowService['getToggleCompletionSummaries']>;
   queryVariable?: (variableName: string) => VariableFlowQueryResult | null;
   queryAt?: (uri: string, hostOffset: number) => VariableFlowQueryResult | null;
   workspaceSnapshot?: WorkspaceSnapshotState | null;
@@ -144,6 +145,9 @@ export function createVariableFlowServiceStub(
           };
         })),
     getDefaultVariableDefinitions: options.getDefaultVariableDefinitions ?? (() => []),
+    getToggleCompletionSummaries: options.getToggleCompletionSummaries ?? (() => []),
+    getToggleDefinitions: () => [],
+    getToggleGlobalVariableDefinitions: () => [],
     queryVariable: options.queryVariable ?? (() => null),
     queryAt: options.queryAt ?? (() => null),
     getWorkspaceFreshness: ({ uri, version }: { uri: string; version: number }) => {

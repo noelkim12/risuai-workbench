@@ -174,6 +174,24 @@ function createWorkspaceChatVariableService(...variableNames: string[]): Variabl
 }
 
 /**
+ * createRisuToggleService 함수.
+ * completion 테스트에서 `.risutoggle` 기반 toggle 후보를 흉내 냄.
+ *
+ * @param toggleNames - risutoggle에 등록되어 있다고 가정할 toggle 이름 목록
+ * @returns CompletionProvider에 주입할 VariableFlowService stub
+ */
+function createRisuToggleService(...toggleNames: string[]): VariableFlowService {
+  return createVariableFlowServiceStub({
+    getToggleCompletionSummaries: () =>
+      toggleNames.map((name) => ({
+        name,
+        globalVariableName: `toggle_${name}`,
+        definitionCount: 1,
+      })),
+  });
+}
+
+/**
  * createDefaultOnlyVariableService 함수.
  * `.risuvar` 기본 변수 key만 있는 workspace completion 후보를 흉내 냄.
  *
@@ -869,14 +887,14 @@ describe('CompletionProvider', () => {
       const completions = provider.provide(
         createParams(modifiedRequest, offsetToPosition(modifiedText, operatorOffset)),
       );
-      const equalityCompletion = completions.find((completion) => completion.label === '==');
+      const equalityCompletion = completions.find((completion) => completion.label === '=');
 
       expect(equalityCompletion?.textEdit).toEqual({
         range: {
           start: offsetToPosition(modifiedText, operatorOffset - 1),
           end: offsetToPosition(modifiedText, operatorOffset),
         },
-        newText: '==',
+        newText: '=',
       });
     });
   });
@@ -2119,6 +2137,35 @@ describe('CompletionProvider', () => {
       );
 
       expectCompletionLabels(completions, 'world');
+    });
+
+    it('offers risutoggle-derived global variables for getglobalvar first-argument completion', () => {
+      const request = createInlineCompletionRequest('{{getglobalvar::toggle_}}');
+      const provider = createProvider(
+        new FragmentAnalysisService(),
+        request,
+        createRisuToggleService('response_mode-gpt-5.4', 'pastmj-gpt-5.4'),
+      );
+      const cursorOffset = request.text.indexOf('{{getglobalvar::toggle_') + '{{getglobalvar::toggle_'.length;
+
+      const completions = provider.provide(createParams(request, offsetToPosition(request.text, cursorOffset)));
+
+      expectCompletionLabels(completions, 'toggle_response_mode-gpt-5.4', 'toggle_pastmj-gpt-5.4');
+    });
+
+    it('offers raw risutoggle names for #when toggle argument completion', () => {
+      const request = createInlineCompletionRequest('{{#when::toggle::}}body{{/when}}');
+      const provider = createProvider(
+        new FragmentAnalysisService(),
+        request,
+        createRisuToggleService('response_mode-gpt-5.4', 'pastmj-gpt-5.4'),
+      );
+      const cursorOffset = request.text.indexOf('{{#when::toggle::') + '{{#when::toggle::'.length;
+
+      const completions = provider.provide(createParams(request, offsetToPosition(request.text, cursorOffset)));
+
+      expectCompletionLabels(completions, 'response_mode-gpt-5.4', 'pastmj-gpt-5.4');
+      expectNoCompletionLabels(completions, 'toggle_response_mode-gpt-5.4', 'toggle_pastmj-gpt-5.4');
     });
 
     it('offers global variables for setglobalvar first-argument completion', () => {
