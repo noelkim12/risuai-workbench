@@ -358,6 +358,46 @@ describe('DiagnosticsEngine', () => {
     expect(diagnostics).toEqual([]);
   });
 
+  it.each([
+    ['inline bare single equals', '{{? =1}}'],
+    ['calc macro bare single equals', '{{calc::=1}}'],
+    ['inline binary single equals', '{{? 1=1}}'],
+    ['calc macro binary single equals', '{{calc::1=1}}'],
+  ] as const)('accepts upstream single equals equality in %s', (_label, source) => {
+    const document = new CBSParser().parse(source);
+    const diagnostics = diagnosticsEngine.analyze(document, source);
+
+    expect(diagnostics).toEqual([]);
+  });
+
+  it('accepts single equals after nested macros in inline math diagnostics', () => {
+    const source = '{{? {{getglobalvar::toggle_response_mode-gpt-5.4}}=1}}';
+    const document = new CBSParser().parse(source);
+    const diagnostics = diagnosticsEngine.analyze(document, source);
+
+    expect(diagnostics).toEqual([]);
+  });
+
+  it('accepts single equals inside pure-mode block headers', () => {
+    const source = '{{#if_pure {{? !({{getglobalvar::toggle_response_mode-gpt-5.4}}=1)}}}}body{{/if}}';
+    const document = new CBSParser().parse(source);
+    const diagnostics = diagnosticsEngine.analyze(document, source);
+
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      DiagnosticCode.CalcExpressionUnsupportedToken,
+    );
+  });
+
+  it('accepts single equals inside regular #if block headers', () => {
+    const source = '{{#if {{? {{getglobalvar::toggle_pastmj-gpt-5.4}}=1 }}}}body{{/if}}';
+    const document = new CBSParser().parse(source);
+    const diagnostics = diagnosticsEngine.analyze(document, source);
+
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      DiagnosticCode.CalcExpressionUnsupportedToken,
+    );
+  });
+
   it('does not flag nested inline math conditions in #if block headers', () => {
     const source = '{{#if {{? {{getvar::ct_Deck_Level}} <= 2}}}}ok{{/if}}';
     const document = new CBSParser().parse(source);

@@ -117,7 +117,7 @@ const HEADER_OPERATORS = new Set([
   '>=',
   '<=',
 ]);
-const MATH_OPERATORS = ['>=', '<=', '==', '!=', '+', '-', '*', '/', '%', '^', '<', '>', '(', ')'];
+const MATH_OPERATORS = ['>=', '<=', '==', '!=', '+', '-', '*', '/', '%', '^', '<', '>', '=', '(', ')'];
 const NUMBER_PATTERN = /^[+-]?\d+(?:\.\d+)?$/;
 
 function getTokenTypeIndex(tokenType: SemanticTokenTypeName): number {

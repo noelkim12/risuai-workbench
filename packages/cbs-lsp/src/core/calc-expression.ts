@@ -64,7 +64,7 @@ export function getCalcExpressionSublanguageDocumentation(): CalcExpressionSubla
     summary:
       `This is not regular CBS argument syntax. The \`{{? ...}}\` inline form and the expression argument of \`{{calc::...}}\` both use the same \`${CALC_EXPRESSION_SUBLANGUAGE_LABEL}\`.`,
     variables: 'Variables: `$name` for chat variables, `@name` for global variables',
-    operators: 'Operators: `+ - * / ^ % < > <= >= == != ! && ||` and parentheses',
+    operators: 'Operators: `+ - * / ^ % < > <= >= = == != ! && ||` and parentheses',
     coercion: 'Coercion: `null` and non-numeric variable values evaluate as `0` upstream',
   };
 }
@@ -84,7 +84,7 @@ interface CalcExpressionTokenizationResult {
 
 const IDENTIFIER_PATTERN = /[A-Za-z0-9_]/u;
 const MULTI_CHARACTER_OPERATORS = ['&&', '||', '<=', '>=', '==', '!='] as const;
-const SINGLE_CHARACTER_OPERATORS = ['+', '-', '*', '/', '^', '%', '<', '>', '!', '(', ')'] as const;
+const SINGLE_CHARACTER_OPERATORS = ['+', '-', '*', '/', '^', '%', '<', '>', '=', '!', '(', ')'] as const;
 const BINARY_OPERATORS = new Set([
   '+',
   '-',
@@ -96,6 +96,7 @@ const BINARY_OPERATORS = new Set([
   '>',
   '<=',
   '>=',
+  '=',
   '==',
   '!=',
   '&&',
@@ -306,6 +307,11 @@ export function validateCalcExpression(expression: string): CalcExpressionDiagno
       }
 
       if (token.kind === 'operator' && (token.value === '+' || token.value === '-' || token.value === '!')) {
+        lastToken = token;
+        continue;
+      }
+
+      if (token.kind === 'operator' && token.value === '=') {
         lastToken = token;
         continue;
       }
