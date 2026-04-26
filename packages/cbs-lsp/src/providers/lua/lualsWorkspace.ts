@@ -5,6 +5,8 @@
 
 import path from 'node:path';
 
+import { getRisuAiLuaDiagnosticGlobals } from './typeStubs';
+
 export interface LuaLsWorkspaceLibraryOptions {
   rootPath?: string | null;
   shadowRootPath: string;
@@ -55,6 +57,8 @@ export function createLuaLsWorkspaceConfiguration(
     Lua: {
       diagnostics: {
         enableScheme: string[];
+        globals: string[];
+        libraryFiles: 'Disable';
       };
       workspace: {
         library: string[];
@@ -67,6 +71,8 @@ export function createLuaLsWorkspaceConfiguration(
       Lua: {
         diagnostics: {
           enableScheme: [...options.diagnosticsEnableSchemes],
+          globals: [...getRisuAiLuaDiagnosticGlobals()],
+          libraryFiles: 'Disable',
         },
         workspace: {
           library: [...resolveLuaLsWorkspaceLibraryPaths(options)],

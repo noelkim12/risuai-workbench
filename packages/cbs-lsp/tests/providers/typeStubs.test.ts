@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   createMinimalRisuAiLuaTypeStub,
   createRisuAiLuaTypeStubWorkspace,
+  getRisuAiLuaDiagnosticGlobals,
 } from '../../src/providers/lua/typeStubs';
 
 const temporaryRoots: string[] = [];
@@ -31,7 +32,33 @@ describe('typeStubs', () => {
     expect(stub).toContain('getState = function(id, name) end');
     expect(stub).toContain('setState = function(id, name, value) end');
     expect(stub).toContain('getLoreBooks = function(id, search) end');
+    expect(stub).toContain('log = function(value) end');
+    expect(stub).toContain('logMain = function(value) end');
+    expect(stub).toContain('LLMMain = function(id, promptStr, useMultimodal) end');
+    expect(stub).toContain('listenEdit = function(type, func) end');
+    expect(stub).toContain('json = {}');
+    expect(stub).toContain('Promise = {}');
     expect(stub).toContain('---@class RisuLoreBook');
+  });
+
+  it('exposes upstream runtime globals for LuaLS undefined-global suppression', () => {
+    const globals = getRisuAiLuaDiagnosticGlobals();
+
+    for (const globalName of [
+      'getChatVar',
+      'setChatVar',
+      'log',
+      'logMain',
+      'LLM',
+      'LLMMain',
+      'listenEdit',
+      'json',
+      'Promise',
+      'onInput',
+      'onOutput',
+    ]) {
+      expect(globals).toContain(globalName);
+    }
   });
 
   it('writes the generated runtime stub into a deterministic Lua file inside the stub root', () => {

@@ -53,7 +53,10 @@ import {
   createSyntheticDocumentVersion,
   fragmentAnalysisService,
 } from '../src/core';
-import { ACTIVATION_CHAIN_CODELENS_COMMAND } from '../src/features/codelens';
+import {
+  ACTIVATION_CHAIN_CODELENS_CLIENT_COMMAND,
+  ACTIVATION_CHAIN_CODELENS_COMMAND,
+} from '../src/features/codelens';
 import { CBS_COMPLETION_TRIGGER_CHARACTERS } from '../src/features/completion';
 import { SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES } from '../src/features/semanticTokens';
 import { ElementRegistry, UnifiedVariableGraph } from '../src/indexer';
@@ -2903,7 +2906,7 @@ describe('LSP server integration', () => {
         expect.objectContaining({
           lensKind: 'detail',
           command: expect.objectContaining({
-            command: ACTIVATION_CHAIN_CODELENS_COMMAND,
+            command: ACTIVATION_CHAIN_CODELENS_CLIENT_COMMAND,
             kind: 'detail',
             mode: 'no-op',
             uri: alphaUri,
@@ -2912,7 +2915,7 @@ describe('LSP server integration', () => {
         expect.objectContaining({
           lensKind: 'summary',
           command: expect.objectContaining({
-            command: ACTIVATION_CHAIN_CODELENS_COMMAND,
+            command: ACTIVATION_CHAIN_CODELENS_CLIENT_COMMAND,
             kind: 'summary',
             mode: 'no-op',
             uri: alphaUri,

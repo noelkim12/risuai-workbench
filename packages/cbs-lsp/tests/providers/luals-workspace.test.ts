@@ -9,6 +9,7 @@ import {
   createLuaLsWorkspaceConfiguration,
   resolveLuaLsWorkspaceLibraryPaths,
 } from '../../src/providers/lua/lualsWorkspace';
+import { getRisuAiLuaDiagnosticGlobals } from '../../src/providers/lua/typeStubs';
 
 describe('lualsWorkspace', () => {
   it('builds deterministic workspace.library paths from shadow and stub roots', () => {
@@ -38,6 +39,8 @@ describe('lualsWorkspace', () => {
         Lua: {
           diagnostics: {
             enableScheme: ['file', 'risu-luals'],
+            globals: [...getRisuAiLuaDiagnosticGlobals()],
+            libraryFiles: 'Disable',
           },
           workspace: {
             library: ['/tmp/cbs-lsp-shadow', '/workspace/.generated/luals-stubs'],
