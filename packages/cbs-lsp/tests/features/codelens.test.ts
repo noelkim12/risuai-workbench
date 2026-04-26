@@ -9,10 +9,13 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { getCustomExtensionArtifactContract, type CustomExtensionArtifact } from 'risu-workbench-core';
+import {
+  getCustomExtensionArtifactContract,
+  type CustomExtensionArtifact,
+} from 'risu-workbench-core';
 
 import {
-  ACTIVATION_CHAIN_CODELENS_COMMAND,
+  ACTIVATION_CHAIN_CODELENS_CLIENT_COMMAND,
   CodeLensProvider,
 } from '../../src/features/codelens';
 import { fragmentAnalysisService } from '../../src/core';
@@ -80,7 +83,7 @@ describe('CodeLensProvider', () => {
       fileName: 'alpha.risulorebook',
       text: alphaText,
     });
-    await writeWorkspaceFile(root, {
+    const betaUri = await writeWorkspaceFile(root, {
       artifact: 'lorebook',
       fileName: 'beta.risulorebook',
       text: betaEntry.text,
@@ -115,6 +118,69 @@ describe('CodeLensProvider', () => {
     });
 
     expect(codeLenses).toHaveLength(2);
+    const expectedActivation = {
+      incoming: [
+        {
+          direction: 'incoming',
+          entryId: 'Beta',
+          entryName: 'Beta',
+          link: {
+            command: 'risuWorkbench.cbs.openOccurrence',
+            arguments: [
+              {
+                range: {
+                  start: { line: 0, character: 0 },
+                  end: { line: 0, character: 0 },
+                },
+                uri: betaUri,
+              },
+            ],
+          },
+          matchedKeywords: ['alpha'],
+          relativePath: 'lorebooks/beta.risulorebook',
+          uri: betaUri,
+        },
+      ],
+      markdown: expect.stringContaining(
+        `command:risuWorkbench.cbs.openOccurrence?${encodeURIComponent(
+          JSON.stringify([
+            {
+              range: {
+                start: { line: 0, character: 0 },
+                end: { line: 0, character: 0 },
+              },
+              uri: betaUri,
+            },
+          ]),
+        )}`,
+      ),
+      outgoing: [
+        {
+          direction: 'outgoing',
+          entryId: 'Beta',
+          entryName: 'Beta',
+          link: {
+            command: 'risuWorkbench.cbs.openOccurrence',
+            arguments: [
+              {
+                range: {
+                  start: { line: 0, character: 0 },
+                  end: { line: 0, character: 0 },
+                },
+                uri: betaUri,
+              },
+            ],
+          },
+          matchedKeywords: ['beta'],
+          relativePath: 'lorebooks/beta.risulorebook',
+          uri: betaUri,
+        },
+      ],
+      plainText: expect.stringContaining('활성화시킨 엔트리'),
+    };
+    expect(codeLenses[0]?.command?.arguments).toEqual([
+      { activation: expectedActivation, kind: 'summary', uri: alphaUri },
+    ]);
     expect(snapshotCodeLensesEnvelope(codeLenses)).toEqual({
       schema: 'cbs-lsp-agent-contract',
       schemaVersion: '1.0.0',
@@ -134,8 +200,9 @@ describe('CodeLensProvider', () => {
       },
       codeLenses: [
         {
+          activation: expectedActivation,
           command: {
-            command: ACTIVATION_CHAIN_CODELENS_COMMAND,
+            command: ACTIVATION_CHAIN_CODELENS_CLIENT_COMMAND,
             kind: 'detail',
             mode: 'no-op',
             uri: alphaUri,
@@ -159,8 +226,9 @@ describe('CodeLensProvider', () => {
           title: '부분 매치: 들어옴 0 / 나감 1 | 차단: 들어옴 0 / 나감 1 | 순환 감지',
         },
         {
+          activation: expectedActivation,
           command: {
-            command: ACTIVATION_CHAIN_CODELENS_COMMAND,
+            command: ACTIVATION_CHAIN_CODELENS_CLIENT_COMMAND,
             kind: 'summary',
             mode: 'no-op',
             uri: alphaUri,
@@ -201,19 +269,30 @@ describe('CodeLensProvider', () => {
     ).toEqual([]);
   });
 
-  it('returns no CodeLens when the lorebook has no CONTENT fragment to anchor the lens', () => {
+  it('returns no CodeLens when the lorebook has no CONTENT fragment to anchor the lens', async () => {
+    const root = await createWorkspaceRoot();
     const entry = getFixtureCorpusEntry('lorebook-no-content-section');
+    const entryUri = await writeWorkspaceFile(root, {
+      artifact: 'lorebook',
+      fileName: 'edge-no-content.risulorebook',
+      text: entry.text,
+    });
+    const scanResult = await new FileScanner(root).scan();
+    const registry = new ElementRegistry(scanResult);
+    const activationChainService = ActivationChainService.fromRegistry(registry);
     const provider = new CodeLensProvider({
       analysisService: fragmentAnalysisService,
-      resolveActivationChainService: () => ({
-        queryByUri: () => null,
-      } as ActivationChainService),
-      resolveRequest: () => createFixtureRequest(entry),
+      resolveActivationChainService: () => activationChainService,
+      resolveRequest: () => ({
+        ...createFixtureRequest(entry),
+        uri: entryUri,
+        filePath: path.join(root, 'lorebooks', 'edge-no-content.risulorebook'),
+      }),
     });
 
     expect(
       provider.provide({
-        textDocument: { uri: entry.uri },
+        textDocument: { uri: entryUri },
       }),
     ).toEqual([]);
   });

@@ -27,6 +27,9 @@ import type { ActivationChainQueryResult, ActivationChainService } from '../serv
 import { isRequestCancelled } from '../utils/request-cancellation';
 
 export const ACTIVATION_CHAIN_CODELENS_COMMAND = 'cbs-lsp.codelens.activationSummary';
+export const ACTIVATION_CHAIN_CODELENS_CLIENT_COMMAND = 'risuWorkbench.cbs.showActivationLinks';
+
+const CBS_OCCURRENCE_NAVIGATION_COMMAND = 'risuWorkbench.cbs.openOccurrence';
 
 type ActivationCodeLensKind = 'detail' | 'summary';
 type ActivationCodeLensCommandMode = 'no-op';
@@ -43,6 +46,12 @@ const CODELENS_SNAPSHOT_PROVENANCE = Object.freeze(
 const CODELENS_SUMMARY_STATUSES = Object.freeze(['possible'] as const);
 const CODELENS_DETAIL_STATUSES = Object.freeze(['partial', 'blocked'] as const);
 const CODELENS_REFRESH_TRIGGERS = Object.freeze(['document-sync', 'watched-files'] as const);
+const EMPTY_CODELENS_TOOLTIP: ActivationCodeLensTooltipSnapshot = Object.freeze({
+  incoming: [],
+  markdown: '',
+  outgoing: [],
+  plainText: '',
+});
 
 export type CodeLensRequestResolver = (params: CodeLensParams) => FragmentAnalysisRequest | null;
 
@@ -80,10 +89,38 @@ export interface ActivationCodeLensCommandSnapshot {
 export interface ActivationCodeLensSemanticsSnapshot {
   detailStatuses: readonly ('blocked' | 'partial')[];
   refreshTriggers: readonly ('document-sync' | 'watched-files')[];
-  summaryStatuses: readonly ('possible')[];
+  summaryStatuses: readonly 'possible'[];
+}
+
+export interface ActivationCodeLensLinkTargetSnapshot {
+  arguments: readonly [
+    {
+      range: LspRange;
+      uri: string;
+    },
+  ];
+  command: string;
+}
+
+export interface ActivationCodeLensLinkedEntrySnapshot {
+  direction: 'incoming' | 'outgoing';
+  entryId: string;
+  entryName: string;
+  link: ActivationCodeLensLinkTargetSnapshot | null;
+  matchedKeywords: readonly string[];
+  relativePath: string | null;
+  uri: string | null;
+}
+
+export interface ActivationCodeLensTooltipSnapshot {
+  incoming: readonly ActivationCodeLensLinkedEntrySnapshot[];
+  markdown: string;
+  outgoing: readonly ActivationCodeLensLinkedEntrySnapshot[];
+  plainText: string;
 }
 
 export interface NormalizedCodeLensSnapshot {
+  activation: ActivationCodeLensTooltipSnapshot;
   command: ActivationCodeLensCommandSnapshot;
   counts: ActivationCodeLensCountsSnapshot;
   cycle: ActivationCodeLensCycleSnapshot;
@@ -117,17 +154,19 @@ export interface NormalizedCodeLensesEnvelopeSnapshot {
  * @param title - editor에 표시할 CodeLens 문구
  * @param uri - CodeLens가 붙는 lorebook 문서 URI
  * @param kind - summary/detail 중 어떤 lens인지 구분하는 식별자
+ * @param query - popup command가 표시할 activation 관계 metadata source
  * @returns executeCommandProvider가 소유하는 안정적인 no-op command payload
  */
 function createCodeLensCommand(
   title: string,
   uri: string,
   kind: ActivationCodeLensKind,
+  query: ActivationChainQueryResult,
 ): Command {
   return {
     title,
-    command: ACTIVATION_CHAIN_CODELENS_COMMAND,
-    arguments: [{ kind, uri }],
+    command: ACTIVATION_CHAIN_CODELENS_CLIENT_COMMAND,
+    arguments: [{ activation: createActivationTooltipSnapshot(query), kind, uri }],
   };
 }
 
@@ -140,6 +179,202 @@ function createCodeLensCommand(
  */
 function createSummaryTitle(query: ActivationChainQueryResult): string {
   return `${query.possibleIncoming.length}개 엔트리에 의해 활성화됨 | ${query.possibleOutgoing.length}개 엔트리를 활성화`;
+}
+
+/**
+ * createActivationTooltipSnapshot 함수.
+ * summary CodeLens가 보여줄 수 있는 활성화 관계 tooltip/link metadata를 만듦.
+ *
+ * @param query - 현재 lorebook activation query result
+ * @returns plain tooltip과 command-link markdown을 함께 담은 snapshot
+ */
+function createActivationTooltipSnapshot(
+  query: ActivationChainQueryResult,
+): ActivationCodeLensTooltipSnapshot {
+  const incoming = query.possibleIncoming.map((match) =>
+    createLinkedEntrySnapshot('incoming', match),
+  );
+  const outgoing = query.possibleOutgoing.map((match) =>
+    createLinkedEntrySnapshot('outgoing', match),
+  );
+
+  return {
+    incoming,
+    markdown: formatActivationTooltipMarkdown(incoming, outgoing),
+    outgoing,
+    plainText: formatActivationTooltipPlainText(incoming, outgoing),
+  };
+}
+
+/**
+ * createLinkedEntrySnapshot 함수.
+ * activation match 하나를 client/agent가 열 수 있는 링크 metadata로 정규화함.
+ *
+ * @param direction - 현재 entry 기준 incoming/outgoing 방향
+ * @param match - 연결된 activation entry match
+ * @returns entry 표시 정보와 optional navigation command target
+ */
+function createLinkedEntrySnapshot(
+  direction: 'incoming' | 'outgoing',
+  match: ActivationChainQueryResult['possibleIncoming'][number],
+): ActivationCodeLensLinkedEntrySnapshot {
+  return {
+    direction,
+    entryId: match.entry.id,
+    entryName: match.entry.name,
+    link: match.uri ? createEntryLinkTarget(match.uri) : null,
+    matchedKeywords: match.edge.matchedKeywords,
+    relativePath: match.relativePath,
+    uri: match.uri,
+  };
+}
+
+/**
+ * createEntryLinkTarget 함수.
+ * lorebook entry file을 여는 VS Code client command target을 만듦.
+ *
+ * @param uri - 열 대상 lorebook file URI
+ * @returns file 시작 위치로 이동하는 command payload
+ */
+function createEntryLinkTarget(uri: string): ActivationCodeLensLinkTargetSnapshot {
+  return {
+    command: CBS_OCCURRENCE_NAVIGATION_COMMAND,
+    arguments: [
+      {
+        range: createFileStartRange(),
+        uri,
+      },
+    ],
+  };
+}
+
+/**
+ * createFileStartRange 함수.
+ * file-level activation link가 열릴 기본 위치를 LSP range로 표현함.
+ *
+ * @returns 파일 시작 위치 zero-width range
+ */
+function createFileStartRange(): LspRange {
+  return {
+    start: { line: 0, character: 0 },
+    end: { line: 0, character: 0 },
+  };
+}
+
+/**
+ * formatActivationTooltipPlainText 함수.
+ * VS Code command tooltip에 바로 들어갈 수 있는 plain-text 요약을 만듦.
+ *
+ * @param incoming - 현재 entry를 활성화하는 entry 링크 목록
+ * @param outgoing - 현재 entry가 활성화하는 entry 링크 목록
+ * @returns 줄바꿈 기반 plain tooltip 문자열
+ */
+function formatActivationTooltipPlainText(
+  incoming: readonly ActivationCodeLensLinkedEntrySnapshot[],
+  outgoing: readonly ActivationCodeLensLinkedEntrySnapshot[],
+): string {
+  return [
+    '활성화하는 엔트리',
+    ...formatPlainEntryLines(incoming),
+    '',
+    '활성화시킨 엔트리',
+    ...formatPlainEntryLines(outgoing),
+  ].join('\n');
+}
+
+/**
+ * formatActivationTooltipMarkdown 함수.
+ * Hover/agent surface에서 command link로 재사용할 수 있는 markdown tooltip을 만듦.
+ *
+ * @param incoming - 현재 entry를 활성화하는 entry 링크 목록
+ * @param outgoing - 현재 entry가 활성화하는 entry 링크 목록
+ * @returns command URI link가 포함된 markdown 문자열
+ */
+function formatActivationTooltipMarkdown(
+  incoming: readonly ActivationCodeLensLinkedEntrySnapshot[],
+  outgoing: readonly ActivationCodeLensLinkedEntrySnapshot[],
+): string {
+  return [
+    '**활성화하는 엔트리**',
+    ...formatMarkdownEntryLines(incoming),
+    '',
+    '**활성화시킨 엔트리**',
+    ...formatMarkdownEntryLines(outgoing),
+  ].join('\n');
+}
+
+/**
+ * formatPlainEntryLines 함수.
+ * entry 링크 목록을 plain-text bullet 목록으로 변환함.
+ *
+ * @param entries - 표시할 activation entry metadata 목록
+ * @returns entry가 없으면 비어 있음을 알리는 bullet 목록
+ */
+function formatPlainEntryLines(
+  entries: readonly ActivationCodeLensLinkedEntrySnapshot[],
+): string[] {
+  if (entries.length === 0) {
+    return ['- 없음'];
+  }
+
+  return entries.map((entry) => `- ${formatEntryLabel(entry)}`);
+}
+
+/**
+ * formatMarkdownEntryLines 함수.
+ * entry 링크 목록을 markdown bullet 목록으로 변환함.
+ *
+ * @param entries - 표시할 activation entry metadata 목록
+ * @returns entry가 없으면 비어 있음을 알리는 bullet 목록
+ */
+function formatMarkdownEntryLines(
+  entries: readonly ActivationCodeLensLinkedEntrySnapshot[],
+): string[] {
+  if (entries.length === 0) {
+    return ['- 없음'];
+  }
+
+  return entries.map((entry) => {
+    const label = escapeMarkdownLinkLabel(formatEntryLabel(entry));
+    const target = entry.link ? formatCommandMarkdownLinkTarget(entry.link) : null;
+    return target ? `- [${label}](${target})` : `- ${label}`;
+  });
+}
+
+/**
+ * formatEntryLabel 함수.
+ * entry 이름, 상대 경로, 매칭 keyword를 읽기 쉬운 label로 합침.
+ *
+ * @param entry - 표시할 activation entry metadata
+ * @returns tooltip에 표시할 entry label
+ */
+function formatEntryLabel(entry: ActivationCodeLensLinkedEntrySnapshot): string {
+  const location = entry.relativePath ? ` — ${entry.relativePath}` : '';
+  const keywords =
+    entry.matchedKeywords.length > 0 ? ` (키워드: ${entry.matchedKeywords.join(', ')})` : '';
+  return `${entry.entryName}${location}${keywords}`;
+}
+
+/**
+ * formatCommandMarkdownLinkTarget 함수.
+ * VS Code command URI markdown target을 생성함.
+ *
+ * @param link - 실행할 command와 arguments payload
+ * @returns markdown link target 문자열
+ */
+function formatCommandMarkdownLinkTarget(link: ActivationCodeLensLinkTargetSnapshot): string {
+  return `command:${link.command}?${encodeURIComponent(JSON.stringify(link.arguments))}`;
+}
+
+/**
+ * escapeMarkdownLinkLabel 함수.
+ * markdown link label 안에서 깨지는 문자를 escape함.
+ *
+ * @param label - 원본 label 문자열
+ * @returns markdown label-safe 문자열
+ */
+function escapeMarkdownLinkLabel(label: string): string {
+  return label.replace(/[\\\[\]]/gu, (character) => `\\${character}`);
 }
 
 /**
@@ -159,7 +394,9 @@ function createDetailTitle(query: ActivationChainQueryResult): string | null {
   }
 
   if (query.blockedIncoming.length > 0 || query.blockedOutgoing.length > 0) {
-    segments.push(`차단: 들어옴 ${query.blockedIncoming.length} / 나감 ${query.blockedOutgoing.length}`);
+    segments.push(
+      `차단: 들어옴 ${query.blockedIncoming.length} / 나감 ${query.blockedOutgoing.length}`,
+    );
   }
 
   if (query.cycle.hasCycles) {
@@ -212,8 +449,9 @@ function createNormalizedCodeLensSnapshot(
   query: ActivationChainQueryResult,
 ): NormalizedCodeLensSnapshot {
   return {
+    activation: createActivationTooltipSnapshot(query),
     command: {
-      command: ACTIVATION_CHAIN_CODELENS_COMMAND,
+      command: ACTIVATION_CHAIN_CODELENS_CLIENT_COMMAND,
       kind,
       mode: 'no-op',
       uri,
@@ -294,6 +532,7 @@ export function normalizeCodeLensForSnapshot(lens: CodeLens): NormalizedCodeLens
   const data = isActivationCodeLensAgentData(lens.data) ? lens.data : null;
 
   return {
+    activation: data?.lens.activation ?? EMPTY_CODELENS_TOOLTIP,
     command: {
       command: lens.command?.command ?? null,
       kind: data?.lens.command.kind ?? null,
@@ -381,7 +620,10 @@ function compareNormalizedCodeLenses(
  * @returns 정렬 비교값
  */
 function compareRanges(left: LspRange | null, right: LspRange | null): number {
-  return comparePositions(left?.start ?? null, right?.start ?? null) || comparePositions(left?.end ?? null, right?.end ?? null);
+  return (
+    comparePositions(left?.start ?? null, right?.start ?? null) ||
+    comparePositions(left?.end ?? null, right?.end ?? null)
+  );
 }
 
 /**
@@ -392,11 +634,11 @@ function compareRanges(left: LspRange | null, right: LspRange | null): number {
  * @param right - 오른쪽 position
  * @returns 정렬 비교값
  */
-function comparePositions(
-  left: LspRange['start'] | null,
-  right: LspRange['start'] | null,
-): number {
-  return compareNumbers(left?.line ?? null, right?.line ?? null) || compareNumbers(left?.character ?? null, right?.character ?? null);
+function comparePositions(left: LspRange['start'] | null, right: LspRange['start'] | null): number {
+  return (
+    compareNumbers(left?.line ?? null, right?.line ?? null) ||
+    compareNumbers(left?.character ?? null, right?.character ?? null)
+  );
 }
 
 /**
@@ -524,7 +766,7 @@ export class CodeLensProvider {
           query,
         ),
         range,
-        command: createCodeLensCommand(summaryTitle, params.textDocument.uri, 'summary'),
+        command: createCodeLensCommand(summaryTitle, params.textDocument.uri, 'summary', query),
       },
     ];
 
@@ -533,7 +775,7 @@ export class CodeLensProvider {
       lenses.push({
         data: createCodeLensAgentData(range, detailTitle, params.textDocument.uri, 'detail', query),
         range,
-        command: createCodeLensCommand(detailTitle, params.textDocument.uri, 'detail'),
+        command: createCodeLensCommand(detailTitle, params.textDocument.uri, 'detail', query),
       });
     }
 
