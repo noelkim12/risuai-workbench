@@ -9,7 +9,17 @@ import { createLuaLsCompanionRuntime } from '../../src/core';
 import {
   createLuaLsProxy,
   normalizeLuaHoverEnvelopeForSnapshot,
+  type LuaLsUriRemapResolver,
 } from '../../src/providers/lua/lualsProxy';
+import { createLuaLsShadowDocumentUri } from '../../src/providers/lua/lualsShadowWorkspace';
+
+function createUriRemapResolver(entries: readonly (readonly [string, string])[]): LuaLsUriRemapResolver {
+  const transportToSourceUri = new Map(entries);
+  return {
+    getTransportToSourceUriEntries: () => transportToSourceUri.entries(),
+    resolveSourceUriFromTransportUri: (uri) => transportToSourceUri.get(uri) ?? null,
+  };
+}
 
 describe('LuaLsProxy', () => {
   it('rewrites source URIs to mirrored Lua transport URIs for hover requests', async () => {
@@ -168,6 +178,73 @@ describe('LuaLsProxy', () => {
     );
   });
 
+  it('maps cross-file definition and references through the workspace-wide URI resolver', async () => {
+    const sourceUri = 'file:///workspace/lua/companion.risulua';
+    const otherSourceUri = 'file:///workspace/lua/shared.risulua';
+    const otherTransportUri = createLuaLsShadowDocumentUri('/workspace/lua/shared.risulua');
+    const request = async <TResult>(method: string): Promise<TResult | null> => {
+      if (method === 'textDocument/references') {
+        return [
+          {
+            uri: otherTransportUri,
+            range: {
+              start: { line: 2, character: 4 },
+              end: { line: 2, character: 10 },
+            },
+          },
+        ] as TResult;
+      }
+
+      return [
+        {
+          uri: otherTransportUri,
+          range: {
+            start: { line: 1, character: 6 },
+            end: { line: 1, character: 12 },
+          },
+        },
+      ] as TResult;
+    };
+    const proxy = createLuaLsProxy(
+      {
+        getRuntime: () => createLuaLsCompanionRuntime({ status: 'ready', health: 'healthy' }),
+        request,
+      },
+      {
+        uriRemapResolver: createUriRemapResolver([[otherTransportUri, otherSourceUri]]),
+      },
+    );
+
+    const definition = await proxy.provideDefinition({
+      textDocument: { uri: sourceUri },
+      position: { line: 0, character: 8 },
+    });
+    const references = await proxy.provideReferences({
+      textDocument: { uri: sourceUri },
+      position: { line: 0, character: 8 },
+      context: { includeDeclaration: true },
+    });
+
+    expect(definition).toEqual([
+      {
+        uri: otherSourceUri,
+        range: {
+          start: { line: 1, character: 6 },
+          end: { line: 1, character: 12 },
+        },
+      },
+    ]);
+    expect(references).toEqual([
+      {
+        uri: otherSourceUri,
+        range: {
+          start: { line: 2, character: 4 },
+          end: { line: 2, character: 10 },
+        },
+      },
+    ]);
+  });
+
   it('maps LuaLS rename workspace edits from shadow URI back to source URI', async () => {
     const request = async <TResult>(
       _method: string,
@@ -215,6 +292,178 @@ describe('LuaLsProxy', () => {
               newText: 'renamed',
             },
           ],
+        },
+      ],
+    });
+  });
+
+  it('maps cross-file rename edits and merges changes keys that resolve to the same source URI', async () => {
+    const sourceUri = 'file:///workspace/lua/companion.risulua';
+    const sourceTransportUri = createLuaLsShadowDocumentUri('/workspace/lua/companion.risulua');
+    const otherSourceUri = 'file:///workspace/lua/shared.risulua';
+    const otherTransportUri = createLuaLsShadowDocumentUri('/workspace/lua/shared.risulua');
+    const request = async <TResult>(): Promise<TResult | null> => ({
+      changes: {
+        [sourceTransportUri]: [
+          {
+            range: {
+              start: { line: 0, character: 6 },
+              end: { line: 0, character: 13 },
+            },
+            newText: 'renamedLocal',
+          },
+        ],
+        [otherTransportUri]: [
+          {
+            range: {
+              start: { line: 1, character: 4 },
+              end: { line: 1, character: 11 },
+            },
+            newText: 'renamedRemote',
+          },
+        ],
+        [otherSourceUri]: [
+          {
+            range: {
+              start: { line: 2, character: 4 },
+              end: { line: 2, character: 11 },
+            },
+            newText: 'renamedAlreadySource',
+          },
+        ],
+      },
+      documentChanges: [
+        {
+          textDocument: { uri: otherTransportUri, version: null },
+          edits: [],
+        },
+        {
+          kind: 'rename',
+          oldUri: otherTransportUri,
+          newUri: sourceTransportUri,
+        },
+      ],
+    }) as TResult;
+    const proxy = createLuaLsProxy(
+      {
+        getRuntime: () => createLuaLsCompanionRuntime({ status: 'ready', health: 'healthy' }),
+        request,
+      },
+      {
+        uriRemapResolver: createUriRemapResolver([[otherTransportUri, otherSourceUri]]),
+      },
+    );
+
+    const edit = await proxy.provideRename({
+      textDocument: { uri: sourceUri },
+      position: { line: 0, character: 8 },
+      newName: 'renamed',
+    });
+
+    expect(edit?.changes?.[sourceUri]).toEqual([
+      {
+        range: {
+          start: { line: 0, character: 6 },
+          end: { line: 0, character: 13 },
+        },
+        newText: 'renamedLocal',
+      },
+    ]);
+    expect(edit?.changes?.[otherSourceUri]).toEqual([
+      {
+        range: {
+          start: { line: 1, character: 4 },
+          end: { line: 1, character: 11 },
+        },
+        newText: 'renamedRemote',
+      },
+      {
+        range: {
+          start: { line: 2, character: 4 },
+          end: { line: 2, character: 11 },
+        },
+        newText: 'renamedAlreadySource',
+      },
+    ]);
+    expect(edit?.documentChanges).toEqual([
+      {
+        textDocument: { uri: otherSourceUri, version: null },
+        edits: [],
+      },
+      {
+        kind: 'rename',
+        oldUri: otherSourceUri,
+        newUri: sourceUri,
+      },
+    ]);
+  });
+
+  it('remaps hover and completion display text without touching completion data', async () => {
+    const sourceUri = 'file:///workspace/lua/companion.risulua';
+    const otherSourceUri = 'file:///workspace/lua/shared.risulua';
+    const otherTransportUri = createLuaLsShadowDocumentUri('/workspace/lua/shared.risulua');
+    const opaqueData = { uri: otherTransportUri, serverToken: 'keep-shadow-uri' };
+    const request = async <TResult>(method: string): Promise<TResult | null> => {
+      if (method === 'textDocument/hover') {
+        return {
+          contents: {
+            kind: 'markdown',
+            value: `[shared](${otherTransportUri})`,
+          },
+        } as TResult;
+      }
+
+      return {
+        isIncomplete: false,
+        items: [
+          {
+            label: 'sharedCall',
+            detail: `defined at ${otherTransportUri}`,
+            documentation: {
+              kind: 'markdown',
+              value: `[shared](${otherTransportUri})`,
+            },
+            data: opaqueData,
+          },
+        ],
+      } as TResult;
+    };
+    const proxy = createLuaLsProxy(
+      {
+        getRuntime: () => createLuaLsCompanionRuntime({ status: 'ready', health: 'healthy' }),
+        request,
+      },
+      {
+        uriRemapResolver: createUriRemapResolver([[otherTransportUri, otherSourceUri]]),
+      },
+    );
+
+    const hover = await proxy.provideHover({
+      textDocument: { uri: sourceUri },
+      position: { line: 0, character: 8 },
+    });
+    const completion = await proxy.provideCompletion({
+      textDocument: { uri: sourceUri },
+      position: { line: 0, character: 8 },
+    });
+
+    expect(hover).toEqual({
+      contents: {
+        kind: 'markdown',
+        value: `[shared](${otherSourceUri})`,
+      },
+    });
+    expect(completion).toEqual({
+      isIncomplete: false,
+      items: [
+        {
+          label: 'sharedCall',
+          detail: `defined at ${otherSourceUri}`,
+          documentation: {
+            kind: 'markdown',
+            value: `[shared](${otherSourceUri})`,
+          },
+          data: opaqueData,
         },
       ],
     });
@@ -330,6 +579,50 @@ describe('LuaLsProxy', () => {
         textDocument: { uri: expect.stringContaining('/workspace/lua/companion.risulua.lua') },
       }),
     );
+  });
+
+  it('maps SymbolInformation documentSymbol locations through the URI resolver', async () => {
+    const sourceUri = 'file:///workspace/lua/companion.risulua';
+    const otherSourceUri = 'file:///workspace/lua/shared.risulua';
+    const otherTransportUri = createLuaLsShadowDocumentUri('/workspace/lua/shared.risulua');
+    const request = async <TResult>(): Promise<TResult | null> => [
+      {
+        name: 'sharedSymbol',
+        kind: 12,
+        location: {
+          uri: otherTransportUri,
+          range: {
+            start: { line: 3, character: 2 },
+            end: { line: 3, character: 14 },
+          },
+        },
+      },
+    ] as TResult;
+    const proxy = createLuaLsProxy(
+      {
+        getRuntime: () => createLuaLsCompanionRuntime({ status: 'ready', health: 'healthy' }),
+        request,
+      },
+      {
+        uriRemapResolver: createUriRemapResolver([[otherTransportUri, otherSourceUri]]),
+      },
+    );
+
+    const symbols = await proxy.provideDocumentSymbol({ textDocument: { uri: sourceUri } });
+
+    expect(symbols).toEqual([
+      {
+        name: 'sharedSymbol',
+        kind: 12,
+        location: {
+          uri: otherSourceUri,
+          range: {
+            start: { line: 3, character: 2 },
+            end: { line: 3, character: 14 },
+          },
+        },
+      },
+    ]);
   });
 
   it('returns null when the request is cancelled or the companion request fails', async () => {

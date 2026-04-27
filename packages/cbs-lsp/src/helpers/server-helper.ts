@@ -84,6 +84,7 @@ import {
   createRisuAiRuntimeDefinition,
   createRisuAiRuntimeHover,
 } from '../providers/lua/risuaiRuntimeOverlay';
+import { isLuaLsSymbolInformation } from '../providers/lua/lualsProxy';
 import { getDefaultRisuAiLuaStubRootPath } from '../providers/lua/typeStubs';
 import { logFeature, traceFeatureRequest, traceFeatureResult } from '../utils/server-tracing';
 import { VariableFlowService, type WorkspaceSnapshotState } from '../services';
@@ -750,7 +751,7 @@ export class ServerFeatureRegistrar {
       const skipLuaLsProxy = routedToLuaLs && shouldSkipLuaLsProxyForRequest(routingRequest, filePath);
 
       if (routedToLuaLs) {
-        return this.requestRunner.runAsync<DocumentSymbolParams, DocumentSymbol[]>({
+        return this.requestRunner.runAsync<DocumentSymbolParams, DocumentSymbol[] | SymbolInformation[]>({
           empty: [],
           feature: 'documentSymbol',
           getUri: (requestParams) => requestParams.textDocument.uri,
@@ -765,7 +766,13 @@ export class ServerFeatureRegistrar {
             }
 
             const luaSymbols = await this.luaLsProxy.provideDocumentSymbol(params, cancellationToken);
-            return [...cbsSymbols, ...luaSymbols];
+            if (luaSymbols.every(isLuaLsSymbolInformation)) {
+              return cbsSymbols.length > 0 ? cbsSymbols : luaSymbols;
+            }
+            const luaDocumentSymbols = luaSymbols.filter(
+              (symbol): symbol is DocumentSymbol => !isLuaLsSymbolInformation(symbol),
+            );
+            return [...cbsSymbols, ...luaDocumentSymbols];
           },
           summarize: (result) => ({
             count: result.length,

@@ -10,6 +10,7 @@ import { CbsLspPathHelper } from '../../helpers/path-helper';
 import { MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH, type WorkspaceScanFile } from '../../indexer';
 import { getArtifactTypeFromPath } from '../../utils/document-router';
 import type { LuaLsProcessManager } from './lualsProcess';
+import type { LuaLsUriRemapResolver } from './lualsResponseRemapper';
 import {
   createLuaLsShadowDocumentUri,
   isLuaLsShadowDocumentUri,
@@ -169,16 +170,57 @@ function compareLuaLsDocuments(left: LuaLsRoutedDocument, right: LuaLsRoutedDocu
  * LuaLsDocumentRouter 클래스.
  * workspace scan/open document 상태를 LuaLS session mirror로 정렬함.
  */
-export class LuaLsDocumentRouter {
+export class LuaLsDocumentRouter implements LuaLsUriRemapResolver {
   private readonly standaloneDocuments = new Map<string, LuaLsRoutedDocument>();
 
   private readonly workspaceDocumentsByRoot = new Map<string, Map<string, LuaLsRoutedDocument>>();
 
   private readonly deferredWorkspaceSyncTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+  private readonly transportToSourceUri = new Map<string, string>();
+
   constructor(
     private readonly processManager: LuaLsDocumentRouterProcessManager,
   ) {}
+
+  /**
+   * resolveSourceUriFromTransportUri 함수.
+   * LuaLS shadow transport URI에 대응하는 원본 `.risulua` URI를 조회함.
+   *
+   * @param uri - LuaLS가 반환한 shadow transport URI
+   * @returns 알려진 source URI, 없으면 null
+   */
+  resolveSourceUriFromTransportUri(uri: string): string | null {
+    return this.transportToSourceUri.get(uri) ?? null;
+  }
+
+  /**
+   * getTransportToSourceUriEntries 함수.
+   * proxy가 요청 단위 remap map을 만들 수 있게 현재 reverse map entry를 노출함.
+   *
+   * @returns transport/source URI entry iterator
+   */
+  getTransportToSourceUriEntries(): Iterable<readonly [transportUri: string, sourceUri: string]> {
+    return this.transportToSourceUri.entries();
+  }
+
+  /**
+   * rebuildTransportToSourceUri 함수.
+   * 현재 standalone/workspace mirror 상태 전체에서 reverse URI map을 다시 만든다.
+   */
+  private rebuildTransportToSourceUri(): void {
+    this.transportToSourceUri.clear();
+
+    for (const document of this.standaloneDocuments.values()) {
+      this.transportToSourceUri.set(document.transportUri, document.sourceUri);
+    }
+
+    for (const workspaceDocuments of this.workspaceDocumentsByRoot.values()) {
+      for (const document of workspaceDocuments.values()) {
+        this.transportToSourceUri.set(document.transportUri, document.sourceUri);
+      }
+    }
+  }
 
   /**
    * syncStandaloneDocument 함수.
@@ -198,12 +240,14 @@ export class LuaLsDocumentRouter {
     if (shouldSkipLuaLsDocumentText(routedDocument.text)) {
       if (previousDocument) {
         this.standaloneDocuments.delete(document.uri);
+        this.rebuildTransportToSourceUri();
         this.processManager.closeDocument(document.uri);
       }
       return;
     }
 
     this.standaloneDocuments.set(document.uri, routedDocument);
+    this.rebuildTransportToSourceUri();
 
     if (previousDocument && compareLuaLsDocuments(previousDocument, routedDocument)) {
       return;
@@ -223,7 +267,11 @@ export class LuaLsDocumentRouter {
       return;
     }
 
+    const previousDocument = this.standaloneDocuments.get(sourceUri);
     this.standaloneDocuments.delete(sourceUri);
+    if (previousDocument) {
+      this.rebuildTransportToSourceUri();
+    }
     this.processManager.closeDocument(sourceUri);
   }
 
@@ -292,6 +340,7 @@ export class LuaLsDocumentRouter {
     if (nextDocuments.size === 0) {
       this.cancelDeferredWorkspaceSync(rootPath);
       this.workspaceDocumentsByRoot.delete(rootPath);
+      this.rebuildTransportToSourceUri();
       return {
         totalFiles: files.length,
         luaFileCount: 0,
@@ -305,6 +354,7 @@ export class LuaLsDocumentRouter {
     }
 
     this.workspaceDocumentsByRoot.set(rootPath, nextDocuments);
+    this.rebuildTransportToSourceUri();
     if (deferredCount > 0) {
       this.scheduleDeferredWorkspaceSync(rootPath, nextDocuments, prioritySourceUris);
     } else {
@@ -390,6 +440,7 @@ export class LuaLsDocumentRouter {
     this.cancelDeferredWorkspaceSync(rootPath);
 
     this.workspaceDocumentsByRoot.delete(rootPath);
+    this.rebuildTransportToSourceUri();
   }
 }
 

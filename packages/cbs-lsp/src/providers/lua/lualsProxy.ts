@@ -17,7 +17,6 @@ import type {
   Hover,
   HoverParams,
   Location,
-  LocationLink,
   MarkedString,
   MarkupContent,
   Range as LspRange,
@@ -41,6 +40,21 @@ import {
 } from '../../core';
 import { CbsLspPathHelper } from '../../helpers/path-helper';
 import { createLuaLsTransportUri } from './lualsDocuments';
+import {
+  createLuaLsRemapContext,
+  remapLuaLsCompletionResult,
+  remapLuaLsDefinitionResult,
+  remapLuaLsDocumentSymbols,
+  remapLuaLsHover,
+  remapLuaLsLocations,
+  remapLuaLsWorkspaceEdit,
+  type LuaLsDocumentSymbolResult,
+  type LuaLsRemapContext,
+  type LuaLsUriRemapResolver,
+} from './lualsResponseRemapper';
+
+export { isLuaLsSymbolInformation } from './lualsResponseRemapper';
+export type { LuaLsDocumentSymbolResult, LuaLsUriRemapResolver } from './lualsResponseRemapper';
 
 const DEFAULT_LUALS_HOVER_TIMEOUT_MS = 1_500;
 const DEFAULT_LUALS_COMPLETION_TIMEOUT_MS = 1_500;
@@ -79,6 +93,16 @@ export interface LuaLsRequestClient {
   request<TResult>(method: string, params: unknown, timeoutMs?: number): Promise<TResult | null>;
 }
 
+export interface LuaLsProxyOptions {
+  uriRemapResolver?: LuaLsUriRemapResolver;
+}
+
+interface LuaLsTextDocumentParams {
+  textDocument: {
+    uri: string;
+  };
+}
+
 /**
  * normalizeLuaHoverContents 함수.
  * LuaLS hover contents를 snapshot/golden 비교에 적합한 stable shape로 정규화함.
@@ -107,153 +131,6 @@ function normalizeLuaHoverContents(contents: Hover['contents']): NormalizedLuaHo
   return {
     kind: 'kind' in markup ? markup.kind : null,
     value: markup.value,
-  };
-}
-
-/**
- * isLocationLink 함수.
- * LuaLS definition 응답 항목이 LocationLink shape인지 좁힘.
- *
- * @param value - 검사할 definition entry
- * @returns LocationLink이면 true
- */
-function isLocationLink(value: Location | LocationLink): value is LocationLink {
-  return 'targetUri' in value;
-}
-
-/**
- * remapLuaLsLocationUri 함수.
- * 현재 source 문서에 대응하는 shadow URI를 원본 `.risulua` URI로 되돌림.
- *
- * @param uri - LuaLS가 반환한 URI
- * @param sourceUri - 원본 `.risulua` URI
- * @param transportUri - LuaLS shadow `.lua` URI
- * @returns 원본 URI로 되돌린 URI
- */
-function remapLuaLsLocationUri(uri: string, sourceUri: string, transportUri: string): string {
-  return uri === transportUri ? sourceUri : uri;
-}
-
-/**
- * remapLuaLsDefinitionResult 함수.
- * LuaLS definition 응답에 포함된 current shadow document URI를 source URI로 되돌림.
- *
- * @param definition - LuaLS definition 응답
- * @param sourceUri - 원본 `.risulua` URI
- * @param transportUri - LuaLS shadow `.lua` URI
- * @returns VS Code client가 열 수 있는 source URI 기준 definition 응답
- */
-function remapLuaLsDefinitionResult(
-  definition: Definition | null,
-  sourceUri: string,
-  transportUri: string,
-): Definition | null {
-  if (!definition) {
-    return null;
-  }
-
-  const entries = Array.isArray(definition) ? definition : [definition];
-  const remapped = entries.map((entry) => {
-    if (isLocationLink(entry)) {
-      return {
-        ...entry,
-        targetUri: remapLuaLsLocationUri(entry.targetUri, sourceUri, transportUri),
-      };
-    }
-
-    return {
-      ...entry,
-      uri: remapLuaLsLocationUri(entry.uri, sourceUri, transportUri),
-    };
-  });
-
-  return Array.isArray(definition) ? remapped as Definition : remapped[0] as Definition;
-}
-
-/**
- * remapLuaLsLocations 함수.
- * LuaLS location 배열에 포함된 current shadow document URI를 source URI로 되돌림.
- *
- * @param locations - LuaLS location 응답
- * @param sourceUri - 원본 `.risulua` URI
- * @param transportUri - LuaLS shadow `.lua` URI
- * @returns source URI 기준 location 배열
- */
-function remapLuaLsLocations(
-  locations: Location[] | null,
-  sourceUri: string,
-  transportUri: string,
-): Location[] {
-  if (!locations) {
-    return [];
-  }
-
-  return locations.map((location) => ({
-    ...location,
-    uri: remapLuaLsLocationUri(location.uri, sourceUri, transportUri),
-  }));
-}
-
-/**
- * remapLuaLsWorkspaceEdit 함수.
- * LuaLS rename WorkspaceEdit 안의 current shadow document URI를 원본 `.risulua` URI로 되돌림.
- *
- * @param edit - LuaLS rename 응답
- * @param sourceUri - 원본 `.risulua` URI
- * @param transportUri - LuaLS shadow `.lua` URI
- * @returns source URI 기준 WorkspaceEdit
- */
-function remapLuaLsWorkspaceEdit(
-  edit: WorkspaceEdit | null,
-  sourceUri: string,
-  transportUri: string,
-): WorkspaceEdit | null {
-  if (!edit) {
-    return null;
-  }
-
-  const changes = edit.changes
-    ? Object.fromEntries(
-        Object.entries(edit.changes).map(([uri, edits]) => [
-          remapLuaLsLocationUri(uri, sourceUri, transportUri),
-          edits,
-        ]),
-      )
-    : undefined;
-
-  const documentChanges = edit.documentChanges?.map((change) => {
-    if ('textDocument' in change) {
-      return {
-        ...change,
-        textDocument: {
-          ...change.textDocument,
-          uri: remapLuaLsLocationUri(change.textDocument.uri, sourceUri, transportUri),
-        },
-      };
-    }
-
-    if ('uri' in change) {
-      return {
-        ...change,
-        uri: remapLuaLsLocationUri(change.uri, sourceUri, transportUri),
-      };
-    }
-
-    if ('kind' in change && change.kind === 'rename') {
-      return {
-        ...change,
-        oldUri: remapLuaLsLocationUri(change.oldUri, sourceUri, transportUri),
-        newUri: remapLuaLsLocationUri(change.newUri, sourceUri, transportUri),
-      };
-    }
-
-    return change;
-  });
-
-  return {
-    ...edit,
-    ...(changes ? { changes } : {}),
-    ...(documentChanges ? { documentChanges } : {}),
   };
 }
 
@@ -302,7 +179,46 @@ export function normalizeLuaHoverEnvelopeForSnapshot(
  * shadow file:// `.lua` mirror를 대상으로 read-only LuaLS 요청을 프록시함.
  */
 export class LuaLsProxy {
-  constructor(private readonly client: LuaLsRequestClient) {}
+  constructor(
+    private readonly client: LuaLsRequestClient,
+    private readonly options: LuaLsProxyOptions = {},
+  ) {}
+
+  /**
+   * createRequestContext 함수.
+   * source URI에서 LuaLS transport URI와 response remap context를 함께 생성함.
+   *
+   * @param sourceUri - 원본 `.risulua` URI
+   * @returns transport URI와 remap context 묶음
+   */
+  private createRequestContext(sourceUri: string): { transportUri: string; remapContext: LuaLsRemapContext } {
+    const transportUri = createLuaLsTransportUri(CbsLspPathHelper.getFilePathFromUri(sourceUri));
+    return {
+      transportUri,
+      remapContext: createLuaLsRemapContext(sourceUri, transportUri, this.options.uriRemapResolver),
+    };
+  }
+
+  /**
+   * createTransportParams 함수.
+   * host textDocument URI만 LuaLS transport URI로 바꾼 요청 params를 만듦.
+   *
+   * @param params - host LSP params
+   * @param transportUri - LuaLS shadow `.lua` URI
+   * @returns LuaLS에 전달할 params
+   */
+  private createTransportParams<TParams extends LuaLsTextDocumentParams>(
+    params: TParams,
+    transportUri: string,
+  ): TParams {
+    return {
+      ...params,
+      textDocument: {
+        ...params.textDocument,
+        uri: transportUri,
+      },
+    };
+  }
 
   /**
    * getRuntime 함수.
@@ -330,23 +246,15 @@ export class LuaLsProxy {
       return [];
     }
 
-    const transportUri = createLuaLsTransportUri(
-      CbsLspPathHelper.getFilePathFromUri(params.textDocument.uri),
-    );
+    const { transportUri, remapContext } = this.createRequestContext(params.textDocument.uri);
 
     try {
-      return (
-        (await this.client.request<CompletionItem[] | CompletionList>(
+      const completion = await this.client.request<CompletionItem[] | CompletionList>(
           'textDocument/completion',
-          {
-            ...params,
-            textDocument: {
-              uri: transportUri,
-            },
-          },
+          this.createTransportParams(params, transportUri),
           DEFAULT_LUALS_COMPLETION_TIMEOUT_MS,
-        )) ?? []
-      );
+        );
+      return remapLuaLsCompletionResult(completion, remapContext);
     } catch {
       return [];
     }
@@ -368,21 +276,15 @@ export class LuaLsProxy {
       return null;
     }
 
-    const transportUri = createLuaLsTransportUri(
-      CbsLspPathHelper.getFilePathFromUri(params.textDocument.uri),
-    );
+    const { transportUri, remapContext } = this.createRequestContext(params.textDocument.uri);
 
     try {
-      return await this.client.request<Hover>(
+      const hover = await this.client.request<Hover>(
         'textDocument/hover',
-        {
-          ...params,
-          textDocument: {
-            uri: transportUri,
-          },
-        },
+        this.createTransportParams(params, transportUri),
         DEFAULT_LUALS_HOVER_TIMEOUT_MS,
       );
+      return remapLuaLsHover(hover, remapContext);
     } catch {
       return null;
     }
@@ -404,21 +306,15 @@ export class LuaLsProxy {
       return null;
     }
 
-    const sourceUri = params.textDocument.uri;
-    const transportUri = createLuaLsTransportUri(CbsLspPathHelper.getFilePathFromUri(sourceUri));
+    const { transportUri, remapContext } = this.createRequestContext(params.textDocument.uri);
 
     try {
       const definition = await this.client.request<Definition>(
         'textDocument/definition',
-        {
-          ...params,
-          textDocument: {
-            uri: transportUri,
-          },
-        },
+        this.createTransportParams(params, transportUri),
         DEFAULT_LUALS_DEFINITION_TIMEOUT_MS,
       );
-      return remapLuaLsDefinitionResult(definition, sourceUri, transportUri);
+      return remapLuaLsDefinitionResult(definition, remapContext);
     } catch {
       return null;
     }
@@ -440,21 +336,15 @@ export class LuaLsProxy {
       return [];
     }
 
-    const sourceUri = params.textDocument.uri;
-    const transportUri = createLuaLsTransportUri(CbsLspPathHelper.getFilePathFromUri(sourceUri));
+    const { transportUri, remapContext } = this.createRequestContext(params.textDocument.uri);
 
     try {
       const references = await this.client.request<Location[]>(
         'textDocument/references',
-        {
-          ...params,
-          textDocument: {
-            uri: transportUri,
-          },
-        },
+        this.createTransportParams(params, transportUri),
         DEFAULT_LUALS_REFERENCES_TIMEOUT_MS,
       );
-      return remapLuaLsLocations(references, sourceUri, transportUri);
+      return remapLuaLsLocations(references, remapContext);
     } catch {
       return [];
     }
@@ -476,19 +366,14 @@ export class LuaLsProxy {
       return [];
     }
 
-    const transportUri = createLuaLsTransportUri(
-      CbsLspPathHelper.getFilePathFromUri(params.textDocument.uri),
-    );
+    const { transportUri } = this.createRequestContext(params.textDocument.uri);
 
     try {
       return (
         (await this.client.request<DocumentHighlight[]>(
           'textDocument/documentHighlight',
           {
-            ...params,
-            textDocument: {
-              uri: transportUri,
-            },
+            ...this.createTransportParams(params, transportUri),
           },
           DEFAULT_LUALS_DOCUMENT_HIGHLIGHT_TIMEOUT_MS,
         )) ?? []
@@ -509,28 +394,20 @@ export class LuaLsProxy {
   async provideDocumentSymbol(
     params: DocumentSymbolParams,
     cancellationToken?: CancellationToken,
-  ): Promise<DocumentSymbol[]> {
+  ): Promise<LuaLsDocumentSymbolResult> {
     if (cancellationToken?.isCancellationRequested) {
       return [];
     }
 
-    const transportUri = createLuaLsTransportUri(
-      CbsLspPathHelper.getFilePathFromUri(params.textDocument.uri),
-    );
+    const { transportUri, remapContext } = this.createRequestContext(params.textDocument.uri);
 
     try {
-      return (
-        (await this.client.request<DocumentSymbol[]>(
+      const symbols = await this.client.request<LuaLsDocumentSymbolResult>(
           'textDocument/documentSymbol',
-          {
-            ...params,
-            textDocument: {
-              uri: transportUri,
-            },
-          },
+          this.createTransportParams(params, transportUri),
           DEFAULT_LUALS_DOCUMENT_SYMBOL_TIMEOUT_MS,
-        )) ?? []
-      );
+        );
+      return remapLuaLsDocumentSymbols(symbols, remapContext);
     } catch {
       return [];
     }
@@ -552,18 +429,13 @@ export class LuaLsProxy {
       return null;
     }
 
-    const transportUri = createLuaLsTransportUri(
-      CbsLspPathHelper.getFilePathFromUri(params.textDocument.uri),
-    );
+    const { transportUri } = this.createRequestContext(params.textDocument.uri);
 
     try {
       return await this.client.request<SignatureHelp>(
         'textDocument/signatureHelp',
         {
-          ...params,
-          textDocument: {
-            uri: transportUri,
-          },
+          ...this.createTransportParams(params, transportUri),
         },
         DEFAULT_LUALS_SIGNATURE_TIMEOUT_MS,
       );
@@ -588,18 +460,13 @@ export class LuaLsProxy {
       return null;
     }
 
-    const transportUri = createLuaLsTransportUri(
-      CbsLspPathHelper.getFilePathFromUri(params.textDocument.uri),
-    );
+    const { transportUri } = this.createRequestContext(params.textDocument.uri);
 
     try {
       return await this.client.request<LspRange | { placeholder: string; range: LspRange }>(
         'textDocument/prepareRename',
         {
-          ...params,
-          textDocument: {
-            uri: transportUri,
-          },
+          ...this.createTransportParams(params, transportUri),
         },
         DEFAULT_LUALS_RENAME_TIMEOUT_MS,
       );
@@ -624,21 +491,15 @@ export class LuaLsProxy {
       return null;
     }
 
-    const sourceUri = params.textDocument.uri;
-    const transportUri = createLuaLsTransportUri(CbsLspPathHelper.getFilePathFromUri(sourceUri));
+    const { transportUri, remapContext } = this.createRequestContext(params.textDocument.uri);
 
     try {
       const edit = await this.client.request<WorkspaceEdit>(
         'textDocument/rename',
-        {
-          ...params,
-          textDocument: {
-            uri: transportUri,
-          },
-        },
+        this.createTransportParams(params, transportUri),
         DEFAULT_LUALS_RENAME_TIMEOUT_MS,
       );
-      return remapLuaLsWorkspaceEdit(edit, sourceUri, transportUri);
+      return remapLuaLsWorkspaceEdit(edit, remapContext);
     } catch {
       return null;
     }
@@ -652,6 +513,6 @@ export class LuaLsProxy {
  * @param client - LuaLS request/response를 수행할 companion client
  * @returns Lua hover proxy provider seam
  */
-export function createLuaLsProxy(client: LuaLsRequestClient): LuaLsProxy {
-  return new LuaLsProxy(client);
+export function createLuaLsProxy(client: LuaLsRequestClient, options: LuaLsProxyOptions = {}): LuaLsProxy {
+  return new LuaLsProxy(client, options);
 }

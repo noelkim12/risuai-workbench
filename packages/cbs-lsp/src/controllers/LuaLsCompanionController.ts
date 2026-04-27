@@ -12,7 +12,6 @@ import type {
   DefinitionParams,
   DocumentHighlight,
   DocumentHighlightParams,
-  DocumentSymbol,
   DocumentSymbolParams,
   Hover,
   HoverParams,
@@ -44,7 +43,7 @@ import {
   type LuaLsProcessStartOptions,
   type LuaLsRestartPolicyStatus,
 } from '../providers/lua/lualsProcess';
-import { createLuaLsProxy, type LuaLsProxy } from '../providers/lua/lualsProxy';
+import { createLuaLsProxy, type LuaLsDocumentSymbolResult, type LuaLsProxy } from '../providers/lua/lualsProxy';
 import {
   createRisuAiLuaTypeStubWorkspace,
   type RisuAiLuaTypeStubWorkspace,
@@ -102,7 +101,9 @@ export class LuaLsCompanionController {
     this.typeStubWorkspace = typeStubWorkspace;
     this.typeStubWorkspace.syncRuntimeStub();
     this.documentRouter = createLuaLsDocumentRouter(processManager);
-    this.proxy = createLuaLsProxy(processManager);
+    this.proxy = createLuaLsProxy(processManager, {
+      uriRemapResolver: this.documentRouter,
+    });
   }
 
   /**
@@ -380,7 +381,7 @@ export class LuaLsCompanionController {
   provideDocumentSymbol(
     params: DocumentSymbolParams,
     cancellationToken?: CancellationToken,
-  ): Promise<DocumentSymbol[]> {
+  ): Promise<LuaLsDocumentSymbolResult> {
     return this.proxy.provideDocumentSymbol(params, cancellationToken);
   }
 

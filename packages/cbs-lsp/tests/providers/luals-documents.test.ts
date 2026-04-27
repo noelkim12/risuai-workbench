@@ -3,7 +3,6 @@
  * @file packages/cbs-lsp/tests/providers/luals-documents.test.ts
  */
 
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 
@@ -69,6 +68,93 @@ describe('lualsDocuments', () => {
       text: 'local mood = getState("mood")\n',
     });
     expect(processManager.closeDocument).toHaveBeenCalledWith(workspaceLuaFile.uri);
+    expect(router.resolveSourceUriFromTransportUri(createLuaLsShadowDocumentUri('/workspace/lua/trigger.risulua'))).toBeNull();
+  });
+
+  it('exposes workspace-wide transport to source URI entries while routed documents are mirrored', () => {
+    const processManager = {
+      closeDocument: vi.fn(),
+      syncDocument: vi.fn(),
+    };
+    const router = createLuaLsDocumentRouter(processManager);
+    const firstLuaFile = createWorkspaceScanFileFromText({
+      workspaceRoot: '/workspace',
+      absolutePath: '/workspace/lua/first.risulua',
+      text: 'local first = getState("first")',
+      artifact: 'lua',
+    });
+    const secondLuaFile = createWorkspaceScanFileFromText({
+      workspaceRoot: '/workspace',
+      absolutePath: '/workspace/lua/second.risulua',
+      text: 'local second = getState("second")',
+      artifact: 'lua',
+    });
+    const firstTransportUri = createLuaLsShadowDocumentUri('/workspace/lua/first.risulua');
+    const secondTransportUri = createLuaLsShadowDocumentUri('/workspace/lua/second.risulua');
+
+    router.syncWorkspaceDocuments('/workspace', [firstLuaFile, secondLuaFile]);
+
+    expect(router.resolveSourceUriFromTransportUri(firstTransportUri)).toBe(firstLuaFile.uri);
+    expect(router.resolveSourceUriFromTransportUri(secondTransportUri)).toBe(secondLuaFile.uri);
+    expect([...router.getTransportToSourceUriEntries()]).toEqual([
+      [firstTransportUri, firstLuaFile.uri],
+      [secondTransportUri, secondLuaFile.uri],
+    ]);
+
+    router.syncWorkspaceDocuments('/workspace', [secondLuaFile]);
+
+    expect(router.resolveSourceUriFromTransportUri(firstTransportUri)).toBeNull();
+    expect(router.resolveSourceUriFromTransportUri(secondTransportUri)).toBe(secondLuaFile.uri);
+
+    router.clearWorkspaceDocuments('/workspace');
+
+    expect(router.resolveSourceUriFromTransportUri(secondTransportUri)).toBeNull();
+  });
+
+  it('keeps standalone transport URI entries only while the standalone document is mirrored', () => {
+    const processManager = {
+      closeDocument: vi.fn(),
+      syncDocument: vi.fn(),
+    };
+    const router = createLuaLsDocumentRouter(processManager);
+    const sourceUri = 'file:///workspace/lua/standalone.risulua';
+    const transportUri = createLuaLsShadowDocumentUri('/workspace/lua/standalone.risulua');
+
+    router.syncStandaloneDocument(TextDocument.create(sourceUri, 'lua', 1, 'return getState("mood")'));
+
+    expect(router.resolveSourceUriFromTransportUri(transportUri)).toBe(sourceUri);
+
+    router.closeStandaloneDocument(sourceUri);
+
+    expect(router.resolveSourceUriFromTransportUri(transportUri)).toBeNull();
+  });
+
+  it('keeps reverse URI entries when standalone and workspace mirrors overlap', () => {
+    const processManager = {
+      closeDocument: vi.fn(),
+      syncDocument: vi.fn(),
+    };
+    const router = createLuaLsDocumentRouter(processManager);
+    const workspaceLuaFile = createWorkspaceScanFileFromText({
+      workspaceRoot: '/workspace',
+      absolutePath: '/workspace/lua/overlap.risulua',
+      text: 'return getState("overlap")',
+      artifact: 'lua',
+    });
+    const transportUri = createLuaLsShadowDocumentUri('/workspace/lua/overlap.risulua');
+
+    router.syncWorkspaceDocuments('/workspace', [workspaceLuaFile]);
+    router.syncStandaloneDocument(TextDocument.create(workspaceLuaFile.uri, 'lua', 1, workspaceLuaFile.text));
+
+    expect(router.resolveSourceUriFromTransportUri(transportUri)).toBe(workspaceLuaFile.uri);
+
+    router.closeStandaloneDocument(workspaceLuaFile.uri);
+
+    expect(router.resolveSourceUriFromTransportUri(transportUri)).toBe(workspaceLuaFile.uri);
+
+    router.clearWorkspaceDocuments('/workspace');
+
+    expect(router.resolveSourceUriFromTransportUri(transportUri)).toBeNull();
   });
 
   it('skips oversized workspace lua files before LuaLS shadow sync', () => {
