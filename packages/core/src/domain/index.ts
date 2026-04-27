@@ -176,6 +176,10 @@ export {
   RISUAI_LUA_RUNTIME_STUB_FILE_NAME,
   createMinimalRisuAiLuaTypeStub,
   getRisuAiLuaDiagnosticGlobals,
+  getRisuAiLuaRuntimeDocumentation,
+  getRisuAiLuaRuntimeSignatures,
+  type RisuAiLuaRuntimeDocumentation,
+  type RisuAiLuaRuntimeParameterDocumentation,
 } from './analyze/lua-type-stubs';
 export { analyzeLuaSource, type LuaAnalysisArtifact } from './analyze/lua-core';
 export {

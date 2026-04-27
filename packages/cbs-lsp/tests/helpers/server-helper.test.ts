@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type {
   CancellationToken,
   CompletionItem,
+  CompletionList,
   CompletionParams,
   Connection,
   Definition,
@@ -39,7 +40,7 @@ import { createFragmentRequest } from '../../src/helpers/server-workspace-helper
 type CompletionHandler = (
   params: CompletionParams,
   cancellationToken?: CancellationToken,
-) => CompletionItem[] | Promise<CompletionItem[]>;
+) => CompletionItem[] | CompletionList | Promise<CompletionItem[] | CompletionList>;
 
 type DefinitionHandler = (
   params: DefinitionParams,
@@ -322,6 +323,97 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
     expect(result).toMatchObject([{ label: 'cbs-local' }]);
   });
 
+  it('returns runtime completion overlay when LuaLS returns no runtime candidates', async () => {
+    const connectionFixture = createConnectionStub();
+    const request: FragmentAnalysisRequest = {
+      uri: 'file:///workspace/lua/small.risulua',
+      filePath: '/workspace/lua/small.risulua',
+      version: 1,
+      text: 'local result = ax',
+    };
+    const luaLsProxy = {
+      getRuntime: vi.fn(() => ({ status: 'ready' })),
+      provideCompletion: vi.fn(async () => []),
+      provideHover: vi.fn(async () => null),
+    } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
+    const registrar = new ServerFeatureRegistrar({
+      ...createRegistrarContext(request, luaLsProxy),
+      connection: connectionFixture.connection,
+    });
+    (registrar as unknown as { registerCompletionHandler: () => void }).registerCompletionHandler();
+
+    const result = await connectionFixture.getCompletionHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 0, character: request.text.length },
+    });
+    const labels = Array.isArray(result) ? result.map((item) => item.label) : result.items.map((item) => item.label);
+
+    expect(labels).toContain('axLLM');
+    expect(luaLsProxy.provideCompletion).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not duplicate LuaLS generated runtime function labels', async () => {
+    const connectionFixture = createConnectionStub();
+    const request: FragmentAnalysisRequest = {
+      uri: 'file:///workspace/lua/small.risulua',
+      filePath: '/workspace/lua/small.risulua',
+      version: 1,
+      text: 'local value = get',
+    };
+    const luaLsProxy = {
+      getRuntime: vi.fn(() => ({ status: 'ready' })),
+      provideCompletion: vi.fn(async () => ({
+        isIncomplete: false,
+        items: [{ label: 'getState(' }, { label: 'getLoreBooks(' }],
+      })),
+      provideHover: vi.fn(async () => null),
+    } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
+    const registrar = new ServerFeatureRegistrar({
+      ...createRegistrarContext(request, luaLsProxy),
+      connection: connectionFixture.connection,
+    });
+    (registrar as unknown as { registerCompletionHandler: () => void }).registerCompletionHandler();
+
+    const result = await connectionFixture.getCompletionHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 0, character: request.text.length },
+    });
+    const labels = Array.isArray(result) ? result.map((item) => item.label) : result.items.map((item) => item.label);
+
+    expect(labels.filter((label) => label === 'getState')).toEqual([]);
+    expect(labels.filter((label) => label === 'getState(')).toHaveLength(1);
+    expect(labels).toContain('getChat');
+  });
+
+  it('returns runtime completion overlay when oversized .risulua skips LuaLS proxy', async () => {
+    const connectionFixture = createConnectionStub();
+    const request: FragmentAnalysisRequest = {
+      uri: 'file:///workspace/lua/huge.risulua',
+      filePath: '/workspace/lua/huge.risulua',
+      version: 1,
+      text: `${'x'.repeat(MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH + 1)}\nlo`,
+    };
+    const luaLsProxy = {
+      getRuntime: vi.fn(() => ({ status: 'ready' })),
+      provideCompletion: vi.fn(async () => [{ label: 'lua-item' }]),
+      provideHover: vi.fn(async () => null),
+    } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
+    const registrar = new ServerFeatureRegistrar({
+      ...createRegistrarContext(request, luaLsProxy),
+      connection: connectionFixture.connection,
+    });
+    (registrar as unknown as { registerCompletionHandler: () => void }).registerCompletionHandler();
+
+    const result = await connectionFixture.getCompletionHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 1, character: 2 },
+    });
+    const labels = Array.isArray(result) ? result.map((item) => item.label) : result.items.map((item) => item.label);
+
+    expect(labels).toContain('log');
+    expect(luaLsProxy.provideCompletion).not.toHaveBeenCalled();
+  });
+
   it('returns null hover without calling LuaLS for oversized .risulua documents', async () => {
     const connectionFixture = createConnectionStub();
     const request: FragmentAnalysisRequest = {
@@ -348,6 +440,35 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
 
     expect(luaLsProxy.provideHover).not.toHaveBeenCalled();
     expect(result).toBeNull();
+  });
+
+  it('returns runtime hover without calling LuaLS for oversized .risulua runtime globals', async () => {
+    const connectionFixture = createConnectionStub();
+    const request: FragmentAnalysisRequest = {
+      uri: 'file:///workspace/lua/huge.risulua',
+      filePath: '/workspace/lua/huge.risulua',
+      version: 1,
+      text: `${'x'.repeat(MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH + 1)}\nlog("hello")`,
+    };
+    const luaLsProxy = {
+      getRuntime: vi.fn(() => ({ status: 'ready' })),
+      provideCompletion: vi.fn(async () => [{ label: 'lua-item' }]),
+      provideHover: vi.fn(async () => ({ contents: 'lua-hover' })),
+    } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
+    const registrar = new ServerFeatureRegistrar({
+      ...createRegistrarContext(request, luaLsProxy),
+      connection: connectionFixture.connection,
+    });
+    (registrar as unknown as { registerHoverHandler: () => void }).registerHoverHandler();
+
+    const result = await connectionFixture.getHoverHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 1, character: 1 },
+    });
+
+    expect(luaLsProxy.provideHover).not.toHaveBeenCalled();
+    expect(JSON.stringify(result)).toContain('RisuAI Runtime');
+    expect(JSON.stringify(result)).toContain('log');
   });
 
   it('returns CBS hover immediately without calling LuaLS for small .risulua CBS targets', async () => {
@@ -383,6 +504,295 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
     expect(luaLsProxy.provideHover).not.toHaveBeenCalled();
     expect(JSON.stringify(result)).toContain('cbs-hover');
     expect(JSON.stringify(result)).not.toContain('lua-hover');
+  });
+
+  it('returns runtime hover when LuaLS returns null for a RisuAI runtime global', async () => {
+    const connectionFixture = createConnectionStub();
+    const request: FragmentAnalysisRequest = {
+      uri: 'file:///workspace/lua/small.risulua',
+      filePath: '/workspace/lua/small.risulua',
+      version: 1,
+      text: 'log("hello")',
+    };
+    const luaLsProxy = {
+      getRuntime: vi.fn(() => ({ status: 'ready' })),
+      provideCompletion: vi.fn(async () => []),
+      provideHover: vi.fn(async () => null),
+    } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
+    const registrar = new ServerFeatureRegistrar({
+      ...createRegistrarContext(request, luaLsProxy),
+      connection: connectionFixture.connection,
+    });
+    (registrar as unknown as { registerHoverHandler: () => void }).registerHoverHandler();
+
+    const result = await connectionFixture.getHoverHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 0, character: 1 },
+    });
+
+    expect(JSON.stringify(result)).toContain('RisuAI Runtime');
+    expect(JSON.stringify(result)).toContain('log');
+  });
+
+  it('returns runtime definition when LuaLS returns null for a RisuAI runtime global', async () => {
+    const connectionFixture = createConnectionStub();
+    const request: FragmentAnalysisRequest = {
+      uri: 'file:///workspace/lua/small.risulua',
+      filePath: '/workspace/lua/small.risulua',
+      version: 1,
+      text: 'getState("mood")',
+    };
+    const luaLsProxy = {
+      getRuntime: vi.fn(() => ({ status: 'ready' })),
+      provideCompletion: vi.fn(async () => []),
+      provideDefinition: vi.fn(async () => null),
+      provideHover: vi.fn(async () => null),
+    } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
+    const registrar = new ServerFeatureRegistrar({
+      ...createRegistrarContext(request, luaLsProxy),
+      connection: connectionFixture.connection,
+    });
+    (registrar as unknown as { registerDefinitionHandler: () => void }).registerDefinitionHandler();
+
+    const result = await connectionFixture.getDefinitionHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 0, character: 2 },
+    });
+
+    expect(JSON.stringify(result)).toContain('risu-runtime');
+  });
+
+  it('returns runtime hover for _G runtime member access when LuaLS returns null', async () => {
+    const connectionFixture = createConnectionStub();
+    const request: FragmentAnalysisRequest = {
+      uri: 'file:///workspace/lua/small.risulua',
+      filePath: '/workspace/lua/small.risulua',
+      version: 1,
+      text: 'if _G.axLLM then result = axLLM(triggerId, request_msgs) end',
+    };
+    const luaLsProxy = {
+      getRuntime: vi.fn(() => ({ status: 'ready' })),
+      provideCompletion: vi.fn(async () => []),
+      provideHover: vi.fn(async () => null),
+    } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
+    const registrar = new ServerFeatureRegistrar({
+      ...createRegistrarContext(request, luaLsProxy),
+      connection: connectionFixture.connection,
+    });
+    (registrar as unknown as { registerHoverHandler: () => void }).registerHoverHandler();
+
+    const result = await connectionFixture.getHoverHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 0, character: 4 },
+    });
+
+    expect(JSON.stringify(result)).toContain('RisuAI Runtime');
+    expect(JSON.stringify(result)).toContain('axLLM');
+  });
+
+  it('returns runtime definition for _G runtime member access when LuaLS returns null', async () => {
+    const connectionFixture = createConnectionStub();
+    const request: FragmentAnalysisRequest = {
+      uri: 'file:///workspace/lua/small.risulua',
+      filePath: '/workspace/lua/small.risulua',
+      version: 1,
+      text: 'if _G.axLLM then result = axLLM(triggerId, request_msgs) end',
+    };
+    const luaLsProxy = {
+      getRuntime: vi.fn(() => ({ status: 'ready' })),
+      provideCompletion: vi.fn(async () => []),
+      provideDefinition: vi.fn(async () => null),
+      provideHover: vi.fn(async () => null),
+    } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
+    const registrar = new ServerFeatureRegistrar({
+      ...createRegistrarContext(request, luaLsProxy),
+      connection: connectionFixture.connection,
+    });
+    (registrar as unknown as { registerDefinitionHandler: () => void }).registerDefinitionHandler();
+
+    const result = await connectionFixture.getDefinitionHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 0, character: 5 },
+    });
+
+    expect(JSON.stringify(result)).toContain('risu-runtime');
+  });
+
+  it('returns runtime hover for runtime functions assigned to local aliases', async () => {
+    const connectionFixture = createConnectionStub();
+    const request: FragmentAnalysisRequest = {
+      uri: 'file:///workspace/lua/small.risulua',
+      filePath: '/workspace/lua/small.risulua',
+      version: 1,
+      text: 'local invokeModel = axLLM',
+    };
+    const luaLsProxy = {
+      getRuntime: vi.fn(() => ({ status: 'ready' })),
+      provideCompletion: vi.fn(async () => []),
+      provideHover: vi.fn(async () => null),
+    } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
+    const registrar = new ServerFeatureRegistrar({
+      ...createRegistrarContext(request, luaLsProxy),
+      connection: connectionFixture.connection,
+    });
+    (registrar as unknown as { registerHoverHandler: () => void }).registerHoverHandler();
+
+    const result = await connectionFixture.getHoverHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 0, character: 22 },
+    });
+
+    expect(JSON.stringify(result)).toContain('RisuAI Runtime');
+    expect(JSON.stringify(result)).toContain('axLLM');
+  });
+
+  it('returns runtime definition for runtime functions assigned to local aliases', async () => {
+    const connectionFixture = createConnectionStub();
+    const request: FragmentAnalysisRequest = {
+      uri: 'file:///workspace/lua/small.risulua',
+      filePath: '/workspace/lua/small.risulua',
+      version: 1,
+      text: 'local invokeModel = axLLM',
+    };
+    const luaLsProxy = {
+      getRuntime: vi.fn(() => ({ status: 'ready' })),
+      provideCompletion: vi.fn(async () => []),
+      provideDefinition: vi.fn(async () => null),
+      provideHover: vi.fn(async () => null),
+    } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
+    const registrar = new ServerFeatureRegistrar({
+      ...createRegistrarContext(request, luaLsProxy),
+      connection: connectionFixture.connection,
+    });
+    (registrar as unknown as { registerDefinitionHandler: () => void }).registerDefinitionHandler();
+
+    const result = await connectionFixture.getDefinitionHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 0, character: 22 },
+    });
+
+    expect(JSON.stringify(result)).toContain('risu-runtime');
+  });
+
+  it('does not intercept normal Lua symbol hover responses', async () => {
+    const connectionFixture = createConnectionStub();
+    const request: FragmentAnalysisRequest = {
+      uri: 'file:///workspace/lua/small.risulua',
+      filePath: '/workspace/lua/small.risulua',
+      version: 1,
+      text: 'string.len("abc")',
+    };
+    const luaLsProxy = {
+      getRuntime: vi.fn(() => ({ status: 'ready' })),
+      provideCompletion: vi.fn(async () => []),
+      provideHover: vi.fn(async () => ({ contents: { kind: 'markdown', value: 'LuaLS string hover' } })),
+    } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
+    const registrar = new ServerFeatureRegistrar({
+      ...createRegistrarContext(request, luaLsProxy),
+      connection: connectionFixture.connection,
+    });
+    (registrar as unknown as { registerHoverHandler: () => void }).registerHoverHandler();
+
+    const result = await connectionFixture.getHoverHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 0, character: 2 },
+    });
+
+    expect(JSON.stringify(result)).toContain('LuaLS string hover');
+    expect(JSON.stringify(result)).not.toContain('RisuAI Runtime');
+  });
+
+  it('keeps CBS macro hover priority over runtime overlay tokens inside macros', async () => {
+    const connectionFixture = createConnectionStub();
+    const request: FragmentAnalysisRequest = {
+      uri: 'file:///workspace/lua/small.risulua',
+      filePath: '/workspace/lua/small.risulua',
+      version: 1,
+      text: '{{getvar::log}}',
+    };
+    const luaLsProxy = {
+      getRuntime: vi.fn(() => ({ status: 'ready' })),
+      provideCompletion: vi.fn(async () => []),
+      provideHover: vi.fn(async () => null),
+    } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
+    const baseContext = createRegistrarContext(request, luaLsProxy);
+    const registrar = new ServerFeatureRegistrar({
+      ...baseContext,
+      connection: connectionFixture.connection,
+      providers: {
+        ...baseContext.providers,
+        hoverProvider: {
+          provide: vi.fn(() => ({ contents: { kind: 'markdown', value: 'CBS getvar hover' } })),
+        } as unknown as ServerFeatureRegistrarContext['providers']['hoverProvider'],
+      },
+    });
+    (registrar as unknown as { registerHoverHandler: () => void }).registerHoverHandler();
+
+    const result = await connectionFixture.getHoverHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 0, character: 2 },
+    });
+
+    expect(JSON.stringify(result)).toContain('CBS getvar hover');
+    expect(JSON.stringify(result)).not.toContain('RisuAI Runtime');
+    expect(luaLsProxy.provideHover).not.toHaveBeenCalled();
+  });
+
+  it('does not run runtime hover overlay for runtime-looking tokens in CBS macro arguments', async () => {
+    const connectionFixture = createConnectionStub();
+    const request: FragmentAnalysisRequest = {
+      uri: 'file:///workspace/lua/small.risulua',
+      filePath: '/workspace/lua/small.risulua',
+      version: 1,
+      text: '{{getvar::log}}',
+    };
+    const luaLsProxy = {
+      getRuntime: vi.fn(() => ({ status: 'ready' })),
+      provideCompletion: vi.fn(async () => []),
+      provideHover: vi.fn(async () => ({ contents: 'lua-hover' })),
+    } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
+    const registrar = new ServerFeatureRegistrar({
+      ...createRegistrarContext(request, luaLsProxy),
+      connection: connectionFixture.connection,
+    });
+    (registrar as unknown as { registerHoverHandler: () => void }).registerHoverHandler();
+
+    const result = await connectionFixture.getHoverHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 0, character: 11 },
+    });
+
+    expect(result).toBeNull();
+    expect(luaLsProxy.provideHover).not.toHaveBeenCalled();
+  });
+
+  it('does not run runtime definition overlay for runtime-looking tokens in CBS macro arguments', async () => {
+    const connectionFixture = createConnectionStub();
+    const request: FragmentAnalysisRequest = {
+      uri: 'file:///workspace/lua/small.risulua',
+      filePath: '/workspace/lua/small.risulua',
+      version: 1,
+      text: '{{getvar::log}}',
+    };
+    const luaLsProxy = {
+      getRuntime: vi.fn(() => ({ status: 'ready' })),
+      provideCompletion: vi.fn(async () => []),
+      provideDefinition: vi.fn(async () => null),
+      provideHover: vi.fn(async () => null),
+    } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
+    const registrar = new ServerFeatureRegistrar({
+      ...createRegistrarContext(request, luaLsProxy),
+      connection: connectionFixture.connection,
+    });
+    (registrar as unknown as { registerDefinitionHandler: () => void }).registerDefinitionHandler();
+
+    const result = await connectionFixture.getDefinitionHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 0, character: 11 },
+    });
+
+    expect(result).toBeNull();
+    expect(luaLsProxy.provideDefinition).not.toHaveBeenCalled();
   });
 
   it('proxies definition to LuaLS for small .risulua Lua symbols', async () => {

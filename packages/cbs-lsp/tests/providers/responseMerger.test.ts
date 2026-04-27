@@ -1,9 +1,18 @@
-import type { CompletionItem, CompletionList, Hover } from 'vscode-languageserver/node';
+import {
+  MarkupKind,
+  Position,
+  Range,
+  type CompletionItem,
+  type CompletionList,
+  type Hover,
+  type LocationLink,
+} from 'vscode-languageserver/node';
 import { describe, expect, it } from 'vitest';
 
 import {
   buildLuaStateHoverOverlayMarkdown,
   buildLuaStateNameOverlayCompletions,
+  mergeDefinitions,
   mergeLuaHoverResponse,
   mergeLuaCompletionResponse,
 } from '../../src/providers/lua/responseMerger';
@@ -395,5 +404,35 @@ describe('Lua responseMerger', () => {
       'getState(',
       'getLoreBooks(',
     ]);
+  });
+
+  it('appends runtime overlay hover markdown to LuaLS hover markdown', () => {
+    const luaHover: Hover = {
+      contents: { kind: MarkupKind.Markdown, value: 'LuaLS hover' },
+    };
+    const overlayHover: Hover = {
+      contents: {
+        kind: MarkupKind.Markdown,
+        value: '**RisuAI Runtime**\n\n```lua\nlog(message: any): void\n```',
+      },
+    };
+
+    const merged = mergeLuaHoverResponse(luaHover, overlayHover);
+
+    expect(JSON.stringify(merged)).toContain('LuaLS hover');
+    expect(JSON.stringify(merged)).toContain('RisuAI Runtime');
+  });
+
+  it('dedupes runtime overlay definition links by uri and range', () => {
+    const range = Range.create(Position.create(0, 0), Position.create(0, 0));
+    const link: LocationLink = {
+      targetUri: 'file:///workspace/.risu-stubs/risu-runtime.d.lua',
+      targetRange: range,
+      targetSelectionRange: range,
+    };
+
+    const merged = mergeDefinitions([link], [link]);
+
+    expect(merged).toHaveLength(1);
   });
 });

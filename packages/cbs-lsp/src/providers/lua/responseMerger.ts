@@ -13,6 +13,7 @@ import {
   type CompletionParams,
   type Hover,
   type HoverParams,
+  type LocationLink,
   type MarkedString,
   type MarkupContent,
 } from 'vscode-languageserver/node';
@@ -31,6 +32,7 @@ import { offsetToPosition, positionToOffset } from '../../utils/position';
 
 type LuaCompletionResponse = CompletionItem[] | CompletionList;
 type LuaHoverResponse = Hover | null;
+type LuaHoverOverlay = string | Hover | null;
 type LuaStateOverlayService = Pick<
   VariableFlowService,
   'getAllVariableNames' | 'getVariableCompletionSummaries' | 'queryAt' | 'queryVariable'
@@ -452,9 +454,11 @@ export function mergeLuaCompletionResponse(
  */
 export function mergeLuaHoverResponse(
   base: LuaHoverResponse,
-  overlayMarkdown: string | null,
+  overlay: LuaHoverOverlay,
   fallbackRange?: Range,
 ): LuaHoverResponse {
+  const overlayMarkdown = typeof overlay === 'string' || !overlay ? overlay : normalizeHoverContents(overlay.contents);
+  const overlayRange = typeof overlay === 'string' || !overlay ? fallbackRange : overlay.range;
   if (!overlayMarkdown) {
     return base;
   }
@@ -465,7 +469,7 @@ export function mergeLuaHoverResponse(
         kind: MarkupKind.Markdown,
         value: overlayMarkdown,
       },
-      range: fallbackRange,
+      range: overlayRange,
     };
   }
 
@@ -476,6 +480,39 @@ export function mergeLuaHoverResponse(
       kind: MarkupKind.Markdown,
       value: [baseMarkdown, overlayMarkdown].filter(Boolean).join('\n\n---\n\n'),
     },
-    range: base.range ?? fallbackRange,
+    range: overlayRange ?? base.range ?? fallbackRange,
   };
+}
+
+/**
+ * mergeDefinitions 함수.
+ * LuaLS definition과 overlay definition을 target URI/range 기준으로 dedupe해 병합함.
+ *
+ * @param primary - 우선 배치할 definition 목록
+ * @param secondary - 뒤에 병합할 definition 목록
+ * @returns 중복이 제거된 LocationLink 목록 또는 null
+ */
+export function mergeDefinitions(
+  primary: readonly LocationLink[] | null,
+  secondary: readonly LocationLink[] | null,
+): LocationLink[] | null {
+  const merged: LocationLink[] = [];
+  const seen = new Set<string>();
+
+  for (const link of [...(primary ?? []), ...(secondary ?? [])]) {
+    const key = [
+      link.targetUri,
+      link.targetRange.start.line,
+      link.targetRange.start.character,
+      link.targetRange.end.line,
+      link.targetRange.end.character,
+    ].join(':');
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    merged.push(link);
+  }
+
+  return merged.length > 0 ? merged : null;
 }

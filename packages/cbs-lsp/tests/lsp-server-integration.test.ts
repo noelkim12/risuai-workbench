@@ -1559,7 +1559,9 @@ describe('LSP server integration', () => {
       createCancellationToken(false),
     );
 
-    expect(getCompletionItems(completion ?? null)).toEqual([{ label: 'getState' }]);
+    expect(getCompletionItems(completion ?? null).map((item) => item.label)).toEqual(
+      expect.arrayContaining(['getState']),
+    );
     expect(requestSpy).toHaveBeenCalledTimes(1);
   expect(connection.traceMessages).toEqual(
       expect.arrayContaining([
@@ -1808,6 +1810,86 @@ describe('LSP server integration', () => {
       'getLoreBooks(',
     ]);
     expect(requestSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('merges RisuAI runtime global completions into `.risulua` when LuaLS returns no candidates', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const uri = 'file:///tmp/runtime-completion.risulua';
+    const text = 'local result = ax\n';
+    const requestSpy = vi.fn(async () => []);
+    const luaLsManager = createLuaLsProcessManagerStub({
+      getRuntime: vi.fn(() =>
+        createLuaLsCompanionRuntime({
+          detail: 'LuaLS sidecar is ready to serve proxied completion requests.',
+          executablePath: '/mock/luals',
+          health: 'healthy',
+          status: 'ready',
+        }),
+      ),
+      request: requestSpy,
+    });
+
+    registerServer(connection as any, documents as any, {
+      createLuaLsProcessManager: (() => luaLsManager) as unknown as () => LuaLsProcessManager,
+    });
+    connection.initializeHandler?.({ capabilities: {} } as InitializeParams);
+    connection.initializedHandler?.({});
+    documents.open(uri, text, 1, 'lua');
+
+    const completion = await connection.completionHandler?.(
+      {
+        textDocument: { uri },
+        position: positionAt(text, 'ax', 2),
+      },
+      createCancellationToken(false),
+    );
+    const labels = getCompletionItems(completion ?? null).map((item) => item.label);
+
+    expect(labels).toContain('axLLM');
+    expect(requestSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps LuaLS generated runtime completion labels deduped in `.risulua`', async () => {
+    const connection = new FakeConnection();
+    const documents = new FakeDocuments();
+    const uri = 'file:///tmp/runtime-completion-dedupe.risulua';
+    const text = 'local state = get\n';
+    const requestSpy = vi.fn(async () => ({
+      isIncomplete: false,
+      items: [{ label: 'getState(' }, { label: 'getLoreBooks(' }],
+    }));
+    const luaLsManager = createLuaLsProcessManagerStub({
+      getRuntime: vi.fn(() =>
+        createLuaLsCompanionRuntime({
+          detail: 'LuaLS sidecar is ready to serve proxied completion requests.',
+          executablePath: '/mock/luals',
+          health: 'healthy',
+          status: 'ready',
+        }),
+      ),
+      request: requestSpy,
+    });
+
+    registerServer(connection as any, documents as any, {
+      createLuaLsProcessManager: (() => luaLsManager) as unknown as () => LuaLsProcessManager,
+    });
+    connection.initializeHandler?.({ capabilities: {} } as InitializeParams);
+    connection.initializedHandler?.({});
+    documents.open(uri, text, 1, 'lua');
+
+    const completion = await connection.completionHandler?.(
+      {
+        textDocument: { uri },
+        position: positionAt(text, 'get', 3),
+      },
+      createCancellationToken(false),
+    );
+    const labels = getCompletionItems(completion ?? null).map((item) => item.label);
+
+    expect(labels.filter((label) => label === 'getState(')).toHaveLength(1);
+    expect(labels).not.toContain('getState');
+    expect(labels).toContain('getChat');
   });
 
   it('merges read-only cross-language bridge hover into `.risulua` LuaLS hover for getState string arguments', async () => {

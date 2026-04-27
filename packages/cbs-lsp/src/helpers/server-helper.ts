@@ -3,7 +3,9 @@
  * @file packages/cbs-lsp/src/helpers/server-helper.ts
  */
 
-import { CBSBuiltinRegistry } from 'risu-workbench-core';
+import { CBSBuiltinRegistry, RISUAI_LUA_RUNTIME_STUB_FILE_NAME } from 'risu-workbench-core';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
   type CodeAction,
   type CodeActionParams,
@@ -28,6 +30,7 @@ import {
   type InlayHintParams,
   LSPErrorCodes,
   type Location,
+  type LocationLink,
   MarkupKind,
   type SelectionRange,
   type SelectionRangeParams,
@@ -76,9 +79,18 @@ import {
   mergeLuaHoverResponse,
   mergeLuaCompletionResponse,
 } from '../providers/lua/responseMerger';
+import {
+  buildRisuAiRuntimeCompletionItems,
+  createRisuAiRuntimeDefinition,
+  createRisuAiRuntimeHover,
+} from '../providers/lua/risuaiRuntimeOverlay';
+import { getDefaultRisuAiLuaStubRootPath } from '../providers/lua/typeStubs';
 import { logFeature, traceFeatureRequest, traceFeatureResult } from '../utils/server-tracing';
 import { VariableFlowService, type WorkspaceSnapshotState } from '../services';
 import { isLuaArtifactPath } from '../utils/oversized-lua';
+
+type DefinitionResponse = Definition | LocationLink[];
+type DefinitionEntry = Location | LocationLink;
 
 export interface ServerFeatureRegistrarProviders {
   codeActionProvider: CodeActionProvider;
@@ -121,6 +133,10 @@ export interface ServerFeatureRegistrarContext {
     workspaceSnapshot: WorkspaceSnapshotState;
   } | null;
 }
+
+const RISUAI_RUNTIME_STUB_URI = pathToFileURL(
+  path.join(getDefaultRisuAiLuaStubRootPath(), RISUAI_LUA_RUNTIME_STUB_FILE_NAME),
+).href;
 
 /**
  * shouldSkipRequest 함수.
@@ -249,6 +265,20 @@ function mergeCbsAndLuaHover(cbsHover: Hover | null, luaHover: Hover | null): Ho
 }
 
 /**
+ * collectCompletionResponseLabels 함수.
+ * LuaLS completion response shape와 array shape 모두에서 label set을 추출함.
+ *
+ * @param response - LuaLS 또는 merged completion response
+ * @returns completion label set
+ */
+function collectCompletionResponseLabels(
+  response: CompletionItem[] | CompletionList,
+): ReadonlySet<string> {
+  const items = Array.isArray(response) ? response : response.items;
+  return new Set(items.map((item) => item.label));
+}
+
+/**
  * mergeDefinitions 함수.
  * CBS와 LuaLS definition 응답을 같은 LSP Definition 배열로 합치고 중복 target을 제거함.
  *
@@ -256,9 +286,12 @@ function mergeCbsAndLuaHover(cbsHover: Hover | null, luaHover: Hover | null): Ho
  * @param luaDefinition - LuaLS proxy definition 결과
  * @returns 병합된 definition 결과
  */
-function mergeDefinitions(cbsDefinition: Definition | null, luaDefinition: Definition | null): Definition | null {
+function mergeDefinitions(
+  cbsDefinition: DefinitionResponse | null,
+  luaDefinition: DefinitionResponse | null,
+): DefinitionResponse | null {
   const entries = [cbsDefinition, luaDefinition]
-    .flatMap((definition) => {
+    .flatMap<DefinitionEntry>((definition) => {
       if (!definition) {
         return [];
       }
@@ -283,7 +316,7 @@ function mergeDefinitions(cbsDefinition: Definition | null, luaDefinition: Defin
     return true;
   });
 
-  return merged as Definition;
+  return merged as DefinitionResponse;
 }
 
 function isPositionInsideCbsMacro(text: string, position: LSPRange['start']): boolean {
@@ -635,14 +668,24 @@ export class ServerFeatureRegistrar {
               luaCompletion = await this.luaLsProxy.provideCompletion(params, cancellationToken);
               luaCompletionDurationMs = Math.round(performance.now() - luaCompletionStartTime);
             }
-            const overlay = buildLuaStateNameOverlayCompletions({
+            const runtimeCompletionOverlay = routingRequest
+              ? buildRisuAiRuntimeCompletionItems({
+                  source: routingRequest.text,
+                  position: params.position,
+                  existingLabels: collectCompletionResponseLabels(luaCompletion),
+                })
+              : [];
+            const stateNameOverlay = buildLuaStateNameOverlayCompletions({
               params,
               request: workspaceRequest,
               variableFlowService: workspaceVariableFlowService,
             });
 
             return mergeLuaCompletionResponse(
-              mergeLuaCompletionResponse(luaCompletion, overlay),
+              mergeLuaCompletionResponse(
+                mergeLuaCompletionResponse(luaCompletion, runtimeCompletionOverlay),
+                stateNameOverlay,
+              ),
               cbsCompletion,
             );
           },
@@ -887,7 +930,7 @@ export class ServerFeatureRegistrar {
       const skipLuaLsProxy = routedToLuaLs && shouldSkipLuaLsProxyForRequest(routingRequest, filePath);
 
       if (routedToLuaLs) {
-        return this.requestRunner.runAsync<DefinitionParams, Definition | null>({
+        return this.requestRunner.runAsync<DefinitionParams, DefinitionResponse | null>({
           empty: null,
           feature: 'definition',
           getUri: (requestParams) => requestParams.textDocument.uri,
@@ -899,16 +942,20 @@ export class ServerFeatureRegistrar {
               cancellationToken,
             );
 
-            if (cbsDefinition && routingRequest && isPositionInsideCbsMacro(routingRequest.text, params.position)) {
+            if (routingRequest && isPositionInsideCbsMacro(routingRequest.text, params.position)) {
               return cbsDefinition;
             }
 
+            const runtimeDefinition = routingRequest
+              ? createRisuAiRuntimeDefinition(routingRequest.text, params.position, RISUAI_RUNTIME_STUB_URI)
+              : null;
+
             if (skipLuaLsProxy) {
-              return cbsDefinition;
+              return mergeDefinitions(cbsDefinition, runtimeDefinition);
             }
 
             const luaDefinition = await this.luaLsProxy.provideDefinition(params, cancellationToken);
-            return mergeDefinitions(cbsDefinition, luaDefinition);
+            return mergeDefinitions(mergeDefinitions(cbsDefinition, runtimeDefinition), luaDefinition);
           },
           summarize: (result) => ({
             count: Array.isArray(result) ? result.length : result ? 1 : 0,
@@ -1151,14 +1198,18 @@ export class ServerFeatureRegistrar {
           cancellationToken,
         );
 
-        if (cbsHover && routingRequest && isPositionInsideCbsMacro(routingRequest.text, params.position)) {
+        if (routingRequest && isPositionInsideCbsMacro(routingRequest.text, params.position)) {
           traceFeatureResult(this.connection, 'hover', 'end', {
             uri: params.textDocument.uri,
-            hasResult: true,
+            hasResult: cbsHover !== null,
             source: 'cbs',
           });
           return cbsHover;
         }
+
+        const runtimeHover = routingRequest
+          ? createRisuAiRuntimeHover(routingRequest.text, params.position)
+          : null;
 
         if (skipLuaLsProxy) {
           traceFeatureResult(this.connection, 'luaProxy', 'hover-skipped', {
@@ -1167,10 +1218,10 @@ export class ServerFeatureRegistrar {
           });
           traceFeatureResult(this.connection, 'hover', 'end', {
             uri: params.textDocument.uri,
-            hasResult: cbsHover !== null,
+            hasResult: cbsHover !== null || runtimeHover !== null,
             source: 'luaProxySkipped',
           });
-          return cbsHover;
+          return mergeCbsAndLuaHover(cbsHover, runtimeHover);
         }
 
         traceFeatureRequest(this.connection, 'luaProxy', 'hover-start', {
@@ -1190,7 +1241,8 @@ export class ServerFeatureRegistrar {
             variableFlowService: workspaceVariableFlowService,
           });
           const luaHover = mergeLuaHoverResponse(result, overlayMarkdown);
-          const mergedHover = mergeCbsAndLuaHover(cbsHover, luaHover);
+          const luaHoverWithRuntime = mergeLuaHoverResponse(luaHover, runtimeHover);
+          const mergedHover = mergeCbsAndLuaHover(cbsHover, luaHoverWithRuntime);
           traceFeatureResult(this.connection, 'luaProxy', 'hover-end', {
             uri: params.textDocument.uri,
             companionStatus: this.luaLsProxy.getRuntime().status,
