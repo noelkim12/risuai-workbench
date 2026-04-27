@@ -5,6 +5,10 @@
 
 import type { FunctionSymbol, VariableSymbol } from '../symbolTable';
 
+/**
+ * ScopeFrame 인터페이스.
+ * block/function 중첩 분석 중 현재 위치에서 보이는 scope 문맥.
+ */
 export interface ScopeFrame {
   parent: ScopeFrame | null;
   loopBindings: Map<string, VariableSymbol>;
@@ -38,6 +42,7 @@ export function findLoopBinding(scope: ScopeFrame, name: string): VariableSymbol
   let currentScope: ScopeFrame | null = scope;
 
   while (currentScope) {
+    // 가장 안쪽 frame부터 확인해 같은 이름의 바깥 loop alias를 shadow 처리함.
     const loopSymbol = currentScope.loopBindings.get(name);
     if (loopSymbol) {
       return loopSymbol;
@@ -60,6 +65,7 @@ export function findActiveFunction(scope: ScopeFrame): FunctionSymbol | null {
   let currentScope: ScopeFrame | null = scope;
 
   while (currentScope) {
+    // child frame이 activeFunction을 상속하므로 첫 hit가 현재 위치의 함수 문맥임.
     if (currentScope.activeFunction) {
       return currentScope.activeFunction;
     }

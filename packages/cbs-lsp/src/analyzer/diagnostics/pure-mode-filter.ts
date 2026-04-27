@@ -45,6 +45,7 @@ function shouldKeepDiagnostic(
     return true;
   }
 
+  /** pure block body 진단은 기본적으로 숨기고, 허용 macro 인자 내부 진단만 예외로 남김. */
   const macroContext = resolveMacroArgumentContextAtRange(
     context.tokens,
     context.sourceText,
@@ -87,6 +88,7 @@ function resolveMacroArgumentContextAtRange(
     return null;
   }
 
+  /** target argument에서 뒤로 걸어 macro open brace까지 추적해 인자 index를 복원함. */
   let openBraceIndex = -1;
   let separatorCount = 0;
   for (let index = tokenIndex - 1; index >= 0; index -= 1) {

@@ -30,6 +30,7 @@ export function collectVisibleLoopBindingsFromNodePath(
   const seenBindings = new Set<string>();
 
   const appendBinding = (binding: EachLoopBinding | null) => {
+    // 안쪽 scope에서 먼저 수집된 이름은 바깥 binding을 shadow 처리함.
     if (!binding || seenBindings.has(binding.bindingName)) {
       return;
     }
@@ -38,12 +39,14 @@ export function collectVisibleLoopBindingsFromNodePath(
     visibleBindings.push(binding);
   };
 
+  // malformed fragment는 AST path가 끊길 수 있어 cursor 앞 raw source를 먼저 복원함.
   if (sourceText.length > 0 && fragmentLocalOffset !== undefined) {
     for (const binding of collectVisibleLoopBindingsFromSource(sourceText, fragmentLocalOffset)) {
       appendBinding(binding);
     }
   }
 
+  // 정상 AST path가 있으면 가장 안쪽 block부터 확인해 parser 기반 range를 우선 보강함.
   if (sourceText.length > 0) {
     for (let index = nodePath.length - 1; index >= 0; index -= 1) {
       const node = nodePath[index];
@@ -115,6 +118,7 @@ function collectVisibleLoopBindingsFromSource(
 
   for (const match of prefixText.matchAll(macroPattern)) {
     const rawMacro = match[1]?.trim() ?? '';
+    // 닫힘 macro는 최근 열린 #each frame 하나만 제거해 현재 prefix 기준 stack을 맞춤.
     if (/^\/each\b/i.test(rawMacro)) {
       frames.pop();
       continue;
@@ -137,6 +141,7 @@ function collectVisibleLoopBindingsFromSource(
   const visibleBindings: EachLoopBinding[] = [];
   const seenBindings = new Set<string>();
 
+  // stack 뒤쪽이 가장 안쪽 scope이므로 역순으로 visible binding을 고정함.
   for (let index = frames.length - 1; index >= 0; index -= 1) {
     const binding = frames[index]?.binding;
     if (!binding || seenBindings.has(binding.bindingName)) {
@@ -175,6 +180,7 @@ function extractEachLoopBindingFromMacroText(
   const shorthandMatch = asMatch ? null : headerText.match(/^(\S+)\s+(\S+)$/u);
   const iteratorExpression = (asMatch?.[1] ?? shorthandMatch?.[1] ?? '').trim();
   const bindingName = (asMatch?.[2] ?? shorthandMatch?.[2] ?? '').trim();
+  // alias가 비어 있거나 예약어처럼 보이면 recovery 후보에서 제외함.
   if (
     !iteratorExpression ||
     !bindingName ||

@@ -59,6 +59,14 @@ export function collectMacroDiagnostics(
   return diagnostics;
 }
 
+/**
+ * appendDeprecatedDiagnostic 함수.
+ * deprecated macro builtin metadata를 diagnostic 목록에 추가함.
+ *
+ * @param diagnostics - diagnostic을 누적할 출력 배열
+ * @param builtin - deprecation metadata를 확인할 builtin 정의
+ * @param range - diagnostic과 quick fix가 가리킬 macro 이름 range
+ */
 function appendDeprecatedDiagnostic(
   diagnostics: DiagnosticInfo[],
   builtin: CBSBuiltinFunction,
@@ -92,6 +100,13 @@ function appendDeprecatedDiagnostic(
   );
 }
 
+/**
+ * appendArgumentDiagnostics 함수.
+ * macro argument 개수를 builtin argument contract와 비교함.
+ *
+ * @param diagnostics - diagnostic을 누적할 출력 배열
+ * @param options - argument count와 표시 target을 담은 검사 옵션
+ */
 function appendArgumentDiagnostics(
   diagnostics: DiagnosticInfo[],
   options: {
@@ -132,6 +147,15 @@ function appendArgumentDiagnostics(
   }
 }
 
+/**
+ * appendAliasAvailabilityDiagnostic 함수.
+ * 더 짧은 macro builtin alias가 있으면 replacement quick fix diagnostic을 추가함.
+ *
+ * @param diagnostics - diagnostic을 누적할 출력 배열
+ * @param usedName - 사용자가 작성한 macro builtin 이름
+ * @param range - alias diagnostic과 replacement가 가리킬 range
+ * @param builtin - alias metadata를 제공하는 builtin 정의
+ */
 function appendAliasAvailabilityDiagnostic(
   diagnostics: DiagnosticInfo[],
   usedName: string,

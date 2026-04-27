@@ -30,6 +30,7 @@ export class AnalyzableBodyResolver {
    * @returns 현재 block body 분석에 사용할 AST 노드 목록
    */
   getBodyNodes(node: BlockNode, sourceText: string): readonly CBSNode[] {
+    // #each body만 literal braces recovery가 필요하고, source가 없으면 parser 결과를 그대로 신뢰함.
     if (node.kind !== 'each' || sourceText.length === 0) {
       return node.body;
     }
@@ -40,6 +41,7 @@ export class AnalyzableBodyResolver {
       return cached;
     }
 
+    // 재파싱이 실패하거나 range가 불완전하면 기존 parser body로 안전하게 후퇴함.
     const resolved = this.reparseLiteralBody(node.body, sourceText) ?? node.body;
     this.cache.set(cacheKey, resolved);
     return resolved;
@@ -71,6 +73,7 @@ export class AnalyzableBodyResolver {
    */
   private reparseLiteralBody(body: readonly CBSNode[], sourceText: string): readonly CBSNode[] | null {
     const bodyRange = this.getNodesRange(body);
+    // 빈 body는 null 대신 기존 body를 돌려 caller가 no-op으로 처리하게 함.
     if (!bodyRange) {
       return body;
     }
@@ -145,6 +148,7 @@ export class AnalyzableBodyResolver {
           ),
         };
       case 'Block':
+        // nested block의 open/close/body/else range를 모두 host 좌표로 맞춰 downstream lookup을 보존함.
         return {
           ...node,
           range: this.rebaseRange(node.range, localSource, hostSource, startOffset),

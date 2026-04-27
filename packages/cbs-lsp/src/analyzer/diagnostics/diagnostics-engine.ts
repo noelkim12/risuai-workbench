@@ -26,11 +26,12 @@ import { collectParserDiagnostics } from './collectors/parser-diagnostic.collect
  * parser/tokenizer 결과와 registry/symbol 정보를 합쳐 최종 CBS diagnostics를 수집함.
  */
 export class DiagnosticsEngine {
+  /** CBS builtin metadata 조회에 쓰는 registry. */
   constructor(private readonly registry: CBSBuiltinRegistry) {}
 
   /**
    * analyze 함수.
- * 문서 AST, source text, scope analysis 결과를 함께 읽어 정규화된 diagnostics 목록을 생성함.
+   * 문서 AST, source text, scope analysis 결과를 함께 읽어 정규화된 diagnostics 목록을 생성함.
    *
    * @param document - tokenizer/parser 단계 진단이 담긴 CBS 문서 AST
    * @param sourceText - 추가 range 해석과 재토크나이즈에 쓸 fragment 원문

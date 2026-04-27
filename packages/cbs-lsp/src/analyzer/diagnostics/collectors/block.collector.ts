@@ -64,6 +64,14 @@ export function collectBlockDiagnostics(
   return diagnostics;
 }
 
+/**
+ * appendDeprecatedDiagnostic 함수.
+ * deprecated builtin metadata를 diagnostic 목록에 추가함.
+ *
+ * @param diagnostics - diagnostic을 누적할 출력 배열
+ * @param builtin - deprecation metadata를 확인할 builtin 정의
+ * @param range - diagnostic과 quick fix가 가리킬 block 이름 range
+ */
 function appendDeprecatedDiagnostic(
   diagnostics: DiagnosticInfo[],
   builtin: CBSBuiltinFunction,
@@ -97,6 +105,15 @@ function appendDeprecatedDiagnostic(
   );
 }
 
+/**
+ * appendBlockArgumentDiagnostics 함수.
+ * block condition 유무를 builtin argument contract와 비교함.
+ *
+ * @param diagnostics - diagnostic을 누적할 출력 배열
+ * @param node - argument를 검사할 block 노드
+ * @param builtin - 기대 argument contract를 가진 builtin 정의
+ * @param sourceText - 의미 있는 condition node 판정에 쓸 fragment 원문
+ */
 function appendBlockArgumentDiagnostics(
   diagnostics: DiagnosticInfo[],
   node: BlockNode,
@@ -135,6 +152,15 @@ function appendBlockArgumentDiagnostics(
   }
 }
 
+/**
+ * appendBlockStructuralDiagnostics 함수.
+ * body가 비어 있는 block 구조를 diagnostic으로 보고함.
+ *
+ * @param diagnostics - diagnostic을 누적할 출력 배열
+ * @param node - body와 else body를 검사할 block 노드
+ * @param builtin - diagnostic target 표시에 쓸 builtin 정의
+ * @param sourceText - meaningful node 판정에 쓸 fragment 원문
+ */
 function appendBlockStructuralDiagnostics(
   diagnostics: DiagnosticInfo[],
   node: BlockNode,
@@ -154,6 +180,14 @@ function appendBlockStructuralDiagnostics(
   );
 }
 
+/**
+ * appendBlockHeaderDiagnostics 함수.
+ * source text 기반 block header validation diagnostic을 추가함.
+ *
+ * @param diagnostics - diagnostic을 누적할 출력 배열
+ * @param context - registry와 source text를 제공하는 diagnostics 문맥
+ * @param node - header를 검사할 block 노드
+ */
 function appendBlockHeaderDiagnostics(
   diagnostics: DiagnosticInfo[],
   context: DiagnosticsContext,
@@ -183,6 +217,14 @@ function appendBlockHeaderDiagnostics(
   }
 }
 
+/**
+ * collectWhenOperatorDiagnostics 함수.
+ * `#when` header operator sequence의 operand 누락과 잘못된 operator를 찾음.
+ *
+ * @param node - diagnostic range를 제공할 `#when` block 노드
+ * @param rawTail - block 이름 뒤 raw header tail
+ * @returns `#when` operator 관련 diagnostics 목록
+ */
 function collectWhenOperatorDiagnostics(node: BlockNode, rawTail: string): DiagnosticInfo[] {
   const diagnostics: DiagnosticInfo[] = [];
   const segments = stripLeadingBlockHeaderOperators(
@@ -264,6 +306,15 @@ function collectWhenOperatorDiagnostics(node: BlockNode, rawTail: string): Diagn
   return diagnostics;
 }
 
+/**
+ * collectEachHeaderDiagnostics 함수.
+ * `#each` header에서 alias binding 시도와 malformed binding을 검사함.
+ *
+ * @param node - diagnostic range와 binding range를 제공할 `#each` block 노드
+ * @param rawTail - block 이름 뒤 raw header tail
+ * @param sourceText - binding range 복원에 쓸 fragment 원문
+ * @returns `#each` header 관련 diagnostics 목록
+ */
 function collectEachHeaderDiagnostics(
   node: BlockNode,
   rawTail: string,
@@ -308,6 +359,15 @@ function containsEachAliasKeyword(headerText: string): boolean {
   return /(?:^|\s)as(?:\s|$)/i.test(headerText);
 }
 
+/**
+ * appendAliasAvailabilityDiagnostic 함수.
+ * 더 짧은 builtin alias가 있으면 replacement quick fix diagnostic을 추가함.
+ *
+ * @param diagnostics - diagnostic을 누적할 출력 배열
+ * @param usedName - 사용자가 작성한 block builtin 이름
+ * @param range - alias diagnostic과 replacement가 가리킬 range
+ * @param builtin - alias metadata를 제공하는 builtin 정의
+ */
 function appendAliasAvailabilityDiagnostic(
   diagnostics: DiagnosticInfo[],
   usedName: string,

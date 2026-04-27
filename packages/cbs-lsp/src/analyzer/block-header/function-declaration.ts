@@ -9,6 +9,10 @@ import { CbsLspTextHelper } from '../../helpers/text-helper';
 import { offsetToPosition, positionToOffset } from '../../utils/position';
 import { extractBlockHeaderInfo } from './block-header';
 
+/**
+ * FunctionDeclaration 인터페이스.
+ * `#func` block header에서 추출한 함수 선언 계약.
+ */
 export interface FunctionDeclaration {
   name: string;
   range: Range;

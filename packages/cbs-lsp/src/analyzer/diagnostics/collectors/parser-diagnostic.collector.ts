@@ -30,6 +30,14 @@ export function collectParserDiagnostics(context: DiagnosticsContext): Diagnosti
   });
 }
 
+/**
+ * enrichDiagnosticMetadata 함수.
+ * unknown builtin diagnostic에 registry suggestion quick fix metadata를 붙임.
+ *
+ * @param context - registry와 source text를 제공하는 diagnostics 문맥
+ * @param diagnostic - 보강할 normalized diagnostic
+ * @returns quick fix metadata가 보강된 diagnostic
+ */
 function enrichDiagnosticMetadata(
   context: DiagnosticsContext,
   diagnostic: DiagnosticInfo,

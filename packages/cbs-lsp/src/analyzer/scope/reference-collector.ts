@@ -35,6 +35,16 @@ import { extractStaticArgument } from './static-argument';
  * 현재 scope frame을 유지하면서 macro/block 내부 참조를 재귀적으로 수집함.
  */
 export class ReferenceCollector {
+  /**
+   * ReferenceCollector 생성자.
+   * definition pass 결과와 현재 fragment 원문을 받아 reference pass 준비를 끝냄.
+   *
+   * @param table - 정의와 참조를 누적할 symbol table
+   * @param issues - scope 진단을 기록할 issue store
+   * @param fragmentDefinitions - definition pass에서 만든 fragment-local lookup cache
+   * @param sourceText - 정적 인수와 block header range 계산에 쓸 fragment 원문
+   * @param bodyResolver - recoverable block body를 제공하는 resolver
+   */
   constructor(
     private readonly table: SymbolTable,
     private readonly issues: ScopeIssueStore,
@@ -65,6 +75,7 @@ export class ReferenceCollector {
       switch (node.type) {
         case 'MacroCall':
           this.collectMacroReferences(node, scope);
+          // macro 인수 안에 중첩 macro나 수식이 있을 수 있어 argument AST도 같은 scope로 내려감.
           for (const argument of node.arguments) {
             this.collectNodes(argument, scope);
           }
@@ -129,6 +140,7 @@ export class ReferenceCollector {
       const bodyScope = createScopeFrame(scope);
       const loopBinding = this.sourceText.length > 0 ? extractEachLoopBinding(node, this.sourceText) : null;
       if (loopBinding) {
+        // iterator source는 body alias 정의보다 먼저 읽힌 값이라 부모 scope 기준 참조로 기록함.
         this.collectEachIteratorReference(loopBinding.iteratorExpression, loopBinding.iteratorRange);
         const loopSymbol = this.table.addDefinition(loopBinding.bindingName, 'loop', loopBinding.bindingRange, {
           scope: 'block',
@@ -137,6 +149,7 @@ export class ReferenceCollector {
         bodyScope.loopBindings.set(loopBinding.bindingName, loopSymbol);
       }
 
+      // body는 새 loop scope를 쓰고 else branch는 alias가 보이지 않는 부모 scope를 유지함.
       this.collectNodes(this.bodyResolver.getBodyNodes(node, this.sourceText), bodyScope);
       if (node.elseBody) {
         this.collectNodes(node.elseBody, scope);
@@ -149,6 +162,7 @@ export class ReferenceCollector {
       const functionDeclaration = this.sourceText.length
         ? extractFunctionDeclaration(node, this.sourceText)
         : null;
+      // arg::N은 현재 함수 선언의 parameter list에만 연결되므로 active function을 좁힘.
       bodyScope.activeFunction = functionDeclaration
         ? this.fragmentDefinitions.func.get(functionDeclaration.name) ?? null
         : bodyScope.activeFunction;
@@ -297,6 +311,7 @@ export class ReferenceCollector {
       return;
     }
 
+    // zero-based numbered slot이 선언된 parameter 수를 벗어나면 호출자가 고칠 수 있게 진단함.
     if (reference.index >= activeFunction.parameters.length) {
       this.issues.recordInvalidArgumentReference({
         rawText: reference.rawText,

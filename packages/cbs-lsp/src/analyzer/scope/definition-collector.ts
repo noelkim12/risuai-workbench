@@ -12,6 +12,10 @@ import { normalizeLookupKey } from './lookup-key';
 import { getScopeMacroRules, type FragmentVariableKind } from './scope-macro-rules';
 import { extractStaticArgument } from './static-argument';
 
+/**
+ * FragmentDefinitionMaps 인터페이스.
+ * reference pass가 빠르게 조회할 fragment-local 정의 cache 묶음.
+ */
 export interface FragmentDefinitionMaps {
   chat: Map<string, VariableSymbol>;
   temp: Map<string, VariableSymbol>;
@@ -37,6 +41,15 @@ export function createFragmentDefinitionMaps(): FragmentDefinitionMaps {
  * AST를 순회하면서 chat/temp 변수와 local function 정의를 먼저 수집함.
  */
 export class DefinitionCollector {
+  /**
+   * DefinitionCollector 생성자.
+   * symbol table과 fragment-local cache를 받아 definition pass 준비를 끝냄.
+   *
+   * @param table - 정의 symbol을 누적할 symbol table
+   * @param fragmentDefinitions - kind별 definition lookup cache
+   * @param sourceText - block header와 static argument range 계산에 쓸 fragment 원문
+   * @param bodyResolver - recoverable block body를 제공하는 resolver
+   */
   constructor(
     private readonly table: SymbolTable,
     private readonly fragmentDefinitions: FragmentDefinitionMaps,
@@ -65,11 +78,13 @@ export class DefinitionCollector {
       switch (node.type) {
         case 'MacroCall':
           this.collectMacroDefinitions(node);
+          // 정의 macro의 값 인수 안에도 nested macro가 올 수 있어 재귀 분석을 이어감.
           for (const argument of node.arguments) {
             this.collectNodes(argument);
           }
           break;
         case 'Block':
+          // 함수 정의는 body 참조보다 먼저 등록돼야 recursive call과 후속 call을 안정적으로 연결함.
           if (node.kind === 'func' && this.sourceText.length > 0) {
             const functionDeclaration = extractFunctionDeclaration(node, this.sourceText);
             if (functionDeclaration) {

@@ -8,17 +8,29 @@ import type { DiagnosticInfo } from 'risu-workbench-core';
 import {
   createAgentMetadataExplanation,
   type AgentMetadataExplanationContract,
-} from '../../core/agent-metadata';
+} from '../../contracts/agent-metadata';
 import { compareDiagnosticQuickFixes, compareDiagnosticSuggestions } from './compare';
 import { createDiagnosticRuleExplanation, getDiagnosticDefinition } from './taxonomy';
 
+/**
+ * DiagnosticQuickFixEditKind 타입.
+ * diagnostics quick-fix가 적용할 edit 방식 종류를 정의함.
+ */
 export type DiagnosticQuickFixEditKind = 'replace';
 
+/**
+ * DiagnosticQuickFixSuggestion 인터페이스.
+ * 하나의 replacement 후보와 editor 표시용 세부 설명을 담음.
+ */
 export interface DiagnosticQuickFixSuggestion {
   value: string;
   detail?: string;
 }
 
+/**
+ * DiagnosticQuickFix 인터페이스.
+ * code action으로 변환 가능한 diagnostics quick-fix payload를 표현함.
+ */
 export interface DiagnosticQuickFix {
   title: string;
   editKind: DiagnosticQuickFixEditKind;
@@ -27,6 +39,10 @@ export interface DiagnosticQuickFix {
   suggestions?: readonly DiagnosticQuickFixSuggestion[];
 }
 
+/**
+ * DiagnosticMachineData 인터페이스.
+ * diagnostic.data에 실리는 rule metadata와 quick-fix 목록의 machine-readable shape.
+ */
 export interface DiagnosticMachineData {
   rule: {
     category: string;

@@ -7,6 +7,10 @@ import { type MacroCallNode, type Range } from 'risu-workbench-core';
 
 import { positionToOffset, offsetToPosition } from '../../utils/position';
 
+/**
+ * StaticArgument 인터페이스.
+ * macro argument가 정적 literal로 확정될 때의 text와 trimmed range.
+ */
 export interface StaticArgument {
   text: string;
   range: Range;
@@ -35,10 +39,12 @@ export function extractStaticArgument(
   let mergedRange: Range | null = null;
 
   for (const child of argument) {
+    // comment는 값 의미가 없으므로 literal 판정에서 제외함.
     if (child.type === 'Comment') {
       continue;
     }
 
+    // 중첩 macro나 수식이 섞이면 runtime 값이라 정적 symbol lookup에 쓰지 않음.
     if (child.type !== 'PlainText') {
       return null;
     }
@@ -52,6 +58,7 @@ export function extractStaticArgument(
       : child.range;
   }
 
+  // comment만 있는 인수는 실제 이름 범위가 없어 reference 후보가 아님.
   if (!mergedRange) {
     return null;
   }
@@ -63,6 +70,7 @@ export function extractStaticArgument(
     return null;
   }
 
+  // diagnostic과 rename range가 공백을 포함하지 않도록 trim된 offset으로 다시 계산함.
   const startOffset = positionToOffset(sourceText, mergedRange.start) + leadingTrim;
   const endOffset = startOffset + trimmedText.length;
 

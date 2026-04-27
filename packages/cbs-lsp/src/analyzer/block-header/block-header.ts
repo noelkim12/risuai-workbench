@@ -8,8 +8,11 @@ import { type BlockNode, type Range } from 'risu-workbench-core';
 import { CbsLspTextHelper } from '../../helpers/text-helper';
 import { offsetToPosition, positionToOffset } from '../../utils/position';
 
+/** `#when` header 앞부분에서 mode prefix로 허용되는 operator 목록. */
 export const WHEN_MODE_OPERATORS = new Set(['keep', 'legacy']);
+/** `#when` header에서 단항 조건으로 해석되는 operator 목록. */
 export const WHEN_UNARY_OPERATORS = new Set(['not', 'toggle', 'var']);
+/** `#when` header에서 좌우 operand를 요구하는 이항 operator 목록. */
 export const WHEN_BINARY_OPERATORS = new Set([
   'and',
   'or',
@@ -24,15 +27,24 @@ export const WHEN_BINARY_OPERATORS = new Set([
   'tis',
   'tisnot',
 ]);
+/** `#each` header 앞부분에서 mode prefix로 허용되는 operator 목록. */
 export const EACH_MODE_OPERATORS = new Set(['keep']);
 
 const LOOP_VARIABLE_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 
+/**
+ * BlockHeaderInfo 인터페이스.
+ * Block open tag에서 분리한 원본 block 이름과 header tail을 담음.
+ */
 export interface BlockHeaderInfo {
   rawName: string;
   tail: string;
 }
 
+/**
+ * EachLoopBinding 인터페이스.
+ * `#each` loop source와 alias binding의 원문 range를 보존함.
+ */
 export interface EachLoopBinding {
   iteratorExpression: string;
   iteratorRange: Range;

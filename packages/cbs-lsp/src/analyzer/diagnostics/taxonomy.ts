@@ -11,8 +11,12 @@ import {
 import {
   createAgentMetadataExplanation,
   type AgentMetadataExplanationContract,
-} from '../../core/agent-metadata';
+} from '../../contracts/agent-metadata';
 
+/**
+ * DiagnosticCode enum.
+ * CBS diagnostics가 LSP와 agent metadata에서 공유하는 안정 diagnostic code 집합.
+ */
 export enum DiagnosticCode {
   UnclosedMacro = 'CBS001',
   UnclosedBlock = 'CBS002',
@@ -35,7 +39,10 @@ export enum DiagnosticCode {
   AliasAvailable = 'CBS200',
 }
 
+/** diagnostics를 발행한 pipeline 단계. */
 export type DiagnosticOwner = 'tokenizer' | 'parser' | 'analyzer';
+
+/** diagnostics rule을 agent가 읽을 수 있게 묶는 상위 category. */
 export type DiagnosticRuleCategory =
   | 'syntax'
   | 'expression'
@@ -43,6 +50,10 @@ export type DiagnosticRuleCategory =
   | 'compatibility'
   | 'quality';
 
+/**
+ * DiagnosticRuleMetadata 인터페이스.
+ * diagnostic code 한 건의 owner, severity, 의미, agent explanation을 정의함.
+ */
 export interface DiagnosticRuleMetadata {
   category: DiagnosticRuleCategory;
   code: DiagnosticCode;
@@ -52,6 +63,10 @@ export interface DiagnosticRuleMetadata {
   meaning: string;
 }
 
+/**
+ * DiagnosticDefinition 인터페이스.
+ * taxonomy table에 저장되는 최종 diagnostic rule 정의.
+ */
 export interface DiagnosticDefinition extends DiagnosticRuleMetadata {}
 
 /**
@@ -73,6 +88,10 @@ export function createDiagnosticRuleExplanation(
   );
 }
 
+/**
+ * CBS diagnostic code별 taxonomy metadata.
+ * severity와 owner를 한 곳에 고정해 collector와 agent-facing envelope이 같은 의미를 쓰게 함.
+ */
 export const DIAGNOSTIC_TAXONOMY: Readonly<Record<DiagnosticCode, DiagnosticDefinition>> = {
   [DiagnosticCode.UnclosedMacro]: {
     category: 'syntax',

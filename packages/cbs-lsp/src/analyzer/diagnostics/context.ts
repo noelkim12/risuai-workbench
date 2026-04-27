@@ -12,6 +12,10 @@ import {
 
 import type { ScopeAnalysisResult } from '../symbolTable';
 
+/**
+ * DiagnosticsContext 인터페이스.
+ * diagnostics collector가 AST, 원문, registry, scope 정보를 한 번에 읽는 공유 문맥.
+ */
 export interface DiagnosticsContext {
   document: CBSDocument;
   sourceText: string;

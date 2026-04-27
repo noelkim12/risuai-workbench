@@ -92,6 +92,10 @@ function extractStaticMacroArgument(
     return null;
   }
 
+  /**
+   * PlainText만으로 된 인자는 원문 range와 serializer 결과가 일치함.
+   * 중첩 macro/comment가 섞이면 값 검증은 하되 세부 error range는 전체 인자로 낮춤.
+   */
   return {
     text: segment.map((child) => serializeCalcExpressionNode(child)).join(''),
     range: {
@@ -109,6 +113,7 @@ function serializeCalcExpressionNode(node: CBSNode): string {
     case 'Comment':
       return '';
     default:
+      /** 중첩 CBS node는 calc validator가 읽을 수 없으므로 안전한 placeholder로 대체함. */
       return '0';
   }
 }
@@ -143,6 +148,7 @@ function extractEmptyFirstCalcArgumentRange(node: MacroCallNode, sourceText: str
   const nameEndOffset = positionToOffset(sourceText, node.nameRange.end);
   const macroEndOffset = positionToOffset(sourceText, node.range.end);
   const separatorOffset = sourceText.indexOf('::', nameEndOffset);
+  /** 첫 separator가 macro body 밖이면 빈 calc 인자 위치를 안정적으로 특정할 수 없음. */
   if (separatorOffset === -1 || separatorOffset > macroEndOffset - 2) {
     return null;
   }

@@ -5,9 +5,22 @@
 
 import type { VariableSymbolKind } from '../symbolTable';
 
+/**
+ * FragmentVariableKind 타입.
+ * fragment 내부에서 직접 정의하고 참조할 수 있는 variable namespace.
+ */
 export type FragmentVariableKind = Extract<VariableSymbolKind, 'chat' | 'temp'>;
+
+/**
+ * ScopeVariableArgumentKind 타입.
+ * macro argument completion과 lookup이 구분해야 하는 variable namespace.
+ */
 export type ScopeVariableArgumentKind = FragmentVariableKind | 'global';
 
+/**
+ * ScopeMacroRule 타입.
+ * macro 이름별 scope analyzer 동작을 선언하는 규칙 union.
+ */
 export type ScopeMacroRule =
   | {
       kind: 'define-variable';
@@ -77,6 +90,7 @@ export function getVariableMacroArgumentKind(
   argumentIndex: number,
 ): ScopeVariableArgumentKind | null {
   for (const rule of getScopeMacroRules(normalizedName)) {
+    // 정의와 참조는 같은 argument slot completion 후보를 공유하므로 같은 namespace로 반환함.
     if (rule.kind === 'define-variable' && rule.argumentIndex === argumentIndex) {
       return rule.variableKind;
     }
@@ -85,6 +99,7 @@ export function getVariableMacroArgumentKind(
       return rule.variableKind;
     }
 
+    // global 변수는 fragment definition cache에 없지만 argument kind로는 별도 노출함.
     if (rule.kind === 'reference-global-variable' && rule.argumentIndex === argumentIndex) {
       return 'global';
     }
