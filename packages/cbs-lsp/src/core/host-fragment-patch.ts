@@ -26,11 +26,19 @@ export function createHostFragmentKey(fragmentAnalysis: FragmentDocumentAnalysis
   return `${fragment.section}:${fragmentIndex}:${fragment.start}-${fragment.end}`;
 }
 
+/**
+ * Fragment-local patch edit 계약.
+ * CBS fragment 내부 좌표계에서 적용할 단일 text edit를 나타냄.
+ */
 export interface FragmentLocalPatchEdit {
   range: Range;
   newText: string;
 }
 
+/**
+ * Host fragment patch edit 계약.
+ * Fragment-local edit를 host document 좌표계로 remap한 결과를 나타냄.
+ */
 export interface HostFragmentPatchEdit {
   uri: string;
   range: Range;
@@ -39,6 +47,10 @@ export interface HostFragmentPatchEdit {
   section: string;
 }
 
+/**
+ * Host fragment patch problem code.
+ * Patch 검증 실패 원인을 machine-readable 값으로 고정함.
+ */
 export type HostFragmentPatchProblemCode =
   | 'malformed-fragment'
   | 'outside-fragment'
@@ -46,6 +58,10 @@ export type HostFragmentPatchProblemCode =
   | 'overlapping-edits'
   | 'unresolved-uri';
 
+/**
+ * Host fragment patch problem 계약.
+ * 검증 실패 위치와 사람이 읽을 수 있는 설명을 함께 전달함.
+ */
 export interface HostFragmentPatchProblem {
   code: HostFragmentPatchProblemCode;
   uri: string;
@@ -54,12 +70,20 @@ export interface HostFragmentPatchProblem {
   section?: string;
 }
 
+/**
+ * Host fragment patch validation result 계약.
+ * 검증 성공 여부와 안전하게 적용 가능한 edit 또는 문제 목록을 묶음.
+ */
 export interface HostFragmentPatchValidationResult {
   ok: boolean;
   edits: readonly HostFragmentPatchEdit[];
   problems: readonly HostFragmentPatchProblem[];
 }
 
+/**
+ * validateHostFragmentPatchEdits 옵션.
+ * URI별 host 문서 해석과 허용 fragment window를 주입함.
+ */
 export interface ValidateHostFragmentPatchOptions {
   resolveRequestForUri?: (uri: string) => FragmentAnalysisRequest | null;
   allowedFragmentKeysByUri?: ReadonlyMap<string, ReadonlySet<string>>;

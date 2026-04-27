@@ -20,7 +20,7 @@ import {
 import {
   snapshotLayer1Contracts,
   type NormalizedLayer1ContractSnapshot,
-} from '../auxiliary/agent-contracts';
+} from '../contracts';
 import { createCliWorkspaceQueryContext } from './workspace-query';
 
 export type ReportCliCommand = { kind: 'availability' } | { kind: 'layer1' };

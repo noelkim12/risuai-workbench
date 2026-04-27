@@ -8,17 +8,26 @@ import { TokenType, type BlockKind, type BlockNode } from 'risu-workbench-core';
 import type { FragmentCursorLookupResult } from './fragment-locator';
 import { positionToOffset } from '../utils/position';
 
+/**
+ * TokenMacroArgumentContext 인터페이스.
+ * Token stream에서 해석한 macro 이름과 argument 슬롯 정보를 묶음.
+ */
 export interface TokenMacroArgumentContext {
   macroName: string;
   argumentIndex: number;
 }
 
+/**
+ * PureModeRangeLookupContext 인터페이스.
+ * Range 기반 consumer가 pure-mode block을 찾을 때 필요한 분석 문맥.
+ */
 export interface PureModeRangeLookupContext {
   nodes: readonly BlockNode[];
   sourceText: string;
   targetRange: { start: { line: number; character: number } };
 }
 
+/** pure-mode body로 취급해 일반 CBS feature를 제한하는 block kind 목록. */
 export const PURE_MODE_BLOCKS = new Set<BlockKind>([
   'each',
   'escape',

@@ -3,4 +3,5 @@
  * @file packages/cbs-lsp/src/analyzer/diagnostics.ts
  */
 
+/** Analyzer diagnostics public API re-export. */
 export * from './diagnostics/index';

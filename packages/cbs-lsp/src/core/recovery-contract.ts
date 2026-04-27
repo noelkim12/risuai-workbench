@@ -5,8 +5,16 @@
 
 import type { CBSDocument, TokenizerDiagnostic } from 'risu-workbench-core';
 
+/**
+ * FragmentRecoveryMode 타입.
+ * fragment 분석 결과가 정상인지, token 또는 structure recovery를 거쳤는지 구분함.
+ */
 export type FragmentRecoveryMode = 'clean' | 'token-recovery' | 'structure-recovery';
 
+/**
+ * FragmentRecoveryState 인터페이스.
+ * 단일 CBS fragment의 recovery 모드와 feature별 신뢰도 플래그를 나타냄.
+ */
 export interface FragmentRecoveryState {
   mode: FragmentRecoveryMode;
   hasSyntaxRecovery: boolean;
@@ -20,6 +28,10 @@ export interface FragmentRecoveryState {
   syntaxDiagnosticCodes: readonly string[];
 }
 
+/**
+ * DocumentRecoveryState 인터페이스.
+ * 여러 fragment recovery 상태를 문서 단위로 요약함.
+ */
 export interface DocumentRecoveryState {
   hasRecoveredFragments: boolean;
   fragmentModes: readonly FragmentRecoveryMode[];

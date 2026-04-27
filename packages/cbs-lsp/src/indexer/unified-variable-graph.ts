@@ -37,7 +37,7 @@ import type {
 import {
   createCbsAgentProtocolMarker,
   type CbsAgentProtocolMarker,
-} from '../core/agent-metadata';
+} from '../contracts';
 import { createFragmentOffsetMapper } from '../core/fragment-position';
 import { extractEachLoopBinding, isStaticEachIteratorIdentifier } from '../analyzer/block-header';
 

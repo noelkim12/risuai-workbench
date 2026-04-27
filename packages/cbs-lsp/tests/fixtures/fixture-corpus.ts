@@ -24,7 +24,7 @@ import {
   snapshotLayer3Queries as createLayer3QueriesSnapshot,
   type NormalizedLayer1ContractSnapshot,
   type NormalizedLayer3QuerySnapshot,
-} from '../../src/auxiliary/agent-contracts';
+} from '../../src/contracts';
 import {
   normalizeHostDiagnosticsEnvelopeForSnapshot,
   normalizeHostDiagnosticsForSnapshot,

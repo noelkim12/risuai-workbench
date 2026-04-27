@@ -9,8 +9,12 @@ import {
   type CbsAgentProtocolMarker,
   type AgentMetadataAvailabilityContract,
   type AgentMetadataAvailabilityScope,
-} from './agent-metadata';
+} from '../contracts/agent-metadata';
 
+/**
+ * ActiveFeatureAvailabilityMap 인터페이스.
+ * 현재 LSP server가 광고하거나 실제로 제공하는 active feature별 availability 계약.
+ */
 export interface ActiveFeatureAvailabilityMap {
   codeAction: AgentMetadataAvailabilityContract;
   codelens: AgentMetadataAvailabilityContract;
@@ -34,6 +38,10 @@ export interface ActiveFeatureAvailabilityMap {
   luaHover: AgentMetadataAvailabilityContract;
 }
 
+/**
+ * DeferredFeatureAvailabilityMap 인터페이스.
+ * 현재 runtime에서 명시적으로 deferred로 고정한 cross-language feature availability 목록.
+ */
 export interface DeferredFeatureAvailabilityMap {
   'cross-language-code-action': AgentMetadataAvailabilityContract;
   'cross-language-rename': AgentMetadataAvailabilityContract;
@@ -41,15 +49,25 @@ export interface DeferredFeatureAvailabilityMap {
   'lua-ast-fragment-routing': AgentMetadataAvailabilityContract;
 }
 
+/**
+ * ExcludedArtifactAvailabilityMap 인터페이스.
+ * CBS routing이 workspace-disabled로 유지되는 artifact별 availability 계약.
+ */
 export interface ExcludedArtifactAvailabilityMap {
   risutoggle: AgentMetadataAvailabilityContract;
   risuvar: AgentMetadataAvailabilityContract;
 }
 
+/** LuaLS sidecar process lifecycle 상태. */
 export type LuaLsCompanionStatus = 'unavailable' | 'stopped' | 'starting' | 'ready' | 'crashed';
 
+/** LuaLS sidecar가 LSP 기능을 제공할 수 있는 건강 상태. */
 export type LuaLsCompanionHealth = 'unavailable' | 'idle' | 'healthy' | 'degraded';
 
+/**
+ * LuaLsCompanionRuntime 인터페이스.
+ * LuaLS sidecar의 runtime process, health, operator detail을 snapshot으로 노출함.
+ */
 export interface LuaLsCompanionRuntime {
   key: 'luals';
   status: LuaLsCompanionStatus;
@@ -60,18 +78,28 @@ export interface LuaLsCompanionRuntime {
   detail: string;
 }
 
+/**
+ * CompanionRuntimeMap 인터페이스.
+ * Runtime availability payload에서 companion key별 상태를 보관함.
+ */
 export interface CompanionRuntimeMap {
   luals: LuaLsCompanionRuntime;
 }
 
+/**
+ * DeferredScopeContract 인터페이스.
+ * read-only Lua bridge MVP에서 deferred feature와 routing mode를 고정함.
+ */
 export interface DeferredScopeContract {
   deferredFeatures: readonly (keyof DeferredFeatureAvailabilityMap)[];
   featureAvailability: DeferredFeatureAvailabilityMap;
   luaRoutingMode: 'full-document-fragment';
 }
 
+/** cbs-language-server 실행 binary 설치 방식. */
 export type RuntimeOperatorInstallMode = 'global' | 'local-devDependency' | 'npx';
 
+/** Runtime workspace root가 어떤 입력에서 선택됐는지 나타내는 source key. */
 export type RuntimeOperatorWorkspaceRootSource =
   | 'document-artifact-path'
   | 'initialize.rootUri'
@@ -79,12 +107,17 @@ export type RuntimeOperatorWorkspaceRootSource =
   | 'none'
   | 'runtime-config.workspacePath';
 
+/** Runtime/operator availability에서 보고하는 failure mode 식별자. */
 export type RuntimeOperatorFailureModeKey =
   | 'luals-unavailable'
   | 'multi-root-reduced'
   | 'watched-files-client-unsupported'
   | 'workspace-root-unresolved';
 
+/**
+ * RuntimeOperatorInstallContract 인터페이스.
+ * Standalone server 설치 방식과 stdio transport 요구사항을 설명함.
+ */
 export interface RuntimeOperatorInstallContract {
   binaryName: 'cbs-language-server';
   installModes: readonly RuntimeOperatorInstallMode[];
@@ -93,6 +126,10 @@ export interface RuntimeOperatorInstallContract {
   detail: string;
 }
 
+/**
+ * RuntimeOperatorWorkspaceContract 인터페이스.
+ * Workspace root 선택 순서와 multi-root degrade 정책을 설명함.
+ */
 export interface RuntimeOperatorWorkspaceContract {
   documentFallbackSource: 'document-artifact-path';
   initializeWorkspaceFolderCount: number;
@@ -103,6 +140,10 @@ export interface RuntimeOperatorWorkspaceContract {
   detail: string;
 }
 
+/**
+ * RuntimeOperatorDocsContract 인터페이스.
+ * Operator와 agent가 같은 문서 경로를 참조하도록 문서 링크를 고정함.
+ */
 export interface RuntimeOperatorDocsContract {
   agentIntegration: 'packages/cbs-lsp/docs/AGENT_INTEGRATION.md';
   compatibility: 'packages/cbs-lsp/docs/COMPATIBILITY.md';
@@ -113,6 +154,10 @@ export interface RuntimeOperatorDocsContract {
   vscodeClient: 'packages/vscode/README.md';
 }
 
+/**
+ * RuntimeOperatorFailureModeContract 인터페이스.
+ * 현재 세션에서 활성화된 운영 failure mode와 복구 안내를 표현함.
+ */
 export interface RuntimeOperatorFailureModeContract {
   active: boolean;
   detail: string;
@@ -121,6 +166,10 @@ export interface RuntimeOperatorFailureModeContract {
   severity: 'info' | 'warning';
 }
 
+/**
+ * RuntimeOperatorContract 인터페이스.
+ * 설치, workspace, scope, failure mode, 문서 링크를 하나의 operator 계약으로 묶음.
+ */
 export interface RuntimeOperatorContract {
   docs: RuntimeOperatorDocsContract;
   failureModes: RuntimeOperatorFailureModeContract[];
@@ -129,6 +178,10 @@ export interface RuntimeOperatorContract {
   workspace: RuntimeOperatorWorkspaceContract;
 }
 
+/**
+ * RuntimeOperatorScopeContract 인터페이스.
+ * Runtime에서 쓰기 기능을 어디까지 허용하는지 scope honesty 정책을 표현함.
+ */
 export interface RuntimeOperatorScopeContract {
   deferredEditFeatures: readonly [
     'cross-language-rename',
@@ -140,6 +193,10 @@ export interface RuntimeOperatorScopeContract {
   readOnlyBridge: 'on';
 }
 
+/**
+ * RuntimeOperatorContractOptions 인터페이스.
+ * Runtime operator 계약 생성 시 initialize와 client capability 상태를 주입함.
+ */
 export interface RuntimeOperatorContractOptions {
   initializeWorkspaceFolderCount?: number;
   resolvedWorkspaceRoot?: string | null;
@@ -147,6 +204,10 @@ export interface RuntimeOperatorContractOptions {
   watchedFilesDynamicRegistration?: boolean;
 }
 
+/**
+ * CbsRuntimeAvailabilityContract 인터페이스.
+ * Companion, artifact, feature, operator availability를 합친 runtime-facing 계약.
+ */
 export interface CbsRuntimeAvailabilityContract {
   companions: CompanionRuntimeMap;
   excludedArtifacts: ExcludedArtifactAvailabilityMap;
@@ -154,10 +215,18 @@ export interface CbsRuntimeAvailabilityContract {
   operator: RuntimeOperatorContract;
 }
 
+/**
+ * NormalizedAvailabilitySnapshotEntry 인터페이스.
+ * Snapshot에서 availability 항목을 key와 함께 정렬 가능한 shape로 표현함.
+ */
 export interface NormalizedAvailabilitySnapshotEntry extends AgentMetadataAvailabilityContract {
   key: string;
 }
 
+/**
+ * NormalizedRuntimeAvailabilitySnapshot 인터페이스.
+ * Trace와 golden snapshot이 공유하는 정렬된 runtime availability view.
+ */
 export interface NormalizedRuntimeAvailabilitySnapshot extends CbsAgentProtocolMarker {
   artifacts: NormalizedAvailabilitySnapshotEntry[];
   companions: LuaLsCompanionRuntime[];
@@ -165,12 +234,18 @@ export interface NormalizedRuntimeAvailabilitySnapshot extends CbsAgentProtocolM
   operator: RuntimeOperatorContract;
 }
 
+/** Runtime availability를 현재 LSP session 기준으로 재조회하는 custom request method. */
 export const CBS_RUNTIME_AVAILABILITY_REQUEST_METHOD = 'cbs/runtimeAvailability';
 
+/**
+ * RuntimeAvailabilityRequestParams 인터페이스.
+ * Runtime availability request가 현재 세션 refresh를 요구하는지 표현함.
+ */
 export interface RuntimeAvailabilityRequestParams {
   refresh?: 'current-session';
 }
 
+/** Workspace snapshot freshness 영향을 받는 interactive feature 이름. */
 export type WorkspaceAwareInteractiveFeature = 'completion' | 'hover';
 
 const RUNTIME_OPERATOR_DOCS = Object.freeze({
@@ -213,6 +288,7 @@ export function createStaleWorkspaceAvailability(
   return createAgentMetadataAvailability('local-only', `workspace-snapshot:${feature}`, detail);
 }
 
+/** Active LSP feature의 runtime availability source-of-truth map. */
 export const ACTIVE_FEATURE_AVAILABILITY = Object.freeze({
   codeAction: createAgentMetadataAvailability(
     'local-only',
@@ -316,6 +392,7 @@ export const ACTIVE_FEATURE_AVAILABILITY = Object.freeze({
   ),
 }) satisfies ActiveFeatureAvailabilityMap;
 
+/** CBS routing에서 제외되는 artifact의 workspace-disabled availability map. */
 export const EXCLUDED_ARTIFACT_AVAILABILITY = Object.freeze({
   risutoggle: createAgentMetadataAvailability(
     'workspace-disabled',
@@ -329,6 +406,7 @@ export const EXCLUDED_ARTIFACT_AVAILABILITY = Object.freeze({
   ),
 }) satisfies ExcludedArtifactAvailabilityMap;
 
+/** Read-only Lua bridge MVP에서 deferred scope와 feature availability를 고정한 계약. */
 export const DEFERRED_SCOPE_CONTRACT = Object.freeze({
   deferredFeatures: [
     'cross-language-code-action',
@@ -384,6 +462,14 @@ export function createLuaLsCompanionRuntime(
   };
 }
 
+/**
+ * createRuntimeOperatorFailureModes 함수.
+ * 현재 workspace와 LuaLS 상태에서 활성화할 operator failure mode 목록을 계산함.
+ *
+ * @param lualsRuntime - 현재 LuaLS sidecar runtime 상태
+ * @param options - normalize된 workspace root와 watched-files 지원 상태
+ * @returns operator payload에 포함할 failure mode 목록
+ */
 function createRuntimeOperatorFailureModes(
   lualsRuntime: LuaLsCompanionRuntime,
   options: Required<RuntimeOperatorContractOptions>,
@@ -479,6 +565,8 @@ export function createRuntimeOperatorContract(
  * createCbsRuntimeAvailabilityContract 함수.
  * initialize result와 normalized payload가 재사용할 공통 runtime-facing availability view를 생성함.
  *
+ * @param lualsRuntime - 현재 LuaLS sidecar runtime 상태
+ * @param operatorOptions - workspace root 선택과 client capability 상태
  * @returns active/deferred/workspace-disabled 상태를 한곳에 모은 계약
  */
 export function createCbsRuntimeAvailabilityContract(
@@ -498,6 +586,14 @@ export function createCbsRuntimeAvailabilityContract(
   };
 }
 
+/**
+ * compareAvailabilityEntries 함수.
+ * Snapshot entry를 scope, key, source, detail 순서로 안정 정렬함.
+ *
+ * @param left - 비교할 왼쪽 availability entry
+ * @param right - 비교할 오른쪽 availability entry
+ * @returns 정렬 순서를 나타내는 비교 결과
+ */
 function compareAvailabilityEntries(
   left: NormalizedAvailabilitySnapshotEntry,
   right: NormalizedAvailabilitySnapshotEntry,
@@ -510,6 +606,13 @@ function compareAvailabilityEntries(
   );
 }
 
+/**
+ * createNormalizedAvailabilityEntries 함수.
+ * Availability map을 key 포함 snapshot entry 배열로 정규화하고 안정 정렬함.
+ *
+ * @param entries - key별 availability contract map
+ * @returns 정렬된 normalized availability entry 목록
+ */
 function createNormalizedAvailabilityEntries(
   entries: Record<string, AgentMetadataAvailabilityContract>,
 ): NormalizedAvailabilitySnapshotEntry[] {
@@ -527,6 +630,8 @@ function createNormalizedAvailabilityEntries(
  * createNormalizedRuntimeAvailabilitySnapshot 함수.
  * trace와 snapshot 테스트가 그대로 읽을 수 있는 stable JSON view를 생성함.
  *
+ * @param lualsRuntime - 현재 LuaLS sidecar runtime 상태
+ * @param operatorOptions - workspace root 선택과 client capability 상태
  * @returns artifacts/features availability를 정렬한 snapshot-friendly view
  */
 export function createNormalizedRuntimeAvailabilitySnapshot(
@@ -548,6 +653,10 @@ export function createNormalizedRuntimeAvailabilitySnapshot(
   };
 }
 
+/**
+ * AvailabilityTraceEntry 인터페이스.
+ * Trace payload에서 availability scope, source, detail을 명시적으로 노출하는 항목.
+ */
 export interface AvailabilityTraceEntry {
   availabilityDetail: string;
   availabilityScope: AgentMetadataAvailabilityScope;
@@ -555,6 +664,10 @@ export interface AvailabilityTraceEntry {
   key: string;
 }
 
+/**
+ * RuntimeAvailabilityTracePayload 인터페이스.
+ * Trace layer가 바로 소비할 수 있는 runtime availability payload.
+ */
 export interface RuntimeAvailabilityTracePayload extends CbsAgentProtocolMarker {
   artifacts: AvailabilityTraceEntry[];
   companions: LuaLsCompanionRuntime[];
@@ -562,6 +675,13 @@ export interface RuntimeAvailabilityTracePayload extends CbsAgentProtocolMarker 
   operator: RuntimeOperatorContract;
 }
 
+/**
+ * createAvailabilityTraceEntries 함수.
+ * Normalized snapshot entry를 trace naming convention에 맞는 항목으로 변환함.
+ *
+ * @param entries - 변환할 normalized availability entry 목록
+ * @returns trace payload용 availability entry 목록
+ */
 function createAvailabilityTraceEntries(
   entries: readonly NormalizedAvailabilitySnapshotEntry[],
 ): AvailabilityTraceEntry[] {
@@ -577,6 +697,8 @@ function createAvailabilityTraceEntries(
  * createRuntimeAvailabilityTracePayload 함수.
  * trace layer에서 바로 읽을 수 있는 availability payload를 생성함.
  *
+ * @param lualsRuntime - 현재 LuaLS sidecar runtime 상태
+ * @param operatorOptions - workspace root 선택과 client capability 상태
  * @returns availabilityScope/source/detail 필드를 가진 trace payload
  */
 export function createRuntimeAvailabilityTracePayload(

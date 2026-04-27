@@ -1,3 +1,8 @@
+/**
+ * CBS fragment cursor 위치에서 completion trigger context를 판별하는 유틸.
+ * @file packages/cbs-lsp/src/core/completion-context.ts
+ */
+
 import { TokenType, type Range as CBSRange } from 'risu-workbench-core';
 import { normalizeLookupKey } from '../analyzer/scope/lookup-key';
 import {
@@ -9,6 +14,10 @@ import { getCalcExpressionCompletionTarget, getCalcExpressionZone } from './calc
 import type { FragmentCursorLookupResult } from './fragment-locator';
 import { resolveActiveLocalFunctionContext } from './local-functions';
 
+/**
+ * Completion trigger context 판별 결과.
+ * Completion provider가 어떤 후보군을 제공하고 어떤 범위를 교체할지 정의함.
+ */
 export type CompletionTriggerContext =
   | { type: 'all-functions'; prefix: string; startOffset: number; endOffset: number }
   | { type: 'block-functions'; prefix: string; startOffset: number; endOffset: number }
@@ -36,13 +45,11 @@ export type CompletionTriggerContext =
   | { type: 'none' };
 
 /**
- * Detects completion trigger context from fragment cursor lookup.
- * This is a shared seam that interprets the parsed token stream to determine
- * what kind of completions should be offered at the cursor position.
+ * detectCompletionTriggerContext 함수.
+ * fragment cursor lookup을 해석해 현재 위치에 맞는 completion 후보군을 결정함.
  *
- * This implementation is strictly token/nodePath-driven from the shared analysis seam.
- * It uses only token types, token ranges, nodePath, and fragment-local offsets.
- * No raw fragment text parsing is performed.
+ * @param lookup - fragment locator가 계산한 cursor lookup 결과
+ * @returns cursor 위치에서 사용할 completion trigger context
  */
 export function detectCompletionTriggerContext(
   lookup: FragmentCursorLookupResult,
@@ -62,7 +69,7 @@ export function detectCompletionTriggerContext(
     };
   }
 
-  // Helper to find parent macro from node path
+  // nodePath를 뒤에서부터 훑어 cursor가 속한 가장 가까운 macro context를 찾음.
   const findParentMacro = (): { name: string; range: CBSRange } | null => {
     for (let i = nodePath.length - 1; i >= 0; i--) {
       const node = nodePath[i];
@@ -73,7 +80,7 @@ export function detectCompletionTriggerContext(
     return null;
   };
 
-  // Helper to find open block kind
+  // close-tag 후보를 좁히기 위해 현재 열려 있는 block kind를 nodePath에서 찾음.
   const findOpenBlockKind = (): string | null => {
     for (let i = nodePath.length - 1; i >= 0; i--) {
       const node = nodePath[i];
@@ -84,7 +91,7 @@ export function detectCompletionTriggerContext(
     return null;
   };
 
-  // Helper to find when block in nodePath
+  // #when header 안의 operator completion 여부를 판단할 때 쓸 block span을 찾음.
   const findWhenBlock = (): { openRange: CBSRange } | null => {
     for (const n of nodePath) {
       if (n.type === 'Block' && n.kind === 'when') {
@@ -94,7 +101,7 @@ export function detectCompletionTriggerContext(
     return null;
   };
 
-  // Helper to find the OpenBrace token that starts the current macro context
+  // cursor 이전의 마지막 유효 OpenBrace를 찾아 현재 macro context의 시작점을 고정함.
   const findOpenBraceToken = (): { index: number; offset: number } | null => {
     let startIndex = tokens.length - 1;
     for (let i = tokens.length - 1; i >= 0; i--) {
@@ -125,7 +132,7 @@ export function detectCompletionTriggerContext(
     return null;
   };
 
-  // Helper to find the last ArgumentSeparator before cursor
+  // cursor 앞의 마지막 ArgumentSeparator를 찾아 argument 기반 completion 범위를 계산함.
   const findLastSeparatorBeforeCursor = (): {
     token: (typeof tokens)[0];
     offset: number;
@@ -143,13 +150,11 @@ export function detectCompletionTriggerContext(
     return null;
   };
 
-  // Helper to extract prefix from a token's end to cursor position
+  // raw text 재파싱 없이 token 끝부터 cursor까지의 prefix 역할을 보수적으로 계산함.
   const getPrefixFromTokenEnd = (t: (typeof tokens)[0]): string => {
     const tokenEnd = positionToOffset(fragmentAnalysis.fragment.content, t.range.end);
     if (fragmentLocalOffset <= tokenEnd) return '';
-    // For incomplete syntax, the "prefix" is the partial text the user has typed
-    // We return empty string since we can't extract it without content.slice
-    // The completion provider will use empty prefix to show all options
+    // 불완전한 syntax는 raw slice에 의존하지 않고 전체 후보를 보여 주도록 빈 prefix로 둠.
     return '';
   };
 
@@ -561,12 +566,12 @@ export function detectCompletionTriggerContext(
     return eachIteratorContext;
   }
 
-  // Determine context based on token type and node information
+  // token type과 AST node span을 함께 사용해 cursor가 포함된 문맥을 우선 판별함.
   if (token) {
     const tokenStart = positionToOffset(fragmentAnalysis.fragment.content, token.token.range.start);
     const tokenEnd = positionToOffset(fragmentAnalysis.fragment.content, token.token.range.end);
 
-    // Case 1: When operators - cursor is in a #when block header after an ArgumentSeparator
+    // Case 1: #when block header의 ArgumentSeparator 뒤에서는 operator completion을 제공함.
     const whenBlock = findWhenBlock();
     if (whenBlock) {
       const headerEnd = positionToOffset(
@@ -596,7 +601,7 @@ export function detectCompletionTriggerContext(
       }
     }
 
-    // Case 2: Variable names - cursor is in getvar/gettempvar argument
+    // Case 2: 변수 macro의 argument 위치에서는 scope variable completion으로 라우팅함.
     if (
       token.token.type === TokenType.Argument ||
       token.token.type === TokenType.FunctionName ||
@@ -658,7 +663,7 @@ export function detectCompletionTriggerContext(
       }
     }
 
-    // Case 3: BlockEnd token - close tag completion
+    // Case 3: BlockEnd token 위에서는 현재 block에 맞는 close tag를 제안함.
     if (token.token.type === TokenType.BlockEnd) {
       const blockKind = findOpenBlockKind();
       const openBrace = findOpenBraceToken();
@@ -673,7 +678,7 @@ export function detectCompletionTriggerContext(
       }
     }
 
-    // Case 4: CloseBrace token - check for macro argument completion first, then close tag
+    // Case 4: CloseBrace token에서는 argument completion을 먼저 확인하고 close tag로 fallback함.
     if (token.token.type === TokenType.CloseBrace) {
       const openBrace = findOpenBraceToken();
       if (openBrace !== null) {
@@ -718,7 +723,7 @@ export function detectCompletionTriggerContext(
           };
         }
 
-        // Check if we're in a macro argument context (for variable/metadata completion)
+        // macro argument 끝에서 호출된 completion은 macro별 argument 후보를 먼저 확인함.
         const parentMacro = findParentMacro();
         if (parentMacro) {
           const macroName = parentMacro.name.toLowerCase();
@@ -750,7 +755,7 @@ export function detectCompletionTriggerContext(
               };
             }
 
-            // Check for metadata macro
+            // metadata macro는 첫 argument 위치에서 metadata key 후보로 좁힘.
             if (macroName === 'metadata') {
               return {
                 type: 'metadata-keys',
@@ -781,7 +786,7 @@ export function detectCompletionTriggerContext(
           }
         }
 
-        // Fall back to close-tag completion for block contexts
+        // argument 후보가 없으면 block context의 close-tag completion으로 낮춤.
         const blockKind = findOpenBlockKind();
         return {
           type: 'close-tag',
@@ -793,17 +798,15 @@ export function detectCompletionTriggerContext(
       }
     }
 
-    // Case 5: PlainText token - might be incomplete macro syntax
-    // Two scenarios:
-    // 1. There's an OpenBrace before this PlainText (complete macro before incomplete text)
-    // 2. The PlainText itself starts with {{ (unclosed macro treated as PlainText by tokenizer)
+    // Case 5: PlainText token은 tokenizer가 아직 macro로 분리하지 못한 incomplete syntax일 수 있음.
+    // OpenBrace가 이미 있거나 PlainText 자체가 `{{`를 포함하는 두 경로를 모두 처리함.
     if (token.token.type === TokenType.PlainText) {
       const plainTextMacroPrefixContext = detectPlainTextMacroPrefixContext();
       if (plainTextMacroPrefixContext) {
         return plainTextMacroPrefixContext;
       }
 
-      // Scenario 1: Check if there's an OpenBrace token before this PlainText
+      // Scenario 1: PlainText 앞의 OpenBrace를 기준으로 incomplete macro context를 복원함.
       const openBrace = findOpenBraceToken();
       if (openBrace !== null) {
         // Look at the next token after OpenBrace to determine context
@@ -838,7 +841,7 @@ export function detectCompletionTriggerContext(
               endOffset: fragmentLocalOffset,
             };
           }
-          // Check for FunctionName ({{getvar::, {{metadata::, etc.)
+          // FunctionName 뒤 separator가 있으면 macro별 argument completion으로 전환함.
           if (nextToken.type === TokenType.FunctionName) {
             const funcName = nextToken.value.toLowerCase();
             const separatorToken = tokens[openBrace.index + 2];
@@ -916,7 +919,7 @@ export function detectCompletionTriggerContext(
           }
         }
 
-        // If no next token, default to all-functions
+        // 다음 token이 없으면 `{{`만 입력된 상태로 보고 전체 함수 후보를 제공함.
         return {
           type: 'all-functions',
           prefix: '',
@@ -926,7 +929,7 @@ export function detectCompletionTriggerContext(
       }
     }
 
-    // Case 6: ElseKeyword token
+    // Case 6: ElseKeyword token 위치에서는 else keyword 후보만 유지함.
     if (token.token.type === TokenType.ElseKeyword) {
       const openBrace = findOpenBraceToken();
       if (openBrace !== null) {
@@ -939,7 +942,7 @@ export function detectCompletionTriggerContext(
       }
     }
 
-    // Case 7: BlockStart token - block functions
+    // Case 7: BlockStart token 위치에서는 block 함수 후보를 제공함.
     if (token.token.type === TokenType.BlockStart) {
       const openBrace = findOpenBraceToken();
       if (openBrace !== null) {
@@ -952,7 +955,7 @@ export function detectCompletionTriggerContext(
       }
     }
 
-    // Case 8: FunctionName token - check for specific macros or default to all functions
+    // Case 8: FunctionName token은 separator 이후 macro별 completion, 아니면 전체 함수 후보로 처리함.
     if (token.token.type === TokenType.FunctionName) {
       const openBrace = findOpenBraceToken();
       if (openBrace !== null) {
@@ -1001,10 +1004,10 @@ export function detectCompletionTriggerContext(
     }
   }
 
-  // Fallback: When cursor is between tokens, use token stream analysis
+  // Fallback: cursor가 token 사이에 있을 때는 OpenBrace 주변 token stream만으로 문맥을 복원함.
   const openBrace = findOpenBraceToken();
   if (openBrace !== null) {
-    // Check if we're in a when block context (for when operators)
+    // #when header 내부의 token 사이 위치도 operator completion으로 복구함.
     const whenBlockInPath = findWhenBlock();
     if (whenBlockInPath) {
       const headerEnd = positionToOffset(
@@ -1034,14 +1037,14 @@ export function detectCompletionTriggerContext(
       }
     }
 
-    // Look at the next token after OpenBrace to determine context
+    // OpenBrace 바로 뒤 token을 기준으로 incomplete macro 종류를 판별함.
     const nextToken = tokens[openBrace.index + 1];
     if (nextToken) {
       const nextType = nextToken.type;
       const nextStart = positionToOffset(fragmentAnalysis.fragment.content, nextToken.range.start);
       const nextEnd = positionToOffset(fragmentAnalysis.fragment.content, nextToken.range.end);
 
-      // If cursor is between {{ and the next token
+      // cursor가 `{{`와 다음 token 사이에 있으면 다음 token 종류만으로 후보군을 결정함.
       if (fragmentLocalOffset >= openBrace.offset && fragmentLocalOffset <= nextStart) {
         if (nextType === TokenType.BlockStart) {
           return {
@@ -1079,7 +1082,7 @@ export function detectCompletionTriggerContext(
         }
       }
 
-      // If cursor is after the next token (for incomplete syntax)
+      // cursor가 다음 token 뒤에 있으면 separator 존재 여부로 argument completion을 판별함.
       if (fragmentLocalOffset > nextEnd) {
         if (nextType === TokenType.FunctionName) {
           const funcName = nextToken.value.toLowerCase();
@@ -1131,7 +1134,7 @@ export function detectCompletionTriggerContext(
       }
     }
 
-    // Default: all-functions for plain {{
+    // 순수 `{{` 상태에서는 전체 함수 completion을 기본값으로 사용함.
     return {
       type: 'all-functions',
       prefix: '',

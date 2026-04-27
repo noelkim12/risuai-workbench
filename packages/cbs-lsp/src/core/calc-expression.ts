@@ -5,16 +5,25 @@
 
 import type { FragmentCursorLookupResult } from './fragment-locator';
 
+/** calc expression이 감지된 syntax 위치. */
 export type CalcExpressionZoneKind = 'inline' | 'macro-argument';
+/** calc expression 변수 참조가 가리키는 CBS 변수 namespace. */
 export type CalcExpressionReferenceKind = 'chat' | 'global';
+/** calc expression sublanguage를 사용자 문서에 표시할 때 쓰는 고정 라벨. */
 export const CALC_EXPRESSION_SUBLANGUAGE_LABEL = 'CBS expression sublanguage';
 
+/**
+ * calc expression sublanguage 문서 조각.
+ * Hover, signature help, diagnostics가 같은 설명 문구를 공유할 때 사용함.
+ */
 export interface CalcExpressionSublanguageDocumentation {
   summary: string;
   variables: string;
   operators: string;
   coercion: string;
 }
+
+/** calc expression validator가 반환하는 진단 분류. */
 export type CalcExpressionDiagnosticKind =
   | 'empty-expression'
   | 'unbalanced-parentheses'
@@ -24,6 +33,10 @@ export type CalcExpressionDiagnosticKind =
   | 'invalid-reference-identifier';
 type CalcExpressionTokenKind = 'number' | 'operator' | 'reference' | 'null';
 
+/**
+ * calc expression source 범위.
+ * Inline form과 macro argument form을 같은 offset contract로 정규화함.
+ */
 export interface CalcExpressionZone {
   kind: CalcExpressionZoneKind;
   expression: string;
@@ -31,6 +44,10 @@ export interface CalcExpressionZone {
   expressionEndOffset: number;
 }
 
+/**
+ * calc expression 안의 `$name` 또는 `@name` 변수 참조.
+ * Provider가 hover, definition, reference query로 넘길 수 있는 최소 단위임.
+ */
 export interface CalcExpressionReference {
   raw: string;
   name: string;
@@ -39,6 +56,10 @@ export interface CalcExpressionReference {
   endOffset: number;
 }
 
+/**
+ * calc expression completion 교체 대상.
+ * Completion provider가 prefix와 replacement range를 계산할 때 사용함.
+ */
 export interface CalcExpressionCompletionTarget {
   prefix: string;
   startOffset: number;
@@ -46,6 +67,10 @@ export interface CalcExpressionCompletionTarget {
   referenceKind: CalcExpressionReferenceKind | null;
 }
 
+/**
+ * calc expression 진단 결과.
+ * Fragment-local offset 범위와 사용자 표시 메시지를 함께 보관함.
+ */
 export interface CalcExpressionDiagnostic {
   kind: CalcExpressionDiagnosticKind;
   message: string;
@@ -113,6 +138,7 @@ const BINARY_OPERATORS = new Set([
 export function getCalcExpressionZone(
   lookup: FragmentCursorLookupResult,
 ): CalcExpressionZone | null {
+  // Inline math token은 token raw prefix를 제거해 expression 본문 offset만 노출함.
   const tokenLookup = lookup.token;
   if (tokenLookup?.category === 'math-expression') {
     const prefixLength = getInlineMathExpressionPrefixLength(tokenLookup.token.raw);
@@ -124,6 +150,7 @@ export function getCalcExpressionZone(
     };
   }
 
+  // `calc` macro의 첫 번째 argument만 expression sublanguage zone으로 인정함.
   const nodeSpan = lookup.nodeSpan;
   if (
     nodeSpan?.category !== 'argument' ||
@@ -201,6 +228,7 @@ export function getCalcExpressionCompletionTarget(
   );
   const relativeOffset = boundedOffset - zone.expressionStartOffset;
 
+  // `$name` 또는 `@name` 내부라면 identifier prefix만 교체하도록 범위를 좁힘.
   let prefixStart = relativeOffset;
   while (prefixStart > 0 && IDENTIFIER_PATTERN.test(zone.expression[prefixStart - 1] ?? '')) {
     prefixStart -= 1;
@@ -216,6 +244,7 @@ export function getCalcExpressionCompletionTarget(
     };
   }
 
+  // 비교, 논리 operator는 문자 조합 중간에서도 completion 후보를 좁힐 수 있게 함.
   let operatorStart = relativeOffset;
   while (operatorStart > 0 && /[=!<>&|]/u.test(zone.expression[operatorStart - 1] ?? '')) {
     operatorStart -= 1;
@@ -231,6 +260,7 @@ export function getCalcExpressionCompletionTarget(
     };
   }
 
+  // `null` 같은 alphabetic keyword 후보는 변수 marker 없이 별도 prefix로 처리함.
   let alphaStart = relativeOffset;
   while (alphaStart > 0 && /[A-Za-z]/u.test(zone.expression[alphaStart - 1] ?? '')) {
     alphaStart -= 1;
@@ -271,6 +301,7 @@ export function validateCalcExpression(expression: string): CalcExpressionDiagno
     );
   }
 
+  // 먼저 tokenization 단계에서 unsupported token과 reference 형식을 걸러냄.
   const tokenization = tokenizeCalcExpression(expression);
   if (tokenization.diagnostic) {
     return tokenization.diagnostic;
@@ -286,6 +317,7 @@ export function validateCalcExpression(expression: string): CalcExpressionDiagno
     );
   }
 
+  // 단일 pass로 operand/operator 순서와 괄호 균형을 동시에 검증함.
   let depth = 0;
   let expectsOperand = true;
   const openParentheses: CalcExpressionToken[] = [];

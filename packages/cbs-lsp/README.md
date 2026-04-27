@@ -290,7 +290,7 @@ interface UnifiedVariableGraphSnapshot {
 
 `tests/fixtures/fixture-corpus.ts`의 `snapshotLayer1Contracts()` helper는 이 두 snapshot을 fixture/golden-friendly JSON bundle로 묶어 Layer 1 public contract를 회귀 테스트에서 그대로 고정합니다.
 
-`packages/cbs-lsp/src/auxiliary/agent-contracts.ts`의 `snapshotLayer1Contracts()`는 `report layer1` JSON에 아래 `contract` descriptor를 함께 넣습니다.
+`packages/cbs-lsp/src/contracts/agent-contracts.ts`의 `snapshotLayer1Contracts()`는 `report layer1` JSON에 아래 `contract` descriptor를 함께 넣습니다.
 
 - `trust.agentsMayTrustSnapshotDirectly: true` — agent가 workspace-wide reasoning 입력으로 이 snapshot을 직접 사용해도 됨
 - `stableFields.*` — `ElementRegistrySnapshot`, `UnifiedVariableGraphSnapshot`, occurrence/node/file/seed shape에서 field name과 의미가 breaking change 전까지 유지되는 public contract
@@ -537,7 +537,7 @@ getLoreBooks = function(id, search) end
 
 ### Layer 3 Query Envelope Contract (Public)
 
-`VariableFlowService`와 `ActivationChainService`의 개별 query result는 `snapshotLayer3Queries()`를 통해 하나의 stable public envelope로 승격됩니다. 이 envelope는 CLI `query *`, agent helper, future MCP adapter가 같은 shape를 그대로 재사용하는 것을 전제로 하며, source-of-truth는 `packages/cbs-lsp/src/auxiliary/agent-contracts.ts`의 `LAYER3_QUERY_ENVELOPE_CONTRACT`입니다.
+`VariableFlowService`와 `ActivationChainService`의 개별 query result는 `snapshotLayer3Queries()`를 통해 하나의 stable public envelope로 승격됩니다. 이 envelope는 CLI `query *`, agent helper, future MCP adapter가 같은 shape를 그대로 재사용하는 것을 전제로 하며, source-of-truth는 `packages/cbs-lsp/src/contracts/agent-contracts.ts`의 `LAYER3_QUERY_ENVELOPE_CONTRACT`입니다.
 
 ```typescript
 interface NormalizedLayer3QuerySnapshot {

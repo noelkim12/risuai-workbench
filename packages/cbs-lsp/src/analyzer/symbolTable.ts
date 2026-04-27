@@ -4,10 +4,28 @@
  */
 import type { Range } from 'risu-workbench-core';
 
+/**
+ * VariableSymbolKind 타입.
+ * CBS scope analyzer가 추적하는 변수 namespace 종류를 구분함.
+ */
 export type VariableSymbolKind = 'chat' | 'temp' | 'global' | 'loop';
+
+/**
+ * VariableSymbolScope 타입.
+ * 변수 심볼이 유효한 분석 범위와 외부 제공 여부를 나타냄.
+ */
 export type VariableSymbolScope = 'fragment' | 'block' | 'external';
+
+/**
+ * FunctionSymbolScope 타입.
+ * CBS 로컬 함수 심볼의 lookup 범위를 나타냄.
+ */
 export type FunctionSymbolScope = 'fragment';
 
+/**
+ * VariableSymbol 인터페이스.
+ * CBS fragment 안에서 수집된 변수 정의와 참조 범위를 표현함.
+ */
 export interface VariableSymbol {
   readonly id: string;
   readonly name: string;
@@ -18,12 +36,20 @@ export interface VariableSymbol {
   readonly references: readonly Range[];
 }
 
+/**
+ * UndefinedVariableReference 인터페이스.
+ * 정의를 찾지 못한 변수 참조를 diagnostics 단계로 전달함.
+ */
 export interface UndefinedVariableReference {
   readonly name: string;
   readonly kind: Exclude<VariableSymbolKind, 'global'>;
   readonly range: Range;
 }
 
+/**
+ * InvalidArgumentReference 인터페이스.
+ * arg 참조가 함수 경계나 파라미터 개수 계약을 위반한 위치를 기록함.
+ */
 export interface InvalidArgumentReference {
   readonly rawText: string;
   readonly index: number | null;
@@ -33,6 +59,10 @@ export interface InvalidArgumentReference {
   readonly parameterCount?: number;
 }
 
+/**
+ * FunctionSymbol 인터페이스.
+ * CBS 로컬 함수 정의와 호출 참조를 파라미터 정보와 함께 표현함.
+ */
 export interface FunctionSymbol {
   readonly id: string;
   readonly name: string;
@@ -43,8 +73,16 @@ export interface FunctionSymbol {
   readonly parameters: readonly string[];
 }
 
+/**
+ * ScopeIssue 타입.
+ * scope analyzer가 diagnostics로 넘길 semantic issue union.
+ */
 export type ScopeIssue = UndefinedVariableReference | InvalidArgumentReference;
 
+/**
+ * ScopeAnalysisResult 인터페이스.
+ * scope 분석 결과인 심볼 테이블과 issue store를 함께 전달함.
+ */
 export interface ScopeAnalysisResult {
   readonly symbolTable: SymbolTable;
   readonly issues: ScopeIssueStore;

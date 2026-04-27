@@ -13,6 +13,7 @@ import {
 } from './scope/definition-collector';
 import { ReferenceCollector } from './scope/reference-collector';
 
+/** Visible loop binding resolver 함수 re-export. */
 export {
   collectVisibleLoopBindingsFromNodePath,
   resolveVisibleLoopBindingFromNodePath,

@@ -7,7 +7,7 @@ import type { CbsLspRuntimeConfigOverrides } from '../config/runtime-config';
 import { resolveRuntimeConfig } from '../config/runtime-config';
 import { createCbsAgentProtocolMarker, type CbsAgentProtocolMarker } from '../core';
 
-import { snapshotLayer3Queries, type NormalizedLayer3QuerySnapshot } from '../auxiliary/agent-contracts';
+import { snapshotLayer3Queries, type NormalizedLayer3QuerySnapshot } from '../contracts';
 import { createCliWorkspaceQueryContext, resolveCliDocumentUri } from './workspace-query';
 
 export type QueryCliCommand =

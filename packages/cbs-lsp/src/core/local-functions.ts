@@ -8,6 +8,10 @@ import type { BlockNode, CBSDocument, CBSNode, MacroCallNode, Range } from 'risu
 import { offsetToPosition, positionToOffset } from '../utils/position';
 import type { FragmentCursorLookupResult } from './fragment-locator';
 
+/**
+ * LocalFunctionDeclaration 인터페이스.
+ * fragment-local `#func` 선언의 이름, 위치, 파라미터 계약을 보관함.
+ */
 export interface LocalFunctionDeclaration {
   name: string;
   range: Range;
@@ -15,24 +19,44 @@ export interface LocalFunctionDeclaration {
   parameterDeclarations: LocalFunctionParameterDeclaration[];
 }
 
+/**
+ * LocalFunctionParameterDeclaration 인터페이스.
+ * `#func` 헤더에 선언된 파라미터의 순서와 위치를 나타냄.
+ */
 export interface LocalFunctionParameterDeclaration {
   index: number;
   name: string;
   range: Range;
 }
 
+/**
+ * ActiveLocalFunctionContext 인터페이스.
+ * 커서 위치에서 활성화된 로컬 함수 선언과 진입 원천을 나타냄.
+ */
 export interface ActiveLocalFunctionContext {
   declaration: LocalFunctionDeclaration;
   source: 'func-body' | 'call-macro';
   callArgumentIndex?: number;
 }
 
+/**
+ * NumberedArgumentReference 인터페이스.
+ * `{{arg::N}}` 형태의 numbered argument 참조와 위치를 나타냄.
+ */
 export interface NumberedArgumentReference {
   index: number;
   rawText: string;
   range: Range;
 }
 
+/**
+ * collectLocalFunctionDeclarations 함수.
+ * fragment-local CBS 문서에서 모든 `#func` 선언을 수집함.
+ *
+ * @param document - 선언을 찾을 fragment-local CBS 문서
+ * @param sourceText - fragment 원문 텍스트
+ * @returns 발견된 로컬 함수 선언 목록
+ */
 export function collectLocalFunctionDeclarations(
   document: Pick<CBSDocument, 'nodes'>,
   sourceText: string,
