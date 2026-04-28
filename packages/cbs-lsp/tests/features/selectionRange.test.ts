@@ -10,7 +10,7 @@ import { FragmentAnalysisService } from '../../src/core';
 import {
   SELECTION_RANGE_PROVIDER_AVAILABILITY,
   SelectionRangeProvider,
-} from '../../src/features/selectionRange';
+} from '../../src/features/editing';
 import { offsetToPosition } from '../../src/utils/position';
 import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
 

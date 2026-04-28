@@ -10,7 +10,7 @@ import { FragmentAnalysisService } from '../../src/core';
 import {
   DOCUMENT_HIGHLIGHT_PROVIDER_AVAILABILITY,
   DocumentHighlightProvider,
-} from '../../src/features/documentHighlight';
+} from '../../src/features/symbols';
 import { offsetToPosition } from '../../src/utils/position';
 import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
 

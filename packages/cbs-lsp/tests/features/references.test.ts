@@ -5,7 +5,7 @@ import { FragmentAnalysisService } from '../../src/core';
 import {
   REFERENCES_PROVIDER_AVAILABILITY,
   ReferencesProvider,
-} from '../../src/features/references';
+} from '../../src/features/navigation';
 import type { VariableFlowService } from '../../src/services';
 import { offsetToPosition } from '../../src/utils/position';
 import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';

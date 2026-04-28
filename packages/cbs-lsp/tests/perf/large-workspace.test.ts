@@ -16,10 +16,10 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 
 import { FragmentAnalysisService } from '../../src/core';
 import { DiagnosticCode } from '../../src/analyzer/diagnostics';
-import { SemanticTokensProvider } from '../../src/features/semanticTokens';
+import { SemanticTokensProvider } from '../../src/features/symbols';
 import { CompletionProvider } from '../../src/features/completion';
 import { HoverProvider } from '../../src/features/hover';
-import { CodeActionProvider } from '../../src/features/codeActions';
+import { CodeActionProvider } from '../../src/features/editing';
 import { createFragmentRequest } from '../../src/helpers/server-workspace-helper';
 import {
   assembleDiagnosticsForRequest,

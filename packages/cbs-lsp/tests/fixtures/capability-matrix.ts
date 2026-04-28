@@ -16,7 +16,7 @@ import {
   type RuntimeOperatorContractOptions,
 } from '../../src/core';
 import { CBS_COMPLETION_TRIGGER_CHARACTERS } from '../../src/features/completion';
-import { ACTIVATION_CHAIN_CODELENS_COMMAND } from '../../src/features/codelens';
+import { ACTIVATION_CHAIN_CODELENS_COMMAND } from '../../src/features/presentation';
 import { createInitializeResult } from '../../src/server/capabilities';
 import { readWorkspaceClientState } from '../../src/helpers/server-workspace-helper';
 import { LSP_POSITION_ENCODING } from '../../src/utils/position';

@@ -44,25 +44,25 @@ import {
   normalizeCodeActionsForSnapshot,
   type NormalizedCodeActionsEnvelopeSnapshot,
   type NormalizedCodeActionSnapshot,
-} from '../../src/features/code-actions-snapshot';
+} from '../../src/features/editing';
 import {
   normalizeDocumentSymbolsEnvelopeForSnapshot,
   normalizeDocumentSymbolsForSnapshot,
   type NormalizedDocumentSymbolsEnvelopeSnapshot,
   type NormalizedDocumentSymbolSnapshot,
-} from '../../src/features/documentSymbol';
+} from '../../src/features/symbols';
 import {
   normalizeWorkspaceSymbolsEnvelopeForSnapshot,
   normalizeWorkspaceSymbolsForSnapshot,
   type NormalizedWorkspaceSymbolsEnvelopeSnapshot,
   type NormalizedWorkspaceSymbolSnapshot,
-} from '../../src/features/workspaceSymbol';
+} from '../../src/features/symbols';
 import {
   normalizeCodeLensesEnvelopeForSnapshot,
   normalizeCodeLensesForSnapshot,
   type NormalizedCodeLensesEnvelopeSnapshot,
   type NormalizedCodeLensSnapshot,
-} from '../../src/features/codelens';
+} from '../../src/features/presentation';
 import {
   normalizeLuaHoverEnvelopeForSnapshot,
   normalizeLuaHoverForSnapshot,

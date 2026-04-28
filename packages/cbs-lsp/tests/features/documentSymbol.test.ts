@@ -3,7 +3,7 @@ import type { DocumentSymbolParams } from 'vscode-languageserver/node';
 import { SymbolKind } from 'vscode-languageserver/node';
 
 import { FragmentAnalysisService } from '../../src/core';
-import { DocumentSymbolProvider } from '../../src/features/documentSymbol';
+import { DocumentSymbolProvider } from '../../src/features/symbols';
 import {
   serializeDocumentSymbolsEnvelopeForGolden,
   snapshotDocumentSymbolsEnvelope,

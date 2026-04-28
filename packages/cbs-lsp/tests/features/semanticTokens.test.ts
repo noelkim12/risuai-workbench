@@ -6,7 +6,7 @@ import {
   SEMANTIC_TOKEN_MODIFIERS,
   SEMANTIC_TOKEN_TYPES,
   SemanticTokensProvider,
-} from '../../src/features/semanticTokens';
+} from '../../src/features/symbols';
 import { positionToOffset } from '../../src/utils/position';
 import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
 

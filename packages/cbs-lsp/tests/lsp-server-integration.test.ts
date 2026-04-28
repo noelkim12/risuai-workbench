@@ -56,9 +56,9 @@ import {
 import {
   ACTIVATION_CHAIN_CODELENS_CLIENT_COMMAND,
   ACTIVATION_CHAIN_CODELENS_COMMAND,
-} from '../src/features/codelens';
+} from '../src/features/presentation';
 import { CBS_COMPLETION_TRIGGER_CHARACTERS } from '../src/features/completion';
-import { SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES } from '../src/features/semanticTokens';
+import { SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES } from '../src/features/symbols';
 import { ElementRegistry, UnifiedVariableGraph } from '../src/indexer';
 import { registerServer } from '../src/server';
 import type {

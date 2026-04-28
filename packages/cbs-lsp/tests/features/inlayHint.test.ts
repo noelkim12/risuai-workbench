@@ -10,7 +10,7 @@ import { FragmentAnalysisService } from '../../src/core';
 import {
   InlayHintProvider,
   INLAY_HINT_PROVIDER_AVAILABILITY,
-} from '../../src/features/inlayHint';
+} from '../../src/features/presentation';
 import { offsetToPosition } from '../../src/utils/position';
 import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
 

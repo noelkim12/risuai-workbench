@@ -7,8 +7,7 @@ import type { DocumentOnTypeFormattingParams } from 'vscode-languageserver/node'
 import { describe, expect, it } from 'vitest';
 
 import { createSyntheticDocumentVersion, FragmentAnalysisService } from '../../src/core';
-import { FormattingProvider, type FormattingRequestResolver } from '../../src/features/formatting';
-import { OnTypeFormattingProvider } from '../../src/features/onTypeFormatting';
+import { FormattingProvider, OnTypeFormattingProvider, type FormattingRequestResolver } from '../../src/features/editing';
 import { offsetToPosition } from '../../src/utils/position';
 import { applyTextEdits } from '../helpers/formatting-contract';
 

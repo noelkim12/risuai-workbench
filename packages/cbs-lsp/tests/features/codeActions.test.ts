@@ -6,7 +6,7 @@ import { createSyntheticDocumentVersion } from '../../src/core';
 import {
   CODE_ACTION_PROVIDER_AVAILABILITY,
   CodeActionProvider,
-} from '../../src/features/codeActions';
+} from '../../src/features/editing';
 import { routeDiagnosticsForDocument } from '../../src/utils/diagnostics-router';
 import { DiagnosticCode } from '../../src/analyzer/diagnostics';
 import { positionToOffset } from '../../src/utils/position';
@@ -389,7 +389,7 @@ describe('CodeActionProvider', () => {
       const provider = createProvider(request);
       const diagnostics = routeDiagnosticsForDocument(request.filePath, request.text, {}, request);
       const params = createParams(request, [getDiagnosticByCode(diagnostics, DiagnosticCode.DeprecatedFunction)]);
-      const orphan: import('../../src/features/codeActions').UnresolvedCodeAction = {
+      const orphan: import('../../src/features/editing').UnresolvedCodeAction = {
         title: 'Nonexistent fake action',
         kind: CodeActionKind.QuickFix,
         diagnostics: params.context.diagnostics,
@@ -400,6 +400,7 @@ describe('CodeActionProvider', () => {
             schemaVersion: '1.0.0',
             diagnosticCode: DiagnosticCode.DeprecatedFunction,
             actionType: 'replacement',
+            replacement: null,
             uri: params.textDocument.uri,
           },
         },

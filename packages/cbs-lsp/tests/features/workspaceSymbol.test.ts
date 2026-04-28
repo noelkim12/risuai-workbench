@@ -13,7 +13,7 @@ import {
 import { ActivationChainService, VariableFlowService, type WorkspaceSnapshotState } from '../../src/services';
 import type { WorkspaceDiagnosticsState } from '../../src/helpers/server-workspace-helper';
 import { FragmentAnalysisService } from '../../src/core';
-import { WorkspaceSymbolProvider } from '../../src/features/workspaceSymbol';
+import { WorkspaceSymbolProvider } from '../../src/features/symbols';
 import {
   serializeWorkspaceSymbolsEnvelopeForGolden,
   snapshotWorkspaceSymbolsEnvelope,

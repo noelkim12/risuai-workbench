@@ -5,7 +5,7 @@ import { createSyntheticDocumentVersion, FragmentAnalysisService } from '../../s
 import {
   FORMATTING_PROVIDER_AVAILABILITY,
   FormattingProvider,
-} from '../../src/features/formatting';
+} from '../../src/features/editing';
 import { offsetToPosition } from '../../src/utils/position';
 import {
   createFixtureRequest,

@@ -6,7 +6,7 @@ import { FragmentAnalysisService } from '../../src/core';
 import {
   DEFINITION_PROVIDER_AVAILABILITY,
   DefinitionProvider,
-} from '../../src/features/definition';
+} from '../../src/features/navigation';
 import type { VariableFlowService } from '../../src/services';
 import { offsetToPosition } from '../../src/utils/position';
 import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';

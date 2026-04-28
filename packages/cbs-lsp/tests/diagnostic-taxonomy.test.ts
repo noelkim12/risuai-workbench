@@ -7,10 +7,8 @@ import {
 } from '../src/analyzer/diagnostics';
 import { SymbolTable } from '../src/analyzer/symbolTable';
 import { routeDiagnosticsForDocument, mapDocumentToCbsFragments } from '../src/utils/diagnostics-router';
-import { DefinitionProvider } from '../src/features/definition';
-import { FormattingProvider } from '../src/features/formatting';
-import { ReferencesProvider } from '../src/features/references';
-import { RenameProvider } from '../src/features/rename';
+import { FormattingProvider } from '../src/features/editing';
+import { DefinitionProvider, ReferencesProvider, RenameProvider } from '../src/features/navigation';
 import { getFixtureCorpusEntry, listMatrixFixtures } from './fixtures/fixture-corpus';
 
 describe('diagnostic taxonomy contract', () => {

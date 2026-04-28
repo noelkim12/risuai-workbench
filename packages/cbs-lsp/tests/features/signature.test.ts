@@ -6,7 +6,7 @@ import { FragmentAnalysisService } from '../../src/core';
 import {
   SignatureHelpProvider,
   type SignatureHelpDocumentContext,
-} from '../../src/features/signature';
+} from '../../src/features/presentation';
 import { offsetToPosition } from '../../src/utils/position';
 import { getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
 

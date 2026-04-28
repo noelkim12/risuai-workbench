@@ -17,7 +17,7 @@ import {
 import {
   ACTIVATION_CHAIN_CODELENS_CLIENT_COMMAND,
   CodeLensProvider,
-} from '../../src/features/codelens';
+} from '../../src/features/presentation';
 import { fragmentAnalysisService } from '../../src/core';
 import { ElementRegistry, FileScanner } from '../../src/indexer';
 import { ActivationChainService } from '../../src/services';

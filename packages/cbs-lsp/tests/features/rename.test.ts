@@ -6,7 +6,7 @@ import {
   RENAME_PROVIDER_AVAILABILITY,
   RenameProvider,
   type RenameUriRequestResolver,
-} from '../../src/features/rename';
+} from '../../src/features/navigation';
 import type { VariableFlowService } from '../../src/services';
 import { offsetToPosition } from '../../src/utils/position';
 import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
