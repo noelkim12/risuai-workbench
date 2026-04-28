@@ -30,9 +30,9 @@ import {
   type FragmentAnalysisService,
   type FragmentCursorLookupResult,
   type CompletionTriggerContext,
-} from '../core';
-import type { VariableFlowService, WorkspaceSnapshotState } from '../services';
-import { isRequestCancelled } from '../utils/request-cancellation';
+} from '../../core';
+import type { VariableFlowService, WorkspaceSnapshotState } from '../../services';
+import { isRequestCancelled } from '../../utils/request-cancellation';
 import {
   createCompletionTextEditPlan,
 } from './completion-text-edit';

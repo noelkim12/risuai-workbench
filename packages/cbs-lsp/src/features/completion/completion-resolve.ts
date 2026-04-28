@@ -1,6 +1,6 @@
 /**
  * Completion lazy resolve와 unresolved payload 축소 유틸 모음.
- * @file packages/cbs-lsp/src/features/completion-resolve.ts
+ * @file packages/cbs-lsp/src/features/completion/completion-resolve.ts
  */
 import {
   CompletionItem,
@@ -18,8 +18,8 @@ import {
   type AgentMetadataEnvelope,
   type AgentMetadataExplanationContract,
   type AgentMetadataWorkspaceSnapshotContract,
-} from '../core';
-import type { VariableFlowService, WorkspaceSnapshotState } from '../services';
+} from '../../core';
+import type { VariableFlowService, WorkspaceSnapshotState } from '../../services';
 import {
   formatFunctionDetail,
   getBuiltinExplanation,

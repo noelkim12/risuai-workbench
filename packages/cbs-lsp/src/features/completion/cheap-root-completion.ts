@@ -1,6 +1,6 @@
 /**
  * CBS root completion fast path detection and textEdit helpers.
- * @file packages/cbs-lsp/src/features/cheap-root-completion.ts
+ * @file packages/cbs-lsp/src/features/completion/cheap-root-completion.ts
  */
 import {
   CompletionItem,
@@ -9,7 +9,7 @@ import {
 } from 'vscode-languageserver/node';
 import type { CBSBuiltinRegistry } from 'risu-workbench-core';
 
-import { isAgentMetadataEnvelope, type FragmentAnalysisRequest } from '../core';
+import { isAgentMetadataEnvelope, type FragmentAnalysisRequest } from '../../core';
 import {
   buildAllFunctionCompletions,
   buildBlockFunctionCompletions,

@@ -1,10 +1,10 @@
 /**
  * CBS completion item textEdit 범위 계산 유틸 모음.
- * @file packages/cbs-lsp/src/features/completion-text-edit.ts
+ * @file packages/cbs-lsp/src/features/completion/completion-text-edit.ts
  */
 import { CompletionItem, CompletionItemKind, InsertTextFormat } from 'vscode-languageserver/node';
 
-import type { CompletionTriggerContext } from '../core';
+import type { CompletionTriggerContext } from '../../core';
 
 /** completion textEdit에 적용할 fragment-local 교체 계획. */
 export interface CompletionTextEditPlan {

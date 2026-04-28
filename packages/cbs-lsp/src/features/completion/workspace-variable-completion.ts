@@ -1,6 +1,6 @@
 /**
  * Workspace variable 기반 completion 후보 생성 유틸 모음.
- * @file packages/cbs-lsp/src/features/workspace-variable-completion.ts
+ * @file packages/cbs-lsp/src/features/completion/workspace-variable-completion.ts
  */
 import { CompletionItem, CompletionItemKind } from 'vscode-languageserver/node';
 
@@ -12,13 +12,13 @@ import {
   type AgentMetadataExplanationContract,
   type AgentMetadataWorkspaceSnapshotContract,
   type FragmentAnalysisRequest,
-} from '../core';
+} from '../../core';
 import type {
   ToggleCompletionSummary,
   VariableCompletionSummary,
   VariableFlowService,
   WorkspaceSnapshotState,
-} from '../services';
+} from '../../services';
 
 export const WORKSPACE_VARIABLE_SORT_PREFIX = 'zzzz-workspace-';
 

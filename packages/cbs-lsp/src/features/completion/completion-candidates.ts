@@ -1,10 +1,10 @@
 /**
  * CBS completion의 fragment-local contextual 후보 생성 유틸 모음.
- * @file packages/cbs-lsp/src/features/completion-candidates.ts
+ * @file packages/cbs-lsp/src/features/completion/completion-candidates.ts
  */
 import { CompletionItem, CompletionItemKind } from 'vscode-languageserver/node';
 
-import { collectVisibleLoopBindingsFromNodePath } from '../analyzer/scopeAnalyzer';
+import { collectVisibleLoopBindingsFromNodePath } from '../../analyzer/scopeAnalyzer';
 import {
   collectLocalFunctionDeclarations,
   resolveActiveLocalFunctionContext,
@@ -13,9 +13,9 @@ import {
   type AgentMetadataExplanationContract,
   type AgentMetadataWorkspaceSnapshotContract,
   type FragmentCursorLookupResult,
-} from '../core';
-import { CbsLspTextHelper } from '../helpers/text-helper';
-import type { VariableFlowService } from '../services';
+} from '../../core';
+import { CbsLspTextHelper } from '../../helpers/text-helper';
+import type { VariableFlowService } from '../../services';
 import {
   buildWorkspaceChatVariableCompletions,
   buildWorkspaceToggleGlobalVariableCompletions,

@@ -1,6 +1,6 @@
 /**
  * Oversized `.risulua` macro argument completion fast path helpers.
- * @file packages/cbs-lsp/src/features/cheap-macro-argument-completion.ts
+ * @file packages/cbs-lsp/src/features/completion/cheap-macro-argument-completion.ts
  */
 import {
   CompletionItem,
@@ -8,13 +8,13 @@ import {
   type Position,
 } from 'vscode-languageserver/node';
 
-import { getVariableMacroArgumentKind } from '../analyzer/scope/scope-macro-rules';
+import { getVariableMacroArgumentKind } from '../../analyzer/scope/scope-macro-rules';
 import type {
   AgentMetadataWorkspaceSnapshotContract,
   FragmentAnalysisRequest,
-} from '../core';
-import type { VariableFlowService, WorkspaceSnapshotState } from '../services';
-import { shouldSkipOversizedLuaText } from '../utils/oversized-lua';
+} from '../../core';
+import type { VariableFlowService, WorkspaceSnapshotState } from '../../services';
+import { shouldSkipOversizedLuaText } from '../../utils/oversized-lua';
 import { getLineTextAtPosition } from './cheap-root-completion';
 import {
   buildWorkspaceChatVariableCompletions,

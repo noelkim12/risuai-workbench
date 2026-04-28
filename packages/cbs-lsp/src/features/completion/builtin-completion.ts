@@ -1,6 +1,6 @@
 /**
  * CBS builtin completion 후보와 static block snippet 생성 유틸 모음.
- * @file packages/cbs-lsp/src/features/builtin-completion.ts
+ * @file packages/cbs-lsp/src/features/completion/builtin-completion.ts
  */
 import { CompletionItem, CompletionItemKind, InsertTextFormat } from 'vscode-languageserver/node';
 import {
@@ -15,7 +15,7 @@ import {
   type AgentMetadataCategoryContract,
   type AgentMetadataEnvelope,
   type AgentMetadataExplanationContract,
-} from '../core';
+} from '../../core';
 import { FULL_MACRO_FILTER_TEXT_PATTERN } from './completion-text-edit';
 
 interface BlockSnippet {
