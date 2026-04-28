@@ -22,9 +22,9 @@ import {
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
   type NormalizedRuntimeAvailabilitySnapshot,
-} from '../core';
-import type { ActivationChainQueryResult, ActivationChainService } from '../services';
-import { isRequestCancelled } from '../utils/request-cancellation';
+} from '../../core';
+import type { ActivationChainQueryResult, ActivationChainService } from '../../services';
+import { isRequestCancelled } from '../../utils/request-cancellation';
 
 export const ACTIVATION_CHAIN_CODELENS_COMMAND = 'cbs-lsp.codelens.activationSummary';
 export const ACTIVATION_CHAIN_CODELENS_CLIENT_COMMAND = 'risuWorkbench.cbs.showActivationLinks';

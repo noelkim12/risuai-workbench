@@ -7,8 +7,8 @@ import {
   fragmentAnalysisService,
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
-} from '../core';
-import { isRequestCancelled } from '../utils/request-cancellation';
+} from '../../core';
+import { isRequestCancelled } from '../../utils/request-cancellation';
 
 const SUPPORTED_FOLDING_BLOCKS = new Set<BlockKind>([
   'when',

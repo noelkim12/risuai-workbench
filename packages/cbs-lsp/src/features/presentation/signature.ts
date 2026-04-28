@@ -25,10 +25,10 @@ import {
   type LocalFunctionDeclaration,
   type FragmentAnalysisVersion,
   type FragmentAnalysisService,
-} from '../core';
-import { CbsLspTextHelper } from '../helpers/text-helper';
-import { isRequestCancelled } from '../utils/request-cancellation';
-import { positionToOffset } from '../utils/position';
+} from '../../core';
+import { CbsLspTextHelper } from '../../helpers/text-helper';
+import { isRequestCancelled } from '../../utils/request-cancellation';
+import { positionToOffset } from '../../utils/position';
 
 export interface SignatureHelpDocumentContext {
   filePath: string;

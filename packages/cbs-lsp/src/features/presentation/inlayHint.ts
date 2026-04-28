@@ -31,13 +31,13 @@ import {
   resolveLocalFunctionDeclaration,
   extractNumberedArgumentReference,
   type LocalFunctionDeclaration,
-} from '../core';
+} from '../../core';
 import {
   extractEachLoopBinding,
   extractFunctionDeclaration,
-} from '../analyzer/block-header';
-import { isRequestCancelled } from '../utils/request-cancellation';
-import { positionToOffset } from '../utils/position';
+} from '../../analyzer/block-header';
+import { isRequestCancelled } from '../../utils/request-cancellation';
+import { positionToOffset } from '../../utils/position';
 
 export type InlayHintRequestResolver = (params: InlayHintParams) => FragmentAnalysisRequest | null;
 
