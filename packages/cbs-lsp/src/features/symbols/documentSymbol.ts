@@ -26,9 +26,9 @@ import {
   type FragmentAnalysisService,
   type FragmentDocumentAnalysis,
   type NormalizedRuntimeAvailabilitySnapshot,
-} from '../core';
-import { CbsLspTextHelper } from '../helpers/text-helper';
-import { isRequestCancelled } from '../utils/request-cancellation';
+} from '../../core';
+import { CbsLspTextHelper } from '../../helpers/text-helper';
+import { isRequestCancelled } from '../../utils/request-cancellation';
 
 const OUTLINE_BLOCK_KINDS = new Set<BlockKind>(['when', 'each', 'escape', 'puredisplay', 'func']);
 const FRAGMENT_CONTAINER_KIND = LspSymbolKind.Namespace;

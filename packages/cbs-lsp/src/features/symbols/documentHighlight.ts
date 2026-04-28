@@ -18,17 +18,17 @@ import {
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
   type FragmentCursorLookupResult,
-} from '../core';
-import type { FunctionSymbol, VariableSymbol } from '../analyzer/symbolTable';
+} from '../../core';
+import type { FunctionSymbol, VariableSymbol } from '../../analyzer/symbolTable';
 import {
   mergeLocalFirstSegments,
   resolveArgumentPosition,
   resolveFunctionPosition,
   resolveVariablePosition,
   type LocalFirstRangeEntry,
-} from './local-first-contract';
-import { isRequestCancelled } from '../utils/request-cancellation';
-import { positionToOffset } from '../utils/position';
+} from '../shared/local-first-contract';
+import { isRequestCancelled } from '../../utils/request-cancellation';
+import { positionToOffset } from '../../utils/position';
 
 export type DocumentHighlightRequestResolver = (
   params: DocumentHighlightParams,

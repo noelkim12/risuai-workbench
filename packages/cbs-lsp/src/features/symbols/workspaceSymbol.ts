@@ -26,11 +26,11 @@ import {
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
   type NormalizedRuntimeAvailabilitySnapshot,
-} from '../core';
-import type { ElementRegistryFileRecord } from '../indexer';
-import type { WorkspaceDiagnosticsState } from '../helpers/server-workspace-helper';
-import { offsetToPosition } from '../utils/position';
-import { isRequestCancelled } from '../utils/request-cancellation';
+} from '../../core';
+import type { ElementRegistryFileRecord } from '../../indexer';
+import type { WorkspaceDiagnosticsState } from '../../helpers/server-workspace-helper';
+import { offsetToPosition } from '../../utils/position';
+import { isRequestCancelled } from '../../utils/request-cancellation';
 
 const WORKSPACE_SYMBOL_SNAPSHOT_PROVENANCE = Object.freeze(
   createAgentMetadataExplanation(
