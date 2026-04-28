@@ -10,7 +10,7 @@ import {
 import { mapFragmentDiagnosticsToHost } from '../src/utils/diagnostics/fragment-diagnostic-policy';
 import { createWorkspaceVariableDiagnosticsForUri } from '../src/utils/diagnostics/workspace-issue-policy';
 import { DiagnosticCode } from '../src/analyzer/diagnostics';
-import type { VariableFlowService } from '../src/services';
+import type { VariableFlowQueryResult, VariableFlowService } from '../src/services';
 import type { CbsFragment } from 'risu-workbench-core';
 import { fragmentAnalysisService } from '../src/core';
 import {
@@ -893,7 +893,7 @@ Hello <user>
         sourceName: 'setvar',
         variableName: 'shared',
       });
-      const query = {
+      const query: VariableFlowQueryResult = {
         ...createVariableFlowQueryResult('shared', [write], [read], read),
         issues: [
           {
@@ -901,6 +901,7 @@ Hello <user>
               type: 'uninitialized-read',
               severity: 'error',
               message: 'Variable "shared" is read before a workspace writer initializes it.',
+              events: [],
             },
             occurrences: [read, write],
           },
@@ -948,7 +949,7 @@ Hello <user>
         sourceName: 'setvar',
         variableName: 'lonely',
       });
-      const query = {
+      const query: VariableFlowQueryResult = {
         ...createVariableFlowQueryResult('lonely', [write], [], write),
         issues: [
           {
@@ -956,6 +957,7 @@ Hello <user>
               type: 'write-only',
               severity: 'warning',
               message: 'Variable "lonely" is written but never read.',
+              events: [],
             },
             occurrences: [write, write],
           },
