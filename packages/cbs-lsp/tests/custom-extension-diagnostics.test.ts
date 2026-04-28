@@ -7,6 +7,7 @@ import {
   shouldKeepLocalSymbolDiagnostic,
   assembleDiagnosticsForRequest,
 } from '../src/utils/diagnostics-router';
+import { mapFragmentDiagnosticsToHost } from '../src/utils/diagnostics/fragment-diagnostic-policy';
 import { DiagnosticCode } from '../src/analyzer/diagnostics';
 import type { VariableFlowService } from '../src/services';
 import type { CbsFragment } from 'risu-workbench-core';
@@ -566,6 +567,93 @@ Hello <user>
           }),
         }),
       });
+    });
+  });
+
+  describe('fragment diagnostic policy', () => {
+    it('preserves minimal and optional LSP diagnostic metadata while remapping ranges', () => {
+      const content = ['---', 'name: policy', '---', '@@@ CONTENT', 'Hello {{user}}', ''].join('\n');
+      const analysis = fragmentAnalysisService.analyzeDocument({
+        uri: 'file:///policy.risulorebook',
+        version: 1,
+        filePath: '/policy.risulorebook',
+        text: content,
+      });
+
+      expect(analysis?.fragmentAnalyses[0]).toBeDefined();
+
+      const fragmentAnalysis = analysis!.fragmentAnalyses[0]!;
+      const diagnostics = mapFragmentDiagnosticsToHost(content, 'file:///policy.risulorebook', {
+        ...fragmentAnalysis,
+        diagnostics: [
+          {
+            message: 'Minimal diagnostic',
+            severity: 'warning',
+            code: DiagnosticCode.UnknownFunction,
+            range: {
+              start: { line: 0, character: 6 },
+              end: { line: 0, character: 14 },
+            },
+          },
+          {
+            data: { fixes: [{ title: 'Keep metadata' }] },
+            message: 'Full diagnostic',
+            severity: 'error',
+            code: DiagnosticCode.UnclosedMacro,
+            range: {
+              start: { line: 0, character: 6 },
+              end: { line: 0, character: 14 },
+            },
+            relatedInformation: [
+              {
+                message: 'Related point',
+                range: {
+                  start: { line: 0, character: 0 },
+                  end: { line: 0, character: 5 },
+                },
+              },
+            ],
+          },
+        ],
+      });
+
+      expect(diagnostics).toEqual([
+        expect.objectContaining({
+          code: DiagnosticCode.UnknownFunction,
+          data: undefined,
+          message: 'Minimal diagnostic',
+          range: {
+            start: { line: 4, character: 6 },
+            end: { line: 4, character: 14 },
+          },
+          relatedInformation: undefined,
+          severity: DiagnosticSeverity.Warning,
+          source: 'risu-cbs',
+        }),
+        expect.objectContaining({
+          code: DiagnosticCode.UnclosedMacro,
+          data: { fixes: [{ title: 'Keep metadata' }] },
+          message: 'Full diagnostic',
+          range: {
+            start: { line: 4, character: 6 },
+            end: { line: 4, character: 14 },
+          },
+          relatedInformation: [
+            {
+              message: 'Related point',
+              location: {
+                uri: 'file:///policy.risulorebook',
+                range: {
+                  start: { line: 4, character: 0 },
+                  end: { line: 4, character: 5 },
+                },
+              },
+            },
+          ],
+          severity: DiagnosticSeverity.Error,
+          source: 'risu-cbs',
+        }),
+      ]);
     });
   });
 
