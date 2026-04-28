@@ -12,12 +12,12 @@ import {
   type CbsAgentProtocolMarker,
 } from '../core';
 import {
-  buildDerivedFlowResult,
   type ElementRegistry,
   UnifiedVariableGraph,
   type UnifiedVariableNode,
   type UnifiedVariableOccurrence,
 } from '../indexer';
+import { buildDerivedFlowResult } from '../indexer/unified-variable-derived-flow';
 import { offsetToPosition } from '../utils/position';
 
 export interface DefaultVariableDefinitionLocation {

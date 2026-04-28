@@ -748,6 +748,48 @@ describe('UnifiedVariableGraph Layer 1 Contract', () => {
   })
 
   describe('Graph Snapshot Contract', () => {
+    it('keeps low-level build and incremental rebuild snapshot indexes equivalent', async () => {
+      const { graph, scanResult } = await buildGraph([
+        {
+          artifact: 'lorebook',
+          fileName: 'builder-equivalence.risulorebook',
+          text: ['---', 'name: builder-equivalence', '---', '@@@ CONTENT', '{{setvar::builder_a::1}}{{getvar::builder_b}}', ''].join('\n'),
+        },
+        {
+          artifact: 'lua',
+          fileName: 'builder-equivalence.risulua',
+          text: 'setState("builder_b", getState("builder_a"))',
+        },
+      ])
+
+      const sourceSnapshot = graph.getSnapshot()
+      const cbsOccurrences = sourceSnapshot.variables.flatMap((variable) =>
+        [...variable.readers, ...variable.writers].filter((occurrence) => occurrence.sourceKind === 'cbs-macro'),
+      )
+      const luaOccurrences = sourceSnapshot.variables.flatMap((variable) =>
+        [...variable.readers, ...variable.writers].filter((occurrence) => occurrence.sourceKind === 'lua-state-api'),
+      )
+
+      const rebuiltGraph = UnifiedVariableGraph.build({
+        rootPath: sourceSnapshot.rootPath,
+        cbsOccurrences,
+        luaOccurrences,
+      })
+      const rebuiltSnapshot = rebuiltGraph.getSnapshot()
+
+      expect(rebuiltSnapshot.variables.map((variable) => variable.name)).toEqual(
+        sourceSnapshot.variables.map((variable) => variable.name),
+      )
+      expect(rebuiltSnapshot.totalVariables).toBe(sourceSnapshot.totalVariables)
+      expect(rebuiltSnapshot.totalOccurrences).toBe(sourceSnapshot.totalOccurrences)
+      expect(rebuiltSnapshot.occurrencesByUri).toEqual(sourceSnapshot.occurrencesByUri)
+      expect(rebuiltSnapshot.occurrencesByElementId).toEqual(sourceSnapshot.occurrencesByElementId)
+
+      const luaUri = scanResult.files.find((file) => file.relativePath === 'lua/builder-equivalence.risulua')?.uri
+      expect(luaUri).toBeTruthy()
+      expect(rebuiltGraph.getOccurrencesByUri(luaUri!)).toEqual(graph.getOccurrencesByUri(luaUri!))
+    })
+
     it('getOccurrencesByUri returns actual UnifiedVariableOccurrence objects', async () => {
       const { graph, scanResult } = await buildGraph([
         {
@@ -1071,6 +1113,139 @@ describe('UnifiedVariableGraph Layer 1 Contract', () => {
       const sourceKinds = new Set(allOccurrences.map((o) => o.sourceKind))
       expect(sourceKinds.has('cbs-macro')).toBe(true)
       expect(sourceKinds.has('lua-state-api')).toBe(true)
+    })
+  })
+
+  describe('PHASE 1 Behavior Characterization', () => {
+    it('locks occurrence id format, variable ordering, and per-variable occurrence ordering', async () => {
+      const { graph, scanResult } = await buildGraph([
+        {
+          artifact: 'regex',
+          fileName: 'ordering-b.risuregex',
+          text: ['---', 'comment: ordering-b', 'type: plain', '---', '@@@ IN', '{{getvar::zeta}}{{getvar::alpha}}', ''].join('\n'),
+        },
+        {
+          artifact: 'lorebook',
+          fileName: 'ordering-a.risulorebook',
+          text: ['---', 'name: ordering-a', '---', '@@@ CONTENT', '{{setvar::alpha::1}}{{getvar::alpha}}', ''].join('\n'),
+        },
+      ])
+
+      const snapshot = graph.getSnapshot()
+      expect(snapshot.variables.map((variable) => variable.name)).toEqual(['alpha', 'zeta'])
+
+      const alphaNode = graph.getVariable('alpha')
+      expect(alphaNode).not.toBeNull()
+
+      const alphaOccurrences = graph.getOccurrencesForVariable('alpha')
+      expect(alphaOccurrences).toHaveLength(3)
+      expect(alphaOccurrences.map((occurrence) => occurrence.occurrenceId)).toEqual(
+        [...alphaOccurrences.map((occurrence) => occurrence.occurrenceId)].sort((left, right) => left.localeCompare(right)),
+      )
+
+      for (const occurrence of alphaOccurrences) {
+        expect(occurrence.occurrenceId).toBe(
+          `${occurrence.elementId}:${occurrence.direction}:${occurrence.hostStartOffset}-${occurrence.hostEndOffset}:${occurrence.variableName}`,
+        )
+      }
+
+      const regexUri = scanResult.files.find((file) => file.relativePath === 'regex/ordering-b.risuregex')?.uri
+      expect(regexUri).toBeTruthy()
+      expect(graph.getOccurrenceIdsByUri(regexUri!)).toEqual(
+        [...graph.getOccurrenceIdsByUri(regexUri!)].sort((left, right) => left.localeCompare(right)),
+      )
+    })
+
+    it('locks CBS host range rebasing and Lua direct range coordinates', async () => {
+      const { graph, scanResult } = await buildGraph([
+        {
+          artifact: 'lorebook',
+          fileName: 'range-lock.risulorebook',
+          text: ['---', 'name: range-lock', '---', '@@@ CONTENT', 'before {{setvar::hosted::value}} after', ''].join('\n'),
+        },
+        {
+          artifact: 'lua',
+          fileName: 'range-lock.risulua',
+          text: ['local function check()', '  local current = getState("lua_direct")', '  setState("lua_direct", current)', 'end', ''].join('\n'),
+        },
+      ])
+
+      const lorebookFile = scanResult.files.find((file) => file.relativePath === 'lorebooks/range-lock.risulorebook')
+      const luaFile = scanResult.files.find((file) => file.relativePath === 'lua/range-lock.risulua')
+      expect(lorebookFile).toBeTruthy()
+      expect(luaFile).toBeTruthy()
+
+      const hosted = graph.getVariable('hosted')?.writers[0]
+      const luaRead = graph.getVariable('lua_direct')?.readers[0]
+      const luaWrite = graph.getVariable('lua_direct')?.writers[0]
+      expect(hosted).toBeDefined()
+      expect(luaRead).toBeDefined()
+      expect(luaWrite).toBeDefined()
+
+      const hostedStart = lorebookFile!.text.indexOf('hosted')
+      expect(hosted!.hostStartOffset).toBe(hostedStart)
+      expect(hosted!.hostEndOffset).toBe(hostedStart + 'hosted'.length)
+      expect(hosted!.hostRange.start.line).toBe(4)
+      expect(hosted!.hostRange.end.character - hosted!.hostRange.start.character).toBe('hosted'.length)
+
+      const luaReadStart = luaFile!.text.indexOf('lua_direct')
+      const luaWriteStart = luaFile!.text.indexOf('lua_direct', luaReadStart + 1)
+      expect(luaRead!.hostStartOffset).toBe(luaReadStart - 1)
+      expect(luaRead!.hostEndOffset).toBe(luaReadStart + 'lua_direct'.length + 1)
+      expect(luaRead!.hostRange.start.line).toBe(1)
+      expect(graph.getVariable('lua_direct')?.readers[0]?.sourceKind).toBe('lua-state-api')
+      expect(luaWrite!.hostStartOffset).toBe(luaWriteStart - 1)
+      expect(luaWrite!.hostEndOffset).toBe(luaWriteStart + 'lua_direct'.length + 1)
+      expect(luaWrite!.hostRange.start.line).toBe(2)
+    })
+
+    it('locks findOccurrenceAt boundary behavior and incremental replacement semantics', async () => {
+      const { root, graph, registry, scanResult } = await buildGraph([
+        {
+          artifact: 'lorebook',
+          fileName: 'incremental-writer.risulorebook',
+          text: ['---', 'name: incremental-writer', '---', '@@@ CONTENT', '{{setvar::phase_one::ready}}', ''].join('\n'),
+        },
+        {
+          artifact: 'regex',
+          fileName: 'incremental-reader.risuregex',
+          text: ['---', 'comment: incremental-reader', 'type: plain', '---', '@@@ IN', '{{getvar::phase_one}}', ''].join('\n'),
+        },
+      ])
+
+      const writerUri = scanResult.files.find((file) => file.relativePath === 'lorebooks/incremental-writer.risulorebook')?.uri
+      const readerUri = scanResult.files.find((file) => file.relativePath === 'regex/incremental-reader.risuregex')?.uri
+      expect(writerUri).toBeTruthy()
+      expect(readerUri).toBeTruthy()
+
+      const writer = graph.getVariable('phase_one')?.writers[0]
+      expect(writer).toBeDefined()
+      expect(graph.findOccurrenceAt(writerUri!, writer!.hostStartOffset).occurrence?.occurrenceId).toBe(writer!.occurrenceId)
+      expect(graph.findOccurrenceAt(writerUri!, writer!.hostEndOffset).occurrence).toBeNull()
+
+      registry.upsertFile(
+        createWorkspaceScanFileFromText({
+          workspaceRoot: root,
+          absolutePath: path.join(root, 'lorebooks/incremental-writer.risulorebook'),
+          text: ['---', 'name: incremental-writer', '---', '@@@ CONTENT', '{{setvar::phase_two::done}}', ''].join('\n'),
+        }),
+      )
+
+      graph.replaceOccurrencesForUri(writerUri!, buildOccurrencesForUri(registry, writerUri!))
+
+      expect(graph.getVariable('phase_one')).toMatchObject({
+        readers: [expect.objectContaining({ uri: readerUri })],
+        writers: [],
+      })
+      expect(graph.getVariable('phase_two')).toMatchObject({
+        writers: [expect.objectContaining({ uri: writerUri })],
+      })
+      expect(graph.getOccurrencesByUri(writerUri!)).toEqual([
+        expect.objectContaining({ variableName: 'phase_two', direction: 'write' }),
+      ])
+      expect(graph.getOccurrencesByUri(readerUri!)).toEqual([
+        expect.objectContaining({ variableName: 'phase_one', direction: 'read' }),
+      ])
     })
   })
 })

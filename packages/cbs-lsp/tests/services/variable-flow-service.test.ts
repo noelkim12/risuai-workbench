@@ -114,6 +114,7 @@ describe('VariableFlowService', () => {
     expect(result).not.toBeNull();
     expect(result?.readers).toHaveLength(2);
     expect(result?.writers).toHaveLength(1);
+    expect(service.queryVariable('mood')?.writers).toHaveLength(1);
     expect(result?.occurrences).toHaveLength(3);
     expect(result?.readers.map((entry) => entry.artifact)).toEqual(['lorebook', 'regex']);
     expect(result?.writers.map((entry) => entry.artifact)).toEqual(['lua']);

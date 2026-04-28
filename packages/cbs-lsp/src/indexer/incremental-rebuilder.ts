@@ -10,7 +10,8 @@ import type { TextDocument } from 'vscode-languageserver-textdocument'
 import { CbsLspPathHelper } from '../helpers/path-helper'
 import { buildWorkspaceScanResult, createWorkspaceScanFileFromText, type WorkspaceScanFile, type WorkspaceScanResult } from './file-scanner'
 import { ElementRegistry } from './element-registry'
-import { buildOccurrencesForUri, UnifiedVariableGraph } from './unified-variable-graph'
+import { buildOccurrencesForUri } from './unified-variable-registry-adapter'
+import { UnifiedVariableGraph } from './unified-variable-graph'
 
 export interface IncrementalRebuilderCreateOptions {
   scanResult: WorkspaceScanResult
