@@ -15,6 +15,7 @@ import type { Diagnostic } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 
 import { FragmentAnalysisService } from '../../src/core';
+import { DiagnosticCode } from '../../src/analyzer/diagnostics';
 import { SemanticTokensProvider } from '../../src/features/semanticTokens';
 import { CompletionProvider } from '../../src/features/completion';
 import { HoverProvider } from '../../src/features/hover';
@@ -378,6 +379,8 @@ describe.sequential('cbs-language-server large workspace product matrix', () => 
     expect(diagnostics).toEqual([]);
     expect(fallbackTraceStats.attempts).toBeLessThanOrEqual(localDiagnostics.length);
     expect(queryVariable.mock.calls.length).toBeLessThanOrEqual(localDiagnostics.length);
+    expect(fallbackTraceStats.hits + fallbackTraceStats.misses).toBe(fallbackTraceStats.attempts);
+    expect(fallbackTraceStats.byCode[DiagnosticCode.UndefinedVariable]).toBeLessThanOrEqual(localDiagnostics.length);
     expect(durationMs).toBeLessThan(250);
   });
 

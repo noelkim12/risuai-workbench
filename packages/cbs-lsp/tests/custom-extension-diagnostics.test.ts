@@ -4,10 +4,13 @@ import {
   mapDocumentToCbsFragments,
   createDiagnosticForFragment,
   routeDiagnosticsForDocument,
-  shouldKeepLocalSymbolDiagnostic,
   assembleDiagnosticsForRequest,
 } from '../src/utils/diagnostics-router';
 import { mapFragmentDiagnosticsToHost } from '../src/utils/diagnostics/fragment-diagnostic-policy';
+import {
+  createDiagnosticsFallbackMemo,
+  shouldKeepLocalSymbolDiagnostic,
+} from '../src/utils/diagnostics/suppression-policy';
 import { createWorkspaceVariableDiagnosticsForUri } from '../src/utils/diagnostics/workspace-issue-policy';
 import { DiagnosticCode } from '../src/analyzer/diagnostics';
 import type { VariableFlowQueryResult, VariableFlowService } from '../src/services';
@@ -767,6 +770,78 @@ Hello <user>
       } as unknown as VariableFlowService;
 
       expect(shouldKeepLocalSymbolDiagnostic(diagnostic, request, mockVariableFlowService)).toBe(false);
+    });
+
+    it('suppresses CBS101 when workspace default variables satisfy the read', () => {
+      const diagnostic: Diagnostic = {
+        code: DiagnosticCode.UndefinedVariable,
+        message: 'Variable "ct_seeded" is not defined',
+        range: { start: { line: 0, character: 2 }, end: { line: 0, character: 21 } },
+        severity: DiagnosticSeverity.Error,
+        source: 'risu-cbs',
+      };
+      const request = {
+        uri: 'file:///test.risulorebook',
+        version: 1,
+        filePath: '/test.risulorebook',
+        text: '{{getvar::ct_seeded}}',
+      };
+      const mockVariableFlowService = {
+        queryAt: () => ({ writers: [], readers: [], defaultValue: '1' }),
+      } as unknown as VariableFlowService;
+
+      expect(shouldKeepLocalSymbolDiagnostic(diagnostic, request, mockVariableFlowService)).toBe(false);
+    });
+
+    it('records fallback trace attempts, hits, misses, and code counts for .risulua fallback', () => {
+      const diagnostic: Diagnostic = {
+        code: DiagnosticCode.UndefinedVariable,
+        message: 'Variable "ct_seeded" is not defined',
+        range: { start: { line: 0, character: 2 }, end: { line: 0, character: 21 } },
+        severity: DiagnosticSeverity.Error,
+        source: 'risu-cbs',
+      };
+      const request = {
+        uri: 'file:///test.risulua',
+        version: 1,
+        filePath: '/test.risulua',
+        text: '{{getvar::ct_seeded}}',
+      };
+      const traceStats = {
+        attempts: 0,
+        hits: 0,
+        misses: 0,
+        durationMs: 0,
+        byCode: {},
+      };
+      const fallbackMemo = createDiagnosticsFallbackMemo(traceStats);
+      const mockVariableFlowService = {
+        queryAt: () => null,
+        queryVariable: (name: string) =>
+          name === 'ct_seeded'
+            ? { ...createVariableFlowQueryResult(name, [], []), defaultValue: '1' }
+            : null,
+      } as unknown as VariableFlowService;
+
+      const first = shouldKeepLocalSymbolDiagnostic(
+        diagnostic,
+        request,
+        mockVariableFlowService,
+        fallbackMemo,
+      );
+      const second = shouldKeepLocalSymbolDiagnostic(
+        diagnostic,
+        request,
+        mockVariableFlowService,
+        fallbackMemo,
+      );
+
+      expect(first).toBe(false);
+      expect(second).toBe(false);
+      expect(traceStats.attempts).toBe(1);
+      expect(traceStats.hits).toBe(1);
+      expect(traceStats.misses).toBe(0);
+      expect(traceStats.byCode).toEqual({ [DiagnosticCode.UndefinedVariable]: 1 });
     });
   });
 
