@@ -8,6 +8,7 @@ import {
   assembleDiagnosticsForRequest,
 } from '../src/utils/diagnostics-router';
 import { mapFragmentDiagnosticsToHost } from '../src/utils/diagnostics/fragment-diagnostic-policy';
+import { createWorkspaceVariableDiagnosticsForUri } from '../src/utils/diagnostics/workspace-issue-policy';
 import { DiagnosticCode } from '../src/analyzer/diagnostics';
 import type { VariableFlowService } from '../src/services';
 import type { CbsFragment } from 'risu-workbench-core';
@@ -18,6 +19,11 @@ import {
   snapshotHostDiagnosticsEnvelope,
   snapshotHostDiagnostics,
 } from './fixtures/fixture-corpus';
+import {
+  createVariableFlowQueryResult,
+  createVariableFlowServiceStub,
+  createVariableOccurrence,
+} from './features/variable-flow-test-helpers';
 
 afterEach(() => {
   fragmentAnalysisService.clearAll();
@@ -866,6 +872,113 @@ Hello <user>
       // Should be sorted by range (line 0 before line 1)
       expect(result[0].code).toBe(DiagnosticCode.UnknownFunction);
       expect(result[1].code).toBe(DiagnosticCode.UnusedVariable);
+    });
+  });
+
+  describe('workspace issue policy', () => {
+    it('maps uninitialized-read issues to CBS101 on local read occurrences only', () => {
+      const read = createVariableOccurrence({
+        direction: 'read',
+        uri: 'file:///workspace/reader.risuregex',
+        relativePath: 'regex/reader.risuregex',
+        range: { start: { line: 4, character: 2 }, end: { line: 4, character: 8 } },
+        sourceName: 'getvar',
+        variableName: 'shared',
+      });
+      const write = createVariableOccurrence({
+        direction: 'write',
+        uri: 'file:///workspace/writer.risulorebook',
+        relativePath: 'lorebooks/writer.risulorebook',
+        range: { start: { line: 4, character: 2 }, end: { line: 4, character: 8 } },
+        sourceName: 'setvar',
+        variableName: 'shared',
+      });
+      const query = {
+        ...createVariableFlowQueryResult('shared', [write], [read], read),
+        issues: [
+          {
+            issue: {
+              type: 'uninitialized-read',
+              severity: 'error',
+              message: 'Variable "shared" is read before a workspace writer initializes it.',
+            },
+            occurrences: [read, write],
+          },
+        ],
+      };
+      const service = createVariableFlowServiceStub({
+        queryVariable: () => query,
+      });
+
+      const diagnostics = createWorkspaceVariableDiagnosticsForUri(read.uri, {
+        ...service,
+        getGraph: () => ({ getOccurrencesByUri: () => [read] }),
+        getIssues: () => query.issues,
+      } as unknown as VariableFlowService);
+
+      expect(diagnostics).toEqual([
+        expect.objectContaining({
+          code: DiagnosticCode.UndefinedVariable,
+          message: 'Variable "shared" is read before a workspace writer initializes it.',
+          range: read.hostRange,
+          severity: DiagnosticSeverity.Error,
+          source: 'risu-cbs',
+          data: expect.objectContaining({
+            workspaceIssue: {
+              kind: 'uninitialized-read',
+              source: 'variable-flow-service',
+            },
+          }),
+          relatedInformation: [
+            {
+              message: 'Workspace write via setvar in lorebooks/writer.risulorebook',
+              location: { uri: write.uri, range: write.hostRange },
+            },
+          ],
+        }),
+      ]);
+    });
+
+    it('maps write-only issues to CBS102 on local write occurrences only and deduplicates keys', () => {
+      const write = createVariableOccurrence({
+        direction: 'write',
+        uri: 'file:///workspace/writer.risulorebook',
+        relativePath: 'lorebooks/writer.risulorebook',
+        range: { start: { line: 4, character: 2 }, end: { line: 4, character: 8 } },
+        sourceName: 'setvar',
+        variableName: 'lonely',
+      });
+      const query = {
+        ...createVariableFlowQueryResult('lonely', [write], [], write),
+        issues: [
+          {
+            issue: {
+              type: 'write-only',
+              severity: 'warning',
+              message: 'Variable "lonely" is written but never read.',
+            },
+            occurrences: [write, write],
+          },
+        ],
+      };
+      const service = createVariableFlowServiceStub({
+        queryVariable: () => query,
+      });
+
+      const diagnostics = createWorkspaceVariableDiagnosticsForUri(write.uri, {
+        ...service,
+        getGraph: () => ({ getOccurrencesByUri: () => [write] }),
+        getIssues: () => query.issues,
+      } as unknown as VariableFlowService);
+
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]).toMatchObject({
+        code: DiagnosticCode.UnusedVariable,
+        message: 'Variable "lonely" is written but never read.',
+        range: write.hostRange,
+        severity: DiagnosticSeverity.Warning,
+        source: 'risu-cbs',
+      });
     });
   });
 });
