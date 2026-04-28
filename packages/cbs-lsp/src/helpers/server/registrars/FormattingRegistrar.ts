@@ -11,8 +11,7 @@ import type {
   TextEdit,
 } from 'vscode-languageserver/node';
 
-import type { FormattingProvider } from '../../../features/formatting';
-import type { OnTypeFormattingProvider } from '../../../features/onTypeFormatting';
+import type { FormattingProvider, OnTypeFormattingProvider } from '../../../features/editing';
 import type { RequestHandlerRunner } from '../../../handlers/RequestHandlerRunner';
 import type { FeatureRegistrar } from './FeatureRegistrar';
 

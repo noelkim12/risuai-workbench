@@ -5,7 +5,7 @@
 
 import type { CodeAction, CodeActionParams, Connection } from 'vscode-languageserver/node';
 
-import { type CodeActionProvider, type UnresolvedCodeAction } from '../../../features/codeActions';
+import { type CodeActionProvider, type UnresolvedCodeAction } from '../../../features/editing';
 import type { RequestHandlerRunner } from '../../../handlers/RequestHandlerRunner';
 import type { FeatureRegistrar } from './FeatureRegistrar';
 

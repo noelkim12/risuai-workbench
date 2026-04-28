@@ -9,7 +9,7 @@ import type {
   SemanticTokensRangeParams,
 } from 'vscode-languageserver/node';
 
-import type { SemanticTokensProvider } from '../../../features/semanticTokens';
+import type { SemanticTokensProvider } from '../../../features/symbols';
 import type { RequestHandlerRunner } from '../../../handlers/RequestHandlerRunner';
 import type { ServerFeatureRegistrarContext } from '../types';
 import type { FeatureRegistrar } from './FeatureRegistrar';

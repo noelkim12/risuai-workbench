@@ -10,7 +10,7 @@ import type {
   WorkspaceSymbolParams,
 } from 'vscode-languageserver/node';
 
-import type { WorkspaceSymbolProvider } from '../../../features/workspaceSymbol';
+import type { WorkspaceSymbolProvider } from '../../../features/symbols';
 import type { RequestHandlerRunner } from '../../../handlers/RequestHandlerRunner';
 import type { FeatureRegistrar } from './FeatureRegistrar';
 

@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/server/commands.ts
  */
 
-import { ACTIVATION_CHAIN_CODELENS_COMMAND } from '../features/codelens';
+import { ACTIVATION_CHAIN_CODELENS_COMMAND } from '../features/presentation';
 import {
   LSPErrorCodes,
   ResponseError,

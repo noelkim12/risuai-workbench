@@ -7,10 +7,8 @@ import { type CancellationToken, type CompletionItem, type CompletionParams } fr
 
 import { fragmentAnalysisService } from '../../core';
 import { CompletionProvider } from '../../features/completion';
-import { DefinitionProvider } from '../../features/definition';
 import { HoverProvider } from '../../features/hover';
-import { ReferencesProvider } from '../../features/references';
-import { RenameProvider } from '../../features/rename';
+import { DefinitionProvider, ReferencesProvider, RenameProvider } from '../../features/navigation';
 import type { WorkspaceAwareProviderFactoryContext } from './types';
 
 /**

@@ -7,7 +7,7 @@ import type { Diagnostic } from 'vscode-languageserver';
 
 import { DiagnosticCode } from '../../analyzer/diagnostics';
 import { fragmentAnalysisService, type FragmentAnalysisRequest } from '../../core';
-import { resolveVariablePosition } from '../../features/local-first-contract';
+import { resolveVariablePosition } from '../../features/shared';
 import type {
   VariableFlowQueryResult,
   VariableFlowService,

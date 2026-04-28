@@ -5,7 +5,7 @@
 
 import type { CodeLensParams, Connection } from 'vscode-languageserver/node';
 
-import type { CodeLensProvider } from '../../../features/codelens';
+import type { CodeLensProvider } from '../../../features/presentation';
 import type { RequestHandlerRunner } from '../../../handlers/RequestHandlerRunner';
 import type { FeatureRegistrar } from './FeatureRegistrar';
 

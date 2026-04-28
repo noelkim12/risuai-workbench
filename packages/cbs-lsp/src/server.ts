@@ -34,20 +34,26 @@ import {
   type RuntimeOperatorContractOptions,
 } from './core';
 import { CompletionProvider } from './features/completion';
-import { CodeLensProvider } from './features/codelens';
-import { CodeActionProvider } from './features/codeActions';
 import { CodeLensRefreshScheduler } from './controllers/CodeLensRefreshScheduler';
-import { DocumentHighlightProvider } from './features/documentHighlight';
-import { DocumentSymbolProvider } from './features/documentSymbol';
-import { WorkspaceSymbolProvider } from './features/workspaceSymbol';
-import { FormattingProvider } from './features/formatting';
-import { FoldingProvider } from './features/folding';
+import {
+  CodeActionProvider,
+  FormattingProvider,
+  OnTypeFormattingProvider,
+  SelectionRangeProvider,
+} from './features/editing';
 import { HoverProvider } from './features/hover';
-import { OnTypeFormattingProvider } from './features/onTypeFormatting';
-import { InlayHintProvider } from './features/inlayHint';
-import { SelectionRangeProvider } from './features/selectionRange';
-import { SemanticTokensProvider } from './features/semanticTokens';
-import { SignatureHelpProvider } from './features/signature';
+import {
+  CodeLensProvider,
+  FoldingProvider,
+  InlayHintProvider,
+  SignatureHelpProvider,
+} from './features/presentation';
+import {
+  DocumentHighlightProvider,
+  DocumentSymbolProvider,
+  SemanticTokensProvider,
+  WorkspaceSymbolProvider,
+} from './features/symbols';
 
 
 import {

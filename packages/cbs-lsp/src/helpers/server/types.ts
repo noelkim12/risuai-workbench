@@ -8,23 +8,22 @@ import type { Connection } from 'vscode-languageserver/node';
 
 import type { LuaLsCompanionController } from '../../controllers/LuaLsCompanionController';
 import type { FragmentAnalysisRequest } from '../../core';
-import type { CodeActionProvider } from '../../features/codeActions';
-import type { CodeLensProvider } from '../../features/codelens';
 import type { CompletionProvider } from '../../features/completion';
-import type { DefinitionProvider } from '../../features/definition';
-import type { DocumentHighlightProvider } from '../../features/documentHighlight';
-import type { DocumentSymbolProvider } from '../../features/documentSymbol';
-import type { FoldingProvider } from '../../features/folding';
-import type { FormattingProvider } from '../../features/formatting';
+import type {
+  CodeActionProvider,
+  FormattingProvider,
+  OnTypeFormattingProvider,
+  SelectionRangeProvider,
+} from '../../features/editing';
 import type { HoverProvider } from '../../features/hover';
-import type { InlayHintProvider } from '../../features/inlayHint';
-import type { OnTypeFormattingProvider } from '../../features/onTypeFormatting';
-import type { ReferencesProvider } from '../../features/references';
-import type { RenameProvider } from '../../features/rename';
-import type { SelectionRangeProvider } from '../../features/selectionRange';
-import type { SemanticTokensProvider } from '../../features/semanticTokens';
-import type { SignatureHelpProvider } from '../../features/signature';
-import type { WorkspaceSymbolProvider } from '../../features/workspaceSymbol';
+import type { DefinitionProvider, ReferencesProvider, RenameProvider } from '../../features/navigation';
+import type { CodeLensProvider, FoldingProvider, InlayHintProvider, SignatureHelpProvider } from '../../features/presentation';
+import type {
+  DocumentHighlightProvider,
+  DocumentSymbolProvider,
+  SemanticTokensProvider,
+  WorkspaceSymbolProvider,
+} from '../../features/symbols';
 import type { VariableFlowService, WorkspaceSnapshotState } from '../../services';
 
 export interface ServerFeatureRegistrarProviders {

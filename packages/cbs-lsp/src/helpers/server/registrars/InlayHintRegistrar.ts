@@ -5,7 +5,7 @@
 
 import type { Connection, InlayHint, InlayHintParams } from 'vscode-languageserver/node';
 
-import type { InlayHintProvider } from '../../../features/inlayHint';
+import type { InlayHintProvider } from '../../../features/presentation';
 import type { RequestHandlerRunner } from '../../../handlers/RequestHandlerRunner';
 import type { FeatureRegistrar } from './FeatureRegistrar';
 

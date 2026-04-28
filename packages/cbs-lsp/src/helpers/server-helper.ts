@@ -6,10 +6,8 @@
 import type { CancellationToken, CompletionItem, CompletionParams } from 'vscode-languageserver/node';
 
 import type { CompletionProvider } from '../features/completion';
-import type { DefinitionProvider } from '../features/definition';
 import type { HoverProvider } from '../features/hover';
-import type { ReferencesProvider } from '../features/references';
-import type { RenameProvider } from '../features/rename';
+import type { DefinitionProvider, ReferencesProvider, RenameProvider } from '../features/navigation';
 import { RequestHandlerRunner } from '../handlers/RequestHandlerRunner';
 import { WorkspaceAwareProviderFactory } from './server/WorkspaceAwareProviderFactory';
 import { LuaLsFallbackService } from './server/lua/LuaLsFallbackService';

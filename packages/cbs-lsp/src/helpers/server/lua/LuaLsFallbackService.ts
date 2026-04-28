@@ -30,13 +30,10 @@ import {
   type WorkspaceEdit,
 } from 'vscode-languageserver/node';
 
-import type { DocumentHighlightProvider } from '../../../features/documentHighlight';
-import type { DocumentSymbolProvider } from '../../../features/documentSymbol';
-import type { DefinitionProvider } from '../../../features/definition';
 import type { HoverProvider } from '../../../features/hover';
-import type { ReferencesProvider } from '../../../features/references';
-import type { RenameProvider } from '../../../features/rename';
-import type { SignatureHelpProvider } from '../../../features/signature';
+import type { DefinitionProvider, ReferencesProvider, RenameProvider } from '../../../features/navigation';
+import type { SignatureHelpProvider } from '../../../features/presentation';
+import type { DocumentHighlightProvider, DocumentSymbolProvider } from '../../../features/symbols';
 import { isLuaLsSymbolInformation } from '../../../providers/lua/lualsProxy';
 import {
   buildLuaStateHoverOverlayMarkdown,

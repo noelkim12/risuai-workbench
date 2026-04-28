@@ -5,7 +5,7 @@
 
 import type { Connection, FoldingRangeParams } from 'vscode-languageserver/node';
 
-import type { FoldingProvider } from '../../../features/folding';
+import type { FoldingProvider } from '../../../features/presentation';
 import type { RequestHandlerRunner } from '../../../handlers/RequestHandlerRunner';
 import type { ServerFeatureRegistrarContext } from '../types';
 import type { FeatureRegistrar } from './FeatureRegistrar';

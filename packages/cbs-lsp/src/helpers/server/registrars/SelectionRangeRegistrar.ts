@@ -5,7 +5,7 @@
 
 import type { Connection, SelectionRange, SelectionRangeParams } from 'vscode-languageserver/node';
 
-import type { SelectionRangeProvider } from '../../../features/selectionRange';
+import type { SelectionRangeProvider } from '../../../features/editing';
 import type { RequestHandlerRunner } from '../../../handlers/RequestHandlerRunner';
 import type { FeatureRegistrar } from './FeatureRegistrar';
 

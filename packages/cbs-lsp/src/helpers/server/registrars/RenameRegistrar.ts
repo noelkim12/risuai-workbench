@@ -13,7 +13,7 @@ import {
   type WorkspaceEdit,
 } from 'vscode-languageserver/node';
 
-import type { RenameProvider } from '../../../features/rename';
+import type { RenameProvider } from '../../../features/navigation';
 import type { RequestHandlerRunner } from '../../../handlers/RequestHandlerRunner';
 import type { LuaLsFallbackService } from '../lua/LuaLsFallbackService';
 import type { FeatureRegistrar } from './FeatureRegistrar';

@@ -5,7 +5,7 @@
 
 import type { Connection, DefinitionParams } from 'vscode-languageserver/node';
 
-import type { DefinitionProvider } from '../../../features/definition';
+import type { DefinitionProvider } from '../../../features/navigation';
 import type { RequestHandlerRunner } from '../../../handlers/RequestHandlerRunner';
 import type { LuaLsFallbackService } from '../lua/LuaLsFallbackService';
 import type { DefinitionResponse } from '../lua/LuaLsResponseMerge';
