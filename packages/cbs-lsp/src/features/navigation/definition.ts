@@ -14,19 +14,23 @@ import {
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
   type FragmentCursorLookupResult,
-} from '../core';
-import type { VariableSymbolKind } from '../analyzer/symbolTable';
+} from '../../core';
+import type { VariableSymbolKind } from '../../analyzer/symbolTable';
 import {
   isCrossFileVariableKind,
-  mergeLocalFirstSegments,
   resolveVariablePosition,
-  type LocalFirstRangeEntry,
-} from './local-first-contract';
-import { isRequestCancelled } from '../utils/request-cancellation';
-import type { VariableFlowService } from '../services';
-import { shouldSkipOversizedLuaText } from '../utils/oversized-lua';
-import { positionToOffset } from '../utils/position';
-import { getVariableMacroArgumentKind } from '../analyzer/scope/scope-macro-rules';
+} from '../shared';
+import {
+  collectProviderWorkspaceVariableSegments,
+  mergeProviderVariableSegments,
+  shouldAllowDefaultDefinitionForProvider,
+  type ProviderVariableRangeEntry,
+} from '../shared';
+import { isRequestCancelled } from '../../utils/request-cancellation';
+import type { VariableFlowService } from '../../services';
+import { shouldSkipOversizedLuaText } from '../../utils/oversized-lua';
+import { positionToOffset } from '../../utils/position';
+import { getVariableMacroArgumentKind } from '../../analyzer/scope/scope-macro-rules';
 
 const MAX_OVERSIZED_DEFINITION_LINE_SCAN_LENGTH = 1024 * 1024;
 
@@ -50,19 +54,6 @@ export const DEFINITION_PROVIDER_AVAILABILITY = createAgentMetadataAvailability(
   'definition-provider:local-first-resolution',
   'Definition resolves fragment-local variables, loop aliases, and local #func declarations first, then appends workspace chat-variable writers/readers when VariableFlowService is available. Global and external symbols stay unavailable.',
 );
-
-function appendWorkspaceVariableEntries(
-  entries: LocalFirstRangeEntry[],
-  flowQuery: ReturnType<VariableFlowService['queryVariable']>,
-): void {
-  for (const writer of flowQuery?.writers ?? []) {
-    entries.push({ uri: writer.uri, range: writer.hostRange });
-  }
-
-  for (const reader of flowQuery?.readers ?? []) {
-    entries.push({ uri: reader.uri, range: reader.hostRange });
-  }
-}
 
 function isFunctionPosition(lookup: FragmentCursorLookupResult): { functionName: string } | null {
   const tokenLookup = lookup.token;
@@ -217,25 +208,32 @@ export class DefinitionProvider {
       );
     }
 
-    const localEntries: LocalFirstRangeEntry[] = [];
+    const localEntries: ProviderVariableRangeEntry[] = [];
 
     if (targetRange) {
       const hostRange = lookup.fragmentAnalysis.mapper.toHostRange(request.text, targetRange);
       if (hostRange) {
-        localEntries.push({ uri: params.textDocument.uri, range: hostRange });
+        localEntries.push({ uri: params.textDocument.uri, range: hostRange, source: 'local-definition' });
       }
     }
 
-    const workspaceEntries: LocalFirstRangeEntry[] = [];
+    const workspaceSegments: ProviderVariableRangeEntry[][] = [];
     if (variableName && variableKind && isCrossFileVariableKind(variableKind) && this.variableFlowService) {
-      const flowQuery = this.variableFlowService.queryVariable(variableName);
-      appendWorkspaceVariableEntries(workspaceEntries, flowQuery);
-      for (const defaultDefinition of this.variableFlowService.getDefaultVariableDefinitions(variableName)) {
-        workspaceEntries.push({ uri: defaultDefinition.uri, range: defaultDefinition.range });
-      }
+      const workspaceLocations = collectProviderWorkspaceVariableSegments({
+        variableFlowService: this.variableFlowService,
+        variableName,
+        includeWriters: true,
+        includeReaders: true,
+        includeDefaultDefinitions: shouldAllowDefaultDefinitionForProvider('definition', true),
+      });
+      workspaceSegments.push([
+        ...workspaceLocations.writers,
+        ...workspaceLocations.readers,
+        ...workspaceLocations.defaultDefinitions,
+      ]);
     }
 
-    const links = mergeLocalFirstSegments([localEntries, workspaceEntries]).map((entry) =>
+    const links = mergeProviderVariableSegments([localEntries, ...workspaceSegments]).map((entry) =>
       buildDefinitionLocationLink(entry.uri, entry.range, originRange),
     );
 
@@ -263,15 +261,21 @@ export class DefinitionProvider {
       start: { line: position.line, character: target.startCharacter },
       end: { line: position.line, character: target.endCharacter },
     };
-    const workspaceEntries: LocalFirstRangeEntry[] = [];
-    const flowQuery = this.variableFlowService.queryVariable(target.name);
-    appendWorkspaceVariableEntries(workspaceEntries, flowQuery);
+    const workspaceLocations = collectProviderWorkspaceVariableSegments({
+      variableFlowService: this.variableFlowService,
+      variableName: target.name,
+      includeWriters: true,
+      includeReaders: true,
+      includeDefaultDefinitions: shouldAllowDefaultDefinitionForProvider('definition', true),
+    });
 
-    for (const defaultDefinition of this.variableFlowService.getDefaultVariableDefinitions(target.name)) {
-      workspaceEntries.push({ uri: defaultDefinition.uri, range: defaultDefinition.range });
-    }
-
-    const links = mergeLocalFirstSegments([workspaceEntries]).map((entry) =>
+    const links = mergeProviderVariableSegments([
+      [
+        ...workspaceLocations.writers,
+        ...workspaceLocations.readers,
+        ...workspaceLocations.defaultDefinitions,
+      ],
+    ]).map((entry) =>
       buildDefinitionLocationLink(entry.uri, entry.range, originRange),
     );
 

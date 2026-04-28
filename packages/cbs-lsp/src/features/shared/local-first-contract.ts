@@ -1,6 +1,6 @@
 /**
  * definition / references / rename의 공통 local-first 병합 계약.
- * @file packages/cbs-lsp/src/features/local-first-contract.ts
+ * @file packages/cbs-lsp/src/features/shared/local-first-contract.ts
  */
 
 import type { Range } from 'risu-workbench-core';
@@ -13,12 +13,12 @@ import {
   type LocalFunctionDeclaration,
   type LocalFunctionParameterDeclaration,
   type FragmentCursorLookupResult,
-} from '../core';
-import type { VariableSymbolKind } from '../analyzer/symbolTable';
-import { extractEachLoopBinding, isStaticEachIteratorIdentifier } from '../analyzer/block-header';
-import { normalizeLookupKey } from '../analyzer/scope/lookup-key';
-import { getVariableMacroArgumentKind } from '../analyzer/scope/scope-macro-rules';
-import { positionToOffset } from '../utils/position';
+} from '../../core';
+import type { VariableSymbolKind } from '../../analyzer/symbolTable';
+import { extractEachLoopBinding, isStaticEachIteratorIdentifier } from '../../analyzer/block-header';
+import { normalizeLookupKey } from '../../analyzer/scope/lookup-key';
+import { getVariableMacroArgumentKind } from '../../analyzer/scope/scope-macro-rules';
+import { positionToOffset } from '../../utils/position';
 
 export interface LocalFirstRangeEntry {
   uri: string;

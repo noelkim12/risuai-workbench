@@ -1,11 +1,10 @@
 /**
  * CBS LSP의 Hover(마우스 호버) 기능을 제공하는 프로바이더 구현체.
- * @file packages/cbs-lsp/src/features/hover.ts
+ * @file packages/cbs-lsp/src/features/hover/hover.ts
  */
 import {
   type CancellationToken,
   Hover,
-  type MarkedString,
   MarkupKind,
   type MarkupContent,
   TextDocumentPositionParams,
@@ -15,8 +14,8 @@ import type { BlockNode, CBSBuiltinFunction, CBSBuiltinRegistry, Position, Range
 import {
   CALC_EXPRESSION_SUBLANGUAGE_LABEL,
   getCalcExpressionSublanguageDocumentation,
-} from '../core/calc-expression';
-import { CbsLspTextHelper } from '../helpers/text-helper';
+} from '../../core/calc-expression';
+import { CbsLspTextHelper } from '../../helpers/text-helper';
 
 import {
   createAgentMetadataEnvelope,
@@ -40,17 +39,18 @@ import {
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
   type FragmentCursorLookupResult,
-} from '../core';
-import { isRequestCancelled } from '../utils/request-cancellation';
-import { shouldSkipOversizedLuaText } from '../utils/oversized-lua';
+} from '../../core';
+import { isRequestCancelled } from '../../utils/request-cancellation';
+import { shouldSkipOversizedLuaText } from '../../utils/oversized-lua';
+import { appendWorkspaceVariableSummary } from './hover-variable-formatting';
 import type {
   VariableFlowQueryResult,
   VariableFlowService,
   WorkspaceSnapshotState,
-} from '../services';
-import { positionToOffset } from '../utils/position';
+} from '../../services';
+import { positionToOffset } from '../../utils/position';
 import { isContextualBuiltin, isDocOnlyBuiltin } from 'risu-workbench-core';
-import { resolveVariablePosition } from './local-first-contract';
+import { resolveVariablePosition } from '../shared/local-first-contract';
 
 const MAX_OVERSIZED_HOVER_LINE_SCAN_LENGTH = 1024 * 1024;
 
@@ -110,14 +110,14 @@ function normalizeHoverContents(contents: Hover['contents']): NormalizedHoverSna
     };
   }
 
-  const markup = contents as MarkupContent | MarkedString;
+  const markup = contents as MarkupContent | { kind?: string; value: string };
 
   if (typeof markup === 'string') {
     return { kind: null, value: markup };
   }
 
   return {
-    kind: 'kind' in markup ? markup.kind : null,
+    kind: 'kind' in markup ? (markup.kind ?? null) : null,
     value: markup.value,
   };
 }
@@ -275,87 +275,6 @@ function formatParameterDefinitionSummary(
         `\`${parameter.name}\` (${CbsLspTextHelper.formatRangeStart(parameter.range)})`,
     )
     .join(', ');
-}
-
-/**
- * formatWorkspaceOccurrenceSummary 함수.
- * 변수의 발생 지점 정보를 상대 경로와 위치를 포함한 문자열 요약으로 변환함.
- *
- * @param occurrence - 변수 flow 결과의 개별 발생 항목
- * @returns 포맷팅된 발생 지점 요약 문자열
- */
-function formatWorkspaceOccurrenceSummary(
-  occurrence: VariableFlowQueryResult['occurrences'][number],
-): string {
-  const codeQuote = String.fromCharCode(96);
-  const locationLabel = `${occurrence.relativePath} (${CbsLspTextHelper.formatRangeStart(occurrence.hostRange)})`;
-  return `${formatWorkspaceOccurrenceLink(occurrence, locationLabel)} — ${codeQuote}${occurrence.sourceName}${codeQuote}`;
-}
-
-function formatWorkspaceOccurrenceLink(
-  occurrence: VariableFlowQueryResult['occurrences'][number],
-  label: string,
-): string {
-  return `[${escapeMarkdownLinkLabel(label)}](${formatFileMarkdownLinkTarget(occurrence)})`;
-}
-
-function escapeMarkdownLinkLabel(label: string): string {
-  return label.replace(/[\\\[\]]/gu, (character) => `\\${character}`);
-}
-
-function formatFileMarkdownLinkTarget(
-  occurrence: VariableFlowQueryResult['occurrences'][number],
-): string {
-  const args = encodeURIComponent(
-    JSON.stringify([
-      {
-        range: occurrence.hostRange,
-        uri: occurrence.uri,
-      },
-    ]),
-  );
-  return `command:risuWorkbench.cbs.openOccurrence?${args}`;
-}
-
-/**
- * pickRepresentativeOccurrences 함수.
- * 변수 사용처 목록에서 정렬 기준에 따라 대표 항목들을 추출함.
- *
- * @param occurrences - 변수 flow 결과에서 얻은 발생 지점 배열
- * @param limit - 추출할 최대 개수 (기본값 3)
- * @returns 정렬 및 제한된 발생 지점 배열
- */
-function pickRepresentativeOccurrences<T extends VariableFlowQueryResult['occurrences'][number]>(
-  occurrences: readonly T[],
-  limit: number = 3,
-): readonly T[] {
-  return [...occurrences]
-    .sort(
-      (left, right) =>
-        left.relativePath.localeCompare(right.relativePath) ||
-        left.hostStartOffset - right.hostStartOffset ||
-        left.sourceName.localeCompare(right.sourceName),
-    )
-    .slice(0, limit);
-}
-
-/**
- * formatWorkspaceIssueSummary 함수.
- * 워크스페이스 변수 분석에서 발견된 이슈를 유형, 심각도, 위치 정보와 함께 요약함.
- *
- * @param issueMatch - 이슈 정보와 관련 발생 지점 매칭 데이터
- * @returns 포맷팅된 이슈 요약 문자열
- */
-function formatWorkspaceIssueSummary(
-  issueMatch: VariableFlowQueryResult['issues'][number],
-): string {
-  const representativeOccurrence =
-    pickRepresentativeOccurrences(issueMatch.occurrences, 1)[0] ?? null;
-  const locationSuffix = representativeOccurrence
-    ? ` — ${formatWorkspaceOccurrenceSummary(representativeOccurrence)}`
-    : '';
-
-  return `${issueMatch.issue.type} [${issueMatch.issue.severity}]: ${issueMatch.issue.message}${locationSuffix}`;
 }
 
 /**
@@ -630,13 +549,13 @@ export class HoverProvider {
       `- Access: ${target.access}`,
     ];
 
-    this.appendWorkspaceVariableSummary(
+    appendWorkspaceVariableSummary({
       lines,
-      target.name,
-      'chat',
-      request.uri,
+      variableName: target.name,
+      kind: 'chat',
+      currentUri: request.uri,
       workspaceVariableQuery,
-    );
+    });
 
     return {
       contents: {
@@ -1182,13 +1101,13 @@ export class HoverProvider {
       lines.push(`- Local references: ${symbol.references.length}`);
     }
 
-    this.appendWorkspaceVariableSummary(
+    appendWorkspaceVariableSummary({
       lines,
       variableName,
       kind,
       currentUri,
       workspaceVariableQuery,
-    );
+    });
 
     return {
       data: this.createCategoryData(
@@ -1211,59 +1130,6 @@ export class HoverProvider {
       localStartOffset,
       localEndOffset,
     };
-  }
-
-  private appendWorkspaceVariableSummary(
-    lines: string[],
-    variableName: string,
-    kind: VariableKind,
-    currentUri: string,
-    workspaceVariableQuery: VariableFlowQueryResult | null,
-  ): void {
-    if (kind === 'chat' && workspaceVariableQuery?.variableName === variableName) {
-      const externalWriters = workspaceVariableQuery.writers.filter(
-        (occurrence) => occurrence.uri !== currentUri,
-      );
-      const externalReaders = workspaceVariableQuery.readers.filter(
-        (occurrence) => occurrence.uri !== currentUri,
-      );
-      const representativeWriters = pickRepresentativeOccurrences(workspaceVariableQuery.writers);
-
-      lines.push(`- Workspace writers: ${workspaceVariableQuery.writers.length}`);
-      lines.push(`- Workspace readers: ${workspaceVariableQuery.readers.length}`);
-
-      if (workspaceVariableQuery.defaultValue) {
-        lines.push(`- Default value: ${workspaceVariableQuery.defaultValue}`);
-      }
-
-      if (representativeWriters.length > 0) {
-        lines.push('- Representative writers:');
-        for (const writer of representativeWriters) {
-          lines.push(`  - ${formatWorkspaceOccurrenceSummary(writer)}`);
-        }
-      }
-
-      if (externalWriters.length > 0) {
-        lines.push('- External writers:');
-        for (const writer of externalWriters) {
-          lines.push(`  - ${formatWorkspaceOccurrenceSummary(writer)}`);
-        }
-      }
-
-      if (externalReaders.length > 0) {
-        lines.push('- External readers:');
-        for (const reader of externalReaders) {
-          lines.push(`  - ${formatWorkspaceOccurrenceSummary(reader)}`);
-        }
-      }
-
-      if (workspaceVariableQuery.issues.length > 0) {
-        lines.push('- Workspace issues:');
-        for (const issue of workspaceVariableQuery.issues) {
-          lines.push(`  - ${formatWorkspaceIssueSummary(issue)}`);
-        }
-      }
-    }
   }
 
   /**

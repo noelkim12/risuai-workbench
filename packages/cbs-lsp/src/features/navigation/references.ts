@@ -8,16 +8,21 @@ import {
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
   type FragmentCursorLookupResult,
-} from '../core';
-import type { VariableSymbol, VariableSymbolKind } from '../analyzer/symbolTable';
+} from '../../core';
+import type { VariableSymbol } from '../../analyzer/symbolTable';
 import {
   isCrossFileVariableKind,
-  mergeLocalFirstSegments,
   resolveVariablePosition,
   type LocalFirstRangeEntry,
-} from './local-first-contract';
-import { isRequestCancelled } from '../utils/request-cancellation';
-import type { VariableFlowService } from '../services';
+} from '../shared';
+import {
+  collectProviderWorkspaceVariableSegments,
+  mergeProviderVariableSegments,
+  shouldAllowDefaultDefinitionForProvider,
+  type ProviderVariableRangeEntry,
+} from '../shared';
+import { isRequestCancelled } from '../../utils/request-cancellation';
+import type { VariableFlowService } from '../../services';
 
 export type ReferencesRequestResolver = (
   params: ReferenceParams,
@@ -80,37 +85,38 @@ export class ReferencesProvider {
     const symbolTable = lookup.fragmentAnalysis.providerLookup.getSymbolTable();
     const symbol = symbolTable.getVariable(variableName, kind);
     const includeDeclaration = params.context?.includeDeclaration ?? false;
-    const localSegments: LocalFirstRangeEntry[][] = [];
+    const localSegments: ProviderVariableRangeEntry[][] = [];
 
     if (symbol && symbol.kind !== 'global' && symbol.scope !== 'external') {
       const localLocations = this.buildLocations(symbol, lookup, request, includeDeclaration);
       if (includeDeclaration) {
-        localSegments.push(localLocations.definitions);
-      }
-      localSegments.push(localLocations.references);
-    }
-
-    const workspaceSegments: LocalFirstRangeEntry[][] = [];
-    if (isCrossFileVariableKind(kind) && this.variableFlowService) {
-      const flowQuery = this.variableFlowService.queryVariable(variableName);
-      if (includeDeclaration) {
-        workspaceSegments.push(
-          (flowQuery?.writers ?? []).map((occurrence) => ({
-            uri: occurrence.uri,
-            range: occurrence.hostRange,
-          })),
+        localSegments.push(
+          localLocations.definitions.map((entry) => ({ ...entry, source: 'local-definition' })),
         );
       }
-
-      workspaceSegments.push(
-        (flowQuery?.readers ?? []).map((occurrence) => ({
-          uri: occurrence.uri,
-          range: occurrence.hostRange,
-        })),
+      localSegments.push(
+        localLocations.references.map((entry) => ({ ...entry, source: 'local-reference' })),
       );
     }
 
-    return mergeLocalFirstSegments([...localSegments, ...workspaceSegments]).map((entry) => ({
+    const workspaceSegments: ProviderVariableRangeEntry[][] = [];
+    if (isCrossFileVariableKind(kind) && this.variableFlowService) {
+      const workspaceLocations = collectProviderWorkspaceVariableSegments({
+        variableFlowService: this.variableFlowService,
+        variableName,
+        includeWriters: includeDeclaration,
+        includeReaders: true,
+        includeDefaultDefinitions: shouldAllowDefaultDefinitionForProvider('references', includeDeclaration),
+      });
+
+      if (includeDeclaration) {
+        workspaceSegments.push(workspaceLocations.writers, workspaceLocations.defaultDefinitions);
+      }
+
+      workspaceSegments.push(workspaceLocations.readers);
+    }
+
+    return mergeProviderVariableSegments([...localSegments, ...workspaceSegments]).map((entry) => ({
       uri: entry.uri,
       range: entry.range,
     }));

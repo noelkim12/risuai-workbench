@@ -7,7 +7,7 @@ import {
 } from 'vscode-languageserver/node';
 import type { Range } from 'risu-workbench-core';
 
-import { SymbolTable, VariableSymbol, VariableSymbolKind } from '../analyzer/symbolTable';
+import { SymbolTable, VariableSymbol, VariableSymbolKind } from '../../analyzer/symbolTable';
 import {
   createAgentMetadataAvailability,
   createHostFragmentKey,
@@ -18,16 +18,16 @@ import {
   type FragmentAnalysisService,
   type FragmentCursorLookupResult,
   validateHostFragmentPatchEdits,
-} from '../core';
+} from '../../core';
 import {
   isCrossFileVariableKind,
   mergeLocalFirstSegments,
   resolveVariablePosition,
   type LocalFirstRangeEntry,
-} from './local-first-contract';
-import { isRequestCancelled } from '../utils/request-cancellation';
-import type { VariableFlowService } from '../services';
-import { positionToOffset } from '../utils/position';
+} from '../shared';
+import { isRequestCancelled } from '../../utils/request-cancellation';
+import type { VariableFlowService } from '../../services';
+import { positionToOffset } from '../../utils/position';
 
 export type RenameRequestResolver = (
   params: TextDocumentPositionParams,
@@ -202,10 +202,25 @@ export class RenameProvider {
       localReferenceEntries,
       workspaceEntries,
     ]);
+    const directWorkspaceEntries = workspaceEntries.filter((entry) =>
+      this.resolveUriRequest(entry.uri)?.filePath.endsWith('.risulua'),
+    );
+    const directWorkspaceKeys = new Set(
+      directWorkspaceEntries.map(
+        (entry) =>
+          `${entry.uri}:${entry.range.start.line}:${entry.range.start.character}:${entry.range.end.line}:${entry.range.end.character}`,
+      ),
+    );
+    const validatedEntries = mergedEntries.filter(
+      (entry) =>
+        !directWorkspaceKeys.has(
+          `${entry.uri}:${entry.range.start.line}:${entry.range.start.character}:${entry.range.end.line}:${entry.range.end.character}`,
+        ),
+    );
 
     const validatedPatchSet = validateHostFragmentPatchEdits(
       this.analysisService,
-      mergedEntries.map((entry) => ({
+      validatedEntries.map((entry) => ({
         uri: entry.uri,
         range: entry.range,
         newText: newName,
@@ -223,7 +238,10 @@ export class RenameProvider {
     }
 
     const changes: Map<string, LSPRange[]> = new Map();
-    for (const entry of validatedPatchSet.edits) {
+    for (const entry of [
+      ...validatedPatchSet.edits,
+      ...directWorkspaceEntries.map((entry) => ({ ...entry, newText: newName })),
+    ]) {
       const existing = changes.get(entry.uri);
       const lspRange = LSPRange.create(
         entry.range.start.line,
