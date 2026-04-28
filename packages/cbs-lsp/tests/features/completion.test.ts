@@ -417,6 +417,25 @@ describe('CompletionProvider', () => {
       expect(locateSpy).not.toHaveBeenCalled();
     });
 
+    it('does not use cheap root completion in a sectioned artifact non-CBS section', () => {
+      const text = ['@@@ NAME', 'Sectioned completion guard', '@@@ KEYS', '{{us', '@@@ CONTENT', '{{user}}'].join('\n');
+      const request = {
+        uri: 'file:///workspace/sectioned-non-cbs-root.risulorebook',
+        version: 1,
+        filePath: '/workspace/sectioned-non-cbs-root.risulorebook',
+        text,
+      };
+      const service = new FragmentAnalysisService();
+      const locateSpy = vi.spyOn(service, 'locatePosition');
+      const provider = createProvider(service, request);
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(text, text.indexOf('{{us') + '{{us'.length)),
+      );
+
+      expect(locateSpy).toHaveBeenCalled();
+      expect(completions).toEqual([]);
+    });
+
     it('applies no-argument builtin completions as closed full macro snippets', () => {
       const request = createInlineCompletionRequest('{{us}}');
       const provider = createProvider(new FragmentAnalysisService(), request);
@@ -546,8 +565,9 @@ describe('CompletionProvider', () => {
       const completions = provider.provide(createParams(request, positionAt(entry.text, '{{', 2)));
 
       const ifCompletion = completions.find((c) => c.label === '#if');
+      const deprecatedField = 'deprecated';
       expect(ifCompletion).toBeDefined();
-      expect(ifCompletion?.['deprecated']).toBe(true);
+      expect((ifCompletion as unknown as Record<string, unknown> | undefined)?.[deprecatedField]).toBe(true);
     });
 
     it('labels documentation-only syntax entries differently from callable builtins', () => {
@@ -672,6 +692,210 @@ describe('CompletionProvider', () => {
           documentation: expect.stringContaining('not a general runtime callback builtin'),
           kind: 7,
           label: '#when',
+        }),
+      );
+    });
+
+    it('locks representative normalized completion snapshots before completion refactor', () => {
+      const blockRequest = createInlineCompletionRequest('{{#');
+      const blockProvider = createProvider(new FragmentAnalysisService(), blockRequest);
+      const blockSnapshot = snapshotCompletionItems(
+        blockProvider.provide(createParams(blockRequest, offsetToPosition(blockRequest.text, 3))),
+      );
+
+      expect(blockSnapshot.find((item) => item.label === '#when')).toEqual(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            cbs: expect.objectContaining({
+              category: { category: 'block-keyword', kind: 'documentation-only-builtin' },
+            }),
+          }),
+          filterText: '{{#when',
+          insertText: '{{#when::${1:condition}}}',
+          insertTextFormat: InsertTextFormat.Snippet,
+          kind: 7,
+          label: '#when',
+          resolved: true,
+        }),
+      );
+      expect(blockSnapshot.find((item) => item.label === 'when-block')).toEqual(
+        expect.objectContaining({
+          filterText: '{{#when',
+          insertText: expect.stringContaining('{{/when}}'),
+          insertTextFormat: InsertTextFormat.Snippet,
+          label: 'when-block',
+          resolved: true,
+        }),
+      );
+
+      const variableEntry = getFixtureCorpusEntry('lorebook-setvar-macro');
+      const variableText = variableEntry.text.replace('}}', '}}{{getvar::}}');
+      const variableRequest = { ...createFixtureRequest(variableEntry), text: variableText };
+      const variableProvider = createProvider(
+        new FragmentAnalysisService(),
+        variableRequest,
+        createWorkspaceChatVariableService('shared', 'mood'),
+      );
+      const variableSnapshot = snapshotCompletionItems(
+        variableProvider.provide(
+          createParams(
+            variableRequest,
+            offsetToPosition(variableText, variableText.indexOf('{{getvar::') + '{{getvar::'.length),
+          ),
+        ),
+      );
+
+      expect(variableSnapshot.find((item) => item.label === 'mood')).toEqual(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            cbs: expect.objectContaining({
+              category: { category: 'variable', kind: 'chat-variable' },
+              explanation: expect.objectContaining({ source: 'chat-variable-symbol-table' }),
+            }),
+          }),
+          detail: 'Chat variable',
+          insertText: 'mood',
+          kind: 6,
+          label: 'mood',
+          resolved: true,
+        }),
+      );
+      expect(variableSnapshot.find((item) => item.label === 'shared')).toEqual(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            cbs: expect.objectContaining({
+              category: { category: 'variable', kind: 'chat-variable' },
+              explanation: expect.objectContaining({ source: 'workspace-chat-variable-graph:macro-argument' }),
+            }),
+          }),
+          detail: 'Workspace chat variable',
+          insertText: 'shared',
+          label: 'shared',
+          resolved: true,
+          sortText: 'zzzz-workspace-shared',
+        }),
+      );
+
+      const calcEntry = getFixtureCorpusEntry('lorebook-calc-expression-context');
+      const calcText = calcEntry.text.replace('{{calc::$score + @bonus}}', '{{calc::$}}');
+      const calcRequest = { ...createFixtureRequest(calcEntry), text: calcText };
+      const calcProvider = createProvider(
+        new FragmentAnalysisService(),
+        calcRequest,
+        createWorkspaceChatVariableService('shared', 'score'),
+      );
+      const calcSnapshot = snapshotCompletionItems(
+        calcProvider.provide(
+          createParams(
+            calcRequest,
+            offsetToPosition(calcText, calcText.indexOf('{{calc::$') + '{{calc::$'.length),
+          ),
+        ),
+      );
+
+      expect(calcSnapshot.find((item) => item.label === '$score')).toEqual(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            cbs: expect.objectContaining({ category: { category: 'variable', kind: 'chat-variable' } }),
+          }),
+          insertText: 'score',
+          label: '$score',
+          resolved: true,
+        }),
+      );
+      expect(calcSnapshot.find((item) => item.label === '$shared')).toEqual(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            cbs: expect.objectContaining({
+              explanation: expect.objectContaining({ source: 'workspace-chat-variable-graph:calc-expression' }),
+            }),
+          }),
+          detail: 'Workspace chat variable for calc expression',
+          insertText: 'shared',
+          label: '$shared',
+          resolved: true,
+          sortText: 'zzzz-workspace-shared',
+        }),
+      );
+
+      const whenRequest = createInlineCompletionRequest('{{#when::mood::}}ok{{/}}');
+      const whenProvider = createProvider(
+        new FragmentAnalysisService(),
+        whenRequest,
+        createWorkspaceChatVariableService('mood', 'target'),
+      );
+      const whenSnapshot = snapshotCompletionItems(
+        whenProvider.provide(
+          createParams(whenRequest, offsetToPosition(whenRequest.text, '{{#when::mood::'.length)),
+        ),
+      );
+
+      expect(whenSnapshot.find((item) => item.label === 'is')).toEqual(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            cbs: expect.objectContaining({ category: { category: 'contextual-token', kind: 'when-operator' } }),
+          }),
+          insertText: 'is',
+          label: 'is',
+          resolved: true,
+        }),
+      );
+      expect(whenSnapshot.find((item) => item.label === 'target')).toEqual(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            cbs: expect.objectContaining({ category: { category: 'variable', kind: 'chat-variable' } }),
+          }),
+          insertText: 'target',
+          label: 'target',
+          resolved: true,
+        }),
+      );
+
+      const toggleRequest = createInlineCompletionRequest('{{#when::toggle::}}body{{/when}}');
+      const toggleProvider = createProvider(
+        new FragmentAnalysisService(),
+        toggleRequest,
+        createRisuToggleService('response_mode-gpt-5.4'),
+      );
+      const toggleSnapshot = snapshotCompletionItems(
+        toggleProvider.provide(
+          createParams(toggleRequest, offsetToPosition(toggleRequest.text, '{{#when::toggle::'.length)),
+        ),
+      );
+
+      expect(toggleSnapshot.find((item) => item.label === 'response_mode-gpt-5.4')).toEqual(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            cbs: expect.objectContaining({ category: { category: 'contextual-token', kind: 'when-operator' } }),
+          }),
+          detail: 'Risutoggle name',
+          insertText: 'response_mode-gpt-5.4',
+          label: 'response_mode-gpt-5.4',
+          resolved: true,
+          sortText: 'zzzz-risutoggle-name-response_mode-gpt-5.4',
+        }),
+      );
+
+      const closeEntry = getFixtureCorpusEntry('regex-block-header');
+      const closeText = closeEntry.text.replace('{{/when}}', '{{/}}');
+      const closeRequest = { ...createFixtureRequest(closeEntry), text: closeText };
+      const closeProvider = createProvider(new FragmentAnalysisService(), closeRequest);
+      const closeSnapshot = snapshotCompletionItems(
+        closeProvider.provide(
+          createParams(closeRequest, offsetToPosition(closeText, closeText.indexOf('{{/') + '{{/'.length)),
+        ),
+      );
+
+      expect(closeSnapshot.find((item) => item.label === '/when')).toEqual(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            cbs: expect.objectContaining({ category: { category: 'block-keyword', kind: 'block-close' } }),
+          }),
+          detail: 'Close when block',
+          insertText: '/when',
+          label: '/when',
+          preselect: true,
+          resolved: true,
         }),
       );
     });
@@ -1474,6 +1698,23 @@ describe('CompletionProvider', () => {
         expect(splitSpy).not.toHaveBeenCalled();
         expectCompletionLabels(completions, 'shared', 'shadow');
         expectNoCompletionLabels(completions, 'getvar', 'setvar', '#when');
+        expect(snapshotCompletionItems(completions).find((item) => item.label === 'shared')).toEqual(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              cbs: expect.objectContaining({
+                category: { category: 'variable', kind: 'chat-variable' },
+                explanation: expect.objectContaining({
+                  source: 'workspace-chat-variable-graph:macro-argument',
+                }),
+              }),
+            }),
+            detail: 'Workspace chat variable',
+            insertText: 'shared',
+            label: 'shared',
+            resolved: true,
+            sortText: 'zzzz-workspace-shared',
+          }),
+        );
         expect(completions.find((completion) => completion.label === 'shared')?.textEdit).toEqual({
           range: {
             start: cursorPosition,
@@ -2700,6 +2941,126 @@ describe('CompletionProvider', () => {
       );
     });
 
+    it('resolve hydrates local chat-variable unresolved items', () => {
+      const request = createInlineCompletionRequest('{{setvar::mood::happy}}{{getvar::}}');
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const params = createParams(
+        request,
+        offsetToPosition(request.text, request.text.indexOf('{{getvar::') + '{{getvar::'.length),
+      );
+      const unresolved = provider.provideUnresolved(params);
+      const mood = unresolved.find((item) => item.label === 'mood');
+
+      expect(mood).toBeDefined();
+      expect(mood?.detail).toBeUndefined();
+      expect(mood?.documentation).toBeUndefined();
+      expect(mood?.data.cbs.category).toEqual({
+        category: 'variable',
+        kind: 'chat-variable',
+      });
+
+      const resolved = provider.resolve(mood!, params);
+
+      expect(resolved).not.toBeNull();
+      expect(resolved).toEqual(
+        expect.objectContaining({
+          detail: 'Chat variable',
+          documentation: {
+            kind: 'markdown',
+            value: 'Variable **mood** (chat)',
+          },
+          insertText: mood?.insertText,
+          label: mood?.label,
+          sortText: mood?.sortText,
+          textEdit: mood?.textEdit,
+        }),
+      );
+      expect(resolved?.data).toEqual(
+        expect.objectContaining({
+          cbs: expect.objectContaining({
+            category: { category: 'variable', kind: 'chat-variable' },
+            explanation: {
+              reason: 'scope-analysis',
+              source: 'chat-variable-symbol-table',
+              detail:
+                'Completion resolved this candidate from analyzed chat-variable definitions in the current fragment.',
+            },
+          }),
+        }),
+      );
+    });
+
+    it('resolve hydrates workspace chat-variable unresolved items', () => {
+      const request = createInlineCompletionRequest('{{getvar::}}');
+      const workspaceSnapshot = createWorkspaceSnapshot(request, 1);
+      const provider = createProvider(
+        new FragmentAnalysisService(),
+        request,
+        createWorkspaceChatVariableService('shared'),
+        workspaceSnapshot,
+      );
+      const params = createParams(
+        request,
+        offsetToPosition(request.text, request.text.indexOf('{{getvar::') + '{{getvar::'.length),
+      );
+      const unresolved = provider.provideUnresolved(params);
+      const shared = unresolved.find((item) => item.label === 'shared');
+
+      expect(shared).toBeDefined();
+      expect(shared?.detail).toBeUndefined();
+      expect(shared?.documentation).toBeUndefined();
+      expect(shared?.sortText).toBe('zzzz-workspace-shared');
+      expect(shared?.data.cbs.category).toEqual({
+        category: 'variable',
+        kind: 'chat-variable',
+      });
+
+      const resolved = provider.resolve(shared!, params);
+      const resolvedSnapshot = snapshotCompletionItems(resolved ? [resolved] : []);
+
+      expect(resolved).not.toBeNull();
+      expect(resolved).toEqual(
+        expect.objectContaining({
+          detail: 'Workspace chat variable',
+          insertText: shared?.insertText,
+          label: shared?.label,
+          sortText: 'zzzz-workspace-shared',
+          textEdit: shared?.textEdit,
+        }),
+      );
+      expect(resolved?.documentation).toEqual({
+        kind: 'markdown',
+        value: expect.stringContaining('shared'),
+      });
+      expect(resolved?.data).toEqual(
+        expect.objectContaining({
+          cbs: expect.objectContaining({
+            category: { category: 'variable', kind: 'chat-variable' },
+            explanation: {
+              reason: 'scope-analysis',
+              source: 'workspace-chat-variable-graph:macro-argument',
+              detail:
+                'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local chat-variable symbols.',
+            },
+            workspace: expect.objectContaining({
+              freshness: 'fresh',
+              requestVersion: 1,
+              rootPath: '/workspace',
+              snapshotVersion: 7,
+              trackedDocumentVersion: 1,
+            }),
+          }),
+        }),
+      );
+      expect(resolvedSnapshot.find((item) => item.label === 'shared')).toEqual(
+        expect.objectContaining({
+          label: 'shared',
+          resolved: true,
+          sortText: 'zzzz-workspace-shared',
+        }),
+      );
+    });
+
     it('resolve preserves textEdit from the resolved item', () => {
       const entry = getFixtureCorpusEntry('lorebook-basic');
       const request = createFixtureRequest(entry);
@@ -2727,6 +3088,41 @@ describe('CompletionProvider', () => {
       expect(resolvedSnapshot.length).toBeGreaterThan(0);
       expect(unresolvedSnapshot[0]!.resolved).toBe(false);
       expect(resolvedSnapshot[0]!.resolved).toBe(true);
+
+      const unresolvedGetvar = unresolvedSnapshot.find((item) => item.label === 'getvar');
+      const resolvedGetvar = resolvedSnapshot.find((item) => item.label === 'getvar');
+
+      expect(unresolvedGetvar).toEqual(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            cbs: expect.objectContaining({ category: { category: 'builtin', kind: 'callable-builtin' } }),
+          }),
+          detail: null,
+          documentation: null,
+          filterText: '{{getvar',
+          insertText: null,
+          label: 'getvar',
+          resolved: false,
+          textEdit: expect.objectContaining({ newText: '{{getvar::${1:variable}}}' }),
+        }),
+      );
+      expect(resolvedGetvar).toEqual(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            cbs: expect.objectContaining({
+              category: { category: 'builtin', kind: 'callable-builtin' },
+              explanation: expect.objectContaining({ source: 'builtin-registry' }),
+            }),
+          }),
+          detail: 'Callable builtin function',
+          documentation: expect.stringContaining('getvar'),
+          filterText: unresolvedGetvar?.filterText,
+          insertText: '{{getvar::${1:variable}}}',
+          label: unresolvedGetvar?.label,
+          resolved: true,
+          textEdit: expect.objectContaining({ newText: '{{getvar::${1:variable}}}' }),
+        }),
+      );
     });
 
     it('resolve returns null when the unresolved item does not match any current result', () => {

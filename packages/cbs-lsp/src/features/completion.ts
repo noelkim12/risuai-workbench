@@ -1,32 +1,24 @@
 import {
   type CancellationToken,
   CompletionItem,
-  CompletionItemKind,
+  type CompletionItemKind,
   InsertTextFormat,
   type InsertReplaceEdit,
   type MarkupContent,
   TextDocumentPositionParams,
   Range as LSPRange,
   type TextEdit,
-  type Position,
 } from 'vscode-languageserver/node';
 import {
-  isContextualBuiltin,
-  isDocOnlyBuiltin,
   type CBSBuiltinRegistry,
   type CBSBuiltinFunction,
 } from 'risu-workbench-core';
 
 import {
-  CBS_AGENT_PROTOCOL_SCHEMA,
-  CBS_AGENT_PROTOCOL_VERSION,
   createAgentMetadataEnvelope,
   createAgentMetadataExplanation,
-  createStaleWorkspaceAvailability,
-  collectLocalFunctionDeclarations,
   fragmentAnalysisService,
   detectCompletionTriggerContext,
-  resolveActiveLocalFunctionContext,
   shouldSuppressPureModeFeatures,
   isAgentMetadataEnvelope,
   type AgentMetadataEnvelope,
@@ -39,12 +31,49 @@ import {
   type FragmentCursorLookupResult,
   type CompletionTriggerContext,
 } from '../core';
-import { getVariableMacroArgumentKind } from '../analyzer/scope/scope-macro-rules';
-import { collectVisibleLoopBindingsFromNodePath } from '../analyzer/scopeAnalyzer';
-import type { VariableCompletionSummary, VariableFlowService, WorkspaceSnapshotState } from '../services';
-import { CbsLspTextHelper } from '../helpers/text-helper';
+import type { VariableFlowService, WorkspaceSnapshotState } from '../services';
 import { isRequestCancelled } from '../utils/request-cancellation';
-import { shouldSkipOversizedLuaText } from '../utils/oversized-lua';
+import {
+  createCompletionTextEditPlan,
+} from './completion-text-edit';
+import {
+  provideCheapRootCompletions,
+} from './cheap-root-completion';
+import { provideCheapMacroArgumentCompletions } from './cheap-macro-argument-completion';
+import {
+  buildAllFunctionCompletions,
+  buildBlockFunctionCompletions,
+  buildCloseTagCompletion,
+  buildElseCompletion,
+  formatFunctionDocumentation,
+} from './builtin-completion';
+import {
+  buildArgumentIndexCompletions,
+  buildCalcExpressionCompletions,
+  buildFunctionCompletions,
+  buildMetadataCompletions,
+  buildSlotAliasCompletions,
+  buildVariableCompletions,
+  buildWhenOperatorCompletions,
+  buildWhenSegmentCompletions,
+  isToggleNameWhenSegment,
+} from './completion-candidates';
+import {
+  resolveCompletionItem,
+  stripCompletionItemToUnresolved,
+  type CompletionItemDataEnvelope,
+  type UnresolvedCompletionItem,
+} from './completion-resolve';
+import {
+  getWorkspaceFreshness,
+} from './workspace-variable-completion';
+
+export type {
+  CompletionItemDataEnvelope,
+  CompletionResolveKey,
+  UnresolvedCompletionItem,
+  UnresolvedCompletionItemData,
+} from './completion-resolve';
 
 export type CompletionRequestResolver = (
   params: TextDocumentPositionParams,
@@ -57,661 +86,14 @@ export interface CompletionProviderOptions {
   workspaceSnapshot?: WorkspaceSnapshotState | null;
 }
 
-export interface CompletionResolveKey {
-  source: 'builtin' | 'workspace-variable' | 'local-variable' | 'snippet' | 'unknown';
-  name: string;
-  /** For builtins: the canonical function name for registry lookup */
-  canonicalName?: string;
-  /** For workspace variables: the variable name */
-  variableName?: string;
-}
-
-export type CompletionItemDataEnvelope = Omit<AgentMetadataEnvelope, 'cbs'> & {
-  cbs: AgentMetadataEnvelope['cbs'] & {};
-};
-
-/**
- * Minimal unresolved completion item data payload.
- * Carries stable category contract plus request context (uri/position) for strong resolve matching.
- * Explanation, workspace snapshot, detail, documentation are deferred to resolve.
- */
-export interface UnresolvedCompletionItemData {
-  cbs: {
-    schema: typeof CBS_AGENT_PROTOCOL_SCHEMA;
-    schemaVersion: typeof CBS_AGENT_PROTOCOL_VERSION;
-    category: AgentMetadataCategoryContract;
-    uri: string;
-    position: Position;
-  };
-}
-
-/**
- * Lightweight unresolved completion item shape.
- * Heavy fields (detail, documentation, explanation, workspace snapshot) are omitted and restored by resolve.
- */
-export type UnresolvedCompletionItem = Omit<CompletionItem, 'detail' | 'documentation' | 'data'> & {
-  detail?: CompletionItem['detail'];
-  documentation?: CompletionItem['documentation'];
-  data: UnresolvedCompletionItemData;
-};
-
 /**
  * CBS_COMPLETION_TRIGGER_CHARACTERS 상수.
  * CBS/Lua 입력 흐름에서 자동 completion을 재요청해야 하는 핵심 trigger 문자 집합.
  */
 export const CBS_COMPLETION_TRIGGER_CHARACTERS = ['{', ':', '#', '/', '?', '<', '"'] as const;
 
-interface BlockSnippet {
-  label: string;
-  insertText: string;
-  detail: string;
-  documentation: string;
-}
-
-interface CalcOperatorCompletion {
-  label: string;
-  detail: string;
-  documentation: string;
-}
-
-interface CheapRootCompletionContext {
-  kind: 'all-functions' | 'block-functions';
-  prefix: string;
-  macroStartCharacter: number;
-  prefixStartCharacter: number;
-  cursorCharacter: number;
-  replaceEndCharacter: number;
-  line: number;
-}
-
-interface CheapMacroArgumentCompletionContext {
-  type: 'variable-names';
-  kind: ScopeMacroArgumentCompletionKind;
-  prefix: string;
-  startCharacter: number;
-  endCharacter: number;
-  line: number;
-}
-
-interface CheapWhenSegmentCompletionContext {
-  type: 'when-segment';
-  prefix: string;
-  previousSegments: readonly string[];
-  startCharacter: number;
-  endCharacter: number;
-  line: number;
-}
-
-interface CheapMetadataKeyCompletionContext {
-  type: 'metadata-keys';
-  prefix: string;
-  startCharacter: number;
-  endCharacter: number;
-  line: number;
-}
-
-interface CheapUnsupportedArgumentCompletionContext {
-  type: 'unsupported-argument';
-  prefix: string;
-  startCharacter: number;
-  endCharacter: number;
-  line: number;
-}
-
-interface CheapNestedChatValueCompletionContext {
-  type: 'nested-chat-value';
-  prefix: string;
-  startCharacter: number;
-  endCharacter: number;
-  line: number;
-}
-
-type CheapMacroSegmentCompletionContext =
-  | CheapMacroArgumentCompletionContext
-  | CheapWhenSegmentCompletionContext
-  | CheapMetadataKeyCompletionContext
-  | CheapUnsupportedArgumentCompletionContext
-  | CheapNestedChatValueCompletionContext;
-
-type ScopeMacroArgumentCompletionKind = NonNullable<
-  ReturnType<typeof getVariableMacroArgumentKind>
->;
-
-const CBS_SECTIONED_ARTIFACT_EXTENSIONS = new Set(['.risulorebook', '.risuregex', '.risuprompt']);
-
-const CBS_FAST_PATH_SECTION_MARKERS = new Set([
-  'CONTENT',
-  'IN',
-  'OUT',
-  'TEXT',
-  'INNER_FORMAT',
-  'DEFAULT_TEXT',
-]);
-
-const CBS_ROOT_PREFIX_PATTERN = /^#?[a-z_]*$/i;
-
-const MAX_OVERSIZED_MACRO_ARGUMENT_LINE_SCAN_LENGTH = 1024 * 1024;
-
-const CBS_OVERSIZED_KNOWN_ARGUMENT_MACROS = new Set([
-  'addvar',
-  'arg',
-  'calc',
-  'call',
-  'getglobalvar',
-  'gettempvar',
-  'getvar',
-  'metadata',
-  'setdefaultvar',
-  'setglobalvar',
-  'settempvar',
-  'setvar',
-  'slot',
-  'tempvar',
-]);
-
-const CBS_OVERSIZED_NESTED_CHAT_VALUE_MACROS = new Set([
-  'all',
-  'and',
-  'any',
-  'contains',
-  'endswith',
-  'equal',
-  'greater',
-  'greaterequal',
-  'iserror',
-  'less',
-  'lessequal',
-  'not',
-  'notequal',
-  'or',
-  'startswith',
-]);
-
-const BLOCK_SNIPPETS: readonly BlockSnippet[] = [
-  {
-    label: 'when-block',
-    insertText: '{{#when ${1:condition}}}\n\t${2:body}\n{{/when}}',
-    detail: 'When block snippet',
-    documentation: 'Conditional block that executes body when condition is true.',
-  },
-  {
-    label: 'when-else-block',
-    insertText: '{{#when ${1:condition}}}\n\t${2:body}\n{{:else}}\n\t${3:otherwise}\n{{/when}}',
-    detail: 'When-else block snippet',
-    documentation: 'Conditional block with else branch.',
-  },
-  {
-    label: 'each-block',
-    insertText: '{{#each ${1:array} as ${2:item}}}\n\t{{slot::${2:item}}}\n{{/each}}',
-    detail: 'Each block snippet',
-    documentation: 'Iterate over array with slot variable.',
-  },
-  {
-    label: 'escape-block',
-    insertText: '{{#escape}}\n\t${1:content}\n{{/escape}}',
-    detail: 'Escape block snippet',
-    documentation: 'Escape CBS processing in body.',
-  },
-  {
-    label: 'puredisplay-block',
-    insertText: '{{#puredisplay}}\n\t${1:content}\n{{/puredisplay}}',
-    detail: 'Pure display block snippet',
-    documentation: 'Display content without evaluation.',
-  },
-  {
-    label: 'pure-block',
-    insertText: '{{#pure}}\n\t${1:content}\n{{/pure}}',
-    detail: 'Pure block snippet',
-    documentation: 'Keep body text literal without evaluating nested CBS macros.',
-  },
-  {
-    label: 'func-block',
-    insertText: '{{#func ${1:name} ${2:param}}}\n\t${3:body}\n{{/func}}',
-    detail: 'Local function block snippet',
-    documentation: 'Declare a fragment-local reusable macro body for `{{call::...}}`.',
-  },
-];
-
-const WHEN_OPERATORS = [
-  { name: 'is', description: 'Equality comparison' },
-  { name: 'isnot', description: 'Inequality comparison' },
-  { name: 'not', description: 'Negation' },
-  { name: 'and', description: 'Logical AND' },
-  { name: 'or', description: 'Logical OR' },
-  { name: '>', description: 'Greater than' },
-  { name: '>=', description: 'Greater than or equal' },
-  { name: '<', description: 'Less than' },
-  { name: '<=', description: 'Less than or equal' },
-  { name: 'keep', description: 'Preserve whitespace' },
-  { name: 'toggle', description: 'Check toggle state' },
-  { name: 'var', description: 'Variable truthiness check' },
-  { name: 'vis', description: 'Variable vs literal comparison' },
-  { name: 'visnot', description: 'Variable vs literal inequality' },
-  { name: 'tis', description: 'Toggle vs literal comparison' },
-  { name: 'tisnot', description: 'Toggle vs literal inequality' },
-  { name: 'legacy', description: 'Legacy whitespace behavior' },
-];
-
-const METADATA_KEYS = [
-  { name: 'mobile', description: 'Mobile flag' },
-  { name: 'local', description: 'Local flag' },
-  { name: 'node', description: 'Node version' },
-  { name: 'version', description: 'Version string' },
-  { name: 'lang', description: 'Language code' },
-  { name: 'user', description: 'User name' },
-  { name: 'char', description: 'Character name' },
-  { name: 'bot', description: 'Bot name (alias for char)' },
-];
-
-const CALC_OPERATORS: readonly CalcOperatorCompletion[] = [
-  {
-    label: '&&',
-    detail: 'Logical AND',
-    documentation:
-      'Combines two truthy/falsey numeric operands. Upstream evaluates truthy results as `1` and falsey as `0`.',
-  },
-  {
-    label: '||',
-    detail: 'Logical OR',
-    documentation: 'Returns a truthy numeric result when either side is truthy.',
-  },
-  {
-    label: '!',
-    detail: 'Logical NOT',
-    documentation: 'Negates the following operand inside the calc sublanguage.',
-  },
-  {
-    label: '==',
-    detail: 'Equality operator',
-    documentation: 'Compares two numeric operands for equality.',
-  },
-  {
-    label: '=',
-    detail: 'Equality operator',
-    documentation:
-      'Compares two numeric operands for equality. Upstream also accepts this single-character equality token directly.',
-  },
-  {
-    label: '!=',
-    detail: 'Inequality operator',
-    documentation: 'Compares two numeric operands for inequality.',
-  },
-  {
-    label: '<=',
-    detail: 'Less-than-or-equal operator',
-    documentation: 'Checks whether the left operand is less than or equal to the right operand.',
-  },
-  {
-    label: '>=',
-    detail: 'Greater-than-or-equal operator',
-    documentation: 'Checks whether the left operand is greater than or equal to the right operand.',
-  },
-  {
-    label: '+',
-    detail: 'Addition operator',
-    documentation: 'Adds two numeric operands.',
-  },
-  {
-    label: '-',
-    detail: 'Subtraction operator',
-    documentation:
-      'Subtracts the right operand from the left operand. Unary minus is also supported.',
-  },
-  {
-    label: '*',
-    detail: 'Multiplication operator',
-    documentation: 'Multiplies two numeric operands.',
-  },
-  {
-    label: '/',
-    detail: 'Division operator',
-    documentation: 'Divides the left operand by the right operand.',
-  },
-  {
-    label: '%',
-    detail: 'Modulo operator',
-    documentation: 'Returns the remainder after division.',
-  },
-  {
-    label: '^',
-    detail: 'Exponent operator',
-    documentation: 'Raises the left operand to the power of the right operand.',
-  },
-  {
-    label: 'null',
-    detail: 'Null literal',
-    documentation: 'Upstream normalizes `null` to `0` before evaluating the expression.',
-  },
-  {
-    label: '(',
-    detail: 'Open grouping',
-    documentation: 'Starts a grouped sub-expression.',
-  },
-  {
-    label: ')',
-    detail: 'Close grouping',
-    documentation: 'Ends a grouped sub-expression.',
-  },
-];
-
 function canCompleteFromRecoveredPlainTextContext(context: CompletionTriggerContext): boolean {
   return context.type !== 'none' && context.type !== 'close-tag';
-}
-
-function normalizeCompletionTextEditNewText(
-  item: CompletionItem,
-  context: CompletionTriggerContext,
-): string {
-  const newText = item.insertText ?? item.label;
-  if (
-    context.type === 'block-functions' &&
-    item.kind === CompletionItemKind.Class &&
-    context.prefix.startsWith('#') &&
-    newText.startsWith('#')
-  ) {
-    return newText.slice(1);
-  }
-
-  if (
-    context.type === 'block-functions' &&
-    item.kind === CompletionItemKind.Snippet &&
-    newText.startsWith('{{')
-  ) {
-    return newText.slice(2);
-  }
-
-  return newText;
-}
-
-interface CompletionTextEditPlan {
-  startOffset: number;
-  endOffset: number;
-  newText: string;
-}
-
-const SNIPPET_PLACEHOLDER_ESCAPE_PATTERN = /[\\}$]/g;
-
-const POLISHED_ARGUMENT_LABELS: Readonly<Record<string, string>> = {
-  amount: 'amount',
-  condition: 'condition',
-  conditionSegments: 'condition',
-  defaultValue: 'default',
-  iteratorExpression: 'iterable',
-  operator: 'operator',
-  positionName: 'position',
-  propertyName: 'property',
-  target: 'target',
-  value: 'value',
-  variableName: 'variable',
-};
-
-const FULL_MACRO_FILTER_TEXT_PATTERN = /^\{\{[^\s:}]+/;
-
-type RangedCompletionTriggerContext = Extract<
-  CompletionTriggerContext,
-  { startOffset: number; endOffset: number }
->;
-
-/**
- * createCompletionTextEditPlan 함수.
- * completion item별 fragment-local replacement 범위와 삽입 텍스트를 계산함.
- *
- * @param item - textEdit를 붙일 completion item
- * @param context - 현재 completion trigger context
- * @param fragmentText - range 계산 기준이 되는 fragment-local 원문
- * @returns item에 적용할 replacement offset과 newText
- */
-function createCompletionTextEditPlan(
-  item: CompletionItem,
-  context: RangedCompletionTriggerContext,
-  fragmentText: string,
-): CompletionTextEditPlan {
-  const newText = item.insertText ?? item.label;
-  if (isFullMacroSnippetCompletion(item, newText)) {
-    const replacementStartOffset = findFullMacroSnippetReplacementStartOffset(
-      fragmentText,
-      context,
-    );
-    if (replacementStartOffset !== null) {
-      return {
-        startOffset: replacementStartOffset,
-        endOffset: getFullMacroSnippetReplacementEndOffset(fragmentText, context.endOffset),
-        newText,
-      };
-    }
-  }
-
-  if (
-    context.type !== 'block-functions' ||
-    item.kind !== CompletionItemKind.Snippet ||
-    !newText.startsWith('{{')
-  ) {
-    return {
-      startOffset: context.startOffset,
-      endOffset: context.endOffset,
-      newText: normalizeCompletionTextEditNewText(item, context),
-    };
-  }
-
-  const replacementStartOffset = findBlockSnippetReplacementStartOffset(fragmentText, context);
-  if (replacementStartOffset === null) {
-    return {
-      startOffset: context.startOffset,
-      endOffset: context.endOffset,
-      newText: normalizeCompletionTextEditNewText(item, context),
-    };
-  }
-
-  return {
-    startOffset: replacementStartOffset,
-    endOffset: getBlockSnippetReplacementEndOffset(fragmentText, context.endOffset),
-    newText,
-  };
-}
-
-/**
- * isFullMacroSnippetCompletion 함수.
- * `{{...}}` 전체를 포함하는 snippet completion인지 판별함.
- *
- * @param item - completion item
- * @param newText - item이 삽입하려는 실제 문자열
- * @returns full CBS macro snippet이면 true
- */
-function isFullMacroSnippetCompletion(
-  item: CompletionItem,
-  newText: string | number,
-): newText is string {
-  return (
-    item.insertTextFormat === InsertTextFormat.Snippet &&
-    typeof newText === 'string' &&
-    newText.startsWith('{{')
-  );
-}
-
-/**
- * findFullMacroSnippetReplacementStartOffset 함수.
- * full macro snippet이 기존 `{{...}}` 전체를 교체하도록 여는 `{{` 위치를 찾음.
- *
- * @param fragmentText - fragment-local 원문
- * @param context - completion trigger context
- * @returns replacement 시작 offset 또는 찾지 못한 경우 null
- */
-function findFullMacroSnippetReplacementStartOffset(
-  fragmentText: string,
-  context: RangedCompletionTriggerContext,
-): number | null {
-  const searchEndOffset = Math.max(0, Math.min(context.startOffset, fragmentText.length));
-  const openBraceOffset = fragmentText.lastIndexOf('{{', searchEndOffset);
-  if (openBraceOffset === -1) {
-    return null;
-  }
-
-  const prefix = fragmentText.slice(openBraceOffset, context.endOffset);
-  if (!prefix.startsWith('{{')) {
-    return null;
-  }
-
-  return openBraceOffset;
-}
-
-/**
- * getFullMacroSnippetReplacementEndOffset 함수.
- * cursor 뒤에 자동 삽입된 `}}`가 있으면 full snippet 교체 범위에 포함함.
- *
- * @param fragmentText - fragment-local 원문
- * @param contextEndOffset - 기존 completion context 종료 offset
- * @returns replacement 종료 offset
- */
-function getFullMacroSnippetReplacementEndOffset(
-  fragmentText: string,
-  contextEndOffset: number,
-): number {
-  if (fragmentText.slice(contextEndOffset, contextEndOffset + 2) === '}}') {
-    return contextEndOffset + 2;
-  }
-
-  return contextEndOffset;
-}
-
-/**
- * createBuiltinSnippetInsertText 함수.
- * CBS builtin을 suggest 선택만으로 완성되는 full macro snippet 문자열로 변환함.
- *
- * @param fn - snippet을 만들 builtin function metadata
- * @returns snippet insertText
- */
-function createBuiltinSnippetInsertText(fn: CBSBuiltinFunction): string {
-  if (fn.arguments.length === 0) {
-    return `{{${fn.name}}}`;
-  }
-
-  if (fn.name === '#each') {
-    return '{{#each ${1:iterable} ${2:key}}}{{slot::${2:key}}}{{/each}}';
-  }
-
-  if (fn.name === '#when') {
-    return '{{#when::${1:condition}}}';
-  }
-
-  if (fn.isBlock) {
-    const name = fn.name.startsWith('#') ? fn.name.slice(1) : fn.name;
-    const placeholders = fn.arguments.map((argument, index) =>
-      createSnippetPlaceholder(argument.name, index),
-    );
-    const headerSuffix = placeholders.length > 0 ? ` ${placeholders.join(' ')}` : '';
-    return `{{#${name}${headerSuffix}}}\n\t$${fn.arguments.length + 1}\n{{/${name}}}`;
-  }
-
-  const argumentSnippet = fn.arguments
-    .map((argument, index) => `::${createSnippetPlaceholder(argument.name, index, fn)}`)
-    .join('');
-  return `{{${fn.name}${argumentSnippet}}}`;
-}
-
-/**
- * createFullMacroFilterText 함수.
- * full macro snippet의 client-side filtering에 필요한 최소 prefix 문자열만 추출함.
- *
- * @param insertText - `{{...}}`로 시작하는 snippet insertText
- * @returns VS Code filtering에 사용할 compact prefix
- */
-function createFullMacroFilterText(insertText: string): string {
-  return FULL_MACRO_FILTER_TEXT_PATTERN.exec(insertText)?.[0] ?? insertText;
-}
-
-/**
- * createSnippetPlaceholder 함수.
- * registry argument name을 VS Code snippet placeholder로 변환함.
- *
- * @param argumentName - registry에 기록된 원본 argument name
- * @param index - 0-based argument 위치
- * @param fn - 필요 시 function category/name까지 참고할 builtin metadata
- * @returns `${n:label}` 형태의 snippet placeholder
- */
-function createSnippetPlaceholder(
-  argumentName: string,
-  index: number,
-  fn?: CBSBuiltinFunction,
-): string {
-  const label = polishArgumentLabel(argumentName, index, fn);
-  return `\${${index + 1}:${escapeSnippetPlaceholderLabel(label)}}`;
-}
-
-/**
- * polishArgumentLabel 함수.
- * 자동완성 placeholder에 노출할 argument label을 짧고 자연스러운 이름으로 다듬음.
- *
- * @param argumentName - registry에 기록된 원본 argument name
- * @param index - 0-based argument 위치
- * @param fn - function category/name metadata
- * @returns 사용자에게 보여줄 placeholder label
- */
-function polishArgumentLabel(argumentName: string, index: number, fn?: CBSBuiltinFunction): string {
-  if (/^arg\d+$/i.test(argumentName)) {
-    if (fn?.category === 'comparison') {
-      return String.fromCharCode('a'.charCodeAt(0) + index);
-    }
-
-    return `value${index + 1}`;
-  }
-
-  return POLISHED_ARGUMENT_LABELS[argumentName] ?? argumentName;
-}
-
-/**
- * escapeSnippetPlaceholderLabel 함수.
- * snippet placeholder label 안에서 특별한 의미를 갖는 문자를 escape함.
- *
- * @param label - escape할 placeholder label
- * @returns VS Code snippet placeholder에 안전한 label
- */
-function escapeSnippetPlaceholderLabel(label: string): string {
-  return label.replace(SNIPPET_PLACEHOLDER_ESCAPE_PATTERN, '\\$&');
-}
-
-/**
- * findBlockSnippetReplacementStartOffset 함수.
- * block snippet이 기존 `{{#...}}` header 전체를 갈아끼울 수 있도록 여는 `{{` 위치를 찾음.
- *
- * @param fragmentText - fragment-local 원문
- * @param context - block-functions completion context
- * @returns snippet replacement 시작 offset 또는 찾지 못한 경우 null
- */
-function findBlockSnippetReplacementStartOffset(
-  fragmentText: string,
-  context: RangedCompletionTriggerContext,
-): number | null {
-  const searchEndOffset = Math.max(0, Math.min(context.startOffset, fragmentText.length));
-  const openBraceOffset = fragmentText.lastIndexOf('{{', searchEndOffset);
-  if (openBraceOffset === -1) {
-    return null;
-  }
-
-  const headerPrefix = fragmentText.slice(openBraceOffset + 2, context.endOffset);
-  if (!headerPrefix.startsWith('#')) {
-    return null;
-  }
-
-  return openBraceOffset;
-}
-
-/**
- * getBlockSnippetReplacementEndOffset 함수.
- * cursor 직후 auto-close `}}`가 있으면 snippet 교체 범위에 포함함.
- *
- * @param fragmentText - fragment-local 원문
- * @param contextEndOffset - 기존 completion context 종료 offset
- * @returns snippet replacement 종료 offset
- */
-function getBlockSnippetReplacementEndOffset(
-  fragmentText: string,
-  contextEndOffset: number,
-): number {
-  if (fragmentText.slice(contextEndOffset, contextEndOffset + 2) === '}}') {
-    return contextEndOffset + 2;
-  }
-
-  return contextEndOffset;
 }
 
 export interface NormalizedCompletionTextEditSnapshot {
@@ -775,6 +157,17 @@ function normalizeMarkupContent(documentation: CompletionItem['documentation']):
   }
 
   return (documentation as MarkupContent | undefined)?.value ?? null;
+}
+
+/**
+ * getDeprecatedCompletionFlag 함수.
+ * LSP의 deprecated flag를 snapshot/resolve contract 유지용으로 읽음.
+ *
+ * @param item - deprecated flag를 확인할 completion item
+ * @returns deprecated flag 또는 미설정 상태
+ */
+function getDeprecatedCompletionFlag(item: CompletionItem): boolean | undefined {
+  return (item as { deprecated?: boolean })['deprecated'];
 }
 
 function normalizeTextEdit(
@@ -852,7 +245,7 @@ export function normalizeCompletionItemForSnapshot(
 
   return {
     data: envelope,
-    deprecated: item.deprecated ?? false,
+    deprecated: getDeprecatedCompletionFlag(item) ?? false,
     detail: item.detail ?? null,
     documentation: normalizeMarkupContent(item.documentation),
     filterText: item.filterText ?? null,
@@ -873,57 +266,6 @@ export function normalizeCompletionItemsForSnapshot(
   return [...items]
     .map(normalizeCompletionItemForSnapshot)
     .sort(compareNormalizedCompletionSnapshots);
-}
-
-/**
- * stripCompletionItemToUnresolved 함수.
- * fully resolved completion item에서 heavy field를 제거해 lightweight unresolved item을 만듦.
- * deferred field: detail, documentation, data.explanation, data.workspace.
- * request context (uri, position)를 data에 추가해 resolve matching을 강화함.
- *
- * @param item - 원본 resolved completion item
- * @param uri - 요청 문서 URI
- * @param position - 요청 cursor position
- * @returns heavy field가 제거된 unresolved completion item
- */
-export function stripCompletionItemToUnresolved(
-  item: CompletionItem,
-  uri: string,
-  position: Position,
-): UnresolvedCompletionItem {
-  const fallbackEnvelope = createAgentMetadataEnvelope({
-    category: 'builtin',
-    kind: 'callable-builtin',
-  });
-  const envelope: CompletionItemDataEnvelope = isAgentMetadataEnvelope(item.data)
-    ? (item.data as CompletionItemDataEnvelope)
-    : {
-        ...fallbackEnvelope,
-        cbs: {
-          ...fallbackEnvelope.cbs,
-        },
-      };
-
-  return {
-    label: item.label,
-    kind: item.kind,
-    insertText: item.textEdit ? undefined : item.insertText,
-    insertTextFormat: item.insertTextFormat,
-    filterText: item.filterText,
-    preselect: item.preselect,
-    sortText: item.sortText,
-    deprecated: item.deprecated,
-    textEdit: item.textEdit,
-    data: {
-      cbs: {
-        schema: CBS_AGENT_PROTOCOL_SCHEMA,
-        schemaVersion: CBS_AGENT_PROTOCOL_VERSION,
-        category: envelope.cbs.category,
-        uri,
-        position,
-      },
-    },
-  };
 }
 
 export class CompletionProvider {
@@ -966,18 +308,23 @@ export class CompletionProvider {
       return [];
     }
 
-    const fastRootCompletions = this.provideCheapRootCompletions(
+    const fastRootCompletions = provideCheapRootCompletions(
       request,
       params.position,
       unresolvedOnly,
+      this.registry,
+      this.getBuiltinCompletionCallbacks(),
     );
     if (fastRootCompletions) {
       return fastRootCompletions;
     }
 
-    const fastMacroArgumentCompletions = this.provideCheapMacroArgumentCompletions(
+    const fastMacroArgumentCompletions = provideCheapMacroArgumentCompletions(
       request,
       params.position,
+      this.variableFlowService,
+      this.workspaceSnapshot,
+      this.getCheapMacroArgumentCompletionCallbacks(),
     );
     if (fastMacroArgumentCompletions) {
       return fastMacroArgumentCompletions;
@@ -1018,7 +365,11 @@ export class CompletionProvider {
       return [];
     }
 
-    const workspaceFreshness = this.getWorkspaceFreshness(request);
+    const workspaceFreshness = getWorkspaceFreshness(
+      this.variableFlowService,
+      this.workspaceSnapshot,
+      request,
+    );
     const completions = this.buildCompletions(context, lookup, workspaceFreshness, unresolvedOnly);
     if (completions.length === 0) {
       return [];
@@ -1109,813 +460,15 @@ export class CompletionProvider {
     cancellationToken?: CancellationToken,
   ): CompletionItem | null {
     void cancellationToken;
-    if (
-      item.data.cbs.uri !== params.textDocument.uri ||
-      item.data.cbs.position.line !== params.position.line ||
-      item.data.cbs.position.character !== params.position.character
-    ) {
-      return null;
-    }
-
-    const resolveKey = this.deriveResolveKey(item);
-    if (!resolveKey) {
-      return null;
-    }
-
-    switch (resolveKey.source) {
-      case 'builtin':
-        return this.hydrateBuiltinItem(item, resolveKey);
-      case 'workspace-variable':
-        return this.hydrateWorkspaceVariableItem(item, params, resolveKey);
-      case 'local-variable':
-        return this.hydrateLocalVariableItem(item, resolveKey);
-      default:
-        return null;
-    }
-  }
-
-  /**
-   * deriveResolveKey 함수.
-   * unresolved payload를 키우지 않도록 기존 category/label/sortText에서 hydrate 경로를 파생함.
-   *
-   * @param item - resolve 요청으로 받은 unresolved completion item
-   * @returns hydrate 가능한 resolve key 또는 없으면 null
-   */
-  private deriveResolveKey(item: UnresolvedCompletionItem): CompletionResolveKey | null {
-    const category = item.data.cbs.category;
-    if (
-      (category.category === 'builtin' ||
-        (category.category === 'block-keyword' &&
-          (category.kind === 'callable-builtin' ||
-            category.kind === 'documentation-only-builtin' ||
-            category.kind === 'contextual-builtin'))) &&
-      this.registry.get(item.label)
-    ) {
-      return {
-        source: 'builtin',
-        name: item.label,
-        canonicalName: item.label,
-      };
-    }
-
-    if (category.category !== 'variable') {
-      return null;
-    }
-
-    if (item.sortText?.startsWith('zzzz-workspace-')) {
-      const variableName = item.sortText.slice('zzzz-workspace-'.length);
-      return {
-        source: 'workspace-variable',
-        name: variableName,
-        variableName,
-      };
-    }
-
-    if (
-      category.kind === 'chat-variable' ||
-      category.kind === 'temp-variable' ||
-      category.kind === 'global-variable'
-    ) {
-      return {
-        source: 'local-variable',
-        name: item.label.replace(/^[$@]/, ''),
-      };
-    }
-
-    return null;
-  }
-
-  /**
-   * hydrateBuiltinItem 함수.
-   * resolveKey의 registry key로 builtin을 직접 조회해 detail/documentation/explanation을 채움.
-   *
-   * @param item - hydrate할 unresolved completion item
-   * @param resolveKey - builtin registry 조회에 사용할 resolve key
-   * @returns builtin heavy field가 채워진 completion item
-   */
-  private hydrateBuiltinItem(
-    item: UnresolvedCompletionItem,
-    resolveKey: CompletionResolveKey,
-  ): CompletionItem | null {
-    const fn = this.registry.get(resolveKey.canonicalName ?? resolveKey.name);
-    if (!fn) {
-      return null;
-    }
-
-    return {
-      ...item,
-      detail: this.formatFunctionDetail(fn),
-      documentation: {
-        kind: 'markdown',
-        value: this.formatFunctionDocumentation(fn),
-      },
-      data: this.createCategoryData(
-        item.data.cbs.category,
-        this.getBuiltinExplanation(fn),
-        undefined,
-        undefined,
-      ),
-    };
-  }
-
-  /**
-   * hydrateLocalVariableItem 함수.
-   * fragment-local 변수 completion의 lightweight metadata를 기존 category/label에서 복원함.
-   *
-   * @param item - hydrate할 unresolved completion item
-   * @param resolveKey - label에서 파생한 local variable resolve key
-   * @returns local variable heavy field가 채워진 completion item
-   */
-  private hydrateLocalVariableItem(
-    item: UnresolvedCompletionItem,
-    resolveKey: CompletionResolveKey,
-  ): CompletionItem {
-    const variableName = resolveKey.name;
-    const categoryKind = item.data.cbs.category.kind;
-    const isCalcExpression = item.label.startsWith('$') || item.label.startsWith('@');
-    const isGlobal = categoryKind === 'global-variable' || item.label.startsWith('@');
-    const isTemp = categoryKind === 'temp-variable';
-
-    if (isCalcExpression) {
-      return {
-        ...item,
-        detail: isGlobal ? 'Calc expression global variable' : 'Calc expression chat variable',
-        documentation: {
-          kind: 'markdown',
-          value: isGlobal
-            ? `Reads global variable **${variableName}** inside a calc expression. Non-numeric values evaluate as \`0\`.`
-            : `Reads chat variable **${variableName}** inside a calc expression. Non-numeric values evaluate as \`0\`.`,
-        },
-        data: this.createCategoryData(
-          item.data.cbs.category,
-          this.createScopeExplanation(
-            'calc-expression-symbol-table',
-            isGlobal
-              ? 'Calc completion resolved this candidate from the analyzed global variable symbol table.'
-              : 'Calc completion resolved this candidate from the analyzed chat variable symbol table.',
-          ),
-        ),
-      };
-    }
-
-    return {
-      ...item,
-      detail: isTemp ? 'Temp variable' : isGlobal ? 'Global variable' : 'Chat variable',
-      documentation: {
-        kind: 'markdown',
-        value: `Variable **${variableName}** (${isTemp ? 'temp' : isGlobal ? 'global' : 'chat'})`,
-      },
-      data: this.createCategoryData(
-        item.data.cbs.category,
-        this.createScopeExplanation(
-          isTemp
-            ? 'temp-variable-symbol-table'
-            : isGlobal
-              ? 'global-variable-symbol-table'
-              : 'chat-variable-symbol-table',
-          isTemp
-            ? 'Completion resolved this candidate from analyzed temp-variable definitions in the current fragment.'
-            : isGlobal
-              ? 'Completion resolved this candidate from analyzed global-variable references in the current fragment.'
-              : 'Completion resolved this candidate from analyzed chat-variable definitions in the current fragment.',
-        ),
-      ),
-    };
-  }
-
-  /**
-   * hydrateWorkspaceVariableItem 함수.
-   * workspace variable graph를 직접 조회해 변수 completion의 detail/documentation/workspace metadata를 채움.
-   *
-   * @param item - hydrate할 unresolved completion item
-   * @param params - resolve 요청의 문서 위치 정보
-   * @param resolveKey - workspace variable 이름을 담은 resolve key
-   * @returns workspace variable heavy field가 채워진 completion item
-   */
-  private hydrateWorkspaceVariableItem(
-    item: UnresolvedCompletionItem,
-    params: TextDocumentPositionParams,
-    resolveKey: CompletionResolveKey,
-  ): CompletionItem | null {
-    if (!this.variableFlowService) {
-      return null;
-    }
-
-    const variableName = resolveKey.variableName ?? resolveKey.name;
-    const query = this.variableFlowService.queryVariable(variableName);
-    const defaultDefinitions = this.variableFlowService.getDefaultVariableDefinitions(variableName);
-    if ((!query || query.writers.length === 0) && defaultDefinitions.length === 0) {
-      return null;
-    }
-
-    const readerCount = query?.readers.length ?? 0;
-    const writerCount = (query?.writers.length ?? 0) + defaultDefinitions.length;
-    const isCalcExpression = item.label.startsWith('$');
-    const detail = isCalcExpression
-      ? 'Workspace chat variable for calc expression'
-      : 'Workspace chat variable';
-    const documentation = isCalcExpression
-      ? [
-          `**Workspace chat variable:** \`${variableName}\``,
-          '',
-          '- Source: workspace persistent chat-variable graph',
-          '- Usage: append after fragment-local `$var` candidates inside the shared CBS expression sublanguage.',
-          `- Workspace readers: ${readerCount}`,
-          `- Workspace writers: ${writerCount}`,
-        ].join('\n')
-      : [
-          `**Workspace chat variable:** \`${variableName}\``,
-          '',
-          '- Source: workspace persistent chat-variable graph',
-          '- Usage: append after fragment-local `getvar` / `setvar` candidates so local symbols stay first.',
-          `- Workspace readers: ${readerCount}`,
-          `- Workspace writers: ${writerCount}`,
-        ].join('\n');
-
-    return {
-      ...item,
-      detail,
-      documentation: {
-        kind: 'markdown',
-        value: documentation,
-      },
-      data: this.createCategoryData(
-        item.data.cbs.category,
-        this.createScopeExplanation(
-          isCalcExpression
-            ? 'workspace-chat-variable-graph:calc-expression'
-            : 'workspace-chat-variable-graph:macro-argument',
-          isCalcExpression
-            ? 'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local `$var` symbols.'
-            : 'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local chat-variable symbols.',
-        ),
-        undefined,
-        this.getResolveWorkspaceSnapshot(params),
-      ),
-    };
-  }
-
-  /**
-   * getResolveWorkspaceSnapshot 함수.
-   * resolve 요청에서 사용할 수 있는 workspace snapshot metadata를 생성함.
-   *
-   * @param params - resolve 요청의 문서 위치 정보
-   * @returns resolve metadata에 실을 workspace snapshot 또는 없으면 undefined
-   */
-  private getResolveWorkspaceSnapshot(
-    params: TextDocumentPositionParams,
-  ): AgentMetadataWorkspaceSnapshotContract | undefined {
-    const snapshot = this.variableFlowService?.getWorkspaceSnapshot() ?? this.workspaceSnapshot;
-    if (!snapshot) {
-      return undefined;
-    }
-
-    const trackedDocumentVersion = snapshot.documentVersions.get(params.textDocument.uri) ?? null;
-    const requestVersion = trackedDocumentVersion ?? 'resolve';
-    return {
-      schema: CBS_AGENT_PROTOCOL_SCHEMA,
-      schemaVersion: CBS_AGENT_PROTOCOL_VERSION,
-      rootPath: snapshot.rootPath,
-      snapshotVersion: snapshot.snapshotVersion,
-      requestVersion,
-      trackedDocumentVersion,
-      freshness: 'fresh',
-      detail:
-        trackedDocumentVersion === null
-          ? `Workspace snapshot v${snapshot.snapshotVersion} has no open-document override for this URI, so resolve uses the installed snapshot as-is.`
-          : `Workspace snapshot v${snapshot.snapshotVersion} tracks document version ${trackedDocumentVersion}, so resolve uses the current workspace variable graph snapshot.`,
-    };
-  }
-
-  /**
-   * provideCheapRootCompletions 함수.
-   * 단순 `{{` / `{{#` root completion은 fragment 분석 없이 현재 줄 prefix만 보고 즉시 후보를 생성함.
-   *
-   * @param request - completion 요청의 문서 텍스트와 경로 정보
-   * @param position - completion을 요청한 cursor 위치
-   * @param unresolvedOnly - heavy field 생략 여부
-   * @returns cheap root completion 후보 또는 full analysis로 넘겨야 하면 null
-   */
-  private provideCheapRootCompletions(
-    request: FragmentAnalysisRequest,
-    position: Position,
-    unresolvedOnly: boolean,
-  ): CompletionItem[] | null {
-    const context = this.detectCheapRootCompletionContext(request, position);
-    if (!context) {
-      return null;
-    }
-
-    const completions =
-      context.kind === 'block-functions'
-        ? this.buildBlockFunctionCompletions(context.prefix, unresolvedOnly)
-        : this.buildAllFunctionCompletions(context.prefix, unresolvedOnly);
-
-    return completions.map((item) => this.applyCheapRootTextEdit(item, context));
-  }
-
-  /**
-   * provideCheapMacroArgumentCompletions 함수.
-   * oversized `.risulua`는 full fragment analysis를 일부러 비우므로, 현재 줄의 단순 CBS 변수 인자만
-   * bounded fast path로 복구해 workspace 변수 후보를 계속 노출함.
-   *
-   * @param request - completion 요청의 문서 텍스트와 경로 정보
-   * @param position - completion을 요청한 cursor 위치
-   * @returns oversized `.risulua` macro argument 후보 또는 일반 분석 경로로 넘겨야 하면 null
-   */
-  private provideCheapMacroArgumentCompletions(
-    request: FragmentAnalysisRequest,
-    position: Position,
-  ): CompletionItem[] | null {
-    const isOversizedLua = shouldSkipOversizedLuaText(request.filePath, request.text.length);
-    const context = this.detectCheapMacroArgumentCompletionContext(request, position);
-    if (!context) {
-      return isOversizedLua ? [] : null;
-    }
-
-    const workspaceFreshness = this.getWorkspaceFreshness(request);
-    const completions = this.buildCheapMacroArgumentCompletions(context, workspaceFreshness);
-
-    if (completions.length === 0) {
-      return [];
-    }
-
-    return completions.map((item) => {
-      const newText = typeof item.insertText === 'string' ? item.insertText : item.label;
-      return {
-        ...item,
-        textEdit: {
-          range: LSPRange.create(
-            context.line,
-            context.startCharacter,
-            context.line,
-            context.endCharacter,
-          ),
-          newText,
-        },
-      } satisfies CompletionItem;
+    return resolveCompletionItem(item, params, {
+      registry: this.registry,
+      variableFlowService: this.variableFlowService,
+      workspaceSnapshot: this.workspaceSnapshot,
+      createCategoryData: (category, explanation, availability, workspace) =>
+        this.createCategoryData(category, explanation, availability, workspace),
+      createScopeExplanation: (source, detail) => this.createScopeExplanation(source, detail),
+      formatFunctionDocumentation: (fn) => this.formatFunctionDocumentation(fn),
     });
-  }
-
-  /**
-   * buildCheapMacroArgumentCompletions 함수.
-   * oversized `.risulua`에서 current-line만으로 안전하게 판별된 CBS 인자 후보를 생성함.
-   * 정적 catalog 또는 workspace summary만 사용하고 fragment/scope 분석은 호출하지 않음.
-   *
-   * @param context - current-line cheap macro argument context
-   * @param workspaceFreshness - workspace graph 후보 freshness metadata
-   * @returns fast path completion 후보 목록
-   */
-  private buildCheapMacroArgumentCompletions(
-    context: CheapMacroSegmentCompletionContext,
-    workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null,
-  ): CompletionItem[] {
-    if (context.type === 'metadata-keys') {
-      return this.buildMetadataCompletions(context.prefix);
-    }
-
-    if (context.type === 'unsupported-argument') {
-      return [];
-    }
-
-    if (context.type === 'nested-chat-value') {
-      return this.buildNestedChatValueCompletions(context.prefix, workspaceFreshness);
-    }
-
-    if (context.type === 'when-segment') {
-      if (this.isToggleNameWhenSegment(context.previousSegments)) {
-        return this.buildWorkspaceToggleNameCompletions(context.prefix);
-      }
-
-      return [
-        ...this.buildWhenOperatorCompletions(context.prefix),
-        ...this.buildWorkspaceChatVariableCompletions(
-          {
-            existingLabels: new Set(),
-            insertBareName: true,
-            labelPrefix: '',
-            prefix: context.prefix,
-            usage: 'macro-argument',
-          },
-          workspaceFreshness,
-        ),
-      ];
-    }
-
-    if (context.kind !== 'chat') {
-      return [];
-    }
-
-    return this.buildWorkspaceChatVariableCompletions(
-      {
-        existingLabels: new Set(),
-        insertBareName: true,
-        labelPrefix: '',
-        prefix: context.prefix,
-        usage: 'macro-argument',
-      },
-      workspaceFreshness,
-    );
-  }
-
-  /**
-   * buildNestedChatValueCompletions 함수.
-   * `{{equal::...}}` 같은 evaluated value slot에서 workspace chat variable을 nested `getvar` macro로 삽입함.
-   *
-   * @param prefix - 현재 value segment에 사용자가 입력한 변수명 prefix
-   * @param workspaceFreshness - workspace graph 후보 freshness metadata
-   * @returns nested `{{getvar::name}}` completion 후보 목록
-   */
-  private buildNestedChatValueCompletions(
-    prefix: string,
-    workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null,
-  ): CompletionItem[] {
-    return this.buildWorkspaceChatVariableCompletions(
-      {
-        existingLabels: new Set(),
-        insertBareName: false,
-        labelPrefix: '',
-        prefix,
-        usage: 'nested-chat-value',
-      },
-      workspaceFreshness,
-    );
-  }
-
-  /**
-   * detectCheapMacroArgumentCompletionContext 함수.
-   * parser/tokenizer 없이 현재 줄 prefix만으로 안전하게 판별 가능한 oversized `.risulua` CBS 변수 인자를 찾음.
-   *
-   * @param request - completion 요청의 문서 텍스트와 경로 정보
-   * @param position - completion을 요청한 cursor 위치
-   * @returns 현재 macro argument completion context 또는 fast path 대상이 아니면 null
-   */
-  private detectCheapMacroArgumentCompletionContext(
-    request: FragmentAnalysisRequest,
-    position: Position,
-  ): CheapMacroSegmentCompletionContext | null {
-    if (!shouldSkipOversizedLuaText(request.filePath, request.text.length)) {
-      return null;
-    }
-
-    const line = this.getLineTextAtPosition(
-      request.text,
-      position,
-      MAX_OVERSIZED_MACRO_ARGUMENT_LINE_SCAN_LENGTH,
-    );
-    if (line === null || position.character > line.length) {
-      return null;
-    }
-
-    const prefixText = line.slice(0, position.character);
-    const macroStartCharacter = prefixText.lastIndexOf('{{');
-    if (macroStartCharacter === -1) {
-      return null;
-    }
-
-    const closeBeforeMacro = prefixText.lastIndexOf('}}');
-    if (closeBeforeMacro > macroStartCharacter) {
-      return null;
-    }
-
-    const macroPrefix = prefixText.slice(macroStartCharacter + 2);
-    if (macroPrefix.includes('{{') || macroPrefix.startsWith('/')) {
-      return null;
-    }
-
-    const lastArgumentSeparatorIndex = macroPrefix.lastIndexOf('::');
-    if (lastArgumentSeparatorIndex === -1) {
-      return null;
-    }
-
-    const segmentStartCharacter = macroStartCharacter + 2 + lastArgumentSeparatorIndex + 2;
-    if (/^#when(?=$|[\s:}])/i.test(macroPrefix)) {
-      return {
-        type: 'when-segment',
-        prefix: macroPrefix.slice(lastArgumentSeparatorIndex + 2),
-        previousSegments: macroPrefix
-          .slice(0, lastArgumentSeparatorIndex)
-          .split('::')
-          .slice(1)
-          .map((segment) => segment.trim()),
-        startCharacter: segmentStartCharacter,
-        endCharacter: position.character,
-        line: position.line,
-      };
-    }
-
-    if (macroPrefix.startsWith('#')) {
-      return null;
-    }
-
-    const macroName = macroPrefix.slice(0, macroPrefix.indexOf('::')).trim().toLowerCase();
-    if (!/^[a-z_][\w]*$/i.test(macroName)) {
-      return null;
-    }
-
-    let argumentIndex = 0;
-    for (let index = 0; index < lastArgumentSeparatorIndex; index += 1) {
-      if (macroPrefix.slice(index, index + 2) !== '::') {
-        continue;
-      }
-
-      argumentIndex += 1;
-      index += 1;
-    }
-
-    if (macroName === 'metadata' && argumentIndex === 0) {
-      return {
-        type: 'metadata-keys',
-        prefix: macroPrefix.slice(lastArgumentSeparatorIndex + 2),
-        startCharacter: segmentStartCharacter,
-        endCharacter: position.character,
-        line: position.line,
-      };
-    }
-
-    if (CBS_OVERSIZED_NESTED_CHAT_VALUE_MACROS.has(macroName)) {
-      return {
-        type: 'nested-chat-value',
-        prefix: macroPrefix.slice(lastArgumentSeparatorIndex + 2),
-        startCharacter: segmentStartCharacter,
-        endCharacter: position.character,
-        line: position.line,
-      };
-    }
-
-    const kind = getVariableMacroArgumentKind(macroName, argumentIndex);
-    if (!kind) {
-      if (CBS_OVERSIZED_KNOWN_ARGUMENT_MACROS.has(macroName)) {
-        return {
-          type: 'unsupported-argument',
-          prefix: macroPrefix.slice(lastArgumentSeparatorIndex + 2),
-          startCharacter: segmentStartCharacter,
-          endCharacter: position.character,
-          line: position.line,
-        };
-      }
-
-      return null;
-    }
-
-    if (kind !== 'chat') {
-      return {
-        type: 'unsupported-argument',
-        prefix: macroPrefix.slice(lastArgumentSeparatorIndex + 2),
-        startCharacter: segmentStartCharacter,
-        endCharacter: position.character,
-        line: position.line,
-      };
-    }
-
-    return {
-      type: 'variable-names',
-      kind,
-      prefix: macroPrefix.slice(lastArgumentSeparatorIndex + 2),
-      startCharacter: segmentStartCharacter,
-      endCharacter: position.character,
-      line: position.line,
-    };
-  }
-
-  /**
-   * detectCheapRootCompletionContext 함수.
-   * parser가 필요 없는 current-line CBS root prefix만 엄격히 감지함.
-   *
-   * @param request - completion 요청의 문서 텍스트와 경로 정보
-   * @param position - completion을 요청한 cursor 위치
-   * @returns cheap root context 또는 안전하지 않으면 null
-   */
-  private detectCheapRootCompletionContext(
-    request: FragmentAnalysisRequest,
-    position: Position,
-  ): CheapRootCompletionContext | null {
-    if (!this.canUseCheapRootFastPath(request, position)) {
-      return null;
-    }
-
-    if (this.isInsideCheapPureBlock(request.text, position)) {
-      return null;
-    }
-
-    const line = this.getLineTextAtPosition(request.text, position);
-    if (line === null || position.character > line.length) {
-      return null;
-    }
-
-    const prefixText = line.slice(0, position.character);
-    const macroStartCharacter = prefixText.lastIndexOf('{{');
-    if (macroStartCharacter === -1) {
-      return null;
-    }
-
-    const typedPrefix = prefixText.slice(macroStartCharacter + 2);
-    if (typedPrefix.includes('::') || typedPrefix.includes('?') || typedPrefix.startsWith(':')) {
-      return null;
-    }
-
-    if (!CBS_ROOT_PREFIX_PATTERN.test(typedPrefix) || typedPrefix.startsWith('/')) {
-      return null;
-    }
-
-    const suffix = line.slice(position.character);
-    const replaceEndCharacter = suffix.startsWith('}}')
-      ? position.character + 2
-      : position.character;
-
-    return {
-      kind: typedPrefix.startsWith('#') ? 'block-functions' : 'all-functions',
-      prefix: typedPrefix,
-      macroStartCharacter,
-      prefixStartCharacter: macroStartCharacter + 2,
-      cursorCharacter: position.character,
-      replaceEndCharacter,
-      line: position.line,
-    };
-  }
-
-  /**
-   * canUseCheapRootFastPath 함수.
-   * sectioned artifact에서는 현재 offset이 CBS-bearing section 안에 있을 때만 fast path를 허용함.
-   *
-   * @param request - completion 요청의 문서 텍스트와 경로 정보
-   * @param position - completion을 요청한 cursor 위치
-   * @returns cheap root fast path를 써도 안전하면 true
-   */
-  private canUseCheapRootFastPath(request: FragmentAnalysisRequest, position: Position): boolean {
-    const normalizedPath = request.filePath.toLowerCase();
-    const isSectionedArtifact = [...CBS_SECTIONED_ARTIFACT_EXTENSIONS].some((extension) =>
-      normalizedPath.endsWith(extension),
-    );
-    if (!isSectionedArtifact) {
-      return true;
-    }
-
-    const linesBeforeCursor = request.text.split(/\r\n|\r|\n/).slice(0, position.line + 1);
-    for (let index = linesBeforeCursor.length - 1; index >= 0; index -= 1) {
-      const markerMatch = /^@@@\s+([A-Z_]+)/i.exec(linesBeforeCursor[index]?.trim() ?? '');
-      if (!markerMatch) {
-        continue;
-      }
-
-      return CBS_FAST_PATH_SECTION_MARKERS.has(markerMatch[1]!.toUpperCase());
-    }
-
-    return false;
-  }
-
-  /**
-   * getLineTextAtPosition 함수.
-   * 문서 텍스트에서 지정 line의 전체 문자열을 추출함.
-   *
-   * @param text - completion 대상 문서 텍스트
-   * @param position - line을 지정하는 cursor 위치
-   * @param maxScannedCharacters - 이 문자 수를 넘겨야만 line을 찾을 수 있으면 null을 반환함
-   * @returns 해당 line 텍스트 또는 범위를 벗어나거나 scan cap을 넘으면 null
-   */
-  private getLineTextAtPosition(
-    text: string,
-    position: Position,
-    maxScannedCharacters: number = Number.POSITIVE_INFINITY,
-  ): string | null {
-    let currentLine = 0;
-    let lineStart = 0;
-
-    for (let offset = 0; offset < text.length; offset += 1) {
-      if (offset > maxScannedCharacters) {
-        return null;
-      }
-
-      const char = text[offset];
-      if (char !== '\r' && char !== '\n') {
-        continue;
-      }
-
-      if (currentLine === position.line) {
-        return position.character <= offset - lineStart ? text.slice(lineStart, offset) : null;
-      }
-
-      if (char === '\r' && text[offset + 1] === '\n') {
-        offset += 1;
-      }
-      currentLine += 1;
-      lineStart = offset + 1;
-    }
-
-    if (currentLine !== position.line) {
-      return null;
-    }
-
-    return position.character <= text.length - lineStart ? text.slice(lineStart) : null;
-  }
-
-  /**
-   * isInsideCheapPureBlock 함수.
-   * root fast path가 pure/puredisplay body suppression을 우회하지 않도록 cursor 전 text를 가볍게 스캔함.
-   *
-   * @param text - completion 대상 문서 텍스트
-   * @param position - completion을 요청한 cursor 위치
-   * @returns cursor가 pure 계열 block body 안에 있으면 true
-   */
-  private isInsideCheapPureBlock(text: string, position: Position): boolean {
-    const offset = this.offsetAtPosition(text, position);
-    if (offset === null) {
-      return false;
-    }
-
-    const beforeCursor = text.slice(0, offset);
-    const pureBlockPattern = /\{\{\s*(#puredisplay|#pure|\/puredisplay|\/pure)\b[^}]*\}\}/gi;
-    let depth = 0;
-    for (const match of beforeCursor.matchAll(pureBlockPattern)) {
-      const marker = match[1]?.toLowerCase();
-      if (marker === '#pure' || marker === '#puredisplay') {
-        depth += 1;
-      } else if (marker === '/pure' || marker === '/puredisplay') {
-        depth = Math.max(0, depth - 1);
-      }
-    }
-
-    return depth > 0;
-  }
-
-  /**
-   * offsetAtPosition 함수.
-   * fast path 보조 판단용으로 Position을 문서 offset으로 변환함.
-   *
-   * @param text - completion 대상 문서 텍스트
-   * @param position - 변환할 cursor 위치
-   * @returns 문서 offset 또는 범위를 벗어나면 null
-   */
-  private offsetAtPosition(text: string, position: Position): number | null {
-    let line = 0;
-    let character = 0;
-    for (let offset = 0; offset <= text.length; offset += 1) {
-      if (line === position.line && character === position.character) {
-        return offset;
-      }
-
-      if (offset === text.length) {
-        break;
-      }
-
-      const char = text[offset];
-      if (char === '\r') {
-        if (text[offset + 1] === '\n') {
-          offset += 1;
-        }
-        line += 1;
-        character = 0;
-      } else if (char === '\n') {
-        line += 1;
-        character = 0;
-      } else {
-        character += 1;
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * applyCheapRootTextEdit 함수.
-   * cheap root completion item에 host 문서 기준 textEdit range를 직접 부여함.
-   *
-   * @param item - textEdit을 적용할 completion item
-   * @param context - current-line cheap root context
-   * @returns textEdit이 설정된 completion item
-   */
-  private applyCheapRootTextEdit(
-    item: CompletionItem,
-    context: CheapRootCompletionContext,
-  ): CompletionItem {
-    const newText = typeof item.insertText === 'string' ? item.insertText : item.label;
-    const isSnippet =
-      this.isBlockSnippetCompletion(item) || isFullMacroSnippetCompletion(item, newText);
-    const startCharacter = isSnippet ? context.macroStartCharacter : context.prefixStartCharacter;
-    const endCharacter = isSnippet ? context.replaceEndCharacter : context.cursorCharacter;
-
-    return {
-      ...item,
-      textEdit: {
-        range: LSPRange.create(context.line, startCharacter, context.line, endCharacter),
-        newText,
-      },
-    };
-  }
-
-  /**
-   * isBlockSnippetCompletion 함수.
-   * block snippet은 `{{`까지 포함한 template라서 root prefix 전체를 교체해야 하는지 판별함.
-   *
-   * @param item - completion item
-   * @returns block snippet completion이면 true
-   */
-  private isBlockSnippetCompletion(item: CompletionItem): boolean {
-    const envelope = isAgentMetadataEnvelope(item.data) ? item.data : null;
-    return (
-      envelope?.cbs.category.category === 'snippet' &&
-      envelope.cbs.category.kind === 'block-snippet'
-    );
   }
 
   private buildCompletions(
@@ -1926,1031 +479,147 @@ export class CompletionProvider {
   ): CompletionItem[] {
     switch (context.type) {
       case 'all-functions':
-        return this.buildAllFunctionCompletions(context.prefix, unresolvedOnly);
+        return buildAllFunctionCompletions(
+          this.registry,
+          context.prefix,
+          unresolvedOnly,
+          this.getBuiltinCompletionCallbacks(),
+        );
       case 'block-functions':
-        return this.buildBlockFunctionCompletions(context.prefix, unresolvedOnly);
+        return buildBlockFunctionCompletions(
+          this.registry,
+          context.prefix,
+          unresolvedOnly,
+          this.getBuiltinCompletionCallbacks(),
+        );
       case 'else-keyword':
-        return this.buildElseCompletion();
+        return buildElseCompletion(this.registry, this.getBuiltinCompletionCallbacks());
       case 'close-tag':
-        return this.buildCloseTagCompletion(context.blockKind);
+        return buildCloseTagCompletion(
+          this.registry,
+          context.blockKind,
+          this.getBuiltinCompletionCallbacks(),
+        );
       case 'variable-names':
-        return this.buildVariableCompletions(
+        return buildVariableCompletions(
           context.prefix,
           context.kind,
           lookup,
+          this.variableFlowService,
           workspaceFreshness,
+          this.getContextualCompletionCallbacks(),
         );
       case 'metadata-keys':
-        return this.buildMetadataCompletions(context.prefix);
+        return buildMetadataCompletions(context.prefix, this.getContextualCompletionCallbacks());
       case 'function-names':
-        return this.buildFunctionCompletions(context.prefix, lookup);
+        return buildFunctionCompletions(
+          context.prefix,
+          lookup,
+          this.getContextualCompletionCallbacks(),
+        );
       case 'argument-indices':
-        return this.buildArgumentIndexCompletions(context.prefix, lookup);
+        return buildArgumentIndexCompletions(
+          context.prefix,
+          lookup,
+          this.getContextualCompletionCallbacks(),
+        );
       case 'slot-aliases':
-        return this.buildSlotAliasCompletions(context.prefix, lookup);
+        return buildSlotAliasCompletions(
+          context.prefix,
+          lookup,
+          this.getContextualCompletionCallbacks(),
+        );
       case 'when-operators':
-        return this.buildWhenSegmentCompletions(
+        return buildWhenSegmentCompletions(
           context.prefix,
           context.startOffset,
           lookup,
+          this.variableFlowService,
           workspaceFreshness,
+          this.getContextualCompletionCallbacks(),
         );
       case 'calc-expression':
-        return this.buildCalcExpressionCompletions(
+        return buildCalcExpressionCompletions(
           context.prefix,
           context.referenceKind,
           lookup,
+          this.variableFlowService,
           workspaceFreshness,
+          this.getContextualCompletionCallbacks(),
         );
       default:
         return [];
     }
   }
 
-  private buildCalcExpressionCompletions(
-    prefix: string,
-    referenceKind: 'chat' | 'global' | null,
-    lookup: FragmentCursorLookupResult,
-    workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null,
-  ): CompletionItem[] {
-    const symbolTable = lookup.fragmentAnalysis.providerLookup.getSymbolTable();
-    const variables = symbolTable.getAllVariables();
-    const normalizedPrefix = prefix.toLowerCase();
-
-    const localVariableCompletions = variables
-      .filter((variable) => {
-        if (referenceKind === 'chat') {
-          return (
-            variable.kind === 'chat' && variable.name.toLowerCase().startsWith(normalizedPrefix)
-          );
-        }
-
-        if (referenceKind === 'global') {
-          return (
-            variable.kind === 'global' && variable.name.toLowerCase().startsWith(normalizedPrefix)
-          );
-        }
-
-        return variable.name.toLowerCase().startsWith(normalizedPrefix);
-      })
-      .map((variable) => {
-        const marker = variable.kind === 'global' ? '@' : '$';
-        return {
-          label: `${marker}${variable.name}`,
-          kind: CompletionItemKind.Variable,
-          data: this.createCategoryData(
-            {
-              category: 'variable',
-              kind: variable.kind === 'global' ? 'global-variable' : 'chat-variable',
-            },
-            this.createScopeExplanation(
-              'calc-expression-symbol-table',
-              variable.kind === 'global'
-                ? 'Calc completion resolved this candidate from the analyzed global variable symbol table.'
-                : 'Calc completion resolved this candidate from the analyzed chat variable symbol table.',
-            ),
-            variable.kind === 'global'
-              ? undefined
-              : this.getStaleWorkspaceAvailability(workspaceFreshness, 'completion'),
-            variable.kind === 'global' ? undefined : (workspaceFreshness ?? undefined),
-          ),
-          detail:
-            variable.kind === 'global'
-              ? 'Calc expression global variable'
-              : 'Calc expression chat variable',
-          documentation: {
-            kind: 'markdown',
-            value:
-              variable.kind === 'global'
-                ? `Reads global variable **${variable.name}** inside a calc expression. ` +
-                  'Non-numeric values evaluate as `0`.'
-                : `Reads chat variable **${variable.name}** inside a calc expression. ` +
-                  'Non-numeric values evaluate as `0`.',
-          },
-          insertText: referenceKind ? variable.name : `${marker}${variable.name}`,
-        } satisfies CompletionItem;
-      });
-
-    const workspaceVariableCompletions =
-      referenceKind === 'global'
-        ? []
-        : this.buildWorkspaceChatVariableCompletions(
-            {
-              existingLabels: new Set(
-                localVariableCompletions.map((completion) => completion.label),
-              ),
-              insertBareName: referenceKind === 'chat',
-              labelPrefix: '$',
-              prefix,
-              usage: 'calc-expression',
-            },
-            workspaceFreshness,
-          );
-
-    if (referenceKind) {
-      return [...localVariableCompletions, ...workspaceVariableCompletions];
-    }
-
-    const operatorCompletions = CALC_OPERATORS.filter((operator) =>
-      operator.label.toLowerCase().startsWith(normalizedPrefix),
-    ).map(
-      (operator) =>
-        ({
-          label: operator.label,
-          kind:
-            operator.label === 'null' ? CompletionItemKind.Constant : CompletionItemKind.Operator,
-          data: this.createCategoryData(
-            {
-              category: 'expression-operator',
-              kind: 'calc-operator',
-            },
-            this.createContextualExplanation(
-              'calc-expression-operator-context',
-              'Calc completion inferred an operator slot from the shared CBS expression sublanguage context.',
-            ),
-          ),
-          detail: operator.detail,
-          documentation: {
-            kind: 'markdown',
-            value: operator.documentation,
-          },
-          insertText: operator.label,
-        }) satisfies CompletionItem,
-    );
-
-    return [...localVariableCompletions, ...workspaceVariableCompletions, ...operatorCompletions];
-  }
-
-  private buildAllFunctionCompletions(prefix: string, unresolvedOnly: boolean): CompletionItem[] {
-    const allFunctions = this.registry.getAll();
-    const filtered = this.filterByPrefix(allFunctions, prefix);
-
-    return filtered.map((fn) => this.buildBuiltinCompletionItem(fn, unresolvedOnly));
-  }
-
-  private buildBlockFunctionCompletions(prefix: string, unresolvedOnly: boolean): CompletionItem[] {
-    const allFunctions = this.registry.getAll();
-    const blockFunctions = allFunctions.filter((fn) => fn.isBlock);
-    // Strip leading # from prefix for comparison since registry stores names with # (e.g., "#when")
-    const searchPrefix = prefix.startsWith('#') ? prefix.slice(1) : prefix;
-    // Filter by comparing against name without # prefix (strip # from both sides)
-    const lowerSearchPrefix = searchPrefix.toLowerCase();
-    const filtered = blockFunctions.filter((fn) => {
-      const nameWithoutHash = fn.name.startsWith('#') ? fn.name.slice(1) : fn.name;
-      return (
-        nameWithoutHash.toLowerCase().startsWith(lowerSearchPrefix) ||
-        fn.aliases.some((alias) => alias.toLowerCase().startsWith(lowerSearchPrefix))
-      );
-    });
-
-    const completions: CompletionItem[] = filtered.map((fn) =>
-      this.buildBuiltinCompletionItem(fn, unresolvedOnly),
-    );
-
-    // Add block snippets
-    for (const snippet of BLOCK_SNIPPETS) {
-      if (snippet.label.toLowerCase().startsWith(lowerSearchPrefix)) {
-        const item: CompletionItem = {
-          label: snippet.label,
-          kind: CompletionItemKind.Snippet,
-          data: this.createCategoryData(
-            {
-              category: 'snippet',
-              kind: 'block-snippet',
-            },
-            unresolvedOnly
-              ? undefined
-              : this.createContextualExplanation(
-                  'block-snippet-library',
-                  'Block completion appended an editor snippet from the static CBS block snippet set.',
-                ),
-            undefined,
-            undefined,
-          ),
-          insertText: snippet.insertText,
-          insertTextFormat: InsertTextFormat.Snippet,
-          filterText: createFullMacroFilterText(snippet.insertText),
-        };
-
-        completions.push(
-          unresolvedOnly
-            ? item
-            : {
-                ...item,
-                detail: snippet.detail,
-                documentation: {
-                  kind: 'markdown',
-                  value: snippet.documentation,
-                },
-              },
-        );
-      }
-    }
-
-    return completions;
-  }
-
-  private buildBuiltinCompletionItem(
-    fn: CBSBuiltinFunction,
-    unresolvedOnly: boolean,
-  ): CompletionItem {
-    const snippetInsertText = createBuiltinSnippetInsertText(fn);
-    const item: CompletionItem = {
-      label: fn.name,
-      kind: fn.isBlock ? CompletionItemKind.Class : CompletionItemKind.Function,
-      filterText: createFullMacroFilterText(snippetInsertText),
-      data: this.createCategoryData(
-        this.getBuiltinCategory(fn),
-        unresolvedOnly ? undefined : this.getBuiltinExplanation(fn),
-        undefined,
-        undefined,
-      ),
-      insertText: snippetInsertText ?? fn.name,
-      insertTextFormat: snippetInsertText ? InsertTextFormat.Snippet : undefined,
-      deprecated: fn.deprecated !== undefined,
-    };
-
-    if (unresolvedOnly) {
-      return item;
-    }
-
+  /**
+   * getCheapMacroArgumentCompletionCallbacks 함수.
+   * cheap macro argument 모듈이 provider-local static catalog와 metadata builder를 쓰도록 연결함.
+   *
+   * @returns cheap macro argument completion callback 묶음
+   */
+  private getCheapMacroArgumentCompletionCallbacks() {
     return {
-      ...item,
-      detail: this.formatFunctionDetail(fn),
-      documentation: {
-        kind: 'markdown',
-        value: this.formatFunctionDocumentation(fn),
-      },
+      buildMetadataCompletions: (prefix: string) =>
+        buildMetadataCompletions(prefix, this.getContextualCompletionCallbacks()),
+      buildWhenOperatorCompletions: (prefix: string) =>
+        buildWhenOperatorCompletions(prefix, this.getContextualCompletionCallbacks()),
+      isToggleNameWhenSegment,
+      workspaceVariableCallbacks: this.getWorkspaceVariableCompletionCallbacks(),
     };
   }
 
-  private buildElseCompletion(): CompletionItem[] {
-    const builtin = this.registry.get(':else');
-    if (!builtin) {
-      return [];
-    }
-
-    return [
-      {
-        label: ':else',
-        kind: CompletionItemKind.Keyword,
-        data: this.createCategoryData(
-          {
-            category: 'block-keyword',
-            kind: 'else-keyword',
-          },
-          this.createContextualExplanation(
-            'else-keyword-context',
-            'Completion inferred a live :else branch position from the current CBS block structure.',
-          ),
-        ),
-        detail: 'Else keyword',
-        documentation: {
-          kind: 'markdown',
-          value: this.formatFunctionDocumentation(builtin),
-        },
-        insertText: ':else',
-      },
-    ];
+  private getContextualCompletionCallbacks() {
+    return {
+      createCategoryData: (
+        category: AgentMetadataCategoryContract,
+        explanation?: AgentMetadataExplanationContract,
+        availability?: AgentMetadataAvailabilityContract,
+        workspace?: AgentMetadataWorkspaceSnapshotContract,
+      ) => this.createCategoryData(category, explanation, availability, workspace),
+      createContextualExplanation: (source: string, detail: string) =>
+        this.createContextualExplanation(source, detail),
+      createScopeExplanation: (source: string, detail: string) =>
+        this.createScopeExplanation(source, detail),
+      workspaceVariableCallbacks: this.getWorkspaceVariableCompletionCallbacks(),
+    };
   }
 
-  private buildCloseTagCompletion(blockKind: string): CompletionItem[] {
-    // Normalize block kind by stripping leading # if present (e.g., "#when" -> "when")
-    const normalizedKind = blockKind.startsWith('#') ? blockKind.slice(1) : blockKind;
-
-    if (!normalizedKind) {
-      // Offer all block close tags
-      // Normalize block names by stripping # prefix (e.g., "#when" -> "when")
-      const blocks = this.registry.getAll().filter((fn) => fn.isBlock);
-      return blocks.map((fn) => {
-        const nameWithoutHash = fn.name.startsWith('#') ? fn.name.slice(1) : fn.name;
-        return {
-          label: `/${nameWithoutHash}`,
-          kind: CompletionItemKind.Keyword,
-          data: this.createCategoryData(
-            {
-              category: 'block-keyword',
-              kind: 'block-close',
-            },
-            this.createContextualExplanation(
-              'block-close-context',
-              'Completion inferred a block close candidate from the open block context at the cursor.',
-            ),
-          ),
-          detail: `Close ${nameWithoutHash} block`,
-          insertText: `/${nameWithoutHash}`,
-        };
-      });
-    }
-
-    // Offer specific close tag for the open block
-    return [
-      {
-        label: `/${normalizedKind}`,
-        kind: CompletionItemKind.Keyword,
-        data: this.createCategoryData(
-          {
-            category: 'block-keyword',
-            kind: 'block-close',
-          },
-          this.createContextualExplanation(
-            'block-close-context',
-            'Completion inferred the matching block close tag from the active open block kind.',
-          ),
-        ),
-        detail: `Close ${normalizedKind} block`,
-        insertText: `/${normalizedKind}`,
-        preselect: true,
-      },
-    ];
+  private getBuiltinCompletionCallbacks() {
+    return {
+      createCategoryData: (
+        category: AgentMetadataCategoryContract,
+        explanation?: AgentMetadataExplanationContract,
+      ) => this.createCategoryData(category, explanation, undefined, undefined),
+      createContextualExplanation: (source: string, detail: string) =>
+        this.createContextualExplanation(source, detail),
+    };
   }
 
-  private buildVariableCompletions(
-    prefix: string,
-    kind: 'chat' | 'temp' | 'global',
-    lookup: FragmentCursorLookupResult,
-    workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null,
-  ): CompletionItem[] {
-    const symbolTable = lookup.fragmentAnalysis.providerLookup.getSymbolTable();
-    const variables = symbolTable.getAllVariables();
-
-    const matchingVars = variables.filter(
-      (v) => v.kind === kind && v.name.toLowerCase().startsWith(prefix.toLowerCase()),
-    );
-
-    const localCompletions = matchingVars.map(
-      (v) =>
-        ({
-          label: v.name,
-          kind: CompletionItemKind.Variable,
-          data: this.createCategoryData(
-            {
-              category: 'variable',
-              kind:
-                v.kind === 'global'
-                  ? 'global-variable'
-                  : v.kind === 'temp'
-                    ? 'temp-variable'
-                    : v.kind === 'loop'
-                      ? 'chat-variable'
-                      : 'chat-variable',
-            },
-            this.createScopeExplanation(
-              kind === 'temp'
-                ? 'temp-variable-symbol-table'
-                : kind === 'global'
-                  ? 'global-variable-symbol-table'
-                  : 'chat-variable-symbol-table',
-              kind === 'temp'
-                ? 'Completion resolved this candidate from analyzed temp-variable definitions in the current fragment.'
-                : kind === 'global'
-                  ? 'Completion resolved this candidate from analyzed global-variable references in the current fragment.'
-                  : 'Completion resolved this candidate from analyzed chat-variable definitions in the current fragment.',
-            ),
-            kind === 'chat'
-              ? this.getStaleWorkspaceAvailability(workspaceFreshness, 'completion')
-              : undefined,
-            kind === 'chat' ? (workspaceFreshness ?? undefined) : undefined,
-          ),
-          detail:
-            kind === 'chat'
-              ? 'Chat variable'
-              : kind === 'temp'
-                ? 'Temp variable'
-                : 'Global variable',
-          documentation: {
-            kind: 'markdown',
-            value: `Variable **${v.name}** (${v.kind})\n\n- Definitions: ${v.definitionRanges.length}\n- References: ${v.references.length}`,
-          },
-          insertText: v.name,
-        }) satisfies CompletionItem,
-    );
-
-    if (kind === 'global') {
-      return [
-        ...localCompletions,
-        ...this.buildWorkspaceToggleGlobalVariableCompletions(
-          prefix,
-          new Set(localCompletions.map((completion) => completion.label)),
-        ),
-      ];
-    }
-
-    if (kind !== 'chat') {
-      return localCompletions;
-    }
-
-    const workspaceCompletions = this.buildWorkspaceChatVariableCompletions(
-      {
-        existingLabels: new Set(localCompletions.map((completion) => completion.label)),
-        insertBareName: true,
-        labelPrefix: '',
-        prefix,
-        usage: 'macro-argument',
-      },
-      workspaceFreshness,
-    );
-
-    return [...localCompletions, ...workspaceCompletions];
+  private getWorkspaceVariableCompletionCallbacks() {
+    return {
+      createCategoryData: (
+        category: AgentMetadataCategoryContract,
+        explanation?: AgentMetadataExplanationContract,
+        availability?: AgentMetadataAvailabilityContract,
+        workspace?: AgentMetadataWorkspaceSnapshotContract,
+      ) => this.createCategoryData(category, explanation, availability, workspace),
+      createContextualExplanation: (source: string, detail: string) =>
+        this.createContextualExplanation(source, detail),
+      createScopeExplanation: (source: string, detail: string) =>
+        this.createScopeExplanation(source, detail),
+    };
   }
 
   /**
-   * buildWorkspaceToggleGlobalVariableCompletions 함수.
-   * risutoggle key에서 파생되는 `toggle_<name>` globalvar completion 후보를 생성함.
+   * formatFunctionDocumentation 함수.
+   * Builtin formatter module로 위임하되 unresolved lazy-format 테스트의 spy seam을 유지함.
    *
-   * @param prefix - 현재 globalvar 인자 prefix
-   * @param existingLabels - fragment-local global 후보와 중복 방지용 label 집합
-   * @returns risutoggle 기반 globalvar completion item 목록
+   * @param fn - documentation을 만들 builtin function
+   * @returns completion documentation markdown 문자열
    */
-  private buildWorkspaceToggleGlobalVariableCompletions(
-    prefix: string,
-    existingLabels: ReadonlySet<string>,
-  ): CompletionItem[] {
-    if (!this.variableFlowService) {
-      return [];
-    }
-
-    const normalizedPrefix = prefix.toLowerCase();
-
-    return this.variableFlowService.getToggleCompletionSummaries().flatMap((summary) => {
-      if (!summary.globalVariableName.toLowerCase().startsWith(normalizedPrefix)) {
-        return [];
-      }
-
-      if (existingLabels.has(summary.globalVariableName)) {
-        return [];
-      }
-
-      return {
-        label: summary.globalVariableName,
-        kind: CompletionItemKind.Variable,
-        data: this.createCategoryData(
-          {
-            category: 'variable',
-            kind: 'global-variable',
-          },
-          this.createScopeExplanation(
-            'risutoggle-globalvar-index',
-            'Completion resolved this candidate from `.risutoggle` keys exposed as `toggle_<name>` global variables.',
-          ),
-        ),
-        detail: 'Risutoggle global variable',
-        documentation: {
-          kind: 'markdown',
-          value: [
-            `**Risutoggle global variable:** \`${summary.globalVariableName}\``,
-            '',
-            `- Toggle name: \`${summary.name}\``,
-            '- Usage: `{{getglobalvar::toggle_<toggleName>}}` reads the selected/toggled value.',
-            `- Definitions: ${summary.definitionCount}`,
-          ].join('\n'),
-        },
-        insertText: summary.globalVariableName,
-        sortText: `zzzz-risutoggle-global-${summary.globalVariableName}`,
-      } satisfies CompletionItem;
-    });
-  }
-
-  /**
-   * buildWorkspaceChatVariableCompletions 함수.
-   * 현재 fragment-local 후보 뒤에 붙일 workspace persistent chat variable completion item을 생성함.
-   *
-   * @param options - prefix, insertion mode, local dedupe 정보
-   * @returns workspace chat variable completion item 배열
-   */
-  private buildWorkspaceChatVariableCompletions(
-    options: {
-      existingLabels: ReadonlySet<string>;
-      insertBareName: boolean;
-      labelPrefix: '' | '$';
-      prefix: string;
-      usage: 'macro-argument' | 'calc-expression' | 'nested-chat-value';
-    },
-    workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null,
-  ): CompletionItem[] {
-    if (
-      !this.variableFlowService ||
-      (workspaceFreshness?.freshness === 'stale' && options.usage === 'calc-expression')
-    ) {
-      return [];
-    }
-
-    const normalizedPrefix = options.prefix.toLowerCase();
-
-    return this.variableFlowService.getVariableCompletionSummaries().flatMap((summary) => {
-      if (!summary.name.toLowerCase().startsWith(normalizedPrefix)) {
-        return [];
-      }
-
-      if (options.existingLabels.has(`${options.labelPrefix}${summary.name}`)) {
-        return [];
-      }
-
-      if (!summary.hasWritableSource) {
-        return [];
-      }
-
-      const label = `${options.labelPrefix}${summary.name}`;
-      const detail =
-        options.usage === 'calc-expression'
-          ? 'Workspace chat variable for calc expression'
-          : options.usage === 'nested-chat-value'
-            ? 'Workspace chat variable as nested value'
-          : 'Workspace chat variable';
-      const documentation = this.formatWorkspaceVariableDocumentation(summary, options.usage);
-      const insertText = options.usage === 'nested-chat-value'
-        ? `{{getvar::${summary.name}}}`
-        : options.insertBareName
-          ? summary.name
-          : label;
-
-      return {
-        label,
-        kind: CompletionItemKind.Variable,
-        data: this.createCategoryData(
-          {
-            category: 'variable',
-            kind: 'chat-variable',
-          },
-          this.createScopeExplanation(
-            this.getWorkspaceVariableCompletionSource(options.usage),
-            this.getWorkspaceVariableCompletionExplanation(options.usage),
-          ),
-          undefined,
-          workspaceFreshness ?? undefined,
-        ),
-        detail,
-        documentation: {
-          kind: 'markdown',
-          value: documentation,
-        },
-        insertText,
-        sortText: `zzzz-workspace-${summary.name}`,
-      } satisfies CompletionItem;
-    });
-  }
-
-  private getWorkspaceVariableCompletionSource(
-    usage: 'macro-argument' | 'calc-expression' | 'nested-chat-value',
-  ): string {
-    if (usage === 'calc-expression') {
-      return 'workspace-chat-variable-graph:calc-expression';
-    }
-
-    if (usage === 'nested-chat-value') {
-      return 'workspace-chat-variable-graph:nested-chat-value';
-    }
-
-    return 'workspace-chat-variable-graph:macro-argument';
-  }
-
-  private getWorkspaceVariableCompletionExplanation(
-    usage: 'macro-argument' | 'calc-expression' | 'nested-chat-value',
-  ): string {
-    if (usage === 'calc-expression') {
-      return 'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local `$var` symbols.';
-    }
-
-    if (usage === 'nested-chat-value') {
-      return 'Completion resolved this candidate from workspace persistent chat-variable graph entries and inserts it as a nested getvar value expression.';
-    }
-
-    return 'Completion resolved this candidate from workspace persistent chat-variable graph entries and appended it after fragment-local chat-variable symbols.';
-  }
-
-  /**
-   * formatWorkspaceVariableDocumentation 함수.
-   * workspace variable summary만으로 completion documentation을 생성함.
-   *
-   * @param summary - completion 후보용 lightweight variable summary
-   * @param usage - macro argument 또는 calc expression 후보 문맥
-   * @returns markdown documentation 문자열
-   */
-  private formatWorkspaceVariableDocumentation(
-    summary: VariableCompletionSummary,
-    usage: 'macro-argument' | 'calc-expression' | 'nested-chat-value',
-  ): string {
-    const writerCount = summary.writerCount + summary.defaultDefinitionCount;
-    if (usage === 'nested-chat-value') {
-      return [
-        `**Workspace chat variable:** \`${summary.name}\``,
-        '',
-        '- Source: workspace persistent chat-variable graph',
-        '- Usage: insert as a nested `getvar` value expression inside comparison/logical CBS arguments.',
-        `- Workspace readers: ${summary.readerCount}`,
-        `- Workspace writers: ${writerCount}`,
-      ].join('\n');
-    }
-
-    return usage === 'calc-expression'
-      ? [
-          `**Workspace chat variable:** \`${summary.name}\``,
-          '',
-          '- Source: workspace persistent chat-variable graph',
-          '- Usage: append after fragment-local `$var` candidates inside the shared CBS expression sublanguage.',
-          `- Workspace readers: ${summary.readerCount}`,
-          `- Workspace writers: ${writerCount}`,
-        ].join('\n')
-      : [
-          `**Workspace chat variable:** \`${summary.name}\``,
-          '',
-          '- Source: workspace persistent chat-variable graph',
-          '- Usage: append after fragment-local `getvar` / `setvar` candidates so local symbols stay first.',
-          `- Workspace readers: ${summary.readerCount}`,
-          `- Workspace writers: ${writerCount}`,
-        ].join('\n');
-  }
-
-  private buildFunctionCompletions(
-    prefix: string,
-    lookup: FragmentCursorLookupResult,
-  ): CompletionItem[] {
-    const symbolTable = lookup.fragmentAnalysis.providerLookup.getSymbolTable();
-    const symbolFunctions = symbolTable.getAllFunctions();
-    const functionCandidates =
-      symbolFunctions.length > 0
-        ? symbolFunctions.map((symbol) => ({
-            name: symbol.name,
-            parameters: symbol.parameters,
-            references: symbol.references.length,
-          }))
-        : collectLocalFunctionDeclarations(
-            lookup.fragmentAnalysis.document,
-            lookup.fragment.content,
-          ).map((declaration) => ({
-            name: declaration.name,
-            parameters: declaration.parameters,
-            references: 0,
-          }));
-
-    const functions = functionCandidates.filter((symbol) =>
-      symbol.name.toLowerCase().startsWith(prefix.toLowerCase()),
-    );
-
-    return functions.map((symbol) => ({
-      label: symbol.name,
-      kind: CompletionItemKind.Function,
-      data: this.createCategoryData(
-        {
-          category: 'contextual-token',
-          kind: 'local-function',
-        },
-        this.createContextualExplanation(
-          'local-function-context',
-          'Completion inferred a local #func target from the first call:: slot context.',
-        ),
-      ),
-      detail: 'Local #func declaration for the first call:: slot',
-      documentation: {
-        kind: 'markdown',
-        value: [
-          `**Local function: ${symbol.name}**`,
-          '',
-          '- Meaning: insert this into the first `call::` slot to choose which fragment-local `#func` declaration to invoke.',
-          symbol.parameters.length > 0
-            ? `Parameters: ${symbol.parameters.map((parameter) => `\`${parameter}\``).join(', ')}`
-            : 'Parameters: declared later or inferred at runtime',
-          symbol.parameters.length > 0
-            ? `Argument slots: ${symbol.parameters
-                .map((parameter, index) => `\`arg::${index}\` → \`${parameter}\``)
-                .join(', ')}`
-            : 'Argument slots: no local parameter names are declared yet.',
-          `Local calls: ${symbol.references}`,
-        ].join('\n'),
-      },
-      insertText: symbol.name,
-    }));
-  }
-
-  private buildArgumentIndexCompletions(
-    prefix: string,
-    lookup: FragmentCursorLookupResult,
-  ): CompletionItem[] {
-    const activeFunctionContext = resolveActiveLocalFunctionContext(lookup);
-    const declaration = activeFunctionContext?.declaration;
-    if (!declaration || declaration.parameters.length === 0) {
-      return [];
-    }
-
-    const normalizedPrefix = prefix.trim();
-
-    return declaration.parameters
-      .map((parameter, index) => ({ parameter, index }))
-      .filter(({ index }) => index.toString().startsWith(normalizedPrefix))
-      .map(({ parameter, index }) => {
-        const parameterDeclaration = declaration.parameterDeclarations[index];
-
-        return {
-          label: index.toString(),
-          kind: CompletionItemKind.Constant,
-          data: this.createCategoryData(
-            {
-              category: 'contextual-token',
-              kind: 'argument-index',
-            },
-            this.createContextualExplanation(
-              'active-local-function-context',
-              'Completion inferred numbered arg:: slots from the active local #func / call:: context.',
-            ),
-          ),
-          detail: `Numbered argument reference for \`${parameter}\` in the active local #func / {{call::...}} context`,
-          documentation: {
-            kind: 'markdown',
-            value: [
-              `**Numbered argument reference: arg::${index}**`,
-              '',
-              `- Local function: \`${declaration.name}\``,
-              `- Parameter slot: ${index}`,
-              `- Parameter name: \`${parameter}\``,
-              parameterDeclaration
-                ? `- Parameter definition: line ${parameterDeclaration.range.start.line + 1}, character ${parameterDeclaration.range.start.character + 1}`
-                : '- Parameter definition: declared in the active local function header',
-              `- Meaning: references the ${CbsLspTextHelper.formatOrdinal(index + 1)} call argument from the active local \`#func\` / \`{{call::...}}\` context.`,
-            ].join('\n'),
-          },
-          insertText: index.toString(),
-        } satisfies CompletionItem;
-      });
-  }
-
-  private buildSlotAliasCompletions(
-    prefix: string,
-    lookup: FragmentCursorLookupResult,
-  ): CompletionItem[] {
-    const visibleBindings = collectVisibleLoopBindingsFromNodePath(
-      lookup.nodePath,
-      lookup.fragment.content,
-      lookup.fragmentLocalOffset,
-    );
-    const normalizedPrefix = prefix.trim().toLowerCase();
-
-    return visibleBindings
-      .filter((binding) => binding.bindingName.toLowerCase().startsWith(normalizedPrefix))
-      .map((binding, index) => ({
-        label: binding.bindingName,
-        kind: CompletionItemKind.Variable,
-        data: this.createCategoryData(
-          {
-            category: 'contextual-token',
-            kind: 'loop-alias',
-          },
-          this.createScopeExplanation(
-            'visible-loop-bindings',
-            'Completion resolved a visible #each loop alias from scope analysis rather than general variables.',
-          ),
-        ),
-        detail: index === 0 ? 'Current #each loop alias' : 'Outer #each loop alias',
-        documentation: {
-          kind: 'markdown',
-          value: [
-            `**Loop alias: ${binding.bindingName}**`,
-            '',
-            `- Source: \`#each ${binding.iteratorExpression} as ${binding.bindingName}\``,
-            index === 0
-              ? '- Scope: current `#each` block'
-              : '- Scope: outer `#each` block still visible from the current cursor',
-            '- Policy: `slot::` completion only offers loop aliases, never general variables.',
-          ].join('\n'),
-        },
-        insertText: binding.bindingName,
-        preselect: index === 0,
-        sortText: `${index.toString().padStart(2, '0')}-${binding.bindingName}`,
-      }));
-  }
-
-  private buildMetadataCompletions(prefix: string): CompletionItem[] {
-    const filtered = METADATA_KEYS.filter((k) =>
-      k.name.toLowerCase().startsWith(prefix.toLowerCase()),
-    );
-
-    return filtered.map((k) => ({
-      label: k.name,
-      kind: CompletionItemKind.Property,
-      data: this.createCategoryData(
-        {
-          category: 'metadata-key',
-          kind: 'metadata-property',
-        },
-        this.createContextualExplanation(
-          'metadata-key-catalog',
-          'Completion matched a key from the static CBS metadata property catalog.',
-        ),
-      ),
-      detail: 'Metadata key',
-      documentation: {
-        kind: 'markdown',
-        value: `${k.description}`,
-      },
-      insertText: k.name,
-    }));
-  }
-
-  /**
-   * buildWhenSegmentCompletions 함수.
-   * #when header segment에서 operator와 chat variable 후보를 함께 생성함.
-   *
-   * @param prefix - 현재 segment에서 이미 입력한 prefix
-   * @param lookup - fragment-local symbol table과 분석 결과
-   * @param workspaceFreshness - workspace graph 후보 사용 가능 상태
-   * @returns #when segment에 표시할 completion item 목록
-   */
-  private buildWhenSegmentCompletions(
-    prefix: string,
-    startOffset: number,
-    lookup: FragmentCursorLookupResult,
-    workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null,
-  ): CompletionItem[] {
-    const previousSegments = this.getWhenSegmentsBeforeOffset(lookup, startOffset);
-    if (this.isToggleNameWhenSegment(previousSegments)) {
-      return this.buildWorkspaceToggleNameCompletions(prefix);
-    }
-
-    return [
-      ...this.buildWhenOperatorCompletions(prefix),
-      ...this.buildVariableCompletions(prefix, 'chat', lookup, workspaceFreshness),
-    ];
-  }
-
-  /**
-   * getWhenSegmentsBeforeOffset 함수.
-   * 현재 #when segment 앞에 있는 top-level segment 목록을 단순 DSL 기준으로 추출함.
-   *
-   * @param lookup - fragment content와 cursor 정보를 담은 lookup 결과
-   * @param startOffset - 현재 completion segment 시작 offset
-   * @returns 현재 segment 앞의 #when segment 목록
-   */
-  private getWhenSegmentsBeforeOffset(
-    lookup: FragmentCursorLookupResult,
-    startOffset: number,
-  ): readonly string[] {
-    const content = lookup.fragment.content;
-    const headerPrefix = content.slice(0, Math.max(0, startOffset));
-    const whenStart = headerPrefix.lastIndexOf('{{#when');
-    if (whenStart === -1) {
-      return [];
-    }
-
-    return headerPrefix
-      .slice(whenStart + '{{#when'.length)
-      .split('::')
-      .filter((segment, index) => index > 0 || segment.trim().length > 0)
-      .map((segment) => segment.trim())
-      .filter((segment) => segment.length > 0);
-  }
-
-  /**
-   * isToggleNameWhenSegment 함수.
-   * `{{#when::toggle::...}}`의 toggle 이름 argument 위치인지 판별함.
-   *
-   * @param previousSegments - 현재 segment 앞의 #when segment 목록
-   * @returns 직전 segment가 unary `toggle` operator이면 true
-   */
-  private isToggleNameWhenSegment(previousSegments: readonly string[]): boolean {
-    return previousSegments[previousSegments.length - 1]?.toLowerCase() === 'toggle';
-  }
-
-  /**
-   * buildWorkspaceToggleNameCompletions 함수.
-   * `#when::toggle::` 인자에서 risutoggle 원본 key 이름을 completion 후보로 생성함.
-   *
-   * @param prefix - 현재 toggle 이름 prefix
-   * @returns risutoggle 원본 이름 completion item 목록
-   */
-  private buildWorkspaceToggleNameCompletions(prefix: string): CompletionItem[] {
-    if (!this.variableFlowService) {
-      return [];
-    }
-
-    const normalizedPrefix = prefix.toLowerCase();
-    return this.variableFlowService.getToggleCompletionSummaries().flatMap((summary) => {
-      if (!summary.name.toLowerCase().startsWith(normalizedPrefix)) {
-        return [];
-      }
-
-      return {
-        label: summary.name,
-        kind: CompletionItemKind.Property,
-        data: this.createCategoryData(
-          {
-            category: 'contextual-token',
-            kind: 'when-operator',
-          },
-          this.createContextualExplanation(
-            'risutoggle-name-index',
-            'Completion inferred a #when toggle argument and resolved the candidate from `.risutoggle` keys.',
-          ),
-        ),
-        detail: 'Risutoggle name',
-        documentation: {
-          kind: 'markdown',
-          value: [
-            `**Risutoggle:** \`${summary.name}\``,
-            '',
-            '- Usage: `{{#when::toggle::<toggleName>}}...{{/when}}` checks this registered toggle.',
-            `- Globalvar alias: \`${summary.globalVariableName}\``,
-            `- Definitions: ${summary.definitionCount}`,
-          ].join('\n'),
-        },
-        insertText: summary.name,
-        sortText: `zzzz-risutoggle-name-${summary.name}`,
-      } satisfies CompletionItem;
-    });
-  }
-
-  private buildWhenOperatorCompletions(prefix: string): CompletionItem[] {
-    const filtered = WHEN_OPERATORS.filter((op) =>
-      op.name.toLowerCase().startsWith(prefix.toLowerCase()),
-    );
-
-    return filtered.map((op) => ({
-      label: op.name,
-      kind: CompletionItemKind.Operator,
-      data: this.createCategoryData(
-        {
-          category: 'contextual-token',
-          kind: 'when-operator',
-        },
-        this.createContextualExplanation(
-          'when-operator-context',
-          'Completion inferred a #when operator position from the current block-header operator slot.',
-        ),
-      ),
-      detail: 'When operator',
-      documentation: {
-        kind: 'markdown',
-        value: `${op.description}\n\n\`\`\`cbs\n{{#when::left::${op.name}::right}}...{{/when}}\n\`\`\``,
-      },
-      insertText: op.name,
-    }));
-  }
-
-  private filterByPrefix(functions: CBSBuiltinFunction[], prefix: string): CBSBuiltinFunction[] {
-    if (!prefix) {
-      return functions;
-    }
-
-    const lowerPrefix = prefix.toLowerCase();
-    return functions.filter(
-      (fn) =>
-        fn.name.toLowerCase().startsWith(lowerPrefix) ||
-        fn.aliases.some((alias) => alias.toLowerCase().startsWith(lowerPrefix)),
-    );
-  }
-
-  private formatFunctionDetail(fn: CBSBuiltinFunction): string {
-    if (isContextualBuiltin(fn)) {
-      return fn.isBlock ? 'Contextual block syntax' : 'Contextual syntax entry';
-    }
-
-    if (isDocOnlyBuiltin(fn)) {
-      return fn.isBlock ? 'Documentation-only block syntax' : 'Documentation-only syntax entry';
-    }
-
-    return fn.isBlock ? 'Callable block builtin' : 'Callable builtin function';
-  }
-
-  private formatFunctionDocumentation(fn: CBSBuiltinFunction): string {
-    const lines: string[] = [];
-
-    if (fn.deprecated) {
-      lines.push(`**Deprecated:** ${fn.deprecated.message}`);
-      if (fn.deprecated.replacement) {
-        lines.push(`Use \`${fn.deprecated.replacement}\` instead.`);
-      }
-      lines.push('');
-    }
-
-    if (isContextualBuiltin(fn)) {
-      lines.push(
-        '**Contextual syntax entry:** visible in editor docs and completion, but only meaningful in specific syntactic contexts.',
-      );
-    } else if (isDocOnlyBuiltin(fn)) {
-      lines.push(
-        '**Documentation-only syntax entry:** visible in editor docs and completion, but not a general runtime callback builtin.',
-      );
-    } else {
-      lines.push('**Callable builtin:** available as a runtime CBS builtin.');
-    }
-    lines.push('');
-
-    lines.push(fn.description);
-
-    if (fn.arguments.length > 0) {
-      lines.push('');
-      lines.push('**Arguments:**');
-      for (const arg of fn.arguments) {
-        const required = arg.required ? '(required)' : '(optional)';
-        const variadic = arg.variadic ? '...' : '';
-        lines.push(`- \`${arg.name}${variadic}\` ${required}: ${arg.description}`);
-      }
-    }
-
-    if (fn.aliases.length > 0) {
-      lines.push('');
-      lines.push(`**Aliases:** ${fn.aliases.map((a) => `\`${a}\``).join(', ')}`);
-    }
-
-    return lines.join('\n');
+  formatFunctionDocumentation(fn: CBSBuiltinFunction): string {
+    return formatFunctionDocumentation(fn);
   }
 
   /**
@@ -2975,30 +644,6 @@ export class CompletionProvider {
     };
   }
 
-  private getWorkspaceFreshness(
-    request: FragmentAnalysisRequest,
-  ): AgentMetadataWorkspaceSnapshotContract | null {
-    if (!this.variableFlowService || !this.workspaceSnapshot) {
-      return null;
-    }
-
-    return this.variableFlowService.getWorkspaceFreshness({
-      uri: request.uri,
-      version: request.version,
-    });
-  }
-
-  private getStaleWorkspaceAvailability(
-    workspaceFreshness: AgentMetadataWorkspaceSnapshotContract | null,
-    feature: 'completion' | 'hover',
-  ): AgentMetadataAvailabilityContract | undefined {
-    if (workspaceFreshness?.freshness !== 'stale') {
-      return undefined;
-    }
-
-    return createStaleWorkspaceAvailability(feature, workspaceFreshness.detail);
-  }
-
   private createContextualExplanation(
     source: string,
     detail: string,
@@ -3010,36 +655,4 @@ export class CompletionProvider {
     return createAgentMetadataExplanation('scope-analysis', source, detail);
   }
 
-  /**
-   * getBuiltinCategory 함수.
-   * registry builtin을 block keyword vs callable builtin 기준의 stable category로 변환함.
-   *
-   * @param fn - completion/hover에 노출할 registry builtin 항목
-   * @returns agent-friendly category contract
-   */
-  private getBuiltinCategory(fn: CBSBuiltinFunction): AgentMetadataCategoryContract {
-    return {
-      category: fn.isBlock ? 'block-keyword' : 'builtin',
-      kind: isContextualBuiltin(fn)
-        ? 'contextual-builtin'
-        : isDocOnlyBuiltin(fn)
-          ? 'documentation-only-builtin'
-          : 'callable-builtin',
-    };
-  }
-
-  private getBuiltinExplanation(fn: CBSBuiltinFunction): AgentMetadataExplanationContract {
-    let detail: string;
-    if (isContextualBuiltin(fn)) {
-      detail =
-        'Completion surfaced this item from the builtin registry as a contextual CBS syntax entry.';
-    } else if (isDocOnlyBuiltin(fn)) {
-      detail =
-        'Completion surfaced this item from the builtin registry as a documentation-only CBS syntax entry.';
-    } else {
-      detail = 'Completion surfaced this item from the builtin registry as a callable CBS builtin.';
-    }
-
-    return createAgentMetadataExplanation('registry-lookup', 'builtin-registry', detail);
-  }
 }
