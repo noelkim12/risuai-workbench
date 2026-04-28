@@ -326,6 +326,7 @@ describe('FragmentAnalysisService', () => {
 
     routeDiagnosticsForDocument(entry.filePath, entry.text, {}, { uri: entry.uri, version });
 
+    expect(analyzeSpy).toHaveBeenCalledTimes(1);
     expect(analyzeSpy).toHaveBeenCalledWith({
       uri: entry.uri,
       version,

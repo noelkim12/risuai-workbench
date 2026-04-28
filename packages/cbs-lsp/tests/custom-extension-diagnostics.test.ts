@@ -5,12 +5,10 @@ import {
   createDiagnosticForFragment,
   routeDiagnosticsForDocument,
   assembleDiagnosticsForRequest,
+  shouldKeepLocalSymbolDiagnostic,
 } from '../src/utils/diagnostics-router';
 import { mapFragmentDiagnosticsToHost } from '../src/utils/diagnostics/fragment-diagnostic-policy';
-import {
-  createDiagnosticsFallbackMemo,
-  shouldKeepLocalSymbolDiagnostic,
-} from '../src/utils/diagnostics/suppression-policy';
+import { createDiagnosticsFallbackMemo } from '../src/utils/diagnostics/suppression-policy';
 import { createWorkspaceVariableDiagnosticsForUri } from '../src/utils/diagnostics/workspace-issue-policy';
 import { DiagnosticCode } from '../src/analyzer/diagnostics';
 import type { VariableFlowQueryResult, VariableFlowService } from '../src/services';
@@ -846,6 +844,13 @@ Hello <user>
   });
 
   describe('assembleDiagnosticsForRequest', () => {
+    it('keeps router facade exports compatible after policy extraction', () => {
+      expect(typeof routeDiagnosticsForDocument).toBe('function');
+      expect(typeof createDiagnosticForFragment).toBe('function');
+      expect(typeof shouldKeepLocalSymbolDiagnostic).toBe('function');
+      expect(typeof assembleDiagnosticsForRequest).toBe('function');
+    });
+
     it('returns local diagnostics unchanged when no workspace service provided', () => {
       const localDiagnostics: Diagnostic[] = [
         {

@@ -19,10 +19,7 @@ import {
 } from '../core';
 import type { VariableFlowService } from '../services/variable-flow-service';
 import type { FragmentAnalysisRequest } from '../core';
-import {
-  createDiagnosticForFragment,
-  mapFragmentDiagnosticsToHost,
-} from './diagnostics/fragment-diagnostic-policy';
+import { mapFragmentDiagnosticsToHost } from './diagnostics/fragment-diagnostic-policy';
 import {
   createDiagnosticsFallbackMemo,
   shouldKeepLocalSymbolDiagnostic,
@@ -30,7 +27,7 @@ import {
 } from './diagnostics/suppression-policy';
 import { createWorkspaceVariableDiagnosticsForUri } from './diagnostics/workspace-issue-policy';
 
-export { createDiagnosticForFragment };
+export { createDiagnosticForFragment } from './diagnostics/fragment-diagnostic-policy';
 export { shouldKeepLocalSymbolDiagnostic, type DiagnosticsFallbackTraceStats };
 export { createWorkspaceVariableDiagnosticsForUri };
 
