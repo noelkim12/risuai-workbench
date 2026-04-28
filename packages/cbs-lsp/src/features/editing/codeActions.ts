@@ -12,7 +12,7 @@ import {
 } from 'vscode-languageserver/node';
 import { type BlockNode, type Range } from 'risu-workbench-core';
 
-import { CbsLspTextHelper } from '../helpers/text-helper';
+import { CbsLspTextHelper } from '../../helpers/text-helper';
 import {
   ACTIVE_FEATURE_AVAILABILITY,
   createHostFragmentKey,
@@ -24,14 +24,14 @@ import {
   type FragmentDocumentAnalysis,
   type HostFragmentPatchEdit,
   validateHostFragmentPatchEdits,
-} from '../core';
+} from '../../core';
 import {
   DiagnosticCode,
   extractBlockHeaderInfo,
   type DiagnosticMachineData,
   type DiagnosticQuickFix,
-} from '../analyzer/diagnostics';
-import { positionToOffset } from '../utils/position';
+} from '../../analyzer/diagnostics';
+import { positionToOffset } from '../../utils/position';
 
 export type CodeActionRequestResolver = (uri: string) => FragmentAnalysisRequest | null;
 

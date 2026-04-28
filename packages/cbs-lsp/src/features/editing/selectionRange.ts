@@ -19,9 +19,9 @@ import {
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
   type FragmentCursorLookupResult,
-} from '../core';
-import { isRequestCancelled } from '../utils/request-cancellation';
-import { positionToOffset } from '../utils/position';
+} from '../../core';
+import { isRequestCancelled } from '../../utils/request-cancellation';
+import { positionToOffset } from '../../utils/position';
 
 export type SelectionRangeRequestResolver = (
   params: SelectionRangeParams,

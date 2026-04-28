@@ -9,11 +9,11 @@ import {
   createCbsAgentProtocolMarker,
   createNormalizedRuntimeAvailabilitySnapshot,
   type NormalizedRuntimeAvailabilitySnapshot,
-} from '../core';
+} from '../../core';
 import {
   normalizeHostDiagnosticForSnapshot,
   type NormalizedHostDiagnosticSnapshot,
-} from '../utils/diagnostics-router';
+} from '../../utils/diagnostics-router';
 
 export interface NormalizedCodeActionTextEditSnapshot {
   newText: string;

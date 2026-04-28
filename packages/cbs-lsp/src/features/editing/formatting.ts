@@ -24,8 +24,8 @@ import {
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
   validateHostFragmentPatchEdits,
-} from '../core';
-import { offsetToPosition, positionToOffset } from '../utils/position';
+} from '../../core';
+import { offsetToPosition, positionToOffset } from '../../utils/position';
 
 export type FormattingRequestResolver = (uri: string) => FragmentAnalysisRequest | null;
 

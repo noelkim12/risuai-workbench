@@ -16,7 +16,7 @@ import {
   findOwningHostFragmentAnalysis,
   fragmentAnalysisService,
   type FragmentAnalysisService,
-} from '../core';
+} from '../../core';
 import { FormattingProvider, type FormattingRequestResolver } from './formatting';
 
 export interface OnTypeFormattingProviderOptions {
