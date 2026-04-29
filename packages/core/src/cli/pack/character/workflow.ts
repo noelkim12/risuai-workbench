@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { zipSync, zip, type AsyncZippable } from 'fflate';
+import { zipSync } from 'fflate';
 import { ensureDir } from '@/node/fs-helpers';
 import {
   PNG_1X1_TRANSPARENT,
@@ -14,8 +14,6 @@ import { encodeModuleRisum } from '@/node/rpack';
 import { readJson, isDir } from '@/node/json-listing';
 import { toPosix } from '@/domain/lorebook/folders';
 import { sanitizeFilename } from '../../../utils/filenames';
-import { readFileAsync } from '@/node/fs-helpers';
-import { createLimiter } from '../../shared/concurrency';
 import { argValue, setNestedValue, classifyAssetExt, normalizeExt } from '../utils';
 import { createBlankCharxV3 } from '@/domain/charx/blank-char';
 import {
@@ -61,7 +59,8 @@ const HELP_TEXT = `
     - lua/<charxName>.risulua → triggerscript (target-name-based naming)
     - html/background.risuhtml → extensions.risuai.backgroundHTML
     - variables/<charxName>.risuvar → extensions.risuai.defaultVariables (target-name-based naming)
-    - character/*.txt, metadata.json → character fields
+    - .risuchar, character/*.risutext → character fields
+    - character/*.txt, metadata.json → legacy fallback-only character fields
     - .risutoggle is NOT supported for charx (module/preset only)
     - 현재는 chara_card_v3만 지원합니다.
     - cover를 지정하지 않으면 png/jpg는 1x1 fallback 이미지를 사용합니다.
@@ -152,8 +151,9 @@ function buildCharxFromCanonical(inRoot: string): any {
   clearDefaultTriggerStubs(charx);
 
   // Overlay canonical artifacts
+  mergeCharacterExtensionSidecar(charx, inRoot);
   // IMPORTANT: mergeCharacterCanonical MUST run first to establish the character
-  // name from metadata.json, which is required for target-name-based filename
+  // name from .risuchar or legacy metadata.json, which is required for target-name-based filename
   // resolution in mergeLuaCanonical and mergeVariablesCanonical
   mergeCharacterCanonical(charx, inRoot);
   mergeLorebooksCanonical(charx, inRoot);
@@ -161,8 +161,76 @@ function buildCharxFromCanonical(inRoot: string): any {
   mergeLuaCanonical(charx, inRoot);
   mergeHtmlCanonical(charx, inRoot);
   mergeVariablesCanonical(charx, inRoot);
+  mergeAssetsCanonical(charx, inRoot);
 
   return charx;
+}
+
+/**
+ * mergeCharacterExtensionSidecar 함수.
+ * Extract가 보존한 unknown extension namespace를 canonical overlays 전에 복원함.
+ *
+ * @param charx - CharX envelope being assembled
+ * @param inRoot - Character workspace root containing character/extensions.json
+ */
+function mergeCharacterExtensionSidecar(charx: any, inRoot: string): void {
+  const sidecarPath = path.join(inRoot, 'character', 'extensions.json');
+  if (!fs.existsSync(sidecarPath)) return;
+
+  const sidecar: unknown = readJson(sidecarPath);
+  if (!isPlainRecord(sidecar)) {
+    throw new Error(`잘못된 character/extensions.json 형식: ${sidecarPath}`);
+  }
+
+  if (!charx.data) charx.data = {};
+  if (!charx.data.extensions) charx.data.extensions = {};
+  if (!charx.data.extensions.risuai) charx.data.extensions.risuai = {};
+
+  for (const [namespace, namespaceValue] of Object.entries(sidecar)) {
+    if (namespace === 'risuai' && isPlainRecord(namespaceValue)) {
+      Object.assign(charx.data.extensions.risuai, namespaceValue);
+      continue;
+    }
+    charx.data.extensions[namespace] = namespaceValue;
+  }
+}
+
+/**
+ * mergeAssetsCanonical 함수.
+ * assets/manifest.json의 asset metadata를 CharX asset 배열로 복원함.
+ *
+ * @param charx - CharX envelope receiving asset metadata
+ * @param inRoot - Character workspace root containing assets/manifest.json
+ */
+function mergeAssetsCanonical(charx: any, inRoot: string): void {
+  const manifestPath = path.join(inRoot, 'assets', 'manifest.json');
+  if (!fs.existsSync(manifestPath)) return;
+
+  const manifest: unknown = readJson(manifestPath);
+  if (!isPlainRecord(manifest) || !Array.isArray(manifest.assets)) return;
+
+  const assets: any[] = [];
+  for (const record of manifest.assets) {
+    if (!isPlainRecord(record) || !Number.isInteger(record.index)) continue;
+    const assetIndex = Number(record.index);
+
+    const asset: Record<string, unknown> = {};
+    for (const key of ['type', 'name', 'ext'] as const) {
+      if (typeof record[key] === 'string') asset[key] = record[key];
+    }
+
+    if (typeof record.original_uri === 'string' && record.original_uri.length > 0) {
+      asset.uri = record.original_uri;
+    } else if (typeof record.extracted_path === 'string' && record.extracted_path.length > 0) {
+      asset.uri = `embeded://${toPosix(record.extracted_path)}`;
+    }
+
+    assets[assetIndex] = asset;
+  }
+
+  if (assets.length === 0) return;
+  if (!charx.data) charx.data = {};
+  charx.data.assets = assets;
 }
 
 /**
@@ -355,48 +423,123 @@ function mergeVariablesCanonical(charx: any, inRoot: string): void {
 }
 
 /**
- * Merge character fields from canonical text files and metadata.json.
+ * mergeCharacterCanonical 함수.
+ * Merge canonical character metadata and prose with legacy split files as fallback only.
+ *
+ * @param charx - CharX envelope being assembled from canonical workspace files
+ * @param inRoot - Character workspace root containing .risuchar and character artifacts
  * Note: .risutoggle is NOT supported for charx (module/preset only per spec).
  */
 function mergeCharacterCanonical(charx: any, inRoot: string): void {
   const characterDir = path.join(inRoot, 'character');
-  if (!isDir(characterDir)) return;
+  const hasCharacterDir = isDir(characterDir);
 
-  // Text fields as .txt files (canonical)
+  mergeCharacterMetadata(charx, inRoot, characterDir);
+
+  if (!hasCharacterDir) return;
+
   const textFieldMap: Record<string, string[]> = {
-    'description.txt': ['data', 'description'],
-    'first_mes.txt': ['data', 'first_mes'],
-    'system_prompt.txt': ['data', 'system_prompt'],
-    'post_history_instructions.txt': ['data', 'post_history_instructions'],
-    'creator_notes.txt': ['data', 'creator_notes'],
-    'additional_text.txt': ['data', 'extensions', 'risuai', 'additionalText'],
+    description: ['data', 'description'],
+    first_mes: ['data', 'first_mes'],
+    system_prompt: ['data', 'system_prompt'],
+    replace_global_note: ['data', 'replaceGlobalNote'],
+    creator_notes: ['data', 'creator_notes'],
+    additional_text: ['data', 'extensions', 'risuai', 'additionalText'],
   };
 
-  for (const [fileName, targetPath] of Object.entries(textFieldMap)) {
-    const filePath = path.join(characterDir, fileName);
-    if (!fs.existsSync(filePath)) continue;
-    setNestedValue(charx, targetPath, fs.readFileSync(filePath, 'utf-8'));
+  for (const [fieldName, targetPath] of Object.entries(textFieldMap)) {
+    const canonicalPath = path.join(characterDir, `${fieldName}.risutext`);
+    const legacyPath = path.join(characterDir, `${fieldName}.txt`);
+    const hasCanonical = fs.existsSync(canonicalPath);
+    const hasLegacy = fs.existsSync(legacyPath);
+
+    if (hasCanonical) {
+      if (hasLegacy) {
+        warnCanonicalConflict(`${fieldName}.risutext`, `${fieldName}.txt`);
+      }
+      setNestedValue(charx, targetPath, fs.readFileSync(canonicalPath, 'utf-8'));
+      continue;
+    }
+
+    if (hasLegacy) {
+      setNestedValue(charx, targetPath, fs.readFileSync(legacyPath, 'utf-8'));
+    }
   }
 
-  // Alternate greetings as JSON
-  const greetingsPath = path.join(characterDir, 'alternate_greetings.json');
-  if (fs.existsSync(greetingsPath)) {
-    const greetings = readJson(greetingsPath);
+  const canonicalGreetingsDir = path.join(characterDir, 'alternate_greetings');
+  const legacyGreetingsPath = path.join(characterDir, 'alternate_greetings.json');
+  if (isDir(canonicalGreetingsDir)) {
+    if (fs.existsSync(legacyGreetingsPath)) {
+      warnCanonicalConflict('alternate_greetings/', 'alternate_greetings.json');
+    }
+    charx.data.alternate_greetings = readCanonicalAlternateGreetings(canonicalGreetingsDir);
+  } else if (fs.existsSync(legacyGreetingsPath)) {
+    const greetings = readJson(legacyGreetingsPath);
     if (!Array.isArray(greetings)) {
-      throw new Error(`잘못된 alternate_greetings.json 형식: ${greetingsPath}`);
+      throw new Error(`잘못된 alternate_greetings.json 형식: ${legacyGreetingsPath}`);
     }
     charx.data.alternate_greetings = greetings;
   }
 
   // Note: module.risutoggle is NOT read for charx per spec
   // .risutoggle is module/preset only
+}
 
-  // Metadata as JSON
+/**
+ * mergeCharacterMetadata 함수.
+ * Read root .risuchar first and use legacy metadata.json only when absent.
+ *
+ * @param charx - CharX envelope receiving metadata fields
+ * @param inRoot - Character workspace root containing .risuchar
+ * @param characterDir - Legacy character directory containing metadata.json
+ */
+function mergeCharacterMetadata(charx: any, inRoot: string, characterDir: string): void {
+  const manifestPath = path.join(inRoot, '.risuchar');
   const metadataPath = path.join(characterDir, 'metadata.json');
+  const hasManifest = fs.existsSync(manifestPath);
+  const hasLegacyMetadata = fs.existsSync(metadataPath);
+
+  if (hasManifest) {
+    if (hasLegacyMetadata) {
+      warnCanonicalConflict('.risuchar', 'metadata.json');
+    }
+
+    const manifest: unknown = readJson(manifestPath);
+    if (!isPlainRecord(manifest)) {
+      throw new Error(`잘못된 .risuchar 형식: ${manifestPath}`);
+    }
+
+    const stringManifestFields: Record<string, string[]> = {
+      name: ['data', 'name'],
+      creator: ['data', 'creator'],
+      characterVersion: ['data', 'character_version'],
+      createdAt: ['data', 'creation_date'],
+      modifiedAt: ['data', 'modification_date'],
+    };
+
+    for (const [key, targetPath] of Object.entries(stringManifestFields)) {
+      if (typeof manifest[key] === 'string' || manifest[key] === null) {
+        setNestedValue(charx, targetPath, manifest[key]);
+      }
+    }
+
+    const flags = manifest.flags;
+    if (isPlainRecord(flags)) {
+      if (typeof flags.utilityBot === 'boolean') {
+        charx.data.extensions.risuai.utilityBot = flags.utilityBot;
+      }
+      if (typeof flags.lowLevelAccess === 'boolean') {
+        charx.data.extensions.risuai.lowLevelAccess = flags.lowLevelAccess;
+      }
+    }
+
+    return;
+  }
+
   if (!fs.existsSync(metadataPath)) return;
 
-  const metadata = readJson(metadataPath) as any;
-  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+  const metadata: unknown = readJson(metadataPath);
+  if (!isPlainRecord(metadata)) {
     throw new Error(`잘못된 metadata.json 형식: ${metadataPath}`);
   }
 
@@ -420,6 +563,101 @@ function mergeCharacterCanonical(charx: any, inRoot: string): void {
   if (typeof metadata.lowLevelAccess === 'boolean') {
     charx.data.extensions.risuai.lowLevelAccess = metadata.lowLevelAccess;
   }
+}
+
+/**
+ * readCanonicalAlternateGreetings 함수.
+ * Read ordered canonical alternate greeting .risutext files from a directory.
+ *
+ * @param greetingsDir - Directory containing greeting .risutext files and optional _order.json
+ * @returns Greeting texts in declared order followed by deterministic filename sort
+ */
+function readCanonicalAlternateGreetings(greetingsDir: string): string[] {
+  const orderPath = path.join(greetingsDir, '_order.json');
+  let orderedFiles: string[] = [];
+
+  if (fs.existsSync(orderPath)) {
+    const parsedOrder = readJson(orderPath);
+    if (!Array.isArray(parsedOrder) || parsedOrder.some((entry) => typeof entry !== 'string')) {
+      throw new Error(`잘못된 alternate_greetings/_order.json 형식: ${orderPath}`);
+    }
+    orderedFiles = parsedOrder;
+  }
+
+  const allFiles = fs
+    .readdirSync(greetingsDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.risutext'))
+    .map((entry) => entry.name)
+    .sort((left, right) => left.localeCompare(right));
+
+  const seen = new Set<string>();
+  const resolvedFiles: string[] = [];
+
+  for (const relativeName of orderedFiles) {
+    const normalizedName = validateGreetingOrderEntry(relativeName, orderPath);
+    const absolutePath = path.join(greetingsDir, normalizedName);
+    if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile()) {
+      throw new Error(`alternate_greetings/_order.json에 없는 파일이 지정되었습니다: ${relativeName}`);
+    }
+    if (!normalizedName.endsWith('.risutext')) {
+      throw new Error(`alternate_greetings/_order.json 항목은 .risutext 파일이어야 합니다: ${relativeName}`);
+    }
+    if (!seen.has(normalizedName)) {
+      seen.add(normalizedName);
+      resolvedFiles.push(normalizedName);
+    }
+  }
+
+  for (const fileName of allFiles) {
+    if (seen.has(fileName)) continue;
+    resolvedFiles.push(fileName);
+  }
+
+  return resolvedFiles.map((fileName) => fs.readFileSync(path.join(greetingsDir, fileName), 'utf-8'));
+}
+
+/**
+ * validateGreetingOrderEntry 함수.
+ * Keep alternate greeting order entries relative to their canonical directory.
+ *
+ * @param relativeName - _order.json entry to validate
+ * @param orderPath - Path used in error messages
+ * @returns Normalized relative filename
+ */
+function validateGreetingOrderEntry(relativeName: string, orderPath: string): string {
+  const normalizedName = toPosix(path.normalize(relativeName));
+  if (
+    path.isAbsolute(relativeName) ||
+    normalizedName.startsWith('../') ||
+    normalizedName === '..' ||
+    normalizedName.includes('/../') ||
+    normalizedName.includes('/')
+  ) {
+    throw new Error(`잘못된 alternate_greetings/_order.json 경로: ${orderPath}`);
+  }
+  return normalizedName;
+}
+
+/**
+ * warnCanonicalConflict 함수.
+ * Emit pack-local warning when canonical and legacy sources target the same field.
+ *
+ * @param canonicalSource - Canonical source path that wins
+ * @param legacySource - Legacy source path ignored for the same field
+ */
+function warnCanonicalConflict(canonicalSource: string, legacySource: string): void {
+  console.warn(`  ⚠️ canonical ${canonicalSource} wins over legacy ${legacySource}; legacy value ignored`);
+}
+
+/**
+ * isPlainRecord 함수.
+ * Check that parsed JSON is an object record rather than null or an array.
+ *
+ * @param value - Parsed JSON value to check
+ * @returns True when value is a plain object-like record
+ */
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function resolveTargetFormat(inRoot: string, formatArgValue: string): PackFormat {
@@ -569,58 +807,6 @@ function buildCharxBuffer(charx: any, inRoot: string): Buffer {
   return Buffer.from(zipSync(zipEntries, { level: 0 }));
 }
 
-async function buildCharxBufferAsync(charx: any, inRoot: string): Promise<Buffer> {
-  const work = structuredClone(charx);
-  const assetBlobs = await collectAssetBuffersAsync(work, inRoot);
-  const zipEntries: Record<string, Uint8Array | Buffer> = {};
-  const usedPaths = new Set<string>();
-
-  const assets = Array.isArray(work.data.assets) ? work.data.assets : [];
-  for (let i = 0; i < assets.length; i += 1) {
-    const asset = assets[i];
-    if (!asset || typeof asset !== 'object') continue;
-
-    const idx = i + 1;
-    const blob = assetBlobs.get(idx);
-    if (!blob) continue;
-
-    const uri = typeof asset.uri === 'string' ? asset.uri : '';
-    if (uri.startsWith('http://') || uri.startsWith('https://') || uri.startsWith('data:'))
-      continue;
-
-    const assetType = sanitizeFilename(asset.type || 'asset', 'asset').toLowerCase();
-    const extClass = classifyAssetExt(asset.ext || 'bin');
-    const ext = normalizeExt(asset.ext || 'bin');
-    const stem = sanitizeFilename(asset.name || `asset_${idx}`, `asset_${idx}`);
-
-    let rel = `assets/${assetType}/${extClass}/${stem}.${ext}`;
-    let serial = 1;
-    while (usedPaths.has(rel)) {
-      rel = `assets/${assetType}/${extClass}/${stem}_${serial}.${ext}`;
-      serial += 1;
-    }
-    usedPaths.add(rel);
-
-    asset.uri = `embeded://${toPosix(rel)}`;
-    zipEntries[toPosix(rel)] = new Uint8Array(blob);
-  }
-
-  const moduleObj = buildModuleFromCharx(work);
-  // Note: We do NOT delete triggerscript/customScripts/_moduleLorebook from charx.json
-  // The module.risum is built from charx data, but charx.json retains all fields for round-trip fidelity
-
-  zipEntries['charx.json'] = Buffer.from(`${JSON.stringify(work, null, 2)}\n`, 'utf-8');
-  zipEntries['module.risum'] = encodeModuleRisum(moduleObj);
-
-  const data = await new Promise<Uint8Array>((resolve, reject) => {
-    zip(zipEntries as AsyncZippable, { level: 0 }, (err, result) => {
-      if (err) reject(err);
-      else resolve(result);
-    });
-  });
-  return Buffer.from(data);
-}
-
 /**
  * Build module.risum content from charx data.
  * Note: customModuleToggle is NOT included for charx per spec (.risutoggle is module/preset only).
@@ -659,56 +845,6 @@ function collectAssetBuffers(charx: any, inRoot: string): Map<number, Buffer> {
     out.set(Number(rec.index) + 1, fs.readFileSync(filePath));
   }
 
-  for (let i = 0; i < (charx.data.assets || []).length; i += 1) {
-    const idx = i + 1;
-    if (out.has(idx)) continue;
-    const asset = charx.data.assets[i];
-    if (!asset || typeof asset.uri !== 'string') continue;
-
-    if (asset.uri.startsWith('embeded://') || asset.uri.startsWith('embedded://')) {
-      const rel = asset.uri.replace(/^embeded:\/\//, '').replace(/^embedded:\/\//, '');
-      const absolute = path.join(inRoot, rel);
-      if (fs.existsSync(absolute) && fs.statSync(absolute).isFile()) {
-        out.set(idx, fs.readFileSync(absolute));
-      }
-    }
-  }
-
-  return out;
-}
-
-async function collectAssetBuffersAsync(charx: any, inRoot: string): Promise<Map<number, Buffer>> {
-  const out = new Map<number, Buffer>();
-  const assetDir = path.join(inRoot, 'assets');
-  const manifestPath = path.join(assetDir, 'manifest.json');
-  if (!fs.existsSync(manifestPath)) return out;
-
-  const manifest = readJson(manifestPath) as any;
-  if (!manifest || !Array.isArray(manifest.assets)) return out;
-
-  // Collect valid file reads
-  const readJobs: Array<{ index: number; filePath: string }> = [];
-  for (const rec of manifest.assets) {
-    if (!rec || typeof rec !== 'object') continue;
-    if (!Number.isFinite(rec.index)) continue;
-    if (typeof rec.extracted_path !== 'string' || rec.extracted_path.length === 0) continue;
-    const filePath = path.join(assetDir, rec.extracted_path);
-    if (!fs.existsSync(filePath)) continue;
-    readJobs.push({ index: Number(rec.index) + 1, filePath });
-  }
-
-  // Parallel reads
-  const limiter = createLimiter();
-  const results = await limiter.map(readJobs, async (job) => ({
-    index: job.index,
-    data: await readFileAsync(job.filePath),
-  }));
-
-  for (const result of results) {
-    out.set(result.index, result.data);
-  }
-
-  // Fallback for embedded assets not in manifest
   for (let i = 0; i < (charx.data.assets || []).length; i += 1) {
     const idx = i + 1;
     if (out.has(idx)) continue;
