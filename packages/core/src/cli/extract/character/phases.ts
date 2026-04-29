@@ -28,23 +28,102 @@ import {
 import {
   extractRegexFromCharx,
   serializeRegexContent,
-  type CanonicalRegexEntry,
 } from '@/domain/regex';
 import {
   extractVariablesFromCharx,
   serializeVariableContent,
-  type VariableContent,
 } from '@/domain/custom-extension/extensions/variable';
 import {
   extractHtmlFromCharx,
   serializeHtmlContent,
-  type HtmlContent,
 } from '@/domain/custom-extension/extensions/html';
-import {
-  extractLuaFromCharx,
-  serializeLuaContent,
-  type LuaContent,
-} from '@/domain/custom-extension/extensions/lua';
+
+const CHARACTER_PROSE_FIELDS: Array<[string, (data: any, risuai: any) => string]> = [
+  ['description', (data) => data.description || ''],
+  ['first_mes', (data) => data.first_mes || ''],
+  ['system_prompt', (data) => data.system_prompt || ''],
+  ['replace_global_note', (data) => data.replaceGlobalNote || ''],
+  ['creator_notes', (data) => data.creator_notes || ''],
+  ['additional_text', (_data, risuai) => risuai.additionalText || ''],
+];
+
+const CANONICAL_RISUAI_KEYS = new Set([
+  'additionalText',
+  'backgroundHTML',
+  'customScripts',
+  'defaultVariables',
+  'lowLevelAccess',
+  'triggerscript',
+  'utilityBot',
+  '_moduleLorebook',
+]);
+
+/**
+ * isPlainRecord 함수.
+ * JSON object record 여부를 확인함.
+ *
+ * @param value - 검사할 값
+ * @returns plain object record이면 true
+ */
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * buildCharacterExtensionsSidecar 함수.
+ * canonical artifact가 직접 소유하지 않는 extension namespace를 보존 sidecar로 분리함.
+ *
+ * @param extensions - upstream data.extensions 객체
+ * @returns pack 단계에서 다시 병합할 sidecar payload 또는 null
+ */
+function buildCharacterExtensionsSidecar(extensions: unknown): Record<string, unknown> | null {
+  if (!isPlainRecord(extensions)) return null;
+
+  const sidecar: Record<string, unknown> = {};
+  for (const [namespace, namespaceValue] of Object.entries(extensions)) {
+    if (namespace !== 'risuai') {
+      sidecar[namespace] = namespaceValue;
+      continue;
+    }
+
+    if (!isPlainRecord(namespaceValue)) continue;
+    const unknownRisuaiEntries = Object.entries(namespaceValue).filter(
+      ([key]) => !CANONICAL_RISUAI_KEYS.has(key),
+    );
+    if (unknownRisuaiEntries.length > 0) {
+      sidecar.risuai = Object.fromEntries(unknownRisuaiEntries);
+    }
+  }
+
+  return Object.keys(sidecar).length > 0 ? sidecar : null;
+}
+
+/**
+ * buildCharacterManifest 함수.
+ * 캐릭터 루트 메타데이터 소유자인 `.risuchar` 페이로드를 구성함.
+ *
+ * @param data - charx.data 객체
+ * @param risuai - data.extensions.risuai 객체
+ * @returns `.risuchar`에 기록할 canonical metadata 객체
+ */
+function buildCharacterManifest(data: any, risuai: any): Record<string, unknown> {
+  return {
+    $schema: 'https://risuai-workbench.dev/schemas/risuchar.schema.json',
+    kind: 'risu.character',
+    schemaVersion: 1,
+    id: data.character_id || data.id || '',
+    name: data.name || '',
+    creator: data.creator || '',
+    characterVersion: data.character_version || '',
+    createdAt: data.creation_date || null,
+    modifiedAt: data.modification_date || null,
+    sourceFormat: 'charx',
+    flags: {
+      utilityBot: risuai.utilityBot ?? false,
+      lowLevelAccess: risuai.lowLevelAccess ?? false,
+    },
+  };
+}
 
 export function phase1_parseCharx(inputPath: string): {
   charx: any;
@@ -745,47 +824,42 @@ export function phase8_extractCharacterFields(charx: any, outputDir: string): nu
   const data = charx.data || {};
   const risuai = data.extensions?.risuai || {};
   const characterDir = path.join(outputDir, 'character');
+  const alternateGreetingsDir = path.join(characterDir, 'alternate_greetings');
   ensureDir(characterDir);
 
-  // Text fields as .txt files (canonical)
-  const textFields: Record<string, string> = {
-    'description.txt': data.description || '',
-    'first_mes.txt': data.first_mes || '',
-    'system_prompt.txt': data.system_prompt || '',
-    'post_history_instructions.txt': data.post_history_instructions || '',
-    'creator_notes.txt': data.creator_notes || '',
-    'additional_text.txt': risuai.additionalText || '',
-  };
-
   let fileCount = 0;
-  for (const [filename, content] of Object.entries(textFields)) {
-    writeText(path.join(characterDir, filename), content);
+
+  writeJson(path.join(outputDir, '.risuchar'), buildCharacterManifest(data, risuai));
+  fileCount += 1;
+
+  const extensionSidecar = buildCharacterExtensionsSidecar(data.extensions);
+  if (extensionSidecar) {
+    writeJson(path.join(characterDir, 'extensions.json'), extensionSidecar);
     fileCount += 1;
   }
 
-  // Alternate greetings as JSON (structured data)
-  const greetings = Array.isArray(data.alternate_greetings) ? data.alternate_greetings : [];
-  writeJson(path.join(characterDir, 'alternate_greetings.json'), greetings);
-  fileCount += 1;
+  for (const [fieldName, getContent] of CHARACTER_PROSE_FIELDS) {
+    writeText(path.join(characterDir, `${fieldName}.risutext`), getContent(data, risuai));
+    fileCount += 1;
+  }
 
-  // Metadata as JSON (structured data)
-  const metadata = {
-    name: data.name || '',
-    creator: data.creator || '',
-    character_version: data.character_version || '',
-    creation_date: data.creation_date || null,
-    modification_date: data.modification_date || null,
-    utilityBot: risuai.utilityBot ?? false,
-    lowLevelAccess: risuai.lowLevelAccess ?? false,
-  };
-  writeJson(path.join(characterDir, 'metadata.json'), metadata);
+  const greetings = Array.isArray(data.alternate_greetings) ? data.alternate_greetings : [];
+  const greetingOrder: string[] = [];
+  for (let i = 0; i < greetings.length; i += 1) {
+    const filename = `greeting-${String(i + 1).padStart(3, '0')}.risutext`;
+    greetingOrder.push(filename);
+    writeText(path.join(alternateGreetingsDir, filename), String(greetings[i] ?? ''));
+    fileCount += 1;
+  }
+
+  writeJson(path.join(alternateGreetingsDir, '_order.json'), greetingOrder);
   fileCount += 1;
 
   // Note: .risutoggle is NOT emitted for charx per spec
   // .risutoggle is module/preset only
 
   console.log(
-    `     텍스트: ${Object.keys(textFields).length}개, greetings: ${greetings.length}개, metadata: ${Object.keys(metadata).length}개 필드`,
+    `     risutext: ${CHARACTER_PROSE_FIELDS.length}개, greetings: ${greetings.length}개, manifest: .risuchar`,
   );
   console.log(`     ✅ ${fileCount}개 파일 → ${path.relative('.', characterDir)}/`);
   return fileCount;

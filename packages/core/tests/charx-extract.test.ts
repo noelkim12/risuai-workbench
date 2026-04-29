@@ -54,7 +54,247 @@ function createMockCharxWithTriggerscript(): Buffer {
   return Buffer.from(zipData);
 }
 
+/**
+ * createCanonicalCharacterFixture 함수.
+ * canonical character extract 기대값을 검증할 수 있는 최소 charx를 만듦.
+ *
+ * @returns zip으로 직렬화한 charx fixture 버퍼
+ */
+function createCanonicalCharacterFixture(): Buffer {
+  const charxData = {
+    spec: 'chara_card_v3',
+    spec_version: '3.0',
+    data: {
+      character_id: 'char-fixture-001',
+      name: 'Canonical Character',
+      creator: 'Fixture Author',
+      character_version: '2.3',
+      creation_date: '2026-04-28T00:00:00.000Z',
+      modification_date: '2026-04-29T00:00:00.000Z',
+      description: 'Fixture description',
+      first_mes: 'Fixture first message',
+      system_prompt: 'Fixture system prompt',
+      replaceGlobalNote: 'Fixture replace global note',
+      creator_notes: 'Fixture creator notes',
+      alternate_greetings: ['Greeting one', 'Greeting two'],
+      assets: [
+        {
+          type: 'icon',
+          name: 'main',
+          ext: 'png',
+          uri: 'embeded://assets/main.png',
+        },
+      ],
+      extensions: {
+        vendorFixture: {
+          compatibility: 'opaque-extension-value',
+        },
+        risuai: {
+          triggerscript: [],
+          customScripts: [],
+          additionalText: 'Fixture additional text',
+          utilityBot: true,
+          lowLevelAccess: false,
+          safetyNote: 'script access stays metadata-only',
+        },
+      },
+    },
+  };
+
+  return Buffer.from(zipSync({
+    'charx.json': strToU8(JSON.stringify(charxData, null, 2)),
+    'assets/main.png': new Uint8Array([137, 80, 78, 71]),
+  }, { level: 0 }));
+}
+
 describe('charx extract integration (canonical mode)', () => {
+  it('extracts character metadata owner and full-file .risutext prose', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-risuchar-extract-'));
+    tempDirs.push(workDir);
+
+    const charxPath = path.join(workDir, 'canonical.charx');
+    writeFileSync(charxPath, createCanonicalCharacterFixture());
+
+    const outDir = path.join(workDir, 'output');
+    mkdirSync(outDir, { recursive: true });
+
+    const result = spawnSync(
+      'node',
+      [path.join(process.cwd(), 'dist', 'cli', 'main.js'), 'extract', charxPath, '--out', outDir],
+      {
+        cwd: process.cwd(),
+        encoding: 'utf-8',
+      },
+    );
+
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+
+    const manifest = JSON.parse(readFileSync(path.join(outDir, '.risuchar'), 'utf-8')) as Record<string, any>;
+    expect(manifest).toMatchObject({
+      $schema: 'https://risuai-workbench.dev/schemas/risuchar.schema.json',
+      kind: 'risu.character',
+      schemaVersion: 1,
+      id: 'char-fixture-001',
+      name: 'Canonical Character',
+      creator: 'Fixture Author',
+      characterVersion: '2.3',
+      createdAt: '2026-04-28T00:00:00.000Z',
+      modifiedAt: '2026-04-29T00:00:00.000Z',
+      sourceFormat: 'charx',
+      flags: {
+        utilityBot: true,
+        lowLevelAccess: false,
+      },
+    });
+    expect(manifest.description).toBeUndefined();
+    expect(manifest.prose).toBeUndefined();
+    expect(manifest.fields).toBeUndefined();
+    expect(manifest.data).toBeUndefined();
+
+    const extensionSidecar = JSON.parse(
+      readFileSync(path.join(outDir, 'character', 'extensions.json'), 'utf-8'),
+    ) as Record<string, any>;
+    expect(extensionSidecar).toEqual({
+      vendorFixture: {
+        compatibility: 'opaque-extension-value',
+      },
+      risuai: {
+        safetyNote: 'script access stays metadata-only',
+      },
+    });
+
+    const proseExpectations: Array<[string, string]> = [
+      ['description.risutext', 'Fixture description'],
+      ['first_mes.risutext', 'Fixture first message'],
+      ['system_prompt.risutext', 'Fixture system prompt'],
+      ['replace_global_note.risutext', 'Fixture replace global note'],
+      ['creator_notes.risutext', 'Fixture creator notes'],
+      ['additional_text.risutext', 'Fixture additional text'],
+    ];
+    for (const [fileName, expectedContent] of proseExpectations) {
+      expect(readFileSync(path.join(outDir, 'character', fileName), 'utf-8')).toBe(expectedContent);
+    }
+
+    const greetingsDir = path.join(outDir, 'character', 'alternate_greetings');
+    const greetingOrder = JSON.parse(readFileSync(path.join(greetingsDir, '_order.json'), 'utf-8')) as string[];
+    expect(greetingOrder).toEqual(['greeting-001.risutext', 'greeting-002.risutext']);
+    expect(readFileSync(path.join(greetingsDir, 'greeting-001.risutext'), 'utf-8')).toBe('Greeting one');
+    expect(readFileSync(path.join(greetingsDir, 'greeting-002.risutext'), 'utf-8')).toBe('Greeting two');
+
+    const assetManifest = JSON.parse(readFileSync(path.join(outDir, 'assets', 'manifest.json'), 'utf-8')) as Record<string, any>;
+    expect(assetManifest.assets).toEqual([
+      expect.objectContaining({
+        index: 0,
+        original_uri: 'embeded://assets/main.png',
+        status: 'extracted',
+        type: 'icon',
+        name: 'main',
+        ext: 'png',
+      }),
+    ]);
+  });
+
+  it('keeps the .risuchar schema limited to metadata and safety flags', () => {
+    const repoRoot = path.resolve(process.cwd(), '..', '..');
+    const schemaPath = path.join(repoRoot, 'docs', 'schemas', 'risuchar.schema.json');
+    const schema = JSON.parse(readFileSync(schemaPath, 'utf-8')) as Record<string, any>;
+
+    expect(schema.$id).toBe('https://risuai-workbench.dev/schemas/risuchar.schema.json');
+    expect(schema.required).toEqual([
+      'kind',
+      'schemaVersion',
+      'id',
+      'name',
+      'creator',
+      'characterVersion',
+      'createdAt',
+      'modifiedAt',
+      'sourceFormat',
+      'flags',
+    ]);
+    expect(Object.keys(schema.properties)).toEqual(expect.arrayContaining([
+      'kind',
+      'schemaVersion',
+      'id',
+      'name',
+      'creator',
+      'characterVersion',
+      'createdAt',
+      'modifiedAt',
+      'sourceFormat',
+      'flags',
+    ]));
+    expect(schema.properties.sourceFormat.enum).toEqual(['charx', 'png', 'json', 'scaffold']);
+    expect(schema.properties.flags.required).toEqual(['utilityBot', 'lowLevelAccess']);
+    expect(schema.properties.prose).toBeUndefined();
+    expect(schema.properties.fields).toBeUndefined();
+    expect(schema.properties.fieldMappings).toBeUndefined();
+    expect(schema.required).not.toContain('prose');
+    expect(schema.required).not.toContain('fields');
+    expect(schema.required).not.toContain('fieldMappings');
+  });
+
+  it('scaffolds a canonical charx workspace without legacy character files', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-scaffold-'));
+    tempDirs.push(workDir);
+    const outDir = path.join(workDir, 'canonical-scaffold');
+
+    const result = spawnSync(
+      'node',
+      [
+        path.join(process.cwd(), 'dist', 'cli', 'main.js'),
+        'scaffold',
+        'charx',
+        '--name',
+        'Scaffold Character',
+        '--creator',
+        'Scaffold Author',
+        '--out',
+        outDir,
+      ],
+      {
+        cwd: process.cwd(),
+        encoding: 'utf-8',
+      },
+    );
+
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+
+    const manifest = JSON.parse(readFileSync(path.join(outDir, '.risuchar'), 'utf-8')) as Record<string, any>;
+    expect(manifest).toMatchObject({
+      $schema: 'https://risuai-workbench.dev/schemas/risuchar.schema.json',
+      kind: 'risu.character',
+      schemaVersion: 1,
+      name: 'Scaffold Character',
+      creator: 'Scaffold Author',
+      characterVersion: '1.0',
+      sourceFormat: 'scaffold',
+      flags: {
+        utilityBot: false,
+        lowLevelAccess: false,
+      },
+    });
+    expect(typeof manifest.id).toBe('string');
+    expect(existsSync(path.join(outDir, 'character', 'metadata.json'))).toBe(false);
+    expect(existsSync(path.join(outDir, 'character', 'description.txt'))).toBe(false);
+    expect(existsSync(path.join(outDir, 'character', 'alternate_greetings.json'))).toBe(false);
+
+    for (const fileName of [
+      'description.risutext',
+      'first_mes.risutext',
+      'system_prompt.risutext',
+      'post_history_instructions.risutext',
+      'creator_notes.risutext',
+      'additional_text.risutext',
+    ]) {
+      expect(existsSync(path.join(outDir, 'character', fileName))).toBe(true);
+    }
+    expect(JSON.parse(readFileSync(path.join(outDir, 'character', 'alternate_greetings', '_order.json'), 'utf-8'))).toEqual([]);
+    expect(existsSync(path.join(outDir, 'lorebooks', '_order.json'))).toBe(true);
+    expect(existsSync(path.join(outDir, 'regex', '_order.json'))).toBe(true);
+    expect(existsSync(path.join(outDir, 'variables', 'Scaffold_Character.risuvar'))).toBe(true);
+  });
+
   it('extracts triggerscript array to .risulua file (T12 regression test)', () => {
     // This test specifically catches the regression where triggerscript array
     // wasn't being extracted to .risulua because extractLuaFromCharx expected a string
@@ -160,14 +400,25 @@ describe('charx extract integration (canonical mode)', () => {
     expect(existsSync(path.join(outDir, 'charx.json'))).toBe(false);
 
     // Character fields
-    expect(existsSync(path.join(outDir, 'character', 'metadata.json'))).toBe(true);
-    expect(existsSync(path.join(outDir, 'character', 'description.txt'))).toBe(true);
-    expect(existsSync(path.join(outDir, 'character', 'first_mes.txt'))).toBe(true);
-    expect(existsSync(path.join(outDir, 'character', 'system_prompt.txt'))).toBe(true);
-    expect(existsSync(path.join(outDir, 'character', 'post_history_instructions.txt'))).toBe(true);
-    expect(existsSync(path.join(outDir, 'character', 'creator_notes.txt'))).toBe(true);
-    expect(existsSync(path.join(outDir, 'character', 'additional_text.txt'))).toBe(true);
-    expect(existsSync(path.join(outDir, 'character', 'alternate_greetings.json'))).toBe(true);
+    expect(existsSync(path.join(outDir, '.risuchar'))).toBe(true);
+    expect(existsSync(path.join(outDir, 'character', 'description.risutext'))).toBe(true);
+    expect(existsSync(path.join(outDir, 'character', 'first_mes.risutext'))).toBe(true);
+    expect(existsSync(path.join(outDir, 'character', 'system_prompt.risutext'))).toBe(true);
+    expect(existsSync(path.join(outDir, 'character', 'replace_global_note.risutext'))).toBe(true);
+    expect(existsSync(path.join(outDir, 'character', 'creator_notes.risutext'))).toBe(true);
+    expect(existsSync(path.join(outDir, 'character', 'additional_text.risutext'))).toBe(true);
+    expect(existsSync(path.join(outDir, 'character', 'alternate_greetings', '_order.json'))).toBe(true);
+
+    // Legacy character output should not be emitted by canonical extract.
+    expect(existsSync(path.join(outDir, 'character', 'metadata.json'))).toBe(false);
+    expect(existsSync(path.join(outDir, 'character', 'description.txt'))).toBe(false);
+    expect(existsSync(path.join(outDir, 'character', 'first_mes.txt'))).toBe(false);
+    expect(existsSync(path.join(outDir, 'character', 'system_prompt.txt'))).toBe(false);
+    expect(existsSync(path.join(outDir, 'character', 'post_history_instructions.txt'))).toBe(false);
+    expect(existsSync(path.join(outDir, 'character', 'post_history_instructions.risutext'))).toBe(false);
+    expect(existsSync(path.join(outDir, 'character', 'creator_notes.txt'))).toBe(false);
+    expect(existsSync(path.join(outDir, 'character', 'additional_text.txt'))).toBe(false);
+    expect(existsSync(path.join(outDir, 'character', 'alternate_greetings.json'))).toBe(false);
 
     // .risutoggle should NOT exist for charx (module/preset only)
     expect(existsSync(path.join(outDir, 'character', 'module.risutoggle'))).toBe(false);
