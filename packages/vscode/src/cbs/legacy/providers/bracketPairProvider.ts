@@ -5,7 +5,7 @@
 
 import * as vscode from 'vscode';
 
-const RISU_CBS_LANGUAGE_IDS = new Set(['risulorebook', 'risuregex', 'risuprompt', 'risuhtml', 'risulua']);
+const RISU_CBS_LANGUAGE_IDS = new Set(['risulorebook', 'risuregex', 'risuprompt', 'risuhtml', 'risulua', 'risutext']);
 const MAX_RISULUA_BRACKET_DECORATION_TEXT_LENGTH = 512 * 1024;
 
 function isRisuCbsDocument(document: vscode.TextDocument): boolean {

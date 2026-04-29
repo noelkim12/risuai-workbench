@@ -14,6 +14,7 @@
     "onCommand:risuWorkbench.packCard",
     "onCommand:risuWorkbench.analyzeLua",
     "onCommand:risuWorkbench.inspectCard",
+    "onCommand:risuWorkbench.character.selectImage",
     "onCommand:risuWorkbench.openCardPanel",
     "onCommand:risuWorkbench.generateLuaStubs",
     "onCommand:risuWorkbench.cbs.showActivationLinks",
@@ -22,6 +23,7 @@
     "onLanguage:risuregex",
     "onLanguage:risuprompt",
     "onLanguage:risuhtml",
+    "onLanguage:risutext",
     "onLanguage:risulua",
     "onLanguage:lua",
     "workspaceContains:**/*.risulua"
@@ -102,6 +104,17 @@
           "dark": "./resources/icon/risutoggle.svg"
         },
         "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "risutext",
+        "extensions": [
+          ".risutext"
+        ],
+        "icon": {
+          "light": "./resources/icon/risutext.svg",
+          "dark": "./resources/icon/risutext.svg"
+        },
+        "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
@@ -129,6 +142,11 @@
         "language": "risulua",
         "scopeName": "source.risulua",
         "path": "./syntaxes/risulua.tmLanguage.json"
+      },
+      {
+        "language": "risutext",
+        "scopeName": "source.risutext",
+        "path": "./syntaxes/risutext.tmLanguage.json"
       },
       {
         "scopeName": "source.lua.risu-cbs.injection",
@@ -254,6 +272,14 @@
           "strings": true
         },
         "editor.suggestOnTriggerCharacters": true
+      },
+      "[risutext]": {
+        "editor.quickSuggestions": {
+          "comments": false,
+          "other": true,
+          "strings": true
+        },
+        "editor.suggestOnTriggerCharacters": true
       }
     },
     "viewsContainers": {
@@ -291,6 +317,10 @@
         "title": "Risu Workbench: Inspect Card"
       },
       {
+        "command": "risuWorkbench.character.selectImage",
+        "title": "Risu Workbench: Select Character Thumbnail"
+      },
+      {
         "command": "risuWorkbench.openCardPanel",
         "title": "Risu Workbench: Open Card Panel"
       },
@@ -318,6 +348,11 @@
       "view/item/context": [
         {
           "command": "risuWorkbench.inspectCard",
+          "when": "view == risuWorkbench.cards && viewItem == risuWorkbench.cardItem",
+          "group": "inline"
+        },
+        {
+          "command": "risuWorkbench.character.selectImage",
           "when": "view == risuWorkbench.cards && viewItem == risuWorkbench.cardItem",
           "group": "inline"
         }

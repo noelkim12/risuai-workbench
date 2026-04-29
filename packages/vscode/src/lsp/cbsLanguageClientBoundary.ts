@@ -49,12 +49,14 @@ export const CBS_DOCUMENT_SELECTORS: DocumentSelector = [
   { scheme: 'file', pattern: '**/*.risuprompt' },
   { scheme: 'file', pattern: '**/*.risuhtml' },
   { scheme: 'file', pattern: '**/*.risulua' },
+  { scheme: 'file', pattern: '**/*.risutext' },
   { language: 'lua', scheme: 'file', pattern: '**/*.risulua' },
   { language: 'risulorebook' },
   { language: 'risuregex' },
   { language: 'risuprompt' },
   { language: 'risuhtml' },
   { language: 'risulua' },
+  { language: 'risutext' },
 ];
 
 /**

@@ -11,6 +11,7 @@ import {
 } from '../lsp/cbsActivationCodeLens';
 import { CBS_OCCURRENCE_NAVIGATION_COMMAND } from '../lsp/cbsLanguageClient';
 import { RISU_LUALS_STUB_COMMAND, installRisuLuaWorkspaceStubs } from '../luals/risuLuaStubs';
+import { RISU_CHARACTER_SELECT_IMAGE_COMMAND, selectCharacterImage } from './characterImage';
 
 interface CbsOccurrenceNavigationTarget {
   uri?: string;
@@ -110,6 +111,9 @@ export function registerCoreCommands(
       void vscode.window.showInformationMessage(
         `${summary.name} — lorebook ${summary.lorebookEntries}, scripts ${summary.customScripts}`,
       );
+    }),
+    vscode.commands.registerCommand(RISU_CHARACTER_SELECT_IMAGE_COMMAND, async (uri?: vscode.Uri) => {
+      await selectCharacterImage(uri);
     }),
     vscode.commands.registerCommand('risuWorkbench.openCardPanel', () => {
       CardPanel.createOrShow(context);

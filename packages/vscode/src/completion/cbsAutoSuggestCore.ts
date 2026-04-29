@@ -9,6 +9,7 @@ const CBS_LANGUAGE_IDS = new Set([
   'risuprompt',
   'risuhtml',
   'risulua',
+  'risutext',
 ]);
 
 export interface CbsAutoSuggestInput {

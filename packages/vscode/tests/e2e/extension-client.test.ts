@@ -87,6 +87,19 @@ interface BuiltRisuLuaStubsModule {
   ) => string[] | Record<string, boolean>;
 }
 
+interface BuiltCharacterImageModule {
+  RISU_CHARACTER_SELECT_IMAGE_COMMAND: string;
+  getCharacterImageAssetPath: (fileName: string) => string;
+  updateRisucharImageMetadata: (
+    manifest: Record<string, unknown>,
+    imagePath: string,
+  ) => Record<string, unknown>;
+  upsertCharacterImageManifestEntry: (
+    manifest: Record<string, unknown>,
+    entry: { ext: string; extractedPath: string; originalUri: string; sizeBytes: number },
+  ) => Record<string, unknown>;
+}
+
 /**
  * readPackageJson 함수.
  * package.json을 읽어 script surface를 검증하기 쉬운 JSON으로 반환함.
@@ -104,8 +117,11 @@ function readPackageJson(): {
       extensions?: string[];
       icon?: { dark?: string; light?: string };
       id?: string;
-    }>;
+    }>; 
     commands?: Array<{ command?: string; title?: string }>;
+    menus?: {
+      'view/item/context'?: Array<{ command?: string; group?: string; when?: string }>;
+    };
   };
   scripts?: Record<string, string>;
 } {
@@ -125,8 +141,11 @@ function readPackageJson(): {
         extensions?: string[];
         icon?: { dark?: string; light?: string };
         id?: string;
-      }>;
+      }>; 
       commands?: Array<{ command?: string; title?: string }>;
+      menus?: {
+        'view/item/context'?: Array<{ command?: string; group?: string; when?: string }>;
+      };
     };
     scripts?: Record<string, string>;
   };
@@ -218,6 +237,16 @@ function loadBuiltRisuLuaStubsModule(): BuiltRisuLuaStubsModule {
   return localRequire(modulePath) as BuiltRisuLuaStubsModule;
 }
 
+/**
+ * loadBuiltCharacterImageModule 함수.
+ * build 산출물에서 character thumbnail 선택 helper를 불러옴.
+ *
+ * @returns built character image helper exports
+ */
+function loadBuiltCharacterImageModule(): BuiltCharacterImageModule {
+  return localRequire(path.join(packageRoot, 'dist', 'commands', 'characterImage.js')) as BuiltCharacterImageModule;
+}
+
 test('separates standalone server validation from official VS Code client integration scripts', () => {
   const packageJson = readPackageJson();
 
@@ -271,6 +300,68 @@ test('contributes native LuaLS stub generation command', () => {
   assert.ok(
     activationEvents.includes(`onCommand:${stubs.RISU_LUALS_STUB_COMMAND}`),
     'Expected activation event for native LuaLS stub generation command',
+  );
+});
+
+test('contributes character thumbnail selection command', () => {
+  const packageJson = readPackageJson();
+  const commands = packageJson.contributes?.commands ?? [];
+  const activationEvents = packageJson.activationEvents ?? [];
+  const contextMenu = packageJson.contributes?.menus?.['view/item/context'] ?? [];
+
+  assert.ok(
+    commands.some((command) => command.command === 'risuWorkbench.character.selectImage'),
+    'Expected character image selection command contribution',
+  );
+  assert.ok(
+    activationEvents.includes('onCommand:risuWorkbench.character.selectImage'),
+    'Expected activation event for character image selection command',
+  );
+  assert.ok(
+    contextMenu.some((item) => item.command === 'risuWorkbench.character.selectImage'),
+    'Expected tree context menu entry for character image selection',
+  );
+});
+
+test('builds deterministic character image metadata updates', () => {
+  const characterImage = loadBuiltCharacterImageModule();
+
+  assert.equal(characterImage.RISU_CHARACTER_SELECT_IMAGE_COMMAND, 'risuWorkbench.character.selectImage');
+  assert.equal(characterImage.getCharacterImageAssetPath('Portrait Image.PNG'), 'assets/icons/Portrait_Image.png');
+  assert.deepEqual(
+    characterImage.updateRisucharImageMetadata({ name: 'Demo' }, 'assets/icons/main.png'),
+    { name: 'Demo', image: 'assets/icons/main.png' },
+  );
+  assert.deepEqual(
+    characterImage.upsertCharacterImageManifestEntry(
+      { version: 1, source_format: 'scaffold', total: 0, extracted: 0, skipped: 0, assets: [] },
+      {
+        ext: 'png',
+        extractedPath: 'icons/main.png',
+        originalUri: 'embeded://assets/icons/main.png',
+        sizeBytes: 4,
+      },
+    ),
+    {
+      version: 1,
+      source_format: 'scaffold',
+      total: 1,
+      extracted: 1,
+      skipped: 0,
+      assets: [
+        {
+          index: 0,
+          original_uri: 'embeded://assets/icons/main.png',
+          extracted_path: 'icons/main.png',
+          status: 'extracted',
+          type: 'icon',
+          name: 'main',
+          ext: 'png',
+          subdir: 'icons',
+          size_bytes: 4,
+        },
+      ],
+    },
   );
 });
 
@@ -390,7 +481,7 @@ test('enables trigger-character suggestions by default for CBS-bearing languages
   const packageJson = readPackageJson();
   const defaults = packageJson.contributes?.configurationDefaults ?? {};
 
-  for (const languageId of ['risulorebook', 'risuregex', 'risuprompt', 'risuhtml', 'risulua']) {
+  for (const languageId of ['risulorebook', 'risuregex', 'risuprompt', 'risuhtml', 'risulua', 'risutext']) {
     const languageDefaults = defaults[`[${languageId}]`];
     const quickSuggestions = languageDefaults?.['editor.quickSuggestions'] as
       | { comments?: boolean; other?: boolean; strings?: boolean }
@@ -406,7 +497,7 @@ test('attaches language configuration to every CBS-bearing language', () => {
   const packageJson = readPackageJson();
   const languages = packageJson.contributes?.languages ?? [];
 
-  for (const languageId of ['risulorebook', 'risuregex', 'risuprompt', 'risuhtml', 'risulua']) {
+  for (const languageId of ['risulorebook', 'risuregex', 'risuprompt', 'risuhtml', 'risulua', 'risutext']) {
     const language = languages.find((candidate) => candidate.id === languageId);
 
     assert.equal(language?.configuration, './language-configuration.json');
@@ -422,6 +513,7 @@ test('contributes Risu language icons without overriding the active file icon th
     ['risulua', './resources/icon/risulua.svg'],
     ['risuprompt', './resources/icon/risuprompt.svg'],
     ['risuregex', './resources/icon/risuregex.svg'],
+    ['risutext', './resources/icon/risutext.svg'],
     ['risutoggle', './resources/icon/risutoggle.svg'],
     ['risuvar', './resources/icon/risuvar.svg'],
   ]);
@@ -472,7 +564,7 @@ test('contributes CBS TextMate grammars for every CBS-bearing language', () => {
   const packageJson = readPackageJson();
   const grammars = packageJson.contributes?.grammars ?? [];
 
-  for (const languageId of ['risulorebook', 'risuregex', 'risuprompt', 'risuhtml', 'risulua']) {
+  for (const languageId of ['risulorebook', 'risuregex', 'risuprompt', 'risuhtml', 'risulua', 'risutext']) {
     const grammar = grammars.find((candidate) => candidate.language === languageId);
     const grammarPath = path.join(packageRoot, grammar?.path ?? '');
 
@@ -561,6 +653,22 @@ test('detects double-open-brace CBS prefixes for explicit VS Code suggest fallba
     autoSuggest.shouldTriggerCbsAutoSuggest({
       insertedText: ':',
       languageId: 'risulorebook',
+      linePrefix: '{{getvar::',
+    }),
+    true,
+  );
+  assert.equal(
+    autoSuggest.shouldTriggerCbsAutoSuggest({
+      insertedText: '{',
+      languageId: 'risutext',
+      linePrefix: '{{',
+    }),
+    true,
+  );
+  assert.equal(
+    autoSuggest.shouldTriggerCbsAutoSuggest({
+      insertedText: ':',
+      languageId: 'risutext',
       linePrefix: '{{getvar::',
     }),
     true,
@@ -786,6 +894,22 @@ test('keeps the official client boundary on standalone stdio when a workspace lo
       (selector) => 'language' in selector && selector.language === 'risuhtml',
     ),
     'Expected language-based selectors so untitled risuhtml documents can receive CBS completions',
+  );
+  assert.ok(
+    snapshot.clientOptions.documentSelector.some(
+      (selector) => 'language' in selector && selector.language === 'risutext',
+    ),
+    'Expected language-based selectors so untitled risutext documents can receive CBS completions',
+  );
+  assert.ok(
+    snapshot.clientOptions.documentSelector.some(
+      (selector) =>
+        'scheme' in selector &&
+        'pattern' in selector &&
+        selector.scheme === 'file' &&
+        selector.pattern === '**/*.risutext',
+    ),
+    'Expected file pattern selector so .risutext documents attach to the CBS client',
   );
   assert.ok(
     snapshot.clientOptions.documentSelector.some(
