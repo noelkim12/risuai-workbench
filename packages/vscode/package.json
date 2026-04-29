@@ -295,7 +295,8 @@
       "risuWorkbench": [
         {
           "id": "risuWorkbench.cards",
-          "name": "Cards"
+          "name": "Cards",
+          "type": "webview"
         }
       ]
     },
@@ -399,7 +400,8 @@
     }
   },
   "scripts": {
-    "build": "npm --prefix ../webview run build && tsc && npx tsc-alias && node ./scripts/copy-webview.mjs",
+    "build": "npm --prefix ../webview run build && npm run build:extension",
+    "build:extension": "tsc && npx tsc-alias && node ./scripts/copy-webview.mjs",
     "build:test:e2e": "tsc -p ./tsconfig.tests.json",
     "watch": "tsc --watch",
     "dev": "tsc && code --extensionDevelopmentPath=\"$PWD\"",

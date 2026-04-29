@@ -9,9 +9,9 @@ import {
   stopCbsLanguageClient,
   type CbsLanguageClientRuntimeState,
 } from './lsp/cbsLanguageClient';
-import { RisuTreeProvider } from './providers/tree-provider';
 import { AnalysisService } from './services/analysis-service';
 import { CardService } from './services/card-service';
+import { CharacterBrowserViewProvider } from './views/CharacterBrowserViewProvider';
 
 /**
  * Official VS Code extension API surface.
@@ -29,13 +29,14 @@ export function activate(context: vscode.ExtensionContext): RisuWorkbenchExtensi
   const cardService = new CardService();
   const analysisService = new AnalysisService(cardService);
 
-  const treeProvider = new RisuTreeProvider(cardService);
-  const treeView = vscode.window.createTreeView('risuWorkbench.cards', {
-    treeDataProvider: treeProvider,
-  });
   const bracketHighlighter = new CBSBracketPairHighlighter();
+  const characterBrowserProvider = new CharacterBrowserViewProvider(context);
 
-  context.subscriptions.push(treeView);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(CharacterBrowserViewProvider.viewType, characterBrowserProvider, {
+      webviewOptions: { retainContextWhenHidden: true },
+    }),
+  );
   context.subscriptions.push(bracketHighlighter);
   context.subscriptions.push(registerCoreCommands(context, cardService, analysisService));
   registerCbsAutoSuggestTrigger(context);

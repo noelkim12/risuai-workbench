@@ -10,7 +10,7 @@
 
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import { createRequire, Module } from 'node:module';
 import path from 'node:path';
 import test from 'node:test';
 
@@ -98,6 +98,51 @@ interface BuiltCharacterImageModule {
     manifest: Record<string, unknown>,
     entry: { ext: string; extractedPath: string; originalUri: string; sizeBytes: number },
   ) => Record<string, unknown>;
+}
+
+interface BuiltCharacterDetailScannerModule {
+  CharacterDetailScanner: new () => {
+    scan: (card: {
+      characterVersion: string;
+      creator: string;
+      flags: { lowLevelAccess: boolean; utilityBot: boolean };
+      manifestId: string;
+      markerPathLabel: string;
+      markerUri: string;
+      name: string;
+      rootPathLabel: string;
+      rootUri: string;
+      sourceFormat: 'json';
+      stableId: string;
+      status: 'ready';
+      tags: string[];
+      warnings: [];
+    }) => Promise<Array<{ kind: string; label: string; items: Array<{ label: string; relativePath?: string; type: string }> }>>;
+  };
+}
+
+interface TestVscodeModule {
+  FileType: { Directory: 2; File: 1 };
+  Uri: {
+    file: (fsPath: string) => TestUri;
+    joinPath: (base: TestUri, ...paths: string[]) => TestUri;
+    parse: (value: string) => TestUri;
+  };
+  workspace: {
+    fs: {
+      readDirectory: (uri: TestUri) => Promise<Array<[string, 1 | 2]>>;
+    };
+  };
+}
+
+class TestUri {
+  readonly scheme = 'file';
+
+  constructor(readonly fsPath: string) {}
+
+  toString(): string {
+    return `file://${this.fsPath}`;
+  }
 }
 
 /**
@@ -247,6 +292,106 @@ function loadBuiltCharacterImageModule(): BuiltCharacterImageModule {
   return localRequire(path.join(packageRoot, 'dist', 'commands', 'characterImage.js')) as BuiltCharacterImageModule;
 }
 
+/**
+ * createCharacterScannerVscodeStub 함수.
+ * CharacterDetailScanner boundary test용 in-memory VS Code fs 모듈을 만듦.
+ *
+ * @param entriesByDirectory - 디렉터리 fsPath별 readDirectory 결과
+ * @returns scanner가 import할 최소 vscode stub
+ */
+function createCharacterScannerVscodeStub(entriesByDirectory: Record<string, Array<[string, 1 | 2]>>): TestVscodeModule {
+  return {
+    FileType: { File: 1, Directory: 2 },
+    Uri: {
+      file: (fsPath: string) => new TestUri(path.normalize(fsPath)),
+      joinPath: (base: TestUri, ...paths: string[]) => new TestUri(path.join(base.fsPath, ...paths)),
+      parse: (value: string) => {
+        const parsed = new URL(value);
+        return new TestUri(path.normalize(parsed.pathname));
+      },
+    },
+    workspace: {
+      fs: {
+        readDirectory: async (uri: TestUri) => entriesByDirectory[path.normalize(uri.fsPath)] ?? [],
+      },
+    },
+  };
+}
+
+/**
+ * loadBuiltCharacterDetailScannerModule 함수.
+ * vscode 모듈을 in-memory fs stub으로 대체한 뒤 scanner build 산출물을 불러옴.
+ *
+ * @param vscodeStub - scanner가 사용할 최소 VS Code API stub
+ * @returns built character detail scanner module exports
+ */
+function loadBuiltCharacterDetailScannerModule(vscodeStub: TestVscodeModule): BuiltCharacterDetailScannerModule {
+  const nodeModule = Module as unknown as {
+    _load: (request: string, parent: NodeJS.Module | null, isMain: boolean) => unknown;
+  };
+  const originalLoad = nodeModule._load;
+  const modulePath = path.join(packageRoot, 'dist', 'character-browser', 'CharacterDetailScanner.js');
+
+  assert.ok(existsSync(modulePath), `Built character detail scanner module not found: ${modulePath}`);
+  delete localRequire.cache[localRequire.resolve(modulePath)];
+  nodeModule._load = (request, parent, isMain) => {
+    if (request === 'vscode') return vscodeStub;
+    return originalLoad(request, parent, isMain);
+  };
+
+  try {
+    return localRequire(modulePath) as BuiltCharacterDetailScannerModule;
+  } finally {
+    nodeModule._load = originalLoad;
+  }
+}
+
+/**
+ * getSectionItemSummaries 함수.
+ * scanner item의 경로/라벨/type만 뽑아 테스트 의도를 고정함.
+ *
+ * @param sections - scanner가 반환한 detail section 목록
+ * @param kind - 확인할 section kind
+ * @returns item 핵심 필드 요약 목록
+ */
+function getSectionItemSummaries(
+  sections: Awaited<ReturnType<InstanceType<BuiltCharacterDetailScannerModule['CharacterDetailScanner']>['scan']>>,
+  kind: string,
+): Array<{ label: string; relativePath?: string; type: string }> {
+  return (sections.find((section) => section.kind === kind)?.items ?? []).map((item) => ({
+    label: item.label,
+    relativePath: item.relativePath,
+    type: item.type,
+  }));
+}
+
+/**
+ * createCharacterBrowserCardInput 함수.
+ * scanner boundary test에서 반복되는 card 입력을 최소 필드로 구성함.
+ *
+ * @param characterRootPath - `.risuchar`가 위치한 character root 경로
+ * @param stableId - 테스트 card stable id
+ * @returns CharacterDetailScanner.scan 입력 card shape
+ */
+function createCharacterBrowserCardInput(characterRootPath: string, stableId: string) {
+  return {
+    characterVersion: '1.0.0',
+    creator: 'tester',
+    flags: { lowLevelAccess: false, utilityBot: false },
+    manifestId: stableId,
+    markerPathLabel: '.risuchar',
+    markerUri: new TestUri(path.join(characterRootPath, '.risuchar')).toString(),
+    name: stableId,
+    rootPathLabel: characterRootPath,
+    rootUri: new TestUri(characterRootPath).toString(),
+    sourceFormat: 'json' as const,
+    stableId,
+    status: 'ready' as const,
+    tags: [],
+    warnings: [] as [],
+  };
+}
+
 test('separates standalone server validation from official VS Code client integration scripts', () => {
   const packageJson = readPackageJson();
 
@@ -363,6 +508,94 @@ test('builds deterministic character image metadata updates', () => {
       ],
     },
   );
+});
+
+test('scans marker parent recursively and preserves nested character artifact paths', async () => {
+  const characterRootPath = path.join('/tmp', 'risu-character', 'alice');
+  const scannerModule = loadBuiltCharacterDetailScannerModule(
+    createCharacterScannerVscodeStub({
+      [characterRootPath]: [
+        ['.risuchar', 1],
+        ['html', 2],
+        ['lorebooks', 2],
+        ['lua', 2],
+        ['regex', 2],
+      ],
+      [path.join(characterRootPath, 'html')]: [['page.risuhtml', 1]],
+      [path.join(characterRootPath, 'lorebooks')]: [['foo.risulorebook', 1]],
+      [path.join(characterRootPath, 'lua')]: [['main.risulua', 1]],
+      [path.join(characterRootPath, 'regex')]: [['rule.risuregex', 1]],
+    }),
+  );
+
+  const sections = await new scannerModule.CharacterDetailScanner().scan(
+    createCharacterBrowserCardInput(characterRootPath, 'alice'),
+  );
+
+  assert.deepEqual(
+    sections.map((section) => section.label),
+    ['Manifest', 'Lorebooks', 'Regex Rules', 'HTML', 'Lua', 'Diagnostics'],
+  );
+  assert.deepEqual(getSectionItemSummaries(sections, 'lorebooks'), [
+    { label: 'foo.risulorebook', relativePath: 'lorebooks/foo.risulorebook', type: 'risulorebook' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'regexRules'), [
+    { label: 'rule.risuregex', relativePath: 'regex/rule.risuregex', type: 'risuregex' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'html'), [
+    { label: 'page.risuhtml', relativePath: 'html/page.risuhtml', type: 'risuhtml' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'lua'), [
+    { label: 'main.risulua', relativePath: 'lua/main.risulua', type: 'risulua' },
+  ]);
+});
+
+test('does not let large asset directories exhaust artifact scan budget', async () => {
+  const characterRootPath = path.join('/tmp', 'risu-character', 'alternate-hunters-v2', 'extract');
+  const assetEntries = Array.from({ length: 600 }, (_, index): [string, 1] => [
+    `asset-${String(index).padStart(3, '0')}.png`,
+    1,
+  ]);
+  const scannerModule = loadBuiltCharacterDetailScannerModule(
+    createCharacterScannerVscodeStub({
+      [characterRootPath]: [
+        ['.risuchar', 1],
+        ['assets', 2],
+        ['html', 2],
+        ['lorebooks', 2],
+        ['lua', 2],
+        ['regex', 2],
+      ],
+      [path.join(characterRootPath, 'assets')]: [['additional', 2]],
+      [path.join(characterRootPath, 'assets', 'additional')]: assetEntries,
+      [path.join(characterRootPath, 'html')]: [['background.risuhtml', 1]],
+      [path.join(characterRootPath, 'lorebooks')]: [['헌터', 2]],
+      [path.join(characterRootPath, 'lorebooks', '헌터')]: [['사냥개.risulorebook', 1]],
+      [path.join(characterRootPath, 'lua')]: [['Alternate_Hunters_V2.risulua', 1]],
+      [path.join(characterRootPath, 'regex')]: [['rule.risuregex', 1]],
+    }),
+  );
+
+  const sections = await new scannerModule.CharacterDetailScanner().scan(
+    createCharacterBrowserCardInput(characterRootPath, 'alternate-hunters-v2'),
+  );
+
+  assert.deepEqual(
+    sections.map((section) => section.label),
+    ['Manifest', 'Lorebooks', 'Regex Rules', 'HTML', 'Lua', 'Diagnostics'],
+  );
+  assert.deepEqual(getSectionItemSummaries(sections, 'lorebooks'), [
+    { label: '사냥개.risulorebook', relativePath: 'lorebooks/헌터/사냥개.risulorebook', type: 'risulorebook' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'regexRules'), [
+    { label: 'rule.risuregex', relativePath: 'regex/rule.risuregex', type: 'risuregex' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'html'), [
+    { label: 'background.risuhtml', relativePath: 'html/background.risuhtml', type: 'risuhtml' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'lua'), [
+    { label: 'Alternate_Hunters_V2.risulua', relativePath: 'lua/Alternate_Hunters_V2.risulua', type: 'risulua' },
+  ]);
 });
 
 test('builds deterministic native LuaLS stub paths and library settings', () => {

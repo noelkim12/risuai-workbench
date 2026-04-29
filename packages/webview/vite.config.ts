@@ -1,8 +1,14 @@
 import path from 'path';
+import { svelte, vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
   base: './',
+  plugins: [
+    svelte({
+      preprocess: vitePreprocess(),
+    }),
+  ],
   build: {
     outDir: 'dist',
     emptyOutDir: true,
