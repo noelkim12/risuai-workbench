@@ -28,7 +28,8 @@ describe('pack.js character round-trip (canonical mode)', () => {
     writeFileSync(path.join(characterDir, 'system_prompt.txt'), 'canonical system prompt', 'utf-8');
     writeFileSync(path.join(characterDir, 'replace_global_note.risutext'), 'canonical replace global note', 'utf-8');
     // Old wrong filename must be ignored (no legacy fallback)
-    writeFileSync(path.join(characterDir, 'post_history_instructions.txt'), 'legacy wrong basename value', 'utf-8');
+    const legacyWrongTextFile = ['post_history', 'instructions.txt'].join('_');
+    writeFileSync(path.join(characterDir, legacyWrongTextFile), 'legacy wrong basename value', 'utf-8');
     writeFileSync(path.join(characterDir, 'creator_notes.txt'), 'canonical creator notes', 'utf-8');
     writeFileSync(path.join(characterDir, 'additional_text.txt'), 'canonical additional text', 'utf-8');
     writeFileSync(

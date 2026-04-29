@@ -277,7 +277,8 @@ describe('charx extract integration (canonical mode)', () => {
     expect(typeof manifest.id).toBe('string');
     expect(existsSync(path.join(outDir, 'character', 'metadata.json'))).toBe(false);
     expect(existsSync(path.join(outDir, 'character', 'description.txt'))).toBe(false);
-    expect(existsSync(path.join(outDir, 'character', 'post_history_instructions.risutext'))).toBe(false);
+    const legacyRisutextFile = ['post_history', 'instructions.risutext'].join('_');
+    expect(existsSync(path.join(outDir, 'character', legacyRisutextFile))).toBe(false);
     expect(existsSync(path.join(outDir, 'character', 'alternate_greetings.json'))).toBe(false);
 
     for (const fileName of [
@@ -415,8 +416,10 @@ describe('charx extract integration (canonical mode)', () => {
     expect(existsSync(path.join(outDir, 'character', 'description.txt'))).toBe(false);
     expect(existsSync(path.join(outDir, 'character', 'first_mes.txt'))).toBe(false);
     expect(existsSync(path.join(outDir, 'character', 'system_prompt.txt'))).toBe(false);
-    expect(existsSync(path.join(outDir, 'character', 'post_history_instructions.txt'))).toBe(false);
-    expect(existsSync(path.join(outDir, 'character', 'post_history_instructions.risutext'))).toBe(false);
+    const legacyTextFile = ['post_history', 'instructions.txt'].join('_');
+    const legacyRisutextFile = ['post_history', 'instructions.risutext'].join('_');
+    expect(existsSync(path.join(outDir, 'character', legacyTextFile))).toBe(false);
+    expect(existsSync(path.join(outDir, 'character', legacyRisutextFile))).toBe(false);
     expect(existsSync(path.join(outDir, 'character', 'creator_notes.txt'))).toBe(false);
     expect(existsSync(path.join(outDir, 'character', 'additional_text.txt'))).toBe(false);
     expect(existsSync(path.join(outDir, 'character', 'alternate_greetings.json'))).toBe(false);

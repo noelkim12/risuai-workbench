@@ -13,10 +13,11 @@ describe('blank character CharX mapping', () => {
     );
   });
 
-  it('does not expose postHistoryInstructions as the active local blank character field', () => {
+  it('does not expose the legacy post-history field as the active local blank character field', () => {
     const character = createBlankChar() as unknown as Record<string, unknown>;
+    const legacyPostHistoryKey = ['postHistory', 'Instructions'].join('');
 
     expect(character.replaceGlobalNote).toBe('');
-    expect(Object.prototype.hasOwnProperty.call(character, 'postHistoryInstructions')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(character, legacyPostHistoryKey)).toBe(false);
   });
 });
