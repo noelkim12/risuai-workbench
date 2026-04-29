@@ -41,6 +41,15 @@ interface ScaffoldOptions {
 
 const SCAFFOLD_TYPES = new Set<string>(['charx', 'module', 'preset']);
 
+const CHARX_PROSE_PLACEHOLDERS: Array<[string, string]> = [
+  ['character/description.risutext', '캐릭터 설명을 여기에 작성하세요.\n'],
+  ['character/first_mes.risutext', '첫 번째 메시지를 여기에 작성하세요.\n'],
+  ['character/system_prompt.risutext', ''],
+  ['character/replace_global_note.risutext', ''],
+  ['character/creator_notes.risutext', ''],
+  ['character/additional_text.risutext', ''],
+];
+
 // ── Entry Point ─────────────────────────────────────────────────────
 
 export function runScaffoldWorkflow(argv: readonly string[]): number {
@@ -124,37 +133,36 @@ function runScaffold(options: ScaffoldOptions): void {
 
 function scaffoldCharx(root: string, options: ScaffoldOptions): number {
   const sanitizedName = sanitizeFilename(options.name);
+  const now = new Date().toISOString();
   let count = 0;
 
-  // character/metadata.json
-  writeJson(path.join(root, 'character', 'metadata.json'), {
+  // .risuchar
+  writeJson(path.join(root, '.risuchar'), {
+    $schema: 'https://risuai-workbench.dev/schemas/risuchar.schema.json',
+    kind: 'risu.character',
+    schemaVersion: 1,
+    id: crypto.randomUUID(),
     name: options.name,
     creator: options.creator,
-    character_version: '1.0',
-    creation_date: Date.now(),
-    modification_date: null,
-    utilityBot: false,
-    lowLevelAccess: false,
+    characterVersion: '1.0',
+    createdAt: now,
+    modifiedAt: now,
+    sourceFormat: 'scaffold',
+    flags: {
+      utilityBot: false,
+      lowLevelAccess: false,
+    },
   });
   count++;
 
-  // character text files
-  const textFiles: Array<[string, string]> = [
-    ['character/description.txt', '캐릭터 설명을 여기에 작성하세요.\n'],
-    ['character/first_mes.txt', '첫 번째 메시지를 여기에 작성하세요.\n'],
-    ['character/system_prompt.txt', ''],
-    ['character/post_history_instructions.txt', ''],
-    ['character/creator_notes.txt', ''],
-    ['character/additional_text.txt', ''],
-  ];
-
-  for (const [filePath, content] of textFiles) {
+  // character prose files
+  for (const [filePath, content] of CHARX_PROSE_PLACEHOLDERS) {
     writeText(path.join(root, filePath), content);
     count++;
   }
 
-  // character/alternate_greetings.json
-  writeJson(path.join(root, 'character', 'alternate_greetings.json'), []);
+  // character/alternate_greetings/_order.json
+  writeJson(path.join(root, 'character', 'alternate_greetings', '_order.json'), []);
   count++;
 
   // lorebooks/_order.json

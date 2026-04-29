@@ -277,13 +277,14 @@ describe('charx extract integration (canonical mode)', () => {
     expect(typeof manifest.id).toBe('string');
     expect(existsSync(path.join(outDir, 'character', 'metadata.json'))).toBe(false);
     expect(existsSync(path.join(outDir, 'character', 'description.txt'))).toBe(false);
+    expect(existsSync(path.join(outDir, 'character', 'post_history_instructions.risutext'))).toBe(false);
     expect(existsSync(path.join(outDir, 'character', 'alternate_greetings.json'))).toBe(false);
 
     for (const fileName of [
       'description.risutext',
       'first_mes.risutext',
       'system_prompt.risutext',
-      'post_history_instructions.risutext',
+      'replace_global_note.risutext',
       'creator_notes.risutext',
       'additional_text.risutext',
     ]) {
