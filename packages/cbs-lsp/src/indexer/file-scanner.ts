@@ -123,6 +123,7 @@ function createArtifactCounters(): Record<CustomExtensionArtifact, number> {
     toggle: 0,
     variable: 0,
     html: 0,
+    text: 0,
   } satisfies Record<CustomExtensionArtifact, number>;
 }
 

@@ -20,6 +20,7 @@ export const SUPPORTED_CBS_EXTENSIONS = [
   '.risuprompt',
   '.risuhtml',
   '.risulua',
+  '.risutext',
 ] as const
 
 /**

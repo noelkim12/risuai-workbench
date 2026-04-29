@@ -3079,6 +3079,8 @@ describe('LSP server integration', () => {
             { globPattern: '**/*.risuprompt' },
             { globPattern: '**/*.risuhtml' },
             { globPattern: '**/*.risulua' },
+            { globPattern: '**/*.risuvar' },
+            { globPattern: '**/*.risutext' },
           ],
         },
       },

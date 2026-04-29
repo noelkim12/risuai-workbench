@@ -14,6 +14,8 @@ import { DiagnosticCode } from '../src/analyzer/diagnostics';
 import type { VariableFlowQueryResult, VariableFlowService } from '../src/services';
 import type { CbsFragment } from 'risu-workbench-core';
 import { fragmentAnalysisService } from '../src/core';
+import { WATCHED_FILE_GLOB_PATTERNS } from '../src/helpers/server-workspace-helper';
+import { shouldRouteForDiagnostics, SUPPORTED_CBS_EXTENSIONS } from '../src/utils/document-router';
 import {
   createFixtureRequest,
   getFixtureCorpusEntry,
@@ -117,6 +119,21 @@ return greeting`;
       expect(result?.fragments[0].section).toBe('full');
     });
 
+    it('maps risutext full body to a single TEXT fragment', () => {
+      const content = 'Greeting line\n{{getvar::mood}}\nclosing line';
+      const result = mapDocumentToCbsFragments('/path/to/character/description.risutext', content);
+
+      expect(result).not.toBeNull();
+      expect(result?.artifact).toBe('text');
+      expect(result?.fragments).toHaveLength(1);
+      expect(result?.fragments[0]).toEqual({
+        section: 'TEXT',
+        start: 0,
+        end: content.length,
+        content,
+      });
+    });
+
     it('returns null for toggle files (non-CBS)', () => {
       const content = 'toggle_setting = true';
       const result = mapDocumentToCbsFragments('/path/to/toggle.risutoggle', content);
@@ -127,6 +144,13 @@ return greeting`;
     it('returns null for variable files (non-CBS)', () => {
       const content = 'key1=value1\nkey2=value2';
       const result = mapDocumentToCbsFragments('/path/to/vars.risuvar', content);
+
+      expect(result).toBeNull();
+    });
+
+    it('returns null for risuchar root marker files', () => {
+      const content = '{"kind":"risu.character","schemaVersion":1}';
+      const result = mapDocumentToCbsFragments('/path/to/.risuchar', content);
 
       expect(result).toBeNull();
     });
@@ -412,6 +436,34 @@ Hello <user>
           },
         ],
       });
+    });
+
+    it('routes diagnostics for risutext content through the full-file TEXT fragment', () => {
+      const content = 'Intro line\n{{unknown_function::arg}}\nOutro line';
+      const diagnostics = routeDiagnosticsForDocument('/path/to/character/description.risutext', content, {
+        checkUnknownFunctions: true,
+      });
+
+      expect(diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+        DiagnosticCode.UnknownFunction,
+      );
+      const unknownFunctionDiagnostic = diagnostics.find(
+        (diagnostic) => diagnostic.code === DiagnosticCode.UnknownFunction,
+      );
+      expect(unknownFunctionDiagnostic?.range.start).toEqual({ line: 1, character: 2 });
+    });
+
+    it('keeps risuchar out of CBS diagnostics routing', () => {
+      const content = '{"kind":"risu.character","note":"{{unknown_function::arg}}"}';
+
+      expect(shouldRouteForDiagnostics('/path/to/.risuchar')).toBe(false);
+      expect(routeDiagnosticsForDocument('/path/to/.risuchar', content, {})).toEqual([]);
+    });
+
+    it('includes risutext in CBS routing and watched-file contracts', () => {
+      expect(SUPPORTED_CBS_EXTENSIONS).toContain('.risutext');
+      expect(shouldRouteForDiagnostics('/path/to/character/description.risutext')).toBe(true);
+      expect(WATCHED_FILE_GLOB_PATTERNS).toContain('**/*.risutext');
     });
 
     it('keeps routing diagnostics for recovered regex fragments after malformed section headers', () => {

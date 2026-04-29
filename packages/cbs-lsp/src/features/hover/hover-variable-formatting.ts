@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/features/hover/hover-variable-formatting.ts
  */
 
-import type { VariableFlowQueryResult } from '../../services';
+import type { DefaultVariableDefinitionLocation, VariableFlowQueryResult } from '../../services';
 import { CbsLspTextHelper } from '../../helpers/text-helper';
 
 export type HoverWorkspaceVariableKind = 'chat' | 'global' | 'loop' | 'temp';
@@ -17,6 +17,11 @@ export interface AppendWorkspaceVariableSummaryOptions {
 }
 
 type WorkspaceOccurrence = VariableFlowQueryResult['occurrences'][number];
+
+interface WorkspaceCommandLinkTarget {
+  uri: string;
+  range: WorkspaceOccurrence['hostRange'];
+}
 
 /**
  * appendWorkspaceVariableSummary 함수.
@@ -46,6 +51,13 @@ export function appendWorkspaceVariableSummary(
 
   if (workspaceVariableQuery.defaultValue) {
     lines.push(`- Default value: ${workspaceVariableQuery.defaultValue}`);
+  }
+
+  if (workspaceVariableQuery.defaultDefinitions.length > 0) {
+    lines.push('- Default definitions:');
+    for (const definition of workspaceVariableQuery.defaultDefinitions) {
+      lines.push(`  - ${formatDefaultDefinitionSummary(definition)}`);
+    }
   }
 
   if (representativeWriters.length > 0) {
@@ -102,7 +114,43 @@ export function formatWorkspaceOccurrenceLink(
   occurrence: WorkspaceOccurrence,
   label: string,
 ): string {
-  return `[${escapeMarkdownLinkLabel(label)}](${formatFileMarkdownLinkTarget(occurrence)})`;
+  return formatWorkspaceLocationLink(
+    { uri: occurrence.uri, range: occurrence.hostRange },
+    label,
+  );
+}
+
+/**
+ * formatDefaultDefinitionSummary 함수.
+ * `.risuvar` default variable key 정의 위치를 command link 요약으로 변환함.
+ *
+ * @param definition - `.risuvar` key 정의 위치와 값 정보
+ * @returns 포맷팅된 default definition 요약 문자열
+ */
+export function formatDefaultDefinitionSummary(
+  definition: DefaultVariableDefinitionLocation,
+): string {
+  const codeQuote = String.fromCharCode(96);
+  const locationLabel = `${definition.relativePath} (${CbsLspTextHelper.formatRangeStart(definition.range)})`;
+  return `${formatWorkspaceLocationLink(
+    { uri: definition.uri, range: definition.range },
+    locationLabel,
+  )} — ${codeQuote}${definition.variableName}${codeQuote}`;
+}
+
+/**
+ * formatWorkspaceLocationLink 함수.
+ * workspace 위치 정보로 이동하는 command markdown link를 생성함.
+ *
+ * @param target - command 인수로 직렬화할 URI와 range
+ * @param label - markdown link에 표시할 위치 label
+ * @returns command URI markdown link 문자열
+ */
+export function formatWorkspaceLocationLink(
+  target: WorkspaceCommandLinkTarget,
+  label: string,
+): string {
+  return `[${escapeMarkdownLinkLabel(label)}](${formatWorkspaceLocationMarkdownLinkTarget(target)})`;
 }
 
 /**
@@ -124,11 +172,27 @@ export function escapeMarkdownLinkLabel(label: string): string {
  * @returns markdown link target command URI
  */
 export function formatFileMarkdownLinkTarget(occurrence: WorkspaceOccurrence): string {
+  return formatWorkspaceLocationMarkdownLinkTarget({
+    uri: occurrence.uri,
+    range: occurrence.hostRange,
+  });
+}
+
+/**
+ * formatWorkspaceLocationMarkdownLinkTarget 함수.
+ * workspace 위치를 open command URI markdown target으로 변환함.
+ *
+ * @param target - command 인수로 직렬화할 URI와 range
+ * @returns markdown link target command URI
+ */
+export function formatWorkspaceLocationMarkdownLinkTarget(
+  target: WorkspaceCommandLinkTarget,
+): string {
   const args = encodeURIComponent(
     JSON.stringify([
       {
-        range: occurrence.hostRange,
-        uri: occurrence.uri,
+        range: target.range,
+        uri: target.uri,
       },
     ]),
   );

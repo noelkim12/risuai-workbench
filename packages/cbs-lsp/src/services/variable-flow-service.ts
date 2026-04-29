@@ -172,6 +172,7 @@ export interface WorkspaceSnapshotState {
  * @param flowEntry - core variable-flow 엔트리, 없으면 null
  * @param issues - occurrence와 매핑된 issue 목록
  * @param defaultValue - defaultVariables에서 온 기본값 또는 null
+ * @param defaultDefinitions - `.risuvar` key 정의 위치 목록
  * @param matchedOccurrence - 위치 기반 질의일 때 cursor가 가리킨 occurrence
  */
 export interface VariableFlowQueryResult extends CbsAgentProtocolMarker {
@@ -183,6 +184,7 @@ export interface VariableFlowQueryResult extends CbsAgentProtocolMarker {
   flowEntry: VarFlowEntry | null;
   issues: readonly VariableFlowIssueMatch[];
   defaultValue: string | null;
+  defaultDefinitions: readonly DefaultVariableDefinitionLocation[];
   matchedOccurrence: UnifiedVariableOccurrence | null;
 }
 
@@ -496,6 +498,7 @@ export class VariableFlowService {
       flowEntry,
       issues,
       defaultValue,
+      defaultDefinitions,
       matchedOccurrence: null,
     };
   }

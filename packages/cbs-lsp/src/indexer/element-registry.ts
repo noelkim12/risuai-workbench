@@ -169,6 +169,7 @@ function createArtifactSummaryRecord(): Record<CustomExtensionArtifact, ElementR
     toggle: { files: 0, elements: 0, graphSeeds: 0 },
     variable: { files: 0, elements: 0, graphSeeds: 0 },
     html: { files: 0, elements: 0, graphSeeds: 0 },
+    text: { files: 0, elements: 0, graphSeeds: 0 },
   } satisfies Record<CustomExtensionArtifact, ElementRegistryArtifactSummary>;
 }
 

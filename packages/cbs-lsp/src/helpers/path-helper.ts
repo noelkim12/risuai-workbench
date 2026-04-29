@@ -11,6 +11,8 @@ import {
   parseCustomExtensionArtifactFromPath,
 } from 'risu-workbench-core';
 
+const CHARACTER_WORKSPACE_ROOT_MARKER_FILE_NAME = '.risuchar';
+
 /**
  * CbsLspPathHelper 클래스.
  * server/provider/indexer가 공통으로 쓰는 file URI 및 workspace root 해석 유틸을 모음.
@@ -43,10 +45,15 @@ export class CbsLspPathHelper {
    * @returns 계산된 workspace root, 규칙을 해석할 수 없으면 null
    */
   static resolveWorkspaceRootFromFilePath(filePath: string): string | null {
+    const normalizedPath = path.normalize(filePath);
+
+    if (path.basename(normalizedPath) === CHARACTER_WORKSPACE_ROOT_MARKER_FILE_NAME) {
+      return path.dirname(normalizedPath);
+    }
+
     try {
       const artifact = parseCustomExtensionArtifactFromPath(filePath);
       const contract = getCustomExtensionArtifactContract(artifact);
-      const normalizedPath = path.normalize(filePath);
       const segments = normalizedPath.split(path.sep);
       const directoryIndex = segments.lastIndexOf(contract.directory);
 

@@ -12,10 +12,16 @@ import type {
 } from '../../src/indexer';
 import type {
   VariableFlowQueryResult,
-  VariableFlowService,
   WorkspaceSnapshotState,
 } from '../../src/services';
 import { createAgentMetadataWorkspaceSnapshot } from '../../src/core';
+import {
+  buildWorkspaceScanResult,
+  createWorkspaceScanFileFromText,
+  ElementRegistry,
+  UnifiedVariableGraph,
+} from '../../src/indexer';
+import { VariableFlowService } from '../../src/services';
 
 export interface VariableOccurrenceSeed {
   variableName?: string;
@@ -36,6 +42,34 @@ export interface VariableFlowServiceStubOptions {
   queryVariable?: (variableName: string) => VariableFlowQueryResult | null;
   queryAt?: (uri: string, hostOffset: number) => VariableFlowQueryResult | null;
   workspaceSnapshot?: WorkspaceSnapshotState | null;
+}
+
+export interface VariableFlowServiceFileSeed {
+  absolutePath: string;
+  text: string;
+}
+
+/**
+ * createRealVariableFlowService 함수.
+ * in-memory workspace 파일들로 실제 registry/graph/service를 조립함.
+ *
+ * @param files - workspace root 아래 absolute path와 text 목록
+ * @returns 실제 VariableFlowService 인스턴스
+ */
+export function createRealVariableFlowService(
+  files: readonly VariableFlowServiceFileSeed[],
+): VariableFlowService {
+  const workspaceRoot = '/workspace';
+  const scanFiles = files.map((file) =>
+    createWorkspaceScanFileFromText({
+      workspaceRoot,
+      absolutePath: file.absolutePath,
+      text: file.text,
+    }),
+  );
+  const registry = new ElementRegistry(buildWorkspaceScanResult(workspaceRoot, scanFiles));
+  const graph = UnifiedVariableGraph.fromRegistry(registry);
+  return new VariableFlowService({ graph, registry });
 }
 
 /**
@@ -110,6 +144,7 @@ export function createVariableFlowQueryResult(
     flowEntry: null,
     issues: [],
     defaultValue: null,
+    defaultDefinitions: [],
     matchedOccurrence,
   };
 }

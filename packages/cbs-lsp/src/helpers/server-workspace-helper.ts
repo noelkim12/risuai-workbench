@@ -62,6 +62,8 @@ export const WATCHED_FILE_GLOB_PATTERNS = Object.freeze([
   '**/*.risuprompt',
   '**/*.risuhtml',
   '**/*.risulua',
+  '**/*.risuvar',
+  '**/*.risutext',
 ]);
 
 /**

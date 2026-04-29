@@ -21,6 +21,7 @@ import {
 } from '../fixtures/fixture-corpus';
 import {
   createVariableFlowQueryResult,
+  createRealVariableFlowService,
   createVariableFlowServiceStub,
   createVariableOccurrence,
 } from './variable-flow-test-helpers';
@@ -188,35 +189,6 @@ function createRisuToggleService(...toggleNames: string[]): VariableFlowService 
         globalVariableName: `toggle_${name}`,
         definitionCount: 1,
       })),
-  });
-}
-
-/**
- * createDefaultOnlyVariableService 함수.
- * `.risuvar` 기본 변수 key만 있는 workspace completion 후보를 흉내 냄.
- *
- * @param variableNames - 기본 변수 파일에 있다고 가정할 chat variable 이름 목록
- * @returns CompletionProvider에 주입할 VariableFlowService stub
- */
-function createDefaultOnlyVariableService(...variableNames: string[]): VariableFlowService {
-  return createVariableFlowServiceStub({
-    getAllVariableNames: () => variableNames,
-    getDefaultVariableDefinitions: (variableName) =>
-      variableNames.includes(variableName)
-        ? [
-            {
-              uri: `file:///workspace/variables/defaults.risuvar`,
-              relativePath: 'variables/defaults.risuvar',
-              variableName,
-              value: '1',
-              range: {
-                start: { line: 0, character: 0 },
-                end: { line: 0, character: variableName.length },
-              },
-            },
-          ]
-        : [],
-    queryVariable: () => null,
   });
 }
 
@@ -2436,22 +2408,31 @@ describe('CompletionProvider', () => {
 
     it('offers .risuvar default-only variables for chat variable argument completion', () => {
       const entry = getFixtureCorpusEntry('lorebook-basic');
-      const modifiedText = entry.text.replace('{{user}}', '{{getvar::}}');
+      const modifiedText = entry.text.replace('{{user}}', '{{getvar::t}}');
       const modifiedRequest = { ...createFixtureRequest(entry), text: modifiedText };
       const provider = createProvider(
         new FragmentAnalysisService(),
         modifiedRequest,
-        createDefaultOnlyVariableService('tea'),
+  createRealVariableFlowService([
+    {
+      absolutePath: '/workspace/variables/defaults.risuvar',
+      text: ['# defaults', ' tea =green=oolong', 'coffee=dark', ''].join('\n'),
+    },
+  ]),
       );
 
       const completions = provider.provide(
         createParams(
           modifiedRequest,
-          offsetToPosition(modifiedText, modifiedText.indexOf('{{getvar::') + '{{getvar::'.length),
+          offsetToPosition(modifiedText, modifiedText.indexOf('{{getvar::t') + '{{getvar::t'.length),
         ),
       );
 
       expectCompletionLabels(completions, 'tea');
+      expect(completions.find((completion) => completion.label === 'tea')?.documentation).toEqual({
+        kind: 'markdown',
+        value: expect.stringContaining('Workspace writers: 1'),
+      });
     });
 
     it('filters chat variables by prefix when typing', () => {

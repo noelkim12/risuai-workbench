@@ -13,6 +13,7 @@ import {
 } from '../fixtures/fixture-corpus';
 import {
   createVariableFlowQueryResult,
+  createRealVariableFlowService,
   createVariableFlowServiceStub,
   createVariableOccurrence,
 } from './variable-flow-test-helpers';
@@ -275,6 +276,53 @@ describe('HoverProvider', () => {
     expect(markdown).not.toContain('Workspace readers:');
     expect(markdown).not.toContain('Representative writers:');
     expect(markdown).not.toContain('Workspace issues:');
+  });
+
+  it('shows .risuvar default value for default-only chat variable hover', () => {
+    const text = '{{getvar::tea}}';
+    const request = {
+      uri: 'file:///workspace/html/default-hover.risuhtml',
+      version: 1,
+      filePath: '/workspace/html/default-hover.risuhtml',
+      text,
+    };
+    const provider = createProvider(
+      new FragmentAnalysisService(),
+      request,
+      createRealVariableFlowService([
+        {
+          absolutePath: '/workspace/html/default-hover.risuhtml',
+          text,
+        },
+        {
+          absolutePath: '/workspace/variables/defaults.risuvar',
+          text: ['# user defaults', 'tea=green=oolong', ''].join('\n'),
+        },
+      ]),
+    );
+
+    const hover = provider.provide(createParams(request, positionAt(text, 'tea', 1)));
+    const markdown = expectMarkdownHover(hover);
+
+    expect(markdown).toContain('**Variable: tea**');
+    expect(markdown).toContain('Workspace writers: 0');
+    expect(markdown).toContain('Workspace readers: 1');
+    expect(markdown).toContain('Default value: green=oolong');
+    expect(markdown).toContain('Default definitions:');
+    expect(markdown).toContain('variables/defaults.risuvar');
+    expect(markdown).toContain(
+      `[variables/defaults.risuvar (line 2, character 1)](command:risuWorkbench.cbs.openOccurrence?${encodeURIComponent(
+        JSON.stringify([
+          {
+            range: {
+              start: { line: 1, character: 0 },
+              end: { line: 1, character: 3 },
+            },
+            uri: 'file:///workspace/variables/defaults.risuvar',
+          },
+        ]),
+      )})`,
+    );
   });
 
   it('resolves variable argument hover inside .risulua CBS string literals', () => {

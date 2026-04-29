@@ -126,6 +126,7 @@ describe('VariableFlowService', () => {
     expect(result?.flowEntry?.varName).toBe('mood');
     expect(result?.issues).toEqual([]);
     expect(result?.defaultValue).toBeNull();
+    expect(result?.defaultDefinitions).toEqual([]);
     expect(result?.matchedOccurrence).toBeNull();
 
     const snapshot = snapshotLayer3Queries({ activationChain: null, variableFlow: result ?? null });
@@ -146,6 +147,9 @@ describe('VariableFlowService', () => {
         deterministicOrdering: {
           variableOccurrences: 'occurrenceId',
           variableReadersWriters: 'uri -> hostStartOffset -> hostEndOffset -> occurrenceId',
+        },
+        alwaysPresentButMayBeEmpty: {
+          variableFlowArrays: ['occurrences', 'readers', 'writers', 'issues', 'defaultDefinitions'],
         },
       },
       variableFlow: {

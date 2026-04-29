@@ -12,6 +12,7 @@ import { offsetToPosition } from '../../src/utils/position';
 import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
 import {
   createVariableFlowQueryResult,
+  createRealVariableFlowService,
   createVariableFlowServiceStub,
   createVariableOccurrence,
 } from './variable-flow-test-helpers';
@@ -613,23 +614,12 @@ describe('DefinitionProvider', () => {
       const provider = createProvider(
         service,
         request,
-        createVariableFlowServiceStub({
-          getDefaultVariableDefinitions: (name) =>
-            name === 'ct_memory'
-              ? [
-                  {
-                    uri: variableUri,
-                    relativePath: 'variables/defaults.risuvar',
-                    variableName: 'ct_memory',
-                    value: 'seed',
-                    range: {
-                      start: { line: 0, character: 0 },
-                      end: { line: 0, character: 'ct_memory'.length },
-                    },
-                  },
-                ]
-              : [],
-        }),
+        createRealVariableFlowService([
+          {
+            absolutePath: '/workspace/variables/defaults.risuvar',
+            text: '  ct_memory=seed=with=equals\nother=ignored\n',
+          },
+        ]),
       );
 
       const definition = provider.provide(createParams(request, positionAt(text, 'ct_memory', 1)));
@@ -641,8 +631,8 @@ describe('DefinitionProvider', () => {
         expect.objectContaining({
           targetUri: variableUri,
           targetRange: {
-            start: { line: 0, character: 0 },
-            end: { line: 0, character: 'ct_memory'.length },
+            start: { line: 0, character: 2 },
+            end: { line: 0, character: 2 + 'ct_memory'.length },
           },
           originSelectionRange: {
             start: { line: 22000, character: 'local cbs = "{{getvar::'.length },

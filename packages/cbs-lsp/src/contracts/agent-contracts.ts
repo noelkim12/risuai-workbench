@@ -358,6 +358,7 @@ export interface Layer3QueryEnvelopeContractDescriptor {
       'flowEntry',
       'issues',
       'defaultValue',
+      'defaultDefinitions',
       'matchedOccurrence',
     ];
     /** 변수 흐름 내 발생한 이슈와 매칭된 발생 내역 필드. */
@@ -403,7 +404,7 @@ export interface Layer3QueryEnvelopeContractDescriptor {
    */
   alwaysPresentButMayBeEmpty: {
     /** 변수 흐름 결과에서 항상 배열로 제공되어야 하는 목록. */
-    variableFlowArrays: readonly ['occurrences', 'readers', 'writers', 'issues'];
+    variableFlowArrays: readonly ['occurrences', 'readers', 'writers', 'issues', 'defaultDefinitions'];
     /** 활성화 체인 관계 목록 중 항상 배열이어야 하는 필드. */
     activationArrays: readonly [
       'incoming',
@@ -472,6 +473,7 @@ export const LAYER3_QUERY_ENVELOPE_CONTRACT: Layer3QueryEnvelopeContractDescript
       'flowEntry',
       'issues',
       'defaultValue',
+      'defaultDefinitions',
       'matchedOccurrence',
     ],
     variableFlowIssueMatch: ['issue', 'occurrences'],
@@ -498,7 +500,7 @@ export const LAYER3_QUERY_ENVELOPE_CONTRACT: Layer3QueryEnvelopeContractDescript
     activationMatch: ['uri', 'relativePath'],
   },
   alwaysPresentButMayBeEmpty: {
-    variableFlowArrays: ['occurrences', 'readers', 'writers', 'issues'],
+    variableFlowArrays: ['occurrences', 'readers', 'writers', 'issues', 'defaultDefinitions'],
     activationArrays: [
       'incoming',
       'outgoing',
