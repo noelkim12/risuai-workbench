@@ -126,7 +126,9 @@ describe('src/cli main dispatcher integration', () => {
     expect(result.status).toBe(0);
     // In canonical mode, charx.json should NOT exist (only canonical artifacts)
     expect(fs.existsSync(path.join(expectedOutDir, 'charx.json'))).toBe(false);
-    expect(fs.existsSync(path.join(expectedOutDir, 'character', 'metadata.json'))).toBe(true);
+    expect(fs.existsSync(path.join(expectedOutDir, '.risuchar'))).toBe(true);
+    expect(fs.existsSync(path.join(expectedOutDir, 'character', 'description.risutext'))).toBe(true);
+    expect(fs.existsSync(path.join(expectedOutDir, 'character', 'metadata.json'))).toBe(false);
     expect(fs.existsSync(path.join(tempDir, 'charx.json'))).toBe(false);
 
     fs.rmSync(tempDir, { recursive: true, force: true });

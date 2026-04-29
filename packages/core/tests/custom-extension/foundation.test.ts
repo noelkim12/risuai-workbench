@@ -33,9 +33,26 @@ describe('custom-extension foundation contracts', () => {
     ) => boolean;
 
     expect(targets).toEqual(['charx', 'module', 'preset']);
-    expect(extensions).toEqual(['lorebook', 'regex', 'lua', 'prompt', 'toggle', 'variable', 'html']);
+    expect(extensions).toEqual([
+      'lorebook',
+      'regex',
+      'lua',
+      'prompt',
+      'toggle',
+      'variable',
+      'html',
+      'text',
+    ]);
+    expect(extensions).not.toContain('risuchar');
 
-    expect(listOwnedExtensions('charx')).toEqual(['lorebook', 'regex', 'lua', 'variable', 'html']);
+    expect(listOwnedExtensions('charx')).toEqual([
+      'lorebook',
+      'regex',
+      'lua',
+      'variable',
+      'html',
+      'text',
+    ]);
     expect(listOwnedExtensions('module')).toEqual([
       'lorebook',
       'regex',
@@ -47,7 +64,9 @@ describe('custom-extension foundation contracts', () => {
     expect(listOwnedExtensions('preset')).toEqual(['regex', 'prompt', 'toggle']);
 
     expect(supportsOwnership('charx', 'toggle')).toBe(false);
+    expect(supportsOwnership('charx', 'text')).toBe(true);
     expect(supportsOwnership('module', 'variable')).toBe(true);
+    expect(supportsOwnership('module', 'text')).toBe(false);
     expect(supportsOwnership('preset', 'prompt')).toBe(true);
     expect(supportsOwnership('preset', 'html')).toBe(false);
   });
@@ -79,6 +98,13 @@ describe('custom-extension foundation contracts', () => {
     expect(buildCanonicalPath({ target: 'charx', artifact: 'html' })).toBe(
       'html/background.risuhtml',
     );
+    expect(
+      buildCanonicalPath({
+        target: 'charx',
+        artifact: 'text',
+        stem: 'description',
+      }),
+    ).toBe('character/description.risutext');
     expect(
       buildCanonicalPath({
         target: 'module',
@@ -141,6 +167,8 @@ describe('custom-extension foundation contracts', () => {
     fs.mkdirSync(path.join(tmpDir, 'regex'), { recursive: true });
     fs.mkdirSync(path.join(tmpDir, 'lua'), { recursive: true });
     fs.mkdirSync(path.join(tmpDir, 'html'), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, 'character'), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, 'character', 'alternate_greetings'), { recursive: true });
     fs.mkdirSync(path.join(tmpDir, 'prompt_template'), { recursive: true });
     fs.mkdirSync(path.join(tmpDir, 'provider'), { recursive: true });
 
@@ -154,6 +182,12 @@ describe('custom-extension foundation contracts', () => {
     fs.writeFileSync(path.join(tmpDir, 'regex', 'combat.risuregex'), '', 'utf-8');
     fs.writeFileSync(path.join(tmpDir, 'lua', 'Adventure.risulua'), '', 'utf-8');
     fs.writeFileSync(path.join(tmpDir, 'html', 'background.risuhtml'), '', 'utf-8');
+    fs.writeFileSync(path.join(tmpDir, 'character', 'description.risutext'), '', 'utf-8');
+    fs.writeFileSync(
+      path.join(tmpDir, 'character', 'alternate_greetings', 'greeting-001.risutext'),
+      '',
+      'utf-8',
+    );
     fs.writeFileSync(path.join(tmpDir, 'prompt_template', 'main.risuprompt'), '', 'utf-8');
 
     const nodeModule = await loadNodeModule();
@@ -168,6 +202,8 @@ describe('custom-extension foundation contracts', () => {
     expect(
       discovery.canonicalFiles.map(({ artifact, relativePath }) => ({ artifact, relativePath })),
     ).toEqual([
+      { artifact: 'text', relativePath: 'character/alternate_greetings/greeting-001.risutext' },
+      { artifact: 'text', relativePath: 'character/description.risutext' },
       { artifact: 'html', relativePath: 'html/background.risuhtml' },
       { artifact: 'lorebook', relativePath: 'lorebooks/nested/alpha.risulorebook' },
       { artifact: 'lua', relativePath: 'lua/Adventure.risulua' },
@@ -191,8 +227,11 @@ describe('custom-extension foundation contracts', () => {
       suffix: string,
     ) => string;
 
-    expect(() => parseCanonicalExtension('.risuunknown')).toThrowError(
+    expect(() => parseCanonicalExtension('.risuunknown')).toThrow(
       'Unsupported canonical extension: .risuunknown',
+    );
+    expect(() => parseCanonicalExtension('.risuchar')).toThrow(
+      'Unsupported canonical extension: .risuchar',
     );
   });
 });
