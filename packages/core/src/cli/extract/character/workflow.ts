@@ -1,8 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ensureDir } from '@/node/fs-helpers';
-import { runAnalyzeWorkflow } from '@/cli/analyze/lua/workflow';
-import { runAnalyzeCharxWorkflow } from '@/cli/analyze/charx/workflow';
 import { getCharacterName } from '@/domain/charx/data';
 import { sanitizeFilename } from '../../../utils/filenames';
 import {
@@ -40,7 +38,7 @@ const HELP_TEXT = `
     5. 에셋 바이너리 추출 → assets/ + assets/manifest.json
     6. backgroundHTML 추출 → html/background.risuhtml
     7. defaultVariables 추출 → variables/default.risuvar
-    8. Character Card 추출 → character/*.txt + metadata.json + alternate_greetings.json
+    8. Character Card 추출 → .risuchar + character/*.risutext + alternate_greetings/*.risutext
     9. Lua 분석 (analyze.js) — deferred to T13
     10. 카드 종합 분석 (analyze-charx.js) → analysis/ — deferred to T13
 
@@ -126,13 +124,13 @@ async function runMain(filePath: string, outArg: string | null, jsonOnly: boolea
   console.log(`     ⏱  Phase 4: ${fmt(performance.now() - t)}`);
 
   t = performance.now();
-  await phase5_extractAssetsAsync(charx, resolvedOutDir, assetSources, mainImage);
+  const assetManifest = await phase5_extractAssetsAsync(charx, resolvedOutDir, assetSources, mainImage);
   console.log(`     ⏱  Phase 5 (assets): ${fmt(performance.now() - t)}`);
 
   t = performance.now();
   phase6_extractBackgroundHTML(charx, resolvedOutDir);
   phase7_extractVariables(charx, resolvedOutDir);
-  phase8_extractCharacterFields(charx, resolvedOutDir);
+  phase8_extractCharacterFields(charx, resolvedOutDir, assetManifest);
   console.log(`     ⏱  Phase 6-8: ${fmt(performance.now() - t)}`);
 
   // Analysis phases deferred to T13 (canonical workspace migration)
@@ -145,37 +143,4 @@ async function runMain(filePath: string, outArg: string | null, jsonOnly: boolea
   console.log(`  📊 추출 완료 → ${path.relative('.', resolvedOutDir)}/`);
   console.log(`  ⏱  총 소요: ${fmt(total)}`);
   console.log('  ────────────────────────────────────────\n');
-}
-
-function runLuaAnalysis(resolvedOutDir: string): void {
-  const luaDir = path.join(resolvedOutDir, 'lua');
-  if (!fs.existsSync(luaDir)) return;
-
-  // Look for canonical .risulua files
-  const luaFiles = fs.readdirSync(luaDir).filter((file) => file.endsWith('.risulua'));
-  if (luaFiles.length === 0) return;
-
-  console.log('\n  ═══ Phase 9: Lua Analysis ═══');
-
-  for (const luaFile of luaFiles) {
-    const luaPath = path.join(luaDir, luaFile);
-    // Note: --charx flag removed since charx.json no longer exists in canonical mode
-    const code = runAnalyzeWorkflow([luaPath, '--json']);
-    if (code !== 0) {
-      console.error(`  ⚠️ analyze.js 실행 실패: ${luaFile} — exit code ${code}`);
-    }
-  }
-}
-
-function runCharxAnalysis(resolvedOutDir: string): void {
-  // TEMPORARILY DISABLED - T13 migration required
-  // Charx analysis depends on charx.json which is intentionally excluded in T12 canonical mode.
-  // This functionality will be restored in T13 when analyze/compose/CLI detection migrates
-  // to work with canonical .risu* artifacts instead of charx.json.
-  //
-  // console.log('\n  ═══ Phase 10: Card Analysis ═══');
-  // const code = runAnalyzeCharxWorkflow([resolvedOutDir]);
-  // if (code !== 0) {
-  //   console.error(`  ⚠️ analyze-charx.js 실행 실패: exit code ${code}`);
-  // }
 }

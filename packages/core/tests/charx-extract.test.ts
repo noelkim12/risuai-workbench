@@ -77,7 +77,14 @@ function createCanonicalCharacterFixture(): Buffer {
       replaceGlobalNote: 'Fixture replace global note',
       creator_notes: 'Fixture creator notes',
       alternate_greetings: ['Greeting one', 'Greeting two'],
+      tags: ['female', 'OfficeLady', 'romance'],
       assets: [
+        {
+          type: 'icon',
+          name: 'side',
+          ext: 'png',
+          uri: 'embeded://assets/side.png',
+        },
         {
           type: 'icon',
           name: 'main',
@@ -103,7 +110,8 @@ function createCanonicalCharacterFixture(): Buffer {
 
   return Buffer.from(zipSync({
     'charx.json': strToU8(JSON.stringify(charxData, null, 2)),
-    'assets/main.png': new Uint8Array([137, 80, 78, 71]),
+    'assets/side.png': new Uint8Array([137, 80, 78, 71, 1]),
+    'assets/main.png': new Uint8Array([137, 80, 78, 71, 2]),
   }, { level: 0 }));
 }
 
@@ -141,6 +149,8 @@ describe('charx extract integration (canonical mode)', () => {
       createdAt: '2026-04-28T00:00:00.000Z',
       modifiedAt: '2026-04-29T00:00:00.000Z',
       sourceFormat: 'charx',
+      image: 'assets/icons/main.png',
+      tags: ['female', 'OfficeLady', 'romance'],
       flags: {
         utilityBot: true,
         lowLevelAccess: false,
@@ -185,11 +195,21 @@ describe('charx extract integration (canonical mode)', () => {
     expect(assetManifest.assets).toEqual([
       expect.objectContaining({
         index: 0,
+        original_uri: 'embeded://assets/side.png',
+        status: 'extracted',
+        type: 'icon',
+        name: 'side',
+        ext: 'png',
+        extracted_path: 'icons/side.png',
+      }),
+      expect.objectContaining({
+        index: 1,
         original_uri: 'embeded://assets/main.png',
         status: 'extracted',
         type: 'icon',
         name: 'main',
         ext: 'png',
+        extracted_path: 'icons/main.png',
       }),
     ]);
   });
@@ -226,6 +246,17 @@ describe('charx extract integration (canonical mode)', () => {
     ]));
     expect(schema.properties.sourceFormat.enum).toEqual(['charx', 'png', 'json', 'scaffold']);
     expect(schema.properties.flags.required).toEqual(['utilityBot', 'lowLevelAccess']);
+    expect(schema.properties.image).toEqual({
+      type: ['string', 'null'],
+      description: 'Workspace-relative path to the selected character thumbnail image.',
+    });
+    expect(schema.properties.tags).toEqual({
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Canonical character tag list mapped to CCv3 data.tags.',
+    });
+    expect(schema.required).not.toContain('image');
+    expect(schema.required).not.toContain('tags');
     expect(schema.properties.prose).toBeUndefined();
     expect(schema.properties.fields).toBeUndefined();
     expect(schema.properties.fieldMappings).toBeUndefined();
@@ -275,6 +306,8 @@ describe('charx extract integration (canonical mode)', () => {
       },
     });
     expect(typeof manifest.id).toBe('string');
+    expect(manifest.image).toBeNull();
+    expect(manifest.tags).toEqual([]);
     expect(existsSync(path.join(outDir, 'character', 'metadata.json'))).toBe(false);
     expect(existsSync(path.join(outDir, 'character', 'description.txt'))).toBe(false);
     const legacyRisutextFile = ['post_history', 'instructions.risutext'].join('_');

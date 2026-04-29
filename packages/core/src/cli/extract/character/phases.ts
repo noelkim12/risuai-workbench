@@ -37,6 +37,7 @@ import {
   extractHtmlFromCharx,
   serializeHtmlContent,
 } from '@/domain/custom-extension/extensions/html';
+import { toPosix } from '@/domain/lorebook/folders';
 
 const CHARACTER_PROSE_FIELDS: Array<[string, (data: any, risuai: any) => string]> = [
   ['description', (data) => data.description || ''],
@@ -98,15 +99,64 @@ function buildCharacterExtensionsSidecar(extensions: unknown): Record<string, un
   return Object.keys(sidecar).length > 0 ? sidecar : null;
 }
 
+interface ExtractedAssetManifestEntry {
+  index: number;
+  original_uri?: string | null;
+  extracted_path?: string | null;
+  status?: string | null;
+  type?: string | null;
+  name?: string | null;
+  ext?: string | null;
+  subdir?: string | null;
+}
+
+interface ExtractedAssetManifest {
+  assets: ExtractedAssetManifestEntry[];
+}
+
+/** normalizeStringArray 함수.
+ * unknown 배열을 빈 문자열 없는 string 배열로 정규화함.
+ *
+ * @param value - 정규화할 upstream 값
+ * @returns 문자열만 남긴 배열
+ */
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+}
+
+/** selectCharacterImagePath 함수.
+ * 추출된 icon asset 중 `.risuchar.image`로 쓸 대표 썸네일 경로를 고름.
+ *
+ * @param manifest - assets/manifest.json에 기록된 asset 추출 결과
+ * @returns 워크스페이스 상대 이미지 경로 또는 null
+ */
+function selectCharacterImagePath(manifest: ExtractedAssetManifest | null): string | null {
+  if (!manifest || !Array.isArray(manifest.assets)) return null;
+
+  const extractedIcons = manifest.assets.filter(
+    (entry) => entry.type === 'icon' && entry.status === 'extracted' && typeof entry.extracted_path === 'string',
+  );
+  const mainIcon = extractedIcons.find((entry) => entry.name === 'main');
+  const selected = mainIcon ?? extractedIcons[0];
+  if (!selected || typeof selected.extracted_path !== 'string') return null;
+  return `assets/${toPosix(selected.extracted_path)}`;
+}
+
 /**
  * buildCharacterManifest 함수.
  * 캐릭터 루트 메타데이터 소유자인 `.risuchar` 페이로드를 구성함.
  *
  * @param data - charx.data 객체
  * @param risuai - data.extensions.risuai 객체
+ * @param assetManifest - Phase 5에서 추출한 asset manifest 데이터
  * @returns `.risuchar`에 기록할 canonical metadata 객체
  */
-function buildCharacterManifest(data: any, risuai: any): Record<string, unknown> {
+function buildCharacterManifest(
+  data: any,
+  risuai: any,
+  assetManifest: ExtractedAssetManifest | null,
+): Record<string, unknown> {
   return {
     $schema: 'https://risuai-workbench.dev/schemas/risuchar.schema.json',
     kind: 'risu.character',
@@ -118,6 +168,8 @@ function buildCharacterManifest(data: any, risuai: any): Record<string, unknown>
     createdAt: data.creation_date || null,
     modifiedAt: data.modification_date || null,
     sourceFormat: 'charx',
+    image: selectCharacterImagePath(assetManifest),
+    tags: normalizeStringArray(data.tags),
     flags: {
       utilityBot: risuai.utilityBot ?? false,
       lowLevelAccess: risuai.lowLevelAccess ?? false,
@@ -651,16 +703,16 @@ export async function phase5_extractAssetsAsync(
   outputDir: string,
   assetSources: Record<string, Uint8Array>,
   mainImage: Buffer | null,
-): Promise<number> {
+): Promise<ExtractedAssetManifest | null> {
   const assets = charx.data?.assets;
   if (assets == null) {
     console.log('     (V2 카드 — assets 배열 없음)');
-    return 0;
+    return null;
   }
 
   if (assets.length === 0) {
     console.log('     (에셋 없음)');
-    return 0;
+    return { assets: [] };
   }
 
   console.log('\n  🖼️ Phase 5: 에셋 추출 (async)');
@@ -768,7 +820,7 @@ export async function phase5_extractAssetsAsync(
     `     ✅ ${manifest.extracted}개 추출 (${breakdown}), ${manifest.skipped}개 스킵 → ${path.relative('.', assetsDir)}/`,
   );
 
-  return manifest.extracted;
+  return manifest;
 }
 
 export function phase6_extractBackgroundHTML(charx: any, outputDir: string): number {
@@ -818,7 +870,11 @@ export function phase7_extractVariables(charx: any, outputDir: string): number {
   return count;
 }
 
-export function phase8_extractCharacterFields(charx: any, outputDir: string): number {
+export function phase8_extractCharacterFields(
+  charx: any,
+  outputDir: string,
+  assetManifest: ExtractedAssetManifest | null = null,
+): number {
   console.log('\n  🧾 Phase 8: Character Card 추출 (canonical)');
 
   const data = charx.data || {};
@@ -829,7 +885,7 @@ export function phase8_extractCharacterFields(charx: any, outputDir: string): nu
 
   let fileCount = 0;
 
-  writeJson(path.join(outputDir, '.risuchar'), buildCharacterManifest(data, risuai));
+  writeJson(path.join(outputDir, '.risuchar'), buildCharacterManifest(data, risuai, assetManifest));
   fileCount += 1;
 
   const extensionSidecar = buildCharacterExtensionsSidecar(data.extensions);

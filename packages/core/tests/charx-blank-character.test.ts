@@ -20,4 +20,13 @@ describe('blank character CharX mapping', () => {
     expect(character.replaceGlobalNote).toBe('');
     expect(Object.prototype.hasOwnProperty.call(character, legacyPostHistoryKey)).toBe(false);
   });
+
+  it('exports tags into charx v3 data', () => {
+    const character = createBlankChar();
+    character.tags = ['female', 'OfficeLady', 'romance'];
+
+    const charx = createBlankCharxV3(character);
+
+    expect(charx.data.tags).toEqual(['female', 'OfficeLady', 'romance']);
+  });
 });

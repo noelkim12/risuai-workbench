@@ -152,16 +152,15 @@ function buildCharxFromCanonical(inRoot: string): any {
 
   // Overlay canonical artifacts
   mergeCharacterExtensionSidecar(charx, inRoot);
-  // IMPORTANT: mergeCharacterCanonical MUST run first to establish the character
-  // name from .risuchar or legacy metadata.json, which is required for target-name-based filename
-  // resolution in mergeLuaCanonical and mergeVariablesCanonical
+  mergeAssetsCanonical(charx, inRoot);
+  // IMPORTANT: mergeCharacterCanonical MUST run before target-name-based lua/variable
+  // resolution so the character name from .risuchar or legacy metadata.json is available.
   mergeCharacterCanonical(charx, inRoot);
   mergeLorebooksCanonical(charx, inRoot);
   mergeRegexCanonical(charx, inRoot);
   mergeLuaCanonical(charx, inRoot);
   mergeHtmlCanonical(charx, inRoot);
   mergeVariablesCanonical(charx, inRoot);
-  mergeAssetsCanonical(charx, inRoot);
 
   return charx;
 }
@@ -231,6 +230,72 @@ function mergeAssetsCanonical(charx: any, inRoot: string): void {
   if (assets.length === 0) return;
   if (!charx.data) charx.data = {};
   charx.data.assets = assets;
+}
+
+/** applyManifestImageSelection 함수.
+ * `.risuchar.image`가 가리키는 asset을 CCv3 main icon으로 승격함.
+ *
+ * @param charx - assembled CharX envelope
+ * @param inRoot - canonical workspace root
+ * @param imagePath - `.risuchar.image`에서 읽은 상대 경로
+ */
+function applyManifestImageSelection(charx: any, inRoot: string, imagePath: string | null): void {
+  if (!imagePath) return;
+  const normalizedImagePath = normalizeWorkspaceRelativePath(imagePath);
+  if (!normalizedImagePath || !isSupportedImagePath(normalizedImagePath)) {
+    console.warn('  ⚠️ .risuchar image 경로가 assets/icons 이미지가 아니어서 무시합니다.');
+    return;
+  }
+
+  const absoluteImagePath = path.join(inRoot, normalizedImagePath);
+  if (!fs.existsSync(absoluteImagePath) || !fs.statSync(absoluteImagePath).isFile()) {
+    console.warn(`  ⚠️ .risuchar image 파일을 찾을 수 없어 무시합니다: ${normalizedImagePath}`);
+    return;
+  }
+
+  if (!charx.data) charx.data = {};
+  if (!Array.isArray(charx.data.assets)) charx.data.assets = [];
+
+  const manifestPath = path.join(inRoot, 'assets', 'manifest.json');
+  const manifest = fs.existsSync(manifestPath) ? readJson(manifestPath) : null;
+  const candidateUris = new Set<string>([`embeded://${normalizedImagePath}`]);
+  if (isPlainRecord(manifest) && Array.isArray(manifest.assets)) {
+    const assetsRootRelative = normalizedImagePath.startsWith('assets/')
+      ? normalizedImagePath.slice('assets/'.length)
+      : normalizedImagePath;
+    for (const record of manifest.assets) {
+      if (!isPlainRecord(record)) continue;
+      if (record.extracted_path === assetsRootRelative) {
+        candidateUris.add(`embeded://${assetsRootRelative}`);
+        if (typeof record.original_uri === 'string' && record.original_uri.length > 0) {
+          candidateUris.add(record.original_uri);
+        }
+        break;
+      }
+    }
+  }
+
+  const ext = normalizeExt(path.extname(normalizedImagePath).replace(/^\./, '') || 'png');
+  const mainIcon = {
+    type: 'icon',
+    name: 'main',
+    ext,
+    uri: `embeded://${normalizedImagePath}`,
+  };
+
+  const existingIndex = charx.data.assets.findIndex(
+    (asset: unknown) => isPlainRecord(asset) && typeof asset.uri === 'string' && candidateUris.has(asset.uri),
+  );
+
+  if (existingIndex >= 0) {
+    charx.data.assets[existingIndex] = {
+      ...(charx.data.assets[existingIndex] || {}),
+      ...mainIcon,
+    };
+    return;
+  }
+
+  charx.data.assets.push(mainIcon);
 }
 
 /**
@@ -523,6 +588,13 @@ function mergeCharacterMetadata(charx: any, inRoot: string, characterDir: string
       }
     }
 
+    const tags = readStringArrayField(manifest.tags);
+    if (tags) {
+      setNestedValue(charx, ['data', 'tags'], tags);
+    }
+
+    applyManifestImageSelection(charx, inRoot, normalizeWorkspaceRelativePath(manifest.image));
+
     const flags = manifest.flags;
     if (isPlainRecord(flags)) {
       if (typeof flags.utilityBot === 'boolean') {
@@ -658,6 +730,48 @@ function warnCanonicalConflict(canonicalSource: string, legacySource: string): v
  */
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** readStringArrayField 함수.
+ * manifest의 string array 필드를 안전하게 읽음.
+ *
+ * @param value - 검사할 manifest 값
+ * @returns 문자열만 포함한 배열 또는 null
+ */
+function readStringArrayField(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  return value.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+}
+
+/** normalizeWorkspaceRelativePath 함수.
+ * `.risuchar.image` 값을 워크스페이스 상대 POSIX 경로로 제한함.
+ *
+ * @param value - manifest image 값
+ * @returns 정규화된 상대 경로 또는 null
+ */
+function normalizeWorkspaceRelativePath(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length === 0) return null;
+  const normalized = toPosix(path.normalize(value));
+  if (
+    path.isAbsolute(value) ||
+    normalized.startsWith('../') ||
+    normalized === '..' ||
+    normalized.includes('/../')
+  ) {
+    return null;
+  }
+  return normalized;
+}
+
+/** isSupportedImagePath 함수.
+ * `.risuchar.image`가 허용된 icon image 경로인지 확인함.
+ *
+ * @param value - 워크스페이스 상대 POSIX 경로
+ * @returns assets/icons 아래의 지원 이미지 확장자이면 true
+ */
+function isSupportedImagePath(value: string): boolean {
+  const ext = path.extname(value).toLowerCase();
+  return value.startsWith('assets/icons/') && ['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext);
 }
 
 function resolveTargetFormat(inRoot: string, formatArgValue: string): PackFormat {
@@ -830,19 +944,20 @@ function collectAssetBuffers(charx: any, inRoot: string): Map<number, Buffer> {
   const out = new Map<number, Buffer>();
   const assetDir = path.join(inRoot, 'assets');
   const manifestPath = path.join(assetDir, 'manifest.json');
-  if (!fs.existsSync(manifestPath)) return out;
 
-  const manifest = readJson(manifestPath) as any;
-  if (!manifest || !Array.isArray(manifest.assets)) return out;
+  if (fs.existsSync(manifestPath)) {
+    const manifest = readJson(manifestPath) as any;
+    if (manifest && Array.isArray(manifest.assets)) {
+      for (const rec of manifest.assets) {
+        if (!rec || typeof rec !== 'object') continue;
+        if (!Number.isFinite(rec.index)) continue;
+        if (typeof rec.extracted_path !== 'string' || rec.extracted_path.length === 0) continue;
 
-  for (const rec of manifest.assets) {
-    if (!rec || typeof rec !== 'object') continue;
-    if (!Number.isFinite(rec.index)) continue;
-    if (typeof rec.extracted_path !== 'string' || rec.extracted_path.length === 0) continue;
-
-    const filePath = path.join(assetDir, rec.extracted_path);
-    if (!fs.existsSync(filePath)) continue;
-    out.set(Number(rec.index) + 1, fs.readFileSync(filePath));
+        const filePath = path.join(assetDir, rec.extracted_path);
+        if (!fs.existsSync(filePath)) continue;
+        out.set(Number(rec.index) + 1, fs.readFileSync(filePath));
+      }
+    }
   }
 
   for (let i = 0; i < (charx.data.assets || []).length; i += 1) {

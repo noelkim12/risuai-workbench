@@ -148,6 +148,8 @@ function scaffoldCharx(root: string, options: ScaffoldOptions): number {
     createdAt: now,
     modifiedAt: now,
     sourceFormat: 'scaffold',
+    image: null,
+    tags: [],
     flags: {
       utilityBot: false,
       lowLevelAccess: false,

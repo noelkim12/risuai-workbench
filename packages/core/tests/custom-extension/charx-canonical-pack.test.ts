@@ -1,12 +1,57 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { unzipSync, strFromU8 } from 'fflate';
+import { unzipSync, strFromU8, zipSync, strToU8 } from 'fflate';
 import { parseModuleRisum } from '../../src/cli/extract/parsers';
 
 const tempDirs: string[] = [];
+
+function packCharx(workDir: string, outPath = path.join(workDir, 'packed.charx')): { stdout: string; stderr: string } {
+  const result = spawnSync(
+    'node',
+    [path.join(process.cwd(), 'dist', 'cli', 'main.js'), 'pack', '--in', workDir, '--format', 'charx', '--out', outPath],
+    {
+      cwd: process.cwd(),
+      encoding: 'utf-8',
+    }
+  );
+
+  if (result.status !== 0) {
+    throw new Error(`${result.stderr}${result.stdout}`);
+  }
+
+  return { stdout: result.stdout, stderr: result.stderr };
+}
+
+function readPackedCharx(outPath: string): any {
+  const archive = unzipSync(readFileSync(outPath));
+  return JSON.parse(strFromU8(archive['charx.json']));
+}
+
+function writeCanonicalManifest(workDir: string, overrides: Record<string, unknown> = {}): void {
+  writeFileSync(
+    path.join(workDir, '.risuchar'),
+    `${JSON.stringify({
+      kind: 'risu.character',
+      schemaVersion: 1,
+      id: 'test-character-id',
+      name: 'Canonical Character',
+      creator: 'Canonical Creator',
+      characterVersion: '2.0',
+      createdAt: '2026-04-01',
+      modifiedAt: '2026-04-02',
+      sourceFormat: 'charx',
+      flags: {
+        utilityBot: true,
+        lowLevelAccess: false,
+      },
+      ...overrides,
+    })}\n`,
+    'utf-8'
+  );
+}
 
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
@@ -15,6 +60,346 @@ afterEach(() => {
 });
 
 describe('charx canonical pack', () => {
+  it('packs canonical-only .risuchar metadata and .risutext prose', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-canonical-only-'));
+    tempDirs.push(workDir);
+
+    const characterDir = path.join(workDir, 'character');
+    mkdirSync(characterDir, { recursive: true });
+    writeCanonicalManifest(workDir);
+    writeFileSync(path.join(characterDir, 'description.risutext'), 'canonical description', 'utf-8');
+    writeFileSync(path.join(characterDir, 'first_mes.risutext'), 'canonical first message', 'utf-8');
+    writeFileSync(path.join(characterDir, 'additional_text.risutext'), 'canonical additional text', 'utf-8');
+
+    const outPath = path.join(workDir, 'packed.charx');
+    packCharx(workDir, outPath);
+    const packedCharx = readPackedCharx(outPath);
+
+    expect(packedCharx.data.name).toBe('Canonical Character');
+    expect(packedCharx.data.creator).toBe('Canonical Creator');
+    expect(packedCharx.data.character_version).toBe('2.0');
+    expect(packedCharx.data.creation_date).toBe('2026-04-01');
+    expect(packedCharx.data.modification_date).toBe('2026-04-02');
+    expect(packedCharx.data.extensions.risuai.utilityBot).toBe(true);
+    expect(packedCharx.data.extensions.risuai.lowLevelAccess).toBe(false);
+    expect(packedCharx.data.description).toBe('canonical description');
+    expect(packedCharx.data.first_mes).toBe('canonical first message');
+    expect(packedCharx.data.extensions.risuai.additionalText).toBe('canonical additional text');
+  });
+
+  it('packs canonical sidecar extensions, assets, and script safety flags', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-sidecar-assets-'));
+    tempDirs.push(workDir);
+
+    const characterDir = path.join(workDir, 'character');
+    const assetDir = path.join(workDir, 'assets');
+    const iconDir = path.join(assetDir, 'icons');
+    mkdirSync(characterDir, { recursive: true });
+    mkdirSync(iconDir, { recursive: true });
+
+    writeCanonicalManifest(workDir, {
+      name: 'Sidecar Asset Character',
+      flags: {
+        utilityBot: false,
+        lowLevelAccess: true,
+      },
+    });
+    writeFileSync(path.join(characterDir, 'description.risutext'), 'sidecar asset description', 'utf-8');
+    writeFileSync(path.join(characterDir, 'extensions.json'), `${JSON.stringify({
+      vendorFixture: {
+        preserved: true,
+      },
+      risuai: {
+        safetyNote: 'lowLevelAccess remains explicit metadata',
+      },
+    })}\n`, 'utf-8');
+    writeFileSync(path.join(iconDir, 'main.png'), Buffer.from([137, 80, 78, 71]));
+    writeFileSync(path.join(assetDir, 'manifest.json'), `${JSON.stringify({
+      version: 1,
+      source_format: 'charx',
+      total: 1,
+      extracted: 1,
+      skipped: 0,
+      assets: [
+        {
+          index: 0,
+          original_uri: 'embeded://assets/main.png',
+          extracted_path: 'icons/main.png',
+          status: 'extracted',
+          type: 'icon',
+          name: 'main',
+          ext: 'png',
+          subdir: 'icons',
+          size_bytes: 4,
+        },
+      ],
+    })}\n`, 'utf-8');
+
+    const outPath = path.join(workDir, 'packed.charx');
+    packCharx(workDir, outPath);
+    const archive = unzipSync(readFileSync(outPath));
+    const packedCharx = JSON.parse(strFromU8(archive['charx.json']));
+
+    expect(packedCharx.data.extensions.vendorFixture).toEqual({ preserved: true });
+    expect(packedCharx.data.extensions.risuai.safetyNote).toBe('lowLevelAccess remains explicit metadata');
+    expect(packedCharx.data.extensions.risuai.lowLevelAccess).toBe(true);
+    expect(packedCharx.data.assets).toHaveLength(1);
+    expect(packedCharx.data.assets[0]).toMatchObject({
+      type: 'icon',
+      name: 'main',
+      ext: 'png',
+    });
+    expect(packedCharx.data.assets[0].uri).toMatch(/^embeded:\/\/assets\//);
+    expect(Object.keys(archive).some((entryName) => entryName.startsWith('assets/'))).toBe(true);
+  });
+
+  it('packs .risuchar tags and selected image as the main icon asset', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-image-tags-'));
+    tempDirs.push(workDir);
+
+    const characterDir = path.join(workDir, 'character');
+    const assetDir = path.join(workDir, 'assets');
+    const iconDir = path.join(assetDir, 'icons');
+    mkdirSync(characterDir, { recursive: true });
+    mkdirSync(iconDir, { recursive: true });
+
+    writeCanonicalManifest(workDir, {
+      name: 'Image Tags Character',
+      image: 'assets/icons/portrait.png',
+      tags: ['female', 'OfficeLady', 'romance'],
+    });
+    writeFileSync(path.join(characterDir, 'description.risutext'), 'image tags description', 'utf-8');
+    writeFileSync(path.join(iconDir, 'portrait.png'), Buffer.from([137, 80, 78, 71, 9]));
+    writeFileSync(path.join(assetDir, 'manifest.json'), `${JSON.stringify({
+      version: 1,
+      source_format: 'charx',
+      total: 1,
+      extracted: 1,
+      skipped: 0,
+      assets: [
+        {
+          index: 0,
+          original_uri: 'embeded://assets/icons/portrait.png',
+          extracted_path: 'icons/portrait.png',
+          status: 'extracted',
+          type: 'icon',
+          name: 'portrait',
+          ext: 'png',
+          subdir: 'icons',
+          size_bytes: 5,
+        },
+      ],
+    })}\n`, 'utf-8');
+
+    const outPath = path.join(workDir, 'packed.charx');
+    packCharx(workDir, outPath);
+    const archive = unzipSync(readFileSync(outPath));
+    const packedCharx = JSON.parse(strFromU8(archive['charx.json']));
+
+    expect(packedCharx.data.tags).toEqual(['female', 'OfficeLady', 'romance']);
+    expect(packedCharx.data.assets[0]).toMatchObject({
+      type: 'icon',
+      name: 'main',
+      ext: 'png',
+    });
+    expect(packedCharx.data.assets[0].uri).toMatch(/^embeded:\/\/assets\/icon\/image\/main\.png$/);
+    expect(Object.keys(archive)).toContain('assets/icon/image/main.png');
+  });
+
+  it('packs manifestless .risuchar selected image as the main icon asset', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-image-no-manifest-'));
+    tempDirs.push(workDir);
+
+    const characterDir = path.join(workDir, 'character');
+    const iconDir = path.join(workDir, 'assets', 'icons');
+    mkdirSync(characterDir, { recursive: true });
+    mkdirSync(iconDir, { recursive: true });
+
+    writeCanonicalManifest(workDir, {
+      name: 'Manifestless Image Character',
+      image: 'assets/icons/portrait.png',
+    });
+    writeFileSync(path.join(characterDir, 'description.risutext'), 'manifestless image description', 'utf-8');
+    writeFileSync(path.join(iconDir, 'portrait.png'), Buffer.from([137, 80, 78, 71, 10]));
+
+    const outPath = path.join(workDir, 'packed.charx');
+    packCharx(workDir, outPath);
+    const archive = unzipSync(readFileSync(outPath));
+    const packedCharx = JSON.parse(strFromU8(archive['charx.json']));
+
+    expect(packedCharx.data.assets[0]).toMatchObject({
+      type: 'icon',
+      name: 'main',
+      ext: 'png',
+    });
+    expect(packedCharx.data.assets[0].uri).toMatch(/^embeded:\/\/assets\/icon\/image\/main\.png$/);
+    expect(Object.keys(archive)).toContain('assets/icon/image/main.png');
+    expect(Array.from(archive['assets/icon/image/main.png'])).toEqual([137, 80, 78, 71, 10]);
+  });
+
+  it('round-trips extracted image and tags through canonical workspace', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-image-tags-roundtrip-'));
+    tempDirs.push(workDir);
+
+    const sourceCharx = path.join(workDir, 'source.charx');
+    const extractedDir = path.join(workDir, 'extracted');
+    const packedPath = path.join(workDir, 'repacked.charx');
+    const charxData = {
+      spec: 'chara_card_v3',
+      spec_version: '3.0',
+      data: {
+        name: 'Roundtrip Image Tags',
+        description: 'roundtrip description',
+        tags: ['female', 'OfficeLady', 'romance'],
+        assets: [
+          {
+            type: 'icon',
+            name: 'main',
+            ext: 'png',
+            uri: 'embeded://assets/main.png',
+          },
+        ],
+        extensions: {
+          risuai: {
+            triggerscript: [],
+            customScripts: [],
+            additionalText: '',
+            utilityBot: false,
+            lowLevelAccess: false,
+          },
+        },
+      },
+    };
+
+    writeFileSync(sourceCharx, Buffer.from(zipSync({
+      'charx.json': strToU8(JSON.stringify(charxData, null, 2)),
+      'assets/main.png': new Uint8Array([137, 80, 78, 71, 7]),
+    }, { level: 0 })));
+
+    const extractResult = spawnSync(
+      'node',
+      [path.join(process.cwd(), 'dist', 'cli', 'main.js'), 'extract', sourceCharx, '--out', extractedDir],
+      { cwd: process.cwd(), encoding: 'utf-8' },
+    );
+    expect(extractResult.status, extractResult.stderr || extractResult.stdout).toBe(0);
+
+    packCharx(extractedDir, packedPath);
+    const packedCharx = readPackedCharx(packedPath);
+
+    expect(packedCharx.data.tags).toEqual(['female', 'OfficeLady', 'romance']);
+    expect(packedCharx.data.assets[0]).toMatchObject({
+      type: 'icon',
+      name: 'main',
+      ext: 'png',
+    });
+  });
+
+  it('warns and skips .risuchar image paths outside assets icons', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-image-tags-invalid-'));
+    tempDirs.push(workDir);
+
+    const characterDir = path.join(workDir, 'character');
+    mkdirSync(characterDir, { recursive: true });
+    writeCanonicalManifest(workDir, {
+      name: 'Invalid Image Character',
+      image: 'character/description.risutext',
+      tags: ['safe-tag'],
+    });
+    writeFileSync(path.join(characterDir, 'description.risutext'), 'not an image', 'utf-8');
+
+    const outPath = path.join(workDir, 'packed.charx');
+    const result = packCharx(workDir, outPath);
+    const packedCharx = readPackedCharx(outPath);
+
+    expect(result.stderr).toContain('.risuchar image');
+    expect(packedCharx.data.tags).toEqual(['safe-tag']);
+    expect(packedCharx.data.assets ?? []).toEqual([]);
+  });
+
+  it('falls back to legacy metadata, txt prose, and alternate_greetings.json when canonical sources are absent', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-legacy-fallback-'));
+    tempDirs.push(workDir);
+
+    const characterDir = path.join(workDir, 'character');
+    mkdirSync(characterDir, { recursive: true });
+    writeFileSync(path.join(characterDir, 'metadata.json'), `${JSON.stringify({ name: 'Legacy Character' })}\n`, 'utf-8');
+    writeFileSync(path.join(characterDir, 'description.txt'), 'legacy description', 'utf-8');
+    writeFileSync(path.join(characterDir, 'additional_text.txt'), 'legacy additional text', 'utf-8');
+    writeFileSync(path.join(characterDir, 'alternate_greetings.json'), `${JSON.stringify(['legacy hello'])}\n`, 'utf-8');
+
+    const outPath = path.join(workDir, 'packed.charx');
+    packCharx(workDir, outPath);
+    const packedCharx = readPackedCharx(outPath);
+
+    expect(packedCharx.data.name).toBe('Legacy Character');
+    expect(packedCharx.data.description).toBe('legacy description');
+    expect(packedCharx.data.extensions.risuai.additionalText).toBe('legacy additional text');
+    expect(packedCharx.data.alternate_greetings).toEqual(['legacy hello']);
+  });
+
+  it('warns and ignores legacy values when canonical metadata, prose, and greetings exist', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-conflicts-'));
+    tempDirs.push(workDir);
+
+    const characterDir = path.join(workDir, 'character');
+    const greetingsDir = path.join(characterDir, 'alternate_greetings');
+    mkdirSync(greetingsDir, { recursive: true });
+    writeCanonicalManifest(workDir, { name: 'Canonical Wins' });
+    writeFileSync(path.join(characterDir, 'metadata.json'), `${JSON.stringify({ name: 'Legacy Loses' })}\n`, 'utf-8');
+    writeFileSync(path.join(characterDir, 'description.risutext'), 'canonical description', 'utf-8');
+    writeFileSync(path.join(characterDir, 'description.txt'), 'legacy description', 'utf-8');
+    writeFileSync(path.join(greetingsDir, 'greeting-001.risutext'), 'canonical greeting', 'utf-8');
+    writeFileSync(path.join(characterDir, 'alternate_greetings.json'), `${JSON.stringify(['legacy greeting'])}\n`, 'utf-8');
+
+    const outPath = path.join(workDir, 'packed.charx');
+    const result = packCharx(workDir, outPath);
+    const packedCharx = readPackedCharx(outPath);
+
+    expect(packedCharx.data.name).toBe('Canonical Wins');
+    expect(packedCharx.data.description).toBe('canonical description');
+    expect(packedCharx.data.alternate_greetings).toEqual(['canonical greeting']);
+    expect(result.stderr).toContain('.risuchar');
+    expect(result.stderr).toContain('metadata.json');
+    expect(result.stderr).toContain('description.risutext');
+    expect(result.stderr).toContain('description.txt');
+    expect(result.stderr).toContain('alternate_greetings');
+    expect(result.stderr).toContain('alternate_greetings.json');
+  });
+
+  it('packs ordered canonical alternate greetings before sorted unlisted risutext files', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-greeting-order-'));
+    tempDirs.push(workDir);
+
+    const characterDir = path.join(workDir, 'character');
+    const greetingsDir = path.join(characterDir, 'alternate_greetings');
+    mkdirSync(greetingsDir, { recursive: true });
+    writeCanonicalManifest(workDir, { name: 'Greeting Order' });
+    writeFileSync(path.join(characterDir, 'description.risutext'), 'test', 'utf-8');
+    writeFileSync(path.join(greetingsDir, '_order.json'), `${JSON.stringify(['second.risutext'])}\n`, 'utf-8');
+    writeFileSync(path.join(greetingsDir, 'z-last.risutext'), 'z unlisted', 'utf-8');
+    writeFileSync(path.join(greetingsDir, 'a-first.risutext'), 'a unlisted', 'utf-8');
+    writeFileSync(path.join(greetingsDir, 'second.risutext'), 'ordered second', 'utf-8');
+
+    const outPath = path.join(workDir, 'packed.charx');
+    packCharx(workDir, outPath);
+    const packedCharx = readPackedCharx(outPath);
+
+    expect(packedCharx.data.alternate_greetings).toEqual(['ordered second', 'a unlisted', 'z unlisted']);
+  });
+
+  it('errors when canonical alternate greeting _order.json lists a missing file', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-greeting-missing-'));
+    tempDirs.push(workDir);
+
+    const characterDir = path.join(workDir, 'character');
+    const greetingsDir = path.join(characterDir, 'alternate_greetings');
+    mkdirSync(greetingsDir, { recursive: true });
+    writeCanonicalManifest(workDir, { name: 'Greeting Missing' });
+    writeFileSync(path.join(characterDir, 'description.risutext'), 'test', 'utf-8');
+    writeFileSync(path.join(greetingsDir, '_order.json'), `${JSON.stringify(['missing.risutext'])}\n`, 'utf-8');
+
+    expect(() => packCharx(workDir)).toThrow(/missing\.risutext/);
+  });
   it('packs canonical lorebooks into character_book.entries', () => {
     const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-lorebooks-'));
     tempDirs.push(workDir);
