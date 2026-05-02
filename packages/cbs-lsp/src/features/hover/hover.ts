@@ -10,7 +10,15 @@ import {
   TextDocumentPositionParams,
 } from 'vscode-languageserver/node';
 import { formatHoverContent } from 'risu-workbench-core';
-import type { BlockNode, CBSBuiltinFunction, CBSBuiltinRegistry, Position, Range } from 'risu-workbench-core';
+import type {
+  BlockNode,
+  CBSBuiltinFunction,
+  CBSBuiltinRegistry,
+  CBSNode,
+  MacroCallNode,
+  Position,
+  Range,
+} from 'risu-workbench-core';
 import {
   CALC_EXPRESSION_SUBLANGUAGE_LABEL,
   getCalcExpressionSublanguageDocumentation,
@@ -29,6 +37,7 @@ import {
   resolveTokenMacroArgumentContext,
   resolveActiveLocalFunctionContext,
   resolveLocalFunctionDeclaration,
+  resolveRuntimeArgumentSlot,
   shouldSuppressPureModeFeatures,
   isAgentMetadataEnvelope,
   type AgentMetadataCategoryContract,
@@ -39,6 +48,7 @@ import {
   type FragmentAnalysisRequest,
   type FragmentAnalysisService,
   type FragmentCursorLookupResult,
+  type LocalFunctionDeclaration,
 } from '../../core';
 import { isRequestCancelled } from '../../utils/request-cancellation';
 import { shouldSkipOversizedLuaText } from '../../utils/oversized-lua';
@@ -167,6 +177,23 @@ const VARIABLE_KIND_LABELS = Object.freeze({
 
 type VariableKind = keyof typeof VARIABLE_KIND_LABELS;
 
+/**
+ * formatInlineCode 함수.
+ * 사용자 입력 값을 Markdown inline code span으로 안전하게 감쌈.
+ *
+ * @param value - inline code로 표시할 원문 값
+ * @returns value 안의 backtick run보다 긴 delimiter를 사용한 code span
+ */
+function formatInlineCode(value: string): string {
+  const backtickRuns = value.match(/`+/gu) ?? [];
+  const delimiterLength = Math.max(1, ...backtickRuns.map((run) => run.length + 1));
+  const delimiter = '`'.repeat(delimiterLength);
+  const needsPadding = value.includes('`') || value.startsWith(' ') || value.endsWith(' ');
+  const padding = needsPadding ? ' ' : '';
+
+  return `${delimiter}${padding}${value}${padding}${delimiter}`;
+}
+
 const WHEN_OPERATOR_DOCS = Object.freeze({
   keep: {
     summary: 'Preserves the block body whitespace instead of trimming it.',
@@ -239,23 +266,6 @@ const WHEN_OPERATOR_DOCS = Object.freeze({
 } as const);
 
 /**
- * formatParameterSlotSummary 함수.
- * 함수 매개변수 목록을 `arg::n` 슬롯 대응 요약 문자열로 변환함.
- *
- * @param parameters - 매개변수 정보 배열
- * @returns 포맷팅된 매개변수 요약 문자열
- */
-function formatParameterSlotSummary(parameters: readonly { name: string }[]): string {
-  if (parameters.length === 0) {
-    return 'none declared';
-  }
-
-  return parameters
-    .map((parameter, index) => `\`arg::${index}\` → \`${parameter.name}\``)
-    .join(', ');
-}
-
-/**
  * formatParameterDefinitionSummary 함수.
  * 매개변수 이름과 정의 위치를 포함한 요약 문자열을 생성함.
  *
@@ -272,9 +282,134 @@ function formatParameterDefinitionSummary(
   return parameters
     .map(
       (parameter) =>
-        `\`${parameter.name}\` (${CbsLspTextHelper.formatRangeStart(parameter.range)})`,
+        `${formatInlineCode(parameter.name)} (${CbsLspTextHelper.formatRangeStart(parameter.range)})`,
     )
     .join(', ');
+}
+
+/**
+ * formatHoverRuntimeArgumentSlotSummary 함수.
+ * local function runtime slot 요약을 hover용 안전 code span으로 생성함.
+ *
+ * @param declaration - 요약할 fragment-local 함수 선언
+ * @returns hover Markdown에 표시할 runtime slot 요약
+ */
+function formatHoverRuntimeArgumentSlotSummary(
+  declaration: LocalFunctionDeclaration,
+): string {
+  const slots = [
+    `${formatInlineCode('arg::0')} → function name`,
+    ...declaration.parameterDeclarations.map(
+      (parameter) =>
+        `${formatInlineCode(`arg::${parameter.runtimeArgumentIndex}`)} → ${formatInlineCode(parameter.name)}`,
+    ),
+  ];
+
+  return slots.join(', ');
+}
+
+/**
+ * extractPlainMacroArgumentText 함수.
+ * macro argument가 plain text로만 구성될 때 trim된 표시 문자열을 추출함.
+ *
+ * @param node - argument를 읽을 macro call 노드
+ * @param argumentIndex - 읽을 argument 슬롯 번호
+ * @param sourceText - fragment-local CBS 원문
+ * @returns 표시 가능한 argument 문자열 또는 null
+ */
+function extractPlainMacroArgumentText(
+  node: MacroCallNode,
+  argumentIndex: number,
+  sourceText: string,
+): string | null {
+  const argument = node.arguments[argumentIndex];
+  if (!argument || argument.length === 0) {
+    return null;
+  }
+
+  const literalParts: string[] = [];
+  for (const child of argument) {
+    if (child.type === 'Comment') {
+      continue;
+    }
+
+    if (child.type !== 'PlainText') {
+      return null;
+    }
+
+    literalParts.push(
+      sourceText.slice(
+        positionToOffset(sourceText, child.range.start),
+        positionToOffset(sourceText, child.range.end),
+      ),
+    );
+  }
+
+  const text = literalParts.join('').trim();
+  return text.length > 0 ? text : null;
+}
+
+/**
+ * findRepresentativeCallArgument 함수.
+ * 현재 fragment에서 로컬 함수 호출의 runtime argument 슬롯 예시를 찾음.
+ *
+ * @param nodes - 검색할 CBS 노드 목록
+ * @param functionName - 대상 로컬 함수 이름
+ * @param runtimeArgumentIndex - 읽을 upstream `arg::N` 슬롯 번호
+ * @param sourceText - fragment-local CBS 원문
+ * @returns 호출부의 실제 argument 문자열 또는 null
+ */
+function findRepresentativeCallArgument(
+  nodes: readonly CBSNode[],
+  functionName: string,
+  runtimeArgumentIndex: number,
+  sourceText: string,
+): string | null {
+  for (const node of nodes) {
+    if (node.type === 'MacroCall') {
+      const targetName = extractPlainMacroArgumentText(node, 0, sourceText);
+      if (node.name.toLowerCase() === 'call' && targetName === functionName) {
+        const argument = extractPlainMacroArgumentText(node, runtimeArgumentIndex, sourceText);
+        if (argument) {
+          return argument;
+        }
+      }
+
+      const nestedArgument = findRepresentativeCallArgument(
+        node.arguments.flat(),
+        functionName,
+        runtimeArgumentIndex,
+        sourceText,
+      );
+      if (nestedArgument) {
+        return nestedArgument;
+      }
+    }
+
+    if (node.type === 'Block') {
+      const nestedArgument =
+        findRepresentativeCallArgument(
+          node.condition,
+          functionName,
+          runtimeArgumentIndex,
+          sourceText,
+        ) ??
+        findRepresentativeCallArgument(node.body, functionName, runtimeArgumentIndex, sourceText) ??
+        (node.elseBody
+          ? findRepresentativeCallArgument(
+              node.elseBody,
+              functionName,
+              runtimeArgumentIndex,
+              sourceText,
+            )
+          : null);
+      if (nestedArgument) {
+        return nestedArgument;
+      }
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -1309,11 +1444,12 @@ export class HoverProvider {
         ? {
             name: functionSymbol.name,
             range: functionSymbol.definitionRange!,
-            parameters: functionSymbol.parameters,
+            parameters: [...functionSymbol.parameters],
             parameterDeclarations: functionSymbol.parameters.map((parameter, index) => ({
               index,
               name: parameter,
               range: functionSymbol.definitionRange!,
+              runtimeArgumentIndex: index + 1,
             })),
           }
         : null);
@@ -1333,14 +1469,14 @@ export class HoverProvider {
         ),
       ),
       markdown: [
-        `**Local function declaration: ${declaration.name}**`,
+        `**Local function declaration: ${formatInlineCode(declaration.name)}**`,
         '',
-        `- Meaning: \`#func ${declaration.name}\` declares a fragment-local reusable macro body that \`{{call::${declaration.name}::...}}\` can invoke.`,
+        `- Meaning: ${formatInlineCode(`#func ${declaration.name}`)} declares a fragment-local reusable macro body that ${formatInlineCode(`{{call::${declaration.name}::...}}`)} can invoke.`,
         `- Local definition: ${CbsLspTextHelper.formatRangeStart(declaration.range)}`,
         declaration.parameters.length > 0
-          ? `- Parameters: ${declaration.parameters.map((parameter) => `\`${parameter}\``).join(', ')}`
+          ? `- Parameters: ${declaration.parameters.map((parameter) => formatInlineCode(parameter)).join(', ')}`
           : '- Parameters: inferred at runtime',
-        `- Parameter slots: ${formatParameterSlotSummary(declaration.parameterDeclarations)}`,
+        `- Parameter slots: ${formatHoverRuntimeArgumentSlotSummary(declaration)}`,
         `- Parameter definitions: ${formatParameterDefinitionSummary(declaration.parameterDeclarations)}`,
         `- Local calls: ${functionSymbol?.references.length ?? 0}`,
       ].join('\n'),
@@ -1384,7 +1520,7 @@ export class HoverProvider {
     );
     const parameters = functionSymbol?.parameters ?? fallbackDeclaration?.parameters ?? [];
     const definitionRange = functionSymbol?.definitionRange ?? fallbackDeclaration?.range;
-    const lines = [`**Local function reference: ${functionName}**`, ''];
+    const lines = [`**Local function reference: ${formatInlineCode(functionName)}**`, ''];
 
     lines.push(
       '- Meaning: references a fragment-local `#func` declaration used by `{{call::...}}`.',
@@ -1394,7 +1530,7 @@ export class HoverProvider {
       lines.push('- Status: unresolved local #func declaration');
     } else {
       if (parameters.length > 0) {
-        lines.push(`- Parameters: ${parameters.map((parameter) => `\`${parameter}\``).join(', ')}`);
+        lines.push(`- Parameters: ${parameters.map((parameter) => formatInlineCode(parameter)).join(', ')}`);
       }
       if (definitionRange) {
         lines.push(`- Local definition: ${CbsLspTextHelper.formatRangeStart(definitionRange)}`);
@@ -1449,32 +1585,70 @@ export class HoverProvider {
     };
 
     const activeFunctionContext = resolveActiveLocalFunctionContext(lookup);
-    const parameterDeclaration =
-      activeFunctionContext?.declaration.parameterDeclarations[reference.index];
+    const runtimeSlot = activeFunctionContext
+      ? resolveRuntimeArgumentSlot(activeFunctionContext.declaration, reference.index)
+      : null;
     const lines = [`**Numbered argument reference: arg::${reference.rawText}**`, ''];
 
-    lines.push(
-      `- Meaning: references the ${CbsLspTextHelper.formatOrdinal(reference.index + 1)} call argument from the active local \`#func\` / \`{{call::...}}\` context.`,
-    );
-
     if (!activeFunctionContext) {
+      lines.push(
+        `- Meaning: references runtime \`arg::${reference.index}\` from a local \`#func\` / \`{{call::...}}\` context.`,
+      );
       lines.push('- Status: outside a local `#func` / `call::` context.');
+    } else if (runtimeSlot?.kind === 'function-name') {
+      lines.push(
+        '- Meaning: references the upstream function-name slot from the active local `#func` / `{{call::...}}` context.',
+      );
+      lines.push(`- Local function: ${formatInlineCode(activeFunctionContext.declaration.name)}`);
+      lines.push(
+        `- Local #func declaration: ${CbsLspTextHelper.formatRangeStart(activeFunctionContext.declaration.range)}`,
+      );
+      lines.push('- Parameter slot: 0');
+      lines.push(
+        `- Runtime meaning: upstream function-name slot ${formatInlineCode(activeFunctionContext.declaration.name)}`,
+      );
+    } else if (runtimeSlot?.kind === 'call-argument') {
+      const activeFunctionName = activeFunctionContext.declaration.name;
+      const parameterName = runtimeSlot.parameterName;
+      if (!activeFunctionName || !parameterName) {
+        return null;
+      }
+
+      const actualArgument = findRepresentativeCallArgument(
+        lookup.fragmentAnalysis.document.nodes,
+        activeFunctionName,
+        runtimeSlot.index,
+        lookup.fragment.content,
+      );
+      lines.push(
+        `- Meaning: references runtime \`arg::${runtimeSlot.index}\`, which receives the declared parameter ${formatInlineCode(parameterName)} from the active local \`#func\` / \`{{call::...}}\` context.`,
+      );
+      lines.push(`- Local function: ${formatInlineCode(activeFunctionName)}`);
+      lines.push(
+        `- Local #func declaration: ${CbsLspTextHelper.formatRangeStart(activeFunctionContext.declaration.range)}`,
+      );
+      lines.push(`- Parameter slot: ${runtimeSlot.index}`);
+      if (actualArgument) {
+        lines.push(`- Actual call argument: ${formatInlineCode(actualArgument)}`);
+      }
+      lines.push(`- Parameter name: ${formatInlineCode(parameterName)}`);
+      if (runtimeSlot.parameterDeclaration) {
+        lines.push(
+          `- Parameter definition: ${CbsLspTextHelper.formatRangeStart(runtimeSlot.parameterDeclaration.range)}`,
+        );
+      }
     } else {
-      lines.push(`- Local function: \`${activeFunctionContext.declaration.name}\``);
+      lines.push(
+        `- Meaning: references runtime \`arg::${reference.index}\` from the active local \`#func\` / \`{{call::...}}\` context.`,
+      );
+      lines.push(`- Local function: ${formatInlineCode(activeFunctionContext.declaration.name)}`);
       lines.push(
         `- Local #func declaration: ${CbsLspTextHelper.formatRangeStart(activeFunctionContext.declaration.range)}`,
       );
       lines.push(`- Parameter slot: ${reference.index}`);
-      if (parameterDeclaration) {
-        lines.push(`- Parameter name: \`${parameterDeclaration.name}\``);
-        lines.push(
-          `- Parameter definition: ${CbsLspTextHelper.formatRangeStart(parameterDeclaration.range)}`,
-        );
-      } else {
-        lines.push(
-          `- Status: current function only exposes ${activeFunctionContext.declaration.parameters.length} parameter(s).`,
-        );
-      }
+      lines.push(
+        `- Status: current function only exposes ${activeFunctionContext.declaration.parameters.length + 1} runtime slot(s).`,
+      );
     }
 
     return {

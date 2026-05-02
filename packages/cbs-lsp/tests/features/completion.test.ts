@@ -1184,13 +1184,13 @@ describe('CompletionProvider', () => {
       });
       expect(greetCompletion?.documentation).toEqual({
         kind: 'markdown',
-        value: expect.stringContaining('`arg::0` → `user`, `arg::1` → `target`'),
+        value: expect.stringContaining('`arg::0` → function name, `arg::1` → `user`, `arg::2` → `target`'),
       });
     });
   });
 
   describe('trigger context: {{arg:: (numbered local argument slots)', () => {
-    it('offers 0-based parameter slots inside a local #func body', () => {
+    it('offers runtime function-name and parameter slots inside a local #func body', () => {
       const entry = getFixtureCorpusEntry('lorebook-basic');
       const modifiedText = entry.text.replace(
         '{{user}}',
@@ -1205,21 +1205,23 @@ describe('CompletionProvider', () => {
         ),
       );
 
-      expectCompletionLabels(completions, '0', '1');
+      expectCompletionLabels(completions, '0', '1', '2');
       expect(completions.find((completion) => completion.label === '0')?.detail).toContain(
-        'Numbered argument reference',
+        'runtime function-name slot',
       );
-      expect(completions.find((completion) => completion.label === '0')?.detail).toContain('user');
       expect(completions.find((completion) => completion.label === '1')?.detail).toContain(
+        'user',
+      );
+      expect(completions.find((completion) => completion.label === '2')?.detail).toContain(
         'target',
       );
-      expect(completions.find((completion) => completion.label === '1')?.documentation).toEqual({
+      expect(completions.find((completion) => completion.label === '2')?.documentation).toEqual({
         kind: 'markdown',
         value: expect.stringContaining(
           'references the 2nd call argument from the active local `#func` / `{{call::...}}` context',
         ),
       });
-      expect(completions.find((completion) => completion.label === '1')?.documentation).toEqual({
+      expect(completions.find((completion) => completion.label === '2')?.documentation).toEqual({
         kind: 'markdown',
         value: expect.stringContaining('Parameter definition: line'),
       });

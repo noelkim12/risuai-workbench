@@ -18,6 +18,7 @@ import type {
 
 import {
   createSyntheticDocumentVersion,
+  formatRuntimeArgumentSlotSummary,
   fragmentAnalysisService,
   getCalcExpressionSublanguageDocumentation,
   getCalcExpressionZone,
@@ -28,7 +29,7 @@ import {
 } from '../../core';
 import { CbsLspTextHelper } from '../../helpers/text-helper';
 import { isRequestCancelled } from '../../utils/request-cancellation';
-import { positionToOffset } from '../../utils/position';
+import { offsetToPosition, positionToOffset } from '../../utils/position';
 
 export interface SignatureHelpDocumentContext {
   filePath: string;
@@ -188,12 +189,13 @@ function createLocalCallSignatureInformation(
 ): SignatureInformation {
   const parameterLabels = [declaration.name, ...declaration.parameters];
   const label = `call::${parameterLabels.join('::')}`;
+  const slotSummary = formatRuntimeArgumentSlotSummary(declaration);
 
   return {
     label,
     documentation: [
       `Local function call for fragment-local \`#func ${declaration.name}\` declared at ${CbsLspTextHelper.formatRangeStart(declaration.range)}.`,
-      'The first slot selects the local function name, and the remaining slots feed `arg::N` references inside the function body.',
+      `The visible call syntax stays \`call::${parameterLabels.join('::')}\`; runtime slots are ${slotSummary}.`,
     ].join(' '),
     parameters: [
       createNamedParameterInformation(
@@ -202,11 +204,13 @@ function createLocalCallSignatureInformation(
       ),
       ...declaration.parameters.map((parameter, index) => {
         const parameterDeclaration = declaration.parameterDeclarations[index];
+        const runtimeArgumentIndex = parameterDeclaration?.runtimeArgumentIndex ?? index + 1;
+        const slotDescription = `\`arg::0\` is the function name and \`arg::${runtimeArgumentIndex}\` maps to \`${parameter}\`.`;
         return createNamedParameterInformation(
           parameter,
           parameterDeclaration
-            ? `Call argument slot ${index} feeds local parameter \`${parameterDeclaration.name}\` declared at ${CbsLspTextHelper.formatRangeStart(parameterDeclaration.range)}. The function body can read it via \`arg::${index}\`.`
-            : `Call argument slot ${index} feeds local parameter \`${parameter}\`. The function body can read it via \`arg::${index}\`.`,
+            ? `Call argument slot ${index + 1} feeds local parameter \`${parameterDeclaration.name}\` as runtime \`arg::${runtimeArgumentIndex}\`, declared at ${CbsLspTextHelper.formatRangeStart(parameterDeclaration.range)}. ${slotDescription}`
+            : `Call argument slot ${index + 1} feeds local parameter \`${parameter}\` as runtime \`arg::${runtimeArgumentIndex}\`. ${slotDescription}`,
         );
       }),
     ],
@@ -273,14 +277,12 @@ function createEachBlockHeaderSignatureInformation(): SignatureInformation {
  * @returns `#func` header 의미를 설명하는 signature information
  */
 function createFuncBlockHeaderSignatureInformation(
-  declaration: Pick<LocalFunctionDeclaration, 'name' | 'parameters'> | null,
+  declaration: LocalFunctionDeclaration | null,
 ): SignatureInformation {
   const declaredParameters = declaration?.parameters ?? [];
   const declaredSummary =
     declaration && declaredParameters.length > 0
-      ? ` Current header slots: ${declaredParameters
-          .map((parameter, index) => `\`arg::${index}\` → \`${parameter}\``)
-          .join(', ')}.`
+      ? ` Current runtime slots: ${formatRuntimeArgumentSlotSummary(declaration)}.`
       : declaration
         ? ' Current header has no declared local parameters yet.'
         : '';
@@ -289,7 +291,7 @@ function createFuncBlockHeaderSignatureInformation(
     label: '#func functionName ...parameters',
     documentation: [
       'Block header that declares a fragment-local function callable through `{{call::functionName::...}}`.',
-      'The first slot declares the local function name. Each following space-separated token declares a local parameter exposed inside the body as `arg::0`, `arg::1`, and so on.',
+      'The first header token declares the local function name and is readable as runtime `arg::0`. Each following space-separated token declares a local parameter starting at `arg::1`.',
       declaredSummary,
     ].join(''),
     parameters: [
@@ -299,7 +301,7 @@ function createFuncBlockHeaderSignatureInformation(
       ),
       createNamedParameterInformation(
         '...parameters',
-        'Space-separated local parameter names. The first declared name maps to `arg::0`, the next to `arg::1`, and so on inside the `#func` body.',
+        'Space-separated local parameter names. The first declared name maps to runtime `arg::1`, the next to `arg::2`, and so on inside the `#func` body.',
       ),
     ],
   };
@@ -427,13 +429,60 @@ function parseLocalFunctionHeaderDeclaration(
   const name = match[1];
   const rawParameterText = match[2]?.trim() ?? '';
   const parameters = rawParameterText.length > 0 ? rawParameterText.split(/\s+/u) : [];
+  const parameterDeclarations = createHeaderParameterDeclarations(
+    parameters,
+    rawParameterText,
+    headerText,
+    headerStart,
+    content,
+  );
 
   return {
     name,
     range: headerRange,
     parameters,
-    parameterDeclarations: [],
+    parameterDeclarations,
   };
+}
+
+/**
+ * createHeaderParameterDeclarations 함수.
+ * `#func` 헤더에서 파싱한 파라미터에 runtime `arg::N` 슬롯과 range를 붙임.
+ *
+ * @param parameters - 헤더에서 읽은 파라미터 이름 목록
+ * @param rawParameterText - 헤더 내 파라미터 원문 조각
+ * @param headerText - 전체 `#func` 헤더 원문
+ * @param headerStart - fragment-local 헤더 시작 offset
+ * @param content - fragment 원문 텍스트
+ * @returns runtime slot metadata가 포함된 파라미터 선언 목록
+ */
+function createHeaderParameterDeclarations(
+  parameters: readonly string[],
+  rawParameterText: string,
+  headerText: string,
+  headerStart: number,
+  content: string,
+): LocalFunctionDeclaration['parameterDeclarations'] {
+  const parameterTextStart = rawParameterText.length > 0 ? headerText.indexOf(rawParameterText) : -1;
+  if (parameterTextStart < 0) {
+    return [];
+  }
+
+  return parameters.map((parameterName, index) => {
+    const searchFrom = parameters.slice(0, index).join(' ').length + (index > 0 ? 1 : 0);
+    const parameterStartInText = rawParameterText.indexOf(parameterName, searchFrom);
+    const parameterStartOffset = headerStart + parameterTextStart + parameterStartInText;
+
+    return {
+      index,
+      name: parameterName,
+      runtimeArgumentIndex: index + 1,
+      range: {
+        start: offsetToPosition(content, parameterStartOffset),
+        end: offsetToPosition(content, parameterStartOffset + parameterName.length),
+      },
+    };
+  });
 }
 
 /**

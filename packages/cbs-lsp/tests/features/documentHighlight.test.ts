@@ -110,6 +110,23 @@ describe('DocumentHighlightProvider', () => {
     const entry = getFixtureCorpusEntry('lorebook-basic');
     const text = entry.text.replace(
       '{{user}}',
+      '{{#func outer user}}{{arg::1}}{{#func inner value}}{{arg::1}}{{/func}}{{arg::1}}{{/func}}{{call::outer::Noel}}',
+    );
+    const request = { ...createFixtureRequest(entry), text };
+    const argOffset = locateNthOffset(text, '{{arg::1}}', 0) + '{{arg::'.length;
+    const highlights = createProvider(request).provide(
+      createParams(request, offsetToPosition(text, argOffset)),
+    );
+
+    expect(highlights).toHaveLength(4);
+    expect(countHighlightsByKind(highlights, DocumentHighlightKind.Write)).toBe(1);
+    expect(countHighlightsByKind(highlights, DocumentHighlightKind.Read)).toBe(3);
+  });
+
+  it('does not highlight arg::0 as the first declared #func parameter', () => {
+    const entry = getFixtureCorpusEntry('lorebook-basic');
+    const text = entry.text.replace(
+      '{{user}}',
       '{{#func outer user}}{{arg::0}}{{#func inner value}}{{arg::0}}{{/func}}{{arg::0}}{{/func}}{{call::outer::Noel}}',
     );
     const request = { ...createFixtureRequest(entry), text };
@@ -118,8 +135,8 @@ describe('DocumentHighlightProvider', () => {
       createParams(request, offsetToPosition(text, argOffset)),
     );
 
-    expect(highlights).toHaveLength(4);
-    expect(countHighlightsByKind(highlights, DocumentHighlightKind.Write)).toBe(1);
+    expect(highlights).toHaveLength(3);
+    expect(countHighlightsByKind(highlights, DocumentHighlightKind.Write)).toBe(0);
     expect(countHighlightsByKind(highlights, DocumentHighlightKind.Read)).toBe(3);
   });
 

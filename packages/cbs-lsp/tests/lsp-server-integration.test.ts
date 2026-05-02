@@ -2416,11 +2416,12 @@ describe('LSP server integration', () => {
     expect(labels).toContain('condition:');
     expect(labels).toContain('iterator:');
     expect(labels).toContain('alias:');
-    expect(labels).toContain('arg::0 \u2192 name:');
-    expect(labels).toContain('arg::1 \u2192 greeting:');
+    expect(labels).toContain('arg::1 \u2192 name:');
+    expect(labels).toContain('arg::2 \u2192 greeting:');
     expect(labels).toContain('func:');
-    expect(labels).toContain('arg::0 \u2192 name:');
-    expect(labels).toContain('arg::1 \u2192 greeting:');
+    expect(labels).toContain('arg::1 \u2192 name:');
+    expect(labels).toContain('arg::2 \u2192 greeting:');
+    expect(labels).toContain('arg::0:');
   });
 
   it('routes textDocument/selectionRange through the server seam and keeps the chain fragment-safe', async () => {

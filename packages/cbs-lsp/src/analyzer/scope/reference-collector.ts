@@ -11,13 +11,17 @@ import {
   type Range,
 } from 'risu-workbench-core';
 
-import { extractNumberedArgumentReference } from '../../core/local-functions';
+import {
+  extractNumberedArgumentReference,
+  type NumberedArgumentReference,
+} from '../../core/local-functions';
+import { offsetToPosition, positionToOffset } from '../../utils/position';
 import {
   extractEachLoopBinding,
   extractFunctionDeclaration,
   isStaticEachIteratorIdentifier,
 } from '../block-header';
-import { ScopeIssueStore, SymbolTable } from '../symbolTable';
+import { ScopeIssueStore, SymbolTable, type FunctionSymbol } from '../symbolTable';
 import { AnalyzableBodyResolver } from './analyzable-body-resolver';
 import type { FragmentDefinitionMaps } from './definition-collector';
 import { normalizeLookupKey } from './lookup-key';
@@ -86,6 +90,9 @@ export class ReferenceCollector {
         case 'MathExpr':
           this.collectNodes(node.children, scope);
           break;
+        case 'PlainText':
+          this.collectLiteralArgumentReferences(node, scope);
+          break;
         default:
           break;
       }
@@ -102,6 +109,7 @@ export class ReferenceCollector {
   private collectMacroReferences(node: MacroCallNode, scope: ScopeFrame): void {
     const normalizedName = normalizeLookupKey(node.name);
     const rules = getScopeMacroRules(normalizedName);
+    let handledArgumentReference = false;
 
     for (const rule of rules) {
       switch (rule.kind) {
@@ -118,11 +126,16 @@ export class ReferenceCollector {
           this.collectFunctionReference(node, rule.argumentIndex);
           break;
         case 'reference-function-argument':
+          handledArgumentReference = true;
           this.collectArgumentReference(node, scope);
           break;
         default:
           break;
       }
+    }
+
+    if (!handledArgumentReference && extractNumberedArgumentReference(node, this.sourceText)) {
+      this.collectArgumentReference(node, scope);
     }
   }
 
@@ -284,6 +297,42 @@ export class ReferenceCollector {
     const functionSymbol = this.fragmentDefinitions.func.get(identifier.text);
     if (functionSymbol) {
       this.table.addFunctionReference(functionSymbol, identifier.range);
+    } else {
+      this.issues.recordInvalidFunctionReference({
+        name: identifier.text,
+        range: identifier.range,
+        reason: 'unresolved-call',
+      });
+    }
+
+    this.collectUnsafeNestedCallArguments(node, argumentIndex, identifier.text);
+  }
+
+  /**
+   * collectUnsafeNestedCallArguments 함수.
+   * call:: 값 인자 안에 upstream plain split이 보존할 수 없는 nested :: macro가 있는지 기록함.
+   *
+   * @param node - call:: macro 노드
+   * @param functionNameArgumentIndex - 함수 이름 슬롯의 argument index
+   * @param functionName - diagnostics 메시지에 표시할 local function 이름
+   */
+  private collectUnsafeNestedCallArguments(
+    node: MacroCallNode,
+    functionNameArgumentIndex: number,
+    functionName: string,
+  ): void {
+    for (const argument of node.arguments.slice(functionNameArgumentIndex + 1)) {
+      if (!containsNestedSeparatorMacro(argument, this.sourceText)) {
+        continue;
+      }
+
+      this.issues.recordInvalidFunctionReference({
+        name: functionName,
+        range: getArgumentRange(argument) ?? node.range,
+        reason: 'unsafe-nested-argument',
+        detail:
+          'call:: uses upstream plain split semantics; nested CBS arguments containing :: may be split incorrectly.',
+      });
     }
   }
 
@@ -300,6 +349,57 @@ export class ReferenceCollector {
       return;
     }
 
+    this.recordArgumentReference(reference, scope);
+  }
+
+  /**
+   * collectLiteralArgumentReferences 함수.
+   * pure-mode `#func` body에 plain text로 남은 `{{arg::N}}` 참조를 복구해 검증함.
+   *
+   * @param node - 검사할 plain-text AST 노드
+   * @param scope - 현재 scope frame
+   */
+  private collectLiteralArgumentReferences(
+    node: { value: string; range: Range },
+    scope: ScopeFrame,
+  ): void {
+    if (this.sourceText.length === 0 || !node.value.includes('arg::')) {
+      return;
+    }
+
+    const nodeStartOffset = positionToOffset(this.sourceText, node.range.start);
+    for (const match of node.value.matchAll(/\{\{\s*arg::(\d+)\s*\}\}/giu)) {
+      const rawText = match[1];
+      if (!rawText) {
+        continue;
+      }
+
+      const matchStart = match.index ?? 0;
+      const rawTextStart = match[0].indexOf(rawText);
+      const indexStartOffset = nodeStartOffset + matchStart + rawTextStart;
+      this.recordArgumentReference(
+        {
+          index: Number.parseInt(rawText, 10),
+          rawText,
+          range: {
+            start: offsetToPosition(this.sourceText, indexStartOffset),
+            end: offsetToPosition(this.sourceText, indexStartOffset + rawText.length),
+          },
+        },
+        scope,
+      );
+    }
+  }
+
+  /**
+   * recordArgumentReference 함수.
+   * 추출된 `arg::N` 참조를 active function의 upstream runtime slot range와 대조함.
+   *
+   * @param reference - 검증할 numbered argument 참조
+   * @param scope - 현재 scope frame
+   */
+  private recordArgumentReference(reference: NumberedArgumentReference, scope: ScopeFrame): void {
+
     const activeFunction = findActiveFunction(scope);
     if (!activeFunction) {
       this.issues.recordInvalidArgumentReference({
@@ -311,8 +411,8 @@ export class ReferenceCollector {
       return;
     }
 
-    // zero-based numbered slot이 선언된 parameter 수를 벗어나면 호출자가 고칠 수 있게 진단함.
-    if (reference.index >= activeFunction.parameters.length) {
+    const runtimeSlotCount = getRuntimeSlotCountForFunctionSymbol(activeFunction);
+    if (reference.index >= runtimeSlotCount) {
       this.issues.recordInvalidArgumentReference({
         rawText: reference.rawText,
         index: reference.index,
@@ -323,4 +423,69 @@ export class ReferenceCollector {
       });
     }
   }
+}
+
+/**
+ * getRuntimeSlotCountForFunctionSymbol 함수.
+ * scope pass의 FunctionSymbol에서 upstream `arg::N` 런타임 슬롯 수를 계산함.
+ *
+ * @param activeFunction - 현재 scope에서 활성화된 로컬 함수 심볼
+ * @returns function-name 슬롯 1개를 포함한 런타임 슬롯 개수
+ */
+function getRuntimeSlotCountForFunctionSymbol(activeFunction: FunctionSymbol): number {
+  return activeFunction.parameters.length + 1;
+}
+
+/**
+ * containsNestedSeparatorMacro 함수.
+ * node 목록 안에서 raw source에 `::`를 포함한 nested CBS macro 호출을 찾음.
+ *
+ * @param nodes - 검사할 argument/body node 목록
+ * @param sourceText - raw macro source를 잘라낼 fragment 원문
+ * @returns separator macro가 하나라도 있으면 true
+ */
+function containsNestedSeparatorMacro(nodes: readonly CBSNode[], sourceText: string): boolean {
+  return nodes.some((node) => {
+    if (node.type === 'MacroCall') {
+      const raw = sourceText.slice(
+        positionToOffset(sourceText, node.range.start),
+        positionToOffset(sourceText, node.range.end),
+      );
+      return raw.includes('::');
+    }
+
+    if (node.type === 'Block') {
+      return (
+        containsNestedSeparatorMacro(node.condition, sourceText) ||
+        containsNestedSeparatorMacro(node.body, sourceText) ||
+        containsNestedSeparatorMacro(node.elseBody ?? [], sourceText)
+      );
+    }
+
+    if (node.type === 'MathExpr') {
+      return containsNestedSeparatorMacro(node.children, sourceText);
+    }
+
+    return false;
+  });
+}
+
+/**
+ * getArgumentRange 함수.
+ * macro argument node 목록 전체가 차지하는 범위를 계산함.
+ *
+ * @param nodes - 단일 macro argument를 구성하는 node 목록
+ * @returns argument 전체 범위, 비어 있으면 null
+ */
+function getArgumentRange(nodes: readonly CBSNode[]): Range | null {
+  const first = nodes[0];
+  const last = nodes[nodes.length - 1];
+  if (!first || !last) {
+    return null;
+  }
+
+  return {
+    start: first.range.start,
+    end: last.range.end,
+  };
 }

@@ -848,11 +848,11 @@ describe('HoverProvider', () => {
     const hover = provider.provide(createParams(request, positionAt(modifiedText, 'greet', 2)));
     const markdown = expectMarkdownHover(hover);
 
-    expect(markdown).toContain('**Local function declaration: greet**');
+    expect(markdown).toContain('**Local function declaration: `greet`**');
     expect(markdown).toContain('declares a fragment-local reusable macro body');
     expect(markdown).toContain('Local definition:');
     expect(markdown).toContain('Parameters: `user`');
-    expect(markdown).toContain('Parameter slots: `arg::0` → `user`');
+    expect(markdown).toContain('Parameter slots: `arg::0` → function name, `arg::1` → `user`');
     expect(markdown).toContain('Parameter definitions: `user` (line');
     expect(markdown).toContain('Local calls: 1');
   });
@@ -868,34 +868,94 @@ describe('HoverProvider', () => {
     const hover = provider.provide(createParams(request, positionAt(modifiedText, 'greet', 2, 1)));
     const markdown = expectMarkdownHover(hover);
 
-    expect(markdown).toContain('**Local function reference: greet**');
+    expect(markdown).toContain('**Local function reference: `greet`**');
     expect(markdown).toContain('references a fragment-local `#func` declaration');
     expect(markdown).not.toContain('declares a fragment-local reusable macro body');
     expect(markdown).toContain('Parameters: `user`');
     expect(markdown).toContain('Local definition:');
   });
 
+  it('escapes backticks in local function declaration and reference hover titles', () => {
+    const entry = getFixtureCorpusEntry('lorebook-basic');
+    const modifiedText = entry.text.replace(
+      '{{user}}',
+      '{{#func gre`et user}}Hello{{/func}}{{call::gre`et::Noel}}',
+    );
+    const request = { ...createFixtureRequest(entry), text: modifiedText };
+    const provider = createProvider(new FragmentAnalysisService(), request);
+    const declarationHover = provider.provide(
+      createParams(request, positionAt(modifiedText, 'gre`et', 2)),
+    );
+    const referenceHover = provider.provide(
+      createParams(request, positionAt(modifiedText, 'gre`et', 2, 1)),
+    );
+    const declarationMarkdown = expectMarkdownHover(declarationHover);
+    const referenceMarkdown = expectMarkdownHover(referenceHover);
+
+    expect(declarationMarkdown).toContain('**Local function declaration: `` gre`et ``**');
+    expect(referenceMarkdown).toContain('**Local function reference: `` gre`et ``**');
+  });
+
   it('describes arg::N as a numbered local argument reference', () => {
     const entry = getFixtureCorpusEntry('lorebook-basic');
     const modifiedText = entry.text.replace(
       '{{user}}',
-      '{{#func greet user target}}Hello {{arg::1}}{{/func}}{{call::greet::Noel::friend}}',
+      '{{#func greet user target}}Hello {{arg::2}}{{/func}}{{call::greet::Noel::friend}}',
     );
     const request = { ...createFixtureRequest(entry), text: modifiedText };
     const service = new FragmentAnalysisService();
     const provider = createProvider(service, request);
-    const position = positionAt(modifiedText, '1');
+    const position = positionAt(modifiedText, '2');
     const hover = provider.provide(createParams(request, position));
     const markdown = expectMarkdownHover(hover);
 
-    expect(markdown).toContain('**Numbered argument reference: arg::1**');
+    expect(markdown).toContain('**Numbered argument reference: arg::2**');
     expect(markdown).toContain(
-      'references the 2nd call argument from the active local `#func` / `{{call::...}}` context',
+      'references runtime `arg::2`, which receives the declared parameter `target` from the active local `#func` / `{{call::...}}` context',
     );
     expect(markdown).toContain('Local function: `greet`');
     expect(markdown).toContain('Local #func declaration:');
+    expect(markdown).toContain('Parameter slot: 2');
+    expect(markdown).toContain('Actual call argument: `friend`');
     expect(markdown).toContain('Parameter name: `target`');
     expect(markdown).toContain('Parameter definition:');
+  });
+
+  it('escapes backticks in local function actual call argument hover inline code', () => {
+    const entry = getFixtureCorpusEntry('lorebook-basic');
+    const modifiedText = entry.text.replace(
+      '{{user}}',
+      '{{#func greet user}}Hello {{arg::1}}{{/func}}{{call::greet::No`el}}',
+    );
+    const request = { ...createFixtureRequest(entry), text: modifiedText };
+    const provider = createProvider(new FragmentAnalysisService(), request);
+    const hover = provider.provide(createParams(request, positionAt(modifiedText, '1')));
+    const markdown = expectMarkdownHover(hover);
+
+    expect(markdown).toContain('Actual call argument:');
+    expect(markdown).toContain('Actual call argument: `` No`el ``');
+    expect(markdown).not.toContain('Actual call argument: `No`el`');
+  });
+
+  it('describes arg::0 as the active local function-name slot', () => {
+    const entry = getFixtureCorpusEntry('lorebook-basic');
+    const modifiedText = entry.text.replace(
+      '{{user}}',
+      '{{#func greet user}}Hello {{arg::0}}{{/func}}{{call::greet::Noel}}',
+    );
+    const request = { ...createFixtureRequest(entry), text: modifiedText };
+    const provider = createProvider(new FragmentAnalysisService(), request);
+    const hover = provider.provide(createParams(request, positionAt(modifiedText, '0')));
+    const markdown = expectMarkdownHover(hover);
+
+    expect(markdown).toContain('**Numbered argument reference: arg::0**');
+    expect(markdown).toContain(
+      'references the upstream function-name slot from the active local `#func` / `{{call::...}}` context',
+    );
+    expect(markdown).toContain('Local function: `greet`');
+    expect(markdown).toContain('Parameter slot: 0');
+    expect(markdown).toContain('Runtime meaning: upstream function-name slot `greet`');
+    expect(markdown).not.toContain('Parameter name: `user`');
   });
 
   it('suppresses builtin hover inside puredisplay bodies', () => {
@@ -990,8 +1050,8 @@ describe('HoverProvider', () => {
       provider.provide(createParams(request, positionAt(text, 'greet', 2, 1))),
     );
 
-    expect(declarationMarkdown).toContain('**Local function declaration: greet**');
-    expect(callMarkdown).toContain('**Local function reference: greet**');
+    expect(declarationMarkdown).toContain('**Local function declaration: `greet`**');
+    expect(callMarkdown).toContain('**Local function reference: `greet`**');
     expect(callMarkdown).toContain('unresolved local #func declaration');
     expect(callMarkdown).not.toContain('Local definition:');
   });

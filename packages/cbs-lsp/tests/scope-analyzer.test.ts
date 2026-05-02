@@ -131,6 +131,40 @@ describe('ScopeAnalyzer', () => {
     expect(issues.getInvalidArgumentReferences()).toEqual([]);
   });
 
+  it('treats arg::0 as the runtime function-name slot and arg::1 as the first declared parameter slot', () => {
+    const { issues } = analyzeScope(
+      '{{#func greet user target}}{{arg::0}}{{arg::1}}{{arg::2}}{{/func}}{{call::greet::Noel::friend}}',
+    );
+
+    expect(issues.getInvalidArgumentReferences()).toEqual([]);
+  });
+
+  it('reports arg::N only when it is above the upstream runtime slot range', () => {
+    const { issues } = analyzeScope(
+      '{{#func greet user target}}{{arg::3}}{{/func}}{{call::greet::Noel::friend}}',
+    );
+
+    expect(issues.getInvalidArgumentReferences()).toEqual([
+      expect.objectContaining({
+        rawText: '3',
+        reason: 'out-of-range',
+        functionName: 'greet',
+        parameterCount: 2,
+      }),
+    ]);
+  });
+
+  it('does not treat outer non-arg macros containing nested arg::N as extra argument references', () => {
+    const { issues } = analyzeScope('{{getvar::{{arg::0}}}}');
+
+    expect(issues.getInvalidArgumentReferences()).toEqual([
+      expect.objectContaining({
+        rawText: '0',
+        reason: 'outside-function',
+      }),
+    ]);
+  });
+
   it('trims static argument ranges down to the identifier text', () => {
     const source = '{{getvar::   score   }}';
     const { issues } = analyzeScope(source);

@@ -28,14 +28,11 @@ import {
   type FragmentAnalysisService,
   type FragmentOffsetMapper,
   collectLocalFunctionDeclarations,
-  resolveLocalFunctionDeclaration,
   extractNumberedArgumentReference,
+  resolveRuntimeArgumentSlot,
   type LocalFunctionDeclaration,
 } from '../../core';
-import {
-  extractEachLoopBinding,
-  extractFunctionDeclaration,
-} from '../../analyzer/block-header';
+import { extractEachLoopBinding } from '../../analyzer/block-header';
 import { isRequestCancelled } from '../../utils/request-cancellation';
 import { positionToOffset } from '../../utils/position';
 
@@ -216,7 +213,7 @@ class InlayHintCollector {
           const nameIndex = headerText.indexOf(decl.name);
           return nameIndex >= 0 && declOffset === blockNameOffset + nameIndex;
         });
-        this.visitFuncBlock(node, matchedDeclaration ?? null);
+        this.visitFuncBlock(matchedDeclaration ?? null);
         this.functionContextStack.push(matchedDeclaration ?? null);
         if (matchedDeclaration) {
           this.scanArgReferencesInFuncBody(node, matchedDeclaration);
@@ -294,11 +291,14 @@ class InlayHintCollector {
       if (!startPosition) {
         continue;
       }
-      const parameterIndex = index - 1;
-      const parameterName = declaration?.parameters[parameterIndex];
+      const runtimeArgumentIndex = index;
+      const runtimeSlot = declaration
+        ? resolveRuntimeArgumentSlot(declaration, runtimeArgumentIndex)
+        : null;
+      const parameterName = runtimeSlot?.kind === 'call-argument' ? runtimeSlot.parameterName : null;
       const label = parameterName
-        ? `arg::${parameterIndex} \u2192 ${parameterName}:`
-        : `arg::${parameterIndex}:`;
+        ? `arg::${runtimeArgumentIndex} \u2192 ${parameterName}:`
+        : `arg::${runtimeArgumentIndex}:`;
       this.addHint(startPosition, label, InlayHintKind.Parameter);
     }
   }
@@ -322,7 +322,10 @@ class InlayHintCollector {
     }
 
     const currentFunction = this.functionContextStack[this.functionContextStack.length - 1];
-    const parameterName = currentFunction?.parameters[argRef.index];
+    const runtimeSlot = currentFunction
+      ? resolveRuntimeArgumentSlot(currentFunction, argRef.index)
+      : null;
+    const parameterName = runtimeSlot?.kind === 'call-argument' ? runtimeSlot.parameterName : null;
     const label = parameterName ? `${parameterName}:` : `arg::${argRef.index}:`;
     this.addHint(startPosition, label, InlayHintKind.Parameter);
   }
@@ -366,13 +369,13 @@ class InlayHintCollector {
    * @param node - func block 노드
    * @param declaration - 문서에서 수집한 local function 선언 정보, 없으면 null
    */
-  private visitFuncBlock(node: BlockNode, declaration: LocalFunctionDeclaration | null): void {
+  private visitFuncBlock(declaration: LocalFunctionDeclaration | null): void {
     if (!declaration || declaration.parameterDeclarations.length === 0) {
       return;
     }
 
     for (const parameter of declaration.parameterDeclarations) {
-      const label = `arg::${parameter.index} \u2192 ${parameter.name}:`;
+      const label = `arg::${parameter.runtimeArgumentIndex} \u2192 ${parameter.name}:`;
       this.addHint(parameter.range.start, label, InlayHintKind.Parameter);
     }
   }
@@ -417,7 +420,8 @@ class InlayHintCollector {
       }
 
       const argIndex = Number.parseInt(argumentToken.value.trim(), 10);
-      const parameterName = declaration.parameters[argIndex];
+      const runtimeSlot = resolveRuntimeArgumentSlot(declaration, argIndex);
+      const parameterName = runtimeSlot?.kind === 'call-argument' ? runtimeSlot.parameterName : null;
       const label = parameterName ? `${parameterName}:` : `arg::${argIndex}:`;
       this.addHint(argumentToken.range.start, label, InlayHintKind.Parameter);
     }

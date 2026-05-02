@@ -7,12 +7,15 @@ import { CompletionItem, CompletionItemKind } from 'vscode-languageserver/node';
 import { collectVisibleLoopBindingsFromNodePath } from '../../analyzer/scopeAnalyzer';
 import {
   collectLocalFunctionDeclarations,
+  formatRuntimeArgumentSlotSummary,
   resolveActiveLocalFunctionContext,
   type AgentMetadataAvailabilityContract,
   type AgentMetadataCategoryContract,
   type AgentMetadataExplanationContract,
   type AgentMetadataWorkspaceSnapshotContract,
   type FragmentCursorLookupResult,
+  type LocalFunctionDeclaration,
+  type LocalFunctionParameterDeclaration,
 } from '../../core';
 import { CbsLspTextHelper } from '../../helpers/text-helper';
 import type { VariableFlowService } from '../../services';
@@ -371,20 +374,27 @@ export function buildFunctionCompletions(
 ): CompletionItem[] {
   const symbolTable = lookup.fragmentAnalysis.providerLookup.getSymbolTable();
   const symbolFunctions = symbolTable.getAllFunctions();
+  const functionDeclarations = collectLocalFunctionDeclarations(
+    lookup.fragmentAnalysis.document,
+    lookup.fragment.content,
+  );
+  const declarationByName = new Map(
+    functionDeclarations.map((declaration) => [declaration.name, declaration]),
+  );
   const functionCandidates =
     symbolFunctions.length > 0
       ? symbolFunctions.map((symbol) => ({
           name: symbol.name,
           parameters: symbol.parameters,
           references: symbol.references.length,
+          declaration: declarationByName.get(symbol.name) ?? null,
         }))
-      : collectLocalFunctionDeclarations(lookup.fragmentAnalysis.document, lookup.fragment.content).map(
-          (declaration) => ({
-            name: declaration.name,
-            parameters: declaration.parameters,
-            references: 0,
-          }),
-        );
+      : functionDeclarations.map((declaration) => ({
+          name: declaration.name,
+          parameters: declaration.parameters,
+          references: 0,
+          declaration,
+        }));
 
   const functions = functionCandidates.filter((symbol) =>
     symbol.name.toLowerCase().startsWith(prefix.toLowerCase()),
@@ -413,11 +423,9 @@ export function buildFunctionCompletions(
         symbol.parameters.length > 0
           ? `Parameters: ${symbol.parameters.map((parameter) => `\`${parameter}\``).join(', ')}`
           : 'Parameters: declared later or inferred at runtime',
-        symbol.parameters.length > 0
-          ? `Argument slots: ${symbol.parameters
-              .map((parameter, index) => `\`arg::${index}\` → \`${parameter}\``)
-              .join(', ')}`
-          : 'Argument slots: no local parameter names are declared yet.',
+        symbol.declaration
+          ? `Argument slots: ${formatRuntimeArgumentSlotSummary(symbol.declaration)}`
+          : 'Argument slots: `arg::0` is the function name; declared parameters start at `arg::1`.',
         `Local calls: ${symbol.references}`,
       ].join('\n'),
     },
@@ -441,17 +449,17 @@ export function buildArgumentIndexCompletions(
 ): CompletionItem[] {
   const activeFunctionContext = resolveActiveLocalFunctionContext(lookup);
   const declaration = activeFunctionContext?.declaration;
-  if (!declaration || declaration.parameters.length === 0) {
+  if (!declaration) {
     return [];
   }
 
   const normalizedPrefix = prefix.trim();
+  const slots = buildRuntimeArgumentCompletionSlots(declaration);
 
-  return declaration.parameters
-    .map((parameter, index) => ({ parameter, index }))
+  return slots
     .filter(({ index }) => index.toString().startsWith(normalizedPrefix))
-    .map(({ parameter, index }) => {
-      const parameterDeclaration = declaration.parameterDeclarations[index];
+    .map(({ parameter, parameterDeclaration, kind, index }) => {
+      const isFunctionNameSlot = kind === 'function-name';
 
       return {
         label: index.toString(),
@@ -466,24 +474,56 @@ export function buildArgumentIndexCompletions(
             'Completion inferred numbered arg:: slots from the active local #func / call:: context.',
           ),
         ),
-        detail: `Numbered argument reference for \`${parameter}\` in the active local #func / {{call::...}} context`,
+        detail: isFunctionNameSlot
+          ? 'Numbered argument reference for the runtime function-name slot in the active local #func / {{call::...}} context'
+          : `Numbered argument reference for \`${parameter}\` in the active local #func / {{call::...}} context`,
         documentation: {
           kind: 'markdown',
           value: [
             `**Numbered argument reference: arg::${index}**`,
             '',
             `- Local function: \`${declaration.name}\``,
-            `- Parameter slot: ${index}`,
-            `- Parameter name: \`${parameter}\``,
+            isFunctionNameSlot ? '- Runtime slot: function name' : `- Parameter slot: ${index}`,
+            isFunctionNameSlot ? '- Parameter name: function name' : `- Parameter name: \`${parameter}\``,
             parameterDeclaration
               ? `- Parameter definition: line ${parameterDeclaration.range.start.line + 1}, character ${parameterDeclaration.range.start.character + 1}`
-              : '- Parameter definition: declared in the active local function header',
-            `- Meaning: references the ${CbsLspTextHelper.formatOrdinal(index + 1)} call argument from the active local \`#func\` / \`{{call::...}}\` context.`,
+              : '- Parameter definition: runtime function-name slot',
+            isFunctionNameSlot
+              ? '- Meaning: references the runtime function-name slot from the active local `#func` / `{{call::...}}` context.'
+              : `- Meaning: references the ${CbsLspTextHelper.formatOrdinal(index)} call argument from the active local \`#func\` / \`{{call::...}}\` context.`,
           ].join('\n'),
         },
         insertText: index.toString(),
       } satisfies CompletionItem;
     });
+}
+
+interface RuntimeArgumentCompletionSlot {
+  index: number;
+  parameter: string;
+  parameterDeclaration: LocalFunctionParameterDeclaration | null;
+  kind: 'function-name' | 'call-argument';
+}
+
+/**
+ * buildRuntimeArgumentCompletionSlots 함수.
+ * upstream `arg::N` 런타임 슬롯을 completion 후보용 슬롯 모델로 변환함.
+ *
+ * @param declaration - active local `#func` 선언
+ * @returns function-name 슬롯과 선언 파라미터 슬롯 목록
+ */
+function buildRuntimeArgumentCompletionSlots(
+  declaration: LocalFunctionDeclaration,
+): RuntimeArgumentCompletionSlot[] {
+  return [
+    { index: 0, parameter: 'function name', parameterDeclaration: null, kind: 'function-name' },
+    ...declaration.parameterDeclarations.map((parameterDeclaration) => ({
+      index: parameterDeclaration.runtimeArgumentIndex,
+      parameter: parameterDeclaration.name,
+      parameterDeclaration,
+      kind: 'call-argument' as const,
+    })),
+  ];
 }
 
 /**

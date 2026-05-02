@@ -46,12 +46,6 @@ function findHintLabel(hints: readonly InlayHint[], needle: string): string | un
   return typeof matchedHint?.label === 'string' ? matchedHint.label : undefined;
 }
 
-function filterHintsByLabelPrefix(hints: readonly InlayHint[], prefix: string): InlayHint[] {
-  return hints.filter((hint) =>
-    typeof hint.label === 'string' ? hint.label.startsWith(prefix) : false,
-  );
-}
-
 describe('InlayHintProvider', () => {
   it('exposes local-only availability honesty metadata', () => {
     const provider = new InlayHintProvider();
@@ -144,8 +138,8 @@ describe('InlayHintProvider', () => {
     const params = createParams(request);
     const hints = provider.provide(params);
 
-    expect(findHintLabel(hints, 'arg::0 \u2192 name:')).toBeDefined();
-    expect(findHintLabel(hints, 'arg::1 \u2192 greeting:')).toBeDefined();
+    expect(findHintLabel(hints, 'arg::1 \u2192 name:')).toBeDefined();
+    expect(findHintLabel(hints, 'arg::2 \u2192 greeting:')).toBeDefined();
   });
 
   it('shows call:: argument hints resolved from #func declaration', () => {
@@ -160,15 +154,15 @@ describe('InlayHintProvider', () => {
     const hints = provider.provide(params);
 
     expect(findHintLabel(hints, 'func:')).toBeDefined();
-    expect(findHintLabel(hints, 'arg::0 \u2192 name:')).toBeDefined();
-    expect(findHintLabel(hints, 'arg::1 \u2192 greeting:')).toBeDefined();
+    expect(findHintLabel(hints, 'arg::1 \u2192 name:')).toBeDefined();
+    expect(findHintLabel(hints, 'arg::2 \u2192 greeting:')).toBeDefined();
   });
 
   it('shows arg::N hints mapped to enclosing #func parameter names', () => {
     const entry = getFixtureCorpusEntry('lorebook-basic');
     const text = entry.text.replace(
       '{{user}}',
-      '{{#func greet name greeting}}{{arg::0}}{{arg::1}}{{/func}}',
+      '{{#func greet name greeting}}{{arg::0}}{{arg::1}}{{arg::2}}{{/func}}',
     );
     const request = { ...createFixtureRequest(entry), text };
     const provider = createProvider(request);
@@ -176,9 +170,10 @@ describe('InlayHintProvider', () => {
     const hints = provider.provide(params);
 
     // #func header hints
-    expect(findHintLabel(hints, 'arg::0 \u2192 name:')).toBeDefined();
-    expect(findHintLabel(hints, 'arg::1 \u2192 greeting:')).toBeDefined();
+    expect(findHintLabel(hints, 'arg::1 \u2192 name:')).toBeDefined();
+    expect(findHintLabel(hints, 'arg::2 \u2192 greeting:')).toBeDefined();
     // arg::N body hints resolved from enclosing #func parameter names
+    expect(findHintLabel(hints, 'arg::0:')).toBeDefined();
     expect(findHintLabel(hints, 'name:')).toBeDefined();
     expect(findHintLabel(hints, 'greeting:')).toBeDefined();
   });
@@ -192,8 +187,8 @@ describe('InlayHintProvider', () => {
     const hints = provider.provide(params);
 
     expect(findHintLabel(hints, 'func:')).toBeDefined();
-    expect(findHintLabel(hints, 'arg::0:')).toBeDefined();
     expect(findHintLabel(hints, 'arg::1:')).toBeDefined();
+    expect(findHintLabel(hints, 'arg::2:')).toBeDefined();
   });
 
   it('limits hints to the requested range', () => {

@@ -27,6 +27,19 @@ export interface LocalFunctionParameterDeclaration {
   index: number;
   name: string;
   range: Range;
+  runtimeArgumentIndex: number;
+}
+
+/**
+ * LocalFunctionRuntimeSlot 인터페이스.
+ * upstream `call::` plain split 기준 런타임 `arg::N` 슬롯 하나를 나타냄.
+ */
+export interface LocalFunctionRuntimeSlot {
+  index: number;
+  label: string;
+  parameterName: string | null;
+  parameterDeclaration: LocalFunctionParameterDeclaration | null;
+  kind: 'function-name' | 'call-argument';
 }
 
 /**
@@ -117,8 +130,13 @@ export function extractNumberedArgumentReference(
   node: MacroCallNode,
   sourceText: string,
 ): NumberedArgumentReference | null {
-  if (normalizeMacroName(node.name) !== 'arg') {
-    return null;
+  const normalizedName = normalizeMacroName(node.name);
+  if (normalizedName !== 'arg') {
+    if (!/^arg::\d+$/u.test(normalizedName)) {
+      return null;
+    }
+
+    return extractNumberedArgumentReferenceFromRawText(node, sourceText);
   }
 
   const firstArgument = extractStaticMacroArgument(node, 0, sourceText);
@@ -131,6 +149,105 @@ export function extractNumberedArgumentReference(
     rawText: firstArgument.text,
     range: firstArgument.range,
   };
+}
+
+/**
+ * extractNumberedArgumentReferenceFromRawText 함수.
+ * parser가 `arg::N` 전체를 macro 이름으로 보존한 경우 원문에서 슬롯 번호를 복구함.
+ *
+ * @param node - 검사할 macro call AST 노드
+ * @param sourceText - fragment 원문 텍스트
+ * @returns 파싱된 인자 슬롯 정보, 유효하지 않으면 null
+ */
+function extractNumberedArgumentReferenceFromRawText(
+  node: MacroCallNode,
+  sourceText: string,
+): NumberedArgumentReference | null {
+  const macroStartOffset = positionToOffset(sourceText, node.range.start);
+  const macroEndOffset = positionToOffset(sourceText, node.range.end);
+  const macroText = sourceText.slice(macroStartOffset, macroEndOffset);
+  const match = macroText.match(/^\{\{\s*arg::(\d+)\s*\}\}$/iu);
+  const rawText = match?.[1];
+  if (!rawText) {
+    return null;
+  }
+
+  const indexOffset = macroText.indexOf(rawText);
+  const indexStartOffset = macroStartOffset + indexOffset;
+
+  return {
+    index: Number.parseInt(rawText, 10),
+    rawText,
+    range: {
+      start: offsetToPosition(sourceText, indexStartOffset),
+      end: offsetToPosition(sourceText, indexStartOffset + rawText.length),
+    },
+  };
+}
+
+/**
+ * getRuntimeArgumentSlotCount 함수.
+ * upstream `call::` 런타임에서 접근 가능한 `arg::N` 슬롯 개수를 반환함.
+ *
+ * @param declaration - 슬롯 수를 계산할 로컬 함수 선언
+ * @returns function-name 슬롯 1개와 선언 파라미터 슬롯 수의 합
+ */
+export function getRuntimeArgumentSlotCount(declaration: LocalFunctionDeclaration): number {
+  return declaration.parameters.length + 1;
+}
+
+/**
+ * resolveRuntimeArgumentSlot 함수.
+ * upstream 런타임 기준 `arg::N` 슬롯을 선언 메타데이터에 매핑함.
+ *
+ * @param declaration - 슬롯을 해석할 로컬 함수 선언
+ * @param index - 확인할 `arg::N` 숫자 슬롯
+ * @returns 해석된 런타임 슬롯, 범위를 벗어나면 null
+ */
+export function resolveRuntimeArgumentSlot(
+  declaration: LocalFunctionDeclaration,
+  index: number,
+): LocalFunctionRuntimeSlot | null {
+  if (index === 0) {
+    return {
+      index,
+      label: 'function name',
+      parameterName: null,
+      parameterDeclaration: null,
+      kind: 'function-name',
+    };
+  }
+
+  const parameterDeclaration = declaration.parameterDeclarations[index - 1] ?? null;
+  if (!parameterDeclaration) {
+    return null;
+  }
+
+  return {
+    index,
+    label: parameterDeclaration.name,
+    parameterName: parameterDeclaration.name,
+    parameterDeclaration,
+    kind: 'call-argument',
+  };
+}
+
+/**
+ * formatRuntimeArgumentSlotSummary 함수.
+ * 로컬 함수 선언의 upstream `arg::N` 슬롯 요약 문구를 생성함.
+ *
+ * @param declaration - 요약할 로컬 함수 선언
+ * @returns 문서 UI에 표시할 슬롯 매핑 요약
+ */
+export function formatRuntimeArgumentSlotSummary(declaration: LocalFunctionDeclaration): string {
+  const slots = [
+    '`arg::0` → function name',
+    ...declaration.parameterDeclarations.map(
+      (parameter) => `\`arg::${parameter.runtimeArgumentIndex}\` → \`${parameter.name}\``,
+    ),
+  ];
+
+  return slots.join(', ');
 }
 
 function collectFromNodes(
@@ -234,6 +351,7 @@ function collectParameterDeclarations(
     return {
       index,
       name: parameterName,
+      runtimeArgumentIndex: index + 1,
       range: {
         start: offsetToPosition(sourceText, parameterStartOffset),
         end: offsetToPosition(sourceText, parameterStartOffset + parameterName.length),

@@ -81,6 +81,34 @@ describe('DiagnosticsEngine', () => {
     expect(diagnostic?.message).toContain('expects 1 argument, but received 2');
   });
 
+  it('accepts time with zero or one format argument', () => {
+    const acceptedSource = '{{time}}{{time::HH:mm:ss}}';
+    const acceptedDiagnostics = diagnosticsEngine.analyze(
+      new CBSParser().parse(acceptedSource),
+      acceptedSource,
+    );
+
+    expect(acceptedDiagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      DiagnosticCode.MissingRequiredArgument,
+    );
+    expect(acceptedDiagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      DiagnosticCode.WrongArgumentCount,
+    );
+
+    const rejectedSource = '{{time::HH:mm:ss::1640995200000}}';
+    const rejectedDiagnostics = diagnosticsEngine.analyze(
+      new CBSParser().parse(rejectedSource),
+      rejectedSource,
+    );
+
+    expect(rejectedDiagnostics).toContainEqual(
+      expect.objectContaining({
+        code: DiagnosticCode.WrongArgumentCount,
+        message: expect.stringContaining('expects between 0 and 1 arguments, but received 2'),
+      }),
+    );
+  });
+
   it('attaches registry-backed replacement metadata to deprecated diagnostics with a precise edit range', () => {
     const source = '{{#if true}}fallback{{/if}}';
     const diagnostics = diagnosticsEngine.analyze(new CBSParser().parse(source), source);
@@ -572,6 +600,49 @@ type: plain
       expect.objectContaining({
         code: DiagnosticCode.WrongArgumentCount,
         message: expect.stringContaining('only valid inside a local #func body'),
+      }),
+    );
+  });
+
+  it('keeps arg::0 valid because upstream maps it to the local function name', () => {
+    const source = '{{#func greet user}}{{arg::0}}{{arg::1}}{{/func}}{{call::greet::Noel}}';
+    const document = new CBSParser().parse(source);
+    const scopeAnalysis = scopeAnalyzer.analyze(document, source);
+    const diagnostics = diagnosticsEngine.analyze(document, source, scopeAnalysis);
+
+    expect(diagnostics.map((diagnostic) => diagnostic.message)).not.toContain(
+      expect.stringContaining('arg::0'),
+    );
+  });
+
+  it('reports unresolved call:: local function names', () => {
+    const source = '{{call::missing::Noel}}';
+    const document = new CBSParser().parse(source);
+    const scopeAnalysis = scopeAnalyzer.analyze(document, source);
+    const diagnostics = diagnosticsEngine.analyze(document, source, scopeAnalysis);
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: DiagnosticCode.UnknownFunction,
+        message: expect.stringContaining('missing'),
+        range: {
+          start: { line: 0, character: 8 },
+          end: { line: 0, character: 15 },
+        },
+      }),
+    );
+  });
+
+  it('warns when call:: arguments contain nested CBS separators that upstream plain split cannot preserve', () => {
+    const source = '{{#func render item}}{{arg::1}}{{/func}}{{call::render::{{slot::fruit}}}}';
+    const document = new CBSParser().parse(source);
+    const scopeAnalysis = scopeAnalyzer.analyze(document, source);
+    const diagnostics = diagnosticsEngine.analyze(document, source, scopeAnalysis);
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: DiagnosticCode.WrongArgumentCount,
+        message: expect.stringContaining('plain split'),
       }),
     );
   });

@@ -10,6 +10,7 @@ import { createDiagnosticInfo } from './diagnostic-info';
 import { DiagnosticCode } from './taxonomy';
 import {
   type InvalidArgumentReference,
+  type InvalidFunctionReference,
   type ScopeAnalysisResult,
   type SymbolTable,
   type UndefinedVariableReference,
@@ -44,6 +45,18 @@ export function collectSymbolDiagnostics(scopeAnalysis: ScopeAnalysisResult): Di
         reference.range,
         formatInvalidArgumentReferenceMessage(reference),
         createInvalidArgumentRelatedInformation(reference, symbolTable),
+      ),
+    );
+  }
+
+  for (const reference of issues.getInvalidFunctionReferences()) {
+    diagnostics.push(
+      createDiagnosticInfo(
+        reference.reason === 'unresolved-call'
+          ? DiagnosticCode.UnknownFunction
+          : DiagnosticCode.WrongArgumentCount,
+        reference.range,
+        formatInvalidFunctionReferenceMessage(reference),
       ),
     );
   }
@@ -96,12 +109,16 @@ function formatInvalidArgumentReferenceMessage(reference: InvalidArgumentReferen
   }
 
   const parameterCount = reference.parameterCount ?? 0;
-  if (parameterCount <= 0) {
-    return `CBS argument reference ${JSON.stringify(`arg::${reference.rawText}`)} targets local function ${JSON.stringify(reference.functionName ?? 'unknown')} with no available parameter slots`;
+  const maxIndex = Math.max(0, parameterCount);
+  return `CBS argument reference ${JSON.stringify(`arg::${reference.rawText}`)} is outside upstream runtime slots for local function ${JSON.stringify(reference.functionName ?? 'unknown')} (expected 0..${maxIndex}; arg::0 is the function name)`;
+}
+
+function formatInvalidFunctionReferenceMessage(reference: InvalidFunctionReference): string {
+  if (reference.reason === 'unsafe-nested-argument') {
+    return `CBS local function call ${JSON.stringify(`call::${reference.name}`)} contains a nested CBS argument with ::; upstream call:: uses plain split semantics, so this argument may not be preserved.`;
   }
 
-  const maxIndex = Math.max(0, parameterCount - 1);
-  return `CBS argument reference ${JSON.stringify(`arg::${reference.rawText}`)} is outside the 0-based parameter slots for local function ${JSON.stringify(reference.functionName ?? 'unknown')} (expected 0..${maxIndex})`;
+  return `CBS local function call references unknown #func ${JSON.stringify(reference.name)} in this fragment`;
 }
 
 function createInvalidArgumentRelatedInformation(

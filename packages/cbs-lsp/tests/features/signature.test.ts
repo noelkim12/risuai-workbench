@@ -198,11 +198,11 @@ describe('SignatureHelpProvider', () => {
     expect(signature.signatures[0]?.parameters?.[0]?.documentation).toContain(
       'Local function name slot. Resolves to fragment-local `#func greet` declared at line',
     );
-    expect(signature.signatures[0]?.parameters?.[2]?.documentation).toContain(
-      'Call argument slot 1 feeds local parameter `target` declared at line',
+    expect(signature.signatures[0]?.parameters?.[1]?.documentation).toContain(
+      '`arg::0` is the function name and `arg::1` maps to `user`',
     );
     expect(signature.signatures[0]?.parameters?.[2]?.documentation).toContain(
-      '`arg::1`',
+      'feeds local parameter `target` as runtime `arg::2`',
     );
   });
 
@@ -255,7 +255,7 @@ describe('SignatureHelpProvider', () => {
     expect(parameterSignature.activeParameter).toBe(1);
     expect(getParameterLabel(parameterSignature, 1)).toBe('...parameters');
     expect(parameterSignature.signatures[0]?.documentation).toContain(
-      '`arg::0` → `user`, `arg::1` → `target`',
+      '`arg::0` → function name, `arg::1` → `user`, `arg::2` → `target`',
     );
     expect(parameterSignature.signatures[0]?.parameters?.[1]?.documentation).toContain(
       'Space-separated local parameter names',

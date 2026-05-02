@@ -7,6 +7,7 @@ import type { Range } from 'risu-workbench-core';
 
 import {
   extractNumberedArgumentReference,
+  resolveRuntimeArgumentSlot,
   resolveActiveLocalFunctionContext,
   resolveTokenMacroArgumentContext,
   resolveVisibleLoopBindingFromNodePath,
@@ -324,11 +325,14 @@ export function resolveArgumentPosition(
   }
 
   const argumentIndex = reference?.index ?? Number.parseInt(parsedIndex, 10);
+  const runtimeSlot = resolveRuntimeArgumentSlot(activeContext.declaration, argumentIndex);
+  const parameterDeclaration =
+    runtimeSlot?.kind === 'call-argument' ? runtimeSlot.parameterDeclaration : null;
 
   return {
     argumentIndex,
     declaration: activeContext.declaration,
-    parameterDeclaration: activeContext.declaration.parameterDeclarations[argumentIndex],
+    ...(parameterDeclaration ? { parameterDeclaration } : {}),
     referenceRange: reference?.range ?? tokenLookup.localRange,
   };
 }

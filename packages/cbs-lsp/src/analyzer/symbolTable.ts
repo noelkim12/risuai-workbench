@@ -60,6 +60,17 @@ export interface InvalidArgumentReference {
 }
 
 /**
+ * InvalidFunctionReference 인터페이스.
+ * call:: 로컬 함수 참조가 해석되지 않거나 upstream split 계약상 안전하지 않은 위치를 기록함.
+ */
+export interface InvalidFunctionReference {
+  readonly name: string;
+  readonly range: Range;
+  readonly reason: 'unresolved-call' | 'unsafe-nested-argument';
+  readonly detail?: string;
+}
+
+/**
  * FunctionSymbol 인터페이스.
  * CBS 로컬 함수 정의와 호출 참조를 파라미터 정보와 함께 표현함.
  */
@@ -77,7 +88,7 @@ export interface FunctionSymbol {
  * ScopeIssue 타입.
  * scope analyzer가 diagnostics로 넘길 semantic issue union.
  */
-export type ScopeIssue = UndefinedVariableReference | InvalidArgumentReference;
+export type ScopeIssue = UndefinedVariableReference | InvalidArgumentReference | InvalidFunctionReference;
 
 /**
  * ScopeAnalysisResult 인터페이스.
@@ -115,6 +126,7 @@ interface MutableFunctionSymbol {
 export class ScopeIssueStore {
   private readonly undefinedReferences: UndefinedVariableReference[] = [];
   private readonly invalidArgumentReferences: InvalidArgumentReference[] = [];
+  private readonly invalidFunctionReferences: InvalidFunctionReference[] = [];
 
   /**
    * recordUndefinedReference 함수.
@@ -147,6 +159,16 @@ export class ScopeIssueStore {
   }
 
   /**
+   * recordInvalidFunctionReference 함수.
+   * local call:: 참조 문제를 diagnostics용으로 보존함.
+   *
+   * @param reference - invalid function diagnostics에 필요한 원본 정보 묶음
+   */
+  recordInvalidFunctionReference(reference: InvalidFunctionReference): void {
+    this.invalidFunctionReferences.push(reference);
+  }
+
+  /**
    * getUndefinedReferences 함수.
    * 기록된 undefined variable 참조 목록을 복사본으로 반환함.
    *
@@ -167,13 +189,27 @@ export class ScopeIssueStore {
   }
 
   /**
+   * getInvalidFunctionReferences 함수.
+   * 기록된 invalid local function 참조 목록을 복사본으로 반환함.
+   *
+   * @returns 기록된 invalid local function 참조 목록
+   */
+  getInvalidFunctionReferences(): readonly InvalidFunctionReference[] {
+    return [...this.invalidFunctionReferences];
+  }
+
+  /**
    * getAll 함수.
    * 현재 issue store에 쌓인 semantic issue를 단일 배열로 반환함.
    *
    * @returns undefined/invalid-argument issue 전체 목록
    */
   getAll(): readonly ScopeIssue[] {
-    return [...this.undefinedReferences, ...this.invalidArgumentReferences];
+    return [
+      ...this.undefinedReferences,
+      ...this.invalidArgumentReferences,
+      ...this.invalidFunctionReferences,
+    ];
   }
 }
 
