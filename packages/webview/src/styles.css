@@ -167,6 +167,7 @@ button:focus-visible {
 .character-card {
   display: grid;
   grid-template-columns: var(--thumb-width) minmax(0, 1fr);
+  grid-template-rows: var(--thumb-height);
   align-items: stretch;
   gap: var(--space-3);
   position: relative;
@@ -231,8 +232,8 @@ button:focus-visible {
 
 .thumbnail {
   width: var(--thumb-width);
-  height: 100%;
-  min-height: 100%;
+  height: var(--thumb-height);
+  min-height: var(--thumb-height);
   display: block;
   position: relative;
   align-self: stretch;
@@ -254,8 +255,8 @@ button:focus-visible {
 
 .thumbnail:not(.thumbnail--fallback) {
   width: calc(var(--thumb-width) + var(--space-2));
-  height: calc(100% + (var(--space-2) * 2));
-  min-height: calc(100% + (var(--space-2) * 2));
+  height: calc(var(--thumb-height) + (var(--space-2) * 2));
+  min-height: calc(var(--thumb-height) + (var(--space-2) * 2));
   margin: calc(var(--space-2) * -1) 0 calc(var(--space-2) * -1) calc(var(--space-2) * -1);
   border: 0;
   background: transparent;
