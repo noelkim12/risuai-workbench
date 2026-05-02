@@ -1,3 +1,8 @@
+/**
+ * CBS routed fragment에서 host cursor를 token, node, span 문맥으로 해석하는 locator 유틸 모음.
+ * @file packages/cbs-lsp/src/core/fragment-locator.ts
+ */
+
 import type {
   BlockNode,
   CBSNode,
@@ -15,19 +20,26 @@ import type {
 } from './fragment-analysis-service';
 import type { FragmentRecoveryState } from './recovery-contract';
 
+/** offset이 span 내부, 끝 경계, 외부 중 어디에 놓이는지 나타내는 분류. */
 type SpanRelation = 'strict' | 'boundary' | 'outside';
 
+/** fragment-local range와 offset span을 함께 보관하는 내부 lookup 단위. */
 interface OffsetSpan {
   localRange: Range;
   localStartOffset: number;
   localEndOffset: number;
 }
 
+/** AST node path 탐색 결과와 cursor/span 관계를 함께 담는 내부 lookup 결과. */
 interface NodePathLookup {
   path: readonly CBSNode[];
   relation: Exclude<SpanRelation, 'outside'>;
 }
 
+/**
+ * FragmentTokenSpanCategory 타입.
+ * Fragment token이 LSP feature에서 어떤 문맥으로 소비될지 분류함.
+ */
 export type FragmentTokenSpanCategory =
   | 'macro-name'
   | 'argument'
@@ -40,6 +52,10 @@ export type FragmentTokenSpanCategory =
   | 'plain-text'
   | 'punctuation';
 
+/**
+ * FragmentNodeSpanCategory 타입.
+ * Fragment AST node span이 symbol, highlight, selection feature에서 어떤 역할인지 분류함.
+ */
 export type FragmentNodeSpanCategory =
   | 'macro-name'
   | 'argument'
@@ -50,18 +66,30 @@ export type FragmentNodeSpanCategory =
   | 'local-function-reference'
   | 'node-range';
 
+/**
+ * FragmentTokenLookup 인터페이스.
+ * 현재 cursor와 맞닿은 token의 fragment-local 위치와 feature category를 보관함.
+ */
 export interface FragmentTokenLookup extends OffsetSpan {
   token: Token;
   tokenIndex: number;
   category: FragmentTokenSpanCategory;
 }
 
+/**
+ * FragmentNodeSpanLookup 인터페이스.
+ * 현재 cursor가 의미적으로 가리키는 AST owner와 해당 span category를 보관함.
+ */
 export interface FragmentNodeSpanLookup extends OffsetSpan {
   owner: CBSNode;
   category: FragmentNodeSpanCategory;
   argumentIndex?: number;
 }
 
+/**
+ * FragmentCursorLookupResult 인터페이스.
+ * Host document cursor를 routed CBS fragment의 local token/node 문맥으로 정규화한 결과.
+ */
 export interface FragmentCursorLookupResult {
   fragmentAnalysis: FragmentDocumentAnalysis;
   fragment: FragmentDocumentAnalysis['fragment'];
@@ -78,6 +106,14 @@ export interface FragmentCursorLookupResult {
   nodeSpan: FragmentNodeSpanLookup | null;
 }
 
+/**
+ * rangeToOffsetSpan 함수.
+ * Range를 fragment-local offset span으로 변환함.
+ *
+ * @param text - offset 계산 기준이 되는 fragment 원문
+ * @param range - offset span으로 변환할 local range
+ * @returns local range와 시작, 끝 offset을 함께 담은 span
+ */
 function rangeToOffsetSpan(text: string, range: Range): OffsetSpan {
   return {
     localRange: range,
@@ -86,6 +122,15 @@ function rangeToOffsetSpan(text: string, range: Range): OffsetSpan {
   };
 }
 
+/**
+ * getSpanRelation 함수.
+ * offset이 span 내부인지, 끝 경계인지, 외부인지 판정함.
+ *
+ * @param startOffset - span 시작 offset
+ * @param endOffset - span 끝 offset
+ * @param offset - 검사할 cursor offset
+ * @returns offset과 span의 관계 분류
+ */
 function getSpanRelation(startOffset: number, endOffset: number, offset: number): SpanRelation {
   if (offset >= startOffset && offset < endOffset) {
     return 'strict';
@@ -98,6 +143,13 @@ function getSpanRelation(startOffset: number, endOffset: number, offset: number)
   return 'outside';
 }
 
+/**
+ * classifyTokenCategory 함수.
+ * parser token type을 feature 소비용 token category로 변환함.
+ *
+ * @param token - 분류할 CBS token
+ * @returns token의 feature category
+ */
 function classifyTokenCategory(token: Token): FragmentTokenSpanCategory {
   switch (token.type) {
     case TokenType.FunctionName:
@@ -127,6 +179,15 @@ function classifyTokenCategory(token: Token): FragmentTokenSpanCategory {
   }
 }
 
+/**
+ * getMacroArgumentSpan 함수.
+ * macro call 인수 중 cursor offset이 포함된 argument span을 찾음.
+ *
+ * @param content - offset 계산 기준이 되는 fragment 원문
+ * @param node - argument span을 찾을 macro call node
+ * @param offset - 검사할 fragment-local cursor offset
+ * @returns argument span과 index, span 관계. 없으면 null
+ */
 function getMacroArgumentSpan(
   content: string,
   node: MacroCallNode,
@@ -165,6 +226,13 @@ function getMacroArgumentSpan(
   return boundaryMatch;
 }
 
+/**
+ * getChildNodeGroups 함수.
+ * node type별로 재귀 탐색해야 하는 child node 그룹을 반환함.
+ *
+ * @param node - child group을 조회할 CBS AST node
+ * @returns 재귀 탐색 대상 child node 그룹 목록
+ */
 function getChildNodeGroups(node: CBSNode): readonly (readonly CBSNode[])[] {
   switch (node.type) {
     case 'MacroCall':
@@ -173,11 +241,23 @@ function getChildNodeGroups(node: CBSNode): readonly (readonly CBSNode[])[] {
       return node.elseBody
         ? [node.condition, node.body, node.elseBody]
         : [node.condition, node.body];
+    case 'MathExpr':
+      return [node.children];
     default:
       return [];
   }
 }
 
+/**
+ * findInnermostNodePath 함수.
+ * cursor offset을 포함하는 가장 안쪽 AST node path를 찾음.
+ *
+ * @param content - offset 계산 기준이 되는 fragment 원문
+ * @param nodes - 탐색할 sibling node 목록
+ * @param offset - 검사할 fragment-local cursor offset
+ * @param path - 상위 호출에서 누적한 node path
+ * @returns 가장 안쪽 node path와 span 관계. 없으면 null
+ */
 function findInnermostNodePath(
   content: string,
   nodes: readonly CBSNode[],
@@ -213,6 +293,13 @@ function findInnermostNodePath(
   return boundaryMatch;
 }
 
+/**
+ * findNearestBlock 함수.
+ * node path에서 cursor와 가장 가까운 block node를 찾음.
+ *
+ * @param path - innermost node까지 이어지는 AST node path
+ * @returns 가장 가까운 block node. 없으면 null
+ */
 function findNearestBlock(path: readonly CBSNode[]): BlockNode | null {
   for (let index = path.length - 1; index >= 0; index -= 1) {
     const node = path[index];
@@ -224,6 +311,16 @@ function findNearestBlock(path: readonly CBSNode[]): BlockNode | null {
   return null;
 }
 
+/**
+ * buildNodeSpanLookup 함수.
+ * token lookup과 AST path를 조합해 feature가 소유해야 할 node span을 계산함.
+ *
+ * @param content - offset 계산 기준이 되는 fragment 원문
+ * @param path - innermost node까지 이어지는 AST node path
+ * @param token - cursor와 맞닿은 token lookup
+ * @param offset - 검사할 fragment-local cursor offset
+ * @returns node span lookup. 의미 있는 owner가 없으면 null
+ */
 function buildNodeSpanLookup(
   content: string,
   path: readonly CBSNode[],
@@ -327,6 +424,14 @@ function buildNodeSpanLookup(
   };
 }
 
+/**
+ * locateTokenAtLocalOffset 함수.
+ * fragment-local offset과 맞닿은 token을 token stream에서 찾음.
+ *
+ * @param fragmentAnalysis - token stream과 fragment 정보를 가진 분석 결과
+ * @param localOffset - 검사할 fragment-local cursor offset
+ * @returns token lookup. 맞닿은 token이 없으면 null
+ */
 function locateTokenAtLocalOffset(
   fragmentAnalysis: FragmentDocumentAnalysis,
   localOffset: number,
@@ -362,6 +467,14 @@ function locateTokenAtLocalOffset(
   return boundaryMatch;
 }
 
+/**
+ * findFragmentAtHostOffset 함수.
+ * host document offset을 포함하는 routed fragment 분석 결과를 찾음.
+ *
+ * @param documentAnalysis - host 문서 전체 fragment 분석 결과
+ * @param hostOffset - 검사할 host document offset
+ * @returns host offset을 소유한 fragment 분석 결과. 없으면 null
+ */
 function findFragmentAtHostOffset(
   documentAnalysis: DocumentFragmentAnalysis,
   hostOffset: number,
@@ -375,6 +488,15 @@ function findFragmentAtHostOffset(
   return null;
 }
 
+/**
+ * locateFragmentAtHostPosition 함수.
+ * Host position을 routed CBS fragment의 token, node, recovery 문맥으로 변환함.
+ *
+ * @param documentAnalysis - host 문서 전체 fragment 분석 결과
+ * @param documentContent - host document 전체 원문
+ * @param hostPosition - lookup할 host document position
+ * @returns fragment cursor lookup 결과. routed fragment 밖이면 null
+ */
 export function locateFragmentAtHostPosition(
   documentAnalysis: DocumentFragmentAnalysis,
   documentContent: string,

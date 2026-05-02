@@ -14,10 +14,274 @@
     "onCommand:risuWorkbench.packCard",
     "onCommand:risuWorkbench.analyzeLua",
     "onCommand:risuWorkbench.inspectCard",
+    "onCommand:risuWorkbench.character.selectImage",
     "onCommand:risuWorkbench.openCardPanel",
-    "onView:risuWorkbench.cards"
+    "onCommand:risuWorkbench.generateLuaStubs",
+    "onCommand:risuWorkbench.cbs.showActivationLinks",
+    "onView:risuWorkbench.cards",
+    "onLanguage:risulorebook",
+    "onLanguage:risuregex",
+    "onLanguage:risuprompt",
+    "onLanguage:risuhtml",
+    "onLanguage:risutext",
+    "onLanguage:risulua",
+    "onLanguage:lua",
+    "workspaceContains:**/*.risulua"
   ],
   "contributes": {
+    "languages": [
+      {
+        "id": "risulorebook",
+        "extensions": [
+          ".risulorebook"
+        ],
+        "icon": {
+          "light": "./resources/icon/risulorebook.svg",
+          "dark": "./resources/icon/risulorebook.svg"
+        },
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "risuregex",
+        "extensions": [
+          ".risuregex"
+        ],
+        "icon": {
+          "light": "./resources/icon/risuregex.svg",
+          "dark": "./resources/icon/risuregex.svg"
+        },
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "risuprompt",
+        "extensions": [
+          ".risuprompt"
+        ],
+        "icon": {
+          "light": "./resources/icon/risuprompt.svg",
+          "dark": "./resources/icon/risuprompt.svg"
+        },
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "risuhtml",
+        "extensions": [
+          ".risuhtml"
+        ],
+        "icon": {
+          "light": "./resources/icon/risuhtml.svg",
+          "dark": "./resources/icon/risuhtml.svg"
+        },
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "risulua",
+        "extensions": [],
+        "icon": {
+          "light": "./resources/icon/risulua.svg",
+          "dark": "./resources/icon/risulua.svg"
+        },
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "risuvar",
+        "extensions": [
+          ".risuvar"
+        ],
+        "icon": {
+          "light": "./resources/icon/risuvar.svg",
+          "dark": "./resources/icon/risuvar.svg"
+        },
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "risutoggle",
+        "extensions": [
+          ".risutoggle"
+        ],
+        "icon": {
+          "light": "./resources/icon/risutoggle.svg",
+          "dark": "./resources/icon/risutoggle.svg"
+        },
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "risutext",
+        "extensions": [
+          ".risutext"
+        ],
+        "icon": {
+          "light": "./resources/icon/risutext.svg",
+          "dark": "./resources/icon/risutext.svg"
+        },
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "risulorebook",
+        "scopeName": "source.risulorebook",
+        "path": "./syntaxes/risulorebook.tmLanguage.json"
+      },
+      {
+        "language": "risuregex",
+        "scopeName": "source.risuregex",
+        "path": "./syntaxes/risuregex.tmLanguage.json"
+      },
+      {
+        "language": "risuprompt",
+        "scopeName": "source.risuprompt",
+        "path": "./syntaxes/risuprompt.tmLanguage.json"
+      },
+      {
+        "language": "risuhtml",
+        "scopeName": "source.risuhtml",
+        "path": "./syntaxes/risuhtml.tmLanguage.json"
+      },
+      {
+        "language": "risulua",
+        "scopeName": "source.risulua",
+        "path": "./syntaxes/risulua.tmLanguage.json"
+      },
+      {
+        "language": "risutext",
+        "scopeName": "source.risutext",
+        "path": "./syntaxes/risutext.tmLanguage.json"
+      },
+      {
+        "scopeName": "source.lua.risu-cbs.injection",
+        "path": "./syntaxes/risulua-cbs-injection.tmLanguage.json",
+        "injectTo": [
+          "source.lua"
+        ]
+      }
+    ],
+    "configurationDefaults": {
+      "files.associations": {
+        "*.risulua": "lua"
+      },
+      "Lua.diagnostics.globals": [
+        "LLM",
+        "LLMMain",
+        "Promise",
+        "addChat",
+        "alertConfirm",
+        "alertError",
+        "alertInput",
+        "alertNormal",
+        "alertSelect",
+        "async",
+        "axLLM",
+        "axLLMMain",
+        "callListenMain",
+        "cbs",
+        "cutChat",
+        "generateImage",
+        "getAuthorsNote",
+        "getBackgroundEmbedding",
+        "getCharacterFirstMessage",
+        "getCharacterImage",
+        "getCharacterImageMain",
+        "getCharacterLastMessage",
+        "getChat",
+        "getChatLength",
+        "getChatMain",
+        "getChatVar",
+        "getDescription",
+        "getFullChat",
+        "getFullChatMain",
+        "getGlobalVar",
+        "getLoreBooks",
+        "getLoreBooksMain",
+        "getName",
+        "getPersonaDescription",
+        "getPersonaImage",
+        "getPersonaImageMain",
+        "getPersonaName",
+        "getState",
+        "getTokens",
+        "getUserLastMessage",
+        "hash",
+        "insertChat",
+        "json",
+        "listenEdit",
+        "loadLoreBooks",
+        "loadLoreBooksMain",
+        "log",
+        "logMain",
+        "onButtonClick",
+        "onInput",
+        "onOutput",
+        "onStart",
+        "reloadChat",
+        "reloadDisplay",
+        "removeChat",
+        "request",
+        "setBackgroundEmbedding",
+        "setCharacterFirstMessage",
+        "setChat",
+        "setChatRole",
+        "setChatVar",
+        "setDescription",
+        "setFullChat",
+        "setFullChatMain",
+        "setName",
+        "setState",
+        "similarity",
+        "simpleLLM",
+        "sleep",
+        "stopChat",
+        "upsertLocalLoreBook"
+      ],
+      "[risulorebook]": {
+        "editor.quickSuggestions": {
+          "comments": false,
+          "other": true,
+          "strings": true
+        },
+        "editor.suggestOnTriggerCharacters": true
+      },
+      "[risuregex]": {
+        "editor.quickSuggestions": {
+          "comments": false,
+          "other": true,
+          "strings": true
+        },
+        "editor.suggestOnTriggerCharacters": true
+      },
+      "[risuprompt]": {
+        "editor.quickSuggestions": {
+          "comments": false,
+          "other": true,
+          "strings": true
+        },
+        "editor.suggestOnTriggerCharacters": true
+      },
+      "[risuhtml]": {
+        "editor.quickSuggestions": {
+          "comments": false,
+          "other": true,
+          "strings": true
+        },
+        "editor.suggestOnTriggerCharacters": true
+      },
+      "[risulua]": {
+        "editor.quickSuggestions": {
+          "comments": false,
+          "other": true,
+          "strings": true
+        },
+        "editor.suggestOnTriggerCharacters": true
+      },
+      "[risutext]": {
+        "editor.quickSuggestions": {
+          "comments": false,
+          "other": true,
+          "strings": true
+        },
+        "editor.suggestOnTriggerCharacters": true
+      }
+    },
     "viewsContainers": {
       "activitybar": [
         {
@@ -31,7 +295,8 @@
       "risuWorkbench": [
         {
           "id": "risuWorkbench.cards",
-          "name": "Cards"
+          "name": "Cards",
+          "type": "webview"
         }
       ]
     },
@@ -53,8 +318,24 @@
         "title": "Risu Workbench: Inspect Card"
       },
       {
+        "command": "risuWorkbench.character.selectImage",
+        "title": "Risu Workbench: Select Character Thumbnail"
+      },
+      {
         "command": "risuWorkbench.openCardPanel",
         "title": "Risu Workbench: Open Card Panel"
+      },
+      {
+        "command": "risuWorkbench.generateLuaStubs",
+        "title": "Risu Workbench: Generate LuaLS Stubs"
+      },
+      {
+        "command": "risuWorkbench.cbs.openOccurrence",
+        "title": "Risu Workbench: Open CBS Occurrence"
+      },
+      {
+        "command": "risuWorkbench.cbs.showActivationLinks",
+        "title": "Risu Workbench: Show Lorebook Activation Links"
       }
     ],
     "menus": {
@@ -70,23 +351,75 @@
           "command": "risuWorkbench.inspectCard",
           "when": "view == risuWorkbench.cards && viewItem == risuWorkbench.cardItem",
           "group": "inline"
+        },
+        {
+          "command": "risuWorkbench.character.selectImage",
+          "when": "view == risuWorkbench.cards && viewItem == risuWorkbench.cardItem",
+          "group": "inline"
         }
       ]
+    },
+    "configuration": {
+      "title": "Risu Workbench",
+      "properties": {
+        "risuWorkbench.cbs.server.launchMode": {
+          "type": "string",
+          "scope": "window",
+          "enum": [
+            "auto",
+            "embedded",
+            "standalone"
+          ],
+          "default": "auto",
+          "markdownDescription": "How the CBS language client resolves `cbs-language-server`. `auto` tries the selected standalone install strategy first, then falls back to the embedded monorepo server module when available."
+        },
+        "risuWorkbench.cbs.server.installMode": {
+          "type": "string",
+          "scope": "window",
+          "enum": [
+            "local-devDependency",
+            "npx",
+            "global"
+          ],
+          "default": "local-devDependency",
+          "markdownDescription": "Standalone attach strategy for `cbs-language-server`. `local-devDependency` resolves `<workspace>/node_modules/.bin/cbs-language-server`, `npx` runs `npx cbs-language-server --stdio`, and `global` runs `cbs-language-server --stdio` from PATH."
+        },
+        "risuWorkbench.cbs.server.path": {
+          "type": "string",
+          "scope": "window",
+          "default": "",
+          "markdownDescription": "Optional explicit path to the `cbs-language-server` executable. Relative paths resolve from the first workspace folder when available, otherwise from the extension root."
+        },
+        "risuWorkbench.cbs.server.luaLsPath": {
+          "type": "string",
+          "scope": "window",
+          "default": "",
+          "markdownDescription": "Optional explicit path to the `lua-language-server` executable used by the CBS LuaLS sidecar for `.risulua` hover, completion, go to definition, and rename. If empty, the server searches PATH for `lua-language-server`."
+        }
+      }
     }
   },
   "scripts": {
-    "build": "npm --prefix ../webview run build && tsc && npx tsc-alias && node ./scripts/copy-webview.mjs",
+    "build": "npm --prefix ../webview run build && npm run build:extension",
+    "build:extension": "tsc && npx tsc-alias && node ./scripts/copy-webview.mjs",
+    "build:test:e2e": "tsc -p ./tsconfig.tests.json",
     "watch": "tsc --watch",
     "dev": "tsc && code --extensionDevelopmentPath=\"$PWD\"",
+    "test:e2e:cbs-client:boundary": "npm run build && npm run build:test:e2e && node --test ./dist-tests/tests/e2e/extension-client.test.js",
+    "test:e2e:cbs-client:runtime": "npm run build && npm run build:test:e2e && node ./dist-tests/tests/e2e/run-extension-runtime-tests.js",
+    "test:e2e:cbs-client": "npm run test:e2e:cbs-client:boundary && npm run test:e2e:cbs-client:runtime",
+    "verify:cbs-client": "node ./scripts/verify-cbs-client.mjs && npm run test:e2e:cbs-client",
     "lint": "eslint 'src/**/*.ts'",
     "lint:fix": "eslint 'src/**/*.ts' --fix",
     "format": "prettier --write 'src/**/*.ts'",
     "format:check": "prettier --check 'src/**/*.ts'"
   },
   "dependencies": {
-    "risu-workbench-core": "*"
+    "risu-workbench-core": "^0.1.0",
+    "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {
+    "@vscode/test-electron": "^2.5.2",
     "@types/vscode": "^1.96.0",
     "tsc-alias": "^1.8.0",
     "typescript": "^5.7.0"

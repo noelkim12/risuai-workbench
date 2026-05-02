@@ -1235,7 +1235,7 @@ function toModuleLorebookEntry(entry: LorebookContent, context: string): Upstrea
   return {
     key: normalized.keys.join(', '),
     secondkey: normalized.secondary_keys?.join(', ') ?? '',
-    comment: normalized.comment,
+    comment: normalized.name,
     content: normalized.content,
     mode: normalized.mode,
     alwaysActive: normalized.constant,

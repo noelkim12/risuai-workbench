@@ -1,4 +1,12 @@
-import type { CompletionItem, Diagnostic, Hover } from 'vscode-languageserver/node';
+import type {
+  CodeAction,
+  CodeLens,
+  CompletionItem,
+  Diagnostic,
+  DocumentSymbol,
+  Hover,
+  SymbolInformation,
+} from 'vscode-languageserver/node';
 import {
   DIAGNOSTIC_TAXONOMY,
   DiagnosticCode,
@@ -6,13 +14,23 @@ import {
   type DiagnosticOwner,
   type DiagnosticRuleCategory,
 } from '../../src/analyzer/diagnostics';
-import type { AgentMetadataExplanationContract } from '../../src/core';
+import {
+  createCbsAgentProtocolMarker,
+  type AgentMetadataExplanationContract,
+  type CbsAgentProtocolMarker,
+} from '../../src/core';
+import {
+  snapshotLayer1Contracts as createLayer1ContractsSnapshot,
+  snapshotLayer3Queries as createLayer3QueriesSnapshot,
+  type NormalizedLayer1ContractSnapshot,
+  type NormalizedLayer3QuerySnapshot,
+} from '../../src/contracts';
 import {
   normalizeHostDiagnosticsEnvelopeForSnapshot,
   normalizeHostDiagnosticsForSnapshot,
   type NormalizedHostDiagnosticsEnvelopeSnapshot,
   type NormalizedHostDiagnosticSnapshot,
-} from '../../src/diagnostics-router';
+} from '../../src/utils/diagnostics-router';
 import {
   normalizeCompletionItemsForSnapshot,
   type NormalizedCompletionItemSnapshot,
@@ -21,6 +39,45 @@ import {
   normalizeHoverForSnapshot,
   type NormalizedHoverSnapshot,
 } from '../../src/features/hover';
+import {
+  normalizeCodeActionsEnvelopeForSnapshot,
+  normalizeCodeActionsForSnapshot,
+  type NormalizedCodeActionsEnvelopeSnapshot,
+  type NormalizedCodeActionSnapshot,
+} from '../../src/features/editing';
+import {
+  normalizeDocumentSymbolsEnvelopeForSnapshot,
+  normalizeDocumentSymbolsForSnapshot,
+  type NormalizedDocumentSymbolsEnvelopeSnapshot,
+  type NormalizedDocumentSymbolSnapshot,
+} from '../../src/features/symbols';
+import {
+  normalizeWorkspaceSymbolsEnvelopeForSnapshot,
+  normalizeWorkspaceSymbolsForSnapshot,
+  type NormalizedWorkspaceSymbolsEnvelopeSnapshot,
+  type NormalizedWorkspaceSymbolSnapshot,
+} from '../../src/features/symbols';
+import {
+  normalizeCodeLensesEnvelopeForSnapshot,
+  normalizeCodeLensesForSnapshot,
+  type NormalizedCodeLensesEnvelopeSnapshot,
+  type NormalizedCodeLensSnapshot,
+} from '../../src/features/presentation';
+import {
+  normalizeLuaHoverEnvelopeForSnapshot,
+  normalizeLuaHoverForSnapshot,
+  type NormalizedLuaHoverEnvelopeSnapshot,
+} from '../../src/providers/lua/lualsProxy';
+import type { LuaLsCompanionRuntime } from '../../src/core';
+
+export interface NormalizedProviderBundleSnapshot extends CbsAgentProtocolMarker {
+  codeActions: NormalizedCodeActionSnapshot[];
+  codeLenses?: NormalizedCodeLensSnapshot[];
+  completion: NormalizedCompletionItemSnapshot[];
+  diagnostics: NormalizedHostDiagnosticSnapshot[];
+  documentSymbols: NormalizedDocumentSymbolSnapshot[];
+  hover: NormalizedHoverSnapshot | null;
+}
 
 type Eol = '\n' | '\r\n';
 
@@ -38,6 +95,7 @@ export type FixtureCorpusArtifact =
 export type FixtureCorpusSourceKind = 'inline-document';
 export type FixtureCorpusKind = 'representative' | 'excluded' | 'edge-case';
 export type FixtureMatrixArea = 'service' | 'remap' | 'locator' | 'diagnostic-taxonomy';
+export type FormattingContractCoverage = 'single-fragment' | 'multi-fragment' | 'pure-mode' | 'malformed' | 'unicode';
 
 export interface FixtureExpectedDiagnosticRule {
   category: DiagnosticRuleCategory;
@@ -65,6 +123,11 @@ export interface FixtureCorpusEntry {
   expectedDiagnosticRules: readonly FixtureExpectedDiagnosticRule[];
   features: readonly string[];
   text: string;
+}
+
+export interface FormattingContractFixtureCase {
+  coverage: FormattingContractCoverage;
+  entry: FixtureCorpusEntry;
 }
 
 interface FixtureCorpusSeed {
@@ -106,6 +169,40 @@ function lorebookDocument(
 
   lines.push('');
   return lines.join(eol);
+}
+
+/**
+ * activationLorebookDocument 함수.
+ * activation-chain/CodeLens 테스트용 canonical lorebook 문서를 조립함.
+ *
+ * @param options - lorebook 이름, 키워드, selective/secondary/content 같은 activation 시드
+ * @returns activation-chain fixture로 재사용할 `.risulorebook` 문서 문자열
+ */
+function activationLorebookDocument(options: {
+  content: string;
+  keys: readonly string[];
+  name: string;
+  secondaryKeys?: readonly string[];
+  selective?: boolean;
+}): string {
+  return [
+    '---',
+    `name: ${options.name}`,
+    `comment: ${options.name}`,
+    'constant: false',
+    `selective: ${String(options.selective ?? false)}`,
+    'enabled: true',
+    'insertion_order: 0',
+    'case_sensitive: false',
+    'use_regex: false',
+    '---',
+    '@@@ KEYS',
+    ...options.keys,
+    ...(options.secondaryKeys ? ['@@@ SECONDARY_KEYS', ...options.secondaryKeys] : []),
+    '@@@ CONTENT',
+    options.content,
+    '',
+  ].join('\n');
 }
 
 /**
@@ -291,6 +388,84 @@ const fixtureCorpusSeeds: readonly FixtureCorpusSeed[] = [
     text: lorebookDocument([], { includeContentSection: false }),
   },
   {
+    id: 'lorebook-activation-alpha',
+    label: 'Lorebook activation summary seed with possible, partial, and blocked outgoing edges',
+    kind: 'edge-case',
+    artifact: 'lorebook',
+    cbsBearing: true,
+    sourceKind: 'inline-document',
+    relativePath: 'activation-alpha.risulorebook',
+    expectedSections: ['CONTENT'],
+    features: ['activation-chain', 'codelens', 'possible', 'partial', 'blocked', 'cycle'],
+    text: activationLorebookDocument({
+      name: 'Alpha',
+      keys: ['alpha'],
+      content: 'beta wakes the main chain, gamma only partially matches, and delta is blocked.',
+    }),
+  },
+  {
+    id: 'lorebook-activation-beta',
+    label: 'Lorebook activation cycle partner',
+    kind: 'edge-case',
+    artifact: 'lorebook',
+    cbsBearing: true,
+    sourceKind: 'inline-document',
+    relativePath: 'activation-beta.risulorebook',
+    expectedSections: ['CONTENT'],
+    features: ['activation-chain', 'codelens', 'possible', 'cycle'],
+    text: activationLorebookDocument({
+      name: 'Beta',
+      keys: ['beta'],
+      content: 'alpha closes the cycle.',
+    }),
+  },
+  {
+    id: 'lorebook-activation-gamma',
+    label: 'Selective lorebook activation partial-match seed',
+    kind: 'edge-case',
+    artifact: 'lorebook',
+    cbsBearing: true,
+    sourceKind: 'inline-document',
+    relativePath: 'activation-gamma.risulorebook',
+    expectedSections: ['CONTENT'],
+    features: ['activation-chain', 'codelens', 'partial', 'selective'],
+    text: activationLorebookDocument({
+      name: 'Gamma',
+      keys: ['gamma'],
+      secondaryKeys: ['omega'],
+      selective: true,
+      content: 'Gamma lore body.',
+    }),
+  },
+  {
+    id: 'lorebook-activation-delta',
+    label: 'Lorebook activation blocked seed via no_recursive_search',
+    kind: 'edge-case',
+    artifact: 'lorebook',
+    cbsBearing: true,
+    sourceKind: 'inline-document',
+    relativePath: 'activation-delta.risulorebook',
+    expectedSections: ['CONTENT'],
+    features: ['activation-chain', 'codelens', 'blocked'],
+    text: activationLorebookDocument({
+      name: 'Delta',
+      keys: ['delta'],
+      content: '@@no_recursive_search\nDelta lore body.',
+    }),
+  },
+  {
+    id: 'lorebook-puredisplay-formatting',
+    label: 'Lorebook puredisplay formatting contract fixture',
+    kind: 'edge-case',
+    artifact: 'lorebook',
+    cbsBearing: true,
+    sourceKind: 'inline-document',
+    relativePath: 'format-puredisplay.risulorebook',
+    expectedSections: ['CONTENT'],
+    features: ['pure-mode', 'formatting'],
+    text: lorebookDocument(['{{#puredisplay}}  {{ user }}', '{{/}}']),
+  },
+  {
     id: 'lorebook-unclosed-macro',
     label: 'Malformed lorebook with unclosed macro',
     kind: 'edge-case',
@@ -434,6 +609,18 @@ const fixtureCorpusSeeds: readonly FixtureCorpusSeed[] = [
     expectedSections: ['CONTENT'],
     features: ['utf16', 'surrogate-pair'],
     text: lorebookDocument(['🙂{{user}}']),
+  },
+  {
+    id: 'lorebook-utf16-formatting',
+    label: 'Lorebook UTF-16 formatting contract fixture',
+    kind: 'edge-case',
+    artifact: 'lorebook',
+    cbsBearing: true,
+    sourceKind: 'inline-document',
+    relativePath: 'format-utf16.risulorebook',
+    expectedSections: ['CONTENT'],
+    features: ['utf16', 'surrogate-pair', 'formatting'],
+    text: lorebookDocument(['🙂{{ user }}']),
   },
   {
     id: 'regex-duplicate-fragments',
@@ -634,14 +821,14 @@ const fixtureCorpusSeeds: readonly FixtureCorpusSeed[] = [
   },
   {
     id: 'prompt-malformed-each-header',
-    label: 'Prompt with malformed #each header diagnostic',
+    label: 'Prompt with #each header without alias',
     kind: 'edge-case',
     artifact: 'prompt',
     cbsBearing: true,
     sourceKind: 'inline-document',
     relativePath: 'edge-malformed-each-header.risuprompt',
     expectedSections: ['TEXT'],
-    expectedDiagnosticCodes: [DiagnosticCode.MissingRequiredArgument],
+    expectedDiagnosticCodes: [],
     features: ['taxonomy', 'analyzer-each'],
     text: promptDocument({
       TEXT: '{{#each items}}{{slot::item}}{{/each}}',
@@ -718,6 +905,14 @@ export const CBS_LSP_FIXTURE_CORPUS: readonly FixtureCorpusEntry[] = Object.free
   }),
 );
 
+const FORMATTING_CONTRACT_FIXTURE_IDS = [
+  ['single-fragment', 'lorebook-basic'],
+  ['multi-fragment', 'regex-basic'],
+  ['pure-mode', 'lorebook-puredisplay-formatting'],
+  ['malformed', 'lorebook-unclosed-macro'],
+  ['unicode', 'lorebook-utf16-formatting'],
+] as const satisfies readonly [FormattingContractCoverage, string][];
+
 // red test matrix
 // 어떤 fixture가 어떤 테스트 축을 대표하는지 고정하는 표
 const fixtureRedTestMatrix: Record<FixtureMatrixArea, readonly string[]> = {
@@ -770,6 +965,19 @@ export function listFixtureCorpusEntries(kind?: FixtureCorpusKind): readonly Fix
  */
 export function listMatrixFixtures(area: FixtureMatrixArea): readonly FixtureCorpusEntry[] {
   return FIXTURE_RED_TEST_MATRIX[area].map((id) => getFixtureCorpusEntry(id));
+}
+
+/**
+ * listFormattingContractFixtures 함수.
+ * formatting golden test에서 공통 invariants를 검증할 fixture matrix를 반환함.
+ *
+ * @returns coverage 라벨과 fixture entry를 함께 담은 formatting contract fixture 목록
+ */
+export function listFormattingContractFixtures(): readonly FormattingContractFixtureCase[] {
+  return FORMATTING_CONTRACT_FIXTURE_IDS.map(([coverage, id]) => ({
+    coverage,
+    entry: getFixtureCorpusEntry(id),
+  }));
 }
 
 /**
@@ -838,6 +1046,32 @@ export function snapshotHoverResult(hover: Hover | null): NormalizedHoverSnapsho
 }
 
 /**
+ * snapshotLuaHoverResult 함수.
+ * live Lua hover payload를 deterministic ordering의 normalized snapshot으로 정규화함.
+ *
+ * @param hover - 정규화할 Lua hover 결과
+ * @returns stable Lua hover snapshot
+ */
+export function snapshotLuaHoverResult(hover: Hover | null) {
+  return normalizeLuaHoverForSnapshot(hover);
+}
+
+/**
+ * snapshotLuaHoverEnvelope 함수.
+ * Lua hover snapshot에 shared availability/provenance envelope를 붙임.
+ *
+ * @param hover - 정규화할 Lua hover 결과
+ * @param lualsRuntime - snapshot에 반영할 LuaLS runtime 상태
+ * @returns schema/version과 availability/provenance를 포함한 Lua hover snapshot view
+ */
+export function snapshotLuaHoverEnvelope(
+  hover: Hover | null,
+  lualsRuntime: LuaLsCompanionRuntime,
+): NormalizedLuaHoverEnvelopeSnapshot {
+  return normalizeLuaHoverEnvelopeForSnapshot(hover, lualsRuntime);
+}
+
+/**
  * snapshotHostDiagnostics 함수.
  * host LSP diagnostics 배열을 deterministic ordering의 normalized JSON view로 변환함.
  *
@@ -859,6 +1093,231 @@ export function snapshotHostDiagnostics(
  */
 export function snapshotHostDiagnosticsEnvelope(
   diagnostics: readonly Diagnostic[],
+  lualsRuntime?: LuaLsCompanionRuntime,
 ): NormalizedHostDiagnosticsEnvelopeSnapshot {
-  return normalizeHostDiagnosticsEnvelopeForSnapshot(diagnostics);
+  return normalizeHostDiagnosticsEnvelopeForSnapshot(diagnostics, lualsRuntime);
+}
+
+/**
+ * snapshotCodeActions 함수.
+ * code action 목록을 deterministic ordering의 normalized JSON view로 변환함.
+ *
+ * @param actions - 정규화할 code action 목록
+ * @returns linked diagnostic/edit/no-op 정보를 포함한 stable snapshot 배열
+ */
+export function snapshotCodeActions(
+  actions: readonly CodeAction[],
+): NormalizedCodeActionSnapshot[] {
+  return normalizeCodeActionsForSnapshot(actions);
+}
+
+/**
+ * snapshotCodeActionsEnvelope 함수.
+ * code action snapshot에 runtime availability contract를 함께 묶음.
+ *
+ * @param actions - 정규화할 code action 목록
+ * @returns code action + availability를 함께 담은 snapshot view
+ */
+export function snapshotCodeActionsEnvelope(
+  actions: readonly CodeAction[],
+): NormalizedCodeActionsEnvelopeSnapshot {
+  return normalizeCodeActionsEnvelopeForSnapshot(actions);
+}
+
+/**
+ * snapshotDocumentSymbols 함수.
+ * document symbol 결과를 agent/golden 친화적인 stable tree로 정규화함.
+ *
+ * @param symbols - 정규화할 outline symbol 목록
+ * @returns deterministic ordering을 가진 normalized symbol tree
+ */
+export function snapshotDocumentSymbols(
+  symbols: readonly DocumentSymbol[],
+): NormalizedDocumentSymbolSnapshot[] {
+  return normalizeDocumentSymbolsForSnapshot(symbols);
+}
+
+/**
+ * snapshotDocumentSymbolsEnvelope 함수.
+ * document symbol snapshot에 shared availability/provenance envelope를 붙임.
+ *
+ * @param symbols - 정규화할 outline symbol 목록
+ * @returns schema/version과 availability/provenance를 포함한 snapshot view
+ */
+export function snapshotDocumentSymbolsEnvelope(
+  symbols: readonly DocumentSymbol[],
+): NormalizedDocumentSymbolsEnvelopeSnapshot {
+  return normalizeDocumentSymbolsEnvelopeForSnapshot(symbols);
+}
+
+/**
+ * snapshotWorkspaceSymbols 함수.
+ * workspace symbol 결과를 deterministic ordering의 normalized snapshot 배열로 변환함.
+ *
+ * @param symbols - 정규화할 workspace symbol 목록
+ * @returns stable workspace symbol snapshot 배열
+ */
+export function snapshotWorkspaceSymbols(
+  symbols: readonly SymbolInformation[],
+): NormalizedWorkspaceSymbolSnapshot[] {
+  return normalizeWorkspaceSymbolsForSnapshot(symbols);
+}
+
+/**
+ * snapshotWorkspaceSymbolsEnvelope 함수.
+ * workspace symbol snapshot에 shared availability/provenance envelope를 붙임.
+ *
+ * @param symbols - 정규화할 workspace symbol 목록
+ * @returns schema/version과 availability/provenance를 포함한 snapshot view
+ */
+export function snapshotWorkspaceSymbolsEnvelope(
+  symbols: readonly SymbolInformation[],
+): NormalizedWorkspaceSymbolsEnvelopeSnapshot {
+  return normalizeWorkspaceSymbolsEnvelopeForSnapshot(symbols);
+}
+
+/**
+ * snapshotProviderBundle 함수.
+ * 같은 문서 상태에서 여러 provider 결과를 snapshot/golden 친화적인 하나의 JSON shape로 묶음.
+ *
+ * @param bundle - completion/hover/diagnostics/code action 원본 payload 묶음
+ * @returns stable field names와 deterministic ordering을 가진 provider bundle snapshot
+ */
+export function snapshotProviderBundle(bundle: {
+  codeActions: readonly CodeAction[];
+  codeLenses?: readonly CodeLens[];
+  completion: readonly CompletionItem[];
+  diagnostics: readonly Diagnostic[];
+  documentSymbols: readonly DocumentSymbol[];
+  hover: Hover | null;
+}): NormalizedProviderBundleSnapshot {
+  return {
+    ...createCbsAgentProtocolMarker(),
+    codeActions: snapshotCodeActions(bundle.codeActions),
+    ...(bundle.codeLenses ? { codeLenses: snapshotCodeLenses(bundle.codeLenses) } : {}),
+    completion: snapshotCompletionItems(bundle.completion),
+    diagnostics: snapshotHostDiagnostics(bundle.diagnostics),
+    documentSymbols: snapshotDocumentSymbols(bundle.documentSymbols),
+    hover: snapshotHoverResult(bundle.hover),
+  };
+}
+
+/**
+ * snapshotCodeLenses 함수.
+ * CodeLens 결과를 deterministic ordering의 normalized snapshot 배열로 변환함.
+ *
+ * @param lenses - 정규화할 CodeLens 목록
+ * @returns count/command/cycle semantics를 포함한 stable CodeLens snapshot 배열
+ */
+export function snapshotCodeLenses(
+  lenses: readonly CodeLens[],
+): NormalizedCodeLensSnapshot[] {
+  return normalizeCodeLensesForSnapshot(lenses);
+}
+
+/**
+ * snapshotCodeLensesEnvelope 함수.
+ * CodeLens snapshot에 shared availability/provenance envelope를 붙임.
+ *
+ * @param lenses - 정규화할 CodeLens 목록
+ * @returns schema/version과 availability/provenance를 포함한 CodeLens snapshot view
+ */
+export function snapshotCodeLensesEnvelope(
+  lenses: readonly CodeLens[],
+): NormalizedCodeLensesEnvelopeSnapshot {
+  return normalizeCodeLensesEnvelopeForSnapshot(lenses);
+}
+
+/**
+ * serializeCodeLensesEnvelopeForGolden 함수.
+ * CodeLens envelope snapshot을 deterministic JSON 문자열로 직렬화함.
+ *
+ * @param snapshot - 직렬화할 CodeLens envelope snapshot
+ * @returns golden 비교용 deterministic JSON 문자열
+ */
+export function serializeCodeLensesEnvelopeForGolden(
+  snapshot: NormalizedCodeLensesEnvelopeSnapshot,
+): string {
+  return JSON.stringify(snapshot, null, 2);
+}
+
+/**
+ * serializeDocumentSymbolsEnvelopeForGolden 함수.
+ * document symbol envelope snapshot을 deterministic JSON 문자열로 직렬화함.
+ *
+ * @param snapshot - 직렬화할 document symbol envelope
+ * @returns golden 비교용 deterministic JSON 문자열
+ */
+export function serializeDocumentSymbolsEnvelopeForGolden(
+  snapshot: NormalizedDocumentSymbolsEnvelopeSnapshot,
+): string {
+  return JSON.stringify(snapshot, null, 2);
+}
+
+/**
+ * serializeWorkspaceSymbolsEnvelopeForGolden 함수.
+ * workspace symbol envelope snapshot을 deterministic JSON 문자열로 직렬화함.
+ *
+ * @param snapshot - 직렬화할 workspace symbol envelope
+ * @returns golden 비교용 deterministic JSON 문자열
+ */
+export function serializeWorkspaceSymbolsEnvelopeForGolden(
+  snapshot: NormalizedWorkspaceSymbolsEnvelopeSnapshot,
+): string {
+  return JSON.stringify(snapshot, null, 2);
+}
+
+/**
+ * snapshotLayer1Contracts 함수.
+ * Layer 1 registry/graph public contract를 fixture/golden 친화적인 JSON shape로 묶음.
+ *
+ * @param registry - Layer 1 ElementRegistry snapshot
+ * @param graph - Layer 1 UnifiedVariableGraph snapshot
+ * @returns Layer 1 public contract bundle
+ */
+export function snapshotLayer1Contracts(
+  registry: NormalizedLayer1ContractSnapshot['registry'],
+  graph: NormalizedLayer1ContractSnapshot['graph'],
+): NormalizedLayer1ContractSnapshot {
+  return createLayer1ContractsSnapshot(registry, graph);
+}
+
+/**
+ * snapshotLayer3Queries 함수.
+ * Layer 3 variable-flow/activation query 결과를 fixture/golden 친화적인 JSON shape로 묶음.
+ *
+ * @param bundle - Layer 3 query payload 묶음
+ * @returns Layer 3 public contract bundle
+ */
+export function snapshotLayer3Queries(bundle: {
+  activationChain: NormalizedLayer3QuerySnapshot['activationChain'];
+  variableFlow: NormalizedLayer3QuerySnapshot['variableFlow'];
+}): NormalizedLayer3QuerySnapshot {
+  return createLayer3QueriesSnapshot(bundle);
+}
+
+/**
+ * serializeAgentContractForGolden 함수.
+ * Layer 1/3 public contract bundle을 deterministic JSON 문자열로 직렬화함.
+ *
+ * @param contract - 직렬화할 Layer 1/3 contract snapshot
+ * @returns golden 비교용 deterministic JSON 문자열
+ */
+export function serializeAgentContractForGolden(
+  contract: NormalizedLayer1ContractSnapshot | NormalizedLayer3QuerySnapshot,
+): string {
+  return JSON.stringify(contract, null, 2);
+}
+
+/**
+ * serializeProviderBundleForGolden 함수.
+ * normalized provider bundle을 stable indentation의 JSON 문자열로 직렬화함.
+ *
+ * @param bundle - 직렬화할 normalized provider bundle snapshot
+ * @returns golden 비교용 deterministic JSON 문자열
+ */
+export function serializeProviderBundleForGolden(
+  bundle: NormalizedProviderBundleSnapshot,
+): string {
+  return JSON.stringify(bundle, null, 2);
 }

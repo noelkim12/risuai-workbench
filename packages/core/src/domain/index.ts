@@ -173,9 +173,38 @@ export {
 } from './analyze/lua-helpers';
 export { RISUAI_API, type ApiMeta, LUA_STDLIB_CALLS } from './analyze/lua-api';
 export {
-  analyzeLuaSource,
-  type LuaAnalysisArtifact,
-} from './analyze/lua-core';
+  RISUAI_LUA_RUNTIME_STUB_FILE_NAME,
+  createMinimalRisuAiLuaTypeStub,
+  getRisuAiLuaDiagnosticGlobals,
+  getRisuAiLuaRuntimeDocumentation,
+  getRisuAiLuaRuntimeSignatures,
+  type RisuAiLuaRuntimeDocumentation,
+  type RisuAiLuaRuntimeParameterDocumentation,
+} from './analyze/lua-type-stubs';
+export { analyzeLuaSource, type LuaAnalysisArtifact } from './analyze/lua-core';
+export {
+  analyzeLuaWithWasmSync,
+  analyzeLuaWithWasm,
+  loadLuaAnalyzerWasm,
+  loadLuaAnalyzerWasmSync,
+  normalizeLuaWasmResult,
+} from './analyze/lua-wasm-adapter';
+export {
+  analyzeLuaWithBackend,
+  type LuaAnalysisBackendKind,
+  type LuaAnalysisBackendRequest,
+  type LuaBackendAnalysisResult,
+} from './analyze/lua-analysis-backend';
+export type {
+  LuaWasmAccessDirection,
+  LuaWasmAnalyzeOptions,
+  LuaWasmAnalyzeResult,
+  LuaWasmApiName,
+  LuaWasmDiagnostic,
+  LuaWasmQuoteKind,
+  LuaWasmStateAccess,
+  LuaWasmStringLiteral,
+} from './analyze/lua-wasm-types';
 export {
   type CollectedFunction,
   type CollectedStateVar,
@@ -187,6 +216,7 @@ export {
   type CorrelationEntry,
   type LorebookCorrelation,
   type RegexCorrelation,
+  type StateAccessOccurrence,
 } from './analyze/lua-analysis-types';
 export { runCollectPhase } from './analyze/lua-collector';
 export { runAnalyzePhase } from './analyze/lua-analyzer';

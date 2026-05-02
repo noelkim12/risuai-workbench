@@ -1,0 +1,5 @@
+{
+  "risuWorkbench.cbs.server.launchMode": "auto",
+  "risuWorkbench.cbs.server.installMode": "local-devDependency",
+  "risuWorkbench.cbs.server.path": ""
+}

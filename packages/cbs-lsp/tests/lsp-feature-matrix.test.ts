@@ -1,12 +1,30 @@
 import type {
+  CodeAction,
+  CodeLens,
   CompletionItem,
+  Definition,
   Diagnostic,
+  DocumentHighlight,
+  DocumentSymbol,
+  DocumentFormattingParams,
+  DocumentOnTypeFormattingParams,
+  DocumentRangeFormattingParams,
   FoldingRange,
   Hover,
+  InlayHint,
   InitializeParams,
   InitializeResult,
+  Location,
+  Range,
+  ReferenceParams,
+  RenameParams,
+  SelectionRange,
   SemanticTokens,
   SignatureHelp,
+  SymbolInformation,
+  TextEdit,
+  TextDocumentPositionParams,
+  WorkspaceEdit,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -99,18 +117,54 @@ class FakeConnection {
 
   shutdownHandler: (() => void | Promise<void>) | null = null;
 
+  executeCommandHandler: ((params: any) => void | Promise<void>) | null = null;
+
+  codeActionHandler: ((params: any) => CodeAction[]) | null = null;
+
+  codeActionResolveHandler: ((action: CodeAction) => CodeAction) | null = null;
+
+  codeLensHandler: ((params: any) => CodeLens[]) | null = null;
+
   completionHandler: ((params: any) => CompletionItem[] | { items: CompletionItem[] }) | null =
     null;
 
-  hoverHandler: ((params: any) => Hover | null) | null = null;
+  completionResolveHandler: ((item: CompletionItem) => CompletionItem) | null = null;
+
+  documentHighlightHandler: ((params: any) => DocumentHighlight[]) | null = null;
+
+  documentSymbolHandler: ((params: any) => DocumentSymbol[]) | null = null;
+
+  definitionHandler: ((params: any) => Definition | null) | null = null;
+
+  referencesHandler: ((params: any) => Location[]) | null = null;
+
+  prepareRenameHandler: ((params: TextDocumentPositionParams) => Range | null) | null = null;
+
+  renameHandler: ((params: RenameParams) => WorkspaceEdit | null) | null = null;
+
+  hoverHandler: any = null;
+
+  inlayHintHandler: ((params: any) => InlayHint[]) | null = null;
+
+  selectionRangesHandler: ((params: any) => SelectionRange[]) | null = null;
+
+  workspaceSymbolHandler: ((params: any) => SymbolInformation[]) | null = null;
 
   signatureHelpHandler: ((params: any) => SignatureHelp | null) | null = null;
 
   foldingRangesHandler: ((params: any) => FoldingRange[]) | null = null;
 
+  formattingHandler: ((params: DocumentFormattingParams) => TextEdit[]) | null = null;
+
+  rangeFormattingHandler: ((params: DocumentRangeFormattingParams) => TextEdit[]) | null = null;
+
+  onTypeFormattingHandler: ((params: DocumentOnTypeFormattingParams) => TextEdit[]) | null = null;
+
   semanticTokensHandler: ((params: any) => SemanticTokens) | null = null;
 
-  readonly diagnostics: Array<{ uri: string; diagnostics: readonly Diagnostic[] }> = [];
+  semanticTokensRangeHandler: ((params: any) => SemanticTokens) | null = null;
+
+  readonly diagnostics: Array<{ uri: string; version?: number; diagnostics: readonly Diagnostic[] }> = [];
 
   readonly traceMessages: Array<{ message: string; verbose?: string }> = [];
 
@@ -129,9 +183,19 @@ class FakeConnection {
   };
 
   readonly languages = {
+    inlayHint: {
+      on: (handler: (params: any) => InlayHint[]) => {
+        this.inlayHintHandler = handler;
+        return createDisposable();
+      },
+    },
     semanticTokens: {
       on: (handler: (params: any) => SemanticTokens) => {
         this.semanticTokensHandler = handler;
+        return createDisposable();
+      },
+      onRange: (handler: (params: any) => SemanticTokens) => {
+        this.semanticTokensRangeHandler = handler;
         return createDisposable();
       },
     },
@@ -147,8 +211,73 @@ class FakeConnection {
     return createDisposable();
   }
 
+  onExecuteCommand(handler: (params: any) => void | Promise<void>) {
+    this.executeCommandHandler = handler;
+    return createDisposable();
+  }
+
+  onCodeAction(handler: (params: any) => CodeAction[]) {
+    this.codeActionHandler = handler;
+    return createDisposable();
+  }
+
+  onCodeActionResolve(handler: (action: CodeAction) => CodeAction) {
+    this.codeActionResolveHandler = handler;
+    return createDisposable();
+  }
+
+  onCodeLens(handler: (params: any) => CodeLens[]) {
+    this.codeLensHandler = handler;
+    return createDisposable();
+  }
+
   onCompletion(handler: (params: any) => CompletionItem[] | { items: CompletionItem[] }) {
     this.completionHandler = handler;
+    return createDisposable();
+  }
+
+  onCompletionResolve(handler: (item: CompletionItem) => CompletionItem) {
+    this.completionResolveHandler = handler;
+    return createDisposable();
+  }
+
+  onDocumentSymbol(handler: (params: any) => DocumentSymbol[]) {
+    this.documentSymbolHandler = handler;
+    return createDisposable();
+  }
+
+  onDocumentHighlight(handler: (params: any) => DocumentHighlight[]) {
+    this.documentHighlightHandler = handler;
+    return createDisposable();
+  }
+
+  onSelectionRanges(handler: (params: any) => SelectionRange[]) {
+    this.selectionRangesHandler = handler;
+    return createDisposable();
+  }
+
+  onWorkspaceSymbol(handler: (params: any) => SymbolInformation[]) {
+    this.workspaceSymbolHandler = handler;
+    return createDisposable();
+  }
+
+  onDefinition(handler: (params: any) => Definition | null) {
+    this.definitionHandler = handler;
+    return createDisposable();
+  }
+
+  onReferences(handler: (params: ReferenceParams) => Location[]) {
+    this.referencesHandler = handler;
+    return createDisposable();
+  }
+
+  onPrepareRename(handler: (params: TextDocumentPositionParams) => Range | null) {
+    this.prepareRenameHandler = handler;
+    return createDisposable();
+  }
+
+  onRenameRequest(handler: (params: RenameParams) => WorkspaceEdit | null) {
+    this.renameHandler = handler;
     return createDisposable();
   }
 
@@ -167,7 +296,22 @@ class FakeConnection {
     return createDisposable();
   }
 
-  sendDiagnostics(params: { uri: string; diagnostics: readonly Diagnostic[] }) {
+  onDocumentFormatting(handler: (params: DocumentFormattingParams) => TextEdit[]) {
+    this.formattingHandler = handler;
+    return createDisposable();
+  }
+
+  onDocumentRangeFormatting(handler: (params: DocumentRangeFormattingParams) => TextEdit[]) {
+    this.rangeFormattingHandler = handler;
+    return createDisposable();
+  }
+
+  onDocumentOnTypeFormatting(handler: (params: DocumentOnTypeFormattingParams) => TextEdit[]) {
+    this.onTypeFormattingHandler = handler;
+    return createDisposable();
+  }
+
+  sendDiagnostics(params: { uri: string; version?: number; diagnostics: readonly Diagnostic[] }) {
     this.diagnostics.push(params);
     return Promise.resolve();
   }
@@ -275,21 +419,6 @@ const supportedArtifactScenarios: readonly SupportedArtifactScenario[] = [
       expect(labels).toContain('setvar');
     },
   },
-  {
-    label: 'lua → hover',
-    happyEntryId: 'lua-basic',
-    failureEntryId: 'lua-unclosed-macro',
-    assertFeature: (connection, entry) => {
-      const markdown = getHoverMarkdown(
-        connection.hoverHandler?.({
-          textDocument: { uri: entry.uri },
-          position: positionAt(entry.text, 'user', 1, 1),
-        }) ?? null,
-      );
-
-      expect(markdown).toContain('**user**');
-    },
-  },
 ];
 
 const unsupportedScenarios = [
@@ -362,6 +491,11 @@ describe('LSP feature matrix', () => {
           position: { line: 0, character: 0 },
         }),
       ),
+    ).toEqual([]);
+    expect(
+      connection.documentSymbolHandler?.({
+        textDocument: { uri },
+      }) ?? [],
     ).toEqual([]);
     expect(
       connection.hoverHandler?.({

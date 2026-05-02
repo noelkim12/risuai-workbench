@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { FoldingRangeParams } from 'vscode-languageserver/node';
 
 import { FragmentAnalysisService } from '../../src/core';
-import { FoldingProvider } from '../../src/features/folding';
+import { FoldingProvider } from '../../src/features/presentation';
 import { offsetToPosition } from '../../src/utils/position';
 import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
 

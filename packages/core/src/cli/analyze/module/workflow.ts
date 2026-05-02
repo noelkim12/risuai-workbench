@@ -14,6 +14,7 @@ import {
 import { parseLorebookContent } from '@/domain/custom-extension/extensions/lorebook';
 import { parseRegexContent } from '@/domain/regex';
 import { readJsonIfExists } from '@/node/fs-helpers';
+import { readRisumoduleManifest, RISUMODULE_FILENAME } from '../../shared/risumodule';
 import { detectLocale } from '../shared/i18n';
 import {
   collectLorebookEntryInfosFromDir,
@@ -65,16 +66,14 @@ export function runAnalyzeModuleWorkflow(argv: readonly string[]): number {
     return 1;
   }
 
-  // Check for canonical workspace markers or legacy module.json
-  const hasCanonicalMarkers =
-    fs.existsSync(path.join(outputDir, 'metadata.json')) &&
-    fs.existsSync(path.join(outputDir, 'lorebooks'));
+  // Check for canonical .risumodule marker or legacy module.json
+  const hasRisumodule = fs.existsSync(path.join(outputDir, RISUMODULE_FILENAME));
   const hasLegacyModuleJson = fs.existsSync(path.join(outputDir, 'module.json'));
 
-  if (!hasCanonicalMarkers && !hasLegacyModuleJson) {
+  if (!hasRisumodule && !hasLegacyModuleJson) {
     console.error(`\n  ❌ Canonical module workspace markers not found: ${outputDir}`);
     console.error(`  Expected one of:`);
-    console.error(`    - metadata.json + lorebooks/ directory (canonical workspace)`);
+    console.error(`    - .risumodule (canonical workspace)`);
     console.error(`    - module.json (legacy workspace)\n`);
     return 1;
   }
@@ -199,26 +198,20 @@ export function runAnalyzeModuleWorkflow(argv: readonly string[]): number {
  * without requiring the full module.json file.
  */
 function buildMinimalModuleFromCanonical(outputDir: string): Record<string, unknown> {
-  // Read metadata if available
-  const metadataPath = path.join(outputDir, 'metadata.json');
+  // Read .risumodule canonical marker if available
   let name = 'Unknown';
   let namespace: string | undefined;
 
-  if (fs.existsSync(metadataPath)) {
-    try {
-      const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8')) as {
-        name?: string;
-        namespace?: string;
-      };
-      if (typeof metadata.name === 'string' && metadata.name.length > 0) {
-        name = metadata.name;
-      }
-      if (typeof metadata.namespace === 'string' && metadata.namespace.length > 0) {
-        namespace = metadata.namespace;
-      }
-    } catch {
-      // Ignore metadata parse errors
+  try {
+    const manifest = readRisumoduleManifest(outputDir);
+    if (typeof manifest.name === 'string' && manifest.name.length > 0) {
+      name = manifest.name;
     }
+    if (typeof manifest.namespace === 'string' && manifest.namespace.length > 0) {
+      namespace = manifest.namespace;
+    }
+  } catch {
+    // Ignore marker read/parse errors
   }
 
   // Read lorebook entries from canonical .risulorebook files

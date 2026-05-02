@@ -4,16 +4,23 @@
  */
 
 import { readdir, readFile } from 'node:fs/promises';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   CUSTOM_EXTENSION_ARTIFACTS,
+  analyzeLuaWithWasm,
   isCbsBearingArtifact,
   mapToCbsFragments,
   parseCustomExtensionArtifactFromPath,
   type CbsFragmentMap,
   type CustomExtensionArtifact,
+  type LuaWasmStateAccess,
+  type StateAccessOccurrence,
 } from 'risu-workbench-core';
+
+import { MAX_LUA_ANALYSIS_TEXT_LENGTH } from '../utils/oversized-lua';
+import { scanLuaStateAccessOccurrences } from '../utils/lua-state-access-scanner';
 
 export type WorkspaceFileArtifactClass = 'cbs-bearing' | 'non-cbs';
 
@@ -21,6 +28,11 @@ export interface WorkspaceScanFile {
   uri: string;
   absolutePath: string;
   relativePath: string;
+  text: string;
+  originalTextLength?: number;
+  indexTextTruncated?: boolean;
+  lightweightLuaSourceText?: string;
+  lightweightLuaStateAccessOccurrences?: readonly StateAccessOccurrence[];
   artifact: CustomExtensionArtifact;
   artifactClass: WorkspaceFileArtifactClass;
   cbsBearingArtifact: boolean;
@@ -54,6 +66,33 @@ interface DiscoveredWorkspaceFile {
   artifact: CustomExtensionArtifact;
 }
 
+const IGNORED_WORKSPACE_DIRECTORY_NAMES = new Set([
+  '.git',
+  '.hg',
+  '.svn',
+  '.cache',
+  '.next',
+  '.nuxt',
+  '.turbo',
+  '.vscode-test',
+  'coverage',
+  'dist',
+  'dist-tests',
+  'graphify-out',
+  'node_modules',
+  'out',
+]);
+
+export interface WorkspaceScanFileFromTextOptions {
+  workspaceRoot: string;
+  absolutePath: string;
+  text: string;
+  artifact?: CustomExtensionArtifact;
+  lightweightLuaStateAccessOccurrences?: readonly StateAccessOccurrence[];
+}
+
+export const MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH = MAX_LUA_ANALYSIS_TEXT_LENGTH;
+
 /**
  * compareWorkspaceScanFiles 함수.
  * 스캔 결과를 relative path 기준으로 deterministic ordering으로 고정함.
@@ -84,6 +123,7 @@ function createArtifactCounters(): Record<CustomExtensionArtifact, number> {
     toggle: 0,
     variable: 0,
     html: 0,
+    text: 0,
   } satisfies Record<CustomExtensionArtifact, number>;
 }
 
@@ -161,6 +201,144 @@ function compareDirectoryEntries(left: string, right: string): number {
 }
 
 /**
+ * shouldSkipWorkspaceDirectory 함수.
+ * 대형 dependency/build/cache 디렉토리는 canonical artifact scan에서 제외함.
+ *
+ * @param directoryName - 탐색 중인 디렉토리 basename
+ * @returns 재귀 탐색을 건너뛰어야 하면 true
+ */
+function shouldSkipWorkspaceDirectory(directoryName: string): boolean {
+  return IGNORED_WORKSPACE_DIRECTORY_NAMES.has(directoryName);
+}
+
+function convertWasmStateAccesses(
+  accesses: readonly LuaWasmStateAccess[],
+): readonly StateAccessOccurrence[] {
+  return accesses.map((access) => ({
+    apiName: access.apiName,
+    key: access.key,
+    direction: access.direction,
+    argStart: access.argStartUtf16,
+    argEnd: access.argEndUtf16,
+    line: access.line,
+    containingFunction: access.containingFunction,
+  }));
+}
+
+async function scanLuaStateAccessesWithWasm(
+  text: string,
+): Promise<readonly StateAccessOccurrence[] | undefined> {
+  const fallbackOccurrences = scanLuaStateAccessOccurrences(text);
+  try {
+    const result = await analyzeLuaWithWasm(text, {
+      includeStringLiterals: false,
+      includeStateAccesses: true,
+    });
+    return result.ok
+      ? mergeStateAccessOccurrences(convertWasmStateAccesses(result.stateAccesses), fallbackOccurrences)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function mergeStateAccessOccurrences(
+  primary: readonly StateAccessOccurrence[],
+  fallback: readonly StateAccessOccurrence[],
+): readonly StateAccessOccurrence[] {
+  const seen = new Set<string>();
+  const merged: StateAccessOccurrence[] = [];
+
+  for (const occurrence of [...primary, ...fallback]) {
+    const key = [
+      occurrence.apiName,
+      occurrence.direction,
+      occurrence.key,
+      occurrence.argStart,
+      occurrence.argEnd,
+    ].join('\0');
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    merged.push(occurrence);
+  }
+
+  return merged;
+}
+
+/**
+ * createWorkspaceScanFileFromText 함수.
+ * in-memory text를 Layer 1 scan entry shape로 정규화함.
+ *
+ * @param options - workspace root, absolute path, source text
+ * @returns fragment map까지 포함한 workspace scan file entry
+ */
+export function createWorkspaceScanFileFromText(
+  options: WorkspaceScanFileFromTextOptions,
+): WorkspaceScanFile {
+  const artifact = options.artifact ?? parseCustomExtensionArtifactFromPath(options.absolutePath);
+  const indexTextTruncated = artifact === 'lua' && options.text.length > MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH;
+  const text = indexTextTruncated ? '' : options.text;
+  // Keep this JS scanner as the fallback path. The Rust/WASM adapter replaces this
+  // value when compact scan records are available, but oversized files must never
+  // fall back to full Lua/CBS parsing on WASM load failure.
+  const lightweightLuaStateAccessOccurrences = indexTextTruncated
+    ? (options.lightweightLuaStateAccessOccurrences ?? scanLuaStateAccessOccurrences(options.text))
+    : [];
+  const lightweightLuaSourceText = indexTextTruncated ? options.text : undefined;
+  const fragmentMap = mapToCbsFragments(artifact, text);
+  const cbsBearingArtifact = isCbsBearingArtifact(artifact);
+
+  return {
+    uri: pathToFileURL(options.absolutePath).href,
+    absolutePath: options.absolutePath,
+    relativePath: toPosixRelativePath(path.relative(options.workspaceRoot, options.absolutePath)),
+    text,
+    originalTextLength: options.text.length,
+    indexTextTruncated,
+    lightweightLuaSourceText,
+    lightweightLuaStateAccessOccurrences,
+    artifact,
+    artifactClass: cbsBearingArtifact ? 'cbs-bearing' : 'non-cbs',
+    cbsBearingArtifact,
+    hasCbsFragments: fragmentMap.fragments.length > 0,
+    fragmentCount: fragmentMap.fragments.length,
+    fragmentSections: fragmentMap.fragments.map((fragment) => fragment.section),
+    fragmentMap,
+  };
+}
+
+/**
+ * buildWorkspaceScanResult 함수.
+ * scan file 배열을 deterministic workspace scan result로 묶음.
+ *
+ * @param workspaceRoot - 스캔 대상 workspace root
+ * @param files - workspace file entry 목록
+ * @returns 정렬/집계가 완료된 workspace scan result
+ */
+export function buildWorkspaceScanResult(
+  workspaceRoot: string,
+  files: readonly WorkspaceScanFile[],
+): WorkspaceScanResult {
+  const sortedFiles = [...files].sort(compareWorkspaceScanFiles);
+  const filesByArtifact = createFilesByArtifact(sortedFiles);
+  const cbsBearingFiles = sortedFiles.filter((file) => file.cbsBearingArtifact);
+  const nonCbsFiles = sortedFiles.filter((file) => !file.cbsBearingArtifact);
+  const filesWithCbsFragments = sortedFiles.filter((file) => file.hasCbsFragments);
+
+  return {
+    rootPath: workspaceRoot,
+    files: sortedFiles,
+    filesByArtifact,
+    cbsBearingFiles,
+    nonCbsFiles,
+    filesWithCbsFragments,
+    summary: createWorkspaceScanSummary(sortedFiles),
+  };
+}
+
+/**
  * FileScanner 클래스.
  * workspace canonical `.risu*` 파일을 수집하고 artifact/fragment 상태를 Layer 1 공용 계약으로 정리함.
  */
@@ -176,22 +354,7 @@ export class FileScanner {
   async scan(): Promise<WorkspaceScanResult> {
     const discoveredFiles = await this.collectWorkspaceFiles(this.workspaceRoot);
     const files = await Promise.all(discoveredFiles.map((file) => this.scanDiscoveredFile(file)));
-    files.sort(compareWorkspaceScanFiles);
-
-    const filesByArtifact = createFilesByArtifact(files);
-    const cbsBearingFiles = files.filter((file) => file.cbsBearingArtifact);
-    const nonCbsFiles = files.filter((file) => !file.cbsBearingArtifact);
-    const filesWithCbsFragments = files.filter((file) => file.hasCbsFragments);
-
-    return {
-      rootPath: this.workspaceRoot,
-      files,
-      filesByArtifact,
-      cbsBearingFiles,
-      nonCbsFiles,
-      filesWithCbsFragments,
-      summary: createWorkspaceScanSummary(files),
-    };
+    return buildWorkspaceScanResult(this.workspaceRoot, files);
   }
 
   /**
@@ -211,6 +374,10 @@ export class FileScanner {
       const absolutePath = path.join(currentPath, entry.name);
 
       if (entry.isDirectory()) {
+        if (shouldSkipWorkspaceDirectory(entry.name)) {
+          continue;
+        }
+
         discoveredFiles.push(...(await this.collectWorkspaceFiles(absolutePath)));
         continue;
       }
@@ -258,22 +425,64 @@ export class FileScanner {
    */
   private async scanDiscoveredFile(file: DiscoveredWorkspaceFile): Promise<WorkspaceScanFile> {
     const text = await readFile(file.absolutePath, 'utf8');
-    const fragmentMap = mapToCbsFragments(file.artifact, text);
-    const cbsBearingArtifact = isCbsBearingArtifact(file.artifact);
-
-    return {
-      uri: pathToFileURL(file.absolutePath).href,
+    const lightweightLuaStateAccessOccurrences =
+      file.artifact === 'lua' && text.length > MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH
+        ? await scanLuaStateAccessesWithWasm(text)
+        : undefined;
+    return createWorkspaceScanFileFromText({
+      workspaceRoot: this.workspaceRoot,
       absolutePath: file.absolutePath,
-      relativePath: file.relativePath,
+      text,
       artifact: file.artifact,
-      artifactClass: cbsBearingArtifact ? 'cbs-bearing' : 'non-cbs',
-      cbsBearingArtifact,
-      hasCbsFragments: fragmentMap.fragments.length > 0,
-      fragmentCount: fragmentMap.fragments.length,
-      fragmentSections: fragmentMap.fragments.map((fragment) => fragment.section),
-      fragmentMap,
-    };
+      lightweightLuaStateAccessOccurrences,
+    });
   }
+}
+
+function collectWorkspaceFilesSync(
+  workspaceRoot: string,
+  currentPath: string,
+): DiscoveredWorkspaceFile[] {
+  const entries = readdirSync(currentPath, { withFileTypes: true });
+  entries.sort((left, right) => compareDirectoryEntries(left.name, right.name));
+
+  const discoveredFiles: DiscoveredWorkspaceFile[] = [];
+
+  for (const entry of entries) {
+    const absolutePath = path.join(currentPath, entry.name);
+
+    if (entry.isDirectory()) {
+      if (shouldSkipWorkspaceDirectory(entry.name)) {
+        continue;
+      }
+
+      discoveredFiles.push(...collectWorkspaceFilesSync(workspaceRoot, absolutePath));
+      continue;
+    }
+
+    if (!entry.isFile()) {
+      continue;
+    }
+
+    let artifact: CustomExtensionArtifact | null = null;
+    try {
+      artifact = parseCustomExtensionArtifactFromPath(absolutePath);
+    } catch {
+      artifact = null;
+    }
+
+    if (!artifact) {
+      continue;
+    }
+
+    discoveredFiles.push({
+      absolutePath,
+      relativePath: toPosixRelativePath(path.relative(workspaceRoot, absolutePath)),
+      artifact,
+    });
+  }
+
+  return discoveredFiles;
 }
 
 /**
@@ -285,4 +494,25 @@ export class FileScanner {
  */
 export async function scanWorkspaceFiles(workspaceRoot: string): Promise<WorkspaceScanResult> {
   return new FileScanner(workspaceRoot).scan();
+}
+
+/**
+ * scanWorkspaceFilesSync 함수.
+ * server가 현재 open document overlay와 함께 즉시 workspace snapshot을 만들 때 쓰는 sync helper.
+ *
+ * @param workspaceRoot - 스캔할 workspace root 절대 경로
+ * @returns deterministic workspace scan result
+ */
+export function scanWorkspaceFilesSync(workspaceRoot: string): WorkspaceScanResult {
+  const discoveredFiles = collectWorkspaceFilesSync(workspaceRoot, workspaceRoot);
+  const files = discoveredFiles.map((file) =>
+    createWorkspaceScanFileFromText({
+      workspaceRoot,
+      absolutePath: file.absolutePath,
+      text: readFileSync(file.absolutePath, 'utf8'),
+      artifact: file.artifact,
+    }),
+  );
+
+  return buildWorkspaceScanResult(workspaceRoot, files);
 }

@@ -1,0 +1,208 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "risulua-cbs-injection",
+  "scopeName": "source.lua.risu-cbs.injection",
+  "injectionSelector": "L:source.lua",
+  "patterns": [
+    {
+      "include": "#cbs-comment"
+    },
+    {
+      "include": "#cbs-else"
+    },
+    {
+      "include": "#cbs-block-open"
+    },
+    {
+      "include": "#cbs-block-close"
+    },
+    {
+      "include": "#cbs-math-expression"
+    },
+    {
+      "include": "#cbs-function-call"
+    }
+  ],
+  "repository": {
+    "argument-separator": {
+      "name": "punctuation.separator.argument.cbs",
+      "match": "::"
+    },
+    "cbs-block-argument": {
+      "name": "string.unquoted.argument.cbs",
+      "match": "\\s+[^{}]+"
+    },
+    "cbs-block-close": {
+      "name": "meta.block.close.cbs",
+      "match": "(\\{\\{)(/(?:[a-zA-Z_][a-zA-Z0-9_]*)?)(\\}\\})",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.block.end.cbs"
+        },
+        "2": {
+          "name": "keyword.control.block.cbs"
+        },
+        "3": {
+          "name": "punctuation.definition.block.end.cbs"
+        }
+      }
+    },
+    "cbs-block-open": {
+      "name": "meta.block.open.cbs",
+      "begin": "(\\{\\{)(#)([a-zA-Z_][a-zA-Z0-9_]*)",
+      "end": "(\\}\\})",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.block.begin.cbs"
+        },
+        "2": {
+          "name": "keyword.control.block.cbs"
+        },
+        "3": {
+          "name": "entity.name.function.block.cbs"
+        }
+      },
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.block.begin.cbs"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#cbs-comment"
+        },
+        {
+          "include": "#cbs-else"
+        },
+        {
+          "include": "#cbs-block-open"
+        },
+        {
+          "include": "#cbs-math-expression"
+        },
+        {
+          "include": "#cbs-function-call"
+        },
+        {
+          "include": "#cbs-block-argument"
+        }
+      ]
+    },
+    "cbs-comment": {
+      "name": "comment.line.cbs",
+      "match": "(\\{\\{)(//)([^}]*)(\\}\\})",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.comment.begin.cbs"
+        },
+        "2": {
+          "name": "keyword.operator.comment.cbs"
+        },
+        "3": {
+          "name": "comment.line.content.cbs"
+        },
+        "4": {
+          "name": "punctuation.definition.comment.end.cbs"
+        }
+      }
+    },
+    "cbs-else": {
+      "name": "keyword.control.else.cbs",
+      "match": "(\\{\\{)(:else)(\\}\\})",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.else.begin.cbs"
+        },
+        "2": {
+          "name": "keyword.control.else.cbs"
+        },
+        "3": {
+          "name": "punctuation.definition.else.end.cbs"
+        }
+      }
+    },
+    "cbs-function-call": {
+      "name": "meta.function.call.cbs",
+      "begin": "(\\{\\{)(?![#/?:])",
+      "end": "(\\}\\})",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.function.begin.cbs"
+        }
+      },
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.function.end.cbs"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#function-names"
+        },
+        {
+          "include": "#argument-separator"
+        },
+        {
+          "include": "#function-arguments"
+        }
+      ]
+    },
+    "cbs-math-expression": {
+      "name": "meta.math.expression.cbs",
+      "begin": "(\\{\\{)(\\?)\\s*",
+      "end": "(\\}\\})",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.expression.begin.cbs"
+        },
+        "2": {
+          "name": "keyword.operator.math.cbs"
+        }
+      },
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.expression.end.cbs"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#cbs-function-call"
+        },
+        {
+          "include": "#math-operators"
+        },
+        {
+          "include": "#numbers"
+        }
+      ]
+    },
+    "function-arguments": {
+      "name": "string.unquoted.argument.cbs",
+      "match": "(?<=::)[^{}:]+"
+    },
+    "function-names": {
+      "patterns": [
+        {
+          "name": "entity.name.function.variable.cbs",
+          "match": "\\b(tempvar|gettempvar|settempvar|getvar|setvar|addvar|setdefaultvar|getglobalvar|return)\\b"
+        },
+        {
+          "name": "entity.name.function.logic.cbs",
+          "match": "\\b(equal|not_equal|notequal|greater|less|greater_equal|greaterequal|less_equal|lessequal|and|or|not|all|any|iserror)\\b"
+        },
+        {
+          "name": "entity.name.function.cbs",
+          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "math-operators": {
+      "name": "keyword.operator.math.cbs",
+      "match": "[+\\-*/%]|==|~=|<=|>=|<|>"
+    },
+    "numbers": {
+      "name": "constant.numeric.cbs",
+      "match": "\\b\\d+(?:\\.\\d+)?\\b"
+    }
+  }
+}

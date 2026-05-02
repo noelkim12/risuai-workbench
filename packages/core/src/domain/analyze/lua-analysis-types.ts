@@ -29,6 +29,26 @@ export interface CollectedFunction {
 }
 
 /**
+ * 개별 상태 접근 발생 정보 (정적 문자열 키 기준)
+ */
+export interface StateAccessOccurrence {
+  /** 상태 변수 키 */
+  key: string;
+  /** 접근 방향: 'read' | 'write' */
+  direction: 'read' | 'write';
+  /** 사용된 API 이름 (setState, getState, setChatVar, getChatVar) */
+  apiName: string;
+  /** 접근이 발생한 함수 이름. 최상위면 '<top-level>' */
+  containingFunction: string;
+  /** 접근이 발생한 행 번호 */
+  line: number;
+  /** 인자 노드의 시작 바이트 위치 (inclusive) */
+  argStart: number;
+  /** 인자 노드의 종료 바이트 위치 (exclusive) */
+  argEnd: number;
+}
+
+/**
  * 분석 과정에서 수집된 상태 변수 정보
  */
 export interface CollectedStateVar {
@@ -133,6 +153,8 @@ export interface CollectedData {
   preloadModules: CollectedPreloadModule[];
   requireBindings: CollectedRequireBinding[];
   moduleMemberCalls: CollectedModuleMemberCall[];
+  /** 정적 문자열 키 기준 상태 접근 발생 목록 */
+  stateAccessOccurrences: StateAccessOccurrence[];
 }
 
 /**

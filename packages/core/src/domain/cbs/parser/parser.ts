@@ -37,6 +37,10 @@ const BLOCK_KIND_BY_NAME = new Map<string, BlockKind>([
   ['func', 'func'],
 ]);
 
+const BLOCK_CLOSE_ALIASES = new Map<BlockKind, ReadonlySet<BlockKind>>([
+  ['if_pure', new Set<BlockKind>(['if'])],
+]);
+
 export class CBSParser {
   private input = '';
   private tokens: Token[] = [];
@@ -126,7 +130,7 @@ export class CBSParser {
       case TokenType.Comment:
         return this.parseComment();
       case TokenType.MathExpression:
-        return this.parseMathExpression();
+        return this.parseMathExpression(depth);
       case TokenType.ElseKeyword:
         this.addDiagnostic(
           'CBS006',
@@ -158,14 +162,44 @@ export class CBSParser {
     };
   }
 
-  private parseMathExpression(): MathExprNode {
+  private parseMathExpression(depth: number): MathExprNode {
     const open = this.consume(TokenType.OpenBrace);
-    const expression = this.consume(TokenType.MathExpression);
+    const expressionStart = this.currentToken().range.start;
+    const children: CBSNode[] = [];
+
+    while (!this.isAt(TokenType.CloseBrace)) {
+      if (this.isAt(TokenType.EOF)) {
+        throw new Error(
+          'Unexpected EOF while parsing math expression. Tokenizer should have recovered earlier.',
+        );
+      }
+
+      if (this.isAt(TokenType.MathExpression)) {
+        const expressionToken = this.consume(TokenType.MathExpression);
+        if (expressionToken.value.length > 0) {
+          children.push(this.createPlainTextNode(expressionToken.value, expressionToken.range));
+        }
+        continue;
+      }
+
+      const node = this.parseNode(depth + 1);
+      if (!node) {
+        break;
+      }
+
+      children.push(node);
+    }
+
     const close = this.consume(TokenType.CloseBrace);
+    const expressionEnd = close.range.start;
+    const expression = this.sliceRange({ start: expressionStart, end: expressionEnd })
+      .replace(/^\?/, '')
+      .trimStart();
 
     return {
       type: 'MathExpr',
-      expression: expression.value,
+      expression,
+      children,
       range: this.createRange(open.range.start, close.range.end),
     };
   }
@@ -551,7 +585,11 @@ export class CBSParser {
     actual: { kind?: BlockKind; shorthand: boolean },
     expected: BlockKind,
   ): boolean {
-    return actual.shorthand || actual.kind === expected;
+    if (actual.shorthand || actual.kind === expected) {
+      return true;
+    }
+
+    return actual.kind ? (BLOCK_CLOSE_ALIASES.get(expected)?.has(actual.kind) ?? false) : false;
   }
 
   private consumeElseMacro(): void {

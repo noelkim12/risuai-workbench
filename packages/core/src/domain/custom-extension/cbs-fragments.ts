@@ -1,3 +1,4 @@
+import type { LuaWasmStringLiteral } from '../analyze/lua-wasm-types';
 import type { CustomExtensionArtifact } from './contracts';
 
 /**
@@ -42,7 +43,7 @@ export class CbsFragmentMappingError extends Error {
 }
 
 /** CBS-bearing artifact type union. */
-export type CbsBearingArtifact = 'lorebook' | 'regex' | 'prompt' | 'html' | 'lua';
+export type CbsBearingArtifact = 'lorebook' | 'regex' | 'prompt' | 'html' | 'lua' | 'text';
 
 /** Non-CBS artifact type union. */
 export type NonCbsArtifact = 'toggle' | 'variable';
@@ -57,6 +58,7 @@ export const CBS_BEARING_ARTIFACTS: readonly CbsBearingArtifact[] = [
   'prompt',
   'html',
   'lua',
+  'text',
 ];
 
 /**
@@ -364,6 +366,57 @@ export function mapLuaToCbsFragments(rawContent: string): CbsFragmentMap {
 }
 
 /**
+ * mapTextToCbsFragments 함수.
+ * `.risutext` 전체 본문을 frontmatter-free CBS TEXT fragment 하나로 매핑함.
+ *
+ * @param rawContent - 원본 `.risutext` 문서 문자열
+ * @returns 전체 파일 하나를 TEXT section으로 담은 fragment map
+ */
+export function mapTextToCbsFragments(rawContent: string): CbsFragmentMap {
+  return {
+    artifact: 'text',
+    fragments: [
+      {
+        section: 'TEXT',
+        start: 0,
+        end: rawContent.length,
+        content: rawContent,
+      },
+    ],
+    fileLength: rawContent.length,
+  };
+}
+
+/**
+ * Map WASM-scanned Lua string literal content ranges to CBS fragments.
+ * Only literals with CBS markers are exposed; this keeps .risulua CBS parsing
+ * scoped to string literal contents instead of the whole Lua source.
+ *
+ * @param rawContent - The raw .risulua source text
+ * @param stringLiterals - Compact string literal records from the Rust/WASM scanner
+ * @returns CbsFragmentMap with one fragment per CBS-bearing string literal content range
+ */
+export function mapLuaWasmStringLiteralsToCbsFragments(
+  rawContent: string,
+  stringLiterals: readonly LuaWasmStringLiteral[],
+): CbsFragmentMap {
+  const fragments = stringLiterals
+    .filter((literal) => literal.hasCbsMarker)
+    .map((literal, index) => ({
+      section: `lua-string:${index + 1}`,
+      start: literal.contentStartUtf16,
+      end: literal.contentEndUtf16,
+      content: rawContent.slice(literal.contentStartUtf16, literal.contentEndUtf16),
+    }));
+
+  return {
+    artifact: 'lua',
+    fragments,
+    fileLength: rawContent.length,
+  };
+}
+
+/**
  * Map a non-CBS artifact to fragments (returns empty fragments array).
  * This explicitly documents that .risutoggle and .risuvar are non-CBS-bearing.
  *
@@ -407,6 +460,8 @@ export function mapToCbsFragments(
       return mapHtmlToCbsFragments(rawContent);
     case 'lua':
       return mapLuaToCbsFragments(rawContent);
+    case 'text':
+      return mapTextToCbsFragments(rawContent);
     case 'toggle':
     case 'variable':
       return mapNonCbsToFragments(artifact, rawContent);
@@ -419,12 +474,13 @@ export function mapToCbsFragments(
 }
 
 /** Mapping of CBS-bearing artifacts to their file extensions. */
-const CBS_ARTIFACT_EXTENSIONS: Record<CbsBearingArtifact, string> = {
+export const CBS_ARTIFACT_EXTENSIONS: Record<CbsBearingArtifact, string> = {
   lorebook: '.risulorebook',
   regex: '.risuregex',
   prompt: '.risuprompt',
   html: '.risuhtml',
   lua: '.risulua',
+  text: '.risutext',
 };
 
 /**

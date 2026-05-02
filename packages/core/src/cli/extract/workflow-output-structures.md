@@ -53,7 +53,7 @@ Default tree (canonical workspace):
     description.txt
     first_mes.txt
     system_prompt.txt
-    post_history_instructions.txt
+    replace_global_note.risutext
     creator_notes.txt
     additional_text.txt
     alternate_greetings.json

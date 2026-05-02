@@ -6,11 +6,9 @@ import {
   DiagnosticCode,
 } from '../src/analyzer/diagnostics';
 import { SymbolTable } from '../src/analyzer/symbolTable';
-import { routeDiagnosticsForDocument, mapDocumentToCbsFragments } from '../src/diagnostics-router';
-import { DefinitionProvider } from '../src/features/definition';
-import { FormattingProvider } from '../src/features/formatting';
-import { ReferencesProvider } from '../src/features/references';
-import { RenameProvider } from '../src/features/rename';
+import { routeDiagnosticsForDocument, mapDocumentToCbsFragments } from '../src/utils/diagnostics-router';
+import { FormattingProvider } from '../src/features/editing';
+import { DefinitionProvider, ReferencesProvider, RenameProvider } from '../src/features/navigation';
 import { getFixtureCorpusEntry, listMatrixFixtures } from './fixtures/fixture-corpus';
 
 describe('diagnostic taxonomy contract', () => {
@@ -183,39 +181,32 @@ describe('diagnostic taxonomy contract', () => {
     ]);
   });
 
-  it('freezes deferred scope and current lua fragment-routing behavior', () => {
+  it('freezes remaining deferred scope and current lua fragment-routing behavior', () => {
     expect(DEFERRED_SCOPE_CONTRACT).toEqual({
       deferredFeatures: [
-        'definition',
-        'references',
-        'rename',
-        'formatting',
+        'cross-language-code-action',
+        'cross-language-rename',
+        'cross-language-workspace-edit',
         'lua-ast-fragment-routing',
       ],
       featureAvailability: {
-        definition: {
+        'cross-language-code-action': {
           scope: 'deferred',
-          source: 'deferred-scope-contract:definition',
+          source: 'deferred-scope-contract:cross-language-code-action',
           detail:
-            'Definition provider exists but server capability stays deferred until workspace-level cross-file resolution is available.',
+            'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language code actions stay off until authoritative multi-file edit merge rules exist.',
         },
-        references: {
+        'cross-language-rename': {
           scope: 'deferred',
-          source: 'deferred-scope-contract:references',
+          source: 'deferred-scope-contract:cross-language-rename',
           detail:
-            'References provider exists but server capability stays deferred until workspace-level cross-file reference lookup is available.',
+            'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language rename stays off until authoritative multi-file edit merge rules exist.',
         },
-        rename: {
+        'cross-language-workspace-edit': {
           scope: 'deferred',
-          source: 'deferred-scope-contract:rename',
+          source: 'deferred-scope-contract:cross-language-workspace-edit',
           detail:
-            'Rename provider exists but server capability stays deferred until workspace-aware multi-document edits are supported.',
-        },
-        formatting: {
-          scope: 'deferred',
-          source: 'deferred-scope-contract:formatting',
-          detail:
-            'Formatting stays deferred until host-fragment patch semantics are safe for embedded CBS artifacts.',
+            'Scope honesty MVP keeps the Lua state bridge read-only: read-only bridge is on, while cross-language workspace edits stay off until authoritative multi-file edit merge rules exist.',
         },
         'lua-ast-fragment-routing': {
           scope: 'deferred',

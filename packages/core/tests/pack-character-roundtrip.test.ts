@@ -26,7 +26,10 @@ describe('pack.js character round-trip (canonical mode)', () => {
     writeFileSync(path.join(characterDir, 'description.txt'), 'canonical description', 'utf-8');
     writeFileSync(path.join(characterDir, 'first_mes.txt'), 'canonical first message', 'utf-8');
     writeFileSync(path.join(characterDir, 'system_prompt.txt'), 'canonical system prompt', 'utf-8');
-    writeFileSync(path.join(characterDir, 'post_history_instructions.txt'), 'canonical post history', 'utf-8');
+    writeFileSync(path.join(characterDir, 'replace_global_note.risutext'), 'canonical replace global note', 'utf-8');
+    // Old wrong filename must be ignored (no legacy fallback)
+    const legacyWrongTextFile = ['post_history', 'instructions.txt'].join('_');
+    writeFileSync(path.join(characterDir, legacyWrongTextFile), 'legacy wrong basename value', 'utf-8');
     writeFileSync(path.join(characterDir, 'creator_notes.txt'), 'canonical creator notes', 'utf-8');
     writeFileSync(path.join(characterDir, 'additional_text.txt'), 'canonical additional text', 'utf-8');
     writeFileSync(
@@ -90,7 +93,8 @@ describe('pack.js character round-trip (canonical mode)', () => {
     expect(packedCharx.data.description).toBe('canonical description');
     expect(packedCharx.data.first_mes).toBe('canonical first message');
     expect(packedCharx.data.system_prompt).toBe('canonical system prompt');
-    expect(packedCharx.data.post_history_instructions).toBe('canonical post history');
+    expect(packedCharx.data.replaceGlobalNote).toBe('canonical replace global note');
+    expect(packedCharx.data.replaceGlobalNote ?? '').not.toBe('legacy wrong basename value');
     expect(packedCharx.data.creator_notes).toBe('canonical creator notes');
     expect(packedCharx.data.extensions.risuai.additionalText).toBe('canonical additional text');
     expect(packedCharx.data.alternate_greetings).toEqual(['greeting one', 'greeting two']);

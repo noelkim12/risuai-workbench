@@ -8,6 +8,8 @@ import {
   mapPromptToCbsFragments,
   mapHtmlToCbsFragments,
   mapLuaToCbsFragments,
+  mapTextToCbsFragments,
+  mapLuaWasmStringLiteralsToCbsFragments,
   mapNonCbsToFragments,
   getCbsArtifactExtension,
   isCbsBearingFile,
@@ -19,12 +21,14 @@ import type { CustomExtensionArtifact } from '../../src/domain/custom-extension/
 
 describe('CBS Fragment Mapping', () => {
   describe('artifact classification', () => {
-    it('classifies lorebook, regex, prompt, html, lua as CBS-bearing', () => {
+    it('classifies lorebook, regex, prompt, html, lua, text as CBS-bearing', () => {
       expect(CBS_BEARING_ARTIFACTS).toContain('lorebook');
       expect(CBS_BEARING_ARTIFACTS).toContain('regex');
       expect(CBS_BEARING_ARTIFACTS).toContain('prompt');
       expect(CBS_BEARING_ARTIFACTS).toContain('html');
       expect(CBS_BEARING_ARTIFACTS).toContain('lua');
+      expect(CBS_BEARING_ARTIFACTS).toContain('text');
+      expect(CBS_BEARING_ARTIFACTS).not.toContain('risuchar');
     });
 
     it('classifies toggle and variable as non-CBS', () => {
@@ -38,6 +42,7 @@ describe('CBS Fragment Mapping', () => {
       expect(isCbsBearingArtifact('prompt')).toBe(true);
       expect(isCbsBearingArtifact('html')).toBe(true);
       expect(isCbsBearingArtifact('lua')).toBe(true);
+      expect(isCbsBearingArtifact('text')).toBe(true);
     });
 
     it('isCbsBearingArtifact returns false for non-CBS types', () => {
@@ -64,6 +69,7 @@ describe('CBS Fragment Mapping', () => {
       expect(getCbsArtifactExtension('prompt')).toBe('.risuprompt');
       expect(getCbsArtifactExtension('html')).toBe('.risuhtml');
       expect(getCbsArtifactExtension('lua')).toBe('.risulua');
+      expect(getCbsArtifactExtension('text')).toBe('.risutext');
     });
   });
 
@@ -74,16 +80,19 @@ describe('CBS Fragment Mapping', () => {
       expect(isCbsBearingFile('prompt_template/item.risuprompt')).toBe(true);
       expect(isCbsBearingFile('html/background.risuhtml')).toBe(true);
       expect(isCbsBearingFile('lua/script.risulua')).toBe(true);
+      expect(isCbsBearingFile('text/profile.risutext')).toBe(true);
     });
 
     it('returns false for non-CBS file paths', () => {
       expect(isCbsBearingFile('toggle/module.risutoggle')).toBe(false);
       expect(isCbsBearingFile('variables/default.risuvar')).toBe(false);
+      expect(isCbsBearingFile('character/main.risuchar')).toBe(false);
     });
 
     it('is case-insensitive', () => {
       expect(isCbsBearingFile('lorebooks/entry.RISULOREBOOK')).toBe(true);
       expect(isCbsBearingFile('regex/script.Risuregex')).toBe(true);
+      expect(isCbsBearingFile('text/profile.RISUTEXT')).toBe(true);
     });
   });
 
@@ -570,6 +579,89 @@ end
     });
   });
 
+  describe('mapTextToCbsFragments', () => {
+    it('maps entire .risutext file body to one TEXT fragment', () => {
+      const content = `Plain character text
+{{getvar::tone}}
+@@@ NOT_A_SECTION
+kept verbatim`;
+
+      const result = mapTextToCbsFragments(content);
+
+      expect(result.artifact).toBe('text');
+      expect(result.fileLength).toBe(content.length);
+      expect(result.fragments).toEqual([
+        {
+          section: 'TEXT',
+          start: 0,
+          end: content.length,
+          content,
+        },
+      ]);
+    });
+
+    it('preserves frontmatter-like text as plain body content', () => {
+      const content = `---
+name: not metadata
+---
+{{user}}`;
+
+      const result = mapTextToCbsFragments(content);
+
+      expect(result.fragments).toHaveLength(1);
+      expect(result.fragments[0].section).toBe('TEXT');
+      expect(result.fragments[0].content).toBe(content);
+      expect(result.fragments[0].start).toBe(0);
+      expect(result.fragments[0].end).toBe(content.length);
+    });
+  });
+
+  describe('mapLuaWasmStringLiteralsToCbsFragments', () => {
+    it('maps only CBS-bearing Lua string literal contents to fragments', () => {
+      const source = 'local a = "plain"\nlocal b = "hello {{user}}"\n';
+      const cbsContentStart = source.indexOf('hello {{user}}');
+      const cbsContentEnd = cbsContentStart + 'hello {{user}}'.length;
+      const plainContentStart = source.indexOf('plain');
+      const plainContentEnd = plainContentStart + 'plain'.length;
+
+      const fragmentMap = mapLuaWasmStringLiteralsToCbsFragments(source, [
+        {
+          startUtf16: plainContentStart - 1,
+          endUtf16: plainContentEnd + 1,
+          contentStartUtf16: plainContentStart,
+          contentEndUtf16: plainContentEnd,
+          startByte: plainContentStart - 1,
+          endByte: plainContentEnd + 1,
+          contentStartByte: plainContentStart,
+          contentEndByte: plainContentEnd,
+          quoteKind: 'double',
+          hasCbsMarker: false,
+        },
+        {
+          startUtf16: cbsContentStart - 1,
+          endUtf16: cbsContentEnd + 1,
+          contentStartUtf16: cbsContentStart,
+          contentEndUtf16: cbsContentEnd,
+          startByte: cbsContentStart - 1,
+          endByte: cbsContentEnd + 1,
+          contentStartByte: cbsContentStart,
+          contentEndByte: cbsContentEnd,
+          quoteKind: 'double',
+          hasCbsMarker: true,
+        },
+      ]);
+
+      expect(fragmentMap.artifact).toBe('lua');
+      expect(fragmentMap.fragments).toHaveLength(1);
+      expect(fragmentMap.fragments[0]).toMatchObject({
+        section: 'lua-string:1',
+        start: cbsContentStart,
+        end: cbsContentEnd,
+        content: 'hello {{user}}',
+      });
+    });
+  });
+
   describe('mapNonCbsToFragments', () => {
     it('returns empty fragments for toggle (explicitly non-CBS)', () => {
       const content = `some toggle DSL content
@@ -666,6 +758,28 @@ content
 
       expect(result.artifact).toBe('lua');
       expect(result.fragments).toHaveLength(1);
+    });
+
+    it('routes text to mapTextToCbsFragments', () => {
+      const content = 'full text body {{user}}';
+
+      const result = mapToCbsFragments('text', content);
+
+      expect(result.artifact).toBe('text');
+      expect(result.fragments).toEqual([
+        {
+          section: 'TEXT',
+          start: 0,
+          end: content.length,
+          content,
+        },
+      ]);
+    });
+
+    it('does not route .risuchar as a custom-extension artifact', () => {
+      expect(() => mapToCbsFragments('risuchar' as CustomExtensionArtifact, 'content')).toThrow(
+        CbsFragmentMappingError,
+      );
     });
 
     it('routes toggle to mapNonCbsToFragments (empty result)', () => {

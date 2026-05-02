@@ -7,13 +7,15 @@ import {
   FragmentAnalysisService,
   fragmentAnalysisService,
 } from '../src/core';
+import { MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH } from '../src/indexer';
 import { DiagnosticCode } from '../src/analyzer/diagnostics';
-import { routeDiagnosticsForDocument } from '../src/diagnostics-router';
+import { routeDiagnosticsForDocument } from '../src/utils/diagnostics-router';
 import {
   createFixtureRequest,
   getFixtureCorpusEntry,
   listMatrixFixtures,
 } from './fixtures/fixture-corpus';
+import { offsetToPosition } from '../src/utils/position';
 
 const serviceFixtures = listMatrixFixtures('service');
 const supportedServiceFixtures = serviceFixtures.filter(
@@ -31,6 +33,23 @@ function createCancellationToken(cancelled: boolean = false): CancellationToken 
       dispose() {},
     }),
   };
+}
+
+function locateOffset(text: string, needle: string, characterOffset: number = 0, occurrence: number = 0) {
+  let fromIndex = 0;
+  let foundIndex = -1;
+
+  for (let index = 0; index <= occurrence; index += 1) {
+    foundIndex = text.indexOf(needle, fromIndex);
+    if (foundIndex === -1) {
+      break;
+    }
+
+    fromIndex = foundIndex + needle.length;
+  }
+
+  expect(foundIndex).toBeGreaterThanOrEqual(0);
+  return foundIndex + characterOffset;
 }
 
 afterEach(() => {
@@ -109,9 +128,9 @@ describe('FragmentAnalysisService', () => {
 
     expect(first).toBe(second);
     expect(nextVersion).not.toBe(first);
-      expect(service.getCachedAnalysis(request.uri, request.version)).toBeNull();
-      expect(service.getCachedAnalysis(request.uri, 8)).toBe(nextVersion);
-    });
+    expect(service.getCachedAnalysis(request.uri, request.version)).toBeNull();
+    expect(service.getCachedAnalysis(request.uri, 8)).toBe(nextVersion);
+  });
 
   it('replaces stale cache entries when the same uri/version receives different text', () => {
     const service = new FragmentAnalysisService();
@@ -130,6 +149,55 @@ describe('FragmentAnalysisService', () => {
     expect(second).not.toBe(first);
     expect(service.getCachedAnalysis(firstRequest.uri, firstRequest.version)).toBe(second);
     expect(second?.cache.textSignature).toBe(createSyntheticDocumentVersion(secondText));
+  });
+
+  it('reuses the cached document state for repeated position lookups and replaces it after a version change', () => {
+    const service = new FragmentAnalysisService();
+    const parseSpy = vi.spyOn(core.CBSParser.prototype, 'parse');
+    const entry = getFixtureCorpusEntry('regex-basic');
+    const firstRequest = createFixtureRequest(entry, 1);
+    const secondText = entry.text.replace('Hi {{char}}', 'Hi {{user}}');
+    const secondRequest = {
+      ...firstRequest,
+      version: 2,
+      text: secondText,
+    };
+
+    const firstAnalysis = service.analyzeDocument(firstRequest);
+    const firstLookup = service.locatePosition(
+      firstRequest,
+      offsetToPosition(entry.text, locateOffset(entry.text, 'user', 1)),
+    );
+    const secondLookup = service.locatePosition(
+      firstRequest,
+      offsetToPosition(entry.text, locateOffset(entry.text, 'char', 1)),
+    );
+
+    expect(firstAnalysis).not.toBeNull();
+    expect(firstLookup).not.toBeNull();
+    expect(secondLookup).not.toBeNull();
+    expect(parseSpy).toHaveBeenCalledTimes(2);
+    expect(service.getCachedAnalysis(firstRequest.uri, 1)).toBe(firstAnalysis);
+    expect(firstLookup?.fragmentAnalysis).toBe(firstAnalysis?.fragmentAnalyses[0]);
+    expect(secondLookup?.fragmentAnalysis).toBe(firstAnalysis?.fragmentAnalyses[1]);
+    expect(firstLookup?.fragmentAnalysis.document).toBe(firstAnalysis?.fragmentAnalyses[0]?.document);
+    expect(secondLookup?.fragmentAnalysis.document).toBe(firstAnalysis?.fragmentAnalyses[1]?.document);
+
+    const refreshedAnalysis = service.analyzeDocument(secondRequest);
+    const refreshedLookup = service.locatePosition(
+      secondRequest,
+      offsetToPosition(secondText, locateOffset(secondText, 'user', 1, 1)),
+    );
+
+    expect(refreshedAnalysis).not.toBeNull();
+    expect(refreshedAnalysis).not.toBe(firstAnalysis);
+    expect(parseSpy).toHaveBeenCalledTimes(3);
+    expect(service.getCachedAnalysis(firstRequest.uri, 1)).toBeNull();
+    expect(service.getCachedAnalysis(firstRequest.uri, 2)).toBe(refreshedAnalysis);
+    expect(refreshedLookup?.fragmentAnalysis).toBe(refreshedAnalysis?.fragmentAnalyses[1]);
+    expect(refreshedLookup?.fragmentAnalysis.document).toBe(refreshedAnalysis?.fragmentAnalyses[1]?.document);
+    expect(refreshedLookup?.fragmentAnalysis.document).not.toBe(firstAnalysis?.fragmentAnalyses[1]?.document);
+    expect(refreshedLookup?.fragmentAnalysis.tokens).not.toBe(firstAnalysis?.fragmentAnalyses[1]?.tokens);
   });
 
   it('reuses unchanged fragment analyses across versions of a multi-fragment document', () => {
@@ -212,6 +280,34 @@ describe('FragmentAnalysisService', () => {
     expect(service.getCachedAnalysis(`file://${filePath}`, version)).toBeNull();
   });
 
+  it('returns lightweight empty analysis for oversized .risulua without parsing CBS', () => {
+    const service = new FragmentAnalysisService();
+    const parseSpy = vi.spyOn(core.CBSParser.prototype, 'parse');
+    const text = `{{user}}${'x'.repeat(MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH + 1)}`;
+    const request = {
+      uri: 'file:///workspace/lua/huge.risulua',
+      version: 1,
+      filePath: '/workspace/lua/huge.risulua',
+      text,
+    };
+
+    const analysis = service.analyzeDocument(request);
+    const lookup = service.locatePosition(request, { line: 0, character: 2 });
+
+    expect(analysis).not.toBeNull();
+    expect(analysis?.artifact).toBe('lua');
+    expect(analysis?.fragmentMap).toEqual({
+      artifact: 'lua',
+      fragments: [],
+      fileLength: text.length,
+    });
+    expect(analysis?.fragmentAnalyses).toEqual([]);
+    expect(analysis?.diagnostics).toEqual([]);
+    expect(analysis?.cache.textSignature).toBe(`oversized-lua:${text.length}`);
+    expect(lookup).toBeNull();
+    expect(parseSpy).not.toHaveBeenCalled();
+  });
+
   it('does not cache analysis when the request is already cancelled', () => {
     const service = new FragmentAnalysisService();
     const entry = getFixtureCorpusEntry('lorebook-basic');
@@ -230,6 +326,7 @@ describe('FragmentAnalysisService', () => {
 
     routeDiagnosticsForDocument(entry.filePath, entry.text, {}, { uri: entry.uri, version });
 
+    expect(analyzeSpy).toHaveBeenCalledTimes(1);
     expect(analyzeSpy).toHaveBeenCalledWith({
       uri: entry.uri,
       version,

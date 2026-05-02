@@ -2,7 +2,7 @@ import type { CbsFragment, Range } from 'risu-workbench-core';
 import { describe, expect, it } from 'vitest';
 
 import { createFragmentOffsetMapper } from '../src/core';
-import { createDiagnosticForFragment, mapDocumentToCbsFragments } from '../src/diagnostics-router';
+import { createDiagnosticForFragment, mapDocumentToCbsFragments } from '../src/utils/diagnostics-router';
 import { getFixtureCorpusEntry } from './fixtures/fixture-corpus';
 
 function getFragment(
@@ -100,6 +100,46 @@ describe('fragment position remap', () => {
       start: { line: 4, character: 2 },
       end: { line: 4, character: 10 },
     });
+  });
+
+  it('round-trips mixed Hangul and emoji ranges with UTF-16 columns', () => {
+    const documentContent = ['---', 'name: entry', '---', '@@@ CONTENT', '한🙂{{기분}}🎉', ''].join('\n');
+    const fragmentMap = mapDocumentToCbsFragments('/fixtures/unicode-range.risulorebook', documentContent);
+
+    expect(fragmentMap).not.toBeNull();
+
+    const fragment = fragmentMap?.fragments[0] as CbsFragment;
+    const mapper = createFragmentOffsetMapper(fragment);
+    const macroStart = fragment.content.indexOf('{{기분}}');
+    const macroEnd = macroStart + '{{기분}}'.length;
+    const hostRange = {
+      start: { line: 4, character: 3 },
+      end: { line: 4, character: 9 },
+    };
+
+    expect(fragment.content).toBe('한🙂{{기분}}🎉');
+    expect(mapper.toHostPosition(documentContent, macroStart)).toEqual(hostRange.start);
+    expect(mapper.toHostRangeFromOffsets(documentContent, macroStart, macroEnd)).toEqual(hostRange);
+    expect(mapper.toLocalPosition(documentContent, hostRange.start)).toEqual({
+      line: 0,
+      character: 3,
+    });
+    expect(mapper.toLocalRange(documentContent, hostRange)).toEqual({
+      start: { line: 0, character: 3 },
+      end: { line: 0, character: 9 },
+    });
+
+    const diagnostic = createDiagnosticForFragment(
+      documentContent,
+      fragment,
+      'Unicode range diagnostic',
+      'error',
+      'CBS-UNICODE',
+      macroStart,
+      macroEnd,
+    );
+
+    expect(diagnostic.range).toEqual(hostRange);
   });
 
   it('disambiguates duplicate fragment text via fragment metadata in multi-fragment documents', () => {

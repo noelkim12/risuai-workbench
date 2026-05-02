@@ -3,6 +3,23 @@ import { CardPanel } from '../panels/card-panel';
 import { AnalysisService } from '../services/analysis-service';
 import { CardService } from '../services/card-service';
 import { CoreCliService } from '../services/core-cli-service';
+import {
+  buildCbsActivationQuickPickItems,
+  CBS_ACTIVATION_SUMMARY_COMMAND,
+  type CbsActivationCodeLensPayload,
+  type CbsActivationQuickPickItemModel,
+} from '../lsp/cbsActivationCodeLens';
+import { CBS_OCCURRENCE_NAVIGATION_COMMAND } from '../lsp/cbsLanguageClient';
+import { RISU_LUALS_STUB_COMMAND, installRisuLuaWorkspaceStubs } from '../luals/risuLuaStubs';
+import { RISU_CHARACTER_SELECT_IMAGE_COMMAND, selectCharacterImage } from './characterImage';
+
+interface CbsOccurrenceNavigationTarget {
+  uri?: string;
+  range?: {
+    start?: { line?: number; character?: number };
+    end?: { line?: number; character?: number };
+  };
+}
 
 export function registerCoreCommands(
   context: vscode.ExtensionContext,
@@ -95,12 +112,113 @@ export function registerCoreCommands(
         `${summary.name} — lorebook ${summary.lorebookEntries}, scripts ${summary.customScripts}`,
       );
     }),
+    vscode.commands.registerCommand(RISU_CHARACTER_SELECT_IMAGE_COMMAND, async (uri?: vscode.Uri) => {
+      await selectCharacterImage(uri);
+    }),
     vscode.commands.registerCommand('risuWorkbench.openCardPanel', () => {
       CardPanel.createOrShow(context);
     }),
+    vscode.commands.registerCommand(RISU_LUALS_STUB_COMMAND, async () => {
+      await generateRisuLuaStubs(output);
+    }),
+    vscode.commands.registerCommand(
+      CBS_OCCURRENCE_NAVIGATION_COMMAND,
+      async (target?: CbsOccurrenceNavigationTarget) => {
+        await openCbsOccurrence(target);
+      },
+    ),
+    vscode.commands.registerCommand(
+      CBS_ACTIVATION_SUMMARY_COMMAND,
+      async (payload?: CbsActivationCodeLensPayload) => {
+        await showCbsActivationSummary(payload);
+      },
+    ),
   ];
 
   return vscode.Disposable.from(...commands, output);
+}
+
+async function generateRisuLuaStubs(output: vscode.OutputChannel): Promise<void> {
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+  if (!workspaceFolder) {
+    void vscode.window.showWarningMessage(
+      'Open a workspace folder before generating RisuAI Lua stubs.',
+    );
+    return;
+  }
+
+  try {
+    const result = await installRisuLuaWorkspaceStubs(workspaceFolder);
+    output.appendLine(`[Risu Workbench] Generated RisuAI LuaLS stub: ${result.stubFilePath}`);
+    output.appendLine(`[Risu Workbench] Added Lua.workspace.library path: ${result.stubRootPath}`);
+    void vscode.window.showInformationMessage(
+      'RisuAI LuaLS stubs generated. Reload the Lua language server if hover does not update immediately.',
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    output.appendLine(`[Risu Workbench] Failed to generate RisuAI LuaLS stubs: ${message}`);
+    void vscode.window.showErrorMessage(`Failed to generate RisuAI LuaLS stubs: ${message}`);
+  }
+}
+
+async function showCbsActivationSummary(payload?: CbsActivationCodeLensPayload): Promise<void> {
+  const items = buildCbsActivationQuickPickItems(payload).map(toVsCodeActivationQuickPickItem);
+  const selected = await vscode.window.showQuickPick(items, {
+    title: 'Lorebook activation links',
+    placeHolder: '이동할 활성화 관계 엔트리를 선택하세요.',
+    ignoreFocusOut: false,
+  });
+
+  if (!selected?.target) {
+    return;
+  }
+
+  await openCbsOccurrence(selected.target);
+}
+
+function toVsCodeActivationQuickPickItem(
+  item: CbsActivationQuickPickItemModel,
+): vscode.QuickPickItem & { target?: CbsOccurrenceNavigationTarget } {
+  if (item.kind === 'separator') {
+    return {
+      kind: vscode.QuickPickItemKind.Separator,
+      label: item.label,
+    };
+  }
+
+  return {
+    label: item.label,
+    description: item.description,
+    detail: item.detail,
+    target: item.target,
+  };
+}
+
+async function openCbsOccurrence(target?: CbsOccurrenceNavigationTarget): Promise<void> {
+  if (!target?.uri || !target.range?.start) {
+    void vscode.window.showWarningMessage('CBS occurrence location is unavailable.');
+    return;
+  }
+
+  const targetUri = vscode.Uri.parse(target.uri);
+  if (targetUri.scheme !== 'file') {
+    void vscode.window.showWarningMessage(
+      'CBS occurrence navigation only supports local file targets.',
+    );
+    return;
+  }
+
+  const startLine = Math.max(0, target.range.start.line ?? 0);
+  const startCharacter = Math.max(0, target.range.start.character ?? 0);
+  const endLine = Math.max(startLine, target.range.end?.line ?? startLine);
+  const endCharacter = Math.max(0, target.range.end?.character ?? startCharacter);
+  const selection = new vscode.Range(
+    new vscode.Position(startLine, startCharacter),
+    new vscode.Position(endLine, endCharacter),
+  );
+
+  const document = await vscode.workspace.openTextDocument(targetUri);
+  await vscode.window.showTextDocument(document, { selection });
 }
 
 function workspaceRoot(): string | undefined {
