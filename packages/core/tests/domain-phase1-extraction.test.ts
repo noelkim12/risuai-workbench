@@ -9,6 +9,9 @@ import {
   collectRegexCBSFromCharx,
   parseDefaultVariablesJson,
   parseDefaultVariablesText,
+  extractCBSVariableOccurrences,
+  extractCBSVarOps,
+  type CBSVariableOccurrence,
 } from '@/domain';
 
 describe('Phase 1-1 domain extraction', () => {
@@ -141,5 +144,165 @@ describe('domain purity guard', () => {
         expect(source).not.toMatch(pattern);
       }
     }
+  });
+});
+
+describe('CBS variable occurrence extraction', () => {
+  it('extracts exact occurrence metadata with direction and range', () => {
+    const text = '{{getvar::hp}} {{setvar::mp::10}}';
+    const occurrences = extractCBSVariableOccurrences(text);
+
+    expect(occurrences).toHaveLength(2);
+
+    // First occurrence: getvar (read)
+    expect(occurrences[0].variableName).toBe('hp');
+    expect(occurrences[0].direction).toBe('read');
+    expect(occurrences[0].operation).toBe('getvar');
+    expect(occurrences[0].range).toBeDefined();
+    expect(occurrences[0].keyStart).toBeDefined();
+    expect(occurrences[0].keyEnd).toBeDefined();
+
+    // Second occurrence: setvar (write)
+    expect(occurrences[1].variableName).toBe('mp');
+    expect(occurrences[1].direction).toBe('write');
+    expect(occurrences[1].operation).toBe('setvar');
+  });
+
+  it('handles all supported variable operations', () => {
+    const text = '{{getvar::a}} {{setvar::b::1}} {{addvar::c::2}} {{setdefaultvar::d::3}}';
+    const occurrences = extractCBSVariableOccurrences(text);
+
+    expect(occurrences).toHaveLength(4);
+    expect(occurrences[0]).toMatchObject({ variableName: 'a', direction: 'read', operation: 'getvar' });
+    expect(occurrences[1]).toMatchObject({ variableName: 'b', direction: 'write', operation: 'setvar' });
+    expect(occurrences[2]).toMatchObject({ variableName: 'c', direction: 'write', operation: 'addvar' });
+    expect(occurrences[3]).toMatchObject({ variableName: 'd', direction: 'write', operation: 'setdefaultvar' });
+  });
+
+  it('skips dynamic or non-plain keys deterministically', () => {
+    // Dynamic key with nested macro - inner dynamic key is extracted as separate occurrence
+    // but the outer macro with dynamic key is skipped
+    const textWithDynamic = '{{getvar::{{getvar::key}}}} {{setvar::static::value}}';
+    const occurrences = extractCBSVariableOccurrences(textWithDynamic);
+
+    // The inner {{getvar::key}} is a valid static occurrence
+    // The outer {{getvar::...}} has dynamic key so it's skipped
+    // The {{setvar::static::value}} is a valid static occurrence
+    expect(occurrences.some(o => o.variableName === 'key')).toBe(true);
+    expect(occurrences.some(o => o.variableName === 'static')).toBe(true);
+    // The outer dynamic macro should not create an occurrence
+    expect(occurrences.some(o => o.variableName === '{{getvar::key}}')).toBe(false);
+  });
+
+  it('provides accurate key ranges for exact local occurrence metadata', () => {
+    // text: '{{getvar::  health  }}'
+    //        01234567890123456789012
+    //        {{getvar::  health  }}
+    //        0         1         2
+    // Positions:
+    //        0-9:   '{{getvar::' (10 chars)
+    //        10-11: '  ' (2 leading spaces)
+    //        12-17: 'health' (6 chars, trimmed key)
+    //        18-19: '  ' (2 trailing spaces)
+    //        20-21: '}}' (2 chars)
+    // range.start: line 0, char 10 (after '{{getvar::')
+    // range.end: line 0, char 20 (before '}}')
+    // keyStart: line 0, char 12 (after '{{getvar::  ')
+    // keyEnd: line 0, char 18 (after 'health', before '  ')
+    const text = '{{getvar::  health  }}';
+    const occurrences = extractCBSVariableOccurrences(text);
+
+    expect(occurrences).toHaveLength(1);
+    expect(occurrences[0].variableName).toBe('health');
+
+    // Exact position assertions for trimmed key boundaries
+    const { keyStart, keyEnd, range } = occurrences[0];
+    expect(keyStart.line).toBe(0);
+    expect(keyStart.character).toBe(12); // after '{{getvar::' + 2 leading spaces
+    expect(keyEnd.line).toBe(0);
+    expect(keyEnd.character).toBe(18); // keyStart + 6 ('health') = 18
+
+    // Verify range encompasses the full argument including spaces
+    expect(range.start.line).toBe(0);
+    expect(range.start.character).toBe(10); // after '{{getvar::'
+    expect(range.end.line).toBe(0);
+    expect(range.end.character).toBe(20); // before '}}'
+  });
+
+  it('returns empty array for empty or non-string input', () => {
+    expect(extractCBSVariableOccurrences('')).toEqual([]);
+    expect(extractCBSVariableOccurrences('   ')).toEqual([]);
+    expect(extractCBSVariableOccurrences('no cbs here')).toEqual([]);
+  });
+
+  it('maintains backward compatibility with extractCBSVarOps', () => {
+    const text = '{{getvar::foo}} {{setvar::bar::1}} {{addvar::baz::2}}';
+
+    const occurrences = extractCBSVariableOccurrences(text);
+    const varOps = extractCBSVarOps(text);
+
+    // Verify that extractCBSVarOps derives from occurrence data
+    expect(varOps.reads.has('foo')).toBe(true);
+    expect(varOps.writes.has('bar')).toBe(true);
+    expect(varOps.writes.has('baz')).toBe(true);
+
+    // Verify consistency between both APIs
+    const occurrenceReads = new Set(occurrences.filter(o => o.direction === 'read').map(o => o.variableName));
+    const occurrenceWrites = new Set(occurrences.filter(o => o.direction === 'write').map(o => o.variableName));
+
+    expect(varOps.reads).toEqual(occurrenceReads);
+    expect(varOps.writes).toEqual(occurrenceWrites);
+  });
+
+  it('handles multiline CBS with accurate line positions', () => {
+    const text = '{{getvar::line1}}\n{{setvar::line2::val}}';
+    const occurrences = extractCBSVariableOccurrences(text);
+
+    expect(occurrences).toHaveLength(2);
+    expect(occurrences[0].variableName).toBe('line1');
+    expect(occurrences[0].range.start.line).toBe(0);
+    expect(occurrences[1].variableName).toBe('line2');
+    expect(occurrences[1].range.start.line).toBe(1);
+  });
+
+  it('provides exact positions for whitespace-padded keys across lines', () => {
+    // Multiline text with padded variable key
+    // Line 0: {{getvar::  padded
+    //         0123456789012345
+    //         {{getvar::  (12 chars: 0-11)
+    //         padded (6 chars: 12-17)
+    // Line 1: key  }}
+    //         012345
+    //         key  (5 chars: 0-4, includes 2 trailing spaces)
+    //         }} (2 chars: 5-6)
+    const text = '{{getvar::  padded\nkey  }}';
+    const occurrences = extractCBSVariableOccurrences(text);
+
+    expect(occurrences).toHaveLength(1);
+    expect(occurrences[0].variableName).toBe('padded\nkey');
+
+    const { keyStart, keyEnd, range } = occurrences[0];
+    // keyStart should be after '{{getvar::' + 2 spaces on line 0
+    expect(keyStart.line).toBe(0);
+    expect(keyStart.character).toBe(12); // after '{{getvar::  '
+    // keyEnd should be before 2 trailing spaces on line 1
+    expect(keyEnd.line).toBe(1);
+    expect(keyEnd.character).toBe(3); // 'key' ends at char 3 (3 chars: 0-2)
+
+    // Full range includes the padding
+    expect(range.start.line).toBe(0);
+    expect(range.start.character).toBe(10); // after '{{getvar::'
+    expect(range.end.line).toBe(1);
+    expect(range.end.character).toBe(5); // after 'key  ' (before '}}')
+  });
+
+  it('falls back to regex extraction on parse errors', () => {
+    // Malformed CBS that might cause parser issues
+    const text = '{{getvar::valid}} {{malformed';
+    const occurrences = extractCBSVariableOccurrences(text);
+
+    // Should still extract the valid occurrence via fallback
+    expect(occurrences.length).toBeGreaterThanOrEqual(1);
+    expect(occurrences.some(o => o.variableName === 'valid')).toBe(true);
   });
 });

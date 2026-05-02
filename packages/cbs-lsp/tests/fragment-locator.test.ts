@@ -115,6 +115,32 @@ describe('fragment locator', () => {
     expectMacroCall(resolved.nodeSpan, 'getvar');
   });
 
+  it('resolves nested getvar arguments inside #if inline math conditions', () => {
+    const service = new FragmentAnalysisService();
+    const text = '{{#if {{? {{getvar::ct_Deck_Level}} <= 2}}}}ok{{/if}}';
+    const request = {
+      uri: 'file:///workspace/nested-inline-math.risuhtml',
+      version: 1,
+      filePath: '/workspace/nested-inline-math.risuhtml',
+      text,
+    };
+    const position = positionAt(text, 'ct_Deck_Level', 3);
+
+    const resolved = expectLookup(service.locatePosition(request, position));
+
+    expect(resolved.section).toBe('full');
+    expect(resolved.token).toMatchObject({
+      category: 'argument',
+      token: {
+        type: TokenType.Argument,
+        value: 'ct_Deck_Level',
+      },
+    });
+    expect(resolved.nodeSpan?.category).toBe('argument');
+    expect(resolved.nodeSpan?.argumentIndex).toBe(0);
+    expectMacroCall(resolved.nodeSpan, 'getvar');
+  });
+
   it('classifies block header cursors in regex fragments', () => {
     const service = new FragmentAnalysisService();
     const entry = getFixtureCorpusEntry('regex-block-header');

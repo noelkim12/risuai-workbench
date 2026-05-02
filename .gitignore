@@ -25,6 +25,8 @@ tmp/
 
 ## Local agent/runtime artifacts
 .sisyphus/
+graphify-out/
+.code-review-graph/
 
 ## CLI package publishing/test artifacts
 *.tgz
@@ -39,7 +41,12 @@ playground/
 
 ## Monorepo build outputs
 packages/*/dist/
+packages/*/dist-tests/
 packages/*/node_modules/
+packages/lua-analyzer-wasm/pkg/
 
 ui-mockup
 .octto
+.tools/
+scripts/
+packages/vscode/.vscode-test/

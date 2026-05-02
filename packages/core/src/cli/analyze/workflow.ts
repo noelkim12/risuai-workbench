@@ -15,12 +15,9 @@ function runLuaAnalyze(argv: readonly string[]): number {
 
 /** Detect workspace type based on canonical markers instead of root JSON files. */
 function detectWorkspaceType(targetDir: string): 'charx' | 'module' | 'preset' | null {
-  // Check for module FIRST: metadata.json + lorebooks/ directory
+  // Check for module FIRST: .risumodule canonical marker
   // Module has stricter criteria and takes precedence over preset
-  if (
-    fs.existsSync(path.join(targetDir, 'metadata.json')) &&
-    fs.existsSync(path.join(targetDir, 'lorebooks'))
-  ) {
+  if (fs.existsSync(path.join(targetDir, '.risumodule'))) {
     return 'module';
   }
 
@@ -65,7 +62,7 @@ const HELP_TEXT = `
 
   Auto-detection (canonical workspaces):
     .lua/.risulua file → lua
-    directory          → detected by canonical markers (character/, lorebooks/, prompts/, metadata.json)
+    directory          → detected by canonical markers (character/, lorebooks/, prompts/, .risumodule, metadata.json)
     compose            → auto-detect 없음, --type compose로 명시
 
   Run 'risu-core analyze --type <type> --help' for type-specific help.
@@ -143,7 +140,7 @@ export function runAnalyzeWorkflow(argv: readonly string[]): number {
             console.error(`\n  ❌ Cannot detect workspace type for: ${target}`);
             console.error(`  Expected canonical markers:`);
             console.error(`    - Preset: metadata.json + prompts/ | prompt_template/ | regex/`);
-            console.error(`    - Module: metadata.json + lorebooks/`);
+            console.error(`    - Module: .risumodule`);
             console.error(`    - Charx:  character/ + lorebooks/\n`);
             return 1;
         }

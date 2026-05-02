@@ -54,13 +54,6 @@ const ALLOWED_PATHS = [
   // but we check it has the right canonical-first language
 ];
 
-/** Files that MUST be updated to canonical language */
-const ACTIVE_DOC_PATHS = [
-  'src/cli/CLI.md',
-  'src/cli/extract/workflow-output-structures.md',
-  'packages/cbs-lsp/README.md',
-];
-
 function* walkFiles(dir: string, extension: string): Generator<string> {
   if (!fs.existsSync(dir)) return;
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -126,9 +119,9 @@ describe('T16: No Root JSON Legacy Surface', () => {
       const content = fs.readFileSync(workflowPath, 'utf-8');
 
       // Should detect canonical markers (canonical-first is the active standard)
-      expect(content).toContain("fs.existsSync(path.join(targetDir, 'metadata.json'))");
+      expect(content).toContain("fs.existsSync(path.join(targetDir, '.risumodule'))");
       expect(content).toContain("fs.existsSync(path.join(targetDir, 'character'))");
-      expect(content).toContain("fs.existsSync(path.join(targetDir, 'lorebooks'))");
+      expect(content).toContain("fs.existsSync(path.join(targetDir, 'metadata.json'))");
 
       // T16 strict root-JSON eradication is deferred - runtime uses canonical-first exclusively
       // Docs may acknowledge deferred status, but runtime doesn't implement root-JSON fallback
@@ -261,9 +254,10 @@ describe('T16: No Root JSON Legacy Surface', () => {
       if (fs.existsSync(analyzeWorkflowPath)) {
         const content = fs.readFileSync(analyzeWorkflowPath, 'utf-8');
         
-        // Should check canonical markers exclusively
-        const hasCanonicalMarkers = content.includes('metadata.json') && 
-          (content.includes('character') || content.includes('lorebooks'));
+        // Should check module canonical marker separately from preset metadata.
+        const hasCanonicalMarkers = content.includes('.risumodule') &&
+          content.includes('metadata.json') &&
+          content.includes('character');
         
         // Runtime code should not implement root-JSON fallback logic
         // (docs may mention it as deferred, but runtime doesn't use it)

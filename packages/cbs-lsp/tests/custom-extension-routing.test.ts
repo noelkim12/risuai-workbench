@@ -5,7 +5,7 @@ import {
   shouldRouteForDiagnostics,
   SUPPORTED_CBS_EXTENSIONS,
   EXPLICITLY_IGNORED_EXTENSIONS,
-} from '../src/document-router'
+} from '../src/utils/document-router'
 
 describe('custom-extension routing', () => {
   describe('supported CBS-bearing files', () => {
@@ -28,6 +28,10 @@ describe('custom-extension routing', () => {
 
     it('recognizes .risulua as CBS-bearing', () => {
       expect(isCbsBearingFile('/path/to/triggerscript.risulua')).toBe(true)
+    })
+
+    it('recognizes .risutext as CBS-bearing', () => {
+      expect(isCbsBearingFile('/path/to/character/description.risutext')).toBe(true)
     })
 
     it('is case-insensitive for extensions', () => {
@@ -86,6 +90,10 @@ describe('custom-extension routing', () => {
       expect(getArtifactTypeFromPath('/path/to/script.risulua')).toBe('lua')
     })
 
+    it('resolves text artifact from risutext path', () => {
+      expect(getArtifactTypeFromPath('/path/to/character/description.risutext')).toBe('text')
+    })
+
     it('returns null for ignored extensions', () => {
       expect(getArtifactTypeFromPath('/path/to/toggle.risutoggle')).toBeNull()
       expect(getArtifactTypeFromPath('/path/to/vars.risuvar')).toBeNull()
@@ -103,6 +111,11 @@ describe('custom-extension routing', () => {
       expect(SUPPORTED_CBS_EXTENSIONS).toContain('.risuprompt')
       expect(SUPPORTED_CBS_EXTENSIONS).toContain('.risuhtml')
       expect(SUPPORTED_CBS_EXTENSIONS).toContain('.risulua')
+      expect(SUPPORTED_CBS_EXTENSIONS).toContain('.risutext')
+    })
+
+    it('routes .risutext files for diagnostics', () => {
+      expect(shouldRouteForDiagnostics('/path/to/character/description.risutext')).toBe(true)
     })
 
     it('does not contain ignored extensions', () => {

@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { afterEach, describe, expect, it } from 'vitest'
 import { getCustomExtensionArtifactContract, type CustomExtensionArtifact } from 'risu-workbench-core'
 
+import { CbsLspPathHelper } from '../../src/helpers/path-helper'
 import { FileScanner } from '../../src/indexer'
 import { getFixtureCorpusEntry, type FixtureCorpusEntry } from '../fixtures/fixture-corpus'
 
@@ -87,16 +88,19 @@ describe('FileScanner', () => {
       getFixtureCorpusEntry('toggle-excluded'),
       getFixtureCorpusEntry('variable-excluded'),
     ]
+    const textArtifactPath = path.join(root, 'character', 'description.risutext')
 
     await Promise.all(entries.map((entry) => writeFixtureToWorkspace(root, entry)))
+    await mkdir(path.dirname(textArtifactPath), { recursive: true })
+    await writeFile(textArtifactPath, 'Hello {{user}}', 'utf8')
 
     const result = await new FileScanner(root).scan()
 
     expect(result.summary).toEqual({
-      totalFiles: 7,
-      cbsBearingFiles: 5,
+      totalFiles: 8,
+      cbsBearingFiles: 6,
       nonCbsFiles: 2,
-      filesWithCbsFragments: 5,
+      filesWithCbsFragments: 6,
       byArtifact: {
         lorebook: 1,
         regex: 1,
@@ -105,11 +109,12 @@ describe('FileScanner', () => {
         toggle: 1,
         variable: 1,
         html: 1,
+        text: 1,
       },
     })
-    expect(result.cbsBearingFiles).toHaveLength(5)
+    expect(result.cbsBearingFiles).toHaveLength(6)
     expect(result.nonCbsFiles).toHaveLength(2)
-    expect(result.filesWithCbsFragments).toHaveLength(5)
+    expect(result.filesWithCbsFragments).toHaveLength(6)
 
     expect(result.filesByArtifact.get('lorebook')).toMatchObject([
       {
@@ -143,6 +148,16 @@ describe('FileScanner', () => {
       {
         artifact: 'lua',
         fragmentSections: ['full'],
+      },
+    ])
+    expect(result.filesByArtifact.get('text')).toMatchObject([
+      {
+        artifact: 'text',
+        artifactClass: 'cbs-bearing',
+        cbsBearingArtifact: true,
+        hasCbsFragments: true,
+        fragmentCount: 1,
+        fragmentSections: ['TEXT'],
       },
     ])
     expect(result.filesByArtifact.get('toggle')).toMatchObject([
@@ -200,7 +215,44 @@ describe('FileScanner', () => {
         toggle: 0,
         variable: 0,
         html: 0,
+        text: 0,
       },
+    })
+  })
+
+  it('recognizes .risuchar as a root marker without scanning it as CBS source', async () => {
+    const root = await createWorkspaceRoot()
+    const markerPath = path.join(root, '.risuchar')
+    const textArtifactPath = path.join(root, 'character', 'first_mes.risutext')
+
+    await mkdir(path.dirname(textArtifactPath), { recursive: true })
+    await writeFile(markerPath, '{"kind":"risu.character","schemaVersion":1}', 'utf8')
+    await writeFile(textArtifactPath, '{{unknown_function::arg}}', 'utf8')
+
+    const result = await new FileScanner(root).scan()
+
+    expect(CbsLspPathHelper.resolveWorkspaceRootFromFilePath(markerPath)).toBe(root)
+    expect(result.files.map((file) => file.relativePath)).toEqual(['character/first_mes.risutext'])
+    expect(result.summary).toEqual({
+      totalFiles: 1,
+      cbsBearingFiles: 1,
+      nonCbsFiles: 0,
+      filesWithCbsFragments: 1,
+      byArtifact: {
+        lorebook: 0,
+        regex: 0,
+        lua: 0,
+        prompt: 0,
+        toggle: 0,
+        variable: 0,
+        html: 0,
+        text: 1,
+      },
+    })
+    expect(result.files[0]).toMatchObject({
+      artifact: 'text',
+      fragmentCount: 1,
+      fragmentSections: ['TEXT'],
     })
   })
 
@@ -225,5 +277,21 @@ describe('FileScanner', () => {
       'regex/happy-script.risuregex',
     ])
     expect(result.files.every((file) => file.uri.startsWith('file://'))).toBe(true)
+  })
+
+  it('skips dependency and build output directories during recursive scans', async () => {
+    const root = await createWorkspaceRoot()
+    const entry = getFixtureCorpusEntry('lorebook-basic')
+    const ignoredPath = path.join(root, 'node_modules', 'pkg', 'ignored.risulorebook')
+
+    await writeFixtureToWorkspace(root, entry)
+    await mkdir(path.dirname(ignoredPath), { recursive: true })
+    await writeFile(ignoredPath, entry.text, 'utf8')
+
+    const result = await new FileScanner(root).scan()
+
+    expect(result.files.map((file) => file.relativePath)).toEqual([
+      'lorebooks/happy-entry.risulorebook',
+    ])
   })
 })

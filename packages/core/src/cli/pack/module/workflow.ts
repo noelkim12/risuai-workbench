@@ -34,6 +34,10 @@ import {
 } from '@/domain/custom-extension/extensions/toggle';
 import { sanitizeFilename } from '../../../utils/filenames';
 import { argValue } from '../utils';
+import {
+  readRisumoduleManifest,
+  applyRisumoduleToModule,
+} from '@/cli/shared/risumodule';
 
 const HELP_TEXT = `
   📦 RisuAI Module Packer
@@ -90,16 +94,16 @@ export function buildModuleFromCanonicalDirectory(inRoot: string): {
   module: Record<string, unknown>;
   assetBuffers: Array<Buffer | null>;
 } {
-  const metadata = readMetadata(path.join(inRoot, 'metadata.json'));
+  const manifest = readRisumoduleManifest(inRoot);
   const moduleObj: Record<string, unknown> = {};
 
-  applyMetadata(moduleObj, metadata);
+  applyRisumoduleToModule(moduleObj, manifest);
   mergeLorebooks(moduleObj, inRoot);
   mergeRegex(moduleObj, inRoot);
   mergeLua(moduleObj, inRoot);
   mergeVariables(moduleObj, inRoot);
   mergeBackgroundHtml(moduleObj, inRoot);
-  mergeToggle(moduleObj, inRoot, metadata);
+  mergeToggle(moduleObj, inRoot);
 
   const assets = mergeAssets(moduleObj, inRoot);
   return { module: moduleObj, assetBuffers: assets.buffers };
@@ -184,41 +188,6 @@ function resolveOutputPath(params: {
   const finalName = parsed.name || `${defaultBase}_repack`;
   const finalExt = parsed.ext || ext;
   return { outPath: path.join(parsed.dir || '.', `${finalName}${finalExt}`), baseName: finalName };
-}
-
-function readMetadata(metadataPath: string): Record<string, unknown> {
-  if (!fs.existsSync(metadataPath)) {
-    return {};
-  }
-
-  const parsed = JSON.parse(fs.readFileSync(metadataPath, 'utf-8')) as unknown;
-  if (!isPlainObject(parsed)) {
-    throw new Error(`잘못된 metadata.json 형식: ${metadataPath}`);
-  }
-
-  return parsed;
-}
-
-function applyMetadata(moduleObj: Record<string, unknown>, metadata: Record<string, unknown>): void {
-  const stringFields = ['name', 'description', 'id', 'namespace', 'cjs'] as const;
-  for (const field of stringFields) {
-    const value = metadata[field];
-    if (typeof value === 'string') {
-      moduleObj[field] = value;
-    }
-  }
-
-  if (typeof metadata.lowLevelAccess === 'boolean') {
-    moduleObj.lowLevelAccess = metadata.lowLevelAccess;
-  }
-
-  if (typeof metadata.hideIcon === 'boolean') {
-    moduleObj.hideIcon = metadata.hideIcon;
-  }
-
-  if (isPlainObject(metadata.mcp)) {
-    moduleObj.mcp = metadata.mcp;
-  }
 }
 
 function mergeLorebooks(moduleObj: Record<string, unknown>, inRoot: string): void {
@@ -326,7 +295,6 @@ function mergeBackgroundHtml(moduleObj: Record<string, unknown>, inRoot: string)
 function mergeToggle(
   moduleObj: Record<string, unknown>,
   inRoot: string,
-  metadata: Record<string, unknown>,
 ): void {
   const toggleDir = path.join(inRoot, 'toggle');
   const sources = isDir(toggleDir)
@@ -337,22 +305,9 @@ function mergeToggle(
       }))
     : [];
 
-  const metadataToggle = metadata.customModuleToggle;
-  if (typeof metadataToggle === 'string') {
-    sources.push({
-      target: 'module' as const,
-      source: 'metadata.json',
-      content: parseToggleContent(metadataToggle),
-    });
-  }
-
   if (sources.length === 0) {
     injectToggleIntoModule(moduleObj, null, 'module');
     return;
-  }
-
-  if (sources.length === 1 && sources[0].source === 'metadata.json') {
-    throw new Error('metadata.json cannot own customModuleToggle. Use toggle/*.risutoggle instead.');
   }
 
   const resolved = resolveDuplicateToggleSources(sources);

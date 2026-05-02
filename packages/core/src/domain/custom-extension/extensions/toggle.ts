@@ -6,6 +6,14 @@ import type { CustomExtensionTarget } from '../contracts';
  */
 export type ToggleContent = string;
 
+export interface ToggleDefinition {
+  name: string;
+  globalVariableName: string;
+  line: number;
+  startOffset: number;
+  endOffset: number;
+}
+
 /**
  * Supported targets for .risutoggle artifacts.
  * Per spec: module and preset only. Charx is explicitly excluded.
@@ -43,6 +51,46 @@ export function parseToggleContent(rawContent: string): ToggleContent {
   // Preserve exact content including empty strings, multiline DSL, whitespace
   // No trimming, no normalization, no transformation
   return rawContent;
+}
+
+/**
+ * parseToggleDefinitions 함수.
+ * risutoggle DSL의 `name=...` 행에서 toggle 이름과 파생 globalvar 이름을 추출함.
+ *
+ * @param rawContent - `.risutoggle` 원문 DSL
+ * @returns 문서 순서대로 정렬된 toggle 정의 목록
+ */
+export function parseToggleDefinitions(rawContent: string): readonly ToggleDefinition[] {
+  const definitions: ToggleDefinition[] = [];
+  let lineStartOffset = 0;
+  const lines = rawContent.split(/\n/);
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex] ?? '';
+    const trimmedStart = line.search(/\S/);
+    const equalsIndex = line.indexOf('=');
+    const isComment = trimmedStart !== -1 && line.slice(trimmedStart).startsWith('#');
+
+    if (equalsIndex > 0 && !isComment) {
+      const rawName = line.slice(0, equalsIndex).trim();
+      if (rawName.length > 0) {
+        const keyStartInLine = line.indexOf(rawName);
+        const startOffset = lineStartOffset + keyStartInLine;
+        const endOffset = startOffset + rawName.length;
+        definitions.push({
+          name: rawName,
+          globalVariableName: `toggle_${rawName}`,
+          line: lineIndex,
+          startOffset,
+          endOffset,
+        });
+      }
+    }
+
+    lineStartOffset += line.length + 1;
+  }
+
+  return definitions;
 }
 
 /**

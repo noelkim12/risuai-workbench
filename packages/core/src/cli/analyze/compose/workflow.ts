@@ -13,6 +13,7 @@ import { parseLorebookContent } from '@/domain/custom-extension/extensions/loreb
 import { parseRegexContent } from '@/domain/regex';
 import { parseVariableContent } from '@/domain/custom-extension/extensions/variable';
 import { readJsonIfExists, readTextIfExists } from '@/node/fs-helpers';
+import { RISUMODULE_FILENAME } from '../../shared/risumodule';
 import { detectLocale } from '../shared/i18n';
 import { collectHTMLCBS, collectTSCBS, collectVariablesCBS, importLuaAnalysis, loadLuaArtifacts } from '../charx/collectors';
 import { collectModuleCBS } from '../module/collectors';
@@ -167,17 +168,15 @@ function buildCharxArtifactInput(outputDir: string): ArtifactInput {
 }
 
 function buildModuleArtifactInput(outputDir: string): ArtifactInput {
-  // Check for canonical markers or legacy module.json
-  const hasCanonicalMarkers =
-    fs.existsSync(path.join(outputDir, 'metadata.json')) &&
-    fs.existsSync(path.join(outputDir, 'lorebooks'));
+  // Check for canonical .risumodule marker or legacy module.json
+  const hasRisumodule = fs.existsSync(path.join(outputDir, RISUMODULE_FILENAME));
   const modulePath = path.join(outputDir, 'module.json');
   const hasLegacyModuleJson = fs.existsSync(modulePath);
 
-  if (!hasCanonicalMarkers && !hasLegacyModuleJson) {
+  if (!hasRisumodule && !hasLegacyModuleJson) {
     throw new Error(
       `Canonical module workspace markers not found: ${outputDir}. ` +
-        `Expected metadata.json + lorebooks/ directory (canonical) or module.json (legacy)`,
+        `Expected .risumodule (canonical) or module.json (legacy)`,
     );
   }
 

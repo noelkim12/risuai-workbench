@@ -47,6 +47,7 @@ export interface CommentNode {
 export interface MathExprNode {
   type: 'MathExpr';
   expression: string;
+  children: CBSNode[];
   range: Range;
 }
 

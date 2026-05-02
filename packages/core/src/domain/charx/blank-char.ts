@@ -36,7 +36,6 @@ export interface UpstreamCharacter {
   exampleMessage: string;
   creatorNotes: string;
   systemPrompt: string;
-  postHistoryInstructions: string;
   alternateGreetings: string[];
   tags: string[];
   creator: string;
@@ -70,8 +69,8 @@ export interface CharxV3Data {
   character_version: string;
   creator_notes: string;
   system_prompt: string;
-  post_history_instructions: string;
   alternate_greetings: string[];
+  replaceGlobalNote: string;
   tags: string[];
   personality: string;
   scenario: string;
@@ -134,8 +133,8 @@ export function createBlankChar(): UpstreamCharacter {
     exampleMessage: '',
     creatorNotes: '',
     systemPrompt: '',
-    postHistoryInstructions: '',
     alternateGreetings: [],
+
     tags: [],
     creator: '',
     characterVersion: '',
@@ -186,8 +185,8 @@ export function createBlankCharxV3(char: UpstreamCharacter = createBlankChar()):
       character_version: char.characterVersion,
       creator_notes: char.creatorNotes,
       system_prompt: char.systemPrompt,
-      post_history_instructions: char.postHistoryInstructions,
       alternate_greetings: char.alternateGreetings,
+      replaceGlobalNote: char.replaceGlobalNote,
       tags: char.tags,
       personality: char.personality,
       scenario: char.scenario,

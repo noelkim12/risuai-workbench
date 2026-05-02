@@ -1,86 +1,160 @@
 import './styles.css';
+import App from './App.svelte';
+import { mount } from 'svelte';
+import { writable } from 'svelte/store';
+import {
+  createCharacterBrowserOpenItemMessage,
+  createCharacterBrowserReadyMessage,
+  createCharacterBrowserRefreshMessage,
+  createCharacterBrowserSelectMessage,
+  getVsCodeApi,
+} from './lib/vscode';
+import {
+  CHARACTER_BROWSER_PROTOCOL,
+  CHARACTER_BROWSER_PROTOCOL_VERSION,
+  type CharacterBrowserCard,
+  type CharacterBrowserExtensionMessage,
+  type CharacterItem,
+  type CharacterSection,
+} from './lib/types';
 
-type IncomingMessage =
-  | { type: 'ready' }
-  | { type: 'pong' };
-
-type OutgoingMessage =
-  | { type: 'webview-ready' }
-  | { type: 'ping' };
-
-type VsCodeApi = {
-  postMessage(message: OutgoingMessage): void;
-};
-
-declare global {
-  interface Window {
-    acquireVsCodeApi?: () => VsCodeApi;
-  }
-}
-
-const vscode = window.acquireVsCodeApi?.();
-
+const vscode = getVsCodeApi();
+const cards = writable<CharacterBrowserCard[]>([]);
+const selectedStableId = writable<string | undefined>(undefined);
+const detailSections = writable<CharacterSection[]>([]);
+const expandedSectionIds = writable<string[]>(['manifest', 'lorebooks', 'regexRules', 'html', 'diagnostics']);
+const viewMode = writable<'characters' | 'characterDetail'>('characters');
+const status = writable('Connecting to extension host…');
 const app = document.querySelector<HTMLDivElement>('#app');
 
 if (!app) {
   throw new Error('Missing #app root for Risu Workbench webview.');
 }
 
-app.innerHTML = `
-  <main class="shell">
-    <section class="hero">
-      <p class="eyebrow">Risu Workbench / Webview</p>
-      <h1>Vite 8-powered panel is live.</h1>
-      <p class="lede">
-        The extension host stays TypeScript-first, while the webview now ships as a fast,
-        dedicated browser bundle.
-      </p>
-    </section>
-
-    <section class="grid">
-      <article class="card card--signal">
-        <span class="card-label">Bridge</span>
-        <strong id="status-text">Waiting for extension handshake…</strong>
-        <button id="ping-button" type="button">Ping extension host</button>
-      </article>
-
-      <article class="card">
-        <span class="card-label">Build path</span>
-        <strong>packages/webview → packages/vscode/dist/webview</strong>
-        <p>Vite owns browser assets. The extension just serves the finished bundle.</p>
-      </article>
-
-      <article class="card">
-        <span class="card-label">Why this split</span>
-        <strong>Faster front-end iteration without disturbing VS Code runtime constraints</strong>
-        <p>That keeps CommonJS extension code stable while moving UI work onto modern tooling.</p>
-      </article>
-    </section>
-  </main>
-`;
-
-const statusText = document.querySelector<HTMLElement>('#status-text');
-const pingButton = document.querySelector<HTMLButtonElement>('#ping-button');
-
-pingButton?.addEventListener('click', () => {
-  vscode?.postMessage({ type: 'ping' });
-  setStatus('Ping sent to extension host.');
+mount(App, {
+  target: app,
+  props: {
+    cards,
+    selectedStableId,
+    detailSections,
+    expandedSectionIds,
+    viewMode,
+    status,
+    refreshCards,
+    selectCard,
+    returnToCards,
+    toggleSection,
+    openItem,
+  },
 });
 
-window.addEventListener('message', (event: MessageEvent<IncomingMessage>) => {
-  if (event.data.type === 'ready') {
-    setStatus('Extension host connected.');
+window.addEventListener('message', handleMessage);
+vscode?.postMessage(createCharacterBrowserReadyMessage());
+
+function handleMessage(event: MessageEvent<unknown>): void {
+  const message = event.data;
+  if (!isCharacterBrowserExtensionMessage(message)) return;
+
+  if (message.type === 'character-browser/cards') {
+    const nextCards = message.payload.cards;
+    cards.set(nextCards);
+    setStatus(`${nextCards.length} .risuchar manifests loaded from workspace discovery.`);
+    return;
   }
 
-  if (event.data.type === 'pong') {
-    setStatus('Round-trip confirmed.');
+  if (message.type === 'character-browser/characterDetailLoaded') {
+    selectedStableId.set(message.payload.stableId);
+    detailSections.set(message.payload.sections);
+    expandedSectionIds.update((current) => mergeExpandedSections(current, message.payload.sections));
+    viewMode.set('characterDetail');
+    setStatus(`Detail loaded with ${message.payload.sections.length} sections.`);
   }
-});
+}
 
-vscode?.postMessage({ type: 'webview-ready' });
+/**
+ * refreshCards 함수.
+ * Refresh button action을 typed webview-to-extension message로 전달함.
+ */
+function refreshCards(): void {
+  setStatus('Refreshing .risuchar manifests…');
+  viewMode.set('characters');
+  detailSections.set([]);
+  vscode?.postMessage(createCharacterBrowserRefreshMessage());
+}
+
+/**
+ * selectCard 함수.
+ * 선택한 card id를 local state와 extension host에 함께 반영함.
+ *
+ * @param stableId - 선택된 card stable id
+ */
+function selectCard(stableId: string): void {
+  selectedStableId.set(stableId);
+  detailSections.set([]);
+  setStatus('Loading character detail…');
+  vscode?.postMessage(createCharacterBrowserSelectMessage(stableId));
+}
+
+/**
+ * returnToCards 함수.
+ * Host discovery를 다시 요청하지 않고 보존된 card state로 돌아감.
+ */
+function returnToCards(): void {
+  viewMode.set('characters');
+  setStatus('Returned to character cards.');
+}
+
+/**
+ * toggleSection 함수.
+ * Stable section id 기준으로 accordion 펼침 상태를 토글함.
+ *
+ * @param sectionId - 토글할 accordion section id
+ */
+function toggleSection(sectionId: string): void {
+  expandedSectionIds.update((current) =>
+    current.includes(sectionId) ? current.filter((id) => id !== sectionId) : [...current, sectionId],
+  );
+}
+
+/**
+ * openItem 함수.
+ * File-backed detail item을 typed bridge message로 extension host에 전달함.
+ *
+ * @param item - 사용자가 클릭한 detail item
+ */
+function openItem(item: CharacterItem): void {
+  if (!item.fileUri) return;
+  let stableId: string | undefined;
+  selectedStableId.subscribe((value) => {
+    stableId = value;
+  })();
+  if (!stableId) return;
+
+  vscode?.postMessage(createCharacterBrowserOpenItemMessage(stableId, item.id));
+}
 
 function setStatus(text: string): void {
-  if (statusText) {
-    statusText.textContent = text;
+  status.set(text);
+}
+
+function isCharacterBrowserExtensionMessage(message: unknown): message is CharacterBrowserExtensionMessage {
+  if (!message || typeof message !== 'object') {
+    return false;
   }
+
+  const candidate = message as Partial<CharacterBrowserExtensionMessage>;
+  return (
+    candidate.protocol === CHARACTER_BROWSER_PROTOCOL &&
+    candidate.version === CHARACTER_BROWSER_PROTOCOL_VERSION &&
+    ((candidate.type === 'character-browser/cards' && Array.isArray(candidate.payload?.cards)) ||
+      (candidate.type === 'character-browser/characterDetailLoaded' &&
+        typeof candidate.payload?.stableId === 'string' &&
+        Array.isArray(candidate.payload.sections)))
+  );
+}
+
+function mergeExpandedSections(current: string[], sections: CharacterSection[]): string[] {
+  const sectionIds = sections.map((section) => section.id);
+  const knownCurrent = current.filter((id) => sectionIds.includes(id));
+  return knownCurrent.length > 0 ? knownCurrent : sectionIds;
 }

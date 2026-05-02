@@ -1,0 +1,308 @@
+-- ============================================
+-- Elysion 퍼메 선택기
+-- ============================================
+
+function EL_SetLang_1(triggerId)
+    setState(triggerId, "el_lang", 1)
+    setChatVar(triggerId, "el_lang", "1")
+    elUpdateCalVar(triggerId)
+end
+function EL_SetLang_2(triggerId)
+    setState(triggerId, "el_lang", 2)
+    setChatVar(triggerId, "el_lang", "2")
+    elUpdateCalVar(triggerId)
+end
+function EL_SetLang_3(triggerId)
+    setState(triggerId, "el_lang", 3)
+    setChatVar(triggerId, "el_lang", "3")
+    elUpdateCalVar(triggerId)
+end
+
+local function elUpdateFmInfo(triggerId, y, m, d, mapVal)
+    if y and m and d then
+        local dateStr = string.format("%04d-%02d-%02d", y, m, d)
+        setChatVar(triggerId, "el_cur_date", dateStr)
+        setChatVar(triggerId, "el_cur_year", tostring(y))
+        setChatVar(triggerId, "el_cur_month", tostring(m))
+    end
+    if mapVal then
+        setChatVar(triggerId, "el_cur_map", mapVal)
+    end
+    setChatVar(triggerId, "el_cal_offset", "0")
+    setState(triggerId, "el_cal_offset", 0)
+    elUpdateCalVar(triggerId)
+end
+
+function EL_SetFM_1(triggerId) setState(triggerId,"el_fm",1); setChatVar(triggerId,"el_fm","1"); elUpdateFmInfo(triggerId, 2042, 3, 28, "Map School main building") end
+function EL_SetFM_2(triggerId) setState(triggerId,"el_fm",2); setChatVar(triggerId,"el_fm","2"); elUpdateFmInfo(triggerId, 2042, 3, 28, "Map Elysion Campus") end
+function EL_SetFM_3(triggerId) setState(triggerId,"el_fm",3); setChatVar(triggerId,"el_fm","3"); elUpdateFmInfo(triggerId, 2042, 2, 17, "Map Port") end
+function EL_SetFM_4(triggerId) setState(triggerId,"el_fm",4); setChatVar(triggerId,"el_fm","4"); elUpdateFmInfo(triggerId, 2042, 2, 26, "Map School main building") end
+function EL_SetFM_5(triggerId) setState(triggerId,"el_fm",5); setChatVar(triggerId,"el_fm","5"); elUpdateFmInfo(triggerId, 2042, 3, 2, "Map Unknown") end
+function EL_SetFM_6(triggerId) setState(triggerId,"el_fm",6); setChatVar(triggerId,"el_fm","6"); elUpdateFmInfo(triggerId, 2042, 3, 1, "Map Asia") end
+function EL_SetFM_7(triggerId) setState(triggerId,"el_fm",7); setChatVar(triggerId,"el_fm","7"); elUpdateFmInfo(triggerId, 2042, 3, 15, "Map Port") end
+function EL_SetFM_8(triggerId) setState(triggerId,"el_fm",8); setChatVar(triggerId,"el_fm","8"); elUpdateFmInfo(triggerId, nil, nil, nil, "Map Unknown") end
+
+-- ============================================
+-- Interface 태그 파싱 (onOutput 대신 listenEdit 사용)
+-- ============================================
+listenEdit('editOutput', function(triggerId, data)
+    if not data or data == "" then return data end
+
+    local date     = data:match("|%s*Date:%s*([^|]+)")
+    local location = data:match("|%s*Location:%s*([^|]+)")
+    local mapVal   = data:match("|%s*Map:%s*([^%]]+)")
+
+    if date then
+        date = date:gsub("^%s+",""):gsub("%s+$","")
+        setChatVar(triggerId, "el_cur_date", date)
+        local y, m = date:match("(%d+)%-(%d+)")
+        if y and m then
+            setChatVar(triggerId, "el_cur_year", y)
+            setChatVar(triggerId, "el_cur_month", m)
+        end
+    end
+    if location then
+        location = location:gsub("^%s+",""):gsub("%s+$","")
+        setChatVar(triggerId, "el_cur_location", location)
+    end
+    if mapVal then
+        mapVal = mapVal:gsub("^%s+",""):gsub("%s+$","")
+        setChatVar(triggerId, "el_cur_map", mapVal)
+    end
+
+    return data
+end)
+
+-- ============================================
+-- 사이드 팝업 버튼 함수
+-- ============================================
+
+function EL_PopupClose(triggerId)
+    setChatVar(triggerId, "el_popup", "0")
+    setState(triggerId, "el_popup", 0)
+end
+
+function EL_Popup_1(triggerId)
+    local cur = tostring(getChatVar(triggerId, "el_popup") or "0")
+    setChatVar(triggerId, "el_popup", cur == "1" and "0" or "1")
+    setState(triggerId, "el_popup", cur == "1" and 0 or 1)
+end
+
+function EL_Popup_2(triggerId)
+    local cur = tostring(getChatVar(triggerId, "el_popup") or "0")
+    local next = cur == "2" and "0" or "2"
+    setChatVar(triggerId, "el_popup", next)
+    setState(triggerId, "el_popup", tonumber(next))
+    setChatVar(triggerId, "el_cal_offset", "0")
+    setState(triggerId, "el_cal_offset", 0)
+    elUpdateCalVar(triggerId)
+end
+
+function EL_Popup_3(triggerId)
+    local cur = tostring(getChatVar(triggerId, "el_popup") or "0")
+    setChatVar(triggerId, "el_popup", cur == "3" and "0" or "3")
+    setState(triggerId, "el_popup", cur == "3" and 0 or 3)
+end
+
+function EL_Popup_4(triggerId)
+    local cur = tostring(getChatVar(triggerId, "el_popup") or "0")
+    setChatVar(triggerId, "el_popup", cur == "4" and "0" or "4")
+    setState(triggerId, "el_popup", cur == "4" and 0 or 4)
+end
+
+function EL_CalPrev(triggerId)
+    local o = tonumber(getChatVar(triggerId, "el_cal_offset") or "0") or 0
+    setChatVar(triggerId, "el_cal_offset", tostring(o - 1))
+    setState(triggerId, "el_cal_offset", o - 1)
+    elUpdateCalVar(triggerId)
+end
+
+function EL_CalNext(triggerId)
+    local o = tonumber(getChatVar(triggerId, "el_cal_offset") or "0") or 0
+    setChatVar(triggerId, "el_cal_offset", tostring(o + 1))
+    setState(triggerId, "el_cal_offset", o + 1)
+    elUpdateCalVar(triggerId)
+end
+
+function EL_ToggleRandomEvent(triggerId)
+    local cur = tostring(getChatVar(triggerId, "el_random_event") or "1")
+    setChatVar(triggerId, "el_random_event", cur == "1" and "0" or "1")
+    setState(triggerId, "el_random_event", cur == "1" and 0 or 1)
+end
+
+-- ============================================
+-- 달력 HTML 생성 (chatVar 저장 방식)
+-- ============================================
+
+local EL_EVENTS = {
+    [2042] = {
+        [2] = {
+            [17] = {ko="입학시험", en="Entrance Exam", ja="入学試験"},
+        },
+        [3] = {
+            [3]  = {ko="입학식", en="Entrance Ceremony", ja="入学式"},
+            [12] = {ko="담임 개인 면담", en="Homeroom Interview", ja="担任個人面談"},
+            [21] = {ko="부활동 신설 마감", en="Club Establishment Deadline", ja="部活設立締切"},
+            [31] = {ko="넥서스 대장 초청", en="Nexus Captain Invitation", ja="ネクサス隊長招待"},
+        },
+        [4] = {
+            [4]  = {ko="테라 시티 벚꽃 축제", en="Terra City Cherry Blossom Festival", ja="テラシティ桜祭り"},
+            [14] = {ko="퍼스트 플레어 개최", en="First Flare Opening", ja="ファーストフレア開催"},
+            [18] = {ko="퍼스트 플레어 결승", en="First Flare Finals", ja="ファーストフレア決勝"},
+            [28] = {ko="중간고사", en="Midterm Exams", ja="中間試験"},
+        },
+        [5] = {
+            [1]  = {ko="골든 위크 시작", en="Golden Week Start", ja="ゴールデンウィーク開始"},
+            [7]  = {ko="골든 위크 마지막", en="Golden Week End", ja="ゴールデンウィーク最終日"},
+            [21] = {ko="수학 여행", en="School Trip", ja="修学旅行"},
+            [22] = {ko="수학 여행", en="School Trip", ja="修学旅行"},
+            [23] = {ko="수학 여행", en="School Trip", ja="修学旅行"},
+        },
+        [6] = {
+            [3]  = {ko="구기 대회", en="Ball Sports Tournament", ja="球技大会"},
+            [16] = {ko="부활동 합숙 주간", en="Club Camp Week", ja="部活合宿週間"},
+            [26] = {ko="테라 시티 현장 실습", en="Terra City Field Training", ja="テラシティ現場実習"},
+        },
+        [7] = {
+            [14] = {ko="기말고사", en="Final Exams", ja="期末試験"},
+            [20] = {ko="테라 시티 여름 축제", en="Terra City Summer Festival", ja="テラシティ夏祭り"},
+            [21] = {ko="방학식", en="Vacation Ceremony", ja="終業式"},
+        },
+        [8] = {
+            [1]  = {ko="여름 캠프", en="Summer Camp", ja="サマーキャンプ"},
+            [2]  = {ko="여름 캠프", en="Summer Camp", ja="サマーキャンプ"},
+            [3]  = {ko="여름 캠프", en="Summer Camp", ja="サマーキャンプ"},
+            [18] = {ko="개학식", en="School Reopening", ja="始業式"},
+            [20] = {ko="반 대항전 듀얼", en="Class Duel Match", ja="クラス対抗デュエル"},
+        },
+        [9] = {
+            [3]  = {ko="교내 체육대회", en="Sports Festival", ja="校内体育大会"},
+            [15] = {ko="우수학생 넥서스 파견", en="Top Students Nexus Dispatch", ja="優秀生ネクサス派遣"},
+            [19] = {ko="넥서스 파견 종료", en="Nexus Dispatch End", ja="ネクサス派遣終了"},
+        },
+        [10] = {
+            [1]  = {ko="중간고사", en="Midterm Exams", ja="中間試験"},
+            [16] = {ko="문화제", en="Cultural Festival", ja="文化祭"},
+            [17] = {ko="문화제", en="Cultural Festival", ja="文化祭"},
+            [31] = {ko="할로윈 파티", en="Halloween Party", ja="ハロウィンパーティー"},
+        },
+        [11] = {
+            [11] = {ko="교사vs학생 교류전", en="Teacher vs Student Match", ja="教師vs生徒交流戦"},
+            [24] = {ko="기말고사", en="Final Exams", ja="期末試験"},
+        },
+        [12] = {
+            [8]  = {ko="아펙스 아스테리아 개최", en="Apex Asteria Opening", ja="アペクスアステリア開催"},
+            [12] = {ko="아펙스 아스테리아 결승", en="Apex Asteria Finals", ja="アペクスアステリア決勝"},
+            [25] = {ko="크리스마스 파티", en="Christmas Party", ja="クリスマスパーティー"},
+            [26] = {ko="방학식", en="Vacation Ceremony", ja="終業式"},
+        },
+    },
+    [2043] = {
+        [1] = {
+            [1]  = {ko="신년", en="New Year", ja="新年"},
+        },
+        [2] = {
+            [3]  = {ko="종업식 / 졸업식", en="Closing / Graduation", ja="終業式・卒業式"},
+        },
+    },
+}
+
+local function elIsLeap(y) return (y%4==0 and y%100~=0) or (y%400==0) end
+local function elDIM(y,m)
+    local d={31,28,31,30,31,30,31,31,30,31,30,31}
+    if m==2 and elIsLeap(y) then return 29 end
+    return d[m]
+end
+local function elDOW(y,m,d)
+    if m<3 then m=m+12; y=y-1 end
+    return (d+math.floor(13*(m+1)/5)+y+math.floor(y/4)-math.floor(y/100)+math.floor(y/400)+6)%7
+end
+
+function elBuildCalendar(triggerId)
+    local lang   = tonumber(getChatVar(triggerId,"el_lang") or "1") or 1
+    local baseY  = tonumber(getChatVar(triggerId,"el_cur_year") or "2042") or 2042
+    local baseM  = tonumber(getChatVar(triggerId,"el_cur_month") or "3") or 3
+    local offset = tonumber(getChatVar(triggerId,"el_cal_offset") or "0") or 0
+
+    local totalM = (baseY * 12 + baseM - 1) + offset
+    local viewY  = math.floor(totalM / 12)
+    local viewM  = (totalM % 12) + 1
+
+    local mN
+    if lang==2 then mN={"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"}
+    elseif lang==3 then mN={"1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"}
+    else mN={"1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"} end
+
+    local dH
+    if lang==2 then dH={"S","M","T","W","T","F","S"}
+    elseif lang==3 then dH={"日","月","火","水","木","金","土"}
+    else dH={"일","월","화","수","목","금","토"} end
+
+    local dim  = elDIM(viewY, viewM)
+    local fDow = elDOW(viewY, viewM, 1)
+    local evts = (EL_EVENTS[viewY] or {})[viewM] or {}
+
+    local curD = tostring(getChatVar(triggerId,"el_cur_date") or "")
+    local tY, tM, tD = curD:match("(%d+)%-(%d+)%-(%d+)")
+    tY = tonumber(tY) or 0
+    tM = tonumber(tM) or 0
+    tD = tonumber(tD) or 0
+
+    local h = '<div class="elp-cal-hd">'
+    h = h .. '<button class="elp-cal-arr" risu-trigger="EL_CalPrev">◀</button>'
+    h = h .. '<span class="elp-cal-mo">' .. viewY .. ' ' .. mN[viewM] .. '</span>'
+    h = h .. '<button class="elp-cal-arr" risu-trigger="EL_CalNext">▶</button>'
+    h = h .. '</div><div class="elp-cal-g">'
+
+    for i, dv in ipairs(dH) do
+        local c = "elp-cal-dh"
+        if i==1 then c=c.." elp-sun" end
+        if i==7 then c=c.." elp-sat" end
+        h = h .. '<div class="'..c..'">'..dv..'</div>'
+    end
+    for _=1,fDow do h = h .. '<div class="elp-cal-e"></div>' end
+    for d=1,dim do
+        local dow = (fDow+d-1)%7
+        local c = "elp-cal-d"
+        if dow==0 then c=c.." elp-sun" end
+        if dow==6 then c=c.." elp-sat" end
+        if d==tD and viewM==tM and viewY==tY then c=c.." elp-cal-today" end
+        local ev = evts[d]
+        local eT = ""
+        if ev then
+            c=c.." elp-cal-ev"
+            if lang==2 then eT=ev.en or "" elseif lang==3 then eT=ev.ja or "" else eT=ev.ko or "" end
+        end
+        if eT ~= "" then
+            h = h .. '<div class="'..c..'" data-tooltip="'..eT..'">'
+        else
+            h = h .. '<div class="'..c..'">'
+        end
+        h = h .. '<span class="elp-cal-n">'..d..'</span>'
+        h = h .. '</div>'
+    end
+    h = h .. '</div>'
+    return h
+end
+
+function elUpdateCalVar(triggerId)
+    local html = elBuildCalendar(triggerId)
+    setChatVar(triggerId, "el_cal_html", html)
+end
+
+-- ============================================
+-- 이미지 크기 변경 함수 (사이드 패널 팝업용)
+-- ============================================
+function EL_SetImgSize_1(triggerId)
+    setChatVar(triggerId, "el_img_size", "1")
+    setState(triggerId, "el_img_size", 1)
+end
+function EL_SetImgSize_2(triggerId)
+    setChatVar(triggerId, "el_img_size", "2")
+    setState(triggerId, "el_img_size", 2)
+end
+function EL_SetImgSize_3(triggerId)
+    setChatVar(triggerId, "el_img_size", "3")
+    setState(triggerId, "el_img_size", 3)
+end
+

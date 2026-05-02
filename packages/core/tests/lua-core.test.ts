@@ -195,4 +195,164 @@ describe('analyzeLuaSource', () => {
     expect(result.elementCbs[0]?.reads.has('mode')).toBe(true);
     expect(result.elementCbs[0]?.writes.has('mana')).toBe(true);
   });
+
+  describe('stateAccessOccurrences metadata', () => {
+    it('captures exact occurrence metadata for static getState calls', () => {
+      const result = analyzeLuaSource({
+        filePath: '/tmp/read-test.lua',
+        source: [
+          'function readMode()',
+          '  return getState("mode")',
+          'end',
+        ].join('\n'),
+        charxData: null,
+      });
+
+      const occurrences = result.collected.stateAccessOccurrences;
+      expect(occurrences).toHaveLength(1);
+      expect(occurrences[0]).toMatchObject({
+        key: 'mode',
+        direction: 'read',
+        apiName: 'getState',
+        containingFunction: 'readmode',
+        line: 2,
+      });
+      // Verify exact byte range exists and is valid
+      expect(occurrences[0].argStart).toBeGreaterThan(0);
+      expect(occurrences[0].argEnd).toBeGreaterThan(occurrences[0].argStart);
+    });
+
+    it('captures exact occurrence metadata for static setState calls', () => {
+      const result = analyzeLuaSource({
+        filePath: '/tmp/write-test.lua',
+        source: [
+          'function writeMana()',
+          '  setState("mana", 100)',
+          'end',
+        ].join('\n'),
+        charxData: null,
+      });
+
+      const occurrences = result.collected.stateAccessOccurrences;
+      expect(occurrences).toHaveLength(1);
+      expect(occurrences[0]).toMatchObject({
+        key: 'mana',
+        direction: 'write',
+        apiName: 'setState',
+        containingFunction: 'writemana',
+        line: 2,
+      });
+      expect(occurrences[0].argStart).toBeGreaterThan(0);
+      expect(occurrences[0].argEnd).toBeGreaterThan(occurrences[0].argStart);
+    });
+
+    it('captures exact occurrence metadata for setChatVar/getChatVar calls', () => {
+      const result = analyzeLuaSource({
+        filePath: '/tmp/chatvar-test.lua',
+        source: [
+          'function updateChatVar()',
+          '  setChatVar("user_pref", "dark")',
+          '  return getChatVar("user_pref")',
+          'end',
+        ].join('\n'),
+        charxData: null,
+      });
+
+      const occurrences = result.collected.stateAccessOccurrences;
+      expect(occurrences).toHaveLength(2);
+
+      const writeOcc = occurrences.find((o) => o.apiName === 'setChatVar');
+      const readOcc = occurrences.find((o) => o.apiName === 'getChatVar');
+
+      expect(writeOcc).toMatchObject({
+        key: 'user_pref',
+        direction: 'write',
+        containingFunction: 'updatechatvar',
+        line: 2,
+      });
+      expect(readOcc).toMatchObject({
+        key: 'user_pref',
+        direction: 'read',
+        containingFunction: 'updatechatvar',
+        line: 3,
+      });
+    });
+
+    it('preserves one occurrence per static access without collapsing', () => {
+      const result = analyzeLuaSource({
+        filePath: '/tmp/multi-access.lua',
+        source: [
+          'function multiAccess()',
+          '  setState("counter", 1)',
+          '  setState("counter", 2)',
+          '  setState("counter", 3)',
+          'end',
+        ].join('\n'),
+        charxData: null,
+      });
+
+      const occurrences = result.collected.stateAccessOccurrences;
+      expect(occurrences).toHaveLength(3);
+      // Each occurrence should have a unique line
+      const lines = occurrences.map((o) => o.line);
+      expect(new Set(lines).size).toBe(3);
+    });
+
+    it('skips dynamic-key accesses without fabricating occurrences', () => {
+      const result = analyzeLuaSource({
+        filePath: '/tmp/dynamic-key.lua',
+        source: [
+          'function dynamicAccess(key)',
+          '  setState(key, "value")',
+          '  setState("static_key", "value")',
+          'end',
+        ].join('\n'),
+        charxData: null,
+      });
+
+      const occurrences = result.collected.stateAccessOccurrences;
+      // Dynamic key access (setState(key, "value")) should NOT produce a fake occurrence
+      // Only the true static key access should be recorded
+      expect(occurrences).toHaveLength(1);
+      expect(occurrences[0].key).toBe('static_key');
+      expect(occurrences[0].apiName).toBe('setState');
+      expect(occurrences[0].containingFunction).toBe('dynamicaccess');
+      // Verify the dynamic key access did not create a fake "value" occurrence
+      const fakeValueOcc = occurrences.find((o) => o.key === 'value');
+      expect(fakeValueOcc).toBeUndefined();
+    });
+
+    it('includes occurrences in serialized output', () => {
+      const result = analyzeLuaSource({
+        filePath: '/tmp/serialize-test.lua',
+        source: [
+          'function test()',
+          '  setState("flag", true)',
+          'end',
+        ].join('\n'),
+        charxData: null,
+      });
+
+      expect(result.serialized.stateAccessOccurrences).toHaveLength(1);
+      expect(result.serialized.stateAccessOccurrences[0]).toMatchObject({
+        key: 'flag',
+        direction: 'write',
+        apiName: 'setState',
+        containingFunction: 'test',
+      });
+    });
+
+    it('captures top-level occurrences with <top-level> as containing function', () => {
+      const result = analyzeLuaSource({
+        filePath: '/tmp/toplevel.lua',
+        source: 'setState("global_flag", 1)',
+        charxData: null,
+      });
+
+      const occurrences = result.collected.stateAccessOccurrences;
+      expect(occurrences).toHaveLength(1);
+      expect(occurrences[0].containingFunction).toBe('<top-level>');
+      expect(occurrences[0].key).toBe('global_flag');
+    });
+  });
 });

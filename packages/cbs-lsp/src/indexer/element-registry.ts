@@ -9,15 +9,20 @@ import {
   analyzeLuaSource,
   extractCBSVarOps,
   type CbsFragment,
+  type CollectedData,
+  type CollectedStateVar,
   type CustomExtensionArtifact,
   type ElementCBSData,
   type LuaAnalysisArtifact,
 } from 'risu-workbench-core';
 
-import type {
-  WorkspaceFileArtifactClass,
-  WorkspaceScanFile,
-  WorkspaceScanResult,
+import { createCbsAgentProtocolMarker, type CbsAgentProtocolMarker } from '../core';
+
+import {
+  MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH,
+  type WorkspaceFileArtifactClass,
+  type WorkspaceScanFile,
+  type WorkspaceScanResult,
 } from './file-scanner';
 
 export type ElementRegistryFileAnalysisKind =
@@ -41,16 +46,29 @@ export interface ElementRegistryGraphSeed {
   artifactClass: WorkspaceFileArtifactClass;
   elementName: string;
   fragmentSection: string | null;
+  fragmentIndex: number;
   analysisKind: ElementRegistryElementAnalysisKind;
   cbs: ElementRegistryVariableAccess;
+  /**
+   * Host document range for this element.
+   * For fragments: the absolute position in the host document.
+   * For Lua files: null (entire file is the element).
+   */
+  hostRange: { start: number; end: number } | null;
 }
 
 export interface ElementRegistryFragmentDescriptor {
   section: string;
+  fragmentIndex: number;
   start: number;
   end: number;
   content: string;
   contentLength: number;
+  /**
+   * Host document range for rebasing.
+   * Same as start/end but explicitly named for graph consumers.
+   */
+  hostRange: { start: number; end: number };
 }
 
 interface ElementRegistryElementBase {
@@ -70,6 +88,11 @@ interface ElementRegistryElementBase {
 export interface ElementRegistryFragmentElement extends ElementRegistryElementBase {
   analysisKind: 'cbs-fragment';
   fragment: ElementRegistryFragmentDescriptor;
+  /**
+   * Fragment index within the file for deterministic disambiguation.
+   * Stable ordering based on host document position.
+   */
+  fragmentIndex: number;
 }
 
 export interface ElementRegistryLuaElement extends ElementRegistryElementBase {
@@ -89,6 +112,7 @@ export interface ElementRegistryFileRecord {
   uri: string;
   absolutePath: string;
   relativePath: string;
+  text: string;
   artifact: CustomExtensionArtifact;
   artifactClass: WorkspaceFileArtifactClass;
   cbsBearingArtifact: boolean;
@@ -114,7 +138,7 @@ export interface ElementRegistrySummary {
   byArtifact: Readonly<Record<CustomExtensionArtifact, ElementRegistryArtifactSummary>>;
 }
 
-export interface ElementRegistrySnapshot {
+export interface ElementRegistrySnapshot extends CbsAgentProtocolMarker {
   rootPath: string;
   files: readonly ElementRegistryFileRecord[];
   elements: readonly ElementRegistryElement[];
@@ -145,6 +169,7 @@ function createArtifactSummaryRecord(): Record<CustomExtensionArtifact, ElementR
     toggle: { files: 0, elements: 0, graphSeeds: 0 },
     variable: { files: 0, elements: 0, graphSeeds: 0 },
     html: { files: 0, elements: 0, graphSeeds: 0 },
+    text: { files: 0, elements: 0, graphSeeds: 0 },
   } satisfies Record<CustomExtensionArtifact, ElementRegistryArtifactSummary>;
 }
 
@@ -199,15 +224,21 @@ function createElementName(relativePath: string, section?: string): string {
  * core fragment를 registry snapshot에 바로 넣을 수 있는 descriptor로 변환함.
  *
  * @param fragment - core fragment metadata
+ * @param fragmentIndex - stable ordering index for disambiguation
  * @returns registry용 fragment descriptor
  */
-function createFragmentDescriptor(fragment: CbsFragment): ElementRegistryFragmentDescriptor {
+function createFragmentDescriptor(
+  fragment: CbsFragment,
+  fragmentIndex: number,
+): ElementRegistryFragmentDescriptor {
   return {
     section: fragment.section,
+    fragmentIndex,
     start: fragment.start,
     end: fragment.end,
     content: fragment.content,
     contentLength: fragment.content.length,
+    hostRange: { start: fragment.start, end: fragment.end },
   };
 }
 
@@ -235,23 +266,36 @@ function createVariableAccess(
  *
  * @param file - 원본 scan file
  * @param fragment - 변환할 CBS fragment
+ * @param fragmentIndex - stable ordering index for disambiguation
  * @returns fragment element, graph seed, core seed tuple
  */
-function buildFragmentElement(file: WorkspaceScanFile, fragment: CbsFragment): BuiltRegistryFileRecord['elements'][number] & {
+function buildFragmentElement(
+  file: WorkspaceScanFile,
+  fragment: CbsFragment,
+  fragmentIndex: number,
+): BuiltRegistryFileRecord['elements'][number] & {
   elementCbsData: ElementCBSData;
 } {
   const ops = extractCBSVarOps(fragment.content);
   const elementName = createElementName(file.relativePath, fragment.section);
+  /**
+   * Deterministic element ID with fragment index disambiguation.
+   * Format: {uri}#fragment:{section}:{index}
+   * This ensures duplicate section names never collide.
+   */
+  const elementId = `${file.uri}#fragment:${fragment.section}:${fragmentIndex}`;
   const graphSeed: ElementRegistryGraphSeed = {
-    elementId: `${file.uri}#fragment:${fragment.section}`,
+    elementId,
     uri: file.uri,
     relativePath: file.relativePath,
     artifact: file.artifact,
     artifactClass: file.artifactClass,
     elementName,
     fragmentSection: fragment.section,
+    fragmentIndex,
     analysisKind: 'cbs-fragment',
     cbs: createVariableAccess(ops.reads, ops.writes),
+    hostRange: { start: fragment.start, end: fragment.end },
   };
 
   const elementCbsData: ElementCBSData = {
@@ -262,7 +306,7 @@ function buildFragmentElement(file: WorkspaceScanFile, fragment: CbsFragment): B
   };
 
   return {
-    id: graphSeed.elementId,
+    id: elementId,
     uri: file.uri,
     absolutePath: file.absolutePath,
     relativePath: file.relativePath,
@@ -271,7 +315,8 @@ function buildFragmentElement(file: WorkspaceScanFile, fragment: CbsFragment): B
     elementName,
     displayName: createDisplayName(file.relativePath, fragment.section),
     analysisKind: 'cbs-fragment',
-    fragment: createFragmentDescriptor(fragment),
+    fragment: createFragmentDescriptor(fragment, fragmentIndex),
+    fragmentIndex,
     cbs: graphSeed.cbs,
     graphSeed,
     elementCbsData,
@@ -288,6 +333,10 @@ function buildFragmentElement(file: WorkspaceScanFile, fragment: CbsFragment): B
 function buildLuaFileRecord(file: WorkspaceScanFile): BuiltRegistryFileRecord {
   try {
     const source = file.fragmentMap.fragments[0]?.content ?? '';
+    if (file.indexTextTruncated) {
+      return buildLightweightLuaFileRecord(file);
+    }
+
     const luaArtifact = analyzeLuaSource({
       filePath: file.absolutePath,
       source,
@@ -307,8 +356,10 @@ function buildLuaFileRecord(file: WorkspaceScanFile): BuiltRegistryFileRecord {
       artifactClass: file.artifactClass,
       elementName,
       fragmentSection: null,
+      fragmentIndex: -1,
       analysisKind: 'lua-file',
       cbs: createVariableAccess(cbsSeed.reads, cbsSeed.writes),
+      hostRange: null,
     };
     const elementCbsData: ElementCBSData = {
       elementType: 'lua',
@@ -347,6 +398,7 @@ function buildLuaFileRecord(file: WorkspaceScanFile): BuiltRegistryFileRecord {
         uri: file.uri,
         absolutePath: file.absolutePath,
         relativePath: file.relativePath,
+        text: file.text,
         artifact: file.artifact,
         artifactClass: file.artifactClass,
         cbsBearingArtifact: file.cbsBearingArtifact,
@@ -369,6 +421,7 @@ function buildLuaFileRecord(file: WorkspaceScanFile): BuiltRegistryFileRecord {
         uri: file.uri,
         absolutePath: file.absolutePath,
         relativePath: file.relativePath,
+        text: file.text,
         artifact: file.artifact,
         artifactClass: file.artifactClass,
         cbsBearingArtifact: file.cbsBearingArtifact,
@@ -388,6 +441,216 @@ function buildLuaFileRecord(file: WorkspaceScanFile): BuiltRegistryFileRecord {
   }
 }
 
+function buildLightweightLuaFileRecord(file: WorkspaceScanFile): BuiltRegistryFileRecord {
+  const stateAccessOccurrences = [...(file.lightweightLuaStateAccessOccurrences ?? [])];
+  const baseName = path.basename(file.absolutePath, path.extname(file.absolutePath));
+  const stateVars = createLightweightStateVars(stateAccessOccurrences);
+  const collected = createLightweightCollectedData(stateVars, stateAccessOccurrences);
+  const luaArtifact: LuaAnalysisArtifact = {
+    filePath: file.absolutePath,
+    baseName,
+    sourceText: file.lightweightLuaSourceText,
+    totalLines: 0,
+    collected,
+    analyzePhase: {
+      commentSections: [],
+      sectionMapSections: [],
+      callGraph: new Map(),
+      calledBy: new Map(),
+      apiByCategory: new Map(),
+      moduleGroups: [],
+      moduleByFunction: new Map(),
+      stateOwnership: [],
+      registryVars: [],
+      rootFunctions: [],
+      getDescendants: () => [],
+      resolvedModuleCalls: [],
+    },
+    lorebookCorrelation: null,
+    regexCorrelation: null,
+    serialized: {
+      stateVars: serializeLightweightStateVars(stateVars),
+      functions: [],
+      handlers: [],
+      apiCalls: [],
+      stateAccessOccurrences,
+    },
+    elementCbs: [buildLightweightElementCbs(file.relativePath, stateVars)],
+  };
+  const cbsSeed = luaArtifact.elementCbs[0] ?? {
+    elementType: 'lua',
+    elementName: file.relativePath,
+    reads: new Set<string>(),
+    writes: new Set<string>(),
+  };
+  const elementName = createElementName(file.relativePath);
+  const graphSeed: ElementRegistryGraphSeed = {
+    elementId: `${file.uri}#lua`,
+    uri: file.uri,
+    relativePath: file.relativePath,
+    artifact: file.artifact,
+    artifactClass: file.artifactClass,
+    elementName,
+    fragmentSection: null,
+    fragmentIndex: -1,
+    analysisKind: 'lua-file',
+    cbs: createVariableAccess(cbsSeed.reads, cbsSeed.writes),
+    hostRange: null,
+  };
+  const elementCbsData: ElementCBSData = {
+    elementType: 'lua',
+    elementName,
+    reads: new Set(graphSeed.cbs.reads),
+    writes: new Set(graphSeed.cbs.writes),
+  };
+  const element: ElementRegistryLuaElement = {
+    id: graphSeed.elementId,
+    uri: file.uri,
+    absolutePath: file.absolutePath,
+    relativePath: file.relativePath,
+    artifact: file.artifact,
+    artifactClass: file.artifactClass,
+    elementName,
+    displayName: createDisplayName(file.relativePath),
+    analysisKind: 'lua-file',
+    fragment: null,
+    cbs: graphSeed.cbs,
+    graphSeed,
+    lua: {
+      baseName,
+      totalLines: 0,
+      functionNames: [],
+      stateVariableNames: Object.keys(luaArtifact.serialized.stateVars).sort((left, right) =>
+        left.localeCompare(right),
+      ),
+    },
+  };
+
+  return {
+    record: {
+      uri: file.uri,
+      absolutePath: file.absolutePath,
+      relativePath: file.relativePath,
+      text: file.text,
+      artifact: file.artifact,
+      artifactClass: file.artifactClass,
+      cbsBearingArtifact: file.cbsBearingArtifact,
+      hasCbsFragments: file.hasCbsFragments,
+      fragmentCount: file.fragmentCount,
+      fragmentSections: file.fragmentSections,
+      analysisKind: 'lua-file',
+      elementIds: [element.id],
+      graphSeedCount: 1,
+      analysisError: `Lua full analysis skipped because source exceeds ${MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH} characters; lightweight state API scan indexed ${stateAccessOccurrences.length} static occurrence(s).`,
+    },
+    elements: [element],
+    graphSeeds: [graphSeed],
+    elementCbsData: [elementCbsData],
+    luaArtifact,
+  };
+}
+
+function createLightweightStateVars(
+  occurrences: readonly LuaAnalysisArtifact['serialized']['stateAccessOccurrences'][number][],
+): Map<string, CollectedStateVar> {
+  const stateVars = new Map<string, CollectedStateVar>();
+  for (const occurrence of occurrences) {
+    const existing = stateVars.get(occurrence.key) ?? {
+      key: occurrence.key,
+      readBy: new Set<string>(),
+      writtenBy: new Set<string>(),
+      apis: new Set<string>(),
+      firstWriteValue: null,
+      firstWriteFunction: null,
+      firstWriteLine: 0,
+      hasDualWrite: false,
+    };
+
+    existing.apis.add(occurrence.apiName);
+    if (occurrence.direction === 'read') {
+      existing.readBy.add(occurrence.containingFunction);
+    } else {
+      existing.writtenBy.add(occurrence.containingFunction);
+      if (!existing.firstWriteFunction) {
+        existing.firstWriteFunction = occurrence.containingFunction;
+        existing.firstWriteLine = occurrence.line;
+      }
+    }
+
+    stateVars.set(occurrence.key, existing);
+  }
+  return stateVars;
+}
+
+function createLightweightCollectedData(
+  stateVars: Map<string, CollectedStateVar>,
+  stateAccessOccurrences: LuaAnalysisArtifact['serialized']['stateAccessOccurrences'],
+): CollectedData {
+  return {
+    functions: [],
+    calls: [],
+    apiCalls: stateAccessOccurrences.map((occurrence) => ({
+      apiName: occurrence.apiName,
+      category: 'state',
+      access: 'lightweight-static-scan',
+      rw: occurrence.direction,
+      line: occurrence.line,
+      containingFunction: occurrence.containingFunction,
+    })),
+    handlers: [],
+    dataTables: [],
+    stateVars,
+    functionIndexByName: new Map(),
+    prefixBuckets: new Map(),
+    loreApiCalls: [],
+    preloadModules: [],
+    requireBindings: [],
+    moduleMemberCalls: [],
+    stateAccessOccurrences: [...stateAccessOccurrences],
+  };
+}
+
+function serializeLightweightStateVars(
+  stateVars: ReadonlyMap<string, CollectedStateVar>,
+): LuaAnalysisArtifact['serialized']['stateVars'] {
+  const serialized: LuaAnalysisArtifact['serialized']['stateVars'] = {};
+  for (const [key, value] of stateVars) {
+    serialized[key] = {
+      key: value.key,
+      readBy: [...value.readBy].sort(),
+      writtenBy: [...value.writtenBy].sort(),
+      apis: [...value.apis].sort(),
+      firstWriteValue: value.firstWriteValue,
+      firstWriteFunction: value.firstWriteFunction,
+      firstWriteLine: value.firstWriteLine,
+      hasDualWrite: value.hasDualWrite,
+    };
+  }
+  return serialized;
+}
+
+function buildLightweightElementCbs(
+  elementName: string,
+  stateVars: ReadonlyMap<string, CollectedStateVar>,
+): ElementCBSData {
+  const reads = new Set<string>();
+  const writes = new Set<string>();
+  for (const [key, stateVar] of stateVars) {
+    if (stateVar.readBy.size > 0) {
+      reads.add(key);
+    }
+    if (stateVar.writtenBy.size > 0) {
+      writes.add(key);
+    }
+  }
+  return {
+    elementType: 'lua',
+    elementName,
+    reads,
+    writes,
+  };
+}
+
 /**
  * buildRegistryFileRecord 함수.
  * scan file 한 건을 ElementRegistry 내부 저장 형태로 변환함.
@@ -402,6 +665,7 @@ function buildRegistryFileRecord(file: WorkspaceScanFile): BuiltRegistryFileReco
         uri: file.uri,
         absolutePath: file.absolutePath,
         relativePath: file.relativePath,
+        text: file.text,
         artifact: file.artifact,
         artifactClass: file.artifactClass,
         cbsBearingArtifact: file.cbsBearingArtifact,
@@ -430,6 +694,7 @@ function buildRegistryFileRecord(file: WorkspaceScanFile): BuiltRegistryFileReco
         uri: file.uri,
         absolutePath: file.absolutePath,
         relativePath: file.relativePath,
+        text: file.text,
         artifact: file.artifact,
         artifactClass: file.artifactClass,
         cbsBearingArtifact: file.cbsBearingArtifact,
@@ -448,13 +713,29 @@ function buildRegistryFileRecord(file: WorkspaceScanFile): BuiltRegistryFileReco
     };
   }
 
-  const fragmentElements = file.fragmentMap.fragments.map((fragment) => buildFragmentElement(file, fragment));
+  /**
+   * Sort fragments by host position for deterministic ordering.
+   * This ensures fragmentIndex is stable across rebuilds.
+   */
+  const sortedFragments = [...file.fragmentMap.fragments].sort((left, right) => {
+    return (
+      left.start - right.start ||
+      left.end - right.end ||
+      left.section.localeCompare(right.section) ||
+      left.content.localeCompare(right.content)
+    );
+  });
+
+  const fragmentElements = sortedFragments.map((fragment, index) =>
+    buildFragmentElement(file, fragment, index),
+  );
 
   return {
     record: {
       uri: file.uri,
       absolutePath: file.absolutePath,
       relativePath: file.relativePath,
+      text: file.text,
       artifact: file.artifact,
       artifactClass: file.artifactClass,
       cbsBearingArtifact: file.cbsBearingArtifact,
@@ -480,6 +761,7 @@ function buildRegistryFileRecord(file: WorkspaceScanFile): BuiltRegistryFileReco
 export class ElementRegistry {
   private rootPath = '';
   private snapshot: ElementRegistrySnapshot = {
+    ...createCbsAgentProtocolMarker(),
     rootPath: '',
     files: [],
     elements: [],
@@ -498,6 +780,8 @@ export class ElementRegistry {
   private readonly graphSeedsByUri = new Map<string, readonly ElementRegistryGraphSeed[]>();
   private readonly elementCbsDataByUri = new Map<string, readonly ElementCBSData[]>();
   private readonly luaArtifactsByUri = new Map<string, LuaAnalysisArtifact>();
+
+  private isBatchRebuilding = false;
 
   constructor(scanResult: WorkspaceScanResult) {
     this.rebuild(scanResult);
@@ -534,46 +818,62 @@ export class ElementRegistry {
       this.elementsByArtifact.set(artifact, []);
     }
 
-    const files: ElementRegistryFileRecord[] = [];
-    const elements: ElementRegistryElement[] = [];
-    const graphSeeds: ElementRegistryGraphSeed[] = [];
-    const byArtifact = createArtifactSummaryRecord();
-
-    for (const file of scanResult.files) {
-      const built = buildRegistryFileRecord(file);
-
-      files.push(built.record);
-      elements.push(...built.elements);
-      graphSeeds.push(...built.graphSeeds);
-      this.filesByUri.set(built.record.uri, built.record);
-      this.filesByArtifact.get(file.artifact)?.push(built.record);
-      this.elementsByUri.set(built.record.uri, built.elements);
-      this.elementsByArtifact.get(file.artifact)?.push(...built.elements);
-      this.graphSeedsByUri.set(built.record.uri, built.graphSeeds);
-      this.elementCbsDataByUri.set(built.record.uri, built.elementCbsData);
-      if (built.luaArtifact) {
-        this.luaArtifactsByUri.set(built.record.uri, built.luaArtifact);
+    this.isBatchRebuilding = true;
+    try {
+      for (const file of scanResult.files) {
+        this.upsertFile(file);
       }
-
-      byArtifact[file.artifact].files += 1;
-      byArtifact[file.artifact].elements += built.elements.length;
-      byArtifact[file.artifact].graphSeeds += built.graphSeeds.length;
+    } finally {
+      this.isBatchRebuilding = false;
     }
 
-    this.snapshot = {
-      rootPath: scanResult.rootPath,
-      files,
-      elements,
-      graphSeeds,
-      summary: {
-        totalFiles: files.length,
-        totalElements: elements.length,
-        totalGraphSeeds: graphSeeds.length,
-        byArtifact,
-      },
-    };
+    return this.rebuildSnapshot();
+  }
 
-    return this.snapshot;
+  /**
+   * upsertFile 함수.
+   * 단일 scan file 변경만 registry에 부분 반영하고 snapshot을 다시 고정함.
+   *
+   * @param file - 최신 workspace scan file entry
+   * @returns 갱신된 file record
+   */
+  upsertFile(file: WorkspaceScanFile): ElementRegistryFileRecord {
+    const built = buildRegistryFileRecord(file);
+    this.removeFileFromIndexes(built.record.uri);
+
+    this.filesByUri.set(built.record.uri, built.record);
+    this.filesByArtifact.get(file.artifact)?.push(built.record);
+    this.elementsByUri.set(built.record.uri, built.elements);
+    this.elementsByArtifact.get(file.artifact)?.push(...built.elements);
+    this.graphSeedsByUri.set(built.record.uri, built.graphSeeds);
+    this.elementCbsDataByUri.set(built.record.uri, built.elementCbsData);
+
+    if (built.luaArtifact) {
+      this.luaArtifactsByUri.set(built.record.uri, built.luaArtifact);
+    }
+
+    if (!this.isBatchRebuilding) {
+      this.rebuildSnapshot();
+    }
+    return built.record;
+  }
+
+  /**
+   * removeFile 함수.
+   * URI 하나를 registry에서 제거하고 snapshot을 다시 고정함.
+   *
+   * @param uri - 제거할 file URI
+   * @returns 실제로 제거된 파일이 있었는지 여부
+   */
+  removeFile(uri: string): boolean {
+    const didExist = this.filesByUri.has(uri);
+    if (!didExist) {
+      return false;
+    }
+
+    this.removeFileFromIndexes(uri);
+    this.rebuildSnapshot();
+    return true;
   }
 
   /**
@@ -691,6 +991,80 @@ export class ElementRegistry {
    */
   getRootPath(): string {
     return this.rootPath;
+  }
+
+  /**
+   * removeFileFromIndexes 함수.
+   * 특정 URI의 기존 file/element/graph index를 모두 제거함.
+   *
+   * @param uri - 제거할 file URI
+   */
+  private removeFileFromIndexes(uri: string): void {
+    const previousRecord = this.filesByUri.get(uri);
+    if (!previousRecord) {
+      return;
+    }
+
+    this.filesByUri.delete(uri);
+    this.elementsByUri.delete(uri);
+    this.graphSeedsByUri.delete(uri);
+    this.elementCbsDataByUri.delete(uri);
+    this.luaArtifactsByUri.delete(uri);
+
+    const artifactFiles = this.filesByArtifact.get(previousRecord.artifact);
+    if (artifactFiles) {
+      this.filesByArtifact.set(
+        previousRecord.artifact,
+        artifactFiles.filter((record) => record.uri !== uri),
+      );
+    }
+
+    const artifactElements = this.elementsByArtifact.get(previousRecord.artifact);
+    if (artifactElements) {
+      this.elementsByArtifact.set(
+        previousRecord.artifact,
+        artifactElements.filter((element) => element.uri !== uri),
+      );
+    }
+  }
+
+  /**
+   * rebuildSnapshot 함수.
+   * 현재 index map들을 기반으로 stable snapshot/summary를 다시 계산함.
+   *
+   * @returns 최신 registry snapshot
+   */
+  private rebuildSnapshot(): ElementRegistrySnapshot {
+    const files = [...this.filesByUri.values()].sort((left, right) =>
+      left.relativePath.localeCompare(right.relativePath) || left.absolutePath.localeCompare(right.absolutePath),
+    );
+    const elements = files.flatMap((file) => this.getElementsByUri(file.uri));
+    const graphSeeds = files.flatMap((file) => this.getGraphSeedsByUri(file.uri));
+    const byArtifact = createArtifactSummaryRecord();
+
+    for (const file of files) {
+      const elementList = this.getElementsByUri(file.uri);
+      const seedList = this.getGraphSeedsByUri(file.uri);
+      byArtifact[file.artifact].files += 1;
+      byArtifact[file.artifact].elements += elementList.length;
+      byArtifact[file.artifact].graphSeeds += seedList.length;
+    }
+
+    this.snapshot = {
+      ...createCbsAgentProtocolMarker(),
+      rootPath: this.rootPath,
+      files,
+      elements,
+      graphSeeds,
+      summary: {
+        totalFiles: files.length,
+        totalElements: elements.length,
+        totalGraphSeeds: graphSeeds.length,
+        byArtifact,
+      },
+    };
+
+    return this.snapshot;
   }
 }
 

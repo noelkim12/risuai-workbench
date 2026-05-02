@@ -7,6 +7,7 @@ import {
   injectToggleIntoModule,
   injectToggleIntoPreset,
   parseToggleContent,
+  parseToggleDefinitions,
   resolveDuplicateToggleSources,
   serializeToggleContent,
   ToggleAdapterError,
@@ -39,6 +40,46 @@ SoundEffect=🔊 효과음
     it('preserves content with XML-like tags', () => {
       const content = '<toggle condition="1 == 1"/>';
       expect(parseToggleContent(content)).toBe(content);
+    });
+  });
+
+  describe('parseToggleDefinitions', () => {
+    it('extracts toggle keys and derived global variable names from risutoggle DSL', () => {
+      const content = [
+        'response_mode-gpt-5.4=모드=select=기본,OOC(지침X),OOC(지침O)',
+        'pastmj-gpt-5.4=중요사건',
+      ].join('\n');
+
+      expect(parseToggleDefinitions(content)).toEqual([
+        {
+          name: 'response_mode-gpt-5.4',
+          globalVariableName: 'toggle_response_mode-gpt-5.4',
+          line: 0,
+          startOffset: 0,
+          endOffset: 'response_mode-gpt-5.4'.length,
+        },
+        {
+          name: 'pastmj-gpt-5.4',
+          globalVariableName: 'toggle_pastmj-gpt-5.4',
+          line: 1,
+          startOffset: content.indexOf('pastmj-gpt-5.4'),
+          endOffset: content.indexOf('pastmj-gpt-5.4') + 'pastmj-gpt-5.4'.length,
+        },
+      ]);
+    });
+
+    it('ignores blank and comment lines while preserving raw toggle names', () => {
+      const content = ['# comment', '', '  spaced.name = label'].join('\n');
+
+      expect(parseToggleDefinitions(content)).toEqual([
+        {
+          name: 'spaced.name',
+          globalVariableName: 'toggle_spaced.name',
+          line: 2,
+          startOffset: content.indexOf('spaced.name'),
+          endOffset: content.indexOf('spaced.name') + 'spaced.name'.length,
+        },
+      ]);
     });
   });
 

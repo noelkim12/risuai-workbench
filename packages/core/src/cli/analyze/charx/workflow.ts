@@ -413,24 +413,50 @@ function resolveCharxName(charx: unknown): string {
 }
 
 /**
+ * readCanonicalCharacterName 함수.
+ * Canonical manifest에서 분석 대상 캐릭터 이름을 읽음.
+ *
+ * @param outputDir - 분석할 canonical character workspace 경로
+ * @returns manifest에 기록된 캐릭터 이름 또는 null
+ */
+function readCanonicalCharacterName(outputDir: string): string | null {
+  const manifestPath = path.join(outputDir, '.risuchar');
+  if (!fs.existsSync(manifestPath)) return null;
+
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as { name?: unknown };
+    return typeof manifest.name === 'string' && manifest.name.length > 0 ? manifest.name : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * readLegacyCharacterName 함수.
+ * Legacy metadata fallback에서 분석 대상 캐릭터 이름을 읽음.
+ *
+ * @param outputDir - 분석할 legacy character workspace 경로
+ * @returns metadata에 기록된 캐릭터 이름 또는 null
+ */
+function readLegacyCharacterName(outputDir: string): string | null {
+  const metadataPath = path.join(outputDir, 'character', 'metadata.json');
+  if (!fs.existsSync(metadataPath)) return null;
+
+  try {
+    const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8')) as { name?: unknown };
+    return typeof metadata.name === 'string' && metadata.name.length > 0 ? metadata.name : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Build minimal charx structure from canonical artifacts for analysis.
  * This creates a skeleton charx object that allows existing analysis functions to work
  * without requiring the full charx.json file.
  */
 function buildMinimalCharxFromCanonical(outputDir: string): unknown {
-  // Read character metadata if available
-  const metadataPath = path.join(outputDir, 'character', 'metadata.json');
-  let name = 'Unknown';
-  if (fs.existsSync(metadataPath)) {
-    try {
-      const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8')) as { name?: string };
-      if (typeof metadata.name === 'string' && metadata.name.length > 0) {
-        name = metadata.name;
-      }
-    } catch {
-      // Ignore metadata parse errors
-    }
-  }
+  const name = readCanonicalCharacterName(outputDir) ?? readLegacyCharacterName(outputDir) ?? 'Unknown';
 
   // Read lorebook entries from canonical .risulorebook files
   const lorebookEntries = collectLorebookEntriesFromCanonical(outputDir);
@@ -609,7 +635,8 @@ function buildCharxTokenComponents(
       'description.txt',
       'first_mes.txt',
       'system_prompt.txt',
-      'post_history_instructions.txt',
+      'replace_global_note.txt',
+      'replace_global_note.risutext',
       'creator_notes.txt',
       'additional_text.txt',
     ]),
@@ -647,7 +674,7 @@ function buildFallbackCharxTokenComponents(
     ['description', data.description],
     ['first_mes', data.first_mes],
     ['system_prompt', data.system_prompt],
-    ['post_history_instructions', data.post_history_instructions],
+    ['replace_global_note', data.replaceGlobalNote],
     ['creator_notes', data.creator_notes],
     ['additional_text', risuai.additionalText],
   ];

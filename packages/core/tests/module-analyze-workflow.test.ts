@@ -6,6 +6,25 @@ import { collectModuleCBS } from '../src/cli/analyze/module/collectors';
 import { runAnalyzeModuleWorkflow } from '../src/cli/analyze/module/workflow';
 import { runExtractWorkflow as runModuleExtractWorkflow } from '../src/cli/extract/module/workflow';
 
+function makeRisumodule(opts: { name: string; id?: string; namespace?: string }): string {
+  return JSON.stringify(
+    {
+      $schema: 'https://risuai-workbench.dev/schemas/risumodule.schema.json',
+      kind: 'risu.module',
+      schemaVersion: 1,
+      id: opts.id || opts.name,
+      name: opts.name,
+      description: '',
+      createdAt: null,
+      modifiedAt: null,
+      sourceFormat: 'json',
+      ...(opts.namespace ? { namespace: opts.namespace } : {}),
+    },
+    null,
+    2,
+  );
+}
+
 describe('module analyze collectors and workflow', () => {
   let tempDir: string;
 
@@ -83,10 +102,10 @@ type: editdisplay
       'utf-8',
     );
 
-    // Canonical workspace uses metadata.json (no module.json)
+    // Canonical workspace uses .risumodule (no module.json)
     fs.writeFileSync(
-      path.join(tempDir, 'metadata.json'),
-      `${JSON.stringify({ name: 'test_module', id: 'module-id' }, null, 2)}\n`,
+      path.join(tempDir, '.risumodule'),
+      `${makeRisumodule({ name: 'test_module', id: 'module-id' })}\n`,
       'utf-8',
     );
   });
@@ -291,7 +310,8 @@ end
 
     expect(code).toBe(0);
     expect(fs.existsSync(path.join(outDir, 'module.json'))).toBe(false);
-    expect(fs.existsSync(path.join(outDir, 'metadata.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, '.risumodule'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'metadata.json'))).toBe(false);
     expect(fs.existsSync(path.join(outDir, 'analysis', 'module-analysis.md'))).toBe(true);
     expect(fs.existsSync(path.join(outDir, 'analysis', 'module-analysis.html'))).toBe(true);
     expect(fs.existsSync(path.join(outDir, 'lua', 'auto_module.risulua'))).toBe(true);
@@ -398,11 +418,13 @@ unused_${i}
     const code = await runModuleExtractWorkflow([sourcePath, '--out', outDir, '--json-only']);
 
     expect(code).toBe(0);
-    // In canonical mode, module.json is NOT created (only metadata.json)
+    // In canonical mode, module.json is NOT created (only .risumodule)
     expect(fs.existsSync(path.join(outDir, 'module.json'))).toBe(false);
-    expect(fs.existsSync(path.join(outDir, 'metadata.json'))).toBe(true);
-    // Analysis is skipped because there's no module.json (canonical behavior)
-    expect(fs.existsSync(path.join(outDir, 'analysis'))).toBe(false);
+    expect(fs.existsSync(path.join(outDir, '.risumodule'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'metadata.json'))).toBe(false);
+    // Analysis runs because .risumodule is the canonical marker
+    expect(fs.existsSync(path.join(outDir, 'analysis', 'module-analysis.md'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'analysis', 'module-analysis.html'))).toBe(true);
   });
 
   it('preserves lorebook-derived analysis sections without module.json using canonical files', () => {
@@ -468,10 +490,10 @@ type: editdisplay
       'utf-8',
     );
 
-    // Create metadata.json (canonical marker, NOT module.json)
+    // Create .risumodule (canonical marker, NOT module.json)
     fs.writeFileSync(
-      path.join(canonicalDir, 'metadata.json'),
-      `${JSON.stringify({ name: 'canonical_module', namespace: 'rpg' }, null, 2)}\n`,
+      path.join(canonicalDir, '.risumodule'),
+      `${makeRisumodule({ name: 'canonical_module', id: 'canonical-module', namespace: 'rpg' })}\n`,
       'utf-8',
     );
 
@@ -494,7 +516,7 @@ type: editdisplay
     fs.rmSync(canonicalDir, { recursive: true, force: true });
   });
 
-  it('auto-detects as module (not preset) when workspace has metadata.json + lorebooks/ + regex/', () => {
+  it('auto-detects as module (not preset) when workspace has .risumodule + lorebooks/ + regex/', () => {
     // Create a canonical module workspace that ALSO has regex/ (which is a preset marker)
     // Module should take precedence over preset due to stricter criteria
     const moduleWithRegexDir = fs.mkdtempSync(path.join(os.tmpdir(), 'module-with-regex-'));
@@ -537,10 +559,10 @@ type: editdisplay
       'utf-8',
     );
 
-    // Create metadata.json (canonical marker for both module and preset)
+    // Create .risumodule (canonical module marker)
     fs.writeFileSync(
-      path.join(moduleWithRegexDir, 'metadata.json'),
-      `${JSON.stringify({ name: 'module_with_regex', namespace: 'test' }, null, 2)}\n`,
+      path.join(moduleWithRegexDir, '.risumodule'),
+      `${makeRisumodule({ name: 'module_with_regex', id: 'module-with-regex', namespace: 'test' })}\n`,
       'utf-8',
     );
 
@@ -559,5 +581,98 @@ type: editdisplay
 
     // Cleanup
     fs.rmSync(moduleWithRegexDir, { recursive: true, force: true });
+  });
+
+  it('rejects metadata.json + lorebooks/ without .risumodule as non-canonical module', () => {
+    const metadataOnlyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'module-metadata-only-'));
+
+    fs.mkdirSync(path.join(metadataOnlyDir, 'lorebooks'), { recursive: true });
+    fs.writeFileSync(
+      path.join(metadataOnlyDir, 'lorebooks', 'entry.risulorebook'),
+      `---
+name: entry
+comment: Entry
+mode: normal
+constant: false
+selective: false
+insertion_order: 0
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+key1
+@@@ CONTENT
+{{setvar::x::y}}
+`,
+      'utf-8',
+    );
+
+    // metadata.json alone is no longer a canonical module marker
+    fs.writeFileSync(
+      path.join(metadataOnlyDir, 'metadata.json'),
+      `${JSON.stringify({ name: 'metadata_only_module', id: 'metadata-only' }, null, 2)}\n`,
+      'utf-8',
+    );
+
+    const code = runAnalyzeModuleWorkflow([metadataOnlyDir, '--locale', 'en']);
+    expect(code).toBe(1);
+    expect(fs.existsSync(path.join(metadataOnlyDir, 'analysis'))).toBe(false);
+
+    fs.rmSync(metadataOnlyDir, { recursive: true, force: true });
+  });
+
+  it('analyzes module with .risumodule even when lorebooks/ is absent', () => {
+    const minimalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'module-minimal-risumodule-'));
+
+    fs.writeFileSync(
+      path.join(minimalDir, '.risumodule'),
+      `${makeRisumodule({ name: 'minimal_module', id: 'minimal-module' })}\n`,
+      'utf-8',
+    );
+
+    const code = runAnalyzeModuleWorkflow([minimalDir, '--locale', 'en']);
+    expect(code).toBe(0);
+    expect(fs.existsSync(path.join(minimalDir, 'analysis', 'module-analysis.md'))).toBe(true);
+    expect(fs.existsSync(path.join(minimalDir, 'analysis', 'module-analysis.html'))).toBe(true);
+
+    fs.rmSync(minimalDir, { recursive: true, force: true });
+  });
+
+  it('does not use metadata.json for collector metadata when .risumodule is absent', () => {
+    const noMarkerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'module-no-risumodule-'));
+
+    fs.mkdirSync(path.join(noMarkerDir, 'lorebooks'), { recursive: true });
+    fs.writeFileSync(
+      path.join(noMarkerDir, 'lorebooks', 'entry.risulorebook'),
+      `---
+name: entry
+comment: Entry
+mode: normal
+constant: false
+selective: false
+insertion_order: 0
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+key1
+@@@ CONTENT
+{{setvar::x::y}}
+`,
+      'utf-8',
+    );
+
+    // metadata.json exists but must be ignored by collectors
+    fs.writeFileSync(
+      path.join(noMarkerDir, 'metadata.json'),
+      `${JSON.stringify({ name: 'should_be_ignored', id: 'ignored' }, null, 2)}\n`,
+      'utf-8',
+    );
+
+    const collected = collectModuleCBS(noMarkerDir);
+    expect(collected.metadata.name).not.toBe('should_be_ignored');
+    expect(collected.metadata.id).toBeUndefined();
+
+    fs.rmSync(noMarkerDir, { recursive: true, force: true });
   });
 });

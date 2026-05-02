@@ -182,6 +182,47 @@ describe('CBSTokenizer', () => {
     ]);
   });
 
+  it('keeps nested macros inside math expressions as separate tokens', () => {
+    const tokenizer = new CBSTokenizer();
+
+    const tokens = tokenizer.tokenize('{{? {{getvar::ct_Language}} == 1}}');
+
+    expect(snapshotTokens(tokens)).toEqual([
+      { type: 'OpenBrace', value: '{{', raw: '{{' },
+      { type: 'MathExpression', value: '', raw: '? ' },
+      { type: 'OpenBrace', value: '{{', raw: '{{' },
+      { type: 'FunctionName', value: 'getvar', raw: 'getvar' },
+      { type: 'ArgumentSeparator', value: '::', raw: '::' },
+      { type: 'Argument', value: 'ct_Language', raw: 'ct_Language' },
+      { type: 'CloseBrace', value: '}}', raw: '}}' },
+      { type: 'MathExpression', value: ' == 1', raw: ' == 1' },
+      { type: 'CloseBrace', value: '}}', raw: '}}' },
+      { type: 'EOF', value: '', raw: '' },
+    ]);
+  });
+
+  it('keeps nested math macros inside block headers as condition tokens', () => {
+    const tokenizer = new CBSTokenizer();
+
+    const tokens = tokenizer.tokenize('{{#if {{? {{getvar::ct_Deck_Level}} <= 2}}}}');
+
+    expect(snapshotTokens(tokens)).toEqual([
+      { type: 'OpenBrace', value: '{{', raw: '{{' },
+      { type: 'BlockStart', value: '#if', raw: '#if ' },
+      { type: 'OpenBrace', value: '{{', raw: '{{' },
+      { type: 'MathExpression', value: '', raw: '? ' },
+      { type: 'OpenBrace', value: '{{', raw: '{{' },
+      { type: 'FunctionName', value: 'getvar', raw: 'getvar' },
+      { type: 'ArgumentSeparator', value: '::', raw: '::' },
+      { type: 'Argument', value: 'ct_Deck_Level', raw: 'ct_Deck_Level' },
+      { type: 'CloseBrace', value: '}}', raw: '}}' },
+      { type: 'MathExpression', value: ' <= 2', raw: ' <= 2' },
+      { type: 'CloseBrace', value: '}}', raw: '}}' },
+      { type: 'CloseBrace', value: '}}', raw: '}}' },
+      { type: 'EOF', value: '', raw: '' },
+    ]);
+  });
+
   it('exposes tokenizer diagnostics via a getter and resets them between runs', () => {
     const tokenizer = new CBSTokenizer();
 

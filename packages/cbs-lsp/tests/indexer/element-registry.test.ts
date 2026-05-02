@@ -5,7 +5,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { afterEach, describe, expect, it } from 'vitest'
 import { getCustomExtensionArtifactContract, type CustomExtensionArtifact } from 'risu-workbench-core'
 
-import { ElementRegistry, FileScanner } from '../../src/indexer'
+import { buildWorkspaceScanResult, createWorkspaceScanFileFromText, ElementRegistry, FileScanner, MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH, UnifiedVariableGraph } from '../../src/indexer'
+import { snapshotLayer1Contracts } from '../fixtures/fixture-corpus'
 
 type WorkspaceFileSeed = {
   artifact: CustomExtensionArtifact
@@ -131,21 +132,68 @@ describe('ElementRegistry', () => {
       },
     })
 
+    const contractSnapshot = snapshotLayer1Contracts(
+      registry.getSnapshot(),
+      UnifiedVariableGraph.fromRegistry(registry).getSnapshot(),
+    )
+    expect(contractSnapshot).toMatchObject({
+      schema: 'cbs-lsp-agent-contract',
+      schemaVersion: '1.0.0',
+      contract: {
+        layer: 'layer1',
+        stability: 'stable-public-read-contract',
+        trust: {
+          agentsMayTrustSnapshotDirectly: true,
+          stableForWorkspaceReasoning: true,
+          writeCapabilitiesIncluded: false,
+        },
+        stableFields: {
+          registrySnapshot: ['rootPath', 'files', 'elements', 'graphSeeds', 'summary'],
+          graphSnapshot: [
+            'rootPath',
+            'variables',
+            'totalVariables',
+            'totalOccurrences',
+            'variableIndex',
+            'occurrencesByUri',
+            'occurrencesByElementId',
+            'buildTimestamp',
+          ],
+          runtimeDerivedFields: ['graph.buildTimestamp'],
+        },
+        deterministicOrdering: {
+          registryFiles: 'relativePath -> absolutePath',
+          graphOccurrences: 'variableName -> uri -> hostStartOffset -> hostEndOffset -> occurrenceId',
+        },
+      },
+      registry: {
+        schema: 'cbs-lsp-agent-contract',
+        schemaVersion: '1.0.0',
+      },
+      graph: {
+        schema: 'cbs-lsp-agent-contract',
+        schemaVersion: '1.0.0',
+      },
+    })
+
     expect(registry.getFileByUri(lorebookUri!)).toMatchObject({
       artifact: 'lorebook',
       analysisKind: 'cbs-fragments',
-      elementIds: [`${lorebookUri}#fragment:CONTENT`],
+      elementIds: [`${lorebookUri}#fragment:CONTENT:0`],
       graphSeedCount: 1,
     })
     expect(registry.getElementsByUri(lorebookUri!)).toMatchObject([
       {
-        id: `${lorebookUri}#fragment:CONTENT`,
+        id: `${lorebookUri}#fragment:CONTENT:0`,
         elementName: 'lorebooks/hero-entry.risulorebook#CONTENT',
         displayName: 'hero-entry.risulorebook#CONTENT',
         analysisKind: 'cbs-fragment',
+        fragmentIndex: 0,
         fragment: {
           section: 'CONTENT',
+          fragmentIndex: 0,
           content: '{{setvar::mood::happy}} {{getvar::hp}}',
+          hostRange: { start: expect.any(Number), end: expect.any(Number) },
         },
         cbs: {
           reads: ['hp'],
@@ -156,13 +204,15 @@ describe('ElementRegistry', () => {
 
     expect(registry.getElementsByArtifact('regex')).toMatchObject([
       {
-        id: `${regexUri}#fragment:IN`,
-        fragment: { section: 'IN' },
+        id: `${regexUri}#fragment:IN:0`,
+        fragmentIndex: 0,
+        fragment: { section: 'IN', fragmentIndex: 0 },
         cbs: { reads: ['mood'], writes: [] },
       },
       {
-        id: `${regexUri}#fragment:OUT`,
-        fragment: { section: 'OUT' },
+        id: `${regexUri}#fragment:OUT:1`,
+        fragmentIndex: 1,
+        fragment: { section: 'OUT', fragmentIndex: 1 },
         cbs: { reads: [], writes: ['reply'] },
       },
     ])
@@ -171,18 +221,23 @@ describe('ElementRegistry', () => {
       {
         artifact: 'prompt',
         fragmentSection: 'TEXT',
+        fragmentIndex: 0,
         cbs: { reads: ['persona'], writes: [] },
+        hostRange: { start: expect.any(Number), end: expect.any(Number) },
       },
       {
         artifact: 'prompt',
         fragmentSection: 'DEFAULT_TEXT',
+        fragmentIndex: 1,
         cbs: { reads: [], writes: [] },
+        hostRange: { start: expect.any(Number), end: expect.any(Number) },
       },
     ])
     expect(registry.getElementsByUri(htmlUri!)).toMatchObject([
       {
         artifact: 'html',
-        fragment: { section: 'full' },
+        fragmentIndex: 0,
+        fragment: { section: 'full', fragmentIndex: 0 },
         cbs: { reads: [], writes: ['theme'] },
       },
     ])
@@ -264,6 +319,143 @@ describe('ElementRegistry', () => {
     expect([...registry.getAllElementCbsData()[0]!.writes]).toEqual(['reply'])
   })
 
+  it('keeps oversized lua files queryable with lightweight state API occurrences', async () => {
+    const luaText = [
+      'local chat = getCurrentChat()'.padEnd(120, ' '),
+      '-- getState(chat, "commentedOut")',
+      'local mood = getState(chat, "oversizedMood")',
+      'setState(chat, "oversizedReply", mood)',
+      'setChatVar("directWrite", "ok")',
+      'local directRead = getChatVar("directRead")',
+      'return mood',
+      'x'.repeat(MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH),
+    ].join('\n')
+    const { scanResult, registry } = await buildRegistry([
+      {
+        artifact: 'lua',
+        fileName: 'huge-script.risulua',
+        text: luaText,
+      },
+    ])
+
+    const luaUri = scanResult.files[0]?.uri
+    expect(luaUri).toBeTruthy()
+    expect(scanResult.files[0]).toMatchObject({
+      artifact: 'lua',
+      indexTextTruncated: true,
+      originalTextLength: luaText.length,
+      text: '',
+    })
+    expect(registry.getFileByUri(luaUri!)).toMatchObject({
+      artifact: 'lua',
+      analysisKind: 'lua-file',
+      elementIds: [`${luaUri}#lua`],
+      graphSeedCount: 1,
+      analysisError: `Lua full analysis skipped because source exceeds ${MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH} characters; lightweight state API scan indexed 4 static occurrence(s).`,
+    })
+    expect(registry.getElementsByUri(luaUri!)).toMatchObject([
+      {
+        id: `${luaUri}#lua`,
+        lua: {
+          functionNames: [],
+          stateVariableNames: ['directRead', 'directWrite', 'oversizedMood', 'oversizedReply'],
+        },
+      },
+    ])
+    expect(registry.getGraphSeedsByUri(luaUri!)).toMatchObject([
+      {
+        artifact: 'lua',
+        analysisKind: 'lua-file',
+        cbs: {
+          reads: ['directRead', 'oversizedMood'],
+          writes: ['directWrite', 'oversizedReply'],
+        },
+      },
+    ])
+    expect(registry.getLuaArtifactByUri(luaUri!)).toMatchObject({
+      baseName: 'huge-script',
+      serialized: {
+        stateAccessOccurrences: expect.arrayContaining([
+          expect.objectContaining({ apiName: 'getState', key: 'oversizedMood', direction: 'read' }),
+          expect.objectContaining({ apiName: 'setState', key: 'oversizedReply', direction: 'write' }),
+          expect.objectContaining({ apiName: 'setChatVar', key: 'directWrite', direction: 'write' }),
+          expect.objectContaining({ apiName: 'getChatVar', key: 'directRead', direction: 'read' }),
+        ]),
+      },
+    })
+
+    const graph = UnifiedVariableGraph.fromRegistry(registry)
+    expect(graph.getVariable('commentedOut')).toBeNull()
+    expect(graph.getVariable('oversizedMood')?.readers).toMatchObject([
+      {
+        sourceKind: 'lua-state-api',
+        sourceName: 'getState',
+        artifact: 'lua',
+        relativePath: 'lua/huge-script.risulua',
+      },
+    ])
+    expect(graph.getVariable('oversizedReply')?.writers).toMatchObject([
+      {
+        sourceKind: 'lua-state-api',
+        sourceName: 'setState',
+        artifact: 'lua',
+        hostRange: {
+          start: { line: 3, character: 16 },
+          end: { line: 3, character: 30 },
+        },
+      },
+    ])
+  })
+
+  it('indexes oversized lua state accesses from compact wasm-compatible scan records', () => {
+    const uri = 'file:///workspace/lua/oversized.risulua'
+    const source = 'local mood = getState("wasmMood")\nsetChatVar("wasmReply", mood)\n'
+    const scanResult = buildWorkspaceScanResult('/workspace', [
+      {
+        uri,
+        absolutePath: '/workspace/lua/oversized.risulua',
+        relativePath: 'lua/oversized.risulua',
+        artifact: 'lua',
+        artifactClass: 'cbs-bearing',
+        cbsBearingArtifact: true,
+        text: '',
+        originalTextLength: source.length,
+        indexTextTruncated: true,
+        lightweightLuaSourceText: source,
+        lightweightLuaStateAccessOccurrences: [
+          {
+            apiName: 'getState',
+            key: 'wasmMood',
+            direction: 'read',
+            argStart: source.indexOf('wasmMood'),
+            argEnd: source.indexOf('wasmMood') + 'wasmMood'.length,
+            line: 1,
+            containingFunction: '<top-level>',
+          },
+          {
+            apiName: 'setChatVar',
+            key: 'wasmReply',
+            direction: 'write',
+            argStart: source.indexOf('wasmReply'),
+            argEnd: source.indexOf('wasmReply') + 'wasmReply'.length,
+            line: 2,
+            containingFunction: '<top-level>',
+          },
+        ],
+        fragmentMap: { artifact: 'lua', fragments: [], fileLength: source.length },
+        hasCbsFragments: false,
+        fragmentCount: 0,
+        fragmentSections: [],
+      },
+    ])
+    const registry = new ElementRegistry(scanResult)
+
+    expect(registry.getLuaArtifactByUri(uri)?.serialized.stateAccessOccurrences).toMatchObject([
+      { apiName: 'getState', key: 'wasmMood', direction: 'read' },
+      { apiName: 'setChatVar', key: 'wasmReply', direction: 'write' },
+    ])
+  })
+
   it('keeps non-CBS and no-fragment files queryable without inventing fake elements', async () => {
     const { scanResult, registry } = await buildRegistry([
       {
@@ -323,6 +515,200 @@ describe('ElementRegistry', () => {
         toggle: { files: 1, elements: 0, graphSeeds: 0 },
         variable: { files: 1, elements: 0, graphSeeds: 0 },
         html: { files: 0, elements: 0, graphSeeds: 0 },
+      },
+    })
+  })
+
+  it('disambiguates duplicate fragment section names with deterministic index-based IDs', async () => {
+    const { scanResult, registry } = await buildRegistry([
+      {
+        artifact: 'lorebook',
+        fileName: 'duplicate-sections.risulorebook',
+        text: [
+          '---',
+          'name: duplicate-test',
+          '---',
+          '@@@ CONTENT',
+          '{{setvar::first::value1}}',
+          '@@@ CONTENT',
+          '{{setvar::second::value2}}',
+          '@@@ CONTENT',
+          '{{setvar::third::value3}}',
+          '',
+        ].join('\n'),
+      },
+    ])
+
+    const lorebookUri = scanResult.files[0]?.uri
+    expect(lorebookUri).toBeTruthy()
+
+    const elements = registry.getElementsByUri(lorebookUri!)
+    expect(elements).toHaveLength(3)
+
+    // Each duplicate section gets a unique ID with index disambiguation
+    expect(elements[0]).toMatchObject({
+      id: `${lorebookUri}#fragment:CONTENT:0`,
+      fragmentIndex: 0,
+      elementName: 'lorebooks/duplicate-sections.risulorebook#CONTENT',
+      fragment: {
+        section: 'CONTENT',
+        fragmentIndex: 0,
+        hostRange: { start: expect.any(Number), end: expect.any(Number) },
+      },
+      cbs: { writes: ['first'] },
+    })
+    expect(elements[1]).toMatchObject({
+      id: `${lorebookUri}#fragment:CONTENT:1`,
+      fragmentIndex: 1,
+      elementName: 'lorebooks/duplicate-sections.risulorebook#CONTENT',
+      fragment: {
+        section: 'CONTENT',
+        fragmentIndex: 1,
+        hostRange: { start: expect.any(Number), end: expect.any(Number) },
+      },
+      cbs: { writes: ['second'] },
+    })
+    expect(elements[2]).toMatchObject({
+      id: `${lorebookUri}#fragment:CONTENT:2`,
+      fragmentIndex: 2,
+      elementName: 'lorebooks/duplicate-sections.risulorebook#CONTENT',
+      fragment: {
+        section: 'CONTENT',
+        fragmentIndex: 2,
+        hostRange: { start: expect.any(Number), end: expect.any(Number) },
+      },
+      cbs: { writes: ['third'] },
+    })
+
+    // Graph seeds include explicit metadata for consumers
+    const seeds = registry.getGraphSeedsByUri(lorebookUri!)
+    expect(seeds).toHaveLength(3)
+    expect(seeds[0]).toMatchObject({
+      elementId: `${lorebookUri}#fragment:CONTENT:0`,
+      fragmentSection: 'CONTENT',
+      fragmentIndex: 0,
+      hostRange: { start: expect.any(Number), end: expect.any(Number) },
+    })
+    expect(seeds[1]).toMatchObject({
+      elementId: `${lorebookUri}#fragment:CONTENT:1`,
+      fragmentSection: 'CONTENT',
+      fragmentIndex: 1,
+      hostRange: { start: expect.any(Number), end: expect.any(Number) },
+    })
+    expect(seeds[2]).toMatchObject({
+      elementId: `${lorebookUri}#fragment:CONTENT:2`,
+      fragmentSection: 'CONTENT',
+      fragmentIndex: 2,
+      hostRange: { start: expect.any(Number), end: expect.any(Number) },
+    })
+
+    // Summary counts all elements correctly
+    expect(registry.getSnapshot().summary).toMatchObject({
+      totalFiles: 1,
+      totalElements: 3,
+      totalGraphSeeds: 3,
+      byArtifact: {
+        lorebook: { files: 1, elements: 3, graphSeeds: 3 },
+      },
+    })
+  })
+
+  it('exposes hostRange metadata for graph consumers to avoid elementName parsing', async () => {
+    const { scanResult, registry } = await buildRegistry([
+      {
+        artifact: 'lorebook',
+        fileName: 'host-range-test.risulorebook',
+        text: ['---', 'name: test', '---', '@@@ CONTENT', '{{getvar::x}}', ''].join('\n'),
+      },
+    ])
+
+    const lorebookUri = scanResult.files[0]?.uri
+    const elements = registry.getElementsByUri(lorebookUri!)
+    const seeds = registry.getGraphSeedsByUri(lorebookUri!)
+
+    expect(elements).toHaveLength(1)
+    expect(seeds).toHaveLength(1)
+
+    const element = elements[0]!
+    const seed = seeds[0]!
+
+    // Graph consumers can use explicit metadata instead of parsing elementName
+    expect(seed.fragmentSection).toBe('CONTENT')
+    expect(seed.fragmentIndex).toBe(0)
+    expect(seed.hostRange).toEqual({
+      start: expect.any(Number),
+      end: expect.any(Number),
+    })
+
+    // Host range matches fragment position
+    expect(seed.hostRange).toEqual(element.fragment!.hostRange)
+
+    // Lua files have null hostRange (entire file is the element)
+    const { registry: luaRegistry } = await buildRegistry([
+      {
+        artifact: 'lua',
+        fileName: 'test.risulua',
+        text: 'local x = getState("y")',
+      },
+    ])
+    const luaSeed = luaRegistry.getGraphSeeds()[0]!
+    expect(luaSeed.fragmentSection).toBeNull()
+    expect(luaSeed.fragmentIndex).toBe(-1)
+    expect(luaSeed.hostRange).toBeNull()
+  })
+
+  it('updates and removes a single file without rebuilding the whole registry instance', async () => {
+    const { root, scanResult, registry } = await buildRegistry([
+      {
+        artifact: 'lorebook',
+        fileName: 'hero.risulorebook',
+        text: ['---', 'name: hero', '---', '@@@ CONTENT', '{{setvar::mood::happy}}', ''].join('\n'),
+      },
+      {
+        artifact: 'regex',
+        fileName: 'flow.risuregex',
+        text: ['---', 'comment: flow', 'type: plain', '---', '@@@ IN', '{{getvar::mood}}', ''].join('\n'),
+      },
+    ])
+
+    const heroUri = scanResult.files.find((file) => file.relativePath === 'lorebooks/hero.risulorebook')?.uri
+    const regexUri = scanResult.files.find((file) => file.relativePath === 'regex/flow.risuregex')?.uri
+
+    expect(heroUri).toBeTruthy()
+    expect(regexUri).toBeTruthy()
+    expect(registry.getSnapshot().summary.totalFiles).toBe(2)
+    expect(registry.getElementsByUri(regexUri!)).toMatchObject([
+      expect.objectContaining({ cbs: { reads: ['mood'], writes: [] } }),
+    ])
+
+    registry.upsertFile(
+      createWorkspaceScanFileFromText({
+        workspaceRoot: root,
+        absolutePath: path.join(root, 'lorebooks/hero.risulorebook'),
+        text: ['---', 'name: hero', '---', '@@@ CONTENT', '{{setvar::energy::boost}}', ''].join('\n'),
+      }),
+    )
+
+    expect(registry.getFileByUri(heroUri!)).toMatchObject({
+      graphSeedCount: 1,
+      analysisKind: 'cbs-fragments',
+    })
+    expect(registry.getElementsByUri(heroUri!)).toMatchObject([
+      expect.objectContaining({ cbs: { reads: [], writes: ['energy'] } }),
+    ])
+    expect(registry.getElementsByUri(regexUri!)).toMatchObject([
+      expect.objectContaining({ cbs: { reads: ['mood'], writes: [] } }),
+    ])
+
+    expect(registry.removeFile(regexUri!)).toBe(true)
+    expect(registry.getFileByUri(regexUri!)).toBeNull()
+    expect(registry.getElementsByUri(regexUri!)).toEqual([])
+    expect(registry.getSnapshot().summary).toMatchObject({
+      totalFiles: 1,
+      totalElements: 1,
+      byArtifact: {
+        lorebook: { files: 1, elements: 1, graphSeeds: 1 },
+        regex: { files: 0, elements: 0, graphSeeds: 0 },
       },
     })
   })

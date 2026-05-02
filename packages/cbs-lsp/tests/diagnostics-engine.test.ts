@@ -13,7 +13,7 @@ import {
   DiagnosticsEngine,
 } from '../src/analyzer/diagnostics';
 import { ScopeAnalyzer } from '../src/analyzer/scopeAnalyzer';
-import { routeDiagnosticsForDocument } from '../src/diagnostics-router';
+import { routeDiagnosticsForDocument } from '../src/utils/diagnostics-router';
 import { getFixtureCorpusEntry } from './fixtures/fixture-corpus';
 
 const diagnosticsEngine = new DiagnosticsEngine(new CBSBuiltinRegistry());
@@ -81,6 +81,34 @@ describe('DiagnosticsEngine', () => {
     expect(diagnostic?.message).toContain('expects 1 argument, but received 2');
   });
 
+  it('accepts time with zero or one format argument', () => {
+    const acceptedSource = '{{time}}{{time::HH:mm:ss}}';
+    const acceptedDiagnostics = diagnosticsEngine.analyze(
+      new CBSParser().parse(acceptedSource),
+      acceptedSource,
+    );
+
+    expect(acceptedDiagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      DiagnosticCode.MissingRequiredArgument,
+    );
+    expect(acceptedDiagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      DiagnosticCode.WrongArgumentCount,
+    );
+
+    const rejectedSource = '{{time::HH:mm:ss::1640995200000}}';
+    const rejectedDiagnostics = diagnosticsEngine.analyze(
+      new CBSParser().parse(rejectedSource),
+      rejectedSource,
+    );
+
+    expect(rejectedDiagnostics).toContainEqual(
+      expect.objectContaining({
+        code: DiagnosticCode.WrongArgumentCount,
+        message: expect.stringContaining('expects between 0 and 1 arguments, but received 2'),
+      }),
+    );
+  });
+
   it('attaches registry-backed replacement metadata to deprecated diagnostics with a precise edit range', () => {
     const source = '{{#if true}}fallback{{/if}}';
     const diagnostics = diagnosticsEngine.analyze(new CBSParser().parse(source), source);
@@ -137,7 +165,7 @@ describe('DiagnosticsEngine', () => {
       (candidate) => candidate.code === DiagnosticCode.WrongArgumentCount,
     );
 
-    expect(slotDiagnostic?.message).toContain('Documentation-only CBS syntax entry "slot"');
+    expect(slotDiagnostic?.message).toContain('Contextual CBS syntax entry "slot"');
 
     const whenSource = '{{#when}}body{{/when}}';
     const whenDiagnostics = diagnosticsEngine.analyze(new CBSParser().parse(whenSource), whenSource);
@@ -168,6 +196,25 @@ describe('DiagnosticsEngine', () => {
     );
 
     expect(diagnostic?.message).toContain('Invalid #when operator');
+  });
+
+  it('accepts nested CBS macro conditions in #when headers', () => {
+    const source =
+      '{{#when::{{and::{{equal::{{getglobalvar::toggle_lang}}::1}}::{{equal::{{getglobalvar::toggle_PC}}::1}}}}::is::1}}body{{/when}}';
+    const diagnostics = diagnosticsEngine.analyze(new CBSParser().parse(source), source);
+
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      DiagnosticCode.UnknownFunction,
+    );
+  });
+
+  it('does not report CBS103 when #when body contains whitespace', () => {
+    const source = '{{#when::ct_generatedHTML::vis::A}} {{/when}}';
+    const diagnostics = diagnosticsEngine.analyze(new CBSParser().parse(source), source);
+
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      DiagnosticCode.EmptyBlock,
+    );
   });
 
   it('adds suggestion metadata to unknown builtin diagnostics from the shared registry', () => {
@@ -210,8 +257,17 @@ describe('DiagnosticsEngine', () => {
     );
   });
 
-  it('validates malformed #each headers as missing required arguments', () => {
+  it('accepts #each headers without optional as bindings', () => {
     const { diagnostics } = analyzeFixture('prompt-malformed-each-header', 'TEXT');
+
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      DiagnosticCode.MissingRequiredArgument,
+    );
+  });
+
+  it('validates malformed #each as bindings as missing required arguments', () => {
+    const source = '{{#each items as}}{{slot::item}}{{/each}}';
+    const diagnostics = diagnosticsEngine.analyze(new CBSParser().parse(source), source);
     const diagnostic = diagnostics.find(
       (candidate) => candidate.code === DiagnosticCode.MissingRequiredArgument,
     );
@@ -317,6 +373,67 @@ describe('DiagnosticsEngine', () => {
       )
         ?.message,
     ).toContain('incomplete operator sequence');
+  });
+
+  it('treats nested macros as operands in inline math diagnostics', () => {
+    const source = '{{? {{getvar::ct_Language}} == 1}}';
+    const document = new CBSParser().parse(source);
+    const diagnostics = diagnosticsEngine.analyze(document, source);
+
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      DiagnosticCode.CalcExpressionUnsupportedToken,
+    );
+    expect(diagnostics).toEqual([]);
+  });
+
+  it.each([
+    ['inline bare single equals', '{{? =1}}'],
+    ['calc macro bare single equals', '{{calc::=1}}'],
+    ['inline binary single equals', '{{? 1=1}}'],
+    ['calc macro binary single equals', '{{calc::1=1}}'],
+  ] as const)('accepts upstream single equals equality in %s', (_label, source) => {
+    const document = new CBSParser().parse(source);
+    const diagnostics = diagnosticsEngine.analyze(document, source);
+
+    expect(diagnostics).toEqual([]);
+  });
+
+  it('accepts single equals after nested macros in inline math diagnostics', () => {
+    const source = '{{? {{getglobalvar::toggle_response_mode-gpt-5.4}}=1}}';
+    const document = new CBSParser().parse(source);
+    const diagnostics = diagnosticsEngine.analyze(document, source);
+
+    expect(diagnostics).toEqual([]);
+  });
+
+  it('accepts single equals inside pure-mode block headers', () => {
+    const source = '{{#if_pure {{? !({{getglobalvar::toggle_response_mode-gpt-5.4}}=1)}}}}body{{/if}}';
+    const document = new CBSParser().parse(source);
+    const diagnostics = diagnosticsEngine.analyze(document, source);
+
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      DiagnosticCode.CalcExpressionUnsupportedToken,
+    );
+  });
+
+  it('accepts single equals inside regular #if block headers', () => {
+    const source = '{{#if {{? {{getglobalvar::toggle_pastmj-gpt-5.4}}=1 }}}}body{{/if}}';
+    const document = new CBSParser().parse(source);
+    const diagnostics = diagnosticsEngine.analyze(document, source);
+
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      DiagnosticCode.CalcExpressionUnsupportedToken,
+    );
+  });
+
+  it('does not flag nested inline math conditions in #if block headers', () => {
+    const source = '{{#if {{? {{getvar::ct_Deck_Level}} <= 2}}}}ok{{/if}}';
+    const document = new CBSParser().parse(source);
+    const diagnostics = diagnosticsEngine.analyze(document, source);
+
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      DiagnosticCode.CalcExpressionUnsupportedToken,
+    );
   });
 
   it('classifies unmatched calc parentheses with a parenthesis-specific diagnostic and range', () => {
@@ -425,8 +542,8 @@ describe('DiagnosticsEngine', () => {
     const source =
       '{{setvar::used::1}}{{getvar::used}}{{setvar::unused::1}}{{settempvar::temp::x}}{{gettempvar::missing}}{{#each items as entry}}{{slot::entry}}{{/each}}{{#each items as orphan}}plain{{/each}}';
     const document = new CBSParser().parse(source);
-    const symbolTable = scopeAnalyzer.analyze(document, source);
-    const diagnostics = diagnosticsEngine.analyze(document, source, symbolTable);
+    const scopeAnalysis = scopeAnalyzer.analyze(document, source);
+    const diagnostics = diagnosticsEngine.analyze(document, source, scopeAnalysis);
 
     expect(diagnostics.map((diagnostic) => diagnostic.code)).toContain(
       DiagnosticCode.UndefinedVariable,
@@ -476,13 +593,56 @@ type: plain
   it('reports arg::N misuse outside a local #func body', () => {
     const source = '{{arg::0}}{{#func greet user}}{{arg::1}}{{/func}}{{call::greet::Noel}}';
     const document = new CBSParser().parse(source);
-    const symbolTable = scopeAnalyzer.analyze(document, source);
-    const diagnostics = diagnosticsEngine.analyze(document, source, symbolTable);
+    const scopeAnalysis = scopeAnalyzer.analyze(document, source);
+    const diagnostics = diagnosticsEngine.analyze(document, source, scopeAnalysis);
 
     expect(diagnostics).toContainEqual(
       expect.objectContaining({
         code: DiagnosticCode.WrongArgumentCount,
         message: expect.stringContaining('only valid inside a local #func body'),
+      }),
+    );
+  });
+
+  it('keeps arg::0 valid because upstream maps it to the local function name', () => {
+    const source = '{{#func greet user}}{{arg::0}}{{arg::1}}{{/func}}{{call::greet::Noel}}';
+    const document = new CBSParser().parse(source);
+    const scopeAnalysis = scopeAnalyzer.analyze(document, source);
+    const diagnostics = diagnosticsEngine.analyze(document, source, scopeAnalysis);
+
+    expect(diagnostics.map((diagnostic) => diagnostic.message)).not.toContain(
+      expect.stringContaining('arg::0'),
+    );
+  });
+
+  it('reports unresolved call:: local function names', () => {
+    const source = '{{call::missing::Noel}}';
+    const document = new CBSParser().parse(source);
+    const scopeAnalysis = scopeAnalyzer.analyze(document, source);
+    const diagnostics = diagnosticsEngine.analyze(document, source, scopeAnalysis);
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: DiagnosticCode.UnknownFunction,
+        message: expect.stringContaining('missing'),
+        range: {
+          start: { line: 0, character: 8 },
+          end: { line: 0, character: 15 },
+        },
+      }),
+    );
+  });
+
+  it('warns when call:: arguments contain nested CBS separators that upstream plain split cannot preserve', () => {
+    const source = '{{#func render item}}{{arg::1}}{{/func}}{{call::render::{{slot::fruit}}}}';
+    const document = new CBSParser().parse(source);
+    const scopeAnalysis = scopeAnalyzer.analyze(document, source);
+    const diagnostics = diagnosticsEngine.analyze(document, source, scopeAnalysis);
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: DiagnosticCode.WrongArgumentCount,
+        message: expect.stringContaining('plain split'),
       }),
     );
   });
@@ -500,8 +660,8 @@ type: plain
       '{{call::greet::Noel}}',
     ].join('');
     const document = new CBSParser().parse(source);
-    const symbolTable = scopeAnalyzer.analyze(document, source);
-    const diagnostics = diagnosticsEngine.analyze(document, source, symbolTable);
+    const scopeAnalysis = scopeAnalyzer.analyze(document, source);
+    const diagnostics = diagnosticsEngine.analyze(document, source, scopeAnalysis);
 
     expect(diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
       DiagnosticCode.UnusedVariable,
@@ -520,8 +680,8 @@ type: plain
   it('attaches secondary definition ranges to unused variable diagnostics', () => {
     const source = '{{setvar::mood::1}}{{setvar::mood::2}}';
     const document = new CBSParser().parse(source);
-    const symbolTable = scopeAnalyzer.analyze(document, source);
-    const diagnostics = diagnosticsEngine.analyze(document, source, symbolTable);
+    const scopeAnalysis = scopeAnalyzer.analyze(document, source);
+    const diagnostics = diagnosticsEngine.analyze(document, source, scopeAnalysis);
     const diagnostic = diagnostics.find(
       (candidate) => candidate.code === DiagnosticCode.UnusedVariable,
     );
@@ -541,9 +701,9 @@ type: plain
     const source = '{{setvar::mood::1}}{{setvar::mood::2}}{{getvar::missing}}{{user';
     const analyze = () => {
       const document = new CBSParser().parse(source);
-      const symbolTable = scopeAnalyzer.analyze(document, source);
+      const scopeAnalysis = scopeAnalyzer.analyze(document, source);
 
-      return diagnosticsEngine.analyze(document, source, symbolTable);
+      return diagnosticsEngine.analyze(document, source, scopeAnalysis);
     };
 
     const first = analyze();

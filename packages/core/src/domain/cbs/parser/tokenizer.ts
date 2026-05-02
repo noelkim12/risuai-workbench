@@ -114,7 +114,52 @@ export class CBSTokenizer {
   ): Token[] | null {
     const contentStart = this.currentPos();
 
+    if (type === TokenType.Comment) {
+      while (!this.isEOF() && !this.isMacroClose()) {
+        this.advance();
+      }
+
+      if (this.isEOF()) {
+        return null;
+      }
+
+      const raw = this.input.slice(this.positionToIndex(contentStart), this.pos);
+      const value = raw.slice(prefix.length).trimStart();
+      tokens.push(this.createToken(type, value, raw, contentStart, this.currentPos()));
+      tokens.push(this.consumeCloseBrace());
+
+      return tokens;
+    }
+
+    let chunkStart = this.currentPos();
+
+    const flushMathChunk = () => {
+      const raw = this.input.slice(this.positionToIndex(chunkStart), this.pos);
+      if (raw.length === 0) {
+        chunkStart = this.currentPos();
+        return;
+      }
+
+      const value = chunkStart.line === contentStart.line && chunkStart.character === contentStart.character
+        ? raw.slice(prefix.length).trimStart()
+        : raw;
+      tokens.push(this.createToken(type, value, raw, chunkStart, this.currentPos()));
+      chunkStart = this.currentPos();
+    };
+
     while (!this.isEOF() && !this.isMacroClose()) {
+      if (this.isMacroStart()) {
+        flushMathChunk();
+        const nestedTokens = this.readMacro();
+        if (nestedTokens === null) {
+          return null;
+        }
+
+        tokens.push(...nestedTokens);
+        chunkStart = this.currentPos();
+        continue;
+      }
+
       this.advance();
     }
 
@@ -122,9 +167,7 @@ export class CBSTokenizer {
       return null;
     }
 
-    const raw = this.input.slice(this.positionToIndex(contentStart), this.pos);
-    const value = raw.slice(prefix.length).trimStart();
-    tokens.push(this.createToken(type, value, raw, contentStart, this.currentPos()));
+    flushMathChunk();
     tokens.push(this.consumeCloseBrace());
 
     return tokens;
@@ -134,12 +177,18 @@ export class CBSTokenizer {
     let separatorMode: SeparatorMode = 'header';
     let headerRaw = '';
     const headerStart = this.currentPos();
+    let headerFlushed = false;
 
     let argumentRaw = '';
     let argumentStart: Position | null = null;
 
     const flushHeader = () => {
+      if (headerFlushed) {
+        return;
+      }
+
       tokens.push(this.createHeaderToken(headerRaw, headerStart, this.currentPos()));
+      headerFlushed = true;
     };
 
     const flushArgument = () => {
@@ -207,6 +256,18 @@ export class CBSTokenizer {
           continue;
         }
 
+        if (this.isMacroStart() && this.canSplitHeaderBeforeNestedMacro(headerRaw)) {
+          flushHeader();
+          separatorMode = 'double';
+          const nestedTokens = this.readMacro();
+          if (nestedTokens === null) {
+            return null;
+          }
+
+          tokens.push(...nestedTokens);
+          continue;
+        }
+
         headerRaw += this.advance();
         continue;
       }
@@ -231,6 +292,11 @@ export class CBSTokenizer {
     }
 
     return null;
+  }
+
+  private canSplitHeaderBeforeNestedMacro(raw: string): boolean {
+    const trimmed = raw.trimStart();
+    return /^#[A-Za-z_][A-Za-z0-9_-]*\s+$/.test(trimmed);
   }
 
   private createHeaderToken(raw: string, start: Position, end: Position): Token {

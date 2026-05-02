@@ -42,6 +42,7 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
     preloadModules: [],
     requireBindings: [],
     moduleMemberCalls: [],
+    stateAccessOccurrences: [],
   };
 
   const fnHandled = new Set<string>();
@@ -251,6 +252,7 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
   const addStateAccess = (
     apiName: string,
     key: string,
+    keyNode: LuaASTNode | null,
     fnName: string | null,
     line: number,
     writeValue: string | null,
@@ -271,6 +273,19 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
       }
       if (apiName === 'setState' && sv.apis.has('setChatVar')) sv.hasDualWrite = true;
       if (apiName === 'setChatVar' && sv.apis.has('setState')) sv.hasDualWrite = true;
+    }
+
+    // Record exact occurrence metadata for static string key accesses
+    if (keyNode && keyNode.range) {
+      collected.stateAccessOccurrences.push({
+        key,
+        direction: rw === 'write' ? 'write' : 'read',
+        apiName,
+        containingFunction: owner,
+        line,
+        argStart: keyNode.range[0],
+        argEnd: keyNode.range[1],
+      });
     }
 
     if (!fnName) return;
@@ -337,13 +352,43 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
       callee === 'setState' ||
       callee === 'getState'
     ) {
-      const keyIndex =
-        strLit(args[0]) !== null ? 0 : strLit(args[1]) !== null ? 1 : 0;
-      const key = strLit(args[keyIndex]);
-      const writeValue = callee === 'setChatVar' || callee === 'setState'
-        ? strLit(args[keyIndex + 1])
-        : null;
-      if (key) addStateAccess(callee, key, caller, lineStart(node), writeValue);
+      // Determine key index based on API patterns:
+      // Read APIs (getState/getChatVar):
+      //   - 1 arg: arg0 is the key
+      //   - 2 args with static arg0: arg0 is key
+      //   - 2 args with identifier arg0: wrapper form, arg1 is key
+      // Write APIs (setState/setChatVar):
+      //   - 2 args with static arg0: arg0 is key
+      //   - 3+ args with identifier arg0: wrapper form, arg1 is key
+      //   - 2 args with identifier arg0: ambiguous (dynamic key), skip
+      const isRead = callee === 'getState' || callee === 'getChatVar';
+      let keyIndex: number | null = null;
+
+      if (args.length === 1 && strLit(args[0]) !== null) {
+        keyIndex = 0;
+      } else if (args.length >= 2 && strLit(args[0]) !== null) {
+        // Static first arg - it's the key (both read and write)
+        keyIndex = 0;
+      } else if (args.length >= 2 && args[0]?.type === 'Identifier' && strLit(args[1]) !== null) {
+        // Identifier first arg, static second arg
+        if (isRead && args.length === 2) {
+          // Read API with 2 args: wrapper form (getState(chat, "key"))
+          keyIndex = 1;
+        } else if (!isRead && args.length >= 3) {
+          // Write API with 3+ args: wrapper form (setState(chat, "key", value))
+          keyIndex = 1;
+        }
+        // Otherwise: ambiguous (likely dynamic key), skip
+      }
+
+      if (keyIndex !== null) {
+        const keyNode = args[keyIndex];
+        const key = strLit(keyNode);
+        const writeValue = callee === 'setChatVar' || callee === 'setState'
+          ? strLit(args[keyIndex + 1])
+          : null;
+        if (key) addStateAccess(callee, key, keyNode, caller, lineStart(node), writeValue);
+      }
     }
 
     if (LOREBOOK_LOOKUP_APIS.has(callee)) {

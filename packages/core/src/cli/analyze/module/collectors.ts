@@ -12,6 +12,7 @@ import { parseLorebookContent } from '@/domain/custom-extension/extensions/loreb
 import { parseRegexContent } from '@/domain/regex';
 import { dirExists, readJsonIfExists, readTextIfExists } from '@/node/fs-helpers';
 import { listJsonFilesRecursive, resolveOrderedFiles } from '@/node/json-listing';
+import { readRisumoduleManifest } from '../../shared/risumodule';
 import { collectHTMLCBS, importLuaAnalysis, loadLuaArtifacts } from '../charx/collectors';
 import type { ModuleCollectResult } from './types';
 
@@ -195,12 +196,25 @@ function collectModuleRegexCBS(outputDir: string): { regexCBS: ElementCBSData[];
 
 function loadModuleMetadata(outputDir: string): Record<string, unknown> {
   const moduleJson = readJsonIfExists(path.join(outputDir, 'module.json'));
-  const identityJson = readJsonIfExists(path.join(outputDir, 'metadata.json'));
 
-  return {
-    ...(isRecord(moduleJson) ? moduleJson : {}),
-    ...(isRecord(identityJson) ? identityJson : {}),
-  };
+  // Canonical: read .risumodule marker
+  const risumodule = (() => {
+    try {
+      return readRisumoduleManifest(outputDir) as unknown as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  })();
+
+  if (risumodule) {
+    return {
+      ...(isRecord(moduleJson) ? moduleJson : {}),
+      ...risumodule,
+    };
+  }
+
+  // Legacy: module.json only (metadata.json fallback removed)
+  return isRecord(moduleJson) ? moduleJson : {};
 }
 
 function readStringField(record: GenericRecord, key: string): string {

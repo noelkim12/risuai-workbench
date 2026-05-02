@@ -15,6 +15,7 @@ export const CUSTOM_EXTENSION_ARTIFACTS = [
   'toggle',
   'variable',
   'html',
+  'text',
 ] as const;
 
 /** Canonical custom-extension artifact. */
@@ -115,6 +116,15 @@ export const CUSTOM_EXTENSION_ARTIFACT_CONTRACTS = Object.freeze({
     stemPolicy: 'fixed',
     fixedStem: 'background',
     fallbackStem: 'background',
+  },
+  text: {
+    artifact: 'text',
+    directory: 'character',
+    suffix: '.risutext',
+    supportedTargets: ['charx'],
+    markerFiles: [],
+    stemPolicy: 'stem',
+    fallbackStem: 'description',
   },
 } as const satisfies Record<CustomExtensionArtifact, CustomExtensionArtifactContract>);
 

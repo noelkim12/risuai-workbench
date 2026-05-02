@@ -58,7 +58,7 @@ describe('module extract', () => {
     const filePath = path.join(tmpDir, 'invalid.json');
     fs.writeFileSync(filePath, JSON.stringify({ type: 'not-module', value: 1 }), 'utf-8');
 
-    expect(() => phase1_parseModule(filePath)).toThrowError();
+    expect(() => phase1_parseModule(filePath)).toThrow();
   });
 
   it('phase2_extractLorebooks writes canonical .risulorebook files and order markers', () => {
@@ -92,6 +92,35 @@ describe('module extract', () => {
     expect(parsed.keys).toEqual(['key1', 'key2']);
     expect(parsed.secondary_keys).toEqual(['secondary']);
     expect(parsed.content).toBe('content1');
+  });
+
+  it('phase2_extractLorebooks preserves CBS variable sigils and emoji text byte-for-byte', () => {
+    const preservedText = 'Value: {{getvar::$vg_asdf}} 😈🔥';
+    const module = {
+      lorebook: [
+        {
+          key: 'sigil-key',
+          secondkey: '',
+          content: preservedText,
+          comment: 'Sigil Emoji Entry',
+          mode: 'normal',
+          alwaysActive: true,
+          selective: false,
+          insertorder: 1,
+          useRegex: false,
+        },
+      ],
+    };
+
+    const count = phase2_extractLorebooks(module, tmpDir);
+    const canonicalPath = path.join(tmpDir, 'lorebooks', 'Sigil_Emoji_Entry.risulorebook');
+    const rawContent = fs.readFileSync(canonicalPath, 'utf-8');
+
+    expect(count).toBe(1);
+    expect(rawContent).toContain(preservedText);
+    expect(rawContent).not.toContain('{{getvar::vg_asdf}}');
+    expect(rawContent).not.toContain('\\ud83d');
+    expect(parseLorebookContent(rawContent).content).toBe(preservedText);
   });
 
   it('phase2_extractLorebooks accepts stringified module lorebook bookVersion values from .risum payloads', () => {
@@ -151,6 +180,35 @@ describe('module extract', () => {
     });
   });
 
+  it('phase3_extractRegex preserves CBS variable sigils and emoji in regex payloads', () => {
+    const preservedIn = 'input {{getvar::$vg_asdf}} 😈';
+    const preservedOut = 'output {{setvar::$vg_asdf::값🔥}}';
+    const module = {
+      regex: [
+        {
+          comment: 'regex-preservation',
+          type: 'editdisplay',
+          in: preservedIn,
+          out: preservedOut,
+        },
+      ],
+    };
+
+    const count = phase3_extractRegex(module, tmpDir);
+    const canonicalPath = path.join(tmpDir, 'regex', 'regex-preservation.risuregex');
+    const rawContent = fs.readFileSync(canonicalPath, 'utf-8');
+
+    expect(count).toBe(1);
+    expect(rawContent).toContain(preservedIn);
+    expect(rawContent).toContain(preservedOut);
+    expect(rawContent).not.toContain('{{getvar::vg_asdf}}');
+    expect(rawContent).not.toContain('\\ud83d');
+    expect(parseRegexContent(rawContent)).toMatchObject({
+      in: preservedIn,
+      out: preservedOut,
+    });
+  });
+
   it('phase4_extractLua writes one canonical .risulua file from module trigger array', () => {
     const module = {
       name: 'test module',
@@ -170,6 +228,28 @@ describe('module extract', () => {
     expect(fs.readFileSync(luaPath, 'utf-8')).toBe(
       '-- Trigger: onStart\nfunction onStart()\n  print("hello")\nend\n',
     );
+  });
+
+  it('phase4_extractLua preserves CBS variable sigils and emoji in Lua trigger code', () => {
+    const preservedCode = 'function onStart()\n  return "{{getvar::$vg_asdf}} 😈"\nend';
+    const module = {
+      name: 'sigil lua module',
+      trigger: [
+        {
+          comment: 'onStart',
+          effect: [{ type: 'triggerlua', code: preservedCode }],
+        },
+      ],
+    };
+
+    const count = phase4_extractLua(module, tmpDir);
+    const luaPath = path.join(tmpDir, 'lua', 'sigil_lua_module.risulua');
+    const rawContent = fs.readFileSync(luaPath, 'utf-8');
+
+    expect(count).toBe(1);
+    expect(rawContent).toContain(preservedCode);
+    expect(rawContent).not.toContain('{{getvar::vg_asdf}}');
+    expect(rawContent).not.toContain('\\ud83d');
   });
 
   it('phase5_extractAssets skips extraction for JSON source format', () => {
@@ -194,6 +274,22 @@ describe('module extract', () => {
     expect(count).toBe(1);
     expect(fs.existsSync(backgroundPath)).toBe(true);
     expect(fs.readFileSync(backgroundPath, 'utf-8')).toBe('<div>test</div>');
+  });
+
+  it('phase6_extractBackgroundEmbedding preserves CBS variable sigils and emoji in HTML', () => {
+    const preservedHtml = '<div data-var="{{getvar::$vg_asdf}}">😈🔥</div>';
+    const module = {
+      backgroundEmbedding: preservedHtml,
+    };
+
+    const count = phase6_extractBackgroundEmbedding(module, tmpDir);
+    const backgroundPath = path.join(tmpDir, 'html', 'background.risuhtml');
+    const rawContent = fs.readFileSync(backgroundPath, 'utf-8');
+
+    expect(count).toBe(1);
+    expect(rawContent).toBe(preservedHtml);
+    expect(rawContent).not.toContain('{{getvar::vg_asdf}}');
+    expect(rawContent).not.toContain('\\ud83d');
   });
 
   it('phase6_extractBackgroundEmbedding returns 0 when embedding is empty', () => {
@@ -227,7 +323,27 @@ describe('module extract', () => {
     });
   });
 
-  it('phase8_extractModuleIdentity writes metadata fields without duplicating customModuleToggle', () => {
+  it('phase7_extractVariables preserves variable value sigils and emoji', () => {
+    const preservedValue = '{{getvar::$vg_asdf}} 😈🔥';
+    const module = {
+      name: 'module-name',
+      defaultVariables: {
+        preserved: preservedValue,
+      },
+    };
+
+    const count = phase7_extractVariables(module, tmpDir);
+    const variablePath = path.join(tmpDir, 'variables', 'module-name.risuvar');
+    const rawContent = fs.readFileSync(variablePath, 'utf-8');
+
+    expect(count).toBe(1);
+    expect(rawContent).toBe(`preserved=${preservedValue}`);
+    expect(rawContent).not.toContain('{{getvar::vg_asdf}}');
+    expect(rawContent).not.toContain('\\ud83d');
+    expect(parseVariableContent(rawContent)).toEqual({ preserved: preservedValue });
+  });
+
+  it('phase8_extractModuleIdentity writes .risumodule marker with risum sourceFormat and without customModuleToggle', () => {
     const module = {
       name: 'module-name',
       description: 'module-description',
@@ -241,25 +357,53 @@ describe('module extract', () => {
       customModuleToggle: '<toggle>legacy</toggle>',
     };
 
-    const count = phase8_extractModuleIdentity(module, tmpDir);
-    const metadataPath = path.join(tmpDir, 'metadata.json');
+    const count = phase8_extractModuleIdentity(module, tmpDir, 'risum');
+    const markerPath = path.join(tmpDir, '.risumodule');
 
     expect(count).toBe(1);
-    expect(fs.existsSync(metadataPath)).toBe(true);
+    expect(fs.existsSync(markerPath)).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, 'metadata.json'))).toBe(false);
 
-    const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8')) as Record<string, unknown>;
-    expect(metadata).toMatchObject({
+    const marker = JSON.parse(fs.readFileSync(markerPath, 'utf-8')) as Record<string, unknown>;
+    expect(marker).toMatchObject({
+      kind: 'risu.module',
+      schemaVersion: 1,
+      id: 'module-id',
       name: 'module-name',
       description: 'module-description',
-      id: 'module-id',
       namespace: 'module-namespace',
       lowLevelAccess: true,
       hideIcon: false,
       mcp: {
         server: 'mcp-server',
       },
+      createdAt: null,
+      modifiedAt: null,
+      sourceFormat: 'risum',
     });
-    expect(metadata).not.toHaveProperty('customModuleToggle');
+    expect(marker).not.toHaveProperty('customModuleToggle');
+  });
+
+  it('phase8_extractModuleIdentity preserves module marker sigils and emoji as readable UTF-8', () => {
+    const module = {
+      name: 'module 😈',
+      description: 'description {{getvar::$vg_asdf}} 🔥',
+      id: 'module-id',
+      namespace: 'ns-😈',
+    };
+
+    const count = phase8_extractModuleIdentity(module, tmpDir, 'json');
+    const markerPath = path.join(tmpDir, '.risumodule');
+    const rawContent = fs.readFileSync(markerPath, 'utf-8');
+    const marker = JSON.parse(rawContent) as Record<string, unknown>;
+
+    expect(count).toBe(1);
+    expect(rawContent).toContain('module 😈');
+    expect(rawContent).toContain('description {{getvar::$vg_asdf}} 🔥');
+    expect(rawContent).toContain('ns-😈');
+    expect(rawContent).not.toContain('{{getvar::vg_asdf}}');
+    expect(rawContent).not.toContain('\\ud83d');
+    expect(marker).toMatchObject(module);
   });
 
   it('phase9_extractModuleToggle writes module toggle artifact when present', () => {
@@ -276,20 +420,38 @@ describe('module extract', () => {
     expect(fs.readFileSync(togglePath, 'utf-8')).toBe('<toggle condition="1 == 1"/>');
   });
 
+  it('phase9_extractModuleToggle preserves CBS variable sigils and emoji in toggle artifacts', () => {
+    const preservedToggle = 'name=toggle😈\ncondition={{getvar::$vg_asdf}} 🔥';
+    const module = {
+      name: 'module-toggle-name',
+      customModuleToggle: preservedToggle,
+    };
+
+    const count = phase9_extractModuleToggle(module, tmpDir);
+    const togglePath = path.join(tmpDir, 'toggle', 'module-toggle-name.risutoggle');
+    const rawContent = fs.readFileSync(togglePath, 'utf-8');
+
+    expect(count).toBe(1);
+    expect(rawContent).toBe(preservedToggle);
+    expect(rawContent).not.toContain('{{getvar::vg_asdf}}');
+    expect(rawContent).not.toContain('\\ud83d');
+  });
+
   it('runExtractWorkflow emits canonical artifacts and omits module.json', async () => {
     const filePath = path.join(tmpDir, 'source-module.json');
     const outDir = path.join(tmpDir, 'out');
+    const preservedText = '{{getvar::$vg_asdf}} 😈🔥';
     const payload = {
       type: 'risuModule',
       module: {
         name: 'workflow-module',
-        description: 'workflow-description',
+        description: `workflow-description ${preservedText}`,
         id: 'workflow-id',
         lorebook: [
           {
             key: 'alpha',
             secondkey: '',
-            content: 'Lore content',
+            content: `Lore content ${preservedText}`,
             comment: 'Lore Entry',
             mode: 'normal',
             alwaysActive: false,
@@ -302,21 +464,21 @@ describe('module extract', () => {
           {
             comment: 'workflow-regex',
             type: 'editdisplay',
-            in: 'in',
-            out: 'out',
+            in: `in ${preservedText}`,
+            out: `out ${preservedText}`,
           },
         ],
         trigger: [
           {
             comment: 'init',
-            effect: [{ type: 'triggerlua', code: 'function init()\n  return true\nend' }],
+            effect: [{ type: 'triggerlua', code: `function init()\n  return "${preservedText}"\nend` }],
           },
         ],
         defaultVariables: {
-          score: '10',
+          score: `10 ${preservedText}`,
         },
-        backgroundEmbedding: '<div>workflow</div>',
-        customModuleToggle: '<toggle>workflow</toggle>',
+        backgroundEmbedding: `<div>workflow ${preservedText}</div>`,
+        customModuleToggle: `<toggle>${preservedText}</toggle>`,
       },
     };
     fs.writeFileSync(filePath, JSON.stringify(payload), 'utf-8');
@@ -325,7 +487,8 @@ describe('module extract', () => {
 
     expect(exitCode).toBe(0);
     expect(fs.existsSync(path.join(outDir, 'module.json'))).toBe(false);
-    expect(fs.existsSync(path.join(outDir, 'metadata.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'metadata.json'))).toBe(false);
+    expect(fs.existsSync(path.join(outDir, '.risumodule'))).toBe(true);
     expect(fs.existsSync(path.join(outDir, 'lorebooks', 'Lore_Entry.risulorebook'))).toBe(true);
     expect(fs.existsSync(path.join(outDir, 'regex', 'workflow-regex.risuregex'))).toBe(true);
     expect(fs.existsSync(path.join(outDir, 'lua', 'workflow-module.risulua'))).toBe(true);
@@ -333,11 +496,73 @@ describe('module extract', () => {
     expect(fs.existsSync(path.join(outDir, 'html', 'background.risuhtml'))).toBe(true);
     expect(fs.existsSync(path.join(outDir, 'toggle', 'workflow-module.risutoggle'))).toBe(true);
 
-    const metadata = JSON.parse(fs.readFileSync(path.join(outDir, 'metadata.json'), 'utf-8')) as Record<
+    const extractedContents = [
+      fs.readFileSync(path.join(outDir, '.risumodule'), 'utf-8'),
+      fs.readFileSync(path.join(outDir, 'lorebooks', 'Lore_Entry.risulorebook'), 'utf-8'),
+      fs.readFileSync(path.join(outDir, 'regex', 'workflow-regex.risuregex'), 'utf-8'),
+      fs.readFileSync(path.join(outDir, 'lua', 'workflow-module.risulua'), 'utf-8'),
+      fs.readFileSync(path.join(outDir, 'variables', 'workflow-module.risuvar'), 'utf-8'),
+      fs.readFileSync(path.join(outDir, 'html', 'background.risuhtml'), 'utf-8'),
+      fs.readFileSync(path.join(outDir, 'toggle', 'workflow-module.risutoggle'), 'utf-8'),
+    ];
+
+    for (const content of extractedContents) {
+      expect(content).toContain(preservedText);
+      expect(content).not.toContain('{{getvar::vg_asdf}}');
+      expect(content).not.toContain('\\ud83d');
+    }
+
+    const marker = JSON.parse(fs.readFileSync(path.join(outDir, '.risumodule'), 'utf-8')) as Record<
       string,
       unknown
     >;
-    expect(metadata).not.toHaveProperty('customModuleToggle');
+    expect(marker).toMatchObject({
+      kind: 'risu.module',
+      schemaVersion: 1,
+      id: 'workflow-id',
+      name: 'workflow-module',
+      description: `workflow-description ${preservedText}`,
+      createdAt: null,
+      modifiedAt: null,
+      sourceFormat: 'json',
+    });
+    expect(marker).not.toHaveProperty('customModuleToggle');
+  });
+
+  it('runExtractWorkflow emits .risumodule for module without lorebooks and does not require lorebooks for analysis', async () => {
+    const filePath = path.join(tmpDir, 'no-lorebook.json');
+    const outDir = path.join(tmpDir, 'no-lorebook-out');
+    const payload = {
+      type: 'risuModule',
+      module: {
+        name: 'no-lorebook-module',
+        description: 'no lorebooks at all',
+        id: 'no-lorebook-id',
+      },
+    };
+    fs.writeFileSync(filePath, JSON.stringify(payload), 'utf-8');
+
+    const exitCode = await runModuleExtractWorkflow([filePath, '--out', outDir]);
+
+    expect(exitCode).toBe(0);
+    expect(fs.existsSync(path.join(outDir, '.risumodule'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'metadata.json'))).toBe(false);
+    expect(fs.existsSync(path.join(outDir, 'lorebooks'))).toBe(false);
+
+    const marker = JSON.parse(fs.readFileSync(path.join(outDir, '.risumodule'), 'utf-8')) as Record<
+      string,
+      unknown
+    >;
+    expect(marker).toMatchObject({
+      kind: 'risu.module',
+      schemaVersion: 1,
+      id: 'no-lorebook-id',
+      name: 'no-lorebook-module',
+      description: 'no lorebooks at all',
+      createdAt: null,
+      modifiedAt: null,
+      sourceFormat: 'json',
+    });
   });
 
   it('isModuleFile only accepts .risum extension', () => {

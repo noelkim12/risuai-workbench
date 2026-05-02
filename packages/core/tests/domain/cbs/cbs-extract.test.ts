@@ -61,6 +61,13 @@ describe('extractCBSVarOps', () => {
     expect(Array.from(result.writes).sort()).toEqual(['written']);
   });
 
+  it('collects getvar reads nested in #if inline math conditions', () => {
+    const result = extractCBSVarOps('{{#if {{? {{getvar::ct_Language}} == 1}}}}ok{{/if}}');
+
+    expect(Array.from(result.reads).sort()).toEqual(['ct_Language']);
+    expect(Array.from(result.writes).sort()).toEqual([]);
+  });
+
   it('ignores variable operations that appear inside pure-mode block bodies', () => {
     const result = extractCBSVarOps(
       '{{#escape}}before {{getvar::hidden}} {{setvar::ignored::1}}{{/}} {{getvar::visible}}',

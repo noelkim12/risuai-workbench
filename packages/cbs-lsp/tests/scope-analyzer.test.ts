@@ -2,6 +2,7 @@ import { CBSParser } from 'risu-workbench-core';
 import { describe, expect, it } from 'vitest';
 
 import { ScopeAnalyzer } from '../src/analyzer/scopeAnalyzer';
+import { positionToOffset } from '../src/utils/position';
 
 const parser = new CBSParser();
 const analyzer = new ScopeAnalyzer();
@@ -12,9 +13,10 @@ function analyzeScope(source: string) {
 
 describe('ScopeAnalyzer', () => {
   it('tracks chat, temp, and global variable symbols from fragment-local AST analysis', () => {
-    const table = analyzeScope(
+    const result = analyzeScope(
       '{{setvar::mood::happy}}{{getvar::mood}}{{addvar::counter::1}}{{settempvar::cache::ok}}{{tempvar::cache}}{{getglobalvar::shared}}',
     );
+    const { symbolTable: table, issues } = result;
 
     expect(table.getVariable('mood', 'chat')).toMatchObject({
       kind: 'chat',
@@ -40,28 +42,46 @@ describe('ScopeAnalyzer', () => {
     });
     expect(table.getVariable('shared', 'global')?.references).toHaveLength(1);
 
-    expect(table.getUndefinedReferences()).toEqual([]);
+    expect(issues.getUndefinedReferences()).toEqual([]);
   });
 
-  it('models #each loop bindings as block-scoped symbols and ignores slot usage outside the block', () => {
-    const table = analyzeScope(
+  it('models #each loop bindings as block-scoped symbols and records orphan slot usage as undefined loop references', () => {
+    const result = analyzeScope(
       '{{#each items as item}}{{slot::item}}{{#each others as item}}{{slot::item}}{{/each}}{{slot::item}}{{/each}}{{slot::item}}',
     );
+    const { symbolTable: table, issues } = result;
 
     const loopSymbols = table.getVariables('item', 'loop');
 
     expect(loopSymbols).toHaveLength(2);
     expect(loopSymbols.map((symbol) => symbol.references.length)).toEqual([2, 1]);
-    expect(table.getUndefinedReferences()).toEqual([]);
+    expect(issues.getUndefinedReferences()).toEqual([
+      {
+        name: 'item',
+        kind: 'loop',
+        range: expect.any(Object),
+      },
+    ]);
     expect(table.getUnusedVariables()).toEqual([]);
   });
 
+  it('records shorthand #each iterator source as a chat variable read while preserving the loop alias', () => {
+    const result = analyzeScope('{{setvar::var1::ready}}{{#each var1 key}}{{slot::key}}{{/each}}');
+    const { symbolTable: table, issues } = result;
+
+    expect(table.getVariable('var1', 'chat')?.references).toHaveLength(1);
+    expect(table.getVariables('key', 'loop')).toHaveLength(1);
+    expect(table.getVariable('key', 'loop')?.references).toHaveLength(1);
+    expect(issues.getUndefinedReferences()).toEqual([]);
+  });
+
   it('records unresolved local references and unused loop bindings from symbol data', () => {
-    const table = analyzeScope(
+    const result = analyzeScope(
       '{{getvar::missing}}{{gettempvar::cache}}{{#each items as entry}}plain{{/each}}',
     );
+    const { symbolTable: table, issues } = result;
 
-    expect(table.getUndefinedReferences()).toEqual([
+    expect(issues.getUndefinedReferences()).toEqual([
       {
         name: 'missing',
         kind: 'chat',
@@ -84,7 +104,7 @@ describe('ScopeAnalyzer', () => {
   });
 
   it('collects local #func declarations and call:: references in the same fragment', () => {
-    const table = analyzeScope('{{#func greet user}}Hello{{/func}}{{call::greet::Noel}}');
+    const { symbolTable: table } = analyzeScope('{{#func greet user}}Hello{{/func}}{{call::greet::Noel}}');
 
     expect(table.getFunction('greet')).toMatchObject({
       name: 'greet',
@@ -94,5 +114,70 @@ describe('ScopeAnalyzer', () => {
       references: expect.any(Array),
     });
     expect(table.getFunction('greet')?.references).toHaveLength(1);
+  });
+
+  it('collects variable references nested in #if inline math conditions', () => {
+    const { symbolTable: table, issues } = analyzeScope(
+      '{{setvar::ct_Language::1}}{{#if {{? {{getvar::ct_Language}} == 1}}}}ok{{/if}}',
+    );
+
+    expect(table.getVariable('ct_Language', 'chat')?.references).toHaveLength(1);
+    expect(issues.getUndefinedReferences()).toEqual([]);
+  });
+
+  it('keeps the active function visible inside nested #each scopes', () => {
+    const { issues } = analyzeScope('{{#func greet name}}{{#each users as user}}{{arg::0}}{{/each}}{{/func}}');
+
+    expect(issues.getInvalidArgumentReferences()).toEqual([]);
+  });
+
+  it('treats arg::0 as the runtime function-name slot and arg::1 as the first declared parameter slot', () => {
+    const { issues } = analyzeScope(
+      '{{#func greet user target}}{{arg::0}}{{arg::1}}{{arg::2}}{{/func}}{{call::greet::Noel::friend}}',
+    );
+
+    expect(issues.getInvalidArgumentReferences()).toEqual([]);
+  });
+
+  it('reports arg::N only when it is above the upstream runtime slot range', () => {
+    const { issues } = analyzeScope(
+      '{{#func greet user target}}{{arg::3}}{{/func}}{{call::greet::Noel::friend}}',
+    );
+
+    expect(issues.getInvalidArgumentReferences()).toEqual([
+      expect.objectContaining({
+        rawText: '3',
+        reason: 'out-of-range',
+        functionName: 'greet',
+        parameterCount: 2,
+      }),
+    ]);
+  });
+
+  it('does not treat outer non-arg macros containing nested arg::N as extra argument references', () => {
+    const { issues } = analyzeScope('{{getvar::{{arg::0}}}}');
+
+    expect(issues.getInvalidArgumentReferences()).toEqual([
+      expect.objectContaining({
+        rawText: '0',
+        reason: 'outside-function',
+      }),
+    ]);
+  });
+
+  it('trims static argument ranges down to the identifier text', () => {
+    const source = '{{getvar::   score   }}';
+    const { issues } = analyzeScope(source);
+    const [reference] = issues.getUndefinedReferences();
+
+    expect(reference?.name).toBe('score');
+    expect(reference).toBeDefined();
+    if (!reference) {
+      return;
+    }
+
+    const startOffset = positionToOffset(source, reference.range.start);
+    const endOffset = positionToOffset(source, reference.range.end);
+    expect(source.slice(startOffset, endOffset)).toBe('score');
   });
 });

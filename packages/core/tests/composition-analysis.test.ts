@@ -5,6 +5,25 @@ import path from 'node:path';
 import { analyzeComposition } from '@/domain/analyze/composition';
 import { runAnalyzeComposeWorkflow } from '@/cli/analyze/compose/workflow';
 
+function makeRisumodule(opts: { name: string; id?: string; namespace?: string }): string {
+  return JSON.stringify(
+    {
+      $schema: 'https://risuai-workbench.dev/schemas/risumodule.schema.json',
+      kind: 'risu.module',
+      schemaVersion: 1,
+      id: opts.id || opts.name,
+      name: opts.name,
+      description: '',
+      createdAt: null,
+      modifiedAt: null,
+      sourceFormat: 'json',
+      ...(opts.namespace ? { namespace: opts.namespace } : {}),
+    },
+    null,
+    2,
+  );
+}
+
 describe('analyzeComposition', () => {
   it('detects variable name collision between card and module', () => {
     const result = analyzeComposition({
@@ -191,7 +210,11 @@ battle
     // Create canonical module workspace
     fs.mkdirSync(path.join(moduleDir, 'regex'), { recursive: true });
     fs.mkdirSync(path.join(moduleDir, 'lorebooks'), { recursive: true });
-    fs.writeFileSync(path.join(moduleDir, 'metadata.json'), '{"name":"combat"}\n', 'utf-8');
+    fs.writeFileSync(
+      path.join(moduleDir, '.risumodule'),
+      `${makeRisumodule({ name: 'combat', id: 'combat-module' })}\n`,
+      'utf-8',
+    );
     fs.writeFileSync(
       path.join(moduleDir, 'regex', 'init.risuregex'),
       `---
@@ -255,7 +278,11 @@ battle
     fs.mkdirSync(path.join(moduleDir, 'regex'), { recursive: true });
     fs.mkdirSync(path.join(moduleDir, 'lorebooks'), { recursive: true });
     fs.mkdirSync(path.join(moduleDir, 'variables'), { recursive: true });
-    fs.writeFileSync(path.join(moduleDir, 'metadata.json'), '{"name":"combat"}\n', 'utf-8');
+    fs.writeFileSync(
+      path.join(moduleDir, '.risumodule'),
+      `${makeRisumodule({ name: 'combat', id: 'combat-module' })}\n`,
+      'utf-8',
+    );
     fs.writeFileSync(
       path.join(moduleDir, 'regex', 'init.risuregex'),
       `---
@@ -323,7 +350,11 @@ battle
     fs.mkdirSync(path.join(moduleDir, 'regex'), { recursive: true });
     fs.mkdirSync(path.join(moduleDir, 'lorebooks'), { recursive: true });
     fs.mkdirSync(path.join(moduleDir, 'variables'), { recursive: true });
-    fs.writeFileSync(path.join(moduleDir, 'metadata.json'), '{"name":"combat"}\n', 'utf-8');
+    fs.writeFileSync(
+      path.join(moduleDir, '.risumodule'),
+      `${makeRisumodule({ name: 'combat', id: 'combat-module' })}\n`,
+      'utf-8',
+    );
     fs.writeFileSync(
       path.join(moduleDir, 'regex', 'init.risuregex'),
       `---
@@ -399,7 +430,11 @@ hello
 
     // Create canonical module workspace
     fs.mkdirSync(path.join(moduleDir, 'lorebooks'), { recursive: true });
-    fs.writeFileSync(path.join(moduleDir, 'metadata.json'), '{"name":"rpg","namespace":"rpg"}\n', 'utf-8');
+    fs.writeFileSync(
+      path.join(moduleDir, '.risumodule'),
+      `${makeRisumodule({ name: 'rpg', id: 'rpg-module', namespace: 'rpg' })}\n`,
+      'utf-8',
+    );
 
     const code = runAnalyzeComposeWorkflow([charxDir, '--module', moduleDir, '--locale', 'en']);
 
@@ -462,7 +497,11 @@ type: editdisplay
 
     // Create canonical module workspace
     fs.mkdirSync(path.join(moduleDir, 'lorebooks'), { recursive: true });
-    fs.writeFileSync(path.join(moduleDir, 'metadata.json'), '{"name":"rpg","namespace":"rpg"}\n', 'utf-8');
+    fs.writeFileSync(
+      path.join(moduleDir, '.risumodule'),
+      `${makeRisumodule({ name: 'rpg', id: 'rpg-module', namespace: 'rpg' })}\n`,
+      'utf-8',
+    );
     // Create module .risulorebook with overlapping keyword
     fs.writeFileSync(
       path.join(moduleDir, 'lorebooks', 'spells.risulorebook'),
