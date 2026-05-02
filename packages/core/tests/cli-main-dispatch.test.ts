@@ -4,6 +4,25 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+function makeRisumodule(opts: { name: string; id?: string; namespace?: string }): string {
+  return JSON.stringify(
+    {
+      $schema: 'https://risuai-workbench.dev/schemas/risumodule.schema.json',
+      kind: 'risu.module',
+      schemaVersion: 1,
+      id: opts.id || opts.name,
+      name: opts.name,
+      description: '',
+      createdAt: null,
+      modifiedAt: null,
+      sourceFormat: 'json',
+      ...(opts.namespace ? { namespace: opts.namespace } : {}),
+    },
+    null,
+    2,
+  );
+}
+
 const cliPath = path.join(process.cwd(), 'dist', 'cli', 'main.js');
 const scriptGuardDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-core-cli-guard-'));
 const scriptGuardPath = path.join(scriptGuardDir, 'deny-legacy-scripts.cjs');
@@ -149,8 +168,8 @@ describe('src/cli main dispatcher integration', () => {
     // Create minimal canonical module workspace
     fs.mkdirSync(path.join(tempDir, 'lorebooks'), { recursive: true });
     fs.writeFileSync(
-      path.join(tempDir, 'metadata.json'),
-      `${JSON.stringify({ name: 'Module Pack Test', id: 'test-module' }, null, 2)}\n`,
+      path.join(tempDir, '.risumodule'),
+      `${makeRisumodule({ name: 'Module Pack Test', id: 'test-module' })}\n`,
       'utf-8',
     );
     fs.writeFileSync(
@@ -245,7 +264,11 @@ battle
     // Create canonical module workspace
     fs.mkdirSync(path.join(moduleDir, 'regex'), { recursive: true });
     fs.mkdirSync(path.join(moduleDir, 'lorebooks'), { recursive: true });
-    fs.writeFileSync(path.join(moduleDir, 'metadata.json'), '{"name":"combat"}\n', 'utf-8');
+    fs.writeFileSync(
+      path.join(moduleDir, '.risumodule'),
+      `${makeRisumodule({ name: 'combat', id: 'combat-module' })}\n`,
+      'utf-8',
+    );
     fs.writeFileSync(
       path.join(moduleDir, 'regex', 'init.risuregex'),
       `---
@@ -273,7 +296,11 @@ type: editdisplay
   it('auto-detects module analysis from a canonical workspace', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-core-analyze-module-'));
     fs.mkdirSync(path.join(tempDir, 'lorebooks'), { recursive: true });
-    fs.writeFileSync(path.join(tempDir, 'metadata.json'), '{"name":"Module Stub"}\n', 'utf-8');
+    fs.writeFileSync(
+      path.join(tempDir, '.risumodule'),
+      `${makeRisumodule({ name: 'Module Stub', id: 'module-stub' })}\n`,
+      'utf-8',
+    );
 
     const result = runCli(['analyze', tempDir]);
 

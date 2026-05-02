@@ -3,6 +3,10 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { writeJson, writeText } from '@/node/fs-helpers';
 import { sanitizeFilename } from '../../utils/filenames';
+import {
+  RISUMODULE_FILENAME,
+  buildScaffoldRisumoduleManifest,
+} from '../shared/risumodule';
 
 // ── Help ────────────────────────────────────────────────────────────
 
@@ -20,11 +24,12 @@ const HELP_TEXT = `
     --name <name>       프로젝트 이름 (필수)
     --out <dir>         출력 디렉토리 (기본: ./<sanitized_name>)
     --creator <name>    크리에이터 이름 (charx 전용, 선택)
+    --namespace <ns>    모듈 namespace (.risumodule 전용, 선택)
     -h, --help          도움말
 
   Examples:
     risu-core scaffold charx --name "My Character" --creator "Author"
-    risu-core scaffold module --name "RPG Module"
+    risu-core scaffold module --name "RPG Module" --namespace rpg
     risu-core scaffold preset --name "My Preset" --out ./presets/my-preset
 `;
 
@@ -37,6 +42,7 @@ interface ScaffoldOptions {
   name: string;
   outDir: string;
   creator: string;
+  namespace?: string;
 }
 
 const SCAFFOLD_TYPES = new Set<string>(['charx', 'module', 'preset']);
@@ -87,12 +93,14 @@ function parseOptions(argv: readonly string[]): ScaffoldOptions {
   const sanitizedName = sanitizeFilename(name);
   const outDir = argValue(argv, '--out') || `./${sanitizedName}`;
   const creator = argValue(argv, '--creator') || '';
+  const namespace = typeArg === 'module' ? argValue(argv, '--namespace') : null;
 
   return {
     type: typeArg as ScaffoldType,
     name,
     outDir,
     creator,
+    ...(typeof namespace === 'string' ? { namespace } : {}),
   };
 }
 
@@ -186,16 +194,20 @@ function scaffoldCharx(root: string, options: ScaffoldOptions): number {
 
 function scaffoldModule(root: string, options: ScaffoldOptions): number {
   const sanitizedName = sanitizeFilename(options.name);
+  const now = new Date().toISOString();
   let count = 0;
 
-  // metadata.json
-  writeJson(path.join(root, 'metadata.json'), {
-    name: options.name,
-    description: '',
-    id: crypto.randomUUID(),
-    lowLevelAccess: false,
-    hideIcon: false,
-  });
+  // .risumodule
+  const id = crypto.randomUUID();
+  writeJson(
+    path.join(root, RISUMODULE_FILENAME),
+    buildScaffoldRisumoduleManifest({
+      id,
+      name: options.name,
+      namespace: options.namespace,
+      nowIso: now,
+    }),
+  );
   count++;
 
   // lorebooks/_order.json
@@ -316,7 +328,7 @@ function printNextSteps(type: ScaffoldType, relPath: string): void {
       console.log(`    2. risu-core pack --in ${relPath} 로 패킹하세요.`);
       break;
     case 'module':
-      console.log(`    1. ${relPath}/metadata.json 에서 모듈 정보를 편집하세요.`);
+      console.log(`    1. ${relPath}/.risumodule 에서 모듈 정보를 편집하세요.`);
       console.log(`    2. lorebooks/, regex/ 에 콘텐츠를 추가하세요.`);
       console.log(`    3. risu-core pack --in ${relPath} --format module 로 패킹하세요.`);
       break;

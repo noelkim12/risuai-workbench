@@ -30,6 +30,10 @@ import {
   uniquePath,
 } from '@/node';
 import { createLimiter } from '../../shared/concurrency';
+import {
+  RISUMODULE_FILENAME,
+  buildExtractRisumoduleManifest,
+} from '../../shared/risumodule';
 import { parseModuleRisumFull, parseModuleJson } from '../parsers';
 import type { ParsedModuleFull } from '../parsers';
 
@@ -479,24 +483,17 @@ export function phase7_extractVariables(module: any, outputDir: string): number 
   return 1;
 }
 
-export function phase8_extractModuleIdentity(module: any, outputDir: string): number {
+export function phase8_extractModuleIdentity(
+  module: any,
+  outputDir: string,
+  sourceFormat: 'risum' | 'json' = 'json',
+): number {
   console.log('\n  🧾 Phase 8: Module Identity 추출');
 
-  const metadata: Record<string, unknown> = {
-    name: module?.name || '',
-    description: module?.description || '',
-    id: module?.id || '',
-  };
-
-  if (module?.namespace) metadata.namespace = module.namespace;
-  if (typeof module?.lowLevelAccess === 'boolean') metadata.lowLevelAccess = module.lowLevelAccess;
-  if (typeof module?.hideIcon === 'boolean') metadata.hideIcon = module.hideIcon;
-  if (module?.mcp) metadata.mcp = module.mcp;
-  if (typeof module?.cjs === 'string' && module.cjs.length > 0) metadata.cjs = module.cjs;
-
-  const metadataPath = path.join(outputDir, 'metadata.json');
-  writeJson(metadataPath, metadata);
-  console.log(`     ✅ metadata.json → ${path.relative('.', metadataPath)}`);
+  const manifest = buildExtractRisumoduleManifest(module ?? {}, sourceFormat);
+  const markerPath = path.join(outputDir, RISUMODULE_FILENAME);
+  writeJson(markerPath, manifest);
+  console.log(`     ✅ ${RISUMODULE_FILENAME} → ${path.relative('.', markerPath)}`);
   return 1;
 }
 

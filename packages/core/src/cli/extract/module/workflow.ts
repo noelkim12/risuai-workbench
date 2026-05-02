@@ -31,7 +31,7 @@ const HELP_TEXT = `
     5. 에셋 추출 (risum only) → assets/ + assets/manifest.json
     6. backgroundEmbedding 추출 → html/background.risuhtml
     7. module variables 추출 → variables/<moduleName>.risuvar
-    8. 모듈 identity 추출 → metadata.json
+    8. 모듈 identity 추출 → .risumodule
     9. module toggle 추출 → toggle/<moduleName>.risutoggle
 
   Examples:
@@ -115,7 +115,7 @@ async function runMain(filePath: string, outArg: string | null): Promise<void> {
   t = performance.now();
   phase6_extractBackgroundEmbedding(parsed.module, resolvedOutDir);
   phase7_extractVariables(parsed.module, resolvedOutDir);
-  phase8_extractModuleIdentity(parsed.module, resolvedOutDir);
+  phase8_extractModuleIdentity(parsed.module, resolvedOutDir, parsed.sourceFormat);
   phase9_extractModuleToggle(parsed.module, resolvedOutDir);
   console.log(`     ⏱  Phase 6-9: ${fmt(performance.now() - t)}`);
 
@@ -139,12 +139,10 @@ function sanitizeOutputName(name: string): string {
 }
 
 function runModuleAnalysis(resolvedOutDir: string): void {
-  const hasCanonicalMarkers =
-    fs.existsSync(path.join(resolvedOutDir, 'metadata.json')) &&
-    fs.existsSync(path.join(resolvedOutDir, 'lorebooks'));
+  const hasCanonicalMarker = fs.existsSync(path.join(resolvedOutDir, '.risumodule'));
   const hasLegacyModuleJson = fs.existsSync(path.join(resolvedOutDir, 'module.json'));
 
-  if (!hasCanonicalMarkers && !hasLegacyModuleJson) {
+  if (!hasCanonicalMarker && !hasLegacyModuleJson) {
     console.log('  ⏭  canonical module extract에서는 module 분석을 건너뜁니다.');
     return;
   }

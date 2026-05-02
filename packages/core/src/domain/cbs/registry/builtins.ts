@@ -1182,6 +1182,14 @@ const EXPLICIT_ARGUMENTS_BY_NAME = new Map<string, readonly ArgumentDef[]>([
     ],
   ],
   ['getglobalvar', [createArgument('variableName', 'Global chat variable name to read')]],
+  [
+    'time',
+    [
+      createArgument('format', 'Optional time format string for the current time', {
+        required: false,
+      }),
+    ],
+  ],
   ['source', [createArgument('target', 'Profile source target, usually `user` or `char`')]],
   [
     'slot',
