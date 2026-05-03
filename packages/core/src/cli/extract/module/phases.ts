@@ -43,6 +43,45 @@ export interface ParsedModuleResult {
   sourceFormat: 'risum' | 'json';
 }
 
+type ModuleAssetManifest = {
+  version: number;
+  source_format: 'risum' | 'json';
+  total: number;
+  extracted: number;
+  skipped: number;
+  assets: Array<{
+    index: number;
+    name: string | null;
+    uri: string | null;
+    type: string | null;
+    extracted_path: string | null;
+    status: 'extracted' | 'missing_buffer';
+    size_bytes: number | null;
+  }>;
+};
+
+/**
+ * createModuleAssetManifest 함수.
+ * module asset 추출 결과를 기록할 빈 manifest를 생성함.
+ *
+ * @param sourceFormat - manifest에 남길 module 입력 포맷
+ * @param total - 추출 대상으로 관측한 module asset tuple 수
+ * @returns 비어 있는 module asset manifest
+ */
+function createModuleAssetManifest(
+  sourceFormat: 'risum' | 'json',
+  total: number,
+): ModuleAssetManifest {
+  return {
+    version: 1,
+    source_format: sourceFormat,
+    total,
+    extracted: 0,
+    skipped: 0,
+    assets: [],
+  };
+}
+
 export function phase1_parseModule(inputPath: string): ParsedModuleResult {
   const ext = path.extname(inputPath).toLowerCase();
   const buf = fs.readFileSync(inputPath);
@@ -273,44 +312,27 @@ export function phase5_extractAssets(
 ): number {
   console.log('\n  🖼️ Phase 5: 에셋 추출');
 
+  const assetsDir = path.join(outputDir, 'assets');
+
   if (sourceFormat === 'json') {
-    console.log('     (JSON 소스 — 바이너리 에셋 버퍼 없음, 스킵)');
+    ensureDir(assetsDir);
+    writeJson(path.join(assetsDir, 'manifest.json'), createModuleAssetManifest(sourceFormat, 0));
+    console.log('     (JSON 소스 — 바이너리 에셋 버퍼 없음, scaffold 생성)');
     return 0;
   }
 
   const assets = module?.assets;
   if (!Array.isArray(assets) || assets.length === 0) {
-    console.log('     (assets 없음)');
+    ensureDir(assetsDir);
+    writeJson(path.join(assetsDir, 'manifest.json'), createModuleAssetManifest(sourceFormat, 0));
+    console.log('     (assets 없음 — scaffold 생성)');
     return 0;
   }
 
   console.log(`     module.assets: ${assets.length}개`);
-  const assetsDir = path.join(outputDir, 'assets');
   ensureDir(assetsDir);
 
-  const manifest: {
-    version: number;
-    source_format: 'risum' | 'json';
-    total: number;
-    extracted: number;
-    skipped: number;
-    assets: Array<{
-      index: number;
-      name: string | null;
-      uri: string | null;
-      type: string | null;
-      extracted_path: string | null;
-      status: 'extracted' | 'missing_buffer';
-      size_bytes: number | null;
-    }>;
-  } = {
-    version: 1,
-    source_format: sourceFormat,
-    total: assets.length,
-    extracted: 0,
-    skipped: 0,
-    assets: [],
-  };
+  const manifest = createModuleAssetManifest(sourceFormat, assets.length);
 
   for (let i = 0; i < assets.length; i += 1) {
     const tuple = assets[i];
@@ -365,44 +387,27 @@ export async function phase5_extractAssetsAsync(
 ): Promise<number> {
   console.log('\n  🖼️ Phase 5: 에셋 추출 (async)');
 
+  const assetsDir = path.join(outputDir, 'assets');
+
   if (sourceFormat === 'json') {
-    console.log('     (JSON 소스 — 바이너리 에셋 버퍼 없음, 스킵)');
+    ensureDir(assetsDir);
+    await writeJsonAsync(path.join(assetsDir, 'manifest.json'), createModuleAssetManifest(sourceFormat, 0));
+    console.log('     (JSON 소스 — 바이너리 에셋 버퍼 없음, scaffold 생성)');
     return 0;
   }
 
   const assets = module?.assets;
   if (!Array.isArray(assets) || assets.length === 0) {
-    console.log('     (assets 없음)');
+    ensureDir(assetsDir);
+    await writeJsonAsync(path.join(assetsDir, 'manifest.json'), createModuleAssetManifest(sourceFormat, 0));
+    console.log('     (assets 없음 — scaffold 생성)');
     return 0;
   }
 
   console.log(`     module.assets: ${assets.length}개`);
-  const assetsDir = path.join(outputDir, 'assets');
   ensureDir(assetsDir);
 
-  const manifest: {
-    version: number;
-    source_format: 'risum' | 'json';
-    total: number;
-    extracted: number;
-    skipped: number;
-    assets: Array<{
-      index: number;
-      name: string | null;
-      uri: string | null;
-      type: string | null;
-      extracted_path: string | null;
-      status: 'extracted' | 'missing_buffer';
-      size_bytes: number | null;
-    }>;
-  } = {
-    version: 1,
-    source_format: sourceFormat,
-    total: assets.length,
-    extracted: 0,
-    skipped: 0,
-    assets: [],
-  };
+  const manifest = createModuleAssetManifest(sourceFormat, assets.length);
 
   const writeJobs: Array<{ outPath: string; data: Buffer }> = [];
 
