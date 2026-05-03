@@ -6,8 +6,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { CharacterDetailScanner } from '../character-browser/CharacterDetailScanner';
+import { ModuleDetailScanner } from '../character-browser/ModuleDetailScanner';
 import * as vscode from 'vscode';
-import { CharacterManifestDiscoveryService } from '../character-browser/CharacterManifestDiscoveryService';
+import { WorkspaceArtifactDiscoveryService } from '../character-browser/WorkspaceArtifactDiscoveryService';
 import {
   createCharacterBrowserCardsMessage,
   createCharacterBrowserDetailMessage,
@@ -16,7 +17,7 @@ import {
   isCharacterBrowserRefreshMessage,
   isCharacterBrowserSelectMessage,
 } from '../character-browser/characterBrowserMessages';
-import { CHARACTER_BROWSER_VIEW_ID, type CharacterBrowserCard, type CharacterSection } from '../character-browser/characterBrowserTypes';
+import { CHARACTER_BROWSER_VIEW_ID, type BrowserArtifactCard, type BrowserSection } from '../character-browser/characterBrowserTypes';
 
 /**
  * CharacterBrowserViewProvider 클래스.
@@ -27,8 +28,8 @@ export class CharacterBrowserViewProvider implements vscode.WebviewViewProvider 
 
   private view: vscode.WebviewView | undefined;
   private selectedStableId: string | undefined;
-  private currentCards: CharacterBrowserCard[] = [];
-  private currentSections = new Map<string, CharacterSection[]>();
+  private currentCards: BrowserArtifactCard[] = [];
+  private currentSections = new Map<string, BrowserSection[]>();
 
   constructor(private readonly context: vscode.ExtensionContext) {}
 
@@ -82,7 +83,7 @@ export class CharacterBrowserViewProvider implements vscode.WebviewViewProvider 
   }
 
   private async sendDiscoveredCards(webview: vscode.Webview): Promise<void> {
-    const discoveryService = new CharacterManifestDiscoveryService(webview);
+    const discoveryService = new WorkspaceArtifactDiscoveryService(webview);
     const cards = await discoveryService.discoverCards();
     this.currentCards = cards;
     if (this.selectedStableId && !cards.some((card) => card.stableId === this.selectedStableId)) {
@@ -93,16 +94,18 @@ export class CharacterBrowserViewProvider implements vscode.WebviewViewProvider 
 
   /**
    * selectCharacter 함수.
-   * 선택 stable id를 보존하고 read-only detail scanner 결과를 webview로 전송함.
+   * 선택 stable id를 보존하고 artifact kind별 read-only detail scanner 결과를 webview로 전송함.
    *
-   * @param stableId - Webview에서 선택한 character card stable id
+   * @param stableId - Webview에서 선택한 artifact card stable id
    */
   private async selectCharacter(stableId: string): Promise<void> {
     this.selectedStableId = stableId;
     const selectedCard = this.currentCards.find((card) => card.stableId === stableId);
     if (!selectedCard) return;
 
-    const sections = await new CharacterDetailScanner().scan(selectedCard);
+    const sections = selectedCard.artifactKind === 'character'
+      ? await new CharacterDetailScanner().scan(selectedCard)
+      : await new ModuleDetailScanner().scan(selectedCard);
     if (this.selectedStableId !== stableId) return;
 
     this.currentSections.set(stableId, sections);
@@ -153,10 +156,10 @@ export class CharacterBrowserViewProvider implements vscode.WebviewViewProvider 
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource};" />
-    <title>Risu Character Browser</title>
+    <title>Risu Workbench Browser</title>
   </head>
   <body>
-    <h1>Risu Character Browser</h1>
+    <h1>Risu Workbench Browser</h1>
     <p>Webview bundle is missing. Run the vscode package build to generate Vite assets.</p>
   </body>
 </html>`;

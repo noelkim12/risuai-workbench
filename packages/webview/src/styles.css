@@ -224,6 +224,12 @@ button:focus-visible {
   border-color: var(--character-card-border-invalid);
 }
 
+.character-card--module {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--badge) 14%, transparent), transparent 46%),
+    var(--card);
+}
+
 .character-card--selected {
   border-color: var(--focus);
   box-shadow: var(--card-selected-shadow);
@@ -279,6 +285,14 @@ button:focus-visible {
   color: var(--text);
   background:
     linear-gradient(145deg, color-mix(in srgb, var(--badge) 68%, transparent), transparent),
+    var(--section);
+}
+
+.thumbnail--module {
+  border-style: solid;
+  background:
+    radial-gradient(circle at 72% 22%, color-mix(in srgb, var(--focus) 34%, transparent), transparent 36%),
+    linear-gradient(145deg, color-mix(in srgb, var(--badge) 54%, transparent), transparent),
     var(--section);
 }
 
@@ -673,6 +687,13 @@ h2 {
   color: var(--warning);
   background: transparent;
   outline: 1px solid var(--warning);
+}
+
+.item-button__type--risutoggle,
+.item-button__type--risuvar {
+  color: var(--text);
+  background: color-mix(in srgb, var(--focus) 24%, var(--card));
+  outline: 1px solid color-mix(in srgb, var(--focus) 54%, var(--card-border));
 }
 
 .item-button__copy {

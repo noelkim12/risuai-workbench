@@ -24,10 +24,14 @@ export interface MessageEnvelope<TType extends string, TPayload> {
   payload: TPayload;
 }
 
+export type BrowserArtifactKind = 'character' | 'module';
+export type BrowserArtifactStatus = 'ready' | 'warning' | 'invalid';
 export type CharacterSourceFormat = 'charx' | 'png' | 'json' | 'scaffold';
-export type CharacterBrowserStatus = 'ready' | 'warning' | 'invalid';
+export type ModuleSourceFormat = 'risum' | 'json' | 'scaffold' | 'unknown';
+export type CharacterBrowserStatus = BrowserArtifactStatus;
 export type CharacterSectionKind = 'manifest' | 'lorebooks' | 'regexRules' | 'html' | 'lua' | 'diagnostics';
-export type CharacterItemType =
+export type BrowserSectionKind = CharacterSectionKind | 'toggle' | 'variables';
+export type BrowserItemType =
   | 'manifest'
   | 'image'
   | 'json'
@@ -37,15 +41,25 @@ export type CharacterItemType =
   | 'risuregex'
   | 'risulua'
   | 'risuhtml'
+  | 'risutoggle'
+  | 'risuvar'
   | 'png'
   | 'markdown'
   | 'regex'
   | 'diagnostic'
   | 'unknown';
+export type CharacterItemType = BrowserItemType;
 
 export interface CharacterManifestFlags {
   utilityBot: boolean;
   lowLevelAccess: boolean;
+}
+
+export interface ModuleBrowserFlags {
+  lowLevelAccess: boolean;
+  hideIcon: boolean;
+  hasCjs: boolean;
+  hasMcp: boolean;
 }
 
 export type ManifestParseWarningCode =
@@ -60,7 +74,8 @@ export type ManifestParseWarningCode =
   | 'invalidKind'
   | 'invalidFlagType'
   | 'invalidJson'
-  | 'readError';
+  | 'readError'
+  | 'conflictingRootMarkers';
 
 export interface ManifestParseWarning {
   code: ManifestParseWarningCode;
@@ -111,6 +126,7 @@ export interface RisucharManifestNormalized {
  * Manifest-backed card summary sent from the extension host.
  */
 export interface CharacterBrowserCard {
+  artifactKind: 'character';
   stableId: string;
   manifestId: string;
   name: string;
@@ -132,13 +148,36 @@ export interface CharacterBrowserCard {
 }
 
 /**
+ * ModuleBrowserCard interface.
+ * Module marker-backed card summary without character-only metadata requirements.
+ */
+export interface ModuleBrowserCard {
+  artifactKind: 'module';
+  stableId: string;
+  manifestId: string;
+  name: string;
+  description: string;
+  sourceFormat: ModuleSourceFormat;
+  namespace?: string;
+  status: BrowserArtifactStatus;
+  flags: ModuleBrowserFlags;
+  markerUri: string;
+  rootUri: string;
+  rootPathLabel: string;
+  markerPathLabel: string;
+  warnings: ManifestParseWarning[];
+}
+
+export type BrowserArtifactCard = CharacterBrowserCard | ModuleBrowserCard;
+
+/**
  * CharacterItem interface.
  * Detail view에서 파일 또는 진단 항목 하나를 안정적으로 참조함.
  */
-export interface CharacterItem {
+export interface BrowserItem {
   id: string;
   label: string;
-  type: CharacterItemType;
+  type: BrowserItemType;
   fileUri?: string;
   relativePath?: string;
   description?: string;
@@ -146,17 +185,21 @@ export interface CharacterItem {
   source?: 'manifest' | 'scanner' | 'diagnostics';
 }
 
+export type CharacterItem = BrowserItem;
+
 /**
  * CharacterSection interface.
  * Detail view accordion이 렌더링할 character 관련 항목 그룹.
  */
-export interface CharacterSection {
+export interface BrowserSection {
   id: string;
   label: string;
-  kind: CharacterSectionKind;
+  kind: BrowserSectionKind;
   count: number;
-  items: CharacterItem[];
+  items: BrowserItem[];
 }
+
+export type CharacterSection = BrowserSection;
 
 export interface CharacterBrowserReadyPayload {
   viewId: typeof CHARACTER_BROWSER_VIEW_ID;
@@ -177,13 +220,13 @@ export interface CharacterBrowserOpenItemPayload {
 
 export interface CharacterBrowserCardsPayload {
   generatedAt: string;
-  cards: CharacterBrowserCard[];
+  cards: BrowserArtifactCard[];
 }
 
 export interface CharacterBrowserDetailPayload {
   generatedAt: string;
   stableId: string;
-  sections: CharacterSection[];
+  sections: BrowserSection[];
 }
 
 export type CharacterBrowserReadyMessage = MessageEnvelope<

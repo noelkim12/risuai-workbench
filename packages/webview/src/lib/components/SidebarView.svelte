@@ -1,11 +1,11 @@
 <script lang="ts">
-  import type { CharacterBrowserCard } from '../types';
+  import type { BrowserArtifactCard } from '../types';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
   import CharacterCard from './CharacterCard.svelte';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
   import EmptyState from './EmptyState.svelte';
 
-  export let cards: CharacterBrowserCard[];
+  export let cards: BrowserArtifactCard[];
   export let selectedStableId: string | undefined;
   export let status: string;
   export let onRefresh: () => void;

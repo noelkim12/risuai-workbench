@@ -19,6 +19,7 @@ import type {
   CbsClientBoundaryInputs,
 } from '../../src/lsp/cbsLanguageClientBoundary';
 import type { CbsLanguageServerSettings } from '../../src/lsp/cbsLanguageServerLaunch';
+import type { BrowserArtifactCard, ModuleBrowserCard } from '../../src/character-browser/characterBrowserTypes';
 
 const packageRoot = process.cwd();
 const localRequire = createRequire(__filename);
@@ -121,7 +122,192 @@ interface BuiltCharacterDetailScannerModule {
   };
 }
 
+interface BuiltModuleDetailScannerModule {
+  ModuleDetailScanner: new () => {
+    scan: (card: ModuleBrowserCard) => Promise<Array<{
+      kind: string;
+      label: string;
+      items: Array<{ fileUri?: string; id: string; label: string; relativePath?: string; type: string; description?: string }>;
+    }>>;
+  };
+}
+
+interface BuiltCharacterBrowserViewProviderModule {
+  CharacterBrowserViewProvider: new (context: {
+    extensionUri: TestUri;
+    subscriptions: unknown[];
+  }) => {
+    currentCards?: BrowserArtifactCard[];
+    currentSections?: Map<string, Array<{ items: Array<{ id: string; fileUri?: string }> }>>;
+    getHtml?: (webview: { asWebviewUri: (uri: TestUri) => TestUri; cspSource: string }) => string;
+    selectedStableId?: string;
+    selectCharacter?: (stableId: string) => Promise<void>;
+    openItem?: (stableId: string, itemId: string) => Promise<void>;
+    view?: { webview: { postMessage: (message: unknown) => PromiseLike<boolean> | boolean } };
+  };
+}
+
+interface BuiltWorkspaceArtifactDiscoveryModule {
+  WorkspaceArtifactDiscoveryService: new (webview: { asWebviewUri: (uri: TestUri) => TestUri }) => {
+    discoverCards: () => Promise<BrowserArtifactCard[]>;
+  };
+}
+
+// ===== Mixed Root Marker Boundary Fixtures =====
+// These fixtures support testing .risuchar + .risumodule discovery scenarios
+
+interface RisumoduleManifestFixture {
+  $schema: string;
+  kind: 'risu.module' | string;
+  schemaVersion: number;
+  id: string;
+  name: string;
+  description: string;
+  createdAt: string | null;
+  modifiedAt: string | null;
+  sourceFormat: 'json' | 'risum' | 'scaffold';
+  namespace?: string;
+  lowLevelAccess?: boolean;
+  hideIcon?: boolean;
+  cjs?: string;
+  mcp?: Record<string, unknown>;
+}
+
+interface ModuleBrowserCardInput {
+  artifactKind: 'module';
+  description: string;
+  flags: { lowLevelAccess: boolean; hideIcon: boolean; hasCjs: boolean; hasMcp: boolean };
+  manifestId: string;
+  markerPathLabel: string;
+  markerUri: string;
+  name: string;
+  rootPathLabel: string;
+  rootUri: string;
+  sourceFormat: 'json' | 'risum' | 'scaffold' | 'unknown';
+  stableId: string;
+  status: 'ready' | 'invalid' | 'warning';
+  warnings: Array<{ code: 'invalidJson' | 'invalidKind' | 'conflictingRootMarkers'; field?: string; message: string }>;
+  namespace?: string;
+}
+
+const RISUMODULE_SCHEMA_URL = 'https://risuai-workbench.dev/schemas/risumodule.schema.json';
+const RISUMODULE_KIND = 'risu.module';
+
+/**
+ * createValidRisumoduleManifest 함수.
+ * 유효한 .risumodule JSON fixture를 생성함.
+ *
+ * @param id - 모듈 고유 ID
+ * @param name - 모듈 표시 이름
+ * @param description - 모듈 설명
+ * @param options - 선택적 필드 (namespace, lowLevelAccess, hideIcon 등)
+ * @returns 유효한 risumodule manifest 객체
+ */
+function createValidRisumoduleManifest(
+  id: string,
+  name: string,
+  description: string,
+  options?: {
+    namespace?: string;
+    lowLevelAccess?: boolean;
+    hideIcon?: boolean;
+    cjs?: string;
+    mcp?: Record<string, unknown>;
+    sourceFormat?: 'json' | 'risum' | 'scaffold';
+    createdAt?: string | null;
+    modifiedAt?: string | null;
+  },
+): RisumoduleManifestFixture {
+  return {
+    $schema: RISUMODULE_SCHEMA_URL,
+    kind: RISUMODULE_KIND,
+    schemaVersion: 1,
+    id,
+    name,
+    description,
+    createdAt: options?.createdAt ?? '2024-01-01T00:00:00.000Z',
+    modifiedAt: options?.modifiedAt ?? '2024-01-02T00:00:00.000Z',
+    sourceFormat: options?.sourceFormat ?? 'json',
+    ...(options?.namespace !== undefined && { namespace: options.namespace }),
+    ...(options?.lowLevelAccess !== undefined && { lowLevelAccess: options.lowLevelAccess }),
+    ...(options?.hideIcon !== undefined && { hideIcon: options.hideIcon }),
+    ...(options?.cjs !== undefined && { cjs: options.cjs }),
+    ...(options?.mcp !== undefined && { mcp: options.mcp }),
+  };
+}
+
+/**
+ * createInvalidRisumoduleManifest 함수.
+ * 유효하지 않은 .risumodule JSON fixture를 생성함 (잘못된 kind, schemaVersion 등).
+ *
+ * @param kind - 잘못된 kind 값
+ * @returns 유효하지 않은 risumodule manifest 객체
+ */
+function createInvalidRisumoduleManifest(kind: string = 'wrong.kind'): RisumoduleManifestFixture {
+  return {
+    $schema: RISUMODULE_SCHEMA_URL,
+    kind,
+    schemaVersion: 1,
+    id: 'invalid-id',
+    name: 'Invalid Module',
+    description: 'This module has an invalid kind',
+    createdAt: null,
+    modifiedAt: null,
+    sourceFormat: 'json',
+  };
+}
+
+/**
+ * createMalformedRisumoduleJson 함수.
+ * 파싱 불가능한 malformed JSON 문자열을 생성함.
+ *
+ * @returns 파싱 불가능한 JSON 문자열
+ */
+function createMalformedRisumoduleJson(): string {
+  return '{"kind": "risu.module", "id": "broken", "name": }'; // Invalid JSON - missing value after "name":
+}
+
+/**
+ * createModuleBrowserCardInput 함수.
+ * module scanner boundary test에서 반복되는 card 입력을 최소 필드로 구성함.
+ *
+ * @param moduleRootPath - `.risumodule`이 위치한 module root 경로
+ * @param stableId - 테스트 card stable id
+ * @param options - 선택적 필드 (namespace, hideIcon 등)
+ * @returns ModuleDetailScanner.scan 입력 card shape
+ */
+function createModuleBrowserCardInput(
+  moduleRootPath: string,
+  stableId: string,
+  options?: {
+    namespace?: string;
+    hideIcon?: boolean;
+    status?: 'ready' | 'invalid' | 'warning';
+    warnings?: ModuleBrowserCardInput['warnings'];
+  },
+): ModuleBrowserCardInput {
+  return {
+    artifactKind: 'module',
+    description: 'Boundary test module',
+    flags: { lowLevelAccess: false, hideIcon: options?.hideIcon ?? false, hasCjs: false, hasMcp: false },
+    manifestId: stableId,
+    markerPathLabel: '.risumodule',
+    markerUri: new TestUri(path.join(moduleRootPath, '.risumodule')).toString(),
+    name: stableId,
+    rootPathLabel: moduleRootPath,
+    rootUri: new TestUri(moduleRootPath).toString(),
+    sourceFormat: 'json',
+    stableId,
+    status: options?.status ?? 'ready',
+    warnings: options?.warnings ?? [],
+    ...(options?.namespace !== undefined && { namespace: options.namespace }),
+  };
+}
+
 interface TestVscodeModule {
+  commands?: {
+    executeCommand: (command: string, uri: TestUri) => Promise<void>;
+  };
   FileType: { Directory: 2; File: 1 };
   Uri: {
     file: (fsPath: string) => TestUri;
@@ -129,7 +315,11 @@ interface TestVscodeModule {
     parse: (value: string) => TestUri;
   };
   workspace: {
+    findFiles?: (include: string, exclude?: string) => Promise<TestUri[]>;
+    getWorkspaceFolder?: (uri: TestUri) => { name: string; uri: TestUri } | undefined;
     fs: {
+      readFile?: (uri: TestUri) => Promise<Uint8Array>;
+      stat?: (uri: TestUri) => Promise<{ type: 1 | 2 }>;
       readDirectory: (uri: TestUri) => Promise<Array<[string, 1 | 2]>>;
     };
   };
@@ -167,6 +357,9 @@ function readPackageJson(): {
     menus?: {
       'view/item/context'?: Array<{ command?: string; group?: string; when?: string }>;
     };
+    views?: {
+      risuWorkbench?: Array<{ id?: string; name?: string; type?: string }>;
+    };
   };
   scripts?: Record<string, string>;
 } {
@@ -190,6 +383,9 @@ function readPackageJson(): {
       commands?: Array<{ command?: string; title?: string }>;
       menus?: {
         'view/item/context'?: Array<{ command?: string; group?: string; when?: string }>;
+      };
+      views?: {
+        risuWorkbench?: Array<{ id?: string; name?: string; type?: string }>;
       };
     };
     scripts?: Record<string, string>;
@@ -347,6 +543,157 @@ function loadBuiltCharacterDetailScannerModule(vscodeStub: TestVscodeModule): Bu
 }
 
 /**
+ * loadBuiltModuleDetailScannerModule 함수.
+ * vscode 모듈을 in-memory fs stub으로 대체한 뒤 module scanner build 산출물을 불러옴.
+ *
+ * @param vscodeStub - scanner가 사용할 최소 VS Code API stub
+ * @returns built module detail scanner module exports
+ */
+function loadBuiltModuleDetailScannerModule(vscodeStub: TestVscodeModule): BuiltModuleDetailScannerModule {
+  const nodeModule = Module as unknown as {
+    _load: (request: string, parent: NodeJS.Module | null, isMain: boolean) => unknown;
+  };
+  const originalLoad = nodeModule._load;
+  const modulePath = path.join(packageRoot, 'dist', 'character-browser', 'ModuleDetailScanner.js');
+
+  assert.ok(existsSync(modulePath), `Built module detail scanner module not found: ${modulePath}`);
+  delete localRequire.cache[localRequire.resolve(modulePath)];
+  nodeModule._load = (request, parent, isMain) => {
+    if (request === 'vscode') return vscodeStub;
+    return originalLoad(request, parent, isMain);
+  };
+
+  try {
+    return localRequire(modulePath) as BuiltModuleDetailScannerModule;
+  } finally {
+    nodeModule._load = originalLoad;
+  }
+}
+
+/**
+ * loadBuiltCharacterBrowserViewProviderModule 함수.
+ * vscode 모듈을 test stub으로 대체한 뒤 provider build 산출물을 불러옴.
+ *
+ * @param vscodeStub - provider와 scanners가 사용할 최소 VS Code API stub
+ * @returns built CharacterBrowserViewProvider module exports
+ */
+function loadBuiltCharacterBrowserViewProviderModule(vscodeStub: TestVscodeModule): BuiltCharacterBrowserViewProviderModule {
+  const nodeModule = Module as unknown as {
+    _load: (request: string, parent: NodeJS.Module | null, isMain: boolean) => unknown;
+  };
+  const originalLoad = nodeModule._load;
+  const modulePaths = [
+    path.join(packageRoot, 'dist', 'views', 'CharacterBrowserViewProvider.js'),
+    path.join(packageRoot, 'dist', 'character-browser', 'CharacterDetailScanner.js'),
+    path.join(packageRoot, 'dist', 'character-browser', 'ModuleDetailScanner.js'),
+  ];
+
+  for (const modulePath of modulePaths) {
+    assert.ok(existsSync(modulePath), `Built provider dependency not found: ${modulePath}`);
+    delete localRequire.cache[localRequire.resolve(modulePath)];
+  }
+
+  nodeModule._load = (request, parent, isMain) => {
+    if (request === 'vscode') return vscodeStub;
+    return originalLoad(request, parent, isMain);
+  };
+
+  try {
+    return localRequire(modulePaths[0]) as BuiltCharacterBrowserViewProviderModule;
+  } finally {
+    nodeModule._load = originalLoad;
+  }
+}
+
+/**
+ * createArtifactDiscoveryVscodeStub 함수.
+ * WorkspaceArtifactDiscoveryService boundary test용 marker-glob 기반 VS Code stub을 만듦.
+ *
+ * @param workspaceRootPath - getWorkspaceRelativePath 기준 workspace root
+ * @param markerTextByPath - marker absolute path별 파일 내용
+ * @returns discovery service가 사용할 최소 VS Code API stub
+ */
+function createArtifactDiscoveryVscodeStub(
+  workspaceRootPath: string,
+  markerTextByPath: Record<string, string>,
+): TestVscodeModule {
+  const normalizedWorkspaceRoot = path.normalize(workspaceRootPath);
+  const entries = new Map(
+    Object.entries(markerTextByPath).map(([filePath, text]) => [path.normalize(filePath), text]),
+  );
+
+  return {
+    FileType: { File: 1, Directory: 2 },
+    Uri: {
+      file: (fsPath: string) => new TestUri(path.normalize(fsPath)),
+      joinPath: (base: TestUri, ...paths: string[]) => new TestUri(path.join(base.fsPath, ...paths)),
+      parse: (value: string) => {
+        const parsed = new URL(value);
+        return new TestUri(path.normalize(parsed.pathname));
+      },
+    },
+    workspace: {
+      findFiles: async (include: string) => {
+        const markerName = include.endsWith('.risuchar') ? '.risuchar' : '.risumodule';
+        return [...entries.keys()]
+          .filter((filePath) => path.basename(filePath) === markerName)
+          .sort((a, b) => a.localeCompare(b))
+          .map((filePath) => new TestUri(filePath));
+      },
+      getWorkspaceFolder: (uri: TestUri) => {
+        const normalized = path.normalize(uri.fsPath);
+        if (!normalized.startsWith(normalizedWorkspaceRoot)) return undefined;
+        return { name: path.basename(normalizedWorkspaceRoot), uri: new TestUri(normalizedWorkspaceRoot) };
+      },
+      fs: {
+        readDirectory: async () => [],
+        readFile: async (uri: TestUri) => {
+          const text = entries.get(path.normalize(uri.fsPath));
+          if (text === undefined) throw new Error(`Missing test marker: ${uri.fsPath}`);
+          return Buffer.from(text, 'utf-8');
+        },
+        stat: async () => ({ type: 1 }),
+      },
+    },
+  };
+}
+
+/**
+ * loadBuiltWorkspaceArtifactDiscoveryModule 함수.
+ * vscode 모듈을 marker-glob stub으로 대체한 뒤 unified discovery build 산출물을 불러옴.
+ *
+ * @param vscodeStub - discovery가 사용할 최소 VS Code API stub
+ * @returns built workspace artifact discovery module exports
+ */
+function loadBuiltWorkspaceArtifactDiscoveryModule(vscodeStub: TestVscodeModule): BuiltWorkspaceArtifactDiscoveryModule {
+  const nodeModule = Module as unknown as {
+    _load: (request: string, parent: NodeJS.Module | null, isMain: boolean) => unknown;
+  };
+  const originalLoad = nodeModule._load;
+  const modulePaths = [
+    path.join(packageRoot, 'dist', 'character-browser', 'WorkspaceArtifactDiscoveryService.js'),
+    path.join(packageRoot, 'dist', 'character-browser', 'CharacterManifestDiscoveryService.js'),
+    path.join(packageRoot, 'dist', 'character-browser', 'ModuleManifestDiscoveryService.js'),
+  ];
+
+  for (const modulePath of modulePaths) {
+    assert.ok(existsSync(modulePath), `Built discovery module not found: ${modulePath}`);
+    delete localRequire.cache[localRequire.resolve(modulePath)];
+  }
+
+  nodeModule._load = (request, parent, isMain) => {
+    if (request === 'vscode') return vscodeStub;
+    return originalLoad(request, parent, isMain);
+  };
+
+  try {
+    return localRequire(modulePaths[0]) as BuiltWorkspaceArtifactDiscoveryModule;
+  } finally {
+    nodeModule._load = originalLoad;
+  }
+}
+
+/**
  * getSectionItemSummaries 함수.
  * scanner item의 경로/라벨/type만 뽑아 테스트 의도를 고정함.
  *
@@ -402,6 +749,27 @@ test('separates standalone server validation from official VS Code client integr
   assert.match(packageJson.scripts?.['test:e2e:cbs-client'] ?? '', /test:e2e:cbs-client:boundary/);
   assert.match(packageJson.scripts?.['test:e2e:cbs-client'] ?? '', /test:e2e:cbs-client:runtime/);
   assert.match(packageJson.scripts?.['verify:cbs-client'] ?? '', /test:e2e:cbs-client/);
+});
+
+test('keeps the unified workbench browser on the existing cards view contribution', () => {
+  const packageJson = readPackageJson();
+  const activationEvents = packageJson.activationEvents ?? [];
+  const workbenchViews = packageJson.contributes?.views?.risuWorkbench ?? [];
+
+  assert.equal(activationEvents.includes('onView:risuWorkbench.cards'), true);
+  assert.equal(activationEvents.some((event) => event.includes('risuWorkbench.modules')), false);
+  assert.deepEqual(
+    workbenchViews.map((view) => ({ id: view.id, name: view.name, type: view.type })),
+    [{ id: 'risuWorkbench.cards', name: 'Items', type: 'webview' }],
+  );
+  assert.equal(workbenchViews.some((view) => view.id === 'risuWorkbench.modules'), false);
+});
+
+test('keeps the VS Code build on the single copied webview bundle path', () => {
+  const packageJson = readPackageJson();
+
+  assert.match(packageJson.scripts?.build ?? '', /npm --prefix \.\.\/webview run build/);
+  assert.match(packageJson.scripts?.['build:extension'] ?? '', /node \.\/scripts\/copy-webview\.mjs/);
 });
 
 test('contributes CBS occurrence navigation command for trusted hover links', () => {
@@ -1252,4 +1620,434 @@ test('preserves VS Code-family multi-root initialize preview while reducing laun
     snapshot.initializePayloadPreview.workspaceFolders?.[1]?.fsPath,
     secondWorkspaceRoot,
   );
+});
+
+// ===== Mixed Root Marker Boundary Tests =====
+// These tests load built production services with VS Code stubs instead of duplicating discovery logic.
+
+test('production unified discovery returns same-root character and module cards with conflict warnings', async () => {
+  const workspaceRootPath = path.join('/tmp', 'risu-discovery-workspace');
+  const sharedRootPath = path.join(workspaceRootPath, 'hybrid-content');
+  const characterMarkerPath = path.join(sharedRootPath, '.risuchar');
+  const moduleMarkerPath = path.join(sharedRootPath, '.risumodule');
+  const discoveryModule = loadBuiltWorkspaceArtifactDiscoveryModule(
+    createArtifactDiscoveryVscodeStub(workspaceRootPath, {
+      [characterMarkerPath]: JSON.stringify({
+        kind: 'risu.character',
+        schemaVersion: 1,
+        id: 'hybrid-artifact',
+        name: 'Hybrid Artifact',
+        creator: 'tester',
+        characterVersion: '1.0.0',
+        createdAt: null,
+        modifiedAt: null,
+        sourceFormat: 'json',
+        flags: { utilityBot: false, lowLevelAccess: false },
+      }),
+      [moduleMarkerPath]: JSON.stringify(createValidRisumoduleManifest('hybrid-artifact', 'Hybrid Artifact', 'Hybrid module description', {
+        namespace: 'hybrid.namespace',
+        lowLevelAccess: true,
+        hideIcon: true,
+        cjs: 'index.cjs',
+        mcp: { server: 'hybrid' },
+        sourceFormat: 'risum',
+      })),
+    }),
+  );
+
+  const cards = await new discoveryModule.WorkspaceArtifactDiscoveryService({ asWebviewUri: (uri) => uri }).discoverCards();
+
+  assert.equal(cards.length, 2);
+  assert.deepEqual(cards.map((card) => card.artifactKind), ['character', 'module']);
+  assert.deepEqual(cards.map((card) => card.status), ['warning', 'warning']);
+  assert.notEqual(cards[0].stableId, cards[1].stableId);
+  assert.ok(cards[0].stableId.startsWith('character:'));
+  assert.ok(cards[1].stableId.startsWith('module:'));
+
+  const characterCard = cards.find((card) => card.artifactKind === 'character');
+  const moduleCard = cards.find((card) => card.artifactKind === 'module');
+  assert.ok(characterCard);
+  assert.ok(moduleCard);
+  assert.equal(characterCard.sourceFormat, 'json');
+  assert.equal(moduleCard.description, 'Hybrid module description');
+  assert.equal(moduleCard.sourceFormat, 'risum');
+  assert.equal(moduleCard.namespace, 'hybrid.namespace');
+  assert.deepEqual(moduleCard.flags, { lowLevelAccess: true, hideIcon: true, hasCjs: true, hasMcp: true });
+  assert.ok(moduleCard.rootPathLabel.endsWith('hybrid-content'));
+  assert.ok(moduleCard.markerPathLabel.endsWith('hybrid-content/.risumodule'));
+
+  for (const card of cards) {
+    const conflict = card.warnings.find((warning) => warning.code === 'conflictingRootMarkers');
+    assert.ok(conflict);
+    assert.equal(conflict.field, 'marker');
+    assert.ok(conflict.message.includes('.risuchar'));
+    assert.ok(conflict.message.includes('.risumodule'));
+    assert.equal(conflict.message.includes('.risucharacter'), false);
+  }
+});
+
+test('production unified discovery keeps valid modules when another .risumodule is malformed', async () => {
+  const workspaceRootPath = path.join('/tmp', 'risu-invalid-discovery-workspace');
+  const validRootPath = path.join(workspaceRootPath, 'valid-module');
+  const invalidRootPath = path.join(workspaceRootPath, 'broken-module');
+  const warningRootPath = path.join(workspaceRootPath, 'wrong-kind-module');
+  const discoveryModule = loadBuiltWorkspaceArtifactDiscoveryModule(
+    createArtifactDiscoveryVscodeStub(workspaceRootPath, {
+      [path.join(validRootPath, '.risumodule')]: JSON.stringify(createValidRisumoduleManifest('valid-module', 'Valid Module', 'Still discovered')),
+      [path.join(invalidRootPath, '.risumodule')]: createMalformedRisumoduleJson(),
+      [path.join(warningRootPath, '.risumodule')]: JSON.stringify(createInvalidRisumoduleManifest('not.a.module')),
+    }),
+  );
+
+  const cards = await new discoveryModule.WorkspaceArtifactDiscoveryService({ asWebviewUri: (uri) => uri }).discoverCards();
+
+  assert.equal(cards.length, 3);
+  assert.equal(cards.every((card) => card.artifactKind === 'module'), true);
+  assert.ok(cards.some((card) => card.name === 'Valid Module' && card.status === 'ready'));
+
+  const invalidCard = cards.find((card) => card.status === 'invalid');
+  assert.ok(invalidCard);
+  assert.equal(invalidCard.artifactKind, 'module');
+  assert.ok(invalidCard.stableId.startsWith('module:'));
+  assert.equal(invalidCard.warnings[0].code, 'invalidJson');
+  assert.equal(invalidCard.warnings[0].field, 'manifest');
+
+  const warningCard = cards.find((card) => card.status === 'warning');
+  assert.ok(warningCard);
+  assert.equal(warningCard.artifactKind, 'module');
+  assert.equal(warningCard.name, 'Invalid Module');
+  assert.equal(warningCard.warnings[0].code, 'invalidKind');
+  assert.equal(warningCard.warnings[0].field, 'kind');
+});
+
+test('production module-only root produces module artifact and real module sections', async () => {
+  const workspaceRootPath = path.join('/tmp', 'risu-module-workspace');
+  const moduleRootPath = path.join(workspaceRootPath, 'combat-system');
+  const discoveryModule = loadBuiltWorkspaceArtifactDiscoveryModule(
+    createArtifactDiscoveryVscodeStub(workspaceRootPath, {
+      [path.join(moduleRootPath, '.risumodule')]: JSON.stringify(createValidRisumoduleManifest('combat-system', 'Combat System', 'Module-only discovery')),
+    }),
+  );
+  const scannerModule = loadBuiltModuleDetailScannerModule(
+    createCharacterScannerVscodeStub({
+      [moduleRootPath]: [
+        ['.risumodule', 1],
+        ['lorebooks', 2],
+        ['regex', 2],
+        ['lua', 2],
+        ['toggle', 2],
+        ['variables', 2],
+        ['html', 2],
+      ],
+      [path.join(moduleRootPath, 'lorebooks')]: [['enemies.risulorebook', 1]],
+      [path.join(moduleRootPath, 'regex')]: [['damage.risuregex', 1]],
+      [path.join(moduleRootPath, 'lua')]: [['ai.risulua', 1]],
+      [path.join(moduleRootPath, 'toggle')]: [['features.risutoggle', 1]],
+      [path.join(moduleRootPath, 'variables')]: [['config.risuvar', 1]],
+      [path.join(moduleRootPath, 'html')]: [['battle.risuhtml', 1]],
+    }),
+  );
+
+  const [card] = await new discoveryModule.WorkspaceArtifactDiscoveryService({ asWebviewUri: (uri) => uri }).discoverCards();
+  assert.ok(card);
+  if (card.artifactKind !== 'module') assert.fail(`Expected module card, got ${card.artifactKind}`);
+  assert.equal(card.name, 'Combat System');
+  assert.equal(card.description, 'Module-only discovery');
+  assert.equal(card.status, 'ready');
+  assert.ok(card.stableId.startsWith('module:'));
+
+  const sections = await new scannerModule.ModuleDetailScanner().scan(card);
+  assert.deepEqual(
+    sections.map((section) => section.kind),
+    ['manifest', 'lorebooks', 'regexRules', 'lua', 'toggle', 'variables', 'html', 'diagnostics'],
+  );
+  assert.deepEqual(
+    sections.map((section) => section.label),
+    ['Manifest', 'Lorebooks', 'Regex Rules', 'Lua', 'Toggle', 'Variables', 'HTML', 'Diagnostics'],
+  );
+  assert.deepEqual(getSectionItemSummaries(sections, 'manifest'), [
+    { label: '.risumodule', relativePath: '.risumodule', type: 'manifest' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'lorebooks'), [
+    { label: 'enemies.risulorebook', relativePath: 'lorebooks/enemies.risulorebook', type: 'risulorebook' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'regexRules'), [
+    { label: 'damage.risuregex', relativePath: 'regex/damage.risuregex', type: 'risuregex' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'lua'), [
+    { label: 'ai.risulua', relativePath: 'lua/ai.risulua', type: 'risulua' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'toggle'), [
+    { label: 'features.risutoggle', relativePath: 'toggle/features.risutoggle', type: 'risutoggle' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'variables'), [
+    { label: 'config.risuvar', relativePath: 'variables/config.risuvar', type: 'risuvar' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'html'), [
+    { label: 'battle.risuhtml', relativePath: 'html/battle.risuhtml', type: 'risuhtml' },
+  ]);
+  assert.equal(sections.find((section) => section.kind === 'diagnostics')?.items.length, 0);
+});
+
+test('production module detail scanner returns exact module sections and file-backed items', async () => {
+  const moduleRootPath = path.join('/tmp', 'risu-module-detail', 'combat-system');
+  const scannerModule = loadBuiltModuleDetailScannerModule(
+    createCharacterScannerVscodeStub({
+      [moduleRootPath]: [
+        ['.risumodule', 1],
+        ['assets', 2],
+        ['lorebooks', 2],
+        ['regex', 2],
+        ['lua', 2],
+        ['toggle', 2],
+        ['variables', 2],
+        ['html', 2],
+      ],
+      [path.join(moduleRootPath, 'assets')]: [['ignored.risulua', 1]],
+      [path.join(moduleRootPath, 'lorebooks')]: [['enemies.risulorebook', 1]],
+      [path.join(moduleRootPath, 'regex')]: [['damage.risuregex', 1]],
+      [path.join(moduleRootPath, 'lua')]: [['ai.risulua', 1]],
+      [path.join(moduleRootPath, 'toggle')]: [['features.risutoggle', 1]],
+      [path.join(moduleRootPath, 'variables')]: [['config.risuvar', 1]],
+      [path.join(moduleRootPath, 'html')]: [['battle.risuhtml', 1]],
+    }),
+  );
+
+  const sections = await new scannerModule.ModuleDetailScanner().scan(
+    createModuleBrowserCardInput(moduleRootPath, 'module:combat-system'),
+  );
+
+  assert.deepEqual(
+    sections.map((section) => section.label),
+    ['Manifest', 'Lorebooks', 'Regex Rules', 'Lua', 'Toggle', 'Variables', 'HTML', 'Diagnostics'],
+  );
+  assert.deepEqual(getSectionItemSummaries(sections, 'manifest'), [
+    { label: '.risumodule', relativePath: '.risumodule', type: 'manifest' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'lorebooks'), [
+    { label: 'enemies.risulorebook', relativePath: 'lorebooks/enemies.risulorebook', type: 'risulorebook' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'regexRules'), [
+    { label: 'damage.risuregex', relativePath: 'regex/damage.risuregex', type: 'risuregex' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'lua'), [
+    { label: 'ai.risulua', relativePath: 'lua/ai.risulua', type: 'risulua' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'toggle'), [
+    { label: 'features.risutoggle', relativePath: 'toggle/features.risutoggle', type: 'risutoggle' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'variables'), [
+    { label: 'config.risuvar', relativePath: 'variables/config.risuvar', type: 'risuvar' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'html'), [
+    { label: 'battle.risuhtml', relativePath: 'html/battle.risuhtml', type: 'risuhtml' },
+  ]);
+  assert.equal(sections.find((section) => section.kind === 'diagnostics')?.items.length, 0);
+});
+
+test('production module detail scanner adds invalid module warnings to diagnostics', async () => {
+  const moduleRootPath = path.join('/tmp', 'risu-module-detail', 'invalid-system');
+  const scannerModule = loadBuiltModuleDetailScannerModule(
+    createCharacterScannerVscodeStub({
+      [moduleRootPath]: [['.risumodule', 1]],
+    }),
+  );
+
+  const sections = await new scannerModule.ModuleDetailScanner().scan(
+    createModuleBrowserCardInput(moduleRootPath, 'module:invalid-system', {
+      status: 'warning',
+      warnings: [
+        { code: 'invalidKind', field: 'kind', message: '.risumodule kind must be "risu.module"' },
+        { code: 'conflictingRootMarkers', field: 'marker', message: 'Root has both .risuchar and .risumodule' },
+      ],
+    }),
+  );
+
+  const diagnostics = sections.find((section) => section.kind === 'diagnostics');
+  assert.ok(diagnostics);
+  assert.deepEqual(
+    diagnostics.items.map((item) => ({ label: item.label, relativePath: item.relativePath, type: item.type, description: item.description })),
+    [
+      {
+        label: 'invalidKind · kind',
+        relativePath: 'invalidKind:kind',
+        type: 'diagnostic',
+        description: '.risumodule kind must be "risu.module"',
+      },
+      {
+        label: 'conflictingRootMarkers · marker',
+        relativePath: 'conflictingRootMarkers:marker',
+        type: 'diagnostic',
+        description: 'Root has both .risuchar and .risumodule',
+      },
+    ],
+  );
+});
+
+test('provider dispatches module selections and opens module file-backed items', async () => {
+  const moduleRootPath = path.join('/tmp', 'risu-module-detail', 'provider-module');
+  const opened: Array<{ command: string; uri: string }> = [];
+  const vscodeStub = createCharacterScannerVscodeStub({
+    [moduleRootPath]: [
+      ['.risumodule', 1],
+      ['lua', 2],
+    ],
+    [path.join(moduleRootPath, 'lua')]: [['entry.risulua', 1]],
+  });
+  vscodeStub.commands = {
+    executeCommand: async (command, uri) => {
+      opened.push({ command, uri: uri.toString() });
+    },
+  };
+  const providerModule = loadBuiltCharacterBrowserViewProviderModule(vscodeStub);
+  const postedMessages: unknown[] = [];
+  const provider = new providerModule.CharacterBrowserViewProvider({
+    extensionUri: new TestUri(packageRoot),
+    subscriptions: [],
+  });
+  provider.view = { webview: { postMessage: (message) => { postedMessages.push(message); return true; } } };
+  provider.currentCards = [createModuleBrowserCardInput(moduleRootPath, 'module:provider-module') as unknown as BrowserArtifactCard];
+
+  assert.ok(provider.selectCharacter);
+  assert.ok(provider.openItem);
+  await provider.selectCharacter('module:provider-module');
+
+  const sections = provider.currentSections?.get('module:provider-module') ?? [];
+  const luaItem = sections.flatMap((section) => section.items).find((item) => item.id.endsWith('lua::lua/entry.risulua'));
+  assert.ok(luaItem);
+  assert.ok(postedMessages.some((message) => JSON.stringify(message).includes('character-browser/characterDetailLoaded')));
+
+  await provider.openItem('module:provider-module', luaItem.id);
+
+  assert.deepEqual(opened, [
+    { command: 'vscode.open', uri: new TestUri(path.join(moduleRootPath, 'lua', 'entry.risulua')).toString() },
+  ]);
+});
+
+test('provider fallback HTML uses neutral workbench browser copy', () => {
+  const providerModule = loadBuiltCharacterBrowserViewProviderModule(createCharacterScannerVscodeStub({}));
+  const provider = new providerModule.CharacterBrowserViewProvider({
+    extensionUri: new TestUri(path.join('/tmp', 'risu-missing-webview-bundle')),
+    subscriptions: [],
+  });
+
+  assert.ok(provider.getHtml);
+  const html = provider.getHtml({ asWebviewUri: (uri) => uri, cspSource: 'vscode-webview://test' });
+
+  assert.match(html, /<title>Risu Workbench Browser<\/title>/);
+  assert.match(html, /<h1>Risu Workbench Browser<\/h1>/);
+  assert.equal(html.includes('Risu Character Browser'), false);
+});
+
+test('provider ignores stale async detail scans for character and module selections', async () => {
+  const characterRootPath = path.join('/tmp', 'risu-stale-detail', 'character');
+  const moduleRootPath = path.join('/tmp', 'risu-stale-detail', 'module');
+  const providerModule = loadBuiltCharacterBrowserViewProviderModule(
+    createCharacterScannerVscodeStub({
+      [characterRootPath]: [['.risuchar', 1], ['lua', 2]],
+      [path.join(characterRootPath, 'lua')]: [['character.risulua', 1]],
+      [moduleRootPath]: [['.risumodule', 1], ['lua', 2]],
+      [path.join(moduleRootPath, 'lua')]: [['module.risulua', 1]],
+    }),
+  );
+  const postedMessages: unknown[] = [];
+  const provider = new providerModule.CharacterBrowserViewProvider({
+    extensionUri: new TestUri(packageRoot),
+    subscriptions: [],
+  });
+  provider.view = { webview: { postMessage: (message) => { postedMessages.push(message); return true; } } };
+  provider.currentCards = [
+    createCharacterBrowserCardInput(characterRootPath, 'character:stale') as unknown as BrowserArtifactCard,
+    createModuleBrowserCardInput(moduleRootPath, 'module:fresh') as unknown as BrowserArtifactCard,
+  ];
+
+  assert.ok(provider.selectCharacter);
+  const staleCharacterScan = provider.selectCharacter('character:stale');
+  const freshModuleScan = provider.selectCharacter('module:fresh');
+  await Promise.all([staleCharacterScan, freshModuleScan]);
+
+  assert.equal(provider.currentSections?.has('character:stale'), false);
+  assert.equal(provider.currentSections?.has('module:fresh'), true);
+  assert.equal(JSON.stringify(postedMessages).includes('character:stale'), false);
+  assert.equal(JSON.stringify(postedMessages).includes('module:fresh'), true);
+});
+
+test('production unified discovery sorts mixed separate roots by name then kind then path', async () => {
+  const workspaceRootPath = path.join('/tmp', 'risu-sorted-discovery-workspace');
+  const moduleRootPath = path.join(workspaceRootPath, 'mod-alice');
+  const characterRootPath = path.join(workspaceRootPath, 'char-alice');
+  const discoveryModule = loadBuiltWorkspaceArtifactDiscoveryModule(
+    createArtifactDiscoveryVscodeStub(workspaceRootPath, {
+      [path.join(moduleRootPath, '.risumodule')]: JSON.stringify(createValidRisumoduleManifest('alice-module', 'Alice', 'Sorted module')),
+      [path.join(characterRootPath, '.risuchar')]: JSON.stringify({
+        kind: 'risu.character',
+        schemaVersion: 1,
+        id: 'alice-character',
+        name: 'Alice',
+        creator: 'tester',
+        characterVersion: '1.0.0',
+        createdAt: null,
+        modifiedAt: null,
+        sourceFormat: 'json',
+        flags: { utilityBot: false, lowLevelAccess: false },
+      }),
+    }),
+  );
+
+  const cards = await new discoveryModule.WorkspaceArtifactDiscoveryService({ asWebviewUri: (uri) => uri }).discoverCards();
+
+  assert.equal(cards.length, 2);
+  assert.deepEqual(cards.map((card) => card.name), ['Alice', 'Alice']);
+  assert.deepEqual(cards.map((card) => card.artifactKind), ['character', 'module']);
+  assert.ok(cards[0].stableId.startsWith('character:'));
+  assert.ok(cards[1].stableId.startsWith('module:'));
+  assert.ok(cards[0].rootPathLabel.endsWith('char-alice'));
+  assert.ok(cards[1].rootPathLabel.endsWith('mod-alice'));
+});
+
+test('preserves existing .risuchar boundary coverage when adding module support', async () => {
+  // This test ensures existing character scanner behavior is preserved
+  // It exercises the actual CharacterDetailScanner with in-memory stubs
+
+  const characterRootPath = path.join('/tmp', 'risu-character', 'boundary-test');
+  const scannerModule = loadBuiltCharacterDetailScannerModule(
+    createCharacterScannerVscodeStub({
+      [characterRootPath]: [
+        ['.risuchar', 1],
+        ['lorebooks', 2],
+        ['lorebooks/world.risulorebook', 1],
+      ],
+    }),
+  );
+
+  const characterCard = createCharacterBrowserCardInput(characterRootPath, 'boundary-test');
+
+  // Verify character card structure matches existing expectations
+  assert.equal(characterCard.markerPathLabel, '.risuchar');
+  assert.equal(characterCard.sourceFormat, 'json');
+  assert.equal(characterCard.status, 'ready');
+  assert.deepEqual(characterCard.warnings, []);
+  assert.equal(characterCard.characterVersion, '1.0.0');
+  assert.equal(characterCard.creator, 'tester');
+  assert.equal(characterCard.flags.lowLevelAccess, false);
+  assert.equal(characterCard.flags.utilityBot, false);
+
+  // Verify URI structure
+  assert.ok(characterCard.markerUri.includes('.risuchar'));
+  assert.ok(characterCard.rootUri.includes('boundary-test'));
+  assert.equal(characterCard.stableId, 'boundary-test');
+  assert.equal(characterCard.manifestId, 'boundary-test');
+
+  // Actually run the scanner to verify real behavior is preserved
+  const sections = await new scannerModule.CharacterDetailScanner().scan(characterCard);
+
+  // Assert expected sections exist
+  assert.ok(sections.some((s) => s.kind === 'manifest'));
+  assert.ok(sections.some((s) => s.kind === 'lorebooks'));
+
+  // Assert lorebook file is discovered
+  const lorebooksSection = sections.find((s) => s.kind === 'lorebooks');
+  assert.ok(lorebooksSection);
+  assert.equal(lorebooksSection.items.length, 1);
+  assert.equal(lorebooksSection.items[0].relativePath, 'lorebooks/world.risulorebook');
 });

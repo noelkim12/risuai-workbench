@@ -9,9 +9,13 @@ export const CHARACTER_BROWSER_VIEW_ID = 'risuWorkbench.cards';
 
 export type CharacterBrowserProtocol = typeof CHARACTER_BROWSER_PROTOCOL;
 export type CharacterBrowserProtocolVersion = typeof CHARACTER_BROWSER_PROTOCOL_VERSION;
+export type BrowserArtifactKind = 'character' | 'module';
+export type BrowserArtifactStatus = 'ready' | 'warning' | 'invalid';
 export type CharacterSourceFormat = 'charx' | 'png' | 'json' | 'scaffold';
+export type ModuleSourceFormat = 'risum' | 'json' | 'scaffold' | 'unknown';
 export type CharacterSectionKind = 'manifest' | 'lorebooks' | 'regexRules' | 'html' | 'lua' | 'diagnostics';
-export type CharacterItemType =
+export type BrowserSectionKind = CharacterSectionKind | 'toggle' | 'variables';
+export type BrowserItemType =
   | 'manifest'
   | 'image'
   | 'json'
@@ -21,11 +25,14 @@ export type CharacterItemType =
   | 'risuregex'
   | 'risulua'
   | 'risuhtml'
+  | 'risutoggle'
+  | 'risuvar'
   | 'png'
   | 'markdown'
   | 'regex'
   | 'diagnostic'
   | 'unknown';
+export type CharacterItemType = BrowserItemType;
 
 export interface MessageEnvelope<TType extends string, TPayload> {
   protocol: CharacterBrowserProtocol;
@@ -34,11 +41,18 @@ export interface MessageEnvelope<TType extends string, TPayload> {
   payload: TPayload;
 }
 
-export type CharacterBrowserStatus = 'ready' | 'warning' | 'invalid';
+export type CharacterBrowserStatus = BrowserArtifactStatus;
 
 export interface CharacterManifestFlags {
   utilityBot: boolean;
   lowLevelAccess: boolean;
+}
+
+export interface ModuleBrowserFlags {
+  lowLevelAccess: boolean;
+  hideIcon: boolean;
+  hasCjs: boolean;
+  hasMcp: boolean;
 }
 
 export interface ManifestParseWarning {
@@ -48,6 +62,7 @@ export interface ManifestParseWarning {
 }
 
 export interface CharacterBrowserCard {
+  artifactKind: 'character';
   stableId: string;
   manifestId: string;
   name: string;
@@ -68,10 +83,29 @@ export interface CharacterBrowserCard {
   warnings: ManifestParseWarning[];
 }
 
-export interface CharacterItem {
+export interface ModuleBrowserCard {
+  artifactKind: 'module';
+  stableId: string;
+  manifestId: string;
+  name: string;
+  description: string;
+  sourceFormat: ModuleSourceFormat;
+  namespace?: string;
+  status: BrowserArtifactStatus;
+  flags: ModuleBrowserFlags;
+  markerUri: string;
+  rootUri: string;
+  rootPathLabel: string;
+  markerPathLabel: string;
+  warnings: ManifestParseWarning[];
+}
+
+export type BrowserArtifactCard = CharacterBrowserCard | ModuleBrowserCard;
+
+export interface BrowserItem {
   id: string;
   label: string;
-  type: CharacterItemType;
+  type: BrowserItemType;
   fileUri?: string;
   relativePath?: string;
   description?: string;
@@ -79,13 +113,17 @@ export interface CharacterItem {
   source?: 'manifest' | 'scanner' | 'diagnostics';
 }
 
-export interface CharacterSection {
+export type CharacterItem = BrowserItem;
+
+export interface BrowserSection {
   id: string;
   label: string;
-  kind: CharacterSectionKind;
+  kind: BrowserSectionKind;
   count: number;
-  items: CharacterItem[];
+  items: BrowserItem[];
 }
+
+export type CharacterSection = BrowserSection;
 
 export interface CharacterBrowserReadyPayload {
   viewId: typeof CHARACTER_BROWSER_VIEW_ID;
@@ -106,13 +144,13 @@ export interface CharacterBrowserOpenItemPayload {
 
 export interface CharacterBrowserCardsPayload {
   generatedAt: string;
-  cards: CharacterBrowserCard[];
+  cards: BrowserArtifactCard[];
 }
 
 export interface CharacterBrowserDetailPayload {
   generatedAt: string;
   stableId: string;
-  sections: CharacterSection[];
+  sections: BrowserSection[];
 }
 
 export type CharacterBrowserReadyMessage = MessageEnvelope<

@@ -23,6 +23,28 @@ import { parseLorebookContent } from '../src/domain/custom-extension/extensions/
 import { parseRegexContent } from '../src/domain/regex';
 import { parseVariableContent } from '../src/domain/custom-extension/extensions/variable';
 
+/**
+ * expectEmptyAssetScaffold 함수.
+ * module extract가 만든 빈 assets manifest scaffold를 검증함.
+ *
+ * @param outputDir - assets directory를 포함한 extract output root
+ * @param sourceFormat - manifest에 기록되어야 하는 입력 포맷
+ */
+function expectEmptyAssetScaffold(outputDir: string, sourceFormat: 'risum' | 'json'): void {
+  const manifestPath = path.join(outputDir, 'assets', 'manifest.json');
+
+  expect(fs.existsSync(path.join(outputDir, 'assets'))).toBe(true);
+  expect(fs.existsSync(manifestPath)).toBe(true);
+  expect(JSON.parse(fs.readFileSync(manifestPath, 'utf-8'))).toEqual({
+    version: 1,
+    source_format: sourceFormat,
+    total: 0,
+    extracted: 0,
+    skipped: 0,
+    assets: [],
+  });
+}
+
 describe('module extract', () => {
   let tmpDir: string;
 
@@ -252,7 +274,7 @@ describe('module extract', () => {
     expect(rawContent).not.toContain('\\ud83d');
   });
 
-  it('phase5_extractAssets skips extraction for JSON source format', () => {
+  it('phase5_extractAssets writes an empty scaffold for JSON source format', () => {
     const module = {
       assets: [['asset_name', 'asset_uri', 'icon']],
     };
@@ -260,7 +282,64 @@ describe('module extract', () => {
     const extracted = phase5_extractAssets(module, tmpDir, [Buffer.from('data')], 'json');
 
     expect(extracted).toBe(0);
-    expect(fs.existsSync(path.join(tmpDir, 'assets'))).toBe(false);
+    expectEmptyAssetScaffold(tmpDir, 'json');
+  });
+
+  it('phase5_extractAssets writes an empty scaffold when module assets are missing or empty', () => {
+    const missingAssetsDir = path.join(tmpDir, 'missing-assets');
+    const emptyAssetsDir = path.join(tmpDir, 'empty-assets');
+
+    const missingCount = phase5_extractAssets({}, missingAssetsDir, [], 'risum');
+    const emptyCount = phase5_extractAssets({ assets: [] }, emptyAssetsDir, [], 'risum');
+
+    expect(missingCount).toBe(0);
+    expect(emptyCount).toBe(0);
+    expectEmptyAssetScaffold(missingAssetsDir, 'risum');
+    expectEmptyAssetScaffold(emptyAssetsDir, 'risum');
+  });
+
+  it('phase5_extractAssets keeps real risum asset extraction behavior unchanged', () => {
+    const module = {
+      assets: [
+        ['first asset', 'risu://asset/1', 'icon'],
+        ['missing asset', 'risu://asset/2', 'emotion'],
+      ],
+    };
+
+    const extracted = phase5_extractAssets(module, tmpDir, [Buffer.from('first-data')], 'risum');
+    const manifestPath = path.join(tmpDir, 'assets', 'manifest.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as Record<string, unknown>;
+
+    expect(extracted).toBe(1);
+    expect(fs.existsSync(path.join(tmpDir, 'assets', 'first_asset.bin'))).toBe(true);
+    expect(fs.readFileSync(path.join(tmpDir, 'assets', 'first_asset.bin'), 'utf-8')).toBe('first-data');
+    expect(manifest).toEqual({
+      version: 1,
+      source_format: 'risum',
+      total: 2,
+      extracted: 1,
+      skipped: 1,
+      assets: [
+        {
+          index: 0,
+          name: 'first asset',
+          uri: 'risu://asset/1',
+          type: 'icon',
+          extracted_path: 'first_asset.bin',
+          status: 'extracted',
+          size_bytes: Buffer.from('first-data').length,
+        },
+        {
+          index: 1,
+          name: 'missing asset',
+          uri: 'risu://asset/2',
+          type: 'emotion',
+          extracted_path: null,
+          status: 'missing_buffer',
+          size_bytes: null,
+        },
+      ],
+    });
   });
 
   it('phase6_extractBackgroundEmbedding writes canonical .risuhtml file when embedding exists', () => {
@@ -495,6 +574,7 @@ describe('module extract', () => {
     expect(fs.existsSync(path.join(outDir, 'variables', 'workflow-module.risuvar'))).toBe(true);
     expect(fs.existsSync(path.join(outDir, 'html', 'background.risuhtml'))).toBe(true);
     expect(fs.existsSync(path.join(outDir, 'toggle', 'workflow-module.risutoggle'))).toBe(true);
+    expectEmptyAssetScaffold(outDir, 'json');
 
     const extractedContents = [
       fs.readFileSync(path.join(outDir, '.risumodule'), 'utf-8'),
@@ -548,6 +628,7 @@ describe('module extract', () => {
     expect(fs.existsSync(path.join(outDir, '.risumodule'))).toBe(true);
     expect(fs.existsSync(path.join(outDir, 'metadata.json'))).toBe(false);
     expect(fs.existsSync(path.join(outDir, 'lorebooks'))).toBe(false);
+    expectEmptyAssetScaffold(outDir, 'json');
 
     const marker = JSON.parse(fs.readFileSync(path.join(outDir, '.risumodule'), 'utf-8')) as Record<
       string,
