@@ -24,6 +24,7 @@ export interface RisumoduleManifest {
   createdAt: string | null;
   modifiedAt: string | null;
   sourceFormat: RisumoduleSourceFormat;
+  image?: string | null;
   namespace?: string;
   cjs?: string;
   lowLevelAccess?: boolean;
@@ -57,6 +58,9 @@ export function buildExtractRisumoduleManifest(
     sourceFormat,
   };
 
+  if (typeof module.image === 'string' || module.image === null) {
+    manifest.image = module.image;
+  }
   if (typeof module.namespace === 'string') {
     manifest.namespace = module.namespace;
   }
@@ -109,6 +113,7 @@ export function buildScaffoldRisumoduleManifest({
     createdAt: nowIso,
     modifiedAt: nowIso,
     sourceFormat: 'scaffold',
+    image: null,
     lowLevelAccess: false,
     hideIcon: false,
   };
@@ -227,6 +232,12 @@ export function parseRisumoduleManifest(text: string, markerPath: string): Risum
     );
   }
 
+  if ('image' in obj && obj.image !== null && typeof obj.image !== 'string') {
+    throw new Error(
+      `.risumodule image must be a string or null at ${markerPath}`,
+    );
+  }
+
   const manifest: RisumoduleManifest = {
     $schema: obj.$schema,
     kind: obj.kind,
@@ -239,6 +250,9 @@ export function parseRisumoduleManifest(text: string, markerPath: string): Risum
     sourceFormat,
   };
 
+  if ('image' in obj) {
+    manifest.image = obj.image === null ? null : obj.image as string;
+  }
   if (typeof obj.namespace === 'string') {
     manifest.namespace = obj.namespace;
   }
