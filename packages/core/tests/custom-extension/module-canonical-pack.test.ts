@@ -193,6 +193,34 @@ describe('module canonical pack workflow', () => {
     ]);
   });
 
+  it('accepts .risumodule image metadata without exporting it to upstream module json', () => {
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'module-canonical-pack-image-'));
+    tempDirs.push(workDir);
+
+    fs.writeFileSync(
+      path.join(workDir, '.risumodule'),
+      `${JSON.stringify(makeRisumodule({ image: 'assets/icons/module.png' }), null, 2)}\n`,
+      'utf-8',
+    );
+
+    fs.mkdirSync(path.join(workDir, 'assets', 'icons'), { recursive: true });
+    fs.writeFileSync(path.join(workDir, 'assets', 'icons', 'module.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+
+    const outPath = path.join(workDir, 'packed-module.json');
+    const exitCode = runPackWorkflow(['--in', workDir, '--out', outPath, '--format', 'json']);
+
+    expect(exitCode).toBe(0);
+    const payload = JSON.parse(fs.readFileSync(outPath, 'utf-8')) as {
+      type: string;
+      module: Record<string, unknown>;
+    };
+
+    expect(payload.type).toBe('risuModule');
+    expect(payload.module.name).toBe('workflow-module');
+    expect(payload.module).not.toHaveProperty('image');
+    expect(payload.module).not.toHaveProperty('assets');
+  });
+
   it('rejects .risumodule containing customModuleToggle', () => {
     const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'module-canonical-pack-marker-toggle-'));
     tempDirs.push(workDir);

@@ -1,5 +1,6 @@
 import './styles.css';
 import App from './App.svelte';
+import MarkerEditor from './lib/components/editor/marker/MarkerEditor.svelte';
 import { mount } from 'svelte';
 import { writable } from 'svelte/store';
 import {
@@ -12,44 +13,60 @@ import {
 import {
   CHARACTER_BROWSER_PROTOCOL,
   CHARACTER_BROWSER_PROTOCOL_VERSION,
-  type CharacterBrowserCard,
+  type BrowserArtifactCard,
   type CharacterBrowserExtensionMessage,
   type CharacterItem,
   type CharacterSection,
 } from './lib/types';
 
 const vscode = getVsCodeApi();
-const cards = writable<CharacterBrowserCard[]>([]);
+const cards = writable<BrowserArtifactCard[]>([]);
 const selectedStableId = writable<string | undefined>(undefined);
 const detailSections = writable<CharacterSection[]>([]);
-const expandedSectionIds = writable<string[]>(['manifest', 'lorebooks', 'regexRules', 'html', 'diagnostics']);
+const expandedSectionIds = writable<string[]>([
+  'manifest',
+  'lorebooks',
+  'regexRules',
+  'lua',
+  'toggle',
+  'variables',
+  'html',
+  'diagnostics',
+]);
 const viewMode = writable<'characters' | 'characterDetail'>('characters');
 const status = writable('Connecting to extension host…');
 const app = document.querySelector<HTMLDivElement>('#app');
+const isEditorMode = document.documentElement.dataset.editorMode === 'true';
 
 if (!app) {
   throw new Error('Missing #app root for Risu Workbench webview.');
 }
 
-mount(App, {
-  target: app,
-  props: {
-    cards,
-    selectedStableId,
-    detailSections,
-    expandedSectionIds,
-    viewMode,
-    status,
-    refreshCards,
-    selectCard,
-    returnToCards,
-    toggleSection,
-    openItem,
-  },
-});
+if (isEditorMode) {
+  mount(MarkerEditor, {
+    target: app,
+  });
+} else {
+  mount(App, {
+    target: app,
+    props: {
+      cards,
+      selectedStableId,
+      detailSections,
+      expandedSectionIds,
+      viewMode,
+      status,
+      refreshCards,
+      selectCard,
+      returnToCards,
+      toggleSection,
+      openItem,
+    },
+  });
 
-window.addEventListener('message', handleMessage);
-vscode?.postMessage(createCharacterBrowserReadyMessage());
+  window.addEventListener('message', handleMessage);
+  vscode?.postMessage(createCharacterBrowserReadyMessage());
+}
 
 function handleMessage(event: MessageEvent<unknown>): void {
   const message = event.data;
@@ -57,8 +74,11 @@ function handleMessage(event: MessageEvent<unknown>): void {
 
   if (message.type === 'character-browser/cards') {
     const nextCards = message.payload.cards;
+    if (message.payload.selectedStableId) {
+      selectedStableId.set(message.payload.selectedStableId);
+    }
     cards.set(nextCards);
-    setStatus(`${nextCards.length} .risuchar manifests loaded from workspace discovery.`);
+    setStatus(`${nextCards.length} .risuchar/.risumodule root-marker artifacts loaded from workspace discovery.`);
     return;
   }
 
@@ -76,7 +96,7 @@ function handleMessage(event: MessageEvent<unknown>): void {
  * Refresh button action을 typed webview-to-extension message로 전달함.
  */
 function refreshCards(): void {
-  setStatus('Refreshing .risuchar manifests…');
+  setStatus('Refreshing .risuchar and .risumodule root markers…');
   viewMode.set('characters');
   detailSections.set([]);
   vscode?.postMessage(createCharacterBrowserRefreshMessage());
@@ -89,9 +109,15 @@ function refreshCards(): void {
  * @param stableId - 선택된 card stable id
  */
 function selectCard(stableId: string): void {
+  let selectedCard: BrowserArtifactCard | undefined;
+  cards.subscribe((value) => {
+    selectedCard = value.find((card) => card.stableId === stableId);
+  })();
+  if (!selectedCard) return;
+
   selectedStableId.set(stableId);
   detailSections.set([]);
-  setStatus('Loading character detail…');
+  setStatus(`Loading ${selectedCard.artifactKind} detail…`);
   vscode?.postMessage(createCharacterBrowserSelectMessage(stableId));
 }
 
@@ -101,7 +127,7 @@ function selectCard(stableId: string): void {
  */
 function returnToCards(): void {
   viewMode.set('characters');
-  setStatus('Returned to character cards.');
+  setStatus('Returned to artifact cards.');
 }
 
 /**

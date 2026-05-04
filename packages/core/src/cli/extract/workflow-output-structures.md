@@ -139,19 +139,19 @@ Execution order:
 7. `phase7_extractVariables()`
 8. `phase8_extractModuleIdentity()`
 9. `phase9_extractModuleToggle()`
-10. `runModuleAnalysis()` (deferred — only runs if `module.json` exists, legacy mode)
+10. `runModuleAnalysis()` (runs when `.risumodule` or legacy `module.json` exists)
 
 Notes:
 
 - Input can be `.risum` or `.json`.
 - Default output directory is `module_<sanitized_name>`, where the name comes from `module.name` or the input filename stem.
-- Module-wide analysis available via `risu-core analyze --type module <dir>` (run manually after extract). Note: canonical analyze requires `metadata.json` + `lorebooks/` directory; if `lorebooks/` is absent, only legacy `module.json` fallback enables analysis.
+- Module-wide analysis runs automatically after extract when `.risumodule` or legacy `module.json` exists. It can also be re-run manually with `risu-core analyze --type module <dir>`. Canonical analyze requires `.risumodule`; `lorebooks/` is optional and `metadata.json` is not a module fallback.
 
 Default tree (canonical workspace):
 
 ```text
 module_<name>/
-  metadata.json
+  .risumodule
 ```
 
 Optional additions (canonical `.risu*` artifacts):
@@ -166,7 +166,7 @@ module_<name>/
     <entry>_1.risulorebook
 ```
 
-Deferred outputs (manual run after extract):
+Analysis outputs (auto-run after extract when a module marker exists, manual re-run supported):
 
 ```text
 module_<name>/
@@ -191,8 +191,9 @@ Phase details (canonical formats):
   - Reads `module.triggerscript` (string field).
   - Direct string passthrough to `lua/<moduleName>.risulua` (target-name-based naming).
 - Assets:
-  - Only runs for `.risum` input.
-  - `.json` input skips assets because there are no binary asset buffers.
+  - `.risum` input extracts available binary asset buffers.
+  - `.json` input has no binary asset buffers, so no asset files are materialized; it still writes an empty `assets/manifest.json` scaffold.
+  - Missing or empty `module.assets` also writes an empty `assets/manifest.json` scaffold.
   - Files are written directly under `assets/` as `.bin` files; this workflow does not split by asset type.
   - `assets/manifest.json` maps module asset tuples to extracted filenames or `missing_buffer` status.
 - Background HTML:
@@ -202,14 +203,15 @@ Phase details (canonical formats):
 - Toggle:
   - `module.customModuleToggle` becomes `toggle/<target>.risutoggle`.
 - Identity:
-  - `metadata.json` contains `name`, `description`, `id`, plus optional fields like `namespace`, `lowLevelAccess`, `hideIcon`, `mcp`, `cjs`.
-  - Note: `customModuleToggle` is NOT stored in metadata.json; it has its own `.risutoggle` file.
-- Analysis (deferred — not written automatically during extract):
-  - Module analysis available via `risu-core analyze --type module` (run manually after extract).
-  - The module analyzer generates `analysis/module-analysis.md` and `analysis/module-analysis.html` when invoked.
-  - Canonical analyze requires `metadata.json` + `lorebooks/` directory; legacy fallback requires `module.json`.
+  - `.risumodule` contains `name`, `description`, `id`, plus optional fields like `namespace`, `lowLevelAccess`, `hideIcon`, `mcp`, `cjs`.
+  - Note: `customModuleToggle` is NOT stored in `.risumodule`; it has its own `.risutoggle` file.
+- Analysis:
+  - `runModuleAnalysis()` auto-runs at the end of module extract when `.risumodule` or legacy `module.json` exists.
+  - Module analysis can also be re-run manually via `risu-core analyze --type module <dir>`.
+  - The module analyzer generates `analysis/module-analysis.md` and `analysis/module-analysis.html`.
+  - Canonical analyze requires `.risumodule`; legacy fallback requires `module.json`.
 
-Note: `module.json` is no longer written during extract. The canonical workspace uses `.risu*` artifacts as the editable source of truth. Analyze workflows use canonical-marker-first auto-detection; legacy root-JSON fallback remains supported while strict eradication is deferred.
+Note: `module.json` and module `metadata.json` are no longer written during extract. The canonical workspace uses `.risumodule` plus `.risu*` artifacts as the editable source of truth. Analyze workflows use canonical-marker-first auto-detection; legacy `module.json` remains supported where explicitly documented, but module `metadata.json` fallback is removed.
 
 ## Preset workflow
 
@@ -324,7 +326,7 @@ Note: `preset.json` is no longer written during extract. The canonical workspace
 | Workflow  | Full-run baseline                           | Canonical `.risu*` artifacts                                                  | Notable special cases                                                                                                               |
 | --------- | ------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | Character | `character/` (including `metadata.json`)  | `lorebooks/*.risulorebook`, `regex/*.risuregex`, `lua/*.risulua`, `html/*.risuhtml`, `variables/*.risuvar` | default out dir is `character_<name>`; embedded `module.risum` can be merged; analysis run manually via `analyze --type charx/lua`   |
-| Module    | `metadata.json`                             | `lorebooks/*.risulorebook`, `regex/*.risuregex`, `lua/*.risulua`, `html/*.risuhtml`, `variables/*.risuvar`, `toggle/*.risutoggle` | default out dir is `module_<name>`; assets only for `.risum`; analysis run manually via `analyze --type module`                     |
+| Module    | `.risumodule`                               | `lorebooks/*.risulorebook`, `regex/*.risuregex`, `lua/*.risulua`, `html/*.risuhtml`, `variables/*.risuvar`, `toggle/*.risutoggle` | default out dir is `module_<name>`; assets only for `.risum`; analysis run manually via `analyze --type module`                     |
 | Preset    | `metadata.json`                             | `prompt_template/*.risuprompt`, `regex/*.risuregex`, `toggle/*.risutoggle`   | default out dir is `preset_<name>`; output shape depends heavily on detected preset type; **analysis auto-runs after extract** (unless `--json-only`) |
 
 **Legacy note:** Root JSON files (`charx.json`, `module.json`, `preset.json`) are no longer written during extract. They are still used internally for binary output serialization (inside `.charx`/`.risum` files). The editable workspace uses canonical `.risu*` artifacts exclusively. Analyze workflows use canonical-marker-first auto-detection; legacy root-JSON fallback remains supported while strict eradication is deferred.

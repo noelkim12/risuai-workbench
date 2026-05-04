@@ -79,6 +79,31 @@ describe('risumodule manifest helper', () => {
       expect(manifest.mcp).toEqual({ server: 'srv' });
     });
 
+    it('preserves optional image metadata when extract source provides a string or null', () => {
+      const withImage = buildExtractRisumoduleManifest({
+        name: 'Image Module',
+        id: 'image-id',
+        description: 'has thumbnail',
+        image: 'assets/icons/module.png',
+      }, 'json');
+      const withNullImage = buildExtractRisumoduleManifest({
+        name: 'Null Image Module',
+        id: 'null-image-id',
+        description: '',
+        image: null,
+      }, 'json');
+      const withInvalidImage = buildExtractRisumoduleManifest({
+        name: 'Invalid Image Module',
+        id: 'invalid-image-id',
+        description: '',
+        image: 123,
+      }, 'json');
+
+      expect(withImage.image).toBe('assets/icons/module.png');
+      expect(withNullImage.image).toBeNull();
+      expect(withInvalidImage).not.toHaveProperty('image');
+    });
+
     it('skips optional fields with wrong types', () => {
       const module = {
         name: 'Partial',
@@ -118,6 +143,7 @@ describe('risumodule manifest helper', () => {
       expect(manifest.createdAt).toBe(now);
       expect(manifest.modifiedAt).toBe(now);
       expect(manifest.sourceFormat).toBe('scaffold');
+      expect(manifest.image).toBeNull();
       expect(manifest.lowLevelAccess).toBe(false);
       expect(manifest.hideIcon).toBe(false);
       expect(manifest).not.toHaveProperty('namespace');
@@ -216,6 +242,55 @@ describe('risumodule manifest helper', () => {
       expect(manifest.lowLevelAccess).toBe(true);
       expect(manifest.hideIcon).toBe(false);
       expect(manifest.mcp).toEqual({ server: 'srv' });
+    });
+
+    it('parses optional image metadata as string or null', () => {
+      const withImage = JSON.stringify({
+        $schema: RISUMODULE_SCHEMA_URL,
+        kind: RISUMODULE_KIND,
+        schemaVersion: 1,
+        id: 'id-image',
+        name: 'Image',
+        description: 'Desc',
+        image: 'assets/icons/module.png',
+        createdAt: null,
+        modifiedAt: null,
+        sourceFormat: 'json',
+      });
+      const withNull = JSON.stringify({
+        $schema: RISUMODULE_SCHEMA_URL,
+        kind: RISUMODULE_KIND,
+        schemaVersion: 1,
+        id: 'id-null',
+        name: 'Null Image',
+        description: 'Desc',
+        image: null,
+        createdAt: null,
+        modifiedAt: null,
+        sourceFormat: 'json',
+      });
+
+      expect(parseRisumoduleManifest(withImage, '/tmp/.risumodule').image).toBe('assets/icons/module.png');
+      expect(parseRisumoduleManifest(withNull, '/tmp/.risumodule').image).toBeNull();
+    });
+
+    it('rejects invalid image metadata types', () => {
+      const text = JSON.stringify({
+        $schema: RISUMODULE_SCHEMA_URL,
+        kind: RISUMODULE_KIND,
+        schemaVersion: 1,
+        id: 'id-invalid-image',
+        name: 'Invalid Image',
+        description: 'Desc',
+        image: 123,
+        createdAt: null,
+        modifiedAt: null,
+        sourceFormat: 'json',
+      });
+
+      expect(() => parseRisumoduleManifest(text, '/tmp/.risumodule')).toThrow(
+        '.risumodule image must be a string or null at /tmp/.risumodule',
+      );
     });
 
     it('rejects invalid JSON with exact phrase', () => {
@@ -473,6 +548,27 @@ describe('risumodule manifest helper', () => {
       expect(moduleObj.id).toBe('aid');
       expect(moduleObj.namespace).toBe('ns');
       expect(moduleObj.cjs).toBe('cjs-val');
+    });
+
+    it('does not copy workbench-only image metadata into packed module object', () => {
+      const moduleObj: Record<string, unknown> = {};
+      const manifest = parseRisumoduleManifest(JSON.stringify({
+        $schema: RISUMODULE_SCHEMA_URL,
+        kind: RISUMODULE_KIND,
+        schemaVersion: 1,
+        id: 'id-image-apply',
+        name: 'Image Apply',
+        description: 'Desc',
+        image: 'assets/icons/module.png',
+        createdAt: null,
+        modifiedAt: null,
+        sourceFormat: 'json',
+      }), '/tmp/.risumodule');
+
+      applyRisumoduleToModule(moduleObj, manifest);
+
+      expect(moduleObj.name).toBe('Image Apply');
+      expect(moduleObj).not.toHaveProperty('image');
     });
 
     it('copies boolean and object fields', () => {

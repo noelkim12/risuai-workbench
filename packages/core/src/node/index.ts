@@ -45,6 +45,15 @@ import {
   type DiscoveredStructuredJsonFile,
   type CustomExtensionWorkspaceDiscovery,
 } from './custom-extension-file-discovery';
+import {
+  RISUMODULE_FILENAME,
+  RISUMODULE_KIND,
+  RISUMODULE_SCHEMA_VERSION,
+  RISUMODULE_SCHEMA_URL,
+  parseRisumoduleManifest,
+  type RisumoduleManifest,
+  type RisumoduleSourceFormat,
+} from '../cli/shared/risumodule';
 
 const parsePngChunks = parsePngTextChunks;
 
@@ -92,4 +101,11 @@ export {
   type DiscoveredMarkerFile,
   type DiscoveredStructuredJsonFile,
   type CustomExtensionWorkspaceDiscovery,
+  RISUMODULE_FILENAME,
+  RISUMODULE_KIND,
+  RISUMODULE_SCHEMA_VERSION,
+  RISUMODULE_SCHEMA_URL,
+  parseRisumoduleManifest,
+  type RisumoduleManifest,
+  type RisumoduleSourceFormat,
 };

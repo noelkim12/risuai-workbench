@@ -4,9 +4,9 @@ import type { Writable } from 'svelte/store';
 import CharacterDetailView from './lib/components/CharacterDetailView.svelte';
 // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
 import SidebarView from './lib/components/SidebarView.svelte';
-import type { CharacterBrowserCard, CharacterItem, CharacterSection } from './lib/types';
+import type { BrowserArtifactCard, CharacterItem, CharacterSection } from './lib/types';
 
-export let cards: Writable<CharacterBrowserCard[]>;
+export let cards: Writable<BrowserArtifactCard[]>;
 export let selectedStableId: Writable<string | undefined>;
 export let detailSections: Writable<CharacterSection[]>;
 export let expandedSectionIds: Writable<string[]>;
@@ -18,12 +18,12 @@ export let returnToCards: () => void;
 export let toggleSection: (sectionId: string) => void;
 export let openItem: (item: CharacterItem) => void;
 
-$: selectedCharacter = $cards.find((card) => card.stableId === $selectedStableId);
+$: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId);
 </script>
 
-{#if $viewMode === 'characterDetail' && selectedCharacter}
+{#if $viewMode === 'characterDetail' && selectedArtifact}
   <CharacterDetailView
-    character={selectedCharacter}
+    artifact={selectedArtifact}
     sections={$detailSections}
     expandedSectionIds={$expandedSectionIds}
     status={$status}

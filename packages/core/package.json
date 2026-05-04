@@ -27,6 +27,7 @@
   "scripts": {
     "build": "tsc && npx tsc-alias && npm run build:assets",
     "build:assets": "mkdir -p dist/cli/analyze/shared/report-shell && cp src/cli/analyze/shared/report-shell/template.html src/cli/analyze/shared/report-shell/client.js dist/cli/analyze/shared/report-shell/",
+    "watch": "npm run build:assets && (tsc --watch --preserveWatchOutput & npx tsc-alias -w)",
     "test": "vitest run",
     "lint": "eslint 'src/**/*.ts'",
     "lint:fix": "eslint 'src/**/*.ts' --fix",

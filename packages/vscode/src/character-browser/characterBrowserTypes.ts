@@ -6,9 +6,15 @@
 export const CHARACTER_BROWSER_PROTOCOL = 'risu-workbench.character-browser';
 export const CHARACTER_BROWSER_PROTOCOL_VERSION = 1;
 export const CHARACTER_BROWSER_VIEW_ID = 'risuWorkbench.cards';
+export const MARKER_EDITOR_PROTOCOL = 'risu-workbench.marker-editor';
+export const MARKER_EDITOR_PROTOCOL_VERSION = 1;
 
 export type CharacterBrowserProtocol = typeof CHARACTER_BROWSER_PROTOCOL;
 export type CharacterBrowserProtocolVersion = typeof CHARACTER_BROWSER_PROTOCOL_VERSION;
+export type MarkerEditorProtocol = typeof MARKER_EDITOR_PROTOCOL;
+export type MarkerEditorProtocolVersion = typeof MARKER_EDITOR_PROTOCOL_VERSION;
+export type WebviewMessageProtocol = CharacterBrowserProtocol | MarkerEditorProtocol;
+export type WebviewMessageProtocolVersion = CharacterBrowserProtocolVersion | MarkerEditorProtocolVersion;
 
 /**
  * MessageEnvelope interface.
@@ -18,16 +24,20 @@ export type CharacterBrowserProtocolVersion = typeof CHARACTER_BROWSER_PROTOCOL_
  * @param TPayload - Message-specific payload shape
  */
 export interface MessageEnvelope<TType extends string, TPayload> {
-  protocol: CharacterBrowserProtocol;
-  version: CharacterBrowserProtocolVersion;
+  protocol: WebviewMessageProtocol;
+  version: WebviewMessageProtocolVersion;
   type: TType;
   payload: TPayload;
 }
 
+export type BrowserArtifactKind = 'character' | 'module';
+export type BrowserArtifactStatus = 'ready' | 'warning' | 'invalid';
 export type CharacterSourceFormat = 'charx' | 'png' | 'json' | 'scaffold';
-export type CharacterBrowserStatus = 'ready' | 'warning' | 'invalid';
+export type ModuleSourceFormat = 'risum' | 'json' | 'scaffold' | 'unknown';
+export type CharacterBrowserStatus = BrowserArtifactStatus;
 export type CharacterSectionKind = 'manifest' | 'lorebooks' | 'regexRules' | 'html' | 'lua' | 'diagnostics';
-export type CharacterItemType =
+export type BrowserSectionKind = CharacterSectionKind | 'toggle' | 'variables';
+export type BrowserItemType =
   | 'manifest'
   | 'image'
   | 'json'
@@ -37,15 +47,25 @@ export type CharacterItemType =
   | 'risuregex'
   | 'risulua'
   | 'risuhtml'
+  | 'risutoggle'
+  | 'risuvar'
   | 'png'
   | 'markdown'
   | 'regex'
   | 'diagnostic'
   | 'unknown';
+export type CharacterItemType = BrowserItemType;
 
 export interface CharacterManifestFlags {
   utilityBot: boolean;
   lowLevelAccess: boolean;
+}
+
+export interface ModuleBrowserFlags {
+  lowLevelAccess: boolean;
+  hideIcon: boolean;
+  hasCjs: boolean;
+  hasMcp: boolean;
 }
 
 export type ManifestParseWarningCode =
@@ -60,7 +80,8 @@ export type ManifestParseWarningCode =
   | 'invalidKind'
   | 'invalidFlagType'
   | 'invalidJson'
-  | 'readError';
+  | 'readError'
+  | 'conflictingRootMarkers';
 
 export interface ManifestParseWarning {
   code: ManifestParseWarningCode;
@@ -111,6 +132,7 @@ export interface RisucharManifestNormalized {
  * Manifest-backed card summary sent from the extension host.
  */
 export interface CharacterBrowserCard {
+  artifactKind: 'character';
   stableId: string;
   manifestId: string;
   name: string;
@@ -132,13 +154,38 @@ export interface CharacterBrowserCard {
 }
 
 /**
+ * ModuleBrowserCard interface.
+ * Module marker-backed card summary without character-only metadata requirements.
+ */
+export interface ModuleBrowserCard {
+  artifactKind: 'module';
+  stableId: string;
+  manifestId: string;
+  name: string;
+  description: string;
+  sourceFormat: ModuleSourceFormat;
+  namespace?: string;
+  imageUri?: string;
+  imagePath?: string | null;
+  status: BrowserArtifactStatus;
+  flags: ModuleBrowserFlags;
+  markerUri: string;
+  rootUri: string;
+  rootPathLabel: string;
+  markerPathLabel: string;
+  warnings: ManifestParseWarning[];
+}
+
+export type BrowserArtifactCard = CharacterBrowserCard | ModuleBrowserCard;
+
+/**
  * CharacterItem interface.
  * Detail view에서 파일 또는 진단 항목 하나를 안정적으로 참조함.
  */
-export interface CharacterItem {
+export interface BrowserItem {
   id: string;
   label: string;
-  type: CharacterItemType;
+  type: BrowserItemType;
   fileUri?: string;
   relativePath?: string;
   description?: string;
@@ -146,17 +193,21 @@ export interface CharacterItem {
   source?: 'manifest' | 'scanner' | 'diagnostics';
 }
 
+export type CharacterItem = BrowserItem;
+
 /**
  * CharacterSection interface.
  * Detail view accordion이 렌더링할 character 관련 항목 그룹.
  */
-export interface CharacterSection {
+export interface BrowserSection {
   id: string;
   label: string;
-  kind: CharacterSectionKind;
+  kind: BrowserSectionKind;
   count: number;
-  items: CharacterItem[];
+  items: BrowserItem[];
 }
+
+export type CharacterSection = BrowserSection;
 
 export interface CharacterBrowserReadyPayload {
   viewId: typeof CHARACTER_BROWSER_VIEW_ID;
@@ -177,13 +228,119 @@ export interface CharacterBrowserOpenItemPayload {
 
 export interface CharacterBrowserCardsPayload {
   generatedAt: string;
-  cards: CharacterBrowserCard[];
+  cards: BrowserArtifactCard[];
+  selectedStableId?: string;
 }
 
 export interface CharacterBrowserDetailPayload {
   generatedAt: string;
   stableId: string;
-  sections: CharacterSection[];
+  sections: BrowserSection[];
+}
+
+export type MarkerEditorMode = BrowserArtifactKind;
+
+export type MarkerEditorTimestamp = string | null;
+
+export type CharacterMarkerEditField =
+  | 'name'
+  | 'creator'
+  | 'characterVersion'
+  | 'image'
+  | 'tags'
+  | keyof CharacterManifestFlags;
+
+export type ModuleMarkerEditField = 'name' | 'description' | 'namespace' | 'image' | keyof ModuleBrowserFlags;
+
+export type MarkerEditorEditField = CharacterMarkerEditField | ModuleMarkerEditField;
+
+export interface CharacterEditFields {
+  name: string;
+  creator: string;
+  characterVersion: string;
+  image: string | null;
+  tags: string[];
+  utilityBot: CharacterManifestFlags['utilityBot'];
+  lowLevelAccess: CharacterManifestFlags['lowLevelAccess'];
+}
+
+export interface ModuleEditFields {
+  name: string;
+  description: string;
+  namespace: string;
+  image: string | null;
+  lowLevelAccess: ModuleBrowserFlags['lowLevelAccess'];
+  hideIcon: ModuleBrowserFlags['hideIcon'];
+}
+
+export type MarkerEditFields = CharacterEditFields | ModuleEditFields;
+
+export interface CharacterEditorInitPayload {
+  mode: 'character';
+  markerUri: string;
+  rootUri: string;
+  rootPathLabel: string;
+  markerPathLabel?: string;
+  fields: CharacterEditFields;
+  imageUri?: string;
+  createdAt: MarkerEditorTimestamp;
+  modifiedAt: MarkerEditorTimestamp;
+}
+
+export interface ModuleEditorInitPayload {
+  mode: 'module';
+  markerUri: string;
+  rootUri: string;
+  rootPathLabel: string;
+  markerPathLabel?: string;
+  fields: ModuleEditFields;
+  imageUri?: string;
+  createdAt: MarkerEditorTimestamp;
+  modifiedAt: MarkerEditorTimestamp;
+}
+
+export type MarkerEditorInitPayload = CharacterEditorInitPayload | ModuleEditorInitPayload;
+
+export interface MarkerEditorSavePayload {
+  markerUri: string;
+  mode: MarkerEditorMode;
+  fields: MarkerEditFields;
+}
+
+export interface MarkerEditorResetRequestPayload {
+  markerUri: string;
+  mode: MarkerEditorMode;
+}
+
+export interface MarkerEditorSelectImagePayload {
+  markerUri: string;
+  rootUri: string;
+  mode: MarkerEditorMode;
+}
+
+export interface MarkerEditorSavedPayload {
+  success: boolean;
+  message?: string;
+  fields?: MarkerEditFields;
+  imageUri?: string;
+}
+
+export interface MarkerEditorResetResponsePayload {
+  fields: MarkerEditFields;
+  imageUri?: string;
+  createdAt: MarkerEditorTimestamp;
+  modifiedAt: MarkerEditorTimestamp;
+}
+
+export interface MarkerEditorImageSelectedPayload {
+  imagePath: string;
+  imageUri?: string;
+}
+
+export interface MarkerEditorErrorPayload {
+  code: string;
+  message: string;
+  field?: MarkerEditorEditField;
 }
 
 export type CharacterBrowserReadyMessage = MessageEnvelope<
@@ -222,3 +379,43 @@ export type CharacterBrowserWebviewMessage =
   | CharacterBrowserSelectMessage
   | CharacterBrowserOpenItemMessage;
 export type CharacterBrowserExtensionMessage = CharacterBrowserCardsMessage | CharacterBrowserDetailMessage;
+
+export type MarkerEditorSaveMessage = MessageEnvelope<'marker-editor/save', MarkerEditorSavePayload>;
+
+export type MarkerEditorResetRequestMessage = MessageEnvelope<
+  'marker-editor/reset',
+  MarkerEditorResetRequestPayload
+>;
+
+export type MarkerEditorSelectImageMessage = MessageEnvelope<
+  'marker-editor/selectImage',
+  MarkerEditorSelectImagePayload
+>;
+
+export type MarkerEditorInitMessage = MessageEnvelope<'marker-editor/init', MarkerEditorInitPayload>;
+
+export type MarkerEditorSavedMessage = MessageEnvelope<'marker-editor/saved', MarkerEditorSavedPayload>;
+
+export type MarkerEditorResetResponseMessage = MessageEnvelope<
+  'marker-editor/reset',
+  MarkerEditorResetResponsePayload
+>;
+
+export type MarkerEditorImageSelectedMessage = MessageEnvelope<
+  'marker-editor/imageSelected',
+  MarkerEditorImageSelectedPayload
+>;
+
+export type MarkerEditorErrorMessage = MessageEnvelope<'marker-editor/error', MarkerEditorErrorPayload>;
+
+export type MarkerEditorWebviewMessage =
+  | MarkerEditorSaveMessage
+  | MarkerEditorResetRequestMessage
+  | MarkerEditorSelectImageMessage;
+
+export type MarkerEditorExtensionMessage =
+  | MarkerEditorInitMessage
+  | MarkerEditorSavedMessage
+  | MarkerEditorResetResponseMessage
+  | MarkerEditorImageSelectedMessage
+  | MarkerEditorErrorMessage;

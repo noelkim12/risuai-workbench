@@ -1,6 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as vscode from 'vscode';
+import {
+  createWebviewDevServerHtml,
+  getConfiguredWebviewDevServerUrl,
+  getWebviewDevServerPortMapping,
+} from '../views/webviewDevServer';
 
 interface WebviewIncomingMessage {
   type: 'ping' | 'webview-ready';
@@ -27,6 +32,7 @@ export class CardPanel {
       {
         enableScripts: true,
         retainContextWhenHidden: true,
+        portMapping: getWebviewDevServerPortMapping(),
       },
     );
 
@@ -40,6 +46,7 @@ export class CardPanel {
     this.panel.webview.options = {
       enableScripts: true,
       localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview')],
+      portMapping: getWebviewDevServerPortMapping(),
     };
 
     this.panel.webview.html = this.getHtml(context.extensionUri, this.panel.webview);
@@ -73,6 +80,15 @@ export class CardPanel {
   }
 
   private getHtml(extensionUri: vscode.Uri, webview: vscode.Webview): string {
+    const devServerUrl = getConfiguredWebviewDevServerUrl();
+    if (devServerUrl) {
+      return createWebviewDevServerHtml(devServerUrl, {
+        title: 'Risu Card Panel',
+        viewName: 'card-panel',
+        webview,
+      });
+    }
+
     const webviewRoot = vscode.Uri.joinPath(extensionUri, 'dist', 'webview');
     const htmlPath = path.join(webviewRoot.fsPath, 'index.html');
 

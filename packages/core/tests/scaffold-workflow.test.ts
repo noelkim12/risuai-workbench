@@ -44,6 +44,7 @@ describe('src/cli scaffold workflow', () => {
       expect(manifest.kind).toBe(RISUMODULE_KIND);
       expect(manifest.schemaVersion).toBe(1);
       expect(manifest.sourceFormat).toBe('scaffold');
+      expect(manifest.image).toBeNull();
       expect(manifest.description).toBe('');
       expect(manifest.name).toBe('RPG Module');
       expect(manifest.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);

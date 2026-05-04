@@ -295,7 +295,7 @@
       "risuWorkbench": [
         {
           "id": "risuWorkbench.cards",
-          "name": "Cards",
+          "name": "Items",
           "type": "webview"
         }
       ]
