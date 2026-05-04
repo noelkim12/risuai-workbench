@@ -485,6 +485,37 @@ describe('module extract', () => {
     expect(marker).toMatchObject(module);
   });
 
+  it('preserves optional module image metadata in .risumodule during json extract', async () => {
+    const workDir = path.join(tmpDir, 'module-extract-image');
+    fs.mkdirSync(workDir, { recursive: true });
+    const inputPath = path.join(workDir, 'module.json');
+    const outDir = path.join(workDir, 'out');
+
+    fs.writeFileSync(
+      inputPath,
+      `${JSON.stringify(
+        {
+          type: 'risuModule',
+          module: {
+            id: 'module-image-id',
+            name: 'Module Image',
+            description: 'Module with workbench thumbnail metadata',
+            image: 'assets/icons/module.png',
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      'utf-8',
+    );
+
+    const exitCode = await runModuleExtractWorkflow([inputPath, '--out', outDir]);
+
+    expect(exitCode).toBe(0);
+    const manifest = JSON.parse(fs.readFileSync(path.join(outDir, '.risumodule'), 'utf-8'));
+    expect(manifest.image).toBe('assets/icons/module.png');
+  });
+
   it('phase9_extractModuleToggle writes module toggle artifact when present', () => {
     const module = {
       name: 'module-toggle-name',
