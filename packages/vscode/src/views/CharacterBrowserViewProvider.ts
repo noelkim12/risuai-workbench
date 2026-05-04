@@ -6,8 +6,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { CharacterDetailScanner } from '../character-browser/CharacterDetailScanner';
+import { ModuleDetailScanner } from '../character-browser/ModuleDetailScanner';
 import * as vscode from 'vscode';
-import { CharacterManifestDiscoveryService } from '../character-browser/CharacterManifestDiscoveryService';
+import { WorkspaceArtifactDiscoveryService } from '../character-browser/WorkspaceArtifactDiscoveryService';
 import {
   createCharacterBrowserCardsMessage,
   createCharacterBrowserDetailMessage,
@@ -16,7 +17,16 @@ import {
   isCharacterBrowserRefreshMessage,
   isCharacterBrowserSelectMessage,
 } from '../character-browser/characterBrowserMessages';
-import { CHARACTER_BROWSER_VIEW_ID, type CharacterBrowserCard, type CharacterSection } from '../character-browser/characterBrowserTypes';
+import { CHARACTER_BROWSER_VIEW_ID, type BrowserArtifactCard, type BrowserSection } from '../character-browser/characterBrowserTypes';
+import { MarkerEditorViewProvider } from './MarkerEditorViewProvider';
+import {
+  createWebviewDevServerHtml,
+  getConfiguredWebviewDevServerUrl,
+  getWebviewDevServerPortMapping,
+} from './webviewDevServer';
+
+const CHARACTER_MARKER_FILENAME = '.risuchar';
+const MODULE_MARKER_FILENAME = '.risumodule';
 
 /**
  * CharacterBrowserViewProvider 클래스.
@@ -24,13 +34,38 @@ import { CHARACTER_BROWSER_VIEW_ID, type CharacterBrowserCard, type CharacterSec
  */
 export class CharacterBrowserViewProvider implements vscode.WebviewViewProvider {
   static readonly viewType = CHARACTER_BROWSER_VIEW_ID;
+  private static readonly instances = new Set<CharacterBrowserViewProvider>();
 
   private view: vscode.WebviewView | undefined;
   private selectedStableId: string | undefined;
-  private currentCards: CharacterBrowserCard[] = [];
-  private currentSections = new Map<string, CharacterSection[]>();
+  private currentCards: BrowserArtifactCard[] = [];
+  private currentSections = new Map<string, BrowserSection[]>();
 
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(private readonly context: vscode.ExtensionContext) {
+    CharacterBrowserViewProvider.instances.add(this);
+    this.context.subscriptions.push({
+      dispose: () => CharacterBrowserViewProvider.instances.delete(this),
+    });
+  }
+
+  /**
+   * refreshOpenViews 함수.
+   * 열린 Character Browser sidebar가 있으면 workspace artifact 목록을 다시 전송함.
+   */
+  static refreshOpenViews(): void {
+    for (const instance of CharacterBrowserViewProvider.instances) {
+      instance.refreshIfOpen();
+    }
+  }
+
+  /**
+   * refreshIfOpen 함수.
+   * resolve된 sidebar webview에만 새 discovery snapshot을 전송함.
+   */
+  private refreshIfOpen(): void {
+    if (!this.view) return;
+    void this.sendDiscoveredCards(this.view.webview);
+  }
 
   /**
    * resolveWebviewView 함수.
@@ -46,6 +81,7 @@ export class CharacterBrowserViewProvider implements vscode.WebviewViewProvider 
         vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview'),
         ...(vscode.workspace.workspaceFolders?.map((folder) => folder.uri) ?? []),
       ],
+      portMapping: getWebviewDevServerPortMapping(),
     };
     webviewView.webview.html = this.getHtml(webviewView.webview);
 
@@ -82,27 +118,74 @@ export class CharacterBrowserViewProvider implements vscode.WebviewViewProvider 
   }
 
   private async sendDiscoveredCards(webview: vscode.Webview): Promise<void> {
-    const discoveryService = new CharacterManifestDiscoveryService(webview);
+    const previousSelectedCard = this.selectedStableId
+      ? this.currentCards.find((card) => card.stableId === this.selectedStableId)
+      : undefined;
+    const discoveryService = new WorkspaceArtifactDiscoveryService(webview);
     const cards = await discoveryService.discoverCards();
+    const refreshedSelectedCard = this.resolveRefreshedSelection(cards, previousSelectedCard);
     this.currentCards = cards;
-    if (this.selectedStableId && !cards.some((card) => card.stableId === this.selectedStableId)) {
+
+    if (refreshedSelectedCard) {
+      this.selectedStableId = refreshedSelectedCard.stableId;
+    } else if (this.selectedStableId) {
       this.selectedStableId = undefined;
     }
-    this.postMessage(createCharacterBrowserCardsMessage(cards));
+
+    this.postMessage(createCharacterBrowserCardsMessage(cards, refreshedSelectedCard?.stableId));
+    if (refreshedSelectedCard) {
+      await this.postDetailSections(refreshedSelectedCard);
+    }
+  }
+
+  /**
+   * resolveRefreshedSelection 함수.
+   * Discovery refresh 후에도 같은 marker file card를 현재 선택으로 이어붙임.
+   *
+   * @param cards - 새 discovery snapshot cards
+   * @param previousSelectedCard - refresh 전 선택되어 있던 card
+   * @returns refresh 후 유지할 선택 card
+   */
+  private resolveRefreshedSelection(
+    cards: BrowserArtifactCard[],
+    previousSelectedCard: BrowserArtifactCard | undefined,
+  ): BrowserArtifactCard | undefined {
+    if (!this.selectedStableId) return undefined;
+
+    const stableIdMatch = cards.find((card) => card.stableId === this.selectedStableId);
+    if (stableIdMatch) return stableIdMatch;
+
+    if (!previousSelectedCard) return undefined;
+    return cards.find((card) => card.markerUri === previousSelectedCard.markerUri);
   }
 
   /**
    * selectCharacter 함수.
-   * 선택 stable id를 보존하고 read-only detail scanner 결과를 webview로 전송함.
+   * 선택 stable id를 보존하고 artifact kind별 read-only detail scanner 결과를 webview로 전송함.
    *
-   * @param stableId - Webview에서 선택한 character card stable id
+   * @param stableId - Webview에서 선택한 artifact card stable id
    */
   private async selectCharacter(stableId: string): Promise<void> {
     this.selectedStableId = stableId;
     const selectedCard = this.currentCards.find((card) => card.stableId === stableId);
     if (!selectedCard) return;
 
-    const sections = await new CharacterDetailScanner().scan(selectedCard);
+    this.openMarkerEditor(selectedCard.markerUri);
+
+    await this.postDetailSections(selectedCard);
+  }
+
+  /**
+   * postDetailSections 함수.
+   * 선택 card의 detail section을 scan하고 최신 선택이 유지될 때만 webview로 전송함.
+   *
+   * @param selectedCard - detail section을 만들 현재 선택 card
+   */
+  private async postDetailSections(selectedCard: BrowserArtifactCard): Promise<void> {
+    const stableId = selectedCard.stableId;
+    const sections = selectedCard.artifactKind === 'character'
+      ? await new CharacterDetailScanner().scan(selectedCard)
+      : await new ModuleDetailScanner().scan(selectedCard);
     if (this.selectedStableId !== stableId) return;
 
     this.currentSections.set(stableId, sections);
@@ -121,10 +204,35 @@ export class CharacterBrowserViewProvider implements vscode.WebviewViewProvider 
     const item = sections?.flatMap((section) => section.items).find((candidate) => candidate.id === itemId);
     if (!item?.fileUri) return;
 
-    await vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(item.fileUri));
+    const uri = vscode.Uri.parse(item.fileUri);
+    if (isRootMarkerUri(uri)) {
+      MarkerEditorViewProvider.openEditor(this.context, uri);
+      return;
+    }
+
+    await vscode.commands.executeCommand('vscode.open', uri);
+  }
+
+  /**
+   * openMarkerEditor 함수.
+   * 선택된 character/module card의 root marker를 marker editor panel로 엶.
+   *
+   * @param markerUri - 선택 card가 가리키는 `.risuchar` 또는 `.risumodule` URI 문자열
+   */
+  private openMarkerEditor(markerUri: string): void {
+    MarkerEditorViewProvider.openEditor(this.context, vscode.Uri.parse(markerUri));
   }
 
   private getHtml(webview: vscode.Webview): string {
+    const devServerUrl = getConfiguredWebviewDevServerUrl();
+    if (devServerUrl) {
+      return createWebviewDevServerHtml(devServerUrl, {
+        title: 'Risu Workbench Browser',
+        viewName: 'character-browser',
+        webview,
+      });
+    }
+
     const webviewRoot = vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview');
     const htmlPath = path.join(webviewRoot.fsPath, 'index.html');
 
@@ -153,10 +261,10 @@ export class CharacterBrowserViewProvider implements vscode.WebviewViewProvider 
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource};" />
-    <title>Risu Character Browser</title>
+    <title>Risu Workbench Browser</title>
   </head>
   <body>
-    <h1>Risu Character Browser</h1>
+    <h1>Risu Workbench Browser</h1>
     <p>Webview bundle is missing. Run the vscode package build to generate Vite assets.</p>
   </body>
 </html>`;
@@ -171,4 +279,16 @@ export class CharacterBrowserViewProvider implements vscode.WebviewViewProvider 
  */
 function createNonce(): string {
   return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+}
+
+/**
+ * isRootMarkerUri 함수.
+ * detail item URI가 root marker manifest 파일인지 판별함.
+ *
+ * @param uri - detail item이 가리키는 file URI
+ * @returns `.risuchar` 또는 `.risumodule` marker 여부
+ */
+function isRootMarkerUri(uri: vscode.Uri): boolean {
+  const basename = path.basename(uri.fsPath);
+  return basename === CHARACTER_MARKER_FILENAME || basename === MODULE_MARKER_FILENAME;
 }

@@ -28,7 +28,7 @@ const HELP_TEXT = `
     2. lorebook 추출 → lorebooks/*.risulorebook + lorebooks/_order.json + lorebooks/_folders.json
     3. regex 추출 → regex/*.risuregex + regex/_order.json
     4. triggerscript 추출 → lua/*.risulua
-    5. 에셋 추출 (risum only) → assets/ + assets/manifest.json
+    5. 에셋 추출/scaffold → assets/ + assets/manifest.json
     6. backgroundEmbedding 추출 → html/background.risuhtml
     7. module variables 추출 → variables/<moduleName>.risuvar
     8. 모듈 identity 추출 → .risumodule
