@@ -1,5 +1,6 @@
 import './styles.css';
 import App from './App.svelte';
+import MarkerEditor from './lib/components/editor/marker/MarkerEditor.svelte';
 import { mount } from 'svelte';
 import { writable } from 'svelte/store';
 import {
@@ -35,30 +36,37 @@ const expandedSectionIds = writable<string[]>([
 const viewMode = writable<'characters' | 'characterDetail'>('characters');
 const status = writable('Connecting to extension host…');
 const app = document.querySelector<HTMLDivElement>('#app');
+const isEditorMode = document.documentElement.dataset.editorMode === 'true';
 
 if (!app) {
   throw new Error('Missing #app root for Risu Workbench webview.');
 }
 
-mount(App, {
-  target: app,
-  props: {
-    cards,
-    selectedStableId,
-    detailSections,
-    expandedSectionIds,
-    viewMode,
-    status,
-    refreshCards,
-    selectCard,
-    returnToCards,
-    toggleSection,
-    openItem,
-  },
-});
+if (isEditorMode) {
+  mount(MarkerEditor, {
+    target: app,
+  });
+} else {
+  mount(App, {
+    target: app,
+    props: {
+      cards,
+      selectedStableId,
+      detailSections,
+      expandedSectionIds,
+      viewMode,
+      status,
+      refreshCards,
+      selectCard,
+      returnToCards,
+      toggleSection,
+      openItem,
+    },
+  });
 
-window.addEventListener('message', handleMessage);
-vscode?.postMessage(createCharacterBrowserReadyMessage());
+  window.addEventListener('message', handleMessage);
+  vscode?.postMessage(createCharacterBrowserReadyMessage());
+}
 
 function handleMessage(event: MessageEvent<unknown>): void {
   const message = event.data;
@@ -66,6 +74,9 @@ function handleMessage(event: MessageEvent<unknown>): void {
 
   if (message.type === 'character-browser/cards') {
     const nextCards = message.payload.cards;
+    if (message.payload.selectedStableId) {
+      selectedStableId.set(message.payload.selectedStableId);
+    }
     cards.set(nextCards);
     setStatus(`${nextCards.length} .risuchar/.risumodule root-marker artifacts loaded from workspace discovery.`);
     return;

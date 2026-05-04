@@ -101,6 +101,15 @@ interface BuiltCharacterImageModule {
   ) => Record<string, unknown>;
 }
 
+interface BuiltMarkerEditorViewProviderModule {
+  copyMarkerEditorImageToAssets: (
+    rootUri: TestUri,
+    imageUri: TestUri,
+  ) => Promise<{ relativePath: string; uri: TestUri } | null>;
+  getMarkerEditorImageAssetPath: (fileName: string) => string;
+  normalizeMarkerEditorImagePath: (value: unknown) => string | null;
+}
+
 interface BuiltCharacterDetailScannerModule {
   CharacterDetailScanner: new () => {
     scan: (card: {
@@ -143,6 +152,7 @@ interface BuiltCharacterBrowserViewProviderModule {
     selectedStableId?: string;
     selectCharacter?: (stableId: string) => Promise<void>;
     openItem?: (stableId: string, itemId: string) => Promise<void>;
+    sendDiscoveredCards?: (webview: { asWebviewUri?: (uri: TestUri) => TestUri; postMessage: (message: unknown) => PromiseLike<boolean> | boolean }) => Promise<void>;
     view?: { webview: { postMessage: (message: unknown) => PromiseLike<boolean> | boolean } };
   };
 }
@@ -167,6 +177,7 @@ interface RisumoduleManifestFixture {
   modifiedAt: string | null;
   sourceFormat: 'json' | 'risum' | 'scaffold';
   namespace?: string;
+  image?: string | null;
   lowLevelAccess?: boolean;
   hideIcon?: boolean;
   cjs?: string;
@@ -186,7 +197,7 @@ interface ModuleBrowserCardInput {
   sourceFormat: 'json' | 'risum' | 'scaffold' | 'unknown';
   stableId: string;
   status: 'ready' | 'invalid' | 'warning';
-  warnings: Array<{ code: 'invalidJson' | 'invalidKind' | 'conflictingRootMarkers'; field?: string; message: string }>;
+  warnings: Array<{ code: 'invalidJson' | 'invalidKind' | 'conflictingRootMarkers' | 'missingOptionalField'; field?: string; message: string }>;
   namespace?: string;
 }
 
@@ -209,6 +220,7 @@ function createValidRisumoduleManifest(
   description: string,
   options?: {
     namespace?: string;
+    image?: string | null;
     lowLevelAccess?: boolean;
     hideIcon?: boolean;
     cjs?: string;
@@ -229,6 +241,7 @@ function createValidRisumoduleManifest(
     modifiedAt: options?.modifiedAt ?? '2024-01-02T00:00:00.000Z',
     sourceFormat: options?.sourceFormat ?? 'json',
     ...(options?.namespace !== undefined && { namespace: options.namespace }),
+    ...(options?.image !== undefined && { image: options.image }),
     ...(options?.lowLevelAccess !== undefined && { lowLevelAccess: options.lowLevelAccess }),
     ...(options?.hideIcon !== undefined && { hideIcon: options.hideIcon }),
     ...(options?.cjs !== undefined && { cjs: options.cjs }),
@@ -309,18 +322,36 @@ interface TestVscodeModule {
     executeCommand: (command: string, uri: TestUri) => Promise<void>;
   };
   FileType: { Directory: 2; File: 1 };
+  ViewColumn?: { One: 1 };
   Uri: {
     file: (fsPath: string) => TestUri;
     joinPath: (base: TestUri, ...paths: string[]) => TestUri;
     parse: (value: string) => TestUri;
   };
+  window?: {
+    activeTextEditor?: { viewColumn?: number };
+    createWebviewPanel: (viewType: string, title: string, column: number, options: unknown) => {
+      onDidDispose: (listener: () => void) => { dispose: () => void };
+      reveal: (column: number) => void;
+      webview: {
+        asWebviewUri: (uri: TestUri) => TestUri;
+        onDidReceiveMessage: (listener: (message: unknown) => void) => { dispose: () => void };
+        postMessage: (message: unknown) => PromiseLike<boolean> | boolean;
+        options?: unknown;
+        html?: string;
+      };
+    };
+    showErrorMessage?: (message: string) => PromiseLike<void> | void;
+  };
   workspace: {
     findFiles?: (include: string, exclude?: string) => Promise<TestUri[]>;
     getWorkspaceFolder?: (uri: TestUri) => { name: string; uri: TestUri } | undefined;
     fs: {
+      createDirectory?: (uri: TestUri) => Promise<void>;
       readFile?: (uri: TestUri) => Promise<Uint8Array>;
       stat?: (uri: TestUri) => Promise<{ type: 1 | 2 }>;
       readDirectory: (uri: TestUri) => Promise<Array<[string, 1 | 2]>>;
+      writeFile?: (uri: TestUri, bytes: Uint8Array) => Promise<void>;
     };
   };
 }
@@ -355,6 +386,7 @@ function readPackageJson(): {
     }>; 
     commands?: Array<{ command?: string; title?: string }>;
     menus?: {
+      'explorer/context'?: Array<{ command?: string; group?: string; when?: string }>;
       'view/item/context'?: Array<{ command?: string; group?: string; when?: string }>;
     };
     views?: {
@@ -382,6 +414,7 @@ function readPackageJson(): {
       }>; 
       commands?: Array<{ command?: string; title?: string }>;
       menus?: {
+        'explorer/context'?: Array<{ command?: string; group?: string; when?: string }>;
         'view/item/context'?: Array<{ command?: string; group?: string; when?: string }>;
       };
       views?: {
@@ -489,14 +522,58 @@ function loadBuiltCharacterImageModule(): BuiltCharacterImageModule {
 }
 
 /**
- * createCharacterScannerVscodeStub 함수.
- * CharacterDetailScanner boundary test용 in-memory VS Code fs 모듈을 만듦.
+ * loadBuiltMarkerEditorViewProviderModule 함수.
+ * vscode 모듈을 in-memory fs stub으로 대체한 뒤 marker editor helper exports를 불러옴.
  *
- * @param entriesByDirectory - 디렉터리 fsPath별 readDirectory 결과
- * @returns scanner가 import할 최소 vscode stub
+ * @param vscodeStub - marker editor helper가 사용할 최소 VS Code API stub
+ * @returns built marker editor provider helper exports
  */
-function createCharacterScannerVscodeStub(entriesByDirectory: Record<string, Array<[string, 1 | 2]>>): TestVscodeModule {
-  return {
+function loadBuiltMarkerEditorViewProviderModule(vscodeStub: TestVscodeModule): BuiltMarkerEditorViewProviderModule {
+  const nodeModule = Module as unknown as {
+    _load: (request: string, parent: NodeJS.Module | null, isMain: boolean) => unknown;
+  };
+  const originalLoad = nodeModule._load;
+  const modulePaths = [
+    path.join(packageRoot, 'dist', 'views', 'MarkerEditorViewProvider.js'),
+    path.join(packageRoot, 'dist', 'views', 'CharacterBrowserViewProvider.js'),
+    path.join(packageRoot, 'dist', 'character-browser', 'CharacterManifestDiscoveryService.js'),
+    path.join(packageRoot, 'dist', 'commands', 'characterImage.js'),
+  ];
+
+  for (const modulePath of modulePaths) {
+    assert.ok(existsSync(modulePath), `Built marker editor dependency not found: ${modulePath}`);
+    delete localRequire.cache[localRequire.resolve(modulePath)];
+  }
+
+  nodeModule._load = (request, parent, isMain) => {
+    if (request === 'vscode') return vscodeStub;
+    return originalLoad(request, parent, isMain);
+  };
+
+  try {
+    return localRequire(modulePaths[0]) as BuiltMarkerEditorViewProviderModule;
+  } finally {
+    nodeModule._load = originalLoad;
+  }
+}
+
+/**
+ * createMarkerEditorImageVscodeStub 함수.
+ * Marker editor image helper tests용 in-memory VS Code fs 모듈을 만듦.
+ *
+ * @param bytesByPath - 초기 파일 bytes map
+ * @returns vscode stub과 write 결과 map
+ */
+function createMarkerEditorImageVscodeStub(bytesByPath: Record<string, Uint8Array>): {
+  directories: Set<string>;
+  files: Map<string, Uint8Array>;
+  vscodeStub: TestVscodeModule;
+} {
+  const files = new Map(
+    Object.entries(bytesByPath).map(([filePath, bytes]) => [path.normalize(filePath), bytes]),
+  );
+  const directories = new Set<string>();
+  const vscodeStub: TestVscodeModule = {
     FileType: { File: 1, Directory: 2 },
     Uri: {
       file: (fsPath: string) => new TestUri(path.normalize(fsPath)),
@@ -508,8 +585,61 @@ function createCharacterScannerVscodeStub(entriesByDirectory: Record<string, Arr
     },
     workspace: {
       fs: {
-        readDirectory: async (uri: TestUri) => entriesByDirectory[path.normalize(uri.fsPath)] ?? [],
+        createDirectory: async (uri: TestUri) => {
+          directories.add(path.normalize(uri.fsPath));
+        },
+        readDirectory: async () => [],
+        readFile: async (uri: TestUri) => {
+          const bytes = files.get(path.normalize(uri.fsPath));
+          if (!bytes) throw new Error(`Missing test file: ${uri.fsPath}`);
+          return bytes;
+        },
+        writeFile: async (uri: TestUri, bytes: Uint8Array) => {
+          files.set(path.normalize(uri.fsPath), Buffer.from(bytes));
+        },
       },
+    },
+  };
+
+  return { directories, files, vscodeStub };
+}
+
+/**
+ * createCharacterScannerVscodeStub 함수.
+ * CharacterDetailScanner boundary test용 in-memory VS Code fs 모듈을 만듦.
+ *
+ * @param entriesByDirectory - 디렉터리 fsPath별 readDirectory 결과
+ * @returns scanner가 import할 최소 vscode stub
+ */
+function createCharacterScannerVscodeStub(entriesByDirectory: Record<string, Array<[string, 1 | 2]>>): TestVscodeModule {
+  return {
+    FileType: { File: 1, Directory: 2 },
+    ViewColumn: { One: 1 },
+    Uri: {
+      file: (fsPath: string) => new TestUri(path.normalize(fsPath)),
+      joinPath: (base: TestUri, ...paths: string[]) => new TestUri(path.join(base.fsPath, ...paths)),
+      parse: (value: string) => {
+        const parsed = new URL(value);
+        return new TestUri(path.normalize(parsed.pathname));
+      },
+    },
+    workspace: {
+      fs: {
+        readDirectory: async (uri: TestUri) => entriesByDirectory[path.normalize(uri.fsPath)] ?? [],
+        readFile: async () => Buffer.from('{}', 'utf-8'),
+      },
+    },
+    window: {
+      createWebviewPanel: () => ({
+        onDidDispose: () => ({ dispose: () => {} }),
+        reveal: () => {},
+        webview: {
+          asWebviewUri: (uri) => uri,
+          onDidReceiveMessage: () => ({ dispose: () => {} }),
+          postMessage: () => true,
+        },
+      }),
+      showErrorMessage: () => {},
     },
   };
 }
@@ -584,8 +714,13 @@ function loadBuiltCharacterBrowserViewProviderModule(vscodeStub: TestVscodeModul
   const originalLoad = nodeModule._load;
   const modulePaths = [
     path.join(packageRoot, 'dist', 'views', 'CharacterBrowserViewProvider.js'),
+    path.join(packageRoot, 'dist', 'views', 'MarkerEditorViewProvider.js'),
+    path.join(packageRoot, 'dist', 'character-browser', 'WorkspaceArtifactDiscoveryService.js'),
+    path.join(packageRoot, 'dist', 'character-browser', 'ModuleManifestDiscoveryService.js'),
     path.join(packageRoot, 'dist', 'character-browser', 'CharacterDetailScanner.js'),
     path.join(packageRoot, 'dist', 'character-browser', 'ModuleDetailScanner.js'),
+    path.join(packageRoot, 'dist', 'character-browser', 'CharacterManifestDiscoveryService.js'),
+    path.join(packageRoot, 'dist', 'commands', 'characterImage.js'),
   ];
 
   for (const modulePath of modulePaths) {
@@ -611,16 +746,19 @@ function loadBuiltCharacterBrowserViewProviderModule(vscodeStub: TestVscodeModul
  *
  * @param workspaceRootPath - getWorkspaceRelativePath 기준 workspace root
  * @param markerTextByPath - marker absolute path별 파일 내용
+ * @param existingFilePaths - marker 외에 stat이 성공해야 하는 absolute file paths
  * @returns discovery service가 사용할 최소 VS Code API stub
  */
 function createArtifactDiscoveryVscodeStub(
   workspaceRootPath: string,
   markerTextByPath: Record<string, string>,
+  existingFilePaths: string[] = [],
 ): TestVscodeModule {
   const normalizedWorkspaceRoot = path.normalize(workspaceRootPath);
   const entries = new Map(
     Object.entries(markerTextByPath).map(([filePath, text]) => [path.normalize(filePath), text]),
   );
+  const existingFiles = new Set(existingFilePaths.map((filePath) => path.normalize(filePath)));
 
   return {
     FileType: { File: 1, Directory: 2 },
@@ -652,7 +790,11 @@ function createArtifactDiscoveryVscodeStub(
           if (text === undefined) throw new Error(`Missing test marker: ${uri.fsPath}`);
           return Buffer.from(text, 'utf-8');
         },
-        stat: async () => ({ type: 1 }),
+        stat: async (uri: TestUri) => {
+          const normalized = path.normalize(uri.fsPath);
+          if (!existingFiles.has(normalized)) throw new Error(`Missing test file: ${uri.fsPath}`);
+          return { type: 1 };
+        },
       },
     },
   };
@@ -836,6 +978,43 @@ test('contributes character thumbnail selection command', () => {
   );
 });
 
+test('contributes marker editor command to explorer marker file context menus', () => {
+  const packageJson = readPackageJson();
+  const commands = packageJson.contributes?.commands ?? [];
+  const activationEvents = packageJson.activationEvents ?? [];
+  const explorerContext = packageJson.contributes?.menus?.['explorer/context'] ?? [];
+
+  assert.ok(
+    commands.some((command) => command.command === 'risuWorkbench.openMarkerEditor'),
+    'Expected marker editor command contribution',
+  );
+  assert.ok(
+    activationEvents.includes('onCommand:risuWorkbench.openMarkerEditor'),
+    'Expected activation event for marker editor command',
+  );
+  assert.ok(
+    explorerContext.some(
+      (item) => item.command === 'risuWorkbench.openMarkerEditor' && item.when === 'resourceFilename == .risuchar',
+    ),
+    'Expected explorer context menu for .risuchar marker files',
+  );
+  assert.ok(
+    explorerContext.some(
+      (item) => item.command === 'risuWorkbench.openMarkerEditor' && item.when === 'resourceFilename == .risumodule',
+    ),
+    'Expected explorer context menu for .risumodule marker files',
+  );
+});
+
+test('keeps marker editor webview on the nonce module script without a dynamic MarkerEditor chunk', () => {
+  const mainSource = readFileSync(path.join(packageRoot, '..', 'webview', 'src', 'main.ts'), 'utf8');
+  const copiedWebviewAssets = path.join(packageRoot, 'dist', 'webview', 'assets');
+
+  assert.match(mainSource, /import MarkerEditor from '\.\/lib\/components\/editor\/marker\/MarkerEditor\.svelte';/);
+  assert.doesNotMatch(mainSource, /await import\('\.\/lib\/components\/editor\/marker\/MarkerEditor\.svelte'\)/);
+  assert.equal(existsSync(path.join(copiedWebviewAssets, 'MarkerEditor.js')), false);
+});
+
 test('builds deterministic character image metadata updates', () => {
   const characterImage = loadBuiltCharacterImageModule();
 
@@ -876,6 +1055,58 @@ test('builds deterministic character image metadata updates', () => {
       ],
     },
   );
+});
+
+test('normalizes marker editor images to supported assets paths only', () => {
+  const markerEditor = loadBuiltMarkerEditorViewProviderModule(createCharacterScannerVscodeStub({}));
+
+  assert.equal(markerEditor.getMarkerEditorImageAssetPath('Portrait Image.PNG'), 'assets/icons/Portrait_Image.png');
+  assert.equal(markerEditor.normalizeMarkerEditorImagePath('assets/icons/Portrait Image.PNG'), 'assets/icons/Portrait Image.PNG');
+  assert.equal(markerEditor.normalizeMarkerEditorImagePath('assets\\icons\\portrait.webp'), 'assets/icons/portrait.webp');
+  assert.equal(markerEditor.normalizeMarkerEditorImagePath('icons/portrait.png'), null);
+  assert.equal(markerEditor.normalizeMarkerEditorImagePath('../assets/icons/portrait.png'), null);
+  assert.equal(markerEditor.normalizeMarkerEditorImagePath('/tmp/portrait.png'), null);
+  assert.equal(markerEditor.normalizeMarkerEditorImagePath('assets/icons/portrait.txt'), null);
+  assert.equal(markerEditor.normalizeMarkerEditorImagePath(null), null);
+});
+
+test('copies marker editor image selections into assets icons and updates asset manifest', async () => {
+  const rootPath = path.join('/tmp', 'risu-marker-root');
+  const externalPath = path.join('/tmp', 'selected', 'Portrait Image.PNG');
+  const imageBytes = Buffer.from([1, 2, 3, 4]);
+  const { directories, files, vscodeStub } = createMarkerEditorImageVscodeStub({
+    [externalPath]: imageBytes,
+  });
+  const markerEditor = loadBuiltMarkerEditorViewProviderModule(vscodeStub);
+
+  const result = await markerEditor.copyMarkerEditorImageToAssets(
+    new TestUri(rootPath),
+    new TestUri(externalPath),
+  );
+
+  assert.deepEqual(result, {
+    relativePath: 'assets/icons/Portrait_Image.png',
+    uri: new TestUri(path.join(rootPath, 'assets', 'icons', 'Portrait_Image.png')),
+  });
+  assert.deepEqual(files.get(path.join(rootPath, 'assets', 'icons', 'Portrait_Image.png')), imageBytes);
+  assert.equal(directories.has(path.join(rootPath, 'assets', 'icons')), true);
+
+  const manifestBytes = files.get(path.join(rootPath, 'assets', 'manifest.json'));
+  assert.ok(manifestBytes, 'Expected assets/manifest.json to be written');
+  const manifest = JSON.parse(Buffer.from(manifestBytes).toString('utf-8')) as Record<string, unknown>;
+  assert.deepEqual(manifest.assets, [
+    {
+      index: 0,
+      original_uri: 'embeded://assets/icons/Portrait_Image.png',
+      extracted_path: 'icons/Portrait_Image.png',
+      status: 'extracted',
+      type: 'icon',
+      name: 'main',
+      ext: 'png',
+      subdir: 'icons',
+      size_bytes: 4,
+    },
+  ]);
 });
 
 test('scans marker parent recursively and preserves nested character artifact paths', async () => {
@@ -1789,6 +2020,59 @@ test('production module-only root produces module artifact and real module secti
   assert.equal(sections.find((section) => section.kind === 'diagnostics')?.items.length, 0);
 });
 
+test('resolves module manifest image to a webview uri when the file exists', async () => {
+  const workspaceRootPath = path.join('/tmp', `risu-module-image-${Date.now()}`);
+  const moduleRootPath = path.join(workspaceRootPath, 'image-module');
+  const markerPath = path.join(moduleRootPath, '.risumodule');
+  const imagePath = path.join(moduleRootPath, 'assets', 'icons', 'module.png');
+  const vscodeStub = createArtifactDiscoveryVscodeStub(
+    workspaceRootPath,
+    {
+      [markerPath]: JSON.stringify(createValidRisumoduleManifest('image-module-id', 'Image Module', 'Has image', {
+        image: 'assets/icons/module.png',
+      })),
+    },
+    [imagePath],
+  );
+  const discoveryModule = loadBuiltWorkspaceArtifactDiscoveryModule(vscodeStub);
+
+  const cards = await new discoveryModule.WorkspaceArtifactDiscoveryService({ asWebviewUri: (uri) => uri }).discoverCards();
+
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].artifactKind, 'module');
+  if (cards[0].artifactKind !== 'module') assert.fail('Expected module card');
+  assert.equal(cards[0].imagePath, 'assets/icons/module.png');
+  assert.deepEqual(cards[0].warnings, []);
+  assert.ok(cards[0].imageUri?.includes('assets/icons/module.png'));
+});
+
+test('keeps module discovery alive and warns when manifest image is missing', async () => {
+  const workspaceRootPath = path.join('/tmp', `risu-module-missing-image-${Date.now()}`);
+  const moduleRootPath = path.join(workspaceRootPath, 'missing-image-module');
+  const markerPath = path.join(moduleRootPath, '.risumodule');
+  const vscodeStub = createArtifactDiscoveryVscodeStub(workspaceRootPath, {
+    [markerPath]: JSON.stringify(createValidRisumoduleManifest('missing-image-module-id', 'Missing Image Module', 'Has missing image', {
+      image: 'assets/icons/missing.png',
+    })),
+  });
+  const discoveryModule = loadBuiltWorkspaceArtifactDiscoveryModule(vscodeStub);
+
+  const cards = await new discoveryModule.WorkspaceArtifactDiscoveryService({ asWebviewUri: (uri) => uri }).discoverCards();
+
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].artifactKind, 'module');
+  if (cards[0].artifactKind !== 'module') assert.fail('Expected module card');
+  assert.equal(cards[0].imagePath, 'assets/icons/missing.png');
+  assert.equal(cards[0].imageUri, undefined);
+  assert.ok(
+    cards[0].warnings.some((warning) => (
+      warning.code === 'missingOptionalField'
+      && warning.field === 'image'
+      && warning.message === 'manifest.image target does not exist under the module root: assets/icons/missing.png'
+    )),
+  );
+});
+
 test('production module detail scanner returns exact module sections and file-backed items', async () => {
   const moduleRootPath = path.join('/tmp', 'risu-module-detail', 'combat-system');
   const scannerModule = loadBuiltModuleDetailScannerModule(
@@ -1887,6 +2171,8 @@ test('production module detail scanner adds invalid module warnings to diagnosti
 test('provider dispatches module selections and opens module file-backed items', async () => {
   const moduleRootPath = path.join('/tmp', 'risu-module-detail', 'provider-module');
   const opened: Array<{ command: string; uri: string }> = [];
+  const markerPanels: Array<{ title: string; viewType: string }> = [];
+  const revealedPanels: string[] = [];
   const vscodeStub = createCharacterScannerVscodeStub({
     [moduleRootPath]: [
       ['.risumodule', 1],
@@ -1898,6 +2184,21 @@ test('provider dispatches module selections and opens module file-backed items',
     executeCommand: async (command, uri) => {
       opened.push({ command, uri: uri.toString() });
     },
+  };
+  vscodeStub.window = {
+    createWebviewPanel: (viewType, title) => {
+      markerPanels.push({ title, viewType });
+      return {
+        onDidDispose: () => ({ dispose: () => {} }),
+        reveal: () => { revealedPanels.push(title); },
+        webview: {
+          asWebviewUri: (uri) => uri,
+          onDidReceiveMessage: () => ({ dispose: () => {} }),
+          postMessage: () => true,
+        },
+      };
+    },
+    showErrorMessage: () => {},
   };
   const providerModule = loadBuiltCharacterBrowserViewProviderModule(vscodeStub);
   const postedMessages: unknown[] = [];
@@ -1913,15 +2214,122 @@ test('provider dispatches module selections and opens module file-backed items',
   await provider.selectCharacter('module:provider-module');
 
   const sections = provider.currentSections?.get('module:provider-module') ?? [];
+  const manifestItem = sections.flatMap((section) => section.items).find((item) => item.id.endsWith('manifest::.risumodule'));
   const luaItem = sections.flatMap((section) => section.items).find((item) => item.id.endsWith('lua::lua/entry.risulua'));
+  assert.ok(manifestItem);
   assert.ok(luaItem);
+  assert.deepEqual(markerPanels, [
+    { viewType: 'risuWorkbench.markerEditor', title: 'Edit Module Marker: provider-module' },
+  ]);
   assert.ok(postedMessages.some((message) => JSON.stringify(message).includes('character-browser/characterDetailLoaded')));
 
+  await provider.openItem('module:provider-module', manifestItem.id);
   await provider.openItem('module:provider-module', luaItem.id);
 
+  assert.deepEqual(revealedPanels, ['Edit Module Marker: provider-module']);
   assert.deepEqual(opened, [
     { command: 'vscode.open', uri: new TestUri(path.join(moduleRootPath, 'lua', 'entry.risulua')).toString() },
   ]);
+});
+
+test('provider opens marker editor for character selections while posting detail sections', async () => {
+  const characterRootPath = path.join('/tmp', 'risu-character-detail', 'provider-character');
+  const markerPanels: Array<{ title: string; viewType: string }> = [];
+  const vscodeStub = createCharacterScannerVscodeStub({
+    [characterRootPath]: [
+      ['.risuchar', 1],
+      ['lua', 2],
+    ],
+    [path.join(characterRootPath, 'lua')]: [['entry.risulua', 1]],
+  });
+  vscodeStub.window = {
+    createWebviewPanel: (viewType, title) => {
+      markerPanels.push({ title, viewType });
+      return {
+        onDidDispose: () => ({ dispose: () => {} }),
+        reveal: () => {},
+        webview: {
+          asWebviewUri: (uri) => uri,
+          onDidReceiveMessage: () => ({ dispose: () => {} }),
+          postMessage: () => true,
+        },
+      };
+    },
+    showErrorMessage: () => {},
+  };
+  const providerModule = loadBuiltCharacterBrowserViewProviderModule(vscodeStub);
+  const postedMessages: unknown[] = [];
+  const provider = new providerModule.CharacterBrowserViewProvider({
+    extensionUri: new TestUri(packageRoot),
+    subscriptions: [],
+  });
+  provider.view = { webview: { postMessage: (message) => { postedMessages.push(message); return true; } } };
+  provider.currentCards = [createCharacterBrowserCardInput(characterRootPath, 'character:provider-character') as unknown as BrowserArtifactCard];
+
+  assert.ok(provider.selectCharacter);
+  await provider.selectCharacter('character:provider-character');
+
+  assert.deepEqual(markerPanels, [
+    { viewType: 'risuWorkbench.markerEditor', title: 'Edit Character Marker: provider-character' },
+  ]);
+  assert.equal(provider.currentSections?.has('character:provider-character'), true);
+  assert.ok(postedMessages.some((message) => JSON.stringify(message).includes('character-browser/characterDetailLoaded')));
+});
+
+test('provider keeps character detail selection across marker refresh when fallback stable id changes', async () => {
+  const workspaceRootPath = path.join('/tmp', 'risu-refresh-selection-workspace');
+  const characterRootPath = path.join(workspaceRootPath, 'mutable-name-character');
+  const markerPath = path.join(characterRootPath, '.risuchar');
+  const markerUri = new TestUri(markerPath).toString();
+  const vscodeStub = createArtifactDiscoveryVscodeStub(workspaceRootPath, {
+    [markerPath]: JSON.stringify({
+      kind: 'risu.character',
+      schemaVersion: 1,
+      id: '',
+      name: 'Renamed Character',
+      creator: 'tester',
+      characterVersion: '1.0.0',
+      createdAt: null,
+      modifiedAt: null,
+      sourceFormat: 'json',
+      flags: { utilityBot: false, lowLevelAccess: false },
+    }),
+  });
+  const providerModule = loadBuiltCharacterBrowserViewProviderModule(vscodeStub);
+  const postedMessages: unknown[] = [];
+  const webview = {
+    asWebviewUri: (uri: TestUri) => uri,
+    postMessage: (message: unknown) => {
+      postedMessages.push(message);
+      return true;
+    },
+  };
+  const provider = new providerModule.CharacterBrowserViewProvider({
+    extensionUri: new TestUri(packageRoot),
+    subscriptions: [],
+  });
+  provider.view = { webview };
+  provider.currentCards = [
+    {
+      ...createCharacterBrowserCardInput(characterRootPath, 'character:old-name-selection'),
+      markerUri,
+    } as unknown as BrowserArtifactCard,
+  ];
+  provider.selectedStableId = 'character:old-name-selection';
+
+  assert.ok(provider.sendDiscoveredCards);
+  await provider.sendDiscoveredCards(webview);
+
+  assert.notEqual(provider.selectedStableId, undefined);
+  assert.notEqual(provider.selectedStableId, 'character:old-name-selection');
+  const cardsMessage = postedMessages.find((message) => JSON.stringify(message).includes('character-browser/cards')) as {
+    payload?: { selectedStableId?: string };
+  } | undefined;
+  assert.equal(cardsMessage?.payload?.selectedStableId, provider.selectedStableId);
+  assert.equal(provider.currentCards?.[0]?.markerUri, markerUri);
+  assert.equal(provider.currentSections?.has(provider.selectedStableId ?? ''), true);
+  assert.ok(postedMessages.some((message) => JSON.stringify(message).includes('character-browser/cards')));
+  assert.ok(postedMessages.some((message) => JSON.stringify(message).includes('character-browser/characterDetailLoaded')));
 });
 
 test('provider fallback HTML uses neutral workbench browser copy', () => {

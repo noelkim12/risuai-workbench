@@ -110,9 +110,13 @@ export function isCharacterBrowserOpenItemMessage(message: unknown): message is 
  * Discovery card snapshot을 versioned extension-host 메시지로 감쌈.
  *
  * @param cards - workspace에서 발견한 manifest-backed card 목록
+ * @param selectedStableId - refresh 후 유지할 선택 card stable id
  * @returns Character Browser cards snapshot message
  */
-export function createCharacterBrowserCardsMessage(cards: BrowserArtifactCard[]): CharacterBrowserCardsMessage {
+export function createCharacterBrowserCardsMessage(
+  cards: BrowserArtifactCard[],
+  selectedStableId?: string,
+): CharacterBrowserCardsMessage {
   return {
     protocol: CHARACTER_BROWSER_PROTOCOL,
     version: CHARACTER_BROWSER_PROTOCOL_VERSION,
@@ -120,6 +124,7 @@ export function createCharacterBrowserCardsMessage(cards: BrowserArtifactCard[])
     payload: {
       generatedAt: new Date().toISOString(),
       cards,
+      ...(selectedStableId && { selectedStableId }),
     },
   };
 }

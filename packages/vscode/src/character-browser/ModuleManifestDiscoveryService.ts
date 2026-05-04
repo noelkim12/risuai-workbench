@@ -32,6 +32,8 @@ interface ModuleParseContext {
  * 모든 workspace folder에서 `.risumodule` marker를 찾아 module card model로 변환함.
  */
 export class ModuleManifestDiscoveryService {
+  constructor(private readonly webview?: vscode.Webview) {}
+
   /**
    * discoverCards 함수.
    * workspace-wide risumodule marker scan 결과를 card로 변환하고 marker별 오류를 보존함.
@@ -63,7 +65,7 @@ export class ModuleManifestDiscoveryService {
 
     try {
       const manifest = parseRisumoduleManifest(manifestText, markerUri.fsPath);
-      return this.toValidCardModel(manifest, context);
+      return await this.toValidCardModel(manifest, context);
     } catch (error) {
       return this.toInvalidCardModel(error, context, manifestText);
     }
@@ -78,7 +80,10 @@ export class ModuleManifestDiscoveryService {
     };
   }
 
-  private toValidCardModel(manifest: RisumoduleManifest, context: ModuleParseContext): ModuleBrowserCard {
+  private async toValidCardModel(manifest: RisumoduleManifest, context: ModuleParseContext): Promise<ModuleBrowserCard> {
+    const warnings: ManifestParseWarning[] = [];
+    const imageUri = await this.resolveImageUri(manifest, context, warnings);
+
     return {
       artifactKind: 'module',
       stableId: withArtifactKindStableId('module', manifest.id || createFallbackStableId(context.rootPathLabel, manifest.name)),
@@ -87,7 +92,9 @@ export class ModuleManifestDiscoveryService {
       description: manifest.description,
       sourceFormat: manifest.sourceFormat,
       ...(manifest.namespace !== undefined && { namespace: manifest.namespace }),
-      status: 'ready',
+      ...(imageUri !== undefined && { imageUri }),
+      ...('image' in manifest && { imagePath: manifest.image ?? null }),
+      status: warnings.length > 0 ? 'warning' : 'ready',
       flags: {
         lowLevelAccess: manifest.lowLevelAccess === true,
         hideIcon: manifest.hideIcon === true,
@@ -98,8 +105,40 @@ export class ModuleManifestDiscoveryService {
       rootUri: context.rootUri.toString(),
       rootPathLabel: context.rootPathLabel,
       markerPathLabel: context.markerPathLabel,
-      warnings: [],
+      warnings,
     };
+  }
+
+  private async resolveImageUri(
+    manifest: RisumoduleManifest,
+    context: ModuleParseContext,
+    warnings: ManifestParseWarning[],
+  ): Promise<string | undefined> {
+    if (typeof manifest.image !== 'string') return undefined;
+
+    const normalized = normalizeModuleImagePath(manifest.image);
+    if (!normalized) {
+      warnings.push({
+        code: 'missingOptionalField',
+        field: 'image',
+        message: `manifest.image must be a workspace-relative image path under the module root: ${manifest.image}`,
+      });
+      return undefined;
+    }
+
+    const imageUri = vscode.Uri.joinPath(context.rootUri, ...normalized.split('/'));
+    try {
+      const stat = await vscode.workspace.fs.stat(imageUri);
+      if (stat.type !== vscode.FileType.File) throw new Error('not a file');
+      return this.webview?.asWebviewUri(imageUri).toString() ?? imageUri.toString();
+    } catch {
+      warnings.push({
+        code: 'missingOptionalField',
+        field: 'image',
+        message: `manifest.image target does not exist under the module root: ${normalized}`,
+      });
+      return undefined;
+    }
   }
 
   private toInvalidCardModel(error: unknown, context: ModuleParseContext, manifestText?: string): ModuleBrowserCard {
@@ -198,6 +237,19 @@ function slugify(value: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 40);
+}
+
+function normalizeModuleImagePath(value: string): string | null {
+  const normalized = value.replace(/\\/g, '/').replace(/^\.\//, '');
+  if (normalized.length === 0) return null;
+  if (path.isAbsolute(normalized)) return null;
+  if (normalized.split('/').includes('..')) return null;
+  if (!isSupportedImageExtension(path.extname(normalized).toLowerCase())) return null;
+  return normalized;
+}
+
+function isSupportedImageExtension(extension: string): boolean {
+  return ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.avif', '.svg'].includes(extension);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

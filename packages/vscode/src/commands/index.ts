@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import path from 'node:path';
 import { CardPanel } from '../panels/card-panel';
 import { AnalysisService } from '../services/analysis-service';
 import { CardService } from '../services/card-service';
@@ -12,6 +13,10 @@ import {
 import { CBS_OCCURRENCE_NAVIGATION_COMMAND } from '../lsp/cbsLanguageClient';
 import { RISU_LUALS_STUB_COMMAND, installRisuLuaWorkspaceStubs } from '../luals/risuLuaStubs';
 import { RISU_CHARACTER_SELECT_IMAGE_COMMAND, selectCharacterImage } from './characterImage';
+import { MarkerEditorViewProvider } from '../views/MarkerEditorViewProvider';
+
+const MARKER_EDITOR_COMMAND = 'risuWorkbench.openMarkerEditor';
+const MARKER_EDITOR_FILENAMES = new Set(['.risuchar', '.risumodule']);
 
 interface CbsOccurrenceNavigationTarget {
   uri?: string;
@@ -117,6 +122,14 @@ export function registerCoreCommands(
     }),
     vscode.commands.registerCommand('risuWorkbench.openCardPanel', () => {
       CardPanel.createOrShow(context);
+    }),
+    vscode.commands.registerCommand(MARKER_EDITOR_COMMAND, async (uri?: vscode.Uri) => {
+      const markerUri = uri ?? (await pickMarkerFileToEdit());
+      if (!markerUri) {
+        return;
+      }
+
+      MarkerEditorViewProvider.openEditor(context, markerUri);
     }),
     vscode.commands.registerCommand(RISU_LUALS_STUB_COMMAND, async () => {
       await generateRisuLuaStubs(output);
@@ -254,6 +267,33 @@ async function pickSingleFile(
     },
   });
   return selection?.[0];
+}
+
+/**
+ * pickMarkerFileToEdit 함수.
+ * Command Palette 실행 시 편집할 root marker dotfile을 선택하고 basename을 검증함.
+ *
+ * @returns 선택된 `.risuchar`/`.risumodule` URI 또는 취소 시 undefined
+ */
+async function pickMarkerFileToEdit(): Promise<vscode.Uri | undefined> {
+  const selection = await vscode.window.showOpenDialog({
+    title: 'Select marker file to edit',
+    canSelectFiles: true,
+    canSelectFolders: false,
+    canSelectMany: false,
+    filters: {
+      'Risu Marker Files': ['risuchar', 'risumodule'],
+    },
+  });
+  const markerUri = selection?.[0];
+  if (!markerUri) return undefined;
+
+  if (!MARKER_EDITOR_FILENAMES.has(path.basename(markerUri.fsPath))) {
+    void vscode.window.showWarningMessage('Select a .risuchar or .risumodule root marker file.');
+    return undefined;
+  }
+
+  return markerUri;
 }
 
 async function pickFolder(title: string): Promise<vscode.Uri | undefined> {

@@ -92,14 +92,25 @@
   aria-label={`Select ${card.name}`}
   on:click={() => onSelect(card.stableId)}
 >
-  <span class:thumbnail--fallback={!imageUri || imageLoadFailed} class:thumbnail--module={card.artifactKind === 'module'} class="thumbnail" aria-hidden="true">
-    {#if imageUri && !imageLoadFailed}
-      <img src={imageUri} alt="" on:error={() => (imageLoadFailed = true)} />
-    {:else}
-      <span class="thumbnail__initials">{getInitials(card.name)}</span>
-      <span class="thumbnail__hint">{card.artifactKind === 'module' ? 'Module' : 'No image'}</span>
-    {/if}
-  </span>
+  {#if card.artifactKind === 'character'}
+    <span class:thumbnail--fallback={!imageUri || imageLoadFailed} class="thumbnail" aria-hidden="true">
+      {#if imageUri && !imageLoadFailed}
+        <img src={imageUri} alt="" on:error={() => (imageLoadFailed = true)} />
+      {:else}
+        <span class="thumbnail__initials">{getInitials(card.name)}</span>
+        <span class="thumbnail__hint">No image</span>
+      {/if}
+    </span>
+  {:else if card.artifactKind === 'module'}
+    <div class:thumbnail--fallback={!card.imageUri} class:thumbnail--module={true} class="thumbnail module-thumbnail" aria-hidden="true">
+      {#if card.imageUri}
+        <img src={card.imageUri} alt="" loading="lazy" />
+      {:else}
+        <span class="thumbnail__initials">{getInitials(card.name)}</span>
+        <span class="thumbnail__hint module-thumbnail__icon">MOD</span>
+      {/if}
+    </div>
+  {/if}
 
   <span class="card-body">
     <span class="card-source-icon" aria-hidden="true">

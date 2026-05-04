@@ -6,9 +6,15 @@
 export const CHARACTER_BROWSER_PROTOCOL = 'risu-workbench.character-browser';
 export const CHARACTER_BROWSER_PROTOCOL_VERSION = 1;
 export const CHARACTER_BROWSER_VIEW_ID = 'risuWorkbench.cards';
+export const MARKER_EDITOR_PROTOCOL = 'risu-workbench.marker-editor';
+export const MARKER_EDITOR_PROTOCOL_VERSION = 1;
 
 export type CharacterBrowserProtocol = typeof CHARACTER_BROWSER_PROTOCOL;
 export type CharacterBrowserProtocolVersion = typeof CHARACTER_BROWSER_PROTOCOL_VERSION;
+export type MarkerEditorProtocol = typeof MARKER_EDITOR_PROTOCOL;
+export type MarkerEditorProtocolVersion = typeof MARKER_EDITOR_PROTOCOL_VERSION;
+export type WebviewMessageProtocol = CharacterBrowserProtocol | MarkerEditorProtocol;
+export type WebviewMessageProtocolVersion = CharacterBrowserProtocolVersion | MarkerEditorProtocolVersion;
 
 /**
  * MessageEnvelope interface.
@@ -18,8 +24,8 @@ export type CharacterBrowserProtocolVersion = typeof CHARACTER_BROWSER_PROTOCOL_
  * @param TPayload - Message-specific payload shape
  */
 export interface MessageEnvelope<TType extends string, TPayload> {
-  protocol: CharacterBrowserProtocol;
-  version: CharacterBrowserProtocolVersion;
+  protocol: WebviewMessageProtocol;
+  version: WebviewMessageProtocolVersion;
   type: TType;
   payload: TPayload;
 }
@@ -159,6 +165,8 @@ export interface ModuleBrowserCard {
   description: string;
   sourceFormat: ModuleSourceFormat;
   namespace?: string;
+  imageUri?: string;
+  imagePath?: string | null;
   status: BrowserArtifactStatus;
   flags: ModuleBrowserFlags;
   markerUri: string;
@@ -221,12 +229,118 @@ export interface CharacterBrowserOpenItemPayload {
 export interface CharacterBrowserCardsPayload {
   generatedAt: string;
   cards: BrowserArtifactCard[];
+  selectedStableId?: string;
 }
 
 export interface CharacterBrowserDetailPayload {
   generatedAt: string;
   stableId: string;
   sections: BrowserSection[];
+}
+
+export type MarkerEditorMode = BrowserArtifactKind;
+
+export type MarkerEditorTimestamp = string | null;
+
+export type CharacterMarkerEditField =
+  | 'name'
+  | 'creator'
+  | 'characterVersion'
+  | 'image'
+  | 'tags'
+  | keyof CharacterManifestFlags;
+
+export type ModuleMarkerEditField = 'name' | 'description' | 'namespace' | 'image' | keyof ModuleBrowserFlags;
+
+export type MarkerEditorEditField = CharacterMarkerEditField | ModuleMarkerEditField;
+
+export interface CharacterEditFields {
+  name: string;
+  creator: string;
+  characterVersion: string;
+  image: string | null;
+  tags: string[];
+  utilityBot: CharacterManifestFlags['utilityBot'];
+  lowLevelAccess: CharacterManifestFlags['lowLevelAccess'];
+}
+
+export interface ModuleEditFields {
+  name: string;
+  description: string;
+  namespace: string;
+  image: string | null;
+  lowLevelAccess: ModuleBrowserFlags['lowLevelAccess'];
+  hideIcon: ModuleBrowserFlags['hideIcon'];
+}
+
+export type MarkerEditFields = CharacterEditFields | ModuleEditFields;
+
+export interface CharacterEditorInitPayload {
+  mode: 'character';
+  markerUri: string;
+  rootUri: string;
+  rootPathLabel: string;
+  markerPathLabel?: string;
+  fields: CharacterEditFields;
+  imageUri?: string;
+  createdAt: MarkerEditorTimestamp;
+  modifiedAt: MarkerEditorTimestamp;
+}
+
+export interface ModuleEditorInitPayload {
+  mode: 'module';
+  markerUri: string;
+  rootUri: string;
+  rootPathLabel: string;
+  markerPathLabel?: string;
+  fields: ModuleEditFields;
+  imageUri?: string;
+  createdAt: MarkerEditorTimestamp;
+  modifiedAt: MarkerEditorTimestamp;
+}
+
+export type MarkerEditorInitPayload = CharacterEditorInitPayload | ModuleEditorInitPayload;
+
+export interface MarkerEditorSavePayload {
+  markerUri: string;
+  mode: MarkerEditorMode;
+  fields: MarkerEditFields;
+}
+
+export interface MarkerEditorResetRequestPayload {
+  markerUri: string;
+  mode: MarkerEditorMode;
+}
+
+export interface MarkerEditorSelectImagePayload {
+  markerUri: string;
+  rootUri: string;
+  mode: MarkerEditorMode;
+}
+
+export interface MarkerEditorSavedPayload {
+  success: boolean;
+  message?: string;
+  fields?: MarkerEditFields;
+  imageUri?: string;
+}
+
+export interface MarkerEditorResetResponsePayload {
+  fields: MarkerEditFields;
+  imageUri?: string;
+  createdAt: MarkerEditorTimestamp;
+  modifiedAt: MarkerEditorTimestamp;
+}
+
+export interface MarkerEditorImageSelectedPayload {
+  imagePath: string;
+  imageUri?: string;
+}
+
+export interface MarkerEditorErrorPayload {
+  code: string;
+  message: string;
+  field?: MarkerEditorEditField;
 }
 
 export type CharacterBrowserReadyMessage = MessageEnvelope<
@@ -265,3 +379,43 @@ export type CharacterBrowserWebviewMessage =
   | CharacterBrowserSelectMessage
   | CharacterBrowserOpenItemMessage;
 export type CharacterBrowserExtensionMessage = CharacterBrowserCardsMessage | CharacterBrowserDetailMessage;
+
+export type MarkerEditorSaveMessage = MessageEnvelope<'marker-editor/save', MarkerEditorSavePayload>;
+
+export type MarkerEditorResetRequestMessage = MessageEnvelope<
+  'marker-editor/reset',
+  MarkerEditorResetRequestPayload
+>;
+
+export type MarkerEditorSelectImageMessage = MessageEnvelope<
+  'marker-editor/selectImage',
+  MarkerEditorSelectImagePayload
+>;
+
+export type MarkerEditorInitMessage = MessageEnvelope<'marker-editor/init', MarkerEditorInitPayload>;
+
+export type MarkerEditorSavedMessage = MessageEnvelope<'marker-editor/saved', MarkerEditorSavedPayload>;
+
+export type MarkerEditorResetResponseMessage = MessageEnvelope<
+  'marker-editor/reset',
+  MarkerEditorResetResponsePayload
+>;
+
+export type MarkerEditorImageSelectedMessage = MessageEnvelope<
+  'marker-editor/imageSelected',
+  MarkerEditorImageSelectedPayload
+>;
+
+export type MarkerEditorErrorMessage = MessageEnvelope<'marker-editor/error', MarkerEditorErrorPayload>;
+
+export type MarkerEditorWebviewMessage =
+  | MarkerEditorSaveMessage
+  | MarkerEditorResetRequestMessage
+  | MarkerEditorSelectImageMessage;
+
+export type MarkerEditorExtensionMessage =
+  | MarkerEditorInitMessage
+  | MarkerEditorSavedMessage
+  | MarkerEditorResetResponseMessage
+  | MarkerEditorImageSelectedMessage
+  | MarkerEditorErrorMessage;

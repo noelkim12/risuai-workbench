@@ -291,7 +291,11 @@ button:focus-visible {
 .thumbnail--module {
   border-style: solid;
   background:
-    radial-gradient(circle at 72% 22%, color-mix(in srgb, var(--focus) 34%, transparent), transparent 36%),
+    radial-gradient(
+      circle at 72% 22%,
+      color-mix(in srgb, var(--focus) 34%, transparent),
+      transparent 36%
+    ),
     linear-gradient(145deg, color-mix(in srgb, var(--badge) 54%, transparent), transparent),
     var(--section);
 }
@@ -725,4 +729,902 @@ h2 {
   overflow: visible;
   white-space: normal;
   line-height: 1.35;
+}
+
+/* Marker Editor ---------------------------------------------------------- */
+
+.marker-editor-shell {
+  min-width: 0;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  align-items: stretch;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background:
+    radial-gradient(
+      circle at 14% 8%,
+      color-mix(in srgb, var(--focus) 18%, transparent),
+      transparent 34%
+    ),
+    radial-gradient(
+      circle at 86% 16%,
+      color-mix(in srgb, var(--accent) 14%, transparent),
+      transparent 32%
+    ),
+    var(--surface);
+}
+
+.marker-editor-loading {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  color: var(--muted);
+  background: var(--surface);
+  font-size: var(--text-lg);
+  text-align: center;
+}
+
+.live-preview,
+.marker-form {
+  min-width: 0;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--card-shadow);
+}
+
+.live-preview {
+  position: sticky;
+  top: var(--space-3);
+  overflow: hidden;
+  padding: var(--space-3);
+  background:
+    radial-gradient(
+      circle at 20% 0%,
+      color-mix(in srgb, var(--warning) 12%, transparent),
+      transparent 34%
+    ),
+    radial-gradient(
+      circle at 92% 12%,
+      color-mix(in srgb, var(--focus) 12%, transparent),
+      transparent 30%
+    ),
+    color-mix(in srgb, var(--card) 92%, var(--surface));
+}
+
+.live-preview__heading,
+.marker-form__title {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-xl);
+  line-height: 1.2;
+}
+
+.live-preview__heading {
+  margin-bottom: var(--space-3);
+}
+
+.live-preview__card {
+  --preview-frame: color-mix(in srgb, var(--warning) 80%, white 8%);
+  --preview-frame-dark: color-mix(in srgb, var(--warning) 58%, black 18%);
+  --preview-paper: color-mix(in srgb, var(--card) 90%, var(--warning));
+  --preview-panel: color-mix(in srgb, var(--section) 86%, var(--warning));
+  --preview-ink: var(--text);
+  --preview-glow: var(--warning);
+  --preview-holo-a: var(--warning);
+  --preview-holo-b: var(--accent);
+  --preview-holo-c: var(--focus);
+  width: min(100%, 390px);
+  min-width: 0;
+  position: relative;
+  margin: 0 auto;
+  overflow: hidden;
+  padding: 9px;
+  border: 2px solid color-mix(in srgb, var(--preview-frame) 78%, var(--card-border));
+  border-radius: 24px;
+  color: var(--preview-ink);
+  background:
+    radial-gradient(circle at 22% 8%, color-mix(in srgb, white 20%, transparent), transparent 26%),
+    radial-gradient(
+      circle at 78% 16%,
+      color-mix(in srgb, var(--preview-holo-b) 22%, transparent),
+      transparent 34%
+    ),
+    linear-gradient(
+      135deg,
+      var(--preview-frame),
+      var(--preview-frame-dark) 48%,
+      var(--preview-frame) 100%
+    );
+  box-shadow:
+    0 20px 44px color-mix(in srgb, var(--vscode-widget-shadow) 82%, transparent),
+    0 0 0 1px color-mix(in srgb, white 10%, transparent),
+    0 0 28px color-mix(in srgb, var(--preview-glow) 24%, transparent);
+  transition:
+    transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 260ms ease;
+  /* transform 180ms ease,
+    box-shadow 180ms ease; */
+}
+
+.live-preview__card--module {
+  --preview-frame: color-mix(in srgb, var(--focus) 76%, white 6%);
+  --preview-frame-dark: color-mix(in srgb, var(--focus) 48%, black 24%);
+  --preview-paper: color-mix(in srgb, var(--card) 90%, var(--focus));
+  --preview-panel: color-mix(in srgb, var(--section) 86%, var(--focus));
+  --preview-glow: var(--focus);
+  --preview-holo-a: var(--focus);
+  --preview-holo-b: var(--accent);
+  --preview-holo-c: var(--success);
+}
+
+.live-preview__foil,
+.live-preview__sparkle {
+  overflow: hidden;
+}
+
+.live-preview__inner {
+  min-width: 0;
+  position: relative;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, white 24%, var(--preview-frame-dark));
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, white 10%, transparent), transparent 18%),
+    radial-gradient(
+      circle at 18% 10%,
+      color-mix(in srgb, var(--preview-holo-a) 16%, transparent),
+      transparent 36%
+    ),
+    linear-gradient(
+      155deg,
+      color-mix(in srgb, var(--preview-paper) 92%, transparent),
+      color-mix(in srgb, var(--surface) 72%, var(--preview-frame-dark))
+    );
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 16%, transparent),
+    inset 0 -16px 32px color-mix(in srgb, black 10%, transparent);
+}
+
+.live-preview__topline,
+.live-preview__name-row,
+.live-preview__type-cluster,
+.live-preview__art-card,
+.live-preview__section-title,
+.live-preview__tag-row,
+.live-preview__status-grid,
+.live-preview__status,
+.live-preview__footer {
+  min-width: 0;
+  display: flex;
+}
+
+.live-preview__topline {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.live-preview__stage,
+.live-preview__edition,
+.live-preview__section-title,
+.live-preview__footer {
+  color: color-mix(in srgb, var(--muted) 72%, var(--text));
+  font-size: var(--text-xs);
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.live-preview__stage,
+.live-preview__edition {
+  max-width: 58%;
+  overflow: hidden;
+  padding: var(--pill-padding-y) var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--preview-glow) 34%, var(--card-border));
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--card) 76%, var(--preview-glow));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-preview__name-row {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1) 0;
+}
+
+.live-preview__name {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: clamp(21px, 5vw, 29px);
+  font-weight: 950;
+  letter-spacing: 0.01em;
+  line-height: 1.02;
+  text-shadow:
+    0 1px 0 color-mix(in srgb, white 14%, transparent),
+    0 8px 18px color-mix(in srgb, black 30%, transparent);
+}
+
+.live-preview__type-cluster {
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.live-preview__rarity-mark,
+.live-preview__type-orb {
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 28%, transparent),
+    0 5px 12px color-mix(in srgb, black 32%, transparent);
+}
+
+.live-preview__rarity-mark {
+  width: 26px;
+  height: 26px;
+  border: 1px solid color-mix(in srgb, var(--preview-glow) 72%, var(--card-border));
+  color: color-mix(in srgb, var(--preview-glow) 86%, white 12%);
+  background:
+    radial-gradient(circle at 30% 24%, color-mix(in srgb, white 36%, transparent), transparent 34%),
+    color-mix(in srgb, var(--card) 62%, var(--preview-glow));
+  font-size: var(--text-lg);
+  text-shadow: 0 1px 3px color-mix(in srgb, black 50%, transparent);
+}
+
+.live-preview__type-orb {
+  width: 31px;
+  height: 31px;
+  border: 1px solid color-mix(in srgb, white 20%, var(--preview-frame-dark));
+  color: var(--badge-text);
+  background:
+    radial-gradient(circle at 32% 22%, color-mix(in srgb, white 36%, transparent), transparent 32%),
+    radial-gradient(circle at 68% 76%, color-mix(in srgb, black 30%, transparent), transparent 42%),
+    var(--preview-frame-dark);
+  font-size: var(--text-md);
+  font-weight: 950;
+}
+
+.live-preview__art-card {
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid color-mix(in srgb, var(--preview-frame-dark) 62%, var(--card-border));
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, white 7%, transparent), transparent 46%),
+    color-mix(in srgb, var(--preview-panel) 86%, var(--card));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 12%, transparent),
+    0 10px 20px color-mix(in srgb, var(--vscode-widget-shadow) 58%, transparent);
+}
+
+.live-preview__image-frame {
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+  padding: var(--space-1);
+  border: 1px solid color-mix(in srgb, var(--preview-glow) 56%, var(--card-border));
+  border-radius: 18px 20px 17px 19px / 19px 17px 20px 18px;
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--preview-holo-a) 24%, transparent),
+      transparent 44%
+    ),
+    color-mix(in srgb, var(--section) 82%, var(--card));
+}
+
+.live-preview__image-badge {
+  position: absolute;
+  top: calc(var(--space-2) + 1px);
+  right: calc(var(--space-2) + 1px);
+  z-index: 4;
+  max-width: calc(100% - var(--space-4));
+  overflow: hidden;
+  padding: var(--pill-padding-y) var(--space-2);
+  border: 1px solid color-mix(in srgb, white 18%, var(--preview-frame-dark));
+  border-radius: var(--radius-pill);
+  color: var(--text);
+  background: color-mix(in srgb, var(--card) 80%, var(--preview-glow));
+  box-shadow: 0 4px 10px color-mix(in srgb, black 30%, transparent);
+  font-size: var(--text-xs);
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.live-preview__avatar {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  min-height: 100px;
+  max-height: 280px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--focus) 32%, var(--preview-glow));
+  border-radius: 15px 17px 14px 16px / 16px 14px 17px 15px;
+  background:
+    radial-gradient(
+      circle at 28% 18%,
+      color-mix(in srgb, var(--preview-holo-b) 34%, transparent),
+      transparent 42%
+    ),
+    linear-gradient(
+      160deg,
+      color-mix(in srgb, var(--preview-glow) 18%, transparent),
+      transparent 50%
+    ),
+    var(--badge);
+  box-shadow: inset 0 0 22px color-mix(in srgb, var(--focus) 18%, transparent);
+}
+
+.live-preview__avatar-img {
+  display: block;
+  width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+  object-position: center center;
+}
+
+.live-preview__avatar--empty {
+  color: color-mix(in srgb, var(--preview-glow) 72%, var(--muted));
+  background:
+    repeating-linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--preview-glow) 10%, transparent) 0 var(--space-1),
+      transparent var(--space-1) var(--space-3)
+    ),
+    radial-gradient(
+      circle at 50% 34%,
+      color-mix(in srgb, var(--preview-holo-b) 24%, transparent),
+      transparent 42%
+    ),
+    var(--section);
+}
+
+.live-preview__avatar-placeholder {
+  position: relative;
+  z-index: 3;
+  font-size: var(--text-sm);
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.live-preview__image-caption {
+  overflow: hidden;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--preview-glow) 24%, var(--card-border));
+  border-radius: var(--radius-pill);
+  color: color-mix(in srgb, var(--muted) 84%, var(--text));
+  background: color-mix(in srgb, var(--card) 78%, var(--preview-glow));
+  font-size: var(--text-xs);
+  font-style: italic;
+  font-weight: 650;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-preview__ability-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--preview-frame-dark) 50%, var(--card-border));
+  border-radius: 14px 16px 15px 17px / 16px 14px 17px 15px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, white 6%, transparent), transparent 54%),
+    color-mix(in srgb, var(--card) 82%, var(--preview-glow));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 10%, transparent),
+    inset 0 -10px 20px color-mix(in srgb, black 8%, transparent);
+}
+
+.live-preview__section-title,
+.live-preview__footer {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.live-preview__tag-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.live-preview__tag-row {
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--preview-glow) 22%, var(--card-border));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--surface) 68%, var(--preview-glow));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 8%, transparent);
+}
+
+.live-preview__energy-dot {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in srgb, white 20%, var(--preview-frame-dark));
+  background:
+    radial-gradient(circle at 32% 24%, color-mix(in srgb, white 40%, transparent), transparent 34%),
+    var(--preview-glow);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--preview-glow) 44%, transparent);
+}
+
+.live-preview__tag-row--1 .live-preview__energy-dot {
+  background:
+    radial-gradient(circle at 32% 24%, color-mix(in srgb, white 40%, transparent), transparent 34%),
+    var(--focus);
+}
+
+.live-preview__tag-row--2 .live-preview__energy-dot {
+  background:
+    radial-gradient(circle at 32% 24%, color-mix(in srgb, white 40%, transparent), transparent 34%),
+    var(--success);
+}
+
+.live-preview__tag-row--3 .live-preview__energy-dot {
+  background:
+    radial-gradient(circle at 32% 24%, color-mix(in srgb, white 40%, transparent), transparent 34%),
+    var(--accent);
+}
+
+.live-preview__tag-name {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.live-preview__tag-name > .tag-chip {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  box-shadow: none;
+  font-size: var(--text-md);
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.live-preview__tag-rarity {
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--preview-glow) 82%, white 10%);
+  font-size: var(--text-lg);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--preview-glow) 52%, transparent);
+}
+
+.live-preview__more-tags,
+.live-preview__flavor-text {
+  color: color-mix(in srgb, var(--muted) 86%, var(--text));
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+.live-preview__more-tags {
+  padding: 0 var(--space-1);
+  color: color-mix(in srgb, var(--preview-glow) 64%, var(--muted));
+  font-weight: 750;
+}
+
+.live-preview__status-grid {
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.live-preview__status {
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--success) 34%, var(--card-border));
+  border-radius: var(--radius-pill);
+  color: var(--text);
+  background: color-mix(in srgb, var(--success) 10%, var(--card));
+  font-size: var(--text-sm);
+  font-weight: 750;
+  letter-spacing: 0.01em;
+}
+
+.live-preview__status.is-off {
+  border-color: color-mix(in srgb, var(--muted) 34%, var(--card-border));
+  color: color-mix(in srgb, var(--muted) 82%, var(--text));
+  background: color-mix(in srgb, var(--muted) 8%, var(--card));
+}
+
+.live-preview__status-dot {
+  width: var(--space-2);
+  height: var(--space-2);
+  flex: 0 0 auto;
+  border-radius: var(--radius-pill);
+  background: var(--success);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--success) 72%, transparent);
+}
+
+.live-preview__status.is-off .live-preview__status-dot {
+  background: var(--muted);
+  box-shadow: none;
+}
+
+.live-preview__footer {
+  padding: 0 var(--space-1);
+}
+
+.marker-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.marker-form__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--focus) 34%, var(--card-border));
+  border-radius: var(--radius-md);
+  background: var(--section);
+}
+
+.marker-form__subtitle {
+  color: var(--muted);
+  font-size: var(--text-md);
+  line-height: 1.4;
+}
+
+.marker-form__fields,
+.marker-form__field,
+.image-picker,
+.tags-input {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.marker-form__fields,
+.marker-form__field,
+.image-picker,
+.tags-input {
+  gap: var(--space-2);
+}
+
+.marker-form__field-label,
+.image-picker__label,
+.tags-input__label {
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.marker-form__input,
+.tags-input__field {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  color: var(--text);
+  background: var(--vscode-input-background, var(--surface));
+  font: inherit;
+}
+
+.marker-form__input::placeholder,
+.tags-input__field::placeholder {
+  color: var(--muted);
+}
+
+.marker-form__input:focus,
+.tags-input__field:focus {
+  border-color: var(--focus);
+  outline: 1px solid var(--focus);
+  outline-offset: 0;
+}
+
+.marker-form__field--toggle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: calc(var(--space-2) + 2px) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--card-border) 82%, var(--focus));
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--section) 88%, var(--surface)), transparent 160%),
+    color-mix(in srgb, var(--section) 76%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 8%, transparent);
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.marker-form__field--toggle:hover {
+  border-color: color-mix(in srgb, var(--focus) 48%, var(--card-border));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--text) 10%, transparent),
+    0 10px 26px color-mix(in srgb, var(--vscode-widget-shadow) 58%, transparent);
+  transform: translateY(-1px);
+}
+
+.marker-form__toggle {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  border: 0;
+  white-space: nowrap;
+}
+
+.marker-form__switch {
+  position: relative;
+  display: inline-flex;
+  width: 48px;
+  height: 26px;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--card-border) 78%, var(--muted));
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 28% 45%, color-mix(in srgb, var(--muted) 28%, transparent), transparent 32%),
+    linear-gradient(135deg, color-mix(in srgb, var(--surface) 92%, var(--muted)), color-mix(in srgb, var(--section) 86%, transparent));
+  box-shadow:
+    inset 0 1px 3px color-mix(in srgb, var(--vscode-widget-shadow) 76%, transparent),
+    0 1px 0 color-mix(in srgb, var(--text) 8%, transparent);
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.marker-form__switch-thumb {
+  position: absolute;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--text) 24%, white), transparent 28%),
+    linear-gradient(145deg, var(--vscode-editor-foreground, #f6f8ff), color-mix(in srgb, var(--muted) 42%, var(--section)));
+  box-shadow:
+    0 5px 12px color-mix(in srgb, var(--vscode-widget-shadow) 72%, transparent),
+    inset 0 -1px 2px color-mix(in srgb, var(--vscode-widget-shadow) 42%, transparent);
+  transition:
+    background 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.marker-form__toggle:checked + .marker-form__switch {
+  border-color: color-mix(in srgb, var(--accent) 76%, var(--focus));
+  background:
+    radial-gradient(circle at 72% 42%, color-mix(in srgb, white 28%, transparent), transparent 30%),
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 88%, var(--focus)), color-mix(in srgb, var(--success) 76%, var(--accent)));
+  box-shadow:
+    inset 0 1px 2px color-mix(in srgb, white 18%, transparent),
+    0 0 18px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.marker-form__toggle:checked + .marker-form__switch .marker-form__switch-thumb {
+  transform: translateX(22px);
+  background:
+    radial-gradient(circle at 35% 30%, white, transparent 30%),
+    linear-gradient(145deg, #ffffff, color-mix(in srgb, var(--accent) 18%, #dfe8ff));
+  box-shadow:
+    0 5px 14px color-mix(in srgb, var(--vscode-widget-shadow) 64%, transparent),
+    0 0 10px color-mix(in srgb, white 34%, transparent);
+}
+
+.marker-form__toggle:focus-visible + .marker-form__switch {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.marker-form__toggle-label {
+  min-width: 3.25rem;
+  border: 1px solid color-mix(in srgb, var(--card-border) 76%, transparent);
+  border-radius: 999px;
+  padding: 3px var(--space-2);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 74%, transparent);
+  font-size: var(--text-xs);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  line-height: 1.3;
+  text-align: center;
+  text-transform: uppercase;
+  transition:
+    border-color 180ms ease,
+    color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.marker-form__toggle:checked ~ .marker-form__toggle-label {
+  border-color: color-mix(in srgb, var(--accent) 58%, transparent);
+  color: color-mix(in srgb, var(--text) 92%, white);
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marker-form__field--toggle,
+  .marker-form__switch,
+  .marker-form__switch-thumb,
+  .marker-form__toggle-label {
+    transition: none;
+  }
+}
+
+.marker-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding-top: var(--space-1);
+}
+
+.image-picker,
+.tags-input {
+  padding: var(--space-3);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--section) 70%, transparent);
+}
+
+.image-picker__row {
+  display: grid;
+  grid-template-columns: calc(var(--thumb-width) + var(--space-4)) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.image-picker__preview,
+.image-picker__placeholder {
+  width: calc(var(--thumb-width) + var(--space-4));
+  height: calc(var(--thumb-height) + var(--space-4));
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--focus) 42%, var(--card-border));
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.image-picker__preview > img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.image-picker__placeholder {
+  border-style: dashed;
+  color: var(--muted);
+  background:
+    radial-gradient(
+      circle at 32% 22%,
+      color-mix(in srgb, var(--badge) 34%, transparent),
+      transparent 44%
+    ),
+    var(--surface);
+}
+
+.image-picker__placeholder-text {
+  font-size: var(--text-sm);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.image-picker__actions,
+.tags-input__add-row {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.image-picker__path {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-picker__path--empty {
+  font-style: italic;
+}
+
+.tags-input__chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.tags-input__chip {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--focus) 38%, var(--card-border));
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--section) 82%, transparent);
+}
+
+.tags-input__chip-label {
+  min-width: 0;
+  overflow: hidden;
+  padding: var(--pill-padding-y) var(--space-2);
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tags-input__chip-remove {
+  align-self: stretch;
+  border: 0;
+  border-left: 1px solid var(--card-border);
+  border-radius: 0;
+  padding: var(--pill-padding-y) var(--space-2);
+  color: var(--muted);
+  background: transparent;
+  font-weight: 800;
+}
+
+.tags-input__chip-remove:hover:not(:disabled) {
+  color: var(--error);
+  outline: 0;
+}
+
+.tags-input__field {
+  flex: 1 1 calc(var(--thumb-width) + var(--space-5));
+}
+
+@media (max-width: 720px) {
+  .marker-editor-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .live-preview {
+    position: static;
+  }
+
+  .image-picker__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .image-picker__preview,
+  .image-picker__placeholder {
+    width: 100%;
+  }
 }
