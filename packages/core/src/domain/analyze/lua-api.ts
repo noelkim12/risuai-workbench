@@ -1,17 +1,22 @@
 /**
- * API 메타데이터 정보를 담는 타입이
+ * RisuAI Lua API 메타데이터와 표준 라이브러리 호출 목록.
+ * @file packages/core/src/domain/analyze/lua-api.ts
+ */
+
+/**
+ * API 메타데이터 정보를 담는 타입.
  */
 export type ApiMeta = {
-  /** API 카테고리 (state, chat, ui 등) */
+  /** API가 속한 기능 카테고리. */
   cat: string;
-  /** 접근 수준 (safe, wrapper, low-level 등) */
+  /** API 접근 수준. */
   access: string;
-  /** 읽기/쓰기 구분 */
+  /** API 호출이 상태를 읽는지 쓰는지 나타내는 방향. */
   rw: 'read' | 'write';
 };
 
 /**
- * RisuAI에서 제공하는 주요 Lua API 함수들의 메타데이터 정의
+ * RisuAI에서 제공하는 주요 Lua API 함수들의 메타데이터 정의.
  */
 export const RISUAI_API: Record<string, ApiMeta> = {
   getChatVar: { cat: 'state', access: 'injected', rw: 'read' },
@@ -70,7 +75,7 @@ export const RISUAI_API: Record<string, ApiMeta> = {
 };
 
 /**
- * Lua 표준 라이브러리 함수들 중 분석 시 무시하거나 식별할 함수 목록이
+ * Lua 표준 라이브러리 함수 중 분석 시 별도 API로 보지 않을 호출 이름 목록.
  */
 export const LUA_STDLIB_CALLS = new Set([
   'string',
