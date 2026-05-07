@@ -9,6 +9,69 @@
       "problemMatcher": ["$tsc"]
     },
     {
+      "type": "shell",
+      "command": ". ~/.nvm/nvm.sh && npm run build:extension",
+      "group": "build",
+      "label": "npm: build:extension",
+      "problemMatcher": ["$tsc"]
+    },
+    {
+      "type": "shell",
+      "command": ". ~/.nvm/nvm.sh && npm --prefix ../core run watch",
+      "group": "build",
+      "isBackground": true,
+      "label": "npm: watch:core",
+      "problemMatcher": ["$tsc-watch"]
+    },
+    {
+      "type": "shell",
+      "command": ". ~/.nvm/nvm.sh && npm --prefix ../cbs-lsp run watch",
+      "group": "build",
+      "isBackground": true,
+      "label": "npm: watch:cbs-lsp",
+      "problemMatcher": ["$tsc-watch"]
+    },
+    {
+      "type": "shell",
+      "command": ". ~/.nvm/nvm.sh && npm run watch",
+      "group": "build",
+      "isBackground": true,
+      "label": "npm: watch:extension",
+      "problemMatcher": ["$tsc-watch"]
+    },
+    {
+      "type": "shell",
+      "command": ". ~/.nvm/nvm.sh && npm --prefix ../webview run dev -- --host 127.0.0.1 --port 5173 --strictPort",
+      "group": "build",
+      "isBackground": true,
+      "label": "npm: dev:webview",
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": {
+          "regexp": "^$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "VITE",
+          "endsPattern": "Local:\\s+http://127\\.0\\.0\\.1:5173/"
+        }
+      }
+    },
+    {
+      "label": "Risu: watch extension and webview",
+      "dependsOn": ["npm: watch:extension", "npm: dev:webview"],
+      "dependsOrder": "parallel",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Risu: watch core lsp extension and webview",
+      "dependsOn": ["npm: watch:core", "npm: watch:cbs-lsp", "npm: watch:extension", "npm: dev:webview"],
+      "dependsOrder": "parallel",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
       "label": "RisuAI: Extract Character Card",
       "type": "shell",
       "command": ". ~/.nvm/nvm.sh && node \"${workspaceFolder}/../core/bin/risu-core.js\" extract \"${input:characterCardFile}\" --out \"${input:extractOutputDir}\"",

@@ -16,6 +16,7 @@
     "onCommand:risuWorkbench.inspectCard",
     "onCommand:risuWorkbench.character.selectImage",
     "onCommand:risuWorkbench.openCardPanel",
+    "onCommand:risuWorkbench.openMarkerEditor",
     "onCommand:risuWorkbench.generateLuaStubs",
     "onCommand:risuWorkbench.cbs.showActivationLinks",
     "onView:risuWorkbench.cards",
@@ -326,6 +327,10 @@
         "title": "Risu Workbench: Open Card Panel"
       },
       {
+        "command": "risuWorkbench.openMarkerEditor",
+        "title": "Risu Workbench: Open Marker Editor"
+      },
+      {
         "command": "risuWorkbench.generateLuaStubs",
         "title": "Risu Workbench: Generate LuaLS Stubs"
       },
@@ -339,6 +344,18 @@
       }
     ],
     "menus": {
+      "explorer/context": [
+        {
+          "command": "risuWorkbench.openMarkerEditor",
+          "when": "resourceFilename == .risuchar",
+          "group": "navigation"
+        },
+        {
+          "command": "risuWorkbench.openMarkerEditor",
+          "when": "resourceFilename == .risumodule",
+          "group": "navigation"
+        }
+      ],
       "view/title": [
         {
           "command": "risuWorkbench.openCardPanel",
