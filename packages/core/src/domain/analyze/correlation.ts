@@ -1,3 +1,8 @@
+/**
+ * CBS 변수 사용 정보를 element, Lua, 로어북, 정규식 사이에서 연결하는 상관관계 분석 유틸 모음.
+ * @file packages/core/src/domain/analyze/correlation.ts
+ */
+
 import { ELEMENT_TYPES, type ElementType } from './constants';
 import { extractCBSVarOps } from '../cbs/cbs';
 import {
@@ -33,8 +38,14 @@ export interface ElementCBSData {
   executionOrder?: number;
 }
 
+/**
+ * ElementSource 인터페이스.
+ * 특정 element type에서 변수 읽기와 쓰기를 수행한 주체 라벨을 모은다.
+ */
 interface ElementSource {
+  /** 해당 변수 값을 읽은 element 라벨 목록 */
   readers: string[];
+  /** 해당 변수 값을 쓴 element 라벨 목록 */
   writers: string[];
 }
 
@@ -93,32 +104,53 @@ export interface LorebookRegexCorrelation {
   };
 }
 
-/** 두 element type 사이의 공유 변수 상관관계 항목 */
+/**
+ * ElementPairSharedVar 인터페이스.
+ * 두 element type 사이에서 공유되는 변수와 양쪽 사용 주체를 나타낸다.
+ */
 export interface ElementPairSharedVar {
+  /** 공유된 CBS 변수 이름 */
   varName: string;
+  /** 좌우 element type 사이의 값 흐름 방향 */
   direction: string;
+  /** 좌측 element type에서 이 변수를 사용한 element 라벨 목록 */
   leftElements: string[];
+  /** 우측 element type에서 이 변수를 사용한 element 라벨 목록 */
   rightElements: string[];
 }
 
-/** 통합 그래프에서 계산한 두 element type 사이의 상관관계 요약 */
+/**
+ * ElementPairCorrelation 인터페이스.
+ * 통합 그래프에서 계산한 두 element type 사이의 공유 변수와 단독 변수 요약을 담는다.
+ */
 export interface ElementPairCorrelation {
+  /** 비교 기준의 좌측 element type */
   leftType: string;
+  /** 비교 기준의 우측 element type */
   rightType: string;
+  /** 양쪽 element type에서 함께 쓰는 변수 목록 */
   sharedVars: ElementPairSharedVar[];
+  /** 좌측 element type에서만 쓰는 변수 이름 목록 */
   leftOnlyVars: string[];
+  /** 우측 element type에서만 쓰는 변수 이름 목록 */
   rightOnlyVars: string[];
+  /** 공유와 단독 변수 개수 요약 */
   summary: {
+    /** 공유 변수 수 */
     totalShared: number;
+    /** 좌측 전용 변수 수 */
     totalLeftOnly: number;
+    /** 우측 전용 변수 수 */
     totalRightOnly: number;
   };
 }
 
 /**
- * 수집된 모든 CBS 데이터를 바탕으로 통합된 CBS 변수 그래프를 빌드합니다.
- * @param allCollected - 수집된 각 엘리먼트의 CBS 사용 데이터 배열
- * @param defaultVariables - 봇 설정 등에서 정의된 기본 변수 맵
+ * buildUnifiedCBSGraph 함수.
+ * 수집된 모든 CBS 데이터를 바탕으로 element type별 읽기와 쓰기 출처를 합친 통합 변수 그래프를 만든다.
+ *
+ * @param allCollected - 수집된 각 element의 CBS 사용 데이터 배열, null이나 undefined면 빈 그래프로 처리함
+ * @param defaultVariables - 봇 설정 등에서 정의된 기본 변수 맵, 값은 문자열로 변환되어 그래프에 저장됨
  * @returns 변수 이름을 키로 하는 통합 변수 항목 맵
  */
 export function buildUnifiedCBSGraph(
@@ -200,9 +232,11 @@ export function buildUnifiedCBSGraph(
 }
 
 /**
- * 로어북과 정규식 간의 CBS 변수 사용 현황을 비교하여 상관관계를 분석합니다.
- * @param lorebookCBS - 로어북 엔트리들의 CBS 사용 데이터
- * @param regexCBS - 정규식 스크립트들의 CBS 사용 데이터
+ * buildLorebookRegexCorrelation 함수.
+ * 로어북과 정규식 간의 CBS 변수 사용 현황을 비교하여 공유 변수와 방향성을 분석한다.
+ *
+ * @param lorebookCBS - 로어북 엔트리에서 수집한 CBS 읽기와 쓰기 데이터 목록
+ * @param regexCBS - 정규식 스크립트에서 수집한 CBS 읽기와 쓰기 데이터 목록
  * @returns 로어북과 정규식 간의 변수 공유 및 방향성 분석 결과
  */
 export function buildLorebookRegexCorrelation(
@@ -280,11 +314,12 @@ export function buildLorebookRegexCorrelation(
 }
 
 /**
+ * buildElementPairCorrelationFromUnifiedGraph 함수.
  * 통합 그래프에서 임의의 두 element type 사이의 공유 변수 상관관계를 계산한다.
  *
- * @param unifiedGraph - buildUnifiedCBSGraph 결과
- * @param leftType - 좌측 element type
- * @param rightType - 우측 element type
+ * @param unifiedGraph - buildUnifiedCBSGraph가 반환한 통합 변수 그래프
+ * @param leftType - 비교 기준의 좌측 element type 이름
+ * @param rightType - 비교 기준의 우측 element type 이름
  * @returns 좌우 타입 간 공유/단독 변수 및 방향성 요약
  */
 export function buildElementPairCorrelationFromUnifiedGraph(
@@ -342,10 +377,11 @@ export function buildElementPairCorrelationFromUnifiedGraph(
 }
 
 /**
- * Lorebook 엔트리 배열에서 CBS 변수별 읽기/쓰기 주체를 수집한다.
+ * extractLorebookCBSVariables 함수.
+ * Lorebook 엔트리 배열에서 CBS 변수별 읽기와 쓰기 주체를 수집한다.
  *
- * @param entries - RisuAI lorebook 엔트리 배열
- * @returns 변수명 → { readers, writers } 맵 (각 Set은 엔트리 레이블)
+ * @param entries - RisuAI lorebook 엔트리 배열, folder 엔트리는 수집 대상에서 제외함
+ * @returns 변수 이름을 키로 하고 reader와 writer 엔트리 라벨 Set을 값으로 갖는 맵
  */
 export function extractLorebookCBSVariables(
   entries: any[],
@@ -376,10 +412,11 @@ export function extractLorebookCBSVariables(
 }
 
 /**
- * Regex 스크립트 배열에서 CBS 변수별 읽기/쓰기 주체를 수집한다.
+ * extractRegexCBSVariables 함수.
+ * Regex 스크립트 배열에서 CBS 변수별 읽기와 쓰기 주체를 수집한다.
  *
  * @param customScripts - RisuAI custom regex 스크립트 배열
- * @returns 변수명 → { readers, writers } 맵 (각 Set은 스크립트 레이블)
+ * @returns 변수 이름을 키로 하고 reader와 writer 스크립트 라벨 Set을 값으로 갖는 맵
  */
 export function extractRegexCBSVariables(
   customScripts: any[],
@@ -410,8 +447,10 @@ export function extractRegexCBSVariables(
 }
 
 /**
+ * buildLorebookCorrelationFromEntries 함수.
  * Lorebook 엔트리와 Lua 분석 결과를 결합하여 변수 상관관계를 계산한다.
  *
+ * @param params - 로어북 엔트리와 Lua 수집 결과를 담은 분석 입력 객체
  * @param params.entries - RisuAI lorebook 엔트리 배열
  * @param params.collected - Lua 수집 단계 결과 (stateVars, loreApiCalls 포함)
  * @returns 변수별 lua↔lorebook 방향성 및 엔트리 정보가 담긴 LorebookCorrelation
@@ -501,8 +540,10 @@ export function buildLorebookCorrelationFromEntries(params: {
 }
 
 /**
+ * buildRegexCorrelationFromScripts 함수.
  * Regex 스크립트와 Lua 분석 결과를 결합하여 변수 상관관계를 계산한다.
  *
+ * @param params - 정규식 스크립트와 Lua 수집 결과를 담은 분석 입력 객체
  * @param params.scripts - RisuAI custom regex 스크립트 배열
  * @param params.collected - Lua 수집 단계 결과
  * @param params.totalScripts - 전체 스크립트 수 (비율 계산용, 선택)
@@ -598,6 +639,14 @@ export function buildRegexCorrelationFromScripts(params: {
   };
 }
 
+/**
+ * ensureEntry 함수.
+ * 통합 변수 그래프에 변수 엔트리가 없으면 빈 기본 엔트리를 추가한다.
+ *
+ * @param graph - 변수 이름을 키로 하는 통합 CBS 그래프
+ * @param varName - 그래프에 보장할 CBS 변수 이름
+ * @returns 값을 반환하지 않음
+ */
 function ensureEntry(graph: Map<string, UnifiedVarEntry>, varName: string): void {
   if (graph.has(varName)) return;
   graph.set(varName, {
@@ -611,12 +660,28 @@ function ensureEntry(graph: Map<string, UnifiedVarEntry>, varName: string): void
   });
 }
 
+/**
+ * ensureSource 함수.
+ * 통합 변수 엔트리 안에 element type별 source bucket이 없으면 생성한다.
+ *
+ * @param entry - source bucket을 보장할 통합 변수 엔트리
+ * @param elementType - 읽기와 쓰기 주체를 저장할 element type 이름
+ * @returns 값을 반환하지 않음
+ */
 function ensureSource(entry: UnifiedVarEntry, elementType: string): void {
   if (!entry.sources[elementType]) {
     entry.sources[elementType] = { readers: [], writers: [] };
   }
 }
 
+/**
+ * sortElementTypes 함수.
+ * 알려진 element type은 constants 순서대로, 알 수 없는 type은 사전순으로 정렬한다.
+ *
+ * @param a - 비교할 첫 번째 element type 이름
+ * @param b - 비교할 두 번째 element type 이름
+ * @returns a가 앞서면 음수, b가 앞서면 양수, 같은 순서면 0
+ */
 function sortElementTypes(a: string, b: string): number {
   const aIndex = ELEMENT_TYPE_ORDER.indexOf(a as ElementType);
   const bIndex = ELEMENT_TYPE_ORDER.indexOf(b as ElementType);
@@ -627,6 +692,14 @@ function sortElementTypes(a: string, b: string): number {
   return aIndex - bIndex;
 }
 
+/**
+ * sortCorrelationDirection 함수.
+ * 표준 상관관계 방향은 고정 우선순위로, 그 외 방향 문자열은 사전순으로 정렬한다.
+ *
+ * @param a - 비교할 첫 번째 방향 문자열
+ * @param b - 비교할 두 번째 방향 문자열
+ * @returns a가 앞서면 음수, b가 앞서면 양수, 같은 순서면 0
+ */
 function sortCorrelationDirection(a: string, b: string): number {
   const order = new Map<string, number>([
     ['bidirectional', 0],
@@ -652,10 +725,26 @@ function sortCorrelationDirection(a: string, b: string): number {
   return a.localeCompare(b);
 }
 
+/**
+ * unique 함수.
+ * 문자열 배열에서 첫 등장 순서를 유지하며 중복 값을 제거한다.
+ *
+ * @param values - 중복 제거 대상 문자열 배열
+ * @returns 중복이 제거된 문자열 배열
+ */
 function unique(values: string[]): string[] {
   return [...new Set(values)];
 }
 
+/**
+ * pushToMap 함수.
+ * Map의 문자열 배열 bucket에 값을 추가하고 bucket이 없으면 먼저 만든다.
+ *
+ * @param map - 문자열 키와 문자열 배열 bucket을 저장하는 맵
+ * @param key - 값을 추가할 bucket 키
+ * @param value - bucket에 추가할 문자열 값
+ * @returns 값을 반환하지 않음
+ */
 function pushToMap(map: Map<string, string[]>, key: string, value: string): void {
   if (!map.has(key)) map.set(key, []);
   map.get(key)!.push(value);
