@@ -13,7 +13,9 @@ import type {
 import { CBSTokenizer } from './tokenizer';
 import { type Position, type Range, TokenType, type Token } from './tokens';
 
-const MAX_RECURSION_DEPTH = 20;
+// 64 is chosen as a developer-friendly power-of-2 cap that accommodates realistic
+// prompt-template nesting depths (observed up to 57) while still preventing runaway recursion.
+const MAX_RECURSION_DEPTH = 64;
 
 const PURE_MODE_BLOCKS = new Set<BlockKind>(['each', 'escape', 'pure', 'puredisplay', 'func']);
 const CONDITIONAL_BLOCKS = new Set<BlockKind>(['when', 'if', 'if_pure']);
@@ -23,6 +25,8 @@ type ParsedSegments = {
   separators: Token[];
   closeToken: Token;
 };
+
+type BlockEndToken = { kind?: BlockKind; shorthand: boolean; legacyNumbered: boolean };
 
 const BLOCK_KIND_BY_NAME = new Map<string, BlockKind>([
   ['when', 'when'],
@@ -40,6 +44,11 @@ const BLOCK_KIND_BY_NAME = new Map<string, BlockKind>([
 const BLOCK_CLOSE_ALIASES = new Map<BlockKind, ReadonlySet<BlockKind>>([
   ['if_pure', new Set<BlockKind>(['if'])],
 ]);
+
+/** isLegacyNumberedBlockClose 함수. Playground export가 만든 numbered close shorthand인지 판정함. */
+function isLegacyNumberedBlockClose(value: string): boolean {
+  return /^\/[0-9]+$/.test(value.trim());
+}
 
 export class CBSParser {
   private input = '';
@@ -564,10 +573,14 @@ export class CBSParser {
     };
   }
 
-  private readBlockEndToken(token: Token): { kind?: BlockKind; shorthand: boolean } {
+  private readBlockEndToken(token: Token): BlockEndToken {
     const trimmed = token.raw.trim();
     if (trimmed === '/') {
-      return { shorthand: true };
+      return { shorthand: true, legacyNumbered: false };
+    }
+
+    if (isLegacyNumberedBlockClose(trimmed)) {
+      return { shorthand: false, legacyNumbered: true };
     }
 
     const body = trimmed.startsWith('/') ? trimmed.slice(1) : trimmed;
@@ -578,14 +591,12 @@ export class CBSParser {
     return {
       kind: BLOCK_KIND_BY_NAME.get(normalizedName),
       shorthand: false,
+      legacyNumbered: false,
     };
   }
 
-  private blockEndMatchesKind(
-    actual: { kind?: BlockKind; shorthand: boolean },
-    expected: BlockKind,
-  ): boolean {
-    if (actual.shorthand || actual.kind === expected) {
+  private blockEndMatchesKind(actual: BlockEndToken, expected: BlockKind): boolean {
+    if (actual.shorthand || actual.legacyNumbered || actual.kind === undefined || actual.kind === expected) {
       return true;
     }
 
