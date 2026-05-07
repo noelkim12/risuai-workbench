@@ -4,6 +4,10 @@
 
 ## 표준 워크스페이스 구조 (Canonical Layout)
 
+현재 구현의 표준 Lua 레이아웃은 레거시 싱글톤 모드입니다. 번들 모드는 `.risuchar`를 Lua source resolution의 root marker 및 package manifest처럼 사용하는 향후 구현 대상 컨벤션이며, 기존 `.risulua` 확장자와 RisuAI 런타임 hook 계약은 그대로 유지합니다.
+
+### 레거시 싱글톤 모드 (현재 구현)
+
 ```text
 <캐릭터_루트>/
 ├── .risuchar (캐릭터 루트 marker 및 metadata owner)
@@ -32,8 +36,30 @@
     └── background.risuhtml (고정파일명)
 ```
 
+### 번들 모드 (컨벤션 및 향후 구현 명세)
+
+```text
+<캐릭터_루트>/
+├── .risuchar (캐릭터 루트 marker, metadata owner, Lua package manifest 역할)
+├── character/
+├── lorebooks/
+├── regex/
+├── lua/
+│   ├── main.risulua (단일 작성 진입점)
+│   └── common/
+│       ├── variables.risulua
+│       └── function.risulua
+├── dist/
+│   └── <대상_이름>.risulua (생성 전용 singleton pack artifact)
+├── variables/
+└── html/
+    └── background.risuhtml (고정파일명)
+```
+
+번들 모드에서 `lua/**/*.risulua`는 작성 source이고, `dist/<대상_이름>.risulua`만 패키징 입력으로 인정되는 생성 artifact입니다. `require("common.variables")` 같은 호출은 빌드 타임에 루트 `lua/` 기준으로 해석되어야 하며, 최종 dist에는 `require`, `package.path`, `dofile`, `loadfile`, 런타임 파일시스템 로딩이 남으면 안 됩니다.
+
 - **핵심 데이터**: `.risuchar`는 루트 metadata owner이고, `character/*.risutext`는 패키징 시 직접 참조되는 실제 prose 페이로드(Payload)입니다.
-- **파일명 규칙**: `lua/` 및 `variables/` 디렉토리 내의 파일명은 임의의 이름이 아닌, 캐릭터 메타데이터의 `name` 필드를 정제(Sanitize)한 '대상 이름' 규칙을 따릅니다.
+- **파일명 규칙**: 레거시 싱글톤 모드의 `lua/` 파일과 `variables/` 디렉토리 내의 파일명은 임의의 이름이 아닌, 캐릭터 메타데이터의 `name` 필드를 정제(Sanitize)한 '대상 이름' 규칙을 따릅니다. 번들 모드의 작성 source는 `lua/main.risulua`와 `lua/**/*.risulua`를 사용하고, 대상 이름 규칙은 생성 artifact인 `dist/<대상_이름>.risulua`에 적용합니다.
 - **고정 파일**: `html/background.risuhtml`은 예외적으로 파일명이 고정되어 있습니다.
 
 ## 아티팩트 소유권 및 매핑 명세
@@ -41,7 +67,7 @@
 | 아티팩트 종류 | 매핑되는 상위(Upstream) 필드 |
 |---|---|
 | 캐릭터 prose 파일 | `description`, `first_mes`, `system_prompt`, `replace_global_note`, `creator_notes`, `additionalText`, `alternate_greetings` canonical 이름을 사용하며, `replace_global_note`는 `data.replaceGlobalNote`로 직접 매핑 |
-| 캐릭터 메타데이터 | `.risuchar`가 소유하는 `data` 하위의 `name`, `creator`, `character_version`, `creation_date`, `modification_date`, `extensions.risuai.utilityBot`, `extensions.risuai.lowLevelAccess` |
+| 캐릭터 메타데이터 | `.risuchar`가 소유하는 `data` 하위의 `name`, `creator`, `character_version`, `creation_date`, `modification_date`, `extensions.risuai.utilityBot`, `extensions.risuai.lowLevelAccess`, `data.tags`, selected thumbnail metadata via `.risuchar.image`, and existing identity/version/timestamp/flag fields |
 | 로어북 | `char_book` 및 로어북 관련 확장(Extension) 필드 전체 |
 | 정규식 | `extensions.risuai.customScripts` 필드 |
 | Lua | `triggerscript` 필드 |
@@ -66,6 +92,11 @@
 - `lowLevelAccess` (저수준 접근 허용 여부)
 
 위 항목들은 로어북이나 정규식 같은 데이터 페이로드 영역이 아닌 구조화 메타데이터 영역에서 설명되어야 합니다. 캐릭터 카드는 `.risutoggle` 아티팩트를 지원하지 않으므로 토글 소유권을 이 대상으로 확장해서는 안 됩니다.
+
+### 이미지 및 태그 필드
+- `image`는 워크스페이스 상대 경로로 선택된 캐릭터 썸네일을 가리킵니다. 일반적으로 `assets/icons/<filename>` 형태이며, 바이너리 자체나 전체 asset manifest를 `.risuchar`에 넣지 않습니다.
+- `tags`는 CCv3 `data.tags`로 다시 패킹되는 canonical 태그 배열입니다. Risu 내부 `additionalData.tag`는 호환 미러로 취급하며 `.risuchar`의 canonical 필드로 분리하지 않습니다.
+- `assets/manifest.json`은 여전히 asset metadata와 추출 파일 경로의 소유자입니다. `.risuchar.image`는 그중 하나를 대표 썸네일로 선택하는 metadata pointer입니다.
 
 ## 루트 JSON 제거 및 호환성 방침
 

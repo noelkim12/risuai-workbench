@@ -4,13 +4,13 @@
 
 ## 신뢰 기준 (Source of Truth)
 
-- **워크스페이스 중심**: 신뢰 기준은 루트 JSON 파일이 아닌, 생성된 표준 `.risu*` 파일 집합, 마커(Marker) 파일, `metadata.json` 등 워크스페이스 인터페이스입니다.
+- **워크스페이스 중심**: 신뢰 기준은 루트 JSON 파일이 아닌, 생성된 표준 `.risu*` 파일 집합, 마커(Marker) 파일, 대상별 metadata owner 등 워크스페이스 인터페이스입니다. `charx` 대상은 루트 `.risuchar`가 metadata owner이고, module은 `.risumodule`가, preset은 `metadata.json`을 사용합니다.
 - **문서의 역할**: 아카이브 성격의 `../custom-extension-design.md`는 과거 설계 스냅샷입니다. 현재 적용되는 활성 규칙은 이 문서와 `../extensions/*.md`, `../targets/*.md`에서 정의합니다.
 - **구현 우선주의**: 실제 구현된 동작이 문서보다 우선합니다. 문서는 현재 배포된 동작(Shipped Behavior)을 설명하며, 미래의 이상적인 상태는 별도의 메모(Note)로 구분하여 기술합니다.
 
 ## 표준 용어 가이드라인
 
-- **표준 생성/편집 워크스페이스 인터페이스 (Canonical Surface)**: 사용자가 워크스페이스에서 직접 확인하고 수정하는 `.risu*`, 마커 파일, `metadata.json` 계층을 의미합니다.
+- **표준 생성/편집 워크스페이스 인터페이스 (Canonical Surface)**: 사용자가 워크스페이스에서 직접 확인하고 수정하는 `.risu*`, 마커 파일, `.risumodule`, `metadata.json` 계층을 의미합니다.
 - **레거시/지연 폴백 인터페이스 (Legacy / Deferred Fallback Surface)**: 분석, 아카이브, 이전 버전과의 링크 호환 등을 위해 유지되는 비주도적 입력 경로입니다. 수용은 가능하나 현재 워크스페이스의 표준은 아닙니다.
 - **바이너리/내부 호환성 동작 (Binary / Internal Compatibility Behavior)**: `.charx`, `.risum`, 내부 직렬화 이름 등 패키징 이후 또는 런타임 내부에서만 관찰되는 비워크스페이스 동작입니다.
 - **표기 규칙**: 문서에서 루트 JSON, 구조화된 JSON, 폴백 등을 언급할 때는 위 세 범주 중 어디에 해당하는지 명확히 병기합니다.
@@ -21,7 +21,7 @@
 |---|---|:---:|:---:|:---:|---|
 | 로어북 | `.risulorebook` | ✓ | ✓ |   | 다중 파일 지원 + `_order.json` |
 | 정규식 | `.risuregex` | ✓ | ✓ | ✓ | 다중 파일 지원 + `_order.json` |
-| Lua | `.risulua` | ✓ | ✓ |   | 대상당 단일 파일(Singleton) |
+| Lua | `.risulua` | ✓ | ✓ |   | 현재 구현은 대상당 단일 파일(Singleton), 번들 모드는 `lua/` source와 `dist/` singleton artifact 컨벤션 |
 | 프롬프트 템플릿 | `.risuprompt` |   |   | ✓ | 다중 파일 지원 + `_order.json` |
 | 토글 | `.risutoggle` |   | ✓ | ✓ | 대상당 단일 파일 |
 | 변수 | `.risuvar` | ✓ | ✓ |   | 대상당 단일 파일 |
@@ -31,9 +31,10 @@
 
 - **순서 보존**: 로어북, 정규식, 프롬프트 템플릿과 같이 다중 파일로 구성되는 아티팩트는 `_order.json`을 정렬의 신뢰 기준으로 사용합니다.
 - **로어북 식별**: 현재 경로 기반 식별(Path-based Identity)을 기본으로 합니다. 표준 레이아웃은 `lorebooks/<폴더...>/<엔트리>.risulorebook` 구조와 `_order.json`을 조합하며, 과거의 `_folders.json`은 아카이브 참고용으로만 활용합니다.
-- **싱글톤(Singleton) 인터페이스**: Lua, 토글, 변수, HTML은 대상당 단일 파일만 허용됩니다. 중복된 소스가 발견될 경우 자동 병합하지 않고 오류로 처리합니다.
+- **싱글톤(Singleton) 인터페이스**: 토글, 변수, HTML은 대상당 단일 파일만 허용됩니다. Lua는 현재 구현 기준으로 대상당 단일 파일을 허용하며, 번들 모드에서는 `lua/main.risulua`와 `lua/**/*.risulua` source를 빌드해 `dist/<targetName>.risulua` 단일 산출물로 만드는 컨벤션을 따릅니다. 중복된 싱글톤 산출물이 발견될 경우 자동 병합하지 않고 오류로 처리합니다.
   - HTML은 항상 `html/background.risuhtml` 경로를 사용합니다.
   - 프리셋 토글은 `toggle/prompt_template.risutoggle`를 기본 싱글톤 인터페이스로 간주합니다.
+  - Lua 번들 모드에서 `.risuchar`와 `.risumodule`는 Lua source 해석의 root marker 및 package manifest 역할을 겸합니다. 별도 Lua package manifest 파일은 표준이 아닙니다.
 
 ## 편집 범위(Authoring Scope) 원칙
 
@@ -43,9 +44,9 @@
 - **데이터 유실에 대한 관점**: "표준 파일에 필드가 없음"이 곧 데이터 유실을 의미하지는 않습니다. 의도적으로 미편집 영역으로 분류된 차이는 '허용된 손실(Allowed loss)'로 명시합니다.
 
 ### 주요 사례
-- **메타데이터 분리**: 캐릭터/모듈/프리셋의 구조화된 메타데이터는 `metadata.json`이 담당하고, 실제 데이터 페이로드는 `.risu*` 파일이 담당합니다.
+- **메타데이터 분리**: 구조화된 메타데이터는 대상별 metadata owner가 담당하고, 실제 데이터 페이로드는 `.risu*` 파일이 담당합니다. `charx`는 루트 `.risuchar`가 담당하며, module은 `.risumodule`가, preset은 `metadata.json`이 담당합니다.
 - **로어북 폴더**: 로어북의 폴더 정체성은 파일 내의 `folder` 문자열보다 물리적 경로와 `_order.json` 명시를 우선합니다.
-- **Lua 보존**: `.risulua`는 현재 함수 단위 분할이 아닌, 상위의 `triggerscript` 바이너리 데이터를 원본 그대로 보존합니다.
+- **Lua 보존**: `.risulua`는 현재 함수 단위 분할이 아닌, 상위의 `triggerscript` 바이너리 데이터를 원본 그대로 보존합니다. 번들 모드는 이 현재 동작을 대체했다고 설명하지 않고, 같은 `.risulua` 확장자 위에 얹는 향후 구현 대상 작성 컨벤션으로 구분합니다.
 
 ## 왕복 변환 차이(Diff) 분류
 

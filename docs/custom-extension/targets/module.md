@@ -4,9 +4,13 @@
 
 ## 표준 워크스페이스 구조 (Canonical Layout)
 
+현재 구현의 표준 Lua 레이아웃은 레거시 싱글톤 모드입니다. 번들 모드는 `.risumodule`를 Lua source resolution의 root marker 및 package manifest처럼 사용하는 향후 구현 대상 컨벤션이며, 기존 `.risulua` 확장자와 RisuAI 런타임 hook 계약은 그대로 유지합니다.
+
+### 레거시 싱글톤 모드 (현재 구현)
+
 ```text
 <모듈_루트>/
-├── metadata.json (구조화 메타데이터)
+├── .risumodule (모듈 루트 marker 및 metadata owner)
 ├── lorebooks/
 │   ├── _order.json (로어북 정렬 순서)
 │   └── <폴더...>/<엔트리>.risulorebook
@@ -26,6 +30,30 @@
     └── <추출된 에셋 파일들...>
 ```
 
+### 번들 모드 (컨벤션 및 향후 구현 명세)
+
+```text
+<모듈_루트>/
+├── .risumodule (모듈 루트 marker, metadata owner, Lua package manifest 역할)
+├── lorebooks/
+├── regex/
+├── lua/
+│   ├── main.risulua (단일 작성 진입점)
+│   └── common/
+│       ├── variables.risulua
+│       └── function.risulua
+├── dist/
+│   └── <모듈명>.risulua (생성 전용 singleton pack artifact)
+├── toggle/
+├── variables/
+├── html/
+└── assets/
+    ├── manifest.json
+    └── <추출된 에셋 파일들...>
+```
+
+번들 모드에서 `lua/**/*.risulua`는 작성 source이고, `dist/<모듈명>.risulua`만 패키징 입력으로 인정되는 생성 artifact입니다. `require("common.variables")` 같은 호출은 빌드 타임에 루트 `lua/` 기준으로 해석되어야 하며, 최종 dist에는 `require`, `package.path`, `dofile`, `loadfile`, 런타임 파일시스템 로딩이 남으면 안 됩니다.
+
 패키징 시 병합(Merge) 우선순위는 다음과 같습니다.
 `메타데이터 → 로어북 → 정규식 → Lua → 변수 → HTML → 토글 → 에셋`
 
@@ -43,19 +71,24 @@
 
 ## 메타데이터 관리 원칙
 
-`applyMetadata` 로직이 현재 `metadata.json`에서 읽어들이는 필드는 다음과 같이 제한됩니다.
+`.risumodule`가 소유하는 구조화된 메타데이터 필드는 다음과 같이 제한됩니다.
 
 - **문자열(String)**: `name`, `description`, `id`, `namespace`, `cjs`
+- **문자열 또는 null(String or null)**: `image`
 - **불리언(Boolean)**: `lowLevelAccess`, `hideIcon`
 - **객체(Object)**: `mcp` (Model Context Protocol 설정)
 
-위 필드들은 데이터 페이로드가 아닌 구조화된 메타데이터 인터페이스(`metadata.json`)의 책임 범위입니다.
+위 필드들은 데이터 페이로드가 아닌 구조화된 메타데이터 인터페이스(`.risumodule`)의 책임 범위입니다. 이전의 `metadata.json` 기반 metadata owner 방식은 더 이상 표준이 아니며, `.risumodule`가 없을 때도 `metadata.json`로 폴백하지 않습니다. 이는 breaking migration입니다.
+
+`.risumodule.image`는 RisuAI runtime module 필드가 아니라 Workbench thumbnail metadata입니다. Pack workflow는 이 값을 upstream module JSON에 쓰지 않으며, 이미지 파일의 실제 패키징 여부는 계속 `assets/manifest.json`과 module asset tuple/buffer 흐름이 결정합니다.
+
+`risu-core scaffold module --name "RPG Module" --namespace rpg`처럼 scaffold 단계에서 `--namespace`를 제공하면 초기 `.risumodule.namespace`가 같은 문자열로 기록됩니다. `--namespace`를 생략한 scaffold는 namespace를 임의로 만들지 않으며, 추출/패키징 경로는 기존처럼 upstream `module.namespace`와 `.risumodule.namespace`를 보존·적용합니다.
 
 ## 토글 소유권 제약 사항
 
 - **공식 소유자**: 모듈 토글의 표준 소유자는 오직 `toggle/*.risutoggle` 파일입니다.
-- **메타데이터 위임 금지**: `metadata.json`은 `customModuleToggle` 필드에 대한 편집 권한을 가질 수 없습니다.
-- **오류 처리**: 패키징 워크플로우는 메타데이터에 포함된 토글 폴백 문자열을 무시하며, `metadata.json cannot own customModuleToggle. Use toggle/*.risutoggle instead.` 오류를 발생시켜 명확한 소유권 분리를 강제합니다.
+- **마커 위임 금지**: `.risumodule`은 `customModuleToggle` 필드를 포함할 수 없습니다. 스키마 계약은 `not: { required: ["customModuleToggle"] }`로 이를 명시적으로 거부합니다.
+- **오류 처리**: `.risumodule`에 `customModuleToggle` 필드가 포함되면 검증/파싱 단계에서 거부됩니다. `customModuleToggle`은 오직 `toggle/*.risutoggle`에서만 읽습니다.
 
 ## 에셋 인터페이스 (Assets Surface)
 
