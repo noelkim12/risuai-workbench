@@ -1,0 +1,413 @@
+import { afterEach, describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { strToU8, zipSync } from 'fflate';
+
+import { runExtractWorkflow as runCharacterExtractWorkflow } from '../src/cli/extract/character/workflow';
+import { runExtractWorkflow as runModuleExtractWorkflow } from '../src/cli/extract/module/workflow';
+import { hasExecutableRequireCalls } from '../src/cli/shared';
+import { parseRisuLuaSplitMode, RISULUA_SPLIT_FLAG, type RisuLuaSplitCliMode } from '../src/cli/shared/risulua-split';
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+describe('risulua-split extract CLI integration', () => {
+  it('preserves default and explicit none module extract Lua output byte-for-byte', async () => {
+    const workDir = createTempDir('none');
+    const sourceLua = 'function onOutput(text)\n  return text .. "!"\nend';
+    const defaultOut = path.join(workDir, 'default-out');
+    const noneOut = path.join(workDir, 'none-out');
+    const expectedClassicLua = classicModuleLua(sourceLua);
+    const defaultInput = writeModuleJson(workDir, 'default-module.json', 'none-module', sourceLua);
+    const noneInput = writeModuleJson(workDir, 'none-module.json', 'none-module', sourceLua);
+
+    const defaultCode = await runModuleExtractWorkflow([defaultInput, '--out', defaultOut]);
+    const noneCode = await runModuleExtractWorkflow([
+      noneInput,
+      '--out',
+      noneOut,
+      '--risulua-split',
+      'none',
+    ]);
+
+    expect(defaultCode).toBe(0);
+    expect(noneCode).toBe(0);
+    expect(readFile(defaultOut, 'lua/none-module.risulua')).toBe(expectedClassicLua);
+    expect(readFile(noneOut, 'lua/none-module.risulua')).toBe(expectedClassicLua);
+    expect(readFile(noneOut, 'lua/none-module.risulua')).toBe(readFile(defaultOut, 'lua/none-module.risulua'));
+    expect(fs.existsSync(path.join(noneOut, 'docs', 'risulua-split-plan.json'))).toBe(false);
+    expect(fs.existsSync(path.join(noneOut, 'legacy'))).toBe(false);
+    expect(fs.existsSync(path.join(noneOut, 'dist'))).toBe(false);
+  });
+
+  it('writes report docs only while preserving .risumodule extraction and classic Lua source', async () => {
+    const workDir = createTempDir('report');
+    const sourceLua = 'local value = 1\nfunction onStart()\n  return value\nend';
+    const input = writeModuleJson(workDir, 'report-module.json', 'report-module', sourceLua);
+    const outDir = path.join(workDir, 'report-out');
+    const expectedClassicLua = classicModuleLua(sourceLua);
+
+    const exitCode = await runModuleExtractWorkflow([
+      input,
+      '--out',
+      outDir,
+      '--risulua-split',
+      'report',
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(fs.existsSync(path.join(outDir, '.risumodule'))).toBe(true);
+    expect(readFile(outDir, 'lua/report-module.risulua')).toBe(expectedClassicLua);
+    expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-split-plan.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-split-report.md'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'legacy'))).toBe(false);
+    expect(fs.existsSync(path.join(outDir, 'dist'))).toBe(false);
+
+    const plan = readJson(outDir, 'docs/risulua-split-plan.json') as Record<string, unknown>;
+    expect(plan).toMatchObject({
+      mode: 'report',
+      files: [],
+      distPath: null,
+      packable: false,
+    });
+  });
+
+  it('writes coarse character workspace through temp-then-move and keeps .risuchar metadata', async () => {
+    const workDir = createTempDir('character-coarse');
+    const sourceLua = 'function onOutput(text)\n  return text\nend';
+    const input = path.join(workDir, 'character.charx');
+    fs.writeFileSync(input, createCharacterCharx('Split Character', sourceLua));
+    const outDir = path.join(workDir, 'character-out');
+
+    const exitCode = await runCharacterExtractWorkflow([
+      input,
+      '--out',
+      outDir,
+      '--risulua-mode',
+      'modular',
+      '--risulua-split',
+      'coarse',
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(fs.existsSync(path.join(outDir, '.risuchar'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'lua', 'main.risulua'))).toBe(true);
+    expect(readFile(outDir, 'legacy/original.risulua')).toBe(sourceLua);
+    expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-split-plan.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-split-report.md'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'dist', 'Split_Character.risulua'))).toBe(true);
+
+    const plan = readJson(outDir, 'docs/risulua-split-plan.json') as Record<string, unknown>;
+    expect(plan).toMatchObject({
+      mode: 'coarse',
+      sourceProfile: 'plain-single',
+      buildStrategy: 'concat-build-time-require',
+      validation: expect.objectContaining({ ok: true, wroteDist: true }),
+    });
+    expect(listTempSplitDirs(path.dirname(outDir), path.basename(outDir))).toEqual([]);
+  });
+
+  it('cleans temp split output and keeps original Lua source plus diagnostics on validation failure', async () => {
+    const workDir = createTempDir('failure');
+    const sourceLua = [
+      'package.preload["dup"] = function()',
+      '  return { a = 1 }',
+      'end',
+      'package.preload["dup"] = function()',
+      '  return { b = 2 }',
+      'end',
+    ].join('\n');
+    const input = writeModuleJson(workDir, 'failure-module.json', 'failure-module', sourceLua);
+    const outDir = path.join(workDir, 'failure-out');
+
+    const exitCode = await runModuleExtractWorkflow([
+      input,
+      '--out',
+      outDir,
+      '--risulua-split',
+      'coarse',
+    ]);
+
+    expect(exitCode).toBe(1);
+    expect(readFile(outDir, 'lua/failure-module.risulua')).toBe(classicModuleLua(sourceLua));
+    expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-split-plan.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-split-report.md'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'lua', 'preload'))).toBe(false);
+    expect(fs.existsSync(path.join(outDir, 'legacy'))).toBe(false);
+    expect(fs.existsSync(path.join(outDir, 'dist'))).toBe(false);
+    expect(listTempSplitDirs(path.dirname(outDir), path.basename(outDir))).toEqual([]);
+
+    const plan = readJson(outDir, 'docs/risulua-split-plan.json') as Record<string, unknown>;
+    expect(plan.validation).toEqual(expect.objectContaining({ ok: false }));
+    const validation = plan.validation as Record<string, unknown>;
+    expect(validation.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'preload-duplicate-id', severity: 'error' }),
+    ]));
+  });
+
+  it('accepts module-table as valid split mode and generates dry-run docs for plain-single source', async () => {
+    const workDir = createTempDir('module-table');
+    const sourceLua = 'function onOutput(text)\n  return text\nend';
+    const input = writeModuleJson(workDir, 'module-table-test.json', 'module-table-module', sourceLua);
+    const outDir = path.join(workDir, 'module-table-out');
+
+    const exitCode = await runModuleExtractWorkflow([
+      input,
+      '--out',
+      outDir,
+      '--risulua-split',
+      'module-table',
+    ]);
+
+    // module-table mode should succeed for plain-single sources
+    expect(exitCode).toBe(0);
+    // Should generate module-table docs and workspace artifacts
+    expect(fs.existsSync(path.join(outDir, '.risumodule'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'lua', 'main.risulua'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-split-plan.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-split-report.md'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'docs', 'refactor-map.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'docs', 'domain-candidates.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'legacy', 'original.risulua'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'dist', 'module-table-module.risulua'))).toBe(true);
+
+    // Verify plan structure
+    const plan = readJson(outDir, 'docs/risulua-split-plan.json') as Record<string, unknown>;
+    expect(plan).toMatchObject({
+      mode: 'module-table',
+      sourceProfile: 'plain-single',
+      buildStrategy: 'concat-build-time-require',
+      distPath: 'dist/module-table-module.risulua',
+      packable: true,
+      validation: expect.objectContaining({ ok: true, wroteDist: true }),
+    });
+    const dist = readFile(outDir, 'dist/module-table-module.risulua');
+    expect(dist).not.toContain('Build-time local helper fragments');
+    expect(hasExecutableRequireCalls(dist)).toBe(false);
+  });
+
+  it('fails closed for module-table on unsupported source profiles with diagnostics', async () => {
+    const workDir = createTempDir('module-table-unsupported');
+    // Create a preload-bundle style source
+    const sourceLua = [
+      'package.preload["helpers"] = function()',
+      '  return { helper = function() end }',
+      'end',
+      'local h = require("helpers")',
+    ].join('\n');
+    const input = writeModuleJson(workDir, 'preload-module.json', 'preload-module', sourceLua);
+    const outDir = path.join(workDir, 'preload-out');
+
+    const exitCode = await runModuleExtractWorkflow([
+      input,
+      '--out',
+      outDir,
+      '--risulua-split',
+      'module-table',
+    ]);
+
+    // Should fail for preload-bundle profile
+    expect(exitCode).toBe(1);
+    // Should still generate docs with error info
+    expect(fs.existsSync(path.join(outDir, '.risumodule'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-split-plan.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-split-report.md'))).toBe(true);
+    // No workspace artifacts
+    expect(fs.existsSync(path.join(outDir, 'lua', 'main.risulua'))).toBe(false);
+    expect(fs.existsSync(path.join(outDir, 'legacy'))).toBe(false);
+    expect(fs.existsSync(path.join(outDir, 'dist'))).toBe(false);
+
+    // Verify plan shows failure
+    const plan = readJson(outDir, 'docs/risulua-split-plan.json') as Record<string, unknown>;
+    expect(plan.mode).toBe('module-table');
+    expect(plan.validation).toEqual(expect.objectContaining({ ok: false }));
+  });
+
+  it('rejects invalid split mode with exit code 1 and prints helpful error including module-table', async () => {
+    const workDir = createTempDir('invalid-mode');
+    const sourceLua = 'function onOutput(text)\n  return text\nend';
+    const input = writeModuleJson(workDir, 'invalid-mode-test.json', 'invalid-mode-module', sourceLua);
+    const outDir = path.join(workDir, 'invalid-mode-out');
+
+    const exitCode = await runModuleExtractWorkflow([
+      input,
+      '--out',
+      outDir,
+      '--risulua-split',
+      'invalid-mode',
+    ]);
+
+    // Invalid mode should return exit code 1 (error handled by workflow)
+    expect(exitCode).toBe(1);
+    // No output files should be generated for invalid mode
+    expect(fs.existsSync(path.join(outDir, '.risumodule'))).toBe(false);
+    expect(fs.existsSync(path.join(outDir, 'docs'))).toBe(false);
+  });
+
+  it('accepts module-table for character extraction with plain-single source', async () => {
+    const workDir = createTempDir('char-module-table');
+    const sourceLua = 'function onOutput(text)\n  return text\nend';
+    const input = path.join(workDir, 'character.charx');
+    fs.writeFileSync(input, createCharacterCharx('ModuleTableChar', sourceLua));
+    const outDir = path.join(workDir, 'char-out');
+
+    const exitCode = await runCharacterExtractWorkflow([
+      input,
+      '--out',
+      outDir,
+      '--risulua-mode',
+      'modular',
+      '--risulua-split',
+      'module-table',
+    ]);
+
+    // module-table mode should succeed for plain-single character sources
+    expect(exitCode).toBe(0);
+    // Should generate module-table docs and workspace artifacts
+    expect(fs.existsSync(path.join(outDir, '.risuchar'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'lua', 'main.risulua'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-split-plan.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-split-report.md'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'docs', 'refactor-map.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'docs', 'domain-candidates.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'legacy', 'original.risulua'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'dist', 'ModuleTableChar.risulua'))).toBe(true);
+
+    // Verify plan structure
+    const plan = readJson(outDir, 'docs/risulua-split-plan.json') as Record<string, unknown>;
+    expect(plan).toMatchObject({
+      mode: 'module-table',
+      sourceProfile: 'plain-single',
+      buildStrategy: 'concat-build-time-require',
+      distPath: 'dist/ModuleTableChar.risulua',
+      packable: true,
+      validation: expect.objectContaining({ ok: true, wroteDist: true }),
+    });
+    const dist = readFile(outDir, 'dist/ModuleTableChar.risulua');
+    expect(dist).not.toContain('Build-time local helper fragments');
+    expect(hasExecutableRequireCalls(dist)).toBe(false);
+  });
+});
+
+// ── Parser unit tests ─────────────────────────────────────────────────
+
+describe('parseRisuLuaSplitMode', () => {
+  it('returns null when --risulua-split is absent', () => {
+    const result = parseRisuLuaSplitMode(['--in', '.', '--out', 'out.json']);
+    expect(result.mode).toBeNull();
+    expect(result.strippedArgv).toEqual(['--in', '.', '--out', 'out.json']);
+  });
+
+  it('parses module-table mode to exact string module-table', () => {
+    const result = parseRisuLuaSplitMode(['--risulua-split', 'module-table']);
+    expect(result.mode).toBe('module-table');
+    const _typeCheck: RisuLuaSplitCliMode = result.mode as RisuLuaSplitCliMode;
+    expect(_typeCheck).toBe('module-table');
+  });
+
+  it('parses all valid modes correctly', () => {
+    const none = parseRisuLuaSplitMode(['--risulua-split', 'none']);
+    expect(none.mode).toBe('none');
+
+    const report = parseRisuLuaSplitMode(['--risulua-split', 'report']);
+    expect(report.mode).toBe('report');
+
+    const coarse = parseRisuLuaSplitMode(['--risulua-split', 'coarse']);
+    expect(coarse.mode).toBe('coarse');
+
+    const moduleTable = parseRisuLuaSplitMode(['--risulua-split', 'module-table']);
+    expect(moduleTable.mode).toBe('module-table');
+  });
+
+  it('strips --risulua-split and its value from argv', () => {
+    const result = parseRisuLuaSplitMode([
+      '--in',
+      '.',
+      '--risulua-split',
+      'module-table',
+      '--out',
+      'out.json',
+    ]);
+    expect(result.mode).toBe('module-table');
+    expect(result.strippedArgv).toEqual(['--in', '.', '--out', 'out.json']);
+  });
+
+  it('rejects invalid values with error containing all valid modes', () => {
+    expect(() => parseRisuLuaSplitMode(['--risulua-split', 'invalid'])).toThrow(
+      `Invalid ${RISULUA_SPLIT_FLAG} value: "invalid". Must be "none", "report", "coarse", or "module-table".`,
+    );
+  });
+
+  it('rejects missing value (flag is last arg)', () => {
+    expect(() => parseRisuLuaSplitMode(['--risulua-split'])).toThrow(
+      `Invalid ${RISULUA_SPLIT_FLAG} value: "". Must be "none", "report", "coarse", or "module-table".`,
+    );
+  });
+});
+
+function createTempDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `risulua-split-extract-${prefix}-`));
+  tempDirs.push(dir);
+  return dir;
+}
+
+function writeModuleJson(workDir: string, fileName: string, moduleName: string, sourceLua: string): string {
+  const filePath = path.join(workDir, fileName);
+  fs.writeFileSync(
+    filePath,
+    JSON.stringify({
+      type: 'risuModule',
+      module: {
+        name: moduleName,
+        id: `${moduleName}-id`,
+        trigger: [{ comment: 'init', effect: [{ type: 'triggerlua', code: sourceLua }] }],
+      },
+    }),
+    'utf8',
+  );
+  return filePath;
+}
+
+function createCharacterCharx(name: string, sourceLua: string): Buffer {
+  return Buffer.from(zipSync({
+    'charx.json': strToU8(JSON.stringify({
+      spec: 'chara_card_v3',
+      spec_version: '3.0',
+      data: {
+        name,
+        description: 'split character',
+        first_mes: 'hello',
+        extensions: {
+          risuai: {
+            triggerscript: [{ comment: 'entry', effect: [{ type: 'triggerlua', code: sourceLua }] }],
+            customScripts: [],
+          },
+        },
+      },
+    })),
+  }, { level: 0 }));
+}
+
+function readFile(root: string, relativePath: string): string {
+  return fs.readFileSync(path.join(root, ...relativePath.split('/')), 'utf8');
+}
+
+function readJson(root: string, relativePath: string): unknown {
+  return JSON.parse(readFile(root, relativePath));
+}
+
+function classicModuleLua(sourceLua: string): string {
+  return `-- Trigger: init\n${sourceLua}\n`;
+}
+
+function listTempSplitDirs(parentDir: string, outputBaseName: string): string[] {
+  const prefix = `.tmp-risulua-split-${outputBaseName}-`;
+  if (!fs.existsSync(parentDir)) return [];
+  return fs.readdirSync(parentDir).filter((entry) => entry.startsWith(prefix));
+}

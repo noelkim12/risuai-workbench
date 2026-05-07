@@ -1,12 +1,16 @@
 import { runPackWorkflow as runCharacterPack } from './character/workflow';
 import { runPackWorkflow as runModulePack } from './module/workflow';
 import { runPackWorkflow as runPresetPack } from './preset/workflow';
+import { parseRisuLuaMode } from '../shared/lua-bundler/risulua-mode';
 
 export function runPackWorkflow(argv: readonly string[]): number {
-  const formatArg = getArgValue(argv, '--format')?.toLowerCase();
+  // Validate and strip --risulua-mode at router level
+  const { strippedArgv } = parseRisuLuaMode(argv);
+
+  const formatArg = getArgValue(strippedArgv, '--format')?.toLowerCase();
   if (formatArg === 'preset') {
     // Strip --format preset from argv since preset packer uses --format for output type (json/risup)
-    const filteredArgv = stripArg(argv, '--format');
+    const filteredArgv = stripArg(strippedArgv, '--format');
     return runPresetPack(filteredArgv);
   }
   if (formatArg === 'module') {

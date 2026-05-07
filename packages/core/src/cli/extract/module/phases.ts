@@ -7,11 +7,7 @@ import {
   serializeLorebookOrder,
 } from '@/domain/custom-extension/extensions/lorebook';
 import { executeLorebookPlan } from '@/node/lorebook-io';
-import {
-  buildRegexPath,
-  extractRegexFromModule,
-  serializeRegexContent,
-} from '@/domain/regex';
+import { buildRegexPath, extractRegexFromModule, serializeRegexContent } from '@/domain/regex';
 import { buildLuaPath, extractLuaFromModule } from '@/domain/custom-extension/extensions/lua';
 import { buildHtmlPath, extractHtmlFromModule } from '@/domain/custom-extension/extensions/html';
 import {
@@ -19,7 +15,10 @@ import {
   extractVariablesFromModule,
   serializeVariableContent,
 } from '@/domain/custom-extension/extensions/variable';
-import { buildTogglePath, extractToggleFromModule } from '@/domain/custom-extension/extensions/toggle';
+import {
+  buildTogglePath,
+  extractToggleFromModule,
+} from '@/domain/custom-extension/extensions/toggle';
 import {
   ensureDir,
   writeJson,
@@ -30,12 +29,16 @@ import {
   uniquePath,
 } from '@/node';
 import { createLimiter } from '../../shared/concurrency';
-import {
-  RISUMODULE_FILENAME,
-  buildExtractRisumoduleManifest,
-} from '../../shared/risumodule';
+import { RISUMODULE_FILENAME, buildExtractRisumoduleManifest } from '../../shared/risumodule';
 import { parseModuleRisumFull, parseModuleJson } from '../parsers';
 import type { ParsedModuleFull } from '../parsers';
+import type { RisuLuaMode } from '../../shared/lua-bundler/risulua-mode';
+import {
+  cleanupRisuLuaSplitTemps,
+  runRisuLuaSplitExtract,
+  uniqueRisuLuaSplitTargetName,
+  type RisuLuaSplitCliMode,
+} from '../../shared/risulua-split';
 
 export interface ParsedModuleResult {
   module: any;
@@ -202,18 +205,26 @@ export function phase2_extractLorebooks(module: any, outputDir: string): number 
 }
 
 /** Convert raw lorebook entry data to canonical LorebookContent format */
-function entryToCanonicalContent(entry: any): import('@/domain/custom-extension/extensions/lorebook').LorebookContent {
+function entryToCanonicalContent(
+  entry: any,
+): import('@/domain/custom-extension/extensions/lorebook').LorebookContent {
   // Handle both character_book and module lorebook schemas
   const keys = Array.isArray(entry.keys)
     ? entry.keys
     : typeof entry.key === 'string'
-      ? entry.key.split(',').map((k: string) => k.trim()).filter(Boolean)
+      ? entry.key
+          .split(',')
+          .map((k: string) => k.trim())
+          .filter(Boolean)
       : [];
 
   const secondaryKeys = Array.isArray(entry.secondary_keys)
     ? entry.secondary_keys
     : typeof entry.secondkey === 'string' && entry.secondkey.trim()
-      ? entry.secondkey.split(',').map((k: string) => k.trim()).filter(Boolean)
+      ? entry.secondkey
+          .split(',')
+          .map((k: string) => k.trim())
+          .filter(Boolean)
       : undefined;
 
   const content: import('@/domain/custom-extension/extensions/lorebook').LorebookContent = {
@@ -269,11 +280,7 @@ export function phase3_extractRegex(module: any, outputDir: string): number {
   for (let i = 0; i < scripts.length; i += 1) {
     const script = scripts[i];
     const suggestedPath = buildRegexPath('module', script.comment || `regex_${i}`);
-    const outPath = uniquePath(
-      regexDir,
-      path.basename(suggestedPath, '.risuregex'),
-      '.risuregex',
-    );
+    const outPath = uniquePath(regexDir, path.basename(suggestedPath, '.risuregex'), '.risuregex');
     writeText(outPath, serializeRegexContent(script));
     orderList.push(path.basename(outPath));
     count += 1;
@@ -287,22 +294,75 @@ export function phase3_extractRegex(module: any, outputDir: string): number {
   return count;
 }
 
-export function phase4_extractLua(module: any, outputDir: string): number {
+export async function phase4_extractLua(
+  module: any,
+  outputDir: string,
+  risuluaMode: RisuLuaMode = 'classic',
+  risuluaSplitMode: RisuLuaSplitCliMode = 'none',
+): Promise<number> {
   console.log('\n  🌙 Phase 4: Lua triggerscript 추출');
 
-  const lua = extractLuaFromModule(module ?? {}, 'module');
+  const lua =
+    risuluaMode === 'modular'
+      ? extractModularLuaPayload(module ?? {})
+      : extractLuaFromModule(module ?? {}, 'module');
   if (lua === null) {
     console.log('     (module triggerscript 없음)');
     return 0;
   }
 
-  const outPath = path.join(outputDir, buildLuaPath('module', resolveModuleTargetName(module)));
+  const targetName = uniqueRisuLuaSplitTargetName(resolveModuleTargetName(module));
+  const outPath = path.join(
+    outputDir,
+    risuluaMode === 'modular' ? 'lua/main.risulua' : buildLuaPath('module', targetName),
+  );
   writeText(outPath, lua);
+  cleanupRisuLuaSplitTemps(outputDir);
+  await runRisuLuaSplitExtract({
+    mode: risuluaSplitMode,
+    outputRoot: outputDir,
+    source: lua,
+    sourcePath: outPath,
+    targetName,
+    cwd: process.cwd(),
+  });
   console.log(`     ✅ ${path.relative('.', outPath)} -> ${lua.length} chars`);
   return 1;
 }
 
 export const phase4_extractTriggerLua = phase4_extractLua;
+
+function extractModularLuaPayload(module: {
+  triggerscript?: string;
+  trigger?: unknown[];
+}): string | null {
+  if (typeof module.triggerscript === 'string') {
+    return module.triggerscript;
+  }
+
+  const trigger = module.trigger;
+  if (!Array.isArray(trigger) || trigger.length === 0) {
+    return null;
+  }
+
+  const luaParts: string[] = [];
+  for (const item of trigger) {
+    const effects = (item as { effect?: unknown[] } | null | undefined)?.effect;
+    if (!Array.isArray(effects)) continue;
+    for (const effect of effects) {
+      const candidate = effect as { type?: unknown; code?: unknown } | null | undefined;
+      if (
+        candidate?.type === 'triggerlua' &&
+        typeof candidate.code === 'string' &&
+        candidate.code.length > 0
+      ) {
+        luaParts.push(candidate.code);
+      }
+    }
+  }
+
+  return luaParts.length > 0 ? luaParts.join('\n\n') : null;
+}
 
 export function phase5_extractAssets(
   module: any,
@@ -391,7 +451,10 @@ export async function phase5_extractAssetsAsync(
 
   if (sourceFormat === 'json') {
     ensureDir(assetsDir);
-    await writeJsonAsync(path.join(assetsDir, 'manifest.json'), createModuleAssetManifest(sourceFormat, 0));
+    await writeJsonAsync(
+      path.join(assetsDir, 'manifest.json'),
+      createModuleAssetManifest(sourceFormat, 0),
+    );
     console.log('     (JSON 소스 — 바이너리 에셋 버퍼 없음, scaffold 생성)');
     return 0;
   }
@@ -399,7 +462,10 @@ export async function phase5_extractAssetsAsync(
   const assets = module?.assets;
   if (!Array.isArray(assets) || assets.length === 0) {
     ensureDir(assetsDir);
-    await writeJsonAsync(path.join(assetsDir, 'manifest.json'), createModuleAssetManifest(sourceFormat, 0));
+    await writeJsonAsync(
+      path.join(assetsDir, 'manifest.json'),
+      createModuleAssetManifest(sourceFormat, 0),
+    );
     console.log('     (assets 없음 — scaffold 생성)');
     return 0;
   }
@@ -469,7 +535,9 @@ export function phase6_extractBackgroundEmbedding(module: any, outputDir: string
 
   const outPath = path.join(outputDir, buildHtmlPath('module'));
   writeText(outPath, html);
-  console.log(`     ✅ ${path.relative('.', outPath)} → ${path.relative('.', path.join(outputDir, 'html'))}`);
+  console.log(
+    `     ✅ ${path.relative('.', outPath)} → ${path.relative('.', path.join(outputDir, 'html'))}`,
+  );
   return 1;
 }
 
@@ -482,7 +550,10 @@ export function phase7_extractVariables(module: any, outputDir: string): number 
     return 0;
   }
 
-  const outPath = path.join(outputDir, buildVariablePath('module', resolveModuleTargetName(module)));
+  const outPath = path.join(
+    outputDir,
+    buildVariablePath('module', resolveModuleTargetName(module)),
+  );
   writeText(outPath, serializeVariableContent(variables));
   console.log(`     ✅ ${path.relative('.', outPath)} -> ${Object.keys(variables).length} vars`);
   return 1;

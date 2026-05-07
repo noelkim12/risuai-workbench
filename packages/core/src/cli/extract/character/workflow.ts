@@ -3,6 +3,8 @@ import path from 'node:path';
 import { ensureDir } from '@/node/fs-helpers';
 import { getCharacterName } from '@/domain/charx/data';
 import { sanitizeFilename } from '../../../utils/filenames';
+import { parseRisuLuaMode, type RisuLuaMode } from '../../shared/lua-bundler/risulua-mode';
+import { parseRisuLuaSplitMode, type RisuLuaSplitCliMode } from '../../shared/risulua-split';
 import {
   phase1_parseCharxAsync,
   phase2_extractLorebooks,
@@ -28,6 +30,8 @@ const HELP_TEXT = `
   Options:
     --out <dir>     출력 디렉토리 (기본: ./character_<name>)
     --json-only     (deprecated) Phase 1만 실행
+    --risulua-mode <classic|modular>  RisuLua 개발 방식: classic=단일 파일 개발, modular=모듈식 개발 (기본: classic)
+    --risulua-split <none|report|coarse|module-table>  추출된 RisuLua split 산출물 생성 방식 (기본: none)
     -h, --help      도움말
 
   Phases (canonical mode — no charx.json):
@@ -55,10 +59,21 @@ const HELP_TEXT = `
 
 export async function runExtractWorkflow(argv: readonly string[]): Promise<number> {
   const helpMode = argv.includes('-h') || argv.includes('--help') || argv.length === 0;
-  const jsonOnly = argv.includes('--json-only');
-  const outIdx = argv.indexOf('--out');
-  const outArg = outIdx >= 0 ? argv[outIdx + 1] : null;
-  const filePath = argv.find(
+  let modeResult: ReturnType<typeof parseRisuLuaMode>;
+  let splitResult: ReturnType<typeof parseRisuLuaSplitMode>;
+  try {
+    splitResult = parseRisuLuaSplitMode(argv);
+    modeResult = parseRisuLuaMode(splitResult.strippedArgv);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`\n  ❌ ${message}\n`);
+    return 1;
+  }
+
+  const jsonOnly = modeResult.strippedArgv.includes('--json-only');
+  const outIdx = modeResult.strippedArgv.indexOf('--out');
+  const outArg = outIdx >= 0 ? modeResult.strippedArgv[outIdx + 1] : null;
+  const filePath = modeResult.strippedArgv.find(
     (value) =>
       !value.startsWith('-') && value !== outArg && value !== '--out' && value !== '--json-only',
   );
@@ -74,7 +89,7 @@ export async function runExtractWorkflow(argv: readonly string[]): Promise<numbe
   }
 
   try {
-    await runMain(filePath, outArg, jsonOnly);
+    await runMain(filePath, outArg, jsonOnly, modeResult.mode ?? 'classic', splitResult.mode ?? 'none');
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -87,12 +102,19 @@ function fmt(ms: number): string {
   return ms < 1000 ? `${ms.toFixed(0)}ms` : `${(ms / 1000).toFixed(2)}s`;
 }
 
-async function runMain(filePath: string, outArg: string | null, jsonOnly: boolean): Promise<void> {
+async function runMain(
+  filePath: string,
+  outArg: string | null,
+  jsonOnly: boolean,
+  risuluaMode: RisuLuaMode,
+  risuluaSplitMode: RisuLuaSplitCliMode,
+): Promise<void> {
   const t0 = performance.now();
   console.log('\n  🐿️ RisuAI Character Card Extractor (canonical)\n');
 
   let t = performance.now();
-  const { charx, assetSources, mainImage }: ParsedCharxResult = await phase1_parseCharxAsync(filePath);
+  const { charx, assetSources, mainImage }: ParsedCharxResult =
+    await phase1_parseCharxAsync(filePath);
   const safeName = sanitizeFilename(
     getCharacterName(charx),
     path.basename(filePath, path.extname(filePath)),
@@ -104,6 +126,8 @@ async function runMain(filePath: string, outArg: string | null, jsonOnly: boolea
   // Note: charx.json is NOT written in canonical mode
   // All data is emitted as canonical .risu* artifacts only
   console.log(`\n     ✅ Canonical extract mode — no charx.json`);
+  console.log(`     🌙 RisuLua: ${formatRisuLuaModeLabel(risuluaMode)}`);
+  console.log(`     🧩 RisuLua split: ${risuluaSplitMode}`);
   console.log(`     ⏱  Phase 1: ${fmt(performance.now() - t)}`);
 
   if (jsonOnly) {
@@ -120,11 +144,16 @@ async function runMain(filePath: string, outArg: string | null, jsonOnly: boolea
   console.log(`     ⏱  Phase 3: ${fmt(performance.now() - t)}`);
 
   t = performance.now();
-  phase4_extractTriggerLua(charx, resolvedOutDir);
+  await phase4_extractTriggerLua(charx, resolvedOutDir, risuluaMode, risuluaSplitMode);
   console.log(`     ⏱  Phase 4: ${fmt(performance.now() - t)}`);
 
   t = performance.now();
-  const assetManifest = await phase5_extractAssetsAsync(charx, resolvedOutDir, assetSources, mainImage);
+  const assetManifest = await phase5_extractAssetsAsync(
+    charx,
+    resolvedOutDir,
+    assetSources,
+    mainImage,
+  );
   console.log(`     ⏱  Phase 5 (assets): ${fmt(performance.now() - t)}`);
 
   t = performance.now();
@@ -143,4 +172,8 @@ async function runMain(filePath: string, outArg: string | null, jsonOnly: boolea
   console.log(`  📊 추출 완료 → ${path.relative('.', resolvedOutDir)}/`);
   console.log(`  ⏱  총 소요: ${fmt(total)}`);
   console.log('  ────────────────────────────────────────\n');
+}
+
+function formatRisuLuaModeLabel(mode: RisuLuaMode): string {
+  return mode === 'modular' ? '모듈식 개발' : '단일 파일 개발';
 }

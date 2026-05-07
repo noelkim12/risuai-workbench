@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { unzipSync, strFromU8, zipSync, strToU8 } from 'fflate';
 import { parseModuleRisum } from '../../src/cli/extract/parsers';
+import { runPackWorkflow as runCharxPackWorkflow } from '../../src/cli/pack/character/workflow';
 
 const tempDirs: string[] = [];
 
@@ -714,7 +715,8 @@ emptyValue=
 
     // Write minimal character
     writeFileSync(path.join(characterDir, 'description.txt'), 'test', 'utf-8');
-    writeFileSync(path.join(characterDir, 'metadata.json'), `${JSON.stringify({ name: 'Toggle Test' })}\n`, 'utf-8');
+    writeFileSync(path.join(characterDir, 'metadata.json'), `${JSON.stringify({ name: 'Toggle Test' })}
+`, 'utf-8');
 
     // Write module.risutoggle (should be ignored for charx)
     writeFileSync(path.join(characterDir, 'module.risutoggle'), '<module-toggle>test</module-toggle>', 'utf-8');
@@ -734,5 +736,225 @@ emptyValue=
 
     // customModuleToggle should NOT be in charx extensions
     expect(packedCharx.data.extensions.risuai.customModuleToggle).toBeUndefined();
+  });
+
+  // ============================================================================
+  // RISULUA CLASSIC REGRESSION TESTS
+  // ============================================================================
+  // These tests freeze the classic .risulua behavior before modular bundle mode
+  // changes are introduced. They verify:
+  // 1. Single lua/<charxName>.risulua file is used per character
+  // 2. Lua bytes are injected unchanged into upstream charx payload
+  // 3. Duplicate .risulua sources throw LuaAdapterError deterministically
+  // ============================================================================
+
+  it('risulua classic single file: packs single lua/<charxName>.risulua unchanged into triggerscript', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-risulua-classic-single-'));
+    tempDirs.push(workDir);
+
+    const characterDir = path.join(workDir, 'character');
+    const luaDir = path.join(workDir, 'lua');
+    mkdirSync(characterDir, { recursive: true });
+    mkdirSync(luaDir, { recursive: true });
+
+    // Write minimal character metadata
+    writeFileSync(path.join(characterDir, 'description.txt'), 'test', 'utf-8');
+    writeFileSync(path.join(characterDir, 'metadata.json'), `${JSON.stringify({ name: 'Classic Lua Test' })}
+`, 'utf-8');
+
+    // Write classic .risulua with exact content including whitespace, comments, CBS placeholders
+    const luaContent = `-- Classic risulua trigger script
+-- Preserves exact bytes including whitespace and {{CBS}} placeholders
+
+function onTrigger()
+  local user = "{{user}}"
+  local char = "{{char}}"
+  print("Hello " .. user .. " from " .. char)
+  
+  --[[
+    Multi-line comment block
+    with {{variable}} placeholders
+  --]]
+  
+  return true
+end
+
+function onLoad()
+  -- Initialization with tabs and spaces
+  local x = 1
+  local y = 2
+  return x + y
+end
+`;
+    // Classic mode uses target-name-based naming: lua/<sanitizedCharxName>.risulua
+    writeFileSync(path.join(luaDir, 'Classic_Lua_Test.risulua'), luaContent, 'utf-8');
+
+    const outPath = path.join(workDir, 'packed.charx');
+    const exitCode = runCharxPackWorkflow(['--in', workDir, '--format', 'charx', '--out', outPath]);
+    expect(exitCode).toBe(0);
+
+    const archive = unzipSync(readFileSync(outPath));
+    const packedCharx = JSON.parse(strFromU8(archive['charx.json']));
+
+    // Verify triggerscript array structure
+    expect(packedCharx.data.extensions.risuai.triggerscript).toBeDefined();
+    expect(Array.isArray(packedCharx.data.extensions.risuai.triggerscript)).toBe(true);
+    expect(packedCharx.data.extensions.risuai.triggerscript.length).toBe(1);
+
+    const trigger = packedCharx.data.extensions.risuai.triggerscript[0];
+    expect(trigger.comment).toBe('Canonical Lua Trigger');
+    expect(trigger.type).toBe('manual');
+    expect(trigger.effect).toBeDefined();
+    expect(trigger.effect.length).toBe(1);
+    expect(trigger.effect[0].type).toBe('triggerlua');
+
+    // CRITICAL: Verify exact byte-for-byte preservation of Lua content
+    expect(trigger.effect[0].code).toBe(luaContent);
+
+    // Verify module.risum round-trip also preserves exact content
+    const module = parseModuleRisum(Buffer.from(archive['module.risum']));
+    expect(module.trigger).toBeDefined();
+    expect(Array.isArray(module.trigger)).toBe(true);
+    expect(module.trigger.length).toBe(1);
+    expect(module.trigger[0].effect[0].code).toBe(luaContent);
+  });
+
+  it('risulua classic duplicate: ignores non-matching .risulua files and only uses lua/<charxName>.risulua', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-risulua-classic-duplicate-'));
+    tempDirs.push(workDir);
+
+    const characterDir = path.join(workDir, 'character');
+    const luaDir = path.join(workDir, 'lua');
+    mkdirSync(characterDir, { recursive: true });
+    mkdirSync(luaDir, { recursive: true });
+
+    // Write minimal character metadata
+    writeFileSync(path.join(characterDir, 'description.txt'), 'test', 'utf-8');
+    writeFileSync(path.join(characterDir, 'metadata.json'), `${JSON.stringify({ name: 'Duplicate Lua Test' })}
+`, 'utf-8');
+
+    // Write the target-named .risulua file (this should be used)
+    const targetLuaContent = 'function target() return "target" end';
+    writeFileSync(path.join(luaDir, 'Duplicate_Lua_Test.risulua'), targetLuaContent, 'utf-8');
+
+    // Write additional .risulua files with different names (these should be ignored in classic mode)
+    writeFileSync(path.join(luaDir, 'first_script.risulua'), 'function first() end', 'utf-8');
+    writeFileSync(path.join(luaDir, 'second_script.risulua'), 'function second() end', 'utf-8');
+
+    const outPath = path.join(workDir, 'packed.charx');
+    const exitCode = runCharxPackWorkflow(['--in', workDir, '--format', 'charx', '--out', outPath]);
+
+    // Classic charx mode succeeds by only using the target-named file
+    expect(exitCode).toBe(0);
+    expect(existsSync(outPath)).toBe(true);
+
+    const archive = unzipSync(readFileSync(outPath));
+    const packedCharx = JSON.parse(strFromU8(archive['charx.json']));
+
+    // Verify only the target-named file was used
+    expect(packedCharx.data.extensions.risuai.triggerscript[0].effect[0].code).toBe(targetLuaContent);
+  });
+
+  it('risulua classic: preserves empty .risulua file content exactly', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-risulua-classic-empty-'));
+    tempDirs.push(workDir);
+
+    const characterDir = path.join(workDir, 'character');
+    const luaDir = path.join(workDir, 'lua');
+    mkdirSync(characterDir, { recursive: true });
+    mkdirSync(luaDir, { recursive: true });
+
+    // Write minimal character metadata
+    writeFileSync(path.join(characterDir, 'description.txt'), 'test', 'utf-8');
+    writeFileSync(path.join(characterDir, 'metadata.json'), `${JSON.stringify({ name: 'Empty Lua Test' })}
+`, 'utf-8');
+
+    // Write empty .risulua file
+    writeFileSync(path.join(luaDir, 'Empty_Lua_Test.risulua'), '', 'utf-8');
+
+    const outPath = path.join(workDir, 'packed.charx');
+    const exitCode = runCharxPackWorkflow(['--in', workDir, '--format', 'charx', '--out', outPath]);
+    expect(exitCode).toBe(0);
+
+    const archive = unzipSync(readFileSync(outPath));
+    const packedCharx = JSON.parse(strFromU8(archive['charx.json']));
+
+    // Verify empty content is preserved exactly
+    expect(packedCharx.data.extensions.risuai.triggerscript[0].effect[0].code).toBe('');
+  });
+
+  it('risulua classic: preserves whitespace-only .risulua file content exactly', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-risulua-classic-whitespace-'));
+    tempDirs.push(workDir);
+
+    const characterDir = path.join(workDir, 'character');
+    const luaDir = path.join(workDir, 'lua');
+    mkdirSync(characterDir, { recursive: true });
+    mkdirSync(luaDir, { recursive: true });
+
+    // Write minimal character metadata
+    writeFileSync(path.join(characterDir, 'description.txt'), 'test', 'utf-8');
+    writeFileSync(path.join(characterDir, 'metadata.json'), `${JSON.stringify({ name: 'Whitespace Lua Test' })}
+`, 'utf-8');
+
+    // Write whitespace-only .risulua file
+    const whitespaceContent = '   \n\t\n  \n';
+    writeFileSync(path.join(luaDir, 'Whitespace_Lua_Test.risulua'), whitespaceContent, 'utf-8');
+
+    const outPath = path.join(workDir, 'packed.charx');
+    const exitCode = runCharxPackWorkflow(['--in', workDir, '--format', 'charx', '--out', outPath]);
+    expect(exitCode).toBe(0);
+
+    const archive = unzipSync(readFileSync(outPath));
+    const packedCharx = JSON.parse(strFromU8(archive['charx.json']));
+
+    // Verify whitespace content is preserved exactly
+    expect(packedCharx.data.extensions.risuai.triggerscript[0].effect[0].code).toBe(whitespaceContent);
+  });
+
+  it('character pack risulua modular reads dist only', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-risulua-modular-dist-'));
+    tempDirs.push(workDir);
+
+    const characterDir = path.join(workDir, 'character');
+    const luaDir = path.join(workDir, 'lua');
+    mkdirSync(characterDir, { recursive: true });
+    mkdirSync(path.join(luaDir, 'common'), { recursive: true });
+
+    writeCanonicalManifest(workDir, { name: 'Modular Lua Character' });
+    writeFileSync(path.join(characterDir, 'description.risutext'), 'modular character', 'utf-8');
+    writeFileSync(path.join(luaDir, 'main.risulua'), [
+      'local helper = require("common.helper")',
+      'function onOutput(data)',
+      '  return helper.decorate(data)',
+      'end',
+    ].join('\n'), 'utf-8');
+    writeFileSync(path.join(luaDir, 'common', 'helper.risulua'), [
+      'return {',
+      '  decorate = function(data) return "dist:" .. tostring(data) end',
+      '}',
+    ].join('\n'), 'utf-8');
+    writeFileSync(path.join(luaDir, 'orphan.risulua'), 'function sourceOnlyShouldNotLeak() end', 'utf-8');
+
+    const outPath = path.join(workDir, 'packed.charx');
+    const exitCode = runCharxPackWorkflow([
+      '--risulua-mode', 'modular',
+      '--in', workDir,
+      '--format', 'charx',
+      '--out', outPath,
+    ]);
+
+    expect(exitCode).toBe(0);
+    const distContent = readFileSync(path.join(workDir, 'dist', 'Modular_Lua_Character.risulua'), 'utf-8');
+    const archive = unzipSync(readFileSync(outPath));
+    const packedCharx = JSON.parse(strFromU8(archive['charx.json']));
+    const packedLua = packedCharx.data.extensions.risuai.triggerscript[0].effect[0].code;
+    const module = parseModuleRisum(Buffer.from(archive['module.risum']));
+
+    expect(packedLua).toBe(distContent);
+    expect(packedLua).toContain('local helper = __loader_common_helper()');
+    expect(packedLua).toContain('decorate = function(data) return "dist:" .. tostring(data) end');
+    expect(packedLua).not.toContain('sourceOnlyShouldNotLeak');
+    expect(module.trigger[0].effect[0].code).toBe(distContent);
   });
 });

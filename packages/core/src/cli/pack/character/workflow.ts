@@ -38,6 +38,12 @@ import {
 import {
   parseLuaContent,
 } from '@/domain/custom-extension/extensions/lua';
+import { buildRisuLuaModularDist } from '@/cli/build/workflow';
+import {
+  parseRisuLuaMode,
+  discoverRisuLuaBundleTarget,
+  type RisuLuaMode,
+} from '@/cli/shared';
 
 const HELP_TEXT = `
   🐿️ RisuAI Character Card Packer (canonical mode)
@@ -50,6 +56,7 @@ const HELP_TEXT = `
     --format <type>     png | charx | charx-jpg (기본: assets/manifest.json 기반 auto)
     --cover <file>      커버 이미지 경로 (png 또는 jpg)
     --name <name>       출력 파일명 기본값 (확장자 제외)
+    --risulua-mode <classic|modular>  Lua 번들 모드 (미지정 시 향후 auto-detect)
     -h, --help          도움말
 
   Notes (canonical mode):
@@ -74,6 +81,7 @@ interface PackOptions {
   formatArg: string;
   coverArg: string | null;
   nameArg: string | null;
+  risuluaMode: RisuLuaMode | null;
 }
 
 export function runPackWorkflow(argv: readonly string[]): number {
@@ -83,12 +91,22 @@ export function runPackWorkflow(argv: readonly string[]): number {
     return 0;
   }
 
+  let modeResult: ReturnType<typeof parseRisuLuaMode>;
+  try {
+    modeResult = parseRisuLuaMode(argv);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`\n  ❌ ${message}\n`);
+    return 1;
+  }
+
   const options: PackOptions = {
-    inDir: argValue(argv, '--in') || '.',
-    outArg: argValue(argv, '--out'),
-    formatArg: (argValue(argv, '--format') || '').toLowerCase(),
-    coverArg: argValue(argv, '--cover'),
-    nameArg: argValue(argv, '--name'),
+    inDir: argValue(modeResult.strippedArgv, '--in') || '.',
+    outArg: argValue(modeResult.strippedArgv, '--out'),
+    formatArg: (argValue(modeResult.strippedArgv, '--format') || '').toLowerCase(),
+    coverArg: argValue(modeResult.strippedArgv, '--cover'),
+    nameArg: argValue(modeResult.strippedArgv, '--name'),
+    risuluaMode: modeResult.mode,
   };
 
   try {
@@ -108,7 +126,7 @@ function runMain(options: PackOptions): void {
   console.log(`  입력: ${path.relative('.', resolvedIn)}`);
 
   // Build charx from createBlankChar() + canonical overlays
-  const charx = buildCharxFromCanonical(resolvedIn);
+  const charx = buildCharxFromCanonical(resolvedIn, options.risuluaMode);
 
   const targetFormat = resolveTargetFormat(resolvedIn, options.formatArg);
   const { outPath, baseName } = resolveOutputPath({
@@ -142,7 +160,7 @@ function runMain(options: PackOptions): void {
  * Build charx from createBlankChar() + canonical artifact overlays.
  * This is the canonical pack mode — no charx.json required.
  */
-function buildCharxFromCanonical(inRoot: string): any {
+function buildCharxFromCanonical(inRoot: string, risuluaMode: RisuLuaMode | null): any {
   // Start with blank charx V3 envelope
   const charx = createBlankCharxV3();
 
@@ -158,7 +176,7 @@ function buildCharxFromCanonical(inRoot: string): any {
   mergeCharacterCanonical(charx, inRoot);
   mergeLorebooksCanonical(charx, inRoot);
   mergeRegexCanonical(charx, inRoot);
-  mergeLuaCanonical(charx, inRoot);
+  mergeLuaCanonical(charx, inRoot, risuluaMode);
   mergeHtmlCanonical(charx, inRoot);
   mergeVariablesCanonical(charx, inRoot);
 
@@ -409,41 +427,50 @@ function mergeRegexCanonical(charx: any, inRoot: string): void {
  * code in a standard trigger structure for round-trip compatibility.
  * Uses target-name-based file naming: lua/<charxName>.risulua
  */
-function mergeLuaCanonical(charx: any, inRoot: string): void {
-  // Determine the expected lua filename based on character name
-  const charxName = charx.data?.name || 'character';
-  const sanitizedName = sanitizeFilename(charxName, 'character');
-  const luaPath = path.join(inRoot, 'lua', `${sanitizedName}.risulua`);
+function mergeLuaCanonical(charx: any, inRoot: string, risuluaMode: RisuLuaMode | null): void {
+  const target = discoverRisuLuaBundleTarget({ rootDir: inRoot, mode: risuluaMode });
+
+  if (target.mode === 'modular') {
+    const result = buildRisuLuaModularDist({ rootDir: inRoot });
+    applyLuaTriggerToCharx(charx, result.validation.code);
+    return;
+  }
+
+  const luaPath = target.entryPath;
 
   if (!fs.existsSync(luaPath)) return;
 
   try {
     const luaCode = parseLuaContent(fs.readFileSync(luaPath, 'utf-8'));
-    // Ensure the extensions.risuai structure exists
-    if (!charx.data) charx.data = {};
-    if (!charx.data.extensions) charx.data.extensions = {};
-    if (!charx.data.extensions.risuai) charx.data.extensions.risuai = {};
-
-    // Wrap Lua code in proper triggerscript array structure
-    // This maintains compatibility with buildModuleFromCharx() which expects
-    // triggerscript to be an array it can pass to module.risum
-    charx.data.extensions.risuai.triggerscript = [
-      {
-        comment: 'Canonical Lua Trigger',
-        type: 'manual',
-        conditions: [],
-        effect: [
-          {
-            type: 'triggerlua',
-            code: luaCode,
-            indent: 0,
-          },
-        ],
-      },
-    ];
+    applyLuaTriggerToCharx(charx, luaCode);
   } catch (error) {
-    console.warn(`  ⚠️ Failed to parse ${sanitizedName}.risulua`);
+    console.warn(`  ⚠️ Failed to parse ${path.basename(luaPath)}`);
   }
+}
+
+function applyLuaTriggerToCharx(charx: any, luaCode: string): void {
+  // Ensure the extensions.risuai structure exists
+  if (!charx.data) charx.data = {};
+  if (!charx.data.extensions) charx.data.extensions = {};
+  if (!charx.data.extensions.risuai) charx.data.extensions.risuai = {};
+
+  // Wrap Lua code in proper triggerscript array structure
+  // This maintains compatibility with buildModuleFromCharx() which expects
+  // triggerscript to be an array it can pass to module.risum
+  charx.data.extensions.risuai.triggerscript = [
+    {
+      comment: 'Canonical Lua Trigger',
+      type: 'manual',
+      conditions: [],
+      effect: [
+        {
+          type: 'triggerlua',
+          code: luaCode,
+          indent: 0,
+        },
+      ],
+    },
+  ];
 }
 
 /**

@@ -25,10 +25,7 @@ import {
   extractLorebooksFromCharx,
   serializeLorebookContent,
 } from '@/domain/custom-extension/extensions/lorebook';
-import {
-  extractRegexFromCharx,
-  serializeRegexContent,
-} from '@/domain/regex';
+import { extractRegexFromCharx, serializeRegexContent } from '@/domain/regex';
 import {
   extractVariablesFromCharx,
   serializeVariableContent,
@@ -38,6 +35,13 @@ import {
   serializeHtmlContent,
 } from '@/domain/custom-extension/extensions/html';
 import { toPosix } from '@/domain/lorebook/folders';
+import type { RisuLuaMode } from '../../shared/lua-bundler/risulua-mode';
+import {
+  cleanupRisuLuaSplitTemps,
+  runRisuLuaSplitExtract,
+  uniqueRisuLuaSplitTargetName,
+  type RisuLuaSplitCliMode,
+} from '../../shared/risulua-split';
 
 const CHARACTER_PROSE_FIELDS: Array<[string, (data: any, risuai: any) => string]> = [
   ['description', (data) => data.description || ''],
@@ -135,7 +139,10 @@ function selectCharacterImagePath(manifest: ExtractedAssetManifest | null): stri
   if (!manifest || !Array.isArray(manifest.assets)) return null;
 
   const extractedIcons = manifest.assets.filter(
-    (entry) => entry.type === 'icon' && entry.status === 'extracted' && typeof entry.extracted_path === 'string',
+    (entry) =>
+      entry.type === 'icon' &&
+      entry.status === 'extracted' &&
+      typeof entry.extracted_path === 'string',
   );
   const mainIcon = extractedIcons.find((entry) => entry.name === 'main');
   const selected = mainIcon ?? extractedIcons[0];
@@ -429,18 +436,26 @@ export function phase2_extractLorebooks(charx: any, outputDir: string): number {
 }
 
 /** Convert raw lorebook entry data to canonical LorebookContent format */
-function entryToCanonicalContent(entry: any): import('@/domain/custom-extension/extensions/lorebook').LorebookContent {
+function entryToCanonicalContent(
+  entry: any,
+): import('@/domain/custom-extension/extensions/lorebook').LorebookContent {
   // Handle both character_book and module lorebook schemas
   const keys = Array.isArray(entry.keys)
     ? entry.keys
     : typeof entry.key === 'string'
-      ? entry.key.split(',').map((k: string) => k.trim()).filter(Boolean)
+      ? entry.key
+          .split(',')
+          .map((k: string) => k.trim())
+          .filter(Boolean)
       : [];
 
   const secondaryKeys = Array.isArray(entry.secondary_keys)
     ? entry.secondary_keys
     : typeof entry.secondkey === 'string' && entry.secondkey.trim()
-      ? entry.secondkey.split(',').map((k: string) => k.trim()).filter(Boolean)
+      ? entry.secondkey
+          .split(',')
+          .map((k: string) => k.trim())
+          .filter(Boolean)
       : undefined;
 
   const content: import('@/domain/custom-extension/extensions/lorebook').LorebookContent = {
@@ -517,7 +532,12 @@ export function phase3_extractRegex(charx: any, outputDir: string): number {
   return count;
 }
 
-export function phase4_extractTriggerLua(charx: any, outputDir: string): number {
+export async function phase4_extractTriggerLua(
+  charx: any,
+  outputDir: string,
+  risuluaMode: RisuLuaMode = 'classic',
+  risuluaSplitMode: RisuLuaSplitCliMode = 'none',
+): Promise<number> {
   console.log('\n  🌙 Phase 4: TriggerLua 추출 (canonical)');
 
   const luaDir = path.join(outputDir, 'lua');
@@ -537,13 +557,20 @@ export function phase4_extractTriggerLua(charx: any, outputDir: string): number 
     if (!trigger.effect || !Array.isArray(trigger.effect)) continue;
 
     for (const effect of trigger.effect) {
-      if (effect.type === 'triggerlua' && typeof effect.code === 'string' && effect.code.length > 0) {
-        // Add comment with trigger info if available
-        if (trigger.comment) {
+      if (
+        effect.type === 'triggerlua' &&
+        typeof effect.code === 'string' &&
+        effect.code.length > 0
+      ) {
+        // Classic mode keeps the existing contextual trigger comments.
+        // Modular mode writes the upstream Lua payload body without synthetic splits/metadata.
+        if (risuluaMode === 'classic' && trigger.comment) {
           luaParts.push(`-- Trigger: ${trigger.comment}`);
         }
         luaParts.push(effect.code);
-        luaParts.push(''); // Empty line between code blocks
+        if (risuluaMode === 'classic') {
+          luaParts.push(''); // Empty line between code blocks
+        }
       }
     }
   }
@@ -553,13 +580,24 @@ export function phase4_extractTriggerLua(charx: any, outputDir: string): number 
     return 0;
   }
 
-  // Write as canonical .risulua file using target-name-based naming
+  // Write as canonical .risulua file using the selected authoring layout.
   const charxName = charx.data?.name || 'character';
   const sanitizedName = sanitizeFilename(charxName, 'character');
-  const fileName = path.join(luaDir, `${sanitizedName}.risulua`);
-  writeText(fileName, luaParts.join('\n'));
+  const luaFileName = risuluaMode === 'modular' ? 'main.risulua' : `${sanitizedName}.risulua`;
+  const fileName = path.join(luaDir, luaFileName);
+  const luaSource = risuluaMode === 'modular' ? luaParts.join('\n\n') : luaParts.join('\n');
+  writeText(fileName, luaSource);
+  cleanupRisuLuaSplitTemps(outputDir);
+  await runRisuLuaSplitExtract({
+    mode: risuluaSplitMode,
+    outputRoot: outputDir,
+    source: luaSource,
+    sourcePath: fileName,
+    targetName: uniqueRisuLuaSplitTargetName(sanitizedName),
+    cwd: process.cwd(),
+  });
 
-  console.log(`     ✅ ${triggerscript.length}개 trigger → ${path.relative('.', luaDir)}/${sanitizedName}.risulua`);
+  console.log(`     ✅ ${triggerscript.length}개 trigger → ${path.relative('.', fileName)}`);
   return 1;
 }
 

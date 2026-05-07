@@ -13,7 +13,20 @@ import {
   resolveOrderedFiles,
   readJson,
 } from '@/node/json-listing';
-import { isPlainObject } from '../shared';
+import {
+  bundleRisuLuaModularGraph,
+  discoverRisuLuaBundleTarget,
+  isPlainObject,
+  parseRisuLuaMode,
+  resolveRisuLuaModularGraph,
+  validateRisuLuaDist,
+  writeRisuLuaDist,
+  type RisuLuaBundleTarget,
+  type RisuLuaDistValidationResult,
+  type RisuLuaDistWriteResult,
+  type RisuLuaModuleGraph,
+  type RisuLuaBundledOutput,
+} from '../shared';
 
 interface BuildOptions {
   inDir: string;
@@ -23,6 +36,28 @@ interface BuildOptions {
   dedupeLorebook: boolean;
   regexOnly: boolean;
   lorebookOnly: boolean;
+}
+
+export interface BuildRisuLuaModularDistOptions {
+  rootDir: string;
+}
+
+export interface RisuLuaModularDistBuildResult {
+  target: RisuLuaBundleTarget;
+  graph: RisuLuaModuleGraph;
+  bundled: RisuLuaBundledOutput;
+  writeResult: RisuLuaDistWriteResult;
+  validation: RisuLuaDistValidationResult;
+  summary: {
+    rootDir: string;
+    sourceRoot: string;
+    entryPath: string;
+    entryRelativePath: string;
+    distPath: string;
+    distRelativePath: string;
+    moduleCount: number;
+    edgeCount: number;
+  };
 }
 
 interface LorebookRow {
@@ -47,7 +82,28 @@ export function runBuildWorkflow(argv: readonly string[]): number {
     return 0;
   }
 
-  const options = parseBuildOptions(argv);
+  let modeResult: ReturnType<typeof parseRisuLuaMode>;
+  try {
+    modeResult = parseRisuLuaMode(argv);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`\nERROR: ${message}\n`);
+    return 1;
+  }
+
+  const options = parseBuildOptions(modeResult.strippedArgv);
+
+  if (modeResult.mode === 'modular') {
+    try {
+      const result = buildRisuLuaModularDist({ rootDir: options.inDir });
+      printRisuLuaModularBuildSummary(result);
+      return 0;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`\nERROR: ${message}\n`);
+      return 1;
+    }
+  }
 
   if (options.regexOnly && options.lorebookOnly) {
     console.error('\nERROR: --regex-only and --lorebook-only cannot be used together.\n');
@@ -62,6 +118,49 @@ export function runBuildWorkflow(argv: readonly string[]): number {
     console.error(`\nERROR: ${message}\n`);
     return 1;
   }
+}
+
+export function buildRisuLuaModularDist(
+  options: BuildRisuLuaModularDistOptions,
+): RisuLuaModularDistBuildResult {
+  const target = discoverRisuLuaBundleTarget({ rootDir: options.rootDir, mode: 'modular' });
+  const graph = resolveRisuLuaModularGraph({ target });
+  const bundled = bundleRisuLuaModularGraph({ graph });
+  const writeResult = writeRisuLuaDist({ target, bundled });
+  const validation = validateRisuLuaDist({ target, selectedPaths: [target.distPath] });
+
+  return {
+    target,
+    graph,
+    bundled,
+    writeResult,
+    validation,
+    summary: {
+      rootDir: target.rootDir,
+      sourceRoot: target.sourceRoot,
+      entryPath: target.entryPath,
+      entryRelativePath: target.entryRelativePath,
+      distPath: target.distPath,
+      distRelativePath: target.distRelativePath,
+      moduleCount: graph.modules.length,
+      edgeCount: graph.edges.length,
+    },
+  };
+}
+
+function printRisuLuaModularBuildSummary(result: RisuLuaModularDistBuildResult): void {
+  const { summary } = result;
+  console.log('\nRisuLua Modular Dist Builder\n');
+  console.log(`- workspace       : ${summary.rootDir}`);
+  console.log(`- source root     : ${summary.sourceRoot}`);
+  console.log(`- entry           : ${summary.entryRelativePath}`);
+  console.log(`- dist            : ${summary.distRelativePath}`);
+  console.log(`- dist absolute   : ${summary.distPath}`);
+  console.log(`- modules         : ${summary.moduleCount}`);
+  console.log(`- edges           : ${summary.edgeCount}`);
+  console.log('\nBuild complete:');
+  console.log(`- ${summary.distRelativePath} (${result.validation.code.length} bytes)`);
+  console.log('');
 }
 
 function printHelp(): void {
@@ -79,6 +178,7 @@ Options:
   --regex-only          Build regexscript_export.json only
   --lorebook-only       Build lorebook_export.json only
   --no-dedupe           Keep duplicate lorebook entries
+  --risulua-mode <classic|modular>  Lua 번들 모드 (미지정 시 향후 auto-detect)
   -h, --help            Show help
 
 Outputs:

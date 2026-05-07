@@ -640,6 +640,47 @@ describe('module extract', () => {
     expect(marker).not.toHaveProperty('customModuleToggle');
   });
 
+  describe('risulua extract mode', () => {
+    it('risulua extract modular writes main', async () => {
+      const filePath = path.join(tmpDir, 'modular-source-module.json');
+      const outDir = path.join(tmpDir, 'modular-out');
+      const upstreamLua = 'local value = "original upstream lua"\nfunction onOutput()\n  return value\nend';
+      const payload = {
+        type: 'risuModule',
+        module: {
+          name: 'modular-workflow-module',
+          description: 'module with modular lua extract',
+          id: 'modular-workflow-id',
+          trigger: [
+            {
+              comment: 'entrypoint',
+              effect: [{ type: 'triggerlua', code: upstreamLua }],
+            },
+          ],
+        },
+      };
+      fs.writeFileSync(filePath, JSON.stringify(payload), 'utf-8');
+
+      const exitCode = await runModuleExtractWorkflow([
+        filePath,
+        '--out',
+        outDir,
+        '--risulua-mode',
+        'modular',
+      ]);
+
+      expect(exitCode).toBe(0);
+      expect(fs.existsSync(path.join(outDir, 'lua', 'main.risulua'))).toBe(true);
+      expect(fs.readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).toBe(upstreamLua);
+      expect(fs.existsSync(path.join(outDir, 'lua', 'modular-workflow-module.risulua'))).toBe(false);
+      expect(fs.existsSync(path.join(outDir, 'lua', 'features'))).toBe(false);
+      expect(fs.existsSync(path.join(outDir, 'lua', 'manifest.json'))).toBe(false);
+      expect(fs.existsSync(path.join(outDir, 'risulua.json'))).toBe(false);
+      expect(fs.existsSync(path.join(outDir, 'dist'))).toBe(false);
+      expect(fs.existsSync(path.join(outDir, 'dist', 'modular-workflow-module.risulua'))).toBe(false);
+    });
+  });
+
   it('runExtractWorkflow emits .risumodule for module without lorebooks and does not require lorebooks for analysis', async () => {
     const filePath = path.join(tmpDir, 'no-lorebook.json');
     const outDir = path.join(tmpDir, 'no-lorebook-out');

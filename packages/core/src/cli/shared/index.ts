@@ -1,3 +1,93 @@
 export { mdRow, escapeHtml } from './report-utils';
 export { safeCollect } from './safe-collect';
 export { isPlainObject } from './guards';
+export {
+  type RisuLuaMode,
+  type ParsedRisuLuaMode,
+  RISULUA_MODE_FLAG,
+  RISULUA_MODE_HELP_LINE,
+  parseRisuLuaMode,
+  stripRisuLuaMode,
+} from './lua-bundler/risulua-mode';
+export {
+  type RisuLuaBundleMarkerKind,
+  type RisucharManifest,
+  type RisuLuaBundleTarget,
+  type DiscoverRisuLuaBundleTargetOptions,
+  RISUCHAR_FILENAME,
+  RISUCHAR_KIND,
+  RISUCHAR_METADATA_KIND,
+  discoverRisuLuaBundleTarget,
+  readRisucharManifest,
+  parseRisucharManifest,
+} from './lua-bundler/risulua-target';
+export {
+  type LuaAstNode,
+  type RisuLuaForbiddenDiagnosticCode,
+  type RisuLuaSourceLocation,
+  type RisuLuaForbiddenDiagnostic,
+  type AnalyzeRisuLuaForbiddenPatternsOptions,
+  RISULUA_PARSE_OPTIONS,
+  analyzeRisuLuaForbiddenPatterns,
+  parseRisuLuaSource,
+  walkLuaAst,
+  isLuaAstNode,
+  isIdentifierNamed,
+  getLocation,
+} from './lua-bundler/risulua-forbidden-analyzer';
+export {
+  type RisuLuaResolverErrorCode,
+  type RisuLuaResolverDiagnostic,
+  type RisuLuaRequireEdge,
+  type RisuLuaSourceRange,
+  type RisuLuaStaticRequireReference,
+  type RisuLuaSourceModuleFile,
+  type RisuLuaGraphDiagnostic,
+  type CollectRisuLuaModuleGraphDiagnosticsOptions,
+  type RisuLuaResolvedModule,
+  type RisuLuaModuleGraph,
+  type ResolveRisuLuaModularGraphOptions,
+  RISULUA_MODULE_EXTENSION,
+  RISULUA_MODULAR_ENTRY_ID,
+  RisuLuaResolverError,
+  resolveRisuLuaModularGraph,
+  validateRisuLuaModuleId,
+  resolveRisuLuaModulePath,
+  moduleIdFromRisuLuaSourcePath,
+  listRisuLuaSourceModules,
+  listRisuLuaSourceModuleIds,
+  extractRisuLuaStaticRequireReferences,
+  collectRisuLuaModuleGraphDiagnostics,
+} from './lua-bundler/risulua-modular-resolver';
+export {
+  type BundleRisuLuaModularGraphOptions,
+  type RisuLuaBundledOutput,
+  bundleRisuLuaModularGraph,
+  hasExecutableRequireCalls,
+  extractGlobalFunctionDeclarations,
+} from './lua-bundler/risulua-modular-bundler';
+export {
+  type RisuLuaDistErrorCode,
+  type RisuLuaDistDiagnostic,
+  type WriteRisuLuaDistOptions,
+  type RisuLuaDistWriteResult,
+  type ValidateRisuLuaDistOptions,
+  type RisuLuaDistValidationResult,
+  RISULUA_DIST_GENERATED_HEADER,
+  RisuLuaDistError,
+  writeRisuLuaDist,
+  validateRisuLuaDist,
+  analyzeRisuLuaDistOutput,
+} from './lua-bundler/risulua-dist';
+export {
+  type RisuLuaSplitCliMode,
+  type ParsedRisuLuaSplitMode,
+  type RunRisuLuaSplitOptions,
+  RISULUA_SPLIT_FLAG,
+  RISULUA_SPLIT_HELP_LINE,
+  parseRisuLuaSplitMode,
+  runRisuLuaSplitExtract,
+  cleanupRisuLuaSplitTemps,
+  uniqueRisuLuaSplitTargetName,
+  getTempDirectoryRoot,
+} from './risulua-split';

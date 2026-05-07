@@ -1,15 +1,19 @@
 import path from 'node:path';
 import { runExtractWorkflow as runCharacterExtract } from './character/workflow';
 import { runExtractWorkflow as runPresetExtract, isPresetFile } from './preset/workflow';
-import { runExtractWorkflow as runModuleExtract, isModuleFile } from './module/workflow';
+import { runExtractWorkflow as runModuleExtract } from './module/workflow';
 import { isModuleJson } from './parsers';
+import { parseRisuLuaMode } from '../shared/lua-bundler/risulua-mode';
 
 const PRESET_ONLY_EXTENSIONS = new Set(['.preset', '.risupreset', '.risup']);
 const MODULE_ONLY_EXTENSIONS = new Set(['.risum']);
 
 export async function runExtractWorkflow(argv: readonly string[]): Promise<number> {
-  const typeIdx = argv.indexOf('--type');
-  const typeArg = typeIdx >= 0 ? argv[typeIdx + 1] : null;
+  // Validate and strip --risulua-mode at router level
+  const { strippedArgv } = parseRisuLuaMode(argv);
+
+  const typeIdx = strippedArgv.indexOf('--type');
+  const typeArg = typeIdx >= 0 ? strippedArgv[typeIdx + 1] : null;
   const stripType = (v: string) => v !== '--type' && v !== typeArg;
 
   if (typeArg === 'module') {
@@ -17,20 +21,20 @@ export async function runExtractWorkflow(argv: readonly string[]): Promise<numbe
   }
 
   if (typeArg === 'preset') {
-    return runPresetExtract(argv.filter(stripType));
+    return runPresetExtract(strippedArgv.filter(stripType));
   }
 
   if (typeArg === 'character') {
     return await runCharacterExtract(argv.filter(stripType));
   }
 
-  const filePath = argv.find(
+  const filePath = strippedArgv.find(
     (v) =>
       !v.startsWith('-') &&
       v !== typeArg &&
       v !== '--type' &&
       v !== '--out' &&
-      !isOptionValue(argv, v),
+      !isOptionValue(strippedArgv, v),
   );
 
   if (filePath) {
@@ -39,14 +43,14 @@ export async function runExtractWorkflow(argv: readonly string[]): Promise<numbe
       return await runModuleExtract(argv);
     }
     if (PRESET_ONLY_EXTENSIONS.has(ext)) {
-      return runPresetExtract(argv);
+      return runPresetExtract(strippedArgv);
     }
     if (ext === '.json') {
       if (isModuleJson(filePath)) {
         return await runModuleExtract(argv);
       }
       if (isPresetFile(filePath)) {
-        return runPresetExtract(argv);
+        return runPresetExtract(strippedArgv);
       }
     }
   }

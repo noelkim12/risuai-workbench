@@ -1,0 +1,12 @@
+local actions = {
+  heal = function() setChatVar("hp", "10") end,
+  alert = function() alertNormal("done") end,
+}
+
+function onButtonClick(buttonId)
+  local action = actions[buttonId]
+  if action then
+    return action()
+  end
+  return nil
+end

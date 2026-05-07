@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { zipSync, strToU8 } from 'fflate';
+import { runExtractWorkflow as runCharacterExtractWorkflow } from '../src/cli/extract/character/workflow';
 
 const tempDirs: string[] = [];
 
@@ -361,6 +362,60 @@ describe('charx extract integration (canonical mode)', () => {
     const luaContent = readFileSync(luaFile, 'utf-8');
     expect(luaContent).toContain('onTrigger');
     expect(luaContent).toContain('Hello from trigger!');
+  });
+
+  it('risulua extract modular writes main', async () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-modular-lua-extract-'));
+    tempDirs.push(workDir);
+
+    const upstreamLua = 'local value = "charx upstream lua"\nfunction onOutput()\n  return value\nend';
+    const charxPath = path.join(workDir, 'modular.charx');
+    const charxData = {
+      spec: 'chara_card_v3',
+      spec_version: '3.0',
+      data: {
+        name: 'Modular Character',
+        description: 'Test description',
+        extensions: {
+          risuai: {
+            triggerscript: [
+              {
+                comment: 'entrypoint',
+                type: 'manual',
+                conditions: [],
+                effect: [{ type: 'triggerlua', code: upstreamLua }],
+              },
+            ],
+            customScripts: [],
+            additionalText: '',
+            utilityBot: false,
+            lowLevelAccess: false,
+          },
+        },
+      },
+    };
+    writeFileSync(charxPath, Buffer.from(zipSync({ 'charx.json': strToU8(JSON.stringify(charxData, null, 2)) }, { level: 0 })));
+
+    const outDir = path.join(workDir, 'output');
+    mkdirSync(outDir, { recursive: true });
+
+    const exitCode = await runCharacterExtractWorkflow([
+      charxPath,
+      '--out',
+      outDir,
+      '--risulua-mode',
+      'modular',
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(existsSync(path.join(outDir, 'lua', 'main.risulua'))).toBe(true);
+    expect(readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).toBe(upstreamLua);
+    expect(existsSync(path.join(outDir, 'lua', 'Modular_Character.risulua'))).toBe(false);
+    expect(existsSync(path.join(outDir, 'lua', 'features'))).toBe(false);
+    expect(existsSync(path.join(outDir, 'lua', 'manifest.json'))).toBe(false);
+    expect(existsSync(path.join(outDir, 'risulua.json'))).toBe(false);
+    expect(existsSync(path.join(outDir, 'dist'))).toBe(false);
+    expect(existsSync(path.join(outDir, 'dist', 'Modular_Character.risulua'))).toBe(false);
   });
 
   it('extracts charx defaultVariables into variables/<character>.risuvar', () => {

@@ -34,6 +34,7 @@ import type { HoverProvider } from '../../../features/hover';
 import type { DefinitionProvider, ReferencesProvider, RenameProvider } from '../../../features/navigation';
 import type { SignatureHelpProvider } from '../../../features/presentation';
 import type { DocumentHighlightProvider, DocumentSymbolProvider } from '../../../features/symbols';
+import { buildRisuLuaModuleIdCompletions } from '../../../features/completion/risulua-module-completion';
 import { isLuaLsSymbolInformation } from '../../../providers/lua/lualsProxy';
 import {
   buildLuaStateHoverOverlayMarkdown,
@@ -418,11 +419,18 @@ export class LuaLsFallbackService {
       request: workspaceRequest,
       variableFlowService: workspaceVariableFlowService,
     });
+    const moduleIdOverlay = buildRisuLuaModuleIdCompletions({
+      params,
+      request: route.request,
+    });
 
     return mergeLuaCompletionResponse(
       mergeLuaCompletionResponse(
-        mergeLuaCompletionResponse(luaCompletion, runtimeCompletionOverlay),
-        stateNameOverlay,
+        mergeLuaCompletionResponse(
+          mergeLuaCompletionResponse(luaCompletion, runtimeCompletionOverlay),
+          stateNameOverlay,
+        ),
+        moduleIdOverlay,
       ),
       cbsCompletion,
     );
