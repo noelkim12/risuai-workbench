@@ -87,15 +87,15 @@ function buildParameterInfos(
 - 시그니처 레이블 내부에서 각 매개변수를 **부분 문자열 범위(substring range)**에 매핑합니다 (시그니처 도움말의 밑줄 표시용).
 - 인자 텍스트 옆에 레이블을 표시하고 싶은 경우, 부분 문자열 매칭 로직(`indexOf(displayLabel, searchFrom)`)을 재사용하여 인레이 힌트용 인라인 레이블을 빌드할 수 있습니다.
 
-### `formatParameterSlotSummary` / `formatParameterDefinitionSummary`  
-**파일:** `src/features/hover.ts` (211, 223행)
+### `formatRuntimeArgumentSlotSummary` / `formatParameterDefinitionSummary`  
+**파일:** `src/core/local-functions.ts`, `src/features/hover.ts`
 
 ```ts
-function formatParameterSlotSummary(parameters: readonly { name: string }[]): string
+function formatRuntimeArgumentSlotSummary(declaration: LocalFunctionDeclaration): string
 function formatParameterDefinitionSummary(parameters: readonly { name: string; range: Range }[]): string
 ```
 
-- `formatParameterSlotSummary`: `` `arg::0` → `foo`, `arg::1` → `bar` ``와 같은 문자열을 생성합니다.
+- `formatRuntimeArgumentSlotSummary`: `` `arg::0` → function name, `arg::1` → `foo`, `arg::2` → `bar` ``와 같이 upstream runtime slot 문자열을 생성합니다.
 - `formatParameterDefinitionSummary`: `` `foo` (3행, 5자) ``와 같은 문자열을 생성합니다.
 - 두 함수 모두 호버와 유사한 인레이 힌트 툴팁이나 상세 정보 문자열에 직접 재사용할 수 있습니다.
 
@@ -378,7 +378,6 @@ export class DocumentHighlightProvider {
    - `#each` 헤더 → `extractEachLoopBinding()`
 4. **레이블 빌드 (Build labels):**
    - 내장 기능에는 `formatBlockParameterLabel()` 사용
-   - 로컬 함수에는 `formatParameterSlotSummary()` 사용
+    - 로컬 함수에는 `formatRuntimeArgumentSlotSummary()` 또는 `runtimeArgumentIndex` 사용
 5. **범위 매핑 (Map ranges):** 모든 힌트에 대해 `lookup.fragmentAnalysis.mapper.toHostRangeFromOffsets()` 적용
 6. **반환 (Return):** `label: string | InlayHintLabelPart[]`와 `position: Position`을 가진 `InlayHint[]` 반환
-
