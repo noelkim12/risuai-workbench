@@ -26,7 +26,7 @@ import {
 } from '../../../src/simulator';
 ```
 
-> **참고**: `risu-workbench-core/simulator` 패키지 서브패스는 제공되지 않습니다. 위 두 가지 경로 중 하나를 사용하세요.
+> **참고**: simulator 전용 패키지 서브패스는 제공되지 않습니다. 위 두 가지 경로 중 하나를 사용하세요.
 
 ## 언제 simulator context injection이 필요한가
 
@@ -128,6 +128,20 @@ simulateCbsText('{{time::YYYY-MM-DD HH:mm}} {{random::a::b}}', {
 ```
 
 시간과 난수는 preview 재현성을 위해 provider 주입을 우선합니다.
+
+## Regex preview simulator
+
+Regex preview simulator는 기존 CBS simulator를 대체하지 않습니다. CBS dry-run evaluator는 계속 `packages/core/src/simulator`에 남고, 새 `.risuregex` preview DTO generator만 `packages/core/src/simulator/regex` 아래에 둡니다.
+
+`packages/core/src/simulator/regex`는 파싱된 `.risuregex` entry를 받아 viewer가 바로 읽을 수 있는 derived preview DTO를 만듭니다. Canonical `.risuregex` parse와 serialize 책임은 계속 `packages/core/src/domain/regex/`에 있습니다. Regex simulator layer는 그 canonical 결과를 소비해 match, replacement, directive plan, CBS section dry-run 결과를 조합합니다.
+
+책임은 아래처럼 분리합니다.
+
+- JS `RegExp` execution: JS flag subset만 사용해 match, capture, replacement preview, deterministic diff를 계산합니다.
+- RisuAI directives: `<move_top>`, `<order n>`, `<cbs>` 같은 directive를 JS flags와 분리해 plan DTO와 notice로 표시합니다. Directive parity는 fixture-backed 근거가 쌓이기 전까지 `simulated` confidence로 시작합니다.
+- CBS dry-run integration: `@@@ IN`, `@@@ OUT` section에서 CBS macro preview가 필요할 때 기존 `simulateCbsText` 기반 dry-run 결과를 연결합니다.
+
+Core의 non-goal도 명확합니다. Core는 panel layout, editor watching, workspace state collection, persistence를 소유하지 않습니다. VS Code extension 또는 다른 caller가 editor 상태와 workspace snapshot을 모아 input으로 넘기고, core는 preview DTO만 반환합니다.
 
 ## 개선 후보 bucket
 
