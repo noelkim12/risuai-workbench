@@ -474,4 +474,33 @@ describe('CBS preview variable injector engine', () => {
     expect(result.effects[0]).not.toBe(effects[0]);
     expect(result.effects[0]).toEqual(effects[0]);
   });
+
+  it('hands effective context to custom-extension fragment adapter as data only', async () => {
+    const { simulateCustomExtensionCbsFragments } = await import(
+      '../../../src/domain/custom-extension/cbs-simulator'
+    );
+    const rawContent = `---
+comment: Adapter handoff test
+type: editdisplay
+---
+@@@ IN
+{{getvar::mood}}
+@@@ OUT
+replacement
+`;
+
+    const injection = createCbsPreviewVariableInjection({
+      source: '{{getvar::mood}}',
+      previewOverrides: {
+        chatVariables: { mood: 'calm' },
+      },
+    });
+
+    const result = simulateCustomExtensionCbsFragments('regex', rawContent, {
+      context: injection.effectiveContext,
+    });
+
+    expect(result.status).toBe('ok');
+    expect(result.fragments[0].result.output).toContain('calm');
+  });
 });
