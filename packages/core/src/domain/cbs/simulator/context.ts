@@ -2,6 +2,7 @@
  * CBS simulator default context and deterministic providers.
  * @file packages/core/src/domain/cbs/simulator/context.ts
  */
+import { cloneChatHistoryEntry } from './chat-history';
 import type { CbsSimulationContext, CbsSimulationOptions, CbsSimulationProviders } from './types';
 
 /** Default budget/options contract for CBS simulation. */
@@ -65,7 +66,7 @@ export function createDefaultCbsSimulationContext(
     chatIndex: overrides.chatIndex,
     isFirstMessage: overrides.isFirstMessage,
     lorePositions: overrides.lorePositions ? { ...overrides.lorePositions } : undefined,
-    chatHistory: overrides.chatHistory ? [...overrides.chatHistory] : undefined,
+    chatHistory: overrides.chatHistory ? overrides.chatHistory.map(cloneChatHistoryEntry) : undefined,
     providers: {
       ...DEFAULT_CBS_SIMULATION_PROVIDERS,
       ...(overrides.providers ?? {}),

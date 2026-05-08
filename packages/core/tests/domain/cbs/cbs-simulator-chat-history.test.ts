@@ -35,6 +35,34 @@ describe('CBS simulator chat history context', () => {
     expect(result.diagnostics).toEqual([]);
   });
 
+  it('reads content from role-bearing chat history entries', () => {
+    const result = simulateCbsText('{{lastmessageid}}|{{previous_chat_log::0}}|{{previouschatlog::1}}', {
+      chatHistory: [
+        { role: 'user', content: 'hello' },
+        { role: 'char', content: 'world' },
+      ],
+    });
+
+    expect(result.status).toBe('ok');
+    expect(result.output).toBe('1|hello|world');
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it('does not mutate caller-provided chat history entries', () => {
+    const context = {
+      chatHistory: [
+        { role: 'user', content: 'hello', id: 'u1', createdAt: '2026-05-08T00:00:00.000Z' },
+        { role: 'char', content: 'world', id: 'c1', createdAt: '2026-05-08T00:00:05.000Z' },
+      ],
+    } as const;
+    const before = JSON.stringify(context);
+
+    const result = simulateCbsText('{{previous_chat_log::1}}', context);
+
+    expect(result.output).toBe('world');
+    expect(JSON.stringify(context)).toBe(before);
+  });
+
   it('keeps numeric #each iterator text as one item before range compatibility is introduced', () => {
     const result = simulateCbsText('{{#each {{? {{lastmessageid}}}} item}}[{{slot::item}}]{{/each}}', {
       chatHistory: ['hello', 'world', 'again'],

@@ -4,6 +4,7 @@
  */
 import type { CBSDocument, DiagnosticInfo } from '../parser/ast';
 import type { Range } from '../parser/tokens';
+import type { CbsSimulationChatHistoryEntry } from './chat-history';
 import type { CbsSupportClass } from './support-classification';
 
 /** CBS simulation completion status. */
@@ -70,7 +71,7 @@ export interface CbsSimulationContext {
   /** Explicit lore position text keyed by position id. */
   readonly lorePositions?: Readonly<Record<string, string>>;
   /** Explicit chat history messages used by history-sensitive macros. */
-  readonly chatHistory?: readonly string[];
+  readonly chatHistory?: readonly CbsSimulationChatHistoryEntry[];
   /** Deterministic providers for time/random/pick behavior; can be overridden per call through options. */
   providers: CbsSimulationProviders;
 }
