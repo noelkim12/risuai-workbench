@@ -5,3 +5,4 @@
 export * from './shared';
 export * from './types';
 export * from './flags';
+export * from './native-regexp-runner';
