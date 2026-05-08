@@ -112,8 +112,6 @@ describe('CBS simulator chat history context', () => {
       chatHistory: [{ role: 'user', content: 'hello', createdAt: '2026-05-08T00:00:00.000Z' }],
       providers: {
         clock: () => new Date('2026-05-08T01:02:03.000Z'),
-        rng: () => 0,
-        pickHashRand: () => 0,
       },
     });
 

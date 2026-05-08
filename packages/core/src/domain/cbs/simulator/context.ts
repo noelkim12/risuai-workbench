@@ -3,7 +3,12 @@
  * @file packages/core/src/domain/cbs/simulator/context.ts
  */
 import { cloneChatHistoryEntry } from './chat-history';
-import type { CbsSimulationContext, CbsSimulationOptions, CbsSimulationProviders } from './types';
+import type {
+  CbsSimulationContext,
+  CbsSimulationContextInput,
+  CbsSimulationOptions,
+  CbsSimulationProviders,
+} from './types';
 
 /** Default budget/options contract for CBS simulation. */
 export const DEFAULT_CBS_SIMULATION_OPTIONS: CbsSimulationOptions = {
@@ -50,7 +55,7 @@ export const DEFAULT_CBS_SIMULATION_PROVIDERS: CbsSimulationProviders = {
  * @returns 새로 생성된 CBS simulation context
  */
 export function createDefaultCbsSimulationContext(
-  overrides: Partial<CbsSimulationContext> = {},
+  overrides: CbsSimulationContextInput = {},
 ): CbsSimulationContext {
   return {
     executionMode: overrides.executionMode ?? 'preview',

@@ -23,6 +23,12 @@ export interface CbsSimulationProviders {
   pickHashRand: (seed: string, upperBound: number) => number;
 }
 
+/** Caller-provided context shape; providers may override only the needed deterministic seams. */
+export type CbsSimulationContextInput = Partial<Omit<CbsSimulationContext, 'providers'>> & {
+  /** Partial provider overrides merged over default deterministic providers. */
+  readonly providers?: Partial<CbsSimulationProviders>;
+};
+
 /** Caller-tunable simulation options, budget limits, and provider overrides. */
 export interface CbsSimulationOptions {
   /** Maximum recursive traversal depth before budget handling runs. */

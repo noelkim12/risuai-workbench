@@ -11,6 +11,7 @@ import { getCbsSupportClassification } from './support-classification';
 import { CBS_SIMULATOR_UNSUPPORTED_MACRO_DIAGNOSTIC_CODE } from './unsupported-diagnostics';
 import type {
   CbsSimulationContext,
+  CbsSimulationContextInput,
   CbsSimulationDiagnostic,
   CbsSimulationEffect,
   CbsSimulationOptions,
@@ -184,7 +185,7 @@ const MACRO_HANDLERS: Readonly<Record<string, MacroHandler>> = {
  */
 export function simulateCbsText(
   input: string,
-  context: Partial<CbsSimulationContext> = {},
+  context: CbsSimulationContextInput = {},
   options: Partial<CbsSimulationOptions> = {},
 ): CbsSimulationResult {
   const explicitContextKeys = new Set(Object.keys(context));
