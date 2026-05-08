@@ -154,3 +154,42 @@ export interface RegexReplacementPreviewResult {
   /** Effective immutable limit snapshot used by this preview run. */
   limits: SimulatorSafetyLimits;
 }
+
+/** Placement target chosen for a replacement plan DTO. */
+export type RegexReplacementPlacement = 'match' | 'top' | 'bottom' | 'inject';
+
+/** Confidence label for whether directive planning is verified or simulated. */
+export type RegexPreviewConfidence = 'verified' | 'simulated';
+
+/** Newline handling policy selected for planned replacement output. */
+export type RegexNewlinePolicy = 'preserve' | 'preserve-without-auto-suffix';
+
+/** Input accepted by the RisuAI directive replacement planner. */
+export interface RegexReplacementPlanInput {
+  /** Parsed RisuAI regex directives in source order. */
+  directives: readonly RisuRegexDirective[];
+  /** Replacement preview whose output must be preserved exactly. */
+  replacementPreview: Pick<RegexReplacementPreviewResult, 'output'>;
+}
+
+/** Deterministic DTO describing how a replacement preview should be placed. */
+export interface RegexReplacementPlanDto {
+  /** Replacement output copied without trimming or newline mutation. */
+  output: string;
+  /** Placement target derived from movement/injection directives. */
+  placement: RegexReplacementPlacement;
+  /** Optional numeric ordering from `<order n>`. */
+  order?: number;
+  /** Newline policy requested by supported newline directives. */
+  newlinePolicy: RegexNewlinePolicy;
+  /** Whether `<repeat_back>` was present in parsed directives. */
+  repeatBack: boolean;
+  /** Whether `<cbs>` was present in parsed directives. */
+  cbs: boolean;
+  /** Simulated when any RisuAI directive participates, otherwise verified native replacement. */
+  confidence: RegexPreviewConfidence;
+  /** Parsed directives copied in source order for caller inspection. */
+  appliedDirectives: readonly RisuRegexDirective[];
+  /** Raw directive tokens copied in source order for deterministic display. */
+  appliedDirectiveRawTokens: string[];
+}

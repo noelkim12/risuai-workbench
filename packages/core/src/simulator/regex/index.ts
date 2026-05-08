@@ -8,3 +8,6 @@ export * from './flags';
 export * from './native-regexp-runner';
 export * from './replacement-diff';
 export * from './replacement-template';
+export * from './directives';
+export * from './directive-registry';
+export * from './replacement-plan';
