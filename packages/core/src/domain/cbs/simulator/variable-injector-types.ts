@@ -5,6 +5,29 @@
 import type { CBSVariableOccurrence } from '../cbs';
 import type { CbsSimulationContext, CbsSimulationEffect } from './types';
 
+/** Widened CBS operation type including pre-extracted scoped references. */
+export type CbsPreviewVariableOperation =
+  | CBSVariableOccurrence['operation']
+  | 'getglobalvar'
+  | 'gettoggle'
+  | 'tempvar';
+
+/** Pre-extracted variable reference for preview injection. */
+export interface CbsPreviewVariableReference {
+  /** Variable name. */
+  readonly variableName: string;
+  /** Access direction (read or write). */
+  readonly direction: 'read' | 'write';
+  /** CBS operation that produced this reference. */
+  readonly operation: CbsPreviewVariableOperation;
+  /** Source range from parser (preserves CBSVariableOccurrence shape). */
+  readonly range?: CBSVariableOccurrence['range'];
+  /** Key start position from parser (preserves CBSVariableOccurrence shape). */
+  readonly keyStart?: CBSVariableOccurrence['keyStart'];
+  /** Key end position from parser (preserves CBSVariableOccurrence shape). */
+  readonly keyEnd?: CBSVariableOccurrence['keyEnd'];
+}
+
 /** Variable scope for CBS preview injection. */
 export type CbsPreviewVariableScope =
   | 'chat'
@@ -58,7 +81,7 @@ export interface CbsPreviewVariableInjectionInput {
   /** CBS source text to extract variables from (alternative to pre-extracted occurrences). */
   readonly source?: string;
   /** Pre-extracted variable occurrences (if already parsed). */
-  readonly occurrences?: readonly CBSVariableOccurrence[];
+  readonly occurrences?: readonly CbsPreviewVariableReference[];
   /** Base simulation context to merge over. */
   readonly baseContext?: Partial<CbsSimulationContext>;
   /** Preview overrides (highest precedence for reads). */
@@ -78,7 +101,7 @@ export interface CbsPreviewVariableBinding {
   /** Access direction (read or write). */
   readonly direction: 'read' | 'write';
   /** CBS operation that produced this binding. */
-  readonly operation: CBSVariableOccurrence['operation'];
+  readonly operation: CbsPreviewVariableOperation;
   /** Resolution status. */
   readonly status: CbsPreviewVariableBindingStatus;
   /** Source indicating where the value originated. */
@@ -86,7 +109,7 @@ export interface CbsPreviewVariableBinding {
   /** Value preview (undefined if missing or write-only). */
   readonly valuePreview: string | undefined;
   /** Original occurrence metadata. */
-  readonly occurrence: CBSVariableOccurrence;
+  readonly occurrence: CbsPreviewVariableReference;
 }
 
 /** A warning produced during variable injection. */
@@ -97,7 +120,7 @@ export interface CbsPreviewVariableWarning {
   readonly variableName: string;
   /** Human-readable warning message. */
   readonly message: string;
-  /** Optional source range. */
+  /** Optional source range (preserves CBSVariableOccurrence shape). */
   readonly range?: CBSVariableOccurrence['range'];
 }
 
