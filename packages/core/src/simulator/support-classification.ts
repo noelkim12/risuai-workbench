@@ -2,7 +2,7 @@
  * CBS simulator builtin 지원 등급을 정의하는 source-of-truth 테이블.
  * @file packages/core/src/domain/cbs/simulator/support-classification.ts
  */
-import { CBSBuiltinRegistry } from '../registry/builtins';
+import { CBSBuiltinRegistry } from '../domain/cbs/registry/builtins';
 
 /** CBS simulator가 builtin을 다루는 현재 지원 수준. */
 export type CbsSupportClass =

@@ -4,7 +4,7 @@
  * and policy-based continue/stop decisions.
  * @file packages/core/src/domain/cbs/simulator/engine/budget.ts
  */
-import type { Range } from '../../parser/tokens';
+import type { Range } from '../../domain/cbs/parser/tokens';
 import { cloneRange } from './source-range';
 import type { TraceState } from './trace';
 import { pushTrace } from './trace';
@@ -26,9 +26,19 @@ export interface BudgetState extends TraceState {
  * @param node - 관련 node 이름
  * @param range - 관련 source range
  */
-export function exceedBudget(state: BudgetState, message: string, node?: string, range?: Range): void {
+export function exceedBudget(
+  state: BudgetState,
+  message: string,
+  node?: string,
+  range?: Range,
+): void {
   state.status = state.options.onBudgetExceeded === 'continue' ? 'partial' : 'aborted';
-  pushTrace(state, { phase: 'budget-exceeded', message, node, range: range ? cloneRange(range) : undefined });
+  pushTrace(state, {
+    phase: 'budget-exceeded',
+    message,
+    node,
+    range: range ? cloneRange(range) : undefined,
+  });
 }
 
 /**

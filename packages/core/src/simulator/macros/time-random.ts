@@ -4,7 +4,7 @@
  * random/pick/roll/hash macros, and provider consumption helpers.
  * @file packages/core/src/domain/cbs/simulator/macros/time-random.ts
  */
-import type { CBSNode, MacroCallNode } from '../../parser/ast';
+import type { CBSNode, MacroCallNode } from '../../domain/cbs/parser/ast';
 import type { CbsSimulationContext } from '../types';
 import type { TraceState } from '../engine/trace';
 import { stringifyVariableValue } from '../values';
@@ -23,7 +23,11 @@ export interface TimeRandomState extends TraceState {
 }
 
 /** Handler signature for time/random macro evaluators. */
-export type TimeRandomMacroHandler = (node: MacroCallNode, state: TimeRandomState, depth: number) => string;
+export type TimeRandomMacroHandler = (
+  node: MacroCallNode,
+  state: TimeRandomState,
+  depth: number,
+) => string;
 
 /**
  * evaluateMacroArguments 함수.
@@ -34,7 +38,11 @@ export type TimeRandomMacroHandler = (node: MacroCallNode, state: TimeRandomStat
  * @param depth - 현재 재귀 깊이
  * @returns 평가된 argument 문자열 배열
  */
-function evaluateMacroArguments(node: MacroCallNode, state: TimeRandomState, depth: number): string[] {
+function evaluateMacroArguments(
+  node: MacroCallNode,
+  state: TimeRandomState,
+  depth: number,
+): string[] {
   return node.arguments.map((argument) => state.evaluateArgument(argument, depth + 1));
 }
 
@@ -65,11 +73,19 @@ function consumeRng(state: TimeRandomState, node: MacroCallNode): number {
 }
 
 /** consumeHashIndex 함수. injected hash picker provider를 bounded index로 사용하고 trace에 남김. */
-function consumeHashIndex(state: TimeRandomState, node: MacroCallNode, seed: string, upperBound: number): number {
+function consumeHashIndex(
+  state: TimeRandomState,
+  node: MacroCallNode,
+  seed: string,
+  upperBound: number,
+): number {
   const sequence = state.providerConsumption;
   state.providerConsumption += 1;
   const boundedUpper = Math.max(Math.floor(upperBound), 1);
-  const index = normalizeIndex(state.context.providers.pickHashRand(seed, boundedUpper), boundedUpper);
+  const index = normalizeIndex(
+    state.context.providers.pickHashRand(seed, boundedUpper),
+    boundedUpper,
+  );
   pushProviderTrace(state, node, `resolved ${node.name} from injected hash provider`, {
     provider: 'pickHashRand',
     sequence,
@@ -84,7 +100,10 @@ function consumeHashIndex(state: TimeRandomState, node: MacroCallNode, seed: str
 function randomPick(args: readonly string[], rand: number): string {
   const choices = normalizeRandomChoices(args);
   if (choices.length === 0) return rand.toString();
-  const index = normalizeIndex(Math.floor(clampUnitInterval(rand) * choices.length), choices.length);
+  const index = normalizeIndex(
+    Math.floor(clampUnitInterval(rand) * choices.length),
+    choices.length,
+  );
   return choices[index] ?? '';
 }
 
@@ -101,7 +120,10 @@ function normalizeRandomChoices(args: readonly string[]): string[] {
       return [raw];
     }
   }
-  return raw.replace(/\\,/g, '§X').split(/:|,/g).map((value) => value.replace(/§X/g, ','));
+  return raw
+    .replace(/\\,/g, '§X')
+    .split(/:|,/g)
+    .map((value) => value.replace(/§X/g, ','));
 }
 
 /** rollDice 함수. dice notation을 deterministic random source로 합산함. */
@@ -127,7 +149,9 @@ function rollDice(notationInput: string, nextRand: (sides: number) => number): s
 function formatDateTime(formatInput: string, date: Date): string {
   const format = formatInput.startsWith(':') ? formatInput.slice(1) : formatInput;
   if (format.length > 300) return '';
-  const dayOfYear = Math.floor((date.getTime() - new Date(date.getFullYear(), 0, 0).getTime()) / 86_400_000);
+  const dayOfYear = Math.floor(
+    (date.getTime() - new Date(date.getFullYear(), 0, 0).getTime()) / 86_400_000,
+  );
   return format
     .replace(/YYYY/g, date.getFullYear().toString())
     .replace(/YY/g, date.getFullYear().toString().slice(2))
@@ -223,7 +247,9 @@ function evaluateRandIntMacro(node: MacroCallNode, state: TimeRandomState, depth
 
 /** evaluateRollMacro 함수. deterministic rng 기반 dice notation 합계를 반환함. */
 function evaluateRollMacro(node: MacroCallNode, state: TimeRandomState, depth: number): string {
-  return rollDice(state.evaluateArgument(node.arguments[0], depth + 1), () => consumeRng(state, node));
+  return rollDice(state.evaluateArgument(node.arguments[0], depth + 1), () =>
+    consumeRng(state, node),
+  );
 }
 
 /** evaluateRollPickMacro 함수. deterministic hash provider 기반 dice notation 합계를 반환함. */

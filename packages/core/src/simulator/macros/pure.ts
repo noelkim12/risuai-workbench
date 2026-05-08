@@ -5,7 +5,7 @@
  * through the narrow DiagnosticState interface.
  * @file packages/core/src/domain/cbs/simulator/macros/pure.ts
  */
-import type { MacroCallNode } from '../../parser/ast';
+import type { MacroCallNode } from '../../domain/cbs/parser/ast';
 import { addInvalidPureMacroDiagnostic } from '../engine/diagnostics';
 import type { DiagnosticState } from '../engine/diagnostics';
 import { booleanString } from '../support-label';
@@ -21,7 +21,11 @@ import { parseJsonArray, parseJsonObject, stringifyPureValue } from '../values';
  * @param state - narrow diagnostic state for invalid-argument warnings
  * @returns evaluated output string
  */
-export type PureMacroEvaluator = (args: readonly string[], node: MacroCallNode, state: DiagnosticState) => string;
+export type PureMacroEvaluator = (
+  args: readonly string[],
+  node: MacroCallNode,
+  state: DiagnosticState,
+) => string;
 
 /**
  * Pure macro definition with optional minimum argument count.
@@ -54,35 +58,60 @@ export const PURE_MACRO_HANDLERS: Readonly<Record<string, PureMacroDefinition>> 
   notequal: { minArgs: 2, evaluator: (args) => booleanString(args[0] !== args[1]) },
   greater: { minArgs: 2, evaluator: (args) => booleanString(Number(args[0]) > Number(args[1])) },
   less: { minArgs: 2, evaluator: (args) => booleanString(Number(args[0]) < Number(args[1])) },
-  greaterequal: { minArgs: 2, evaluator: (args) => booleanString(Number(args[0]) >= Number(args[1])) },
+  greaterequal: {
+    minArgs: 2,
+    evaluator: (args) => booleanString(Number(args[0]) >= Number(args[1])),
+  },
   lessequal: { minArgs: 2, evaluator: (args) => booleanString(Number(args[0]) <= Number(args[1])) },
   and: { minArgs: 2, evaluator: (args) => booleanString(args[0] === '1' && args[1] === '1') },
   or: { minArgs: 2, evaluator: (args) => booleanString(args[0] === '1' || args[1] === '1') },
   not: { minArgs: 1, evaluator: (args) => booleanString(args[0] !== '1') },
-  all: { minArgs: 1, evaluator: (args) => booleanString(expandArrayOrArgs(args).every((value) => value === '1')) },
-  any: { minArgs: 1, evaluator: (args) => booleanString(expandArrayOrArgs(args).some((value) => value === '1')) },
+  all: {
+    minArgs: 1,
+    evaluator: (args) => booleanString(expandArrayOrArgs(args).every((value) => value === '1')),
+  },
+  any: {
+    minArgs: 1,
+    evaluator: (args) => booleanString(expandArrayOrArgs(args).some((value) => value === '1')),
+  },
   startswith: { minArgs: 2, evaluator: (args) => booleanString(args[0].startsWith(args[1])) },
   endswith: { minArgs: 2, evaluator: (args) => booleanString(args[0].endsWith(args[1])) },
   contains: { minArgs: 2, evaluator: (args) => booleanString(args[0].includes(args[1])) },
-  replace: { minArgs: 3, evaluator: (args) => (args[1] === '' ? args[0] : args[0].replaceAll(args[1], args[2])) },
+  replace: {
+    minArgs: 3,
+    evaluator: (args) => (args[1] === '' ? args[0] : args[0].replaceAll(args[1], args[2])),
+  },
   split: { minArgs: 2, evaluator: (args) => JSON.stringify(args[0].split(args[1])) },
   join: { minArgs: 2, evaluator: evaluateJoinPureMacro },
   trim: { minArgs: 1, evaluator: (args) => args[0].trim() },
   length: { minArgs: 1, evaluator: (args) => args[0].length.toString() },
   lower: { minArgs: 1, evaluator: (args) => args[0].toLocaleLowerCase() },
   upper: { minArgs: 1, evaluator: (args) => args[0].toLocaleUpperCase() },
-  capitalize: { minArgs: 1, evaluator: (args) => args[0].charAt(0).toUpperCase() + args[0].slice(1) },
+  capitalize: {
+    minArgs: 1,
+    evaluator: (args) => args[0].charAt(0).toUpperCase() + args[0].slice(1),
+  },
   calc: { minArgs: 1, evaluator: evaluateCalcPureMacro },
   round: { minArgs: 1, evaluator: (args) => Math.round(Number(args[0])).toString() },
   floor: { minArgs: 1, evaluator: (args) => Math.floor(Number(args[0])).toString() },
   ceil: { minArgs: 1, evaluator: (args) => Math.ceil(Number(args[0])).toString() },
   abs: { minArgs: 1, evaluator: (args) => Math.abs(Number(args[0])).toString() },
   remaind: { minArgs: 2, evaluator: (args) => (Number(args[0]) % Number(args[1])).toString() },
-  tonumber: { minArgs: 1, evaluator: (args) => [...args[0]].filter((value) => !Number.isNaN(Number(value)) || value === '.').join('') },
+  tonumber: {
+    minArgs: 1,
+    evaluator: (args) =>
+      [...args[0]].filter((value) => !Number.isNaN(Number(value)) || value === '.').join(''),
+  },
   pow: { minArgs: 2, evaluator: (args) => Math.pow(Number(args[0]), Number(args[1])).toString() },
   min: { minArgs: 1, evaluator: (args) => Math.min(...numericValuesFromArgs(args)).toString() },
   max: { minArgs: 1, evaluator: (args) => Math.max(...numericValuesFromArgs(args)).toString() },
-  sum: { minArgs: 1, evaluator: (args) => numericValuesFromArgs(args).reduce((sum, value) => sum + value, 0).toString() },
+  sum: {
+    minArgs: 1,
+    evaluator: (args) =>
+      numericValuesFromArgs(args)
+        .reduce((sum, value) => sum + value, 0)
+        .toString(),
+  },
   average: { minArgs: 1, evaluator: evaluateAveragePureMacro },
   fixnum: { minArgs: 2, evaluator: (args) => Number(args[0]).toFixed(Number(args[1])) },
   makearray: { evaluator: (args) => JSON.stringify([...args]) },
@@ -102,7 +131,10 @@ export const PURE_MACRO_HANDLERS: Readonly<Record<string, PureMacroDefinition>> 
   xor: { minArgs: 1, evaluator: evaluateXorPureMacro },
   xordecrypt: { minArgs: 1, evaluator: evaluateXorDecryptPureMacro },
   crypt: { minArgs: 1, evaluator: evaluateCryptPureMacro },
-  iserror: { minArgs: 1, evaluator: (args) => booleanString(args[0].toLocaleLowerCase().startsWith('error:')) },
+  iserror: {
+    minArgs: 1,
+    evaluator: (args) => booleanString(args[0].toLocaleLowerCase().startsWith('error:')),
+  },
   comment: { evaluator: () => '' },
   '//': { evaluator: () => '' },
   tex: { minArgs: 1, evaluator: (args) => `$$${args[0]}$$` },
@@ -158,7 +190,11 @@ function evaluateEscapedNewlinePureMacro(args: readonly string[]): string {
  * @param state - diagnostic 누적 상태
  * @returns joined string
  */
-function evaluateJoinPureMacro(args: readonly string[], node: MacroCallNode, state: DiagnosticState): string {
+function evaluateJoinPureMacro(
+  args: readonly string[],
+  node: MacroCallNode,
+  state: DiagnosticState,
+): string {
   const array = parseJsonArray(args[0]);
   if (!array) {
     addInvalidPureMacroDiagnostic(state, node, 'First argument must be a JSON array');
@@ -185,7 +221,11 @@ function evaluateMakeDictPureMacro(args: readonly string[]): string {
 }
 
 /** evaluateArrayLengthPureMacro 함수. JSON array의 길이를 반환함. */
-function evaluateArrayLengthPureMacro(args: readonly string[], node: MacroCallNode, state: DiagnosticState): string {
+function evaluateArrayLengthPureMacro(
+  args: readonly string[],
+  node: MacroCallNode,
+  state: DiagnosticState,
+): string {
   const array = parseJsonArray(args[0]);
   if (!array) {
     addInvalidPureMacroDiagnostic(state, node, 'First argument must be a JSON array');
@@ -195,7 +235,11 @@ function evaluateArrayLengthPureMacro(args: readonly string[], node: MacroCallNo
 }
 
 /** evaluateArrayElementPureMacro 함수. JSON array에서 index element를 반환함. */
-function evaluateArrayElementPureMacro(args: readonly string[], node: MacroCallNode, state: DiagnosticState): string {
+function evaluateArrayElementPureMacro(
+  args: readonly string[],
+  node: MacroCallNode,
+  state: DiagnosticState,
+): string {
   const array = parseJsonArray(args[0]);
   if (!array) {
     addInvalidPureMacroDiagnostic(state, node, 'First argument must be a JSON array');
@@ -205,7 +249,11 @@ function evaluateArrayElementPureMacro(args: readonly string[], node: MacroCallN
 }
 
 /** evaluateDictElementPureMacro 함수. JSON object에서 key element를 반환함. */
-function evaluateDictElementPureMacro(args: readonly string[], node: MacroCallNode, state: DiagnosticState): string {
+function evaluateDictElementPureMacro(
+  args: readonly string[],
+  node: MacroCallNode,
+  state: DiagnosticState,
+): string {
   const object = parseJsonObject(args[0]);
   if (!object) {
     addInvalidPureMacroDiagnostic(state, node, 'First argument must be a JSON object');
@@ -233,7 +281,11 @@ function evaluateElementPureMacro(args: readonly string[]): string {
 }
 
 /** evaluateFilterPureMacro 함수. JSON array를 filter type으로 필터링함. */
-function evaluateFilterPureMacro(args: readonly string[], node: MacroCallNode, state: DiagnosticState): string {
+function evaluateFilterPureMacro(
+  args: readonly string[],
+  node: MacroCallNode,
+  state: DiagnosticState,
+): string {
   const array = parseJsonArray(args[0]);
   if (!array) {
     addInvalidPureMacroDiagnostic(state, node, 'First argument must be a JSON array');
@@ -250,7 +302,11 @@ function evaluateFilterPureMacro(args: readonly string[], node: MacroCallNode, s
 }
 
 /** evaluateRangePureMacro 함수. start/end/step으로 number array를 생성함. */
-function evaluateRangePureMacro(args: readonly string[], node: MacroCallNode, state: DiagnosticState): string {
+function evaluateRangePureMacro(
+  args: readonly string[],
+  node: MacroCallNode,
+  state: DiagnosticState,
+): string {
   const rangeArgs = parseJsonArray(args[0]);
   if (!rangeArgs) {
     addInvalidPureMacroDiagnostic(state, node, 'First argument must be a JSON array');
@@ -289,7 +345,9 @@ function evaluateXorDecryptPureMacro(args: readonly string[]): string {
 /** evaluateCryptPureMacro 함수. charCode shift 인코딩을 반환함. */
 function evaluateCryptPureMacro(args: readonly string[]): string {
   const shift = args[1] ? Number(args[1]) : 32768;
-  return [...args[0]].map((char) => String.fromCharCode((char.charCodeAt(0) + shift) % 65536)).join('');
+  return [...args[0]]
+    .map((char) => String.fromCharCode((char.charCodeAt(0) + shift) % 65536))
+    .join('');
 }
 
 /** evaluateCodeBlockPureMacro 함수. markdown code block으로 포맷함. */
@@ -307,10 +365,18 @@ function evaluateCodeBlockPureMacro(args: readonly string[]): string {
  * @param state - diagnostic 누적 상태
  * @returns 계산 결과 문자열
  */
-function evaluateCalcPureMacro(args: readonly string[], node: MacroCallNode, state: DiagnosticState): string {
+function evaluateCalcPureMacro(
+  args: readonly string[],
+  node: MacroCallNode,
+  state: DiagnosticState,
+): string {
   const result = evaluateCalcExpression(args[0]);
   if (result === undefined) {
-    addInvalidPureMacroDiagnostic(state, node, 'Expression must contain only numbers, operators, comparisons, logical operators, and parentheses');
+    addInvalidPureMacroDiagnostic(
+      state,
+      node,
+      'Expression must contain only numbers, operators, comparisons, logical operators, and parentheses',
+    );
     return 'NaN';
   }
   return result.toString();

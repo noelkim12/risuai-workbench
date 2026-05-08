@@ -3,7 +3,7 @@
  * SimulationState structurally satisfies this interface.
  * @file packages/core/src/domain/cbs/simulator/blocks/state.ts
  */
-import type { CBSNode } from '../../parser/ast';
+import type { CBSNode } from '../../domain/cbs/parser/ast';
 import type { CbsSimulationContext, CbsSimulationEffect } from '../types';
 import type { SourceInfo } from '../engine/source-range';
 import type { DiagnosticState } from '../engine/diagnostics';

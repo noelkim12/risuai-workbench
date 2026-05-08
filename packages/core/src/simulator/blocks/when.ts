@@ -2,7 +2,7 @@
  * #when block evaluator for the CBS simulator.
  * @file packages/core/src/domain/cbs/simulator/blocks/when.ts
  */
-import type { BlockNode } from '../../parser/ast';
+import type { BlockNode } from '../../domain/cbs/parser/ast';
 import { cloneRange } from '../engine/source-range';
 import { pushTrace } from '../engine/trace';
 import { hasOwn, stringifyVariableValue } from '../values';
@@ -17,16 +17,19 @@ function isWhenTruthy(value: string): boolean {
 
 /** toggleValue 함수. context toggleValues에서 CBS 문자열 값을 가져옴. */
 function toggleValue(state: BlockEvaluationState, key: string): string {
-  if (hasOwn(state.context.toggleValues, key)) return state.context.toggleValues[key] ? 'true' : 'false';
+  if (hasOwn(state.context.toggleValues, key))
+    return state.context.toggleValues[key] ? 'true' : 'false';
   const globalKey = `toggle_${key}`;
-  if (hasOwn(state.context.globalVariables, globalKey)) return stringifyVariableValue(state.context.globalVariables[globalKey]);
+  if (hasOwn(state.context.globalVariables, globalKey))
+    return stringifyVariableValue(state.context.globalVariables[globalKey]);
   return 'null';
 }
 
 /** resolveWhenMode 함수. parser operator와 condition prefix에서 whitespace mode를 결정함. */
 function resolveWhenMode(node: BlockNode, conditionText: string): 'normal' | 'keep' | 'legacy' {
   if (node.operators.includes('keep') || conditionText.split('::').includes('keep')) return 'keep';
-  if (node.operators.includes('legacy') || conditionText.split('::').includes('legacy')) return 'legacy';
+  if (node.operators.includes('legacy') || conditionText.split('::').includes('legacy'))
+    return 'legacy';
   return 'normal';
 }
 
@@ -113,7 +116,11 @@ function evaluateWhenCondition(conditionText: string, state: BlockEvaluationStat
  * @param depth - 현재 재귀 깊이
  * @returns 선택된 branch 출력
  */
-export function evaluateWhenBlock(node: BlockNode, state: BlockEvaluationState, depth: number): string {
+export function evaluateWhenBlock(
+  node: BlockNode,
+  state: BlockEvaluationState,
+  depth: number,
+): string {
   const conditionText = state.evaluateArgument(node.condition, depth + 1);
   const mode = resolveWhenMode(node, conditionText);
   const truthy = evaluateWhenCondition(conditionText, state);

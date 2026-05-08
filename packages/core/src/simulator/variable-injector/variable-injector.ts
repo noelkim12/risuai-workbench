@@ -2,7 +2,7 @@
  * CBS preview variable injector engine implementation.
  * @file packages/core/src/domain/cbs/simulator/variable-injector.ts
  */
-import { extractCBSVariableOccurrences, type CBSVariableOccurrence } from '../../cbs';
+import { extractCBSVariableOccurrences, type CBSVariableOccurrence } from '../../domain/cbs/cbs';
 import { createDefaultCbsSimulationContext } from '../context';
 import type { CbsSimulationContext, CbsSimulationEffect } from '../types';
 import type {

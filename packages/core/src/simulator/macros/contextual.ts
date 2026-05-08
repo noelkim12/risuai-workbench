@@ -4,7 +4,7 @@
  * including identity labels, chat index/history, and role macros.
  * @file packages/core/src/domain/cbs/simulator/macros/contextual.ts
  */
-import type { CBSNode, MacroCallNode } from '../../parser/ast';
+import type { CBSNode, MacroCallNode } from '../../domain/cbs/parser/ast';
 import type { CbsSimulationContext } from '../types';
 import { addSimulatorDiagnostic } from '../engine/diagnostics';
 import type { DiagnosticState } from '../engine/diagnostics';
@@ -35,7 +35,11 @@ export interface ContextualState extends SourceInfo, DiagnosticState {
 }
 
 /** Handler signature for contextual macro evaluators. */
-export type ContextualMacroHandler = (node: MacroCallNode, state: ContextualState, depth: number) => string;
+export type ContextualMacroHandler = (
+  node: MacroCallNode,
+  state: ContextualState,
+  depth: number,
+) => string;
 
 /**
  * preserveContextMacro 함수.
@@ -63,7 +67,12 @@ export function preserveContextMacro(
     message: `context macro ${node.name} missing ${requiredSource} - preserving source`,
     node: node.name,
     range: cloneRange(node.range),
-    details: { policy: 'source-preserved', supportClass: 'runtime-unknown', requiredSource, ...details },
+    details: {
+      policy: 'source-preserved',
+      supportClass: 'runtime-unknown',
+      requiredSource,
+      ...details,
+    },
   });
   addSimulatorDiagnostic(state, {
     code: CBS_SIMULATOR_UNSUPPORTED_MACRO_DIAGNOSTIC_CODE,
@@ -158,16 +167,23 @@ function evaluateChatIndexMacro(node: MacroCallNode, state: ContextualState): st
   if (!state.explicitContextKeys.has('chatIndex') || state.context.chatIndex === undefined) {
     return preserveContextMacro(node, state, 'context.chatIndex');
   }
-  pushProviderTrace(state, node, 'resolved chatindex from explicit context', { source: 'context.chatIndex' });
+  pushProviderTrace(state, node, 'resolved chatindex from explicit context', {
+    source: 'context.chatIndex',
+  });
   return String(state.context.chatIndex);
 }
 
 /** evaluateIsFirstMessageMacro 함수. 명시된 first-message flag만 CBS truthy 문자열로 반환함. */
 function evaluateIsFirstMessageMacro(node: MacroCallNode, state: ContextualState): string {
-  if (!state.explicitContextKeys.has('isFirstMessage') || state.context.isFirstMessage === undefined) {
+  if (
+    !state.explicitContextKeys.has('isFirstMessage') ||
+    state.context.isFirstMessage === undefined
+  ) {
     return preserveContextMacro(node, state, 'context.isFirstMessage');
   }
-  pushProviderTrace(state, node, 'resolved isfirstmsg from explicit context', { source: 'context.isFirstMessage' });
+  pushProviderTrace(state, node, 'resolved isfirstmsg from explicit context', {
+    source: 'context.isFirstMessage',
+  });
   return state.context.isFirstMessage ? '1' : '0';
 }
 
@@ -186,7 +202,11 @@ function evaluateLastMessageIdMacro(node: MacroCallNode, state: ContextualState)
 }
 
 /** evaluatePreviousChatLogMacro 함수. 명시 chatHistory의 indexed message content 또는 Out of range를 반환함. */
-function evaluatePreviousChatLogMacro(node: MacroCallNode, state: ContextualState, depth: number): string {
+function evaluatePreviousChatLogMacro(
+  node: MacroCallNode,
+  state: ContextualState,
+  depth: number,
+): string {
   const index = parseChatHistoryIndex(state.evaluateArgument(node.arguments[0], depth + 1));
   if (!state.explicitContextKeys.has('chatHistory') || state.context.chatHistory === undefined) {
     return preserveContextMacro(node, state, 'context.chatHistory', { index });
@@ -225,7 +245,11 @@ function evaluatePreviousUserChatMacro(node: MacroCallNode, state: ContextualSta
   ) {
     return preserveContextMacro(node, state, 'context.chatHistoryCursor');
   }
-  const value = findPreviousChatHistoryContentByRole(state.context.chatHistory, 'user', state.context.chatHistoryCursor);
+  const value = findPreviousChatHistoryContentByRole(
+    state.context.chatHistory,
+    'user',
+    state.context.chatHistoryCursor,
+  );
   pushProviderTrace(state, node, 'resolved previoususerchat from explicit chat history context', {
     source: 'context.chatHistory',
     cursor: state.context.chatHistoryCursor,
@@ -240,7 +264,9 @@ function evaluateIdleDurationMacro(node: MacroCallNode, state: ContextualState):
     return preserveContextMacro(node, state, 'context.chatHistory');
   }
   if (state.context.chatHistory.length === 0) return '0:00:00';
-  const timestamp = getChatHistoryTimestamp(state.context.chatHistory[state.context.chatHistory.length - 1]);
+  const timestamp = getChatHistoryTimestamp(
+    state.context.chatHistory[state.context.chatHistory.length - 1],
+  );
   if (timestamp === undefined) return '[Cannot get time, message was sent in older version]';
   return formatDurationMillis(state.context.providers.clock().getTime() - timestamp);
 }
@@ -254,7 +280,10 @@ function evaluateMessageIdleDurationMacro(node: MacroCallNode, state: Contextual
   ) {
     return preserveContextMacro(node, state, 'context.chatHistoryCursor');
   }
-  const timestamps = findLatestUserMessageTimestamps(state.context.chatHistory, state.context.chatHistoryCursor);
+  const timestamps = findLatestUserMessageTimestamps(
+    state.context.chatHistory,
+    state.context.chatHistoryCursor,
+  );
   if (timestamps.latest === undefined) return '[No user message found]';
   if (timestamps.previous === undefined) return '[No previous user message found]';
   return formatDurationMillis(timestamps.latest - timestamps.previous);

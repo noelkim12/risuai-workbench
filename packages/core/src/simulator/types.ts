@@ -2,8 +2,8 @@
  * CBS simulator public contract types.
  * @file packages/core/src/domain/cbs/simulator/types.ts
  */
-import type { CBSDocument, DiagnosticInfo } from '../parser/ast';
-import type { Range } from '../parser/tokens';
+import type { CBSDocument, DiagnosticInfo } from '../domain/cbs/parser/ast';
+import type { Range } from '../domain/cbs/parser/tokens';
 import type { CbsSimulationChatHistoryEntry } from './chat-history';
 import type { CbsSupportClass } from './support-classification';
 
@@ -85,7 +85,14 @@ export interface CbsSimulationContext {
 }
 
 /** Trace event phase for CBS simulation lifecycle. */
-export type CbsSimulationTracePhase = 'parse' | 'visit' | 'macro-enter' | 'macro-exit' | 'macro-skip' | 'diagnostic' | 'budget-exceeded';
+export type CbsSimulationTracePhase =
+  | 'parse'
+  | 'visit'
+  | 'macro-enter'
+  | 'macro-exit'
+  | 'macro-skip'
+  | 'diagnostic'
+  | 'budget-exceeded';
 
 /** A trace event emitted while parsing or visiting CBS AST nodes. */
 export interface CbsSimulationTraceEvent {

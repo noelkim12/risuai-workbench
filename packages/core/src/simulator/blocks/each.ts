@@ -4,8 +4,8 @@
  * open-range header restoration, and nested header evaluation.
  * @file packages/core/src/domain/cbs/simulator/blocks/each.ts
  */
-import type { BlockNode } from '../../parser/ast';
-import { CBSParser } from '../../parser/parser';
+import type { BlockNode } from '../../domain/cbs/parser/ast';
+import { CBSParser } from '../../domain/cbs/parser/parser';
 import { cloneRange, sourceForRange } from '../engine/source-range';
 import type { SourceInfo } from '../engine/source-range';
 import { pushTrace } from '../engine/trace';
@@ -42,7 +42,9 @@ function firstNonWhitespaceIndex(value: string): number {
  * @param header - 평가된 #each header 문자열
  * @returns JSON source와 종료 index, 아니면 undefined
  */
-function readLeadingJsonSource(header: string): { readonly source: string; readonly end: number } | undefined {
+function readLeadingJsonSource(
+  header: string,
+): { readonly source: string; readonly end: number } | undefined {
   const start = firstNonWhitespaceIndex(header);
   if (start === -1 || (header[start] !== '[' && header[start] !== '{')) return undefined;
 
@@ -90,7 +92,9 @@ function readLeadingJsonSource(header: string): { readonly source: string; reado
  * @param header - 평가된 #each header 문자열
  * @returns iterator source와 alias clause, 아니면 undefined
  */
-function parseEachAliasClause(header: string): { readonly source: string; readonly aliasClause: string } | undefined {
+function parseEachAliasClause(
+  header: string,
+): { readonly source: string; readonly aliasClause: string } | undefined {
   const asMatch = /\s+as\s+(\S+)\s*$/u.exec(header);
   if (asMatch?.index !== undefined) {
     return { source: header.slice(0, asMatch.index).trim(), aliasClause: `as ${asMatch[1]}` };
@@ -123,8 +127,13 @@ function parseEachSpec(header: string): EachSpec | undefined {
     : parseEachAliasClause(header);
   if (!parsed) return undefined;
 
-  const items = parseJsonArray(parsed.source) ?? parseNumericEachItems(parsed.source) ?? parsed.source.split('§');
-  const alias = parsed.aliasClause.startsWith('as ') ? parsed.aliasClause.slice(3).trim() : parsed.aliasClause;
+  const items =
+    parseJsonArray(parsed.source) ??
+    parseNumericEachItems(parsed.source) ??
+    parsed.source.split('§');
+  const alias = parsed.aliasClause.startsWith('as ')
+    ? parsed.aliasClause.slice(3).trim()
+    : parsed.aliasClause;
   if (alias.length === 0) return undefined;
   return { items, alias };
 }
@@ -148,7 +157,8 @@ function readEachHeaderFromOpenRange(
   const afterKind = inner.slice('#each'.length);
   if (afterKind.startsWith('::')) {
     const firstSpace = afterKind.search(/\s/);
-    if (firstSpace === -1) return { operators: afterKind.slice(2).split('::').filter(Boolean), header: '' };
+    if (firstSpace === -1)
+      return { operators: afterKind.slice(2).split('::').filter(Boolean), header: '' };
     return {
       operators: afterKind.slice(2, firstSpace).split('::').filter(Boolean),
       header: afterKind.slice(firstSpace).trim(),
@@ -168,7 +178,11 @@ function readEachHeaderFromOpenRange(
  * @param depth - 평가 깊이
  * @returns 평가된 header 문자열
  */
-function evaluateEachHeaderSource(header: string, state: BlockEvaluationState, depth: number): string {
+function evaluateEachHeaderSource(
+  header: string,
+  state: BlockEvaluationState,
+  depth: number,
+): string {
   if (header.length === 0) return '';
   const document = new CBSParser().parse(header);
   return state.visitNodes(document.nodes, depth);
@@ -200,11 +214,19 @@ function renderEachBody(
  * @param depth - 현재 재귀 깊이
  * @returns 반복 출력
  */
-export function evaluateEachBlock(node: BlockNode, state: BlockEvaluationState, depth: number): string {
+export function evaluateEachBlock(
+  node: BlockNode,
+  state: BlockEvaluationState,
+  depth: number,
+): string {
   const conditionHeader = state.evaluateArgument(node.condition, depth + 1).trim();
   const sourceHeader = readEachHeaderFromOpenRange(node, state);
-  const evaluatedSourceHeader = sourceHeader ? evaluateEachHeaderSource(sourceHeader.header, state, depth + 1).trim() : undefined;
-  const spec = (evaluatedSourceHeader ? parseEachSpec(evaluatedSourceHeader) : undefined) ?? parseEachSpec(conditionHeader);
+  const evaluatedSourceHeader = sourceHeader
+    ? evaluateEachHeaderSource(sourceHeader.header, state, depth + 1).trim()
+    : undefined;
+  const spec =
+    (evaluatedSourceHeader ? parseEachSpec(evaluatedSourceHeader) : undefined) ??
+    parseEachSpec(conditionHeader);
   if (!spec) {
     addSimulatorDiagnostic(state, {
       code: CBS_SIMULATOR_UNSUPPORTED_MACRO_DIAGNOSTIC_CODE,
@@ -232,5 +254,7 @@ export function evaluateEachBlock(node: BlockNode, state: BlockEvaluationState, 
     details: { alias: spec.alias, count: spec.items.length },
   });
 
-  return node.operators.includes('keep') || sourceHeader?.operators.includes('keep') ? output : trimLines(output.trim());
+  return node.operators.includes('keep') || sourceHeader?.operators.includes('keep')
+    ? output
+    : trimLines(output.trim());
 }

@@ -4,8 +4,8 @@
  * build line-start offset tables, and clone parser diagnostics.
  * @file packages/core/src/domain/cbs/simulator/engine/source-range.ts
  */
-import type { DiagnosticInfo } from '../../parser/ast';
-import type { Range } from '../../parser/tokens';
+import type { DiagnosticInfo } from '../../domain/cbs/parser/ast';
+import type { Range } from '../../domain/cbs/parser/tokens';
 import type { CbsSimulationDiagnostic } from '../types';
 
 /**
@@ -57,7 +57,11 @@ export function buildLineStarts(source: string): number[] {
  * @param character - zero-based character offset in line
  * @returns source offset
  */
-export function offsetForPosition(lineStarts: readonly number[], line: number, character: number): number {
+export function offsetForPosition(
+  lineStarts: readonly number[],
+  line: number,
+  character: number,
+): number {
   return (lineStarts[line] ?? 0) + character;
 }
 

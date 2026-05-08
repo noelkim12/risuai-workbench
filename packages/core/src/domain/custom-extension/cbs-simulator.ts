@@ -2,7 +2,7 @@
  * custom-extension CBS fragment 시뮬레이션 어댑터.
  * @file packages/core/src/domain/custom-extension/cbs-simulator.ts
  */
-import { simulateCbsText } from '../cbs/simulator';
+import { simulateCbsText } from '../../simulator';
 import type {
   CbsSimulationContext,
   CbsSimulationDiagnostic,
@@ -12,7 +12,7 @@ import type {
   CbsSimulationStatus,
   CbsSimulationTraceEvent,
   CbsSimulatorCoverage,
-} from '../cbs/simulator';
+} from '../../simulator';
 import type { Range } from '../cbs/parser/tokens';
 import type { CustomExtensionArtifact } from './contracts';
 import { CbsFragmentMappingError, mapToCbsFragments } from './cbs-fragments';
@@ -105,7 +105,9 @@ export function simulateCustomExtensionCbsFragments(
     fragmentMap,
     fragments,
     diagnostics: fragments.flatMap((fragment) =>
-      fragment.result.diagnostics.map((diagnostic) => annotateDiagnostic(diagnostic, fragment, lineStarts)),
+      fragment.result.diagnostics.map((diagnostic) =>
+        annotateDiagnostic(diagnostic, fragment, lineStarts),
+      ),
     ),
     effects: fragments.flatMap((fragment) =>
       fragment.result.effects.map((effect) => annotateEffect(effect, fragment, lineStarts)),
@@ -233,7 +235,8 @@ function aggregateCoverage(coverages: readonly CbsSimulatorCoverage[]): CbsSimul
 
     for (const [supportClass, count] of Object.entries(fragmentCoverage.bySupportClass)) {
       coverage.bySupportClass[supportClass as keyof CbsSimulatorCoverage['bySupportClass']] =
-        (coverage.bySupportClass[supportClass as keyof CbsSimulatorCoverage['bySupportClass']] ?? 0) + count;
+        (coverage.bySupportClass[supportClass as keyof CbsSimulatorCoverage['bySupportClass']] ??
+          0) + count;
     }
 
     for (const macroName of fragmentCoverage.unknownMacros) {
@@ -300,7 +303,9 @@ function annotateEffect(
 ): CbsSimulationEffect {
   return {
     ...effect,
-    range: effect.range ? translateRange(effect.range, fragment.content, fragment.start, lineStarts) : undefined,
+    range: effect.range
+      ? translateRange(effect.range, fragment.content, fragment.start, lineStarts)
+      : undefined,
     source: effect.source,
     target: effect.target,
     operation: effect.operation,
@@ -329,7 +334,9 @@ function annotateTraceEvent(
   return {
     ...event,
     message: `[${fragment.id}] ${event.message}`,
-    range: event.range ? translateRange(event.range, fragment.content, fragment.start, lineStarts) : undefined,
+    range: event.range
+      ? translateRange(event.range, fragment.content, fragment.start, lineStarts)
+      : undefined,
     details: {
       ...(event.details ?? {}),
       fragmentId: fragment.id,

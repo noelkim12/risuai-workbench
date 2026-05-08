@@ -2,7 +2,7 @@
  * Literal block evaluator for #pure, #puredisplay, and #escape CBS blocks.
  * @file packages/core/src/domain/cbs/simulator/blocks/literal.ts
  */
-import type { BlockNode } from '../../parser/ast';
+import type { BlockNode } from '../../domain/cbs/parser/ast';
 import type { SourceInfo } from '../engine/source-range';
 import { sourceForRange } from '../engine/source-range';
 import { trimOuterWhitespace } from './whitespace';
@@ -81,5 +81,9 @@ export function evaluatePureDisplayBlock(node: BlockNode, state: BlockEvaluation
  * @returns risu-escaped literal block body
  */
 export function evaluateEscapeBlock(node: BlockNode, state: BlockEvaluationState): string {
-  return escapeRisuLiteral(node.operators.includes('keep') ? literalBlockBody(node, state) : trimOuterWhitespace(literalBlockBody(node, state)));
+  return escapeRisuLiteral(
+    node.operators.includes('keep')
+      ? literalBlockBody(node, state)
+      : trimOuterWhitespace(literalBlockBody(node, state)),
+  );
 }

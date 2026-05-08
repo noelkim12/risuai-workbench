@@ -5,8 +5,8 @@
  * evaluation, coverage recording, and trace entry/exit lifecycle.
  * @file packages/core/src/domain/cbs/simulator/engine/dispatch.ts
  */
-import type { MacroCallNode } from '../../parser/ast';
-import { CBSBuiltinRegistry } from '../../registry/builtins';
+import type { MacroCallNode } from '../../domain/cbs/parser/ast';
+import { CBSBuiltinRegistry } from '../../domain/cbs/registry/builtins';
 import { getCbsSupportClassification } from '../support-classification';
 import { CBS_SIMULATOR_UNSUPPORTED_MACRO_DIAGNOSTIC_CODE } from '../unsupported-diagnostics';
 import { addInvalidPureMacroDiagnostic, addSimulatorDiagnostic } from './diagnostics';
@@ -31,7 +31,11 @@ const BUILTIN_REGISTRY = new CBSBuiltinRegistry();
  * @param depth - 현재 재귀 깊이
  * @returns 평가된 출력 문자열
  */
-export function evaluateMacroCall(node: MacroCallNode, state: MacroDispatchState, depth: number): string {
+export function evaluateMacroCall(
+  node: MacroCallNode,
+  state: MacroDispatchState,
+  depth: number,
+): string {
   const macroName = node.name;
   const builtin = BUILTIN_REGISTRY.get(macroName);
   const canonicalName = builtin?.name ?? macroName;
@@ -190,7 +194,11 @@ function applyFallbackPolicy(
  * @param state - simulation 누적 상태
  * @param depth - 현재 재귀 깊이
  */
-function visitArgumentsForSideEffects(node: MacroCallNode, state: MacroDispatchState, depth: number): void {
+function visitArgumentsForSideEffects(
+  node: MacroCallNode,
+  state: MacroDispatchState,
+  depth: number,
+): void {
   for (const argNodes of node.arguments) {
     if (argNodes.length > 0) {
       state.visitNodes(argNodes, depth + 1);
@@ -213,7 +221,11 @@ function evaluatePureMacro(node: MacroCallNode, state: MacroDispatchState, depth
 
   const args = node.arguments.map((argNodes) => state.evaluateArgument(argNodes, depth + 1));
   if (definition.minArgs !== undefined && args.length < definition.minArgs) {
-    addInvalidPureMacroDiagnostic(state, node, `Expected at least ${definition.minArgs} argument(s), got ${args.length}`);
+    addInvalidPureMacroDiagnostic(
+      state,
+      node,
+      `Expected at least ${definition.minArgs} argument(s), got ${args.length}`,
+    );
     return '';
   }
 
@@ -241,7 +253,9 @@ function evaluatePureMacro(node: MacroCallNode, state: MacroDispatchState, depth
  * @param name - macro 또는 block 이름
  * @returns support classification 또는 undefined
  */
-export function getSimulatorSupportClassification(name: string): ReturnType<typeof getCbsSupportClassification> {
+export function getSimulatorSupportClassification(
+  name: string,
+): ReturnType<typeof getCbsSupportClassification> {
   if (CONTROL_FLOW_UNSUPPORTED_MACROS.has(name.toLowerCase())) return 'unsupported';
   return getCbsSupportClassification(name, BUILTIN_REGISTRY);
 }

@@ -2,7 +2,7 @@
  * CBS preview variable injector engine type contracts.
  * @file packages/core/src/domain/cbs/simulator/variable-injector-types.ts
  */
-import type { CBSVariableOccurrence } from '../../cbs';
+import type { CBSVariableOccurrence } from '../../domain/cbs/cbs';
 import type { CbsSimulationContext, CbsSimulationEffect } from '../types';
 
 /** Widened CBS operation type including pre-extracted scoped references. */

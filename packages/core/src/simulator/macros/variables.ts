@@ -5,7 +5,7 @@
  * precedence chain.
  * @file packages/core/src/domain/cbs/simulator/macros/variables.ts
  */
-import type { CBSNode, MacroCallNode } from '../../parser/ast';
+import type { CBSNode, MacroCallNode } from '../../domain/cbs/parser/ast';
 import type { CbsSimulationContext, CbsSimulationDiagnostic, CbsSimulationEffect } from '../types';
 import { cloneRange, sourceForRange } from '../engine/source-range';
 import type { SourceInfo } from '../engine/source-range';
@@ -38,7 +38,11 @@ export interface VariableState extends SourceInfo, TraceState {
 }
 
 /** Handler signature for variable/effect macro evaluators. */
-export type VariableMacroHandler = (node: MacroCallNode, state: VariableState, depth: number) => string;
+export type VariableMacroHandler = (
+  node: MacroCallNode,
+  state: VariableState,
+  depth: number,
+) => string;
 
 /** Dry-run policy reason written to uncommitted variable write effects. */
 export const UNCOMMITTED_EFFECT_REASON = 'dry-run policy blocked commit';
@@ -56,10 +60,16 @@ export function resolveChatVariable(state: VariableState, key: string): Variable
     return { value: stringifyVariableValue(state.context.chatVariables[key]), source: 'chat' };
   }
   if (hasOwn(state.context.characterDefaultVariables, key)) {
-    return { value: stringifyVariableValue(state.context.characterDefaultVariables[key]), source: 'characterDefault' };
+    return {
+      value: stringifyVariableValue(state.context.characterDefaultVariables[key]),
+      source: 'characterDefault',
+    };
   }
   if (hasOwn(state.context.templateDefaultVariables, key)) {
-    return { value: stringifyVariableValue(state.context.templateDefaultVariables[key]), source: 'templateDefault' };
+    return {
+      value: stringifyVariableValue(state.context.templateDefaultVariables[key]),
+      source: 'templateDefault',
+    };
   }
   return { value: 'null', source: 'missing' };
 }
@@ -97,7 +107,11 @@ function evaluateGetVarMacro(node: MacroCallNode, state: VariableState, depth: n
  * @param depth - 현재 재귀 깊이
  * @returns resolved global variable value string
  */
-function evaluateGetGlobalVarMacro(node: MacroCallNode, state: VariableState, depth: number): string {
+function evaluateGetGlobalVarMacro(
+  node: MacroCallNode,
+  state: VariableState,
+  depth: number,
+): string {
   const key = state.evaluateArgument(node.arguments[0], depth + 1);
   const hasValue = hasOwn(state.context.globalVariables, key);
   const value = hasValue ? stringifyVariableValue(state.context.globalVariables[key]) : 'null';
@@ -198,7 +212,11 @@ function evaluateReturnMacro(node: MacroCallNode, state: VariableState, depth: n
  * @param depth - 현재 재귀 깊이
  * @returns empty output
  */
-function evaluateVariableEffectMacro(node: MacroCallNode, state: VariableState, depth: number): string {
+function evaluateVariableEffectMacro(
+  node: MacroCallNode,
+  state: VariableState,
+  depth: number,
+): string {
   if (state.context.executionMode !== 'execute') {
     const source = sourceForRange(state, node.range);
     pushTrace(state, {
@@ -232,7 +250,13 @@ function evaluateVariableEffectMacro(node: MacroCallNode, state: VariableState, 
     message: `${node.name} ${JSON.stringify(key)} recorded as execute-mode dry-run effect; commit blocked`,
     node: node.name,
     range: cloneRange(node.range),
-    details: { key, valuePreview: value, committed: false, executionMode: 'execute', reason: UNCOMMITTED_EFFECT_REASON },
+    details: {
+      key,
+      valuePreview: value,
+      committed: false,
+      executionMode: 'execute',
+      reason: UNCOMMITTED_EFFECT_REASON,
+    },
   });
 
   return '';
@@ -248,7 +272,12 @@ function evaluateVariableEffectMacro(node: MacroCallNode, state: VariableState, 
  * @param depth - 현재 재귀 깊이
  * @returns local dry-run effect에 기록할 value preview
  */
-function evaluateVariableEffectValue(node: MacroCallNode, state: VariableState, key: string, depth: number): string {
+function evaluateVariableEffectValue(
+  node: MacroCallNode,
+  state: VariableState,
+  key: string,
+  depth: number,
+): string {
   const value = state.evaluateArgument(node.arguments[1], depth + 1);
   if (node.name !== 'addvar') return value;
 

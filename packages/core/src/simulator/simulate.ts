@@ -2,13 +2,27 @@
  * CBS simulator public entry point.
  * @file packages/core/src/domain/cbs/simulator/simulate.ts
  */
-import type { CBSNode, DiagnosticInfo, MacroCallNode, BlockNode, MathExprNode } from '../parser/ast';
-import { CBSParser } from '../parser/parser';
+import type {
+  CBSNode,
+  DiagnosticInfo,
+  MacroCallNode,
+  BlockNode,
+  MathExprNode,
+} from '../domain/cbs/parser/ast';
+import { CBSParser } from '../domain/cbs/parser/parser';
 import { DEFAULT_CBS_SIMULATION_OPTIONS, createDefaultCbsSimulationContext } from './context';
 import { exceedBudget, consumeStep } from './engine/budget';
 import { recordMacro } from './engine/coverage';
-import { addSimulatorDiagnostic, CBS_SIMULATOR_INVALID_PURE_MACRO_ARGS_CODE } from './engine/diagnostics';
-import { buildLineStarts, cloneParserDiagnostic, cloneRange, sourceForRange } from './engine/source-range';
+import {
+  addSimulatorDiagnostic,
+  CBS_SIMULATOR_INVALID_PURE_MACRO_ARGS_CODE,
+} from './engine/diagnostics';
+import {
+  buildLineStarts,
+  cloneParserDiagnostic,
+  cloneRange,
+  sourceForRange,
+} from './engine/source-range';
 import { pushTrace } from './engine/trace';
 import { getCbsSupportClassification } from './support-classification';
 import { CBS_SIMULATOR_UNSUPPORTED_MACRO_DIAGNOSTIC_CODE } from './unsupported-diagnostics';
@@ -78,7 +92,10 @@ export function simulateCbsText(
 
   const parser = new CBSParser();
   const document = parser.parse(input);
-  const hasParserDepthCapDiagnostic = hasDiagnosticCode(document.diagnostics, CBS_PARSER_DEPTH_CAP_DIAGNOSTIC_CODE);
+  const hasParserDepthCapDiagnostic = hasDiagnosticCode(
+    document.diagnostics,
+    CBS_PARSER_DEPTH_CAP_DIAGNOSTIC_CODE,
+  );
   const resolvedOptions = normalizeSimulationOptionsForParserDiagnostics(
     { ...DEFAULT_CBS_SIMULATION_OPTIONS, ...options },
     hasParserDepthCapDiagnostic,
@@ -159,7 +176,10 @@ function normalizeSimulationOptionsForParserDiagnostics(
   options: CbsSimulationOptions,
   hasParserDepthCapDiagnostic: boolean,
 ): CbsSimulationOptions {
-  if (!hasParserDepthCapDiagnostic || options.maxDepth >= CBS_PARSER_DEPTH_CAP_MIN_SIMULATION_DEPTH) {
+  if (
+    !hasParserDepthCapDiagnostic ||
+    options.maxDepth >= CBS_PARSER_DEPTH_CAP_MIN_SIMULATION_DEPTH
+  ) {
     return options;
   }
 
@@ -176,7 +196,9 @@ function normalizeSimulationOptionsForParserDiagnostics(
  * @param diagnostics - parser에서 반환된 diagnostic 목록
  * @returns depth cap parser diagnostic은 partial, 그 외 parser diagnostic은 error status
  */
-function resolveInitialSimulationStatus(diagnostics: readonly DiagnosticInfo[]): CbsSimulationStatus {
+function resolveInitialSimulationStatus(
+  diagnostics: readonly DiagnosticInfo[],
+): CbsSimulationStatus {
   if (diagnostics.length === 0) return 'ok';
   if (hasDiagnosticCode(diagnostics, CBS_PARSER_DEPTH_CAP_DIAGNOSTIC_CODE)) return 'partial';
   return 'error';
@@ -289,7 +311,11 @@ function evaluateNode(node: CBSNode, state: SimulationState, depth: number): str
  * @param depth - argument 평가 깊이
  * @returns argument output string
  */
-function evaluateArgument(nodes: CBSNode[] | undefined, state: SimulationState, depth: number): string {
+function evaluateArgument(
+  nodes: CBSNode[] | undefined,
+  state: SimulationState,
+  depth: number,
+): string {
   if (!nodes || nodes.length === 0) return '';
   return visitNodes(nodes, state, depth);
 }
@@ -406,7 +432,8 @@ function evaluateMathExpr(node: MathExprNode, state: SimulationState, depth: num
     range: cloneRange(node.range),
   });
 
-  const expression = node.children.length > 0 ? visitNodes(node.children, state, depth + 1) : node.expression;
+  const expression =
+    node.children.length > 0 ? visitNodes(node.children, state, depth + 1) : node.expression;
   const result = evaluateCalcExpression(expression);
   const output = result === undefined ? 'NaN' : result.toString();
 
@@ -421,7 +448,8 @@ function evaluateMathExpr(node: MathExprNode, state: SimulationState, depth: num
   if (result === undefined) {
     addSimulatorDiagnostic(state, {
       code: CBS_SIMULATOR_INVALID_PURE_MACRO_ARGS_CODE,
-      message: 'Invalid arguments for pure CBS macro "?": Expression must contain only numbers, operators, comparisons, logical operators, and parentheses',
+      message:
+        'Invalid arguments for pure CBS macro "?": Expression must contain only numbers, operators, comparisons, logical operators, and parentheses',
       severity: 'warning',
       range: cloneRange(node.range),
       data: { macroName: '?', reason: 'invalid arithmetic/comparison/logical expression' },

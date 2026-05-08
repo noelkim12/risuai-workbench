@@ -4,8 +4,13 @@
  * maps and re-exports the pure macro definitions for dispatch use.
  * @file packages/core/src/domain/cbs/simulator/macros/registry.ts
  */
-import type { MacroCallNode } from '../../parser/ast';
-import type { CbsSimulationContext, CbsSimulatorCoverage, CbsSimulationStatus, CbsSimulationEffect } from '../types';
+import type { MacroCallNode } from '../../domain/cbs/parser/ast';
+import type {
+  CbsSimulationContext,
+  CbsSimulatorCoverage,
+  CbsSimulationStatus,
+  CbsSimulationEffect,
+} from '../types';
 import type { SourceInfo } from '../engine/source-range';
 import type { DiagnosticState } from '../engine/diagnostics';
 import type { CoverageState } from '../engine/coverage';
@@ -13,7 +18,7 @@ import { CONTEXTUAL_MACRO_HANDLERS } from './contextual';
 import { TIME_RANDOM_MACRO_HANDLERS } from './time-random';
 import { VARIABLE_MACRO_HANDLERS } from './variables';
 import { SLOT_POSITION_MACRO_HANDLERS } from './slots-position';
-import type { CBSNode } from '../../parser/ast';
+import type { CBSNode } from '../../domain/cbs/parser/ast';
 
 /**
  * Narrow structural interface for macro handler dispatch.
@@ -44,7 +49,11 @@ export interface MacroDispatchState extends SourceInfo, DiagnosticState, Coverag
 }
 
 /** Handler signature for macro evaluators. */
-export type MacroHandler = (node: MacroCallNode, state: MacroDispatchState, depth: number) => string;
+export type MacroHandler = (
+  node: MacroCallNode,
+  state: MacroDispatchState,
+  depth: number,
+) => string;
 
 /**
  * Combined non-pure macro handler map for dispatch.

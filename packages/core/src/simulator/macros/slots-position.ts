@@ -4,7 +4,7 @@
  * explicit lore position context.
  * @file packages/core/src/domain/cbs/simulator/macros/slots-position.ts
  */
-import type { CBSNode, MacroCallNode } from '../../parser/ast';
+import type { CBSNode, MacroCallNode } from '../../domain/cbs/parser/ast';
 import type { CbsSimulationContext, CbsSimulationDiagnostic } from '../types';
 import { cloneRange } from '../engine/source-range';
 import type { SourceInfo } from '../engine/source-range';
@@ -27,7 +27,11 @@ export interface SlotPositionState extends SourceInfo, TraceState {
 }
 
 /** Handler signature for slot/position macro evaluators. */
-export type SlotPositionMacroHandler = (node: MacroCallNode, state: SlotPositionState, depth: number) => string;
+export type SlotPositionMacroHandler = (
+  node: MacroCallNode,
+  state: SlotPositionState,
+  depth: number,
+) => string;
 
 /** evaluateSlotMacro 함수. keyed slot은 block frame에서 읽고 bare slot은 host context가 없으면 source를 보존함. */
 function evaluateSlotMacro(node: MacroCallNode, state: SlotPositionState, depth: number): string {
@@ -57,7 +61,11 @@ function evaluateSlotMacro(node: MacroCallNode, state: SlotPositionState, depth:
  * @param depth - 현재 재귀 깊이
  * @returns lore position 값 또는 source-preserved macro text
  */
-function evaluatePositionMacro(node: MacroCallNode, state: SlotPositionState, depth: number): string {
+function evaluatePositionMacro(
+  node: MacroCallNode,
+  state: SlotPositionState,
+  depth: number,
+): string {
   const key = state.evaluateArgument(node.arguments[0], depth + 1);
   const value = state.context.lorePositions?.[key];
   if (value !== undefined) {

@@ -2,7 +2,7 @@
  * #if and #if_pure block evaluator for the CBS simulator.
  * @file packages/core/src/domain/cbs/simulator/blocks/if.ts
  */
-import type { BlockNode } from '../../parser/ast';
+import type { BlockNode } from '../../domain/cbs/parser/ast';
 import { cloneRange } from '../engine/source-range';
 import { pushTrace } from '../engine/trace';
 import { trimLines } from './whitespace';
