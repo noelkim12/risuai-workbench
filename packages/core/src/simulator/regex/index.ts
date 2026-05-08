@@ -12,3 +12,5 @@ export * from './directives';
 export * from './directive-registry';
 export * from './replacement-plan';
 export * from './cbs-adapter';
+export * from './view-model';
+export * from './simulate';

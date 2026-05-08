@@ -3,6 +3,8 @@
  * @file packages/core/src/simulator/regex/types.ts
  */
 import type { SimulatorDiagnostic, SimulatorSafetyLimits, SimulatorStatus } from './shared';
+import type { SimulatorTraceEvent } from './shared/trace';
+import type { CanonicalRegexEntry } from '../../domain/regex/contracts';
 import type {
   CbsSimulationContextInput,
   CbsSimulationOptions,
@@ -226,4 +228,56 @@ export interface RegexCbsSectionSimulationResult {
   replacement: CbsSimulationResult;
   /** Regex-local diagnostics mapped from requested CBS simulation runs. */
   diagnostics: SimulatorDiagnostic[];
+}
+
+/** Input accepted by the high-level `.risuregex` preview view-model simulator. */
+export interface RisuRegexPreviewInput {
+  /** Raw `.risuregex` document content parsed through the domain adapter. */
+  rawDocument: string;
+  /** Sample text used for native match and replacement preview. */
+  sampleInput: string;
+  /** CBS simulator context forwarded unchanged to requested CBS dry-runs. */
+  context?: CbsSimulationContextInput;
+  /** CBS simulator options forwarded unchanged to requested CBS dry-runs. */
+  simulationOptions?: Partial<CbsSimulationOptions>;
+  /** Optional caller safety limits merged over defaults by native preview runners. */
+  limits?: Partial<SimulatorSafetyLimits>;
+}
+
+/** Notice intended for viewer UI display without treating it as a diagnostic. */
+export interface RisuRegexPreviewNoticeDto {
+  /** Stable notice code suitable for filtering and tests. */
+  code: string;
+  /** Notice severity for viewer grouping. */
+  severity: 'info' | 'warning';
+  /** Human-readable notice message. */
+  message: string;
+  /** Producer label for the notice. */
+  source: string;
+  /** Optional JSON-serializable metadata for callers. */
+  details?: Readonly<Record<string, unknown>>;
+}
+
+/** Viewer-ready DTO produced by `simulateRisuRegexPreview`. */
+export interface RisuRegexPreviewViewModel {
+  /** Conservative aggregate status across parse, CBS, native, replacement, and planning steps. */
+  status: SimulatorStatus;
+  /** Canonical regex entry parsed from the raw document, or null when parsing failed. */
+  entry: CanonicalRegexEntry | null;
+  /** Parsed flag/directive result when an entry could be parsed. */
+  flags: RisuRegexFlagParseResult | null;
+  /** CBS section dry-run results when an entry could be parsed. */
+  cbs: RegexCbsSectionSimulationResult | null;
+  /** Native JavaScript match preview result. */
+  nativePreview: NativeRegexPreviewResult;
+  /** Native JavaScript replacement preview result. */
+  replacementPreview: RegexReplacementPreviewResult;
+  /** Directive placement plan generated from parsed directives and replacement output. */
+  replacementPlan: RegexReplacementPlanDto;
+  /** Aggregated serializable diagnostics from every preview stage. */
+  diagnostics: SimulatorDiagnostic[];
+  /** Viewer trace events explaining major preview stages. */
+  trace: SimulatorTraceEvent[];
+  /** Non-diagnostic viewer notices, including simulated runtime parity caveats. */
+  notices: RisuRegexPreviewNoticeDto[];
 }
