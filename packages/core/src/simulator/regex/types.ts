@@ -90,3 +90,67 @@ export interface NativeRegexPreviewResult {
   /** Effective immutable limit snapshot used by this preview run. */
   limits: SimulatorSafetyLimits;
 }
+
+/** Input accepted by the native JavaScript replacement preview runner. */
+export interface RegexReplacementPreviewInput {
+  /** Native JavaScript regex pattern source. */
+  pattern: string;
+  /** Native JavaScript flags after RisuAI directive parsing. */
+  jsFlags: string;
+  /** Sample text used as the immutable replacement source. */
+  sampleInput: string;
+  /** Native JavaScript replacement template string. */
+  replacement: string;
+  /** Optional caller safety limits merged over defaults for this run. */
+  limits?: Partial<SimulatorSafetyLimits>;
+}
+
+/** Minimal deterministic replacement diff chunk operation. */
+export type RegexReplacementDiffOperation = 'equal' | 'delete' | 'insert';
+
+/** Minimal deterministic replacement diff chunk DTO. */
+export interface RegexReplacementDiffChunkDto {
+  /** Stable operation label used by callers. */
+  operation: RegexReplacementDiffOperation;
+  /** Alias for viewers that call the operation a kind. */
+  kind: RegexReplacementDiffOperation;
+  /** Text represented by this chunk. */
+  text: string;
+}
+
+/** Replacement template capture/reference token kind. */
+export type RegexReplacementCaptureReferenceKind =
+  | 'escaped-dollar'
+  | 'match'
+  | 'prefix'
+  | 'suffix'
+  | 'numeric'
+  | 'named';
+
+/** Serializable replacement template capture/reference DTO. */
+export interface RegexReplacementCaptureReferenceDto {
+  /** Exact reference token as written in the replacement template. */
+  token: string;
+  /** Parsed reference kind. */
+  kind: RegexReplacementCaptureReferenceKind;
+  /** Numeric capture index for `$1`-style references. */
+  index?: number;
+  /** Named capture key for `$<name>` references. */
+  name?: string;
+}
+
+/** Non-throwing native JavaScript replacement preview result. */
+export interface RegexReplacementPreviewResult {
+  /** Completion status for the replacement preview run. */
+  status: SimulatorStatus;
+  /** Replacement output, possibly truncated by maxOutputLength. */
+  output: string;
+  /** Minimal deterministic before/after diff chunks. */
+  diff: RegexReplacementDiffChunkDto[];
+  /** Capture/reference tokens found in the replacement template. */
+  captureReferences: RegexReplacementCaptureReferenceDto[];
+  /** Diagnostics explaining compile, input, or output-limit problems. */
+  diagnostics: SimulatorDiagnostic[];
+  /** Effective immutable limit snapshot used by this preview run. */
+  limits: SimulatorSafetyLimits;
+}
