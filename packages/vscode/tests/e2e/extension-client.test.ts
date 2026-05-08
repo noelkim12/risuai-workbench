@@ -1421,6 +1421,22 @@ test('injects CBS TextMate grammar into Lua for default risulua-as-lua editing',
   );
 });
 
+test('colorizes generated RisuLua navigation comments in RisuLua and Lua grammars', () => {
+  for (const relativePath of [
+    'syntaxes/risulua.tmLanguage.json',
+    'syntaxes/risulua-cbs-injection.tmLanguage.json',
+  ]) {
+    const grammar = readFileSync(path.join(packageRoot, relativePath), 'utf8');
+
+    assert.match(grammar, /meta\.annotation\.button-action-bridge\.risulua/);
+    assert.match(grammar, /keyword\.other\.button-action-bridge\.risulua/);
+    assert.match(grammar, /entity\.name\.function\.button-action\.risulua/);
+    assert.match(grammar, /meta\.annotation\.source-navigation\.risulua/);
+    assert.match(grammar, /storage\.type\.annotation\.source\.risulua/);
+    assert.match(grammar, /constant\.numeric\.line-number\.risulua/);
+  }
+});
+
 test('keeps imported CBS syntax-extension legacy assets available without provider duplication', () => {
   for (const relativePath of [
     'src/cbs/legacy/core/cbsDatabase.ts',
