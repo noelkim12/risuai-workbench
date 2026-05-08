@@ -2,6 +2,32 @@
 
 `packages/core`의 CBS simulator는 RisuAI upstream runtime을 직접 호출하지 않는 로컬 dry-run evaluator입니다. 목적은 프리뷰, trace, effect, diagnostics, coverage를 안전하게 제공하는 것이며, 실제 채팅 런타임과 workspace state를 변경하지 않습니다.
 
+## Import Paths
+
+이 모듈은 두 가지 canonical import 경로를 제공합니다.
+
+### Package Root (권장)
+
+```ts
+// Canonical package-level entry point
+import {
+  simulateCbsText,
+  createCbsPreviewVariableInjection,
+} from '@risu-workbench/core/domain/cbs';
+```
+
+### Source-Level (테스트/내부용)
+
+```ts
+// Canonical source-level entry point for tests and internal modules
+import {
+  simulateCbsText,
+  createCbsPreviewVariableInjection,
+} from '../../../src/simulator';
+```
+
+> **참고**: `risu-workbench-core/simulator` 패키지 서브패스는 제공되지 않습니다. 위 두 가지 경로 중 하나를 사용하세요.
+
 ## 언제 simulator context injection이 필요한가
 
 CBS source만으로 값이 결정되지 않는 macro는 명시 context를 주입해야 합니다. 주입하지 않으면 simulator는 런타임 값을 추측하지 않고 원문을 보존하거나 `partial`/warning을 남깁니다.
@@ -58,10 +84,11 @@ VS Code extension에서 CBS preview를 호출할 때는 editor/project state를 
 Preview variable injector는 CBS 프리뷰가 사용할 변수 context를 caller가 명시적으로 합성하는 dry-run helper입니다. `createCbsPreviewVariableInjection(input)`은 preview override, 현재 chat 변수, 캐릭터 기본값, 템플릿 기본값을 순서대로 병합하고, 그 결과를 `effectiveContext`로 돌려줍니다. 실제 CBS 평가는 기존처럼 `simulateCbsText(source, injection.effectiveContext)`에 맡깁니다.
 
 ```ts
+// Canonical import from package root
 import {
   createCbsPreviewVariableInjection,
   simulateCbsText,
-} from '@risu-workbench/core/domain/cbs/simulator';
+} from '@risu-workbench/core/domain/cbs';
 import { parseVariableContent } from '@risu-workbench/core/domain/custom-extension/extensions/variable';
 
 const workspaceDefaults = parseVariableContent('mood=calm\nscore=0');

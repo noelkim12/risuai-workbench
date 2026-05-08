@@ -1,6 +1,7 @@
 /**
- * CBS simulator support metadata barrel exports.
- * @file packages/core/src/domain/cbs/simulator/index.ts
+ * CBS simulator barrel exports.
+ * Canonical source-level entry point for simulator functionality.
+ * @file packages/core/src/simulator/index.ts
  */
 export * from './support-classification';
 export * from './unsupported-diagnostics';

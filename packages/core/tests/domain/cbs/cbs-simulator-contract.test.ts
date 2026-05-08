@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createDefaultCbsSimulationContext,
   simulateCbsText,
+  createCbsPreviewVariableInjection,
   type CbsSimulationContext,
   type CbsSimulationEffect,
   type CbsSimulationOptions,
@@ -12,6 +13,12 @@ import {
   type CbsSimulatorCoverage,
   type CbsSupportClass,
 } from '../../../src/domain/cbs';
+
+// Import from simulator barrel to verify export surface
+import {
+  simulateCbsText as simulateFromSimulator,
+  createCbsPreviewVariableInjection as createInjectionFromSimulator,
+} from '../../../src/simulator';
 
 /**
  * deepFreeze 함수.
@@ -180,5 +187,19 @@ describe('CBS simulator public contract', () => {
       }),
     ]);
     expect(snapshotContext(context)).toBe(before);
+  });
+
+  it('exposes simulateCbsText and createCbsPreviewVariableInjection from both simulator and domain/cbs barrels', () => {
+    // Verify simulator barrel exports both functions
+    expect(typeof simulateFromSimulator).toBe('function');
+    expect(typeof createInjectionFromSimulator).toBe('function');
+
+    // Verify domain/cbs barrel also exports both functions (via re-export)
+    expect(typeof simulateCbsText).toBe('function');
+    expect(typeof createCbsPreviewVariableInjection).toBe('function');
+
+    // Both barrels should produce the same function references (re-export identity)
+    expect(simulateFromSimulator).toBe(simulateCbsText);
+    expect(createInjectionFromSimulator).toBe(createCbsPreviewVariableInjection);
   });
 });
