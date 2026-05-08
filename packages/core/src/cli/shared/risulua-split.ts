@@ -22,14 +22,21 @@ import {
   writeRisuLuaSplitReport,
   type RisuLuaSplitPlan,
   type RisuLuaSplitReportContext,
+  type RisuLuaModuleTableDomainGenerationOption,
 } from '@/domain/risulua-split';
 
 import { runModuleTableDryRunAsync } from './risulua-module-table-dry-run';
 
 export type RisuLuaSplitCliMode = 'none' | 'report' | 'coarse' | 'module-table';
+export type RisuLuaDomainGenerationCliMode = RisuLuaModuleTableDomainGenerationOption;
 
 export interface ParsedRisuLuaSplitMode {
   mode: RisuLuaSplitCliMode | null;
+  strippedArgv: string[];
+}
+
+export interface ParsedRisuLuaDomainGenerationMode {
+  mode: RisuLuaDomainGenerationCliMode | null;
   strippedArgv: string[];
 }
 
@@ -40,13 +47,19 @@ export interface RunRisuLuaSplitOptions {
   sourcePath: string;
   targetName: string;
   cwd?: string;
+  domainGeneration?: RisuLuaDomainGenerationCliMode;
+  buttonActionSources?: string[];
 }
 
 export const RISULUA_SPLIT_FLAG = '--risulua-split';
+export const RISULUA_DOMAIN_GENERATION_FLAG = '--risulua-domain-generation';
 export const RISULUA_SPLIT_HELP_LINE =
   '    --risulua-split <none|report|coarse|module-table>  추출된 RisuLua split 산출물 생성 방식 (기본: none)';
+export const RISULUA_DOMAIN_GENERATION_HELP_LINE =
+  '    --risulua-domain-generation <report|validated>  module-table domain 함수 생성 방식 (기본: validated)';
 
 const VALID_SPLIT_MODES: readonly string[] = ['none', 'report', 'coarse', 'module-table'];
+const VALID_DOMAIN_GENERATION_MODES: readonly string[] = ['report', 'validated'];
 const SPLIT_OUTPUT_ROOTS = ['lua', 'legacy', 'dist', 'docs'] as const;
 
 export function parseRisuLuaSplitMode(argv: readonly string[]): ParsedRisuLuaSplitMode {
@@ -63,6 +76,22 @@ export function parseRisuLuaSplitMode(argv: readonly string[]): ParsedRisuLuaSpl
   const strippedArgv = [...argv];
   strippedArgv.splice(idx, 2);
   return { mode: value as RisuLuaSplitCliMode, strippedArgv };
+}
+
+export function parseRisuLuaDomainGenerationMode(argv: readonly string[]): ParsedRisuLuaDomainGenerationMode {
+  const idx = argv.indexOf(RISULUA_DOMAIN_GENERATION_FLAG);
+  if (idx < 0) return { mode: null, strippedArgv: [...argv] };
+
+  const value = argv[idx + 1];
+  if (!value || !VALID_DOMAIN_GENERATION_MODES.includes(value)) {
+    throw new Error(
+      `Invalid ${RISULUA_DOMAIN_GENERATION_FLAG} value: "${value ?? ''}". Must be "report" or "validated".`,
+    );
+  }
+
+  const strippedArgv = [...argv];
+  strippedArgv.splice(idx, 2);
+  return { mode: value as RisuLuaDomainGenerationCliMode, strippedArgv };
 }
 
 export async function runRisuLuaSplitExtract(options: RunRisuLuaSplitOptions): Promise<void> {

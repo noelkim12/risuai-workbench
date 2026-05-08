@@ -4,7 +4,13 @@ import { ensureDir } from '@/node/fs-helpers';
 import { getCharacterName } from '@/domain/charx/data';
 import { sanitizeFilename } from '../../../utils/filenames';
 import { parseRisuLuaMode, type RisuLuaMode } from '../../shared/lua-bundler/risulua-mode';
-import { parseRisuLuaSplitMode, type RisuLuaSplitCliMode } from '../../shared/risulua-split';
+import {
+  RISULUA_DOMAIN_GENERATION_HELP_LINE,
+  parseRisuLuaDomainGenerationMode,
+  parseRisuLuaSplitMode,
+  type RisuLuaDomainGenerationCliMode,
+  type RisuLuaSplitCliMode,
+} from '../../shared/risulua-split';
 import {
   phase1_parseCharxAsync,
   phase2_extractLorebooks,
@@ -32,6 +38,7 @@ const HELP_TEXT = `
     --json-only     (deprecated) Phase 1만 실행
     --risulua-mode <classic|modular>  RisuLua 개발 방식: classic=단일 파일 개발, modular=모듈식 개발 (기본: classic)
     --risulua-split <none|report|coarse|module-table>  추출된 RisuLua split 산출물 생성 방식 (기본: none)
+${RISULUA_DOMAIN_GENERATION_HELP_LINE}
     -h, --help      도움말
 
   Phases (canonical mode — no charx.json):
@@ -61,8 +68,10 @@ export async function runExtractWorkflow(argv: readonly string[]): Promise<numbe
   const helpMode = argv.includes('-h') || argv.includes('--help') || argv.length === 0;
   let modeResult: ReturnType<typeof parseRisuLuaMode>;
   let splitResult: ReturnType<typeof parseRisuLuaSplitMode>;
+  let domainGenerationResult: ReturnType<typeof parseRisuLuaDomainGenerationMode>;
   try {
-    splitResult = parseRisuLuaSplitMode(argv);
+    domainGenerationResult = parseRisuLuaDomainGenerationMode(argv);
+    splitResult = parseRisuLuaSplitMode(domainGenerationResult.strippedArgv);
     modeResult = parseRisuLuaMode(splitResult.strippedArgv);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -89,7 +98,7 @@ export async function runExtractWorkflow(argv: readonly string[]): Promise<numbe
   }
 
   try {
-    await runMain(filePath, outArg, jsonOnly, modeResult.mode ?? 'classic', splitResult.mode ?? 'none');
+    await runMain(filePath, outArg, jsonOnly, modeResult.mode ?? 'classic', splitResult.mode ?? 'none', domainGenerationResult.mode ?? 'validated');
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -108,6 +117,7 @@ async function runMain(
   jsonOnly: boolean,
   risuluaMode: RisuLuaMode,
   risuluaSplitMode: RisuLuaSplitCliMode,
+  domainGeneration: RisuLuaDomainGenerationCliMode,
 ): Promise<void> {
   const t0 = performance.now();
   console.log('\n  🐿️ RisuAI Character Card Extractor (canonical)\n');
@@ -128,6 +138,7 @@ async function runMain(
   console.log(`\n     ✅ Canonical extract mode — no charx.json`);
   console.log(`     🌙 RisuLua: ${formatRisuLuaModeLabel(risuluaMode)}`);
   console.log(`     🧩 RisuLua split: ${risuluaSplitMode}`);
+  if (risuluaSplitMode === 'module-table') console.log(`     🧩 RisuLua domain generation: ${domainGeneration}`);
   console.log(`     ⏱  Phase 1: ${fmt(performance.now() - t)}`);
 
   if (jsonOnly) {
@@ -144,7 +155,7 @@ async function runMain(
   console.log(`     ⏱  Phase 3: ${fmt(performance.now() - t)}`);
 
   t = performance.now();
-  await phase4_extractTriggerLua(charx, resolvedOutDir, risuluaMode, risuluaSplitMode);
+  await phase4_extractTriggerLua(charx, resolvedOutDir, risuluaMode, risuluaSplitMode, domainGeneration);
   console.log(`     ⏱  Phase 4: ${fmt(performance.now() - t)}`);
 
   t = performance.now();

@@ -122,6 +122,35 @@ describe('risulua-split module-table analyzer', () => {
     ]));
     expect(result.proceduralBlocks.every((block) => block.extractable === false)).toBe(true);
   });
+
+  it('resolves locals declared inside blocks and loop variables without reporting them as unknown globals', async () => {
+    const result = await analyze(lines([
+      'function buildStatus(triggerId, values)',
+      '  local lines = {}',
+      '  if triggerId then',
+      '    local clearFlag = getChatVar(triggerId, "clear")',
+      '    table.insert(lines, clearFlag)',
+      '  end',
+      '  for i = 1, #values do',
+      '    local raw = values[i]',
+      '    table.insert(lines, raw)',
+      '  end',
+      '  for _, t in ipairs(values) do',
+      '    table.insert(lines, t)',
+      '  end',
+      '  return table.concat(lines, "|")',
+      'end',
+    ]));
+
+    const symbol = result.lexicalSymbols.find((candidate) => candidate.originalName === 'buildStatus');
+    expect(symbol).toBeDefined();
+    const unresolvedNames = symbol!.references
+      .filter((reference) => reference.resolvedScopeId === undefined)
+      .map((reference) => reference.name);
+
+    expect(unresolvedNames).not.toEqual(expect.arrayContaining(['clearFlag', 'i', '_', 't', 'raw', 'lines']));
+    expect(symbol!.localDeclarations).toEqual(expect.arrayContaining(['clearFlag', 'i', '_', 't', 'raw', 'lines']));
+  });
 });
 
 async function analyze(source: string): Promise<RisuLuaModuleTableAnalyzerResult> {

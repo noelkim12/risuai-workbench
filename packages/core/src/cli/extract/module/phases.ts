@@ -37,6 +37,7 @@ import {
   cleanupRisuLuaSplitTemps,
   runRisuLuaSplitExtract,
   uniqueRisuLuaSplitTargetName,
+  type RisuLuaDomainGenerationCliMode,
   type RisuLuaSplitCliMode,
 } from '../../shared/risulua-split';
 
@@ -299,6 +300,7 @@ export async function phase4_extractLua(
   outputDir: string,
   risuluaMode: RisuLuaMode = 'classic',
   risuluaSplitMode: RisuLuaSplitCliMode = 'none',
+  domainGeneration: RisuLuaDomainGenerationCliMode = 'validated',
 ): Promise<number> {
   console.log('\n  🌙 Phase 4: Lua triggerscript 추출');
 
@@ -325,12 +327,37 @@ export async function phase4_extractLua(
     sourcePath: outPath,
     targetName,
     cwd: process.cwd(),
+    domainGeneration,
+    buttonActionSources: collectRegexButtonActionSources(outputDir),
   });
   console.log(`     ✅ ${path.relative('.', outPath)} -> ${lua.length} chars`);
   return 1;
 }
 
 export const phase4_extractTriggerLua = phase4_extractLua;
+
+function collectRegexButtonActionSources(outputDir: string): string[] {
+  const regexDir = path.join(outputDir, 'regex');
+  if (!fs.existsSync(regexDir)) return [];
+  const sources: string[] = [];
+  for (const filePath of listRisuRegexFiles(regexDir)) {
+    sources.push(fs.readFileSync(filePath, 'utf8'));
+  }
+  return sources;
+}
+
+function listRisuRegexFiles(dir: string): string[] {
+  const files: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...listRisuRegexFiles(fullPath));
+    } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.risuregex')) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
 
 function extractModularLuaPayload(module: {
   triggerscript?: string;

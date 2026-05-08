@@ -3,8 +3,10 @@ import path from 'node:path';
 
 import {
   RISULUA_MODULE_TABLE_DOMAIN_CANDIDATES_PATH,
+  RISULUA_MODULE_TABLE_PROMPT_STORE_PATH,
   RISULUA_MODULE_TABLE_REFACTOR_MAP_PATH,
   RISULUA_MODULE_TABLE_VARIABLE_STORE_PATH,
+  type RisuLuaModuleTableDomainGenerationOption,
   type RisuLuaModuleTableRefactorMapContract,
 } from './module-table-contracts';
 import { detectRisuLuaSourceProfile } from '../profiling/source-profile';
@@ -28,6 +30,8 @@ export interface CreateRisuLuaModuleTableArtifactsInput {
   cwd?: string;
   profileResult?: SourceProfileResult;
   parseResult?: RisuLuaModuleTableParseSuccess;
+  domainGeneration?: RisuLuaModuleTableDomainGenerationOption;
+  buttonActionSources?: string[];
 }
 
 export interface RisuLuaModuleTableArtifacts extends RisuLuaSplitReportContext {
@@ -57,7 +61,20 @@ interface VariableStoreExtractionResult {
   exportNames: string[];
 }
 
+interface PromptStoreExtractionResult {
+  mainText: string;
+  storeFile?: RisuLuaWorkspaceFile;
+  exportNames: string[];
+}
+
 interface LocalTableDeclaration {
+  name: string;
+  text: string;
+  startOffset: number;
+  endOffset: number;
+}
+
+interface LocalPromptDeclaration {
   name: string;
   text: string;
   startOffset: number;
@@ -67,23 +84,26 @@ interface LocalTableDeclaration {
 const HANDLER_HELPER_PATH_RE = /^lua\/handler_helpers\/[^/]+_helpers\.risulua$/;
 const VARIABLE_STORE_ALIAS = '__variable_store';
 const VARIABLE_STORE_REQUIRE = `local ${VARIABLE_STORE_ALIAS} = require("state.variable_store")`;
+const PROMPT_STORE_ALIAS = '__prompt_store';
+const PROMPT_STORE_REQUIRE = `local ${PROMPT_STORE_ALIAS} = require("prompts.instruction_store")`;
 
 export async function createRisuLuaModuleTableArtifacts(
   input: CreateRisuLuaModuleTableArtifactsInput,
 ): Promise<RisuLuaModuleTableArtifacts> {
   const pipeline = await runPipeline(input);
   const targetName = input.targetName ?? inferTargetName(input.sourcePath);
-  const variableStore = extractVariableStore(composeMainText(pipeline));
-  const pipelineWithVariableStore = withVariableStoreModule(pipeline, variableStore);
-  const workspaceLuaFiles = buildLuaWorkspaceFiles(input.source, variableStore.mainText, pipelineWithVariableStore, variableStore.storeFile);
-  const plan = buildPlan(input, targetName, pipelineWithVariableStore, workspaceLuaFiles);
-  const context = buildReportContext(plan, pipelineWithVariableStore.dryRunResult.refactorMap);
-  const docs = buildDocWorkspaceFiles(plan, context, pipelineWithVariableStore.dryRunResult.refactorMap, input.cwd);
+  const promptStore = extractPromptStore(composeMainText(pipeline));
+  const variableStore = extractVariableStore(promptStore.mainText);
+  const pipelineWithStores = withPromptStoreModule(withVariableStoreModule(pipeline, variableStore), promptStore);
+  const workspaceLuaFiles = buildLuaWorkspaceFiles(input.source, variableStore.mainText, pipelineWithStores, variableStore.storeFile, promptStore.storeFile);
+  const plan = buildPlan(input, targetName, pipelineWithStores, workspaceLuaFiles);
+  const context = buildReportContext(plan, pipelineWithStores.dryRunResult.refactorMap);
+  const docs = buildDocWorkspaceFiles(plan, context, pipelineWithStores.dryRunResult.refactorMap, input.cwd);
   const artifacts: RisuLuaModuleTableArtifacts = {
     ...context,
     plan,
     workspaceFiles: [...workspaceLuaFiles, ...docs],
-    dryRunResult: pipelineWithVariableStore.dryRunResult,
+    dryRunResult: pipelineWithStores.dryRunResult,
     topLevelRewrite: pipeline.topLevelRewrite,
     nestedHandlerRewrite: pipeline.nestedHandlerRewrite,
   };
@@ -116,10 +136,12 @@ function buildLuaWorkspaceFiles(
   mainText: string,
   pipeline: PipelineResult,
   variableStoreFile: RisuLuaWorkspaceFile | undefined,
+  promptStoreFile: RisuLuaWorkspaceFile | undefined,
 ): RisuLuaWorkspaceFile[] {
   return [
     { path: 'lua/main.risulua', content: mainText },
     ...(variableStoreFile === undefined ? [] : [variableStoreFile]),
+    ...(promptStoreFile === undefined ? [] : [promptStoreFile]),
     ...pipeline.topLevelRewrite.modulePlans
       .filter((plan) => plan.exportNames.length > 0)
       .map((plan) => ({ path: plan.modulePath, content: plan.body })),
@@ -159,6 +181,8 @@ async function runPipeline(input: CreateRisuLuaModuleTableArtifactsInput): Promi
     source: input.source,
     sourceFile: input.sourcePath,
     analyzerResult,
+    domainGeneration: input.domainGeneration,
+    buttonActionSources: input.buttonActionSources,
   });
   const dryRunResult = planDryRunRefactorMap({
     source: input.source,
@@ -222,6 +246,43 @@ function withVariableStoreModule(
   };
 }
 
+function withPromptStoreModule(
+  pipeline: PipelineResult,
+  promptStore: PromptStoreExtractionResult,
+): PipelineResult {
+  if (promptStore.storeFile === undefined) return pipeline;
+  const existing = pipeline.dryRunResult.refactorMap.modules.some(
+    (moduleContract) => moduleContract.path === RISULUA_MODULE_TABLE_PROMPT_STORE_PATH,
+  );
+  if (existing) return pipeline;
+
+  const refactorMap: RisuLuaModuleTableRefactorMapContract = {
+    ...pipeline.dryRunResult.refactorMap,
+    modules: [
+      ...pipeline.dryRunResult.refactorMap.modules,
+      {
+        path: RISULUA_MODULE_TABLE_PROMPT_STORE_PATH,
+        requireId: 'prompts.instruction_store',
+        alias: PROMPT_STORE_ALIAS,
+        category: 'prompt-store',
+        exports: promptStore.exportNames,
+      },
+    ],
+  };
+
+  return {
+    ...pipeline,
+    dryRunResult: {
+      ...pipeline.dryRunResult,
+      refactorMap,
+      editPlan: {
+        ...pipeline.dryRunResult.editPlan,
+        moduleContracts: refactorMap.modules,
+      },
+    },
+  };
+}
+
 function extractVariableStore(mainText: string): VariableStoreExtractionResult {
   const declarations = findTopLevelLocalTableDeclarations(mainText);
   if (declarations.length === 0) return { mainText, exportNames: [] };
@@ -252,6 +313,64 @@ function extractVariableStore(mainText: string): VariableStoreExtractionResult {
     storeFile: { path: RISULUA_MODULE_TABLE_VARIABLE_STORE_PATH, content: `${storeLines.join('\n')}\n` },
     exportNames: declarations.map((declaration) => declaration.name),
   };
+}
+
+function extractPromptStore(mainText: string): PromptStoreExtractionResult {
+  const declarations = findTopLevelLocalPromptDeclarations(mainText);
+  if (declarations.length === 0) return { mainText, exportNames: [] };
+
+  const storeLines: string[] = [
+    '-- @generated by risuai-workbench',
+    '-- risulua-split=module-table prompt-store',
+    '',
+    'local M = {}',
+    '',
+  ];
+  const replacements: Array<{ startOffset: number; endOffset: number; text: string }> = [];
+  for (const declaration of declarations) {
+    storeLines.push(declaration.text.trimEnd(), '', `M.${declaration.name} = ${declaration.name}`, '');
+    replacements.push({
+      startOffset: declaration.startOffset,
+      endOffset: declaration.endOffset,
+      text: `local ${declaration.name} = ${PROMPT_STORE_ALIAS}.${declaration.name}\n`,
+    });
+  }
+  storeLines.push('return M');
+
+  let rewrittenMain = applyMainTextReplacements(mainText, replacements);
+  rewrittenMain = insertRequireStatements(rewrittenMain, [PROMPT_STORE_REQUIRE]);
+
+  return {
+    mainText: rewrittenMain,
+    storeFile: { path: RISULUA_MODULE_TABLE_PROMPT_STORE_PATH, content: `${storeLines.join('\n')}\n` },
+    exportNames: declarations.map((declaration) => declaration.name),
+  };
+}
+
+function findTopLevelLocalPromptDeclarations(text: string): LocalPromptDeclaration[] {
+  const declarations: LocalPromptDeclaration[] = [];
+  let body: LuaNode[];
+  try {
+    body = parseLuaBody(text);
+  } catch {
+    return declarations;
+  }
+
+  for (const statement of body) {
+    if (!isSingleLocalPromptStatement(statement)) continue;
+    const name = statement.variables[0].name;
+    if (!shouldExtractPromptStoreName(name)) continue;
+    const range = getNodeRange(statement);
+    if (range === undefined) continue;
+    const endOffset = includeTrailingNewline(text, range.endOffset);
+    declarations.push({
+      name,
+      text: text.slice(range.startOffset, endOffset),
+      startOffset: range.startOffset,
+      endOffset,
+    });
+  }
+  return declarations;
 }
 
 function findTopLevelLocalTableDeclarations(text: string): LocalTableDeclaration[] {
@@ -288,8 +407,20 @@ function isSingleLocalTableStatement(node: LuaNode): node is LuaLocalStatement {
     && statement.init[0]?.type === 'TableConstructorExpression';
 }
 
+function isSingleLocalPromptStatement(node: LuaNode): node is LuaLocalStatement {
+  if (node.type !== 'LocalStatement') return false;
+  const statement = node as LuaLocalStatement;
+  return statement.variables.length === 1
+    && statement.init.length === 1
+    && statement.init[0]?.type === 'StringLiteral';
+}
+
 function shouldExtractVariableStoreName(name: string): boolean {
   return /^(?:[a-z][A-Za-z0-9]*|[A-Z][A-Za-z0-9]*)$/.test(name);
+}
+
+function shouldExtractPromptStoreName(name: string): boolean {
+  return /^[A-Z][A-Z0-9_]*(?:INSTRUCTION|PROMPT|TEMPLATE|CONTENT)[A-Z0-9_]*$/.test(name);
 }
 
 function includeTrailingNewline(text: string, offset: number): number {
@@ -560,6 +691,7 @@ function rootKind(name: string): 'function' | 'listener' | 'handler-assignment' 
 function reasonForPath(filePath: string): string {
   if (filePath === 'lua/main.risulua') return 'Module-table composition root generated from dry-run rewrite plans.';
   if (filePath === 'legacy/original.risulua') return 'Original source preserved outside the lua source graph for recovery and audit.';
+  if (filePath === RISULUA_MODULE_TABLE_PROMPT_STORE_PATH) return 'Prompt and instruction literals extracted from top-level local string declarations.';
   if (filePath.startsWith('docs/')) return 'Module-table documentation generated from dry-run refactor-map output.';
   return 'Module-table artifact generated only because it is present in the dry-run refactor map.';
 }

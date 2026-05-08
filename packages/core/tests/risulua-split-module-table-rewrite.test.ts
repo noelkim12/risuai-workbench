@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH,
+  RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH,
   RISULUA_MODULE_TABLE_COMMON_HELPERS_PATH,
   RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH,
+  RISULUA_MODULE_TABLE_RUNTIME_BUTTON_CLICK_PATH,
+  RISULUA_MODULE_TABLE_RUNTIME_OUTPUT_PATH,
 } from '../src/domain/risulua-split';
 import { lines, rewriteFixture } from './helpers/module-table-refactor-map-helpers';
 
@@ -41,7 +44,7 @@ describe('risulua-split module-table top-level rewrite planner', () => {
     expect(returnMCount).toBe(1);
   });
 
-  it('rewrites bound references to extracted private locals in main', async () => {
+  it('moves runtime handler body to a runtime module and leaves a thin main shim', async () => {
     const result = await rewriteFixture(lines([
       'local function helperTrim(value)',
       '  return value:gsub("^%s+", "")',
@@ -54,8 +57,34 @@ describe('risulua-split module-table top-level rewrite planner', () => {
 
     expect(result.ok).toBe(true);
     const main = result.mainRewritePlan.fullMainText;
-    expect(main).toContain('__local_helpers.helperTrim');
-    expect(main).toContain('require("common.local_helpers")');
+    expect(main).toContain('local __runtime_output = require("runtime.output")');
+    expect(main).toContain('function onOutput(text)');
+    expect(main).toContain('return __runtime_output.onOutput(text)');
+    expect(main).not.toContain('return helperTrim(text)');
+
+    const runtimeModule = result.modulePlans.find((m) => m.modulePath === RISULUA_MODULE_TABLE_RUNTIME_OUTPUT_PATH);
+    expect(runtimeModule).toBeDefined();
+    expect(runtimeModule!.body).toContain('local __local_helpers = require("common.local_helpers")');
+    expect(runtimeModule!.body).toContain('__local_helpers.helperTrim(text)');
+  });
+
+  it('preserves async(function(...)) wrappers when moving runtime handler assignments', async () => {
+    const result = await rewriteFixture(lines([
+      'local function helperValue(value)',
+      '  return value',
+      'end',
+      '',
+      'onButtonClick = async(function(id, data)',
+      '  return helperValue(data)',
+      'end)',
+    ]));
+
+    expect(result.ok).toBe(true);
+    const runtimeModule = result.modulePlans.find((m) => m.modulePath === RISULUA_MODULE_TABLE_RUNTIME_BUTTON_CLICK_PATH);
+    expect(runtimeModule).toBeDefined();
+    expect(runtimeModule!.body).toContain('onButtonClick = async(function(id, data)');
+    expect(runtimeModule!.body).not.toContain('onButtonClick = async(id, data)');
+    expect(runtimeModule!.body).toContain('end)');
   });
 
   it('builds direct public global bridge in main', async () => {
@@ -78,6 +107,66 @@ describe('risulua-split module-table top-level rewrite planner', () => {
     const main = result.mainRewritePlan.fullMainText;
     expect(main).toContain('setLanguage1 = __host_globals.setLanguage1');
     expect(main).toContain('require("host_globals.global_functions")');
+  });
+
+  it('builds button_actions module and main trigger bridges', async () => {
+    const result = await rewriteFixture(lines([
+      'local html = [[<button type="button" risu-trigger="toggleSidePanel">Open</button>]]',
+      'local auto = [[<button type="button" risu-trigger="setAutoSuccess">Auto</button>]]',
+      '',
+      'local function helperTrim(value)',
+      '  return value:gsub("^%s+", "")',
+      'end',
+      '',
+      'local function toggleSidePanel()',
+      '  return helperTrim(" opened")',
+      'end',
+      '',
+      'function setAutoSuccess()',
+      '  return "auto"',
+      'end',
+    ]));
+
+    expect(result.ok).toBe(true);
+
+    const buttonModule = result.modulePlans.find((m) => m.modulePath === RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH);
+    expect(buttonModule).toBeDefined();
+    expect(buttonModule!.category).toBe('button-action');
+    expect(buttonModule!.body).toContain('local __local_helpers = require("common.local_helpers")');
+    expect(buttonModule!.body).toContain('function toggleSidePanel()');
+    expect(buttonModule!.body).toContain('__local_helpers.helperTrim(" opened")');
+    expect(buttonModule!.body).toContain('M.toggleSidePanel = toggleSidePanel');
+    expect(buttonModule!.body).toContain('local function setAutoSuccess()');
+    expect(buttonModule!.body).not.toContain('\nfunction setAutoSuccess()');
+    expect(buttonModule!.body).toContain('M.setAutoSuccess = setAutoSuccess');
+
+    const main = result.mainRewritePlan.fullMainText;
+    expect(main).toContain('local __button_actions = require("button_actions.actions")');
+    expect(main).toContain('toggleSidePanel = __button_actions.toggleSidePanel');
+    expect(main).toContain('setAutoSuccess = __button_actions.setAutoSuccess');
+    expect(main).not.toContain('local function toggleSidePanel()');
+    expect(main).not.toContain('function setAutoSuccess()');
+  });
+
+  it('moves the full async button action assignment instead of leaving wrapper fragments in main', async () => {
+    const result = await rewriteFixture(lines([
+      'local html = [[<button type="button" risu-trigger="removeActionButton">Remove</button>]]',
+      '',
+      'removeActionButton = async(function(triggerId)',
+      '  alertNormal(triggerId)',
+      'end)',
+    ]));
+
+    expect(result.ok).toBe(true);
+    const buttonModule = result.modulePlans.find((m) => m.modulePath === RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH);
+    expect(buttonModule).toBeDefined();
+    expect(buttonModule!.body).toContain('local removeActionButton = async(function(triggerId)');
+    expect(buttonModule!.body).toContain('M.removeActionButton = removeActionButton');
+
+    const main = result.mainRewritePlan.fullMainText;
+    expect(main).toContain('removeActionButton = __button_actions.removeActionButton');
+    expect(main).not.toContain('removeActionButton = async(');
+    expect(main).not.toContain('removeActionButton = async(\nremoveActionButton = __button_actions.removeActionButton');
   });
 
   it('builds async public global bridge targeting async_actions', async () => {
@@ -117,6 +206,11 @@ describe('risulua-split module-table top-level rewrite planner', () => {
     const main = result.mainRewritePlan.fullMainText;
     expect(main).toContain('local function bumpOutside()');
     expect(main).toContain('outside = outside + 1');
+    expect(main).toContain('return __runtime_output.onOutput(text, bumpOutside)');
+
+    const runtimeModule = result.modulePlans.find((m) => m.modulePath === RISULUA_MODULE_TABLE_RUNTIME_OUTPUT_PATH);
+    expect(runtimeModule).toBeDefined();
+    expect(runtimeModule!.body).toContain('function onOutput(text, bumpOutside)');
   });
 
   it('does not rewrite references inside comments', async () => {
@@ -150,9 +244,10 @@ describe('risulua-split module-table top-level rewrite planner', () => {
     ]));
 
     expect(result.ok).toBe(true);
-    const main = result.mainRewritePlan.fullMainText;
-    expect(main).toContain('"call helperTrim here"');
-    expect(main).not.toContain('"call __local_helpers.helperTrim');
+    const runtimeModule = result.modulePlans.find((m) => m.modulePath === RISULUA_MODULE_TABLE_RUNTIME_OUTPUT_PATH);
+    expect(runtimeModule).toBeDefined();
+    expect(runtimeModule!.body).toContain('"call helperTrim here"');
+    expect(runtimeModule!.body).not.toContain('"call __local_helpers.helperTrim');
   });
 
   it('does not rewrite table keys', async () => {
@@ -168,9 +263,10 @@ describe('risulua-split module-table top-level rewrite planner', () => {
     ]));
 
     expect(result.ok).toBe(true);
-    const main = result.mainRewritePlan.fullMainText;
-    expect(main).toContain('{ helperTrim = "kept" }');
-    expect(main).not.toContain('{ __local_helpers.helperTrim');
+    const runtimeModule = result.modulePlans.find((m) => m.modulePath === RISULUA_MODULE_TABLE_RUNTIME_OUTPUT_PATH);
+    expect(runtimeModule).toBeDefined();
+    expect(runtimeModule!.body).toContain('{ helperTrim = "kept" }');
+    expect(runtimeModule!.body).not.toContain('{ __local_helpers.helperTrim');
   });
 
   it('does not rewrite member expressions', async () => {
@@ -187,9 +283,10 @@ describe('risulua-split module-table top-level rewrite planner', () => {
     ]));
 
     expect(result.ok).toBe(true);
-    const main = result.mainRewritePlan.fullMainText;
-    expect(main).toContain('obj.helperTrim()');
-    expect(main).not.toContain('obj.__local_helpers.helperTrim');
+    const runtimeModule = result.modulePlans.find((m) => m.modulePath === RISULUA_MODULE_TABLE_RUNTIME_OUTPUT_PATH);
+    expect(runtimeModule).toBeDefined();
+    expect(runtimeModule!.body).toContain('obj.helperTrim()');
+    expect(runtimeModule!.body).not.toContain('obj.__local_helpers.helperTrim');
   });
 
   it('does not rewrite shadowed identifiers', async () => {
@@ -207,15 +304,15 @@ describe('risulua-split module-table top-level rewrite planner', () => {
     ]));
 
     expect(result.ok).toBe(true);
-    const main = result.mainRewritePlan.fullMainText;
+    const runtimeModule = result.modulePlans.find((m) => m.modulePath === RISULUA_MODULE_TABLE_RUNTIME_OUTPUT_PATH);
+    expect(runtimeModule).toBeDefined();
 
-    // onOutput is preserved in main as top-level side-effect
-    // The nested local function helperTrim shadows the extracted top-level one
-    expect(main).toContain('local function helperTrim()');
-    expect(main).toContain('return text');
+    // The nested local function helperTrim shadows the extracted top-level one inside the runtime body.
+    expect(runtimeModule!.body).toContain('local function helperTrim()');
+    expect(runtimeModule!.body).toContain('return text');
 
     // Call inside shadowed scope should NOT be rewritten to __local_helpers.helperTrim
-    expect(main).not.toContain('__local_helpers.helperTrim');
+    expect(runtimeModule!.body).not.toContain('__local_helpers.helperTrim()');
   });
 
   it('preserves top-level side-effect statements in original order', async () => {
@@ -256,9 +353,10 @@ describe('risulua-split module-table top-level rewrite planner', () => {
     ]));
 
     expect(result.ok).toBe(true);
-    const main = result.mainRewritePlan.fullMainText;
-    expect(main).toContain('print(');
-    expect(main).not.toContain('__local_helpers.print');
+    const runtimeModule = result.modulePlans.find((m) => m.modulePath === RISULUA_MODULE_TABLE_RUNTIME_OUTPUT_PATH);
+    expect(runtimeModule).toBeDefined();
+    expect(runtimeModule!.body).toContain('print(');
+    expect(runtimeModule!.body).not.toContain('__local_helpers.print');
   });
 
   it('inserts require binding only when common helpers exist', async () => {
@@ -336,11 +434,12 @@ describe('risulua-split module-table top-level rewrite planner', () => {
 
     expect(result.ok).toBe(true);
 
-    const main = result.mainRewritePlan.fullMainText;
+    const runtimeModule = result.modulePlans.find((m) => m.modulePath === RISULUA_MODULE_TABLE_RUNTIME_OUTPUT_PATH);
+    expect(runtimeModule).toBeDefined();
 
-    // Nested helper 'processChunk' must remain in main
-    expect(main).toContain('local function processChunk(chunk)');
-    expect(main).toContain('return processChunk(text)');
+    // Nested helper 'processChunk' remains with the moved runtime body in this rewrite phase.
+    expect(runtimeModule!.body).toContain('local function processChunk(chunk)');
+    expect(runtimeModule!.body).toContain('return processChunk(text)');
 
     // No handler-helper require in main
     for (const req of result.mainRewritePlan.requireStatements) {
@@ -352,8 +451,8 @@ describe('risulua-split module-table top-level rewrite planner', () => {
       expect(plan.modulePath).not.toContain('handler_helpers');
     }
 
-    // But the top-level helper should still be extracted and rewritten
-    expect(main).toContain('__local_helpers.helperTrim');
+    // But the top-level helper should still be extracted and rewritten in the runtime body.
+    expect(runtimeModule!.body).toContain('__local_helpers.helperTrim');
   });
 
   it('rewrites helper calls before shadowed scope but not inside it', async () => {
@@ -378,10 +477,13 @@ describe('risulua-split module-table top-level rewrite planner', () => {
     // Call before shadowed scope should be rewritten
     expect(main).toContain('__local_helpers.helperTrim("before")');
 
-    // Shadowed declaration should remain unchanged
-    expect(main).toContain('local function helperTrim()');
+    const runtimeModule = result.modulePlans.find((m) => m.modulePath === RISULUA_MODULE_TABLE_RUNTIME_OUTPUT_PATH);
+    expect(runtimeModule).toBeDefined();
+
+    // Shadowed declaration should remain unchanged inside the runtime body.
+    expect(runtimeModule!.body).toContain('local function helperTrim()');
 
     // Call inside shadowed scope should NOT be rewritten
-    expect(main).not.toContain('__local_helpers.helperTrim()');
+    expect(runtimeModule!.body).not.toContain('__local_helpers.helperTrim()');
   });
 });

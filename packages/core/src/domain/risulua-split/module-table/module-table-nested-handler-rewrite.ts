@@ -246,8 +246,10 @@ function buildHandlerBodyRewrite(
 ): HandlerBodyRewritePlan | null {
   const runtimeRoot = refactorMap.preserved.find(
     (p) => p.originalName === handlerName && p.reason === 'preserve:top-level-side-effect',
+  ) ?? refactorMap.symbols.find(
+    (symbol) => symbol.originalName === handlerName && symbol.classification === 'extract:runtime-handler-body',
   );
-  if (!runtimeRoot) {
+  if (runtimeRoot === undefined) {
     return null;
   }
 

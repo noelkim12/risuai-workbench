@@ -4,7 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {
+  RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH,
   createRisuLuaModuleTableArtifacts,
+  RISULUA_MODULE_TABLE_PROMPT_STORE_PATH,
   RISULUA_MODULE_TABLE_VARIABLE_STORE_PATH,
   serializeRisuLuaModuleTableDomainCandidates,
   serializeRisuLuaModuleTableRefactorMap,
@@ -126,9 +128,10 @@ describe('risulua-split module-table artifact writer', () => {
     const artifacts = await createRisuLuaModuleTableArtifacts({ source, sourcePath: 'function_local_state.risulua' });
     const paths = artifacts.workspaceFiles.map((file) => file.path);
     const main = fileContent(artifacts, 'lua/main.risulua');
+    const runtimeOutput = fileContent(artifacts, 'lua/runtime/output.risulua');
 
     expect(paths).not.toContain(RISULUA_MODULE_TABLE_VARIABLE_STORE_PATH);
-    expect(main).toContain('local transientState = {');
+    expect(runtimeOutput).toContain('local transientState = {');
     expect(main).not.toContain('__variable_store.transientState');
   });
 
@@ -155,6 +158,171 @@ describe('risulua-split module-table artifact writer', () => {
     expect(variableStore).toContain('M.storyState = storyState');
     expect(main).toContain('local storyState = __variable_store.storyState');
     expect(main).not.toContain('template = [[keeps } inside long string]]');
+  });
+
+  it('extracts top-level prompt string constants into a dedicated prompt store', async () => {
+    const source = lines([
+      'local CHOICE_GENERATION_INSTRUCTION = [[',
+      '## Assistant Guidance',
+      '한국어 안내와 ] ] 비슷한 텍스트를 보존합니다.',
+      ']]',
+      '',
+      'local KOREAN_CHOICE_INSTRUCTION_CONTENT = [=[',
+      '현재 언어는 Korean입니다.',
+      ']=]',
+      '',
+      'local storyState = {',
+      '  marker = "ok",',
+      '}',
+      '',
+      'function onOutput(text)',
+      '  local INNER_PROMPT_TEMPLATE = [[keep function scope]]',
+      '  return CHOICE_GENERATION_INSTRUCTION .. KOREAN_CHOICE_INSTRUCTION_CONTENT .. storyState.marker .. INNER_PROMPT_TEMPLATE .. text',
+      'end',
+    ]);
+
+    const artifacts = await createRisuLuaModuleTableArtifacts({ source, sourcePath: 'prompt_store_fixture.risulua' });
+    const paths = artifacts.workspaceFiles.map((file) => file.path);
+
+    expect(paths).toContain(RISULUA_MODULE_TABLE_PROMPT_STORE_PATH);
+    expect(paths).toContain(RISULUA_MODULE_TABLE_VARIABLE_STORE_PATH);
+    expect(artifacts.dryRunResult.refactorMap.modules).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: RISULUA_MODULE_TABLE_PROMPT_STORE_PATH,
+        requireId: 'prompts.instruction_store',
+        alias: '__prompt_store',
+        category: 'prompt-store',
+        exports: ['CHOICE_GENERATION_INSTRUCTION', 'KOREAN_CHOICE_INSTRUCTION_CONTENT'],
+      }),
+    ]));
+
+    const main = fileContent(artifacts, 'lua/main.risulua');
+    const runtimeOutput = fileContent(artifacts, 'lua/runtime/output.risulua');
+    expect(main).toContain('local __prompt_store = require("prompts.instruction_store")');
+    expect(main).toContain('local CHOICE_GENERATION_INSTRUCTION = __prompt_store.CHOICE_GENERATION_INSTRUCTION');
+    expect(main).toContain('local KOREAN_CHOICE_INSTRUCTION_CONTENT = __prompt_store.KOREAN_CHOICE_INSTRUCTION_CONTENT');
+    expect(main).not.toContain('## Assistant Guidance');
+    expect(runtimeOutput).toContain('local INNER_PROMPT_TEMPLATE = [[keep function scope]]');
+    expect(main).toContain('local storyState = __variable_store.storyState');
+
+    const promptStore = fileContent(artifacts, RISULUA_MODULE_TABLE_PROMPT_STORE_PATH);
+    expect(promptStore).toContain('-- risulua-split=module-table prompt-store');
+    expect(promptStore).toContain('local CHOICE_GENERATION_INSTRUCTION = [[');
+    expect(promptStore).toContain('한국어 안내와 ] ] 비슷한 텍스트를 보존합니다.');
+    expect(promptStore).toContain('local KOREAN_CHOICE_INSTRUCTION_CONTENT = [=[');
+    expect(promptStore).toContain('M.CHOICE_GENERATION_INSTRUCTION = CHOICE_GENERATION_INSTRUCTION');
+    expect(promptStore.trim().endsWith('return M')).toBe(true);
+
+    const variableStore = fileContent(artifacts, RISULUA_MODULE_TABLE_VARIABLE_STORE_PATH);
+    expect(variableStore).toContain('local storyState = {');
+    expect(variableStore).not.toContain('CHOICE_GENERATION_INSTRUCTION');
+  });
+
+  it('generates one domain file per validated safe domain function', async () => {
+    const source = lines([
+      'local function scoreDeck(cards)',
+      '  return #cards * 10',
+      'end',
+      '',
+      'function onOutput(text)',
+      '  return tostring(scoreDeck({ text }))',
+      'end',
+    ]);
+
+    const artifacts = await createRisuLuaModuleTableArtifacts({
+      source,
+      sourcePath: 'domain_generation_fixture.risulua',
+      domainGeneration: 'validated',
+    });
+    const paths = artifacts.workspaceFiles.map((file) => file.path);
+
+    expect(paths).toContain('lua/domain/score_deck.risulua');
+    expect(artifacts.dryRunResult.refactorMap.domainCandidates).toEqual([
+      expect.objectContaining({
+        name: 'scoreDeck',
+        generationStatus: 'generated',
+        generatedPath: 'lua/domain/score_deck.risulua',
+        autoGenerated: true,
+      }),
+    ]);
+
+    const main = fileContent(artifacts, 'lua/main.risulua');
+    expect(main).toContain('local __domain_score_deck = require("domain.score_deck")');
+    expect(main).toContain('return __runtime_output.onOutput(text, __domain_score_deck.scoreDeck)');
+    expect(main).not.toContain('local function scoreDeck');
+
+    const domainFile = fileContent(artifacts, 'lua/domain/score_deck.risulua');
+    expect(domainFile).toContain('local M = {}');
+    expect(domainFile).toContain('function scoreDeck(cards)');
+    expect(domainFile).toContain('M.scoreDeck = scoreDeck');
+    expect(domainFile.trim().endsWith('return M')).toBe(true);
+  });
+
+  it('uses risuregex button triggers when generating button_actions artifacts', async () => {
+    const source = lines([
+      'local function toggleSidePanel()',
+      '  return "ok"',
+      'end',
+    ]);
+
+    const artifacts = await createRisuLuaModuleTableArtifacts({
+      source,
+      sourcePath: 'regex_button_fixture.risulua',
+      buttonActionSources: ['@@@ OUT\n{{button::Toggle::toggleSidePanel}}\n'],
+    });
+
+    const paths = artifacts.workspaceFiles.map((file) => file.path);
+    expect(paths).toContain(RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH);
+    expect(artifacts.dryRunResult.refactorMap.modules).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH,
+        category: 'button-action',
+        exports: ['toggleSidePanel'],
+      }),
+    ]));
+
+    const main = fileContent(artifacts, 'lua/main.risulua');
+    expect(main).toContain('local __button_actions = require("button_actions.actions")');
+    expect(main).toContain('toggleSidePanel = __button_actions.toggleSidePanel');
+
+    const buttonActions = fileContent(artifacts, RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH);
+    expect(buttonActions).toContain('function toggleSidePanel()');
+    expect(buttonActions).toContain('M.toggleSidePanel = toggleSidePanel');
+  });
+
+  it('generates host-visible public domain functions with bridge assignments and helper rewrites', async () => {
+    const source = lines([
+      'local function safeGet(key)',
+      '  return getChatVar(key)',
+      'end',
+      '',
+      'function createRandomCharacter(code)',
+      '  local name = safeGet("name")',
+      '  setChatVar("last", name)',
+      '  return code .. name',
+      'end',
+      '',
+      'function onOutput(text)',
+      '  return createRandomCharacter(text)',
+      'end',
+    ]);
+
+    const artifacts = await createRisuLuaModuleTableArtifacts({
+      source,
+      sourcePath: 'public_domain_generation_fixture.risulua',
+      domainGeneration: 'validated',
+    });
+
+    const main = fileContent(artifacts, 'lua/main.risulua');
+    const domainFile = fileContent(artifacts, 'lua/domain/create_random_character.risulua');
+    expect(main).toContain('local __domain_create_random_character = require("domain.create_random_character")');
+    expect(main).toContain('createRandomCharacter = __domain_create_random_character.createRandomCharacter');
+    expect(domainFile).toContain('local __local_helpers = require("common.local_helpers")');
+    expect(domainFile).toContain('local name = __local_helpers.safeGet("name")');
+    expect(domainFile).toContain('M.createRandomCharacter = createRandomCharacter');
+    expect(artifacts.dryRunResult.refactorMap.domainCandidates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'createRandomCharacter', generationStatus: 'generated', autoGenerated: true }),
+    ]));
   });
 
   it('does not write empty modules when the refactor map has no module entries', async () => {

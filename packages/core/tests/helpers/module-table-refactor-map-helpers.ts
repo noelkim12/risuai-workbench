@@ -9,6 +9,7 @@ import {
   planTopLevelRewrite,
   type DryRunPlanResult,
   type NestedHandlerRewriteResult,
+  type RisuLuaModuleTableDomainGenerationOption,
   type RisuLuaModuleTableRefactorMapContract,
   type TopLevelRewriteResult,
 } from '../../src/domain/risulua-split';
@@ -17,13 +18,14 @@ export function lines(sourceLines: string[]): string {
   return `${sourceLines.join('\n')}\n`;
 }
 
-export async function planFixture(source: string): Promise<DryRunPlanResult> {
+export async function planFixture(source: string, options?: { domainGeneration?: RisuLuaModuleTableDomainGenerationOption }): Promise<DryRunPlanResult> {
   const parseResult = await parseRisuLuaModuleTableSource(source);
   const analyzerResult = analyzeRisuLuaModuleTable({ source, parseResult });
   const classificationResult = classifyRisuLuaModuleTableDecisions({
     source,
     sourceFile: 'legacy/original.risulua',
     analyzerResult,
+    domainGeneration: options?.domainGeneration,
   });
   return planDryRunRefactorMap({
     source,

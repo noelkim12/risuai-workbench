@@ -3,7 +3,13 @@ import path from 'node:path';
 import { runAnalyzeModuleWorkflow } from '@/cli/analyze/module/workflow';
 import { ensureDir } from '@/node/fs-helpers';
 import { parseRisuLuaMode, type RisuLuaMode } from '../../shared/lua-bundler/risulua-mode';
-import { parseRisuLuaSplitMode, type RisuLuaSplitCliMode } from '../../shared/risulua-split';
+import {
+  RISULUA_DOMAIN_GENERATION_HELP_LINE,
+  parseRisuLuaDomainGenerationMode,
+  parseRisuLuaSplitMode,
+  type RisuLuaDomainGenerationCliMode,
+  type RisuLuaSplitCliMode,
+} from '../../shared/risulua-split';
 import {
   phase1_parseModule,
   phase2_extractLorebooks,
@@ -25,6 +31,7 @@ const HELP_TEXT = `
     --out <dir>     출력 디렉토리 (기본: ./module_<name>)
     --risulua-mode <classic|modular>  RisuLua 개발 방식: classic=단일 파일 개발, modular=모듈식 개발 (기본: classic)
     --risulua-split <none|report|coarse|module-table>  추출된 RisuLua split 산출물 생성 방식 (기본: none)
+${RISULUA_DOMAIN_GENERATION_HELP_LINE}
     -h, --help      도움말
 
   Phases:
@@ -51,8 +58,10 @@ export async function runExtractWorkflow(argv: readonly string[]): Promise<numbe
   const helpMode = argv.includes('-h') || argv.includes('--help') || argv.length === 0;
   let modeResult: ReturnType<typeof parseRisuLuaMode>;
   let splitResult: ReturnType<typeof parseRisuLuaSplitMode>;
+  let domainGenerationResult: ReturnType<typeof parseRisuLuaDomainGenerationMode>;
   try {
-    splitResult = parseRisuLuaSplitMode(argv);
+    domainGenerationResult = parseRisuLuaDomainGenerationMode(argv);
+    splitResult = parseRisuLuaSplitMode(domainGenerationResult.strippedArgv);
     modeResult = parseRisuLuaMode(splitResult.strippedArgv);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -77,7 +86,7 @@ export async function runExtractWorkflow(argv: readonly string[]): Promise<numbe
   }
 
   try {
-    await runMain(filePath, outArg, modeResult.mode ?? 'classic', splitResult.mode ?? 'none');
+    await runMain(filePath, outArg, modeResult.mode ?? 'classic', splitResult.mode ?? 'none', domainGenerationResult.mode ?? 'validated');
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -95,6 +104,7 @@ async function runMain(
   outArg: string | null,
   risuluaMode: RisuLuaMode,
   risuluaSplitMode: RisuLuaSplitCliMode,
+  domainGeneration: RisuLuaDomainGenerationCliMode,
 ): Promise<void> {
   const t0 = performance.now();
   console.log('\n  RisuAI Module Extractor\n');
@@ -110,6 +120,7 @@ async function runMain(
 
   console.log(`     RisuLua: ${formatRisuLuaModeLabel(risuluaMode)}`);
   console.log(`     RisuLua split: ${risuluaSplitMode}`);
+  if (risuluaSplitMode === 'module-table') console.log(`     RisuLua domain generation: ${domainGeneration}`);
   console.log(`     ⏱  Phase 1: ${fmt(performance.now() - t)}`);
 
   t = performance.now();
@@ -123,7 +134,7 @@ async function runMain(
   t = performance.now();
   let phase4Error: Error | undefined;
   try {
-    await phase4_extractLua(parsed.module, resolvedOutDir, risuluaMode, risuluaSplitMode);
+    await phase4_extractLua(parsed.module, resolvedOutDir, risuluaMode, risuluaSplitMode, domainGeneration);
   } catch (error) {
     phase4Error = error instanceof Error ? error : new Error(String(error));
     console.error(`     ⚠️ Phase 4 failed: ${phase4Error.message}`);

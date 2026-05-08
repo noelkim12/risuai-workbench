@@ -188,6 +188,8 @@ export async function runModuleTableDryRunAsync(options: RunRisuLuaSplitOptions)
     cwd: options.cwd,
     profileResult,
     parseResult,
+    domainGeneration: options.domainGeneration ?? 'validated',
+    buttonActionSources: options.buttonActionSources,
   });
   writeRisuLuaModuleTableWorkspace(artifacts, { outputRoot: options.outputRoot, cwd: options.cwd });
   const buildResult = buildRisuLuaSplitDist({ outputRoot: options.outputRoot, plan: artifacts.plan });

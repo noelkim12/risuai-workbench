@@ -277,10 +277,23 @@ function analyzeFunctionBody(state: AnalyzerState, declaration: LuaFunctionDecla
   const mutations: RisuLuaModuleTableMutationFact[] = [];
   const callSites: RisuLuaModuleTableCallSiteFact[] = [];
   const hostEffects = createEmptyRisuLuaModuleTableHostEffects();
-  for (const statement of declaration.body) analyzeStatementInScope(statement, state, scope, localDeclarations, references, mutations, callSites, hostEffects);
+  analyzeStatementsInScope(declaration.body, state, scope, localDeclarations, references, mutations, callSites, hostEffects);
 
   const captures = uniqueSorted(references.filter((reference) => reference.resolvedScopeId !== undefined && reference.resolvedScopeId !== scope.fact.id).map((reference) => reference.name));
   return { parameters, localDeclarations: uniqueSorted(localDeclarations), references, captures, mutations, mutates: uniqueSorted(mutations.map((mutation) => mutation.accessPath ?? mutation.name)), hostEffects, callSites };
+}
+
+function analyzeStatementsInScope(
+  statements: LuaNode[],
+  state: AnalyzerState,
+  scope: ScopeFrame,
+  localDeclarations: string[],
+  references: RisuLuaModuleTableReferenceFact[],
+  mutations: RisuLuaModuleTableMutationFact[],
+  callSites: RisuLuaModuleTableCallSiteFact[],
+  hostEffects: RisuLuaModuleTableHostEffects,
+): void {
+  for (const statement of statements) analyzeStatementInScope(statement, state, scope, localDeclarations, references, mutations, callSites, hostEffects);
 }
 
 function analyzeStatementInScope(
@@ -307,11 +320,66 @@ function analyzeStatementInScope(
     analyzeLocalStatement(node as LuaLocalStatement, state, scope, localDeclarations, references, mutations, callSites, hostEffects);
     return;
   }
+  if (node.type === 'IfStatement') {
+    for (const clause of nodeArrayProperty(node, 'clauses')) {
+      analyzeStatementsInScope(nodeArrayProperty(clause, 'body'), state, scope, localDeclarations, references, mutations, callSites, hostEffects);
+    }
+    return;
+  }
+  if (node.type === 'ForNumericStatement') {
+    for (const expression of ['start', 'end', 'step'].flatMap((key) => optionalNodeProperty(node, key))) {
+      analyzeExpression(expression, state, scope, references, mutations, callSites, hostEffects);
+    }
+    declareOptionalNodeName(nodeProperty(node, 'variable'), scope, localDeclarations);
+    analyzeStatementsInScope(nodeArrayProperty(node, 'body'), state, scope, localDeclarations, references, mutations, callSites, hostEffects);
+    return;
+  }
+  if (node.type === 'ForGenericStatement') {
+    for (const iterator of nodeArrayProperty(node, 'iterators')) analyzeExpression(iterator, state, scope, references, mutations, callSites, hostEffects);
+    for (const variable of nodeArrayProperty(node, 'variables')) declareOptionalNodeName(variable, scope, localDeclarations);
+    analyzeStatementsInScope(nodeArrayProperty(node, 'body'), state, scope, localDeclarations, references, mutations, callSites, hostEffects);
+    return;
+  }
+  if (node.type === 'DoStatement' || node.type === 'WhileStatement' || node.type === 'RepeatStatement') {
+    analyzeStatementsInScope(nodeArrayProperty(node, 'body'), state, scope, localDeclarations, references, mutations, callSites, hostEffects);
+    return;
+  }
   if (node.type === 'AssignmentStatement') {
     analyzeAssignmentStatement(node as LuaAssignmentStatement, state, scope, references, mutations, callSites, hostEffects);
     return;
   }
   analyzeExpression(node, state, scope, references, mutations, callSites, hostEffects);
+}
+
+function declareOptionalNodeName(node: LuaNode | undefined, scope: ScopeFrame, localDeclarations: string[]): void {
+  const name = node?.type === 'Identifier' ? (node as LuaIdentifier).name : undefined;
+  if (name === undefined) return;
+  scope.declared.add(name);
+  localDeclarations.push(name);
+}
+
+function optionalNodeProperty(node: LuaNode, key: string): LuaNode[] {
+  const value = nodeRecord(node)[key];
+  return isLuaNodeValue(value) ? [value] : [];
+}
+
+function nodeProperty(node: LuaNode, key: string): LuaNode | undefined {
+  const value = nodeRecord(node)[key];
+  return isLuaNodeValue(value) ? value : undefined;
+}
+
+function nodeArrayProperty(node: LuaNode, key: string): LuaNode[] {
+  const value = nodeRecord(node)[key];
+  if (!Array.isArray(value)) return [];
+  return value.filter(isLuaNodeValue);
+}
+
+function nodeRecord(node: LuaNode): Record<string, unknown> {
+  return node as Record<string, unknown>;
+}
+
+function isLuaNodeValue(value: unknown): value is LuaNode {
+  return typeof value === 'object' && value !== null && typeof (value as LuaNode).type === 'string';
 }
 
 function analyzeLocalStatement(local: LuaLocalStatement, state: AnalyzerState, scope: ScopeFrame, localDeclarations: string[], references: RisuLuaModuleTableReferenceFact[], mutations: RisuLuaModuleTableMutationFact[], callSites: RisuLuaModuleTableCallSiteFact[], hostEffects: RisuLuaModuleTableHostEffects): void {

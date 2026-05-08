@@ -306,6 +306,7 @@ function buildRequireBindings(
 function validateEditOverlap(editPlan: DryRunEditPlan, findings: DryRunValidationFinding[]): void {
   const editableRanges = editPlan.edits
     .filter((edit) => edit.intent === 'extract-symbol' || edit.intent === 'bridge-global')
+    .filter((edit) => !isNestedHandlerHelperInsideRuntimeHandler(edit, editPlan.edits))
     .map((edit) => edit.sourceRange);
 
   const sorted = [...editableRanges].sort(
@@ -321,6 +322,14 @@ function validateEditOverlap(editPlan: DryRunEditPlan, findings: DryRunValidatio
       return;
     }
   }
+}
+
+function isNestedHandlerHelperInsideRuntimeHandler(edit: DryRunEdit, edits: DryRunEdit[]): boolean {
+  if (edit.intent !== 'extract-symbol') return false;
+  if (!/^lua\/handler_helpers\/[^/]+_helpers\.risulua$/.test(edit.targetModule)) return false;
+  return edits.some((candidate) => candidate.classification === 'extract:runtime-handler-body'
+    && candidate.sourceRange.startOffset <= edit.sourceRange.startOffset
+    && candidate.sourceRange.endOffset >= edit.sourceRange.endOffset);
 }
 
 function validateEditAgainstNonExecutableRanges(
