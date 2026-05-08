@@ -12,7 +12,14 @@ import { cloneRange, sourceForRange } from '../engine/source-range';
 import type { SourceInfo } from '../engine/source-range';
 import { pushTrace } from '../engine/trace';
 import type { TraceState } from '../engine/trace';
-import { findPreviousChatHistoryContentByRole, getChatHistoryContent, parseChatHistoryIndex } from '../chat-history';
+import {
+  findLatestUserMessageTimestamps,
+  findPreviousChatHistoryContentByRole,
+  formatDurationMillis,
+  getChatHistoryContent,
+  getChatHistoryTimestamp,
+  parseChatHistoryIndex,
+} from '../chat-history';
 import { CBS_SIMULATOR_UNSUPPORTED_MACRO_DIAGNOSTIC_CODE } from '../unsupported-diagnostics';
 
 /**
@@ -227,6 +234,32 @@ function evaluatePreviousUserChatMacro(node: MacroCallNode, state: ContextualSta
   return value ?? '';
 }
 
+/** evaluateIdleDurationMacro 함수. 마지막 message timestamp부터 deterministic clock까지 duration을 반환함. */
+function evaluateIdleDurationMacro(node: MacroCallNode, state: ContextualState): string {
+  if (!state.explicitContextKeys.has('chatHistory') || state.context.chatHistory === undefined) {
+    return preserveContextMacro(node, state, 'context.chatHistory');
+  }
+  if (state.context.chatHistory.length === 0) return '0:00:00';
+  const timestamp = getChatHistoryTimestamp(state.context.chatHistory[state.context.chatHistory.length - 1]);
+  if (timestamp === undefined) return '[Cannot get time, message was sent in older version]';
+  return formatDurationMillis(state.context.providers.clock().getTime() - timestamp);
+}
+
+/** evaluateMessageIdleDurationMacro 함수. 최근 두 user message 사이 duration을 반환함. */
+function evaluateMessageIdleDurationMacro(node: MacroCallNode, state: ContextualState): string {
+  if (
+    !state.explicitContextKeys.has('chatHistory') ||
+    state.context.chatHistory === undefined ||
+    state.context.chatHistoryCursor === undefined
+  ) {
+    return preserveContextMacro(node, state, 'context.chatHistoryCursor');
+  }
+  const timestamps = findLatestUserMessageTimestamps(state.context.chatHistory, state.context.chatHistoryCursor);
+  if (timestamps.latest === undefined) return '[No user message found]';
+  if (timestamps.previous === undefined) return '[No previous user message found]';
+  return formatDurationMillis(timestamps.latest - timestamps.previous);
+}
+
 /**
  * Registry of all contextual macro handlers.
  * Maps canonical macro names to their evaluator functions.
@@ -241,4 +274,6 @@ export const CONTEXTUAL_MACRO_HANDLERS: Readonly<Record<string, ContextualMacroH
   previouschatlog: evaluatePreviousChatLogMacro,
   previouscharchat: evaluatePreviousCharacterChatMacro,
   previoususerchat: evaluatePreviousUserChatMacro,
+  idleduration: evaluateIdleDurationMacro,
+  messageidleduration: evaluateMessageIdleDurationMacro,
 };

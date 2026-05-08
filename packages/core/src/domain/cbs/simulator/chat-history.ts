@@ -100,3 +100,44 @@ export function findPreviousChatHistoryContentByRole(
   }
   return undefined;
 }
+
+/**
+ * formatDurationMillis 함수.
+ * milliseconds duration을 upstream-style H:MM:SS 문자열로 변환함.
+ *
+ * @param durationMillis - 변환할 duration milliseconds
+ * @returns H:MM:SS 형식 문자열
+ */
+export function formatDurationMillis(durationMillis: number): string {
+  let seconds = Math.floor(Math.max(durationMillis, 0) / 1000);
+  let minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  seconds %= 60;
+  minutes %= 60;
+  return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
+
+/**
+ * findLatestUserMessageTimestamps 함수.
+ * cursor부터 역방향으로 최근 user message 2개의 timestamp를 찾음.
+ *
+ * @param entries - 검색할 chat history entries
+ * @param cursor - 검색 시작 index
+ * @returns 최신 user timestamp와 이전 user timestamp, 부족하면 undefined 포함
+ */
+export function findLatestUserMessageTimestamps(
+  entries: readonly CbsSimulationChatHistoryEntry[],
+  cursor: number,
+): { readonly latest?: number; readonly previous?: number } {
+  let latest: number | undefined;
+  for (let index = Math.min(cursor, entries.length - 1); index >= 0; index -= 1) {
+    if (getChatHistoryRole(entries[index]) !== 'user') continue;
+    const timestamp = getChatHistoryTimestamp(entries[index]);
+    if (latest === undefined) {
+      latest = timestamp;
+    } else {
+      return { latest, previous: timestamp };
+    }
+  }
+  return { latest };
+}

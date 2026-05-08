@@ -107,6 +107,36 @@ describe('CBS simulator chat history context', () => {
     );
   });
 
+  it('resolves idle_duration from the final chat history timestamp and deterministic clock', () => {
+    const result = simulateCbsText('{{idle_duration}}', {
+      chatHistory: [{ role: 'user', content: 'hello', createdAt: '2026-05-08T00:00:00.000Z' }],
+      providers: {
+        clock: () => new Date('2026-05-08T01:02:03.000Z'),
+        rng: () => 0,
+        pickHashRand: () => 0,
+      },
+    });
+
+    expect(result.status).toBe('ok');
+    expect(result.output).toBe('1:02:03');
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it('resolves message_idle_duration between the latest two user messages at the cursor', () => {
+    const result = simulateCbsText('{{message_idle_duration}}', {
+      chatHistory: [
+        { role: 'user', content: 'first', createdAt: '2026-05-08T00:00:00.000Z' },
+        { role: 'char', content: 'reply', createdAt: '2026-05-08T00:00:10.000Z' },
+        { role: 'user', content: 'second', createdAt: '2026-05-08T00:02:05.000Z' },
+      ],
+      chatHistoryCursor: 2,
+    });
+
+    expect(result.status).toBe('ok');
+    expect(result.output).toBe('0:02:05');
+    expect(result.diagnostics).toEqual([]);
+  });
+
   it('keeps numeric #each iterator text as one item before range compatibility is introduced', () => {
     const result = simulateCbsText('{{#each {{? {{lastmessageid}}}} item}}[{{slot::item}}]{{/each}}', {
       chatHistory: ['hello', 'world', 'again'],
