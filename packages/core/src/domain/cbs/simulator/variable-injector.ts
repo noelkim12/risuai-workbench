@@ -71,8 +71,8 @@ export function createCbsPreviewVariableInjection(
   // Generate coverage notes from bindings
   const coverageNotes = generateCoverageNotes(bindings);
 
-  // Clone effects from input (minimal Task 1 behavior)
-  const effects: CbsSimulationEffect[] = [...(input.effects ?? [])];
+  // Clone effects from input with deep cloning (Task 3: no-mutation guarantee)
+  const effects: CbsSimulationEffect[] = (input.effects ?? []).map((effect) => ({ ...effect }));
 
   return {
     effectiveContext,

@@ -391,4 +391,87 @@ describe('CBS preview variable injector engine', () => {
     // No warnings for resolved variables
     expect(result.warnings).toHaveLength(0);
   });
+
+  it('reports iterator runtime-unknown for #each with as clause', () => {
+    const input: CbsPreviewVariableInjectionInput = {
+      source: '{{#each actor as item}}{{slot::item}}{{/each}}',
+    };
+
+    const result = createCbsPreviewVariableInjection(input);
+
+    // Should have one binding for 'actor' with iterator scope
+    expect(result.bindings).toHaveLength(1);
+    expect(result.bindings[0]).toMatchObject({
+      variableName: 'actor',
+      scope: 'iterator',
+      direction: 'read',
+      status: 'runtimeUnknown',
+      source: 'runtimeUnknown',
+      valuePreview: undefined,
+    });
+
+    // Should have CBSVAR_RUNTIME_UNKNOWN warning
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toMatchObject({
+      code: 'CBSVAR_RUNTIME_UNKNOWN',
+      variableName: 'actor',
+    });
+
+    // Coverage note should contain iterator:runtimeUnknown
+    expect(result.coverageNotes).toHaveLength(1);
+    expect(result.coverageNotes[0]).toMatchObject({
+      key: 'actor',
+      status: 'runtimeUnknown',
+    });
+    expect(result.coverageNotes[0].note).toContain('iterator:runtimeUnknown');
+  });
+
+  it('does not mutate caller inputs and clones effects deeply', () => {
+    // Create input objects with nested structures
+    const baseContext = {
+      chatVariables: { mood: 'happy' },
+      characterDefaultVariables: { tone: 'friendly' },
+    };
+    const previewOverrides = {
+      chatVariables: { mood: 'excited' },
+    };
+    const workspaceDefaults = {
+      characterDefaultVariables: { tone: 'formal' },
+    };
+    const effects = [
+      { operation: 'setvar', kind: 'variableWrite', target: 'x', valuePreview: '1' },
+    ];
+
+    // Store JSON snapshots
+    const baseContextSnapshot = JSON.stringify(baseContext);
+    const previewOverridesSnapshot = JSON.stringify(previewOverrides);
+    const workspaceDefaultsSnapshot = JSON.stringify(workspaceDefaults);
+    const effectsSnapshot = JSON.stringify(effects);
+
+    const input: CbsPreviewVariableInjectionInput = {
+      source: '{{getvar::mood}}',
+      baseContext,
+      previewOverrides,
+      workspaceDefaults,
+      effects,
+    };
+
+    const result = createCbsPreviewVariableInjection(input);
+
+    // Assert caller objects are unchanged (JSON-identical)
+    expect(JSON.stringify(baseContext)).toBe(baseContextSnapshot);
+    expect(JSON.stringify(previewOverrides)).toBe(previewOverridesSnapshot);
+    expect(JSON.stringify(workspaceDefaults)).toBe(workspaceDefaultsSnapshot);
+    expect(JSON.stringify(effects)).toBe(effectsSnapshot);
+
+    // Assert result.effects deep-equals input.effects
+    expect(result.effects).toEqual(effects);
+
+    // Assert result.effects is not the same array reference
+    expect(result.effects).not.toBe(effects);
+
+    // Assert each effect object is cloned (not same reference)
+    expect(result.effects[0]).not.toBe(effects[0]);
+    expect(result.effects[0]).toEqual(effects[0]);
+  });
 });
