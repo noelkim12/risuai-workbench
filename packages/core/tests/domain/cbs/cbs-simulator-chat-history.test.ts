@@ -63,6 +63,50 @@ describe('CBS simulator chat history context', () => {
     expect(JSON.stringify(context)).toBe(before);
   });
 
+  it('resolves previouscharchat by searching backward from the explicit cursor', () => {
+    const result = simulateCbsText('{{previouscharchat}}', {
+      chatHistory: [
+        { role: 'user', content: 'first user' },
+        { role: 'char', content: 'first char' },
+        { role: 'user', content: 'second user' },
+      ],
+      chatHistoryCursor: 2,
+    });
+
+    expect(result.status).toBe('ok');
+    expect(result.output).toBe('first char');
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it('resolves previoususerchat by searching backward from the explicit cursor', () => {
+    const result = simulateCbsText('{{previoususerchat}}', {
+      chatHistory: [
+        { role: 'user', content: 'first user' },
+        { role: 'char', content: 'first char' },
+        { role: 'user', content: 'second user' },
+      ],
+      chatHistoryCursor: 2,
+    });
+
+    expect(result.status).toBe('ok');
+    expect(result.output).toBe('first user');
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it('preserves previoususerchat when chatHistoryCursor is absent to match upstream no-chatID behavior safely', () => {
+    const result = simulateCbsText('{{previoususerchat}}', {
+      chatHistory: [{ role: 'user', content: 'first user' }],
+    });
+
+    expect(result.status).toBe('partial');
+    expect(result.output).toBe('{{previoususerchat}}');
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: 'simulator', severity: 'warning', message: expect.stringContaining('previoususerchat') }),
+      ]),
+    );
+  });
+
   it('keeps numeric #each iterator text as one item before range compatibility is introduced', () => {
     const result = simulateCbsText('{{#each {{? {{lastmessageid}}}} item}}[{{slot::item}}]{{/each}}', {
       chatHistory: ['hello', 'world', 'again'],

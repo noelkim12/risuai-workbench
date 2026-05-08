@@ -67,6 +67,7 @@ export function createDefaultCbsSimulationContext(
     isFirstMessage: overrides.isFirstMessage,
     lorePositions: overrides.lorePositions ? { ...overrides.lorePositions } : undefined,
     chatHistory: overrides.chatHistory ? overrides.chatHistory.map(cloneChatHistoryEntry) : undefined,
+    chatHistoryCursor: overrides.chatHistoryCursor,
     providers: {
       ...DEFAULT_CBS_SIMULATION_PROVIDERS,
       ...(overrides.providers ?? {}),

@@ -77,3 +77,26 @@ export function parseChatHistoryIndex(value: string): number | undefined {
   const index = Number(value);
   return Number.isInteger(index) ? index : undefined;
 }
+
+/**
+ * findPreviousChatHistoryContentByRole 함수.
+ * cursor 직전부터 뒤로 탐색해 지정 role의 최근 message content를 찾음.
+ *
+ * @param entries - 검색할 chat history entries
+ * @param role - 찾을 role 이름
+ * @param cursor - 현재 message index
+ * @returns 발견한 content, 없으면 undefined
+ */
+export function findPreviousChatHistoryContentByRole(
+  entries: readonly CbsSimulationChatHistoryEntry[],
+  role: string,
+  cursor: number,
+): string | undefined {
+  const targetRole = role.toLocaleLowerCase();
+  for (let index = cursor - 1; index >= 0; index -= 1) {
+    if (getChatHistoryRole(entries[index]) === targetRole) {
+      return getChatHistoryContent(entries[index]);
+    }
+  }
+  return undefined;
+}

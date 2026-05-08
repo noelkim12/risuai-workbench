@@ -12,7 +12,7 @@ import { cloneRange, sourceForRange } from '../engine/source-range';
 import type { SourceInfo } from '../engine/source-range';
 import { pushTrace } from '../engine/trace';
 import type { TraceState } from '../engine/trace';
-import { getChatHistoryContent, parseChatHistoryIndex } from '../chat-history';
+import { findPreviousChatHistoryContentByRole, getChatHistoryContent, parseChatHistoryIndex } from '../chat-history';
 import { CBS_SIMULATOR_UNSUPPORTED_MACRO_DIAGNOSTIC_CODE } from '../unsupported-diagnostics';
 
 /**
@@ -194,6 +194,39 @@ function evaluatePreviousChatLogMacro(node: MacroCallNode, state: ContextualStat
   return entry === undefined ? 'Out of range' : getChatHistoryContent(entry);
 }
 
+/** evaluatePreviousCharacterChatMacro 함수. cursor 이전의 최근 character message를 반환함. */
+function evaluatePreviousCharacterChatMacro(node: MacroCallNode, state: ContextualState): string {
+  if (!state.explicitContextKeys.has('chatHistory') || state.context.chatHistory === undefined) {
+    return preserveContextMacro(node, state, 'context.chatHistory');
+  }
+  const cursor = state.context.chatHistoryCursor ?? state.context.chatHistory.length;
+  const value = findPreviousChatHistoryContentByRole(state.context.chatHistory, 'char', cursor);
+  pushProviderTrace(state, node, 'resolved previouscharchat from explicit chat history context', {
+    source: 'context.chatHistory',
+    cursor,
+    found: value !== undefined,
+  });
+  return value ?? '';
+}
+
+/** evaluatePreviousUserChatMacro 함수. 명시 cursor 이전의 최근 user message를 반환함. */
+function evaluatePreviousUserChatMacro(node: MacroCallNode, state: ContextualState): string {
+  if (
+    !state.explicitContextKeys.has('chatHistory') ||
+    state.context.chatHistory === undefined ||
+    state.context.chatHistoryCursor === undefined
+  ) {
+    return preserveContextMacro(node, state, 'context.chatHistoryCursor');
+  }
+  const value = findPreviousChatHistoryContentByRole(state.context.chatHistory, 'user', state.context.chatHistoryCursor);
+  pushProviderTrace(state, node, 'resolved previoususerchat from explicit chat history context', {
+    source: 'context.chatHistory',
+    cursor: state.context.chatHistoryCursor,
+    found: value !== undefined,
+  });
+  return value ?? '';
+}
+
 /**
  * Registry of all contextual macro handlers.
  * Maps canonical macro names to their evaluator functions.
@@ -206,4 +239,6 @@ export const CONTEXTUAL_MACRO_HANDLERS: Readonly<Record<string, ContextualMacroH
   isfirstmsg: evaluateIsFirstMessageMacro,
   lastmessageid: evaluateLastMessageIdMacro,
   previouschatlog: evaluatePreviousChatLogMacro,
+  previouscharchat: evaluatePreviousCharacterChatMacro,
+  previoususerchat: evaluatePreviousUserChatMacro,
 };

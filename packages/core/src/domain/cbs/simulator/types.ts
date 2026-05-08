@@ -72,6 +72,8 @@ export interface CbsSimulationContext {
   readonly lorePositions?: Readonly<Record<string, string>>;
   /** Explicit chat history messages used by history-sensitive macros. */
   readonly chatHistory?: readonly CbsSimulationChatHistoryEntry[];
+  /** Explicit current chat history index used by previous role-sensitive macros. */
+  readonly chatHistoryCursor?: number;
   /** Deterministic providers for time/random/pick behavior; can be overridden per call through options. */
   providers: CbsSimulationProviders;
 }
