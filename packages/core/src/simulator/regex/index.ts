@@ -14,3 +14,4 @@ export * from './replacement-plan';
 export * from './cbs-adapter';
 export * from './view-model';
 export * from './simulate';
+export * from './fixtures/regex-preview-fixtures';
