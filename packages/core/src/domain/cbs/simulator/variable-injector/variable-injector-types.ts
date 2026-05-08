@@ -2,8 +2,8 @@
  * CBS preview variable injector engine type contracts.
  * @file packages/core/src/domain/cbs/simulator/variable-injector-types.ts
  */
-import type { CBSVariableOccurrence } from '../cbs';
-import type { CbsSimulationContext, CbsSimulationEffect } from './types';
+import type { CBSVariableOccurrence } from '../../cbs';
+import type { CbsSimulationContext, CbsSimulationEffect } from '../types';
 
 /** Widened CBS operation type including pre-extracted scoped references. */
 export type CbsPreviewVariableOperation =
@@ -29,12 +29,7 @@ export interface CbsPreviewVariableReference {
 }
 
 /** Variable scope for CBS preview injection. */
-export type CbsPreviewVariableScope =
-  | 'chat'
-  | 'global'
-  | 'toggle'
-  | 'temp'
-  | 'iterator';
+export type CbsPreviewVariableScope = 'chat' | 'global' | 'toggle' | 'temp' | 'iterator';
 
 /** Variable source indicating where a binding value originated. */
 export type CbsPreviewVariableSource =

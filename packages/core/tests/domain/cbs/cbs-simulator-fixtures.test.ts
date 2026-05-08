@@ -246,12 +246,18 @@ describe('CBS simulator block control-flow fixtures', () => {
     expect(result.diagnostics).toEqual([]);
   });
 
-  it('accepts arbitrary slash-prefixed close tags as current-block closes', () => {
+  it('surfaces arbitrary slash close tags as parser diagnostics instead of legacy numbered closes', () => {
     const result = simulateCbsText('{{#if {{? 1=1}}}}A{{/whatever}}Z');
 
-    expect(result.status).toBe('ok');
+    expect(result.status).toBe('error');
     expect(result.output).toBe('AZ');
-    expect(result.diagnostics).toEqual([]);
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        code: 'CBS006',
+        message: 'Cross-nested block close detected',
+        severity: 'error',
+      }),
+    ]);
   });
 
   it('surfaces parser depth cap diagnostics through simulator results', () => {
@@ -409,11 +415,11 @@ describe('CBS simulator block control-flow fixtures', () => {
     );
   });
 
-  it('treats numeric #each iterator text as a single fallback item', () => {
+  it('expands numeric #each iterator text into a zero-based inclusive range', () => {
     const result = simulateCbsText('{{#each 3 as item}}[{{slot::item}}]{{/each}}');
 
     expect(result.status).toBe('ok');
-    expect(result.output).toBe('[3]');
+    expect(result.output).toBe('[0][1][2][3]');
     expect(result.diagnostics).toEqual([]);
   });
 

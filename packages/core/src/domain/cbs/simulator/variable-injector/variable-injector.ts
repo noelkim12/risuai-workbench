@@ -2,9 +2,9 @@
  * CBS preview variable injector engine implementation.
  * @file packages/core/src/domain/cbs/simulator/variable-injector.ts
  */
-import { extractCBSVariableOccurrences, type CBSVariableOccurrence } from '../cbs';
-import { createDefaultCbsSimulationContext } from './context';
-import type { CbsSimulationContext, CbsSimulationEffect } from './types';
+import { extractCBSVariableOccurrences, type CBSVariableOccurrence } from '../../cbs';
+import { createDefaultCbsSimulationContext } from '../context';
+import type { CbsSimulationContext, CbsSimulationEffect } from '../types';
 import type {
   CbsPreviewVariableBinding,
   CbsPreviewVariableBindingStatus,
@@ -91,9 +91,7 @@ export function createCbsPreviewVariableInjection(
  * @param input - Injection input containing context layers
  * @returns Merged effective simulation context
  */
-function buildEffectiveContext(
-  input: CbsPreviewVariableInjectionInput,
-): CbsSimulationContext {
+function buildEffectiveContext(input: CbsPreviewVariableInjectionInput): CbsSimulationContext {
   const baseContext = input.baseContext ?? {};
   const previewOverrides = input.previewOverrides ?? {};
   const workspaceDefaults = input.workspaceDefaults ?? {};
@@ -334,10 +332,7 @@ function resolveReadValue(
  * @param key - Variable key to read
  * @returns Object with found flag and stringified value
  */
-function readLayer(
-  layer: Record<string, unknown>,
-  key: string,
-): { found: boolean; value: string } {
+function readLayer(layer: Record<string, unknown>, key: string): { found: boolean; value: string } {
   // Use Object.prototype.hasOwnProperty.call to check for own property
   // This preserves falsy values as valid
   if (Object.prototype.hasOwnProperty.call(layer, key)) {
@@ -357,9 +352,7 @@ function readLayer(
  * @param operation - CBS variable operation
  * @returns Corresponding preview variable scope
  */
-function mapOperationToScope(
-  operation: CbsPreviewVariableOperation,
-): CbsPreviewVariableScope {
+function mapOperationToScope(operation: CbsPreviewVariableOperation): CbsPreviewVariableScope {
   switch (operation) {
     case 'getglobalvar':
       return 'global';

@@ -196,6 +196,30 @@ describe('CBSParser', () => {
     expect(snapshotDiagnostics(document)).toEqual([]);
   });
 
+  it('diagnoses arbitrary slash close blocks instead of treating them as legacy shorthand closes', () => {
+    const document = parse('{{#if 1}}A{{/whatever}}Z');
+
+    expect(snapshotNodes(document.nodes)).toEqual([
+      {
+        type: 'Block',
+        kind: 'if',
+        operators: [],
+        condition: [{ type: 'PlainText', value: '1' }],
+        body: [{ type: 'PlainText', value: 'A' }],
+        elseBody: undefined,
+        hasClose: true,
+      },
+      { type: 'PlainText', value: 'Z' },
+    ]);
+    expect(snapshotDiagnostics(document)).toEqual([
+      {
+        code: 'CBS006',
+        message: 'Cross-nested block close detected',
+        severity: 'error',
+      },
+    ]);
+  });
+
   it('parses nested CBS macros inside inline math expressions', () => {
     const document = parse('{{? {{getvar::ct_Language}} == 1}}');
 

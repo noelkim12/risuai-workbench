@@ -7,5 +7,5 @@ export * from './unsupported-diagnostics';
 export * from './types';
 export * from './context';
 export * from './simulate';
-export * from './variable-injector-types';
-export * from './variable-injector';
+export * from './variable-injector/variable-injector-types';
+export * from './variable-injector/variable-injector';

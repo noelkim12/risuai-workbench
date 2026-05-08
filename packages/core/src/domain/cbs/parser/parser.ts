@@ -26,7 +26,12 @@ type ParsedSegments = {
   closeToken: Token;
 };
 
-type BlockEndToken = { kind?: BlockKind; shorthand: boolean; legacyNumbered: boolean };
+type BlockEndToken = {
+  kind?: BlockKind;
+  shorthand: boolean;
+  legacyNumbered: boolean;
+  unknownSlashClose: boolean;
+};
 
 const BLOCK_KIND_BY_NAME = new Map<string, BlockKind>([
   ['when', 'when'],
@@ -576,28 +581,34 @@ export class CBSParser {
   private readBlockEndToken(token: Token): BlockEndToken {
     const trimmed = token.raw.trim();
     if (trimmed === '/') {
-      return { shorthand: true, legacyNumbered: false };
+      return { shorthand: true, legacyNumbered: false, unknownSlashClose: false };
     }
 
     if (isLegacyNumberedBlockClose(trimmed)) {
-      return { shorthand: false, legacyNumbered: true };
+      return { shorthand: false, legacyNumbered: true, unknownSlashClose: false };
     }
 
     const body = trimmed.startsWith('/') ? trimmed.slice(1) : trimmed;
     const splitIndex = body.search(/\s/);
     const rawName = (splitIndex === -1 ? body : body.slice(0, splitIndex)).trim();
     const normalizedName = rawName.toLowerCase().replace(/-/g, '_');
+    const kind = BLOCK_KIND_BY_NAME.get(normalizedName);
 
     return {
-      kind: BLOCK_KIND_BY_NAME.get(normalizedName),
+      kind,
       shorthand: false,
       legacyNumbered: false,
+      unknownSlashClose: kind === undefined,
     };
   }
 
   private blockEndMatchesKind(actual: BlockEndToken, expected: BlockKind): boolean {
-    if (actual.shorthand || actual.legacyNumbered || actual.kind === undefined || actual.kind === expected) {
+    if (actual.shorthand || actual.legacyNumbered || actual.kind === expected) {
       return true;
+    }
+
+    if (actual.unknownSlashClose) {
+      return false;
     }
 
     return actual.kind ? (BLOCK_CLOSE_ALIASES.get(expected)?.has(actual.kind) ?? false) : false;

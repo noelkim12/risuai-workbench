@@ -135,13 +135,23 @@ describe('CBS simulator chat history context', () => {
     expect(result.diagnostics).toEqual([]);
   });
 
-  it('keeps numeric #each iterator text as one item before range compatibility is introduced', () => {
-    const result = simulateCbsText('{{#each {{? {{lastmessageid}}}} item}}[{{slot::item}}]{{/each}}', {
-      chatHistory: ['hello', 'world', 'again'],
+  it('expands numeric #each input into zero-based indexes for lastmessageid history scans', () => {
+    const result = simulateCbsText('{{#each {{? {{lastmessageid}}}} item}}[{{slot::item}}:{{previous_chat_log::{{slot::item}}}}]{{/each}}', {
+      chatHistory: ['alpha', 'Helena appears', 'omega'],
     });
 
     expect(result.status).toBe('ok');
-    expect(result.output).toBe('[2]');
+    expect(result.output).toBe('[0:alpha][1:Helena appears][2:omega]');
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it('evaluates reduced Helena history scan from reference prompt patterns', () => {
+    const result = simulateCbsText('{{#each {{? {{lastmessageid}}}} item}}{{#if {{? {{contains::{{previous_chat_log::{{slot::item}}}}::Helena}} }} }}H{{/if}}{{/each}}', {
+      chatHistory: ['alpha', 'Helena appears', 'omega'],
+    });
+
+    expect(result.status).toBe('ok');
+    expect(result.output).toBe('H');
     expect(result.diagnostics).toEqual([]);
   });
 });

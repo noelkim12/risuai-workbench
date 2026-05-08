@@ -30,13 +30,28 @@ simulateCbsText('{{#if {{? {{getglobalvar::toggle_trpgmode}}>=1}}}}TRPG{{/if}}',
 
 ### 채팅 히스토리 기반 반복
 
+`chatHistory`는 오래된 메시지부터 최신 메시지 순서로 주입합니다. 문자열 배열과 role-bearing object 배열을 모두 받을 수 있습니다.
+
 ```ts
 simulateCbsText('{{lastmessageid}}|{{previous_chat_log::0}}', {
   chatHistory: ['hello', 'world'],
 });
+// output: '1|hello'
+
+simulateCbsText('{{previouscharchat}}|{{previoususerchat}}', {
+  chatHistory: [
+    { role: 'user', content: 'hello', createdAt: '2026-05-08T00:00:00.000Z' },
+    { role: 'char', content: 'world', createdAt: '2026-05-08T00:00:05.000Z' },
+    { role: 'user', content: 'again', createdAt: '2026-05-08T00:01:00.000Z' },
+  ],
+  chatHistoryCursor: 2,
+});
+// output: 'world|hello'
 ```
 
-`chatHistory`가 없으면 `lastmessageid`와 `previous_chat_log`는 runtime-unknown으로 원문을 보존합니다.
+`lastmessageid`는 upstream parity에 맞춰 message count가 아니라 마지막 0-based index를 반환합니다. `previous_chat_log::N`은 상대 “이전 N번째”가 아니라 absolute 0-based index 조회입니다. `chatHistory`가 없으면 simulator는 런타임 값을 추측하지 않고 원문을 보존합니다.
+
+VS Code extension에서 CBS preview를 호출할 때는 editor/project state를 `packages/core`로 직접 import하지 말고, adapter가 `CbsSimulationContext`를 조립해 `simulateCbsText(source, context, options)`에 전달해야 합니다. 최소 주입 단위는 `chatHistory`, `chatHistoryCursor`, variable maps, `lorePositions`, deterministic providers이며, simulator package는 dry-run 평가만 수행하고 실제 런타임 state를 변경하지 않습니다.
 
 ### Preview variable injector engine
 
