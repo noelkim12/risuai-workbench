@@ -3,6 +3,12 @@
  * @file packages/core/src/simulator/regex/types.ts
  */
 import type { SimulatorDiagnostic, SimulatorSafetyLimits, SimulatorStatus } from './shared';
+import type {
+  CbsSimulationContextInput,
+  CbsSimulationOptions,
+  CbsSimulationResult,
+  CbsSimulationStatus,
+} from '../types';
 
 /** RisuAI regex directive kinds recognized by the local simulator flag parser. */
 export type RisuRegexDirectiveKind =
@@ -192,4 +198,32 @@ export interface RegexReplacementPlanDto {
   appliedDirectives: readonly RisuRegexDirective[];
   /** Raw directive tokens copied in source order for deterministic display. */
   appliedDirectiveRawTokens: string[];
+}
+
+/** Input accepted by the `.risuregex` CBS section dry-run adapter. */
+export interface RegexCbsSectionSimulationInput {
+  /** Raw `.risuregex` IN section source used as the regex pattern. */
+  patternSource: string;
+  /** Raw `.risuregex` OUT section source used as the replacement template. */
+  replacementSource: string;
+  /** Whether the IN section should be dry-run through the CBS simulator. */
+  simulatePattern: boolean;
+  /** Whether the OUT section should be dry-run through the CBS simulator. */
+  simulateReplacement: boolean;
+  /** CBS simulator context forwarded unchanged to requested section simulations. */
+  context?: CbsSimulationContextInput;
+  /** CBS simulator options forwarded unchanged to requested section simulations. */
+  simulationOptions?: Partial<CbsSimulationOptions>;
+}
+
+/** Result returned by the `.risuregex` CBS section dry-run adapter. */
+export interface RegexCbsSectionSimulationResult {
+  /** Conservative aggregate status for both section results. */
+  status: CbsSimulationStatus;
+  /** Raw CBS simulation result or pass-through result for the IN section. */
+  pattern: CbsSimulationResult;
+  /** Raw CBS simulation result or pass-through result for the OUT section. */
+  replacement: CbsSimulationResult;
+  /** Regex-local diagnostics mapped from requested CBS simulation runs. */
+  diagnostics: SimulatorDiagnostic[];
 }
