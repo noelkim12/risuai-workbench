@@ -38,7 +38,6 @@ simulateCbsText('{{lastmessageid}}|{{previous_chat_log::0}}', {
 
 `chatHistory`가 없으면 `lastmessageid`와 `previous_chat_log`는 runtime-unknown으로 원문을 보존합니다.
 
-### deterministic clock/random
 ### Preview variable injector engine
 
 Preview variable injector는 CBS 프리뷰가 사용할 변수 context를 caller가 명시적으로 합성하는 dry-run helper입니다. `createCbsPreviewVariableInjection(input)`은 preview override, 현재 chat 변수, 캐릭터 기본값, 템플릿 기본값을 순서대로 병합하고, 그 결과를 `effectiveContext`로 돌려줍니다. 실제 CBS 평가는 기존처럼 `simulateCbsText(source, injection.effectiveContext)`에 맡깁니다.
@@ -73,6 +72,8 @@ const preview = simulateCbsText(
 상태 의미는 trace와 warning을 읽기 위한 계약입니다. `missing`은 해당 scope에서 읽을 값이 없다는 뜻이고, `runtimeUnknown`은 `#each` iterator처럼 실제 런타임 frame이 있어야 확정되는 값입니다. 반대로 `''`, `0`, `false`, `null`처럼 falsy인 own value는 missing으로 취급하지 않고 resolved로 남깁니다. Caller는 값의 truthiness가 아니라 own-property 존재 여부를 기준으로 preview override와 default map을 준비해야 합니다.
 
 이 engine의 non-goal도 명확합니다. VS Code webview UI를 만들지 않고, preview override를 저장하지 않으며, `.risuvar`를 쓰지 않습니다. 또한 variable serializer나 injector write path를 호출하지 않으므로 `serializeVariableContent`, `injectVariablesIntoCharx`, `injectVariablesIntoModule`은 preview variable injector의 의존성이 아닙니다.
+
+### deterministic clock/random
 
 ```ts
 simulateCbsText('{{time::YYYY-MM-DD HH:mm}} {{random::a::b}}', {
