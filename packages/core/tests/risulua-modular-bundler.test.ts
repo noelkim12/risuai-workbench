@@ -187,6 +187,317 @@ describe('risulua modular bundler', () => {
     expect(bundled.code).toContain('__risulua_loaders["module.a"] = function()');
   });
 
+  it('risulua modular bundler rewrites safe export aliases to table assignments', () => {
+    const rootDir = createModularRoot();
+    writeLua(rootDir, 'main', [
+      'local actions = require("button.actions")',
+      'return actions.Cheat_Set_Character_Level("trigger")',
+    ].join('\n'));
+    writeLua(rootDir, 'button/actions', [
+      'local M = {}',
+      'local Cheat_Set_Character_Level = async(function(triggerId)',
+      '  local lang = getState(triggerId, "Language") or 0',
+      '  return lang',
+      'end)',
+      'M.Cheat_Set_Character_Level = Cheat_Set_Character_Level',
+      'return M',
+    ].join('\n'));
+
+    const graph = resolveRisuLuaModularGraph({ target: discoverRisuLuaBundleTarget({ rootDir, mode: 'modular' }) });
+    const bundled = bundleRisuLuaModularGraph({ graph });
+
+    expect(bundled.code).toContain('M.Cheat_Set_Character_Level = async(function(triggerId)');
+    expect(bundled.code).not.toContain('local Cheat_Set_Character_Level = async(function(triggerId)');
+    expect(bundled.code).not.toContain('M.Cheat_Set_Character_Level = Cheat_Set_Character_Level');
+    expect(hasExecutableRequireCalls(bundled.code)).toBe(false);
+  });
+
+  it('risulua modular bundler preserves export aliases that are used before assignment', () => {
+    const rootDir = createModularRoot();
+    writeLua(rootDir, 'main', [
+      'local actions = require("button.actions")',
+      'return actions.Action("trigger")',
+    ].join('\n'));
+    writeLua(rootDir, 'button/actions', [
+      'local M = {}',
+      'local Action = async(function(triggerId)',
+      '  return triggerId',
+      'end)',
+      'registerAction(Action)',
+      'M.Action = Action',
+      'return M',
+    ].join('\n'));
+
+    const graph = resolveRisuLuaModularGraph({ target: discoverRisuLuaBundleTarget({ rootDir, mode: 'modular' }) });
+    const bundled = bundleRisuLuaModularGraph({ graph });
+
+    expect(bundled.code).toContain('local Action = async(function(triggerId)');
+    expect(bundled.code).toContain('registerAction(Action)');
+    expect(bundled.code).toContain('M.Action = Action');
+  });
+
+  it('risulua modular bundler preserves local function exports for recursive functions', () => {
+    const rootDir = createModularRoot();
+    writeLua(rootDir, 'main', [
+      'local mathmod = require("domain.math")',
+      'return mathmod.countdown(3)',
+    ].join('\n'));
+    writeLua(rootDir, 'domain/math', [
+      'local M = {}',
+      'local function countdown(value)',
+      '  if value <= 0 then return 0 end',
+      '  return countdown(value - 1)',
+      'end',
+      'M.countdown = countdown',
+      'return M',
+    ].join('\n'));
+
+    const graph = resolveRisuLuaModularGraph({ target: discoverRisuLuaBundleTarget({ rootDir, mode: 'modular' }) });
+    const bundled = bundleRisuLuaModularGraph({ graph });
+
+    expect(bundled.code).toContain('local function countdown(value)');
+    expect(bundled.code).toContain('return countdown(value - 1)');
+    expect(bundled.code).toContain('M.countdown = countdown');
+  });
+
+  it('risulua modular bundler rewrites safe local function export aliases to table functions', () => {
+    const rootDir = createModularRoot();
+    writeLua(rootDir, 'main', [
+      'local actions = require("button.actions")',
+      'return actions.Action001("trigger")',
+    ].join('\n'));
+    writeLua(rootDir, 'button/actions', [
+      'local M = {}',
+      ...Array.from({ length: 80 }, (_value, index) => {
+        const name = `Action${String(index + 1).padStart(3, '0')}`;
+        return [
+          `local function ${name}(triggerId)`,
+          '  local lang = getState(triggerId, "Language") or 0',
+          '  return tostring(lang) .. triggerId',
+          'end',
+          `M.${name} = ${name}`,
+        ].join('\n');
+      }),
+      'return M',
+    ].join('\n'));
+
+    const graph = resolveRisuLuaModularGraph({ target: discoverRisuLuaBundleTarget({ rootDir, mode: 'modular' }) });
+    const bundled = bundleRisuLuaModularGraph({ graph });
+    const diagnostics = analyzeRisuLuaLocalBudget({ code: bundled.code, filePath: 'dist/local-functions.risulua' });
+
+    expect(bundled.code).toContain('function M.Action080(triggerId)');
+    expect(bundled.code).not.toContain('local function Action080(triggerId)');
+    expect(bundled.code).not.toContain('M.Action080 = Action080');
+    expect(diagnostics.filter((diagnostic) => diagnostic.severity === 'error')).toEqual([]);
+    expect(diagnostics.some((diagnostic) => diagnostic.scopeKind === 'function' && diagnostic.localCount >= 80)).toBe(false);
+  });
+
+  it('risulua modular bundler preserves local function exports referenced after assignment', () => {
+    const rootDir = createModularRoot();
+    writeLua(rootDir, 'main', [
+      'local actions = require("button.actions")',
+      'return actions.Action("trigger")',
+    ].join('\n'));
+    writeLua(rootDir, 'button/actions', [
+      'local M = {}',
+      'local function Action(triggerId)',
+      '  return triggerId',
+      'end',
+      'M.Action = Action',
+      'registerAction(Action)',
+      'return M',
+    ].join('\n'));
+
+    const graph = resolveRisuLuaModularGraph({ target: discoverRisuLuaBundleTarget({ rootDir, mode: 'modular' }) });
+    const bundled = bundleRisuLuaModularGraph({ graph });
+
+    expect(bundled.code).toContain('local function Action(triggerId)');
+    expect(bundled.code).toContain('M.Action = Action');
+    expect(bundled.code).toContain('registerAction(Action)');
+  });
+
+  it('risulua modular bundler preserves mutually recursive local function exports', () => {
+    const rootDir = createModularRoot();
+    writeLua(rootDir, 'main', [
+      'local mathmod = require("domain.math")',
+      'return mathmod.isEven(4)',
+    ].join('\n'));
+    writeLua(rootDir, 'domain/math', [
+      'local M = {}',
+      'local function isEven(value)',
+      '  if value == 0 then return true end',
+      '  return isOdd(value - 1)',
+      'end',
+      'M.isEven = isEven',
+      'local function isOdd(value)',
+      '  if value == 0 then return false end',
+      '  return isEven(value - 1)',
+      'end',
+      'M.isOdd = isOdd',
+      'return M',
+    ].join('\n'));
+
+    const graph = resolveRisuLuaModularGraph({ target: discoverRisuLuaBundleTarget({ rootDir, mode: 'modular' }) });
+    const bundled = bundleRisuLuaModularGraph({ graph });
+
+    expect(bundled.code).toContain('local function isEven(value)');
+    expect(bundled.code).toContain('local function isOdd(value)');
+    expect(bundled.code).toContain('M.isEven = isEven');
+    expect(bundled.code).toContain('M.isOdd = isOdd');
+  });
+
+  it('risulua modular bundler inlines adjacent single-use generated dependency aliases', () => {
+    const rootDir = createModularRoot();
+    writeLua(rootDir, 'main', [
+      'local bridge = require("domain.bridge")',
+      'return bridge.helper',
+    ].join('\n'));
+    writeLua(rootDir, 'domain/bridge', [
+      'local __common_helper = require("common.helper")',
+      'local M = {}',
+      'M.helper = __common_helper',
+      'return M',
+    ].join('\n'));
+    writeLua(rootDir, 'common/helper', [
+      'return { value = 1 }',
+    ].join('\n'));
+
+    const graph = resolveRisuLuaModularGraph({ target: discoverRisuLuaBundleTarget({ rootDir, mode: 'modular' }) });
+    const bundled = bundleRisuLuaModularGraph({ graph });
+
+    expect(bundled.code).toContain('M.helper = __risulua_loaders["common.helper"]()');
+    expect(bundled.code).not.toContain('local __common_helper = __risulua_loaders["common.helper"]()');
+    expect(hasExecutableRequireCalls(bundled.code)).toBe(false);
+  });
+
+  it('risulua modular bundler preserves dependency aliases captured by returned closures', () => {
+    const rootDir = createModularRoot();
+    writeLua(rootDir, 'main', [
+      'local bridge = require("domain.bridge")',
+      'return bridge()',
+    ].join('\n'));
+    writeLua(rootDir, 'domain/bridge', [
+      'local __common_helper = require("common.helper")',
+      'local M = {}',
+      'return function()',
+      '  return __common_helper',
+      'end',
+    ].join('\n'));
+    writeLua(rootDir, 'common/helper', [
+      'return { value = 1 }',
+    ].join('\n'));
+
+    const graph = resolveRisuLuaModularGraph({ target: discoverRisuLuaBundleTarget({ rootDir, mode: 'modular' }) });
+    const bundled = bundleRisuLuaModularGraph({ graph });
+
+    expect(bundled.code).toContain('local __common_helper = __risulua_loaders["common.helper"]()');
+    expect(bundled.code).toContain('return __common_helper');
+  });
+
+  it('risulua modular bundler preserves dependency aliases when intervening module table has fields', () => {
+    const rootDir = createModularRoot();
+    writeLua(rootDir, 'main', [
+      'local bridge = require("domain.bridge")',
+      'return bridge.helper',
+    ].join('\n'));
+    writeLua(rootDir, 'domain/bridge', [
+      'local __common_helper = require("common.helper")',
+      'local M = { initialized = makeValue() }',
+      'M.helper = __common_helper',
+      'return M',
+    ].join('\n'));
+    writeLua(rootDir, 'common/helper', [
+      'return { value = 1 }',
+    ].join('\n'));
+
+    const graph = resolveRisuLuaModularGraph({ target: discoverRisuLuaBundleTarget({ rootDir, mode: 'modular' }) });
+    const bundled = bundleRisuLuaModularGraph({ graph });
+
+    expect(bundled.code).toContain('local __common_helper = __risulua_loaders["common.helper"]()');
+    expect(bundled.code).toContain('local M = { initialized = makeValue() }');
+    expect(bundled.code).toContain('M.helper = __common_helper');
+  });
+
+  it('risulua modular bundler preserves multi-use generated dependency aliases', () => {
+    const rootDir = createModularRoot();
+    writeLua(rootDir, 'main', [
+      'local bridge = require("domain.bridge")',
+      'return bridge.first',
+    ].join('\n'));
+    writeLua(rootDir, 'domain/bridge', [
+      'local __common_helper = require("common.helper")',
+      'local M = {}',
+      'M.first = __common_helper',
+      'M.second = __common_helper',
+      'return M',
+    ].join('\n'));
+    writeLua(rootDir, 'common/helper', [
+      'return { value = 1 }',
+    ].join('\n'));
+
+    const graph = resolveRisuLuaModularGraph({ target: discoverRisuLuaBundleTarget({ rootDir, mode: 'modular' }) });
+    const bundled = bundleRisuLuaModularGraph({ graph });
+
+    expect(bundled.code).toContain('local __common_helper = __risulua_loaders["common.helper"]()');
+    expect(bundled.code).toContain('M.first = __common_helper');
+    expect(bundled.code).toContain('M.second = __common_helper');
+  });
+
+  it('risulua modular bundler preserves export aliases referenced inside their initializer', () => {
+    const rootDir = createModularRoot();
+    writeLua(rootDir, 'main', [
+      'local actions = require("button.actions")',
+      'return actions.Action("trigger")',
+    ].join('\n'));
+    writeLua(rootDir, 'button/actions', [
+      'local M = {}',
+      'local Action = async(function(triggerId)',
+      '  if triggerId == "again" then return Action("done") end',
+      '  return triggerId',
+      'end)',
+      'M.Action = Action',
+      'return M',
+    ].join('\n'));
+
+    const graph = resolveRisuLuaModularGraph({ target: discoverRisuLuaBundleTarget({ rootDir, mode: 'modular' }) });
+    const bundled = bundleRisuLuaModularGraph({ graph });
+
+    expect(bundled.code).toContain('local Action = async(function(triggerId)');
+    expect(bundled.code).toContain('return Action("done")');
+    expect(bundled.code).toContain('M.Action = Action');
+  });
+
+  it('risulua modular bundler reduces module IIFE local pressure for exported async actions', () => {
+    const rootDir = createModularRoot();
+    writeLua(rootDir, 'main', [
+      'local actions = require("button.actions")',
+      'return actions.Action001("trigger")',
+    ].join('\n'));
+    writeLua(rootDir, 'button/actions', [
+      'local M = {}',
+      ...Array.from({ length: 80 }, (_value, index) => {
+        const name = `Action${String(index + 1).padStart(3, '0')}`;
+        return [
+          `local ${name} = async(function(triggerId)`,
+          '  local lang = getState(triggerId, "Language") or 0',
+          '  return lang',
+          'end)',
+          `M.${name} = ${name}`,
+        ].join('\n');
+      }),
+      'return M',
+    ].join('\n'));
+
+    const graph = resolveRisuLuaModularGraph({ target: discoverRisuLuaBundleTarget({ rootDir, mode: 'modular' }) });
+    const bundled = bundleRisuLuaModularGraph({ graph });
+    const diagnostics = analyzeRisuLuaLocalBudget({ code: bundled.code, filePath: 'dist/actions.risulua' });
+
+    expect(bundled.code).toContain('M.Action080 = async(function(triggerId)');
+    expect(bundled.code).not.toContain('local Action080 = async(function(triggerId)');
+    expect(diagnostics.filter((diagnostic) => diagnostic.severity === 'error')).toEqual([]);
+    expect(diagnostics.some((diagnostic) => diagnostic.scopeKind === 'function' && diagnostic.localCount >= 80)).toBe(false);
+  });
+
   it('risulua modular bundler caches nil returns as true', () => {
     const rootDir = createModularRoot();
     writeLua(rootDir, 'main', [
@@ -537,6 +848,29 @@ describe('risulua local budget analyzer', () => {
     });
   });
 
+  it('risulua local budget analyzer reports scope range and peak location separately', () => {
+    const code = [
+      'local result = (function()',
+      ...Array.from({ length: 150 }, (_value, index) => `  local v${String(index + 1).padStart(3, '0')} = ${index + 1}`),
+      '  return v150',
+      'end)()',
+      'return result',
+    ].join('\n');
+
+    const diagnostics = analyzeRisuLuaLocalBudget({ code, filePath: 'dist/range-test.risulua' });
+
+    expect(diagnostics).toMatchObject([
+      {
+        code: 'local_budget_warning',
+        severity: 'warning',
+        scopeKind: 'function',
+        localCount: 150,
+        scopeLocation: { line: 1, column: 16 },
+        peakLocation: { line: 151, column: 8 },
+      },
+    ]);
+  });
+
   it('does not count nested function locals in the containing scope', () => {
     const code = [
       'local outer = 1',
@@ -697,7 +1031,7 @@ describe('risulua dist local budget diagnostics', () => {
         code: 'local_budget',
         severity,
         symbol: 'local',
-        message: expect.stringContaining(`declares ${localCount} locals`),
+        message: expect.stringContaining(`reaches ${localCount} active locals`),
       },
     ]);
   });

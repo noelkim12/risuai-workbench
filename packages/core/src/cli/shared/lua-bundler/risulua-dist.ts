@@ -60,6 +60,10 @@ export interface RisuLuaDistDiagnostic {
   filePath?: string;
   /** 오류가 발생한 위치 정보(선택적). */
   location?: RisuLuaSourceLocation;
+  /** local budget 진단이 측정된 scope 시작 위치(선택적). */
+  scopeLocation?: RisuLuaSourceLocation;
+  /** local budget 진단의 max active local 도달 위치(선택적). */
+  peakLocation?: RisuLuaSourceLocation;
   /** 관련된 심볼 이름(선택적). */
   symbol?: string;
   /** 진단 심각도. 생략된 기존 진단은 validation에서 error처럼 처리됨. */
@@ -271,7 +275,10 @@ export function analyzeRisuLuaDistOutput(options: {
     }
   });
 
-  for (const diagnostic of analyzeRisuLuaLocalBudget({ code: analyzableCode, filePath: distPath })) {
+  const localBudgetCode = analyzableCode.startsWith(RISULUA_DIST_GENERATED_HEADER)
+    ? analyzableCode.slice(RISULUA_DIST_GENERATED_HEADER.length)
+    : analyzableCode;
+  for (const diagnostic of analyzeRisuLuaLocalBudget({ code: localBudgetCode, filePath: distPath })) {
     diagnostics.push({
       code: 'local_budget',
       severity: diagnostic.severity,
@@ -279,6 +286,8 @@ export function analyzeRisuLuaDistOutput(options: {
       distRelativePath,
       filePath: distPath,
       location: diagnostic.location,
+      scopeLocation: diagnostic.scopeLocation,
+      peakLocation: diagnostic.peakLocation,
       symbol: 'local',
       localCount: diagnostic.localCount,
       threshold: diagnostic.threshold,

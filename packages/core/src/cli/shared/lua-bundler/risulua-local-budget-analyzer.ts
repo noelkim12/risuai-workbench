@@ -33,6 +33,8 @@ export interface RisuLuaLocalBudgetDiagnostic {
   threshold: number;
   limit: number;
   location?: RisuLuaSourceLocation;
+  scopeLocation?: RisuLuaSourceLocation;
+  peakLocation?: RisuLuaSourceLocation;
   message: string;
 }
 
@@ -41,6 +43,8 @@ interface LocalScope {
   activeLocalCount: number;
   maxActiveLocalCount: number;
   location?: RisuLuaSourceLocation;
+  scopeLocation?: RisuLuaSourceLocation;
+  peakLocation?: RisuLuaSourceLocation;
 }
 
 const AST_METADATA_KEYS = new Set(['loc', 'range', 'raw', 'comments', 'globals']);
@@ -58,12 +62,23 @@ export function analyzeRisuLuaLocalBudget(options: AnalyzeRisuLuaLocalBudgetOpti
 
 function collectLocalScopes(ast: LuaAstNode): LocalScope[] {
   const scopes: LocalScope[] = [];
-  collectScope({ body: asNodeArray(ast.body), scopeKind: 'chunk', scopes });
+  const body = asNodeArray(ast.body);
+  collectScope({ body, scopeKind: 'chunk', scopes, scopeLocation: firstLocation(body) });
   return scopes;
 }
 
-function collectScope(options: { body: LuaAstNode[]; scopeKind: RisuLuaLocalBudgetScopeKind; scopes: LocalScope[] }): void {
-  const scope: LocalScope = { scopeKind: options.scopeKind, activeLocalCount: 0, maxActiveLocalCount: 0 };
+function collectScope(options: {
+  body: LuaAstNode[];
+  scopeKind: RisuLuaLocalBudgetScopeKind;
+  scopes: LocalScope[];
+  scopeLocation?: RisuLuaSourceLocation;
+}): void {
+  const scope: LocalScope = {
+    scopeKind: options.scopeKind,
+    activeLocalCount: 0,
+    maxActiveLocalCount: 0,
+    scopeLocation: options.scopeLocation ?? firstLocation(options.body),
+  };
   options.scopes.push(scope);
 
   for (const statement of options.body) {
@@ -132,7 +147,12 @@ function collectChildNode(node: LuaAstNode, scope: LocalScope, scopes: LocalScop
 }
 
 function collectFunctionScope(node: LuaAstNode, scopes: LocalScope[]): void {
-  const scope: LocalScope = { scopeKind: 'function', activeLocalCount: 0, maxActiveLocalCount: 0 };
+  const scope: LocalScope = {
+    scopeKind: 'function',
+    activeLocalCount: 0,
+    maxActiveLocalCount: 0,
+    scopeLocation: getLocation(node) ?? undefined,
+  };
   scopes.push(scope);
   addLocals(scope, countFunctionParameters(node), firstLocation(getNamedParameters(node)) ?? getLocation(node) ?? undefined);
 
@@ -219,8 +239,11 @@ function collectNestedFunctionScope(value: unknown, scopes: LocalScope[]): void 
 function addLocals(scope: LocalScope, count: number, location: RisuLuaSourceLocation | undefined): void {
   if (count <= 0) return;
   scope.activeLocalCount += count;
-  scope.maxActiveLocalCount = Math.max(scope.maxActiveLocalCount, scope.activeLocalCount);
-  scope.location ??= location;
+  if (scope.activeLocalCount > scope.maxActiveLocalCount) {
+    scope.maxActiveLocalCount = scope.activeLocalCount;
+    scope.peakLocation = location;
+    scope.location = location;
+  }
 }
 
 function toBudgetDiagnostic(filePath: string, scope: LocalScope): RisuLuaLocalBudgetDiagnostic | null {
@@ -234,9 +257,16 @@ function toBudgetDiagnostic(filePath: string, scope: LocalScope): RisuLuaLocalBu
     localCount: scope.maxActiveLocalCount,
     threshold: budget.threshold,
     limit: RISULUA_LOCAL_BUDGET_HARD_LIMIT,
-    location: scope.location,
-    message: `RisuLua generated ${scope.scopeKind} declares ${scope.maxActiveLocalCount} locals, exceeding ${budget.threshold} local budget for wasmoon/Lua safety: ${filePath}`,
+    location: scope.peakLocation ?? scope.location,
+    scopeLocation: scope.scopeLocation,
+    peakLocation: scope.peakLocation ?? scope.location,
+    message: `RisuLua generated ${scope.scopeKind} reaches ${scope.maxActiveLocalCount} active locals at ${formatBudgetLocation(scope.peakLocation ?? scope.location)}, exceeding ${budget.threshold} local budget for wasmoon/Lua safety: ${filePath}`,
   };
+}
+
+function formatBudgetLocation(location: RisuLuaSourceLocation | undefined): string {
+  if (!location) return 'unknown location';
+  return `line ${location.line}`;
 }
 
 function classifyLocalBudget(localCount: number): { code: RisuLuaLocalBudgetDiagnosticCode; severity: RisuLuaLocalBudgetSeverity; threshold: number } | null {

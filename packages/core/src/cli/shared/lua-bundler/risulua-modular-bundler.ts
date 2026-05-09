@@ -212,12 +212,14 @@ interface GenerateLoaderOptions {
 function generateLoaderFunctionBody(options: GenerateLoaderOptions): string {
   const { moduleId, source, requireReplacements } = options;
 
-  // 모듈 소스의 require 호출 교체
-  const transformedSource = replaceRequiresInSource({
-    source,
+  // 안전한 export alias를 먼저 낮춘 뒤 모듈 소스의 require 호출을 교체함.
+  const aliasRewrittenSource = rewriteSafeModuleExportAliases(source);
+  const requireRewrittenSource = replaceRequiresInSource({
+    source: aliasRewrittenSource,
     moduleId,
     requireReplacements,
   });
+  const transformedSource = rewriteSingleUseGeneratedDependencyAliases(requireRewrittenSource);
 
   const moduleKey = JSON.stringify(moduleId);
   const parts: string[] = [];
@@ -242,6 +244,297 @@ function generateLoaderFunctionBody(options: GenerateLoaderOptions): string {
   parts.push(`end`);
 
   return parts.join('\n');
+}
+
+function rewriteSafeModuleExportAliases(source: string): string {
+  let ast: LuaAstNode;
+  try {
+    ast = parseRisuLuaSource(source);
+  } catch (error) {
+    void error;
+    return source;
+  }
+
+  const body = Array.isArray(ast.body) ? ast.body : [];
+  const replacements: Array<{ start: number; end: number; replacement: string }> = [];
+
+  for (let index = 0; index < body.length - 1; index += 1) {
+    const declaration = body[index];
+    const assignment = body[index + 1];
+    const rewrite = getSafeExportAliasRewrite(source, declaration, assignment, body, index);
+    if (rewrite) replacements.push(rewrite);
+  }
+
+  replacements.sort((left, right) => right.start - left.start);
+  let rewritten = source;
+  for (const replacement of replacements) {
+    rewritten = rewritten.slice(0, replacement.start) + replacement.replacement + rewritten.slice(replacement.end);
+  }
+  return rewritten;
+}
+
+function getSafeExportAliasRewrite(
+  source: string,
+  declaration: LuaAstNode,
+  assignment: LuaAstNode,
+  body: LuaAstNode[],
+  declarationIndex: number,
+): { start: number; end: number; replacement: string } | null {
+  const functionRewrite = getSafeLocalFunctionExportRewrite(source, declaration, assignment, body, declarationIndex);
+  if (functionRewrite) return functionRewrite;
+
+  if (declaration.type !== 'LocalStatement') return null;
+  const variables = Array.isArray(declaration.variables) ? declaration.variables : [];
+  const init = Array.isArray(declaration.init) ? declaration.init : [];
+  if (variables.length !== 1 || init.length !== 1) return null;
+
+  const variable = variables[0];
+  if (!isIdentifierNode(variable)) return null;
+
+  if (assignment.type !== 'AssignmentStatement') return null;
+  const assignmentVariables = Array.isArray(assignment.variables) ? assignment.variables : [];
+  const assignmentInit = Array.isArray(assignment.init) ? assignment.init : [];
+  if (assignmentVariables.length !== 1 || assignmentInit.length !== 1) return null;
+
+  const target = assignmentVariables[0];
+  const value = assignmentInit[0];
+  if (!isModuleExportMember(target, variable.name)) return null;
+  if (!isIdentifierNamed(value, variable.name)) return null;
+  if (containsIdentifierName(init[0], variable.name)) return null;
+  if (statementsContainIdentifierName(body.slice(declarationIndex + 2), variable.name)) return null;
+
+  const declarationRange = getNodeRange(declaration);
+  const initRange = getNodeRange(init[0]);
+  const assignmentTargetRange = getNodeRange(target);
+  const assignmentRange = getNodeRange(assignment);
+  if (!declarationRange || !initRange || !assignmentTargetRange || !assignmentRange) return null;
+
+  const assignmentTarget = source.slice(assignmentTargetRange[0], assignmentTargetRange[1]);
+  const initializer = source.slice(initRange[0], initRange[1]);
+  return {
+    start: declarationRange[0],
+    end: assignmentRange[1],
+    replacement: `${assignmentTarget} = ${initializer}`,
+  };
+}
+
+function getSafeLocalFunctionExportRewrite(
+  source: string,
+  declaration: LuaAstNode,
+  assignment: LuaAstNode,
+  body: LuaAstNode[],
+  declarationIndex: number,
+): { start: number; end: number; replacement: string } | null {
+  if (declaration.type !== 'FunctionDeclaration' || declaration.isLocal !== true) return null;
+  const functionName = declaration.identifier;
+  if (!isIdentifierNode(functionName)) return null;
+
+  if (assignment.type !== 'AssignmentStatement') return null;
+  const assignmentVariables = Array.isArray(assignment.variables) ? assignment.variables : [];
+  const assignmentInit = Array.isArray(assignment.init) ? assignment.init : [];
+  if (assignmentVariables.length !== 1 || assignmentInit.length !== 1) return null;
+
+  const target = assignmentVariables[0];
+  const value = assignmentInit[0];
+  if (!isModuleExportMember(target, functionName.name)) return null;
+  if (!isIdentifierNamed(value, functionName.name)) return null;
+  if (statementsContainIdentifierName(body.slice(0, declarationIndex), functionName.name)) return null;
+  if (statementsContainIdentifierName(asNodeArray(declaration.body), functionName.name)) return null;
+  if (statementsContainIdentifierName(body.slice(declarationIndex + 2), functionName.name)) return null;
+
+  const declarationRange = getNodeRange(declaration);
+  const assignmentTargetRange = getNodeRange(target);
+  const assignmentRange = getNodeRange(assignment);
+  if (!declarationRange || !assignmentTargetRange || !assignmentRange) return null;
+
+  const declarationText = source.slice(declarationRange[0], declarationRange[1]);
+  const assignmentTarget = source.slice(assignmentTargetRange[0], assignmentTargetRange[1]);
+  const functionPrefix = new RegExp(`^local\\s+function\\s+${escapeRegExp(functionName.name)}\\b`);
+  if (!functionPrefix.test(declarationText)) return null;
+
+  return {
+    start: declarationRange[0],
+    end: assignmentRange[1],
+    replacement: declarationText.replace(functionPrefix, `function ${assignmentTarget}`),
+  };
+}
+
+function rewriteSingleUseGeneratedDependencyAliases(source: string): string {
+  let ast: LuaAstNode;
+  try {
+    ast = parseRisuLuaSource(source);
+  } catch (error) {
+    void error;
+    return source;
+  }
+
+  const body = Array.isArray(ast.body) ? ast.body : [];
+  const replacements: Array<{ start: number; end: number; replacement: string }> = [];
+
+  for (let index = 0; index < body.length; index += 1) {
+    const declaration = body[index];
+    const rewrite = getSingleUseGeneratedDependencyAliasRewrite(source, declaration, body, index);
+    if (rewrite) replacements.push(...rewrite);
+  }
+
+  replacements.sort((left, right) => right.start - left.start);
+  let rewritten = source;
+  for (const replacement of replacements) {
+    rewritten = rewritten.slice(0, replacement.start) + replacement.replacement + rewritten.slice(replacement.end);
+  }
+  return rewritten;
+}
+
+function getSingleUseGeneratedDependencyAliasRewrite(
+  source: string,
+  declaration: LuaAstNode,
+  body: LuaAstNode[],
+  declarationIndex: number,
+): Array<{ start: number; end: number; replacement: string }> | null {
+  if (declaration.type !== 'LocalStatement') return null;
+  const variables = Array.isArray(declaration.variables) ? declaration.variables : [];
+  const init = Array.isArray(declaration.init) ? declaration.init : [];
+  if (variables.length !== 1 || init.length !== 1) return null;
+
+  const variable = variables[0];
+  if (!isIdentifierNode(variable) || !variable.name.startsWith('__')) return null;
+  const declarationRange = getNodeRange(declaration);
+  const initRange = getNodeRange(init[0]);
+  if (!declarationRange || !initRange) return null;
+
+  const initializer = source.slice(initRange[0], initRange[1]);
+  if (!isGeneratedLoaderCall(initializer)) return null;
+
+  const references = collectTopLevelIdentifierReferences(body, variable.name, declarationIndex + 1);
+  if (references.length !== 1) return null;
+
+  const [reference] = references;
+  if (!isInlineableAliasReference(reference)) return null;
+  if (!hasOnlySafeInterveningAliasStatements(body, declarationIndex + 1, reference.statementIndex)) return null;
+
+  return [
+    { start: reference.range[0], end: reference.range[1], replacement: initializer },
+    { start: declarationRange[0], end: includeTrailingLineBreak(source, declarationRange[1]), replacement: '' },
+  ];
+}
+
+interface IdentifierReference {
+  node: LuaAstNode;
+  parent: LuaAstNode | null;
+  statement: LuaAstNode;
+  statementIndex: number;
+  range: [number, number];
+}
+
+function collectTopLevelIdentifierReferences(body: LuaAstNode[], name: string, startIndex: number): IdentifierReference[] {
+  const references: IdentifierReference[] = [];
+  for (let index = startIndex; index < body.length; index += 1) {
+    const statement = body[index];
+    walkLuaAst(statement, (node, parent) => {
+      if (!isIdentifierNamed(node, name)) return;
+      const range = getNodeRange(node);
+      if (!range) return;
+      references.push({ node, parent, statement, statementIndex: index, range });
+    });
+  }
+  return references;
+}
+
+function isInlineableAliasReference(reference: IdentifierReference): boolean {
+  const { parent, statement, node } = reference;
+  if (!parent) return false;
+  if (parent.type === 'AssignmentStatement') {
+    const variables = Array.isArray(parent.variables) ? parent.variables : [];
+    const init = Array.isArray(parent.init) ? parent.init : [];
+    return statement === parent && init.includes(node) && !variables.includes(node);
+  }
+  if (parent.type === 'LocalStatement') {
+    const variables = Array.isArray(parent.variables) ? parent.variables : [];
+    const init = Array.isArray(parent.init) ? parent.init : [];
+    return statement === parent && init.includes(node) && !variables.includes(node);
+  }
+  if (statement.type === 'ReturnStatement') {
+    const args = Array.isArray(statement.arguments) ? statement.arguments : [];
+    return parent === statement && args.includes(node);
+  }
+  return false;
+}
+
+function hasOnlySafeInterveningAliasStatements(body: LuaAstNode[], startIndex: number, endIndex: number): boolean {
+  for (let index = startIndex; index < endIndex; index += 1) {
+    if (!isLocalEmptyModuleTableDeclaration(body[index])) return false;
+  }
+  return true;
+}
+
+function isLocalEmptyModuleTableDeclaration(statement: LuaAstNode): boolean {
+  if (statement.type !== 'LocalStatement') return false;
+  const variables = Array.isArray(statement.variables) ? statement.variables : [];
+  const init = Array.isArray(statement.init) ? statement.init : [];
+  return variables.length === 1 && init.length === 1 && isIdentifierNamed(variables[0], 'M') && isEmptyTableConstructor(init[0]);
+}
+
+function isEmptyTableConstructor(node: LuaAstNode | undefined): boolean {
+  if (node?.type !== 'TableConstructorExpression') return false;
+  const fields = getNodeArrayProperty(node, 'fields');
+  const elements = getNodeArrayProperty(node, 'elements');
+  return fields.length === 0 && elements.length === 0;
+}
+
+function getNodeArrayProperty(node: LuaAstNode, key: string): LuaAstNode[] {
+  const value = node[key];
+  return Array.isArray(value) ? value.filter(isNode) : [];
+}
+
+function isGeneratedLoaderCall(source: string): boolean {
+  return /^__risulua_loaders\[[\s\S]+\]\(\)$/.test(source.trim());
+}
+
+function includeTrailingLineBreak(source: string, end: number): number {
+  if (source[end] === '\r' && source[end + 1] === '\n') return end + 2;
+  if (source[end] === '\n' || source[end] === '\r') return end + 1;
+  return end;
+}
+
+function isIdentifierNode(node: unknown): node is LuaAstNode & { name: string } {
+  return isNode(node) && node.type === 'Identifier' && typeof node.name === 'string';
+}
+
+function isModuleExportMember(node: unknown, memberName: string): boolean {
+  if (!isNode(node) || node.type !== 'MemberExpression') return false;
+  const member = node as LuaAstNode & { base?: LuaAstNode; identifier?: LuaAstNode; indexer?: string };
+  return isIdentifierNamed(member.base, 'M') && member.indexer === '.' && isIdentifierNamed(member.identifier, memberName);
+}
+
+function containsIdentifierName(node: LuaAstNode, name: string): boolean {
+  let found = false;
+  walkLuaAst(node, (child) => {
+    if (isIdentifierNamed(child, name)) found = true;
+  });
+  return found;
+}
+
+function statementsContainIdentifierName(statements: LuaAstNode[], name: string): boolean {
+  return statements.some((statement) => containsIdentifierName(statement, name));
+}
+
+function asNodeArray(value: unknown): LuaAstNode[] {
+  return Array.isArray(value) ? value.filter(isNode) : [];
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getNodeRange(node: unknown): [number, number] | null {
+  const range = (node as { range?: unknown })?.range;
+  return Array.isArray(range) && range.length === 2 && typeof range[0] === 'number' && typeof range[1] === 'number'
+    ? [range[0], range[1]]
+    : null;
+}
+
+function isNode(value: unknown): value is LuaAstNode {
+  return Boolean(value) && typeof value === 'object' && typeof (value as { type?: unknown }).type === 'string';
 }
 
 /**

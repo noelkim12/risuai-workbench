@@ -164,6 +164,35 @@ describe('risulua dist validator', () => {
     }
   });
 
+  it('risulua dist validator exposes local budget scope and peak locations', () => {
+    const rootDir = createModularRoot('Local Budget Range Metadata');
+    writeLua(rootDir, 'main', 'return true\n');
+    const target = discoverRisuLuaBundleTarget({ rootDir, mode: 'modular' });
+    writeFile(rootDir, target.distRelativePath, `${RISULUA_DIST_GENERATED_HEADER}${[
+      'local result = (function()',
+      ...Array.from({ length: 150 }, (_value, index) => `  local v${String(index + 1).padStart(3, '0')} = ${index + 1}`),
+      '  return v150',
+      'end)()',
+      'return result',
+    ].join('\n')}`);
+
+    const diagnostics = analyzeRisuLuaDistOutput({
+      code: fs.readFileSync(target.distPath, 'utf-8'),
+      distPath: target.distPath,
+      distRelativePath: target.distRelativePath,
+    });
+
+    expect(diagnostics).toMatchObject([
+      {
+        code: 'local_budget',
+        severity: 'warning',
+        localCount: 150,
+        scopeLocation: { line: 1, column: 16 },
+        peakLocation: { line: 151, column: 8 },
+      },
+    ]);
+  });
+
   it('risulua dist validator rejects local budget hard-limit diagnostics', () => {
     const rootDir = createModularRoot('Local Budget Hard Limit');
     writeLua(rootDir, 'main', 'return true\n');
@@ -173,7 +202,7 @@ describe('risulua dist validator', () => {
     expectDistError(
       () => validateRisuLuaDist({ target }),
       'local_budget',
-      'declares 200 locals',
+      'reaches 200 active locals',
     );
   });
 });
