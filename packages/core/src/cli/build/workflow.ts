@@ -15,12 +15,17 @@ import {
 } from '@/node/json-listing';
 import {
   bundleRisuLuaModularGraph,
+  createRisuLuaRecoveryManifest,
   discoverRisuLuaBundleTarget,
   isPlainObject,
   parseRisuLuaMode,
+  parseRisuLuaRecoveryMode,
+  RISULUA_MODE_HELP_LINE,
+  RISULUA_RECOVERY_HELP_LINE,
   resolveRisuLuaModularGraph,
   validateRisuLuaDist,
   writeRisuLuaDist,
+  type RisuLuaRecoveryMode,
   type RisuLuaBundleTarget,
   type RisuLuaDistValidationResult,
   type RisuLuaDistWriteResult,
@@ -40,6 +45,7 @@ interface BuildOptions {
 
 export interface BuildRisuLuaModularDistOptions {
   rootDir: string;
+  recovery?: RisuLuaRecoveryMode;
 }
 
 export interface RisuLuaModularDistBuildResult {
@@ -91,11 +97,23 @@ export function runBuildWorkflow(argv: readonly string[]): number {
     return 1;
   }
 
-  const options = parseBuildOptions(modeResult.strippedArgv);
+  let recoveryResult: ReturnType<typeof parseRisuLuaRecoveryMode>;
+  try {
+    recoveryResult = parseRisuLuaRecoveryMode(modeResult.strippedArgv);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`\nERROR: ${message}\n`);
+    return 1;
+  }
+
+  const options = parseBuildOptions(recoveryResult.strippedArgv);
 
   if (modeResult.mode === 'modular') {
     try {
-      const result = buildRisuLuaModularDist({ rootDir: options.inDir });
+      const result = buildRisuLuaModularDist({
+        rootDir: options.inDir,
+        recovery: recoveryResult.mode,
+      });
       printRisuLuaModularBuildSummary(result);
       return 0;
     } catch (error) {
@@ -126,7 +144,11 @@ export function buildRisuLuaModularDist(
   const target = discoverRisuLuaBundleTarget({ rootDir: options.rootDir, mode: 'modular' });
   const graph = resolveRisuLuaModularGraph({ target });
   const bundled = bundleRisuLuaModularGraph({ graph });
-  const writeResult = writeRisuLuaDist({ target, bundled });
+  const recoveryManifest =
+    options.recovery === 'full-source'
+      ? createRisuLuaRecoveryManifest({ rootDir: target.rootDir })
+      : undefined;
+  const writeResult = writeRisuLuaDist({ target, bundled, recoveryManifest });
   const validation = validateRisuLuaDist({ target, selectedPaths: [target.distPath] });
 
   return {
@@ -178,7 +200,8 @@ Options:
   --regex-only          Build regexscript_export.json only
   --lorebook-only       Build lorebook_export.json only
   --no-dedupe           Keep duplicate lorebook entries
-  --risulua-mode <classic|modular>  Lua 번들 모드 (미지정 시 향후 auto-detect)
+${RISULUA_MODE_HELP_LINE}
+${RISULUA_RECOVERY_HELP_LINE}
   -h, --help            Show help
 
 Outputs:

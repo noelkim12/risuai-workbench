@@ -6,6 +6,7 @@ import path from 'node:path';
 import {
   RISULUA_DIST_GENERATED_HEADER,
   RisuLuaDistError,
+  analyzeRisuLuaDistOutput,
   bundleRisuLuaModularGraph,
   discoverRisuLuaBundleTarget,
   resolveRisuLuaModularGraph,
@@ -56,7 +57,7 @@ describe('risulua dist validator', () => {
     expect(validation.code.startsWith(RISULUA_DIST_GENERATED_HEADER)).toBe(true);
     expect(validation.code).toContain('To re-modularize, use lua/main.risulua or legacy/original.risulua instead.');
     expect(validation.code.slice(RISULUA_DIST_GENERATED_HEADER.length)).toBe(bundled.code);
-    expect(validation.code).toContain('local helpers = __loader_common_helpers()');
+    expect(validation.code).toContain('local helpers = __risulua_loaders["common.helpers"]()');
   });
 
   it('risulua dist validator rejects missing expected dist', () => {
@@ -142,6 +143,39 @@ describe('risulua dist validator', () => {
       `Failed to parse RisuLua modular dist ${target.distRelativePath}`,
     );
   });
+
+  it('risulua dist validator allows warning-only local budget diagnostics', () => {
+    for (const count of [180, 190]) {
+      const rootDir = createModularRoot(`Local Budget ${count}`);
+      writeLua(rootDir, 'main', 'return true\n');
+      const target = discoverRisuLuaBundleTarget({ rootDir, mode: 'modular' });
+      writeFile(rootDir, target.distRelativePath, `${RISULUA_DIST_GENERATED_HEADER}${buildTopLevelLocalChunk(count)}`);
+
+      const diagnostics = analyzeRisuLuaDistOutput({
+        code: fs.readFileSync(target.distPath, 'utf-8'),
+        distPath: target.distPath,
+        distRelativePath: target.distRelativePath,
+      });
+
+      expect(diagnostics).toMatchObject([
+        { code: 'local_budget', severity: 'warning', localCount: count, symbol: 'local' },
+      ]);
+      expect(validateRisuLuaDist({ target }).code).toContain(`local v${String(count).padStart(3, '0')} = 1`);
+    }
+  });
+
+  it('risulua dist validator rejects local budget hard-limit diagnostics', () => {
+    const rootDir = createModularRoot('Local Budget Hard Limit');
+    writeLua(rootDir, 'main', 'return true\n');
+    const target = discoverRisuLuaBundleTarget({ rootDir, mode: 'modular' });
+    writeFile(rootDir, target.distRelativePath, `${RISULUA_DIST_GENERATED_HEADER}${buildTopLevelLocalChunk(200)}`);
+
+    expectDistError(
+      () => validateRisuLuaDist({ target }),
+      'local_budget',
+      'declares 200 locals',
+    );
+  });
 });
 
 function expectDistError(action: () => unknown, code: string, messagePart: string): void {
@@ -181,4 +215,8 @@ function writeFile(rootDir: string, relativePath: string, content: string): void
   const absolutePath = path.join(rootDir, ...relativePath.split('/'));
   fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
   fs.writeFileSync(absolutePath, content, 'utf-8');
+}
+
+function buildTopLevelLocalChunk(count: number): string {
+  return `${Array.from({ length: count }, (_value, index) => `local v${String(index + 1).padStart(3, '0')} = 1`).join('\n')}\nreturn v001\n`;
 }

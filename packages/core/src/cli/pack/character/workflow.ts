@@ -41,8 +41,11 @@ import {
 import { buildRisuLuaModularDist } from '@/cli/build/workflow';
 import {
   parseRisuLuaMode,
+  parseRisuLuaRecoveryMode,
   discoverRisuLuaBundleTarget,
+  RISULUA_RECOVERY_HELP_LINE,
   type RisuLuaMode,
+  type RisuLuaRecoveryMode,
 } from '@/cli/shared';
 
 const HELP_TEXT = `
@@ -57,6 +60,7 @@ const HELP_TEXT = `
     --cover <file>      커버 이미지 경로 (png 또는 jpg)
     --name <name>       출력 파일명 기본값 (확장자 제외)
     --risulua-mode <classic|modular>  Lua 번들 모드 (미지정 시 향후 auto-detect)
+${RISULUA_RECOVERY_HELP_LINE}
     -h, --help          도움말
 
   Notes (canonical mode):
@@ -82,6 +86,7 @@ interface PackOptions {
   coverArg: string | null;
   nameArg: string | null;
   risuluaMode: RisuLuaMode | null;
+  risuluaRecovery: RisuLuaRecoveryMode;
 }
 
 export function runPackWorkflow(argv: readonly string[]): number {
@@ -92,8 +97,10 @@ export function runPackWorkflow(argv: readonly string[]): number {
   }
 
   let modeResult: ReturnType<typeof parseRisuLuaMode>;
+  let recoveryResult: ReturnType<typeof parseRisuLuaRecoveryMode>;
   try {
     modeResult = parseRisuLuaMode(argv);
+    recoveryResult = parseRisuLuaRecoveryMode(modeResult.strippedArgv);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`\n  ❌ ${message}\n`);
@@ -101,12 +108,13 @@ export function runPackWorkflow(argv: readonly string[]): number {
   }
 
   const options: PackOptions = {
-    inDir: argValue(modeResult.strippedArgv, '--in') || '.',
-    outArg: argValue(modeResult.strippedArgv, '--out'),
-    formatArg: (argValue(modeResult.strippedArgv, '--format') || '').toLowerCase(),
-    coverArg: argValue(modeResult.strippedArgv, '--cover'),
-    nameArg: argValue(modeResult.strippedArgv, '--name'),
+    inDir: argValue(recoveryResult.strippedArgv, '--in') || '.',
+    outArg: argValue(recoveryResult.strippedArgv, '--out'),
+    formatArg: (argValue(recoveryResult.strippedArgv, '--format') || '').toLowerCase(),
+    coverArg: argValue(recoveryResult.strippedArgv, '--cover'),
+    nameArg: argValue(recoveryResult.strippedArgv, '--name'),
     risuluaMode: modeResult.mode,
+    risuluaRecovery: recoveryResult.mode,
   };
 
   try {
@@ -126,7 +134,7 @@ function runMain(options: PackOptions): void {
   console.log(`  입력: ${path.relative('.', resolvedIn)}`);
 
   // Build charx from createBlankChar() + canonical overlays
-  const charx = buildCharxFromCanonical(resolvedIn, options.risuluaMode);
+  const charx = buildCharxFromCanonical(resolvedIn, options.risuluaMode, options.risuluaRecovery);
 
   const targetFormat = resolveTargetFormat(resolvedIn, options.formatArg);
   const { outPath, baseName } = resolveOutputPath({
@@ -160,7 +168,11 @@ function runMain(options: PackOptions): void {
  * Build charx from createBlankChar() + canonical artifact overlays.
  * This is the canonical pack mode — no charx.json required.
  */
-function buildCharxFromCanonical(inRoot: string, risuluaMode: RisuLuaMode | null): any {
+function buildCharxFromCanonical(
+  inRoot: string,
+  risuluaMode: RisuLuaMode | null,
+  risuluaRecovery: RisuLuaRecoveryMode,
+): any {
   // Start with blank charx V3 envelope
   const charx = createBlankCharxV3();
 
@@ -176,7 +188,7 @@ function buildCharxFromCanonical(inRoot: string, risuluaMode: RisuLuaMode | null
   mergeCharacterCanonical(charx, inRoot);
   mergeLorebooksCanonical(charx, inRoot);
   mergeRegexCanonical(charx, inRoot);
-  mergeLuaCanonical(charx, inRoot, risuluaMode);
+  mergeLuaCanonical(charx, inRoot, risuluaMode, risuluaRecovery);
   mergeHtmlCanonical(charx, inRoot);
   mergeVariablesCanonical(charx, inRoot);
 
@@ -427,11 +439,16 @@ function mergeRegexCanonical(charx: any, inRoot: string): void {
  * code in a standard trigger structure for round-trip compatibility.
  * Uses target-name-based file naming: lua/<charxName>.risulua
  */
-function mergeLuaCanonical(charx: any, inRoot: string, risuluaMode: RisuLuaMode | null): void {
+function mergeLuaCanonical(
+  charx: any,
+  inRoot: string,
+  risuluaMode: RisuLuaMode | null,
+  risuluaRecovery: RisuLuaRecoveryMode,
+): void {
   const target = discoverRisuLuaBundleTarget({ rootDir: inRoot, mode: risuluaMode });
 
   if (target.mode === 'modular') {
-    const result = buildRisuLuaModularDist({ rootDir: inRoot });
+    const result = buildRisuLuaModularDist({ rootDir: inRoot, recovery: risuluaRecovery });
     applyLuaTriggerToCharx(charx, result.validation.code);
     return;
   }

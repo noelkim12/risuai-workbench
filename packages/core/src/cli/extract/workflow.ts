@@ -3,14 +3,22 @@ import { runExtractWorkflow as runCharacterExtract } from './character/workflow'
 import { runExtractWorkflow as runPresetExtract, isPresetFile } from './preset/workflow';
 import { runExtractWorkflow as runModuleExtract } from './module/workflow';
 import { isModuleJson } from './parsers';
-import { parseRisuLuaMode } from '../shared/lua-bundler/risulua-mode';
+import { parseRisuLuaMode, parseRisuLuaRecoveryMode } from '../shared/lua-bundler/risulua-mode';
 
 const PRESET_ONLY_EXTENSIONS = new Set(['.preset', '.risupreset', '.risup']);
 const MODULE_ONLY_EXTENSIONS = new Set(['.risum']);
 
 export async function runExtractWorkflow(argv: readonly string[]): Promise<number> {
-  // Validate and strip --risulua-mode at router level
-  const { strippedArgv } = parseRisuLuaMode(argv);
+  let strippedArgv: string[];
+  try {
+    const modeResult = parseRisuLuaMode(argv);
+    const recoveryResult = parseRisuLuaRecoveryMode(modeResult.strippedArgv);
+    strippedArgv = recoveryResult.strippedArgv;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`\n  ❌ ${message}\n`);
+    return 1;
+  }
 
   const typeIdx = strippedArgv.indexOf('--type');
   const typeArg = typeIdx >= 0 ? strippedArgv[typeIdx + 1] : null;

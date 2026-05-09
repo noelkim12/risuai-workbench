@@ -1,16 +1,26 @@
 import { runPackWorkflow as runCharacterPack } from './character/workflow';
 import { runPackWorkflow as runModulePack } from './module/workflow';
 import { runPackWorkflow as runPresetPack } from './preset/workflow';
-import { parseRisuLuaMode } from '../shared/lua-bundler/risulua-mode';
+import { parseRisuLuaMode, parseRisuLuaRecoveryMode } from '../shared/lua-bundler/risulua-mode';
 
 export function runPackWorkflow(argv: readonly string[]): number {
-  // Validate and strip --risulua-mode at router level
-  const { strippedArgv } = parseRisuLuaMode(argv);
+  // Validate and strip --risulua-mode / --risulua-recovery at router level
+  // so format routing never treats their values as pack inputs.
+  let modeResult: ReturnType<typeof parseRisuLuaMode>;
+  let recoveryResult: ReturnType<typeof parseRisuLuaRecoveryMode>;
+  try {
+    modeResult = parseRisuLuaMode(argv);
+    recoveryResult = parseRisuLuaRecoveryMode(modeResult.strippedArgv);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`\n  ❌ ${message}\n`);
+    return 1;
+  }
 
-  const formatArg = getArgValue(strippedArgv, '--format')?.toLowerCase();
+  const formatArg = getArgValue(recoveryResult.strippedArgv, '--format')?.toLowerCase();
   if (formatArg === 'preset') {
     // Strip --format preset from argv since preset packer uses --format for output type (json/risup)
-    const filteredArgv = stripArg(strippedArgv, '--format');
+    const filteredArgv = stripArg(recoveryResult.strippedArgv, '--format');
     return runPresetPack(filteredArgv);
   }
   if (formatArg === 'module') {

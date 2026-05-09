@@ -209,7 +209,21 @@ export async function runModuleTableDryRunAsync(options: RunRisuLuaSplitOptions)
     renderRisuLuaSplitReport({ ...artifacts, plan: validatedPlan }),
     'utf8',
   );
-  if (!validation.ok) {
+  if (!validation.ok && !hasOnlyDistBuildBlockingFindings(validation, buildResult)) {
     throw new Error('Module-table split validation failed; diagnostics were written to docs/.');
   }
+}
+
+function hasOnlyDistBuildBlockingFindings(
+  validation: ReturnType<typeof validateRisuLuaSplitWorkspace>,
+  buildResult: ReturnType<typeof buildRisuLuaSplitDist>,
+): boolean {
+  const blockingFindings = validation.findings.filter((finding) => finding.severity === 'error');
+  const diagnostics = buildResult.diagnostics ?? [];
+  if (blockingFindings.length === 0 || diagnostics.length === 0) return false;
+  const distDiagnosticMessages = new Set(diagnostics.map((diagnostic) => diagnostic.message));
+  return blockingFindings.every((finding) =>
+    finding.filePath === buildResult.distRelativePath
+    && distDiagnosticMessages.has(finding.message),
+  );
 }

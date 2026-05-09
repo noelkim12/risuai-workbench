@@ -8,8 +8,10 @@ import {
   runBuildWorkflow,
 } from '../src/cli/build/workflow';
 import {
+  decodeRisuLuaRecoveryBlock,
   RISULUA_DIST_GENERATED_HEADER,
   hasExecutableRequireCalls,
+  removeRisuLuaRecoveryBlock,
 } from '../src/cli/shared';
 import {
   RISUMODULE_KIND,
@@ -50,7 +52,7 @@ describe('risulua build workflow', () => {
     expect(status).toBe(0);
     expect(dist.startsWith(RISULUA_DIST_GENERATED_HEADER)).toBe(true);
     expect(dist).toContain('decorate = function(data) return "built:" .. tostring(data) end');
-    expect(dist).toContain('local helper = __loader_common_helper()');
+    expect(dist).toContain('local helper = __risulua_loaders["common.helper"]()');
     expect(hasExecutableRequireCalls(dist)).toBe(false);
     expect(joinedLogs(logs)).toContain('RisuLua Modular Dist Builder');
     expect(joinedLogs(logs)).toContain('- entry           : lua/main.risulua');
@@ -71,6 +73,44 @@ describe('risulua build workflow', () => {
     expect(result.summary.edgeCount).toBe(0);
     expect(result.writeResult.distPath).toBe(result.validation.distPath);
     expect(fs.existsSync(result.summary.distPath)).toBe(true);
+  });
+
+  it('modular build embeds full-source recovery manifest when requested', () => {
+    const rootDir = createWorkspace('Recovery Builder Module');
+    writeLua(rootDir, 'main', [
+      'local helper = require("common.helper")',
+      '',
+      'function onOutput(data)',
+      '  return helper.decorate(data)',
+      'end',
+    ].join('\n'));
+    writeLua(rootDir, 'common/helper', [
+      'return {',
+      '  decorate = function(data) return "recovered:" .. tostring(data) end',
+      '}',
+    ].join('\n'));
+
+    const result = buildRisuLuaModularDist({ rootDir, recovery: 'full-source' });
+    const manifest = decodeRisuLuaRecoveryBlock(result.validation.code);
+    const strippedCode = removeRisuLuaRecoveryBlock(result.validation.code);
+
+    expect(manifest).not.toBeNull();
+    expect(manifest?.manifest.files.map((file) => file.path)).toEqual([
+      'lua/common/helper.risulua',
+      'lua/main.risulua',
+    ]);
+    expect(strippedCode).toContain('local helper = __risulua_loaders["common.helper"]()');
+    expect(strippedCode).toContain('decorate = function(data) return "recovered:" .. tostring(data) end');
+  });
+
+  it('modular build omits recovery manifest by default', () => {
+    const rootDir = createWorkspace('Default Recovery Omitted Module');
+    writeLua(rootDir, 'main', 'function onStart() return true end\n');
+
+    const result = buildRisuLuaModularDist({ rootDir });
+
+    expect(decodeRisuLuaRecoveryBlock(result.validation.code)).toBeNull();
+    expect(removeRisuLuaRecoveryBlock(result.validation.code)).toBe(result.validation.code);
   });
 
   it('component build workflow remains unchanged by default mode', () => {

@@ -35,7 +35,12 @@ import {
   serializeHtmlContent,
 } from '@/domain/custom-extension/extensions/html';
 import { toPosix } from '@/domain/lorebook/folders';
-import type { RisuLuaMode } from '../../shared/lua-bundler/risulua-mode';
+import type { RisuLuaMode, RisuLuaRecoveryMode } from '../../shared/lua-bundler/risulua-mode';
+import {
+  decodeRisuLuaRecoveryBlock,
+  removeRisuLuaRecoveryBlock,
+  restoreRisuLuaRecoveryFiles,
+} from '../../shared/lua-bundler/risulua-recovery';
 import {
   cleanupRisuLuaSplitTemps,
   runRisuLuaSplitExtract,
@@ -537,6 +542,7 @@ export async function phase4_extractTriggerLua(
   charx: any,
   outputDir: string,
   risuluaMode: RisuLuaMode = 'classic',
+  risuluaRecovery: RisuLuaRecoveryMode = 'none',
   risuluaSplitMode: RisuLuaSplitCliMode = 'none',
   domainGeneration: RisuLuaDomainGenerationCliMode = 'validated',
 ): Promise<number> {
@@ -588,18 +594,38 @@ export async function phase4_extractTriggerLua(
   const luaFileName = risuluaMode === 'modular' ? 'main.risulua' : `${sanitizedName}.risulua`;
   const fileName = path.join(luaDir, luaFileName);
   const luaSource = risuluaMode === 'modular' ? luaParts.join('\n\n') : luaParts.join('\n');
-  writeText(fileName, luaSource);
+  const recoveryBlock = risuluaMode === 'modular' ? decodeRisuLuaRecoveryBlock(luaSource) : null;
+  if (recoveryBlock && risuluaRecovery !== 'none') {
+    restoreRisuLuaRecoveryFiles({ outputRoot: outputDir, files: recoveryBlock.manifest.files });
+    cleanupRisuLuaSplitTemps(outputDir);
+    console.log(`     ✅ embedded recovery manifest → ${path.relative('.', path.join(outputDir, 'lua'))}/`);
+    return 1;
+  }
+
+  const strippedLuaSource = removeRisuLuaRecoveryBlock(luaSource);
+  writeText(fileName, strippedLuaSource);
   cleanupRisuLuaSplitTemps(outputDir);
-  await runRisuLuaSplitExtract({
-    mode: risuluaSplitMode,
-    outputRoot: outputDir,
-    source: luaSource,
-    sourcePath: fileName,
-    targetName: uniqueRisuLuaSplitTargetName(sanitizedName),
-    cwd: process.cwd(),
-    domainGeneration,
-    buttonActionSources: collectRegexButtonActionSources(outputDir),
-  });
+  try {
+    await runRisuLuaSplitExtract({
+      mode: risuluaSplitMode,
+      outputRoot: outputDir,
+      source: strippedLuaSource,
+      sourcePath: fileName,
+      targetName: uniqueRisuLuaSplitTargetName(sanitizedName),
+      cwd: process.cwd(),
+      domainGeneration,
+      buttonActionSources: collectRegexButtonActionSources(outputDir),
+    });
+  } catch (error) {
+    if (risuluaMode !== 'modular') throw error;
+
+    cleanupRisuLuaSplitTemps(outputDir);
+    writeText(fileName, strippedLuaSource);
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `     ⚠️ RisuLua split failed; preserving ${path.relative('.', fileName)} as single-file Lua and continuing extract: ${message}`,
+    );
+  }
 
   console.log(`     ✅ ${triggerscript.length}개 trigger → ${path.relative('.', fileName)}`);
   return 1;

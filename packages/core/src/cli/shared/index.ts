@@ -2,12 +2,18 @@ export { mdRow, escapeHtml } from './report-utils';
 export { safeCollect } from './safe-collect';
 export { isPlainObject } from './guards';
 export {
-  type RisuLuaMode,
-  type ParsedRisuLuaMode,
-  RISULUA_MODE_FLAG,
-  RISULUA_MODE_HELP_LINE,
   parseRisuLuaMode,
   stripRisuLuaMode,
+  parseRisuLuaRecoveryMode,
+  stripRisuLuaRecoveryMode,
+  RISULUA_MODE_FLAG,
+  RISULUA_MODE_HELP_LINE,
+  RISULUA_RECOVERY_FLAG,
+  RISULUA_RECOVERY_HELP_LINE,
+  type RisuLuaMode,
+  type RisuLuaRecoveryMode,
+  type ParsedRisuLuaMode,
+  type ParsedRisuLuaRecoveryMode,
 } from './lua-bundler/risulua-mode';
 export {
   type RisuLuaBundleMarkerKind,
@@ -35,6 +41,18 @@ export {
   isIdentifierNamed,
   getLocation,
 } from './lua-bundler/risulua-forbidden-analyzer';
+export {
+  type AnalyzeRisuLuaLocalBudgetOptions,
+  type RisuLuaLocalBudgetDiagnostic,
+  type RisuLuaLocalBudgetDiagnosticCode,
+  type RisuLuaLocalBudgetScopeKind,
+  type RisuLuaLocalBudgetSeverity,
+  RISULUA_LOCAL_BUDGET_EXCEEDED_THRESHOLD,
+  RISULUA_LOCAL_BUDGET_HARD_LIMIT,
+  RISULUA_LOCAL_BUDGET_HIGH_RISK_THRESHOLD,
+  RISULUA_LOCAL_BUDGET_WARNING_THRESHOLD,
+  analyzeRisuLuaLocalBudget,
+} from './lua-bundler/risulua-local-budget-analyzer';
 export {
   type RisuLuaResolverErrorCode,
   type RisuLuaResolverDiagnostic,
@@ -79,6 +97,22 @@ export {
   validateRisuLuaDist,
   analyzeRisuLuaDistOutput,
 } from './lua-bundler/risulua-dist';
+export {
+  type DecodedRisuLuaRecoveryBlock,
+  type RisuLuaRecoveryFile,
+  type RisuLuaRecoveryManifest,
+  RISULUA_RECOVERY_BLOCK_END,
+  RISULUA_RECOVERY_BLOCK_START,
+  RISULUA_RECOVERY_SCHEMA,
+  RISULUA_RECOVERY_VERSION,
+  RisuLuaRecoveryError,
+  collectRisuLuaRecoveryFiles,
+  createRisuLuaRecoveryManifest,
+  decodeRisuLuaRecoveryBlock,
+  encodeRisuLuaRecoveryBlock,
+  removeRisuLuaRecoveryBlock,
+  restoreRisuLuaRecoveryFiles,
+} from './lua-bundler/risulua-recovery';
 export {
   type RisuLuaSplitCliMode,
   type ParsedRisuLuaSplitMode,

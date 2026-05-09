@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { analyzeRisuLuaDistOutput } from '../../../cli/shared';
+import { analyzeRisuLuaDistOutput, type RisuLuaDistDiagnostic } from '../../../cli/shared';
 import {
   RISULUA_MODULE_TABLE_REFACTOR_MAP_PATH,
   isForbiddenRisuLuaModuleTableMvpTarget,
@@ -179,6 +179,13 @@ function validatePreloadRecovery(plan: RisuLuaSplitPlan): RisuLuaSplitValidation
 
 function validateDistProfile(options: ValidateRisuLuaSplitWorkspaceOptions & { distPath: string | null }): RisuLuaSplitValidationFinding[] {
   const findings: RisuLuaSplitValidationFinding[] = [];
+  const buildDiagnostics = options.buildResult?.diagnostics ?? [];
+  for (const diagnostic of buildDiagnostics) {
+    findings.push(distDiagnosticFinding(diagnostic, diagnostic.distRelativePath));
+  }
+  if (options.buildResult?.distBlocked) {
+    return findings;
+  }
   if (options.distPath === null || !fs.existsSync(options.distPath)) {
     findings.push(finding('missing-dist-output', 'error', `Expected generated dist output for ${options.plan.buildStrategy}.`));
     return findings;
@@ -188,7 +195,7 @@ function validateDistProfile(options: ValidateRisuLuaSplitWorkspaceOptions & { d
   const code = fs.readFileSync(options.distPath, 'utf8');
   findings.push(finding('dist-written', 'info', `Generated dist output ${distRelativePath}.`, distRelativePath));
   for (const diagnostic of analyzeRisuLuaDistOutput({ code, distPath: options.distPath, distRelativePath })) {
-    findings.push(finding(diagnostic.symbol === 'require' ? 'executable-require-in-dist' : 'package-loader-mutation', 'error', diagnostic.message, distRelativePath));
+    findings.push(distDiagnosticFinding(diagnostic, distRelativePath));
   }
   if (options.plan.mode === 'module-table' && code.includes('Build-time local helper fragments')) {
     findings.push(finding('module-table-build-time-fragment-marker', 'error', 'Module-table dist must use modular loader output instead of build-time local helper fragments.', distRelativePath));
@@ -205,6 +212,19 @@ function validateDistProfile(options: ValidateRisuLuaSplitWorkspaceOptions & { d
     }
   }
   return findings;
+}
+
+function distDiagnosticFinding(
+  diagnostic: RisuLuaDistDiagnostic,
+  distRelativePath: string,
+): RisuLuaSplitValidationFinding {
+  if (diagnostic.code === 'local_budget') {
+    return finding('local-budget', diagnostic.severity ?? 'error', diagnostic.message, distRelativePath);
+  }
+  if (diagnostic.symbol === 'require') {
+    return finding('executable-require-in-dist', diagnostic.severity ?? 'error', diagnostic.message, distRelativePath);
+  }
+  return finding('package-loader-mutation', diagnostic.severity ?? 'error', diagnostic.message, distRelativePath);
 }
 
 function validateModuleTableProfile(options: ValidateRisuLuaSplitWorkspaceOptions): RisuLuaSplitValidationFinding[] {

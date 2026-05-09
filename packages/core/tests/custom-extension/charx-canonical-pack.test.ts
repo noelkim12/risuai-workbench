@@ -6,6 +6,7 @@ import path from 'node:path';
 import { unzipSync, strFromU8, zipSync, strToU8 } from 'fflate';
 import { parseModuleRisum } from '../../src/cli/extract/parsers';
 import { runPackWorkflow as runCharxPackWorkflow } from '../../src/cli/pack/character/workflow';
+import { decodeRisuLuaRecoveryBlock } from '../../src/cli/shared';
 
 const tempDirs: string[] = [];
 
@@ -952,9 +953,55 @@ end
     const module = parseModuleRisum(Buffer.from(archive['module.risum']));
 
     expect(packedLua).toBe(distContent);
-    expect(packedLua).toContain('local helper = __loader_common_helper()');
+    expect(packedLua).toContain('local helper = __risulua_loaders["common.helper"]()');
     expect(packedLua).toContain('decorate = function(data) return "dist:" .. tostring(data) end');
     expect(packedLua).not.toContain('sourceOnlyShouldNotLeak');
+    expect(decodeRisuLuaRecoveryBlock(packedLua)).toBeNull();
     expect(module.trigger[0].effect[0].code).toBe(distContent);
+  });
+
+  it('character pack risulua modular embeds full-source recovery manifest when requested', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-risulua-modular-recovery-'));
+    tempDirs.push(workDir);
+
+    const characterDir = path.join(workDir, 'character');
+    const luaDir = path.join(workDir, 'lua');
+    mkdirSync(characterDir, { recursive: true });
+    mkdirSync(path.join(luaDir, 'common'), { recursive: true });
+
+    writeCanonicalManifest(workDir, { name: 'Recovered Modular Character' });
+    writeFileSync(path.join(characterDir, 'description.risutext'), 'modular recovery character', 'utf-8');
+    writeFileSync(path.join(luaDir, 'main.risulua'), [
+      'local helper = require("common.helper")',
+      'function onOutput(data)',
+      '  return helper.decorate(data)',
+      'end',
+    ].join('\n'), 'utf-8');
+    writeFileSync(path.join(luaDir, 'common', 'helper.risulua'), [
+      'return {',
+      '  decorate = function(data) return "recovery:" .. tostring(data) end',
+      '}',
+    ].join('\n'), 'utf-8');
+
+    const outPath = path.join(workDir, 'packed.charx');
+    const exitCode = runCharxPackWorkflow([
+      '--risulua-mode', 'modular',
+      '--risulua-recovery', 'full-source',
+      '--in', workDir,
+      '--format', 'charx',
+      '--out', outPath,
+    ]);
+
+    expect(exitCode).toBe(0);
+    const archive = unzipSync(readFileSync(outPath));
+    const packedCharx = JSON.parse(strFromU8(archive['charx.json']));
+    const packedLua = packedCharx.data.extensions.risuai.triggerscript[0].effect[0].code;
+    const decoded = decodeRisuLuaRecoveryBlock(packedLua);
+
+    expect(decoded).not.toBeNull();
+    expect(decoded!.manifest.files.map((file) => file.path)).toEqual(expect.arrayContaining([
+      'lua/main.risulua',
+      'lua/common/helper.risulua',
+    ]));
   });
 });

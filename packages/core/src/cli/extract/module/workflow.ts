@@ -2,7 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { runAnalyzeModuleWorkflow } from '@/cli/analyze/module/workflow';
 import { ensureDir } from '@/node/fs-helpers';
-import { parseRisuLuaMode, type RisuLuaMode } from '../../shared/lua-bundler/risulua-mode';
+import {
+  RISULUA_RECOVERY_HELP_LINE,
+  parseRisuLuaMode,
+  parseRisuLuaRecoveryMode,
+  type RisuLuaMode,
+  type RisuLuaRecoveryMode,
+} from '../../shared/lua-bundler/risulua-mode';
 import {
   RISULUA_DOMAIN_GENERATION_HELP_LINE,
   parseRisuLuaDomainGenerationMode,
@@ -30,6 +36,7 @@ const HELP_TEXT = `
   Options:
     --out <dir>     출력 디렉토리 (기본: ./module_<name>)
     --risulua-mode <classic|modular>  RisuLua 개발 방식: classic=단일 파일 개발, modular=모듈식 개발 (기본: classic)
+${RISULUA_RECOVERY_HELP_LINE}
     --risulua-split <none|report|coarse|module-table>  추출된 RisuLua split 산출물 생성 방식 (기본: none)
 ${RISULUA_DOMAIN_GENERATION_HELP_LINE}
     -h, --help      도움말
@@ -57,21 +64,23 @@ export function isModuleFile(filePath: string): boolean {
 export async function runExtractWorkflow(argv: readonly string[]): Promise<number> {
   const helpMode = argv.includes('-h') || argv.includes('--help') || argv.length === 0;
   let modeResult: ReturnType<typeof parseRisuLuaMode>;
+  let recoveryResult: ReturnType<typeof parseRisuLuaRecoveryMode>;
   let splitResult: ReturnType<typeof parseRisuLuaSplitMode>;
   let domainGenerationResult: ReturnType<typeof parseRisuLuaDomainGenerationMode>;
   try {
     domainGenerationResult = parseRisuLuaDomainGenerationMode(argv);
     splitResult = parseRisuLuaSplitMode(domainGenerationResult.strippedArgv);
     modeResult = parseRisuLuaMode(splitResult.strippedArgv);
+    recoveryResult = parseRisuLuaRecoveryMode(modeResult.strippedArgv);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`\n  ${message}\n`);
     return 1;
   }
 
-  const outIdx = modeResult.strippedArgv.indexOf('--out');
-  const outArg = outIdx >= 0 ? modeResult.strippedArgv[outIdx + 1] : null;
-  const filePath = modeResult.strippedArgv.find(
+  const outIdx = recoveryResult.strippedArgv.indexOf('--out');
+  const outArg = outIdx >= 0 ? recoveryResult.strippedArgv[outIdx + 1] : null;
+  const filePath = recoveryResult.strippedArgv.find(
     (value) => !value.startsWith('-') && value !== outArg && value !== '--out',
   );
 
@@ -86,7 +95,7 @@ export async function runExtractWorkflow(argv: readonly string[]): Promise<numbe
   }
 
   try {
-    await runMain(filePath, outArg, modeResult.mode ?? 'classic', splitResult.mode ?? 'none', domainGenerationResult.mode ?? 'validated');
+    await runMain(filePath, outArg, modeResult.mode ?? 'classic', recoveryResult.mode, splitResult.mode ?? 'none', domainGenerationResult.mode ?? 'validated');
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -103,6 +112,7 @@ async function runMain(
   filePath: string,
   outArg: string | null,
   risuluaMode: RisuLuaMode,
+  risuluaRecovery: RisuLuaRecoveryMode,
   risuluaSplitMode: RisuLuaSplitCliMode,
   domainGeneration: RisuLuaDomainGenerationCliMode,
 ): Promise<void> {
@@ -134,7 +144,7 @@ async function runMain(
   t = performance.now();
   let phase4Error: Error | undefined;
   try {
-    await phase4_extractLua(parsed.module, resolvedOutDir, risuluaMode, risuluaSplitMode, domainGeneration);
+    await phase4_extractLua(parsed.module, resolvedOutDir, risuluaMode, risuluaRecovery, risuluaSplitMode, domainGeneration);
   } catch (error) {
     phase4Error = error instanceof Error ? error : new Error(String(error));
     console.error(`     ⚠️ Phase 4 failed: ${phase4Error.message}`);

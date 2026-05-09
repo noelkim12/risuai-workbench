@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -6,6 +6,8 @@ import { strToU8, zipSync } from 'fflate';
 
 import { runExtractWorkflow as runCharacterExtractWorkflow } from '../src/cli/extract/character/workflow';
 import { runExtractWorkflow as runModuleExtractWorkflow } from '../src/cli/extract/module/workflow';
+import { runPackWorkflow as runCharacterPackWorkflow } from '../src/cli/pack/character/workflow';
+import { runPackWorkflow as runModulePackWorkflow } from '../src/cli/pack/module/workflow';
 import { hasExecutableRequireCalls } from '../src/cli/shared';
 import {
   parseRisuLuaDomainGenerationMode,
@@ -197,6 +199,56 @@ describe('risulua-split extract CLI integration', () => {
     const dist = readFile(outDir, 'dist/module-table-module.risulua');
     expect(dist).not.toContain('Build-time local helper fragments');
     expect(hasExecutableRequireCalls(dist)).toBe(false);
+  });
+
+  it('keeps module-table workspace when generated dist is blocked by local budget', async () => {
+    const workDir = createTempDir('module-table-dist-blocked');
+    const sourceLua = lines([
+      'local function helper(text)',
+      '  return text',
+      'end',
+      '',
+      'function onOutput(text)',
+      ...buildLocalDeclarations(200),
+      '  return helper(text)',
+      'end',
+    ]);
+    const input = writeModuleJson(workDir, 'blocked-module.json', 'blocked-module', sourceLua);
+    const outDir = path.join(workDir, 'blocked-out');
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    try {
+      const exitCode = await runModuleExtractWorkflow([
+        input,
+        '--out',
+        outDir,
+        '--risulua-mode',
+        'modular',
+        '--risulua-split',
+        'module-table',
+      ]);
+
+      expect(exitCode).toBe(0);
+      expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('RisuLua split failed; preserving'));
+      expect(fs.existsSync(path.join(outDir, 'lua', 'main.risulua'))).toBe(true);
+      expect(fs.existsSync(path.join(outDir, 'lua', 'runtime', 'output.risulua'))).toBe(true);
+      expect(fs.existsSync(path.join(outDir, 'legacy', 'original.risulua'))).toBe(true);
+      expect(fs.existsSync(path.join(outDir, 'docs', 'refactor-map.json'))).toBe(true);
+      expect(fs.existsSync(path.join(outDir, 'dist', 'blocked-module.risulua'))).toBe(false);
+
+      const plan = readJson(outDir, 'docs/risulua-split-plan.json') as Record<string, unknown>;
+      expect(plan).toMatchObject({
+        mode: 'module-table',
+        validation: expect.objectContaining({ ok: false, packable: false, wroteDist: false }),
+      });
+      const validation = plan.validation as { findings?: Array<Record<string, unknown>> };
+      expect(validation.findings).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'local-budget', severity: 'error' }),
+      ]));
+      expect(readFile(outDir, 'docs/risulua-split-report.md')).toContain('error: local-budget');
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it('generates validated domain function files by default for module-table extract', async () => {
@@ -398,6 +450,124 @@ describe('risulua-split extract CLI integration', () => {
     expect(buttonActions).not.toContain('-- Button action bridge:');
     expect(buttonActions).not.toContain('---@source');
   });
+
+  it('restores character module-table files after extract pack extract with full-source recovery', async () => {
+    const workDir = createTempDir('char-round-trip-recovery');
+    const sourceLua = lines([
+      'local html = [[<button type="button" risu-trigger="toggleSidePanel">Open</button>]]',
+      '',
+      'local function renderLabel(value)',
+      '  return "label:" .. tostring(value)',
+      'end',
+      '',
+      'function toggleSidePanel()',
+      '  return renderLabel(html)',
+      'end',
+      '',
+      'function onOutput(text)',
+      '  return toggleSidePanel() .. text',
+      'end',
+    ]);
+    const input = path.join(workDir, 'round-trip-character.charx');
+    fs.writeFileSync(input, createCharacterCharx('RoundTripCharacter', sourceLua));
+    const firstOut = path.join(workDir, 'first-extract');
+    const packedPath = path.join(workDir, 'packed.charx');
+    const secondOut = path.join(workDir, 'second-extract');
+
+    const firstExtractCode = await runCharacterExtractWorkflow([
+      input,
+      '--out',
+      firstOut,
+      '--risulua-mode',
+      'modular',
+      '--risulua-split',
+      'module-table',
+    ]);
+    const packCode = runCharacterPackWorkflow([
+      '--in',
+      firstOut,
+      '--format',
+      'charx',
+      '--out',
+      packedPath,
+      '--risulua-mode',
+      'modular',
+      '--risulua-recovery',
+      'full-source',
+    ]);
+    const secondExtractCode = await runCharacterExtractWorkflow([
+      packedPath,
+      '--out',
+      secondOut,
+      '--risulua-mode',
+      'modular',
+      '--risulua-recovery',
+      'full-source',
+    ]);
+
+    expect(firstExtractCode).toBe(0);
+    expect(packCode).toBe(0);
+    expect(secondExtractCode).toBe(0);
+    expectSameFileBytes(firstOut, secondOut, 'lua/main.risulua');
+    expectSameFileBytes(firstOut, secondOut, 'docs/refactor-map.json');
+    expectSameFileBytes(firstOut, secondOut, 'lua/button_actions/actions.risulua');
+  });
+
+  it('restores module-table module files after extract pack extract with full-source recovery', async () => {
+    const workDir = createTempDir('module-round-trip-recovery');
+    const sourceLua = lines([
+      'function onOutput(text)',
+      'local transientState = {',
+      '  count = 1,',
+      '}',
+      '  transientState.count = transientState.count + #text',
+      '  return text .. tostring(transientState.count)',
+      'end',
+    ]);
+    const input = writeModuleJson(workDir, 'round-trip-module.json', 'round-trip-module', sourceLua);
+    const firstOut = path.join(workDir, 'first-extract');
+    const packedPath = path.join(workDir, 'packed-module.json');
+    const secondOut = path.join(workDir, 'second-extract');
+
+    const firstExtractCode = await runModuleExtractWorkflow([
+      input,
+      '--out',
+      firstOut,
+      '--risulua-mode',
+      'modular',
+      '--risulua-split',
+      'module-table',
+    ]);
+    const packCode = runModulePackWorkflow([
+      '--in',
+      firstOut,
+      '--out',
+      packedPath,
+      '--format',
+      'json',
+      '--risulua-mode',
+      'modular',
+      '--risulua-recovery',
+      'full-source',
+    ]);
+    const secondExtractCode = await runModuleExtractWorkflow([
+      packedPath,
+      '--out',
+      secondOut,
+      '--risulua-mode',
+      'modular',
+      '--risulua-recovery',
+      'full-source',
+    ]);
+    const generatedModulePath = chooseGeneratedLuaModulePath(firstOut);
+
+    expect(firstExtractCode).toBe(0);
+    expect(packCode).toBe(0);
+    expect(secondExtractCode).toBe(0);
+    expectSameFileBytes(firstOut, secondOut, 'lua/main.risulua');
+    expectSameFileBytes(firstOut, secondOut, 'docs/refactor-map.json');
+    expectSameFileBytes(firstOut, secondOut, generatedModulePath);
+  });
 });
 
 // ── Parser unit tests ─────────────────────────────────────────────────
@@ -534,8 +704,43 @@ function readJson(root: string, relativePath: string): unknown {
   return JSON.parse(readFile(root, relativePath));
 }
 
+function readBytes(root: string, relativePath: string): Buffer {
+  return fs.readFileSync(path.join(root, ...relativePath.split('/')));
+}
+
+function expectSameFileBytes(firstRoot: string, secondRoot: string, relativePath: string): void {
+  expect(readBytes(secondRoot, relativePath)).toEqual(readBytes(firstRoot, relativePath));
+}
+
+function chooseGeneratedLuaModulePath(root: string): string {
+  const preferredPath = 'lua/runtime/output.risulua';
+  if (fs.existsSync(path.join(root, ...preferredPath.split('/')))) return preferredPath;
+
+  const refactorMap = readJson(root, 'docs/refactor-map.json');
+  const candidates = collectStringValues(refactorMap)
+    .filter((value) => value.startsWith('lua/') && value.endsWith('.risulua') && value !== 'lua/main.risulua')
+    .filter((value) => fs.existsSync(path.join(root, ...value.split('/'))))
+    .sort();
+
+  expect(candidates.length).toBeGreaterThan(0);
+  return candidates[0];
+}
+
+function collectStringValues(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap((item) => collectStringValues(item));
+  if (value && typeof value === 'object') {
+    return Object.values(value).flatMap((item) => collectStringValues(item));
+  }
+  return [];
+}
+
 function classicModuleLua(sourceLua: string): string {
   return `-- Trigger: init\n${sourceLua}\n`;
+}
+
+function buildLocalDeclarations(count: number): string[] {
+  return Array.from({ length: count }, (_, index) => `  local v${String(index + 1).padStart(3, '0')} = ${index + 1}`);
 }
 
 function lines(sourceLines: string[]): string {

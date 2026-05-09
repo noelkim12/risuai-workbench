@@ -62,7 +62,7 @@ describe('risulua-split dist builder and validators', () => {
       expect(buildResult.wroteDist).toBe(true);
       expect(validation.ok).toBe(true);
       expect(validation.packable).toBe(true);
-      expect(dist).toContain('local helper = __loader_common_helpers()');
+      expect(dist).toContain('local helper = __risulua_loaders["common.helpers"]()');
       expect(dist).toContain('function onOutput(text)');
       expect(hasExecutableRequireCalls(dist)).toBe(false);
       expect(validation.findings).toEqual(expect.arrayContaining([
@@ -152,11 +152,79 @@ describe('risulua-split dist builder and validators', () => {
       expect(buildResult.wroteDist).toBe(true);
       expect(validation.ok).toBe(true);
       expect(validation.packable).toBe(true);
-      expect(dist).toContain('local local_helpers = __loader_common_local_helpers()');
-      expect(dist).toContain('local output_helpers = __loader_handler_helpers_output_helpers()');
-      expect(dist).toContain('local host_globals = __loader_host_globals_global_functions()');
+      expect(dist).toContain('local local_helpers = __risulua_loaders["common.local_helpers"]()');
+      expect(dist).toContain('local output_helpers = __risulua_loaders["handler_helpers.output_helpers"]()');
+      expect(dist).toContain('local host_globals = __risulua_loaders["host_globals.global_functions"]()');
       expect(dist).not.toContain('Build-time local helper fragments');
       expect(hasExecutableRequireCalls(dist)).toBe(false);
+    });
+  });
+
+  it('keeps warning-only local budget diagnostics non-blocking in split validation', () => {
+    withTempDir('module-table-local-warning', (outputRoot) => {
+      const source = 'function onOutput(text)\n  return text\nend\n';
+      const plan = createModuleTablePlan('module_table_local_warning', source, [
+        plannedFile('lua/main.risulua', 0),
+        plannedFile('legacy/original.risulua', 1, 'legacy-original'),
+      ]);
+      writeFile(outputRoot, 'lua/main.risulua', source);
+      writeFile(outputRoot, 'legacy/original.risulua', source);
+      writeModuleTableRefactorMap(outputRoot, []);
+      writeFile(outputRoot, 'dist/module_table_local_warning.risulua', buildTopLevelLocalChunk(167));
+
+      const validation = validateRisuLuaSplitWorkspace({
+        outputRoot,
+        plan,
+        buildResult: {
+          strategy: plan.buildStrategy,
+          distPath: path.join(outputRoot, 'dist', 'module_table_local_warning.risulua'),
+          distRelativePath: 'dist/module_table_local_warning.risulua',
+          wroteDist: true,
+          staleDistDetected: false,
+          code: buildTopLevelLocalChunk(167),
+        },
+        source,
+      });
+
+      expect(validation.ok).toBe(true);
+      expect(validation.packable).toBe(true);
+      expect(validation.findings).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'local-budget', severity: 'warning' }),
+      ]));
+    });
+  });
+
+  it('blocks hard-limit local budget diagnostics in split validation', () => {
+    withTempDir('module-table-local-hard-limit', (outputRoot) => {
+      const source = 'function onOutput(text)\n  return text\nend\n';
+      const plan = createModuleTablePlan('module_table_local_hard_limit', source, [
+        plannedFile('lua/main.risulua', 0),
+        plannedFile('legacy/original.risulua', 1, 'legacy-original'),
+      ]);
+      writeFile(outputRoot, 'lua/main.risulua', source);
+      writeFile(outputRoot, 'legacy/original.risulua', source);
+      writeModuleTableRefactorMap(outputRoot, []);
+      writeFile(outputRoot, 'dist/module_table_local_hard_limit.risulua', buildTopLevelLocalChunk(200));
+
+      const validation = validateRisuLuaSplitWorkspace({
+        outputRoot,
+        plan,
+        buildResult: {
+          strategy: plan.buildStrategy,
+          distPath: path.join(outputRoot, 'dist', 'module_table_local_hard_limit.risulua'),
+          distRelativePath: 'dist/module_table_local_hard_limit.risulua',
+          wroteDist: true,
+          staleDistDetected: false,
+          code: buildTopLevelLocalChunk(200),
+        },
+        source,
+      });
+
+      expect(validation.ok).toBe(false);
+      expect(validation.packable).toBe(false);
+      expect(validation.findings).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'local-budget', severity: 'error' }),
+      ]));
     });
   });
 
@@ -482,4 +550,8 @@ function writeInvalidRefactorMap(outputRoot: string): void {
 
 function wholeRange(source: string): LuaSourceRange {
   return { startLine: 1, endLine: Math.max(1, source.split('\n').length), startOffset: 0, endOffset: source.length };
+}
+
+function buildTopLevelLocalChunk(count: number): string {
+  return `${Array.from({ length: count }, (_, index) => `local v${String(index + 1).padStart(3, '0')} = 1`).join('\n')}\nreturn v001\n`;
 }

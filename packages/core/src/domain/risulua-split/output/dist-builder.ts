@@ -3,11 +3,12 @@ import path from 'node:path';
 
 import {
   RISULUA_DIST_GENERATED_HEADER,
+  analyzeRisuLuaDistOutput,
   bundleRisuLuaModularGraph,
   resolveRisuLuaModularGraph,
-  validateRisuLuaDist,
   writeRisuLuaDist,
   type RisuLuaBundleTarget,
+  type RisuLuaDistDiagnostic,
 } from '../../../cli/shared';
 import type { DistBuildStrategy, RisuLuaSplitPlan } from '../shared/types';
 
@@ -21,8 +22,10 @@ export interface RisuLuaSplitDistBuildResult {
   distPath: string | null;
   distRelativePath: string | null;
   wroteDist: boolean;
+  distBlocked?: boolean;
   staleDistDetected: boolean;
   code: string | null;
+  diagnostics?: RisuLuaDistDiagnostic[];
 }
 
 export function buildRisuLuaSplitDist(
@@ -46,14 +49,34 @@ function buildPlainDist(outputRoot: string, plan: RisuLuaSplitPlan): RisuLuaSpli
     ? prependPlainLocalFragments(outputRoot, plan, bundled.code)
     : bundled.code;
   const writeResult = writeRisuLuaDist({ target, bundled: bundledWithLocalFragments });
-  const validation = validateRisuLuaDist({ target, selectedPaths: [target.distPath] });
+  const diagnostics = analyzeRisuLuaDistOutput({
+    code: writeResult.code,
+    distPath: writeResult.distPath,
+    distRelativePath: writeResult.distRelativePath,
+  });
+  const blockingDiagnostics = diagnostics.filter((diagnostic) => diagnostic.severity !== 'warning');
+  if (blockingDiagnostics.length > 0) {
+    fs.rmSync(writeResult.distPath, { force: true });
+    return {
+      strategy: plan.buildStrategy,
+      distPath: writeResult.distPath,
+      distRelativePath: writeResult.distRelativePath,
+      wroteDist: false,
+      distBlocked: true,
+      staleDistDetected: false,
+      code: null,
+      diagnostics,
+    };
+  }
   return {
     strategy: plan.buildStrategy,
     distPath: writeResult.distPath,
     distRelativePath: writeResult.distRelativePath,
     wroteDist: true,
+    distBlocked: false,
     staleDistDetected: false,
-    code: validation.code,
+    code: writeResult.code,
+    diagnostics: [],
   };
 }
 
@@ -81,8 +104,10 @@ function buildSectionDist(outputRoot: string, plan: RisuLuaSplitPlan): RisuLuaSp
     distPath,
     distRelativePath,
     wroteDist: true,
+    distBlocked: false,
     staleDistDetected: false,
     code,
+    diagnostics: [],
   };
 }
 
@@ -94,8 +119,10 @@ function buildNoDistResult(outputRoot: string, plan: RisuLuaSplitPlan): RisuLuaS
     distPath,
     distRelativePath,
     wroteDist: false,
+    distBlocked: false,
     staleDistDetected: distPath !== null && fs.existsSync(distPath),
     code: null,
+    diagnostics: [],
   };
 }
 

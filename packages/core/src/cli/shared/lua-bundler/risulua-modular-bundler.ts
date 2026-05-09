@@ -39,6 +39,8 @@ interface LuaAstWithComments extends LuaAstNode {
   comments?: LuaCommentNode[];
 }
 
+const RISULUA_LOADER_REGISTRY_NAME = '__risulua_loaders';
+
 /**
  * 해결된 RisuLua 모듈 그래프를 단일 Lua 문자열로 번들링함.
  *
@@ -70,13 +72,12 @@ export function bundleRisuLuaModularGraph(
     loaderNames.set(id, generateLoaderName(id));
   }
 
-  // require 교체 맵 구성: 각 require 엣지에 대해 (fromModule, requireId) → loaderName 매핑
+  // require 교체 맵 구성: 각 require 엣지에 대해 (fromModule, requireId) → moduleId 매핑
   const requireReplacements = new Map<string, string>();
   for (const edge of graph.edges) {
     const key = `${edge.from}:${edge.requireId}`;
-    const loaderName = loaderNames.get(edge.to);
-    if (loaderName) {
-      requireReplacements.set(key, loaderName);
+    if (loaderNames.has(edge.to)) {
+      requireReplacements.set(key, edge.to);
     }
   }
 
@@ -96,35 +97,30 @@ export function bundleRisuLuaModularGraph(
   outputParts.push('local __risulua_cache = {}');
   outputParts.push('');
 
-  // 2. 모든 로컬 로더 선언(Lua 렉시컬 스코핑 안전을 위해)
-  // 그 다음 로더 함수 본문 출력. 이를 통해 모든 로더가 서로의 스코프에 존재함.
+  // 2. 의존성 로더 registry와 로더 함수 본문 출력.
+  // 테이블 lookup은 많은 의존성에서도 top-level local budget을 고정 크기로 유지함.
   const sortedDependencyIds = [...dependencyIds].sort();
 
-  // 의존성이 있을 때만 로더 선언과 본문 출력
+  // 의존성이 있을 때만 로더 registry와 본문 출력
   if (sortedDependencyIds.length > 0) {
-    // 2a. 전방 선언: local __loader_a, __loader_b, ...
-    const loaderLocalDeclarations = sortedDependencyIds
-      .map((id) => loaderNames.get(id)!)
-      .join(', ');
-    outputParts.push(`local ${loaderLocalDeclarations}`);
+    outputParts.push(`local ${RISULUA_LOADER_REGISTRY_NAME} = {}`);
     outputParts.push('');
 
-    // 2b. 함수 본문 할당
     for (const moduleId of sortedDependencyIds) {
-    const module = moduleMap.get(moduleId)!;
-    const loaderName = loaderNames.get(moduleId)!;
+      const module = moduleMap.get(moduleId)!;
+      const loaderName = loaderNames.get(moduleId)!;
 
-    // 로더 함수 본문 할당 생성
-    const loaderCode = generateLoaderFunctionBody({
-      loaderName,
-      moduleId,
-      source: module.source,
-      requireReplacements,
-    });
+      // 로더 함수 본문 할당 생성
+      const loaderCode = generateLoaderFunctionBody({
+        loaderName,
+        moduleId,
+        source: module.source,
+        requireReplacements,
+      });
 
-    outputParts.push(loaderCode);
-    outputParts.push('');
-    generatedLoaders.push(loaderName);
+      outputParts.push(loaderCode);
+      outputParts.push('');
+      generatedLoaders.push(loaderName);
 
       // 이 모듈의 교체된 require 추적
       for (const edge of module.requires) {
@@ -214,21 +210,20 @@ interface GenerateLoaderOptions {
  * @returns 생성된 로더 함수 코드 문자열
  */
 function generateLoaderFunctionBody(options: GenerateLoaderOptions): string {
-  const { loaderName, moduleId, source, requireReplacements } = options;
+  const { moduleId, source, requireReplacements } = options;
 
-    // 모듈 소스의 require 호출 교체
-    const transformedSource = replaceRequiresInSource({
-      source,
-      moduleId,
-      requireReplacements,
-    });
+  // 모듈 소스의 require 호출 교체
+  const transformedSource = replaceRequiresInSource({
+    source,
+    moduleId,
+    requireReplacements,
+  });
 
-  // 로더 함수 본문 할당 생성(로컬 선언이 아님)
-  // 로컬은 렉시컬 스코핑 안전을 위해 앞서 선언됨
+  const moduleKey = JSON.stringify(moduleId);
   const parts: string[] = [];
-  parts.push(`${loaderName} = function()`);
-  parts.push(`  if __risulua_cache["${moduleId}"] ~= nil then`);
-  parts.push(`    return __risulua_cache["${moduleId}"]`);
+  parts.push(`${RISULUA_LOADER_REGISTRY_NAME}[${moduleKey}] = function()`);
+  parts.push(`  if __risulua_cache[${moduleKey}] ~= nil then`);
+  parts.push(`    return __risulua_cache[${moduleKey}]`);
   parts.push(`  end`);
   parts.push(`  local __risulua_module_result = (function()`);
   // 변환된 소스 들여쓰기
@@ -239,11 +234,11 @@ function generateLoaderFunctionBody(options: GenerateLoaderOptions): string {
   parts.push(indentedSource);
   parts.push(`  end)()`);
   parts.push(`  if __risulua_module_result == nil then`);
-  parts.push(`    __risulua_cache["${moduleId}"] = true`);
+  parts.push(`    __risulua_cache[${moduleKey}] = true`);
   parts.push(`  else`);
-  parts.push(`    __risulua_cache["${moduleId}"] = __risulua_module_result`);
+  parts.push(`    __risulua_cache[${moduleKey}] = __risulua_module_result`);
   parts.push(`  end`);
-  parts.push(`  return __risulua_cache["${moduleId}"]`);
+  parts.push(`  return __risulua_cache[${moduleKey}]`);
   parts.push(`end`);
 
   return parts.join('\n');
@@ -299,16 +294,16 @@ function replaceRequiresInSource(options: ReplaceRequiresOptions): string {
     }
 
     const key = `${moduleId}:${requireId}`;
-    const loaderName = requireReplacements.get(key);
+    const replacementModuleId = requireReplacements.get(key);
 
-    if (loaderName) {
+    if (replacementModuleId) {
       // 교체를 위한 범위 가져오기
       const range = (node as unknown as { range?: [number, number] }).range;
       if (range && Array.isArray(range) && range.length === 2) {
         replacements.push({
           start: range[0],
           end: range[1],
-          replacement: `${loaderName}()`,
+          replacement: `${RISULUA_LOADER_REGISTRY_NAME}[${JSON.stringify(replacementModuleId)}]()`,
         });
       }
     }

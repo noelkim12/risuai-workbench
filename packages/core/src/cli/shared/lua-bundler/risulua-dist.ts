@@ -12,7 +12,13 @@ import {
   parseRisuLuaSource,
   walkLuaAst,
 } from './risulua-forbidden-analyzer';
+import { analyzeRisuLuaLocalBudget } from './risulua-local-budget-analyzer';
 import type { RisuLuaBundledOutput } from './risulua-modular-bundler';
+import {
+  encodeRisuLuaRecoveryBlock,
+  removeRisuLuaRecoveryBlock,
+  type RisuLuaRecoveryManifest,
+} from './risulua-recovery';
 import type { RisuLuaBundleTarget } from './risulua-target';
 
 /**
@@ -24,6 +30,7 @@ export const RISULUA_DIST_GENERATED_HEADER = [
   '-- Do not edit directly; rebuild from lua/main.risulua.',
   '-- This dist is a flattened runtime artifact, not a source module-table input.',
   '-- To re-modularize, use lua/main.risulua or legacy/original.risulua instead.',
+  '-- It may include embedded recovery metadata for packed archive restoration.',
   '',
 ].join('\n');
 
@@ -32,6 +39,7 @@ export const RISULUA_DIST_GENERATED_HEADER = [
  */
 export type RisuLuaDistErrorCode =
   | 'forbidden_output'
+  | 'local_budget'
   | 'missing_dist'
   | 'parse_error'
   | 'source_path_selected';
@@ -54,6 +62,16 @@ export interface RisuLuaDistDiagnostic {
   location?: RisuLuaSourceLocation;
   /** 관련된 심볼 이름(선택적). */
   symbol?: string;
+  /** 진단 심각도. 생략된 기존 진단은 validation에서 error처럼 처리됨. */
+  severity?: 'warning' | 'error';
+  /** local budget 진단의 local 개수. */
+  localCount?: number;
+  /** local budget 진단이 넘은 threshold. */
+  threshold?: number;
+  /** local budget hard limit. */
+  limit?: number;
+  /** local budget이 측정된 scope 종류. */
+  scopeKind?: 'chunk' | 'function';
 }
 
 /**
@@ -64,6 +82,8 @@ export interface WriteRisuLuaDistOptions {
   target: RisuLuaBundleTarget;
   /** 번들링된 출력물. 문자열 또는 번들 결과 객체를 받을 수 있음. */
   bundled: RisuLuaBundledOutput | string;
+  /** dist 끝에 포함할 복원 메타데이터 manifest(선택적). */
+  recoveryManifest?: RisuLuaRecoveryManifest;
 }
 
 /**
@@ -122,7 +142,10 @@ export class RisuLuaDistError extends Error {
 export function writeRisuLuaDist(options: WriteRisuLuaDistOptions): RisuLuaDistWriteResult {
   const { target } = options;
   const bundledCode = typeof options.bundled === 'string' ? options.bundled : options.bundled.code;
-  const code = `${RISULUA_DIST_GENERATED_HEADER}${bundledCode}`;
+  const recoveryBlock = options.recoveryManifest
+    ? `${bundledCode.endsWith('\n') ? '' : '\n'}${encodeRisuLuaRecoveryBlock(options.recoveryManifest)}`
+    : '';
+  const code = `${RISULUA_DIST_GENERATED_HEADER}${bundledCode}${recoveryBlock}`;
 
   // dist 파일이 들어갈 디렉토리 생성.
   fs.mkdirSync(path.dirname(target.distPath), { recursive: true });
@@ -176,8 +199,9 @@ export function validateRisuLuaDist(
     distPath: target.distPath,
     distRelativePath: target.distRelativePath,
   });
-  if (diagnostics.length > 0) {
-    throw new RisuLuaDistError(diagnostics[0]);
+  const blockingDiagnostic = diagnostics.find((diagnostic) => diagnostic.severity !== 'warning');
+  if (blockingDiagnostic) {
+    throw new RisuLuaDistError(blockingDiagnostic);
   }
 
   return {
@@ -199,8 +223,9 @@ export function analyzeRisuLuaDistOutput(options: {
   distRelativePath: string;
 }): RisuLuaDistDiagnostic[] {
   const { code, distPath, distRelativePath } = options;
+  const analyzableCode = removeRisuLuaRecoveryBlock(code);
   const sourceDiagnostics = analyzeRisuLuaForbiddenPatterns({
-    source: code,
+    source: analyzableCode,
     filePath: distPath,
     moduleId: distRelativePath,
   });
@@ -211,7 +236,7 @@ export function analyzeRisuLuaDistOutput(options: {
 
   let ast: LuaAstNode;
   try {
-    ast = parseRisuLuaSource(code);
+    ast = parseRisuLuaSource(analyzableCode);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return [
@@ -245,6 +270,23 @@ export function analyzeRisuLuaDistOutput(options: {
       });
     }
   });
+
+  for (const diagnostic of analyzeRisuLuaLocalBudget({ code: analyzableCode, filePath: distPath })) {
+    diagnostics.push({
+      code: 'local_budget',
+      severity: diagnostic.severity,
+      distPath,
+      distRelativePath,
+      filePath: distPath,
+      location: diagnostic.location,
+      symbol: 'local',
+      localCount: diagnostic.localCount,
+      threshold: diagnostic.threshold,
+      limit: diagnostic.limit,
+      scopeKind: diagnostic.scopeKind,
+      message: diagnostic.message.replace(distPath, distRelativePath),
+    });
+  }
 
   return diagnostics.sort(compareDistDiagnostics);
 }

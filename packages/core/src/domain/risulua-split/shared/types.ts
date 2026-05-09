@@ -58,6 +58,7 @@ export type RisuLuaSplitValidationCode =
   | 'host-global-shadowed'
   | 'inbound-root-missing-from-dist'
   | 'legacy-original-in-source-graph'
+  | 'local-budget'
   | 'missing-dist-output'
   | 'module-table-build-time-fragment-marker'
   | 'module-table-content-mismatch'
