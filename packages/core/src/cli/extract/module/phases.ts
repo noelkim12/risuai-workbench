@@ -336,12 +336,12 @@ export async function phase4_extractLua(
 
 export const phase4_extractTriggerLua = phase4_extractLua;
 
-function collectRegexButtonActionSources(outputDir: string): string[] {
+function collectRegexButtonActionSources(outputDir: string): Array<{ sourceFile: string; source: string }> {
   const regexDir = path.join(outputDir, 'regex');
   if (!fs.existsSync(regexDir)) return [];
-  const sources: string[] = [];
+  const sources: Array<{ sourceFile: string; source: string }> = [];
   for (const filePath of listRisuRegexFiles(regexDir)) {
-    sources.push(fs.readFileSync(filePath, 'utf8'));
+    sources.push({ sourceFile: path.relative(outputDir, filePath), source: fs.readFileSync(filePath, 'utf8') });
   }
   return sources;
 }

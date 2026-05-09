@@ -4,6 +4,7 @@ import {
   RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH,
   RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH,
   RISULUA_MODULE_TABLE_COMMON_HELPERS_PATH,
+  RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH,
   RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH,
   RISULUA_MODULE_TABLE_RUNTIME_OUTPUT_PATH,
   analyzeRisuLuaModuleTable,
@@ -15,7 +16,7 @@ import {
 } from '../src/domain/risulua-split';
 
 describe('risulua-split module-table classifier', () => {
-  it('applies precedence so host-visible globals bridge before domain report-only proposals', async () => {
+  it('extracts strict host globals as module dependencies without main bridges', async () => {
     const result = await classify(lines([
       'local function trimText(value)',
       '  return value:gsub("^%s+", "")',
@@ -44,21 +45,15 @@ describe('risulua-split module-table classifier', () => {
       }),
       expect.objectContaining({
         originalName: 'DeckShuffle',
-        classification: 'bridge:host-visible-global',
+        classification: 'extract:host-global-function',
         targetModule: RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH,
-        globalBridge: true,
-        bridge: expect.objectContaining({
-          kind: 'direct_assignment',
-          mainAssignment: { shape: 'direct_assignment', text: 'DeckShuffle = __host_globals.DeckShuffle' },
-        }),
+        globalBridge: false,
       }),
       expect.objectContaining({
         originalName: 'setHeroineClothes',
-        classification: 'bridge:host-visible-global',
+        classification: 'extract:host-global-function',
         targetModule: RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH,
-        bridge: expect.objectContaining({
-          mainAssignment: { shape: 'direct_assignment', text: 'setHeroineClothes = __async_actions.setHeroineClothes' },
-        }),
+        globalBridge: false,
       }),
       expect.objectContaining({
         originalName: 'onOutput',
@@ -81,6 +76,36 @@ describe('risulua-split module-table classifier', () => {
     expect(result.refactorMap.modules.map((moduleContract) => moduleContract.path)).not.toContain('lua/domain/deck_shuffle.risulua');
   });
 
+  it('bridges safe duplicate public globals with source-order versioned exports', async () => {
+    const result = await classify(lines([
+      'function duplicatedGlobal() return 1 end',
+      'function duplicatedGlobal() return 2 end',
+    ]));
+
+    expect(validateRisuLuaModuleTableRefactorMap(result.refactorMap)).toEqual([]);
+    expect(result.refactorMap.symbols).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        originalName: 'duplicatedGlobal',
+        targetModule: RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH,
+        exportName: 'duplicatedGlobal__L1',
+        bridge: expect.objectContaining({
+          mainAssignment: { shape: 'direct_assignment', text: 'duplicatedGlobal = __duplicate_globals.duplicatedGlobal__L1' },
+        }),
+      }),
+      expect.objectContaining({
+        originalName: 'duplicatedGlobal',
+        targetModule: RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH,
+        exportName: 'duplicatedGlobal__L2',
+        bridge: expect.objectContaining({
+          mainAssignment: { shape: 'direct_assignment', text: 'duplicatedGlobal = __duplicate_globals.duplicatedGlobal__L2' },
+        }),
+      }),
+    ]));
+    expect(result.refactorMap.preserved).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ originalName: 'duplicatedGlobal' }),
+    ]));
+  });
+
   it('preserves unsafe public globals with exact conservative reason codes', async () => {
     const result = await classify(lines([
       'function dynamicPublic(name)',
@@ -88,7 +113,7 @@ describe('risulua-split module-table classifier', () => {
       'end',
       '',
       'function duplicatedGlobal() return 1 end',
-      'function duplicatedGlobal() return 2 end',
+      'function duplicatedGlobal() return _G.dynamic end',
       '',
       'function unknownDependency()',
       '  return missingGlobal()',
@@ -98,12 +123,44 @@ describe('risulua-split module-table classifier', () => {
       'collidingExport = { value = 4 }',
     ]));
 
-    expect(result.refactorMap.symbols).toEqual([]);
+    expect(result.refactorMap.symbols).toEqual(expect.arrayContaining([
+      expect.objectContaining({ originalName: 'duplicatedGlobal', targetModule: RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH }),
+    ]));
     expect(result.refactorMap.preserved).toEqual(expect.arrayContaining([
       expect.objectContaining({ originalName: 'dynamicPublic', reason: 'preserve:dynamic-global-reference-risk' }),
-      expect.objectContaining({ originalName: 'duplicatedGlobal', reason: 'preserve:host-visible-global-unsafe-bridge' }),
+      expect.objectContaining({ originalName: 'duplicatedGlobal', reason: 'preserve:dynamic-global-reference-risk' }),
       expect.objectContaining({ originalName: 'unknownDependency', reason: 'preserve:ambiguous' }),
       expect.objectContaining({ originalName: 'collidingExport', reason: 'preserve:host-visible-global-unsafe-bridge' }),
+    ]));
+  });
+
+  it('does not generate unsafe public globals as domain dependencies', async () => {
+    const result = await classify(lines([
+      'function duplicatedDomain() return 1 end',
+      'function duplicatedDomain() return missingGlobal() end',
+      '',
+      'local function usesDuplicatedDomain()',
+      '  return duplicatedDomain()',
+      'end',
+    ]), { domainGeneration: 'validated' });
+
+    expect(result.refactorMap.symbols).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ originalName: 'usesDuplicatedDomain', classification: 'extract:domain-function' }),
+    ]));
+    expect(result.refactorMap.preserved).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        originalName: 'usesDuplicatedDomain',
+        reason: 'preserve:captures-mutable-state',
+      }),
+    ]));
+    expect(result.refactorMap.domainCandidates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'usesDuplicatedDomain',
+        generationStatus: 'blocked',
+        generationBlockedReasons: expect.arrayContaining([
+          'Captures bindings that cannot be rewritten as module dependencies: duplicatedDomain.',
+        ]),
+      }),
     ]));
   });
 
@@ -229,6 +286,127 @@ describe('risulua-split module-table classifier', () => {
     ]));
   });
 
+  it('extracts public domain functions without main global bridge assignments', async () => {
+    const result = await classify(lines([
+      'function buildTargetStatus(triggerId)',
+      '  return getChatVar(triggerId, "ct_Target_Name") or ""',
+      'end',
+      '',
+      'function onOutput(triggerId)',
+      '  return buildTargetStatus(triggerId)',
+      'end',
+    ]), { domainGeneration: 'validated' });
+
+    expect(validateRisuLuaModuleTableRefactorMap(result.refactorMap)).toEqual([]);
+    const domainSymbol = result.refactorMap.symbols.find((symbol) => symbol.originalName === 'buildTargetStatus');
+    expect(domainSymbol).toEqual(expect.objectContaining({
+      originalName: 'buildTargetStatus',
+      classification: 'extract:domain-function',
+      targetModule: 'lua/domain/build_target_status.risulua',
+      globalBridge: false,
+    }));
+    expect(domainSymbol?.bridge).toBeUndefined();
+    expect(result.refactorMap.domainCandidates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'buildTargetStatus',
+        generationStatus: 'generated',
+        generatedPath: 'lua/domain/build_target_status.risulua',
+        autoGenerated: true,
+      }),
+    ]));
+  });
+
+  it('promotes private domain helpers that capture generated variable-store constants', async () => {
+    const result = await classify(lines([
+      'local CORRUPTION_MAX_LEVEL = 5',
+      '',
+      'local function getCorruptionTotalExpForLevel(level)',
+      '  level = math.max(0, math.floor(tonumber(level) or 0))',
+      '  level = math.min(level, CORRUPTION_MAX_LEVEL)',
+      '  return level * 100',
+      'end',
+    ]), {
+      domainGeneration: 'validated',
+      variableStoreNames: ['CORRUPTION_MAX_LEVEL'],
+    });
+
+    expect(validateRisuLuaModuleTableRefactorMap(result.refactorMap)).toEqual([]);
+    expect(result.refactorMap.symbols).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        originalName: 'getCorruptionTotalExpForLevel',
+        classification: 'extract:domain-function',
+        targetModule: 'lua/domain/get_corruption_total_exp_for_level.risulua',
+      }),
+    ]));
+    expect(result.refactorMap.preserved).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ originalName: 'getCorruptionTotalExpForLevel' }),
+    ]));
+  });
+
+  it('blocks private domain helpers with captures that cannot be rewritten as module dependencies', async () => {
+    const result = await classify(lines([
+      'local LIMIT = 5',
+      '',
+      'local function scoreWithLimit(value)',
+      '  return value + LIMIT',
+      'end',
+    ]), { domainGeneration: 'validated' });
+
+    expect(result.refactorMap.symbols).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ originalName: 'scoreWithLimit', classification: 'extract:domain-function' }),
+    ]));
+    expect(result.refactorMap.domainCandidates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'scoreWithLimit',
+        generationStatus: 'blocked',
+        generationBlockedReasons: expect.arrayContaining([
+          'Captures bindings that cannot be rewritten as module dependencies: LIMIT.',
+        ]),
+      }),
+    ]));
+  });
+
+  it('preserves helpers that capture ordinary local scalar state not exported through variable_store', async () => {
+    const result = await classify(lines([
+      'local counter = 0',
+      '',
+      'local function nextCounter()',
+      '  counter = counter + 1',
+      '  return counter',
+      'end',
+    ]), { domainGeneration: 'validated', variableStoreNames: [] });
+
+    expect(result.refactorMap.symbols).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ originalName: 'nextCounter', classification: 'extract:domain-function' }),
+    ]));
+    expect(result.refactorMap.preserved).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        originalName: 'nextCounter',
+        reason: 'preserve:captures-mutable-state',
+      }),
+    ]));
+  });
+
+  it('does not promote variable-store captures through report-mode common helper extraction', async () => {
+    const result = await classify(lines([
+      'local configValues = { prefix = "Lucky" }',
+      '',
+      'local function formatLabel(count)',
+      '  return configValues.prefix .. count',
+      'end',
+    ]), { variableStoreNames: ['configValues'] });
+
+    expect(result.refactorMap.symbols).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ originalName: 'formatLabel', classification: 'extract:pure-helper' }),
+    ]));
+    expect(result.refactorMap.preserved).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        originalName: 'formatLabel',
+        reason: 'preserve:captures-mutable-state',
+      }),
+    ]));
+  });
+
   it('extracts risu-trigger functions into button_actions before common or host globals', async () => {
     const result = await classify(lines([
       'local html = [[<button type="button" risu-trigger="toggleSidePanel">Open</button>]]',
@@ -278,6 +456,104 @@ describe('risulua-split module-table classifier', () => {
     ]));
   });
 
+  it('extracts button actions that capture rewriteable host globals', async () => {
+    const result = await classify(lines([
+      'local html = [[<button type="button" risu-trigger="generateStartInput">Start</button>]]',
+      '',
+      'function resetTargetState(triggerId)',
+      '  setChatVar(triggerId, "ct_Target_Name", "")',
+      'end',
+      '',
+      'function generateStartInput(triggerId)',
+      '  resetTargetState(triggerId)',
+      'end',
+    ]), { domainGeneration: 'validated' });
+
+    expect(validateRisuLuaModuleTableRefactorMap(result.refactorMap)).toEqual([]);
+    expect(result.refactorMap.symbols).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        originalName: 'resetTargetState',
+        classification: 'extract:host-global-function',
+        targetModule: RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH,
+        globalBridge: false,
+      }),
+      expect.objectContaining({
+        originalName: 'generateStartInput',
+        classification: 'extract:button-action',
+        targetModule: RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH,
+        globalBridge: true,
+        bridge: expect.objectContaining({
+          mainAssignment: {
+            shape: 'direct_assignment',
+            text: 'generateStartInput = __button_actions.generateStartInput',
+          },
+        }),
+      }),
+    ]));
+    expect(result.refactorMap.preserved).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ originalName: 'generateStartInput' }),
+    ]));
+  });
+
+  it('extracts button actions that capture generated variable-store exports', async () => {
+    const result = await classify(lines([
+      'local skills = { "Melee", "Magic" }',
+      'local skillPointBonusTable = { { points = 0, bonus = 0 } }',
+      'local html = [[<button type="button" risu-trigger="Cheat_Set_Skill_Value">Set</button>]]',
+      '',
+      'Cheat_Set_Skill_Value = async(function(triggerId)',
+      '  local selectedIndex = tonumber(alertSelect(triggerId, skills):await()) + 1',
+      '  local skillName = skills[selectedIndex]',
+      '  local newBonus = skillPointBonusTable[1].bonus',
+      '  setChatVar(triggerId, skillName .. "_bonus", newBonus)',
+      'end)',
+    ]), {
+      domainGeneration: 'validated',
+      variableStoreNames: ['skills', 'skillPointBonusTable'],
+    });
+
+    expect(validateRisuLuaModuleTableRefactorMap(result.refactorMap)).toEqual([]);
+    expect(result.refactorMap.symbols).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        originalName: 'Cheat_Set_Skill_Value',
+        classification: 'extract:button-action',
+        targetModule: RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH,
+      }),
+    ]));
+    expect(result.refactorMap.preserved).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ originalName: 'Cheat_Set_Skill_Value' }),
+    ]));
+  });
+
+  it('preserves button actions that capture unsafe public globals', async () => {
+    const result = await classify(lines([
+      'local html = [[<button type="button" risu-trigger="doIt">Do</button>]]',
+      '',
+      'function dynamicPublic(name)',
+      '  return _G[name]',
+      'end',
+      '',
+      'function doIt(name)',
+      '  return dynamicPublic(name)',
+      'end',
+    ]));
+
+    expect(result.refactorMap.symbols).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ originalName: 'doIt', classification: 'extract:button-action' }),
+    ]));
+    expect(result.refactorMap.preserved).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        originalName: 'dynamicPublic',
+        reason: 'preserve:dynamic-global-reference-risk',
+      }),
+      expect.objectContaining({
+        originalName: 'doIt',
+        reason: 'preserve:captures-mutable-state',
+        evidence: expect.arrayContaining(['Button action captures external bindings: dynamicPublic.']),
+      }),
+    ]));
+  });
+
   it('preserves button action candidates that capture mutable local state', async () => {
     const result = await classify(lines([
       'local counter = 0',
@@ -300,13 +576,37 @@ describe('risulua-split module-table classifier', () => {
       }),
     ]));
   });
+
+  it('extracts model host globals that use axLLM and response fields without main bridges', async () => {
+    const result = await classify(lines([
+      'function callLLMWithRetry(triggerId, prompt)',
+      '  local response = axLLM(triggerId, prompt)',
+      '  if response and response.success then',
+      '    return response.result',
+      '  end',
+      '  return { success = false, result = "failed" }',
+      'end',
+    ]));
+
+    expect(result.refactorMap.symbols).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        originalName: 'callLLMWithRetry',
+        classification: 'extract:host-global-function',
+        targetModule: RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH,
+        globalBridge: false,
+      }),
+    ]));
+    expect(result.refactorMap.preserved).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ originalName: 'callLLMWithRetry', reason: 'preserve:ambiguous' }),
+    ]));
+  });
 });
 
-async function classify(source: string, options?: { domainGeneration?: RisuLuaModuleTableDomainGenerationOption; buttonActionSources?: string[] }): Promise<RisuLuaModuleTableClassificationResult> {
+async function classify(source: string, options?: { domainGeneration?: RisuLuaModuleTableDomainGenerationOption; buttonActionSources?: string[]; variableStoreNames?: string[] }): Promise<RisuLuaModuleTableClassificationResult> {
   const parseResult = await parseRisuLuaModuleTableSource(source);
   const analyzerResult = analyzeRisuLuaModuleTable({ source, parseResult });
   expect(analyzerResult.ok).toBe(true);
-  return classifyRisuLuaModuleTableDecisions({ source, sourceFile: 'legacy/original.risulua', analyzerResult, domainGeneration: options?.domainGeneration, buttonActionSources: options?.buttonActionSources });
+  return classifyRisuLuaModuleTableDecisions({ source, sourceFile: 'legacy/original.risulua', analyzerResult, domainGeneration: options?.domainGeneration, buttonActionSources: options?.buttonActionSources, variableStoreNames: options?.variableStoreNames });
 }
 
 function lines(sourceLines: string[]): string {

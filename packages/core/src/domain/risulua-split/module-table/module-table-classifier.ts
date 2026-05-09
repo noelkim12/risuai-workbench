@@ -2,12 +2,15 @@ import {
   RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH,
   RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH,
   RISULUA_MODULE_TABLE_COMMON_HELPERS_PATH,
+  RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH,
   RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH,
   RISULUA_MODULE_TABLE_RUNTIME_BUTTON_CLICK_PATH,
   RISULUA_MODULE_TABLE_RUNTIME_INPUT_PATH,
+  RISULUA_MODULE_TABLE_RUNTIME_LISTEN_EDIT_PATH,
   RISULUA_MODULE_TABLE_RUNTIME_OUTPUT_PATH,
   RISULUA_MODULE_TABLE_RUNTIME_START_PATH,
   type RisuLuaModuleTableBridgeMetadata,
+  type RisuLuaModuleTableButtonActionSourceContract,
   type RisuLuaModuleTableClassificationCode,
   type RisuLuaModuleTableDomainCandidateContract,
   type RisuLuaModuleTableDomainGenerationOption,
@@ -32,7 +35,9 @@ export interface RisuLuaModuleTableClassifierInput {
   sourceFile: string;
   analyzerResult: RisuLuaModuleTableAnalyzerResult;
   domainGeneration?: RisuLuaModuleTableDomainGenerationOption;
-  buttonActionSources?: string[];
+  buttonActionSources?: RisuLuaModuleTableButtonActionSourceInput[];
+  variableStoreNames?: string[];
+  promptStoreNames?: string[];
 }
 
 export interface RisuLuaModuleTableParameterizedHelperDecision {
@@ -56,13 +61,16 @@ export interface RisuLuaModuleTableClassificationResult {
 const HOST_GLOBAL_ALIAS = '__host_globals';
 const ASYNC_ACTIONS_ALIAS = '__async_actions';
 const BUTTON_ACTIONS_ALIAS = '__button_actions';
-const SAFE_GLOBAL_NAMES = new Set(['string', 'table', 'math', 'os', 'pairs', 'ipairs', 'tostring', 'tonumber', 'type', 'print']);
+const DUPLICATE_GLOBALS_ALIAS = '__duplicate_globals';
+const SAFE_GLOBAL_NAMES = new Set(['string', 'table', 'math', 'os', 'pairs', 'ipairs', 'pcall', 'xpcall', 'tostring', 'tonumber', 'type', 'print']);
 const RUNTIME_HANDLER_MODULES: Record<string, string> = {
   onOutput: RISULUA_MODULE_TABLE_RUNTIME_OUTPUT_PATH,
   onInput: RISULUA_MODULE_TABLE_RUNTIME_INPUT_PATH,
   onStart: RISULUA_MODULE_TABLE_RUNTIME_START_PATH,
   onButtonClick: RISULUA_MODULE_TABLE_RUNTIME_BUTTON_CLICK_PATH,
 };
+
+type RisuLuaModuleTableButtonActionSourceInput = string | RisuLuaModuleTableButtonActionSourceContract;
 
 export function classifyRisuLuaModuleTableDecisions(input: RisuLuaModuleTableClassifierInput): RisuLuaModuleTableClassificationResult {
   const diagnostics = [...input.analyzerResult.diagnostics];
@@ -73,7 +81,9 @@ export function classifyRisuLuaModuleTableDecisions(input: RisuLuaModuleTableCla
   const parameterizedHelpers: RisuLuaModuleTableParameterizedHelperDecision[] = [];
   const consumedSymbolIds = new Set<string>();
   const buttonActionNames = collectButtonActionNames([input.source, ...(input.buttonActionSources ?? [])]);
-  const safeButtonCaptureNames = new Set(input.analyzerResult.lexicalSymbols.filter(isCommonHelperSymbol).map((symbol) => symbol.originalName));
+  const extractableCommonHelperNames = collectCommonHelperClosureNames(input.analyzerResult.lexicalSymbols);
+  const variableStoreNames = new Set(input.variableStoreNames ?? []);
+  const promptStoreNames = new Set(input.promptStoreNames ?? []);
 
   if (!input.analyzerResult.ok) {
     diagnostics.push('Analyzer failed; module-table classifier produced preservation-only output.');
@@ -93,6 +103,38 @@ export function classifyRisuLuaModuleTableDecisions(input: RisuLuaModuleTableCla
 
   const publicGlobalsByName = groupByName(input.analyzerResult.publicGlobals);
   const unsafePublicNames = collectUnsafePublicNames(input.source, input.analyzerResult, publicGlobalsByName);
+  const rewriteablePublicHostGlobalNames = collectRewriteablePublicHostGlobalNames(
+    input.analyzerResult.lexicalSymbols,
+    input.analyzerResult.publicGlobals,
+    publicGlobalsByName,
+    unsafePublicNames,
+  );
+  const validatedPublicDomainNames = collectValidatedPublicDomainNames(
+    input.analyzerResult.lexicalSymbols,
+    input.analyzerResult.publicGlobals,
+    publicGlobalsByName,
+    unsafePublicNames,
+    domainGeneration,
+  );
+  const validatedPrivateDomainNames = collectValidatedPrivateDomainNames(
+    input.analyzerResult.lexicalSymbols,
+    extractableCommonHelperNames,
+    rewriteablePublicHostGlobalNames,
+    validatedPublicDomainNames,
+    domainGeneration,
+    variableStoreNames,
+    promptStoreNames,
+  );
+  const safeButtonCaptureNames = collectSafeButtonCaptureNames(
+    input.analyzerResult.lexicalSymbols,
+    input.analyzerResult.publicGlobals,
+    extractableCommonHelperNames,
+    validatedPrivateDomainNames,
+    domainGeneration,
+    rewriteablePublicHostGlobalNames,
+    variableStoreNames,
+    promptStoreNames,
+  );
 
   for (const publicGlobal of input.analyzerResult.publicGlobals) {
     const symbol = findSymbolForPublicGlobal(input.analyzerResult.lexicalSymbols, publicGlobal);
@@ -106,12 +148,14 @@ export function classifyRisuLuaModuleTableDecisions(input: RisuLuaModuleTableCla
       symbols.push(buttonActionSymbol(symbol, publicGlobal.name, publicGlobal.sourceRange));
       continue;
     }
+    const publicDomainUnsafeReason = unsafePublicNames.get(publicGlobal.name) ?? unsafePublicDomainGenerationReason(symbol);
     const publicDomainDecision = domainGeneration === 'validated'
       && isPublicDomainCandidate(publicGlobal)
       && symbol !== undefined
       && isValidatedPublicDomainFunction(publicGlobal)
+      && publicDomainUnsafeReason === undefined
       ? { status: 'generated' as const, blockedReasons: [] }
-      : { status: domainGeneration === 'validated' && isPublicDomainCandidate(publicGlobal) ? 'blocked' as const : 'report-only' as const, blockedReasons: publicDomainBlockedReasons(publicGlobal, symbol, domainGeneration) };
+      : { status: domainGeneration === 'validated' && isPublicDomainCandidate(publicGlobal) ? 'blocked' as const : 'report-only' as const, blockedReasons: publicDomainBlockedReasons(publicGlobal, symbol, domainGeneration, publicDomainUnsafeReason) };
     const domainCandidate = isPublicDomainCandidate(publicGlobal)
       ? maybeDomainCandidate(publicGlobal.name, publicGlobal.sourceRange, publicGlobal.hostEffects, [publicGlobal.name], publicDomainDecision.status, publicDomainDecision.blockedReasons)
       : undefined;
@@ -120,9 +164,14 @@ export function classifyRisuLuaModuleTableDecisions(input: RisuLuaModuleTableCla
       symbols.push(domainPublicGlobalSymbol(publicGlobal, symbol));
       continue;
     }
-    const unsafeReason = unsafePublicNames.get(publicGlobal.name) ?? unsafePublicGlobalReason(symbol);
+    const duplicateGroup = publicGlobalsByName.get(publicGlobal.name) ?? [];
+    const unsafeReason = unsafePublicNames.get(publicGlobal.name) ?? unsafePublicGlobalReason(symbol, new Set([publicGlobal.name]));
     if (unsafeReason !== undefined) {
       preserved.push(preservedEntry(publicGlobal.id, publicGlobal.name, publicGlobal.sourceRange, unsafeReason.code, unsafeReason.evidence));
+      continue;
+    }
+    if (duplicateGroup.length > 1) {
+      symbols.push(duplicateHostVisibleGlobalSymbol(publicGlobal, symbol, duplicateExportName(publicGlobal, duplicateGroup)));
       continue;
     }
     symbols.push(hostVisibleGlobalSymbol(publicGlobal, symbol));
@@ -140,10 +189,10 @@ export function classifyRisuLuaModuleTableDecisions(input: RisuLuaModuleTableCla
         symbols.push(buttonActionSymbol(symbol, symbol.originalName, symbol.sourceRange));
         continue;
       }
-      const commonHelper = isCommonHelperSymbol(symbol);
-      const domainDecision = domainGeneration === 'validated' && !commonHelper && isValidatedPrivateDomainFunction(symbol)
+      const commonHelper = extractableCommonHelperNames.has(symbol.originalName);
+      const domainDecision = domainGeneration === 'validated' && !commonHelper && isValidatedPrivateDomainFunction(symbol, validatedPrivateDomainNames)
         ? { status: 'generated' as const, blockedReasons: [] }
-        : { status: domainGeneration === 'validated' && !commonHelper ? 'blocked' as const : 'report-only' as const, blockedReasons: domainGenerationBlockedReasons(symbol, domainGeneration, commonHelper) };
+        : { status: domainGeneration === 'validated' && !commonHelper ? 'blocked' as const : 'report-only' as const, blockedReasons: domainGenerationBlockedReasons(symbol, domainGeneration, commonHelper, extractableCommonHelperNames, rewriteablePublicHostGlobalNames, validatedPrivateDomainNames, validatedPublicDomainNames, variableStoreNames, promptStoreNames) };
       const domainCandidate = commonHelper
         ? undefined
         : maybeDomainCandidate(symbol.originalName, symbol.sourceRange, symbol.hostEffects, [symbol.originalName], domainDecision.status, domainDecision.blockedReasons);
@@ -152,7 +201,7 @@ export function classifyRisuLuaModuleTableDecisions(input: RisuLuaModuleTableCla
         symbols.push(domainFunctionSymbol(symbol));
         continue;
       }
-      const unsafeReason = unsafeLocalHelperReason(symbol);
+      const unsafeReason = unsafeLocalHelperReason(symbol, extractableCommonHelperNames);
       if (unsafeReason === undefined) {
         symbols.push(localHelperSymbol(symbol));
       } else {
@@ -176,7 +225,7 @@ export function classifyRisuLuaModuleTableDecisions(input: RisuLuaModuleTableCla
     mode: 'module-table',
     domainGeneration,
     sourceFile: input.sourceFile,
-    modules: moduleContractsForSymbols(symbols),
+    modules: moduleContractsForSymbols(symbols, input.analyzerResult.runtimeRoots),
     symbols,
     preserved: dedupePreserved(preserved),
     domainCandidates: dedupeDomainCandidates(domainCandidates),
@@ -206,7 +255,6 @@ function domainPublicGlobalSymbol(
   symbol: RisuLuaModuleTableLexicalSymbolFact,
 ): RisuLuaModuleTableSymbolContract {
   const targetModule = domainFunctionPath(publicGlobal.name);
-  const moduleAlias = aliasForModulePath(targetModule);
   return {
     id: symbol.id,
     originalName: publicGlobal.name,
@@ -215,18 +263,7 @@ function domainPublicGlobalSymbol(
     classification: 'extract:domain-function',
     targetModule,
     exportName: publicGlobal.name,
-    globalBridge: true,
-    bridge: {
-      required: true,
-      kind: 'direct_assignment',
-      originalPublicName: publicGlobal.name,
-      moduleAlias,
-      exportName: publicGlobal.name,
-      mainAssignment: {
-        shape: 'direct_assignment',
-        text: `${publicGlobal.name} = ${moduleAlias}.${publicGlobal.name}`,
-      },
-    },
+    globalBridge: false,
     captures: symbol.captures,
     mutates: symbol.mutates,
     hostEffects: publicGlobal.hostEffects,
@@ -241,16 +278,36 @@ function hostVisibleGlobalSymbol(
   const targetModule = publicGlobal.wrapperKind === 'async-wrapper' || publicGlobal.hostEffects.asyncModelNetwork.length > 0
     ? RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH
     : RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH;
-  const moduleAlias = targetModule === RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH ? ASYNC_ACTIONS_ALIAS : HOST_GLOBAL_ALIAS;
+  return {
+    id: symbol?.id ?? publicGlobal.id,
+    originalName: publicGlobal.name,
+    declarationKind: symbol?.declarationKind ?? 'top-level-global-assignment',
+    sourceRange: publicGlobal.sourceRange,
+    classification: 'extract:host-global-function',
+    targetModule,
+    exportName: publicGlobal.name,
+    globalBridge: false,
+    captures: symbol?.captures ?? [],
+    mutates: symbol?.mutates ?? [],
+    hostEffects: publicGlobal.hostEffects,
+    rewriteRefs: symbol?.callSites.map((callSite) => callSite.name) ?? [],
+  };
+}
+
+function duplicateHostVisibleGlobalSymbol(
+  publicGlobal: RisuLuaModuleTablePublicGlobalFact,
+  symbol: RisuLuaModuleTableLexicalSymbolFact | undefined,
+  exportName: string,
+): RisuLuaModuleTableSymbolContract {
   const bridge: RisuLuaModuleTableBridgeMetadata = {
     required: true,
     kind: 'direct_assignment',
     originalPublicName: publicGlobal.name,
-    moduleAlias,
-    exportName: publicGlobal.name,
+    moduleAlias: DUPLICATE_GLOBALS_ALIAS,
+    exportName,
     mainAssignment: {
       shape: 'direct_assignment',
-      text: `${publicGlobal.name} = ${moduleAlias}.${publicGlobal.name}`,
+      text: `${publicGlobal.name} = ${DUPLICATE_GLOBALS_ALIAS}.${exportName}`,
     },
   };
   return {
@@ -259,8 +316,8 @@ function hostVisibleGlobalSymbol(
     declarationKind: symbol?.declarationKind ?? 'top-level-global-assignment',
     sourceRange: publicGlobal.sourceRange,
     classification: 'bridge:host-visible-global',
-    targetModule,
-    exportName: publicGlobal.name,
+    targetModule: RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH,
+    exportName,
     globalBridge: true,
     bridge,
     captures: symbol?.captures ?? [],
@@ -403,20 +460,22 @@ function isExtractClassification(
   return classification.startsWith('extract:');
 }
 
-function unsafePublicGlobalReason(symbol: RisuLuaModuleTableLexicalSymbolFact | undefined): { code: RisuLuaModuleTableClassificationCode; evidence: string[] } | undefined {
+function unsafePublicGlobalReason(symbol: RisuLuaModuleTableLexicalSymbolFact | undefined, allowedLateGlobals = new Set<string>()): { code: RisuLuaModuleTableClassificationCode; evidence: string[] } | undefined {
   if (symbol === undefined) return { code: 'preserve:ambiguous', evidence: ['Missing lexical symbol for public global.'] };
   if (symbol.hostEffects.dynamicEnvironment.length > 0) return { code: 'preserve:dynamic-global-reference-risk', evidence: [`Dynamic environment usage: ${symbol.hostEffects.dynamicEnvironment.join(', ')}.`] };
   const unknownReferences = symbol.references
     .filter((reference) => reference.resolvedScopeId === undefined)
     .map((reference) => reference.name)
-    .filter((name) => !SAFE_GLOBAL_NAMES.has(name) && !symbol.hostEffects.reads.includes(name) && !symbol.hostEffects.writes.includes(name) && !symbol.hostEffects.uiInteraction.includes(name) && !symbol.hostEffects.asyncModelNetwork.includes(name));
+    .filter((name) => !allowedLateGlobals.has(name) && !SAFE_GLOBAL_NAMES.has(name) && !symbol.hostEffects.reads.includes(name) && !symbol.hostEffects.writes.includes(name) && !symbol.hostEffects.uiInteraction.includes(name) && !symbol.hostEffects.asyncModelNetwork.includes(name));
   if (unknownReferences.length > 0) return { code: 'preserve:ambiguous', evidence: [`Unknown global dependencies: ${uniqueSorted(unknownReferences).join(', ')}.`] };
   return undefined;
 }
 
-function unsafeLocalHelperReason(symbol: RisuLuaModuleTableLexicalSymbolFact): { code: RisuLuaModuleTableClassificationCode; evidence: string[] } | undefined {
-  if (symbol.captures.length > 0) return { code: 'preserve:captures-mutable-state', evidence: [`Top-level local helper captures external bindings: ${symbol.captures.join(', ')}.`] };
-  if (symbol.mutations.length > 0 || symbol.mutates.length > 0) return { code: 'preserve:captures-mutable-state', evidence: [`Top-level local helper mutates bindings: ${symbol.mutates.join(', ')}.`] };
+function unsafeLocalHelperReason(symbol: RisuLuaModuleTableLexicalSymbolFact, extractableCommonHelperNames: Set<string>): { code: RisuLuaModuleTableClassificationCode; evidence: string[] } | undefined {
+  const unsafeCaptures = symbol.captures.filter((capture) => !extractableCommonHelperNames.has(capture));
+  if (unsafeCaptures.length > 0) return { code: 'preserve:captures-mutable-state', evidence: [`Top-level local helper captures external bindings: ${unsafeCaptures.join(', ')}.`] };
+  const unsafeMutations = unsafeMutationNames(symbol);
+  if (unsafeMutations.length > 0) return { code: 'preserve:captures-mutable-state', evidence: [`Top-level local helper mutates bindings: ${unsafeMutations.join(', ')}.`] };
   if (symbol.hostEffects.dynamicEnvironment.length > 0) return { code: 'preserve:dynamic-global-reference-risk', evidence: [`Dynamic environment usage: ${symbol.hostEffects.dynamicEnvironment.join(', ')}.`] };
   if (symbol.hostEffects.writes.length > 0) return { code: 'preserve:host-write-order', evidence: [`Host writes require order preservation: ${symbol.hostEffects.writes.join(', ')}.`] };
   if (symbol.hostEffects.uiInteraction.length > 0 || symbol.hostEffects.asyncModelNetwork.length > 0) return { code: 'preserve:async-boundary-risk', evidence: [`UI/async boundary effects: ${[...symbol.hostEffects.uiInteraction, ...symbol.hostEffects.asyncModelNetwork].join(', ')}.`] };
@@ -426,7 +485,8 @@ function unsafeLocalHelperReason(symbol: RisuLuaModuleTableLexicalSymbolFact): {
 function unsafeButtonActionReason(symbol: RisuLuaModuleTableLexicalSymbolFact, safeCaptureNames: Set<string>): { code: RisuLuaModuleTableClassificationCode; evidence: string[] } | undefined {
   const unsafeCaptures = symbol.captures.filter((capture) => !safeCaptureNames.has(capture));
   if (unsafeCaptures.length > 0) return { code: 'preserve:captures-mutable-state', evidence: [`Button action captures external bindings: ${unsafeCaptures.join(', ')}.`] };
-  if (symbol.mutations.length > 0 || symbol.mutates.length > 0) return { code: 'preserve:captures-mutable-state', evidence: [`Button action mutates bindings: ${symbol.mutates.join(', ')}.`] };
+  const unsafeMutations = unsafeMutationNames(symbol);
+  if (unsafeMutations.length > 0) return { code: 'preserve:captures-mutable-state', evidence: [`Button action mutates captured bindings: ${unsafeMutations.join(', ')}.`] };
   if (symbol.hostEffects.dynamicEnvironment.length > 0) return { code: 'preserve:dynamic-global-reference-risk', evidence: [`Button action uses dynamic environment APIs: ${symbol.hostEffects.dynamicEnvironment.join(', ')}.`] };
   return undefined;
 }
@@ -437,9 +497,7 @@ function collectUnsafePublicNames(
   publicGlobalsByName: Map<string, RisuLuaModuleTablePublicGlobalFact[]>,
 ): Map<string, { code: RisuLuaModuleTableClassificationCode; evidence: string[] }> {
   const output = new Map<string, { code: RisuLuaModuleTableClassificationCode; evidence: string[] }>();
-  for (const [name, globals] of publicGlobalsByName) {
-    if (globals.length > 1) output.set(name, { code: 'preserve:host-visible-global-unsafe-bridge', evidence: [`Duplicate public global assignments for ${name}.`] });
-  }
+  void publicGlobalsByName;
   for (const block of analyzerResult.proceduralBlocks) {
     const text = source.slice(block.sourceRange.startOffset, block.sourceRange.endOffset);
     const assignedName = topLevelAssignedName(text);
@@ -453,7 +511,7 @@ function collectUnsafePublicNames(
   return output;
 }
 
-function moduleContractsForSymbols(symbols: RisuLuaModuleTableSymbolContract[]): RisuLuaModuleTableModuleContract[] {
+function moduleContractsForSymbols(symbols: RisuLuaModuleTableSymbolContract[], runtimeRoots: RisuLuaModuleTableRuntimeRootFact[]): RisuLuaModuleTableModuleContract[] {
   const contracts = new Map<string, RisuLuaModuleTableModuleContract>();
   for (const symbol of symbols) {
     if (symbol.targetModule === undefined) continue;
@@ -470,7 +528,23 @@ function moduleContractsForSymbols(symbols: RisuLuaModuleTableSymbolContract[]):
       exports: symbol.exportName === undefined ? [] : [symbol.exportName],
     });
   }
+  if (runtimeRoots.some((root) => root.kind === 'listener-registration' && root.wrapperKind === 'listen-edit-callback')) {
+    contracts.set(RISULUA_MODULE_TABLE_RUNTIME_LISTEN_EDIT_PATH, {
+      path: RISULUA_MODULE_TABLE_RUNTIME_LISTEN_EDIT_PATH,
+      requireId: modulePathToRequireId(RISULUA_MODULE_TABLE_RUNTIME_LISTEN_EDIT_PATH),
+      alias: aliasForModulePath(RISULUA_MODULE_TABLE_RUNTIME_LISTEN_EDIT_PATH),
+      category: categoryForModulePath(RISULUA_MODULE_TABLE_RUNTIME_LISTEN_EDIT_PATH),
+      exports: [],
+    });
+  }
   return [...contracts.values()];
+}
+
+function duplicateExportName(publicGlobal: RisuLuaModuleTablePublicGlobalFact, duplicateGroup: RisuLuaModuleTablePublicGlobalFact[]): string {
+  const ordered = [...duplicateGroup].sort((left, right) => left.sourceRange.startOffset - right.sourceRange.startOffset);
+  const occurrenceIndex = ordered.findIndex((candidate) => candidate.id === publicGlobal.id);
+  const line = publicGlobal.sourceRange.startLine || occurrenceIndex + 1;
+  return `${publicGlobal.name}__L${line}`;
 }
 
 function findSymbolForPublicGlobal(symbols: RisuLuaModuleTableLexicalSymbolFact[], publicGlobal: RisuLuaModuleTablePublicGlobalFact): RisuLuaModuleTableLexicalSymbolFact | undefined {
@@ -509,13 +583,24 @@ function maybeDomainCandidate(
   };
 }
 
-function domainGenerationBlockedReasons(symbol: RisuLuaModuleTableLexicalSymbolFact, domainGeneration: RisuLuaModuleTableDomainGenerationOption, commonHelper: boolean): string[] {
+function domainGenerationBlockedReasons(
+  symbol: RisuLuaModuleTableLexicalSymbolFact,
+  domainGeneration: RisuLuaModuleTableDomainGenerationOption,
+  commonHelper: boolean,
+  extractableCommonHelperNames: Set<string>,
+  rewriteablePublicHostGlobalNames: Set<string>,
+  validatedPrivateDomainNames: Set<string>,
+  validatedPublicDomainNames: Set<string>,
+  variableStoreNames: Set<string>,
+  promptStoreNames: Set<string>,
+): string[] {
   if (domainGeneration === 'report') return ['Domain generation is report-only by default.'];
   if (commonHelper) return ['Symbol is classified as a strict common helper.'];
   const reasons: string[] = [];
-  if (symbol.captures.length > 0) reasons.push(`Captures external bindings: ${symbol.captures.join(', ')}.`);
-  if (symbol.mutations.length > 0 || symbol.mutates.length > 0) reasons.push(`Mutates bindings: ${symbol.mutates.join(', ')}.`);
-  if (symbol.hostEffects.uiInteraction.length > 0) reasons.push(`Uses UI interactions: ${symbol.hostEffects.uiInteraction.join(', ')}.`);
+  const unresolvedCaptures = symbol.captures.filter((capture) => !extractableCommonHelperNames.has(capture) && !rewriteablePublicHostGlobalNames.has(capture) && !validatedPrivateDomainNames.has(capture) && !validatedPublicDomainNames.has(capture) && !variableStoreNames.has(capture) && !promptStoreNames.has(capture));
+  if (unresolvedCaptures.length > 0) reasons.push(`Captures bindings that cannot be rewritten as module dependencies: ${unresolvedCaptures.join(', ')}.`);
+  const unsafeMutations = unsafeMutationNames(symbol);
+  if (unsafeMutations.length > 0) reasons.push(`Mutates captured bindings: ${unsafeMutations.join(', ')}.`);
   if (symbol.hostEffects.asyncModelNetwork.length > 0) reasons.push(`Uses async/model/network APIs: ${symbol.hostEffects.asyncModelNetwork.join(', ')}.`);
   if (symbol.hostEffects.dynamicEnvironment.length > 0) reasons.push(`Uses dynamic environment APIs: ${symbol.hostEffects.dynamicEnvironment.join(', ')}.`);
   return reasons.length === 0 ? ['Domain candidate was not selected for generation.'] : reasons;
@@ -525,29 +610,27 @@ function publicDomainBlockedReasons(
   publicGlobal: RisuLuaModuleTablePublicGlobalFact,
   symbol: RisuLuaModuleTableLexicalSymbolFact | undefined,
   domainGeneration: RisuLuaModuleTableDomainGenerationOption,
+  unsafeReason?: { code: RisuLuaModuleTableClassificationCode; evidence: string[] },
 ): string[] {
   if (domainGeneration === 'report') return ['Domain generation is report-only by default.'];
   if (!isPublicDomainCandidate(publicGlobal)) return ['Public global is classified as host/async infrastructure rather than domain.'];
   if (symbol === undefined) return ['Missing lexical symbol for public domain function.'];
+  if (unsafeReason !== undefined) return unsafeReason.evidence;
   const reasons: string[] = [];
-  if (publicGlobal.hostEffects.uiInteraction.length > 0) reasons.push(`Uses UI interactions: ${publicGlobal.hostEffects.uiInteraction.join(', ')}.`);
   if (publicGlobal.hostEffects.asyncModelNetwork.length > 0) reasons.push(`Uses async/model/network APIs: ${publicGlobal.hostEffects.asyncModelNetwork.join(', ')}.`);
   if (publicGlobal.hostEffects.dynamicEnvironment.length > 0) reasons.push(`Uses dynamic environment APIs: ${publicGlobal.hostEffects.dynamicEnvironment.join(', ')}.`);
   return reasons.length === 0 ? ['Public domain function was not selected for generation.'] : reasons;
 }
 
-function isValidatedPrivateDomainFunction(symbol: RisuLuaModuleTableLexicalSymbolFact): boolean {
-  return symbol.captures.length === 0
-    && symbol.mutations.length === 0
-    && symbol.mutates.length === 0
-    && symbol.hostEffects.uiInteraction.length === 0
-    && symbol.hostEffects.asyncModelNetwork.length === 0
-    && symbol.hostEffects.dynamicEnvironment.length === 0;
+function isValidatedPrivateDomainFunction(
+  symbol: RisuLuaModuleTableLexicalSymbolFact,
+  validatedPrivateDomainNames: Set<string>,
+): boolean {
+  return validatedPrivateDomainNames.has(symbol.originalName);
 }
 
 function isValidatedPublicDomainFunction(publicGlobal: RisuLuaModuleTablePublicGlobalFact): boolean {
-  return publicGlobal.hostEffects.uiInteraction.length === 0
-    && publicGlobal.hostEffects.asyncModelNetwork.length === 0
+  return publicGlobal.hostEffects.asyncModelNetwork.length === 0
     && publicGlobal.hostEffects.dynamicEnvironment.length === 0;
 }
 
@@ -556,22 +639,143 @@ function isPublicDomainCandidate(publicGlobal: RisuLuaModuleTablePublicGlobalFac
 }
 
 function isStrictHostGlobalName(name: string): boolean {
+  if (name === 'setPhase') return false;
   return /^(?:set[A-Z]|toggle[A-Z]|skill_|appendComma$|appendPipe$|safeGet$|resetTargetState$|classifySensitivity$|describeAlertLocal$|getSensitivityArousalBonus$)/.test(name);
 }
 
-function isCommonHelperSymbol(symbol: RisuLuaModuleTableLexicalSymbolFact): boolean {
-  return isStrictCommonHelperName(symbol.originalName)
-    && symbol.captures.length === 0
-    && symbol.mutations.length === 0
-    && symbol.mutates.length === 0
+function collectCommonHelperClosureNames(symbols: RisuLuaModuleTableLexicalSymbolFact[]): Set<string> {
+  const extractable = new Set<string>();
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    for (const symbol of symbols) {
+      if (extractable.has(symbol.originalName)) continue;
+      if (!isStrictCommonHelperName(symbol.originalName)) continue;
+      if (!isCommonHelperEffectsSafe(symbol)) continue;
+      if (!symbol.captures.every((capture) => extractable.has(capture))) continue;
+      extractable.add(symbol.originalName);
+      changed = true;
+    }
+  }
+
+  return extractable;
+}
+
+function collectSafeButtonCaptureNames(
+  symbols: RisuLuaModuleTableLexicalSymbolFact[],
+  publicGlobals: RisuLuaModuleTablePublicGlobalFact[],
+  extractableCommonHelperNames: Set<string>,
+  validatedPrivateDomainNames: Set<string>,
+  domainGeneration: RisuLuaModuleTableDomainGenerationOption,
+  rewriteablePublicHostGlobalNames: Set<string>,
+  variableStoreNames: Set<string>,
+  promptStoreNames: Set<string>,
+): Set<string> {
+  const names = new Set([...extractableCommonHelperNames, ...validatedPrivateDomainNames, ...rewriteablePublicHostGlobalNames, ...variableStoreNames, ...promptStoreNames]);
+  if (domainGeneration !== 'validated') return names;
+
+  for (const publicGlobal of publicGlobals) {
+    const symbol = findSymbolForPublicGlobal(symbols, publicGlobal);
+    if (symbol === undefined) continue;
+    if (!isPublicDomainCandidate(publicGlobal)) continue;
+    if (!isValidatedPublicDomainFunction(publicGlobal)) continue;
+    names.add(publicGlobal.name);
+  }
+
+  return names;
+}
+
+function collectRewriteablePublicHostGlobalNames(
+  symbols: RisuLuaModuleTableLexicalSymbolFact[],
+  publicGlobals: RisuLuaModuleTablePublicGlobalFact[],
+  publicGlobalsByName: Map<string, RisuLuaModuleTablePublicGlobalFact[]>,
+  unsafePublicNames: Map<string, { code: RisuLuaModuleTableClassificationCode; evidence: string[] }>,
+): Set<string> {
+  const names = new Set<string>();
+  for (const publicGlobal of publicGlobals) {
+    if (unsafePublicNames.has(publicGlobal.name)) continue;
+    if ((publicGlobalsByName.get(publicGlobal.name)?.length ?? 0) !== 1) continue;
+    if (unsafePublicDomainGenerationReason(findSymbolForPublicGlobal(symbols, publicGlobal)) !== undefined) continue;
+    names.add(publicGlobal.name);
+  }
+  return names;
+}
+
+function collectValidatedPublicDomainNames(
+  symbols: RisuLuaModuleTableLexicalSymbolFact[],
+  publicGlobals: RisuLuaModuleTablePublicGlobalFact[],
+  publicGlobalsByName: Map<string, RisuLuaModuleTablePublicGlobalFact[]>,
+  unsafePublicNames: Map<string, { code: RisuLuaModuleTableClassificationCode; evidence: string[] }>,
+  domainGeneration: RisuLuaModuleTableDomainGenerationOption,
+): Set<string> {
+  const names = new Set<string>();
+  if (domainGeneration !== 'validated') return names;
+
+  for (const publicGlobal of publicGlobals) {
+    if (!isPublicDomainCandidate(publicGlobal)) continue;
+    if (!isValidatedPublicDomainFunction(publicGlobal)) continue;
+    if (unsafePublicNames.has(publicGlobal.name)) continue;
+    if ((publicGlobalsByName.get(publicGlobal.name)?.length ?? 0) !== 1) continue;
+    if (unsafePublicGlobalReason(findSymbolForPublicGlobal(symbols, publicGlobal)) !== undefined) continue;
+    names.add(publicGlobal.name);
+  }
+
+  return names;
+}
+
+function collectValidatedPrivateDomainNames(
+  symbols: RisuLuaModuleTableLexicalSymbolFact[],
+  extractableCommonHelperNames: Set<string>,
+  rewriteablePublicHostGlobalNames: Set<string>,
+  validatedPublicDomainNames: Set<string>,
+  domainGeneration: RisuLuaModuleTableDomainGenerationOption,
+  variableStoreNames: Set<string>,
+  promptStoreNames: Set<string>,
+): Set<string> {
+  const names = new Set<string>();
+  if (domainGeneration !== 'validated') return names;
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const symbol of symbols) {
+      if (names.has(symbol.originalName)) continue;
+      if (symbol.declarationKind !== 'top-level-local-function') continue;
+      if (unsafeMutationNames(symbol).length > 0) continue;
+      if (symbol.hostEffects.asyncModelNetwork.length > 0) continue;
+      if (symbol.hostEffects.dynamicEnvironment.length > 0) continue;
+      if (!symbol.captures.every((capture) => extractableCommonHelperNames.has(capture) || rewriteablePublicHostGlobalNames.has(capture) || names.has(capture) || validatedPublicDomainNames.has(capture) || variableStoreNames.has(capture) || promptStoreNames.has(capture))) continue;
+      names.add(symbol.originalName);
+      changed = true;
+    }
+  }
+
+  return names;
+}
+
+function unsafePublicDomainGenerationReason(symbol: RisuLuaModuleTableLexicalSymbolFact | undefined): { code: RisuLuaModuleTableClassificationCode; evidence: string[] } | undefined {
+  if (symbol === undefined) return { code: 'preserve:ambiguous', evidence: ['Missing lexical symbol for public global.'] };
+  if (symbol.hostEffects.dynamicEnvironment.length > 0) return { code: 'preserve:dynamic-global-reference-risk', evidence: [`Dynamic environment usage: ${symbol.hostEffects.dynamicEnvironment.join(', ')}.`] };
+  return undefined;
+}
+
+function isCommonHelperEffectsSafe(symbol: RisuLuaModuleTableLexicalSymbolFact): boolean {
+  return unsafeMutationNames(symbol).length === 0
     && symbol.hostEffects.writes.length === 0
     && symbol.hostEffects.uiInteraction.length === 0
     && symbol.hostEffects.asyncModelNetwork.length === 0
     && symbol.hostEffects.dynamicEnvironment.length === 0;
 }
 
+function unsafeMutationNames(symbol: RisuLuaModuleTableLexicalSymbolFact): string[] {
+  return uniqueSorted(symbol.mutations
+    .filter((mutation) => mutation.mutatesCapturedBinding || mutation.mutatesCapturedTable)
+    .map((mutation) => mutation.accessPath ?? mutation.name));
+}
+
 function isStrictCommonHelperName(name: string): boolean {
-  return /(?:trim|clamp|split|join|parse|extract|normalize|format|escape|unescape)/i.test(name)
+  return /(?:trim|clamp|split|join|normalize|format|escape|unescape)/i.test(name)
     || /^(?:safeGet|appendComma|appendPipe|to[A-Z]|from[A-Z]|is[A-Z]|has[A-Z])/.test(name);
 }
 
@@ -579,11 +783,12 @@ function domainFunctionPath(name: string): string {
   return `lua/domain/${toSnakeCase(name)}.risulua`;
 }
 
-function collectButtonActionNames(sources: string[]): Set<string> {
+function collectButtonActionNames(sources: RisuLuaModuleTableButtonActionSourceInput[]): Set<string> {
   const names = new Set<string>();
   const attributePattern = /\brisu-trigger\s*=\s*(["'])([A-Za-z_][A-Za-z0-9_]*)\1/g;
   const cbsButtonPattern = /\{\{\s*button\s*::([\s\S]*?)\}\}/g;
-  for (const source of sources) {
+  for (const entry of sources) {
+    const source = typeof entry === 'string' ? entry : entry.source;
     let attributeMatch = attributePattern.exec(source);
     while (attributeMatch !== null) {
       names.add(attributeMatch[2]);
@@ -630,6 +835,7 @@ function modulePathToRequireId(modulePath: string): string {
 
 function aliasForModulePath(modulePath: string): string {
   if (modulePath === RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH) return HOST_GLOBAL_ALIAS;
+  if (modulePath === RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH) return DUPLICATE_GLOBALS_ALIAS;
   if (modulePath === RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH) return ASYNC_ACTIONS_ALIAS;
   if (modulePath === RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH) return BUTTON_ACTIONS_ALIAS;
   if (modulePath === RISULUA_MODULE_TABLE_COMMON_HELPERS_PATH) return '__local_helpers';
@@ -637,6 +843,7 @@ function aliasForModulePath(modulePath: string): string {
   if (modulePath === RISULUA_MODULE_TABLE_RUNTIME_INPUT_PATH) return '__runtime_input';
   if (modulePath === RISULUA_MODULE_TABLE_RUNTIME_START_PATH) return '__runtime_start';
   if (modulePath === RISULUA_MODULE_TABLE_RUNTIME_BUTTON_CLICK_PATH) return '__runtime_button';
+  if (modulePath === RISULUA_MODULE_TABLE_RUNTIME_LISTEN_EDIT_PATH) return '__runtime_listen_edit';
 
   if (modulePath.startsWith('lua/domain/')) return `__domain_${modulePath.split('/').at(-1)?.replace(/\.risulua$/, '') ?? 'module'}`;
 
@@ -653,7 +860,7 @@ function aliasForModulePath(modulePath: string): string {
 function categoryForModulePath(modulePath: string): RisuLuaModuleTableModuleCategory {
   if (modulePath === RISULUA_MODULE_TABLE_COMMON_HELPERS_PATH) return 'common-helper';
   if (modulePath === RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH || modulePath.startsWith('lua/button_actions/')) return 'button-action';
-  if (modulePath === RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH || modulePath === RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH) return 'host-global';
+  if (modulePath === RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH || modulePath === RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH || modulePath === RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH) return 'host-global';
   if (modulePath.startsWith('lua/runtime/')) return 'runtime-handler';
   if (modulePath.startsWith('lua/domain/')) return 'domain-function';
   return 'handler-helper';

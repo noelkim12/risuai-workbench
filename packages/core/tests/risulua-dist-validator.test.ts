@@ -54,6 +54,7 @@ describe('risulua dist validator', () => {
     expect(validation.distRelativePath).toBe('dist/Dist_Module.risulua');
     expect(validation.code).toBe(writeResult.code);
     expect(validation.code.startsWith(RISULUA_DIST_GENERATED_HEADER)).toBe(true);
+    expect(validation.code).toContain('To re-modularize, use lua/main.risulua or legacy/original.risulua instead.');
     expect(validation.code.slice(RISULUA_DIST_GENERATED_HEADER.length)).toBe(bundled.code);
     expect(validation.code).toContain('local helpers = __loader_common_helpers()');
   });

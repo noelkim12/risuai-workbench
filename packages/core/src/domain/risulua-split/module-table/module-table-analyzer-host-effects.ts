@@ -1,12 +1,12 @@
 import { createEmptyRisuLuaModuleTableHostEffects, type RisuLuaModuleTableHostEffects } from './module-table-contracts';
 
-const HOST_READS = new Set(['getChatVar', 'getState', 'getChat', 'getCharacter', 'getLorebook', 'getModules', 'getAssets']);
-const HOST_WRITES = new Set(['setChatVar', 'setState', 'setChat', 'setCharacter', 'setLorebook', 'setModules', 'setAssets', 'addMessage', 'removeMessage', 'reloadDisplay']);
-const HOST_UI = new Set(['alertSelect', 'alertNormal', 'alertInput', 'alertConfirm']);
-const HOST_ASYNC_MODEL_NETWORK = new Set(['async', 'LLM', 'request', 'Promise', 'fetch']);
+const HOST_READS = new Set(['getChatVar', 'getState', 'getChat', 'getFullChat', 'getChatLength', 'getPersonaName', 'getCharacter', 'getLorebook', 'getModules', 'getAssets']);
+const HOST_WRITES = new Set(['setChatVar', 'setState', 'setStateTracked', 'setChat', 'addChat', 'removeChat', 'setCharacter', 'setLorebook', 'setModules', 'setAssets', 'addMessage', 'removeMessage', 'reloadDisplay', 'reloadChat']);
+const HOST_UI = new Set(['alertSelect', 'alertNormal', 'alertError', 'alertInput', 'alertConfirm']);
+const HOST_ASYNC_MODEL_NETWORK = new Set(['async', 'LLM', 'axLLM', 'request', 'Promise', 'fetch']);
 const HOST_DYNAMIC_ENVIRONMENT = new Set(['_G', 'rawget', 'rawset', 'load', 'loadstring', 'setfenv', 'getfenv']);
 
-export const GLOBAL_IGNORE_NAMES = new Set(['string', 'table', 'math', 'os', 'pairs', 'ipairs', 'tostring', 'tonumber', 'type', 'print', 'return']);
+export const GLOBAL_IGNORE_NAMES = new Set(['string', 'table', 'math', 'os', 'pairs', 'ipairs', 'pcall', 'xpcall', 'tostring', 'tonumber', 'type', 'print', 'return']);
 
 export function isHostWriteName(name: string): boolean {
   return HOST_WRITES.has(name);

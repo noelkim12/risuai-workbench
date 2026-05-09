@@ -137,6 +137,30 @@ describe('risulua-split module-table nested handler helper rewrite planner', () 
     expect(listenerHelpers!.alias).toBe('__listener_helpers');
   });
 
+  it('extracts listenEdit read-only display helpers while preserving listener registration', async () => {
+    const result = await nestedHandlerRewriteFixture(lines([
+      'listenEdit("editDisplay", function(t, d)',
+      '  local lang = getState(t, "Language") or 0',
+      '  local function buildLabel(count)',
+      '    if lang == 1 then return "행운 " .. count end',
+      '    return "Lucky " .. count',
+      '  end',
+      '  return d .. buildLabel(3)',
+      'end)',
+    ]));
+
+    expect(result.ok).toBe(true);
+    const listenerHelpers = getListenerHelpers(result);
+    expect(listenerHelpers).toBeDefined();
+    expect(listenerHelpers!.exportNames).toContain('buildLabel');
+    expect(listenerHelpers!.body).toContain('function buildLabel(count, lang)');
+    assertParameterizedExport(listenerHelpers!, 'buildLabel', ['lang']);
+    const listenEditRewrite = getHandlerRewrite(result, 'listenEdit');
+    expect(listenEditRewrite).toBeDefined();
+    expect(listenEditRewrite!.rewrittenSource).toContain('listenEdit("editDisplay", function(t, d)');
+    expect(listenEditRewrite!.rewrittenSource).toContain('__listener_helpers.buildLabel(3, lang)');
+  });
+
   it('handles onButtonClick helpers with __button_helpers alias', async () => {
     const result = await nestedHandlerRewriteFixture(lines([
       'function onButtonClick(buttonId)',

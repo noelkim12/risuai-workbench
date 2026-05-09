@@ -22,13 +22,15 @@ const archiveExamples = [
   'merry_sisters_final_original.risulua',
   'merry_rpg_module_original.risulua',
 ];
+const archiveExamplesAvailable = archiveExamples.every((filename) => fs.existsSync(path.join(archiveRoot, filename)));
+const describeArchiveExamples = archiveExamplesAvailable ? describe : describe.skip;
 
 // Helper-level cache for Chikan analysis result to avoid duplicate analysis
 // across the archive examples test and the block-comment listenEdit assertion.
 let chikanAnalysisCache: Awaited<ReturnType<typeof analyzeArchiveReportOnly>> | null = null;
 let chikanSourceCache: string | null = null;
 
-describe('risulua-split module-table archive report-only QA', () => {
+describeArchiveExamples('risulua-split module-table archive report-only QA', () => {
   it('analyzes archive examples into report evidence without production lua output', async () => {
     for (const filename of archiveExamples) {
       const sourcePath = path.join(archiveRoot, filename);

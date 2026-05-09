@@ -22,6 +22,7 @@ import {
   writeRisuLuaSplitReport,
   type RisuLuaSplitPlan,
   type RisuLuaSplitReportContext,
+  type RisuLuaModuleTableButtonActionSourceInput,
   type RisuLuaModuleTableDomainGenerationOption,
 } from '@/domain/risulua-split';
 
@@ -48,7 +49,7 @@ export interface RunRisuLuaSplitOptions {
   targetName: string;
   cwd?: string;
   domainGeneration?: RisuLuaDomainGenerationCliMode;
-  buttonActionSources?: string[];
+  buttonActionSources?: RisuLuaModuleTableButtonActionSourceInput[];
 }
 
 export const RISULUA_SPLIT_FLAG = '--risulua-split';
@@ -141,7 +142,11 @@ export async function runRisuLuaSplitExtract(options: RunRisuLuaSplitOptions): P
 async function runModuleTableExtract(options: RunRisuLuaSplitOptions): Promise<void> {
   const tempRoot = createTempRoot(options.outputRoot);
   try {
-    await runModuleTableDryRunAsync({ ...options, outputRoot: tempRoot });
+    await runModuleTableDryRunAsync({
+      ...options,
+      sourcePath: relativeOutputSourcePath(options.outputRoot, options.sourcePath),
+      outputRoot: tempRoot,
+    });
     moveSplitWorkspace(tempRoot, options.outputRoot);
   } catch (error) {
     moveDocsOnly(tempRoot, options.outputRoot);
@@ -149,6 +154,14 @@ async function runModuleTableExtract(options: RunRisuLuaSplitOptions): Promise<v
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
+}
+
+function relativeOutputSourcePath(outputRoot: string, sourcePath: string): string {
+  if (!path.isAbsolute(sourcePath)) return sourcePath;
+  const relativePath = path.relative(outputRoot, sourcePath).split(path.sep).join('/');
+  return relativePath.startsWith('..') || path.isAbsolute(relativePath) || relativePath.length === 0
+    ? sourcePath
+    : relativePath;
 }
 
 function writeReportOnlyArtifacts(options: RunRisuLuaSplitOptions, outputRoot: string): void {

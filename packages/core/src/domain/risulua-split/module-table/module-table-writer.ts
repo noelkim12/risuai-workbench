@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import {
+  RISULUA_MODULE_TABLE_BUTTON_ACTION_INDEX_PATH,
   RISULUA_MODULE_TABLE_DOMAIN_CANDIDATES_PATH,
+  RISULUA_MODULE_TABLE_EXPORT_MANIFEST_PATH,
   RISULUA_MODULE_TABLE_PROMPT_STORE_PATH,
   RISULUA_MODULE_TABLE_REFACTOR_MAP_PATH,
   RISULUA_MODULE_TABLE_VARIABLE_STORE_PATH,
@@ -18,6 +20,8 @@ import { planTopLevelRewrite, type TopLevelRewriteResult } from './module-table-
 import { planNestedHandlerRewrite, type NestedHandlerRewriteResult } from './module-table-nested-handler-rewrite';
 import { getNodeRange, parseLuaBody, type LuaLocalStatement, type LuaNode } from './module-table-analyzer-lua-ast';
 import { serializeRisuLuaModuleTableDomainCandidates, serializeRisuLuaModuleTableRefactorMap } from './module-table-rendering';
+import { buildRisuLuaModuleTableExportManifest, serializeRisuLuaModuleTableExportManifest } from './module-table-export-manifest';
+import { buildRisuLuaModuleTableButtonActionIndex, serializeRisuLuaModuleTableButtonActionIndex, type RisuLuaModuleTableButtonActionSourceInput } from './module-table-button-action-index';
 import { RISULUA_SPLIT_PLAN_PATH, serializeRisuLuaSplitPlan } from '../output/plan-writer';
 import { RISULUA_SPLIT_REPORT_PATH, renderRisuLuaSplitReport, type RisuLuaSplitReportContext } from '../output/report-writer';
 import type { LuaHostApiSummary, LuaPlannedFile, LuaSourceRange, RisuLuaSplitPlan, SourceProfileResult, SourceProfileSummary } from '../shared/types';
@@ -31,7 +35,7 @@ export interface CreateRisuLuaModuleTableArtifactsInput {
   profileResult?: SourceProfileResult;
   parseResult?: RisuLuaModuleTableParseSuccess;
   domainGeneration?: RisuLuaModuleTableDomainGenerationOption;
-  buttonActionSources?: string[];
+  buttonActionSources?: RisuLuaModuleTableButtonActionSourceInput[];
 }
 
 export interface RisuLuaModuleTableArtifacts extends RisuLuaSplitReportContext {
@@ -67,7 +71,7 @@ interface PromptStoreExtractionResult {
   exportNames: string[];
 }
 
-interface LocalTableDeclaration {
+export interface RisuLuaModuleTableLocalTableDeclaration {
   name: string;
   text: string;
   startOffset: number;
@@ -98,7 +102,7 @@ export async function createRisuLuaModuleTableArtifacts(
   const workspaceLuaFiles = buildLuaWorkspaceFiles(input.source, variableStore.mainText, pipelineWithStores, variableStore.storeFile, promptStore.storeFile);
   const plan = buildPlan(input, targetName, pipelineWithStores, workspaceLuaFiles);
   const context = buildReportContext(plan, pipelineWithStores.dryRunResult.refactorMap);
-  const docs = buildDocWorkspaceFiles(plan, context, pipelineWithStores.dryRunResult.refactorMap, input.cwd);
+  const docs = buildDocWorkspaceFiles(plan, context, pipelineWithStores.dryRunResult.refactorMap, input.cwd, pipelineWithStores.dryRunResult.runtimeRoots, input.buttonActionSources ?? []);
   const artifacts: RisuLuaModuleTableArtifacts = {
     ...context,
     plan,
@@ -157,12 +161,26 @@ function buildDocWorkspaceFiles(
   context: RisuLuaSplitReportContext,
   refactorMap: RisuLuaModuleTableRefactorMapContract,
   cwd: string | undefined,
+  runtimeRoots: DryRunPlanResult['runtimeRoots'],
+  buttonActionSources: RisuLuaModuleTableButtonActionSourceInput[],
 ): RisuLuaWorkspaceFile[] {
+  const exportManifest = buildRisuLuaModuleTableExportManifest({
+    sourceFile: refactorMap.sourceFile,
+    refactorMap,
+    runtimeRoots,
+  });
+  const buttonActionIndex = buildRisuLuaModuleTableButtonActionIndex({
+    sourceFile: refactorMap.sourceFile,
+    refactorMap,
+    buttonActionSources,
+  });
   return [
     { path: RISULUA_SPLIT_PLAN_PATH, content: serializeRisuLuaSplitPlan(plan, { cwd }) },
     { path: RISULUA_SPLIT_REPORT_PATH, content: renderRisuLuaSplitReport(context) },
     { path: RISULUA_MODULE_TABLE_REFACTOR_MAP_PATH, content: serializeRisuLuaModuleTableRefactorMap(refactorMap, { cwd }) },
     { path: RISULUA_MODULE_TABLE_DOMAIN_CANDIDATES_PATH, content: serializeRisuLuaModuleTableDomainCandidates(refactorMap.domainCandidates, { cwd }) },
+    { path: RISULUA_MODULE_TABLE_EXPORT_MANIFEST_PATH, content: serializeRisuLuaModuleTableExportManifest(exportManifest) },
+    { path: RISULUA_MODULE_TABLE_BUTTON_ACTION_INDEX_PATH, content: serializeRisuLuaModuleTableButtonActionIndex(buttonActionIndex) },
   ];
 }
 
@@ -177,12 +195,16 @@ async function runPipeline(input: CreateRisuLuaModuleTableArtifactsInput): Promi
     throw new Error(`Failed to parse Lua source: ${errors}`);
   }
   const analyzerResult = analyzeRisuLuaModuleTable({ source: input.source, parseResult });
+  const variableStoreNames = findTopLevelLocalTableDeclarations(input.source).map((declaration) => declaration.name);
+  const promptStoreNames = findTopLevelLocalPromptDeclarations(input.source).map((declaration) => declaration.name);
   const classificationResult = classifyRisuLuaModuleTableDecisions({
     source: input.source,
     sourceFile: input.sourcePath,
     analyzerResult,
     domainGeneration: input.domainGeneration,
     buttonActionSources: input.buttonActionSources,
+    variableStoreNames,
+    promptStoreNames,
   });
   const dryRunResult = planDryRunRefactorMap({
     source: input.source,
@@ -190,7 +212,15 @@ async function runPipeline(input: CreateRisuLuaModuleTableArtifactsInput): Promi
     parseResult,
     classificationResult,
   });
-  const topLevelRewrite = planTopLevelRewrite({ source: input.source, sourceFile: input.sourcePath, dryRunResult, parseResult });
+  const topLevelRewrite = planTopLevelRewrite({
+    source: input.source,
+    sourceFile: input.sourcePath,
+    dryRunResult,
+    parseResult,
+    variableStoreNames,
+    promptStoreNames,
+    buttonActionSources: input.buttonActionSources,
+  });
   const nestedHandlerRewrite = planNestedHandlerRewrite({ source: input.source, sourceFile: input.sourcePath, dryRunResult, parseResult });
   if (!dryRunResult.ok || !topLevelRewrite.ok || !nestedHandlerRewrite.ok) {
     throw new Error('Module-table rewrite planning failed; artifact writer blocked.');
@@ -206,7 +236,7 @@ function composeMainText(pipeline: PipelineResult): string {
   for (const rewrite of pipeline.nestedHandlerRewrite.handlerBodyRewrites) {
     mainText = applyPlannedHandlerRewrite(mainText, rewrite.originalSource, rewrite.rewrittenSource);
   }
-  return insertRequireStatements(mainText, handlerRequires);
+  return pruneUnusedRequireStatements(insertRequireStatements(mainText, handlerRequires));
 }
 
 function withVariableStoreModule(
@@ -373,8 +403,8 @@ function findTopLevelLocalPromptDeclarations(text: string): LocalPromptDeclarati
   return declarations;
 }
 
-function findTopLevelLocalTableDeclarations(text: string): LocalTableDeclaration[] {
-  const declarations: LocalTableDeclaration[] = [];
+export function findTopLevelLocalTableDeclarations(text: string): RisuLuaModuleTableLocalTableDeclaration[] {
+  const declarations: RisuLuaModuleTableLocalTableDeclaration[] = [];
   let body: LuaNode[];
   try {
     body = parseLuaBody(text);
@@ -383,8 +413,9 @@ function findTopLevelLocalTableDeclarations(text: string): LocalTableDeclaration
   }
 
   for (const statement of body) {
-    if (!isSingleLocalTableStatement(statement)) continue;
+    if (!isSingleLocalStoreStatement(statement)) continue;
     const name = statement.variables[0].name;
+    if (shouldExtractPromptStoreName(name)) continue;
     if (name.startsWith('__') || !shouldExtractVariableStoreName(name)) continue;
     const range = getNodeRange(statement);
     if (range === undefined) continue;
@@ -399,12 +430,22 @@ function findTopLevelLocalTableDeclarations(text: string): LocalTableDeclaration
   return declarations;
 }
 
-function isSingleLocalTableStatement(node: LuaNode): node is LuaLocalStatement {
+function isSingleLocalStoreStatement(node: LuaNode): node is LuaLocalStatement {
   if (node.type !== 'LocalStatement') return false;
   const statement = node as LuaLocalStatement;
   return statement.variables.length === 1
     && statement.init.length === 1
-    && statement.init[0]?.type === 'TableConstructorExpression';
+    && isVariableStoreInitializer(statement.init[0]);
+}
+
+function isVariableStoreInitializer(node: LuaNode | undefined): boolean {
+  if (node === undefined) return false;
+  return node.type === 'TableConstructorExpression'
+    || node.type === 'NumericLiteral'
+    || node.type === 'StringLiteral'
+    || node.type === 'BooleanLiteral'
+    || node.type === 'NilLiteral'
+    || node.type === 'UnaryExpression';
 }
 
 function isSingleLocalPromptStatement(node: LuaNode): node is LuaLocalStatement {
@@ -416,7 +457,7 @@ function isSingleLocalPromptStatement(node: LuaNode): node is LuaLocalStatement 
 }
 
 function shouldExtractVariableStoreName(name: string): boolean {
-  return /^(?:[a-z][A-Za-z0-9]*|[A-Z][A-Za-z0-9]*)$/.test(name);
+  return /^(?:[a-z][A-Za-z0-9]*|[A-Z][A-Za-z0-9]*|[A-Z][A-Z0-9_]*[A-Z0-9])$/.test(name);
 }
 
 function shouldExtractPromptStoreName(name: string): boolean {
@@ -544,6 +585,36 @@ function insertRequireStatements(mainText: string, statements: string[]): string
   return lines.join('\n');
 }
 
+function pruneUnusedRequireStatements(mainText: string): string {
+  const lines = mainText.split('\n');
+  const output: string[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const alias = requireAlias(line);
+    if (alias !== undefined && !requireAliasUsedOutsideLine(lines, index, alias)) continue;
+    output.push(line);
+  }
+
+  let text = output.join('\n');
+  while (text.includes('\n\n\n')) text = text.replace(/\n\n\n+/g, '\n\n');
+  return text;
+}
+
+function requireAlias(line: string): string | undefined {
+  const match = /^local\s+(__\w+)\s*=\s*require\("[^"]+"\)$/.exec(line);
+  return match?.[1];
+}
+
+function requireAliasUsedOutsideLine(lines: string[], requireLineIndex: number, alias: string): boolean {
+  const pattern = new RegExp(`\\b${escapeRegExp(alias)}\\b`);
+  return lines.some((line, index) => index !== requireLineIndex && pattern.test(line));
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function buildPlan(
   input: CreateRisuLuaModuleTableArtifactsInput,
   targetName: string,
@@ -618,7 +689,10 @@ function validateModuleTableArtifacts(artifacts: RisuLuaModuleTableArtifacts): s
 }
 
 function isDerivedDocumentationPath(filePath: string): boolean {
-  return filePath === RISULUA_SPLIT_PLAN_PATH || filePath === RISULUA_SPLIT_REPORT_PATH;
+  return filePath === RISULUA_SPLIT_PLAN_PATH
+    || filePath === RISULUA_SPLIT_REPORT_PATH
+    || filePath === RISULUA_MODULE_TABLE_EXPORT_MANIFEST_PATH
+    || filePath === RISULUA_MODULE_TABLE_BUTTON_ACTION_INDEX_PATH;
 }
 
 function buildReportContext(

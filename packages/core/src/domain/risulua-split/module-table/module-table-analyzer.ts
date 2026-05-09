@@ -322,6 +322,7 @@ function analyzeStatementInScope(
   }
   if (node.type === 'IfStatement') {
     for (const clause of nodeArrayProperty(node, 'clauses')) {
+      for (const condition of conditionNodes(clause)) analyzeExpression(condition, state, scope, references, mutations, callSites, hostEffects);
       analyzeStatementsInScope(nodeArrayProperty(clause, 'body'), state, scope, localDeclarations, references, mutations, callSites, hostEffects);
     }
     return;
@@ -341,6 +342,7 @@ function analyzeStatementInScope(
     return;
   }
   if (node.type === 'DoStatement' || node.type === 'WhileStatement' || node.type === 'RepeatStatement') {
+    for (const condition of conditionNodes(node)) analyzeExpression(condition, state, scope, references, mutations, callSites, hostEffects);
     analyzeStatementsInScope(nodeArrayProperty(node, 'body'), state, scope, localDeclarations, references, mutations, callSites, hostEffects);
     return;
   }
@@ -361,6 +363,11 @@ function declareOptionalNodeName(node: LuaNode | undefined, scope: ScopeFrame, l
 function optionalNodeProperty(node: LuaNode, key: string): LuaNode[] {
   const value = nodeRecord(node)[key];
   return isLuaNodeValue(value) ? [value] : [];
+}
+
+function conditionNodes(node: LuaNode): LuaNode[] {
+  return ['condition', 'expression', 'test']
+    .flatMap((key) => optionalNodeProperty(node, key));
 }
 
 function nodeProperty(node: LuaNode, key: string): LuaNode | undefined {
@@ -432,6 +439,15 @@ function analyzeExpression(node: LuaNode, state: AnalyzerState, scope: ScopeFram
     const index = node as LuaIndexExpression;
     analyzeExpression(index.base, state, scope, references, mutations, callSites, hostEffects);
     analyzeExpression(index.index, state, scope, references, mutations, callSites, hostEffects);
+    return;
+  }
+  if (node.type === 'TableConstructorExpression') {
+    for (const field of nodeArrayProperty(node, 'fields')) {
+      const key = nodeProperty(field, 'key');
+      const value = nodeProperty(field, 'value');
+      if (key !== undefined && key.type !== 'Identifier') analyzeExpression(key, state, scope, references, mutations, callSites, hostEffects);
+      if (value !== undefined) analyzeExpression(value, state, scope, references, mutations, callSites, hostEffects);
+    }
     return;
   }
   for (const child of childrenOf(node)) analyzeExpression(child, state, scope, references, mutations, callSites, hostEffects);

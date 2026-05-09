@@ -275,15 +275,18 @@ describe('risulua modular bundler', () => {
     expect(hasExecutableRequireCalls(bundled.code)).toBe(false);
   });
 
-  it('risulua modular bundler ignores require in comments and strings', () => {
+  it('risulua modular bundler strips comments while preserving strings', () => {
     const rootDir = createModularRoot();
     writeLua(rootDir, 'main', [
       '-- require("fake.module")',
+      '--[[ require("fake.block") ]]',
       'local text = "require(\"fake.module\")"',
+      'local longText = [[-- keep long string text]]',
       'local real = require("common.real")',
       'return real',
     ].join('\n'));
     writeLua(rootDir, 'common/real', [
+      '-- dependency comment should be stripped',
       'return { real = true }',
     ].join('\n'));
 
@@ -293,9 +296,12 @@ describe('risulua modular bundler', () => {
     // Verify only the real require was replaced
     expect(bundled.code).toContain('local real = __loader_common_real()');
 
-    // Verify comment and string content is preserved
-    expect(bundled.code).toContain('-- require("fake.module")');
+    // Verify comments are stripped but string content is preserved
+    expect(bundled.code).not.toContain('-- require("fake.module")');
+    expect(bundled.code).not.toContain('require("fake.block")');
+    expect(bundled.code).not.toContain('dependency comment should be stripped');
     expect(bundled.code).toContain('local text = "require(\"fake.module\")"');
+    expect(bundled.code).toContain('local longText = [[-- keep long string text]]');
 
     // Verify no executable require calls remain
     expect(hasExecutableRequireCalls(bundled.code)).toBe(false);

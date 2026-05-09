@@ -6,6 +6,8 @@
 import type { CancellationToken, Connection, HoverParams } from 'vscode-languageserver/node';
 
 import type { HoverProvider } from '../../../features/hover';
+import { createRisuLuaBridgeHover } from '../../../features/navigation/risulua-bridge-index';
+import { createRisuLuaSourceCommentHover } from '../../../features/navigation/risulua-source-definition';
 import { traceFeatureRequest, traceFeatureResult } from '../../../utils/server-tracing';
 import type { LuaLsFallbackService } from '../lua/LuaLsFallbackService';
 import type { FeatureRegistrar } from './FeatureRegistrar';
@@ -63,6 +65,35 @@ export class HoverRegistrar implements FeatureRegistrar {
       if (shouldSkipRequest(cancellationToken)) {
         traceFeatureResult(this.connection, 'hover', 'cancelled', { uri: params.textDocument.uri });
         return null;
+      }
+
+      if (route.request) {
+        const sourceCommentHover = createRisuLuaSourceCommentHover(
+          route.request.text,
+          params.position,
+          params.textDocument.uri,
+        );
+        if (sourceCommentHover) {
+          traceFeatureResult(this.connection, 'hover', 'end', {
+            uri: params.textDocument.uri,
+            hasResult: true,
+            source: 'risuluaSourceComment',
+          });
+          return sourceCommentHover;
+        }
+        const bridgeHover = createRisuLuaBridgeHover(
+          route.request.text,
+          params.position,
+          params.textDocument.uri,
+        );
+        if (bridgeHover) {
+          traceFeatureResult(this.connection, 'hover', 'end', {
+            uri: params.textDocument.uri,
+            hasResult: true,
+            source: 'risuluaGeneratedBridge',
+          });
+          return bridgeHover;
+        }
       }
 
       if (route.routedToLuaLs) {

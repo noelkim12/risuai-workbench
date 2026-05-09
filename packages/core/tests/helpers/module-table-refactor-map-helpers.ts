@@ -4,6 +4,7 @@ import {
   analyzeRisuLuaModuleTable,
   classifyRisuLuaModuleTableDecisions,
   createEmptyRisuLuaModuleTableHostEffects,
+  findTopLevelLocalTableDeclarations,
   parseRisuLuaModuleTableSource,
   planDryRunRefactorMap,
   planTopLevelRewrite,
@@ -18,18 +19,21 @@ export function lines(sourceLines: string[]): string {
   return `${sourceLines.join('\n')}\n`;
 }
 
-export async function planFixture(source: string, options?: { domainGeneration?: RisuLuaModuleTableDomainGenerationOption }): Promise<DryRunPlanResult> {
+export async function planFixture(source: string, options?: { domainGeneration?: RisuLuaModuleTableDomainGenerationOption; sourceFile?: string }): Promise<DryRunPlanResult> {
   const parseResult = await parseRisuLuaModuleTableSource(source);
   const analyzerResult = analyzeRisuLuaModuleTable({ source, parseResult });
+  const variableStoreNames = findTopLevelLocalTableDeclarations(source).map((declaration) => declaration.name);
+  const sourceFile = options?.sourceFile ?? 'legacy/original.risulua';
   const classificationResult = classifyRisuLuaModuleTableDecisions({
     source,
-    sourceFile: 'legacy/original.risulua',
+    sourceFile,
     analyzerResult,
     domainGeneration: options?.domainGeneration,
+    variableStoreNames,
   });
   return planDryRunRefactorMap({
     source,
-    sourceFile: 'legacy/original.risulua',
+    sourceFile,
     parseResult,
     classificationResult,
   });
@@ -120,14 +124,16 @@ export function createSyntheticOverlappingEditPlan() {
   };
 }
 
-export async function rewriteFixture(source: string): Promise<TopLevelRewriteResult> {
-  const dryRunResult = await planFixture(source);
+export async function rewriteFixture(source: string, options?: { domainGeneration?: RisuLuaModuleTableDomainGenerationOption; sourceFile?: string }): Promise<TopLevelRewriteResult> {
+  const dryRunResult = await planFixture(source, options);
   const parseResult = await parseRisuLuaModuleTableSource(source);
+  const variableStoreNames = findTopLevelLocalTableDeclarations(source).map((declaration) => declaration.name);
   return planTopLevelRewrite({
     source,
-    sourceFile: 'legacy/original.risulua',
+    sourceFile: options?.sourceFile ?? 'legacy/original.risulua',
     dryRunResult,
     parseResult,
+    variableStoreNames,
   });
 }
 

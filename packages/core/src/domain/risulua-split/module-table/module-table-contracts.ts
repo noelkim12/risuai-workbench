@@ -2,6 +2,7 @@ import type { LuaSourceRange } from '../shared/types';
 
 export const RISULUA_MODULE_TABLE_COMMON_HELPERS_PATH = 'lua/common/local_helpers.risulua';
 export const RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH = 'lua/host_globals/global_functions.risulua';
+export const RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH = 'lua/host_globals/duplicate_globals.risulua';
 export const RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH = 'lua/host_globals/async_actions.risulua';
 export const RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH = 'lua/button_actions/actions.risulua';
 export const RISULUA_MODULE_TABLE_VARIABLE_STORE_PATH = 'lua/state/variable_store.risulua';
@@ -10,12 +11,16 @@ export const RISULUA_MODULE_TABLE_RUNTIME_OUTPUT_PATH = 'lua/runtime/output.risu
 export const RISULUA_MODULE_TABLE_RUNTIME_INPUT_PATH = 'lua/runtime/input.risulua';
 export const RISULUA_MODULE_TABLE_RUNTIME_START_PATH = 'lua/runtime/start.risulua';
 export const RISULUA_MODULE_TABLE_RUNTIME_BUTTON_CLICK_PATH = 'lua/runtime/button_click.risulua';
+export const RISULUA_MODULE_TABLE_RUNTIME_LISTEN_EDIT_PATH = 'lua/runtime/listen_edit.risulua';
 export const RISULUA_MODULE_TABLE_REFACTOR_MAP_PATH = 'docs/refactor-map.json';
 export const RISULUA_MODULE_TABLE_DOMAIN_CANDIDATES_PATH = 'docs/domain-candidates.json';
+export const RISULUA_MODULE_TABLE_EXPORT_MANIFEST_PATH = 'docs/risulua-export-manifest.json';
+export const RISULUA_MODULE_TABLE_BUTTON_ACTION_INDEX_PATH = 'docs/risulua-button-action-index.json';
 
 export const RISULUA_MODULE_TABLE_MVP_ARTIFACT_PATHS = [
   RISULUA_MODULE_TABLE_COMMON_HELPERS_PATH,
   RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH,
+  RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH,
   RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH,
   RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH,
   RISULUA_MODULE_TABLE_VARIABLE_STORE_PATH,
@@ -24,8 +29,11 @@ export const RISULUA_MODULE_TABLE_MVP_ARTIFACT_PATHS = [
   RISULUA_MODULE_TABLE_RUNTIME_INPUT_PATH,
   RISULUA_MODULE_TABLE_RUNTIME_START_PATH,
   RISULUA_MODULE_TABLE_RUNTIME_BUTTON_CLICK_PATH,
+  RISULUA_MODULE_TABLE_RUNTIME_LISTEN_EDIT_PATH,
   RISULUA_MODULE_TABLE_REFACTOR_MAP_PATH,
   RISULUA_MODULE_TABLE_DOMAIN_CANDIDATES_PATH,
+  RISULUA_MODULE_TABLE_EXPORT_MANIFEST_PATH,
+  RISULUA_MODULE_TABLE_BUTTON_ACTION_INDEX_PATH,
 ] as const;
 
 export const RISULUA_MODULE_TABLE_CLASSIFIER_PRECEDENCE = [
@@ -45,6 +53,7 @@ export const RISULUA_MODULE_TABLE_CLASSIFICATION_CODES = [
   'extract:pure-helper',
   'extract:domain-function',
   'extract:button-action',
+  'extract:host-global-function',
   'extract:host-read-helper',
   'extract:parameterized-read-helper',
   'extract:runtime-handler-body',
@@ -171,6 +180,72 @@ export interface RisuLuaModuleTableRefactorMapContract {
   symbols: RisuLuaModuleTableSymbolContract[];
   preserved: RisuLuaModuleTablePreservedContract[];
   domainCandidates: RisuLuaModuleTableDomainCandidateContract[];
+}
+
+export interface RisuLuaModuleTableExportManifestOccurrence {
+  order: number;
+  line: number;
+  id: string;
+  name: string;
+  classification: RisuLuaModuleTableClassificationCode;
+  targetModule?: string;
+  preservedReason?: RisuLuaModuleTableClassificationCode;
+}
+
+export interface RisuLuaModuleTableExportManifestDuplicateGroup {
+  name: string;
+  occurrences: RisuLuaModuleTableExportManifestOccurrence[];
+  finalWinner: RisuLuaModuleTableExportManifestOccurrence;
+}
+
+export interface RisuLuaModuleTableExportManifestListenerRegistration {
+  name: string;
+  kind: string;
+  line: number;
+  preservedReason?: RisuLuaModuleTableClassificationCode;
+}
+
+export interface RisuLuaModuleTableExportManifestContract {
+  version: 1;
+  mode: 'module-table-export-manifest';
+  sourceFile: string;
+  generatedAt?: string;
+  hostVisibleGlobals: RisuLuaModuleTableExportManifestOccurrence[];
+  duplicateGroups: RisuLuaModuleTableExportManifestDuplicateGroup[];
+  listenerRegistrations: RisuLuaModuleTableExportManifestListenerRegistration[];
+  preserved: RisuLuaModuleTablePreservedContract[];
+}
+
+export interface RisuLuaModuleTableButtonActionUsageContract {
+  source: 'risu-trigger-attribute' | 'cbs-button';
+  rawText: string;
+  sourceFile: string;
+  sourceRange: LuaSourceRange;
+}
+
+export interface RisuLuaModuleTableButtonActionSourceContract {
+  sourceFile: string;
+  source: string;
+}
+
+export interface RisuLuaModuleTableButtonActionIndexEntryContract {
+  name: string;
+  targetModule?: string;
+  declaration?: {
+    id: string;
+    sourceFile: string;
+    sourceRange: LuaSourceRange;
+    classification: RisuLuaModuleTableClassificationCode;
+  };
+  usages: RisuLuaModuleTableButtonActionUsageContract[];
+}
+
+export interface RisuLuaModuleTableButtonActionIndexContract {
+  version: 1;
+  mode: 'module-table-button-action-index';
+  sourceFile: string;
+  generatedAt?: string;
+  actions: RisuLuaModuleTableButtonActionIndexEntryContract[];
 }
 
 export type RisuLuaModuleTableInvariantCode =

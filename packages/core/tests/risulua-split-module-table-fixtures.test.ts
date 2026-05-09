@@ -1,9 +1,12 @@
+import { existsSync, readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
 import {
   RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH,
   RISULUA_MODULE_TABLE_COMMON_HELPERS_PATH,
   RISULUA_MODULE_TABLE_DOMAIN_CANDIDATES_PATH,
+  RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH,
   RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH,
   createEmptyRisuLuaModuleTableHostEffects,
   isAllowedRisuLuaModuleTableMvpTarget,
@@ -23,6 +26,8 @@ const INPUT_HANDLER_HELPERS_PATH = 'lua/handler_helpers/input_helpers.risulua';
 const START_HANDLER_HELPERS_PATH = 'lua/handler_helpers/start_helpers.risulua';
 const BUTTON_HANDLER_HELPERS_PATH = 'lua/handler_helpers/button_click_helpers.risulua';
 const LISTEN_EDIT_HANDLER_HELPERS_PATH = 'lua/handler_helpers/listen_edit_helpers.risulua';
+const MERRY_RPG_FIXTURE_ROOT = '../../../docs/bundle-mode/extract-test/output/module-merry-rpg-v1-3/';
+const VIOLATED_GIRL_FIXTURE_ROOT = '../../../docs/bundle-mode/extract-test/output/module-violated-girl-260501/';
 
 const APPROVED_MODULE_TABLE_TARGETS = [
   RISULUA_MODULE_TABLE_COMMON_HELPERS_PATH,
@@ -33,6 +38,7 @@ const APPROVED_MODULE_TABLE_TARGETS = [
   LISTEN_EDIT_HANDLER_HELPERS_PATH,
   RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH,
   RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH,
+  RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH,
   RISULUA_MODULE_TABLE_DOMAIN_CANDIDATES_PATH,
 ] as const;
 
@@ -207,7 +213,14 @@ const FIXTURE_MATRIX: ModuleTableFixtureCase[] = [
       '  return selected',
       'end',
     ]),
-    expectedSymbols: [],
+    expectedSymbols: [
+      symbol('symbol:duplicate:duplicatedGlobal__L1', 'duplicatedGlobal', 'bridge:host-visible-global', RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH, {
+        globalBridge: true,
+      }),
+      symbol('symbol:duplicate:duplicatedGlobal__L2', 'duplicatedGlobal', 'bridge:host-visible-global', RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH, {
+        globalBridge: true,
+      }),
+    ],
     expectedPreserved: [
       preserved('preserve:dynamic:buttonMarkup', 'risu-btn', 'preserve:dynamic-global-reference-risk'),
       preserved('preserve:dynamic:buttonString', 'dynamicButton', 'preserve:dynamic-global-reference-risk'),
@@ -217,7 +230,6 @@ const FIXTURE_MATRIX: ModuleTableFixtureCase[] = [
       preserved('preserve:dynamic:load', 'load', 'preserve:dynamic-global-reference-risk'),
       preserved('preserve:dynamic:loadstring', 'loadstring', 'preserve:dynamic-global-reference-risk'),
       preserved('preserve:dynamic:setfenv', 'setfenv', 'preserve:dynamic-global-reference-risk'),
-      preserved('preserve:collision:duplicatedGlobal', 'duplicatedGlobal', 'preserve:host-visible-global-unsafe-bridge'),
       preserved('preserve:collision:collidingExport', 'collidingExport', 'preserve:host-visible-global-unsafe-bridge'),
     ],
   },
@@ -284,6 +296,7 @@ describe('risulua-split module-table fixture matrix', () => {
       expect.objectContaining({ originalName: 'buttonLabel', targetModule: BUTTON_HANDLER_HELPERS_PATH }),
       expect.objectContaining({ originalName: 'normalizeProfileName', targetModule: LISTEN_EDIT_HANDLER_HELPERS_PATH }),
       expect.objectContaining({ originalName: 'scoreDeck', targetModule: RISULUA_MODULE_TABLE_DOMAIN_CANDIDATES_PATH }),
+      expect.objectContaining({ originalName: 'duplicatedGlobal', targetModule: RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH }),
     ]));
     expect(refactorMap.preserved.map((entry) => entry.originalName)).toEqual(expect.arrayContaining([
       'onOutput',
@@ -305,7 +318,6 @@ describe('risulua-split module-table fixture matrix', () => {
       'load',
       'loadstring',
       'setfenv',
-      'duplicatedGlobal',
       'collidingExport',
     ]));
     expect(refactorMap.domainCandidates).toEqual([
@@ -373,7 +385,32 @@ describe('risulua-split module-table fixture matrix', () => {
     expect(commentOnly.executableRanges).toEqual([]);
     expect(commentOnly.nonExecutableRanges.length).toBeGreaterThan(0);
   });
+
+  it('keeps Merry RPG main as an ABI shell with listener shims after fixture generation', () => {
+    const mainText = readFileSync(new URL(`${MERRY_RPG_FIXTURE_ROOT}lua/main.risulua`, import.meta.url), 'utf8');
+
+    expect(rawSurfaceFunctionNames(mainText)).toEqual([]);
+    expect(mainText).not.toContain('function callLLMWithRetry(');
+    expect(mainText).not.toContain('Cheat_Skill_Points = async(function');
+    expect(mainText).not.toContain('function resetCharacterSkillsAndPerks(');
+    expect(mainText).not.toContain('function TogglePanel_Skill(');
+    expect(mainText).not.toContain('function TogglePanel_Settings(');
+    expect(mainText).not.toContain('function ForceRefresh(');
+    expect(mainText).toContain('listenEdit("editDisplay", function(t, d)');
+    expect(mainText).toContain('__runtime_listen_edit.editDisplay(t, d)');
+  });
+
+  it('keeps export manifests in regenerated module-table fixtures', () => {
+    expect(existsSync(new URL(`${MERRY_RPG_FIXTURE_ROOT}docs/risulua-export-manifest.json`, import.meta.url))).toBe(true);
+    expect(existsSync(new URL(`${VIOLATED_GIRL_FIXTURE_ROOT}docs/risulua-export-manifest.json`, import.meta.url))).toBe(true);
+  });
 });
+
+function rawSurfaceFunctionNames(mainText: string): string[] {
+  return [...mainText.matchAll(/^function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/gm)]
+    .map((match) => match[1])
+    .filter((name) => !['onStart', 'onInput', 'onOutput', 'onButtonClick'].includes(name));
+}
 
 function expectParseSuccess(result: RisuLuaModuleTableParseResult): asserts result is RisuLuaModuleTableParseSuccess {
   expect(result.ok).toBe(true);
@@ -396,11 +433,11 @@ function createMatrixRefactorMap(): RisuLuaModuleTableRefactorMapContract {
       required: true as const,
       kind: 'direct_assignment' as const,
       originalPublicName: expectedSymbol.originalName,
-      moduleAlias: expectedSymbol.targetModule === RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH ? '__async_actions' : '__global_functions',
+      moduleAlias: expectedSymbol.targetModule === RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH ? '__async_actions' : expectedSymbol.targetModule === RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH ? '__duplicate_globals' : '__global_functions',
       exportName: expectedSymbol.originalName,
       mainAssignment: {
         shape: 'direct_assignment' as const,
-        text: `${expectedSymbol.originalName} = ${expectedSymbol.targetModule === RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH ? '__async_actions' : '__global_functions'}.${expectedSymbol.originalName}`,
+        text: `${expectedSymbol.originalName} = ${expectedSymbol.targetModule === RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH ? '__async_actions' : expectedSymbol.targetModule === RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH ? '__duplicate_globals' : '__global_functions'}.${expectedSymbol.originalName}`,
       },
     } : undefined,
     captures: [],
@@ -423,6 +460,7 @@ function createMatrixRefactorMap(): RisuLuaModuleTableRefactorMapContract {
       moduleContract(LISTEN_EDIT_HANDLER_HELPERS_PATH, 'handler_helpers.listen_edit_helpers', '__listen_edit_helpers', 'handler-helper', symbols),
       moduleContract(RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH, 'host_globals.global_functions', '__global_functions', 'host-global', symbols),
       moduleContract(RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH, 'host_globals.async_actions', '__async_actions', 'host-global', symbols),
+      moduleContract(RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH, 'host_globals.duplicate_globals', '__duplicate_globals', 'host-global', symbols),
     ],
     symbols,
     preserved: FIXTURE_MATRIX.flatMap((fixture, fixtureIndex) => fixture.expectedPreserved.map((expectedPreserved, preservedIndex) => ({

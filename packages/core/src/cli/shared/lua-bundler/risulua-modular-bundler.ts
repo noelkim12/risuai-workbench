@@ -31,6 +31,14 @@ export interface RisuLuaBundledOutput {
   }>;
 }
 
+interface LuaCommentNode {
+  range?: [number, number];
+}
+
+interface LuaAstWithComments extends LuaAstNode {
+  comments?: LuaCommentNode[];
+}
+
 /**
  * 해결된 RisuLua 모듈 그래프를 단일 Lua 문자열로 번들링함.
  *
@@ -155,10 +163,35 @@ export function bundleRisuLuaModularGraph(
   outputParts.push(entryCode);
 
   return {
-    code: outputParts.join('\n'),
+    code: stripLuaComments(outputParts.join('\n')),
     generatedLoaders,
     replacedRequires,
   };
+}
+
+function stripLuaComments(code: string): string {
+  let ast: LuaAstWithComments;
+  try {
+    ast = parseRisuLuaSource(code) as LuaAstWithComments;
+  } catch (error) {
+    void error;
+    return code;
+  }
+
+  const comments = ast.comments ?? [];
+  if (comments.length === 0) return code;
+
+  let output = code;
+  for (const comment of [...comments].sort((left, right) => (right.range?.[0] ?? 0) - (left.range?.[0] ?? 0))) {
+    const range = comment.range;
+    if (range === undefined) continue;
+    output = output.slice(0, range[0]) + preserveNewlinesAsWhitespace(output.slice(range[0], range[1])) + output.slice(range[1]);
+  }
+  return output;
+}
+
+function preserveNewlinesAsWhitespace(text: string): string {
+  return text.replace(/[^\r\n]/g, ' ');
 }
 
 /**

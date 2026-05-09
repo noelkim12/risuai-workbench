@@ -9,6 +9,7 @@ import {
 } from './module-table-contracts';
 import type { RisuLuaModuleTableClassificationResult } from './module-table-classifier';
 import type { RisuLuaModuleTableParseResult, RisuLuaModuleTableParserRange } from './module-table-parser';
+import type { RisuLuaModuleTableRuntimeRootFact } from './module-table-analyzer-types';
 import type { LuaSourceRange } from '../shared/types';
 import { rangesAreNonOverlapping } from '../shared/source-slice';
 import { createOffsetRangeIndex } from '../shared/offset-range-index';
@@ -92,6 +93,7 @@ export interface DryRunPlanResult {
   refactorMap: RisuLuaModuleTableRefactorMapContract;
   editPlan: DryRunEditPlan;
   validation: DryRunValidationResult;
+  runtimeRoots: RisuLuaModuleTableRuntimeRootFact[];
   diagnostics: string[];
 }
 
@@ -122,6 +124,7 @@ export function planDryRunRefactorMap(input: DryRunPlanInput): DryRunPlanResult 
     refactorMap,
     editPlan,
     validation,
+    runtimeRoots: input.classificationResult.runtimeRoots,
     diagnostics,
   };
 }

@@ -154,11 +154,14 @@ export {
 } from './output/validators';
 export {
   RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH,
+  RISULUA_MODULE_TABLE_BUTTON_ACTION_INDEX_PATH,
   RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH,
   RISULUA_MODULE_TABLE_CLASSIFICATION_CODES,
   RISULUA_MODULE_TABLE_CLASSIFIER_PRECEDENCE,
   RISULUA_MODULE_TABLE_COMMON_HELPERS_PATH,
   RISULUA_MODULE_TABLE_DOMAIN_CANDIDATES_PATH,
+  RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH,
+  RISULUA_MODULE_TABLE_EXPORT_MANIFEST_PATH,
   RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH,
   RISULUA_MODULE_TABLE_HOST_EFFECT_CLASSES,
   RISULUA_MODULE_TABLE_MVP_ARTIFACT_PATHS,
@@ -166,6 +169,7 @@ export {
   RISULUA_MODULE_TABLE_REFACTOR_MAP_PATH,
   RISULUA_MODULE_TABLE_RUNTIME_BUTTON_CLICK_PATH,
   RISULUA_MODULE_TABLE_RUNTIME_INPUT_PATH,
+  RISULUA_MODULE_TABLE_RUNTIME_LISTEN_EDIT_PATH,
   RISULUA_MODULE_TABLE_RUNTIME_OUTPUT_PATH,
   RISULUA_MODULE_TABLE_RUNTIME_START_PATH,
   RISULUA_MODULE_TABLE_VARIABLE_STORE_PATH,
@@ -175,6 +179,10 @@ export {
   isRisuLuaModuleTableClassificationCode,
   validateRisuLuaModuleTableDomainCandidates,
   validateRisuLuaModuleTableRefactorMap,
+  type RisuLuaModuleTableButtonActionIndexContract,
+  type RisuLuaModuleTableButtonActionIndexEntryContract,
+  type RisuLuaModuleTableButtonActionSourceContract,
+  type RisuLuaModuleTableButtonActionUsageContract,
   type RisuLuaModuleTableBridgeMetadata,
   type RisuLuaModuleTableClassificationCode,
   type RisuLuaModuleTableClassifierPrecedence,
@@ -193,7 +201,17 @@ export {
   type RisuLuaModuleTablePreservedContract,
   type RisuLuaModuleTableRefactorMapContract,
   type RisuLuaModuleTableSymbolContract,
+  type RisuLuaModuleTableExportManifestContract,
+  type RisuLuaModuleTableExportManifestDuplicateGroup,
+  type RisuLuaModuleTableExportManifestListenerRegistration,
+  type RisuLuaModuleTableExportManifestOccurrence,
 } from './module-table/module-table-contracts';
+export {
+  buildRisuLuaModuleTableButtonActionIndex,
+  serializeRisuLuaModuleTableButtonActionIndex,
+  type BuildRisuLuaModuleTableButtonActionIndexInput,
+  type RisuLuaModuleTableButtonActionSourceInput,
+} from './module-table/module-table-button-action-index';
 export {
   createRisuLuaModuleTableDomainCandidatesDocument,
   createRisuLuaModuleTableRefactorMapDocument,
@@ -209,6 +227,11 @@ export {
   type WriteRisuLuaModuleTableJsonOptions,
   type WriteRisuLuaModuleTableJsonResult,
 } from './module-table/module-table-rendering';
+export {
+  buildRisuLuaModuleTableExportManifest,
+  serializeRisuLuaModuleTableExportManifest,
+  type BuildRisuLuaModuleTableExportManifestInput,
+} from './module-table/module-table-export-manifest';
 export {
   parseRisuLuaModuleTableSource,
   type RisuLuaModuleTableParserRange,
@@ -279,8 +302,10 @@ export {
 } from './module-table/module-table-nested-handler-rewrite';
 export {
   createRisuLuaModuleTableArtifacts,
+  findTopLevelLocalTableDeclarations,
   writeRisuLuaModuleTableWorkspace,
   type CreateRisuLuaModuleTableArtifactsInput,
+  type RisuLuaModuleTableLocalTableDeclaration,
   type RisuLuaModuleTableArtifacts,
   type WriteRisuLuaModuleTableWorkspaceOptions,
 } from './module-table/module-table-writer';

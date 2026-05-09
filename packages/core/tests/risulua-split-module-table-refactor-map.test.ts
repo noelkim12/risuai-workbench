@@ -72,17 +72,12 @@ describe('risulua-split module-table dry-run refactor-map planner', () => {
         targetModule: RISULUA_MODULE_TABLE_COMMON_HELPERS_PATH, globalBridge: false,
       }),
       expect.objectContaining({
-        originalName: 'setLanguage1', classification: 'bridge:host-visible-global',
-        targetModule: RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH, globalBridge: true,
-        bridge: expect.objectContaining({
-          required: true, kind: 'direct_assignment',
-          mainAssignment: { shape: 'direct_assignment', text: 'setLanguage1 = __host_globals.setLanguage1' },
-        }),
+        originalName: 'setLanguage1', classification: 'extract:host-global-function',
+        targetModule: RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH, globalBridge: false,
       }),
       expect.objectContaining({
-        originalName: 'setHeroineClothes', classification: 'bridge:host-visible-global',
-        targetModule: RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH, globalBridge: true,
-        bridge: expect.objectContaining({ required: true, kind: 'direct_assignment' }),
+        originalName: 'setHeroineClothes', classification: 'extract:host-global-function',
+        targetModule: RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH, globalBridge: false,
       }),
       expect.objectContaining({
         originalName: 'onOutput', classification: 'extract:runtime-handler-body',
@@ -120,13 +115,10 @@ describe('risulua-split module-table dry-run refactor-map planner', () => {
       (e) => e.intent === 'preserve-in-main' || e.intent === 'preserve-procedural-root' || e.intent === 'preserve-handler-root',
     );
     expect(extractEdits.length).toBeGreaterThanOrEqual(2);
-    expect(bridgeEdits.length).toBeGreaterThanOrEqual(2);
+    expect(bridgeEdits.length).toBe(0);
     expect(preserveEdits.length).toBeGreaterThanOrEqual(2);
 
-    expect(result.editPlan.mainBridgeInsertions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ symbolName: 'setLanguage1', text: 'setLanguage1 = __host_globals.setLanguage1' }),
-      expect.objectContaining({ symbolName: 'setHeroineClothes' }),
-    ]));
+    expect(result.editPlan.mainBridgeInsertions).toEqual([]);
     expect(result.editPlan.mainRequireBindings.length).toBeGreaterThanOrEqual(3);
     expect(result.editPlan.mainRequireBindings).toEqual(expect.arrayContaining([
       expect.objectContaining({ alias: '__local_helpers' }),

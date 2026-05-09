@@ -225,7 +225,7 @@ describe('risulua-split extract CLI integration', () => {
 
     expect(exitCode).toBe(0);
     expect(fs.existsSync(path.join(outDir, 'lua', 'domain', 'score_deck.risulua'))).toBe(true);
-    expect(readFile(outDir, 'lua/main.risulua')).toContain('local __domain_score_deck = require("domain.score_deck")');
+    expect(readFile(outDir, 'lua/main.risulua')).not.toContain('local __domain_score_deck = require("domain.score_deck")');
     expect(readFile(outDir, 'lua/domain/score_deck.risulua')).toContain('M.scoreDeck = scoreDeck');
     const refactorMap = readJson(outDir, 'docs/refactor-map.json') as Record<string, unknown>;
     expect(refactorMap.domainGeneration).toBe('validated');
@@ -362,6 +362,41 @@ describe('risulua-split extract CLI integration', () => {
     const dist = readFile(outDir, 'dist/ModuleTableChar.risulua');
     expect(dist).not.toContain('Build-time local helper fragments');
     expect(hasExecutableRequireCalls(dist)).toBe(false);
+  });
+
+  it('omits declaration-only source paths in module-table main bridge navigation comments', async () => {
+    const workDir = createTempDir('char-module-table-navigation');
+    const sourceLua = lines([
+      'local html = [[<button type="button" risu-trigger="toggleSidePanel">Open</button>]]',
+      '',
+      'function toggleSidePanel()',
+      '  return "ok"',
+      'end',
+    ]);
+    const input = path.join(workDir, 'character.charx');
+    fs.writeFileSync(input, createCharacterCharx('ModuleTableNavigationChar', sourceLua));
+    const outDir = path.join(workDir, 'char-navigation-out');
+
+    const exitCode = await runCharacterExtractWorkflow([
+      input,
+      '--out',
+      outDir,
+      '--risulua-mode',
+      'modular',
+      '--risulua-split',
+      'module-table',
+    ]);
+
+    expect(exitCode).toBe(0);
+    const main = readFile(outDir, 'lua/main.risulua');
+    expect(main).not.toContain('-- Button action bridge: toggleSidePanel');
+    expect(main).not.toContain('---@source lua/main.risulua:3:0');
+    expect(main).toContain('toggleSidePanel = __button_actions.toggleSidePanel');
+    expect(main).not.toContain(outDir);
+
+    const buttonActions = readFile(outDir, 'lua/button_actions/actions.risulua');
+    expect(buttonActions).not.toContain('-- Button action bridge:');
+    expect(buttonActions).not.toContain('---@source');
   });
 });
 

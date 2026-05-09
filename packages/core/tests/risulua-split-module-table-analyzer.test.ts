@@ -151,6 +151,27 @@ describe('risulua-split module-table analyzer', () => {
     expect(unresolvedNames).not.toEqual(expect.arrayContaining(['clearFlag', 'i', '_', 't', 'raw', 'lines']));
     expect(symbol!.localDeclarations).toEqual(expect.arrayContaining(['clearFlag', 'i', '_', 't', 'raw', 'lines']));
   });
+
+  it('treats axLLM as async host API without reporting member fields as globals', async () => {
+    const result = await analyze(lines([
+      'function callLLMWithRetry(triggerId, prompt)',
+      '  local response = axLLM(triggerId, prompt)',
+      '  if response and response.success then',
+      '    return response.result',
+      '  end',
+      '  return { success = false, result = "failed" }',
+      'end',
+    ]));
+
+    const symbol = result.lexicalSymbols.find((candidate) => candidate.originalName === 'callLLMWithRetry');
+    expect(symbol).toBeDefined();
+    expect(symbol!.hostEffects.asyncModelNetwork).toEqual(expect.arrayContaining(['axLLM']));
+    const unresolvedNames = symbol!.references
+      .filter((reference) => reference.resolvedScopeId === undefined)
+      .map((reference) => reference.name);
+    expect(unresolvedNames).toContain('axLLM');
+    expect(unresolvedNames).not.toEqual(expect.arrayContaining(['success', 'result']));
+  });
 });
 
 async function analyze(source: string): Promise<RisuLuaModuleTableAnalyzerResult> {
