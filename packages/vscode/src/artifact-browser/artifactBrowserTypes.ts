@@ -1,20 +1,20 @@
 /**
- * Character Browser sidebar message contract and manifest-backed card model.
- * @file packages/vscode/src/character-browser/characterBrowserTypes.ts
+ * Artifact Browser sidebar message contract and manifest-backed card model.
+ * @file packages/vscode/src/artifact-browser/artifactBrowserTypes.ts
  */
 
-export const CHARACTER_BROWSER_PROTOCOL = 'risu-workbench.character-browser';
-export const CHARACTER_BROWSER_PROTOCOL_VERSION = 1;
-export const CHARACTER_BROWSER_VIEW_ID = 'risuWorkbench.cards';
+export const ARTIFACT_BROWSER_PROTOCOL = 'risu-workbench.artifact-browser';
+export const ARTIFACT_BROWSER_PROTOCOL_VERSION = 1;
+export const ARTIFACT_BROWSER_VIEW_ID = 'risuWorkbench.cards';
 export const MARKER_EDITOR_PROTOCOL = 'risu-workbench.marker-editor';
 export const MARKER_EDITOR_PROTOCOL_VERSION = 1;
 
-export type CharacterBrowserProtocol = typeof CHARACTER_BROWSER_PROTOCOL;
-export type CharacterBrowserProtocolVersion = typeof CHARACTER_BROWSER_PROTOCOL_VERSION;
+export type ArtifactBrowserProtocol = typeof ARTIFACT_BROWSER_PROTOCOL;
+export type ArtifactBrowserProtocolVersion = typeof ARTIFACT_BROWSER_PROTOCOL_VERSION;
 export type MarkerEditorProtocol = typeof MARKER_EDITOR_PROTOCOL;
 export type MarkerEditorProtocolVersion = typeof MARKER_EDITOR_PROTOCOL_VERSION;
-export type WebviewMessageProtocol = CharacterBrowserProtocol | MarkerEditorProtocol;
-export type WebviewMessageProtocolVersion = CharacterBrowserProtocolVersion | MarkerEditorProtocolVersion;
+export type WebviewMessageProtocol = ArtifactBrowserProtocol | MarkerEditorProtocol;
+export type WebviewMessageProtocolVersion = ArtifactBrowserProtocolVersion | MarkerEditorProtocolVersion;
 
 /**
  * MessageEnvelope interface.
@@ -209,30 +209,30 @@ export interface BrowserSection {
 
 export type CharacterSection = BrowserSection;
 
-export interface CharacterBrowserReadyPayload {
-  viewId: typeof CHARACTER_BROWSER_VIEW_ID;
+export interface ArtifactBrowserReadyPayload {
+  viewId: typeof ARTIFACT_BROWSER_VIEW_ID;
 }
 
-export interface CharacterBrowserRefreshPayload {
-  viewId: typeof CHARACTER_BROWSER_VIEW_ID;
+export interface ArtifactBrowserRefreshPayload {
+  viewId: typeof ARTIFACT_BROWSER_VIEW_ID;
 }
 
-export interface CharacterBrowserSelectPayload {
+export interface ArtifactBrowserSelectPayload {
   stableId: string;
 }
 
-export interface CharacterBrowserOpenItemPayload {
+export interface ArtifactBrowserOpenItemPayload {
   stableId: string;
   itemId: string;
 }
 
-export interface CharacterBrowserCardsPayload {
+export interface ArtifactBrowserCardsPayload {
   generatedAt: string;
   cards: BrowserArtifactCard[];
   selectedStableId?: string;
 }
 
-export interface CharacterBrowserDetailPayload {
+export interface ArtifactBrowserDetailPayload {
   generatedAt: string;
   stableId: string;
   sections: BrowserSection[];
@@ -343,42 +343,42 @@ export interface MarkerEditorErrorPayload {
   field?: MarkerEditorEditField;
 }
 
-export type CharacterBrowserReadyMessage = MessageEnvelope<
-  'character-browser/ready',
-  CharacterBrowserReadyPayload
+export type ArtifactBrowserReadyMessage = MessageEnvelope<
+  'artifact-browser/ready',
+  ArtifactBrowserReadyPayload
 >;
 
-export type CharacterBrowserCardsMessage = MessageEnvelope<
-  'character-browser/cards',
-  CharacterBrowserCardsPayload
+export type ArtifactBrowserCardsMessage = MessageEnvelope<
+  'artifact-browser/cards',
+  ArtifactBrowserCardsPayload
 >;
 
-export type CharacterBrowserRefreshMessage = MessageEnvelope<
-  'character-browser/refreshCharacters',
-  CharacterBrowserRefreshPayload
+export type ArtifactBrowserRefreshMessage = MessageEnvelope<
+  'artifact-browser/refresh',
+  ArtifactBrowserRefreshPayload
 >;
 
-export type CharacterBrowserSelectMessage = MessageEnvelope<
-  'character-browser/selectCharacter',
-  CharacterBrowserSelectPayload
+export type ArtifactBrowserSelectMessage = MessageEnvelope<
+  'artifact-browser/select',
+  ArtifactBrowserSelectPayload
 >;
 
-export type CharacterBrowserOpenItemMessage = MessageEnvelope<
-  'character-browser/openItem',
-  CharacterBrowserOpenItemPayload
+export type ArtifactBrowserOpenItemMessage = MessageEnvelope<
+  'artifact-browser/openItem',
+  ArtifactBrowserOpenItemPayload
 >;
 
-export type CharacterBrowserDetailMessage = MessageEnvelope<
-  'character-browser/characterDetailLoaded',
-  CharacterBrowserDetailPayload
+export type ArtifactBrowserDetailMessage = MessageEnvelope<
+  'artifact-browser/detailLoaded',
+  ArtifactBrowserDetailPayload
 >;
 
-export type CharacterBrowserWebviewMessage =
-  | CharacterBrowserReadyMessage
-  | CharacterBrowserRefreshMessage
-  | CharacterBrowserSelectMessage
-  | CharacterBrowserOpenItemMessage;
-export type CharacterBrowserExtensionMessage = CharacterBrowserCardsMessage | CharacterBrowserDetailMessage;
+export type ArtifactBrowserWebviewMessage =
+  | ArtifactBrowserReadyMessage
+  | ArtifactBrowserRefreshMessage
+  | ArtifactBrowserSelectMessage
+  | ArtifactBrowserOpenItemMessage;
+export type ArtifactBrowserExtensionMessage = ArtifactBrowserCardsMessage | ArtifactBrowserDetailMessage;
 
 export type MarkerEditorSaveMessage = MessageEnvelope<'marker-editor/save', MarkerEditorSavePayload>;
 

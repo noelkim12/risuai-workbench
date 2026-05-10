@@ -1,23 +1,23 @@
 /**
- * VS Code sidebar Webview View provider for the Character Browser skeleton.
- * @file packages/vscode/src/views/CharacterBrowserViewProvider.ts
+ * VS Code sidebar Webview View provider for the Artifact Browser skeleton.
+ * @file packages/vscode/src/views/ArtifactBrowserViewProvider.ts
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { CharacterDetailScanner } from '../character-browser/CharacterDetailScanner';
-import { ModuleDetailScanner } from '../character-browser/ModuleDetailScanner';
+import { CharacterDetailScanner } from '../artifact-browser/CharacterDetailScanner';
+import { ModuleDetailScanner } from '../artifact-browser/ModuleDetailScanner';
 import * as vscode from 'vscode';
-import { WorkspaceArtifactDiscoveryService } from '../character-browser/WorkspaceArtifactDiscoveryService';
+import { WorkspaceArtifactDiscoveryService } from '../artifact-browser/WorkspaceArtifactDiscoveryService';
 import {
-  createCharacterBrowserCardsMessage,
-  createCharacterBrowserDetailMessage,
-  isCharacterBrowserOpenItemMessage,
-  isCharacterBrowserReadyMessage,
-  isCharacterBrowserRefreshMessage,
-  isCharacterBrowserSelectMessage,
-} from '../character-browser/characterBrowserMessages';
-import { CHARACTER_BROWSER_VIEW_ID, type BrowserArtifactCard, type BrowserSection } from '../character-browser/characterBrowserTypes';
+  createArtifactBrowserCardsMessage,
+  createArtifactBrowserDetailMessage,
+  isArtifactBrowserOpenItemMessage,
+  isArtifactBrowserReadyMessage,
+  isArtifactBrowserRefreshMessage,
+  isArtifactBrowserSelectMessage,
+} from '../artifact-browser/artifactBrowserMessages';
+import { ARTIFACT_BROWSER_VIEW_ID, type BrowserArtifactCard, type BrowserSection } from '../artifact-browser/artifactBrowserTypes';
 import { MarkerEditorViewProvider } from './MarkerEditorViewProvider';
 import {
   createWebviewDevServerHtml,
@@ -29,12 +29,12 @@ const CHARACTER_MARKER_FILENAME = '.risuchar';
 const MODULE_MARKER_FILENAME = '.risumodule';
 
 /**
- * CharacterBrowserViewProvider 클래스.
+ * ArtifactBrowserViewProvider 클래스.
  * 기존 `risuWorkbench.cards` view id에 Svelte bundle을 로드하고 typed bridge를 연결함.
  */
-export class CharacterBrowserViewProvider implements vscode.WebviewViewProvider {
-  static readonly viewType = CHARACTER_BROWSER_VIEW_ID;
-  private static readonly instances = new Set<CharacterBrowserViewProvider>();
+export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
+  static readonly viewType = ARTIFACT_BROWSER_VIEW_ID;
+  private static readonly instances = new Set<ArtifactBrowserViewProvider>();
 
   private view: vscode.WebviewView | undefined;
   private selectedStableId: string | undefined;
@@ -42,18 +42,18 @@ export class CharacterBrowserViewProvider implements vscode.WebviewViewProvider 
   private currentSections = new Map<string, BrowserSection[]>();
 
   constructor(private readonly context: vscode.ExtensionContext) {
-    CharacterBrowserViewProvider.instances.add(this);
+    ArtifactBrowserViewProvider.instances.add(this);
     this.context.subscriptions.push({
-      dispose: () => CharacterBrowserViewProvider.instances.delete(this),
+      dispose: () => ArtifactBrowserViewProvider.instances.delete(this),
     });
   }
 
   /**
    * refreshOpenViews 함수.
-   * 열린 Character Browser sidebar가 있으면 workspace artifact 목록을 다시 전송함.
+   * 열린 Artifact Browser sidebar가 있으면 workspace artifact 목록을 다시 전송함.
    */
   static refreshOpenViews(): void {
-    for (const instance of CharacterBrowserViewProvider.instances) {
+    for (const instance of ArtifactBrowserViewProvider.instances) {
       instance.refreshIfOpen();
     }
   }
@@ -87,22 +87,22 @@ export class CharacterBrowserViewProvider implements vscode.WebviewViewProvider 
 
     webviewView.webview.onDidReceiveMessage(
       (message: unknown) => {
-        if (isCharacterBrowserReadyMessage(message)) {
+        if (isArtifactBrowserReadyMessage(message)) {
           void this.sendDiscoveredCards(webviewView.webview);
           return;
         }
 
-        if (isCharacterBrowserRefreshMessage(message)) {
+        if (isArtifactBrowserRefreshMessage(message)) {
           void this.sendDiscoveredCards(webviewView.webview);
           return;
         }
 
-        if (isCharacterBrowserSelectMessage(message)) {
-          void this.selectCharacter(message.payload.stableId);
+        if (isArtifactBrowserSelectMessage(message)) {
+          void this.selectArtifact(message.payload.stableId);
           return;
         }
 
-        if (isCharacterBrowserOpenItemMessage(message)) {
+        if (isArtifactBrowserOpenItemMessage(message)) {
           void this.openItem(message.payload.stableId, message.payload.itemId);
         }
       },
@@ -112,7 +112,7 @@ export class CharacterBrowserViewProvider implements vscode.WebviewViewProvider 
   }
 
   private postMessage(
-    message: ReturnType<typeof createCharacterBrowserCardsMessage> | ReturnType<typeof createCharacterBrowserDetailMessage>,
+    message: ReturnType<typeof createArtifactBrowserCardsMessage> | ReturnType<typeof createArtifactBrowserDetailMessage>,
   ): void {
     void this.view?.webview.postMessage(message);
   }
@@ -132,7 +132,7 @@ export class CharacterBrowserViewProvider implements vscode.WebviewViewProvider 
       this.selectedStableId = undefined;
     }
 
-    this.postMessage(createCharacterBrowserCardsMessage(cards, refreshedSelectedCard?.stableId));
+    this.postMessage(createArtifactBrowserCardsMessage(cards, refreshedSelectedCard?.stableId));
     if (refreshedSelectedCard) {
       await this.postDetailSections(refreshedSelectedCard);
     }
@@ -160,12 +160,12 @@ export class CharacterBrowserViewProvider implements vscode.WebviewViewProvider 
   }
 
   /**
-   * selectCharacter 함수.
+   * selectArtifact 함수.
    * 선택 stable id를 보존하고 artifact kind별 read-only detail scanner 결과를 webview로 전송함.
    *
    * @param stableId - Webview에서 선택한 artifact card stable id
    */
-  private async selectCharacter(stableId: string): Promise<void> {
+  private async selectArtifact(stableId: string): Promise<void> {
     this.selectedStableId = stableId;
     const selectedCard = this.currentCards.find((card) => card.stableId === stableId);
     if (!selectedCard) return;
@@ -189,14 +189,14 @@ export class CharacterBrowserViewProvider implements vscode.WebviewViewProvider 
     if (this.selectedStableId !== stableId) return;
 
     this.currentSections.set(stableId, sections);
-    this.postMessage(createCharacterBrowserDetailMessage(stableId, sections));
+    this.postMessage(createArtifactBrowserDetailMessage(stableId, sections));
   }
 
   /**
    * openItem 함수.
    * Detail view file-backed item 요청을 VS Code editor open으로 연결함.
    *
-   * @param stableId - item이 속한 character stable id
+   * @param stableId - item이 속한 artifact stable id
    * @param itemId - detail scanner가 만든 item stable id
    */
   private async openItem(stableId: string, itemId: string): Promise<void> {
@@ -228,7 +228,7 @@ export class CharacterBrowserViewProvider implements vscode.WebviewViewProvider 
     if (devServerUrl) {
       return createWebviewDevServerHtml(devServerUrl, {
         title: 'Risu Workbench Browser',
-        viewName: 'character-browser',
+        viewName: 'artifact-browser',
         webview,
       });
     }

@@ -1,12 +1,12 @@
 /**
- * Unified workspace discovery for Character Browser artifact cards.
- * @file packages/vscode/src/character-browser/WorkspaceArtifactDiscoveryService.ts
+ * Unified workspace discovery for Artifact Browser artifact cards.
+ * @file packages/vscode/src/artifact-browser/WorkspaceArtifactDiscoveryService.ts
  */
 
 import * as vscode from 'vscode';
 import { CharacterManifestDiscoveryService } from './CharacterManifestDiscoveryService';
 import { ModuleManifestDiscoveryService } from './ModuleManifestDiscoveryService';
-import type { BrowserArtifactCard, ManifestParseWarning } from './characterBrowserTypes';
+import type { BrowserArtifactCard, ManifestParseWarning } from './artifactBrowserTypes';
 
 /**
  * WorkspaceArtifactDiscoveryService 클래스.

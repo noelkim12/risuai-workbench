@@ -1,6 +1,6 @@
 /**
  * Workspace `.risumodule` discovery and module card model conversion.
- * @file packages/vscode/src/character-browser/ModuleManifestDiscoveryService.ts
+ * @file packages/vscode/src/artifact-browser/ModuleManifestDiscoveryService.ts
  */
 
 import { createHash } from 'node:crypto';
@@ -16,7 +16,7 @@ import {
   getWorkspaceRelativePath,
   withArtifactKindStableId,
 } from './CharacterManifestDiscoveryService';
-import type { ManifestParseWarning, ModuleBrowserCard } from './characterBrowserTypes';
+import type { ManifestParseWarning, ModuleBrowserCard } from './artifactBrowserTypes';
 
 export const RISUMODULE_GLOB = `**/${RISUMODULE_FILENAME}`;
 

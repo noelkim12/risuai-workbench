@@ -1,12 +1,12 @@
 /**
  * Workspace `.risuchar` discovery and webview card model conversion.
- * @file packages/vscode/src/character-browser/CharacterManifestDiscoveryService.ts
+ * @file packages/vscode/src/artifact-browser/CharacterManifestDiscoveryService.ts
  */
 
 import path from 'node:path';
 import * as vscode from 'vscode';
 import { createManifestReadErrorModel, RisucharManifestParser } from './RisucharManifestParser';
-import type { CharacterBrowserCard, ManifestParseWarning, RisucharManifestNormalized } from './characterBrowserTypes';
+import type { CharacterBrowserCard, ManifestParseWarning, RisucharManifestNormalized } from './artifactBrowserTypes';
 
 export const RISUCHAR_GLOB = '**/.risuchar';
 export const ARTIFACT_MARKER_EXCLUDE_GLOB = '{**/node_modules/**,**/.git/**,**/.vscode/**,**/dist/**,**/build/**,**/out/**,**/coverage/**}';

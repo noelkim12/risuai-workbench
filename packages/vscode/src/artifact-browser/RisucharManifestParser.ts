@@ -1,6 +1,6 @@
 /**
  * `.risuchar` manifest parsing, validation, and normalization helpers.
- * @file packages/vscode/src/character-browser/RisucharManifestParser.ts
+ * @file packages/vscode/src/artifact-browser/RisucharManifestParser.ts
  */
 
 import { createHash } from 'node:crypto';
@@ -9,7 +9,7 @@ import type {
   ManifestParseWarning,
   RisucharManifestNormalized,
   RisucharManifestRaw,
-} from './characterBrowserTypes';
+} from './artifactBrowserTypes';
 
 const REQUIRED_FIELDS = [
   'kind',
