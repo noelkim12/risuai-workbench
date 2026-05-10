@@ -1,21 +1,21 @@
 /**
- * VS Code webview API singleton and Character Browser outbound messages.
+ * VS Code webview API singleton and Artifact Browser outbound messages.
  * @file packages/webview/src/lib/vscode.ts
  */
 
 import {
-  CHARACTER_BROWSER_PROTOCOL,
-  CHARACTER_BROWSER_PROTOCOL_VERSION,
-  CHARACTER_BROWSER_VIEW_ID,
-  type CharacterBrowserOpenItemMessage,
-  type CharacterBrowserReadyMessage,
-  type CharacterBrowserRefreshMessage,
-  type CharacterBrowserSelectMessage,
-  type CharacterBrowserWebviewMessage,
+  ARTIFACT_BROWSER_PROTOCOL,
+  ARTIFACT_BROWSER_PROTOCOL_VERSION,
+  ARTIFACT_BROWSER_VIEW_ID,
+  type ArtifactBrowserOpenItemMessage,
+  type ArtifactBrowserReadyMessage,
+  type ArtifactBrowserRefreshMessage,
+  type ArtifactBrowserSelectMessage,
+  type ArtifactBrowserWebviewMessage,
 } from './types';
 
 type VsCodeApi = {
-  postMessage(message: CharacterBrowserWebviewMessage): void;
+  postMessage(message: ArtifactBrowserWebviewMessage): void;
 };
 
 declare global {
@@ -38,51 +38,51 @@ export function getVsCodeApi(): VsCodeApi | undefined {
 }
 
 /**
- * createCharacterBrowserReadyMessage 함수.
+ * createArtifactBrowserReadyMessage 함수.
  * Sidebar webview가 extension host에 최초 준비 완료를 알리는 versioned message를 생성함.
  *
- * @returns Character Browser ready message
+ * @returns Artifact Browser ready message
  */
-export function createCharacterBrowserReadyMessage(): CharacterBrowserReadyMessage {
+export function createArtifactBrowserReadyMessage(): ArtifactBrowserReadyMessage {
   return {
-    protocol: CHARACTER_BROWSER_PROTOCOL,
-    version: CHARACTER_BROWSER_PROTOCOL_VERSION,
-    type: 'character-browser/ready',
+    protocol: ARTIFACT_BROWSER_PROTOCOL,
+    version: ARTIFACT_BROWSER_PROTOCOL_VERSION,
+    type: 'artifact-browser/ready',
     payload: {
-      viewId: CHARACTER_BROWSER_VIEW_ID,
+      viewId: ARTIFACT_BROWSER_VIEW_ID,
     },
   };
 }
 
 /**
- * createCharacterBrowserRefreshMessage 함수.
+ * createArtifactBrowserRefreshMessage 함수.
  * Sidebar refresh action을 extension host가 처리할 versioned message로 생성함.
  *
- * @returns Character Browser refresh request message
+ * @returns Artifact Browser refresh request message
  */
-export function createCharacterBrowserRefreshMessage(): CharacterBrowserRefreshMessage {
+export function createArtifactBrowserRefreshMessage(): ArtifactBrowserRefreshMessage {
   return {
-    protocol: CHARACTER_BROWSER_PROTOCOL,
-    version: CHARACTER_BROWSER_PROTOCOL_VERSION,
-    type: 'character-browser/refreshCharacters',
+    protocol: ARTIFACT_BROWSER_PROTOCOL,
+    version: ARTIFACT_BROWSER_PROTOCOL_VERSION,
+    type: 'artifact-browser/refresh',
     payload: {
-      viewId: CHARACTER_BROWSER_VIEW_ID,
+      viewId: ARTIFACT_BROWSER_VIEW_ID,
     },
   };
 }
 
 /**
- * createCharacterBrowserSelectMessage 함수.
+ * createArtifactBrowserSelectMessage 함수.
  * Card selection state를 Phase 4 detail view의 seed로 extension host에 전달함.
  *
- * @param stableId - 선택된 character card의 stable id
- * @returns Character Browser selection message
+ * @param stableId - 선택된 artifact card의 stable id
+ * @returns Artifact Browser selection message
  */
-export function createCharacterBrowserSelectMessage(stableId: string): CharacterBrowserSelectMessage {
+export function createArtifactBrowserSelectMessage(stableId: string): ArtifactBrowserSelectMessage {
   return {
-    protocol: CHARACTER_BROWSER_PROTOCOL,
-    version: CHARACTER_BROWSER_PROTOCOL_VERSION,
-    type: 'character-browser/selectCharacter',
+    protocol: ARTIFACT_BROWSER_PROTOCOL,
+    version: ARTIFACT_BROWSER_PROTOCOL_VERSION,
+    type: 'artifact-browser/select',
     payload: {
       stableId,
     },
@@ -90,18 +90,18 @@ export function createCharacterBrowserSelectMessage(stableId: string): Character
 }
 
 /**
- * createCharacterBrowserOpenItemMessage 함수.
+ * createArtifactBrowserOpenItemMessage 함수.
  * Detail item open action을 extension host가 처리할 versioned message로 생성함.
  *
- * @param stableId - item이 속한 character stable id
+ * @param stableId - item이 속한 artifact stable id
  * @param itemId - scanner가 만든 stable item id
- * @returns Character Browser open item message
+ * @returns Artifact Browser open item message
  */
-export function createCharacterBrowserOpenItemMessage(stableId: string, itemId: string): CharacterBrowserOpenItemMessage {
+export function createArtifactBrowserOpenItemMessage(stableId: string, itemId: string): ArtifactBrowserOpenItemMessage {
   return {
-    protocol: CHARACTER_BROWSER_PROTOCOL,
-    version: CHARACTER_BROWSER_PROTOCOL_VERSION,
-    type: 'character-browser/openItem',
+    protocol: ARTIFACT_BROWSER_PROTOCOL,
+    version: ARTIFACT_BROWSER_PROTOCOL_VERSION,
+    type: 'artifact-browser/openItem',
     payload: {
       stableId,
       itemId,
