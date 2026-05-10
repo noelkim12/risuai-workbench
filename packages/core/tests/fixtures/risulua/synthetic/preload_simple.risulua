@@ -1,0 +1,17 @@
+package.preload["./constants"] = function()
+  return { greeting = "hello" }
+end
+
+package.preload["./formatter"] = function()
+  local constants = require("./constants")
+  return {
+    format = function(name)
+      return constants.greeting .. ", " .. name
+    end,
+  }
+end
+
+local formatter = require("./formatter")
+function onOutput(text)
+  return formatter.format(text)
+end

@@ -1,13 +1,20 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { zipSync, strToU8 } from 'fflate';
+import { runExtractWorkflow as runCharacterExtractWorkflow } from '../src/cli/extract/character/workflow';
+import {
+  createRisuLuaRecoveryManifest,
+  encodeRisuLuaRecoveryBlock,
+  RISULUA_RECOVERY_BLOCK_START,
+} from '../src/cli/shared';
 
 const tempDirs: string[] = [];
 
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -361,6 +368,178 @@ describe('charx extract integration (canonical mode)', () => {
     const luaContent = readFileSync(luaFile, 'utf-8');
     expect(luaContent).toContain('onTrigger');
     expect(luaContent).toContain('Hello from trigger!');
+  });
+
+  it('risulua extract modular writes main', async () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-modular-lua-extract-'));
+    tempDirs.push(workDir);
+
+    const upstreamLua = 'local value = "charx upstream lua"\nfunction onOutput()\n  return value\nend';
+    const charxPath = path.join(workDir, 'modular.charx');
+    const charxData = {
+      spec: 'chara_card_v3',
+      spec_version: '3.0',
+      data: {
+        name: 'Modular Character',
+        description: 'Test description',
+        extensions: {
+          risuai: {
+            triggerscript: [
+              {
+                comment: 'entrypoint',
+                type: 'manual',
+                conditions: [],
+                effect: [{ type: 'triggerlua', code: upstreamLua }],
+              },
+            ],
+            customScripts: [],
+            additionalText: '',
+            utilityBot: false,
+            lowLevelAccess: false,
+          },
+        },
+      },
+    };
+    writeFileSync(charxPath, Buffer.from(zipSync({ 'charx.json': strToU8(JSON.stringify(charxData, null, 2)) }, { level: 0 })));
+
+    const outDir = path.join(workDir, 'output');
+    mkdirSync(outDir, { recursive: true });
+
+    const exitCode = await runCharacterExtractWorkflow([
+      charxPath,
+      '--out',
+      outDir,
+      '--risulua-mode',
+      'modular',
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(existsSync(path.join(outDir, 'lua', 'main.risulua'))).toBe(true);
+    expect(readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).toBe(upstreamLua);
+    expect(existsSync(path.join(outDir, 'lua', 'Modular_Character.risulua'))).toBe(false);
+    expect(existsSync(path.join(outDir, 'lua', 'features'))).toBe(false);
+    expect(existsSync(path.join(outDir, 'lua', 'manifest.json'))).toBe(false);
+    expect(existsSync(path.join(outDir, 'risulua.json'))).toBe(false);
+    expect(existsSync(path.join(outDir, 'dist'))).toBe(false);
+    expect(existsSync(path.join(outDir, 'dist', 'Modular_Character.risulua'))).toBe(false);
+  });
+
+  it('risulua extract modular module-table split failure falls back to lua/main.risulua and writes .risuchar', async () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-split-fallback-'));
+    tempDirs.push(workDir);
+
+    const malformedLua = 'local __loader_common_local_helpers = .\nreturn __loader_common_local_helpers';
+    const charxPath = path.join(workDir, 'split-fallback.charx');
+    const charxData = {
+      spec: 'chara_card_v3',
+      spec_version: '3.0',
+      data: {
+        character_id: 'split-fallback-char',
+        name: 'Split Fallback Character',
+        description: 'Fallback character description',
+        extensions: {
+          risuai: {
+            triggerscript: [
+              {
+                comment: 'entrypoint',
+                type: 'manual',
+                conditions: [],
+                effect: [{ type: 'triggerlua', code: malformedLua }],
+              },
+            ],
+            customScripts: [],
+            additionalText: '',
+            utilityBot: false,
+            lowLevelAccess: false,
+          },
+        },
+      },
+    };
+    writeFileSync(charxPath, Buffer.from(zipSync({ 'charx.json': strToU8(JSON.stringify(charxData, null, 2)) }, { level: 0 })));
+
+    const outDir = path.join(workDir, 'output');
+    mkdirSync(outDir, { recursive: true });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    try {
+      const exitCode = await runCharacterExtractWorkflow([
+        charxPath,
+        '--out',
+        outDir,
+        '--risulua-mode',
+        'modular',
+        '--risulua-split',
+        'module-table',
+      ]);
+
+      expect(exitCode).toBe(0);
+      expect(readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).toBe(malformedLua);
+      expect(existsSync(path.join(outDir, '.risuchar'))).toBe(true);
+      expect(existsSync(path.join(outDir, 'dist'))).toBe(false);
+      expect(readdirSync(path.dirname(outDir)).filter((entry) => entry.startsWith('.tmp-risulua-split-output-'))).toEqual([]);
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('RisuLua split failed; preserving'));
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('risulua extract modular full-source restores embedded recovery files', async () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-recovery-extract-'));
+    tempDirs.push(workDir);
+
+    const sourceRoot = path.join(workDir, 'source');
+    mkdirSync(path.join(sourceRoot, 'lua', 'common'), { recursive: true });
+    mkdirSync(path.join(sourceRoot, 'docs'), { recursive: true });
+    writeFileSync(path.join(sourceRoot, 'lua', 'main.risulua'), 'local helper = require("common.helper")\nreturn helper.value\n', 'utf-8');
+    writeFileSync(path.join(sourceRoot, 'lua', 'common', 'helper.risulua'), 'return { value = "charx recovery helper" }\n', 'utf-8');
+    writeFileSync(path.join(sourceRoot, 'docs', 'refactor-map.json'), `${JSON.stringify({ owner: 'charx', restored: true }, null, 2)}\n`, 'utf-8');
+
+    const fallbackLua = 'print("fallback charx lua")\n';
+    const embeddedLua = `${fallbackLua}\n${encodeRisuLuaRecoveryBlock(createRisuLuaRecoveryManifest({ rootDir: sourceRoot }))}`;
+    const charxPath = path.join(workDir, 'recovery.charx');
+    const charxData = {
+      spec: 'chara_card_v3',
+      spec_version: '3.0',
+      data: {
+        name: 'Recovery Character',
+        extensions: {
+          risuai: {
+            triggerscript: [
+              {
+                comment: 'entrypoint',
+                type: 'manual',
+                conditions: [],
+                effect: [{ type: 'triggerlua', code: embeddedLua }],
+              },
+            ],
+            customScripts: [],
+            additionalText: '',
+            utilityBot: false,
+            lowLevelAccess: false,
+          },
+        },
+      },
+    };
+    writeFileSync(charxPath, Buffer.from(zipSync({ 'charx.json': strToU8(JSON.stringify(charxData, null, 2)) }, { level: 0 })));
+
+    const outDir = path.join(workDir, 'output');
+    mkdirSync(outDir, { recursive: true });
+
+    const exitCode = await runCharacterExtractWorkflow([
+      charxPath,
+      '--out',
+      outDir,
+      '--risulua-mode',
+      'modular',
+      '--risulua-recovery',
+      'full-source',
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).toBe('local helper = require("common.helper")\nreturn helper.value\n');
+    expect(readFileSync(path.join(outDir, 'lua', 'common', 'helper.risulua'), 'utf-8')).toBe('return { value = "charx recovery helper" }\n');
+    expect(JSON.parse(readFileSync(path.join(outDir, 'docs', 'refactor-map.json'), 'utf-8'))).toEqual({ owner: 'charx', restored: true });
+    expect(readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).not.toContain(RISULUA_RECOVERY_BLOCK_START);
   });
 
   it('extracts charx defaultVariables into variables/<character>.risuvar', () => {

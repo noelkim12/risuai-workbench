@@ -1,0 +1,10 @@
+local prefix = "mood"
+
+local function saveMood(slot, value)
+  local key = prefix .. ":" .. slot
+  setState(key, value)
+end
+
+function onButtonClick(buttonId)
+  saveMood(buttonId, getChatVar(buttonId) or "neutral")
+end

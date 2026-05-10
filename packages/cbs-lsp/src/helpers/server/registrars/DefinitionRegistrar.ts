@@ -6,6 +6,11 @@
 import type { Connection, DefinitionParams } from 'vscode-languageserver/node';
 
 import type { DefinitionProvider } from '../../../features/navigation';
+import { createRisuLuaBridgeDefinition } from '../../../features/navigation/risulua-bridge-index';
+import {
+  createRisuLuaSourceCommentDefinition,
+  hasRisuLuaSourceCommentAtPosition,
+} from '../../../features/navigation/risulua-source-definition';
 import type { RequestHandlerRunner } from '../../../handlers/RequestHandlerRunner';
 import type { LuaLsFallbackService } from '../lua/LuaLsFallbackService';
 import type { DefinitionResponse } from '../lua/LuaLsResponseMerge';
@@ -48,6 +53,28 @@ export class DefinitionRegistrar implements FeatureRegistrar {
   register(): void {
     this.connection.onDefinition((params: DefinitionParams, cancellationToken) => {
       const route = this.luaLsFallbackService.resolveRoute(params.textDocument.uri);
+
+      if (route.request) {
+        const sourceCommentDefinition = createRisuLuaSourceCommentDefinition(
+          route.request.text,
+          params.position,
+          params.textDocument.uri,
+        );
+        if (sourceCommentDefinition) {
+          return sourceCommentDefinition;
+        }
+        if (hasRisuLuaSourceCommentAtPosition(route.request.text, params.position)) {
+          return null;
+        }
+        const bridgeDefinition = createRisuLuaBridgeDefinition(
+          route.request.text,
+          params.position,
+          params.textDocument.uri,
+        );
+        if (bridgeDefinition) {
+          return bridgeDefinition;
+        }
+      }
 
       if (route.routedToLuaLs) {
         return this.requestRunner.runAsync<DefinitionParams, DefinitionResponse | null>({

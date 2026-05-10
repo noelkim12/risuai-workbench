@@ -1,0 +1,10 @@
+local editCount = 0
+
+listenEdit("profile.name", function(value)
+  editCount = editCount + 1
+  setState("last_profile_name", value)
+end)
+
+function onInput(text)
+  return text
+end
