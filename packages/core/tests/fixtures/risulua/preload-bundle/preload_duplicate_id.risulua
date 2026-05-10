@@ -1,0 +1,9 @@
+package.preload["./dupe"] = function()
+  return { value = 1 }
+end
+
+package.preload["./dupe"] = function()
+  return { value = 2 }
+end
+
+return require("./dupe")

@@ -3,10 +3,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { writeJson, writeText } from '@/node/fs-helpers';
 import { sanitizeFilename } from '../../utils/filenames';
-import {
-  RISUMODULE_FILENAME,
-  buildScaffoldRisumoduleManifest,
-} from '../shared/risumodule';
+import { RISUMODULE_FILENAME, buildScaffoldRisumoduleManifest } from '../shared/risumodule';
+import { parseRisuLuaMode, type RisuLuaMode } from '../shared/lua-bundler/risulua-mode';
 
 // ── Help ────────────────────────────────────────────────────────────
 
@@ -25,6 +23,7 @@ const HELP_TEXT = `
     --out <dir>         출력 디렉토리 (기본: ./<sanitized_name>)
     --creator <name>    크리에이터 이름 (charx 전용, 선택)
     --namespace <ns>    모듈 namespace (.risumodule 전용, 선택)
+    --risulua-mode <classic|modular>  RisuLua 개발 방식: classic=단일 파일 개발, modular=모듈식 개발 (기본: classic)
     -h, --help          도움말
 
   Examples:
@@ -43,6 +42,7 @@ interface ScaffoldOptions {
   outDir: string;
   creator: string;
   namespace?: string;
+  risuluaMode: RisuLuaMode;
 }
 
 const SCAFFOLD_TYPES = new Set<string>(['charx', 'module', 'preset']);
@@ -78,28 +78,30 @@ export function runScaffoldWorkflow(argv: readonly string[]): number {
 // ── Option Parsing ──────────────────────────────────────────────────
 
 function parseOptions(argv: readonly string[]): ScaffoldOptions {
-  const typeArg = argv[0];
+  const { mode, strippedArgv } = parseRisuLuaMode(argv);
+  const typeArg = strippedArgv[0];
   if (!typeArg || !SCAFFOLD_TYPES.has(typeArg)) {
     throw new Error(
       `지원하지 않는 스캐폴드 타입: ${typeArg ?? '(없음)'}\n  지원 타입: charx, module, preset`,
     );
   }
 
-  const name = argValue(argv, '--name');
+  const name = argValue(strippedArgv, '--name');
   if (!name) {
     throw new Error('--name 옵션이 필요합니다.');
   }
 
   const sanitizedName = sanitizeFilename(name);
-  const outDir = argValue(argv, '--out') || `./${sanitizedName}`;
-  const creator = argValue(argv, '--creator') || '';
-  const namespace = typeArg === 'module' ? argValue(argv, '--namespace') : null;
+  const outDir = argValue(strippedArgv, '--out') || `./${sanitizedName}`;
+  const creator = argValue(strippedArgv, '--creator') || '';
+  const namespace = typeArg === 'module' ? argValue(strippedArgv, '--namespace') : null;
 
   return {
     type: typeArg as ScaffoldType,
     name,
     outDir,
     creator,
+    risuluaMode: mode ?? 'classic',
     ...(typeof namespace === 'string' ? { namespace } : {}),
   };
 }
@@ -117,6 +119,7 @@ function runScaffold(options: ScaffoldOptions): void {
   console.log(`  타입: ${options.type}`);
   console.log(`  이름: ${options.name}`);
   console.log(`  출력: ${path.relative('.', root)}`);
+  console.log(`  RisuLua: ${formatRisuLuaModeLabel(options.risuluaMode)}`);
 
   let fileCount: number;
   switch (options.type) {
@@ -187,6 +190,8 @@ function scaffoldCharx(root: string, options: ScaffoldOptions): number {
   writeText(path.join(root, 'variables', `${sanitizedName}.risuvar`), '');
   count++;
 
+  count += scaffoldRisuLuaLayout(root, sanitizedName, options.risuluaMode);
+
   return count;
 }
 
@@ -222,7 +227,34 @@ function scaffoldModule(root: string, options: ScaffoldOptions): number {
   writeText(path.join(root, 'toggle', `${sanitizedName}.risutoggle`), '');
   count++;
 
+  count += scaffoldRisuLuaLayout(root, sanitizedName, options.risuluaMode);
+
   return count;
+}
+
+function scaffoldRisuLuaLayout(root: string, sanitizedName: string, mode: RisuLuaMode): number {
+  if (mode === 'classic') {
+    return 0;
+  }
+
+  const luaDir = path.join(root, 'lua');
+  const starter = [
+    '-- RisuLua modular entrypoint',
+    '-- 모듈식 개발: build/pack 단계에서 dist 파일이 생성됩니다.',
+    '',
+    'function onStart()',
+    `  -- ${sanitizedName} starter`,
+    'end',
+    '',
+  ].join('\n');
+
+  writeText(path.join(luaDir, 'main.risulua'), starter);
+  for (const dirName of ['common', 'runtime', 'features', 'adapters']) {
+    fs.mkdirSync(path.join(luaDir, dirName), { recursive: true });
+  }
+  fs.mkdirSync(path.join(root, 'dist'), { recursive: true });
+
+  return 1;
 }
 
 // ── Preset Scaffold ─────────────────────────────────────────────────
@@ -289,9 +321,7 @@ function scaffoldPreset(root: string, options: ScaffoldOptions): number {
   count++;
 
   // prompt_template/_order.json
-  writeJson(path.join(root, 'prompt_template', '_order.json'), [
-    'main.risuprompt',
-  ]);
+  writeJson(path.join(root, 'prompt_template', '_order.json'), ['main.risuprompt']);
   count++;
 
   // prompt_template/main.risuprompt
@@ -340,6 +370,10 @@ function printNextSteps(type: ScaffoldType, relPath: string): void {
   }
 
   console.log('');
+}
+
+function formatRisuLuaModeLabel(mode: RisuLuaMode): string {
+  return mode === 'modular' ? '모듈식 개발' : '단일 파일 개발';
 }
 
 // ── Utility ─────────────────────────────────────────────────────────

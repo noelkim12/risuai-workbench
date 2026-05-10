@@ -10,6 +10,14 @@ pub struct AnalyzeOptions {
     pub include_string_literals: bool,
     #[serde(default = "default_true")]
     pub include_state_accesses: bool,
+    #[serde(default = "default_true")]
+    pub include_require_aliases: bool,
+    #[serde(default = "default_true")]
+    pub include_member_bridge_assignments: bool,
+    #[serde(default = "default_true")]
+    pub include_module_member_definitions: bool,
+    #[serde(default = "default_true")]
+    pub include_source_comments: bool,
     #[serde(default = "default_max_key_length")]
     pub max_key_length: usize,
 }
@@ -19,6 +27,10 @@ impl Default for AnalyzeOptions {
         Self {
             include_string_literals: true,
             include_state_accesses: true,
+            include_require_aliases: true,
+            include_member_bridge_assignments: true,
+            include_module_member_definitions: true,
+            include_source_comments: true,
             max_key_length: default_max_key_length(),
         }
     }
@@ -43,6 +55,10 @@ pub struct LuaWasmAnalyzeResult {
     pub total_lines: usize,
     pub string_literals: Vec<LuaStringLiteral>,
     pub state_accesses: Vec<LuaStateAccess>,
+    pub require_aliases: Vec<LuaRequireAlias>,
+    pub member_bridge_assignments: Vec<LuaMemberBridgeAssignment>,
+    pub module_member_definitions: Vec<LuaModuleMemberDefinition>,
+    pub source_comments: Vec<LuaSourceComment>,
     pub diagnostics: Vec<LuaWasmDiagnostic>,
     pub error: Option<String>,
 }
@@ -78,6 +94,62 @@ pub struct LuaStateAccess {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct LuaRequireAlias {
+    pub alias_name: String,
+    pub module_name: String,
+    pub alias_start_utf16: usize,
+    pub alias_end_utf16: usize,
+    pub module_start_utf16: usize,
+    pub module_end_utf16: usize,
+    pub statement_start_utf16: usize,
+    pub statement_end_utf16: usize,
+    pub line: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LuaMemberBridgeAssignment {
+    pub public_name: String,
+    pub alias_name: String,
+    pub member_name: String,
+    pub public_start_utf16: usize,
+    pub public_end_utf16: usize,
+    pub alias_start_utf16: usize,
+    pub alias_end_utf16: usize,
+    pub member_start_utf16: usize,
+    pub member_end_utf16: usize,
+    pub statement_start_utf16: usize,
+    pub statement_end_utf16: usize,
+    pub line: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LuaModuleMemberDefinition {
+    pub export_name: String,
+    pub container_name: Option<String>,
+    pub definition_kind: &'static str,
+    pub name_start_utf16: usize,
+    pub name_end_utf16: usize,
+    pub definition_start_utf16: usize,
+    pub definition_end_utf16: usize,
+    pub line: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LuaSourceComment {
+    pub source_path: String,
+    pub source_line: usize,
+    pub source_character: usize,
+    pub comment_start_utf16: usize,
+    pub comment_end_utf16: usize,
+    pub applies_to_statement_start_utf16: Option<usize>,
+    pub line: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LuaWasmDiagnostic {
     pub message: String,
     pub start_utf16: usize,
@@ -109,6 +181,10 @@ pub fn analyze_lua(source: &str, options_json: &str) -> String {
             "totalLines": source.lines().count().max(1),
             "stringLiterals": [],
             "stateAccesses": [],
+            "requireAliases": [],
+            "memberBridgeAssignments": [],
+            "moduleMemberDefinitions": [],
+            "sourceComments": [],
             "diagnostics": [],
             "error": error.to_string()
         })
@@ -125,6 +201,10 @@ struct LuaScanner<'a> {
     options: AnalyzeOptions,
     string_literals: Vec<LuaStringLiteral>,
     state_accesses: Vec<LuaStateAccess>,
+    require_aliases: Vec<LuaRequireAlias>,
+    member_bridge_assignments: Vec<LuaMemberBridgeAssignment>,
+    module_member_definitions: Vec<LuaModuleMemberDefinition>,
+    source_comments: Vec<LuaSourceComment>,
     diagnostics: Vec<LuaWasmDiagnostic>,
 }
 
@@ -139,12 +219,19 @@ impl<'a> LuaScanner<'a> {
             options,
             string_literals: Vec::new(),
             state_accesses: Vec::new(),
+            require_aliases: Vec::new(),
+            member_bridge_assignments: Vec::new(),
+            module_member_definitions: Vec::new(),
+            source_comments: Vec::new(),
             diagnostics: Vec::new(),
         }
     }
 
     fn scan(&mut self) -> LuaWasmAnalyzeResult {
         while let Some(ch) = self.current_char() {
+            if self.try_scan_generated_index_record() {
+                continue;
+            }
             if ch == '-' && self.peek_char(1) == Some('-') {
                 self.scan_comment();
                 continue;
@@ -171,6 +258,10 @@ impl<'a> LuaScanner<'a> {
             total_lines: self.line,
             string_literals: std::mem::take(&mut self.string_literals),
             state_accesses: std::mem::take(&mut self.state_accesses),
+            require_aliases: std::mem::take(&mut self.require_aliases),
+            member_bridge_assignments: std::mem::take(&mut self.member_bridge_assignments),
+            module_member_definitions: std::mem::take(&mut self.module_member_definitions),
+            source_comments: std::mem::take(&mut self.source_comments),
             diagnostics: std::mem::take(&mut self.diagnostics),
             error: None,
         }
@@ -358,7 +449,8 @@ impl<'a> LuaScanner<'a> {
             if !self.starts_with_identifier(api_name) {
                 continue;
             }
-            if !self.has_identifier_boundary_before() || !self.has_identifier_boundary_after(api_name)
+            if !self.has_identifier_boundary_before()
+                || !self.has_identifier_boundary_after(api_name)
             {
                 continue;
             }
@@ -398,6 +490,437 @@ impl<'a> LuaScanner<'a> {
         }
 
         false
+    }
+
+    fn try_scan_generated_index_record(&mut self) -> bool {
+        if self.options.include_require_aliases && self.try_scan_require_alias() {
+            return true;
+        }
+        if self.options.include_source_comments && self.try_scan_source_comment() {
+            return true;
+        }
+        if self.options.include_module_member_definitions
+            && self.try_scan_module_member_definition()
+        {
+            return true;
+        }
+        if self.options.include_member_bridge_assignments
+            && self.try_scan_member_bridge_assignment()
+        {
+            return true;
+        }
+        false
+    }
+
+    fn try_scan_require_alias(&mut self) -> bool {
+        if !self.starts_with_identifier("local") || !self.has_identifier_boundary_before() {
+            return false;
+        }
+        let saved_index = self.index;
+        let saved_utf16 = self.utf16_offset;
+        let saved_line = self.line;
+        let statement_start_utf16 = self.utf16_offset;
+
+        self.advance_n_chars("local".chars().count());
+        if !self.consume_inline_whitespace() {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        }
+        let Some((alias_name, alias_start_utf16, alias_end_utf16)) = self.scan_identifier() else {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        };
+        self.skip_inline_whitespace();
+        if self.current_char() != Some('=') {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        }
+        self.advance_char();
+        self.skip_inline_whitespace();
+        if !self.starts_with_identifier("require") || !self.has_identifier_boundary_after("require")
+        {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        }
+        self.advance_n_chars("require".chars().count());
+        self.skip_inline_whitespace();
+        if self.current_char() != Some('(') {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        }
+        self.advance_char();
+        self.skip_inline_whitespace();
+        let Some((module_name, module_start_utf16, module_end_utf16)) =
+            self.scan_plain_string_literal_content()
+        else {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        };
+        self.skip_inline_whitespace();
+        if self.current_char() != Some(')') {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        }
+        self.advance_char();
+        let statement_end_utf16 = self.utf16_offset;
+        self.require_aliases.push(LuaRequireAlias {
+            alias_name,
+            module_name,
+            alias_start_utf16,
+            alias_end_utf16,
+            module_start_utf16,
+            module_end_utf16,
+            statement_start_utf16,
+            statement_end_utf16,
+            line: saved_line,
+        });
+        true
+    }
+
+    fn try_scan_source_comment(&mut self) -> bool {
+        if !self.source[self.current_byte()..].starts_with("---@source") {
+            return false;
+        }
+        let saved_index = self.index;
+        let saved_utf16 = self.utf16_offset;
+        let saved_line = self.line;
+        let comment_start_utf16 = self.utf16_offset;
+
+        self.advance_n_chars("---@source".chars().count());
+        if !self.consume_inline_whitespace() {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        }
+        let start_byte = self.current_byte();
+        while let Some(ch) = self.current_char() {
+            if ch == '\n' || ch == '\r' {
+                break;
+            }
+            self.advance_char();
+        }
+        let end_byte = self.current_byte();
+        let comment_end_utf16 = self.utf16_offset;
+        let payload = self.source[start_byte..end_byte].trim();
+        let Some((source_path, source_line, source_character)) =
+            parse_source_comment_payload(payload)
+        else {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        };
+        let applies_to_statement_start_utf16 = self.next_non_blank_line_start_utf16();
+        self.source_comments.push(LuaSourceComment {
+            source_path,
+            source_line,
+            source_character,
+            comment_start_utf16,
+            comment_end_utf16,
+            applies_to_statement_start_utf16,
+            line: saved_line,
+        });
+        true
+    }
+
+    fn try_scan_module_member_definition(&mut self) -> bool {
+        if self.try_scan_table_method_function_definition() {
+            return true;
+        }
+        if self.try_scan_table_field_function_definition() {
+            return true;
+        }
+        self.try_scan_table_field_alias_definition()
+    }
+
+    fn try_scan_table_method_function_definition(&mut self) -> bool {
+        if !self.starts_with_identifier("function") || !self.has_identifier_boundary_before() {
+            return false;
+        }
+        let saved_index = self.index;
+        let saved_utf16 = self.utf16_offset;
+        let saved_line = self.line;
+        let definition_start_utf16 = self.utf16_offset;
+
+        self.advance_n_chars("function".chars().count());
+        if !self.consume_inline_whitespace() {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        }
+        let Some((container_name, _, _)) = self.scan_identifier() else {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        };
+        if self.current_char() != Some('.') {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        }
+        self.advance_char();
+        let Some((export_name, name_start_utf16, name_end_utf16)) = self.scan_identifier() else {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        };
+        self.skip_inline_whitespace();
+        if self.current_char() != Some('(') {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        }
+        self.module_member_definitions
+            .push(LuaModuleMemberDefinition {
+                export_name,
+                container_name: Some(container_name),
+                definition_kind: "table-method-function",
+                name_start_utf16,
+                name_end_utf16,
+                definition_start_utf16,
+                definition_end_utf16: name_end_utf16,
+                line: saved_line,
+            });
+        true
+    }
+
+    fn try_scan_table_field_function_definition(&mut self) -> bool {
+        let saved_index = self.index;
+        let saved_utf16 = self.utf16_offset;
+        let saved_line = self.line;
+        let definition_start_utf16 = self.utf16_offset;
+        if !self.has_identifier_boundary_before() {
+            return false;
+        }
+        let Some((container_name, _, _)) = self.scan_identifier() else {
+            return false;
+        };
+        if self.current_char() != Some('.') {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        }
+        self.advance_char();
+        let Some((export_name, name_start_utf16, name_end_utf16)) = self.scan_identifier() else {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        };
+        self.skip_inline_whitespace();
+        if self.current_char() != Some('=') {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        }
+        self.advance_char();
+        self.skip_inline_whitespace();
+        if !self.starts_with_identifier("function")
+            || !self.has_identifier_boundary_after("function")
+        {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        }
+        self.advance_n_chars("function".chars().count());
+        self.skip_inline_whitespace();
+        if self.current_char() != Some('(') {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        }
+        self.module_member_definitions
+            .push(LuaModuleMemberDefinition {
+                export_name,
+                container_name: Some(container_name),
+                definition_kind: "table-field-function",
+                name_start_utf16,
+                name_end_utf16,
+                definition_start_utf16,
+                definition_end_utf16: name_end_utf16,
+                line: saved_line,
+            });
+        true
+    }
+
+    fn try_scan_table_field_alias_definition(&mut self) -> bool {
+        let saved_index = self.index;
+        let saved_utf16 = self.utf16_offset;
+        let saved_line = self.line;
+        let definition_start_utf16 = self.utf16_offset;
+        if !self.has_identifier_boundary_before() {
+            return false;
+        }
+        let Some((container_name, _, _)) = self.scan_identifier() else {
+            return false;
+        };
+        if self.current_char() != Some('.') {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        }
+        self.advance_char();
+        let Some((export_name, name_start_utf16, name_end_utf16)) = self.scan_identifier() else {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        };
+        self.skip_inline_whitespace();
+        if self.current_char() != Some('=') {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        }
+        self.advance_char();
+        self.skip_inline_whitespace();
+        let Some((rhs_name, _, _)) = self.scan_identifier() else {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        };
+        if rhs_name != export_name {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        }
+        self.module_member_definitions
+            .push(LuaModuleMemberDefinition {
+                export_name,
+                container_name: Some(container_name),
+                definition_kind: "table-field-function",
+                name_start_utf16,
+                name_end_utf16,
+                definition_start_utf16,
+                definition_end_utf16: name_end_utf16,
+                line: saved_line,
+            });
+        true
+    }
+
+    fn try_scan_member_bridge_assignment(&mut self) -> bool {
+        let saved_index = self.index;
+        let saved_utf16 = self.utf16_offset;
+        let saved_line = self.line;
+        let statement_start_utf16 = self.utf16_offset;
+        if !self.has_identifier_boundary_before() {
+            return false;
+        }
+        let Some((public_name, public_start_utf16, public_end_utf16)) = self.scan_identifier()
+        else {
+            return false;
+        };
+        self.skip_inline_whitespace();
+        if self.current_char() != Some('=') {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        }
+        self.advance_char();
+        self.skip_inline_whitespace();
+        let Some((alias_name, alias_start_utf16, alias_end_utf16)) = self.scan_identifier() else {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        };
+        if self.current_char() != Some('.') {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        }
+        self.advance_char();
+        let Some((member_name, member_start_utf16, member_end_utf16)) = self.scan_identifier()
+        else {
+            self.restore_position(saved_index, saved_utf16, saved_line);
+            return false;
+        };
+        let statement_end_utf16 = self.utf16_offset;
+        self.member_bridge_assignments
+            .push(LuaMemberBridgeAssignment {
+                public_name,
+                alias_name,
+                member_name,
+                public_start_utf16,
+                public_end_utf16,
+                alias_start_utf16,
+                alias_end_utf16,
+                member_start_utf16,
+                member_end_utf16,
+                statement_start_utf16,
+                statement_end_utf16,
+                line: saved_line,
+            });
+        true
+    }
+
+    fn scan_identifier(&mut self) -> Option<(String, usize, usize)> {
+        let first = self.current_char()?;
+        if !is_lua_identifier_start(first) {
+            return None;
+        }
+        let start_utf16 = self.utf16_offset;
+        let mut value = String::new();
+        while let Some(ch) = self.current_char() {
+            if !is_lua_identifier_char(ch) {
+                break;
+            }
+            value.push(ch);
+            self.advance_char();
+        }
+        Some((value, start_utf16, self.utf16_offset))
+    }
+
+    fn scan_plain_string_literal_content(&mut self) -> Option<(String, usize, usize)> {
+        let quote = self.current_char()?;
+        if quote != '\'' && quote != '"' {
+            return None;
+        }
+        self.advance_char();
+        let content_start_utf16 = self.utf16_offset;
+        let mut value = String::new();
+        let mut escaped = false;
+        while let Some(ch) = self.current_char() {
+            if escaped {
+                value.push(ch);
+                escaped = false;
+                self.advance_char();
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                self.advance_char();
+                continue;
+            }
+            if ch == quote {
+                let content_end_utf16 = self.utf16_offset;
+                self.advance_char();
+                return Some((value, content_start_utf16, content_end_utf16));
+            }
+            value.push(ch);
+            self.advance_char();
+        }
+        None
+    }
+
+    fn advance_n_chars(&mut self, count: usize) {
+        for _ in 0..count {
+            self.advance_char();
+        }
+    }
+
+    fn consume_inline_whitespace(&mut self) -> bool {
+        let mut consumed = false;
+        while matches!(self.current_char(), Some(' ' | '\t')) {
+            consumed = true;
+            self.advance_char();
+        }
+        consumed
+    }
+
+    fn next_non_blank_line_start_utf16(&self) -> Option<usize> {
+        let mut cursor = self.index;
+        while let Some((_, ch)) = self.chars.get(cursor) {
+            if *ch == '\n' {
+                cursor += 1;
+                break;
+            }
+            cursor += 1;
+        }
+        let mut offset = self.utf16_offset;
+        for index in self.index..cursor {
+            offset += self.chars[index].1.len_utf16();
+        }
+        while let Some((_, ch)) = self.chars.get(cursor) {
+            match *ch {
+                ' ' | '\t' | '\r' => {
+                    offset += ch.len_utf16();
+                    cursor += 1;
+                }
+                '\n' => {
+                    offset += ch.len_utf16();
+                    cursor += 1;
+                }
+                _ => return Some(offset),
+            }
+        }
+        None
     }
 
     fn starts_with_identifier(&self, name: &str) -> bool {
@@ -465,7 +988,13 @@ impl<'a> LuaScanner<'a> {
                     content_end_utf16: arg_end_utf16,
                     quote_kind: if quote == '\'' { "single" } else { "double" },
                 });
-                return Some((key, arg_start_utf16, arg_end_utf16, arg_start_byte, arg_end_byte));
+                return Some((
+                    key,
+                    arg_start_utf16,
+                    arg_end_utf16,
+                    arg_start_byte,
+                    arg_end_byte,
+                ));
             }
             key.push(ch);
             self.advance_char();
@@ -494,6 +1023,21 @@ struct LuaStringLiteralInput {
 
 fn is_lua_identifier_char(ch: char) -> bool {
     ch == '_' || ch.is_ascii_alphanumeric()
+}
+
+fn is_lua_identifier_start(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphabetic()
+}
+
+fn parse_source_comment_payload(payload: &str) -> Option<(String, usize, usize)> {
+    let (prefix, character_text) = payload.rsplit_once(':')?;
+    let (source_path, line_text) = prefix.rsplit_once(':')?;
+    let source_line = line_text.parse::<usize>().ok()?;
+    let source_character = character_text.parse::<usize>().ok()?;
+    if source_path.is_empty() {
+        return None;
+    }
+    Some((source_path.to_string(), source_line, source_character))
 }
 
 #[cfg(test)]
@@ -650,5 +1194,111 @@ getState("ok")"#,
         assert_eq!(result.state_accesses.len(), 1);
         assert_eq!(result.state_accesses[0].key, "ok");
         assert_eq!(result.state_accesses[0].containing_function, "<top-level>");
+    }
+
+    #[test]
+    fn extracts_require_aliases_and_bridge_assignments() {
+        let source = r#"
+local __button_actions = require("button_actions.actions")
+---@source regex/Heroine_옷_설정.risuregex:11:0
+setHeroineClothes = __button_actions.setHeroineClothes
+"#;
+        let result = analyze_source(source, AnalyzeOptions::default());
+
+        assert!(result.ok);
+        assert_eq!(result.require_aliases.len(), 1);
+        assert_eq!(result.require_aliases[0].alias_name, "__button_actions");
+        assert_eq!(
+            result.require_aliases[0].module_name,
+            "button_actions.actions"
+        );
+
+        assert_eq!(result.member_bridge_assignments.len(), 1);
+        assert_eq!(
+            result.member_bridge_assignments[0].public_name,
+            "setHeroineClothes"
+        );
+        assert_eq!(
+            result.member_bridge_assignments[0].alias_name,
+            "__button_actions"
+        );
+        assert_eq!(
+            result.member_bridge_assignments[0].member_name,
+            "setHeroineClothes"
+        );
+
+        assert_eq!(result.source_comments.len(), 1);
+        assert_eq!(
+            result.source_comments[0].source_path,
+            "regex/Heroine_옷_설정.risuregex"
+        );
+        assert_eq!(result.source_comments[0].source_line, 11);
+        assert_eq!(result.source_comments[0].source_character, 0);
+    }
+
+    #[test]
+    fn extracts_module_member_definitions() {
+        let source = r#"
+local M = {}
+
+function M.setHeroineClothes(triggerId)
+    return triggerId
+end
+
+M.setTrainTheme = function(theme)
+    return theme
+end
+
+local removeActionButton = async(function(triggerId)
+    return triggerId
+end)
+M.removeActionButton = removeActionButton
+
+return M
+"#;
+        let result = analyze_source(source, AnalyzeOptions::default());
+
+        let names: Vec<_> = result
+            .module_member_definitions
+            .iter()
+            .map(|definition| definition.export_name.as_str())
+            .collect();
+
+        assert!(result.ok);
+        assert_eq!(
+            names,
+            vec!["setHeroineClothes", "setTrainTheme", "removeActionButton"]
+        );
+        assert_eq!(
+            result.module_member_definitions[0]
+                .container_name
+                .as_deref(),
+            Some("M")
+        );
+        assert_eq!(
+            result.module_member_definitions[0].definition_kind,
+            "table-method-function"
+        );
+        assert_eq!(
+            result.module_member_definitions[1].definition_kind,
+            "table-field-function"
+        );
+    }
+
+    #[test]
+    fn ignores_generated_bridge_patterns_inside_comments_and_strings() {
+        let source = r#"
+-- local fake = require("fake.module")
+local text = "setFake = __fake.setFake"
+local __real = require("real.module")
+setReal = __real.setReal
+"#;
+        let result = analyze_source(source, AnalyzeOptions::default());
+
+        assert!(result.ok);
+        assert_eq!(result.require_aliases.len(), 1);
+        assert_eq!(result.require_aliases[0].alias_name, "__real");
+        assert_eq!(result.member_bridge_assignments.len(), 1);
+        assert_eq!(result.member_bridge_assignments[0].public_name, "setReal");
     }
 }

@@ -1,0 +1,13 @@
+-- [BUNDLE] 00_init.lua
+local counter = 0
+
+-- [BUNDLE] 10_helpers.lua
+local function bump()
+  counter = counter + 1
+  return counter
+end
+
+-- [BUNDLE] 90_runtime.lua
+function onOutput(text)
+  return text .. " #" .. bump()
+end

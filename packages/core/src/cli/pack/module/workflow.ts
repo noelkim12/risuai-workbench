@@ -38,6 +38,15 @@ import {
   readRisumoduleManifest,
   applyRisumoduleToModule,
 } from '@/cli/shared/risumodule';
+import { buildRisuLuaModularDist } from '@/cli/build/workflow';
+import {
+  discoverRisuLuaBundleTarget,
+  parseRisuLuaMode,
+  parseRisuLuaRecoveryMode,
+  RISULUA_RECOVERY_HELP_LINE,
+  type RisuLuaMode,
+  type RisuLuaRecoveryMode,
+} from '@/cli/shared';
 
 const HELP_TEXT = `
   📦 RisuAI Module Packer
@@ -49,6 +58,8 @@ const HELP_TEXT = `
     --out <path|dir>  출력 파일 경로 또는 디렉토리
     --format <type>   json | risum (기본: json)
     --name <name>     출력 파일명 기본값 (확장자 제외)
+    --risulua-mode <classic|modular>  Lua 번들 모드 (미지정 시 향후 auto-detect)
+${RISULUA_RECOVERY_HELP_LINE}
     -h, --help        도움말
 `;
 
@@ -59,6 +70,8 @@ interface PackOptions {
   outArg: string | null;
   formatArg: string;
   nameArg: string | null;
+  risuluaMode: RisuLuaMode | null;
+  risuluaRecovery: RisuLuaRecoveryMode;
 }
 
 interface ModuleAssetsResult {
@@ -73,11 +86,24 @@ export function runPackWorkflow(argv: readonly string[]): number {
     return 0;
   }
 
+  let modeResult: ReturnType<typeof parseRisuLuaMode>;
+  let recoveryResult: ReturnType<typeof parseRisuLuaRecoveryMode>;
+  try {
+    modeResult = parseRisuLuaMode(argv);
+    recoveryResult = parseRisuLuaRecoveryMode(modeResult.strippedArgv);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`\n  ❌ ${message}\n`);
+    return 1;
+  }
+
   const options: PackOptions = {
-    inDir: argValue(argv, '--in') || '.',
-    outArg: argValue(argv, '--out'),
-    formatArg: (argValue(argv, '--format') || 'json').toLowerCase(),
-    nameArg: argValue(argv, '--name'),
+    inDir: argValue(recoveryResult.strippedArgv, '--in') || '.',
+    outArg: argValue(recoveryResult.strippedArgv, '--out'),
+    formatArg: (argValue(recoveryResult.strippedArgv, '--format') || 'json').toLowerCase(),
+    nameArg: argValue(recoveryResult.strippedArgv, '--name'),
+    risuluaMode: modeResult.mode,
+    risuluaRecovery: recoveryResult.mode,
   };
 
   try {
@@ -93,6 +119,20 @@ export function runPackWorkflow(argv: readonly string[]): number {
 export function buildModuleFromCanonicalDirectory(inRoot: string): {
   module: Record<string, unknown>;
   assetBuffers: Array<Buffer | null>;
+};
+export function buildModuleFromCanonicalDirectory(
+  inRoot: string,
+  options: { risuluaMode?: RisuLuaMode | null; risuluaRecovery?: RisuLuaRecoveryMode },
+): {
+  module: Record<string, unknown>;
+  assetBuffers: Array<Buffer | null>;
+};
+export function buildModuleFromCanonicalDirectory(
+  inRoot: string,
+  options: { risuluaMode?: RisuLuaMode | null; risuluaRecovery?: RisuLuaRecoveryMode } = {},
+): {
+  module: Record<string, unknown>;
+  assetBuffers: Array<Buffer | null>;
 } {
   const manifest = readRisumoduleManifest(inRoot);
   const moduleObj: Record<string, unknown> = {};
@@ -100,7 +140,7 @@ export function buildModuleFromCanonicalDirectory(inRoot: string): {
   applyRisumoduleToModule(moduleObj, manifest);
   mergeLorebooks(moduleObj, inRoot);
   mergeRegex(moduleObj, inRoot);
-  mergeLua(moduleObj, inRoot);
+  mergeLua(moduleObj, inRoot, options.risuluaMode ?? null, options.risuluaRecovery ?? 'none');
   mergeVariables(moduleObj, inRoot);
   mergeBackgroundHtml(moduleObj, inRoot);
   mergeToggle(moduleObj, inRoot);
@@ -116,7 +156,10 @@ function runMain(options: PackOptions): void {
   }
 
   const format = resolveTargetFormat(options.formatArg);
-  const packed = buildModuleFromCanonicalDirectory(resolvedIn);
+  const packed = buildModuleFromCanonicalDirectory(resolvedIn, {
+    risuluaMode: options.risuluaMode,
+    risuluaRecovery: options.risuluaRecovery,
+  });
   const { outPath, baseName } = resolveOutputPath({
     inRoot: resolvedIn,
     outArg: options.outArg,
@@ -229,7 +272,19 @@ function mergeRegex(moduleObj: Record<string, unknown>, inRoot: string): void {
   injectRegexIntoModule(moduleObj, content, 'module');
 }
 
-function mergeLua(moduleObj: Record<string, unknown>, inRoot: string): void {
+function mergeLua(
+  moduleObj: Record<string, unknown>,
+  inRoot: string,
+  risuluaMode: RisuLuaMode | null,
+  risuluaRecovery: RisuLuaRecoveryMode,
+): void {
+  const target = discoverRisuLuaBundleTarget({ rootDir: inRoot, mode: risuluaMode });
+  if (target.mode === 'modular') {
+    const result = buildRisuLuaModularDist({ rootDir: inRoot, recovery: risuluaRecovery });
+    injectLuaIntoModule(moduleObj, result.validation.code, 'module');
+    return;
+  }
+
   const luaDir = path.join(inRoot, 'lua');
   if (!isDir(luaDir)) {
     return;

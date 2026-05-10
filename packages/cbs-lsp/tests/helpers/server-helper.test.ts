@@ -3,6 +3,10 @@
  * @file packages/cbs-lsp/tests/helpers/server-helper.test.ts
  */
 
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import type {
   CancellationToken,
@@ -80,6 +84,10 @@ type RenameHandler = (
   params: RenameParams,
   cancellationToken?: CancellationToken,
 ) => WorkspaceEdit | null | Promise<WorkspaceEdit | null>;
+
+function isPromiseLike(value: unknown): value is Promise<unknown> {
+  return typeof value === 'object' && value !== null && 'then' in value;
+}
 
 /**
  * createConnectionStub 함수.
@@ -254,6 +262,15 @@ function createRegistrarContext(
     resolveWorkspaceRequest: () => request,
     resolveWorkspaceVariableFlowContext: () => null,
   };
+}
+
+function makeTempWorkspace(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'server-helper-risulua-source-'));
+}
+
+function writeFile(filePath: string, content: string): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content, 'utf8');
 }
 
 describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
@@ -535,6 +552,112 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
     expect(luaLsProxy.provideHover).not.toHaveBeenCalled();
     expect(JSON.stringify(result)).toContain('cbs-hover');
     expect(JSON.stringify(result)).not.toContain('lua-hover');
+  });
+
+  it('returns RisuLua source comment hover before calling CBS or LuaLS hover providers', async () => {
+    const root = makeTempWorkspace();
+    const mainPath = path.join(root, 'lua', 'main.risulua');
+    const targetPath = path.join(root, 'regex', 'toggle.risuregex');
+    writeFile(mainPath, [
+      '-- Button action bridge: toggleSidePanel',
+      '---@source regex/toggle.risuregex:2:0',
+      'toggleSidePanel = __button_actions.toggleSidePanel',
+      '',
+    ].join('\n'));
+    writeFile(targetPath, '@@@ OUT\n{{button::Toggle::toggleSidePanel}}\n');
+    const request: FragmentAnalysisRequest = {
+      uri: pathToFileURL(mainPath).href,
+      filePath: mainPath,
+      version: 1,
+      text: fs.readFileSync(mainPath, 'utf8'),
+    };
+    const luaLsProxy = {
+      getRuntime: vi.fn(() => ({ status: 'ready' })),
+      provideCompletion: vi.fn(async () => []),
+      provideHover: vi.fn(async () => ({ contents: 'lua-hover' })),
+    } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
+    const connectionFixture = createConnectionStub();
+    const cbsHoverSpy = vi.fn(() => ({ contents: 'cbs-hover' }));
+    const baseContext = createRegistrarContext(request, luaLsProxy);
+    const registrar = new ServerFeatureRegistrar({
+      ...baseContext,
+      connection: connectionFixture.connection,
+      providers: {
+        ...baseContext.providers,
+        hoverProvider: {
+          provide: cbsHoverSpy,
+        } as unknown as ServerFeatureRegistrarContext['providers']['hoverProvider'],
+      },
+    });
+    (registrar as unknown as { registerHoverHandler: () => void }).registerHoverHandler();
+
+    const result = connectionFixture.getHoverHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 1, character: 15 },
+    });
+
+    expect(isPromiseLike(result)).toBe(false);
+    expect(cbsHoverSpy).not.toHaveBeenCalled();
+    expect(luaLsProxy.provideHover).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      contents: {
+        kind: 'markdown',
+        value: [
+          '**RisuLua generated source**',
+          '',
+          'Generated from `regex/toggle.risuregex:2:0`.',
+          '',
+          'Go to Definition opens the original source location directly; LuaLS is skipped for this generated source marker.',
+        ].join('\n'),
+      },
+      range: {
+        start: { line: 1, character: 11 },
+        end: { line: 1, character: 37 },
+      },
+    });
+  });
+
+  it('returns later source comment hover synchronously while an earlier LuaLS hover is still pending', () => {
+    const root = makeTempWorkspace();
+    const mainPath = path.join(root, 'lua', 'main.risulua');
+    const targetPath = path.join(root, 'regex', 'toggle.risuregex');
+    writeFile(mainPath, [
+      'local slowSymbol = true',
+      '---@source regex/toggle.risuregex:2:0',
+      '',
+    ].join('\n'));
+    writeFile(targetPath, '@@@ OUT\n{{button::Toggle::toggleSidePanel}}\n');
+    const request: FragmentAnalysisRequest = {
+      uri: pathToFileURL(mainPath).href,
+      filePath: mainPath,
+      version: 1,
+      text: fs.readFileSync(mainPath, 'utf8'),
+    };
+    const luaLsProxy = {
+      getRuntime: vi.fn(() => ({ status: 'ready' })),
+      provideCompletion: vi.fn(async () => []),
+      provideHover: vi.fn(() => new Promise<Hover | null>(() => undefined)),
+    } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
+    const connectionFixture = createConnectionStub();
+    const registrar = new ServerFeatureRegistrar({
+      ...createRegistrarContext(request, luaLsProxy),
+      connection: connectionFixture.connection,
+    });
+    (registrar as unknown as { registerHoverHandler: () => void }).registerHoverHandler();
+
+    const pendingHover = connectionFixture.getHoverHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 0, character: 8 },
+    });
+    const sourceHover = connectionFixture.getHoverHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 1, character: 15 },
+    });
+
+    expect(isPromiseLike(pendingHover)).toBe(true);
+    expect(isPromiseLike(sourceHover)).toBe(false);
+    expect(JSON.stringify(sourceHover)).toContain('regex/toggle.risuregex:2:0');
+    expect(luaLsProxy.provideHover).toHaveBeenCalledTimes(1);
   });
 
   it('normalizes mixed CBS and Lua hover markdown before merging sections', async () => {
@@ -881,6 +1004,236 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
 
     expect(result).toBeNull();
     expect(luaLsProxy.provideDefinition).not.toHaveBeenCalled();
+  });
+
+  it('returns RisuLua source comment definitions before calling CBS or LuaLS definition providers', async () => {
+    const root = makeTempWorkspace();
+    const mainPath = path.join(root, 'lua', 'main.risulua');
+    const targetPath = path.join(root, 'regex', 'toggle.risuregex');
+    writeFile(mainPath, [
+      '-- Button action bridge: toggleSidePanel',
+      '---@source regex/toggle.risuregex:2:0',
+      'toggleSidePanel = __button_actions.toggleSidePanel',
+      '',
+    ].join('\n'));
+    writeFile(targetPath, '@@@ OUT\n{{button::Toggle::toggleSidePanel}}\n');
+    const request: FragmentAnalysisRequest = {
+      uri: pathToFileURL(mainPath).href,
+      filePath: mainPath,
+      version: 1,
+      text: fs.readFileSync(mainPath, 'utf8'),
+    };
+    const shadowRange = {
+      start: { line: 1, character: 0 },
+      end: { line: 1, character: 15 },
+    };
+    const luaLsProxy = {
+      getRuntime: vi.fn(() => ({ status: 'ready' })),
+      provideCompletion: vi.fn(async () => []),
+      provideDefinition: vi.fn(async () => [
+        {
+          uri: 'file:///shadow/luals-definition.lua',
+          range: shadowRange,
+        },
+      ]),
+      provideHover: vi.fn(async () => null),
+    } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
+    const connectionFixture = createConnectionStub();
+    const cbsProvideSpy = vi.fn(() => null);
+    const registrar = new ServerFeatureRegistrar({
+      ...createRegistrarContext(request, luaLsProxy),
+      connection: connectionFixture.connection,
+      providers: {
+        ...createRegistrarContext(request, luaLsProxy).providers,
+        resolveRequest: () => request,
+      },
+    });
+    // Spy on CBS definition provider to verify it's not called for source comment positions
+    (
+      registrar as unknown as {
+        createDefinitionProvider: () => { provide: typeof cbsProvideSpy };
+        registerDefinitionHandler: () => void;
+      }
+    ).createDefinitionProvider = () => ({ provide: cbsProvideSpy });
+    (registrar as unknown as { registerDefinitionHandler: () => void }).registerDefinitionHandler();
+
+    const result = await connectionFixture.getDefinitionHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 1, character: 15 },
+    });
+
+    // Regression: source comment definitions must bypass both CBS and LuaLS providers
+    expect(cbsProvideSpy).not.toHaveBeenCalled();
+    expect(luaLsProxy.provideDefinition).not.toHaveBeenCalled();
+    expect(result).toEqual([
+      expect.objectContaining({
+        targetUri: pathToFileURL(targetPath).href,
+        targetRange: {
+          start: { line: 1, character: 0 },
+          end: { line: 1, character: 0 },
+        },
+      }),
+    ]);
+  });
+
+  it('returns generated bridge definition before LuaLS proxy for .risulua bridge symbols', async () => {
+    const root = makeTempWorkspace();
+    const mainPath = path.join(root, 'lua', 'main.risulua');
+    const modulePath = path.join(root, 'lua', 'button_actions', 'actions.risulua');
+    writeFile(mainPath, [
+      'local __button_actions = require("button_actions.actions")',
+      '---@source regex/Heroine_옷_설정.risuregex:11:0',
+      'setHeroineClothes = __button_actions.setHeroineClothes',
+      '',
+    ].join('\n'));
+    writeFile(modulePath, 'local M = {}\nfunction M.setHeroineClothes()\nend\nreturn M\n');
+
+    const request: FragmentAnalysisRequest = {
+      uri: pathToFileURL(mainPath).href,
+      filePath: mainPath,
+      version: 1,
+      text: fs.readFileSync(mainPath, 'utf8'),
+    };
+    const luaLsProxy = {
+      getRuntime: vi.fn(() => ({ status: 'ready' })),
+      provideCompletion: vi.fn(async () => []),
+      provideDefinition: vi.fn(async () => [
+        {
+          uri: 'file:///shadow/luals-definition.lua',
+          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } },
+        },
+      ]),
+      provideHover: vi.fn(async () => null),
+    } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
+    const connectionFixture = createConnectionStub();
+    const cbsProvideSpy = vi.fn(() => null);
+    const baseContext = createRegistrarContext(request, luaLsProxy);
+    const registrar = new ServerFeatureRegistrar({
+      ...baseContext,
+      connection: connectionFixture.connection,
+      providers: {
+        ...baseContext.providers,
+        resolveRequest: () => request,
+      },
+    });
+    (
+      registrar as unknown as {
+        createDefinitionProvider: () => { provide: typeof cbsProvideSpy };
+        registerDefinitionHandler: () => void;
+      }
+    ).createDefinitionProvider = () => ({ provide: cbsProvideSpy });
+    (registrar as unknown as { registerDefinitionHandler: () => void }).registerDefinitionHandler();
+
+    const result = await connectionFixture.getDefinitionHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 2, character: 5 },
+    });
+
+    expect(cbsProvideSpy).not.toHaveBeenCalled();
+    expect(luaLsProxy.provideDefinition).not.toHaveBeenCalled();
+    expect(result?.[0]?.targetUri).toBe(pathToFileURL(modulePath).href);
+  });
+
+  it('returns null for missing RisuLua source comment definition targets without calling CBS or LuaLS', async () => {
+    const root = makeTempWorkspace();
+    const mainPath = path.join(root, 'lua', 'main.risulua');
+    writeFile(mainPath, [
+      '-- Button action bridge: missingTarget',
+      '---@source regex/missing.risuregex:2:0',
+      'missingTarget = __button_actions.missingTarget',
+      '',
+    ].join('\n'));
+    const request: FragmentAnalysisRequest = {
+      uri: pathToFileURL(mainPath).href,
+      filePath: mainPath,
+      version: 1,
+      text: fs.readFileSync(mainPath, 'utf8'),
+    };
+    const luaLsProxy = {
+      getRuntime: vi.fn(() => ({ status: 'ready' })),
+      provideCompletion: vi.fn(async () => []),
+      provideDefinition: vi.fn(async () => [{ uri: 'file:///shadow/luals-definition.lua', range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } } }]),
+      provideHover: vi.fn(async () => null),
+    } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
+    const connectionFixture = createConnectionStub();
+    const cbsProvideSpy = vi.fn(() => null);
+    const registrar = new ServerFeatureRegistrar({
+      ...createRegistrarContext(request, luaLsProxy),
+      connection: connectionFixture.connection,
+    });
+    (
+      registrar as unknown as {
+        createDefinitionProvider: () => { provide: typeof cbsProvideSpy };
+        registerDefinitionHandler: () => void;
+      }
+    ).createDefinitionProvider = () => ({ provide: cbsProvideSpy });
+    (registrar as unknown as { registerDefinitionHandler: () => void }).registerDefinitionHandler();
+
+    const result = await connectionFixture.getDefinitionHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 1, character: 15 },
+    });
+
+    expect(result).toBeNull();
+    expect(cbsProvideSpy).not.toHaveBeenCalled();
+    expect(luaLsProxy.provideDefinition).not.toHaveBeenCalled();
+  });
+
+  it('returns later source comment definitions synchronously while an earlier LuaLS definition is still pending', () => {
+    const root = makeTempWorkspace();
+    const mainPath = path.join(root, 'lua', 'main.risulua');
+    const firstTargetPath = path.join(root, 'regex', 'first.risuregex');
+    const secondTargetPath = path.join(root, 'regex', 'second.risuregex');
+    writeFile(mainPath, [
+      'local slowSymbol = true',
+      '---@source regex/first.risuregex:2:0',
+      '---@source regex/second.risuregex:3:0',
+      '',
+    ].join('\n'));
+    writeFile(firstTargetPath, '@@@ OUT\nfirst\n');
+    writeFile(secondTargetPath, '@@@ OUT\nsecond\nthird\n');
+    const request: FragmentAnalysisRequest = {
+      uri: pathToFileURL(mainPath).href,
+      filePath: mainPath,
+      version: 1,
+      text: fs.readFileSync(mainPath, 'utf8'),
+    };
+    const luaLsProxy = {
+      getRuntime: vi.fn(() => ({ status: 'ready' })),
+      provideCompletion: vi.fn(async () => []),
+      provideDefinition: vi.fn(() => new Promise<Definition | null>(() => undefined)),
+      provideHover: vi.fn(async () => null),
+    } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
+    const connectionFixture = createConnectionStub();
+    const registrar = new ServerFeatureRegistrar({
+      ...createRegistrarContext(request, luaLsProxy),
+      connection: connectionFixture.connection,
+    });
+    (registrar as unknown as { registerDefinitionHandler: () => void }).registerDefinitionHandler();
+
+    const pendingDefinition = connectionFixture.getDefinitionHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 0, character: 8 },
+    });
+    const firstSourceDefinition = connectionFixture.getDefinitionHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 1, character: 15 },
+    });
+    const secondSourceDefinition = connectionFixture.getDefinitionHandler()({
+      textDocument: { uri: request.uri },
+      position: { line: 2, character: 15 },
+    });
+
+    expect(isPromiseLike(pendingDefinition)).toBe(true);
+    expect(isPromiseLike(firstSourceDefinition)).toBe(false);
+    expect(isPromiseLike(secondSourceDefinition)).toBe(false);
+    expect(luaLsProxy.provideDefinition).toHaveBeenCalledTimes(1);
+    expect(firstSourceDefinition).toEqual([
+      expect.objectContaining({ targetUri: pathToFileURL(firstTargetPath).href }),
+    ]);
+    expect(secondSourceDefinition).toEqual([
+      expect.objectContaining({ targetUri: pathToFileURL(secondTargetPath).href }),
+    ]);
   });
 
   it('proxies definition to LuaLS for small .risulua Lua symbols', async () => {

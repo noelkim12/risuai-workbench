@@ -4,6 +4,9 @@
   "scopeName": "source.risulua",
   "patterns": [
     {
+      "include": "#risulua-navigation-comments"
+    },
+    {
       "include": "#cbs-comment"
     },
     {
@@ -29,6 +32,49 @@
     }
   ],
   "repository": {
+    "risulua-navigation-comments": {
+      "patterns": [
+        {
+          "name": "meta.annotation.button-action-bridge.risulua",
+          "match": "^(\\s*)(--)(\\s*)(Button action bridge)(:)(\\s*)([A-Za-z_][A-Za-z0-9_]*)\\s*$",
+          "captures": {
+            "2": {
+              "name": "punctuation.definition.comment.risulua"
+            },
+            "4": {
+              "name": "keyword.other.button-action-bridge.risulua"
+            },
+            "5": {
+              "name": "punctuation.separator.key-value.risulua"
+            },
+            "7": {
+              "name": "entity.name.function.button-action.risulua"
+            }
+          }
+        },
+        {
+          "name": "meta.annotation.source-navigation.risulua",
+          "match": "^(\\s*)(---)(@source)(\\s+)(.+?)(:)(\\d+)(:)(\\d+)\\s*$",
+          "captures": {
+            "2": {
+              "name": "punctuation.definition.comment.risulua"
+            },
+            "3": {
+              "name": "storage.type.annotation.source.risulua"
+            },
+            "5": {
+              "name": "string.unquoted.source-path.risulua"
+            },
+            "7": {
+              "name": "constant.numeric.line-number.risulua"
+            },
+            "9": {
+              "name": "constant.numeric.column-number.risulua"
+            }
+          }
+        }
+      ]
+    },
     "cbs-comment": {
       "name": "comment.line.cbs",
       "match": "(\\{\\{)(//)([^}]*)(\\}\\})",

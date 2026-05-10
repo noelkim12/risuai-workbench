@@ -4,9 +4,9 @@
 
 ## 표준 워크스페이스 구조 (Canonical Layout)
 
-현재 구현의 표준 Lua 레이아웃은 레거시 싱글톤 모드입니다. 번들 모드는 `.risumodule`를 Lua source resolution의 root marker 및 package manifest처럼 사용하는 향후 구현 대상 컨벤션이며, 기존 `.risulua` 확장자와 RisuAI 런타임 hook 계약은 그대로 유지합니다.
+현재 Lua 레이아웃은 **단일 파일 개발**과 **모듈식 개발**을 지원합니다. CLI 표기는 `--risulua-mode <classic|modular>`입니다. `bundle mode`는 내부 구현 개념이고, 사용자에게 주로 설명할 이름은 모듈식 개발입니다.
 
-### 레거시 싱글톤 모드 (현재 구현)
+### 단일 파일 개발
 
 ```text
 <모듈_루트>/
@@ -30,11 +30,11 @@
     └── <추출된 에셋 파일들...>
 ```
 
-### 번들 모드 (컨벤션 및 향후 구현 명세)
+### 모듈식 개발
 
 ```text
 <모듈_루트>/
-├── .risumodule (모듈 루트 marker, metadata owner, Lua package manifest 역할)
+├── .risumodule (모듈 루트 marker 및 metadata owner)
 ├── lorebooks/
 ├── regex/
 ├── lua/
@@ -52,21 +52,23 @@
     └── <추출된 에셋 파일들...>
 ```
 
-번들 모드에서 `lua/**/*.risulua`는 작성 source이고, `dist/<모듈명>.risulua`만 패키징 입력으로 인정되는 생성 artifact입니다. `require("common.variables")` 같은 호출은 빌드 타임에 루트 `lua/` 기준으로 해석되어야 하며, 최종 dist에는 `require`, `package.path`, `dofile`, `loadfile`, 런타임 파일시스템 로딩이 남으면 안 됩니다.
+모듈식 개발에서 `lua/**/*.risulua`는 작성 source이고, `dist/<targetName>.risulua`만 패키징 입력으로 인정되는 생성 artifact입니다. `require("common.variables")`는 `lua/common/variables.risulua`로 해석됩니다. 동적 require, slash paths, `.risulua` suffix, `package.path`/`package.cpath`/`package.searchers`/`package.loaders` mutation, `dofile`, `loadfile`, `require` shadow/alias/reassignment는 금지됩니다.
+
+No Lua manifest in first implementation. `.risumodule`은 Lua manifest가 아니며, `risulua.json`이나 `lua/manifest.json`도 현재 동작이 아닙니다. pack은 modular pack에서 dist를 다시 만들고 `dist/<targetName>.risulua`만 모듈 Lua 페이로드로 주입하며 source module을 주입하지 않습니다. extract는 upstream Lua를 `lua/main.risulua`에 쓰고 자동 분해하지 않습니다. scaffold는 starter layout과 `dist/`를 만들지만 생성된 dist 파일은 만들지 않습니다. `risulua-split`/auto-decomposition is future work. `lua/main.risulua` 자동 감지가 기존 파일명과 충돌하면 `--risulua-mode classic`을 명시합니다.
 
 패키징 시 병합(Merge) 우선순위는 다음과 같습니다.
 `메타데이터 → 로어북 → 정규식 → Lua → 변수 → HTML → 토글 → 에셋`
 
 ## 아티팩트 소유권 및 매핑 명세
 
-| 아티팩트 종류 | 매핑되는 상위(Upstream) 필드 |
-|---|---|
-| 로어북 | `_moduleLorebook` 필드 |
-| 정규식 | `customscript[]` 배열 필드 |
-| Lua | 모듈 내 트리거(Trigger) 및 Lua 페이로드 영역 |
-| 토글 설정 | `customModuleToggle` 필드 |
-| 변수 설정 | 모듈 수준의 변수 설정 영역 |
-| HTML | `backgroundEmbedding` 필드 |
+| 아티팩트 종류 | 매핑되는 상위(Upstream) 필드                        |
+| ------------- | --------------------------------------------------- |
+| 로어북        | `_moduleLorebook` 필드                              |
+| 정규식        | `customscript[]` 배열 필드                          |
+| Lua           | 모듈 내 트리거(Trigger) 및 Lua 페이로드 영역        |
+| 토글 설정     | `customModuleToggle` 필드                           |
+| 변수 설정     | 모듈 수준의 변수 설정 영역                          |
+| HTML          | `backgroundEmbedding` 필드                          |
 | 에셋 (Assets) | `assets` 튜플(Tuple) 페이로드 및 추출된 버퍼 데이터 |
 
 ## 메타데이터 관리 원칙

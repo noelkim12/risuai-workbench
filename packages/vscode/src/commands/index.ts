@@ -10,7 +10,7 @@ import {
   type CbsActivationCodeLensPayload,
   type CbsActivationQuickPickItemModel,
 } from '../lsp/cbsActivationCodeLens';
-import { CBS_OCCURRENCE_NAVIGATION_COMMAND } from '../lsp/cbsLanguageClient';
+import { CBS_OCCURRENCE_NAVIGATION_COMMAND } from '../lsp/cbsCommands';
 import { RISU_LUALS_STUB_COMMAND, installRisuLuaWorkspaceStubs } from '../luals/risuLuaStubs';
 import { RISU_CHARACTER_SELECT_IMAGE_COMMAND, selectCharacterImage } from './characterImage';
 import { MarkerEditorViewProvider } from '../views/MarkerEditorViewProvider';

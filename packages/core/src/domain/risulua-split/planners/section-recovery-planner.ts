@@ -1,0 +1,209 @@
+import { detectRisuLuaSourceProfile } from '../profiling/source-profile';
+import { extractRisuLuaSections, type RisuLuaExtractedSection } from '../extractors/section-extractor';
+import { writeRisuLuaSplitPlan } from '../output/plan-writer';
+import { writeRisuLuaSplitReport } from '../output/report-writer';
+import { writeRisuLuaWorkspaceFiles, type RisuLuaWorkspaceFile } from '../output/workspace-writer';
+import type {
+  LuaDetectedRoot,
+  LuaHostApiSummary,
+  LuaPlanRisk,
+  LuaPlannedFile,
+  RisuLuaSplitPlan,
+  SourceProfileResult,
+  SourceProfileSummary,
+} from '../shared/types';
+
+export interface CreateRisuLuaSectionRecoveryInput {
+  source: string;
+  sourcePath: string;
+  targetName?: string;
+}
+
+export interface RisuLuaSectionRecoveryArtifacts {
+  plan: RisuLuaSplitPlan;
+  workspaceFiles: RisuLuaWorkspaceFile[];
+  profileMap: string[];
+  pureCandidates: string[];
+  runtimeCoupledHelpers: string[];
+  riskyBlocks: string[];
+  dynamicPatterns: string[];
+  refactorTasks: string[];
+  verificationSuggestions: string[];
+  sections: RisuLuaExtractedSection[];
+}
+
+export interface WriteRisuLuaSectionRecoveryWorkspaceOptions {
+  outputRoot: string;
+  cwd?: string;
+}
+
+export function createRisuLuaSectionRecoveryArtifacts(
+  input: CreateRisuLuaSectionRecoveryInput,
+): RisuLuaSectionRecoveryArtifacts {
+  const sourceProfileResult = detectRisuLuaSourceProfile(input.source);
+  const { sections } = extractRisuLuaSections(input.source);
+  const targetName = input.targetName ?? inferTargetName(input.sourcePath);
+  const risks = buildSectionRisks(sourceProfileResult, sections);
+  const sectionFiles = sections.map(sectionToPlannedFile);
+  const plan: RisuLuaSplitPlan = {
+    version: 1,
+    mode: 'coarse',
+    sourceProfile: sourceProfileResult.profile,
+    sourceProfileSummary: summarizeProfile(sourceProfileResult),
+    sourcePath: normalizeSourcePath(input.sourcePath),
+    targetName,
+    entryPath: 'lua/main.risulua',
+    distPath: `dist/${targetName}.risulua`,
+    packable: sourceProfileResult.profile === 'section-bundle' && sections.length > 0,
+    buildStrategy: 'section-order-concat',
+    files: [
+      {
+        path: 'lua/main.risulua',
+        kind: 'entry-tail',
+        sourceRanges: [],
+        confidence: 'high',
+        reason: 'Generated section-bundle entry comments only; no executable require calls are synthesized.',
+        preserveOrderIndex: -1,
+      },
+      ...sectionFiles,
+      {
+        path: 'legacy/original.risulua',
+        kind: 'legacy-original',
+        sourceRanges: [{
+          startLine: 1,
+          endLine: Math.max(1, input.source.split('\n').length),
+          startOffset: 0,
+          endOffset: input.source.length,
+        }],
+        confidence: 'high',
+        reason: 'Original source preserved outside the lua source graph for recovery and audit.',
+        preserveOrderIndex: sections.length,
+      },
+    ],
+    risks,
+    detectedRoots: detectSectionRoots(sections),
+    hostApiSummary: summarizeHostApis(input.source),
+  };
+
+  return {
+    plan,
+    workspaceFiles: [
+      { path: 'lua/main.risulua', content: renderSectionMain(sections) },
+      ...sections.map((section) => ({ path: section.path, content: section.content })),
+      { path: 'legacy/original.risulua', content: input.source },
+    ],
+    profileMap: sections.map((section) => `Section ${section.preserveOrderIndex}: \`${section.sectionLabel}\` → \`${section.path}\` (lines ${section.sourceRange.startLine}-${section.sourceRange.endLine}).`),
+    pureCandidates: [],
+    runtimeCoupledHelpers: ['Section files are chunk fragments; local scope may intentionally flow across adjacent sections.'],
+    riskyBlocks: risks.map((risk) => `${risk.severity}: ${risk.message}`),
+    dynamicPatterns: sourceProfileResult.dynamicRequires.map((item) => `Dynamic require on line ${item.line}: \`${item.expression}\`.`),
+    refactorTasks: ['Keep section ordering from `docs/risulua-split-plan.json` when building or reviewing recovered source.', 'Do not wrap recovered sections before checking for cross-section local scope usage.'],
+    verificationSuggestions: ['Concatenate section files by `preserveOrderIndex` and compare against the original marker-order bundle.', 'Verify generated `lua/main.risulua` contains no synthesized `require(...)` calls.'],
+    sections,
+  };
+}
+
+export function writeRisuLuaSectionRecoveryWorkspace(
+  artifacts: RisuLuaSectionRecoveryArtifacts,
+  options: WriteRisuLuaSectionRecoveryWorkspaceOptions,
+): void {
+  writeRisuLuaWorkspaceFiles(artifacts.workspaceFiles, { outputRoot: options.outputRoot });
+  writeRisuLuaSplitPlan(artifacts.plan, { outputRoot: options.outputRoot, cwd: options.cwd });
+  writeRisuLuaSplitReport(artifacts, { outputRoot: options.outputRoot });
+}
+
+export function renderSectionMain(sections: RisuLuaExtractedSection[]): string {
+  const includeLines = sections.map((section) => `-- ${section.preserveOrderIndex}: ${section.path}`);
+  return [
+    '-- @generated by risuai-workbench',
+    '-- risulua-split=coarse',
+    '-- source-profile=section-bundle',
+    '-- These files are chunk fragments, not independent Lua modules.',
+    '-- They are not safe to require individually because locals can cross section boundaries.',
+    '-- dist-build-strategy=section-order-concat',
+    '',
+    '-- include-order is stored in docs/risulua-split-plan.json:',
+    ...includeLines,
+    '',
+  ].join('\n');
+}
+
+function sectionToPlannedFile(section: RisuLuaExtractedSection): LuaPlannedFile {
+  return {
+    path: section.path,
+    kind: 'chunk-fragment',
+    sourceRanges: [section.sourceRange],
+    sectionLabel: section.sectionLabel,
+    confidence: 'high',
+    reason: 'Recovered from an exact [BUNDLE] marker source slice without wrapping or formatting.',
+    preserveOrderIndex: section.preserveOrderIndex,
+  };
+}
+
+function summarizeProfile(result: SourceProfileResult): SourceProfileSummary {
+  return {
+    profile: result.profile,
+    confidence: result.confidence,
+    reasons: result.reasons,
+    preloadModuleCount: result.preloadModules.length,
+    sectionMarkerCount: result.sectionMarkers.length,
+    staticRequireCount: result.staticRequires.length,
+    dynamicRequireCount: result.dynamicRequires.length,
+  };
+}
+
+function buildSectionRisks(result: SourceProfileResult, sections: RisuLuaExtractedSection[]): LuaPlanRisk[] {
+  const risks: LuaPlanRisk[] = [{
+    id: 'section-chunk-fragment-semantics',
+    severity: 'info',
+    message: 'Recovered section files are ordered chunk fragments; do not wrap, require, or sort them as independent modules.',
+    sourceRanges: sections.map((section) => section.sourceRange),
+    riskFlags: ['chunk-fragment', 'section-order-concat'],
+  }];
+
+  if (result.profile !== 'section-bundle') {
+    risks.push({
+      id: 'section-profile-mismatch',
+      severity: 'strong-warning',
+      message: `Section recovery expected section-bundle profile but detected ${result.profile}.`,
+      sourceRanges: sections.map((section) => section.sourceRange),
+      riskFlags: ['profile-mismatch'],
+    });
+  }
+
+  return risks;
+}
+
+function detectSectionRoots(sections: RisuLuaExtractedSection[]): LuaDetectedRoot[] {
+  return sections.map((section) => ({
+    name: section.sectionLabel,
+    kind: 'bundle-section',
+    sourceRange: section.sourceRange,
+  }));
+}
+
+function summarizeHostApis(source: string): LuaHostApiSummary {
+  return {
+    reads: collectPresent(source, ['getChatVar', 'getState', 'getChat']),
+    writes: collectPresent(source, ['setChatVar', 'setState', 'setChat', 'addChat', 'reloadDisplay', 'alertNormal', 'alertInput', 'LLM', 'request']),
+    asyncCalls: collectPresent(source, ['LLM', 'request', 'Promise', 'async']),
+    unknownGlobals: [],
+  };
+}
+
+function collectPresent(source: string, names: string[]): string[] {
+  return names.filter((name) => new RegExp(`\\b${escapeRegExp(name)}\\b`).test(source));
+}
+
+function inferTargetName(sourcePath: string): string {
+  const fileName = normalizeSourcePath(sourcePath).split('/').pop() ?? 'main.risulua';
+  return fileName.replace(/\.risulua$/i, '') || 'main';
+}
+
+function normalizeSourcePath(sourcePath: string): string {
+  return sourcePath.replace(/\\/g, '/');
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}

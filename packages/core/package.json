@@ -4,9 +4,19 @@
   "description": "Core engine for RisuAI character card workbench",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "node": [
+        "dist/node/index.d.ts"
+      ]
+    }
+  },
   "exports": {
     ".": "./dist/index.js",
-    "./node": "./dist/node/index.js"
+    "./node": {
+      "types": "./dist/node/index.d.ts",
+      "default": "./dist/node/index.js"
+    }
   },
   "bin": {
     "risu-core": "bin/risu-core.js"
@@ -41,9 +51,11 @@
   },
   "dependencies": {
     "@risuai/lua-analyzer-wasm": "file:../lua-analyzer-wasm",
+    "@tree-sitter-grammars/tree-sitter-lua": "^0.4.1",
     "fflate": "^0.8.2",
     "luaparse": "^0.3.1",
     "msgpackr": "^1.11.9",
+    "tree-sitter": "^0.25.0",
     "yaml": "^2.5.0"
   },
   "devDependencies": {

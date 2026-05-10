@@ -79,6 +79,39 @@ describe('src/cli scaffold workflow', () => {
       expect(manifest.name).toBe('RPG Module');
       expect(manifest.namespace).toBe('rpg');
     });
+
+    describe('risulua scaffold mode', () => {
+      it('risulua scaffold modular structure', () => {
+        const outDir = path.join(tmpDir, 'modular-module');
+        const exitCode = runScaffoldWorkflow([
+          'module',
+          '--name',
+          'Modular Module',
+          '--out',
+          outDir,
+          '--risulua-mode',
+          'modular',
+        ]);
+
+        expect(exitCode).toBe(0);
+        expect(fs.existsSync(path.join(outDir, RISUMODULE_FILENAME))).toBe(true);
+        expect(fs.existsSync(path.join(outDir, 'lua', 'main.risulua'))).toBe(true);
+        expect(fs.existsSync(path.join(outDir, 'lua', 'common'))).toBe(true);
+        expect(fs.existsSync(path.join(outDir, 'lua', 'runtime'))).toBe(true);
+        expect(fs.existsSync(path.join(outDir, 'lua', 'features'))).toBe(true);
+        expect(fs.existsSync(path.join(outDir, 'lua', 'adapters'))).toBe(true);
+        expect(fs.existsSync(path.join(outDir, 'dist'))).toBe(true);
+
+        const starter = fs.readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8');
+        expect(starter).toContain('function onStart()');
+        expect(starter).not.toContain('require(');
+        expect(starter).not.toContain('dofile(');
+        expect(starter).not.toContain('loadfile(');
+        expect(fs.existsSync(path.join(outDir, 'lua', 'manifest.json'))).toBe(false);
+        expect(fs.existsSync(path.join(outDir, 'risulua.json'))).toBe(false);
+        expect(fs.existsSync(path.join(outDir, 'dist', 'Modular_Module.risulua'))).toBe(false);
+      });
+    });
   });
 
   describe('preset scaffold', () => {
@@ -138,6 +171,39 @@ describe('src/cli scaffold workflow', () => {
       expect(risuchar.sourceFormat).toBe('scaffold');
       expect(risuchar.name).toBe('My Character');
       expect(risuchar.creator).toBe('TestAuthor');
+    });
+
+    it('risulua scaffold modular structure for charx', () => {
+      const outDir = path.join(tmpDir, 'modular-charx');
+      const exitCode = runScaffoldWorkflow([
+        'charx',
+        '--name',
+        'Modular Character',
+        '--creator',
+        'TestAuthor',
+        '--out',
+        outDir,
+        '--risulua-mode',
+        'modular',
+      ]);
+
+      expect(exitCode).toBe(0);
+      expect(fs.existsSync(path.join(outDir, '.risuchar'))).toBe(true);
+      expect(fs.existsSync(path.join(outDir, 'lua', 'main.risulua'))).toBe(true);
+      expect(fs.existsSync(path.join(outDir, 'lua', 'common'))).toBe(true);
+      expect(fs.existsSync(path.join(outDir, 'lua', 'runtime'))).toBe(true);
+      expect(fs.existsSync(path.join(outDir, 'lua', 'features'))).toBe(true);
+      expect(fs.existsSync(path.join(outDir, 'lua', 'adapters'))).toBe(true);
+      expect(fs.existsSync(path.join(outDir, 'dist'))).toBe(true);
+
+      const starter = fs.readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8');
+      expect(starter).toContain('function onStart()');
+      expect(starter).not.toContain('require(');
+      expect(starter).not.toContain('dofile(');
+      expect(starter).not.toContain('loadfile(');
+      expect(fs.existsSync(path.join(outDir, 'lua', 'manifest.json'))).toBe(false);
+      expect(fs.existsSync(path.join(outDir, 'risulua.json'))).toBe(false);
+      expect(fs.existsSync(path.join(outDir, 'dist', 'Modular_Character.risulua'))).toBe(false);
     });
   });
 });

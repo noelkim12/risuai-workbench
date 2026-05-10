@@ -37,6 +37,14 @@ export enum DiagnosticCode {
   EmptyBlock = 'CBS103',
   LegacyAngleBracket = 'CBS104',
   AliasAvailable = 'CBS200',
+  RisuLuaParseError = 'RISULUA001',
+  RisuLuaDynamicRequire = 'RISULUA002',
+  RisuLuaInvalidRequire = 'RISULUA003',
+  RisuLuaPackageLoaderMutation = 'RISULUA004',
+  RisuLuaForbiddenRuntimeLoad = 'RISULUA005',
+  RisuLuaRequireBindingMutation = 'RISULUA006',
+  RisuLuaMissingModule = 'RISULUA007',
+  RisuLuaDependencyCycle = 'RISULUA008',
 }
 
 /** diagnostics를 발행한 pipeline 단계. */
@@ -48,7 +56,8 @@ export type DiagnosticRuleCategory =
   | 'expression'
   | 'symbol'
   | 'compatibility'
-  | 'quality';
+  | 'quality'
+  | 'risulua-modular';
 
 /**
  * DiagnosticRuleMetadata 인터페이스.
@@ -225,6 +234,62 @@ export const DIAGNOSTIC_TAXONOMY: Readonly<Record<DiagnosticCode, DiagnosticDefi
     severity: 'info',
     owner: 'analyzer',
     meaning: 'Shorter CBS alias is available',
+  },
+  [DiagnosticCode.RisuLuaParseError]: {
+    category: 'risulua-modular',
+    code: DiagnosticCode.RisuLuaParseError,
+    severity: 'error',
+    owner: 'analyzer',
+    meaning: 'RisuLua modular mode source has a Lua parse error',
+  },
+  [DiagnosticCode.RisuLuaDynamicRequire]: {
+    category: 'risulua-modular',
+    code: DiagnosticCode.RisuLuaDynamicRequire,
+    severity: 'error',
+    owner: 'analyzer',
+    meaning: 'RisuLua modular mode requires static require("module.id") calls',
+  },
+  [DiagnosticCode.RisuLuaInvalidRequire]: {
+    category: 'risulua-modular',
+    code: DiagnosticCode.RisuLuaInvalidRequire,
+    severity: 'error',
+    owner: 'analyzer',
+    meaning: 'RisuLua modular mode require module IDs must use dot-separated Lua identifiers',
+  },
+  [DiagnosticCode.RisuLuaPackageLoaderMutation]: {
+    category: 'risulua-modular',
+    code: DiagnosticCode.RisuLuaPackageLoaderMutation,
+    severity: 'error',
+    owner: 'analyzer',
+    meaning: 'RisuLua modular mode forbids package loader/path mutation',
+  },
+  [DiagnosticCode.RisuLuaForbiddenRuntimeLoad]: {
+    category: 'risulua-modular',
+    code: DiagnosticCode.RisuLuaForbiddenRuntimeLoad,
+    severity: 'error',
+    owner: 'analyzer',
+    meaning: 'RisuLua modular mode forbids runtime file loading',
+  },
+  [DiagnosticCode.RisuLuaRequireBindingMutation]: {
+    category: 'risulua-modular',
+    code: DiagnosticCode.RisuLuaRequireBindingMutation,
+    severity: 'error',
+    owner: 'analyzer',
+    meaning: 'RisuLua modular mode forbids shadowing, reassigning, aliasing, or wrapping require',
+  },
+  [DiagnosticCode.RisuLuaMissingModule]: {
+    category: 'risulua-modular',
+    code: DiagnosticCode.RisuLuaMissingModule,
+    severity: 'error',
+    owner: 'analyzer',
+    meaning: 'RisuLua modular mode require target does not resolve to a source module',
+  },
+  [DiagnosticCode.RisuLuaDependencyCycle]: {
+    category: 'risulua-modular',
+    code: DiagnosticCode.RisuLuaDependencyCycle,
+    severity: 'error',
+    owner: 'analyzer',
+    meaning: 'RisuLua modular mode source modules form a dependency cycle',
   },
 };
 

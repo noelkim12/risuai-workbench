@@ -9,6 +9,7 @@ import {
   stopCbsLanguageClient,
   type CbsLanguageClientRuntimeState,
 } from './lsp/cbsLanguageClient';
+import { registerRisuLuaSourceDocumentLinks } from './lsp/risuLuaSourceLinks';
 import { AnalysisService } from './services/analysis-service';
 import { CardService } from './services/card-service';
 import { CharacterBrowserViewProvider } from './views/CharacterBrowserViewProvider';
@@ -40,6 +41,7 @@ export function activate(context: vscode.ExtensionContext): RisuWorkbenchExtensi
   context.subscriptions.push(bracketHighlighter);
   context.subscriptions.push(registerCoreCommands(context, cardService, analysisService));
   registerCbsAutoSuggestTrigger(context);
+  registerRisuLuaSourceDocumentLinks(context);
 
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor((editor) => {

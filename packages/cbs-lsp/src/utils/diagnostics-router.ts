@@ -26,6 +26,7 @@ import {
   type DiagnosticsFallbackTraceStats,
 } from './diagnostics/suppression-policy';
 import { createWorkspaceVariableDiagnosticsForUri } from './diagnostics/workspace-issue-policy';
+import { collectRisuLuaModularDiagnostics } from '../analyzer/diagnostics/risulua-modular-diagnostics';
 
 export { createDiagnosticForFragment } from './diagnostics/fragment-diagnostic-policy';
 export { shouldKeepLocalSymbolDiagnostic, type DiagnosticsFallbackTraceStats };
@@ -238,6 +239,7 @@ export function routeDiagnosticsForDocument(
   _options: Record<string, boolean> = {},
   context: DiagnosticDocumentContext = {},
 ): Diagnostic[] {
+  const risuLuaModularDiagnostics = collectRisuLuaModularDiagnostics(filePath, content);
   const analysis = fragmentAnalysisService.analyzeDocument({
     uri: context.uri ?? filePath,
     version: context.version ?? createSyntheticDocumentVersion(content),
@@ -246,13 +248,16 @@ export function routeDiagnosticsForDocument(
   });
 
   if (!analysis || analysis.fragmentAnalyses.length === 0) {
-    return [];
+    return sortHostDiagnostics(risuLuaModularDiagnostics);
   }
 
   const documentUri = context.uri ?? filePath;
   return sortHostDiagnostics(
-    analysis.fragmentAnalyses
-    .flatMap((fragmentAnalysis) => mapFragmentDiagnosticsToHost(content, documentUri, fragmentAnalysis))
+    [
+      ...risuLuaModularDiagnostics,
+      ...analysis.fragmentAnalyses
+      .flatMap((fragmentAnalysis) => mapFragmentDiagnosticsToHost(content, documentUri, fragmentAnalysis)),
+    ]
   );
 }
 

@@ -201,7 +201,12 @@ export type {
   LuaWasmAnalyzeResult,
   LuaWasmApiName,
   LuaWasmDiagnostic,
+  LuaWasmMemberBridgeAssignment,
+  LuaWasmModuleMemberDefinition,
+  LuaWasmModuleMemberDefinitionKind,
   LuaWasmQuoteKind,
+  LuaWasmRequireAlias,
+  LuaWasmSourceComment,
   LuaWasmStateAccess,
   LuaWasmStringLiteral,
 } from './analyze/lua-wasm-types';

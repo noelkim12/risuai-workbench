@@ -38,16 +38,16 @@ docs/custom-extension/
 
 각 익스텐션이 어떤 대상에 적용되는지를 정의하는 기준 매트릭스입니다. 작업 시작 시 어떤 문서를 참조해야 할지 결정하는 1차 필터 역할을 합니다.
 
-| 익스텐션 | 캐릭터(charx) | 모듈(module) | 프리셋(preset) | 상위(Upstream) 필드 (charx / module / preset) |
-|---|:---:|:---:|:---:|---|
-| [`.risulorebook`](extensions/lorebook.md) | ✓ | ✓ |   | V3 `char_book` / `_moduleLorebook` (`loreBook[]`) / — |
-| [`.risuregex`](extensions/regex.md) | ✓ | ✓ | ✓ | `customScripts` / `customscript[]` / `presetRegex` (저장 시 레거시 호환성을 위해 `regex` 필드까지 연동 가능) |
-| [`.risulua`](extensions/lua.md) | ✓ | ✓ |   | `triggerscript` 또는 모듈 Lua 페이로드. 현재 구현은 단일 파일, 번들 모드는 `lua/` source와 `dist/` singleton artifact 컨벤션 |
-| [`.risuprompt`](extensions/prompt-template.md) |   |   | ✓ | — / — / `botPreset.promptTemplate` |
-| [`.risutoggle`](extensions/toggle.md) |   | ✓ | ✓ | — / `customModuleToggle` / `customPromptTemplateToggle` |
-| [`.risuvar`](extensions/variable.md) | ✓ | ✓ |   | `defaultVariables` / 모듈 수준 변수 |
-| [`.risuhtml`](extensions/html.md) | ✓ | ✓ |   | `backgroundHTML` / `backgroundEmbedding` |
-| [`.risutext`](extensions/text.md) | ✓ |   |   | `description`, `first_mes`, `system_prompt`, `replace_global_note`, `creator_notes`, `additionalText`, `alternate_greetings` |
+| 익스텐션                                       | 캐릭터(charx) | 모듈(module) | 프리셋(preset) | 상위(Upstream) 필드 (charx / module / preset)                                                                                                                                                 |
+| ---------------------------------------------- | :-----------: | :----------: | :------------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`.risulorebook`](extensions/lorebook.md)      |       ✓       |      ✓       |                | V3 `char_book` / `_moduleLorebook` (`loreBook[]`) / —                                                                                                                                         |
+| [`.risuregex`](extensions/regex.md)            |       ✓       |      ✓       |       ✓        | `customScripts` / `customscript[]` / `presetRegex` (저장 시 레거시 호환성을 위해 `regex` 필드까지 연동 가능)                                                                                  |
+| [`.risulua`](extensions/lua.md)                |       ✓       |      ✓       |                | `triggerscript` 또는 모듈 Lua 페이로드. **단일 파일 개발**은 `lua/<targetName>.risulua`, **모듈식 개발**은 `lua/main.risulua` source graph와 `dist/<targetName>.risulua` 생성 artifact를 사용 |
+| [`.risuprompt`](extensions/prompt-template.md) |               |              |       ✓        | — / — / `botPreset.promptTemplate`                                                                                                                                                            |
+| [`.risutoggle`](extensions/toggle.md)          |               |      ✓       |       ✓        | — / `customModuleToggle` / `customPromptTemplateToggle`                                                                                                                                       |
+| [`.risuvar`](extensions/variable.md)           |       ✓       |      ✓       |                | `defaultVariables` / 모듈 수준 변수                                                                                                                                                           |
+| [`.risuhtml`](extensions/html.md)              |       ✓       |      ✓       |                | `backgroundHTML` / `backgroundEmbedding`                                                                                                                                                      |
+| [`.risutext`](extensions/text.md)              |       ✓       |              |                | `description`, `first_mes`, `system_prompt`, `replace_global_note`, `creator_notes`, `additionalText`, `alternate_greetings`                                                                  |
 
 > 참고: [`.risuchar`](markers/risuchar.md)는 위 표의 아티팩트 익스텐션이 아니라 `charx` 대상 전용 루트 marker 및 metadata owner입니다. 캐릭터 루트 탐색과 구조화 metadata 소유권은 `.risuchar`가 담당하고, 실제 prose payload는 `.risutext`가 담당합니다.
 > 참고: [`.risumodule`](markers/risumodule.md)는 위 표의 아티팩트 익스텐션이 아니라 `module` 대상 전용 루트 marker 및 metadata owner입니다. 모듈 루트 탐색과 구조화 metadata 소유권은 `.risumodule`가 담당하며, 이전의 `metadata.json` 기반 metadata owner 방식은 더 이상 표준이 아닙니다. 이는 breaking migration입니다.
@@ -74,3 +74,4 @@ docs/custom-extension/
   - **상위(Upstream)**: `risuai-pork`에서 정의하는 타입 및 실제 물리 저장 포맷을 의미합니다.
   - **왕복 변환(Round-trip)**: 상위 포맷 ↔ 표준 워크스페이스 포맷 간의 상호 변환 과정을 의미합니다.
   - **편집 범위(Authoring Scope)**: 워크벤치가 실제로 편집을 지원하는 필드 집합입니다. 범위 밖 필드는 패키징 시 상위 기본값이나 메타데이터를 통해 복원됩니다.
+  - **RisuLua 모드**: `--risulua-mode <classic|modular>`로 선택합니다. 사용자용 이름은 **단일 파일 개발**과 **모듈식 개발**이며, `bundle mode`는 내부 구현 개념입니다. No Lua manifest in first implementation. 자동 분해는 future work입니다.

@@ -8,6 +8,18 @@
 - **패키징(Pack)**: 표준 `.risu*` 아티팩트와 실제 런타임에서 참조하는 `.risumodule`(module), `metadata.json`(preset), `.risuchar`(charx) 및 `character/` 페이로드를 기반으로 최종 엔벨로프(Envelope)를 재구성합니다.
 - **분석(Analyze)**: 탐색 코드 및 기초 테스트에서 실제로 증명된 인터페이스만을 확정적인 신호(Authoritative Signal)로 간주하여 분석 내용을 기술합니다.
 
+## RisuLua 모드 옵션
+
+Lua가 있는 charx와 module 워크스페이스는 `--risulua-mode <classic|modular>` 옵션을 받을 수 있습니다.
+
+- `classic`: **단일 파일 개발**입니다. 기존 `lua/<targetName>.risulua` 흐름을 유지합니다.
+- `modular`: **모듈식 개발**입니다. `lua/main.risulua`에서 시작해 정적 `require("module.id")` 그래프를 `dist/<targetName>.risulua`로 생성합니다.
+- 옵션을 생략하면 기존 동작은 그대로 유지됩니다. 다만 `lua/main.risulua`가 있으면 모듈식 개발로 자동 감지됩니다.
+- 기존 단일 파일 프로젝트가 `lua/main.risulua` 파일명을 쓰고 있었다면 `--risulua-mode classic`을 명시합니다.
+- No Lua manifest in first implementation. CLI는 `risulua.json`이나 `lua/manifest.json`을 찾지 않습니다.
+- `risulua-split`/auto-decomposition is future work. extract는 upstream Lua를 `lua/main.risulua`에 쓰며 자동 분해하지 않습니다.
+- 내부 구현에서 `bundle mode`라는 표현을 볼 수 있지만, 사용자 문서의 기본 이름은 **모듈식 개발**입니다.
+
 ## 분석 및 탐색(Analyze Detection) 관련 명세
 
 - **수집 방식**: `custom-extension-file-discovery.ts`의 탐색 로직은 디렉토리 이름이 아닌 실제 파일을 기준으로 데이터를 수집하며, 이를 `canonicalFiles`, `markerFiles`, `structuredJsonFiles`의 세 가지 버킷으로 분류합니다.
