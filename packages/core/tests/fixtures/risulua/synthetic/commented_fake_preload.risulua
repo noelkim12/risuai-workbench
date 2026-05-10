@@ -1,0 +1,6 @@
+-- package.preload["./fake"] = function() return {} end
+local sample = 'require("./not_real") and -- [BUNDLE] fake.lua'
+
+function onOutput(text)
+  return text .. sample
+end

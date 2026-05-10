@@ -28,9 +28,14 @@ It extracts:
 - Lua long bracket string literals (`[[...]]`, `[=[...]=]`)
 - Whether a string literal content range contains CBS markers (`{{` or `}}`)
 - Static first-argument keys for `getState`, `setState`, `getChatVar`, and `setChatVar`
+- Generated RisuLua `local alias = require("module.id")` aliases
+- Generated RisuLua public bridge assignments such as `setAction = __actions.setAction`
+- Generated RisuLua module member definitions such as `function M.setAction(...)`, `M.setAction = function(...)`, and generated export aliases such as `M.setAction = setAction`
+- Generated `---@source path:line:character` comments
 
 It intentionally ignores:
 
 - Dynamic state keys such as `getState(prefix .. "key")`
-- Full Lua AST, call graph, and module ownership analysis
+- Dynamic require calls such as `require(prefix .. name)`
+- Full Lua AST, call graph, and general module ownership analysis
 - CBS parsing itself; TypeScript CBS providers still own CBS parsing

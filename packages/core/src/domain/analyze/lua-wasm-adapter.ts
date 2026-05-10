@@ -10,7 +10,12 @@ import type {
   LuaWasmAnalyzeResult,
   LuaWasmApiName,
   LuaWasmDiagnostic,
+  LuaWasmMemberBridgeAssignment,
+  LuaWasmModuleMemberDefinition,
+  LuaWasmModuleMemberDefinitionKind,
   LuaWasmQuoteKind,
+  LuaWasmRequireAlias,
+  LuaWasmSourceComment,
   LuaWasmStateAccess,
   LuaWasmStringLiteral,
 } from './lua-wasm-types';
@@ -137,6 +142,26 @@ export function normalizeLuaWasmResult(value: unknown): LuaWasmAnalyzeResult {
     'stringLiterals',
   );
   const stateAccesses = readArray(value.stateAccesses, normalizeStateAccess, 'stateAccesses');
+  const requireAliases = readOptionalArray(
+    value.requireAliases,
+    normalizeRequireAlias,
+    'requireAliases',
+  );
+  const memberBridgeAssignments = readOptionalArray(
+    value.memberBridgeAssignments,
+    normalizeMemberBridgeAssignment,
+    'memberBridgeAssignments',
+  );
+  const moduleMemberDefinitions = readOptionalArray(
+    value.moduleMemberDefinitions,
+    normalizeModuleMemberDefinition,
+    'moduleMemberDefinitions',
+  );
+  const sourceComments = readOptionalArray(
+    value.sourceComments,
+    normalizeSourceComment,
+    'sourceComments',
+  );
   const diagnostics = readArray(value.diagnostics, normalizeDiagnostic, 'diagnostics');
 
   return {
@@ -148,6 +173,10 @@ export function normalizeLuaWasmResult(value: unknown): LuaWasmAnalyzeResult {
     totalLines: readNumber(value.totalLines, 'totalLines'),
     stringLiterals,
     stateAccesses,
+    requireAliases,
+    memberBridgeAssignments,
+    moduleMemberDefinitions,
+    sourceComments,
     diagnostics,
     error: value.error === null ? null : readString(value.error, 'error'),
   };
@@ -236,6 +265,130 @@ function normalizeDiagnostic(value: unknown): LuaWasmDiagnostic {
 }
 
 /**
+ * normalizeRequireAlias 함수.
+ * WASM require alias 항목의 module id와 위치 범위를 검증함.
+ *
+ * @param value - 정규화할 unknown require alias 항목
+ * @returns 정규화된 Lua WASM require alias 정보
+ */
+function normalizeRequireAlias(value: unknown): LuaWasmRequireAlias {
+  if (!isRecord(value)) {
+    throw new Error('Lua WASM analyzer returned malformed require alias');
+  }
+  return {
+    aliasName: readString(value.aliasName, 'requireAliases.aliasName'),
+    moduleName: readString(value.moduleName, 'requireAliases.moduleName'),
+    aliasStartUtf16: readNumber(value.aliasStartUtf16, 'requireAliases.aliasStartUtf16'),
+    aliasEndUtf16: readNumber(value.aliasEndUtf16, 'requireAliases.aliasEndUtf16'),
+    moduleStartUtf16: readNumber(value.moduleStartUtf16, 'requireAliases.moduleStartUtf16'),
+    moduleEndUtf16: readNumber(value.moduleEndUtf16, 'requireAliases.moduleEndUtf16'),
+    statementStartUtf16: readNumber(value.statementStartUtf16, 'requireAliases.statementStartUtf16'),
+    statementEndUtf16: readNumber(value.statementEndUtf16, 'requireAliases.statementEndUtf16'),
+    line: readNumber(value.line, 'requireAliases.line'),
+  };
+}
+
+/**
+ * normalizeMemberBridgeAssignment 함수.
+ * WASM public bridge assignment 항목의 이름과 위치 범위를 검증함.
+ *
+ * @param value - 정규화할 unknown bridge assignment 항목
+ * @returns 정규화된 Lua WASM bridge assignment 정보
+ */
+function normalizeMemberBridgeAssignment(value: unknown): LuaWasmMemberBridgeAssignment {
+  if (!isRecord(value)) {
+    throw new Error('Lua WASM analyzer returned malformed member bridge assignment');
+  }
+  return {
+    publicName: readString(value.publicName, 'memberBridgeAssignments.publicName'),
+    aliasName: readString(value.aliasName, 'memberBridgeAssignments.aliasName'),
+    memberName: readString(value.memberName, 'memberBridgeAssignments.memberName'),
+    publicStartUtf16: readNumber(value.publicStartUtf16, 'memberBridgeAssignments.publicStartUtf16'),
+    publicEndUtf16: readNumber(value.publicEndUtf16, 'memberBridgeAssignments.publicEndUtf16'),
+    aliasStartUtf16: readNumber(value.aliasStartUtf16, 'memberBridgeAssignments.aliasStartUtf16'),
+    aliasEndUtf16: readNumber(value.aliasEndUtf16, 'memberBridgeAssignments.aliasEndUtf16'),
+    memberStartUtf16: readNumber(value.memberStartUtf16, 'memberBridgeAssignments.memberStartUtf16'),
+    memberEndUtf16: readNumber(value.memberEndUtf16, 'memberBridgeAssignments.memberEndUtf16'),
+    statementStartUtf16: readNumber(
+      value.statementStartUtf16,
+      'memberBridgeAssignments.statementStartUtf16',
+    ),
+    statementEndUtf16: readNumber(
+      value.statementEndUtf16,
+      'memberBridgeAssignments.statementEndUtf16',
+    ),
+    line: readNumber(value.line, 'memberBridgeAssignments.line'),
+  };
+}
+
+/**
+ * normalizeModuleMemberDefinition 함수.
+ * WASM module member definition 항목의 export 이름과 definition kind를 검증함.
+ *
+ * @param value - 정규화할 unknown module member definition 항목
+ * @returns 정규화된 Lua WASM module member definition 정보
+ */
+function normalizeModuleMemberDefinition(value: unknown): LuaWasmModuleMemberDefinition {
+  if (!isRecord(value)) {
+    throw new Error('Lua WASM analyzer returned malformed module member definition');
+  }
+  const definitionKind = readString(
+    value.definitionKind,
+    'moduleMemberDefinitions.definitionKind',
+  );
+  if (!isLuaWasmModuleMemberDefinitionKind(definitionKind)) {
+    throw new Error('Lua WASM analyzer returned unsupported module member definition kind');
+  }
+  return {
+    exportName: readString(value.exportName, 'moduleMemberDefinitions.exportName'),
+    containerName:
+      value.containerName === null
+        ? null
+        : readString(value.containerName, 'moduleMemberDefinitions.containerName'),
+    definitionKind,
+    nameStartUtf16: readNumber(value.nameStartUtf16, 'moduleMemberDefinitions.nameStartUtf16'),
+    nameEndUtf16: readNumber(value.nameEndUtf16, 'moduleMemberDefinitions.nameEndUtf16'),
+    definitionStartUtf16: readNumber(
+      value.definitionStartUtf16,
+      'moduleMemberDefinitions.definitionStartUtf16',
+    ),
+    definitionEndUtf16: readNumber(
+      value.definitionEndUtf16,
+      'moduleMemberDefinitions.definitionEndUtf16',
+    ),
+    line: readNumber(value.line, 'moduleMemberDefinitions.line'),
+  };
+}
+
+/**
+ * normalizeSourceComment 함수.
+ * WASM source comment 항목의 원본 위치와 적용 statement 위치를 검증함.
+ *
+ * @param value - 정규화할 unknown source comment 항목
+ * @returns 정규화된 Lua WASM source comment 정보
+ */
+function normalizeSourceComment(value: unknown): LuaWasmSourceComment {
+  if (!isRecord(value)) {
+    throw new Error('Lua WASM analyzer returned malformed source comment');
+  }
+  return {
+    sourcePath: readString(value.sourcePath, 'sourceComments.sourcePath'),
+    sourceLine: readNumber(value.sourceLine, 'sourceComments.sourceLine'),
+    sourceCharacter: readNumber(value.sourceCharacter, 'sourceComments.sourceCharacter'),
+    commentStartUtf16: readNumber(value.commentStartUtf16, 'sourceComments.commentStartUtf16'),
+    commentEndUtf16: readNumber(value.commentEndUtf16, 'sourceComments.commentEndUtf16'),
+    appliesToStatementStartUtf16:
+      value.appliesToStatementStartUtf16 === null
+        ? null
+        : readNumber(
+            value.appliesToStatementStartUtf16,
+            'sourceComments.appliesToStatementStartUtf16',
+          ),
+    line: readNumber(value.line, 'sourceComments.line'),
+  };
+}
+
+/**
  * readArray 함수.
  * unknown 값이 배열인지 확인하고 각 항목을 지정한 normalizer로 변환함.
  *
@@ -253,6 +406,26 @@ function readArray<T>(
     throw new Error(`Lua WASM analyzer returned malformed ${fieldName} array`);
   }
   return value.map((item) => normalizeItem(item));
+}
+
+/**
+ * readOptionalArray 함수.
+ * 새 WASM metadata 배열이 없는 이전 result는 빈 배열로 정규화하고, 값이 있으면 배열인지 검증함.
+ *
+ * @param value - 검사할 unknown 배열 값 또는 undefined
+ * @param normalizeItem - 배열 항목을 domain 타입으로 바꾸는 함수
+ * @param fieldName - 오류 메시지에 표시할 result field 이름
+ * @returns 정규화된 readonly 배열
+ */
+function readOptionalArray<T>(
+  value: unknown,
+  normalizeItem: (item: unknown) => T,
+  fieldName: string,
+): readonly T[] {
+  if (value === undefined) {
+    return [];
+  }
+  return readArray(value, normalizeItem, fieldName);
 }
 
 /**
@@ -336,6 +509,19 @@ function isLuaWasmApiName(value: string): value is LuaWasmApiName {
  */
 function isLuaWasmAccessDirection(value: string): value is LuaWasmAccessDirection {
   return value === 'read' || value === 'write';
+}
+
+/**
+ * isLuaWasmModuleMemberDefinitionKind 함수.
+ * 문자열이 generated module member definition kind인지 판별함.
+ *
+ * @param value - 검사할 definition kind 문자열
+ * @returns 지원되는 LuaWasmModuleMemberDefinitionKind이면 true
+ */
+function isLuaWasmModuleMemberDefinitionKind(
+  value: string,
+): value is LuaWasmModuleMemberDefinitionKind {
+  return value === 'table-method-function' || value === 'table-field-function';
 }
 
 /**

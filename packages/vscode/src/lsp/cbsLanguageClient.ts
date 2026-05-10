@@ -22,6 +22,11 @@ import {
   type CbsClientBoundaryInputs,
   type CbsClientBoundarySnapshot,
 } from './cbsLanguageClientBoundary';
+export {
+  CBS_MARKDOWN_TRUSTED_COMMANDS,
+  CBS_OCCURRENCE_NAVIGATION_COMMAND,
+} from './cbsCommands';
+import { CBS_MARKDOWN_TRUSTED_COMMANDS } from './cbsCommands';
 
 export {
   buildCbsClientBoundarySnapshot,
@@ -34,10 +39,6 @@ let client: LanguageClient | undefined;
 let outputChannel: vscode.OutputChannel | undefined;
 let lastBoundarySnapshot: CbsClientBoundarySnapshot | undefined;
 let clientReadyPromise: Promise<void> | undefined;
-
-export const CBS_OCCURRENCE_NAVIGATION_COMMAND = 'risuWorkbench.cbs.openOccurrence';
-
-export const CBS_MARKDOWN_TRUSTED_COMMANDS = [CBS_OCCURRENCE_NAVIGATION_COMMAND] as const;
 
 const CBS_RUNTIME_AVAILABILITY_REQUEST_METHOD = 'cbs/runtimeAvailability';
 

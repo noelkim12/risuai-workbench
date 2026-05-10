@@ -13,6 +13,7 @@ import {
 } from '../../src/domain/custom-extension/extensions/lorebook';
 import { serializeRegexContent } from '../../src/domain/regex';
 import { serializeVariableContent } from '../../src/domain/custom-extension/extensions/variable';
+import { decodeRisuLuaRecoveryBlock } from '../../src/cli/shared';
 
 const tempDirs: string[] = [];
 
@@ -364,5 +365,329 @@ describe('module canonical pack workflow', () => {
     expect(exitCode).toBe(1);
     expect(fs.existsSync(outPath)).toBe(false);
     expect(() => buildModuleFromCanonicalDirectory(workDir)).toThrow(/schemaVersion.*1/);
+  });
+
+  // ============================================================================
+  // RISULUA CLASSIC REGRESSION TESTS
+  // ============================================================================
+  // These tests freeze the classic .risulua behavior before modular bundle mode
+  // changes are introduced. They verify:
+  // 1. Single lua/<moduleName>.risulua file is used per module
+  // 2. Lua bytes are injected unchanged into upstream module payload
+  // 3. Duplicate .risulua sources throw LuaAdapterError deterministically
+  // ============================================================================
+
+  it('risulua classic single file: packs single lua/<moduleName>.risulua unchanged into trigger array', () => {
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'module-risulua-classic-single-'));
+    tempDirs.push(workDir);
+
+    fs.writeFileSync(
+      path.join(workDir, '.risumodule'),
+      `${JSON.stringify(
+        makeRisumodule({
+          name: 'classic-lua-module',
+          id: 'classic-lua-id',
+        }),
+        null,
+        2,
+      )}\n`,
+      'utf-8',
+    );
+
+    fs.mkdirSync(path.join(workDir, 'lua'), { recursive: true });
+
+    // Write classic .risulua with exact content including whitespace, comments, CBS placeholders
+    const luaContent = `-- Classic module risulua script
+-- Preserves exact bytes including whitespace and {{CBS}} placeholders
+
+function init()
+  local moduleName = "{{module}}"
+  print("Initializing " .. moduleName)
+  
+  --[[
+    Multi-line comment block
+    with {{variable}} placeholders
+  --]]
+  
+  return true
+end
+
+function process(input)
+  -- Process with tabs and spaces
+  local result = input * 2
+  return result
+end
+`;
+    // Classic mode uses target-name-based naming: lua/<sanitizedModuleName>.risulua
+    fs.writeFileSync(path.join(workDir, 'lua', 'classic-lua-module.risulua'), luaContent, 'utf-8');
+
+    const outPath = path.join(workDir, 'packed-module.json');
+    const exitCode = runPackWorkflow(['--in', workDir, '--out', outPath, '--format', 'json']);
+
+    expect(exitCode).toBe(0);
+    expect(fs.existsSync(outPath)).toBe(true);
+
+    const payload = JSON.parse(fs.readFileSync(outPath, 'utf-8')) as {
+      type: string;
+      module: {
+        trigger?: Array<{
+          comment?: string;
+          type?: string;
+          effect?: Array<{ type?: string; code?: string }>;
+        }>;
+      };
+    };
+
+    // Verify trigger array structure
+    expect(payload.type).toBe('risuModule');
+    expect(payload.module.trigger).toBeDefined();
+    expect(Array.isArray(payload.module.trigger)).toBe(true);
+    expect(payload.module.trigger!.length).toBe(1);
+
+    const trigger = payload.module.trigger![0];
+    expect(trigger.comment).toBe('Canonical Lua Trigger');
+    expect(trigger.type).toBe('manual');
+    expect(trigger.effect).toBeDefined();
+    expect(trigger.effect!.length).toBe(1);
+    expect(trigger.effect![0].type).toBe('triggerlua');
+
+    // CRITICAL: Verify exact byte-for-byte preservation of Lua content
+    expect(trigger.effect![0].code).toBe(luaContent);
+  });
+
+  it('risulua classic duplicate: throws LuaAdapterError when multiple .risulua files exist for module', () => {
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'module-risulua-classic-duplicate-'));
+    tempDirs.push(workDir);
+
+    fs.writeFileSync(
+      path.join(workDir, '.risumodule'),
+      `${JSON.stringify(
+        makeRisumodule({
+          name: 'duplicate-lua-module',
+          id: 'duplicate-lua-id',
+        }),
+        null,
+        2,
+      )}\n`,
+      'utf-8',
+    );
+
+    fs.mkdirSync(path.join(workDir, 'lua'), { recursive: true });
+
+    // Write TWO .risulua files - classic mode should reject this deterministically
+    fs.writeFileSync(path.join(workDir, 'lua', 'first_script.risulua'), 'function first() end', 'utf-8');
+    fs.writeFileSync(path.join(workDir, 'lua', 'second_script.risulua'), 'function second() end', 'utf-8');
+
+    const outPath = path.join(workDir, 'packed-module.json');
+    const exitCode = runPackWorkflow(['--in', workDir, '--out', outPath, '--format', 'json']);
+
+    // Should fail with exit code 1
+    expect(exitCode).toBe(1);
+    expect(fs.existsSync(outPath)).toBe(false);
+
+    // Verify the error is LuaAdapterError with duplicate sources message
+    expect(() => buildModuleFromCanonicalDirectory(workDir)).toThrow(/Duplicate .risulua sources.*multiple files found/);
+  });
+
+  it('risulua classic: preserves empty .risulua file content exactly', () => {
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'module-risulua-classic-empty-'));
+    tempDirs.push(workDir);
+
+    fs.writeFileSync(
+      path.join(workDir, '.risumodule'),
+      `${JSON.stringify(
+        makeRisumodule({
+          name: 'empty-lua-module',
+          id: 'empty-lua-id',
+        }),
+        null,
+        2,
+      )}\n`,
+      'utf-8',
+    );
+
+    fs.mkdirSync(path.join(workDir, 'lua'), { recursive: true });
+
+    // Write empty .risulua file
+    fs.writeFileSync(path.join(workDir, 'lua', 'empty-lua-module.risulua'), '', 'utf-8');
+
+    const outPath = path.join(workDir, 'packed-module.json');
+    const exitCode = runPackWorkflow(['--in', workDir, '--out', outPath, '--format', 'json']);
+
+    expect(exitCode).toBe(0);
+    expect(fs.existsSync(outPath)).toBe(true);
+
+    const payload = JSON.parse(fs.readFileSync(outPath, 'utf-8')) as {
+      type: string;
+      module: {
+        trigger?: Array<{
+          effect?: Array<{ code?: string }>;
+        }>;
+      };
+    };
+
+    // Verify empty content is preserved exactly
+    expect(payload.module.trigger![0].effect![0].code).toBe('');
+  });
+
+  it('risulua classic: preserves whitespace-only .risulua file content exactly', () => {
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'module-risulua-classic-whitespace-'));
+    tempDirs.push(workDir);
+
+    fs.writeFileSync(
+      path.join(workDir, '.risumodule'),
+      `${JSON.stringify(
+        makeRisumodule({
+          name: 'whitespace-lua-module',
+          id: 'whitespace-lua-id',
+        }),
+        null,
+        2,
+      )}\n`,
+      'utf-8',
+    );
+
+    fs.mkdirSync(path.join(workDir, 'lua'), { recursive: true });
+
+    // Write whitespace-only .risulua file
+    const whitespaceContent = '   \n\t\n  \n';
+    fs.writeFileSync(path.join(workDir, 'lua', 'whitespace-lua-module.risulua'), whitespaceContent, 'utf-8');
+
+    const outPath = path.join(workDir, 'packed-module.json');
+    const exitCode = runPackWorkflow(['--in', workDir, '--out', outPath, '--format', 'json']);
+
+    expect(exitCode).toBe(0);
+    expect(fs.existsSync(outPath)).toBe(true);
+
+    const payload = JSON.parse(fs.readFileSync(outPath, 'utf-8')) as {
+      type: string;
+      module: {
+        trigger?: Array<{
+          effect?: Array<{ code?: string }>;
+        }>;
+      };
+    };
+
+    // Verify whitespace content is preserved exactly
+    expect(payload.module.trigger![0].effect![0].code).toBe(whitespaceContent);
+  });
+
+  it('module pack risulua modular reads dist only', () => {
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'module-risulua-modular-dist-'));
+    tempDirs.push(workDir);
+
+    fs.writeFileSync(
+      path.join(workDir, '.risumodule'),
+      `${JSON.stringify(makeRisumodule({ name: 'modular-lua-module', id: 'modular-lua-id' }), null, 2)}\n`,
+      'utf-8',
+    );
+    fs.mkdirSync(path.join(workDir, 'lua', 'common'), { recursive: true });
+    fs.writeFileSync(path.join(workDir, 'lua', 'main.risulua'), [
+      'local helper = require("common.helper")',
+      'function onStart()',
+      '  return helper.ready()',
+      'end',
+    ].join('\n'), 'utf-8');
+    fs.writeFileSync(path.join(workDir, 'lua', 'common', 'helper.risulua'), [
+      'return {',
+      '  ready = function() return "dist-module" end',
+      '}',
+    ].join('\n'), 'utf-8');
+    fs.writeFileSync(path.join(workDir, 'lua', 'unused.risulua'), 'function sourceOnlyShouldNotLeak() end', 'utf-8');
+
+    const outPath = path.join(workDir, 'packed-module.json');
+    const exitCode = runPackWorkflow([
+      '--risulua-mode', 'modular',
+      '--in', workDir,
+      '--out', outPath,
+      '--format', 'json',
+    ]);
+
+    expect(exitCode).toBe(0);
+    const distContent = fs.readFileSync(path.join(workDir, 'dist', 'modular-lua-module.risulua'), 'utf-8');
+    const payload = JSON.parse(fs.readFileSync(outPath, 'utf-8')) as {
+      module: { trigger?: Array<{ effect?: Array<{ code?: string }> }> };
+    };
+    const packedLua = payload.module.trigger![0].effect![0].code!;
+
+    expect(packedLua).toBe(distContent);
+    expect(packedLua).toContain('local helper = __risulua_loaders["common.helper"]()');
+    expect(packedLua).toContain('ready = function() return "dist-module" end');
+    expect(packedLua).not.toContain('sourceOnlyShouldNotLeak');
+    expect(decodeRisuLuaRecoveryBlock(packedLua)).toBeNull();
+  });
+
+  it('module pack risulua modular embeds full-source recovery manifest when requested', () => {
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'module-risulua-modular-recovery-'));
+    tempDirs.push(workDir);
+
+    fs.writeFileSync(
+      path.join(workDir, '.risumodule'),
+      `${JSON.stringify(makeRisumodule({ name: 'recovery-lua-module', id: 'recovery-lua-id' }), null, 2)}\n`,
+      'utf-8',
+    );
+    fs.mkdirSync(path.join(workDir, 'lua', 'common'), { recursive: true });
+    fs.writeFileSync(path.join(workDir, 'lua', 'main.risulua'), [
+      'local helper = require("common.helper")',
+      'function onStart()',
+      '  return helper.ready()',
+      'end',
+    ].join('\n'), 'utf-8');
+    fs.writeFileSync(path.join(workDir, 'lua', 'common', 'helper.risulua'), [
+      'return {',
+      '  ready = function() return "recovery-module" end',
+      '}',
+    ].join('\n'), 'utf-8');
+
+    const outPath = path.join(workDir, 'packed-module.json');
+    const exitCode = runPackWorkflow([
+      '--risulua-mode', 'modular',
+      '--risulua-recovery', 'full-source',
+      '--in', workDir,
+      '--out', outPath,
+      '--format', 'json',
+    ]);
+
+    expect(exitCode).toBe(0);
+    const payload = JSON.parse(fs.readFileSync(outPath, 'utf-8')) as {
+      module: { trigger?: Array<{ effect?: Array<{ code?: string }> }> };
+    };
+    const packedLua = payload.module.trigger![0].effect![0].code!;
+    const decoded = decodeRisuLuaRecoveryBlock(packedLua);
+
+    expect(decoded).not.toBeNull();
+    expect(decoded!.manifest.files.map((file) => file.path)).toEqual(expect.arrayContaining([
+      'lua/main.risulua',
+      'lua/common/helper.risulua',
+    ]));
+  });
+
+  it('module pack risulua modular rejects invalid source', () => {
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'module-risulua-modular-invalid-'));
+    tempDirs.push(workDir);
+
+    fs.writeFileSync(
+      path.join(workDir, '.risumodule'),
+      `${JSON.stringify(makeRisumodule({ name: 'invalid-modular-module', id: 'invalid-modular-id' }), null, 2)}\n`,
+      'utf-8',
+    );
+    fs.mkdirSync(path.join(workDir, 'lua'), { recursive: true });
+    fs.writeFileSync(path.join(workDir, 'lua', 'main.risulua'), [
+      'local moduleName = "common.helper"',
+      'local helper = require(moduleName)',
+      'return helper',
+    ].join('\n'), 'utf-8');
+
+    const outPath = path.join(workDir, 'packed-module.json');
+    const exitCode = runPackWorkflow([
+      '--risulua-mode', 'modular',
+      '--in', workDir,
+      '--out', outPath,
+      '--format', 'json',
+    ]);
+
+    expect(exitCode).toBe(1);
+    expect(fs.existsSync(outPath)).toBe(false);
+    expect(() => buildModuleFromCanonicalDirectory(workDir, { risuluaMode: 'modular' })).toThrow(/Dynamic require/);
   });
 });

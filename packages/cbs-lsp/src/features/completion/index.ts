@@ -6,3 +6,4 @@ export * from './cheap-root-completion';
 export * from './cheap-macro-argument-completion';
 export * from './builtin-completion';
 export * from './workspace-variable-completion';
+export * from './risulua-module-completion';

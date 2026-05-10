@@ -1,0 +1,12 @@
+-- [BUNDLE] 00_state.lua
+local shared = "visible across concatenated sections"
+
+-- [BUNDLE] 20_feature.lua
+local function readShared()
+  return shared
+end
+
+-- [BUNDLE] 80_runtime.lua
+function onStart()
+  setChatVar("shared", readShared())
+end

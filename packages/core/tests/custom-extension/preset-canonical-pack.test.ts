@@ -179,4 +179,58 @@ describe('preset canonical pack workflow', () => {
       },
     ]);
   });
+
+  it('returns 1 and prints error for invalid --risulua-recovery value at router level', () => {
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'preset-pack-invalid-recovery-'));
+    tempDirs.push(workDir);
+
+    fs.mkdirSync(path.join(workDir, 'prompts'), { recursive: true });
+    fs.writeFileSync(
+      path.join(workDir, 'metadata.json'),
+      `${JSON.stringify({ name: 'Test', preset_type: 'risuai' }, null, 2)}\n`,
+      'utf-8',
+    );
+    fs.writeFileSync(path.join(workDir, 'prompts', 'main.txt'), 'TEST', 'utf-8');
+
+    const outPath = path.join(workDir, 'packed-preset.json');
+    // Use an invalid recovery value that should be caught at router level
+    const code = runPackWorkflow([
+      '--risulua-mode', 'modular',
+      '--risulua-recovery', 'invalid-value',
+      '--in', workDir,
+      '--format', 'preset',
+      '--out', outPath,
+    ]);
+
+    expect(code).toBe(1);
+    // Output file should not be created due to early exit
+    expect(fs.existsSync(outPath)).toBe(false);
+  });
+
+  it('returns 1 and prints error for missing --risulua-recovery value at router level', () => {
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'preset-pack-missing-recovery-'));
+    tempDirs.push(workDir);
+
+    fs.mkdirSync(path.join(workDir, 'prompts'), { recursive: true });
+    fs.writeFileSync(
+      path.join(workDir, 'metadata.json'),
+      `${JSON.stringify({ name: 'Test', preset_type: 'risuai' }, null, 2)}\n`,
+      'utf-8',
+    );
+    fs.writeFileSync(path.join(workDir, 'prompts', 'main.txt'), 'TEST', 'utf-8');
+
+    const outPath = path.join(workDir, 'packed-preset.json');
+    // Missing value after --risulua-recovery flag
+    const code = runPackWorkflow([
+      '--risulua-mode', 'modular',
+      '--risulua-recovery',
+      '--in', workDir,
+      '--format', 'preset',
+      '--out', outPath,
+    ]);
+
+    expect(code).toBe(1);
+    // Output file should not be created due to early exit
+    expect(fs.existsSync(outPath)).toBe(false);
+  });
 });

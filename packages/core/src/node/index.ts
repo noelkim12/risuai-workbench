@@ -54,6 +54,20 @@ import {
   type RisumoduleManifest,
   type RisumoduleSourceFormat,
 } from '../cli/shared/risumodule';
+import {
+  collectRisuLuaModuleGraphDiagnostics,
+  extractRisuLuaStaticRequireReferences,
+  listRisuLuaSourceModuleIds,
+  listRisuLuaSourceModules,
+  moduleIdFromRisuLuaSourcePath,
+  resolveRisuLuaModulePath,
+  validateRisuLuaModuleId,
+  type CollectRisuLuaModuleGraphDiagnosticsOptions,
+  type RisuLuaGraphDiagnostic,
+  type RisuLuaSourceModuleFile,
+  type RisuLuaSourceRange,
+  type RisuLuaStaticRequireReference,
+} from '../cli/shared/lua-bundler/risulua-modular-resolver';
 
 const parsePngChunks = parsePngTextChunks;
 
@@ -108,4 +122,16 @@ export {
   parseRisumoduleManifest,
   type RisumoduleManifest,
   type RisumoduleSourceFormat,
+  collectRisuLuaModuleGraphDiagnostics,
+  extractRisuLuaStaticRequireReferences,
+  listRisuLuaSourceModuleIds,
+  listRisuLuaSourceModules,
+  moduleIdFromRisuLuaSourcePath,
+  resolveRisuLuaModulePath,
+  validateRisuLuaModuleId,
+  type CollectRisuLuaModuleGraphDiagnosticsOptions,
+  type RisuLuaGraphDiagnostic,
+  type RisuLuaSourceModuleFile,
+  type RisuLuaSourceRange,
+  type RisuLuaStaticRequireReference,
 };
