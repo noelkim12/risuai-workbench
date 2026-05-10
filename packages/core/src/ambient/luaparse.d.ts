@@ -1,10 +1,12 @@
 declare module 'luaparse' {
-  export interface ParseOptions {
+export interface ParseOptions {
     comments?: boolean;
     locations?: boolean;
     ranges?: boolean;
     scope?: boolean;
     luaVersion?: string;
+    extendedIdentifiers?: boolean;
+    encodingMode?: 'none' | 'x-user-defined' | 'pseudo-latin1';
   }
 
   export interface Chunk {

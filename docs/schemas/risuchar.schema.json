@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://risuai-workbench.dev/schemas/risuchar.schema.json",
+  "title": "Risu Character Manifest",
+  "description": "Root marker and metadata owner for RisuAI Workbench character workspaces",
+  "type": "object",
+  "required": [
+    "kind",
+    "schemaVersion",
+    "id",
+    "name",
+    "creator",
+    "characterVersion",
+    "createdAt",
+    "modifiedAt",
+    "sourceFormat",
+    "flags"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Schema URL reference"
+    },
+    "kind": {
+      "type": "string",
+      "const": "risu.character",
+      "description": "Marker kind identifier"
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Schema version number"
+    },
+    "id": {
+      "type": "string",
+      "description": "Unique character identifier"
+    },
+    "name": {
+      "type": "string",
+      "description": "Character display name"
+    },
+    "creator": {
+      "type": "string",
+      "description": "Character creator name"
+    },
+    "characterVersion": {
+      "type": "string",
+      "description": "Character version string"
+    },
+    "createdAt": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "Character creation timestamp"
+    },
+    "modifiedAt": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "Character last modification timestamp"
+    },
+    "sourceFormat": {
+      "type": "string",
+      "enum": ["charx", "png", "json", "scaffold"],
+      "description": "Original source format of the character"
+    },
+    "image": {
+      "type": ["string", "null"],
+      "description": "Workspace-relative path to the selected character thumbnail image."
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Canonical character tag list mapped to CCv3 data.tags."
+    },
+    "flags": {
+      "type": "object",
+      "required": ["utilityBot", "lowLevelAccess"],
+      "properties": {
+        "utilityBot": {
+          "type": "boolean",
+          "description": "Whether this character is a utility bot"
+        },
+        "lowLevelAccess": {
+          "type": "boolean",
+          "description": "Whether this character has low-level Lua access"
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -5,7 +5,12 @@ import type {
   LuaWasmAnalyzeResult,
   LuaWasmApiName,
   LuaWasmDiagnostic,
+  LuaWasmMemberBridgeAssignment,
+  LuaWasmModuleMemberDefinition,
+  LuaWasmModuleMemberDefinitionKind,
   LuaWasmQuoteKind,
+  LuaWasmRequireAlias,
+  LuaWasmSourceComment,
   LuaWasmStateAccess,
   LuaWasmStringLiteral,
 } from './lua-wasm-types';
@@ -83,6 +88,18 @@ export function normalizeLuaWasmResult(value: unknown): LuaWasmAnalyzeResult {
     'stringLiterals',
   );
   const stateAccesses = readArray(value.stateAccesses, normalizeStateAccess, 'stateAccesses');
+  const requireAliases = readArray(value.requireAliases, normalizeRequireAlias, 'requireAliases');
+  const memberBridgeAssignments = readArray(
+    value.memberBridgeAssignments,
+    normalizeMemberBridgeAssignment,
+    'memberBridgeAssignments',
+  );
+  const moduleMemberDefinitions = readArray(
+    value.moduleMemberDefinitions,
+    normalizeModuleMemberDefinition,
+    'moduleMemberDefinitions',
+  );
+  const sourceComments = readArray(value.sourceComments, normalizeSourceComment, 'sourceComments');
   const diagnostics = readArray(value.diagnostics, normalizeDiagnostic, 'diagnostics');
 
   return {
@@ -94,6 +111,10 @@ export function normalizeLuaWasmResult(value: unknown): LuaWasmAnalyzeResult {
     totalLines: readNumber(value.totalLines, 'totalLines'),
     stringLiterals,
     stateAccesses,
+    requireAliases,
+    memberBridgeAssignments,
+    moduleMemberDefinitions,
+    sourceComments,
     diagnostics,
     error: value.error === null ? null : readString(value.error, 'error'),
   };
@@ -160,6 +181,102 @@ function normalizeDiagnostic(value: unknown): LuaWasmDiagnostic {
   };
 }
 
+function normalizeRequireAlias(value: unknown): LuaWasmRequireAlias {
+  if (!isRecord(value)) {
+    throw new Error('Lua WASM analyzer returned malformed require alias');
+  }
+  return {
+    aliasName: readString(value.aliasName, 'requireAliases.aliasName'),
+    moduleName: readString(value.moduleName, 'requireAliases.moduleName'),
+    aliasStartUtf16: readNumber(value.aliasStartUtf16, 'requireAliases.aliasStartUtf16'),
+    aliasEndUtf16: readNumber(value.aliasEndUtf16, 'requireAliases.aliasEndUtf16'),
+    moduleStartUtf16: readNumber(value.moduleStartUtf16, 'requireAliases.moduleStartUtf16'),
+    moduleEndUtf16: readNumber(value.moduleEndUtf16, 'requireAliases.moduleEndUtf16'),
+    statementStartUtf16: readNumber(value.statementStartUtf16, 'requireAliases.statementStartUtf16'),
+    statementEndUtf16: readNumber(value.statementEndUtf16, 'requireAliases.statementEndUtf16'),
+    line: readNumber(value.line, 'requireAliases.line'),
+  };
+}
+
+function normalizeMemberBridgeAssignment(value: unknown): LuaWasmMemberBridgeAssignment {
+  if (!isRecord(value)) {
+    throw new Error('Lua WASM analyzer returned malformed member bridge assignment');
+  }
+  return {
+    publicName: readString(value.publicName, 'memberBridgeAssignments.publicName'),
+    aliasName: readString(value.aliasName, 'memberBridgeAssignments.aliasName'),
+    memberName: readString(value.memberName, 'memberBridgeAssignments.memberName'),
+    publicStartUtf16: readNumber(value.publicStartUtf16, 'memberBridgeAssignments.publicStartUtf16'),
+    publicEndUtf16: readNumber(value.publicEndUtf16, 'memberBridgeAssignments.publicEndUtf16'),
+    aliasStartUtf16: readNumber(value.aliasStartUtf16, 'memberBridgeAssignments.aliasStartUtf16'),
+    aliasEndUtf16: readNumber(value.aliasEndUtf16, 'memberBridgeAssignments.aliasEndUtf16'),
+    memberStartUtf16: readNumber(value.memberStartUtf16, 'memberBridgeAssignments.memberStartUtf16'),
+    memberEndUtf16: readNumber(value.memberEndUtf16, 'memberBridgeAssignments.memberEndUtf16'),
+    statementStartUtf16: readNumber(
+      value.statementStartUtf16,
+      'memberBridgeAssignments.statementStartUtf16',
+    ),
+    statementEndUtf16: readNumber(
+      value.statementEndUtf16,
+      'memberBridgeAssignments.statementEndUtf16',
+    ),
+    line: readNumber(value.line, 'memberBridgeAssignments.line'),
+  };
+}
+
+function normalizeModuleMemberDefinition(value: unknown): LuaWasmModuleMemberDefinition {
+  if (!isRecord(value)) {
+    throw new Error('Lua WASM analyzer returned malformed module member definition');
+  }
+  const definitionKind = readString(
+    value.definitionKind,
+    'moduleMemberDefinitions.definitionKind',
+  );
+  if (!isLuaWasmModuleMemberDefinitionKind(definitionKind)) {
+    throw new Error('Lua WASM analyzer returned unsupported module member definition kind');
+  }
+  return {
+    exportName: readString(value.exportName, 'moduleMemberDefinitions.exportName'),
+    containerName:
+      value.containerName === null
+        ? null
+        : readString(value.containerName, 'moduleMemberDefinitions.containerName'),
+    definitionKind,
+    nameStartUtf16: readNumber(value.nameStartUtf16, 'moduleMemberDefinitions.nameStartUtf16'),
+    nameEndUtf16: readNumber(value.nameEndUtf16, 'moduleMemberDefinitions.nameEndUtf16'),
+    definitionStartUtf16: readNumber(
+      value.definitionStartUtf16,
+      'moduleMemberDefinitions.definitionStartUtf16',
+    ),
+    definitionEndUtf16: readNumber(
+      value.definitionEndUtf16,
+      'moduleMemberDefinitions.definitionEndUtf16',
+    ),
+    line: readNumber(value.line, 'moduleMemberDefinitions.line'),
+  };
+}
+
+function normalizeSourceComment(value: unknown): LuaWasmSourceComment {
+  if (!isRecord(value)) {
+    throw new Error('Lua WASM analyzer returned malformed source comment');
+  }
+  return {
+    sourcePath: readString(value.sourcePath, 'sourceComments.sourcePath'),
+    sourceLine: readNumber(value.sourceLine, 'sourceComments.sourceLine'),
+    sourceCharacter: readNumber(value.sourceCharacter, 'sourceComments.sourceCharacter'),
+    commentStartUtf16: readNumber(value.commentStartUtf16, 'sourceComments.commentStartUtf16'),
+    commentEndUtf16: readNumber(value.commentEndUtf16, 'sourceComments.commentEndUtf16'),
+    appliesToStatementStartUtf16:
+      value.appliesToStatementStartUtf16 === null
+        ? null
+        : readNumber(
+            value.appliesToStatementStartUtf16,
+            'sourceComments.appliesToStatementStartUtf16',
+          ),
+    line: readNumber(value.line, 'sourceComments.line'),
+  };
+}
+
 function readArray<T>(
   value: unknown,
   normalizeItem: (item: unknown) => T,
@@ -207,6 +324,12 @@ function isLuaWasmApiName(value: string): value is LuaWasmApiName {
 
 function isLuaWasmAccessDirection(value: string): value is LuaWasmAccessDirection {
   return value === 'read' || value === 'write';
+}
+
+function isLuaWasmModuleMemberDefinitionKind(
+  value: string,
+): value is LuaWasmModuleMemberDefinitionKind {
+  return value === 'table-method-function' || value === 'table-field-function';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

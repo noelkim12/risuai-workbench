@@ -44,6 +44,10 @@ export async function analyzeLuaWithBackend(
       wasmResult: await analyzeWithWasm(request.source, {
         includeStringLiterals: true,
         includeStateAccesses: true,
+        includeRequireAliases: true,
+        includeMemberBridgeAssignments: true,
+        includeModuleMemberDefinitions: true,
+        includeSourceComments: true,
       }),
     };
   } catch {

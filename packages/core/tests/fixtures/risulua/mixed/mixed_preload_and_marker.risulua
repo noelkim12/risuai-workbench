@@ -1,0 +1,12 @@
+-- [BUNDLE] 00_boot.lua
+local booted = true
+
+package.preload["./panel"] = function()
+  return { booted = booted }
+end
+
+-- [BUNDLE] 90_runtime.lua
+local panel = require("./panel")
+function onStart()
+  setChatVar("panel_booted", tostring(panel.booted))
+end

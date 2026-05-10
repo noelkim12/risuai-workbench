@@ -1,0 +1,2 @@
+-- This fixture intentionally contains only comments.
+-- It verifies that comment-only sources keep a stable line count.

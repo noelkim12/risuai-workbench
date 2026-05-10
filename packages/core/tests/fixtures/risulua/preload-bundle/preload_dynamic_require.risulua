@@ -1,0 +1,11 @@
+package.preload["./feature"] = function()
+  local M = {}
+  function M.run(name)
+    local moduleName = "./" .. name
+    return require(moduleName)
+  end
+  return M
+end
+
+local feature = require("./feature")
+return feature

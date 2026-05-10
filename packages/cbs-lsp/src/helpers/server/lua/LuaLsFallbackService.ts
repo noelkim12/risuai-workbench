@@ -31,9 +31,23 @@ import {
 } from 'vscode-languageserver/node';
 
 import type { HoverProvider } from '../../../features/hover';
-import type { DefinitionProvider, ReferencesProvider, RenameProvider } from '../../../features/navigation';
+import type {
+  DefinitionProvider,
+  ReferencesProvider,
+  RenameProvider,
+} from '../../../features/navigation';
+import {
+  createRisuLuaBridgeDefinition,
+  createRisuLuaBridgeHover,
+} from '../../../features/navigation/risulua-bridge-index';
+import {
+  createRisuLuaSourceCommentDefinition,
+  createRisuLuaSourceCommentHover,
+  hasRisuLuaSourceCommentAtPosition,
+} from '../../../features/navigation/risulua-source-definition';
 import type { SignatureHelpProvider } from '../../../features/presentation';
 import type { DocumentHighlightProvider, DocumentSymbolProvider } from '../../../features/symbols';
+import { buildRisuLuaModuleIdCompletions } from '../../../features/completion/risulua-module-completion';
 import { isLuaLsSymbolInformation } from '../../../providers/lua/lualsProxy';
 import {
   buildLuaStateHoverOverlayMarkdown,
@@ -71,9 +85,14 @@ export interface LuaLsFallbackServiceContext {
   documentSymbolProvider: DocumentSymbolProvider;
   luaLsProxy: ServerFeatureRegistrarContext['luaLsProxy'];
   luaLsRequestGate: LuaLsRequestGate;
-  provideCbsCompletionItems: (params: CompletionParams, cancellationToken?: CancellationToken) => CompletionItem[];
+  provideCbsCompletionItems: (
+    params: CompletionParams,
+    cancellationToken?: CancellationToken,
+  ) => CompletionItem[];
   resolveRequest: ServerFeatureRegistrarContext['providers']['resolveRequest'];
-  resolveWorkspaceRequest: (uri: string) => ReturnType<ServerFeatureRegistrarContext['resolveWorkspaceRequest']>;
+  resolveWorkspaceRequest: (
+    uri: string,
+  ) => ReturnType<ServerFeatureRegistrarContext['resolveWorkspaceRequest']>;
   resolveWorkspaceVariableFlowContext: (uri: string) => ServerWorkspaceVariableFlowContext | null;
   signatureHelpProvider: SignatureHelpProvider;
 }
@@ -233,7 +252,10 @@ export class LuaLsFallbackService {
     route: LuaLsRoutingContext,
     cancellationToken?: CancellationToken,
   ): Promise<Location[]> {
-    const cbsReferences = this.createReferencesProvider(params.textDocument.uri).provide(params, cancellationToken);
+    const cbsReferences = this.createReferencesProvider(params.textDocument.uri).provide(
+      params,
+      cancellationToken,
+    );
     if (cbsReferences.length > 0 && route.isInsideCbsMacro(params.position)) {
       return cbsReferences;
     }
@@ -260,7 +282,34 @@ export class LuaLsFallbackService {
     route: LuaLsRoutingContext,
     cancellationToken?: CancellationToken,
   ): Promise<DefinitionResponse | null> {
-    const cbsDefinition = this.createDefinitionProvider(params.textDocument.uri).provide(params, cancellationToken);
+    // Fast-path: source comment definition before any heavy CBS/LuaLS work
+    // This ensures VS Code Ctrl-hover underline resolves quickly for ---@source comments
+    if (route.request) {
+      const sourceCommentDefinition = createRisuLuaSourceCommentDefinition(
+        route.request.text,
+        params.position,
+        params.textDocument.uri,
+      );
+      if (sourceCommentDefinition) {
+        return sourceCommentDefinition;
+      }
+      if (hasRisuLuaSourceCommentAtPosition(route.request.text, params.position)) {
+        return null;
+      }
+      const bridgeDefinition = createRisuLuaBridgeDefinition(
+        route.request.text,
+        params.position,
+        params.textDocument.uri,
+      );
+      if (bridgeDefinition) {
+        return bridgeDefinition;
+      }
+    }
+
+    const cbsDefinition = this.createDefinitionProvider(params.textDocument.uri).provide(
+      params,
+      cancellationToken,
+    );
 
     if (route.isInsideCbsMacro(params.position)) {
       return cbsDefinition;
@@ -292,7 +341,36 @@ export class LuaLsFallbackService {
     route: LuaLsRoutingContext,
     cancellationToken?: CancellationToken,
   ): Promise<Hover | null> {
-    const cbsHover = this.createHoverProvider(params.textDocument.uri).provide(params, cancellationToken);
+    // Fast-path: source comment hover before any heavy CBS/LuaLS work.
+    // Ctrl-hover asks hover and definition independently, so definition-only bypass still leaves the UI blocked on LuaLS.
+    if (route.request) {
+      const sourceCommentHover = createRisuLuaSourceCommentHover(
+        route.request.text,
+        params.position,
+        params.textDocument.uri,
+      );
+      if (sourceCommentHover) {
+        traceFeatureResult(this.connection, 'hover', 'end', {
+          uri: params.textDocument.uri,
+          hasResult: true,
+          source: 'risuluaSourceComment',
+        });
+        return sourceCommentHover;
+      }
+      const bridgeHover = createRisuLuaBridgeHover(
+        route.request.text,
+        params.position,
+        params.textDocument.uri,
+      );
+      if (bridgeHover) {
+        return bridgeHover;
+      }
+    }
+
+    const cbsHover = this.createHoverProvider(params.textDocument.uri).provide(
+      params,
+      cancellationToken,
+    );
 
     if (route.isInsideCbsMacro(params.position)) {
       traceFeatureResult(this.connection, 'hover', 'end', {
@@ -326,9 +404,9 @@ export class LuaLsFallbackService {
     });
 
     const workspaceRequest = route.request;
-    const workspaceVariableFlowService = this.resolveWorkspaceVariableFlowContext(
-      params.textDocument.uri,
-    )?.variableFlowService ?? null;
+    const workspaceVariableFlowService =
+      this.resolveWorkspaceVariableFlowContext(params.textDocument.uri)?.variableFlowService ??
+      null;
 
     const result = await this.luaLsProxy.provideHover(params, cancellationToken);
     const overlayMarkdown = buildLuaStateHoverOverlayMarkdown({
@@ -410,19 +488,26 @@ export class LuaLsFallbackService {
     const workspaceRequest = route.skipLuaLsProxy
       ? null
       : this.resolveWorkspaceRequest(params.textDocument.uri);
-    const workspaceVariableFlowService = this.resolveWorkspaceVariableFlowContext(
-      params.textDocument.uri,
-    )?.variableFlowService ?? null;
+    const workspaceVariableFlowService =
+      this.resolveWorkspaceVariableFlowContext(params.textDocument.uri)?.variableFlowService ??
+      null;
     const stateNameOverlay = buildLuaStateNameOverlayCompletions({
       params,
       request: workspaceRequest,
       variableFlowService: workspaceVariableFlowService,
     });
+    const moduleIdOverlay = buildRisuLuaModuleIdCompletions({
+      params,
+      request: route.request,
+    });
 
     return mergeLuaCompletionResponse(
       mergeLuaCompletionResponse(
-        mergeLuaCompletionResponse(luaCompletion, runtimeCompletionOverlay),
-        stateNameOverlay,
+        mergeLuaCompletionResponse(
+          mergeLuaCompletionResponse(luaCompletion, runtimeCompletionOverlay),
+          stateNameOverlay,
+        ),
+        moduleIdOverlay,
       ),
       cbsCompletion,
     );
@@ -442,7 +527,10 @@ export class LuaLsFallbackService {
     route: LuaLsRoutingContext,
     cancellationToken?: CancellationToken,
   ): Promise<LSPRange | { placeholder: string; range: LSPRange } | null> {
-    const prepareResult = this.createRenameProvider(params.textDocument.uri).prepareRename(params, cancellationToken);
+    const prepareResult = this.createRenameProvider(params.textDocument.uri).prepareRename(
+      params,
+      cancellationToken,
+    );
     if (prepareResult.canRename && prepareResult.hostRange) {
       return prepareResult.hostRange;
     }

@@ -26,6 +26,58 @@ describe('lua-wasm-adapter', () => {
         },
       ],
       stateAccesses: [],
+      requireAliases: [
+        {
+          aliasName: '__button_actions',
+          moduleName: 'button_actions.actions',
+          aliasStartUtf16: 6,
+          aliasEndUtf16: 22,
+          moduleStartUtf16: 34,
+          moduleEndUtf16: 56,
+          statementStartUtf16: 0,
+          statementEndUtf16: 58,
+          line: 1,
+        },
+      ],
+      memberBridgeAssignments: [
+        {
+          publicName: 'setHeroineClothes',
+          aliasName: '__button_actions',
+          memberName: 'setHeroineClothes',
+          publicStartUtf16: 59,
+          publicEndUtf16: 77,
+          aliasStartUtf16: 80,
+          aliasEndUtf16: 96,
+          memberStartUtf16: 97,
+          memberEndUtf16: 115,
+          statementStartUtf16: 59,
+          statementEndUtf16: 115,
+          line: 3,
+        },
+      ],
+      moduleMemberDefinitions: [
+        {
+          exportName: 'setHeroineClothes',
+          containerName: 'M',
+          definitionKind: 'table-method-function',
+          nameStartUtf16: 10,
+          nameEndUtf16: 28,
+          definitionStartUtf16: 0,
+          definitionEndUtf16: 40,
+          line: 1,
+        },
+      ],
+      sourceComments: [
+        {
+          sourcePath: 'regex/Heroine_옷_설정.risuregex',
+          sourceLine: 11,
+          sourceCharacter: 0,
+          commentStartUtf16: 0,
+          commentEndUtf16: 44,
+          appliesToStatementStartUtf16: 45,
+          line: 2,
+        },
+      ],
       diagnostics: [],
       error: null,
     });
@@ -33,6 +85,10 @@ describe('lua-wasm-adapter', () => {
     expect(normalized.ok).toBe(true);
     expect(normalized.stringLiterals[0]?.contentStartUtf16).toBe(11);
     expect(normalized.stringLiterals[0]?.hasCbsMarker).toBe(true);
+    expect(normalized.requireAliases[0]?.moduleName).toBe('button_actions.actions');
+    expect(normalized.memberBridgeAssignments[0]?.publicName).toBe('setHeroineClothes');
+    expect(normalized.moduleMemberDefinitions[0]?.definitionKind).toBe('table-method-function');
+    expect(normalized.sourceComments[0]?.sourcePath).toBe('regex/Heroine_옷_설정.risuregex');
   });
 
   it('rejects unsupported parser/version and malformed arrays', () => {
@@ -43,6 +99,10 @@ describe('lua-wasm-adapter', () => {
         version: 1,
         stringLiterals: [],
         stateAccesses: [],
+        requireAliases: [],
+        memberBridgeAssignments: [],
+        moduleMemberDefinitions: [],
+        sourceComments: [],
         diagnostics: [],
       }),
     ).toThrow(/unsupported result version/);
@@ -57,6 +117,10 @@ describe('lua-wasm-adapter', () => {
         totalLines: 1,
         stringLiterals: {},
         stateAccesses: [],
+        requireAliases: [],
+        memberBridgeAssignments: [],
+        moduleMemberDefinitions: [],
+        sourceComments: [],
         diagnostics: [],
         error: null,
       }),

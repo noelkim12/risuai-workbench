@@ -88,6 +88,11 @@ interface BuiltRisuLuaStubsModule {
   ) => string[] | Record<string, boolean>;
 }
 
+interface BuiltRisuLuaSourceLinksModule {
+  createRisuLuaSourceDocumentLinks: (document: TestTextDocument) => TestDocumentLink[];
+  isRisuLuaSourceLinkDocument: (document: Pick<TestTextDocument, 'fileName' | 'languageId' | 'uri'>) => boolean;
+}
+
 interface BuiltCharacterImageModule {
   RISU_CHARACTER_SELECT_IMAGE_COMMAND: string;
   getCharacterImageAssetPath: (fileName: string) => string;
@@ -321,7 +326,10 @@ interface TestVscodeModule {
   commands?: {
     executeCommand: (command: string, uri: TestUri) => Promise<void>;
   };
+  DocumentLink?: new (range: TestRange, target: TestUri) => TestDocumentLink;
   FileType: { Directory: 2; File: 1 };
+  Position?: new (line: number, character: number) => TestPosition;
+  Range?: new (start: TestPosition, end: TestPosition) => TestRange;
   ViewColumn?: { One: 1 };
   Uri: {
     file: (fsPath: string) => TestUri;
@@ -356,13 +364,41 @@ interface TestVscodeModule {
   };
 }
 
-class TestUri {
-  readonly scheme = 'file';
+interface TestTextLine {
+  text: string;
+}
 
-  constructor(readonly fsPath: string) {}
+interface TestTextDocument {
+  fileName: string;
+  languageId: string;
+  lineAt: (line: number) => TestTextLine;
+  lineCount: number;
+  uri: TestUri;
+}
+
+class TestPosition {
+  constructor(readonly line: number, readonly character: number) {}
+}
+
+class TestRange {
+  constructor(readonly start: TestPosition, readonly end: TestPosition) {}
+}
+
+class TestDocumentLink {
+  tooltip?: string;
+
+  constructor(readonly range: TestRange, readonly target: TestUri) {}
+}
+
+class TestUri {
+  readonly scheme: string;
+
+  constructor(readonly fsPath: string, scheme: string = 'file', private readonly rawString?: string) {
+    this.scheme = scheme;
+  }
 
   toString(): string {
-    return `file://${this.fsPath}`;
+    return this.rawString ?? `file://${this.fsPath}`;
   }
 }
 
@@ -512,6 +548,40 @@ function loadBuiltRisuLuaStubsModule(): BuiltRisuLuaStubsModule {
 }
 
 /**
+ * loadBuiltRisuLuaSourceLinksModule 함수.
+ * vscode 모듈을 source-link 전용 stub으로 대체한 뒤 DocumentLink helper를 불러옴.
+ *
+ * @param vscodeStub - DocumentLink helper가 사용할 최소 VS Code API stub
+ * @returns built RisuLua source-link helper exports
+ */
+function loadBuiltRisuLuaSourceLinksModule(vscodeStub: TestVscodeModule): BuiltRisuLuaSourceLinksModule {
+  const nodeModule = Module as unknown as {
+    _load: (request: string, parent: NodeJS.Module | null, isMain: boolean) => unknown;
+  };
+  const originalLoad = nodeModule._load;
+  const modulePaths = [
+    path.join(packageRoot, 'dist', 'lsp', 'risuLuaSourceLinks.js'),
+    path.join(packageRoot, 'dist', 'lsp', 'cbsCommands.js'),
+  ];
+
+  for (const modulePath of modulePaths) {
+    assert.ok(existsSync(modulePath), `Built source link dependency not found: ${modulePath}`);
+    delete localRequire.cache[localRequire.resolve(modulePath)];
+  }
+
+  nodeModule._load = (request, parent, isMain) => {
+    if (request === 'vscode') return vscodeStub;
+    return originalLoad(request, parent, isMain);
+  };
+
+  try {
+    return localRequire(modulePaths[0]) as BuiltRisuLuaSourceLinksModule;
+  } finally {
+    nodeModule._load = originalLoad;
+  }
+}
+
+/**
  * loadBuiltCharacterImageModule 함수.
  * build 산출물에서 character thumbnail 선택 helper를 불러옴.
  *
@@ -602,6 +672,44 @@ function createMarkerEditorImageVscodeStub(bytesByPath: Record<string, Uint8Arra
   };
 
   return { directories, files, vscodeStub };
+}
+
+/**
+ * createRisuLuaSourceLinksVscodeStub 함수.
+ * RisuLua source DocumentLink helper boundary test용 최소 VS Code API stub을 만듦.
+ *
+ * @param workspaceRootPath - 상대 source path를 resolve할 workspace root
+ * @returns source-link helper가 import할 최소 vscode stub
+ */
+function createRisuLuaSourceLinksVscodeStub(workspaceRootPath: string): TestVscodeModule {
+  return {
+    DocumentLink: TestDocumentLink,
+    FileType: { File: 1, Directory: 2 },
+    Position: TestPosition,
+    Range: TestRange,
+    Uri: {
+      file: (fsPath: string) => new TestUri(path.normalize(fsPath)),
+      joinPath: (base: TestUri, ...paths: string[]) => new TestUri(path.join(base.fsPath, ...paths)),
+      parse: (value: string) => {
+        const scheme = value.slice(0, Math.max(0, value.indexOf(':')));
+        return new TestUri(value, scheme, value);
+      },
+    },
+    workspace: {
+      fs: {
+        readDirectory: async () => [],
+      },
+      getWorkspaceFolder: (uri: TestUri) => {
+        const normalizedDocumentPath = path.normalize(uri.fsPath);
+        const normalizedWorkspaceRoot = path.normalize(workspaceRootPath);
+        if (!normalizedDocumentPath.startsWith(normalizedWorkspaceRoot)) {
+          return undefined;
+        }
+
+        return { name: path.basename(normalizedWorkspaceRoot), uri: new TestUri(normalizedWorkspaceRoot) };
+      },
+    },
+  };
 }
 
 /**
@@ -1392,6 +1500,64 @@ test('associates .risulua with lua by default so native LuaLS can attach', () =>
   }
 });
 
+test('creates immediate command document links for generated risulua source comments', () => {
+  const workspaceRoot = path.join(packageRoot, 'fixtures', 'source-links');
+  const documentPath = path.join(workspaceRoot, 'lua', 'generated.risulua');
+  const vscodeStub = createRisuLuaSourceLinksVscodeStub(workspaceRoot);
+  const sourceLinks = loadBuiltRisuLuaSourceLinksModule(vscodeStub);
+  const lines = [
+    'local value = 1',
+    '---@source src/original.lua:42:7',
+    '---@source :0:0',
+  ];
+  const document: TestTextDocument = {
+    fileName: documentPath,
+    languageId: 'lua',
+    lineAt: (line) => ({ text: lines[line] ?? '' }),
+    lineCount: lines.length,
+    uri: new TestUri(documentPath),
+  };
+
+  assert.equal(sourceLinks.isRisuLuaSourceLinkDocument(document), true);
+
+  const links = sourceLinks.createRisuLuaSourceDocumentLinks(document);
+
+  assert.equal(links.length, 1);
+  assert.equal(links[0]?.range.start.line, 1);
+  assert.equal(links[0]?.range.start.character, 11);
+  assert.equal(links[0]?.range.end.character, 27);
+  assert.equal(links[0]?.tooltip, 'Open original source: src/original.lua:42:7');
+
+  const target = links[0]?.target.toString() ?? '';
+  assert.match(target, /^command:risuWorkbench\.cbs\.openOccurrence\?/);
+  const encodedArgs = target.slice(target.indexOf('?') + 1);
+  const args = JSON.parse(decodeURIComponent(encodedArgs)) as Array<{
+    range?: {
+      end?: { character?: number; line?: number };
+      start?: { character?: number; line?: number };
+    };
+    uri?: string;
+  }>;
+  assert.deepEqual(args, [
+    {
+      uri: new TestUri(path.join(workspaceRoot, 'src', 'original.lua')).toString(),
+      range: {
+        start: { line: 41, character: 7 },
+        end: { line: 41, character: 7 },
+      },
+    },
+  ]);
+
+  assert.deepEqual(
+    sourceLinks.createRisuLuaSourceDocumentLinks({
+      ...document,
+      fileName: path.join(workspaceRoot, 'lua', 'generated.lua'),
+      uri: new TestUri(path.join(workspaceRoot, 'lua', 'generated.lua')),
+    }),
+    [],
+  );
+});
+
 test('contributes CBS TextMate grammars for every CBS-bearing language', () => {
   const packageJson = readPackageJson();
   const grammars = packageJson.contributes?.grammars ?? [];
@@ -1419,6 +1585,22 @@ test('injects CBS TextMate grammar into Lua for default risulua-as-lua editing',
     existsSync(path.join(packageRoot, injection?.path ?? '')),
     'Expected Lua CBS injection grammar file to exist',
   );
+});
+
+test('colorizes generated RisuLua navigation comments in RisuLua and Lua grammars', () => {
+  for (const relativePath of [
+    'syntaxes/risulua.tmLanguage.json',
+    'syntaxes/risulua-cbs-injection.tmLanguage.json',
+  ]) {
+    const grammar = readFileSync(path.join(packageRoot, relativePath), 'utf8');
+
+    assert.match(grammar, /meta\.annotation\.button-action-bridge\.risulua/);
+    assert.match(grammar, /keyword\.other\.button-action-bridge\.risulua/);
+    assert.match(grammar, /entity\.name\.function\.button-action\.risulua/);
+    assert.match(grammar, /meta\.annotation\.source-navigation\.risulua/);
+    assert.match(grammar, /storage\.type\.annotation\.source\.risulua/);
+    assert.match(grammar, /constant\.numeric\.line-number\.risulua/);
+  }
 });
 
 test('keeps imported CBS syntax-extension legacy assets available without provider duplication', () => {

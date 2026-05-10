@@ -1,0 +1,13 @@
+local started = false
+
+function onStart()
+  started = true
+  setChatVar("booted", "yes")
+end
+
+function onOutput(text)
+  if started then
+    return text .. "\n[ready]"
+  end
+  return text
+end
