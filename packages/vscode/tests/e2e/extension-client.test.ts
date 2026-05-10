@@ -19,7 +19,7 @@ import type {
   CbsClientBoundaryInputs,
 } from '../../src/lsp/cbsLanguageClientBoundary';
 import type { CbsLanguageServerSettings } from '../../src/lsp/cbsLanguageServerLaunch';
-import type { BrowserArtifactCard, ModuleBrowserCard } from '../../src/character-browser/characterBrowserTypes';
+import type { BrowserArtifactCard, ModuleBrowserCard } from '../../src/artifact-browser/artifactBrowserTypes';
 
 const packageRoot = process.cwd();
 const localRequire = createRequire(__filename);
@@ -146,8 +146,8 @@ interface BuiltModuleDetailScannerModule {
   };
 }
 
-interface BuiltCharacterBrowserViewProviderModule {
-  CharacterBrowserViewProvider: new (context: {
+interface BuiltArtifactBrowserViewProviderModule {
+  ArtifactBrowserViewProvider: new (context: {
     extensionUri: TestUri;
     subscriptions: unknown[];
   }) => {
@@ -155,7 +155,7 @@ interface BuiltCharacterBrowserViewProviderModule {
     currentSections?: Map<string, Array<{ items: Array<{ id: string; fileUri?: string }> }>>;
     getHtml?: (webview: { asWebviewUri: (uri: TestUri) => TestUri; cspSource: string }) => string;
     selectedStableId?: string;
-    selectCharacter?: (stableId: string) => Promise<void>;
+    selectArtifact?: (stableId: string) => Promise<void>;
     openItem?: (stableId: string, itemId: string) => Promise<void>;
     sendDiscoveredCards?: (webview: { asWebviewUri?: (uri: TestUri) => TestUri; postMessage: (message: unknown) => PromiseLike<boolean> | boolean }) => Promise<void>;
     view?: { webview: { postMessage: (message: unknown) => PromiseLike<boolean> | boolean } };
@@ -605,8 +605,8 @@ function loadBuiltMarkerEditorViewProviderModule(vscodeStub: TestVscodeModule): 
   const originalLoad = nodeModule._load;
   const modulePaths = [
     path.join(packageRoot, 'dist', 'views', 'MarkerEditorViewProvider.js'),
-    path.join(packageRoot, 'dist', 'views', 'CharacterBrowserViewProvider.js'),
-    path.join(packageRoot, 'dist', 'character-browser', 'CharacterManifestDiscoveryService.js'),
+    path.join(packageRoot, 'dist', 'views', 'ArtifactBrowserViewProvider.js'),
+    path.join(packageRoot, 'dist', 'artifact-browser', 'CharacterManifestDiscoveryService.js'),
     path.join(packageRoot, 'dist', 'commands', 'characterImage.js'),
   ];
 
@@ -764,7 +764,7 @@ function loadBuiltCharacterDetailScannerModule(vscodeStub: TestVscodeModule): Bu
     _load: (request: string, parent: NodeJS.Module | null, isMain: boolean) => unknown;
   };
   const originalLoad = nodeModule._load;
-  const modulePath = path.join(packageRoot, 'dist', 'character-browser', 'CharacterDetailScanner.js');
+  const modulePath = path.join(packageRoot, 'dist', 'artifact-browser', 'CharacterDetailScanner.js');
 
   assert.ok(existsSync(modulePath), `Built character detail scanner module not found: ${modulePath}`);
   delete localRequire.cache[localRequire.resolve(modulePath)];
@@ -792,7 +792,7 @@ function loadBuiltModuleDetailScannerModule(vscodeStub: TestVscodeModule): Built
     _load: (request: string, parent: NodeJS.Module | null, isMain: boolean) => unknown;
   };
   const originalLoad = nodeModule._load;
-  const modulePath = path.join(packageRoot, 'dist', 'character-browser', 'ModuleDetailScanner.js');
+  const modulePath = path.join(packageRoot, 'dist', 'artifact-browser', 'ModuleDetailScanner.js');
 
   assert.ok(existsSync(modulePath), `Built module detail scanner module not found: ${modulePath}`);
   delete localRequire.cache[localRequire.resolve(modulePath)];
@@ -809,25 +809,25 @@ function loadBuiltModuleDetailScannerModule(vscodeStub: TestVscodeModule): Built
 }
 
 /**
- * loadBuiltCharacterBrowserViewProviderModule 함수.
+ * loadBuiltArtifactBrowserViewProviderModule 함수.
  * vscode 모듈을 test stub으로 대체한 뒤 provider build 산출물을 불러옴.
  *
  * @param vscodeStub - provider와 scanners가 사용할 최소 VS Code API stub
- * @returns built CharacterBrowserViewProvider module exports
+ * @returns built ArtifactBrowserViewProvider module exports
  */
-function loadBuiltCharacterBrowserViewProviderModule(vscodeStub: TestVscodeModule): BuiltCharacterBrowserViewProviderModule {
+function loadBuiltArtifactBrowserViewProviderModule(vscodeStub: TestVscodeModule): BuiltArtifactBrowserViewProviderModule {
   const nodeModule = Module as unknown as {
     _load: (request: string, parent: NodeJS.Module | null, isMain: boolean) => unknown;
   };
   const originalLoad = nodeModule._load;
   const modulePaths = [
-    path.join(packageRoot, 'dist', 'views', 'CharacterBrowserViewProvider.js'),
+    path.join(packageRoot, 'dist', 'views', 'ArtifactBrowserViewProvider.js'),
     path.join(packageRoot, 'dist', 'views', 'MarkerEditorViewProvider.js'),
-    path.join(packageRoot, 'dist', 'character-browser', 'WorkspaceArtifactDiscoveryService.js'),
-    path.join(packageRoot, 'dist', 'character-browser', 'ModuleManifestDiscoveryService.js'),
-    path.join(packageRoot, 'dist', 'character-browser', 'CharacterDetailScanner.js'),
-    path.join(packageRoot, 'dist', 'character-browser', 'ModuleDetailScanner.js'),
-    path.join(packageRoot, 'dist', 'character-browser', 'CharacterManifestDiscoveryService.js'),
+    path.join(packageRoot, 'dist', 'artifact-browser', 'WorkspaceArtifactDiscoveryService.js'),
+    path.join(packageRoot, 'dist', 'artifact-browser', 'ModuleManifestDiscoveryService.js'),
+    path.join(packageRoot, 'dist', 'artifact-browser', 'CharacterDetailScanner.js'),
+    path.join(packageRoot, 'dist', 'artifact-browser', 'ModuleDetailScanner.js'),
+    path.join(packageRoot, 'dist', 'artifact-browser', 'CharacterManifestDiscoveryService.js'),
     path.join(packageRoot, 'dist', 'commands', 'characterImage.js'),
   ];
 
@@ -842,7 +842,7 @@ function loadBuiltCharacterBrowserViewProviderModule(vscodeStub: TestVscodeModul
   };
 
   try {
-    return localRequire(modulePaths[0]) as BuiltCharacterBrowserViewProviderModule;
+    return localRequire(modulePaths[0]) as BuiltArtifactBrowserViewProviderModule;
   } finally {
     nodeModule._load = originalLoad;
   }
@@ -921,9 +921,9 @@ function loadBuiltWorkspaceArtifactDiscoveryModule(vscodeStub: TestVscodeModule)
   };
   const originalLoad = nodeModule._load;
   const modulePaths = [
-    path.join(packageRoot, 'dist', 'character-browser', 'WorkspaceArtifactDiscoveryService.js'),
-    path.join(packageRoot, 'dist', 'character-browser', 'CharacterManifestDiscoveryService.js'),
-    path.join(packageRoot, 'dist', 'character-browser', 'ModuleManifestDiscoveryService.js'),
+    path.join(packageRoot, 'dist', 'artifact-browser', 'WorkspaceArtifactDiscoveryService.js'),
+    path.join(packageRoot, 'dist', 'artifact-browser', 'CharacterManifestDiscoveryService.js'),
+    path.join(packageRoot, 'dist', 'artifact-browser', 'ModuleManifestDiscoveryService.js'),
   ];
 
   for (const modulePath of modulePaths) {
@@ -2382,18 +2382,18 @@ test('provider dispatches module selections and opens module file-backed items',
     },
     showErrorMessage: () => {},
   };
-  const providerModule = loadBuiltCharacterBrowserViewProviderModule(vscodeStub);
+  const providerModule = loadBuiltArtifactBrowserViewProviderModule(vscodeStub);
   const postedMessages: unknown[] = [];
-  const provider = new providerModule.CharacterBrowserViewProvider({
+  const provider = new providerModule.ArtifactBrowserViewProvider({
     extensionUri: new TestUri(packageRoot),
     subscriptions: [],
   });
   provider.view = { webview: { postMessage: (message) => { postedMessages.push(message); return true; } } };
   provider.currentCards = [createModuleBrowserCardInput(moduleRootPath, 'module:provider-module') as unknown as BrowserArtifactCard];
 
-  assert.ok(provider.selectCharacter);
+  assert.ok(provider.selectArtifact);
   assert.ok(provider.openItem);
-  await provider.selectCharacter('module:provider-module');
+  await provider.selectArtifact('module:provider-module');
 
   const sections = provider.currentSections?.get('module:provider-module') ?? [];
   const manifestItem = sections.flatMap((section) => section.items).find((item) => item.id.endsWith('manifest::.risumodule'));
@@ -2403,7 +2403,7 @@ test('provider dispatches module selections and opens module file-backed items',
   assert.deepEqual(markerPanels, [
     { viewType: 'risuWorkbench.markerEditor', title: 'Edit Module Marker: provider-module' },
   ]);
-  assert.ok(postedMessages.some((message) => JSON.stringify(message).includes('character-browser/characterDetailLoaded')));
+  assert.ok(postedMessages.some((message) => JSON.stringify(message).includes('artifact-browser/detailLoaded')));
 
   await provider.openItem('module:provider-module', manifestItem.id);
   await provider.openItem('module:provider-module', luaItem.id);
@@ -2439,23 +2439,23 @@ test('provider opens marker editor for character selections while posting detail
     },
     showErrorMessage: () => {},
   };
-  const providerModule = loadBuiltCharacterBrowserViewProviderModule(vscodeStub);
+  const providerModule = loadBuiltArtifactBrowserViewProviderModule(vscodeStub);
   const postedMessages: unknown[] = [];
-  const provider = new providerModule.CharacterBrowserViewProvider({
+  const provider = new providerModule.ArtifactBrowserViewProvider({
     extensionUri: new TestUri(packageRoot),
     subscriptions: [],
   });
   provider.view = { webview: { postMessage: (message) => { postedMessages.push(message); return true; } } };
   provider.currentCards = [createCharacterBrowserCardInput(characterRootPath, 'character:provider-character') as unknown as BrowserArtifactCard];
 
-  assert.ok(provider.selectCharacter);
-  await provider.selectCharacter('character:provider-character');
+  assert.ok(provider.selectArtifact);
+  await provider.selectArtifact('character:provider-character');
 
   assert.deepEqual(markerPanels, [
     { viewType: 'risuWorkbench.markerEditor', title: 'Edit Character Marker: provider-character' },
   ]);
   assert.equal(provider.currentSections?.has('character:provider-character'), true);
-  assert.ok(postedMessages.some((message) => JSON.stringify(message).includes('character-browser/characterDetailLoaded')));
+  assert.ok(postedMessages.some((message) => JSON.stringify(message).includes('artifact-browser/detailLoaded')));
 });
 
 test('provider keeps character detail selection across marker refresh when fallback stable id changes', async () => {
@@ -2477,7 +2477,7 @@ test('provider keeps character detail selection across marker refresh when fallb
       flags: { utilityBot: false, lowLevelAccess: false },
     }),
   });
-  const providerModule = loadBuiltCharacterBrowserViewProviderModule(vscodeStub);
+  const providerModule = loadBuiltArtifactBrowserViewProviderModule(vscodeStub);
   const postedMessages: unknown[] = [];
   const webview = {
     asWebviewUri: (uri: TestUri) => uri,
@@ -2486,7 +2486,7 @@ test('provider keeps character detail selection across marker refresh when fallb
       return true;
     },
   };
-  const provider = new providerModule.CharacterBrowserViewProvider({
+  const provider = new providerModule.ArtifactBrowserViewProvider({
     extensionUri: new TestUri(packageRoot),
     subscriptions: [],
   });
@@ -2504,19 +2504,19 @@ test('provider keeps character detail selection across marker refresh when fallb
 
   assert.notEqual(provider.selectedStableId, undefined);
   assert.notEqual(provider.selectedStableId, 'character:old-name-selection');
-  const cardsMessage = postedMessages.find((message) => JSON.stringify(message).includes('character-browser/cards')) as {
+  const cardsMessage = postedMessages.find((message) => JSON.stringify(message).includes('artifact-browser/cards')) as {
     payload?: { selectedStableId?: string };
   } | undefined;
   assert.equal(cardsMessage?.payload?.selectedStableId, provider.selectedStableId);
   assert.equal(provider.currentCards?.[0]?.markerUri, markerUri);
   assert.equal(provider.currentSections?.has(provider.selectedStableId ?? ''), true);
-  assert.ok(postedMessages.some((message) => JSON.stringify(message).includes('character-browser/cards')));
-  assert.ok(postedMessages.some((message) => JSON.stringify(message).includes('character-browser/characterDetailLoaded')));
+  assert.ok(postedMessages.some((message) => JSON.stringify(message).includes('artifact-browser/cards')));
+  assert.ok(postedMessages.some((message) => JSON.stringify(message).includes('artifact-browser/detailLoaded')));
 });
 
 test('provider fallback HTML uses neutral workbench browser copy', () => {
-  const providerModule = loadBuiltCharacterBrowserViewProviderModule(createCharacterScannerVscodeStub({}));
-  const provider = new providerModule.CharacterBrowserViewProvider({
+  const providerModule = loadBuiltArtifactBrowserViewProviderModule(createCharacterScannerVscodeStub({}));
+  const provider = new providerModule.ArtifactBrowserViewProvider({
     extensionUri: new TestUri(path.join('/tmp', 'risu-missing-webview-bundle')),
     subscriptions: [],
   });
@@ -2526,13 +2526,13 @@ test('provider fallback HTML uses neutral workbench browser copy', () => {
 
   assert.match(html, /<title>Risu Workbench Browser<\/title>/);
   assert.match(html, /<h1>Risu Workbench Browser<\/h1>/);
-  assert.equal(html.includes('Risu Character Browser'), false);
+  assert.equal(html.includes('Risu Artifact Browser'), false);
 });
 
 test('provider ignores stale async detail scans for character and module selections', async () => {
   const characterRootPath = path.join('/tmp', 'risu-stale-detail', 'character');
   const moduleRootPath = path.join('/tmp', 'risu-stale-detail', 'module');
-  const providerModule = loadBuiltCharacterBrowserViewProviderModule(
+  const providerModule = loadBuiltArtifactBrowserViewProviderModule(
     createCharacterScannerVscodeStub({
       [characterRootPath]: [['.risuchar', 1], ['lua', 2]],
       [path.join(characterRootPath, 'lua')]: [['character.risulua', 1]],
@@ -2541,7 +2541,7 @@ test('provider ignores stale async detail scans for character and module selecti
     }),
   );
   const postedMessages: unknown[] = [];
-  const provider = new providerModule.CharacterBrowserViewProvider({
+  const provider = new providerModule.ArtifactBrowserViewProvider({
     extensionUri: new TestUri(packageRoot),
     subscriptions: [],
   });
@@ -2551,9 +2551,9 @@ test('provider ignores stale async detail scans for character and module selecti
     createModuleBrowserCardInput(moduleRootPath, 'module:fresh') as unknown as BrowserArtifactCard,
   ];
 
-  assert.ok(provider.selectCharacter);
-  const staleCharacterScan = provider.selectCharacter('character:stale');
-  const freshModuleScan = provider.selectCharacter('module:fresh');
+  assert.ok(provider.selectArtifact);
+  const staleCharacterScan = provider.selectArtifact('character:stale');
+  const freshModuleScan = provider.selectArtifact('module:fresh');
   await Promise.all([staleCharacterScan, freshModuleScan]);
 
   assert.equal(provider.currentSections?.has('character:stale'), false);

@@ -1,50 +1,51 @@
 /**
- * Character detail view를 위한 read-only related file scanner.
- * @file packages/vscode/src/character-browser/CharacterDetailScanner.ts
+ * Module detail view를 위한 read-only related file scanner.
+ * @file packages/vscode/src/artifact-browser/ModuleDetailScanner.ts
  */
 
 import path from 'node:path';
 import * as vscode from 'vscode';
 import type {
-  CharacterBrowserCard,
-  CharacterItem,
-  CharacterItemType,
-  CharacterSection,
-  CharacterSectionKind,
+  BrowserItem,
+  BrowserItemType,
+  BrowserSection,
+  BrowserSectionKind,
   ManifestParseWarning,
-} from './characterBrowserTypes';
+  ModuleBrowserCard,
+} from './artifactBrowserTypes';
 
 const SKIPPED_DIRECTORIES = new Set(['node_modules', '.git', '.vscode', 'dist', 'build', 'out', 'coverage', 'assets']);
-const SECTION_ORDER: CharacterSectionKind[] = ['manifest', 'lorebooks', 'regexRules', 'html', 'lua', 'diagnostics'];
+const SECTION_ORDER: BrowserSectionKind[] = ['manifest', 'lorebooks', 'regexRules', 'lua', 'toggle', 'variables', 'html', 'diagnostics'];
 const MAX_SCANNED_FILES = 500;
 const MAX_SCAN_DEPTH = 8;
 
-type SectionDraft = Omit<CharacterSection, 'count'>;
+type ModuleSectionKind = (typeof SECTION_ORDER)[number];
+type SectionDraft = Omit<BrowserSection, 'count'>;
 
 /**
- * CharacterDetailScanner 클래스.
- * 선택된 character root 내부만 보수적으로 스캔해 detail accordion section을 구성함.
+ * ModuleDetailScanner 클래스.
+ * 선택된 module root 내부만 보수적으로 스캔해 detail accordion section을 구성함.
  */
-export class CharacterDetailScanner {
+export class ModuleDetailScanner {
   /**
    * scan 함수.
-   * 선택 card의 root URI와 manifest warning을 section/item model로 변환함.
+   * 선택 card의 root URI와 module warning을 section/item model로 변환함.
    *
-   * @param card - detail을 열 selected character card
+   * @param card - detail을 열 selected module card
    * @returns detail view에 표시할 stable section 목록
    */
-  async scan(card: CharacterBrowserCard): Promise<CharacterSection[]> {
+  async scan(card: ModuleBrowserCard): Promise<BrowserSection[]> {
     const markerUri = vscode.Uri.parse(card.markerUri);
     const scanRootUri = vscode.Uri.file(path.dirname(markerUri.fsPath));
     const sections = createSectionDrafts();
     const usedRelativePaths = new Set<string>();
 
-    addItem(sections.manifest, createFileItem(card, 'manifest', '.risuchar', markerUri, 'manifest'));
-    usedRelativePaths.add('.risuchar');
+    addItem(sections.manifest, createFileItem(card, 'manifest', '.risumodule', markerUri, 'manifest'));
+    usedRelativePaths.add('.risumodule');
 
     const files = await this.collectFiles(scanRootUri);
     for (const file of files) {
-      if (file.relativePath === '.risuchar') continue;
+      if (file.relativePath === '.risumodule') continue;
       const sectionKind = classifyFile(file.relativePath);
       if (!sectionKind || usedRelativePaths.has(file.relativePath)) continue;
 
@@ -103,32 +104,34 @@ export class CharacterDetailScanner {
   }
 }
 
-function createSectionDrafts(): Record<CharacterSectionKind, SectionDraft> {
+function createSectionDrafts(): Record<ModuleSectionKind, SectionDraft> {
   return {
     manifest: createSection('manifest', 'Manifest', 'manifest'),
     lorebooks: createSection('lorebooks', 'Lorebooks', 'lorebooks'),
     regexRules: createSection('regexRules', 'Regex Rules', 'regexRules'),
-    html: createSection('html', 'HTML', 'html'),
     lua: createSection('lua', 'Lua', 'lua'),
+    toggle: createSection('toggle', 'Toggle', 'toggle'),
+    variables: createSection('variables', 'Variables', 'variables'),
+    html: createSection('html', 'HTML', 'html'),
     diagnostics: createSection('diagnostics', 'Diagnostics', 'diagnostics'),
   };
 }
 
-function createSection(id: string, label: string, kind: CharacterSectionKind): SectionDraft {
+function createSection(id: string, label: string, kind: ModuleSectionKind): SectionDraft {
   return { id, label, kind, items: [] };
 }
 
-function addItem(section: SectionDraft, item: CharacterItem): void {
+function addItem(section: SectionDraft, item: BrowserItem): void {
   section.items.push(item);
 }
 
 function createFileItem(
-  card: CharacterBrowserCard,
-  sectionId: CharacterSectionKind,
+  card: ModuleBrowserCard,
+  sectionId: ModuleSectionKind,
   relativePath: string,
   uri: vscode.Uri,
   source: 'manifest' | 'scanner',
-): CharacterItem {
+): BrowserItem {
   const extension = path.extname(relativePath).replace('.', '').toLowerCase();
   return {
     id: createItemId(card.stableId, sectionId, relativePath),
@@ -141,7 +144,7 @@ function createFileItem(
   };
 }
 
-function createDiagnosticItem(card: CharacterBrowserCard, warning: ManifestParseWarning): CharacterItem {
+function createDiagnosticItem(card: ModuleBrowserCard, warning: ManifestParseWarning): BrowserItem {
   const relativePath = warning.field ? `${warning.code}:${warning.field}` : warning.code;
   return {
     id: createItemId(card.stableId, 'diagnostics', relativePath),
@@ -153,44 +156,37 @@ function createDiagnosticItem(card: CharacterBrowserCard, warning: ManifestParse
   };
 }
 
-function classifyFile(relativePath: string): CharacterSectionKind | undefined {
+function classifyFile(relativePath: string): ModuleSectionKind | undefined {
   const lowerPath = relativePath.toLowerCase();
   const extension = path.extname(lowerPath).replace('.', '');
 
-  if (extension === 'risulorebook') return 'lorebooks';
-  if (extension === 'risuregex') return 'regexRules';
-  if (extension === 'risuhtml') return 'html';
-  if (extension === 'risulua') return 'lua';
-  if (/(^|\/)(lore|lorebook|book)(\/|[-_.])/.test(lowerPath) || /(^|[-_.])(lore|lorebook|book)([-_.]|$)/.test(lowerPath)) {
-    return 'lorebooks';
-  }
-  if (/(^|\/)(regex|regexp|rule)(\/|[-_.])/.test(lowerPath) || /(^|[-_.])(regex|regexp|rule)([-_.]|$)/.test(lowerPath)) {
-    return 'regexRules';
-  }
+  if (lowerPath === '.risumodule') return 'manifest';
+  if (extension === 'risulorebook' || isUnderDirectory(lowerPath, 'lorebooks')) return 'lorebooks';
+  if (extension === 'risuregex' || isUnderDirectory(lowerPath, 'regex')) return 'regexRules';
+  if (extension === 'risulua' || isUnderDirectory(lowerPath, 'lua')) return 'lua';
+  if (extension === 'risutoggle' || isUnderDirectory(lowerPath, 'toggle')) return 'toggle';
+  if (extension === 'risuvar' || isUnderDirectory(lowerPath, 'variables')) return 'variables';
+  if (extension === 'risuhtml' || isUnderDirectory(lowerPath, 'html')) return 'html';
 
   return undefined;
 }
 
-function classifyItemType(relativePath: string, sectionId: CharacterSectionKind): CharacterItemType {
+function classifyItemType(relativePath: string, sectionId: ModuleSectionKind): BrowserItemType {
   if (sectionId === 'manifest') return 'manifest';
 
   const extension = path.extname(relativePath).replace('.', '').toLowerCase();
-  if (isImageExtension(extension)) return extension === 'png' ? 'png' : 'image';
-  if (extension === 'json') return 'json';
-  if (extension === 'charx') return 'charx';
-  if (extension === 'risutext') return 'risutext';
-  if (extension === 'risulorebook') return 'risulorebook';
-  if (extension === 'risuregex') return 'risuregex';
-  if (extension === 'risulua') return 'risulua';
-  if (extension === 'risuhtml') return 'risuhtml';
-  if (extension === 'md' || extension === 'markdown') return 'markdown';
-  if (sectionId === 'regexRules') return 'regex';
+  if (extension === 'risulorebook' || sectionId === 'lorebooks') return 'risulorebook';
+  if (extension === 'risuregex' || sectionId === 'regexRules') return 'risuregex';
+  if (extension === 'risulua' || sectionId === 'lua') return 'risulua';
+  if (extension === 'risutoggle' || sectionId === 'toggle') return 'risutoggle';
+  if (extension === 'risuvar' || sectionId === 'variables') return 'risuvar';
+  if (extension === 'risuhtml' || sectionId === 'html') return 'risuhtml';
 
   return 'unknown';
 }
 
-function isImageExtension(extension: string): boolean {
-  return ['png', 'jpg', 'jpeg', 'webp'].includes(extension);
+function isUnderDirectory(relativePath: string, directoryName: string): boolean {
+  return relativePath === directoryName || relativePath.startsWith(`${directoryName}/`);
 }
 
 function normalizeRelativePath(value: string | undefined): string | undefined {

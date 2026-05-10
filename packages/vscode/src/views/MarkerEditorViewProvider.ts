@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as vscode from 'vscode';
 import { getCharacterImageAssetPath, upsertCharacterImageManifestEntry } from '../commands/characterImage';
-import { getWorkspaceRelativePath, splitRelativePath } from '../character-browser/CharacterManifestDiscoveryService';
+import { getWorkspaceRelativePath, splitRelativePath } from '../artifact-browser/CharacterManifestDiscoveryService';
 import {
   MARKER_EDITOR_PROTOCOL,
   MARKER_EDITOR_PROTOCOL_VERSION,
@@ -25,8 +25,8 @@ import {
   type MarkerEditorSavedMessage,
   type MarkerEditorSelectImageMessage,
   type ModuleEditFields,
-} from '../character-browser/characterBrowserTypes';
-import { CharacterBrowserViewProvider } from './CharacterBrowserViewProvider';
+} from '../artifact-browser/artifactBrowserTypes';
+import { ArtifactBrowserViewProvider } from './ArtifactBrowserViewProvider';
 import {
   createWebviewDevServerHtml,
   getConfiguredWebviewDevServerUrl,
@@ -183,7 +183,7 @@ export class MarkerEditorViewProvider {
         fields: payload.fields,
         imageUri: payload.imageUri,
       }));
-      CharacterBrowserViewProvider.refreshOpenViews();
+      ArtifactBrowserViewProvider.refreshOpenViews();
     } catch (error) {
       this.postMessage(createErrorMessage('saveFailed', getErrorMessage(error)));
     }
