@@ -1,6 +1,8 @@
 # TODO
 
 완료 이력과 운영 메모는 `FIN.md`에 기록합니다. 더 오래된 상세 아카이브는 `../docs/todo-done-archive.md`를 참고하면 됩니다.
+현재 남은 작업은 아래 `### Remaining` 섹션만 기준으로 관리하며, 완료 이력은 `FIN.md`에만 추가합니다.
+2026-05-08 CBS preview variable injector engine final bookkeeping 후 새 remain task는 없으며, 기존 `#### Backlog` 항목만 유지합니다.
 
 ### Remaining
 #### Backlog

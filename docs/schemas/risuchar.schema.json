@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://risuai-workbench.dev/schemas/risuchar.schema.json",
+  "title": "RisuAI Workbench Character Manifest",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "kind",
+    "schemaVersion",
+    "id",
+    "name",
+    "creator",
+    "characterVersion",
+    "createdAt",
+    "modifiedAt",
+    "sourceFormat",
+    "flags"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "const": "https://risuai-workbench.dev/schemas/risuchar.schema.json"
+    },
+    "kind": {
+      "type": "string",
+      "const": "risu.character"
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "creator": {
+      "type": "string"
+    },
+    "characterVersion": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "modifiedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "sourceFormat": {
+      "type": "string",
+      "enum": ["charx", "png", "json", "scaffold"]
+    },
+    "image": {
+      "type": ["string", "null"],
+      "description": "Workspace-relative path to the selected character thumbnail image."
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Canonical character tag list mapped to CCv3 data.tags."
+    },
+    "flags": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["utilityBot", "lowLevelAccess"],
+      "properties": {
+        "utilityBot": {
+          "type": "boolean"
+        },
+        "lowLevelAccess": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

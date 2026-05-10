@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://risuai-workbench.dev/schemas/risumodule.schema.json",
+  "title": "RisuAI Workbench Module Manifest",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "$schema",
+    "kind",
+    "schemaVersion",
+    "id",
+    "name",
+    "description",
+    "createdAt",
+    "modifiedAt",
+    "sourceFormat"
+  ],
+  "not": {
+    "required": ["customModuleToggle"]
+  },
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "const": "https://risuai-workbench.dev/schemas/risumodule.schema.json"
+    },
+    "kind": {
+      "type": "string",
+      "const": "risu.module"
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "image": {
+      "type": ["string", "null"],
+      "description": "Workspace-relative path to the selected module thumbnail image for Workbench display."
+    },
+    "namespace": {
+      "type": "string"
+    },
+    "cjs": {
+      "type": "string"
+    },
+    "lowLevelAccess": {
+      "type": "boolean"
+    },
+    "hideIcon": {
+      "type": "boolean"
+    },
+    "mcp": {
+      "type": "object",
+      "description": "Model Context Protocol configuration."
+    },
+    "createdAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "modifiedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "sourceFormat": {
+      "type": "string",
+      "enum": ["risum", "json", "scaffold"]
+    }
+  }
+}
