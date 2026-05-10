@@ -4,7 +4,7 @@
 
 ## 공통 원칙
 
-- **콘텐츠 중심**: 표준 워크스페이스는 `.risu*` 페이로드 파일과 `metadata.json`을 중심으로 설명하고 구성합니다.
+- **콘텐츠 중심**: 표준 워크스페이스는 `.risu*` 페이로드 파일과 대상별 metadata owner를 중심으로 설명하고 구성합니다. `charx`는 루트 `.risuchar`, module은 `.risumodule`, preset은 `metadata.json`을 사용합니다.
 - **증거 기반 기술**: 분석 및 탐색 명세는 `custom-extension-file-discovery.ts`와 `foundation.test.ts`가 실제로 수집하는 파일 증거를 기준으로 작성합니다. 단순한 디렉토리 이름만으로 대상 판별이 확정되었다고 기술하지 않습니다.
 - **레거시 배제**: 루트 JSON 파일(`charx.json`, `module.json`, `preset.json`)은 현재의 표준 출력 구조가 아닙니다. 다만, 분석 문맥에서 레거시 폴백이 남아 있을 경우 이를 명시적으로 표기합니다.
 
@@ -12,7 +12,8 @@
 
 ```text
 <캐릭터_루트>/
-├── character/ (핵심 데이터 및 메타데이터)
+├── .risuchar (캐릭터 루트 marker 및 metadata owner)
+├── character/ (캐릭터 prose 페이로드)
 ├── lorebooks/ (로어북 아티팩트)
 ├── regex/ (정규식 아티팩트)
 ├── lua/ (Lua 스크립트)
@@ -20,14 +21,15 @@
 └── html/ (배경 HTML)
 ```
 
-- **편집 인터페이스**: `character/` 디렉토리는 캐릭터 패키징 워크플로우의 핵심 인터페이스입니다. `character/*.txt`, `alternate_greetings.json`, `metadata.json` 등을 포함합니다.
+- **루트 marker**: `.risuchar`는 캐릭터 루트를 식별하고 `name`, `creator`, `characterVersion`, `flags`, `image`, `tags` 같은 구조화 metadata를 소유합니다.
+- **편집 인터페이스**: `character/` 디렉토리는 캐릭터 prose payload의 핵심 인터페이스입니다. 현재 canonical 출력은 `character/*.risutext`와 `alternate_greetings/` 구조를 우선하며, legacy `character/*.txt`, `alternate_greetings.json`, `metadata.json`은 fallback 문맥에서만 다룹니다.
 - **탐색 기준**: 위 구조는 물리적 레이아웃을 보여주지만, 탐색 증거로서의 의미는 실제 내부 파일들(`.risu*`, 마커 파일, 구조화된 JSON)에 있습니다.
 
 ## 모듈 (Module)
 
 ```text
 <모듈_루트>/
-├── metadata.json (표준 구조화 JSON)
+├── .risumodule (모듈 루트 marker 및 metadata owner)
 ├── lorebooks/
 ├── regex/
 ├── lua/
@@ -36,8 +38,9 @@
 └── html/
 ```
 
-- **구조화된 인터페이스**: `metadata.json`은 표준 구조화 인터페이스 역할을 수행합니다.
+- **루트 marker**: `.risumodule`는 모듈 루트를 식별하고 `name`, `description`, `id`, `namespace`, `cjs`, `lowLevelAccess`, `hideIcon`, `mcp` 같은 구조화 metadata를 소유합니다.
 - **탐색 증거**: 로어북 정렬 마커(`_order.json`, `_folders.json`)와 각 `.risu*` 페이로드 파일이 탐색의 근거를 형성합니다.
+- **Breaking migration**: 이전의 `metadata.json` 기반 metadata owner 방식은 더 이상 표준이 아니며, `.risumodule`가 없을 때도 `metadata.json`로 폴백하지 않습니다.
 
 ## 프리셋 (Preset)
 
