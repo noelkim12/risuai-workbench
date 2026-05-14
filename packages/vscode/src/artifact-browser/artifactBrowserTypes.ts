@@ -301,6 +301,10 @@ export interface ModuleEditorInitPayload {
 
 export type MarkerEditorInitPayload = CharacterEditorInitPayload | ModuleEditorInitPayload;
 
+export interface MarkerEditorReadyPayload {
+  markerUri: string;
+}
+
 export interface MarkerEditorSavePayload {
   markerUri: string;
   mode: MarkerEditorMode;
@@ -380,6 +384,8 @@ export type ArtifactBrowserWebviewMessage =
   | ArtifactBrowserOpenItemMessage;
 export type ArtifactBrowserExtensionMessage = ArtifactBrowserCardsMessage | ArtifactBrowserDetailMessage;
 
+export type MarkerEditorReadyMessage = MessageEnvelope<'marker-editor/ready', MarkerEditorReadyPayload>;
+
 export type MarkerEditorSaveMessage = MessageEnvelope<'marker-editor/save', MarkerEditorSavePayload>;
 
 export type MarkerEditorResetRequestMessage = MessageEnvelope<
@@ -409,6 +415,7 @@ export type MarkerEditorImageSelectedMessage = MessageEnvelope<
 export type MarkerEditorErrorMessage = MessageEnvelope<'marker-editor/error', MarkerEditorErrorPayload>;
 
 export type MarkerEditorWebviewMessage =
+  | MarkerEditorReadyMessage
   | MarkerEditorSaveMessage
   | MarkerEditorResetRequestMessage
   | MarkerEditorSelectImageMessage;

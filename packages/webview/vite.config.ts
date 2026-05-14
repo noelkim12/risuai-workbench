@@ -4,6 +4,11 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   base: './',
+  resolve: {
+    alias: {
+      'risu-workbench-core/cbs-browser': path.resolve(__dirname, '../core/src/cbs-browser.ts'),
+    },
+  },
   server: {
     host: '127.0.0.1',
     port: 5173,

@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { CBSBracketPairHighlighter } from './cbs/legacy/providers/bracketPairProvider';
 import { registerCbsAutoSuggestTrigger } from './completion/cbsAutoSuggest';
 import { registerCoreCommands } from './commands';
+import { registerMainEditorProviders } from './editors/mainEditor';
 import {
   awaitCbsLanguageClientReady,
   getCbsLanguageClientRuntimeState,
@@ -38,6 +39,7 @@ export function activate(context: vscode.ExtensionContext): RisuWorkbenchExtensi
       webviewOptions: { retainContextWhenHidden: true },
     }),
   );
+  context.subscriptions.push(registerMainEditorProviders(context));
   context.subscriptions.push(bracketHighlighter);
   context.subscriptions.push(registerCoreCommands(context, cardService, analysisService));
   registerCbsAutoSuggestTrigger(context);

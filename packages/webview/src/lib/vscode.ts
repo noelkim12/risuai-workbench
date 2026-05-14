@@ -12,10 +12,14 @@ import {
   type ArtifactBrowserRefreshMessage,
   type ArtifactBrowserSelectMessage,
   type ArtifactBrowserWebviewMessage,
+  type MainEditorWebviewMessage,
+  type MarkerEditorWebviewMessage,
 } from './types';
 
-type VsCodeApi = {
-  postMessage(message: ArtifactBrowserWebviewMessage): void;
+type WebviewOutboundMessage = ArtifactBrowserWebviewMessage | MarkerEditorWebviewMessage | MainEditorWebviewMessage;
+
+export type VsCodeApi = {
+  postMessage(message: WebviewOutboundMessage): void;
 };
 
 declare global {

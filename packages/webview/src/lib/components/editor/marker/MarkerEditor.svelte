@@ -19,7 +19,11 @@
     ModuleEditFields,
   } from '../../../types/markerEditor';
   import { getVsCodeApi } from '../../../vscode';
-  import { createMarkerEditorResetMessage, createMarkerEditorSaveMessage } from '../../../vscode/markerEditorMessages';
+  import {
+    createMarkerEditorReadyMessage,
+    createMarkerEditorResetMessage,
+    createMarkerEditorSaveMessage,
+  } from '../../../vscode/markerEditorMessages';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
   import LivePreview from './LivePreview.svelte';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
@@ -37,15 +41,43 @@
   let rootUri = '';
   let fields: MarkerEditFields = createEmptyCharacterFields();
   let imageUri: string | null | undefined;
+  let readyRetryTimer: ReturnType<typeof setInterval> | undefined;
   $: previewImageUri = imageUri ?? undefined;
 
   onMount(() => {
     window.addEventListener('message', handleMessage);
+    announceMarkerEditorReady();
+    readyRetryTimer = setInterval(() => {
+      if (initialized) {
+        stopReadyRetry();
+        return;
+      }
+      announceMarkerEditorReady();
+    }, 500);
   });
 
   onDestroy(() => {
     window.removeEventListener('message', handleMessage);
+    stopReadyRetry();
   });
+
+  /**
+   * announceMarkerEditorReady 함수.
+   * Host init을 받을 때까지 marker editor 준비 상태를 반복 알림.
+   */
+  function announceMarkerEditorReady(): void {
+    getTypedVsCodeApi()?.postMessage(createMarkerEditorReadyMessage({ markerUri }));
+  }
+
+  /**
+   * stopReadyRetry 함수.
+   * init 수신 또는 unmount 시 marker ready retry timer를 정리함.
+   */
+  function stopReadyRetry(): void {
+    if (!readyRetryTimer) return;
+    clearInterval(readyRetryTimer);
+    readyRetryTimer = undefined;
+  }
 
   /**
    * createEmptyCharacterFields 함수.
@@ -99,6 +131,7 @@
       fields = cloneFields(message.payload.fields);
       imageUri = message.payload.imageUri;
       initialized = true;
+      stopReadyRetry();
       return;
     }
 
@@ -132,8 +165,7 @@
    */
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup passes this handler to MarkerForm.
   function saveMarker(): void {
-    const vscodeApi = getVsCodeApi() as MarkerEditorVsCodeApi | undefined;
-    vscodeApi?.postMessage(
+    getTypedVsCodeApi()?.postMessage(
       createMarkerEditorSaveMessage({
         markerUri,
         mode,
@@ -148,13 +180,22 @@
    */
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup passes this handler to MarkerForm.
   function resetMarker(): void {
-    const vscodeApi = getVsCodeApi() as MarkerEditorVsCodeApi | undefined;
-    vscodeApi?.postMessage(
+    getTypedVsCodeApi()?.postMessage(
       createMarkerEditorResetMessage({
         markerUri,
         mode,
       }),
     );
+  }
+
+  /**
+   * getTypedVsCodeApi 함수.
+   * Marker editor outbound message 전송용 VS Code API wrapper를 반환함.
+   *
+   * @returns VS Code webview API 또는 브라우저 preview의 undefined
+   */
+  function getTypedVsCodeApi(): MarkerEditorVsCodeApi | undefined {
+    return getVsCodeApi() as MarkerEditorVsCodeApi | undefined;
   }
 
   /**
