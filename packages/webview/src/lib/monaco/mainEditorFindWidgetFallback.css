@@ -1,0 +1,74 @@
+/**
+ * Monaco find widget icon fallback for VS Code webview embedding.
+ * @file packages/webview/src/lib/monaco/mainEditorFindWidgetFallback.css
+ */
+
+.main-editor-shell .monaco-editor .find-widget .button,
+.main-editor-shell .monaco-editor .find-widget .monaco-custom-toggle,
+.main-editor-shell .monaco-editor .find-widget .codicon-find-selection {
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 20px;
+  text-align: center;
+}
+
+.main-editor-shell .monaco-editor .find-widget .button::before,
+.main-editor-shell .monaco-editor .find-widget .monaco-custom-toggle::before,
+.main-editor-shell .monaco-editor .find-widget .codicon-find-selection::before {
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.main-editor-shell .monaco-editor .find-widget .button.previous::before,
+.main-editor-shell .monaco-editor .find-widget .codicon-find-previous-match::before {
+  content: '↑';
+}
+
+.main-editor-shell .monaco-editor .find-widget .button.next::before,
+.main-editor-shell .monaco-editor .find-widget .codicon-find-next-match::before {
+  content: '↓';
+}
+
+.main-editor-shell .monaco-editor .find-widget .button.replace::before,
+.main-editor-shell .monaco-editor .find-widget .codicon-find-replace::before {
+  content: 'R';
+}
+
+.main-editor-shell .monaco-editor .find-widget .button.replace-all::before,
+.main-editor-shell .monaco-editor .find-widget .codicon-find-replace-all::before {
+  content: 'All';
+}
+
+.main-editor-shell .monaco-editor .find-widget .button.toggle.left.codicon-find-collapsed::before {
+  content: '›';
+}
+
+.main-editor-shell .monaco-editor .find-widget .button.toggle.left.codicon-find-expanded::before {
+  content: '⌄';
+}
+
+.main-editor-shell .monaco-editor .find-widget > .button.codicon-widget-close::before {
+  content: '×';
+}
+
+.main-editor-shell .monaco-editor .find-widget .monaco-custom-toggle.codicon-case-sensitive::before {
+  content: 'Aa';
+}
+
+.main-editor-shell .monaco-editor .find-widget .monaco-custom-toggle.codicon-whole-word::before {
+  content: 'W';
+}
+
+.main-editor-shell .monaco-editor .find-widget .monaco-custom-toggle.codicon-regex::before {
+  content: '.*';
+}
+
+.main-editor-shell .monaco-editor .find-widget .monaco-custom-toggle.codicon-preserve-case::before {
+  content: 'Ab';
+}
+
+.main-editor-shell .monaco-editor .find-widget .codicon-find-selection::before {
+  content: '[]';
+}

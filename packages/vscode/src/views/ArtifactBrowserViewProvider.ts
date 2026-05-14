@@ -83,8 +83,6 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
       ],
       portMapping: getWebviewDevServerPortMapping(),
     };
-    webviewView.webview.html = this.getHtml(webviewView.webview);
-
     webviewView.webview.onDidReceiveMessage(
       (message: unknown) => {
         if (isArtifactBrowserReadyMessage(message)) {
@@ -109,6 +107,8 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
       null,
       this.context.subscriptions,
     );
+
+    webviewView.webview.html = this.getHtml(webviewView.webview);
   }
 
   private postMessage(

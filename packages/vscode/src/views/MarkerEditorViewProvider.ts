@@ -19,6 +19,7 @@ import {
   type MarkerEditorInitMessage,
   type MarkerEditorInitPayload,
   type MarkerEditorMode,
+  type MarkerEditorReadyMessage,
   type MarkerEditorResetRequestMessage,
   type MarkerEditorResetResponseMessage,
   type MarkerEditorSaveMessage,
@@ -105,8 +106,6 @@ export class MarkerEditorViewProvider {
       localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview'), vscode.Uri.joinPath(rootUri, ASSETS_DIRECTORY)],
       portMapping: getWebviewDevServerPortMapping(),
     };
-    this.panel.webview.html = this.getHtml(this.panel.webview);
-
     this.disposables.push(
       this.panel.onDidDispose(() => {
         MarkerEditorViewProvider.panels.delete(this.markerUri.toString());
@@ -117,7 +116,7 @@ export class MarkerEditorViewProvider {
       }),
     );
 
-    void this.sendInitMessage();
+    this.panel.webview.html = this.getHtml(this.panel.webview);
   }
 
   /**
@@ -127,6 +126,11 @@ export class MarkerEditorViewProvider {
    * @param message - Webview에서 수신한 unknown message envelope
    */
   private async handleMessage(message: unknown): Promise<void> {
+    if (isMarkerEditorReadyMessage(message)) {
+      await this.handleReady(message);
+      return;
+    }
+
     if (isMarkerEditorSaveMessage(message)) {
       await this.handleSave(message);
       return;
@@ -140,6 +144,21 @@ export class MarkerEditorViewProvider {
     if (isMarkerEditorSelectImageMessage(message)) {
       await this.handleSelectImage(message);
     }
+  }
+
+  /**
+   * handleReady 함수.
+   * Webview listener 준비 완료 신호를 받은 뒤 marker init payload를 전송함.
+   *
+   * @param message - marker editor ready request
+   */
+  private async handleReady(message: MarkerEditorReadyMessage): Promise<void> {
+    if (message.payload.markerUri && message.payload.markerUri !== this.markerUri.toString()) {
+      this.postMessage(createErrorMessage('staleMessage', 'Ready message does not match the open marker editor panel.'));
+      return;
+    }
+
+    await this.sendInitMessage();
   }
 
   /**
@@ -451,6 +470,10 @@ function isMarkerEditorSaveMessage(message: unknown): message is MarkerEditorSav
   return isMarkerEditorMessage(message, 'marker-editor/save') && isJsonObject(message.payload);
 }
 
+function isMarkerEditorReadyMessage(message: unknown): message is MarkerEditorReadyMessage {
+  return isMarkerEditorMessage(message, 'marker-editor/ready');
+}
+
 function isMarkerEditorResetMessage(message: unknown): message is MarkerEditorResetRequestMessage {
   return isMarkerEditorMessage(message, 'marker-editor/reset') && isJsonObject(message.payload);
 }
@@ -459,10 +482,22 @@ function isMarkerEditorSelectImageMessage(message: unknown): message is MarkerEd
   return isMarkerEditorMessage(message, 'marker-editor/selectImage') && isJsonObject(message.payload);
 }
 
-function isMarkerEditorMessage(message: unknown, type: MarkerEditorSaveMessage['type'] | MarkerEditorResetRequestMessage['type'] | MarkerEditorSelectImageMessage['type']): message is MarkerEditorSaveMessage | MarkerEditorResetRequestMessage | MarkerEditorSelectImageMessage {
+function isMarkerEditorMessage(
+  message: unknown,
+  type: MarkerEditorReadyMessage['type'] | MarkerEditorSaveMessage['type'] | MarkerEditorResetRequestMessage['type'] | MarkerEditorSelectImageMessage['type'],
+): message is MarkerEditorReadyMessage | MarkerEditorSaveMessage | MarkerEditorResetRequestMessage | MarkerEditorSelectImageMessage {
   if (!isJsonObject(message)) return false;
   const payload = message.payload;
   if (!isJsonObject(payload)) return false;
+  if (type === 'marker-editor/ready') {
+    return (
+      message.protocol === MARKER_EDITOR_PROTOCOL &&
+      message.version === MARKER_EDITOR_PROTOCOL_VERSION &&
+      message.type === type &&
+      typeof payload.markerUri === 'string'
+    );
+  }
+
   return (
     message.protocol === MARKER_EDITOR_PROTOCOL &&
     message.version === MARKER_EDITOR_PROTOCOL_VERSION &&

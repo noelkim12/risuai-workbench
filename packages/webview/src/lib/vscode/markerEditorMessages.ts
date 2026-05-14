@@ -6,14 +6,32 @@
 import {
   MARKER_EDITOR_PROTOCOL,
   MARKER_EDITOR_PROTOCOL_VERSION,
+  type MarkerEditorReadyMessage,
   type MarkerEditorSelectImageMessage,
   type MarkerEditorWebviewMessage,
 } from '../types';
 import type {
+  MarkerEditorReadyPayload,
   MarkerEditorResetRequestPayload,
   MarkerEditorSavePayload,
   MarkerEditorSelectImagePayload,
 } from '../types/markerEditor';
+
+/**
+ * createMarkerEditorReadyMessage 함수.
+ * Webview listener 준비 완료 후 extension host에 init 전송을 요청함.
+ *
+ * @param payload - 준비 완료를 알리는 marker URI 힌트
+ * @returns Marker Editor ready message
+ */
+export function createMarkerEditorReadyMessage(payload: MarkerEditorReadyPayload): MarkerEditorReadyMessage {
+  return {
+    protocol: MARKER_EDITOR_PROTOCOL,
+    version: MARKER_EDITOR_PROTOCOL_VERSION,
+    type: 'marker-editor/ready',
+    payload,
+  };
+}
 
 /**
  * createMarkerEditorSaveMessage 함수.

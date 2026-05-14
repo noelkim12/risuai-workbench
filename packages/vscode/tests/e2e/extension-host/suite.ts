@@ -17,6 +17,7 @@ import { getEmbeddedCbsServerModulePath } from '../../../src/lsp/cbsLanguageServ
 const EXTENSION_ID = 'risuai.risu-workbench-vscode';
 const HOVER_FIXTURE_NAME = 'runtime-hover.risuhtml';
 const HOVER_NEEDLE = '{{getvar::mood}}';
+const MAIN_EDITOR_RUNTIME_FIXTURE = 'main-editor/phase-6-entry.risulorebook';
 
 interface WorkspaceServerSettings {
   installMode: 'global' | 'local-devDependency' | 'npx';
@@ -195,6 +196,47 @@ function getWorkspaceFixtureUri(): vscode.Uri {
 }
 
 /**
+ * getMainEditorRuntimeFixtureUri 함수.
+ * extension-host workspace 아래의 Phase 6 custom editor smoke fixture URI를 계산함.
+ *
+ * @returns `.risulorebook` custom editor smoke fixture URI
+ */
+function getMainEditorRuntimeFixtureUri(): vscode.Uri {
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  assert.ok(workspaceRoot, 'Expected extension-host test workspace to be open');
+  return vscode.Uri.file(path.join(workspaceRoot, MAIN_EDITOR_RUNTIME_FIXTURE));
+}
+
+/**
+ * runMainEditorRuntimeSmoke 함수.
+ * `.risulorebook` custom editor open path와 TextDocument edit/undo/redo를 검증함.
+ */
+async function runMainEditorRuntimeSmoke(): Promise<void> {
+  const fixtureUri = getMainEditorRuntimeFixtureUri();
+  const document = await vscode.workspace.openTextDocument(fixtureUri);
+
+  assert.equal(document.languageId, 'risulorebook');
+  assert.match(document.getText(), /@@@ CONTENT/);
+
+  await vscode.commands.executeCommand('vscode.openWith', fixtureUri, 'risuWorkbench.mainEditor.lorebook', {
+    preview: false,
+    viewColumn: vscode.ViewColumn.One,
+  });
+
+  const originalText = document.getText();
+  const edit = new vscode.WorkspaceEdit();
+  const fullRange = new vscode.Range(document.positionAt(0), document.positionAt(originalText.length));
+  edit.replace(fixtureUri, fullRange, originalText.replace('Runtime Entry', 'Runtime Entry Edited'));
+
+  assert.equal(await vscode.workspace.applyEdit(edit), true);
+  assert.match(document.getText(), /Runtime Entry Edited/);
+  await vscode.commands.executeCommand('undo');
+  assert.match(document.getText(), /Runtime Entry/);
+  await vscode.commands.executeCommand('redo');
+  assert.match(document.getText(), /Runtime Entry Edited/);
+}
+
+/**
  * runRuntimeRoundtrip 함수.
  * initialize → didOpen → hover → shutdown의 실제 LanguageClient 왕복을 검증함.
  */
@@ -225,6 +267,8 @@ async function runRuntimeRoundtrip(): Promise<void> {
   const hovers = await waitForHoverResult(fixtureUri, hoverPosition);
   assert.ok(hovers.length > 0, 'Expected live hover result from the CBS language client');
   assert.match(toHoverText(hovers[0]), /getvar/i);
+
+  await runMainEditorRuntimeSmoke();
 
   await api.stopCbsLanguageClient();
 

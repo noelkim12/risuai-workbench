@@ -1,5 +1,6 @@
 import './styles.css';
 import App from './App.svelte';
+import MainEditor from './lib/components/editor/main/MainEditor.svelte';
 import MarkerEditor from './lib/components/editor/marker/MarkerEditor.svelte';
 import { mount } from 'svelte';
 import { writable } from 'svelte/store';
@@ -37,12 +38,21 @@ const viewMode = writable<'artifacts' | 'artifactDetail'>('artifacts');
 const status = writable('Connecting to extension host…');
 const app = document.querySelector<HTMLDivElement>('#app');
 const isEditorMode = document.documentElement.dataset.editorMode === 'true';
+const webviewName =
+  document.documentElement.dataset.risuWorkbenchView ??
+  document.querySelector('meta[name="risu-workbench-view"]')?.getAttribute('content');
+let artifactBrowserReadyRetryTimer: ReturnType<typeof setInterval> | undefined;
+let artifactBrowserInitialized = false;
 
 if (!app) {
   throw new Error('Missing #app root for Risu Workbench webview.');
 }
 
-if (isEditorMode) {
+if (isEditorMode && webviewName === 'main-editor') {
+  mount(MainEditor, {
+    target: app,
+  });
+} else if (isEditorMode) {
   mount(MarkerEditor, {
     target: app,
   });
@@ -65,7 +75,32 @@ if (isEditorMode) {
   });
 
   window.addEventListener('message', handleMessage);
+  announceArtifactBrowserReady();
+  artifactBrowserReadyRetryTimer = setInterval(() => {
+    if (artifactBrowserInitialized) {
+      stopArtifactBrowserReadyRetry();
+      return;
+    }
+    announceArtifactBrowserReady();
+  }, 500);
+}
+
+/**
+ * announceArtifactBrowserReady 함수.
+ * Sidebar webview가 host listener 준비 race에서 복구되도록 ready를 반복 전송함.
+ */
+function announceArtifactBrowserReady(): void {
   vscode?.postMessage(createArtifactBrowserReadyMessage());
+}
+
+/**
+ * stopArtifactBrowserReadyRetry 함수.
+ * 첫 cards 응답을 받으면 sidebar ready 재전송 timer를 정리함.
+ */
+function stopArtifactBrowserReadyRetry(): void {
+  if (!artifactBrowserReadyRetryTimer) return;
+  clearInterval(artifactBrowserReadyRetryTimer);
+  artifactBrowserReadyRetryTimer = undefined;
 }
 
 function handleMessage(event: MessageEvent<unknown>): void {
@@ -73,6 +108,8 @@ function handleMessage(event: MessageEvent<unknown>): void {
   if (!isArtifactBrowserExtensionMessage(message)) return;
 
   if (message.type === 'artifact-browser/cards') {
+    artifactBrowserInitialized = true;
+    stopArtifactBrowserReadyRetry();
     const nextCards = message.payload.cards;
     if (message.payload.selectedStableId) {
       selectedStableId.set(message.payload.selectedStableId);
