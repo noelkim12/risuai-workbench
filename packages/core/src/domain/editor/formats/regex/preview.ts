@@ -1,12 +1,12 @@
 /**
  * .risuregex 문서의 Main Editor preview를 생성하는 어댑터입니다.
- * @file packages/core/src/domain/editor/regex-preview-adapter.ts
+ * @file packages/core/src/domain/editor/formats/regex/preview.ts
  */
 
-import type { CbsSimulationContextInput } from '../../simulator';
-import { simulateRisuRegexPreview } from '../../simulator/regex';
-import type { SimulatorDiagnostic, SimulatorTraceEvent } from '../../simulator/regex';
-import type { RegexEditorState } from './document-model-types';
+import type { CbsSimulationContextInput } from '../../../../simulator';
+import { simulateRisuRegexPreview } from '../../../../simulator/regex';
+import type { SimulatorDiagnostic, SimulatorTraceEvent } from '../../../../simulator/regex';
+import type { RegexEditorState } from '../../document-model/types';
 
 export interface RegexMainEditorPreviewInput {
   sampleInput?: string;

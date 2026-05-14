@@ -1,9 +1,9 @@
 /**
- * `.risuhtml` 문서 전체를 단일 본문으로 보존하는 identity editor model 유틸입니다.
- * @file packages/core/src/domain/editor/html-document-model.ts
+ * `.risuhtml` 문서 전체를 단일 본문으로 보존하는 identity format module.
+ * @file packages/core/src/domain/editor/formats/html/document-model.ts
  */
 
-import type { EditorDocumentModel, HtmlEditorState } from './document-model-types';
+import type { EditorDocumentModel, HtmlEditorState } from '../../document-model/types';
 
 /**
  * parseHtmlEditorDocument 함수.

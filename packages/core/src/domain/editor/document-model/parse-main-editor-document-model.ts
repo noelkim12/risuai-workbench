@@ -1,13 +1,13 @@
 /**
  * Main Editor formatKind에 따라 전용 document model parser로 위임하는 진입점.
- * @file packages/core/src/domain/editor/main-editor-document-model.ts
+ * @file packages/core/src/domain/editor/document-model/parse-main-editor-document-model.ts
  */
 
-import type { EditorDocumentModel, EditorFormatState, MainEditorFormatKind } from './document-model-types';
-import { parseHtmlEditorDocument } from './html-document-model';
-import { parseLorebookEditorDocument } from './lorebook-document-model';
-import { parsePromptEditorDocument } from './prompt-document-model';
-import { parseRegexEditorDocument } from './regex-document-model';
+import type { EditorDocumentModel, EditorFormatState, MainEditorFormatKind } from './types';
+import { parseHtmlEditorDocument } from '../formats/html/document-model';
+import { parseLorebookEditorDocument } from '../formats/lorebook/document-model';
+import { parsePromptEditorDocument } from '../formats/prompt/document-model';
+import { parseRegexEditorDocument } from '../formats/regex/document-model';
 
 /**
  * parseMainEditorDocumentModel 함수.

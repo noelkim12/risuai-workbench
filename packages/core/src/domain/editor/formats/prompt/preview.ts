@@ -1,11 +1,13 @@
 /**
  * .risuprompt 문서의 Main Editor preview를 생성하는 어댑터입니다.
- * @file packages/core/src/domain/editor/prompt-preview-adapter.ts
+ * @file packages/core/src/domain/editor/formats/prompt/preview.ts
  */
 
-import type { CbsSimulationContextInput, CbsSimulationDiagnostic, CbsSimulationTraceEvent } from '../../simulator';
-import { simulateCbsText } from '../../simulator';
-import type { PromptEditorState } from './document-model-types';
+import type { CbsSimulationContextInput, CbsSimulationTraceEvent } from '../../../../simulator';
+import { simulateCbsText } from '../../../../simulator';
+import type { PromptEditorState } from '../../document-model/types';
+import type { EditorPreviewDiagnostic } from '../../preview/types';
+import { createPreviewDiagnostic } from '../../preview/create-preview-diagnostic';
 import { getPromptTypeRule, isPromptType, type PromptSectionName, type PromptType } from './prompt-rules';
 
 export interface PromptMainEditorPreviewInput {
@@ -17,7 +19,7 @@ export interface PromptMainEditorPreviewResult {
   status: 'ok' | 'partial' | 'aborted' | 'error';
   title: string;
   output: string;
-  diagnostics: Array<{ severity: 'error' | 'warning' | 'info'; message: string; code?: string }>;
+  diagnostics: EditorPreviewDiagnostic[];
   trace: CbsSimulationTraceEvent[];
   metadata: {
     format: 'prompt';
@@ -67,7 +69,7 @@ export function createPromptMainEditorPreview(
     status: simulation.status,
     title: `.risuprompt ${type} Preview`,
     output: simulation.output,
-    diagnostics: simulation.diagnostics.map(toPromptDiagnostic),
+    diagnostics: simulation.diagnostics.map(createPreviewDiagnostic),
     trace: simulation.trace,
     metadata: {
       format: 'prompt',
@@ -139,20 +141,5 @@ function createPromptErrorPreview(type: string, code: string, message: string): 
       activeSection: '',
       sectionless: 'false',
     },
-  };
-}
-
-/**
- * toPromptDiagnostic 함수.
- * CBS simulator diagnostic을 prompt preview DTO가 쓰는 최소 형태로 축약합니다.
- *
- * @param diagnostic - prompt section 평가 중 simulator가 생성한 diagnostic입니다.
- * @returns prompt preview 결과에 포함할 diagnostic DTO입니다.
- */
-function toPromptDiagnostic(diagnostic: CbsSimulationDiagnostic): { severity: 'error' | 'warning' | 'info'; message: string; code?: string } {
-  return {
-    severity: diagnostic.severity,
-    message: diagnostic.message,
-    code: diagnostic.code,
   };
 }

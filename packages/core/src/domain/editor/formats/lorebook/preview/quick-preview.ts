@@ -1,14 +1,17 @@
 /**
  * .risulorebook CONTENT 섹션의 빠른 preview를 생성하는 어댑터입니다.
- * @file packages/core/src/domain/editor/lorebook-preview.ts
+ * @file packages/core/src/domain/editor/formats/lorebook/preview/quick-preview.ts
  */
 
-import { simulateCbsText, type CbsSimulationContextInput } from '../../simulator';
+import { simulateCbsText, type CbsSimulationContextInput } from '../../../../../simulator';
+import type { EditorPreviewDiagnostic } from '../../../preview/types';
+import { createPreviewDiagnostic } from '../../../preview/create-preview-diagnostic';
+import { formatCoverageSummary } from '../../../preview/coverage-summary';
 
 export interface LorebookContentPreviewResult {
   status: 'ok' | 'partial' | 'aborted' | 'error';
   output: string;
-  diagnostics: Array<{ severity: 'error' | 'warning' | 'info'; message: string; code?: string }>;
+  diagnostics: EditorPreviewDiagnostic[];
   coverageSummary: string;
 }
 
@@ -28,11 +31,7 @@ export function createLorebookContentPreview(
   return {
     status: result.status,
     output: result.output,
-    diagnostics: result.diagnostics.map((diagnostic) => ({
-      severity: diagnostic.severity,
-      message: diagnostic.message,
-      code: diagnostic.code,
-    })),
-    coverageSummary: `${result.coverage.totalMacros} macros, ${result.coverage.unknownMacros.length} unknown`,
+    diagnostics: result.diagnostics.map(createPreviewDiagnostic),
+    coverageSummary: formatCoverageSummary(result.coverage.totalMacros, result.coverage.unknownMacros.length),
   };
 }

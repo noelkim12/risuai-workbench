@@ -18,6 +18,9 @@
 | `parseLorebookEditorDocument` | `.risulorebook` parser |
 | `reassembleLorebookEditorDocument` | `.risulorebook` serializer compatibility API |
 | `parseRegexEditorDocument` / `reassembleRegexEditorDocument` | `.risuregex` IN/OUT skeleton parser와 serializer |
+| `canSerializeLorebookModel` | lorebook model의 warning이 재조립을 허용하는지 판별 |
+| `canSerializeRegexModel` | regex model의 warning이 재조립을 허용하는지 판별 |
+| `canSerializePromptModel` | prompt model의 warning이 재조립을 허용하는지 판별 |
 | `parsePromptEditorDocument` / `reassemblePromptEditorDocument` | `.risuprompt` type-aware section parser와 serializer |
 | `parseHtmlEditorDocument` / `reassembleHtmlEditorDocument` | `.risuhtml` identity document model |
 | `createLorebookContentPreview` | lorebook CONTENT quick preview 생성 |
@@ -26,6 +29,18 @@
 | `createPromptMainEditorPreview` | prompt preview 생성 |
 | `createHtmlMainEditorPreview` | sandboxed iframe srcdoc preview 생성 |
 | `createDefaultMainEditorSimulatorProfile` | Main Editor용 기본 simulator profile 생성 |
+| `mapContentMonacoPositionToSourcePosition` | lorebook CONTENT 전용 Monaco → source position 변환 (VS Code LSP bridge에서 소비) |
+| `mapSourceRangeToContentMonacoRange` | lorebook CONTENT 전용 source range → Monaco range 변환 (VS Code LSP bridge에서 소비) |
+
+## Internal candidate exports
+
+다음 export는 editor domain 내부 구현과 core test에서만 직접 사용하며, `@internal`로 문서화되어 있습니다. Barrel 재노출은 import 호환성을 위해 유지합니다:
+
+| Symbol | Note |
+|---|---|
+| `scanEditorDocumentSections` | format별 parser 내부 scanner. 외부 패키지 소비자 없음 |
+| `createLineOffsetIndex` | content-position-mapper 내부 offset index. 외부 패키지 소비자 없음 |
+| `createEmptyEditorDocumentWarnings` | document-model 내부 default helper |
 
 ## Invariants
 
@@ -34,7 +49,7 @@
 - Monaco position/range는 one-based line/column을 사용합니다.
 - Parser는 CRLF와 final newline 여부를 model에 보존해야 합니다.
 - Malformed document나 raw section 손실 가능성이 있는 document는 serializer가 원문을 반환해야 합니다.
-- `scanEditorDocumentSections`는 현재 public barrel에서 재노출되지만, 구조 변경 시 compatibility를 유지해야 합니다.
+- `scanEditorDocumentSections`는 `@internal`로 분류된 barrel export입니다. editor domain 내부와 core test에서만 사용하며, 외부 패키지 소비자는 없습니다. Barrel 재노출은 import 호환성을 위해 유지합니다.
 
 ## Current behavior to preserve before refactor
 

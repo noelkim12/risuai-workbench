@@ -1,10 +1,12 @@
 /**
- * `.risuregex` 문서의 IN/OUT section을 구조화 편집 상태로 다루는 모델 유틸입니다.
- * @file packages/core/src/domain/editor/regex-document-model.ts
+ * `.risuregex` 문서의 IN/OUT section을 구조화 편집 상태로 다루는 format module.
+ * @file packages/core/src/domain/editor/formats/regex/document-model.ts
  */
 
-import type { EditorDocumentModel, RegexEditorState } from './document-model-types';
-import { scanEditorDocumentSections } from './section-scanner';
+import type { EditorDocumentModel, RegexEditorState } from '../../document-model/types';
+import { scanEditorDocumentSections } from '../../shared/sections/scan-editor-document';
+import { canSerializeRegexModel } from './serialize-policy';
+import { REGEX_KNOWN_SECTIONS } from './schema';
 
 /**
  * parseRegexEditorDocument 함수.
@@ -14,7 +16,7 @@ import { scanEditorDocumentSections } from './section-scanner';
  * @returns frontmatter, section range, IN/OUT 본문을 담은 regex editor model을 반환합니다.
  */
 export function parseRegexEditorDocument(source: string): EditorDocumentModel<RegexEditorState> {
-  const scanned = scanEditorDocumentSections(source, { knownSections: ['IN', 'OUT'] });
+  const scanned = scanEditorDocumentSections(source, { knownSections: [...REGEX_KNOWN_SECTIONS] });
   const sections = new Map(scanned.sections.map((section) => [section.name, section]));
   return {
     formatKind: 'regex',
@@ -41,7 +43,7 @@ export function parseRegexEditorDocument(source: string): EditorDocumentModel<Re
  * @returns warning이 없을 때 재조립된 `.risuregex` 원문을 반환합니다.
  */
 export function reassembleRegexEditorDocument(model: EditorDocumentModel<RegexEditorState>, state: RegexEditorState): string {
-  if (model.warnings.length > 0) return model.source;
+  if (!canSerializeRegexModel(model)) return model.source;
 
   const lineEnding = model.lineEnding;
   const frontmatterLines = Object.entries(state.frontmatter).map(([key, value]) => `${key}: ${value}`);

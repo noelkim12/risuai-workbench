@@ -3,7 +3,7 @@
  * @file packages/core/src/domain/editor/shared/source-position/line-offset-index.ts
  */
 
-import type { SourcePosition } from '../../document-model-types';
+import type { SourcePosition } from './types';
 
 export interface LineOffsetIndex {
   readonly lineStarts: readonly number[];

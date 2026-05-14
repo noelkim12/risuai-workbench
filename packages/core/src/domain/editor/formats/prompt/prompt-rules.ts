@@ -1,6 +1,6 @@
 /**
  * Main Editor authoring과 preview에서 쓰는 `.risuprompt` type/section 규칙입니다.
- * @file packages/core/src/domain/editor/prompt-rules.ts
+ * @file packages/core/src/domain/editor/formats/prompt/prompt-rules.ts
  */
 
 export type PromptType = 'plain' | 'jailbreak' | 'cot' | 'chatML' | 'persona' | 'description' | 'lorebook' | 'postEverything' | 'memory' | 'authornote' | 'chat' | 'cache';
