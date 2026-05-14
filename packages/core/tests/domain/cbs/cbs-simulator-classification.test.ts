@@ -106,11 +106,11 @@ describe('CBS simulator upstream parity fixture corpus', () => {
       templateDefaultVariables: { mood: 'sad' },
     });
 
-    const missingFixture = getCbsSimulatorParityFixture('variable precedence missing value returns null intent');
+    const missingFixture = getCbsSimulatorParityFixture('variable precedence missing value returns blank intent');
     expect(missingFixture).toEqual(
       expect.objectContaining({
         source: '{{getvar::missing_mood}}',
-        expectedOutput: 'null',
+        expectedOutput: '',
       }),
     );
     expect(missingFixture?.context).toEqual({

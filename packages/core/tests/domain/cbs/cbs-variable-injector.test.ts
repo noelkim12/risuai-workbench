@@ -224,12 +224,12 @@ describe('CBS preview variable injector engine', () => {
       valuePreview: 'false',
     });
 
-    // nil: null should be resolved
+    // nil: null should be resolved, but preview as visually blank
     expect(result.bindings[3]).toMatchObject({
       variableName: 'nil',
       status: 'resolved',
       source: 'previewOverride',
-      valuePreview: 'null',
+      valuePreview: '',
     });
 
     // No warnings for any of these variables

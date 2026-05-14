@@ -7,6 +7,9 @@
  */
 
 type CalcComparisonOperator = '=' | '==' | '!=' | '<' | '<=' | '>' | '>=' | '=>';
+type CalcEqualityOperand =
+  | { readonly kind: 'number'; readonly value: number }
+  | { readonly kind: 'nullish' };
 
 interface CalcComparisonSplit {
   readonly left: string;
@@ -153,6 +156,44 @@ function normalizeLegacyCalcNotEquals(expression: string): string {
 }
 
 /**
+ * parseCalcEqualityOperand 함수.
+ * Equality 비교에서만 허용할 nullish/number operand를 분류함.
+ *
+ * @param expression - equality operand expression
+ * @returns 비교 가능한 operand 또는 invalid이면 undefined
+ */
+function parseCalcEqualityOperand(expression: string): CalcEqualityOperand | undefined {
+  const trimmed = expression.trim();
+  if (trimmed === '' || trimmed === 'null' || trimmed === 'undefined') {
+    return { kind: 'nullish' };
+  }
+
+  const value = evaluateArithmeticExpression(trimmed);
+  return value === undefined ? undefined : { kind: 'number', value };
+}
+
+/**
+ * evaluateCalcEqualityComparison 함수.
+ * `=`, `==`, `!=`에서 nullish operand와 numeric operand를 비교함.
+ *
+ * @param split - top-level equality comparison 분해 결과
+ * @returns CBS numeric boolean, invalid operand이면 undefined
+ */
+function evaluateCalcEqualityComparison(split: CalcComparisonSplit): number | undefined {
+  const left = parseCalcEqualityOperand(split.left);
+  const right = parseCalcEqualityOperand(split.right);
+  if (!left || !right) return undefined;
+
+  let equal = false;
+  if (left.kind === 'nullish' && right.kind === 'nullish') {
+    equal = true;
+  } else if (left.kind === 'number' && right.kind === 'number') {
+    equal = left.value === right.value;
+  }
+  return split.operator === '!=' ? (equal ? 0 : 1) : (equal ? 1 : 0);
+}
+
+/**
  * evaluateCalcComparison 함수.
  * Arithmetic 양변을 안전하게 계산한 뒤 CBS numeric boolean으로 반환함.
  *
@@ -160,16 +201,15 @@ function normalizeLegacyCalcNotEquals(expression: string): string {
  * @returns `1` 또는 `0`, invalid arithmetic이면 undefined
  */
 function evaluateCalcComparison(split: CalcComparisonSplit): number | undefined {
+  if (split.operator === '=' || split.operator === '==' || split.operator === '!=') {
+    return evaluateCalcEqualityComparison(split);
+  }
+
   const left = evaluateArithmeticExpression(split.left);
   const right = evaluateArithmeticExpression(split.right);
   if (left === undefined || right === undefined) return undefined;
 
   switch (split.operator) {
-    case '=':
-    case '==':
-      return left === right ? 1 : 0;
-    case '!=':
-      return left !== right ? 1 : 0;
     case '<':
       return left < right ? 1 : 0;
     case '<=':

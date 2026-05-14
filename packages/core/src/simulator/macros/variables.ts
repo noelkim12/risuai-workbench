@@ -71,12 +71,12 @@ export function resolveChatVariable(state: VariableState, key: string): Variable
       source: 'templateDefault',
     };
   }
-  return { value: 'null', source: 'missing' };
+  return { value: '', source: 'missing' };
 }
 
 /**
  * evaluateGetVarMacro 함수.
- * chat → character default → template default → null 순서로 변수를 읽음.
+ * chat → character default → template default → blank fallback 순서로 변수를 읽음.
  *
  * @param node - 평가할 getvar MacroCall node
  * @param state - simulation 누적 상태
@@ -100,7 +100,7 @@ function evaluateGetVarMacro(node: MacroCallNode, state: VariableState, depth: n
 
 /**
  * evaluateGetGlobalVarMacro 함수.
- * global variable store에서 값을 읽고 missing이면 null을 반환함.
+ * global variable store에서 값을 읽고 missing이면 빈 문자열을 반환함.
  *
  * @param node - 평가할 getglobalvar MacroCall node
  * @param state - simulation 누적 상태
@@ -114,7 +114,7 @@ function evaluateGetGlobalVarMacro(
 ): string {
   const key = state.evaluateArgument(node.arguments[0], depth + 1);
   const hasValue = hasOwn(state.context.globalVariables, key);
-  const value = hasValue ? stringifyVariableValue(state.context.globalVariables[key]) : 'null';
+  const value = hasValue ? stringifyVariableValue(state.context.globalVariables[key]) : '';
   const source = hasValue ? 'global' : 'missing';
 
   pushTrace(state, {

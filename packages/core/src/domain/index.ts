@@ -1,6 +1,7 @@
 export { asRecord, type GenericRecord } from './types';
 export * from './cbs';
 export * from './custom-extension';
+export * from './editor';
 export {
   buildFolderMap as buildRisuFolderMap,
   resolveFolderName as resolveRisuFolderName,

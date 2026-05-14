@@ -62,7 +62,7 @@ describe('CBS simulator variable fixtures', () => {
     );
   });
 
-  it('falls back through character default, template default, and missing null', () => {
+  it('falls back through character default, template default, and missing blank output', () => {
     expect(
       simulateCbsText('{{getvar::mood}}', {
         characterDefaultVariables: { mood: 'angry' },
@@ -74,7 +74,25 @@ describe('CBS simulator variable fixtures', () => {
         templateDefaultVariables: { mood: 'sad' },
       }).output,
     ).toBe('sad');
-    expect(simulateCbsText('{{getvar::mood}}').output).toBe('null');
+    expect(simulateCbsText('{{getvar::mood}}').output).toBe('');
+  });
+
+  it('renders null own-property variable values as blank output', () => {
+    const result = simulateCbsText('{{getvar::mood}}|{{getglobalvar::route}}|{{tempvar::scratch}}', {
+      chatVariables: { mood: null },
+      globalVariables: { route: null },
+      tempVariables: { scratch: null },
+    });
+
+    expect(result.status).toBe('ok');
+    expect(result.output).toBe('||');
+    expect(result.trace).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ node: 'getvar', details: expect.objectContaining({ key: 'mood', source: 'chat' }) }),
+        expect.objectContaining({ node: 'getglobalvar', details: expect.objectContaining({ key: 'route', source: 'global' }) }),
+        expect.objectContaining({ node: 'tempvar', details: expect.objectContaining({ key: 'scratch', source: 'temp' }) }),
+      ]),
+    );
   });
 
   it('resolves getglobalvar from context globals with source labels', () => {
@@ -82,7 +100,7 @@ describe('CBS simulator variable fixtures', () => {
       globalVariables: { route: 'alpha' },
     });
 
-    expect(result.output).toBe('alpha null');
+    expect(result.output).toBe('alpha ');
     expect(result.trace).toContainEqual(
       expect.objectContaining({
         node: 'getglobalvar',
@@ -1107,6 +1125,33 @@ describe('CBS simulator pure macro fixtures', () => {
     expect(result.status).toBe('ok');
     expect(result.output).toBe('1|1|0|yes');
     expect(result.diagnostics).toEqual([]);
+  });
+
+  it('evaluates nullish variable equality comparisons without widening arithmetic', () => {
+    const result = simulateCbsText(
+      [
+        '{{? {{getvar::vg_Language}} != 2}}',
+        '{{#if {{? {{getvar::vg_Language}} != 2}}}}english{{/if}}',
+        '{{? {{getvar::vg_Language}} == 2}}',
+        '{{? {{getvar::vg_Language}} == null}}',
+        '{{? null == undefined}}',
+        '{{? 2 != {{getvar::vg_Language}}}}',
+        '{{? {{getvar::vg_Language}} < 2}}',
+        '{{? {{getvar::vg_Language}} + 2}}',
+        '{{? unknown == 2}}',
+      ].join('|'),
+      {
+        chatVariables: { vg_Language: null },
+      },
+    );
+
+    expect(result.output).toBe('1|english|0|1|1|1|NaN|NaN|NaN');
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'CBSSIM002', source: 'simulator', severity: 'warning' }),
+      ]),
+    );
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.code === 'CBSSIM002')).toHaveLength(3);
   });
 
   it('evaluates upstream-style calc logical operators', () => {

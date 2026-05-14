@@ -59,7 +59,7 @@ export function stringifyPureValue(value: unknown): string {
  * @returns CBS output string
  */
 export function stringifyVariableValue(value: unknown): string {
-  if (value === undefined || value === null) return 'null';
+  if (value === undefined || value === null) return '';
   return String(value);
 }
 
