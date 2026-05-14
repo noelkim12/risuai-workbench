@@ -5,6 +5,7 @@
 import { extractCBSVariableOccurrences, type CBSVariableOccurrence } from '../../domain/cbs/cbs';
 import { createDefaultCbsSimulationContext } from '../context';
 import type { CbsSimulationContext, CbsSimulationEffect } from '../types';
+import { stringifyVariableValue } from '../values';
 import type {
   CbsPreviewVariableBinding,
   CbsPreviewVariableBindingStatus,
@@ -337,8 +338,8 @@ function readLayer(layer: Record<string, unknown>, key: string): { found: boolea
   // This preserves falsy values as valid
   if (Object.prototype.hasOwnProperty.call(layer, key)) {
     const value = layer[key];
-    // Stringify the value for preview
-    const stringified = value === null ? 'null' : String(value);
+    // Stringify the value for preview while keeping null visibly blank.
+    const stringified = stringifyVariableValue(value);
     return { found: true, value: stringified };
   }
   return { found: false, value: '' };

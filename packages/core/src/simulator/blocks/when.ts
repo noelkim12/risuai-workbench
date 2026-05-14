@@ -3,7 +3,7 @@
  * @file packages/core/src/domain/cbs/simulator/blocks/when.ts
  */
 import type { BlockNode } from '../../domain/cbs/parser/ast';
-import { cloneRange } from '../engine/source-range';
+import { cloneRange, sourceForRange } from '../engine/source-range';
 import { pushTrace } from '../engine/trace';
 import { hasOwn, stringifyVariableValue } from '../values';
 import { resolveChatVariable } from '../macros/variables';
@@ -31,6 +31,18 @@ function resolveWhenMode(node: BlockNode, conditionText: string): 'normal' | 'ke
   if (node.operators.includes('legacy') || conditionText.split('::').includes('legacy'))
     return 'legacy';
   return 'normal';
+}
+
+/**
+ * getRawWhenConditionText 함수.
+ * #when condition AST를 source 기준 CBS condition/operator 문자열로 복원함.
+ *
+ * @param node - raw condition을 읽을 #when Block node
+ * @param state - source range lookup에 사용할 simulation state
+ * @returns source에 적힌 #when condition/operator chain
+ */
+function getRawWhenConditionText(node: BlockNode, state: BlockEvaluationState): string {
+  return node.condition.map((conditionNode) => sourceForRange(state, conditionNode.range)).join('').trim();
 }
 
 /**
@@ -131,7 +143,7 @@ export function evaluateWhenBlock(
     message: `#when evaluated ${truthy ? 'truthy' : 'falsy'}`,
     node: '#when',
     range: cloneRange(node.openRange),
-    details: { condition: conditionText, mode, truthy },
+    details: { condition: conditionText, rawCondition: getRawWhenConditionText(node, state), mode, truthy },
   });
 
   if (mode === 'keep') return output;

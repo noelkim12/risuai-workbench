@@ -76,12 +76,12 @@ export const CBS_SIMULATOR_PARITY_FIXTURES: readonly CbsSimulatorParityFixture[]
     },
   },
   {
-    name: 'variable precedence missing value returns null intent',
+    name: 'variable precedence missing value returns blank intent',
     priority: 'P1',
     source: '{{getvar::missing_mood}}',
-    expectedOutput: 'null',
+    expectedOutput: '',
     supportClass: 'supported',
-    upstreamRefs: ['local simulator Task 4 missing variable fallback contract'],
+    upstreamRefs: ['local simulator missing variable blank display contract'],
     context: {
       chatVariables: {},
       characterDefaultVariables: {},

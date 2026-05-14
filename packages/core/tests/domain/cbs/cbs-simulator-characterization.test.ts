@@ -225,9 +225,36 @@ describe('CBS simulator PR1 characterization safety net', () => {
     expect(result.diagnostics).toEqual([]);
     expect(result.trace).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ node: '#if', details: expect.objectContaining({ condition: '1', truthy: true }) }),
-        expect.objectContaining({ node: '#when', details: expect.objectContaining({ truthy: false }) }),
+        expect.objectContaining({ node: '#if', details: expect.objectContaining({ condition: '1', rawCondition: '{{? {{getglobalvar::enabled}}=1}}', truthy: true }) }),
+        expect.objectContaining({ node: '#when', details: expect.objectContaining({ rawCondition: '0', truthy: false }) }),
         expect.objectContaining({ node: '#each', details: expect.objectContaining({ alias: 'item', count: 2 }) }),
+      ]),
+    );
+  });
+
+  it('keeps raw condition text in #if and #when trace details for compact preview labels', () => {
+    const result = simulateCbsText(
+      [
+        '{{#if {{? ({{getvar::vg_Choice_Flag}} == 4)}} }}IF{{/if}}',
+        '{{#when::{{getglobalvar::toggle_advice}}::is::1}}WHEN{{/when}}',
+      ].join('\n'),
+      {
+        chatVariables: { vg_Choice_Flag: '4' },
+        globalVariables: { toggle_advice: '1' },
+      },
+    );
+
+    expect(result.status).toBe('ok');
+    expect(result.trace).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          node: '#if',
+          details: expect.objectContaining({ rawCondition: '{{? ({{getvar::vg_Choice_Flag}} == 4)}}' }),
+        }),
+        expect.objectContaining({
+          node: '#when',
+          details: expect.objectContaining({ rawCondition: '{{getglobalvar::toggle_advice}}::is::1' }),
+        }),
       ]),
     );
   });

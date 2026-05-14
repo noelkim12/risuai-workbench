@@ -36,7 +36,7 @@ CBS source만으로 값이 결정되지 않는 macro는 명시 context를 주입
 | --- | --- | --- | --- |
 | 표시 이름/역할 | `{{user}}`, `{{char}}`, `{{role}}` | 원문 보존 또는 기본 안전값 | `userLabel`, `characterLabel`, `role` |
 | 채팅 히스토리 | `{{lastmessageid}}`, `{{previous_chat_log::0}}` | runtime-unknown 원문 보존 | `chatHistory` |
-| 전역/채팅 변수 | `{{getglobalvar::toggle_trpgmode}}`, `{{getvar::mood}}` | missing은 `null` 계열 값 | `globalVariables`, `chatVariables`, default variable maps |
+| 전역/채팅 변수 | `{{getglobalvar::toggle_trpgmode}}`, `{{getvar::mood}}` | missing/null은 빈 출력 | `globalVariables`, `chatVariables`, default variable maps |
 | temp scope | `{{tempvar::x}}`, `{{settempvar::x::1}}` | simulator-local temp만 사용 | `tempVariables` |
 | 위치/로어 슬롯 | `{{position::ep1}}`, bare `{{slot}}` | 원문 보존 또는 frame miss | `lorePositions`, block slot frame을 만드는 source |
 | 비결정 macro | `{{time::...}}`, `{{random::...}}`, `{{roll::...}}` | 기본 provider 사용 | `providers.clock`, `providers.rng`, `providers.pickHashRand` |
@@ -111,7 +111,9 @@ const preview = simulateCbsText(
 
 `parseVariableContent`는 이미 caller가 읽어 온 `.risuvar` 텍스트를 key-value map으로 바꾸는 읽기 전용 parsing support로만 사용합니다. 이 helper는 첫 번째 `=`만 나누고, 빈 줄은 건너뛰며, 값 내부 공백과 추가 `=`는 보존합니다. Injector 안에서는 custom-extension module을 import하지 않으며, caller가 필요한 경우에만 parsing 결과를 `workspaceDefaults.characterDefaultVariables`나 `workspaceDefaults.templateDefaultVariables`에 넘깁니다.
 
-상태 의미는 trace와 warning을 읽기 위한 계약입니다. `missing`은 해당 scope에서 읽을 값이 없다는 뜻이고, `runtimeUnknown`은 `#each` iterator처럼 실제 런타임 frame이 있어야 확정되는 값입니다. 반대로 `''`, `0`, `false`, `null`처럼 falsy인 own value는 missing으로 취급하지 않고 resolved로 남깁니다. Caller는 값의 truthiness가 아니라 own-property 존재 여부를 기준으로 preview override와 default map을 준비해야 합니다.
+상태 의미는 trace와 warning을 읽기 위한 계약입니다. `missing`은 해당 scope에서 읽을 값이 없다는 뜻이고, `runtimeUnknown`은 `#each` iterator처럼 실제 런타임 frame이 있어야 확정되는 값입니다. 반대로 `''`, `0`, `false`, `null`처럼 falsy인 own value는 missing으로 취급하지 않고 resolved로 남깁니다. 단, `null`/`undefined` 변수 값의 preview output은 문자 `null`이 아니라 빈 문자열로 표시합니다. Caller는 값의 truthiness가 아니라 own-property 존재 여부를 기준으로 preview override와 default map을 준비해야 합니다.
+
+`{{? ...}}` equality 비교(`=`, `==`, `!=`)에서는 이 빈 nullish 출력과 literal `null`/`undefined`를 비교 가능한 nullish operand로 취급합니다. 예를 들어 `{{#if {{? {{getvar::vg_Language}} != 2}}}}...{{/if}}`에서 `vg_Language`가 own-property `null`이면 `nullish != 2`가 true로 평가되어 body가 표시됩니다. 다만 이 보정은 equality 비교에만 적용되며, `{{? {{getvar::vg_Language}} < 2}}` 또는 `{{? {{getvar::vg_Language}} + 2}}`처럼 산술/관계 연산에 빈 nullish 값이 들어가면 기존처럼 invalid expression diagnostic과 `NaN` preview를 유지합니다.
 
 이 engine의 non-goal도 명확합니다. VS Code webview UI를 만들지 않고, preview override를 저장하지 않으며, `.risuvar`를 쓰지 않습니다. 또한 variable serializer나 injector write path를 호출하지 않으므로 `serializeVariableContent`, `injectVariablesIntoCharx`, `injectVariablesIntoModule`은 preview variable injector의 의존성이 아닙니다.
 
