@@ -1,6 +1,6 @@
 /**
  * .risulorebook CONTENT runtime preview와 변수 override binding을 생성하는 어댑터입니다.
- * @file packages/core/src/domain/editor/lorebook-preview-runtime.ts
+ * @file packages/core/src/domain/editor/formats/lorebook/preview/runtime-preview.ts
  */
 
 import {
@@ -11,7 +11,10 @@ import {
   type CbsSimulationContext,
   type CbsSimulationContextInput,
   type CbsSimulationTracePhase,
-} from '../../simulator';
+} from '../../../../../simulator';
+import type { EditorPreviewDiagnostic } from '../../../preview/types';
+import { createPreviewDiagnostic } from '../../../preview/create-preview-diagnostic';
+import { formatCoverageSummary } from '../../../preview/coverage-summary';
 
 export type LorebookRuntimeVariableSourceBadge =
   | 'usage'
@@ -57,9 +60,7 @@ export interface LorebookRuntimePreviewResult {
   warnings: Array<{ code: string; variableName: string; message: string }>;
   diagnostics: Array<{
     source: 'parser' | 'simulator';
-    severity: 'error' | 'warning' | 'info';
-    message: string;
-    code?: string;
+  } & EditorPreviewDiagnostic & {
     range?: { line: number; character: number; endLine: number; endCharacter: number };
   }>;
   effects: Array<{
@@ -129,9 +130,7 @@ export function createLorebookContentRuntimePreview(
     })),
     diagnostics: simulation.diagnostics.map((diagnostic) => ({
       source: diagnostic.source,
-      severity: diagnostic.severity,
-      message: diagnostic.message,
-      code: diagnostic.code,
+      ...createPreviewDiagnostic(diagnostic),
       range: diagnostic.range ? toRuntimeRange(diagnostic.range) : undefined,
     })),
     effects: simulation.effects.map((effect) => ({
@@ -151,7 +150,7 @@ export function createLorebookContentRuntimePreview(
       range: event.range ? toRuntimeRange(event.range) : undefined,
       details: stringifyDetails(event.details),
     })),
-    coverageSummary: `${simulation.coverage.totalMacros} macros, ${simulation.coverage.unknownMacros.length} unknown`,
+    coverageSummary: formatCoverageSummary(simulation.coverage.totalMacros, simulation.coverage.unknownMacros.length),
   };
 }
 

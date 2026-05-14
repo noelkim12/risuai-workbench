@@ -1,72 +1,19 @@
 /**
  * Main Editor 문서 모델에서 함께 쓰는 타입 계약을 모아둔 파일.
- * @file packages/core/src/domain/editor/document-model-types.ts
+ * @file packages/core/src/domain/editor/document-model/types.ts
  */
 
 export const MAIN_EDITOR_FORMAT_KINDS = ['lorebook', 'regex', 'prompt', 'html'] as const;
 
 export type MainEditorFormatKind = (typeof MAIN_EDITOR_FORMAT_KINDS)[number];
 
-export type EditorDocumentWarningSeverity = 'info' | 'warning' | 'error';
-
-export interface SourceRange {
-  startOffset: number;
-  endOffset: number;
-}
-
-export interface SourcePosition {
-  line: number;
-  character: number;
-  offset: number;
-}
-
-export interface SourceLocatedRange extends SourceRange {
-  start: SourcePosition;
-  end: SourcePosition;
-}
-
-export interface EditorDocumentWarning {
-  code:
-    | 'missing-frontmatter'
-    | 'malformed-frontmatter'
-    | 'missing-section'
-    | 'duplicate-section'
-    | 'unsupported-section'
-    | 'out-of-order-section'
-    | 'unsupported-frontmatter-field';
-  severity: EditorDocumentWarningSeverity;
-  message: string;
-  range: SourceRange;
-  sectionName?: string;
-  fieldName?: string;
-}
-
-export interface EditorFrontmatterField {
-  key: string;
-  value: string;
-  rawLine: string;
-  range: SourceRange;
-  keyRange: SourceRange;
-  valueRange: SourceRange;
-}
-
-export interface EditorFrontmatterBlock {
-  exists: boolean;
-  range: SourceRange;
-  bodyRange: SourceRange;
-  raw: string;
-  fields: EditorFrontmatterField[];
-  unknownFields: EditorFrontmatterField[];
-}
-
-export interface EditorSectionBlock {
-  name: string;
-  markerRange: SourceRange;
-  contentRange: SourceRange;
-  rawContent: string;
-  normalizedContent: string;
-  structuralTrailingNewline: '' | '\n' | '\r\n';
-}
+export type { EditorDocumentWarning, EditorDocumentWarningSeverity } from '../shared/diagnostics/editor-warning';
+export type { EditorFrontmatterBlock, EditorFrontmatterField } from '../shared/frontmatter/types';
+export type { EditorSectionBlock } from '../shared/sections/types';
+export type { SourceLocatedRange, SourcePosition, SourceRange } from '../shared/source-position/types';
+import type { EditorDocumentWarning } from '../shared/diagnostics/editor-warning';
+import type { EditorFrontmatterBlock, EditorFrontmatterField } from '../shared/frontmatter/types';
+import type { EditorSectionBlock } from '../shared/sections/types';
 
 export interface EditorDocumentBaseModel {
   formatKind: MainEditorFormatKind;

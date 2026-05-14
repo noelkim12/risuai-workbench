@@ -1,12 +1,12 @@
 /**
- * `.risuprompt` 문서의 type-aware section을 구조화 편집 상태로 다루는 모델 유틸입니다.
- * @file packages/core/src/domain/editor/prompt-document-model.ts
+ * `.risuprompt` 문서의 type-aware section을 구조화 편집 상태로 다루는 format module.
+ * @file packages/core/src/domain/editor/formats/prompt/document-model.ts
  */
 
-import type { EditorDocumentModel, PromptEditorState } from './document-model-types';
-import { scanEditorDocumentSections } from './section-scanner';
-
-const PROMPT_SECTIONS = ['TEXT', 'INNER_FORMAT', 'DEFAULT_TEXT'] as const;
+import type { EditorDocumentModel, PromptEditorState } from '../../document-model/types';
+import { scanEditorDocumentSections } from '../../shared/sections/scan-editor-document';
+import { canSerializePromptModel } from './serialize-policy';
+import { PROMPT_KNOWN_SECTIONS } from './schema';
 
 /**
  * parsePromptEditorDocument 함수.
@@ -16,7 +16,7 @@ const PROMPT_SECTIONS = ['TEXT', 'INNER_FORMAT', 'DEFAULT_TEXT'] as const;
  * @returns prompt type, section 본문, range 정보를 포함한 prompt editor model을 반환합니다.
  */
 export function parsePromptEditorDocument(source: string): EditorDocumentModel<PromptEditorState> {
-  const scanned = scanEditorDocumentSections(source, { knownSections: PROMPT_SECTIONS });
+  const scanned = scanEditorDocumentSections(source, { knownSections: [...PROMPT_KNOWN_SECTIONS] });
   const frontmatter = Object.fromEntries((scanned.frontmatter?.fields ?? []).map((field) => [field.key, field.value]));
   const sections = Object.fromEntries(
     scanned.sections
@@ -49,11 +49,11 @@ export function parsePromptEditorDocument(source: string): EditorDocumentModel<P
  * @returns warning이 없을 때 재조립된 `.risuprompt` 원문을 반환합니다.
  */
 export function reassemblePromptEditorDocument(model: EditorDocumentModel<PromptEditorState>, state: PromptEditorState): string {
-  if (model.warnings.length > 0) return model.source;
+  if (!canSerializePromptModel(model)) return model.source;
 
   const lineEnding = model.lineEnding;
   const frontmatterLines = Object.entries(state.frontmatter).map(([key, value]) => `${key}: ${value}`);
-  const sectionLines = PROMPT_SECTIONS.flatMap((name) =>
+  const sectionLines = PROMPT_KNOWN_SECTIONS.flatMap((name) =>
     state.sections[name] === undefined ? [] : [`@@@ ${name}`, state.sections[name] ?? ''],
   );
   const joined = ['---', ...frontmatterLines, '---', ...sectionLines].join(lineEnding);
@@ -67,6 +67,6 @@ export function reassemblePromptEditorDocument(model: EditorDocumentModel<Prompt
  * @param name - prompt section state에 안전하게 넣을 수 있는지 확인할 marker 이름입니다.
  * @returns 지원하는 prompt section 이름이면 true를 반환합니다.
  */
-function isPromptSectionName(name: string): name is (typeof PROMPT_SECTIONS)[number] {
-  return PROMPT_SECTIONS.some((sectionName) => sectionName === name);
+function isPromptSectionName(name: string): name is (typeof PROMPT_KNOWN_SECTIONS)[number] {
+  return PROMPT_KNOWN_SECTIONS.some((sectionName) => sectionName === name);
 }

@@ -1,10 +1,10 @@
 /**
  * Main Editor CONTENT 섹션과 원본 문서 좌표를 연결하는 위치 매핑 유틸 모음.
- * @file packages/core/src/domain/editor/content-position-mapping.ts
+ * @file packages/core/src/domain/editor/formats/lorebook/content-position-mapper.ts
  */
 
-import type { EditorDocumentModel, SourcePosition, SourceRange } from './document-model-types';
-import { createLineOffsetIndex } from './line-offsets';
+import type { EditorDocumentModel, SourcePosition, SourceRange } from '../../document-model/types';
+import { createLineOffsetIndex } from '../../shared/source-position/line-offset-index';
 
 export interface ContentMonacoPosition {
   lineNumber: number;

@@ -1,28 +1,12 @@
 /**
- * `.risulorebook` 문서를 구조화 편집 상태로 파싱하고 다시 원문으로 조립하는 모델 유틸입니다.
- * @file packages/core/src/domain/editor/lorebook-document-model.ts
+ * `.risulorebook` 문서를 구조화 편집 상태로 파싱하고 다시 원문으로 조립하는 format module.
+ * @file packages/core/src/domain/editor/formats/lorebook/document-model.ts
  */
 
-import type { EditorDocumentModel, EditorDocumentWarning, EditorFrontmatterField, LorebookEditorState } from './document-model-types';
-import { scanEditorDocumentSections } from './section-scanner';
-
-const LOREBOOK_FRONTMATTER_FIELDS = new Set([
-  'name',
-  'comment',
-  'mode',
-  'constant',
-  'selective',
-  'insertion_order',
-  'case_sensitive',
-  'use_regex',
-  'folder',
-  'extensions',
-  'book_version',
-  'activation_percent',
-  'id',
-]);
-
-const LOREBOOK_REQUIRED_SECTIONS = ['KEYS', 'CONTENT'] as const;
+import type { EditorDocumentModel, EditorDocumentWarning, EditorFrontmatterField, LorebookEditorState } from '../../document-model/types';
+import { scanEditorDocumentSections } from '../../shared/sections/scan-editor-document';
+import { canSerializeLorebookModel } from './serialize-policy';
+import { LOREBOOK_FRONTMATTER_FIELDS, LOREBOOK_REQUIRED_SECTIONS, LOREBOOK_KNOWN_SECTIONS } from './schema';
 
 /**
  * parseLorebookEditorDocument 함수.
@@ -33,7 +17,7 @@ const LOREBOOK_REQUIRED_SECTIONS = ['KEYS', 'CONTENT'] as const;
  */
 export function parseLorebookEditorDocument(source: string): EditorDocumentModel<LorebookEditorState> {
   const scanned = scanEditorDocumentSections(source, {
-    knownSections: ['KEYS', 'SECONDARY_KEYS', 'CONTENT'],
+    knownSections: [...LOREBOOK_KNOWN_SECTIONS],
   });
   const warnings = [...scanned.warnings];
   const firstSections = new Map(scanned.sections.map((section) => [section.name, section]));
@@ -84,7 +68,7 @@ export function reassembleLorebookEditorDocument(
   model: EditorDocumentModel<LorebookEditorState>,
   state: LorebookEditorState,
 ): string {
-  if (hasUnsafeStructuralWarning(model)) {
+  if (!canSerializeLorebookModel(model)) {
     return model.source;
   }
 
@@ -129,15 +113,4 @@ function createUnsupportedFrontmatterWarning(field: EditorFrontmatterField): Edi
   };
 }
 
-/**
- * hasUnsafeStructuralWarning 함수.
- * 자동 재조립이 원문 구조를 손상할 수 있는 경고가 있는지 확인합니다.
- *
- * @param model - 재조립 전에 error와 비보존 warning을 검사할 lorebook editor model입니다.
- * @returns 원문을 그대로 돌려야 하는 위험 경고가 있으면 true를 반환합니다.
- */
-function hasUnsafeStructuralWarning(model: EditorDocumentModel<LorebookEditorState>): boolean {
-  return model.warnings.some(
-    (warning) => warning.severity === 'error' || warning.code !== 'unsupported-frontmatter-field',
-  );
-}
+

@@ -4,19 +4,45 @@
 
 ## Current folder map
 
-현재 Phase 0 기준 구조는 아직 단일 디렉터리입니다.
+현재 구조는 `editor/` 루트에 문서와 public barrel만 두고, 실제 구현을 `document-model/`, `shared/`, `formats/`, `preview/`, `runtime-profile/`로 분리합니다.
 
-| File | Responsibility |
+| File/Directory | Responsibility |
 |---|---|
-| `document-model-types.ts` | 공통 문서 모델 타입과 format별 state 타입 |
-| `section-scanner.ts` | frontmatter parsing, section header 수집, range 계산, scanner warning 생성 |
-| `line-offsets.ts` | UTF-16 offset과 zero-based source position 변환 |
-| `content-position-mapping.ts` | lorebook CONTENT 전용 Monaco/source coordinate mapping |
-| `*-document-model.ts` | format별 parse/reassemble 구현 |
-| `*-preview*.ts` | format별 preview adapter |
-| `prompt-rules.ts` | prompt type별 section rule |
-| `simulator-profile.ts` | Main Editor runtime simulation profile 타입, 기본값, validation, clone, variable merge |
-| `index.ts` | public compatibility barrel |
+| `document-model/types.ts` | 공통 문서 모델 타입과 format별 state 타입 |
+| `document-model/parse-main-editor-document-model.ts` | `formatKind`별 parser dispatch |
+| `document-model/index.ts` | document-model 하위 barrel |
+| `shared/diagnostics/` | editor warning DTO |
+| `shared/frontmatter/` | frontmatter 타입과 parser |
+| `shared/sections/` | section header 수집, section block 생성, scan orchestration |
+| `shared/source-position/` | source range/position 타입과 line offset index |
+| `preview/types.ts` | 공통 preview DTO 타입 (`EditorPreviewStatus`, `EditorPreviewDiagnostic`, `EditorPreviewMetadataBase`) |
+| `preview/create-preview-diagnostic.ts` | CBS simulator diagnostic을 preview DTO로 변환하는 공통 helper |
+| `preview/coverage-summary.ts` | CBS simulation coverage 요약 포맷 helper |
+| `formats/lorebook/document-model.ts` | lorebook parse/reassemble |
+| `formats/lorebook/types.ts` | lorebook format state 타입 |
+| `formats/lorebook/schema.ts` | lorebook frontmatter field 이름과 필수 section schema |
+| `formats/lorebook/serialize-policy.ts` | lorebook serialize warning policy (`canSerializeLorebookModel`) |
+| `formats/lorebook/content-position-mapper.ts` | lorebook CONTENT 전용 Monaco/source coordinate mapping |
+| `formats/lorebook/preview/quick-preview.ts` | lorebook CONTENT CBS dry-run preview |
+| `formats/lorebook/preview/runtime-preview.ts` | lorebook CONTENT runtime preview with variable bindings |
+| `formats/regex/document-model.ts` | regex parse/reassemble |
+| `formats/regex/types.ts` | regex format state 타입 |
+| `formats/regex/schema.ts` | regex section 이름 schema |
+| `formats/regex/serialize-policy.ts` | regex serialize warning policy (`canSerializeRegexModel`) |
+| `formats/regex/preview.ts` | regex preview adapter |
+| `formats/prompt/document-model.ts` | prompt parse/reassemble |
+| `formats/prompt/types.ts` | prompt format state 타입 |
+| `formats/prompt/schema.ts` | prompt section 이름과 type rule schema |
+| `formats/prompt/serialize-policy.ts` | prompt serialize warning policy (`canSerializePromptModel`) |
+| `formats/prompt/prompt-rules.ts` | prompt type별 section rule |
+| `formats/prompt/preview.ts` | prompt preview adapter |
+| `formats/html/document-model.ts` | html identity parse/reassemble |
+| `formats/html/types.ts` | html format state 타입 |
+| `formats/html/schema.ts` | html section 이름 schema (`HTML_KNOWN_SECTIONS`) |
+| `formats/html/preview.ts` | html sandboxed iframe preview adapter |
+| `formats/html/preview-security.ts` | HTML preview CSP, sandbox mode, srcdoc 생성, attribute escape |
+| `runtime-profile/` | Main Editor runtime simulation profile 타입, 기본값, validation, clone, variable merge |
+| `index.ts` | public barrel — 외부 소비자가 import하는 유일한 진입점 |
 
 ## Target dependency direction
 
@@ -25,17 +51,21 @@
 ```txt
 index.ts -> document-model
 index.ts -> formats/*
-index.ts -> preview
 index.ts -> runtime-profile
+index.ts -> preview
+index.ts -> shared (LineOffsetIndex, scanEditorDocumentSections)
 
 formats/* -> document-model
 formats/* -> shared
 formats/* -> preview
-formats/* -> ../../simulator only when preview/runtime needs it
+formats/*/preview -> ../../../../simulator only when preview/runtime needs it
+formats/lorebook/preview -> formats/lorebook/content-position-mapper (indirect via index.ts)
+formats/html/preview -> formats/html/preview-security (CSP, sandbox, srcdoc)
 
+preview -> ../../simulator (createPreviewDiagnostic)
 document-model -> shared
+document-model -> formats/*/document-model
 runtime-profile -> ../../simulator
-preview -> ../../simulator
 shared -> shared only
 ```
 
@@ -58,15 +88,21 @@ shared -> shared only
 
 ## Warning severity policy
 
-| Warning code | Current serialize behavior |
-|---|---|
-| `missing-frontmatter` | 차단 |
-| `malformed-frontmatter` | 차단 |
-| `missing-section` | 차단 |
-| `duplicate-section` | 차단 |
-| `unsupported-section` | 차단 |
-| `out-of-order-section` | 차단 |
-| `unsupported-frontmatter-field` | lorebook만 허용, regex/prompt는 현재 별도 unknown field warning을 만들지 않음 |
+각 format의 `canSerialize{Format}Model` 정책 함수가 reassemble 직렬화 허용 여부를 결정함.
+
+| Warning code | Lorebook (`canSerializeLorebookModel`) | Regex (`canSerializeRegexModel`) | Prompt (`canSerializePromptModel`) |
+|---|---|---|---|
+| `missing-frontmatter` | 차단 | 차단 | 차단 |
+| `malformed-frontmatter` | 차단 | 차단 | 차단 |
+| `missing-section` | 차단 | 차단 | 차단 |
+| `duplicate-section` | 차단 | 차단 | 차단 |
+| `unsupported-section` | 차단 | 차단 | 차단 |
+| `out-of-order-section` | 차단 | 차단 | 차단 |
+| `unsupported-frontmatter-field` | **허용** | N/A | N/A |
+
+- Lorebook: error severity가 없고 모든 warning이 `unsupported-frontmatter-field`인 경우에만 직렬화 허용.
+- Regex/Prompt: warning이 하나라도 있으면 직렬화 차단.
+- HTML: scanner warning이 없는 identity model. 별도 정책 함수 없이 `state.contentText` 반환.
 
 ## Preview lifecycle
 
@@ -89,3 +125,55 @@ shared -> shared only
 - 기존 export는 바로 제거하지 않고 compatibility alias를 유지합니다.
 - Public export snapshot test를 먼저 갱신해 의도한 변경인지 확인합니다.
 - VS Code extension, webview, core tests의 import path를 함께 확인합니다.
+
+## Public / internal API classification (Phase 6)
+
+`index.ts`의 export는 세 그룹으로 분류됩니다. 이 분류는 주석과 JSDoc `@internal` 태그로 문서화되어 있으며, runtime 동작이나 가시성에는 영향을 주지 않습니다.
+
+### Stable public API
+
+VS Code extension, webview, core test에서 직접 소비하는 안정적인 진입점:
+
+| Symbol | Category |
+|---|---|
+| `EditorDocumentModel`, state types, warning types | Document model types |
+| `MAIN_EDITOR_FORMAT_KINDS` | Format kind constant |
+| `parseMainEditorDocumentModel` | Parser dispatch |
+| `EditorPreviewStatus`, `EditorPreviewDiagnostic`, `EditorPreviewMetadataBase` | Preview DTO types |
+| `createPreviewDiagnostic` | Preview diagnostic mapper |
+| `formatCoverageSummary` | Coverage summary helper |
+| `HTML_PREVIEW_CSP`, `createSandboxedHtmlSrcdoc`, `escapeHtmlAttribute`, `resolveHtmlPreviewSandboxMode` | HTML preview security |
+| `parseLorebookEditorDocument`, `reassembleLorebookEditorDocument` | Lorebook parse/reassemble |
+| `canSerializeLorebookModel` | Lorebook serialize policy |
+| `createLorebookContentPreview` | Lorebook quick preview |
+| `createLorebookContentRuntimePreview` | Lorebook runtime preview |
+| `parseRegexEditorDocument`, `reassembleRegexEditorDocument` | Regex parse/reassemble |
+| `canSerializeRegexModel` | Regex serialize policy |
+| `createRegexMainEditorPreview` | Regex preview |
+| `parsePromptEditorDocument`, `reassemblePromptEditorDocument` | Prompt parse/reassemble |
+| `canSerializePromptModel` | Prompt serialize policy |
+| `PROMPT_SECTION_NAMES`, `PROMPT_TYPES`, `getPromptTypeRule`, `isPromptType` | Prompt rules |
+| `createPromptMainEditorPreview` | Prompt preview |
+| `parseHtmlEditorDocument`, `reassembleHtmlEditorDocument` | HTML parse/reassemble |
+| `createHtmlMainEditorPreview` | HTML preview |
+| Simulator profile types and functions | Runtime profile |
+
+### Lorebook position mapping (compatibility surface)
+
+VS Code `mainEditorLspBridge.ts`가 직접 소비하는 lorebook CONTENT 전용 좌표 변환. 범용 mapper가 아님:
+
+| Symbol | Note |
+|---|---|
+| `ContentMonacoPosition`, `ContentMonacoRange` | Lorebook CONTENT 전용 position/range type |
+| `mapContentMonacoPositionToSourcePosition` | Monaco → source position mapping |
+| `mapSourceRangeToContentMonacoRange` | Source range → Monaco range mapping |
+
+### Internal candidate / compatibility
+
+Editor domain 내부 구현과 core test에서만 직접 사용. 외부 패키지 소비자 없음. Barrel 재노출은 import 호환성을 위해 유지:
+
+| Symbol | `@internal` reason |
+|---|---|
+| `createLineOffsetIndex`, `LineOffsetIndex` | `content-position-mapper.ts`와 core test에서만 사용 |
+| `scanEditorDocumentSections`, `ScanEditorDocumentSectionsOptions`, `ScannedEditorDocumentSections` | Format별 parser 내부와 core test에서만 사용 |
+| `createEmptyEditorDocumentWarnings` | `document-model/types.ts` 내부 default helper |
