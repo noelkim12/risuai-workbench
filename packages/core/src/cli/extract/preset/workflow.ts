@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { runAnalyzePresetWorkflow } from '@/cli/analyze/preset/workflow';
 import { ensureDir, writeJson } from '@/node/fs-helpers';
+import { getErrorMessage } from '../../shared';
 import {
   phase1_parsePreset,
   phase2_extractPrompts,
@@ -86,7 +87,7 @@ export function runExtractWorkflow(argv: readonly string[]): number {
     runMain(filePath, outArg, jsonOnly);
     return 0;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     console.error(`\n  ${message}\n`);
     return 1;
   }

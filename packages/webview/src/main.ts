@@ -14,11 +14,14 @@ import {
 import {
   ARTIFACT_BROWSER_PROTOCOL,
   ARTIFACT_BROWSER_PROTOCOL_VERSION,
+  type ArtifactBrowserCardsPayload,
   type BrowserArtifactCard,
   type ArtifactBrowserExtensionMessage,
+  type ArtifactBrowserDetailPayload,
   type CharacterItem,
   type CharacterSection,
 } from './lib/types';
+import { isPlainRecord, isProtocolEnvelope, isProtocolMessageEnvelope } from './lib/protocolEnvelope';
 
 const vscode = getVsCodeApi();
 const cards = writable<BrowserArtifactCard[]>([]);
@@ -43,6 +46,28 @@ const webviewName =
   document.querySelector('meta[name="risu-workbench-view"]')?.getAttribute('content');
 let artifactBrowserReadyRetryTimer: ReturnType<typeof setInterval> | undefined;
 let artifactBrowserInitialized = false;
+
+type ArtifactBrowserExtensionMessageType = ArtifactBrowserExtensionMessage['type'];
+type ArtifactBrowserExtensionPayloadGuard<TType extends ArtifactBrowserExtensionMessageType> = (
+  payload: unknown,
+) => payload is Extract<ArtifactBrowserExtensionMessage, { type: TType }>['payload'];
+type ArtifactBrowserExtensionMessageGuard = (message: unknown) => message is ArtifactBrowserExtensionMessage;
+
+const ARTIFACT_BROWSER_EXTENSION_MESSAGE_TYPES = [
+  'artifact-browser/cards',
+  'artifact-browser/detailLoaded',
+] as const satisfies readonly ArtifactBrowserExtensionMessageType[];
+
+const ARTIFACT_BROWSER_EXTENSION_MESSAGE_GUARDS = {
+  'artifact-browser/cards': createArtifactBrowserExtensionMessageGuard(
+    'artifact-browser/cards',
+    isArtifactBrowserCardsPayload,
+  ),
+  'artifact-browser/detailLoaded': createArtifactBrowserExtensionMessageGuard(
+    'artifact-browser/detailLoaded',
+    isArtifactBrowserDetailPayload,
+  ),
+} satisfies Record<ArtifactBrowserExtensionMessageType, ArtifactBrowserExtensionMessageGuard>;
 
 if (!app) {
   throw new Error('Missing #app root for Risu Workbench webview.');
@@ -201,18 +226,40 @@ function setStatus(text: string): void {
 }
 
 function isArtifactBrowserExtensionMessage(message: unknown): message is ArtifactBrowserExtensionMessage {
-  if (!message || typeof message !== 'object') {
-    return false;
-  }
+  if (!isProtocolMessageEnvelope(message, ARTIFACT_BROWSER_PROTOCOL, ARTIFACT_BROWSER_PROTOCOL_VERSION)) return false;
+  if (!isArtifactBrowserExtensionMessageType(message.type)) return false;
+  return ARTIFACT_BROWSER_EXTENSION_MESSAGE_GUARDS[message.type](message);
+}
 
-  const candidate = message as Partial<ArtifactBrowserExtensionMessage>;
+/**
+ * createArtifactBrowserExtensionMessageGuard 함수.
+ * Artifact Browser host message envelope와 payload guard를 결합함.
+ *
+ * @param type - 검증할 Artifact Browser extension message type
+ * @param payloadGuard - type별 payload shape 검증 callback
+ * @returns Artifact Browser extension message guard
+ */
+function createArtifactBrowserExtensionMessageGuard<TType extends ArtifactBrowserExtensionMessageType>(
+  type: TType,
+  payloadGuard: ArtifactBrowserExtensionPayloadGuard<TType>,
+): (message: unknown) => message is Extract<ArtifactBrowserExtensionMessage, { type: TType }> {
+  return (message: unknown): message is Extract<ArtifactBrowserExtensionMessage, { type: TType }> =>
+    isProtocolEnvelope(message, ARTIFACT_BROWSER_PROTOCOL, ARTIFACT_BROWSER_PROTOCOL_VERSION, type) &&
+    payloadGuard(message.payload);
+}
+
+function isArtifactBrowserCardsPayload(payload: unknown): payload is ArtifactBrowserCardsPayload {
+  return isPlainRecord(payload) && Array.isArray(payload.cards);
+}
+
+function isArtifactBrowserDetailPayload(payload: unknown): payload is ArtifactBrowserDetailPayload {
+  return isPlainRecord(payload) && typeof payload.stableId === 'string' && Array.isArray(payload.sections);
+}
+
+function isArtifactBrowserExtensionMessageType(value: unknown): value is ArtifactBrowserExtensionMessageType {
   return (
-    candidate.protocol === ARTIFACT_BROWSER_PROTOCOL &&
-    candidate.version === ARTIFACT_BROWSER_PROTOCOL_VERSION &&
-    ((candidate.type === 'artifact-browser/cards' && Array.isArray(candidate.payload?.cards)) ||
-      (candidate.type === 'artifact-browser/detailLoaded' &&
-        typeof candidate.payload?.stableId === 'string' &&
-        Array.isArray(candidate.payload.sections)))
+    typeof value === 'string' &&
+    ARTIFACT_BROWSER_EXTENSION_MESSAGE_TYPES.includes(value as ArtifactBrowserExtensionMessageType)
   );
 }
 

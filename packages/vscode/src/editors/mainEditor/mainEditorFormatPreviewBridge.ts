@@ -21,6 +21,7 @@ import type {
   PromptStructuredState,
   RegexStructuredState,
 } from './mainEditorTypes';
+import { createPreviewBaseResultFields } from './shared/bridge-helpers';
 
 /**
  * createMainEditorFormatPreviewResult 함수.
@@ -114,9 +115,7 @@ function toFormatResult(
   metadata: Record<string, string>,
 ): MainEditorFormatPreviewResultPayload {
   return {
-    requestId: payload.requestId,
-    documentUri: document.uri.toString(),
-    documentVersion: document.version,
+    ...createPreviewBaseResultFields(payload, document),
     formatKind: payload.formatKind,
     sectionName: payload.sectionName,
     status,
@@ -133,9 +132,7 @@ function createFormatPreviewErrorResult(
   message: string,
 ): MainEditorFormatPreviewResultPayload {
   return {
-    requestId: payload.requestId,
-    documentUri: document.uri.toString(),
-    documentVersion: document.version,
+    ...createPreviewBaseResultFields(payload, document),
     formatKind: payload.formatKind,
     sectionName: payload.sectionName,
     status: 'error',
@@ -151,9 +148,7 @@ function createStaleFormatPreviewResult(
   message: string,
 ): MainEditorFormatPreviewResultPayload {
   return {
-    requestId: payload.requestId,
-    documentUri: document.uri.toString(),
-    documentVersion: document.version,
+    ...createPreviewBaseResultFields(payload, document),
     formatKind: payload.formatKind,
     sectionName: payload.sectionName,
     status: 'stale',

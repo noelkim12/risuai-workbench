@@ -3,18 +3,17 @@
  * @file packages/core/src/domain/editor/runtime-profile/guards.ts
  */
 
+import { isStrictPlainRecord } from '@/shared/guards';
+
 /**
  * isRecord 함수.
  * 외부 입력이 array가 아닌 plain object 또는 null-prototype object인지 확인합니다.
+ * 공유 isStrictPlainRecord에 prototype 검사를 위임합니다.
  *
  * @param value - record guard의 기준점으로 삼을 unknown 값입니다.
  * @returns plain record로 key 접근이 안전하면 true입니다.
  */
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
+export const isRecord = isStrictPlainRecord;
 
 /**
  * isStringRecord 함수.

@@ -1,4 +1,3 @@
-import type { Position, ReferenceParams } from 'vscode-languageserver/node';
 import { describe, expect, it } from 'vitest';
 
 import { FragmentAnalysisService } from '../../src/core';
@@ -7,6 +6,10 @@ import {
   ReferencesProvider,
 } from '../../src/features/navigation';
 import type { VariableFlowService } from '../../src/services';
+import {
+  createReferenceParams,
+  createSimpleProviderDeps,
+} from '../helpers/provider-test-harness';
 import { offsetToPosition } from '../../src/utils/position';
 import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
 import {
@@ -14,58 +17,17 @@ import {
   createVariableFlowServiceStub,
   createVariableOccurrence,
 } from './variable-flow-test-helpers';
-
-function locateNthOffset(text: string, needle: string, occurrence: number = 0): number {
-  let fromIndex = 0;
-  let foundIndex = -1;
-
-  for (let index = 0; index <= occurrence; index += 1) {
-    foundIndex = text.indexOf(needle, fromIndex);
-    if (foundIndex === -1) {
-      break;
-    }
-
-    fromIndex = foundIndex + needle.length;
-  }
-
-  expect(foundIndex).toBeGreaterThanOrEqual(0);
-  return foundIndex;
-}
-
-function positionAt(
-  text: string,
-  needle: string,
-  characterOffset: number = 0,
-  occurrence: number = 0,
-): Position {
-  return offsetToPosition(text, locateNthOffset(text, needle, occurrence) + characterOffset);
-}
+import { positionAt } from '../helpers/lsp-test-utils';
 
 function createProvider(
   service: FragmentAnalysisService,
   request: ReturnType<typeof createFixtureRequest>,
   variableFlowService?: VariableFlowService,
 ): ReferencesProvider {
-  return new ReferencesProvider({
-    analysisService: service,
-    resolveRequest: ({ textDocument }) => (textDocument.uri === request.uri ? request : null),
-    variableFlowService,
-  });
+  return new ReferencesProvider(createSimpleProviderDeps(service, request, variableFlowService));
 }
 
-function createParams(
-  request: ReturnType<typeof createFixtureRequest>,
-  position: Position,
-  includeDeclaration: boolean = false,
-): ReferenceParams {
-  return {
-    textDocument: { uri: request.uri },
-    position,
-    context: {
-      includeDeclaration,
-    },
-  };
-}
+const createParams = createReferenceParams;
 
 describe('ReferencesProvider', () => {
   it('exposes local-only availability honesty metadata', () => {

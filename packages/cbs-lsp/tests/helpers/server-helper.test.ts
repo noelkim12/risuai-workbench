@@ -78,7 +78,11 @@ type SignatureHelpHandler = (
 type PrepareRenameHandler = (
   params: TextDocumentPositionParams,
   cancellationToken?: CancellationToken,
-) => LSPRange | { placeholder: string; range: LSPRange } | null | Promise<LSPRange | { placeholder: string; range: LSPRange } | null>;
+) =>
+  | LSPRange
+  | { placeholder: string; range: LSPRange }
+  | null
+  | Promise<LSPRange | { placeholder: string; range: LSPRange } | null>;
 
 type RenameHandler = (
   params: RenameParams,
@@ -251,12 +255,15 @@ function createRegistrarContext(
       } as unknown as ServerFeatureRegistrarContext['providers']['hoverProvider'],
       inlayHintProvider: {} as ServerFeatureRegistrarContext['providers']['inlayHintProvider'],
       resolveRequest: () => request,
-      selectionRangeProvider: {} as ServerFeatureRegistrarContext['providers']['selectionRangeProvider'],
-      semanticTokensProvider: {} as ServerFeatureRegistrarContext['providers']['semanticTokensProvider'],
+      selectionRangeProvider:
+        {} as ServerFeatureRegistrarContext['providers']['selectionRangeProvider'],
+      semanticTokensProvider:
+        {} as ServerFeatureRegistrarContext['providers']['semanticTokensProvider'],
       signatureHelpProvider: {
         provide: vi.fn(() => null),
       } as unknown as ServerFeatureRegistrarContext['providers']['signatureHelpProvider'],
-      workspaceSymbolProvider: {} as ServerFeatureRegistrarContext['providers']['workspaceSymbolProvider'],
+      workspaceSymbolProvider:
+        {} as ServerFeatureRegistrarContext['providers']['workspaceSymbolProvider'],
     },
     registry: {} as ServerFeatureRegistrarContext['registry'],
     resolveWorkspaceRequest: () => request,
@@ -365,7 +372,9 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
       textDocument: { uri: request.uri },
       position: { line: 0, character: request.text.length },
     });
-    const labels = Array.isArray(result) ? result.map((item) => item.label) : result.items.map((item) => item.label);
+    const labels = Array.isArray(result)
+      ? result.map((item) => item.label)
+      : result.items.map((item) => item.label);
 
     expect(labels).toContain('axLLM');
     expect(luaLsProxy.provideCompletion).toHaveBeenCalledTimes(1);
@@ -397,7 +406,9 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
       textDocument: { uri: request.uri },
       position: { line: 0, character: request.text.length },
     });
-    const labels = Array.isArray(result) ? result.map((item) => item.label) : result.items.map((item) => item.label);
+    const labels = Array.isArray(result)
+      ? result.map((item) => item.label)
+      : result.items.map((item) => item.label);
 
     expect(labels.filter((label) => label === 'getState')).toEqual([]);
     expect(labels.filter((label) => label === 'getState(')).toHaveLength(1);
@@ -427,7 +438,9 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
       textDocument: { uri: request.uri },
       position: { line: 0, character: request.text.length },
     });
-    const labels = Array.isArray(result) ? result.map((item) => item.label) : result.items.map((item) => item.label);
+    const labels = Array.isArray(result)
+      ? result.map((item) => item.label)
+      : result.items.map((item) => item.label);
 
     expect(labels.filter((label) => label === 'log')).toHaveLength(1);
     expect(labels).toContain('lua-only');
@@ -456,7 +469,9 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
       textDocument: { uri: request.uri },
       position: { line: 1, character: 2 },
     });
-    const labels = Array.isArray(result) ? result.map((item) => item.label) : result.items.map((item) => item.label);
+    const labels = Array.isArray(result)
+      ? result.map((item) => item.label)
+      : result.items.map((item) => item.label);
 
     expect(labels).toContain('log');
     expect(luaLsProxy.provideCompletion).not.toHaveBeenCalled();
@@ -558,12 +573,15 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
     const root = makeTempWorkspace();
     const mainPath = path.join(root, 'lua', 'main.risulua');
     const targetPath = path.join(root, 'regex', 'toggle.risuregex');
-    writeFile(mainPath, [
-      '-- Button action bridge: toggleSidePanel',
-      '---@source regex/toggle.risuregex:2:0',
-      'toggleSidePanel = __button_actions.toggleSidePanel',
-      '',
-    ].join('\n'));
+    writeFile(
+      mainPath,
+      [
+        '-- Button action bridge: toggleSidePanel',
+        '---@source regex/toggle.risuregex:2:0',
+        'toggleSidePanel = __button_actions.toggleSidePanel',
+        '',
+      ].join('\n'),
+    );
     writeFile(targetPath, '@@@ OUT\n{{button::Toggle::toggleSidePanel}}\n');
     const request: FragmentAnalysisRequest = {
       uri: pathToFileURL(mainPath).href,
@@ -621,11 +639,10 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
     const root = makeTempWorkspace();
     const mainPath = path.join(root, 'lua', 'main.risulua');
     const targetPath = path.join(root, 'regex', 'toggle.risuregex');
-    writeFile(mainPath, [
-      'local slowSymbol = true',
-      '---@source regex/toggle.risuregex:2:0',
-      '',
-    ].join('\n'));
+    writeFile(
+      mainPath,
+      ['local slowSymbol = true', '---@source regex/toggle.risuregex:2:0', ''].join('\n'),
+    );
     writeFile(targetPath, '@@@ OUT\n{{button::Toggle::toggleSidePanel}}\n');
     const request: FragmentAnalysisRequest = {
       uri: pathToFileURL(mainPath).href,
@@ -680,10 +697,7 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
       getRuntime: vi.fn(() => ({ status: 'ready' })),
       provideCompletion: vi.fn(async () => []),
       provideHover: vi.fn(async () => ({
-        contents: [
-          { kind: 'markdown', value: 'LuaLS hover' },
-          'Lua tail',
-        ],
+        contents: [{ kind: 'markdown', value: 'LuaLS hover' }, 'Lua tail'],
         range: luaRange,
       })),
     } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
@@ -694,10 +708,12 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
       providers: {
         ...baseContext.providers,
         hoverProvider: {
-          provide: vi.fn((): Hover => ({
-            contents: ['CBS hover', { language: 'lua', value: 'local cbs = true' }],
-            range: cbsRange,
-          })),
+          provide: vi.fn(
+            (): Hover => ({
+              contents: ['CBS hover', { language: 'lua', value: 'local cbs = true' }],
+              range: cbsRange,
+            }),
+          ),
         } as unknown as ServerFeatureRegistrarContext['providers']['hoverProvider'],
       },
     });
@@ -711,7 +727,7 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
     expect(result).toEqual({
       contents: {
         kind: 'markdown',
-        value: 'CBS hover\n\nlocal cbs = true\n\n---\n\nLuaLS hover\n\nLua tail',
+        value: 'CBS hover\n\n```lua\nlocal cbs = true\n```\n\n---\n\nLuaLS hover\n\nLua tail',
       },
       range: cbsRange,
     });
@@ -896,7 +912,9 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
     const luaLsProxy = {
       getRuntime: vi.fn(() => ({ status: 'ready' })),
       provideCompletion: vi.fn(async () => []),
-      provideHover: vi.fn(async () => ({ contents: { kind: 'markdown', value: 'LuaLS string hover' } })),
+      provideHover: vi.fn(async () => ({
+        contents: { kind: 'markdown', value: 'LuaLS string hover' },
+      })),
     } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
     const registrar = new ServerFeatureRegistrar({
       ...createRegistrarContext(request, luaLsProxy),
@@ -1010,12 +1028,15 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
     const root = makeTempWorkspace();
     const mainPath = path.join(root, 'lua', 'main.risulua');
     const targetPath = path.join(root, 'regex', 'toggle.risuregex');
-    writeFile(mainPath, [
-      '-- Button action bridge: toggleSidePanel',
-      '---@source regex/toggle.risuregex:2:0',
-      'toggleSidePanel = __button_actions.toggleSidePanel',
-      '',
-    ].join('\n'));
+    writeFile(
+      mainPath,
+      [
+        '-- Button action bridge: toggleSidePanel',
+        '---@source regex/toggle.risuregex:2:0',
+        'toggleSidePanel = __button_actions.toggleSidePanel',
+        '',
+      ].join('\n'),
+    );
     writeFile(targetPath, '@@@ OUT\n{{button::Toggle::toggleSidePanel}}\n');
     const request: FragmentAnalysisRequest = {
       uri: pathToFileURL(mainPath).href,
@@ -1080,12 +1101,15 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
     const root = makeTempWorkspace();
     const mainPath = path.join(root, 'lua', 'main.risulua');
     const modulePath = path.join(root, 'lua', 'button_actions', 'actions.risulua');
-    writeFile(mainPath, [
-      'local __button_actions = require("button_actions.actions")',
-      '---@source regex/Heroine_옷_설정.risuregex:11:0',
-      'setHeroineClothes = __button_actions.setHeroineClothes',
-      '',
-    ].join('\n'));
+    writeFile(
+      mainPath,
+      [
+        'local __button_actions = require("button_actions.actions")',
+        '---@source regex/Heroine_옷_설정.risuregex:11:0',
+        'setHeroineClothes = __button_actions.setHeroineClothes',
+        '',
+      ].join('\n'),
+    );
     writeFile(modulePath, 'local M = {}\nfunction M.setHeroineClothes()\nend\nreturn M\n');
 
     const request: FragmentAnalysisRequest = {
@@ -1137,12 +1161,15 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
   it('returns null for missing RisuLua source comment definition targets without calling CBS or LuaLS', async () => {
     const root = makeTempWorkspace();
     const mainPath = path.join(root, 'lua', 'main.risulua');
-    writeFile(mainPath, [
-      '-- Button action bridge: missingTarget',
-      '---@source regex/missing.risuregex:2:0',
-      'missingTarget = __button_actions.missingTarget',
-      '',
-    ].join('\n'));
+    writeFile(
+      mainPath,
+      [
+        '-- Button action bridge: missingTarget',
+        '---@source regex/missing.risuregex:2:0',
+        'missingTarget = __button_actions.missingTarget',
+        '',
+      ].join('\n'),
+    );
     const request: FragmentAnalysisRequest = {
       uri: pathToFileURL(mainPath).href,
       filePath: mainPath,
@@ -1152,7 +1179,12 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
     const luaLsProxy = {
       getRuntime: vi.fn(() => ({ status: 'ready' })),
       provideCompletion: vi.fn(async () => []),
-      provideDefinition: vi.fn(async () => [{ uri: 'file:///shadow/luals-definition.lua', range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } } }]),
+      provideDefinition: vi.fn(async () => [
+        {
+          uri: 'file:///shadow/luals-definition.lua',
+          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } },
+        },
+      ]),
       provideHover: vi.fn(async () => null),
     } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
     const connectionFixture = createConnectionStub();
@@ -1184,12 +1216,15 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
     const mainPath = path.join(root, 'lua', 'main.risulua');
     const firstTargetPath = path.join(root, 'regex', 'first.risuregex');
     const secondTargetPath = path.join(root, 'regex', 'second.risuregex');
-    writeFile(mainPath, [
-      'local slowSymbol = true',
-      '---@source regex/first.risuregex:2:0',
-      '---@source regex/second.risuregex:3:0',
-      '',
-    ].join('\n'));
+    writeFile(
+      mainPath,
+      [
+        'local slowSymbol = true',
+        '---@source regex/first.risuregex:2:0',
+        '---@source regex/second.risuregex:3:0',
+        '',
+      ].join('\n'),
+    );
     writeFile(firstTargetPath, '@@@ OUT\nfirst\n');
     writeFile(secondTargetPath, '@@@ OUT\nsecond\nthird\n');
     const request: FragmentAnalysisRequest = {
@@ -1363,7 +1398,9 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
       ...createRegistrarContext(request, luaLsProxy),
       connection: connectionFixture.connection,
     });
-    (registrar as unknown as { registerPrepareRenameHandler: () => void }).registerPrepareRenameHandler();
+    (
+      registrar as unknown as { registerPrepareRenameHandler: () => void }
+    ).registerPrepareRenameHandler();
     (registrar as unknown as { registerRenameHandler: () => void }).registerRenameHandler();
 
     const prepared = await connectionFixture.getPrepareRenameHandler()({
@@ -1402,7 +1439,10 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
       provideCompletion: vi.fn(async () => []),
       provideDefinition: vi.fn(async () => null),
       provideHover: vi.fn(async () => null),
-      prepareRename: vi.fn(async () => ({ start: { line: 0, character: 0 }, end: { line: 0, character: 0 } })),
+      prepareRename: vi.fn(async () => ({
+        start: { line: 0, character: 0 },
+        end: { line: 0, character: 0 },
+      })),
       provideRename: vi.fn(async () => ({ documentChanges: [] })),
     } as unknown as ServerFeatureRegistrarContext['luaLsProxy'];
     const registrar = new ServerFeatureRegistrar({
@@ -1420,7 +1460,9 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
       prepareRename: () => ({ canRename: false, message: 'Request cancelled' }),
       provideRename: () => null,
     });
-    (registrar as unknown as { registerPrepareRenameHandler: () => void }).registerPrepareRenameHandler();
+    (
+      registrar as unknown as { registerPrepareRenameHandler: () => void }
+    ).registerPrepareRenameHandler();
     (registrar as unknown as { registerRenameHandler: () => void }).registerRenameHandler();
 
     const prepared = await connectionFixture.getPrepareRenameHandler()({
@@ -1467,7 +1509,9 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
       prepareRename: () => ({ canRename: false, message: 'No rename target here' }),
       provideRename: () => null,
     });
-    (registrar as unknown as { registerPrepareRenameHandler: () => void }).registerPrepareRenameHandler();
+    (
+      registrar as unknown as { registerPrepareRenameHandler: () => void }
+    ).registerPrepareRenameHandler();
     (registrar as unknown as { registerRenameHandler: () => void }).registerRenameHandler();
 
     expect(() =>
@@ -1543,15 +1587,24 @@ describe('ServerFeatureRegistrar LuaLS oversized request guard', () => {
       ...createRegistrarContext(request, luaLsProxy),
       connection: connectionFixture.connection,
     });
-    (registrar as unknown as { registerDocumentSymbolHandler: () => void }).registerDocumentSymbolHandler();
-    (registrar as unknown as { registerDocumentHighlightHandler: () => void }).registerDocumentHighlightHandler();
+    (
+      registrar as unknown as { registerDocumentSymbolHandler: () => void }
+    ).registerDocumentSymbolHandler();
+    (
+      registrar as unknown as { registerDocumentHighlightHandler: () => void }
+    ).registerDocumentHighlightHandler();
     (registrar as unknown as { registerReferencesHandler: () => void }).registerReferencesHandler();
-    (registrar as unknown as { registerSignatureHelpHandler: () => void }).registerSignatureHelpHandler();
+    (
+      registrar as unknown as { registerSignatureHelpHandler: () => void }
+    ).registerSignatureHelpHandler();
 
     const textDocument = { uri: request.uri };
     const position = { line: 3, character: 2 };
     const symbols = await connectionFixture.getDocumentSymbolHandler()({ textDocument });
-    const highlights = await connectionFixture.getDocumentHighlightHandler()({ textDocument, position });
+    const highlights = await connectionFixture.getDocumentHighlightHandler()({
+      textDocument,
+      position,
+    });
     const references = await connectionFixture.getReferencesHandler()({
       textDocument,
       position,

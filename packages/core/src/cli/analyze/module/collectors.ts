@@ -13,6 +13,7 @@ import { parseRegexContent } from '@/domain/regex';
 import { dirExists, readJsonIfExists, readTextIfExists } from '@/node/fs-helpers';
 import { listJsonFilesRecursive, resolveOrderedFiles } from '@/node/json-listing';
 import { readRisumoduleManifest } from '../../shared/risumodule';
+import { isPlainRecord } from '@/shared/guards';
 import { collectHTMLCBS, importLuaAnalysis, loadLuaArtifacts } from '../charx/collectors';
 import type { ModuleCollectResult } from './types';
 
@@ -234,7 +235,7 @@ function isManifestWithEntries(value: unknown): value is { entries: unknown[] } 
 }
 
 function isRecord(value: unknown): value is GenericRecord {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return isPlainRecord(value);
 }
 
 /** List all files with a specific extension recursively. */

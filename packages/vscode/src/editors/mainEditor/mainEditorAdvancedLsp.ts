@@ -24,6 +24,8 @@ import type {
   MainEditorWorkspaceSymbolsResultPayload,
 } from './mainEditorTypes';
 import { mapMainEditorMonacoPositionToSource, mapMainEditorSourceRangeToMonaco } from './mainEditorAdvancedLspMapping';
+import { getErrorMessage } from '../../shared/errors';
+import { checkMainEditorDocumentFreshness } from './shared/bridge-helpers';
 
 interface SerializableLocationInput {
   uri: string;
@@ -135,7 +137,8 @@ export async function createMainEditorRenameResult(document: vscode.TextDocument
   try {
     const edit = await vscode.commands.executeCommand<vscode.WorkspaceEdit | undefined>('vscode.executeDocumentRenameProvider', document.uri, position.value, payload.newName);
     if (!edit) return { ok: false, error: createAdvancedLspError(payload.requestId, 'rename', 'rename-rejected', 'Rename provider did not return edits.') };
-    if (payload.documentVersion !== document.version) {
+    const postApplyFreshness = checkMainEditorDocumentFreshness(payload, document);
+    if (!postApplyFreshness.fresh && (postApplyFreshness.reason === 'version-mismatch' || postApplyFreshness.reason === 'both-mismatch')) {
       return { ok: false, error: createAdvancedLspError(payload.requestId, 'rename', 'stale-document', 'Rename result is stale because the document changed before apply.') };
     }
     const applied = await vscode.workspace.applyEdit(edit);
@@ -183,8 +186,13 @@ function validateDocumentRequest(
   payload: MainEditorReferencesRequestPayload | MainEditorPrepareRenameRequestPayload | MainEditorRenameRequestPayload | MainEditorCodeLensRequestPayload,
   kind: MainEditorAdvancedLspErrorPayload['kind'],
 ): { ok: true } | { ok: false; error: MainEditorAdvancedLspErrorPayload } {
-  if (payload.documentUri !== document.uri.toString()) return { ok: false, error: createAdvancedLspError(payload.requestId, kind, 'stale-document', 'Request document URI does not match the open document.') };
-  if (payload.documentVersion !== document.version) return { ok: false, error: createAdvancedLspError(payload.requestId, kind, 'stale-document', 'Request is based on an older document version.') };
+  const freshness = checkMainEditorDocumentFreshness(payload, document);
+  if (!freshness.fresh) {
+    const message = freshness.reason === 'version-mismatch'
+      ? 'Request is based on an older document version.'
+      : 'Request document URI does not match the open document.';
+    return { ok: false, error: createAdvancedLspError(payload.requestId, kind, 'stale-document', message) };
+  }
   return { ok: true };
 }
 
@@ -214,6 +222,6 @@ function normalizePrepareRenameResult(result: { range: vscode.Range; placeholder
 }
 
 function toError(requestId: string, kind: MainEditorAdvancedLspErrorPayload['kind'], code: MainEditorAdvancedLspErrorPayload['code'], error: unknown): MainEditorAdvancedLspErrorPayload {
-  const message = error instanceof Error ? error.message : 'Advanced LSP request failed.';
+  const message = getErrorMessage(error) || 'Advanced LSP request failed.';
   return createAdvancedLspError(requestId, kind, code, message);
 }

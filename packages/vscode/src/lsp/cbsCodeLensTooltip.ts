@@ -3,6 +3,8 @@
  * @file packages/vscode/src/lsp/cbsCodeLensTooltip.ts
  */
 
+import { isPlainRecord as isRecord } from '../shared/protocolEnvelope';
+
 const CBS_AGENT_CONTRACT_SCHEMA = 'cbs-lsp-agent-contract';
 
 export interface CbsCodeLensTooltipCarrier {
@@ -58,15 +60,4 @@ export function applyCbsCodeLensActivationTooltip<T extends CbsCodeLensTooltipCa
     tooltip,
   };
   return codeLens;
-}
-
-/**
- * isRecord 함수.
- * unknown payload가 string key object인지 좁힘.
- *
- * @param value - 검사할 임의 값
- * @returns record처럼 안전하게 field를 읽을 수 있으면 true
- */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }

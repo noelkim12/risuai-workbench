@@ -48,6 +48,7 @@
   } from '../../../types/mainEditor';
   import { createMainEditorMonacoLspClient, type MainEditorMonacoLspClient } from '../../../monaco/mainEditorLspClient';
   import { getVsCodeApi, type VsCodeApi } from '../../../vscode';
+  import { createRequestId } from '../../../requestIds';
   import {
     createMainEditorEditMessage,
     createMainEditorFormatPreviewRequestMessage,
@@ -417,10 +418,9 @@
       return;
     }
 
-    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const requestId = createRequestId('edit');
     pendingTimer = setTimeout(() => {
       const baseVersion = documentVersion;
-      pendingTimer = undefined;
       const nextDraftSync = markRawEditSent(createDraftSyncState(), {
         requestId,
         sentText: draftText,
@@ -526,7 +526,7 @@
     if (previewTimer) clearTimeout(previewTimer);
     previewTimer = setTimeout(() => {
       previewTimer = undefined;
-      const requestId = `preview-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const requestId = createRequestId('preview');
       latestPreviewRequestId = requestId;
       previewPending = true;
       getTypedVsCodeApi()?.postMessage(
@@ -554,7 +554,7 @@
     if (runtimePreviewTimer) clearTimeout(runtimePreviewTimer);
     runtimePreviewTimer = setTimeout(() => {
       runtimePreviewTimer = undefined;
-      const requestId = `runtime-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const requestId = createRequestId('runtime');
       runtimePreviewRequestId = requestId;
       runtimePreviewPending = true;
       runtimePreviewFallbackBindings = createFallbackGetvarBindings(contentText);
@@ -584,7 +584,7 @@
     if (previewTimer) clearTimeout(previewTimer);
     previewTimer = setTimeout(() => {
       previewTimer = undefined;
-      const requestId = `format-preview-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const requestId = createRequestId('format-preview');
       formatPreviewRequestId = requestId;
       previewPending = true;
       getTypedVsCodeApi()?.postMessage(
@@ -655,7 +655,7 @@
   function requestLazyVariableSection(section: 'workspace' | 'profiles' | 'traceContext'): void {
     if (section !== 'workspace' || !lorebookState) return;
     const variableNames = runtimePreviewBindings.map((binding) => binding.variableName);
-    const requestId = `candidates-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const requestId = createRequestId('candidates');
     getTypedVsCodeApi()?.postMessage(
       createMainEditorVariableCandidatesRequestMessage({
         requestId,
@@ -671,7 +671,7 @@
   }
 
   function requestSimulatorProfiles(): void {
-    const requestId = `profiles-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const requestId = createRequestId('profiles');
     latestProfileListRequestId = requestId;
     simulatorProfilePending = true;
     getTypedVsCodeApi()?.postMessage(createMainEditorSimulatorProfileListRequestMessage({ requestId, documentUri }));
@@ -696,7 +696,7 @@
       }
       workspaceSymbolPending = true;
       void activeAdvancedLspController.requestWorkspaceSymbols({
-        requestId: `workspace-symbols-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        requestId: createRequestId('workspace-symbols'),
         query: normalized.query,
         limit: normalized.limit,
       }).then((symbols) => {
@@ -719,7 +719,7 @@
     status = `Selected ${symbol.name} at ${symbol.location.uri}.`;
     getTypedVsCodeApi()?.postMessage(
       createMainEditorLspRevealLocationMessage({
-        requestId: `reveal-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        requestId: createRequestId('reveal'),
         location: symbol.location,
       }),
     );
@@ -741,7 +741,7 @@
   }
 
   function saveProfileDraft(): void {
-    const requestId = `profile-save-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const requestId = createRequestId('profile-save');
     latestProfileSaveRequestId = requestId;
     simulatorProfilePending = true;
     getTypedVsCodeApi()?.postMessage(
@@ -851,7 +851,7 @@
       return;
     }
 
-    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const requestId = createRequestId('structured-edit');
     pendingTimer = setTimeout(() => {
       const state = queuedStructuredState;
       if (!state) return;

@@ -8,6 +8,7 @@ import path from 'node:path';
 import { CharacterDetailScanner } from '../artifact-browser/CharacterDetailScanner';
 import { ModuleDetailScanner } from '../artifact-browser/ModuleDetailScanner';
 import * as vscode from 'vscode';
+import { createWebviewNonce } from '../shared/webviewNonce';
 import { WorkspaceArtifactDiscoveryService } from '../artifact-browser/WorkspaceArtifactDiscoveryService';
 import {
   createArtifactBrowserCardsMessage,
@@ -17,7 +18,11 @@ import {
   isArtifactBrowserRefreshMessage,
   isArtifactBrowserSelectMessage,
 } from '../artifact-browser/artifactBrowserMessages';
-import { ARTIFACT_BROWSER_VIEW_ID, type BrowserArtifactCard, type BrowserSection } from '../artifact-browser/artifactBrowserTypes';
+import {
+  ARTIFACT_BROWSER_VIEW_ID,
+  type BrowserArtifactCard,
+  type BrowserSection,
+} from '../artifact-browser/artifactBrowserTypes';
 import { MarkerEditorViewProvider } from './MarkerEditorViewProvider';
 import {
   createWebviewDevServerHtml,
@@ -112,7 +117,9 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
   }
 
   private postMessage(
-    message: ReturnType<typeof createArtifactBrowserCardsMessage> | ReturnType<typeof createArtifactBrowserDetailMessage>,
+    message:
+      | ReturnType<typeof createArtifactBrowserCardsMessage>
+      | ReturnType<typeof createArtifactBrowserDetailMessage>,
   ): void {
     void this.view?.webview.postMessage(message);
   }
@@ -183,9 +190,10 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
    */
   private async postDetailSections(selectedCard: BrowserArtifactCard): Promise<void> {
     const stableId = selectedCard.stableId;
-    const sections = selectedCard.artifactKind === 'character'
-      ? await new CharacterDetailScanner().scan(selectedCard)
-      : await new ModuleDetailScanner().scan(selectedCard);
+    const sections =
+      selectedCard.artifactKind === 'character'
+        ? await new CharacterDetailScanner().scan(selectedCard)
+        : await new ModuleDetailScanner().scan(selectedCard);
     if (this.selectedStableId !== stableId) return;
 
     this.currentSections.set(stableId, sections);
@@ -201,7 +209,9 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
    */
   private async openItem(stableId: string, itemId: string): Promise<void> {
     const sections = this.currentSections.get(stableId);
-    const item = sections?.flatMap((section) => section.items).find((candidate) => candidate.id === itemId);
+    const item = sections
+      ?.flatMap((section) => section.items)
+      .find((candidate) => candidate.id === itemId);
     if (!item?.fileUri) return;
 
     const uri = vscode.Uri.parse(item.fileUri);
@@ -240,13 +250,21 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
       return this.getFallbackHtml(webview);
     }
 
-    const nonce = createNonce();
+    const nonce = createWebviewNonce();
     const html = fs.readFileSync(htmlPath, 'utf8');
-    const assetHtml = html.replace(/(src|href)="(\.\/assets\/[^\"]+)"/g, (_match, attr, assetPath) => {
-      const assetUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewRoot, assetPath.replace('./', '')));
-      return `${attr}="${assetUri.toString()}"`;
-    });
-    const withNonce = assetHtml.replace(/<script type="module"/g, `<script nonce="${nonce}" type="module"`);
+    const assetHtml = html.replace(
+      /(src|href)="(\.\/assets\/[^\"]+)"/g,
+      (_match, attr, assetPath) => {
+        const assetUri = webview.asWebviewUri(
+          vscode.Uri.joinPath(webviewRoot, assetPath.replace('./', '')),
+        );
+        return `${attr}="${assetUri.toString()}"`;
+      },
+    );
+    const withNonce = assetHtml.replace(
+      /<script type="module"/g,
+      `<script nonce="${nonce}" type="module"`,
+    );
 
     return withNonce.replace(
       '</head>',
@@ -269,16 +287,6 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
   </body>
 </html>`;
   }
-}
-
-/**
- * createNonce 함수.
- * VS Code webview CSP에서 module script를 허용할 일회성 nonce를 생성함.
- *
- * @returns CSP script nonce
- */
-function createNonce(): string {
-  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
 }
 
 /**

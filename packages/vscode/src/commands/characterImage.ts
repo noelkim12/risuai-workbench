@@ -4,6 +4,8 @@
 
 import * as path from 'node:path';
 import type { Uri } from 'vscode';
+import { getErrorMessage } from '../shared/errors';
+import { isPlainRecord as isRecord } from '../shared/protocolEnvelope';
 
 type VsCodeApi = typeof import('vscode');
 
@@ -45,16 +47,6 @@ export function updateRisucharImageMetadata(
   imagePath: string,
 ): Record<string, unknown> {
   return { ...manifest, image: imagePath };
-}
-
-/** isRecord 함수.
- * unknown 값을 object record로 안전하게 좁힘.
- *
- * @param value - 검사할 값
- * @returns 배열이 아닌 object이면 true
- */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 /** upsertCharacterImageManifestEntry 함수.
@@ -236,7 +228,7 @@ export async function selectCharacterImage(uri?: Uri): Promise<void> {
 
     void vscodeApi.window.showInformationMessage(`Character thumbnail set to ${imagePath}`);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     void vscodeApi.window.showErrorMessage(`Failed to select character image: ${message}`);
   }
 }

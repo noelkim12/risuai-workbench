@@ -4,6 +4,7 @@
  */
 
 import type { PresetType } from './types';
+import { isPlainRecord as isPlainRecordShared } from '@/shared/guards';
 
 /**
  * detectPresetType 함수.
@@ -48,12 +49,13 @@ export function detectPresetType(data: Record<string, unknown>): PresetType {
 /**
  * isRecord 함수.
  * unknown 값이 배열이 아닌 plain object 형태인지 좁힘.
+ * 공유 isPlainRecord에 위임함.
  *
  * @param value - 검사할 임의 값
  * @returns record로 안전하게 다룰 수 있으면 true
  */
 export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return isPlainRecordShared(value);
 }
 
 /**

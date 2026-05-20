@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { writeJson, writeText } from '@/node/fs-helpers';
 import { sanitizeFilename } from '../../utils/filenames';
+import { argValue, getErrorMessage } from '../shared';
 import { RISUMODULE_FILENAME, buildScaffoldRisumoduleManifest } from '../shared/risumodule';
 import { parseRisuLuaMode, type RisuLuaMode } from '../shared/lua-bundler/risulua-mode';
 
@@ -69,7 +70,7 @@ export function runScaffoldWorkflow(argv: readonly string[]): number {
     runScaffold(options);
     return 0;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     console.error(`\n  ❌ ${message}\n`);
     return 1;
   }
@@ -374,12 +375,4 @@ function printNextSteps(type: ScaffoldType, relPath: string): void {
 
 function formatRisuLuaModeLabel(mode: RisuLuaMode): string {
   return mode === 'modular' ? '모듈식 개발' : '단일 파일 개발';
-}
-
-// ── Utility ─────────────────────────────────────────────────────────
-
-function argValue(argv: readonly string[], name: string): string | null {
-  const index = argv.indexOf(name);
-  if (index < 0) return null;
-  return argv[index + 1] ?? null;
 }

@@ -17,7 +17,7 @@ import process from 'node:process';
 
 import { describe, expect, it } from 'vitest';
 
-import type { CompletionItem, CompletionList, Diagnostic } from 'vscode-languageserver/node';
+import type { CompletionItem, Diagnostic } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 
 import { createLuaLsCompanionController } from '../../src/controllers/LuaLsCompanionController';
@@ -27,6 +27,7 @@ import {
   type LuaLsPublishDiagnosticsEvent,
 } from '../../src/providers/lua/lualsProcess';
 import { createLuaLsProxy, normalizeLuaHoverForSnapshot } from '../../src/providers/lua/lualsProxy';
+import { getCompletionItems, positionAt } from '../helpers/lsp-test-utils';
 
 const RUN_LUALS_INTEGRATION = ['1', 'true'].includes(
   process.env.CBS_LSP_RUN_LUALS_INTEGRATION?.toLowerCase() ?? '',
@@ -34,45 +35,6 @@ const RUN_LUALS_INTEGRATION = ['1', 'true'].includes(
 const RESOLVED_LUALS_PATH = resolveLuaLsExecutablePathSync({
   overrideExecutablePath: process.env.CBS_LSP_LUALS_PATH ?? null,
 });
-
-/**
- * positionAt 함수.
- * 테스트 문자열 안에서 특정 토큰의 LSP position을 계산함.
- *
- * @param text - 검색할 전체 Lua 텍스트
- * @param needle - 기준으로 삼을 토큰 문자열
- * @param characterOffset - 찾은 토큰 시작점에서 추가로 이동할 문자 수
- * @returns hover/completion 요청에 사용할 position
- */
-function positionAt(
-  text: string,
-  needle: string,
-  characterOffset: number = 0,
-): { character: number; line: number } {
-  const offset = text.indexOf(needle);
-  expect(offset).toBeGreaterThanOrEqual(0);
-
-  const before = text.slice(0, offset + characterOffset);
-  const lines = before.split('\n');
-
-  return {
-    line: lines.length - 1,
-    character: lines.at(-1)?.length ?? 0,
-  };
-}
-
-/**
- * getCompletionItems 함수.
- * LuaLS completion 응답을 item 배열 형태로 정규화함.
- *
- * @param completion - LuaLS completion 응답 payload
- * @returns 안정적으로 비교할 completion item 배열
- */
-function getCompletionItems(
-  completion: CompletionItem[] | CompletionList,
-): readonly CompletionItem[] {
-  return Array.isArray(completion) ? completion : completion.items;
-}
 
 /**
  * waitForRealLuaHover 함수.
@@ -166,12 +128,12 @@ async function waitForDiagnostics(
   predicate: (diagnostics: readonly Diagnostic[]) => boolean = (diagnostics) => diagnostics.length > 0,
 ): Promise<LuaLsPublishDiagnosticsEvent> {
   const deadline = Date.now() + 20_000;
-  let lastEvent: LuaLsPublishDiagnosticsEvent | null = null;
+  const receivedEvents: LuaLsPublishDiagnosticsEvent[] = [];
   let received = false;
 
   const unsubscribe = manager.onPublishDiagnostics((event) => {
     if (event.sourceUri === sourceUri) {
-      lastEvent = event;
+      receivedEvents.push(event);
       if (predicate(event.diagnostics)) {
         received = true;
       }
@@ -183,10 +145,12 @@ async function waitForDiagnostics(
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
 
+    const lastEvent = receivedEvents[receivedEvents.length - 1];
+    const lastDiagnosticCount = lastEvent?.diagnostics.length;
     if (!received || !lastEvent) {
       throw new Error(
         `Timed out waiting for real LuaLS diagnostics. ` +
-          `Last received: ${lastEvent ? `${lastEvent.diagnostics.length} diagnostics` : 'none'}. ` +
+          `Last received: ${lastDiagnosticCount === undefined ? 'none' : `${lastDiagnosticCount} diagnostics`}. ` +
           `Ensure shadow-file workspace is configured and Lua.workspace.library includes shadow root.`,
       );
     }

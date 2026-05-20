@@ -13,27 +13,22 @@ import {
   moduleIdFromRisuLuaSourcePath,
   validateRisuLuaModuleId,
 } from 'risu-workbench-core/node';
+import { getErrorMessage } from '../../helpers/error-helper';
+import {
+  type ParsedLuaArgument,
+  isLuaIdentifierPart,
+  parseLuaStringLiteral,
+  parseLuaTopLevelArguments,
+  skipLuaTrivia,
+  skipLuaWhitespace,
+} from '../../utils/lua-lexical-scan';
 import { DiagnosticSeverity, type Diagnostic, type Range } from 'vscode-languageserver';
 
 import { DiagnosticCode } from './taxonomy';
 
-interface ParsedLuaArgument {
-  kind: 'identifier' | 'other' | 'string';
-  value: string | null;
-  start: number;
-  end: number;
-}
-
 interface ParsedCallArguments {
   arguments: ParsedLuaArgument[];
   closeParen: number;
-}
-
-interface ParsedStringLiteral {
-  value: string;
-  contentStart: number;
-  contentEnd: number;
-  end: number;
 }
 
 interface RisuLuaModularIssue {
@@ -71,13 +66,18 @@ export function collectRisuLuaModularDiagnostics(filePath: string, source: strin
 
   const parseError = getLuaParseError(filePath, source);
   if (parseError) {
-    return [createDiagnostic({
-      code: DiagnosticCode.RisuLuaParseError,
-      message: `RisuLua modular mode source parse error: ${parseError}`,
-      symbol: 'parse',
-      start: 0,
-      end: Math.min(source.length, Math.max(1, firstLineEnd(source))),
-    }, source)];
+    return [
+      createDiagnostic(
+        {
+          code: DiagnosticCode.RisuLuaParseError,
+          message: `RisuLua modular mode source parse error: ${parseError}`,
+          symbol: 'parse',
+          start: 0,
+          end: Math.min(source.length, Math.max(1, firstLineEnd(source))),
+        },
+        source,
+      ),
+    ];
   }
 
   return [
@@ -91,7 +91,9 @@ export function shouldAnalyzeRisuLuaModularSource(filePath: string): boolean {
   return Boolean(workspace && isRisuLuaSourceFile(filePath, workspace));
 }
 
-export function getRisuLuaGeneratedDistMetadata(filePath: string): { rootDir: string; distPath: string; targetName: string } | null {
+export function getRisuLuaGeneratedDistMetadata(
+  filePath: string,
+): { rootDir: string; distPath: string; targetName: string } | null {
   const workspace = getRisuLuaModularWorkspaceContext(filePath);
   if (!workspace) return null;
   return path.resolve(filePath) === workspace.distPath
@@ -99,7 +101,9 @@ export function getRisuLuaGeneratedDistMetadata(filePath: string): { rootDir: st
     : null;
 }
 
-export function getRisuLuaModularWorkspaceContext(filePath: string): RisuLuaWorkspaceContext | null {
+export function getRisuLuaModularWorkspaceContext(
+  filePath: string,
+): RisuLuaWorkspaceContext | null {
   const normalized = path.resolve(filePath);
   if (!normalized.toLowerCase().endsWith('.risulua')) {
     return null;
@@ -124,17 +128,22 @@ function isRisuLuaSourceFile(filePath: string, workspace: RisuLuaWorkspaceContex
   const normalized = path.resolve(filePath);
   if (normalized === workspace.distPath) return false;
   const relative = path.relative(workspace.sourceRoot, normalized);
-  return Boolean(relative)
-    && !relative.startsWith('..')
-    && !path.isAbsolute(relative)
-    && normalized.toLowerCase().endsWith('.risulua')
-    && !relative.split(path.sep).includes('dist');
+  return (
+    Boolean(relative) &&
+    !relative.startsWith('..') &&
+    !path.isAbsolute(relative) &&
+    normalized.toLowerCase().endsWith('.risulua') &&
+    !relative.split(path.sep).includes('dist')
+  );
 }
 
 function findRisuLuaWorkspaceRoot(filePath: string): string | null {
   let current = path.dirname(filePath);
   while (current !== path.dirname(current)) {
-    if (fs.existsSync(path.join(current, '.risuchar')) || fs.existsSync(path.join(current, '.risumodule'))) {
+    if (
+      fs.existsSync(path.join(current, '.risuchar')) ||
+      fs.existsSync(path.join(current, '.risumodule'))
+    ) {
       return current;
     }
     current = path.dirname(current);
@@ -194,7 +203,7 @@ function getLuaParseError(filePath: string, source: string): string | null {
     });
     return null;
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
+    const detail = getErrorMessage(error);
     return `${filePath}: ${detail}`;
   }
 }
@@ -217,7 +226,8 @@ function scanRisuLuaModularIssues(source: string): RisuLuaModularIssue[] {
         symbol: 'require',
         start: localRequire.start,
         end: localRequire.end,
-        message: 'RisuLua modular mode forbids shadowing require; build-time module extraction must stay unambiguous.',
+        message:
+          'RisuLua modular mode forbids shadowing require; build-time module extraction must stay unambiguous.',
       });
       index = localRequire.end;
       continue;
@@ -230,7 +240,8 @@ function scanRisuLuaModularIssues(source: string): RisuLuaModularIssue[] {
         symbol: 'require',
         start: requireAlias.start,
         end: requireAlias.end,
-        message: 'RisuLua modular mode forbids aliasing or wrapping require; use direct require("module.id") calls only.',
+        message:
+          'RisuLua modular mode forbids aliasing or wrapping require; use direct require("module.id") calls only.',
       });
       index = requireAlias.end;
       continue;
@@ -243,7 +254,8 @@ function scanRisuLuaModularIssues(source: string): RisuLuaModularIssue[] {
         symbol: 'require',
         start: requireReassign.start,
         end: requireReassign.end,
-        message: 'RisuLua modular mode forbids reassigning require; build-time module extraction must stay deterministic.',
+        message:
+          'RisuLua modular mode forbids reassigning require; build-time module extraction must stay deterministic.',
       });
       index = requireReassign.end;
       continue;
@@ -289,35 +301,40 @@ function scanRisuLuaModularIssues(source: string): RisuLuaModularIssue[] {
     index = Math.max(index + callName.name.length, call.closeParen + 1);
   }
 
-  return issues.sort((left, right) => left.start - right.start || left.end - right.end || left.code.localeCompare(right.code));
+  return issues.sort(
+    (left, right) =>
+      left.start - right.start || left.end - right.end || left.code.localeCompare(right.code),
+  );
 }
 
-function diagnoseRequireCall(
-  callStart: number,
-  call: ParsedCallArguments,
-): RisuLuaModularIssue[] {
+function diagnoseRequireCall(callStart: number, call: ParsedCallArguments): RisuLuaModularIssue[] {
   const [argument] = call.arguments;
   if (call.arguments.length !== 1 || !argument || argument.kind !== 'string') {
-    return [{
-      code: DiagnosticCode.RisuLuaDynamicRequire,
-      symbol: 'require',
-      start: callStart,
-      end: call.closeParen + 1,
-      message: 'RisuLua modular mode supports only direct static require("module.id") calls; dynamic require shapes cannot be bundled safely.',
-    }];
+    return [
+      {
+        code: DiagnosticCode.RisuLuaDynamicRequire,
+        symbol: 'require',
+        start: callStart,
+        end: call.closeParen + 1,
+        message:
+          'RisuLua modular mode supports only direct static require("module.id") calls; dynamic require shapes cannot be bundled safely.',
+      },
+    ];
   }
 
   try {
     if (!argument.value) throw new Error('Missing RisuLua module ID');
     validateRisuLuaModuleId(argument.value);
   } catch {
-    return [{
-      code: DiagnosticCode.RisuLuaInvalidRequire,
-      symbol: 'require',
-      start: argument.start,
-      end: argument.end,
-      message: `RisuLua modular mode require ID must be dot-separated Lua identifiers without slashes, empty segments, or .risulua suffixes: ${JSON.stringify(argument.value)}.`,
-    }];
+    return [
+      {
+        code: DiagnosticCode.RisuLuaInvalidRequire,
+        symbol: 'require',
+        start: argument.start,
+        end: argument.end,
+        message: `RisuLua modular mode require ID must be dot-separated Lua identifiers without slashes, empty segments, or .risulua suffixes: ${JSON.stringify(argument.value)}.`,
+      },
+    ];
   }
 
   return [];
@@ -335,17 +352,23 @@ function collectRisuLuaGraphIssues(
     sourceRoot: workspace.sourceRoot,
     filePath,
     source,
-  }).map((diagnostic): RisuLuaModularIssue => ({
-    code: diagnostic.code === 'missing_module'
-      ? DiagnosticCode.RisuLuaMissingModule
-      : DiagnosticCode.RisuLuaDependencyCycle,
-    symbol: 'require',
-    start: diagnostic.requireIdRange?.start ?? 0,
-    end: diagnostic.requireIdRange?.end ?? Math.min(source.length, Math.max(1, firstLineEnd(source))),
-    message: diagnostic.code === 'missing_module'
-      ? `RisuLua modular mode cannot resolve required module ${JSON.stringify(diagnostic.requireId)} from ${moduleId}.`
-      : diagnostic.message,
-  }));
+  }).map(
+    (diagnostic): RisuLuaModularIssue => ({
+      code:
+        diagnostic.code === 'missing_module'
+          ? DiagnosticCode.RisuLuaMissingModule
+          : DiagnosticCode.RisuLuaDependencyCycle,
+      symbol: 'require',
+      start: diagnostic.requireIdRange?.start ?? 0,
+      end:
+        diagnostic.requireIdRange?.end ??
+        Math.min(source.length, Math.max(1, firstLineEnd(source))),
+      message:
+        diagnostic.code === 'missing_module'
+          ? `RisuLua modular mode cannot resolve required module ${JSON.stringify(diagnostic.requireId)} from ${moduleId}.`
+          : diagnostic.message,
+    }),
+  );
 }
 
 export function listRisuLuaModuleIdsForCompletion(filePath: string): string[] {
@@ -382,22 +405,28 @@ function createDiagnostic(issue: RisuLuaModularIssue, source: string): Diagnosti
   };
 }
 
-function matchLocalRequireShadow(source: string, index: number): { start: number; end: number } | null {
+function matchLocalRequireShadow(
+  source: string,
+  index: number,
+): { start: number; end: number } | null {
   if (!matchesKeyword(source, index, 'local')) return null;
-  let cursor = skipWhitespace(source, index + 'local'.length);
-  if (source.startsWith('function', cursor) && !isLuaIdentifierPart(source[cursor + 'function'.length] ?? '')) {
+  let cursor = skipLuaWhitespace(source, index + 'local'.length);
+  if (
+    source.startsWith('function', cursor) &&
+    !isLuaIdentifierPart(source[cursor + 'function'.length] ?? '')
+  ) {
     return null;
   }
 
   while (cursor < source.length) {
-    cursor = skipWhitespace(source, cursor);
+    cursor = skipLuaWhitespace(source, cursor);
     const identifier = matchIdentifier(source, cursor);
     if (!identifier) return null;
     if (identifier.name === 'require') {
       return { start: cursor, end: cursor + identifier.name.length };
     }
     cursor += identifier.name.length;
-    cursor = skipWhitespace(source, cursor);
+    cursor = skipLuaWhitespace(source, cursor);
     if (source[cursor] === ',') {
       cursor += 1;
       continue;
@@ -417,30 +446,39 @@ function matchRequireAlias(source: string, index: number): { start: number; end:
   return { start: index, end: index + 'require'.length };
 }
 
-function matchRequireReassignment(source: string, index: number): { start: number; end: number } | null {
+function matchRequireReassignment(
+  source: string,
+  index: number,
+): { start: number; end: number } | null {
   if (!matchesKeyword(source, index, 'require')) return null;
-  const cursor = skipWhitespace(source, index + 'require'.length);
+  const cursor = skipLuaWhitespace(source, index + 'require'.length);
   if (source[cursor] !== '=' || source[cursor + 1] === '=') {
     return null;
   }
   return { start: index, end: index + 'require'.length };
 }
 
-function matchPackageLoaderMutation(source: string, index: number): { symbol: string; start: number; end: number } | null {
+function matchPackageLoaderMutation(
+  source: string,
+  index: number,
+): { symbol: string; start: number; end: number } | null {
   if (!matchesKeyword(source, index, 'package')) return null;
   const parsed = parsePackageLoaderReference(source, index);
   if (!parsed) return null;
 
-  const cursor = skipWhitespace(source, parsed.end);
+  const cursor = skipLuaWhitespace(source, parsed.end);
   if (source[cursor] !== '=' || source[cursor + 1] === '=') {
     return null;
   }
   return parsed;
 }
 
-function parsePackageLoaderReference(source: string, index: number): { symbol: string; start: number; end: number } | null {
+function parsePackageLoaderReference(
+  source: string,
+  index: number,
+): { symbol: string; start: number; end: number } | null {
   let cursor = index + 'package'.length;
-  cursor = skipWhitespace(source, cursor);
+  cursor = skipLuaWhitespace(source, cursor);
   let field: string | null = null;
   let end = cursor;
 
@@ -451,10 +489,10 @@ function parsePackageLoaderReference(source: string, index: number): { symbol: s
     field = identifier.name;
     end = cursor + identifier.name.length;
   } else if (source[cursor] === '[') {
-    cursor = skipWhitespace(source, cursor + 1);
-    const literal = parseStringLiteral(source, cursor);
+    cursor = skipLuaWhitespace(source, cursor + 1);
+    const literal = parseLuaStringLiteral(source, cursor);
     if (!literal) return null;
-    cursor = skipWhitespace(source, literal.end);
+    cursor = skipLuaWhitespace(source, literal.end);
     if (source[cursor] !== ']') return null;
     field = literal.value;
     end = cursor + 1;
@@ -464,8 +502,8 @@ function parsePackageLoaderReference(source: string, index: number): { symbol: s
     return null;
   }
 
-  while (source[skipWhitespace(source, end)] === '[') {
-    const open = skipWhitespace(source, end);
+  while (source[skipLuaWhitespace(source, end)] === '[') {
+    const open = skipLuaWhitespace(source, end);
     const close = findMatchingBracket(source, open);
     if (close === null) break;
     end = close + 1;
@@ -475,130 +513,11 @@ function parsePackageLoaderReference(source: string, index: number): { symbol: s
 }
 
 function parseCallArguments(source: string, cursor: number): ParsedCallArguments | null {
-  cursor = skipWhitespace(source, cursor);
+  cursor = skipLuaWhitespace(source, cursor);
   if (source[cursor] !== '(') return null;
-  const parsed = parseTopLevelArguments(source, cursor + 1);
+  const parsed = parseLuaTopLevelArguments(source, cursor + 1);
   if (!parsed) return null;
   return { arguments: parsed.arguments, closeParen: parsed.closeParen };
-}
-
-function parseTopLevelArguments(
-  source: string,
-  start: number,
-): { arguments: ParsedLuaArgument[]; closeParen: number } | null {
-  const args: ParsedLuaArgument[] = [];
-  let cursor = start;
-  let argumentStart = skipWhitespace(source, cursor);
-  let nestedDepth = 0;
-
-  while (cursor < source.length) {
-    const skippedIndex = skipLuaTrivia(source, cursor);
-    if (skippedIndex !== cursor) {
-      cursor = skippedIndex;
-      continue;
-    }
-
-    const char = source[cursor];
-    if (char === '(' || char === '{' || char === '[') {
-      nestedDepth += 1;
-      cursor += 1;
-      continue;
-    }
-    if (char === ')' && nestedDepth === 0) {
-      const end = trimTrailingWhitespace(source, argumentStart, cursor);
-      if (end > argumentStart || args.length > 0) {
-        args.push(parseArgument(source, argumentStart, end));
-      }
-      return { arguments: args, closeParen: cursor };
-    }
-    if ((char === ')' || char === '}' || char === ']') && nestedDepth > 0) {
-      nestedDepth -= 1;
-      cursor += 1;
-      continue;
-    }
-    if (char === ',' && nestedDepth === 0) {
-      const end = trimTrailingWhitespace(source, argumentStart, cursor);
-      args.push(parseArgument(source, argumentStart, end));
-      cursor += 1;
-      argumentStart = skipWhitespace(source, cursor);
-      continue;
-    }
-    cursor += 1;
-  }
-  return null;
-}
-
-function parseArgument(source: string, start: number, end: number): ParsedLuaArgument {
-  const stringLiteral = parseStringLiteral(source, start);
-  if (stringLiteral && stringLiteral.end === end) {
-    return {
-      kind: 'string',
-      value: stringLiteral.value,
-      start: stringLiteral.contentStart,
-      end: stringLiteral.contentEnd,
-    };
-  }
-  const raw = source.slice(start, end);
-  if (/^[A-Za-z_][A-Za-z0-9_]*$/u.test(raw)) {
-    return { kind: 'identifier', value: raw, start, end };
-  }
-  return { kind: 'other', value: null, start, end };
-}
-
-function parseStringLiteral(source: string, start: number): ParsedStringLiteral | null {
-  const quote = source[start];
-  if (quote !== '"' && quote !== "'") return null;
-  let cursor = start + 1;
-  let value = '';
-  while (cursor < source.length) {
-    const char = source[cursor];
-    if (char === '\\') {
-      const next = source[cursor + 1];
-      if (next === undefined) return null;
-      value += next;
-      cursor += 2;
-      continue;
-    }
-    if (char === quote) {
-      return { value, contentStart: start + 1, contentEnd: cursor, end: cursor + 1 };
-    }
-    value += char;
-    cursor += 1;
-  }
-  return null;
-}
-
-function skipLuaTrivia(source: string, index: number): number {
-  const char = source[index];
-  if (char === '"' || char === "'") return skipQuotedString(source, index);
-  if (source.startsWith('--[[', index)) {
-    const end = source.indexOf(']]', index + 4);
-    return end === -1 ? source.length : end + 2;
-  }
-  if (source.startsWith('--', index)) {
-    const end = source.indexOf('\n', index + 2);
-    return end === -1 ? source.length : end + 1;
-  }
-  if (source.startsWith('[[', index)) {
-    const end = source.indexOf(']]', index + 2);
-    return end === -1 ? source.length : end + 2;
-  }
-  return index;
-}
-
-function skipQuotedString(source: string, start: number): number {
-  const quote = source[start];
-  let cursor = start + 1;
-  while (cursor < source.length) {
-    const char = source[cursor];
-    if (char === '\\') {
-      cursor += 2;
-      continue;
-    }
-    if (char === quote) return cursor + 1;
-    cursor += 1;
-  }
-  return source.length;
 }
 
 function matchIdentifier(source: string, index: number): { name: string } | null {
@@ -623,20 +542,8 @@ function previousMeaningfulCharacter(source: string, index: number): string {
 }
 
 function nextMeaningfulCharacter(source: string, index: number): string {
-  let cursor = skipWhitespace(source, index);
+  const cursor = skipLuaWhitespace(source, index);
   return source[cursor] ?? '';
-}
-
-function skipWhitespace(source: string, start: number): number {
-  let cursor = start;
-  while (cursor < source.length && /\s/u.test(source[cursor] ?? '')) cursor += 1;
-  return cursor;
-}
-
-function trimTrailingWhitespace(source: string, start: number, end: number): number {
-  let cursor = end;
-  while (cursor > start && /\s/u.test(source[cursor - 1] ?? '')) cursor -= 1;
-  return cursor;
 }
 
 function findMatchingBracket(source: string, open: number): number | null {
@@ -678,8 +585,4 @@ function positionFromOffset(source: string, offset: number): Range['start'] {
 function firstLineEnd(source: string): number {
   const newline = source.indexOf('\n');
   return newline === -1 ? source.length : newline;
-}
-
-function isLuaIdentifierPart(value: string | undefined): boolean {
-  return Boolean(value && /[A-Za-z0-9_]/u.test(value));
 }

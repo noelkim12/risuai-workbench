@@ -4,6 +4,7 @@
  */
 
 import path from 'node:path';
+import { isPlainRecord, isProtocolEnvelope, isProtocolMessageEnvelope } from '../../shared/protocolEnvelope';
 
 export const MAIN_EDITOR_PROTOCOL = 'risu-workbench.main-editor';
 export const MAIN_EDITOR_PROTOCOL_VERSION = 1;
@@ -641,6 +642,115 @@ export type MainEditorWebviewMessage =
       payload: MainEditorVariableCandidatesRequestPayload;
     };
 
+type MainEditorWebviewMessageType = MainEditorWebviewMessage['type'];
+type MainEditorPayloadGuard<TType extends MainEditorWebviewMessageType> = (
+  payload: unknown,
+) => payload is Extract<MainEditorWebviewMessage, { type: TType }>['payload'];
+type MainEditorMessageGuard = (message: unknown) => message is MainEditorWebviewMessage;
+
+const MAIN_EDITOR_WEBVIEW_MESSAGE_TYPES = [
+  'main-editor/ready',
+  'main-editor/edit',
+  'main-editor/structuredEdit',
+  'main-editor/updatePreferences',
+  'main-editor/lspCompletion',
+  'main-editor/lspHover',
+  'main-editor/lspDefinition',
+  'main-editor/lspReferences',
+  'main-editor/lspPrepareRename',
+  'main-editor/lspRename',
+  'main-editor/lspCodeLens',
+  'main-editor/lspWorkspaceSymbols',
+  'main-editor/lspRevealLocation',
+  'main-editor/previewRequest',
+  'main-editor/previewRuntimeRequest',
+  'main-editor/formatPreviewRequest',
+  'main-editor/simulatorProfileListRequest',
+  'main-editor/simulatorProfileSaveRequest',
+  'main-editor/variableCandidatesRequest',
+] as const satisfies readonly MainEditorWebviewMessageType[];
+
+/**
+ * createMainEditorMessageGuard 함수.
+ * Main Editor inbound envelope 검증과 type별 payload guard를 결합함.
+ *
+ * @param type - 검증할 Main Editor message type
+ * @param payloadGuard - message payload shape를 검증할 callback
+ * @returns Main Editor message 전체를 검증하는 type guard
+ */
+function createMainEditorMessageGuard<TType extends MainEditorWebviewMessageType>(
+  type: TType,
+  payloadGuard: MainEditorPayloadGuard<TType>,
+): (message: unknown) => message is Extract<MainEditorWebviewMessage, { type: TType }> {
+  return (message: unknown): message is Extract<MainEditorWebviewMessage, { type: TType }> =>
+    isProtocolEnvelope(message, MAIN_EDITOR_PROTOCOL, MAIN_EDITOR_PROTOCOL_VERSION, type) && payloadGuard(message.payload);
+}
+
+const MAIN_EDITOR_WEBVIEW_MESSAGE_GUARDS = {
+  'main-editor/ready': createMainEditorMessageGuard(
+    'main-editor/ready',
+    (payload): payload is MainEditorReadyPayload => isPlainRecord(payload) && typeof payload.documentUri === 'string',
+  ),
+  'main-editor/edit': createMainEditorMessageGuard('main-editor/edit', isMainEditorEditPayload),
+  'main-editor/structuredEdit': createMainEditorMessageGuard(
+    'main-editor/structuredEdit',
+    isMainEditorStructuredEditPayload,
+  ),
+  'main-editor/updatePreferences': createMainEditorMessageGuard(
+    'main-editor/updatePreferences',
+    (payload): payload is Extract<MainEditorWebviewMessage, { type: 'main-editor/updatePreferences' }>['payload'] =>
+      isPlainRecord(payload) &&
+      typeof payload.documentUri === 'string' &&
+      isMainEditorFormatKind(payload.formatKind) &&
+      isMainEditorPreferenceState(payload.preferences),
+  ),
+  'main-editor/lspCompletion': createMainEditorMessageGuard(
+    'main-editor/lspCompletion',
+    isMainEditorLspCompletionRequestPayload,
+  ),
+  'main-editor/lspHover': createMainEditorMessageGuard('main-editor/lspHover', isMainEditorLspRequestPayload),
+  'main-editor/lspDefinition': createMainEditorMessageGuard('main-editor/lspDefinition', isMainEditorLspRequestPayload),
+  'main-editor/lspReferences': createMainEditorMessageGuard(
+    'main-editor/lspReferences',
+    isMainEditorReferencesRequestPayload,
+  ),
+  'main-editor/lspPrepareRename': createMainEditorMessageGuard(
+    'main-editor/lspPrepareRename',
+    isMainEditorPrepareRenameRequestPayload,
+  ),
+  'main-editor/lspRename': createMainEditorMessageGuard('main-editor/lspRename', isMainEditorRenameRequestPayload),
+  'main-editor/lspCodeLens': createMainEditorMessageGuard('main-editor/lspCodeLens', isMainEditorCodeLensRequestPayload),
+  'main-editor/lspWorkspaceSymbols': createMainEditorMessageGuard(
+    'main-editor/lspWorkspaceSymbols',
+    isMainEditorWorkspaceSymbolsRequestPayload,
+  ),
+  'main-editor/lspRevealLocation': createMainEditorMessageGuard(
+    'main-editor/lspRevealLocation',
+    isMainEditorRevealLocationRequestPayload,
+  ),
+  'main-editor/previewRequest': createMainEditorMessageGuard('main-editor/previewRequest', isMainEditorPreviewRequestPayload),
+  'main-editor/previewRuntimeRequest': createMainEditorMessageGuard(
+    'main-editor/previewRuntimeRequest',
+    isMainEditorPreviewRuntimeRequestPayload,
+  ),
+  'main-editor/formatPreviewRequest': createMainEditorMessageGuard(
+    'main-editor/formatPreviewRequest',
+    isMainEditorFormatPreviewRequestPayload,
+  ),
+  'main-editor/simulatorProfileListRequest': createMainEditorMessageGuard(
+    'main-editor/simulatorProfileListRequest',
+    isMainEditorSimulatorProfileListRequestPayload,
+  ),
+  'main-editor/simulatorProfileSaveRequest': createMainEditorMessageGuard(
+    'main-editor/simulatorProfileSaveRequest',
+    isMainEditorSimulatorProfileSaveRequestPayload,
+  ),
+  'main-editor/variableCandidatesRequest': createMainEditorMessageGuard(
+    'main-editor/variableCandidatesRequest',
+    isMainEditorVariableCandidatesRequestPayload,
+  ),
+} satisfies Record<MainEditorWebviewMessageType, MainEditorMessageGuard>;
+
 /**
  * detectMainEditorFormat 함수.
  * 파일 경로 확장자를 Phase 1 main editor 포맷 정의로 매핑함.
@@ -697,87 +807,9 @@ export function normalizeMainEditorPreferences(value: unknown): MainEditorPrefer
  * @returns Phase 1 main editor webview message 여부
  */
 export function isMainEditorWebviewMessage(message: unknown): message is MainEditorWebviewMessage {
-  if (!isRecord(message)) return false;
-  if (message.protocol !== MAIN_EDITOR_PROTOCOL || message.version !== MAIN_EDITOR_PROTOCOL_VERSION) return false;
-
-  if (message.type === 'main-editor/ready') {
-    return isRecord(message.payload) && typeof message.payload.documentUri === 'string';
-  }
-
-  if (message.type === 'main-editor/edit') {
-    return isMainEditorEditPayload(message.payload);
-  }
-
-  if (message.type === 'main-editor/structuredEdit') {
-    return isMainEditorStructuredEditPayload(message.payload);
-  }
-
-  if (message.type === 'main-editor/updatePreferences') {
-    return (
-      isRecord(message.payload) &&
-      typeof message.payload.documentUri === 'string' &&
-      isMainEditorFormatKind(message.payload.formatKind) &&
-      isMainEditorPreferenceState(message.payload.preferences)
-    );
-  }
-
-  if (message.type === 'main-editor/lspCompletion') {
-    return isMainEditorLspCompletionRequestPayload(message.payload);
-  }
-
-  if (message.type === 'main-editor/lspHover' || message.type === 'main-editor/lspDefinition') {
-    return isMainEditorLspRequestPayload(message.payload);
-  }
-
-  if (message.type === 'main-editor/lspReferences') {
-    return isMainEditorReferencesRequestPayload(message.payload);
-  }
-
-  if (message.type === 'main-editor/lspPrepareRename') {
-    return isMainEditorPrepareRenameRequestPayload(message.payload);
-  }
-
-  if (message.type === 'main-editor/lspRename') {
-    return isMainEditorRenameRequestPayload(message.payload);
-  }
-
-  if (message.type === 'main-editor/lspCodeLens') {
-    return isMainEditorCodeLensRequestPayload(message.payload);
-  }
-
-  if (message.type === 'main-editor/lspWorkspaceSymbols') {
-    return isMainEditorWorkspaceSymbolsRequestPayload(message.payload);
-  }
-
-  if (message.type === 'main-editor/lspRevealLocation') {
-    return isMainEditorRevealLocationRequestPayload(message.payload);
-  }
-
-  if (message.type === 'main-editor/previewRequest') {
-    return isMainEditorPreviewRequestPayload(message.payload);
-  }
-
-  if (message.type === 'main-editor/previewRuntimeRequest') {
-    return isMainEditorPreviewRuntimeRequestPayload(message.payload);
-  }
-
-  if (message.type === 'main-editor/formatPreviewRequest') {
-    return isMainEditorFormatPreviewRequestPayload(message.payload);
-  }
-
-  if (message.type === 'main-editor/simulatorProfileListRequest') {
-    return isMainEditorSimulatorProfileListRequestPayload(message.payload);
-  }
-
-  if (message.type === 'main-editor/simulatorProfileSaveRequest') {
-    return isMainEditorSimulatorProfileSaveRequestPayload(message.payload);
-  }
-
-  if (message.type === 'main-editor/variableCandidatesRequest') {
-    return isMainEditorVariableCandidatesRequestPayload(message.payload);
-  }
-
-  return false;
+  if (!isProtocolMessageEnvelope(message, MAIN_EDITOR_PROTOCOL, MAIN_EDITOR_PROTOCOL_VERSION)) return false;
+  if (!isMainEditorWebviewMessageType(message.type)) return false;
+  return MAIN_EDITOR_WEBVIEW_MESSAGE_GUARDS[message.type](message);
 }
 
 /**
@@ -808,7 +840,7 @@ export function isMainEditorStructuredEditMessage(
 
 function isMainEditorEditPayload(value: unknown): value is MainEditorEditPayload {
   return (
-    isRecord(value) &&
+    isPlainRecord(value) &&
     typeof value.requestId === 'string' &&
     typeof value.documentUri === 'string' &&
     typeof value.baseVersion === 'number' &&
@@ -818,7 +850,7 @@ function isMainEditorEditPayload(value: unknown): value is MainEditorEditPayload
 }
 
 function isMainEditorStructuredEditPayload(value: unknown): value is MainEditorStructuredEditPayload {
-  if (!isRecord(value)) return false;
+  if (!isPlainRecord(value)) return false;
   if (typeof value.requestId !== 'string') return false;
   if (typeof value.documentUri !== 'string') return false;
   if (typeof value.baseVersion !== 'number' || !Number.isInteger(value.baseVersion)) return false;
@@ -838,7 +870,7 @@ function isMainEditorStructuredEditPayload(value: unknown): value is MainEditorS
 
 function isMainEditorLspRequestPayload(value: unknown): value is MainEditorLspRequestPayload {
   return (
-    isRecord(value) &&
+    isPlainRecord(value) &&
     typeof value.requestId === 'string' &&
     typeof value.documentUri === 'string' &&
     typeof value.documentVersion === 'number' &&
@@ -856,7 +888,7 @@ function isMainEditorLspCompletionRequestPayload(value: unknown): value is MainE
 
 function isMainEditorAdvancedLspBaseRequestPayload(value: unknown): value is MainEditorAdvancedLspBaseRequestPayload {
   return (
-    isRecord(value) &&
+    isPlainRecord(value) &&
     typeof value.requestId === 'string' &&
     typeof value.documentUri === 'string' &&
     isNonNegativeInteger(value.documentVersion) &&
@@ -867,7 +899,7 @@ function isMainEditorAdvancedLspBaseRequestPayload(value: unknown): value is Mai
 
 function isMainEditorReferencesRequestPayload(value: unknown): value is MainEditorReferencesRequestPayload {
   return (
-    isRecord(value) &&
+    isPlainRecord(value) &&
     isMainEditorAdvancedLspBaseRequestPayload(value) &&
     isMainEditorMonacoPosition(value.position) &&
     typeof value.includeDeclaration === 'boolean'
@@ -875,12 +907,12 @@ function isMainEditorReferencesRequestPayload(value: unknown): value is MainEdit
 }
 
 function isMainEditorPrepareRenameRequestPayload(value: unknown): value is MainEditorPrepareRenameRequestPayload {
-  return isRecord(value) && isMainEditorAdvancedLspBaseRequestPayload(value) && isMainEditorMonacoPosition(value.position);
+  return isPlainRecord(value) && isMainEditorAdvancedLspBaseRequestPayload(value) && isMainEditorMonacoPosition(value.position);
 }
 
 function isMainEditorRenameRequestPayload(value: unknown): value is MainEditorRenameRequestPayload {
   return (
-    isRecord(value) &&
+    isPlainRecord(value) &&
     isMainEditorAdvancedLspBaseRequestPayload(value) &&
     isMainEditorMonacoPosition(value.position) &&
     typeof value.newName === 'string' &&
@@ -893,20 +925,20 @@ function isMainEditorCodeLensRequestPayload(value: unknown): value is MainEditor
 }
 
 function isMainEditorWorkspaceSymbolsRequestPayload(value: unknown): value is MainEditorWorkspaceSymbolsRequestPayload {
-  return isRecord(value) && typeof value.requestId === 'string' && typeof value.query === 'string' && isPositiveInteger(value.limit);
+  return isPlainRecord(value) && typeof value.requestId === 'string' && typeof value.query === 'string' && isPositiveInteger(value.limit);
 }
 
 function isMainEditorRevealLocationRequestPayload(value: unknown): value is MainEditorRevealLocationRequestPayload {
-  return isRecord(value) && typeof value.requestId === 'string' && isMainEditorLocationPayload(value.location);
+  return isPlainRecord(value) && typeof value.requestId === 'string' && isMainEditorLocationPayload(value.location);
 }
 
 function isMainEditorLocationPayload(value: unknown): value is MainEditorLocationPayload {
-  return isRecord(value) && typeof value.uri === 'string' && isMainEditorSourceRange(value.sourceRange);
+  return isPlainRecord(value) && typeof value.uri === 'string' && isMainEditorSourceRange(value.sourceRange);
 }
 
 function isMainEditorSourceRange(value: unknown): value is MainEditorSourceRangePayload {
   return (
-    isRecord(value) &&
+    isPlainRecord(value) &&
     isMainEditorSourcePosition(value.start) &&
     isMainEditorSourcePosition(value.end) &&
     (value.end.line > value.start.line || (value.end.line === value.start.line && value.end.character >= value.start.character))
@@ -914,7 +946,7 @@ function isMainEditorSourceRange(value: unknown): value is MainEditorSourceRange
 }
 
 function isMainEditorSourcePosition(value: unknown): value is MainEditorSourcePositionPayload {
-  return isRecord(value) && isNonNegativeInteger(value.line) && isNonNegativeInteger(value.character);
+  return isPlainRecord(value) && isNonNegativeInteger(value.line) && isNonNegativeInteger(value.character);
 }
 
 function isSectionAllowedForFormat(formatKind: unknown, sectionName: unknown): sectionName is MainEditorSectionName {
@@ -927,7 +959,7 @@ function isSectionAllowedForFormat(formatKind: unknown, sectionName: unknown): s
 
 function isMainEditorPreviewRequestPayload(value: unknown): value is MainEditorPreviewRequestPayload {
   return (
-    isRecord(value) &&
+    isPlainRecord(value) &&
     typeof value.requestId === 'string' &&
     typeof value.documentUri === 'string' &&
     typeof value.documentVersion === 'number' &&
@@ -942,7 +974,7 @@ function isMainEditorPreviewRequestPayload(value: unknown): value is MainEditorP
 
 function isMainEditorPreviewRuntimeRequestPayload(value: unknown): value is MainEditorPreviewRuntimeRequestPayload {
   return (
-    isRecord(value) &&
+    isPlainRecord(value) &&
     typeof value.requestId === 'string' &&
     typeof value.documentUri === 'string' &&
     typeof value.documentVersion === 'number' &&
@@ -958,7 +990,7 @@ function isMainEditorPreviewRuntimeRequestPayload(value: unknown): value is Main
 }
 
 function isMainEditorFormatPreviewRequestPayload(value: unknown): value is MainEditorFormatPreviewRequestPayload {
-  if (!isRecord(value)) return false;
+  if (!isPlainRecord(value)) return false;
   if (typeof value.requestId !== 'string') return false;
   if (typeof value.documentUri !== 'string') return false;
   if (!isNonNegativeInteger(value.documentVersion)) return false;
@@ -976,14 +1008,14 @@ function isMainEditorFormatPreviewRequestPayload(value: unknown): value is MainE
 function isMainEditorSimulatorProfileListRequestPayload(
   value: unknown,
 ): value is MainEditorSimulatorProfileListRequestPayload {
-  return isRecord(value) && typeof value.requestId === 'string' && typeof value.documentUri === 'string';
+  return isPlainRecord(value) && typeof value.requestId === 'string' && typeof value.documentUri === 'string';
 }
 
 function isMainEditorSimulatorProfileSaveRequestPayload(
   value: unknown,
 ): value is MainEditorSimulatorProfileSaveRequestPayload {
   return (
-    isRecord(value) &&
+    isPlainRecord(value) &&
     typeof value.requestId === 'string' &&
     typeof value.documentUri === 'string' &&
     isSimulatorProfile(value.profile) &&
@@ -993,7 +1025,7 @@ function isMainEditorSimulatorProfileSaveRequestPayload(
 
 function isMainEditorVariableCandidatesRequestPayload(value: unknown): value is MainEditorVariableCandidatesRequestPayload {
   return (
-    isRecord(value) &&
+    isPlainRecord(value) &&
     typeof value.requestId === 'string' &&
     typeof value.documentUri === 'string' &&
     typeof value.documentVersion === 'number' &&
@@ -1009,7 +1041,7 @@ function isMainEditorVariableCandidatesRequestPayload(value: unknown): value is 
 }
 
 function isMainEditorVariableOverridesPayload(value: unknown): value is MainEditorVariableOverridesPayload {
-  if (!isRecord(value)) return false;
+  if (!isPlainRecord(value)) return false;
   return (
     optionalStringRecord(value.chatVariables) &&
     optionalStringRecord(value.globalVariables) &&
@@ -1019,11 +1051,11 @@ function isMainEditorVariableOverridesPayload(value: unknown): value is MainEdit
 }
 
 function optionalStringRecord(value: unknown): boolean {
-  return value === undefined || (isRecord(value) && Object.values(value).every((entry) => typeof entry === 'string'));
+  return value === undefined || (isPlainRecord(value) && Object.values(value).every((entry) => typeof entry === 'string'));
 }
 
 function optionalBooleanRecord(value: unknown): boolean {
-  return value === undefined || (isRecord(value) && Object.values(value).every((entry) => typeof entry === 'boolean'));
+  return value === undefined || (isPlainRecord(value) && Object.values(value).every((entry) => typeof entry === 'boolean'));
 }
 
 function isVariableCandidateScope(value: unknown): value is Exclude<MainEditorVariableSectionScope, 'usedHere'> {
@@ -1032,7 +1064,7 @@ function isVariableCandidateScope(value: unknown): value is Exclude<MainEditorVa
 
 export function isMainEditorMonacoPosition(value: unknown): value is MainEditorMonacoPositionPayload {
   return (
-    isRecord(value) &&
+    isPlainRecord(value) &&
     typeof value.lineNumber === 'number' &&
     Number.isInteger(value.lineNumber) &&
     value.lineNumber >= 1 &&
@@ -1043,7 +1075,7 @@ export function isMainEditorMonacoPosition(value: unknown): value is MainEditorM
 }
 
 export function isMainEditorMonacoRange(value: unknown): value is MainEditorMonacoRangePayload {
-  if (!isRecord(value)) return false;
+  if (!isPlainRecord(value)) return false;
   const startLineNumber = value.startLineNumber;
   const startColumn = value.startColumn;
   const endLineNumber = value.endLineNumber;
@@ -1057,7 +1089,7 @@ export function isMainEditorMonacoRange(value: unknown): value is MainEditorMona
 
 function isLorebookStructuredEditState(value: unknown): value is LorebookStructuredEditState {
   return (
-    isRecord(value) &&
+    isPlainRecord(value) &&
     isStringRecord(value.frontmatter) &&
     Array.isArray(value.unknownFrontmatter) &&
     typeof value.keysText === 'string' &&
@@ -1069,7 +1101,7 @@ function isLorebookStructuredEditState(value: unknown): value is LorebookStructu
 
 export function isRegexStructuredState(value: unknown): value is RegexStructuredState {
   return (
-    isRecord(value) &&
+    isPlainRecord(value) &&
     isPlainScalarRecord(value.frontmatter) &&
     typeof value.inText === 'string' &&
     typeof value.outText === 'string'
@@ -1078,10 +1110,10 @@ export function isRegexStructuredState(value: unknown): value is RegexStructured
 
 export function isPromptStructuredState(value: unknown): value is PromptStructuredState {
   return (
-    isRecord(value) &&
+    isPlainRecord(value) &&
     isPlainScalarRecord(value.frontmatter) &&
     isMainEditorPromptType(value.type) &&
-    isRecord(value.sections) &&
+    isPlainRecord(value.sections) &&
     Object.entries(value.sections).every(
       ([key, sectionValue]) =>
         (key === 'TEXT' || key === 'INNER_FORMAT' || key === 'DEFAULT_TEXT') && typeof sectionValue === 'string',
@@ -1090,25 +1122,25 @@ export function isPromptStructuredState(value: unknown): value is PromptStructur
 }
 
 export function isHtmlStructuredState(value: unknown): value is HtmlStructuredState {
-  return isRecord(value) && typeof value.contentText === 'string';
+  return isPlainRecord(value) && typeof value.contentText === 'string';
 }
 
 export function isSimulatorProfile(value: unknown): value is MainEditorSimulatorProfilePayload {
-  if (!isRecord(value)) return false;
+  if (!isPlainRecord(value)) return false;
   if (typeof value.id !== 'string' || value.id.trim().length === 0) return false;
   if (typeof value.name !== 'string' || value.name.trim().length === 0) return false;
   if (!isSimulatorProfileTarget(value.target)) return false;
   if (!isMainEditorVariableOverridesPayload(value.variables)) return false;
   if (!Array.isArray(value.chatHistory) || !value.chatHistory.every(isSimulatorChatMessage)) return false;
-  return isRecord(value.htmlContext) && isHtmlDocumentUriList(value.htmlContext.enabledHtmlDocumentUris);
+  return isPlainRecord(value.htmlContext) && isHtmlDocumentUriList(value.htmlContext.enabledHtmlDocumentUris);
 }
 
 function isStringRecord(value: unknown): value is Record<string, string> {
-  return isRecord(value) && Object.values(value).every((entry) => typeof entry === 'string');
+  return isPlainRecord(value) && Object.values(value).every((entry) => typeof entry === 'string');
 }
 
 function isPlainScalarRecord(value: unknown): value is Record<string, string | number | boolean | null> {
-  return isRecord(value) && Object.values(value).every(isPlainScalarValue);
+  return isPlainRecord(value) && Object.values(value).every(isPlainScalarValue);
 }
 
 function isPlainScalarValue(value: unknown): value is string | number | boolean | null {
@@ -1117,7 +1149,7 @@ function isPlainScalarValue(value: unknown): value is string | number | boolean 
 
 function isSimulatorProfileTarget(value: unknown): value is MainEditorSimulatorProfilePayload['target'] {
   return (
-    isRecord(value) &&
+    isPlainRecord(value) &&
     (!('characterId' in value) || isSafeProfileIdentifier(value.characterId)) &&
     Array.isArray(value.moduleIds) &&
     value.moduleIds.every(isSafeProfileIdentifier) &&
@@ -1127,7 +1159,7 @@ function isSimulatorProfileTarget(value: unknown): value is MainEditorSimulatorP
 
 function isSimulatorChatMessage(value: unknown): value is MainEditorSimulatorProfilePayload['chatHistory'][number] {
   return (
-    isRecord(value) &&
+    isPlainRecord(value) &&
     isSimulatorChatRole(value.role) &&
     typeof value.content === 'string' &&
     (!('timestamp' in value) || typeof value.timestamp === 'string')
@@ -1214,7 +1246,7 @@ function isNonNegativeInteger(value: unknown): value is number {
 
 export function isMainEditorPreferenceState(value: unknown): value is MainEditorPreferenceState {
   return (
-    isRecord(value) &&
+    isPlainRecord(value) &&
     typeof value.splitRatio === 'number' &&
     Number.isFinite(value.splitRatio) &&
     value.splitRatio >= 0.2 &&
@@ -1224,8 +1256,9 @@ export function isMainEditorPreferenceState(value: unknown): value is MainEditor
   );
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
+function isMainEditorWebviewMessageType(value: unknown): value is MainEditorWebviewMessageType {
+  return (
+    typeof value === 'string' &&
+    MAIN_EDITOR_WEBVIEW_MESSAGE_TYPES.includes(value as MainEditorWebviewMessageType)
+  );
 }

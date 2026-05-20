@@ -14,6 +14,7 @@ import { CBS_OCCURRENCE_NAVIGATION_COMMAND } from '../lsp/cbsCommands';
 import { RISU_LUALS_STUB_COMMAND, installRisuLuaWorkspaceStubs } from '../luals/risuLuaStubs';
 import { RISU_CHARACTER_SELECT_IMAGE_COMMAND, selectCharacterImage } from './characterImage';
 import { MarkerEditorViewProvider } from '../views/MarkerEditorViewProvider';
+import { getErrorMessage } from '../shared/errors';
 
 const MARKER_EDITOR_COMMAND = 'risuWorkbench.openMarkerEditor';
 const MARKER_EDITOR_FILENAMES = new Set(['.risuchar', '.risumodule']);
@@ -168,7 +169,7 @@ async function generateRisuLuaStubs(output: vscode.OutputChannel): Promise<void>
       'RisuAI LuaLS stubs generated. Reload the Lua language server if hover does not update immediately.',
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     output.appendLine(`[Risu Workbench] Failed to generate RisuAI LuaLS stubs: ${message}`);
     void vscode.window.showErrorMessage(`Failed to generate RisuAI LuaLS stubs: ${message}`);
   }
@@ -246,7 +247,7 @@ async function runCli(output: vscode.OutputChannel, runner: () => Promise<void>)
     output.appendLine('[Risu Workbench] CLI completed successfully.');
     void vscode.window.showInformationMessage('Risu core command completed.');
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     output.appendLine(`[Risu Workbench] CLI failed: ${message}`);
     void vscode.window.showErrorMessage(`Risu core command failed: ${message}`);
   }

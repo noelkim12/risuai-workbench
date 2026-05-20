@@ -1,10 +1,14 @@
-import type { Hover, Position, TextDocumentPositionParams } from 'vscode-languageserver/node';
-import { CBSBuiltinRegistry } from 'risu-workbench-core';
+import type { Hover } from 'vscode-languageserver/node';
 import { describe, expect, it } from 'vitest';
 
 import { type AgentMetadataEnvelope, FragmentAnalysisService } from '../../src/core';
 import { type AgentFriendlyHover, HoverProvider } from '../../src/features/hover';
 import type { VariableFlowService, WorkspaceSnapshotState } from '../../src/services';
+import {
+  createTextDocumentPositionParams,
+  createBuiltinProviderDeps,
+  sharedBuiltinRegistry,
+} from '../helpers/provider-test-harness';
 import { offsetToPosition } from '../../src/utils/position';
 import {
   createFixtureRequest,
@@ -17,32 +21,7 @@ import {
   createVariableFlowServiceStub,
   createVariableOccurrence,
 } from './variable-flow-test-helpers';
-
-function locateNthOffset(text: string, needle: string, occurrence: number = 0): number {
-  let fromIndex = 0;
-  let foundIndex = -1;
-
-  for (let index = 0; index <= occurrence; index += 1) {
-    foundIndex = text.indexOf(needle, fromIndex);
-    if (foundIndex === -1) {
-      break;
-    }
-
-    fromIndex = foundIndex + needle.length;
-  }
-
-  expect(foundIndex).toBeGreaterThanOrEqual(0);
-  return foundIndex;
-}
-
-function positionAt(
-  text: string,
-  needle: string,
-  characterOffset: number = 0,
-  occurrence: number = 0,
-): Position {
-  return offsetToPosition(text, locateNthOffset(text, needle, occurrence) + characterOffset);
-}
+import { locateNthOffset, positionAt } from '../helpers/lsp-test-utils';
 
 function createProvider(
   service: FragmentAnalysisService,
@@ -50,23 +29,13 @@ function createProvider(
   variableFlowService?: VariableFlowService,
   workspaceSnapshot?: WorkspaceSnapshotState | null,
 ): HoverProvider {
-  return new HoverProvider(new CBSBuiltinRegistry(), {
-    analysisService: service,
-    resolveRequest: ({ textDocument }) => (textDocument.uri === request.uri ? request : null),
-    variableFlowService,
-    workspaceSnapshot,
-  });
+  return new HoverProvider(
+    sharedBuiltinRegistry,
+    createBuiltinProviderDeps(service, request, variableFlowService, workspaceSnapshot),
+  );
 }
 
-function createParams(
-  request: ReturnType<typeof createFixtureRequest>,
-  position: Position,
-): TextDocumentPositionParams {
-  return {
-    textDocument: { uri: request.uri },
-    position,
-  };
-}
+const createParams = createTextDocumentPositionParams;
 
 function expectMarkdownHover(hover: Hover | null): string {
   expect(hover).not.toBeNull();

@@ -6,6 +6,7 @@ import {
   walkLuaAst,
 } from './risulua-forbidden-analyzer';
 import type { RisuLuaModuleGraph, RisuLuaResolvedModule } from './risulua-modular-resolver';
+import { escapeRegExp } from '../../../shared/string-patterns';
 
 /**
  * RisuLua 모듈 그래프 번들링 옵션 정의.
@@ -520,10 +521,6 @@ function statementsContainIdentifierName(statements: LuaAstNode[], name: string)
 
 function asNodeArray(value: unknown): LuaAstNode[] {
   return Array.isArray(value) ? value.filter(isNode) : [];
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function getNodeRange(node: unknown): [number, number] | null {

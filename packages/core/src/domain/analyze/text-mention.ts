@@ -3,14 +3,12 @@
  * @file packages/core/src/domain/analyze/text-mention.ts
  */
 
+import { escapeRegExp } from '../../shared/string-patterns';
+
 export interface TextMentionEdge {
   sourceEntry: string;
   target: string;
   type: 'variable-mention' | 'lua-mention' | 'lorebook-mention';
-}
-
-function escapeRegExp(string: string): string {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**

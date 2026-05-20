@@ -1,4 +1,4 @@
-import type { Position, RenameParams, TextDocumentPositionParams, TextDocumentEdit } from 'vscode-languageserver/node';
+import type { Position, TextDocumentPositionParams, TextDocumentEdit } from 'vscode-languageserver/node';
 import { describe, expect, it } from 'vitest';
 
 import { createSyntheticDocumentVersion, FragmentAnalysisService } from '../../src/core';
@@ -8,13 +8,18 @@ import {
   type RenameUriRequestResolver,
 } from '../../src/features/navigation';
 import type { VariableFlowService } from '../../src/services';
-import { offsetToPosition } from '../../src/utils/position';
+import {
+  createTextDocumentPositionParams as createParamsBase,
+  createRenameParams as createRenameParamsBase,
+  createSimpleProviderDeps,
+} from '../helpers/provider-test-harness';
 import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
 import {
   createVariableFlowQueryResult,
   createVariableFlowServiceStub,
   createVariableOccurrence,
 } from './variable-flow-test-helpers';
+import { positionAt, rangeAt } from '../helpers/lsp-test-utils';
 
 /**
  * Type guard to check if a document change is a TextDocumentEdit.
@@ -42,60 +47,16 @@ function getFirstTextDocumentEdit(edit: { documentChanges?: Array<unknown> }): T
   return change as TextDocumentEdit;
 }
 
-function locateNthOffset(text: string, needle: string, occurrence: number = 0): number {
-  let fromIndex = 0;
-  let foundIndex = -1;
-
-  for (let index = 0; index <= occurrence; index += 1) {
-    foundIndex = text.indexOf(needle, fromIndex);
-    if (foundIndex === -1) {
-      break;
-    }
-
-    fromIndex = foundIndex + needle.length;
-  }
-
-  expect(foundIndex).toBeGreaterThanOrEqual(0);
-  return foundIndex;
-}
-
-function positionAt(
-  text: string,
-  needle: string,
-  characterOffset: number = 0,
-  occurrence: number = 0,
-): Position {
-  return offsetToPosition(text, locateNthOffset(text, needle, occurrence) + characterOffset);
-}
-
-/**
- * rangeAt 함수.
- * text 안의 needle occurrence를 host range로 변환함.
- *
- * @param text - host 문서 전문
- * @param needle - 찾을 문자열
- * @param occurrence - 같은 문자열의 occurrence index
- * @returns needle 전체를 감싸는 range
- */
-function rangeAt(text: string, needle: string, occurrence: number = 0) {
-  const startOffset = locateNthOffset(text, needle, occurrence);
-  return {
-    start: offsetToPosition(text, startOffset),
-    end: offsetToPosition(text, startOffset + needle.length),
-  };
-}
-
 function createProvider(
   service: FragmentAnalysisService,
   request: ReturnType<typeof createFixtureRequest>,
   variableFlowService?: VariableFlowService,
   resolveUriRequest?: RenameUriRequestResolver,
 ): RenameProvider {
+  const deps = createSimpleProviderDeps(service, request, variableFlowService);
   return new RenameProvider({
-    analysisService: service,
-    resolveRequest: ({ textDocument }) => (textDocument.uri === request.uri ? request : null),
+    ...deps,
     resolveUriRequest,
-    variableFlowService,
   });
 }
 
@@ -121,22 +82,15 @@ function createPositionParams(
   request: ReturnType<typeof createFixtureRequest>,
   position: Position,
 ): TextDocumentPositionParams {
-  return {
-    textDocument: { uri: request.uri },
-    position,
-  };
+  return createParamsBase(request, position);
 }
 
 function createRenameParams(
   request: ReturnType<typeof createFixtureRequest>,
   position: Position,
   newName: string,
-): RenameParams {
-  return {
-    textDocument: { uri: request.uri },
-    position,
-    newName,
-  };
+) {
+  return createRenameParamsBase(request, position, newName);
 }
 
 describe('RenameProvider', () => {

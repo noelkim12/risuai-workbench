@@ -1,9 +1,8 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { buildChartPanel, buildDiagramPanel, buildFindingPanel, buildMetricGrid, buildTablePanel } from '../../shared/view-model';
 import { buildPromptChainGraphPanel } from '../../shared/relationship-network-builders';
 import { escapeHtml } from '../../../shared';
-import { renderHtmlReportShell } from '../../shared/html-report-shell';
+import { buildAnalysisHtmlReport } from '../../shared/html-report-builder';
 import { createSourceId, dedupeSources } from '../../shared/source-links';
 import { type Locale, t } from '../../shared/i18n';
 import type { AnalysisVisualizationDoc, SectionDefinition, VisualizationPanel, VisualizationSource } from '../../shared/visualization-types';
@@ -73,15 +72,12 @@ export function renderPresetHtml(data: PresetReportData, outputDir: string, loca
     sources,
   };
 
-  const analysisDir = path.join(outputDir, 'analysis');
-  fs.mkdirSync(analysisDir, { recursive: true });
-  const reportBaseName = 'preset-analysis';
-  const { html, clientJs, assets } = renderHtmlReportShell(doc, { locale, reportBaseName });
-  fs.writeFileSync(path.join(analysisDir, `${reportBaseName}.html`), html, 'utf-8');
-  fs.writeFileSync(path.join(analysisDir, 'report.js'), clientJs, 'utf-8');
-  for (const asset of assets) {
-    fs.writeFileSync(path.join(analysisDir, asset.fileName), asset.contents, 'utf-8');
-  }
+  buildAnalysisHtmlReport({
+    doc,
+    locale,
+    reportBaseName: 'preset-analysis',
+    analysisDir: path.join(outputDir, 'analysis'),
+  });
 }
 
 // ── Summary totals ───────────────────────────────────────────────

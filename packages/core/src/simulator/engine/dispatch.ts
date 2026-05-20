@@ -13,6 +13,7 @@ import { addInvalidPureMacroDiagnostic, addSimulatorDiagnostic } from './diagnos
 import { recordMacro } from './coverage';
 import { cloneRange, sourceForRange } from './source-range';
 import { pushTrace } from './trace';
+import { getErrorMessage } from '../../shared/errors';
 import { PURE_MACRO_HANDLERS } from '../macros/pure';
 import { MACRO_HANDLERS } from '../macros/registry';
 import type { MacroDispatchState } from '../macros/registry';
@@ -240,7 +241,7 @@ function evaluatePureMacro(node: MacroCallNode, state: MacroDispatchState, depth
     });
     return result;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     addInvalidPureMacroDiagnostic(state, node, message);
     return '';
   }

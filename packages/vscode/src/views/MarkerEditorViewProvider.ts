@@ -6,8 +6,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as vscode from 'vscode';
-import { getCharacterImageAssetPath, upsertCharacterImageManifestEntry } from '../commands/characterImage';
-import { getWorkspaceRelativePath, splitRelativePath } from '../artifact-browser/CharacterManifestDiscoveryService';
+import { createWebviewNonce } from '../shared/webviewNonce';
+import {
+  getCharacterImageAssetPath,
+  upsertCharacterImageManifestEntry,
+} from '../commands/characterImage';
+import {
+  getWorkspaceRelativePath,
+  splitRelativePath,
+} from '../artifact-browser/CharacterManifestDiscoveryService';
+import { getErrorMessage } from '../shared/errors';
+import { isPlainRecord as isJsonObject } from '../shared/protocolEnvelope';
 import {
   MARKER_EDITOR_PROTOCOL,
   MARKER_EDITOR_PROTOCOL_VERSION,
@@ -38,7 +47,15 @@ const PANEL_VIEW_TYPE = 'risuWorkbench.markerEditor';
 const CHARACTER_MARKER_FILENAME = '.risuchar';
 const MODULE_MARKER_FILENAME = '.risumodule';
 const ASSETS_DIRECTORY = 'assets';
-const SUPPORTED_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.avif', '.svg']);
+const SUPPORTED_IMAGE_EXTENSIONS = new Set([
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.webp',
+  '.gif',
+  '.avif',
+  '.svg',
+]);
 
 type JsonObject = Record<string, unknown>;
 
@@ -63,7 +80,9 @@ export class MarkerEditorViewProvider {
   static openEditor(context: vscode.ExtensionContext, markerUri: vscode.Uri): void {
     const mode = detectMarkerMode(markerUri);
     if (!mode) {
-      void vscode.window.showErrorMessage('Marker editor only supports .risuchar and .risumodule files.');
+      void vscode.window.showErrorMessage(
+        'Marker editor only supports .risuchar and .risumodule files.',
+      );
       return;
     }
 
@@ -84,12 +103,18 @@ export class MarkerEditorViewProvider {
       {
         enableScripts: true,
         retainContextWhenHidden: true,
-        localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview'), vscode.Uri.joinPath(rootUri, ASSETS_DIRECTORY)],
+        localResourceRoots: [
+          vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview'),
+          vscode.Uri.joinPath(rootUri, ASSETS_DIRECTORY),
+        ],
         portMapping: getWebviewDevServerPortMapping(),
       },
     );
 
-    MarkerEditorViewProvider.panels.set(panelKey, new MarkerEditorViewProvider(context, panel, markerUri, rootUri, mode));
+    MarkerEditorViewProvider.panels.set(
+      panelKey,
+      new MarkerEditorViewProvider(context, panel, markerUri, rootUri, mode),
+    );
   }
 
   private constructor(
@@ -103,13 +128,18 @@ export class MarkerEditorViewProvider {
     this.mode = mode;
     this.panel.webview.options = {
       enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview'), vscode.Uri.joinPath(rootUri, ASSETS_DIRECTORY)],
+      localResourceRoots: [
+        vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview'),
+        vscode.Uri.joinPath(rootUri, ASSETS_DIRECTORY),
+      ],
       portMapping: getWebviewDevServerPortMapping(),
     };
     this.disposables.push(
       this.panel.onDidDispose(() => {
         MarkerEditorViewProvider.panels.delete(this.markerUri.toString());
-        this.disposables.splice(0).forEach((disposable) => disposable.dispose());
+        this.disposables.splice(0).forEach((disposable) => {
+          disposable.dispose();
+        });
       }),
       this.panel.webview.onDidReceiveMessage((message: unknown) => {
         void this.handleMessage(message);
@@ -154,7 +184,12 @@ export class MarkerEditorViewProvider {
    */
   private async handleReady(message: MarkerEditorReadyMessage): Promise<void> {
     if (message.payload.markerUri && message.payload.markerUri !== this.markerUri.toString()) {
-      this.postMessage(createErrorMessage('staleMessage', 'Ready message does not match the open marker editor panel.'));
+      this.postMessage(
+        createErrorMessage(
+          'staleMessage',
+          'Ready message does not match the open marker editor panel.',
+        ),
+      );
       return;
     }
 
@@ -174,13 +209,21 @@ export class MarkerEditorViewProvider {
       const manifest = await this.readManifestJson();
       const fields = message.payload.fields;
       if (!isJsonObject(fields)) {
-        this.postMessage(createErrorMessage('invalidFields', 'Save payload fields must be a JSON object.'));
+        this.postMessage(
+          createErrorMessage('invalidFields', 'Save payload fields must be a JSON object.'),
+        );
         return;
       }
 
       const normalizedImage = normalizeMarkerEditorImagePath(fields.image);
       if (fields.image && !normalizedImage) {
-        this.postMessage(createErrorMessage('invalidImage', 'Image path must be a supported file under assets/.', 'image'));
+        this.postMessage(
+          createErrorMessage(
+            'invalidImage',
+            'Image path must be a supported file under assets/.',
+            'image',
+          ),
+        );
         return;
       }
       fields.image = normalizedImage;
@@ -190,18 +233,28 @@ export class MarkerEditorViewProvider {
       } else if (this.mode === 'module' && isModuleEditFields(fields)) {
         applyModuleEditFields(manifest, fields);
       } else {
-        this.postMessage(createErrorMessage('invalidFields', 'Save payload fields do not match the marker editor mode.'));
+        this.postMessage(
+          createErrorMessage(
+            'invalidFields',
+            'Save payload fields do not match the marker editor mode.',
+          ),
+        );
         return;
       }
 
-      await vscode.workspace.fs.writeFile(this.markerUri, Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, 'utf-8'));
+      await vscode.workspace.fs.writeFile(
+        this.markerUri,
+        Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, 'utf-8'),
+      );
       const payload = await this.createInitPayload();
-      this.postMessage(createSavedMessage({
-        success: true,
-        message: 'Marker saved.',
-        fields: payload.fields,
-        imageUri: payload.imageUri,
-      }));
+      this.postMessage(
+        createSavedMessage({
+          success: true,
+          message: 'Marker saved.',
+          fields: payload.fields,
+          imageUri: payload.imageUri,
+        }),
+      );
       ArtifactBrowserViewProvider.refreshOpenViews();
     } catch (error) {
       this.postMessage(createErrorMessage('saveFailed', getErrorMessage(error)));
@@ -219,12 +272,14 @@ export class MarkerEditorViewProvider {
 
     try {
       const payload = await this.createInitPayload();
-      this.postMessage(createResetResponseMessage({
-        fields: payload.fields,
-        imageUri: payload.imageUri,
-        createdAt: payload.createdAt,
-        modifiedAt: payload.modifiedAt,
-      }));
+      this.postMessage(
+        createResetResponseMessage({
+          fields: payload.fields,
+          imageUri: payload.imageUri,
+          createdAt: payload.createdAt,
+          modifiedAt: payload.modifiedAt,
+        }),
+      );
     } catch (error) {
       this.postMessage(createErrorMessage('resetFailed', getErrorMessage(error)));
     }
@@ -239,7 +294,13 @@ export class MarkerEditorViewProvider {
   private async handleSelectImage(message: MarkerEditorSelectImageMessage): Promise<void> {
     if (!this.isCurrentMarkerMessage(message.payload.markerUri, message.payload.mode)) return;
     if (message.payload.rootUri !== this.rootUri.toString()) {
-      this.postMessage(createErrorMessage('invalidRoot', 'Image selection root does not match the open marker root.', 'image'));
+      this.postMessage(
+        createErrorMessage(
+          'invalidRoot',
+          'Image selection root does not match the open marker root.',
+          'image',
+        ),
+      );
       return;
     }
 
@@ -258,14 +319,18 @@ export class MarkerEditorViewProvider {
 
     const copied = await copyMarkerEditorImageToAssets(this.rootUri, imageUri);
     if (!copied) {
-      this.postMessage(createErrorMessage('unsupportedImage', 'Choose a supported image file.', 'image'));
+      this.postMessage(
+        createErrorMessage('unsupportedImage', 'Choose a supported image file.', 'image'),
+      );
       return;
     }
 
-    this.postMessage(createImageSelectedMessage({
-      imagePath: copied.relativePath,
-      imageUri: this.panel.webview.asWebviewUri(copied.uri).toString(),
-    }));
+    this.postMessage(
+      createImageSelectedMessage({
+        imagePath: copied.relativePath,
+        imageUri: this.panel.webview.asWebviewUri(copied.uri).toString(),
+      }),
+    );
   }
 
   /**
@@ -308,7 +373,9 @@ export class MarkerEditorViewProvider {
   }
 
   private async readManifestJson(): Promise<JsonObject> {
-    const manifestText = Buffer.from(await vscode.workspace.fs.readFile(this.markerUri)).toString('utf-8');
+    const manifestText = Buffer.from(await vscode.workspace.fs.readFile(this.markerUri)).toString(
+      'utf-8',
+    );
     const parsed: unknown = JSON.parse(manifestText);
     if (!isJsonObject(parsed)) throw new Error('Marker manifest must contain a JSON object.');
     return parsed;
@@ -331,7 +398,9 @@ export class MarkerEditorViewProvider {
 
   private isCurrentMarkerMessage(markerUri: string, mode: MarkerEditorMode): boolean {
     if (markerUri === this.markerUri.toString() && mode === this.mode) return true;
-    this.postMessage(createErrorMessage('staleMessage', 'Message does not match the open marker editor panel.'));
+    this.postMessage(
+      createErrorMessage('staleMessage', 'Message does not match the open marker editor panel.'),
+    );
     return false;
   }
 
@@ -357,22 +426,31 @@ export class MarkerEditorViewProvider {
       return this.getFallbackHtml(webview);
     }
 
-    const nonce = createNonce();
+    const nonce = createWebviewNonce();
     const html = fs.readFileSync(htmlPath, 'utf8');
-    const assetHtml = html.replace(/(src|href)="(\.\/assets\/[^\"]+)"/g, (_match, attr, assetPath) => {
-      const assetUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewRoot, assetPath.replace('./', '')));
-      return `${attr}="${assetUri.toString()}"`;
-    });
-    const withNonce = assetHtml.replace(/<script type="module"/g, `<script nonce="${nonce}" type="module"`);
-    const withEditorSignal = withNonce.replace(
-      /<html(\s[^>]*)?>/i,
-      (match, attrs: string | undefined) => (attrs?.includes('data-editor-mode=')
-        ? match
-        : `<html${attrs ?? ''} data-editor-mode="true">`),
-    ).replace(
-      '</head>',
-      `    <meta name="risu-workbench-view" content="marker-editor" />\n  </head>`,
+    const assetHtml = html.replace(
+      /(src|href)="(\.\/assets\/[^\"]+)"/g,
+      (_match, attr, assetPath) => {
+        const assetUri = webview.asWebviewUri(
+          vscode.Uri.joinPath(webviewRoot, assetPath.replace('./', '')),
+        );
+        return `${attr}="${assetUri.toString()}"`;
+      },
     );
+    const withNonce = assetHtml.replace(
+      /<script type="module"/g,
+      `<script nonce="${nonce}" type="module"`,
+    );
+    const withEditorSignal = withNonce
+      .replace(/<html(\s[^>]*)?>/i, (match, attrs: string | undefined) =>
+        attrs?.includes('data-editor-mode=')
+          ? match
+          : `<html${attrs ?? ''} data-editor-mode="true">`,
+      )
+      .replace(
+        '</head>',
+        `    <meta name="risu-workbench-view" content="marker-editor" />\n  </head>`,
+      );
 
     return withEditorSignal.replace(
       '</head>',
@@ -398,16 +476,6 @@ export class MarkerEditorViewProvider {
   }
 }
 
-/**
- * createNonce 함수.
- * VS Code webview CSP에서 module script를 허용할 일회성 nonce를 생성함.
- *
- * @returns CSP script nonce
- */
-function createNonce(): string {
-  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-}
-
 function detectMarkerMode(markerUri: vscode.Uri): MarkerEditorMode | null {
   const basename = path.basename(markerUri.fsPath);
   if (basename === CHARACTER_MARKER_FILENAME) return 'character';
@@ -428,7 +496,9 @@ function toCharacterEditFields(manifest: JsonObject): CharacterEditFields {
     creator: readString(manifest.creator),
     characterVersion: readString(manifest.characterVersion),
     image: readMarkerEditorImagePath(manifest.image),
-    tags: Array.isArray(manifest.tags) ? manifest.tags.filter((tag): tag is string => typeof tag === 'string') : [],
+    tags: Array.isArray(manifest.tags)
+      ? manifest.tags.filter((tag): tag is string => typeof tag === 'string')
+      : [],
     utilityBot: flags.utilityBot === true,
     lowLevelAccess: flags.lowLevelAccess === true,
   };
@@ -478,14 +548,26 @@ function isMarkerEditorResetMessage(message: unknown): message is MarkerEditorRe
   return isMarkerEditorMessage(message, 'marker-editor/reset') && isJsonObject(message.payload);
 }
 
-function isMarkerEditorSelectImageMessage(message: unknown): message is MarkerEditorSelectImageMessage {
-  return isMarkerEditorMessage(message, 'marker-editor/selectImage') && isJsonObject(message.payload);
+function isMarkerEditorSelectImageMessage(
+  message: unknown,
+): message is MarkerEditorSelectImageMessage {
+  return (
+    isMarkerEditorMessage(message, 'marker-editor/selectImage') && isJsonObject(message.payload)
+  );
 }
 
 function isMarkerEditorMessage(
   message: unknown,
-  type: MarkerEditorReadyMessage['type'] | MarkerEditorSaveMessage['type'] | MarkerEditorResetRequestMessage['type'] | MarkerEditorSelectImageMessage['type'],
-): message is MarkerEditorReadyMessage | MarkerEditorSaveMessage | MarkerEditorResetRequestMessage | MarkerEditorSelectImageMessage {
+  type:
+    | MarkerEditorReadyMessage['type']
+    | MarkerEditorSaveMessage['type']
+    | MarkerEditorResetRequestMessage['type']
+    | MarkerEditorSelectImageMessage['type'],
+): message is
+  | MarkerEditorReadyMessage
+  | MarkerEditorSaveMessage
+  | MarkerEditorResetRequestMessage
+  | MarkerEditorSelectImageMessage {
   if (!isJsonObject(message)) return false;
   const payload = message.payload;
   if (!isJsonObject(payload)) return false;
@@ -538,20 +620,34 @@ function createInitMessage(payload: MarkerEditorInitPayload): MarkerEditorInitMe
   return createMarkerEditorMessage('marker-editor/init', payload);
 }
 
-function createSavedMessage(payload: MarkerEditorSavedMessage['payload']): MarkerEditorSavedMessage {
+function createSavedMessage(
+  payload: MarkerEditorSavedMessage['payload'],
+): MarkerEditorSavedMessage {
   return createMarkerEditorMessage('marker-editor/saved', payload);
 }
 
-function createResetResponseMessage(payload: MarkerEditorResetResponseMessage['payload']): MarkerEditorResetResponseMessage {
+function createResetResponseMessage(
+  payload: MarkerEditorResetResponseMessage['payload'],
+): MarkerEditorResetResponseMessage {
   return createMarkerEditorMessage('marker-editor/reset', payload);
 }
 
-function createImageSelectedMessage(payload: MarkerEditorImageSelectedMessage['payload']): MarkerEditorImageSelectedMessage {
+function createImageSelectedMessage(
+  payload: MarkerEditorImageSelectedMessage['payload'],
+): MarkerEditorImageSelectedMessage {
   return createMarkerEditorMessage('marker-editor/imageSelected', payload);
 }
 
-function createErrorMessage(code: string, message: string, field?: MarkerEditorErrorMessage['payload']['field']): MarkerEditorErrorMessage {
-  return createMarkerEditorMessage('marker-editor/error', { code, message, ...(field && { field }) });
+function createErrorMessage(
+  code: string,
+  message: string,
+  field?: MarkerEditorErrorMessage['payload']['field'],
+): MarkerEditorErrorMessage {
+  return createMarkerEditorMessage('marker-editor/error', {
+    code,
+    message,
+    ...(field && { field }),
+  });
 }
 
 function createMarkerEditorMessage<TMessage extends MarkerEditorExtensionMessage>(
@@ -623,7 +719,9 @@ export async function copyMarkerEditorImageToAssets(
   const bytes = await vscode.workspace.fs.readFile(imageUri);
   const relativePath = getMarkerEditorImageAssetPath(path.basename(imageUri.fsPath));
   const targetUri = vscode.Uri.joinPath(rootUri, ...splitRelativePath(relativePath));
-  await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(rootUri, ASSETS_DIRECTORY, 'icons'));
+  await vscode.workspace.fs.createDirectory(
+    vscode.Uri.joinPath(rootUri, ASSETS_DIRECTORY, 'icons'),
+  );
   await vscode.workspace.fs.writeFile(targetUri, bytes);
   await upsertMarkerEditorAssetManifest(rootUri, {
     ext: ext.replace(/^\./, ''),
@@ -640,16 +738,28 @@ async function upsertMarkerEditorAssetManifest(
   entry: { ext: string; extractedPath: string; originalUri: string; sizeBytes: number },
 ): Promise<void> {
   const manifestUri = vscode.Uri.joinPath(rootUri, ASSETS_DIRECTORY, 'manifest.json');
-  let manifest: JsonObject = { version: 1, source_format: 'scaffold', total: 0, extracted: 0, skipped: 0, assets: [] };
+  let manifest: JsonObject = {
+    version: 1,
+    source_format: 'scaffold',
+    total: 0,
+    extracted: 0,
+    skipped: 0,
+    assets: [],
+  };
   try {
-    const parsed = JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(manifestUri)).toString('utf-8'));
+    const parsed = JSON.parse(
+      Buffer.from(await vscode.workspace.fs.readFile(manifestUri)).toString('utf-8'),
+    );
     if (isJsonObject(parsed)) manifest = parsed;
   } catch {
     await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(rootUri, ASSETS_DIRECTORY));
   }
 
   const nextManifest = upsertCharacterImageManifestEntry(manifest, entry);
-  await vscode.workspace.fs.writeFile(manifestUri, Buffer.from(`${JSON.stringify(nextManifest, null, 2)}\n`, 'utf-8'));
+  await vscode.workspace.fs.writeFile(
+    manifestUri,
+    Buffer.from(`${JSON.stringify(nextManifest, null, 2)}\n`, 'utf-8'),
+  );
 }
 
 function readMarkerEditorImagePath(value: unknown): string | null {
@@ -670,12 +780,4 @@ function readString(value: unknown): string {
 
 function readTimestamp(value: unknown): string | null {
   return typeof value === 'string' || value === null ? value : null;
-}
-
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function isJsonObject(value: unknown): value is JsonObject {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }

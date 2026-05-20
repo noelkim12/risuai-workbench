@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ensureDir } from '@/node/fs-helpers';
 import { encodeRPack } from '@/node/rpack';
+import { isPlainRecord } from '@/shared/guards';
 import {
   assembleLorebookCollection,
   injectLorebooksIntoModule,
@@ -33,14 +34,15 @@ import {
   resolveDuplicateToggleSources,
 } from '@/domain/custom-extension/extensions/toggle';
 import { sanitizeFilename } from '../../../utils/filenames';
-import { argValue } from '../utils';
 import {
   readRisumoduleManifest,
   applyRisumoduleToModule,
 } from '@/cli/shared/risumodule';
 import { buildRisuLuaModularDist } from '@/cli/build/workflow';
 import {
+  argValue,
   discoverRisuLuaBundleTarget,
+  getErrorMessage,
   parseRisuLuaMode,
   parseRisuLuaRecoveryMode,
   RISULUA_RECOVERY_HELP_LINE,
@@ -92,7 +94,7 @@ export function runPackWorkflow(argv: readonly string[]): number {
     modeResult = parseRisuLuaMode(argv);
     recoveryResult = parseRisuLuaRecoveryMode(modeResult.strippedArgv);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     console.error(`\n  ❌ ${message}\n`);
     return 1;
   }
@@ -110,7 +112,7 @@ export function runPackWorkflow(argv: readonly string[]): number {
     runMain(options);
     return 0;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     console.error(`\n  ❌ ${message}\n`);
     return 1;
   }
@@ -515,7 +517,7 @@ function isDir(filePath: string): boolean {
 }
 
 function isPlainObject(value: unknown): value is Record<string, any> {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
+  return isPlainRecord(value);
 }
 
 function asNonEmptyString(value: unknown): string | null {

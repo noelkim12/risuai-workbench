@@ -42,20 +42,35 @@ export function getVsCodeApi(): VsCodeApi | undefined {
 }
 
 /**
+ * createArtifactBrowserWebviewMessage 함수.
+ * Artifact Browser webview outbound message의 protocol envelope를 일관되게 생성함.
+ *
+ * @param type - Artifact Browser message type string
+ * @param payload - type에 대응하는 payload 객체
+ * @returns versioned Artifact Browser webview message
+ */
+function createArtifactBrowserWebviewMessage<TType extends ArtifactBrowserWebviewMessage['type']>(
+  type: TType,
+  payload: Extract<ArtifactBrowserWebviewMessage, { type: TType }>['payload'],
+): Extract<ArtifactBrowserWebviewMessage, { type: TType }> {
+  return {
+    protocol: ARTIFACT_BROWSER_PROTOCOL,
+    version: ARTIFACT_BROWSER_PROTOCOL_VERSION,
+    type,
+    payload,
+  } as Extract<ArtifactBrowserWebviewMessage, { type: TType }>;
+}
+
+/**
  * createArtifactBrowserReadyMessage 함수.
  * Sidebar webview가 extension host에 최초 준비 완료를 알리는 versioned message를 생성함.
  *
  * @returns Artifact Browser ready message
  */
 export function createArtifactBrowserReadyMessage(): ArtifactBrowserReadyMessage {
-  return {
-    protocol: ARTIFACT_BROWSER_PROTOCOL,
-    version: ARTIFACT_BROWSER_PROTOCOL_VERSION,
-    type: 'artifact-browser/ready',
-    payload: {
-      viewId: ARTIFACT_BROWSER_VIEW_ID,
-    },
-  };
+  return createArtifactBrowserWebviewMessage('artifact-browser/ready', {
+    viewId: ARTIFACT_BROWSER_VIEW_ID,
+  });
 }
 
 /**
@@ -65,14 +80,9 @@ export function createArtifactBrowserReadyMessage(): ArtifactBrowserReadyMessage
  * @returns Artifact Browser refresh request message
  */
 export function createArtifactBrowserRefreshMessage(): ArtifactBrowserRefreshMessage {
-  return {
-    protocol: ARTIFACT_BROWSER_PROTOCOL,
-    version: ARTIFACT_BROWSER_PROTOCOL_VERSION,
-    type: 'artifact-browser/refresh',
-    payload: {
-      viewId: ARTIFACT_BROWSER_VIEW_ID,
-    },
-  };
+  return createArtifactBrowserWebviewMessage('artifact-browser/refresh', {
+    viewId: ARTIFACT_BROWSER_VIEW_ID,
+  });
 }
 
 /**
@@ -83,14 +93,9 @@ export function createArtifactBrowserRefreshMessage(): ArtifactBrowserRefreshMes
  * @returns Artifact Browser selection message
  */
 export function createArtifactBrowserSelectMessage(stableId: string): ArtifactBrowserSelectMessage {
-  return {
-    protocol: ARTIFACT_BROWSER_PROTOCOL,
-    version: ARTIFACT_BROWSER_PROTOCOL_VERSION,
-    type: 'artifact-browser/select',
-    payload: {
-      stableId,
-    },
-  };
+  return createArtifactBrowserWebviewMessage('artifact-browser/select', {
+    stableId,
+  });
 }
 
 /**
@@ -102,13 +107,8 @@ export function createArtifactBrowserSelectMessage(stableId: string): ArtifactBr
  * @returns Artifact Browser open item message
  */
 export function createArtifactBrowserOpenItemMessage(stableId: string, itemId: string): ArtifactBrowserOpenItemMessage {
-  return {
-    protocol: ARTIFACT_BROWSER_PROTOCOL,
-    version: ARTIFACT_BROWSER_PROTOCOL_VERSION,
-    type: 'artifact-browser/openItem',
-    payload: {
-      stableId,
-      itemId,
-    },
-  };
+  return createArtifactBrowserWebviewMessage('artifact-browser/openItem', {
+    stableId,
+    itemId,
+  });
 }

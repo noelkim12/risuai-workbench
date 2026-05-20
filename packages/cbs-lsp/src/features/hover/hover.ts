@@ -6,9 +6,12 @@ import {
   type CancellationToken,
   Hover,
   MarkupKind,
-  type MarkupContent,
   TextDocumentPositionParams,
 } from 'vscode-languageserver/node';
+import {
+  normalizeHoverContentToSnapshot,
+  type NormalizedHoverContentSnapshot,
+} from './hover-content-normalizer';
 import { formatHoverContent } from 'risu-workbench-core';
 import type {
   BlockNode,
@@ -93,10 +96,7 @@ export interface AgentFriendlyHover extends Hover {
 }
 
 export interface NormalizedHoverSnapshot {
-  contents: {
-    kind: string | null;
-    value: string;
-  };
+  contents: NormalizedHoverContentSnapshot;
   data: AgentMetadataEnvelope | null;
   range: Range | null;
 }
@@ -104,32 +104,13 @@ export interface NormalizedHoverSnapshot {
 /**
  * normalizeHoverContents 함수.
  * LSP Hover 객체의 다양한 contents 형식을 내부 스냅샷용 구조로 정규화함.
+ * Delegates to the shared `normalizeHoverContentToSnapshot` helper.
  *
  * @param contents - LSP Hover에서 제공하는 contents 데이터
  * @returns 정규화된 호버 콘텐츠 정보
  */
-function normalizeHoverContents(contents: Hover['contents']): NormalizedHoverSnapshot['contents'] {
-  if (typeof contents === 'string') {
-    return { kind: null, value: contents };
-  }
-
-  if (Array.isArray(contents)) {
-    return {
-      kind: null,
-      value: contents.map((entry) => (typeof entry === 'string' ? entry : entry.value)).join('\n'),
-    };
-  }
-
-  const markup = contents as MarkupContent | { kind?: string; value: string };
-
-  if (typeof markup === 'string') {
-    return { kind: null, value: markup };
-  }
-
-  return {
-    kind: 'kind' in markup ? (markup.kind ?? null) : null,
-    value: markup.value,
-  };
+function normalizeHoverContents(contents: Hover['contents']): NormalizedHoverContentSnapshot {
+  return normalizeHoverContentToSnapshot(contents);
 }
 
 /**
@@ -294,9 +275,7 @@ function formatParameterDefinitionSummary(
  * @param declaration - 요약할 fragment-local 함수 선언
  * @returns hover Markdown에 표시할 runtime slot 요약
  */
-function formatHoverRuntimeArgumentSlotSummary(
-  declaration: LocalFunctionDeclaration,
-): string {
+function formatHoverRuntimeArgumentSlotSummary(declaration: LocalFunctionDeclaration): string {
   const slots = [
     `${formatInlineCode('arg::0')} → function name`,
     ...declaration.parameterDeclarations.map(
@@ -806,11 +785,7 @@ export class HoverProvider {
     text: string,
     position: Position,
   ): { name: string; access: string; startCharacter: number; endCharacter: number } | null {
-    const line = this.getLineTextAtPosition(
-      text,
-      position,
-      MAX_OVERSIZED_HOVER_LINE_SCAN_LENGTH,
-    );
+    const line = this.getLineTextAtPosition(text, position, MAX_OVERSIZED_HOVER_LINE_SCAN_LENGTH);
     if (line === null || position.character > line.length) {
       return null;
     }
@@ -1530,7 +1505,9 @@ export class HoverProvider {
       lines.push('- Status: unresolved local #func declaration');
     } else {
       if (parameters.length > 0) {
-        lines.push(`- Parameters: ${parameters.map((parameter) => formatInlineCode(parameter)).join(', ')}`);
+        lines.push(
+          `- Parameters: ${parameters.map((parameter) => formatInlineCode(parameter)).join(', ')}`,
+        );
       }
       if (definitionRange) {
         lines.push(`- Local definition: ${CbsLspTextHelper.formatRangeStart(definitionRange)}`);

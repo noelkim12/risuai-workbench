@@ -4,6 +4,7 @@
  */
 
 import type * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
+import { createRequestId } from '../requestIds';
 import type {
   MainEditorExtensionMessage,
   MainEditorLspCompletionRequestMessage,
@@ -29,7 +30,12 @@ import { getMainEditorRootCompletionContext } from './mainEditorCbsAutoSuggest';
 const CBS_OCCURRENCE_NAVIGATION_COMMAND = 'risuWorkbench.cbs.openOccurrence';
 
 interface PendingRequest {
-  resolve: (value: MainEditorLspCompletionResponsePayload | MainEditorLspHoverResponsePayload | MainEditorLspDefinitionResponsePayload) => void;
+  resolve: (
+    value:
+      | MainEditorLspCompletionResponsePayload
+      | MainEditorLspHoverResponsePayload
+      | MainEditorLspDefinitionResponsePayload,
+  ) => void;
   reject: (error: Error) => void;
   timeout: ReturnType<typeof window.setTimeout>;
 }
@@ -60,12 +66,17 @@ export interface MainEditorMonacoLspClient {
  * @param input - VS Code webview API와 현재 문서 version getter
  * @returns Monaco provider 등록 및 response 처리 helper
  */
-export function createMainEditorMonacoLspClient(input: MainEditorMonacoLspClientInput): MainEditorMonacoLspClient {
+export function createMainEditorMonacoLspClient(
+  input: MainEditorMonacoLspClientInput,
+): MainEditorMonacoLspClient {
   const pending = new Map<string, PendingRequest>();
 
-  function request<T extends MainEditorLspCompletionResponsePayload | MainEditorLspHoverResponsePayload | MainEditorLspDefinitionResponsePayload>(
-    message: MainEditorLspRequestMessage,
-  ): Promise<T> {
+  function request<
+    T extends
+      | MainEditorLspCompletionResponsePayload
+      | MainEditorLspHoverResponsePayload
+      | MainEditorLspDefinitionResponsePayload,
+  >(message: MainEditorLspRequestMessage): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const timeout = window.setTimeout(() => {
         pending.delete(message.payload.requestId);
@@ -87,7 +98,11 @@ export function createMainEditorMonacoLspClient(input: MainEditorMonacoLspClient
   }
 
   function handleMessage(message: MainEditorExtensionMessage): boolean {
-    if (message.type === 'main-editor/lspCompletionResult' || message.type === 'main-editor/lspHoverResult' || message.type === 'main-editor/lspDefinitionResult') {
+    if (
+      message.type === 'main-editor/lspCompletionResult' ||
+      message.type === 'main-editor/lspHoverResult' ||
+      message.type === 'main-editor/lspDefinitionResult'
+    ) {
       const request = pending.get(message.payload.requestId);
       if (request) {
         request.resolve(message.payload);
@@ -137,12 +152,16 @@ export function createMainEditorMonacoLspClient(input: MainEditorMonacoLspClient
               label: item.label,
               kind: item.kind ?? monacoApi.languages.CompletionItemKind.Function,
               insertText: item.insertText,
-              insertTextRules: item.insertTextFormat === 'snippet'
-                ? monacoApi.languages.CompletionItemInsertTextRule.InsertAsSnippet | monacoApi.languages.CompletionItemInsertTextRule.KeepWhitespace
-                : undefined,
+              insertTextRules:
+                item.insertTextFormat === 'snippet'
+                  ? monacoApi.languages.CompletionItemInsertTextRule.InsertAsSnippet |
+                    monacoApi.languages.CompletionItemInsertTextRule.KeepWhitespace
+                  : undefined,
               detail: item.detail,
               documentation: item.documentation,
-              range: item.range ? toMonacoRange(monacoApi, item.range) : fallbackCompletionRange(monacoApi, model, position),
+              range: item.range
+                ? toMonacoRange(monacoApi, item.range)
+                : fallbackCompletionRange(monacoApi, model, position),
             })),
           };
         },
@@ -209,7 +228,9 @@ export function createMainEditorMonacoLspClient(input: MainEditorMonacoLspClient
    *
    * @param target - CBS LSP가 반환한 외부 definition target
    */
-  function revealExternalDefinitionTarget(target: MainEditorLspDefinitionResponsePayload['targets'][number]): void {
+  function revealExternalDefinitionTarget(
+    target: MainEditorLspDefinitionResponsePayload['targets'][number],
+  ): void {
     input.vscode.postMessage(
       createMainEditorLspRevealLocationMessage({
         requestId: createRequestId('definition-reveal'),
@@ -222,12 +243,16 @@ export function createMainEditorMonacoLspClient(input: MainEditorMonacoLspClient
   }
 }
 
-function createRequestId(kind: string): string {
-  return `${kind}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-function toMonacoRange(monacoApi: typeof monaco, range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }): monaco.Range {
-  return new monacoApi.Range(range.startLineNumber, range.startColumn, range.endLineNumber, range.endColumn);
+function toMonacoRange(
+  monacoApi: typeof monaco,
+  range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number },
+): monaco.Range {
+  return new monacoApi.Range(
+    range.startLineNumber,
+    range.startColumn,
+    range.endLineNumber,
+    range.endColumn,
+  );
 }
 
 /**
@@ -250,7 +275,12 @@ function toHoverMarkdownString(value: string): monaco.IMarkdownString {
  * @param range - Monaco 1-based range payload
  * @returns reveal request용 source range
  */
-function monacoRangeToSourceRange(range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }): MainEditorSourceRangePayload {
+function monacoRangeToSourceRange(range: {
+  startLineNumber: number;
+  startColumn: number;
+  endLineNumber: number;
+  endColumn: number;
+}): MainEditorSourceRangePayload {
   return {
     start: {
       line: Math.max(0, range.startLineNumber - 1),
@@ -263,7 +293,16 @@ function monacoRangeToSourceRange(range: { startLineNumber: number; startColumn:
   };
 }
 
-function fallbackCompletionRange(monacoApi: typeof monaco, model: monaco.editor.ITextModel, position: monaco.Position): monaco.Range {
+function fallbackCompletionRange(
+  monacoApi: typeof monaco,
+  model: monaco.editor.ITextModel,
+  position: monaco.Position,
+): monaco.Range {
   const word = model.getWordUntilPosition(position);
-  return new monacoApi.Range(position.lineNumber, word.startColumn, position.lineNumber, position.column);
+  return new monacoApi.Range(
+    position.lineNumber,
+    word.startColumn,
+    position.lineNumber,
+    position.column,
+  );
 }

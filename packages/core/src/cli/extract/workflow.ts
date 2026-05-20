@@ -3,6 +3,7 @@ import { runExtractWorkflow as runCharacterExtract } from './character/workflow'
 import { runExtractWorkflow as runPresetExtract, isPresetFile } from './preset/workflow';
 import { runExtractWorkflow as runModuleExtract } from './module/workflow';
 import { isModuleJson } from './parsers';
+import { getErrorMessage } from '../shared';
 import { parseRisuLuaMode, parseRisuLuaRecoveryMode } from '../shared/lua-bundler/risulua-mode';
 
 const PRESET_ONLY_EXTENSIONS = new Set(['.preset', '.risupreset', '.risup']);
@@ -15,7 +16,7 @@ export async function runExtractWorkflow(argv: readonly string[]): Promise<numbe
     const recoveryResult = parseRisuLuaRecoveryMode(modeResult.strippedArgv);
     strippedArgv = recoveryResult.strippedArgv;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     console.error(`\n  ❌ ${message}\n`);
     return 1;
   }

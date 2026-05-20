@@ -3,13 +3,15 @@
  * @file packages/vscode/src/artifact-browser/RisucharManifestParser.ts
  */
 
-import { createHash } from 'node:crypto';
 import type {
   CharacterSourceFormat,
   ManifestParseWarning,
   RisucharManifestNormalized,
   RisucharManifestRaw,
 } from './artifactBrowserTypes';
+import { getErrorMessage } from '../shared/errors';
+import { isPlainRecord } from '../shared/protocolEnvelope';
+import { createHashFallbackStableId } from './shared/manifestDiscovery';
 
 const REQUIRED_FIELDS = [
   'kind',
@@ -24,12 +26,7 @@ const REQUIRED_FIELDS = [
   'flags',
 ] as const;
 
-const KNOWN_FIELDS = new Set<string>([
-  '$schema',
-  ...REQUIRED_FIELDS,
-  'image',
-  'tags',
-]);
+const KNOWN_FIELDS = new Set<string>(['$schema', ...REQUIRED_FIELDS, 'image', 'tags']);
 
 const SOURCE_FORMATS = new Set<CharacterSourceFormat>(['charx', 'png', 'json', 'scaffold']);
 
@@ -75,9 +72,16 @@ export class RisucharManifestParser {
     const raw = parsed as RisucharManifestRaw;
     const name = readString(raw.name, 'Unnamed character', 'name', warnings);
     const creator = readString(raw.creator, 'Unknown creator', 'creator', warnings);
-    const characterVersion = readString(raw.characterVersion, 'unknown', 'characterVersion', warnings);
+    const characterVersion = readString(
+      raw.characterVersion,
+      'unknown',
+      'characterVersion',
+      warnings,
+    );
     const manifestId = normalizeManifestId(raw.id, warnings);
-    const stableId = manifestId.trim() || createStableId(input.rootPathLabel, name, input.stableHashSeed, warnings);
+    const stableId =
+      manifestId.trim() ||
+      createStableId(input.rootPathLabel, name, input.stableHashSeed, warnings);
     const sourceFormat = normalizeSourceFormat(raw.sourceFormat, warnings);
     const flags = normalizeFlags(raw.flags, warnings);
     const createdAt = normalizeTimestamp(raw.createdAt, 'createdAt', warnings);
@@ -173,7 +177,7 @@ export function createManifestReadErrorModel(
   input: Omit<ParseManifestInput, 'text'>,
   error: unknown,
 ): RisucharManifestNormalized {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = getErrorMessage(error);
   return {
     stableId: createStableId(input.rootPathLabel, 'read-error', input.stableHashSeed, []),
     manifestId: '',
@@ -196,14 +200,17 @@ export function createManifestReadErrorModel(
   };
 }
 
-function parseJsonRecord(text: string, warnings: ManifestParseWarning[]): Record<string, unknown> | null {
+function parseJsonRecord(
+  text: string,
+  warnings: ManifestParseWarning[],
+): Record<string, unknown> | null {
   try {
     const parsed = JSON.parse(text);
-    if (isRecord(parsed)) return parsed;
+    if (isPlainRecord(parsed)) return parsed;
     warnings.push({ code: 'invalidJson', message: '.risuchar must contain a JSON object.' });
     return null;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     warnings.push({ code: 'invalidJson', message: `Invalid JSON: ${message}` });
     return null;
   }
@@ -230,7 +237,10 @@ function normalizeManifestId(value: unknown, warnings: ManifestParseWarning[]): 
   return '';
 }
 
-function normalizeSourceFormat(value: unknown, warnings: ManifestParseWarning[]): CharacterSourceFormat | 'unknown' {
+function normalizeSourceFormat(
+  value: unknown,
+  warnings: ManifestParseWarning[],
+): CharacterSourceFormat | 'unknown' {
   if (typeof value === 'string' && SOURCE_FORMATS.has(value as CharacterSourceFormat)) {
     return value as CharacterSourceFormat;
   }
@@ -246,7 +256,7 @@ function normalizeFlags(
   value: unknown,
   warnings: ManifestParseWarning[],
 ): { value: { utilityBot: boolean; lowLevelAccess: boolean }; valid: boolean } {
-  if (!isRecord(value)) {
+  if (!isPlainRecord(value)) {
     warnings.push({ code: 'invalidFlagType', field: 'flags', message: 'flags must be an object.' });
     return { value: { utilityBot: false, lowLevelAccess: false }, valid: false };
   }
@@ -256,7 +266,11 @@ function normalizeFlags(
   const valid = typeof utilityBot === 'boolean' && typeof lowLevelAccess === 'boolean';
 
   if (typeof utilityBot !== 'boolean') {
-    warnings.push({ code: 'invalidFlagType', field: 'flags.utilityBot', message: 'flags.utilityBot must be boolean.' });
+    warnings.push({
+      code: 'invalidFlagType',
+      field: 'flags.utilityBot',
+      message: 'flags.utilityBot must be boolean.',
+    });
   }
   if (typeof lowLevelAccess !== 'boolean') {
     warnings.push({
@@ -284,7 +298,11 @@ function normalizeTimestamp(
   if (typeof value === 'string') {
     const parsed = Date.parse(value);
     if (!Number.isNaN(parsed)) return value;
-    warnings.push({ code: 'invalidDateTime', field, message: `${field} must be an ISO date-time string or null.` });
+    warnings.push({
+      code: 'invalidDateTime',
+      field,
+      message: `${field} must be an ISO date-time string or null.`,
+    });
     return null;
   }
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -305,15 +323,26 @@ function normalizeTimestamp(
 function normalizeTags(value: unknown, warnings: ManifestParseWarning[]): string[] {
   if (value === undefined) return [];
   if (Array.isArray(value)) return value.filter((tag): tag is string => typeof tag === 'string');
-  warnings.push({ code: 'missingOptionalField', field: 'tags', message: 'tags must be an array of strings when present.' });
+  warnings.push({
+    code: 'missingOptionalField',
+    field: 'tags',
+    message: 'tags must be an array of strings when present.',
+  });
   return [];
 }
 
-function normalizeImagePath(value: unknown, warnings: ManifestParseWarning[]): string | null | undefined {
+function normalizeImagePath(
+  value: unknown,
+  warnings: ManifestParseWarning[],
+): string | null | undefined {
   if (value === undefined) return undefined;
   if (value === null) return null;
   if (typeof value === 'string') return value;
-  warnings.push({ code: 'missingOptionalField', field: 'image', message: 'image must be a string or null when present.' });
+  warnings.push({
+    code: 'missingOptionalField',
+    field: 'image',
+    message: 'image must be a string or null when present.',
+  });
   return null;
 }
 
@@ -324,25 +353,19 @@ function createStableId(
   warnings: ManifestParseWarning[],
 ): string {
   if (!warnings.some((warning) => warning.code === 'emptyManifestId')) {
-    warnings.push({ code: 'emptyManifestId', field: 'id', message: 'manifest.id is empty; using a stable path hash fallback.' });
+    warnings.push({
+      code: 'emptyManifestId',
+      field: 'id',
+      message: 'manifest.id is empty; using a stable path hash fallback.',
+    });
   }
-  const slug = slugify(name || rootPathLabel) || 'character';
-  const hash = createHash('sha256').update(seed).digest('hex').slice(0, 10);
-  return `${slug}-${hash}`;
-}
-
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40);
+  return createHashFallbackStableId({
+    name: name || rootPathLabel,
+    seed,
+    fallbackPrefix: 'character',
+  });
 }
 
 function collectExtra(record: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(record).filter(([key]) => !KNOWN_FIELDS.has(key)));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }

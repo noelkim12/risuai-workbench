@@ -16,6 +16,7 @@ import {
   listMatrixFixtures,
 } from './fixtures/fixture-corpus';
 import { offsetToPosition } from '../src/utils/position';
+import { locateOffset } from './helpers/lsp-test-utils';
 
 const serviceFixtures = listMatrixFixtures('service');
 const supportedServiceFixtures = serviceFixtures.filter(
@@ -33,23 +34,6 @@ function createCancellationToken(cancelled: boolean = false): CancellationToken 
       dispose() {},
     }),
   };
-}
-
-function locateOffset(text: string, needle: string, characterOffset: number = 0, occurrence: number = 0) {
-  let fromIndex = 0;
-  let foundIndex = -1;
-
-  for (let index = 0; index <= occurrence; index += 1) {
-    foundIndex = text.indexOf(needle, fromIndex);
-    if (foundIndex === -1) {
-      break;
-    }
-
-    fromIndex = foundIndex + needle.length;
-  }
-
-  expect(foundIndex).toBeGreaterThanOrEqual(0);
-  return foundIndex + characterOffset;
 }
 
 afterEach(() => {

@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parsePngChunks, stripPngTextChunks } from '@/node';
+import { getErrorMessage } from '../../../shared';
 import { parseCharx, parseCharxAsync, parseModuleRisum } from '../../parsers';
 import type { ParsedCharacterResult } from './types';
 
@@ -96,7 +97,7 @@ export function phase1_parseCharx(inputPath: string): ParsedCharacterResult {
     try {
       charx = JSON.parse(jsonStr);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       throw new Error(`JSON 파싱 실패: ${message}`);
     }
 

@@ -8,6 +8,7 @@ import {
   detectDeadCode,
   type ElementCBSData,
 } from '@/domain';
+import { getErrorMessage } from '../../shared';
 import { detectLocale } from '../shared/i18n';
 import {
   collectJsonTextFieldComponents,
@@ -140,13 +141,13 @@ export function runAnalyzePresetWorkflow(argv: readonly string[]): number {
             `     ✅ wiki → ${path.relative('.', path.join(path.dirname(resolvedOutDir), 'wiki'))}/`,
           );
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message = getErrorMessage(error);
           console.warn(`  ⚠️ wiki 생성 실패: ${message}`);
         }
       }
       return 0;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     console.error(`\n  ❌ Preset analysis failed: ${message}\n`);
     return 1;
   }

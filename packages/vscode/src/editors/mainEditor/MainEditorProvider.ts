@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as vscode from 'vscode';
+import { createWebviewNonce } from '../../shared/webviewNonce';
 import {
   parseMainEditorDocumentModel,
   reassembleHtmlEditorDocument,
@@ -23,7 +24,6 @@ import {
   MAIN_EDITOR_FORMATS,
   MAIN_EDITOR_PROTOCOL,
   MAIN_EDITOR_PROTOCOL_VERSION,
-  createDefaultMainEditorPreferences,
   detectMainEditorFormat,
   getMainEditorPreferenceKey,
   isMainEditorEditMessage,
@@ -52,17 +52,25 @@ import {
   type MainEditorWebviewMessage,
   type MainEditorWorkspaceSymbolsResultPayload,
 } from './mainEditorTypes';
-import { computeMinimalTextReplacement, createWorkspaceEditForTextReplacement } from './textDocumentEdit';
-import { createMainEditorLspBridge, type MainEditorLspBridgeFailure, type MainEditorLspBridgeResult } from './mainEditorLspBridge';
+import {
+  computeMinimalTextReplacement,
+  createWorkspaceEditForTextReplacement,
+} from './textDocumentEdit';
+import {
+  createMainEditorLspBridge,
+  type MainEditorLspBridgeFailure,
+  type MainEditorLspBridgeResult,
+} from './mainEditorLspBridge';
 import { createMainEditorFormatPreviewResult } from './mainEditorFormatPreviewBridge';
 import { createMainEditorPreviewResult } from './mainEditorPreviewBridge';
 import { createMainEditorRuntimePreviewResult } from './mainEditorRuntimePreviewBridge';
-import { createMainEditorSimulatorProfileListResult, createMainEditorSimulatorProfileSaveResult } from './mainEditorSimulatorProfileBridge';
+import {
+  createMainEditorSimulatorProfileListResult,
+  createMainEditorSimulatorProfileSaveResult,
+} from './mainEditorSimulatorProfileBridge';
 import { createMainEditorVariableCandidatesResult } from './mainEditorVariableCandidatesBridge';
 import { MainEditorEditQueue } from './mainEditorEditQueue';
-import {
-  CBS_MARKDOWN_TRUSTED_COMMANDS,
-} from '../../lsp/cbsCommands';
+import { CBS_MARKDOWN_TRUSTED_COMMANDS } from '../../lsp/cbsCommands';
 import {
   createMainEditorCodeLensResult,
   createMainEditorPrepareRenameResult,
@@ -75,6 +83,8 @@ import {
   getConfiguredWebviewDevServerUrl,
   getWebviewDevServerPortMapping,
 } from '../../views/webviewDevServer';
+import { getErrorMessage } from '../../shared/errors';
+import { escapeHtmlText } from '../../shared/htmlEscape';
 
 type MainEditorExtensionMessage =
   | {
@@ -218,6 +228,46 @@ interface MainEditorDocumentSnapshotPayload {
   model: MainEditorDocumentModelPayload;
 }
 
+type MainEditorAdvancedLspResultMessage = Extract<
+  MainEditorExtensionMessage,
+  {
+    type:
+      | 'main-editor/lspReferencesResult'
+      | 'main-editor/lspPrepareRenameResult'
+      | 'main-editor/lspRenameResult'
+      | 'main-editor/lspCodeLensResult'
+      | 'main-editor/lspWorkspaceSymbolsResult';
+  }
+>;
+
+type MainEditorExtensionMessageOf<TType extends MainEditorExtensionMessage['type']> = Extract<
+  MainEditorExtensionMessage,
+  { type: TType }
+>;
+
+type MainEditorExtensionPayloadOf<TType extends MainEditorExtensionMessage['type']> =
+  MainEditorExtensionMessageOf<TType>['payload'];
+
+/**
+ * createMainEditorExtensionMessage 함수.
+ * Extension host에서 main editor webview로 보내는 protocol envelope를 생성함.
+ *
+ * @param type - 생성할 extension message discriminant
+ * @param payload - 선택한 message type에 대응하는 payload
+ * @returns protocol/version/type/payload를 포함한 typed extension message
+ */
+function createMainEditorExtensionMessage<TType extends MainEditorExtensionMessage['type']>(
+  type: TType,
+  payload: MainEditorExtensionPayloadOf<TType>,
+): MainEditorExtensionMessageOf<TType> {
+  return {
+    protocol: MAIN_EDITOR_PROTOCOL,
+    version: MAIN_EDITOR_PROTOCOL_VERSION,
+    type,
+    payload,
+  } as MainEditorExtensionMessageOf<TType>;
+}
+
 /**
  * registerMainEditorProviders 함수.
  * Phase 1 대상 네 포맷의 CustomTextEditorProvider를 등록함.
@@ -226,7 +276,9 @@ interface MainEditorDocumentSnapshotPayload {
  * @returns 등록 disposable 묶음
  */
 export function registerMainEditorProviders(context: vscode.ExtensionContext): vscode.Disposable {
-  return vscode.Disposable.from(...MAIN_EDITOR_FORMATS.map((format) => MainEditorProvider.register(context, format)));
+  return vscode.Disposable.from(
+    ...MAIN_EDITOR_FORMATS.map((format) => MainEditorProvider.register(context, format)),
+  );
 }
 
 /**
@@ -250,12 +302,19 @@ export class MainEditorProvider implements vscode.CustomTextEditorProvider {
    * @param format - 등록할 main editor format definition
    * @returns provider registration disposable
    */
-  static register(context: vscode.ExtensionContext, format: MainEditorFormatDefinition): vscode.Disposable {
-    return vscode.window.registerCustomEditorProvider(format.viewType, new MainEditorProvider(context, format), {
-      webviewOptions: {
-        retainContextWhenHidden: true,
+  static register(
+    context: vscode.ExtensionContext,
+    format: MainEditorFormatDefinition,
+  ): vscode.Disposable {
+    return vscode.window.registerCustomEditorProvider(
+      format.viewType,
+      new MainEditorProvider(context, format),
+      {
+        webviewOptions: {
+          retainContextWhenHidden: true,
+        },
       },
-    });
+    );
   }
 
   resolveCustomTextEditor(
@@ -303,7 +362,10 @@ export class MainEditorProvider implements vscode.CustomTextEditorProvider {
     format: MainEditorFormatDefinition,
   ): Promise<void> {
     if (!isMainEditorWebviewMessage(message)) {
-      this.postMessage(webviewPanel, createErrorMessage('invalidMessage', 'Unsupported main editor message envelope.'));
+      this.postMessage(
+        webviewPanel,
+        createErrorMessage('invalidMessage', 'Unsupported main editor message envelope.'),
+      );
       return;
     }
 
@@ -314,42 +376,74 @@ export class MainEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     if (message.type === 'main-editor/lspCompletion') {
-      await this.handleLspBridgeResult(webviewPanel, message.payload, await this.lspBridge.completion(document, message.payload));
+      await this.handleLspBridgeResult(
+        webviewPanel,
+        message.payload,
+        await this.lspBridge.completion(document, message.payload),
+      );
       return;
     }
 
     if (message.type === 'main-editor/lspHover') {
-      await this.handleLspBridgeResult(webviewPanel, message.payload, await this.lspBridge.hover(document, message.payload));
+      await this.handleLspBridgeResult(
+        webviewPanel,
+        message.payload,
+        await this.lspBridge.hover(document, message.payload),
+      );
       return;
     }
 
     if (message.type === 'main-editor/lspDefinition') {
-      await this.handleLspBridgeResult(webviewPanel, message.payload, await this.lspBridge.definition(document, message.payload));
+      await this.handleLspBridgeResult(
+        webviewPanel,
+        message.payload,
+        await this.lspBridge.definition(document, message.payload),
+      );
       return;
     }
 
     if (message.type === 'main-editor/lspReferences') {
-      this.postAdvancedLspResult(webviewPanel, 'main-editor/lspReferencesResult', await createMainEditorReferencesResult(document, message.payload));
+      this.postAdvancedLspResult(
+        webviewPanel,
+        'main-editor/lspReferencesResult',
+        await createMainEditorReferencesResult(document, message.payload),
+      );
       return;
     }
 
     if (message.type === 'main-editor/lspPrepareRename') {
-      this.postAdvancedLspResult(webviewPanel, 'main-editor/lspPrepareRenameResult', await createMainEditorPrepareRenameResult(document, message.payload));
+      this.postAdvancedLspResult(
+        webviewPanel,
+        'main-editor/lspPrepareRenameResult',
+        await createMainEditorPrepareRenameResult(document, message.payload),
+      );
       return;
     }
 
     if (message.type === 'main-editor/lspRename') {
-      this.postAdvancedLspResult(webviewPanel, 'main-editor/lspRenameResult', await createMainEditorRenameResult(document, message.payload));
+      this.postAdvancedLspResult(
+        webviewPanel,
+        'main-editor/lspRenameResult',
+        await createMainEditorRenameResult(document, message.payload),
+      );
       return;
     }
 
     if (message.type === 'main-editor/lspCodeLens') {
-      this.postAdvancedLspResult(webviewPanel, 'main-editor/lspCodeLensResult', await createMainEditorCodeLensResult(document, message.payload));
+      this.postAdvancedLspResult(
+        webviewPanel,
+        'main-editor/lspCodeLensResult',
+        await createMainEditorCodeLensResult(document, message.payload),
+      );
       return;
     }
 
     if (message.type === 'main-editor/lspWorkspaceSymbols') {
-      this.postAdvancedLspResult(webviewPanel, 'main-editor/lspWorkspaceSymbolsResult', await createMainEditorWorkspaceSymbolsResult(message.payload));
+      this.postAdvancedLspResult(
+        webviewPanel,
+        'main-editor/lspWorkspaceSymbolsResult',
+        await createMainEditorWorkspaceSymbolsResult(message.payload),
+      );
       return;
     }
 
@@ -359,24 +453,42 @@ export class MainEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     if (message.type === 'main-editor/previewRequest') {
-      this.postMessage(webviewPanel, createPreviewResultMessage(createMainEditorPreviewResult(document, message.payload)));
+      this.postMessage(
+        webviewPanel,
+        createPreviewResultMessage(createMainEditorPreviewResult(document, message.payload)),
+      );
       return;
     }
 
     if (message.type === 'main-editor/previewRuntimeRequest') {
-      this.postMessage(webviewPanel, createPreviewRuntimeResultMessage(createMainEditorRuntimePreviewResult(document, message.payload)));
+      this.postMessage(
+        webviewPanel,
+        createPreviewRuntimeResultMessage(
+          createMainEditorRuntimePreviewResult(document, message.payload),
+        ),
+      );
       return;
     }
 
     if (message.type === 'main-editor/formatPreviewRequest') {
-      this.postMessage(webviewPanel, createFormatPreviewResultMessage(createMainEditorFormatPreviewResult(document, message.payload, format.kind)));
+      this.postMessage(
+        webviewPanel,
+        createFormatPreviewResultMessage(
+          createMainEditorFormatPreviewResult(document, message.payload, format.kind),
+        ),
+      );
       return;
     }
 
     if (message.type === 'main-editor/simulatorProfileListRequest') {
       this.postMessage(
         webviewPanel,
-        createSimulatorProfileListResultMessage(await createMainEditorSimulatorProfileListResult(this.context.workspaceState, message.payload)),
+        createSimulatorProfileListResultMessage(
+          await createMainEditorSimulatorProfileListResult(
+            this.context.workspaceState,
+            message.payload,
+          ),
+        ),
       );
       return;
     }
@@ -384,7 +496,12 @@ export class MainEditorProvider implements vscode.CustomTextEditorProvider {
     if (message.type === 'main-editor/simulatorProfileSaveRequest') {
       this.postMessage(
         webviewPanel,
-        createSimulatorProfileSaveResultMessage(await createMainEditorSimulatorProfileSaveResult(this.context.workspaceState, message.payload)),
+        createSimulatorProfileSaveResultMessage(
+          await createMainEditorSimulatorProfileSaveResult(
+            this.context.workspaceState,
+            message.payload,
+          ),
+        ),
       );
       return;
     }
@@ -392,13 +509,18 @@ export class MainEditorProvider implements vscode.CustomTextEditorProvider {
     if (message.type === 'main-editor/variableCandidatesRequest') {
       this.postMessage(
         webviewPanel,
-        createVariableCandidatesResultMessage(await createMainEditorVariableCandidatesResult(document, message.payload)),
+        createVariableCandidatesResultMessage(
+          await createMainEditorVariableCandidatesResult(document, message.payload),
+        ),
       );
       return;
     }
 
     if (message.type === 'main-editor/updatePreferences') {
-      await this.context.workspaceState.update(getMainEditorPreferenceKey(message.payload.formatKind), message.payload.preferences);
+      await this.context.workspaceState.update(
+        getMainEditorPreferenceKey(message.payload.formatKind),
+        message.payload.preferences,
+      );
       return;
     }
 
@@ -407,7 +529,11 @@ export class MainEditorProvider implements vscode.CustomTextEditorProvider {
         if (message.payload.formatKind !== format.kind) {
           this.postMessage(
             webviewPanel,
-            createErrorMessage('formatMismatch', 'Structured edit format does not match the open document.', message.payload.requestId),
+            createErrorMessage(
+              'formatMismatch',
+              'Structured edit format does not match the open document.',
+              message.payload.requestId,
+            ),
           );
           this.postMessage(webviewPanel, createDocumentChangedMessage(document, format));
           return;
@@ -431,8 +557,11 @@ export class MainEditorProvider implements vscode.CustomTextEditorProvider {
             webviewPanel,
           );
         } catch (error) {
-          const messageText = error instanceof Error ? error.message : 'Structured edit could not be reassembled.';
-          this.postMessage(webviewPanel, createErrorMessage('structuredEditRejected', messageText, message.payload.requestId));
+          const messageText = getErrorMessage(error) || 'Structured edit could not be reassembled.';
+          this.postMessage(
+            webviewPanel,
+            createErrorMessage('structuredEditRejected', messageText, message.payload.requestId),
+          );
           this.postMessage(webviewPanel, createDocumentChangedMessage(document, format));
         }
       });
@@ -470,9 +599,19 @@ export class MainEditorProvider implements vscode.CustomTextEditorProvider {
     if (message.payload.baseVersion !== document.version) {
       this.postMessage(
         webviewPanel,
-        createErrorMessage('staleVersion', 'Edit request is based on an older document version.', message.payload.requestId),
+        createErrorMessage(
+          'staleVersion',
+          'Edit request is based on an older document version.',
+          message.payload.requestId,
+        ),
       );
-      this.postMessage(webviewPanel, createDocumentChangedMessage(document, detectMainEditorFormat(document.uri.fsPath) ?? this.format));
+      this.postMessage(
+        webviewPanel,
+        createDocumentChangedMessage(
+          document,
+          detectMainEditorFormat(document.uri.fsPath) ?? this.format,
+        ),
+      );
       return;
     }
 
@@ -482,21 +621,42 @@ export class MainEditorProvider implements vscode.CustomTextEditorProvider {
       return;
     }
 
-    const applied = await vscode.workspace.applyEdit(createWorkspaceEditForTextReplacement(document, replacement));
+    const applied = await vscode.workspace.applyEdit(
+      createWorkspaceEditForTextReplacement(document, replacement),
+    );
     if (!applied) {
       this.postMessage(
         webviewPanel,
-        createErrorMessage('editRejected', 'VS Code rejected the WorkspaceEdit.', message.payload.requestId),
+        createErrorMessage(
+          'editRejected',
+          'VS Code rejected the WorkspaceEdit.',
+          message.payload.requestId,
+        ),
       );
-      this.postMessage(webviewPanel, createDocumentChangedMessage(document, detectMainEditorFormat(document.uri.fsPath) ?? this.format));
+      this.postMessage(
+        webviewPanel,
+        createDocumentChangedMessage(
+          document,
+          detectMainEditorFormat(document.uri.fsPath) ?? this.format,
+        ),
+      );
       return;
     }
 
     this.postMessage(webviewPanel, createEditAppliedMessage(message.payload.requestId, document));
-    this.postDiagnosticsUpdate(webviewPanel, document, detectMainEditorFormat(document.uri.fsPath) ?? this.format);
+    this.postDiagnosticsUpdate(
+      webviewPanel,
+      document,
+      detectMainEditorFormat(document.uri.fsPath) ?? this.format,
+    );
   }
 
-  private async handleLspBridgeResult<TPayload extends MainEditorLspCompletionResponsePayload | MainEditorLspHoverResponsePayload | MainEditorLspDefinitionResponsePayload>(
+  private async handleLspBridgeResult<
+    TPayload extends
+      | MainEditorLspCompletionResponsePayload
+      | MainEditorLspHoverResponsePayload
+      | MainEditorLspDefinitionResponsePayload,
+  >(
     webviewPanel: vscode.WebviewPanel,
     requestPayload: { requestId: string; documentUri: string },
     result: MainEditorLspBridgeResult<TPayload> | MainEditorLspBridgeFailure,
@@ -517,22 +677,30 @@ export class MainEditorProvider implements vscode.CustomTextEditorProvider {
     this.postMessage(webviewPanel, createLspDefinitionResultMessage(result.payload));
   }
 
-  private postDiagnosticsUpdate(webviewPanel: vscode.WebviewPanel, document: vscode.TextDocument, format: MainEditorFormatDefinition): void {
+  private postDiagnosticsUpdate(
+    webviewPanel: vscode.WebviewPanel,
+    document: vscode.TextDocument,
+    format: MainEditorFormatDefinition,
+  ): void {
     if (format.kind !== 'lorebook') return;
-    this.postMessage(webviewPanel, {
-      protocol: MAIN_EDITOR_PROTOCOL,
-      version: MAIN_EDITOR_PROTOCOL_VERSION,
-      type: 'main-editor/diagnosticsUpdate',
-      payload: {
+    this.postMessage(
+      webviewPanel,
+      createMainEditorExtensionMessage('main-editor/diagnosticsUpdate', {
         documentUri: document.uri.toString(),
         documentVersion: document.version,
         sectionName: 'CONTENT',
         markers: [],
-      },
-    });
+      }),
+    );
   }
 
-  private async revealAdvancedLspLocation(location: { uri: string; sourceRange: { start: { line: number; character: number }; end: { line: number; character: number } } }): Promise<void> {
+  private async revealAdvancedLspLocation(location: {
+    uri: string;
+    sourceRange: {
+      start: { line: number; character: number };
+      end: { line: number; character: number };
+    };
+  }): Promise<void> {
     const uri = vscode.Uri.parse(location.uri);
     const range = new vscode.Range(
       new vscode.Position(location.sourceRange.start.line, location.sourceRange.start.character),
@@ -542,24 +710,40 @@ export class MainEditorProvider implements vscode.CustomTextEditorProvider {
     await vscode.window.showTextDocument(document, { selection: range, preview: true });
   }
 
-  private postAdvancedLspResult<TPayload extends MainEditorReferencesResultPayload | MainEditorPrepareRenameResultPayload | MainEditorRenameResultPayload | MainEditorCodeLensResultPayload | MainEditorWorkspaceSymbolsResultPayload>(
+  private postAdvancedLspResult<TType extends MainEditorAdvancedLspResultMessage['type']>(
     webviewPanel: vscode.WebviewPanel,
-    type: Extract<MainEditorExtensionMessage, { payload: TPayload }>['type'],
-    result: { ok: true; payload: TPayload } | { ok: false; error: MainEditorAdvancedLspErrorPayload },
+    type: TType,
+    result:
+      | {
+          ok: true;
+          payload: Extract<MainEditorAdvancedLspResultMessage, { type: TType }>['payload'];
+        }
+      | { ok: false; error: MainEditorAdvancedLspErrorPayload },
   ): void {
     if (!result.ok) {
       this.postMessage(webviewPanel, createAdvancedLspErrorMessage(result.error));
       return;
     }
-    this.postMessage(webviewPanel, { protocol: MAIN_EDITOR_PROTOCOL, version: MAIN_EDITOR_PROTOCOL_VERSION, type, payload: result.payload } as Extract<MainEditorExtensionMessage, { payload: TPayload }>);
+    this.postMessage(
+      webviewPanel,
+      createMainEditorExtensionMessage<TType>(
+        type,
+        result.payload as MainEditorExtensionPayloadOf<TType>,
+      ),
+    );
   }
 
-  private readPreferences(formatKind: MainEditorFormatDefinition['kind']): MainEditorPreferenceState {
+  private readPreferences(
+    formatKind: MainEditorFormatDefinition['kind'],
+  ): MainEditorPreferenceState {
     const stored = this.context.workspaceState.get<unknown>(getMainEditorPreferenceKey(formatKind));
     return normalizeMainEditorPreferences(stored);
   }
 
-  private postMessage(webviewPanel: vscode.WebviewPanel, message: MainEditorExtensionMessage): void {
+  private postMessage(
+    webviewPanel: vscode.WebviewPanel,
+    message: MainEditorExtensionMessage,
+  ): void {
     void webviewPanel.webview.postMessage(message);
   }
 
@@ -577,7 +761,10 @@ export class MainEditorProvider implements vscode.CustomTextEditorProvider {
     format: MainEditorFormatDefinition,
   ): void {
     try {
-      this.postMessage(webviewPanel, createInitMessage(document, format, this.readPreferences(format.kind)));
+      this.postMessage(
+        webviewPanel,
+        createInitMessage(document, format, this.readPreferences(format.kind)),
+      );
     } catch (error) {
       this.postMessage(webviewPanel, createErrorMessage('initFailed', getErrorMessage(error)));
     }
@@ -598,20 +785,31 @@ export class MainEditorProvider implements vscode.CustomTextEditorProvider {
     const htmlPath = path.join(webviewRoot.fsPath, 'index.html');
     if (!fs.existsSync(htmlPath)) return createFallbackHtml(webview, format.displayName);
 
-    const nonce = createNonce();
+    const nonce = createWebviewNonce();
     const html = fs.readFileSync(htmlPath, 'utf8');
-    const assetHtml = html.replace(/(src|href)="(\.\/assets\/[^\"]+)"/g, (_match, attr: string, assetPath: string) => {
-      const assetUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewRoot, assetPath.replace('./', '')));
-      return `${attr}="${assetUri.toString()}"`;
-    });
-    const withNonce = assetHtml.replace(/<script type="module"/g, `<script nonce="${nonce}" type="module"`);
+    const assetHtml = html.replace(
+      /(src|href)="(\.\/assets\/[^\"]+)"/g,
+      (_match, attr: string, assetPath: string) => {
+        const assetUri = webview.asWebviewUri(
+          vscode.Uri.joinPath(webviewRoot, assetPath.replace('./', '')),
+        );
+        return `${attr}="${assetUri.toString()}"`;
+      },
+    );
+    const withNonce = assetHtml.replace(
+      /<script type="module"/g,
+      `<script nonce="${nonce}" type="module"`,
+    );
     const withEditorSignal = withNonce
       .replace(/<html(\s[^>]*)?>/i, (match, attrs: string | undefined) =>
         attrs?.includes('data-editor-mode=')
           ? match
           : `<html${attrs ?? ''} data-editor-mode="true" data-risu-workbench-view="main-editor">`,
       )
-      .replace('</head>', `    <meta name="risu-workbench-view" content="main-editor" />\n  </head>`);
+      .replace(
+        '</head>',
+        `    <meta name="risu-workbench-view" content="main-editor" />\n  </head>`,
+      );
 
     return withEditorSignal.replace(
       '</head>',
@@ -625,27 +823,26 @@ function createInitMessage(
   format: MainEditorFormatDefinition,
   preferences: MainEditorPreferenceState,
 ): MainEditorExtensionMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/init',
-    payload: {
-      ...createDocumentSnapshot(document, format),
-      preferences,
-    },
-  };
+  return createMainEditorExtensionMessage('main-editor/init', {
+    ...createDocumentSnapshot(document, format),
+    preferences,
+  });
 }
 
-function createDocumentChangedMessage(document: vscode.TextDocument, format: MainEditorFormatDefinition): MainEditorExtensionMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/documentChanged',
-    payload: createDocumentSnapshot(document, format),
-  };
+function createDocumentChangedMessage(
+  document: vscode.TextDocument,
+  format: MainEditorFormatDefinition,
+): MainEditorExtensionMessage {
+  return createMainEditorExtensionMessage(
+    'main-editor/documentChanged',
+    createDocumentSnapshot(document, format),
+  );
 }
 
-function createDocumentSnapshot(document: vscode.TextDocument, format: MainEditorFormatDefinition): MainEditorDocumentSnapshotPayload {
+function createDocumentSnapshot(
+  document: vscode.TextDocument,
+  format: MainEditorFormatDefinition,
+): MainEditorDocumentSnapshotPayload {
   const rawText = document.getText();
   const model = parseMainEditorDocumentModel(format.kind, rawText);
   return {
@@ -672,7 +869,9 @@ function createWorkspaceRelativeDisplayPath(uri: vscode.Uri): string {
   return vscode.workspace.asRelativePath(uri, false).replace(/\\/g, '/');
 }
 
-function createDocumentModelPayload(model: EditorDocumentModel<EditorFormatState>): MainEditorDocumentModelPayload {
+function createDocumentModelPayload(
+  model: EditorDocumentModel<EditorFormatState>,
+): MainEditorDocumentModelPayload {
   return {
     formatKind: model.formatKind,
     state: model.state,
@@ -690,7 +889,10 @@ function createDocumentModelPayload(model: EditorDocumentModel<EditorFormatState
   };
 }
 
-function reassembleStructuredMainEditorText(model: EditorDocumentModel<EditorFormatState>, state: unknown): string {
+function reassembleStructuredMainEditorText(
+  model: EditorDocumentModel<EditorFormatState>,
+  state: unknown,
+): string {
   switch (model.formatKind) {
     case 'lorebook':
       return reassembleLorebookEditorDocument(
@@ -698,145 +900,112 @@ function reassembleStructuredMainEditorText(model: EditorDocumentModel<EditorFor
         state as LorebookEditorState,
       );
     case 'regex':
-      return reassembleRegexEditorDocument(model as EditorDocumentModel<RegexEditorState>, state as RegexEditorState);
+      return reassembleRegexEditorDocument(
+        model as EditorDocumentModel<RegexEditorState>,
+        state as RegexEditorState,
+      );
     case 'prompt':
-      return reassemblePromptEditorDocument(model as EditorDocumentModel<PromptEditorState>, state as PromptEditorState);
+      return reassemblePromptEditorDocument(
+        model as EditorDocumentModel<PromptEditorState>,
+        state as PromptEditorState,
+      );
     case 'html':
-      return reassembleHtmlEditorDocument(model as EditorDocumentModel<HtmlEditorState>, state as HtmlEditorState);
+      return reassembleHtmlEditorDocument(
+        model as EditorDocumentModel<HtmlEditorState>,
+        state as HtmlEditorState,
+      );
   }
 }
 
-function createEditAppliedMessage(requestId: string, document: vscode.TextDocument): MainEditorExtensionMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/editApplied',
-    payload: {
-      requestId,
-      documentUri: document.uri.toString(),
-      documentVersion: document.version,
-    },
-  };
+function createEditAppliedMessage(
+  requestId: string,
+  document: vscode.TextDocument,
+): MainEditorExtensionMessage {
+  return createMainEditorExtensionMessage('main-editor/editApplied', {
+    requestId,
+    documentUri: document.uri.toString(),
+    documentVersion: document.version,
+  });
 }
 
-function createErrorMessage(code: string, message: string, requestId?: string): MainEditorExtensionMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/error',
-    payload: { code, message, requestId },
-  };
+function createErrorMessage(
+  code: string,
+  message: string,
+  requestId?: string,
+): MainEditorExtensionMessage {
+  return createMainEditorExtensionMessage('main-editor/error', { code, message, requestId });
 }
 
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+function createLspCompletionResultMessage(
+  payload: MainEditorLspCompletionResponsePayload,
+): MainEditorExtensionMessage {
+  return createMainEditorExtensionMessage('main-editor/lspCompletionResult', payload);
 }
 
-function createLspCompletionResultMessage(payload: MainEditorLspCompletionResponsePayload): MainEditorExtensionMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/lspCompletionResult',
-    payload,
-  };
+function createLspHoverResultMessage(
+  payload: MainEditorLspHoverResponsePayload,
+): MainEditorExtensionMessage {
+  return createMainEditorExtensionMessage('main-editor/lspHoverResult', payload);
 }
 
-function createLspHoverResultMessage(payload: MainEditorLspHoverResponsePayload): MainEditorExtensionMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/lspHoverResult',
-    payload,
-  };
-}
-
-function createLspDefinitionResultMessage(payload: MainEditorLspDefinitionResponsePayload): MainEditorExtensionMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/lspDefinitionResult',
-    payload,
-  };
+function createLspDefinitionResultMessage(
+  payload: MainEditorLspDefinitionResponsePayload,
+): MainEditorExtensionMessage {
+  return createMainEditorExtensionMessage('main-editor/lspDefinitionResult', payload);
 }
 
 function createLspErrorMessage(
   requestPayload: { requestId: string; documentUri: string },
   failure: MainEditorLspBridgeFailure,
 ): MainEditorExtensionMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/lspError',
-    payload: {
-      requestId: requestPayload.requestId,
-      documentUri: requestPayload.documentUri,
-      code: failure.code,
-      message: failure.message,
-    },
-  };
+  return createMainEditorExtensionMessage('main-editor/lspError', {
+    requestId: requestPayload.requestId,
+    documentUri: requestPayload.documentUri,
+    code: failure.code,
+    message: failure.message,
+  });
 }
 
-function createAdvancedLspErrorMessage(payload: MainEditorAdvancedLspErrorPayload): MainEditorExtensionMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/lspAdvancedError',
-    payload,
-  };
+function createAdvancedLspErrorMessage(
+  payload: MainEditorAdvancedLspErrorPayload,
+): MainEditorExtensionMessage {
+  return createMainEditorExtensionMessage('main-editor/lspAdvancedError', payload);
 }
 
-function createPreviewResultMessage(payload: MainEditorPreviewResultPayload): MainEditorExtensionMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/previewResult',
-    payload,
-  };
+function createPreviewResultMessage(
+  payload: MainEditorPreviewResultPayload,
+): MainEditorExtensionMessage {
+  return createMainEditorExtensionMessage('main-editor/previewResult', payload);
 }
 
-function createPreviewRuntimeResultMessage(payload: MainEditorPreviewRuntimeResultPayload): MainEditorExtensionMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/previewRuntimeResult',
-    payload,
-  };
+function createPreviewRuntimeResultMessage(
+  payload: MainEditorPreviewRuntimeResultPayload,
+): MainEditorExtensionMessage {
+  return createMainEditorExtensionMessage('main-editor/previewRuntimeResult', payload);
 }
 
-function createFormatPreviewResultMessage(payload: MainEditorFormatPreviewResultPayload): MainEditorExtensionMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/formatPreviewResult',
-    payload,
-  };
+function createFormatPreviewResultMessage(
+  payload: MainEditorFormatPreviewResultPayload,
+): MainEditorExtensionMessage {
+  return createMainEditorExtensionMessage('main-editor/formatPreviewResult', payload);
 }
 
-function createSimulatorProfileListResultMessage(payload: MainEditorSimulatorProfileListResultPayload): MainEditorExtensionMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/simulatorProfileListResult',
-    payload,
-  };
+function createSimulatorProfileListResultMessage(
+  payload: MainEditorSimulatorProfileListResultPayload,
+): MainEditorExtensionMessage {
+  return createMainEditorExtensionMessage('main-editor/simulatorProfileListResult', payload);
 }
 
-function createSimulatorProfileSaveResultMessage(payload: MainEditorSimulatorProfileSaveResultPayload): MainEditorExtensionMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/simulatorProfileSaveResult',
-    payload,
-  };
+function createSimulatorProfileSaveResultMessage(
+  payload: MainEditorSimulatorProfileSaveResultPayload,
+): MainEditorExtensionMessage {
+  return createMainEditorExtensionMessage('main-editor/simulatorProfileSaveResult', payload);
 }
 
-function createVariableCandidatesResultMessage(payload: MainEditorVariableCandidatesResultPayload): MainEditorExtensionMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/variableCandidatesResult',
-    payload,
-  };
+function createVariableCandidatesResultMessage(
+  payload: MainEditorVariableCandidatesResultPayload,
+): MainEditorExtensionMessage {
+  return createMainEditorExtensionMessage('main-editor/variableCandidatesResult', payload);
 }
 
 function createFallbackHtml(webview: vscode.Webview, title: string): string {
@@ -854,12 +1023,4 @@ function createFallbackHtml(webview: vscode.Webview, title: string): string {
     <p>Webview bundle is missing. Run the vscode package build to generate Vite assets.</p>
   </body>
 </html>`;
-}
-
-function createNonce(): string {
-  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-}
-
-function escapeHtmlText(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 }

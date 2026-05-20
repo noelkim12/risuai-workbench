@@ -20,6 +20,8 @@ import type {
   MainEditorLspHoverResponsePayload,
   MainEditorMonacoRangePayload,
 } from './mainEditorTypes';
+import { getErrorMessage } from '../../shared/errors';
+import { checkMainEditorDocumentFreshness } from './shared/bridge-helpers';
 
 export interface MainEditorLspBridgeResult<TPayload> {
   ok: true;
@@ -135,11 +137,12 @@ async function prepareRequest(
   document: vscode.TextDocument,
   payload: MainEditorLspCompletionRequestPayload | MainEditorLspHoverRequestPayload | MainEditorLspDefinitionRequestPayload,
 ): Promise<MainEditorLspBridgeResult<MappedRequest> | MainEditorLspBridgeFailure> {
-  if (payload.documentVersion !== document.version) {
-    return { ok: false, code: 'staleDocument', message: 'The Monaco request was based on an older TextDocument version.' };
-  }
-  if (payload.documentUri !== document.uri.toString()) {
-    return { ok: false, code: 'staleDocument', message: 'The Monaco request document URI does not match the open TextDocument.' };
+  const freshness = checkMainEditorDocumentFreshness(payload, document, { checkVersionFirst: true });
+  if (!freshness.fresh) {
+    const message = freshness.reason === 'uri-mismatch'
+      ? 'The Monaco request document URI does not match the open TextDocument.'
+      : 'The Monaco request was based on an older TextDocument version.';
+    return { ok: false, code: 'staleDocument', message };
   }
 
   const { getCbsLanguageClientRuntimeState } = await import('../../lsp/cbsLanguageClient');
@@ -274,5 +277,5 @@ function markedStringToText(value: string | vscode.MarkdownString | { language: 
 }
 
 function createFailure(error: unknown): MainEditorLspBridgeFailure {
-  return { ok: false, code: 'requestFailed', message: error instanceof Error ? error.message : 'CBS language request failed.' };
+  return { ok: false, code: 'requestFailed', message: getErrorMessage(error) || 'CBS language request failed.' };
 }

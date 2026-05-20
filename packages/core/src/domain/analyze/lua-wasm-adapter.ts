@@ -4,6 +4,7 @@
  */
 
 import { createRequire } from 'node:module';
+import { isPlainRecord } from '@/shared/guards';
 import type {
   LuaWasmAccessDirection,
   LuaWasmAnalyzeOptions,
@@ -526,11 +527,12 @@ function isLuaWasmModuleMemberDefinitionKind(
 
 /**
  * isRecord 함수.
- * unknown 값이 null이 아닌 object record인지 판별함.
+ * unknown 값이 null이 아닌 plain object record인지 판별함.
+ * 공유 isPlainRecord에 위임하여 배열도 걸러냄.
  *
  * @param value - 검사할 unknown 값
- * @returns object record이면 true
+ * @returns plain object record이면 true
  */
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  return isPlainRecord(value);
 }

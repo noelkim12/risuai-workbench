@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { getErrorMessage } from '../errors';
 import {
   type LuaAstNode,
   type RisuLuaForbiddenDiagnostic,
@@ -242,7 +243,7 @@ export function analyzeRisuLuaDistOutput(options: {
   try {
     ast = parseRisuLuaSource(analyzableCode);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     return [
       {
         code: 'parse_error',
