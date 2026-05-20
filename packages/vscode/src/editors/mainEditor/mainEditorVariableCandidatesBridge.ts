@@ -11,6 +11,7 @@ import type {
   MainEditorVariableCandidatesRequestPayload,
   MainEditorVariableCandidatesResultPayload,
 } from './mainEditorTypes';
+import { checkMainEditorDocumentFreshness, createPreviewBaseResultFields } from './shared/bridge-helpers';
 
 const WORKSPACE_VARIABLE_GLOB = '**/*.{risuvar,risutoggle}';
 const WORKSPACE_VARIABLE_EXCLUDE_GLOB = '**/node_modules/**';
@@ -29,7 +30,8 @@ export async function createMainEditorVariableCandidatesResult(
   document: vscode.TextDocument,
   payload: MainEditorVariableCandidatesRequestPayload,
 ): Promise<MainEditorVariableCandidatesResultPayload> {
-  if (payload.documentUri !== document.uri.toString() || payload.documentVersion !== document.version) {
+  const freshness = checkMainEditorDocumentFreshness(payload, document);
+  if (!freshness.fresh) {
     return createVariableCandidatesResult(document, payload, {}, true);
   }
 
@@ -156,9 +158,7 @@ function createVariableCandidatesResult(
   stale: boolean,
 ): MainEditorVariableCandidatesResultPayload {
   return {
-    requestId: payload.requestId,
-    documentUri: document.uri.toString(),
-    documentVersion: document.version,
+    ...createPreviewBaseResultFields(payload, document),
     contentVersion: payload.contentVersion,
     scope: payload.scope,
     candidatesByVariable,

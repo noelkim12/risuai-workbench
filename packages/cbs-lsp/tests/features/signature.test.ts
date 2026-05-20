@@ -7,8 +7,8 @@ import {
   SignatureHelpProvider,
   type SignatureHelpDocumentContext,
 } from '../../src/features/presentation';
-import { offsetToPosition } from '../../src/utils/position';
 import { getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
+import { positionAt } from '../helpers/lsp-test-utils';
 
 interface TestDocument extends SignatureHelpDocumentContext {
   uri: string;
@@ -28,27 +28,6 @@ function createTestDocument(fileName: string, text: string): TestDocument {
     uri: `file://${filePath}`,
     version: 1,
   };
-}
-
-function positionAt(
-  text: string,
-  needle: string,
-  characterOffset: number = 0,
-  occurrence: number = 0,
-) {
-  let searchFrom = 0;
-  let offset = -1;
-
-  for (let index = 0; index <= occurrence; index += 1) {
-    offset = text.indexOf(needle, searchFrom);
-    if (offset === -1) {
-      break;
-    }
-    searchFrom = offset + needle.length;
-  }
-
-  expect(offset).toBeGreaterThanOrEqual(0);
-  return offsetToPosition(text, offset + characterOffset);
 }
 
 function provideAt(

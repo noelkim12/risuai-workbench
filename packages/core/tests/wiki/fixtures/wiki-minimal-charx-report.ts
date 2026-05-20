@@ -1,11 +1,10 @@
-import type { CharxReportData } from '@/cli/analyze/charx/types';
-import type { UnifiedVarEntry } from '@/domain';
+import type { CharxReportData } from '../../../src/cli/analyze/charx/types';
+import type { UnifiedVarEntry } from '../../../src/domain';
 
 /**
  * Hand-built minimal CharxReportData for wiki renderer tests.
  * Covers every field the wiki renderer reads. Intentionally small —
- * the full fixture for integration tests comes from the alternate-hunters
- * playground directory.
+ * the full fixture for integration tests comes from a private character sample.
  */
 export function minimalCharxReport(): CharxReportData {
   return {
@@ -141,7 +140,15 @@ export function minimalCharxReport(): CharxReportData {
         },
       ],
       edges: [
-        { sourceId: '상태창', targetId: 'folder/NPC', status: 'possible', matchedKeywords: ['NPC'], matchedSecondaryKeywords: ['friend'], missingSecondaryKeywords: [], blockedBy: [] },
+        {
+          sourceId: '상태창',
+          targetId: 'folder/NPC',
+          status: 'possible',
+          matchedKeywords: ['NPC'],
+          matchedSecondaryKeywords: ['friend'],
+          missingSecondaryKeywords: [],
+          blockedBy: [],
+        },
       ],
       summary: {
         totalEntries: 2,

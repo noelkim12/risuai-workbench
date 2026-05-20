@@ -3,6 +3,7 @@
  * @file packages/core/src/domain/custom-extension/cbs-simulator.ts
  */
 import { simulateCbsText } from '../../simulator';
+import { isPlainRecord } from '@/shared/guards';
 import type {
   CbsSimulationContext,
   CbsSimulationDiagnostic,
@@ -460,10 +461,11 @@ function createFullRange(rawContent: string): Range {
 /**
  * isRecord 함수.
  * unknown diagnostic data가 spread 가능한 record인지 확인함.
+ * 공유 isPlainRecord에 위임함.
  *
  * @param value - 확인할 값
  * @returns 일반 객체 레코드 여부
  */
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return isPlainRecord(value);
 }

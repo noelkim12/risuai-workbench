@@ -3,6 +3,7 @@ import path from 'node:path';
 import { ensureDir } from '@/node/fs-helpers';
 import { getCharacterName } from '@/domain/charx/data';
 import { sanitizeFilename } from '../../../utils/filenames';
+import { getErrorMessage } from '../../shared';
 import {
   RISULUA_RECOVERY_HELP_LINE,
   parseRisuLuaMode,
@@ -83,7 +84,7 @@ export async function runExtractWorkflow(argv: readonly string[]): Promise<numbe
     modeResult = parseRisuLuaMode(splitResult.strippedArgv);
     recoveryResult = parseRisuLuaRecoveryMode(modeResult.strippedArgv);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     console.error(`\n  ❌ ${message}\n`);
     return 1;
   }
@@ -110,7 +111,7 @@ export async function runExtractWorkflow(argv: readonly string[]): Promise<numbe
     await runMain(filePath, outArg, jsonOnly, modeResult.mode ?? 'classic', recoveryResult.mode, splitResult.mode ?? 'none', domainGenerationResult.mode ?? 'validated');
     return 0;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     console.error(`\n  ❌ ${message}\n`);
     return 1;
   }

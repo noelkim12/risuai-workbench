@@ -6,6 +6,7 @@
 import * as vscode from 'vscode';
 import { createLorebookContentPreview } from 'risu-workbench-core';
 import type { MainEditorPreviewRequestPayload, MainEditorPreviewResultPayload } from './mainEditorTypes';
+import { createPreviewBaseResultFields } from './shared/bridge-helpers';
 
 /**
  * createMainEditorPreviewResult 함수.
@@ -25,9 +26,7 @@ export function createMainEditorPreviewResult(
 
   const preview = createLorebookContentPreview(payload.contentText, {});
   return {
-    requestId: payload.requestId,
-    documentUri: document.uri.toString(),
-    documentVersion: document.version,
+    ...createPreviewBaseResultFields(payload, document),
     contentVersion: payload.contentVersion,
     formatKind: payload.formatKind,
     sectionName: payload.sectionName,
@@ -44,9 +43,7 @@ function createStalePreviewResult(
   message: string,
 ): MainEditorPreviewResultPayload {
   return {
-    requestId: payload.requestId,
-    documentUri: document.uri.toString(),
-    documentVersion: document.version,
+    ...createPreviewBaseResultFields(payload, document),
     contentVersion: payload.contentVersion,
     formatKind: payload.formatKind,
     sectionName: payload.sectionName,

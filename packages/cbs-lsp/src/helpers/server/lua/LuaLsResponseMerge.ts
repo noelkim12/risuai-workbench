@@ -13,6 +13,7 @@ import {
   MarkupKind,
   type Range as LSPRange,
 } from 'vscode-languageserver/node';
+import { normalizeHoverContentToMarkdown } from '../../../features/hover/hover-content-normalizer';
 
 export type DefinitionResponse = Definition | LocationLink[];
 type DefinitionEntry = Location | LocationLink;
@@ -20,34 +21,18 @@ type DefinitionEntry = Location | LocationLink;
 /**
  * normalizeHoverContentsMarkdown 함수.
  * LSP hover contents를 markdown 병합용 문자열로 정규화함.
+ * Delegates to the shared `normalizeHoverContentToMarkdown` helper with
+ * `\n\n` separator, blank filtering, and fenced code blocks enabled.
  *
  * @param contents - LSP Hover.contents payload
  * @returns markdown 문자열 또는 빈 문자열
  */
 export function normalizeHoverContentsMarkdown(contents: Hover['contents']): string {
-  if (typeof contents === 'string') {
-    return contents;
-  }
-
-  if (Array.isArray(contents)) {
-    return contents
-      .map((entry) => normalizeHoverContentsMarkdown(entry))
-      .filter(Boolean)
-      .join('\n\n');
-  }
-
-  if (typeof contents === 'object' && contents !== null) {
-    const record = contents as Record<string, unknown>;
-    if (typeof record.value === 'string') {
-      return record.value;
-    }
-
-    if (typeof record.language === 'string' && typeof record.value === 'string') {
-      return `\`\`\`${record.language}\n${record.value}\n\`\`\``;
-    }
-  }
-
-  return '';
+  return normalizeHoverContentToMarkdown(contents, {
+    arraySeparator: '\n\n',
+    filterBlank: true,
+    fencedCodeBlocks: true,
+  });
 }
 
 /**
@@ -106,14 +91,13 @@ export function mergeDefinitions(
   cbsDefinition: DefinitionResponse | null,
   luaDefinition: DefinitionResponse | null,
 ): DefinitionResponse | null {
-  const entries = [cbsDefinition, luaDefinition]
-    .flatMap<DefinitionEntry>((definition) => {
-      if (!definition) {
-        return [];
-      }
+  const entries = [cbsDefinition, luaDefinition].flatMap<DefinitionEntry>((definition) => {
+    if (!definition) {
+      return [];
+    }
 
-      return Array.isArray(definition) ? definition : [definition];
-    });
+    return Array.isArray(definition) ? definition : [definition];
+  });
 
   if (entries.length === 0) {
     return null;

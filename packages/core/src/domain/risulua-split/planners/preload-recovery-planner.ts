@@ -4,6 +4,9 @@ import { extractRisuLuaPreloadModules, type RisuLuaExtractedPreloadModule } from
 import { writeRisuLuaSplitPlan } from '../output/plan-writer';
 import { writeRisuLuaSplitReport } from '../output/report-writer';
 import { writeRisuLuaWorkspaceFiles, type RisuLuaWorkspaceFile } from '../output/workspace-writer';
+import { lineOnlyRange, wholeSourceRange } from '../shared/source-range';
+import { inferTargetName, normalizeSourcePath } from '../shared/source-path';
+import { collectPresent } from '../shared/string-patterns';
 import type {
   LuaDetectedRoot,
   LuaHostApiSummary,
@@ -285,29 +288,4 @@ function buildDynamicPatterns(result: SourceProfileResult, modules: RisuLuaExtra
     ...result.runtimeLoads.map((item) => `${item.kind} on line ${item.line}: \`${item.expression}\`.`),
     ...result.packagePathMutations.map((item) => `Package loader mutation on line ${item.line}: \`${item.expression}\`.`),
   ];
-}
-
-function wholeSourceRange(source: string): LuaSourceRange {
-  return { startLine: 1, endLine: Math.max(1, source.split('\n').length), startOffset: 0, endOffset: source.length };
-}
-
-function lineOnlyRange(line: number): LuaSourceRange {
-  return { startLine: line, endLine: line, startOffset: 0, endOffset: 0 };
-}
-
-function collectPresent(source: string, names: string[]): string[] {
-  return names.filter((name) => new RegExp(`\\b${escapeRegExp(name)}\\b`).test(source));
-}
-
-function inferTargetName(sourcePath: string): string {
-  const fileName = normalizeSourcePath(sourcePath).split('/').pop() ?? 'main.risulua';
-  return fileName.replace(/\.risulua$/i, '') || 'main';
-}
-
-function normalizeSourcePath(sourcePath: string): string {
-  return sourcePath.replace(/\\/g, '/');
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

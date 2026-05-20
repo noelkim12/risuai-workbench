@@ -6,6 +6,7 @@
 import path from 'node:path';
 import { sanitizeFilename } from '@/domain';
 import { writeJson, writeText, ensureDir } from '@/node';
+import { isPlainRecord as isPlainRecordShared } from '@/shared/guards';
 import {
   extractVariablesFromCharx,
   serializeVariableContent,
@@ -40,12 +41,13 @@ const CANONICAL_RISUAI_KEYS = new Set([
 /**
  * isPlainRecord 함수.
  * JSON object record 여부를 확인함.
+ * 공유 isPlainRecord에 위임함.
  *
  * @param value - 검사할 값
  * @returns plain object record이면 true
  */
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  return isPlainRecordShared(value);
 }
 
 /**

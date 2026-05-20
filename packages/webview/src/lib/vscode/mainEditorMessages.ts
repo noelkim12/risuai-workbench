@@ -25,6 +25,7 @@ import {
   type MainEditorStructuredEditMessage,
   type MainEditorUpdatePreferencesMessage,
   type MainEditorVariableCandidatesRequestMessage,
+  type MessageEnvelope,
 } from '../types';
 import type {
   MainEditorCodeLensRequestPayload,
@@ -48,6 +49,26 @@ import type {
 } from '../types/mainEditor';
 
 /**
+ * createMainEditorMessage 함수.
+ * Main Editor outbound message의 protocol/version envelope를 한 곳에서 생성함.
+ *
+ * @param type - extension host가 라우팅할 Main Editor message type literal
+ * @param payload - 해당 message type에 맞춰 전달할 request payload
+ * @returns Main Editor protocol/version이 고정된 message envelope
+ */
+function createMainEditorMessage<TType extends string, TPayload>(
+  type: TType,
+  payload: TPayload,
+): MessageEnvelope<TType, TPayload> {
+  return {
+    protocol: MAIN_EDITOR_PROTOCOL,
+    version: MAIN_EDITOR_PROTOCOL_VERSION,
+    type,
+    payload,
+  };
+}
+
+/**
  * createMainEditorReadyMessage 함수.
  * main editor webview가 초기화됐음을 extension host에 알림.
  *
@@ -55,12 +76,7 @@ import type {
  * @returns ready message envelope
  */
 export function createMainEditorReadyMessage(documentUri: string): MainEditorReadyMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/ready',
-    payload: { documentUri },
-  };
+  return createMainEditorMessage('main-editor/ready', { documentUri });
 }
 
 /**
@@ -71,12 +87,7 @@ export function createMainEditorReadyMessage(documentUri: string): MainEditorRea
  * @returns edit message envelope
  */
 export function createMainEditorEditMessage(payload: MainEditorEditPayload): MainEditorEditMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/edit',
-    payload,
-  };
+  return createMainEditorMessage('main-editor/edit', payload);
 }
 
 /**
@@ -89,12 +100,7 @@ export function createMainEditorEditMessage(payload: MainEditorEditPayload): Mai
 export function createMainEditorStructuredEditMessage(
   payload: MainEditorStructuredEditPayload,
 ): MainEditorStructuredEditMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/structuredEdit',
-    payload,
-  };
+  return createMainEditorMessage('main-editor/structuredEdit', payload);
 }
 
 /**
@@ -107,12 +113,7 @@ export function createMainEditorStructuredEditMessage(
 export function createMainEditorUpdatePreferencesMessage(
   payload: MainEditorUpdatePreferencesPayload,
 ): MainEditorUpdatePreferencesMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/updatePreferences',
-    payload,
-  };
+  return createMainEditorMessage('main-editor/updatePreferences', payload);
 }
 
 /**
@@ -125,12 +126,7 @@ export function createMainEditorUpdatePreferencesMessage(
 export function createMainEditorLspCompletionRequestMessage(
   payload: MainEditorLspCompletionRequestPayload,
 ): MainEditorLspCompletionRequestMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/lspCompletion',
-    payload,
-  };
+  return createMainEditorMessage('main-editor/lspCompletion', payload);
 }
 
 /**
@@ -143,12 +139,7 @@ export function createMainEditorLspCompletionRequestMessage(
 export function createMainEditorLspHoverRequestMessage(
   payload: MainEditorLspHoverRequestPayload,
 ): MainEditorLspHoverRequestMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/lspHover',
-    payload,
-  };
+  return createMainEditorMessage('main-editor/lspHover', payload);
 }
 
 /**
@@ -161,12 +152,7 @@ export function createMainEditorLspHoverRequestMessage(
 export function createMainEditorLspDefinitionRequestMessage(
   payload: MainEditorLspDefinitionRequestPayload,
 ): MainEditorLspDefinitionRequestMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/lspDefinition',
-    payload,
-  };
+  return createMainEditorMessage('main-editor/lspDefinition', payload);
 }
 
 /**
@@ -179,12 +165,7 @@ export function createMainEditorLspDefinitionRequestMessage(
 export function createMainEditorLspReferencesMessage(
   payload: MainEditorReferencesRequestPayload,
 ): MainEditorLspReferencesRequestMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/lspReferences',
-    payload,
-  };
+  return createMainEditorMessage('main-editor/lspReferences', payload);
 }
 
 /**
@@ -197,12 +178,7 @@ export function createMainEditorLspReferencesMessage(
 export function createMainEditorLspPrepareRenameMessage(
   payload: MainEditorPrepareRenameRequestPayload,
 ): MainEditorLspPrepareRenameRequestMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/lspPrepareRename',
-    payload,
-  };
+  return createMainEditorMessage('main-editor/lspPrepareRename', payload);
 }
 
 /**
@@ -213,12 +189,7 @@ export function createMainEditorLspPrepareRenameMessage(
  * @returns lspRename message envelope
  */
 export function createMainEditorLspRenameMessage(payload: MainEditorRenameRequestPayload): MainEditorLspRenameRequestMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/lspRename',
-    payload,
-  };
+  return createMainEditorMessage('main-editor/lspRename', payload);
 }
 
 /**
@@ -229,12 +200,7 @@ export function createMainEditorLspRenameMessage(payload: MainEditorRenameReques
  * @returns lspCodeLens message envelope
  */
 export function createMainEditorLspCodeLensMessage(payload: MainEditorCodeLensRequestPayload): MainEditorLspCodeLensRequestMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/lspCodeLens',
-    payload,
-  };
+  return createMainEditorMessage('main-editor/lspCodeLens', payload);
 }
 
 /**
@@ -247,12 +213,7 @@ export function createMainEditorLspCodeLensMessage(payload: MainEditorCodeLensRe
 export function createMainEditorLspWorkspaceSymbolsMessage(
   payload: MainEditorWorkspaceSymbolsRequestPayload,
 ): MainEditorLspWorkspaceSymbolsRequestMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/lspWorkspaceSymbols',
-    payload,
-  };
+  return createMainEditorMessage('main-editor/lspWorkspaceSymbols', payload);
 }
 
 /**
@@ -265,12 +226,7 @@ export function createMainEditorLspWorkspaceSymbolsMessage(
 export function createMainEditorLspRevealLocationMessage(
   payload: MainEditorRevealLocationRequestPayload,
 ): MainEditorLspRevealLocationRequestMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/lspRevealLocation',
-    payload,
-  };
+  return createMainEditorMessage('main-editor/lspRevealLocation', payload);
 }
 
 /**
@@ -283,12 +239,7 @@ export function createMainEditorLspRevealLocationMessage(
 export function createMainEditorPreviewRequestMessage(
   payload: MainEditorPreviewRequestPayload,
 ): MainEditorPreviewRequestMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/previewRequest',
-    payload,
-  };
+  return createMainEditorMessage('main-editor/previewRequest', payload);
 }
 
 /**
@@ -301,12 +252,7 @@ export function createMainEditorPreviewRequestMessage(
 export function createMainEditorPreviewRuntimeRequestMessage(
   payload: MainEditorPreviewRuntimeRequestPayload,
 ): MainEditorPreviewRuntimeRequestMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/previewRuntimeRequest',
-    payload,
-  };
+  return createMainEditorMessage('main-editor/previewRuntimeRequest', payload);
 }
 
 /**
@@ -319,12 +265,7 @@ export function createMainEditorPreviewRuntimeRequestMessage(
 export function createMainEditorFormatPreviewRequestMessage(
   payload: MainEditorFormatPreviewRequestPayload,
 ): MainEditorFormatPreviewRequestMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/formatPreviewRequest',
-    payload,
-  };
+  return createMainEditorMessage('main-editor/formatPreviewRequest', payload);
 }
 
 /**
@@ -337,12 +278,7 @@ export function createMainEditorFormatPreviewRequestMessage(
 export function createMainEditorSimulatorProfileListRequestMessage(
   payload: MainEditorSimulatorProfileListRequestPayload,
 ): MainEditorSimulatorProfileListRequestMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/simulatorProfileListRequest',
-    payload,
-  };
+  return createMainEditorMessage('main-editor/simulatorProfileListRequest', payload);
 }
 
 /**
@@ -355,12 +291,7 @@ export function createMainEditorSimulatorProfileListRequestMessage(
 export function createMainEditorSimulatorProfileSaveRequestMessage(
   payload: MainEditorSimulatorProfileSaveRequestPayload,
 ): MainEditorSimulatorProfileSaveRequestMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/simulatorProfileSaveRequest',
-    payload,
-  };
+  return createMainEditorMessage('main-editor/simulatorProfileSaveRequest', payload);
 }
 
 /**
@@ -373,10 +304,5 @@ export function createMainEditorSimulatorProfileSaveRequestMessage(
 export function createMainEditorVariableCandidatesRequestMessage(
   payload: MainEditorVariableCandidatesRequestPayload,
 ): MainEditorVariableCandidatesRequestMessage {
-  return {
-    protocol: MAIN_EDITOR_PROTOCOL,
-    version: MAIN_EDITOR_PROTOCOL_VERSION,
-    type: 'main-editor/variableCandidatesRequest',
-    payload,
-  };
+  return createMainEditorMessage('main-editor/variableCandidatesRequest', payload);
 }

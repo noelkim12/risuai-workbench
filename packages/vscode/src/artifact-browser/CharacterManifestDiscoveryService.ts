@@ -6,10 +6,29 @@
 import path from 'node:path';
 import * as vscode from 'vscode';
 import { createManifestReadErrorModel, RisucharManifestParser } from './RisucharManifestParser';
-import type { CharacterBrowserCard, ManifestParseWarning, RisucharManifestNormalized } from './artifactBrowserTypes';
+import type {
+  CharacterBrowserCard,
+  ManifestParseWarning,
+  RisucharManifestNormalized,
+} from './artifactBrowserTypes';
+import {
+  ARTIFACT_MARKER_EXCLUDE_GLOB,
+  findArtifactMarkers,
+  getWorkspaceRelativePath,
+  readManifestText,
+  sortArtifactCardsByRootLabel,
+  splitRelativePath,
+  withArtifactKindStableId,
+} from './shared/manifestDiscovery';
+
+export {
+  ARTIFACT_MARKER_EXCLUDE_GLOB,
+  getWorkspaceRelativePath,
+  splitRelativePath,
+  withArtifactKindStableId,
+};
 
 export const RISUCHAR_GLOB = '**/.risuchar';
-export const ARTIFACT_MARKER_EXCLUDE_GLOB = '{**/node_modules/**,**/.git/**,**/.vscode/**,**/dist/**,**/build/**,**/out/**,**/coverage/**}';
 
 /**
  * CharacterManifestDiscoveryService 클래스.
@@ -27,14 +46,14 @@ export class CharacterManifestDiscoveryService {
    * @returns sidebar에 전송할 manifest-backed character cards
    */
   async discoverCards(): Promise<CharacterBrowserCard[]> {
-    const markerUris = await vscode.workspace.findFiles(RISUCHAR_GLOB, ARTIFACT_MARKER_EXCLUDE_GLOB);
+    const markerUris = await findArtifactMarkers(RISUCHAR_GLOB);
     const cards: CharacterBrowserCard[] = [];
 
     for (const markerUri of markerUris) {
       cards.push(await this.discoverCard(markerUri));
     }
 
-    return cards.sort((a, b) => a.rootPathLabel.localeCompare(b.rootPathLabel));
+    return sortArtifactCardsByRootLabel(cards);
   }
 
   private async discoverCard(markerUri: vscode.Uri): Promise<CharacterBrowserCard> {
@@ -42,7 +61,7 @@ export class CharacterManifestDiscoveryService {
     const context = this.createParseContext(markerUri, rootUri);
 
     try {
-      const manifestText = Buffer.from(await vscode.workspace.fs.readFile(markerUri)).toString('utf-8');
+      const manifestText = await readManifestText(markerUri);
       const manifest = this.parser.parse({ ...context, text: manifestText });
       return this.toCardModel(manifest);
     } catch (error) {
@@ -96,7 +115,10 @@ export class CharacterManifestDiscoveryService {
   ): Promise<string | undefined> {
     if (!manifest.imagePath) return undefined;
 
-    const imageUri = vscode.Uri.joinPath(vscode.Uri.parse(manifest.rootUri), ...splitRelativePath(manifest.imagePath));
+    const imageUri = vscode.Uri.joinPath(
+      vscode.Uri.parse(manifest.rootUri),
+      ...splitRelativePath(manifest.imagePath),
+    );
     try {
       const stat = await vscode.workspace.fs.stat(imageUri);
       if (stat.type === vscode.FileType.File) {
@@ -113,41 +135,4 @@ export class CharacterManifestDiscoveryService {
     });
     return undefined;
   }
-}
-
-/**
- * getWorkspaceRelativePath 함수.
- * VS Code workspace folder 기준 표시 경로를 생성함.
- *
- * @param uri - 표시 경로를 만들 VS Code URI
- * @returns workspace 이름을 포함한 상대 경로 또는 절대 fsPath
- */
-export function getWorkspaceRelativePath(uri: vscode.Uri): string {
-  const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
-  if (!workspaceFolder) return uri.fsPath;
-  const relative = path.relative(workspaceFolder.uri.fsPath, uri.fsPath).replace(/\\/g, '/');
-  return relative ? `${workspaceFolder.name}/${relative}` : workspaceFolder.name;
-}
-
-/**
- * splitRelativePath 함수.
- * manifest에 저장된 상대 경로를 안전한 URI path segment 배열로 분해함.
- *
- * @param value - slash 또는 backslash가 섞일 수 있는 상대 경로
- * @returns 상위 경로 이동 요소를 제거한 path segment 목록
- */
-export function splitRelativePath(value: string): string[] {
-  return value.split(/[\\/]+/).filter((segment) => segment && segment !== '.' && segment !== '..');
-}
-
-/**
- * withArtifactKindStableId 함수.
- * 같은 root에 서로 다른 marker가 있을 때도 충돌하지 않도록 card stable id에 kind를 붙임.
- *
- * @param kind - artifact 종류
- * @param stableId - parser가 만든 기존 stable id
- * @returns artifact kind discriminator가 포함된 stable id
- */
-export function withArtifactKindStableId(kind: 'character' | 'module', stableId: string): string {
-  return stableId.startsWith(`${kind}:`) ? stableId : `${kind}:${stableId}`;
 }

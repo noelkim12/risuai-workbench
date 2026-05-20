@@ -4,6 +4,7 @@
  */
 
 import * as vscode from 'vscode';
+import { escapeHtmlAttribute, escapeHtmlText } from '../shared/htmlEscape';
 
 export const RISU_WEBVIEW_DEV_SERVER_ENV = 'RISU_WORKBENCH_WEBVIEW_DEV_SERVER';
 
@@ -82,26 +83,4 @@ export function getWebviewDevServerPortMapping(): vscode.WebviewPortMapping[] {
   if (!Number.isInteger(port) || port <= 0) return [];
 
   return [{ extensionHostPort: port, webviewPort: port }];
-}
-
-/**
- * escapeHtmlAttribute 함수.
- * HTML attribute에 들어갈 개발용 문자열을 escape함.
- *
- * @param value - escape할 문자열
- * @returns attribute-safe 문자열
- */
-function escapeHtmlAttribute(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-}
-
-/**
- * escapeHtmlText 함수.
- * HTML text node에 들어갈 개발용 문자열을 escape함.
- *
- * @param value - escape할 문자열
- * @returns text-safe 문자열
- */
-function escapeHtmlText(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 }

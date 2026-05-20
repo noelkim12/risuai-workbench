@@ -1,4 +1,4 @@
-import type { BlockNode, MacroCallNode, Position } from 'risu-workbench-core';
+import type { BlockNode, MacroCallNode } from 'risu-workbench-core';
 import { TokenType } from 'risu-workbench-core';
 import { describe, expect, it } from 'vitest';
 
@@ -7,34 +7,8 @@ import {
   locateFragmentAtHostPosition,
   type FragmentCursorLookupResult,
 } from '../src/core';
-import { offsetToPosition } from '../src/utils/position';
 import { createFixtureRequest, getFixtureCorpusEntry } from './fixtures/fixture-corpus';
-
-function locateNthOffset(text: string, needle: string, occurrence: number = 0): number {
-  let fromIndex = 0;
-  let foundIndex = -1;
-
-  for (let index = 0; index <= occurrence; index += 1) {
-    foundIndex = text.indexOf(needle, fromIndex);
-    if (foundIndex === -1) {
-      break;
-    }
-
-    fromIndex = foundIndex + needle.length;
-  }
-
-  expect(foundIndex).toBeGreaterThanOrEqual(0);
-  return foundIndex;
-}
-
-function positionAt(
-  text: string,
-  needle: string,
-  characterOffset: number = 0,
-  occurrence: number = 0,
-): Position {
-  return offsetToPosition(text, locateNthOffset(text, needle, occurrence) + characterOffset);
-}
+import { positionAt } from './helpers/lsp-test-utils';
 
 function expectLookup(lookup: FragmentCursorLookupResult | null): FragmentCursorLookupResult {
   expect(lookup).not.toBeNull();

@@ -9,6 +9,7 @@ import type {
   SourceProfileStaticRequire,
   SplitConfidence,
 } from '../shared/types';
+import { parseSimpleLuaString, unescapeSimpleLuaString } from '../shared/lua-string';
 import { classifyLuaRuntimeLoadRisk } from './lua-runtime-risk-policy';
 
 interface ScanMask {
@@ -270,26 +271,6 @@ function lineAt(mask: ScanMask, offset: number): number {
     else high = mid - 1;
   }
   return high + 1;
-}
-
-function parseSimpleLuaString(raw: string): string | null {
-  const match = /^(['"])((?:\\.|(?!\1)[^\\])*)\1$/.exec(raw.trim());
-  return match ? unescapeSimpleLuaString(match[2]) : null;
-}
-
-function unescapeSimpleLuaString(value: string): string {
-  return value.replace(/\\([\\'"abfnrtv])/g, (_match, escaped: string) => {
-    switch (escaped) {
-      case 'a': return '\x07';
-      case 'b': return '\b';
-      case 'f': return '\f';
-      case 'n': return '\n';
-      case 'r': return '\r';
-      case 't': return '\t';
-      case 'v': return '\v';
-      default: return escaped;
-    }
-  });
 }
 
 function findPreloadFunctionEnd(source: string, mask: ScanMask, afterAssignment: number): number | undefined {

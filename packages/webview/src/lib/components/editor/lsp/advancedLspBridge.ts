@@ -4,6 +4,7 @@
  */
 
 import type * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
+import { createRequestId } from '../../../requestIds';
 import { MAIN_EDITOR_CBS_LANGUAGE_ID } from '../../../monaco/mainEditorCbsLanguage';
 import type { MainEditorExtensionMessage, MainEditorWebviewMessage } from '../../../types';
 import type {
@@ -35,7 +36,14 @@ interface AdvancedLspProviderContext {
   documentUri: string;
   getDocumentVersion: () => number;
   getFormatKind: () => 'lorebook' | 'regex' | 'prompt' | 'html';
-  getSectionName: () => 'CONTENT' | 'IN' | 'OUT' | 'TEXT' | 'INNER_FORMAT' | 'DEFAULT_TEXT' | 'FULL';
+  getSectionName: () =>
+    | 'CONTENT'
+    | 'IN'
+    | 'OUT'
+    | 'TEXT'
+    | 'INNER_FORMAT'
+    | 'DEFAULT_TEXT'
+    | 'FULL';
   onStatus?: (message: string) => void;
 }
 
@@ -46,11 +54,17 @@ interface PendingRequest<T> {
 }
 
 export interface AdvancedLspRequestController {
-  requestReferences(payload: MainEditorReferencesRequestPayload): Promise<MainEditorReferencesResultPayload['locations']>;
-  requestPrepareRename(payload: MainEditorPrepareRenameRequestPayload): Promise<MainEditorPrepareRenameResultPayload>;
+  requestReferences(
+    payload: MainEditorReferencesRequestPayload,
+  ): Promise<MainEditorReferencesResultPayload['locations']>;
+  requestPrepareRename(
+    payload: MainEditorPrepareRenameRequestPayload,
+  ): Promise<MainEditorPrepareRenameResultPayload>;
   requestRename(payload: MainEditorRenameRequestPayload): Promise<MainEditorRenameResultPayload>;
   requestCodeLens(payload: MainEditorCodeLensRequestPayload): Promise<MainEditorCodeLensPayload[]>;
-  requestWorkspaceSymbols(payload: MainEditorWorkspaceSymbolsRequestPayload): Promise<MainEditorWorkspaceSymbolPayload[]>;
+  requestWorkspaceSymbols(
+    payload: MainEditorWorkspaceSymbolsRequestPayload,
+  ): Promise<MainEditorWorkspaceSymbolPayload[]>;
   handleExtensionMessage(message: MainEditorExtensionMessage): boolean;
   dispose(): void;
 }
@@ -62,15 +76,32 @@ export interface AdvancedLspRequestController {
  * @param options - postMessage 함수와 timeout 설정
  * @returns advanced LSP request controller
  */
-export function createAdvancedLspRequestController(options: RequestControllerOptions): AdvancedLspRequestController {
+export function createAdvancedLspRequestController(
+  options: RequestControllerOptions,
+): AdvancedLspRequestController {
   const timeoutMs = options.requestTimeoutMs ?? 5000;
-  const pendingReferences = new Map<string, PendingRequest<MainEditorReferencesResultPayload['locations']>>();
-  const pendingPrepareRename = new Map<string, PendingRequest<MainEditorPrepareRenameResultPayload>>();
+  const pendingReferences = new Map<
+    string,
+    PendingRequest<MainEditorReferencesResultPayload['locations']>
+  >();
+  const pendingPrepareRename = new Map<
+    string,
+    PendingRequest<MainEditorPrepareRenameResultPayload>
+  >();
   const pendingRename = new Map<string, PendingRequest<MainEditorRenameResultPayload>>();
   const pendingCodeLens = new Map<string, PendingRequest<MainEditorCodeLensPayload[]>>();
-  const pendingWorkspaceSymbols = new Map<string, PendingRequest<MainEditorWorkspaceSymbolPayload[]>>();
+  const pendingWorkspaceSymbols = new Map<
+    string,
+    PendingRequest<MainEditorWorkspaceSymbolPayload[]>
+  >();
 
-  function request<T>(map: Map<string, PendingRequest<T>>, requestId: string, message: MainEditorWebviewMessage, pickValue: (message: MainEditorExtensionMessage) => T, expectedType: MainEditorExtensionMessage['type']): Promise<T> {
+  function request<T>(
+    map: Map<string, PendingRequest<T>>,
+    requestId: string,
+    message: MainEditorWebviewMessage,
+    pickValue: (message: MainEditorExtensionMessage) => T,
+    expectedType: MainEditorExtensionMessage['type'],
+  ): Promise<T> {
     options.postMessage(message);
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
@@ -83,9 +114,15 @@ export function createAdvancedLspRequestController(options: RequestControllerOpt
   }
 
   type ResponsePicker = (message: MainEditorExtensionMessage) => unknown;
-  const responsePickers = new Map<string, { expectedType: MainEditorExtensionMessage['type']; pickValue: ResponsePicker }>();
+  const responsePickers = new Map<
+    string,
+    { expectedType: MainEditorExtensionMessage['type']; pickValue: ResponsePicker }
+  >();
 
-  function clearPending<T>(map: Map<string, PendingRequest<T>>, requestId: string): PendingRequest<T> | undefined {
+  function clearPending<T>(
+    map: Map<string, PendingRequest<T>>,
+    requestId: string,
+  ): PendingRequest<T> | undefined {
     const pending = map.get(requestId);
     if (!pending) return undefined;
     clearTimeout(pending.timeoutId);
@@ -94,7 +131,10 @@ export function createAdvancedLspRequestController(options: RequestControllerOpt
     return pending;
   }
 
-  function handleResolved<T>(map: Map<string, PendingRequest<T>>, message: MainEditorExtensionMessage & { payload: { requestId: string } }): boolean {
+  function handleResolved<T>(
+    map: Map<string, PendingRequest<T>>,
+    message: MainEditorExtensionMessage & { payload: { requestId: string } },
+  ): boolean {
     const picker = responsePickers.get(message.payload.requestId);
     const pending = clearPending(map, message.payload.requestId);
     if (!pending) return true;
@@ -104,26 +144,87 @@ export function createAdvancedLspRequestController(options: RequestControllerOpt
 
   return {
     requestReferences(payload) {
-      return request(pendingReferences, payload.requestId, createMainEditorLspReferencesMessage(payload), (message) => (message as Extract<MainEditorExtensionMessage, { type: 'main-editor/lspReferencesResult' }>).payload.locations, 'main-editor/lspReferencesResult');
+      return request(
+        pendingReferences,
+        payload.requestId,
+        createMainEditorLspReferencesMessage(payload),
+        (message) =>
+          (
+            message as Extract<
+              MainEditorExtensionMessage,
+              { type: 'main-editor/lspReferencesResult' }
+            >
+          ).payload.locations,
+        'main-editor/lspReferencesResult',
+      );
     },
     requestPrepareRename(payload) {
-      return request(pendingPrepareRename, payload.requestId, createMainEditorLspPrepareRenameMessage(payload), (message) => (message as Extract<MainEditorExtensionMessage, { type: 'main-editor/lspPrepareRenameResult' }>).payload, 'main-editor/lspPrepareRenameResult');
+      return request(
+        pendingPrepareRename,
+        payload.requestId,
+        createMainEditorLspPrepareRenameMessage(payload),
+        (message) =>
+          (
+            message as Extract<
+              MainEditorExtensionMessage,
+              { type: 'main-editor/lspPrepareRenameResult' }
+            >
+          ).payload,
+        'main-editor/lspPrepareRenameResult',
+      );
     },
     requestRename(payload) {
-      return request(pendingRename, payload.requestId, createMainEditorLspRenameMessage(payload), (message) => (message as Extract<MainEditorExtensionMessage, { type: 'main-editor/lspRenameResult' }>).payload, 'main-editor/lspRenameResult');
+      return request(
+        pendingRename,
+        payload.requestId,
+        createMainEditorLspRenameMessage(payload),
+        (message) =>
+          (message as Extract<MainEditorExtensionMessage, { type: 'main-editor/lspRenameResult' }>)
+            .payload,
+        'main-editor/lspRenameResult',
+      );
     },
     requestCodeLens(payload) {
-      return request(pendingCodeLens, payload.requestId, createMainEditorLspCodeLensMessage(payload), (message) => (message as Extract<MainEditorExtensionMessage, { type: 'main-editor/lspCodeLensResult' }>).payload.lenses, 'main-editor/lspCodeLensResult');
+      return request(
+        pendingCodeLens,
+        payload.requestId,
+        createMainEditorLspCodeLensMessage(payload),
+        (message) =>
+          (
+            message as Extract<
+              MainEditorExtensionMessage,
+              { type: 'main-editor/lspCodeLensResult' }
+            >
+          ).payload.lenses,
+        'main-editor/lspCodeLensResult',
+      );
     },
     requestWorkspaceSymbols(payload) {
-      return request(pendingWorkspaceSymbols, payload.requestId, createMainEditorLspWorkspaceSymbolsMessage(payload), (message) => (message as Extract<MainEditorExtensionMessage, { type: 'main-editor/lspWorkspaceSymbolsResult' }>).payload.symbols, 'main-editor/lspWorkspaceSymbolsResult');
+      return request(
+        pendingWorkspaceSymbols,
+        payload.requestId,
+        createMainEditorLspWorkspaceSymbolsMessage(payload),
+        (message) =>
+          (
+            message as Extract<
+              MainEditorExtensionMessage,
+              { type: 'main-editor/lspWorkspaceSymbolsResult' }
+            >
+          ).payload.symbols,
+        'main-editor/lspWorkspaceSymbolsResult',
+      );
     },
     handleExtensionMessage(message) {
-      if (message.type === 'main-editor/lspReferencesResult') return handleResolved(pendingReferences, message);
-      if (message.type === 'main-editor/lspPrepareRenameResult') return handleResolved(pendingPrepareRename, message);
-      if (message.type === 'main-editor/lspRenameResult') return handleResolved(pendingRename, message);
-      if (message.type === 'main-editor/lspCodeLensResult') return handleResolved(pendingCodeLens, message);
-      if (message.type === 'main-editor/lspWorkspaceSymbolsResult') return handleResolved(pendingWorkspaceSymbols, message);
+      if (message.type === 'main-editor/lspReferencesResult')
+        return handleResolved(pendingReferences, message);
+      if (message.type === 'main-editor/lspPrepareRenameResult')
+        return handleResolved(pendingPrepareRename, message);
+      if (message.type === 'main-editor/lspRenameResult')
+        return handleResolved(pendingRename, message);
+      if (message.type === 'main-editor/lspCodeLensResult')
+        return handleResolved(pendingCodeLens, message);
+      if (message.type === 'main-editor/lspWorkspaceSymbolsResult')
+        return handleResolved(pendingWorkspaceSymbols, message);
       if (message.type === 'main-editor/lspAdvancedError') {
         rejectPending(pendingReferences, message.payload.requestId, message.payload.message);
         rejectPending(pendingPrepareRename, message.payload.requestId, message.payload.message);
@@ -144,7 +245,11 @@ export function createAdvancedLspRequestController(options: RequestControllerOpt
     },
   };
 
-  function rejectPending<T>(map: Map<string, PendingRequest<T>>, requestId: string, message: string): void {
+  function rejectPending<T>(
+    map: Map<string, PendingRequest<T>>,
+    requestId: string,
+    message: string,
+  ): void {
     const pending = clearPending(map, requestId);
     if (pending) pending.reject(new Error(message));
   }
@@ -167,7 +272,11 @@ export function createAdvancedLspRequestController(options: RequestControllerOpt
  * @param context - 현재 문서와 section 정보 getter
  * @returns provider disposable 목록
  */
-export function registerAdvancedLspProviders(monacoApi: typeof monaco, controller: AdvancedLspRequestController, context: AdvancedLspProviderContext): monaco.IDisposable[] {
+export function registerAdvancedLspProviders(
+  monacoApi: typeof monaco,
+  controller: AdvancedLspRequestController,
+  context: AdvancedLspProviderContext,
+): monaco.IDisposable[] {
   const languageId = MAIN_EDITOR_CBS_LANGUAGE_ID;
   return [
     monacoApi.languages.registerReferenceProvider(languageId, {
@@ -183,7 +292,10 @@ export function registerAdvancedLspProviders(monacoApi: typeof monaco, controlle
         });
         return locations.map((location) => ({
           uri: monacoApi.Uri.parse(location.uri),
-          range: toMonacoRange(monacoApi, location.monacoRange ?? sourceRangeToMonacoRange(location.sourceRange)),
+          range: toMonacoRange(
+            monacoApi,
+            location.monacoRange ?? sourceRangeToMonacoRange(location.sourceRange),
+          ),
         }));
       },
     }),
@@ -199,7 +311,12 @@ export function registerAdvancedLspProviders(monacoApi: typeof monaco, controlle
         });
         if (result.rejected || !result.range) {
           return {
-            range: new monacoApi.Range(position.lineNumber, position.column, position.lineNumber, position.column),
+            range: new monacoApi.Range(
+              position.lineNumber,
+              position.column,
+              position.lineNumber,
+              position.column,
+            ),
             text: '',
             rejectReason: 'Rename is not available here.',
           };
@@ -231,8 +348,16 @@ export function registerAdvancedLspProviders(monacoApi: typeof monaco, controlle
         });
         return {
           lenses: lenses.map((lens) => ({
-            range: toMonacoRange(monacoApi, lens.monacoRange ?? sourceRangeToMonacoRange(lens.sourceRange)),
-            command: { id: lens.command ?? 'risuWorkbench.mainEditor.codeLensLabel', title: lens.title, tooltip: lens.tooltip, arguments: lens.arguments },
+            range: toMonacoRange(
+              monacoApi,
+              lens.monacoRange ?? sourceRangeToMonacoRange(lens.sourceRange),
+            ),
+            command: {
+              id: lens.command ?? 'risuWorkbench.mainEditor.codeLensLabel',
+              title: lens.title,
+              tooltip: lens.tooltip,
+              arguments: lens.arguments,
+            },
           })),
           dispose: () => undefined,
         };
@@ -251,19 +376,29 @@ export function registerAdvancedLspProviders(monacoApi: typeof monaco, controlle
  * @param input - raw query와 limit
  * @returns 정규화된 query 입력
  */
-export function normalizeWorkspaceSymbolQuery(input: { query: string; limit: number }): { query: string; limit: number } {
+export function normalizeWorkspaceSymbolQuery(input: { query: string; limit: number }): {
+  query: string;
+  limit: number;
+} {
   return { query: input.query.trim(), limit: Math.max(1, Math.min(50, Math.floor(input.limit))) };
 }
 
-function createRequestId(kind: string): string {
-  return `${kind}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+function toMonacoRange(
+  monacoApi: typeof monaco,
+  range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number },
+): monaco.Range {
+  return new monacoApi.Range(
+    range.startLineNumber,
+    range.startColumn,
+    range.endLineNumber,
+    range.endColumn,
+  );
 }
 
-function toMonacoRange(monacoApi: typeof monaco, range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }): monaco.Range {
-  return new monacoApi.Range(range.startLineNumber, range.startColumn, range.endLineNumber, range.endColumn);
-}
-
-function sourceRangeToMonacoRange(range: { start: { line: number; character: number }; end: { line: number; character: number } }) {
+function sourceRangeToMonacoRange(range: {
+  start: { line: number; character: number };
+  end: { line: number; character: number };
+}) {
   return {
     startLineNumber: range.start.line + 1,
     startColumn: range.start.character + 1,

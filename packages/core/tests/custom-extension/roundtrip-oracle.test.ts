@@ -45,11 +45,13 @@ interface OracleHelpersModule {
         target: FixtureCorpusTarget;
         sourceKind: FixtureCorpusSourceKind;
       };
-      source: {
-        kind: 'extract-dir';
-      } | {
-        kind: 'source-file';
-      };
+      source:
+        | {
+            kind: 'extract-dir';
+          }
+        | {
+            kind: 'source-file';
+          };
     }[];
     compare: (fixture: {
       entry: {
@@ -80,7 +82,9 @@ interface OracleHelpersModule {
   assertRoundTripOracleAllowsOnlyKnownLosses: (report: {
     passed: boolean;
     uncategorizedDiffs: readonly unknown[];
-    categorizedDiffs: readonly { category: 'intentional_unedited' | 'upstream_limit' | 'design_bug' }[];
+    categorizedDiffs: readonly {
+      category: 'intentional_unedited' | 'upstream_limit' | 'design_bug';
+    }[];
   }) => void;
 }
 
@@ -119,20 +123,22 @@ describe('custom-extension roundtrip oracle harness', () => {
     if (!module) return;
 
     expect(
-      module.selectRoundTripFixtureCorpusEntries({
-        targets: ['charx', 'module'],
-        sourceKinds: ['extract-dir'],
-      }).map((entry) => entry.id),
-    ).toEqual(['module-merry-rpg', 'module-lightboard-sns', 'charx-alternate-hunters']);
+      module
+        .selectRoundTripFixtureCorpusEntries({
+          targets: ['charx', 'module'],
+          sourceKinds: ['extract-dir'],
+        })
+        .map((entry) => entry.id),
+    ).toEqual(['module-sample-a', 'module-sample-b', 'charx-sample-a']);
 
     expect(
       module.loadRoundTripFixtureCorpusEntries({
-        ids: ['preset-new-risup-source'],
+        ids: ['preset-source-sample-a'],
       }),
     ).toEqual([
       expect.objectContaining({
         entry: expect.objectContaining({
-          id: 'preset-new-risup-source',
+          id: 'preset-source-sample-a',
           sourceKind: 'source-file',
         }),
         source: expect.objectContaining({
@@ -144,12 +150,12 @@ describe('custom-extension roundtrip oracle harness', () => {
 
     expect(
       module.loadRoundTripFixtureCorpusEntries({
-        ids: ['module-merry-rpg'],
+        ids: ['module-sample-a'],
       }),
     ).toEqual([
       expect.objectContaining({
         entry: expect.objectContaining({
-          id: 'module-merry-rpg',
+          id: 'module-sample-a',
           sourceKind: 'extract-dir',
         }),
         source: expect.objectContaining({
@@ -227,7 +233,7 @@ describe('custom-extension roundtrip oracle harness', () => {
     if (!module) return;
 
     const entries = module.loadRoundTripFixtureCorpusEntries({
-      ids: ['charx-alternate-hunters', 'module-merry-rpg', 'preset-hallabong'],
+      ids: ['charx-sample-a', 'module-sample-a', 'preset-sample-a'],
     });
 
     const report = await module.evaluateRoundTripOracle({
@@ -296,7 +302,7 @@ describe('custom-extension roundtrip oracle harness', () => {
     if (!module) return;
 
     const [entry] = module.loadRoundTripFixtureCorpusEntries({
-      ids: ['module-lightboard-sns'],
+      ids: ['module-sample-b'],
     });
 
     const report = await module.evaluateRoundTripOracle({
@@ -304,7 +310,7 @@ describe('custom-extension roundtrip oracle harness', () => {
       compare: () => ({
         diffs: [
           {
-            path: 'toggle/라이트보드-sns-1-25-0.risutoggle',
+            path: 'toggle/module-sample-b.risutoggle',
             summary: 'unknown toggle serialization delta',
           },
         ],
@@ -319,13 +325,13 @@ describe('custom-extension roundtrip oracle harness', () => {
     });
     expect(report.uncategorizedDiffs).toEqual([
       expect.objectContaining({
-        entryId: 'module-lightboard-sns',
-        path: 'toggle/라이트보드-sns-1-25-0.risutoggle',
+        entryId: 'module-sample-b',
+        path: 'toggle/module-sample-b.risutoggle',
         summary: 'unknown toggle serialization delta',
       }),
     ]);
     expect(() => module.assertRoundTripOracleAllowsOnlyKnownLosses(report)).toThrowError(
-      /module-lightboard-sns[\s\S]*toggle\/라이트보드-sns-1-25-0\.risutoggle[\s\S]*unknown toggle serialization delta/,
+      /module-sample-b[\s\S]*toggle\/module-sample-b\.risutoggle[\s\S]*unknown toggle serialization delta/,
     );
   });
 });

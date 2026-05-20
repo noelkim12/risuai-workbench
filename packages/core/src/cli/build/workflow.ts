@@ -15,8 +15,10 @@ import {
 } from '@/node/json-listing';
 import {
   bundleRisuLuaModularGraph,
+  argValue,
   createRisuLuaRecoveryManifest,
   discoverRisuLuaBundleTarget,
+  getErrorMessage,
   isPlainObject,
   parseRisuLuaMode,
   parseRisuLuaRecoveryMode,
@@ -92,7 +94,7 @@ export function runBuildWorkflow(argv: readonly string[]): number {
   try {
     modeResult = parseRisuLuaMode(argv);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     console.error(`\nERROR: ${message}\n`);
     return 1;
   }
@@ -101,7 +103,7 @@ export function runBuildWorkflow(argv: readonly string[]): number {
   try {
     recoveryResult = parseRisuLuaRecoveryMode(modeResult.strippedArgv);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     console.error(`\nERROR: ${message}\n`);
     return 1;
   }
@@ -117,7 +119,7 @@ export function runBuildWorkflow(argv: readonly string[]): number {
       printRisuLuaModularBuildSummary(result);
       return 0;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       console.error(`\nERROR: ${message}\n`);
       return 1;
     }
@@ -132,7 +134,7 @@ export function runBuildWorkflow(argv: readonly string[]): number {
     executeBuild(options);
     return 0;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     console.error(`\nERROR: ${message}\n`);
     return 1;
   }
@@ -231,12 +233,6 @@ function parseBuildOptions(argv: readonly string[]): BuildOptions {
     regexOnly: argv.includes('--regex-only'),
     lorebookOnly: argv.includes('--lorebook-only'),
   };
-}
-
-function argValue(argv: readonly string[], name: string): string | null {
-  const idx = argv.indexOf(name);
-  if (idx < 0) return null;
-  return argv[idx + 1] || null;
 }
 
 function executeBuild(options: BuildOptions): void {

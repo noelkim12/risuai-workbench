@@ -1,10 +1,7 @@
-import type { CompletionItem } from 'vscode-languageserver/node';
+import type { CompletionItem, Position } from 'vscode-languageserver/node';
 import {
   InsertTextFormat,
-  type Position,
-  type TextDocumentPositionParams,
 } from 'vscode-languageserver/node';
-import { CBSBuiltinRegistry } from 'risu-workbench-core';
 import { describe, expect, it, vi } from 'vitest';
 
 import { type AgentMetadataEnvelope, FragmentAnalysisService } from '../../src/core';
@@ -20,37 +17,17 @@ import {
   snapshotCompletionItems,
 } from '../fixtures/fixture-corpus';
 import {
+  createTextDocumentPositionParams,
+  createBuiltinProviderDeps,
+  sharedBuiltinRegistry,
+} from '../helpers/provider-test-harness';
+import {
   createVariableFlowQueryResult,
   createRealVariableFlowService,
   createVariableFlowServiceStub,
   createVariableOccurrence,
 } from './variable-flow-test-helpers';
-
-function locateNthOffset(text: string, needle: string, occurrence: number = 0): number {
-  let fromIndex = 0;
-  let foundIndex = -1;
-
-  for (let index = 0; index <= occurrence; index += 1) {
-    foundIndex = text.indexOf(needle, fromIndex);
-    if (foundIndex === -1) {
-      break;
-    }
-
-    fromIndex = foundIndex + needle.length;
-  }
-
-  expect(foundIndex).toBeGreaterThanOrEqual(0);
-  return foundIndex;
-}
-
-function positionAt(
-  text: string,
-  needle: string,
-  characterOffset: number = 0,
-  occurrence: number = 0,
-): Position {
-  return offsetToPosition(text, locateNthOffset(text, needle, occurrence) + characterOffset);
-}
+import { positionAt } from '../helpers/lsp-test-utils';
 
 function createProvider(
   service: FragmentAnalysisService,
@@ -58,23 +35,13 @@ function createProvider(
   variableFlowService?: VariableFlowService,
   workspaceSnapshot?: WorkspaceSnapshotState | null,
 ): CompletionProvider {
-  return new CompletionProvider(new CBSBuiltinRegistry(), {
-    analysisService: service,
-    resolveRequest: ({ textDocument }) => (textDocument.uri === request.uri ? request : null),
-    variableFlowService,
-    workspaceSnapshot,
-  });
+  return new CompletionProvider(
+    sharedBuiltinRegistry,
+    createBuiltinProviderDeps(service, request, variableFlowService, workspaceSnapshot),
+  );
 }
 
-function createParams(
-  request: ReturnType<typeof createFixtureRequest>,
-  position: Position,
-): TextDocumentPositionParams {
-  return {
-    textDocument: { uri: request.uri },
-    position,
-  };
-}
+const createParams = createTextDocumentPositionParams;
 
 function createInlineCompletionRequest(text: string): ReturnType<typeof createFixtureRequest> {
   return {
@@ -879,7 +846,7 @@ describe('CompletionProvider', () => {
       const request = createFixtureRequest(entry);
       const modifiedText = entry.text.replace('{{? $score + @bonus}}', '{{? }}');
       const modifiedRequest = { ...request, text: modifiedText };
-      const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      const provider = new CompletionProvider(sharedBuiltinRegistry, {
         analysisService: new FragmentAnalysisService(),
         resolveRequest: ({ textDocument }) =>
           textDocument.uri === modifiedRequest.uri ? modifiedRequest : null,
@@ -900,7 +867,7 @@ describe('CompletionProvider', () => {
       const request = createFixtureRequest(entry);
       const modifiedText = entry.text.replace('{{? $score + @bonus}}', '{{? $sc + @bo}}');
       const modifiedRequest = { ...request, text: modifiedText };
-      const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      const provider = new CompletionProvider(sharedBuiltinRegistry, {
         analysisService: new FragmentAnalysisService(),
         resolveRequest: ({ textDocument }) =>
           textDocument.uri === modifiedRequest.uri ? modifiedRequest : null,
@@ -921,7 +888,7 @@ describe('CompletionProvider', () => {
       const request = createFixtureRequest(entry);
       const modifiedText = entry.text.replace('{{calc::$score + @bonus}}', '{{calc::$sc + @bo}}');
       const modifiedRequest = { ...request, text: modifiedText };
-      const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      const provider = new CompletionProvider(sharedBuiltinRegistry, {
         analysisService: new FragmentAnalysisService(),
         resolveRequest: ({ textDocument }) =>
           textDocument.uri === modifiedRequest.uri ? modifiedRequest : null,
@@ -1074,7 +1041,7 @@ describe('CompletionProvider', () => {
       const request = createFixtureRequest(entry);
       const modifiedText = entry.text.replace('{{calc::$score + @bonus}}', '{{calc::=}}');
       const modifiedRequest = { ...request, text: modifiedText };
-      const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      const provider = new CompletionProvider(sharedBuiltinRegistry, {
         analysisService: new FragmentAnalysisService(),
         resolveRequest: ({ textDocument }) =>
           textDocument.uri === modifiedRequest.uri ? modifiedRequest : null,
@@ -1338,7 +1305,7 @@ describe('CompletionProvider', () => {
       // Simulate typing {{#w - cursor right after {{#w
       const modifiedText = entry.text.replace('{{#when', '{{#w');
       const modifiedRequest = { ...request, text: modifiedText };
-      const modifiedProvider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      const modifiedProvider = new CompletionProvider(sharedBuiltinRegistry, {
         analysisService: new FragmentAnalysisService(),
         resolveRequest: () => modifiedRequest,
       });
@@ -1361,7 +1328,7 @@ describe('CompletionProvider', () => {
       // Simulate typing {{#e
       const modifiedText = entry.text.replace('{{#when', '{{#e');
       const modifiedRequest = { ...request, text: modifiedText };
-      const modifiedProvider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      const modifiedProvider = new CompletionProvider(sharedBuiltinRegistry, {
         analysisService: new FragmentAnalysisService(),
         resolveRequest: () => modifiedRequest,
       });
@@ -1451,7 +1418,7 @@ describe('CompletionProvider', () => {
         filePath: '/fixtures/pure-completion.risulorebook',
         text,
       };
-      const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      const provider = new CompletionProvider(sharedBuiltinRegistry, {
         analysisService: new FragmentAnalysisService(),
         resolveRequest: ({ textDocument }) => (textDocument.uri === request.uri ? request : null),
       });
@@ -1493,7 +1460,7 @@ describe('CompletionProvider', () => {
 
       const modifiedText = entry.text.replace('{{/when}}', '{{/}}');
       const modifiedRequest = { ...request, text: modifiedText };
-      const modifiedProvider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      const modifiedProvider = new CompletionProvider(sharedBuiltinRegistry, {
         analysisService: new FragmentAnalysisService(),
         resolveRequest: () => modifiedRequest,
       });
@@ -1552,7 +1519,7 @@ describe('CompletionProvider', () => {
       const modifiedContent = '{{#when::score::is}}some content here {{/';
       const modifiedText = entry.text.replace(originalWhen, modifiedContent);
       const modifiedRequest = { ...request, text: modifiedText };
-      const modifiedProvider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      const modifiedProvider = new CompletionProvider(sharedBuiltinRegistry, {
         analysisService: new FragmentAnalysisService(),
         resolveRequest: () => modifiedRequest,
       });
@@ -1576,7 +1543,7 @@ describe('CompletionProvider', () => {
       // Add {{/ at the end of content (outside any block)
       const modifiedText = entry.text.replace('}}', '}}{{/');
       const modifiedRequest = { ...request, text: modifiedText };
-      const modifiedProvider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      const modifiedProvider = new CompletionProvider(sharedBuiltinRegistry, {
         analysisService: new FragmentAnalysisService(),
         resolveRequest: () => modifiedRequest,
       });
@@ -1904,7 +1871,7 @@ describe('CompletionProvider', () => {
       // Cursor positioned between :: and }} to trigger variable completion
       const modifiedText = entry.text.replace('}}', '}}{{getvar::}}');
       const modifiedRequest = { ...request, text: modifiedText };
-      const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      const provider = new CompletionProvider(sharedBuiltinRegistry, {
         analysisService: new FragmentAnalysisService(),
         resolveRequest: () => modifiedRequest,
       });
@@ -2336,7 +2303,7 @@ describe('CompletionProvider', () => {
         '{{getglobalvar::world}}{{getglobalvar::}}',
       );
       const modifiedRequest = { ...createFixtureRequest(entry), text: modifiedText };
-      const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      const provider = new CompletionProvider(sharedBuiltinRegistry, {
         analysisService: new FragmentAnalysisService(),
         resolveRequest: () => modifiedRequest,
       });
@@ -2390,7 +2357,7 @@ describe('CompletionProvider', () => {
         '{{getglobalvar::world}}{{setglobalvar::}}',
       );
       const modifiedRequest = { ...createFixtureRequest(entry), text: modifiedText };
-      const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      const provider = new CompletionProvider(sharedBuiltinRegistry, {
         analysisService: new FragmentAnalysisService(),
         resolveRequest: () => modifiedRequest,
       });
@@ -2444,7 +2411,7 @@ describe('CompletionProvider', () => {
       // Add {{getvar::mo}} with cursor after 'mo'
       const modifiedText = entry.text.replace('}}', '}}{{getvar::mo}}');
       const modifiedRequest = { ...request, text: modifiedText };
-      const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      const provider = new CompletionProvider(sharedBuiltinRegistry, {
         analysisService: new FragmentAnalysisService(),
         resolveRequest: () => modifiedRequest,
       });
@@ -2469,7 +2436,7 @@ describe('CompletionProvider', () => {
       // Add {{getvar:: after the existing content to test completion
       const modifiedText = entry.text.replace('}}', '}}{{getvar::');
       const modifiedRequest = { ...request, text: modifiedText };
-      const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      const provider = new CompletionProvider(sharedBuiltinRegistry, {
         analysisService: new FragmentAnalysisService(),
         resolveRequest: () => modifiedRequest,
       });
@@ -2492,7 +2459,7 @@ describe('CompletionProvider', () => {
       const request = createFixtureRequest(entry);
       const modifiedText = entry.text.replace('}}', '}}{{getvar::mo');
       const modifiedRequest = { ...request, text: modifiedText };
-      const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      const provider = new CompletionProvider(sharedBuiltinRegistry, {
         analysisService: new FragmentAnalysisService(),
         resolveRequest: () => modifiedRequest,
       });
@@ -2519,7 +2486,7 @@ describe('CompletionProvider', () => {
         '{{settempvar::cache::value}}{{gettempvar::}}',
       );
       const tempRequest = { ...createFixtureRequest(entry), text: tempText };
-      const tempProvider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      const tempProvider = new CompletionProvider(sharedBuiltinRegistry, {
         analysisService: new FragmentAnalysisService(),
         resolveRequest: () => tempRequest,
       });
@@ -2567,7 +2534,7 @@ describe('CompletionProvider', () => {
 
       const tempText = entry.text.replace('{{user}}', '{{settempvar::cache::value}}{{gettempvar::');
       const tempRequest = { ...request, text: tempText };
-      const tempProvider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      const tempProvider = new CompletionProvider(sharedBuiltinRegistry, {
         analysisService: new FragmentAnalysisService(),
         resolveRequest: () => tempRequest,
       });
@@ -2591,7 +2558,7 @@ describe('CompletionProvider', () => {
       // Replace with complete {{metadata::}} macro
       const metaText = entry.text.replace('{{user}}', '{{metadata::}}');
       const metaRequest = { ...request, text: metaText };
-      const metaProvider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      const metaProvider = new CompletionProvider(sharedBuiltinRegistry, {
         analysisService: new FragmentAnalysisService(),
         resolveRequest: () => metaRequest,
       });
@@ -2620,7 +2587,7 @@ describe('CompletionProvider', () => {
       // Replace with {{metadata::mo}} to filter for mobile
       const metaText = entry.text.replace('{{user}}', '{{metadata::mo}}');
       const metaRequest = { ...request, text: metaText };
-      const provider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      const provider = new CompletionProvider(sharedBuiltinRegistry, {
         analysisService: new FragmentAnalysisService(),
         resolveRequest: () => metaRequest,
       });
@@ -2640,7 +2607,7 @@ describe('CompletionProvider', () => {
 
       const metaText = entry.text.replace('{{user}}', '{{metadata::');
       const metaRequest = { ...request, text: metaText };
-      const metaProvider = new CompletionProvider(new CBSBuiltinRegistry(), {
+      const metaProvider = new CompletionProvider(sharedBuiltinRegistry, {
         analysisService: new FragmentAnalysisService(),
         resolveRequest: () => metaRequest,
       });

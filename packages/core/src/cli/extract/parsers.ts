@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Unzip, UnzipInflate } from 'fflate';
+import { getErrorMessage } from '../shared';
 
 let decodeMap: Buffer | null = null;
 
@@ -179,7 +180,7 @@ export function parseModuleRisumFull(buf: Buffer): ParsedModuleFull | null {
   try {
     parsed = JSON.parse(decoded.toString('utf-8'));
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     console.error(`  ⚠️  module.risum: JSON 파싱 실패 — ${message}`);
     return null;
   }

@@ -7,15 +7,78 @@ import {
   ARTIFACT_BROWSER_PROTOCOL,
   ARTIFACT_BROWSER_PROTOCOL_VERSION,
   ARTIFACT_BROWSER_VIEW_ID,
+  type ArtifactBrowserOpenItemPayload,
   type BrowserArtifactCard,
   type BrowserSection,
   type ArtifactBrowserCardsMessage,
   type ArtifactBrowserDetailMessage,
   type ArtifactBrowserOpenItemMessage,
   type ArtifactBrowserReadyMessage,
+  type ArtifactBrowserReadyPayload,
+  type ArtifactBrowserRefreshPayload,
   type ArtifactBrowserRefreshMessage,
+  type ArtifactBrowserSelectPayload,
   type ArtifactBrowserSelectMessage,
 } from './artifactBrowserTypes';
+import { isPlainRecord, isProtocolEnvelope } from '../shared/protocolEnvelope';
+
+type ArtifactBrowserPayloadGuard<TPayload> = (payload: unknown) => payload is TPayload;
+
+/**
+ * createArtifactBrowserMessageGuard 함수.
+ * Artifact Browser inbound envelope 검증과 payload 검증을 한 곳에서 결합함.
+ *
+ * @param type - 검증할 Artifact Browser message type
+ * @param payloadGuard - type별 payload shape 검증 callback
+ * @returns message 전체를 검증하는 type guard
+ */
+function createArtifactBrowserMessageGuard<TMessage extends ArtifactBrowserReadyMessage | ArtifactBrowserRefreshMessage | ArtifactBrowserSelectMessage | ArtifactBrowserOpenItemMessage>(
+  type: TMessage['type'],
+  payloadGuard: ArtifactBrowserPayloadGuard<TMessage['payload']>,
+): (message: unknown) => message is TMessage {
+  return (message: unknown): message is TMessage =>
+    isProtocolEnvelope(message, ARTIFACT_BROWSER_PROTOCOL, ARTIFACT_BROWSER_PROTOCOL_VERSION, type) &&
+    payloadGuard(message.payload);
+}
+
+const isArtifactBrowserViewPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserReadyPayload | ArtifactBrowserRefreshPayload> = (
+  payload,
+): payload is ArtifactBrowserReadyPayload | ArtifactBrowserRefreshPayload =>
+  isPlainRecord(payload) && payload.viewId === ARTIFACT_BROWSER_VIEW_ID;
+
+const isArtifactBrowserSelectPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserSelectPayload> = (
+  payload,
+): payload is ArtifactBrowserSelectPayload =>
+  isPlainRecord(payload) && typeof payload.stableId === 'string' && payload.stableId.length > 0;
+
+const isArtifactBrowserOpenItemPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserOpenItemPayload> = (
+  payload,
+): payload is ArtifactBrowserOpenItemPayload =>
+  isPlainRecord(payload) &&
+  typeof payload.stableId === 'string' &&
+  payload.stableId.length > 0 &&
+  typeof payload.itemId === 'string' &&
+  payload.itemId.length > 0;
+
+const isArtifactBrowserReadyMessageEnvelope = createArtifactBrowserMessageGuard<ArtifactBrowserReadyMessage>(
+  'artifact-browser/ready',
+  isArtifactBrowserViewPayload,
+);
+
+const isArtifactBrowserRefreshMessageEnvelope = createArtifactBrowserMessageGuard<ArtifactBrowserRefreshMessage>(
+  'artifact-browser/refresh',
+  isArtifactBrowserViewPayload,
+);
+
+const isArtifactBrowserSelectMessageEnvelope = createArtifactBrowserMessageGuard<ArtifactBrowserSelectMessage>(
+  'artifact-browser/select',
+  isArtifactBrowserSelectPayload,
+);
+
+const isArtifactBrowserOpenItemMessageEnvelope = createArtifactBrowserMessageGuard<ArtifactBrowserOpenItemMessage>(
+  'artifact-browser/openItem',
+  isArtifactBrowserOpenItemPayload,
+);
 
 /**
  * isArtifactBrowserReadyMessage 함수.
@@ -25,17 +88,7 @@ import {
  * @returns readiness envelope 여부
  */
 export function isArtifactBrowserReadyMessage(message: unknown): message is ArtifactBrowserReadyMessage {
-  if (!message || typeof message !== 'object') {
-    return false;
-  }
-
-  const candidate = message as Partial<ArtifactBrowserReadyMessage>;
-  return (
-    candidate.protocol === ARTIFACT_BROWSER_PROTOCOL &&
-    candidate.version === ARTIFACT_BROWSER_PROTOCOL_VERSION &&
-    candidate.type === 'artifact-browser/ready' &&
-    candidate.payload?.viewId === ARTIFACT_BROWSER_VIEW_ID
-  );
+  return isArtifactBrowserReadyMessageEnvelope(message);
 }
 
 /**
@@ -46,17 +99,7 @@ export function isArtifactBrowserReadyMessage(message: unknown): message is Arti
  * @returns refresh request envelope 여부
  */
 export function isArtifactBrowserRefreshMessage(message: unknown): message is ArtifactBrowserRefreshMessage {
-  if (!message || typeof message !== 'object') {
-    return false;
-  }
-
-  const candidate = message as Partial<ArtifactBrowserRefreshMessage>;
-  return (
-    candidate.protocol === ARTIFACT_BROWSER_PROTOCOL &&
-    candidate.version === ARTIFACT_BROWSER_PROTOCOL_VERSION &&
-    candidate.type === 'artifact-browser/refresh' &&
-    candidate.payload?.viewId === ARTIFACT_BROWSER_VIEW_ID
-  );
+  return isArtifactBrowserRefreshMessageEnvelope(message);
 }
 
 /**
@@ -67,18 +110,7 @@ export function isArtifactBrowserRefreshMessage(message: unknown): message is Ar
  * @returns selectArtifact envelope 여부
  */
 export function isArtifactBrowserSelectMessage(message: unknown): message is ArtifactBrowserSelectMessage {
-  if (!message || typeof message !== 'object') {
-    return false;
-  }
-
-  const candidate = message as Partial<ArtifactBrowserSelectMessage>;
-  return (
-    candidate.protocol === ARTIFACT_BROWSER_PROTOCOL &&
-    candidate.version === ARTIFACT_BROWSER_PROTOCOL_VERSION &&
-    candidate.type === 'artifact-browser/select' &&
-    typeof candidate.payload?.stableId === 'string' &&
-    candidate.payload.stableId.length > 0
-  );
+  return isArtifactBrowserSelectMessageEnvelope(message);
 }
 
 /**
@@ -89,20 +121,29 @@ export function isArtifactBrowserSelectMessage(message: unknown): message is Art
  * @returns openItem envelope 여부
  */
 export function isArtifactBrowserOpenItemMessage(message: unknown): message is ArtifactBrowserOpenItemMessage {
-  if (!message || typeof message !== 'object') {
-    return false;
-  }
+  return isArtifactBrowserOpenItemMessageEnvelope(message);
+}
 
-  const candidate = message as Partial<ArtifactBrowserOpenItemMessage>;
-  return (
-    candidate.protocol === ARTIFACT_BROWSER_PROTOCOL &&
-    candidate.version === ARTIFACT_BROWSER_PROTOCOL_VERSION &&
-    candidate.type === 'artifact-browser/openItem' &&
-    typeof candidate.payload?.stableId === 'string' &&
-    candidate.payload.stableId.length > 0 &&
-    typeof candidate.payload.itemId === 'string' &&
-    candidate.payload.itemId.length > 0
-  );
+type ArtifactBrowserExtensionResponse = ArtifactBrowserCardsMessage | ArtifactBrowserDetailMessage;
+
+/**
+ * createArtifactBrowserExtensionMessage 함수.
+ * Extension host가 webview에 보내는 Artifact Browser response message의 protocol envelope를 일관되게 생성함.
+ *
+ * @param type - Artifact Browser extension response message type string
+ * @param payload - type에 대응하는 payload 객체
+ * @returns versioned Artifact Browser extension response message
+ */
+function createArtifactBrowserExtensionMessage<TType extends ArtifactBrowserExtensionResponse['type']>(
+  type: TType,
+  payload: Extract<ArtifactBrowserExtensionResponse, { type: TType }>['payload'],
+): Extract<ArtifactBrowserExtensionResponse, { type: TType }> {
+  return {
+    protocol: ARTIFACT_BROWSER_PROTOCOL,
+    version: ARTIFACT_BROWSER_PROTOCOL_VERSION,
+    type,
+    payload,
+  } as Extract<ArtifactBrowserExtensionResponse, { type: TType }>;
 }
 
 /**
@@ -117,23 +158,18 @@ export function createArtifactBrowserCardsMessage(
   cards: BrowserArtifactCard[],
   selectedStableId?: string,
 ): ArtifactBrowserCardsMessage {
-  return {
-    protocol: ARTIFACT_BROWSER_PROTOCOL,
-    version: ARTIFACT_BROWSER_PROTOCOL_VERSION,
-    type: 'artifact-browser/cards',
-    payload: {
-      generatedAt: new Date().toISOString(),
-      cards,
-      ...(selectedStableId && { selectedStableId }),
-    },
-  };
+  return createArtifactBrowserExtensionMessage('artifact-browser/cards', {
+    generatedAt: new Date().toISOString(),
+    cards,
+    ...(selectedStableId && { selectedStableId }),
+  });
 }
 
 /**
  * createArtifactBrowserDetailMessage 함수.
-  * 선택된 artifact detail section snapshot을 versioned extension-host 메시지로 감쌈.
+ * 선택된 artifact detail section snapshot을 versioned extension-host 메시지로 감쌈.
  *
-  * @param stableId - detail이 로드된 artifact stable id
+ * @param stableId - detail이 로드된 artifact stable id
  * @param sections - scanner가 구성한 section 목록
  * @returns Artifact Browser detail snapshot message
  */
@@ -141,14 +177,9 @@ export function createArtifactBrowserDetailMessage(
   stableId: string,
   sections: BrowserSection[],
 ): ArtifactBrowserDetailMessage {
-  return {
-    protocol: ARTIFACT_BROWSER_PROTOCOL,
-    version: ARTIFACT_BROWSER_PROTOCOL_VERSION,
-    type: 'artifact-browser/detailLoaded',
-    payload: {
-      generatedAt: new Date().toISOString(),
-      stableId,
-      sections,
-    },
-  };
+  return createArtifactBrowserExtensionMessage('artifact-browser/detailLoaded', {
+    generatedAt: new Date().toISOString(),
+    stableId,
+    sections,
+  });
 }

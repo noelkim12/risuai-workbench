@@ -11,53 +11,26 @@ import {
   DOCUMENT_HIGHLIGHT_PROVIDER_AVAILABILITY,
   DocumentHighlightProvider,
 } from '../../src/features/symbols';
+import {
+  createTextDocumentPositionParams,
+  createSimpleProviderDeps,
+} from '../helpers/provider-test-harness';
 import { offsetToPosition } from '../../src/utils/position';
 import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
-
-function locateNthOffset(text: string, needle: string, occurrence: number = 0): number {
-  let fromIndex = 0;
-  let foundIndex = -1;
-
-  for (let index = 0; index <= occurrence; index += 1) {
-    foundIndex = text.indexOf(needle, fromIndex);
-    if (foundIndex === -1) {
-      break;
-    }
-
-    fromIndex = foundIndex + needle.length;
-  }
-
-  expect(foundIndex).toBeGreaterThanOrEqual(0);
-  return foundIndex;
-}
-
-function positionAt(
-  text: string,
-  needle: string,
-  characterOffset: number = 0,
-  occurrence: number = 0,
-): Position {
-  return offsetToPosition(text, locateNthOffset(text, needle, occurrence) + characterOffset);
-}
+import { locateNthOffset, positionAt } from '../helpers/lsp-test-utils';
 
 function createProvider(
   request: ReturnType<typeof createFixtureRequest>,
   service: FragmentAnalysisService = new FragmentAnalysisService(),
 ): DocumentHighlightProvider {
-  return new DocumentHighlightProvider({
-    analysisService: service,
-    resolveRequest: ({ textDocument }) => (textDocument.uri === request.uri ? request : null),
-  });
+  return new DocumentHighlightProvider(createSimpleProviderDeps(service, request));
 }
 
 function createParams(
   request: ReturnType<typeof createFixtureRequest>,
   position: Position,
 ): DocumentHighlightParams {
-  return {
-    textDocument: { uri: request.uri },
-    position,
-  };
+  return createTextDocumentPositionParams(request, position);
 }
 
 function countHighlightsByKind(highlights: readonly DocumentHighlight[], kind: DocumentHighlightKind): number {

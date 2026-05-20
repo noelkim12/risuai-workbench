@@ -3,7 +3,6 @@
  * @file packages/vscode/src/artifact-browser/ModuleManifestDiscoveryService.ts
  */
 
-import { createHash } from 'node:crypto';
 import path from 'node:path';
 import * as vscode from 'vscode';
 import {
@@ -12,11 +11,16 @@ import {
   type RisumoduleManifest,
 } from 'risu-workbench-core/node';
 import {
-  ARTIFACT_MARKER_EXCLUDE_GLOB,
+  createHashFallbackStableId,
+  findArtifactMarkers,
   getWorkspaceRelativePath,
+  readManifestText,
+  sortArtifactCardsByRootLabel,
   withArtifactKindStableId,
-} from './CharacterManifestDiscoveryService';
+} from './shared/manifestDiscovery';
 import type { ManifestParseWarning, ModuleBrowserCard } from './artifactBrowserTypes';
+import { getErrorMessage } from '../shared/errors';
+import { isPlainRecord } from '../shared/protocolEnvelope';
 
 export const RISUMODULE_GLOB = `**/${RISUMODULE_FILENAME}`;
 
@@ -41,14 +45,14 @@ export class ModuleManifestDiscoveryService {
    * @returns sidebar에 전송할 module cards
    */
   async discoverCards(): Promise<ModuleBrowserCard[]> {
-    const markerUris = await vscode.workspace.findFiles(RISUMODULE_GLOB, ARTIFACT_MARKER_EXCLUDE_GLOB);
+    const markerUris = await findArtifactMarkers(RISUMODULE_GLOB);
     const cards: ModuleBrowserCard[] = [];
 
     for (const markerUri of markerUris) {
       cards.push(await this.discoverCard(markerUri));
     }
 
-    return cards.sort((a, b) => a.rootPathLabel.localeCompare(b.rootPathLabel));
+    return sortArtifactCardsByRootLabel(cards);
   }
 
   private async discoverCard(markerUri: vscode.Uri): Promise<ModuleBrowserCard> {
@@ -57,10 +61,13 @@ export class ModuleManifestDiscoveryService {
 
     let manifestText: string;
     try {
-      manifestText = Buffer.from(await vscode.workspace.fs.readFile(markerUri)).toString('utf-8');
+      manifestText = await readManifestText(markerUri);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return this.toInvalidCardModel(new Error(`Could not read ${RISUMODULE_FILENAME}: ${message}`), context);
+      const message = getErrorMessage(error);
+      return this.toInvalidCardModel(
+        new Error(`Could not read ${RISUMODULE_FILENAME}: ${message}`),
+        context,
+      );
     }
 
     try {
@@ -80,13 +87,24 @@ export class ModuleManifestDiscoveryService {
     };
   }
 
-  private async toValidCardModel(manifest: RisumoduleManifest, context: ModuleParseContext): Promise<ModuleBrowserCard> {
+  private async toValidCardModel(
+    manifest: RisumoduleManifest,
+    context: ModuleParseContext,
+  ): Promise<ModuleBrowserCard> {
     const warnings: ManifestParseWarning[] = [];
     const imageUri = await this.resolveImageUri(manifest, context, warnings);
 
     return {
       artifactKind: 'module',
-      stableId: withArtifactKindStableId('module', manifest.id || createFallbackStableId(context.rootPathLabel, manifest.name)),
+      stableId: withArtifactKindStableId(
+        'module',
+        manifest.id ||
+          createHashFallbackStableId({
+            name: manifest.name || context.rootPathLabel,
+            seed: context.rootPathLabel,
+            fallbackPrefix: 'module',
+          }),
+      ),
       manifestId: manifest.id,
       name: manifest.name,
       description: manifest.description,
@@ -141,15 +159,27 @@ export class ModuleManifestDiscoveryService {
     }
   }
 
-  private toInvalidCardModel(error: unknown, context: ModuleParseContext, manifestText?: string): ModuleBrowserCard {
-    const message = error instanceof Error ? error.message : String(error);
+  private toInvalidCardModel(
+    error: unknown,
+    context: ModuleParseContext,
+    manifestText?: string,
+  ): ModuleBrowserCard {
+    const message = getErrorMessage(error);
     const warning = classifyModuleParseWarning(message);
     const raw = readRawModuleFields(message, manifestText);
     const status = warning.code === 'invalidKind' ? 'warning' : 'invalid';
 
     return {
       artifactKind: 'module',
-      stableId: withArtifactKindStableId('module', raw.manifestId || createFallbackStableId(context.rootPathLabel, raw.name)),
+      stableId: withArtifactKindStableId(
+        'module',
+        raw.manifestId ||
+          createHashFallbackStableId({
+            name: raw.name || context.rootPathLabel,
+            seed: context.rootPathLabel,
+            fallbackPrefix: 'module',
+          }),
+      ),
       manifestId: raw.manifestId,
       name: raw.name || `Invalid ${RISUMODULE_FILENAME} manifest`,
       description: raw.description,
@@ -188,26 +218,48 @@ function classifyModuleParseWarning(message: string): ManifestParseWarning {
   return { code: 'invalidJson', field: 'manifest', message };
 }
 
-function readRawModuleFields(message: string, manifestText?: string): Omit<ModuleBrowserCard, 'artifactKind' | 'stableId' | 'status' | 'markerUri' | 'rootUri' | 'rootPathLabel' | 'markerPathLabel' | 'warnings'> {
+function readRawModuleFields(
+  message: string,
+  manifestText?: string,
+): Omit<
+  ModuleBrowserCard,
+  | 'artifactKind'
+  | 'stableId'
+  | 'status'
+  | 'markerUri'
+  | 'rootUri'
+  | 'rootPathLabel'
+  | 'markerPathLabel'
+  | 'warnings'
+> {
   const fallback = createRawModuleFallback();
-  if (!manifestText || message.includes('Invalid .risumodule JSON') || message.includes('Could not read')) return fallback;
+  if (
+    !manifestText ||
+    message.includes('Invalid .risumodule JSON') ||
+    message.includes('Could not read')
+  )
+    return fallback;
 
   try {
     const parsed: unknown = JSON.parse(manifestText);
-    if (!isRecord(parsed)) return fallback;
+    if (!isPlainRecord(parsed)) return fallback;
     return {
       manifestId: typeof parsed.id === 'string' ? parsed.id : '',
       name: typeof parsed.name === 'string' ? parsed.name : fallback.name,
-      description: typeof parsed.description === 'string' ? parsed.description : fallback.description,
-      sourceFormat: parsed.sourceFormat === 'risum' || parsed.sourceFormat === 'json' || parsed.sourceFormat === 'scaffold'
-        ? parsed.sourceFormat
-        : 'unknown',
+      description:
+        typeof parsed.description === 'string' ? parsed.description : fallback.description,
+      sourceFormat:
+        parsed.sourceFormat === 'risum' ||
+        parsed.sourceFormat === 'json' ||
+        parsed.sourceFormat === 'scaffold'
+          ? parsed.sourceFormat
+          : 'unknown',
       namespace: typeof parsed.namespace === 'string' ? parsed.namespace : undefined,
       flags: {
         lowLevelAccess: parsed.lowLevelAccess === true,
         hideIcon: parsed.hideIcon === true,
         hasCjs: typeof parsed.cjs === 'string' && parsed.cjs.length > 0,
-        hasMcp: isRecord(parsed.mcp),
+        hasMcp: isPlainRecord(parsed.mcp),
       },
     };
   } catch {
@@ -215,7 +267,17 @@ function readRawModuleFields(message: string, manifestText?: string): Omit<Modul
   }
 }
 
-function createRawModuleFallback(): Omit<ModuleBrowserCard, 'artifactKind' | 'stableId' | 'status' | 'markerUri' | 'rootUri' | 'rootPathLabel' | 'markerPathLabel' | 'warnings'> {
+function createRawModuleFallback(): Omit<
+  ModuleBrowserCard,
+  | 'artifactKind'
+  | 'stableId'
+  | 'status'
+  | 'markerUri'
+  | 'rootUri'
+  | 'rootPathLabel'
+  | 'markerPathLabel'
+  | 'warnings'
+> {
   return {
     manifestId: '',
     name: '',
@@ -223,20 +285,6 @@ function createRawModuleFallback(): Omit<ModuleBrowserCard, 'artifactKind' | 'st
     sourceFormat: 'unknown',
     flags: { lowLevelAccess: false, hideIcon: false, hasCjs: false, hasMcp: false },
   };
-}
-
-function createFallbackStableId(rootPathLabel: string, name: string): string {
-  const slug = slugify(name || rootPathLabel) || 'module';
-  const hash = createHash('sha256').update(rootPathLabel).digest('hex').slice(0, 10);
-  return `${slug}-${hash}`;
-}
-
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40);
 }
 
 function normalizeModuleImagePath(value: string): string | null {
@@ -250,8 +298,4 @@ function normalizeModuleImagePath(value: string): string | null {
 
 function isSupportedImageExtension(extension: string): boolean {
   return ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.avif', '.svg'].includes(extension);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }

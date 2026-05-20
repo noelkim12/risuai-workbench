@@ -11,43 +11,17 @@ import {
   SELECTION_RANGE_PROVIDER_AVAILABILITY,
   SelectionRangeProvider,
 } from '../../src/features/editing';
-import { offsetToPosition } from '../../src/utils/position';
+import {
+  createSimpleProviderDeps,
+} from '../helpers/provider-test-harness';
 import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
-
-function locateNthOffset(text: string, needle: string, occurrence: number = 0): number {
-  let fromIndex = 0;
-  let foundIndex = -1;
-
-  for (let index = 0; index <= occurrence; index += 1) {
-    foundIndex = text.indexOf(needle, fromIndex);
-    if (foundIndex === -1) {
-      break;
-    }
-
-    fromIndex = foundIndex + needle.length;
-  }
-
-  expect(foundIndex).toBeGreaterThanOrEqual(0);
-  return foundIndex;
-}
-
-function positionAt(
-  text: string,
-  needle: string,
-  characterOffset: number = 0,
-  occurrence: number = 0,
-): Position {
-  return offsetToPosition(text, locateNthOffset(text, needle, occurrence) + characterOffset);
-}
+import { positionAt } from '../helpers/lsp-test-utils';
 
 function createProvider(
   request: ReturnType<typeof createFixtureRequest>,
   service: FragmentAnalysisService = new FragmentAnalysisService(),
 ): SelectionRangeProvider {
-  return new SelectionRangeProvider({
-    analysisService: service,
-    resolveRequest: ({ textDocument }) => (textDocument.uri === request.uri ? request : null),
-  });
+  return new SelectionRangeProvider(createSimpleProviderDeps(service, request));
 }
 
 function createParams(

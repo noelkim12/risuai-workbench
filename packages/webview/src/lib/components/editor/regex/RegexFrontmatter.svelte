@@ -6,6 +6,7 @@
 <script lang="ts">
   import type { RegexEditorState } from 'risu-workbench-core';
   import type { MainEditorDocumentWarningPayload } from '../../../types/mainEditor';
+  import FrontmatterSummaryBar from '../shared/FrontmatterSummaryBar.svelte';
 
   export let state: RegexEditorState;
   export let warnings: readonly MainEditorDocumentWarningPayload[];
@@ -14,6 +15,8 @@
   export let onChange: (state: RegexEditorState) => void;
 
   const REGEX_TYPES = ['editinput', 'editoutput', 'editdisplay', 'editprocess', 'edittrans', 'disabled'];
+
+  $: summaryPills = [`type: ${state.frontmatter.type || 'editprocess'}`, `flag: ${state.frontmatter.flag || 'none'}`] as const;
 
   function updateFrontmatterField(key: 'comment' | 'flag' | 'type', value: string): void {
     onChange({
@@ -27,13 +30,7 @@
 </script>
 
 <section class="regex-frontmatter" aria-label="Regex metadata">
-  <button type="button" class="lorebook-summary-bar" class:lorebook-summary-bar--open={open} aria-expanded={open} aria-controls="regex-frontmatter-panel" onclick={onToggleOpen}>
-    <span class="lorebook-summary-bar__disclosure" aria-hidden="true">{open ? '▾' : '▸'}</span>
-    <span class="lorebook-summary-bar__title">{state.frontmatter.comment || 'Untitled regex rule'}</span>
-    <span class="lorebook-summary-bar__pill">type: {state.frontmatter.type || 'editprocess'}</span>
-    <span class="lorebook-summary-bar__pill">flag: {state.frontmatter.flag || 'none'}</span>
-    <span class="lorebook-summary-bar__toggle">{open ? 'Hide details' : 'Show details'}</span>
-  </button>
+  <FrontmatterSummaryBar title={state.frontmatter.comment || 'Untitled regex rule'} pills={summaryPills} {open} controlsId="regex-frontmatter-panel" onToggle={onToggleOpen} />
 
   {#if warnings.length > 0}
     <div class="lorebook-frontmatter__warnings" role="status" aria-live="polite">

@@ -9,6 +9,7 @@ import {
 } from '../../src/features/symbols';
 import { positionToOffset } from '../../src/utils/position';
 import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
+import { buildRequest } from '../helpers/lsp-test-utils';
 
 interface DecodedSemanticToken {
   line: number;
@@ -32,15 +33,6 @@ function createRangeParams(
   return {
     textDocument: { uri },
     range,
-  };
-}
-
-function buildRequest(filePath: string, text: string, version: number = 1) {
-  return {
-    uri: `file://${filePath}`,
-    version,
-    filePath,
-    text,
   };
 }
 

@@ -6,6 +6,7 @@
 <script lang="ts">
   import type { PromptEditorState } from 'risu-workbench-core';
   import type { MainEditorDocumentWarningPayload } from '../../../types/mainEditor';
+  import FrontmatterSummaryBar from '../shared/FrontmatterSummaryBar.svelte';
 
   type PromptType = 'plain' | 'jailbreak' | 'cot' | 'chatML' | 'persona' | 'description' | 'lorebook' | 'postEverything' | 'memory' | 'authornote' | 'chat' | 'cache';
 
@@ -18,6 +19,7 @@
   export let onChange: (state: PromptEditorState) => void;
 
   $: promptType = isPromptTypeValue(state.type) ? state.type : 'plain';
+  $: summaryPills = [`type: ${promptType}`] as const;
 
   function updateField(key: string, value: string): void {
     const nextFrontmatter = { ...state.frontmatter, [key]: value };
@@ -30,12 +32,7 @@
 </script>
 
 <section class="prompt-frontmatter" aria-label="Prompt metadata">
-  <button type="button" class="lorebook-summary-bar" class:lorebook-summary-bar--open={open} aria-expanded={open} aria-controls="prompt-frontmatter-panel" onclick={onToggleOpen}>
-    <span class="lorebook-summary-bar__disclosure" aria-hidden="true">{open ? '▾' : '▸'}</span>
-    <span class="lorebook-summary-bar__title">{state.frontmatter.name || '.risuprompt item'}</span>
-    <span class="lorebook-summary-bar__pill">type: {promptType}</span>
-    <span class="lorebook-summary-bar__toggle">{open ? 'Hide details' : 'Show details'}</span>
-  </button>
+  <FrontmatterSummaryBar title={state.frontmatter.name || '.risuprompt item'} pills={summaryPills} {open} controlsId="prompt-frontmatter-panel" onToggle={onToggleOpen} />
 
   {#if warnings.length > 0}
     <div class="lorebook-frontmatter__warnings" role="status" aria-live="polite">

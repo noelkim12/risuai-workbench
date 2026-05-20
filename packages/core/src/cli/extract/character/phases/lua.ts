@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { sanitizeFilename } from '@/domain';
 import { ensureDir, writeText } from '@/node';
+import { getErrorMessage } from '../../../shared';
 import type { RisuLuaMode, RisuLuaRecoveryMode } from '../../../shared/lua-bundler/risulua-mode';
 import {
   decodeRisuLuaRecoveryBlock,
@@ -106,7 +107,7 @@ export async function phase4_extractTriggerLua(
 
     cleanupRisuLuaSplitTemps(outputDir);
     writeText(fileName, strippedLuaSource);
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     console.warn(
       `     ⚠️ RisuLua split failed; preserving ${path.relative('.', fileName)} as single-file Lua and continuing extract: ${message}`,
     );

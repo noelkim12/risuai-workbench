@@ -9,6 +9,7 @@ import {
   type MarkerEditorReadyMessage,
   type MarkerEditorSelectImageMessage,
   type MarkerEditorWebviewMessage,
+  type MessageEnvelope,
 } from '../types';
 import type {
   MarkerEditorReadyPayload,
@@ -18,6 +19,26 @@ import type {
 } from '../types/markerEditor';
 
 /**
+ * createMarkerEditorMessage 함수.
+ * Marker Editor webview outbound message의 protocol/version envelope를 한 곳에서 생성함.
+ *
+ * @param type - extension host가 라우팅할 Marker Editor message type literal
+ * @param payload - 해당 message type에 맞춰 전달할 request payload
+ * @returns Marker Editor protocol/version이 고정된 message envelope
+ */
+function createMarkerEditorMessage<TType extends string, TPayload>(
+  type: TType,
+  payload: TPayload,
+): MessageEnvelope<TType, TPayload> {
+  return {
+    protocol: MARKER_EDITOR_PROTOCOL,
+    version: MARKER_EDITOR_PROTOCOL_VERSION,
+    type,
+    payload,
+  };
+}
+
+/**
  * createMarkerEditorReadyMessage 함수.
  * Webview listener 준비 완료 후 extension host에 init 전송을 요청함.
  *
@@ -25,12 +46,7 @@ import type {
  * @returns Marker Editor ready message
  */
 export function createMarkerEditorReadyMessage(payload: MarkerEditorReadyPayload): MarkerEditorReadyMessage {
-  return {
-    protocol: MARKER_EDITOR_PROTOCOL,
-    version: MARKER_EDITOR_PROTOCOL_VERSION,
-    type: 'marker-editor/ready',
-    payload,
-  };
+  return createMarkerEditorMessage('marker-editor/ready', payload);
 }
 
 /**
@@ -41,12 +57,7 @@ export function createMarkerEditorReadyMessage(payload: MarkerEditorReadyPayload
  * @returns Marker Editor save request message
  */
 export function createMarkerEditorSaveMessage(payload: MarkerEditorSavePayload): MarkerEditorWebviewMessage {
-  return {
-    protocol: MARKER_EDITOR_PROTOCOL,
-    version: MARKER_EDITOR_PROTOCOL_VERSION,
-    type: 'marker-editor/save',
-    payload,
-  };
+  return createMarkerEditorMessage('marker-editor/save', payload);
 }
 
 /**
@@ -57,12 +68,7 @@ export function createMarkerEditorSaveMessage(payload: MarkerEditorSavePayload):
  * @returns Marker Editor reset request message
  */
 export function createMarkerEditorResetMessage(payload: MarkerEditorResetRequestPayload): MarkerEditorWebviewMessage {
-  return {
-    protocol: MARKER_EDITOR_PROTOCOL,
-    version: MARKER_EDITOR_PROTOCOL_VERSION,
-    type: 'marker-editor/reset',
-    payload,
-  };
+  return createMarkerEditorMessage('marker-editor/reset', payload);
 }
 
 /**
@@ -75,10 +81,5 @@ export function createMarkerEditorResetMessage(payload: MarkerEditorResetRequest
 export function createMarkerEditorSelectImageMessage(
   payload: MarkerEditorSelectImagePayload,
 ): MarkerEditorSelectImageMessage {
-  return {
-    protocol: MARKER_EDITOR_PROTOCOL,
-    version: MARKER_EDITOR_PROTOCOL_VERSION,
-    type: 'marker-editor/selectImage',
-    payload,
-  };
+  return createMarkerEditorMessage('marker-editor/selectImage', payload);
 }

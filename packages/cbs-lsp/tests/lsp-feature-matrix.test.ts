@@ -30,65 +30,15 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { fragmentAnalysisService } from '../src/core';
-import { positionToOffset, offsetToPosition } from '../src/utils/position';
+import { positionToOffset } from '../src/utils/position';
 import { registerServer } from '../src/server';
 import { getFixtureCorpusEntry, type FixtureCorpusEntry } from './fixtures/fixture-corpus';
+import { getCompletionItems, getLastDiagnostics, lineOf, positionAt } from './helpers/lsp-test-utils';
 
 function createDisposable() {
   return {
     dispose() {},
   };
-}
-
-function positionAt(
-  text: string,
-  needle: string,
-  characterOffset: number = 0,
-  occurrence: number = 0,
-) {
-  let searchFrom = 0;
-  let offset = -1;
-
-  for (let index = 0; index <= occurrence; index += 1) {
-    offset = text.indexOf(needle, searchFrom);
-    if (offset === -1) {
-      break;
-    }
-
-    searchFrom = offset + needle.length;
-  }
-
-  expect(offset).toBeGreaterThanOrEqual(0);
-  return offsetToPosition(text, offset + characterOffset);
-}
-
-function lineOf(text: string, needle: string, occurrence: number = 0): number {
-  return positionAt(text, needle, 0, occurrence).line;
-}
-
-function getCompletionItems(
-  result: CompletionItem[] | { items: CompletionItem[] } | null | undefined,
-) {
-  if (!result) {
-    return [];
-  }
-
-  return Array.isArray(result) ? result : result.items;
-}
-
-function getHoverMarkdown(hover: Hover | null): string | null {
-  if (!hover) {
-    return null;
-  }
-
-  const contents = hover.contents as { value?: string };
-  return contents.value ?? null;
-}
-
-function getLastDiagnostics(connection: FakeConnection) {
-  const diagnostics = connection.diagnostics[connection.diagnostics.length - 1];
-  expect(diagnostics).toBeDefined();
-  return diagnostics!;
 }
 
 function decodeSemanticTokenTexts(text: string, semanticTokens: SemanticTokens): string[] {

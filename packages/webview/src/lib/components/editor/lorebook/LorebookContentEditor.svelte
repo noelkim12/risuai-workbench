@@ -5,14 +5,15 @@
 
 <script lang="ts">
   import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
-  import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker.js?worker';
   import { onDestroy, onMount } from 'svelte';
   import { getMainEditorChangeEndPosition, registerMainEditorCbsRootCompletionProvider, shouldTriggerMainEditorCbsSuggestForChange, triggerMainEditorCbsSuggest } from '../../../monaco/mainEditorCbsAutoSuggest';
   import { MAIN_EDITOR_CBS_LANGUAGE_ID, retainMainEditorCbsLanguage } from '../../../monaco/mainEditorCbsLanguage';
   import type { MainEditorMonacoLspClient } from '../../../monaco/mainEditorLspClient';
-  import { createWorkbenchMonacoEditorOptions, registerMainEditorFindShortcut, retainWorkbenchMonacoThemeSync, syncMonacoModelValuePreservingViewState } from '../../../monaco/mainEditorWorkbenchTheme';
+  import type { MainEditorContentVersionCounter, MainEditorSectionController } from '../../../monaco/mainEditorSectionController';
+  import { createMainEditorContentVersionCounter, createMainEditorSectionController } from '../../../monaco/mainEditorSectionController';
   import type { MainEditorDiagnosticMarkerPayload } from '../../../types/mainEditor';
-  import { type AdvancedLspRequestController, registerAdvancedLspProviders } from '../lsp/advancedLspBridge';
+  import type { AdvancedLspRequestController } from '../lsp/advancedLspBridge';
+  import { registerAdvancedLspProviders } from '../lsp/advancedLspBridge';
   import type { CbsSnippetVariant } from './lorebookAuthoringTypes';
 
   export let documentUri: string;
@@ -33,75 +34,49 @@
   let container: HTMLDivElement;
   let editor: monaco.editor.IStandaloneCodeEditor | undefined;
   let model: monaco.editor.ITextModel | undefined;
-  let subscription: monaco.IDisposable | undefined;
-  let themeSyncDisposable: monaco.IDisposable | undefined;
-  let cbsLanguageDisposable: monaco.IDisposable | undefined;
-  let findShortcutDisposable: monaco.IDisposable | undefined;
+  let controller: MainEditorSectionController | undefined;
   let rootCompletionDisposable: monaco.IDisposable | undefined;
   let providerDisposables: monaco.IDisposable[] = [];
-  let applyingExternalValue = false;
   let consumedSnippet: CbsSnippetVariant | undefined;
-  let localContentVersion = contentVersion;
+  const contentVersionCounter: MainEditorContentVersionCounter = createMainEditorContentVersionCounter(contentVersion);
   let pendingSuggestFrame: number | undefined;
   let lastSuggestKey = '';
 
-  const monacoGlobal = globalThis as typeof globalThis & {
-    MonacoEnvironment?: { getWorker: () => Worker };
-  };
-
-  monacoGlobal.MonacoEnvironment = {
-    getWorker: () => new EditorWorker(),
-  };
-
   onMount(() => {
-    themeSyncDisposable = retainWorkbenchMonacoThemeSync();
-    cbsLanguageDisposable = retainMainEditorCbsLanguage(monaco);
-    model = monaco.editor.createModel(contentText, CONTENT_LANGUAGE_ID, monaco.Uri.parse(`${documentUri}#CONTENT`));
-    editor = monaco.editor.create(container, {
-      ...createWorkbenchMonacoEditorOptions(),
-      model,
-      automaticLayout: true,
-      minimap: { enabled: false },
-      wordWrap: 'on',
-      scrollBeyondLastLine: false,
-      renderWhitespace: 'selection',
+    controller = createMainEditorSectionController({
+      container,
+      initialValue: contentText,
+      languageId: CONTENT_LANGUAGE_ID,
+      modelUri: `${documentUri}#CONTENT`,
+      onChange: (value, event) => {
+        onChange(value);
+        scheduleCbsAutoSuggest(event.changes);
+      },
+      onContentVersionChange,
+      contentVersionCounter,
+      retainLanguage: () => retainMainEditorCbsLanguage(monaco),
     });
-    findShortcutDisposable = registerMainEditorFindShortcut(editor);
+    editor = controller.editor;
+    model = controller.model;
 
-    subscription = model.onDidChangeContent((event) => {
-      if (!model || applyingExternalValue) return;
-      localContentVersion += 1;
-      onContentVersionChange(localContentVersion);
-      onChange(model.getValue());
-      scheduleCbsAutoSuggest(event.changes);
-    });
     rootCompletionDisposable = registerMainEditorCbsRootCompletionProvider(monaco, CONTENT_LANGUAGE_ID);
     registerProviders();
     applyMarkers();
   });
 
   onDestroy(() => {
-    subscription?.dispose();
     if (pendingSuggestFrame !== undefined) cancelAnimationFrame(pendingSuggestFrame);
-    themeSyncDisposable?.dispose();
-    cbsLanguageDisposable?.dispose();
-    findShortcutDisposable?.dispose();
     rootCompletionDisposable?.dispose();
     clearMarkers();
     disposeProviders();
-    editor?.dispose();
-    model?.dispose();
+    controller?.dispose();
   });
 
-  $: if (contentVersion !== localContentVersion) {
-    localContentVersion = contentVersion;
+  $: if (contentVersion !== contentVersionCounter.get()) {
+    contentVersionCounter.set(contentVersion);
   }
 
-  $: if (model && contentText !== model.getValue()) {
-    applyingExternalValue = true;
-    syncMonacoModelValuePreservingViewState(editor, model, contentText);
-    applyingExternalValue = false;
-  }
+  $: controller?.syncExternalValue(contentText);
 
   $: if (model && documentVersion >= 0) {
     applyMarkers();
@@ -172,7 +147,7 @@
     if (!triggerChange) return;
 
     const position = getMainEditorChangeEndPosition(triggerChange);
-    const key = `${localContentVersion}:${position.lineNumber}:${position.column}`;
+    const key = `${contentVersionCounter.get()}:${position.lineNumber}:${position.column}`;
     if (key === lastSuggestKey) return;
     lastSuggestKey = key;
     if (pendingSuggestFrame !== undefined) cancelAnimationFrame(pendingSuggestFrame);

@@ -8,6 +8,7 @@ import { createDecipheriv, createHash } from 'node:crypto';
 import path from 'node:path';
 import { decode as decodeMsgpack } from 'msgpackr';
 import { decompressSync } from 'fflate';
+import { getErrorMessage } from '../../../shared';
 import { decodeRPackData, initRPack } from '../../parsers';
 import { detectPresetType, isRecord } from './shared';
 import type { ParsedPreset } from './types';
@@ -26,7 +27,7 @@ export function phase1_parsePreset(inputPath: string): ParsedPreset {
     try {
       data = JSON.parse(buf.toString('utf-8'));
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       throw new Error(`JSON 파싱 실패: ${message}`);
     }
 
@@ -111,7 +112,7 @@ function decodePresetContainer(buf: Buffer, inputPath: string): Record<string, u
   try {
     decompressed = decompressSync(new Uint8Array(buf));
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     throw new Error(`${path.basename(inputPath)} 압축 해제 실패: ${message}`);
   }
 

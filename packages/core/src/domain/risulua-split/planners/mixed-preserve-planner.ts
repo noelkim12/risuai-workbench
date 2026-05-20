@@ -1,13 +1,17 @@
 import luaparse from 'luaparse';
 
+import { getErrorMessage } from '../../../shared/errors';
+
 import { evaluateLuaRuntimeRiskPolicy } from '../profiling/lua-runtime-risk-policy';
 import { writeRisuLuaSplitPlan } from '../output/plan-writer';
 import { extractRisuLuaPreloadModules, type RisuLuaExtractedPreloadModule } from '../extractors/preload-extractor';
 import { writeRisuLuaSplitReport } from '../output/report-writer';
-import { buildLineStarts, lineAtOffset } from '../shared/range-utils';
 import { extractRisuLuaSections, type RisuLuaExtractedSection } from '../extractors/section-extractor';
 import { detectRisuLuaSourceProfile } from '../profiling/source-profile';
 import { writeRisuLuaWorkspaceFiles, type RisuLuaWorkspaceFile } from '../output/workspace-writer';
+import { lineOnlyRange, wholeSourceRange } from '../shared/source-range';
+import { inferTargetName, normalizeSourcePath } from '../shared/source-path';
+import { collectPresent } from '../shared/string-patterns';
 import type {
   LuaDetectedRoot,
   LuaHostApiSummary,
@@ -350,7 +354,7 @@ function detectParseFailure(source: string): string | null {
     luaparse.parse(source, { comments: false, locations: true, ranges: true, scope: true, luaVersion: '5.3' });
     return null;
   } catch (error) {
-    return error instanceof Error ? error.message : String(error);
+    return getErrorMessage(error);
   }
 }
 
@@ -381,31 +385,4 @@ function summarizeHostApis(source: string): LuaHostApiSummary {
     asyncCalls: collectPresent(source, ['LLM', 'request', 'Promise', 'async']),
     unknownGlobals: [],
   };
-}
-
-function wholeSourceRange(source: string): LuaSourceRange {
-  const lineStarts = buildLineStarts(source);
-  const endOffset = Math.max(0, source.length - 1);
-  return { startLine: 1, endLine: lineAtOffset(endOffset, lineStarts), startOffset: 0, endOffset: source.length };
-}
-
-function lineOnlyRange(line: number): LuaSourceRange {
-  return { startLine: line, endLine: line, startOffset: 0, endOffset: 0 };
-}
-
-function collectPresent(source: string, names: string[]): string[] {
-  return names.filter((name) => new RegExp(`\\b${escapeRegExp(name)}\\b`).test(source));
-}
-
-function inferTargetName(sourcePath: string): string {
-  const fileName = normalizeSourcePath(sourcePath).split('/').pop() ?? 'main.risulua';
-  return fileName.replace(/\.risulua$/i, '') || 'main';
-}
-
-function normalizeSourcePath(sourcePath: string): string {
-  return sourcePath.replace(/\\/g, '/');
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

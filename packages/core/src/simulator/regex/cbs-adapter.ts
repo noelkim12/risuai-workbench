@@ -6,6 +6,7 @@ import { simulateCbsText } from '../simulate';
 import type { CbsSimulationDiagnostic, CbsSimulationResult, CbsSimulationStatus } from '../types';
 import type { SimulatorDiagnostic } from './shared';
 import type { RegexCbsSectionSimulationInput, RegexCbsSectionSimulationResult } from './types';
+import { isPlainRecord } from '@/shared/guards';
 
 const EMPTY_COVERAGE: CbsSimulationResult['coverage'] = {
   totalMacros: 0,
@@ -124,12 +125,13 @@ function createDiagnosticDetails(
 /**
  * isRecord 함수.
  * unknown diagnostic data를 details에 안전하게 담을 수 있는 record인지 확인함.
+ * 공유 isPlainRecord에 위임함.
  *
  * @param value - 검사할 diagnostic data
  * @returns non-null object이고 array가 아니면 true
  */
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return isPlainRecord(value);
 }
 
 /**

@@ -96,10 +96,10 @@ end`;
   describe('target discrimination', () => {
     it('rejects preset target with clear error', () => {
       expect(() => buildLuaPath('preset' as CustomExtensionTarget, 'test')).toThrow(
-        LuaAdapterError
+        LuaAdapterError,
       );
       expect(() => buildLuaPath('preset' as CustomExtensionTarget, 'test')).toThrow(
-        /preset.*does not support.*risulua/
+        /preset.*does not support.*risulua/,
       );
     });
 
@@ -143,8 +143,8 @@ end`;
 
     it('uses target name for naming (not inferred function names)', () => {
       // Per spec: naming is based on target name, not function names in the script
-      const path = buildLuaPath('module', 'merry-rpg-module');
-      expect(path).toBe('lua/merry-rpg-module.risulua');
+      const path = buildLuaPath('module', 'sample-module');
+      expect(path).toBe('lua/sample-module.risulua');
     });
   });
 
@@ -180,9 +180,9 @@ end`;
 
     it('rejects preset target', () => {
       const charx = { triggerscript: 'content' };
-      expect(() =>
-        extractLuaFromCharx(charx, 'preset' as CustomExtensionTarget)
-      ).toThrow(LuaAdapterError);
+      expect(() => extractLuaFromCharx(charx, 'preset' as CustomExtensionTarget)).toThrow(
+        LuaAdapterError,
+      );
     });
   });
 
@@ -231,9 +231,9 @@ end`;
 
     it('rejects preset target', () => {
       const module = { triggerscript: 'content' };
-      expect(() =>
-        extractLuaFromModule(module, 'preset' as CustomExtensionTarget)
-      ).toThrow(LuaAdapterError);
+      expect(() => extractLuaFromModule(module, 'preset' as CustomExtensionTarget)).toThrow(
+        LuaAdapterError,
+      );
     });
   });
 
@@ -258,16 +258,14 @@ end`;
 
     it('rejects module target for charx injection', () => {
       const charx: { triggerscript?: string } = {};
-      expect(() => injectLuaIntoCharx(charx, 'content', 'module')).toThrow(
-        LuaAdapterError
-      );
+      expect(() => injectLuaIntoCharx(charx, 'content', 'module')).toThrow(LuaAdapterError);
     });
 
     it('rejects preset target', () => {
       const charx: { triggerscript?: string } = {};
-      expect(() =>
-        injectLuaIntoCharx(charx, 'content', 'preset' as CustomExtensionTarget)
-      ).toThrow(LuaAdapterError);
+      expect(() => injectLuaIntoCharx(charx, 'content', 'preset' as CustomExtensionTarget)).toThrow(
+        LuaAdapterError,
+      );
     });
   });
 
@@ -311,15 +309,13 @@ end`;
 
     it('rejects charx target for module injection', () => {
       const module: { triggerscript?: string } = {};
-      expect(() => injectLuaIntoModule(module, 'content', 'charx')).toThrow(
-        LuaAdapterError
-      );
+      expect(() => injectLuaIntoModule(module, 'content', 'charx')).toThrow(LuaAdapterError);
     });
 
     it('rejects preset target', () => {
       const module: { triggerscript?: string } = {};
       expect(() =>
-        injectLuaIntoModule(module, 'content', 'preset' as CustomExtensionTarget)
+        injectLuaIntoModule(module, 'content', 'preset' as CustomExtensionTarget),
       ).toThrow(LuaAdapterError);
     });
   });
@@ -350,11 +346,9 @@ end`;
         source: 'lua/b.risulua',
         content: 'function b() end',
       };
+      expect(() => resolveDuplicateLuaSources([file1, file2])).toThrow(LuaAdapterError);
       expect(() => resolveDuplicateLuaSources([file1, file2])).toThrow(
-        LuaAdapterError
-      );
-      expect(() => resolveDuplicateLuaSources([file1, file2])).toThrow(
-        /Duplicate .risulua sources.*multiple files found/
+        /Duplicate .risulua sources.*multiple files found/,
       );
     });
 
@@ -369,11 +363,9 @@ end`;
         source: 'lua/script2.risulua',
         content: 'function two() end',
       };
+      expect(() => resolveDuplicateLuaSources([file1, file2])).toThrow(LuaAdapterError);
       expect(() => resolveDuplicateLuaSources([file1, file2])).toThrow(
-        LuaAdapterError
-      );
-      expect(() => resolveDuplicateLuaSources([file1, file2])).toThrow(
-        /Duplicate .risulua sources.*multiple files found/
+        /Duplicate .risulua sources.*multiple files found/,
       );
     });
 
@@ -497,7 +489,7 @@ end`;
         { target: 'charx' as const, source: 'lua/char2.risulua', content: 'b' },
       ];
       expect(() => resolveDuplicateLuaSources(sources)).toThrow(
-        /Only one .risulua file per target/
+        /Only one .risulua file per target/,
       );
     });
 
@@ -508,7 +500,7 @@ end`;
         { target: 'module' as const, source: 'lua/mod2.risulua', content: 'b' },
       ];
       expect(() => resolveDuplicateLuaSources(sources)).toThrow(
-        /Only one .risulua file per target/
+        /Only one .risulua file per target/,
       );
     });
 

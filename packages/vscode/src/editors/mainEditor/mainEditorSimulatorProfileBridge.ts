@@ -5,6 +5,7 @@
 
 import * as vscode from 'vscode';
 import { createDefaultMainEditorSimulatorProfile, type MainEditorSimulatorProfile } from 'risu-workbench-core';
+import { isPlainRecord as isRecord } from '../../shared/protocolEnvelope';
 import type {
   MainEditorSimulatorProfileListRequestPayload,
   MainEditorSimulatorProfileListResultPayload,
@@ -173,10 +174,4 @@ function toProfileCandidateWithRequiredVariableMaps(value: unknown): unknown {
         }
       : value.variables,
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
 }

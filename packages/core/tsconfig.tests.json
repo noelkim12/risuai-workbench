@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "declaration": false,
+    "declarationMap": false,
+    "module": "ES2022",
+    "noCheck": true,
+    "noEmit": true,
+    "rootDir": "../..",
+    "types": ["node"]
+  },
+  "include": ["tests/**/*.ts", "src/ambient/**/*.d.ts", "../../tests/helpers/**/*.ts"],
+  "exclude": ["node_modules", "dist", "dist-tests"]
+}

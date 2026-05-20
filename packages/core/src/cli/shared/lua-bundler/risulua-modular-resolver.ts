@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { getErrorMessage } from '../errors';
 import {
   type LuaAstNode,
   type RisuLuaForbiddenDiagnostic,
@@ -383,7 +384,7 @@ export function extractRisuLuaStaticRequireReferences(params: {
     try {
       toPath = resolveRisuLuaModulePath(sourceRoot, requireId);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       const code: RisuLuaResolverErrorCode = message.includes('escapes') ? 'root_escape' : 'invalid_module_id';
       throw resolverError({
         code,
@@ -482,7 +483,7 @@ function parseLuaModule(moduleId: string, filePath: string, source: string): Lua
   try {
     return parseRisuLuaSource(source);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     throw resolverError({
       code: 'parse_error',
       moduleId,

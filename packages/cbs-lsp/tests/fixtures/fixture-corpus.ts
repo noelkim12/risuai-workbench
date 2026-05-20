@@ -7,6 +7,12 @@ import type {
   Hover,
   SymbolInformation,
 } from 'vscode-languageserver/node';
+import type { BaseFixtureCorpusEntry } from '../../../../tests/helpers/fixture-corpus';
+import {
+  freezeCorpusMap,
+  filterCorpusEntries,
+  getCorpusEntryOrThrow,
+} from '../../../../tests/helpers/fixture-corpus';
 import {
   DIAGNOSTIC_TAXONOMY,
   DiagnosticCode,
@@ -35,10 +41,7 @@ import {
   normalizeCompletionItemsForSnapshot,
   type NormalizedCompletionItemSnapshot,
 } from '../../src/features/completion';
-import {
-  normalizeHoverForSnapshot,
-  type NormalizedHoverSnapshot,
-} from '../../src/features/hover';
+import { normalizeHoverForSnapshot, type NormalizedHoverSnapshot } from '../../src/features/hover';
 import {
   normalizeCodeActionsEnvelopeForSnapshot,
   normalizeCodeActionsForSnapshot,
@@ -95,7 +98,12 @@ export type FixtureCorpusArtifact =
 export type FixtureCorpusSourceKind = 'inline-document';
 export type FixtureCorpusKind = 'representative' | 'excluded' | 'edge-case';
 export type FixtureMatrixArea = 'service' | 'remap' | 'locator' | 'diagnostic-taxonomy';
-export type FormattingContractCoverage = 'single-fragment' | 'multi-fragment' | 'pure-mode' | 'malformed' | 'unicode';
+export type FormattingContractCoverage =
+  | 'single-fragment'
+  | 'multi-fragment'
+  | 'pure-mode'
+  | 'malformed'
+  | 'unicode';
 
 export interface FixtureExpectedDiagnosticRule {
   category: DiagnosticRuleCategory;
@@ -108,20 +116,16 @@ export interface FixtureExpectedDiagnosticRule {
 
 // fixture 한 건의 최종 형태
 // 테스트가 바로 꺼내 쓸 수 있게 uri, filePath, 기대값까지 포함한 구조
-export interface FixtureCorpusEntry {
-  id: string;
-  label: string;
+export interface FixtureCorpusEntry extends BaseFixtureCorpusEntry {
   kind: FixtureCorpusKind;
   artifact: FixtureCorpusArtifact;
   cbsBearing: boolean;
   sourceKind: FixtureCorpusSourceKind;
-  relativePath: string;
   filePath: string;
   uri: string;
   expectedSections: readonly string[];
   expectedDiagnosticCodes: readonly DiagnosticCode[];
   expectedDiagnosticRules: readonly FixtureExpectedDiagnosticRule[];
-  features: readonly string[];
   text: string;
 }
 
@@ -645,7 +649,16 @@ const fixtureCorpusSeeds: readonly FixtureCorpusSeed[] = [
     expectedSections: ['OUT'],
     expectedDiagnosticCodes: [DiagnosticCode.UnclosedMacro],
     features: ['malformed-section', 'recovery', 'taxonomy'],
-    text: ['---', 'comment: recovery', 'type: plain', '---', '@@ IN', 'broken header', '@@@ OUT', '{{user'].join('\n'),
+    text: [
+      '---',
+      'comment: recovery',
+      'type: plain',
+      '---',
+      '@@ IN',
+      'broken header',
+      '@@@ OUT',
+      '{{user',
+    ].join('\n'),
   },
   {
     id: 'regex-missing-required-argument',
@@ -879,8 +892,9 @@ const fixtureCorpusSeeds: readonly FixtureCorpusSeed[] = [
 
 // 최종 fixture corpus
 // seed에 가상 경로와 URI를 붙여서 테스트가 실제 문서처럼 다루게 만드는 구간
-export const CBS_LSP_FIXTURE_CORPUS: readonly FixtureCorpusEntry[] = Object.freeze(
-  fixtureCorpusSeeds.map((entry) => {
+export const CBS_LSP_FIXTURE_CORPUS: readonly FixtureCorpusEntry[] = freezeCorpusMap(
+  fixtureCorpusSeeds,
+  (entry) => {
     const filePath = `/fixtures/${entry.relativePath}`;
     const expectedDiagnosticCodes = entry.expectedDiagnosticCodes ?? [];
 
@@ -902,7 +916,7 @@ export const CBS_LSP_FIXTURE_CORPUS: readonly FixtureCorpusEntry[] = Object.free
         } satisfies FixtureExpectedDiagnosticRule;
       }),
     };
-  }),
+  },
 );
 
 const FORMATTING_CONTRACT_FIXTURE_IDS = [
@@ -949,11 +963,10 @@ export const FIXTURE_RED_TEST_MATRIX = Object.freeze(fixtureRedTestMatrix);
  * @returns 조건에 맞는 fixture 목록
  */
 export function listFixtureCorpusEntries(kind?: FixtureCorpusKind): readonly FixtureCorpusEntry[] {
-  if (!kind) {
-    return CBS_LSP_FIXTURE_CORPUS;
-  }
-
-  return CBS_LSP_FIXTURE_CORPUS.filter((entry) => entry.kind === kind);
+  return filterCorpusEntries(
+    CBS_LSP_FIXTURE_CORPUS,
+    kind ? (entry) => entry.kind === kind : undefined,
+  );
 }
 
 /**
@@ -988,12 +1001,11 @@ export function listFormattingContractFixtures(): readonly FormattingContractFix
  * @returns id와 일치하는 fixture 한 건
  */
 export function getFixtureCorpusEntry(id: string): FixtureCorpusEntry {
-  const entry = CBS_LSP_FIXTURE_CORPUS.find((candidate) => candidate.id === id);
-  if (!entry) {
-    throw new Error(`Unknown cbs-lsp fixture corpus entry: ${id}`);
-  }
-
-  return entry;
+  return getCorpusEntryOrThrow(
+    CBS_LSP_FIXTURE_CORPUS,
+    id,
+    `Unknown cbs-lsp fixture corpus entry: ${id}`,
+  );
 }
 
 /**
@@ -1209,9 +1221,7 @@ export function snapshotProviderBundle(bundle: {
  * @param lenses - 정규화할 CodeLens 목록
  * @returns count/command/cycle semantics를 포함한 stable CodeLens snapshot 배열
  */
-export function snapshotCodeLenses(
-  lenses: readonly CodeLens[],
-): NormalizedCodeLensSnapshot[] {
+export function snapshotCodeLenses(lenses: readonly CodeLens[]): NormalizedCodeLensSnapshot[] {
   return normalizeCodeLensesForSnapshot(lenses);
 }
 
@@ -1316,8 +1326,6 @@ export function serializeAgentContractForGolden(
  * @param bundle - 직렬화할 normalized provider bundle snapshot
  * @returns golden 비교용 deterministic JSON 문자열
  */
-export function serializeProviderBundleForGolden(
-  bundle: NormalizedProviderBundleSnapshot,
-): string {
+export function serializeProviderBundleForGolden(bundle: NormalizedProviderBundleSnapshot): string {
   return JSON.stringify(bundle, null, 2);
 }
