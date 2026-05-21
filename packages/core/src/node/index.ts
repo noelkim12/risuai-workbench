@@ -68,6 +68,12 @@ import {
   type RisuLuaSourceRange,
   type RisuLuaStaticRequireReference,
 } from '../cli/shared/lua-bundler/risulua-modular-resolver';
+import {
+  appendLogEntry,
+  rewriteIndexArtifactsSection,
+  writeArtifactFiles,
+  writeSchemaIfChanged,
+} from '../cli/analyze/shared/wiki/write-protect';
 
 const parsePngChunks = parsePngTextChunks;
 
@@ -134,4 +140,8 @@ export {
   type RisuLuaSourceModuleFile,
   type RisuLuaSourceRange,
   type RisuLuaStaticRequireReference,
+  appendLogEntry,
+  rewriteIndexArtifactsSection,
+  writeArtifactFiles,
+  writeSchemaIfChanged,
 };
