@@ -72,6 +72,22 @@ export {
   type LorebookRecursionMode,
 } from './lorebook/activation-chain';
 export {
+  normalizeLorebookDecoratorName,
+  getLorebookDecoratorSpec,
+  listLorebookDecoratorSpecs,
+  getLorebookDecoratorCompletionCandidates,
+  formatLorebookDecoratorMarkdown,
+  formatLorebookDecoratorPlain,
+  getLorebookDecoratorCompletionContext,
+  getLorebookDecoratorHoverToken,
+  type LorebookDecoratorSupportLevel,
+  type LorebookDecoratorSpec,
+  type LorebookDecoratorCompletionCandidate,
+  type LorebookDecoratorCategory,
+  type LorebookDecoratorCompletionContext,
+  type LorebookDecoratorHoverToken,
+} from './lorebook/decorators';
+export {
   collectRegexCBSFromCharx,
   collectRegexCBSFromCharx as collectRegexCBSFromCard,
   collectRegexCBSFromScripts,
