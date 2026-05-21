@@ -1051,4 +1051,248 @@ describe('HoverProvider', () => {
 
     expect(provider.provide(createParams(request, position(entry.text)))).toBeNull();
   });
+
+  // ── Decorator hover ─────────────────────────────────────────────────
+
+  it('returns decorator markdown hover for @@recursive at token start', () => {
+    const text = [
+      '---',
+      'name: decorator-hover',
+      '---',
+      '@@@ CONTENT',
+      '@@recursive',
+      'Hello world',
+      '',
+    ].join('\n');
+    const request = {
+      uri: 'file:///fixtures/decorator-hover.risulorebook',
+      version: 1,
+      filePath: '/fixtures/decorator-hover.risulorebook',
+      text,
+    };
+    const provider = createProvider(new FragmentAnalysisService(), request);
+    // Cursor at start of @@recursive (character 0 on line 4)
+    const hover = provider.provide(
+      createParams(request, { line: 4, character: 0 }),
+    );
+    const markdown = expectMarkdownHover(hover);
+
+    expect(markdown).toContain('**@@recursive**');
+    expect(markdown).toContain('Include in recursive scan source');
+    expect(markdown).toContain('**Support:** Active');
+  });
+
+  it('returns decorator markdown hover for @@recursive at token middle', () => {
+    const text = [
+      '---',
+      'name: decorator-hover-mid',
+      '---',
+      '@@@ CONTENT',
+      '@@recursive',
+      'Hello world',
+      '',
+    ].join('\n');
+    const request = {
+      uri: 'file:///fixtures/decorator-hover-mid.risulorebook',
+      version: 1,
+      filePath: '/fixtures/decorator-hover-mid.risulorebook',
+      text,
+    };
+    const provider = createProvider(new FragmentAnalysisService(), request);
+    // Cursor in the middle of @@recursive (character 6)
+    const hover = provider.provide(
+      createParams(request, { line: 4, character: 6 }),
+    );
+    const markdown = expectMarkdownHover(hover);
+
+    expect(markdown).toContain('**@@recursive**');
+    expect(markdown).toContain('Include in recursive scan source');
+  });
+
+  it('returns decorator markdown hover for @@recursive at token end boundary', () => {
+    const text = [
+      '---',
+      'name: decorator-hover-end',
+      '---',
+      '@@@ CONTENT',
+      '@@recursive',
+      'Hello world',
+      '',
+    ].join('\n');
+    const request = {
+      uri: 'file:///fixtures/decorator-hover-end.risulorebook',
+      version: 1,
+      filePath: '/fixtures/decorator-hover-end.risulorebook',
+      text,
+    };
+    const provider = createProvider(new FragmentAnalysisService(), request);
+    // Cursor at endOffset of @@recursive (character 11 — '@@recursive' is 11 chars)
+    const hover = provider.provide(
+      createParams(request, { line: 4, character: 11 }),
+    );
+    const markdown = expectMarkdownHover(hover);
+
+    expect(markdown).toContain('**@@recursive**');
+    expect(markdown).toContain('Include in recursive scan source');
+  });
+
+  it('returns no decorator hover beyond the @@recursive token boundary', () => {
+    const text = [
+      '---',
+      'name: decorator-hover-beyond',
+      '---',
+      '@@@ CONTENT',
+      '@@recursive ',
+      'Hello world',
+      '',
+    ].join('\n');
+    const request = {
+      uri: 'file:///fixtures/decorator-hover-beyond.risulorebook',
+      version: 1,
+      filePath: '/fixtures/decorator-hover-beyond.risulorebook',
+      text,
+    };
+    const provider = createProvider(new FragmentAnalysisService(), request);
+    // Cursor at character 12 — in trailing whitespace after @@recursive
+    const hover = provider.provide(
+      createParams(request, { line: 4, character: 12 }),
+    );
+
+    expect(hover).toBeNull();
+  });
+
+  it('returns decorator markdown hover for unsupported decorator @@instruct_depth', () => {
+    const text = [
+      '---',
+      'name: decorator-hover-unsupported',
+      '---',
+      '@@@ CONTENT',
+      '@@instruct_depth 5',
+      'Hello world',
+      '',
+    ].join('\n');
+    const request = {
+      uri: 'file:///fixtures/decorator-hover-unsupported.risulorebook',
+      version: 1,
+      filePath: '/fixtures/decorator-hover-unsupported.risulorebook',
+      text,
+    };
+    const provider = createProvider(new FragmentAnalysisService(), request);
+    // Cursor on @@instruct_depth token
+    const hover = provider.provide(
+      createParams(request, { line: 4, character: 5 }),
+    );
+    const markdown = expectMarkdownHover(hover);
+
+    expect(markdown).toContain('**@@instruct_depth N**');
+    expect(markdown).toContain('**Support:** Unsupported');
+    expect(markdown).toContain('Instruct mode depth');
+  });
+
+  it('returns no hover for unknown decorator @@made_up', () => {
+    const text = [
+      '---',
+      'name: decorator-hover-unknown',
+      '---',
+      '@@@ CONTENT',
+      '@@made_up',
+      'Hello world',
+      '',
+    ].join('\n');
+    const request = {
+      uri: 'file:///fixtures/decorator-hover-unknown.risulorebook',
+      version: 1,
+      filePath: '/fixtures/decorator-hover-unknown.risulorebook',
+      text,
+    };
+    const provider = createProvider(new FragmentAnalysisService(), request);
+    const hover = provider.provide(
+      createParams(request, { line: 4, character: 5 }),
+    );
+
+    expect(hover).toBeNull();
+  });
+
+  it('returns no decorator hover for single @', () => {
+    const text = [
+      '---',
+      'name: decorator-hover-single-at',
+      '---',
+      '@@@ CONTENT',
+      '@depth',
+      'Hello world',
+      '',
+    ].join('\n');
+    const request = {
+      uri: 'file:///fixtures/decorator-hover-single-at.risulorebook',
+      version: 1,
+      filePath: '/fixtures/decorator-hover-single-at.risulorebook',
+      text,
+    };
+    const provider = createProvider(new FragmentAnalysisService(), request);
+    const hover = provider.provide(
+      createParams(request, { line: 4, character: 3 }),
+    );
+
+    expect(hover).toBeNull();
+  });
+
+  it('returns no decorator hover for @@decorator inline in prose', () => {
+    const text = [
+      '---',
+      'name: decorator-hover-inline',
+      '---',
+      '@@@ CONTENT',
+      'Some text @@recursive more text',
+      '',
+    ].join('\n');
+    const request = {
+      uri: 'file:///fixtures/decorator-hover-inline.risulorebook',
+      version: 1,
+      filePath: '/fixtures/decorator-hover-inline.risulorebook',
+      text,
+    };
+    const provider = createProvider(new FragmentAnalysisService(), request);
+    // Cursor on the @@ in the middle of the line
+    const hover = provider.provide(
+      createParams(request, { line: 4, character: 13 }),
+    );
+
+    expect(hover).toBeNull();
+  });
+
+  it('returns no decorator hover for normal prose without @@', () => {
+    const text = [
+      '---',
+      'name: decorator-hover-prose',
+      '---',
+      '@@@ CONTENT',
+      'This is normal text without decorators.',
+      '',
+    ].join('\n');
+    const request = {
+      uri: 'file:///fixtures/decorator-hover-prose.risulorebook',
+      version: 1,
+      filePath: '/fixtures/decorator-hover-prose.risulorebook',
+      text,
+    };
+    const provider = createProvider(new FragmentAnalysisService(), request);
+    const hover = provider.provide(
+      createParams(request, { line: 4, character: 10 }),
+    );
+
+    expect(hover).toBeNull();
+  });
+
+  it('preserves existing hover behavior when decorator hover does not match', () => {
+    const entry = getFixtureCorpusEntry('regex-block-header');
+    const request = createFixtureRequest(entry);
+    const provider = createProvider(new FragmentAnalysisService(), request);
+    // This should still return #when hover, not decorator hover
+    const hover = provider.provide(createParams(request, positionAt(entry.text, '#when', 2)));
+    const markdown = expectMarkdownHover(hover);
+
+    expect(markdown).toContain('**#when**');
+    expect(markdown).toContain('**Documentation-only syntax entry:**');
+  });
 });

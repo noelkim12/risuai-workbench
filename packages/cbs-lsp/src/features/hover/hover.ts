@@ -12,7 +12,12 @@ import {
   normalizeHoverContentToSnapshot,
   type NormalizedHoverContentSnapshot,
 } from './hover-content-normalizer';
-import { formatHoverContent } from 'risu-workbench-core';
+import {
+  formatHoverContent,
+  formatLorebookDecoratorMarkdown,
+  getLorebookDecoratorHoverToken,
+  getLorebookDecoratorSpec,
+} from 'risu-workbench-core';
 import type {
   BlockNode,
   CBSBuiltinFunction,
@@ -562,6 +567,11 @@ export class HoverProvider {
     const oversizedHover = this.provideOversizedLuaHover(request, params.position);
     if (oversizedHover) {
       return oversizedHover;
+    }
+
+    const decoratorHover = this.provideDecoratorHover(request, params.position);
+    if (decoratorHover) {
+      return decoratorHover;
     }
 
     const lookup = this.analysisService.locatePosition(request, params.position, cancellationToken);
@@ -1696,6 +1706,58 @@ export class HoverProvider {
       ].join('\n'),
       localStartOffset: tokenLookup.localStartOffset,
       localEndOffset: tokenLookup.localEndOffset,
+    };
+  }
+
+  /**
+   * provideDecoratorHover 메서드.
+   * 줄 시작 `@@` 데코레이터 토큰에 대한 hover를 제공함.
+   * CBS fragment 분석 없이 request 텍스트의 현재 줄만 검사함.
+   *
+   * @param request - 프래그먼트 분석 요청 객체
+   * @param position - 현재 커서 위치
+   * @returns 데코레이터 hover 정보 또는 null
+   */
+  private provideDecoratorHover(
+    request: FragmentAnalysisRequest,
+    position: Position,
+  ): AgentFriendlyHover | null {
+    const line = this.getLineTextAtPosition(request.text, position, MAX_OVERSIZED_HOVER_LINE_SCAN_LENGTH);
+    if (line === null || position.character > line.length) {
+      return null;
+    }
+
+    const token = getLorebookDecoratorHoverToken(line, position.character);
+    if (!token) {
+      return null;
+    }
+
+    const spec = getLorebookDecoratorSpec(token.normalizedName);
+    if (!spec) {
+      return null;
+    }
+
+    const markdown = formatLorebookDecoratorMarkdown(token.normalizedName);
+
+    return {
+      contents: {
+        kind: MarkupKind.Markdown,
+        value: markdown,
+      },
+      data: this.createCategoryData(
+        {
+          category: 'contextual-token',
+          kind: 'lorebook-decorator',
+        },
+        this.createContextualExplanation(
+          'lorebook-decorator-registry',
+          `Hover resolved ${token.rawToken} from the core lorebook decorator registry as a line-leading directive.`,
+        ),
+      ),
+      range: {
+        start: { line: position.line, character: token.startOffset },
+        end: { line: position.line, character: token.endOffset },
+      },
     };
   }
 
