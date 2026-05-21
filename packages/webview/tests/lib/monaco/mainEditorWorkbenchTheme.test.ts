@@ -7,16 +7,13 @@ describe('main editor Monaco workbench options', () => {
     expect(MAIN_EDITOR_FIXED_OVERFLOW_WIDGETS).toBe(false);
   });
 
-  it('registers VS Code-like editor shortcut contributions', () => {
-    expect(mainEditorWorkbenchThemeSource).toContain("monaco-editor/esm/vs/editor/contrib/linesOperations/browser/linesOperations.js");
-    expect(mainEditorWorkbenchThemeSource).toContain("monaco-editor/esm/vs/editor/contrib/wordOperations/browser/wordOperations.js");
-    expect(mainEditorWorkbenchThemeSource).toContain("monaco-editor/esm/vs/editor/contrib/multicursor/browser/multicursor.js");
+  it('registers Monaco core editor contributions as a complete bundle', () => {
+    expect(mainEditorWorkbenchThemeSource).toContain("monaco-editor/esm/vs/editor/edcore.main.js");
+    expect(mainEditorWorkbenchThemeSource).not.toContain('monaco-editor/esm/vs/editor/contrib/');
   });
 
   it('registers Monaco hover and go-to-definition UI contributions', () => {
-    expect(mainEditorWorkbenchThemeSource).toContain("monaco-editor/esm/vs/editor/contrib/hover/browser/hoverContribution.js");
-    expect(mainEditorWorkbenchThemeSource).toContain("monaco-editor/esm/vs/editor/contrib/gotoSymbol/browser/goToCommands.js");
-    expect(mainEditorWorkbenchThemeSource).toContain("monaco-editor/esm/vs/editor/contrib/gotoSymbol/browser/link/goToDefinitionAtPosition.js");
+    expect(mainEditorWorkbenchThemeSource).toContain("monaco-editor/esm/vs/editor/edcore.main.js");
   });
 
   it('bridges F12 to Monaco go-to-definition action', () => {
@@ -35,5 +32,21 @@ describe('main editor Monaco workbench options', () => {
     expect(mainEditorWorkbenchThemeSource).toContain('monaco.KeyMod.Alt | monaco.KeyCode.DownArrow');
     expect(mainEditorWorkbenchThemeSource).toContain('editor.action.moveLinesUpAction');
     expect(mainEditorWorkbenchThemeSource).toContain('editor.action.moveLinesDownAction');
+  });
+
+  it('bridges paste and cut shortcuts to clipboard fallbacks', () => {
+    expect(mainEditorWorkbenchThemeSource).toContain('isPlainPasteShortcut');
+    expect(mainEditorWorkbenchThemeSource).toContain('isPlainCutShortcut');
+    expect(mainEditorWorkbenchThemeSource).toContain('pasteFromNavigatorClipboard');
+    expect(mainEditorWorkbenchThemeSource).toContain('cutToNavigatorClipboard');
+    expect(mainEditorWorkbenchThemeSource).toContain("event.key.toLowerCase() === 'v'");
+    expect(mainEditorWorkbenchThemeSource).toContain("event.key.toLowerCase() === 'x'");
+  });
+
+  it('handles native paste and cut clipboard events before Monaco loses them', () => {
+    expect(mainEditorWorkbenchThemeSource).toContain("ownerDocument.addEventListener('paste'");
+    expect(mainEditorWorkbenchThemeSource).toContain("ownerDocument.addEventListener('cut'");
+    expect(mainEditorWorkbenchThemeSource).toContain("event.clipboardData?.getData('text/plain')");
+    expect(mainEditorWorkbenchThemeSource).toContain("event.clipboardData?.setData('text/plain', selectedText)");
   });
 });
