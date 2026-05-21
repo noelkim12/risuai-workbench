@@ -1,0 +1,1 @@
+{"createdAt":"2026-05-20T20:30:44.428Z","rollbackAvailable":false,"affectedFiles":[],"mutationId":"mutation:0f076934b418","patchOperations":[{"entry":"background.risulorebook","kind":"order.move","orderPath":"characters/merry/lorebooks/_order.json","toIndex":0}],"postValidation":{"diagnostics":[],"status":"not_run"},"status":"rejected","toolName":"workbench.apply_patch_plan"}
