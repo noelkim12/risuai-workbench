@@ -121,6 +121,12 @@ export type { ScanEditorDocumentSectionsOptions, ScannedEditorDocumentSections }
 export { scanEditorDocumentSections } from './shared/sections/scan-editor-document';
 
 /**
+ * YAML frontmatter delimiter와 field range 파싱.
+ * @internal editor format parser와 core test에서 사용합니다.
+ */
+export { parseEditorFrontmatter } from './shared/frontmatter/parse-frontmatter';
+
+/**
  * 경고가 없는 빈 document model용 빈 warning 배열 생성기.
  * @internal document-model 내부 default helper입니다.
  */
