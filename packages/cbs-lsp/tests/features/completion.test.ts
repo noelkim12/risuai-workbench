@@ -181,7 +181,7 @@ function createWorkspaceSnapshot(
 describe('CompletionProvider', () => {
   describe('advertised trigger characters', () => {
     it('covers CBS macro, block, expression, and Lua string-key entry points', () => {
-      expect([...CBS_COMPLETION_TRIGGER_CHARACTERS]).toEqual(['{', ':', '#', '/', '?', '<', '"']);
+      expect([...CBS_COMPLETION_TRIGGER_CHARACTERS]).toEqual(['{', ':', '#', '/', '?', '<', '"', '@']);
     });
   });
 
@@ -3110,6 +3110,133 @@ describe('CompletionProvider', () => {
         position: params.position,
       };
       expect(provider.resolve(unresolved[0]!, mismatchedParams)).toBeNull();
+    });
+  });
+
+  describe('decorator completion (@@ prefix)', () => {
+    it('offers decorator suggestions for line-leading @@', () => {
+      const text = '@@';
+      const request = {
+        uri: 'file:///workspace/decorator.risulorebook',
+        version: 1,
+        filePath: '/workspace/decorator.risulorebook',
+        text,
+      };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(text, 2)),
+      );
+
+      expect(completions.length).toBeGreaterThan(0);
+      expectCompletionLabels(completions, '@@recursive', '@@depth', '@@role', '@@probability');
+    });
+
+    it('filters decorator candidates by prefix @@rec', () => {
+      const text = '@@rec';
+      const request = {
+        uri: 'file:///workspace/decorator-prefix.risulorebook',
+        version: 1,
+        filePath: '/workspace/decorator-prefix.risulorebook',
+        text,
+      };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(text, 5)),
+      );
+
+      expectCompletionLabels(completions, '@@recursive');
+      expectNoCompletionLabels(completions, '@@role', '@@depth', '@@unrecursive', '@@no_recursive_search');
+    });
+
+    it('does not offer decorator suggestions for single @', () => {
+      const text = '@';
+      const request = {
+        uri: 'file:///workspace/single-at.risulorebook',
+        version: 1,
+        filePath: '/workspace/single-at.risulorebook',
+        text,
+      };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(text, 1)),
+      );
+
+      expect(completions).toEqual([]);
+    });
+
+    it('does not offer decorator suggestions for inline prose @@rec', () => {
+      const text = 'foo @@rec';
+      const request = {
+        uri: 'file:///workspace/prose-decorator.risulorebook',
+        version: 1,
+        filePath: '/workspace/prose-decorator.risulorebook',
+        text,
+      };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(text, text.length)),
+      );
+
+      expect(completions).toEqual([]);
+    });
+
+    it('uses core metadata fields on decorator completion items', () => {
+      const text = '@@';
+      const request = {
+        uri: 'file:///workspace/decorator-fields.risulorebook',
+        version: 1,
+        filePath: '/workspace/decorator-fields.risulorebook',
+        text,
+      };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(text, 2)),
+      );
+
+      const recursiveItem = completions.find((c) => c.label === '@@recursive');
+      expect(recursiveItem).toBeDefined();
+      expect(recursiveItem?.detail).toBeTruthy();
+      expect(recursiveItem?.documentation).toEqual({
+        kind: 'markdown',
+        value: expect.any(String),
+      });
+      expect(recursiveItem?.sortText).toBeTruthy();
+      expect(recursiveItem?.insertText).toBeTruthy();
+      expect(recursiveItem?.textEdit).toBeDefined();
+    });
+
+    it('preserves existing CBS {{ completion alongside decorator detection', () => {
+      const request = createInlineCompletionRequest('{{us');
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(request.text, 4)),
+      );
+
+      expect(completions.length).toBeGreaterThan(0);
+      expectCompletionLabels(completions, 'user');
+    });
+
+    it('offers decorator suggestions with textEdit replacing the typed prefix', () => {
+      const text = '@@dep';
+      const request = {
+        uri: 'file:///workspace/decorator-textedit.risulorebook',
+        version: 1,
+        filePath: '/workspace/decorator-textedit.risulorebook',
+        text,
+      };
+      const provider = createProvider(new FragmentAnalysisService(), request);
+      const completions = provider.provide(
+        createParams(request, offsetToPosition(text, text.length)),
+      );
+
+      const depthItem = completions.find((c) => c.label === '@@depth');
+      expect(depthItem?.textEdit).toEqual({
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: text.length },
+        },
+        newText: '@@depth ',
+      });
     });
   });
 });
