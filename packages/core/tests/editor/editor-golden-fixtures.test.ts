@@ -111,6 +111,7 @@ describe('editor Phase 0 golden fixtures', () => {
       'mapSourceRangeToContentMonacoRange',
       'mergeSimulatorProfileVariables',
       'normalizeSimulatorProfile',
+      'parseEditorFrontmatter',
       'parseHtmlEditorDocument',
       'parseLorebookEditorDocument',
       'parseMainEditorDocumentModel',
