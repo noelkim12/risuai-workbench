@@ -6,6 +6,22 @@
 
 export { CBSBuiltinRegistry, type CBSBuiltinFunction } from './domain/cbs/registry/builtins';
 export {
+  normalizeLorebookDecoratorName,
+  getLorebookDecoratorSpec,
+  listLorebookDecoratorSpecs,
+  getLorebookDecoratorCompletionCandidates,
+  formatLorebookDecoratorMarkdown,
+  formatLorebookDecoratorPlain,
+  getLorebookDecoratorCompletionContext,
+  getLorebookDecoratorHoverToken,
+  type LorebookDecoratorSupportLevel,
+  type LorebookDecoratorSpec,
+  type LorebookDecoratorCompletionCandidate,
+  type LorebookDecoratorCategory,
+  type LorebookDecoratorCompletionContext,
+  type LorebookDecoratorHoverToken,
+} from './domain/lorebook/decorators';
+export {
   isPlainRecord,
   isProtocolMessageEnvelope,
   isProtocolEnvelope,
