@@ -4,16 +4,7 @@
  */
 
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
-import 'monaco-editor/esm/vs/base/browser/ui/codicons/codicon/codicon.css';
-import 'monaco-editor/esm/vs/base/browser/ui/codicons/codicon/codicon-modifiers.css';
-import 'monaco-editor/esm/vs/editor/contrib/find/browser/findController.js';
-import 'monaco-editor/esm/vs/editor/contrib/gotoSymbol/browser/goToCommands.js';
-import 'monaco-editor/esm/vs/editor/contrib/gotoSymbol/browser/link/goToDefinitionAtPosition.js';
-import 'monaco-editor/esm/vs/editor/contrib/hover/browser/hoverContribution.js';
-import 'monaco-editor/esm/vs/editor/contrib/linesOperations/browser/linesOperations.js';
-import 'monaco-editor/esm/vs/editor/contrib/multicursor/browser/multicursor.js';
-import 'monaco-editor/esm/vs/editor/contrib/suggest/browser/suggestController.js';
-import 'monaco-editor/esm/vs/editor/contrib/wordOperations/browser/wordOperations.js';
+import 'monaco-editor/esm/vs/editor/edcore.main.js';
 import './mainEditorFindWidgetFallback.css';
 import { MAIN_EDITOR_FIXED_OVERFLOW_WIDGETS } from './mainEditorMonacoOptionsPolicy';
 
@@ -145,8 +136,43 @@ export function registerMainEditorFindShortcut(editor: monaco.editor.IStandalone
   const ownerDocument = editor.getDomNode()?.ownerDocument;
   if (!ownerDocument) return { dispose: () => undefined };
 
+  const handlePaste = (event: ClipboardEvent): void => {
+    if (!editor.hasTextFocus()) return;
+    const text = event.clipboardData?.getData('text/plain') ?? '';
+    if (!text) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    pasteTextIntoEditor(editor, text, 'main-editor-clipboard-paste-event');
+  };
+
+  const handleCut = (event: ClipboardEvent): void => {
+    if (!editor.hasTextFocus()) return;
+    const selectedText = getEditorSelectedText(editor);
+    if (!selectedText) return;
+
+    event.clipboardData?.setData('text/plain', selectedText);
+    event.preventDefault();
+    event.stopPropagation();
+    deleteEditorSelections(editor, 'main-editor-clipboard-cut-event');
+  };
+
   const handleKeydown = (event: KeyboardEvent): void => {
     if (!editor.hasTextFocus() && !editor.hasWidgetFocus()) return;
+
+    if (isPlainPasteShortcut(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      void pasteFromNavigatorClipboard(editor);
+      return;
+    }
+
+    if (isPlainCutShortcut(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      void cutToNavigatorClipboard(editor);
+      return;
+    }
 
     if (isPlainFindShortcut(event)) {
       event.preventDefault();
@@ -177,11 +203,100 @@ export function registerMainEditorFindShortcut(editor: monaco.editor.IStandalone
     }
   };
 
+  ownerDocument.addEventListener('paste', handlePaste, { capture: true });
+  ownerDocument.addEventListener('cut', handleCut, { capture: true });
   ownerDocument.addEventListener('keydown', handleKeydown, { capture: true });
 
   return {
-    dispose: () => ownerDocument.removeEventListener('keydown', handleKeydown, { capture: true }),
+    dispose: () => {
+      ownerDocument.removeEventListener('paste', handlePaste, { capture: true });
+      ownerDocument.removeEventListener('cut', handleCut, { capture: true });
+      ownerDocument.removeEventListener('keydown', handleKeydown, { capture: true });
+    },
   };
+}
+
+/**
+ * pasteFromNavigatorClipboard 함수.
+ * VS Code webview가 native paste event를 Monaco textarea로 전달하지 않을 때 직접 clipboard text를 삽입함.
+ *
+ * @param editor - clipboard text를 삽입할 Monaco editor instance
+ */
+async function pasteFromNavigatorClipboard(editor: monaco.editor.IStandaloneCodeEditor): Promise<void> {
+  const text = await navigator.clipboard?.readText().catch(() => '');
+  if (!text) return;
+  pasteTextIntoEditor(editor, text, 'main-editor-navigator-clipboard-paste');
+}
+
+/**
+ * cutToNavigatorClipboard 함수.
+ * VS Code webview가 native cut event를 전달하지 않을 때 선택 영역을 clipboard에 쓰고 삭제함.
+ *
+ * @param editor - 선택 영역을 잘라낼 Monaco editor instance
+ */
+async function cutToNavigatorClipboard(editor: monaco.editor.IStandaloneCodeEditor): Promise<void> {
+  const selectedText = getEditorSelectedText(editor);
+  if (!selectedText) return;
+
+  const didWrite = await navigator.clipboard
+    ?.writeText(selectedText)
+    .then(() => true)
+    .catch(() => false);
+  if (!didWrite) return;
+
+  deleteEditorSelections(editor, 'main-editor-navigator-clipboard-cut');
+}
+
+/**
+ * pasteTextIntoEditor 함수.
+ * 현재 Monaco selection 위치에 동일한 clipboard text를 삽입함.
+ *
+ * @param editor - text를 삽입할 Monaco editor instance
+ * @param text - 삽입할 clipboard text
+ * @param source - Monaco edit source label
+ */
+function pasteTextIntoEditor(editor: monaco.editor.IStandaloneCodeEditor, text: string, source: string): void {
+  const selections = editor.getSelections();
+  if (!selections || selections.length === 0) return;
+  editor.focus();
+  editor.executeEdits(
+    source,
+    selections.map((selection) => ({ range: selection, text, forceMoveMarkers: true })),
+  );
+}
+
+/**
+ * deleteEditorSelections 함수.
+ * 현재 Monaco selection들을 빈 문자열 edit로 제거함.
+ *
+ * @param editor - selection을 삭제할 Monaco editor instance
+ * @param source - Monaco edit source label
+ */
+function deleteEditorSelections(editor: monaco.editor.IStandaloneCodeEditor, source: string): void {
+  const selections = editor.getSelections();
+  if (!selections || selections.every((selection) => selection.isEmpty())) return;
+  editor.focus();
+  editor.executeEdits(
+    source,
+    selections.map((selection) => ({ range: selection, text: '', forceMoveMarkers: true })),
+  );
+}
+
+/**
+ * getEditorSelectedText 함수.
+ * Monaco selection들의 현재 model text를 OS clipboard에 쓸 plain text로 합침.
+ *
+ * @param editor - selection text를 조회할 Monaco editor instance
+ * @returns clipboard에 쓸 선택 문자열
+ */
+function getEditorSelectedText(editor: monaco.editor.IStandaloneCodeEditor): string {
+  const model = editor.getModel();
+  const selections = editor.getSelections();
+  if (!model || !selections || selections.length === 0) return '';
+  return selections
+    .filter((selection) => !selection.isEmpty())
+    .map((selection) => model.getValueInRange(selection))
+    .join('\n');
 }
 
 /**
@@ -252,6 +367,28 @@ function runEditorFindAction(editor: monaco.editor.IStandaloneCodeEditor): void 
  */
 function isPlainFindShortcut(event: KeyboardEvent): boolean {
   return (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'f';
+}
+
+/**
+ * isPlainPasteShortcut 함수.
+ * Ctrl/Cmd+V 단독 paste shortcut인지 판정함.
+ *
+ * @param event - keyboard event
+ * @returns Monaco paste fallback을 실행해야 하면 true
+ */
+function isPlainPasteShortcut(event: KeyboardEvent): boolean {
+  return (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'v';
+}
+
+/**
+ * isPlainCutShortcut 함수.
+ * Ctrl/Cmd+X 단독 cut shortcut인지 판정함.
+ *
+ * @param event - keyboard event
+ * @returns Monaco cut fallback을 실행해야 하면 true
+ */
+function isPlainCutShortcut(event: KeyboardEvent): boolean {
+  return (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'x';
 }
 
 /**
