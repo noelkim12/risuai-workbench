@@ -8,6 +8,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { getMainEditorChangeEndPosition, registerMainEditorCbsRootCompletionProvider, shouldTriggerMainEditorCbsSuggestForChange, triggerMainEditorCbsSuggest } from '../../../monaco/mainEditorCbsAutoSuggest';
   import { MAIN_EDITOR_CBS_LANGUAGE_ID, retainMainEditorCbsLanguage } from '../../../monaco/mainEditorCbsLanguage';
+  import { registerMainEditorLorebookDecoratorCompletionProvider, shouldTriggerMainEditorLorebookDecoratorSuggestForChange } from '../../../monaco/mainEditorLorebookDecoratorAutoSuggest';
   import type { MainEditorMonacoLspClient } from '../../../monaco/mainEditorLspClient';
   import type { MainEditorContentVersionCounter, MainEditorSectionController } from '../../../monaco/mainEditorSectionController';
   import { createMainEditorContentVersionCounter, createMainEditorSectionController } from '../../../monaco/mainEditorSectionController';
@@ -36,6 +37,7 @@
   let model: monaco.editor.ITextModel | undefined;
   let controller: MainEditorSectionController | undefined;
   let rootCompletionDisposable: monaco.IDisposable | undefined;
+  let decoratorCompletionDisposable: monaco.IDisposable | undefined;
   let providerDisposables: monaco.IDisposable[] = [];
   let consumedSnippet: CbsSnippetVariant | undefined;
   const contentVersionCounter: MainEditorContentVersionCounter = createMainEditorContentVersionCounter(contentVersion);
@@ -60,6 +62,7 @@
     model = controller.model;
 
     rootCompletionDisposable = registerMainEditorCbsRootCompletionProvider(monaco, CONTENT_LANGUAGE_ID);
+    decoratorCompletionDisposable = registerMainEditorLorebookDecoratorCompletionProvider(monaco, CONTENT_LANGUAGE_ID);
     registerProviders();
     applyMarkers();
   });
@@ -67,6 +70,7 @@
   onDestroy(() => {
     if (pendingSuggestFrame !== undefined) cancelAnimationFrame(pendingSuggestFrame);
     rootCompletionDisposable?.dispose();
+    decoratorCompletionDisposable?.dispose();
     clearMarkers();
     disposeProviders();
     controller?.dispose();
@@ -143,7 +147,9 @@
   function scheduleCbsAutoSuggest(changes: readonly monaco.editor.IModelContentChange[]): void {
     const currentModel = model;
     if (!editor || !currentModel) return;
-    const triggerChange = changes.find((change) => shouldTriggerMainEditorCbsSuggestForChange(currentModel, change));
+    const triggerChange = changes.find(
+      (change) => shouldTriggerMainEditorCbsSuggestForChange(currentModel, change) || shouldTriggerMainEditorLorebookDecoratorSuggestForChange(currentModel, change),
+    );
     if (!triggerChange) return;
 
     const position = getMainEditorChangeEndPosition(triggerChange);
