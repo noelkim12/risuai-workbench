@@ -2,6 +2,7 @@
 // @ts-check
 const path = require('path');
 
+/** @type {(argv: string[]) => number | Promise<number | void> | void} */
 let run;
 try {
   const cliModule = require(path.join(__dirname, '..', 'dist', 'cli'));
@@ -17,14 +18,14 @@ try {
 }
 
 const result = run(process.argv.slice(2));
-if (result && typeof result.then === 'function') {
+if (result instanceof Promise) {
   result
     .then((code) => {
       if (typeof code === 'number') {
         process.exit(code);
       }
     })
-    .catch((error) => {
+    .catch((/** @type {Error} */ error) => {
       console.error(error);
       process.exit(1);
     });
