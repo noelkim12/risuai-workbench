@@ -208,6 +208,33 @@ describe('DiagnosticsEngine', () => {
     );
   });
 
+  it('keeps a nested binary or expression valid when its two operands are macro calls', () => {
+    const source =
+      '{{settempvar::_g::{{or::{{greater_equal::{{getvar::erosion}}::2}}::{{not_equal::{{getvar::chill}}::none}}}}}}';
+    const diagnostics = diagnosticsEngine.analyze(new CBSParser().parse(source), source);
+
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      DiagnosticCode.WrongArgumentCount,
+    );
+  });
+
+  it('reports a nested or expression when a real third argument is present', () => {
+    const source =
+      '{{settempvar::_g::{{or::{{greater_equal::{{getvar::erosion}}::2}}::{{not_equal::{{getvar::chill}}::none}}::extra}}}}';
+    const diagnostics = diagnosticsEngine.analyze(new CBSParser().parse(source), source);
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: DiagnosticCode.WrongArgumentCount,
+        message: 'Callable CBS builtin "or" expects 2 arguments, but received 3',
+        range: {
+          start: { line: 0, character: 20 },
+          end: { line: 0, character: 22 },
+        },
+      }),
+    );
+  });
+
   it('does not report CBS103 when #when body contains whitespace', () => {
     const source = '{{#when::ct_generatedHTML::vis::A}} {{/when}}';
     const diagnostics = diagnosticsEngine.analyze(new CBSParser().parse(source), source);
