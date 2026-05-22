@@ -68,6 +68,22 @@ describe('extractCBSVarOps', () => {
     expect(Array.from(result.writes).sort()).toEqual([]);
   });
 
+  it('collects getglobalvar reads as reads', () => {
+    const result = extractCBSVarOps('{{getglobalvar::globalFlag}}');
+
+    expect(Array.from(result.reads).sort()).toEqual(['globalFlag']);
+    expect(Array.from(result.writes).sort()).toEqual([]);
+  });
+
+  it('collects getglobalvar reads nested in #if inline math conditions with hyphen/dot names', () => {
+    const result = extractCBSVarOps(
+      '{{#if {{? {{getglobalvar::toggle_dialogues_dynamic-gpt-5.4}}=1}}}}ok{{/if}}',
+    );
+
+    expect(Array.from(result.reads).sort()).toEqual(['toggle_dialogues_dynamic-gpt-5.4']);
+    expect(Array.from(result.writes).sort()).toEqual([]);
+  });
+
   it('ignores variable operations that appear inside pure-mode block bodies', () => {
     const result = extractCBSVarOps(
       '{{#escape}}before {{getvar::hidden}} {{setvar::ignored::1}}{{/}} {{getvar::visible}}',

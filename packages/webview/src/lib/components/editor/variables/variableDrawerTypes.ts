@@ -30,7 +30,7 @@ export interface VariableDrawerSummary {
   runtimeUnknownCount: number;
 }
 
-const GETVAR_OCCURRENCE_PATTERN = /\{\{getvar::([^}]+)\}\}/g;
+const GETVAR_OCCURRENCE_PATTERN = /\{\{(getvar|getglobalvar)::([^}]+)\}\}/g;
 
 /**
  * buildVariableDrawerSummary 함수.
@@ -50,6 +50,45 @@ export function buildVariableDrawerSummary(
     missingCount: bindings.filter((binding) => binding.status === 'missing').length,
     runtimeUnknownCount: bindings.filter((binding) => binding.status === 'runtimeUnknown').length,
   };
+}
+
+/**
+ * createFallbackGetvarBindings 함수.
+ * Host runtime preview가 늦거나 stale empty result를 돌려도 Used here가 비지 않게 getvar / getglobalvar read rows를 만듦.
+ *
+ * @param source - 현재 CONTENT editor CBS 원문
+ * @returns getvar / getglobalvar occurrence 기반 fallback binding 목록
+ */
+export function createFallbackGetvarBindings(source: string): MainEditorVariableBindingPayload[] {
+  const bindings = new Map<string, MainEditorVariableBindingPayload>();
+  for (const match of source.matchAll(GETVAR_OCCURRENCE_PATTERN)) {
+    const operation = match[1] as 'getvar' | 'getglobalvar';
+    const variableName = match[2]?.trim();
+    if (!variableName) continue;
+
+    const scope = operation === 'getglobalvar' ? 'global' : 'chat';
+    const key = `${variableName}\u0000${scope}\u0000${operation}`;
+    const range = toFallbackUsageRange(source, match.index, match.index + match[0].length);
+    const existing = bindings.get(key);
+    if (existing) {
+      existing.usageRanges = [...existing.usageRanges, range];
+      continue;
+    }
+
+    bindings.set(key, {
+      variableName,
+      scope,
+      direction: 'read',
+      operation,
+      status: 'missing',
+      source: 'missing',
+      valueKind: 'unknown',
+      rawValue: '',
+      candidates: [],
+      usageRanges: [range],
+    });
+  }
+  return [...bindings.values()];
 }
 
 /**
@@ -135,42 +174,6 @@ export function dedupeVariableBindings(
     existing.usageRanges = [...existing.usageRanges, ...binding.usageRanges];
   }
   return [...deduped.values()];
-}
-
-/**
- * createFallbackGetvarBindings 함수.
- * Host runtime preview가 늦거나 stale empty result를 돌려도 Used here가 비지 않게 getvar read rows를 만듦.
- *
- * @param source - 현재 CONTENT editor CBS 원문
- * @returns getvar occurrence 기반 fallback binding 목록
- */
-export function createFallbackGetvarBindings(source: string): MainEditorVariableBindingPayload[] {
-  const bindings = new Map<string, MainEditorVariableBindingPayload>();
-  for (const match of source.matchAll(GETVAR_OCCURRENCE_PATTERN)) {
-    const variableName = match[1]?.trim();
-    if (!variableName) continue;
-
-    const range = toFallbackUsageRange(source, match.index, match.index + match[0].length);
-    const existing = bindings.get(variableName);
-    if (existing) {
-      existing.usageRanges = [...existing.usageRanges, range];
-      continue;
-    }
-
-    bindings.set(variableName, {
-      variableName,
-      scope: 'chat',
-      direction: 'read',
-      operation: 'getvar',
-      status: 'missing',
-      source: 'missing',
-      valueKind: 'unknown',
-      rawValue: '',
-      candidates: [],
-      usageRanges: [range],
-    });
-  }
-  return [...bindings.values()];
 }
 
 /**

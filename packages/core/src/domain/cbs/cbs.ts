@@ -29,8 +29,8 @@ export interface CBSVariableOccurrence {
   variableName: string;
   /** 접근 방향 (읽기/쓰기) */
   direction: CBSVariableDirection;
-  /** CBS 연산 종류 (getvar, setvar, addvar, setdefaultvar, #each) */
-  operation: 'getvar' | 'setvar' | 'addvar' | 'setdefaultvar' | '#each';
+  /** CBS 연산 종류 (getvar, setvar, addvar, setdefaultvar, getglobalvar, #each) */
+  operation: 'getvar' | 'setvar' | 'addvar' | 'setdefaultvar' | 'getglobalvar' | '#each';
   /** 변수 키가 위치한 텍스트 범위 (첫 번째 인자의 전체 범위) */
   range: Range;
   /** 변수 키 값이 시작하는 위치 (PlainText 노드 내에서 trim 전 시작) */
@@ -39,8 +39,8 @@ export interface CBSVariableOccurrence {
   keyEnd: Position;
 }
 
-const COMPATIBLE_VAR_OPS = new Set(['getvar', 'setvar', 'addvar', 'setdefaultvar']);
-const VAR_OP_FALLBACK_PATTERN = /\{\{(getvar|setvar|addvar|setdefaultvar)::([^}:]+)/g;
+const COMPATIBLE_VAR_OPS = new Set(['getvar', 'setvar', 'addvar', 'setdefaultvar', 'getglobalvar']);
+const VAR_OP_FALLBACK_PATTERN = /\{\{(getvar|setvar|addvar|setdefaultvar|getglobalvar)::([^}:]+)/g;
 const STATIC_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 
 /**
@@ -79,8 +79,8 @@ export function extractCBSVariableOccurrences(text: string): CBSVariableOccurren
         const { key, range, keyStart, keyEnd } = keyResult;
         if (key.length === 0) return;
 
-        const direction: CBSVariableDirection = op === 'getvar' ? 'read' : 'write';
-        const operation = op as 'getvar' | 'setvar' | 'addvar' | 'setdefaultvar';
+        const direction: CBSVariableDirection = op === 'getvar' || op === 'getglobalvar' ? 'read' : 'write';
+        const operation = op as 'getvar' | 'setvar' | 'addvar' | 'setdefaultvar' | 'getglobalvar';
 
         occurrences.push({
           variableName: key,
@@ -352,7 +352,7 @@ function extractCBSVariableOccurrencesFallback(text: string): CBSVariableOccurre
   const lineStarts = buildLineStarts(text);
 
   for (const match of text.matchAll(VAR_OP_FALLBACK_PATTERN)) {
-    const op = match[1] as 'getvar' | 'setvar' | 'addvar' | 'setdefaultvar';
+    const op = match[1] as 'getvar' | 'setvar' | 'addvar' | 'setdefaultvar' | 'getglobalvar';
     const rawKey = match[2];
     const key = rawKey.trim();
     if (!key) continue;
@@ -370,7 +370,7 @@ function extractCBSVariableOccurrencesFallback(text: string): CBSVariableOccurre
     const keyStart = indexToPosition(lineStarts, keyStartIndex + leadingSpaces);
     const keyEnd = indexToPosition(lineStarts, keyEndIndex - trailingSpaces);
 
-    const direction: CBSVariableDirection = op === 'getvar' ? 'read' : 'write';
+    const direction: CBSVariableDirection = op === 'getvar' || op === 'getglobalvar' ? 'read' : 'write';
 
     occurrences.push({
       variableName: key,
