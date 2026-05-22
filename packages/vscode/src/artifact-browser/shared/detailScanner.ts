@@ -19,6 +19,7 @@ import type {
 export const SKIPPED_DIRECTORIES = new Set([
   'node_modules',
   '.git',
+  '.history',
   '.vscode',
   'dist',
   'build',
