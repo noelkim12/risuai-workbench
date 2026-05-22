@@ -76,7 +76,7 @@
 
   const EDIT_DEBOUNCE_MS = 350;
   const PREVIEW_DEBOUNCE_MS = 160;
-  const RUNTIME_PREVIEW_DEBOUNCE_MS = 520;
+  const RUNTIME_PREVIEW_DEBOUNCE_MS = 250;
 
   type MainEditorStructuredState = LorebookEditorState | RegexEditorState | PromptEditorState | HtmlEditorState;
   type MainEditorLocalDraftSyncState = MainEditorDraftSyncState<MainEditorStructuredState>;

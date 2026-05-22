@@ -51,6 +51,42 @@ export function resolveSentinelValue(value: string): string {
   return value;
 }
 
+/**
+ * Checks whether a variable row is a bare boolean toggle that should render
+ * as a stable slide/toggle switch instead of 0/1 candidate chips.
+ *
+ * A bare boolean toggle is:
+ * - scope === 'toggle' AND operation === 'gettoggle' (implicit truthiness test, NOT a #when:tis literal comparison)
+ *   OR
+ * - scope === 'chat'|'global' AND operation === 'getvar'|'getglobalvar' from a simple #if truthiness check
+ *   where candidates are exactly the pair ['0', '1'] (injected by the truthiness detector)
+ * - valueKind === 'boolean' OR candidates are exactly the pair ['0', '1']
+ */
+export function isBareBooleanToggle(binding: VariableDrawerBindingView): boolean {
+  // Classic bare toggle scope: #when::toggle::name
+  if (binding.scope === 'toggle' && binding.operation === 'gettoggle') {
+    if (binding.valueKind === 'boolean') return true;
+
+    const values = binding.candidates.map((c) => c.value).sort();
+    return values.length === 2 && values[0] === '0' && values[1] === '1';
+  }
+
+  // Simple truthiness check: #if {{getvar::x}} or #if {{getglobalvar::y}}
+  // → candidate extractor injected 0/1 candidates for stable toggle rendering.
+  const isVariableReadOperation =
+    binding.operation === 'getvar' || binding.operation === 'getglobalvar';
+  const isChatOrGlobalScope = binding.scope === 'chat' || binding.scope === 'global';
+
+  if (isChatOrGlobalScope && isVariableReadOperation) {
+    if (binding.valueKind === 'boolean') return true;
+
+    const values = binding.candidates.map((c) => c.value).sort();
+    return values.length === 2 && values[0] === '0' && values[1] === '1';
+  }
+
+  return false;
+}
+
 export interface VariableDrawerSummary {
   profileLabel: string;
   usedCount: number;
@@ -59,6 +95,18 @@ export interface VariableDrawerSummary {
 }
 
 const GETVAR_OCCURRENCE_PATTERN = /\{\{(getvar|getglobalvar)::([^}]+)\}\}/g;
+const WHEN_CHAT_VARIABLE_OPERATORS = new Set(['vis', 'visnot']);
+const WHEN_TOGGLE_LITERAL_OPERATORS = new Set(['tis', 'tisnot']);
+const WHEN_CONTEXT_COMPARISON_OPERATORS = new Set(['is', 'isnot', '>', '<', '>=', '<=']);
+
+interface FallbackWhenReference {
+  variableName: string;
+  scope: MainEditorVariableBindingPayload['scope'];
+  operation: string;
+  valueKind: MainEditorVariableValueKind;
+  startOffset: number;
+  endOffset: number;
+}
 
 /**
  * buildVariableDrawerSummary 함수.
@@ -121,6 +169,31 @@ export function createFallbackGetvarBindings(source: string): MainEditorVariable
       usageRanges: [range],
     });
   }
+
+  for (const reference of extractFallbackWhenReferences(source)) {
+    const key = `${reference.variableName}\u0000${reference.scope}\u0000${reference.operation}`;
+    const range = toFallbackUsageRange(source, reference.startOffset, reference.endOffset);
+    const existing = bindings.get(key);
+    if (existing) {
+      existing.usageRanges = [...existing.usageRanges, range];
+      continue;
+    }
+
+    const extraCandidates = conditionCandidates.get(reference.variableName) ?? [];
+    bindings.set(key, {
+      variableName: reference.variableName,
+      scope: reference.scope,
+      direction: 'read',
+      operation: reference.operation,
+      status: reference.scope === 'context' ? 'runtimeUnknown' : 'missing',
+      source: reference.scope === 'context' ? 'runtimeUnknown' : 'missing',
+      valueKind: reference.valueKind,
+      rawValue: '',
+      candidates: extraCandidates,
+      usageRanges: [range],
+    });
+  }
+
   return [...bindings.values()];
 }
 
@@ -132,7 +205,10 @@ export function createFallbackGetvarBindings(source: string): MainEditorVariable
  * @param rawValue - 사용자가 입력한 raw value
  * @returns override map에 저장할 값
  */
-export function coerceRawOverride(valueKind: MainEditorVariableValueKind, rawValue: string): string | boolean {
+export function coerceRawOverride(
+  valueKind: MainEditorVariableValueKind,
+  rawValue: string,
+): string | boolean {
   if (valueKind === 'boolean' && rawValue === 'true') return true;
   if (valueKind === 'boolean' && rawValue === 'false') return false;
   return rawValue;
@@ -145,11 +221,27 @@ export function coerceRawOverride(valueKind: MainEditorVariableValueKind, rawVal
  * @param binding - override를 적용할 variable row
  * @returns scope별 override patch
  */
-export function toOverridePatch(binding: VariableDrawerBindingView): MainEditorVariableOverridesPayload {
+export function toOverridePatch(
+  binding: VariableDrawerBindingView,
+): MainEditorVariableOverridesPayload {
   const coerced = coerceRawOverride(binding.valueKind, binding.rawValue);
-  if (binding.scope === 'global') return { globalVariables: { [binding.variableName]: String(coerced) } };
-  if (binding.scope === 'toggle') return { toggleValues: { [binding.variableName]: coerced === true || coerced === 'true' } };
-  if (binding.scope === 'temp') return { tempVariables: { [binding.variableName]: String(coerced) } };
+  if (binding.scope === 'global')
+    return { globalVariables: { [binding.variableName]: String(coerced) } };
+  if (binding.scope === 'toggle' && binding.operation === '#when:tis') {
+    return { toggleValues: { [binding.variableName]: binding.rawValue.trim() === '1' } };
+  }
+  if (binding.scope === 'toggle') {
+    const rawToggleValue = binding.rawValue.trim();
+    return {
+      toggleValues: {
+        [binding.variableName]: rawToggleValue === '1' || coerced === true || coerced === 'true',
+      },
+    };
+  }
+  if (binding.scope === 'context')
+    return { contextVariables: { [binding.variableName]: String(coerced) } };
+  if (binding.scope === 'temp')
+    return { tempVariables: { [binding.variableName]: String(coerced) } };
   return { chatVariables: { [binding.variableName]: String(coerced) } };
 }
 
@@ -199,7 +291,11 @@ export function dedupeVariableBindings(
     const key = createVariableBindingKey(binding);
     const existing = deduped.get(key);
     if (!existing) {
-      deduped.set(key, { ...binding, candidates: [...binding.candidates], usageRanges: [...binding.usageRanges] });
+      deduped.set(key, {
+        ...binding,
+        candidates: [...binding.candidates],
+        usageRanges: [...binding.usageRanges],
+      });
       continue;
     }
 
@@ -207,6 +303,170 @@ export function dedupeVariableBindings(
     existing.usageRanges = [...existing.usageRanges, ...binding.usageRanges];
   }
   return [...deduped.values()];
+}
+
+function extractFallbackWhenReferences(source: string): FallbackWhenReference[] {
+  const references: FallbackWhenReference[] = [];
+  let searchStart = 0;
+
+  while (searchStart < source.length) {
+    const openIndex = source.indexOf('{{#when', searchStart);
+    if (openIndex === -1) break;
+
+    const closeIndex = findMacroClose(source, openIndex);
+    if (closeIndex === -1) break;
+
+    const body = source.slice(openIndex + 2, closeIndex - 2).trim();
+    const condition = extractWhenConditionFromHeader(body);
+    if (condition) {
+      for (const reference of parseImplicitWhenReferences(condition)) {
+        references.push({ ...reference, startOffset: openIndex, endOffset: closeIndex });
+      }
+    }
+    searchStart = closeIndex;
+  }
+
+  return references;
+}
+
+function parseImplicitWhenReferences(
+  conditionSource: string,
+): Array<Omit<FallbackWhenReference, 'startOffset' | 'endOffset'>> {
+  const segments = splitTopLevelCbsSegments(conditionSource)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  const references: Array<Omit<FallbackWhenReference, 'startOffset' | 'endOffset'>> = [];
+
+  if (segments.length === 2 && segments[0].toLowerCase() === 'var') {
+    references.push({
+      variableName: segments[1],
+      scope: 'chat',
+      operation: 'getvar',
+      valueKind: 'unknown',
+    });
+  }
+
+  if (segments.length === 2 && segments[0].toLowerCase() === 'toggle') {
+    references.push({
+      variableName: segments[1],
+      scope: 'toggle',
+      operation: 'gettoggle',
+      valueKind: 'boolean',
+    });
+  }
+
+  if (segments.length === 3) {
+    const operator = segments[1].toLowerCase();
+    if (WHEN_CHAT_VARIABLE_OPERATORS.has(operator) && isStaticWhenLiteral(segments[2])) {
+      references.push({
+        variableName: segments[0],
+        scope: 'chat',
+        operation: 'getvar',
+        valueKind: 'unknown',
+      });
+    }
+    if (WHEN_TOGGLE_LITERAL_OPERATORS.has(operator) && isStaticWhenLiteral(segments[2])) {
+      references.push({
+        variableName: segments[0],
+        scope: 'toggle',
+        operation: '#when:tis',
+        valueKind: 'unknown',
+      });
+    }
+
+    if (WHEN_CONTEXT_COMPARISON_OPERATORS.has(operator)) {
+      const leftContext = parseRuntimeContextMacro(segments[0]);
+      const rightContext = parseRuntimeContextMacro(segments[2]);
+      if (leftContext && !rightContext && isStaticWhenLiteral(segments[2])) {
+        references.push({
+          variableName: leftContext,
+          scope: 'context',
+          operation: 'context',
+          valueKind: 'unknown',
+        });
+      } else if (rightContext && !leftContext && isStaticWhenLiteral(segments[0])) {
+        references.push({
+          variableName: rightContext,
+          scope: 'context',
+          operation: 'context',
+          valueKind: 'unknown',
+        });
+      }
+    }
+  }
+
+  return references.filter((reference) => reference.variableName.trim().length > 0);
+}
+
+function splitTopLevelCbsSegments(body: string): string[] {
+  const segments: string[] = [];
+  let depth = 0;
+  let segmentStart = 0;
+
+  for (let index = 0; index < body.length; index += 1) {
+    if (body.startsWith('{{', index)) {
+      depth += 1;
+      index += 1;
+      continue;
+    }
+    if (body.startsWith('}}', index)) {
+      depth = Math.max(0, depth - 1);
+      index += 1;
+      continue;
+    }
+    if (depth === 0 && body.startsWith('::', index)) {
+      segments.push(body.slice(segmentStart, index));
+      index += 1;
+      segmentStart = index + 1;
+    }
+  }
+
+  segments.push(body.slice(segmentStart));
+  return segments;
+}
+
+function findMacroClose(source: string, openIndex: number): number {
+  let depth = 0;
+  for (let index = openIndex; index < source.length - 1; index += 1) {
+    if (source.startsWith('{{', index)) {
+      depth += 1;
+      index += 1;
+      continue;
+    }
+    if (source.startsWith('}}', index)) {
+      depth -= 1;
+      index += 1;
+      if (depth === 0) return index + 1;
+    }
+  }
+  return -1;
+}
+
+function extractWhenConditionFromHeader(body: string): string | undefined {
+  const trimmed = body.trim();
+  if (!trimmed.startsWith('#when')) return undefined;
+
+  const rest = trimmed.slice('#when'.length).trim();
+  if (!rest) return undefined;
+
+  if (!rest.startsWith('::')) return rest;
+
+  const segments = splitTopLevelCbsSegments(rest.slice(2)).map((segment) => segment.trim());
+  if (segments[0]?.toLowerCase() === 'keep' || segments[0]?.toLowerCase() === 'legacy') {
+    segments.shift();
+  }
+  return segments.join('::').trim() || undefined;
+}
+
+function isStaticWhenLiteral(source: string): boolean {
+  const value = source.trim();
+  return value.length > 0 && !value.includes('{{') && !value.includes('}}');
+}
+
+function parseRuntimeContextMacro(source: string): 'chatIndex' | undefined {
+  const normalized = source.trim().toLowerCase().replace(/\s+/gu, '');
+  if (normalized === '{{chat_index}}' || normalized === '{{chatindex}}') return 'chatIndex';
+  return undefined;
 }
 
 /**
@@ -225,7 +485,12 @@ function toFallbackUsageRange(
 ): MainEditorVariableBindingPayload['usageRanges'][number] {
   const start = offsetToPosition(source, startOffset);
   const end = offsetToPosition(source, endOffset);
-  return { line: start.line, character: start.character, endLine: end.line, endCharacter: end.character };
+  return {
+    line: start.line,
+    character: start.character,
+    endLine: end.line,
+    endCharacter: end.character,
+  };
 }
 
 /**
