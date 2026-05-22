@@ -22,7 +22,7 @@
   import SplitPane from '../shared/SplitPane.svelte';
   import VariableDrawer from '../variables/VariableDrawer.svelte';
   import VariableRail from '../variables/VariableRail.svelte';
-  import { createFallbackGetvarBindings, dedupeVariableBindings, mergeCandidateLists, toOverridePatch } from '../variables/variableDrawerTypes';
+  import { createFallbackGetvarBindings, dedupeVariableBindings, mergeCandidateLists, resolveSentinelValue, toOverridePatch } from '../variables/variableDrawerHelpers';
   import {
     MAIN_EDITOR_PROTOCOL,
     MAIN_EDITOR_PROTOCOL_VERSION,
@@ -644,7 +644,7 @@
    * @param value - 선택된 candidate 값
    */
   function selectVariableCandidate(variableName: string, value: string): void {
-    updateVariableRaw(variableName, value);
+    updateVariableRaw(variableName, resolveSentinelValue(value));
   }
 
   /**

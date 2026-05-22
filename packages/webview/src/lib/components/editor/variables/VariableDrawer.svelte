@@ -6,7 +6,7 @@
 <script lang="ts">
   import type { MainEditorPreviewRuntimeResultPayload, MainEditorVariableBindingPayload } from '../../../types/mainEditor';
   import TracePanel from '../main/TracePanel.svelte';
-  import { buildVariableDrawerSummary, createVariableBindingKey } from './variableDrawerTypes';
+  import { buildVariableDrawerSummary, createVariableBindingKey } from './variableDrawerHelpers';
   import VariableDrawerSection from './VariableDrawerSection.svelte';
   import VariableRow from './VariableRow.svelte';
 

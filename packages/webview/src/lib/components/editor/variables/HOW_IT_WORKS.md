@@ -1,7 +1,7 @@
 # Variable Drawer Injection Paths
 
 > **Scope:** `@packages/webview/src/lib/components/editor/variables/`  
-> **Investigated:** `VariableRail.svelte`, `VariableDrawer.svelte`, `VariableRow.svelte`, `VariableDrawerSection.svelte`, `variableDrawerTypes.ts`  
+> **Investigated:** `VariableRail.svelte`, `VariableDrawer.svelte`, `VariableRow.svelte`, `VariableDrawerSection.svelte`, `variableDrawerHelpers.ts`, `variableCandidateExtractor.ts`  
 > **Parent Orchestrator:** `MainEditor.svelte`
 
 ---
@@ -151,11 +151,13 @@ function scheduleRuntimePreview(contentText: string): void {
 }
 ```
 
-`createFallbackGetvarBindings(contentText)` (in `variableDrawerTypes.ts`) scans the text with the regex `/\{\{(getvar|getglobalvar)::([^}]+)\}\}/g` and creates synthetic `MainEditorVariableBindingPayload` entries with:
+`createFallbackGetvarBindings(contentText)` (in `variableDrawerHelpers.ts`) scans the text with the regex `/\{\{(getvar|getglobalvar)::([^}]+)\}\}/g` and creates synthetic `MainEditorVariableBindingPayload` entries with:
 - `status: 'missing'`
 - `source: 'missing'`
 - `scope: 'chat'` for `getvar`, `scope: 'global'` for `getglobalvar`
 - `valueKind: 'unknown'`
+
+Additionally, it calls `createRegexVariableCandidateExtractor().extract(source)` to scan `{{? ...}}` math expressions inside `#if` / `#when` blocks for variable-literal comparisons (e.g. `{{getvar::x}} == 1`), and pre-populates `candidates` with those literal values. This ensures fallback rows show condition-aware candidates even before the host replies.
 
 This ensures the drawer never appears completely empty even when the host preview engine is slow or returns no results.
 
@@ -182,7 +184,7 @@ Workspace candidates are **merged into existing rows**; they do not create new r
 
 ### 4.4 Mutation Source: User Overrides
 
-When the user types into a raw input or clicks a candidate chip:
+When the user types into a raw input or selects a candidate from the select box:
 
 ```ts
 function updateVariableRaw(variableName: string, rawValue: string): void {
@@ -256,10 +258,17 @@ export function createLorebookContentRuntimePreview(input: LorebookContentRuntim
   // ...
   const injection = createCbsPreviewVariableInjection({ source: input.contentText, ... });
   // ...
+  const candidateExtractor = createAstConditionCandidateExtractor();
+  const conditionCandidates = candidateExtractor.extract(input.contentText);
+  // condition candidates are merged into each binding's candidates[]
   // line 126 — maps injection.bindings → LorebookRuntimeVariableBinding[]
   bindings: injection.bindings.map((b) => /* ... */),
 }
 ```
+
+`createAstConditionCandidateExtractor()` (factory defined in `packages/core/src/domain/cbs/condition-candidates.ts`) parses the CBS AST, walks `#if` / `#when` block conditions, and extracts variable-literal comparison pairs from `{{? ...}}` math expressions. These are merged into each binding's `candidates` array with `source: 'usage'` so the drawer shows them as pre-discovered options.
+
+> **Null/undefined filtering:** Literals `null` and `undefined` are intentionally **not** extracted as candidates. In CBS semantics, these represent "no value set" rather than testable values. Conditions like `{{? {{getvar::x}} != null}}` will not populate the drawer with a "null" candidate; instead, users should type a custom value via the raw input to test the non-null branch.
 
 #### Step D — VSCode Extension Host Bridge
 
@@ -311,7 +320,7 @@ VariableDrawer.svelte
   ├─► VariableRow.svelte
   │     │ binding (prop)
   │     ├─ renders: variableName, source badge, status, rawValue
-  │     ├─ renders: boolean toggle / candidate chips / raw input
+  │     ├─ renders: boolean toggle / candidate select box / raw input
   │     └─ emits: onCandidateSelect → onRawChange → MainEditor.updateVariableRaw()
   │
   ├─► VariableDrawerSection.svelte
@@ -383,7 +392,7 @@ VariableDrawer.svelte
 │  2. Local CBS Source Text (Monaco / textarea)                                │
 │     → createFallbackGetvarBindings(contentText)  (fallback rows)            │
 │                                                                              │
-│  3. User Interaction (raw input, candidate chip click)                         │
+│  3. User Interaction (raw input, candidate select)                           │
 │     → updateVariableRaw() / selectVariableCandidate()                        │
 │     → variableOverrides accumulator                                          │
 └────────────────────────┬───────────────────────────────────────────────────┘
@@ -424,17 +433,19 @@ VariableRail    VariableDrawer ──► VariableRow / VariableDrawerSection / T
 | `MainEditor.svelte` | **Orchestrator.** Holds all state, routes host messages, computes props for variable components. |
 | `VariableRail.svelte` | **Thin indicator.** Displays counts and toggle button. Receives 6 props. |
 | `VariableDrawer.svelte` | **Container.** Receives 11 props, renders header, "Used here" list, and 3 lazy sections. |
-| `VariableRow.svelte` | **Row renderer.** Receives one `binding` + callbacks. Renders controls (boolean toggle, chips, raw input). |
+| `VariableRow.svelte` | **Row renderer.** Receives one `binding` + callbacks. Renders controls (boolean toggle, candidate select box, raw input). |
 | `VariableDrawerSection.svelte` | **Collapsible wrapper.** Receives title, open state, description, optional action. |
-| `variableDrawerTypes.ts` | **Pure helpers.** `buildVariableDrawerSummary`, `createFallbackGetvarBindings`, `dedupeVariableBindings`, `toOverridePatch`, `mergeCandidateLists`, `createVariableBindingKey`. |
+| `variableDrawerHelpers.ts` | **Pure helpers.** `buildVariableDrawerSummary`, `createFallbackGetvarBindings`, `dedupeVariableBindings`, `toOverridePatch`, `mergeCandidateLists`, `createVariableBindingKey`. |
+| `variableCandidateExtractor.ts` | **Regex-based candidate extractor factory.** `createRegexVariableCandidateExtractor()` — scans `{{? ...}}` expressions for variable-literal comparisons, returns `Map<string, MainEditorVariableCandidatePayload[]>`. |
 
 ### Core Engine Layer
 
 | File | Responsibility |
 |------|---------------|
 | `packages/core/src/domain/cbs/cbs.ts` | **CBS parser.** `extractCBSVariableOccurrences()` — AST-based extraction of all variable operations from CBS source text, with regex fallback. |
+| `packages/core/src/domain/cbs/condition-candidates.ts` | **Condition candidate extractor factory.** `createAstConditionCandidateExtractor()` — `ConditionCandidateExtractor` interface + AST-based implementation that parses `#if` / `#when` conditions to extract variable-literal comparison values. |
 | `packages/core/src/simulator/variable-injector/variable-injector.ts` | **Value resolver.** `createCbsPreviewVariableInjection()` — resolves parsed occurrences against layered context (overrides, baseContext, workspaceDefaults) to produce `CbsPreviewVariableBinding[]`. |
-| `packages/core/src/domain/editor/formats/lorebook/preview/runtime-preview.ts` | **Runtime preview adapter.** `createLorebookContentRuntimePreview()` — calls injector + simulator, maps core bindings to `LorebookRuntimeVariableBinding[]`. |
+| `packages/core/src/domain/editor/formats/lorebook/preview/runtime-preview.ts` | **Runtime preview adapter.** `createLorebookContentRuntimePreview()` — calls injector + simulator, merges condition candidates into bindings, maps core bindings to `LorebookRuntimeVariableBinding[]`. |
 
 ### VSCode Extension Host Layer
 
@@ -452,8 +463,9 @@ VariableRail    VariableDrawer ──► VariableRow / VariableDrawerSection / T
 > Every variable list shown in the drawer originates from `MainEditor.svelte`'s `runtimePreviewBindings` array, which is populated by:
 > 1. **Extension Host runtime preview results** (primary) — produced by the core engine's CBS parser → variable injector → runtime preview adapter → VSCode bridge
 > 2. **Static `{{getvar::...}}` / `{{getglobalvar::...}}` regex fallback** (secondary, when host returns empty)
-> 3. **Workspace candidate enrichment** (lazy-loaded on section open) — scans `**/*.{risuvar,risutoggle}` files in the workspace
-> 4. **In-place user overrides** (raw input / candidate selection)
+> 3. **Condition-aware candidate extraction** — `createAstConditionCandidateExtractor()` (core) and `createRegexVariableCandidateExtractor()` (webview fallback) scan `#if` / `#when` blocks for `{{? ...}}` variable-literal comparisons and pre-populate `candidates`
+> 4. **Workspace candidate enrichment** (lazy-loaded on section open) — scans `**/*.{risuvar,risutoggle}` files in the workspace
+> 5. **In-place user overrides** (raw input / candidate select)
 >
 > These are passed down as plain Svelte props through `VariableDrawer` → `VariableRow`, and as computed numbers through `VariableRail`.
 
@@ -464,9 +476,11 @@ CBS Source Text
     ↓
 packages/core/src/domain/cbs/cbs.ts (AST parse / regex fallback)
     ↓
+packages/core/src/domain/cbs/condition-candidates.ts (extract variable-literal comparisons from #if conditions)
+    ↓
 packages/core/src/simulator/variable-injector/variable-injector.ts (resolve values by precedence)
     ↓
-packages/core/src/domain/editor/formats/lorebook/preview/runtime-preview.ts (runtime preview adapter)
+packages/core/src/domain/editor/formats/lorebook/preview/runtime-preview.ts (runtime preview adapter + candidate merge)
     ↓
 packages/vscode/src/editors/mainEditor/mainEditorRuntimePreviewBridge.ts (extension host bridge)
     ↓  main-editor/previewRuntimeResult  (postMessage)

@@ -72,3 +72,25 @@
 .main-editor-shell .monaco-editor .find-widget .codicon-find-selection::before {
   content: '[]';
 }
+
+/* Folding gutter icon fallbacks ------------------------------------------------ */
+
+.main-editor-shell .monaco-editor .margin-view-overlays .folding {
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+}
+
+.main-editor-shell .monaco-editor .margin-view-overlays .codicon-folding-expanded::before {
+  content: '⌄';
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.main-editor-shell .monaco-editor .margin-view-overlays .codicon-folding-collapsed::before {
+  content: '›';
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}

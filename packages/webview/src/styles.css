@@ -1791,8 +1791,7 @@ h2 {
   border-color: color-mix(in srgb, var(--focus) 56%, var(--card-border));
 }
 
-.variable-row__header,
-.variable-row__controls {
+.variable-row__header {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -1844,21 +1843,78 @@ h2 {
 
 .variable-row__title span,
 .variable-row__status,
+.variable-row__candidate span,
 .variable-row__raw span,
 .variable-row__details {
   color: var(--muted);
   font-size: var(--text-xs);
 }
 
+.variable-row__candidate span,
+.variable-row__raw span {
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
 .variable-row__controls {
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(88px, 0.9fr) minmax(112px, 1.4fr);
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid color-mix(in srgb, var(--card-border) 82%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--card) 72%, transparent);
 }
 
 .variable-row__segmented,
-.variable-row__chips {
+.variable-row__chips,
+.variable-row__select {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
+}
+
+.variable-row__select {
+  position: relative;
+  min-width: 0;
+}
+
+.variable-row__select select {
+  width: 100%;
+  min-height: 2rem;
+  appearance: none;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--card-border));
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) 1.75rem var(--space-1) var(--space-2);
+  background: var(--vscode-input-background, var(--surface));
+  color: var(--vscode-input-foreground, var(--text));
+  font-size: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.variable-row__select option {
+  background: var(--vscode-dropdown-background, var(--vscode-input-background, var(--surface)));
+  color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground, var(--text)));
+}
+
+.variable-row__select option:checked {
+  background: var(--vscode-list-activeSelectionBackground, var(--accent));
+  color: var(--vscode-list-activeSelectionForeground, var(--accent-text));
+}
+
+.variable-row__select::after {
+  position: absolute;
+  top: 50%;
+  right: var(--space-2);
+  width: 0.45rem;
+  height: 0.45rem;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  content: '';
+  pointer-events: none;
+  transform: translateY(-62%) rotate(45deg);
 }
 
 .variable-row__segmented button.active {
@@ -1867,20 +1923,45 @@ h2 {
   color: var(--accent-text);
 }
 
+.variable-row__candidate,
 .variable-row__raw {
   display: grid;
-  flex: 1;
-  min-width: 120px;
   gap: var(--space-1);
+  min-width: 0;
+}
+
+.variable-row__raw:only-child {
+  grid-column: 1 / -1;
 }
 
 .variable-row__raw input {
   width: 100%;
-  border: 1px solid var(--card-border);
+  min-height: 2rem;
+  border: 1px solid color-mix(in srgb, var(--card-border) 88%, var(--accent));
   border-radius: var(--radius-sm);
   padding: var(--space-1) var(--space-2);
   background: var(--vscode-input-background, var(--surface));
   color: var(--vscode-input-foreground, var(--text));
+  font: inherit;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.variable-row__select select:hover,
+.variable-row__raw input:hover {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--card-border));
+}
+
+.variable-row__select select:focus,
+.variable-row__raw input:focus {
+  border-color: var(--focus);
+  outline: 2px solid color-mix(in srgb, var(--focus) 28%, transparent);
+  outline-offset: 1px;
+}
+
+@media (max-width: 360px) {
+  .variable-row__controls {
+    grid-template-columns: 1fr;
+  }
 }
 
 .variable-row__details {
