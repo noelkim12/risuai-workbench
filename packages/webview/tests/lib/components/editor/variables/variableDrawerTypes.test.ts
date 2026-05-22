@@ -103,4 +103,18 @@ describe('variable drawer helpers', () => {
       expect.objectContaining({ variableName: 'ct_UseMemory', operation: 'getvar', status: 'missing' }),
     ]);
   });
+
+  it('creates fallback getglobalvar bindings with global scope and operation from nested inline conditions', () => {
+    const bindings = createFallbackGetvarBindings(
+      '{{#if {{? {{getglobalvar::toggle_dialogues_dynamic-gpt-5.4}}=1}}}}ok{{/if}}',
+    );
+
+    expect(bindings).toHaveLength(1);
+    expect(bindings[0]).toMatchObject({
+      variableName: 'toggle_dialogues_dynamic-gpt-5.4',
+      operation: 'getglobalvar',
+      scope: 'global',
+      status: 'missing',
+    });
+  });
 });
