@@ -1,11 +1,11 @@
 import path from 'node:path';
-import type { BaseFixtureCorpusEntry } from '../../../../tests/helpers/fixture-corpus';
+import type { BaseFixtureCorpusEntry } from '../helpers/fixture-corpus';
 import {
   freezeCorpusMap,
   filterCorpusEntries,
   getCorpusEntryOrThrow,
   resolveFixtureRepositoryRoot,
-} from '../../../../tests/helpers/fixture-corpus';
+} from '../helpers/fixture-corpus';
 
 export type FixtureCorpusTarget = 'charx' | 'module' | 'preset';
 export type FixtureCorpusSourceKind = 'extract-dir' | 'source-file';

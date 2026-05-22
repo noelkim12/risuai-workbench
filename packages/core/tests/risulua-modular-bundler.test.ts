@@ -19,7 +19,7 @@ import {
   RISUMODULE_SCHEMA_URL,
   RISUMODULE_SCHEMA_VERSION,
 } from '../src/cli/shared/risumodule';
-import { resolvePrivateFixturePath } from '../../../tests/helpers/private-fixture-paths';
+import { resolvePrivateFixturePath } from './helpers/private-fixture-paths';
 
 const tempDirs: string[] = [];
 const privateModularBundlerFixturePath = resolvePrivateFixturePath(

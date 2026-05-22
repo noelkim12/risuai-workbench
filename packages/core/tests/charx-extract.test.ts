@@ -18,7 +18,7 @@ import {
   encodeRisuLuaRecoveryBlock,
   RISULUA_RECOVERY_BLOCK_START,
 } from '../src/cli/shared';
-import { resolvePrivateFixturePath } from '../../../tests/helpers/private-fixture-paths';
+import { resolvePrivateFixturePath } from './helpers/private-fixture-paths';
 
 const tempDirs: string[] = [];
 const privateCharxFixturePath = resolvePrivateFixturePath(

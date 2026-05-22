@@ -1,6 +1,6 @@
 /**
  * Private regression fixture paths are resolved from environment variables.
- * @file tests/helpers/private-fixture-paths.ts
+ * @file packages/core/tests/helpers/private-fixture-paths.ts
  */
 
 import path from 'node:path';

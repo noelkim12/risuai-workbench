@@ -14,7 +14,7 @@ import {
   writeRisuLuaSplitPlan,
   type RisuLuaSplitPlan,
 } from '../src/domain/risulua-split';
-import { resolvePrivateFixturePath } from '../../../tests/helpers/private-fixture-paths';
+import { resolvePrivateFixturePath } from './helpers/private-fixture-paths';
 
 const archiveRoot = resolvePrivateFixturePath(
   'RISU_WORKBENCH_ARCHIVE_FIXTURE_ROOT',
