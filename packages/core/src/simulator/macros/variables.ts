@@ -172,7 +172,7 @@ function evaluateSetTempVarMacro(node: MacroCallNode, state: VariableState, dept
     message: `settempvar ${JSON.stringify(key)} stored in simulator-local temp state`,
     node: node.name,
     range: cloneRange(node.range),
-    details: { key, source: 'localTemp', committed: true },
+    details: { key, valuePreview: value, source: sourceForRange(state, node.range), store: 'localTemp', committed: true },
   });
 
   return '';
@@ -224,7 +224,7 @@ function evaluateVariableEffectMacro(
       message: `${node.name} preserved by preview execution mode`,
       node: node.name,
       range: cloneRange(node.range),
-      details: { executionMode: 'preview', policy: 'source-preserved' },
+      details: { source, executionMode: 'preview', policy: 'source-preserved' },
     });
     return source;
   }
@@ -250,12 +250,13 @@ function evaluateVariableEffectMacro(
     message: `${node.name} ${JSON.stringify(key)} recorded as execute-mode dry-run effect; commit blocked`,
     node: node.name,
     range: cloneRange(node.range),
-    details: {
-      key,
-      valuePreview: value,
-      committed: false,
-      executionMode: 'execute',
-      reason: UNCOMMITTED_EFFECT_REASON,
+      details: {
+        key,
+        valuePreview: value,
+        source: sourceForRange(state, node.range),
+        committed: false,
+        executionMode: 'execute',
+        reason: UNCOMMITTED_EFFECT_REASON,
     },
   });
 

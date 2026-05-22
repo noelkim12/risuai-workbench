@@ -156,7 +156,7 @@
         return;
       }
       announceMainEditorReady();
-    }, 500);
+    }, 50);
   });
 
   onDestroy(() => {
@@ -245,7 +245,7 @@
         message.payload.documentUri === documentUri &&
         message.payload.formatKind === formatKind &&
         message.payload.sectionName === 'CONTENT' &&
-        message.payload.contentVersion >= contentVersion
+        message.payload.contentVersion === contentVersion
       ) {
         runtimePreviewPending = false;
         const nextBindings = message.payload.bindings.length > 0 ? message.payload.bindings : runtimePreviewFallbackBindings;
@@ -280,7 +280,7 @@
         message.payload.documentUri === documentUri &&
         message.payload.formatKind === formatKind &&
         message.payload.sectionName === 'CONTENT' &&
-        message.payload.contentVersion >= contentVersion
+        message.payload.contentVersion === contentVersion
       ) {
         if (!previewResult) previewResult = message.payload;
         previewPending = false;
@@ -1434,7 +1434,7 @@
             <button type="button" class="main-editor-tab" class:main-editor-tab--active={resultTab === 'simulator'} onclick={() => (resultTab = 'simulator')}>Simulator</button>
           </div>
           {#if resultTab === 'preview'}
-            <PreviewPanel preview={lorebookState ? previewResult : formatPreviewResult} pending={previewPending || runtimePreviewPending} />
+        <PreviewPanel preview={lorebookState ? previewResult : formatPreviewResult} pending={previewPending || runtimePreviewPending} sourceText={lorebookState?.contentText} />
             {#if htmlState && formatPreviewResult}
               <HtmlRenderedPreview
                 srcdoc={formatPreviewResult.output}

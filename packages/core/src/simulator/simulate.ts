@@ -62,12 +62,14 @@ interface SimulationState {
   diagnostics: CbsSimulationDiagnostic[];
   coverage: CbsSimulatorCoverage;
   providerConsumption: number;
+  /** Stack of absolute output offsets for each active visitNodes nesting level. */
+  outputOffsetStack: number[];
   /** Bound argument evaluator for macro handler use. */
   evaluateArgument: (nodes: CBSNode[] | undefined, depth: number) => string;
   /** Bound arguments evaluator for macro handler use. */
   evaluateArguments: (node: MacroCallNode, depth: number) => string[];
-  /** Bound node visitor for block evaluator use. */
-  visitNodes: (nodes: CBSNode[], depth: number) => string;
+  /** Bound node visitor for block evaluator use. Defaults to main-output tracking. */
+  visitNodes: (nodes: CBSNode[], depth: number, isMainOutput?: boolean) => string;
 }
 
 const CBS_PARSER_DEPTH_CAP_DIAGNOSTIC_CODE = 'CBS007';
@@ -133,13 +135,14 @@ export function simulateCbsText(
       byMacroName: {},
     },
     providerConsumption: 0,
+    outputOffsetStack: [],
     evaluateArgument: (nodes, d) => evaluateArgument(nodes, state, d),
     evaluateArguments: (node, d) => evaluateArguments(node, state, d),
-    visitNodes: (nodes, d) => visitNodes(nodes, state, d),
+    visitNodes: (nodes, d, isMainOutput) => visitNodes(nodes, state, d, isMainOutput ?? true),
   };
 
   pushTrace(state, { phase: 'parse', message: 'parsed CBS document' });
-  state.output = visitNodes(document.nodes, state, 0);
+  state.output = visitNodes(document.nodes, state, 0, true);
 
   return {
     status: state.status,
@@ -213,10 +216,17 @@ function resolveInitialSimulationStatus(
  * @param depth - 현재 재귀 깊이
  * @returns 평가된 출력 문자열
  */
-function visitNodes(nodes: CBSNode[], state: SimulationState, depth: number): string {
+function visitNodes(nodes: CBSNode[], state: SimulationState, depth: number, isMainOutput = true): string {
   if (depth > state.options.maxDepth) {
     exceedBudget(state, `maxDepth ${state.options.maxDepth} exceeded`);
     return '';
+  }
+
+  if (isMainOutput) {
+    const startOffset = state.outputOffsetStack.length > 0
+      ? state.outputOffsetStack[state.outputOffsetStack.length - 1]
+      : 0;
+    state.outputOffsetStack.push(startOffset);
   }
 
   let output = '';
@@ -225,6 +235,7 @@ function visitNodes(nodes: CBSNode[], state: SimulationState, depth: number): st
     if (!consumeStep(state, node.type, node.range)) {
       // Budget exceeded with stop policy - halt evaluation
       if (state.options.onBudgetExceeded === 'stop') {
+        if (isMainOutput) state.outputOffsetStack.pop();
         return output;
       }
       // Continue policy - skip this node but keep going
@@ -255,9 +266,19 @@ function visitNodes(nodes: CBSNode[], state: SimulationState, depth: number): st
       output += nodeOutput;
     }
 
+    if (isMainOutput) {
+      const currentOffset = state.outputOffsetStack[state.outputOffsetStack.length - 1];
+      state.outputOffsetStack[state.outputOffsetStack.length - 1] = currentOffset + nodeOutput.length;
+    }
+
     if (state.forceReturn) {
+      if (isMainOutput) state.outputOffsetStack.pop();
       return output;
     }
+  }
+
+  if (isMainOutput) {
+    state.outputOffsetStack.pop();
   }
 
   return output;
@@ -317,7 +338,7 @@ function evaluateArgument(
   depth: number,
 ): string {
   if (!nodes || nodes.length === 0) return '';
-  return visitNodes(nodes, state, depth);
+  return visitNodes(nodes, state, depth, false);
 }
 
 /** evaluateArguments 함수. Macro arguments 전체를 string 배열로 평가함. */
@@ -433,7 +454,7 @@ function evaluateMathExpr(node: MathExprNode, state: SimulationState, depth: num
   });
 
   const expression =
-    node.children.length > 0 ? visitNodes(node.children, state, depth + 1) : node.expression;
+    node.children.length > 0 ? visitNodes(node.children, state, depth + 1, false) : node.expression;
   const result = evaluateCalcExpression(expression);
   const output = result === undefined ? 'NaN' : result.toString();
 

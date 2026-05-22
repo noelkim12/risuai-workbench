@@ -22,6 +22,6 @@ export interface BlockEvaluationState extends SourceInfo, DiagnosticState {
   returnValue?: string;
   /** Bound argument evaluator provided by the simulator core. */
   evaluateArgument: (nodes: CBSNode[] | undefined, depth: number) => string;
-  /** Bound node visitor provided by the simulator core. */
-  visitNodes: (nodes: CBSNode[], depth: number) => string;
+  /** Bound node visitor provided by the simulator core. Defaults to main-output tracking. */
+  visitNodes: (nodes: CBSNode[], depth: number, isMainOutput?: boolean) => string;
 }
