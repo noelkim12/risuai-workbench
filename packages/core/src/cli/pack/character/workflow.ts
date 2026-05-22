@@ -14,7 +14,8 @@ import { encodeModuleRisum } from '@/node/rpack';
 import { readJson, isDir } from '@/node/json-listing';
 import { toPosix } from '@/domain/lorebook/folders';
 import { sanitizeFilename } from '../../../utils/filenames';
-import { argValue, setNestedValue, classifyAssetExt, normalizeExt } from '../utils';
+import { setNestedValue, classifyAssetExt, normalizeExt } from '../utils';
+import { isPlainRecord as isPlainRecordShared } from '@/shared/guards';
 import { createBlankCharxV3 } from '@/domain/charx/blank-char';
 import {
   parseLorebookContent,
@@ -40,9 +41,11 @@ import {
 } from '@/domain/custom-extension/extensions/lua';
 import { buildRisuLuaModularDist } from '@/cli/build/workflow';
 import {
+  argValue,
   parseRisuLuaMode,
   parseRisuLuaRecoveryMode,
   discoverRisuLuaBundleTarget,
+  getErrorMessage,
   RISULUA_RECOVERY_HELP_LINE,
   type RisuLuaMode,
   type RisuLuaRecoveryMode,
@@ -102,7 +105,7 @@ export function runPackWorkflow(argv: readonly string[]): number {
     modeResult = parseRisuLuaMode(argv);
     recoveryResult = parseRisuLuaRecoveryMode(modeResult.strippedArgv);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     console.error(`\n  ❌ ${message}\n`);
     return 1;
   }
@@ -121,7 +124,7 @@ export function runPackWorkflow(argv: readonly string[]): number {
     runMain(options);
     return 0;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     console.error(`\n  ❌ ${message}\n`);
     return 1;
   }
@@ -768,12 +771,13 @@ function warnCanonicalConflict(canonicalSource: string, legacySource: string): v
 /**
  * isPlainRecord 함수.
  * Check that parsed JSON is an object record rather than null or an array.
+ * 공유 isPlainRecord에 위임함.
  *
  * @param value - Parsed JSON value to check
  * @returns True when value is a plain object-like record
  */
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  return isPlainRecordShared(value);
 }
 
 /** readStringArrayField 함수.

@@ -61,14 +61,14 @@ No Lua manifest in first implementation. `.risumodule`은 Lua manifest가 아니
 
 ## 아티팩트 소유권 및 매핑 명세
 
-| 아티팩트 종류 | 매핑되는 상위(Upstream) 필드 |
-|---|---|
-| 로어북 | `_moduleLorebook` 필드 |
-| 정규식 | `customscript[]` 배열 필드 |
-| Lua | 모듈 내 트리거(Trigger) 및 Lua 페이로드 영역 |
-| 토글 설정 | `customModuleToggle` 필드 |
-| 변수 설정 | 모듈 수준의 변수 설정 영역 |
-| HTML | `backgroundEmbedding` 필드 |
+| 아티팩트 종류 | 매핑되는 상위(Upstream) 필드                        |
+| ------------- | --------------------------------------------------- |
+| 로어북        | `_moduleLorebook` 필드                              |
+| 정규식        | `customscript[]` 배열 필드                          |
+| Lua           | 모듈 내 트리거(Trigger) 및 Lua 페이로드 영역        |
+| 토글 설정     | `customModuleToggle` 필드                           |
+| 변수 설정     | 모듈 수준의 변수 설정 영역                          |
+| HTML          | `backgroundEmbedding` 필드                          |
 | 에셋 (Assets) | `assets` 튜플(Tuple) 페이로드 및 추출된 버퍼 데이터 |
 
 ## 메타데이터 관리 원칙

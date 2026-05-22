@@ -25,7 +25,7 @@ import {
   parseToggleContent,
   resolveDuplicateToggleSources,
 } from '@/domain/custom-extension/extensions/toggle';
-import { argValue } from '../utils';
+import { argValue, getErrorMessage } from '@/cli/shared';
 
 const HELP_TEXT = `
   🧩 RisuAI Preset Packer
@@ -181,7 +181,7 @@ export function runPackWorkflow(argv: readonly string[]): number {
     runMain(options);
     return 0;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     console.error(`\n  ❌ ${message}\n`);
     return 1;
   }

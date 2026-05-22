@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { writeJson, writeText } from '@/node/fs-helpers';
 import { sanitizeFilename } from '../../utils/filenames';
+import { argValue, getErrorMessage } from '../shared';
 import { RISUMODULE_FILENAME, buildScaffoldRisumoduleManifest } from '../shared/risumodule';
 import { parseRisuLuaMode, type RisuLuaMode } from '../shared/lua-bundler/risulua-mode';
 
@@ -56,6 +57,74 @@ const CHARX_PROSE_PLACEHOLDERS: Array<[string, string]> = [
   ['character/additional_text.risutext', ''],
 ];
 
+const RISULUA_SCAFFOLD_MODULES = [
+  'common.local_helpers',
+  'common.helpers',
+  'host_globals.global_functions',
+  'host_globals.duplicate_globals',
+  'host_globals.async_actions',
+  'button_actions.actions',
+  'runtime.start',
+  'runtime.input',
+  'runtime.output',
+  'runtime.button_click',
+  'runtime.listen_edit',
+  'runtime.listeners',
+  'handler_helpers.output_helpers',
+  'handler_helpers.input_helpers',
+  'handler_helpers.start_helpers',
+  'handler_helpers.button_click_helpers',
+  'handler_helpers.listen_edit_helpers',
+  'state.variable_store',
+  'prompts.instruction_store',
+  'domain.core',
+  'schema.constants',
+  'features.core',
+] as const;
+
+const RISULUA_SCAFFOLD_DOC_FILES: Array<[string, unknown]> = [
+  [
+    'docs/risulua-split-plan.json',
+    {
+      sourceProfile: 'scaffold-empty',
+      entryPath: 'lua/main.risulua',
+      distBuildStrategy: 'concat-build-time-require',
+      files: [
+        'lua/main.risulua',
+        ...RISULUA_SCAFFOLD_MODULES.map((moduleId) => `lua/${moduleId.replace(/\./g, '/')}.risulua`),
+      ],
+    },
+  ],
+  [
+    'docs/refactor-map.json',
+    {
+      symbols: [],
+      note: 'Scaffold placeholder. Populate after extracting or designing domain modules.',
+    },
+  ],
+  [
+    'docs/domain-candidates.json',
+    {
+      candidates: [],
+      note: 'Scaffold placeholder. Add domain candidates as the module grows.',
+    },
+  ],
+  [
+    'docs/risulua-export-manifest.json',
+    {
+      hostVisibleGlobals: [],
+      duplicateGlobals: [],
+      preservedReasons: [],
+    },
+  ],
+  [
+    'docs/risulua-button-action-index.json',
+    {
+      actions: [],
+    },
+  ],
+];
+
 // ── Entry Point ─────────────────────────────────────────────────────
 
 export function runScaffoldWorkflow(argv: readonly string[]): number {
@@ -69,7 +138,7 @@ export function runScaffoldWorkflow(argv: readonly string[]): number {
     runScaffold(options);
     return 0;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     console.error(`\n  ❌ ${message}\n`);
     return 1;
   }
@@ -237,24 +306,105 @@ function scaffoldRisuLuaLayout(root: string, sanitizedName: string, mode: RisuLu
     return 0;
   }
 
-  const luaDir = path.join(root, 'lua');
-  const starter = [
-    '-- RisuLua modular entrypoint',
-    '-- 모듈식 개발: build/pack 단계에서 dist 파일이 생성됩니다.',
-    '',
-    'function onStart()',
-    `  -- ${sanitizedName} starter`,
-    'end',
-    '',
-  ].join('\n');
+  let count = 0;
 
-  writeText(path.join(luaDir, 'main.risulua'), starter);
-  for (const dirName of ['common', 'runtime', 'features', 'adapters']) {
-    fs.mkdirSync(path.join(luaDir, dirName), { recursive: true });
+  writeText(path.join(root, 'lua', 'main.risulua'), renderRisuLuaScaffoldMain(sanitizedName));
+  count++;
+
+  for (const moduleId of RISULUA_SCAFFOLD_MODULES) {
+    writeText(
+      path.join(root, 'lua', ...moduleId.split('.')) + '.risulua',
+      renderRisuLuaScaffoldModule(moduleId),
+    );
+    count++;
+  }
+
+  writeText(path.join(root, 'legacy', 'original.risulua'), '');
+  count++;
+
+  writeText(path.join(root, 'docs', 'risulua-split-report.md'), renderRisuLuaScaffoldReport(sanitizedName));
+  count++;
+
+  for (const [filePath, data] of RISULUA_SCAFFOLD_DOC_FILES) {
+    writeJson(path.join(root, filePath), data);
+    count++;
+  }
+
+  for (const dirName of ['sections', 'preload']) {
+    fs.mkdirSync(path.join(root, 'lua', dirName), { recursive: true });
   }
   fs.mkdirSync(path.join(root, 'dist'), { recursive: true });
 
-  return 1;
+  return count;
+}
+
+function renderRisuLuaScaffoldMain(sanitizedName: string): string {
+  return [
+    '-- RisuLua modular entrypoint',
+    '-- 모듈식 개발: build/pack 단계에서 dist 파일이 생성됩니다.',
+    '-- Generated to mirror risulua-split output so future edits have clear module boundaries.',
+    '',
+    ...RISULUA_SCAFFOLD_MODULES.map((moduleId) => `local ${moduleIdToLuaLocalName(moduleId)} = require("${moduleId}")`),
+    '',
+    'function onStart()',
+    `  -- ${sanitizedName} starter`,
+    '  if runtime_start.onStart then',
+    '    return runtime_start.onStart()',
+    '  end',
+    'end',
+    '',
+    'function onInput(text)',
+    '  if runtime_input.onInput then',
+    '    return runtime_input.onInput(text)',
+    '  end',
+    '  return text',
+    'end',
+    '',
+    'function onOutput(text)',
+    '  if runtime_output.onOutput then',
+    '    return runtime_output.onOutput(text)',
+    '  end',
+    '  return text',
+    'end',
+    '',
+    'function onButtonClick(buttonId)',
+    '  if runtime_button_click.onButtonClick then',
+    '    return runtime_button_click.onButtonClick(buttonId, button_actions_actions)',
+    '  end',
+    'end',
+    '',
+  ].join('\n');
+}
+
+function renderRisuLuaScaffoldModule(moduleId: string): string {
+  return [
+    `-- ${moduleId}`,
+    '-- Empty scaffold module. Add implementation here and export functions through M.',
+    '',
+    'local M = {}',
+    '',
+    'return M',
+    '',
+  ].join('\n');
+}
+
+function renderRisuLuaScaffoldReport(sanitizedName: string): string {
+  return [
+    '# RisuLua scaffold report',
+    '',
+    `- Target: ${sanitizedName}`,
+    '- Source profile: scaffold-empty',
+    '- Entry: `lua/main.risulua`',
+    '- Build strategy: `concat-build-time-require`',
+    '',
+    'This scaffold intentionally creates empty modules for the risulua-split output structure.',
+    'Use the `require("module.id")` bindings in `lua/main.risulua` as the composition root when adding code.',
+    '',
+  ].join('\n');
+}
+
+function moduleIdToLuaLocalName(moduleId: string): string {
+  return moduleId.replace(/\./g, '_');
 }
 
 // ── Preset Scaffold ─────────────────────────────────────────────────
@@ -374,12 +524,4 @@ function printNextSteps(type: ScaffoldType, relPath: string): void {
 
 function formatRisuLuaModeLabel(mode: RisuLuaMode): string {
   return mode === 'modular' ? '모듈식 개발' : '단일 파일 개발';
-}
-
-// ── Utility ─────────────────────────────────────────────────────────
-
-function argValue(argv: readonly string[], name: string): string | null {
-  const index = argv.indexOf(name);
-  if (index < 0) return null;
-  return argv[index + 1] ?? null;
 }

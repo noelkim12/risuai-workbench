@@ -331,10 +331,12 @@ class UnifiedVariableGraph {
 
 **현재 boundary**
 
-- Layer 1은 workspace graph snapshot과 query surface까지만 제공합니다.
+- Layer 1은 workspace graph snapshot과 direct graph query surface까지만 제공합니다.
 - `buildUnifiedVariableGraphFromRegistry()`가 public graph build 경로입니다.
+- Provider가 occurrence 배열, URI bucket, 또는 `findOccurrenceAt()` 같은 low-level graph query를 직접 읽어야 할 때는 `VariableFlowService.getGraph()`로 같은 `UnifiedVariableGraph` 인스턴스에 접근할 수 있습니다.
+- Provider가 cross-file readers/writers/issues/default value까지 포함한 Layer 3 envelope가 필요할 때는 `VariableFlowService.queryVariable(name)` 또는 `VariableFlowService.queryAt(uri, hostOffset)`을 사용합니다.
+- `.risuvar` 파일은 Layer 1 graph occurrence source가 아닙니다. `.risuvar` key만 존재하는 default-only 변수는 `VariableFlowService`가 `queryVariable()` 응답에서 occurrence 없는 synthetic `UnifiedVariableNode`로 표현하는 정책입니다.
 - core `buildUnifiedCBSGraph()`는 기존 batch analyze seed로 남아 있고, `buildDerivedFlowResult()`는 graph snapshot에 issue를 넣지 않고 core `analyzeVariableFlow()`를 on-demand로 위임하는 adjacent helper입니다.
-- cross-file rename / richer hover summary / broader Layer 3 consumer 확장은 아직 future work이지만, definition / references는 현재 editor capability까지 local-first로 연결되어 있습니다.
 
 **IncrementalRebuilder**
 
@@ -561,7 +563,7 @@ interface NormalizedLayer3QuerySnapshot {
 
 CBS 변수와 Lua state를 통합하여 파일 간 변수 흐름을 추적합니다.
 
-현재 first-cut은 `queryVariable(name)` / `queryAt(uri, hostOffset)` 형태의 읽기 전용 service API를 제공하며, provider가 cross-file writer/reader/issues를 같은 contract로 조회할 수 있게 합니다. editor capability wiring은 아직 후속 단계입니다.
+현재 first-cut은 `getGraph()`, `queryVariable(name)`, `queryAt(uri, hostOffset)` 형태의 읽기 전용 service API를 제공합니다. `getGraph()`는 provider가 Layer 1 graph의 direct access API를 그대로 써야 할 때 사용하고, `queryVariable()` / `queryAt()`은 cross-file readers/writers/issues/default value를 stable Layer 3 envelope로 소비해야 할 때 사용합니다. `.risuvar` default-only 변수는 Layer 1 graph에 occurrence를 만들지 않으며, `VariableFlowService`가 query 응답에서 occurrence 없는 synthetic node로만 노출합니다.
 
 ```typescript
 interface VariableFlowQueryResult {

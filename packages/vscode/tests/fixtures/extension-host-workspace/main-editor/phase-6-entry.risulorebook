@@ -1,0 +1,17 @@
+---
+name: Phase 6 Runtime Entry
+comment: Runtime smoke fixture
+mode: normal
+constant: false
+selective: true
+insertion_order: 20
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+phase6
+runtime
+@@@ SECONDARY_KEYS
+acceptance
+@@@ CONTENT
+Hello {{user}} from runtime smoke.

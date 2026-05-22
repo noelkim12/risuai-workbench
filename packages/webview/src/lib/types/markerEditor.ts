@@ -44,6 +44,10 @@ export interface ModuleEditFields {
 
 export type MarkerEditFields = CharacterEditFields | ModuleEditFields;
 
+export interface MarkerEditorReadyPayload {
+  markerUri: string;
+}
+
 export interface CharacterEditorInitPayload {
   mode: 'character';
   markerUri: string;

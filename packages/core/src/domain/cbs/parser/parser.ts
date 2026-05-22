@@ -13,7 +13,9 @@ import type {
 import { CBSTokenizer } from './tokenizer';
 import { type Position, type Range, TokenType, type Token } from './tokens';
 
-const MAX_RECURSION_DEPTH = 20;
+// 64 is chosen as a developer-friendly power-of-2 cap that accommodates realistic
+// prompt-template nesting depths (observed up to 57) while still preventing runaway recursion.
+const MAX_RECURSION_DEPTH = 64;
 
 const PURE_MODE_BLOCKS = new Set<BlockKind>(['each', 'escape', 'pure', 'puredisplay', 'func']);
 const CONDITIONAL_BLOCKS = new Set<BlockKind>(['when', 'if', 'if_pure']);
@@ -22,6 +24,13 @@ type ParsedSegments = {
   segments: CBSNode[][];
   separators: Token[];
   closeToken: Token;
+};
+
+type BlockEndToken = {
+  kind?: BlockKind;
+  shorthand: boolean;
+  legacyNumbered: boolean;
+  unknownSlashClose: boolean;
 };
 
 const BLOCK_KIND_BY_NAME = new Map<string, BlockKind>([
@@ -40,6 +49,11 @@ const BLOCK_KIND_BY_NAME = new Map<string, BlockKind>([
 const BLOCK_CLOSE_ALIASES = new Map<BlockKind, ReadonlySet<BlockKind>>([
   ['if_pure', new Set<BlockKind>(['if'])],
 ]);
+
+/** isLegacyNumberedBlockClose 함수. Playground export가 만든 numbered close shorthand인지 판정함. */
+function isLegacyNumberedBlockClose(value: string): boolean {
+  return /^\/[0-9]+$/.test(value.trim());
+}
 
 export class CBSParser {
   private input = '';
@@ -564,29 +578,37 @@ export class CBSParser {
     };
   }
 
-  private readBlockEndToken(token: Token): { kind?: BlockKind; shorthand: boolean } {
+  private readBlockEndToken(token: Token): BlockEndToken {
     const trimmed = token.raw.trim();
     if (trimmed === '/') {
-      return { shorthand: true };
+      return { shorthand: true, legacyNumbered: false, unknownSlashClose: false };
+    }
+
+    if (isLegacyNumberedBlockClose(trimmed)) {
+      return { shorthand: false, legacyNumbered: true, unknownSlashClose: false };
     }
 
     const body = trimmed.startsWith('/') ? trimmed.slice(1) : trimmed;
     const splitIndex = body.search(/\s/);
     const rawName = (splitIndex === -1 ? body : body.slice(0, splitIndex)).trim();
     const normalizedName = rawName.toLowerCase().replace(/-/g, '_');
+    const kind = BLOCK_KIND_BY_NAME.get(normalizedName);
 
     return {
-      kind: BLOCK_KIND_BY_NAME.get(normalizedName),
+      kind,
       shorthand: false,
+      legacyNumbered: false,
+      unknownSlashClose: kind === undefined,
     };
   }
 
-  private blockEndMatchesKind(
-    actual: { kind?: BlockKind; shorthand: boolean },
-    expected: BlockKind,
-  ): boolean {
-    if (actual.shorthand || actual.kind === expected) {
+  private blockEndMatchesKind(actual: BlockEndToken, expected: BlockKind): boolean {
+    if (actual.shorthand || actual.legacyNumbered || actual.kind === expected) {
       return true;
+    }
+
+    if (actual.unknownSlashClose) {
+      return false;
     }
 
     return actual.kind ? (BLOCK_CLOSE_ALIASES.get(expected)?.has(actual.kind) ?? false) : false;

@@ -6,6 +6,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { isPlainRecord } from '@/shared/guards';
 
 export const RISUMODULE_FILENAME = '.risumodule';
 export const RISUMODULE_KIND = 'risu.module';
@@ -309,10 +310,11 @@ export function applyRisumoduleToModule(
 /**
  * isPlainObject 함수.
  * 값이 평범한 객체(배열이 아닌 non-null object)인지 판정함.
+ * 공유 isPlainRecord에 위임함.
  *
  * @param value - 검증할 임의 값
  * @returns 평범한 객체이면 true, 아니면 false
  */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  return isPlainRecord(value);
 }

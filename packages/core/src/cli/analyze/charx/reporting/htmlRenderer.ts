@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import {
   ELEMENT_TYPES,
@@ -7,7 +6,7 @@ import {
 } from '@/domain';
 import { buildLorebookStructureTree } from '@/domain/lorebook/structure';
 import { escapeHtml } from '../../../shared';
-import { renderHtmlReportShell } from '../../shared/html-report-shell';
+import { buildAnalysisHtmlReport } from '../../shared/html-report-builder';
 import { type Locale, t } from '../../shared/i18n';
 import { buildLuaInteractionFlow } from '../../shared/lua-interaction-builder';
 import { buildRelationshipNetworkPanel } from '../../shared/relationship-network-builders';
@@ -208,15 +207,12 @@ export function renderHtml(data: CharxReportData, outputDir: string, locale: Loc
     ),
   ];
 
-  const outPath = path.join(outputDir, 'analysis');
-  fs.mkdirSync(outPath, { recursive: true });
-  const reportBaseName = 'charx-analysis';
-  const { html, clientJs, assets } = renderHtmlReportShell(doc, { locale, reportBaseName });
-  fs.writeFileSync(path.join(outPath, `${reportBaseName}.html`), html, 'utf8');
-  fs.writeFileSync(path.join(outPath, 'report.js'), clientJs, 'utf8');
-  for (const asset of assets) {
-    fs.writeFileSync(path.join(outPath, asset.fileName), asset.contents, 'utf8');
-  }
+  buildAnalysisHtmlReport({
+    doc,
+    locale,
+    reportBaseName: 'charx-analysis',
+    analysisDir: path.join(outputDir, 'analysis'),
+  });
 }
 
 interface CharxMetricSummary {

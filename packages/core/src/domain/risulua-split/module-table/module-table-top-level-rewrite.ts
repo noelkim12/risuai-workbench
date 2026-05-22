@@ -27,6 +27,7 @@ import type { DryRunPlanResult } from './module-table-refactor-map';
 import type { RisuLuaModuleTableRuntimeRootFact } from './module-table-analyzer-types';
 import type { RisuLuaModuleTableParseResult } from './module-table-parser';
 import { sliceSourceRange } from '../shared/source-slice';
+import { escapeRegExp } from '../shared/string-patterns';
 import type { LuaSourceRange } from '../shared/types';
 import type { OffsetRangeIndex } from '../shared/offset-range-index';
 import { createOffsetRangeIndex } from '../shared/offset-range-index';
@@ -1147,10 +1148,6 @@ function pathToAlias(modulePath: string): string {
   if (modulePath === RISULUA_MODULE_TABLE_RUNTIME_LISTEN_EDIT_PATH) return '__runtime_listen_edit';
   if (isDomainModulePath(modulePath)) return `__domain_${modulePath.split('/').at(-1)?.replace(/\.risulua$/, '') ?? 'module'}`;
   return `__${modulePath.split('/').at(-1)?.replace(/\.risulua$/, '') ?? 'module'}`;
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function joinMainParts(parts: string[]): string {

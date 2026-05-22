@@ -1,3 +1,8 @@
+/**
+ * Lua 수집 결과를 호출 그래프와 모듈, 상태 소유권 분석 결과로 확장하는 2차 분석 단계.
+ * @file packages/core/src/domain/analyze/lua-analyzer.ts
+ */
+
 import { lineStart, sanitizeName, toModuleName, type LuaASTNode } from './lua-helpers';
 import {
   type ApiMeta,
@@ -192,6 +197,13 @@ export function runAnalyzePhase(params: {
     childrenOf.get(fn.parentFunction)!.push(fn);
   }
 
+  /**
+   * getDescendants 함수.
+   * 함수 이름을 기준으로 중첩된 하위 함수들을 깊이 우선으로 펼쳐 반환함.
+   *
+   * @param fnName - 하위 함수를 조회할 부모 함수 이름
+   * @returns 부모 함수 아래에 속한 모든 하위 함수 목록
+   */
   const getDescendants = (fnName: string): CollectedFunction[] => {
     const result: CollectedFunction[] = [];
     for (const child of childrenOf.get(fnName) || []) {
@@ -216,6 +228,13 @@ export function runAnalyzePhase(params: {
   };
 }
 
+/**
+ * collectCommentSections 함수.
+ * Lua 주석 목록에서 섹션 경계로 볼 수 있는 구분 주석을 수집함.
+ *
+ * @param comments - 섹션 후보를 찾을 Lua 주석 AST 노드 목록
+ * @returns 섹션 제목, 시작 줄, 출처를 담은 섹션 후보 목록
+ */
 function collectCommentSections(
   comments: LuaASTNode[],
 ): Array<{ title: string; line: number; source: string }> {
@@ -237,6 +256,14 @@ function collectCommentSections(
   return sections;
 }
 
+/**
+ * buildSectionMapSections 함수.
+ * 수집된 섹션 후보를 전체 라인 범위에 맞춘 연속 구간 목록으로 변환함.
+ *
+ * @param sections - 라인 범위로 확장할 섹션 후보 목록
+ * @param totalLines - 마지막 섹션의 끝 줄을 정할 전체 Lua 소스 라인 수
+ * @returns 섹션별 시작 줄과 끝 줄을 포함한 구간 목록
+ */
 function buildSectionMapSections(
   sections: Array<{ title: string; line: number; source: string }>,
   totalLines: number,
@@ -268,6 +295,13 @@ function buildSectionMapSections(
   return out.slice(0, 40);
 }
 
+/**
+ * inferModuleName 함수.
+ * 수집된 함수 목록에서 대표 함수명을 골라 분석 모듈 이름을 추론함.
+ *
+ * @param functions - 모듈 이름 추론에 사용할 수집 함수 목록
+ * @returns 추론된 모듈 이름 또는 기본 모듈 이름
+ */
 function inferModuleName(functions: CollectedFunction[]): string {
   if (functions.length === 0) return 'main';
   const top = [...functions].sort((a, b) => b.lineCount - a.lineCount)[0];

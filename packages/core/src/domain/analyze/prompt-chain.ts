@@ -1,3 +1,8 @@
+/**
+ * 순서가 있는 프롬프트 템플릿 체인의 변수 의존성과 토큰 비용을 분석하는 유틸 모음.
+ * @file packages/core/src/domain/analyze/prompt-chain.ts
+ */
+
 import { extractCBSVarOps } from '../cbs/cbs';
 import { estimateTokens } from './token-budget';
 
@@ -34,7 +39,13 @@ export interface PromptChainResult {
 
 const CBS_CONDITIONAL_RE = /\{\{#(?:if|when)::/;
 
-/** analyzePromptChain analyzes ordered prompt/template links for dependency risks */
+/**
+ * analyzePromptChain 함수.
+ * 프롬프트 템플릿의 실행 순서를 따라 CBS 변수 읽기/쓰기 의존성과 체인 이슈를 분석함.
+ *
+ * @param templates - 순서대로 평가할 프롬프트 템플릿 목록
+ * @returns 링크별 변수 흐름, 외부 의존성, 총 토큰 추정치와 체인 이슈 목록
+ */
 export function analyzePromptChain(
   templates: Array<{ name: string; text: string; type: string }>,
 ): PromptChainResult {

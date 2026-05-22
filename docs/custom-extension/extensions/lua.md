@@ -94,10 +94,10 @@ require = customRequire              -- require reassignment
 
 ## 상위(Upstream) 필드 매핑
 
-| 대상 | 매핑되는 상위 인터페이스 |
-|---|---|
-| 캐릭터 카드 | `triggerscript` 필드 |
-| 모듈 | 모듈 내 트리거(Trigger) 및 Lua 페이로드 영역 |
+| 대상        | 매핑되는 상위 인터페이스                     |
+| ----------- | -------------------------------------------- |
+| 캐릭터 카드 | `triggerscript` 필드                         |
+| 모듈        | 모듈 내 트리거(Trigger) 및 Lua 페이로드 영역 |
 
 ## CBS 분석 영역
 

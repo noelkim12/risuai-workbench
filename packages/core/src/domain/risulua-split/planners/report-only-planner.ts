@@ -1,14 +1,18 @@
 import luaparse from 'luaparse';
 
+import { getErrorMessage } from '../../../shared/errors';
+
 import { evaluateLuaRuntimeRiskPolicy } from '../profiling/lua-runtime-risk-policy';
 import { detectRisuLuaSourceProfile } from '../profiling/source-profile';
 import { atomToSourceRange, buildTopLevelInventory } from '../inventory/top-level-inventory';
+import { lineOnlyRange } from '../shared/source-range';
+import { inferTargetName, normalizeSourcePath } from '../shared/source-path';
+import { escapeRegExp } from '../shared/string-patterns';
 import type {
   DistBuildStrategy,
   LuaDetectedRoot,
   LuaHostApiSummary,
   LuaPlanRisk,
-  LuaSourceRange,
   LuaTopLevelAtom,
   RisuLuaSplitPlan,
   SourceProfileResult,
@@ -147,7 +151,7 @@ function buildParseFailureRisk(source: string): LuaPlanRisk[] {
     luaparse.parse(source, { comments: false, locations: true, ranges: true, scope: true, luaVersion: '5.3' });
     return [];
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     return [{
       id: 'lua-ast-analysis-failed',
       severity: 'strong-warning',
@@ -260,24 +264,6 @@ function buildVerificationSuggestions(result: SourceProfileResult): string[] {
   ];
 }
 
-function inferTargetName(sourcePath: string): string {
-  const normalized = normalizeSourcePath(sourcePath);
-  const fileName = normalized.split('/').pop() ?? 'main.risulua';
-  return fileName.replace(/\.risulua$/i, '') || 'main';
-}
-
-function normalizeSourcePath(sourcePath: string): string {
-  return sourcePath.replace(/\\/g, '/');
-}
-
-function lineOnlyRange(line: number): LuaSourceRange {
-  return { startLine: line, endLine: line, startOffset: 0, endOffset: 0 };
-}
-
 function sorted(values: string[]): string[] {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b));
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

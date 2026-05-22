@@ -1,6 +1,7 @@
 import { buildSafeRelativePath } from '../shared/path-policy';
 import { buildLineStarts, lineAtOffset } from '../shared/range-utils';
 import { detectRisuLuaSourceProfile } from '../profiling/source-profile';
+import { parseSimpleLuaString, unescapeSimpleLuaString } from '../shared/lua-string';
 import { sliceSourceOffsets } from '../shared/source-slice';
 import type {
   LuaSourceRange,
@@ -239,19 +240,6 @@ export function collectStaticRequires(source: string): SourceProfileStaticRequir
     }
   }
   return requires;
-}
-
-function parseSimpleLuaString(raw: string): string | null {
-  const match = /^(['"])((?:\\.|(?!\1)[^\\])*)\1$/.exec(raw.trim());
-  if (!match) return null;
-  return unescapeSimpleLuaString(match[2]);
-}
-
-function unescapeSimpleLuaString(value: string): string {
-  return value.replace(/\\(['"\\abfnrtv])/g, (_match, escaped: string) => {
-    const map: Record<string, string> = { a: '\u0007', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\u000b' };
-    return map[escaped] ?? escaped;
-  });
 }
 
 function stripLeadingRelative(value: string): string {

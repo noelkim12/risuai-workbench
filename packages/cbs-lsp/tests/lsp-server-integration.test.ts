@@ -72,7 +72,7 @@ import {
   type LuaLsRoutedDocument,
 } from '../src/providers/lua/lualsDocuments';
 import { normalizeLuaHoverForSnapshot } from '../src/providers/lua/lualsProxy';
-import { LSP_POSITION_ENCODING, offsetToPosition, positionToOffset } from '../src/utils/position';
+import { LSP_POSITION_ENCODING, positionToOffset } from '../src/utils/position';
 import {
   getFixtureCorpusEntry,
   serializeCodeLensesEnvelopeForGolden,
@@ -87,6 +87,7 @@ import {
   snapshotProviderBundle,
   snapshotWorkspaceSymbolsEnvelope,
 } from './fixtures/fixture-corpus';
+import { getCompletionItems, getLastDiagnostics, positionAt } from './helpers/lsp-test-utils';
 
 const tempRoots: string[] = [];
 
@@ -206,28 +207,6 @@ function regexDocument(inLines: readonly string[], outLines: readonly string[]):
   return ['---', 'name: regex', '---', '@@@ IN', ...inLines, '@@@ OUT', ...outLines, ''].join('\n');
 }
 
-function positionAt(
-  text: string,
-  needle: string,
-  characterOffset: number = 0,
-  occurrence: number = 0,
-) {
-  let searchFrom = 0;
-  let offset = -1;
-
-  for (let index = 0; index <= occurrence; index += 1) {
-    offset = text.indexOf(needle, searchFrom);
-    if (offset === -1) {
-      break;
-    }
-
-    searchFrom = offset + needle.length;
-  }
-
-  expect(offset).toBeGreaterThanOrEqual(0);
-  return offsetToPosition(text, offset + characterOffset);
-}
-
 function getHoverMarkdown(hover: Hover | null): string | null {
   if (!hover) {
     return null;
@@ -235,16 +214,6 @@ function getHoverMarkdown(hover: Hover | null): string | null {
 
   const contents = hover.contents as { value?: string };
   return contents.value ?? null;
-}
-
-function getCompletionItems(
-  result: CompletionItem[] | { items: CompletionItem[] } | Promise<CompletionItem[] | { items: CompletionItem[] }> | null | undefined,
-) {
-  if (!result || result instanceof Promise) {
-    return [];
-  }
-
-  return Array.isArray(result) ? result : result.items;
 }
 
 function applyTextEdits(text: string, edits: readonly TextEdit[]): string {
@@ -653,12 +622,6 @@ class FakeDocuments {
       listener({ document });
     });
   }
-}
-
-function getLastDiagnostics(connection: FakeConnection) {
-  const diagnostics = connection.diagnostics[connection.diagnostics.length - 1];
-  expect(diagnostics).toBeDefined();
-  return diagnostics!;
 }
 
 function getLatestDiagnosticsForUri(connection: FakeConnection, uri: string) {

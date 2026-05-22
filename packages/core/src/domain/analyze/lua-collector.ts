@@ -1,3 +1,8 @@
+/**
+ * Lua AST에서 함수, API 호출, 상태 접근, 모듈 연결 정보를 수집하는 1차 분석 단계.
+ * @file packages/core/src/domain/analyze/lua-collector.ts
+ */
+
 import {
   safeArray,
   lineStart,
@@ -54,6 +59,13 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
     exportedMembers: Array<{ memberName: string; functionStartLine: number }>;
   }> = [];
 
+  /**
+   * ensureFnIndex 함수.
+   * 함수 이름별 인덱스 버킷을 보장하고 같은 이름의 수집 함수 목록을 반환함.
+   *
+   * @param name - 인덱스에서 조회하거나 생성할 정규화된 함수 이름
+   * @returns 해당 함수 이름에 연결된 수집 함수 목록
+   */
   const ensureFnIndex = (name: string): CollectedFunction[] => {
     if (!collected.functionIndexByName.has(name)) {
       collected.functionIndexByName.set(name, []);
@@ -61,6 +73,13 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
     return collected.functionIndexByName.get(name)!;
   };
 
+  /**
+   * ensureStateVar 함수.
+   * 상태 키별 접근 기록을 보장하고 읽기, 쓰기 메타데이터를 누적할 저장소를 반환함.
+   *
+   * @param key - 접근 기록을 만들거나 조회할 상태 변수 키
+   * @returns 해당 상태 변수 키의 수집 기록
+   */
   const ensureStateVar = (key: string) => {
     if (!collected.stateVars.has(key)) {
       collected.stateVars.set(key, {
@@ -77,10 +96,25 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
     return collected.stateVars.get(key)!;
   };
 
+  /**
+   * currentFn 함수.
+   * 명시 부모 또는 함수 스택을 기준으로 현재 수집 컨텍스트의 함수 이름을 확인함.
+   *
+   * @param explicitParent - 순회 호출자가 우선 지정한 부모 함수 이름
+   * @returns 현재 함수 이름 또는 최상위 컨텍스트를 뜻하는 null
+   */
   const currentFn = (explicitParent: string | null): string | null => {
     return explicitParent || fnStack[fnStack.length - 1] || null;
   };
 
+  /**
+   * extractPreloadModuleName 함수.
+   * package.preload 할당식에서 등록되는 모듈 이름을 추출함.
+   *
+   * @param lhs - 할당문의 왼쪽 AST 노드
+   * @param rhs - 할당문의 오른쪽 AST 노드
+   * @returns package.preload 모듈 이름 또는 추출할 수 없을 때 null
+   */
   const extractPreloadModuleName = (
     lhs: LuaASTNode | null,
     rhs: LuaASTNode | null,
@@ -91,6 +125,14 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
     return strLit((lhs as any).index as LuaASTNode | undefined);
   };
 
+  /**
+   * collectPendingPreloadModule 함수.
+   * package.preload 팩토리에서 반환 테이블과 export 멤버 후보를 임시 수집함.
+   *
+   * @param moduleName - package.preload에 등록된 모듈 이름
+   * @param factoryNode - export 멤버를 찾을 preload 팩토리 함수 노드
+   * @returns 반환값 없음
+   */
   const collectPendingPreloadModule = (moduleName: string, factoryNode: LuaASTNode): void => {
     const body = safeArray<LuaASTNode>((factoryNode as any).body);
     const returnedTableName = body
@@ -121,6 +163,16 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
     });
   };
 
+  /**
+   * maybeCollectRequireBinding 함수.
+   * local require 할당을 찾아 별칭과 모듈 이름의 스코프별 바인딩을 기록함.
+   *
+   * @param lhs - require 결과를 받는 왼쪽 AST 노드
+   * @param rhs - require 호출인지 확인할 오른쪽 AST 노드
+   * @param explicitParent - 바인딩이 속한 함수 컨텍스트
+   * @param isLocalAssign - local 할당만 require 바인딩으로 인정하기 위한 플래그
+   * @returns 반환값 없음
+   */
   const maybeCollectRequireBinding = (
     lhs: LuaASTNode | null,
     rhs: LuaASTNode | null,
@@ -140,6 +192,14 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
     });
   };
 
+  /**
+   * maybeCollectAliasMemberCall 함수.
+   * require 별칭의 멤버 호출을 기록해 이후 모듈 함수 호출로 해석할 수 있게 함.
+   *
+   * @param node - 멤버 호출 후보인 CallExpression 노드
+   * @param explicitParent - 호출이 발생한 함수 컨텍스트
+   * @returns 반환값 없음
+   */
   const maybeCollectAliasMemberCall = (node: LuaASTNode, explicitParent: string | null): void => {
     const base = (node as any).base as LuaASTNode | undefined;
     if (base?.type !== 'MemberExpression' || (base as any).indexer !== '.') return;
@@ -155,6 +215,15 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
     });
   };
 
+  /**
+   * registerFunction 함수.
+   * Lua 함수 선언을 정규화된 수집 함수 레코드로 등록하고 인덱스와 prefix 버킷을 갱신함.
+   *
+   * @param node - 등록할 함수 선언 AST 노드
+   * @param rawName - 표시 이름과 정규화 이름의 원본으로 쓸 함수명
+   * @param opts - local 여부, async 여부, 부모 함수와 핸들러 메타데이터
+   * @returns 새로 등록된 수집 함수 레코드
+   */
   const registerFunction = (
     node: LuaASTNode,
     rawName: string | null,
@@ -213,6 +282,17 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
     return rec;
   };
 
+  /**
+   * markHandler 함수.
+   * RisuAI 이벤트 핸들러 또는 listenEdit 콜백 정보를 수집 결과에 기록함.
+   *
+   * @param type - 핸들러 종류 또는 이벤트 API 이름
+   * @param line - 핸들러가 발견된 소스 라인
+   * @param isAsync - 핸들러가 async 래퍼로 선언되었는지 여부
+   * @param fnName - 핸들러 구현으로 연결된 수집 함수 이름
+   * @param detail - 이벤트 타입처럼 핸들러를 구분하는 부가 정보
+   * @returns 반환값 없음
+   */
   const markHandler = (
     type: string,
     line: number,
@@ -229,6 +309,15 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
     });
   };
 
+  /**
+   * addApiCall 함수.
+   * RisuAI API 호출을 기록하고 호출 함수의 API 카테고리와 이름 집합을 갱신함.
+   *
+   * @param apiName - 호출된 RisuAI API 이름
+   * @param line - API 호출이 발견된 소스 라인
+   * @param fnName - API 호출을 포함한 함수 이름
+   * @returns 반환값 없음
+   */
   const addApiCall = (apiName: string, line: number, fnName: string | null): void => {
     const meta = risuApi[apiName];
     if (!meta) return;
@@ -249,6 +338,18 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
     }
   };
 
+  /**
+   * addStateAccess 함수.
+   * 상태 API의 정적 키 접근을 읽기 또는 쓰기 기록과 정확한 소스 범위로 저장함.
+   *
+   * @param apiName - 상태 접근을 만든 RisuAI API 이름
+   * @param key - 접근 대상 상태 변수 키
+   * @param keyNode - 키 문자열의 소스 범위를 가진 AST 노드
+   * @param fnName - 상태 접근을 포함한 함수 이름
+   * @param line - 상태 접근이 발견된 소스 라인
+   * @param writeValue - 최초 쓰기 기본값 후보로 저장할 문자열 값
+   * @returns 반환값 없음
+   */
   const addStateAccess = (
     apiName: string,
     key: string,
@@ -295,6 +396,15 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
     }
   };
 
+  /**
+   * addDataTable 함수.
+   * 필드가 충분한 테이블 생성식을 데이터 테이블 후보로 수집함.
+   *
+   * @param name - 테이블 후보에 부여할 식별 이름
+   * @param tableNode - 필드 수와 위치를 확인할 테이블 생성식 노드
+   * @param depth - 현재 함수 스택 깊이로 계산한 테이블 중첩 수준
+   * @returns 반환값 없음
+   */
   const addDataTable = (name: string | null, tableNode: LuaASTNode | null, depth: number): void => {
     if (!tableNode || tableNode.type !== 'TableConstructorExpression') return;
     const fields = safeArray((tableNode as any).fields);
@@ -308,6 +418,13 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
     });
   };
 
+  /**
+   * findAsyncFn 함수.
+   * async 호출의 첫 번째 인자로 전달된 함수 선언을 찾아 비동기 핸들러로 등록할 수 있게 함.
+   *
+   * @param callNode - async 호출인지 확인할 AST 노드
+   * @returns async로 감싼 함수 선언 노드 또는 없을 때 null
+   */
   const findAsyncFn = (callNode: LuaASTNode | null): LuaASTNode | null => {
     if (!callNode || callNode.type !== 'CallExpression') return null;
     if (directCalleeName(callNode) !== 'async') return null;
@@ -317,6 +434,14 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
     return null;
   };
 
+  /**
+   * handleCallExpr 함수.
+   * 함수 호출 노드에서 호출 그래프, API 호출, 상태 접근, 로어북 접근 정보를 수집함.
+   *
+   * @param node - 분석할 Lua CallExpression 노드
+   * @param explicitParent - 호출이 속한 함수 컨텍스트
+   * @returns 반환값 없음
+   */
   const handleCallExpr = (node: LuaASTNode, explicitParent: string | null): void => {
     const caller = currentFn(explicitParent);
     maybeCollectAliasMemberCall(node, explicitParent);
@@ -425,6 +550,14 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
     }
   };
 
+  /**
+   * walk 함수.
+   * Lua AST를 재귀 순회하며 함수, 할당, 호출, 테이블 정보를 각 수집기로 전달함.
+   *
+   * @param node - 순회할 Lua AST 노드, 노드 목록 또는 빈 값
+   * @param explicitParent - 현재 순회가 속한 함수 컨텍스트
+   * @returns 반환값 없음
+   */
   const walk = (node: LuaASTNode | LuaASTNode[] | null, explicitParent: string | null): void => {
     if (!node) return;
 

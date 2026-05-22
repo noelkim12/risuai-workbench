@@ -1,23 +1,27 @@
 import './styles.css';
 import App from './App.svelte';
+import MainEditor from './lib/components/editor/main/MainEditor.svelte';
 import MarkerEditor from './lib/components/editor/marker/MarkerEditor.svelte';
 import { mount } from 'svelte';
 import { writable } from 'svelte/store';
 import {
-  createCharacterBrowserOpenItemMessage,
-  createCharacterBrowserReadyMessage,
-  createCharacterBrowserRefreshMessage,
-  createCharacterBrowserSelectMessage,
+  createArtifactBrowserOpenItemMessage,
+  createArtifactBrowserReadyMessage,
+  createArtifactBrowserRefreshMessage,
+  createArtifactBrowserSelectMessage,
   getVsCodeApi,
 } from './lib/vscode';
 import {
-  CHARACTER_BROWSER_PROTOCOL,
-  CHARACTER_BROWSER_PROTOCOL_VERSION,
+  ARTIFACT_BROWSER_PROTOCOL,
+  ARTIFACT_BROWSER_PROTOCOL_VERSION,
+  type ArtifactBrowserCardsPayload,
   type BrowserArtifactCard,
-  type CharacterBrowserExtensionMessage,
+  type ArtifactBrowserExtensionMessage,
+  type ArtifactBrowserDetailPayload,
   type CharacterItem,
   type CharacterSection,
 } from './lib/types';
+import { isPlainRecord, isProtocolEnvelope, isProtocolMessageEnvelope } from './lib/protocolEnvelope';
 
 const vscode = getVsCodeApi();
 const cards = writable<BrowserArtifactCard[]>([]);
@@ -33,16 +37,47 @@ const expandedSectionIds = writable<string[]>([
   'html',
   'diagnostics',
 ]);
-const viewMode = writable<'characters' | 'characterDetail'>('characters');
+const viewMode = writable<'artifacts' | 'artifactDetail'>('artifacts');
 const status = writable('Connecting to extension host…');
 const app = document.querySelector<HTMLDivElement>('#app');
 const isEditorMode = document.documentElement.dataset.editorMode === 'true';
+const webviewName =
+  document.documentElement.dataset.risuWorkbenchView ??
+  document.querySelector('meta[name="risu-workbench-view"]')?.getAttribute('content');
+let artifactBrowserReadyRetryTimer: ReturnType<typeof setInterval> | undefined;
+let artifactBrowserInitialized = false;
+
+type ArtifactBrowserExtensionMessageType = ArtifactBrowserExtensionMessage['type'];
+type ArtifactBrowserExtensionPayloadGuard<TType extends ArtifactBrowserExtensionMessageType> = (
+  payload: unknown,
+) => payload is Extract<ArtifactBrowserExtensionMessage, { type: TType }>['payload'];
+type ArtifactBrowserExtensionMessageGuard = (message: unknown) => message is ArtifactBrowserExtensionMessage;
+
+const ARTIFACT_BROWSER_EXTENSION_MESSAGE_TYPES = [
+  'artifact-browser/cards',
+  'artifact-browser/detailLoaded',
+] as const satisfies readonly ArtifactBrowserExtensionMessageType[];
+
+const ARTIFACT_BROWSER_EXTENSION_MESSAGE_GUARDS = {
+  'artifact-browser/cards': createArtifactBrowserExtensionMessageGuard(
+    'artifact-browser/cards',
+    isArtifactBrowserCardsPayload,
+  ),
+  'artifact-browser/detailLoaded': createArtifactBrowserExtensionMessageGuard(
+    'artifact-browser/detailLoaded',
+    isArtifactBrowserDetailPayload,
+  ),
+} satisfies Record<ArtifactBrowserExtensionMessageType, ArtifactBrowserExtensionMessageGuard>;
 
 if (!app) {
   throw new Error('Missing #app root for Risu Workbench webview.');
 }
 
-if (isEditorMode) {
+if (isEditorMode && webviewName === 'main-editor') {
+  mount(MainEditor, {
+    target: app,
+  });
+} else if (isEditorMode) {
   mount(MarkerEditor, {
     target: app,
   });
@@ -65,14 +100,41 @@ if (isEditorMode) {
   });
 
   window.addEventListener('message', handleMessage);
-  vscode?.postMessage(createCharacterBrowserReadyMessage());
+  announceArtifactBrowserReady();
+  artifactBrowserReadyRetryTimer = setInterval(() => {
+    if (artifactBrowserInitialized) {
+      stopArtifactBrowserReadyRetry();
+      return;
+    }
+    announceArtifactBrowserReady();
+  }, 500);
+}
+
+/**
+ * announceArtifactBrowserReady 함수.
+ * Sidebar webview가 host listener 준비 race에서 복구되도록 ready를 반복 전송함.
+ */
+function announceArtifactBrowserReady(): void {
+  vscode?.postMessage(createArtifactBrowserReadyMessage());
+}
+
+/**
+ * stopArtifactBrowserReadyRetry 함수.
+ * 첫 cards 응답을 받으면 sidebar ready 재전송 timer를 정리함.
+ */
+function stopArtifactBrowserReadyRetry(): void {
+  if (!artifactBrowserReadyRetryTimer) return;
+  clearInterval(artifactBrowserReadyRetryTimer);
+  artifactBrowserReadyRetryTimer = undefined;
 }
 
 function handleMessage(event: MessageEvent<unknown>): void {
   const message = event.data;
-  if (!isCharacterBrowserExtensionMessage(message)) return;
+  if (!isArtifactBrowserExtensionMessage(message)) return;
 
-  if (message.type === 'character-browser/cards') {
+  if (message.type === 'artifact-browser/cards') {
+    artifactBrowserInitialized = true;
+    stopArtifactBrowserReadyRetry();
     const nextCards = message.payload.cards;
     if (message.payload.selectedStableId) {
       selectedStableId.set(message.payload.selectedStableId);
@@ -82,11 +144,11 @@ function handleMessage(event: MessageEvent<unknown>): void {
     return;
   }
 
-  if (message.type === 'character-browser/characterDetailLoaded') {
+  if (message.type === 'artifact-browser/detailLoaded') {
     selectedStableId.set(message.payload.stableId);
     detailSections.set(message.payload.sections);
     expandedSectionIds.update((current) => mergeExpandedSections(current, message.payload.sections));
-    viewMode.set('characterDetail');
+    viewMode.set('artifactDetail');
     setStatus(`Detail loaded with ${message.payload.sections.length} sections.`);
   }
 }
@@ -97,9 +159,9 @@ function handleMessage(event: MessageEvent<unknown>): void {
  */
 function refreshCards(): void {
   setStatus('Refreshing .risuchar and .risumodule root markers…');
-  viewMode.set('characters');
+  viewMode.set('artifacts');
   detailSections.set([]);
-  vscode?.postMessage(createCharacterBrowserRefreshMessage());
+  vscode?.postMessage(createArtifactBrowserRefreshMessage());
 }
 
 /**
@@ -118,7 +180,7 @@ function selectCard(stableId: string): void {
   selectedStableId.set(stableId);
   detailSections.set([]);
   setStatus(`Loading ${selectedCard.artifactKind} detail…`);
-  vscode?.postMessage(createCharacterBrowserSelectMessage(stableId));
+  vscode?.postMessage(createArtifactBrowserSelectMessage(stableId));
 }
 
 /**
@@ -126,7 +188,7 @@ function selectCard(stableId: string): void {
  * Host discovery를 다시 요청하지 않고 보존된 card state로 돌아감.
  */
 function returnToCards(): void {
-  viewMode.set('characters');
+  viewMode.set('artifacts');
   setStatus('Returned to artifact cards.');
 }
 
@@ -156,26 +218,48 @@ function openItem(item: CharacterItem): void {
   })();
   if (!stableId) return;
 
-  vscode?.postMessage(createCharacterBrowserOpenItemMessage(stableId, item.id));
+  vscode?.postMessage(createArtifactBrowserOpenItemMessage(stableId, item.id));
 }
 
 function setStatus(text: string): void {
   status.set(text);
 }
 
-function isCharacterBrowserExtensionMessage(message: unknown): message is CharacterBrowserExtensionMessage {
-  if (!message || typeof message !== 'object') {
-    return false;
-  }
+function isArtifactBrowserExtensionMessage(message: unknown): message is ArtifactBrowserExtensionMessage {
+  if (!isProtocolMessageEnvelope(message, ARTIFACT_BROWSER_PROTOCOL, ARTIFACT_BROWSER_PROTOCOL_VERSION)) return false;
+  if (!isArtifactBrowserExtensionMessageType(message.type)) return false;
+  return ARTIFACT_BROWSER_EXTENSION_MESSAGE_GUARDS[message.type](message);
+}
 
-  const candidate = message as Partial<CharacterBrowserExtensionMessage>;
+/**
+ * createArtifactBrowserExtensionMessageGuard 함수.
+ * Artifact Browser host message envelope와 payload guard를 결합함.
+ *
+ * @param type - 검증할 Artifact Browser extension message type
+ * @param payloadGuard - type별 payload shape 검증 callback
+ * @returns Artifact Browser extension message guard
+ */
+function createArtifactBrowserExtensionMessageGuard<TType extends ArtifactBrowserExtensionMessageType>(
+  type: TType,
+  payloadGuard: ArtifactBrowserExtensionPayloadGuard<TType>,
+): (message: unknown) => message is Extract<ArtifactBrowserExtensionMessage, { type: TType }> {
+  return (message: unknown): message is Extract<ArtifactBrowserExtensionMessage, { type: TType }> =>
+    isProtocolEnvelope(message, ARTIFACT_BROWSER_PROTOCOL, ARTIFACT_BROWSER_PROTOCOL_VERSION, type) &&
+    payloadGuard(message.payload);
+}
+
+function isArtifactBrowserCardsPayload(payload: unknown): payload is ArtifactBrowserCardsPayload {
+  return isPlainRecord(payload) && Array.isArray(payload.cards);
+}
+
+function isArtifactBrowserDetailPayload(payload: unknown): payload is ArtifactBrowserDetailPayload {
+  return isPlainRecord(payload) && typeof payload.stableId === 'string' && Array.isArray(payload.sections);
+}
+
+function isArtifactBrowserExtensionMessageType(value: unknown): value is ArtifactBrowserExtensionMessageType {
   return (
-    candidate.protocol === CHARACTER_BROWSER_PROTOCOL &&
-    candidate.version === CHARACTER_BROWSER_PROTOCOL_VERSION &&
-    ((candidate.type === 'character-browser/cards' && Array.isArray(candidate.payload?.cards)) ||
-      (candidate.type === 'character-browser/characterDetailLoaded' &&
-        typeof candidate.payload?.stableId === 'string' &&
-        Array.isArray(candidate.payload.sections)))
+    typeof value === 'string' &&
+    ARTIFACT_BROWSER_EXTENSION_MESSAGE_TYPES.includes(value as ArtifactBrowserExtensionMessageType)
   );
 }
 

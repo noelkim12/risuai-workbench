@@ -13,6 +13,7 @@ import { parseRegexContent } from '@/domain/regex';
 import { dirExists, readJsonIfExists, readTextIfExists } from '@/node/fs-helpers';
 import { listJsonFilesRecursive, resolveOrderedFiles } from '@/node/json-listing';
 import type { PresetCollectResult, PromptSource } from './types';
+import { isPlainRecord } from '@/shared/guards';
 
 type PromptTextCarrier = unknown;
 
@@ -213,7 +214,7 @@ function asRecordOrNull(value: unknown): Record<string, unknown> | null {
 }
 
 function isRecord(value: unknown): value is GenericRecord {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return isPlainRecord(value);
 }
 
 function listFilesWithSuffix(dir: string, suffix: string): string[] {

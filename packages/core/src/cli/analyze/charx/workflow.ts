@@ -22,7 +22,7 @@ import {
 import { parseRegexContent } from '@/domain/regex';
 import { ensureDir } from '@/node/fs-helpers';
 import { type Locale, detectLocale } from '../shared/i18n';
-import { safeCollect } from '../../shared';
+import { getErrorMessage, safeCollect } from '../../shared';
 import {
   buildLorebookEntryInfos,
   buildRegexScriptInfos,
@@ -120,7 +120,7 @@ export function runAnalyzeCharxWorkflow(argv: readonly string[]): number {
     runMain(outputDir, charxJsonPath, { noMarkdown, noHtml, wiki, wikiOnly, wikiRoot }, locale);
     return 0;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     console.error(`\n  ❌ analyze-charx 실행 실패: ${message}\n`);
     return 1;
   }
@@ -216,7 +216,7 @@ function runMain(
     try {
       charx = JSON.parse(fs.readFileSync(charxJsonPath, 'utf8'));
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       throw new Error(`${path.basename(charxJsonPath)} 파싱 실패: ${message}`);
     }
   } else {
@@ -360,7 +360,7 @@ function runMain(
         `     ✅ charx-analysis.md → ${path.relative('.', path.join(analysisDir, 'charx-analysis.md'))}`,
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       console.warn(`  ⚠️ Markdown 리포트 생성 실패: ${message}`);
     }
   }
@@ -372,7 +372,7 @@ function runMain(
         `     ✅ charx-analysis.html → ${path.relative('.', path.join(analysisDir, 'charx-analysis.html'))}`,
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       console.warn(`  ⚠️ HTML 리포트 생성 실패: ${message}`);
     }
   }
@@ -387,7 +387,7 @@ function runMain(
         `     ✅ wiki → ${path.relative('.', path.join(path.dirname(resolvedOutDir), 'wiki'))}/`,
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       console.warn(`  ⚠️ wiki 생성 실패: ${message}`);
     }
   }

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { isPathSafe } from '../shared/path-policy';
+import { writeRisuLuaStarterSurface } from './starter-surface';
 
 export interface RisuLuaWorkspaceFile {
   path: string;
@@ -31,6 +32,11 @@ export function writeRisuLuaWorkspaceFiles(
     fs.writeFileSync(outputPath, file.content, 'utf8');
     paths.push(outputPath);
   }
+
+  writeRisuLuaStarterSurface({
+    outputRoot: options.outputRoot,
+    existingPaths: files.map((file) => file.path),
+  });
 
   return { paths };
 }

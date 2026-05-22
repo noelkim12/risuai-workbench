@@ -1,3 +1,8 @@
+/**
+ * Lua 소스를 파싱하고 CBS 분석 아티팩트로 변환하는 코어 진입점.
+ * @file packages/core/src/domain/analyze/lua-core.ts
+ */
+
 import luaparse, { type Chunk } from 'luaparse';
 import { asRecord } from '@/domain';
 import {
@@ -44,7 +49,13 @@ export interface LuaAnalysisArtifact {
   elementCbs: ElementCBSData[];
 }
 
-/** Extract basename from file path without using node:path */
+/**
+ * getBasename 함수.
+ * Node 경로 모듈 없이 파일 경로에서 확장자를 제외한 기본 이름을 추출함.
+ *
+ * @param filePath - 기본 이름을 얻을 Lua 파일 경로
+ * @returns 확장자를 제거한 파일 기본 이름
+ */
 function getBasename(filePath: string): string {
   // Handle both POSIX and Windows paths
   const lastSepIndex = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
@@ -53,7 +64,13 @@ function getBasename(filePath: string): string {
   return lastDotIndex > 0 ? filename.slice(0, lastDotIndex) : filename;
 }
 
-/** Lua 소스 코드를 분석하여 공유 가능한 분석 결과를 반환 */
+/**
+ * analyzeLuaSource 함수.
+ * Lua 소스 코드를 luaparse 기반 수집, 분석 단계로 처리하고 공유 가능한 분석 아티팩트를 만듦.
+ *
+ * @param input - 분석할 파일 경로, Lua 소스, 선택적 charx 데이터를 담은 요청 객체
+ * @returns 수집 데이터, 분석 결과, 상관관계, CBS 데이터를 포함한 Lua 분석 아티팩트
+ */
 export function analyzeLuaSource(input: {
   filePath: string;
   source: string;
@@ -102,6 +119,13 @@ export function analyzeLuaSource(input: {
   };
 }
 
+/**
+ * buildCharxCorrelations 함수.
+ * charx 데이터 안의 로어북과 정규식 스크립트를 수집 결과와 연결함.
+ *
+ * @param params - 선택적 charx 데이터와 Lua 수집 결과를 담은 상관관계 입력
+ * @returns 로어북 상관관계와 정규식 상관관계 결과
+ */
 function buildCharxCorrelations(params: {
   charxData?: Record<string, unknown> | null;
   collected: CollectedData;
@@ -151,6 +175,13 @@ function buildCharxCorrelations(params: {
   };
 }
 
+/**
+ * serializeCollected 함수.
+ * Map과 Set 중심의 수집 결과를 외부 공유에 적합한 직렬화 객체로 변환함.
+ *
+ * @param collected - 직렬화할 Lua 1차 수집 결과
+ * @returns 상태 변수, 함수, 핸들러, API 호출, 상태 접근 위치를 담은 직렬화 결과
+ */
 function serializeCollected(collected: CollectedData): LuaAnalysisArtifact['serialized'] {
   const stateVars: LuaAnalysisArtifact['serialized']['stateVars'] = {};
   for (const [key, value] of collected.stateVars) {
@@ -193,6 +224,13 @@ function serializeCollected(collected: CollectedData): LuaAnalysisArtifact['seri
   };
 }
 
+/**
+ * buildLuaElementCbs 함수.
+ * Lua 파일 단위로 읽기, 쓰기 상태 키를 모아 CBS 요소 데이터를 만듦.
+ *
+ * @param params - 요소 이름에 쓸 기본 파일명과 Lua 수집 결과
+ * @returns Lua 요소의 CBS 읽기, 쓰기 관계 데이터
+ */
 function buildLuaElementCbs(params: { baseName: string; collected: CollectedData }): ElementCBSData {
   const { baseName, collected } = params;
   const reads = new Set<string>();

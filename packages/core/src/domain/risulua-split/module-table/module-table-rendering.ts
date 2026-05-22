@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { serializeStableJson } from '../shared/stable-json';
+
 import {
   RISULUA_MODULE_TABLE_CLASSIFICATION_CODES,
   RISULUA_MODULE_TABLE_DOMAIN_CANDIDATES_PATH,
@@ -284,31 +286,4 @@ function uniqueSorted(values: string[]): string[] {
   return [...new Set(values)].sort((left, right) => left.localeCompare(right));
 }
 
-function serializeStableJson(value: unknown, options?: { cwd?: string }): string {
-  const cwd = normalizeSeparators(options?.cwd ?? process.cwd());
-  return `${JSON.stringify(normalizeStableValue(value, cwd), null, 2)}\n`;
-}
 
-function normalizeStableValue(value: unknown, cwd: string): unknown {
-  if (typeof value === 'string') return normalizeStableString(value, cwd);
-  if (Array.isArray(value)) return value.map((item) => normalizeStableValue(item, cwd));
-  if (value !== null && typeof value === 'object') {
-    const output: Record<string, unknown> = {};
-    for (const [key, nested] of Object.entries(value)) {
-      output[key] = normalizeStableValue(nested, cwd);
-    }
-    return output;
-  }
-  return value;
-}
-
-function normalizeStableString(value: string, cwd: string): string {
-  const normalized = normalizeSeparators(value);
-  if (normalized === cwd) return '<repo-root>';
-  if (normalized.startsWith(`${cwd}/`)) return `<repo-root>/${normalized.slice(cwd.length + 1)}`;
-  return normalized;
-}
-
-function normalizeSeparators(value: string): string {
-  return value.replace(/\\/g, '/');
-}

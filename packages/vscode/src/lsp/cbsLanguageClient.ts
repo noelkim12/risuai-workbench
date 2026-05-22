@@ -22,6 +22,7 @@ import {
   type CbsClientBoundaryInputs,
   type CbsClientBoundarySnapshot,
 } from './cbsLanguageClientBoundary';
+import { getErrorMessage } from '../shared/errors';
 export {
   CBS_MARKDOWN_TRUSTED_COMMANDS,
   CBS_OCCURRENCE_NAVIGATION_COMMAND,
@@ -125,7 +126,7 @@ export function startCbsLanguageClient(context: vscode.ExtensionContext): void {
     .then(() => reportCbsRuntimeAvailability(currentClient, output))
     .catch((error: unknown) => {
       output.appendLine(
-        `[CBS Language Server] Could not query runtime availability: ${error instanceof Error ? error.message : String(error)}`,
+        `[CBS Language Server] Could not query runtime availability: ${getErrorMessage(error)}`,
       );
     });
 }

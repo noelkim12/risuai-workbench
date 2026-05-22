@@ -3,6 +3,9 @@ import { extractRisuLuaSections, type RisuLuaExtractedSection } from '../extract
 import { writeRisuLuaSplitPlan } from '../output/plan-writer';
 import { writeRisuLuaSplitReport } from '../output/report-writer';
 import { writeRisuLuaWorkspaceFiles, type RisuLuaWorkspaceFile } from '../output/workspace-writer';
+import { wholeSourceRange } from '../shared/source-range';
+import { inferTargetName, normalizeSourcePath } from '../shared/source-path';
+import { collectPresent } from '../shared/string-patterns';
 import type {
   LuaDetectedRoot,
   LuaHostApiSummary,
@@ -69,12 +72,7 @@ export function createRisuLuaSectionRecoveryArtifacts(
       {
         path: 'legacy/original.risulua',
         kind: 'legacy-original',
-        sourceRanges: [{
-          startLine: 1,
-          endLine: Math.max(1, input.source.split('\n').length),
-          startOffset: 0,
-          endOffset: input.source.length,
-        }],
+        sourceRanges: [wholeSourceRange(input.source)],
         confidence: 'high',
         reason: 'Original source preserved outside the lua source graph for recovery and audit.',
         preserveOrderIndex: sections.length,
@@ -189,21 +187,4 @@ function summarizeHostApis(source: string): LuaHostApiSummary {
     asyncCalls: collectPresent(source, ['LLM', 'request', 'Promise', 'async']),
     unknownGlobals: [],
   };
-}
-
-function collectPresent(source: string, names: string[]): string[] {
-  return names.filter((name) => new RegExp(`\\b${escapeRegExp(name)}\\b`).test(source));
-}
-
-function inferTargetName(sourcePath: string): string {
-  const fileName = normalizeSourcePath(sourcePath).split('/').pop() ?? 'main.risulua';
-  return fileName.replace(/\.risulua$/i, '') || 'main';
-}
-
-function normalizeSourcePath(sourcePath: string): string {
-  return sourcePath.replace(/\\/g, '/');
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

@@ -1,5 +1,4 @@
-import type { Definition, LocationLink, Position, TextDocumentPositionParams } from 'vscode-languageserver/node';
-import { CBSBuiltinRegistry } from 'risu-workbench-core';
+import type { Definition, LocationLink } from 'vscode-languageserver/node';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FragmentAnalysisService } from '../../src/core';
@@ -8,6 +7,11 @@ import {
   DefinitionProvider,
 } from '../../src/features/navigation';
 import type { VariableFlowService } from '../../src/services';
+import {
+  createTextDocumentPositionParams,
+  createBuiltinProviderDeps,
+  sharedBuiltinRegistry,
+} from '../helpers/provider-test-harness';
 import { offsetToPosition } from '../../src/utils/position';
 import { createFixtureRequest, getFixtureCorpusEntry } from '../fixtures/fixture-corpus';
 import {
@@ -16,54 +20,20 @@ import {
   createVariableFlowServiceStub,
   createVariableOccurrence,
 } from './variable-flow-test-helpers';
-
-function locateNthOffset(text: string, needle: string, occurrence: number = 0): number {
-  let fromIndex = 0;
-  let foundIndex = -1;
-
-  for (let index = 0; index <= occurrence; index += 1) {
-    foundIndex = text.indexOf(needle, fromIndex);
-    if (foundIndex === -1) {
-      break;
-    }
-
-    fromIndex = foundIndex + needle.length;
-  }
-
-  expect(foundIndex).toBeGreaterThanOrEqual(0);
-  return foundIndex;
-}
-
-function positionAt(
-  text: string,
-  needle: string,
-  characterOffset: number = 0,
-  occurrence: number = 0,
-): Position {
-  return offsetToPosition(text, locateNthOffset(text, needle, occurrence) + characterOffset);
-}
+import { locateNthOffset, positionAt } from '../helpers/lsp-test-utils';
 
 function createProvider(
   service: FragmentAnalysisService,
   request: ReturnType<typeof createFixtureRequest>,
   variableFlowService?: VariableFlowService,
 ): DefinitionProvider {
-  return new DefinitionProvider(new CBSBuiltinRegistry(), {
-    analysisService: service,
-    resolveRequest: ({ textDocument }) => (textDocument.uri === request.uri ? request : null),
-    variableFlowService,
-  });
+  return new DefinitionProvider(
+    sharedBuiltinRegistry,
+    createBuiltinProviderDeps(service, request, variableFlowService),
+  );
 }
 
-function createParams(
-  request: ReturnType<typeof createFixtureRequest>,
-  position: Position,
-): TextDocumentPositionParams {
-  return {
-    textDocument: { uri: request.uri },
-    position,
-  };
-}
+const createParams = createTextDocumentPositionParams;
 
 function expectLocationLink(definition: Definition | null): LocationLink[] {
   expect(definition).toBeDefined();
@@ -77,7 +47,7 @@ function expectLocationLink(definition: Definition | null): LocationLink[] {
 
 describe('DefinitionProvider', () => {
   it('exposes local-only availability honesty metadata', () => {
-    const provider = new DefinitionProvider(new CBSBuiltinRegistry());
+    const provider = new DefinitionProvider(sharedBuiltinRegistry);
 
     expect(provider.availability).toEqual(DEFINITION_PROVIDER_AVAILABILITY);
     expect(provider.availability).toEqual({

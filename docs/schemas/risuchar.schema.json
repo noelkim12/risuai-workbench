@@ -1,9 +1,10 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://risuai-workbench.dev/schemas/risuchar.schema.json",
-  "title": "Risu Character Manifest",
+  "title": "RisuAI Workbench Character Manifest",
   "description": "Root marker and metadata owner for RisuAI Workbench character workspaces",
   "type": "object",
+  "additionalProperties": true,
   "required": [
     "kind",
     "schemaVersion",
@@ -19,6 +20,7 @@
   "properties": {
     "$schema": {
       "type": "string",
+      "const": "https://risuai-workbench.dev/schemas/risuchar.schema.json",
       "description": "Schema URL reference"
     },
     "kind": {
@@ -28,7 +30,7 @@
     },
     "schemaVersion": {
       "type": "integer",
-      "minimum": 1,
+      "const": 1,
       "description": "Schema version number"
     },
     "id": {
@@ -68,11 +70,14 @@
     },
     "tags": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Canonical character tag list mapped to CCv3 data.tags."
     },
     "flags": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["utilityBot", "lowLevelAccess"],
       "properties": {
         "utilityBot": {
@@ -85,6 +90,5 @@
         }
       }
     }
-  },
-  "additionalProperties": false
+  }
 }

@@ -66,15 +66,15 @@ No Lua manifest in first implementation. `.risuchar`는 Lua manifest가 아니�
 
 ## 아티팩트 소유권 및 매핑 명세
 
-| 아티팩트 종류 | 매핑되는 상위(Upstream) 필드 |
-|---|---|
-| 캐릭터 prose 파일 | `description`, `first_mes`, `system_prompt`, `replace_global_note`, `creator_notes`, `additionalText`, `alternate_greetings` canonical 이름을 사용하며, `replace_global_note`는 `data.replaceGlobalNote`로 직접 매핑 |
+| 아티팩트 종류     | 매핑되는 상위(Upstream) 필드                                                                                                                                                                                                                                                                               |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 캐릭터 prose 파일 | `description`, `first_mes`, `system_prompt`, `replace_global_note`, `creator_notes`, `additionalText`, `alternate_greetings` canonical 이름을 사용하며, `replace_global_note`는 `data.replaceGlobalNote`로 직접 매핑                                                                                       |
 | 캐릭터 메타데이터 | `.risuchar`가 소유하는 `data` 하위의 `name`, `creator`, `character_version`, `creation_date`, `modification_date`, `extensions.risuai.utilityBot`, `extensions.risuai.lowLevelAccess`, `data.tags`, selected thumbnail metadata via `.risuchar.image`, and existing identity/version/timestamp/flag fields |
-| 로어북 | `char_book` 및 로어북 관련 확장(Extension) 필드 전체 |
-| 정규식 | `extensions.risuai.customScripts` 필드 |
-| Lua | `triggerscript` 필드 |
-| 변수 설정 | `extensions.risuai.defaultVariables` 필드 |
-| HTML | `extensions.risuai.backgroundHTML` 필드 |
+| 로어북            | `char_book` 및 로어북 관련 확장(Extension) 필드 전체                                                                                                                                                                                                                                                       |
+| 정규식            | `extensions.risuai.customScripts` 필드                                                                                                                                                                                                                                                                     |
+| Lua               | `triggerscript` 필드                                                                                                                                                                                                                                                                                       |
+| 변수 설정         | `extensions.risuai.defaultVariables` 필드                                                                                                                                                                                                                                                                  |
+| HTML              | `extensions.risuai.backgroundHTML` 필드                                                                                                                                                                                                                                                                    |
 
 > **참고**: `character/metadata.json`, `character/*.txt`, `character/alternate_greetings.json`은 migration window의 legacy fallback입니다. 같은 필드에 canonical과 legacy가 함께 있으면 canonical이 이기며, legacy 값은 warning 후 무시됩니다.
 
@@ -83,6 +83,7 @@ No Lua manifest in first implementation. `.risuchar`는 Lua manifest가 아니�
 데이터 페이로드가 아닌 구조화된 메타데이터는 루트 `.risuchar`가 소유합니다. `.risuchar`는 prose path 목록이나 field mapping entries를 포함하지 않습니다. 캐릭터 카드 패키징 시 참조하는 주요 메타데이터 필드는 다음과 같습니다.
 
 ### 문자열 필드
+
 - `name` (캐릭터 이름)
 - `creator` (제작자)
 - `character_version` (캐릭터 버전)
@@ -90,12 +91,14 @@ No Lua manifest in first implementation. `.risuchar`는 Lua manifest가 아니�
 - `modification_date` (수정일)
 
 ### 불리언(Boolean) 필드
+
 - `utilityBot` (유틸리티 봇 여부)
 - `lowLevelAccess` (저수준 접근 허용 여부)
 
 위 항목들은 로어북이나 정규식 같은 데이터 페이로드 영역이 아닌 구조화 메타데이터 영역에서 설명되어야 합니다. 캐릭터 카드는 `.risutoggle` 아티팩트를 지원하지 않으므로 토글 소유권을 이 대상으로 확장해서는 안 됩니다.
 
 ### 이미지 및 태그 필드
+
 - `image`는 워크스페이스 상대 경로로 선택된 캐릭터 썸네일을 가리킵니다. 일반적으로 `assets/icons/<filename>` 형태이며, 바이너리 자체나 전체 asset manifest를 `.risuchar`에 넣지 않습니다.
 - `tags`는 CCv3 `data.tags`로 다시 패킹되는 canonical 태그 배열입니다. Risu 내부 `additionalData.tag`는 호환 미러로 취급하며 `.risuchar`의 canonical 필드로 분리하지 않습니다.
 - `assets/manifest.json`은 여전히 asset metadata와 추출 파일 경로의 소유자입니다. `.risuchar.image`는 그중 하나를 대표 썸네일로 선택하는 metadata pointer입니다.

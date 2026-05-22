@@ -13,6 +13,10 @@
   },
   "exports": {
     ".": "./dist/index.js",
+    "./cbs-browser": {
+      "types": "./dist/cbs-browser.d.ts",
+      "default": "./dist/cbs-browser.js"
+    },
     "./node": {
       "types": "./dist/node/index.d.ts",
       "default": "./dist/node/index.js"

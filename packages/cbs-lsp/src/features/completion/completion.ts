@@ -37,6 +37,10 @@ import {
   createCompletionTextEditPlan,
 } from './completion-text-edit';
 import {
+  buildDecoratorCompletions,
+  detectDecoratorCompletionContext,
+} from './decorator-completion';
+import {
   provideCheapRootCompletions,
 } from './cheap-root-completion';
 import { provideCheapMacroArgumentCompletions } from './cheap-macro-argument-completion';
@@ -90,7 +94,7 @@ export interface CompletionProviderOptions {
  * CBS_COMPLETION_TRIGGER_CHARACTERS 상수.
  * CBS/Lua 입력 흐름에서 자동 completion을 재요청해야 하는 핵심 trigger 문자 집합.
  */
-export const CBS_COMPLETION_TRIGGER_CHARACTERS = ['{', ':', '#', '/', '?', '<', '"'] as const;
+export const CBS_COMPLETION_TRIGGER_CHARACTERS = ['{', ':', '#', '/', '?', '<', '"', '@'] as const;
 
 function canCompleteFromRecoveredPlainTextContext(context: CompletionTriggerContext): boolean {
   return context.type !== 'none' && context.type !== 'close-tag';
@@ -306,6 +310,16 @@ export class CompletionProvider {
     const request = this.resolveRequest(params);
     if (!request) {
       return [];
+    }
+
+    // Fast path: decorator completion for line-leading @@
+    const decoratorContext = detectDecoratorCompletionContext(
+      request.text,
+      params.position.line,
+      params.position.character,
+    );
+    if (decoratorContext) {
+      return buildDecoratorCompletions(decoratorContext, params.position.line);
     }
 
     const fastRootCompletions = provideCheapRootCompletions(

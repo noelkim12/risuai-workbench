@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { BrowserArtifactCard } from '../types';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
-  import CharacterCard from './CharacterCard.svelte';
+  import ArtifactCard from './ArtifactCard.svelte';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
   import EmptyState from './EmptyState.svelte';
 
@@ -36,7 +36,7 @@
   {:else}
     <section class="card-list" aria-label="Discovered workbench items">
       {#each cards as card (card.stableId)}
-        <CharacterCard card={card} selected={card.stableId === selectedStableId} {onSelect} />
+        <ArtifactCard card={card} selected={card.stableId === selectedStableId} {onSelect} />
       {/each}
     </section>
   {/if}

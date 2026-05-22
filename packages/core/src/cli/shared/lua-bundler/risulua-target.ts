@@ -4,6 +4,7 @@ import path from 'node:path';
 import { sanitizeFilename } from '../../../utils/filenames';
 import { RISUMODULE_FILENAME, RISUMODULE_KIND, readRisumoduleManifest } from '../risumodule';
 import type { RisuLuaMode } from './risulua-mode';
+import { isPlainRecord } from '@/shared/guards';
 
 /**
  * RisuLua 캐릭터 마커 파일 이름.
@@ -282,5 +283,5 @@ function readJsonObject(filePath: string, label: string): Record<string, unknown
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  return isPlainRecord(value);
 }

@@ -1,3 +1,8 @@
+/**
+ * 여러 RisuAI 아티팩트를 함께 사용할 때 발생할 수 있는 구성 충돌을 분석하는 유틸 모음.
+ * @file packages/core/src/domain/analyze/composition.ts
+ */
+
 import { analyzeVariableFlow } from './variable-flow';
 import type { ElementCBSData } from './correlation';
 import type { VarFlowResult } from './variable-flow-types';
@@ -51,7 +56,13 @@ export interface CompositionResult {
   };
 }
 
-/** analyzeComposition detects multi-artifact compatibility risks */
+/**
+ * analyzeComposition 함수.
+ * 캐릭터, 모듈, 프리셋을 합친 구성에서 변수, 키워드, 정규식, 네임스페이스 충돌을 분석함.
+ *
+ * @param input - 함께 평가할 캐릭터, 모듈, 프리셋 구성 입력
+ * @returns 감지된 충돌, 병합 변수 흐름, 아티팩트 목록과 호환성 요약
+ */
 export function analyzeComposition(input: CompositionInput): CompositionResult {
   const allArtifacts = [
     ...(input.charx ? [input.charx] : []),
@@ -105,6 +116,14 @@ export function analyzeComposition(input: CompositionInput): CompositionResult {
   };
 }
 
+/**
+ * detectVariableCollisions 함수.
+ * 여러 아티팩트가 같은 CBS 변수를 쓰면서 기본값이 다른 경우를 충돌로 기록함.
+ *
+ * @param artifacts - 변수 쓰기 정보를 가진 아티팩트 목록
+ * @param conflicts - 감지한 변수 이름 충돌을 누적할 결과 배열
+ * @returns 반환값 없음
+ */
 function detectVariableCollisions(
   artifacts: ArtifactInput[],
   conflicts: CompositionConflict[],
@@ -146,6 +165,14 @@ function detectVariableCollisions(
   }
 }
 
+/**
+ * detectKeywordCollisions 함수.
+ * 서로 다른 아티팩트의 로어북 키워드가 같은 검색어를 공유하는 경우를 기록함.
+ *
+ * @param artifacts - 로어북 키워드 정보를 가진 아티팩트 목록
+ * @param conflicts - 감지한 키워드 충돌을 누적할 결과 배열
+ * @returns 반환값 없음
+ */
 function detectKeywordCollisions(
   artifacts: ArtifactInput[],
   conflicts: CompositionConflict[],
@@ -172,6 +199,14 @@ function detectKeywordCollisions(
   }
 }
 
+/**
+ * detectRegexConflicts 함수.
+ * 여러 아티팩트에 같은 입력 정규식 패턴이 등록된 경우 실행 순서 충돌로 기록함.
+ *
+ * @param artifacts - 정규식 패턴 정보를 가진 아티팩트 목록
+ * @param conflicts - 감지한 정규식 충돌을 누적할 결과 배열
+ * @returns 반환값 없음
+ */
 function detectRegexConflicts(
   artifacts: ArtifactInput[],
   conflicts: CompositionConflict[],
@@ -198,6 +233,15 @@ function detectRegexConflicts(
   }
 }
 
+/**
+ * detectOverwriteRaces 함수.
+ * 병합된 변수 흐름에서 여러 아티팩트가 같은 변수를 덮어쓰는 런타임 경합을 기록함.
+ *
+ * @param mergedVariableFlow - 전체 아티팩트를 합쳐 계산한 변수 흐름 분석 결과
+ * @param artifacts - 변수 이벤트의 원본 아티팩트를 찾기 위한 아티팩트 목록
+ * @param conflicts - 감지한 덮어쓰기 경합을 누적할 결과 배열
+ * @returns 반환값 없음
+ */
 function detectOverwriteRaces(
   mergedVariableFlow: VarFlowResult,
   artifacts: ArtifactInput[],

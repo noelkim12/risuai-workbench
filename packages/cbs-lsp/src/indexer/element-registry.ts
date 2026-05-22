@@ -18,6 +18,8 @@ import {
 
 import { createCbsAgentProtocolMarker, type CbsAgentProtocolMarker } from '../core';
 
+import { getErrorMessage } from '../helpers/error-helper';
+
 import {
   MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH,
   type WorkspaceFileArtifactClass,
@@ -431,7 +433,7 @@ function buildLuaFileRecord(file: WorkspaceScanFile): BuiltRegistryFileRecord {
         analysisKind: 'lua-file',
         elementIds: [],
         graphSeedCount: 0,
-        analysisError: error instanceof Error ? error.message : String(error),
+        analysisError: getErrorMessage(error),
       },
       elements: [],
       graphSeeds: [],

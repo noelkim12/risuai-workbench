@@ -28,6 +28,9 @@ tmp/
 graphify-out/
 .code-review-graph/
 
+## Worktrees
+.worktrees/
+
 ## CLI package publishing/test artifacts
 *.tgz
 
@@ -50,3 +53,20 @@ ui-mockup
 .tools/
 scripts/
 packages/vscode/.vscode-test/
+packages/cbs-lsp/checklist/
+.vscode/launch.json
+.vscode/tasks.json
+.changeset/config.json
+.changeset/README.md
+.history/
+docs/refactor/
+docs/superpowers/plans/2026-04-27-risuai-lua-runtime-overlay.md
+docs/superpowers/plans/2026-04-27-risulua-runtime-completion-overlay.md
+docs/superpowers/plans/2026-04-28-cbs-lsp-features-reorganization.md
+docs/superpowers/plans/2026-04-28-diagnostics-router-policy.md
+docs/superpowers/plans/2026-04-28-unified-variable-graph-phase-1.md
+docs/superpowers/plans/2026-04-28-unified-variable-graph-phase-2.md
+docs/superpowers/plans/2026-04-28-unified-variable-graph-phase-3.md
+docs/superpowers/plans/2026-04-29-replace-global-note-canonicalization.md
+docs/superpowers/plans/2026-04-29-risuchar-image-tags-metadata.md
+docs/superpowers/plans/2026-04-30-cbs-lsp-local-func-macro-support.md

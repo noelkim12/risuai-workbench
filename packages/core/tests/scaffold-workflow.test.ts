@@ -6,6 +6,65 @@ import path from 'node:path';
 import { runScaffoldWorkflow } from '../src/cli/scaffold/workflow';
 import { RISUMODULE_FILENAME, RISUMODULE_KIND } from '../src/cli/shared/risumodule';
 
+const RISULUA_SCAFFOLD_EXPECTED_FILES = [
+  'lua/main.risulua',
+  'lua/common/local_helpers.risulua',
+  'lua/common/helpers.risulua',
+  'lua/host_globals/global_functions.risulua',
+  'lua/host_globals/duplicate_globals.risulua',
+  'lua/host_globals/async_actions.risulua',
+  'lua/button_actions/actions.risulua',
+  'lua/runtime/start.risulua',
+  'lua/runtime/input.risulua',
+  'lua/runtime/output.risulua',
+  'lua/runtime/button_click.risulua',
+  'lua/runtime/listen_edit.risulua',
+  'lua/runtime/listeners.risulua',
+  'lua/handler_helpers/output_helpers.risulua',
+  'lua/handler_helpers/input_helpers.risulua',
+  'lua/handler_helpers/start_helpers.risulua',
+  'lua/handler_helpers/button_click_helpers.risulua',
+  'lua/handler_helpers/listen_edit_helpers.risulua',
+  'lua/state/variable_store.risulua',
+  'lua/prompts/instruction_store.risulua',
+  'lua/domain/core.risulua',
+  'lua/schema/constants.risulua',
+  'lua/features/core.risulua',
+  'legacy/original.risulua',
+  'docs/risulua-split-plan.json',
+  'docs/risulua-split-report.md',
+  'docs/refactor-map.json',
+  'docs/domain-candidates.json',
+  'docs/risulua-export-manifest.json',
+  'docs/risulua-button-action-index.json',
+];
+
+function expectRisuLuaScaffoldStructure(outDir: string): void {
+  for (const filePath of RISULUA_SCAFFOLD_EXPECTED_FILES) {
+    expect(fs.existsSync(path.join(outDir, filePath))).toBe(true);
+  }
+
+  expect(fs.existsSync(path.join(outDir, 'lua', 'sections'))).toBe(true);
+  expect(fs.existsSync(path.join(outDir, 'lua', 'preload'))).toBe(true);
+  expect(fs.existsSync(path.join(outDir, 'dist'))).toBe(true);
+
+  const starter = fs.readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8');
+  expect(starter).toContain('function onStart()');
+  expect(starter).toContain('local runtime_start = require("runtime.start")');
+  expect(starter).toContain('local button_actions_actions = require("button_actions.actions")');
+  expect(starter).toContain('return runtime_start.onStart()');
+  expect(starter).not.toContain('dofile(');
+  expect(starter).not.toContain('loadfile(');
+
+  const runtimeStart = fs.readFileSync(path.join(outDir, 'lua', 'runtime', 'start.risulua'), 'utf-8');
+  expect(runtimeStart).toContain('local M = {}');
+  expect(runtimeStart).toContain('return M');
+
+  const plan = JSON.parse(fs.readFileSync(path.join(outDir, 'docs', 'risulua-split-plan.json'), 'utf-8'));
+  expect(plan.entryPath).toBe('lua/main.risulua');
+  expect(plan.distBuildStrategy).toBe('concat-build-time-require');
+}
+
 describe('src/cli scaffold workflow', () => {
   let tmpDir: string;
   const originalConsoleLog = console.log;
@@ -95,18 +154,7 @@ describe('src/cli scaffold workflow', () => {
 
         expect(exitCode).toBe(0);
         expect(fs.existsSync(path.join(outDir, RISUMODULE_FILENAME))).toBe(true);
-        expect(fs.existsSync(path.join(outDir, 'lua', 'main.risulua'))).toBe(true);
-        expect(fs.existsSync(path.join(outDir, 'lua', 'common'))).toBe(true);
-        expect(fs.existsSync(path.join(outDir, 'lua', 'runtime'))).toBe(true);
-        expect(fs.existsSync(path.join(outDir, 'lua', 'features'))).toBe(true);
-        expect(fs.existsSync(path.join(outDir, 'lua', 'adapters'))).toBe(true);
-        expect(fs.existsSync(path.join(outDir, 'dist'))).toBe(true);
-
-        const starter = fs.readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8');
-        expect(starter).toContain('function onStart()');
-        expect(starter).not.toContain('require(');
-        expect(starter).not.toContain('dofile(');
-        expect(starter).not.toContain('loadfile(');
+        expectRisuLuaScaffoldStructure(outDir);
         expect(fs.existsSync(path.join(outDir, 'lua', 'manifest.json'))).toBe(false);
         expect(fs.existsSync(path.join(outDir, 'risulua.json'))).toBe(false);
         expect(fs.existsSync(path.join(outDir, 'dist', 'Modular_Module.risulua'))).toBe(false);
@@ -189,18 +237,7 @@ describe('src/cli scaffold workflow', () => {
 
       expect(exitCode).toBe(0);
       expect(fs.existsSync(path.join(outDir, '.risuchar'))).toBe(true);
-      expect(fs.existsSync(path.join(outDir, 'lua', 'main.risulua'))).toBe(true);
-      expect(fs.existsSync(path.join(outDir, 'lua', 'common'))).toBe(true);
-      expect(fs.existsSync(path.join(outDir, 'lua', 'runtime'))).toBe(true);
-      expect(fs.existsSync(path.join(outDir, 'lua', 'features'))).toBe(true);
-      expect(fs.existsSync(path.join(outDir, 'lua', 'adapters'))).toBe(true);
-      expect(fs.existsSync(path.join(outDir, 'dist'))).toBe(true);
-
-      const starter = fs.readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8');
-      expect(starter).toContain('function onStart()');
-      expect(starter).not.toContain('require(');
-      expect(starter).not.toContain('dofile(');
-      expect(starter).not.toContain('loadfile(');
+      expectRisuLuaScaffoldStructure(outDir);
       expect(fs.existsSync(path.join(outDir, 'lua', 'manifest.json'))).toBe(false);
       expect(fs.existsSync(path.join(outDir, 'risulua.json'))).toBe(false);
       expect(fs.existsSync(path.join(outDir, 'dist', 'Modular_Character.risulua'))).toBe(false);

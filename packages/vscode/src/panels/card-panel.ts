@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as vscode from 'vscode';
+import { createWebviewNonce } from '../shared/webviewNonce';
 import {
   createWebviewDevServerHtml,
   getConfiguredWebviewDevServerUrl,
@@ -96,15 +97,23 @@ export class CardPanel {
       return this.getFallbackHtml();
     }
 
-    const nonce = createNonce();
+    const nonce = createWebviewNonce();
     const html = fs.readFileSync(htmlPath, 'utf8');
 
-    const assetHtml = html.replace(/(src|href)="(\.\/assets\/[^"]+)"/g, (_match, attr, assetPath) => {
-      const assetUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewRoot, assetPath.replace('./', '')));
-      return `${attr}="${assetUri.toString()}"`;
-    });
+    const assetHtml = html.replace(
+      /(src|href)="(\.\/assets\/[^"]+)"/g,
+      (_match, attr, assetPath) => {
+        const assetUri = webview.asWebviewUri(
+          vscode.Uri.joinPath(webviewRoot, assetPath.replace('./', '')),
+        );
+        return `${attr}="${assetUri.toString()}"`;
+      },
+    );
 
-    const withNonce = assetHtml.replace(/<script type="module"/g, `<script nonce="${nonce}" type="module"`);
+    const withNonce = assetHtml.replace(
+      /<script type="module"/g,
+      `<script nonce="${nonce}" type="module"`,
+    );
 
     return withNonce.replace(
       '</head>',
@@ -126,8 +135,4 @@ export class CardPanel {
   </body>
 </html>`;
   }
-}
-
-function createNonce(): string {
-  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
 }

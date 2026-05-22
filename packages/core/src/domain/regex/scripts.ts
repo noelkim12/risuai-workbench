@@ -3,6 +3,7 @@ import { asRecord, type GenericRecord } from '../types';
 import { getCustomScriptsFromCharx } from '../charx/data';
 import { ELEMENT_TYPES } from '../analyze/constants';
 import type { ElementCBSData } from '../analyze/correlation';
+import { isPlainRecord } from '@/shared/guards';
 
 /**
  * 정규식 스크립트에서 추출된 변수 조작 정보를 담는 인터페이스
@@ -169,5 +170,5 @@ function getStringField(obj: GenericRecord, key: string): string {
 }
 
 function isPlainObject(value: unknown): value is GenericRecord {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  return isPlainRecord(value);
 }

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { analyzeRisuLuaDistOutput, type RisuLuaDistDiagnostic } from '../../../cli/shared';
+import { getErrorMessage } from '../../../shared/errors';
 import {
   RISULUA_MODULE_TABLE_REFACTOR_MAP_PATH,
   isForbiddenRisuLuaModuleTableMvpTarget,
@@ -9,6 +10,7 @@ import {
   type RisuLuaModuleTableRefactorMapContract,
 } from '../module-table/module-table-contracts';
 import { serializeRisuLuaModuleTableRefactorMap } from '../module-table/module-table-rendering';
+import { escapeRegExp } from '../shared/string-patterns';
 import type {
   LuaSourceRange,
   RisuLuaSplitPlan,
@@ -330,7 +332,7 @@ function readModuleTableRefactorMap(outputRoot: string): RisuLuaModuleTableRefac
   try {
     return JSON.parse(fs.readFileSync(refactorMapPath, 'utf8')) as RisuLuaModuleTableRefactorMapContract;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     return `Failed to parse ${RISULUA_MODULE_TABLE_REFACTOR_MAP_PATH}: ${message}`;
   }
 }
@@ -374,10 +376,6 @@ function finding(
   filePath?: string,
 ): RisuLuaSplitValidationFinding {
   return { code, severity, message, ...(filePath ? { filePath } : {}) };
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function toPosix(value: string): string {
