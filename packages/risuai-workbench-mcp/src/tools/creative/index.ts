@@ -8,6 +8,8 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { getWorkbenchTool } from '../../registry';
+import { createJsonToolResult } from '../../contracts/mcp-result';
+import { workbenchJsonOutputSchema } from '../../contracts/output-schemas';
 import type { WorkspaceRootStatus } from '../../project/resolve-root';
 import {
   handleCritiqueIdeaWithAnalyze,
@@ -297,11 +299,12 @@ export function registerCreativeTools(server: McpServer, workspace: WorkspaceRoo
       {
         description: registryEntry?.description ?? `Creative placeholder: ${scaffolding.name}`,
         inputSchema: scaffolding.inputSchema,
+        outputSchema: workbenchJsonOutputSchema,
         title: registryEntry?.title ?? scaffolding.name,
       },
       async (input: unknown) => {
         const result = await handleCreativeTool(scaffolding.name, input, workspace, patchStore, mutationMode);
-        return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+        return createJsonToolResult(result as object);
       },
     );
   }

@@ -107,6 +107,10 @@ describe('risuai-workbench-mcp startup', () => {
       expect(result.content[0].type).toBe('text');
 
       const parsed = JSON.parse(result.content[0].text);
+      const structured = (result as { structuredContent?: Record<string, unknown> }).structuredContent;
+      expect(structured).toBeDefined();
+      expect(structured?.schema).toBe('risuai-workbench-mcp.diagnostics');
+      expect(structured?.tool).toBe('workbench.inspect_path');
       expect(parsed.schema).toBe('risuai-workbench-mcp.diagnostics');
       expect(parsed.tool).toBe('workbench.inspect_path');
       expect(parsed.status).toBe('ok');
@@ -116,6 +120,52 @@ describe('risuai-workbench-mcp startup', () => {
       expect(parsed.data.artifact).toBe('lorebook');
       expect(parsed.data.contract).toBeDefined();
       expect(parsed.data.contract.suffix).toBe('.risulorebook');
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('smoke returns a diagnostic envelope with structured content', async () => {
+    const transport = new StdioClientTransport({
+      args: [binPath, '--stdio', '--root', fixturesRoot],
+      command: process.execPath,
+      stderr: 'pipe',
+    });
+    const client = new Client({ name: 'risuai-workbench-mcp-smoke-test', version: '0.1.0' });
+
+    try {
+      await client.connect(transport);
+      const result = await client.callTool({ arguments: {}, name: 'workbench.smoke' }) as { content: Array<{ text: string; type: string }>; structuredContent?: Record<string, unknown> };
+
+      expect(result.content[0].type).toBe('text');
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.schema).toBe('risuai-workbench-mcp.diagnostics');
+      expect(parsed.tool).toBe('workbench.smoke');
+      expect(parsed.status).toBe('ok');
+      expect(result.structuredContent?.tool).toBe('workbench.smoke');
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('advertises tools resources and prompts after initialization', async () => {
+    const transport = new StdioClientTransport({
+      args: [binPath, '--stdio', '--root', fixturesRoot],
+      command: process.execPath,
+      stderr: 'pipe',
+    });
+    const client = new Client({ name: 'risuai-workbench-mcp-capability-test', version: '0.1.0' });
+
+    try {
+      await client.connect(transport);
+
+      const tools = await client.listTools();
+      const resourceTemplates = await client.listResourceTemplates();
+      const prompts = await client.listPrompts();
+
+      expect(tools.tools.map((tool) => tool.name)).toContain('workbench.smoke');
+      expect(resourceTemplates.resourceTemplates.map((resource) => resource.name)).toContain('workbench.resource.rule_catalog');
+      expect(prompts.prompts.map((prompt) => prompt.name)).toContain('workbench.review_artifact_change');
     } finally {
       await client.close();
     }
