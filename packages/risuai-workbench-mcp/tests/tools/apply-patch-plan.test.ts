@@ -17,8 +17,8 @@ import { readJournalEntries } from '../../src/mutation/journal';
 import { createFileHashPrecondition, createInsideWorkspacePrecondition, createNonexistencePrecondition, createPatchPlan } from '../../src/mutation/patch-preview';
 import { createPatchPlanStore } from '../../src/mutation/patch-store';
 import type { WorkspaceRootStatus } from '../../src/project/resolve-root';
-import { handleApplyPatchPlan } from '../../src/tools/apply-patch-plan';
-import { handleSuggestOrderPatch } from '../../src/tools/suggest-order-patch';
+import { handleApplyPatchPlan } from '../../src/tools/patch/apply-patch-plan';
+import { handleSuggestOrderPatch } from '../../src/tools/patch/suggest-order-patch';
 
 interface ApplyFixture {
   journalPath: string;

@@ -13,8 +13,8 @@ import type { DiagnosticEnvelope } from '../../src/contracts/diagnostics';
 import type { MutationResultEnvelope } from '../../src/contracts/mutation-result';
 import { createPatchPlanStore } from '../../src/mutation/patch-store';
 import type { WorkspaceRootStatus } from '../../src/project/resolve-root';
-import { handleEditOrder } from '../../src/tools/edit-order';
-import { handleEditMetadata } from '../../src/tools/edit-metadata';
+import { handleEditOrder } from '../../src/tools/mutation/edit-order';
+import { handleEditMetadata } from '../../src/tools/mutation/edit-metadata';
 
 interface MutationFixture {
   root: string;

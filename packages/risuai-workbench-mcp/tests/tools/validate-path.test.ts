@@ -6,7 +6,7 @@
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 
-import { handleValidatePath } from '../../src/tools/validate-path';
+import { handleValidatePath } from '../../src/tools/validate/validate-path';
 import type { WorkspaceRootStatus } from '../../src/project/resolve-root';
 
 const STANDARD_ROOT = path.resolve(__dirname, '../fixtures/workspaces/standard');

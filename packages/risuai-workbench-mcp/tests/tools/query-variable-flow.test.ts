@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 import type { DiagnosticEnvelope } from '../../src/contracts/diagnostics';
 import { computeFileHash } from '../../src/mutation/file-hash';
 import type { WorkspaceRootStatus } from '../../src/project/resolve-root';
-import { handleQueryVariable, handleQueryVariableFlow } from '../../src/tools/query-analyze';
+import { handleQueryVariable, handleQueryVariableFlow } from '../../src/tools/analyze/query-analyze';
 
 interface VariableFlowFixture {
   root: string;

@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 import type { DiagnosticEnvelope } from '../../src/contracts/diagnostics';
 import type { MutationResultEnvelope } from '../../src/contracts/mutation-result';
 import type { WorkspaceRootStatus } from '../../src/project/resolve-root';
-import { handleMoveArtifact } from '../../src/tools/move-artifact';
+import { handleMoveArtifact } from '../../src/tools/mutation/move-artifact';
 
 interface MoveFixture {
   destinationPath: string;

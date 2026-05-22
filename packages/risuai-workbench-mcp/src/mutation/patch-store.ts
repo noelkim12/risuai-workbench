@@ -8,6 +8,7 @@ import type { PatchPlan } from '../contracts/patch-plan';
 export interface PatchPlanStore {
   getPatchPlan(patchPlanId: string): PatchPlan | null;
   savePatchPlan(patchPlan: PatchPlan): void;
+  findByIdeaId(ideaId: string): PatchPlan | null;
 }
 
 /**
@@ -36,6 +37,20 @@ export class InMemoryPatchPlanStore implements PatchPlanStore {
    */
   getPatchPlan(patchPlanId: string): PatchPlan | null {
     return this.patchPlans.get(patchPlanId) ?? null;
+  }
+
+  /**
+   * findByIdeaId 함수.
+   * intent에 포함된 ideaId로 저장된 PatchPlan을 찾음.
+   *
+   * @param ideaId - 찾을 idea id
+   * @returns 매칭되는 patch plan 또는 null
+   */
+  findByIdeaId(ideaId: string): PatchPlan | null {
+    for (const patchPlan of this.patchPlans.values()) {
+      if (patchPlan.intent.includes(ideaId)) return patchPlan;
+    }
+    return null;
   }
 }
 

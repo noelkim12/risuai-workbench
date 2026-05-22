@@ -16,33 +16,43 @@ import { registerWorkbenchPrompts } from './prompts';
 import { resolveWorkspaceRoot, type WorkspaceRootStatus } from './project/resolve-root';
 import { registerWorkbenchResources } from './resources';
 
-import { handleInspectPath } from './tools/inspect-path';
-import { handleInspectArtifact } from './tools/inspect-artifact';
-import { handleValidateArtifact } from './tools/validate-artifact';
-import { handleValidateOrder } from './tools/validate-order';
-import { handleValidateRootMarkers } from './tools/validate-root-markers';
-import { handleValidateMetadata } from './tools/validate-metadata';
-import { handleValidateFrontmatter } from './tools/validate-frontmatter';
-import { handleValidatePath } from './tools/validate-path';
-import { handleBuildPath } from './tools/build-path';
-import { handleSearchWiki } from './tools/search-wiki';
-import { handleSuggestTests } from './tools/suggest-tests';
-import { handleSuggestPatch } from './tools/suggest-patch';
-import { handleSuggestOrderPatch, type OrderPatchOperationInput } from './tools/suggest-order-patch';
-import { handleSuggestFrontmatterPatch } from './tools/suggest-frontmatter-patch';
-import { handleSuggestRootMarkerPatch } from './tools/suggest-root-marker-patch';
-import { handleDiffWiki, handlePlanWikiUpdate } from './tools/wiki-patch-preview';
-import { handleApplyPatchPlan } from './tools/apply-patch-plan';
-import { handleEditOrder } from './tools/edit-order';
-import { handleEditFrontmatter } from './tools/edit-frontmatter';
-import { handleEditMetadata } from './tools/edit-metadata';
-import { handleCreateArtifact } from './tools/create-artifact';
-import { handleMoveArtifact } from './tools/move-artifact';
-import { handleDeleteArtifact } from './tools/delete-artifact';
-import { handleRefreshWiki } from './tools/refresh-wiki';
-import { handleRollbackMutation } from './tools/rollback-mutation';
-import { handleRefreshAnalyzeSnapshot } from './tools/refresh-analyze-snapshot';
 import {
+  // inspect
+  handleInspectArtifact,
+  handleInspectPath,
+  // validate
+  handleValidateArtifact,
+  handleValidateFrontmatter,
+  handleValidateMetadata,
+  handleValidateOrder,
+  handleValidatePath,
+  handleValidateRootMarkers,
+  handleBuildPath,
+  handleSuggestTests,
+  // patch
+  handleApplyPatchPlan,
+  handleSuggestFrontmatterPatch,
+  handleSuggestOrderPatch,
+  handleSuggestPatch,
+  handleSuggestRootMarkerPatch,
+  type OrderPatchOperationInput,
+  // mutation
+  handleCreateArtifact,
+  handleDeleteArtifact,
+  handleEditFrontmatter,
+  handleEditMetadata,
+  handleEditOrder,
+  handleMoveArtifact,
+  handleRollbackMutation,
+  handleRunExtract,
+  handleRunScaffold,
+  // analyze
+  handleExplainContextFeedbackLoop,
+  handleExplainLorebookPromptInjection,
+  handleExplainRisuLuaRuntimeApi,
+  handleExplainRisuLuaWorkspace,
+  handleGuideRisuLuaModule,
+  handlePlanStructuredOutputLoop,
   handleQueryButtonActions,
   handleQueryCompositionConflicts,
   handleQueryDeadCodeFindings,
@@ -54,7 +64,15 @@ import {
   handleQueryTokenBudget,
   handleQueryVariable,
   handleQueryVariableFlow,
-} from './tools/query-analyze';
+  handleRefreshAnalyzeSnapshot,
+  // wiki
+  handleDiffWiki,
+  handlePlanWikiUpdate,
+  handleRefreshWiki,
+  handleSearchWiki,
+  // creative
+  registerCreativeTools,
+} from './tools';
 
 export { resolveWorkspaceRoot, type WorkspaceRootStatus } from './project/resolve-root';
 
@@ -118,10 +136,12 @@ export function createMcpServer(startupContext: StartupContext): McpServer {
   registerPatchPreviewTools(server, startupContext.workspace, patchStore);
   registerPatchApplyTools(server, startupContext, patchStore);
   registerDirectMutationTools(server, startupContext, patchStore);
+  registerCoreWorkflowTools(server, startupContext);
   registerAnalyzeQueryTools(server, startupContext.workspace);
   registerAdvancedMutationTools(server, startupContext);
-  registerWorkbenchResources(server, startupContext.workspace);
+  registerWorkbenchResources(server, startupContext.workspace, patchStore);
   registerWorkbenchPrompts(server);
+  registerCreativeTools(server, startupContext.workspace, patchStore, startupContext.mutationMode);
 
   return server;
 }
@@ -330,6 +350,84 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
       return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
     },
   );
+
+  server.registerTool(
+    'workbench.explain_risulua_workspace',
+    {
+      description: 'Explain source-first split RisuLua workspace authoring and generated dist boundaries.',
+      inputSchema: { targetName: z.string().optional() },
+      title: 'Explain RisuLua workspace',
+    },
+    async (input: Parameters<typeof handleExplainRisuLuaWorkspace>[0]) => {
+      const result = await handleExplainRisuLuaWorkspace(input);
+      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+    },
+  );
+
+  server.registerTool(
+    'workbench.guide_risulua_module',
+    {
+      description: 'Guide source module authoring with allowed static require and dist runtime boundaries.',
+      inputSchema: { moduleId: z.string().optional() },
+      title: 'Guide RisuLua module',
+    },
+    async (input: Parameters<typeof handleGuideRisuLuaModule>[0]) => {
+      const result = await handleGuideRisuLuaModule(input);
+      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+    },
+  );
+
+  server.registerTool(
+    'workbench.explain_risulua_runtime_api',
+    {
+      description: 'Explain RisuAI Lua lifecycle hooks, id threading, async bridge, access tiers, and API categories.',
+      inputSchema: { focus: z.enum(['lifecycle', 'state', 'button', 'async', 'lorebook']).optional() },
+      title: 'Explain RisuLua runtime API',
+    },
+    async (input: Parameters<typeof handleExplainRisuLuaRuntimeApi>[0]) => {
+      const result = await handleExplainRisuLuaRuntimeApi(input);
+      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+    },
+  );
+
+  server.registerTool(
+    'workbench.explain_lorebook_prompt_injection',
+    {
+      description: 'Explain Lorebook as runtime prompt injection and context activation, including decorator effects.',
+      inputSchema: { includeDecorators: z.boolean().optional() },
+      title: 'Explain Lorebook prompt injection',
+    },
+    async (input: Parameters<typeof handleExplainLorebookPromptInjection>[0]) => {
+      const result = await handleExplainLorebookPromptInjection(input);
+      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+    },
+  );
+
+  server.registerTool(
+    'workbench.explain_context_feedback_loop',
+    {
+      description: 'Explain the Lorebook, Structured Output, Regex, Button, RisuLua, Variable/Lorebook feedback loop.',
+      inputSchema: { variableName: z.string().optional() },
+      title: 'Explain context feedback loop',
+    },
+    async (input: Parameters<typeof handleExplainContextFeedbackLoop>[0]) => {
+      const result = await handleExplainContextFeedbackLoop(input);
+      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+    },
+  );
+
+  server.registerTool(
+    'workbench.plan_structured_output_loop',
+    {
+      description: 'Plan a structured output, regex, button, RisuLua state, Lorebook feedback loop.',
+      inputSchema: { buttonLabel: z.string().optional(), buttonTrigger: z.string().optional(), variableName: z.string().optional() },
+      title: 'Plan structured output loop',
+    },
+    async (input: Parameters<typeof handlePlanStructuredOutputLoop>[0]) => {
+      const result = await handlePlanStructuredOutputLoop(input);
+      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+    },
+  );
 }
 
 /**
@@ -390,6 +488,49 @@ function registerAdvancedMutationTools(server: McpServer, startupContext: Startu
     },
     async (input: unknown) => {
       const result = await handleRollbackMutation(input, startupContext.workspace, startupContext.mutationMode);
+      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+    },
+  );
+}
+
+/**
+ * registerCoreWorkflowTools 함수.
+ * core CLI extract/scaffold workflow를 gated mutation tool로 등록함.
+ *
+ * @param server - MCP server 인스턴스
+ * @param startupContext - workspace와 mutation mode startup context
+ */
+function registerCoreWorkflowTools(server: McpServer, startupContext: StartupContext): void {
+  const confirmationSchema = z.object({ accepted: z.boolean(), confirmationText: z.string().optional() }).optional();
+  const risuluaFields = {
+    risuluaDomainGeneration: z.enum(['report', 'validated']).optional(),
+    risuluaMode: z.enum(['classic', 'modular']).optional(),
+    risuluaRecovery: z.enum(['none', 'full-source']).optional(),
+    risuluaSplit: z.enum(['none', 'report', 'coarse', 'module-table']).optional(),
+  };
+
+  server.registerTool(
+    'workbench.run_extract',
+    {
+      description: 'Run risu-core extract workflow for character, module, or preset files through mutation safety gates.',
+      inputSchema: { confirmation: confirmationSchema, mode: z.enum(['preview', 'commit']), outDir: z.string(), postValidate: z.boolean().optional(), sourcePath: z.string(), type: z.enum(['character', 'module', 'preset']).optional(), ...risuluaFields },
+      title: 'Run extract workflow',
+    },
+    async (input: unknown) => {
+      const result = await handleRunExtract(input, startupContext.workspace, startupContext.mutationMode);
+      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+    },
+  );
+
+  server.registerTool(
+    'workbench.run_scaffold',
+    {
+      description: 'Run risu-core scaffold workflow to generate a new charx, module, or preset workspace.',
+      inputSchema: { confirmation: confirmationSchema, creator: z.string().optional(), mode: z.enum(['preview', 'commit']), name: z.string(), namespace: z.string().optional(), outDir: z.string().optional(), postValidate: z.boolean().optional(), risuluaMode: z.enum(['classic', 'modular']).optional(), type: z.enum(['charx', 'module', 'preset']) },
+      title: 'Run scaffold workflow',
+    },
+    async (input: unknown) => {
+      const result = await handleRunScaffold(input, startupContext.workspace, startupContext.mutationMode);
       return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
     },
   );

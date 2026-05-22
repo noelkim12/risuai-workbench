@@ -15,8 +15,8 @@ import type { MutationResultEnvelope } from '../../src/contracts/mutation-result
 import { computeFileHash } from '../../src/mutation/file-hash';
 import { createPatchPlanStore } from '../../src/mutation/patch-store';
 import type { WorkspaceRootStatus } from '../../src/project/resolve-root';
-import { handleEditMetadata } from '../../src/tools/edit-metadata';
-import { handleQueryTokenBudget, handleQueryVariableFlow } from '../../src/tools/query-analyze';
+import { handleEditMetadata } from '../../src/tools/mutation/edit-metadata';
+import { handleQueryTokenBudget, handleQueryVariableFlow } from '../../src/tools/analyze/query-analyze';
 
 interface StaleFixture {
   metadataPath: string;

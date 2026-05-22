@@ -64,8 +64,24 @@ describe('risuai-workbench-mcp startup', () => {
     try {
       await client.connect(transport);
       const tools = await client.listTools();
+      const resourceTemplates = await client.listResourceTemplates();
+      const prompts = await client.listPrompts();
 
-      expect(tools.tools.map((tool) => tool.name)).toContain('workbench.smoke');
+      const toolNames = tools.tools.map((tool) => tool.name);
+      expect(toolNames).toContain('workbench.smoke');
+      expect(toolNames).toEqual(expect.arrayContaining([
+        'workbench.creative.gather_context',
+        'workbench.creative.turn_idea_into_patch_plan',
+        'workbench.creative.apply_idea_patch',
+      ]));
+      expect(resourceTemplates.resourceTemplates.map((resource) => resource.name)).toEqual(expect.arrayContaining([
+        'workbench.creative.resource.methods',
+        'workbench.creative.resource.idea_patch_plan',
+      ]));
+      expect(prompts.prompts.map((prompt) => prompt.name)).toEqual(expect.arrayContaining([
+        'workbench.creative.brainstorm_from_context',
+        'workbench.creative.apply_selected_idea',
+      ]));
     } finally {
       await client.close();
     }

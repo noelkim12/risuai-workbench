@@ -13,7 +13,7 @@ import type { DiagnosticEnvelope } from '../../src/contracts/diagnostics';
 import type { MutationResultEnvelope } from '../../src/contracts/mutation-result';
 import { createPatchPlanStore } from '../../src/mutation/patch-store';
 import type { WorkspaceRootStatus } from '../../src/project/resolve-root';
-import { handleEditFrontmatter } from '../../src/tools/edit-frontmatter';
+import { handleEditFrontmatter } from '../../src/tools/mutation/edit-frontmatter';
 
 interface FrontmatterFixture {
   filePath: string;

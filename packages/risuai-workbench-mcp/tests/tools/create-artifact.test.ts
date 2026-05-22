@@ -13,7 +13,7 @@ import type { DiagnosticEnvelope } from '../../src/contracts/diagnostics';
 import type { MutationResultEnvelope } from '../../src/contracts/mutation-result';
 import { createPatchPlanStore } from '../../src/mutation/patch-store';
 import type { WorkspaceRootStatus } from '../../src/project/resolve-root';
-import { handleCreateArtifact } from '../../src/tools/create-artifact';
+import { handleCreateArtifact } from '../../src/tools/mutation/create-artifact';
 
 interface CreateFixture {
   root: string;

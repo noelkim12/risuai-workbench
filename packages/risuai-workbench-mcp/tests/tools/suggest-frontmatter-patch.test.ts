@@ -9,7 +9,7 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { handleSuggestFrontmatterPatch } from '../../src/tools/suggest-frontmatter-patch';
+import { handleSuggestFrontmatterPatch } from '../../src/tools/patch/suggest-frontmatter-patch';
 import type { WorkspaceRootStatus } from '../../src/project/resolve-root';
 
 const FM_ROOT = path.resolve(__dirname, '../fixtures/workspaces/frontmatter-test');
