@@ -7,12 +7,12 @@ import type {
   Hover,
   SymbolInformation,
 } from 'vscode-languageserver/node';
-import type { BaseFixtureCorpusEntry } from '../../../../tests/helpers/fixture-corpus';
+import type { BaseFixtureCorpusEntry } from '../helpers/fixture-corpus';
 import {
   freezeCorpusMap,
   filterCorpusEntries,
   getCorpusEntryOrThrow,
-} from '../../../../tests/helpers/fixture-corpus';
+} from '../helpers/fixture-corpus';
 import {
   DIAGNOSTIC_TAXONOMY,
   DiagnosticCode,
