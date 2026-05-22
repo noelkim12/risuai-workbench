@@ -30,6 +30,21 @@ export interface MutationResultEnvelope {
   changedFiles: readonly ChangedFileResult[];
   postValidation: PostValidationResult;
   resourceLinks: readonly string[];
+  /** Optional mutation journal pointer surfaced by adapters that inspect journal metadata. */
+  journal?: {
+    mutationId: string;
+    resourceUri: string;
+  };
+  /** Optional backup identifiers surfaced when the underlying mutation journal recorded backups. */
+  backupIdentifiers?: readonly string[];
+  /** Optional rollback eligibility summary; callers must invoke rollback explicitly. */
+  rollback?: {
+    eligible: boolean;
+    mutationId?: string;
+    unavailableReason?: string;
+  };
+  /** Optional non-blocking follow-up tool recommendations; these are not executed automatically. */
+  nextActions?: readonly string[];
 }
 
 export interface MutationJournalEntry {

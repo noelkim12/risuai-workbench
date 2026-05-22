@@ -6,7 +6,7 @@
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 
-import { handleInspectPath } from '../../src/tools/inspect-path';
+import { handleInspectPath } from '../../src/tools/inspect/inspect-path';
 import type { WorkspaceRootStatus } from '../../src/project/resolve-root';
 
 const FIXTURES_ROOT = path.resolve(__dirname, '../fixtures/workspaces/standard');

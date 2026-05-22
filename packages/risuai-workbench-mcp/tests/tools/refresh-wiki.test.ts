@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 import type { DiagnosticEnvelope } from '../../src/contracts/diagnostics';
 import type { MutationResultEnvelope } from '../../src/contracts/mutation-result';
 import type { WorkspaceRootStatus } from '../../src/project/resolve-root';
-import { handleRefreshWiki } from '../../src/tools/refresh-wiki';
+import { handleRefreshWiki } from '../../src/tools/wiki/refresh-wiki';
 
 interface RefreshWikiFixture {
   root: string;

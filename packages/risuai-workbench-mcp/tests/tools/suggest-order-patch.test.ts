@@ -9,7 +9,7 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { handleSuggestOrderPatch } from '../../src/tools/suggest-order-patch';
+import { handleSuggestOrderPatch } from '../../src/tools/patch/suggest-order-patch';
 import type { WorkspaceRootStatus } from '../../src/project/resolve-root';
 
 const STANDARD_ROOT = path.resolve(__dirname, '../fixtures/workspaces/standard');

@@ -13,12 +13,15 @@ interface PromptSpec {
   name: string;
   focus: string;
   steps: readonly string[];
+  source?: string;
 }
+
+const CREATIVE_KB_REFERENCE = 'docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md' as const;
 
 const COMMON_SAFETY_LINES = [
   'Use resources and validation tools for context before proposing changes.',
   'Treat resources as read-only context only; do not write source, generated, journal, cache, or evidence files from a prompt.',
-  'Mutation tools may be mentioned only as gated workflow steps and must still require preview, confirmation, safety policy, and post-validation.',
+  'Mutation tools may be mentioned only as gated workflow steps; existing gated mutation tools must still require preview, confirmation, safety policy, and post-validation.',
   'Never bypass confirmation, hash preconditions, mutation mode, generated-only policy, or validation gates.',
 ] as const;
 
@@ -93,6 +96,84 @@ const PROMPT_SPECS: readonly PromptSpec[] = [
     name: 'workbench.explain_analyze_diagnostic',
     steps: ['Read diagnostic and analyze graph resources.', 'Tie evidence to source artifacts.', 'Recommend next inspection, validation, or test commands.'],
   },
+  {
+    focus: 'Generate bounded creative ideas from supplied workspace context while separating evidence from assumptions.',
+    name: 'workbench.creative.brainstorm_from_context',
+    source: `${CREATIVE_KB_REFERENCE} lines 703-741`,
+    steps: ['Gather and cite the current context first.', 'Create concise ideas with evidence, assumptions, candidate mutation types, and next actions.', 'Do not create files; selected ideas must go through ranking, red-team review, and patch preview before any gated mutation tool.'],
+  },
+  {
+    focus: 'Use SCAMPER to propose lorebook entry variants without editing the lorebook.',
+    name: 'workbench.creative.scamper_lorebook_entries',
+    source: `${CREATIVE_KB_REFERENCE} lines 612-626 and 703-741`,
+    steps: ['Inspect the target lorebook context and activation constraints.', 'Produce Substitute, Combine, Adapt, Modify, Put to another use, Eliminate, and Reverse variants.', 'Mark which variants need validation or patch preview; prompt output itself must not mutate.'],
+  },
+  {
+    focus: 'Use SCAMPER to vary prompt chain placement, wording, or dependency ideas safely.',
+    name: 'workbench.creative.scamper_prompt_chain_variants',
+    source: `${CREATIVE_KB_REFERENCE} lines 703-741`,
+    steps: ['Read prompt chain evidence and conflicts.', 'Generate compact SCAMPER variants tied to context positions or dependencies.', 'Recommend validation and preview steps before using existing gated mutation tools.'],
+  },
+  {
+    focus: 'Review one idea through Six Hats perspectives before selection.',
+    name: 'workbench.creative.six_hats_idea_review',
+    source: `${CREATIVE_KB_REFERENCE} lines 703-741`,
+    steps: ['Separate facts, benefits, risks, feelings, alternatives, and process notes.', 'Tie each risk or benefit to evidence when possible.', 'Return a recommendation for ranking, red-team review, or patch preview without applying anything.'],
+  },
+  {
+    focus: 'Explore a morphological matrix of creative dimensions and rank combinations.',
+    name: 'workbench.creative.morphological_explore',
+    source: `${CREATIVE_KB_REFERENCE} lines 612-626 and 731-741`,
+    steps: ['Define dimensions, values, and constraints from context.', 'Generate a small set of combinations with evidence and assumptions.', 'Score combinations for idea quality and artifact fit before any patch plan.'],
+  },
+  {
+    focus: 'Resolve a design contradiction with TRIZ-style separation or substitution ideas.',
+    name: 'workbench.creative.triz_resolve_contradiction',
+    source: `${CREATIVE_KB_REFERENCE} lines 731-741`,
+    steps: ['State the contradiction and affected constraints.', 'Suggest resolution patterns that reduce source, order, token, or validation risk.', 'Convert only a selected resolution into a previewable patch plan through existing gated tools.'],
+  },
+  {
+    focus: 'Find failure modes, then invert them into safer creative options.',
+    name: 'workbench.creative.reverse_brainstorm_failure_modes',
+    source: `${CREATIVE_KB_REFERENCE} lines 731-741`,
+    steps: ['List plausible failure modes and missing evidence.', 'Invert failures into mitigations, validation checks, or smaller ideas.', 'Do not mutate; require explicit selection and preview before any apply step.'],
+  },
+  {
+    focus: 'Combine two or more concepts into coherent candidate ideas.',
+    name: 'workbench.creative.combine_concepts',
+    source: `${CREATIVE_KB_REFERENCE} lines 703-741`,
+    steps: ['Summarize each source concept and its evidence.', 'Create combined ideas with assumptions and artifact-fit notes.', 'Route promising combinations to ranking or patch preview only after selection.'],
+  },
+  {
+    focus: 'Find distant analogies that can inspire RisuAI artifact ideas.',
+    name: 'workbench.creative.find_distant_analogies',
+    source: `${CREATIVE_KB_REFERENCE} lines 703-741`,
+    steps: ['Extract the core problem shape from context.', 'Map distant analogy patterns back to concrete artifact ideas.', 'Keep output as proposals; mutation requires preview, confirmation, and existing gated mutation tools.'],
+  },
+  {
+    focus: 'Turn a selected idea into a patch-plan request without applying it.',
+    name: 'workbench.creative.turn_idea_into_patch',
+    source: `${CREATIVE_KB_REFERENCE} lines 671-699 and 721-741`,
+    steps: ['Verify selected idea evidence, assumptions, and affected files.', 'Draft expected operations, diagnostics, validation, and resource links for a patch preview.', 'Stop at preview; applying requires explicit confirmation and a gated mutation tool.'],
+  },
+  {
+    focus: 'Guide a selected idea from context review to confirmed gated application.',
+    name: 'workbench.creative.apply_selected_idea',
+    source: `${CREATIVE_KB_REFERENCE} lines 721-741`,
+    steps: ['Gather current context, then separate the selected idea evidence from assumptions.', 'Use ranking and red-team review before creating a patch plan preview.', 'Show the preview resource; only after explicit user confirmation should an external gated mutation tool apply it, followed by post-validation.'],
+  },
+  {
+    focus: 'Red-team a creative concept for safety, evidence gaps, and artifact risk.',
+    name: 'workbench.creative.red_team_concept',
+    source: `${CREATIVE_KB_REFERENCE} lines 731-741`,
+    steps: ['Identify source artifact, ordering, frontmatter, token, and validation risks.', 'Classify risks as evidence-backed or assumption-backed.', 'Recommend reject, revise, validate, or preview; never apply changes from the prompt.'],
+  },
+  {
+    focus: 'Summarize an idea session into decisions, candidates, and next safe workflow steps.',
+    name: 'workbench.creative.synthesize_idea_session',
+    source: `${CREATIVE_KB_REFERENCE} lines 628-668 and 731-741`,
+    steps: ['Group ideas by method, evidence, assumptions, and status.', 'Highlight selected ideas, rejected risks, and patch-plan readiness.', 'Mention that session saving or source mutation occurs only through explicit tools and user-requested actions.'],
+  },
 ];
 
 /**
@@ -134,6 +215,7 @@ export function buildPromptResult(
     `# ${entry.title}`,
     '',
     `Focus: ${spec.focus}`,
+    spec.source ? `Source: ${spec.source}` : undefined,
     args.target ? `Target: ${args.target}` : 'Target: not provided',
     args.context ? `Context: ${args.context}` : 'Context: not provided',
     '',
@@ -142,7 +224,7 @@ export function buildPromptResult(
     '',
     'Safety contract:',
     ...COMMON_SAFETY_LINES.map((line) => `- ${line}`),
-  ];
+  ].filter((line): line is string => typeof line === 'string');
 
   return {
     description: entry.description,
@@ -161,6 +243,7 @@ export function buildPromptResult(
 /**
  * findPromptSpec 함수.
  * prompt 이름에 맞는 instruction spec을 찾음.
+ * Creative prompt specs are not implemented yet; a minimal placeholder is returned.
  *
  * @param name - workbench prompt name
  * @returns prompt instruction spec
@@ -168,7 +251,13 @@ export function buildPromptResult(
 function findPromptSpec(name: string): PromptSpec {
   const spec = PROMPT_SPECS.find((candidate) => candidate.name === name);
   if (!spec) {
-    throw new Error(`Missing prompt spec: ${name}`);
+    // Creative prompts and other not-yet-implemented prompts get a minimal placeholder.
+    // Task 5 owns full creative prompt content.
+    return {
+      focus: `Placeholder prompt spec for ${name}. Not implemented yet.`,
+      name,
+      steps: ['This prompt is registered but not implemented yet.'],
+    };
   }
   return spec;
 }

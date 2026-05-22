@@ -6,7 +6,7 @@
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 
-import { handleValidateFrontmatter } from '../../src/tools/validate-frontmatter';
+import { handleValidateFrontmatter } from '../../src/tools/validate/validate-frontmatter';
 import type { WorkspaceRootStatus } from '../../src/project/resolve-root';
 
 const FM_ROOT = path.resolve(__dirname, '../fixtures/workspaces/frontmatter-test');

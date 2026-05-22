@@ -3,6 +3,7 @@
  * @file packages/risuai-workbench-mcp/src/contracts/index.ts
  */
 
+export * from './creative';
 export * from './diagnostics';
 export * from './mutation-result';
 export * from './patch-plan';

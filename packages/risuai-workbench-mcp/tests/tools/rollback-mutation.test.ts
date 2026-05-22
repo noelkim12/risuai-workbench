@@ -15,7 +15,7 @@ import type { MutationResultEnvelope } from '../../src/contracts/mutation-result
 import { computeFileHash } from '../../src/mutation/file-hash';
 import { appendJournalEntry, readJournalEntries } from '../../src/mutation/journal';
 import type { WorkspaceRootStatus } from '../../src/project/resolve-root';
-import { handleRollbackMutation } from '../../src/tools/rollback-mutation';
+import { handleRollbackMutation } from '../../src/tools/mutation/rollback-mutation';
 
 interface RollbackFixture {
   journalPath: string;

@@ -7,7 +7,7 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { handleDiffWiki, handlePlanWikiUpdate } from '../../src/tools/wiki-patch-preview';
+import { handleDiffWiki, handlePlanWikiUpdate } from '../../src/tools/wiki/wiki-patch-preview';
 import type { WorkspaceRootStatus } from '../../src/project/resolve-root';
 
 const STANDARD_ROOT = path.resolve(__dirname, '../fixtures/workspaces/standard');

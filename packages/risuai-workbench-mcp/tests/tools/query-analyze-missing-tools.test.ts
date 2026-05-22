@@ -15,7 +15,7 @@ import {
   handleQueryDeadCodeFindings,
   handleQueryLuaAnalysis,
   handleQueryLuaStateAccess,
-} from '../../src/tools/query-analyze';
+} from '../../src/tools/analyze/query-analyze';
 
 interface AnalyzeFixture {
   contextPath: string;

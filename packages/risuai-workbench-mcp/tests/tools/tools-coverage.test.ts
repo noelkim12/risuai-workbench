@@ -6,13 +6,13 @@
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 
-import { handleInspectArtifact } from '../../src/tools/inspect-artifact';
-import { handleValidateArtifact } from '../../src/tools/validate-artifact';
-import { handleValidateRootMarkers } from '../../src/tools/validate-root-markers';
-import { handleValidateMetadata } from '../../src/tools/validate-metadata';
-import { handleBuildPath } from '../../src/tools/build-path';
-import { handleSearchWiki } from '../../src/tools/search-wiki';
-import { handleSuggestTests } from '../../src/tools/suggest-tests';
+import { handleInspectArtifact } from '../../src/tools/inspect/inspect-artifact';
+import { handleValidateArtifact } from '../../src/tools/validate/validate-artifact';
+import { handleValidateRootMarkers } from '../../src/tools/validate/validate-root-markers';
+import { handleValidateMetadata } from '../../src/tools/validate/validate-metadata';
+import { handleBuildPath } from '../../src/tools/validate/build-path';
+import { handleSearchWiki } from '../../src/tools/wiki/search-wiki';
+import { handleSuggestTests } from '../../src/tools/validate/suggest-tests';
 import type { WorkspaceRootStatus } from '../../src/project/resolve-root';
 
 const STANDARD_ROOT = path.resolve(__dirname, '../fixtures/workspaces/standard');

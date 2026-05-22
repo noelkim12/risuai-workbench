@@ -31,6 +31,19 @@ const expectedPromptNames = [
   'workbench.review_relationship_network',
   'workbench.review_prompt_chain',
   'workbench.explain_analyze_diagnostic',
+  'workbench.creative.brainstorm_from_context',
+  'workbench.creative.scamper_lorebook_entries',
+  'workbench.creative.scamper_prompt_chain_variants',
+  'workbench.creative.six_hats_idea_review',
+  'workbench.creative.morphological_explore',
+  'workbench.creative.triz_resolve_contradiction',
+  'workbench.creative.reverse_brainstorm_failure_modes',
+  'workbench.creative.combine_concepts',
+  'workbench.creative.find_distant_analogies',
+  'workbench.creative.turn_idea_into_patch',
+  'workbench.creative.apply_selected_idea',
+  'workbench.creative.red_team_concept',
+  'workbench.creative.synthesize_idea_session',
 ] as const;
 
 /**

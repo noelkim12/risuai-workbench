@@ -25,6 +25,17 @@ const expectedResourceNames = [
   'workbench.resource.patch_preview',
   'workbench.resource.mutation_journal',
   'workbench.resource.patch_plan',
+  'workbench.creative.resource.methods',
+  'workbench.creative.resource.method.scamper',
+  'workbench.creative.resource.method.six_hats',
+  'workbench.creative.resource.method.morphological_analysis',
+  'workbench.creative.resource.method.triz',
+  'workbench.creative.resource.method.reverse_brainstorming',
+  'workbench.creative.resource.rubric.idea_quality',
+  'workbench.creative.resource.rubric.artifact_fit',
+  'workbench.creative.resource.idea_session',
+  'workbench.creative.resource.idea',
+  'workbench.creative.resource.idea_patch_plan',
 ] as const;
 
 /**
@@ -74,6 +85,17 @@ describe('workbench MCP resources', () => {
         'risuai-workbench://mutations/patch-plans/{patchPlanId}',
         'risuai-workbench://mutations/journal/{mutationId}',
         'risuai-workbench://mutations/patch-plans/{patchPlanId}',
+        'risuai-workbench://methods',
+        'risuai-workbench://methods/scamper',
+        'risuai-workbench://methods/six-hats',
+        'risuai-workbench://methods/morphological-analysis',
+        'risuai-workbench://methods/triz',
+        'risuai-workbench://methods/reverse-brainstorming',
+        'risuai-workbench://rubrics/idea-quality',
+        'risuai-workbench://rubrics/artifact-fit',
+        'risuai-workbench://ideas/sessions/{sessionId}',
+        'risuai-workbench://ideas/{ideaId}',
+        'risuai-workbench://ideas/{ideaId}/patch-plan',
       ]);
     });
   });
