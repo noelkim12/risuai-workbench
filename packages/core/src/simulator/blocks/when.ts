@@ -25,6 +25,12 @@ function toggleValue(state: BlockEvaluationState, key: string): string {
   return 'null';
 }
 
+/** toggleLiteralValue 함수. #when:tis 비교용 boolean toggle 값을 1/0 literal로 변환함. */
+function toggleLiteralValue(state: BlockEvaluationState, key: string): string {
+  if (hasOwn(state.context.toggleValues, key)) return state.context.toggleValues[key] ? '1' : '0';
+  return toggleValue(state, key);
+}
+
 /** resolveWhenMode 함수. parser operator와 condition prefix에서 whitespace mode를 결정함. */
 function resolveWhenMode(node: BlockNode, conditionText: string): 'normal' | 'keep' | 'legacy' {
   if (node.operators.includes('keep') || conditionText.split('::').includes('keep')) return 'keep';
@@ -42,7 +48,10 @@ function resolveWhenMode(node: BlockNode, conditionText: string): 'normal' | 'ke
  * @returns source에 적힌 #when condition/operator chain
  */
 function getRawWhenConditionText(node: BlockNode, state: BlockEvaluationState): string {
-  return node.condition.map((conditionNode) => sourceForRange(state, conditionNode.range)).join('').trim();
+  return node.condition
+    .map((conditionNode) => sourceForRange(state, conditionNode.range))
+    .join('')
+    .trim();
 }
 
 /**
@@ -93,10 +102,10 @@ function evaluateWhenCondition(conditionText: string, state: BlockEvaluationStat
         parts.push(resolveChatVariable(state, parts.pop() ?? '').value !== condition ? '1' : '0');
         break;
       case 'tis':
-        parts.push(toggleValue(state, parts.pop() ?? '') === condition ? '1' : '0');
+        parts.push(toggleLiteralValue(state, parts.pop() ?? '') === condition ? '1' : '0');
         break;
       case 'tisnot':
-        parts.push(toggleValue(state, parts.pop() ?? '') !== condition ? '1' : '0');
+        parts.push(toggleLiteralValue(state, parts.pop() ?? '') !== condition ? '1' : '0');
         break;
       case '>':
         parts.push(Number(parts.pop() ?? '') > Number(condition) ? '1' : '0');
@@ -143,7 +152,12 @@ export function evaluateWhenBlock(
     message: `#when evaluated ${truthy ? 'truthy' : 'falsy'}`,
     node: '#when',
     range: cloneRange(node.openRange),
-    details: { condition: conditionText, rawCondition: getRawWhenConditionText(node, state), mode, truthy },
+    details: {
+      condition: conditionText,
+      rawCondition: getRawWhenConditionText(node, state),
+      mode,
+      truthy,
+    },
   });
 
   if (mode === 'keep') return output;

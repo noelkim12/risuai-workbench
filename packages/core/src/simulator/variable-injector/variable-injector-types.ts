@@ -10,6 +10,8 @@ export type CbsPreviewVariableOperation =
   | CBSVariableOccurrence['operation']
   | 'getglobalvar'
   | 'gettoggle'
+  | '#when:tis'
+  | 'context'
   | 'tempvar';
 
 /** Pre-extracted variable reference for preview injection. */
@@ -29,7 +31,13 @@ export interface CbsPreviewVariableReference {
 }
 
 /** Variable scope for CBS preview injection. */
-export type CbsPreviewVariableScope = 'chat' | 'global' | 'toggle' | 'temp' | 'iterator';
+export type CbsPreviewVariableScope =
+  | 'chat'
+  | 'global'
+  | 'toggle'
+  | 'temp'
+  | 'iterator'
+  | 'context';
 
 /** Variable source indicating where a binding value originated. */
 export type CbsPreviewVariableSource =
@@ -41,6 +49,7 @@ export type CbsPreviewVariableSource =
   | 'toggleValue'
   | 'tempVariable'
   | 'iterator'
+  | 'context'
   | 'missing'
   | 'runtimeUnknown';
 
@@ -59,6 +68,8 @@ export interface CbsPreviewVariableOverrides {
   readonly globalVariables?: Readonly<Record<string, unknown>>;
   /** Toggle value overrides. */
   readonly toggleValues?: Readonly<Record<string, boolean>>;
+  /** Runtime context overrides such as chatIndex. */
+  readonly contextVariables?: Readonly<Record<string, string | number>>;
   /** Temp variable overrides. */
   readonly tempVariables?: Readonly<Record<string, unknown>>;
 }

@@ -96,6 +96,18 @@ function buildEffectiveContext(input: CbsPreviewVariableInjectionInput): CbsSimu
   const baseContext = input.baseContext ?? {};
   const previewOverrides = input.previewOverrides ?? {};
   const workspaceDefaults = input.workspaceDefaults ?? {};
+  const globalVariables = {
+    ...(baseContext.globalVariables ?? {}),
+    ...(previewOverrides.globalVariables ?? {}),
+  };
+  const toggleValues = {
+    ...(baseContext.toggleValues ?? {}),
+    ...(previewOverrides.toggleValues ?? {}),
+  };
+
+  for (const name of getPreviewToggleLiteralOverrideNames(previewOverrides.globalVariables ?? {})) {
+    delete toggleValues[name];
+  }
 
   // Merge context layers with proper cloning
   return createDefaultCbsSimulationContext({
@@ -112,14 +124,8 @@ function buildEffectiveContext(input: CbsPreviewVariableInjectionInput): CbsSimu
       ...(baseContext.templateDefaultVariables ?? {}),
       ...(workspaceDefaults.templateDefaultVariables ?? {}),
     },
-    globalVariables: {
-      ...(baseContext.globalVariables ?? {}),
-      ...(previewOverrides.globalVariables ?? {}),
-    },
-    toggleValues: {
-      ...(baseContext.toggleValues ?? {}),
-      ...(previewOverrides.toggleValues ?? {}),
-    },
+    globalVariables,
+    toggleValues,
     tempVariables: {
       ...(baseContext.tempVariables ?? {}),
       ...(previewOverrides.tempVariables ?? {}),
@@ -127,13 +133,27 @@ function buildEffectiveContext(input: CbsPreviewVariableInjectionInput): CbsSimu
     userLabel: baseContext.userLabel,
     characterLabel: baseContext.characterLabel,
     role: baseContext.role,
-    chatIndex: baseContext.chatIndex,
+    chatIndex: previewOverrides.contextVariables?.chatIndex ?? baseContext.chatIndex,
     isFirstMessage: baseContext.isFirstMessage,
     lorePositions: baseContext.lorePositions,
     chatHistory: baseContext.chatHistory,
     chatHistoryCursor: baseContext.chatHistoryCursor,
     providers: baseContext.providers,
   });
+}
+
+/**
+ * getPreviewToggleLiteralOverrideNames 함수.
+ * #when:tis drawer overrides are stored as global toggle_<name> literals.
+ * Removing same-name boolean toggleValues lets the simulator compare the literal
+ * instead of the base/profile boolean shadowing it.
+ */
+function getPreviewToggleLiteralOverrideNames(
+  globalVariables: Readonly<Record<string, unknown>>,
+): string[] {
+  return Object.keys(globalVariables)
+    .filter((key) => key.startsWith('toggle_') && key.length > 'toggle_'.length)
+    .map((key) => key.slice('toggle_'.length));
 }
 
 /**
@@ -232,6 +252,27 @@ function resolveReadValue(
       break;
     }
     case 'toggle': {
+      if (_operation === '#when:tis') {
+        const toggleResult = readToggleLiteralLayer(context.toggleValues ?? {}, variableName);
+        if (toggleResult.found) {
+          return {
+            status: 'resolved',
+            source: 'toggleValue',
+            valuePreview: toggleResult.value,
+          };
+        }
+
+        const globalResult = readLayer(context.globalVariables ?? {}, `toggle_${variableName}`);
+        if (globalResult.found) {
+          return {
+            status: 'resolved',
+            source: 'globalVariable',
+            valuePreview: globalResult.value,
+          };
+        }
+        break;
+      }
+
       const layer = context.toggleValues ?? {};
       const result = readLayer(layer, variableName);
       if (result.found) {
@@ -314,6 +355,31 @@ function resolveReadValue(
         source: 'runtimeUnknown',
         valuePreview: undefined,
       };
+    case 'context': {
+      const previewContextVars = input.previewOverrides?.contextVariables ?? {};
+      const previewResult = readLayer(previewContextVars, variableName);
+      if (previewResult.found) {
+        return {
+          status: 'resolved',
+          source: 'previewOverride',
+          valuePreview: previewResult.value,
+        };
+      }
+
+      if (variableName === 'chatIndex' && context.chatIndex !== undefined) {
+        return {
+          status: 'resolved',
+          source: 'context',
+          valuePreview: stringifyVariableValue(context.chatIndex),
+        };
+      }
+
+      return {
+        status: 'runtimeUnknown',
+        source: 'runtimeUnknown',
+        valuePreview: undefined,
+      };
+    }
   }
 
   // Not found in any layer
@@ -346,6 +412,20 @@ function readLayer(layer: Record<string, unknown>, key: string): { found: boolea
 }
 
 /**
+ * readToggleLiteralLayer 함수.
+ * #when:tis drawer rows use CBS literal values where boolean toggles are 1/0.
+ */
+function readToggleLiteralLayer(
+  layer: Record<string, unknown>,
+  key: string,
+): { found: boolean; value: string } {
+  if (Object.prototype.hasOwnProperty.call(layer, key)) {
+    return { found: true, value: layer[key] ? '1' : '0' };
+  }
+  return { found: false, value: '' };
+}
+
+/**
  * mapOperationToScope 함수.
  * CBS operation을 preview variable scope로 매핑함.
  * Task 2: supports getglobalvar, gettoggle, tempvar scoped operations.
@@ -358,7 +438,10 @@ function mapOperationToScope(operation: CbsPreviewVariableOperation): CbsPreview
     case 'getglobalvar':
       return 'global';
     case 'gettoggle':
+    case '#when:tis':
       return 'toggle';
+    case 'context':
+      return 'context';
     case 'tempvar':
       return 'temp';
     case '#each':

@@ -5,7 +5,8 @@
 
 <script lang="ts">
   import type { MainEditorVariableBindingPayload } from '../../../types/mainEditor';
-  import { isNullTestSentinel } from './variableDrawerHelpers';
+  // biome-ignore lint/correctness/noUnusedImports: Svelte markup reads isBareBooleanToggle.
+  import { isBareBooleanToggle, isNullTestSentinel } from './variableDrawerHelpers';
 
   export let binding: MainEditorVariableBindingPayload;
   export let onRawChange: (variableName: string, rawValue: string) => void;
@@ -65,7 +66,26 @@
   </button>
 
   <div class="variable-row__controls">
-    {#if binding.valueKind === 'boolean'}
+    {#if isBareBooleanToggle(binding)}
+      <label class="variable-row__toggle">
+        <span>boolean</span>
+        <button
+          type="button"
+          class="variable-row__toggle-switch"
+          role="switch"
+          aria-label={`${binding.variableName} boolean toggle`}
+          aria-checked={binding.rawValue === '1' || binding.rawValue === 'true'}
+          onclick={() => {
+            const next = binding.rawValue === '1' || binding.rawValue === 'true' ? 'false' : 'true';
+            onCandidateSelect(binding.variableName, next);
+          }}
+        >
+          <span class="variable-row__toggle-track">
+            <span class="variable-row__toggle-thumb" />
+          </span>
+        </button>
+      </label>
+    {:else if binding.valueKind === 'boolean'}
       <div class="variable-row__segmented" role="group" aria-label={`${binding.variableName} boolean override`}>
         <button type="button" class:active={binding.rawValue === 'false'} onclick={() => onCandidateSelect(binding.variableName, 'false')}>false</button>
         <button type="button" class:active={binding.rawValue === 'true'} onclick={() => onCandidateSelect(binding.variableName, 'true')}>true</button>
