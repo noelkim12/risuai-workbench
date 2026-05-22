@@ -429,6 +429,8 @@ export interface MainEditorTraceEventPayload {
   message: string;
   node?: string;
   range?: { line: number; character: number; endLine: number; endCharacter: number };
+  outputLine?: number;
+  outputColumn?: number;
   details?: Record<string, string>;
 }
 
