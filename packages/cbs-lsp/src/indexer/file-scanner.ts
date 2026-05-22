@@ -69,6 +69,7 @@ interface DiscoveredWorkspaceFile {
 const IGNORED_WORKSPACE_DIRECTORY_NAMES = new Set([
   '.git',
   '.hg',
+  '.history',
   '.svn',
   '.cache',
   '.next',

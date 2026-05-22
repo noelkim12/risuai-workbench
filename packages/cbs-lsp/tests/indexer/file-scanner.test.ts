@@ -279,14 +279,17 @@ describe('FileScanner', () => {
     expect(result.files.every((file) => file.uri.startsWith('file://'))).toBe(true)
   })
 
-  it('skips dependency and build output directories during recursive scans', async () => {
+  it('skips dependency, editor history, and build output directories during recursive scans', async () => {
     const root = await createWorkspaceRoot()
     const entry = getFixtureCorpusEntry('lorebook-basic')
     const ignoredPath = path.join(root, 'node_modules', 'pkg', 'ignored.risulorebook')
+    const historyPath = path.join(root, '.history', 'lorebooks', 'old-copy.risulorebook')
 
     await writeFixtureToWorkspace(root, entry)
     await mkdir(path.dirname(ignoredPath), { recursive: true })
+    await mkdir(path.dirname(historyPath), { recursive: true })
     await writeFile(ignoredPath, entry.text, 'utf8')
+    await writeFile(historyPath, entry.text, 'utf8')
 
     const result = await new FileScanner(root).scan()
 
