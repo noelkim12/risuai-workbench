@@ -1,17 +1,17 @@
 <script lang="ts">
-  import type { CharacterBrowserStatus } from '../types';
+  import type { BrowserArtifactStatus } from '../types';
 
-  export let status: CharacterBrowserStatus;
+  export let status: BrowserArtifactStatus;
 
   /**
    * getStatusLabel 함수.
    * Browser status를 카드 하단에 표시할 짧은 상태명으로 변환함.
    *
-   * @param value - character browser status 값
+   * @param value - artifact browser status 값
    * @returns status badge에 표시할 label
    */
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup calls this status label helper.
-  function getStatusLabel(value: CharacterBrowserStatus): string {
+  function getStatusLabel(value: BrowserArtifactStatus): string {
     return value === 'ready' ? 'Active' : 'Inactive';
   }
 </script>

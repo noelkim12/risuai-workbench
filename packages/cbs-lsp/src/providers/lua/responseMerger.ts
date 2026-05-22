@@ -14,8 +14,6 @@ import {
   type Hover,
   type HoverParams,
   type LocationLink,
-  type MarkedString,
-  type MarkupContent,
 } from 'vscode-languageserver/node';
 
 import {
@@ -23,6 +21,7 @@ import {
   createAgentMetadataExplanation,
   type FragmentAnalysisRequest,
 } from '../../core';
+import { normalizeHoverContentToMarkdown } from '../../features/hover/hover-content-normalizer';
 import type {
   VariableCompletionSummary,
   VariableFlowQueryResult,
@@ -83,30 +82,22 @@ function isCompletionList(response: LuaCompletionResponse): response is Completi
 function containsLuaStateKeyCursor(query: LuaStateOverlayQuery | null): boolean {
   return Boolean(
     query?.matchedOccurrence &&
-      query.matchedOccurrence.sourceKind === 'lua-state-api' &&
-      (query.matchedOccurrence.sourceName === 'getState' ||
-        query.matchedOccurrence.sourceName === 'setState'),
+    query.matchedOccurrence.sourceKind === 'lua-state-api' &&
+    (query.matchedOccurrence.sourceName === 'getState' ||
+      query.matchedOccurrence.sourceName === 'setState'),
   );
 }
 
 /**
  * normalizeHoverContents 함수.
  * Hover payload를 markdown string 하나로 정규화함.
+ * Delegates to the shared `normalizeHoverContentToMarkdown` helper.
  *
  * @param contents - 병합 전에 정규화할 hover contents
  * @returns markdown으로 이어붙일 수 있는 문자열
  */
 function normalizeHoverContents(contents: Hover['contents']): string {
-  if (typeof contents === 'string') {
-    return contents;
-  }
-
-  if (Array.isArray(contents)) {
-    return contents.map((entry) => (typeof entry === 'string' ? entry : entry.value)).join('\n');
-  }
-
-  const markup = contents as MarkupContent | MarkedString;
-  return typeof markup === 'string' ? markup : markup.value;
+  return normalizeHoverContentToMarkdown(contents);
 }
 
 /**
@@ -171,7 +162,9 @@ function resolveLuaStateOverlayQuery(params: {
     return null;
   }
 
-  const variableQuery = params.variableFlowService.queryVariable(query.matchedOccurrence.variableName);
+  const variableQuery = params.variableFlowService.queryVariable(
+    query.matchedOccurrence.variableName,
+  );
   if (!variableQuery) {
     return null;
   }
@@ -374,7 +367,9 @@ export function buildLuaStateHoverOverlayMarkdown(
     lines.push(`- Default value: ${query.defaultValue}`);
   }
 
-  const representativeSections: Array<[string, readonly VariableFlowQueryResult['occurrences'][number][]]> = [
+  const representativeSections: Array<
+    [string, readonly VariableFlowQueryResult['occurrences'][number][]]
+  > = [
     ['Representative Lua writers', luaWriters],
     ['Representative CBS writers', cbsWriters],
   ];
@@ -457,7 +452,8 @@ export function mergeLuaHoverResponse(
   overlay: LuaHoverOverlay,
   fallbackRange?: Range,
 ): LuaHoverResponse {
-  const overlayMarkdown = typeof overlay === 'string' || !overlay ? overlay : normalizeHoverContents(overlay.contents);
+  const overlayMarkdown =
+    typeof overlay === 'string' || !overlay ? overlay : normalizeHoverContents(overlay.contents);
   const overlayRange = typeof overlay === 'string' || !overlay ? fallbackRange : overlay.range;
   if (!overlayMarkdown) {
     return base;

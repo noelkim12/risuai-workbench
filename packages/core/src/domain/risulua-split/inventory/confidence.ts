@@ -10,6 +10,7 @@
  * mutation patterns inside function bodies that the inventory does not walk.
  */
 
+import { escapeRegExp } from '../shared/string-patterns';
 import type { LuaTopLevelAtom, SplitConfidence } from '../shared/types';
 
 // ─── public types ───────────────────────────────────────────────────────────
@@ -180,8 +181,4 @@ function sourceSliceContainsHostMutation(sourceSlice: string): boolean {
   return HOST_MUTATION_PATTERNS.some(
     (pattern) => new RegExp(`\\b${escapeRegExp(pattern)}\\b`).test(sourceSlice),
   );
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

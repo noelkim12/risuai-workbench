@@ -17,15 +17,15 @@
 
 ## 대상(Target) × 아티팩트(Artifact) 소유권
 
-| 아티팩트 | 확장자 | 캐릭터(charx) | 모듈(module) | 프리셋(preset) | 비고 |
-|---|---|:---:|:---:|:---:|---|
-| 로어북 | `.risulorebook` | ✓ | ✓ |   | 다중 파일 지원 + `_order.json` |
-| 정규식 | `.risuregex` | ✓ | ✓ | ✓ | 다중 파일 지원 + `_order.json` |
-| Lua | `.risulua` | ✓ | ✓ |   | **단일 파일 개발**은 `lua/<targetName>.risulua`, **모듈식 개발**은 `lua/main.risulua` source graph와 `dist/<targetName>.risulua` 생성 artifact를 사용 |
-| 프롬프트 템플릿 | `.risuprompt` |   |   | ✓ | 다중 파일 지원 + `_order.json` |
-| 토글 | `.risutoggle` |   | ✓ | ✓ | 대상당 단일 파일 |
-| 변수 | `.risuvar` | ✓ | ✓ |   | 대상당 단일 파일 |
-| HTML | `.risuhtml` | ✓ | ✓ |   | `background.risuhtml` 고정 |
+| 아티팩트        | 확장자          | 캐릭터(charx) | 모듈(module) | 프리셋(preset) | 비고                                                                                                                                                  |
+| --------------- | --------------- | :-----------: | :----------: | :------------: | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 로어북          | `.risulorebook` |       ✓       |      ✓       |                | 다중 파일 지원 + `_order.json`                                                                                                                        |
+| 정규식          | `.risuregex`    |       ✓       |      ✓       |       ✓        | 다중 파일 지원 + `_order.json`                                                                                                                        |
+| Lua             | `.risulua`      |       ✓       |      ✓       |                | **단일 파일 개발**은 `lua/<targetName>.risulua`, **모듈식 개발**은 `lua/main.risulua` source graph와 `dist/<targetName>.risulua` 생성 artifact를 사용 |
+| 프롬프트 템플릿 | `.risuprompt`   |               |              |       ✓        | 다중 파일 지원 + `_order.json`                                                                                                                        |
+| 토글            | `.risutoggle`   |               |      ✓       |       ✓        | 대상당 단일 파일                                                                                                                                      |
+| 변수            | `.risuvar`      |       ✓       |      ✓       |                | 대상당 단일 파일                                                                                                                                      |
+| HTML            | `.risuhtml`     |       ✓       |      ✓       |                | `background.risuhtml` 고정                                                                                                                            |
 
 ## 명명, 정렬 및 싱글톤 규칙
 
@@ -44,6 +44,7 @@
 - **데이터 유실에 대한 관점**: "표준 파일에 필드가 없음"이 곧 데이터 유실을 의미하지는 않습니다. 의도적으로 미편집 영역으로 분류된 차이는 '허용된 손실(Allowed loss)'로 명시합니다.
 
 ### 주요 사례
+
 - **메타데이터 분리**: 구조화된 메타데이터는 대상별 metadata owner가 담당하고, 실제 데이터 페이로드는 `.risu*` 파일이 담당합니다. `charx`는 루트 `.risuchar`가 담당하며, module은 `.risumodule`가, preset은 `metadata.json`이 담당합니다.
 - **로어북 폴더**: 로어북의 폴더 정체성은 파일 내의 `folder` 문자열보다 물리적 경로와 `_order.json` 명시를 우선합니다.
 - **Lua 보존**: 단일 파일 개발은 함수 단위 분할 없이 상위 Lua 데이터를 원본 그대로 보존합니다. 모듈식 개발은 `lua/main.risulua`에서 도달 가능한 정적 require graph를 빌드해 `dist/<targetName>.risulua`로 생성합니다. 기존 Lua의 자동 분해는 future work입니다.
@@ -52,11 +53,11 @@
 
 변환 과정에서 발생하는 차이는 다음 세 가지로 분류합니다.
 
-| 분류 | 의미 | 예시 |
-|---|---|---|
-| `intentional_unedited` | 편집 범위 밖의 필드로, 표준 인터페이스가 소유하지 않는 차이 | 기본값 오버레이, 미편집 필드의 복원 |
-| `upstream_limit` | 상위 런타임 또는 저장 포맷의 기술적 한계로 인한 차이 | 런타임 전용 주입 데이터, 대소문자 구분 소멸 |
-| `design_bug` | 현재의 표준 계약이나 구현상의 오류로 인한 차이 | 문서와 코드의 불일치, 패키징 로직 누락 |
+| 분류                   | 의미                                                        | 예시                                        |
+| ---------------------- | ----------------------------------------------------------- | ------------------------------------------- |
+| `intentional_unedited` | 편집 범위 밖의 필드로, 표준 인터페이스가 소유하지 않는 차이 | 기본값 오버레이, 미편집 필드의 복원         |
+| `upstream_limit`       | 상위 런타임 또는 저장 포맷의 기술적 한계로 인한 차이        | 런타임 전용 주입 데이터, 대소문자 구분 소멸 |
+| `design_bug`           | 현재의 표준 계약이나 구현상의 오류로 인한 차이              | 문서와 코드의 불일치, 패키징 로직 누락      |
 
 - **관리 원칙**: `intentional_unedited`와 `upstream_limit`는 반드시 허용 목록(Allowlist) 근거가 있어야 합니다. 근거가 없는 모든 차이는 `design_bug`로 간주합니다. 문서는 허용된 차이가 왜 발생하는지, 현재의 계약 범위가 어디까지인지를 명확히 설명해야 합니다.
 
@@ -64,15 +65,15 @@
 
 CBS LSP 및 조각 매핑의 기준은 다음과 같습니다.
 
-| 아티팩트 | CBS 포함 영역 | 비고 |
-|---|---|---|
-| `.risulorebook` | `@@@ CONTENT` | 프론트매터, KEYS, SECONDARY_KEYS 영역은 CBS 비포함 |
-| `.risuregex` | `@@@ IN`, `@@@ OUT` | 두 섹션 모두 CBS 분석 대상 |
-| `.risuprompt` | `@@@ TEXT`, `@@@ INNER_FORMAT`, `@@@ DEFAULT_TEXT` | 프롬프트 타입에 따라 섹션 존재 여부 결정 |
-| `.risuhtml` | 파일 전체 | 전체가 CBS 분석 대상 |
-| `.risulua` | 파일 전체 | 현재는 파일 전체를 하나의 조각으로 처리 (향후 리터럴 단위 매핑 예정) |
-| `.risutoggle` | 없음 | CBS가 아닌 전용 설정 언어 |
-| `.risuvar` | 없음 | 단순 키=값(Key=Value) 쌍 |
+| 아티팩트        | CBS 포함 영역                                      | 비고                                                                 |
+| --------------- | -------------------------------------------------- | -------------------------------------------------------------------- |
+| `.risulorebook` | `@@@ CONTENT`                                      | 프론트매터, KEYS, SECONDARY_KEYS 영역은 CBS 비포함                   |
+| `.risuregex`    | `@@@ IN`, `@@@ OUT`                                | 두 섹션 모두 CBS 분석 대상                                           |
+| `.risuprompt`   | `@@@ TEXT`, `@@@ INNER_FORMAT`, `@@@ DEFAULT_TEXT` | 프롬프트 타입에 따라 섹션 존재 여부 결정                             |
+| `.risuhtml`     | 파일 전체                                          | 전체가 CBS 분석 대상                                                 |
+| `.risulua`      | 파일 전체                                          | 현재는 파일 전체를 하나의 조각으로 처리 (향후 리터럴 단위 매핑 예정) |
+| `.risutoggle`   | 없음                                               | CBS가 아닌 전용 설정 언어                                            |
+| `.risuvar`      | 없음                                               | 단순 키=값(Key=Value) 쌍                                             |
 
 ## 검증 및 수정 워크플로우
 

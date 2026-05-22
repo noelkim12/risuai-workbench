@@ -13,20 +13,17 @@ describe('custom-extension fixture corpus', () => {
     const workspaceRoot = getFixtureWorkspaceRoot();
 
     expect(CUSTOM_EXTENSION_FIXTURE_CORPUS.map((entry) => entry.id)).toEqual([
-      'module-merry-rpg',
-      'module-lightboard-sns',
-      'charx-alternate-hunters',
-      'preset-hallabong',
-      'preset-managem-jampro',
-      'preset-new-risup-source',
+      'module-sample-a',
+      'module-sample-b',
+      'charx-sample-a',
+      'preset-sample-a',
+      'preset-sample-b',
+      'preset-source-sample-a',
     ]);
 
     for (const entry of CUSTOM_EXTENSION_FIXTURE_CORPUS) {
       expect(entry.sourcePath).toBe(path.join(workspaceRoot, entry.relativePath));
-      expect(
-        entry.relativePath.startsWith('playground/260406-test/output/') ||
-          entry.relativePath.startsWith('test_cases/preset/'),
-      ).toBe(true);
+      expect(entry.relativePath.startsWith('__external_custom_extension_fixtures__/')).toBe(true);
       expect(entry.features.length).toBeGreaterThan(0);
       expect(new Set(entry.features).size).toBe(entry.features.length);
     }
@@ -34,18 +31,16 @@ describe('custom-extension fixture corpus', () => {
 
   it('supports stable lookup and target filtering for later oracle subsets', () => {
     expect(listFixtureCorpusEntries('module').map((entry) => entry.id)).toEqual([
-      'module-merry-rpg',
-      'module-lightboard-sns',
+      'module-sample-a',
+      'module-sample-b',
     ]);
-    expect(listFixtureCorpusEntries('charx').map((entry) => entry.id)).toEqual([
-      'charx-alternate-hunters',
-    ]);
+    expect(listFixtureCorpusEntries('charx').map((entry) => entry.id)).toEqual(['charx-sample-a']);
     expect(listFixtureCorpusEntries('preset').map((entry) => entry.id)).toEqual([
-      'preset-hallabong',
-      'preset-managem-jampro',
-      'preset-new-risup-source',
+      'preset-sample-a',
+      'preset-sample-b',
+      'preset-source-sample-a',
     ]);
-    expect(getFixtureCorpusEntry('preset-new-risup-source')).toMatchObject({
+    expect(getFixtureCorpusEntry('preset-source-sample-a')).toMatchObject({
       sourceKind: 'source-file',
       target: 'preset',
     });

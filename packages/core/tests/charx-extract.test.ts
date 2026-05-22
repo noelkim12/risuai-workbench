@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+  mkdirSync,
+  readdirSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { zipSync, strToU8 } from 'fflate';
@@ -10,8 +18,13 @@ import {
   encodeRisuLuaRecoveryBlock,
   RISULUA_RECOVERY_BLOCK_START,
 } from '../src/cli/shared';
+import { resolvePrivateFixturePath } from './helpers/private-fixture-paths';
 
 const tempDirs: string[] = [];
+const privateCharxFixturePath = resolvePrivateFixturePath(
+  'RISU_WORKBENCH_CHARX_FIXTURE_A',
+  'charx-sample-a/sample.charx',
+);
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -54,9 +67,12 @@ function createMockCharxWithTriggerscript(): Buffer {
     },
   };
 
-  const zipData = zipSync({
-    'charx.json': strToU8(JSON.stringify(charxData, null, 2)),
-  }, { level: 0 });
+  const zipData = zipSync(
+    {
+      'charx.json': strToU8(JSON.stringify(charxData, null, 2)),
+    },
+    { level: 0 },
+  );
 
   return Buffer.from(zipData);
 }
@@ -115,11 +131,16 @@ function createCanonicalCharacterFixture(): Buffer {
     },
   };
 
-  return Buffer.from(zipSync({
-    'charx.json': strToU8(JSON.stringify(charxData, null, 2)),
-    'assets/side.png': new Uint8Array([137, 80, 78, 71, 1]),
-    'assets/main.png': new Uint8Array([137, 80, 78, 71, 2]),
-  }, { level: 0 }));
+  return Buffer.from(
+    zipSync(
+      {
+        'charx.json': strToU8(JSON.stringify(charxData, null, 2)),
+        'assets/side.png': new Uint8Array([137, 80, 78, 71, 1]),
+        'assets/main.png': new Uint8Array([137, 80, 78, 71, 2]),
+      },
+      { level: 0 },
+    ),
+  );
 }
 
 describe('charx extract integration (canonical mode)', () => {
@@ -144,7 +165,10 @@ describe('charx extract integration (canonical mode)', () => {
 
     expect(result.status, result.stderr || result.stdout).toBe(0);
 
-    const manifest = JSON.parse(readFileSync(path.join(outDir, '.risuchar'), 'utf-8')) as Record<string, any>;
+    const manifest = JSON.parse(readFileSync(path.join(outDir, '.risuchar'), 'utf-8')) as Record<
+      string,
+      any
+    >;
     expect(manifest).toMatchObject({
       $schema: 'https://risuai-workbench.dev/schemas/risuchar.schema.json',
       kind: 'risu.character',
@@ -193,12 +217,20 @@ describe('charx extract integration (canonical mode)', () => {
     }
 
     const greetingsDir = path.join(outDir, 'character', 'alternate_greetings');
-    const greetingOrder = JSON.parse(readFileSync(path.join(greetingsDir, '_order.json'), 'utf-8')) as string[];
+    const greetingOrder = JSON.parse(
+      readFileSync(path.join(greetingsDir, '_order.json'), 'utf-8'),
+    ) as string[];
     expect(greetingOrder).toEqual(['greeting-001.risutext', 'greeting-002.risutext']);
-    expect(readFileSync(path.join(greetingsDir, 'greeting-001.risutext'), 'utf-8')).toBe('Greeting one');
-    expect(readFileSync(path.join(greetingsDir, 'greeting-002.risutext'), 'utf-8')).toBe('Greeting two');
+    expect(readFileSync(path.join(greetingsDir, 'greeting-001.risutext'), 'utf-8')).toBe(
+      'Greeting one',
+    );
+    expect(readFileSync(path.join(greetingsDir, 'greeting-002.risutext'), 'utf-8')).toBe(
+      'Greeting two',
+    );
 
-    const assetManifest = JSON.parse(readFileSync(path.join(outDir, 'assets', 'manifest.json'), 'utf-8')) as Record<string, any>;
+    const assetManifest = JSON.parse(
+      readFileSync(path.join(outDir, 'assets', 'manifest.json'), 'utf-8'),
+    ) as Record<string, any>;
     expect(assetManifest.assets).toEqual([
       expect.objectContaining({
         index: 0,
@@ -239,18 +271,20 @@ describe('charx extract integration (canonical mode)', () => {
       'sourceFormat',
       'flags',
     ]);
-    expect(Object.keys(schema.properties)).toEqual(expect.arrayContaining([
-      'kind',
-      'schemaVersion',
-      'id',
-      'name',
-      'creator',
-      'characterVersion',
-      'createdAt',
-      'modifiedAt',
-      'sourceFormat',
-      'flags',
-    ]));
+    expect(Object.keys(schema.properties)).toEqual(
+      expect.arrayContaining([
+        'kind',
+        'schemaVersion',
+        'id',
+        'name',
+        'creator',
+        'characterVersion',
+        'createdAt',
+        'modifiedAt',
+        'sourceFormat',
+        'flags',
+      ]),
+    );
     expect(schema.properties.sourceFormat.enum).toEqual(['charx', 'png', 'json', 'scaffold']);
     expect(schema.properties.flags.required).toEqual(['utilityBot', 'lowLevelAccess']);
     expect(schema.properties.image).toEqual({
@@ -298,7 +332,10 @@ describe('charx extract integration (canonical mode)', () => {
 
     expect(result.status, result.stderr || result.stdout).toBe(0);
 
-    const manifest = JSON.parse(readFileSync(path.join(outDir, '.risuchar'), 'utf-8')) as Record<string, any>;
+    const manifest = JSON.parse(readFileSync(path.join(outDir, '.risuchar'), 'utf-8')) as Record<
+      string,
+      any
+    >;
     expect(manifest).toMatchObject({
       $schema: 'https://risuai-workbench.dev/schemas/risuchar.schema.json',
       kind: 'risu.character',
@@ -331,7 +368,11 @@ describe('charx extract integration (canonical mode)', () => {
     ]) {
       expect(existsSync(path.join(outDir, 'character', fileName))).toBe(true);
     }
-    expect(JSON.parse(readFileSync(path.join(outDir, 'character', 'alternate_greetings', '_order.json'), 'utf-8'))).toEqual([]);
+    expect(
+      JSON.parse(
+        readFileSync(path.join(outDir, 'character', 'alternate_greetings', '_order.json'), 'utf-8'),
+      ),
+    ).toEqual([]);
     expect(existsSync(path.join(outDir, 'lorebooks', '_order.json'))).toBe(true);
     expect(existsSync(path.join(outDir, 'regex', '_order.json'))).toBe(true);
     expect(existsSync(path.join(outDir, 'variables', 'Scaffold_Character.risuvar'))).toBe(true);
@@ -374,7 +415,8 @@ describe('charx extract integration (canonical mode)', () => {
     const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-modular-lua-extract-'));
     tempDirs.push(workDir);
 
-    const upstreamLua = 'local value = "charx upstream lua"\nfunction onOutput()\n  return value\nend';
+    const upstreamLua =
+      'local value = "charx upstream lua"\nfunction onOutput()\n  return value\nend';
     const charxPath = path.join(workDir, 'modular.charx');
     const charxData = {
       spec: 'chara_card_v3',
@@ -400,7 +442,12 @@ describe('charx extract integration (canonical mode)', () => {
         },
       },
     };
-    writeFileSync(charxPath, Buffer.from(zipSync({ 'charx.json': strToU8(JSON.stringify(charxData, null, 2)) }, { level: 0 })));
+    writeFileSync(
+      charxPath,
+      Buffer.from(
+        zipSync({ 'charx.json': strToU8(JSON.stringify(charxData, null, 2)) }, { level: 0 }),
+      ),
+    );
 
     const outDir = path.join(workDir, 'output');
     mkdirSync(outDir, { recursive: true });
@@ -428,7 +475,8 @@ describe('charx extract integration (canonical mode)', () => {
     const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-split-fallback-'));
     tempDirs.push(workDir);
 
-    const malformedLua = 'local __loader_common_local_helpers = .\nreturn __loader_common_local_helpers';
+    const malformedLua =
+      'local __loader_common_local_helpers = .\nreturn __loader_common_local_helpers';
     const charxPath = path.join(workDir, 'split-fallback.charx');
     const charxData = {
       spec: 'chara_card_v3',
@@ -455,7 +503,12 @@ describe('charx extract integration (canonical mode)', () => {
         },
       },
     };
-    writeFileSync(charxPath, Buffer.from(zipSync({ 'charx.json': strToU8(JSON.stringify(charxData, null, 2)) }, { level: 0 })));
+    writeFileSync(
+      charxPath,
+      Buffer.from(
+        zipSync({ 'charx.json': strToU8(JSON.stringify(charxData, null, 2)) }, { level: 0 }),
+      ),
+    );
 
     const outDir = path.join(workDir, 'output');
     mkdirSync(outDir, { recursive: true });
@@ -476,8 +529,14 @@ describe('charx extract integration (canonical mode)', () => {
       expect(readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).toBe(malformedLua);
       expect(existsSync(path.join(outDir, '.risuchar'))).toBe(true);
       expect(existsSync(path.join(outDir, 'dist'))).toBe(false);
-      expect(readdirSync(path.dirname(outDir)).filter((entry) => entry.startsWith('.tmp-risulua-split-output-'))).toEqual([]);
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('RisuLua split failed; preserving'));
+      expect(
+        readdirSync(path.dirname(outDir)).filter((entry) =>
+          entry.startsWith('.tmp-risulua-split-output-'),
+        ),
+      ).toEqual([]);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('RisuLua split failed; preserving'),
+      );
     } finally {
       warnSpy.mockRestore();
     }
@@ -490,9 +549,21 @@ describe('charx extract integration (canonical mode)', () => {
     const sourceRoot = path.join(workDir, 'source');
     mkdirSync(path.join(sourceRoot, 'lua', 'common'), { recursive: true });
     mkdirSync(path.join(sourceRoot, 'docs'), { recursive: true });
-    writeFileSync(path.join(sourceRoot, 'lua', 'main.risulua'), 'local helper = require("common.helper")\nreturn helper.value\n', 'utf-8');
-    writeFileSync(path.join(sourceRoot, 'lua', 'common', 'helper.risulua'), 'return { value = "charx recovery helper" }\n', 'utf-8');
-    writeFileSync(path.join(sourceRoot, 'docs', 'refactor-map.json'), `${JSON.stringify({ owner: 'charx', restored: true }, null, 2)}\n`, 'utf-8');
+    writeFileSync(
+      path.join(sourceRoot, 'lua', 'main.risulua'),
+      'local helper = require("common.helper")\nreturn helper.value\n',
+      'utf-8',
+    );
+    writeFileSync(
+      path.join(sourceRoot, 'lua', 'common', 'helper.risulua'),
+      'return { value = "charx recovery helper" }\n',
+      'utf-8',
+    );
+    writeFileSync(
+      path.join(sourceRoot, 'docs', 'refactor-map.json'),
+      `${JSON.stringify({ owner: 'charx', restored: true }, null, 2)}\n`,
+      'utf-8',
+    );
 
     const fallbackLua = 'print("fallback charx lua")\n';
     const embeddedLua = `${fallbackLua}\n${encodeRisuLuaRecoveryBlock(createRisuLuaRecoveryManifest({ rootDir: sourceRoot }))}`;
@@ -520,7 +591,12 @@ describe('charx extract integration (canonical mode)', () => {
         },
       },
     };
-    writeFileSync(charxPath, Buffer.from(zipSync({ 'charx.json': strToU8(JSON.stringify(charxData, null, 2)) }, { level: 0 })));
+    writeFileSync(
+      charxPath,
+      Buffer.from(
+        zipSync({ 'charx.json': strToU8(JSON.stringify(charxData, null, 2)) }, { level: 0 }),
+      ),
+    );
 
     const outDir = path.join(workDir, 'output');
     mkdirSync(outDir, { recursive: true });
@@ -536,10 +612,18 @@ describe('charx extract integration (canonical mode)', () => {
     ]);
 
     expect(exitCode).toBe(0);
-    expect(readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).toBe('local helper = require("common.helper")\nreturn helper.value\n');
-    expect(readFileSync(path.join(outDir, 'lua', 'common', 'helper.risulua'), 'utf-8')).toBe('return { value = "charx recovery helper" }\n');
-    expect(JSON.parse(readFileSync(path.join(outDir, 'docs', 'refactor-map.json'), 'utf-8'))).toEqual({ owner: 'charx', restored: true });
-    expect(readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).not.toContain(RISULUA_RECOVERY_BLOCK_START);
+    expect(readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).toBe(
+      'local helper = require("common.helper")\nreturn helper.value\n',
+    );
+    expect(readFileSync(path.join(outDir, 'lua', 'common', 'helper.risulua'), 'utf-8')).toBe(
+      'return { value = "charx recovery helper" }\n',
+    );
+    expect(
+      JSON.parse(readFileSync(path.join(outDir, 'docs', 'refactor-map.json'), 'utf-8')),
+    ).toEqual({ owner: 'charx', restored: true });
+    expect(readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).not.toContain(
+      RISULUA_RECOVERY_BLOCK_START,
+    );
   });
 
   it('extracts charx defaultVariables into variables/<character>.risuvar', () => {
@@ -565,7 +649,12 @@ describe('charx extract integration (canonical mode)', () => {
         },
       },
     };
-    writeFileSync(charxPath, Buffer.from(zipSync({ 'charx.json': strToU8(JSON.stringify(charxData, null, 2)) }, { level: 0 })));
+    writeFileSync(
+      charxPath,
+      Buffer.from(
+        zipSync({ 'charx.json': strToU8(JSON.stringify(charxData, null, 2)) }, { level: 0 }),
+      ),
+    );
 
     const outDir = path.join(workDir, 'output');
     mkdirSync(outDir, { recursive: true });
@@ -587,21 +676,24 @@ describe('charx extract integration (canonical mode)', () => {
     expect(readFileSync(variableFile, 'utf-8')).toContain('mp=30');
   });
 
-  it('extracts the real playground charx sample to canonical artifacts only', () => {
-    const workspaceRoot = path.resolve(process.cwd(), '..', '..', '..');
-    const sample = path.join(
-      workspaceRoot,
-      'playground',
-      '260406-test',
-      'charx',
-      'Chikan Train-latest.charx',
-    );
+  it('extracts a private charx fixture to canonical artifacts only', () => {
+    if (!existsSync(privateCharxFixturePath)) {
+      console.log('Skipping: private charx fixture not found.');
+      return;
+    }
+
     const outDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-'));
     tempDirs.push(outDir);
 
     const result = spawnSync(
       'node',
-      [path.join(process.cwd(), 'dist', 'cli', 'main.js'), 'extract', sample, '--out', outDir],
+      [
+        path.join(process.cwd(), 'dist', 'cli', 'main.js'),
+        'extract',
+        privateCharxFixturePath,
+        '--out',
+        outDir,
+      ],
       {
         cwd: process.cwd(),
         encoding: 'utf-8',
@@ -621,7 +713,9 @@ describe('charx extract integration (canonical mode)', () => {
     expect(existsSync(path.join(outDir, 'character', 'replace_global_note.risutext'))).toBe(true);
     expect(existsSync(path.join(outDir, 'character', 'creator_notes.risutext'))).toBe(true);
     expect(existsSync(path.join(outDir, 'character', 'additional_text.risutext'))).toBe(true);
-    expect(existsSync(path.join(outDir, 'character', 'alternate_greetings', '_order.json'))).toBe(true);
+    expect(existsSync(path.join(outDir, 'character', 'alternate_greetings', '_order.json'))).toBe(
+      true,
+    );
 
     // Legacy character output should not be emitted by canonical extract.
     expect(existsSync(path.join(outDir, 'character', 'metadata.json'))).toBe(false);
@@ -691,7 +785,7 @@ describe('charx extract integration (canonical mode)', () => {
     // Verify canonical regex files exist
     const regexDir = path.join(outDir, 'regex');
     const regexOrder = existsSync(regexDir)
-      ? JSON.parse(readFileSync(path.join(regexDir, '_order.json'), 'utf-8')) as string[]
+      ? (JSON.parse(readFileSync(path.join(regexDir, '_order.json'), 'utf-8')) as string[])
       : [];
     expect(regexOrder.length).toBeGreaterThan(0);
     for (const regexFile of regexOrder) {
@@ -704,7 +798,7 @@ describe('charx extract integration (canonical mode)', () => {
     // Note: Uses target-name-based naming (e.g., lua/<charxName>.risulua)
     const luaDir = path.join(outDir, 'lua');
     if (existsSync(luaDir)) {
-      const luaFiles = readdirSync(luaDir).filter(f => f.endsWith('.risulua'));
+      const luaFiles = readdirSync(luaDir).filter((f) => f.endsWith('.risulua'));
       expect(luaFiles.length).toBeGreaterThan(0);
       for (const luaFile of luaFiles) {
         const luaContent = readFileSync(path.join(luaDir, luaFile), 'utf-8');
@@ -712,6 +806,5 @@ describe('charx extract integration (canonical mode)', () => {
         expect(luaContent.length).toBeGreaterThan(0);
       }
     }
-
   });
 });

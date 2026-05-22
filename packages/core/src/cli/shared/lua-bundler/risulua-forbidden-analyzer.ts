@@ -1,4 +1,5 @@
 import luaparse from 'luaparse';
+import { getErrorMessage } from '../errors';
 
 /**
  * RisuLua 소스 코드 파싱 기본 옵션.
@@ -133,7 +134,7 @@ export function analyzeRisuLuaForbiddenPatterns(
   try {
     ast = parseRisuLuaSource(source);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     return [diagnostic({
       code: 'parse_error',
       moduleId,

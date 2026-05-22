@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { buildElementPairCorrelationFromUnifiedGraph } from '@/domain';
 import { buildLorebookStructureTree, type LorebookActivationMode } from '@/domain/lorebook/structure';
@@ -21,7 +20,7 @@ import { escapeHtml } from '../../../shared';
 import { collectRegexScriptInfosFromDir } from '../../shared/cross-cutting';
 import { buildLuaInteractionFlow } from '../../shared/lua-interaction-builder';
 import { buildChartPanel, buildDiagramPanel, buildFindingPanel, buildMetricGrid, buildTablePanel } from '../../shared/view-model';
-import { renderHtmlReportShell } from '../../shared/html-report-shell';
+import { buildAnalysisHtmlReport } from '../../shared/html-report-builder';
 import { createSourceId, dedupeSources } from '../../shared/source-links';
 import type { AnalysisVisualizationDoc, SectionDefinition, TablePanel, VisualizationPanel, VisualizationSource } from '../../shared/visualization-types';
 import type { ModuleReportData } from '../types';
@@ -97,19 +96,12 @@ export function renderModuleHtml(data: ModuleReportData, outputDir: string, loca
     sources,
   };
 
-  const analysisDir = path.join(outputDir, 'analysis');
-  fs.mkdirSync(analysisDir, { recursive: true });
-  const reportBaseName = 'module-analysis';
-  const { html, clientJs, assets } = renderHtmlReportShell(doc, { locale, reportBaseName });
-  fs.writeFileSync(
-    path.join(analysisDir, `${reportBaseName}.html`),
-    html,
-    'utf-8',
-  );
-  fs.writeFileSync(path.join(analysisDir, 'report.js'), clientJs, 'utf-8');
-  for (const asset of assets) {
-    fs.writeFileSync(path.join(analysisDir, asset.fileName), asset.contents, 'utf-8');
-  }
+  buildAnalysisHtmlReport({
+    doc,
+    locale,
+    reportBaseName: 'module-analysis',
+    analysisDir: path.join(outputDir, 'analysis'),
+  });
 }
 
 // ── Summary totals ───────────────────────────────────────────────

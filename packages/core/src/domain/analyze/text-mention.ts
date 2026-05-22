@@ -1,13 +1,14 @@
-/** 로어북 텍스트 내에서 변수/Lua 함수/다른 로어북 이름의 텍스트 언급을 탐지한다. */
+/**
+ * 로어북 텍스트 내에서 변수, Lua 함수, 다른 로어북 이름의 텍스트 언급을 탐지하는 유틸 모음.
+ * @file packages/core/src/domain/analyze/text-mention.ts
+ */
+
+import { escapeRegExp } from '../../shared/string-patterns';
 
 export interface TextMentionEdge {
   sourceEntry: string;
   target: string;
   type: 'variable-mention' | 'lua-mention' | 'lorebook-mention';
-}
-
-function escapeRegExp(string: string): string {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**

@@ -5,6 +5,7 @@ import { dirExists, readJsonIfExists, readTextIfExists } from '@/node/fs-helpers
 import { listJsonFilesRecursive, resolveOrderedFiles } from '@/node/json-listing';
 import { parseLorebookContent, type LorebookContent } from '@/domain/custom-extension/extensions/lorebook';
 import { parseRegexContent, type CanonicalRegexEntry } from '@/domain/regex';
+import { isPlainRecord } from '@/shared/guards';
 
 type TokenBudgetComponent = {
   category: string;
@@ -492,7 +493,7 @@ function isManifestWithEntries(value: unknown): value is { entries: unknown[] } 
 }
 
 function isRecord(value: unknown): value is GenericRecord {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return isPlainRecord(value);
 }
 
 function asRecord(value: unknown): GenericRecord | null {

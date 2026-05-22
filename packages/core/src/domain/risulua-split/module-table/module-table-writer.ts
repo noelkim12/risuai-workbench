@@ -24,6 +24,10 @@ import { buildRisuLuaModuleTableExportManifest, serializeRisuLuaModuleTableExpor
 import { buildRisuLuaModuleTableButtonActionIndex, serializeRisuLuaModuleTableButtonActionIndex, type RisuLuaModuleTableButtonActionSourceInput } from './module-table-button-action-index';
 import { RISULUA_SPLIT_PLAN_PATH, serializeRisuLuaSplitPlan } from '../output/plan-writer';
 import { RISULUA_SPLIT_REPORT_PATH, renderRisuLuaSplitReport, type RisuLuaSplitReportContext } from '../output/report-writer';
+import { writeRisuLuaStarterSurface } from '../output/starter-surface';
+import { wholeSourceRange } from '../shared/source-range';
+import { inferTargetName, normalizeSourcePath } from '../shared/source-path';
+import { escapeRegExp } from '../shared/string-patterns';
 import type { LuaHostApiSummary, LuaPlannedFile, LuaSourceRange, RisuLuaSplitPlan, SourceProfileResult, SourceProfileSummary } from '../shared/types';
 import type { RisuLuaWorkspaceFile } from '../output/workspace-writer';
 
@@ -129,6 +133,10 @@ export function writeRisuLuaModuleTableWorkspace(
   const tempRoot = createTempRoot(options.outputRoot);
   try {
     writeFilesToRoot(artifacts.workspaceFiles, tempRoot);
+    writeRisuLuaStarterSurface({
+      outputRoot: tempRoot,
+      existingPaths: artifacts.workspaceFiles.map((file) => file.path),
+    });
     moveStagedRoots(tempRoot, options.outputRoot);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -611,10 +619,6 @@ function requireAliasUsedOutsideLine(lines: string[], requireLineIndex: number, 
   return lines.some((line, index) => index !== requireLineIndex && pattern.test(line));
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 function buildPlan(
   input: CreateRisuLuaModuleTableArtifactsInput,
   targetName: string,
@@ -626,7 +630,7 @@ function buildPlan(
     mode: 'module-table',
     sourceProfile: 'plain-single',
     sourceProfileSummary: summarizeProfile(pipeline.profileResult),
-    sourcePath: normalizePath(input.sourcePath),
+    sourcePath: normalizeSourcePath(input.sourcePath),
     targetName,
     entryPath: 'lua/main.risulua',
     distPath: `dist/${targetName}.risulua`,
@@ -753,10 +757,6 @@ function summarizeProfile(result: SourceProfileResult): SourceProfileSummary {
   return { profile: result.profile, confidence: result.confidence, reasons: result.reasons, preloadModuleCount: result.preloadModules.length, sectionMarkerCount: result.sectionMarkers.length, staticRequireCount: result.staticRequires.length, dynamicRequireCount: result.dynamicRequires.length };
 }
 
-function wholeSourceRange(source: string): LuaSourceRange {
-  return { startLine: 1, endLine: Math.max(1, source.split('\n').length), startOffset: 0, endOffset: source.length };
-}
-
 function rootKind(name: string): 'function' | 'listener' | 'handler-assignment' {
   if (name === 'listenEdit') return 'listener';
   return 'function';
@@ -768,15 +768,6 @@ function reasonForPath(filePath: string): string {
   if (filePath === RISULUA_MODULE_TABLE_PROMPT_STORE_PATH) return 'Prompt and instruction literals extracted from top-level local string declarations.';
   if (filePath.startsWith('docs/')) return 'Module-table documentation generated from dry-run refactor-map output.';
   return 'Module-table artifact generated only because it is present in the dry-run refactor map.';
-}
-
-function inferTargetName(sourcePath: string): string {
-  const fileName = normalizePath(sourcePath).split('/').pop() ?? 'main.risulua';
-  return fileName.replace(/\.risulua$/i, '') || 'main';
-}
-
-function normalizePath(value: string): string {
-  return value.replace(/\\/g, '/');
 }
 
 function sorted(values: string[]): string[] {

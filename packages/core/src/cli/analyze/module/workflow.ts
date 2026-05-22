@@ -14,6 +14,7 @@ import {
 import { parseLorebookContent } from '@/domain/custom-extension/extensions/lorebook';
 import { parseRegexContent } from '@/domain/regex';
 import { readJsonIfExists } from '@/node/fs-helpers';
+import { getErrorMessage } from '../../shared';
 import { readRisumoduleManifest, RISUMODULE_FILENAME } from '../../shared/risumodule';
 import { detectLocale } from '../shared/i18n';
 import {
@@ -186,7 +187,7 @@ export function runAnalyzeModuleWorkflow(argv: readonly string[]): number {
     }
     return 0;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     console.error(`\n  ❌ Module analysis failed: ${message}\n`);
     return 1;
   }

@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { CBSBracketPairHighlighter } from './cbs/legacy/providers/bracketPairProvider';
 import { registerCbsAutoSuggestTrigger } from './completion/cbsAutoSuggest';
 import { registerCoreCommands } from './commands';
+import { registerMainEditorProviders } from './editors/mainEditor';
 import {
   awaitCbsLanguageClientReady,
   getCbsLanguageClientRuntimeState,
@@ -12,7 +13,7 @@ import {
 import { registerRisuLuaSourceDocumentLinks } from './lsp/risuLuaSourceLinks';
 import { AnalysisService } from './services/analysis-service';
 import { CardService } from './services/card-service';
-import { CharacterBrowserViewProvider } from './views/CharacterBrowserViewProvider';
+import { ArtifactBrowserViewProvider } from './views/ArtifactBrowserViewProvider';
 
 /**
  * Official VS Code extension API surface.
@@ -31,13 +32,14 @@ export function activate(context: vscode.ExtensionContext): RisuWorkbenchExtensi
   const analysisService = new AnalysisService(cardService);
 
   const bracketHighlighter = new CBSBracketPairHighlighter();
-  const characterBrowserProvider = new CharacterBrowserViewProvider(context);
+  const artifactBrowserProvider = new ArtifactBrowserViewProvider(context);
 
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(CharacterBrowserViewProvider.viewType, characterBrowserProvider, {
+    vscode.window.registerWebviewViewProvider(ArtifactBrowserViewProvider.viewType, artifactBrowserProvider, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
   );
+  context.subscriptions.push(registerMainEditorProviders(context));
   context.subscriptions.push(bracketHighlighter);
   context.subscriptions.push(registerCoreCommands(context, cardService, analysisService));
   registerCbsAutoSuggestTrigger(context);

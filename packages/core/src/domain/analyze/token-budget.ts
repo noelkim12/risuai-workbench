@@ -1,3 +1,8 @@
+/**
+ * 분석 대상 텍스트 컴포넌트의 토큰 예산을 추정하는 유틸 모음.
+ * @file packages/core/src/domain/analyze/token-budget.ts
+ */
+
 import { TOKEN_RATIOS, TOKEN_THRESHOLDS } from './constants';
 
 /** 토큰 예산 산출용 단일 텍스트 컴포넌트 */
@@ -42,7 +47,13 @@ export interface TokenBudgetResult {
 const CBS_MACRO_RE = /\{\{[^}]*\}\}/g;
 const CJK_RE = /[\u3000-\u9fff\uac00-\ud7af\uf900-\ufaff]/g;
 
-/** estimateTokens returns a directional token estimate without model calls */
+/**
+ * estimateTokens 함수.
+ * 모델 호출 없이 CBS 매크로를 제외한 텍스트의 대략적인 토큰 수를 계산함.
+ *
+ * @param text - 토큰 수를 추정할 원본 텍스트
+ * @returns CJK와 라틴 문자 비율을 반영한 반올림 토큰 추정치
+ */
 export function estimateTokens(text: string): number {
   if (!text) return 0;
 
@@ -57,7 +68,13 @@ export function estimateTokens(text: string): number {
   return Math.round(cjkTokens + latinTokens);
 }
 
-/** analyzeTokenBudget aggregates token estimates and budget warnings */
+/**
+ * analyzeTokenBudget 함수.
+ * 텍스트 컴포넌트별 토큰 추정치를 집계하고 예산 초과 경고를 생성함.
+ *
+ * @param components - 분석할 텍스트 컴포넌트 목록
+ * @returns 컴포넌트별 추정치, 카테고리별 합계, 전체 합계와 경고 목록
+ */
 export function analyzeTokenBudget(components: TokenComponent[]): TokenBudgetResult {
   const analyzed = components.map((component) => ({
     category: component.category,

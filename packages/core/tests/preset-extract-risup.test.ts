@@ -3,8 +3,13 @@ import { mkdtempSync, existsSync, readFileSync, readdirSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { runExtractWorkflow as runPresetExtractWorkflow } from '../src/cli/extract/preset/workflow';
+import { resolvePrivateFixturePaths } from './helpers/private-fixture-paths';
 
 const tempDirs: string[] = [];
+const privatePresetFixturePaths = resolvePrivateFixturePaths([
+  { envVar: 'RISU_WORKBENCH_PRESET_SOURCE_FIXTURE_A', slot: 'preset-source-sample-a.risup' },
+  { envVar: 'RISU_WORKBENCH_PRESET_SOURCE_FIXTURE_B', slot: 'preset-source-sample-b.risup' },
+]);
 
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
@@ -13,26 +18,15 @@ afterEach(() => {
 });
 
 describe('preset extract binary risup integration', () => {
-  it('extracts real .risup samples from test_cases/preset', () => {
-    const workspaceRoot = path.resolve(process.cwd(), '..', '..', '..');
-    const samples = [
-      path.join(workspaceRoot, 'test_cases', 'preset', 'New Preset_preset.risup'),
-      path.join(
-        workspaceRoot,
-        'test_cases',
-        'preset',
-        '😈소악마 프롬프트 v14-6 [Gem3.1]_preset.risup',
-      ),
-    ];
-
+  it('extracts private .risup fixture samples', () => {
     // Skip if real sample fixtures are not available (regression tier only)
-    const missingSamples = samples.filter((sample) => !existsSync(sample));
+    const missingSamples = privatePresetFixturePaths.filter((sample) => !existsSync(sample));
     if (missingSamples.length > 0) {
-      console.log(`Skipping: real sample fixtures not found (${missingSamples.join(', ')})`);
+      console.log(`Skipping: private preset fixtures not found (${missingSamples.length} missing)`);
       return;
     }
 
-    for (const sample of samples) {
+    for (const sample of privatePresetFixturePaths) {
       const outDir = mkdtempSync(path.join(tmpdir(), 'risu-core-preset-'));
       tempDirs.push(outDir);
 
@@ -117,9 +111,9 @@ describe('preset extract binary risup integration', () => {
     expect(
       JSON.parse(readFileSync(path.join(outDir, 'prompt_template', '_order.json'), 'utf-8')),
     ).toEqual(['Main_Prompt.risuprompt']);
-    expect(readFileSync(path.join(outDir, 'prompt_template', 'Main_Prompt.risuprompt'), 'utf-8')).toContain(
-      '@@@ TEXT',
-    );
+    expect(
+      readFileSync(path.join(outDir, 'prompt_template', 'Main_Prompt.risuprompt'), 'utf-8'),
+    ).toContain('@@@ TEXT');
     expect(readFileSync(path.join(outDir, 'regex', 'cleanup.risuregex'), 'utf-8')).toContain(
       '@@@ OUT',
     );

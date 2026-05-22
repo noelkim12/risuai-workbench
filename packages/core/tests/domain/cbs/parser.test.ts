@@ -62,8 +62,9 @@ function snapshotNodes(nodes: CBSNode[]): NodeSnapshot[] {
           expression: node.expression,
           children: snapshotNodes(node.children),
         };
+      default:
+        throw new Error(`Unexpected node type: ${(node as { type: string }).type}`);
     }
-
   });
 }
 
@@ -163,6 +164,58 @@ describe('CBSParser', () => {
         body: [{ type: 'PlainText', value: 'yes' }],
         elseBody: [{ type: 'PlainText', value: 'no' }],
         hasClose: true,
+      },
+    ]);
+  });
+
+  it('accepts numbered close blocks as legacy shorthand closes', () => {
+    const document = parse('{{#if 1}}A{{#if 1}}B{{/2}}{{/1}}');
+
+    expect(snapshotNodes(document.nodes)).toEqual([
+      {
+        type: 'Block',
+        kind: 'if',
+        operators: [],
+        condition: [{ type: 'PlainText', value: '1' }],
+        body: [
+          { type: 'PlainText', value: 'A' },
+          {
+            type: 'Block',
+            kind: 'if',
+            operators: [],
+            condition: [{ type: 'PlainText', value: '1' }],
+            body: [{ type: 'PlainText', value: 'B' }],
+            elseBody: undefined,
+            hasClose: true,
+          },
+        ],
+        elseBody: undefined,
+        hasClose: true,
+      },
+    ]);
+    expect(snapshotDiagnostics(document)).toEqual([]);
+  });
+
+  it('diagnoses arbitrary slash close blocks instead of treating them as legacy shorthand closes', () => {
+    const document = parse('{{#if 1}}A{{/whatever}}Z');
+
+    expect(snapshotNodes(document.nodes)).toEqual([
+      {
+        type: 'Block',
+        kind: 'if',
+        operators: [],
+        condition: [{ type: 'PlainText', value: '1' }],
+        body: [{ type: 'PlainText', value: 'A' }],
+        elseBody: undefined,
+        hasClose: true,
+      },
+      { type: 'PlainText', value: 'Z' },
+    ]);
+    expect(snapshotDiagnostics(document)).toEqual([
+      {
+        code: 'CBS006',
+        message: 'Cross-nested block close detected',
+        severity: 'error',
       },
     ]);
   });
@@ -299,6 +352,24 @@ describe('CBSParser', () => {
     },
   );
 
+  it('captures pure bodies literally until numbered close tokens', () => {
+    const document = parse('{{#pure}}before {{getvar::name}}{{/1}} after');
+
+    expect(snapshotNodes(document.nodes)).toEqual([
+      {
+        type: 'Block',
+        kind: 'pure',
+        operators: [],
+        condition: [],
+        body: [{ type: 'PlainText', value: 'before {{getvar::name}}' }],
+        elseBody: undefined,
+        hasClose: true,
+      },
+      { type: 'PlainText', value: ' after' },
+    ]);
+    expect(snapshotDiagnostics(document)).toEqual([]);
+  });
+
   it('falls back unknown block starters to macro calls with diagnostics', () => {
     const document = parse('{{#mystery::{{user}}::tail}}');
 
@@ -430,10 +501,28 @@ describe('CBSParser', () => {
     );
   });
 
-  it('stops descending past the recursion depth limit and preserves the remaining literal text', () => {
-    const document = parse(buildNestedGetVar(22));
+  it('accepts nesting up to the 64-depth cap and rejects beyond it', () => {
+    // Depth 57 is within the 64 cap (observed in real prompt templates)
+    const accepted57 = parse(buildNestedGetVar(57));
+    expect(snapshotDiagnostics(accepted57)).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'CBS007' })]),
+    );
 
-    expect(snapshotDiagnostics(document)).toEqual(
+    // Depth 64 should be accepted (at the cap)
+    const accepted64 = parse(buildNestedGetVar(64));
+    expect(snapshotDiagnostics(accepted64)).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'CBS007' })]),
+    );
+
+    // Depth 65 should also be accepted (threshold is 66 due to depth counting)
+    const accepted65 = parse(buildNestedGetVar(65));
+    expect(snapshotDiagnostics(accepted65)).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'CBS007' })]),
+    );
+
+    // Depth 66 exceeds the cap and should trigger CBS007
+    const rejected = parse(buildNestedGetVar(66));
+    expect(snapshotDiagnostics(rejected)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           code: 'CBS007',
@@ -441,7 +530,7 @@ describe('CBSParser', () => {
         }),
       ]),
     );
-    expect(collectPlainText(document.nodes)).toEqual(
+    expect(collectPlainText(rejected.nodes)).toEqual(
       expect.arrayContaining([expect.stringContaining('{{getvar::')]),
     );
   });

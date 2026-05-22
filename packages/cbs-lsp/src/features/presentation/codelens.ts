@@ -25,6 +25,7 @@ import {
 } from '../../core';
 import type { ActivationChainQueryResult, ActivationChainService } from '../../services';
 import { isRequestCancelled } from '../../utils/request-cancellation';
+import { escapeMarkdownLinkLabel } from '../hover/hover-variable-formatting';
 
 export const ACTIVATION_CHAIN_CODELENS_COMMAND = 'cbs-lsp.codelens.activationSummary';
 export const ACTIVATION_CHAIN_CODELENS_CLIENT_COMMAND = 'risuWorkbench.cbs.showActivationLinks';
@@ -364,17 +365,6 @@ function formatEntryLabel(entry: ActivationCodeLensLinkedEntrySnapshot): string 
  */
 function formatCommandMarkdownLinkTarget(link: ActivationCodeLensLinkTargetSnapshot): string {
   return `command:${link.command}?${encodeURIComponent(JSON.stringify(link.arguments))}`;
-}
-
-/**
- * escapeMarkdownLinkLabel 함수.
- * markdown link label 안에서 깨지는 문자를 escape함.
- *
- * @param label - 원본 label 문자열
- * @returns markdown label-safe 문자열
- */
-function escapeMarkdownLinkLabel(label: string): string {
-  return label.replace(/[\\\[\]]/gu, (character) => `\\${character}`);
 }
 
 /**

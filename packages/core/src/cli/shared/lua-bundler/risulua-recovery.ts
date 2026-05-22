@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
+import { getErrorMessage } from '@/shared/errors';
+import { isPlainRecord } from '@/shared/guards';
 
 export const RISULUA_RECOVERY_SCHEMA = 'risulua.bundle-recovery';
 export const RISULUA_RECOVERY_VERSION = 1;
@@ -63,7 +65,7 @@ export function decodeRisuLuaRecoveryBlock(code: string): DecodedRisuLuaRecovery
     return { manifest, encoded, block: match[0] };
   } catch (error) {
     if (error instanceof RisuLuaRecoveryError) throw error;
-    throw new RisuLuaRecoveryError(`Invalid recovery manifest block: ${error instanceof Error ? error.message : String(error)}`);
+    throw new RisuLuaRecoveryError(`Invalid recovery manifest block: ${getErrorMessage(error)}`);
   }
 }
 
@@ -206,5 +208,5 @@ function toPosix(value: string): string {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return isPlainRecord(value);
 }

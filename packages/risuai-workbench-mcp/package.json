@@ -1,0 +1,61 @@
+{
+  "name": "risuai-workbench-mcp",
+  "version": "0.1.0",
+  "description": "MCP server skeleton for RisuAI Workbench artifact inspection and future mutation workflows",
+  "bin": {
+    "risuai-workbench-mcp": "bin/risuai-workbench-mcp.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "default": "./dist/cli.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "package.json",
+    "README*",
+    "LICENSE*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "dist/server.js",
+  "types": "dist/server.d.ts",
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "npm run build && vitest run",
+    "test:watch": "vitest",
+    "watch": "tsc -w -p ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/risuai/risu-workbench.git",
+    "directory": "packages/risuai-workbench-mcp"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "risu-workbench-core": "*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.x",
+    "typescript": "^5.3.0",
+    "vitest": "^4.1.4"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/risuai/risu-workbench/tree/main/packages/risuai-workbench-mcp",
+  "bugs": {
+    "url": "https://github.com/risuai/risu-workbench/issues"
+  }
+}

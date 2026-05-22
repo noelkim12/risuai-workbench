@@ -1,10 +1,6 @@
 import path from 'node:path';
 
-export function argValue(argv: readonly string[], name: string): string | null {
-  const idx = argv.indexOf(name);
-  if (idx < 0) return null;
-  return argv[idx + 1] || null;
-}
+export { argValue } from '../shared/args';
 
 export function setNestedValue(root: any, keys: string[], value: unknown): void {
   let cur = root;

@@ -218,7 +218,7 @@ Note: `module.json` and module `metadata.json` are no longer written during extr
 Source files:
 
 - `packages/core/src/cli/extract/preset/workflow.ts`
-- `packages/core/src/cli/extract/preset/phases.ts`
+- `packages/core/src/cli/extract/preset/phases/`
 
 Execution order:
 

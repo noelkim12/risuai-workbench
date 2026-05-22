@@ -1,7 +1,5 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { createVisualizationDoc, buildMetricGrid, buildChartPanel, buildDiagramPanel, buildFindingsPanel, buildTablePanel } from '../../shared/view-model';
-import { renderHtmlReportShell } from '../../shared/html-report-shell';
+import { buildAnalysisHtmlReport } from '../../shared/html-report-builder';
 import { escapeHtml } from '../../../shared';
 import { createSourceId } from '../../shared/source-links';
 import { type Locale, t } from '../../shared/i18n';
@@ -86,14 +84,7 @@ export function renderComposeHtml(data: ComposeReportData, analysisDir: string, 
     ),
   ];
 
-  fs.mkdirSync(analysisDir, { recursive: true });
-  const reportBaseName = 'compose-analysis';
-  const { html, clientJs, assets } = renderHtmlReportShell(doc, { locale, reportBaseName });
-  fs.writeFileSync(path.join(analysisDir, `${reportBaseName}.html`), html, 'utf-8');
-  fs.writeFileSync(path.join(analysisDir, 'report.js'), clientJs, 'utf-8');
-  for (const asset of assets) {
-    fs.writeFileSync(path.join(analysisDir, asset.fileName), asset.contents, 'utf-8');
-  }
+  buildAnalysisHtmlReport({ doc, locale, reportBaseName: 'compose-analysis', analysisDir });
 }
 
 function buildConflictGraph(data: ComposeReportData): Record<string, unknown> {

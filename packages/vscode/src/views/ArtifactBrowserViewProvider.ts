@@ -1,0 +1,302 @@
+/**
+ * VS Code sidebar Webview View provider for the Artifact Browser skeleton.
+ * @file packages/vscode/src/views/ArtifactBrowserViewProvider.ts
+ */
+
+import fs from 'node:fs';
+import path from 'node:path';
+import { CharacterDetailScanner } from '../artifact-browser/CharacterDetailScanner';
+import { ModuleDetailScanner } from '../artifact-browser/ModuleDetailScanner';
+import * as vscode from 'vscode';
+import { createWebviewNonce } from '../shared/webviewNonce';
+import { WorkspaceArtifactDiscoveryService } from '../artifact-browser/WorkspaceArtifactDiscoveryService';
+import {
+  createArtifactBrowserCardsMessage,
+  createArtifactBrowserDetailMessage,
+  isArtifactBrowserOpenItemMessage,
+  isArtifactBrowserReadyMessage,
+  isArtifactBrowserRefreshMessage,
+  isArtifactBrowserSelectMessage,
+} from '../artifact-browser/artifactBrowserMessages';
+import {
+  ARTIFACT_BROWSER_VIEW_ID,
+  type BrowserArtifactCard,
+  type BrowserSection,
+} from '../artifact-browser/artifactBrowserTypes';
+import { MarkerEditorViewProvider } from './MarkerEditorViewProvider';
+import {
+  createWebviewDevServerHtml,
+  getConfiguredWebviewDevServerUrl,
+  getWebviewDevServerPortMapping,
+} from './webviewDevServer';
+
+const CHARACTER_MARKER_FILENAME = '.risuchar';
+const MODULE_MARKER_FILENAME = '.risumodule';
+
+/**
+ * ArtifactBrowserViewProvider 클래스.
+ * 기존 `risuWorkbench.cards` view id에 Svelte bundle을 로드하고 typed bridge를 연결함.
+ */
+export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
+  static readonly viewType = ARTIFACT_BROWSER_VIEW_ID;
+  private static readonly instances = new Set<ArtifactBrowserViewProvider>();
+
+  private view: vscode.WebviewView | undefined;
+  private selectedStableId: string | undefined;
+  private currentCards: BrowserArtifactCard[] = [];
+  private currentSections = new Map<string, BrowserSection[]>();
+
+  constructor(private readonly context: vscode.ExtensionContext) {
+    ArtifactBrowserViewProvider.instances.add(this);
+    this.context.subscriptions.push({
+      dispose: () => ArtifactBrowserViewProvider.instances.delete(this),
+    });
+  }
+
+  /**
+   * refreshOpenViews 함수.
+   * 열린 Artifact Browser sidebar가 있으면 workspace artifact 목록을 다시 전송함.
+   */
+  static refreshOpenViews(): void {
+    for (const instance of ArtifactBrowserViewProvider.instances) {
+      instance.refreshIfOpen();
+    }
+  }
+
+  /**
+   * refreshIfOpen 함수.
+   * resolve된 sidebar webview에만 새 discovery snapshot을 전송함.
+   */
+  private refreshIfOpen(): void {
+    if (!this.view) return;
+    void this.sendDiscoveredCards(this.view.webview);
+  }
+
+  /**
+   * resolveWebviewView 함수.
+   * Sidebar Webview View가 열릴 때 script-enabled HTML과 readiness message handler를 등록함.
+   *
+   * @param webviewView - VS Code가 생성한 sidebar webview view
+   */
+  resolveWebviewView(webviewView: vscode.WebviewView): void {
+    this.view = webviewView;
+    webviewView.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [
+        vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview'),
+        ...(vscode.workspace.workspaceFolders?.map((folder) => folder.uri) ?? []),
+      ],
+      portMapping: getWebviewDevServerPortMapping(),
+    };
+    webviewView.webview.onDidReceiveMessage(
+      (message: unknown) => {
+        if (isArtifactBrowserReadyMessage(message)) {
+          void this.sendDiscoveredCards(webviewView.webview);
+          return;
+        }
+
+        if (isArtifactBrowserRefreshMessage(message)) {
+          void this.sendDiscoveredCards(webviewView.webview);
+          return;
+        }
+
+        if (isArtifactBrowserSelectMessage(message)) {
+          void this.selectArtifact(message.payload.stableId);
+          return;
+        }
+
+        if (isArtifactBrowserOpenItemMessage(message)) {
+          void this.openItem(message.payload.stableId, message.payload.itemId);
+        }
+      },
+      null,
+      this.context.subscriptions,
+    );
+
+    webviewView.webview.html = this.getHtml(webviewView.webview);
+  }
+
+  private postMessage(
+    message:
+      | ReturnType<typeof createArtifactBrowserCardsMessage>
+      | ReturnType<typeof createArtifactBrowserDetailMessage>,
+  ): void {
+    void this.view?.webview.postMessage(message);
+  }
+
+  private async sendDiscoveredCards(webview: vscode.Webview): Promise<void> {
+    const previousSelectedCard = this.selectedStableId
+      ? this.currentCards.find((card) => card.stableId === this.selectedStableId)
+      : undefined;
+    const discoveryService = new WorkspaceArtifactDiscoveryService(webview);
+    const cards = await discoveryService.discoverCards();
+    const refreshedSelectedCard = this.resolveRefreshedSelection(cards, previousSelectedCard);
+    this.currentCards = cards;
+
+    if (refreshedSelectedCard) {
+      this.selectedStableId = refreshedSelectedCard.stableId;
+    } else if (this.selectedStableId) {
+      this.selectedStableId = undefined;
+    }
+
+    this.postMessage(createArtifactBrowserCardsMessage(cards, refreshedSelectedCard?.stableId));
+    if (refreshedSelectedCard) {
+      await this.postDetailSections(refreshedSelectedCard);
+    }
+  }
+
+  /**
+   * resolveRefreshedSelection 함수.
+   * Discovery refresh 후에도 같은 marker file card를 현재 선택으로 이어붙임.
+   *
+   * @param cards - 새 discovery snapshot cards
+   * @param previousSelectedCard - refresh 전 선택되어 있던 card
+   * @returns refresh 후 유지할 선택 card
+   */
+  private resolveRefreshedSelection(
+    cards: BrowserArtifactCard[],
+    previousSelectedCard: BrowserArtifactCard | undefined,
+  ): BrowserArtifactCard | undefined {
+    if (!this.selectedStableId) return undefined;
+
+    const stableIdMatch = cards.find((card) => card.stableId === this.selectedStableId);
+    if (stableIdMatch) return stableIdMatch;
+
+    if (!previousSelectedCard) return undefined;
+    return cards.find((card) => card.markerUri === previousSelectedCard.markerUri);
+  }
+
+  /**
+   * selectArtifact 함수.
+   * 선택 stable id를 보존하고 artifact kind별 read-only detail scanner 결과를 webview로 전송함.
+   *
+   * @param stableId - Webview에서 선택한 artifact card stable id
+   */
+  private async selectArtifact(stableId: string): Promise<void> {
+    this.selectedStableId = stableId;
+    const selectedCard = this.currentCards.find((card) => card.stableId === stableId);
+    if (!selectedCard) return;
+
+    this.openMarkerEditor(selectedCard.markerUri);
+
+    await this.postDetailSections(selectedCard);
+  }
+
+  /**
+   * postDetailSections 함수.
+   * 선택 card의 detail section을 scan하고 최신 선택이 유지될 때만 webview로 전송함.
+   *
+   * @param selectedCard - detail section을 만들 현재 선택 card
+   */
+  private async postDetailSections(selectedCard: BrowserArtifactCard): Promise<void> {
+    const stableId = selectedCard.stableId;
+    const sections =
+      selectedCard.artifactKind === 'character'
+        ? await new CharacterDetailScanner().scan(selectedCard)
+        : await new ModuleDetailScanner().scan(selectedCard);
+    if (this.selectedStableId !== stableId) return;
+
+    this.currentSections.set(stableId, sections);
+    this.postMessage(createArtifactBrowserDetailMessage(stableId, sections));
+  }
+
+  /**
+   * openItem 함수.
+   * Detail view file-backed item 요청을 VS Code editor open으로 연결함.
+   *
+   * @param stableId - item이 속한 artifact stable id
+   * @param itemId - detail scanner가 만든 item stable id
+   */
+  private async openItem(stableId: string, itemId: string): Promise<void> {
+    const sections = this.currentSections.get(stableId);
+    const item = sections
+      ?.flatMap((section) => section.items)
+      .find((candidate) => candidate.id === itemId);
+    if (!item?.fileUri) return;
+
+    const uri = vscode.Uri.parse(item.fileUri);
+    if (isRootMarkerUri(uri)) {
+      MarkerEditorViewProvider.openEditor(this.context, uri);
+      return;
+    }
+
+    await vscode.commands.executeCommand('vscode.open', uri);
+  }
+
+  /**
+   * openMarkerEditor 함수.
+   * 선택된 character/module card의 root marker를 marker editor panel로 엶.
+   *
+   * @param markerUri - 선택 card가 가리키는 `.risuchar` 또는 `.risumodule` URI 문자열
+   */
+  private openMarkerEditor(markerUri: string): void {
+    MarkerEditorViewProvider.openEditor(this.context, vscode.Uri.parse(markerUri));
+  }
+
+  private getHtml(webview: vscode.Webview): string {
+    const devServerUrl = getConfiguredWebviewDevServerUrl();
+    if (devServerUrl) {
+      return createWebviewDevServerHtml(devServerUrl, {
+        title: 'Risu Workbench Browser',
+        viewName: 'artifact-browser',
+        webview,
+      });
+    }
+
+    const webviewRoot = vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview');
+    const htmlPath = path.join(webviewRoot.fsPath, 'index.html');
+
+    if (!fs.existsSync(htmlPath)) {
+      return this.getFallbackHtml(webview);
+    }
+
+    const nonce = createWebviewNonce();
+    const html = fs.readFileSync(htmlPath, 'utf8');
+    const assetHtml = html.replace(
+      /(src|href)="(\.\/assets\/[^\"]+)"/g,
+      (_match, attr, assetPath) => {
+        const assetUri = webview.asWebviewUri(
+          vscode.Uri.joinPath(webviewRoot, assetPath.replace('./', '')),
+        );
+        return `${attr}="${assetUri.toString()}"`;
+      },
+    );
+    const withNonce = assetHtml.replace(
+      /<script type="module"/g,
+      `<script nonce="${nonce}" type="module"`,
+    );
+
+    return withNonce.replace(
+      '</head>',
+      `    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; font-src ${webview.cspSource};" />\n  </head>`,
+    );
+  }
+
+  private getFallbackHtml(webview: vscode.Webview): string {
+    return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource};" />
+    <title>Risu Workbench Browser</title>
+  </head>
+  <body>
+    <h1>Risu Workbench Browser</h1>
+    <p>Webview bundle is missing. Run the vscode package build to generate Vite assets.</p>
+  </body>
+</html>`;
+  }
+}
+
+/**
+ * isRootMarkerUri 함수.
+ * detail item URI가 root marker manifest 파일인지 판별함.
+ *
+ * @param uri - detail item이 가리키는 file URI
+ * @returns `.risuchar` 또는 `.risumodule` marker 여부
+ */
+function isRootMarkerUri(uri: vscode.Uri): boolean {
+  const basename = path.basename(uri.fsPath);
+  return basename === CHARACTER_MARKER_FILENAME || basename === MODULE_MARKER_FILENAME;
+}

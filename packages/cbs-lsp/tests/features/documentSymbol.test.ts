@@ -8,37 +8,12 @@ import {
   serializeDocumentSymbolsEnvelopeForGolden,
   snapshotDocumentSymbolsEnvelope,
 } from '../fixtures/fixture-corpus';
-import { offsetToPosition } from '../../src/utils/position';
+import { buildRequest, lineOf } from '../helpers/lsp-test-utils';
 
 function createParams(uri: string): DocumentSymbolParams {
   return {
     textDocument: { uri },
   };
-}
-
-function buildRequest(filePath: string, text: string, version: number = 1) {
-  return {
-    uri: `file://${filePath}`,
-    version,
-    filePath,
-    text,
-  };
-}
-
-function lineOf(text: string, needle: string, occurrence: number = 0): number {
-  let fromIndex = 0;
-  let offset = -1;
-
-  for (let index = 0; index <= occurrence; index += 1) {
-    offset = text.indexOf(needle, fromIndex);
-    if (offset === -1) {
-      throw new Error(`Could not find ${JSON.stringify(needle)}`);
-    }
-
-    fromIndex = offset + needle.length;
-  }
-
-  return offsetToPosition(text, offset).line;
 }
 
 describe('DocumentSymbolProvider', () => {

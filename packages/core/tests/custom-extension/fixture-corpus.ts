@@ -1,76 +1,134 @@
 import path from 'node:path';
+import type { BaseFixtureCorpusEntry } from '../helpers/fixture-corpus';
+import {
+  freezeCorpusMap,
+  filterCorpusEntries,
+  getCorpusEntryOrThrow,
+  resolveFixtureRepositoryRoot,
+} from '../helpers/fixture-corpus';
 
 export type FixtureCorpusTarget = 'charx' | 'module' | 'preset';
 export type FixtureCorpusSourceKind = 'extract-dir' | 'source-file';
 
-export interface FixtureCorpusEntry {
-  id: string;
+export interface FixtureCorpusEntry extends BaseFixtureCorpusEntry {
   target: FixtureCorpusTarget;
-  label: string;
   sourceKind: FixtureCorpusSourceKind;
-  relativePath: string;
   sourcePath: string;
-  features: readonly string[];
 }
 
-const workspaceRoot = path.resolve(process.cwd(), '..', '..', '..');
+type ExtractFixtureCorpusSeed = Omit<FixtureCorpusEntry, 'relativePath' | 'sourcePath'> & {
+  sourceKind: 'extract-dir';
+  envVar: string;
+  slot: string;
+};
 
-const fixtureCorpus = [
+type SourceFileFixtureCorpusSeed = Omit<FixtureCorpusEntry, 'relativePath' | 'sourcePath'> & {
+  sourceKind: 'source-file';
+  envVar: string;
+  slot: string;
+};
+
+type FixtureCorpusSeed = ExtractFixtureCorpusSeed | SourceFileFixtureCorpusSeed;
+
+const workspaceRoot = resolveFixtureRepositoryRoot();
+const externalFixturePlaceholderRoot = path.posix.join('__external_custom_extension_fixtures__');
+
+/**
+ * readFixturePathOverride 함수.
+ * 외부 regression fixture 경로를 환경변수에서만 읽어 소스에 실명 경로를 남기지 않음.
+ *
+ * @param envVar - fixture 경로를 제공하는 환경변수 이름
+ * @param slot - 환경변수가 없을 때 사용할 익명 placeholder slot
+ * @returns 환경변수 경로 또는 익명 placeholder 상대 경로
+ */
+function readFixturePathOverride(envVar: string, slot: string): string {
+  return process.env[envVar] ?? path.posix.join(externalFixturePlaceholderRoot, slot);
+}
+
+/**
+ * createFixtureCorpusEntry 함수.
+ * sourceKind별 seed를 최종 fixture corpus entry로 변환함.
+ *
+ * @param seed - 경로 조립에 필요한 최소 seed 정보
+ * @returns sourcePath까지 계산된 fixture corpus entry
+ */
+function createFixtureCorpusEntry(seed: FixtureCorpusSeed): FixtureCorpusEntry {
+  const relativePath = readFixturePathOverride(seed.envVar, seed.slot);
+  const sourcePath = path.isAbsolute(relativePath)
+    ? relativePath
+    : path.join(workspaceRoot, relativePath);
+
+  return {
+    id: seed.id,
+    target: seed.target,
+    label: seed.label,
+    sourceKind: seed.sourceKind,
+    relativePath,
+    sourcePath,
+    features: seed.features,
+  };
+}
+
+const fixtureCorpusSeeds = [
   {
-    id: 'module-merry-rpg',
+    id: 'module-sample-a',
     target: 'module',
-    label: 'merry-rpg-모듈-v1-3 extract',
+    label: 'module sample A extract',
     sourceKind: 'extract-dir',
-    relativePath: 'playground/260406-test/output/module/merry-rpg-모듈-v1-3/extract',
+    envVar: 'RISU_WORKBENCH_MODULE_FIXTURE_A',
+    slot: 'module-sample-a/extract',
     features: ['lorebook', 'regex', 'lua', 'html', 'toggle', 'assets'],
   },
   {
-    id: 'module-lightboard-sns',
+    id: 'module-sample-b',
     target: 'module',
-    label: '라이트보드-sns-1-25-0 extract',
+    label: 'module sample B extract',
     sourceKind: 'extract-dir',
-    relativePath: 'playground/260406-test/output/module/라이트보드-sns-1-25-0/extract',
+    envVar: 'RISU_WORKBENCH_MODULE_FIXTURE_B',
+    slot: 'module-sample-b/extract',
     features: ['lorebook', 'regex', 'lua', 'html', 'toggle', 'assets'],
   },
   {
-    id: 'charx-alternate-hunters',
+    id: 'charx-sample-a',
     target: 'charx',
-    label: 'alternate-hunters-v2 extract',
+    label: 'charx sample A extract',
     sourceKind: 'extract-dir',
-    relativePath: 'playground/260406-test/output/charx/alternate-hunters-v2/extract',
+    envVar: 'RISU_WORKBENCH_CHARX_FIXTURE_A',
+    slot: 'charx-sample-a/extract',
     features: ['lorebook', 'regex', 'lua', 'html', 'variable', 'assets'],
   },
   {
-    id: 'preset-hallabong',
+    id: 'preset-sample-a',
     target: 'preset',
-    label: 'hallabong-preset extract',
+    label: 'preset sample A extract',
     sourceKind: 'extract-dir',
-    relativePath: 'playground/260406-test/output/preset/hallabong-preset/extract',
+    envVar: 'RISU_WORKBENCH_PRESET_FIXTURE_A',
+    slot: 'preset-sample-a/extract',
     features: ['prompt', 'prompt-template', 'structured-json'],
   },
   {
-    id: 'preset-managem-jampro',
+    id: 'preset-sample-b',
     target: 'preset',
-    label: '마나젬-잼프로-마개조-v1-4-2-preset extract',
+    label: 'preset sample B extract',
     sourceKind: 'extract-dir',
-    relativePath: 'playground/260406-test/output/preset/마나젬-잼프로-마개조-v1-4-2-preset/extract',
+    envVar: 'RISU_WORKBENCH_PRESET_FIXTURE_B',
+    slot: 'preset-sample-b/extract',
     features: ['prompt-template', 'regex', 'structured-json'],
   },
   {
-    id: 'preset-new-risup-source',
+    id: 'preset-source-sample-a',
     target: 'preset',
-    label: 'New Preset_preset.risup source',
+    label: 'preset source sample A',
     sourceKind: 'source-file',
-    relativePath: 'test_cases/preset/New Preset_preset.risup',
+    envVar: 'RISU_WORKBENCH_PRESET_SOURCE_FIXTURE_A',
+    slot: 'preset-source-sample-a.risup',
     features: ['preset-binary-source', 'lightweight'],
   },
-] as const satisfies readonly Omit<FixtureCorpusEntry, 'sourcePath'>[];
+] as const satisfies readonly FixtureCorpusSeed[];
 
-export const CUSTOM_EXTENSION_FIXTURE_CORPUS: readonly FixtureCorpusEntry[] = Object.freeze(
-  fixtureCorpus.map((entry) => ({
-    ...entry,
-    sourcePath: path.join(workspaceRoot, entry.relativePath),
-  })),
+export const CUSTOM_EXTENSION_FIXTURE_CORPUS: readonly FixtureCorpusEntry[] = freezeCorpusMap(
+  fixtureCorpusSeeds,
+  createFixtureCorpusEntry,
 );
 
 export function getFixtureWorkspaceRoot(): string {
@@ -80,14 +138,16 @@ export function getFixtureWorkspaceRoot(): string {
 export function listFixtureCorpusEntries(
   target?: FixtureCorpusTarget,
 ): readonly FixtureCorpusEntry[] {
-  if (!target) return CUSTOM_EXTENSION_FIXTURE_CORPUS;
-  return CUSTOM_EXTENSION_FIXTURE_CORPUS.filter((entry) => entry.target === target);
+  return filterCorpusEntries(
+    CUSTOM_EXTENSION_FIXTURE_CORPUS,
+    target ? (entry) => entry.target === target : undefined,
+  );
 }
 
 export function getFixtureCorpusEntry(id: string): FixtureCorpusEntry {
-  const entry = CUSTOM_EXTENSION_FIXTURE_CORPUS.find((candidate) => candidate.id === id);
-  if (!entry) {
-    throw new Error(`Unknown custom-extension fixture corpus entry: ${id}`);
-  }
-  return entry;
+  return getCorpusEntryOrThrow(
+    CUSTOM_EXTENSION_FIXTURE_CORPUS,
+    id,
+    `Unknown custom-extension fixture corpus entry: ${id}`,
+  );
 }

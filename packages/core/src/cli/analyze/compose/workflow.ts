@@ -13,6 +13,7 @@ import { parseLorebookContent } from '@/domain/custom-extension/extensions/loreb
 import { parseRegexContent } from '@/domain/regex';
 import { parseVariableContent } from '@/domain/custom-extension/extensions/variable';
 import { readJsonIfExists, readTextIfExists } from '@/node/fs-helpers';
+import { argValue, argValues, getErrorMessage } from '../../shared';
 import { RISUMODULE_FILENAME } from '../../shared/risumodule';
 import { detectLocale } from '../shared/i18n';
 import { collectHTMLCBS, collectTSCBS, collectVariablesCBS, importLuaAnalysis, loadLuaArtifacts } from '../charx/collectors';
@@ -50,8 +51,8 @@ export function runAnalyzeComposeWorkflow(argv: readonly string[]): number {
 
   const locale = detectLocale(argv);
   const charxDir = argv.find((arg) => !arg.startsWith('-') && !isOptionValue(argv, arg));
-  const moduleDirs = collectFlagValues(argv, '--module');
-  const presetDir = collectFlagValue(argv, '--preset');
+  const moduleDirs = argValues(argv, '--module');
+  const presetDir = argValue(argv, '--preset');
 
   if (!charxDir && moduleDirs.length === 0 && !presetDir) {
     console.error('  ❌ At least one artifact directory is required.');
@@ -80,25 +81,10 @@ export function runAnalyzeComposeWorkflow(argv: readonly string[]): number {
     console.log(`  ⚠️  Conflicts found: ${result.summary.totalConflicts}`);
     return 0;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     console.error(`\n  ❌ Composition analysis failed: ${message}\n`);
     return 1;
   }
-}
-
-function collectFlagValues(argv: readonly string[], flag: string): string[] {
-  const values: string[] = [];
-  for (let index = 0; index < argv.length; index += 1) {
-    if (argv[index] === flag && index + 1 < argv.length) {
-      values.push(argv[index + 1]!);
-    }
-  }
-  return values;
-}
-
-function collectFlagValue(argv: readonly string[], flag: string): string | null {
-  const index = argv.indexOf(flag);
-  return index >= 0 && index + 1 < argv.length ? argv[index + 1]! : null;
 }
 
 function isOptionValue(argv: readonly string[], value: string): boolean {

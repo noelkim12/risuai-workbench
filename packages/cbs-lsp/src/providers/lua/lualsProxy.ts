@@ -12,13 +12,10 @@ import type {
   DefinitionParams,
   DocumentHighlight,
   DocumentHighlightParams,
-  DocumentSymbol,
   DocumentSymbolParams,
   Hover,
   HoverParams,
   Location,
-  MarkedString,
-  MarkupContent,
   Range as LspRange,
   RenameParams,
   ReferenceParams,
@@ -38,6 +35,10 @@ import {
   type NormalizedRuntimeAvailabilitySnapshot,
   type RuntimeOperatorContractOptions,
 } from '../../core';
+import {
+  normalizeHoverContentToSnapshot,
+  type NormalizedHoverContentSnapshot,
+} from '../../features/hover/hover-content-normalizer';
 import { CbsLspPathHelper } from '../../helpers/path-helper';
 import { createLuaLsTransportUri } from './lualsDocuments';
 import {
@@ -73,10 +74,7 @@ const LUA_HOVER_SNAPSHOT_PROVENANCE = Object.freeze(
 );
 
 export interface NormalizedLuaHoverSnapshot {
-  contents: {
-    kind: string | null;
-    value: string;
-  };
+  contents: NormalizedHoverContentSnapshot;
   range: LspRange | null;
 }
 
@@ -106,32 +104,13 @@ interface LuaLsTextDocumentParams {
 /**
  * normalizeLuaHoverContents 함수.
  * LuaLS hover contents를 snapshot/golden 비교에 적합한 stable shape로 정규화함.
+ * Delegates to the shared `normalizeHoverContentToSnapshot` helper.
  *
  * @param contents - 정규화할 LuaLS hover contents
  * @returns stable `kind/value` pair
  */
-function normalizeLuaHoverContents(contents: Hover['contents']): NormalizedLuaHoverSnapshot['contents'] {
-  if (typeof contents === 'string') {
-    return { kind: null, value: contents };
-  }
-
-  if (Array.isArray(contents)) {
-    return {
-      kind: null,
-      value: contents.map((entry) => (typeof entry === 'string' ? entry : entry.value)).join('\n'),
-    };
-  }
-
-  const markup = contents as MarkupContent | MarkedString;
-
-  if (typeof markup === 'string') {
-    return { kind: null, value: markup };
-  }
-
-  return {
-    kind: 'kind' in markup ? markup.kind : null,
-    value: markup.value,
-  };
+function normalizeLuaHoverContents(contents: Hover['contents']): NormalizedHoverContentSnapshot {
+  return normalizeHoverContentToSnapshot(contents);
 }
 
 /**
@@ -141,7 +120,9 @@ function normalizeLuaHoverContents(contents: Hover['contents']): NormalizedLuaHo
  * @param hover - 정규화할 Lua hover 결과
  * @returns stable contents/range shape
  */
-export function normalizeLuaHoverForSnapshot(hover: Hover | null): NormalizedLuaHoverSnapshot | null {
+export function normalizeLuaHoverForSnapshot(
+  hover: Hover | null,
+): NormalizedLuaHoverSnapshot | null {
   if (!hover) {
     return null;
   }
@@ -191,7 +172,10 @@ export class LuaLsProxy {
    * @param sourceUri - 원본 `.risulua` URI
    * @returns transport URI와 remap context 묶음
    */
-  private createRequestContext(sourceUri: string): { transportUri: string; remapContext: LuaLsRemapContext } {
+  private createRequestContext(sourceUri: string): {
+    transportUri: string;
+    remapContext: LuaLsRemapContext;
+  } {
     const transportUri = createLuaLsTransportUri(CbsLspPathHelper.getFilePathFromUri(sourceUri));
     return {
       transportUri,
@@ -250,10 +234,10 @@ export class LuaLsProxy {
 
     try {
       const completion = await this.client.request<CompletionItem[] | CompletionList>(
-          'textDocument/completion',
-          this.createTransportParams(params, transportUri),
-          DEFAULT_LUALS_COMPLETION_TIMEOUT_MS,
-        );
+        'textDocument/completion',
+        this.createTransportParams(params, transportUri),
+        DEFAULT_LUALS_COMPLETION_TIMEOUT_MS,
+      );
       return remapLuaLsCompletionResult(completion, remapContext);
     } catch {
       return [];
@@ -403,10 +387,10 @@ export class LuaLsProxy {
 
     try {
       const symbols = await this.client.request<LuaLsDocumentSymbolResult>(
-          'textDocument/documentSymbol',
-          this.createTransportParams(params, transportUri),
-          DEFAULT_LUALS_DOCUMENT_SYMBOL_TIMEOUT_MS,
-        );
+        'textDocument/documentSymbol',
+        this.createTransportParams(params, transportUri),
+        DEFAULT_LUALS_DOCUMENT_SYMBOL_TIMEOUT_MS,
+      );
       return remapLuaLsDocumentSymbols(symbols, remapContext);
     } catch {
       return [];
@@ -513,6 +497,9 @@ export class LuaLsProxy {
  * @param client - LuaLS request/response를 수행할 companion client
  * @returns Lua hover proxy provider seam
  */
-export function createLuaLsProxy(client: LuaLsRequestClient, options: LuaLsProxyOptions = {}): LuaLsProxy {
+export function createLuaLsProxy(
+  client: LuaLsRequestClient,
+  options: LuaLsProxyOptions = {},
+): LuaLsProxy {
   return new LuaLsProxy(client, options);
 }

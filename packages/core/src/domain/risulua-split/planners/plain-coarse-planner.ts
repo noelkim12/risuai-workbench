@@ -23,12 +23,14 @@ import { classifyAtomForCoarseSplit, isAtomScopeSafe, filePathToModuleId, type A
 import { writeRisuLuaSplitPlan } from '../output/plan-writer';
 import { writeRisuLuaSplitReport } from '../output/report-writer';
 import { writeRisuLuaWorkspaceFiles, type RisuLuaWorkspaceFile } from '../output/workspace-writer';
+import { lineOnlyRange, wholeSourceRange } from '../shared/source-range';
+import { inferTargetName, normalizeSourcePath } from '../shared/source-path';
+import { escapeRegExp } from '../shared/string-patterns';
 import type {
   LuaDetectedRoot,
   LuaHostApiSummary,
   LuaPlanRisk,
   LuaPlannedFile,
-  LuaSourceRange,
   LuaTopLevelAtom,
   RisuLuaSplitPlan,
   SourceProfileResult,
@@ -669,19 +671,6 @@ function summarizeProfile(result: SourceProfileResult): SourceProfileSummary {
   };
 }
 
-function wholeSourceRange(source: string): LuaSourceRange {
-  return {
-    startLine: 1,
-    endLine: Math.max(1, source.split('\n').length),
-    startOffset: 0,
-    endOffset: source.length,
-  };
-}
-
-function lineOnlyRange(line: number): LuaSourceRange {
-  return { startLine: line, endLine: line, startOffset: 0, endOffset: 0 };
-}
-
 function lowestConfidence(confidences: SplitConfidence[]): SplitConfidence | null {
   const order: SplitConfidence[] = ['high', 'medium', 'low', 'very-low'];
   let lowest: SplitConfidence | null = null;
@@ -693,19 +682,6 @@ function lowestConfidence(confidences: SplitConfidence[]): SplitConfidence | nul
   return lowest;
 }
 
-function inferTargetName(sourcePath: string): string {
-  const fileName = normalizeSourcePath(sourcePath).split('/').pop() ?? 'main.risulua';
-  return fileName.replace(/\.risulua$/i, '') || 'main';
-}
-
-function normalizeSourcePath(sourcePath: string): string {
-  return sourcePath.replace(/\\/g, '/');
-}
-
 function sorted(values: string[]): string[] {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b));
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

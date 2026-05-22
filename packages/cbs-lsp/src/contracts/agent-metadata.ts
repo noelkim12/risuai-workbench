@@ -36,7 +36,8 @@ export type AgentMetadataKind =
   | 'calc-expression-zone'
   | 'metadata-property'
   | 'block-snippet'
-  | 'calc-operator';
+  | 'calc-operator'
+  | 'lorebook-decorator';
 
 /** CBS 에이전트 프로토콜 스키마 식별자. */
 export const CBS_AGENT_PROTOCOL_SCHEMA = 'cbs-lsp-agent-contract';

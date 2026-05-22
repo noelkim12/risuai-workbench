@@ -1,6 +1,7 @@
 export { asRecord, type GenericRecord } from './types';
 export * from './cbs';
 export * from './custom-extension';
+export * from './editor';
 export {
   buildFolderMap as buildRisuFolderMap,
   resolveFolderName as resolveRisuFolderName,
@@ -70,6 +71,22 @@ export {
   type LorebookActivationEntry,
   type LorebookRecursionMode,
 } from './lorebook/activation-chain';
+export {
+  normalizeLorebookDecoratorName,
+  getLorebookDecoratorSpec,
+  listLorebookDecoratorSpecs,
+  getLorebookDecoratorCompletionCandidates,
+  formatLorebookDecoratorMarkdown,
+  formatLorebookDecoratorPlain,
+  getLorebookDecoratorCompletionContext,
+  getLorebookDecoratorHoverToken,
+  type LorebookDecoratorSupportLevel,
+  type LorebookDecoratorSpec,
+  type LorebookDecoratorCompletionCandidate,
+  type LorebookDecoratorCategory,
+  type LorebookDecoratorCompletionContext,
+  type LorebookDecoratorHoverToken,
+} from './lorebook/decorators';
 export {
   collectRegexCBSFromCharx,
   collectRegexCBSFromCharx as collectRegexCBSFromCard,

@@ -1,6 +1,14 @@
+/**
+ * 변수 흐름과 원본 메타데이터에서 정리 후보를 찾는 dead code 분석 유틸 모음.
+ * @file packages/core/src/domain/analyze/dead-code.ts
+ */
+
 import type { VarFlowResult } from './variable-flow-types';
 
-/** dead code finding 종류 */
+/**
+ * DeadCodeType 타입.
+ * dead code 분석에서 보고할 수 있는 정리 후보 분류를 나타낸다.
+ */
 export type DeadCodeType =
   | 'write-only-variable'
   | 'uninitialized-variable'
@@ -9,45 +17,87 @@ export type DeadCodeType =
   | 'unreachable-lorebook-entry'
   | 'no-effect-regex';
 
-/** dead code finding 항목 */
+/**
+ * DeadCodeFinding 인터페이스.
+ * dead code 분석에서 발견한 정리 후보 한 건을 나타낸다.
+ */
 export interface DeadCodeFinding {
+  /** 정리 후보 분류 코드 */
   type: DeadCodeType;
+  /** 사용자에게 표시할 심각도 */
   severity: 'info' | 'warning';
+  /** 후보가 속한 element 타입 */
   elementType: string;
+  /** 후보가 속한 element 표시 이름 */
   elementName: string;
+  /** 후보 설명 메시지 */
   message: string;
+  /** 추가 원인이나 보조 설명, 없으면 생략됨 */
   detail?: string;
 }
 
-/** dead code 분석 결과 */
+/**
+ * DeadCodeResult 인터페이스.
+ * dead code 분석 결과와 집계 요약을 담는다.
+ */
 export interface DeadCodeResult {
+  /** 발견된 정리 후보 목록 */
   findings: DeadCodeFinding[];
+  /** 전체 정리 후보 집계 */
   summary: {
+    /** 발견된 전체 후보 수 */
     totalFindings: number;
+    /** 후보 분류별 발생 건수 */
     byType: Record<string, number>;
+    /** 심각도별 발생 건수 */
     bySeverity: Record<string, number>;
   };
 }
 
-/** lorebook dead-code용 엔트리 정보 */
+/**
+ * LorebookEntryInfo 인터페이스.
+ * 로어북 도달 가능성과 키워드 shadow 판정에 필요한 엔트리 메타데이터를 담는다.
+ */
 export interface LorebookEntryInfo {
+  /** 로어북 엔트리 이름 */
   name: string;
+  /** 엔트리를 활성화하는 주 키워드 목록 */
   keywords: string[];
+  /** 같은 키워드 안에서 우선순위를 비교할 insertion order 값 */
   insertionOrder: number;
+  /** 엔트리 활성화 여부 */
   enabled: boolean;
+  /** 상시 삽입 엔트리 여부 */
   constant: boolean;
+  /** 보조 키워드를 요구하는 selective 엔트리 여부 */
   selective: boolean;
+  /** selective 엔트리에서 사용하는 보조 키워드 목록 */
   secondaryKeys?: string[];
 }
 
-/** regex dead-code용 스크립트 정보 */
+/**
+ * RegexScriptInfo 인터페이스.
+ * no effect 정규식 판정에 필요한 스크립트 입출력 메타데이터를 담는다.
+ */
 export interface RegexScriptInfo {
+  /** 정규식 스크립트 이름 */
   name: string;
+  /** 입력 패턴 문자열 */
   in: string;
+  /** 출력 패턴 문자열 */
   out: string;
 }
 
-/** detectDeadCode derives cleanup candidates from flow results and raw metadata */
+/**
+ * detectDeadCode 함수.
+ * 변수 흐름 이슈, 로어북 키워드, 정규식 패턴 메타데이터를 바탕으로 정리 후보를 도출한다.
+ *
+ * @param variableFlow - analyzeVariableFlow가 생성한 변수별 이벤트와 이슈 분석 결과
+ * @param context - dead code 판정에 필요한 로어북 엔트리와 정규식 스크립트 메타데이터
+ * @param context.lorebookEntries - 키워드 중복, 선택 조건, 도달 가능성 검사를 수행할 로어북 엔트리 목록
+ * @param context.regexScripts - 입력과 출력 패턴이 같은 no effect 정규식을 찾을 스크립트 목록
+ * @returns 발견된 정리 후보와 타입, 심각도별 집계 요약
+ */
 export function detectDeadCode(
   variableFlow: VarFlowResult,
   context: {

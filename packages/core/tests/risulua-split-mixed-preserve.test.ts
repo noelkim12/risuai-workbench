@@ -100,8 +100,8 @@ describe('risulua-split mixed/unknown preserve-first planner', () => {
         confidence: 'very-low',
       }));
       expect(fs.existsSync(path.join(outputRoot, 'dist'))).toBe(false);
-      expect(fs.existsSync(path.join(outputRoot, 'lua', 'sections'))).toBe(false);
-      expect(fs.existsSync(path.join(outputRoot, 'lua', 'preload'))).toBe(false);
+      expect(fs.existsSync(path.join(outputRoot, 'lua', 'sections'))).toBe(true);
+      expect(fs.existsSync(path.join(outputRoot, 'lua', 'preload'))).toBe(true);
       expect(fs.existsSync(path.join(outputRoot, ...RISULUA_SPLIT_PLAN_PATH.split('/')))).toBe(true);
       expect(fs.existsSync(path.join(outputRoot, ...RISULUA_SPLIT_REPORT_PATH.split('/')))).toBe(true);
       expect(readOutput(outputRoot, 'legacy/original.risulua')).toBe(source);

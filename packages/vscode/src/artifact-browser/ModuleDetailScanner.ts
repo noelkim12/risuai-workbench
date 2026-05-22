@@ -1,0 +1,99 @@
+/**
+ * Module detail view를 위한 read-only related file scanner.
+ * Generic detail scanner를 Module artifact 전용 section/classifier로 구성한 thin wrapper.
+ * @file packages/vscode/src/artifact-browser/ModuleDetailScanner.ts
+ */
+
+import path from 'node:path';
+import type {
+  BrowserItemType,
+  BrowserSection,
+  BrowserSectionKind,
+  ModuleBrowserCard,
+} from './artifactBrowserTypes';
+import { GenericDetailScanner, type SectionDraft, createSection } from './shared/detailScanner';
+
+type ModuleSectionKind = (typeof SECTION_ORDER)[number];
+
+const SECTION_ORDER: BrowserSectionKind[] = [
+  'manifest',
+  'lorebooks',
+  'regexRules',
+  'lua',
+  'toggle',
+  'variables',
+  'html',
+  'diagnostics',
+];
+
+function createModuleSectionDrafts(): Record<ModuleSectionKind, SectionDraft> {
+  return {
+    manifest: createSection('manifest', 'Manifest', 'manifest'),
+    lorebooks: createSection('lorebooks', 'Lorebooks', 'lorebooks'),
+    regexRules: createSection('regexRules', 'Regex Rules', 'regexRules'),
+    lua: createSection('lua', 'Lua', 'lua'),
+    toggle: createSection('toggle', 'Toggle', 'toggle'),
+    variables: createSection('variables', 'Variables', 'variables'),
+    html: createSection('html', 'HTML', 'html'),
+    diagnostics: createSection('diagnostics', 'Diagnostics', 'diagnostics'),
+  };
+}
+
+function classifyFile(relativePath: string): ModuleSectionKind | undefined {
+  const lowerPath = relativePath.toLowerCase();
+  const extension = path.extname(lowerPath).replace('.', '');
+
+  if (lowerPath === '.risumodule') return 'manifest';
+  if (extension === 'risulorebook' || isUnderDirectory(lowerPath, 'lorebooks')) return 'lorebooks';
+  if (extension === 'risuregex' || isUnderDirectory(lowerPath, 'regex')) return 'regexRules';
+  if (extension === 'risulua' || isUnderDirectory(lowerPath, 'lua')) return 'lua';
+  if (extension === 'risutoggle' || isUnderDirectory(lowerPath, 'toggle')) return 'toggle';
+  if (extension === 'risuvar' || isUnderDirectory(lowerPath, 'variables')) return 'variables';
+  if (extension === 'risuhtml' || isUnderDirectory(lowerPath, 'html')) return 'html';
+
+  return undefined;
+}
+
+function classifyItemType(relativePath: string, sectionId: ModuleSectionKind): BrowserItemType {
+  if (sectionId === 'manifest') return 'manifest';
+
+  const extension = path.extname(relativePath).replace('.', '').toLowerCase();
+  if (extension === 'risulorebook' || sectionId === 'lorebooks') return 'risulorebook';
+  if (extension === 'risuregex' || sectionId === 'regexRules') return 'risuregex';
+  if (extension === 'risulua' || sectionId === 'lua') return 'risulua';
+  if (extension === 'risutoggle' || sectionId === 'toggle') return 'risutoggle';
+  if (extension === 'risuvar' || sectionId === 'variables') return 'risuvar';
+  if (extension === 'risuhtml' || sectionId === 'html') return 'risuhtml';
+
+  return 'unknown';
+}
+
+function isUnderDirectory(relativePath: string, directoryName: string): boolean {
+  return relativePath === directoryName || relativePath.startsWith(`${directoryName}/`);
+}
+
+const scanner = new GenericDetailScanner<ModuleSectionKind, BrowserItemType>({
+  sectionOrder: SECTION_ORDER,
+  createSectionDrafts: createModuleSectionDrafts,
+  classifyFile,
+  classifyItemType,
+  manifestMarkerName: '.risumodule',
+  manifestSectionKind: 'manifest',
+});
+
+/**
+ * ModuleDetailScanner 클래스.
+ * 선택된 module root 내부만 보수적으로 스캔해 detail accordion section을 구성함.
+ */
+export class ModuleDetailScanner {
+  /**
+   * scan 함수.
+   * 선택 card의 root URI와 module warning을 section/item model로 변환함.
+   *
+   * @param card - detail을 열 selected module card
+   * @returns detail view에 표시할 stable section 목록
+   */
+  async scan(card: ModuleBrowserCard): Promise<BrowserSection[]> {
+    return scanner.scan(card);
+  }
+}

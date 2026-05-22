@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import * as wikiPaths from '@/cli/analyze/shared/wiki/paths';
+import * as wikiPaths from '../../src/cli/analyze/shared/wiki/paths';
 import {
   entityToSiblingEntity,
   entityToConsolidated,
@@ -15,7 +15,7 @@ import {
   consolidatedToNotes,
   lorebookIndexToNotes,
   entityToExtractSource,
-} from '@/cli/analyze/shared/wiki/paths';
+} from '../../src/cli/analyze/shared/wiki/paths';
 
 describe('wiki/paths', () => {
   it('exposes a helper that preserves nested lorebook folder paths', () => {
@@ -36,11 +36,16 @@ describe('wiki/paths', () => {
     expect(wikiPaths).toHaveProperty('buildLorebookActivationChainPath');
     const buildLorebookActivationChainPath = (
       wikiPaths as typeof wikiPaths & {
-        buildLorebookActivationChainPath: (folder: string | null | undefined, slug: string) => string;
+        buildLorebookActivationChainPath: (
+          folder: string | null | undefined,
+          slug: string,
+        ) => string;
       }
     ).buildLorebookActivationChainPath;
 
-    expect(buildLorebookActivationChainPath(undefined, '상태창')).toBe('chains/lorebook-activation/상태창.md');
+    expect(buildLorebookActivationChainPath(undefined, '상태창')).toBe(
+      'chains/lorebook-activation/상태창.md',
+    );
     expect(buildLorebookActivationChainPath('🌟이벤트_트리거/서브', '🌟_이벤트_-_나쁜일')).toBe(
       'chains/lorebook-activation/🌟이벤트_트리거/서브/🌟_이벤트_-_나쁜일.md',
     );
@@ -152,12 +157,10 @@ describe('wiki/paths', () => {
 
     expect(
       fn(
-        'lorebook/🌟이벤트_트리거/강유라.md',
-        'character_alternate-hunters-v2',
-        'lorebooks/🌟이벤트_트리거/강유라.risulorebook',
+        'lorebook/events/sample-entry.md',
+        'character_sample_a',
+        'lorebooks/events/sample-entry.risulorebook',
       ),
-    ).toBe(
-      '../../../../../../character_alternate-hunters-v2/lorebooks/🌟이벤트_트리거/강유라.risulorebook',
-    );
+    ).toBe('../../../../../../character_sample_a/lorebooks/events/sample-entry.risulorebook');
   });
 });

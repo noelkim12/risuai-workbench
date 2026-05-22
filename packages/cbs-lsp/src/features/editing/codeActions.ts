@@ -10,7 +10,7 @@ import {
   type CodeActionParams,
   type WorkspaceEdit,
 } from 'vscode-languageserver/node';
-import { type BlockNode, type Range } from 'risu-workbench-core';
+import { type BlockNode, type Range, escapeRegExp } from 'risu-workbench-core';
 
 import { CbsLspTextHelper } from '../../helpers/text-helper';
 import {
@@ -1079,15 +1079,4 @@ function scoreOperatorDistance(source: string, target: string): number {
   }
 
   return matrix[source.length]![target.length]!;
-}
-
-/**
- * escapeRegExp 함수.
- * diagnostic 문자열을 regex literal로 안전하게 escape함.
- *
- * @param value - escape할 문자열
- * @returns regex-safe string
- */
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 }

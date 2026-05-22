@@ -12,7 +12,10 @@ describe('packages/core node entry contract', () => {
 
     expect(packageJson.exports).toMatchObject({
       '.': './dist/index.js',
-      './node': './dist/node/index.js',
+      './node': {
+        default: './dist/node/index.js',
+        types: './dist/node/index.d.ts',
+      },
     });
   });
 
