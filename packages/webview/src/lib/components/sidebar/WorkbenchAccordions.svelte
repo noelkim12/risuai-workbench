@@ -1,13 +1,13 @@
 <script lang="ts">
-  import type { CharacterItem, CharacterSection } from '../../types';
+  import type { BrowserItem, BrowserSection } from '../../types';
 
-  export let sections: CharacterSection[];
+  export let sections: BrowserSection[];
   export let expandedSectionIds: string[];
   export let onToggleSection: (sectionId: string) => void;
-  export let onOpenItem: (item: CharacterItem) => void;
+  export let onOpenItem: (item: BrowserItem) => void;
 </script>
 
-<section class="accordion" aria-label="Character detail sections">
+<section class="accordion" aria-label="Workbench detail sections">
   {#each sections as section (section.id)}
     {@const expanded = expandedSectionIds.includes(section.id)}
     <article class="accordion__section" class:accordion__section--direct={section.kind === 'lua'}>
