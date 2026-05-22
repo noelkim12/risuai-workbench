@@ -48,7 +48,7 @@ describe('FoldingProvider', () => {
 
     const ranges = provider.provide(createParams(request.uri), request);
 
-    expect(ranges).toHaveLength(6);
+    expect(ranges).toHaveLength(7);
     expect(ranges.map((range) => range.startLine)).toEqual([
       lineOf(text, '{{#when::ready}}'),
       lineOf(text, '{{#each items as item}}'),
@@ -56,9 +56,9 @@ describe('FoldingProvider', () => {
       lineOf(text, '{{#pure}}'),
       lineOf(text, '{{#puredisplay}}'),
       lineOf(text, '{{#func greet user}}'),
+      lineOf(text, '{{#if true}}'),
     ]);
     expect(ranges.every((range) => range.endLine > range.startLine)).toBe(true);
-    expect(ranges.some((range) => range.startLine === lineOf(text, '{{#if true}}'))).toBe(false);
   });
 
   it('omits unsupported, unclosed, and single-line block folds gracefully', () => {

@@ -142,4 +142,48 @@ describe('lorebook CONTENT runtime preview', () => {
       }),
     );
   });
+
+  it('keeps an empty inline getvar trace anchored before the following newline', () => {
+    const coreLine = '  - Core: Directly advances the current storyline and begins a consecutive encounter sequence with a standard initial encounter. The Difficulty refers only to that initial encounter, not to the full consecutive encounter sequence.';
+    const preview = createLorebookContentRuntimePreview({
+      contentText: [
+        `${coreLine}{{getvar::vg_Flag_Goal}}`,
+        '  - Side: A self-contained side event not directly related to the main storyline.',
+      ].join('\n'),
+      overrides: {},
+    });
+
+    expect(preview.output).toBe([
+      coreLine,
+      '  - Side: A self-contained side event not directly related to the main storyline.',
+    ].join('\n'));
+    expect(preview.trace).toContainEqual(
+      expect.objectContaining({
+        node: 'getvar',
+        outputLine: 0,
+        outputColumn: coreLine.length,
+      }),
+    );
+  });
+
+  it('keeps empty inline getvar traces anchored after #if body trimming', () => {
+    const preview = createLorebookContentRuntimePreview({
+      contentText: [
+        '{{#if {{? 1}}}}',
+        '- Core: Text.{{getvar::vg_Flag_Goal}}',
+        '- Side: Text.',
+        '{{/if}}',
+      ].join('\n'),
+      overrides: {},
+    });
+
+    expect(preview.output).toBe(['- Core: Text.', '- Side: Text.'].join('\n'));
+    expect(preview.trace).toContainEqual(
+      expect.objectContaining({
+        node: 'getvar',
+        outputLine: 0,
+        outputColumn: '- Core: Text.'.length,
+      }),
+    );
+  });
 });

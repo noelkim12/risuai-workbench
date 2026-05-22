@@ -5,7 +5,7 @@
 import type { BlockNode } from '../../domain/cbs/parser/ast';
 import { cloneRange, sourceForRange } from '../engine/source-range';
 import { pushTrace } from '../engine/trace';
-import { trimLines } from './whitespace';
+import { mapTrimLinesOffset, trimLines } from './whitespace';
 import type { BlockEvaluationState } from './state';
 
 /**
@@ -57,6 +57,33 @@ export function evaluateIfBlock(
     details: { condition: conditionText, rawCondition: getRawConditionText(node, state), truthy },
   });
   if (!truthy) return '';
+  const traceStartIndex = state.trace.length;
+  const outputStartOffset = state.outputOffsetStack[state.outputOffsetStack.length - 1] ?? 0;
   const output = state.visitNodes(node.body, depth + 1);
-  return pureWhitespace ? output : trimLines(output);
+  if (pureWhitespace) return output;
+  remapTrimmedBodyTraceOffsets(state, traceStartIndex, outputStartOffset, output);
+  return trimLines(output);
+}
+
+/**
+ * remapTrimmedBodyTraceOffsets 함수.
+ * block body trace offset을 trimLines() 적용 후 output 기준으로 보정합니다.
+ *
+ * @param state - simulation 누적 상태
+ * @param traceStartIndex - body 평가 직전 trace 시작 index
+ * @param outputStartOffset - body output 시작 absolute offset
+ * @param output - trimLines() 적용 전 body output
+ */
+function remapTrimmedBodyTraceOffsets(
+  state: BlockEvaluationState,
+  traceStartIndex: number,
+  outputStartOffset: number,
+  output: string,
+): void {
+  const outputEndOffset = outputStartOffset + output.length;
+  for (const event of state.trace.slice(traceStartIndex)) {
+    if (event.outputOffset === undefined) continue;
+    if (event.outputOffset < outputStartOffset || event.outputOffset > outputEndOffset) continue;
+    event.outputOffset = outputStartOffset + mapTrimLinesOffset(output, event.outputOffset - outputStartOffset);
+  }
 }

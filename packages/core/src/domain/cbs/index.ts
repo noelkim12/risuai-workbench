@@ -1,5 +1,6 @@
 /** CBS domain barrel exports */
 export * from './cbs';
+export * from './condition-candidates';
 export * from './parser/tokens';
 export * from './parser/ast';
 export * from './parser/tokenizer';

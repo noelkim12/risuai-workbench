@@ -13,6 +13,10 @@ import {
   type CbsSimulationTraceEvent,
   type CbsSimulationTracePhase,
 } from '../../../../../simulator';
+import {
+  createAstConditionCandidateExtractor,
+  type ConditionCandidateExtractor,
+} from '../../../../cbs/condition-candidates';
 import type { EditorPreviewDiagnostic } from '../../../preview/types';
 import { createPreviewDiagnostic } from '../../../preview/create-preview-diagnostic';
 import { formatCoverageSummary } from '../../../preview/coverage-summary';
@@ -120,12 +124,37 @@ export function createLorebookContentRuntimePreview(
   });
   const traceOutputPositions = buildTraceOutputPositionLookup(simulation.output, simulation.trace);
 
+  const candidateExtractor: ConditionCandidateExtractor = createAstConditionCandidateExtractor();
+  const conditionCandidates = candidateExtractor.extract(input.contentText);
+  const conditionCandidatesByVariable = new Map<string, Set<string>>();
+  for (const candidate of conditionCandidates) {
+    const set = conditionCandidatesByVariable.get(candidate.variableName) ?? new Set();
+    set.add(candidate.value);
+    conditionCandidatesByVariable.set(candidate.variableName, set);
+  }
+
   return {
     status: simulation.status,
     output: simulation.output,
     bindings: injection.bindings.map((binding) => {
       const source = toRuntimeSourceBadge(binding.source);
       const rawValue = binding.valuePreview ?? '';
+      const candidates: LorebookRuntimeVariableBinding['candidates'] = [];
+      const seenValues = new Set<string>();
+
+      const extraCandidates = conditionCandidatesByVariable.get(binding.variableName);
+      if (extraCandidates) {
+        for (const value of extraCandidates) {
+          if (!seenValues.has(value)) {
+            const label = value === '__risu_test_nonnull__' ? '✓ Test non-null'
+              : value === '__risu_test_isnull__' ? '✗ Test null'
+                : value;
+            candidates.push({ value, source: 'usage', label });
+            seenValues.add(value);
+          }
+        }
+      }
+
       return {
         variableName: binding.variableName,
         scope: binding.scope,
@@ -136,7 +165,7 @@ export function createLorebookContentRuntimePreview(
         valueKind: inferValueKind(binding.valuePreview),
         resolvedValue: binding.valuePreview,
         rawValue,
-        candidates: binding.valuePreview === undefined ? [] : [{ value: rawValue, source, label: rawValue }],
+        candidates,
         usageRanges: binding.occurrence.range ? [toRuntimeRange(binding.occurrence.range)] : [],
       };
     }),
