@@ -2352,6 +2352,46 @@ h2 {
   color: var(--muted);
 }
 
+.main-editor-placeholder--skeleton {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+}
+
+.main-editor-skeleton-stack {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.main-editor-skeleton-line,
+.main-editor-skeleton-block {
+  display: block;
+  border: 1px solid color-mix(in srgb, var(--card-border) 72%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--section) 78%, var(--surface));
+}
+
+.main-editor-skeleton-line {
+  width: 72%;
+  min-height: calc(var(--space-3) + var(--space-1));
+}
+
+.main-editor-skeleton-line--wide {
+  width: 100%;
+}
+
+.main-editor-skeleton-line--short {
+  width: 42%;
+}
+
+.main-editor-skeleton-block {
+  min-height: calc(var(--space-5) * 4);
+}
+
+.main-editor-skeleton-block--preview {
+  min-height: calc(var(--space-5) * 6);
+}
+
 .main-editor-preview-panel {
   position: relative;
   display: grid;
