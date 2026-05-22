@@ -938,6 +938,24 @@ describe('risulua-split module-table artifact writer', () => {
     expect(artifacts.plan.distPath).toBe('dist/empty_modules.risulua');
   });
 
+  it('writes starter editing surface for absent module-table paths during workspace emit', async () => {
+    const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'risulua-module-table-starter-'));
+    try {
+      const source = 'function onOutput(text)\n  return text\nend\n';
+      const artifacts = await createRisuLuaModuleTableArtifacts({ source, sourcePath: 'starter_surface.risulua' });
+
+      writeRisuLuaModuleTableWorkspace(artifacts, { outputRoot, cwd: process.cwd() });
+
+      expect(artifacts.workspaceFiles.map((file) => file.path)).not.toContain('lua/common/local_helpers.risulua');
+      expect(fs.readFileSync(path.join(outputRoot, 'lua', 'common', 'local_helpers.risulua'), 'utf8')).toContain('local M = {}');
+      expect(fs.readFileSync(path.join(outputRoot, 'lua', 'features', 'core.risulua'), 'utf8')).toContain('return M');
+      expect(fs.existsSync(path.join(outputRoot, 'lua', 'sections'))).toBe(true);
+      expect(fs.existsSync(path.join(outputRoot, 'lua', 'preload'))).toBe(true);
+    } finally {
+      fs.rmSync(outputRoot, { recursive: true, force: true });
+    }
+  });
+
   it('validates before final write and leaves no partial module-table output on failure', async () => {
     const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'risulua-module-table-atomic-'));
     try {

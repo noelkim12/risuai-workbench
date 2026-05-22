@@ -24,6 +24,7 @@ import { buildRisuLuaModuleTableExportManifest, serializeRisuLuaModuleTableExpor
 import { buildRisuLuaModuleTableButtonActionIndex, serializeRisuLuaModuleTableButtonActionIndex, type RisuLuaModuleTableButtonActionSourceInput } from './module-table-button-action-index';
 import { RISULUA_SPLIT_PLAN_PATH, serializeRisuLuaSplitPlan } from '../output/plan-writer';
 import { RISULUA_SPLIT_REPORT_PATH, renderRisuLuaSplitReport, type RisuLuaSplitReportContext } from '../output/report-writer';
+import { writeRisuLuaStarterSurface } from '../output/starter-surface';
 import { wholeSourceRange } from '../shared/source-range';
 import { inferTargetName, normalizeSourcePath } from '../shared/source-path';
 import { escapeRegExp } from '../shared/string-patterns';
@@ -132,6 +133,10 @@ export function writeRisuLuaModuleTableWorkspace(
   const tempRoot = createTempRoot(options.outputRoot);
   try {
     writeFilesToRoot(artifacts.workspaceFiles, tempRoot);
+    writeRisuLuaStarterSurface({
+      outputRoot: tempRoot,
+      existingPaths: artifacts.workspaceFiles.map((file) => file.path),
+    });
     moveStagedRoots(tempRoot, options.outputRoot);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });

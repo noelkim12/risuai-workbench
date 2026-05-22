@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
-import { resolvePrivateFixturePath } from '../../../tests/helpers/private-fixture-paths';
+import { resolvePrivateFixturePath } from './helpers/private-fixture-paths';
 
 import {
   RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH,

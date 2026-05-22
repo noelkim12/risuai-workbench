@@ -10,11 +10,25 @@ import {
   type CbsPreviewVariableSource,
   type CbsSimulationContext,
   type CbsSimulationContextInput,
+  type CbsSimulationTraceEvent,
   type CbsSimulationTracePhase,
 } from '../../../../../simulator';
 import type { EditorPreviewDiagnostic } from '../../../preview/types';
 import { createPreviewDiagnostic } from '../../../preview/create-preview-diagnostic';
 import { formatCoverageSummary } from '../../../preview/coverage-summary';
+
+const PREVIEW_LENS_TRACE_NODES = new Set([
+  '#if',
+  '#if_pure',
+  '#when',
+  'getvar',
+  'getglobalvar',
+  'gettempvar',
+  'setvar',
+  'setglobalvar',
+  'settempvar',
+  'setdefaultvar',
+]);
 
 export type LorebookRuntimeVariableSourceBadge =
   | 'usage'
@@ -78,6 +92,8 @@ export interface LorebookRuntimePreviewResult {
     message: string;
     node?: string;
     range?: { line: number; character: number; endLine: number; endCharacter: number };
+    outputLine?: number;
+    outputColumn?: number;
     details?: Record<string, string>;
   }>;
   coverageSummary: string;
@@ -102,6 +118,7 @@ export function createLorebookContentRuntimePreview(
   const simulation = simulateCbsText(input.contentText, injection.effectiveContext, {
     maxTraceEvents: 1_000,
   });
+  const traceOutputPositions = buildTraceOutputPositionLookup(simulation.output, simulation.trace);
 
   return {
     status: simulation.status,
@@ -148,9 +165,90 @@ export function createLorebookContentRuntimePreview(
       message: event.message,
       node: event.node,
       range: event.range ? toRuntimeRange(event.range) : undefined,
+      outputLine: event.range ? traceOutputPositions.get(createTracePositionKey(event.range.start.line, event.range.start.character))?.line : undefined,
+      outputColumn: event.range ? traceOutputPositions.get(createTracePositionKey(event.range.start.line, event.range.start.character))?.column : undefined,
       details: stringifyDetails(event.details),
     })),
     coverageSummary: formatCoverageSummary(simulation.coverage.totalMacros, simulation.coverage.unknownMacros.length),
+  };
+}
+
+/**
+ * buildTraceOutputPositionLookup 함수.
+ * 각 trace event의 outputOffset을 preview output line/column으로 변환합니다.
+ *
+ * @param output - runtime preview 결과 전체 output입니다.
+ * @param trace - output 위치를 붙일 simulator trace 이벤트입니다.
+ * @returns source line/character key를 preview output 위치로 매핑한 lookup입니다.
+ */
+function buildTraceOutputPositionLookup(
+  output: string,
+  trace: readonly CbsSimulationTraceEvent[],
+): Map<string, { line: number; column: number }> {
+  const lineStarts = buildLineStartOffsets(output);
+  const outputPositionsBySourcePosition = new Map<string, { line: number; column: number }>();
+
+  for (const event of trace) {
+    if (!event.range || event.outputOffset === undefined) continue;
+    if (event.phase !== 'macro-skip' || !event.node || !PREVIEW_LENS_TRACE_NODES.has(event.node)) continue;
+    const key = createTracePositionKey(event.range.start.line, event.range.start.character);
+    outputPositionsBySourcePosition.set(key, getOutputPositionFromOffset(output, event.outputOffset, lineStarts));
+  }
+
+  return outputPositionsBySourcePosition;
+}
+
+/**
+ * createTracePositionKey 함수.
+ * trace source position을 lookup key로 변환합니다.
+ *
+ * @param line - zero-based source line 번호입니다.
+ * @param character - zero-based source character 번호입니다.
+ * @returns source 위치 lookup key입니다.
+ */
+function createTracePositionKey(line: number, character: number): string {
+  return `${line}:${character}`;
+}
+
+/**
+ * buildLineStartOffsets 함수.
+ * source line별 시작 UTF-16 offset lookup을 한 번만 만듭니다.
+ *
+ * @param source - line start offset을 계산할 원문입니다.
+ * @returns zero-based line number로 조회 가능한 offset 배열입니다.
+ */
+function buildLineStartOffsets(source: string): number[] {
+  const lineStarts = [0];
+  for (let index = 0; index < source.length; index += 1) {
+    if (source[index] !== '\n') continue;
+    lineStarts.push(index + 1);
+  }
+
+  return lineStarts;
+}
+
+/**
+ * getOutputPositionFromOffset 함수.
+ * output 내 UTF-16 offset을 preview line/column 위치로 변환합니다.
+ *
+ * @param output - runtime preview 결과 전체 output입니다.
+ * @param offset - 변환할 UTF-16 character offset입니다.
+ * @param lineStarts - output line별 시작 offset 배열입니다.
+ * @returns zero-based preview output 위치입니다.
+ */
+function getOutputPositionFromOffset(
+  output: string,
+  offset: number,
+  lineStarts: number[],
+): { line: number; column: number } {
+  const clampedOffset = Math.max(0, Math.min(output.length, offset));
+  let line = 0;
+  while (line + 1 < lineStarts.length && lineStarts[line + 1] <= clampedOffset) {
+    line += 1;
+  }
+  return {
+    line,
+    column: clampedOffset - lineStarts[line],
   };
 }
 

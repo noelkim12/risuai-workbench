@@ -144,6 +144,17 @@ describe('CBS simulator variable fixtures', () => {
 
     expect(result.status).toBe('ok');
     expect(result.output).toBe('seed changed');
+    expect(result.trace).toContainEqual(
+      expect.objectContaining({
+        node: 'settempvar',
+        details: expect.objectContaining({
+          key: 'scratch',
+          valuePreview: 'changed',
+          source: '{{settempvar::scratch::changed}}',
+          store: 'localTemp',
+        }),
+      }),
+    );
     expect(snapshotContext(context)).toBe(before);
   });
 });
@@ -195,7 +206,12 @@ describe('CBS simulator effect-only fixtures', () => {
     expect(result.trace).toContainEqual(
       expect.objectContaining({
         node: 'setvar',
-        details: expect.objectContaining({ committed: false, executionMode: 'execute' }),
+        details: expect.objectContaining({
+          committed: false,
+          executionMode: 'execute',
+          source: '{{setvar::mood::calm}}',
+          valuePreview: 'calm',
+        }),
       }),
     );
     expect(snapshotContext(context)).toBe(before);

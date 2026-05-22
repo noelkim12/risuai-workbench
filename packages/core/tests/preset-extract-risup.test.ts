@@ -3,7 +3,7 @@ import { mkdtempSync, existsSync, readFileSync, readdirSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { runExtractWorkflow as runPresetExtractWorkflow } from '../src/cli/extract/preset/workflow';
-import { resolvePrivateFixturePaths } from '../../../tests/helpers/private-fixture-paths';
+import { resolvePrivateFixturePaths } from './helpers/private-fixture-paths';
 
 const tempDirs: string[] = [];
 const privatePresetFixturePaths = resolvePrivateFixturePaths([

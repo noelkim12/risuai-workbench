@@ -8,7 +8,7 @@
  * get-by-id-with-error-message logic. This module centralises those
  * without touching any package source barrel or public exports.
  *
- * @file tests/helpers/fixture-corpus.ts
+ * @file packages/core/tests/helpers/fixture-corpus.ts
  */
 
 import path from 'node:path';
@@ -46,7 +46,7 @@ export interface BaseFixtureCorpusEntry {
  * @returns 현재 저장소 루트 절대 경로
  */
 export function resolveFixtureRepositoryRoot(): string {
-  return path.resolve(__dirname, '..', '..');
+  return path.resolve(__dirname, '..', '..', '..', '..');
 }
 
 // ---------------------------------------------------------------------------

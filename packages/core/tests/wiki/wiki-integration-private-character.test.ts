@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { runAnalyzeWorkflow } from '../../src/cli/analyze/workflow';
-import { resolvePrivateFixturePath } from '../../../../tests/helpers/private-fixture-paths';
+import { resolvePrivateFixturePath } from '../helpers/private-fixture-paths';
 
 const FIXTURE_EXTRACT = resolvePrivateFixturePath(
   'RISU_WORKBENCH_WIKI_FIXTURE_A',

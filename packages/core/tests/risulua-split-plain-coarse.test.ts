@@ -421,8 +421,9 @@ describe('risulua-split plain coarse planner/writer', () => {
       expect(main).toContain('setChatVar("hp", "10")');
       expect(main).toContain('alertNormal("done")');
 
-      // Not split into separate feature files
-      expect(fs.existsSync(path.join(outputRoot, 'lua', 'features'))).toBe(false);
+      // Not planned as a split feature file; only the starter editing surface exists on disk.
+      expect(plan.files.map((file) => file.path)).not.toContain('lua/features/core.risulua');
+      expect(readOutput(outputRoot, 'lua/features/core.risulua')).toContain('local M = {}');
 
       // No host mutation helper classified as pure common helper
       for (const candidate of artifacts.pureCandidates) {
