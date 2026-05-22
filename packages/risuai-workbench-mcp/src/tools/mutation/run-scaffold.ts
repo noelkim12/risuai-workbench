@@ -11,6 +11,7 @@ import { createMutationResultEnvelope, type MutationResultEnvelope } from '../..
 import { appendJournalEntry } from '../../mutation/journal';
 import type { MutationMode } from '../../mutation/mode';
 import { evaluateMutationSafetyGate } from '../../mutation/safety-gate';
+import type { ProgressReporter } from '../../progress';
 import type { WorkspaceRootStatus } from '../../project/resolve-root';
 import { resolveSafeWorkspacePath } from '../../project/safe-path';
 
@@ -52,7 +53,9 @@ export async function handleRunScaffold(
   input: unknown,
   workspace: WorkspaceRootStatus,
   mutationMode: MutationMode,
+  progress?: ProgressReporter,
 ): Promise<RunScaffoldToolResult> {
+  await progress?.report(1, 8, 'Validating run_scaffold input.');
   const unknownFieldResult = createUnknownFieldDiagnosticEnvelope({
     allowedKeys: ['type', 'name', 'outDir', 'creator', 'namespace', 'risuluaMode', 'mode', 'confirmation', 'postValidate'],
     input,
@@ -79,6 +82,7 @@ export async function handleRunScaffold(
 
   const scaffoldInput = parsed.input;
   const targetOutDir = scaffoldInput.outDir ?? `./${sanitizeDefaultOutputName(scaffoldInput.name)}`;
+  await progress?.report(2, 8, 'Resolving run_scaffold workspace paths.');
   const safeOutDir = await resolveSafeWorkspacePath({ inputPath: targetOutDir, intent: 'create-missing', workspace });
   if (!safeOutDir.ok) {
     return createDiagnosticEnvelope({
@@ -97,9 +101,11 @@ export async function handleRunScaffold(
     });
   }
 
+  await progress?.report(3, 8, 'Preparing run_scaffold command preview.');
   const argv = buildScaffoldArgs(scaffoldInput, safeOutDir.relativePath);
   const confirmationText = `RUN_SCAFFOLD ${safeOutDir.relativePath}`;
   if (scaffoldInput.mode === 'preview') {
+    await progress?.report(4, 8, 'run_scaffold preview complete.');
     return createDiagnosticEnvelope({
       data: { command: process.execPath, args: [resolveRisuCoreBinPath(), ...argv], cwd: workspace.path, expectedConfirmationText: confirmationText, preview: true, target: safeOutDir.relativePath },
       diagnostics: [],
@@ -108,6 +114,7 @@ export async function handleRunScaffold(
     });
   }
 
+  await progress?.report(4, 8, 'Checking run_scaffold mutation safety.');
   const safetyResult = await evaluateMutationSafetyGate({
     confirmation: scaffoldInput.confirmation,
     expectedConfirmationText: confirmationText,
@@ -127,8 +134,11 @@ export async function handleRunScaffold(
     });
   }
 
+  await progress?.report(5, 8, 'Running risu-core scaffold.');
   const commandResult = await runRisuCoreCommand(argv, workspace.path);
+  await progress?.report(6, 8, 'Collecting run_scaffold changed files.');
   const changedFiles = await collectChangedFiles(safeOutDir.absolutePath, safeOutDir.relativePath).catch(() => []);
+  await progress?.report(7, 8, 'Validating run_scaffold output.');
   const postValidation = scaffoldInput.postValidate !== false
     ? await createWorkflowPostValidation({ absoluteRoot: safeOutDir.absolutePath, expectedMarkerPaths: expectedScaffoldMarkers(scaffoldInput.type), relativeRoot: safeOutDir.relativePath, tool: TOOL_NAME })
     : { diagnostics: [], status: 'not_run' as const };
@@ -148,6 +158,7 @@ export async function handleRunScaffold(
     toolName: TOOL_NAME,
   });
 
+  await progress?.report(8, 8, 'run_scaffold complete.');
   return createMutationResultEnvelope({
     appliedAt: new Date().toISOString(),
     changedFiles,

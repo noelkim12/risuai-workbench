@@ -36,6 +36,18 @@ function mutationResult(result: DiagnosticEnvelope | MutationResultEnvelope): Mu
   return result;
 }
 
+function createRecordingProgressReporter() {
+  const messages: Array<{ message: string; progress: number; total: number | undefined }> = [];
+  return {
+    messages,
+    reporter: {
+      async report(progress: number, total: number | undefined, message: string): Promise<void> {
+        messages.push({ message, progress, total });
+      },
+    },
+  };
+}
+
 describe('core workflow wrappers', () => {
   it('previews scaffold command without creating output directory', async () => {
     const fixture = await createWorkflowFixture();
@@ -119,5 +131,43 @@ describe('core workflow wrappers', () => {
 
     expect(result.status).toBe('rejected');
     expect(result.postValidation.diagnostics[0]?.ruleId).toBe('run-extract.mutation-mode-preview-only');
+  });
+
+  it('reports progress milestones for run_extract preview', async () => {
+    const progress = createRecordingProgressReporter();
+    const root = await mkdtemp(path.join(tmpdir(), 'risuai-workbench-mcp-extract-progress-'));
+    await writeFile(path.join(root, 'source.risup'), 'not a real preset; preview must not parse it', 'utf8');
+
+    await handleRunExtract(
+      { mode: 'preview', outDir: 'generated/extract-preview', sourcePath: 'source.risup', type: 'preset' },
+      { ok: true, path: root, reason: null },
+      'preview-only',
+      progress.reporter,
+    );
+
+    expect(progress.messages.map((entry) => entry.message)).toEqual([
+      'Validating run_extract input.',
+      'Resolving run_extract workspace paths.',
+      'Preparing run_extract command preview.',
+      'run_extract preview complete.',
+    ]);
+  });
+
+  it('reports progress milestones for run_scaffold preview', async () => {
+    const progress = createRecordingProgressReporter();
+
+    await handleRunScaffold(
+      { mode: 'preview', name: 'Progress Character', outDir: 'generated/progress-character', type: 'charx' },
+      { ok: true, path: await mkdtemp(path.join(tmpdir(), 'risuai-workbench-mcp-scaffold-progress-')), reason: null },
+      'preview-only',
+      progress.reporter,
+    );
+
+    expect(progress.messages.map((entry) => entry.message)).toEqual([
+      'Validating run_scaffold input.',
+      'Resolving run_scaffold workspace paths.',
+      'Preparing run_scaffold command preview.',
+      'run_scaffold preview complete.',
+    ]);
   });
 });

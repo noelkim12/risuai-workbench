@@ -8,6 +8,13 @@ import { z } from 'zod';
 
 import packageJson from '../package.json';
 import type { PatchOperation } from './contracts/patch-plan';
+import { createDiagnosticEnvelope } from './contracts/diagnostics';
+import { createJsonToolResult } from './contracts/mcp-result';
+import {
+  diagnosticEnvelopeOutputSchema,
+  workbenchJsonOutputSchema,
+} from './contracts/output-schemas';
+import { createProgressReporter, getProgressToken } from './progress';
 import { getWorkbenchTool } from './registry';
 
 import { DEFAULT_MUTATION_MODE, type MutationMode } from './mutation/mode';
@@ -108,10 +115,19 @@ export async function createStartupContext(options: StartupOptions = {}): Promis
  * @returns official SDK 기반 MCP server 인스턴스
  */
 export function createMcpServer(startupContext: StartupContext): McpServer {
-  const server = new McpServer({
-    name: packageJson.name,
-    version: packageJson.version,
-  });
+  const server = new McpServer(
+    {
+      name: packageJson.name,
+      version: packageJson.version,
+    },
+    {
+      capabilities: {
+        prompts: { listChanged: false },
+        resources: { listChanged: false, subscribe: false },
+        tools: { listChanged: false },
+      },
+    },
+  );
   const smokeTool = getWorkbenchTool('workbench.smoke');
   const patchStore = createPatchPlanStore();
 
@@ -120,16 +136,22 @@ export function createMcpServer(startupContext: StartupContext): McpServer {
     {
       description: smokeTool?.description ?? 'Return a minimal risuai-workbench-mcp startup smoke response.',
       inputSchema: {},
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: smokeTool?.title ?? 'RisuAI Workbench MCP smoke check',
     },
-    async () => ({
-      content: [
-        {
-          text: `${packageJson.name} startup ok`,
-          type: 'text',
-        },
-      ],
-    }),
+    async () => createJsonToolResult(createDiagnosticEnvelope({
+      data: {
+        mutationMode: startupContext.mutationMode,
+        packageName: packageJson.name,
+        version: packageJson.version,
+        workspace: startupContext.workspace.ok
+          ? { ok: true, path: startupContext.workspace.path }
+          : { ok: false, path: startupContext.workspace.path, reason: startupContext.workspace.reason },
+      },
+      diagnostics: [],
+      status: 'ok',
+      tool: 'workbench.smoke',
+    })),
   );
 
   registerInspectValidateTools(server, startupContext.workspace);
@@ -189,11 +211,12 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
     {
       description: 'Refresh analyze snapshot metadata without mutating source artifacts.',
       inputSchema: snapshotFields,
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Refresh analyze snapshot',
     },
     async (input: Parameters<typeof handleRefreshAnalyzeSnapshot>[0]) => {
       const result = await handleRefreshAnalyzeSnapshot(input, workspace);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -202,11 +225,12 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
     {
       description: 'Query variable read/write flow and diagnostics with snapshot metadata.',
       inputSchema: { ...snapshotFields, defaultVariables: z.record(z.string(), z.string()).optional(), elements: z.array(elementSchema).optional() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Query variable flow',
     },
     async (input: Parameters<typeof handleQueryVariableFlow>[0]) => {
       const result = await handleQueryVariableFlow(input, workspace);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -215,11 +239,12 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
     {
       description: 'Query one variable and its readers, writers, events, and diagnostics.',
       inputSchema: { ...snapshotFields, defaultVariables: z.record(z.string(), z.string()).optional(), elements: z.array(elementSchema).optional(), variableName: z.string() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Query variable',
     },
     async (input: Parameters<typeof handleQueryVariable>[0]) => {
       const result = await handleQueryVariable(input, workspace);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -228,11 +253,12 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
     {
       description: 'Query normalized Lua analysis artifact JSON view.',
       inputSchema: luaInputSchema,
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Query Lua analysis',
     },
     async (input: Parameters<typeof handleQueryLuaAnalysis>[0]) => {
       const result = await handleQueryLuaAnalysis(input, workspace);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -241,11 +267,12 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
     {
       description: 'Query Lua handler/function call graph data.',
       inputSchema: luaInputSchema,
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Query Lua call graph',
     },
     async (input: Parameters<typeof handleQueryLuaCallGraph>[0]) => {
       const result = await handleQueryLuaCallGraph(input, workspace);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -254,11 +281,12 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
     {
       description: 'Query Lua state/chat variable read and write occurrences.',
       inputSchema: luaInputSchema,
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Query Lua state access',
     },
     async (input: Parameters<typeof handleQueryLuaStateAccess>[0]) => {
       const result = await handleQueryLuaStateAccess(input, workspace);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -267,11 +295,12 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
     {
       description: 'Query button action declarations and usage from Lua handlers.',
       inputSchema: luaInputSchema,
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Query button actions',
     },
     async (input: Parameters<typeof handleQueryButtonActions>[0]) => {
       const result = await handleQueryButtonActions(input, workspace);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -280,11 +309,12 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
     {
       description: 'Query normalized relationship graph nodes and edges.',
       inputSchema: { ...snapshotFields, elements: z.array(elementSchema).optional(), luaSources: z.array(z.object(luaInputSchema)).optional() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Query relationship network',
     },
     async (input: Parameters<typeof handleQueryRelationshipNetwork>[0]) => {
       const result = await handleQueryRelationshipNetwork(input, workspace);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -293,11 +323,12 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
     {
       description: 'Query prompt chain dependencies and issues.',
       inputSchema: { ...snapshotFields, templates: z.array(z.object({ name: z.string(), text: z.string(), type: z.string() })) },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Query prompt chain',
     },
     async (input: Parameters<typeof handleQueryPromptChain>[0]) => {
       const result = await handleQueryPromptChain(input, workspace);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -311,11 +342,12 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
         modules: z.array(z.any()).optional(),
         preset: z.any().optional(),
       },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Query composition conflicts',
     },
     async (input: Parameters<typeof handleQueryCompositionConflicts>[0]) => {
       const result = await handleQueryCompositionConflicts(input, workspace);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -330,11 +362,12 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
         lorebookEntries: z.array(lorebookEntrySchema).optional(),
         regexScripts: z.array(regexScriptSchema).optional(),
       },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Query dead code findings',
     },
     async (input: Parameters<typeof handleQueryDeadCodeFindings>[0]) => {
       const result = await handleQueryDeadCodeFindings(input, workspace);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -343,11 +376,12 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
     {
       description: 'Query token budget summaries and threshold warnings.',
       inputSchema: { ...snapshotFields, components: z.array(z.object({ alwaysActive: z.boolean(), category: z.string(), name: z.string(), text: z.string() })) },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Query token budget',
     },
     async (input: Parameters<typeof handleQueryTokenBudget>[0]) => {
       const result = await handleQueryTokenBudget(input, workspace);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -356,11 +390,12 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
     {
       description: 'Explain source-first split RisuLua workspace authoring and generated dist boundaries.',
       inputSchema: { targetName: z.string().optional() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Explain RisuLua workspace',
     },
     async (input: Parameters<typeof handleExplainRisuLuaWorkspace>[0]) => {
       const result = await handleExplainRisuLuaWorkspace(input);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -369,11 +404,12 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
     {
       description: 'Guide source module authoring with allowed static require and dist runtime boundaries.',
       inputSchema: { moduleId: z.string().optional() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Guide RisuLua module',
     },
     async (input: Parameters<typeof handleGuideRisuLuaModule>[0]) => {
       const result = await handleGuideRisuLuaModule(input);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -382,11 +418,12 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
     {
       description: 'Explain RisuAI Lua lifecycle hooks, id threading, async bridge, access tiers, and API categories.',
       inputSchema: { focus: z.enum(['lifecycle', 'state', 'button', 'async', 'lorebook']).optional() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Explain RisuLua runtime API',
     },
     async (input: Parameters<typeof handleExplainRisuLuaRuntimeApi>[0]) => {
       const result = await handleExplainRisuLuaRuntimeApi(input);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -395,11 +432,12 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
     {
       description: 'Explain Lorebook as runtime prompt injection and context activation, including decorator effects.',
       inputSchema: { includeDecorators: z.boolean().optional() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Explain Lorebook prompt injection',
     },
     async (input: Parameters<typeof handleExplainLorebookPromptInjection>[0]) => {
       const result = await handleExplainLorebookPromptInjection(input);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -408,11 +446,12 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
     {
       description: 'Explain the Lorebook, Structured Output, Regex, Button, RisuLua, Variable/Lorebook feedback loop.',
       inputSchema: { variableName: z.string().optional() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Explain context feedback loop',
     },
     async (input: Parameters<typeof handleExplainContextFeedbackLoop>[0]) => {
       const result = await handleExplainContextFeedbackLoop(input);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -421,11 +460,12 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
     {
       description: 'Plan a structured output, regex, button, RisuLua state, Lorebook feedback loop.',
       inputSchema: { buttonLabel: z.string().optional(), buttonTrigger: z.string().optional(), variableName: z.string().optional() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Plan structured output loop',
     },
     async (input: Parameters<typeof handlePlanStructuredOutputLoop>[0]) => {
       const result = await handlePlanStructuredOutputLoop(input);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 }
@@ -445,11 +485,12 @@ function registerAdvancedMutationTools(server: McpServer, startupContext: Startu
     {
       description: 'Move or rename an artifact while preserving suffix and optional order ownership.',
       inputSchema: { confirmation: confirmationSchema, expectedHash: z.string().optional(), from: z.string(), mode: z.enum(['preview', 'commit']), postValidate: z.boolean().optional(), toStem: z.string(), updateOrder: z.boolean().optional() },
+      outputSchema: workbenchJsonOutputSchema,
       title: 'Move artifact',
     },
     async (input: unknown) => {
       const result = await handleMoveArtifact(input, startupContext.workspace, startupContext.mutationMode);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -458,11 +499,12 @@ function registerAdvancedMutationTools(server: McpServer, startupContext: Startu
     {
       description: 'Delete an artifact only after exact high-risk confirmation.',
       inputSchema: { confirmation: confirmationSchema, createBackup: z.boolean().optional(), expectedHash: z.string().optional(), mode: z.enum(['preview', 'commit']), path: z.string(), postValidate: z.boolean().optional(), updateOrder: z.boolean().optional() },
+      outputSchema: workbenchJsonOutputSchema,
       title: 'Delete artifact',
     },
     async (input: unknown) => {
       const result = await handleDeleteArtifact(input, startupContext.workspace, startupContext.mutationMode);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -471,11 +513,12 @@ function registerAdvancedMutationTools(server: McpServer, startupContext: Startu
     {
       description: 'Refresh proposal-approved generated wiki files only.',
       inputSchema: { confirmation: confirmationSchema, generatedFiles: z.array(z.object({ content: z.string(), path: z.string() })).optional(), mode: z.enum(['preview', 'commit']), postValidate: z.boolean().optional(), target: z.string().optional(), wikiRoot: z.string().optional() },
+      outputSchema: workbenchJsonOutputSchema,
       title: 'Refresh wiki',
     },
     async (input: unknown) => {
       const result = await handleRefreshWiki(input, startupContext.workspace, startupContext.mutationMode);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -484,11 +527,12 @@ function registerAdvancedMutationTools(server: McpServer, startupContext: Startu
     {
       description: 'Rollback a journaled mutation only when inverse state is sufficient.',
       inputSchema: { confirmation: confirmationSchema, mode: z.enum(['preview', 'commit']), mutationId: z.string() },
+      outputSchema: workbenchJsonOutputSchema,
       title: 'Rollback mutation',
     },
     async (input: unknown) => {
       const result = await handleRollbackMutation(input, startupContext.workspace, startupContext.mutationMode);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 }
@@ -514,11 +558,16 @@ function registerCoreWorkflowTools(server: McpServer, startupContext: StartupCon
     {
       description: 'Run risu-core extract workflow for character, module, or preset files through mutation safety gates.',
       inputSchema: { confirmation: confirmationSchema, mode: z.enum(['preview', 'commit']), outDir: z.string(), postValidate: z.boolean().optional(), sourcePath: z.string(), type: z.enum(['character', 'module', 'preset']).optional(), ...risuluaFields },
+      outputSchema: workbenchJsonOutputSchema,
       title: 'Run extract workflow',
     },
-    async (input: unknown) => {
-      const result = await handleRunExtract(input, startupContext.workspace, startupContext.mutationMode);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+    async (input: unknown, extra) => {
+      const progress = createProgressReporter({
+        sendNotification: extra.sendNotification,
+        token: getProgressToken(extra),
+      });
+      const result = await handleRunExtract(input, startupContext.workspace, startupContext.mutationMode, progress);
+      return createJsonToolResult(result);
     },
   );
 
@@ -527,11 +576,16 @@ function registerCoreWorkflowTools(server: McpServer, startupContext: StartupCon
     {
       description: 'Run risu-core scaffold workflow to generate a new charx, module, or preset workspace.',
       inputSchema: { confirmation: confirmationSchema, creator: z.string().optional(), mode: z.enum(['preview', 'commit']), name: z.string(), namespace: z.string().optional(), outDir: z.string().optional(), postValidate: z.boolean().optional(), risuluaMode: z.enum(['classic', 'modular']).optional(), type: z.enum(['charx', 'module', 'preset']) },
+      outputSchema: workbenchJsonOutputSchema,
       title: 'Run scaffold workflow',
     },
-    async (input: unknown) => {
-      const result = await handleRunScaffold(input, startupContext.workspace, startupContext.mutationMode);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+    async (input: unknown, extra) => {
+      const progress = createProgressReporter({
+        sendNotification: extra.sendNotification,
+        token: getProgressToken(extra),
+      });
+      const result = await handleRunScaffold(input, startupContext.workspace, startupContext.mutationMode, progress);
+      return createJsonToolResult(result);
     },
   );
 }
@@ -549,11 +603,12 @@ function registerPatchPreviewTools(server: McpServer, workspace: WorkspaceRootSt
     {
       description: 'Create a structured multi-operation patch plan preview.',
       inputSchema: { intent: z.string(), operations: z.array(z.any()) },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Suggest patch',
     },
     async (input: { intent: string; operations: readonly PatchOperation[] }) => {
       const result = await handleSuggestPatch(input, workspace, patchStore);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -570,11 +625,12 @@ function registerPatchPreviewTools(server: McpServer, workspace: WorkspaceRootSt
           z.object({ entry: z.string(), kind: z.literal('remove') }),
         ])),
       },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Suggest order patch',
     },
     async (input: { directory: string; intent?: string; operations: readonly OrderPatchOperationInput[] }) => {
       const result = await handleSuggestOrderPatch(input, workspace, patchStore);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -589,11 +645,12 @@ function registerPatchPreviewTools(server: McpServer, workspace: WorkspaceRootSt
         remove: z.array(z.string()).optional(),
         set: z.record(z.string(), z.string()).optional(),
       },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Suggest frontmatter patch',
     },
     async (input: { intent?: string; path: string; preserveBody?: boolean; remove?: readonly string[]; set?: Record<string, string> }) => {
       const result = await handleSuggestFrontmatterPatch(input, workspace, patchStore);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -602,11 +659,12 @@ function registerPatchPreviewTools(server: McpServer, workspace: WorkspaceRootSt
     {
       description: 'Create a root marker repair/create patch preview.',
       inputSchema: { content: z.string().optional(), intent: z.string().optional(), markerPath: z.string() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Suggest root marker patch',
     },
     async (input: { content?: string; intent?: string; markerPath: string }) => {
       const result = await handleSuggestRootMarkerPatch(input, workspace, patchStore);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -615,11 +673,12 @@ function registerPatchPreviewTools(server: McpServer, workspace: WorkspaceRootSt
     {
       description: 'Preview generated wiki refresh targets and write scope.',
       inputSchema: { artifactKey: z.string().optional() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Plan wiki update',
     },
     async (input: { artifactKey?: string }) => {
       const result = await handlePlanWikiUpdate(input, workspace, patchStore);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -628,11 +687,12 @@ function registerPatchPreviewTools(server: McpServer, workspace: WorkspaceRootSt
     {
       description: 'Summarize generated wiki differences without writing files.',
       inputSchema: { paths: z.array(z.string()).optional() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Diff wiki',
     },
     async (input: { paths?: readonly string[] }) => {
       const result = await handleDiffWiki(input, workspace);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 }
@@ -655,11 +715,12 @@ function registerPatchApplyTools(server: McpServer, startupContext: StartupConte
         options: z.object({ createBackup: z.boolean().optional(), postValidate: z.boolean().optional(), rollbackOnValidationError: z.boolean().optional() }).optional(),
         patchPlanId: z.string(),
       },
+      outputSchema: workbenchJsonOutputSchema,
       title: 'Apply patch plan',
     },
     async (input: unknown) => {
       const result = await handleApplyPatchPlan(input, { mutationMode: startupContext.mutationMode, patchStore, workspace: startupContext.workspace });
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 }
@@ -677,11 +738,12 @@ function registerInspectValidateTools(server: McpServer, workspace: WorkspaceRoo
     {
       description: 'Describe the role and artifact ownership of a workspace path.',
       inputSchema: { path: z.string() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Inspect path',
     },
     async (input: { path: string }) => {
       const result = await handleInspectPath(input, workspace);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -690,11 +752,12 @@ function registerInspectValidateTools(server: McpServer, workspace: WorkspaceRoo
     {
       description: 'Summarize artifact root contracts, marker files, and related docs.',
       inputSchema: { artifactRoot: z.string() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Inspect artifact',
     },
     async (input: { artifactRoot: string }) => {
       const result = await handleInspectArtifact(input, workspace);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -703,11 +766,12 @@ function registerInspectValidateTools(server: McpServer, workspace: WorkspaceRoo
     {
       description: 'Validate full artifact root structure.',
       inputSchema: { artifactRoot: z.string() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Validate artifact',
     },
     async (input: { artifactRoot: string }) => {
       const result = await handleValidateArtifact(input, workspace);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -716,11 +780,12 @@ function registerInspectValidateTools(server: McpServer, workspace: WorkspaceRoo
     {
       description: 'Validate _order.json entries against canonical files.',
       inputSchema: { directory: z.string() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Validate order',
     },
     async (input: { directory: string }) => {
       const result = await handleValidateOrder(input, workspace);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -729,11 +794,12 @@ function registerInspectValidateTools(server: McpServer, workspace: WorkspaceRoo
     {
       description: 'Validate .risuchar/.risumodule conflicts and schema.',
       inputSchema: { path: z.string() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Validate root markers',
     },
     async (input: { path: string }) => {
       const result = await handleValidateRootMarkers(input, workspace);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -742,11 +808,12 @@ function registerInspectValidateTools(server: McpServer, workspace: WorkspaceRoo
     {
       description: 'Validate structured metadata owner and legacy/deferred surface.',
       inputSchema: { path: z.string() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Validate metadata',
     },
     async (input: { path: string }) => {
       const result = await handleValidateMetadata(input, workspace);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -755,11 +822,12 @@ function registerInspectValidateTools(server: McpServer, workspace: WorkspaceRoo
     {
       description: 'Validate frontmatter delimiter, field schema, and round-trip risk.',
       inputSchema: { path: z.string() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Validate frontmatter',
     },
     async (input: { path: string }) => {
       const result = await handleValidateFrontmatter(input, workspace);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -768,11 +836,12 @@ function registerInspectValidateTools(server: McpServer, workspace: WorkspaceRoo
     {
       description: 'Validate canonical directory, suffix, and stem policy.',
       inputSchema: { path: z.string() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Validate path',
     },
     async (input: { path: string }) => {
       const result = await handleValidatePath(input, workspace);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -781,11 +850,12 @@ function registerInspectValidateTools(server: McpServer, workspace: WorkspaceRoo
     {
       description: 'Build canonical relative path from target/artifact/stem components.',
       inputSchema: { target: z.string(), artifact: z.string(), targetName: z.string().optional(), stem: z.string().optional() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Build path',
     },
     async (input: { target: string; artifact: string; targetName?: string; stem?: string }) => {
       const result = await handleBuildPath(input);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -794,11 +864,12 @@ function registerInspectValidateTools(server: McpServer, workspace: WorkspaceRoo
     {
       description: 'Search docs, wiki, and rule resources.',
       inputSchema: { query: z.string() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Search wiki',
     },
     async (input: { query: string }) => {
       const result = await handleSearchWiki(input);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -807,11 +878,12 @@ function registerInspectValidateTools(server: McpServer, workspace: WorkspaceRoo
     {
       description: 'Suggest focused tests for a planned path change.',
       inputSchema: { path: z.string() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Suggest tests',
     },
     async (input: { path: string }) => {
       const result = await handleSuggestTests(input);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 }
@@ -843,11 +915,12 @@ function registerDirectMutationTools(server: McpServer, startupContext: StartupC
         orderPath: z.string(),
         postValidate: z.boolean().optional(),
       },
+      outputSchema: workbenchJsonOutputSchema,
       title: 'Edit order',
     },
     async (input: unknown) => {
       const result = await handleEditOrder(input, startupContext.workspace, startupContext.mutationMode, patchStore);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -868,11 +941,12 @@ function registerDirectMutationTools(server: McpServer, startupContext: StartupC
         postValidate: z.boolean().optional(),
         preserveBody: z.boolean().optional(),
       },
+      outputSchema: workbenchJsonOutputSchema,
       title: 'Edit frontmatter',
     },
     async (input: unknown) => {
       const result = await handleEditFrontmatter(input, startupContext.workspace, startupContext.mutationMode, patchStore);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -889,11 +963,12 @@ function registerDirectMutationTools(server: McpServer, startupContext: StartupC
         path: z.string(),
         postValidate: z.boolean().optional(),
       },
+      outputSchema: workbenchJsonOutputSchema,
       title: 'Edit metadata',
     },
     async (input: unknown) => {
       const result = await handleEditMetadata(input, startupContext.workspace, startupContext.mutationMode, patchStore);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 
@@ -912,11 +987,12 @@ function registerDirectMutationTools(server: McpServer, startupContext: StartupC
         stem: z.string(),
         target: z.string(),
       },
+      outputSchema: workbenchJsonOutputSchema,
       title: 'Create artifact',
     },
     async (input: unknown) => {
       const result = await handleCreateArtifact(input, startupContext.workspace, startupContext.mutationMode, patchStore);
-      return { content: [{ text: JSON.stringify(result), type: 'text' as const }] };
+      return createJsonToolResult(result);
     },
   );
 }

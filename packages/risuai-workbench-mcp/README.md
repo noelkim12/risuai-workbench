@@ -16,6 +16,29 @@ Creative thinking surface는 `docs/mcp/risuai-workbench-mcp-for-creative-thinkin
 - **Creative Thinking**: workspace/analyze/wiki context를 바탕으로 아이디어를 만들고, 선택된 아이디어만 PatchPlan preview와 gated mutation apply로 연결합니다.
 - **Resources / Prompts**: wiki/rule/schema/analyze/mutation context resource와 agent workflow prompt를 제공합니다.
 
+## MCP protocol compliance
+
+This package runs as a local MCP server over stdio and uses the official `@modelcontextprotocol/sdk` lifecycle.
+The client starts the process, sends `initialize`, receives server information and negotiated capabilities, sends `notifications/initialized`, and then calls the advertised tools, resources, and prompts.
+
+Server info is derived from `package.json`:
+
+| Field | Value |
+| --- | --- |
+| `name` | `risuai-workbench-mcp` |
+| `version` | package version |
+
+Implemented MCP capabilities:
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| `tools` | implemented | Static registry during one server session; no list-changed notifications are emitted. |
+| `resources` | implemented | Read-only resource templates and selected materialized JSON/text resources. |
+| `prompts` | implemented | Workflow-only prompt templates; prompts never mutate files. |
+| `logging` | not declared | Operational logs use stderr; MCP `notifications/message` is not emitted. |
+| `completions` | not declared | Completion handlers are not registered. |
+| `tasks` | not declared | MCP tasks are experimental and not part of this server surface. |
+
 ## 요구사항
 
 - Node.js 20 이상
@@ -37,6 +60,27 @@ npm run build --workspace risuai-workbench-mcp
 ```bash
 node packages/risuai-workbench-mcp/bin/risuai-workbench-mcp.js --help
 ```
+
+## Server lifecycle
+
+Startup flow:
+
+1. CLI parses `--stdio`, `--root`, and `--mutation`.
+2. `startStdioServer()` resolves the workspace root and creates the MCP server.
+3. The SDK handles MCP `initialize`, protocol negotiation, and `notifications/initialized`.
+4. Clients may call `tools/list`, `tools/call`, `resources/templates/list`, `resources/read`, `prompts/list`, and `prompts/get`.
+5. Shutdown is handled by the stdio transport when the client closes the child process streams.
+
+## Transport
+
+This package currently supports MCP stdio transport only.
+
+Rules:
+
+- stdout is reserved for MCP JSON-RPC messages while `--stdio` is active.
+- Operational diagnostics and warnings must be written to stderr.
+- Human-readable `--help` and `--version` output is allowed only before MCP stdio starts.
+- Child process stdout/stderr from wrapped workflows is captured and returned through structured tool results instead of being forwarded to server stdout.
 
 ## MCP client 설정
 
@@ -97,6 +141,54 @@ risuai-workbench-mcp --version
 | `--mutation <mode>` | `preview-only` | direct mutation tool의 write 허용 모드입니다. |
 | `--help` | 없음 | stdio 시작 없이 사용법을 출력합니다. |
 | `--version` | 없음 | package version을 출력합니다. |
+
+## Workspace roots
+
+Current behavior:
+
+- The workspace root is provided by `--root` or the current process context.
+- All user-provided file paths are interpreted as workspace-relative paths.
+- Absolute paths, traversal outside the workspace, and symlink escapes are rejected.
+- MCP client-provided `roots` are not queried yet.
+
+Future behavior may validate the configured workspace against client-provided MCP roots when the client declares the `roots` capability.
+
+## Error policy
+
+The server distinguishes MCP protocol errors from tool execution results.
+
+- Unknown tools, malformed MCP requests, and transport-level failures are handled by the MCP SDK as JSON-RPC protocol errors.
+- Domain validation failures, unsafe paths, stale hashes, rejected confirmations, and mutation safety failures are returned as structured tool results.
+- Tool execution errors remain actionable for the model by returning diagnostic or mutation envelopes with rule IDs and messages.
+
+## Tool response format
+
+Compatibility mode:
+
+- Every tool result includes `content[0].type = "text"`.
+- `content[0].text` contains serialized JSON for the envelope or payload.
+
+Structured mode:
+
+- Tools with stable envelope schemas also return `structuredContent`.
+- Tools with stable envelope schemas declare `outputSchema` through the MCP SDK.
+- Text JSON is preserved for clients that do not consume structured output.
+
+## Long-running operations
+
+Current behavior:
+
+- Long-running tools return a final diagnostic or mutation envelope.
+- `workbench.run_extract` and `workbench.run_scaffold` may emit `notifications/progress` when a client supplies `_meta.progressToken`.
+- MCP task-augmented execution is not implemented.
+- Cooperative cancellation is tracked separately from this plan.
+
+## Logging and sensitive data
+
+The server does not declare the MCP `logging` capability.
+Operational logs and startup warnings use stderr.
+
+Logs, diagnostics, and progress messages must not include credentials, access tokens, unnecessary personal information, or host-specific secrets.
 
 ## Safety model
 

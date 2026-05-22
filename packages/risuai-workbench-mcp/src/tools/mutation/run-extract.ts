@@ -11,6 +11,7 @@ import { createMutationResultEnvelope, type MutationResultEnvelope } from '../..
 import { appendJournalEntry } from '../../mutation/journal';
 import type { MutationMode } from '../../mutation/mode';
 import { evaluateMutationSafetyGate } from '../../mutation/safety-gate';
+import type { ProgressReporter } from '../../progress';
 import type { WorkspaceRootStatus } from '../../project/resolve-root';
 import { resolveSafeWorkspacePath } from '../../project/safe-path';
 
@@ -55,7 +56,9 @@ export async function handleRunExtract(
   input: unknown,
   workspace: WorkspaceRootStatus,
   mutationMode: MutationMode,
+  progress?: ProgressReporter,
 ): Promise<RunExtractToolResult> {
+  await progress?.report(1, 8, 'Validating run_extract input.');
   const unknownFieldResult = createUnknownFieldDiagnosticEnvelope({
     allowedKeys: ['sourcePath', 'type', 'outDir', 'risuluaMode', 'risuluaRecovery', 'risuluaSplit', 'risuluaDomainGeneration', 'mode', 'confirmation', 'postValidate'],
     input,
@@ -81,6 +84,7 @@ export async function handleRunExtract(
   }
 
   const extractInput = parsed.input;
+  await progress?.report(2, 8, 'Resolving run_extract workspace paths.');
   const safeSource = await resolveSafeWorkspacePath({ inputPath: extractInput.sourcePath, intent: 'read-existing', workspace });
   if (!safeSource.ok) {
     return createDiagnosticEnvelope({
@@ -108,9 +112,11 @@ export async function handleRunExtract(
     });
   }
 
+  await progress?.report(3, 8, 'Preparing run_extract command preview.');
   const argv = buildExtractArgs(extractInput, safeSource.relativePath, safeOutDir.relativePath);
   const confirmationText = `RUN_EXTRACT ${safeSource.relativePath} TO ${safeOutDir.relativePath}`;
   if (extractInput.mode === 'preview') {
+    await progress?.report(4, 8, 'run_extract preview complete.');
     return createDiagnosticEnvelope({
       data: { command: process.execPath, args: [resolveRisuCoreBinPath(), ...argv], cwd: workspace.path, expectedConfirmationText: confirmationText, preview: true, source: safeSource.relativePath, target: safeOutDir.relativePath },
       diagnostics: [],
@@ -119,6 +125,7 @@ export async function handleRunExtract(
     });
   }
 
+  await progress?.report(4, 8, 'Checking run_extract mutation safety.');
   const safetyResult = await evaluateMutationSafetyGate({
     confirmation: extractInput.confirmation,
     expectedConfirmationText: confirmationText,
@@ -138,8 +145,11 @@ export async function handleRunExtract(
     });
   }
 
+  await progress?.report(5, 8, 'Running risu-core extract.');
   const commandResult = await runRisuCoreCommand(argv, workspace.path);
+  await progress?.report(6, 8, 'Collecting run_extract changed files.');
   const changedFiles = await collectChangedFiles(safeOutDir.absolutePath, safeOutDir.relativePath).catch(() => []);
+  await progress?.report(7, 8, 'Validating run_extract output.');
   const postValidation = extractInput.postValidate !== false
     ? await createWorkflowPostValidation({ absoluteRoot: safeOutDir.absolutePath, expectedMarkerPaths: expectedExtractMarkers(extractInput.type), relativeRoot: safeOutDir.relativePath, tool: TOOL_NAME })
     : { diagnostics: [], status: 'not_run' as const };
@@ -159,6 +169,7 @@ export async function handleRunExtract(
     toolName: TOOL_NAME,
   });
 
+  await progress?.report(8, 8, 'run_extract complete.');
   return createMutationResultEnvelope({
     appliedAt: new Date().toISOString(),
     changedFiles,

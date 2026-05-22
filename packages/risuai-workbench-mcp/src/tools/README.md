@@ -33,7 +33,8 @@ Tool 구현은 이 디렉토리에 있지만 MCP SDK 등록은 `packages/risuai-
 - Tool name은 `workbench.{verb}_{noun}` 형식입니다.
 - Handler 함수명은 `handle{Verb}{Noun}` 형식입니다.
 - `inputSchema`는 `zod` raw shape로 등록됩니다.
-- Handler 결과는 `JSON.stringify(result)` 후 MCP text content로 감싸 반환합니다.
+- Handler 결과는 `createJsonToolResult(result)`를 통해 MCP text JSON과 `structuredContent`를 함께 반환합니다.
+- Stable envelope tools should declare `outputSchema` from `src/contracts/output-schemas.ts`.
 - Tool metadata와 구현 상태는 `src/registry/index.ts`의 `WORKBENCH_REGISTRY`와 `IMPLEMENTED_ROADMAP_TOOL_NAMES`가 관리합니다.
 
 응답은 transport exception 대신 구조화된 envelope를 반환하는 것을 기본 원칙으로 합니다.
