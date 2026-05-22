@@ -8,7 +8,7 @@ import {
   mergeCandidateLists,
   toOverridePatch,
   type VariableDrawerBindingView,
-} from '../../../../../src/lib/components/editor/variables/variableDrawerTypes';
+} from '../../../../../src/lib/components/editor/variables/variableDrawerHelpers';
 
 describe('variable drawer helpers', () => {
   const bindings: VariableDrawerBindingView[] = [

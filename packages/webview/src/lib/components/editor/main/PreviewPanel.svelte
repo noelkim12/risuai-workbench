@@ -158,19 +158,33 @@
    * source에서 control block open macro가 한 줄을 단독으로 차지한 경우 preview에서도 lens 줄을 보존함.
    *
    * @param event - lens를 만들 runtime trace event
-   * @param outputLine - core가 계산한 output line
    * @param outputColumn - core가 계산한 output column
    * @param lines - 현재 source line 배열
    * @returns source macro-only control line이면 true
    */
   function shouldRenderLensOnPrefixLine(
     event: MainEditorPreviewRuntimeResultPayload['trace'][number],
-    outputLine: number,
     outputColumn: number,
     lines: string[]
   ): boolean {
-    if (!event.node || !isParentLensTraceNode(event.node) || !event.range) return false;
-    if (outputColumn !== 0 || outputLines[outputLine]?.length === 0) return false;
+    if (!event.node || !event.range) return false;
+    if (isVariableTraceNode(event.node) && event.details?.source === 'missing') {
+      return isSourceLineOnlyTrace(event, lines);
+    }
+
+    return isParentLensTraceNode(event.node) && outputColumn === 0 && isSourceLineOnlyTrace(event, lines);
+  }
+
+  /**
+   * isSourceLineOnlyTrace 함수.
+   * trace source range가 source line 전체를 차지하는지 확인함.
+   *
+   * @param event - source line 경계를 확인할 trace event
+   * @param lines - 현재 source line 배열
+   * @returns trace가 source line의 유일한 의미 있는 token이면 true
+   */
+  function isSourceLineOnlyTrace(event: MainEditorPreviewRuntimeResultPayload['trace'][number], lines: string[]): boolean {
+    if (!event.range) return false;
     if (event.range.line !== event.range.endLine) return false;
 
     const sourceLine = lines[event.range.line];
@@ -230,6 +244,7 @@
         const lens = createTraceLensViewModel(event);
         const outputLine = getTracePreviewOutputLine(event, outputLineCount);
         const outputColumn = moveColumnToTokenStart(clampOutputColumn(event.outputColumn, outputLines[outputLine] ?? ''), outputLines[outputLine] ?? '');
+        const placement = shouldRenderLensOnPrefixLine(event, outputColumn, lines) ? 'prefix-line' : 'inline';
         return {
           id: `trace-${index}`,
           label: lens.label,
@@ -238,7 +253,8 @@
           detailLines: lens.detailLines,
           outputLine,
           outputColumn,
-          placement: shouldRenderLensOnPrefixLine(event, outputLine, outputColumn, lines) ? 'prefix-line' : 'inline'
+          placement,
+          suppressOutputLine: placement === 'prefix-line' && (outputLines[outputLine] ?? '').length === 0
         };
       });
   }

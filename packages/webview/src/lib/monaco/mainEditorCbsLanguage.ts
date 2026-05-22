@@ -11,6 +11,7 @@ let registeredLanguage = false;
 let retainCount = 0;
 let tokenizerDisposable: monaco.IDisposable | undefined;
 let configurationDisposable: monaco.IDisposable | undefined;
+let foldingDisposable: monaco.IDisposable | undefined;
 
 /**
  * createMainEditorCbsMonarchLanguage 함수.
@@ -98,6 +99,64 @@ export function createMainEditorCbsLanguageConfiguration(): monaco.languages.Lan
   };
 }
 
+const CBS_BLOCK_OPEN_LINE_PATTERN = /\{\{\s*#\s*([a-z_][\w-]*)/i;
+const CBS_BLOCK_CLOSE_LINE_PATTERN = /\{\{\s*\/\s*([a-z_][\w-]*)\s*\}\}/i;
+const CBS_BLOCK_ANON_CLOSE_LINE_PATTERN = /\{\{\s*\/\s*\}\}/;
+
+/**
+ * createMainEditorCbsFoldingProvider 함수.
+ * CBS block opener/closer 쌍을 Monaco folding range로 변환함.
+ * Nested 블록은 stack 기반으로 정확히 매칭함.
+ *
+ * @returns Monaco folding range provider
+ */
+export function createMainEditorCbsFoldingProvider(): monaco.languages.FoldingRangeProvider {
+  return {
+    provideFoldingRanges(model): monaco.languages.FoldingRange[] {
+      const ranges: monaco.languages.FoldingRange[] = [];
+      const stack: Array<{ name: string; startLine: number }> = [];
+      const lineCount = model.getLineCount();
+
+      for (let lineNumber = 1; lineNumber <= lineCount; lineNumber++) {
+        const lineContent = model.getLineContent(lineNumber);
+
+        const openMatch = CBS_BLOCK_OPEN_LINE_PATTERN.exec(lineContent);
+        if (openMatch) {
+          stack.push({ name: openMatch[1].toLowerCase(), startLine: lineNumber });
+        }
+
+        const closeMatch = CBS_BLOCK_CLOSE_LINE_PATTERN.exec(lineContent);
+        if (closeMatch) {
+          const closeName = closeMatch[1].toLowerCase();
+          while (stack.length > 0) {
+            const top = stack.pop()!;
+            if (top.startLine < lineNumber) {
+              ranges.push({
+                start: top.startLine,
+                end: lineNumber,
+              });
+            }
+            if (top.name === closeName) break;
+          }
+        }
+
+        const anonCloseMatch = CBS_BLOCK_ANON_CLOSE_LINE_PATTERN.exec(lineContent);
+        if (anonCloseMatch && stack.length > 0) {
+          const top = stack.pop()!;
+          if (top.startLine < lineNumber) {
+            ranges.push({
+              start: top.startLine,
+              end: lineNumber,
+            });
+          }
+        }
+      }
+
+      return ranges;
+    },
+  };
+}
+
 /**
  * retainMainEditorCbsLanguage 함수.
  * `risu-cbs-content` Monaco language/tokenizer 등록을 참조 카운트로 유지함.
@@ -126,6 +185,13 @@ export function retainMainEditorCbsLanguage(monacoApi: typeof monaco): monaco.ID
     );
   }
 
+  if (!foldingDisposable) {
+    foldingDisposable = monacoApi.languages.registerFoldingRangeProvider(
+      MAIN_EDITOR_CBS_LANGUAGE_ID,
+      createMainEditorCbsFoldingProvider(),
+    );
+  }
+
   let disposed = false;
   return {
     dispose: () => {
@@ -138,6 +204,8 @@ export function retainMainEditorCbsLanguage(monacoApi: typeof monaco): monaco.ID
       tokenizerDisposable = undefined;
       configurationDisposable?.dispose();
       configurationDisposable = undefined;
+      foldingDisposable?.dispose();
+      foldingDisposable = undefined;
     },
   };
 }

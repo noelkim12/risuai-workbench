@@ -1,6 +1,6 @@
 /**
  * Variable drawer view-model helpers.
- * @file packages/webview/src/lib/components/editor/variables/variableDrawerTypes.ts
+ * @file packages/webview/src/lib/components/editor/variables/variableDrawerHelpers.ts
  */
 
 import type {
@@ -9,6 +9,7 @@ import type {
   MainEditorVariableOverridesPayload,
   MainEditorVariableValueKind,
 } from '../../../types/mainEditor';
+import { createRegexVariableCandidateExtractor } from './variableCandidateExtractor';
 
 export type VariableDrawerBindingView = Pick<
   MainEditorVariableBindingPayload,
@@ -22,6 +23,33 @@ export type VariableDrawerBindingView = Pick<
   | 'candidates'
   | 'usageRanges'
 >;
+
+/**
+ * Null-test sentinel values injected into candidate lists when a variable is
+ * compared against null/undefined in a {{? ...}} condition.
+ */
+export const RISU_TEST_NONNULL_SENTINEL = '__risu_test_nonnull__';
+export const RISU_TEST_ISNULL_SENTINEL = '__risu_test_isnull__';
+
+/**
+ * Checks whether a candidate value is a null-test sentinel.
+ */
+export function isNullTestSentinel(value: string): boolean {
+  return value === RISU_TEST_NONNULL_SENTINEL || value === RISU_TEST_ISNULL_SENTINEL;
+}
+
+/**
+ * Resolves a null-test sentinel to the concrete rawValue that simulates the
+ * desired null-state branch.
+ *
+ * - __risu_test_nonnull__ → '1'  (variable is set / truthy)
+ * - __risu_test_isnull__  → ''   (variable is unset / null / undefined)
+ */
+export function resolveSentinelValue(value: string): string {
+  if (value === RISU_TEST_NONNULL_SENTINEL) return '1';
+  if (value === RISU_TEST_ISNULL_SENTINEL) return '';
+  return value;
+}
 
 export interface VariableDrawerSummary {
   profileLabel: string;
@@ -61,6 +89,9 @@ export function buildVariableDrawerSummary(
  */
 export function createFallbackGetvarBindings(source: string): MainEditorVariableBindingPayload[] {
   const bindings = new Map<string, MainEditorVariableBindingPayload>();
+  const candidateExtractor = createRegexVariableCandidateExtractor();
+  const conditionCandidates = candidateExtractor.extract(source);
+
   for (const match of source.matchAll(GETVAR_OCCURRENCE_PATTERN)) {
     const operation = match[1] as 'getvar' | 'getglobalvar';
     const variableName = match[2]?.trim();
@@ -75,6 +106,8 @@ export function createFallbackGetvarBindings(source: string): MainEditorVariable
       continue;
     }
 
+    const extraCandidates = conditionCandidates.get(variableName) ?? [];
+
     bindings.set(key, {
       variableName,
       scope,
@@ -84,7 +117,7 @@ export function createFallbackGetvarBindings(source: string): MainEditorVariable
       source: 'missing',
       valueKind: 'unknown',
       rawValue: '',
-      candidates: [],
+      candidates: extraCandidates,
       usageRanges: [range],
     });
   }
