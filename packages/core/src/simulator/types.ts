@@ -104,6 +104,8 @@ export interface CbsSimulationTraceEvent {
   node?: string;
   /** Optional source range involved in the event. */
   range?: Range;
+  /** Absolute character offset in the main simulation output at the time this event was emitted. */
+  outputOffset?: number;
   /** Optional structured details for evaluator-specific trace labels. */
   details?: Readonly<Record<string, unknown>>;
 }

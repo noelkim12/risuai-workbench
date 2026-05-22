@@ -13,6 +13,8 @@ export interface TraceState {
   trace: CbsSimulationTraceEvent[];
   status: CbsSimulationStatus;
   options: CbsSimulationOptions;
+  /** Stack of absolute output character offsets for each active visitNodes nesting level. */
+  outputOffsetStack: number[];
 }
 
 /**
@@ -28,6 +30,10 @@ export function pushTrace(state: TraceState, event: CbsSimulationTraceEvent): vo
       state.status = state.options.onBudgetExceeded === 'continue' ? 'partial' : 'aborted';
     }
     return;
+  }
+
+  if (state.outputOffsetStack.length > 0) {
+    event.outputOffset = state.outputOffsetStack[state.outputOffsetStack.length - 1];
   }
 
   state.trace.push(event);
