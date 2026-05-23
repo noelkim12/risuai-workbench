@@ -14,8 +14,10 @@ import {
   diagnosticEnvelopeOutputSchema,
   workbenchJsonOutputSchema,
 } from './contracts/output-schemas';
+import { intentRouteInputSchema } from './contracts/intent-route';
 import { createProgressReporter, getProgressToken } from './progress';
 import { getWorkbenchTool } from './registry';
+import { annotationsForTool } from './registry/tool-annotations';
 
 import { DEFAULT_MUTATION_MODE, type MutationMode } from './mutation/mode';
 import { createPatchPlanStore, type PatchPlanStore } from './mutation/patch-store';
@@ -24,6 +26,8 @@ import { resolveWorkspaceRoot, type WorkspaceRootStatus } from './project/resolv
 import { registerWorkbenchResources } from './resources';
 
 import {
+  // intent-route
+  handleRouteIntent,
   // inspect
   handleInspectArtifact,
   handleInspectPath,
@@ -134,6 +138,7 @@ export function createMcpServer(startupContext: StartupContext): McpServer {
   server.registerTool(
     'workbench.smoke',
     {
+      annotations: annotationsForTool('workbench.smoke'),
       description: smokeTool?.description ?? 'Return a minimal risuai-workbench-mcp startup smoke response.',
       inputSchema: {},
       outputSchema: diagnosticEnvelopeOutputSchema,
@@ -154,6 +159,7 @@ export function createMcpServer(startupContext: StartupContext): McpServer {
     })),
   );
 
+  registerIntentRouteTools(server);
   registerInspectValidateTools(server, startupContext.workspace);
   registerPatchPreviewTools(server, startupContext.workspace, patchStore);
   registerPatchApplyTools(server, startupContext, patchStore);
@@ -209,6 +215,7 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
   server.registerTool(
     'workbench.refresh_analyze_snapshot',
     {
+      annotations: annotationsForTool('workbench.refresh_analyze_snapshot'),
       description: 'Refresh analyze snapshot metadata without mutating source artifacts.',
       inputSchema: snapshotFields,
       outputSchema: diagnosticEnvelopeOutputSchema,
@@ -483,6 +490,7 @@ function registerAdvancedMutationTools(server: McpServer, startupContext: Startu
   server.registerTool(
     'workbench.move_artifact',
     {
+      annotations: annotationsForTool('workbench.move_artifact'),
       description: 'Move or rename an artifact while preserving suffix and optional order ownership.',
       inputSchema: { confirmation: confirmationSchema, expectedHash: z.string().optional(), from: z.string(), mode: z.enum(['preview', 'commit']), postValidate: z.boolean().optional(), toStem: z.string(), updateOrder: z.boolean().optional() },
       outputSchema: workbenchJsonOutputSchema,
@@ -556,6 +564,7 @@ function registerCoreWorkflowTools(server: McpServer, startupContext: StartupCon
   server.registerTool(
     'workbench.run_extract',
     {
+      annotations: annotationsForTool('workbench.run_extract'),
       description: 'Run risu-core extract workflow for character, module, or preset files through mutation safety gates.',
       inputSchema: { confirmation: confirmationSchema, mode: z.enum(['preview', 'commit']), outDir: z.string(), postValidate: z.boolean().optional(), sourcePath: z.string(), type: z.enum(['character', 'module', 'preset']).optional(), ...risuluaFields },
       outputSchema: workbenchJsonOutputSchema,
@@ -709,6 +718,7 @@ function registerPatchApplyTools(server: McpServer, startupContext: StartupConte
   server.registerTool(
     'workbench.apply_patch_plan',
     {
+      annotations: annotationsForTool('workbench.apply_patch_plan'),
       description: 'Apply a stored patch plan after confirmation and precondition checks.',
       inputSchema: {
         confirmation: z.object({ accepted: z.boolean(), confirmationText: z.string().optional() }),
@@ -726,6 +736,31 @@ function registerPatchApplyTools(server: McpServer, startupContext: StartupConte
 }
 
 /**
+ * registerIntentRouteTools 함수.
+ * Phase 1 read-only intent route tool을 MCP server에 등록함.
+ *
+ * @param server - MCP server 인스턴스
+ */
+function registerIntentRouteTools(server: McpServer): void {
+  const routeTool = getWorkbenchTool('workbench.route_intent');
+
+  server.registerTool(
+    'workbench.route_intent',
+    {
+      annotations: annotationsForTool('workbench.route_intent'),
+      description: routeTool?.description ?? 'Classify caller intent into a deterministic route with allowed tools, risk, and next step.',
+      inputSchema: intentRouteInputSchema,
+      outputSchema: diagnosticEnvelopeOutputSchema,
+      title: routeTool?.title ?? 'Route intent',
+    },
+    async (input: Parameters<typeof handleRouteIntent>[0]) => {
+      const result = await handleRouteIntent(input);
+      return createJsonToolResult(result);
+    },
+  );
+}
+
+/**
  * registerInspectValidateTools 함수.
  * Phase 1 inspect/validate tools를 MCP server에 등록함.
  *
@@ -736,6 +771,7 @@ function registerInspectValidateTools(server: McpServer, workspace: WorkspaceRoo
   server.registerTool(
     'workbench.inspect_path',
     {
+      annotations: annotationsForTool('workbench.inspect_path'),
       description: 'Describe the role and artifact ownership of a workspace path.',
       inputSchema: { path: z.string() },
       outputSchema: diagnosticEnvelopeOutputSchema,
@@ -902,6 +938,7 @@ function registerDirectMutationTools(server: McpServer, startupContext: StartupC
   server.registerTool(
     'workbench.edit_order',
     {
+      annotations: annotationsForTool('workbench.edit_order'),
       description: 'Edit _order.json through structured insert/move/remove operations.',
       inputSchema: {
         confirmation: confirmationSchema,

@@ -5,6 +5,7 @@
 
 export * from './creative';
 export * from './diagnostics';
+export * from './intent-route';
 export * from './mutation-result';
 export * from './patch-plan';
 export * from './resource-uri';

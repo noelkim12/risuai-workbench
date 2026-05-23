@@ -69,11 +69,21 @@ describe('risuai-workbench-mcp startup', () => {
 
       const toolNames = tools.tools.map((tool) => tool.name);
       expect(toolNames).toContain('workbench.smoke');
+      expect(toolNames).toContain('workbench.route_intent');
       expect(toolNames).toEqual(expect.arrayContaining([
         'workbench.creative.gather_context',
         'workbench.creative.turn_idea_into_patch_plan',
         'workbench.creative.apply_idea_patch',
       ]));
+
+      const routeTool = tools.tools.find((tool) => tool.name === 'workbench.route_intent');
+      expect(routeTool).toBeDefined();
+      expect(routeTool?.annotations).toEqual({
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+        readOnlyHint: true,
+      });
       expect(resourceTemplates.resourceTemplates.map((resource) => resource.name)).toEqual(expect.arrayContaining([
         'workbench.creative.resource.methods',
         'workbench.creative.resource.idea_patch_plan',

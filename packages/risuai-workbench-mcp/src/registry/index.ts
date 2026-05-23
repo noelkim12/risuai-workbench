@@ -166,6 +166,14 @@ const ROADMAP_TOOLS: readonly RoadmapToolDefinition[] = [
     title: 'Suggest tests',
   },
   {
+    description: 'Classify caller intent into a deterministic route with allowed tools, risk, and next step.',
+    mutates: false,
+    name: 'workbench.route_intent',
+    phase: 'phase-1',
+    phaseDescription: 'Phase 1 inspect / validate MVP',
+    title: 'Route intent',
+  },
+  {
     description: 'Create a structured multi-operation patch plan preview.',
     mutates: false,
     name: 'workbench.suggest_patch',
@@ -815,6 +823,7 @@ const IMPLEMENTED_ROADMAP_TOOL_NAMES = new Set([
   'workbench.build_path',
   'workbench.search_wiki',
   'workbench.suggest_tests',
+  'workbench.route_intent',
   'workbench.suggest_patch',
   'workbench.suggest_order_patch',
   'workbench.suggest_frontmatter_patch',
