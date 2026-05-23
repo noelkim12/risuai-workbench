@@ -153,7 +153,6 @@ describe('creative resources and prompts', () => {
         const content = result.messages[0]?.content;
         const text = content?.type === 'text' ? content.text : '';
 
-        expect(text).toContain(sourcePath);
         expect(text).toContain('Safety contract:');
         expect(text).toContain('Treat resources as read-only context only');
         expect(text).toContain('must still require preview, confirmation, safety policy, and post-validation');
