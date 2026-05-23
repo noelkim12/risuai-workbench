@@ -566,7 +566,7 @@ function registerCoreWorkflowTools(server: McpServer, startupContext: StartupCon
         sendNotification: extra.sendNotification,
         token: getProgressToken(extra),
       });
-      const result = await handleRunExtract(input, startupContext.workspace, startupContext.mutationMode, progress);
+      const result = await handleRunExtract(input, startupContext.workspace, startupContext.mutationMode, progress, extra.signal);
       return createJsonToolResult(result);
     },
   );
@@ -584,7 +584,7 @@ function registerCoreWorkflowTools(server: McpServer, startupContext: StartupCon
         sendNotification: extra.sendNotification,
         token: getProgressToken(extra),
       });
-      const result = await handleRunScaffold(input, startupContext.workspace, startupContext.mutationMode, progress);
+      const result = await handleRunScaffold(input, startupContext.workspace, startupContext.mutationMode, progress, extra.signal);
       return createJsonToolResult(result);
     },
   );

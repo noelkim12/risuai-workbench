@@ -181,7 +181,14 @@ Current behavior:
 - Long-running tools return a final diagnostic or mutation envelope.
 - `workbench.run_extract` and `workbench.run_scaffold` may emit `notifications/progress` when a client supplies `_meta.progressToken`.
 - MCP task-augmented execution is not implemented.
-- Cooperative cancellation is tracked separately from this plan.
+
+Cancellation support:
+
+- `workbench.run_extract` and `workbench.run_scaffold` observe MCP request cancellation through the SDK-provided `AbortSignal`.
+- If cancellation is observed before child process execution, the tool returns a structured cancellation diagnostic without writing files.
+- If cancellation is observed while a wrapped `risu-core` child process is running, the server sends `SIGTERM` to the child process and returns a structured result describing the cancellation state and any observed output files.
+- Mid-child cancellation is represented through command cancellation diagnostics and a failed mutation result after post-validation and journal handling.
+- Cancellation does not bypass mutation safety gates, confirmation requirements, stale-hash checks, or post-validation reporting.
 
 ## Logging and sensitive data
 

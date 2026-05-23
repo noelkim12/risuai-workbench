@@ -161,6 +161,9 @@ Mutation 계열 handler는 대체로 `unknown` input을 받은 뒤 내부 parse 
 - source artifact write는 `enabled` mode와 confirmation이 필요합니다.
 - generated wiki write는 allowlist boundary를 통과해야 합니다.
 - stale hash, unknown field, invalid input, confirmation mismatch는 파일 변경 없이 structured diagnostic 또는 rejected mutation result로 반환됩니다.
+- Long-running mutation handlers should accept an optional `AbortSignal` after optional progress reporter parameters.
+- Handlers must check cancellation before irreversible work, pass the signal to child-process wrappers, and report cancellation through structured diagnostic or mutation envelopes.
+- Handlers must not swallow cancellation by returning `ok` when a child process was terminated. Mid-child cancellation should remain visible through command cancellation diagnostics and a failed mutation result after post-validation and journal handling.
 
 ## 새 tool 추가 체크리스트
 
