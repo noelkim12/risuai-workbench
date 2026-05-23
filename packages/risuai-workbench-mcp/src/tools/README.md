@@ -48,7 +48,7 @@ Mutation 계열 handler는 대체로 `unknown` input을 받은 뒤 내부 parse 
 
 ## Tool 목록
 
-현재 registry 기준 구현 tool은 `workbench.smoke`를 포함해 41개입니다. `workbench.smoke`는 startup smoke tool이며 `src/tools/`가 아니라 `src/server.ts`에서 직접 등록됩니다.
+현재 registry 기준 구현 tool은 `workbench.smoke`를 포함해 **73개**입니다(비즈니스 로직 tool 47개 + creative tool 26개). `workbench.smoke`는 startup smoke tool이며 `src/tools/`가 아니라 `src/server.ts`에서 직접 등록됩니다.
 
 ### Startup
 

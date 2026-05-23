@@ -101,6 +101,7 @@ describe('workbench MCP prompts', () => {
       const text = content.type === 'text' ? content.text : '';
       expect(text).toContain('Workflow:');
       expect(text).toContain('Safety contract:');
+      expect(text).toContain('# Apply artifact change');
       expect(text).toContain('must still require preview, confirmation, safety policy, and post-validation');
       expect(text).toContain('Never bypass confirmation');
       expect(text).not.toContain('automatically apply');

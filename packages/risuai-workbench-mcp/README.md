@@ -415,6 +415,10 @@ Resources는 read-only context입니다. write는 반드시 tool을 통해서만
 
 ## Prompts
 
+Prompt registry metadata (`name`, `title`, `description`) is defined in `src/registry/index.ts`. Prompt workflow bodies are stored as Markdown assets under `prompt-assets/` and loaded by `src/prompts/prompt-assets.ts`; this keeps prompt wording reviewable without embedding long workflow text in TypeScript source. Prompt assets are packaged with the npm package via the `package.json` `files` allowlist.
+
+Prompt name, purpose, and Markdown asset mapping은 [`prompt-assets/README.md`](./prompt-assets/README.md)에서 확인할 수 있습니다.
+
 Prompts는 user-invoked workflow template입니다. Prompt 자체는 파일을 수정하지 않으며, mutation tool은 preview, confirmation, safety, post-validation을 요구하는 외부 단계로만 안내합니다.
 
 - `workbench.review_artifact_change`
