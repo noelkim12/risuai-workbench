@@ -24,6 +24,7 @@ const proposalPhaseToolNames = [
   'workbench.build_path',
   'workbench.search_wiki',
   'workbench.suggest_tests',
+  'workbench.route_intent',
   'workbench.suggest_patch',
   'workbench.suggest_order_patch',
   'workbench.suggest_frontmatter_patch',
@@ -108,6 +109,12 @@ describe('workbench registry contracts', () => {
       const tool = snapshot.tools.find((t) => t.name === name);
       return tool && tool.implementationStatus === 'implemented' && tool.mutates === false && tool.phase === 'phase-1';
     })).toBe(true);
+
+    expect(snapshot.tools.find((tool) => tool.name === 'workbench.route_intent')).toMatchObject({
+      implementationStatus: 'implemented',
+      mutates: false,
+      phase: 'phase-1',
+    });
 
     const phase4ReadOnlyTools = [
       'workbench.query_lua_analysis',

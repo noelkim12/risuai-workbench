@@ -221,4 +221,29 @@ describe('handleApplyPatchPlan', () => {
     const entries = await readJournalEntries(fixture.journalPath);
     expect(entries[entries.length - 1]?.status).toBe('failed-validation');
   });
+
+  it('applies a valid patch plan without routeId (routeId is advisory, not required)', async () => {
+    const fixture = await createApplyFixture();
+    const patchStore = createPatchPlanStore();
+    const patchPlan = createPatchPlan({
+      expectedDiagnostics: [],
+      intent: 'Create file to prove routeId is not required',
+      operations: [{ content: 'new\n', kind: 'file.create', path: 'characters/merry/lorebooks/new.risulorebook', overwrite: false }],
+      preconditions: [
+        createInsideWorkspacePrecondition('characters/merry/lorebooks/new.risulorebook'),
+        createNonexistencePrecondition('characters/merry/lorebooks/new.risulorebook'),
+      ],
+      workspaceRoot: fixture.root,
+    });
+    patchStore.savePatchPlan(patchPlan);
+
+    const result = mutationResult(await handleApplyPatchPlan(
+      { confirmation: { accepted: true }, patchPlanId: patchPlan.patchPlanId },
+      { mutationMode: 'enabled', patchStore, workspace: fixture.workspace },
+    ));
+
+    expect(result.status).toBe('applied');
+    expect(result.patchPlanId).toBe(patchPlan.patchPlanId);
+    expect(await readFile(path.join(fixture.root, 'characters', 'merry', 'lorebooks', 'new.risulorebook'), 'utf8')).toBe('new\n');
+  });
 });

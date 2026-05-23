@@ -10,3 +10,4 @@ export * from './mutation';
 export * from './analyze';
 export * from './wiki';
 export * from './creative';
+export { handleRouteIntent } from './intent-route';
