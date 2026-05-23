@@ -5,6 +5,7 @@
 
 import path from 'node:path';
 
+import { createCancellationDiagnostic, isCancellationRequested, throwIfCancellationRequested } from '../../cancellation';
 import { createDiagnosticEnvelope, createUnknownFieldDiagnosticEnvelope, type DiagnosticEnvelope } from '../../contracts/diagnostics';
 import type { MutationMode as PatchPlanMutationMode } from '../../contracts/patch-plan';
 import { createMutationResultEnvelope, type MutationResultEnvelope } from '../../contracts/mutation-result';
@@ -57,6 +58,7 @@ export async function handleRunExtract(
   workspace: WorkspaceRootStatus,
   mutationMode: MutationMode,
   progress?: ProgressReporter,
+  signal?: AbortSignal,
 ): Promise<RunExtractToolResult> {
   await progress?.report(1, 8, 'Validating run_extract input.');
   const unknownFieldResult = createUnknownFieldDiagnosticEnvelope({
@@ -112,6 +114,14 @@ export async function handleRunExtract(
     });
   }
 
+  if (isCancellationRequested(signal)) {
+    return createDiagnosticEnvelope({
+      diagnostics: [createCancellationDiagnostic(TOOL_NAME, safeOutDir.relativePath)],
+      status: 'domain_warning',
+      tool: TOOL_NAME,
+    });
+  }
+
   await progress?.report(3, 8, 'Preparing run_extract command preview.');
   const argv = buildExtractArgs(extractInput, safeSource.relativePath, safeOutDir.relativePath);
   const confirmationText = `RUN_EXTRACT ${safeSource.relativePath} TO ${safeOutDir.relativePath}`;
@@ -146,7 +156,16 @@ export async function handleRunExtract(
   }
 
   await progress?.report(5, 8, 'Running risu-core extract.');
-  const commandResult = await runRisuCoreCommand(argv, workspace.path);
+  try {
+    throwIfCancellationRequested(signal, TOOL_NAME);
+  } catch (error) {
+    return createDiagnosticEnvelope({
+      diagnostics: [createCancellationDiagnostic(TOOL_NAME, safeOutDir.relativePath)],
+      status: 'domain_warning',
+      tool: TOOL_NAME,
+    });
+  }
+  const commandResult = await runRisuCoreCommand(argv, workspace.path, { signal });
   await progress?.report(6, 8, 'Collecting run_extract changed files.');
   const changedFiles = await collectChangedFiles(safeOutDir.absolutePath, safeOutDir.relativePath).catch(() => []);
   await progress?.report(7, 8, 'Validating run_extract output.');
@@ -235,5 +254,6 @@ function buildCommandDiagnostics(commandResult: RisuCoreCommandResult, targetPat
   if (commandResult.stderr.trim() !== '') diagnostics.push({ category: 'workflow', id: 'RUN_EXTRACT_STDERR', message: commandResult.stderr, path: targetPath, ruleId: 'run-extract.stderr', severity: commandResult.exitCode === 0 ? 'warning' as const : 'error' as const });
   if (commandResult.exitCode !== 0) diagnostics.push({ category: 'workflow', id: 'RUN_EXTRACT_EXIT_NONZERO', message: `risu-core extract exited with code ${commandResult.exitCode}.`, path: targetPath, ruleId: 'run-extract.exit-code', severity: 'error' as const });
   if (commandResult.timedOut) diagnostics.push({ category: 'workflow', id: 'RUN_EXTRACT_TIMEOUT', message: 'risu-core extract command timed out and was terminated.', path: targetPath, ruleId: 'run-extract.timeout', severity: 'error' as const });
+  if (commandResult.cancelled) diagnostics.push({ category: 'cancellation', id: 'RUN_EXTRACT_CANCELLED', message: 'risu-core extract was cancelled by the MCP request.', path: targetPath, ruleId: 'run-extract.cancelled', severity: 'warning' as const });
   return diagnostics;
 }

@@ -15,6 +15,7 @@ import type { MutationResultEnvelope } from '../../src/contracts/mutation-result
 import type { WorkspaceRootStatus } from '../../src/project/resolve-root';
 import { handleRunExtract } from '../../src/tools/mutation/run-extract';
 import { handleRunScaffold } from '../../src/tools/mutation/run-scaffold';
+import { runRisuCoreCommand } from '../../src/tools/mutation/core-workflow-cli';
 
 interface WorkflowFixture {
   root: string;
@@ -153,6 +154,45 @@ describe('core workflow wrappers', () => {
     ]);
   });
 
+  it('run_extract is aborted before command execution', async () => {
+    const fixture = await createWorkflowFixture();
+    await writeFile(path.join(fixture.root, 'source.risup'), 'not executed', 'utf8');
+
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await handleRunExtract(
+      { confirmation: { accepted: true, confirmationText: 'RUN_EXTRACT source.risup TO generated/cancelled-extract' }, mode: 'commit', outDir: 'generated/cancelled-extract', sourcePath: 'source.risup' },
+      fixture.workspace,
+      'enabled',
+      undefined,
+      controller.signal,
+    );
+
+    const diagnosticResult = diagnosticEnvelope(result);
+    expect(diagnosticResult.status).toBe('domain_warning');
+    expect(diagnosticResult.diagnostics[0].id).toBe('REQUEST_CANCELLED');
+  });
+
+  it('run_scaffold is aborted before command execution', async () => {
+    const fixture = await createWorkflowFixture();
+
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await handleRunScaffold(
+      { confirmation: { accepted: true, confirmationText: 'RUN_SCAFFOLD generated/cancelled-scaffold' }, mode: 'commit', name: 'Cancelled', outDir: 'generated/cancelled-scaffold', type: 'charx' },
+      fixture.workspace,
+      'enabled',
+      undefined,
+      controller.signal,
+    );
+
+    const diagnosticResult = diagnosticEnvelope(result);
+    expect(diagnosticResult.status).toBe('domain_warning');
+    expect(diagnosticResult.diagnostics[0].id).toBe('REQUEST_CANCELLED');
+  });
+
   it('reports progress milestones for run_scaffold preview', async () => {
     const progress = createRecordingProgressReporter();
 
@@ -169,5 +209,16 @@ describe('core workflow wrappers', () => {
       'Preparing run_scaffold command preview.',
       'run_scaffold preview complete.',
     ]);
+  });
+
+  it('marks risu-core command result as cancelled when signal is already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await runRisuCoreCommand(['--version'], process.cwd(), { signal: controller.signal });
+
+    expect(result.cancelled).toBe(true);
+    expect(result.exitCode).toBe(130);
+    expect(result.stderr).toContain('cancelled before start');
   });
 });

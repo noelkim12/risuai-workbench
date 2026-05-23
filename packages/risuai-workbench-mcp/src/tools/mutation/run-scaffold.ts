@@ -5,6 +5,7 @@
 
 import path from 'node:path';
 
+import { createCancellationDiagnostic, isCancellationRequested, throwIfCancellationRequested } from '../../cancellation';
 import { createDiagnosticEnvelope, createUnknownFieldDiagnosticEnvelope, type DiagnosticEnvelope } from '../../contracts/diagnostics';
 import type { MutationMode as PatchPlanMutationMode } from '../../contracts/patch-plan';
 import { createMutationResultEnvelope, type MutationResultEnvelope } from '../../contracts/mutation-result';
@@ -54,6 +55,7 @@ export async function handleRunScaffold(
   workspace: WorkspaceRootStatus,
   mutationMode: MutationMode,
   progress?: ProgressReporter,
+  signal?: AbortSignal,
 ): Promise<RunScaffoldToolResult> {
   await progress?.report(1, 8, 'Validating run_scaffold input.');
   const unknownFieldResult = createUnknownFieldDiagnosticEnvelope({
@@ -101,6 +103,14 @@ export async function handleRunScaffold(
     });
   }
 
+  if (isCancellationRequested(signal)) {
+    return createDiagnosticEnvelope({
+      diagnostics: [createCancellationDiagnostic(TOOL_NAME, safeOutDir.relativePath)],
+      status: 'domain_warning',
+      tool: TOOL_NAME,
+    });
+  }
+
   await progress?.report(3, 8, 'Preparing run_scaffold command preview.');
   const argv = buildScaffoldArgs(scaffoldInput, safeOutDir.relativePath);
   const confirmationText = `RUN_SCAFFOLD ${safeOutDir.relativePath}`;
@@ -135,7 +145,16 @@ export async function handleRunScaffold(
   }
 
   await progress?.report(5, 8, 'Running risu-core scaffold.');
-  const commandResult = await runRisuCoreCommand(argv, workspace.path);
+  try {
+    throwIfCancellationRequested(signal, TOOL_NAME);
+  } catch (error) {
+    return createDiagnosticEnvelope({
+      diagnostics: [createCancellationDiagnostic(TOOL_NAME, safeOutDir.relativePath)],
+      status: 'domain_warning',
+      tool: TOOL_NAME,
+    });
+  }
+  const commandResult = await runRisuCoreCommand(argv, workspace.path, { signal });
   await progress?.report(6, 8, 'Collecting run_scaffold changed files.');
   const changedFiles = await collectChangedFiles(safeOutDir.absolutePath, safeOutDir.relativePath).catch(() => []);
   await progress?.report(7, 8, 'Validating run_scaffold output.');
@@ -215,5 +234,6 @@ function buildCommandDiagnostics(commandResult: RisuCoreCommandResult, targetPat
   if (commandResult.stderr.trim() !== '') diagnostics.push({ category: 'workflow', id: 'RUN_SCAFFOLD_STDERR', message: commandResult.stderr, path: targetPath, ruleId: 'run-scaffold.stderr', severity: commandResult.exitCode === 0 ? 'warning' as const : 'error' as const });
   if (commandResult.exitCode !== 0) diagnostics.push({ category: 'workflow', id: 'RUN_SCAFFOLD_EXIT_NONZERO', message: `risu-core scaffold exited with code ${commandResult.exitCode}.`, path: targetPath, ruleId: 'run-scaffold.exit-code', severity: 'error' as const });
   if (commandResult.timedOut) diagnostics.push({ category: 'workflow', id: 'RUN_SCAFFOLD_TIMEOUT', message: 'risu-core scaffold command timed out and was terminated.', path: targetPath, ruleId: 'run-scaffold.timeout', severity: 'error' as const });
+  if (commandResult.cancelled) diagnostics.push({ category: 'cancellation', id: 'RUN_SCAFFOLD_CANCELLED', message: 'risu-core scaffold was cancelled by the MCP request.', path: targetPath, ruleId: 'run-scaffold.cancelled', severity: 'warning' as const });
   return diagnostics;
 }
