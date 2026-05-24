@@ -55,7 +55,7 @@ export const CUSTOM_EXTENSION_ARTIFACT_CONTRACTS = Object.freeze({
     directory: 'lorebooks',
     suffix: '.risulorebook',
     supportedTargets: ['charx', 'module'],
-    markerFiles: ['order', 'folders'],
+    markerFiles: ['order'],
     stemPolicy: 'stem',
     fallbackStem: 'entry',
   },

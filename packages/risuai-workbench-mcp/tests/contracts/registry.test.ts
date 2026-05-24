@@ -21,6 +21,7 @@ const proposalPhaseToolNames = [
   'workbench.validate_root_markers',
   'workbench.validate_metadata',
   'workbench.validate_frontmatter',
+  'workbench.validate_cbs_syntax',
   'workbench.build_path',
   'workbench.search_wiki',
   'workbench.suggest_tests',
@@ -55,6 +56,7 @@ const proposalPhaseToolNames = [
   'workbench.explain_lorebook_prompt_injection',
   'workbench.explain_context_feedback_loop',
   'workbench.plan_structured_output_loop',
+  'workbench.query_cbs_usage',
   'workbench.move_artifact',
   'workbench.delete_artifact',
   'workbench.refresh_wiki',
@@ -160,6 +162,10 @@ describe('workbench registry contracts', () => {
     expect(buildMutationJournalCollectionUri()).toBe('risuai-workbench://mutations/journal');
     expect(buildMutationJournalUri('mutation:001')).toBe('risuai-workbench://mutations/journal/mutation%3A001');
     expect(buildPatchPlanUri('patch:001')).toBe('risuai-workbench://mutations/patch-plans/patch%3A001');
+    expect(snapshot.resources.find((resource) => resource.name === 'workbench.resource.cbs_reference')).toMatchObject({
+      description: 'Read CBS index, syntax, category, tag detail, pattern, pitfall, and fallback source resources.',
+      uriTemplate: 'risuai-workbench://cbs/{cbsPath}',
+    });
   });
 
   it('lists prompt names from the proposal in stable order', () => {

@@ -28,6 +28,14 @@ export const SKIPPED_DIRECTORIES = new Set([
   'assets',
 ]);
 
+/**
+ * Detail accordion에 표시하지 않을 meta/manifest 파일 이름 집합.
+ * 예: lorebooks/_order.json, lua/_order.json 등 내부 순서 정의 파일.
+ */
+export const SKIPPED_FILE_NAMES = new Set([
+  '_order.json',
+]);
+
 /** 단일 스캔에서 수집하는 최대 파일 수. */
 export const MAX_SCANNED_FILES = 500;
 
@@ -104,6 +112,7 @@ export class GenericDetailScanner<
     const files = await this.collectFiles(scanRootUri);
     for (const file of files) {
       if (file.relativePath === this.config.manifestMarkerName) continue;
+      if (SKIPPED_FILE_NAMES.has(path.posix.basename(file.relativePath))) continue;
       const sectionKind = this.config.classifyFile(file.relativePath);
       if (!sectionKind || usedRelativePaths.has(file.relativePath)) continue;
 

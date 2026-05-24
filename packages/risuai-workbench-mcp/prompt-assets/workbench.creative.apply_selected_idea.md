@@ -8,6 +8,8 @@ Context: {{context}}
 Before selecting any Workbench tool, call `workbench.route_intent` with the user request, target, context, and any available patchPlanId or ideaId.
 Treat the route result as advisory workflow guidance, not authorization.
 Use only tools listed in `allowedTools` for the next safe step.
+Prefer tools listed in `recommendedTools` before broader allowed tools.
+Treat tools listed in `discouragedTools` as advisory warnings: avoid them unless the user's request explicitly requires that tool and all safety gates still pass.
 Do not call tools listed in `blockedTools`.
 If `nextStep` is `clarify`, stop and ask only for the missing input.
 If `commitAllowed` is false, do not call commit-mode mutation tools.

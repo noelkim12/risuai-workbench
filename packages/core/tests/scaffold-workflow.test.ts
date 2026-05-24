@@ -95,6 +95,14 @@ describe('src/cli scaffold workflow', () => {
       expect(fs.existsSync(path.join(outDir, 'regex', '_order.json'))).toBe(true);
       expect(fs.existsSync(path.join(outDir, 'toggle', 'RPG_Module.risutoggle'))).toBe(true);
 
+      // Non-Lua module files
+      expect(fs.existsSync(path.join(outDir, 'assets', 'manifest.json'))).toBe(true);
+      expect(fs.existsSync(path.join(outDir, 'html', 'background.risuhtml'))).toBe(true);
+      expect(fs.existsSync(path.join(outDir, 'variables', 'RPG_Module.risuvar'))).toBe(true);
+
+      // Modular Lua structure is the default
+      expectRisuLuaScaffoldStructure(outDir);
+
       // No metadata.json
       expect(fs.existsSync(path.join(outDir, 'metadata.json'))).toBe(false);
 
@@ -212,6 +220,9 @@ describe('src/cli scaffold workflow', () => {
       expect(fs.existsSync(path.join(outDir, 'lorebooks', '_order.json'))).toBe(true);
       expect(fs.existsSync(path.join(outDir, 'regex', '_order.json'))).toBe(true);
       expect(fs.existsSync(path.join(outDir, 'variables', 'My_Character.risuvar'))).toBe(true);
+
+      // Modular is now the default — charx also gets lua structure
+      expectRisuLuaScaffoldStructure(outDir);
 
       const risuchar = JSON.parse(fs.readFileSync(path.join(outDir, '.risuchar'), 'utf-8'));
       expect(risuchar.kind).toBe('risu.character');

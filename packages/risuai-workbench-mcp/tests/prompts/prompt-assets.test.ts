@@ -31,6 +31,8 @@ describe('prompt asset loader', () => {
     expect(text).toContain('advisory workflow guidance, not authorization');
     expect(text).toContain('allowedTools');
     expect(text).toContain('blockedTools');
+    expect(text).toContain('recommendedTools');
+    expect(text).toContain('discouragedTools');
     expect(text).toContain('commitAllowed');
     expect(text).toContain('Never bypass confirmation');
     expect(text).toContain('must still require preview, confirmation, safety policy, and post-validation');
@@ -46,6 +48,8 @@ describe('prompt asset loader', () => {
     expect(text).toContain('advisory workflow guidance, not authorization');
     expect(text).toContain('allowedTools');
     expect(text).toContain('blockedTools');
+    expect(text).toContain('recommendedTools');
+    expect(text).toContain('discouragedTools');
     expect(text).toContain('commitAllowed');
     expect(text).toContain('Existing mutation safety gates, confirmation, hash, and workspace checks remain mandatory');
   });
@@ -60,6 +64,8 @@ describe('prompt asset loader', () => {
     expect(text).toContain('advisory workflow guidance, not authorization');
     expect(text).toContain('allowedTools');
     expect(text).toContain('blockedTools');
+    expect(text).toContain('recommendedTools');
+    expect(text).toContain('discouragedTools');
     expect(text).toContain('commitAllowed');
     expect(text).toContain('Existing mutation safety gates, confirmation, hash, and workspace checks remain mandatory');
   });
@@ -73,6 +79,8 @@ describe('prompt asset loader', () => {
         text.includes('advisory workflow guidance, not authorization') &&
         text.includes('allowedTools') &&
         text.includes('blockedTools') &&
+        text.includes('recommendedTools') &&
+        text.includes('discouragedTools') &&
         text.includes('commitAllowed')
       );
     });

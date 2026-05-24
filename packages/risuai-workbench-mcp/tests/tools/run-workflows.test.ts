@@ -50,13 +50,13 @@ function createRecordingProgressReporter() {
 }
 
 describe('core workflow wrappers', () => {
-  it('previews scaffold command without creating output directory', async () => {
+  it('previews scaffold command in preview-only mutation mode', async () => {
     const fixture = await createWorkflowFixture();
 
     const result = diagnosticEnvelope(await handleRunScaffold(
-      { mode: 'preview', name: 'Preview Character', outDir: 'generated/preview-character', type: 'charx' },
+      { mode: 'commit', name: 'Preview Character', outDir: 'generated/preview-character', type: 'charx' },
       fixture.workspace,
-      'enabled',
+      'preview-only',
     ));
 
     expect(result.status).toBe('ok');
@@ -78,37 +78,37 @@ describe('core workflow wrappers', () => {
     expect(result.diagnostics.some((diagnostic) => diagnostic.id === 'RUN_SCAFFOLD_OUTDIR_EXISTS')).toBe(true);
   });
 
-  it('rejects scaffold commit in preview-only mutation mode before running command', async () => {
+  it('returns preview for scaffold in preview-only mutation mode', async () => {
     const fixture = await createWorkflowFixture();
 
-    const result = mutationResult(await handleRunScaffold(
+    const result = diagnosticEnvelope(await handleRunScaffold(
       { confirmation: { accepted: true, confirmationText: 'RUN_SCAFFOLD new-module' }, mode: 'commit', name: 'New Module', outDir: 'new-module', type: 'module' },
       fixture.workspace,
       'preview-only',
     ));
 
-    expect(result.status).toBe('rejected');
-    expect(result.postValidation.diagnostics[0]?.ruleId).toBe('run-scaffold.mutation-mode-preview-only');
+    expect(result.status).toBe('ok');
+    expect(result.data).toMatchObject({ preview: true, expectedConfirmationText: 'RUN_SCAFFOLD new-module' });
   });
 
-  it('previews extract command with source and target paths', async () => {
+  it('previews extract command in preview-only mutation mode', async () => {
     const fixture = await createWorkflowFixture();
     await writeFile(path.join(fixture.root, 'source.risup'), 'not a real preset; preview must not parse it', 'utf8');
 
     const result = diagnosticEnvelope(await handleRunExtract(
-      { mode: 'preview', outDir: 'extracted/preset', sourcePath: 'source.risup', type: 'preset' },
+      { mode: 'commit', outDir: 'extracted/preset', sourcePath: 'source.risup', type: 'preset' },
       fixture.workspace,
-      'enabled',
+      'preview-only',
     ));
 
     expect(result.status).toBe('ok');
     expect(result.data).toMatchObject({ expectedConfirmationText: 'RUN_EXTRACT source.risup TO extracted/preset', preview: true, source: 'source.risup', target: 'extracted/preset' });
   });
 
-  it('rejects extract when output directory already exists', async () => {
+  it('rejects extract when output directory and fallback already exists', async () => {
     const fixture = await createWorkflowFixture();
     await writeFile(path.join(fixture.root, 'source.risup'), 'not executed', 'utf8');
-    await mkdir(path.join(fixture.root, 'existing-extract'), { recursive: true });
+    await mkdir(path.join(fixture.root, 'existing-extract', 'source'), { recursive: true });
 
     const result = diagnosticEnvelope(await handleRunExtract(
       { mode: 'commit', outDir: 'existing-extract', sourcePath: 'source.risup', type: 'preset' },
@@ -120,18 +120,18 @@ describe('core workflow wrappers', () => {
     expect(result.diagnostics.some((diagnostic) => diagnostic.id === 'RUN_EXTRACT_OUTDIR_EXISTS')).toBe(true);
   });
 
-  it('rejects extract commit in preview-only mutation mode before running command', async () => {
+  it('returns preview for extract in preview-only mutation mode', async () => {
     const fixture = await createWorkflowFixture();
     await writeFile(path.join(fixture.root, 'source.risup'), 'not executed', 'utf8');
 
-    const result = mutationResult(await handleRunExtract(
+    const result = diagnosticEnvelope(await handleRunExtract(
       { confirmation: { accepted: true, confirmationText: 'RUN_EXTRACT source.risup TO extracted' }, mode: 'commit', outDir: 'extracted', sourcePath: 'source.risup', type: 'preset' },
       fixture.workspace,
       'preview-only',
     ));
 
-    expect(result.status).toBe('rejected');
-    expect(result.postValidation.diagnostics[0]?.ruleId).toBe('run-extract.mutation-mode-preview-only');
+    expect(result.status).toBe('ok');
+    expect(result.data).toMatchObject({ preview: true, expectedConfirmationText: 'RUN_EXTRACT source.risup TO extracted' });
   });
 
   it('reports progress milestones for run_extract preview', async () => {
@@ -209,6 +209,20 @@ describe('core workflow wrappers', () => {
       'Preparing run_scaffold command preview.',
       'run_scaffold preview complete.',
     ]);
+  });
+
+  it('derives outDir from sourcePath when omitted in preview-only mode', async () => {
+    const fixture = await createWorkflowFixture();
+    await mkdir(path.join(fixture.root, 'characters', 'merry'), { recursive: true });
+    await writeFile(path.join(fixture.root, 'characters', 'merry', 'source.charx'), 'not a real charx; preview must not parse it', 'utf8');
+
+    const result = diagnosticEnvelope(await handleRunExtract(
+      { mode: 'commit', sourcePath: 'characters/merry/source.charx' },
+      fixture.workspace,
+      'preview-only',
+    ));
+    expect(result.status).toBe('ok');
+    expect(result.data).toMatchObject({ target: 'characters/merry/source' });
   });
 
   it('marks risu-core command result as cancelled when signal is already aborted', async () => {

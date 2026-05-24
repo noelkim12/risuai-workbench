@@ -26,6 +26,7 @@ import {
   getStringField,
   resolveRisuCoreBinPath,
   runRisuCoreCommand,
+  sanitizeDefaultOutputName,
   type RisuCoreCommandResult,
   type RisuLuaDomainGenerationInput,
   type RisuLuaModeInput,
@@ -40,7 +41,7 @@ type ExtractType = 'character' | 'module' | 'preset';
 export interface RunExtractInput {
   confirmation?: { accepted: boolean; confirmationText?: string };
   mode: PatchPlanMutationMode;
-  outDir: string;
+  outDir?: string;
   postValidate?: boolean;
   risuluaDomainGeneration?: RisuLuaDomainGenerationInput;
   risuluaMode?: RisuLuaModeInput;
@@ -96,22 +97,43 @@ export async function handleRunExtract(
     });
   }
 
-  const safeOutDir = await resolveSafeWorkspacePath({ inputPath: extractInput.outDir, intent: 'create-missing', workspace });
+  const sourceDir = path.dirname(safeSource.relativePath);
+  const sourceBase = sanitizeDefaultOutputName(path.basename(safeSource.relativePath, path.extname(safeSource.relativePath)));
+  const defaultOutDir = extractInput.outDir
+    ? extractInput.outDir
+    : sourceDir === '.' ? `./${sourceBase}` : `${sourceDir}/${sourceBase}`;
+
+  let safeOutDir = await resolveSafeWorkspacePath({ inputPath: defaultOutDir, intent: 'create-missing', workspace });
   if (!safeOutDir.ok) {
     return createDiagnosticEnvelope({
-      diagnostics: [{ category: 'path', id: 'RUN_EXTRACT_OUTDIR_UNSAFE', message: `Output directory is not safe for extract: ${extractInput.outDir} (${safeOutDir.reason}).`, path: extractInput.outDir, ruleId: 'run-extract.outdir-boundary', severity: 'error' }],
+      diagnostics: [{ category: 'path', id: 'RUN_EXTRACT_OUTDIR_UNSAFE', message: `Output directory is not safe for extract: ${defaultOutDir} (${safeOutDir.reason}).`, path: defaultOutDir, ruleId: 'run-extract.outdir-boundary', severity: 'error' }],
       status: 'domain_error',
       tool: TOOL_NAME,
     });
   }
 
-  const missingOutput = await ensureOutputDirectoryMissing(safeOutDir.absolutePath);
+  let missingOutput = await ensureOutputDirectoryMissing(safeOutDir.absolutePath);
   if (!missingOutput.ok) {
-    return createDiagnosticEnvelope({
-      diagnostics: [{ category: 'path', id: 'RUN_EXTRACT_OUTDIR_EXISTS', message: `${missingOutput.message}: ${safeOutDir.relativePath}.`, path: safeOutDir.relativePath, ruleId: `run-extract.${missingOutput.reason}`, severity: 'error' }],
-      status: 'domain_error',
-      tool: TOOL_NAME,
-    });
+    // outDir이 이미 존재하면 자동으로 sourceBase 서브디렉토리를 생성
+    const fallbackOutDir = path.posix.join(safeOutDir.relativePath, sourceBase);
+    const safeFallback = await resolveSafeWorkspacePath({ inputPath: fallbackOutDir, intent: 'create-missing', workspace });
+    if (!safeFallback.ok) {
+      return createDiagnosticEnvelope({
+        diagnostics: [{ category: 'path', id: 'RUN_EXTRACT_OUTDIR_UNSAFE', message: `Fallback output directory is not safe for extract: ${fallbackOutDir} (${safeFallback.reason}).`, path: fallbackOutDir, ruleId: 'run-extract.outdir-boundary', severity: 'error' }],
+        status: 'domain_error',
+        tool: TOOL_NAME,
+      });
+    }
+    const missingFallback = await ensureOutputDirectoryMissing(safeFallback.absolutePath);
+    if (!missingFallback.ok) {
+      return createDiagnosticEnvelope({
+        diagnostics: [{ category: 'path', id: 'RUN_EXTRACT_OUTDIR_EXISTS', message: `${missingFallback.message}: ${safeFallback.relativePath}.`, path: safeFallback.relativePath, ruleId: `run-extract.${missingFallback.reason}`, severity: 'error' }],
+        status: 'domain_error',
+        tool: TOOL_NAME,
+      });
+    }
+    safeOutDir = safeFallback;
+    missingOutput = missingFallback;
   }
 
   if (isCancellationRequested(signal)) {
@@ -125,7 +147,7 @@ export async function handleRunExtract(
   await progress?.report(3, 8, 'Preparing run_extract command preview.');
   const argv = buildExtractArgs(extractInput, safeSource.relativePath, safeOutDir.relativePath);
   const confirmationText = `RUN_EXTRACT ${safeSource.relativePath} TO ${safeOutDir.relativePath}`;
-  if (extractInput.mode === 'preview') {
+  if (mutationMode === 'preview-only') {
     await progress?.report(4, 8, 'run_extract preview complete.');
     return createDiagnosticEnvelope({
       data: { command: process.execPath, args: [resolveRisuCoreBinPath(), ...argv], cwd: workspace.path, expectedConfirmationText: confirmationText, preview: true, source: safeSource.relativePath, target: safeOutDir.relativePath },
@@ -140,7 +162,7 @@ export async function handleRunExtract(
     confirmation: extractInput.confirmation,
     expectedConfirmationText: confirmationText,
     mode: mutationMode,
-    risk: 'high',
+    risk: 'medium',
     targets: [{ intent: 'read-existing', path: safeSource.relativePath }, { intent: 'create-missing', path: safeOutDir.relativePath }],
     toolName: TOOL_NAME,
     workspace,
@@ -206,10 +228,10 @@ function parseRunExtractInput(input: unknown): { input: RunExtractInput; ok: tru
   const sourcePath = getStringField(candidate, 'sourcePath');
   if (!sourcePath) return { ok: false, reason: 'sourcePath must be a non-empty workspace-relative string.' };
   const outDir = getStringField(candidate, 'outDir');
-  if (!outDir) return { ok: false, reason: 'outDir must be a non-empty workspace-relative string.' };
+  // outDir is now optional; if omitted, it will be derived from sourcePath
   const type = getStringField(candidate, 'type');
   if (type !== undefined && !VALID_TYPES.has(type as ExtractType)) return { ok: false, reason: 'type must be character, module, or preset.' };
-  const mode: PatchPlanMutationMode = candidate.mode === 'commit' ? 'commit' : 'preview';
+  const mode: PatchPlanMutationMode = 'commit';
   const risuluaMode = candidate.risuluaMode;
   if (risuluaMode !== undefined && risuluaMode !== 'classic' && risuluaMode !== 'modular') return { ok: false, reason: 'risuluaMode must be classic or modular.' };
   const risuluaRecovery = candidate.risuluaRecovery;

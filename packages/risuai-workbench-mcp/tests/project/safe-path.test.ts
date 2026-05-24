@@ -60,7 +60,23 @@ describe('resolveSafeWorkspacePath', () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('Expected absolute outside path to be rejected.');
-    expect(result.reason).toBe('absolute-path-rejected');
+    expect(result.reason).toBe('path-outside-workspace');
+  });
+
+  it('accepts absolute paths inside the workspace root', async () => {
+    const fixture = await createWorkspaceFixture();
+    const context = await createStartupContext({ root: fixture.root });
+
+    const absoluteInsidePath = path.join(fixture.root, fixture.sourceRelativePath);
+    const result = await resolveSafeWorkspacePath({
+      inputPath: absoluteInsidePath,
+      intent: 'read-existing',
+      workspace: context.workspace,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('Expected in-workspace absolute path to pass.');
+    expect(result.relativePath).toBe('characters/merry/lorebooks/intro.risulorebook');
   });
 
   it('rejects symlink escape for read and write without changing target hash', async () => {

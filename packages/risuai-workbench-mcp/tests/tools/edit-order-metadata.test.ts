@@ -61,18 +61,18 @@ function diagnosticEnvelope(result: DiagnosticEnvelope | MutationResultEnvelope)
 }
 
 describe('handleEditOrder', () => {
-  it('returns preview with patchPlan in preview mode', async () => {
+  it('returns preview with patchPlan in preview-only mutation mode', async () => {
     const fixture = await createOrderFixture();
     const patchStore = createPatchPlanStore();
 
     const result = diagnosticEnvelope(await handleEditOrder(
       {
-        mode: 'preview',
+        mode: 'commit',
         operations: [{ entry: 'combat.risulorebook', index: 1, kind: 'insert' }],
         orderPath: 'characters/merry/lorebooks/_order.json',
       },
       fixture.workspace,
-      'enabled',
+      'preview-only',
       patchStore,
     ));
 
@@ -106,11 +106,11 @@ describe('handleEditOrder', () => {
     expect(order).toEqual(['intro.risulorebook', 'combat.risulorebook', 'background.risulorebook']);
   });
 
-  it('rejects commit in preview-only mode', async () => {
+  it('returns preview in preview-only mode', async () => {
     const fixture = await createOrderFixture();
     const patchStore = createPatchPlanStore();
 
-    const result = mutationResult(await handleEditOrder(
+    const result = diagnosticEnvelope(await handleEditOrder(
       {
         confirmation: { accepted: true },
         mode: 'commit',
@@ -122,7 +122,8 @@ describe('handleEditOrder', () => {
       patchStore,
     ));
 
-    expect(result.status).toBe('rejected');
+    expect(result.status).toBe('ok');
+    expect(result.data).toMatchObject({ preview: true });
   });
 
   it('rejects stale hash', async () => {
@@ -179,18 +180,18 @@ describe('handleEditOrder', () => {
 });
 
 describe('handleEditMetadata', () => {
-  it('returns preview with patchPlan in preview mode', async () => {
+  it('returns preview with patchPlan in preview-only mutation mode', async () => {
     const fixture = await createMetadataFixture();
     const patchStore = createPatchPlanStore();
 
     const result = diagnosticEnvelope(await handleEditMetadata(
       {
-        mode: 'preview',
+        mode: 'commit',
         operations: [{ jsonPointer: '/name', kind: 'json.set', value: 'Updated' }],
         path: 'characters/merry/.risuchar',
       },
       fixture.workspace,
-      'enabled',
+      'preview-only',
       patchStore,
     ));
 
@@ -266,11 +267,11 @@ describe('handleEditMetadata', () => {
     expect(content.name).toBe('Updated');
   });
 
-  it('rejects commit in preview-only mode', async () => {
+  it('returns preview in preview-only mode', async () => {
     const fixture = await createMetadataFixture();
     const patchStore = createPatchPlanStore();
 
-    const result = mutationResult(await handleEditMetadata(
+    const result = diagnosticEnvelope(await handleEditMetadata(
       {
         confirmation: { accepted: true },
         mode: 'commit',
@@ -282,7 +283,8 @@ describe('handleEditMetadata', () => {
       patchStore,
     ));
 
-    expect(result.status).toBe('rejected');
+    expect(result.status).toBe('ok');
+    expect(result.data).toMatchObject({ preview: true });
   });
 
   it('rejects outside workspace path even when outside file exists', async () => {

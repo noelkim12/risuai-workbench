@@ -114,7 +114,7 @@ export async function handleRunScaffold(
   await progress?.report(3, 8, 'Preparing run_scaffold command preview.');
   const argv = buildScaffoldArgs(scaffoldInput, safeOutDir.relativePath);
   const confirmationText = `RUN_SCAFFOLD ${safeOutDir.relativePath}`;
-  if (scaffoldInput.mode === 'preview') {
+  if (mutationMode === 'preview-only') {
     await progress?.report(4, 8, 'run_scaffold preview complete.');
     return createDiagnosticEnvelope({
       data: { command: process.execPath, args: [resolveRisuCoreBinPath(), ...argv], cwd: workspace.path, expectedConfirmationText: confirmationText, preview: true, target: safeOutDir.relativePath },
@@ -129,7 +129,7 @@ export async function handleRunScaffold(
     confirmation: scaffoldInput.confirmation,
     expectedConfirmationText: confirmationText,
     mode: mutationMode,
-    risk: 'high',
+    risk: 'medium',
     targets: [{ intent: 'create-missing', path: safeOutDir.relativePath }],
     toolName: TOOL_NAME,
     workspace,
@@ -196,7 +196,7 @@ function parseRunScaffoldInput(input: unknown): { input: RunScaffoldInput; ok: t
   if (!type || !VALID_TYPES.has(type as ScaffoldType)) return { ok: false, reason: 'type must be one of charx, module, preset.' };
   const name = getStringField(candidate, 'name');
   if (!name) return { ok: false, reason: 'name must be a non-empty string.' };
-  const mode: PatchPlanMutationMode = candidate.mode === 'commit' ? 'commit' : 'preview';
+  const mode: PatchPlanMutationMode = 'commit';
   const risuluaMode = candidate.risuluaMode;
   if (risuluaMode !== undefined && risuluaMode !== 'classic' && risuluaMode !== 'modular') return { ok: false, reason: 'risuluaMode must be classic or modular.' };
   return {

@@ -77,7 +77,7 @@ export async function handleRefreshWiki(input: unknown, workspace: WorkspaceRoot
     resolvedTargets.push({ absolutePath: safePath.absolutePath, beforeHash: await computeFileHash(safePath.absolutePath).catch(() => null), file });
   }
 
-  if (refreshInput.mode === 'preview') {
+  if (mutationMode === 'preview-only') {
     return createDiagnosticEnvelope({
       data: { preview: true, target: refreshInput.target ?? 'all', writePolicy: 'generated-only', writeTargets: requestedFiles.map((file) => file.path) },
       diagnostics: [{ category: 'wiki', id: 'REFRESH_WIKI_PREVIEW', message: 'Generated wiki refresh preview created; no files were changed.', path: null, ruleId: 'wiki.refresh-preview', severity: 'info' }],
@@ -204,7 +204,7 @@ function parseRefreshWikiInput(input: unknown): { input: RefreshWikiInput; ok: t
   const candidate = input as Record<string, unknown>;
   const generatedFiles = Array.isArray(candidate.generatedFiles) ? candidate.generatedFiles as RefreshWikiFileInput[] : undefined;
   if (generatedFiles?.some((file) => typeof file.path !== 'string' || typeof file.content !== 'string')) return { ok: false, reason: 'generatedFiles must contain path/content strings.' };
-  return { input: { confirmation: isConfirmation(candidate.confirmation) ? candidate.confirmation : undefined, generatedFiles, mode: candidate.mode === 'preview' ? 'preview' : 'commit', postValidate: typeof candidate.postValidate === 'boolean' ? candidate.postValidate : undefined, target: typeof candidate.target === 'string' ? candidate.target : undefined, wikiRoot: typeof candidate.wikiRoot === 'string' ? candidate.wikiRoot : undefined }, ok: true };
+  return { input: { confirmation: isConfirmation(candidate.confirmation) ? candidate.confirmation : undefined, generatedFiles, mode: 'commit', postValidate: typeof candidate.postValidate === 'boolean' ? candidate.postValidate : undefined, target: typeof candidate.target === 'string' ? candidate.target : undefined, wikiRoot: typeof candidate.wikiRoot === 'string' ? candidate.wikiRoot : undefined }, ok: true };
 }
 
 function isConfirmation(value: unknown): value is { accepted: boolean; confirmationText?: string } {
