@@ -47,7 +47,10 @@ export async function handleRollbackMutation(input: unknown, workspace: Workspac
   if (!entry || !entry.rollbackAvailable || !entry.rollbackData) {
     return createMutationResultEnvelope({ changedFiles: [], postValidation: { diagnostics: [{ category: 'rollback', id: 'ROLLBACK_INSUFFICIENT_JOURNAL', message: `Mutation ${rollbackInput.mutationId} lacks sufficient inverse state for rollback.`, path: null, ruleId: 'rollback.insufficient-journal', severity: 'error' }], status: 'error' }, resourceLinks: [], status: 'rejected', tool: TOOL_NAME });
   }
-  if (rollbackInput.mode === 'preview') return createDiagnosticEnvelope({ data: { confirmationText: `ROLLBACK ${rollbackInput.mutationId}`, rollbackData: entry.rollbackData }, diagnostics: [], status: 'ok', tool: TOOL_NAME });
+
+  if (mutationMode === 'preview-only') {
+    return createDiagnosticEnvelope({ data: { confirmationText: `ROLLBACK ${rollbackInput.mutationId}`, rollbackData: entry.rollbackData }, diagnostics: [], status: 'ok', tool: TOOL_NAME });
+  }
 
   const targets = entry.rollbackData.kind === 'move-back'
     ? [{ expectedHash: entry.rollbackData.expectedCurrentHash, intent: 'write-existing' as const, path: entry.rollbackData.from }, { intent: 'create-missing' as const, path: entry.rollbackData.to }]
@@ -107,7 +110,7 @@ function parseRollbackMutationInput(input: unknown): { input: RollbackMutationIn
   if (input === null || typeof input !== 'object' || Array.isArray(input)) return { ok: false, reason: 'Input must be an object.' };
   const candidate = input as Record<string, unknown>;
   if (typeof candidate.mutationId !== 'string' || candidate.mutationId.trim() === '') return { ok: false, reason: 'mutationId must be a non-empty string.' };
-  return { input: { confirmation: isConfirmation(candidate.confirmation) ? candidate.confirmation : undefined, mode: candidate.mode === 'preview' ? 'preview' : 'commit', mutationId: candidate.mutationId }, ok: true };
+  return { input: { confirmation: isConfirmation(candidate.confirmation) ? candidate.confirmation : undefined,   mode: 'commit', mutationId: candidate.mutationId }, ok: true };
 }
 
 function isConfirmation(value: unknown): value is { accepted: boolean; confirmationText?: string } { return Boolean(value && typeof value === 'object' && !Array.isArray(value) && 'accepted' in value); }

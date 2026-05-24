@@ -151,7 +151,7 @@ export async function handleEditFrontmatter(
 
   patchStore.savePatchPlan(patchPlan);
 
-  if (editInput.mode === 'preview') {
+  if (mutationMode === 'preview-only') {
     return createDiagnosticEnvelope({
       data: { bodyPreserved: preserveBody, patchPlan, preview: true },
       diagnostics: warnings.map((w) => ({ category: 'frontmatter' as const, id: `FRONTMATTER_${w.code.toUpperCase()}` as string, message: w.message, path: editInput.path as string | null, ruleId: `frontmatter.${w.code}` as string, severity: (w.severity === 'error' ? 'warning' : 'info') as 'warning' | 'info' })),
@@ -249,7 +249,7 @@ function parseEditFrontmatterInput(input: unknown): { input: EditFrontmatterInpu
       return { ok: false, reason: 'Each operation must have a string key.' };
     }
   }
-  const mode: PatchPlanMutationMode = candidate.mode === 'commit' ? 'commit' : 'preview';
+  const mode: PatchPlanMutationMode = 'commit';
   const confirmation = candidate.confirmation as EditFrontmatterInput['confirmation'] | undefined;
   return {
     input: {

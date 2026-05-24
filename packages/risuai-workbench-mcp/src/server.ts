@@ -33,6 +33,7 @@ import {
   handleInspectPath,
   // validate
   handleValidateArtifact,
+  handleValidateCbsSyntax,
   handleValidateFrontmatter,
   handleValidateMetadata,
   handleValidateOrder,
@@ -65,6 +66,7 @@ import {
   handleGuideRisuLuaModule,
   handlePlanStructuredOutputLoop,
   handleQueryButtonActions,
+  handleQueryCbsUsage,
   handleQueryCompositionConflicts,
   handleQueryDeadCodeFindings,
   handleQueryLuaAnalysis,
@@ -132,6 +134,9 @@ export function createMcpServer(startupContext: StartupContext): McpServer {
       },
     },
   );
+
+  enableDebugLogging(server);
+
   const smokeTool = getWorkbenchTool('workbench.smoke');
   const patchStore = createPatchPlanStore();
 
@@ -172,6 +177,125 @@ export function createMcpServer(startupContext: StartupContext): McpServer {
   registerCreativeTools(server, startupContext.workspace, patchStore, startupContext.mutationMode);
 
   return server;
+}
+
+/**
+ * getDebugLogPath 함수.
+ * stdio.ts에서 설정한 세션별 로그 파일 경로를 가져옴.
+ */
+function getDebugLogPath(): string | null {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (process as any).risuMcpLogPath ?? null;
+}
+
+/**
+ * writeLog 함수.
+ * 세션 로그 파일에 한 줄을 추가함. 파일이 없으면 무시.
+ */
+function writeLog(line: string): void {
+  const logPath = getDebugLogPath();
+  if (!logPath) {
+    return;
+  }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { appendFileSync } = require('node:fs');
+    appendFileSync(logPath, `${line}\n`);
+  } catch {
+    // 로그 파일 쓰기 실패는 침묵히 무시 (stderr는 MCP stdout과 혼동될 수 있음)
+  }
+}
+
+/**
+ * enableDebugLogging 함수.
+ * RISU_MCP_DEBUG 환경변수가 설정된 경우 모든 tool 호출/응답을
+ * 세션별 로그 파일 + stderr에 기록함.
+ * stdout는 MCP JSON-RPC 전용으로 유지됨.
+ *
+ * @param server - MCP server 인스턴스
+ */
+function enableDebugLogging(server: McpServer): void {
+  const isDebug = process.env.RISU_MCP_DEBUG && process.env.RISU_MCP_DEBUG !== '0' && process.env.RISU_MCP_DEBUG !== 'false';
+  if (!isDebug) {
+    return;
+  }
+
+  // McpServer 내부의 Server 인스턴스에 접근하여 setRequestHandler를 monkey-patch
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const internalServer = (server as any).server;
+  if (!internalServer || typeof internalServer.setRequestHandler !== 'function') {
+    console.error('[risuai-workbench-mcp] Debug logging: unable to access internal server for request interception');
+    return;
+  }
+
+  const originalSetRequestHandler = internalServer.setRequestHandler.bind(internalServer);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  internalServer.setRequestHandler = function (method: string, handler: (...args: any[]) => any) {
+    // method can be a Zod schema object; extract the RPC method name from it
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const methodName = typeof method === 'string' ? method : (method as any).shape?.method?.value;
+    if (methodName === 'tools/call') {
+      const wrappedHandler = async (...handlerArgs: any[]) => {
+        const timestamp = new Date().toISOString();
+
+        // Extract tool name and arguments from the request
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const request = handlerArgs[0] as any;
+        const toolName = request?.params?.name as string | undefined;
+        const toolInput = request?.params?.arguments as Record<string, unknown> | undefined;
+
+        if (toolName) {
+          const inputJson = toolInput ? JSON.stringify(toolInput, null, 2) : '{}';
+          const logLine = `[${timestamp}] CALL ${toolName}\nINPUT:\n${inputJson}`;
+          console.error(`[RISU_MCP_DEBUG ${timestamp}] CALL ${toolName}`);
+          writeLog(logLine);
+        }
+
+        try {
+          const result = await handler(...handlerArgs);
+
+          if (toolName) {
+            let status = 'ok';
+            let summary = '';
+            let responsePreview = '';
+
+            if (result && typeof result === 'object') {
+              if ('content' in result && Array.isArray(result.content) && result.content[0]?.text) {
+                try {
+                  const parsed = JSON.parse(result.content[0].text);
+                  status = parsed.status || 'ok';
+                  summary = `schema=${parsed.schema || 'none'}`;
+                  responsePreview = JSON.stringify(parsed.data ?? parsed, null, 2).slice(0, 2000);
+                } catch {
+                  summary = `text=${String(result.content[0].text).slice(0, 100)}`;
+                  responsePreview = String(result.content[0].text).slice(0, 500);
+                }
+              }
+            }
+
+            const respLine = `[${timestamp}] RESP ${toolName} status=${status} ${summary}\nPREVIEW:\n${responsePreview}`;
+            console.error(`[RISU_MCP_DEBUG ${timestamp}] RESP ${toolName} status=${status} ${summary}`);
+            writeLog(respLine);
+          }
+
+          return result;
+        } catch (error) {
+          if (toolName) {
+            const message = error instanceof Error ? error.message : String(error);
+            const errLine = `[${timestamp}] ERR  ${toolName}\n${message}`;
+            console.error(`[RISU_MCP_DEBUG ${timestamp}] ERR  ${toolName} ${message}`);
+            writeLog(errLine);
+          }
+          throw error;
+        }
+      };
+
+      return originalSetRequestHandler(method, wrappedHandler);
+    }
+
+    return originalSetRequestHandler(method, handler);
+  };
 }
 
 /**
@@ -475,6 +599,20 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
       return createJsonToolResult(result);
     },
   );
+
+  server.registerTool(
+    'workbench.query_cbs_usage',
+    {
+      description: 'Query CBS tag usage, bracket balance, and reference statistics from source text.',
+      inputSchema: { tag: z.string(), category: z.string().optional() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
+      title: 'Query CBS usage',
+    },
+    async (input: Parameters<typeof handleQueryCbsUsage>[0]) => {
+      const result = await handleQueryCbsUsage(input);
+      return createJsonToolResult(result);
+    },
+  );
 }
 
 /**
@@ -565,8 +703,8 @@ function registerCoreWorkflowTools(server: McpServer, startupContext: StartupCon
     'workbench.run_extract',
     {
       annotations: annotationsForTool('workbench.run_extract'),
-      description: 'Run risu-core extract workflow for character, module, or preset files through mutation safety gates.',
-      inputSchema: { confirmation: confirmationSchema, mode: z.enum(['preview', 'commit']), outDir: z.string(), postValidate: z.boolean().optional(), sourcePath: z.string(), type: z.enum(['character', 'module', 'preset']).optional(), ...risuluaFields },
+      description: 'Extract a .risum (module), .risuchar (character), or .risup (preset) file into a canonical workspace directory. Use this tool when the user mentions a risum/charx/risup file path and asks to extract, unpack, open, or import it. If outDir is omitted, the output directory defaults to the same directory as the source file with the filename (without extension). Risk: medium.',
+      inputSchema: { confirmation: confirmationSchema, mode: z.enum(['preview', 'commit']), outDir: z.string().optional().describe('Output directory path (workspace-relative; defaults to source filename without extension)'), postValidate: z.boolean().optional(), sourcePath: z.string(), type: z.enum(['character', 'module', 'preset']).optional(), ...risuluaFields },
       outputSchema: workbenchJsonOutputSchema,
       title: 'Run extract workflow',
     },
@@ -583,7 +721,7 @@ function registerCoreWorkflowTools(server: McpServer, startupContext: StartupCon
   server.registerTool(
     'workbench.run_scaffold',
     {
-      description: 'Run risu-core scaffold workflow to generate a new charx, module, or preset workspace.',
+      description: 'Generate a new charx, module, or preset workspace skeleton using risu-core scaffold. Use this tool when the user asks to create, initialize, or scaffold a new RisuAI character, module, or preset project. If outDir is omitted, the output directory defaults to the project name in the workspace root. Risk: medium.',
       inputSchema: { confirmation: confirmationSchema, creator: z.string().optional(), mode: z.enum(['preview', 'commit']), name: z.string(), namespace: z.string().optional(), outDir: z.string().optional(), postValidate: z.boolean().optional(), risuluaMode: z.enum(['classic', 'modular']).optional(), type: z.enum(['charx', 'module', 'preset']) },
       outputSchema: workbenchJsonOutputSchema,
       title: 'Run scaffold workflow',
@@ -863,6 +1001,20 @@ function registerInspectValidateTools(server: McpServer, workspace: WorkspaceRoo
     },
     async (input: { path: string }) => {
       const result = await handleValidateFrontmatter(input, workspace);
+      return createJsonToolResult(result);
+    },
+  );
+
+  server.registerTool(
+    'workbench.validate_cbs_syntax',
+    {
+      description: 'Validate CBS syntax, tag usage, and bracket balance in CBS content.',
+      inputSchema: { path: z.string().optional(), sourceText: z.string() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
+      title: 'Validate CBS syntax',
+    },
+    async (input: { path?: string; sourceText: string }) => {
+      const result = await handleValidateCbsSyntax(input);
       return createJsonToolResult(result);
     },
   );

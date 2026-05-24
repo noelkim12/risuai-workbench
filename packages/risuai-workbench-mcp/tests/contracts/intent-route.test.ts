@@ -188,6 +188,148 @@ describe('intent route contract', () => {
     expect(parsed.nextStep).toBe('inspect');
   });
 
+  it('accepts route guidance fields for recommended, discouraged, domain, and signal metadata', () => {
+    const parsed = intentRouteResultSchema.parse({
+      allowedTools: ['workbench.inspect_path', 'workbench.validate_frontmatter'],
+      blockedTools: ['workbench.apply_patch_plan'],
+      commitAllowed: false,
+      confidence: 0.86,
+      discouragedTools: ['workbench.edit_frontmatter'],
+      domainTags: ['lorebook', 'frontmatter'],
+      explanation: 'Frontmatter preview request with lorebook domain signals.',
+      intent: 'artifact.frontmatter.preview',
+      missingInputs: [],
+      mutationRequested: true,
+      nextStep: 'preview',
+      recommendedTools: ['workbench.inspect_path', 'workbench.validate_frontmatter', 'workbench.suggest_frontmatter_patch'],
+      requiredEvidence: ['resolved target path', 'current frontmatter fields'],
+      risk: 'preview_only',
+      routeId: 'route_guidance',
+      routingSignals: ['mutation', 'frontmatter', 'domain:lorebook'],
+      schema: 'risuai-workbench-mcp.intent-route',
+      schemaVersion: '0.1.0',
+      stopConditions: ['preview_required', 'confirmation_required'],
+      targetKind: 'path',
+    });
+
+    expect(parsed.recommendedTools).toEqual([
+      'workbench.inspect_path',
+      'workbench.validate_frontmatter',
+      'workbench.suggest_frontmatter_patch',
+    ]);
+    expect(parsed.discouragedTools).toEqual(['workbench.edit_frontmatter']);
+    expect(parsed.domainTags).toEqual(['lorebook', 'frontmatter']);
+    expect(parsed.routingSignals).toEqual(['mutation', 'frontmatter', 'domain:lorebook']);
+  });
+
+  it('accepts advisory mutation mode as part of the compiled workflow state', () => {
+    const parsed = intentRouteResultSchema.parse({
+      allowedTools: ['workbench.edit_frontmatter'],
+      blockedTools: [],
+      commitAllowed: false,
+      confidence: 0.88,
+      discouragedTools: [],
+      domainTags: ['frontmatter'],
+      explanation: 'Explicit structured frontmatter update can use a guarded direct mutation tool.',
+      intent: 'artifact.frontmatter.preview',
+      missingInputs: [],
+      mutationMode: 'guarded_direct',
+      mutationRequested: true,
+      nextStep: 'apply',
+      recommendedTools: ['workbench.edit_frontmatter'],
+      requiredEvidence: [
+        'resolved workspace-relative path',
+        'explicit frontmatter field name',
+        'explicit new value',
+      ],
+      risk: 'write_modify',
+      routeId: 'route_mutation_mode',
+      routingSignals: ['mutation', 'direct_structured_edit', 'domain:frontmatter'],
+      schema: 'risuai-workbench-mcp.intent-route',
+      schemaVersion: '0.1.0',
+      stopConditions: [],
+      targetKind: 'path',
+    });
+
+    expect(parsed.mutationMode).toBe('guarded_direct');
+  });
+
+  it('defaults mutationMode to none when omitted for backward-compatible parsing', () => {
+    const parsed = intentRouteResultSchema.parse({
+      allowedTools: ['workbench.inspect_path'],
+      blockedTools: ['workbench.apply_patch_plan'],
+      commitAllowed: false,
+      confidence: 0.83,
+      explanation: 'Inspection request.',
+      intent: 'artifact.inspect',
+      missingInputs: [],
+      mutationRequested: false,
+      nextStep: 'inspect',
+      requiredEvidence: [],
+      risk: 'read_only',
+      routeId: 'route_mutation_mode_default',
+      schema: 'risuai-workbench-mcp.intent-route',
+      schemaVersion: '0.1.0',
+      stopConditions: [],
+      targetKind: 'path',
+    });
+
+    expect(parsed.mutationMode).toBe('none');
+  });
+
+  it('defaults route guidance fields to empty arrays when omitted', () => {
+    const parsed = intentRouteResultSchema.parse({
+      allowedTools: ['workbench.inspect_path'],
+      blockedTools: ['workbench.apply_patch_plan'],
+      commitAllowed: false,
+      confidence: 0.83,
+      explanation: 'Inspection request.',
+      intent: 'artifact.inspect',
+      missingInputs: [],
+      mutationRequested: false,
+      nextStep: 'inspect',
+      requiredEvidence: [],
+      risk: 'read_only',
+      routeId: 'route_defaults',
+      schema: 'risuai-workbench-mcp.intent-route',
+      schemaVersion: '0.1.0',
+      stopConditions: [],
+      targetKind: 'path',
+    });
+
+    expect(parsed.recommendedTools).toEqual([]);
+    expect(parsed.discouragedTools).toEqual([]);
+    expect(parsed.domainTags).toEqual([]);
+    expect(parsed.routingSignals).toEqual([]);
+  });
+
+  it('rejects non-array route guidance fields', () => {
+    expect(() =>
+      intentRouteResultSchema.parse({
+        allowedTools: [],
+        blockedTools: [],
+        commitAllowed: false,
+        confidence: 0.5,
+        discouragedTools: 'workbench.edit_order',
+        domainTags: [],
+        explanation: 'test',
+        intent: 'unknown',
+        missingInputs: [],
+        mutationRequested: false,
+        nextStep: 'clarify',
+        recommendedTools: [],
+        requiredEvidence: [],
+        risk: 'read_only',
+        routeId: 'route_invalid_guidance',
+        routingSignals: [],
+        schema: 'risuai-workbench-mcp.intent-route',
+        schemaVersion: '0.1.0',
+        stopConditions: [],
+        targetKind: 'unknown',
+      }),
+    ).toThrow();
+  });
+
   it('rejects intent route result with wrong schema literal', () => {
     expect(() =>
       intentRouteResultSchema.parse({
@@ -358,14 +500,19 @@ describe('intent route contract', () => {
       blockedTools: ['workbench.apply_patch_plan'],
       commitAllowed: false,
       confidence: 0.85,
+      discouragedTools: [],
+      domainTags: [],
       explanation: 'Read-only inspect request.',
       intent: 'artifact.inspect',
       missingInputs: [],
+      mutationMode: 'none',
       mutationRequested: false,
       nextStep: 'inspect',
+      recommendedTools: ['workbench.inspect_path'],
       requiredEvidence: [],
       risk: 'read_only',
       routeId: 'route_abc123',
+      routingSignals: ['inspect'],
       stopConditions: [],
       targetKind: 'path',
     });

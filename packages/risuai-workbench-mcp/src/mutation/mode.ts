@@ -5,7 +5,7 @@
 
 export type MutationMode = 'enabled' | 'generated-only' | 'preview-only';
 
-export const DEFAULT_MUTATION_MODE: MutationMode = 'preview-only';
+export const DEFAULT_MUTATION_MODE: MutationMode = 'enabled';
 
 /**
  * isMutationMode 함수.

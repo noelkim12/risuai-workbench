@@ -18,6 +18,7 @@ export type WorkbenchIntent =
   | 'artifact.frontmatter.preview'
   | 'artifact.order.preview'
   | 'wiki.refresh.preview'
+  | 'core.scaffold.preview'
   | 'analyze.variable_flow'
   | 'analyze.lua_handler'
   | 'creative.idea_to_patch'
@@ -58,6 +59,13 @@ export type RouteNextStep =
   | 'post_validate'
   | 'answer';
 
+export type RouteMutationMode =
+  | 'none'
+  | 'guarded_direct'
+  | 'preview_required'
+  | 'confirmation_required'
+  | 'blocked';
+
 export type RouteStopCondition =
   | 'missing_request'
   | 'missing_target'
@@ -84,6 +92,7 @@ export const workbenchIntentSchema = z.enum([
   'artifact.frontmatter.preview',
   'artifact.order.preview',
   'wiki.refresh.preview',
+  'core.scaffold.preview',
   'analyze.variable_flow',
   'analyze.lua_handler',
   'creative.idea_to_patch',
@@ -126,6 +135,14 @@ export const routeNextStepSchema = z.enum([
   'apply',
   'post_validate',
   'answer',
+]);
+
+export const routeMutationModeSchema = z.enum([
+  'none',
+  'guarded_direct',
+  'preview_required',
+  'confirmation_required',
+  'blocked',
 ]);
 
 export const routeStopConditionSchema = z.enum([
@@ -178,11 +195,16 @@ export interface IntentRouteResult {
   targetKind: TargetKind;
   mutationRequested: boolean;
   commitAllowed: boolean;
+  mutationMode: RouteMutationMode;
   nextStep: RouteNextStep;
   allowedTools: readonly string[];
+  recommendedTools: readonly string[];
+  discouragedTools: readonly string[];
   blockedTools: readonly string[];
   requiredEvidence: readonly string[];
   missingInputs: readonly string[];
+  domainTags: readonly string[];
+  routingSignals: readonly string[];
   stopConditions: readonly RouteStopCondition[];
   explanation: string;
 }
@@ -197,11 +219,16 @@ export const intentRouteResultSchema = z.object({
   targetKind: targetKindSchema,
   mutationRequested: z.boolean(),
   commitAllowed: z.boolean(),
+  mutationMode: routeMutationModeSchema.default('none'),
   nextStep: routeNextStepSchema,
   allowedTools: z.array(z.string()),
+  recommendedTools: z.array(z.string()).default([]),
+  discouragedTools: z.array(z.string()).default([]),
   blockedTools: z.array(z.string()),
   requiredEvidence: z.array(z.string()),
   missingInputs: z.array(z.string()),
+  domainTags: z.array(z.string()).default([]),
+  routingSignals: z.array(z.string()).default([]),
   stopConditions: z.array(routeStopConditionSchema),
   explanation: z.string(),
 }).catchall(z.unknown());
@@ -237,14 +264,19 @@ export function createIntentRouteResult(
     blockedTools: input.blockedTools,
     commitAllowed: input.commitAllowed,
     confidence: input.confidence,
+    discouragedTools: input.discouragedTools,
+    domainTags: input.domainTags,
     explanation: input.explanation,
     intent: input.intent,
     missingInputs: input.missingInputs,
+    mutationMode: input.mutationMode,
     mutationRequested: input.mutationRequested,
     nextStep: input.nextStep,
+    recommendedTools: input.recommendedTools,
     requiredEvidence: input.requiredEvidence,
     risk: input.risk,
     routeId: input.routeId,
+    routingSignals: input.routingSignals,
     schema: 'risuai-workbench-mcp.intent-route',
     schemaVersion: '0.1.0',
     stopConditions: input.stopConditions,

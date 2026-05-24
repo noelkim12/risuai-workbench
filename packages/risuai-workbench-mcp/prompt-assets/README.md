@@ -24,6 +24,7 @@ Source of truth 경계는 다음과 같습니다.
 | `workbench.review_relationship_network` | Review relationship graph communities and edges. | `workbench.review_relationship_network.md` |
 | `workbench.review_prompt_chain` | Review prompt dependency chain and conflicts. | `workbench.review_prompt_chain.md` |
 | `workbench.explain_analyze_diagnostic` | Explain analyze output diagnostic and evidence. | `workbench.explain_analyze_diagnostic.md` |
+| `workbench.create_project` | Guide scaffold workflow for creating new RisuAI charx/module/preset projects. | `workbench.create_project.md` |
 | `workbench.creative.brainstorm_from_context` | Creative workflow prompt; see docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md §Prompt 목록. | `workbench.creative.brainstorm_from_context.md` |
 | `workbench.creative.scamper_lorebook_entries` | Creative workflow prompt; see docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md §Prompt 목록. | `workbench.creative.scamper_lorebook_entries.md` |
 | `workbench.creative.scamper_prompt_chain_variants` | Creative workflow prompt; see docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md §Prompt 목록. | `workbench.creative.scamper_prompt_chain_variants.md` |

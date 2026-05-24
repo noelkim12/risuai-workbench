@@ -18,6 +18,10 @@
       "types": "./dist/cli.d.ts",
       "default": "./dist/cli.js"
     },
+    "./analyzer/diagnostics": {
+      "types": "./dist/analyzer/diagnostics/index.d.ts",
+      "default": "./dist/analyzer/diagnostics/index.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

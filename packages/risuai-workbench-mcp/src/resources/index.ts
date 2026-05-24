@@ -13,6 +13,7 @@ import { buildRegistrySnapshot, WORKBENCH_REGISTRY, type WorkbenchResourceRegist
 import type { WorkspaceRootStatus } from '../project/resolve-root';
 import { resolveSafeWorkspacePath } from '../project/safe-path';
 import type { PatchPlanStore } from '../mutation/patch-store';
+import { readCbsResource } from './cbs-reference';
 
 interface ResourcePayload {
   schema: 'risuai-workbench-mcp.resource';
@@ -185,6 +186,16 @@ export async function readWorkbenchResource(
 
   if (entry.name === 'workbench.resource.wiki') {
     return readWikiResource(entry.name, uri, workspace);
+  }
+
+  if (entry.name === 'workbench.resource.cbs_reference') {
+    const cbsResult = readCbsResource(uriText);
+    if (cbsResult) {
+      return cbsResult as ReadResourceResult;
+    }
+    return jsonResource(uriText, buildStablePayload(entry.name, uriText, 'not_found', 'CBS reference resource was not found.', {
+      requestedId: decodeLastPathSegment(uri),
+    }));
   }
 
   if (entry.name.startsWith('workbench.creative.resource.')) {
@@ -469,3 +480,5 @@ function decodeWikiPath(uri: URL): string {
   const pathPart = uri.pathname.replace(/^\//, '');
   return decodeURIComponent(pathPart || 'index.md');
 }
+
+

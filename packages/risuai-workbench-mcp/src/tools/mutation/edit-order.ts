@@ -122,7 +122,7 @@ export async function handleEditOrder(
 
   patchStore.savePatchPlan(patchPlan);
 
-  if (editInput.mode === 'preview') {
+  if (mutationMode === 'preview-only') {
     return createDiagnosticEnvelope({
       data: { patchPlan, preview: true },
       diagnostics: [],
@@ -219,7 +219,7 @@ function parseEditOrderInput(input: unknown): { input: EditOrderInput; ok: true 
       return { ok: false, reason: 'Each operation must have a string entry.' };
     }
   }
-  const mode: PatchPlanMutationMode = candidate.mode === 'commit' ? 'commit' : 'preview';
+  const mode: PatchPlanMutationMode = 'commit';
   const confirmation = candidate.confirmation as EditOrderInput['confirmation'] | undefined;
   return {
     input: {
