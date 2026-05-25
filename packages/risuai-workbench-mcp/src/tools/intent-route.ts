@@ -79,7 +79,22 @@ const PREVIEW_EVIDENCE_KEYWORDS = [
 const APPLY_COMMIT_KEYWORDS = ['apply', 'commit', 'confirm', '적용'];
 const PATCH_PREVIEW_KEYWORDS = ['patch', 'preview', 'diff', 'plan'];
 const VARIABLE_FLOW_KEYWORDS = ['variable', 'flow', 'read', 'write'];
-const LUA_KEYWORDS = ['lua', 'handler', 'call graph', 'state access', 'risulua'];
+const LUA_KEYWORDS = [
+  'lua',
+  'handler',
+  'call graph',
+  'state access',
+  'risulua',
+  'host function',
+  'host api',
+  'runtime api',
+  'getstate',
+  'setstate',
+  'getchatvar',
+  'setchatvar',
+  'id/async',
+  'access rules',
+];
 const ORDER_KEYWORDS = ['_order.json', 'order', 'reorder', '순서'];
 const FRONTMATTER_KEYWORDS = ['frontmatter', 'yaml', 'metadata header', 'meta field', '프론트매터'];
 const WIKI_KEYWORDS = ['wiki', 'refresh wiki', 'update wiki'];
@@ -90,7 +105,19 @@ const INSPECT_KEYWORDS = ['inspect', 'review', 'look at', 'check', 'examine'];
 const LOREBOOK_DOMAIN_KEYWORDS = ['lorebook', 'risulorebook', '로어북', 'entry', 'entries'];
 const CHARACTER_DOMAIN_KEYWORDS = ['risuchar', 'charx', 'character card', '캐릭터', '카드'];
 const MODULE_DOMAIN_KEYWORDS = ['risumodule', 'module', '모듈'];
-const RISULUA_DOMAIN_KEYWORDS = ['risulua', '.risulua', 'lua/main.risulua'];
+const RISULUA_DOMAIN_KEYWORDS = [
+  'risulua',
+  '.risulua',
+  'lua/main.risulua',
+  'host function',
+  'host api',
+  'runtime api',
+  'getstate',
+  'setstate',
+  'getchatvar',
+  'setchatvar',
+  'id/async',
+];
 const CBS_DOMAIN_KEYWORDS = [
   'cbs', 'when', 'condition', '조건',
   'getvar', 'setvar', 'addvar', 'tempvar',
@@ -394,11 +421,12 @@ function domainRecommendedTools(domainTags: readonly string[]): readonly string[
   }
   if (domainTags.includes('risulua')) {
     tools.push(
+      'workbench.query_risulua_api',
       'workbench.query_lua_analysis',
       'workbench.query_lua_call_graph',
       'workbench.query_lua_state_access',
-      'workbench.explain_risulua_workspace',
       'workbench.explain_risulua_runtime_api',
+      'workbench.explain_risulua_workspace',
     );
   }
   if (domainTags.includes('order')) {
@@ -653,6 +681,8 @@ function classifyIntent(
       routingSignals: ['analyze', 'lua', ...constraints.domainTags.map((tag) => `domain:${tag}`)],
       recommendedTools: limitRecommended(unionSets([
         [
+          'workbench.query_risulua_api',
+          'workbench.explain_risulua_runtime_api',
           'workbench.query_lua_analysis',
           'workbench.query_lua_call_graph',
           'workbench.query_lua_state_access',

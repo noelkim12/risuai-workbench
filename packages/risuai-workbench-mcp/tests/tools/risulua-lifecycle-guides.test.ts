@@ -56,6 +56,7 @@ describe('RisuLua lifecycle guide tools', () => {
     expect(JSON.stringify(result.data)).toContain('Every host function takes id as the first argument');
     expect(JSON.stringify(result.data)).toContain(':await()');
     expect(JSON.stringify(result.data)).toContain('LowLevel');
+    expect(JSON.stringify(result.data)).toContain('risuai-workbench://risulua/index');
     expect(JSON.stringify(result.data)).toContain('docs/reference/LUA_FOR_LLM.md');
     expect(JSON.stringify(result.data)).toContain('docs/risuai-lua.d.ts');
     expect(JSON.stringify(result.data)).toContain('packages/core/src/domain/analyze/lua-api.ts');
@@ -132,6 +133,7 @@ describe('RisuLua lifecycle guide tools', () => {
       'workbench.explain_lorebook_prompt_injection',
       'workbench.explain_risulua_runtime_api',
       'workbench.explain_risulua_workspace',
+      'workbench.query_risulua_api',
       'workbench.guide_risulua_module',
       'workbench.plan_structured_output_loop',
     ].sort());

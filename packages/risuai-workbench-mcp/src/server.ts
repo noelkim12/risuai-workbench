@@ -74,12 +74,14 @@ import {
   handleQueryLuaStateAccess,
   handleQueryPromptChain,
   handleQueryRelationshipNetwork,
+  handleQueryRisuLuaApi,
   handleQueryTokenBudget,
   handleQueryVariable,
   handleQueryVariableFlow,
   handleRefreshAnalyzeSnapshot,
   // wiki
   handleDiffWiki,
+  handleEnsureWikiRoot,
   handlePlanWikiUpdate,
   handleRefreshWiki,
   handleSearchWiki,
@@ -559,6 +561,21 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
   );
 
   server.registerTool(
+    'workbench.query_risulua_api',
+    {
+      annotations: annotationsForTool('workbench.query_risulua_api'),
+      description: 'Query one RisuAI Lua host function/global with access tier, category, signature, examples, and reference URIs.',
+      inputSchema: { category: z.string().optional(), symbol: z.string() },
+      outputSchema: diagnosticEnvelopeOutputSchema,
+      title: 'Query RisuLua API',
+    },
+    async (input: Parameters<typeof handleQueryRisuLuaApi>[0]) => {
+      const result = await handleQueryRisuLuaApi(input);
+      return createJsonToolResult(result);
+    },
+  );
+
+  server.registerTool(
     'workbench.explain_lorebook_prompt_injection',
     {
       description: 'Explain Lorebook as runtime prompt injection and context activation, including decorator effects.',
@@ -650,6 +667,21 @@ function registerAdvancedMutationTools(server: McpServer, startupContext: Startu
     },
     async (input: unknown) => {
       const result = await handleDeleteArtifact(input, startupContext.workspace, startupContext.mutationMode);
+      return createJsonToolResult(result);
+    },
+  );
+
+  server.registerTool(
+    'workbench.ensure_wiki_root',
+    {
+      annotations: annotationsForTool('workbench.ensure_wiki_root'),
+      description: 'Create the minimal generated wiki root files when they are missing.',
+      inputSchema: { confirmation: confirmationSchema, mode: z.enum(['preview', 'commit']), postValidate: z.boolean().optional(), wikiRoot: z.string().optional() },
+      outputSchema: workbenchJsonOutputSchema,
+      title: 'Ensure wiki root',
+    },
+    async (input: unknown) => {
+      const result = await handleEnsureWikiRoot(input, startupContext.workspace, startupContext.mutationMode);
       return createJsonToolResult(result);
     },
   );

@@ -15,6 +15,7 @@ import { parseVariableContent } from '@/domain/custom-extension/extensions/varia
 import { dirExists, readJsonIfExists, readTextIfExists } from '@/node/fs-helpers';
 import { listJsonFilesRecursive, resolveOrderedFiles } from '@/node/json-listing';
 import { isPlainObject } from '../../shared';
+import { discoverLuaAnalysisFiles, discoverLuaSourceFiles } from '../shared/lua-source-discovery';
 import { type ElementCBSData, type HtmlResult, type VariablesResult } from './types';
 
 function stripJsonExt(fileName: string): string {
@@ -586,47 +587,49 @@ export function loadLuaArtifacts(
   charxJsonPath: string | null,
 ): LuaAnalysisArtifact[] {
   try {
-    const luaDir = path.join(outputDir, 'lua');
-    if (!fs.existsSync(luaDir)) return [];
-
-    // Canonical .risulua files first, then fallback to .lua
-    const allFiles = fs.readdirSync(luaDir);
-    const risuFiles = allFiles.filter((file) => file.toLowerCase().endsWith('.risulua'));
-    const luaFiles = risuFiles.length > 0
-      ? risuFiles
-      : allFiles.filter((file) => file.toLowerCase().endsWith('.lua'));
+    const luaFiles = discoverLuaSourceFiles(outputDir);
     if (luaFiles.length === 0) return [];
 
-    return luaFiles.map((file) => {
-      const filePath = path.join(luaDir, file);
-      const source = fs.readFileSync(filePath, 'utf-8');
-      let charxData: Record<string, unknown> | undefined;
-      if (charxJsonPath && fs.existsSync(charxJsonPath)) {
-        const raw = JSON.parse(fs.readFileSync(charxJsonPath, 'utf-8'));
-        charxData = raw as Record<string, unknown>;
-      }
-      return analyzeLuaSource({ filePath, source, charxData });
+    let charxData: Record<string, unknown> | undefined;
+    if (charxJsonPath && fs.existsSync(charxJsonPath)) {
+      const raw = JSON.parse(fs.readFileSync(charxJsonPath, 'utf-8'));
+      charxData = raw as Record<string, unknown>;
+    }
+
+    return luaFiles.map((luaFile) => {
+      const source = fs.readFileSync(luaFile.filePath, 'utf-8');
+      const artifact = analyzeLuaSource({ filePath: luaFile.filePath, source, charxData });
+      const elementName = stripLuaSourceExtension(luaFile.relativePath);
+      return {
+        ...artifact,
+        relativePath: luaFile.relativePath,
+        splitRole: luaFile.role,
+        elementCbs: artifact.elementCbs.map((entry) => ({
+          ...entry,
+          elementName,
+        })),
+      };
     });
   } catch {
     return [];
   }
 }
 
+function stripLuaSourceExtension(relativePath: string): string {
+  return relativePath.replace(/\.(risulua|lua)$/iu, '');
+}
+
 /** 이전에 생성된 Lua 분석 JSON(*.analysis.json)에서 CBS 데이터를 임포트한다. */
 export function importLuaAnalysis(outputDir: string): ElementCBSData[] {
   try {
-    const luaDir = path.join(outputDir, 'lua');
-    if (!fs.existsSync(luaDir)) return [];
-
-    const jsonFiles = fs.readdirSync(luaDir).filter((file) => file.endsWith('.analysis.json'));
+    const jsonFiles = discoverLuaAnalysisFiles(outputDir);
     if (jsonFiles.length === 0) return [];
 
     return jsonFiles.flatMap((file) => {
       try {
-        const raw = JSON.parse(fs.readFileSync(path.join(luaDir, file), 'utf8')) as {
+        const raw = JSON.parse(fs.readFileSync(file.filePath, 'utf8')) as {
           stateVars?: Record<string, { readBy?: unknown[]; writtenBy?: unknown[] }>;
         };
-        const baseName = path.basename(file, '.analysis.json');
 
         const reads = new Set<string>();
         const writes = new Set<string>();
@@ -660,7 +663,7 @@ export function importLuaAnalysis(outputDir: string): ElementCBSData[] {
         return [
           {
             elementType: ELEMENT_TYPES.LUA,
-            elementName: baseName,
+            elementName: file.elementName,
             reads,
             writes,
             readersByVar,

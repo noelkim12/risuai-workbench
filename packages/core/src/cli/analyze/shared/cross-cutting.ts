@@ -6,6 +6,7 @@ import { listJsonFilesRecursive, resolveOrderedFiles } from '@/node/json-listing
 import { parseLorebookContent, type LorebookContent } from '@/domain/custom-extension/extensions/lorebook';
 import { parseRegexContent, type CanonicalRegexEntry } from '@/domain/regex';
 import { isPlainRecord } from '@/shared/guards';
+import { discoverLuaSourceFiles } from './lua-source-discovery';
 
 type TokenBudgetComponent = {
   category: string;
@@ -193,20 +194,12 @@ export function collectLuaTokenComponents(
   outputDir: string,
   category: string,
 ): TokenBudgetComponent[] {
-  const luaDir = path.join(outputDir, 'lua');
-  if (!dirExists(luaDir)) return [];
+  const luaFiles = discoverLuaSourceFiles(outputDir);
 
-  const allFiles = fs.readdirSync(luaDir);
-  // Canonical .risulua files first, then fallback to .lua
-  const risuFiles = allFiles.filter((fileName) => fileName.toLowerCase().endsWith('.risulua'));
-  const luaFiles = risuFiles.length > 0
-    ? risuFiles
-    : allFiles.filter((fileName) => fileName.toLowerCase().endsWith('.lua'));
-
-  return luaFiles.map((fileName) => ({
+  return luaFiles.map((file) => ({
     category,
-    name: fileName,
-    text: readTextIfExists(path.join(luaDir, fileName)),
+    name: file.relativePath,
+    text: readTextIfExists(file.filePath),
     alwaysActive: false,
   }));
 }

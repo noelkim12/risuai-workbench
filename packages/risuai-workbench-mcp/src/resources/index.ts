@@ -14,6 +14,7 @@ import type { WorkspaceRootStatus } from '../project/resolve-root';
 import { resolveSafeWorkspacePath } from '../project/safe-path';
 import type { PatchPlanStore } from '../mutation/patch-store';
 import { readCbsResource } from './cbs-reference';
+import { readRisuLuaResource } from './risulua-reference';
 
 interface ResourcePayload {
   schema: 'risuai-workbench-mcp.resource';
@@ -194,6 +195,16 @@ export async function readWorkbenchResource(
       return cbsResult as ReadResourceResult;
     }
     return jsonResource(uriText, buildStablePayload(entry.name, uriText, 'not_found', 'CBS reference resource was not found.', {
+      requestedId: decodeLastPathSegment(uri),
+    }));
+  }
+
+  if (entry.name === 'workbench.resource.risulua_reference') {
+    const risuLuaResult = readRisuLuaResource(uriText);
+    if (risuLuaResult) {
+      return risuLuaResult as ReadResourceResult;
+    }
+    return jsonResource(uriText, buildStablePayload(entry.name, uriText, 'not_found', 'RisuLua reference resource was not found.', {
       requestedId: decodeLastPathSegment(uri),
     }));
   }

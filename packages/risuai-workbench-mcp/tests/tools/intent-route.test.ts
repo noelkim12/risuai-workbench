@@ -433,6 +433,28 @@ describe('handleRouteIntent', () => {
       expect(route.targetKind).toBe('lua_handler');
     });
 
+    it('rule 7: RisuLua host function docs → analyze.lua_handler with API guidance', async () => {
+      const result = await handleRouteIntent({
+        request: 'Explain the RisuLua getState host function and its id/async access rules',
+      });
+
+      const route = result.data!.route;
+      expect(route.intent).toBe('analyze.lua_handler');
+      expect(route.risk).toBe('read_only');
+      expect(route.targetKind).toBe('lua_handler');
+      expect(route.domainTags).toContain('risulua');
+      expect(route.routingSignals).toEqual(expect.arrayContaining([
+        'analyze',
+        'lua',
+        'domain:risulua',
+      ]));
+      expect(route.recommendedTools).toEqual(expect.arrayContaining([
+        'workbench.query_risulua_api',
+        'workbench.explain_risulua_runtime_api',
+        'workbench.query_lua_analysis',
+      ]));
+    });
+
     it('rule 8: order language → artifact.order.preview', async () => {
       const result = await handleRouteIntent({
         request: "Reorder the lorebook entries",
@@ -659,6 +681,25 @@ describe('handleRouteIntent', () => {
         recommendedIncludes: ['workbench.query_lua_analysis', 'workbench.query_lua_call_graph'],
         domainTagsInclude: ['risulua'],
         routingSignalsInclude: ['analyze'],
+      },
+      {
+        name: 'RisuLua host function docs request recommends runtime API tools',
+        input: {
+          request: 'Explain the RisuLua getState host function and its id/async access rules',
+        },
+        expectedIntent: 'analyze.lua_handler',
+        expectedNextStep: 'analyze',
+        expectedRisk: 'read_only',
+        expectedTargetKind: 'lua_handler',
+        expectedMutationRequested: false,
+        expectedCommitAllowed: false,
+        recommendedIncludes: [
+          'workbench.query_risulua_api',
+          'workbench.explain_risulua_runtime_api',
+          'workbench.query_lua_analysis',
+        ],
+        domainTagsInclude: ['risulua'],
+        routingSignalsInclude: ['analyze', 'lua', 'domain:risulua'],
       },
       {
         name: 'Lorebook frontmatter mutation routes to specific frontmatter preview (classifier: fix wording yields mutationRequested false)',

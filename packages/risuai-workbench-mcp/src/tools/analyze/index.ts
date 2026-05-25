@@ -26,3 +26,4 @@ export {
   handlePlanStructuredOutputLoop,
 } from './risulua-lifecycle-guides';
 export { handleQueryCbsUsage } from './query-cbs-usage';
+export { handleQueryRisuLuaApi } from './query-risulua-api';

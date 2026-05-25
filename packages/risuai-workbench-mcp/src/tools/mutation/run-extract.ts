@@ -61,7 +61,7 @@ export async function handleRunExtract(
   progress?: ProgressReporter,
   signal?: AbortSignal,
 ): Promise<RunExtractToolResult> {
-  await progress?.report(1, 8, 'Validating run_extract input.');
+  await progress?.report(1, 9, 'Validating run_extract input.');
   const unknownFieldResult = createUnknownFieldDiagnosticEnvelope({
     allowedKeys: ['sourcePath', 'type', 'outDir', 'risuluaMode', 'risuluaRecovery', 'risuluaSplit', 'risuluaDomainGeneration', 'mode', 'confirmation', 'postValidate'],
     input,
@@ -87,7 +87,7 @@ export async function handleRunExtract(
   }
 
   const extractInput = parsed.input;
-  await progress?.report(2, 8, 'Resolving run_extract workspace paths.');
+  await progress?.report(2, 9, 'Resolving run_extract workspace paths.');
   const safeSource = await resolveSafeWorkspacePath({ inputPath: extractInput.sourcePath, intent: 'read-existing', workspace });
   if (!safeSource.ok) {
     return createDiagnosticEnvelope({
@@ -144,26 +144,28 @@ export async function handleRunExtract(
     });
   }
 
-  await progress?.report(3, 8, 'Preparing run_extract command preview.');
+  await progress?.report(3, 9, 'Preparing run_extract command preview.');
+  const defaultWikiRelativePath = defaultPostExtractWikiPath(safeOutDir.relativePath);
   const argv = buildExtractArgs(extractInput, safeSource.relativePath, safeOutDir.relativePath);
-  const confirmationText = `RUN_EXTRACT ${safeSource.relativePath} TO ${safeOutDir.relativePath}`;
+  const analyzeArgv = buildPostExtractAnalyzeArgs(extractInput, safeOutDir.relativePath, defaultWikiRelativePath);
+  const confirmationText = `RUN_EXTRACT ${safeSource.relativePath} TO ${safeOutDir.relativePath} WITH WIKI ${defaultWikiRelativePath}`;
   if (mutationMode === 'preview-only') {
-    await progress?.report(4, 8, 'run_extract preview complete.');
+    await progress?.report(4, 9, 'run_extract preview complete.');
     return createDiagnosticEnvelope({
-      data: { command: process.execPath, args: [resolveRisuCoreBinPath(), ...argv], cwd: workspace.path, expectedConfirmationText: confirmationText, preview: true, source: safeSource.relativePath, target: safeOutDir.relativePath },
+      data: { command: process.execPath, args: [resolveRisuCoreBinPath(), ...argv], postExtractAnalyze: { command: process.execPath, args: [resolveRisuCoreBinPath(), ...analyzeArgv], defaultWikiRoot: defaultWikiRelativePath }, cwd: workspace.path, expectedConfirmationText: confirmationText, preview: true, source: safeSource.relativePath, target: safeOutDir.relativePath },
       diagnostics: [],
       status: 'ok',
       tool: TOOL_NAME,
     });
   }
 
-  await progress?.report(4, 8, 'Checking run_extract mutation safety.');
+  await progress?.report(4, 9, 'Checking run_extract mutation safety.');
   const safetyResult = await evaluateMutationSafetyGate({
     confirmation: extractInput.confirmation,
     expectedConfirmationText: confirmationText,
     mode: mutationMode,
     risk: 'medium',
-    targets: [{ intent: 'read-existing', path: safeSource.relativePath }, { intent: 'create-missing', path: safeOutDir.relativePath }],
+    targets: [{ intent: 'read-existing', path: safeSource.relativePath }, { intent: 'create-missing', path: safeOutDir.relativePath }, { intent: 'create-missing', path: defaultWikiRelativePath }],
     toolName: TOOL_NAME,
     workspace,
   });
@@ -177,7 +179,7 @@ export async function handleRunExtract(
     });
   }
 
-  await progress?.report(5, 8, 'Running risu-core extract.');
+  await progress?.report(5, 9, 'Running risu-core extract.');
   try {
     throwIfCancellationRequested(signal, TOOL_NAME);
   } catch (error) {
@@ -188,14 +190,21 @@ export async function handleRunExtract(
     });
   }
   const commandResult = await runRisuCoreCommand(argv, workspace.path, { signal });
-  await progress?.report(6, 8, 'Collecting run_extract changed files.');
+  await progress?.report(6, 9, 'Running post-extract analyze and wiki generation.');
+  const analyzeResult = commandResult.exitCode === 0
+    ? await runRisuCoreCommand(analyzeArgv, workspace.path, { signal })
+    : createSkippedCommandResult(analyzeArgv, workspace.path);
+  await progress?.report(7, 9, 'Collecting run_extract changed files.');
   const changedFiles = await collectChangedFiles(safeOutDir.absolutePath, safeOutDir.relativePath).catch(() => []);
-  await progress?.report(7, 8, 'Validating run_extract output.');
+  await progress?.report(8, 9, 'Validating run_extract output.');
   const postValidation = extractInput.postValidate !== false
     ? await createWorkflowPostValidation({ absoluteRoot: safeOutDir.absolutePath, expectedMarkerPaths: expectedExtractMarkers(extractInput.type), relativeRoot: safeOutDir.relativePath, tool: TOOL_NAME })
     : { diagnostics: [], status: 'not_run' as const };
-  const commandDiagnostics = buildCommandDiagnostics(commandResult, safeOutDir.relativePath);
-  const effectivePostValidation = commandResult.exitCode === 0
+  const commandDiagnostics = [
+    ...buildCommandDiagnostics(commandResult, safeOutDir.relativePath, 'extract', 'RUN_EXTRACT', 'run-extract'),
+    ...buildCommandDiagnostics(analyzeResult, safeOutDir.relativePath, 'post-extract analyze/wiki', 'RUN_EXTRACT_ANALYZE', 'run-extract.analyze'),
+  ];
+  const effectivePostValidation = commandResult.exitCode === 0 && analyzeResult.exitCode === 0
     ? { diagnostics: [...postValidation.diagnostics, ...commandDiagnostics], status: postValidation.status }
     : { diagnostics: [...postValidation.diagnostics, ...commandDiagnostics], status: 'error' as const };
   const mutationId = `mutation:${Date.now().toString(36)}:${safeOutDir.relativePath.replace(/[^a-zA-Z0-9]/g, '-').slice(0, 20)}`;
@@ -206,18 +215,18 @@ export async function handleRunExtract(
     mutationId,
     patchOperations: [{ kind: 'file.create', path: safeOutDir.relativePath, content: '[risu-core extract workflow output directory]' }],
     postValidation: effectivePostValidation,
-    status: commandResult.exitCode === 0 && effectivePostValidation.status !== 'error' ? 'applied' : 'failed-validation',
+    status: commandResult.exitCode === 0 && analyzeResult.exitCode === 0 && effectivePostValidation.status !== 'error' ? 'applied' : 'failed-validation',
     toolName: TOOL_NAME,
   });
 
-  await progress?.report(8, 8, 'run_extract complete.');
+  await progress?.report(9, 9, 'run_extract complete.');
   return createMutationResultEnvelope({
     appliedAt: new Date().toISOString(),
     changedFiles,
     mutationId,
     postValidation: effectivePostValidation,
-    resourceLinks: [`risuai-workbench://mutations/journal/${mutationId}`],
-    status: commandResult.exitCode === 0 && effectivePostValidation.status !== 'error' ? 'applied' : 'failed',
+    resourceLinks: [`risuai-workbench://mutations/journal/${mutationId}`, `risuai-workbench://wiki/${defaultWikiRelativePath}`],
+    status: commandResult.exitCode === 0 && analyzeResult.exitCode === 0 && effectivePostValidation.status !== 'error' ? 'applied' : 'failed',
     tool: TOOL_NAME,
   });
 }
@@ -263,6 +272,27 @@ function buildExtractArgs(input: RunExtractInput, sourcePath: string, outDir: st
   return args;
 }
 
+function buildPostExtractAnalyzeArgs(input: RunExtractInput, outDir: string, wikiRoot: string): string[] {
+  const args = ['analyze'];
+  const analyzeType = extractTypeToAnalyzeType(input.type);
+  if (analyzeType) args.push('--type', analyzeType);
+  args.push(outDir, '--wiki', '--wiki-root', wikiRoot);
+  return args;
+}
+
+function extractTypeToAnalyzeType(type: ExtractType | undefined): 'charx' | 'module' | 'preset' | undefined {
+  if (type === 'character') return 'charx';
+  return type;
+}
+
+function defaultPostExtractWikiPath(outDir: string): string {
+  return path.posix.join(outDir, 'wiki');
+}
+
+function createSkippedCommandResult(args: readonly string[] = [], cwd = process.cwd()): RisuCoreCommandResult {
+  return { args, cancelled: false, command: process.execPath, cwd, exitCode: 0, stderr: '', stdout: '', timedOut: false };
+}
+
 function expectedExtractMarkers(type: ExtractType | undefined): string[] {
   if (type === 'character') return ['.risuchar'];
   if (type === 'module') return ['.risumodule'];
@@ -270,12 +300,12 @@ function expectedExtractMarkers(type: ExtractType | undefined): string[] {
   return [];
 }
 
-function buildCommandDiagnostics(commandResult: RisuCoreCommandResult, targetPath: string) {
+function buildCommandDiagnostics(commandResult: RisuCoreCommandResult, targetPath: string, label: string, idPrefix: string, rulePrefix: string) {
   const diagnostics = [];
-  if (commandResult.stdout.trim() !== '') diagnostics.push({ category: 'workflow', id: 'RUN_EXTRACT_STDOUT', message: commandResult.stdout, path: targetPath, ruleId: 'run-extract.stdout', severity: 'info' as const });
-  if (commandResult.stderr.trim() !== '') diagnostics.push({ category: 'workflow', id: 'RUN_EXTRACT_STDERR', message: commandResult.stderr, path: targetPath, ruleId: 'run-extract.stderr', severity: commandResult.exitCode === 0 ? 'warning' as const : 'error' as const });
-  if (commandResult.exitCode !== 0) diagnostics.push({ category: 'workflow', id: 'RUN_EXTRACT_EXIT_NONZERO', message: `risu-core extract exited with code ${commandResult.exitCode}.`, path: targetPath, ruleId: 'run-extract.exit-code', severity: 'error' as const });
-  if (commandResult.timedOut) diagnostics.push({ category: 'workflow', id: 'RUN_EXTRACT_TIMEOUT', message: 'risu-core extract command timed out and was terminated.', path: targetPath, ruleId: 'run-extract.timeout', severity: 'error' as const });
-  if (commandResult.cancelled) diagnostics.push({ category: 'cancellation', id: 'RUN_EXTRACT_CANCELLED', message: 'risu-core extract was cancelled by the MCP request.', path: targetPath, ruleId: 'run-extract.cancelled', severity: 'warning' as const });
+  if (commandResult.stdout.trim() !== '') diagnostics.push({ category: 'workflow', id: `${idPrefix}_STDOUT`, message: commandResult.stdout, path: targetPath, ruleId: `${rulePrefix}.stdout`, severity: 'info' as const });
+  if (commandResult.stderr.trim() !== '') diagnostics.push({ category: 'workflow', id: `${idPrefix}_STDERR`, message: commandResult.stderr, path: targetPath, ruleId: `${rulePrefix}.stderr`, severity: commandResult.exitCode === 0 ? 'warning' as const : 'error' as const });
+  if (commandResult.exitCode !== 0) diagnostics.push({ category: 'workflow', id: `${idPrefix}_EXIT_NONZERO`, message: `risu-core ${label} exited with code ${commandResult.exitCode}.`, path: targetPath, ruleId: `${rulePrefix}.exit-code`, severity: 'error' as const });
+  if (commandResult.timedOut) diagnostics.push({ category: 'workflow', id: `${idPrefix}_TIMEOUT`, message: `risu-core ${label} command timed out and was terminated.`, path: targetPath, ruleId: `${rulePrefix}.timeout`, severity: 'error' as const });
+  if (commandResult.cancelled) diagnostics.push({ category: 'cancellation', id: `${idPrefix}_CANCELLED`, message: `risu-core ${label} was cancelled by the MCP request.`, path: targetPath, ruleId: `${rulePrefix}.cancelled`, severity: 'warning' as const });
   return diagnostics;
 }

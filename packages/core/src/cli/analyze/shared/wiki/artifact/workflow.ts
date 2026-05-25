@@ -3,6 +3,8 @@ import type { RenderContext, WikiFile } from '../types';
 import { renderOverview } from './overview';
 import { renderVariables } from './variables';
 import { renderLua } from './lua';
+import { renderLuaSplit } from './lua-split';
+import { renderLuaWorkspaceCallgraph } from './lua-workspace-callgraph';
 import { renderRegex } from './regex';
 import { renderLorebookIndex } from './lorebook-index';
 import { renderLorebookEntities } from './lorebook-entity';
@@ -30,6 +32,8 @@ export function renderArtifactWiki(
   push(renderOverview(data, ctx));
   push(renderVariables(data, ctx));
   push(renderLua(data, ctx));
+  push(renderLuaSplit(data, ctx));
+  push(renderLuaWorkspaceCallgraph(data, ctx));
   push(renderRegex(data, ctx));
   push(renderLorebookIndex(data, ctx));
 

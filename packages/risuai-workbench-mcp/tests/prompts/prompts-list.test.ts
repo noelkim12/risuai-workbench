@@ -31,6 +31,7 @@ const expectedPromptNames = [
   'workbench.review_relationship_network',
   'workbench.review_prompt_chain',
   'workbench.explain_analyze_diagnostic',
+  'workbench.create_project',
   'workbench.creative.brainstorm_from_context',
   'workbench.creative.scamper_lorebook_entries',
   'workbench.creative.scamper_prompt_chain_variants',
