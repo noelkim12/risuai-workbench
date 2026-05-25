@@ -1,9 +1,8 @@
 /**
- * Tests for rollback_mutation high-risk confirmation rejection paths.
+ * Tests for rollback_mutation confirmation-disabled behavior.
  * @file packages/risuai-workbench-mcp/tests/tools/rollback-mutation.test.ts
  */
 
-import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -57,17 +56,6 @@ async function createRollbackFixture(): Promise<RollbackFixture> {
 }
 
 /**
- * hashFile 함수.
- * 파일 내용을 sha256 digest로 요약함.
- *
- * @param filePath - hash 대상 absolute file path
- * @returns sha256 digest
- */
-async function hashFile(filePath: string): Promise<string> {
-  return createHash('sha256').update(await readFile(filePath)).digest('hex');
-}
-
-/**
  * mutationResult 함수.
  * handler union result를 mutation result로 좁힘.
  *
@@ -80,30 +68,28 @@ function mutationResult(result: DiagnosticEnvelope | MutationResultEnvelope): Mu
 }
 
 describe('handleRollbackMutation', () => {
-  it('confirmation: rejects missing/wrong exact confirmation before rollback side effects', async () => {
-    const fixture = await createRollbackFixture();
-    const beforeMovedHash = await hashFile(fixture.movedPath);
-    const beforeJournalEntries = await readJournalEntries(fixture.journalPath);
-    const beforeJournalContent = await readFile(fixture.journalPath, 'utf8');
+  it('accepts missing or wrong confirmation because confirmation gate is disabled', async () => {
+    const missingFixture = await createRollbackFixture();
+    const wrongFixture = await createRollbackFixture();
 
     const missing = mutationResult(await handleRollbackMutation(
-      { mode: 'commit', mutationId: fixture.mutationId },
-      fixture.workspace,
+      { mode: 'commit', mutationId: missingFixture.mutationId },
+      missingFixture.workspace,
       'enabled',
     ));
     const wrong = mutationResult(await handleRollbackMutation(
-      { confirmation: { accepted: true, confirmationText: `ROLLBACK ${fixture.mutationId}-wrong` }, mode: 'commit', mutationId: fixture.mutationId },
-      fixture.workspace,
+      { confirmation: { accepted: true, confirmationText: `ROLLBACK ${wrongFixture.mutationId}-wrong` }, mode: 'commit', mutationId: wrongFixture.mutationId },
+      wrongFixture.workspace,
       'enabled',
     ));
 
-    expect(missing.status).toBe('rejected');
-    expect(wrong.status).toBe('rejected');
-    expect(missing.postValidation.diagnostics[0]?.ruleId).toBe('rollback.confirmation-missing');
-    expect(wrong.postValidation.diagnostics[0]?.ruleId).toBe('rollback.confirmation-text-mismatch');
-    expect(await hashFile(fixture.movedPath)).toBe(beforeMovedHash);
-    await expect(readFile(fixture.originalPath, 'utf8')).rejects.toThrow();
-    expect(await readJournalEntries(fixture.journalPath)).toHaveLength(beforeJournalEntries.length);
-    expect(await readFile(fixture.journalPath, 'utf8')).toBe(beforeJournalContent);
+    expect(missing.status).toBe('applied');
+    expect(wrong.status).toBe('applied');
+    await expect(readFile(missingFixture.movedPath, 'utf8')).rejects.toThrow();
+    await expect(readFile(wrongFixture.movedPath, 'utf8')).rejects.toThrow();
+    expect(await readFile(missingFixture.originalPath, 'utf8')).toContain('name: intro');
+    expect(await readFile(wrongFixture.originalPath, 'utf8')).toContain('name: intro');
+    expect(await readJournalEntries(missingFixture.journalPath)).toHaveLength(2);
+    expect(await readJournalEntries(wrongFixture.journalPath)).toHaveLength(2);
   });
 });

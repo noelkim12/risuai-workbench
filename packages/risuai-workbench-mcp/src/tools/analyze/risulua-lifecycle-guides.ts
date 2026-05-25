@@ -95,6 +95,13 @@ export async function handleExplainRisuLuaRuntimeApi(input: ExplainRisuLuaRuntim
     asyncModel: 'Promise-like host calls use :await(); wrapper helpers such as LLM wrap common async calls.',
     accessTiers: ['Open', 'Safe', 'EditDisplay', 'LowLevel'],
     apiCategories: ['state', 'chat', 'ui', 'ai', 'character', 'lore', 'control', 'utility', 'network', 'event'],
+    resourceUris: [
+      'risuai-workbench://risulua/index',
+      'risuai-workbench://risulua/lifecycle',
+      'risuai-workbench://risulua/access-tiers',
+      'risuai-workbench://risulua/async',
+      'risuai-workbench://risulua/pitfalls',
+    ],
     references: [
       'docs/reference/LUA_FOR_LLM.md',
       'docs/risuai-lua.d.ts',

@@ -102,7 +102,8 @@ describe('core workflow wrappers', () => {
     ));
 
     expect(result.status).toBe('ok');
-    expect(result.data).toMatchObject({ expectedConfirmationText: 'RUN_EXTRACT source.risup TO extracted/preset', preview: true, source: 'source.risup', target: 'extracted/preset' });
+    expect(result.data).toMatchObject({ expectedConfirmationText: 'RUN_EXTRACT source.risup TO extracted/preset WITH WIKI extracted/preset/wiki', preview: true, source: 'source.risup', target: 'extracted/preset' });
+    expect(result.data).toMatchObject({ postExtractAnalyze: { args: expect.arrayContaining(['analyze', '--type', 'preset', 'extracted/preset', '--wiki', '--wiki-root', 'extracted/preset/wiki']), defaultWikiRoot: 'extracted/preset/wiki' } });
   });
 
   it('rejects extract when output directory and fallback already exists', async () => {
@@ -125,13 +126,28 @@ describe('core workflow wrappers', () => {
     await writeFile(path.join(fixture.root, 'source.risup'), 'not executed', 'utf8');
 
     const result = diagnosticEnvelope(await handleRunExtract(
-      { confirmation: { accepted: true, confirmationText: 'RUN_EXTRACT source.risup TO extracted' }, mode: 'commit', outDir: 'extracted', sourcePath: 'source.risup', type: 'preset' },
+      { confirmation: { accepted: true, confirmationText: 'RUN_EXTRACT source.risup TO extracted WITH WIKI extracted/wiki' }, mode: 'commit', outDir: 'extracted', sourcePath: 'source.risup', type: 'preset' },
       fixture.workspace,
       'preview-only',
     ));
 
     expect(result.status).toBe('ok');
-    expect(result.data).toMatchObject({ preview: true, expectedConfirmationText: 'RUN_EXTRACT source.risup TO extracted' });
+    expect(result.data).toMatchObject({ preview: true, expectedConfirmationText: 'RUN_EXTRACT source.risup TO extracted WITH WIKI extracted/wiki' });
+  });
+
+  it('uses fallback extract output when requested nested wiki root already exists', async () => {
+    const fixture = await createWorkflowFixture();
+    await writeFile(path.join(fixture.root, 'source.risup'), 'not executed', 'utf8');
+    await mkdir(path.join(fixture.root, 'extracted', 'preset', 'wiki'), { recursive: true });
+
+    const result = diagnosticEnvelope(await handleRunExtract(
+      { mode: 'commit', outDir: 'extracted/preset', sourcePath: 'source.risup', type: 'preset' },
+      fixture.workspace,
+      'preview-only',
+    ));
+
+    expect(result.status).toBe('ok');
+    expect(result.data).toMatchObject({ expectedConfirmationText: 'RUN_EXTRACT source.risup TO extracted/preset/source WITH WIKI extracted/preset/source/wiki', preview: true });
   });
 
   it('reports progress milestones for run_extract preview', async () => {
@@ -162,7 +178,7 @@ describe('core workflow wrappers', () => {
     controller.abort();
 
     const result = await handleRunExtract(
-      { confirmation: { accepted: true, confirmationText: 'RUN_EXTRACT source.risup TO generated/cancelled-extract' }, mode: 'commit', outDir: 'generated/cancelled-extract', sourcePath: 'source.risup' },
+    { confirmation: { accepted: true, confirmationText: 'RUN_EXTRACT source.risup TO generated/cancelled-extract WITH WIKI generated/cancelled-extract/wiki' }, mode: 'commit', outDir: 'generated/cancelled-extract', sourcePath: 'source.risup' },
       fixture.workspace,
       'enabled',
       undefined,
@@ -222,7 +238,7 @@ describe('core workflow wrappers', () => {
       'preview-only',
     ));
     expect(result.status).toBe('ok');
-    expect(result.data).toMatchObject({ target: 'characters/merry/source' });
+    expect(result.data).toMatchObject({ postExtractAnalyze: { defaultWikiRoot: 'characters/merry/source/wiki' }, target: 'characters/merry/source' });
   });
 
   it('marks risu-core command result as cancelled when signal is already aborted', async () => {

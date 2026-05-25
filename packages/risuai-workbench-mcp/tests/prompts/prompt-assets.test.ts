@@ -70,7 +70,7 @@ describe('prompt asset loader', () => {
     expect(text).toContain('Existing mutation safety gates, confirmation, hash, and workspace checks remain mandatory');
   });
 
-  it('requires exactly three MVP prompts to include route-first guidance', () => {
+  it('requires the route-first MVP prompts to include route-first guidance', () => {
     const manifest = loadPromptAssetManifest();
     const routeFirstPrompts = manifest.filter((entry) => {
       const text = renderPromptAsset(entry.name, {});
@@ -85,10 +85,11 @@ describe('prompt asset loader', () => {
       );
     });
 
-    expect(routeFirstPrompts).toHaveLength(3);
+    expect(routeFirstPrompts).toHaveLength(4);
     expect(routeFirstPrompts.map((p) => p.name)).toEqual([
       'workbench.review_artifact_change',
       'workbench.apply_artifact_change',
+      'workbench.create_project',
       'workbench.creative.apply_selected_idea',
     ]);
   });

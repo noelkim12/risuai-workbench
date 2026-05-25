@@ -11,7 +11,7 @@ Creative thinking surface는 `docs/mcp/risuai-workbench-mcp-for-creative-thinkin
 - **Inspect / Validate**: artifact path, root marker, `_order.json`, frontmatter, metadata, canonical path를 검사합니다.
 - **Analyze / Impact**: variable flow, Lua analysis/call graph/state access, button action, relationship network, prompt chain, composition conflict, dead-code, token budget을 조회합니다.
 - **Preview / Patch Plan**: 실제 write 없이 structured patch plan과 diff를 생성합니다.
-- **Direct Mutation**: 승인된 patch plan, `_order.json`, frontmatter, metadata, artifact 생성/이동/삭제, generated wiki refresh를 처리합니다.
+- **Direct Mutation**: 승인된 patch plan, `_order.json`, frontmatter, metadata, artifact 생성/이동/삭제, generated wiki bootstrap/refresh를 처리합니다.
 - **Core Workflows**: `risu-core extract` / `risu-core scaffold`를 MCP mutation gate 뒤에서 실행합니다.
 - **Creative Thinking**: workspace/analyze/wiki context를 바탕으로 아이디어를 만들고, 선택된 아이디어만 PatchPlan preview와 gated mutation apply로 연결합니다.
 - **Resources / Prompts**: wiki/rule/schema/analyze/mutation context resource와 agent workflow prompt를 제공합니다.
@@ -310,6 +310,7 @@ Not implemented by design: UI/webview, automatic wiki refresh, automatic graph r
 | `workbench.explain_risulua_workspace` | no | Source-first split RisuLua workspace authoring guide for `lua/main.risulua`, `lua/**/*.risulua`, and generated `dist/<targetName>.risulua` boundaries. |
 | `workbench.guide_risulua_module` | no | RisuLua source module guide. Static `require("module.id")` is valid authoring syntax and not an authoring violation. |
 | `workbench.explain_risulua_runtime_api` | no | RisuAI Lua lifecycle and runtime API guide based on `LUA_FOR_LLM.md`, type declarations, and core API metadata. |
+| `workbench.query_risulua_api` | no | RisuLua host function catalog에서 category, access tier, signature, docs, related functions, reference URI를 조회합니다. |
 | `workbench.explain_lorebook_prompt_injection` | no | Lorebook prompt injection and context activation guide, including decorator and recursive activation references. |
 | `workbench.explain_context_feedback_loop` | no | Explains `Lorebook -> Structured Output -> Regex -> Button -> RisuLua -> Variable/Lorebook -> Lorebook`. |
 | `workbench.plan_structured_output_loop` | no | Plans a source-first structured output, regex, button, Lua state, Lorebook feedback loop without packaging scope. |
@@ -340,6 +341,7 @@ RisuLua lifecycle guide tools are authoring guides. They do not preview bundled 
 | `workbench.run_scaffold` | yes | `risu-core scaffold`를 안전 게이트 뒤에서 실행해 charx/module/preset 프로젝트 골격을 생성합니다. |
 | `workbench.move_artifact` | yes | artifact rename/move와 optional order update를 처리합니다. |
 | `workbench.delete_artifact` | yes | exact confirmation이 필요한 high-risk delete tool입니다. |
+| `workbench.ensure_wiki_root` | yes | wiki가 없거나 bootstrap 파일이 누락된 경우 최소 generated wiki root 파일을 생성합니다. 현재 기본 `wiki/` root만 지원합니다. |
 | `workbench.refresh_wiki` | yes | generated wiki allowlist 영역만 갱신합니다. |
 | `workbench.rollback_mutation` | yes | journal에 충분한 inverse state가 있는 mutation을 rollback합니다. |
 
@@ -401,6 +403,7 @@ Resources는 read-only context입니다. write는 반드시 tool을 통해서만
 | `workbench.resource.patch_preview` | `risuai-workbench://mutations/patch-plans/{patchPlanId}` | patch preview/plan URI family입니다. |
 | `workbench.resource.patch_plan` | `risuai-workbench://mutations/patch-plans/{patchPlanId}` | patch plan URI family입니다. |
 | `workbench.resource.mutation_journal` | `risuai-workbench://mutations/journal/{mutationId?}` | mutation journal URI family입니다. |
+| `workbench.resource.risulua_reference` | `risuai-workbench://risulua/{risuluaPath}` | RisuLua lifecycle, access tier, async, pattern, pitfall, category/function reference를 읽습니다. |
 | `workbench.creative.resource.methods` | `risuai-workbench://methods` | creative method catalog reference card를 읽습니다. |
 | `workbench.creative.resource.method.scamper` | `risuai-workbench://methods/scamper` | SCAMPER method reference card를 읽습니다. |
 | `workbench.creative.resource.method.six_hats` | `risuai-workbench://methods/six-hats` | Six Hats method reference card를 읽습니다. |

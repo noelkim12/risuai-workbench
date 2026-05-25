@@ -53,12 +53,14 @@ const proposalPhaseToolNames = [
   'workbench.explain_risulua_workspace',
   'workbench.guide_risulua_module',
   'workbench.explain_risulua_runtime_api',
+  'workbench.query_risulua_api',
   'workbench.explain_lorebook_prompt_injection',
   'workbench.explain_context_feedback_loop',
   'workbench.plan_structured_output_loop',
   'workbench.query_cbs_usage',
   'workbench.move_artifact',
   'workbench.delete_artifact',
+  'workbench.ensure_wiki_root',
   'workbench.refresh_wiki',
   'workbench.rollback_mutation',
   'workbench.refresh_analyze_snapshot',
@@ -122,6 +124,7 @@ describe('workbench registry contracts', () => {
       'workbench.query_lua_analysis',
       'workbench.query_lua_state_access',
       'workbench.query_dead_code_findings',
+      'workbench.query_risulua_api',
     ];
     expect(phase4ReadOnlyTools.every((name) => {
       const tool = snapshot.tools.find((t) => t.name === name);
@@ -137,6 +140,7 @@ describe('workbench registry contracts', () => {
     expect(phase5Tools.map((tool) => tool.name)).toEqual([
       'workbench.move_artifact',
       'workbench.delete_artifact',
+      'workbench.ensure_wiki_root',
       'workbench.refresh_wiki',
       'workbench.rollback_mutation',
       'workbench.refresh_analyze_snapshot',
@@ -165,6 +169,11 @@ describe('workbench registry contracts', () => {
     expect(snapshot.resources.find((resource) => resource.name === 'workbench.resource.cbs_reference')).toMatchObject({
       description: 'Read CBS index, syntax, category, tag detail, pattern, pitfall, and fallback source resources.',
       uriTemplate: 'risuai-workbench://cbs/{cbsPath}',
+    });
+    expect(snapshot.resources.find((resource) => resource.name === 'workbench.resource.risulua_reference')).toMatchObject({
+      readOnly: true,
+      title: 'RisuLua host function reference resource',
+      uriTemplate: 'risuai-workbench://risulua/{risuluaPath}',
     });
   });
 

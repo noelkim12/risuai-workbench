@@ -1,3 +1,6 @@
+import path from 'node:path';
+import { toPosix } from '@/domain';
+import type { LuaAnalysisArtifact } from '@/domain/analyze/lua-core';
 import type { CharxReportData } from '../../../charx/types';
 import type { RenderContext, WikiFile } from '../types';
 import { serializeFrontmatter } from '../markdown';
@@ -7,12 +10,34 @@ function formatLoreAccessCall(apiName: string, keyword: string | null): string {
   return keyword ? `\`${apiName}("${keyword}")\`` : `\`${apiName}\``;
 }
 
+function luaArtifactLabel(artifact: LuaAnalysisArtifact, ctx: RenderContext): string {
+  if (artifact.relativePath && artifact.relativePath.length > 0) return artifact.relativePath;
+
+  const relativeToExtract = toPosix(path.relative(ctx.extractDir, artifact.filePath));
+  if (!relativeToExtract.startsWith('..') && relativeToExtract.length > 0) {
+    return relativeToExtract;
+  }
+
+  return artifact.baseName;
+}
+
+function countRoles(artifacts: LuaAnalysisArtifact[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const artifact of artifacts) {
+    const role = artifact.splitRole;
+    if (!role) continue;
+    counts.set(role, (counts.get(role) ?? 0) + 1);
+  }
+  return counts;
+}
+
 /**
  * Render lua.md. Returns null when the artifact has no Lua files.
  *
  * One section per Lua file, one subsection per function. Lists:
  *   - function name and source location
- *   - state reads/writes (if any)
+  *   - split role, when available
+  *   - state reads/writes (if any)
  *   - internal callees (from callGraph)
  *   - lorebook API calls (if any)
  */
@@ -23,6 +48,7 @@ export function renderLua(data: CharxReportData, ctx: RenderContext): WikiFile |
     (sum, artifact) => sum + artifact.collected.functions.filter((fn) => fn.name && fn.name !== '<top-level>').length,
     0,
   );
+  const roleCounts = countRoles(data.luaArtifacts);
 
   const frontmatter = serializeFrontmatter({
     source: 'generated',
@@ -38,8 +64,19 @@ export function renderLua(data: CharxReportData, ctx: RenderContext): WikiFile |
 
   const lines: string[] = [frontmatter.trimEnd(), '', '# Lua', '', `${data.luaArtifacts.length} files · ${totalFunctions} functions.`, ''];
 
+  if (roleCounts.size > 0) {
+    lines.push('## Split roles', '');
+    for (const [role, count] of [...roleCounts.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      lines.push(`- \`${role}\`: ${count} file${count === 1 ? '' : 's'}`);
+    }
+    lines.push('');
+  }
+
   for (const artifact of data.luaArtifacts) {
-    lines.push(`## \`${artifact.baseName}\``, '');
+    lines.push(`## \`${luaArtifactLabel(artifact, ctx)}\``, '');
+    if (artifact.splitRole) {
+      lines.push(`- **role:** \`${artifact.splitRole}\``, '');
+    }
     const fns = artifact.collected.functions.filter((fn) => fn.name && fn.name !== '<top-level>');
     for (const fn of fns) {
       lines.push(`### \`${fn.name}\``, '');
