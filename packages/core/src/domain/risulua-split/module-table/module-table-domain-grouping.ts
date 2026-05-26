@@ -11,6 +11,7 @@ export interface RisuLuaDomainGroupingOptions {
 
 const WEAK_DOMAIN_TOKENS = new Set([
   'add',
+  'and',
   'apply',
   'build',
   'calc',
@@ -347,7 +348,6 @@ function restoreSafeSemanticClusters(
 ): void {
   if (dependencies === undefined) return;
   for (const cluster of semanticClusters(names, semanticGroupedPaths, semanticGroupingByName)) {
-    if (cluster.names.some((name) => !dependencies.has(name))) continue;
     if (cluster.names.length < 2) continue;
     if (cluster.reason === 'singleton') continue;
     const namesAtClusterPath = names.filter((name) => groupedPaths.get(name) === cluster.path);
@@ -532,8 +532,6 @@ function bestRepeatedToken(name: string, tokenCounts: Map<string, number>): stri
     .sort((left, right) => {
       const countDiff = (tokenCounts.get(right) ?? 0) - (tokenCounts.get(left) ?? 0);
       if (countDiff !== 0) return countDiff;
-      const lengthDiff = right.length - left.length;
-      if (lengthDiff !== 0) return lengthDiff;
       return left.localeCompare(right);
     });
   return candidates[0];
