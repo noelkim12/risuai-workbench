@@ -301,7 +301,7 @@ function coalesceCyclicModuleGroups(
       if (peers.length >= 6) {
         diagnostics.push({
           code: 'domain-grouping:cycle-coalesced-large',
-          message: `Domain grouping coalesced ${peers.length} functions into ${componentPath} to break a module dependency cycle.`,
+          message: `Cycle coalescing grouped ${peers.length} members into ${componentPath}.`,
           names: peers,
           path: componentPath,
         });
@@ -397,7 +397,7 @@ function restoreSafeSemanticClusters(
     }
     diagnostics.push({
       code: 'domain-grouping:semantic-cluster-restored',
-      message: `Domain grouping restored ${cluster.names.length} ${cluster.reason} functions to ${cluster.path} after cycle coalescing.`,
+      message: `Restored semantic cluster ${cluster.path} with ${cluster.names.length} members after cycle coalescing.`,
       names: cluster.names,
       path: cluster.path,
     });

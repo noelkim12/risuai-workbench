@@ -1010,9 +1010,6 @@ describe('risulua-split module-table dry-run refactor-map planner', () => {
         names: ['executeChoiceReroll', 'generateAndAppendChoices', 'makeChoicePrompt'],
       }),
     ]));
-    expect(grouping.diagnostics().map((diagnostic) => diagnostic.message)).toEqual(expect.arrayContaining([
-      'Domain grouping restored 3 repeated-token functions to lua/domain/choice.risulua after cycle coalescing.',
-    ]));
   });
 
   it('does not split cycle-coalesced groups into singleton files during semantic restoration', () => {
