@@ -1038,20 +1038,23 @@ describe('risulua-split module-table dry-run refactor-map planner', () => {
 
   it('keeps existing cycle-coalesced token path behavior before dominance guard changes paths', () => {
     const grouping = createRisuLuaDomainGroupingContext([
-      'buildBattleRound',
-      'resolveTurnOutcome',
-      'applyRewardState',
+      'getItemSortRank',
+      'getSortedShopItemKeys',
     ], {
       dependencies: new Map([
-        ['buildBattleRound', ['resolveTurnOutcome']],
-        ['resolveTurnOutcome', ['applyRewardState']],
-        ['applyRewardState', ['buildBattleRound']],
+        ['getItemSortRank', ['getSortedShopItemKeys']],
+        ['getSortedShopItemKeys', ['getItemSortRank']],
       ]),
     });
 
-    for (const name of ['buildBattleRound', 'resolveTurnOutcome', 'applyRewardState']) {
-      expect(grouping.pathForName(name)).toBe('lua/domain/battle.risulua');
-    }
+    expect(grouping.groupingForName('getItemSortRank')).toEqual(expect.objectContaining({
+      reason: 'cycle-coalesced',
+      path: 'lua/domain/item.risulua',
+    }));
+    expect(grouping.groupingForName('getSortedShopItemKeys')).toEqual(expect.objectContaining({
+      reason: 'cycle-coalesced',
+      path: 'lua/domain/item.risulua',
+    }));
   });
 
   it('refreshes cycle-coalesced metadata for every peer in a coalesced module group', async () => {
