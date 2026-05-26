@@ -202,7 +202,7 @@ export function createRisuLuaDomainGroupingContext(
     diagnostics,
   );
   restoreSafeUtilityFamilyGroups(uniqueNames, options.dependencies, groupedPaths, groupingByName);
-  coalesceActionFamilyGroups(uniqueNames, groupedPaths, groupingByName);
+  coalesceActionFamilyGroups(uniqueNames, options.dependencies, groupedPaths, groupingByName);
 
   return {
     pathForName(name: string): string {
@@ -253,6 +253,7 @@ function coalesceUtilityFamilyGroups(
 
 function coalesceActionFamilyGroups(
   names: readonly string[],
+  dependencies: ReadonlyMap<string, readonly string[]> | undefined,
   groupedPaths: Map<string, string>,
   groupingByName: Map<string, RisuLuaDomainGroupingMetadata>,
 ): void {
@@ -267,6 +268,12 @@ function coalesceActionFamilyGroups(
     const familyNames = uniqueSorted(namesByFamily.get(family) ?? []);
     if (familyNames.length < 2) continue;
     const path = ACTION_FAMILY_PATHS[family];
+    if (dependencies !== undefined) {
+      const trialGroupedPaths = new Map(groupedPaths);
+      for (const name of familyNames) trialGroupedPaths.set(name, path);
+      if (cyclicModuleComponents(names, dependencies, trialGroupedPaths).length > 0) continue;
+    }
+
     for (const name of familyNames) {
       groupedPaths.set(name, path);
       groupingByName.set(name, {

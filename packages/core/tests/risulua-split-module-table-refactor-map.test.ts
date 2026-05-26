@@ -619,6 +619,51 @@ describe('risulua-split module-table dry-run refactor-map planner', () => {
     expect(result.validation.ok).toBe(true);
   });
 
+  it('keeps render action siblings separate when family contraction would create a module cycle', async () => {
+    const result = await planFixture(lines([
+      'local function renderHeader(state)',
+      '  return composeShell(state) .. "|header"',
+      'end',
+      '',
+      'local function composeShell(state)',
+      '  return renderFooter(state) .. "|shell"',
+      'end',
+      '',
+      'local function renderFooter(state)',
+      '  return state.footer or ""',
+      'end',
+      '',
+      'function onOutput(text)',
+      '  return renderHeader({ footer = text })',
+      'end',
+    ]), { domainGeneration: 'validated' });
+
+    expect(result.refactorMap.modules.some((moduleContract) => moduleContract.path === 'lua/domain/render.risulua')).toBe(false);
+    expect(result.refactorMap.modules).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'lua/domain/render_header.risulua',
+        exports: expect.arrayContaining(['renderHeader']),
+      }),
+      expect.objectContaining({
+        path: 'lua/domain/compose_shell.risulua',
+        exports: expect.arrayContaining(['composeShell']),
+      }),
+      expect.objectContaining({
+        path: 'lua/domain/render_footer.risulua',
+        exports: expect.arrayContaining(['renderFooter']),
+      }),
+    ]));
+    for (const name of ['renderHeader', 'renderFooter']) {
+      expect(result.refactorMap.domainCandidates).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          name,
+          grouping: expect.objectContaining({ reason: 'singleton' }),
+        }),
+      ]));
+    }
+    expect(result.validation.ok).toBe(true);
+  });
+
   it('groups small text utility helpers into one refactor-map module', async () => {
     const result = await planFixture(lines([
       'local function trimText(value)',
