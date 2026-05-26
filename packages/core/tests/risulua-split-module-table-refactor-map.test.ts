@@ -982,6 +982,30 @@ describe('risulua-split module-table dry-run refactor-map planner', () => {
     }));
   });
 
+  it('does not split cycle-coalesced groups into singleton files during semantic restoration', () => {
+    const grouping = createRisuLuaDomainGroupingContext([
+      'buildBattleRound',
+      'resolveTurnOutcome',
+      'applyRewardState',
+    ], {
+      dependencies: new Map([
+        ['buildBattleRound', ['resolveTurnOutcome']],
+        ['resolveTurnOutcome', ['applyRewardState']],
+        ['applyRewardState', ['buildBattleRound']],
+      ]),
+    });
+
+    for (const name of ['buildBattleRound', 'resolveTurnOutcome', 'applyRewardState']) {
+      expect(grouping.groupingForName(name)).toEqual(expect.objectContaining({
+        reason: 'cycle-coalesced',
+        path: 'lua/domain/battle.risulua',
+        peers: ['applyRewardState', 'buildBattleRound', 'resolveTurnOutcome'],
+      }));
+    }
+    expect(grouping.pathForName('resolveTurnOutcome')).not.toBe('lua/domain/resolve_turn_outcome.risulua');
+    expect(grouping.pathForName('applyRewardState')).not.toBe('lua/domain/apply_reward_state.risulua');
+  });
+
   it('refreshes cycle-coalesced metadata for every peer in a coalesced module group', async () => {
     const result = await planFixture(lines([
       'function getItemSortRank(key)',
