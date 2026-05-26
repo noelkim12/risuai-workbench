@@ -11,7 +11,6 @@ export interface RisuLuaDomainGroupingOptions {
 
 const WEAK_DOMAIN_TOKENS = new Set([
   'add',
-  'and',
   'apply',
   'build',
   'calc',
@@ -348,22 +347,13 @@ function restoreSafeSemanticClusters(
 ): void {
   if (dependencies === undefined) return;
   for (const cluster of semanticClusters(names, semanticGroupedPaths, semanticGroupingByName)) {
+    if (cluster.names.some((name) => !dependencies.has(name))) continue;
     if (cluster.names.length < 2) continue;
     if (cluster.reason === 'singleton') continue;
-    if (cyclicDomainComponents(cluster.names, dependencies).length > 0) continue;
+    const namesAtClusterPath = names.filter((name) => groupedPaths.get(name) === cluster.path);
     if (
-      cluster.names.every((name) => {
-        const grouping = groupingByName.get(name);
-        return (
-          groupedPaths.get(name) === cluster.path &&
-          grouping?.reason === cluster.reason &&
-          grouping.path === cluster.path &&
-          grouping.token === cluster.token &&
-          grouping.family === cluster.family &&
-          grouping.peers.length === cluster.names.length &&
-          grouping.peers.every((peer, index) => peer === cluster.names[index])
-        );
-      })
+      namesAtClusterPath.length === cluster.names.length &&
+      cluster.names.every((name) => groupedPaths.get(name) === cluster.path)
     )
       continue;
 
@@ -542,6 +532,8 @@ function bestRepeatedToken(name: string, tokenCounts: Map<string, number>): stri
     .sort((left, right) => {
       const countDiff = (tokenCounts.get(right) ?? 0) - (tokenCounts.get(left) ?? 0);
       if (countDiff !== 0) return countDiff;
+      const lengthDiff = right.length - left.length;
+      if (lengthDiff !== 0) return lengthDiff;
       return left.localeCompare(right);
     });
   return candidates[0];
@@ -585,8 +577,8 @@ function actionFamilyForName(name: string): ActionFamily | undefined {
 }
 
 function normalizeDomainToken(token: string): string {
+  if (token === 'choices') return 'choice';
   if (token.endsWith('ies') && token.length > 4) return `${token.slice(0, -3)}y`;
-  if (token.endsWith('ices') && token.length > 5) return `${token.slice(0, -4)}ice`;
   if (token.endsWith('es') && token.length > 4 && !token.endsWith('ses')) return token.slice(0, -2);
   if (token.endsWith('s') && token.length > 4 && !token.endsWith('ss')) return token.slice(0, -1);
   return token;
