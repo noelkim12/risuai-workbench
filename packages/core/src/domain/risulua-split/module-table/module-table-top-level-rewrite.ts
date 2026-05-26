@@ -329,23 +329,35 @@ function buildDomainFunctionModule(
     promptStoreNames,
     currentModulePath: modulePath,
   }));
-  const rewriteNames = new Set(capturePlans.flatMap((plan) => [...plan.rewriteMap.keys()]));
-  const shadowedScopes = detectShadowedScopes(source, rewriteNames, [], nonExecIndex, unionRange(sorted.map((sym) => sym.sourceRange)));
+  const sameModuleRewriteMap = new Map(sorted.map((sym) => [sym.originalName, `__impl.${sym.originalName}`]));
+  const rewriteNames = new Set([
+    ...capturePlans.flatMap((plan) => [...plan.rewriteMap.keys()]),
+    ...sameModuleRewriteMap.keys(),
+  ]);
+  const sortedRanges = sorted.map((sym) => sym.sourceRange);
+  const declarationShadowIgnoreRanges = sorted.map((sym) => declarationHeadRange(source, sym.sourceRange));
+  const shadowedScopes = detectShadowedScopes(source, rewriteNames, declarationShadowIgnoreRanges, nonExecIndex, unionRange(sortedRanges));
   const lines: string[] = [];
 
   const internalRequires = uniqueRequireBindings(capturePlans.flatMap((plan) => plan.requires));
   if (internalRequires.length > 0) lines.push(...internalRequires.map((binding) => binding.text), '');
 
-  lines.push('local M = {}', '');
+  lines.push('local M = {}', 'local __impl = {}', '');
 
   for (const [index, sym] of sorted.entries()) {
     const capturePlan = capturePlans[index];
     const leadingCommentText = leadingCommentTextForSymbol(source, sym.sourceRange);
     const stripped = stripLocalPrefixWithOffset(sliceSourceRange(source, sym.sourceRange));
     let body = stripped.text.trimEnd();
-    body = rewriteBoundReferences(body, capturePlan.rewriteMap, sym.sourceRange.startOffset + stripped.offsetAdjustment, shadowedScopes, nonExecIndex);
-    lines.push(`${leadingCommentText}${body}`, '', `M.${sym.originalName} = ${sym.originalName}`, '');
+    body = rewriteBoundReferences(body, new Map([...capturePlan.rewriteMap, ...sameModuleRewriteMap]), sym.sourceRange.startOffset + stripped.offsetAdjustment, shadowedScopes, nonExecIndex);
+    const functionBody = toPrivateImplementationFunction(body, sym.originalName);
+    lines.push(`${leadingCommentText}${functionBody}`, '');
   }
+
+  for (const sym of sorted) {
+    lines.push(`M.${sym.originalName} = __impl.${sym.originalName}`);
+  }
+  lines.push('');
   lines.push('return M');
 
   return {
@@ -356,6 +368,24 @@ function buildDomainFunctionModule(
     body: `${lines.join('\n')}\n`,
     exportNames: sorted.map((s) => s.originalName),
     internalRequires,
+  };
+}
+
+function toPrivateImplementationFunction(sourceSlice: string, originalName: string): string {
+  const escapedName = escapeRegExp(originalName);
+  return sourceSlice
+    .replace(new RegExp(`^(\\s*)(?:local\\s+)?function\\s+${escapedName}(\\s*\\()`, 'm'), `$1function __impl.${originalName}$2`)
+    .replace(new RegExp(`^(\\s*)${escapedName}(\\s*=\\s*(?:async\\s*\\(\\s*)?function\\b)`, 'm'), `$1function __impl.${originalName}`);
+}
+
+function declarationHeadRange(source: string, range: LuaSourceRange): LuaSourceRange {
+  const lineEndOffset = source.indexOf('\n', range.startOffset);
+  const endOffset = lineEndOffset === -1 || lineEndOffset > range.endOffset ? range.endOffset : lineEndOffset;
+  return {
+    startLine: range.startLine,
+    endLine: range.startLine,
+    startOffset: range.startOffset,
+    endOffset,
   };
 }
 
@@ -802,6 +832,57 @@ function detectShadowedScopes(
       }
     }
   }
+  scopes.push(...detectFunctionParameterShadowedScopes(source, helperNames, nonExecIndex, scanRange));
+  return scopes;
+}
+
+function detectFunctionParameterShadowedScopes(
+  source: string,
+  helperNames: Set<string>,
+  nonExecIndex: OffsetRangeIndex,
+  scanRange?: LuaSourceRange,
+): ShadowedScope[] {
+  const scopes: ShadowedScope[] = [];
+  let cursor = scanRange?.startOffset ?? 0;
+  const len = scanRange?.endOffset ?? source.length;
+
+  while (cursor < len) {
+    const functionIdx = source.indexOf('function', cursor);
+    if (functionIdx < 0 || functionIdx >= len) break;
+    cursor = functionIdx + 1;
+
+    if (nonExecIndex.containsOffset(functionIdx)) continue;
+    if (functionIdx > 0 && isIdentChar(source.charCodeAt(functionIdx - 1))) continue;
+
+    const keywordEnd = functionIdx + 8;
+    if (keywordEnd < source.length && isIdentChar(source.charCodeAt(keywordEnd))) continue;
+
+    const openParen = source.indexOf('(', keywordEnd);
+    if (openParen < 0 || openParen >= len) continue;
+
+    const betweenKeywordAndParams = source.slice(keywordEnd, openParen);
+    if (betweenKeywordAndParams.includes('\n')) continue;
+
+    const closeParen = source.indexOf(')', openParen + 1);
+    if (closeParen < 0 || closeParen >= len) continue;
+
+    const paramsText = source.slice(openParen + 1, closeParen);
+    const paramRe = /[A-Za-z_][A-Za-z0-9_]*/g;
+    let paramMatch: RegExpExecArray | null = paramRe.exec(paramsText);
+    while (paramMatch !== null) {
+      const name = paramMatch[0];
+      if (helperNames.has(name)) {
+        const paramOffset = openParen + 1 + paramMatch.index;
+        scopes.push({
+          name,
+          startOffset: paramOffset,
+          endOffset: Math.min(findBlockEnd(source, paramOffset, nonExecIndex), len),
+        });
+      }
+      paramMatch = paramRe.exec(paramsText);
+    }
+  }
+
   return scopes;
 }
 
@@ -1003,7 +1084,7 @@ function symbolUsagesInRange(
     ...symbols.map((symbol) => symbol.originalName),
     ...preservedNames,
   ].filter((name) => name !== currentName));
-  const text = source.slice(range.startOffset, range.endOffset);
+  const text = maskLuaCommentsAndStrings(source.slice(range.startOffset, range.endOffset));
   for (const name of [...names]) {
     const declaration = new RegExp(`\\blocal\\s+function\\s+${escapeRegExp(name)}\\s*\\(`);
     if (declaration.test(text)) names.delete(name);
@@ -1013,6 +1094,57 @@ function symbolUsagesInRange(
   return uniqueSorted(scanIdentifierTokens(text, rewriteMap, range.startOffset)
     .filter((token) => !token.precededByDot && token.charAfterWs === '(' && !isDeclarationContext(text, token.start))
     .map((token) => token.name));
+}
+
+function maskLuaCommentsAndStrings(sourceText: string): string {
+  let output = '';
+  let index = 0;
+  while (index < sourceText.length) {
+    const current = sourceText[index];
+    const next = sourceText[index + 1];
+    if (current === '-' && next === '-') {
+      const longCommentEnd = sourceText.startsWith('--[[', index) ? sourceText.indexOf(']]', index + 4) : -1;
+      if (longCommentEnd >= 0) {
+        output += ' '.repeat(longCommentEnd + 2 - index);
+        index = longCommentEnd + 2;
+        continue;
+      }
+      const newlineIndex = sourceText.indexOf('\n', index + 2);
+      const end = newlineIndex < 0 ? sourceText.length : newlineIndex;
+      output += ' '.repeat(end - index);
+      index = end;
+      continue;
+    }
+    if (current === '[' && next === '[') {
+      const longStringEnd = sourceText.indexOf(']]', index + 2);
+      if (longStringEnd >= 0) {
+        output += ' '.repeat(longStringEnd + 2 - index);
+        index = longStringEnd + 2;
+        continue;
+      }
+    }
+    if (current === '"' || current === "'") {
+      const quote = current;
+      const start = index;
+      index += 1;
+      while (index < sourceText.length) {
+        if (sourceText[index] === '\\') {
+          index += 2;
+          continue;
+        }
+        if (sourceText[index] === quote) {
+          index += 1;
+          break;
+        }
+        index += 1;
+      }
+      output += ' '.repeat(index - start);
+      continue;
+    }
+    output += current;
+    index += 1;
+  }
+  return output;
 }
 
 function uniqueSorted(values: string[]): string[] {

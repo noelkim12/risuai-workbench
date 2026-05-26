@@ -147,13 +147,49 @@ async function runModuleTableExtract(options: RunRisuLuaSplitOptions): Promise<v
       sourcePath: relativeOutputSourcePath(options.outputRoot, options.sourcePath),
       outputRoot: tempRoot,
     });
+    assertModuleTableWorkspaceMaterialized(tempRoot);
     moveSplitWorkspace(tempRoot, options.outputRoot);
+    assertModuleTableWorkspaceMaterialized(options.outputRoot);
   } catch (error) {
-    moveDocsOnly(tempRoot, options.outputRoot);
+    if (shouldPreserveModuleTableFailureDocs(tempRoot)) {
+      moveDocsOnly(tempRoot, options.outputRoot);
+    }
     throw error;
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
+}
+
+function shouldPreserveModuleTableFailureDocs(outputRoot: string): boolean {
+  const planPath = path.join(outputRoot, ...RISULUA_SPLIT_PLAN_PATH.split('/'));
+  if (!fs.existsSync(planPath)) return false;
+
+  const plan = JSON.parse(fs.readFileSync(planPath, 'utf8')) as RisuLuaSplitPlan;
+  return plan.buildStrategy === 'report-only' || plan.files.length === 0;
+}
+
+function assertModuleTableWorkspaceMaterialized(outputRoot: string): void {
+  const planPath = path.join(outputRoot, ...RISULUA_SPLIT_PLAN_PATH.split('/'));
+  if (!fs.existsSync(planPath)) {
+    throw new Error(`Module-table split did not write ${RISULUA_SPLIT_PLAN_PATH}.`);
+  }
+
+  const plan = JSON.parse(fs.readFileSync(planPath, 'utf8')) as RisuLuaSplitPlan;
+  const missingPaths = plan.files
+    .filter((file) => shouldMaterializeModuleTableFile(file.path))
+    .map((file) => file.path)
+    .filter((relativePath) => !fs.existsSync(path.join(outputRoot, ...relativePath.split('/'))));
+
+  if (missingPaths.length > 0) {
+    throw new Error(`Module-table split did not materialize planned files: ${missingPaths.join(', ')}`);
+  }
+}
+
+function shouldMaterializeModuleTableFile(relativePath: string): boolean {
+  return relativePath.startsWith('lua/')
+    || relativePath.startsWith('legacy/')
+    || relativePath === 'docs/refactor-map.json'
+    || relativePath === 'docs/domain-candidates.json';
 }
 
 function relativeOutputSourcePath(outputRoot: string, sourcePath: string): string {

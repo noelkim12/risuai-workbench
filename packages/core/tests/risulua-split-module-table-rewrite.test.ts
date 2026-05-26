@@ -110,7 +110,7 @@ describe('risulua-split module-table top-level rewrite planner', () => {
     const domainModule = result.modulePlans.find((m) => m.modulePath === 'lua/domain/parse_story_choice_block.risulua');
     expect(domainModule).toBeDefined();
     expect(domainModule!.body).toContain('-- 파싱 스토리');
-    expect(domainModule!.body).toContain('function parseStoryChoiceBlock(triggerId, cleanMsg)');
+    expect(domainModule!.body).toContain('function __impl.parseStoryChoiceBlock(triggerId, cleanMsg)');
   });
 
   it('preserves async(function(...)) wrappers when moving runtime handler assignments', async () => {
@@ -270,7 +270,344 @@ describe('risulua-split module-table top-level rewrite planner', () => {
     expect(domainModule).toBeDefined();
     expect(domainModule!.body).toContain('local __variable_store = require("state.variable_store")');
     expect(domainModule!.body).toContain('__variable_store.CORRUPTION_MAX_LEVEL');
-    expect(domainModule!.body).toContain('M.getCorruptionTotalExpForLevel = getCorruptionTotalExpForLevel');
+    expect(domainModule!.body).toContain('M.getCorruptionTotalExpForLevel = __impl.getCorruptionTotalExpForLevel');
+  });
+
+  it('emits domain functions through a private implementation table', async () => {
+    const result = await rewriteFixture(lines([
+      'function foo(value)',
+      '  return bar(value)',
+      'end',
+      '',
+      'function bar(value)',
+      '  if value == nil then return foo(0) end',
+      '  return value + 1',
+      'end',
+      '',
+      'function onOutput(text)',
+      '  return tostring(foo(text)) .. tostring(bar(text))',
+      'end',
+    ]), { domainGeneration: 'validated' });
+
+    expect(result.ok).toBe(true);
+    const domainModule = result.modulePlans.find(
+      (modulePlan) => modulePlan.category === 'domain-function' && modulePlan.exportNames.join(',') === 'foo,bar',
+    );
+    expect(domainModule).toBeDefined();
+    expect(domainModule!.exportNames).toEqual(['foo', 'bar']);
+
+    const body = domainModule!.body;
+    expect(body).toContain([
+      'local M = {}',
+      'local __impl = {}',
+      '',
+      'function __impl.foo(value)',
+      '  return __impl.bar(value)',
+      'end',
+      '',
+      'function __impl.bar(value)',
+      '  if value == nil then return __impl.foo(0) end',
+      '  return value + 1',
+      'end',
+      '',
+      'M.foo = __impl.foo',
+      'M.bar = __impl.bar',
+      '',
+      'return M',
+    ].join('\n'));
+    expect(body).not.toContain('local foo');
+    expect(body).not.toContain('local bar');
+    expect(body).not.toContain('M.foo = foo');
+    expect(body).not.toContain('M.bar = bar');
+  });
+
+  it('rewrites same-module domain function references to the private implementation table', async () => {
+    const result = await rewriteFixture(lines([
+      'local function normalizeText(value)',
+      '  return tostring(value)',
+      'end',
+      '',
+      'local function scoreText(value)',
+      '  return #normalizeText(value)',
+      'end',
+      '',
+      'function onOutput(text)',
+      '  return tostring(scoreText(text))',
+      'end',
+    ]), { domainGeneration: 'validated' });
+
+    expect(result.ok).toBe(true);
+    const domainModule = result.modulePlans.find((modulePlan) => modulePlan.modulePath === 'lua/domain/text.risulua');
+    expect(domainModule).toBeDefined();
+    expect(domainModule!.body).toContain('function __impl.scoreText(value)');
+    expect(domainModule!.body).toContain('return #__impl.normalizeText(value)');
+  });
+
+  it('does not rewrite shadowed same-module names', async () => {
+    const result = await rewriteFixture(lines([
+      'local function normalizeText(value)',
+      '  return tostring(value)',
+      'end',
+      '',
+      'local function scoreText(normalizeText)',
+      '  return normalizeText + 1',
+      'end',
+      '',
+      'function onOutput(text)',
+      '  return tostring(scoreText(text))',
+      'end',
+    ]), { domainGeneration: 'validated' });
+
+    expect(result.ok).toBe(true);
+    const domainModule = result.modulePlans.find((modulePlan) => modulePlan.modulePath === 'lua/domain/text.risulua');
+    expect(domainModule).toBeDefined();
+    expect(domainModule!.body).toContain('function __impl.scoreText(normalizeText)');
+    expect(domainModule!.body).toContain('return normalizeText + 1');
+    expect(domainModule!.body).not.toContain('return __impl.normalizeText + 1');
+  });
+
+  it('does not rewrite local variables shadowing same-module names', async () => {
+    const result = await rewriteFixture(lines([
+      'local function normalizeText(value)',
+      '  return tostring(value)',
+      'end',
+      '',
+      'local function scoreText(value)',
+      '  local normalizeText = 1',
+      '  return normalizeText + 1',
+      'end',
+      '',
+      'function onOutput(text)',
+      '  return tostring(scoreText(text))',
+      'end',
+    ]), { domainGeneration: 'validated' });
+
+    expect(result.ok).toBe(true);
+    const domainModule = result.modulePlans.find((modulePlan) => modulePlan.modulePath === 'lua/domain/text.risulua');
+    expect(domainModule).toBeDefined();
+    expect(domainModule!.body).toContain('function __impl.scoreText(value)');
+    expect(domainModule!.body).toContain('local normalizeText = 1');
+    expect(domainModule!.body).toContain('return normalizeText + 1');
+    expect(domainModule!.body).not.toContain('local __impl.normalizeText = 1');
+    expect(domainModule!.body).not.toContain('return __impl.normalizeText + 1');
+  });
+
+  it('does not rewrite same-module names inside non-executable ranges', async () => {
+    const result = await rewriteFixture(lines([
+      'local function normalizeText(value)',
+      '  return tostring(value)',
+      'end',
+      '',
+      'local function explainText()',
+      '  return "normalizeText should stay as text"',
+      'end',
+      '',
+      'function onOutput(text)',
+      '  return explainText()',
+      'end',
+    ]), { domainGeneration: 'validated' });
+
+    expect(result.ok).toBe(true);
+    const domainModule = result.modulePlans.find((modulePlan) => modulePlan.modulePath === 'lua/domain/text.risulua');
+    expect(domainModule).toBeDefined();
+    expect(domainModule!.body).toContain('return "normalizeText should stay as text"');
+    expect(domainModule!.body).not.toContain('"__impl.normalizeText should stay as text"');
+  });
+
+  it('renders grouped domain modules with local intra-group calls and one external require', async () => {
+    const result = await rewriteFixture(lines([
+      'local function normalizeDeck(cards)',
+      '  return cards or {}',
+      'end',
+      '',
+      'local function scoreDeck(cards)',
+      '  return #normalizeDeck(cards) * 10',
+      'end',
+      '',
+      'function onOutput(text)',
+      '  return tostring(scoreDeck({ text }))',
+      'end',
+    ]), { domainGeneration: 'validated' });
+
+    expect(result.ok).toBe(true);
+    const domainModule = result.modulePlans.find((modulePlan) => modulePlan.modulePath === 'lua/domain/deck.risulua');
+    expect(domainModule).toBeDefined();
+    expect(domainModule!.body).toContain('local M = {}');
+    expect(domainModule!.body).toContain('function __impl.normalizeDeck(cards)');
+    expect(domainModule!.body).toContain('function __impl.scoreDeck(cards)');
+    expect(domainModule!.body).toContain('return #__impl.normalizeDeck(cards) * 10');
+    expect(domainModule!.body).not.toContain('require("domain.deck")');
+    expect(domainModule!.body).toContain('M.normalizeDeck = __impl.normalizeDeck');
+    expect(domainModule!.body).toContain('M.scoreDeck = __impl.scoreDeck');
+
+    const runtimeOutput = result.modulePlans.find((modulePlan) => modulePlan.modulePath === RISULUA_MODULE_TABLE_RUNTIME_OUTPUT_PATH);
+    expect(runtimeOutput).toBeDefined();
+    expect(runtimeOutput!.body).toContain('local __domain_deck = require("domain.deck")');
+    expect(runtimeOutput!.body).toContain('return tostring(__domain_deck.scoreDeck({ text }))');
+  });
+
+  it('renders singular and plural block helpers in one domain module', async () => {
+    const result = await rewriteFixture(lines([
+      'local function parseStoryChoiceBlock(text)',
+      '  return text:gsub("Story", "")',
+      'end',
+      '',
+      'local function parseStoryChoiceBlocks(text)',
+      '  return parseStoryChoiceBlock(text) .. "|all"',
+      'end',
+      '',
+      'function onOutput(text)',
+      '  return parseStoryChoiceBlocks(text)',
+      'end',
+    ]), { domainGeneration: 'validated' });
+
+    expect(result.ok).toBe(true);
+    const domainModule = result.modulePlans.find((modulePlan) => modulePlan.modulePath === 'lua/domain/story_choice_block.risulua');
+    expect(domainModule).toBeDefined();
+    expect(domainModule!.body).toContain('function __impl.parseStoryChoiceBlock(text)');
+    expect(domainModule!.body).toContain('function __impl.parseStoryChoiceBlocks(text)');
+    expect(domainModule!.body).toContain('return __impl.parseStoryChoiceBlock(text) .. "|all"');
+    expect(domainModule!.body).not.toContain('require("domain.parse_story_choice_block")');
+
+    const runtimeOutput = result.modulePlans.find((modulePlan) => modulePlan.modulePath === RISULUA_MODULE_TABLE_RUNTIME_OUTPUT_PATH);
+    expect(runtimeOutput).toBeDefined();
+    expect(runtimeOutput!.body).toContain('local __domain_story_choice_block = require("domain.story_choice_block")');
+    expect(runtimeOutput!.body).toContain('__domain_story_choice_block.parseStoryChoiceBlocks(text)');
+  });
+
+  it('renders grouped numeric utility helpers with local intra-group calls', async () => {
+    const result = await rewriteFixture(lines([
+      'local function clampNumber(value, minValue, maxValue)',
+      '  return math.max(minValue, math.min(maxValue, value))',
+      'end',
+      '',
+      'local function roundNumber(value)',
+      '  return math.floor(value + 0.5)',
+      'end',
+      '',
+      'local function normalizePercent(value)',
+      '  return clampNumber(roundNumber(value), 0, 100)',
+      'end',
+      '',
+      'function onOutput(text)',
+      '  return tostring(normalizePercent(tonumber(text) or 0))',
+      'end',
+    ]), { domainGeneration: 'validated' });
+
+    expect(result.ok).toBe(true);
+    const numberModule = result.modulePlans.find((modulePlan) => modulePlan.modulePath === 'lua/domain/number.risulua');
+    expect(numberModule).toBeDefined();
+    expect(numberModule!.body).toContain('function __impl.clampNumber(value, minValue, maxValue)');
+    expect(numberModule!.body).toContain('function __impl.roundNumber(value)');
+    expect(numberModule!.body).toContain('function __impl.normalizePercent(value)');
+    expect(numberModule!.body).toContain('return __impl.clampNumber(__impl.roundNumber(value), 0, 100)');
+    expect(numberModule!.body).not.toContain('require("domain.clamp_number")');
+    expect(numberModule!.body).not.toContain('require("domain.round_number")');
+  });
+
+  it('adds forward declarations for grouped domain functions that call later group members', async () => {
+    const result = await rewriteFixture(lines([
+      'local function scoreDeck(cards)',
+      '  return #normalizeDeck(cards) * 10',
+      'end',
+      '',
+      'local function normalizeDeck(cards)',
+      '  return cards or {}',
+      'end',
+      '',
+      'function onOutput(text)',
+      '  return tostring(scoreDeck({ text }))',
+      'end',
+    ]), { domainGeneration: 'validated' });
+
+    expect(result.ok).toBe(true);
+    const domainModule = result.modulePlans.find((modulePlan) => modulePlan.modulePath === 'lua/domain/deck.risulua');
+    expect(domainModule).toBeDefined();
+    expect(domainModule!.body).not.toContain('local scoreDeck');
+    expect(domainModule!.body).not.toContain('local normalizeDeck');
+    expect(domainModule!.body).toContain('function __impl.scoreDeck(cards)');
+    expect(domainModule!.body).toContain('return #__impl.normalizeDeck(cards) * 10');
+    expect(domainModule!.body).toContain('function __impl.normalizeDeck(cards)');
+  });
+
+  it('co-locates cross-referenced domain functions to avoid generated require cycles', async () => {
+    const result = await rewriteFixture(lines([
+      'function getItemSortRank(key)',
+      '  if key == "rare" then return 2 end',
+      '  return 1',
+      'end',
+      '',
+      'function getSortedShopItemKeys(items)',
+      '  table.sort(items, function(a, b)',
+      '    return getItemSortRank(a) > getItemSortRank(b)',
+      '  end)',
+      '  return items',
+      'end',
+      '',
+      'function onOutput(text)',
+      '  return table.concat(getSortedShopItemKeys({ "rare", "common" }), ",")',
+      'end',
+    ]), { domainGeneration: 'validated' });
+
+    expect(result.ok).toBe(true);
+    const itemModule = result.modulePlans.find((modulePlan) => modulePlan.modulePath === 'lua/domain/item.risulua');
+    expect(itemModule).toBeDefined();
+    expect(itemModule!.body).toContain('function __impl.getItemSortRank(key)');
+    expect(itemModule!.body).toContain('function __impl.getSortedShopItemKeys(items)');
+    expect(itemModule!.body).toContain('return __impl.getItemSortRank(a) > __impl.getItemSortRank(b)');
+    expect(itemModule!.body).not.toContain('require("domain.get_item_sort_rank")');
+  });
+
+  it('keeps one-way domain dependencies in separate modules', async () => {
+    const result = await rewriteFixture(lines([
+      'local function normalizeAlpha(value)',
+      '  return value or ""',
+      'end',
+      '',
+      'local function scoreBeta(value)',
+      '  return #normalizeAlpha(value)',
+      'end',
+      '',
+      'function onOutput(text)',
+      '  return tostring(scoreBeta(text))',
+      'end',
+    ]), { domainGeneration: 'validated' });
+
+    expect(result.ok).toBe(true);
+    const alphaModule = result.modulePlans.find((modulePlan) => modulePlan.modulePath === 'lua/domain/normalize_alpha.risulua');
+    const betaModule = result.modulePlans.find((modulePlan) => modulePlan.modulePath === 'lua/domain/score_beta.risulua');
+    expect(alphaModule).toBeDefined();
+    expect(betaModule).toBeDefined();
+    expect(alphaModule!.body).not.toContain('require("domain.score_beta")');
+    expect(betaModule!.body).toContain('local __domain_normalize_alpha = require("domain.normalize_alpha")');
+    expect(betaModule!.body).toContain('return #__domain_normalize_alpha.normalizeAlpha(value)');
+    expect(betaModule!.body).not.toContain('function normalizeAlpha');
+  });
+
+  it('ignores call-like domain names inside strings and comments when grouping modules', async () => {
+    const result = await rewriteFixture(lines([
+      'local function alphaRank(value)',
+      '  local text = "betaScore("',
+      '  -- betaScore(value)',
+      '  return value or text',
+      'end',
+      '',
+      'local function betaScore(value)',
+      '  return #alphaRank(value)',
+      'end',
+      '',
+      'function onOutput(text)',
+      '  return tostring(betaScore(text))',
+      'end',
+    ]), { domainGeneration: 'validated' });
+
+    expect(result.ok).toBe(true);
+    const alphaModule = result.modulePlans.find((modulePlan) => modulePlan.modulePath === 'lua/domain/alpha_rank.risulua');
+    const betaModule = result.modulePlans.find((modulePlan) => modulePlan.modulePath === 'lua/domain/beta_score.risulua');
+    expect(alphaModule).toBeDefined();
+    expect(betaModule).toBeDefined();
+    expect(alphaModule!.body).not.toContain('require("domain.beta_score")');
+    expect(betaModule!.body).toContain('local __domain_alpha_rank = require("domain.alpha_rank")');
   });
 
   it('moves the full async button action assignment instead of leaving wrapper fragments in main', async () => {
@@ -386,7 +723,7 @@ describe('risulua-split module-table top-level rewrite planner', () => {
     expect(runtimeModule!.body).toContain('function onOutput(text, bumpOutside)');
   });
 
-  it('keeps domain require when preserved main code still calls an extracted domain function', async () => {
+  it('preserves domain function when top-level eager code calls it', async () => {
     const result = await rewriteFixture(lines([
       'function buildTargetStatus(triggerId)',
       '  return getChatVar(triggerId, "ct_Target_Name") or ""',
@@ -401,8 +738,9 @@ describe('risulua-split module-table top-level rewrite planner', () => {
 
     expect(result.ok).toBe(true);
     const main = result.mainRewritePlan.fullMainText;
-    expect(main).toContain('local __domain_build_target_status = require("domain.build_target_status")');
-    expect(main).toContain('local previewStatus = __domain_build_target_status.buildTargetStatus("preview")');
+    expect(main).toContain('function buildTargetStatus(triggerId)');
+    expect(main).toContain('local previewStatus = buildTargetStatus("preview")');
+    expect(main).not.toContain('local __domain_build_target_status = require("domain.build_target_status")');
     expect(main).not.toContain('buildTargetStatus = __domain_build_target_status.buildTargetStatus');
   });
 

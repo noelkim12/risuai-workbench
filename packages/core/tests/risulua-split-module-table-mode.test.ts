@@ -112,9 +112,18 @@ describe('risulua-split module-table artifact writer', () => {
 
     const variableStore = fileContent(artifacts, RISULUA_MODULE_TABLE_VARIABLE_STORE_PATH);
     expect(variableStore).toContain('-- risulua-split=module-table variable-store');
-    expect(variableStore).toContain('local vgContext = {');
-    expect(variableStore).toContain('stats = { hp = 10 }');
-    expect(variableStore).toContain('M.vgContext = vgContext');
+    expect(variableStore).toContain([
+      'local M = {}',
+      '',
+      'M.vgContext = {',
+      '  mood = "neutral",',
+      '  stats = { hp = 10 },',
+      '}',
+      '',
+      'return M',
+    ].join('\n'));
+    expect(variableStore).not.toContain('local vgContext = {');
+    expect(variableStore).not.toContain('M.vgContext = vgContext');
     expect(variableStore.trim().endsWith('return M')).toBe(true);
   });
 
@@ -155,12 +164,142 @@ describe('risulua-split module-table artifact writer', () => {
     const variableStore = fileContent(artifacts, RISULUA_MODULE_TABLE_VARIABLE_STORE_PATH);
     const main = fileContent(artifacts, 'lua/main.risulua');
 
+    expect(variableStore).toContain('M.storyState = {');
     expect(variableStore).toContain('template = [[keeps } inside long string]]');
     expect(variableStore).toContain('note = [=[also keeps } inside nested long string]=]');
     expect(variableStore).toContain('marker = "ok"');
-    expect(variableStore).toContain('M.storyState = storyState');
+    expect(variableStore).not.toContain('local storyState = {');
+    expect(variableStore).not.toContain('M.storyState = storyState');
     expect(main).toContain('local storyState = __variable_store.storyState');
     expect(main).not.toContain('template = [[keeps } inside long string]]');
+  });
+
+  it('rewrites variable-store initializer dependencies to module table references', async () => {
+    const source = lines([
+      'local constEnhancementType = {',
+      '  attack = "attack",',
+      '  defense = "defense",',
+      '}',
+      '',
+      'local enhancementTypeDefs = {',
+      '  { name = "Attack", code = constEnhancementType.attack },',
+      '  { name = "Defense", code = constEnhancementType.defense },',
+      '}',
+      '',
+      'function onOutput(text)',
+      '  return enhancementTypeDefs[1].code .. text',
+      'end',
+    ]);
+
+    const artifacts = await createRisuLuaModuleTableArtifacts({
+      source,
+      sourcePath: 'variable_store_dependency_fixture.risulua',
+    });
+
+    const variableStore = fileContent(artifacts, RISULUA_MODULE_TABLE_VARIABLE_STORE_PATH);
+    expect(variableStore).toContain('M.constEnhancementType = {');
+    expect(variableStore).toContain([
+      'M.constEnhancementType = {',
+      '  attack = "attack",',
+      '  defense = "defense",',
+      '}',
+      '',
+      'M.enhancementTypeDefs = {',
+    ].join('\n'));
+    expect(variableStore).toContain('M.enhancementTypeDefs = {');
+    expect(variableStore).toContain('{ name = "Attack", code = M.constEnhancementType.attack }');
+    expect(variableStore).toContain('{ name = "Defense", code = M.constEnhancementType.defense }');
+    expect(variableStore).not.toContain('code = constEnhancementType.attack');
+    expect(variableStore).not.toContain('local enhancementTypeDefs = {');
+
+    const main = fileContent(artifacts, 'lua/main.risulua');
+    expect(main).toContain('local constEnhancementType = __variable_store.constEnhancementType');
+    expect(main).toContain('local enhancementTypeDefs = __variable_store.enhancementTypeDefs');
+  });
+
+  it('directly emits variable-store table constructors that contain function values', async () => {
+    const source = lines([
+      'local SKILL_EFFECT_HANDLERS = {',
+      '  heal = function(target, amount)',
+      '    target.hp = math.min(target.max_hp, target.hp + amount)',
+      '    return target.hp',
+      '  end,',
+      '}',
+      '',
+      'function onOutput(text)',
+      '  return tostring(SKILL_EFFECT_HANDLERS.heal({ hp = 1, max_hp = 10 }, 2)) .. text',
+      'end',
+    ]);
+
+    const artifacts = await createRisuLuaModuleTableArtifacts({
+      source,
+      sourcePath: 'variable_store_function_table_fixture.risulua',
+    });
+
+    const variableStore = fileContent(artifacts, RISULUA_MODULE_TABLE_VARIABLE_STORE_PATH);
+    expect(variableStore).toContain('M.SKILL_EFFECT_HANDLERS = {');
+    expect(variableStore).toContain('heal = function(target, amount)');
+    expect(variableStore).toContain('target.hp = math.min(target.max_hp, target.hp + amount)');
+    expect(variableStore).not.toContain('local SKILL_EFFECT_HANDLERS = {');
+    expect(variableStore).not.toContain('M.SKILL_EFFECT_HANDLERS = SKILL_EFFECT_HANDLERS');
+  });
+
+  it('uses compact local-backed fallback for self-referential variable-store initializers', async () => {
+    const source = lines([
+      'local recursiveStore = { parent = recursiveStore }',
+      '',
+      'function onOutput(text)',
+      '  return tostring(recursiveStore.parent) .. text',
+      'end',
+    ]);
+
+    const artifacts = await createRisuLuaModuleTableArtifacts({
+      source,
+      sourcePath: 'variable_store_self_reference_fixture.risulua',
+    });
+
+    const variableStore = fileContent(artifacts, RISULUA_MODULE_TABLE_VARIABLE_STORE_PATH);
+    expect(variableStore).toContain([
+      'local recursiveStore = { parent = recursiveStore }',
+      'M.recursiveStore = recursiveStore',
+    ].join('\n'));
+    expect(variableStore).not.toContain([
+      'local recursiveStore = { parent = recursiveStore }',
+      '',
+      'M.recursiveStore = recursiveStore',
+    ].join('\n'));
+    expect(variableStore).not.toContain('M.recursiveStore = { parent = M.recursiveStore }');
+  });
+
+  it('renders compact variable-store output without blank lines between one-line entries', async () => {
+    const source = lines([
+      'local FIRST_VALUE = 1',
+      'local SECOND_VALUE = 2',
+      'local THIRD_VALUE = 3',
+      '',
+      'function onOutput(text)',
+      '  return tostring(FIRST_VALUE + SECOND_VALUE + THIRD_VALUE) .. text',
+      'end',
+    ]);
+
+    const artifacts = await createRisuLuaModuleTableArtifacts({
+      source,
+      sourcePath: 'variable_store_compact_fixture.risulua',
+    });
+
+    const variableStore = fileContent(artifacts, RISULUA_MODULE_TABLE_VARIABLE_STORE_PATH);
+    expect(variableStore).toContain([
+      'local M = {}',
+      '',
+      'M.FIRST_VALUE = 1',
+      'M.SECOND_VALUE = 2',
+      'M.THIRD_VALUE = 3',
+      '',
+      'return M',
+    ].join('\n'));
+    expect(variableStore).not.toContain('M.FIRST_VALUE = 1\n\nM.SECOND_VALUE = 2');
+    expect(variableStore.endsWith('\n')).toBe(true);
+    expect(variableStore.endsWith('\n\n')).toBe(false);
   });
 
   it('extracts top-level prompt string constants into a dedicated prompt store', async () => {
@@ -220,7 +359,8 @@ describe('risulua-split module-table artifact writer', () => {
     expect(promptStore.trim().endsWith('return M')).toBe(true);
 
     const variableStore = fileContent(artifacts, RISULUA_MODULE_TABLE_VARIABLE_STORE_PATH);
-    expect(variableStore).toContain('local storyState = {');
+    expect(variableStore).toContain('M.storyState = {');
+    expect(variableStore).not.toContain('local storyState = {');
     expect(variableStore).not.toContain('CHOICE_GENERATION_INSTRUCTION');
   });
 
@@ -264,9 +404,119 @@ describe('risulua-split module-table artifact writer', () => {
 
     const domainFile = fileContent(artifacts, 'lua/domain/score_deck.risulua');
     expect(domainFile).toContain('local M = {}');
-    expect(domainFile).toContain('function scoreDeck(cards)');
-    expect(domainFile).toContain('M.scoreDeck = scoreDeck');
+    expect(domainFile).toContain('local __impl = {}');
+    expect(domainFile).toContain('function __impl.scoreDeck(cards)');
+    expect(domainFile).toContain('M.scoreDeck = __impl.scoreDeck');
     expect(domainFile.trim().endsWith('return M')).toBe(true);
+  });
+
+  it('writes canonical grouped domain files as actual workspace artifacts', async () => {
+    const source = lines([
+      'local function normalizeDeck(cards)',
+      '  return cards or {}',
+      'end',
+      '',
+      'local function scoreDeck(cards)',
+      '  return #normalizeDeck(cards) * 10',
+      'end',
+      '',
+      'function onOutput(text)',
+      '  return tostring(scoreDeck({ text }))',
+      'end',
+    ]);
+
+    const artifacts = await createRisuLuaModuleTableArtifacts({
+      source,
+      sourcePath: 'grouped_domain_fixture.risulua',
+      targetName: 'grouped_domain_fixture',
+      domainGeneration: 'validated',
+    });
+
+    const paths = artifacts.workspaceFiles.map((file) => file.path);
+    expect(paths).toContain('lua/domain/deck.risulua');
+    expect(paths).not.toContain('lua/domain/normalize_deck.risulua');
+    expect(paths).not.toContain('lua/domain/score_deck.risulua');
+
+    const domain = fileContent(artifacts, 'lua/domain/deck.risulua');
+    expect(domain).toContain('local __impl = {}');
+    expect(domain).toContain('function __impl.normalizeDeck(cards)');
+    expect(domain).toContain('function __impl.scoreDeck(cards)');
+    expect(domain).toContain('return #__impl.normalizeDeck(cards) * 10');
+    expect(domain).toContain('M.normalizeDeck = __impl.normalizeDeck');
+    expect(domain).toContain('M.scoreDeck = __impl.scoreDeck');
+    expect(domain.trim().endsWith('return M')).toBe(true);
+
+    const runtimeOutput = fileContent(artifacts, 'lua/runtime/output.risulua');
+    expect(runtimeOutput).toContain('local __domain_deck = require("domain.deck")');
+    expect(runtimeOutput).toContain('__domain_deck.scoreDeck');
+
+    expect(artifacts.plan.files).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'lua/domain/deck.risulua' }),
+    ]));
+    expect(artifacts.dryRunResult.refactorMap.modules).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'lua/domain/deck.risulua', requireId: 'domain.deck' }),
+    ]));
+  });
+
+  it('writes grouped numeric utility domain files as actual workspace artifacts', async () => {
+    const artifacts = await createRisuLuaModuleTableArtifacts({
+      source: lines([
+        'local function clampNumber(value, minValue, maxValue)',
+        '  return math.max(minValue, math.min(maxValue, value))',
+        'end',
+        '',
+        'local function roundNumber(value)',
+        '  return math.floor(value + 0.5)',
+        'end',
+        '',
+        'function onOutput(text)',
+        '  return tostring(clampNumber(roundNumber(tonumber(text) or 0), 0, 100))',
+        'end',
+      ]),
+      sourcePath: 'numeric_utility_grouping_fixture.risulua',
+      domainGeneration: 'validated',
+    });
+
+    const paths = artifacts.workspaceFiles.map((file) => file.path);
+    expect(paths).toContain('lua/domain/number.risulua');
+    expect(paths).not.toContain('lua/domain/clamp_number.risulua');
+    expect(paths).not.toContain('lua/domain/round_number.risulua');
+
+    const domain = fileContent(artifacts, 'lua/domain/number.risulua');
+    expect(domain).toContain('local __impl = {}');
+    expect(domain).toContain('function __impl.clampNumber(value, minValue, maxValue)');
+    expect(domain).toContain('function __impl.roundNumber(value)');
+    expect(domain).toContain('M.clampNumber = __impl.clampNumber');
+    expect(domain).toContain('M.roundNumber = __impl.roundNumber');
+  });
+
+  it('rewrites variable-store captures once inside grouped domain modules', async () => {
+    const source = lines([
+      'local DECK_SCORE_MULTIPLIER = 10',
+      '',
+      'local function normalizeDeck(cards)',
+      '  return cards or {}',
+      'end',
+      '',
+      'local function scoreDeck(cards)',
+      '  return #normalizeDeck(cards) * DECK_SCORE_MULTIPLIER',
+      'end',
+      '',
+      'function onOutput(text)',
+      '  return tostring(scoreDeck({ text }))',
+      'end',
+    ]);
+
+    const artifacts = await createRisuLuaModuleTableArtifacts({
+      source,
+      sourcePath: 'grouped_domain_store_fixture.risulua',
+      domainGeneration: 'validated',
+    });
+
+    const domain = fileContent(artifacts, 'lua/domain/deck.risulua');
+    expect(domain).toContain('local __variable_store = require("state.variable_store")');
+    expect(domain).toContain('return #__impl.normalizeDeck(cards) * __variable_store.DECK_SCORE_MULTIPLIER');
+    expect(domain).not.toContain('return #__impl.normalizeDeck(cards) * DECK_SCORE_MULTIPLIER');
   });
 
   it('rewrites prompt store captures inside validated domain modules', async () => {
@@ -388,7 +638,7 @@ describe('risulua-split module-table artifact writer', () => {
     const paths = artifacts.workspaceFiles.map((file) => file.path);
 
     expect(paths).toEqual(expect.arrayContaining([
-      'lua/common/local_helpers.risulua',
+      'lua/domain/text.risulua',
       'lua/domain/find_character_code.risulua',
       'lua/domain/build_chikan_target_save.risulua',
       'lua/runtime/output.risulua',
@@ -400,21 +650,23 @@ describe('risulua-split module-table artifact writer', () => {
     expect(main).not.toContain('local function splitPipe');
     expect(main).not.toContain('local function buildChikanTargetSave');
 
-    const common = fileContent(artifacts, 'lua/common/local_helpers.risulua');
-    expect(common).toContain('function trim(value)');
-    expect(common).toContain('function splitPipe(value)');
-    expect(common).toContain('table.insert(out, trim(token))');
-    expect(common).toContain('M.splitPipe = splitPipe');
+    const text = fileContent(artifacts, 'lua/domain/text.risulua');
+    expect(text).toContain('function __impl.trim(value)');
+    expect(text).toContain('function __impl.splitPipe(value)');
+    expect(text).toContain('table.insert(out, __impl.trim(token))');
+    expect(text).toContain('M.trim = __impl.trim');
+    expect(text).toContain('M.splitPipe = __impl.splitPipe');
+    expect(text).not.toContain('require("domain.trim")');
 
     const findCharacterCode = fileContent(artifacts, 'lua/domain/find_character_code.risulua');
-    expect(findCharacterCode).toContain('local __local_helpers = require("common.local_helpers")');
-    expect(findCharacterCode).toContain('return __local_helpers.trim(name) .. tostring(triggerId)');
+    expect(findCharacterCode).toContain('local __domain_text = require("domain.text")');
+    expect(findCharacterCode).toContain('return __domain_text.trim(name) .. tostring(triggerId)');
 
     const buildChikanTargetSave = fileContent(artifacts, 'lua/domain/build_chikan_target_save.risulua');
     expect(buildChikanTargetSave).toContain('local __domain_find_character_code = require("domain.find_character_code")');
-    expect(buildChikanTargetSave).toContain('local __local_helpers = require("common.local_helpers")');
+    expect(buildChikanTargetSave).toContain('local __domain_text = require("domain.text")');
     expect(buildChikanTargetSave).toContain('local code = __domain_find_character_code.findCharacterCode(triggerId, " C001 ")');
-    expect(buildChikanTargetSave).toContain('local parts = __local_helpers.splitPipe(code .. "|saved")');
+    expect(buildChikanTargetSave).toContain('local parts = __domain_text.splitPipe(code .. "|saved")');
 
     const runtimeOutput = fileContent(artifacts, 'lua/runtime/output.risulua');
     expect(runtimeOutput).toContain('local __domain_build_chikan_target_save = require("domain.build_chikan_target_save")');
@@ -448,6 +700,7 @@ describe('risulua-split module-table artifact writer', () => {
 
     const paths = artifacts.workspaceFiles.map((file) => file.path);
     expect(paths).toContain('lua/domain/set_phase.risulua');
+    expect(paths).toContain('lua/domain/text.risulua');
 
     const main = fileContent(artifacts, 'lua/main.risulua');
     expect(main).not.toContain('setPhase = __domain_set_phase.setPhase');
@@ -461,8 +714,8 @@ describe('risulua-split module-table artifact writer', () => {
     expect(buttonRuntime).toContain('return __domain_set_phase.setPhase(triggerId, c)');
 
     const setPhase = fileContent(artifacts, 'lua/domain/set_phase.risulua');
-    expect(setPhase).toContain('local __local_helpers = require("common.local_helpers")');
-    expect(setPhase).toContain('local phase = tonumber(__local_helpers.trim(value)) or 0');
+    expect(setPhase).toContain('local __domain_text = require("domain.text")');
+    expect(setPhase).toContain('local phase = tonumber(__domain_text.trim(value)) or 0');
     expect(setPhase).toContain('setChatVar(triggerId, "phase", phase)');
   });
 
@@ -669,9 +922,9 @@ describe('risulua-split module-table artifact writer', () => {
     expect(hostGlobals).toContain('M.resetTargetState = resetTargetState');
 
     const adjustSkill = fileContent(artifacts, 'lua/domain/adjust_skill.risulua');
-    expect(adjustSkill).toContain('function adjustSkill(triggerId, skillKey, delta, maxLevel, minChikanLevel)');
+    expect(adjustSkill).toContain('function __impl.adjustSkill(triggerId, skillKey, delta, maxLevel, minChikanLevel)');
     expect(adjustSkill).toContain('setChatVar(triggerId, skillKey, tostring(nextLevel))');
-    expect(adjustSkill).toContain('M.adjustSkill = adjustSkill');
+    expect(adjustSkill).toContain('M.adjustSkill = __impl.adjustSkill');
   });
 
   it('does not move button actions that capture ordinary local scalar state', async () => {
@@ -743,9 +996,9 @@ describe('risulua-split module-table artifact writer', () => {
 
     const restore = fileContent(artifacts, 'lua/domain/restore_chikan_full_save.risulua');
     expect(restore).toContain('local __host_globals = require("host_globals.global_functions")');
-    expect(restore).toContain('function restoreChikanFullSave(triggerId)');
+    expect(restore).toContain('function __impl.restoreChikanFullSave(triggerId)');
     expect(restore).toContain('__host_globals.resetTargetState(triggerId)');
-    expect(restore).toContain('M.restoreChikanFullSave = restoreChikanFullSave');
+    expect(restore).toContain('M.restoreChikanFullSave = __impl.restoreChikanFullSave');
 
     const buttonActions = fileContent(artifacts, RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH);
     expect(buttonActions).toContain('local __domain_restore_chikan_full_save = require("domain.restore_chikan_full_save")');
@@ -815,9 +1068,9 @@ describe('risulua-split module-table artifact writer', () => {
     const domainFile = fileContent(artifacts, 'lua/domain/create_random_character.risulua');
     expect(main).not.toContain('local __domain_create_random_character = require("domain.create_random_character")');
     expect(main).not.toContain('createRandomCharacter = __domain_create_random_character.createRandomCharacter');
-    expect(domainFile).toContain('local __local_helpers = require("common.local_helpers")');
-    expect(domainFile).toContain('local name = __local_helpers.safeGet("name")');
-    expect(domainFile).toContain('M.createRandomCharacter = createRandomCharacter');
+    expect(domainFile).toContain('local __domain_safe_get = require("domain.safe_get")');
+    expect(domainFile).toContain('local name = __domain_safe_get.safeGet("name")');
+    expect(domainFile).toContain('M.createRandomCharacter = __impl.createRandomCharacter');
     const runtimeOutput = fileContent(artifacts, 'lua/runtime/output.risulua');
     expect(runtimeOutput).toContain('local __domain_create_random_character = require("domain.create_random_character")');
     expect(runtimeOutput).toContain('return __domain_create_random_character.createRandomCharacter(text)');
@@ -864,8 +1117,8 @@ describe('risulua-split module-table artifact writer', () => {
     expect(runtimeOutput).toContain('return __domain_spend_skill_point.spendSkillPoint(triggerId, "Melee")');
 
     const variableStore = fileContent(artifacts, RISULUA_MODULE_TABLE_VARIABLE_STORE_PATH);
-    expect(variableStore).toContain('local AUTO_EXP_VALUES = {');
-    expect(variableStore).toContain('M.AUTO_EXP_VALUES = AUTO_EXP_VALUES');
+    expect(variableStore).toContain('M.AUTO_EXP_VALUES = {');
+    expect(variableStore).not.toContain('M.AUTO_EXP_VALUES = AUTO_EXP_VALUES');
   });
 
   it('moves variable-store backed start enhancement buttons behind the ABI shell', async () => {
