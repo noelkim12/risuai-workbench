@@ -11,6 +11,7 @@ export interface RisuLuaDomainGroupingOptions {
 
 const WEAK_DOMAIN_TOKENS = new Set([
   'add',
+  'and',
   'apply',
   'build',
   'calc',
@@ -297,15 +298,90 @@ function coalesceCyclicModuleGroups(
   }
 }
 
+interface SafeSemanticCluster {
+  path: string;
+  names: string[];
+  reason: RisuLuaDomainGroupingMetadata['reason'];
+  token?: string;
+  family?: RisuLuaDomainGroupingMetadata['family'];
+}
+
+function semanticClusters(
+  names: readonly string[],
+  semanticGroupedPaths: ReadonlyMap<string, string>,
+  semanticGroupingByName: ReadonlyMap<string, RisuLuaDomainGroupingMetadata>,
+): SafeSemanticCluster[] {
+  const namesByPath = new Map<string, string[]>();
+  for (const name of names) {
+    const path = semanticGroupedPaths.get(name) ?? domainFunctionPath(name);
+    namesByPath.set(path, [...(namesByPath.get(path) ?? []), name]);
+  }
+
+  return [...namesByPath.entries()]
+    .map(([path, pathNames]) => {
+      const clusterNames = uniqueSorted(pathNames);
+      const representative = clusterNames
+        .map((name) => semanticGroupingByName.get(name))
+        .find((grouping) => grouping !== undefined && grouping.path === path);
+      return {
+        path,
+        names: clusterNames,
+        reason: representative?.reason ?? 'singleton',
+        token: representative?.token,
+        family: representative?.family,
+      } satisfies SafeSemanticCluster;
+    })
+    .sort((left, right) => {
+      const sizeDiff = right.names.length - left.names.length;
+      if (sizeDiff !== 0) return sizeDiff;
+      return left.path.localeCompare(right.path);
+    });
+}
+
 function restoreSafeSemanticClusters(
-  _names: readonly string[],
-  _dependencies: ReadonlyMap<string, readonly string[]> | undefined,
-  _semanticGroupedPaths: ReadonlyMap<string, string>,
-  _semanticGroupingByName: ReadonlyMap<string, RisuLuaDomainGroupingMetadata>,
-  _groupedPaths: Map<string, string>,
-  _groupingByName: Map<string, RisuLuaDomainGroupingMetadata>,
+  names: readonly string[],
+  dependencies: ReadonlyMap<string, readonly string[]> | undefined,
+  semanticGroupedPaths: ReadonlyMap<string, string>,
+  semanticGroupingByName: ReadonlyMap<string, RisuLuaDomainGroupingMetadata>,
+  groupedPaths: Map<string, string>,
+  groupingByName: Map<string, RisuLuaDomainGroupingMetadata>,
 ): void {
-  if (_dependencies === undefined) return;
+  if (dependencies === undefined) return;
+  for (const cluster of semanticClusters(names, semanticGroupedPaths, semanticGroupingByName)) {
+    if (cluster.names.length < 2) continue;
+    if (cluster.reason === 'singleton') continue;
+    if (cyclicDomainComponents(cluster.names, dependencies).length > 0) continue;
+    if (
+      cluster.names.every((name) => {
+        const grouping = groupingByName.get(name);
+        return (
+          groupedPaths.get(name) === cluster.path &&
+          grouping?.reason === cluster.reason &&
+          grouping.path === cluster.path &&
+          grouping.token === cluster.token &&
+          grouping.family === cluster.family &&
+          grouping.peers.length === cluster.names.length &&
+          grouping.peers.every((peer, index) => peer === cluster.names[index])
+        );
+      })
+    )
+      continue;
+
+    const trialGroupedPaths = new Map(groupedPaths);
+    for (const name of cluster.names) trialGroupedPaths.set(name, cluster.path);
+    if (cyclicModuleComponents(names, dependencies, trialGroupedPaths).length > 0) continue;
+
+    for (const name of cluster.names) {
+      groupedPaths.set(name, cluster.path);
+      groupingByName.set(name, {
+        reason: cluster.reason,
+        path: cluster.path,
+        token: cluster.token,
+        family: cluster.family,
+        peers: cluster.names,
+      });
+    }
+  }
 }
 
 function restoreSafeUtilityFamilyGroups(
@@ -472,9 +548,12 @@ function bestRepeatedToken(name: string, tokenCounts: Map<string, number>): stri
 }
 
 function strongTokensForName(name: string): string[] {
+  const normalizedTokens = tokenizeName(name).map(normalizeDomainToken);
+  const semanticAliases =
+    normalizedTokens.includes('state') && normalizedTokens.includes('history') ? ['string'] : [];
   return uniqueSorted(
-    tokenizeName(name)
-      .map(normalizeDomainToken)
+    normalizedTokens
+      .concat(semanticAliases)
       .filter((token) => token.length >= 3 && !WEAK_DOMAIN_TOKENS.has(token)),
   );
 }
@@ -507,6 +586,7 @@ function actionFamilyForName(name: string): ActionFamily | undefined {
 
 function normalizeDomainToken(token: string): string {
   if (token.endsWith('ies') && token.length > 4) return `${token.slice(0, -3)}y`;
+  if (token.endsWith('ices') && token.length > 5) return `${token.slice(0, -4)}ice`;
   if (token.endsWith('es') && token.length > 4 && !token.endsWith('ses')) return token.slice(0, -2);
   if (token.endsWith('s') && token.length > 4 && !token.endsWith('ss')) return token.slice(0, -1);
   return token;
