@@ -1036,6 +1036,24 @@ describe('risulua-split module-table dry-run refactor-map planner', () => {
     expect(grouping.pathForName('applyRewardState')).not.toBe('lua/domain/apply_reward_state.risulua');
   });
 
+  it('keeps existing cycle-coalesced token path behavior before dominance guard changes paths', () => {
+    const grouping = createRisuLuaDomainGroupingContext([
+      'buildBattleRound',
+      'resolveTurnOutcome',
+      'applyRewardState',
+    ], {
+      dependencies: new Map([
+        ['buildBattleRound', ['resolveTurnOutcome']],
+        ['resolveTurnOutcome', ['applyRewardState']],
+        ['applyRewardState', ['buildBattleRound']],
+      ]),
+    });
+
+    for (const name of ['buildBattleRound', 'resolveTurnOutcome', 'applyRewardState']) {
+      expect(grouping.pathForName(name)).toBe('lua/domain/battle.risulua');
+    }
+  });
+
   it('refreshes cycle-coalesced metadata for every peer in a coalesced module group', async () => {
     const result = await planFixture(lines([
       'function getItemSortRank(key)',
