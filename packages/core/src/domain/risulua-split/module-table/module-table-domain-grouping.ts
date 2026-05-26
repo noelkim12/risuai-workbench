@@ -3,6 +3,14 @@ import type { RisuLuaDomainGroupingMetadata } from './module-table-contracts';
 export interface RisuLuaDomainGroupingContext {
   pathForName(name: string): string;
   groupingForName(name: string): RisuLuaDomainGroupingMetadata;
+  diagnostics(): readonly RisuLuaDomainGroupingDiagnostic[];
+}
+
+export interface RisuLuaDomainGroupingDiagnostic {
+  code: 'domain-grouping:cycle-coalesced-large' | 'domain-grouping:semantic-cluster-restored';
+  message: string;
+  names: string[];
+  path: string;
 }
 
 export interface RisuLuaDomainGroupingOptions {
@@ -108,6 +116,7 @@ export function createRisuLuaDomainGroupingContext(
 
   const groupedPaths = new Map<string, string>();
   const groupingByName = new Map<string, RisuLuaDomainGroupingMetadata>();
+  const diagnostics: RisuLuaDomainGroupingDiagnostic[] = [];
   for (const name of uniqueNames) {
     const groupToken = bestRepeatedToken(name, tokenCounts);
     const normalizedPhrase = normalizedTokenPhraseForName(name);
@@ -181,6 +190,7 @@ export function createRisuLuaDomainGroupingContext(
     tokenCounts,
     groupedPaths,
     groupingByName,
+    diagnostics,
   );
   restoreSafeSemanticClusters(
     uniqueNames,
@@ -189,6 +199,7 @@ export function createRisuLuaDomainGroupingContext(
     semanticGroupingByName,
     groupedPaths,
     groupingByName,
+    diagnostics,
   );
   restoreSafeUtilityFamilyGroups(uniqueNames, options.dependencies, groupedPaths, groupingByName);
   coalesceActionFamilyGroups(uniqueNames, groupedPaths, groupingByName);
@@ -205,6 +216,9 @@ export function createRisuLuaDomainGroupingContext(
           peers: [name],
         }
       );
+    },
+    diagnostics(): readonly RisuLuaDomainGroupingDiagnostic[] {
+      return diagnostics;
     },
   };
 }
@@ -271,6 +285,7 @@ function coalesceCyclicModuleGroups(
   tokenCounts: Map<string, number>,
   groupedPaths: Map<string, string>,
   groupingByName: Map<string, RisuLuaDomainGroupingMetadata>,
+  diagnostics: RisuLuaDomainGroupingDiagnostic[],
 ): void {
   if (dependencies === undefined) return;
   let changed = true;
@@ -283,6 +298,14 @@ function coalesceCyclicModuleGroups(
       if (componentNames.length < 2) continue;
       const componentPath = pathForComponent(componentNames, tokenCounts, groupedPaths);
       const peers = [...componentNames].sort();
+      if (peers.length >= 6) {
+        diagnostics.push({
+          code: 'domain-grouping:cycle-coalesced-large',
+          message: `Domain grouping coalesced ${peers.length} functions into ${componentPath} to break a module dependency cycle.`,
+          names: peers,
+          path: componentPath,
+        });
+      }
       for (const name of componentNames) {
         if (groupedPaths.get(name) !== componentPath) {
           groupedPaths.set(name, componentPath);
@@ -345,6 +368,7 @@ function restoreSafeSemanticClusters(
   semanticGroupingByName: ReadonlyMap<string, RisuLuaDomainGroupingMetadata>,
   groupedPaths: Map<string, string>,
   groupingByName: Map<string, RisuLuaDomainGroupingMetadata>,
+  diagnostics: RisuLuaDomainGroupingDiagnostic[],
 ): void {
   if (dependencies === undefined) return;
   for (const cluster of semanticClusters(names, semanticGroupedPaths, semanticGroupingByName)) {
@@ -371,6 +395,12 @@ function restoreSafeSemanticClusters(
         peers: cluster.names,
       });
     }
+    diagnostics.push({
+      code: 'domain-grouping:semantic-cluster-restored',
+      message: `Domain grouping restored ${cluster.names.length} ${cluster.reason} functions to ${cluster.path} after cycle coalescing.`,
+      names: cluster.names,
+      path: cluster.path,
+    });
   }
 }
 
