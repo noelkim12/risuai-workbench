@@ -528,11 +528,16 @@ function stronglyConnectedComponents(
   return components;
 }
 
-function pathForComponent(
+interface ComponentTokenChoice {
+  token?: string;
+  count: number;
+  dominance: number;
+}
+
+function bestTokenForComponent(
   names: readonly string[],
   tokenCounts: Map<string, number>,
-  groupedPaths: Map<string, string>,
-): string {
+): ComponentTokenChoice {
   const tokenScores = new Map<string, number>();
   for (const name of names) {
     for (const token of strongTokensForName(name)) {
@@ -540,13 +545,27 @@ function pathForComponent(
     }
   }
 
-  const bestToken = [...tokenScores.entries()].sort((left, right) => {
+  const [token, count] = [...tokenScores.entries()].sort((left, right) => {
     const componentDiff = right[1] - left[1];
     if (componentDiff !== 0) return componentDiff;
     const globalDiff = (tokenCounts.get(right[0]) ?? 0) - (tokenCounts.get(left[0]) ?? 0);
     if (globalDiff !== 0) return globalDiff;
     return left[0].localeCompare(right[0]);
-  })[0]?.[0];
+  })[0] ?? [undefined, 0];
+
+  return {
+    token,
+    count,
+    dominance: names.length === 0 ? 0 : count / names.length,
+  };
+}
+
+function pathForComponent(
+  names: readonly string[],
+  tokenCounts: Map<string, number>,
+  groupedPaths: Map<string, string>,
+): string {
+  const bestToken = bestTokenForComponent(names, tokenCounts).token;
 
   if (bestToken !== undefined) return `lua/domain/${bestToken}.risulua`;
   return groupedPaths.get(names[0]) ?? domainFunctionPath(names[0]);
