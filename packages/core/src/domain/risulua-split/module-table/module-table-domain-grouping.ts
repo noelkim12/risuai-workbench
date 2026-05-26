@@ -158,6 +158,8 @@ export function createRisuLuaDomainGroupingContext(
   }
 
   coalesceUtilityFamilyGroups(uniqueNames, groupedPaths, groupingByName);
+  const semanticGroupedPaths = new Map(groupedPaths);
+  const semanticGroupingByName = new Map(groupingByName);
 
   for (const component of cyclicDomainComponents(uniqueNames, options.dependencies)) {
     if (component.length < 2) continue;
@@ -176,6 +178,14 @@ export function createRisuLuaDomainGroupingContext(
     uniqueNames,
     options.dependencies,
     tokenCounts,
+    groupedPaths,
+    groupingByName,
+  );
+  restoreSafeSemanticClusters(
+    uniqueNames,
+    options.dependencies,
+    semanticGroupedPaths,
+    semanticGroupingByName,
     groupedPaths,
     groupingByName,
   );
@@ -285,6 +295,17 @@ function coalesceCyclicModuleGroups(
       }
     }
   }
+}
+
+function restoreSafeSemanticClusters(
+  _names: readonly string[],
+  _dependencies: ReadonlyMap<string, readonly string[]> | undefined,
+  _semanticGroupedPaths: ReadonlyMap<string, string>,
+  _semanticGroupingByName: ReadonlyMap<string, RisuLuaDomainGroupingMetadata>,
+  _groupedPaths: Map<string, string>,
+  _groupingByName: Map<string, RisuLuaDomainGroupingMetadata>,
+): void {
+  if (_dependencies === undefined) return;
 }
 
 function restoreSafeUtilityFamilyGroups(
