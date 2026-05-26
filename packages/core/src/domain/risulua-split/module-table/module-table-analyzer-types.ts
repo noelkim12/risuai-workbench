@@ -104,6 +104,9 @@ export interface RisuLuaModuleTableProceduralBlockFact {
   name: string;
   sourceRange: LuaSourceRange;
   hostEffects: RisuLuaModuleTableHostEffects;
+  references: RisuLuaModuleTableReferenceFact[];
+  mutations: RisuLuaModuleTableMutationFact[];
+  callSites: RisuLuaModuleTableCallSiteFact[];
   extractable: false;
 }
 

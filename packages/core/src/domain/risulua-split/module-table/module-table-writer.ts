@@ -19,6 +19,8 @@ import { planDryRunRefactorMap, validateWriterParity, type DryRunPlanResult } fr
 import { planTopLevelRewrite, type TopLevelRewriteResult } from './module-table-top-level-rewrite';
 import { planNestedHandlerRewrite, type NestedHandlerRewriteResult } from './module-table-nested-handler-rewrite';
 import { getNodeRange, parseLuaBody, type LuaLocalStatement, type LuaNode } from './module-table-analyzer-lua-ast';
+import { applyReplacements } from './module-table-identifier-rewrite';
+import type { Replacement } from './module-table-identifier-rewrite';
 import { serializeRisuLuaModuleTableDomainCandidates, serializeRisuLuaModuleTableRefactorMap } from './module-table-rendering';
 import { buildRisuLuaModuleTableExportManifest, serializeRisuLuaModuleTableExportManifest } from './module-table-export-manifest';
 import { buildRisuLuaModuleTableButtonActionIndex, serializeRisuLuaModuleTableButtonActionIndex, type RisuLuaModuleTableButtonActionSourceInput } from './module-table-button-action-index';
@@ -78,8 +80,12 @@ interface PromptStoreExtractionResult {
 export interface RisuLuaModuleTableLocalTableDeclaration {
   name: string;
   text: string;
+  initializerText: string;
   startOffset: number;
   endOffset: number;
+  initializerStartOffset: number;
+  initializerEndOffset: number;
+  initializer: LuaNode;
 }
 
 interface LocalPromptDeclaration {
@@ -321,10 +327,117 @@ function withPromptStoreModule(
   };
 }
 
+function renderVariableStoreEntry(
+  declaration: RisuLuaModuleTableLocalTableDeclaration,
+  storeNames: Set<string>,
+): string {
+  const rewrittenInitializer = rewriteVariableStoreInitializer(declaration, storeNames);
+  if (rewrittenInitializer === undefined) {
+    return `${declaration.text.trimEnd()}\nM.${declaration.name} = ${declaration.name}`;
+  }
+  return `M.${declaration.name} = ${rewrittenInitializer}`;
+}
+
+function rewriteVariableStoreInitializer(
+  declaration: RisuLuaModuleTableLocalTableDeclaration,
+  storeNames: Set<string>,
+): string | undefined {
+  const replacements: Replacement[] = [];
+  let hasSelfReference = false;
+
+  collectVariableStoreInitializerReplacements({
+    node: declaration.initializer,
+    declarationName: declaration.name,
+    storeNames,
+    initializerStartOffset: declaration.initializerStartOffset,
+    replacements,
+    markSelfReference: () => {
+      hasSelfReference = true;
+    },
+  });
+
+  if (hasSelfReference) return undefined;
+  return applyReplacements(declaration.initializerText, replacements);
+}
+
+function collectVariableStoreInitializerReplacements(options: {
+  node: LuaNode;
+  declarationName: string;
+  storeNames: Set<string>;
+  initializerStartOffset: number;
+  replacements: Replacement[];
+  markSelfReference: () => void;
+}): void {
+  if (options.node.type === 'Identifier') {
+    const name = String(options.node.name ?? '');
+    if (!options.storeNames.has(name)) return;
+    if (name === options.declarationName) {
+      options.markSelfReference();
+      return;
+    }
+    const range = getNodeRange(options.node);
+    if (range === undefined) return;
+    options.replacements.push({
+      start: range.startOffset - options.initializerStartOffset,
+      end: range.endOffset - options.initializerStartOffset,
+      replacement: `M.${name}`,
+    });
+    return;
+  }
+
+  if (options.node.type === 'MemberExpression') {
+    const base = options.node.base;
+    if (isLuaNode(base)) {
+      collectVariableStoreInitializerReplacements({ ...options, node: base });
+    }
+    return;
+  }
+
+  if (options.node.type === 'TableKeyString') {
+    const value = options.node.value;
+    if (isLuaNode(value)) {
+      collectVariableStoreInitializerReplacements({ ...options, node: value });
+    }
+    return;
+  }
+
+  for (const child of luaNodeChildren(options.node)) {
+    collectVariableStoreInitializerReplacements({ ...options, node: child });
+  }
+}
+
+function luaNodeChildren(node: LuaNode): LuaNode[] {
+  const children: LuaNode[] = [];
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'loc' || key === 'range' || key === 'raw' || key === 'comments' || key === 'globals') continue;
+    if (Array.isArray(value)) {
+      for (const item of value) if (isLuaNode(item)) children.push(item);
+      continue;
+    }
+    if (isLuaNode(value)) children.push(value);
+  }
+  return children;
+}
+
+function isLuaNode(value: unknown): value is LuaNode {
+  return typeof value === 'object' && value !== null && typeof (value as LuaNode).type === 'string';
+}
+
+function appendVariableStoreEntry(storeLines: string[], entry: string): void {
+  const previousEntry = storeLines[storeLines.length - 1];
+  const previousIsMultiLine = previousEntry !== undefined && previousEntry.includes('\n');
+  const entryIsMultiLine = entry.includes('\n');
+  if (storeLines[storeLines.length - 1] !== '' && (previousIsMultiLine || entryIsMultiLine)) {
+    storeLines.push('');
+  }
+  storeLines.push(entry);
+}
+
 function extractVariableStore(mainText: string): VariableStoreExtractionResult {
   const declarations = findTopLevelLocalTableDeclarations(mainText);
   if (declarations.length === 0) return { mainText, exportNames: [] };
 
+  const storeNames = new Set(declarations.map((declaration) => declaration.name));
   const storeLines: string[] = [
     '-- @generated by risuai-workbench',
     '-- risulua-split=module-table variable-store',
@@ -334,14 +447,14 @@ function extractVariableStore(mainText: string): VariableStoreExtractionResult {
   ];
   const replacements: Array<{ startOffset: number; endOffset: number; text: string }> = [];
   for (const declaration of declarations) {
-    storeLines.push(declaration.text.trimEnd(), '', `M.${declaration.name} = ${declaration.name}`, '');
+    appendVariableStoreEntry(storeLines, renderVariableStoreEntry(declaration, storeNames));
     replacements.push({
       startOffset: declaration.startOffset,
       endOffset: declaration.endOffset,
       text: `local ${declaration.name} = ${VARIABLE_STORE_ALIAS}.${declaration.name}\n`,
     });
   }
-  storeLines.push('return M');
+  storeLines.push('', 'return M');
 
   let rewrittenMain = applyMainTextReplacements(mainText, replacements);
   rewrittenMain = insertRequireStatements(rewrittenMain, [VARIABLE_STORE_REQUIRE]);
@@ -425,14 +538,21 @@ export function findTopLevelLocalTableDeclarations(text: string): RisuLuaModuleT
     const name = statement.variables[0].name;
     if (shouldExtractPromptStoreName(name)) continue;
     if (name.startsWith('__') || !shouldExtractVariableStoreName(name)) continue;
+    const initializer = statement.init[0];
+    const initializerRange = getNodeRange(initializer);
+    if (initializerRange === undefined) continue;
     const range = getNodeRange(statement);
     if (range === undefined) continue;
     const endOffset = includeTrailingNewline(text, range.endOffset);
     declarations.push({
       name,
       text: text.slice(range.startOffset, endOffset),
+      initializerText: text.slice(initializerRange.startOffset, initializerRange.endOffset),
       startOffset: range.startOffset,
       endOffset,
+      initializerStartOffset: initializerRange.startOffset,
+      initializerEndOffset: initializerRange.endOffset,
+      initializer,
     });
   }
   return declarations;

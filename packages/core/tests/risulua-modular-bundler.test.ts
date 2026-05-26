@@ -1257,6 +1257,82 @@ describe('risulua local budget analyzer', () => {
       threshold: 150,
     });
   });
+
+  it('keeps generated private-table domain modules under the local hard limit', () => {
+    const privateTableBody = buildPrivateTableDomainModuleBody(220);
+    const forwardLocalBody = buildForwardLocalDomainModuleBody(201);
+
+    expect(privateTableBody).toContain('local M = {}\nlocal __impl = {}');
+    expect(privateTableBody).toContain('function __impl.fn001()');
+    expect(privateTableBody).toContain('M.fn001 = __impl.fn001');
+    expect(privateTableBody).toContain('return M');
+
+    const privateTableDiagnostics = analyzeRisuLuaLocalBudget({
+      code: privateTableBody,
+      filePath: 'dist/private-table-domain.risulua',
+    });
+    expect(
+      privateTableDiagnostics.some(
+        (diagnostic) => diagnostic.code === 'local_budget_hard_limit',
+      ),
+    ).toBe(false);
+
+    const forwardLocalDiagnostics = analyzeRisuLuaLocalBudget({
+      code: forwardLocalBody,
+      filePath: 'dist/forward-local-domain.risulua',
+    });
+    expect(forwardLocalBody).toContain('local fn001');
+    expect(forwardLocalBody).toContain('local fn201');
+    expect(forwardLocalDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'local_budget_hard_limit',
+          severity: 'error',
+          scopeKind: 'chunk',
+          localCount: 202,
+          threshold: 200,
+        }),
+      ]),
+    );
+  });
+
+  it('keeps direct variable-store modules under the local hard limit', () => {
+    const directBody = buildDirectVariableStoreBody(220);
+    const localBackedBody = buildLocalBackedVariableStoreBody(201);
+
+    expect(directBody).toContain('local M = {}');
+    expect(directBody).toContain('M.VALUE_001 = 1');
+    expect(directBody).toContain('M.VALUE_220 = 220');
+    expect(directBody).not.toContain('local VALUE_001');
+
+    const directDiagnostics = analyzeRisuLuaLocalBudget({
+      code: directBody,
+      filePath: 'dist/direct-variable-store.risulua',
+    });
+    expect(
+      directDiagnostics.some(
+        (diagnostic) => diagnostic.code === 'local_budget_hard_limit',
+      ),
+    ).toBe(false);
+
+    const localBackedDiagnostics = analyzeRisuLuaLocalBudget({
+      code: localBackedBody,
+      filePath: 'dist/local-backed-variable-store.risulua',
+    });
+    expect(localBackedBody).toContain('local VALUE_001');
+    expect(localBackedBody).toContain('local VALUE_201');
+    expect(localBackedDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'local_budget_hard_limit',
+          severity: 'error',
+          scopeKind: 'chunk',
+          localCount: 202,
+          threshold: 200,
+        }),
+      ]),
+    );
+  });
 });
 
 describe('risulua dist local budget diagnostics', () => {
@@ -1337,6 +1413,59 @@ function buildTopLevelLocalChunk(count: number): string {
   return `${buildLocalNames(count)
     .map((name) => `local ${name} = 1`)
     .join('\n')}\nreturn v001\n`;
+}
+
+function buildPrivateTableDomainModuleBody(functionCount: number): string {
+  return [
+    'local M = {}',
+    'local __impl = {}',
+    ...buildDomainFunctionNames(functionCount).flatMap((name) => [
+      `function __impl.${name}()`,
+      `  return "${name}"`,
+      'end',
+      `M.${name} = __impl.${name}`,
+    ]),
+    'return M',
+  ].join('\n');
+}
+
+function buildForwardLocalDomainModuleBody(functionCount: number): string {
+  const names = buildDomainFunctionNames(functionCount);
+  return [
+    'local M = {}',
+    ...names.map((name) => `local ${name}`),
+    ...names.flatMap((name) => [
+      `function ${name}()`,
+      `  return "${name}"`,
+      'end',
+      `M.${name} = ${name}`,
+    ]),
+    'return M',
+  ].join('\n');
+}
+
+function buildDirectVariableStoreBody(count: number): string {
+  const lines = ['local M = {}', ''];
+  for (let index = 1; index <= count; index += 1) {
+    const name = `VALUE_${String(index).padStart(3, '0')}`;
+    lines.push(`M.${name} = ${index}`);
+  }
+  lines.push('', 'return M');
+  return lines.join('\n');
+}
+
+function buildLocalBackedVariableStoreBody(count: number): string {
+  const lines = ['local M = {}', ''];
+  for (let index = 1; index <= count; index += 1) {
+    const name = `VALUE_${String(index).padStart(3, '0')}`;
+    lines.push(`local ${name} = ${index}`, `M.${name} = ${name}`, '');
+  }
+  lines.push('return M');
+  return lines.join('\n');
+}
+
+function buildDomainFunctionNames(count: number): string[] {
+  return Array.from({ length: count }, (_value, index) => `fn${String(index + 1).padStart(3, '0')}`);
 }
 
 function buildLocalNames(count: number): string[] {
