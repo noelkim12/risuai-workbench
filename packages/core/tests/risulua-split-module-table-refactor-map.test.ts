@@ -982,6 +982,39 @@ describe('risulua-split module-table dry-run refactor-map planner', () => {
     }));
   });
 
+  it('reports semantic cluster restoration diagnostics', () => {
+    const grouping = createRisuLuaDomainGroupingContext([
+      'acquirePerk',
+      'syncPerkVars',
+      'makeChoicePrompt',
+      'executeChoiceReroll',
+      'generateAndAppendChoices',
+      'parseAndApplySaveString',
+      'loadLatestStateFromHistory',
+    ], {
+      dependencies: new Map([
+        ['acquirePerk', ['syncPerkVars']],
+        ['syncPerkVars', ['makeChoicePrompt']],
+        ['makeChoicePrompt', ['executeChoiceReroll']],
+        ['executeChoiceReroll', ['generateAndAppendChoices']],
+        ['generateAndAppendChoices', ['syncPerkVars']],
+        ['parseAndApplySaveString', []],
+        ['loadLatestStateFromHistory', ['parseAndApplySaveString']],
+      ]),
+    });
+
+    expect(grouping.diagnostics()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'domain-grouping:semantic-cluster-restored',
+        path: 'lua/domain/choice.risulua',
+        names: ['executeChoiceReroll', 'generateAndAppendChoices', 'makeChoicePrompt'],
+      }),
+    ]));
+    expect(grouping.diagnostics().map((diagnostic) => diagnostic.message)).toEqual(expect.arrayContaining([
+      'Domain grouping restored 3 repeated-token functions to lua/domain/choice.risulua after cycle coalescing.',
+    ]));
+  });
+
   it('does not split cycle-coalesced groups into singleton files during semantic restoration', () => {
     const grouping = createRisuLuaDomainGroupingContext([
       'buildBattleRound',

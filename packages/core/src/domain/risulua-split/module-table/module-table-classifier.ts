@@ -147,6 +147,7 @@ export function classifyRisuLuaModuleTableDecisions(input: RisuLuaModuleTableCla
   ], {
     dependencies: collectDomainDependencies(input.source, input.analyzerResult.lexicalSymbols, validatedDomainNames),
   });
+  diagnostics.push(...validatedDomainGrouping.diagnostics().map((diagnostic) => diagnostic.message));
   const safeButtonCaptureNames = collectSafeButtonCaptureNames(
     input.analyzerResult.lexicalSymbols,
     input.analyzerResult.publicGlobals,
