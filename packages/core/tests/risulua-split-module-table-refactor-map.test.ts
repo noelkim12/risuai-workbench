@@ -928,6 +928,60 @@ describe('risulua-split module-table dry-run refactor-map planner', () => {
     expect(result.validation.ok).toBe(true);
   });
 
+  it('restores safe multi-member semantic clusters after broad cycle coalescing', () => {
+    const grouping = createRisuLuaDomainGroupingContext([
+      'acquirePerk',
+      'syncPerkVars',
+      'makeChoicePrompt',
+      'executeChoiceReroll',
+      'generateAndAppendChoices',
+      'parseAndApplySaveString',
+      'loadLatestStateFromHistory',
+    ], {
+      dependencies: new Map([
+        ['acquirePerk', ['syncPerkVars']],
+        ['syncPerkVars', ['makeChoicePrompt']],
+        ['makeChoicePrompt', ['executeChoiceReroll']],
+        ['executeChoiceReroll', ['generateAndAppendChoices']],
+        ['generateAndAppendChoices', ['syncPerkVars']],
+        ['parseAndApplySaveString', []],
+        ['loadLatestStateFromHistory', ['parseAndApplySaveString']],
+      ]),
+    });
+
+    expect(grouping.groupingForName('makeChoicePrompt')).toEqual(expect.objectContaining({
+      reason: 'repeated-token',
+      token: 'choice',
+      path: 'lua/domain/choice.risulua',
+      peers: ['executeChoiceReroll', 'generateAndAppendChoices', 'makeChoicePrompt'],
+    }));
+    expect(grouping.groupingForName('executeChoiceReroll')).toEqual(expect.objectContaining({
+      reason: 'repeated-token',
+      token: 'choice',
+      path: 'lua/domain/choice.risulua',
+      peers: ['executeChoiceReroll', 'generateAndAppendChoices', 'makeChoicePrompt'],
+    }));
+    expect(grouping.groupingForName('generateAndAppendChoices')).toEqual(expect.objectContaining({
+      reason: 'repeated-token',
+      token: 'choice',
+      path: 'lua/domain/choice.risulua',
+      peers: ['executeChoiceReroll', 'generateAndAppendChoices', 'makeChoicePrompt'],
+    }));
+
+    expect(grouping.groupingForName('parseAndApplySaveString')).toEqual(expect.objectContaining({
+      reason: 'repeated-token',
+      token: 'string',
+      path: 'lua/domain/string.risulua',
+      peers: ['loadLatestStateFromHistory', 'parseAndApplySaveString'],
+    }));
+    expect(grouping.groupingForName('loadLatestStateFromHistory')).toEqual(expect.objectContaining({
+      reason: 'repeated-token',
+      token: 'string',
+      path: 'lua/domain/string.risulua',
+      peers: ['loadLatestStateFromHistory', 'parseAndApplySaveString'],
+    }));
+  });
+
   it('refreshes cycle-coalesced metadata for every peer in a coalesced module group', async () => {
     const result = await planFixture(lines([
       'function getItemSortRank(key)',
