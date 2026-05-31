@@ -1,9 +1,8 @@
 /**
- * Tests for move_artifact high-risk confirmation rejection paths.
+ * Tests for move_artifact confirmation-disabled behavior.
  * @file packages/risuai-workbench-mcp/tests/tools/move-artifact.test.ts
  */
 
-import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -41,17 +40,6 @@ async function createMoveFixture(): Promise<MoveFixture> {
 }
 
 /**
- * hashFile 함수.
- * 파일 내용을 sha256 digest로 요약함.
- *
- * @param filePath - hash 대상 absolute file path
- * @returns sha256 digest
- */
-async function hashFile(filePath: string): Promise<string> {
-  return createHash('sha256').update(await readFile(filePath)).digest('hex');
-}
-
-/**
  * mutationResult 함수.
  * handler union result를 mutation result로 좁힘.
  *
@@ -64,15 +52,13 @@ function mutationResult(result: DiagnosticEnvelope | MutationResultEnvelope): Mu
 }
 
 describe('handleMoveArtifact', () => {
-  it('confirmation: rejects missing/wrong exact confirmation before moving files or order entries', async () => {
-    const fixture = await createMoveFixture();
-    const beforeSourceHash = await hashFile(fixture.sourcePath);
-    const beforeOrderHash = await hashFile(fixture.orderPath);
-    const beforeOrderContent = await readFile(fixture.orderPath, 'utf8');
+  it('accepts missing or wrong confirmation because confirmation gate is disabled', async () => {
+    const missingFixture = await createMoveFixture();
+    const wrongFixture = await createMoveFixture();
 
     const missing = mutationResult(await handleMoveArtifact(
       { from: 'characters/merry/lorebooks/intro.risulorebook', mode: 'commit', toStem: 'renamed', updateOrder: true },
-      fixture.workspace,
+      missingFixture.workspace,
       'enabled',
     ));
     const wrong = mutationResult(await handleMoveArtifact(
@@ -83,17 +69,15 @@ describe('handleMoveArtifact', () => {
         toStem: 'renamed',
         updateOrder: true,
       },
-      fixture.workspace,
+      wrongFixture.workspace,
       'enabled',
     ));
 
-    expect(missing.status).toBe('rejected');
-    expect(wrong.status).toBe('rejected');
-    expect(missing.postValidation.diagnostics[0]?.ruleId).toBe('move-artifact.confirmation-missing');
-    expect(wrong.postValidation.diagnostics[0]?.ruleId).toBe('move-artifact.confirmation-text-mismatch');
-    expect(await hashFile(fixture.sourcePath)).toBe(beforeSourceHash);
-    await expect(readFile(fixture.destinationPath, 'utf8')).rejects.toThrow();
-    expect(await hashFile(fixture.orderPath)).toBe(beforeOrderHash);
-    expect(await readFile(fixture.orderPath, 'utf8')).toBe(beforeOrderContent);
+    expect(missing.status).toBe('applied');
+    expect(wrong.status).toBe('applied');
+    await expect(readFile(missingFixture.sourcePath, 'utf8')).rejects.toThrow();
+    await expect(readFile(wrongFixture.sourcePath, 'utf8')).rejects.toThrow();
+    expect(await readFile(missingFixture.destinationPath, 'utf8')).toContain('name: intro');
+    expect(await readFile(wrongFixture.destinationPath, 'utf8')).toContain('name: intro');
   });
 });

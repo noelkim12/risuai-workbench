@@ -1,28 +1,26 @@
 /**
- * cbs-lsp diagnostics 도메인 public export 모음.
+ * cbs-lsp diagnostics 도메인 public export — explicit named surface.
  * @file packages/cbs-lsp/src/analyzer/diagnostics/index.ts
  */
 
-/** Deferred diagnostics scope contract 상수 re-export. */
+export { DiagnosticsEngine } from './diagnostics-engine';
+export {
+  DiagnosticCode,
+  DIAGNOSTIC_TAXONOMY,
+  getDiagnosticDefinition,
+  createDiagnosticRuleExplanation,
+  type DiagnosticOwner,
+  type DiagnosticRuleCategory,
+} from './taxonomy';
+export { createDiagnosticInfo, normalizeDiagnosticInfo, stabilizeDiagnostics } from './diagnostic-info';
+export { createDiagnosticsContext, type DiagnosticsContext } from './context';
+export { collectParserDiagnostics } from './collectors/parser-diagnostic.collector';
+export { collectMacroDiagnostics } from './collectors/macro.collector';
+export { collectBlockDiagnostics } from './collectors/block.collector';
+export { collectLegacyAngleBracketDiagnostics } from './collectors/legacy-angle.collector';
+export { collectSymbolDiagnostics } from './symbol-diagnostics';
+export { filterPureModeDiagnostics } from './pure-mode-filter';
+export type { DiagnosticQuickFix, DiagnosticMachineData } from './quick-fix';
+export { extractBlockHeaderInfo } from './block-header';
 export { DEFERRED_SCOPE_CONTRACT } from '../../core/availability-contract';
-
-/** Deferred diagnostics availability 타입 re-export. */
-export type {
-  DeferredFeatureAvailabilityMap,
-  DeferredScopeContract,
-} from '../../core/availability-contract';
-
-/** Block header diagnostics helper public export. */
-export * from './block-header';
-/** Diagnostics comparator public export. */
-export * from './compare';
-/** Diagnostics context public export. */
-export * from './context';
-/** DiagnosticInfo factory public export. */
-export * from './diagnostic-info';
-/** Diagnostics engine public export. */
-export * from './diagnostics-engine';
-/** Diagnostics quick-fix public export. */
-export * from './quick-fix';
-/** Diagnostics taxonomy public export. */
-export * from './taxonomy';
+export type { DeferredFeatureAvailabilityMap, DeferredScopeContract } from '../../core/availability-contract';

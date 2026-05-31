@@ -29,8 +29,17 @@ export interface CBSVariableOccurrence {
   variableName: string;
   /** 접근 방향 (읽기/쓰기) */
   direction: CBSVariableDirection;
-  /** CBS 연산 종류 (getvar, setvar, addvar, setdefaultvar, #each) */
-  operation: 'getvar' | 'setvar' | 'addvar' | 'setdefaultvar' | '#each';
+  /** CBS 연산 종류 (getvar, setvar, addvar, setdefaultvar, getglobalvar, #each, implicit #when reads) */
+  operation:
+    | 'getvar'
+    | 'setvar'
+    | 'addvar'
+    | 'setdefaultvar'
+    | 'getglobalvar'
+    | 'gettoggle'
+    | '#when:tis'
+    | 'context'
+    | '#each';
   /** 변수 키가 위치한 텍스트 범위 (첫 번째 인자의 전체 범위) */
   range: Range;
   /** 변수 키 값이 시작하는 위치 (PlainText 노드 내에서 trim 전 시작) */
@@ -39,9 +48,13 @@ export interface CBSVariableOccurrence {
   keyEnd: Position;
 }
 
-const COMPATIBLE_VAR_OPS = new Set(['getvar', 'setvar', 'addvar', 'setdefaultvar']);
-const VAR_OP_FALLBACK_PATTERN = /\{\{(getvar|setvar|addvar|setdefaultvar)::([^}:]+)/g;
+const COMPATIBLE_VAR_OPS = new Set(['getvar', 'setvar', 'addvar', 'setdefaultvar', 'getglobalvar']);
+const VAR_OP_FALLBACK_PATTERN = /\{\{(getvar|setvar|addvar|setdefaultvar|getglobalvar)::([^}:]+)/g;
 const STATIC_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_-]*$/;
+const WHEN_CHAT_VARIABLE_OPERATORS = new Set(['vis', 'visnot']);
+const WHEN_TOGGLE_LITERAL_OPERATORS = new Set(['tis', 'tisnot']);
+const WHEN_RUNTIME_CONTEXT_COMPARISON_OPERATORS = new Set(['is', 'isnot', '>', '<', '>=', '<=']);
+const STATIC_WHEN_LITERAL_PATTERN = /^[^{}]+$/u;
 
 /**
  * 텍스트에서 CBS 변수 발생(occurrence) 메타데이터를 추출
@@ -79,8 +92,9 @@ export function extractCBSVariableOccurrences(text: string): CBSVariableOccurren
         const { key, range, keyStart, keyEnd } = keyResult;
         if (key.length === 0) return;
 
-        const direction: CBSVariableDirection = op === 'getvar' ? 'read' : 'write';
-        const operation = op as 'getvar' | 'setvar' | 'addvar' | 'setdefaultvar';
+        const direction: CBSVariableDirection =
+          op === 'getvar' || op === 'getglobalvar' ? 'read' : 'write';
+        const operation = op as 'getvar' | 'setvar' | 'addvar' | 'setdefaultvar' | 'getglobalvar';
 
         occurrences.push({
           variableName: key,
@@ -92,6 +106,12 @@ export function extractCBSVariableOccurrences(text: string): CBSVariableOccurren
         });
       },
       visitBlock(node) {
+        if (node.kind === 'when') {
+          for (const occurrence of extractImplicitWhenOccurrences(text, lineStarts, node)) {
+            occurrences.push(occurrence);
+          }
+        }
+
         if (node.kind !== 'each') return;
 
         const iteratorResult = extractStaticEachIteratorWithRange(text, lineStarts, node);
@@ -147,10 +167,147 @@ interface StaticPlainTextResult {
   keyEnd: Position;
 }
 
+interface ImplicitWhenReference {
+  variableName: string;
+  operation: CBSVariableOccurrence['operation'];
+}
+
 interface EachIteratorHeaderParts {
   iteratorExpression: string;
   iteratorStartIndex: number;
   iteratorEndIndex: number;
+}
+
+function serializeCbsNodes(nodes: readonly CBSNode[]): string {
+  return nodes
+    .map((node) => {
+      if (node.type === 'PlainText') return node.value;
+      if (node.type === 'MathExpr') return `{{? ${node.expression}}}`;
+      if (node.type === 'Comment') return `{{//${node.value}}}`;
+      if (node.type === 'Block') return `{{#${node.kind}::${serializeCbsNodes(node.condition)}}}`;
+      return `{{${node.name}${node.arguments.map((argument) => `::${serializeCbsNodes(argument)}`).join('')}}}`;
+    })
+    .join('');
+}
+
+function splitTopLevelCbsSegments(body: string): string[] {
+  const segments: string[] = [];
+  let depth = 0;
+  let segmentStart = 0;
+
+  for (let index = 0; index < body.length; index += 1) {
+    if (body.startsWith('{{', index)) {
+      depth += 1;
+      index += 1;
+      continue;
+    }
+    if (body.startsWith('}}', index)) {
+      depth = Math.max(0, depth - 1);
+      index += 1;
+      continue;
+    }
+    if (depth === 0 && body.startsWith('::', index)) {
+      segments.push(body.slice(segmentStart, index));
+      index += 1;
+      segmentStart = index + 1;
+    }
+  }
+
+  segments.push(body.slice(segmentStart));
+  return segments;
+}
+
+function isStaticWhenLiteral(source: string): boolean {
+  const value = source.trim();
+  return value.length > 0 && STATIC_WHEN_LITERAL_PATTERN.test(value);
+}
+
+function parseRuntimeContextMacro(source: string): 'chatIndex' | undefined {
+  const normalized = source.trim().toLowerCase().replace(/\s+/gu, '');
+  if (normalized === '{{chat_index}}' || normalized === '{{chatindex}}') return 'chatIndex';
+  return undefined;
+}
+
+function extractImplicitWhenReferences(conditionSource: string): ImplicitWhenReference[] {
+  const segments = splitTopLevelCbsSegments(conditionSource)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  const references: ImplicitWhenReference[] = [];
+
+  if (segments.length === 2 && segments[0].toLowerCase() === 'var') {
+    references.push({ variableName: segments[1], operation: 'getvar' });
+  }
+
+  if (segments.length === 2 && segments[0].toLowerCase() === 'toggle') {
+    references.push({ variableName: segments[1], operation: 'gettoggle' });
+  }
+
+  if (segments.length === 3) {
+    const operator = segments[1].toLowerCase();
+    if (WHEN_CHAT_VARIABLE_OPERATORS.has(operator) && isStaticWhenLiteral(segments[2])) {
+      references.push({ variableName: segments[0], operation: 'getvar' });
+    }
+    if (WHEN_TOGGLE_LITERAL_OPERATORS.has(operator) && isStaticWhenLiteral(segments[2])) {
+      references.push({ variableName: segments[0], operation: '#when:tis' });
+    }
+
+    if (WHEN_RUNTIME_CONTEXT_COMPARISON_OPERATORS.has(operator)) {
+      const leftContext = parseRuntimeContextMacro(segments[0]);
+      const rightContext = parseRuntimeContextMacro(segments[2]);
+      if (leftContext && !rightContext && isStaticWhenLiteral(segments[2])) {
+        references.push({ variableName: leftContext, operation: 'context' });
+      } else if (rightContext && !leftContext && isStaticWhenLiteral(segments[0])) {
+        references.push({ variableName: rightContext, operation: 'context' });
+      }
+    }
+  }
+
+  return references;
+}
+
+function extractImplicitWhenOccurrences(
+  text: string,
+  lineStarts: number[],
+  node: BlockNode,
+): CBSVariableOccurrence[] {
+  const conditionSource = serializeCbsNodes(node.condition);
+  const references = extractImplicitWhenReferences(conditionSource);
+  if (references.length === 0) return [];
+
+  const range = getConditionRange(node);
+  return references
+    .map((reference): CBSVariableOccurrence => {
+      const keyStart = findWhenReferencePosition(text, lineStarts, node, reference.variableName);
+      return {
+        variableName: reference.variableName.trim(),
+        direction: 'read',
+        operation: reference.operation,
+        range,
+        keyStart,
+        keyEnd: positionAddCharacters(keyStart, reference.variableName.length, lineStarts),
+      };
+    })
+    .filter((occurrence) => occurrence.variableName.length > 0);
+}
+
+function getConditionRange(node: BlockNode): Range {
+  const first = node.condition[0];
+  const last = node.condition[node.condition.length - 1];
+  if (!first || !last) return node.openRange;
+  return { start: first.range.start, end: last.range.end };
+}
+
+function findWhenReferencePosition(
+  text: string,
+  lineStarts: number[],
+  node: BlockNode,
+  variableName: string,
+): Position {
+  const openStartIndex = positionToIndex(lineStarts, node.openRange.start);
+  const openEndIndex = positionToIndex(lineStarts, node.openRange.end);
+  const localIndex = text.slice(openStartIndex, openEndIndex).indexOf(variableName);
+  if (localIndex === -1) return node.openRange.start;
+  return indexToPosition(lineStarts, openStartIndex + localIndex);
 }
 
 /**
@@ -320,11 +477,7 @@ function extractStaticPlainTextWithRange(
  * 문자 위치에 상대적 문자 수를 더한 새 위치 계산
  * (줄바꿈 경계를 고려)
  */
-function positionAddCharacters(
-  pos: Position,
-  charDelta: number,
-  lineStarts: number[],
-): Position {
+function positionAddCharacters(pos: Position, charDelta: number, lineStarts: number[]): Position {
   if (charDelta === 0) return pos;
 
   const currentIndex = positionToIndex(lineStarts, pos);
@@ -352,7 +505,7 @@ function extractCBSVariableOccurrencesFallback(text: string): CBSVariableOccurre
   const lineStarts = buildLineStarts(text);
 
   for (const match of text.matchAll(VAR_OP_FALLBACK_PATTERN)) {
-    const op = match[1] as 'getvar' | 'setvar' | 'addvar' | 'setdefaultvar';
+    const op = match[1] as 'getvar' | 'setvar' | 'addvar' | 'setdefaultvar' | 'getglobalvar';
     const rawKey = match[2];
     const key = rawKey.trim();
     if (!key) continue;
@@ -370,7 +523,8 @@ function extractCBSVariableOccurrencesFallback(text: string): CBSVariableOccurre
     const keyStart = indexToPosition(lineStarts, keyStartIndex + leadingSpaces);
     const keyEnd = indexToPosition(lineStarts, keyEndIndex - trailingSpaces);
 
-    const direction: CBSVariableDirection = op === 'getvar' ? 'read' : 'write';
+    const direction: CBSVariableDirection =
+      op === 'getvar' || op === 'getglobalvar' ? 'read' : 'write';
 
     occurrences.push({
       variableName: key,

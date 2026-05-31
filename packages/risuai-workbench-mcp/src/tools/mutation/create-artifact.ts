@@ -181,7 +181,7 @@ export async function handleCreateArtifact(
 
   patchStore.savePatchPlan(patchPlan);
 
-  if (createInput.mode === 'preview') {
+  if (mutationMode === 'preview-only') {
     return createDiagnosticEnvelope({
       data: { canonicalPath, patchPlan, preview: true },
       diagnostics: [],
@@ -375,7 +375,7 @@ function parseCreateArtifactInput(input: unknown): { input: CreateArtifactInput;
   if (typeof candidate.stem !== 'string' || candidate.stem.trim() === '') {
     return { ok: false, reason: 'stem must be a non-empty string.' };
   }
-  const mode: PatchPlanMutationMode = candidate.mode === 'commit' ? 'commit' : 'preview';
+  const mode: PatchPlanMutationMode = 'commit';
   const confirmation = candidate.confirmation as CreateArtifactInput['confirmation'] | undefined;
   const order = candidate.order as CreateArtifactInput['order'] | undefined;
   return {

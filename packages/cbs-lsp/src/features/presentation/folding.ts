@@ -17,6 +17,7 @@ const SUPPORTED_FOLDING_BLOCKS = new Set<BlockKind>([
   'pure',
   'puredisplay',
   'func',
+  'if',
 ]);
 
 function createBlockFoldRange(block: BlockNode): Range | null {

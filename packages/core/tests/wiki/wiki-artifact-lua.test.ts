@@ -46,4 +46,41 @@ describe('wiki/artifact/lua', () => {
     expect(file!.content).toContain('- **lore access:** `loadLoreBooksMain`');
     expect(file!.content).not.toContain('**getLoreBooks:**');
   });
+
+  it('renders split lua artifacts by relative path and role instead of only baseName', () => {
+    const report = minimalCharxReport();
+    const first = report.luaArtifacts[0];
+    report.luaArtifacts = [
+      {
+        ...first,
+        filePath: '/tmp/character_test/lua/domain/core.risulua',
+        baseName: 'core',
+        relativePath: 'lua/domain/core.risulua',
+        splitRole: 'domain',
+        analyzePhase: {
+          ...first.analyzePhase,
+          callGraph: new Map(),
+        },
+      },
+      {
+        ...first,
+        filePath: '/tmp/character_test/lua/features/core.risulua',
+        baseName: 'core',
+        relativePath: 'lua/features/core.risulua',
+        splitRole: 'features',
+        analyzePhase: {
+          ...first.analyzePhase,
+          callGraph: new Map(),
+        },
+      },
+    ];
+
+    const file = renderLua(report, ctx);
+
+    expect(file).not.toBeNull();
+    expect(file!.content).toContain('## `lua/domain/core.risulua`');
+    expect(file!.content).toContain('## `lua/features/core.risulua`');
+    expect(file!.content).toContain('- **role:** `domain`');
+    expect(file!.content).toContain('- **role:** `features`');
+  });
 });

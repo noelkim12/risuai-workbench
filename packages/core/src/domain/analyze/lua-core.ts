@@ -25,6 +25,10 @@ import { type LuaASTNode } from './lua-helpers';
 export interface LuaAnalysisArtifact {
   filePath: string;
   baseName: string;
+  /** Path relative to the artifact extract root, for example lua/domain/foo.risulua. */
+  relativePath?: string;
+  /** Split-lua source role inferred from luaRelativePath, for example domain or runtime. */
+  splitRole?: string;
   sourceText?: string;
   totalLines: number;
   collected: CollectedData;

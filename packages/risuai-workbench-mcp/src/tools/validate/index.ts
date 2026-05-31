@@ -11,3 +11,4 @@ export { handleValidateFrontmatter } from './validate-frontmatter';
 export { handleValidatePath } from './validate-path';
 export { handleBuildPath } from './build-path';
 export { handleSuggestTests } from './suggest-tests';
+export { handleValidateCbsSyntax } from './validate-cbs-syntax';

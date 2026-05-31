@@ -22,6 +22,17 @@ import {
   type RisuLuaSplitCliMode,
 } from '../../../shared/risulua-split';
 
+const RISULUA_SPLIT_FALLBACK_PATHS = [
+  'docs/domain-candidates.json',
+  'docs/refactor-map.json',
+  'docs/risulua-button-action-index.json',
+  'docs/risulua-export-manifest.json',
+  'docs/risulua-split-plan.json',
+  'docs/risulua-split-report.md',
+  'dist',
+  'legacy',
+] as const;
+
 export async function phase4_extractTriggerLua(
   charx: any,
   outputDir: string,
@@ -106,6 +117,7 @@ export async function phase4_extractTriggerLua(
     if (risuluaMode !== 'modular') throw error;
 
     cleanupRisuLuaSplitTemps(outputDir);
+    cleanupRisuLuaSplitFallbackArtifacts(outputDir);
     writeText(fileName, strippedLuaSource);
     const message = getErrorMessage(error);
     console.warn(
@@ -115,6 +127,12 @@ export async function phase4_extractTriggerLua(
 
   console.log(`     ✅ ${triggerscript.length}개 trigger → ${path.relative('.', fileName)}`);
   return 1;
+}
+
+function cleanupRisuLuaSplitFallbackArtifacts(outputDir: string): void {
+  for (const relativePath of RISULUA_SPLIT_FALLBACK_PATHS) {
+    fs.rmSync(path.join(outputDir, ...relativePath.split('/')), { recursive: true, force: true });
+  }
 }
 
 function collectRegexButtonActionSources(

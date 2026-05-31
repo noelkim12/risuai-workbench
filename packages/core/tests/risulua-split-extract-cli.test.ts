@@ -8,7 +8,7 @@ import { runExtractWorkflow as runCharacterExtractWorkflow } from '../src/cli/ex
 import { runExtractWorkflow as runModuleExtractWorkflow } from '../src/cli/extract/module/workflow';
 import { runPackWorkflow as runCharacterPackWorkflow } from '../src/cli/pack/character/workflow';
 import { runPackWorkflow as runModulePackWorkflow } from '../src/cli/pack/module/workflow';
-import { hasExecutableRequireCalls } from '../src/cli/shared';
+import { hasExecutableRequireCalls, runRisuLuaSplitExtract } from '../src/cli/shared';
 import {
   parseRisuLuaDomainGenerationMode,
   parseRisuLuaSplitMode,
@@ -251,11 +251,15 @@ describe('risulua-split extract CLI integration', () => {
     }
   });
 
-  it('generates validated domain function files by default for module-table extract', async () => {
+  it('emits private implementation tables for validated domain modules', async () => {
     const workDir = createTempDir('module-table-domain');
     const sourceLua = lines([
+      'local function normalizeDeck(cards)',
+      '  return cards or {}',
+      'end',
+      '',
       'local function scoreDeck(cards)',
-      '  return #cards * 10',
+      '  return #normalizeDeck(cards) * 10',
       'end',
       '',
       'function onOutput(text)',
@@ -276,11 +280,68 @@ describe('risulua-split extract CLI integration', () => {
     ]);
 
     expect(exitCode).toBe(0);
-    expect(fs.existsSync(path.join(outDir, 'lua', 'domain', 'score_deck.risulua'))).toBe(true);
-    expect(readFile(outDir, 'lua/main.risulua')).not.toContain('local __domain_score_deck = require("domain.score_deck")');
-    expect(readFile(outDir, 'lua/domain/score_deck.risulua')).toContain('M.scoreDeck = scoreDeck');
+    expect(fs.existsSync(path.join(outDir, 'lua', 'domain', 'deck.risulua'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'lua', 'domain', 'score_deck.risulua'))).toBe(false);
+    const domainDeck = readFile(outDir, 'lua/domain/deck.risulua');
+    expect(domainDeck).toContain('local __impl = {}');
+    expect(domainDeck).toContain('function __impl.normalizeDeck(cards)');
+    expect(domainDeck).toContain('function __impl.scoreDeck(cards)');
+    expect(domainDeck).toContain('M.normalizeDeck = __impl.normalizeDeck');
+    expect(domainDeck).toContain('M.scoreDeck = __impl.scoreDeck');
+    expect(domainDeck).not.toMatch(/^local\s+(?:normalizeDeck|scoreDeck)\b/gm);
+    const runtimeOutput = readFile(outDir, 'lua/runtime/output.risulua');
+    expect(runtimeOutput).toContain('local __domain_deck = require("domain.deck")');
+    expect(runtimeOutput).toContain('__domain_deck.scoreDeck({ text })');
     const refactorMap = readJson(outDir, 'docs/refactor-map.json') as Record<string, unknown>;
     expect(refactorMap.domainGeneration).toBe('validated');
+    expect(moduleExports(refactorMap, 'lua/domain/deck.risulua')).toEqual([
+      'normalizeDeck',
+      'scoreDeck',
+    ]);
+
+    const exportManifest = readJson(outDir, 'docs/risulua-export-manifest.json') as Record<string, unknown>;
+    expect(publicExportNames(refactorMap)).toEqual(publicExportNames(exportManifest));
+    expect(publicExportNames(exportManifest)).toEqual([]);
+  });
+
+  it('verifies 히메둥드_0.57 validated domains in temporary output only', async () => {
+    const fixtureRoot = path.resolve(process.cwd(), '..', '..', 'test_suites', '히메둥드_0.57');
+    const sourcePath = path.join(fixtureRoot, 'legacy', 'original.risulua');
+    expect(fs.existsSync(sourcePath)).toBe(true);
+
+    const workDir = createTempDir('hime-fixture');
+    const outDir = path.join(workDir, '히메둥드_0.57');
+    const sourceLua = fs.readFileSync(sourcePath, 'utf8');
+
+    await runRisuLuaSplitExtract({
+      mode: 'module-table',
+      outputRoot: outDir,
+      source: sourceLua,
+      sourcePath,
+      targetName: '히메둥드_0.57ver',
+      cwd: process.cwd(),
+      domainGeneration: 'validated',
+    });
+
+    const refactorMap = readJson(outDir, 'docs/refactor-map.json') as Record<string, unknown>;
+    const domainModules = domainFunctionModules(refactorMap);
+    expect(domainModules.length).toBeGreaterThan(0);
+
+    for (const moduleContract of domainModules) {
+      const domainModule = readFile(outDir, moduleContract.path);
+      expect(domainModule).toContain('local __impl = {}');
+      for (const exportName of moduleContract.exports) {
+        expect(domainModule).toContain(`function __impl.${exportName}(`);
+        expect(domainModule).toContain(`M.${exportName} = __impl.${exportName}`);
+        expect(domainModule).not.toMatch(new RegExp(`^local\\s+${escapeRegExp(exportName)}\\b`, 'm'));
+      }
+    }
+
+    const report = readFile(outDir, 'docs/risulua-split-report.md');
+    expect(report).not.toContain('243 active locals');
+    const exportManifest = readJson(outDir, 'docs/risulua-export-manifest.json') as Record<string, unknown>;
+    expect(publicExportNames(refactorMap)).toEqual(publicExportNames(exportManifest));
+    expect(fs.existsSync(path.join(fixtureRoot, 'docs', 'refactor-map.json'))).toBe(true);
   });
 
   it('keeps domain candidates report-only when module-table domain generation is explicitly disabled', async () => {
@@ -702,6 +763,39 @@ function readFile(root: string, relativePath: string): string {
 
 function readJson(root: string, relativePath: string): unknown {
   return JSON.parse(readFile(root, relativePath));
+}
+
+function moduleExports(refactorMap: Record<string, unknown>, modulePath: string): string[] {
+  const modules = refactorMap.modules as Array<Record<string, unknown>> | undefined;
+  const moduleContract = modules?.find((module) => module.path === modulePath);
+  expect(moduleContract).toBeDefined();
+  return moduleContract?.exports as string[];
+}
+
+function domainFunctionModules(refactorMap: Record<string, unknown>): Array<{ path: string; exports: string[] }> {
+  const modules = refactorMap.modules as Array<Record<string, unknown>> | undefined;
+  return (modules ?? [])
+    .filter((moduleContract) => moduleContract.category === 'domain-function')
+    .map((moduleContract) => ({
+      path: moduleContract.path as string,
+      exports: moduleContract.exports as string[],
+    }));
+}
+
+function publicExportNames(document: Record<string, unknown>): string[] {
+  const symbols = document.symbols as Array<Record<string, unknown>> | undefined;
+  if (symbols) {
+    return symbols
+      .filter((symbol) => symbol.globalBridge === true)
+      .map((symbol) => symbol.originalName as string);
+  }
+
+  const entries = document.hostVisibleGlobals as Array<Record<string, unknown>> | undefined;
+  return entries?.map((entry) => entry.name as string) ?? [];
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function readBytes(root: string, relativePath: string): Buffer {

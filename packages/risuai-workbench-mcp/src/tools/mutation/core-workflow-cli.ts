@@ -23,12 +23,17 @@ export type RisuLuaDomainGenerationInput = 'report' | 'validated';
 
 export interface RisuCoreCommandResult {
   args: readonly string[];
+  cancelled: boolean;
   command: string;
   cwd: string;
   exitCode: number;
   timedOut: boolean;
   stderr: string;
   stdout: string;
+}
+
+export interface RunRisuCoreCommandOptions {
+  signal?: AbortSignal;
 }
 
 /**
@@ -50,11 +55,28 @@ export function resolveRisuCoreBinPath(): string {
  * @param cwd - command working directory
  * @returns exit code와 bounded stdout/stderr
  */
-export async function runRisuCoreCommand(args: readonly string[], cwd: string): Promise<RisuCoreCommandResult> {
+export async function runRisuCoreCommand(
+  args: readonly string[],
+  cwd: string,
+  options: RunRisuCoreCommandOptions = {},
+): Promise<RisuCoreCommandResult> {
   const binPath = resolveRisuCoreBinPath();
+  if (options.signal?.aborted) {
+    return {
+      args,
+      cancelled: true,
+      command: process.execPath,
+      cwd,
+      exitCode: 130,
+      stderr: 'risu-core command cancelled before start.',
+      stdout: '',
+      timedOut: false,
+    };
+  }
   return await new Promise<RisuCoreCommandResult>((resolve) => {
     let settled = false;
     let timedOut = false;
+    let cancelled = false;
     const child = spawn(process.execPath, [binPath, ...args], {
       cwd,
       shell: false,
@@ -62,6 +84,14 @@ export async function runRisuCoreCommand(args: readonly string[], cwd: string): 
     });
     let stdout = '';
     let stderr = '';
+
+    const onAbort = () => {
+      if (settled) return;
+      cancelled = true;
+      stderr = appendBounded(stderr, '\nrisu-core command cancelled by MCP request.');
+      child.kill('SIGTERM');
+    };
+    options.signal?.addEventListener('abort', onAbort, { once: true });
 
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
@@ -80,14 +110,16 @@ export async function runRisuCoreCommand(args: readonly string[], cwd: string): 
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
+      options.signal?.removeEventListener('abort', onAbort);
       stderr = appendBounded(stderr, `\n${error.message}`);
-      resolve({ args, command: process.execPath, cwd, exitCode: 1, stderr, stdout, timedOut });
+      resolve({ args, cancelled, command: process.execPath, cwd, exitCode: 1, stderr, stdout, timedOut });
     });
     child.on('close', (code) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
-      resolve({ args, command: process.execPath, cwd, exitCode: timedOut ? 124 : code ?? 1, stderr, stdout, timedOut });
+      options.signal?.removeEventListener('abort', onAbort);
+      resolve({ args, cancelled, command: process.execPath, cwd, exitCode: cancelled ? 130 : timedOut ? 124 : code ?? 1, stderr, stdout, timedOut });
     });
   });
 }

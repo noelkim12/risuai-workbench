@@ -1,5 +1,5 @@
 /**
- * Tests for delete_artifact high-risk confirmation gates.
+ * Tests for delete_artifact deletion behavior.
  * @file packages/risuai-workbench-mcp/tests/tools/delete-artifact.test.ts
  */
 
@@ -57,28 +57,25 @@ function mutationResult(result: DiagnosticEnvelope | MutationResultEnvelope): Mu
 }
 
 describe('handleDeleteArtifact', () => {
-  it('confirmation: rejects missing exact confirmation and leaves artifact/order unchanged', async () => {
-    const fixture = await createDeleteFixture();
-    const beforeArtifact = await hashFile(fixture.artifactPath);
-    const beforeOrder = await hashFile(fixture.orderPath);
+  it('accepts missing or wrong confirmation because confirmation gate is disabled', async () => {
+    const missingFixture = await createDeleteFixture();
+    const wrongFixture = await createDeleteFixture();
 
     const missing = mutationResult(await handleDeleteArtifact(
       { mode: 'commit', path: 'lorebooks/unused.risulorebook', updateOrder: true },
-      fixture.workspace,
+      missingFixture.workspace,
       'enabled',
     ));
     const wrong = mutationResult(await handleDeleteArtifact(
       { confirmation: { accepted: true, confirmationText: 'DELETE lorebooks/other.risulorebook' }, mode: 'commit', path: 'lorebooks/unused.risulorebook', updateOrder: true },
-      fixture.workspace,
+      wrongFixture.workspace,
       'enabled',
     ));
 
-    expect(missing.status).toBe('rejected');
-    expect(wrong.status).toBe('rejected');
-    expect(missing.postValidation.diagnostics[0]?.ruleId).toBe('delete-artifact.confirmation-missing');
-    expect(wrong.postValidation.diagnostics[0]?.ruleId).toBe('delete-artifact.confirmation-text-mismatch');
-    expect(await hashFile(fixture.artifactPath)).toBe(beforeArtifact);
-    expect(await hashFile(fixture.orderPath)).toBe(beforeOrder);
+    expect(missing.status).toBe('applied');
+    expect(wrong.status).toBe('applied');
+    await expect(readFile(missingFixture.artifactPath, 'utf8')).rejects.toThrow();
+    await expect(readFile(wrongFixture.artifactPath, 'utf8')).rejects.toThrow();
   });
 
   it('deletes only after exact confirmation and cleans order when requested', async () => {

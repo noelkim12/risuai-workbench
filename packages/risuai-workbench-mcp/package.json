@@ -23,6 +23,7 @@
   "files": [
     "bin",
     "dist",
+    "prompt-assets",
     "package.json",
     "README*",
     "LICENSE*"
@@ -45,6 +46,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "cbs-language-server": "*",
     "risu-workbench-core": "*",
     "zod": "^4.4.3"
   },

@@ -129,6 +129,87 @@ export function stripOuterParentheses(expression: string): string {
 }
 
 /**
+ * tryParseWhenConditionChain 함수.
+ * {{macro::...}}::and::{{macro::...}} 형태의 #when 복합 조건식을 감지해
+ * 각 조건을 formatting 한 뒤 AND/OR 로 연결합니다.
+ *
+ * @param condition - raw CBS condition 문자열
+ * @returns 복합 조건식이면 formatting 된 문자열, 아니면 undefined
+ */
+function tryParseWhenConditionChain(condition: string): string | undefined {
+  const trimmed = condition.trim();
+  if (!trimmed.startsWith('{{')) return undefined;
+
+  let depth = 0;
+  let hasAndOr = false;
+  for (let i = 0; i < trimmed.length - 4; i++) {
+    if (trimmed.startsWith('{{', i)) {
+      depth++;
+      i++;
+      continue;
+    }
+    if (trimmed.startsWith('}}', i)) {
+      depth = Math.max(0, depth - 1);
+      i++;
+      continue;
+    }
+    if (depth === 0 && (trimmed.startsWith('::and::', i) || trimmed.startsWith('::or::', i))) {
+      hasAndOr = true;
+      break;
+    }
+  }
+  if (!hasAndOr) return undefined;
+
+  const parts: string[] = [];
+  let currentSegment = '';
+  depth = 0;
+  for (let i = 0; i < trimmed.length; i++) {
+    if (trimmed.startsWith('{{', i)) {
+      depth++;
+      i++;
+      currentSegment += '{{';
+      continue;
+    }
+    if (trimmed.startsWith('}}', i)) {
+      depth = Math.max(0, depth - 1);
+      i++;
+      currentSegment += '}}';
+      continue;
+    }
+    if (depth === 0 && trimmed.startsWith('::and::', i)) {
+      i += 6;
+      if (currentSegment.trim()) {
+        parts.push(formatSegment(currentSegment.trim()));
+      }
+      parts.push('AND');
+      currentSegment = '';
+      continue;
+    }
+    if (depth === 0 && trimmed.startsWith('::or::', i)) {
+      i += 5;
+      if (currentSegment.trim()) {
+        parts.push(formatSegment(currentSegment.trim()));
+      }
+      parts.push('OR');
+      currentSegment = '';
+      continue;
+    }
+    currentSegment += trimmed[i];
+  }
+  if (currentSegment.trim()) {
+    parts.push(formatSegment(currentSegment.trim()));
+  }
+
+  return parts.join(' ');
+}
+
+function formatSegment(segment: string): string {
+  const macro = parseCbsMacroCall(segment);
+  if (macro) return formatCbsExpression(macro);
+  return normalizeLiteralExpression(segment);
+}
+
+/**
  * simplifyCbsConditionExpression 함수.
  * CBS variable/function wrappers를 사용자가 읽는 조건식으로 축약함.
  *
@@ -139,6 +220,11 @@ export function simplifyCbsConditionExpression(condition: string): string {
   const mathExpression = unwrapCbsMathExpression(condition);
   if (mathExpression !== undefined) {
     return simplifyInfixCbsExpression(mathExpression);
+  }
+
+  const whenChain = tryParseWhenConditionChain(condition);
+  if (whenChain !== undefined) {
+    return whenChain;
   }
 
   const parsedMacro = parseCbsMacroCall(condition);

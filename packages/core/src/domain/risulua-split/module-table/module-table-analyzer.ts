@@ -480,8 +480,20 @@ function addPublicGlobal(state: AnalyzerState, name: string, kind: RisuLuaModule
 
 function addProceduralBlock(state: AnalyzerState, node: LuaNode): void {
   const effects = createEmptyRisuLuaModuleTableHostEffects();
-  analyzeExpression(node, state, scopeFrameFromFact(state.scopes[0]), [], [], [], effects);
-  state.proceduralBlocks.push({ id: `procedural:${state.proceduralBlocks.length}`, name: node.type, sourceRange: sourceRangeForNode(state, node), hostEffects: effects, extractable: false });
+  const references: RisuLuaModuleTableReferenceFact[] = [];
+  const mutations: RisuLuaModuleTableMutationFact[] = [];
+  const callSites: RisuLuaModuleTableCallSiteFact[] = [];
+  analyzeExpression(node, state, scopeFrameFromFact(state.scopes[0]), references, mutations, callSites, effects);
+  state.proceduralBlocks.push({
+    id: `procedural:${state.proceduralBlocks.length}`,
+    name: node.type,
+    sourceRange: sourceRangeForNode(state, node),
+    hostEffects: effects,
+    references,
+    mutations,
+    callSites,
+    extractable: false,
+  });
 }
 
 function createScope(state: AnalyzerState, kind: RisuLuaModuleTableScopeKind, name: string, parent: ScopeFrame | undefined, sourceRange: LuaSourceRange): ScopeFrame {
