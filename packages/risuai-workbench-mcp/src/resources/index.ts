@@ -13,6 +13,7 @@ import { buildRegistrySnapshot, WORKBENCH_REGISTRY, type WorkbenchResourceRegist
 import type { WorkspaceRootStatus } from '../project/resolve-root';
 import { resolveSafeWorkspacePath } from '../project/safe-path';
 import type { PatchPlanStore } from '../mutation/patch-store';
+import { readAuthoringSkillResource } from './authoring-skills-reference';
 import { readCbsResource } from './cbs-reference';
 import { readRisuLuaResource } from './risulua-reference';
 
@@ -205,6 +206,16 @@ export async function readWorkbenchResource(
       return risuLuaResult as ReadResourceResult;
     }
     return jsonResource(uriText, buildStablePayload(entry.name, uriText, 'not_found', 'RisuLua reference resource was not found.', {
+      requestedId: decodeLastPathSegment(uri),
+    }));
+  }
+
+  if (entry.name === 'workbench.resource.authoring_skills') {
+    const skillResult = readAuthoringSkillResource(uriText);
+    if (skillResult) {
+      return skillResult as ReadResourceResult;
+    }
+    return jsonResource(uriText, buildStablePayload(entry.name, uriText, 'not_found', 'Authoring skill resource was not found.', {
       requestedId: decodeLastPathSegment(uri),
     }));
   }

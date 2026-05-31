@@ -376,6 +376,20 @@ RisuLua lifecycle guide tools are authoring guides. They do not preview bundled 
 | `workbench.creative.save_idea_session` | yes | explicit confirmation 후 workspace-local creative session metadata를 저장합니다. |
 | `workbench.creative.write_idea_memory` | yes | explicit confirmation 후 workspace-local creative memory record를 저장합니다. |
 
+### Authoring Skills
+
+The authoring skill workflow exposes RisuAI creation guidance as read-only skill resources and approval-gated planning tools.
+
+| Surface | Name / URI | Mutates | Description |
+| --- | --- | ---: | --- |
+| Resource | `risuai-workbench://skills/index` | no | Compact skill catalog for LLM-assisted matching. |
+| Resource | `risuai-workbench://skills/en/{skillId}` | no | Full Markdown guidance for one approved skill. |
+| Prompt | `workbench.select_authoring_skill` | no | Guides the host LLM to select one skill from the catalog and ask the user for approval. |
+| Prompt | `workbench.generate_plan_from_skill` | no | Guides the host LLM to turn an approved skill preview bundle into a Korean plan document preview. |
+| Tool | `workbench.list_authoring_skills` | no | Returns packaged skill names, friendly descriptions, usage hints, and resource links. |
+| Tool | `workbench.recommend_skills` | no | Validates the LLM-selected skill and returns an approval-required recommendation. |
+| Tool | `workbench.apply_skill` | no | Requires confirmation and returns a plan document preview bundle without writing files. |
+
 ## Patch operation support
 
 `PatchPlan` contract는 제안서의 operation union을 보존하지만, `workbench.apply_patch_plan`의 apply engine이 현재 직접 지원하는 operation은 제한되어 있습니다.

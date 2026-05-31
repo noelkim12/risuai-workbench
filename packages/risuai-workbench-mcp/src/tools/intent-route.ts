@@ -99,6 +99,24 @@ const ORDER_KEYWORDS = ['_order.json', 'order', 'reorder', '순서'];
 const FRONTMATTER_KEYWORDS = ['frontmatter', 'yaml', 'metadata header', 'meta field', '프론트매터'];
 const WIKI_KEYWORDS = ['wiki', 'refresh wiki', 'update wiki'];
 const DOCS_KEYWORDS = ['docs', 'documentation', '문서', '가이드'];
+const AUTHORING_SKILL_KEYWORDS = [
+  'authoring skill',
+  'skill',
+  'design a new',
+  'build a new',
+  'create a system',
+  'feature boundary',
+  'artifact role',
+  'artifact roles',
+  'state flow',
+  'structured output',
+  'button loop',
+  'choice protocol',
+  '새 시스템',
+  '새 모듈',
+  '제작',
+  '설계',
+];
 const VALIDATE_KEYWORDS = ['validate', 'validation', 'verify', 'check'];
 const INSPECT_KEYWORDS = ['inspect', 'review', 'look at', 'check', 'examine'];
 
@@ -626,6 +644,37 @@ function classifyIntent(
       allowedTools: filterImplemented(unionSets([READ_ONLY_TOOLS, CREATIVE_PREVIEW_TOOLS])),
       blockedTools: filterImplemented(MUTATION_TOOLS),
       domainTags: constraints.domainTags,
+    });
+  }
+
+  // Rule 5.5: authoring skill candidate language
+  if (!constraints.hasMutationLanguage && hasKeyword(text, AUTHORING_SKILL_KEYWORDS)) {
+    return buildRouteResult(input, {
+      intent: 'docs.update',
+      nextStep: 'read_resource',
+      confidence: 0.8,
+      risk: 'read_only',
+      targetKind: 'documentation',
+      mutationRequested: false,
+      commitAllowed: false,
+      stopConditions: ['confirmation_required'],
+      explanation: 'Authoring-oriented request detected. Recommend the LLM-assisted authoring skill selection workflow before planning.',
+      allowedTools: filterImplemented(unionSets([READ_ONLY_TOOLS, DOCS_TOOLS, ['workbench.recommend_skills', 'workbench.apply_skill']])),
+      recommendedTools: limitRecommended([
+        'workbench.recommend_skills',
+      ]),
+      blockedTools: filterImplemented(MUTATION_TOOLS),
+      domainTags: constraints.domainTags,
+      requiredEvidence: [
+        'skill catalog resource risuai-workbench://skills/index',
+        'LLM-selected skill id and reason',
+        'explicit user approval before workbench.apply_skill',
+      ],
+      routingSignals: [
+        'authoring_skill_candidate',
+        'approval_required',
+        ...constraints.domainTags.map((tag) => `domain:${tag}`),
+      ],
     });
   }
 

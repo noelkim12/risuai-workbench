@@ -29,7 +29,6 @@ import {
   sanitizeDefaultOutputName,
   type RisuCoreCommandResult,
   type RisuLuaDomainGenerationInput,
-  type RisuLuaModeInput,
   type RisuLuaRecoveryInput,
   type RisuLuaSplitInput,
 } from './core-workflow-cli';
@@ -44,7 +43,8 @@ export interface RunExtractInput {
   outDir?: string;
   postValidate?: boolean;
   risuluaDomainGeneration?: RisuLuaDomainGenerationInput;
-  risuluaMode?: RisuLuaModeInput;
+  /** Always 'modular'. Classic is fallback-only and not caller-selectable. */
+  risuluaMode?: 'modular';
   risuluaRecovery?: RisuLuaRecoveryInput;
   risuluaSplit?: RisuLuaSplitInput;
   sourcePath: string;
@@ -241,12 +241,15 @@ function parseRunExtractInput(input: unknown): { input: RunExtractInput; ok: tru
   const type = getStringField(candidate, 'type');
   if (type !== undefined && !VALID_TYPES.has(type as ExtractType)) return { ok: false, reason: 'type must be character, module, or preset.' };
   const mode: PatchPlanMutationMode = 'commit';
-  const risuluaMode = candidate.risuluaMode;
-  if (risuluaMode !== undefined && risuluaMode !== 'classic' && risuluaMode !== 'modular') return { ok: false, reason: 'risuluaMode must be classic or modular.' };
+  // risuluaMode is hardcoded to 'modular'. Caller input is ignored.
   const risuluaRecovery = candidate.risuluaRecovery;
   if (risuluaRecovery !== undefined && risuluaRecovery !== 'none' && risuluaRecovery !== 'full-source') return { ok: false, reason: 'risuluaRecovery must be none or full-source.' };
-  const risuluaSplit = candidate.risuluaSplit;
-  if (risuluaSplit !== undefined && risuluaSplit !== 'none' && risuluaSplit !== 'report' && risuluaSplit !== 'coarse' && risuluaSplit !== 'module-table') return { ok: false, reason: 'risuluaSplit must be none, report, coarse, or module-table.' };
+  const risuluaSplitRaw = candidate.risuluaSplit;
+  if (risuluaSplitRaw !== undefined && risuluaSplitRaw !== 'none' && risuluaSplitRaw !== 'report' && risuluaSplitRaw !== 'coarse' && risuluaSplitRaw !== 'module-table') return { ok: false, reason: 'risuluaSplit must be none, report, coarse, or module-table.' };
+  // Default to module-table when omitted, same as risuluaMode defaults to modular.
+  const risuluaSplit: RisuLuaSplitInput = (risuluaSplitRaw === 'none' || risuluaSplitRaw === 'report' || risuluaSplitRaw === 'coarse' || risuluaSplitRaw === 'module-table')
+    ? risuluaSplitRaw
+    : 'module-table';
   const risuluaDomainGeneration = candidate.risuluaDomainGeneration;
   if (risuluaDomainGeneration !== undefined && risuluaDomainGeneration !== 'report' && risuluaDomainGeneration !== 'validated') return { ok: false, reason: 'risuluaDomainGeneration must be report or validated.' };
   return {
@@ -256,7 +259,7 @@ function parseRunExtractInput(input: unknown): { input: RunExtractInput; ok: tru
       outDir,
       postValidate: getBooleanField(candidate, 'postValidate'),
       risuluaDomainGeneration,
-      risuluaMode,
+      risuluaMode: 'modular' as const,
       risuluaRecovery,
       risuluaSplit,
       sourcePath,

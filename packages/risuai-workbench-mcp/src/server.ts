@@ -85,6 +85,10 @@ import {
   handlePlanWikiUpdate,
   handleRefreshWiki,
   handleSearchWiki,
+  // skills
+  handleApplySkill,
+  handleListAuthoringSkills,
+  handleRecommendSkills,
   // creative
   registerCreativeTools,
 } from './tools';
@@ -167,6 +171,7 @@ export function createMcpServer(startupContext: StartupContext): McpServer {
   );
 
   registerIntentRouteTools(server);
+  registerAuthoringSkillTools(server);
   registerInspectValidateTools(server, startupContext.workspace);
   registerPatchPreviewTools(server, startupContext.workspace, patchStore);
   registerPatchApplyTools(server, startupContext, patchStore);
@@ -726,7 +731,6 @@ function registerCoreWorkflowTools(server: McpServer, startupContext: StartupCon
   const confirmationSchema = z.object({ accepted: z.boolean(), confirmationText: z.string().optional() }).optional();
   const risuluaFields = {
     risuluaDomainGeneration: z.enum(['report', 'validated']).optional(),
-    risuluaMode: z.enum(['classic', 'modular']).optional(),
     risuluaRecovery: z.enum(['none', 'full-source']).optional(),
     risuluaSplit: z.enum(['none', 'report', 'coarse', 'module-table']).optional(),
   };
@@ -754,7 +758,7 @@ function registerCoreWorkflowTools(server: McpServer, startupContext: StartupCon
     'workbench.run_scaffold',
     {
       description: 'Generate a new charx, module, or preset workspace skeleton using risu-core scaffold. Use this tool when the user asks to create, initialize, or scaffold a new RisuAI character, module, or preset project. If outDir is omitted, the output directory defaults to the project name in the workspace root. Risk: medium.',
-      inputSchema: { confirmation: confirmationSchema, creator: z.string().optional(), mode: z.enum(['preview', 'commit']), name: z.string(), namespace: z.string().optional(), outDir: z.string().optional(), postValidate: z.boolean().optional(), risuluaMode: z.enum(['classic', 'modular']).optional(), type: z.enum(['charx', 'module', 'preset']) },
+      inputSchema: { confirmation: confirmationSchema, creator: z.string().optional(), mode: z.enum(['preview', 'commit']), name: z.string(), namespace: z.string().optional(), outDir: z.string().optional(), postValidate: z.boolean().optional(), type: z.enum(['charx', 'module', 'preset']) },
       outputSchema: workbenchJsonOutputSchema,
       title: 'Run scaffold workflow',
     },
@@ -925,6 +929,78 @@ function registerIntentRouteTools(server: McpServer): void {
     },
     async (input: Parameters<typeof handleRouteIntent>[0]) => {
       const result = await handleRouteIntent(input);
+      return createJsonToolResult(result);
+    },
+  );
+}
+
+/**
+ * registerAuthoringSkillTools 함수.
+ * Phase 1 authoring skill recommendation tools를 MCP server에 등록함.
+ *
+ * @param server - MCP server 인스턴스
+ */
+function registerAuthoringSkillTools(server: McpServer): void {
+  const listTool = getWorkbenchTool('workbench.list_authoring_skills');
+
+  server.registerTool(
+    'workbench.list_authoring_skills',
+    {
+      annotations: annotationsForTool('workbench.list_authoring_skills'),
+      description: listTool?.description ?? 'List packaged authoring skills with user-friendly descriptions.',
+      inputSchema: {},
+      outputSchema: diagnosticEnvelopeOutputSchema,
+      title: listTool?.title ?? 'List authoring skills',
+    },
+    async (input: unknown) => {
+      const result = await handleListAuthoringSkills(input);
+      return createJsonToolResult(result);
+    },
+  );
+
+  const recommendTool = getWorkbenchTool('workbench.recommend_skills');
+
+  server.registerTool(
+    'workbench.recommend_skills',
+    {
+      annotations: annotationsForTool('workbench.recommend_skills'),
+      description: recommendTool?.description ?? 'Validate an LLM-selected authoring skill recommendation.',
+      inputSchema: {
+        llmSelection: z.object({
+          confidence: z.number().min(0).max(1),
+          reason: z.string(),
+          skillId: z.string(),
+        }),
+        request: z.string(),
+      },
+      outputSchema: diagnosticEnvelopeOutputSchema,
+      title: recommendTool?.title ?? 'Recommend authoring skills',
+    },
+    async (input: unknown) => {
+      const result = await handleRecommendSkills(input);
+      return createJsonToolResult(result);
+    },
+  );
+
+  const applyTool = getWorkbenchTool('workbench.apply_skill');
+
+  server.registerTool(
+    'workbench.apply_skill',
+    {
+      annotations: annotationsForTool('workbench.apply_skill'),
+      description: applyTool?.description ?? 'Apply an approved authoring skill as a plan preview.',
+      inputSchema: {
+        confirmation: z.object({ accepted: z.boolean(), confirmationText: z.string().optional() }).optional(),
+        recommendationReason: z.string().optional(),
+        request: z.string(),
+        skillId: z.string(),
+        target: z.string().optional(),
+      },
+      outputSchema: diagnosticEnvelopeOutputSchema,
+      title: applyTool?.title ?? 'Apply authoring skill',
+    },
+    async (input: unknown) => {
+      const result = await handleApplySkill(input);
       return createJsonToolResult(result);
     },
   );

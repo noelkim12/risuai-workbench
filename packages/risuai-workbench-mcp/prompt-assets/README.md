@@ -42,3 +42,22 @@ Source of truth 경계는 다음과 같습니다.
 ## Maintenance note
 
 Prompt를 추가하거나 제거할 때는 registry entry, manifest mapping, Markdown asset file, 이 색인을 함께 갱신하세요. Registry는 metadata, manifest는 파일 매핑, Markdown asset은 prompt body를 각각 소유합니다.
+
+## Authoring skill assets
+
+Authoring skills are packaged read-only Markdown assets under `skills/en/` and indexed by `skills/skills-catalog.json`.
+
+Ownership boundaries:
+
+- `skills/en/*.md` owns the human-readable authoring guidance body.
+- `skills/skills-catalog.json` owns machine-readable recommendation metadata: `id`, `title`, `kind`, `summary`, `useWhen`, `doNotUseWhen`, `primaryArtifacts`, `families`, `signals`, `resourceUri`, and `source`.
+- `src/skills/catalog.ts` owns runtime validation and safe loading.
+- `workbench.select_authoring_skill` owns the LLM-assisted matching workflow.
+- `workbench.recommend_skills` validates the LLM-selected skill and returns approval-required user guidance.
+- `workbench.apply_skill` requires explicit confirmation and returns a plan preview bundle without writing files.
+
+Safety rules:
+
+- Do not add skill Markdown files to the `prompts[]` manifest.
+- Do not auto-apply skills from `route_intent`.
+- Do not write plan files from `workbench.apply_skill`; saving plans must use the existing preview/confirmation mutation workflow.
