@@ -5,12 +5,45 @@
 
 <script lang="ts">
   import type { MainEditorVariableBindingPayload } from '../../../types/mainEditor';
+  // biome-ignore lint/correctness/noUnusedImports: Svelte markup reads isBareBooleanToggle.
+  import { isBareBooleanToggle, isNullTestSentinel } from './variableDrawerHelpers';
 
   export let binding: MainEditorVariableBindingPayload;
   export let onRawChange: (variableName: string, rawValue: string) => void;
   export let onCandidateSelect: (variableName: string, value: string) => void;
 
+  const CUSTOM_VALUE_OPTION = '__risu_custom_variable_value__';
+
   let expanded = false;
+
+  type VariableCandidateOption = MainEditorVariableBindingPayload['candidates'][number] & { value: string | null };
+
+  /**
+   * candidate option 값을 select용 문자열로 정규화함.
+   * Runtime에서 null candidate가 들어와도 native select의 빈 값과 충돌하지 않게 유지함.
+   */
+  function getCandidateOptionValue(candidate: VariableCandidateOption): string {
+    return candidate.value === null ? 'null' : candidate.value;
+  }
+
+  /**
+   * 현재 rawValue와 매칭되는 candidate가 없으면 custom sentinel을 선택함.
+   */
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup reads this select value helper.
+  function getSelectedCandidateValue(): string {
+    return binding.candidates.some((candidate) => getCandidateOptionValue(candidate) === binding.rawValue) ? binding.rawValue : CUSTOM_VALUE_OPTION;
+  }
+
+  /**
+   * Custom Value placeholder는 내부 sentinel만 사용하고, raw override에는 빈 문자열로 반영함.
+   */
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup binds this select change handler.
+  function handleCandidateChange(event: Event): void {
+    if (!(event.currentTarget instanceof HTMLSelectElement)) return;
+
+    const selectedValue = event.currentTarget.value;
+    onCandidateSelect(binding.variableName, selectedValue === CUSTOM_VALUE_OPTION ? '' : selectedValue);
+  }
 
   /**
    * toggleExpanded 함수.
@@ -33,21 +66,49 @@
   </button>
 
   <div class="variable-row__controls">
-    {#if binding.valueKind === 'boolean'}
+    {#if isBareBooleanToggle(binding)}
+      <label class="variable-row__toggle">
+        <span>boolean</span>
+        <button
+          type="button"
+          class="variable-row__toggle-switch"
+          role="switch"
+          aria-label={`${binding.variableName} boolean toggle`}
+          aria-checked={binding.rawValue === '1' || binding.rawValue === 'true'}
+          onclick={() => {
+            const next = binding.rawValue === '1' || binding.rawValue === 'true' ? 'false' : 'true';
+            onCandidateSelect(binding.variableName, next);
+          }}
+        >
+          <span class="variable-row__toggle-track">
+            <span class="variable-row__toggle-thumb" />
+          </span>
+        </button>
+      </label>
+    {:else if binding.valueKind === 'boolean'}
       <div class="variable-row__segmented" role="group" aria-label={`${binding.variableName} boolean override`}>
         <button type="button" class:active={binding.rawValue === 'false'} onclick={() => onCandidateSelect(binding.variableName, 'false')}>false</button>
         <button type="button" class:active={binding.rawValue === 'true'} onclick={() => onCandidateSelect(binding.variableName, 'true')}>true</button>
       </div>
     {:else if binding.candidates.length > 0}
-      <div class="variable-row__chips" aria-label={`${binding.variableName} candidates`}>
-        {#each binding.candidates.slice(0, 6) as candidate}
-          <button type="button" onclick={() => onCandidateSelect(binding.variableName, candidate.value)} title={candidate.source}>{candidate.label}</button>
-        {/each}
-      </div>
+      <label class="variable-row__candidate">
+        <span>candidate</span>
+        <span class="variable-row__select" aria-label={`${binding.variableName} candidates`}>
+          <select
+            value={getSelectedCandidateValue()}
+            onchange={handleCandidateChange}
+          >
+            <option value={CUSTOM_VALUE_OPTION}>-- select --</option>
+            {#each binding.candidates as candidate}
+              <option value={getCandidateOptionValue(candidate)} class:is-sentinel={isNullTestSentinel(candidate.value)}>{candidate.label}</option>
+            {/each}
+          </select>
+        </span>
+      </label>
     {/if}
 
     <label class="variable-row__raw">
-      <span>raw</span>
+      <span>raw value</span>
       <input value={binding.rawValue} oninput={(event) => onRawChange(binding.variableName, event.currentTarget.value)} />
     </label>
   </div>

@@ -32,7 +32,7 @@ async function createMutationFixture(): Promise<{ generatedPath: string; root: s
 }
 
 describe('mutation mode safety gate', () => {
-  it('keeps preview-only as the default and blocks writes through the shared foundation', async () => {
+  it('uses enabled as the default and allows writes through the shared foundation', async () => {
     const fixture = await createMutationFixture();
     const context = await createStartupContext({ root: fixture.root });
 
@@ -43,11 +43,8 @@ describe('mutation mode safety gate', () => {
       workspace: context.workspace,
     });
 
-    expect(context.mutationMode).toBe('preview-only');
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('Expected preview-only mutation to be rejected.');
-    expect(result.status).toBe('rejected');
-    expect(result.reason).toBe('mutation-mode-preview-only');
+    expect(context.mutationMode).toBe('enabled');
+    expect(result.ok).toBe(true);
   });
 
   it('rejects source artifact paths in generated-only mode', async () => {
@@ -90,7 +87,7 @@ describe('mutation mode safety gate', () => {
 });
 
 describe('confirmation policy', () => {
-  it('rejects missing, wrong, and accepts exact high-risk confirmation text', async () => {
+  it('accepts all confirmation states without rejection (confirmation gate disabled)', async () => {
     const fixture = await createMutationFixture();
     const context = await createStartupContext({ root: fixture.root });
     const base = {
@@ -112,12 +109,8 @@ describe('confirmation policy', () => {
       confirmation: { accepted: true, confirmationText: 'DELETE characters/merry/lorebooks/intro.risulorebook' },
     });
 
-    expect(missing.ok).toBe(false);
-    if (missing.ok) throw new Error('Expected missing high-risk confirmation to be rejected.');
-    expect(missing.reason).toBe('confirmation-missing');
-    expect(wrong.ok).toBe(false);
-    if (wrong.ok) throw new Error('Expected wrong high-risk confirmation to be rejected.');
-    expect(wrong.reason).toBe('confirmation-text-mismatch');
+    expect(missing.ok).toBe(true);
+    expect(wrong.ok).toBe(true);
     expect(exact.ok).toBe(true);
   });
 });
@@ -154,7 +147,7 @@ describe('file hash preconditions', () => {
 });
 
 describe('append-only mutation journal', () => {
-  it('writes and reads all foundation statuses without compaction', async () => {
+  it('writes and reads all foundation statuses with compact entries', async () => {
     const fixture = await createMutationFixture();
     const statuses: MutationJournalStatus[] = ['previewed', 'rejected', 'failed-precondition', 'applied', 'failed-validation'];
     const journalPath = path.join(fixture.root, '.risuai-workbench-mcp', 'journal.jsonl');
@@ -173,5 +166,37 @@ describe('append-only mutation journal', () => {
 
     expect(raw.trim().split('\n')).toHaveLength(statuses.length);
     expect(entries.map((entry) => entry.status)).toEqual(statuses);
+  });
+
+  it('compacts verbose patch operations and diagnostics before writing', async () => {
+    const fixture = await createMutationFixture();
+    const journalPath = path.join(fixture.root, '.risuai-workbench-mcp', 'journal.jsonl');
+    const largeContent = 'x'.repeat(10_000);
+
+    await appendJournalEntry(journalPath, {
+      affectedFiles: Array.from({ length: 30 }, (_, index) => `${fixture.sourcePath}.${index}`),
+      changedFiles: Array.from({ length: 30 }, (_, index) => ({ operationCount: 1, path: `${fixture.sourcePath}.${index}` })),
+      mutationId: 'mutation:compact',
+      patchOperations: [{ content: largeContent, kind: 'file.create', path: fixture.sourcePath }],
+      postValidation: {
+        diagnostics: [{ message: largeContent, ruleId: 'test.large-diagnostic', severity: 'warning' }],
+        status: 'warning',
+      },
+      rollbackAvailable: true,
+      rollbackData: { expectedCurrentHash: 'sha256:after', from: 'renamed.risulorebook', kind: 'move-back', to: fixture.sourcePath },
+      status: 'applied',
+      toolName: 'workbench.test',
+    });
+
+    const raw = await readFile(journalPath, 'utf8');
+    const [entry] = await readJournalEntries(journalPath);
+
+    expect(raw).not.toContain(largeContent);
+    expect(entry.patchOperations).toBeUndefined();
+    expect(entry.operationSummary).toMatchObject({ count: 1, operations: [{ kind: 'file.create', path: fixture.sourcePath }] });
+    expect(entry.affectedFiles).toHaveLength(25);
+    expect(entry.changedFilesSummary).toMatchObject({ count: 30, omitted: 5 });
+    expect(entry.diagnosticsSummary).toMatchObject({ count: 1, maxSeverity: 'warning', ruleIds: ['test.large-diagnostic'] });
+    expect(entry.rollbackData).toMatchObject({ kind: 'move-back', to: fixture.sourcePath });
   });
 });

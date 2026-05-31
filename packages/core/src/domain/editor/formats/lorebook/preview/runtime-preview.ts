@@ -13,6 +13,10 @@ import {
   type CbsSimulationTraceEvent,
   type CbsSimulationTracePhase,
 } from '../../../../../simulator';
+import {
+  createAstConditionCandidateExtractor,
+  type ConditionCandidateExtractor,
+} from '../../../../cbs/condition-candidates';
 import type { EditorPreviewDiagnostic } from '../../../preview/types';
 import { createPreviewDiagnostic } from '../../../preview/create-preview-diagnostic';
 import { formatCoverageSummary } from '../../../preview/coverage-summary';
@@ -37,6 +41,7 @@ export type LorebookRuntimeVariableSourceBadge =
   | 'profile'
   | 'history'
   | 'workspace'
+  | 'context'
   | 'missing'
   | 'runtimeUnknown'
   | 'previewOverride'
@@ -55,7 +60,7 @@ export interface LorebookRuntimePreviewInput {
 
 export interface LorebookRuntimeVariableBinding {
   variableName: string;
-  scope: 'chat' | 'global' | 'toggle' | 'temp' | 'iterator';
+  scope: 'chat' | 'global' | 'toggle' | 'temp' | 'iterator' | 'context';
   direction: 'read' | 'write';
   operation: string;
   status: 'resolved' | 'missing' | 'runtimeUnknown' | 'writeOnly';
@@ -72,11 +77,13 @@ export interface LorebookRuntimePreviewResult {
   output: string;
   bindings: LorebookRuntimeVariableBinding[];
   warnings: Array<{ code: string; variableName: string; message: string }>;
-  diagnostics: Array<{
-    source: 'parser' | 'simulator';
-  } & EditorPreviewDiagnostic & {
-    range?: { line: number; character: number; endLine: number; endCharacter: number };
-  }>;
+  diagnostics: Array<
+    {
+      source: 'parser' | 'simulator';
+    } & EditorPreviewDiagnostic & {
+        range?: { line: number; character: number; endLine: number; endCharacter: number };
+      }
+  >;
   effects: Array<{
     operation: string;
     kind?: string;
@@ -120,12 +127,40 @@ export function createLorebookContentRuntimePreview(
   });
   const traceOutputPositions = buildTraceOutputPositionLookup(simulation.output, simulation.trace);
 
+  const candidateExtractor: ConditionCandidateExtractor = createAstConditionCandidateExtractor();
+  const conditionCandidates = candidateExtractor.extract(input.contentText);
+  const conditionCandidatesByVariable = new Map<string, Set<string>>();
+  for (const candidate of conditionCandidates) {
+    const set = conditionCandidatesByVariable.get(candidate.variableName) ?? new Set();
+    set.add(candidate.value);
+    conditionCandidatesByVariable.set(candidate.variableName, set);
+  }
+
   return {
     status: simulation.status,
     output: simulation.output,
     bindings: injection.bindings.map((binding) => {
       const source = toRuntimeSourceBadge(binding.source);
       const rawValue = binding.valuePreview ?? '';
+      const candidates: LorebookRuntimeVariableBinding['candidates'] = [];
+      const seenValues = new Set<string>();
+
+      const extraCandidates = conditionCandidatesByVariable.get(binding.variableName);
+      if (extraCandidates) {
+        for (const value of extraCandidates) {
+          if (!seenValues.has(value)) {
+            const label =
+              value === '__risu_test_nonnull__'
+                ? '✓ Test non-null'
+                : value === '__risu_test_isnull__'
+                  ? '✗ Test null'
+                  : value;
+            candidates.push({ value, source: 'usage', label });
+            seenValues.add(value);
+          }
+        }
+      }
+
       return {
         variableName: binding.variableName,
         scope: binding.scope,
@@ -136,7 +171,7 @@ export function createLorebookContentRuntimePreview(
         valueKind: inferValueKind(binding.valuePreview),
         resolvedValue: binding.valuePreview,
         rawValue,
-        candidates: binding.valuePreview === undefined ? [] : [{ value: rawValue, source, label: rawValue }],
+        candidates,
         usageRanges: binding.occurrence.range ? [toRuntimeRange(binding.occurrence.range)] : [],
       };
     }),
@@ -165,11 +200,22 @@ export function createLorebookContentRuntimePreview(
       message: event.message,
       node: event.node,
       range: event.range ? toRuntimeRange(event.range) : undefined,
-      outputLine: event.range ? traceOutputPositions.get(createTracePositionKey(event.range.start.line, event.range.start.character))?.line : undefined,
-      outputColumn: event.range ? traceOutputPositions.get(createTracePositionKey(event.range.start.line, event.range.start.character))?.column : undefined,
+      outputLine: event.range
+        ? traceOutputPositions.get(
+            createTracePositionKey(event.range.start.line, event.range.start.character),
+          )?.line
+        : undefined,
+      outputColumn: event.range
+        ? traceOutputPositions.get(
+            createTracePositionKey(event.range.start.line, event.range.start.character),
+          )?.column
+        : undefined,
       details: stringifyDetails(event.details),
     })),
-    coverageSummary: formatCoverageSummary(simulation.coverage.totalMacros, simulation.coverage.unknownMacros.length),
+    coverageSummary: formatCoverageSummary(
+      simulation.coverage.totalMacros,
+      simulation.coverage.unknownMacros.length,
+    ),
   };
 }
 
@@ -190,9 +236,13 @@ function buildTraceOutputPositionLookup(
 
   for (const event of trace) {
     if (!event.range || event.outputOffset === undefined) continue;
-    if (event.phase !== 'macro-skip' || !event.node || !PREVIEW_LENS_TRACE_NODES.has(event.node)) continue;
+    if (event.phase !== 'macro-skip' || !event.node || !PREVIEW_LENS_TRACE_NODES.has(event.node))
+      continue;
     const key = createTracePositionKey(event.range.start.line, event.range.start.character);
-    outputPositionsBySourcePosition.set(key, getOutputPositionFromOffset(output, event.outputOffset, lineStarts));
+    outputPositionsBySourcePosition.set(
+      key,
+      getOutputPositionFromOffset(output, event.outputOffset, lineStarts),
+    );
   }
 
   return outputPositionsBySourcePosition;
@@ -290,9 +340,13 @@ function inferValueKind(value: string | undefined): LorebookRuntimeVariableBindi
  * @param source - drawer badge로 노출할 출처를 판단하기 위한 injector binding source입니다.
  * @returns drawer에서 안전하게 사용할 source badge입니다.
  */
-function toRuntimeSourceBadge(source: CbsPreviewVariableSource): LorebookRuntimeVariableSourceBadge {
-  if (source === 'previewOverride' || source === 'missing' || source === 'runtimeUnknown') return source;
+function toRuntimeSourceBadge(
+  source: CbsPreviewVariableSource,
+): LorebookRuntimeVariableSourceBadge {
+  if (source === 'previewOverride' || source === 'missing' || source === 'runtimeUnknown')
+    return source;
   if (source === 'toggleValue') return 'toggle';
+  if (source === 'context') return 'context';
   return 'inferred';
 }
 
@@ -303,7 +357,10 @@ function toRuntimeSourceBadge(source: CbsPreviewVariableSource): LorebookRuntime
  * @param range - webview가 표시할 위치를 계산하기 위한 parser/simulator source range입니다.
  * @returns runtime preview가 소비하는 range DTO입니다.
  */
-function toRuntimeRange(range: { start: { line: number; character: number }; end: { line: number; character: number } }): {
+function toRuntimeRange(range: {
+  start: { line: number; character: number };
+  end: { line: number; character: number };
+}): {
   line: number;
   character: number;
   endLine: number;
@@ -324,7 +381,9 @@ function toRuntimeRange(range: { start: { line: number; character: number }; end
  * @param details - preview trace panel에 표시할 simulator trace details입니다.
  * @returns 문자열 값만 담은 details map입니다.
  */
-function stringifyDetails(details: Readonly<Record<string, unknown>> | undefined): Record<string, string> | undefined {
+function stringifyDetails(
+  details: Readonly<Record<string, unknown>> | undefined,
+): Record<string, string> | undefined {
   if (!details) return undefined;
   return Object.fromEntries(Object.entries(details).map(([key, value]) => [key, String(value)]));
 }

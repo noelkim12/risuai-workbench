@@ -468,7 +468,7 @@ canonical-replacement
       const result = collectLuaTokenComponents(outputDir, 'lua');
 
       expect(result).toHaveLength(1);
-      expect(result[0].name).toBe('script.risulua');
+      expect(result[0].name).toBe('lua/script.risulua');
       expect(result[0].text).toBe('function canonical() return true end');
     });
 
@@ -485,8 +485,34 @@ canonical-replacement
       const result = collectLuaTokenComponents(outputDir, 'lua');
 
       expect(result).toHaveLength(1);
-      expect(result[0].name).toBe('legacy.lua');
+      expect(result[0].name).toBe('lua/legacy.lua');
       expect(result[0].text).toBe('function legacy() return false end');
+    });
+
+    it('collects recursive split .risulua files with relative source names', () => {
+      const outputDir = path.join(tempDir, 'output');
+      const luaDir = path.join(outputDir, 'lua');
+      fs.mkdirSync(path.join(luaDir, 'domain'), { recursive: true });
+      fs.mkdirSync(path.join(luaDir, 'runtime'), { recursive: true });
+      fs.mkdirSync(path.join(outputDir, 'dist'), { recursive: true });
+
+      fs.writeFileSync(path.join(luaDir, 'main.risulua'), 'require("domain.core")');
+      fs.writeFileSync(path.join(luaDir, 'domain', 'core.risulua'), 'function core() return true end');
+      fs.writeFileSync(path.join(luaDir, 'runtime', 'output.risulua'), 'function onOutput() return core() end');
+      fs.writeFileSync(path.join(outputDir, 'dist', 'generated.risulua'), 'function generated() return false end');
+
+      const result = collectLuaTokenComponents(outputDir, 'lua');
+
+      expect(result.map((component) => component.name)).toEqual([
+        'lua/main.risulua',
+        'lua/domain/core.risulua',
+        'lua/runtime/output.risulua',
+      ]);
+      expect(result.map((component) => component.text)).toEqual([
+        'require("domain.core")',
+        'function core() return true end',
+        'function onOutput() return core() end',
+      ]);
     });
   });
 });

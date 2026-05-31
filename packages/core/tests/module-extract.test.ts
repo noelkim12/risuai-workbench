@@ -705,6 +705,9 @@ describe('module extract', () => {
         },
       };
       fs.writeFileSync(filePath, JSON.stringify(payload), 'utf-8');
+      fs.mkdirSync(path.join(outDir, 'docs'), { recursive: true });
+      fs.writeFileSync(path.join(outDir, 'docs', 'risulua-button-action-index.json'), '{}', 'utf-8');
+      fs.writeFileSync(path.join(outDir, 'docs', 'risulua-export-manifest.json'), '{}', 'utf-8');
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
       try {
@@ -721,7 +724,14 @@ describe('module extract', () => {
         expect(exitCode).toBe(0);
         expect(fs.readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).toBe(malformedLua);
         expect(fs.existsSync(path.join(outDir, '.risumodule'))).toBe(true);
+        expect(fs.existsSync(path.join(outDir, 'docs', 'domain-candidates.json'))).toBe(false);
+        expect(fs.existsSync(path.join(outDir, 'docs', 'refactor-map.json'))).toBe(false);
+        expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-button-action-index.json'))).toBe(false);
+        expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-export-manifest.json'))).toBe(false);
+        expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-split-plan.json'))).toBe(false);
+        expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-split-report.md'))).toBe(false);
         expect(fs.existsSync(path.join(outDir, 'dist'))).toBe(false);
+        expect(fs.existsSync(path.join(outDir, 'legacy'))).toBe(false);
         expect(fs.readdirSync(path.dirname(outDir)).filter((entry) => entry.startsWith('.tmp-risulua-split-split-fallback-out-'))).toEqual([]);
         expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('RisuLua split failed; preserving'));
       } finally {

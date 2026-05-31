@@ -178,4 +178,20 @@ describe('applyStoredIdeaPatch', () => {
     const entries = await readJournalEntries(fixture.journalPath);
     expect(entries[entries.length - 1]).toMatchObject({ affectedFiles: ['characters/merry/lorebooks/combat-emotion.risulorebook'], status: 'applied', toolName: 'workbench.apply_patch_plan' });
   });
+
+  it('applies a valid stored PatchPlan without routeId (routeId is advisory, not required)', async () => {
+    const fixture = await createFixture();
+    const store = createPatchPlanStore();
+    const plan = makePatchPlan(fixture.root);
+    store.savePatchPlan(plan);
+
+    const result = mutation(await applyStoredIdeaPatch(
+      { confirmation: { accepted: true }, patchPlanId: plan.patchPlanId },
+      { mutationMode: 'enabled', patchStore: store, workspace: fixture.workspace },
+    ));
+
+    expect(result.status).toBe('applied');
+    expect(result.patchPlanId).toBe(plan.patchPlanId);
+    expect(await readFile(fixture.targetPath, 'utf8')).toContain('Combat Emotion');
+  });
 });

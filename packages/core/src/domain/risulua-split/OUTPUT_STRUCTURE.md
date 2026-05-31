@@ -66,10 +66,11 @@
 │   │       # *_PROMPT, *_INSTRUCTION 같은 prompt 상수 추출 결과.
 │   │
 │   ├── domain/
-│   │   ├── <domain_function>.risulua ?
-│   │   └── <another_domain_function>.risulua ?
-│   │       # 의미 단위 domain function 후보.
-│   │       # 현재는 자동 앱 계층화가 아니라 candidate 중심 분리.
+│   │   ├── <topic>.risulua ?
+│   │   └── <single_function>.risulua ?
+│   │       # validated module-table domain generation의 실제 canonical 개발 표면.
+│   │       # 반복되는 함수명 명사 token이 있으면 topic 단위로 묶고,
+│   │       # 안정적인 topic을 만들 수 없는 singleton은 기존 function path를 유지한다.
 │   │
 │   ├── schema/
 │   │   └── constants.risulua ?
@@ -134,7 +135,23 @@ lua/sections/, preload/   # recovery fallback 전용
 
 현재 구현은 모놀리식 Lua를 자동으로 `services/`, `models/`, `repositories/`, `ui/`, `commands/` 같은 일반 애플리케이션식 계층으로 펼치지 않습니다. 자동 분류의 목표는 안전한 host ABI shell, runtime hook, helper, state/prompt store, action, domain candidate 정도까지입니다.
 
-더 세밀한 domain layer는 `docs/refactor-map.json`과 `docs/domain-candidates.json`을 보고 후속 설계하는 흐름입니다.
+`module-table`의 `validated` domain generation은 splitter 단계에서 canonical `lua/domain/<topic>.risulua` 파일을 실제로 생성합니다. `docs/refactor-map.json`과 `docs/domain-candidates.json`은 이 결과를 설명하고 검증하는 sidecar이며, report/analyze 단계가 split 순서를 역전해 파일을 생성하지 않습니다.
+
+## Validated domain grouping contract
+
+`module-table`의 `validated` domain generation은 결정적인 규칙으로만 `lua/domain/<topic>.risulua` 경로를 선택합니다. 같은 입력과 같은 함수 집합은 source order나 임의 graph traversal에 의존하지 않고 같은 domain 파일을 생성해야 합니다.
+
+- 반복되는 strong noun token은 topic 파일로 묶습니다. 예를 들어 `normalizeDeck`과 `scoreDeck`은 `deck` token을 공유하므로 `lua/domain/deck.risulua`로 갑니다.
+- singular/plural churn은 정규화된 phrase로 묶습니다. 예를 들어 `parseStoryChoiceBlock`과 `parseStoryChoiceBlocks`는 `lua/domain/story_choice_block.risulua`를 공유합니다.
+- tiny singleton 후보는 엄격한 utility family token에만 묶습니다. 현재 허용된 stable family는 `array`, `text`, `number`입니다.
+- sibling action family는 명시적으로 허용된 경우에만 묶습니다. 현재 허용된 action family는 `render`입니다.
+- 생성된 require cycle은 build 가능한 require graph를 유지하기 위해 같은 domain 파일로 coalesce될 수 있습니다.
+- cycle coalescing 이후에는 기존 semantic cluster를 통째로 되돌려도 require cycle이 재발하지 않는 경우에만 복구합니다. 이 복구는 singleton 과분할을 막기 위해 multi-member cluster를 우선합니다.
+- 위 규칙으로 안정적인 topic을 만들 수 없는 singleton은 `lua/domain/<function_name>.risulua` fallback을 유지합니다.
+- 함수가 작거나, 서로 인접하거나, 한쪽이 다른 쪽을 호출한다는 이유만으로는 grouping하지 않습니다.
+- LLM, API embedding, local ONNX embedding은 기본 grouping 결정에 사용하지 않습니다. 의미 유사도 실험은 생성 경로가 아니라 opt-in diagnostics/advisory layer로만 추가해야 합니다.
+
+`docs/domain-candidates.json`은 선택된 경로를 설명하기 위해 선택적으로 `grouping` metadata를 기록할 수 있습니다. 이 metadata에는 `reason`, `path`, `peers`가 포함되며, grouping 종류에 따라 `token` 또는 `family`가 함께 들어갑니다.
 
 ## Related files
 

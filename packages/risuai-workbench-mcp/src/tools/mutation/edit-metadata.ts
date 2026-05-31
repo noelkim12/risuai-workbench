@@ -149,7 +149,7 @@ export async function handleEditMetadata(
 
   patchStore.savePatchPlan(patchPlan);
 
-  if (editInput.mode === 'preview') {
+  if (mutationMode === 'preview-only') {
     return createDiagnosticEnvelope({
       data: { patchPlan, preview: true },
       diagnostics: [],
@@ -301,7 +301,7 @@ function parseEditMetadataInput(input: unknown): { input: EditMetadataInput; ok:
       return { ok: false, reason: 'Each operation must have a jsonPointer starting with /.' };
     }
   }
-  const mode: PatchPlanMutationMode = candidate.mode === 'commit' ? 'commit' : 'preview';
+  const mode: PatchPlanMutationMode = 'commit';
   const confirmation = candidate.confirmation as EditMetadataInput['confirmation'] | undefined;
   return {
     input: {

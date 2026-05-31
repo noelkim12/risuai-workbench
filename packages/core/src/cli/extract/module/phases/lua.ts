@@ -23,6 +23,17 @@ import {
 } from '../../../shared/risulua-split';
 import { resolveModuleTargetName } from './module-name';
 
+const RISULUA_SPLIT_FALLBACK_PATHS = [
+  'docs/domain-candidates.json',
+  'docs/refactor-map.json',
+  'docs/risulua-button-action-index.json',
+  'docs/risulua-export-manifest.json',
+  'docs/risulua-split-plan.json',
+  'docs/risulua-split-report.md',
+  'dist',
+  'legacy',
+] as const;
+
 export async function phase4_extractLua(
   module: any,
   outputDir: string,
@@ -73,6 +84,7 @@ export async function phase4_extractLua(
     if (risuluaMode !== 'modular') throw error;
 
     cleanupRisuLuaSplitTemps(outputDir);
+    cleanupRisuLuaSplitFallbackArtifacts(outputDir);
     writeText(outPath, strippedLua);
     const message = getErrorMessage(error);
     console.warn(
@@ -81,6 +93,12 @@ export async function phase4_extractLua(
   }
   console.log(`     ✅ ${path.relative('.', outPath)} -> ${lua.length} chars`);
   return 1;
+}
+
+function cleanupRisuLuaSplitFallbackArtifacts(outputDir: string): void {
+  for (const relativePath of RISULUA_SPLIT_FALLBACK_PATHS) {
+    fs.rmSync(path.join(outputDir, ...relativePath.split('/')), { recursive: true, force: true });
+  }
 }
 
 export const phase4_extractTriggerLua = phase4_extractLua;

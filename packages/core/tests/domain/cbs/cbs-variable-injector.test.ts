@@ -285,6 +285,30 @@ describe('CBS preview variable injector engine', () => {
     });
   });
 
+  it('resolves getglobalvar from source extraction against globalVariables preview override', () => {
+    const input: CbsPreviewVariableInjectionInput = {
+      source: '{{getglobalvar::globalFlag}}',
+      previewOverrides: {
+        globalVariables: { globalFlag: 'global-val' },
+      },
+    };
+
+    const result = createCbsPreviewVariableInjection(input);
+
+    expect(result.bindings).toHaveLength(1);
+    expect(result.bindings[0]).toMatchObject({
+      variableName: 'globalFlag',
+      scope: 'global',
+      direction: 'read',
+      operation: 'getglobalvar',
+      status: 'resolved',
+      source: 'globalVariable',
+      valuePreview: 'global-val',
+    });
+
+    expect(result.warnings).toHaveLength(0);
+  });
+
   it('preserves occurrence order and duplicates for repeated/adjacent reads', () => {
     const input: CbsPreviewVariableInjectionInput = {
       source: '{{getvar::first}}{{getvar::last}} {{getvar::first}}',

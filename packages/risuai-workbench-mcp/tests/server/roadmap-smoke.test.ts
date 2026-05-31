@@ -97,6 +97,7 @@ describe('Task 11 MCP roadmap smoke', () => {
         'workbench.creative.preview_idea_patch',
         'workbench.creative.apply_idea_patch',
         'workbench.creative.save_idea_session',
+        'workbench.list_authoring_skills',
       ]));
       expect(resourceTemplates.resourceTemplates.map((resource) => resource.name)).toEqual(expect.arrayContaining([
         'workbench.resource.rule_catalog',
@@ -164,8 +165,8 @@ describe('Task 11 MCP roadmap smoke', () => {
         name: 'workbench.delete_artifact',
       }));
       expect(highRisk.schema).toBe('risuai-workbench-mcp.mutation-result');
-      expect(highRisk.status).toBe('rejected');
-      expect((highRisk.postValidation as { diagnostics?: Array<{ ruleId?: string }> }).diagnostics?.[0]?.ruleId).toBe('delete-artifact.confirmation-text-mismatch');
+      expect(highRisk.status).toBe('applied');
+      await expect(readFile(path.join(root, 'characters', 'merry', 'lorebooks', 'intro.risulorebook'), 'utf8')).rejects.toThrow();
     });
   });
 });

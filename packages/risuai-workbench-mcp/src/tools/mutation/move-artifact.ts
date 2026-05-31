@@ -63,7 +63,8 @@ export async function handleMoveArtifact(input: unknown, workspace: WorkspaceRoo
   const effectiveHash = moveInput.expectedHash ?? beforeHash;
   const orderPath = `${fromDir}/_order.json`;
   const orderState = moveInput.updateOrder === true ? await readOrderState(orderPath, workspace) : null;
-  if (moveInput.mode === 'preview') {
+
+  if (mutationMode === 'preview-only') {
     return createDiagnosticEnvelope({ data: { afterResource: `risuai-workbench://workspace/${to}`, beforeResource: `risuai-workbench://workspace/${moveInput.from}`, confirmationText: `MOVE ${moveInput.from} TO ${to}`, preview: true, to }, diagnostics: [], status: 'ok', tool: TOOL_NAME });
   }
 
@@ -112,7 +113,7 @@ function parseMoveArtifactInput(input: unknown): { input: MoveArtifactInput; ok:
   const candidate = input as Record<string, unknown>;
   if (typeof candidate.from !== 'string' || candidate.from.trim() === '') return { ok: false, reason: 'from must be a non-empty string.' };
   if (typeof candidate.toStem !== 'string' || candidate.toStem.trim() === '') return { ok: false, reason: 'toStem must be a non-empty string.' };
-  return { input: { confirmation: isConfirmation(candidate.confirmation) ? candidate.confirmation : undefined, expectedHash: typeof candidate.expectedHash === 'string' ? candidate.expectedHash : undefined, from: candidate.from, mode: candidate.mode === 'preview' ? 'preview' : 'commit', postValidate: typeof candidate.postValidate === 'boolean' ? candidate.postValidate : undefined, toStem: candidate.toStem, updateOrder: typeof candidate.updateOrder === 'boolean' ? candidate.updateOrder : undefined }, ok: true };
+  return { input: { confirmation: isConfirmation(candidate.confirmation) ? candidate.confirmation : undefined, expectedHash: typeof candidate.expectedHash === 'string' ? candidate.expectedHash : undefined, from: candidate.from,   mode: 'commit', postValidate: typeof candidate.postValidate === 'boolean' ? candidate.postValidate : undefined, toStem: candidate.toStem, updateOrder: typeof candidate.updateOrder === 'boolean' ? candidate.updateOrder : undefined }, ok: true };
 }
 
 function isConfirmation(value: unknown): value is { accepted: boolean; confirmationText?: string } { return Boolean(value && typeof value === 'object' && !Array.isArray(value) && 'accepted' in value); }

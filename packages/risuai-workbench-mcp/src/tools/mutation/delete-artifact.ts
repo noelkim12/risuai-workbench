@@ -62,7 +62,7 @@ export async function handleDeleteArtifact(input: unknown, workspace: WorkspaceR
   const orderPath = `${path.posix.dirname(deleteInput.path)}/_order.json`;
   const orderState = deleteInput.updateOrder === true ? await readOrderState(orderPath, workspace) : null;
 
-  if (deleteInput.mode === 'preview') {
+  if (mutationMode === 'preview-only') {
     return createDiagnosticEnvelope({
       data: { confirmationText: `DELETE ${deleteInput.path}`, orderPath: orderState?.relativePath ?? null, preview: true, target: deleteInput.path },
       diagnostics: [{ category: 'mutation-safety', id: 'DELETE_ARTIFACT_PREVIEW', message: 'Delete preview created; no files were changed.', path: deleteInput.path, ruleId: 'delete-artifact.preview', severity: 'info' }],
@@ -203,7 +203,7 @@ function parseDeleteArtifactInput(input: unknown): { input: DeleteArtifactInput;
       confirmation: isConfirmation(candidate.confirmation) ? candidate.confirmation : undefined,
       createBackup: typeof candidate.createBackup === 'boolean' ? candidate.createBackup : undefined,
       expectedHash: typeof candidate.expectedHash === 'string' ? candidate.expectedHash : undefined,
-      mode: candidate.mode === 'preview' ? 'preview' : 'commit',
+      mode: 'commit',
       path: candidate.path,
       postValidate: typeof candidate.postValidate === 'boolean' ? candidate.postValidate : undefined,
       updateOrder: typeof candidate.updateOrder === 'boolean' ? candidate.updateOrder : undefined,

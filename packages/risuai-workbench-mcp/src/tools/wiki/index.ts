@@ -5,4 +5,5 @@
 
 export { handleSearchWiki } from './search-wiki';
 export { handleRefreshWiki } from './refresh-wiki';
+export { handleEnsureWikiRoot } from './ensure-wiki-root';
 export { handlePlanWikiUpdate, handleDiffWiki } from './wiki-patch-preview';

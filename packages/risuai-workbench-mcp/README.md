@@ -11,10 +11,33 @@ Creative thinking surface는 `docs/mcp/risuai-workbench-mcp-for-creative-thinkin
 - **Inspect / Validate**: artifact path, root marker, `_order.json`, frontmatter, metadata, canonical path를 검사합니다.
 - **Analyze / Impact**: variable flow, Lua analysis/call graph/state access, button action, relationship network, prompt chain, composition conflict, dead-code, token budget을 조회합니다.
 - **Preview / Patch Plan**: 실제 write 없이 structured patch plan과 diff를 생성합니다.
-- **Direct Mutation**: 승인된 patch plan, `_order.json`, frontmatter, metadata, artifact 생성/이동/삭제, generated wiki refresh를 처리합니다.
+- **Direct Mutation**: 승인된 patch plan, `_order.json`, frontmatter, metadata, artifact 생성/이동/삭제, generated wiki bootstrap/refresh를 처리합니다.
 - **Core Workflows**: `risu-core extract` / `risu-core scaffold`를 MCP mutation gate 뒤에서 실행합니다.
 - **Creative Thinking**: workspace/analyze/wiki context를 바탕으로 아이디어를 만들고, 선택된 아이디어만 PatchPlan preview와 gated mutation apply로 연결합니다.
 - **Resources / Prompts**: wiki/rule/schema/analyze/mutation context resource와 agent workflow prompt를 제공합니다.
+
+## MCP protocol compliance
+
+This package runs as a local MCP server over stdio and uses the official `@modelcontextprotocol/sdk` lifecycle.
+The client starts the process, sends `initialize`, receives server information and negotiated capabilities, sends `notifications/initialized`, and then calls the advertised tools, resources, and prompts.
+
+Server info is derived from `package.json`:
+
+| Field | Value |
+| --- | --- |
+| `name` | `risuai-workbench-mcp` |
+| `version` | package version |
+
+Implemented MCP capabilities:
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| `tools` | implemented | Static registry during one server session; no list-changed notifications are emitted. |
+| `resources` | implemented | Read-only resource templates and selected materialized JSON/text resources. |
+| `prompts` | implemented | Workflow-only prompt templates; prompts never mutate files. |
+| `logging` | not declared | Operational logs use stderr; MCP `notifications/message` is not emitted. |
+| `completions` | not declared | Completion handlers are not registered. |
+| `tasks` | not declared | MCP tasks are experimental and not part of this server surface. |
 
 ## 요구사항
 
@@ -37,6 +60,27 @@ npm run build --workspace risuai-workbench-mcp
 ```bash
 node packages/risuai-workbench-mcp/bin/risuai-workbench-mcp.js --help
 ```
+
+## Server lifecycle
+
+Startup flow:
+
+1. CLI parses `--stdio`, `--root`, and `--mutation`.
+2. `startStdioServer()` resolves the workspace root and creates the MCP server.
+3. The SDK handles MCP `initialize`, protocol negotiation, and `notifications/initialized`.
+4. Clients may call `tools/list`, `tools/call`, `resources/templates/list`, `resources/read`, `prompts/list`, and `prompts/get`.
+5. Shutdown is handled by the stdio transport when the client closes the child process streams.
+
+## Transport
+
+This package currently supports MCP stdio transport only.
+
+Rules:
+
+- stdout is reserved for MCP JSON-RPC messages while `--stdio` is active.
+- Operational diagnostics and warnings must be written to stderr.
+- Human-readable `--help` and `--version` output is allowed only before MCP stdio starts.
+- Child process stdout/stderr from wrapped workflows is captured and returned through structured tool results instead of being forwarded to server stdout.
 
 ## MCP client 설정
 
@@ -97,6 +141,61 @@ risuai-workbench-mcp --version
 | `--mutation <mode>` | `preview-only` | direct mutation tool의 write 허용 모드입니다. |
 | `--help` | 없음 | stdio 시작 없이 사용법을 출력합니다. |
 | `--version` | 없음 | package version을 출력합니다. |
+
+## Workspace roots
+
+Current behavior:
+
+- The workspace root is provided by `--root` or the current process context.
+- All user-provided file paths are interpreted as workspace-relative paths.
+- Absolute paths, traversal outside the workspace, and symlink escapes are rejected.
+- MCP client-provided `roots` are not queried yet.
+
+Future behavior may validate the configured workspace against client-provided MCP roots when the client declares the `roots` capability.
+
+## Error policy
+
+The server distinguishes MCP protocol errors from tool execution results.
+
+- Unknown tools, malformed MCP requests, and transport-level failures are handled by the MCP SDK as JSON-RPC protocol errors.
+- Domain validation failures, unsafe paths, stale hashes, rejected confirmations, and mutation safety failures are returned as structured tool results.
+- Tool execution errors remain actionable for the model by returning diagnostic or mutation envelopes with rule IDs and messages.
+
+## Tool response format
+
+Compatibility mode:
+
+- Every tool result includes `content[0].type = "text"`.
+- `content[0].text` contains serialized JSON for the envelope or payload.
+
+Structured mode:
+
+- Tools with stable envelope schemas also return `structuredContent`.
+- Tools with stable envelope schemas declare `outputSchema` through the MCP SDK.
+- Text JSON is preserved for clients that do not consume structured output.
+
+## Long-running operations
+
+Current behavior:
+
+- Long-running tools return a final diagnostic or mutation envelope.
+- `workbench.run_extract` and `workbench.run_scaffold` may emit `notifications/progress` when a client supplies `_meta.progressToken`.
+- MCP task-augmented execution is not implemented.
+
+Cancellation support:
+
+- `workbench.run_extract` and `workbench.run_scaffold` observe MCP request cancellation through the SDK-provided `AbortSignal`.
+- If cancellation is observed before child process execution, the tool returns a structured cancellation diagnostic without writing files.
+- If cancellation is observed while a wrapped `risu-core` child process is running, the server sends `SIGTERM` to the child process and returns a structured result describing the cancellation state and any observed output files.
+- Mid-child cancellation is represented through command cancellation diagnostics and a failed mutation result after post-validation and journal handling.
+- Cancellation does not bypass mutation safety gates, confirmation requirements, stale-hash checks, or post-validation reporting.
+
+## Logging and sensitive data
+
+The server does not declare the MCP `logging` capability.
+Operational logs and startup warnings use stderr.
+
+Logs, diagnostics, and progress messages must not include credentials, access tokens, unnecessary personal information, or host-specific secrets.
 
 ## Safety model
 
@@ -211,6 +310,7 @@ Not implemented by design: UI/webview, automatic wiki refresh, automatic graph r
 | `workbench.explain_risulua_workspace` | no | Source-first split RisuLua workspace authoring guide for `lua/main.risulua`, `lua/**/*.risulua`, and generated `dist/<targetName>.risulua` boundaries. |
 | `workbench.guide_risulua_module` | no | RisuLua source module guide. Static `require("module.id")` is valid authoring syntax and not an authoring violation. |
 | `workbench.explain_risulua_runtime_api` | no | RisuAI Lua lifecycle and runtime API guide based on `LUA_FOR_LLM.md`, type declarations, and core API metadata. |
+| `workbench.query_risulua_api` | no | RisuLua host function catalog에서 category, access tier, signature, docs, related functions, reference URI를 조회합니다. |
 | `workbench.explain_lorebook_prompt_injection` | no | Lorebook prompt injection and context activation guide, including decorator and recursive activation references. |
 | `workbench.explain_context_feedback_loop` | no | Explains `Lorebook -> Structured Output -> Regex -> Button -> RisuLua -> Variable/Lorebook -> Lorebook`. |
 | `workbench.plan_structured_output_loop` | no | Plans a source-first structured output, regex, button, Lua state, Lorebook feedback loop without packaging scope. |
@@ -241,6 +341,7 @@ RisuLua lifecycle guide tools are authoring guides. They do not preview bundled 
 | `workbench.run_scaffold` | yes | `risu-core scaffold`를 안전 게이트 뒤에서 실행해 charx/module/preset 프로젝트 골격을 생성합니다. |
 | `workbench.move_artifact` | yes | artifact rename/move와 optional order update를 처리합니다. |
 | `workbench.delete_artifact` | yes | exact confirmation이 필요한 high-risk delete tool입니다. |
+| `workbench.ensure_wiki_root` | yes | wiki가 없거나 bootstrap 파일이 누락된 경우 최소 generated wiki root 파일을 생성합니다. 현재 기본 `wiki/` root만 지원합니다. |
 | `workbench.refresh_wiki` | yes | generated wiki allowlist 영역만 갱신합니다. |
 | `workbench.rollback_mutation` | yes | journal에 충분한 inverse state가 있는 mutation을 rollback합니다. |
 
@@ -275,6 +376,20 @@ RisuLua lifecycle guide tools are authoring guides. They do not preview bundled 
 | `workbench.creative.save_idea_session` | yes | explicit confirmation 후 workspace-local creative session metadata를 저장합니다. |
 | `workbench.creative.write_idea_memory` | yes | explicit confirmation 후 workspace-local creative memory record를 저장합니다. |
 
+### Authoring Skills
+
+The authoring skill workflow exposes RisuAI creation guidance as read-only skill resources and approval-gated planning tools.
+
+| Surface | Name / URI | Mutates | Description |
+| --- | --- | ---: | --- |
+| Resource | `risuai-workbench://skills/index` | no | Compact skill catalog for LLM-assisted matching. |
+| Resource | `risuai-workbench://skills/en/{skillId}` | no | Full Markdown guidance for one approved skill. |
+| Prompt | `workbench.select_authoring_skill` | no | Guides the host LLM to select one skill from the catalog and ask the user for approval. |
+| Prompt | `workbench.generate_plan_from_skill` | no | Guides the host LLM to turn an approved skill preview bundle into a Korean plan document preview. |
+| Tool | `workbench.list_authoring_skills` | no | Returns packaged skill names, friendly descriptions, usage hints, and resource links. |
+| Tool | `workbench.recommend_skills` | no | Validates the LLM-selected skill and returns an approval-required recommendation. |
+| Tool | `workbench.apply_skill` | no | Requires confirmation and returns a plan document preview bundle without writing files. |
+
 ## Patch operation support
 
 `PatchPlan` contract는 제안서의 operation union을 보존하지만, `workbench.apply_patch_plan`의 apply engine이 현재 직접 지원하는 operation은 제한되어 있습니다.
@@ -302,6 +417,7 @@ Resources는 read-only context입니다. write는 반드시 tool을 통해서만
 | `workbench.resource.patch_preview` | `risuai-workbench://mutations/patch-plans/{patchPlanId}` | patch preview/plan URI family입니다. |
 | `workbench.resource.patch_plan` | `risuai-workbench://mutations/patch-plans/{patchPlanId}` | patch plan URI family입니다. |
 | `workbench.resource.mutation_journal` | `risuai-workbench://mutations/journal/{mutationId?}` | mutation journal URI family입니다. |
+| `workbench.resource.risulua_reference` | `risuai-workbench://risulua/{risuluaPath}` | RisuLua lifecycle, access tier, async, pattern, pitfall, category/function reference를 읽습니다. |
 | `workbench.creative.resource.methods` | `risuai-workbench://methods` | creative method catalog reference card를 읽습니다. |
 | `workbench.creative.resource.method.scamper` | `risuai-workbench://methods/scamper` | SCAMPER method reference card를 읽습니다. |
 | `workbench.creative.resource.method.six_hats` | `risuai-workbench://methods/six-hats` | Six Hats method reference card를 읽습니다. |
@@ -315,6 +431,10 @@ Resources는 read-only context입니다. write는 반드시 tool을 통해서만
 | `workbench.creative.resource.idea_patch_plan` | `risuai-workbench://ideas/{ideaId}/patch-plan` | stored idea PatchPlan을 read-only로 조회합니다. |
 
 ## Prompts
+
+Prompt registry metadata (`name`, `title`, `description`) is defined in `src/registry/index.ts`. Prompt workflow bodies are stored as Markdown assets under `prompt-assets/` and loaded by `src/prompts/prompt-assets.ts`; this keeps prompt wording reviewable without embedding long workflow text in TypeScript source. Prompt assets are packaged with the npm package via the `package.json` `files` allowlist.
+
+Prompt name, purpose, and Markdown asset mapping은 [`prompt-assets/README.md`](./prompt-assets/README.md)에서 확인할 수 있습니다.
 
 Prompts는 user-invoked workflow template입니다. Prompt 자체는 파일을 수정하지 않으며, mutation tool은 preview, confirmation, safety, post-validation을 요구하는 외부 단계로만 안내합니다.
 

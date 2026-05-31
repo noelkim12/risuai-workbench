@@ -27,14 +27,14 @@ export function buildHelpText(): string {
     'risuai-workbench-mcp',
     '',
     'Usage:',
-    '  risuai-workbench-mcp --stdio [--root ./workspace] [--mutation preview-only|generated-only|enabled]',
+    '  risuai-workbench-mcp --stdio [--root ./workspace] [--mutation [preview-only|generated-only|enabled]]',
     '  risuai-workbench-mcp --help',
     '  risuai-workbench-mcp --version',
     '',
     'Options:',
     '  --stdio     Start the MCP server over stdio. stdout is reserved for JSON-RPC.',
     '  --root      Workspace root used for startup validation and tool safety gates.',
-    '  --mutation  Mutation mode for direct mutation tools. Defaults to preview-only.',
+    '  --mutation  Mutation mode for direct mutation tools. Defaults to enabled when used without a value.',
     '  --help      Show this help message without starting MCP stdio.',
     '  --version   Show the package version.',
     '',
@@ -105,12 +105,12 @@ export function parseCliArgs(argv: readonly string[] = process.argv.slice(2)): P
     if (token === '--mutation' || token.startsWith('--mutation=')) {
       const { nextIndex, value } = readFlagValue(argv, index);
       if (!value) {
-        return { command: 'help', error: 'Missing value for --mutation.' };
-      }
-      if (!isMutationMode(value)) {
+        mutationMode = 'enabled';
+      } else if (!isMutationMode(value)) {
         return { command: 'help', error: `Unsupported mutation mode: ${value}` };
+      } else {
+        mutationMode = value;
       }
-      mutationMode = value;
       index = nextIndex;
       continue;
     }

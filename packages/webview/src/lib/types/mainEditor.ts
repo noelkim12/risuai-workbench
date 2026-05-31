@@ -5,9 +5,36 @@
 
 export type MainEditorFormatKind = 'lorebook' | 'regex' | 'prompt' | 'html';
 export type MainEditorLanguageId = 'risulorebook' | 'risuregex' | 'risuprompt' | 'risuhtml';
-export type MainEditorSectionName = 'CONTENT' | 'KEYS' | 'SECONDARY_KEYS' | 'IN' | 'OUT' | 'TEXT' | 'INNER_FORMAT' | 'DEFAULT_TEXT' | 'FULL';
-export type MainEditorPromptType = 'plain' | 'jailbreak' | 'cot' | 'chatML' | 'persona' | 'description' | 'lorebook' | 'postEverything' | 'memory' | 'authornote' | 'chat' | 'cache';
-export type MainEditorFormatSectionName = 'IN' | 'OUT' | 'TEXT' | 'INNER_FORMAT' | 'DEFAULT_TEXT' | 'FULL';
+export type MainEditorSectionName =
+  | 'CONTENT'
+  | 'KEYS'
+  | 'SECONDARY_KEYS'
+  | 'IN'
+  | 'OUT'
+  | 'TEXT'
+  | 'INNER_FORMAT'
+  | 'DEFAULT_TEXT'
+  | 'FULL';
+export type MainEditorPromptType =
+  | 'plain'
+  | 'jailbreak'
+  | 'cot'
+  | 'chatML'
+  | 'persona'
+  | 'description'
+  | 'lorebook'
+  | 'postEverything'
+  | 'memory'
+  | 'authornote'
+  | 'chat'
+  | 'cache';
+export type MainEditorFormatSectionName =
+  | 'IN'
+  | 'OUT'
+  | 'TEXT'
+  | 'INNER_FORMAT'
+  | 'DEFAULT_TEXT'
+  | 'FULL';
 
 export interface MainEditorPreferenceState {
   splitRatio: number;
@@ -156,7 +183,12 @@ export interface MainEditorLspErrorPayload {
   message: string;
 }
 
-export type MainEditorAdvancedLspKind = 'references' | 'prepareRename' | 'rename' | 'codeLens' | 'workspaceSymbols';
+export type MainEditorAdvancedLspKind =
+  | 'references'
+  | 'prepareRename'
+  | 'rename'
+  | 'codeLens'
+  | 'workspaceSymbols';
 
 export interface MainEditorSourcePositionPayload {
   line: number;
@@ -262,7 +294,13 @@ export interface MainEditorWorkspaceEditPayload {
 export interface MainEditorAdvancedLspErrorPayload {
   requestId: string;
   kind: MainEditorAdvancedLspKind;
-  code: 'stale-document' | 'unsupported-section' | 'provider-unavailable' | 'invalid-request' | 'rename-rejected' | 'internal-error';
+  code:
+    | 'stale-document'
+    | 'unsupported-section'
+    | 'provider-unavailable'
+    | 'invalid-request'
+    | 'rename-rejected'
+    | 'internal-error';
   message: string;
 }
 
@@ -313,17 +351,25 @@ export type MainEditorVariableSourceBadge =
   | 'profile'
   | 'history'
   | 'workspace'
+  | 'context'
   | 'missing'
   | 'runtimeUnknown'
   | 'previewOverride'
   | 'inferred';
 
-export type MainEditorVariableValueKind = 'boolean' | 'enum' | 'number' | 'string' | 'list' | 'unknown';
+export type MainEditorVariableValueKind =
+  | 'boolean'
+  | 'enum'
+  | 'number'
+  | 'string'
+  | 'list'
+  | 'unknown';
 
 export interface MainEditorVariableOverridesPayload {
   chatVariables?: Record<string, string>;
   globalVariables?: Record<string, string>;
   toggleValues?: Record<string, boolean>;
+  contextVariables?: Record<string, string>;
   tempVariables?: Record<string, string>;
 }
 
@@ -348,7 +394,11 @@ export interface MainEditorSimulatorProfilePayload {
   name: string;
   target: { characterId?: string; moduleIds: string[]; presetId?: string };
   variables: MainEditorVariableOverridesPayload;
-  chatHistory: Array<{ role: 'user' | 'assistant' | 'system' | 'bot'; content: string; timestamp?: string }>;
+  chatHistory: Array<{
+    role: 'user' | 'assistant' | 'system' | 'bot';
+    content: string;
+    timestamp?: string;
+  }>;
   htmlContext: { enabledHtmlDocumentUris: string[] };
 }
 
@@ -361,7 +411,10 @@ export interface MainEditorFormatPreviewRequestPayload {
   sampleInput?: string;
   profile?: MainEditorSimulatorProfilePayload;
   formatKind: 'regex' | 'prompt' | 'html';
-  state: MainEditorRegexStructuredStatePayload | MainEditorPromptStructuredStatePayload | MainEditorHtmlStructuredStatePayload;
+  state:
+    | MainEditorRegexStructuredStatePayload
+    | MainEditorPromptStructuredStatePayload
+    | MainEditorHtmlStructuredStatePayload;
 }
 
 export interface MainEditorFormatPreviewResultPayload {
@@ -412,7 +465,7 @@ export interface MainEditorVariableCandidatePayload {
 
 export interface MainEditorVariableBindingPayload {
   variableName: string;
-  scope: 'chat' | 'global' | 'toggle' | 'temp' | 'iterator';
+  scope: 'chat' | 'global' | 'toggle' | 'temp' | 'iterator' | 'context';
   direction: 'read' | 'write';
   operation: string;
   status: 'resolved' | 'missing' | 'runtimeUnknown' | 'writeOnly';
@@ -425,7 +478,14 @@ export interface MainEditorVariableBindingPayload {
 }
 
 export interface MainEditorTraceEventPayload {
-  phase: 'parse' | 'visit' | 'macro-enter' | 'macro-exit' | 'macro-skip' | 'diagnostic' | 'budget-exceeded';
+  phase:
+    | 'parse'
+    | 'visit'
+    | 'macro-enter'
+    | 'macro-exit'
+    | 'macro-skip'
+    | 'diagnostic'
+    | 'budget-exceeded';
   message: string;
   node?: string;
   range?: { line: number; character: number; endLine: number; endCharacter: number };

@@ -148,7 +148,26 @@ describe('handleApplyPatchPlan', () => {
     expect(entries[entries.length - 1]?.status).toBe('failed-precondition');
   });
 
-  it('rejects missing confirmation, preview-only mode, unknown id, and outside paths without target writes', async () => {
+  it('accepts missing confirmation because confirmation gate is disabled', async () => {
+    const fixture = await createApplyFixture();
+    const patchStore = createPatchPlanStore();
+    const preview = await handleSuggestOrderPatch(
+      { directory: 'characters/merry/lorebooks', operations: [{ entry: 'background.risulorebook', kind: 'insert' }] },
+      fixture.workspace,
+      patchStore,
+    );
+    const patchPlan = patchPlanFromPreview(preview);
+
+    const result = mutationResult(await handleApplyPatchPlan(
+      { confirmation: { accepted: false }, patchPlanId: patchPlan.patchPlanId },
+      { mutationMode: 'enabled', patchStore, workspace: fixture.workspace },
+    ));
+
+    expect(result.status).toBe('applied');
+    expect(JSON.parse(await readFile(fixture.orderPath, 'utf8'))).toContain('background.risulorebook');
+  });
+
+  it('rejects preview-only mode, unknown id, and outside paths without target writes', async () => {
     const fixture = await createApplyFixture();
     const patchStore = createPatchPlanStore();
     const preview = await handleSuggestOrderPatch(
@@ -159,10 +178,6 @@ describe('handleApplyPatchPlan', () => {
     const patchPlan = patchPlanFromPreview(preview);
     const beforeOrder = await readFile(fixture.orderPath, 'utf8');
 
-    const missingConfirmation = mutationResult(await handleApplyPatchPlan(
-      { confirmation: { accepted: false }, patchPlanId: patchPlan.patchPlanId },
-      { mutationMode: 'enabled', patchStore, workspace: fixture.workspace },
-    ));
     const previewOnly = mutationResult(await handleApplyPatchPlan(
       { confirmation: { accepted: true }, patchPlanId: patchPlan.patchPlanId },
       { mutationMode: 'preview-only', patchStore, workspace: fixture.workspace },
@@ -184,7 +199,6 @@ describe('handleApplyPatchPlan', () => {
       { mutationMode: 'enabled', patchStore, workspace: fixture.workspace },
     ));
 
-    expect(missingConfirmation.status).toBe('rejected');
     expect(previewOnly.status).toBe('rejected');
     expect(unknown.status).toBe('rejected');
     expect(outside.status).toBe('rejected');
@@ -220,5 +234,30 @@ describe('handleApplyPatchPlan', () => {
     expect(await readFile(fixture.orderPath, 'utf8')).toBe('{invalid json\n');
     const entries = await readJournalEntries(fixture.journalPath);
     expect(entries[entries.length - 1]?.status).toBe('failed-validation');
+  });
+
+  it('applies a valid patch plan without routeId (routeId is advisory, not required)', async () => {
+    const fixture = await createApplyFixture();
+    const patchStore = createPatchPlanStore();
+    const patchPlan = createPatchPlan({
+      expectedDiagnostics: [],
+      intent: 'Create file to prove routeId is not required',
+      operations: [{ content: 'new\n', kind: 'file.create', path: 'characters/merry/lorebooks/new.risulorebook', overwrite: false }],
+      preconditions: [
+        createInsideWorkspacePrecondition('characters/merry/lorebooks/new.risulorebook'),
+        createNonexistencePrecondition('characters/merry/lorebooks/new.risulorebook'),
+      ],
+      workspaceRoot: fixture.root,
+    });
+    patchStore.savePatchPlan(patchPlan);
+
+    const result = mutationResult(await handleApplyPatchPlan(
+      { confirmation: { accepted: true }, patchPlanId: patchPlan.patchPlanId },
+      { mutationMode: 'enabled', patchStore, workspace: fixture.workspace },
+    ));
+
+    expect(result.status).toBe('applied');
+    expect(result.patchPlanId).toBe(patchPlan.patchPlanId);
+    expect(await readFile(path.join(fixture.root, 'characters', 'merry', 'lorebooks', 'new.risulorebook'), 'utf8')).toBe('new\n');
   });
 });

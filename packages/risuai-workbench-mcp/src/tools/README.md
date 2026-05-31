@@ -12,7 +12,7 @@ src/tools/
 ├── patch/                   # no-write patch preview + patch plan apply entry
 ├── mutation/                # direct structured source artifact mutations + gated core workflows
 ├── analyze/                 # read-only analyze / impact query tools
-└── wiki/                    # wiki search, preview, generated wiki refresh
+└── wiki/                    # wiki search, preview, generated wiki bootstrap/refresh
 ```
 
 도메인별 `index.ts`는 해당 폴더의 handler를 named export하고, 루트 `src/tools/index.ts`는 다음 도메인을 한 번에 재수출합니다.
@@ -33,7 +33,8 @@ Tool 구현은 이 디렉토리에 있지만 MCP SDK 등록은 `packages/risuai-
 - Tool name은 `workbench.{verb}_{noun}` 형식입니다.
 - Handler 함수명은 `handle{Verb}{Noun}` 형식입니다.
 - `inputSchema`는 `zod` raw shape로 등록됩니다.
-- Handler 결과는 `JSON.stringify(result)` 후 MCP text content로 감싸 반환합니다.
+- Handler 결과는 `createJsonToolResult(result)`를 통해 MCP text JSON과 `structuredContent`를 함께 반환합니다.
+- Stable envelope tools should declare `outputSchema` from `src/contracts/output-schemas.ts`.
 - Tool metadata와 구현 상태는 `src/registry/index.ts`의 `WORKBENCH_REGISTRY`와 `IMPLEMENTED_ROADMAP_TOOL_NAMES`가 관리합니다.
 
 응답은 transport exception 대신 구조화된 envelope를 반환하는 것을 기본 원칙으로 합니다.
@@ -47,7 +48,7 @@ Mutation 계열 handler는 대체로 `unknown` input을 받은 뒤 내부 parse 
 
 ## Tool 목록
 
-현재 registry 기준 구현 tool은 `workbench.smoke`를 포함해 41개입니다. `workbench.smoke`는 startup smoke tool이며 `src/tools/`가 아니라 `src/server.ts`에서 직접 등록됩니다.
+현재 registry 기준 구현 tool은 `workbench.smoke`를 포함해 **74개**입니다(비즈니스 로직 tool 48개 + creative tool 26개). `workbench.smoke`는 startup smoke tool이며 `src/tools/`가 아니라 `src/server.ts`에서 직접 등록됩니다.
 
 ### Startup
 
@@ -103,7 +104,7 @@ Mutation 계열 handler는 대체로 `unknown` input을 받은 뒤 내부 parse 
 | `workbench.edit_frontmatter` | yes | `handleEditFrontmatter` | `mutation/edit-frontmatter.ts` | artifact body를 보존하면서 frontmatter field를 set/remove합니다. malformed commit은 `force: true` 없이 거부합니다. |
 | `workbench.edit_metadata` | yes | `handleEditMetadata` | `mutation/edit-metadata.ts` | metadata/root marker JSON에 `json.set` operation을 적용하며 `allowedFields` 정책을 검사합니다. |
 | `workbench.create_artifact` | yes | `handleCreateArtifact` | `mutation/create-artifact.ts` | canonical path에 새 artifact 파일을 만들고 optional `_order.json` insertion을 수행합니다. |
-| `workbench.run_extract` | yes | `handleRunExtract` | `mutation/run-extract.ts` | `risu-core extract` workflow를 안전 게이트 뒤에서 실행해 charx/risum/risup 등을 canonical workspace로 추출합니다. `outDir`은 workspace-relative 신규 디렉터리여야 합니다. |
+| `workbench.run_extract` | yes | `handleRunExtract` | `mutation/run-extract.ts` | `risu-core extract` workflow를 안전 게이트 뒤에서 실행해 charx/risum/risup 등을 canonical workspace로 추출한 뒤, `risu-core analyze <outDir> --wiki --wiki-root <outDir>/wiki`를 이어 실행해 analysis 리포트와 wiki를 갱신합니다. `outDir`은 workspace-relative 신규 디렉터리여야 하며, 기본 wiki root는 `outDir` 하위의 `wiki/`입니다. |
 | `workbench.run_scaffold` | yes | `handleRunScaffold` | `mutation/run-scaffold.ts` | `risu-core scaffold` workflow를 안전 게이트 뒤에서 실행해 charx/module/preset 프로젝트 골격을 생성합니다. |
 
 ### Analyze / impact query
@@ -122,6 +123,7 @@ Mutation 계열 handler는 대체로 `unknown` input을 받은 뒤 내부 parse 
 | `workbench.query_composition_conflicts` | no | `handleQueryCompositionConflicts` | `analyze/query-analyze.ts` | charx/module/preset composition conflict와 compatibility summary를 조회합니다. |
 | `workbench.query_dead_code_findings` | no | `handleQueryDeadCodeFindings` | `analyze/query-analyze.ts` | variable-flow, lorebook, regex metadata 기반 dead-code/cleanup 후보를 반환합니다. |
 | `workbench.query_token_budget` | no | `handleQueryTokenBudget` | `analyze/query-analyze.ts` | token component별 budget summary와 threshold warning을 조회합니다. |
+| `workbench.query_risulua_api` | no | `handleQueryRisuLuaApi` | `analyze/query-risulua-api.ts` | RisuLua host function catalog에서 category, access tier, signature, docs, related functions, reference URI를 조회합니다. |
 
 `analyze/query-analyze.ts`는 여러 query tool이 snapshot 처리, Lua source 해석, Map/Set JSON 정규화를 공유하기 때문에 한 파일에 모여 있습니다.
 
@@ -131,6 +133,7 @@ Mutation 계열 handler는 대체로 `unknown` input을 받은 뒤 내부 parse 
 | --- | ---: | --- | --- | --- |
 | `workbench.move_artifact` | yes | `handleMoveArtifact` | `mutation/move-artifact.ts` | artifact rename/move를 수행합니다. suffix 보존, expected hash, exact confirmation, optional order update를 검사합니다. |
 | `workbench.delete_artifact` | yes | `handleDeleteArtifact` | `mutation/delete-artifact.ts` | high-risk delete tool입니다. exact confirmation, optional backup, optional order cleanup, journal 기록을 수행합니다. |
+| `workbench.ensure_wiki_root` | yes | `handleEnsureWikiRoot` | `wiki/ensure-wiki-root.ts` | wiki가 없거나 bootstrap 파일이 누락된 경우 generated-only allowlist 안의 최소 wiki root 파일만 생성합니다. |
 | `workbench.refresh_wiki` | yes | `handleRefreshWiki` | `wiki/refresh-wiki.ts` | generated wiki allowlist 경로만 갱신합니다. core write-protect helper와 post-validation을 사용합니다. |
 | `workbench.rollback_mutation` | yes | `handleRollbackMutation` | `mutation/rollback-mutation.ts` | journal에 충분한 inverse state가 있는 mutation만 rollback합니다. high-risk exact confirmation이 필요합니다. |
 
@@ -149,7 +152,8 @@ Mutation 계열 handler는 대체로 `unknown` input을 받은 뒤 내부 parse 
 | `suggest_frontmatter_patch` | `path`, optional `set`, `remove`, `preserveBody` |
 | `apply_patch_plan` | `patchPlanId`, `confirmation`, optional `options` |
 | direct mutation tools | `mode: preview|commit`, optional `confirmation`, `expectedHash`, `postValidate` |
-| `run_extract` | `sourcePath`, `outDir`, optional `type`, RisuLua options, `mode`, `confirmation`, `postValidate` |
+| `ensure_wiki_root` | optional `wikiRoot`(현재 `wiki`만 지원), `mode`, optional `confirmation`, `postValidate` |
+| `run_extract` | `sourcePath`, `outDir`, optional `type`, RisuLua options, `mode`, `confirmation`, `postValidate`. Preview data includes the follow-up `postExtractAnalyze` command; commit confirmation text includes both extract output and wiki target (`RUN_EXTRACT <source> TO <outDir> WITH WIKI <wikiRoot>`). |
 | `run_scaffold` | `type`, `name`, optional `outDir`, `creator`, `namespace`, `risuluaMode`, `mode`, `confirmation`, `postValidate` |
 | analyze query tools | `sourcePath` 또는 `sourceText`, optional `previousSnapshot`, `stalePolicy`, tool별 analyzer payload |
 
@@ -158,8 +162,12 @@ Mutation 계열 handler는 대체로 `unknown` input을 받은 뒤 내부 parse 
 - 모든 workspace path는 `resolveSafeWorkspacePath()`로 workspace-relative boundary를 통과해야 합니다.
 - 기본 mutation mode는 서버 CLI의 `--mutation` 값에 따릅니다. 기본값은 `preview-only`입니다.
 - source artifact write는 `enabled` mode와 confirmation이 필요합니다.
+- `workbench.run_extract`는 extract output directory를 새로 만들고, 이어서 그 하위의 `wiki/`를 생성하거나 기존 wiki를 갱신합니다. 이 wiki 갱신 범위는 preview의 `postExtractAnalyze.defaultWikiRoot`와 confirmation text의 `WITH WIKI <wikiRoot>`에 명시됩니다.
 - generated wiki write는 allowlist boundary를 통과해야 합니다.
 - stale hash, unknown field, invalid input, confirmation mismatch는 파일 변경 없이 structured diagnostic 또는 rejected mutation result로 반환됩니다.
+- Long-running mutation handlers should accept an optional `AbortSignal` after optional progress reporter parameters.
+- Handlers must check cancellation before irreversible work, pass the signal to child-process wrappers, and report cancellation through structured diagnostic or mutation envelopes.
+- Handlers must not swallow cancellation by returning `ok` when a child process was terminated. Mid-child cancellation should remain visible through command cancellation diagnostics and a failed mutation result after post-validation and journal handling.
 
 ## 새 tool 추가 체크리스트
 

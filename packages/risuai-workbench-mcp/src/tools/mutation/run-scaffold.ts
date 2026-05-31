@@ -5,12 +5,14 @@
 
 import path from 'node:path';
 
+import { createCancellationDiagnostic, isCancellationRequested, throwIfCancellationRequested } from '../../cancellation';
 import { createDiagnosticEnvelope, createUnknownFieldDiagnosticEnvelope, type DiagnosticEnvelope } from '../../contracts/diagnostics';
 import type { MutationMode as PatchPlanMutationMode } from '../../contracts/patch-plan';
 import { createMutationResultEnvelope, type MutationResultEnvelope } from '../../contracts/mutation-result';
 import { appendJournalEntry } from '../../mutation/journal';
 import type { MutationMode } from '../../mutation/mode';
 import { evaluateMutationSafetyGate } from '../../mutation/safety-gate';
+import type { ProgressReporter } from '../../progress';
 import type { WorkspaceRootStatus } from '../../project/resolve-root';
 import { resolveSafeWorkspacePath } from '../../project/safe-path';
 
@@ -26,7 +28,6 @@ import {
   runRisuCoreCommand,
   sanitizeDefaultOutputName,
   type RisuCoreCommandResult,
-  type RisuLuaModeInput,
 } from './core-workflow-cli';
 
 export type RunScaffoldToolResult = DiagnosticEnvelope | MutationResultEnvelope;
@@ -41,7 +42,8 @@ export interface RunScaffoldInput {
   namespace?: string;
   outDir?: string;
   postValidate?: boolean;
-  risuluaMode?: RisuLuaModeInput;
+  /** Always 'modular'. Classic is fallback-only and not caller-selectable. */
+  risuluaMode?: 'modular';
   type: ScaffoldType;
 }
 
@@ -52,7 +54,10 @@ export async function handleRunScaffold(
   input: unknown,
   workspace: WorkspaceRootStatus,
   mutationMode: MutationMode,
+  progress?: ProgressReporter,
+  signal?: AbortSignal,
 ): Promise<RunScaffoldToolResult> {
+  await progress?.report(1, 8, 'Validating run_scaffold input.');
   const unknownFieldResult = createUnknownFieldDiagnosticEnvelope({
     allowedKeys: ['type', 'name', 'outDir', 'creator', 'namespace', 'risuluaMode', 'mode', 'confirmation', 'postValidate'],
     input,
@@ -79,6 +84,7 @@ export async function handleRunScaffold(
 
   const scaffoldInput = parsed.input;
   const targetOutDir = scaffoldInput.outDir ?? `./${sanitizeDefaultOutputName(scaffoldInput.name)}`;
+  await progress?.report(2, 8, 'Resolving run_scaffold workspace paths.');
   const safeOutDir = await resolveSafeWorkspacePath({ inputPath: targetOutDir, intent: 'create-missing', workspace });
   if (!safeOutDir.ok) {
     return createDiagnosticEnvelope({
@@ -97,9 +103,19 @@ export async function handleRunScaffold(
     });
   }
 
+  if (isCancellationRequested(signal)) {
+    return createDiagnosticEnvelope({
+      diagnostics: [createCancellationDiagnostic(TOOL_NAME, safeOutDir.relativePath)],
+      status: 'domain_warning',
+      tool: TOOL_NAME,
+    });
+  }
+
+  await progress?.report(3, 8, 'Preparing run_scaffold command preview.');
   const argv = buildScaffoldArgs(scaffoldInput, safeOutDir.relativePath);
   const confirmationText = `RUN_SCAFFOLD ${safeOutDir.relativePath}`;
-  if (scaffoldInput.mode === 'preview') {
+  if (mutationMode === 'preview-only') {
+    await progress?.report(4, 8, 'run_scaffold preview complete.');
     return createDiagnosticEnvelope({
       data: { command: process.execPath, args: [resolveRisuCoreBinPath(), ...argv], cwd: workspace.path, expectedConfirmationText: confirmationText, preview: true, target: safeOutDir.relativePath },
       diagnostics: [],
@@ -108,11 +124,12 @@ export async function handleRunScaffold(
     });
   }
 
+  await progress?.report(4, 8, 'Checking run_scaffold mutation safety.');
   const safetyResult = await evaluateMutationSafetyGate({
     confirmation: scaffoldInput.confirmation,
     expectedConfirmationText: confirmationText,
     mode: mutationMode,
-    risk: 'high',
+    risk: 'medium',
     targets: [{ intent: 'create-missing', path: safeOutDir.relativePath }],
     toolName: TOOL_NAME,
     workspace,
@@ -127,8 +144,20 @@ export async function handleRunScaffold(
     });
   }
 
-  const commandResult = await runRisuCoreCommand(argv, workspace.path);
+  await progress?.report(5, 8, 'Running risu-core scaffold.');
+  try {
+    throwIfCancellationRequested(signal, TOOL_NAME);
+  } catch (error) {
+    return createDiagnosticEnvelope({
+      diagnostics: [createCancellationDiagnostic(TOOL_NAME, safeOutDir.relativePath)],
+      status: 'domain_warning',
+      tool: TOOL_NAME,
+    });
+  }
+  const commandResult = await runRisuCoreCommand(argv, workspace.path, { signal });
+  await progress?.report(6, 8, 'Collecting run_scaffold changed files.');
   const changedFiles = await collectChangedFiles(safeOutDir.absolutePath, safeOutDir.relativePath).catch(() => []);
+  await progress?.report(7, 8, 'Validating run_scaffold output.');
   const postValidation = scaffoldInput.postValidate !== false
     ? await createWorkflowPostValidation({ absoluteRoot: safeOutDir.absolutePath, expectedMarkerPaths: expectedScaffoldMarkers(scaffoldInput.type), relativeRoot: safeOutDir.relativePath, tool: TOOL_NAME })
     : { diagnostics: [], status: 'not_run' as const };
@@ -148,6 +177,7 @@ export async function handleRunScaffold(
     toolName: TOOL_NAME,
   });
 
+  await progress?.report(8, 8, 'run_scaffold complete.');
   return createMutationResultEnvelope({
     appliedAt: new Date().toISOString(),
     changedFiles,
@@ -166,9 +196,8 @@ function parseRunScaffoldInput(input: unknown): { input: RunScaffoldInput; ok: t
   if (!type || !VALID_TYPES.has(type as ScaffoldType)) return { ok: false, reason: 'type must be one of charx, module, preset.' };
   const name = getStringField(candidate, 'name');
   if (!name) return { ok: false, reason: 'name must be a non-empty string.' };
-  const mode: PatchPlanMutationMode = candidate.mode === 'commit' ? 'commit' : 'preview';
-  const risuluaMode = candidate.risuluaMode;
-  if (risuluaMode !== undefined && risuluaMode !== 'classic' && risuluaMode !== 'modular') return { ok: false, reason: 'risuluaMode must be classic or modular.' };
+  const mode: PatchPlanMutationMode = 'commit';
+  // risuluaMode is hardcoded to 'modular'. Caller input is ignored.
   return {
     input: {
       confirmation: getConfirmationField(candidate),
@@ -178,7 +207,7 @@ function parseRunScaffoldInput(input: unknown): { input: RunScaffoldInput; ok: t
       namespace: getStringField(candidate, 'namespace'),
       outDir: getStringField(candidate, 'outDir'),
       postValidate: getBooleanField(candidate, 'postValidate'),
-      risuluaMode,
+      risuluaMode: 'modular' as const,
       type: type as ScaffoldType,
     },
     ok: true,
@@ -204,5 +233,6 @@ function buildCommandDiagnostics(commandResult: RisuCoreCommandResult, targetPat
   if (commandResult.stderr.trim() !== '') diagnostics.push({ category: 'workflow', id: 'RUN_SCAFFOLD_STDERR', message: commandResult.stderr, path: targetPath, ruleId: 'run-scaffold.stderr', severity: commandResult.exitCode === 0 ? 'warning' as const : 'error' as const });
   if (commandResult.exitCode !== 0) diagnostics.push({ category: 'workflow', id: 'RUN_SCAFFOLD_EXIT_NONZERO', message: `risu-core scaffold exited with code ${commandResult.exitCode}.`, path: targetPath, ruleId: 'run-scaffold.exit-code', severity: 'error' as const });
   if (commandResult.timedOut) diagnostics.push({ category: 'workflow', id: 'RUN_SCAFFOLD_TIMEOUT', message: 'risu-core scaffold command timed out and was terminated.', path: targetPath, ruleId: 'run-scaffold.timeout', severity: 'error' as const });
+  if (commandResult.cancelled) diagnostics.push({ category: 'cancellation', id: 'RUN_SCAFFOLD_CANCELLED', message: 'risu-core scaffold was cancelled by the MCP request.', path: targetPath, ruleId: 'run-scaffold.cancelled', severity: 'warning' as const });
   return diagnostics;
 }

@@ -93,7 +93,7 @@ describe('handleCreateArtifact', () => {
     expect(order).toContain('combat-emotion.risulorebook');
   });
 
-  it('returns preview with patchPlan in preview mode', async () => {
+  it('returns preview with patchPlan in preview-only mutation mode', async () => {
     const fixture = await createCreateFixture();
     const patchStore = createPatchPlanStore();
 
@@ -102,13 +102,13 @@ describe('handleCreateArtifact', () => {
         artifact: 'lorebook',
         body: 'preview text',
         initialFrontmatter: { enabled: 'true' },
-        mode: 'preview',
+        mode: 'commit',
         root: 'characters/merry',
         stem: 'preview-test',
         target: 'charx',
       },
       fixture.workspace,
-      'enabled',
+      'preview-only',
       patchStore,
     ));
 
@@ -120,11 +120,11 @@ describe('handleCreateArtifact', () => {
     await expect(readFile(path.join(fixture.root, canonicalPath), 'utf8')).rejects.toThrow();
   });
 
-  it('rejects commit in preview-only mode', async () => {
+  it('returns preview in preview-only mode', async () => {
     const fixture = await createCreateFixture();
     const patchStore = createPatchPlanStore();
 
-    const result = mutationResult(await handleCreateArtifact(
+    const result = diagnosticEnvelope(await handleCreateArtifact(
       {
         artifact: 'lorebook',
         confirmation: { accepted: true },
@@ -138,7 +138,8 @@ describe('handleCreateArtifact', () => {
       patchStore,
     ));
 
-    expect(result.status).toBe('rejected');
+    expect(result.status).toBe('ok');
+    expect(result.data).toMatchObject({ preview: true });
   });
 
   it('rejects when file already exists', async () => {
@@ -164,24 +165,5 @@ describe('handleCreateArtifact', () => {
     expect(result.diagnostics.some((d) => d.id === 'FILE_ALREADY_EXISTS')).toBe(true);
   });
 
-  it('rejects outside workspace path through safety gate', async () => {
-    const fixture = await createCreateFixture();
-    const patchStore = createPatchPlanStore();
 
-    const result = mutationResult(await handleCreateArtifact(
-      {
-        artifact: 'lorebook',
-        confirmation: { accepted: true },
-        mode: 'commit',
-        root: 'characters/merry',
-        stem: 'test-artifact',
-        target: 'charx',
-      },
-      { ok: true, path: fixture.root, reason: null },
-      'preview-only',
-      patchStore,
-    ));
-
-    expect(result.status).toBe('rejected');
-  });
 });

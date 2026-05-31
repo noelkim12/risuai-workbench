@@ -24,7 +24,7 @@ const HELP_TEXT = `
     --out <dir>         출력 디렉토리 (기본: ./<sanitized_name>)
     --creator <name>    크리에이터 이름 (charx 전용, 선택)
     --namespace <ns>    모듈 namespace (.risumodule 전용, 선택)
-    --risulua-mode <classic|modular>  RisuLua 개발 방식: classic=단일 파일 개발, modular=모듈식 개발 (기본: classic)
+    --risulua-mode <classic|modular>  RisuLua 개발 방식: classic=단일 파일 개발, modular=모듈식 개발 (기본: modular)
     -h, --help          도움말
 
   Examples:
@@ -170,7 +170,7 @@ function parseOptions(argv: readonly string[]): ScaffoldOptions {
     name,
     outDir,
     creator,
-    risuluaMode: mode ?? 'classic',
+    risuluaMode: mode ?? 'modular',
     ...(typeof namespace === 'string' ? { namespace } : {}),
   };
 }
@@ -294,6 +294,25 @@ function scaffoldModule(root: string, options: ScaffoldOptions): number {
 
   // toggle/<name>.risutoggle
   writeText(path.join(root, 'toggle', `${sanitizedName}.risutoggle`), '');
+  count++;
+
+  // assets/manifest.json
+  writeJson(path.join(root, 'assets', 'manifest.json'), {
+    version: 1,
+    source_format: 'scaffold',
+    total: 0,
+    extracted: 0,
+    skipped: 0,
+    assets: [],
+  });
+  count++;
+
+  // html/background.risuhtml
+  writeText(path.join(root, 'html', 'background.risuhtml'), '');
+  count++;
+
+  // variables/<name>.risuvar
+  writeText(path.join(root, 'variables', `${sanitizedName}.risuvar`), '');
   count++;
 
   count += scaffoldRisuLuaLayout(root, sanitizedName, options.risuluaMode);
@@ -509,8 +528,9 @@ function printNextSteps(type: ScaffoldType, relPath: string): void {
       break;
     case 'module':
       console.log(`    1. ${relPath}/.risumodule 에서 모듈 정보를 편집하세요.`);
-      console.log(`    2. lorebooks/, regex/ 에 콘텐츠를 추가하세요.`);
-      console.log(`    3. risu-core pack --in ${relPath} --format module 로 패킹하세요.`);
+      console.log(`    2. lorebooks/, regex/, assets/, html/, variables/ 에 콘텐츠를 추가하세요.`);
+      console.log(`    3. lua/ 에서 RisuLua 코드를 작성하세요.`);
+      console.log(`    4. risu-core pack --in ${relPath} --format module 로 패킹하세요.`);
       break;
     case 'preset':
       console.log(`    1. ${relPath}/prompt_template/ 에서 프롬프트를 편집하세요.`);

@@ -9,6 +9,7 @@ import {
   RISULUA_MODULE_TABLE_RUNTIME_LISTEN_EDIT_PATH,
   RISULUA_MODULE_TABLE_RUNTIME_OUTPUT_PATH,
   RISULUA_MODULE_TABLE_RUNTIME_START_PATH,
+  type RisuLuaDomainGroupingMetadata,
   type RisuLuaModuleTableBridgeMetadata,
   type RisuLuaModuleTableButtonActionSourceContract,
   type RisuLuaModuleTableClassificationCode,
@@ -29,6 +30,7 @@ import type {
   RisuLuaModuleTableRuntimeRootFact,
 } from './module-table-analyzer-types';
 import type { LuaSourceRange } from '../shared/types';
+import { createRisuLuaDomainGroupingContext, domainFunctionPath } from './module-table-domain-grouping';
 
 export interface RisuLuaModuleTableClassifierInput {
   source: string;
@@ -84,6 +86,7 @@ export function classifyRisuLuaModuleTableDecisions(input: RisuLuaModuleTableCla
   const extractableCommonHelperNames = collectCommonHelperClosureNames(input.analyzerResult.lexicalSymbols);
   const variableStoreNames = new Set(input.variableStoreNames ?? []);
   const promptStoreNames = new Set(input.promptStoreNames ?? []);
+  const privateDomainBlockers = collectPrivateDomainGenerationBlockers(input.analyzerResult);
 
   if (!input.analyzerResult.ok) {
     diagnostics.push('Analyzer failed; module-table classifier produced preservation-only output.');
@@ -114,6 +117,7 @@ export function classifyRisuLuaModuleTableDecisions(input: RisuLuaModuleTableCla
     input.analyzerResult.publicGlobals,
     publicGlobalsByName,
     unsafePublicNames,
+    privateDomainBlockers,
     domainGeneration,
   );
   const validatedPrivateDomainNames = collectValidatedPrivateDomainNames(
@@ -124,7 +128,26 @@ export function classifyRisuLuaModuleTableDecisions(input: RisuLuaModuleTableCla
     domainGeneration,
     variableStoreNames,
     promptStoreNames,
+    privateDomainBlockers,
   );
+  const generatedPublicDomainNames = collectGeneratedPublicDomainNames(
+    input.analyzerResult.lexicalSymbols,
+    input.analyzerResult.publicGlobals,
+    unsafePublicNames,
+    privateDomainBlockers,
+    domainGeneration,
+  );
+  const validatedDomainNames = [
+    ...validatedPublicDomainNames,
+    ...generatedPublicDomainNames,
+    ...validatedPrivateDomainNames,
+  ];
+  const validatedDomainGrouping = createRisuLuaDomainGroupingContext([
+    ...validatedDomainNames,
+  ], {
+    dependencies: collectDomainDependencies(input.source, input.analyzerResult.lexicalSymbols, validatedDomainNames),
+  });
+  diagnostics.push(...validatedDomainGrouping.diagnostics().map((diagnostic) => diagnostic.message));
   const safeButtonCaptureNames = collectSafeButtonCaptureNames(
     input.analyzerResult.lexicalSymbols,
     input.analyzerResult.publicGlobals,
@@ -148,7 +171,7 @@ export function classifyRisuLuaModuleTableDecisions(input: RisuLuaModuleTableCla
       symbols.push(buttonActionSymbol(symbol, publicGlobal.name, publicGlobal.sourceRange));
       continue;
     }
-    const publicDomainUnsafeReason = unsafePublicNames.get(publicGlobal.name) ?? unsafePublicDomainGenerationReason(symbol);
+    const publicDomainUnsafeReason = unsafePublicNames.get(publicGlobal.name) ?? unsafePublicDomainGenerationReason(symbol, privateDomainBlockers.get(publicGlobal.name));
     const publicDomainDecision = domainGeneration === 'validated'
       && isPublicDomainCandidate(publicGlobal)
       && symbol !== undefined
@@ -157,15 +180,21 @@ export function classifyRisuLuaModuleTableDecisions(input: RisuLuaModuleTableCla
       ? { status: 'generated' as const, blockedReasons: [] }
       : { status: domainGeneration === 'validated' && isPublicDomainCandidate(publicGlobal) ? 'blocked' as const : 'report-only' as const, blockedReasons: publicDomainBlockedReasons(publicGlobal, symbol, domainGeneration, publicDomainUnsafeReason) };
     const domainCandidate = isPublicDomainCandidate(publicGlobal)
-      ? maybeDomainCandidate(publicGlobal.name, publicGlobal.sourceRange, publicGlobal.hostEffects, [publicGlobal.name], publicDomainDecision.status, publicDomainDecision.blockedReasons)
+      ? maybeDomainCandidate(publicGlobal.name, publicGlobal.sourceRange, publicGlobal.hostEffects, [publicGlobal.name], publicDomainDecision.status, publicDomainDecision.blockedReasons, validatedDomainGrouping.pathForName(publicGlobal.name), validatedDomainGrouping.groupingForName(publicGlobal.name))
       : undefined;
     if (domainCandidate !== undefined) domainCandidates.push(domainCandidate);
     if (publicDomainDecision.status === 'generated' && symbol !== undefined) {
-      symbols.push(domainPublicGlobalSymbol(publicGlobal, symbol));
+      symbols.push(domainPublicGlobalSymbol(publicGlobal, symbol, validatedDomainGrouping.pathForName(publicGlobal.name)));
+      continue;
+    }
+    if (publicDomainDecision.status === 'blocked' && publicDomainUnsafeReason !== undefined) {
+      preserved.push(preservedEntry(publicGlobal.id, publicGlobal.name, publicGlobal.sourceRange, publicDomainUnsafeReason.code, publicDomainUnsafeReason.evidence));
       continue;
     }
     const duplicateGroup = publicGlobalsByName.get(publicGlobal.name) ?? [];
-    const unsafeReason = unsafePublicNames.get(publicGlobal.name) ?? unsafePublicGlobalReason(symbol, new Set([publicGlobal.name]));
+    const unsafeReason = unsafePublicNames.get(publicGlobal.name)
+      ?? unsafePublicDomainGenerationReason(symbol)
+      ?? unsafePublicGlobalReason(symbol, new Set([publicGlobal.name]));
     if (unsafeReason !== undefined) {
       preserved.push(preservedEntry(publicGlobal.id, publicGlobal.name, publicGlobal.sourceRange, unsafeReason.code, unsafeReason.evidence));
       continue;
@@ -190,15 +219,16 @@ export function classifyRisuLuaModuleTableDecisions(input: RisuLuaModuleTableCla
         continue;
       }
       const commonHelper = extractableCommonHelperNames.has(symbol.originalName);
-      const domainDecision = domainGeneration === 'validated' && !commonHelper && isValidatedPrivateDomainFunction(symbol, validatedPrivateDomainNames)
+      const privateDomainBlockerReasons = privateDomainBlockers.get(symbol.originalName) ?? [];
+      const domainDecision = domainGeneration === 'validated' && privateDomainBlockerReasons.length === 0 && isValidatedPrivateDomainFunction(symbol, validatedPrivateDomainNames)
         ? { status: 'generated' as const, blockedReasons: [] }
-        : { status: domainGeneration === 'validated' && !commonHelper ? 'blocked' as const : 'report-only' as const, blockedReasons: domainGenerationBlockedReasons(symbol, domainGeneration, commonHelper, extractableCommonHelperNames, rewriteablePublicHostGlobalNames, validatedPrivateDomainNames, validatedPublicDomainNames, variableStoreNames, promptStoreNames) };
-      const domainCandidate = commonHelper
+        : { status: domainGeneration === 'validated' && !commonHelper ? 'blocked' as const : 'report-only' as const, blockedReasons: domainGenerationBlockedReasons(symbol, domainGeneration, commonHelper, extractableCommonHelperNames, rewriteablePublicHostGlobalNames, validatedPrivateDomainNames, validatedPublicDomainNames, variableStoreNames, promptStoreNames, privateDomainBlockerReasons) };
+      const domainCandidate = commonHelper && domainDecision.status !== 'generated'
         ? undefined
-        : maybeDomainCandidate(symbol.originalName, symbol.sourceRange, symbol.hostEffects, [symbol.originalName], domainDecision.status, domainDecision.blockedReasons);
+        : maybeDomainCandidate(symbol.originalName, symbol.sourceRange, symbol.hostEffects, [symbol.originalName], domainDecision.status, domainDecision.blockedReasons, validatedDomainGrouping.pathForName(symbol.originalName), validatedDomainGrouping.groupingForName(symbol.originalName));
       if (domainCandidate !== undefined) domainCandidates.push(domainCandidate);
       if (domainDecision.status === 'generated') {
-        symbols.push(domainFunctionSymbol(symbol));
+        symbols.push(domainFunctionSymbol(symbol, validatedDomainGrouping.pathForName(symbol.originalName)));
         continue;
       }
       const unsafeReason = unsafeLocalHelperReason(symbol, extractableCommonHelperNames);
@@ -241,20 +271,20 @@ export function classifyRisuLuaModuleTableDecisions(input: RisuLuaModuleTableCla
   };
 }
 
-function domainFunctionSymbol(symbol: RisuLuaModuleTableLexicalSymbolFact): RisuLuaModuleTableSymbolContract {
+function domainFunctionSymbol(symbol: RisuLuaModuleTableLexicalSymbolFact, targetModule: string): RisuLuaModuleTableSymbolContract {
   return {
     ...localHelperSymbol(symbol),
     declarationKind: 'domain-candidate',
     classification: 'extract:domain-function',
-    targetModule: domainFunctionPath(symbol.originalName),
+    targetModule,
   };
 }
 
 function domainPublicGlobalSymbol(
   publicGlobal: RisuLuaModuleTablePublicGlobalFact,
   symbol: RisuLuaModuleTableLexicalSymbolFact,
+  targetModule: string,
 ): RisuLuaModuleTableSymbolContract {
-  const targetModule = domainFunctionPath(publicGlobal.name);
   return {
     id: symbol.id,
     originalName: publicGlobal.name,
@@ -565,14 +595,18 @@ function maybeDomainCandidate(
   sourceSymbols: string[],
   generationStatus: RisuLuaModuleTableDomainCandidateContract['generationStatus'],
   generationBlockedReasons: string[],
+  recommendedPath = domainFunctionPath(name),
+  grouping: RisuLuaDomainGroupingMetadata,
 ): RisuLuaModuleTableDomainCandidateContract | undefined {
-  const recommendedPath = domainFunctionPath(name);
   return {
     name,
     sourceSymbols,
     sourceRanges: [sourceRange],
     confidence: 0.7,
-    evidence: [`${name} is classified as default domain logic after strict infrastructure exclusions; generationStatus=${generationStatus}.`],
+    evidence: [
+      `${name} is classified as default domain logic after strict infrastructure exclusions; generationStatus=${generationStatus}.`,
+      groupingEvidenceText(grouping),
+    ],
     recommendedPath,
     generationStatus,
     generatedPath: generationStatus === 'generated' ? recommendedPath : undefined,
@@ -580,7 +614,142 @@ function maybeDomainCandidate(
     hostEffects,
     notGeneratedReason: generationStatus === 'generated' ? '' : generationBlockedReasons.join(' '),
     autoGenerated: generationStatus === 'generated',
+    grouping,
   };
+}
+
+function groupingEvidenceText(grouping: RisuLuaDomainGroupingMetadata): string {
+  if (grouping.reason === 'repeated-token') {
+    return `Grouped into ${grouping.path} because strong token "${grouping.token}" appears with peers: ${grouping.peers.join(', ')}.`;
+  }
+  if (grouping.reason === 'cycle-coalesced') {
+    return `Grouped into ${grouping.path} to avoid generated domain require cycles with peers: ${grouping.peers.join(', ')}.`;
+  }
+  if (grouping.reason === 'normalized-token') {
+    return `Grouped into ${grouping.path} because normalized token "${grouping.token}" appears with peers: ${grouping.peers.join(', ')}.`;
+  }
+  if (grouping.reason === 'utility-family') {
+    return `Grouped into ${grouping.path} because utility family "${grouping.family}" appears with peers: ${grouping.peers.join(', ')}.`;
+  }
+  if (grouping.reason === 'action-family') {
+    return `Grouped into ${grouping.path} because action family "${grouping.family}" appears with peers: ${grouping.peers.join(', ')}.`;
+  }
+  return `Kept on singleton domain path ${grouping.path}.`;
+}
+
+function collectDomainDependencies(
+  source: string,
+  symbols: RisuLuaModuleTableLexicalSymbolFact[],
+  domainNames: readonly string[],
+): ReadonlyMap<string, readonly string[]> {
+  const domainNameSet = new Set(domainNames);
+  const dependencies = new Map<string, string[]>();
+
+  for (const name of domainNameSet) {
+    const matchingSymbols = symbols.filter((candidate) => candidate.originalName === name);
+    if (matchingSymbols.length === 0) continue;
+    const referencedNames = matchingSymbols.flatMap((symbol) => {
+      const sourceText = source.slice(symbol.sourceRange.startOffset, symbol.sourceRange.endOffset);
+      return [
+        ...symbol.captures,
+        ...symbol.callSites.map((callSite) => callSite.name),
+        ...symbol.references.map((reference) => reference.name),
+        ...callLikeDomainReferences(sourceText, domainNames, name),
+      ];
+    }).filter((referencedName) => domainNameSet.has(referencedName) && referencedName !== name);
+    dependencies.set(name, uniqueSorted(referencedNames));
+  }
+
+  return dependencies;
+}
+
+function callLikeDomainReferences(sourceText: string, domainNames: readonly string[], currentName: string): string[] {
+  const executableText = maskLuaCommentsAndStrings(sourceText);
+  return domainNames.filter((candidateName) => {
+    if (candidateName === currentName) return false;
+    return new RegExp(`(^|[^A-Za-z0-9_])${escapeRegExp(candidateName)}\\s*\\(`).test(executableText);
+  });
+}
+
+function maskLuaCommentsAndStrings(sourceText: string): string {
+  let output = '';
+  let index = 0;
+  while (index < sourceText.length) {
+    const current = sourceText[index];
+    const next = sourceText[index + 1];
+
+    if (current === '-' && next === '-') {
+      const longCommentEnd = sourceText.startsWith('--[[', index) ? sourceText.indexOf(']]', index + 4) : -1;
+      if (longCommentEnd >= 0) {
+        output += ' '.repeat(longCommentEnd + 2 - index);
+        index = longCommentEnd + 2;
+        continue;
+      }
+      const newlineIndex = sourceText.indexOf('\n', index + 2);
+      const end = newlineIndex < 0 ? sourceText.length : newlineIndex;
+      output += ' '.repeat(end - index);
+      index = end;
+      continue;
+    }
+
+    if (current === '[' && next === '[') {
+      const longStringEnd = sourceText.indexOf(']]', index + 2);
+      if (longStringEnd >= 0) {
+        output += ' '.repeat(longStringEnd + 2 - index);
+        index = longStringEnd + 2;
+        continue;
+      }
+    }
+
+    if (current === '"' || current === "'") {
+      const quote = current;
+      const start = index;
+      index += 1;
+      while (index < sourceText.length) {
+        if (sourceText[index] === '\\') {
+          index += 2;
+          continue;
+        }
+        if (sourceText[index] === quote) {
+          index += 1;
+          break;
+        }
+        index += 1;
+      }
+      output += ' '.repeat(index - start);
+      continue;
+    }
+
+    output += current;
+    index += 1;
+  }
+  return output;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function collectGeneratedPublicDomainNames(
+  symbols: RisuLuaModuleTableLexicalSymbolFact[],
+  publicGlobals: RisuLuaModuleTablePublicGlobalFact[],
+  unsafePublicNames: Map<string, { code: RisuLuaModuleTableClassificationCode; evidence: string[] }>,
+  privateDomainBlockers: Map<string, string[]>,
+  domainGeneration: RisuLuaModuleTableDomainGenerationOption,
+): string[] {
+  if (domainGeneration !== 'validated') return [];
+  const names: string[] = [];
+  for (const publicGlobal of publicGlobals) {
+    const symbol = findSymbolForPublicGlobal(symbols, publicGlobal);
+    const unsafeReason = unsafePublicNames.get(publicGlobal.name) ?? unsafePublicDomainGenerationReason(symbol, privateDomainBlockers.get(publicGlobal.name));
+    if (isPublicDomainCandidate(publicGlobal)
+      && symbol !== undefined
+      && isValidatedPublicDomainFunction(publicGlobal)
+      && unsafeReason === undefined) {
+      names.push(publicGlobal.name);
+    }
+  }
+  return uniqueSorted(names);
 }
 
 function domainGenerationBlockedReasons(
@@ -593,9 +762,11 @@ function domainGenerationBlockedReasons(
   validatedPublicDomainNames: Set<string>,
   variableStoreNames: Set<string>,
   promptStoreNames: Set<string>,
+  privateDomainBlockerReasons: string[],
 ): string[] {
   if (domainGeneration === 'report') return ['Domain generation is report-only by default.'];
   if (commonHelper) return ['Symbol is classified as a strict common helper.'];
+  if (privateDomainBlockerReasons.length > 0) return privateDomainBlockerReasons;
   const reasons: string[] = [];
   const unresolvedCaptures = symbol.captures.filter((capture) => !extractableCommonHelperNames.has(capture) && !rewriteablePublicHostGlobalNames.has(capture) && !validatedPrivateDomainNames.has(capture) && !validatedPublicDomainNames.has(capture) && !variableStoreNames.has(capture) && !promptStoreNames.has(capture));
   if (unresolvedCaptures.length > 0) reasons.push(`Captures bindings that cannot be rewritten as module dependencies: ${unresolvedCaptures.join(', ')}.`);
@@ -707,6 +878,7 @@ function collectValidatedPublicDomainNames(
   publicGlobals: RisuLuaModuleTablePublicGlobalFact[],
   publicGlobalsByName: Map<string, RisuLuaModuleTablePublicGlobalFact[]>,
   unsafePublicNames: Map<string, { code: RisuLuaModuleTableClassificationCode; evidence: string[] }>,
+  privateDomainBlockers: Map<string, string[]>,
   domainGeneration: RisuLuaModuleTableDomainGenerationOption,
 ): Set<string> {
   const names = new Set<string>();
@@ -716,6 +888,7 @@ function collectValidatedPublicDomainNames(
     if (!isPublicDomainCandidate(publicGlobal)) continue;
     if (!isValidatedPublicDomainFunction(publicGlobal)) continue;
     if (unsafePublicNames.has(publicGlobal.name)) continue;
+    if (privateDomainBlockers.has(publicGlobal.name)) continue;
     if ((publicGlobalsByName.get(publicGlobal.name)?.length ?? 0) !== 1) continue;
     if (unsafePublicGlobalReason(findSymbolForPublicGlobal(symbols, publicGlobal)) !== undefined) continue;
     names.add(publicGlobal.name);
@@ -732,6 +905,7 @@ function collectValidatedPrivateDomainNames(
   domainGeneration: RisuLuaModuleTableDomainGenerationOption,
   variableStoreNames: Set<string>,
   promptStoreNames: Set<string>,
+  privateDomainBlockers: Map<string, string[]>,
 ): Set<string> {
   const names = new Set<string>();
   if (domainGeneration !== 'validated') return names;
@@ -742,6 +916,7 @@ function collectValidatedPrivateDomainNames(
     for (const symbol of symbols) {
       if (names.has(symbol.originalName)) continue;
       if (symbol.declarationKind !== 'top-level-local-function') continue;
+      if (privateDomainBlockers.has(symbol.originalName)) continue;
       if (unsafeMutationNames(symbol).length > 0) continue;
       if (symbol.hostEffects.asyncModelNetwork.length > 0) continue;
       if (symbol.hostEffects.dynamicEnvironment.length > 0) continue;
@@ -754,8 +929,74 @@ function collectValidatedPrivateDomainNames(
   return names;
 }
 
-function unsafePublicDomainGenerationReason(symbol: RisuLuaModuleTableLexicalSymbolFact | undefined): { code: RisuLuaModuleTableClassificationCode; evidence: string[] } | undefined {
+function collectPrivateDomainGenerationBlockers(
+  analyzerResult: RisuLuaModuleTableAnalyzerResult,
+): Map<string, string[]> {
+  const reasonsByName = new Map<string, string[]>();
+  const symbolsByName = groupLexicalSymbolsByName(analyzerResult.lexicalSymbols);
+
+  for (const [name, symbols] of symbolsByName) {
+    if (symbols.length < 2) continue;
+    if (!symbols.some((symbol) => symbol.declarationKind === 'top-level-local-function')) continue;
+    addPrivateDomainBlockerReason(
+      reasonsByName,
+      name,
+      `Blocked ${name} from private-table domain generation because reassignment was found at top level.`,
+    );
+  }
+
+  for (const block of analyzerResult.proceduralBlocks) {
+    for (const mutation of block.mutations) {
+      addPrivateDomainBlockerReason(
+        reasonsByName,
+        mutation.name,
+        `Blocked ${mutation.name} from private-table domain generation because reassignment was found at top level.`,
+      );
+    }
+
+    for (const callSite of block.callSites) {
+      addPrivateDomainBlockerReason(
+        reasonsByName,
+        callSite.name,
+        `Blocked ${callSite.name} from private-table domain generation because a top-level eager call was found.`,
+      );
+    }
+
+    for (const reference of block.references) {
+      if (block.callSites.some((callSite) => callSite.name === reference.name && containsRange(callSite.sourceRange, reference.sourceRange))) continue;
+      addPrivateDomainBlockerReason(
+        reasonsByName,
+        reference.name,
+        `Blocked ${reference.name} from private-table domain generation because a top-level function-value capture was found.`,
+      );
+    }
+  }
+
+  return reasonsByName;
+}
+
+function addPrivateDomainBlockerReason(reasonsByName: Map<string, string[]>, name: string, reason: string): void {
+  const existing = reasonsByName.get(name) ?? [];
+  if (!existing.includes(reason)) reasonsByName.set(name, [...existing, reason].sort((left, right) => left.localeCompare(right)));
+}
+
+function groupLexicalSymbolsByName(symbols: RisuLuaModuleTableLexicalSymbolFact[]): Map<string, RisuLuaModuleTableLexicalSymbolFact[]> {
+  const output = new Map<string, RisuLuaModuleTableLexicalSymbolFact[]>();
+  for (const symbol of symbols) {
+    const existing = output.get(symbol.originalName) ?? [];
+    existing.push(symbol);
+    output.set(symbol.originalName, existing);
+  }
+  return output;
+}
+
+function containsRange(outer: LuaSourceRange, inner: LuaSourceRange): boolean {
+  return outer.startOffset <= inner.startOffset && outer.endOffset >= inner.endOffset;
+}
+
+function unsafePublicDomainGenerationReason(symbol: RisuLuaModuleTableLexicalSymbolFact | undefined, privateDomainBlockerReasons?: string[]): { code: RisuLuaModuleTableClassificationCode; evidence: string[] } | undefined {
   if (symbol === undefined) return { code: 'preserve:ambiguous', evidence: ['Missing lexical symbol for public global.'] };
+  if (privateDomainBlockerReasons !== undefined && privateDomainBlockerReasons.length > 0) return { code: 'preserve:ambiguous', evidence: privateDomainBlockerReasons };
   if (symbol.hostEffects.dynamicEnvironment.length > 0) return { code: 'preserve:dynamic-global-reference-risk', evidence: [`Dynamic environment usage: ${symbol.hostEffects.dynamicEnvironment.join(', ')}.`] };
   return undefined;
 }
@@ -777,10 +1018,6 @@ function unsafeMutationNames(symbol: RisuLuaModuleTableLexicalSymbolFact): strin
 function isStrictCommonHelperName(name: string): boolean {
   return /(?:trim|clamp|split|join|normalize|format|escape|unescape)/i.test(name)
     || /^(?:safeGet|appendComma|appendPipe|to[A-Z]|from[A-Z]|is[A-Z]|has[A-Z])/.test(name);
-}
-
-function domainFunctionPath(name: string): string {
-  return `lua/domain/${toSnakeCase(name)}.risulua`;
 }
 
 function collectButtonActionNames(sources: RisuLuaModuleTableButtonActionSourceInput[]): Set<string> {

@@ -511,7 +511,9 @@ describe('charx extract integration (canonical mode)', () => {
     );
 
     const outDir = path.join(workDir, 'output');
-    mkdirSync(outDir, { recursive: true });
+    mkdirSync(path.join(outDir, 'docs'), { recursive: true });
+    writeFileSync(path.join(outDir, 'docs', 'risulua-button-action-index.json'), '{}', 'utf-8');
+    writeFileSync(path.join(outDir, 'docs', 'risulua-export-manifest.json'), '{}', 'utf-8');
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
     try {
@@ -528,7 +530,14 @@ describe('charx extract integration (canonical mode)', () => {
       expect(exitCode).toBe(0);
       expect(readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).toBe(malformedLua);
       expect(existsSync(path.join(outDir, '.risuchar'))).toBe(true);
+      expect(existsSync(path.join(outDir, 'docs', 'domain-candidates.json'))).toBe(false);
+      expect(existsSync(path.join(outDir, 'docs', 'refactor-map.json'))).toBe(false);
+      expect(existsSync(path.join(outDir, 'docs', 'risulua-button-action-index.json'))).toBe(false);
+      expect(existsSync(path.join(outDir, 'docs', 'risulua-export-manifest.json'))).toBe(false);
+      expect(existsSync(path.join(outDir, 'docs', 'risulua-split-plan.json'))).toBe(false);
+      expect(existsSync(path.join(outDir, 'docs', 'risulua-split-report.md'))).toBe(false);
       expect(existsSync(path.join(outDir, 'dist'))).toBe(false);
+      expect(existsSync(path.join(outDir, 'legacy'))).toBe(false);
       expect(
         readdirSync(path.dirname(outDir)).filter((entry) =>
           entry.startsWith('.tmp-risulua-split-output-'),

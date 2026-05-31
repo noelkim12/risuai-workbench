@@ -60,19 +60,19 @@ function diagnosticEnvelope(result: DiagnosticEnvelope | MutationResultEnvelope)
 }
 
 describe('handleEditFrontmatter', () => {
-  it('returns preview with patchPlan and bodyPreserved in preview mode', async () => {
+  it('returns preview with patchPlan and bodyPreserved in preview-only mutation mode', async () => {
     const fixture = await createFrontmatterFixture('---\nenabled: true\npriority: 10\n---\nbody text\n');
     const patchStore = createPatchPlanStore();
 
     const result = diagnosticEnvelope(await handleEditFrontmatter(
       {
-        mode: 'preview',
+        mode: 'commit',
         operations: [{ key: 'priority', kind: 'set', value: '40' }],
         path: 'characters/test/lorebooks/intro.risulorebook',
         preserveBody: true,
       },
       fixture.workspace,
-      'enabled',
+      'preview-only',
       patchStore,
     ));
 
@@ -131,11 +131,11 @@ describe('handleEditFrontmatter', () => {
     expect(afterContent).toBe(malformedContent);
   });
 
-  it('rejects commit in preview-only mutation mode', async () => {
+  it('returns preview in preview-only mutation mode', async () => {
     const fixture = await createFrontmatterFixture('---\nenabled: true\n---\nbody\n');
     const patchStore = createPatchPlanStore();
 
-    const result = mutationResult(await handleEditFrontmatter(
+    const result = diagnosticEnvelope(await handleEditFrontmatter(
       {
         confirmation: { accepted: true },
         mode: 'commit',
@@ -147,7 +147,8 @@ describe('handleEditFrontmatter', () => {
       patchStore,
     ));
 
-    expect(result.status).toBe('rejected');
+    expect(result.status).toBe('ok');
+    expect(result.data).toMatchObject({ preview: true });
   });
 
   it('rejects stale expectedHash', async () => {

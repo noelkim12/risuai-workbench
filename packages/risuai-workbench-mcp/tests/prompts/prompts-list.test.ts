@@ -31,6 +31,9 @@ const expectedPromptNames = [
   'workbench.review_relationship_network',
   'workbench.review_prompt_chain',
   'workbench.explain_analyze_diagnostic',
+  'workbench.create_project',
+  'workbench.select_authoring_skill',
+  'workbench.generate_plan_from_skill',
   'workbench.creative.brainstorm_from_context',
   'workbench.creative.scamper_lorebook_entries',
   'workbench.creative.scamper_prompt_chain_variants',
@@ -101,6 +104,7 @@ describe('workbench MCP prompts', () => {
       const text = content.type === 'text' ? content.text : '';
       expect(text).toContain('Workflow:');
       expect(text).toContain('Safety contract:');
+      expect(text).toContain('# Apply artifact change');
       expect(text).toContain('must still require preview, confirmation, safety policy, and post-validation');
       expect(text).toContain('Never bypass confirmation');
       expect(text).not.toContain('automatically apply');

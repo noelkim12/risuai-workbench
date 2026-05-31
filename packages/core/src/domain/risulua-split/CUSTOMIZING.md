@@ -13,7 +13,27 @@
 - **핵심 파일**: `packages/core/src/domain/risulua-split/module-table/module-table-contracts.ts`
 - **수정 위치**: `RISULUA_MODULE_TABLE_*_PATH` 상수 정의 부분.
   - 예: `RISULUA_MODULE_TABLE_COMMON_HELPERS_PATH` 값을 바꾸면 공통 헬퍼의 저장 위치가 변경됩니다.
-- **동적 경로**: `module-table-classifier.ts` 하단의 `domainFunctionPath`, `handlerHelperPath` 함수에서 도메인별/핸들러별 파일명 생성 규칙을 수정할 수 있습니다.
+- **동적 경로**: `module-table-domain-grouping.ts`의 token grouping 규칙과 `module-table-classifier.ts`의 targetModule 배정에서 domain topic 파일명을 결정합니다. `handlerHelperPath`는 handler helper 파일명 규칙을 유지합니다.
+
+### 1.1.1. Domain grouping customization rules
+
+`module-table-domain-grouping.ts`를 수정할 때는 validated domain generation의 deterministic path contract를 먼저 지켜야 합니다. 경로가 바뀌는 규칙은 기존 workspace가 참조하던 `lua/domain/*.risulua` path를 바꿀 수 있으므로 fixture evidence와 candidate metadata를 함께 갱신합니다.
+
+Safe extensions:
+
+- singular/plural churn이 fixture로 확인된 경우에만 normalized token을 추가합니다. 예를 들어 단수와 복수 함수명이 같은 의미 단위로 반복될 때만 새 phrase를 허용합니다.
+- 최소 두 개의 generated candidate가 같은 stable family path를 공유해야 할 때만 utility-family 또는 action-family token을 추가합니다.
+- cycle coalescing 이후 semantic cluster를 복구할 때는 cluster 전체를 trial path로 되돌린 뒤 `cyclicModuleComponents()`로 require cycle이 없는지 확인합니다.
+- path가 바뀔 수 있는 grouping에는 `docs/domain-candidates.json`의 `grouping.reason`이나 grouping diagnostics처럼 사람이 검토할 수 있는 evidence text를 남깁니다.
+
+Unsafe extensions:
+
+- 모든 one-way dependency를 같은 domain 파일로 묶지 않습니다. 한 함수가 다른 함수를 호출한다는 사실만으로는 topic evidence가 아닙니다.
+- cycle에서 빠질 수 있다는 이유만으로 모든 함수를 singleton path로 복구하지 않습니다. 이는 `lua/domain/<function_name>.risulua` 파일을 과도하게 만들 수 있습니다.
+- `utils`, `helpers`, `core`처럼 넓은 bucket을 만들지 않습니다. 이런 이름은 작은 함수들을 과하게 모아 후속 설계를 어렵게 만듭니다.
+- source order나 random graph algorithm으로 path를 선택하지 않습니다. 같은 입력은 항상 같은 path를 만들어야 합니다.
+- report/wiki 의존성을 `module-table-domain-grouping.ts`로 끌어오지 않습니다. grouping은 splitter 단계의 순수 contract여야 하고, report와 wiki는 sidecar consumer로 남아야 합니다.
+- LLM, API embedding, local ONNX embedding, model download를 기본 grouping 결정에 넣지 않습니다. 이런 semantic advisor는 명시적 opt-in diagnostics로만 허용합니다.
 
 ### 1.2. 심볼 분류 규칙 수정 (추출 여부 결정)
 

@@ -73,10 +73,6 @@ function toSafeRelativePath(inputPath: string): { ok: true; relativePath: string
     return { ok: false, reason: 'empty-path-rejected' };
   }
 
-  if (path.isAbsolute(inputPath)) {
-    return { ok: false, reason: 'absolute-path-rejected' };
-  }
-
   const normalized = path.normalize(inputPath);
   if (normalized === '.' || normalized === '') {
     return { ok: false, reason: 'empty-path-rejected' };

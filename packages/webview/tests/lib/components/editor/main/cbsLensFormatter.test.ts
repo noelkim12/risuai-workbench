@@ -54,6 +54,20 @@ describe('cbsLensFormatter', () => {
     expect(createConditionLensLabel('#if', { rawCondition })).toBe('if vg_Resolution_Flag = 5');
   });
 
+  it('formats complex #when condition chains with AND operators', () => {
+    const rawCondition = '{{equal::{{getvar::first}}::1}}::and::{{equal::{{getvar::lang}}::0}}::and::{{equal::{{getvar::user_role}}::student}}';
+
+    expect(simplifyCbsConditionExpression(rawCondition)).toBe('first = 1 AND lang = 0 AND user_role = student');
+    expect(createConditionLensLabel('#when', { rawCondition })).toBe('when first = 1 AND lang = 0 AND user_role = student');
+  });
+
+  it('formats #when condition chains with OR operators', () => {
+    const rawCondition = '{{equal::{{getvar::mode}}::1}}::or::{{equal::{{getvar::mode}}::2}}';
+
+    expect(simplifyCbsConditionExpression(rawCondition)).toBe('mode = 1 OR mode = 2');
+    expect(createConditionLensLabel('#when', { rawCondition })).toBe('when mode = 1 OR mode = 2');
+  });
+
   it('marks nested assignment child traces as absorbed by the parent assignment lens', () => {
     const source = '{{settempvar::_g::{{or::{{greater_equal::{{getvar::erosion}}::2}}::{{not_equal::{{getvar::chill}}::none}}}}}}';
     const parent = {

@@ -22,7 +22,7 @@
   import SplitPane from '../shared/SplitPane.svelte';
   import VariableDrawer from '../variables/VariableDrawer.svelte';
   import VariableRail from '../variables/VariableRail.svelte';
-  import { createFallbackGetvarBindings, dedupeVariableBindings, mergeCandidateLists, toOverridePatch } from '../variables/variableDrawerTypes';
+  import { createFallbackGetvarBindings, dedupeVariableBindings, mergeCandidateLists, resolveSentinelValue, toOverridePatch } from '../variables/variableDrawerHelpers';
   import {
     MAIN_EDITOR_PROTOCOL,
     MAIN_EDITOR_PROTOCOL_VERSION,
@@ -76,7 +76,7 @@
 
   const EDIT_DEBOUNCE_MS = 350;
   const PREVIEW_DEBOUNCE_MS = 160;
-  const RUNTIME_PREVIEW_DEBOUNCE_MS = 520;
+  const RUNTIME_PREVIEW_DEBOUNCE_MS = 250;
 
   type MainEditorStructuredState = LorebookEditorState | RegexEditorState | PromptEditorState | HtmlEditorState;
   type MainEditorLocalDraftSyncState = MainEditorDraftSyncState<MainEditorStructuredState>;
@@ -146,6 +146,7 @@
   $: activeSimulatorProfile = simulatorProfiles.find((profile) => profile.id === activeProfileId) ?? simulatorProfiles[0];
   $: profileLabel = activeSimulatorProfile?.name ?? 'Default';
   $: profileSummary = buildSimulatorProfileSummary(activeSimulatorProfile);
+  $: documentPathLabel = documentDisplayPath || 'Waiting for document...';
 
   onMount(() => {
     window.addEventListener('message', handleMessage);
@@ -643,7 +644,7 @@
    * @param value - 선택된 candidate 값
    */
   function selectVariableCandidate(variableName: string, value: string): void {
-    updateVariableRaw(variableName, value);
+    updateVariableRaw(variableName, resolveSentinelValue(value));
   }
 
   /**
@@ -1337,12 +1338,7 @@
   }
 </script>
 
-{#if !initialized}
-  <div class="main-editor-loading">
-    <p>Loading Risu main editor...</p>
-  </div>
-{:else}
-  <main class="main-editor-shell" class:main-editor-shell--raw={!isStructuredAuthoring} class:main-editor-shell--drawer-open={preferences.drawerOpen} aria-label="Risu Main Editor" style={`--main-editor-authoring-ratio: ${preferences.splitRatio}fr; --main-editor-result-ratio: ${1 - preferences.splitRatio}fr;`}>
+<main class="main-editor-shell" class:main-editor-shell--raw={initialized && !isStructuredAuthoring} class:main-editor-shell--drawer-open={preferences.drawerOpen} aria-label="Risu Main Editor" style={`--main-editor-authoring-ratio: ${preferences.splitRatio}fr; --main-editor-result-ratio: ${1 - preferences.splitRatio}fr;`}>
     <aside class="main-editor-side-toolbar" aria-label="Side toolbar">
       {#if lorebookState}
         <SideToolbar onInsertSnippet={queueSnippet} />
@@ -1350,7 +1346,45 @@
         <span>Tools</span>
       {/if}
     </aside>
-    {#if isStructuredAuthoring && model}
+    {#if !model}
+      <div class="split-pane" style={`--split-pane-ratio: ${preferences.splitRatio};`}>
+        <section class="main-editor-authoring main-editor-authoring--skeleton" aria-label={`${formatKind} authoring area`} aria-busy="true">
+          <header class="main-editor-header">
+            <div class="main-editor-header__identity">
+              <div class="main-editor-header__meta">
+                <strong>{formatKind}</strong>
+                <span>v{documentVersion}</span>
+              </div>
+              <span class="main-editor-header__path" title={documentUri || documentPathLabel}>{documentPathLabel}</span>
+            </div>
+            <span class="main-editor-header__status" role="status">{status}</span>
+          </header>
+          <div class="main-editor-placeholder main-editor-placeholder--skeleton" role="status" aria-live="polite">
+            <p>Waiting for document model...</p>
+            <div class="main-editor-skeleton-stack" aria-hidden="true">
+              <span class="main-editor-skeleton-line main-editor-skeleton-line--wide"></span>
+              <span class="main-editor-skeleton-line"></span>
+              <span class="main-editor-skeleton-block"></span>
+              <span class="main-editor-skeleton-line main-editor-skeleton-line--short"></span>
+            </div>
+          </div>
+        </section>
+        <section class="main-editor-result-surface" aria-label="Result surface" aria-busy="true">
+          <div class="main-editor-tabs" role="tablist" aria-label="Result tabs">
+            <button type="button" class="main-editor-tab main-editor-tab--active" disabled>Preview</button>
+            <button type="button" class="main-editor-tab" disabled>Simulator</button>
+          </div>
+          <div class="main-editor-placeholder main-editor-placeholder--skeleton" role="status" aria-live="polite">
+            <p>Waiting for document model...</p>
+            <div class="main-editor-skeleton-stack" aria-hidden="true">
+              <span class="main-editor-skeleton-line main-editor-skeleton-line--wide"></span>
+              <span class="main-editor-skeleton-block main-editor-skeleton-block--preview"></span>
+              <span class="main-editor-skeleton-line main-editor-skeleton-line--short"></span>
+            </div>
+          </div>
+        </section>
+      </div>
+    {:else if isStructuredAuthoring && model}
       <SplitPane ratio={preferences.splitRatio} onRatioChange={updateSplitRatio}>
         <section class="main-editor-authoring main-editor-authoring--lorebook" aria-label={`${formatKind} authoring area`}>
           <header class="main-editor-header">
@@ -1523,4 +1557,3 @@
       onOpenSimulatorEditor={openSimulatorEditor}
     />
   </main>
-{/if}
