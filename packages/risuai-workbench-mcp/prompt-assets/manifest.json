@@ -17,6 +17,8 @@
     { "name": "workbench.review_prompt_chain", "file": "workbench.review_prompt_chain.md" },
     { "name": "workbench.explain_analyze_diagnostic", "file": "workbench.explain_analyze_diagnostic.md" },
     { "name": "workbench.create_project", "file": "workbench.create_project.md" },
+    { "name": "workbench.select_authoring_skill", "file": "workbench.select_authoring_skill.md" },
+    { "name": "workbench.generate_plan_from_skill", "file": "workbench.generate_plan_from_skill.md" },
     { "name": "workbench.creative.brainstorm_from_context", "file": "workbench.creative.brainstorm_from_context.md", "source": "docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md lines 703-741" },
     { "name": "workbench.creative.scamper_lorebook_entries", "file": "workbench.creative.scamper_lorebook_entries.md", "source": "docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md lines 612-626 and 703-741" },
     { "name": "workbench.creative.scamper_prompt_chain_variants", "file": "workbench.creative.scamper_prompt_chain_variants.md", "source": "docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md lines 703-741" },

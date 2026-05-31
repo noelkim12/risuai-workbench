@@ -28,7 +28,6 @@ import {
   runRisuCoreCommand,
   sanitizeDefaultOutputName,
   type RisuCoreCommandResult,
-  type RisuLuaModeInput,
 } from './core-workflow-cli';
 
 export type RunScaffoldToolResult = DiagnosticEnvelope | MutationResultEnvelope;
@@ -43,7 +42,8 @@ export interface RunScaffoldInput {
   namespace?: string;
   outDir?: string;
   postValidate?: boolean;
-  risuluaMode?: RisuLuaModeInput;
+  /** Always 'modular'. Classic is fallback-only and not caller-selectable. */
+  risuluaMode?: 'modular';
   type: ScaffoldType;
 }
 
@@ -197,8 +197,7 @@ function parseRunScaffoldInput(input: unknown): { input: RunScaffoldInput; ok: t
   const name = getStringField(candidate, 'name');
   if (!name) return { ok: false, reason: 'name must be a non-empty string.' };
   const mode: PatchPlanMutationMode = 'commit';
-  const risuluaMode = candidate.risuluaMode;
-  if (risuluaMode !== undefined && risuluaMode !== 'classic' && risuluaMode !== 'modular') return { ok: false, reason: 'risuluaMode must be classic or modular.' };
+  // risuluaMode is hardcoded to 'modular'. Caller input is ignored.
   return {
     input: {
       confirmation: getConfirmationField(candidate),
@@ -208,7 +207,7 @@ function parseRunScaffoldInput(input: unknown): { input: RunScaffoldInput; ok: t
       namespace: getStringField(candidate, 'namespace'),
       outDir: getStringField(candidate, 'outDir'),
       postValidate: getBooleanField(candidate, 'postValidate'),
-      risuluaMode,
+      risuluaMode: 'modular' as const,
       type: type as ScaffoldType,
     },
     ok: true,

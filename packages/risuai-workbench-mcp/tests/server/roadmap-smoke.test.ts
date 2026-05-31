@@ -97,6 +97,7 @@ describe('Task 11 MCP roadmap smoke', () => {
         'workbench.creative.preview_idea_patch',
         'workbench.creative.apply_idea_patch',
         'workbench.creative.save_idea_session',
+        'workbench.list_authoring_skills',
       ]));
       expect(resourceTemplates.resourceTemplates.map((resource) => resource.name)).toEqual(expect.arrayContaining([
         'workbench.resource.rule_catalog',

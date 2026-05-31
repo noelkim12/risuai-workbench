@@ -108,4 +108,22 @@ describe('prompt asset loader', () => {
       expect(entry.file.startsWith('/')).toBe(false);
     }
   });
+
+  it('renders authoring skill prompts with approval-gated guidance', () => {
+    const selectText = renderPromptAsset('workbench.select_authoring_skill', {
+      context: 'build a choice button loop',
+      target: 'modules/adventure',
+    });
+    const planText = renderPromptAsset('workbench.generate_plan_from_skill', {
+      context: 'approved skill: structured-output-to-ui-loop',
+      target: 'modules/adventure',
+    });
+
+    expect(selectText).toContain('Call `workbench.route_intent`');
+    expect(selectText).toContain('Read `risuai-workbench://skills/index`');
+    expect(selectText).toContain('Never apply a skill without explicit user approval');
+    expect(planText).toContain('Generate a Korean planning document preview');
+    expect(planText).toContain('Do not write files automatically');
+    expect(planText).toContain('type: authoring-skill-plan');
+  });
 });
