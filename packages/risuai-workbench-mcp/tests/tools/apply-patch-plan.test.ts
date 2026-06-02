@@ -167,7 +167,7 @@ describe('handleApplyPatchPlan', () => {
     expect(JSON.parse(await readFile(fixture.orderPath, 'utf8'))).toContain('background.risulorebook');
   });
 
-  it('rejects preview-only mode, unknown id, and outside paths without target writes', async () => {
+  it('rejects preview-only mode and unknown id, but applies explicitly provided outside paths', async () => {
     const fixture = await createApplyFixture();
     const patchStore = createPatchPlanStore();
     const preview = await handleSuggestOrderPatch(
@@ -186,24 +186,25 @@ describe('handleApplyPatchPlan', () => {
       { confirmation: { accepted: true }, patchPlanId: 'patch:missing' },
       { mutationMode: 'enabled', patchStore, workspace: fixture.workspace },
     ));
+    const outsideRelativePath = `../${path.basename(fixture.root)}-escape.txt`;
     const outsidePlan = createPatchPlan({
       expectedDiagnostics: [],
-      intent: 'Outside create must fail',
-      operations: [{ content: 'escape\n', kind: 'file.create', path: '../escape.txt' }],
-      preconditions: [createNonexistencePrecondition('../escape.txt')],
+      intent: 'Outside create is explicit and should apply',
+      operations: [{ content: 'escape\n', kind: 'file.create', path: outsideRelativePath }],
+      preconditions: [createNonexistencePrecondition(outsideRelativePath)],
       workspaceRoot: fixture.root,
     });
     patchStore.savePatchPlan(outsidePlan);
     const outside = mutationResult(await handleApplyPatchPlan(
-      { confirmation: { accepted: true }, patchPlanId: outsidePlan.patchPlanId },
+      { confirmation: { accepted: true }, options: { postValidate: false }, patchPlanId: outsidePlan.patchPlanId },
       { mutationMode: 'enabled', patchStore, workspace: fixture.workspace },
     ));
 
     expect(previewOnly.status).toBe('rejected');
     expect(unknown.status).toBe('rejected');
-    expect(outside.status).toBe('rejected');
-    expect(outside.postValidation.diagnostics.some((diagnostic) => diagnostic.ruleId === 'patch.apply.path-outside-workspace')).toBe(true);
+    expect(outside.status).toBe('applied');
     expect(await readFile(fixture.orderPath, 'utf8')).toBe(beforeOrder);
+    expect(await readFile(path.resolve(fixture.root, outsideRelativePath), 'utf8')).toBe('escape\n');
   });
 
   it('records failed-validation without automatic rollback when post-validation fails', async () => {

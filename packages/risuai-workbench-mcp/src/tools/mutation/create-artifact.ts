@@ -111,7 +111,7 @@ export async function handleCreateArtifact(
   const safeTargetPath = await resolveSafeWorkspacePath({ inputPath: canonicalPath, intent: 'create-missing', workspace });
   if (!safeTargetPath.ok) {
     return createDiagnosticEnvelope({
-      diagnostics: [{ category: 'path', id: 'PATH_OUTSIDE_WORKSPACE', message: `Path resolves outside workspace: ${canonicalPath} (${safeTargetPath.reason}).`, path: canonicalPath, ruleId: 'path.boundary', severity: 'error' }],
+      diagnostics: [{ category: 'path', id: 'PATH_RESOLVE_FAILED', message: `Path resolution failed: ${canonicalPath} (${safeTargetPath.reason}).`, path: canonicalPath, ruleId: `path.${safeTargetPath.reason}`, severity: 'error' }],
       status: 'domain_error',
       tool: TOOL_NAME,
     });

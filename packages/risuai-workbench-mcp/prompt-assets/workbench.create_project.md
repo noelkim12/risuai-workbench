@@ -33,6 +33,6 @@ Do NOT create project skeleton files manually (e.g., direct file writes, mkdir, 
 ## Safety contract
 
 - Use `workbench.run_scaffold` as the only tool for new project skeleton creation.
-- Do not bypass the mutation safety gate, confirmation requirement, or workspace boundary checks.
+- Do not bypass the mutation safety gate, confirmation requirement, or hash preconditions.
 - The default server mutation mode is `preview-only`; actual writes require `enabled` mode plus confirmation.
 - Post-validation checks that expected scaffold markers exist in the output directory.

@@ -1,5 +1,5 @@
 /**
- * Workspace safe path boundary tests for MCP mutation foundations.
+ * Path resolution tests for MCP mutation foundations.
  * @file packages/risuai-workbench-mcp/tests/project/safe-path.test.ts
  */
 
@@ -33,7 +33,7 @@ async function createWorkspaceFixture(): Promise<{ outsideFile: string; root: st
 }
 
 describe('resolveSafeWorkspacePath', () => {
-  it('rejects traversal outside the workspace root', async () => {
+  it('resolves traversal paths instead of enforcing a workspace boundary', async () => {
     const fixture = await createWorkspaceFixture();
     const context = await createStartupContext({ root: fixture.root });
 
@@ -44,11 +44,11 @@ describe('resolveSafeWorkspacePath', () => {
     });
 
     expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('Expected traversal path to be rejected.');
-    expect(result.reason).toBe('path-outside-workspace');
+    if (result.ok) throw new Error('Expected missing traversal target to be reported.');
+    expect(result.reason).toBe('target-missing');
   });
 
-  it('rejects absolute paths outside the workspace root', async () => {
+  it('accepts absolute paths outside the configured workspace root', async () => {
     const fixture = await createWorkspaceFixture();
     const context = await createStartupContext({ root: fixture.root });
 
@@ -58,9 +58,10 @@ describe('resolveSafeWorkspacePath', () => {
       workspace: context.workspace,
     });
 
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('Expected absolute outside path to be rejected.');
-    expect(result.reason).toBe('path-outside-workspace');
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('Expected absolute outside path to be resolved.');
+    expect(result.absolutePath).toBe(fixture.outsideFile);
+    expect(result.relativePath).toBe(fixture.outsideFile.split(path.sep).join('/'));
   });
 
   it('accepts absolute paths inside the workspace root', async () => {
@@ -79,7 +80,7 @@ describe('resolveSafeWorkspacePath', () => {
     expect(result.relativePath).toBe('characters/merry/lorebooks/intro.risulorebook');
   });
 
-  it('rejects symlink escape for read and write without changing target hash', async () => {
+  it('resolves symlink targets instead of rejecting symlink escape', async () => {
     const fixture = await createWorkspaceFixture();
     const linkPath = path.join(fixture.root, 'linked-outside.md');
     await symlink(fixture.outsideFile, linkPath);
@@ -99,17 +100,17 @@ describe('resolveSafeWorkspacePath', () => {
     const after = await readFile(fixture.outsideFile, 'utf8');
     const afterHash = await computeFileHash(fixture.outsideFile);
 
-    expect(readResult.ok).toBe(false);
-    if (readResult.ok) throw new Error('Expected symlink read to be rejected.');
-    expect(readResult.reason).toBe('symlink-escape');
-    expect(writeResult.ok).toBe(false);
-    if (writeResult.ok) throw new Error('Expected symlink write to be rejected.');
-    expect(writeResult.reason).toBe('symlink-escape');
+    expect(readResult.ok).toBe(true);
+    if (!readResult.ok) throw new Error('Expected symlink read to resolve.');
+    expect(readResult.absolutePath).toBe(fixture.outsideFile);
+    expect(writeResult.ok).toBe(true);
+    if (!writeResult.ok) throw new Error('Expected symlink write to resolve.');
+    expect(writeResult.absolutePath).toBe(fixture.outsideFile);
     expect(after).toBe('outside sentinel\n');
     expect(afterHash).toBe(beforeHash);
   });
 
-  it('fails closed when the workspace root is missing', async () => {
+  it('falls back to process cwd when the configured workspace root is missing', async () => {
     const fixture = await createWorkspaceFixture();
     const missingRoot = path.join(fixture.root, 'missing-root');
     const context = await createStartupContext({ root: missingRoot });
@@ -121,8 +122,8 @@ describe('resolveSafeWorkspacePath', () => {
     });
 
     expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('Expected missing workspace root to reject safe path.');
-    expect(result.reason).toBe('workspace-root-unavailable');
+    if (result.ok) throw new Error('Expected unresolved relative path to be missing.');
+    expect(result.reason).toBe('target-missing');
   });
 
   it('allows an in-workspace source artifact path when mutation mode is enabled', async () => {

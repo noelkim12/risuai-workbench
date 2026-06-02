@@ -83,7 +83,7 @@ export async function handleEditMetadata(
   const safePath = await resolveSafeWorkspacePath({ inputPath: editInput.path, intent: 'read-existing', workspace });
   if (!safePath.ok) {
     return createDiagnosticEnvelope({
-      diagnostics: [{ category: 'path', id: 'PATH_OUTSIDE_WORKSPACE', message: `Path resolves outside workspace: ${editInput.path} (${safePath.reason}).`, path: editInput.path, ruleId: 'path.boundary', severity: 'error' }],
+        diagnostics: [{ category: 'path', id: 'PATH_RESOLVE_FAILED', message: `Path resolution failed: ${editInput.path} (${safePath.reason}).`, path: editInput.path, ruleId: `path.${safePath.reason}`, severity: 'error' }],
       status: 'domain_error',
       tool: TOOL_NAME,
     });

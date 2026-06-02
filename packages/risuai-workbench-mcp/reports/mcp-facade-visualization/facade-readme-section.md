@@ -117,7 +117,7 @@ sequenceDiagram
     User-->>Client: accepted confirmation
     Client->>Apply: patchPlanId + confirmation
     Apply->>Store: load PatchPlan
-    Apply->>Gate: check confirmation, mutation mode, workspace boundary, preconditions
+Apply->>Gate: check confirmation, mutation mode, preconditions
     Gate-->>Apply: allowed or rejected
     Apply->>Engine: apply approved operations
     Engine-->>Apply: mutation result

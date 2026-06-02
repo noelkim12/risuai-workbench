@@ -239,7 +239,7 @@ function inputError(reason: string): DiagnosticEnvelope {
 }
 
 function pathError(targetPath: string, reason: string): DiagnosticEnvelope {
-  return createDiagnosticEnvelope({ diagnostics: [{ category: 'path', id: 'PATH_OUTSIDE_WORKSPACE', message: `Path resolves outside workspace: ${targetPath} (${reason}).`, path: targetPath, ruleId: 'path.boundary', severity: 'error' }], status: 'domain_error', tool: TOOL_NAME });
+  return createDiagnosticEnvelope({ diagnostics: [{ category: 'path', id: 'PATH_RESOLVE_FAILED', message: `Path resolution failed: ${targetPath} (${reason}).`, path: targetPath, ruleId: `path.${reason}`, severity: 'error' }], status: 'domain_error', tool: TOOL_NAME });
 }
 
 function workspaceDiagnostic(reason: string | null): WorkbenchDiagnostic {
