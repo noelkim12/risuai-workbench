@@ -43,7 +43,7 @@ export interface EvaluateMutationSafetyGateOptions {
 
 /**
  * evaluateMutationSafetyGate 함수.
- * mode, path boundary, generated-only allowlist, confirmation, hash precondition을 한 곳에서 평가함.
+ * mode, generated-only allowlist, confirmation, hash precondition을 한 곳에서 평가함.
  *
  * @param options - downstream mutating handler가 전달하는 안전성 평가 입력
  * @returns transport exception 없이 반환 가능한 mutation safety 결과

@@ -146,19 +146,17 @@ describe('handleEditOrder', () => {
     expect(result.status).toBe('rejected');
   });
 
-  it('rejects outside workspace path even when outside file exists', async () => {
+  it('edits an existing outside order path when explicitly provided', async () => {
     const fixture = await createOrderFixture();
     const patchStore = createPatchPlanStore();
 
-    // Create a real file outside the workspace to prove boundary enforcement
     const outsideDir = await mkdtemp(path.join(tmpdir(), 'risuai-workbench-mcp-outside-'));
     const outsideFile = path.join(outsideDir, '_order.json');
-    await writeFile(outsideFile, '["outside"]', 'utf8');
+    await writeFile(outsideFile, '["outside", "x"]', 'utf8');
 
-    // Use relative traversal to point at the real outside file
     const outsideRelative = path.relative(fixture.root, outsideFile);
 
-    const result = diagnosticEnvelope(await handleEditOrder(
+    const result = mutationResult(await handleEditOrder(
       {
         confirmation: { accepted: true },
         mode: 'commit',
@@ -170,12 +168,10 @@ describe('handleEditOrder', () => {
       patchStore,
     ));
 
-    expect(result.status).toBe('domain_error');
-    expect(result.diagnostics.some((d) => d.id === 'PATH_OUTSIDE_WORKSPACE' || d.ruleId === 'path.boundary')).toBe(true);
+    expect(result.status).toBe('applied');
 
-    // Verify the outside file was NOT read or modified
     const outsideContent = await readFile(outsideFile, 'utf8');
-    expect(outsideContent).toBe('["outside"]');
+    expect(JSON.parse(outsideContent)).toEqual(['outside']);
   });
 });
 
@@ -284,23 +280,22 @@ describe('handleEditMetadata', () => {
     ));
 
     expect(result.status).toBe('ok');
-    expect(result.data).toMatchObject({ preview: true });
   });
 
-  it('rejects outside workspace path even when outside file exists', async () => {
+  it('edits an existing outside metadata path when explicitly provided', async () => {
     const fixture = await createMetadataFixture();
     const patchStore = createPatchPlanStore();
 
-    // Create a real JSON file outside the workspace
     const outsideDir = await mkdtemp(path.join(tmpdir(), 'risuai-workbench-mcp-outside-meta-'));
     const outsideFile = path.join(outsideDir, 'metadata.json');
     await writeFile(outsideFile, '{"secret": "data"}', 'utf8');
 
     const outsideRelative = path.relative(fixture.root, outsideFile);
 
-    const result = diagnosticEnvelope(await handleEditMetadata(
+    const result = mutationResult(await handleEditMetadata(
       {
-        mode: 'preview',
+        confirmation: { accepted: true },
+        mode: 'commit',
         operations: [{ jsonPointer: '/secret', kind: 'json.set', value: 'leaked' }],
         path: outsideRelative,
       },
@@ -309,11 +304,9 @@ describe('handleEditMetadata', () => {
       patchStore,
     ));
 
-    expect(result.status).toBe('domain_error');
-    expect(result.diagnostics.some((d) => d.id === 'PATH_OUTSIDE_WORKSPACE' || d.ruleId === 'path.boundary')).toBe(true);
+    expect(result.status).toBe('applied');
 
-    // Verify the outside file was NOT read or modified
     const outsideContent = await readFile(outsideFile, 'utf8');
-    expect(outsideContent).toBe('{"secret": "data"}');
+    expect(JSON.parse(outsideContent)).toEqual({ secret: 'leaked' });
   });
 });

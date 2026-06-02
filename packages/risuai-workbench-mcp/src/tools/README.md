@@ -71,7 +71,7 @@ Facade tool 등록은 `packages/risuai-workbench-mcp/src/server.ts`의 facade re
 | read-only / preview | `DiagnosticEnvelope` | `schema: risuai-workbench-mcp.diagnostics`, `status`, `diagnostics`, optional `data` 포함 |
 | mutation | `MutationResultEnvelope` 또는 `DiagnosticEnvelope` | `schema: risuai-workbench-mcp.mutation-result`, `changedFiles`, `postValidation`, `mutationId`, `resourceLinks` 포함 |
 
-Mutation 계열 handler는 대체로 `unknown` input을 받은 뒤 내부 parse 함수와 `createUnknownFieldDiagnosticEnvelope()`로 fail-closed 검증을 수행합니다. 실제 write는 `evaluateMutationSafetyGate()`에서 workspace boundary, mutation mode, hash precondition, confirmation gate를 통과해야 합니다.
+Mutation 계열 handler는 대체로 `unknown` input을 받은 뒤 내부 parse 함수와 `createUnknownFieldDiagnosticEnvelope()`로 fail-closed 검증을 수행합니다. 실제 write는 `evaluateMutationSafetyGate()`에서 mutation mode, hash precondition, confirmation gate를 통과해야 합니다.
 
 ## Handler catalog
 
@@ -188,7 +188,7 @@ Default callers should use `workbench.patch_preview` followed by `workbench.patc
 
 ## Safety notes
 
-- 모든 workspace path는 `resolveSafeWorkspacePath()`로 workspace-relative boundary를 통과해야 합니다.
+- path input은 `resolveSafeWorkspacePath()`로 absolute path로 해석됩니다. 상대 경로는 startup context 기준으로 해석합니다.
 - 기본 mutation mode는 서버 CLI의 `--mutation` 값에 따릅니다. 기본값은 `preview-only`입니다.
 - source artifact write는 `enabled` mode와 confirmation이 필요합니다.
 - `workbench.run_extract`는 extract output directory를 새로 만들고, 이어서 그 하위의 `wiki/`를 생성하거나 기존 wiki를 갱신합니다. 이 wiki 갱신 범위는 preview의 `postExtractAnalyze.defaultWikiRoot`와 confirmation text의 `WITH WIKI <wikiRoot>`에 명시됩니다.

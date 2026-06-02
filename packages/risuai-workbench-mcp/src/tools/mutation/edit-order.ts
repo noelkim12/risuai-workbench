@@ -87,7 +87,7 @@ export async function handleEditOrder(
   const safePath = await resolveSafeWorkspacePath({ inputPath: editInput.orderPath, intent: 'read-existing', workspace });
   if (!safePath.ok) {
     return createDiagnosticEnvelope({
-      diagnostics: [{ category: 'path', id: 'PATH_OUTSIDE_WORKSPACE', message: `Path resolves outside workspace: ${editInput.orderPath} (${safePath.reason}).`, path: editInput.orderPath, ruleId: 'path.boundary', severity: 'error' }],
+        diagnostics: [{ category: 'path', id: 'PATH_RESOLVE_FAILED', message: `Path resolution failed: ${editInput.orderPath} (${safePath.reason}).`, path: editInput.orderPath, ruleId: `path.${safePath.reason}`, severity: 'error' }],
       status: 'domain_error',
       tool: TOOL_NAME,
     });

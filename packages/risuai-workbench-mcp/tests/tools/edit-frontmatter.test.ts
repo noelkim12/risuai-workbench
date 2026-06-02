@@ -171,18 +171,17 @@ describe('handleEditFrontmatter', () => {
     expect(result.status).toBe('rejected');
   });
 
-  it('rejects path outside workspace even when outside file exists', async () => {
+  it('edits an existing outside path when explicitly provided', async () => {
     const fixture = await createFrontmatterFixture('---\nenabled: true\n---\nbody\n');
     const patchStore = createPatchPlanStore();
 
-    // Create a real file outside the workspace
     const outsideDir = await mkdtemp(path.join(tmpdir(), 'risuai-workbench-mcp-outside-fm-'));
     const outsideFile = path.join(outsideDir, 'target.txt');
     await writeFile(outsideFile, '---\nenabled: secret\n---\nsecret body\n', 'utf8');
 
     const outsideRelative = path.relative(fixture.root, outsideFile);
 
-    const result = diagnosticEnvelope(await handleEditFrontmatter(
+    const result = mutationResult(await handleEditFrontmatter(
       {
         confirmation: { accepted: true },
         mode: 'commit',
@@ -194,11 +193,9 @@ describe('handleEditFrontmatter', () => {
       patchStore,
     ));
 
-    expect(result.status).toBe('domain_error');
-    expect(result.diagnostics.some((d) => d.id === 'PATH_OUTSIDE_WORKSPACE' || d.ruleId === 'path.boundary')).toBe(true);
+    expect(result.status).toBe('applied');
 
-    // Verify the outside file was NOT read or modified
     const outsideContent = await readFile(outsideFile, 'utf8');
-    expect(outsideContent).toContain('secret');
+    expect(outsideContent).toContain('enabled: false');
   });
 });
