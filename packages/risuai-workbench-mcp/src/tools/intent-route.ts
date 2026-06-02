@@ -367,15 +367,23 @@ function buildRouteResult(
     ? [...routingSignals, 'cbs_authoring']
     : routingSignals;
 
+  const intent = overrides.intent;
+  const capabilities = intentToCapabilities(intent);
+  const recommendedActions = intentToRecommendedActions(intent);
+  const nextTool = intentToNextTool(intent);
+  const nextInput = intentToNextInput(intent, input);
+  const facadeRecommendedTools = intentToFacadeRecommendedTools(intent);
+
   return createIntentRouteResult({
     allowedTools: overrides.allowedTools ?? [],
     blockedTools: overrides.blockedTools ?? [],
+    capabilities,
     commitAllowed: overrides.commitAllowed,
     confidence: overrides.confidence,
     discouragedTools: filterImplemented(overrides.discouragedTools ?? []),
     domainTags,
     explanation: overrides.explanation,
-    intent: overrides.intent,
+    intent,
     missingInputs: overrides.missingInputs ?? [],
     mutationMode:
       overrides.mutationMode ??
@@ -386,8 +394,11 @@ function buildRouteResult(
         stopConditions: overrides.stopConditions,
       }),
     mutationRequested: overrides.mutationRequested,
+    nextInput,
     nextStep: overrides.nextStep,
-    recommendedTools: limitRecommended(overrides.recommendedTools ?? overrides.allowedTools ?? []),
+    nextTool,
+    recommendedActions,
+    recommendedTools: uniqueStable(facadeRecommendedTools),
     requiredEvidence: overrides.requiredEvidence ?? [],
     risk: overrides.risk,
     routeId: generateRouteId(input),
@@ -468,6 +479,151 @@ function domainRecommendedTools(domainTags: readonly string[]): readonly string[
 }
 
 // ---------------------------------------------------------------------------
+// Facade-oriented field mappings (Phase 8)
+// ---------------------------------------------------------------------------
+
+const FACADE_TOOLS = {
+  catalog: 'workbench.catalog',
+  prepareAction: 'workbench.prepare_action',
+  runAction: 'workbench.run_action',
+  context: 'workbench.context',
+  patchPreview: 'workbench.patch_preview',
+  patchApply: 'workbench.patch_apply',
+} as const;
+
+function intentToCapabilities(intent: WorkbenchIntent): readonly string[] {
+  switch (intent) {
+    case 'workspace.inspect':
+    case 'artifact.inspect':
+      return ['inspect'];
+    case 'artifact.validate':
+      return ['validate'];
+    case 'artifact.patch.preview':
+      return ['patch.preview'];
+    case 'artifact.patch.apply':
+      return ['patch.apply'];
+    case 'artifact.frontmatter.preview':
+      return ['patch.preview'];
+    case 'artifact.order.preview':
+      return ['patch.preview'];
+    case 'wiki.refresh.preview':
+      return ['wiki'];
+    case 'core.scaffold.preview':
+      return ['core.scaffold'];
+    case 'analyze.variable_flow':
+    case 'analyze.lua_handler':
+      return ['analyze'];
+    case 'creative.idea_to_patch':
+      return ['creative.ideation', 'creative.context'];
+    case 'creative.apply_patch':
+      return ['creative.apply'];
+    case 'docs.update':
+      return ['skills'];
+    case 'unknown':
+    default:
+      return [];
+  }
+}
+
+function intentToRecommendedActions(intent: WorkbenchIntent): readonly string[] {
+  switch (intent) {
+    case 'workspace.inspect':
+    case 'artifact.inspect':
+      return ['inspect.path', 'inspect.artifact'];
+    case 'artifact.validate':
+      return ['validate.artifact', 'validate.path'];
+    case 'artifact.patch.preview':
+      return ['patch.suggest', 'patch.suggest_order', 'patch.suggest_frontmatter', 'patch.suggest_root_marker'];
+    case 'artifact.patch.apply':
+      return ['patch.apply'];
+    case 'artifact.frontmatter.preview':
+      return ['patch.suggest_frontmatter'];
+    case 'artifact.order.preview':
+      return ['patch.suggest_order'];
+    case 'wiki.refresh.preview':
+      return ['wiki.search', 'wiki.refresh'];
+    case 'core.scaffold.preview':
+      return [];
+    case 'analyze.variable_flow':
+      return ['analyze.query_variable_flow', 'analyze.query_variable'];
+    case 'analyze.lua_handler':
+      return ['analyze.query_lua_analysis', 'analyze.query_lua_call_graph', 'analyze.query_lua_state_access', 'analyze.query_risulua_api'];
+    case 'creative.idea_to_patch':
+      return ['creative.gather_context', 'creative.brainstorm_scamper', 'creative.critique_six_hats'];
+    case 'creative.apply_patch':
+      return ['creative.apply_idea_patch'];
+    case 'docs.update':
+      return ['skills.list', 'skills.recommend', 'skills.apply'];
+    case 'unknown':
+    default:
+      return [];
+  }
+}
+
+function intentToNextTool(intent: WorkbenchIntent): string {
+  switch (intent) {
+    case 'artifact.patch.apply':
+    case 'creative.apply_patch':
+      return FACADE_TOOLS.patchApply;
+    default:
+      return FACADE_TOOLS.catalog;
+  }
+}
+
+function intentToNextInput(
+  intent: WorkbenchIntent,
+  input: IntentRouteInput,
+): Record<string, unknown> {
+  switch (intent) {
+    case 'artifact.patch.apply':
+      return { patchPlanId: input.patchPlanId ?? '' };
+    case 'creative.apply_patch':
+      return { patchPlanId: input.ideaId ?? '' };
+    case 'workspace.inspect':
+    case 'artifact.inspect':
+      return { capability: 'inspect', limit: 5 };
+    case 'artifact.validate':
+      return { capability: 'validate', limit: 5 };
+    case 'artifact.patch.preview':
+    case 'artifact.frontmatter.preview':
+    case 'artifact.order.preview':
+      return { capability: 'patch.preview', limit: 5 };
+    case 'wiki.refresh.preview':
+      return { capability: 'wiki', limit: 5 };
+    case 'core.scaffold.preview':
+      return { query: 'scaffold', limit: 5 };
+    case 'analyze.variable_flow':
+    case 'analyze.lua_handler':
+      return { capability: 'analyze', limit: 5 };
+    case 'creative.idea_to_patch':
+      return { capability: 'creative.ideation', limit: 5 };
+    case 'docs.update':
+      return { capability: 'skills', limit: 5 };
+    case 'unknown':
+    default:
+      return { limit: 5 };
+  }
+}
+
+function intentToFacadeRecommendedTools(intent: WorkbenchIntent): readonly string[] {
+  switch (intent) {
+    case 'artifact.patch.apply':
+    case 'creative.apply_patch':
+      return [FACADE_TOOLS.patchApply, FACADE_TOOLS.catalog];
+    case 'artifact.patch.preview':
+    case 'artifact.frontmatter.preview':
+    case 'artifact.order.preview':
+      return [FACADE_TOOLS.patchPreview, FACADE_TOOLS.catalog, FACADE_TOOLS.prepareAction, FACADE_TOOLS.runAction];
+    case 'creative.idea_to_patch':
+      return [FACADE_TOOLS.catalog, FACADE_TOOLS.context, FACADE_TOOLS.prepareAction, FACADE_TOOLS.runAction];
+    case 'unknown':
+      return [FACADE_TOOLS.catalog];
+    default:
+      return [FACADE_TOOLS.catalog, FACADE_TOOLS.prepareAction, FACADE_TOOLS.runAction];
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Constraint application
 // ---------------------------------------------------------------------------
 
@@ -539,13 +695,20 @@ function applyConstraints(
     }
   }
 
+  // Sanitize facade recommendedTools: remove patch preview/apply when read-only
+  const facadeMutationTools = new Set<string>([FACADE_TOOLS.patchPreview, FACADE_TOOLS.patchApply]);
+  const sanitizedRecommendedTools = constraints.forceReadOnly
+    ? recommendedTools.filter((t) => !facadeMutationTools.has(t))
+    : recommendedTools;
+
   return createIntentRouteResult({
     allowedTools: filterImplemented(allowedTools),
     blockedTools: filterImplemented(blockedTools),
+    capabilities: route.capabilities,
     commitAllowed,
     confidence: route.confidence,
     discouragedTools: filterImplemented(
-      withoutTools(discouragedTools, unionSets([blockedTools, recommendedTools])),
+      withoutTools(discouragedTools, unionSets([blockedTools, sanitizedRecommendedTools])),
     ),
     domainTags: route.domainTags,
     explanation: route.explanation,
@@ -553,8 +716,11 @@ function applyConstraints(
     missingInputs: route.missingInputs,
     mutationMode,
     mutationRequested: route.mutationRequested,
+    nextInput: route.nextInput,
     nextStep: route.nextStep,
-    recommendedTools: filterImplemented(recommendedTools),
+    nextTool: route.nextTool,
+    recommendedActions: route.recommendedActions,
+    recommendedTools: uniqueStable(sanitizedRecommendedTools),
     requiredEvidence: route.requiredEvidence,
     risk,
     routeId: route.routeId,

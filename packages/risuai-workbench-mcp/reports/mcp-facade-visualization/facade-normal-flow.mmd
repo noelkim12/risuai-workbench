@@ -1,0 +1,25 @@
+sequenceDiagram
+    participant Client as MCP client
+    participant Route as route_intent
+    participant Catalog as catalog
+    participant Prepare as prepare_action
+    participant Run as run_action
+    participant Registry as ActionRegistry
+    participant Action as Internal action
+
+    Client->>Route: classify user request
+    Route-->>Client: capabilities + recommendedActions + nextTool
+    Client->>Catalog: query by capability / intent
+    Catalog->>Registry: search actions
+    Registry-->>Catalog: matching action summaries
+    Catalog-->>Client: action candidates
+    Client->>Prepare: prepare selected actionId
+    Prepare->>Registry: read input schema + examples
+    Registry-->>Prepare: action metadata
+    Prepare-->>Client: required fields + examples + next
+    Client->>Run: run actionId with args/contextId
+    Run->>Registry: resolve action
+    Registry-->>Run: action + risk + schema
+    Run->>Action: validate args and execute
+    Action-->>Run: result
+    Run-->>Client: structured tool result

@@ -165,13 +165,17 @@ describe('intent route contract', () => {
     const parsed = intentRouteResultSchema.parse({
       allowedTools: ['workbench.inspect_path'],
       blockedTools: ['workbench.apply_patch_plan'],
+      capabilities: ['inspect'],
       commitAllowed: false,
       confidence: 0.85,
       explanation: 'Read-only inspect request with no mutation language.',
       intent: 'artifact.inspect',
       missingInputs: [],
       mutationRequested: false,
+      nextInput: { capability: 'inspect', limit: 5 },
       nextStep: 'inspect',
+      nextTool: 'workbench.catalog',
+      recommendedActions: ['inspect.path', 'inspect.artifact'],
       requiredEvidence: [],
       risk: 'read_only',
       routeId: 'route_abc123',
@@ -186,12 +190,17 @@ describe('intent route contract', () => {
     expect(parsed.intent).toBe('artifact.inspect');
     expect(parsed.risk).toBe('read_only');
     expect(parsed.nextStep).toBe('inspect');
+    expect(parsed.capabilities).toEqual(['inspect']);
+    expect(parsed.recommendedActions).toEqual(['inspect.path', 'inspect.artifact']);
+    expect(parsed.nextTool).toBe('workbench.catalog');
+    expect(parsed.nextInput).toEqual({ capability: 'inspect', limit: 5 });
   });
 
   it('accepts route guidance fields for recommended, discouraged, domain, and signal metadata', () => {
     const parsed = intentRouteResultSchema.parse({
       allowedTools: ['workbench.inspect_path', 'workbench.validate_frontmatter'],
       blockedTools: ['workbench.apply_patch_plan'],
+      capabilities: ['patch.preview'],
       commitAllowed: false,
       confidence: 0.86,
       discouragedTools: ['workbench.edit_frontmatter'],
@@ -200,8 +209,11 @@ describe('intent route contract', () => {
       intent: 'artifact.frontmatter.preview',
       missingInputs: [],
       mutationRequested: true,
+      nextInput: { capability: 'patch.preview', limit: 5 },
       nextStep: 'preview',
-      recommendedTools: ['workbench.inspect_path', 'workbench.validate_frontmatter', 'workbench.suggest_frontmatter_patch'],
+      nextTool: 'workbench.catalog',
+      recommendedActions: ['patch.suggest_frontmatter'],
+      recommendedTools: ['workbench.patch_preview', 'workbench.catalog', 'workbench.prepare_action', 'workbench.run_action'],
       requiredEvidence: ['resolved target path', 'current frontmatter fields'],
       risk: 'preview_only',
       routeId: 'route_guidance',
@@ -213,19 +225,25 @@ describe('intent route contract', () => {
     });
 
     expect(parsed.recommendedTools).toEqual([
-      'workbench.inspect_path',
-      'workbench.validate_frontmatter',
-      'workbench.suggest_frontmatter_patch',
+      'workbench.patch_preview',
+      'workbench.catalog',
+      'workbench.prepare_action',
+      'workbench.run_action',
     ]);
     expect(parsed.discouragedTools).toEqual(['workbench.edit_frontmatter']);
     expect(parsed.domainTags).toEqual(['lorebook', 'frontmatter']);
     expect(parsed.routingSignals).toEqual(['mutation', 'frontmatter', 'domain:lorebook']);
+    expect(parsed.capabilities).toEqual(['patch.preview']);
+    expect(parsed.recommendedActions).toEqual(['patch.suggest_frontmatter']);
+    expect(parsed.nextTool).toBe('workbench.catalog');
+    expect(parsed.nextInput).toEqual({ capability: 'patch.preview', limit: 5 });
   });
 
   it('accepts advisory mutation mode as part of the compiled workflow state', () => {
     const parsed = intentRouteResultSchema.parse({
       allowedTools: ['workbench.edit_frontmatter'],
       blockedTools: [],
+      capabilities: ['patch.preview'],
       commitAllowed: false,
       confidence: 0.88,
       discouragedTools: [],
@@ -235,8 +253,11 @@ describe('intent route contract', () => {
       missingInputs: [],
       mutationMode: 'guarded_direct',
       mutationRequested: true,
+      nextInput: { capability: 'patch.preview', limit: 5 },
       nextStep: 'apply',
-      recommendedTools: ['workbench.edit_frontmatter'],
+      nextTool: 'workbench.catalog',
+      recommendedActions: ['patch.suggest_frontmatter'],
+      recommendedTools: ['workbench.patch_preview', 'workbench.catalog', 'workbench.prepare_action', 'workbench.run_action'],
       requiredEvidence: [
         'resolved workspace-relative path',
         'explicit frontmatter field name',
@@ -252,6 +273,9 @@ describe('intent route contract', () => {
     });
 
     expect(parsed.mutationMode).toBe('guarded_direct');
+    expect(parsed.capabilities).toEqual(['patch.preview']);
+    expect(parsed.recommendedActions).toEqual(['patch.suggest_frontmatter']);
+    expect(parsed.nextTool).toBe('workbench.catalog');
   });
 
   it('defaults mutationMode to none when omitted for backward-compatible parsing', () => {
@@ -275,6 +299,10 @@ describe('intent route contract', () => {
     });
 
     expect(parsed.mutationMode).toBe('none');
+    expect(parsed.capabilities).toEqual([]);
+    expect(parsed.recommendedActions).toEqual([]);
+    expect(parsed.nextTool).toBe('workbench.catalog');
+    expect(parsed.nextInput).toEqual({});
   });
 
   it('defaults route guidance fields to empty arrays when omitted', () => {
@@ -301,6 +329,10 @@ describe('intent route contract', () => {
     expect(parsed.discouragedTools).toEqual([]);
     expect(parsed.domainTags).toEqual([]);
     expect(parsed.routingSignals).toEqual([]);
+    expect(parsed.capabilities).toEqual([]);
+    expect(parsed.recommendedActions).toEqual([]);
+    expect(parsed.nextTool).toBe('workbench.catalog');
+    expect(parsed.nextInput).toEqual({});
   });
 
   it('rejects non-array route guidance fields', () => {
@@ -473,13 +505,17 @@ describe('intent route contract', () => {
       route: {
         allowedTools: ['workbench.inspect_path'],
         blockedTools: [],
+        capabilities: ['inspect'],
         commitAllowed: false,
         confidence: 0.9,
         explanation: 'Workspace inspect request.',
         intent: 'workspace.inspect',
         missingInputs: [],
         mutationRequested: false,
+        nextInput: { capability: 'inspect', limit: 5 },
         nextStep: 'inspect',
+        nextTool: 'workbench.catalog',
+        recommendedActions: ['inspect.path', 'inspect.artifact'],
         requiredEvidence: [],
         risk: 'read_only',
         routeId: 'route_def456',
@@ -492,12 +528,16 @@ describe('intent route contract', () => {
 
     expect(parsed.route.schema).toBe('risuai-workbench-mcp.intent-route');
     expect(parsed.route.schemaVersion).toBe('0.1.0');
+    expect(parsed.route.capabilities).toEqual(['inspect']);
+    expect(parsed.route.recommendedActions).toEqual(['inspect.path', 'inspect.artifact']);
+    expect(parsed.route.nextTool).toBe('workbench.catalog');
   });
 
   it('createIntentRouteResult preserves schema marker and version', () => {
     const result = createIntentRouteResult({
       allowedTools: ['workbench.inspect_path'],
       blockedTools: ['workbench.apply_patch_plan'],
+      capabilities: ['inspect'],
       commitAllowed: false,
       confidence: 0.85,
       discouragedTools: [],
@@ -507,8 +547,11 @@ describe('intent route contract', () => {
       missingInputs: [],
       mutationMode: 'none',
       mutationRequested: false,
+      nextInput: { capability: 'inspect', limit: 5 },
       nextStep: 'inspect',
-      recommendedTools: ['workbench.inspect_path'],
+      nextTool: 'workbench.catalog',
+      recommendedActions: ['inspect.path', 'inspect.artifact'],
+      recommendedTools: ['workbench.catalog', 'workbench.prepare_action', 'workbench.run_action'],
       requiredEvidence: [],
       risk: 'read_only',
       routeId: 'route_abc123',
@@ -523,5 +566,9 @@ describe('intent route contract', () => {
     expect(result.risk).toBe('read_only');
     expect(result.nextStep).toBe('inspect');
     expect(result.targetKind).toBe('path');
+    expect(result.capabilities).toEqual(['inspect']);
+    expect(result.recommendedActions).toEqual(['inspect.path', 'inspect.artifact']);
+    expect(result.nextTool).toBe('workbench.catalog');
+    expect(result.nextInput).toEqual({ capability: 'inspect', limit: 5 });
   });
 });

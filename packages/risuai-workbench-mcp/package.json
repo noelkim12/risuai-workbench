@@ -37,7 +37,10 @@
     "build": "tsc -p .",
     "test": "npm run build && vitest run",
     "test:watch": "vitest",
-    "watch": "tsc -w -p ."
+    "watch": "tsc -w -p .",
+    "surface:snapshot": "node dist/dev/snapshot-tool-surface.js",
+    "surface:check": "node dist/dev/snapshot-tool-surface.js --check",
+    "facade:visualize": "node dist/dev/facade-visualization.js"
   },
   "repository": {
     "type": "git",

@@ -43,6 +43,8 @@ Source of truth 경계는 다음과 같습니다.
 
 Prompt를 추가하거나 제거할 때는 registry entry, manifest mapping, Markdown asset file, 이 색인을 함께 갱신하세요. Registry는 metadata, manifest는 파일 매핑, Markdown asset은 prompt body를 각각 소유합니다.
 
+Prompt body guidance must target the default facade flow only: `workbench.route_intent` -> `workbench.catalog` -> `workbench.prepare_action` -> `workbench.run_action` for read-only or preview actions, and `workbench.patch_preview` -> `workbench.patch_apply` for mutations. Do not tell agents to call legacy direct MCP tools such as `workbench.inspect_path`, `workbench.query_*`, `workbench.suggest_*`, `workbench.apply_patch_plan`, or `workbench.creative.*` unless the prompt explicitly labels them as legacy/dev-mode references behind `RISU_MCP_EXPOSE_LEGACY_TOOLS=1`.
+
 ## Authoring skill assets
 
 Authoring skills are packaged read-only Markdown assets under `skills/en/` and indexed by `skills/skills-catalog.json`.

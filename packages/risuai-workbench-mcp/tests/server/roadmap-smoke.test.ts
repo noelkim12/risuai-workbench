@@ -36,10 +36,11 @@ async function createMutableFixture(): Promise<string> {
  * @param root - server에 전달할 workspace root
  * @param callback - 연결된 client로 실행할 테스트 로직
  */
-async function withClient(root: string, callback: (client: Client) => Promise<void>): Promise<void> {
+async function withClient(root: string, callback: (client: Client) => Promise<void>, env?: Record<string, string>): Promise<void> {
   const transport = new StdioClientTransport({
     args: [binPath, '--stdio', '--root', root, '--mutation', 'enabled'],
     command: process.execPath,
+    env: env ? { ...process.env, ...env } as Record<string, string> : process.env as Record<string, string>,
     stderr: 'pipe',
   });
   const client = new Client({ name: 'risuai-workbench-mcp-roadmap-smoke-test', version: '0.1.0' });
@@ -91,14 +92,17 @@ describe('Task 11 MCP roadmap smoke', () => {
         'workbench.suggest_order_patch',
         'workbench.edit_order',
         'workbench.delete_artifact',
-        'workbench.creative.gather_context',
-        'workbench.creative.rank_ideas',
-        'workbench.creative.turn_idea_into_patch_plan',
-        'workbench.creative.preview_idea_patch',
-        'workbench.creative.apply_idea_patch',
-        'workbench.creative.save_idea_session',
         'workbench.list_authoring_skills',
+        'workbench.catalog',
+        'workbench.prepare_action',
+        'workbench.run_action',
       ]));
+
+      // Phase 9: legacy gate exposes all legacy tools including creative
+      const toolNames = tools.tools.map((tool) => tool.name);
+      expect(toolNames).toContain('workbench.creative.gather_context');
+      expect(toolNames).toContain('workbench.creative.rank_ideas');
+      expect(toolNames).toContain('workbench.creative.apply_idea_patch');
       expect(resourceTemplates.resourceTemplates.map((resource) => resource.name)).toEqual(expect.arrayContaining([
         'workbench.resource.rule_catalog',
         'workbench.creative.resource.methods',
@@ -167,6 +171,6 @@ describe('Task 11 MCP roadmap smoke', () => {
       expect(highRisk.schema).toBe('risuai-workbench-mcp.mutation-result');
       expect(highRisk.status).toBe('applied');
       await expect(readFile(path.join(root, 'characters', 'merry', 'lorebooks', 'intro.risulorebook'), 'utf8')).rejects.toThrow();
-    });
+    }, { RISU_MCP_EXPOSE_LEGACY_TOOLS: '1' });
   });
 });

@@ -16,6 +16,8 @@ import type {
 } from '../../src/contracts/intent-route';
 import { handleRouteIntent } from '../../src/tools/intent-route';
 import { WORKBENCH_REGISTRY } from '../../src/registry';
+import { createWorkbenchActionRegistry } from '../../src/actions/create-registry';
+import { handleCatalog } from '../../src/tools/facade';
 
 const ALL_IMPLEMENTED_TOOL_NAMES = WORKBENCH_REGISTRY.tools
   .filter((t) => t.implementationStatus === 'implemented')
@@ -140,7 +142,13 @@ describe('handleRouteIntent', () => {
       expect(route.commitAllowed).toBe(false);
       expect(route.blockedTools).toContain('workbench.apply_patch_plan');
       expect(route.routingSignals).toContain('constraint:no_write');
-      expect(route.recommendedTools).toContain('workbench.inspect_path');
+      expect(route.recommendedTools).toEqual(expect.arrayContaining([
+        'workbench.catalog',
+        'workbench.prepare_action',
+        'workbench.run_action',
+      ]));
+      expect(route.recommendedTools).not.toContain('workbench.patch_preview');
+      expect(route.recommendedTools).not.toContain('workbench.patch_apply');
     });
 
     it('routes fix frontmatter to frontmatter preview rather than generic patch preview', async () => {
@@ -153,15 +161,18 @@ describe('handleRouteIntent', () => {
       expect(route.intent).toBe('artifact.frontmatter.preview');
       expect(route.nextStep).toBe('preview');
       expect(route.commitAllowed).toBe(false);
+      expect(route.capabilities).toContain('patch.preview');
+      expect(route.recommendedActions).toContain('patch.suggest_frontmatter');
       expect(route.recommendedTools).toEqual(expect.arrayContaining([
-        'workbench.inspect_path',
-        'workbench.validate_frontmatter',
-        'workbench.suggest_frontmatter_patch',
+        'workbench.patch_preview',
+        'workbench.catalog',
+        'workbench.prepare_action',
+        'workbench.run_action',
       ]));
       expect(route.blockedTools).toContain('workbench.edit_frontmatter');
     });
 
-    it('recommends inspect and validate tools before preview for mixed read plus fix language', async () => {
+    it('recommends facade tools for mixed read plus fix language', async () => {
       const result = await handleRouteIntent({
         request: 'Inspect and fix the character card',
         target: 'characters/merry/character.risuchar',
@@ -170,10 +181,13 @@ describe('handleRouteIntent', () => {
       const route = result.data!.route;
       expect(route.intent).toBe('artifact.patch.preview');
       expect(route.commitAllowed).toBe(false);
+      expect(route.capabilities).toContain('patch.preview');
+      expect(route.recommendedActions).toContain('patch.suggest');
       expect(route.recommendedTools).toEqual(expect.arrayContaining([
-        'workbench.inspect_path',
-        'workbench.validate_path',
-        'workbench.suggest_patch',
+        'workbench.patch_preview',
+        'workbench.catalog',
+        'workbench.prepare_action',
+        'workbench.run_action',
       ]));
       expect(route.routingSignals).toEqual(expect.arrayContaining([
         'inspect',
@@ -261,15 +275,23 @@ describe('handleRouteIntent', () => {
       }
     });
 
-    it('only includes implemented registry tools in recommendedTools and discouragedTools', async () => {
+    it('only includes facade tools in recommendedTools', async () => {
       const result = await handleRouteIntent({
         request: 'Inspect the lorebook frontmatter and suggest a patch',
         target: 'characters/merry/lorebooks/intro.risulorebook',
       });
 
       const route = result.data!.route;
+      const facadeTools = [
+        'workbench.catalog',
+        'workbench.prepare_action',
+        'workbench.run_action',
+        'workbench.context',
+        'workbench.patch_preview',
+        'workbench.patch_apply',
+      ];
       for (const name of route.recommendedTools) {
-        expect(isImplementedTool(name)).toBe(true);
+        expect(facadeTools).toContain(name);
       }
       for (const name of route.discouragedTools) {
         expect(isImplementedTool(name)).toBe(true);
@@ -443,15 +465,20 @@ describe('handleRouteIntent', () => {
       expect(route.risk).toBe('read_only');
       expect(route.targetKind).toBe('lua_handler');
       expect(route.domainTags).toContain('risulua');
+      expect(route.capabilities).toContain('analyze');
+      expect(route.recommendedActions).toEqual(expect.arrayContaining([
+        'analyze.query_risulua_api',
+        'analyze.query_lua_analysis',
+      ]));
+      expect(route.recommendedTools).toEqual(expect.arrayContaining([
+        'workbench.catalog',
+        'workbench.prepare_action',
+        'workbench.run_action',
+      ]));
       expect(route.routingSignals).toEqual(expect.arrayContaining([
         'analyze',
         'lua',
         'domain:risulua',
-      ]));
-      expect(route.recommendedTools).toEqual(expect.arrayContaining([
-        'workbench.query_risulua_api',
-        'workbench.explain_risulua_runtime_api',
-        'workbench.query_lua_analysis',
       ]));
     });
 
@@ -540,6 +567,10 @@ describe('handleRouteIntent', () => {
       domainTagsInclude?: readonly string[];
       routingSignalsInclude?: readonly string[];
       expectedMutationMode?: RouteMutationMode;
+      expectedCapabilities?: readonly string[];
+      expectedRecommendedActions?: readonly string[];
+      expectedNextTool?: string;
+      expectedNextInput?: Record<string, unknown>;
     }
 
     const cases: GoldenCase[] = [
@@ -678,7 +709,7 @@ describe('handleRouteIntent', () => {
         expectedTargetKind: 'lua_handler',
         expectedMutationRequested: false,
         expectedCommitAllowed: false,
-        recommendedIncludes: ['workbench.query_lua_analysis', 'workbench.query_lua_call_graph'],
+        recommendedIncludes: ['workbench.catalog', 'workbench.prepare_action', 'workbench.run_action'],
         domainTagsInclude: ['risulua'],
         routingSignalsInclude: ['analyze'],
       },
@@ -693,11 +724,7 @@ describe('handleRouteIntent', () => {
         expectedTargetKind: 'lua_handler',
         expectedMutationRequested: false,
         expectedCommitAllowed: false,
-        recommendedIncludes: [
-          'workbench.query_risulua_api',
-          'workbench.explain_risulua_runtime_api',
-          'workbench.query_lua_analysis',
-        ],
+        recommendedIncludes: ['workbench.catalog', 'workbench.prepare_action', 'workbench.run_action'],
         domainTagsInclude: ['risulua'],
         routingSignalsInclude: ['analyze', 'lua', 'domain:risulua'],
       },
@@ -714,7 +741,7 @@ describe('handleRouteIntent', () => {
         expectedMutationRequested: false,
         expectedCommitAllowed: false,
         expectedStopConditions: ['preview_required', 'confirmation_required'],
-        recommendedIncludes: ['workbench.inspect_path', 'workbench.validate_frontmatter', 'workbench.suggest_frontmatter_patch'],
+        recommendedIncludes: ['workbench.patch_preview', 'workbench.catalog', 'workbench.prepare_action', 'workbench.run_action'],
         domainTagsInclude: ['lorebook', 'frontmatter'],
         routingSignalsInclude: ['preview', 'frontmatter'],
       },
@@ -731,7 +758,7 @@ describe('handleRouteIntent', () => {
         expectedMutationRequested: false,
         expectedCommitAllowed: false,
         expectedStopConditions: ['preview_required', 'confirmation_required'],
-        recommendedIncludes: ['workbench.explain_risulua_runtime_api', 'workbench.explain_risulua_workspace', 'workbench.query_lua_analysis', 'workbench.query_lua_call_graph', 'workbench.query_lua_state_access'],
+        recommendedIncludes: ['workbench.catalog', 'workbench.prepare_action', 'workbench.run_action'],
         domainTagsInclude: ['risulua'],
         routingSignalsInclude: ['analyze', 'lua', 'domain:risulua', 'mutation_without_confirmation'],
       },
@@ -748,7 +775,7 @@ describe('handleRouteIntent', () => {
         expectedMutationRequested: true,
         expectedCommitAllowed: false,
         expectedMutationMode: 'guarded_direct',
-        recommendedIncludes: ['workbench.edit_frontmatter'],
+        recommendedIncludes: ['workbench.patch_preview', 'workbench.catalog', 'workbench.prepare_action', 'workbench.run_action'],
         domainTagsInclude: ['lorebook', 'frontmatter'],
         routingSignalsInclude: ['direct_structured_edit'],
       },
@@ -765,7 +792,7 @@ describe('handleRouteIntent', () => {
         expectedMutationRequested: false,
         expectedCommitAllowed: false,
         expectedMutationMode: 'preview_required',
-        recommendedIncludes: ['workbench.inspect_path', 'workbench.suggest_frontmatter_patch', 'workbench.validate_frontmatter'],
+        recommendedIncludes: ['workbench.patch_preview', 'workbench.catalog', 'workbench.prepare_action', 'workbench.run_action'],
         domainTagsInclude: ['lorebook', 'frontmatter'],
         routingSignalsInclude: ['preview', 'frontmatter'],
       },
@@ -785,15 +812,26 @@ describe('handleRouteIntent', () => {
       for (const name of route.blockedTools) {
         expect(isImplementedTool(name)).toBe(true);
       }
-      for (const name of route.recommendedTools) {
-        expect(isImplementedTool(name)).toBe(true);
-      }
       for (const name of route.discouragedTools) {
         expect(isImplementedTool(name)).toBe(true);
       }
       const allowedSet = new Set(route.allowedTools);
       for (const blocked of route.blockedTools) {
         expect(allowedSet.has(blocked)).toBe(false);
+      }
+    }
+
+    function assertFacadeOnlyRecommendedTools(route: IntentRouteResult) {
+      const facadeTools = [
+        'workbench.catalog',
+        'workbench.prepare_action',
+        'workbench.run_action',
+        'workbench.context',
+        'workbench.patch_preview',
+        'workbench.patch_apply',
+      ];
+      for (const name of route.recommendedTools) {
+        expect(facadeTools).toContain(name);
       }
     }
 
@@ -869,9 +907,30 @@ describe('handleRouteIntent', () => {
       if (testCase.expectedMutationMode) {
         expect(route.mutationMode).toBe(testCase.expectedMutationMode);
       }
+      if (testCase.expectedCapabilities !== undefined) {
+        for (const cap of testCase.expectedCapabilities) {
+          expect(route.capabilities).toContain(cap);
+        }
+      }
+      if (testCase.expectedRecommendedActions !== undefined) {
+        for (const action of testCase.expectedRecommendedActions) {
+          expect(route.recommendedActions).toContain(action);
+        }
+      }
+      if (testCase.expectedNextTool !== undefined) {
+        expect(route.nextTool).toBe(testCase.expectedNextTool);
+      }
+      if (testCase.expectedNextInput !== undefined) {
+        for (const [key, value] of Object.entries(testCase.expectedNextInput)) {
+          expect(route.nextInput[key]).toEqual(value);
+        }
+      }
 
       // Case 13: every allowedTools / blockedTools value exists in registry and is implemented
       assertRegistryConsistent(route);
+
+      // Phase 8: recommendedTools must contain only facade tool names
+      assertFacadeOnlyRecommendedTools(route);
     });
 
     it('has deterministic routeIds across all golden cases', async () => {
@@ -896,7 +955,14 @@ describe('handleRouteIntent', () => {
       expect(route.intent).toBe('artifact.frontmatter.preview');
       expect(route.mutationMode).toBe('guarded_direct');
       expect(route.mutationRequested).toBe(true);
-      expect(route.recommendedTools).toContain('workbench.edit_frontmatter');
+      expect(route.capabilities).toContain('patch.preview');
+      expect(route.recommendedActions).toContain('patch.suggest_frontmatter');
+      expect(route.recommendedTools).toEqual(expect.arrayContaining([
+        'workbench.patch_preview',
+        'workbench.catalog',
+        'workbench.prepare_action',
+        'workbench.run_action',
+      ]));
       expect(route.blockedTools).not.toContain('workbench.edit_frontmatter');
       expect(route.routingSignals).toEqual(expect.arrayContaining([
         'mutation',
@@ -913,7 +979,14 @@ describe('handleRouteIntent', () => {
 
       const route = result.data!.route;
       expect(route.mutationMode).toBe('preview_required');
-      expect(route.recommendedTools).toContain('workbench.suggest_frontmatter_patch');
+      expect(route.capabilities).toContain('patch.preview');
+      expect(route.recommendedActions).toContain('patch.suggest_frontmatter');
+      expect(route.recommendedTools).toEqual(expect.arrayContaining([
+        'workbench.patch_preview',
+        'workbench.catalog',
+        'workbench.prepare_action',
+        'workbench.run_action',
+      ]));
       expect(route.blockedTools).toContain('workbench.edit_frontmatter');
     });
 
@@ -926,7 +999,14 @@ describe('handleRouteIntent', () => {
       const route = result.data!.route;
       expect(route.intent).toBe('artifact.order.preview');
       expect(route.mutationMode).toBe('guarded_direct');
-      expect(route.recommendedTools).toContain('workbench.edit_order');
+      expect(route.capabilities).toContain('patch.preview');
+      expect(route.recommendedActions).toContain('patch.suggest_order');
+      expect(route.recommendedTools).toEqual(expect.arrayContaining([
+        'workbench.patch_preview',
+        'workbench.catalog',
+        'workbench.prepare_action',
+        'workbench.run_action',
+      ]));
       expect(route.blockedTools).not.toContain('workbench.edit_order');
     });
 
@@ -939,7 +1019,8 @@ describe('handleRouteIntent', () => {
       const route = result.data!.route;
       expect(route.mutationMode).toBe('blocked');
       expect(route.risk).toBe('read_only');
-      expect(route.recommendedTools).not.toContain('workbench.edit_frontmatter');
+      expect(route.recommendedTools).not.toContain('workbench.patch_preview');
+      expect(route.recommendedTools).not.toContain('workbench.patch_apply');
       expect(route.blockedTools).toContain('workbench.edit_frontmatter');
     });
   });
@@ -954,8 +1035,13 @@ describe('handleRouteIntent', () => {
       const route = result.data!.route;
       expect(route.intent).toBe('artifact.inspect');
       expect(route.domainTags).toEqual(expect.arrayContaining(['lorebook', 'frontmatter']));
-      expect(route.recommendedTools).toContain('workbench.inspect_path');
-      expect(route.recommendedTools).toContain('workbench.validate_frontmatter');
+      expect(route.capabilities).toContain('inspect');
+      expect(route.recommendedActions).toEqual(expect.arrayContaining(['inspect.path', 'inspect.artifact']));
+      expect(route.recommendedTools).toEqual(expect.arrayContaining([
+        'workbench.catalog',
+        'workbench.prepare_action',
+        'workbench.run_action',
+      ]));
     });
 
     it('detects RisuLua handler analysis from risulua request text', async () => {
@@ -966,9 +1052,15 @@ describe('handleRouteIntent', () => {
       const route = result.data!.route;
       expect(route.intent).toBe('analyze.lua_handler');
       expect(route.domainTags).toContain('risulua');
+      expect(route.capabilities).toContain('analyze');
+      expect(route.recommendedActions).toEqual(expect.arrayContaining([
+        'analyze.query_lua_analysis',
+        'analyze.query_lua_call_graph',
+      ]));
       expect(route.recommendedTools).toEqual(expect.arrayContaining([
-        'workbench.query_lua_analysis',
-        'workbench.query_lua_call_graph',
+        'workbench.catalog',
+        'workbench.prepare_action',
+        'workbench.run_action',
       ]));
     });
 
@@ -994,8 +1086,14 @@ describe('handleRouteIntent', () => {
       const route = result.data!.route;
       expect(route.intent).toBe('artifact.order.preview');
       expect(route.domainTags).toEqual(expect.arrayContaining(['order', 'lorebook']));
-      expect(route.recommendedTools).toContain('workbench.validate_order');
-      expect(route.recommendedTools).toContain('workbench.suggest_order_patch');
+      expect(route.capabilities).toContain('patch.preview');
+      expect(route.recommendedActions).toContain('patch.suggest_order');
+      expect(route.recommendedTools).toEqual(expect.arrayContaining([
+        'workbench.patch_preview',
+        'workbench.catalog',
+        'workbench.prepare_action',
+        'workbench.run_action',
+      ]));
     });
   });
 
@@ -1021,9 +1119,10 @@ describe('handleRouteIntent', () => {
       const route = result.data!.route;
       expect(route.mutationMode).toBe('blocked');
       expect(route.commitAllowed).toBe(false);
+      expect(route.recommendedTools).not.toContain('workbench.patch_preview');
+      expect(route.recommendedTools).not.toContain('workbench.patch_apply');
       for (const name of route.recommendedTools) {
-        const tool = WORKBENCH_REGISTRY.tools.find((entry) => entry.name === name);
-        expect(tool?.mutates).toBe(false);
+        expect(['workbench.catalog', 'workbench.prepare_action', 'workbench.run_action', 'workbench.context']).toContain(name);
       }
     });
 
@@ -1061,7 +1160,83 @@ describe('handleRouteIntent', () => {
       const route = result.data!.route;
       expect(route.mutationMode).toBe('preview_required');
       expect(route.commitAllowed).toBe(false);
-      expect(route.recommendedTools).toContain('workbench.suggest_patch');
+      expect(route.capabilities).toContain('patch.preview');
+      expect(route.recommendedActions).toContain('patch.suggest');
+      expect(route.recommendedTools).toEqual(expect.arrayContaining([
+        'workbench.patch_preview',
+        'workbench.catalog',
+        'workbench.prepare_action',
+        'workbench.run_action',
+      ]));
+    });
+  });
+
+  describe('Phase 8 facade-oriented output', () => {
+    it('nextInput is usable by workbench.catalog for known intents', async () => {
+      const result = await handleRouteIntent({
+        request: 'Analyze the lua handler call graph',
+      });
+
+      const route = result.data!.route;
+      expect(route.intent).toBe('analyze.lua_handler');
+      expect(route.nextTool).toBe('workbench.catalog');
+      expect(route.nextInput).toHaveProperty('capability', 'analyze');
+      expect(route.nextInput).toHaveProperty('limit', 5);
+
+      const registry = createWorkbenchActionRegistry({
+        workspace: { ok: true, path: '/tmp/workspace', reason: null },
+        mutationMode: 'preview-only',
+        patchStore: {
+          getPatchPlan: () => null,
+          savePatchPlan: () => {},
+          findByIdeaId: () => null,
+        },
+      });
+
+      const catalogResult = handleCatalog(
+        { capability: route.nextInput.capability as string, limit: route.nextInput.limit as number },
+        registry,
+      );
+
+      expect(catalogResult.actions.length).toBeGreaterThan(0);
+      expect(catalogResult.actions.every((a) => a.capability === 'analyze')).toBe(true);
+    });
+
+    it('never recommends legacy creative tools directly', async () => {
+      const result = await handleRouteIntent({
+        request: 'Brainstorm new ideas for the character card',
+        ideaId: 'idea-456',
+      });
+
+      const route = result.data!.route;
+      for (const name of route.recommendedTools) {
+        expect(name).not.toMatch(/^workbench\.creative\./);
+      }
+      expect(route.recommendedActions).not.toContain('workbench.creative.brainstorm_scamper');
+    });
+
+    it('never recommends legacy query or suggest tools directly', async () => {
+      const result = await handleRouteIntent({
+        request: 'Analyze the lua handler call graph',
+      });
+
+      const route = result.data!.route;
+      for (const name of route.recommendedTools) {
+        expect(name).not.toMatch(/^workbench\.query_/);
+        expect(name).not.toMatch(/^workbench\.suggest_/);
+      }
+    });
+
+    it('routes unknown intents to catalog with safe nextInput', async () => {
+      const result = await handleRouteIntent({
+        request: 'hello',
+      });
+
+      const route = result.data!.route;
+      expect(route.intent).toBe('unknown');
+      expect(route.nextTool).toBe('workbench.catalog');
+      expect(route.nextInput).toEqual({ limit: 5 });
+      expect(route.recommendedTools).toEqual(['workbench.catalog']);
     });
   });
 });

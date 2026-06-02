@@ -2,7 +2,7 @@
 
 RisuAI Workbench의 Canonical Workspace를 AI agent가 안전하게 읽고, 검증하고, 필요한 경우 gated mutation으로 수정할 수 있게 해 주는 local stdio MCP server입니다.
 
-이 패키지는 `docs/mcp/risuai-workbench-mcp.mutation-enabled.md`의 direct mutation 지원 제안서를 기준으로 구현된 MCP surface입니다. 기본값은 `preview-only`이며, 실제 파일 쓰기는 workspace boundary, mutation mode, hash precondition, confirmation gate를 통과해야 합니다.
+이 패키지는 facade MCP surface를 기본으로 노출합니다. 기본 `tools/list`는 8개 facade tool만 반환하며, 기존 domain tool들은 내부 Action Registry action으로 실행됩니다. 기본값은 `preview-only`이며, 실제 파일 쓰기는 workspace boundary, mutation mode, hash precondition, confirmation gate를 통과해야 합니다.
 
 Creative thinking surface는 `docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md`를 knowledge-base reference로 삼아 구현되어 있습니다. README는 운영 surface만 요약하며, 상세 method/rubric 배경은 해당 KB 문서를 확인하세요.
 
@@ -15,6 +15,120 @@ Creative thinking surface는 `docs/mcp/risuai-workbench-mcp-for-creative-thinkin
 - **Core Workflows**: `risu-core extract` / `risu-core scaffold`를 MCP mutation gate 뒤에서 실행합니다.
 - **Creative Thinking**: workspace/analyze/wiki context를 바탕으로 아이디어를 만들고, 선택된 아이디어만 PatchPlan preview와 gated mutation apply로 연결합니다.
 - **Resources / Prompts**: wiki/rule/schema/analyze/mutation context resource와 agent workflow prompt를 제공합니다.
+
+## Default facade tool surface
+
+기본 실행에서 외부 MCP `tools/list`에 노출되는 tool은 정확히 다음 8개입니다. Resources와 prompts는 기본으로 계속 사용할 수 있습니다.
+
+| MCP tool | 역할 | Mutation |
+| --- | --- | --- |
+| `workbench.smoke` | server와 workspace 상태를 확인합니다. | no |
+| `workbench.route_intent` | 사용자 요청을 capability, risk, 추천 internal action 후보로 라우팅합니다. | no |
+| `workbench.catalog` | 현재 intent에 맞는 내부 action 후보만 짧게 반환합니다. | no |
+| `workbench.prepare_action` | 선택한 internal action 하나의 입력 가이드와 예시를 반환합니다. | no |
+| `workbench.run_action` | read-only 또는 preview action을 실행합니다. Commit mutation action은 차단합니다. | no commit |
+| `workbench.context` | 큰 context payload를 handle로 만들고, 읽고, 검색하고, 해제합니다. | no |
+| `workbench.patch_preview` | patch preview action 또는 patch plan pass-through를 실행하고 plan을 저장합니다. | preview only |
+| `workbench.patch_apply` | 저장된 patch plan을 confirmation과 mutation gate 뒤에서 적용합니다. | gated commit |
+
+일반 workflow는 facade 순서를 따릅니다.
+
+```text
+workbench.route_intent
+  -> workbench.catalog
+  -> workbench.prepare_action
+  -> workbench.run_action
+```
+
+파일 변경 workflow는 mutation safety gate를 따릅니다.
+
+```text
+workbench.route_intent
+  -> workbench.catalog
+  -> workbench.prepare_action
+  -> workbench.patch_preview
+  -> user confirmation
+  -> workbench.patch_apply
+```
+
+`catalog`와 `prepare_action`이 반환하는 `actionId` 값은 MCP tool 이름이 아니라 내부 Action Registry ID입니다. 예: `inspect.path`, `analyze.query_lua_analysis`, `creative.brainstorm_scamper`, `patch.suggest_order`.
+
+## Facade architecture map
+
+The MCP server uses a small public facade and keeps domain-specific behavior behind an internal Action Registry.
+
+```mermaid
+flowchart TB
+    Client["MCP client / LLM"]
+
+    subgraph Public["Default public MCP surface"]
+      Smoke["workbench.smoke"]
+      Route["workbench.route_intent"]
+      Catalog["workbench.catalog"]
+      Prepare["workbench.prepare_action"]
+      Run["workbench.run_action"]
+      Context["workbench.context"]
+      PatchPreview["workbench.patch_preview"]
+      PatchApply["workbench.patch_apply"]
+    end
+
+    subgraph Registry["Internal Action Registry"]
+      Inspect["inspect.*"]
+      Validate["validate.*"]
+      Analyze["analyze.*"]
+      Wiki["wiki.*"]
+      Skills["skills.*"]
+      Creative["creative.*"]
+      Patch["patch.*"]
+    end
+
+    subgraph Safety["Mutation safety boundary"]
+      PatchStore["PatchPlan store"]
+      Confirm["confirmation gate"]
+      MutationMode["mutation mode"]
+      ApplyEngine["canonical patch apply engine"]
+    end
+
+    Client --> Smoke
+    Client --> Route
+    Route --> Catalog
+    Catalog --> Prepare
+    Prepare --> Run
+    Prepare --> PatchPreview
+    Context -. "hydrates args via contextId" .-> Run
+    Context -. "hydrates args via contextId" .-> PatchPreview
+
+    Catalog --> Registry
+    Prepare --> Registry
+    Run --> Registry
+    PatchPreview --> Registry
+
+    Registry --> Inspect
+    Registry --> Validate
+    Registry --> Analyze
+    Registry --> Wiki
+    Registry --> Skills
+    Registry --> Creative
+    Registry --> Patch
+
+    Run -. "blocks commit_mutation" .-> PatchApply
+    PatchPreview --> PatchStore
+    PatchApply --> PatchStore
+    PatchApply --> Confirm
+    PatchApply --> MutationMode
+    PatchApply --> ApplyEngine
+```
+
+The facade reduces the external MCP `tools/list` surface while preserving the full domain capability internally. `route_intent` decides the likely capability, `catalog` exposes relevant internal actions, `prepare_action` explains one action schema, `run_action` executes read-only and preview-safe actions, `context` carries large payloads by handle, and `patch_preview` / `patch_apply` isolate file writes behind preview, confirmation, mutation-mode, and precondition checks.
+
+For generated Mermaid diagrams and graph JSON, run:
+
+```bash
+npm run build --workspace risuai-workbench-mcp
+npm run facade:visualize --workspace risuai-workbench-mcp
+```
+
+Legacy MCP tools are hidden by default. Set `RISU_MCP_EXPOSE_LEGACY_TOOLS=1` only for development, migration testing, or backward compatibility checks that intentionally need the old direct tool surface.
 
 ## MCP protocol compliance
 
@@ -138,7 +252,7 @@ risuai-workbench-mcp --version
 | --- | --- | --- |
 | `--stdio` | 없음 | MCP stdio server를 시작합니다. stdout은 JSON-RPC 전용입니다. |
 | `--root <path>` | 현재 실행 context | tool safety gate가 사용할 workspace root입니다. |
-| `--mutation <mode>` | `preview-only` | direct mutation tool의 write 허용 모드입니다. |
+| `--mutation <mode>` | `preview-only` | facade patch apply와 legacy/dev-mode mutation action의 write 허용 모드입니다. |
 | `--help` | 없음 | stdio 시작 없이 사용법을 출력합니다. |
 | `--version` | 없음 | package version을 출력합니다. |
 
@@ -178,13 +292,13 @@ Structured mode:
 
 Current behavior:
 
-- Long-running tools return a final diagnostic or mutation envelope.
-- `workbench.run_extract` and `workbench.run_scaffold` may emit `notifications/progress` when a client supplies `_meta.progressToken`.
+- Long-running actions return a final diagnostic or mutation envelope.
+- Internal legacy actions for extract/scaffold may emit `notifications/progress` when a client supplies `_meta.progressToken`; access them through the facade flow unless legacy dev mode is explicitly enabled.
 - MCP task-augmented execution is not implemented.
 
 Cancellation support:
 
-- `workbench.run_extract` and `workbench.run_scaffold` observe MCP request cancellation through the SDK-provided `AbortSignal`.
+- The extract and scaffold handlers observe MCP request cancellation through the SDK-provided `AbortSignal`.
 - If cancellation is observed before child process execution, the tool returns a structured cancellation diagnostic without writing files.
 - If cancellation is observed while a wrapped `risu-core` child process is running, the server sends `SIGTERM` to the child process and returns a structured result describing the cancellation state and any observed output files.
 - Mid-child cancellation is represented through command cancellation diagnostics and a failed mutation result after post-validation and journal handling.
@@ -220,33 +334,33 @@ Tool annotation은 client/user를 위한 힌트일 뿐이며, 실제 보호는 �
 
 Creative 기능은 일반-purpose brainstorm app이 아니라 RisuAI Workbench artifact 변경을 안전하게 구상하고 검증하기 위한 agent-facing MCP surface입니다. Source of truth는 `docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md`이며, 구현은 다음 경계를 지킵니다.
 
-### Read-only creative tools
+### Read-only creative actions
 
-다음 tool은 caller가 제공한 compact context, analyze/wiki/graph 요약, idea/session payload를 읽고 deterministic/advisory 결과만 반환합니다. 파일, session store, analyze snapshot, wiki, graph를 자동으로 쓰거나 새로 고치지 않습니다.
+다음 creative 기능은 기본 facade flow에서 internal action으로 선택됩니다. Caller가 제공한 compact context, analyze/wiki/graph 요약, idea/session payload를 읽고 deterministic/advisory 결과만 반환합니다. 파일, session store, analyze snapshot, wiki, graph를 자동으로 쓰거나 새로 고치지 않습니다.
 
-| Tool group | Tools |
+| Action group | Internal action IDs |
 | --- | --- |
-| Context | `workbench.creative.gather_context`, `inspect_context`, `search_context` |
+| Context | `creative.gather_context`, `creative.inspect_context`, `creative.search_context` |
 | Ideation | `brainstorm_scamper`, `create_matrix`, `generate_combinations`, `extract_contradictions`, `suggest_contradiction_resolutions` |
 | Convergence / critique | `critique_six_hats`, `rank_ideas`, `cluster_ideas`, `deduplicate_ideas`, `search_idea_graph`, `open_idea_neighborhood`, `red_team_concept` |
 | Analyze-backed advisory | `preview_creative_impact`, `find_graph_bridge_ideas`, `critique_idea_with_analyze`, `remix_dead_code_into_ideas`, `optimize_prompt_chain_insertion` |
 
 ### Preview and PatchPlan conversion
 
-- `workbench.creative.turn_idea_into_plan` returns a preview-only implementation plan for one selected idea.
-- `workbench.creative.turn_idea_into_patch_plan` converts one selected idea into the existing `risuai-workbench-mcp.patch-plan` contract and stores only preview metadata in the in-memory PatchPlan store.
-- `workbench.creative.preview_idea_patch` reads a stored idea PatchPlan and returns diff/diagnostic/resource-link context without applying it.
+- `creative.turn_idea_into_plan` returns a preview-only implementation plan for one selected idea through facade action execution.
+- `creative.turn_idea_into_patch_plan` converts one selected idea into the existing `risuai-workbench-mcp.patch-plan` contract and stores only preview metadata in the in-memory PatchPlan store.
+- `creative.preview_idea_patch` reads a stored idea PatchPlan and returns diff/diagnostic/resource-link context without applying it.
 - Raw edit authority is rejected at the creative boundary: callers cannot provide arbitrary diffs, shell commands, replacement text, raw operation arrays, or generated file bodies through creative apply.
 
 ### Explicit persistence
 
-- `workbench.creative.save_idea_session` writes only after explicit tool invocation and confirmation into workspace-local `.risuai-workbench-mcp/creative/sessions/{sessionId}.json`.
-- `workbench.creative.write_idea_memory` writes only after explicit tool invocation and confirmation into workspace-local `.risuai-workbench-mcp/creative/memory/{memoryId}.json`.
+- `creative.save_idea_session` writes only after explicit facade-routed action invocation and confirmation into workspace-local `.risuai-workbench-mcp/creative/sessions/{sessionId}.json`.
+- `creative.write_idea_memory` writes only after explicit facade-routed action invocation and confirmation into workspace-local `.risuai-workbench-mcp/creative/memory/{memoryId}.json`.
 - Read-only ideation/ranking/critique tools do not auto-save sessions, global memory, or cross-workspace state.
 
 ### Gated creative apply
 
-`workbench.creative.apply_idea_patch` is a narrow adapter over the existing `workbench.apply_patch_plan` mutation engine. It uses the same mutation mode (`preview-only|generated-only|enabled`), workspace boundary checks, hash preconditions, confirmation gate, post-validation behavior, append-only journal, and backup/rollback metadata reporting as canonical mutation tools. It may return non-blocking `nextActions` such as analyze/wiki refresh or rollback review, but it does not execute those actions automatically.
+`creative.apply_idea_patch` is an internal action over the existing patch apply engine. Default callers must use `workbench.patch_preview` then `workbench.patch_apply`; the same mutation mode (`preview-only|generated-only|enabled`), workspace boundary checks, hash preconditions, confirmation gate, post-validation behavior, append-only journal, and backup/rollback metadata reporting apply. It may return non-blocking `nextActions` such as analyze/wiki refresh or rollback review, but it does not execute those actions automatically.
 
 ### Creative resources and prompts
 
@@ -272,9 +386,13 @@ Creative prompts are workflow templates only. They can describe safe sequences s
 
 Not implemented by design: UI/webview, automatic wiki refresh, automatic graph rebuild, automatic analyze refresh, automatic rollback, background agents, global memory, cross-workspace sharing, server-side LLM sampling, or automatic application of every generated idea. Creative tools do not replace graphify/code-review-graph, and they do not overwrite artifacts without validation and the existing mutation gate.
 
-## Tools
+## Tools and internal actions
 
-### Inspect / Validate
+The default external MCP tool surface is the 8-tool facade listed above. The following names are internal action coverage and legacy/dev-mode MCP tool references, not the normal default `tools/list` surface. In default mode, call them through `workbench.route_intent`, `workbench.catalog`, `workbench.prepare_action`, and either `workbench.run_action` or the patch preview/apply flow.
+
+To expose the old direct MCP tool names for migration testing, start the server with `RISU_MCP_EXPOSE_LEGACY_TOOLS=1`.
+
+### Inspect / Validate internal actions and legacy tools
 
 | Tool | Mutates | 설명 |
 | --- | ---: | --- |
@@ -291,7 +409,7 @@ Not implemented by design: UI/webview, automatic wiki refresh, automatic graph r
 | `workbench.search_wiki` | no | docs/wiki/rules 검색 surface입니다. 현재 구현은 제한적이며 info diagnostic을 반환할 수 있습니다. |
 | `workbench.suggest_tests` | no | 변경 path 기반 focused test 후보 surface입니다. 현재 구현은 제한적이며 info diagnostic을 반환할 수 있습니다. |
 
-### Analyze / Impact
+### Analyze / Impact internal actions and legacy tools
 
 | Tool | Mutates | 설명 |
 | --- | ---: | --- |
@@ -317,7 +435,7 @@ Not implemented by design: UI/webview, automatic wiki refresh, automatic graph r
 
 RisuLua lifecycle guide tools are authoring guides. They do not preview bundled dist output, do not validate package/export readiness, and do not treat source module `require("module.id")` as a violation. Final generated dist must not retain unresolved executable runtime `require`, but that packaging check is outside this guide family.
 
-### Preview / Patch Plan
+### Preview / Patch Plan internal actions and legacy tools
 
 | Tool | Mutates | 설명 |
 | --- | ---: | --- |
@@ -328,7 +446,7 @@ RisuLua lifecycle guide tools are authoring guides. They do not preview bundled 
 | `workbench.plan_wiki_update` | no | generated wiki refresh 대상과 write scope를 preview합니다. |
 | `workbench.diff_wiki` | no | generated wiki 차이를 요약합니다. |
 
-### Direct Mutation
+### Direct Mutation internal actions and legacy tools
 
 | Tool | Mutates | 설명 |
 | --- | ---: | --- |
@@ -345,7 +463,7 @@ RisuLua lifecycle guide tools are authoring guides. They do not preview bundled 
 | `workbench.refresh_wiki` | yes | generated wiki allowlist 영역만 갱신합니다. |
 | `workbench.rollback_mutation` | yes | journal에 충분한 inverse state가 있는 mutation을 rollback합니다. |
 
-### Creative Thinking
+### Creative Thinking internal actions and legacy tools
 
 | Tool | Mutates | 설명 |
 | --- | ---: | --- |
@@ -378,7 +496,7 @@ RisuLua lifecycle guide tools are authoring guides. They do not preview bundled 
 
 ### Authoring Skills
 
-The authoring skill workflow exposes RisuAI creation guidance as read-only skill resources and approval-gated planning tools.
+The authoring skill workflow exposes RisuAI creation guidance as read-only skill resources and approval-gated planning actions.
 
 | Surface | Name / URI | Mutates | Description |
 | --- | --- | ---: | --- |
@@ -386,22 +504,22 @@ The authoring skill workflow exposes RisuAI creation guidance as read-only skill
 | Resource | `risuai-workbench://skills/en/{skillId}` | no | Full Markdown guidance for one approved skill. |
 | Prompt | `workbench.select_authoring_skill` | no | Guides the host LLM to select one skill from the catalog and ask the user for approval. |
 | Prompt | `workbench.generate_plan_from_skill` | no | Guides the host LLM to turn an approved skill preview bundle into a Korean plan document preview. |
-| Tool | `workbench.list_authoring_skills` | no | Returns packaged skill names, friendly descriptions, usage hints, and resource links. |
-| Tool | `workbench.recommend_skills` | no | Validates the LLM-selected skill and returns an approval-required recommendation. |
-| Tool | `workbench.apply_skill` | no | Requires confirmation and returns a plan document preview bundle without writing files. |
+| Internal action / legacy tool | `skills.list` / `workbench.list_authoring_skills` | no | Returns packaged skill names, friendly descriptions, usage hints, and resource links. |
+| Internal action / legacy tool | `skills.recommend` / `workbench.recommend_skills` | no | Validates the LLM-selected skill and returns an approval-required recommendation. |
+| Internal action / legacy tool | `skills.apply` / `workbench.apply_skill` | no | Requires confirmation and returns a plan document preview bundle without writing files. |
 
 ## Patch operation support
 
-`PatchPlan` contract는 제안서의 operation union을 보존하지만, `workbench.apply_patch_plan`의 apply engine이 현재 직접 지원하는 operation은 제한되어 있습니다.
+`PatchPlan` contract는 제안서의 operation union을 보존하지만, default callers must use `workbench.patch_preview` and `workbench.patch_apply`. The legacy/dev-mode `workbench.apply_patch_plan` engine currently supports a limited set of operations.
 
-| Operation | apply_patch_plan 지원 |
+| Operation | patch apply engine 지원 |
 | --- | --- |
 | `text.replace` | yes |
 | `file.create` | yes |
 | `order.insert` / `order.move` / `order.remove` | yes |
 | `frontmatter.set` / `frontmatter.remove` | yes |
-| `file.delete` / `file.move` | no, 전용 `delete_artifact` / `move_artifact` tool 사용 |
-| `json.set` / `json.remove` | no, 전용 `edit_metadata` tool 사용 |
+| `file.delete` / `file.move` | no, use the matching internal mutation action through the facade or legacy/dev-mode dedicated tool |
+| `json.set` / `json.remove` | no, use the matching internal metadata action through the facade or legacy/dev-mode dedicated tool |
 
 ## Resources
 
@@ -486,11 +604,12 @@ Validation violation과 domain rejection은 MCP transport error가 아니라 str
 - `preview-only|generated-only|enabled` mutation mode와 `preview-only` 기본값은 제안서와 맞습니다.
 - path boundary, symlink escape rejection, hash precondition, confirmation gate, append-only journal이 구현되어 있습니다.
 - core source-of-truth를 재구현하지 않고 `risu-workbench-core` / `risu-workbench-core/node`를 호출합니다.
-- creative thinking tool 26개, creative resource 11개, creative prompt 13개가 registry에 discoverable하고 implemented 상태입니다.
+ - 기본 `tools/list`는 facade tool 8개만 노출합니다. Legacy direct MCP tools are available only with `RISU_MCP_EXPOSE_LEGACY_TOOLS=1`.
+ - creative thinking action 26개, creative resource 11개, creative prompt 13개가 registry에 discoverable하고 implemented 상태입니다.
 - creative apply는 기존 mutation gate와 journal behavior를 재사용하며, analyze/wiki refresh 또는 rollback을 자동 실행하지 않습니다.
 - 일부 resource는 URI surface만 있고 materialized content는 아직 없습니다.
 - `search_wiki`, `suggest_tests`는 현재 제한적인 placeholder 성격입니다.
-- `apply_patch_plan`은 일부 patch operation만 직접 지원하며, delete/move/metadata edit은 전용 tool을 사용합니다.
+- Default mutation guidance uses `workbench.patch_preview` and `workbench.patch_apply`; the underlying legacy apply engine supports only part of the patch operation union.
 
 ## 개발
 

@@ -179,7 +179,7 @@ describe('handleRouteIntent CBS domain awareness', () => {
   });
 
   describe('CBS recommended tools', () => {
-    it('recommends CBS tools when cbs domain is detected via keywords', async () => {
+    it('recommends facade tools when cbs domain is detected via keywords', async () => {
       const result = await handleRouteIntent({
         request: 'Validate the CBS condition syntax',
       });
@@ -187,12 +187,12 @@ describe('handleRouteIntent CBS domain awareness', () => {
       const route = result.data!.route;
       expect(route.domainTags).toContain('cbs');
       expect(route.recommendedTools).toEqual(expect.arrayContaining([
-        'workbench.validate_cbs_syntax',
-        'workbench.query_cbs_usage',
+        'workbench.catalog',
       ]));
+      expect(route.recommendedTools).not.toContain('workbench.creative.brainstorm_scamper');
     });
 
-    it('recommends CBS tools when cbs domain is detected via file suffix', async () => {
+    it('recommends facade tools when cbs domain is detected via file suffix', async () => {
       const result = await handleRouteIntent({
         request: 'Inspect the file',
         target: 'characters/merry/lorebooks/intro.risulorebook',
@@ -200,13 +200,19 @@ describe('handleRouteIntent CBS domain awareness', () => {
 
       const route = result.data!.route;
       expect(route.domainTags).toContain('cbs');
+      expect(route.capabilities).toContain('inspect');
+      expect(route.recommendedActions).toEqual(expect.arrayContaining([
+        'inspect.path',
+        'inspect.artifact',
+      ]));
       expect(route.recommendedTools).toEqual(expect.arrayContaining([
-        'workbench.validate_cbs_syntax',
-        'workbench.query_cbs_usage',
+        'workbench.catalog',
+        'workbench.prepare_action',
+        'workbench.run_action',
       ]));
     });
 
-    it('recommends CBS tools when cbs domain is detected via curly brace syntax', async () => {
+    it('recommends facade tools when cbs domain is detected via curly brace syntax', async () => {
       const result = await handleRouteIntent({
         request: 'Check the {{getvar::name}} usage',
       });
@@ -214,9 +220,9 @@ describe('handleRouteIntent CBS domain awareness', () => {
       const route = result.data!.route;
       expect(route.domainTags).toContain('cbs');
       expect(route.recommendedTools).toEqual(expect.arrayContaining([
-        'workbench.validate_cbs_syntax',
-        'workbench.query_cbs_usage',
+        'workbench.catalog',
       ]));
+      expect(route.recommendedTools).not.toContain('workbench.creative.brainstorm_scamper');
     });
   });
 
@@ -251,15 +257,23 @@ describe('handleRouteIntent CBS domain awareness', () => {
   });
 
   describe('CBS registry consistency', () => {
-    it('only includes implemented registry tools in recommendedTools for CBS routes', async () => {
+    it('only includes facade tools in recommendedTools for CBS routes', async () => {
       const result = await handleRouteIntent({
         request: 'Validate CBS syntax and query usage',
         target: 'characters/merry/lorebooks/intro.risulorebook',
       });
 
       const route = result.data!.route;
+      const facadeTools = [
+        'workbench.catalog',
+        'workbench.prepare_action',
+        'workbench.run_action',
+        'workbench.context',
+        'workbench.patch_preview',
+        'workbench.patch_apply',
+      ];
       for (const name of route.recommendedTools) {
-        expect(isImplementedTool(name)).toBe(true);
+        expect(facadeTools).toContain(name);
       }
     });
 
