@@ -207,6 +207,10 @@ export interface IntentRouteResult {
   routingSignals: readonly string[];
   stopConditions: readonly RouteStopCondition[];
   explanation: string;
+  capabilities: readonly string[];
+  recommendedActions: readonly string[];
+  nextTool: string;
+  nextInput: Record<string, unknown>;
 }
 
 export const intentRouteResultSchema = z.object({
@@ -231,6 +235,10 @@ export const intentRouteResultSchema = z.object({
   routingSignals: z.array(z.string()).default([]),
   stopConditions: z.array(routeStopConditionSchema),
   explanation: z.string(),
+  capabilities: z.array(z.string()).default([]),
+  recommendedActions: z.array(z.string()).default([]),
+  nextTool: z.string().default('workbench.catalog'),
+  nextInput: z.record(z.string(), z.unknown()).default({}),
 }).catchall(z.unknown());
 
 // ---------------------------------------------------------------------------
@@ -262,6 +270,7 @@ export function createIntentRouteResult(
   return {
     allowedTools: input.allowedTools,
     blockedTools: input.blockedTools,
+    capabilities: input.capabilities,
     commitAllowed: input.commitAllowed,
     confidence: input.confidence,
     discouragedTools: input.discouragedTools,
@@ -271,7 +280,10 @@ export function createIntentRouteResult(
     missingInputs: input.missingInputs,
     mutationMode: input.mutationMode,
     mutationRequested: input.mutationRequested,
+    nextInput: input.nextInput,
     nextStep: input.nextStep,
+    nextTool: input.nextTool,
+    recommendedActions: input.recommendedActions,
     recommendedTools: input.recommendedTools,
     requiredEvidence: input.requiredEvidence,
     risk: input.risk,

@@ -110,16 +110,39 @@ describe('RisuLua lifecycle guide tools', () => {
     expect(JSON.stringify(result.data)).toContain('packages/core/src/simulator/regex/simulate.ts');
   });
 
-  it('registers all RisuLua lifecycle guide tools through the MCP server', () => {
+  it('does not register legacy RisuLua lifecycle guide tools in default facade-only mode', () => {
     const server = createMcpServer({ mutationMode: 'preview-only', workspace: { ok: true, path: process.cwd(), reason: null } });
     const toolNames = Object.keys((server as unknown as { _registeredTools: Record<string, unknown> })._registeredTools);
 
-    expect(toolNames).toContain('workbench.explain_risulua_workspace');
-    expect(toolNames).toContain('workbench.guide_risulua_module');
-    expect(toolNames).toContain('workbench.explain_risulua_runtime_api');
-    expect(toolNames).toContain('workbench.explain_lorebook_prompt_injection');
-    expect(toolNames).toContain('workbench.explain_context_feedback_loop');
-    expect(toolNames).toContain('workbench.plan_structured_output_loop');
+    // Phase 9: default surface exposes only facade tools
+    expect(toolNames).not.toContain('workbench.explain_risulua_workspace');
+    expect(toolNames).not.toContain('workbench.guide_risulua_module');
+    expect(toolNames).not.toContain('workbench.explain_risulua_runtime_api');
+    expect(toolNames).not.toContain('workbench.explain_lorebook_prompt_injection');
+    expect(toolNames).not.toContain('workbench.explain_context_feedback_loop');
+    expect(toolNames).not.toContain('workbench.plan_structured_output_loop');
+  });
+
+  it('registers legacy RisuLua lifecycle guide tools when legacy env gate is set', () => {
+    const originalEnv = process.env.RISU_MCP_EXPOSE_LEGACY_TOOLS;
+    process.env.RISU_MCP_EXPOSE_LEGACY_TOOLS = '1';
+    try {
+      const server = createMcpServer({ mutationMode: 'preview-only', workspace: { ok: true, path: process.cwd(), reason: null } });
+      const toolNames = Object.keys((server as unknown as { _registeredTools: Record<string, unknown> })._registeredTools);
+
+      expect(toolNames).toContain('workbench.explain_risulua_workspace');
+      expect(toolNames).toContain('workbench.guide_risulua_module');
+      expect(toolNames).toContain('workbench.explain_risulua_runtime_api');
+      expect(toolNames).toContain('workbench.explain_lorebook_prompt_injection');
+      expect(toolNames).toContain('workbench.explain_context_feedback_loop');
+      expect(toolNames).toContain('workbench.plan_structured_output_loop');
+    } finally {
+      if (originalEnv === undefined) {
+        delete process.env.RISU_MCP_EXPOSE_LEGACY_TOOLS;
+      } else {
+        process.env.RISU_MCP_EXPOSE_LEGACY_TOOLS = originalEnv;
+      }
+    }
   });
 
   it('lists RisuLua lifecycle guide tools as implemented read-only analyze tools', () => {

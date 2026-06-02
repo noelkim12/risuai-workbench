@@ -1,6 +1,6 @@
 # risuai-workbench-mcp tools
 
-`packages/risuai-workbench-mcp/src/tools/`는 RisuAI Workbench MCP 서버가 노출하는 tool handler 구현을 도메인별로 모아 둔 영역입니다. 실제 MCP 등록은 `src/server.ts`에서 수행하고, 이 디렉토리는 handler와 도메인 barrel export를 제공합니다.
+`packages/risuai-workbench-mcp/src/tools/`는 RisuAI Workbench MCP 서버의 domain handler 구현을 도메인별로 모아 둔 영역입니다. 기본 외부 MCP surface는 `src/tools/facade/`와 `src/server.ts`가 등록하는 8개 facade tool이며, 이 디렉토리의 domain handler들은 ActionRegistry 내부 action 또는 legacy/dev-mode direct MCP tool의 구현으로 재사용됩니다.
 
 ## 구조
 
@@ -10,7 +10,7 @@ src/tools/
 ├── inspect/                 # path / artifact inspection
 ├── validate/                # artifact structure validation, path build, test hints
 ├── patch/                   # no-write patch preview + patch plan apply entry
-├── mutation/                # direct structured source artifact mutations + gated core workflows
+├── mutation/                # structured source artifact mutation handlers + gated core workflows
 ├── analyze/                 # read-only analyze / impact query tools
 └── wiki/                    # wiki search, preview, generated wiki bootstrap/refresh
 ```
@@ -26,13 +26,40 @@ export * from './analyze';
 export * from './wiki';
 ```
 
-## 등록 방식
+## Facade registration model
 
-Tool 구현은 이 디렉토리에 있지만 MCP SDK 등록은 `packages/risuai-workbench-mcp/src/server.ts`의 `server.registerTool()` 호출에서 이루어집니다.
+Default `tools/list` exposes exactly these 8 facade tools:
 
-- Tool name은 `workbench.{verb}_{noun}` 형식입니다.
+```text
+workbench.smoke
+workbench.route_intent
+workbench.catalog
+workbench.prepare_action
+workbench.run_action
+workbench.context
+workbench.patch_preview
+workbench.patch_apply
+```
+
+Normal agent flow is:
+
+```text
+workbench.route_intent -> workbench.catalog -> workbench.prepare_action -> workbench.run_action
+```
+
+Mutation flow is:
+
+```text
+workbench.route_intent -> workbench.catalog -> workbench.prepare_action -> workbench.patch_preview -> workbench.patch_apply
+```
+
+이 디렉토리의 domain handler는 대부분 `src/actions/adapters/*`에서 internal action으로 등록되고, facade tool이 ActionRegistry를 통해 실행합니다. 기존 direct MCP tool name(`workbench.inspect_path`, `workbench.query_*`, `workbench.apply_patch_plan` 등)은 default `tools/list`에 노출되지 않습니다. Legacy direct MCP exposure is available only when the server starts with `RISU_MCP_EXPOSE_LEGACY_TOOLS=1` for development or migration testing.
+
+Facade tool 등록은 `packages/risuai-workbench-mcp/src/server.ts`의 facade registration path에서 수행합니다. Legacy/dev-mode direct tool 등록도 `src/server.ts`에 남아 있지만 env gate 뒤에 있습니다.
+
+- Legacy/dev-mode MCP tool name은 `workbench.{verb}_{noun}` 형식입니다.
 - Handler 함수명은 `handle{Verb}{Noun}` 형식입니다.
-- `inputSchema`는 `zod` raw shape로 등록됩니다.
+- Internal action `inputSchema`는 `src/actions/schemas/*`의 Zod schema를 사용합니다. Legacy/dev-mode direct MCP registration uses Zod raw shapes.
 - Handler 결과는 `createJsonToolResult(result)`를 통해 MCP text JSON과 `structuredContent`를 함께 반환합니다.
 - Stable envelope tools should declare `outputSchema` from `src/contracts/output-schemas.ts`.
 - Tool metadata와 구현 상태는 `src/registry/index.ts`의 `WORKBENCH_REGISTRY`와 `IMPLEMENTED_ROADMAP_TOOL_NAMES`가 관리합니다.
@@ -46,9 +73,11 @@ Tool 구현은 이 디렉토리에 있지만 MCP SDK 등록은 `packages/risuai-
 
 Mutation 계열 handler는 대체로 `unknown` input을 받은 뒤 내부 parse 함수와 `createUnknownFieldDiagnosticEnvelope()`로 fail-closed 검증을 수행합니다. 실제 write는 `evaluateMutationSafetyGate()`에서 workspace boundary, mutation mode, hash precondition, confirmation gate를 통과해야 합니다.
 
-## Tool 목록
+## Handler catalog
 
-현재 registry 기준 구현 tool은 `workbench.smoke`를 포함해 **74개**입니다(비즈니스 로직 tool 48개 + creative tool 26개). `workbench.smoke`는 startup smoke tool이며 `src/tools/`가 아니라 `src/server.ts`에서 직접 등록됩니다.
+이 목록은 maintainer용 domain handler catalog입니다. 표의 `Tool` 값은 legacy/dev-mode direct MCP tool name 또는 historical surface name이며, default external `tools/list`가 아닙니다. Default external `tools/list`는 위의 8개 facade tool만 포함합니다.
+
+현재 registry 기준 domain handler coverage는 legacy direct name 기준 비즈니스 로직 tool 48개와 creative tool 26개입니다. `workbench.smoke`는 facade startup smoke tool이며 `src/tools/`가 아니라 `src/server.ts`에서 직접 등록됩니다.
 
 ### Startup
 
@@ -94,7 +123,7 @@ Mutation 계열 handler는 대체로 `unknown` input을 받은 뒤 내부 parse 
 | `workbench.suggest_root_marker_patch` | no | `handleSuggestRootMarkerPatch` | `patch/suggest-root-marker-patch.ts` | `.risuchar`/`.risumodule` 등 root marker 생성 또는 복구 patch preview를 만듭니다. |
 | `workbench.apply_patch_plan` | yes | `handleApplyPatchPlan` | `patch/apply-patch-plan.ts` | 저장된 `patchPlanId`를 조회해 confirmation, mutation mode, precondition을 재검증한 뒤 지원 operation을 적용합니다. |
 
-`workbench.apply_patch_plan`이 직접 지원하는 operation은 `text.replace`, `file.create`, `order.insert`, `order.move`, `order.remove`, `frontmatter.set`, `frontmatter.remove`입니다. `file.move`, `file.delete`, `json.set`은 전용 mutation tool을 사용합니다.
+Default callers should use `workbench.patch_preview` followed by `workbench.patch_apply`. The legacy/dev-mode `workbench.apply_patch_plan` handler directly supports `text.replace`, `file.create`, `order.insert`, `order.move`, `order.remove`, `frontmatter.set`, and `frontmatter.remove`. `file.move`, `file.delete`, and `json.set` use the matching internal mutation action or legacy/dev-mode dedicated tool.
 
 ### Direct mutation
 
@@ -151,7 +180,7 @@ Mutation 계열 handler는 대체로 `unknown` input을 받은 뒤 내부 parse 
 | `suggest_order_patch`, `edit_order` | order path/directory, `insert`/`move`/`remove` operations |
 | `suggest_frontmatter_patch` | `path`, optional `set`, `remove`, `preserveBody` |
 | `apply_patch_plan` | `patchPlanId`, `confirmation`, optional `options` |
-| direct mutation tools | `mode: preview|commit`, optional `confirmation`, `expectedHash`, `postValidate` |
+| mutation handlers / legacy-dev-mode direct tools | `mode: preview|commit`, optional `confirmation`, `expectedHash`, `postValidate` |
 | `ensure_wiki_root` | optional `wikiRoot`(현재 `wiki`만 지원), `mode`, optional `confirmation`, `postValidate` |
 | `run_extract` | `sourcePath`, `outDir`, optional `type`, RisuLua options, `mode`, `confirmation`, `postValidate`. Preview data includes the follow-up `postExtractAnalyze` command; commit confirmation text includes both extract output and wiki target (`RUN_EXTRACT <source> TO <outDir> WITH WIKI <wikiRoot>`). |
 | `run_scaffold` | `type`, `name`, optional `outDir`, `creator`, `namespace`, `risuluaMode`, `mode`, `confirmation`, `postValidate` |
@@ -169,12 +198,14 @@ Mutation 계열 handler는 대체로 `unknown` input을 받은 뒤 내부 parse 
 - Handlers must check cancellation before irreversible work, pass the signal to child-process wrappers, and report cancellation through structured diagnostic or mutation envelopes.
 - Handlers must not swallow cancellation by returning `ok` when a child process was terminated. Mid-child cancellation should remain visible through command cancellation diagnostics and a failed mutation result after post-validation and journal handling.
 
-## 새 tool 추가 체크리스트
+## 새 기능 추가 체크리스트
 
 1. 적절한 도메인 폴더에 `{verb}-{noun}.ts` 파일을 추가합니다.
 2. Handler 이름은 `handle{Verb}{Noun}` 형식으로 작성합니다.
-3. Read-only tool은 `DiagnosticEnvelope`, mutation tool은 `DiagnosticEnvelope | MutationResultEnvelope`를 반환합니다.
+3. Read-only handler는 `DiagnosticEnvelope`, mutation handler는 `DiagnosticEnvelope | MutationResultEnvelope`를 반환합니다.
 4. 도메인 `index.ts`와 루트 barrel export 경로를 확인합니다.
-5. `src/server.ts`의 적절한 `register*Tools()` 함수에 `server.registerTool()`과 Zod `inputSchema`를 추가합니다.
-6. `src/registry/index.ts`에 tool metadata와 구현 상태를 반영합니다.
-7. Mutation tool이면 unknown field rejection, safe path, mutation mode, hash precondition, confirmation gate, journal/post-validation 정책을 반드시 확인합니다.
+5. `src/actions/schemas/*`에 ActionRegistry input schema를 추가하고, `src/actions/adapters/*`에서 internal action ID, capability, risk, handler execute mapping을 등록합니다.
+6. Facade flow에서 discoverable해야 하므로 `workbench.route_intent`, `workbench.catalog`, `workbench.prepare_action`, `workbench.run_action` 또는 mutation의 `workbench.patch_preview`/`workbench.patch_apply` 경로로 사용할 수 있는지 확인합니다.
+7. `src/registry/index.ts`에 metadata와 구현 상태를 반영합니다.
+8. Legacy direct MCP exposure가 꼭 필요한 migration/dev compatibility case에만 `src/server.ts`의 env-gated legacy registration path에 `server.registerTool()`을 추가합니다. Default exposure로 추가하지 마세요.
+9. Mutation handler이면 unknown field rejection, safe path, mutation mode, hash precondition, confirmation gate, journal/post-validation 정책을 반드시 확인합니다.

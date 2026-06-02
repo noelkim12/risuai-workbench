@@ -24,6 +24,8 @@ import { createPatchPlanStore, type PatchPlanStore } from './mutation/patch-stor
 import { registerWorkbenchPrompts } from './prompts';
 import { resolveWorkspaceRoot, type WorkspaceRootStatus } from './project/resolve-root';
 import { registerWorkbenchResources } from './resources';
+import { ContextStore } from './context/context-store';
+import { ContextToolInputSchema } from './context/context-contracts';
 
 import {
   // intent-route
@@ -91,7 +93,22 @@ import {
   handleRecommendSkills,
   // creative
   registerCreativeTools,
+  // facade
+  handleCatalog,
+  CatalogInputSchema,
+  handlePrepareAction,
+  PrepareActionInputSchema,
+  handleRunAction,
+  RunActionInputSchema,
+  handleContextTool,
+  handlePatchPreview,
+  PatchPreviewInputSchema,
+  handlePatchApply,
+  PatchApplyInputSchema,
 } from './tools';
+
+import { createWorkbenchActionRegistry } from './actions/create-registry';
+import { createUnknownActionError } from './actions/errors';
 
 export { resolveWorkspaceRoot, type WorkspaceRootStatus } from './project/resolve-root';
 
@@ -171,17 +188,30 @@ export function createMcpServer(startupContext: StartupContext): McpServer {
   );
 
   registerIntentRouteTools(server);
-  registerAuthoringSkillTools(server);
-  registerInspectValidateTools(server, startupContext.workspace);
-  registerPatchPreviewTools(server, startupContext.workspace, patchStore);
-  registerPatchApplyTools(server, startupContext, patchStore);
-  registerDirectMutationTools(server, startupContext, patchStore);
-  registerCoreWorkflowTools(server, startupContext);
-  registerAnalyzeQueryTools(server, startupContext.workspace);
-  registerAdvancedMutationTools(server, startupContext);
   registerWorkbenchResources(server, startupContext.workspace, patchStore);
   registerWorkbenchPrompts(server);
-  registerCreativeTools(server, startupContext.workspace, patchStore, startupContext.mutationMode);
+
+  const actionExecutionContext = {
+    mutationMode: startupContext.mutationMode,
+    patchStore,
+    workspace: startupContext.workspace,
+  };
+  const contextStore = new ContextStore();
+  const actionRegistry = createWorkbenchActionRegistry(actionExecutionContext);
+  registerFacadeTools(server, actionRegistry, actionExecutionContext, contextStore);
+
+  // Phase 9: legacy tools are gated behind development env var; default exposes only facade
+  if (process.env.RISU_MCP_EXPOSE_LEGACY_TOOLS === '1') {
+    registerAuthoringSkillTools(server);
+    registerInspectValidateTools(server, startupContext.workspace);
+    registerPatchPreviewTools(server, startupContext.workspace, patchStore);
+    registerPatchApplyTools(server, startupContext, patchStore);
+    registerDirectMutationTools(server, startupContext, patchStore);
+    registerCoreWorkflowTools(server, startupContext);
+    registerAnalyzeQueryTools(server, startupContext.workspace);
+    registerAdvancedMutationTools(server, startupContext);
+    registerCreativeTools(server, startupContext.workspace, patchStore, startupContext.mutationMode);
+  }
 
   return server;
 }
@@ -1290,6 +1320,115 @@ function registerDirectMutationTools(server: McpServer, startupContext: StartupC
     async (input: unknown) => {
       const result = await handleCreateArtifact(input, startupContext.workspace, startupContext.mutationMode, patchStore);
       return createJsonToolResult(result);
+    },
+  );
+}
+
+/**
+ * registerFacadeTools 함수.
+ * Phase 3 facade MVP tools (catalog, prepare_action, run_action)와
+ * Phase 6 context tool을 MCP server에 등록함.
+ * Legacy tools와 병렬로 노출되며, facade-only switch는 Phase 9에서 수행함.
+ *
+ * @param server - MCP server 인스턴스
+ * @param registry - ActionRegistry with Phase 2+ actions
+ * @param executionContext - shared action execution context
+ * @param contextStore - in-memory context store for handle-based lazy loading
+ */
+function registerFacadeTools(
+  server: McpServer,
+  registry: ReturnType<typeof createWorkbenchActionRegistry>,
+  executionContext: { mutationMode: MutationMode; patchStore: PatchPlanStore; workspace: WorkspaceRootStatus },
+  contextStore: ContextStore,
+): void {
+  server.registerTool(
+    'workbench.catalog',
+    {
+      description: 'List available workbench actions with metadata and navigation hint.',
+      inputSchema: CatalogInputSchema.shape,
+      outputSchema: workbenchJsonOutputSchema,
+      title: 'Catalog actions',
+    },
+    async (input: Parameters<typeof handleCatalog>[0]) => {
+      const result = handleCatalog(input, registry);
+      return createJsonToolResult(result);
+    },
+  );
+
+  server.registerTool(
+    'workbench.prepare_action',
+    {
+      description: 'Describe input requirements for a single action before running it.',
+      inputSchema: PrepareActionInputSchema.shape,
+      outputSchema: workbenchJsonOutputSchema,
+      title: 'Prepare action',
+    },
+    async (input: Parameters<typeof handlePrepareAction>[0]) => {
+      const result = handlePrepareAction(input, registry);
+      if (!result) {
+        let suggestions = registry.search({ query: input.actionId, limit: 4 });
+        if (suggestions.length === 0) {
+          suggestions = registry.list().slice(0, 4);
+        }
+        return createJsonToolResult(createUnknownActionError(input.actionId, suggestions));
+      }
+      return createJsonToolResult(result);
+    },
+  );
+
+  server.registerTool(
+    'workbench.run_action',
+    {
+      description: 'Execute a registered action with validated input. Read-only actions run directly; commit mutations are blocked.',
+      inputSchema: RunActionInputSchema.shape,
+      outputSchema: workbenchJsonOutputSchema,
+      title: 'Run action',
+    },
+    async (input: Parameters<typeof handleRunAction>[0]) => {
+      const result = await handleRunAction(input, registry, executionContext, contextStore);
+      return createJsonToolResult(result as Record<string, unknown>);
+    },
+  );
+
+  server.registerTool(
+    'workbench.context',
+    {
+      description: 'Create, read, search, summarize, or release in-memory context records for lazy loading large inputs.',
+      inputSchema: ContextToolInputSchema.shape,
+      outputSchema: workbenchJsonOutputSchema,
+      title: 'Manage context',
+    },
+    async (input: Parameters<typeof handleContextTool>[0]) => {
+      const result = handleContextTool(input, contextStore);
+      return createJsonToolResult(result);
+    },
+  );
+
+  server.registerTool(
+    'workbench.patch_preview',
+    {
+      description: 'Preview patch plans safely. Execute a registered preview action by actionId+args, or pass through a supplied patchPlan object.',
+      inputSchema: PatchPreviewInputSchema.shape,
+      outputSchema: workbenchJsonOutputSchema,
+      title: 'Patch preview',
+    },
+    async (input: Parameters<typeof handlePatchPreview>[0]) => {
+      const result = await handlePatchPreview(input, registry, executionContext, contextStore);
+      return createJsonToolResult(result as unknown as Record<string, unknown>);
+    },
+  );
+
+  server.registerTool(
+    'workbench.patch_apply',
+    {
+      description: 'Apply a stored patch plan after confirmation and precondition checks. Requires confirmation object.',
+      inputSchema: PatchApplyInputSchema.shape,
+      outputSchema: workbenchJsonOutputSchema,
+      title: 'Patch apply',
+    },
+    async (input: Parameters<typeof handlePatchApply>[0]) => {
+      const result = await handlePatchApply(input, executionContext);
+      return createJsonToolResult(result as unknown as Record<string, unknown>);
     },
   );
 }
