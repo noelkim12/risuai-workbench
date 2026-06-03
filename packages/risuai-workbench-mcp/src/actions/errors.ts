@@ -150,16 +150,16 @@ export function createUnknownActionError(
   actionId: string,
   suggestions: readonly WorkbenchAction[],
 ): ActionErrorResult {
-  const legacyMatch = suggestions.find((action) => action.legacyToolName === actionId);
-  const message = legacyMatch
-    ? `\`${actionId}\` is a legacy direct tool name. Use \`workbench.run_action\` with \`actionId: "${legacyMatch.id}"\` instead.`
+  const exactLegacyMatch = suggestions.find((action) => action.legacyToolName === actionId);
+  const message = exactLegacyMatch
+    ? `"${actionId}" is a legacy direct MCP tool name. Use internal action id "${exactLegacyMatch.id}" with workbench.run_action.`
     : undefined;
 
   return {
     error: {
       actionId,
       code: 'UNKNOWN_ACTION',
-      message,
+      ...(message ? { message } : {}),
     },
     ok: false,
     suggestions: suggestions.map((action) => ({

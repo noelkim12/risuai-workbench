@@ -218,12 +218,8 @@ describe('facade run_action', () => {
     const result = (await handleRunAction({ actionId: 'workbench.run_extract', args: { sourcePath: 'example.risum' } }, registry, dummyContext)) as { ok: false; error: { code: string; message?: string }; suggestions?: Array<{ id: string; title: string }> };
     expect(result.ok).toBe(false);
     expect(result.error.code).toBe('UNKNOWN_ACTION');
-    expect(result.error.message).toContain('legacy');
-    expect(result.error.message).toContain('core.run_extract');
-    expect(result.suggestions).toBeDefined();
-    expect(result.suggestions!.length).toBeGreaterThan(0);
-    expect(result.suggestions![0].id).toBe('core.run_extract');
-    expect(result.suggestions![0].title).toBe('Run extract workflow');
+    expect(result.error.message).toBe('"workbench.run_extract" is a legacy direct MCP tool name. Use internal action id "core.run_extract" with workbench.run_action.');
+    expect(result.suggestions).toEqual([{ id: 'core.run_extract', title: 'Run extract workflow' }]);
   });
 
   it('returns invalid args error with retry and prepare hints', async () => {
