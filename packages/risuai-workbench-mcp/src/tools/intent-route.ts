@@ -19,6 +19,7 @@ import {
   type TargetKind,
   type WorkbenchIntent,
 } from '../contracts/intent-route';
+import { resolveCompactCanonicalIntent } from '../domain/canonical-intent';
 import { WORKBENCH_REGISTRY } from '../registry';
 
 // ---------------------------------------------------------------------------
@@ -45,6 +46,8 @@ const MUTATION_KEYWORDS = [
   '적용',
   '삭제',
   '이동',
+  '수정',
+  '바꿔',
 ];
 
 const SCAFFOLD_KEYWORDS = [
@@ -52,6 +55,7 @@ const SCAFFOLD_KEYWORDS = [
   'initialize',
   'init',
   'scaffold',
+  '새',
   '새로',
   '생성',
   '스캐폴드',
@@ -65,6 +69,27 @@ const PROJECT_TYPE_KEYWORDS = [
   '캐릭터',
   '모듈',
   '프리셋',
+];
+
+const EXTRACT_KEYWORDS = [
+  'extract',
+  'unpack',
+  'import',
+  'open',
+  '추출',
+  '풀어',
+  '가져오기',
+];
+
+const EXTRACT_SOURCE_KEYWORDS = [
+  '.risum',
+  '.risuchar',
+  '.risup',
+  '.charx',
+  'risum',
+  'risuchar',
+  'risup',
+  'charx',
 ];
 
 const PREVIEW_EVIDENCE_KEYWORDS = [
@@ -117,8 +142,8 @@ const AUTHORING_SKILL_KEYWORDS = [
   '제작',
   '설계',
 ];
-const VALIDATE_KEYWORDS = ['validate', 'validation', 'verify', 'check'];
-const INSPECT_KEYWORDS = ['inspect', 'review', 'look at', 'check', 'examine'];
+const VALIDATE_KEYWORDS = ['validate', 'validation', 'verify', 'check', '검증', '확인'];
+const INSPECT_KEYWORDS = ['inspect', 'review', 'look at', 'check', 'examine', '봐줘', '확인'];
 
 const LOREBOOK_DOMAIN_KEYWORDS = ['lorebook', 'risulorebook', '로어북', 'entry', 'entries'];
 const CHARACTER_DOMAIN_KEYWORDS = ['risuchar', 'charx', 'character card', '캐릭터', '카드'];
@@ -154,6 +179,9 @@ const CBS_FILE_SUFFIXES = [
 ];
 const PROMPT_CHAIN_DOMAIN_KEYWORDS = ['risuprompt', 'prompt chain', '프롬프트', 'prompt template'];
 const ORDER_DOMAIN_KEYWORDS = ['_order.json', 'order', 'reorder', '순서'];
+const PRESET_DOMAIN_KEYWORDS = ['preset', '프리셋'];
+const REGEX_DOMAIN_KEYWORDS = ['regex', 'regexp', '정규식', 'presetregex', 'customscripts', '충돌'];
+const TEXT_DOMAIN_KEYWORDS = ['risutext', '.risutext', 'first_mes', '첫 메시지', '첫메시지', '본문'];
 
 // ---------------------------------------------------------------------------
 // Registry-derived tool categorization
@@ -300,6 +328,9 @@ function detectDomainTags(text: string): readonly string[] {
   addIf('prompt-chain', PROMPT_CHAIN_DOMAIN_KEYWORDS);
   addIf('order', ORDER_DOMAIN_KEYWORDS);
   addIf('frontmatter', FRONTMATTER_KEYWORDS);
+  addIf('preset', PRESET_DOMAIN_KEYWORDS);
+  addIf('regex', REGEX_DOMAIN_KEYWORDS);
+  addIf('text', TEXT_DOMAIN_KEYWORDS);
 
   // Path-based and content-based CBS detection
   if (!tags.includes('cbs')) {
@@ -372,10 +403,18 @@ function buildRouteResult(
   const nextInput = intentToNextInput(intent, input);
   const facadeRecommendedTools = intentToFacadeRecommendedTools(intent);
 
+  const canonical = resolveCompactCanonicalIntent({
+    context: input.context,
+    recommendedActions,
+    request: input.request,
+    target: input.target,
+  });
+
   return createIntentRouteResult({
     allowedTools: overrides.allowedTools ?? [],
     blockedTools: overrides.blockedTools ?? [],
     capabilities,
+    canonical,
     commitAllowed: overrides.commitAllowed,
     confidence: overrides.confidence,
     discouragedTools: filterImplemented(overrides.discouragedTools ?? []),
@@ -507,7 +546,9 @@ function intentToCapabilities(intent: WorkbenchIntent): readonly string[] {
     case 'wiki.refresh.preview':
       return ['wiki'];
     case 'core.scaffold.preview':
-      return ['core.scaffold'];
+      return [];
+    case 'core.extract.preview':
+      return ['mutation.direct'];
     case 'analyze.variable_flow':
     case 'analyze.lua_handler':
       return ['analyze'];
@@ -542,6 +583,8 @@ function intentToRecommendedActions(intent: WorkbenchIntent): readonly string[] 
       return ['wiki.search', 'wiki.refresh'];
     case 'core.scaffold.preview':
       return [];
+    case 'core.extract.preview':
+      return ['core.run_extract'];
     case 'analyze.variable_flow':
       return ['analyze.query_variable_flow', 'analyze.query_variable'];
     case 'analyze.lua_handler':
@@ -590,6 +633,8 @@ function intentToNextInput(
       return { capability: 'wiki', limit: 5 };
     case 'core.scaffold.preview':
       return { query: 'scaffold', limit: 5 };
+    case 'core.extract.preview':
+      return { capability: 'mutation.direct', query: 'extract', limit: 5 };
     case 'analyze.variable_flow':
     case 'analyze.lua_handler':
       return { capability: 'analyze', limit: 5 };
@@ -616,6 +661,8 @@ function intentToFacadeRecommendedTools(intent: WorkbenchIntent): readonly strin
       return [FACADE_TOOLS.catalog, FACADE_TOOLS.context, FACADE_TOOLS.prepareAction, FACADE_TOOLS.runAction];
     case 'unknown':
       return [FACADE_TOOLS.catalog];
+    case 'core.extract.preview':
+      return [FACADE_TOOLS.catalog, FACADE_TOOLS.prepareAction, FACADE_TOOLS.runAction];
     default:
       return [FACADE_TOOLS.catalog, FACADE_TOOLS.prepareAction, FACADE_TOOLS.runAction];
   }
@@ -698,6 +745,7 @@ function applyConstraints(
     allowedTools: filterImplemented(allowedTools),
     blockedTools: filterImplemented(blockedTools),
     capabilities: route.capabilities,
+    canonical: route.canonical,
     commitAllowed,
     confidence: route.confidence,
     discouragedTools: filterImplemented(
@@ -905,6 +953,33 @@ function classifyIntent(
       blockedTools: filterImplemented(differenceSets(MUTATION_TOOLS, ['workbench.run_scaffold'])),
       domainTags: constraints.domainTags,
       routingSignals: ['scaffold', 'preview_required', ...constraints.domainTags.map((tag) => `domain:${tag}`)],
+    });
+  }
+
+  // Rule 7.6: extract/unpack/import language with source file-type signal
+  const extractSourceText = `${text} ${input.target ?? ''}`;
+  if (hasKeyword(text, EXTRACT_KEYWORDS) && hasKeyword(extractSourceText, EXTRACT_SOURCE_KEYWORDS)) {
+    const hasTarget = Boolean(input.target);
+    const hasSourceSignal = hasKeyword(extractSourceText, EXTRACT_SOURCE_KEYWORDS);
+    const missingSourcePath = !hasTarget && !hasSourceSignal;
+
+    return buildRouteResult(input, {
+      intent: 'core.extract.preview',
+      nextStep: 'apply',
+      confidence: 0.9,
+      risk: 'external_process',
+      targetKind: hasTarget ? 'path' : 'workspace',
+      mutationRequested: true,
+      commitAllowed: true,
+      mutationMode: 'guarded_direct',
+      stopConditions: missingSourcePath ? ['missing_target'] : [],
+      missingInputs: missingSourcePath ? ['sourcePath'] : [],
+      explanation: 'Extract or import request for RisuAI archive detected. Use facade catalog/prepare_action/run_action to route to core.run_extract. Do not call legacy workbench.run_extract in default MCP mode.',
+      allowedTools: filterImplemented(unionSets([READ_ONLY_TOOLS, [FACADE_TOOLS.catalog, FACADE_TOOLS.prepareAction, FACADE_TOOLS.runAction]])),
+      recommendedTools: [FACADE_TOOLS.catalog, FACADE_TOOLS.prepareAction, FACADE_TOOLS.runAction],
+      blockedTools: [],
+      domainTags: constraints.domainTags,
+      routingSignals: ['extract', 'external_process', 'facade_action:core.run_extract', ...constraints.domainTags.map((tag) => `domain:${tag}`)],
     });
   }
 
