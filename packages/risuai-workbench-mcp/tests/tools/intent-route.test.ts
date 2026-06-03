@@ -543,32 +543,40 @@ describe('handleRouteIntent', () => {
       expect(route.nextStep).toBe('inspect');
     });
 
-    it('rule 7.6: facade-safe extract routing recommends core.run_extract via facade tools and does not expose workbench.run_extract', async () => {
+    it('routes .risum extract to core.run_extract without blocking the facade execution path', async () => {
       const result = await handleRouteIntent({
         request: 'extract test_suites/example.risum to test_suites/extraction_targets',
       });
 
       const route = result.data!.route;
       expect(route.intent).toBe('core.extract.preview');
+      expect(route.risk).toBe('external_process');
+      expect(route.mutationMode).toBe('guarded_direct');
+      expect(route.commitAllowed).toBe(true);
       expect(route.recommendedActions).toContain('core.run_extract');
-      expect(route.recommendedTools).toEqual([
-        'workbench.catalog',
-        'workbench.prepare_action',
-        'workbench.run_action',
-      ]);
+      expect(route.recommendedTools).toEqual(
+        expect.arrayContaining([
+          'workbench.catalog',
+          'workbench.prepare_action',
+          'workbench.run_action',
+        ]),
+      );
       expect(route.recommendedTools).not.toContain('workbench.run_extract');
       expect(route.blockedTools).not.toContain('workbench.run_action');
+      expect(route.explanation).toContain('core.run_extract');
     });
 
-    it('rule 7.6: target-based archive path detection works when .risum is in target', async () => {
+    it('routes extract language when the archive extension is provided through target', async () => {
       const result = await handleRouteIntent({
-        request: 'extract this archive',
+        request: 'extract this into test_suites/extraction_targets',
         target: 'test_suites/example.risum',
       });
 
       const route = result.data!.route;
       expect(route.intent).toBe('core.extract.preview');
       expect(route.targetKind).toBe('path');
+      expect(route.missingInputs).toEqual([]);
+      expect(route.stopConditions).toEqual([]);
       expect(route.recommendedActions).toContain('core.run_extract');
     });
   });
