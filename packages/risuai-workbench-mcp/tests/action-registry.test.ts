@@ -168,6 +168,24 @@ describe('createWorkbenchActionRegistry', () => {
     expect(registry.list().length).toBeGreaterThan(30);
     expect(registry.get('custom.new_action')).toBeDefined();
   });
+
+  it('registers core.run_extract with correct metadata', () => {
+    const registry = createWorkbenchActionRegistry(dummyContext);
+    const action = registry.get('core.run_extract');
+    expect(action).toBeDefined();
+    expect(action!.id).toBe('core.run_extract');
+    expect(action!.legacyToolName).toBe('workbench.run_extract');
+    expect(action!.risk).toBe('external_process');
+    expect(action!.capability).toBe('mutation.direct');
+  });
+
+  it('can search core.run_extract by legacy name, domain keyword, and alias', () => {
+    const registry = createWorkbenchActionRegistry(dummyContext);
+    expect(registry.search({ query: 'workbench.run_extract' }).map((a) => a.id)).toContain('core.run_extract');
+    expect(registry.search({ query: 'risum' }).map((a) => a.id)).toContain('core.run_extract');
+    expect(registry.search({ query: 'charx' }).map((a) => a.id)).toContain('core.run_extract');
+    expect(registry.search({ query: 'extract' }).map((a) => a.id)).toContain('core.run_extract');
+  });
 });
 
 describe('action error helpers', () => {

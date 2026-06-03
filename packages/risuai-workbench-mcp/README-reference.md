@@ -433,7 +433,7 @@ RisuLua lifecycle guide tools are authoring guides. They do not preview bundled 
 | `workbench.edit_frontmatter` | yes | artifact body를 보존하면서 frontmatter field를 set/remove합니다. |
 | `workbench.edit_metadata` | yes | root marker 또는 metadata JSON을 structured `json.set` operation으로 수정합니다. |
 | `workbench.create_artifact` | yes | canonical path에 새 artifact를 만들고 optional order insertion을 수행합니다. |
-| `workbench.run_extract` | yes | `risu-core extract`를 실행합니다. `sourcePath`는 기존 파일, `outDir`은 신규 디렉터리여야 합니다. |
+| `workbench.run_extract` | yes | Legacy/dev-mode direct tool only. Default facade callers should use `workbench.run_action` with `actionId: "core.run_extract"` for `.risum`, `.charx`, or `.risup` archive extraction. `.risuchar` is a workspace root marker, not an external archive input. |
 | `workbench.run_scaffold` | yes | `risu-core scaffold`를 실행해 charx/module/preset 프로젝트 골격을 생성합니다. |
 | `workbench.move_artifact` | yes | artifact rename/move와 optional order update를 처리합니다. |
 | `workbench.delete_artifact` | yes | artifact delete tool입니다. |

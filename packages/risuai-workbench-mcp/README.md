@@ -6,7 +6,7 @@ RisuAI Workbench의 Canonical Workspace를 AI agent가 안전하게 읽고, 검�
 
 ## Extraction quick path
 
-If the user asks to extract, import, or unpack a RisuAI archive (`.risum`, `.risuchar`, `.charx`, `.risup`), do **not** read the binary archive as text and do **not** call `workbench.run_extract` in default MCP mode.
+If the user asks to extract, import, or unpack a RisuAI archive (`.risum`, `.charx`, `.risup`), do **not** read the binary archive as text, do **not** hand-unzip it, and do **not** call `workbench.run_extract` in default MCP mode. `.risuchar` is a canonical workspace root marker, not an external archive input.
 
 Use the facade action:
 

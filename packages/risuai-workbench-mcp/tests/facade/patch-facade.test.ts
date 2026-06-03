@@ -36,8 +36,16 @@ function mutationResult(result: DiagnosticEnvelope | MutationResultEnvelope): Mu
   return result;
 }
 
-function patchPlanFromPreview(result: DiagnosticEnvelope): PatchPlan {
-  return (result.data as { patchPlan: PatchPlan }).patchPlan;
+function patchPlanFromPreview(result: DiagnosticEnvelope, patchStore: ActionExecutionContext['patchStore']): PatchPlan {
+  const summary = (result.data as { patchPlanSummary?: { patchPlanId: string } }).patchPlanSummary;
+  if (!summary?.patchPlanId) {
+    throw new Error('Expected patchPlanSummary with patchPlanId in preview result');
+  }
+  const plan = patchStore.getPatchPlan(summary.patchPlanId);
+  if (!plan) {
+    throw new Error(`Patch plan ${summary.patchPlanId} not found in patchStore`);
+  }
+  return plan;
 }
 
 async function createPatchFixture(): Promise<{ root: string; workspace: { ok: true; path: string; reason: null } }> {
@@ -69,7 +77,9 @@ describe('handlePatchPreview', () => {
     expect(envelope.status).toBe('ok');
     expect(envelope.tool).toBe('workbench.suggest_order_patch');
     expect(envelope.data).toBeDefined();
-    expect((envelope.data as { patchPlan?: PatchPlan }).patchPlan).toBeDefined();
+    expect((envelope.data as { patchPlan?: PatchPlan }).patchPlan).toBeUndefined();
+    expect((envelope.data as { patchPlanSummary?: Record<string, unknown> }).patchPlanSummary).toBeDefined();
+    expect(context.patchStore.getPatchPlan((envelope.data as { patchPlanSummary: { patchPlanId: string } }).patchPlanSummary.patchPlanId)).not.toBeNull();
   });
 
   it('stores and returns a supplied patchPlan pass-through', async () => {
@@ -99,8 +109,48 @@ describe('handlePatchPreview', () => {
     const envelope = result as DiagnosticEnvelope;
     expect(envelope.status).toBe('ok');
     expect(envelope.tool).toBe('workbench.patch_preview');
-    expect((envelope.data as { patchPlan: PatchPlan }).patchPlan.patchPlanId).toBe('patch:test:abc123');
+    expect((envelope.data as { patchPlanSummary: Record<string, unknown> }).patchPlanSummary.patchPlanId).toBe('patch:test:abc123');
     expect(context.patchStore.getPatchPlan('patch:test:abc123')).not.toBeNull();
+  });
+
+  it('stores pass-through patch plans but returns a compact summary by default', async () => {
+    const context = dummyContext();
+    const registry = createWorkbenchActionRegistry(context);
+    const largeText = 'x'.repeat(12000);
+    const plan: PatchPlan = {
+      schema: 'risuai-workbench-mcp.patch-plan',
+      schemaVersion: '0.2.0',
+      patchPlanId: 'patch:test:large123',
+      createdAt: new Date().toISOString(),
+      workspaceRoot: '/tmp/workspace',
+      intent: 'large preview',
+      operations: [{ kind: 'file.create', path: 'notes/large.txt', content: largeText, overwrite: false }],
+      preconditions: [],
+      expectedDiagnostics: [],
+      preview: {
+        affectedFiles: [{ path: 'notes/large.txt', operationKinds: ['file.create'] }],
+        resourceLinks: ['risuai-workbench://patch-plan/large'],
+        unifiedDiff: largeText,
+      },
+      safety: { destructive: false, touchesGeneratedOnly: false, touchesSourceArtifacts: true },
+    };
+
+    const result = await handlePatchPreview(
+      { patchPlan: plan as unknown as Record<string, unknown> },
+      registry,
+      context,
+    );
+    const data = (result as { data?: { patchPlanSummary?: Record<string, unknown>; patchPlan?: unknown } }).data!;
+
+    expect(data.patchPlan).toBeUndefined();
+    expect(data.patchPlanSummary).toMatchObject({
+      patchPlanId: plan.patchPlanId,
+      affectedFiles: [{ path: 'notes/large.txt', operationKinds: ['file.create'] }],
+      operationCount: 1,
+      writePolicy: 'preview-only',
+    });
+    expect(JSON.stringify(result)).not.toContain(largeText);
+    expect(JSON.stringify(result).length).toBeLessThan(8000);
   });
 
   it('returns error for unknown actionId', async () => {
@@ -159,6 +209,99 @@ describe('handlePatchPreview', () => {
     expect(envelope.status).toBe('domain_error');
     expect(envelope.diagnostics[0].id).toBe('PATCH_PREVIEW_INVALID_PLAN');
   });
+
+  it('rejects pass-through with absolute path in operation', async () => {
+    const context = dummyContext();
+    const registry = createWorkbenchActionRegistry(context);
+
+    const plan: PatchPlan = {
+      schema: 'risuai-workbench-mcp.patch-plan',
+      schemaVersion: '0.2.0',
+      patchPlanId: 'patch:test:absolute',
+      createdAt: new Date().toISOString(),
+      workspaceRoot: '/tmp/workspace',
+      intent: 'Absolute path test',
+      operations: [{ kind: 'file.create', path: '/etc/passwd', content: 'evil' }],
+      preconditions: [],
+      expectedDiagnostics: [],
+      preview: { affectedFiles: [], resourceLinks: [] },
+      safety: { destructive: false, touchesGeneratedOnly: false, touchesSourceArtifacts: true },
+    };
+
+    const result = await handlePatchPreview(
+      { patchPlan: plan as unknown as Record<string, unknown> },
+      registry,
+      context,
+    );
+
+    const envelope = result as DiagnosticEnvelope;
+    expect(envelope.status).toBe('domain_error');
+    expect(envelope.diagnostics[0].id).toBe('PATCH_PREVIEW_INVALID_PLAN');
+    expect(envelope.diagnostics[0].message).toContain('Unsafe path');
+    expect(context.patchStore.getPatchPlan('patch:test:absolute')).toBeNull();
+  });
+
+  it('rejects pass-through with parent traversal in operation path', async () => {
+    const context = dummyContext();
+    const registry = createWorkbenchActionRegistry(context);
+
+    const plan: PatchPlan = {
+      schema: 'risuai-workbench-mcp.patch-plan',
+      schemaVersion: '0.2.0',
+      patchPlanId: 'patch:test:traversal',
+      createdAt: new Date().toISOString(),
+      workspaceRoot: '/tmp/workspace',
+      intent: 'Traversal test',
+      operations: [{ kind: 'file.create', path: '../outside.txt', content: 'evil' }],
+      preconditions: [],
+      expectedDiagnostics: [],
+      preview: { affectedFiles: [], resourceLinks: [] },
+      safety: { destructive: false, touchesGeneratedOnly: false, touchesSourceArtifacts: true },
+    };
+
+    const result = await handlePatchPreview(
+      { patchPlan: plan as unknown as Record<string, unknown> },
+      registry,
+      context,
+    );
+
+    const envelope = result as DiagnosticEnvelope;
+    expect(envelope.status).toBe('domain_error');
+    expect(envelope.diagnostics[0].id).toBe('PATCH_PREVIEW_INVALID_PLAN');
+    expect(envelope.diagnostics[0].message).toContain('Unsafe path');
+    expect(context.patchStore.getPatchPlan('patch:test:traversal')).toBeNull();
+  });
+
+  it('rejects pass-through when workspaceRoot mismatches active workspace', async () => {
+    const context = dummyContext({ workspace: { ok: true, path: '/tmp/workspace', reason: null } });
+    const registry = createWorkbenchActionRegistry(context);
+
+    const plan: PatchPlan = {
+      schema: 'risuai-workbench-mcp.patch-plan',
+      schemaVersion: '0.2.0',
+      patchPlanId: 'patch:test:mismatch',
+      createdAt: new Date().toISOString(),
+      workspaceRoot: '/other/workspace',
+      intent: 'Workspace mismatch test',
+      operations: [{ kind: 'file.create', path: 'test.txt', content: 'hello' }],
+      preconditions: [],
+      expectedDiagnostics: [],
+      preview: { affectedFiles: [], resourceLinks: [] },
+      safety: { destructive: false, touchesGeneratedOnly: false, touchesSourceArtifacts: true },
+    };
+
+    const result = await handlePatchPreview(
+      { patchPlan: plan as unknown as Record<string, unknown> },
+      registry,
+      context,
+    );
+
+    const envelope = result as DiagnosticEnvelope;
+    expect(envelope.status).toBe('domain_error');
+    expect(envelope.diagnostics[0].id).toBe('PATCH_PREVIEW_INVALID_PLAN');
+    expect(envelope.diagnostics[0].message).toContain('workspaceRoot');
+    expect(context.patchStore.getPatchPlan('patch:test:mismatch')).toBeNull();
+  });
 });
 
 describe('handlePatchApply', () => {
@@ -173,7 +316,7 @@ describe('handlePatchApply', () => {
       registry,
       context,
     );
-    const patchPlan = patchPlanFromPreview(preview as DiagnosticEnvelope);
+    const patchPlan = patchPlanFromPreview(preview as DiagnosticEnvelope, context.patchStore);
 
     const result = mutationResult(await handlePatchApply(
       { patchPlanId: patchPlan.patchPlanId, options: { postValidate: true } },
@@ -196,7 +339,7 @@ describe('handlePatchApply', () => {
       registry,
       context,
     );
-    const patchPlan = patchPlanFromPreview(preview as DiagnosticEnvelope);
+    const patchPlan = patchPlanFromPreview(preview as DiagnosticEnvelope, context.patchStore);
     const result = mutationResult(await handlePatchApply(
       { patchPlanId: patchPlan.patchPlanId },
       context,
@@ -216,7 +359,7 @@ describe('handlePatchApply', () => {
       registry,
       context,
     );
-    const patchPlan = patchPlanFromPreview(preview as DiagnosticEnvelope);
+    const patchPlan = patchPlanFromPreview(preview as DiagnosticEnvelope, context.patchStore);
 
     const result = mutationResult(await handlePatchApply(
       { patchPlanId: patchPlan.patchPlanId },

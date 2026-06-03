@@ -11,11 +11,12 @@ import { registerWikiActions } from './adapters/wiki-actions';
 import { registerSkillsActions } from './adapters/skills-actions';
 import { registerCreativeActions } from './adapters/creative-actions';
 import { registerPatchActions } from './adapters/patch-actions';
+import { registerCoreWorkflowActions } from './adapters/core-workflow-actions';
 
 /**
  * createWorkbenchActionRegistry 함수.
  * Returns an ActionRegistry populated with Phase 2 inspect/validate actions,
- * Phase 4 analyze/wiki/skills actions, and Phase 5 creative actions.
+ * Phase 4 analyze/wiki/skills actions, Phase 5 creative actions, and core workflow actions.
  *
  * @param context - execution context shared across actions
  * @returns populated ActionRegistry
@@ -30,6 +31,7 @@ export function createWorkbenchActionRegistry(
   registerSkillsActions(registry);
   registerCreativeActions(registry);
   registerPatchActions(registry);
+  registerCoreWorkflowActions(registry);
   void context;
   return registry;
 }

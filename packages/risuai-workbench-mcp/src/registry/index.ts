@@ -174,7 +174,7 @@ const ROADMAP_TOOLS: readonly RoadmapToolDefinition[] = [
     title: 'Suggest tests',
   },
   {
-    description: 'Classify caller intent into a deterministic route with allowed tools, risk, and next step.',
+    description: 'Classify caller intent into a route with allowed tools, risk, and next step. Extension affordance: .risum/.charx/.risup->core.run_extract; .risulua->Lua analysis; .risulorebook/.risuregex/.risuprompt->CBS/prompt analysis; .risuhtml->inspect/validate; .risuchar/.risumodule->root-marker; _order.json->order validation.',
     mutates: false,
     name: 'workbench.route_intent',
     phase: 'phase-1',
@@ -294,7 +294,7 @@ const ROADMAP_TOOLS: readonly RoadmapToolDefinition[] = [
     title: 'Create artifact',
   },
   {
-    description: 'Extract a .risum (module), .risuchar (character), or .risup (preset) file into a canonical workspace directory, then run post-extract analyze with wiki generation. Use this tool when the user mentions a risum/charx/risup file path and asks to extract, unpack, open, or import it. If outDir is omitted, the output directory defaults to the same directory as the source file with the filename (without extension). Risk: medium.',
+    description: 'Extract a .risum (module), .charx (character), or .risup (preset) archive into a canonical workspace directory, then run post-extract analyze with wiki generation. Use this tool when the user mentions a risum/charx/risup file path and asks to extract, unpack, open, or import it. .risuchar is a workspace root marker, not an external archive input. If outDir is omitted, the output directory defaults to the same directory as the source file with the filename (without extension). Risk: medium.',
     mutates: true,
     name: 'workbench.run_extract',
     phase: 'phase-3',

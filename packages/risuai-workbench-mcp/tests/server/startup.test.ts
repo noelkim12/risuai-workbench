@@ -85,6 +85,7 @@ describe('risuai-workbench-mcp startup', () => {
       expect(toolNames).not.toContain('workbench.apply_patch_plan');
       expect(toolNames).not.toContain('workbench.creative.gather_context');
       expect(toolNames).not.toContain('workbench.creative.apply_idea_patch');
+      expect(toolNames).not.toContain('workbench.run_extract');
 
       const routeTool = tools.tools.find((tool) => tool.name === 'workbench.route_intent');
       expect(routeTool).toBeDefined();
@@ -102,6 +103,29 @@ describe('risuai-workbench-mcp startup', () => {
         'workbench.creative.brainstorm_from_context',
         'workbench.creative.apply_selected_idea',
       ]));
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('exposes extension affordance guidance in facade tool descriptions', async () => {
+    const transport = new StdioClientTransport({
+      args: [binPath, '--stdio', '--root', fixturesRoot],
+      command: process.execPath,
+      stderr: 'pipe',
+    });
+    const client = new Client({ name: 'risuai-workbench-mcp-extension-guidance-test', version: '0.1.0' });
+
+    try {
+      await client.connect(transport);
+      const tools = await client.listTools();
+      const descriptions = new Map(tools.tools.map((tool) => [tool.name, tool.description ?? '']));
+
+      expect(descriptions.get('workbench.route_intent')).toContain('.risulua');
+      expect(descriptions.get('workbench.route_intent')).toContain('.risulorebook');
+      expect(descriptions.get('workbench.route_intent')).toContain('_order.json');
+      expect(descriptions.get('workbench.catalog')).toContain('extension affordance');
+      expect(descriptions.get('workbench.run_action')).toContain('core.run_extract');
     } finally {
       await client.close();
     }
