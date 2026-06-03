@@ -47,6 +47,8 @@ Normal agent flow is:
 workbench.route_intent -> workbench.catalog -> workbench.prepare_action -> workbench.run_action
 ```
 
+For extract/import requests, keep the same facade flow and call `workbench.run_action` with `actionId: "core.run_extract"`. `dryRun: true` on `workbench.run_action` is only a facade invocation dry-run. For `core.run_extract`, it confirms the action exists and args match the schema, then returns without calling `handleRunExtract()`. It does not check path safety, derive the output fallback, run `risu-core`, or create files, so do not describe it as an extraction preview.
+
 Mutation flow is:
 
 ```text
@@ -73,7 +75,11 @@ Facade tool 등록은 `packages/risuai-workbench-mcp/src/server.ts`의 facade re
 
 Mutation 계열 handler는 대체로 `unknown` input을 받은 뒤 내부 parse 함수와 `createUnknownFieldDiagnosticEnvelope()`로 fail-closed 검증을 수행합니다. 실제 write target은 `evaluateMutationSafetyGate()`에서 workspace path로 resolve됩니다.
 
-## Handler catalog
+### Canonical extract/import path
+
+For `.risum`, `.risuchar`, `.risup`, and `.charx` extraction/import requests, default MCP callers should keep the facade flow and call `workbench.run_action` with `actionId: "core.run_extract"` and `args: { sourcePath, outDir, type }`. Do not read binary archives as text, and do not call `workbench.run_extract` in default MCP mode. `workbench.run_extract` below is the legacy direct MCP tool name for the handler and is hidden unless `RISU_MCP_EXPOSE_LEGACY_TOOLS=1` enables legacy/dev-mode direct tools.
+
+## Legacy/dev-mode handler catalog
 
 이 목록은 maintainer용 domain handler catalog입니다. 표의 `Tool` 값은 legacy/dev-mode direct MCP tool name 또는 historical surface name이며, default external `tools/list`가 아닙니다. Default external `tools/list`는 위의 8개 facade tool만 포함합니다.
 
@@ -190,6 +196,7 @@ Default callers should use `workbench.patch_preview` followed by `workbench.patc
 
 - path input은 `resolveSafeWorkspacePath()`로 absolute path로 해석됩니다. 상대 경로는 startup context 기준으로 해석합니다.
 - `workbench.run_extract`는 extract output directory를 새로 만들고, 이어서 그 하위의 `wiki/`를 생성하거나 기존 wiki를 갱신합니다. 이 wiki 갱신 범위는 preview의 `postExtractAnalyze.defaultWikiRoot`에 명시됩니다.
+- `workbench.run_action` dry-run for `core.run_extract` stops before this handler path. It validates only ActionRegistry lookup and input schema, not workspace path safety, output fallback, command availability, `risu-core` execution, or file creation.
 - generated wiki write는 allowlist boundary를 통과해야 합니다.
 - stale state, unknown field, invalid input은 파일 변경 없이 structured diagnostic 또는 rejected mutation result로 반환됩니다.
 - Long-running mutation handlers should accept an optional `AbortSignal` after optional progress reporter parameters.
