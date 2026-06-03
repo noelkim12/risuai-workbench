@@ -6,16 +6,22 @@ RisuAI Workbench의 Canonical Workspace를 AI agent가 안전하게 읽고, 검�
 
 ## Extraction quick path
 
-For `.risum`, `.risuchar`, `.risup`, and `.charx` extraction/import requests, do not read binary archives as text. In default MCP mode, do not call `workbench.run_extract` directly. Use the facade action path instead:
+If the user asks to extract, import, or unpack a RisuAI archive (`.risum`, `.risuchar`, `.charx`, `.risup`), do **not** read the binary archive as text and do **not** call `workbench.run_extract` in default MCP mode.
 
-```ts
+Use the facade action:
+
+```text
 workbench.run_action({
   actionId: "core.run_extract",
-  args: { sourcePath, outDir, type },
-});
+  args: {
+    sourcePath: "test_suites/example.risum",
+    outDir: "test_suites/extraction_targets",
+    type: "module"
+  }
+})
 ```
 
-`workbench.run_extract` is the legacy direct MCP tool name for the same handler. It is hidden from default `tools/list` and is available only for development or migration testing when the server starts with `RISU_MCP_EXPOSE_LEGACY_TOOLS=1`.
+`workbench.run_extract` is a legacy direct MCP tool name. It is hidden unless the server is started with `RISU_MCP_EXPOSE_LEGACY_TOOLS=1`.
 
 ## 빠른 시작
 

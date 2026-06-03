@@ -1,6 +1,6 @@
 # Case Report: `.risum` extract request failed through risuai-workbench-mcp
 
-> Historical note, stale but useful: this case records the pre-fix behavior from 2026-06-03. Default MCP callers should now use `workbench.run_action` with `actionId: "core.run_extract"` for `.risum`, `.risuchar`, `.risup`, and `.charx` extraction/import requests. The direct `workbench.run_extract` name remains a legacy/dev-mode MCP tool name and is hidden unless `RISU_MCP_EXPOSE_LEGACY_TOOLS=1` is enabled.
+> Historical note: this document records the original failure mode. The current MCP facade now registers and routes `core.run_extract`. Treat `workbench.run_extract` as a legacy direct MCP tool name; default users should call `workbench.run_action` with `actionId: "core.run_extract"`.
 
 Date: 2026-06-03
 
