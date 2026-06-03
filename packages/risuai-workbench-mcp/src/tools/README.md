@@ -77,7 +77,7 @@ Mutation 계열 handler는 대체로 `unknown` input을 받은 뒤 내부 parse 
 
 ### Canonical extract/import path
 
-For `.risum`, `.risuchar`, `.risup`, and `.charx` extraction/import requests, default MCP callers should keep the facade flow and call `workbench.run_action` with `actionId: "core.run_extract"` and `args: { sourcePath, outDir, type }`. Do not read binary archives as text, and do not call `workbench.run_extract` in default MCP mode. `workbench.run_extract` below is the legacy direct MCP tool name for the handler and is hidden unless `RISU_MCP_EXPOSE_LEGACY_TOOLS=1` enables legacy/dev-mode direct tools.
+For `.risum`, `.risuchar`, `.charx`, and `.risup` extraction/import requests, the default external MCP surface uses `workbench.run_action` with internal action id `core.run_extract`. The legacy direct tool name `workbench.run_extract` appears in this handler catalog only for maintainer traceability and env-gated development mode.
 
 ## Legacy/dev-mode handler catalog
 
@@ -195,7 +195,7 @@ Default callers should use `workbench.patch_preview` followed by `workbench.patc
 ## Safety notes
 
 - path input은 `resolveSafeWorkspacePath()`로 absolute path로 해석됩니다. 상대 경로는 startup context 기준으로 해석합니다.
-- `workbench.run_extract`는 extract output directory를 새로 만들고, 이어서 그 하위의 `wiki/`를 생성하거나 기존 wiki를 갱신합니다. 이 wiki 갱신 범위는 preview의 `postExtractAnalyze.defaultWikiRoot`에 명시됩니다.
+- Legacy/dev-mode direct handler name `workbench.run_extract` executes the extract handler, which creates the extract output directory and then creates or updates the child `wiki/` directory. This is handler behavior documentation, not default callable guidance; the wiki update scope is listed in `postExtractAnalyze.defaultWikiRoot`.
 - `workbench.run_action` dry-run for `core.run_extract` stops before this handler path. It validates only ActionRegistry lookup and input schema, not workspace path safety, output fallback, command availability, `risu-core` execution, or file creation.
 - generated wiki write는 allowlist boundary를 통과해야 합니다.
 - stale state, unknown field, invalid input은 파일 변경 없이 structured diagnostic 또는 rejected mutation result로 반환됩니다.
