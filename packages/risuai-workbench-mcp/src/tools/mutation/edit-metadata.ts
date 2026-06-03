@@ -30,7 +30,6 @@ export interface EditMetadataInput {
   path: string;
   operations: readonly MetadataOperationInput[];
   mode: PatchPlanMutationMode;
-  confirmation?: { accepted: boolean; confirmationText?: string };
   postValidate?: boolean;
   expectedHash?: string;
   allowedFields?: readonly string[];
@@ -42,7 +41,7 @@ const TOOL_NAME = 'workbench.edit_metadata';
  * handleEditMetadata 함수.
  * structured metadata JSON에 대해 json.set operation을 preview/commit으로 실행함.
  *
- * @param input - path, operations, mode, confirmation, allowedFields
+ * @param input - path, operations, mode, allowedFields
  * @param workspace - workspace root 상태
  * @param mutationMode - 서버 mutation mode
  * @param patchStore - 공유 patch plan store
@@ -55,7 +54,7 @@ export async function handleEditMetadata(
   patchStore: PatchPlanStore,
 ): Promise<EditMetadataToolResult> {
   const unknownFieldResult = createUnknownFieldDiagnosticEnvelope({
-    allowedKeys: ['path', 'operations', 'mode', 'confirmation', 'postValidate', 'expectedHash', 'allowedFields'],
+    allowedKeys: ['path', 'operations', 'mode', 'postValidate', 'expectedHash', 'allowedFields'],
     input,
     tool: TOOL_NAME,
   });
@@ -142,7 +141,7 @@ export async function handleEditMetadata(
       createFileHashPrecondition(editInput.path, effectiveHash ?? ''),
       createInsideWorkspacePrecondition(editInput.path),
     ],
-    safety: { destructive: false, requiresConfirmation: true, touchesGeneratedOnly: false, touchesSourceArtifacts: true },
+    safety: { destructive: false, touchesGeneratedOnly: false, touchesSourceArtifacts: true },
     unifiedDiff: previewContent ? buildUnifiedDiff(editInput.path, currentContent, previewContent) : undefined,
     workspaceRoot: workspace.path,
   });
@@ -159,10 +158,7 @@ export async function handleEditMetadata(
   }
 
   const safetyResult = await evaluateMutationSafetyGate({
-    confirmation: editInput.confirmation ? { accepted: editInput.confirmation.accepted, confirmationText: editInput.confirmation.confirmationText } : undefined,
-    expectedConfirmationText: `APPLY ${patchPlan.patchPlanId}`,
     mode: mutationMode,
-    risk: 'medium',
     targets: [{ expectedHash: effectiveHash, intent: 'write-existing' as const, path: editInput.path }],
     toolName: TOOL_NAME,
     workspace,
@@ -302,11 +298,9 @@ function parseEditMetadataInput(input: unknown): { input: EditMetadataInput; ok:
     }
   }
   const mode: PatchPlanMutationMode = 'commit';
-  const confirmation = candidate.confirmation as EditMetadataInput['confirmation'] | undefined;
   return {
     input: {
       allowedFields: Array.isArray(candidate.allowedFields) ? candidate.allowedFields as string[] : undefined,
-      confirmation: confirmation ? { accepted: !!confirmation.accepted, confirmationText: confirmation.confirmationText } : undefined,
       expectedHash: typeof candidate.expectedHash === 'string' ? candidate.expectedHash : undefined,
       mode,
       operations: candidate.operations as MetadataOperationInput[],

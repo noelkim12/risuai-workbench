@@ -20,22 +20,21 @@ export type RollbackMutationToolResult = DiagnosticEnvelope | MutationResultEnve
 export interface RollbackMutationInput {
   mutationId: string;
   mode: 'commit' | 'preview';
-  confirmation?: { accepted: boolean; confirmationText?: string };
 }
 
 const TOOL_NAME = 'workbench.rollback_mutation';
 
 /**
  * handleRollbackMutation 함수.
- * 충분한 inverse state가 journal에 있는 mutation만 exact confirmation 후 되돌림.
+ * 충분한 inverse state가 journal에 있는 mutation만 되돌림.
  *
- * @param input - mutationId, mode, confirmation
+ * @param input - mutationId, mode
  * @param workspace - startup에서 계산한 workspace root 상태
  * @param mutationMode - 서버 mutation mode
  * @returns mutation result 또는 diagnostic envelope
  */
 export async function handleRollbackMutation(input: unknown, workspace: WorkspaceRootStatus, mutationMode: MutationMode): Promise<RollbackMutationToolResult> {
-  const unknownFieldResult = createUnknownFieldDiagnosticEnvelope({ allowedKeys: ['mutationId', 'mode', 'confirmation'], input, tool: TOOL_NAME });
+  const unknownFieldResult = createUnknownFieldDiagnosticEnvelope({ allowedKeys: ['mutationId', 'mode'], input, tool: TOOL_NAME });
   if (unknownFieldResult.status === 'domain_error') return unknownFieldResult;
   const parsed = parseRollbackMutationInput(input);
   if (!parsed.ok) return inputError(parsed.reason);
@@ -49,13 +48,13 @@ export async function handleRollbackMutation(input: unknown, workspace: Workspac
   }
 
   if (mutationMode === 'preview-only') {
-    return createDiagnosticEnvelope({ data: { confirmationText: `ROLLBACK ${rollbackInput.mutationId}`, rollbackData: entry.rollbackData }, diagnostics: [], status: 'ok', tool: TOOL_NAME });
+    return createDiagnosticEnvelope({ data: { rollbackData: entry.rollbackData }, diagnostics: [], status: 'ok', tool: TOOL_NAME });
   }
 
   const targets = entry.rollbackData.kind === 'move-back'
     ? [{ expectedHash: entry.rollbackData.expectedCurrentHash, intent: 'write-existing' as const, path: entry.rollbackData.from }, { intent: 'create-missing' as const, path: entry.rollbackData.to }]
     : entry.rollbackData.files.map((file) => ({ intent: 'create-missing' as const, path: file.originalPath }));
-  const safetyResult = await evaluateMutationSafetyGate({ confirmation: rollbackInput.confirmation, expectedConfirmationText: `ROLLBACK ${rollbackInput.mutationId}`, mode: mutationMode, risk: 'high', targets, toolName: TOOL_NAME, workspace });
+  const safetyResult = await evaluateMutationSafetyGate({ mode: mutationMode, targets, toolName: TOOL_NAME, workspace });
   if (!safetyResult.ok) return createMutationResultEnvelope({ changedFiles: [], postValidation: { diagnostics: [{ category: 'mutation-safety', id: 'ROLLBACK_SAFETY_REJECTED', message: `Safety gate rejected: ${safetyResult.reason}.`, path: null, ruleId: `rollback.${safetyResult.reason}`, severity: 'error' }], status: 'error' }, resourceLinks: [], status: 'rejected', tool: TOOL_NAME });
 
   let changedFiles: ChangedFileResult[];
@@ -110,9 +109,7 @@ function parseRollbackMutationInput(input: unknown): { input: RollbackMutationIn
   if (input === null || typeof input !== 'object' || Array.isArray(input)) return { ok: false, reason: 'Input must be an object.' };
   const candidate = input as Record<string, unknown>;
   if (typeof candidate.mutationId !== 'string' || candidate.mutationId.trim() === '') return { ok: false, reason: 'mutationId must be a non-empty string.' };
-  return { input: { confirmation: isConfirmation(candidate.confirmation) ? candidate.confirmation : undefined,   mode: 'commit', mutationId: candidate.mutationId }, ok: true };
+  return { input: { mode: 'commit', mutationId: candidate.mutationId }, ok: true };
 }
-
-function isConfirmation(value: unknown): value is { accepted: boolean; confirmationText?: string } { return Boolean(value && typeof value === 'object' && !Array.isArray(value) && 'accepted' in value); }
 function inputError(reason: string): DiagnosticEnvelope { return createDiagnosticEnvelope({ diagnostics: [{ category: 'input', id: 'ROLLBACK_INPUT_INVALID', message: reason, path: null, ruleId: 'input.rollback-mutation', severity: 'error' }], status: 'domain_error', tool: TOOL_NAME }); }
 function workspaceDiagnostic(reason: string | null): WorkbenchDiagnostic { return { category: 'workspace', id: 'WORKSPACE_ROOT_UNAVAILABLE', message: `Workspace root is unavailable: ${reason ?? 'unknown'}.`, path: null, ruleId: 'workspace.unavailable', severity: 'error' }; }

@@ -71,7 +71,7 @@ Facade tool 등록은 `packages/risuai-workbench-mcp/src/server.ts`의 facade re
 | read-only / preview | `DiagnosticEnvelope` | `schema: risuai-workbench-mcp.diagnostics`, `status`, `diagnostics`, optional `data` 포함 |
 | mutation | `MutationResultEnvelope` 또는 `DiagnosticEnvelope` | `schema: risuai-workbench-mcp.mutation-result`, `changedFiles`, `postValidation`, `mutationId`, `resourceLinks` 포함 |
 
-Mutation 계열 handler는 대체로 `unknown` input을 받은 뒤 내부 parse 함수와 `createUnknownFieldDiagnosticEnvelope()`로 fail-closed 검증을 수행합니다. 실제 write는 `evaluateMutationSafetyGate()`에서 mutation mode, hash precondition, confirmation gate를 통과해야 합니다.
+Mutation 계열 handler는 대체로 `unknown` input을 받은 뒤 내부 parse 함수와 `createUnknownFieldDiagnosticEnvelope()`로 fail-closed 검증을 수행합니다. 실제 write target은 `evaluateMutationSafetyGate()`에서 workspace path로 resolve됩니다.
 
 ## Handler catalog
 
@@ -121,7 +121,7 @@ Mutation 계열 handler는 대체로 `unknown` input을 받은 뒤 내부 parse 
 | `workbench.suggest_order_patch` | no | `handleSuggestOrderPatch` | `patch/suggest-order-patch.ts` | `_order.json`에 대한 `order.insert`, `order.move`, `order.remove` preview와 unified diff를 생성합니다. |
 | `workbench.suggest_frontmatter_patch` | no | `handleSuggestFrontmatterPatch` | `patch/suggest-frontmatter-patch.ts` | body를 보존하는 frontmatter `set`/`remove` preview를 생성하고 malformed frontmatter repair preview를 diagnostic과 함께 반환합니다. |
 | `workbench.suggest_root_marker_patch` | no | `handleSuggestRootMarkerPatch` | `patch/suggest-root-marker-patch.ts` | `.risuchar`/`.risumodule` 등 root marker 생성 또는 복구 patch preview를 만듭니다. |
-| `workbench.apply_patch_plan` | yes | `handleApplyPatchPlan` | `patch/apply-patch-plan.ts` | 저장된 `patchPlanId`를 조회해 confirmation, mutation mode, precondition을 재검증한 뒤 지원 operation을 적용합니다. |
+| `workbench.apply_patch_plan` | yes | `handleApplyPatchPlan` | `patch/apply-patch-plan.ts` | 저장된 `patchPlanId`를 조회한 뒤 지원 operation을 적용합니다. |
 
 Default callers should use `workbench.patch_preview` followed by `workbench.patch_apply`. The legacy/dev-mode `workbench.apply_patch_plan` handler directly supports `text.replace`, `file.create`, `order.insert`, `order.move`, `order.remove`, `frontmatter.set`, and `frontmatter.remove`. `file.move`, `file.delete`, and `json.set` use the matching internal mutation action or legacy/dev-mode dedicated tool.
 
@@ -160,11 +160,11 @@ Default callers should use `workbench.patch_preview` followed by `workbench.patc
 
 | Tool | Mutates | Handler | 구현 파일 | 기능 |
 | --- | ---: | --- | --- | --- |
-| `workbench.move_artifact` | yes | `handleMoveArtifact` | `mutation/move-artifact.ts` | artifact rename/move를 수행합니다. suffix 보존, expected hash, exact confirmation, optional order update를 검사합니다. |
-| `workbench.delete_artifact` | yes | `handleDeleteArtifact` | `mutation/delete-artifact.ts` | high-risk delete tool입니다. exact confirmation, optional backup, optional order cleanup, journal 기록을 수행합니다. |
+| `workbench.move_artifact` | yes | `handleMoveArtifact` | `mutation/move-artifact.ts` | artifact rename/move를 수행합니다. suffix 보존, optional order update, journal 기록을 수행합니다. |
+| `workbench.delete_artifact` | yes | `handleDeleteArtifact` | `mutation/delete-artifact.ts` | artifact delete tool입니다. optional backup, optional order cleanup, journal 기록을 수행합니다. |
 | `workbench.ensure_wiki_root` | yes | `handleEnsureWikiRoot` | `wiki/ensure-wiki-root.ts` | wiki가 없거나 bootstrap 파일이 누락된 경우 generated-only allowlist 안의 최소 wiki root 파일만 생성합니다. |
 | `workbench.refresh_wiki` | yes | `handleRefreshWiki` | `wiki/refresh-wiki.ts` | generated wiki allowlist 경로만 갱신합니다. core write-protect helper와 post-validation을 사용합니다. |
-| `workbench.rollback_mutation` | yes | `handleRollbackMutation` | `mutation/rollback-mutation.ts` | journal에 충분한 inverse state가 있는 mutation만 rollback합니다. high-risk exact confirmation이 필요합니다. |
+| `workbench.rollback_mutation` | yes | `handleRollbackMutation` | `mutation/rollback-mutation.ts` | journal에 충분한 inverse state가 있는 mutation만 rollback합니다. |
 
 ## 입력 스키마 요약
 
@@ -179,21 +179,19 @@ Default callers should use `workbench.patch_preview` followed by `workbench.patc
 | `suggest_patch` | `intent`, `operations` |
 | `suggest_order_patch`, `edit_order` | order path/directory, `insert`/`move`/`remove` operations |
 | `suggest_frontmatter_patch` | `path`, optional `set`, `remove`, `preserveBody` |
-| `apply_patch_plan` | `patchPlanId`, `confirmation`, optional `options` |
-| mutation handlers / legacy-dev-mode direct tools | `mode: preview|commit`, optional `confirmation`, `expectedHash`, `postValidate` |
-| `ensure_wiki_root` | optional `wikiRoot`(현재 `wiki`만 지원), `mode`, optional `confirmation`, `postValidate` |
-| `run_extract` | `sourcePath`, `outDir`, optional `type`, RisuLua options, `mode`, `confirmation`, `postValidate`. Preview data includes the follow-up `postExtractAnalyze` command; commit confirmation text includes both extract output and wiki target (`RUN_EXTRACT <source> TO <outDir> WITH WIKI <wikiRoot>`). |
-| `run_scaffold` | `type`, `name`, optional `outDir`, `creator`, `namespace`, `risuluaMode`, `mode`, `confirmation`, `postValidate` |
+| `apply_patch_plan` | `patchPlanId`, optional `options` |
+| mutation handlers / legacy-dev-mode direct tools | Most structured mutation tools accept `mode: preview|commit`, optional `expectedHash`, `postValidate`; core workflows below execute directly and do not accept `mode`. |
+| `ensure_wiki_root` | optional `wikiRoot`(현재 `wiki`만 지원), `mode`, `postValidate` |
+| `run_extract` | `sourcePath`, `outDir`, optional `type`, RisuLua options, `postValidate` |
+| `run_scaffold` | `type`, `name`, optional `outDir`, `creator`, `namespace`, `risuluaMode`, `postValidate` |
 | analyze query tools | `sourcePath` 또는 `sourceText`, optional `previousSnapshot`, `stalePolicy`, tool별 analyzer payload |
 
 ## Safety notes
 
 - path input은 `resolveSafeWorkspacePath()`로 absolute path로 해석됩니다. 상대 경로는 startup context 기준으로 해석합니다.
-- 기본 mutation mode는 서버 CLI의 `--mutation` 값에 따릅니다. 기본값은 `preview-only`입니다.
-- source artifact write는 `enabled` mode와 confirmation이 필요합니다.
-- `workbench.run_extract`는 extract output directory를 새로 만들고, 이어서 그 하위의 `wiki/`를 생성하거나 기존 wiki를 갱신합니다. 이 wiki 갱신 범위는 preview의 `postExtractAnalyze.defaultWikiRoot`와 confirmation text의 `WITH WIKI <wikiRoot>`에 명시됩니다.
+- `workbench.run_extract`는 extract output directory를 새로 만들고, 이어서 그 하위의 `wiki/`를 생성하거나 기존 wiki를 갱신합니다. 이 wiki 갱신 범위는 preview의 `postExtractAnalyze.defaultWikiRoot`에 명시됩니다.
 - generated wiki write는 allowlist boundary를 통과해야 합니다.
-- stale hash, unknown field, invalid input, confirmation mismatch는 파일 변경 없이 structured diagnostic 또는 rejected mutation result로 반환됩니다.
+- stale state, unknown field, invalid input은 파일 변경 없이 structured diagnostic 또는 rejected mutation result로 반환됩니다.
 - Long-running mutation handlers should accept an optional `AbortSignal` after optional progress reporter parameters.
 - Handlers must check cancellation before irreversible work, pass the signal to child-process wrappers, and report cancellation through structured diagnostic or mutation envelopes.
 - Handlers must not swallow cancellation by returning `ok` when a child process was terminated. Mid-child cancellation should remain visible through command cancellation diagnostics and a failed mutation result after post-validation and journal handling.
@@ -208,4 +206,4 @@ Default callers should use `workbench.patch_preview` followed by `workbench.patc
 6. Facade flow에서 discoverable해야 하므로 `workbench.route_intent`, `workbench.catalog`, `workbench.prepare_action`, `workbench.run_action` 또는 mutation의 `workbench.patch_preview`/`workbench.patch_apply` 경로로 사용할 수 있는지 확인합니다.
 7. `src/registry/index.ts`에 metadata와 구현 상태를 반영합니다.
 8. Legacy direct MCP exposure가 꼭 필요한 migration/dev compatibility case에만 `src/server.ts`의 env-gated legacy registration path에 `server.registerTool()`을 추가합니다. Default exposure로 추가하지 마세요.
-9. Mutation handler이면 unknown field rejection, safe path, mutation mode, hash precondition, confirmation gate, journal/post-validation 정책을 반드시 확인합니다.
+9. Mutation handler이면 unknown field rejection, safe path, journal/post-validation 정책을 반드시 확인합니다.

@@ -54,7 +54,6 @@ export type RouteNextStep =
   | 'analyze'
   | 'creative_review'
   | 'preview'
-  | 'confirm'
   | 'apply'
   | 'post_validate'
   | 'answer';
@@ -63,7 +62,6 @@ export type RouteMutationMode =
   | 'none'
   | 'guarded_direct'
   | 'preview_required'
-  | 'confirmation_required'
   | 'blocked';
 
 export type RouteStopCondition =
@@ -72,7 +70,6 @@ export type RouteStopCondition =
   | 'ambiguous_target'
   | 'outside_workspace'
   | 'preview_required'
-  | 'confirmation_required'
   | 'patch_plan_required'
   | 'hash_precondition_required'
   | 'blocking_diagnostics'
@@ -131,7 +128,6 @@ export const routeNextStepSchema = z.enum([
   'analyze',
   'creative_review',
   'preview',
-  'confirm',
   'apply',
   'post_validate',
   'answer',
@@ -141,7 +137,6 @@ export const routeMutationModeSchema = z.enum([
   'none',
   'guarded_direct',
   'preview_required',
-  'confirmation_required',
   'blocked',
 ]);
 
@@ -151,7 +146,6 @@ export const routeStopConditionSchema = z.enum([
   'ambiguous_target',
   'outside_workspace',
   'preview_required',
-  'confirmation_required',
   'patch_plan_required',
   'hash_precondition_required',
   'blocking_diagnostics',
@@ -169,7 +163,6 @@ export interface IntentRouteInput {
   context?: string;
   patchPlanId?: string;
   ideaId?: string;
-  userConfirmed?: boolean;
 }
 
 export const intentRouteInputSchema = z.object({
@@ -178,7 +171,6 @@ export const intentRouteInputSchema = z.object({
   context: z.string().optional(),
   patchPlanId: z.string().optional(),
   ideaId: z.string().optional(),
-  userConfirmed: z.boolean().optional(),
 }).catchall(z.unknown());
 
 // ---------------------------------------------------------------------------

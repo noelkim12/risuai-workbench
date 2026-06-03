@@ -6,7 +6,7 @@
 
 import packageJson from '../package.json';
 
-import { DEFAULT_MUTATION_MODE, isMutationMode, type MutationMode } from './mutation/mode';
+import { isMutationMode, type MutationMode } from './mutation/mode';
 import { startStdioServer } from './transport/stdio';
 
 export interface ParsedCliArgs {
@@ -27,19 +27,14 @@ export function buildHelpText(): string {
     'risuai-workbench-mcp',
     '',
     'Usage:',
-    '  risuai-workbench-mcp --stdio [--mutation [preview-only|generated-only|enabled]] [--root ./optional-startup-context]',
+    '  risuai-workbench-mcp --stdio',
     '  risuai-workbench-mcp --help',
     '  risuai-workbench-mcp --version',
     '',
     'Options:',
     '  --stdio     Start the MCP server over stdio. stdout is reserved for JSON-RPC.',
-    '  --root      Optional startup context for resolving relative paths and smoke/debug output.',
-    '  --mutation  Mutation mode for direct mutation tools. Defaults to enabled when used without a value.',
     '  --help      Show this help message without starting MCP stdio.',
     '  --version   Show the package version.',
-    '',
-    'Safety:',
-    `  Default mutation mode is ${DEFAULT_MUTATION_MODE}; enabled mutations still require tool-level confirmation gates.`,
   ].join('\n');
 }
 

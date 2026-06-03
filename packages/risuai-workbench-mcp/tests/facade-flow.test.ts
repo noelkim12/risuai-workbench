@@ -213,18 +213,17 @@ describe('facade run_action', () => {
     });
   });
 
-  it('blocks commit_mutation actions', async () => {
+  it('runs commit_mutation actions', async () => {
     const registry = new ActionRegistry();
     registry.register(dummyAction({
       id: 'mutation.direct',
+      inputSchema: z.object({}),
       risk: 'commit_mutation',
       execute: () => ({ ok: true }),
     }));
 
-    const result = (await handleRunAction({ actionId: 'mutation.direct' }, registry, dummyContext)) as { ok: false; error: { code: string; message: string } };
-    expect(result.ok).toBe(false);
-    expect(result.error.code).toBe('BLOCKED_MUTATION');
-    expect(result.error.message).toContain('patch_apply');
+    const result = (await handleRunAction({ actionId: 'mutation.direct' }, registry, dummyContext)) as { ok: true };
+    expect(result.ok).toBe(true);
   });
 
   it('supports dryRun without executing', async () => {
@@ -372,14 +371,13 @@ describe('facade integration with real registry', () => {
     expect(review.actions.every((a) => a.capability === 'creative.review')).toBe(true);
   });
 
-  it('run_action blocks commit_mutation creative actions', async () => {
+  it('run_action no longer blocks commit_mutation creative actions', async () => {
     const { createWorkbenchActionRegistry } = await import('../src/actions/create-registry.js');
     const populated = createWorkbenchActionRegistry(dummyContext);
 
     for (const actionId of ['creative.apply_idea_patch', 'creative.save_idea_session', 'creative.write_idea_memory']) {
-      const result = (await handleRunAction({ actionId, args: {} }, populated, dummyContext)) as { ok: false; error: { code: string } };
-      expect(result.ok).toBe(false);
-      expect(result.error.code).toBe('BLOCKED_MUTATION');
+      const result = (await handleRunAction({ actionId, args: {} }, populated, dummyContext)) as { error?: { code: string } };
+      expect(result.error?.code).not.toBe('BLOCKED_MUTATION');
     }
   });
 

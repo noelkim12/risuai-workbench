@@ -76,7 +76,7 @@ describe('facade visualization generator', () => {
     expect(mermaid).toContain('workbench.patch_apply');
     expect(mermaid).toContain('Internal Action Registry');
     expect(mermaid).toContain('Mutation safety boundary');
-    expect(mermaid).toContain('blocks commit_mutation');
+    expect(mermaid).toContain('can execute internal actions');
   });
 
   it('renders sequence diagrams for normal and patch flows', () => {

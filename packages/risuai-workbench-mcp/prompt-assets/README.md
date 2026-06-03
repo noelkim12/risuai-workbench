@@ -55,11 +55,11 @@ Ownership boundaries:
 - `skills/skills-catalog.json` owns machine-readable recommendation metadata: `id`, `title`, `kind`, `summary`, `useWhen`, `doNotUseWhen`, `primaryArtifacts`, `families`, `signals`, `resourceUri`, and `source`.
 - `src/skills/catalog.ts` owns runtime validation and safe loading.
 - `workbench.select_authoring_skill` owns the LLM-assisted matching workflow.
-- `workbench.recommend_skills` validates the LLM-selected skill and returns approval-required user guidance.
-- `workbench.apply_skill` requires explicit confirmation and returns a plan preview bundle without writing files.
+- `workbench.recommend_skills` validates the LLM-selected skill and returns user guidance.
+- `workbench.apply_skill` returns a plan preview bundle without writing files.
 
 Safety rules:
 
 - Do not add skill Markdown files to the `prompts[]` manifest.
 - Do not auto-apply skills from `route_intent`.
-- Do not write plan files from `workbench.apply_skill`; saving plans must use the existing preview/confirmation mutation workflow.
+- Do not write plan files from `workbench.apply_skill`; saving plans uses Workbench apply tools.

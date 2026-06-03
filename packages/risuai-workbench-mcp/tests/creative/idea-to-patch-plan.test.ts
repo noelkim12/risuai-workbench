@@ -99,7 +99,6 @@ describe('idea to implementation plan and patch plan conversion', () => {
       ideaId: 'idea:combat-emotion',
       mutationTarget: { touchesGeneratedOnly: false, touchesSourceArtifacts: true },
       operationKinds: ['file.create', 'order.insert'],
-      requiredConfirmation: true,
       schema: 'risuai-workbench-mcp.creative.idea-patch',
       status: 'preview-created',
       tool: 'workbench.creative.turn_idea_into_patch_plan',
@@ -114,7 +113,7 @@ describe('idea to implementation plan and patch plan conversion', () => {
       schema: 'risuai-workbench-mcp.patch-plan',
       schemaVersion: '0.2.0',
       patchPlanId: result.patchPlanId,
-      safety: { requiresConfirmation: true, touchesSourceArtifacts: true },
+      safety: { touchesSourceArtifacts: true },
       workspaceRoot: tempRoot,
     });
     expect(stored?.operations.map((operation) => operation.kind)).toEqual(['file.create', 'order.insert']);
@@ -177,6 +176,10 @@ class TrackingPatchPlanStore implements PatchPlanStore {
 
   getPatchPlan(patchPlanId: string): PatchPlan | null {
     return this.saved.find((patchPlan) => patchPlan.patchPlanId === patchPlanId) ?? null;
+  }
+
+  findByIdeaId(_ideaId: string): PatchPlan | null {
+    return null;
   }
 
   savePatchPlan(patchPlan: PatchPlan): void {

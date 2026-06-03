@@ -20,7 +20,6 @@ export type DeleteArtifactToolResult = DiagnosticEnvelope | MutationResultEnvelo
 export interface DeleteArtifactInput {
   path: string;
   mode: 'commit' | 'preview';
-  confirmation?: { accepted: boolean; confirmationText?: string };
   updateOrder?: boolean;
   createBackup?: boolean;
   expectedHash?: string;
@@ -31,16 +30,16 @@ const TOOL_NAME = 'workbench.delete_artifact';
 
 /**
  * handleDeleteArtifact 함수.
- * exact confirmation 뒤 isolated workspace 안 artifact file만 삭제하고 선택적으로 order를 정리함.
+ * isolated workspace 안 artifact file만 삭제하고 선택적으로 order를 정리함.
  *
- * @param input - 삭제 대상 path와 confirmation/options
+ * @param input - 삭제 대상 path와 options
  * @param workspace - startup에서 계산한 workspace root 상태
  * @param mutationMode - 서버 mutation mode
  * @returns mutation result 또는 diagnostic envelope
  */
 export async function handleDeleteArtifact(input: unknown, workspace: WorkspaceRootStatus, mutationMode: MutationMode): Promise<DeleteArtifactToolResult> {
   const unknownFieldResult = createUnknownFieldDiagnosticEnvelope({
-    allowedKeys: ['path', 'mode', 'confirmation', 'updateOrder', 'createBackup', 'expectedHash', 'postValidate'],
+    allowedKeys: ['path', 'mode', 'updateOrder', 'createBackup', 'expectedHash', 'postValidate'],
     input,
     tool: TOOL_NAME,
   });
@@ -64,7 +63,7 @@ export async function handleDeleteArtifact(input: unknown, workspace: WorkspaceR
 
   if (mutationMode === 'preview-only') {
     return createDiagnosticEnvelope({
-      data: { confirmationText: `DELETE ${deleteInput.path}`, orderPath: orderState?.relativePath ?? null, preview: true, target: deleteInput.path },
+      data: { orderPath: orderState?.relativePath ?? null, preview: true, target: deleteInput.path },
       diagnostics: [{ category: 'mutation-safety', id: 'DELETE_ARTIFACT_PREVIEW', message: 'Delete preview created; no files were changed.', path: deleteInput.path, ruleId: 'delete-artifact.preview', severity: 'info' }],
       status: 'ok',
       tool: TOOL_NAME,
@@ -75,10 +74,7 @@ export async function handleDeleteArtifact(input: unknown, workspace: WorkspaceR
   if (orderState) safetyTargets.push({ expectedHash: orderState.beforeHash, intent: 'write-existing' as const, path: orderState.relativePath });
 
   const safetyResult = await evaluateMutationSafetyGate({
-    confirmation: deleteInput.confirmation,
-    expectedConfirmationText: `DELETE ${deleteInput.path}`,
     mode: mutationMode,
-    risk: 'high',
     targets: safetyTargets,
     toolName: TOOL_NAME,
     workspace,
@@ -200,7 +196,6 @@ function parseDeleteArtifactInput(input: unknown): { input: DeleteArtifactInput;
   if (typeof candidate.path !== 'string' || candidate.path.trim() === '') return { ok: false, reason: 'path must be a non-empty string.' };
   return {
     input: {
-      confirmation: isConfirmation(candidate.confirmation) ? candidate.confirmation : undefined,
       createBackup: typeof candidate.createBackup === 'boolean' ? candidate.createBackup : undefined,
       expectedHash: typeof candidate.expectedHash === 'string' ? candidate.expectedHash : undefined,
       mode: 'commit',
@@ -210,17 +205,6 @@ function parseDeleteArtifactInput(input: unknown): { input: DeleteArtifactInput;
     },
     ok: true,
   };
-}
-
-/**
- * isConfirmation 함수.
- * raw confirmation 값이 mutation confirmation shape인지 확인함.
- *
- * @param value - 검사할 confirmation 후보
- * @returns confirmation shape 여부
- */
-function isConfirmation(value: unknown): value is { accepted: boolean; confirmationText?: string } {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value) && 'accepted' in value);
 }
 
 /**

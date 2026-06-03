@@ -11,14 +11,12 @@ export const SearchWikiInputSchema = z.object({
 });
 
 export const EnsureWikiRootInputSchema = z.object({
-  confirmation: z.object({ accepted: z.boolean(), confirmationText: z.string().optional() }).optional(),
   mode: z.enum(['preview', 'commit']),
   postValidate: z.boolean().optional(),
   wikiRoot: z.string().optional(),
 });
 
 export const RefreshWikiInputSchema = z.object({
-  confirmation: z.object({ accepted: z.boolean(), confirmationText: z.string().optional() }).optional(),
   generatedFiles: z.array(z.object({ content: z.string(), path: z.string() })).optional(),
   mode: z.enum(['preview', 'commit']),
   postValidate: z.boolean().optional(),

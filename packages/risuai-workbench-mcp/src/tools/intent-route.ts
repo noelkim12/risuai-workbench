@@ -320,7 +320,6 @@ function inferMutationMode(params: {
   if (!params.mutationRequested) return 'none';
   if (params.stopConditions.includes('mutation_tool_blocked')) return 'blocked';
   if (params.stopConditions.includes('preview_required')) return 'preview_required';
-  if (params.stopConditions.includes('confirmation_required')) return 'confirmation_required';
   if (params.commitAllowed && params.risk === 'write_modify') return 'guarded_direct';
   return 'preview_required';
 }
@@ -332,7 +331,6 @@ function generateRouteId(input: IntentRouteInput): string {
     patchPlanId: input.patchPlanId ?? '',
     request: (input.request ?? '').toLowerCase().trim(),
     target: (input.target ?? '').toLowerCase().trim(),
-    userConfirmed: input.userConfirmed ?? false,
   });
   const hash = createHash('sha256').update(normalized).digest('hex').slice(0, 8);
   return `route_${hash}`;
@@ -679,18 +677,13 @@ function applyConstraints(
       recommendedTools = differenceSets(recommendedTools, MUTATION_TOOLS);
       discouragedTools = unionSets([discouragedTools, MUTATION_TOOLS]);
       mutationMode = 'preview_required';
-      if (!routingSignals.includes('mutation_without_confirmation')) {
-        routingSignals = [...routingSignals, 'mutation_without_confirmation'];
+      if (!routingSignals.includes('mutation_requested')) {
+        routingSignals = [...routingSignals, 'mutation_requested'];
       }
 
       const needsPreview = !constraints.hasPreviewEvidence;
-      const needsConfirm = true;
-
       if (needsPreview && !stopConditions.includes('preview_required')) {
         stopConditions = [...stopConditions, 'preview_required'];
-      }
-      if (needsConfirm && !stopConditions.includes('confirmation_required')) {
-        stopConditions = [...stopConditions, 'confirmation_required'];
       }
     }
   }
@@ -743,26 +736,19 @@ function classifyIntent(
 
   // Rule 3: patchPlanId + apply/commit/confirm language
   if (input.patchPlanId && hasKeyword(text, APPLY_COMMIT_KEYWORDS)) {
-    const userConfirmed = input.userConfirmed ?? false;
-    const allowed = userConfirmed
-      ? unionSets([READ_ONLY_TOOLS, PATCH_APPLY_TOOLS])
-      : unionSets([READ_ONLY_TOOLS, PREVIEW_TOOLS]);
-    const blocked = userConfirmed
-      ? differenceSets(MUTATION_TOOLS, PATCH_APPLY_TOOLS)
-      : MUTATION_TOOLS;
+    const allowed = unionSets([READ_ONLY_TOOLS, PATCH_APPLY_TOOLS]);
+    const blocked = differenceSets(MUTATION_TOOLS, PATCH_APPLY_TOOLS);
 
     return buildRouteResult(input, {
       intent: 'artifact.patch.apply',
-      nextStep: userConfirmed ? 'apply' : 'confirm',
+      nextStep: 'apply',
       confidence: 0.95,
-      risk: userConfirmed ? 'write_modify' : 'preview_only',
+      risk: 'write_modify',
       targetKind: 'patch_plan',
       mutationRequested: true,
-      commitAllowed: userConfirmed,
-      stopConditions: userConfirmed ? [] : ['confirmation_required'],
-      explanation: userConfirmed
-        ? `Patch plan ${input.patchPlanId} ready for apply. The mutation safety gate remains authoritative.`
-        : `Patch plan ${input.patchPlanId} ready for confirmation.`,
+      commitAllowed: true,
+      stopConditions: [],
+      explanation: `Patch plan ${input.patchPlanId} ready for apply.`,
       allowedTools: filterImplemented(allowed),
       blockedTools: filterImplemented(blocked),
       domainTags: constraints.domainTags,
@@ -771,24 +757,19 @@ function classifyIntent(
 
   // Rule 4: ideaId + apply/commit language
   if (input.ideaId && hasKeyword(text, APPLY_COMMIT_KEYWORDS)) {
-    const userConfirmed = input.userConfirmed ?? false;
-    const allowed = userConfirmed
-      ? unionSets([READ_ONLY_TOOLS, CREATIVE_APPLY_TOOLS])
-      : unionSets([READ_ONLY_TOOLS, CREATIVE_PREVIEW_TOOLS]);
-    const blocked = userConfirmed
-      ? differenceSets(MUTATION_TOOLS, CREATIVE_APPLY_TOOLS)
-      : MUTATION_TOOLS;
+    const allowed = unionSets([READ_ONLY_TOOLS, CREATIVE_APPLY_TOOLS]);
+    const blocked = differenceSets(MUTATION_TOOLS, CREATIVE_APPLY_TOOLS);
 
     return buildRouteResult(input, {
       intent: 'creative.apply_patch',
-      nextStep: userConfirmed ? 'apply' : 'confirm',
+      nextStep: 'apply',
       confidence: 0.92,
-      risk: userConfirmed ? 'write_modify' : 'preview_only',
+      risk: 'write_modify',
       targetKind: 'idea',
       mutationRequested: true,
-      commitAllowed: userConfirmed,
-      stopConditions: userConfirmed ? [] : ['confirmation_required'],
-      explanation: `Idea ${input.ideaId} ready for ${userConfirmed ? 'apply' : 'confirmation'}.`,
+      commitAllowed: true,
+      stopConditions: [],
+      explanation: `Idea ${input.ideaId} ready for apply.`,
       allowedTools: filterImplemented(allowed),
       blockedTools: filterImplemented(blocked),
       domainTags: constraints.domainTags,
@@ -823,7 +804,7 @@ function classifyIntent(
       targetKind: 'documentation',
       mutationRequested: false,
       commitAllowed: false,
-      stopConditions: ['confirmation_required'],
+      stopConditions: [],
       explanation: 'Authoring-oriented request detected. Recommend the LLM-assisted authoring skill selection workflow before planning.',
       allowedTools: filterImplemented(unionSets([READ_ONLY_TOOLS, DOCS_TOOLS, ['workbench.recommend_skills', 'workbench.apply_skill']])),
       recommendedTools: limitRecommended([
@@ -917,7 +898,7 @@ function classifyIntent(
       targetKind: 'workspace',
       mutationRequested: true,
       commitAllowed: false,
-      stopConditions: ['preview_required', 'confirmation_required'],
+      stopConditions: ['preview_required'],
       explanation: 'New project scaffold request detected. Preview risu-core scaffold output first.',
       allowedTools: filterImplemented(unionSets([READ_ONLY_TOOLS, ['workbench.run_scaffold']])),
       recommendedTools: limitRecommended(['workbench.run_scaffold']),
@@ -1174,7 +1155,7 @@ function classifyIntent(
       targetKind: 'unknown',
       mutationRequested: true,
       commitAllowed: false,
-      stopConditions: ['preview_required', 'confirmation_required'],
+      stopConditions: ['preview_required'],
       explanation: 'Mutation language detected without preview evidence; preview required before commit.',
       allowedTools: filterImplemented(unionSets([READ_ONLY_TOOLS, PREVIEW_TOOLS])),
       blockedTools: filterImplemented(MUTATION_TOOLS),

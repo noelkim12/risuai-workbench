@@ -33,7 +33,6 @@ flowchart TB
 
     subgraph Safety["Mutation safety boundary"]
       PatchStore["PatchPlan store"]
-      Confirm["confirmation gate"]
       MutationMode["mutation mode"]
       ApplyEngine["canonical patch apply engine"]
     end
@@ -46,10 +45,9 @@ flowchart TB
     workbench_prepare_action --> workbench_patch_preview
     workbench_context -. "hydrates args via contextId" .-> workbench_run_action
     workbench_context -. "hydrates args via contextId" .-> workbench_patch_preview
-    workbench_run_action -. "blocks commit_mutation" .-> workbench_patch_apply
+    workbench_run_action -. "can execute internal actions" .-> workbench_patch_apply
     workbench_patch_preview --> PatchStore
     workbench_patch_apply --> PatchStore
-    workbench_patch_apply --> Confirm
     workbench_patch_apply --> MutationMode
     workbench_patch_apply --> ApplyEngine
     workbench_catalog --> capability_inspect
@@ -97,14 +95,13 @@ sequenceDiagram
 
 ### Mutation-safe patch flow
 
-Commit mutations are intentionally not executed through `workbench.run_action`. The facade routes file changes through preview, explicit confirmation, and the canonical patch apply gate.
+Commit mutations can execute through Workbench mutation tools without a separate approval ceremony. The facade still offers preview and canonical patch apply flows for structured file changes.
 
 ```mermaid
 sequenceDiagram
     participant Client as MCP client
     participant Preview as patch_preview
     participant Store as PatchPlan store
-    participant User as User confirmation
     participant Apply as patch_apply
     participant Gate as Mutation safety gate
     participant Engine as Patch apply engine
@@ -113,11 +110,9 @@ sequenceDiagram
     Preview->>Store: validate and store PatchPlan
     Store-->>Preview: patchPlanId
     Preview-->>Client: diff / diagnostics / preview result
-    Client->>User: show preview and request confirmation
-    User-->>Client: accepted confirmation
-    Client->>Apply: patchPlanId + confirmation
+    Client->>Apply: patchPlanId
     Apply->>Store: load PatchPlan
-Apply->>Gate: check confirmation, mutation mode, preconditions
+    Apply->>Gate: resolve workspace targets
     Gate-->>Apply: allowed or rejected
     Apply->>Engine: apply approved operations
     Engine-->>Apply: mutation result
@@ -142,4 +137,4 @@ Apply->>Gate: check confirmation, mutation mode, preconditions
 
 ### Why this facade exists
 
-The facade reduces the external MCP `tools/list` surface while preserving the full domain capability internally. `route_intent` decides the likely capability, `catalog` exposes relevant actions, `prepare_action` explains one action schema, `run_action` executes read-only and preview-safe actions, `context` carries large payloads by handle, and `patch_preview` / `patch_apply` isolate file writes behind preview, confirmation, mutation-mode, and precondition checks.
+The facade reduces the external MCP `tools/list` surface while preserving the full domain capability internally. `route_intent` decides the likely capability, `catalog` exposes relevant actions, `prepare_action` explains one action schema, `run_action` executes internal actions, `context` carries large payloads by handle, and `patch_preview` / `patch_apply` provide a structured path for file writes.

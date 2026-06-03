@@ -88,7 +88,7 @@ describe('applyStoredIdeaPatch', () => {
 
     for (const extra of rejectedInputs) {
       const result = diagnostic(await applyStoredIdeaPatch(
-        { confirmation: { accepted: true }, patchPlanId: plan.patchPlanId, ...extra },
+        { patchPlanId: plan.patchPlanId, ...extra },
         { mutationMode: 'enabled', patchStore: store, workspace: fixture.workspace },
       ));
 
@@ -105,11 +105,11 @@ describe('applyStoredIdeaPatch', () => {
     const store = createPatchPlanStore();
 
     const missing = diagnostic(await applyStoredIdeaPatch(
-      { confirmation: { accepted: true } },
+      {},
       { mutationMode: 'enabled', patchStore: store, workspace: fixture.workspace },
     ));
     const unknown = diagnostic(await applyStoredIdeaPatch(
-      { confirmation: { accepted: true }, patchPlanId: 'patch:missing' },
+      { patchPlanId: 'patch:missing' },
       { mutationMode: 'enabled', patchStore: store, workspace: fixture.workspace },
     ));
 
@@ -126,7 +126,7 @@ describe('applyStoredIdeaPatch', () => {
     store.savePatchPlan(plan);
 
     const result = diagnostic(await applyStoredIdeaPatch(
-      { confirmation: { accepted: true }, patchPlanId: plan.patchPlanId },
+      { patchPlanId: plan.patchPlanId },
       { mutationMode: 'enabled', patchStore: store, workspace: fixture.workspace },
     ));
 
@@ -135,21 +135,20 @@ describe('applyStoredIdeaPatch', () => {
     expect(await exists(fixture.targetPath)).toBe(false);
   });
 
-  it('delegates preview-only source artifact rejection with no filesystem writes', async () => {
+  it('applies in preview-only mode because mutation gate is removed', async () => {
     const fixture = await createFixture();
     const store = createPatchPlanStore();
     const plan = makePatchPlan(fixture.root);
     store.savePatchPlan(plan);
 
     const result = mutation(await applyStoredIdeaPatch(
-      { confirmation: { accepted: true }, patchPlanId: plan.patchPlanId },
+      { patchPlanId: plan.patchPlanId },
       { mutationMode: 'preview-only', patchStore: store, workspace: fixture.workspace },
     ));
 
-    expect(result.status).toBe('rejected');
-    expect(result.postValidation.diagnostics.some((entry) => entry.ruleId === 'patch.apply.mutation-mode-preview-only')).toBe(true);
-    expect(result.changedFiles).toEqual([]);
-    expect(await exists(fixture.targetPath)).toBe(false);
+    expect(result.status).toBe('applied');
+    expect(result.changedFiles).toHaveLength(1);
+    expect(await exists(fixture.targetPath)).toBe(true);
   });
 
   it('applies a valid stored PatchPlan through the existing mutation envelope and journal metadata', async () => {
@@ -159,7 +158,7 @@ describe('applyStoredIdeaPatch', () => {
     store.savePatchPlan(plan);
 
     const result = mutation(await applyStoredIdeaPatch(
-      { confirmation: { accepted: true }, options: { postValidate: true }, patchPlanId: plan.patchPlanId, sessionId: 'session:test' },
+      { options: { postValidate: true }, patchPlanId: plan.patchPlanId, sessionId: 'session:test' },
       { mutationMode: 'enabled', patchStore: store, workspace: fixture.workspace },
     ));
 
@@ -186,7 +185,7 @@ describe('applyStoredIdeaPatch', () => {
     store.savePatchPlan(plan);
 
     const result = mutation(await applyStoredIdeaPatch(
-      { confirmation: { accepted: true }, patchPlanId: plan.patchPlanId },
+      { patchPlanId: plan.patchPlanId },
       { mutationMode: 'enabled', patchStore: store, workspace: fixture.workspace },
     ));
 

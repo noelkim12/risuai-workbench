@@ -7,7 +7,6 @@ import path from 'node:path';
 
 import { createCancellationDiagnostic, isCancellationRequested, throwIfCancellationRequested } from '../../cancellation';
 import { createDiagnosticEnvelope, createUnknownFieldDiagnosticEnvelope, type DiagnosticEnvelope } from '../../contracts/diagnostics';
-import type { MutationMode as PatchPlanMutationMode } from '../../contracts/patch-plan';
 import { createMutationResultEnvelope, type MutationResultEnvelope } from '../../contracts/mutation-result';
 import { appendJournalEntry } from '../../mutation/journal';
 import type { MutationMode } from '../../mutation/mode';
@@ -22,7 +21,6 @@ import {
   ensureOutputDirectoryMissing,
   createWorkflowPostValidation,
   getBooleanField,
-  getConfirmationField,
   getStringField,
   resolveRisuCoreBinPath,
   runRisuCoreCommand,
@@ -38,8 +36,6 @@ export type RunExtractToolResult = DiagnosticEnvelope | MutationResultEnvelope;
 type ExtractType = 'character' | 'module' | 'preset';
 
 export interface RunExtractInput {
-  confirmation?: { accepted: boolean; confirmationText?: string };
-  mode: PatchPlanMutationMode;
   outDir?: string;
   postValidate?: boolean;
   risuluaDomainGeneration?: RisuLuaDomainGenerationInput;
@@ -63,7 +59,7 @@ export async function handleRunExtract(
 ): Promise<RunExtractToolResult> {
   await progress?.report(1, 9, 'Validating run_extract input.');
   const unknownFieldResult = createUnknownFieldDiagnosticEnvelope({
-    allowedKeys: ['sourcePath', 'type', 'outDir', 'risuluaMode', 'risuluaRecovery', 'risuluaSplit', 'risuluaDomainGeneration', 'mode', 'confirmation', 'postValidate'],
+    allowedKeys: ['sourcePath', 'type', 'outDir', 'risuluaMode', 'risuluaRecovery', 'risuluaSplit', 'risuluaDomainGeneration', 'postValidate'],
     input,
     tool: TOOL_NAME,
   });
@@ -144,27 +140,14 @@ export async function handleRunExtract(
     });
   }
 
-  await progress?.report(3, 9, 'Preparing run_extract command preview.');
+  await progress?.report(3, 9, 'Preparing run_extract command.');
   const defaultWikiRelativePath = defaultPostExtractWikiPath(safeOutDir.relativePath);
   const argv = buildExtractArgs(extractInput, safeSource.relativePath, safeOutDir.relativePath);
   const analyzeArgv = buildPostExtractAnalyzeArgs(extractInput, safeOutDir.relativePath, defaultWikiRelativePath);
-  const confirmationText = `RUN_EXTRACT ${safeSource.relativePath} TO ${safeOutDir.relativePath} WITH WIKI ${defaultWikiRelativePath}`;
-  if (mutationMode === 'preview-only') {
-    await progress?.report(4, 9, 'run_extract preview complete.');
-    return createDiagnosticEnvelope({
-      data: { command: process.execPath, args: [resolveRisuCoreBinPath(), ...argv], postExtractAnalyze: { command: process.execPath, args: [resolveRisuCoreBinPath(), ...analyzeArgv], defaultWikiRoot: defaultWikiRelativePath }, cwd: workspace.path, expectedConfirmationText: confirmationText, preview: true, source: safeSource.relativePath, target: safeOutDir.relativePath },
-      diagnostics: [],
-      status: 'ok',
-      tool: TOOL_NAME,
-    });
-  }
 
   await progress?.report(4, 9, 'Checking run_extract mutation safety.');
   const safetyResult = await evaluateMutationSafetyGate({
-    confirmation: extractInput.confirmation,
-    expectedConfirmationText: confirmationText,
     mode: mutationMode,
-    risk: 'medium',
     targets: [{ intent: 'read-existing', path: safeSource.relativePath }, { intent: 'create-missing', path: safeOutDir.relativePath }, { intent: 'create-missing', path: defaultWikiRelativePath }],
     toolName: TOOL_NAME,
     workspace,
@@ -240,7 +223,6 @@ function parseRunExtractInput(input: unknown): { input: RunExtractInput; ok: tru
   // outDir is now optional; if omitted, it will be derived from sourcePath
   const type = getStringField(candidate, 'type');
   if (type !== undefined && !VALID_TYPES.has(type as ExtractType)) return { ok: false, reason: 'type must be character, module, or preset.' };
-  const mode: PatchPlanMutationMode = 'commit';
   // risuluaMode is hardcoded to 'modular'. Caller input is ignored.
   const risuluaRecovery = candidate.risuluaRecovery;
   if (risuluaRecovery !== undefined && risuluaRecovery !== 'none' && risuluaRecovery !== 'full-source') return { ok: false, reason: 'risuluaRecovery must be none or full-source.' };
@@ -254,8 +236,6 @@ function parseRunExtractInput(input: unknown): { input: RunExtractInput; ok: tru
   if (risuluaDomainGeneration !== undefined && risuluaDomainGeneration !== 'report' && risuluaDomainGeneration !== 'validated') return { ok: false, reason: 'risuluaDomainGeneration must be report or validated.' };
   return {
     input: {
-      confirmation: getConfirmationField(candidate),
-      mode,
       outDir,
       postValidate: getBooleanField(candidate, 'postValidate'),
       risuluaDomainGeneration,

@@ -58,7 +58,7 @@ const PUBLIC_FACADE_TOOLS = [
   ['workbench.run_action', 'Execute read-only or preview-safe internal actions'],
   ['workbench.context', 'Manage handle-based large context records'],
   ['workbench.patch_preview', 'Preview patch actions or store patch plans'],
-  ['workbench.patch_apply', 'Apply confirmed patch plans through safety gates'],
+  ['workbench.patch_apply', 'Apply stored patch plans'],
 ] as const;
 
 const ACTION_GROUP_ORDER = [
@@ -176,7 +176,6 @@ export function buildFacadeVisualizationModel(options: { generatedAt?: string } 
       label: group.label,
     })),
     { group: 'Mutation safety', id: 'safety:patch-store', kind: 'safety_gate', label: 'PatchPlan store' },
-    { group: 'Mutation safety', id: 'safety:confirmation', kind: 'safety_gate', label: 'confirmation gate' },
     { group: 'Mutation safety', id: 'safety:mutation-mode', kind: 'safety_gate', label: 'mutation mode' },
     { group: 'Mutation safety', id: 'safety:patch-engine', kind: 'safety_gate', label: 'canonical patch apply engine' },
   ];
@@ -186,7 +185,7 @@ export function buildFacadeVisualizationModel(options: { generatedAt?: string } 
     { source: graphId('tool', 'workbench.catalog'), target: graphId('tool', 'workbench.prepare_action'), kind: 'next_tool', label: 'selects action' },
     { source: graphId('tool', 'workbench.prepare_action'), target: graphId('tool', 'workbench.run_action'), kind: 'next_tool', label: 'runs safe action' },
     { source: graphId('tool', 'workbench.prepare_action'), target: graphId('tool', 'workbench.patch_preview'), kind: 'next_tool', label: 'previews mutation' },
-    { source: graphId('tool', 'workbench.patch_preview'), target: graphId('tool', 'workbench.patch_apply'), kind: 'next_tool', label: 'after confirmation' },
+    { source: graphId('tool', 'workbench.patch_preview'), target: graphId('tool', 'workbench.patch_apply'), kind: 'next_tool', label: 'apply stored plan' },
     { source: graphId('tool', 'workbench.context'), target: graphId('tool', 'workbench.run_action'), kind: 'hydrates', label: 'contextId' },
     { source: graphId('tool', 'workbench.context'), target: graphId('tool', 'workbench.patch_preview'), kind: 'hydrates', label: 'contextId' },
     ...actionGroups.map((group) => ({
@@ -197,7 +196,6 @@ export function buildFacadeVisualizationModel(options: { generatedAt?: string } 
     })),
     { source: graphId('tool', 'workbench.patch_preview'), target: 'safety:patch-store', kind: 'stores', label: 'PatchPlan' },
     { source: graphId('tool', 'workbench.patch_apply'), target: 'safety:patch-store', kind: 'loads', label: 'PatchPlan' },
-    { source: graphId('tool', 'workbench.patch_apply'), target: 'safety:confirmation', kind: 'checks', label: 'requires accepted confirmation' },
     { source: graphId('tool', 'workbench.patch_apply'), target: 'safety:mutation-mode', kind: 'checks', label: 'preview-only/generated-only/enabled' },
     { source: graphId('tool', 'workbench.patch_apply'), target: 'safety:patch-engine', kind: 'applies', label: 'approved operations' },
   ];
@@ -236,7 +234,6 @@ export function renderArchitectureMermaid(model: FacadeVisualizationModel): stri
     '',
     '    subgraph Safety["Mutation safety boundary"]',
     '      PatchStore["PatchPlan store"]',
-    '      Confirm["confirmation gate"]',
     '      MutationMode["mutation mode"]',
     '      ApplyEngine["canonical patch apply engine"]',
     '    end',
@@ -249,10 +246,9 @@ export function renderArchitectureMermaid(model: FacadeVisualizationModel): stri
     '    workbench_prepare_action --> workbench_patch_preview',
     '    workbench_context -. "hydrates args via contextId" .-> workbench_run_action',
     '    workbench_context -. "hydrates args via contextId" .-> workbench_patch_preview',
-    '    workbench_run_action -. "blocks commit_mutation" .-> workbench_patch_apply',
+    '    workbench_run_action -. "can execute internal actions" .-> workbench_patch_apply',
     '    workbench_patch_preview --> PatchStore',
     '    workbench_patch_apply --> PatchStore',
-    '    workbench_patch_apply --> Confirm',
     '    workbench_patch_apply --> MutationMode',
     '    workbench_patch_apply --> ApplyEngine',
     ...model.actionGroups.map((group) => `    workbench_catalog --> ${mermaidId(`capability_${group.capability}`)}`),
@@ -297,7 +293,6 @@ export function renderPatchFlowMermaid(): string {
     '    participant Client as MCP client',
     '    participant Preview as patch_preview',
     '    participant Store as PatchPlan store',
-    '    participant User as User confirmation',
     '    participant Apply as patch_apply',
     '    participant Gate as Mutation safety gate',
     '    participant Engine as Patch apply engine',
@@ -306,11 +301,9 @@ export function renderPatchFlowMermaid(): string {
     '    Preview->>Store: validate and store PatchPlan',
     '    Store-->>Preview: patchPlanId',
     '    Preview-->>Client: diff / diagnostics / preview result',
-    '    Client->>User: show preview and request confirmation',
-    '    User-->>Client: accepted confirmation',
-    '    Client->>Apply: patchPlanId + confirmation',
+    '    Client->>Apply: patchPlanId',
     '    Apply->>Store: load PatchPlan',
-'    Apply->>Gate: check confirmation, mutation mode, preconditions',
+    '    Apply->>Gate: resolve workspace targets',
     '    Gate-->>Apply: allowed or rejected',
     '    Apply->>Engine: apply approved operations',
     '    Engine-->>Apply: mutation result',
@@ -347,7 +340,7 @@ export function renderReadmeSection(model: FacadeVisualizationModel): string {
     '',
     '### Mutation-safe patch flow',
     '',
-    'Commit mutations are intentionally not executed through `workbench.run_action`. The facade routes file changes through preview, explicit confirmation, and the canonical patch apply gate.',
+    'Commit mutations can execute through Workbench mutation tools without a separate approval ceremony. The facade still offers preview and canonical patch apply flows for structured file changes.',
     '',
     '```mermaid',
     renderPatchFlowMermaid().trimEnd(),
@@ -361,7 +354,7 @@ export function renderReadmeSection(model: FacadeVisualizationModel): string {
     '',
     '### Why this facade exists',
     '',
-    'The facade reduces the external MCP `tools/list` surface while preserving the full domain capability internally. `route_intent` decides the likely capability, `catalog` exposes relevant actions, `prepare_action` explains one action schema, `run_action` executes read-only and preview-safe actions, `context` carries large payloads by handle, and `patch_preview` / `patch_apply` isolate file writes behind preview, confirmation, mutation-mode, and precondition checks.',
+    'The facade reduces the external MCP `tools/list` surface while preserving the full domain capability internally. `route_intent` decides the likely capability, `catalog` exposes relevant actions, `prepare_action` explains one action schema, `run_action` executes internal actions, `context` carries large payloads by handle, and `patch_preview` / `patch_apply` provide a structured path for file writes.',
     '',
   ].join('\n');
 }

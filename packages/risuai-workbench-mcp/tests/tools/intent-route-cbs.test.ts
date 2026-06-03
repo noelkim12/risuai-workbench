@@ -238,7 +238,7 @@ describe('handleRouteIntent CBS domain awareness', () => {
       expect(route.mutationRequested).toBe(true);
       expect(route.commitAllowed).toBe(false);
       expect(route.stopConditions).toContain('preview_required');
-      expect(route.stopConditions).toContain('confirmation_required');
+      expect(route.stopConditions).not.toContain('confirmation_required');
     });
 
     it('keeps CBS inspect request read-only', async () => {

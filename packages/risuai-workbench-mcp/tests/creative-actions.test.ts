@@ -226,7 +226,7 @@ describe('creative facade integration', () => {
     expect(envelope.tool).toBe('workbench.creative.gather_context');
   });
 
-  it('run_action blocks commit_mutation creative actions', async () => {
+  it('run_action no longer blocks commit_mutation creative actions', async () => {
     const registry = createWorkbenchActionRegistry(dummyContext);
 
     for (const actionId of COMMIT_MUTATION_CREATIVE_ACTION_IDS) {
@@ -234,10 +234,9 @@ describe('creative facade integration', () => {
         { actionId, args: {} },
         registry,
         dummyContext,
-      )) as { ok: false; error: { code: string } };
+      )) as { error?: { code: string } };
 
-      expect(result.ok).toBe(false);
-      expect(result.error.code).toBe('BLOCKED_MUTATION');
+      expect(result.error?.code).not.toBe('BLOCKED_MUTATION');
     }
   });
 

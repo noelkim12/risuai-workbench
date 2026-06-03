@@ -669,20 +669,18 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
 
 /**
  * registerAdvancedMutationTools 함수.
- * Phase 5 advanced mutation tools를 high-risk safety gate 뒤에 등록함.
+ * Phase 5 advanced mutation tools를 등록함.
  *
  * @param server - MCP server 인스턴스
  * @param startupContext - workspace와 mutation mode startup context
  */
 function registerAdvancedMutationTools(server: McpServer, startupContext: StartupContext): void {
-  const confirmationSchema = z.object({ accepted: z.boolean(), confirmationText: z.string().optional() }).optional();
-
   server.registerTool(
     'workbench.move_artifact',
     {
       annotations: annotationsForTool('workbench.move_artifact'),
       description: 'Move or rename an artifact while preserving suffix and optional order ownership.',
-      inputSchema: { confirmation: confirmationSchema, expectedHash: z.string().optional(), from: z.string(), mode: z.enum(['preview', 'commit']), postValidate: z.boolean().optional(), toStem: z.string(), updateOrder: z.boolean().optional() },
+      inputSchema: { expectedHash: z.string().optional(), from: z.string(), mode: z.enum(['preview', 'commit']), postValidate: z.boolean().optional(), toStem: z.string(), updateOrder: z.boolean().optional() },
       outputSchema: workbenchJsonOutputSchema,
       title: 'Move artifact',
     },
@@ -695,8 +693,8 @@ function registerAdvancedMutationTools(server: McpServer, startupContext: Startu
   server.registerTool(
     'workbench.delete_artifact',
     {
-      description: 'Delete an artifact only after exact high-risk confirmation.',
-      inputSchema: { confirmation: confirmationSchema, createBackup: z.boolean().optional(), expectedHash: z.string().optional(), mode: z.enum(['preview', 'commit']), path: z.string(), postValidate: z.boolean().optional(), updateOrder: z.boolean().optional() },
+      description: 'Delete an artifact.',
+      inputSchema: { createBackup: z.boolean().optional(), expectedHash: z.string().optional(), mode: z.enum(['preview', 'commit']), path: z.string(), postValidate: z.boolean().optional(), updateOrder: z.boolean().optional() },
       outputSchema: workbenchJsonOutputSchema,
       title: 'Delete artifact',
     },
@@ -711,7 +709,7 @@ function registerAdvancedMutationTools(server: McpServer, startupContext: Startu
     {
       annotations: annotationsForTool('workbench.ensure_wiki_root'),
       description: 'Create the minimal generated wiki root files when they are missing.',
-      inputSchema: { confirmation: confirmationSchema, mode: z.enum(['preview', 'commit']), postValidate: z.boolean().optional(), wikiRoot: z.string().optional() },
+      inputSchema: { mode: z.enum(['preview', 'commit']), postValidate: z.boolean().optional(), wikiRoot: z.string().optional() },
       outputSchema: workbenchJsonOutputSchema,
       title: 'Ensure wiki root',
     },
@@ -725,7 +723,7 @@ function registerAdvancedMutationTools(server: McpServer, startupContext: Startu
     'workbench.refresh_wiki',
     {
       description: 'Refresh proposal-approved generated wiki files only.',
-      inputSchema: { confirmation: confirmationSchema, generatedFiles: z.array(z.object({ content: z.string(), path: z.string() })).optional(), mode: z.enum(['preview', 'commit']), postValidate: z.boolean().optional(), target: z.string().optional(), wikiRoot: z.string().optional() },
+      inputSchema: { generatedFiles: z.array(z.object({ content: z.string(), path: z.string() })).optional(), mode: z.enum(['preview', 'commit']), postValidate: z.boolean().optional(), target: z.string().optional(), wikiRoot: z.string().optional() },
       outputSchema: workbenchJsonOutputSchema,
       title: 'Refresh wiki',
     },
@@ -739,7 +737,7 @@ function registerAdvancedMutationTools(server: McpServer, startupContext: Startu
     'workbench.rollback_mutation',
     {
       description: 'Rollback a journaled mutation only when inverse state is sufficient.',
-      inputSchema: { confirmation: confirmationSchema, mode: z.enum(['preview', 'commit']), mutationId: z.string() },
+      inputSchema: { mode: z.enum(['preview', 'commit']), mutationId: z.string() },
       outputSchema: workbenchJsonOutputSchema,
       title: 'Rollback mutation',
     },
@@ -752,13 +750,12 @@ function registerAdvancedMutationTools(server: McpServer, startupContext: Startu
 
 /**
  * registerCoreWorkflowTools 함수.
- * core CLI extract/scaffold workflow를 gated mutation tool로 등록함.
+ * core CLI extract/scaffold workflow를 mutation tool로 등록함.
  *
  * @param server - MCP server 인스턴스
  * @param startupContext - workspace와 mutation mode startup context
  */
 function registerCoreWorkflowTools(server: McpServer, startupContext: StartupContext): void {
-  const confirmationSchema = z.object({ accepted: z.boolean(), confirmationText: z.string().optional() }).optional();
   const risuluaFields = {
     risuluaDomainGeneration: z.enum(['report', 'validated']).optional(),
     risuluaRecovery: z.enum(['none', 'full-source']).optional(),
@@ -770,7 +767,7 @@ function registerCoreWorkflowTools(server: McpServer, startupContext: StartupCon
     {
       annotations: annotationsForTool('workbench.run_extract'),
       description: 'Extract a .risum (module), .risuchar (character), or .risup (preset) file into a canonical workspace directory. Use this tool when the user mentions a risum/charx/risup file path and asks to extract, unpack, open, or import it. If outDir is omitted, the output directory defaults to the same directory as the source file with the filename (without extension). Risk: medium.',
-      inputSchema: { confirmation: confirmationSchema, mode: z.enum(['preview', 'commit']), outDir: z.string().optional().describe('Output directory path (workspace-relative; defaults to source filename without extension)'), postValidate: z.boolean().optional(), sourcePath: z.string(), type: z.enum(['character', 'module', 'preset']).optional(), ...risuluaFields },
+      inputSchema: { outDir: z.string().optional().describe('Output directory path (workspace-relative; defaults to source filename without extension)'), postValidate: z.boolean().optional(), sourcePath: z.string(), type: z.enum(['character', 'module', 'preset']).optional(), ...risuluaFields },
       outputSchema: workbenchJsonOutputSchema,
       title: 'Run extract workflow',
     },
@@ -788,7 +785,7 @@ function registerCoreWorkflowTools(server: McpServer, startupContext: StartupCon
     'workbench.run_scaffold',
     {
       description: 'Generate a new charx, module, or preset workspace skeleton using risu-core scaffold. Use this tool when the user asks to create, initialize, or scaffold a new RisuAI character, module, or preset project. If outDir is omitted, the output directory defaults to the project name in the workspace root. Risk: medium.',
-      inputSchema: { confirmation: confirmationSchema, creator: z.string().optional(), mode: z.enum(['preview', 'commit']), name: z.string(), namespace: z.string().optional(), outDir: z.string().optional(), postValidate: z.boolean().optional(), type: z.enum(['charx', 'module', 'preset']) },
+      inputSchema: { creator: z.string().optional(), name: z.string(), namespace: z.string().optional(), outDir: z.string().optional(), postValidate: z.boolean().optional(), type: z.enum(['charx', 'module', 'preset']) },
       outputSchema: workbenchJsonOutputSchema,
       title: 'Run scaffold workflow',
     },
@@ -923,9 +920,8 @@ function registerPatchApplyTools(server: McpServer, startupContext: StartupConte
     'workbench.apply_patch_plan',
     {
       annotations: annotationsForTool('workbench.apply_patch_plan'),
-      description: 'Apply a stored patch plan after confirmation and precondition checks.',
+      description: 'Apply a stored patch plan.',
       inputSchema: {
-        confirmation: z.object({ accepted: z.boolean(), confirmationText: z.string().optional() }),
         options: z.object({ createBackup: z.boolean().optional(), postValidate: z.boolean().optional(), rollbackOnValidationError: z.boolean().optional() }).optional(),
         patchPlanId: z.string(),
       },
@@ -1018,9 +1014,8 @@ function registerAuthoringSkillTools(server: McpServer): void {
     'workbench.apply_skill',
     {
       annotations: annotationsForTool('workbench.apply_skill'),
-      description: applyTool?.description ?? 'Apply an approved authoring skill as a plan preview.',
+      description: applyTool?.description ?? 'Apply an authoring skill as a plan preview.',
       inputSchema: {
-        confirmation: z.object({ accepted: z.boolean(), confirmationText: z.string().optional() }).optional(),
         recommendationReason: z.string().optional(),
         request: z.string(),
         skillId: z.string(),
@@ -1223,15 +1218,12 @@ function registerInspectValidateTools(server: McpServer, workspace: WorkspaceRoo
  * @param patchStore - preview/apply가 공유하는 patch plan store
  */
 function registerDirectMutationTools(server: McpServer, startupContext: StartupContext, patchStore: PatchPlanStore): void {
-  const confirmationSchema = z.object({ accepted: z.boolean(), confirmationText: z.string().optional() }).optional();
-
   server.registerTool(
     'workbench.edit_order',
     {
       annotations: annotationsForTool('workbench.edit_order'),
       description: 'Edit _order.json through structured insert/move/remove operations.',
       inputSchema: {
-        confirmation: confirmationSchema,
         expectedHash: z.string().optional(),
         mode: z.enum(['preview', 'commit']),
         operations: z.array(z.union([
@@ -1256,7 +1248,6 @@ function registerDirectMutationTools(server: McpServer, startupContext: StartupC
     {
       description: 'Edit frontmatter fields while preserving artifact body text.',
       inputSchema: {
-        confirmation: confirmationSchema,
         expectedHash: z.string().optional(),
         force: z.boolean().optional(),
         mode: z.enum(['preview', 'commit']),
@@ -1283,7 +1274,6 @@ function registerDirectMutationTools(server: McpServer, startupContext: StartupC
       description: 'Edit root marker or metadata JSON through structured json.set operations.',
       inputSchema: {
         allowedFields: z.array(z.string()).optional(),
-        confirmation: confirmationSchema,
         expectedHash: z.string().optional(),
         mode: z.enum(['preview', 'commit']),
         operations: z.array(z.object({ jsonPointer: z.string(), kind: z.literal('json.set'), value: z.any() })),
@@ -1306,7 +1296,6 @@ function registerDirectMutationTools(server: McpServer, startupContext: StartupC
       inputSchema: {
         artifact: z.string(),
         body: z.string().optional(),
-        confirmation: confirmationSchema,
         initialFrontmatter: z.record(z.string(), z.string()).optional(),
         mode: z.enum(['preview', 'commit']),
         order: z.object({ index: z.number().int().nonnegative().optional(), insert: z.boolean() }).optional(),
@@ -1379,7 +1368,7 @@ function registerFacadeTools(
   server.registerTool(
     'workbench.run_action',
     {
-      description: 'Execute a registered action with validated input. Read-only actions run directly; commit mutations are blocked.',
+      description: 'Execute a registered action with validated input.',
       inputSchema: RunActionInputSchema.shape,
       outputSchema: workbenchJsonOutputSchema,
       title: 'Run action',
@@ -1421,7 +1410,7 @@ function registerFacadeTools(
   server.registerTool(
     'workbench.patch_apply',
     {
-      description: 'Apply a stored patch plan after confirmation and precondition checks. Requires confirmation object.',
+      description: 'Apply a stored patch plan.',
       inputSchema: PatchApplyInputSchema.shape,
       outputSchema: workbenchJsonOutputSchema,
       title: 'Patch apply',

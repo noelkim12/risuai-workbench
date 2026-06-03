@@ -190,7 +190,7 @@ const ROADMAP_TOOLS: readonly RoadmapToolDefinition[] = [
     title: 'List authoring skills',
   },
   {
-    description: 'Validate an LLM-selected authoring skill recommendation and return approval-required user guidance.',
+      description: 'Validate an LLM-selected authoring skill recommendation and return guidance.',
     mutates: false,
     name: 'workbench.recommend_skills',
     phase: 'phase-1',
@@ -254,7 +254,7 @@ const ROADMAP_TOOLS: readonly RoadmapToolDefinition[] = [
     title: 'Diff wiki',
   },
   {
-    description: 'Apply a previously confirmed patch plan to the workspace.',
+      description: 'Apply a stored patch plan to the workspace.',
     mutates: true,
     name: 'workbench.apply_patch_plan',
     phase: 'phase-3',
@@ -470,7 +470,7 @@ const ROADMAP_TOOLS: readonly RoadmapToolDefinition[] = [
     title: 'Move artifact',
   },
   {
-    description: 'Delete an artifact through gated backup and confirmation policy.',
+      description: 'Delete an artifact with optional backup and journal tracking.',
     mutates: true,
     name: 'workbench.delete_artifact',
     phase: 'phase-5',

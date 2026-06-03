@@ -6,7 +6,7 @@
  * valid Risu workspace files whenever `--root` did not match the user's actual
  * artifact directory. The exported name is kept for API compatibility, but the
  * implementation now resolves paths without root-boundary or symlink-escape
- * rejection. Mutation-specific confirmation/hash/mode gates still live in the
+ * rejection. Mutation-specific write handling still lives in the
  * mutation layer.
  *
  * @file packages/risuai-workbench-mcp/src/project/safe-path.ts

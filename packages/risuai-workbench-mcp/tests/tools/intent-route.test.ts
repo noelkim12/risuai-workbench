@@ -103,9 +103,9 @@ describe('handleRouteIntent', () => {
       expect(route.commitAllowed).toBe(false);
       expect(route.risk).toBe('preview_only');
 
-      // Must include preview_required and confirmation_required
+      // Must include preview_required without a separate confirmation stop.
       expect(route.stopConditions).toContain('preview_required');
-      expect(route.stopConditions).toContain('confirmation_required');
+      expect(route.stopConditions).not.toContain('confirmation_required');
 
       // Read-only evidence tools allowed
       expect(route.allowedTools).toContain('workbench.inspect_path');
@@ -388,23 +388,22 @@ describe('handleRouteIntent', () => {
       expect(route.targetKind).toBe('patch_plan');
     });
 
-    it('rule 3: patchPlanId without userConfirmed → confirm next step', async () => {
+    it('rule 3: patchPlanId → apply next step', async () => {
       const result = await handleRouteIntent({
         request: "Apply the patch plan",
         patchPlanId: "plan-123",
       });
 
       const route = result.data!.route;
-      expect(route.nextStep).toBe('confirm');
-      expect(route.commitAllowed).toBe(false);
-      expect(route.stopConditions).toContain('confirmation_required');
+      expect(route.nextStep).toBe('apply');
+      expect(route.commitAllowed).toBe(true);
+      expect(route.stopConditions).not.toContain('confirmation_required');
     });
 
-    it('rule 3: patchPlanId with userConfirmed → apply next step', async () => {
+    it('rule 3: patchPlanId route stays apply-ready', async () => {
       const result = await handleRouteIntent({
         request: "Apply the patch plan",
         patchPlanId: "plan-123",
-        userConfirmed: true,
       });
 
       const route = result.data!.route;
@@ -609,23 +608,23 @@ describe('handleRouteIntent', () => {
         expectedBlockedTools: ['workbench.apply_patch_plan', 'workbench.edit_order'],
       },
       {
-        name: 'apply preview without confirmation → artifact.patch.apply, confirm, commit false, confirmation_required',
+        name: 'apply preview → artifact.patch.apply, apply, commit true',
         input: { request: 'Apply the patch plan', patchPlanId: 'plan-123' },
-        expectedIntent: 'artifact.patch.apply',
-        expectedNextStep: 'confirm',
-        expectedCommitAllowed: false,
-        expectedMutationRequested: true,
-        expectedStopConditions: ['confirmation_required'],
-      },
-      {
-        name: 'apply preview with userConfirmed and patchPlanId → artifact.patch.apply, apply, commit true',
-        input: { request: 'Apply the patch plan', patchPlanId: 'plan-123', userConfirmed: true },
         expectedIntent: 'artifact.patch.apply',
         expectedNextStep: 'apply',
         expectedCommitAllowed: true,
         expectedMutationRequested: true,
         expectedStopConditions: [],
-        expectedExplanation: 'Patch plan plan-123 ready for apply. The mutation safety gate remains authoritative.',
+      },
+      {
+        name: 'commit preview with patchPlanId → artifact.patch.apply, apply, commit true',
+        input: { request: 'Commit the patch plan', patchPlanId: 'plan-123' },
+        expectedIntent: 'artifact.patch.apply',
+        expectedNextStep: 'apply',
+        expectedCommitAllowed: true,
+        expectedMutationRequested: true,
+        expectedStopConditions: [],
+        expectedExplanation: 'Patch plan plan-123 ready for apply.',
       },
       {
         name: 'variable flow request → analyze.variable_flow, mutation blocked',
@@ -656,16 +655,16 @@ describe('handleRouteIntent', () => {
         expectedBlockedTools: ['workbench.creative.apply_idea_patch'],
       },
       {
-        name: 'creative apply without confirmation → creative.apply_patch, confirm, commit false',
+        name: 'creative apply → creative.apply_patch, apply, commit true',
         input: { request: 'Apply the idea', ideaId: 'idea-456' },
         expectedIntent: 'creative.apply_patch',
-        expectedNextStep: 'confirm',
-        expectedCommitAllowed: false,
+        expectedNextStep: 'apply',
+        expectedCommitAllowed: true,
         expectedMutationRequested: true,
-        expectedStopConditions: ['confirmation_required'],
+        expectedStopConditions: [],
       },
       {
-        name: 'mixed review/fix → read-only tools allowed, mutation blocked, preview_required and confirmation_required',
+        name: 'mixed review/fix → read-only tools allowed, mutation blocked, preview_required',
         input: {
           request: 'Inspect the path and fix any validation errors',
           target: 'characters/merry',
@@ -674,7 +673,7 @@ describe('handleRouteIntent', () => {
         expectedRisk: 'preview_only',
         expectedCommitAllowed: false,
         expectedMutationRequested: true,
-        expectedStopConditions: ['preview_required', 'confirmation_required'],
+        expectedStopConditions: ['preview_required'],
         expectedAllowedTools: ['workbench.inspect_path', 'workbench.validate_artifact'],
         expectedBlockedTools: ['workbench.apply_patch_plan', 'workbench.edit_order'],
       },
@@ -694,7 +693,7 @@ describe('handleRouteIntent', () => {
         expectedRisk: 'preview_only',
         expectedCommitAllowed: false,
         expectedMutationRequested: true,
-        expectedStopConditions: ['preview_required', 'confirmation_required'],
+        expectedStopConditions: ['preview_required'],
         expectedBlockedTools: ['workbench.apply_patch_plan'],
       },
       {
@@ -740,7 +739,7 @@ describe('handleRouteIntent', () => {
         expectedTargetKind: 'artifact_root',
         expectedMutationRequested: false,
         expectedCommitAllowed: false,
-        expectedStopConditions: ['preview_required', 'confirmation_required'],
+        expectedStopConditions: ['preview_required'],
         recommendedIncludes: ['workbench.patch_preview', 'workbench.catalog', 'workbench.prepare_action', 'workbench.run_action'],
         domainTagsInclude: ['lorebook', 'frontmatter'],
         routingSignalsInclude: ['preview', 'frontmatter'],
@@ -757,10 +756,10 @@ describe('handleRouteIntent', () => {
         expectedTargetKind: 'lua_handler',
         expectedMutationRequested: false,
         expectedCommitAllowed: false,
-        expectedStopConditions: ['preview_required', 'confirmation_required'],
+        expectedStopConditions: ['preview_required'],
         recommendedIncludes: ['workbench.catalog', 'workbench.prepare_action', 'workbench.run_action'],
         domainTagsInclude: ['risulua'],
-        routingSignalsInclude: ['analyze', 'lua', 'domain:risulua', 'mutation_without_confirmation'],
+        routingSignalsInclude: ['analyze', 'lua', 'domain:risulua', 'mutation_requested'],
       },
       {
         name: 'Explicit frontmatter set uses guarded direct mutation guidance',

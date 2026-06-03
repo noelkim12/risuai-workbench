@@ -237,7 +237,6 @@ export const CREATIVE_TOOL_SCAFFOLDING: readonly CreativeToolScaffolding[] = [
   {
     name: 'workbench.creative.apply_idea_patch',
     inputSchema: {
-      confirmation: z.object({ accepted: z.boolean(), confirmationText: z.string().optional() }),
       options: z.object({ createBackup: z.boolean().optional(), postValidate: z.boolean().optional(), rollbackOnValidationError: z.boolean().optional() }).optional(),
       patchPlanId: z.string(),
       sessionId: OPTIONAL_STRING,
@@ -246,7 +245,6 @@ export const CREATIVE_TOOL_SCAFFOLDING: readonly CreativeToolScaffolding[] = [
   {
     name: 'workbench.creative.save_idea_session',
     inputSchema: {
-      confirmation: OPTIONAL_BOOLEAN,
       createdAt: OPTIONAL_STRING,
       ideas: OPTIONAL_UNKNOWN,
       patchPlanRefs: OPTIONAL_UNKNOWN,
@@ -264,7 +262,6 @@ export const CREATIVE_TOOL_SCAFFOLDING: readonly CreativeToolScaffolding[] = [
     name: 'workbench.creative.write_idea_memory',
     inputSchema: {
       assumptions: OPTIONAL_STRING_ARRAY,
-      confirmation: OPTIONAL_BOOLEAN,
       createdAt: OPTIONAL_STRING,
       evidence: OPTIONAL_STRING_ARRAY,
       idea: OPTIONAL_UNKNOWN,

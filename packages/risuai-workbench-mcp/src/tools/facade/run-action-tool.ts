@@ -9,7 +9,6 @@ import type { ActionExecutionContext } from '../../actions/types';
 import {
   createUnknownActionError,
   createInvalidArgsError,
-  createBlockedMutationError,
   type ActionErrorResult,
 } from '../../actions/errors';
 import { ContextStore, createContextNotFoundRunActionError } from '../../context/context-store';
@@ -37,7 +36,7 @@ function zodIssuesToActionIssues(error: z.ZodError): Array<{ path: readonly stri
 
 /**
  * handleRunAction 함수.
- * Looks up an action, enforces mutation policy, hydrates args from contextId, validates, and executes.
+ * Looks up an action, hydrates args from contextId, validates, and executes.
  *
  * @param input - run action request with actionId and args
  * @param registry - the ActionRegistry to query
@@ -59,10 +58,6 @@ export async function handleRunAction(
       suggestions = registry.list().slice(0, 4);
     }
     return createUnknownActionError(input.actionId, suggestions);
-  }
-
-  if (action.risk === 'commit_mutation') {
-    return createBlockedMutationError(action.id);
   }
 
   const args = input.args ?? {};

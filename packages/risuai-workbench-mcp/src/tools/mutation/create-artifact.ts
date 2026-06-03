@@ -37,7 +37,6 @@ export interface CreateArtifactInput {
   body?: string;
   order?: { insert: boolean; index?: number };
   mode: PatchPlanMutationMode;
-  confirmation?: { accepted: boolean; confirmationText?: string };
   postValidate?: boolean;
 }
 
@@ -60,7 +59,7 @@ export async function handleCreateArtifact(
   patchStore: PatchPlanStore,
 ): Promise<CreateArtifactToolResult> {
   const unknownFieldResult = createUnknownFieldDiagnosticEnvelope({
-    allowedKeys: ['target', 'artifact', 'root', 'stem', 'initialFrontmatter', 'body', 'order', 'mode', 'confirmation', 'postValidate'],
+    allowedKeys: ['target', 'artifact', 'root', 'stem', 'initialFrontmatter', 'body', 'order', 'mode', 'postValidate'],
     input,
     tool: TOOL_NAME,
   });
@@ -175,7 +174,7 @@ export async function handleCreateArtifact(
     intent: `create_artifact: ${canonicalPath}`,
     operations,
     preconditions,
-    safety: { destructive: false, requiresConfirmation: true, touchesGeneratedOnly: false, touchesSourceArtifacts: true },
+    safety: { destructive: false, touchesGeneratedOnly: false, touchesSourceArtifacts: true },
     workspaceRoot: workspace.path,
   });
 
@@ -203,10 +202,7 @@ export async function handleCreateArtifact(
   }
 
   const safetyResult = await evaluateMutationSafetyGate({
-    confirmation: createInput.confirmation ? { accepted: createInput.confirmation.accepted, confirmationText: createInput.confirmation.confirmationText } : undefined,
-    expectedConfirmationText: `APPLY ${patchPlan.patchPlanId}`,
     mode: mutationMode,
-    risk: 'medium',
     targets: safetyTargets,
     toolName: TOOL_NAME,
     workspace,
@@ -376,13 +372,11 @@ function parseCreateArtifactInput(input: unknown): { input: CreateArtifactInput;
     return { ok: false, reason: 'stem must be a non-empty string.' };
   }
   const mode: PatchPlanMutationMode = 'commit';
-  const confirmation = candidate.confirmation as CreateArtifactInput['confirmation'] | undefined;
   const order = candidate.order as CreateArtifactInput['order'] | undefined;
   return {
     input: {
       artifact: candidate.artifact as string,
       body: typeof candidate.body === 'string' ? candidate.body : undefined,
-      confirmation: confirmation ? { accepted: !!confirmation.accepted, confirmationText: confirmation.confirmationText } : undefined,
       initialFrontmatter: candidate.initialFrontmatter && typeof candidate.initialFrontmatter === 'object' ? candidate.initialFrontmatter as Record<string, string> : undefined,
       mode,
       order: order ? { insert: !!order.insert, index: typeof order.index === 'number' ? order.index : undefined } : undefined,

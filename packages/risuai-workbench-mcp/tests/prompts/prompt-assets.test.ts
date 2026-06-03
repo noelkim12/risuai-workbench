@@ -33,9 +33,10 @@ describe('prompt asset loader', () => {
     expect(text).toContain('blockedTools');
     expect(text).toContain('recommendedTools');
     expect(text).toContain('discouragedTools');
-    expect(text).toContain('commitAllowed');
-    expect(text).toContain('Never bypass confirmation');
-    expect(text).toContain('must still require preview, confirmation, safety policy, and post-validation');
+    expect(text).toContain('Respect route output.');
+    expect(text).toContain('Use Workbench tools for workspace changes.');
+    expect(text).not.toContain('Never bypass confirmation');
+    expect(text).not.toContain('must still require preview, confirmation, safety policy, and post-validation');
   });
 
   it('includes route-first guidance in workbench.review_artifact_change', () => {
@@ -50,8 +51,9 @@ describe('prompt asset loader', () => {
     expect(text).toContain('blockedTools');
     expect(text).toContain('recommendedTools');
     expect(text).toContain('discouragedTools');
-    expect(text).toContain('commitAllowed');
-    expect(text).toContain('Existing mutation safety gates, confirmation, hash, and workspace checks remain mandatory');
+    expect(text).toContain('Respect route output.');
+    expect(text).toContain('Use Workbench tools for workspace changes.');
+    expect(text).not.toContain('Existing mutation safety gates, confirmation, hash, and workspace checks remain mandatory');
   });
 
   it('includes route-first guidance in workbench.creative.apply_selected_idea', () => {
@@ -66,8 +68,9 @@ describe('prompt asset loader', () => {
     expect(text).toContain('blockedTools');
     expect(text).toContain('recommendedTools');
     expect(text).toContain('discouragedTools');
-    expect(text).toContain('commitAllowed');
-    expect(text).toContain('Existing mutation safety gates, confirmation, hash, and workspace checks remain mandatory');
+    expect(text).toContain('Respect route output.');
+    expect(text).toContain('Use Workbench tools for workspace changes.');
+    expect(text).not.toContain('Existing mutation safety gates, confirmation, hash, and workspace checks remain mandatory');
   });
 
   it('requires the route-first MVP prompts to include route-first guidance', () => {
@@ -81,7 +84,8 @@ describe('prompt asset loader', () => {
         text.includes('blockedTools') &&
         text.includes('recommendedTools') &&
         text.includes('discouragedTools') &&
-        text.includes('commitAllowed')
+        text.includes('Respect route output.') &&
+        text.includes('Use Workbench tools for workspace changes.')
       );
     });
 

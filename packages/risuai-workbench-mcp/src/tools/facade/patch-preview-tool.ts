@@ -204,7 +204,6 @@ function validatePassThroughPatchPlan(candidate: Record<string, unknown>): Valid
     },
     safety: {
       destructive: typeof safetyCandidate?.destructive === 'boolean' ? safetyCandidate.destructive : false,
-      requiresConfirmation: typeof safetyCandidate?.requiresConfirmation === 'boolean' ? safetyCandidate.requiresConfirmation : true,
       touchesGeneratedOnly: typeof safetyCandidate?.touchesGeneratedOnly === 'boolean' ? safetyCandidate.touchesGeneratedOnly : false,
       touchesSourceArtifacts: typeof safetyCandidate?.touchesSourceArtifacts === 'boolean' ? safetyCandidate.touchesSourceArtifacts : true,
     },
