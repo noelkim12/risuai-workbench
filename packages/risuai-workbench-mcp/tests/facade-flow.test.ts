@@ -50,8 +50,10 @@ describe('facade catalog', () => {
     expect(result.actions).toHaveLength(2);
     expect(result.actions[0]).toEqual({
       capability: 'inspect',
+      canonicalActionNote: undefined,
       id: 'inspect.path',
       next: 'workbench.prepare_action',
+      prepareInput: { actionId: 'inspect.path' },
       risk: 'read_only',
       summary: 'A test action.',
       title: 'Inspect Path',
@@ -90,6 +92,29 @@ describe('facade catalog', () => {
 
     const result = handleCatalog({ limit: 3 }, registry);
     expect(result.actions).toHaveLength(3);
+  });
+
+  it('marks core.run_extract as the canonical facade action for legacy extract matches', () => {
+    const registry = new ActionRegistry();
+    registry.register(dummyAction({
+      id: 'core.run_extract',
+      legacyToolName: 'workbench.run_extract',
+      title: 'Run extract workflow',
+      summary: 'Extract a RisuAI archive into a canonical workspace.',
+      capability: 'mutation.direct',
+      risk: 'external_process',
+      aliases: ['extract', 'risum', '.risum'],
+    }));
+
+    const result = handleCatalog({ query: 'workbench.run_extract' }, registry);
+
+    expect(result.actions).toHaveLength(1);
+    expect(result.actions[0]).toMatchObject({
+      id: 'core.run_extract',
+      next: 'workbench.prepare_action',
+      prepareInput: { actionId: 'core.run_extract' },
+      canonicalActionNote: 'Canonical facade action. workbench.run_extract is a legacy direct MCP tool name and is hidden unless RISU_MCP_EXPOSE_LEGACY_TOOLS=1.',
+    });
   });
 });
 
