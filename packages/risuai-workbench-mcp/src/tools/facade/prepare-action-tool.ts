@@ -25,6 +25,10 @@ export interface PrepareActionResult {
   examples: unknown[];
   next: 'workbench.run_action';
   contextHint?: string;
+  runActionInput?: {
+    actionId: string;
+    args: Record<string, unknown>;
+  };
 }
 
 /**
@@ -53,6 +57,42 @@ function summarizeSchema(action: ErasedWorkbenchAction): { required: string[]; o
   return { optional, required };
 }
 
+function extractionOptionalDescriptions(optional: PrepareActionFieldSummary): PrepareActionFieldSummary {
+  return {
+    ...optional,
+    outDir: 'Optional output directory. If it exists, the handler writes into an archive-named child directory.',
+    postValidate: 'Optional boolean. Defaults to validation after extraction unless explicitly false.',
+    risuluaDomainGeneration: 'Optional RisuLua domain generation mode: report or validated.',
+    risuluaRecovery: 'Optional RisuLua recovery mode: none or full-source.',
+    risuluaSplit: 'Optional RisuLua split mode: none, report, coarse, or module-table.',
+    risuluaMode: 'Optional literal modular mode. The MCP handler supports modular extraction.',
+    type: 'Optional explicit artifact type. Use module for .risum, character for .risuchar/.charx, and preset for .risup.',
+  };
+}
+
+function runActionInputForAction(action: ErasedWorkbenchAction, examples: unknown[]): PrepareActionResult['runActionInput'] {
+  if (action.id !== 'core.run_extract') {
+    return undefined;
+  }
+
+  const firstExample = examples[0];
+  const args = firstExample && typeof firstExample === 'object' && !Array.isArray(firstExample)
+    ? firstExample as Record<string, unknown>
+    : { sourcePath: 'test_suites/example.risum', outDir: 'test_suites/extraction_targets', type: 'module' };
+
+  return { actionId: action.id, args };
+}
+
+function contextHintForAction(action: ErasedWorkbenchAction): string | undefined {
+  if (action.id === 'core.run_extract') {
+    return 'Binary RisuAI archives such as .risum should not be read as text. Use workbench.run_action with actionId core.run_extract.';
+  }
+  if (action.capability.startsWith('creative.')) {
+    return 'For large creative inputs, create a context record with workbench.context and pass the contextId to run_action instead of embedding large objects in args.';
+  }
+  return undefined;
+}
+
 /**
  * handlePrepareAction 함수.
  * Returns input guidance for a single action, including field summary and examples.
@@ -68,20 +108,25 @@ export function handlePrepareAction(input: PrepareActionInput, registry: ActionR
   }
 
   const summary = summarizeSchema(action);
-  const examples = action.examples && action.examples.length > 0
-    ? [...action.examples]
-    : [];
+  const examples = input.detail === 'brief'
+    ? []
+    : action.examples && action.examples.length > 0
+      ? [action.examples[0]]
+      : [];
 
-  const contextHint = action.capability.startsWith('creative.')
-    ? 'For large creative inputs, create a context record with workbench.context and pass the contextId to run_action instead of embedding large objects in args.'
-    : undefined;
+  const optional = action.id === 'core.run_extract'
+    ? extractionOptionalDescriptions(summary.optional)
+    : summary.optional;
+  const contextHint = contextHintForAction(action);
+  const runActionInput = runActionInputForAction(action, examples);
 
   return {
     actionId: action.id,
     examples,
     next: 'workbench.run_action',
-    optional: summary.optional,
+    optional,
     required: summary.required,
     contextHint,
+    runActionInput,
   };
 }

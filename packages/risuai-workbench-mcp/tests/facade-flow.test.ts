@@ -191,6 +191,34 @@ describe('facade prepare_action', () => {
     expect(result!.examples).toEqual([{ path: 'characters/merry', deep: true }]);
     expect(JSON.stringify(result).length).toBeLessThan(5000);
   });
+
+  it('returns extraction-specific guidance and runnable payload for core.run_extract', () => {
+    const registry = new ActionRegistry();
+    registry.register(dummyAction({
+      id: 'core.run_extract',
+      legacyToolName: 'workbench.run_extract',
+      title: 'Run extract workflow',
+      capability: 'mutation.direct',
+      risk: 'external_process',
+      inputSchema: z.object({
+        sourcePath: z.string(),
+        outDir: z.string().optional(),
+        type: z.enum(['character', 'module', 'preset']).optional(),
+      }),
+      examples: [{ sourcePath: 'test_suites/example.risum', outDir: 'test_suites/extraction_targets', type: 'module' }],
+    }));
+
+    const result = handlePrepareAction({ actionId: 'core.run_extract' }, registry);
+
+    expect(result).not.toBeNull();
+    expect(result!.contextHint).toBe('Binary RisuAI archives such as .risum should not be read as text. Use workbench.run_action with actionId core.run_extract.');
+    expect(result!.optional.outDir).toBe('Optional output directory. If it exists, the handler writes into an archive-named child directory.');
+    expect(result!.optional.type).toBe('Optional explicit artifact type. Use module for .risum, character for .risuchar/.charx, and preset for .risup.');
+    expect(result!.runActionInput).toEqual({
+      actionId: 'core.run_extract',
+      args: { sourcePath: 'test_suites/example.risum', outDir: 'test_suites/extraction_targets', type: 'module' },
+    });
+  });
 });
 
 describe('facade run_action', () => {
