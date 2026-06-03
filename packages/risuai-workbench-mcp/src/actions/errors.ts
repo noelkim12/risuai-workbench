@@ -150,10 +150,16 @@ export function createUnknownActionError(
   actionId: string,
   suggestions: readonly WorkbenchAction[],
 ): ActionErrorResult {
+  const legacyMatch = suggestions.find((action) => action.legacyToolName === actionId);
+  const message = legacyMatch
+    ? `\`${actionId}\` is a legacy direct tool name. Use \`workbench.run_action\` with \`actionId: "${legacyMatch.id}"\` instead.`
+    : undefined;
+
   return {
     error: {
       actionId,
       code: 'UNKNOWN_ACTION',
+      message,
     },
     ok: false,
     suggestions: suggestions.map((action) => ({

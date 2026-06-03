@@ -130,6 +130,42 @@ describe('facade prepare_action', () => {
     expect(result!.required).toEqual([]);
     expect(result!.optional).toEqual({});
   });
+
+  it('omits examples in brief mode to keep prepare_action compact', () => {
+    const registry = new ActionRegistry();
+    registry.register(dummyAction({
+      id: 'inspect.path',
+      inputSchema: z.object({ path: z.string(), deep: z.boolean().optional() }),
+      examples: [
+        { path: 'characters/merry', deep: true },
+        { path: 'characters/merry/lorebooks/intro.risulorebook', deep: false },
+      ],
+    }));
+
+    const result = handlePrepareAction({ actionId: 'inspect.path', detail: 'brief' }, registry);
+
+    expect(result).not.toBeNull();
+    expect(result!.examples).toEqual([]);
+    expect(JSON.stringify(result).length).toBeLessThan(5000);
+  });
+
+  it('caps examples in normal mode to one minimal example', () => {
+    const registry = new ActionRegistry();
+    registry.register(dummyAction({
+      id: 'inspect.path',
+      inputSchema: z.object({ path: z.string(), deep: z.boolean().optional() }),
+      examples: [
+        { path: 'characters/merry', deep: true },
+        { path: 'characters/merry/lorebooks/intro.risulorebook', deep: false },
+      ],
+    }));
+
+    const result = handlePrepareAction({ actionId: 'inspect.path' }, registry);
+
+    expect(result).not.toBeNull();
+    expect(result!.examples).toEqual([{ path: 'characters/merry', deep: true }]);
+    expect(JSON.stringify(result).length).toBeLessThan(5000);
+  });
 });
 
 describe('facade run_action', () => {
@@ -168,6 +204,26 @@ describe('facade run_action', () => {
     expect(result.ok).toBe(false);
     expect(result.suggestions).toBeDefined();
     expect(result.suggestions!.length).toBeLessThanOrEqual(4);
+  });
+
+  it('explains that workbench.run_extract is a legacy direct tool name', async () => {
+    const registry = new ActionRegistry();
+    registry.register(dummyAction({
+      id: 'core.run_extract',
+      title: 'Run extract workflow',
+      legacyToolName: 'workbench.run_extract',
+      inputSchema: z.object({ sourcePath: z.string() }),
+    }));
+
+    const result = (await handleRunAction({ actionId: 'workbench.run_extract', args: { sourcePath: 'example.risum' } }, registry, dummyContext)) as { ok: false; error: { code: string; message?: string }; suggestions?: Array<{ id: string; title: string }> };
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('UNKNOWN_ACTION');
+    expect(result.error.message).toContain('legacy');
+    expect(result.error.message).toContain('core.run_extract');
+    expect(result.suggestions).toBeDefined();
+    expect(result.suggestions!.length).toBeGreaterThan(0);
+    expect(result.suggestions![0].id).toBe('core.run_extract');
+    expect(result.suggestions![0].title).toBe('Run extract workflow');
   });
 
   it('returns invalid args error with retry and prepare hints', async () => {
@@ -236,6 +292,56 @@ describe('facade run_action', () => {
 
     const result = await handleRunAction({ actionId: 'inspect.path', dryRun: true }, registry, dummyContext);
     expect(result).toEqual({ actionId: 'inspect.path', dryRun: true, ok: true });
+  });
+
+  it('dryRun validates real core.run_extract schema without executing handler', async () => {
+    const { createWorkbenchActionRegistry } = await import('../src/actions/create-registry.js');
+    const context: ActionExecutionContext = {
+      ...dummyContext,
+      workspace: { ok: true, path: '/tmp/workspace', reason: null },
+    };
+    const populated = createWorkbenchActionRegistry(context);
+
+    const result = await handleRunAction(
+      { actionId: 'core.run_extract', args: { sourcePath: 'example.risum' }, dryRun: true },
+      populated,
+      context,
+    );
+    expect(result).toEqual({ actionId: 'core.run_extract', dryRun: true, ok: true });
+  });
+
+  it('returns INVALID_ARGS for real core.run_extract when sourcePath is missing', async () => {
+    const { createWorkbenchActionRegistry } = await import('../src/actions/create-registry.js');
+    const context: ActionExecutionContext = {
+      ...dummyContext,
+      workspace: { ok: true, path: '/tmp/workspace', reason: null },
+    };
+    const populated = createWorkbenchActionRegistry(context);
+
+    const result = (await handleRunAction(
+      { actionId: 'core.run_extract', args: {} },
+      populated,
+      context,
+    )) as { ok: false; error: { code: string } };
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('INVALID_ARGS');
+  });
+
+  it('returns INVALID_ARGS for real core.run_extract with unknown fields even on dryRun', async () => {
+    const { createWorkbenchActionRegistry } = await import('../src/actions/create-registry.js');
+    const context: ActionExecutionContext = {
+      ...dummyContext,
+      workspace: { ok: true, path: '/tmp/workspace', reason: null },
+    };
+    const populated = createWorkbenchActionRegistry(context);
+
+    const result = (await handleRunAction(
+      { actionId: 'core.run_extract', args: { sourcePath: 'example.risum', unexpected: true }, dryRun: true },
+      populated,
+      context,
+    )) as { ok: false; error: { code: string } };
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('INVALID_ARGS');
   });
 
   it('ignores unsupported contextId safely', async () => {
@@ -369,6 +475,33 @@ describe('facade integration with real registry', () => {
     const review = handleCatalog({ capability: 'creative.review' }, populated);
     expect(review.actions.length).toBeGreaterThan(0);
     expect(review.actions.every((a) => a.capability === 'creative.review')).toBe(true);
+  });
+
+  it('catalog discovers core.run_extract by extract query', async () => {
+    const { createWorkbenchActionRegistry } = await import('../src/actions/create-registry.js');
+    const context: ActionExecutionContext = {
+      ...dummyContext,
+      workspace: { ok: true, path: fixturesRoot, reason: null },
+    };
+    const populated = createWorkbenchActionRegistry(context);
+
+    const catalogResult = handleCatalog({ query: 'risum extract' }, populated);
+    expect(catalogResult.actions.some((a) => a.id === 'core.run_extract')).toBe(true);
+  });
+
+  it('prepare_action for core.run_extract marks sourcePath as required', async () => {
+    const { createWorkbenchActionRegistry } = await import('../src/actions/create-registry.js');
+    const context: ActionExecutionContext = {
+      ...dummyContext,
+      workspace: { ok: true, path: fixturesRoot, reason: null },
+    };
+    const populated = createWorkbenchActionRegistry(context);
+
+    const prepareResult = handlePrepareAction({ actionId: 'core.run_extract' }, populated);
+    expect(prepareResult).not.toBeNull();
+    expect(prepareResult!.actionId).toBe('core.run_extract');
+    expect(prepareResult!.required).toContain('sourcePath');
+    expect(prepareResult!.next).toBe('workbench.run_action');
   });
 
   it('run_action no longer blocks commit_mutation creative actions', async () => {
