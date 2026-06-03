@@ -766,7 +766,7 @@ function registerCoreWorkflowTools(server: McpServer, startupContext: StartupCon
     'workbench.run_extract',
     {
       annotations: annotationsForTool('workbench.run_extract'),
-      description: 'Extract a .risum (module), .risuchar (character), or .risup (preset) file into a canonical workspace directory. Use this tool when the user mentions a risum/charx/risup file path and asks to extract, unpack, open, or import it. If outDir is omitted, the output directory defaults to the same directory as the source file with the filename (without extension). Risk: medium.',
+      description: 'Extract a .risum (module), .charx (character), or .risup (preset) archive into a canonical workspace directory. Use this tool when the user mentions a risum/charx/risup file path and asks to extract, unpack, open, or import it. .risuchar is a workspace root marker, not an external archive input. If outDir is omitted, the output directory defaults to the same directory as the source file with the filename (without extension). Risk: medium.',
       inputSchema: { outDir: z.string().optional().describe('Output directory path (workspace-relative; defaults to source filename without extension)'), postValidate: z.boolean().optional(), sourcePath: z.string(), type: z.enum(['character', 'module', 'preset']).optional(), ...risuluaFields },
       outputSchema: workbenchJsonOutputSchema,
       title: 'Run extract workflow',
@@ -1333,7 +1333,7 @@ function registerFacadeTools(
   server.registerTool(
     'workbench.catalog',
     {
-      description: 'List available workbench actions with metadata and navigation hint.',
+      description: 'List workbench actions with metadata. Use extension affordance to query: core.run_extract for .risum/.charx/.risup, analyze.query_lua_analysis for .risulua, validate.cbs_syntax for CBS files, validate.root_markers for .risuchar/.risumodule, patch.suggest_order for _order.json.',
       inputSchema: CatalogInputSchema.shape,
       outputSchema: workbenchJsonOutputSchema,
       title: 'Catalog actions',
@@ -1347,7 +1347,7 @@ function registerFacadeTools(
   server.registerTool(
     'workbench.prepare_action',
     {
-      description: 'Describe input requirements for a single action before running it.',
+      description: 'Describe input requirements for a single action before running it. For RisuAI archive extraction, prepare actionId core.run_extract; do not prepare legacy workbench.run_extract in default facade mode.',
       inputSchema: PrepareActionInputSchema.shape,
       outputSchema: workbenchJsonOutputSchema,
       title: 'Prepare action',
@@ -1368,7 +1368,7 @@ function registerFacadeTools(
   server.registerTool(
     'workbench.run_action',
     {
-      description: 'Execute a registered action with validated input.',
+      description: 'Execute an action with validated input. For .risum/.charx/.risup extraction, run actionId core.run_extract; for .risulua and CBS files prefer analysis/validation before mutation; do not use generic ZipFile/unzip for canonical workbench extraction.',
       inputSchema: RunActionInputSchema.shape,
       outputSchema: workbenchJsonOutputSchema,
       title: 'Run action',

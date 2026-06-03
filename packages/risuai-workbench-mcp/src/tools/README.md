@@ -1,5 +1,7 @@
 # risuai-workbench-mcp tools
 
+`packages/risuai-workbench-mcp/src/tools/facade/intent-route.ts`는 외부 요청 intent를 facade/action flow로 분기하는 주요 tool router입니다.
+
 `packages/risuai-workbench-mcp/src/tools/`는 RisuAI Workbench MCP 서버의 domain handler 구현을 도메인별로 모아 둔 영역입니다. 기본 외부 MCP surface는 `src/tools/facade/`와 `src/server.ts`가 등록하는 8개 facade tool이며, 이 디렉토리의 domain handler들은 ActionRegistry 내부 action 또는 legacy/dev-mode direct MCP tool의 구현으로 재사용됩니다.
 
 ## 구조
@@ -77,7 +79,7 @@ Mutation 계열 handler는 대체로 `unknown` input을 받은 뒤 내부 parse 
 
 ### Canonical extract/import path
 
-For `.risum`, `.risuchar`, `.charx`, and `.risup` extraction/import requests, the default external MCP surface uses `workbench.run_action` with internal action id `core.run_extract`. The legacy direct tool name `workbench.run_extract` appears in this handler catalog only for maintainer traceability and env-gated development mode.
+For `.risum`, `.charx`, and `.risup` extraction/import requests, the default external MCP surface uses `workbench.run_action` with internal action id `core.run_extract`. `.risuchar` is a canonical workspace root marker, not an external archive input. The legacy direct tool name `workbench.run_extract` appears in this handler catalog only for maintainer traceability and env-gated development mode.
 
 ## Legacy/dev-mode handler catalog
 

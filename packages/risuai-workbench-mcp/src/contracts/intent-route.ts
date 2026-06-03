@@ -19,6 +19,7 @@ export type WorkbenchIntent =
   | 'artifact.order.preview'
   | 'wiki.refresh.preview'
   | 'core.scaffold.preview'
+  | 'core.extract.preview'
   | 'analyze.variable_flow'
   | 'analyze.lua_handler'
   | 'creative.idea_to_patch'
@@ -90,6 +91,7 @@ export const workbenchIntentSchema = z.enum([
   'artifact.order.preview',
   'wiki.refresh.preview',
   'core.scaffold.preview',
+  'core.extract.preview',
   'analyze.variable_flow',
   'analyze.lua_handler',
   'creative.idea_to_patch',
@@ -154,6 +156,56 @@ export const routeStopConditionSchema = z.enum([
 ]);
 
 // ---------------------------------------------------------------------------
+// Compact canonical intent
+// ---------------------------------------------------------------------------
+
+export const canonicalTaskTypeSchema = z.enum([
+  'inspect',
+  'analyze',
+  'create',
+  'modify',
+  'move',
+  'delete',
+  'sort',
+  'package',
+  'validate',
+  'design',
+  'refactor',
+  'unknown',
+]);
+
+export const canonicalCandidateSchema = z.object({
+  id: z.string(),
+  confidence: z.number().min(0).max(1),
+  evidence: z.array(z.string()).max(3).default([]),
+}).catchall(z.unknown());
+
+export const canonicalUpstreamFieldSchema = z.object({
+  id: z.string(),
+  extension: z.string(),
+}).catchall(z.unknown());
+
+export const canonicalPathCandidateSchema = z.object({
+  path: z.string(),
+  reason: z.string(),
+}).catchall(z.unknown());
+
+export const compactCanonicalIntentSchema = z.object({
+  taskType: canonicalTaskTypeSchema,
+  targets: z.array(canonicalCandidateSchema).max(3).default([]),
+  extensions: z.array(canonicalCandidateSchema).max(3).default([]),
+  upstreamFields: z.array(canonicalUpstreamFieldSchema).max(3).default([]),
+  pathCandidates: z.array(canonicalPathCandidateSchema).max(3).default([]),
+  contextKinds: z.array(z.string()).max(5).default([]),
+  actionIds: z.array(z.string()).max(5).default([]),
+  resourceLinks: z.array(z.string()).max(5).default([]),
+  truncated: z.boolean().default(false),
+}).catchall(z.unknown());
+
+export type CanonicalTaskType = z.infer<typeof canonicalTaskTypeSchema>;
+export type CompactCanonicalIntent = z.infer<typeof compactCanonicalIntentSchema>;
+
+// ---------------------------------------------------------------------------
 // Intent route input
 // ---------------------------------------------------------------------------
 
@@ -203,6 +255,7 @@ export interface IntentRouteResult {
   recommendedActions: readonly string[];
   nextTool: string;
   nextInput: Record<string, unknown>;
+  canonical?: CompactCanonicalIntent;
 }
 
 export const intentRouteResultSchema = z.object({
@@ -231,6 +284,7 @@ export const intentRouteResultSchema = z.object({
   recommendedActions: z.array(z.string()).default([]),
   nextTool: z.string().default('workbench.catalog'),
   nextInput: z.record(z.string(), z.unknown()).default({}),
+  canonical: compactCanonicalIntentSchema.optional(),
 }).catchall(z.unknown());
 
 // ---------------------------------------------------------------------------
@@ -263,6 +317,7 @@ export function createIntentRouteResult(
     allowedTools: input.allowedTools,
     blockedTools: input.blockedTools,
     capabilities: input.capabilities,
+    canonical: input.canonical,
     commitAllowed: input.commitAllowed,
     confidence: input.confidence,
     discouragedTools: input.discouragedTools,

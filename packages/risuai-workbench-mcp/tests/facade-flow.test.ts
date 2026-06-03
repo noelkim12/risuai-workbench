@@ -211,9 +211,9 @@ describe('facade prepare_action', () => {
     const result = handlePrepareAction({ actionId: 'core.run_extract' }, registry);
 
     expect(result).not.toBeNull();
-    expect(result!.contextHint).toBe('Binary RisuAI archives such as .risum should not be read as text. Use workbench.run_action with actionId core.run_extract.');
+    expect(result!.contextHint).toBe('Binary RisuAI archives (.risum, .charx, .risup) should not be read as text or hand-unzipped. Use workbench.run_action with actionId core.run_extract; direct archive extraction is raw container inspection, not canonical workbench extraction.');
     expect(result!.optional.outDir).toBe('Optional output directory. If it exists, the handler writes into an archive-named child directory.');
-    expect(result!.optional.type).toBe('Optional explicit artifact type. Use module for .risum, character for .risuchar/.charx, and preset for .risup.');
+    expect(result!.optional.type).toBe('Optional explicit artifact type. Use module for .risum, character for .charx, and preset for .risup.');
     expect(result!.runActionInput).toEqual({
       actionId: 'core.run_extract',
       args: { sourcePath: 'test_suites/example.risum', outDir: 'test_suites/extraction_targets', type: 'module' },

@@ -52,6 +52,7 @@ describe('tool surface baseline', () => {
     ]);
     expect(names.some((n) => n.startsWith('workbench.creative.'))).toBe(false);
     expect(names.some((n) => n.startsWith('workbench.inspect_') || n.startsWith('workbench.validate_') || n.startsWith('workbench.query_') || n.startsWith('workbench.suggest_'))).toBe(false);
+    expect(names).not.toContain('workbench.run_extract');
   });
 
   it('does not expose legacy tools in default surface after Phase 9', async () => {

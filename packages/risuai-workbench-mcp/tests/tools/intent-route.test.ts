@@ -579,6 +579,114 @@ describe('handleRouteIntent', () => {
       expect(route.stopConditions).toEqual([]);
       expect(route.recommendedActions).toContain('core.run_extract');
     });
+
+    it('routes Korean .charx extract request to core.run_extract', async () => {
+      const result = await handleRouteIntent({
+        request: 'charx를 output 디렉토리에 추출해줘',
+        target: 'target/Chikan Train-latest.charx',
+      });
+
+      const route = result.data!.route;
+      expect(route.intent).toBe('core.extract.preview');
+      expect(route.risk).toBe('external_process');
+      expect(route.targetKind).toBe('path');
+      expect(route.recommendedActions).toContain('core.run_extract');
+      expect(route.recommendedTools).toEqual(
+        expect.arrayContaining([
+          'workbench.catalog',
+          'workbench.prepare_action',
+          'workbench.run_action',
+        ]),
+      );
+      expect(route.recommendedTools).not.toContain('workbench.run_extract');
+      expect(route.routingSignals).toEqual(expect.arrayContaining(['extract', 'facade_action:core.run_extract']));
+      expect(route.canonical?.taskType).toBe('package');
+    });
+
+    it('recommends root-marker inspection for .risuchar without archive extraction', async () => {
+      const result = await handleRouteIntent({
+        request: '이 파일 확인해줘',
+        target: 'characters/merry/.risuchar',
+      });
+
+      const route = result.data!.route;
+      expect(route.intent).toBe('artifact.validate');
+      expect(route.recommendedActions).toEqual(
+        expect.arrayContaining(['inspect.path', 'validate.root_markers']),
+      );
+      expect(route.recommendedActions).not.toContain('core.run_extract');
+      expect(route.domainTags).toEqual(expect.arrayContaining(['root-marker', 'character']));
+      expect(route.routingSignals).toEqual(expect.arrayContaining(['file_affordance:root-marker']));
+    });
+
+    it('recommends Lua analysis actions for .risulua paths', async () => {
+      const result = await handleRouteIntent({
+        request: '이 Lua 파일 분석해줘',
+        target: 'modules/demo/lua/main.risulua',
+      });
+
+      const route = result.data!.route;
+      expect(route.intent).toBe('analyze.lua_handler');
+      expect(route.recommendedActions).toEqual(
+        expect.arrayContaining([
+          'analyze.query_lua_analysis',
+          'analyze.query_lua_call_graph',
+          'analyze.query_lua_state_access',
+          'analyze.query_risulua_api',
+        ]),
+      );
+      expect(route.domainTags).toEqual(expect.arrayContaining(['risulua']));
+      expect(route.routingSignals).toEqual(expect.arrayContaining(['file_affordance:risulua']));
+    });
+
+    it('recommends CBS validation for .risuregex paths before generic patching', async () => {
+      const result = await handleRouteIntent({
+        request: '정규식 파일 수정 계획을 세워줘',
+        target: 'characters/merry/regex/panel.risuregex',
+      });
+
+      const route = result.data!.route;
+      expect(route.recommendedActions).toEqual(
+        expect.arrayContaining([
+          'validate.cbs_syntax',
+          'analyze.query_cbs_usage',
+          'analyze.query_variable_flow',
+        ]),
+      );
+      expect(route.domainTags).toEqual(expect.arrayContaining(['regex', 'cbs']));
+      expect(route.routingSignals).toEqual(expect.arrayContaining(['file_affordance:cbs']));
+    });
+
+    it('recommends prompt-chain analysis for .risuprompt paths', async () => {
+      const result = await handleRouteIntent({
+        request: '프롬프트 체인 확인해줘',
+        target: 'presets/demo/prompt_template/main.risuprompt',
+      });
+
+      const route = result.data!.route;
+      expect(route.recommendedActions).toEqual(
+        expect.arrayContaining([
+          'analyze.query_prompt_chain',
+          'validate.cbs_syntax',
+        ]),
+      );
+      expect(route.domainTags).toEqual(expect.arrayContaining(['prompt-chain', 'cbs']));
+      expect(route.routingSignals).toEqual(expect.arrayContaining(['file_affordance:prompt-chain']));
+    });
+
+    it('recommends order validation and order patch for _order.json paths', async () => {
+      const result = await handleRouteIntent({
+        request: '순서를 바꾸는 계획을 보여줘',
+        target: 'characters/merry/lorebooks/_order.json',
+      });
+
+      const route = result.data!.route;
+      expect(route.recommendedActions).toEqual(
+        expect.arrayContaining(['validate.order', 'patch.suggest_order']),
+      );
+      expect(route.domainTags).toEqual(expect.arrayContaining(['order']));
+      expect(route.routingSignals).toEqual(expect.arrayContaining(['file_affordance:order']));
+    });
   });
 
   describe('golden route matrix', () => {

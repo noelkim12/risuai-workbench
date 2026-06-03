@@ -66,7 +66,7 @@ function extractionOptionalDescriptions(optional: PrepareActionFieldSummary): Pr
     risuluaRecovery: 'Optional RisuLua recovery mode: none or full-source.',
     risuluaSplit: 'Optional RisuLua split mode: none, report, coarse, or module-table.',
     risuluaMode: 'Optional literal modular mode. The MCP handler supports modular extraction.',
-    type: 'Optional explicit artifact type. Use module for .risum, character for .risuchar/.charx, and preset for .risup.',
+    type: 'Optional explicit artifact type. Use module for .risum, character for .charx, and preset for .risup.',
   };
 }
 
@@ -85,7 +85,7 @@ function runActionInputForAction(action: ErasedWorkbenchAction, examples: unknow
 
 function contextHintForAction(action: ErasedWorkbenchAction): string | undefined {
   if (action.id === 'core.run_extract') {
-    return 'Binary RisuAI archives such as .risum should not be read as text. Use workbench.run_action with actionId core.run_extract.';
+    return 'Binary RisuAI archives (.risum, .charx, .risup) should not be read as text or hand-unzipped. Use workbench.run_action with actionId core.run_extract; direct archive extraction is raw container inspection, not canonical workbench extraction.';
   }
   if (action.capability.startsWith('creative.')) {
     return 'For large creative inputs, create a context record with workbench.context and pass the contextId to run_action instead of embedding large objects in args.';

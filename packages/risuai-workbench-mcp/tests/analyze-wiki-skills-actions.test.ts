@@ -221,6 +221,19 @@ describe('action execute parity with direct handlers', () => {
     expect(actionResult.tool).toBe(directResult.tool);
   });
 
+  it('wiki.search returns compact custom-extension hits instead of SEARCH_STUB', async () => {
+    const result = await handleSearchWiki({ query: 'first_mes risutext' });
+
+    expect(result.status).toBe('ok');
+    expect(result.diagnostics.map((diagnostic) => diagnostic.id)).not.toContain('SEARCH_STUB');
+    const data = result.data as { hits: Array<{ path: string; title: string; resourceUri: string; snippet: string }>; total: number; returned: number; truncated: boolean };
+    expect(data.total).toBeGreaterThan(0);
+    expect(data.returned).toBeLessThanOrEqual(5);
+    expect(data.hits.some((hit) => hit.path.endsWith('extensions/text.md'))).toBe(true);
+    expect(data.hits.every((hit) => hit.snippet.length <= 180)).toBe(true);
+    expect(JSON.stringify(result).length).toBeLessThan(7000);
+  });
+
   it('skills.list action execute matches direct handleListAuthoringSkills', async () => {
     const registry = createWorkbenchActionRegistry(dummyContext);
     const action = registry.get('skills.list');

@@ -39,6 +39,43 @@ function zodIssuesToActionIssues(error: z.ZodError): Array<{ path: readonly stri
 }
 
 /**
+ * Summarize a PatchPlan into a compact representation for facade output.
+ * Excludes large fields like operations content and unifiedDiff bodies.
+ */
+function summarizePatchPlan(plan: PatchPlan): Record<string, unknown> {
+  return {
+    patchPlanId: plan.patchPlanId,
+    affectedFiles: plan.preview.affectedFiles,
+    operationCount: plan.operations.length,
+    operationKinds: [...new Set(plan.operations.map((operation) => operation.kind))].sort(),
+    preconditionCount: plan.preconditions.length,
+    resourceLinks: plan.preview.resourceLinks,
+    safety: plan.safety,
+    writePolicy: 'preview-only',
+  };
+}
+
+/**
+ * Compact a DiagnosticEnvelope that contains a full PatchPlan in data.
+ * Keeps schema, status, tool, diagnostics, and non-large ancillary data.
+ * Replaces data.patchPlan with data.patchPlanSummary.
+ */
+function compactEnvelopeIfPatchPlan(envelope: DiagnosticEnvelope): DiagnosticEnvelope {
+  const data = (envelope.data ?? {}) as Record<string, unknown>;
+  const patchPlan = data.patchPlan as PatchPlan | undefined;
+  if (!patchPlan) {
+    return envelope;
+  }
+  const { patchPlan: _omit, ...restData } = data;
+  return createDiagnosticEnvelope({
+    data: { ...restData, patchPlanSummary: summarizePatchPlan(patchPlan) },
+    diagnostics: envelope.diagnostics,
+    status: envelope.status,
+    tool: envelope.tool,
+  });
+}
+
+/**
  * handlePatchPreview 함수.
  * Safe facade entry for patch previews. Supports:
  * 1. actionId + args → execute a registered preview action
@@ -60,7 +97,7 @@ export async function handlePatchPreview(
 
   // PatchPlan pass-through path
   if (input.patchPlan) {
-    const validated = validatePassThroughPatchPlan(input.patchPlan);
+    const validated = validatePassThroughPatchPlan(input.patchPlan, executionContext);
     if (!validated.ok) {
       return createDiagnosticEnvelope({
         diagnostics: [{
@@ -77,7 +114,7 @@ export async function handlePatchPreview(
     }
     executionContext.patchStore.savePatchPlan(validated.plan);
     return createDiagnosticEnvelope({
-      data: { patchPlan: validated.plan, writePolicy: 'preview-only' },
+      data: { patchPlanSummary: summarizePatchPlan(validated.plan) },
       diagnostics: [{
         category: 'patch',
         id: 'PATCH_PREVIEW_STORED',
@@ -148,7 +185,7 @@ export async function handlePatchPreview(
   }
 
   const result = await action.execute(parsed.data, executionContext);
-  return result as DiagnosticEnvelope;
+  return compactEnvelopeIfPatchPlan(result as DiagnosticEnvelope);
 }
 
 interface ValidatePatchPlanResult {
@@ -165,11 +202,16 @@ interface ValidatePatchPlanError {
  * validatePassThroughPatchPlan 함수.
  * Validates a caller-supplied patch plan object before storing it.
  * Only accepts plans that look like valid PatchPlan envelopes.
+ * Rejects absolute paths, parent traversal, and workspaceRoot mismatches.
  *
  * @param candidate - raw patch plan object from caller
+ * @param executionContext - shared action execution context for workspace binding
  * @returns validated plan or rejection reason
  */
-function validatePassThroughPatchPlan(candidate: Record<string, unknown>): ValidatePatchPlanResult | ValidatePatchPlanError {
+function validatePassThroughPatchPlan(
+  candidate: Record<string, unknown>,
+  executionContext: ActionExecutionContext,
+): ValidatePatchPlanResult | ValidatePatchPlanError {
   if (typeof candidate.patchPlanId !== 'string' || candidate.patchPlanId.trim() === '') {
     return { ok: false, reason: 'patchPlan.patchPlanId must be a non-empty string.' };
   }
@@ -181,6 +223,11 @@ function validatePassThroughPatchPlan(candidate: Record<string, unknown>): Valid
   }
   if (typeof candidate.workspaceRoot !== 'string') {
     return { ok: false, reason: 'patchPlan.workspaceRoot must be a string.' };
+  }
+
+  // Workspace binding: when workspace is ok, workspaceRoot must match active workspace path
+  if (executionContext.workspace.ok && candidate.workspaceRoot !== executionContext.workspace.path) {
+    return { ok: false, reason: `patchPlan.workspaceRoot (${candidate.workspaceRoot}) does not match active workspace path (${executionContext.workspace.path}).` };
   }
 
   // Reconstruct a minimal valid PatchPlan envelope
@@ -209,5 +256,78 @@ function validatePassThroughPatchPlan(candidate: Record<string, unknown>): Valid
     },
   };
 
+  // Safe path validation for all operations and preconditions
+  const pathValidation = validatePatchPlanPaths(plan);
+  if (!pathValidation.ok) {
+    return { ok: false, reason: pathValidation.reason };
+  }
+
   return { ok: true, plan };
+}
+
+interface ValidatePatchPlanPathsResult {
+  ok: true;
+}
+
+interface ValidatePatchPlanPathsError {
+  ok: false;
+  reason: string;
+}
+
+/**
+ * validatePatchPlanPaths 함수.
+ * Ensures every path-like field in operations and preconditions is a safe
+ * relative workspace path. Rejects absolute paths, parent traversal, and empty paths.
+ */
+function validatePatchPlanPaths(plan: PatchPlan): ValidatePatchPlanPathsResult | ValidatePatchPlanPathsError {
+  const unsafePathReason = (field: string, value: string): string => `Unsafe path in ${field}: "${value}". Paths must be relative, non-empty, and must not traverse parent directories.`;
+
+  for (let i = 0; i < plan.operations.length; i++) {
+    const op = plan.operations[i] as Record<string, unknown>;
+    const pathFields = ['path', 'orderPath', 'from', 'to'];
+    for (const field of pathFields) {
+      const value = op[field];
+      if (typeof value === 'string') {
+        const check = isSafeRelativePath(value);
+        if (!check.ok) {
+          return { ok: false, reason: unsafePathReason(`operations[${i}].${field}`, value) };
+        }
+      }
+    }
+  }
+
+  for (let i = 0; i < plan.preconditions.length; i++) {
+    const pre = plan.preconditions[i] as unknown as Record<string, unknown>;
+    const value = pre.path;
+    if (typeof value === 'string') {
+      const check = isSafeRelativePath(value);
+      if (!check.ok) {
+        return { ok: false, reason: unsafePathReason(`preconditions[${i}].path`, value) };
+      }
+    }
+  }
+
+  return { ok: true };
+}
+
+/**
+ * isSafeRelativePath 함수.
+ * Rejects absolute paths, empty paths, and any segment equal to '..'.
+ */
+function isSafeRelativePath(value: string): { ok: true } | { ok: false; reason: string } {
+  if (value === '') {
+    return { ok: false, reason: 'Path is empty.' };
+  }
+  // Absolute path detection: Unix leading slash, Windows leading backslash, or Windows drive letter
+  if (value.startsWith('/') || value.startsWith('\\') || /^[A-Za-z]:[/\\]/.test(value)) {
+    return { ok: false, reason: 'Absolute paths are not allowed.' };
+  }
+  // Parent traversal detection
+  const segments = value.split(/[/\\]/);
+  for (const segment of segments) {
+    if (segment === '..') {
+      return { ok: false, reason: 'Parent directory traversal (..) is not allowed.' };
+    }
+  }
+  return { ok: true };
 }
