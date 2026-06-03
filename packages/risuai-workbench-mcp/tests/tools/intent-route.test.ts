@@ -542,6 +542,35 @@ describe('handleRouteIntent', () => {
       expect(route.intent).toBe('artifact.inspect');
       expect(route.nextStep).toBe('inspect');
     });
+
+    it('rule 7.6: facade-safe extract routing recommends core.run_extract via facade tools and does not expose workbench.run_extract', async () => {
+      const result = await handleRouteIntent({
+        request: 'extract test_suites/example.risum to test_suites/extraction_targets',
+      });
+
+      const route = result.data!.route;
+      expect(route.intent).toBe('core.extract.preview');
+      expect(route.recommendedActions).toContain('core.run_extract');
+      expect(route.recommendedTools).toEqual([
+        'workbench.catalog',
+        'workbench.prepare_action',
+        'workbench.run_action',
+      ]);
+      expect(route.recommendedTools).not.toContain('workbench.run_extract');
+      expect(route.blockedTools).not.toContain('workbench.run_action');
+    });
+
+    it('rule 7.6: target-based archive path detection works when .risum is in target', async () => {
+      const result = await handleRouteIntent({
+        request: 'extract this archive',
+        target: 'test_suites/example.risum',
+      });
+
+      const route = result.data!.route;
+      expect(route.intent).toBe('core.extract.preview');
+      expect(route.targetKind).toBe('path');
+      expect(route.recommendedActions).toContain('core.run_extract');
+    });
   });
 
   describe('golden route matrix', () => {
