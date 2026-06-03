@@ -173,14 +173,12 @@ export const PreviewIdeaPatchInputSchema = z.object({
 export const RedTeamConceptInputSchema = z.object(COMMON_ADVISORY_INPUT_SCHEMA).catchall(z.unknown());
 
 export const ApplyIdeaPatchInputSchema = z.object({
-  confirmation: z.object({ accepted: z.boolean(), confirmationText: z.string().optional() }),
   options: z.object({ createBackup: z.boolean().optional(), postValidate: z.boolean().optional(), rollbackOnValidationError: z.boolean().optional() }).optional(),
   patchPlanId: z.string(),
   sessionId: OPTIONAL_STRING,
 }).catchall(z.unknown());
 
 export const SaveIdeaSessionInputSchema = z.object({
-  confirmation: OPTIONAL_BOOLEAN,
   createdAt: OPTIONAL_STRING,
   ideas: OPTIONAL_UNKNOWN,
   patchPlanRefs: OPTIONAL_UNKNOWN,
@@ -196,7 +194,6 @@ export const SaveIdeaSessionInputSchema = z.object({
 
 export const WriteIdeaMemoryInputSchema = z.object({
   assumptions: OPTIONAL_STRING_ARRAY,
-  confirmation: OPTIONAL_BOOLEAN,
   createdAt: OPTIONAL_STRING,
   evidence: OPTIONAL_STRING_ARRAY,
   idea: OPTIONAL_UNKNOWN,

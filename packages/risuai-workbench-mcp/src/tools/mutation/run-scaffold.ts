@@ -7,7 +7,6 @@ import path from 'node:path';
 
 import { createCancellationDiagnostic, isCancellationRequested, throwIfCancellationRequested } from '../../cancellation';
 import { createDiagnosticEnvelope, createUnknownFieldDiagnosticEnvelope, type DiagnosticEnvelope } from '../../contracts/diagnostics';
-import type { MutationMode as PatchPlanMutationMode } from '../../contracts/patch-plan';
 import { createMutationResultEnvelope, type MutationResultEnvelope } from '../../contracts/mutation-result';
 import { appendJournalEntry } from '../../mutation/journal';
 import type { MutationMode } from '../../mutation/mode';
@@ -22,7 +21,6 @@ import {
   ensureOutputDirectoryMissing,
   createWorkflowPostValidation,
   getBooleanField,
-  getConfirmationField,
   getStringField,
   resolveRisuCoreBinPath,
   runRisuCoreCommand,
@@ -35,9 +33,7 @@ export type RunScaffoldToolResult = DiagnosticEnvelope | MutationResultEnvelope;
 type ScaffoldType = 'charx' | 'module' | 'preset';
 
 export interface RunScaffoldInput {
-  confirmation?: { accepted: boolean; confirmationText?: string };
   creator?: string;
-  mode: PatchPlanMutationMode;
   name: string;
   namespace?: string;
   outDir?: string;
@@ -59,7 +55,7 @@ export async function handleRunScaffold(
 ): Promise<RunScaffoldToolResult> {
   await progress?.report(1, 8, 'Validating run_scaffold input.');
   const unknownFieldResult = createUnknownFieldDiagnosticEnvelope({
-    allowedKeys: ['type', 'name', 'outDir', 'creator', 'namespace', 'risuluaMode', 'mode', 'confirmation', 'postValidate'],
+    allowedKeys: ['type', 'name', 'outDir', 'creator', 'namespace', 'risuluaMode', 'postValidate'],
     input,
     tool: TOOL_NAME,
   });
@@ -111,25 +107,12 @@ export async function handleRunScaffold(
     });
   }
 
-  await progress?.report(3, 8, 'Preparing run_scaffold command preview.');
+  await progress?.report(3, 8, 'Preparing run_scaffold command.');
   const argv = buildScaffoldArgs(scaffoldInput, safeOutDir.relativePath);
-  const confirmationText = `RUN_SCAFFOLD ${safeOutDir.relativePath}`;
-  if (mutationMode === 'preview-only') {
-    await progress?.report(4, 8, 'run_scaffold preview complete.');
-    return createDiagnosticEnvelope({
-      data: { command: process.execPath, args: [resolveRisuCoreBinPath(), ...argv], cwd: workspace.path, expectedConfirmationText: confirmationText, preview: true, target: safeOutDir.relativePath },
-      diagnostics: [],
-      status: 'ok',
-      tool: TOOL_NAME,
-    });
-  }
 
   await progress?.report(4, 8, 'Checking run_scaffold mutation safety.');
   const safetyResult = await evaluateMutationSafetyGate({
-    confirmation: scaffoldInput.confirmation,
-    expectedConfirmationText: confirmationText,
     mode: mutationMode,
-    risk: 'medium',
     targets: [{ intent: 'create-missing', path: safeOutDir.relativePath }],
     toolName: TOOL_NAME,
     workspace,
@@ -196,13 +179,10 @@ function parseRunScaffoldInput(input: unknown): { input: RunScaffoldInput; ok: t
   if (!type || !VALID_TYPES.has(type as ScaffoldType)) return { ok: false, reason: 'type must be one of charx, module, preset.' };
   const name = getStringField(candidate, 'name');
   if (!name) return { ok: false, reason: 'name must be a non-empty string.' };
-  const mode: PatchPlanMutationMode = 'commit';
   // risuluaMode is hardcoded to 'modular'. Caller input is ignored.
   return {
     input: {
-      confirmation: getConfirmationField(candidate),
       creator: getStringField(candidate, 'creator'),
-      mode,
       name,
       namespace: getStringField(candidate, 'namespace'),
       outDir: getStringField(candidate, 'outDir'),

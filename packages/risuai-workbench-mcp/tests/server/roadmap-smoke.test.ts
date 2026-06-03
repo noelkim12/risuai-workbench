@@ -153,7 +153,6 @@ describe('Task 11 MCP roadmap smoke', () => {
 
       const mutation = parseToolPayload(await client.callTool({
         arguments: {
-          confirmation: { accepted: true },
           mode: 'commit',
           operations: [{ entry: 'afterword.risulorebook', index: 2, kind: 'insert' }],
           orderPath: 'characters/merry/lorebooks/_order.json',
@@ -165,7 +164,7 @@ describe('Task 11 MCP roadmap smoke', () => {
       expect(JSON.parse(await readFile(path.join(root, 'characters', 'merry', 'lorebooks', '_order.json'), 'utf8'))).toContain('afterword.risulorebook');
 
       const highRisk = parseToolPayload(await client.callTool({
-        arguments: { confirmation: { accepted: true, confirmationText: 'DELETE characters/merry/lorebooks/background.risulorebook' }, mode: 'commit', path: 'characters/merry/lorebooks/intro.risulorebook' },
+        arguments: { mode: 'commit', path: 'characters/merry/lorebooks/intro.risulorebook' },
         name: 'workbench.delete_artifact',
       }));
       expect(highRisk.schema).toBe('risuai-workbench-mcp.mutation-result');

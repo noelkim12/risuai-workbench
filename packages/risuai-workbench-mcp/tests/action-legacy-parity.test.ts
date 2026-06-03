@@ -194,7 +194,7 @@ describe('patch preview/apply safety behavior parity', () => {
   it('patch.apply action execute routes to same handler as direct apply', async () => {
     // This test verifies registration parity only: the action exists and
     // points to the canonical handleApplyPatchPlan. Direct apply parity is
-    // unsafe to test without a real patch plan and confirmation gate, and is
+  // unsafe to test without a real patch plan and is
     // already covered by patch-facade.test.ts safety tests.
     const context = makeContext();
     const registry = createWorkbenchActionRegistry(context);

@@ -70,7 +70,6 @@ describe('analyze snapshot stale-state handling', () => {
     const mutation = mutationResult(await handleEditMetadata(
       {
         allowedFields: ['name', 'version'],
-        confirmation: { accepted: true },
         mode: 'commit',
         operations: [{ jsonPointer: '/name', kind: 'json.set', value: 'Merry Updated' }],
         path: 'characters/merry/.risuchar',

@@ -45,7 +45,6 @@ export function createPatchPlan(input: CreatePatchPlanInput): PatchPlan {
     },
     safety: {
       destructive: input.safety?.destructive ?? false,
-      requiresConfirmation: input.safety?.requiresConfirmation ?? true,
       touchesGeneratedOnly: input.safety?.touchesGeneratedOnly ?? false,
       touchesSourceArtifacts: input.safety?.touchesSourceArtifacts ?? true,
     },

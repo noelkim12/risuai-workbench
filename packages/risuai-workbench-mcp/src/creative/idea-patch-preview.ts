@@ -24,7 +24,6 @@ export interface IdeaPatchPreviewEnvelope {
   expectedDiagnostics: readonly { id: string; category: string; severity: string }[];
   preconditions: readonly { kind: string; message: string }[];
   safety: {
-    requiresConfirmation: boolean;
     destructive: boolean;
     touchesSourceArtifacts: boolean;
     touchesGeneratedOnly: boolean;

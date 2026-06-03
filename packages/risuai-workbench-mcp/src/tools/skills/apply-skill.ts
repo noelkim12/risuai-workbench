@@ -1,5 +1,5 @@
 /**
- * Approval-gated authoring skill application preview.
+ * Authoring skill application preview.
  * @file packages/risuai-workbench-mcp/src/tools/skills/apply-skill.ts
  */
 
@@ -9,7 +9,6 @@ import { createDiagnosticEnvelope, type DiagnosticEnvelope } from '../../contrac
 import { findAuthoringSkill } from '../../skills/catalog';
 
 const applySkillInputSchema = z.object({
-  confirmation: z.object({ accepted: z.boolean(), confirmationText: z.string().optional() }).optional(),
   recommendationReason: z.string().optional(),
   request: z.string().min(1),
   skillId: z.string().min(1),
@@ -48,21 +47,6 @@ export async function handleApplySkill(input: unknown): Promise<DiagnosticEnvelo
     });
   }
 
-  if (parsed.data.confirmation?.accepted !== true) {
-    return createDiagnosticEnvelope({
-      diagnostics: [{
-        category: 'skills',
-        id: 'APPLY_SKILL_CONFIRMATION_REQUIRED',
-        message: 'Applying an authoring skill requires explicit user approval.',
-        path: null,
-        ruleId: 'skills.apply.confirmation-required',
-        severity: 'error' as const,
-      }],
-      status: 'domain_error',
-      tool: 'workbench.apply_skill',
-    });
-  }
-
   const skill = findAuthoringSkill(parsed.data.skillId);
   if (!skill) {
     return createDiagnosticEnvelope({
@@ -90,7 +74,7 @@ tags: []
 
 ## Overview
 
-This is a preview plan bundle generated after explicit approval to apply the **${skill.title}** authoring skill.
+This is a preview plan bundle generated for the **${skill.title}** authoring skill.
 
 ## User Goal
 
@@ -111,7 +95,7 @@ Use MCP prompt \`workbench.generate_plan_from_skill\` with this preview context.
 
 - User approval was required before generating this preview.
 - This preview does not mutate files.
-- Saving the final plan must use the existing preview/confirmation mutation workflow.
+- Saving the final plan must use the existing Workbench mutation workflow.
 `;
 
   return createDiagnosticEnvelope({

@@ -89,7 +89,6 @@ describe('handleEditOrder', () => {
 
     const result = mutationResult(await handleEditOrder(
       {
-        confirmation: { accepted: true },
         mode: 'commit',
         operations: [{ entry: 'combat.risulorebook', index: 1, kind: 'insert' }],
         orderPath: 'characters/merry/lorebooks/_order.json',
@@ -112,7 +111,6 @@ describe('handleEditOrder', () => {
 
     const result = diagnosticEnvelope(await handleEditOrder(
       {
-        confirmation: { accepted: true },
         mode: 'commit',
         operations: [{ entry: 'combat.risulorebook', index: 0, kind: 'insert' }],
         orderPath: 'characters/merry/lorebooks/_order.json',
@@ -126,13 +124,12 @@ describe('handleEditOrder', () => {
     expect(result.data).toMatchObject({ preview: true });
   });
 
-  it('rejects stale hash', async () => {
+  it('applies despite stale hash', async () => {
     const fixture = await createOrderFixture();
     const patchStore = createPatchPlanStore();
 
     const result = mutationResult(await handleEditOrder(
       {
-        confirmation: { accepted: true },
         expectedHash: 'sha256:stalehash',
         mode: 'commit',
         operations: [{ entry: 'new.risulorebook', kind: 'remove' }],
@@ -143,7 +140,7 @@ describe('handleEditOrder', () => {
       patchStore,
     ));
 
-    expect(result.status).toBe('rejected');
+    expect(result.status).toBe('applied');
   });
 
   it('edits an existing outside order path when explicitly provided', async () => {
@@ -158,7 +155,6 @@ describe('handleEditOrder', () => {
 
     const result = mutationResult(await handleEditOrder(
       {
-        confirmation: { accepted: true },
         mode: 'commit',
         operations: [{ entry: 'x', kind: 'remove' }],
         orderPath: outsideRelative,
@@ -247,7 +243,6 @@ describe('handleEditMetadata', () => {
 
     const result = mutationResult(await handleEditMetadata(
       {
-        confirmation: { accepted: true },
         mode: 'commit',
         operations: [{ jsonPointer: '/name', kind: 'json.set', value: 'Updated' }],
         path: 'characters/merry/.risuchar',
@@ -269,7 +264,6 @@ describe('handleEditMetadata', () => {
 
     const result = diagnosticEnvelope(await handleEditMetadata(
       {
-        confirmation: { accepted: true },
         mode: 'commit',
         operations: [{ jsonPointer: '/name', kind: 'json.set', value: 'x' }],
         path: 'characters/merry/.risuchar',
@@ -294,7 +288,6 @@ describe('handleEditMetadata', () => {
 
     const result = mutationResult(await handleEditMetadata(
       {
-        confirmation: { accepted: true },
         mode: 'commit',
         operations: [{ jsonPointer: '/secret', kind: 'json.set', value: 'leaked' }],
         path: outsideRelative,

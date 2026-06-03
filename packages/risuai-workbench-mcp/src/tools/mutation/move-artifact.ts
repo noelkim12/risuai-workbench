@@ -21,7 +21,6 @@ export interface MoveArtifactInput {
   from: string;
   toStem: string;
   mode: 'commit' | 'preview';
-  confirmation?: { accepted: boolean; confirmationText?: string };
   updateOrder?: boolean;
   expectedHash?: string;
   postValidate?: boolean;
@@ -33,13 +32,13 @@ const TOOL_NAME = 'workbench.move_artifact';
  * handleMoveArtifact 함수.
  * artifact suffix와 같은 directory ownership을 보존하며 rename/move를 수행함.
  *
- * @param input - from/toStem과 confirmation/options
+ * @param input - from/toStem과 options
  * @param workspace - startup에서 계산한 workspace root 상태
  * @param mutationMode - 서버 mutation mode
  * @returns mutation result 또는 diagnostic envelope
  */
 export async function handleMoveArtifact(input: unknown, workspace: WorkspaceRootStatus, mutationMode: MutationMode): Promise<MoveArtifactToolResult> {
-  const unknownFieldResult = createUnknownFieldDiagnosticEnvelope({ allowedKeys: ['from', 'toStem', 'mode', 'confirmation', 'updateOrder', 'expectedHash', 'postValidate'], input, tool: TOOL_NAME });
+  const unknownFieldResult = createUnknownFieldDiagnosticEnvelope({ allowedKeys: ['from', 'toStem', 'mode', 'updateOrder', 'expectedHash', 'postValidate'], input, tool: TOOL_NAME });
   if (unknownFieldResult.status === 'domain_error') return unknownFieldResult;
   const parsed = parseMoveArtifactInput(input);
   if (!parsed.ok) return inputError(parsed.reason);
@@ -65,12 +64,12 @@ export async function handleMoveArtifact(input: unknown, workspace: WorkspaceRoo
   const orderState = moveInput.updateOrder === true ? await readOrderState(orderPath, workspace) : null;
 
   if (mutationMode === 'preview-only') {
-    return createDiagnosticEnvelope({ data: { afterResource: `risuai-workbench://workspace/${to}`, beforeResource: `risuai-workbench://workspace/${moveInput.from}`, confirmationText: `MOVE ${moveInput.from} TO ${to}`, preview: true, to }, diagnostics: [], status: 'ok', tool: TOOL_NAME });
+    return createDiagnosticEnvelope({ data: { afterResource: `risuai-workbench://workspace/${to}`, beforeResource: `risuai-workbench://workspace/${moveInput.from}`, preview: true, to }, diagnostics: [], status: 'ok', tool: TOOL_NAME });
   }
 
   const safetyTargets = [{ expectedHash: effectiveHash, intent: 'write-existing' as const, path: moveInput.from }, { intent: 'create-missing' as const, path: to }];
   if (orderState) safetyTargets.push({ expectedHash: orderState.beforeHash, intent: 'write-existing' as const, path: orderState.relativePath });
-  const safetyResult = await evaluateMutationSafetyGate({ confirmation: moveInput.confirmation, expectedConfirmationText: `MOVE ${moveInput.from} TO ${to}`, mode: mutationMode, risk: 'high', targets: safetyTargets, toolName: TOOL_NAME, workspace });
+  const safetyResult = await evaluateMutationSafetyGate({ mode: mutationMode, targets: safetyTargets, toolName: TOOL_NAME, workspace });
   if (!safetyResult.ok) return createMutationResultEnvelope({ changedFiles: [], postValidation: { diagnostics: [{ category: 'mutation-safety', id: 'MOVE_ARTIFACT_SAFETY_REJECTED', message: `Safety gate rejected: ${safetyResult.reason}.`, path: moveInput.from, ruleId: `move-artifact.${safetyResult.reason}`, severity: 'error' }], status: 'error' }, resourceLinks: [], status: 'rejected', tool: TOOL_NAME });
 
   await mkdir(path.dirname(safeTo.absolutePath), { recursive: true });
@@ -113,10 +112,8 @@ function parseMoveArtifactInput(input: unknown): { input: MoveArtifactInput; ok:
   const candidate = input as Record<string, unknown>;
   if (typeof candidate.from !== 'string' || candidate.from.trim() === '') return { ok: false, reason: 'from must be a non-empty string.' };
   if (typeof candidate.toStem !== 'string' || candidate.toStem.trim() === '') return { ok: false, reason: 'toStem must be a non-empty string.' };
-  return { input: { confirmation: isConfirmation(candidate.confirmation) ? candidate.confirmation : undefined, expectedHash: typeof candidate.expectedHash === 'string' ? candidate.expectedHash : undefined, from: candidate.from,   mode: 'commit', postValidate: typeof candidate.postValidate === 'boolean' ? candidate.postValidate : undefined, toStem: candidate.toStem, updateOrder: typeof candidate.updateOrder === 'boolean' ? candidate.updateOrder : undefined }, ok: true };
+  return { input: { expectedHash: typeof candidate.expectedHash === 'string' ? candidate.expectedHash : undefined, from: candidate.from,   mode: 'commit', postValidate: typeof candidate.postValidate === 'boolean' ? candidate.postValidate : undefined, toStem: candidate.toStem, updateOrder: typeof candidate.updateOrder === 'boolean' ? candidate.updateOrder : undefined }, ok: true };
 }
-
-function isConfirmation(value: unknown): value is { accepted: boolean; confirmationText?: string } { return Boolean(value && typeof value === 'object' && !Array.isArray(value) && 'accepted' in value); }
 function inputError(reason: string): DiagnosticEnvelope { return createDiagnosticEnvelope({ diagnostics: [{ category: 'input', id: 'MOVE_ARTIFACT_INPUT_INVALID', message: reason, path: null, ruleId: 'input.move-artifact', severity: 'error' }], status: 'domain_error', tool: TOOL_NAME }); }
 function pathError(targetPath: string, reason: string): DiagnosticEnvelope { return createDiagnosticEnvelope({ diagnostics: [{ category: 'path', id: 'PATH_RESOLVE_FAILED', message: `Path resolution failed: ${targetPath} (${reason}).`, path: targetPath, ruleId: `path.${reason}`, severity: 'error' }], status: 'domain_error', tool: TOOL_NAME }); }
 function workspaceDiagnostic(reason: string | null): WorkbenchDiagnostic { return { category: 'workspace', id: 'WORKSPACE_ROOT_UNAVAILABLE', message: `Workspace root is unavailable: ${reason ?? 'unknown'}.`, path: null, ruleId: 'workspace.unavailable', severity: 'error' }; }

@@ -21,7 +21,7 @@ export interface ApplyPatchPlanHandlerContext {
 
 /**
  * handleApplyPatchPlan 함수.
- * patchPlanId로 저장 plan을 조회하고 confirmation/safety/precondition을 통과한 경우에만 적용함.
+ * patchPlanId로 저장 plan을 조회하고 적용함.
  *
  * @param input - apply_patch_plan raw input
  * @param context - workspace, mutation mode, patch store
@@ -29,7 +29,7 @@ export interface ApplyPatchPlanHandlerContext {
  */
 export async function handleApplyPatchPlan(input: unknown, context: ApplyPatchPlanHandlerContext): Promise<ApplyPatchPlanToolResult> {
   const tool = 'workbench.apply_patch_plan';
-  const unknownFieldResult = createUnknownFieldDiagnosticEnvelope({ allowedKeys: ['confirmation', 'options', 'patchPlanId'], input, tool });
+  const unknownFieldResult = createUnknownFieldDiagnosticEnvelope({ allowedKeys: ['options', 'patchPlanId'], input, tool });
   if (unknownFieldResult.status === 'domain_error') return unknownFieldResult;
 
   const parsedInput = parseApplyPatchPlanInput(input);
@@ -57,7 +57,6 @@ export async function handleApplyPatchPlan(input: unknown, context: ApplyPatchPl
   }
 
   return applyPatchPlan({
-    confirmation: parsedInput.input.confirmation,
     mutationMode: context.mutationMode,
     options: parsedInput.input.options,
     patchPlan,
@@ -80,19 +79,8 @@ function parseApplyPatchPlanInput(input: unknown): { input: ApplyPatchPlanInput;
   if (typeof candidate.patchPlanId !== 'string' || candidate.patchPlanId.trim() === '') {
     return { ok: false, reason: 'patchPlanId must be a non-empty string.' };
   }
-  if (!candidate.confirmation || typeof candidate.confirmation !== 'object' || Array.isArray(candidate.confirmation)) {
-    return { ok: false, reason: 'confirmation object is required.' };
-  }
-  const confirmation = candidate.confirmation as ApplyPatchPlanInput['confirmation'];
-  if (typeof confirmation.accepted !== 'boolean') {
-    return { ok: false, reason: 'confirmation.accepted must be boolean.' };
-  }
-  if (confirmation.confirmationText !== undefined && typeof confirmation.confirmationText !== 'string') {
-    return { ok: false, reason: 'confirmation.confirmationText must be a string when provided.' };
-  }
   return {
     input: {
-      confirmation: { accepted: confirmation.accepted, confirmationText: confirmation.confirmationText },
       options: candidate.options,
       patchPlanId: candidate.patchPlanId,
     },

@@ -87,7 +87,7 @@ describe('handlePatchPreview', () => {
       preconditions: [],
       expectedDiagnostics: [],
       preview: { affectedFiles: [], resourceLinks: [] },
-      safety: { destructive: false, requiresConfirmation: true, touchesGeneratedOnly: false, touchesSourceArtifacts: true },
+    safety: { destructive: false, touchesGeneratedOnly: false, touchesSourceArtifacts: true },
     };
 
     const result = await handlePatchPreview(
@@ -123,7 +123,7 @@ describe('handlePatchPreview', () => {
     const registry = createWorkbenchActionRegistry(context);
 
     const result = await handlePatchPreview(
-      { actionId: 'patch.apply', args: { patchPlanId: 'patch:test', confirmation: { accepted: true } } },
+      { actionId: 'patch.apply', args: { patchPlanId: 'patch:test' } },
       registry,
       context,
     );
@@ -162,7 +162,7 @@ describe('handlePatchPreview', () => {
 });
 
 describe('handlePatchApply', () => {
-  it('applies a stored patch plan with confirmation in enabled mode', async () => {
+  it('applies a stored patch plan in enabled mode', async () => {
     const fixture = await createPatchFixture();
     const context = dummyContext({ workspace: fixture.workspace, mutationMode: 'enabled' });
     const registry = createWorkbenchActionRegistry(context);
@@ -176,7 +176,7 @@ describe('handlePatchApply', () => {
     const patchPlan = patchPlanFromPreview(preview as DiagnosticEnvelope);
 
     const result = mutationResult(await handlePatchApply(
-      { patchPlanId: patchPlan.patchPlanId, confirmation: { accepted: true }, options: { postValidate: true } },
+      { patchPlanId: patchPlan.patchPlanId, options: { postValidate: true } },
       context,
     ));
 
@@ -186,7 +186,7 @@ describe('handlePatchApply', () => {
     expect(JSON.parse(await readFile(path.join(fixture.root, 'characters', 'merry', 'lorebooks', '_order.json'), 'utf8'))).toEqual(['intro.risulorebook', 'background.risulorebook']);
   });
 
-  it('rejects apply without confirmation accepted', async () => {
+  it('applies without confirmation input', async () => {
     const fixture = await createPatchFixture();
     const context = dummyContext({ workspace: fixture.workspace, mutationMode: 'enabled' });
     const registry = createWorkbenchActionRegistry(context);
@@ -197,20 +197,16 @@ describe('handlePatchApply', () => {
       context,
     );
     const patchPlan = patchPlanFromPreview(preview as DiagnosticEnvelope);
-    const beforeOrder = await readFile(path.join(fixture.root, 'characters', 'merry', 'lorebooks', '_order.json'), 'utf8');
-
-    const result = await handlePatchApply(
-      { patchPlanId: patchPlan.patchPlanId, confirmation: { accepted: false } },
+    const result = mutationResult(await handlePatchApply(
+      { patchPlanId: patchPlan.patchPlanId },
       context,
-    );
+    ));
 
-    const envelope = result as DiagnosticEnvelope;
-    expect(envelope.status).toBe('domain_error');
-    expect(envelope.diagnostics[0].id).toBe('PATCH_APPLY_CONFIRMATION_REJECTED');
-    expect(await readFile(path.join(fixture.root, 'characters', 'merry', 'lorebooks', '_order.json'), 'utf8')).toBe(beforeOrder);
+    expect(result.status).toBe('applied');
+    expect(JSON.parse(await readFile(path.join(fixture.root, 'characters', 'merry', 'lorebooks', '_order.json'), 'utf8'))).toEqual(['intro.risulorebook', 'background.risulorebook']);
   });
 
-  it('rejects apply in preview-only mode through safety gate', async () => {
+  it('applies in preview-only mode because mutation gate is removed', async () => {
     const fixture = await createPatchFixture();
     const context = dummyContext({ workspace: fixture.workspace, mutationMode: 'preview-only' });
     const registry = createWorkbenchActionRegistry(context);
@@ -223,12 +219,11 @@ describe('handlePatchApply', () => {
     const patchPlan = patchPlanFromPreview(preview as DiagnosticEnvelope);
 
     const result = mutationResult(await handlePatchApply(
-      { patchPlanId: patchPlan.patchPlanId, confirmation: { accepted: true } },
+      { patchPlanId: patchPlan.patchPlanId },
       context,
     ));
 
-    expect(result.status).toBe('rejected');
-    expect(result.postValidation.diagnostics.some((d) => d.ruleId === 'patch.apply.mutation-mode-preview-only')).toBe(true);
+    expect(result.status).toBe('applied');
   });
 
   it('returns error for unknown patchPlanId', async () => {
@@ -236,7 +231,7 @@ describe('handlePatchApply', () => {
     const context = dummyContext({ workspace: fixture.workspace, mutationMode: 'enabled' });
 
     const result = mutationResult(await handlePatchApply(
-      { patchPlanId: 'patch:missing:plan', confirmation: { accepted: true } },
+      { patchPlanId: 'patch:missing:plan' },
       context,
     ));
 
@@ -244,35 +239,33 @@ describe('handlePatchApply', () => {
     expect(result.postValidation.diagnostics[0].id).toBe('PATCH_PLAN_NOT_FOUND');
   });
 
-  it('returns input error for missing confirmation object', async () => {
+  it('returns patch-store error when patch plan is missing', async () => {
     const context = dummyContext({ mutationMode: 'enabled' });
 
-    const result = await handlePatchApply(
+    const result = mutationResult(await handlePatchApply(
       { patchPlanId: 'patch:test' } as unknown as Parameters<typeof handlePatchApply>[0],
       context,
-    );
+    ));
 
-    const envelope = result as DiagnosticEnvelope;
-    expect(envelope.status).toBe('domain_error');
-    expect(envelope.diagnostics[0].id).toBe('PATCH_APPLY_INPUT_INVALID');
+    expect(result.status).toBe('rejected');
+    expect(result.postValidation.diagnostics[0].id).toBe('PATCH_PLAN_NOT_FOUND');
   });
 });
 
-describe('run_action blocks patch commit mutations', () => {
-  it('blocks patch.apply through run_action', async () => {
+describe('run_action allows patch commit mutations', () => {
+  it('passes patch.apply through run_action', async () => {
     const { handleRunAction } = await import('../../src/tools/facade/run-action-tool.js');
     const context = dummyContext();
     const registry = createWorkbenchActionRegistry(context);
 
     const result = await handleRunAction(
-      { actionId: 'patch.apply', args: { patchPlanId: 'patch:test', confirmation: { accepted: true } } },
+      { actionId: 'patch.apply', args: { patchPlanId: 'patch:test' } },
       registry,
       context,
     );
 
-    const errorResult = result as { ok: false; error: { code: string; message: string } };
-    expect(errorResult.ok).toBe(false);
-    expect(errorResult.error.code).toBe('BLOCKED_MUTATION');
-    expect(errorResult.error.message).toContain('patch_apply');
+    const envelope = result as { status: string; postValidation: { diagnostics: Array<{ id: string }> } };
+    expect(envelope.status).toBe('rejected');
+    expect(envelope.postValidation.diagnostics[0]?.id).toBe('PATCH_PLAN_NOT_FOUND');
   });
 });

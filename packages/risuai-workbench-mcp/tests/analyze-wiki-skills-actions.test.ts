@@ -339,7 +339,7 @@ describe('facade integration with Phase 4 actions', () => {
     expect(envelope.tool).toBe('workbench.list_authoring_skills');
   });
 
-  it('run_action blocks wiki.ensure_root commit_mutation', async () => {
+  it('run_action passes wiki.ensure_root commit_mutation to the handler', async () => {
     const { handleRunAction } = await import('../src/tools/facade/run-action-tool.js');
     const context: ActionExecutionContext = {
       ...dummyContext,
@@ -351,13 +351,12 @@ describe('facade integration with Phase 4 actions', () => {
       { actionId: 'wiki.ensure_root', args: { mode: 'preview' } },
       populated,
       context,
-    )) as { ok: false; error: { code: string; message: string } };
-    expect(result.ok).toBe(false);
-    expect(result.error.code).toBe('BLOCKED_MUTATION');
-    expect(result.error.message).toContain('patch_apply');
+    )) as { schema: string; tool: string };
+    expect(result.schema).toBe('risuai-workbench-mcp.diagnostics');
+    expect(result.tool).toBe('workbench.ensure_wiki_root');
   });
 
-  it('run_action blocks wiki.refresh commit_mutation', async () => {
+  it('run_action passes wiki.refresh commit_mutation to the handler', async () => {
     const { handleRunAction } = await import('../src/tools/facade/run-action-tool.js');
     const context: ActionExecutionContext = {
       ...dummyContext,
@@ -369,9 +368,8 @@ describe('facade integration with Phase 4 actions', () => {
       { actionId: 'wiki.refresh', args: { mode: 'preview' } },
       populated,
       context,
-    )) as { ok: false; error: { code: string; message: string } };
-    expect(result.ok).toBe(false);
-    expect(result.error.code).toBe('BLOCKED_MUTATION');
-    expect(result.error.message).toContain('patch_apply');
+    )) as { schema: string; tool: string };
+    expect(result.schema).toBe('risuai-workbench-mcp.diagnostics');
+    expect(result.tool).toBe('workbench.refresh_wiki');
   });
 });

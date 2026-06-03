@@ -102,7 +102,6 @@ describe('intent route contract', () => {
       'analyze',
       'creative_review',
       'preview',
-      'confirm',
       'apply',
       'post_validate',
       'answer',
@@ -126,7 +125,6 @@ describe('intent route contract', () => {
       'ambiguous_target',
       'outside_workspace',
       'preview_required',
-      'confirmation_required',
       'patch_plan_required',
       'hash_precondition_required',
       'blocking_diagnostics',
@@ -220,7 +218,7 @@ describe('intent route contract', () => {
       routingSignals: ['mutation', 'frontmatter', 'domain:lorebook'],
       schema: 'risuai-workbench-mcp.intent-route',
       schemaVersion: '0.1.0',
-      stopConditions: ['preview_required', 'confirmation_required'],
+      stopConditions: ['preview_required'],
       targetKind: 'path',
     });
 

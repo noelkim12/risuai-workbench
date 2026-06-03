@@ -29,7 +29,6 @@ export interface RefreshWikiInput {
   wikiRoot?: string;
   target?: string;
   mode: 'commit' | 'preview';
-  confirmation?: { accepted: boolean; confirmationText?: string };
   generatedFiles?: readonly RefreshWikiFileInput[];
   postValidate?: boolean;
 }
@@ -40,14 +39,14 @@ const TOOL_NAME = 'workbench.refresh_wiki';
  * handleRefreshWiki 함수.
  * core wiki write-protect helper만 사용해 proposal-approved generated wiki paths를 갱신함.
  *
- * @param input - wikiRoot, generatedFiles, mode, confirmation
+ * @param input - wikiRoot, generatedFiles, mode
  * @param workspace - startup에서 계산한 workspace root 상태
  * @param mutationMode - 서버 mutation mode
  * @returns mutation result 또는 diagnostic envelope
  */
 export async function handleRefreshWiki(input: unknown, workspace: WorkspaceRootStatus, mutationMode: MutationMode): Promise<RefreshWikiToolResult> {
   const unknownFieldResult = createUnknownFieldDiagnosticEnvelope({
-    allowedKeys: ['wikiRoot', 'target', 'mode', 'confirmation', 'generatedFiles', 'postValidate'],
+    allowedKeys: ['wikiRoot', 'target', 'mode', 'generatedFiles', 'postValidate'],
     input,
     tool: TOOL_NAME,
   });
@@ -87,9 +86,7 @@ export async function handleRefreshWiki(input: unknown, workspace: WorkspaceRoot
   }
 
   const safetyResult = await evaluateMutationSafetyGate({
-    confirmation: refreshInput.confirmation,
     mode: mutationMode,
-    risk: 'low',
     targets: resolvedTargets.map((target) => ({ expectedHash: target.beforeHash ?? undefined, intent: target.beforeHash ? 'write-existing' as const : 'create-missing' as const, path: target.file.path })),
     toolName: TOOL_NAME,
     workspace,
@@ -204,13 +201,8 @@ function parseRefreshWikiInput(input: unknown): { input: RefreshWikiInput; ok: t
   const candidate = input as Record<string, unknown>;
   const generatedFiles = Array.isArray(candidate.generatedFiles) ? candidate.generatedFiles as RefreshWikiFileInput[] : undefined;
   if (generatedFiles?.some((file) => typeof file.path !== 'string' || typeof file.content !== 'string')) return { ok: false, reason: 'generatedFiles must contain path/content strings.' };
-  return { input: { confirmation: isConfirmation(candidate.confirmation) ? candidate.confirmation : undefined, generatedFiles, mode: 'commit', postValidate: typeof candidate.postValidate === 'boolean' ? candidate.postValidate : undefined, target: typeof candidate.target === 'string' ? candidate.target : undefined, wikiRoot: typeof candidate.wikiRoot === 'string' ? candidate.wikiRoot : undefined }, ok: true };
+  return { input: { generatedFiles, mode: 'commit', postValidate: typeof candidate.postValidate === 'boolean' ? candidate.postValidate : undefined, target: typeof candidate.target === 'string' ? candidate.target : undefined, wikiRoot: typeof candidate.wikiRoot === 'string' ? candidate.wikiRoot : undefined }, ok: true };
 }
-
-function isConfirmation(value: unknown): value is { accepted: boolean; confirmationText?: string } {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value) && 'accepted' in value);
-}
-
 function inputError(reason: string): DiagnosticEnvelope {
   return createDiagnosticEnvelope({ diagnostics: [{ category: 'input', id: 'REFRESH_WIKI_INPUT_INVALID', message: reason, path: null, ruleId: 'input.refresh-wiki', severity: 'error' }], status: 'domain_error', tool: TOOL_NAME });
 }

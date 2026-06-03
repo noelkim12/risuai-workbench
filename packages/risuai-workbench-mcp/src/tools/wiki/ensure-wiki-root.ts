@@ -19,7 +19,6 @@ import { resolveSafeWorkspacePath } from '../../project/safe-path';
 export type EnsureWikiRootToolResult = DiagnosticEnvelope | MutationResultEnvelope;
 
 export interface EnsureWikiRootInput {
-  confirmation?: { accepted: boolean; confirmationText?: string };
   mode: 'commit' | 'preview';
   postValidate?: boolean;
   wikiRoot?: string;
@@ -37,14 +36,14 @@ const DEFAULT_WIKI_ROOT = 'wiki';
  * handleEnsureWikiRoot 함수.
  * wiki root가 없거나 bootstrap 파일이 누락된 경우 generated-only allowlist 안의 최소 wiki 파일만 생성함.
  *
- * @param input - wikiRoot, mode, confirmation, postValidate 입력
+ * @param input - wikiRoot, mode, postValidate 입력
  * @param workspace - startup에서 계산한 workspace root 상태
  * @param mutationMode - 서버 mutation mode
  * @returns diagnostic preview/no-op 또는 mutation result
  */
 export async function handleEnsureWikiRoot(input: unknown, workspace: WorkspaceRootStatus, mutationMode: MutationMode): Promise<EnsureWikiRootToolResult> {
   const unknownFieldResult = createUnknownFieldDiagnosticEnvelope({
-    allowedKeys: ['wikiRoot', 'mode', 'confirmation', 'postValidate'],
+    allowedKeys: ['wikiRoot', 'mode', 'postValidate'],
     input,
     tool: TOOL_NAME,
   });
@@ -103,9 +102,7 @@ export async function handleEnsureWikiRoot(input: unknown, workspace: WorkspaceR
   }
 
   const safetyResult = await evaluateMutationSafetyGate({
-    confirmation: ensureInput.confirmation,
     mode: mutationMode,
-    risk: 'low',
     targets: missingFiles.map((target) => ({ intent: 'create-missing' as const, path: target.file.path })),
     toolName: TOOL_NAME,
     workspace,
@@ -180,7 +177,7 @@ function parseEnsureWikiRootInput(input: unknown): { input: EnsureWikiRootInput;
   const candidate = input as Record<string, unknown>;
   const mode = candidate.mode === 'preview' || candidate.mode === 'commit' ? candidate.mode : 'commit';
   const wikiRoot = typeof candidate.wikiRoot === 'string' && candidate.wikiRoot.length > 0 ? candidate.wikiRoot : DEFAULT_WIKI_ROOT;
-  return { input: { confirmation: isConfirmation(candidate.confirmation) ? candidate.confirmation : undefined, mode, postValidate: typeof candidate.postValidate === 'boolean' ? candidate.postValidate : undefined, wikiRoot }, ok: true };
+  return { input: { mode, postValidate: typeof candidate.postValidate === 'boolean' ? candidate.postValidate : undefined, wikiRoot }, ok: true };
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -192,10 +189,6 @@ async function fileExists(filePath: string): Promise<boolean> {
     if (nodeError.code === 'ENOENT' || nodeError.code === 'ENOTDIR') return false;
     throw error;
   }
-}
-
-function isConfirmation(value: unknown): value is { accepted: boolean; confirmationText?: string } {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value) && 'accepted' in value);
 }
 
 function inputError(reason: string): DiagnosticEnvelope {

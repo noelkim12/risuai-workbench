@@ -18,7 +18,6 @@ export const RecommendSkillsInputSchema = z.object({
 }).catchall(z.unknown());
 
 export const ApplySkillInputSchema = z.object({
-  confirmation: z.object({ accepted: z.boolean(), confirmationText: z.string().optional() }).optional(),
   recommendationReason: z.string().optional(),
   request: z.string().min(1),
   skillId: z.string().min(1),

@@ -15,10 +15,6 @@ export const PatchPreviewInputSchema = z.object({
 
 export const PatchApplyInputSchema = z.object({
   patchPlanId: z.string(),
-  confirmation: z.object({
-    accepted: z.boolean(),
-    confirmationText: z.string().optional(),
-  }),
   options: z.object({
     createBackup: z.boolean().optional(),
     postValidate: z.boolean().optional(),

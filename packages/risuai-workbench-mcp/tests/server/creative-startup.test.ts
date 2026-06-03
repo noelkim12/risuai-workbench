@@ -106,7 +106,7 @@ describe('creative tool startup', () => {
       await client.connect(transport);
 
       const result = await client.callTool({
-        arguments: { confirmation: { accepted: true }, patchPlanId: 'patch:missing' },
+      arguments: { patchPlanId: 'patch:missing' },
         name: 'workbench.creative.apply_idea_patch',
       }) as { content: Array<{ text: string; type: string }> };
 
@@ -151,7 +151,7 @@ describe('creative tool startup', () => {
 
       // Call a mutation-creative tool with arbitrary input
       await client.callTool({
-        arguments: { confirmation: { accepted: true }, patchPlanId: 'test-plan' },
+      arguments: { patchPlanId: 'test-plan' },
         name: 'workbench.creative.apply_idea_patch',
       }) as { content: Array<{ text: string; type: string }> };
 

@@ -120,7 +120,6 @@ export function turnIdeaIntoStoredPatchPlan(input: unknown, context: IdeaToPatch
     preconditions: normalized.value.preconditions,
     safety: {
       destructive: false,
-      requiresConfirmation: normalized.value.target.touchesSourceArtifacts,
       touchesGeneratedOnly: normalized.value.target.touchesGeneratedOnly,
       touchesSourceArtifacts: normalized.value.target.touchesSourceArtifacts,
     },
@@ -181,7 +180,6 @@ function buildIdeaPatchEnvelope(normalized: NormalizedConversion, patchPlan: Pat
     patchPlanId: patchPlan.patchPlanId,
     patchPlanResource,
     preApplyValidation: { required: normalized.validationPlan },
-    requiredConfirmation: patchPlan.safety.requiresConfirmation,
     resourceLinks: patchPlan.preview.resourceLinks,
     status: 'preview-created',
     tool: PATCH_TOOL,

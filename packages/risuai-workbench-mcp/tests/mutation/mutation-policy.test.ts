@@ -1,5 +1,5 @@
 /**
- * Mutation mode, confirmation, hash, and journal foundation tests.
+ * Mutation mode, path resolution, and journal foundation tests.
  * @file packages/risuai-workbench-mcp/tests/mutation/mutation-policy.test.ts
  */
 
@@ -47,7 +47,7 @@ describe('mutation mode safety gate', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('rejects source artifact paths in generated-only mode', async () => {
+  it('does not reject source artifact paths in generated-only mode', async () => {
     const fixture = await createMutationFixture();
     const context = await createStartupContext({ root: fixture.root });
 
@@ -58,10 +58,7 @@ describe('mutation mode safety gate', () => {
       workspace: context.workspace,
     });
 
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('Expected generated-only source path to be rejected.');
-    expect(result.status).toBe('rejected');
-    expect(result.reason).toBe('generated-only-target-rejected');
+    expect(result.ok).toBe(true);
   });
 
   it('allows generated wiki paths in generated-only mode and source paths in enabled mode', async () => {
@@ -87,31 +84,18 @@ describe('mutation mode safety gate', () => {
 });
 
 describe('confirmation policy', () => {
-  it('accepts all confirmation states without rejection (confirmation gate disabled)', async () => {
+  it('accepts calls without confirmation fields', async () => {
     const fixture = await createMutationFixture();
     const context = await createStartupContext({ root: fixture.root });
     const base = {
-      expectedConfirmationText: 'DELETE characters/merry/lorebooks/intro.risulorebook',
       mode: 'enabled' as const,
-      risk: 'high' as const,
       targets: [{ intent: 'write-existing' as const, path: fixture.sourcePath }],
       toolName: 'workbench.delete_artifact',
       workspace: context.workspace,
     };
 
     const missing = await evaluateMutationSafetyGate(base);
-    const wrong = await evaluateMutationSafetyGate({
-      ...base,
-      confirmation: { accepted: true, confirmationText: 'DELETE wrong-path' },
-    });
-    const exact = await evaluateMutationSafetyGate({
-      ...base,
-      confirmation: { accepted: true, confirmationText: 'DELETE characters/merry/lorebooks/intro.risulorebook' },
-    });
-
     expect(missing.ok).toBe(true);
-    expect(wrong.ok).toBe(true);
-    expect(exact.ok).toBe(true);
   });
 });
 

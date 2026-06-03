@@ -57,7 +57,7 @@ function mutationResult(result: DiagnosticEnvelope | MutationResultEnvelope): Mu
 }
 
 describe('handleDeleteArtifact', () => {
-  it('accepts missing or wrong confirmation because confirmation gate is disabled', async () => {
+  it('deletes without confirmation', async () => {
     const missingFixture = await createDeleteFixture();
     const wrongFixture = await createDeleteFixture();
 
@@ -67,7 +67,7 @@ describe('handleDeleteArtifact', () => {
       'enabled',
     ));
     const wrong = mutationResult(await handleDeleteArtifact(
-      { confirmation: { accepted: true, confirmationText: 'DELETE lorebooks/other.risulorebook' }, mode: 'commit', path: 'lorebooks/unused.risulorebook', updateOrder: true },
+      { mode: 'commit', path: 'lorebooks/unused.risulorebook', updateOrder: true },
       wrongFixture.workspace,
       'enabled',
     ));
@@ -78,11 +78,11 @@ describe('handleDeleteArtifact', () => {
     await expect(readFile(wrongFixture.artifactPath, 'utf8')).rejects.toThrow();
   });
 
-  it('deletes only after exact confirmation and cleans order when requested', async () => {
+  it('deletes and cleans order when requested', async () => {
     const fixture = await createDeleteFixture();
 
     const result = mutationResult(await handleDeleteArtifact(
-      { confirmation: { accepted: true, confirmationText: 'DELETE lorebooks/unused.risulorebook' }, createBackup: true, mode: 'commit', path: 'lorebooks/unused.risulorebook', updateOrder: true },
+      { createBackup: true, mode: 'commit', path: 'lorebooks/unused.risulorebook', updateOrder: true },
       fixture.workspace,
       'enabled',
     ));

@@ -1,5 +1,5 @@
 /**
- * Tests for approval-gated authoring skill application preview.
+ * Tests for authoring skill application preview.
  * @file packages/risuai-workbench-mcp/tests/tools/apply-skill.test.ts
  */
 
@@ -8,20 +8,18 @@ import { describe, expect, it } from 'vitest';
 import { handleApplySkill } from '../../src/tools/skills';
 
 describe('handleApplySkill', () => {
-  it('rejects calls without explicit approval', async () => {
+  it('returns a plan preview bundle without explicit approval', async () => {
     const result = await handleApplySkill({
-      confirmation: { accepted: false },
       request: 'Design a module.',
       skillId: 'risu-system-builder',
     });
 
-    expect(result.status).toBe('domain_error');
-    expect(result.diagnostics.some((diagnostic: { ruleId?: string }) => diagnostic.ruleId === 'skills.apply.confirmation-required')).toBe(true);
+    expect(result.status).toBe('ok');
+    expect(result.data?.planPreview.skill.id).toBe('risu-system-builder');
   });
 
   it('rejects unknown skill ids', async () => {
     const result = await handleApplySkill({
-      confirmation: { accepted: true },
       request: 'Design a module.',
       skillId: 'unknown-skill',
     });
@@ -32,7 +30,6 @@ describe('handleApplySkill', () => {
 
   it('returns a plan preview bundle for an approved skill', async () => {
     const result = await handleApplySkill({
-      confirmation: { accepted: true },
       recommendationReason: 'The user needs a full artifact role split.',
       request: 'Design a new RisuAI module with Lua, Regex, Lorebook, and HTML.',
       skillId: 'risu-system-builder',
@@ -50,7 +47,6 @@ describe('handleApplySkill', () => {
 
   it('rejects malformed input missing required fields', async () => {
     const result = await handleApplySkill({
-      confirmation: { accepted: true },
       request: 'Design a module.',
     } as unknown as Parameters<typeof handleApplySkill>[0]);
 

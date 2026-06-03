@@ -119,7 +119,7 @@ export function registerPatchActions(registry: ActionRegistry): void {
     id: 'patch.apply',
     legacyToolName: 'workbench.apply_patch_plan',
     title: 'Apply patch plan',
-    summary: 'Apply a stored patch plan after confirmation and precondition checks.',
+    summary: 'Apply a stored patch plan.',
     capability: 'patch.apply',
     risk: 'commit_mutation',
     inputSchema: PatchApplyInputSchema,
