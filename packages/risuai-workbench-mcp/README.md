@@ -4,6 +4,19 @@ RisuAI Workbench의 Canonical Workspace를 AI agent가 안전하게 읽고, 검�
 
 기본 `tools/list`에는 8개 facade tool만 노출됩니다. 기존 domain tool들은 내부 Action Registry action으로 실행되며, 파일 변경은 preview/apply flow로 처리됩니다.
 
+## Extraction quick path
+
+For `.risum`, `.risuchar`, `.risup`, and `.charx` extraction/import requests, do not read binary archives as text. In default MCP mode, do not call `workbench.run_extract` directly. Use the facade action path instead:
+
+```ts
+workbench.run_action({
+  actionId: "core.run_extract",
+  args: { sourcePath, outDir, type },
+});
+```
+
+`workbench.run_extract` is the legacy direct MCP tool name for the same handler. It is hidden from default `tools/list` and is available only for development or migration testing when the server starts with `RISU_MCP_EXPOSE_LEGACY_TOOLS=1`.
+
 ## 빠른 시작
 
 요구사항:
@@ -61,6 +74,17 @@ workbench.route_intent
   -> workbench.patch_preview
   -> workbench.patch_apply
 ```
+
+`core.run_extract` 같은 internal action도 facade flow로 실행합니다:
+
+```text
+workbench.route_intent
+  -> workbench.catalog
+  -> workbench.prepare_action
+  -> workbench.run_action({ actionId: "core.run_extract", args: ... })
+```
+
+`workbench.run_action`의 `dryRun: true`는 facade invocation dry-run입니다. `core.run_extract`에서는 action 존재와 args schema만 확인하고, `handleRunExtract()`를 호출하지 않습니다. 따라서 path safety 검사, `outDir` fallback 계산, `risu-core` 실행, 파일 생성은 하지 않으며, 실제 extraction preview를 뜻하지 않습니다.
 
 ## 기본 facade tools
 
