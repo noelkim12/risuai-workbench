@@ -36,6 +36,7 @@ import type {
   RisuLuaModuleTableAnalyzerInput,
   RisuLuaModuleTableAnalyzerResult,
   RisuLuaModuleTableCallSiteFact,
+  RisuLuaModuleTableDynamicCallbackFact,
   RisuLuaModuleTableLexicalSymbolFact,
   RisuLuaModuleTableMutationFact,
   RisuLuaModuleTablePublicGlobalKind,
@@ -484,6 +485,7 @@ function addProceduralBlock(state: AnalyzerState, node: LuaNode): void {
   const mutations: RisuLuaModuleTableMutationFact[] = [];
   const callSites: RisuLuaModuleTableCallSiteFact[] = [];
   analyzeExpression(node, state, scopeFrameFromFact(state.scopes[0]), references, mutations, callSites, effects);
+  const dynamicCallbacks = collectDynamicCallbackFacts(state, node);
   state.proceduralBlocks.push({
     id: `procedural:${state.proceduralBlocks.length}`,
     name: node.type,
@@ -492,8 +494,53 @@ function addProceduralBlock(state: AnalyzerState, node: LuaNode): void {
     references,
     mutations,
     callSites,
+    dynamicCallbacks,
     extractable: false,
   });
+}
+
+function collectDynamicCallbackFacts(state: AnalyzerState, node: LuaNode): RisuLuaModuleTableDynamicCallbackFact[] {
+  const facts: RisuLuaModuleTableDynamicCallbackFact[] = [];
+  collectDynamicCallbackFactsInto(state, node, facts);
+  return facts;
+}
+
+function collectDynamicCallbackFactsInto(state: AnalyzerState, node: LuaNode, facts: RisuLuaModuleTableDynamicCallbackFact[]): void {
+  const fact = dynamicCallbackFactForAssignment(state, node);
+  if (fact !== undefined) facts.push(fact);
+
+  if (node.type === 'FunctionDeclaration') return;
+  for (const child of childrenOf(node)) collectDynamicCallbackFactsInto(state, child, facts);
+}
+
+function dynamicCallbackFactForAssignment(state: AnalyzerState, node: LuaNode): RisuLuaModuleTableDynamicCallbackFact | undefined {
+  if (node.type !== 'AssignmentStatement') return undefined;
+  const assignment = node as LuaAssignmentStatement;
+  if (assignment.variables.length !== 1 || assignment.init.length !== 1) return undefined;
+
+  const variable = assignment.variables[0];
+  if (variable.type !== 'IndexExpression') return undefined;
+  const index = variable as LuaIndexExpression;
+  if (expressionName(index.base) !== '_G') return undefined;
+
+  const initializer = assignment.init[0];
+  if (initializer.type !== 'FunctionDeclaration') return undefined;
+  const callback = initializer as LuaFunctionDeclaration;
+  if (callback.body.length !== 1 || callback.body[0].type !== 'CallStatement') return undefined;
+
+  const callStatement = callback.body[0] as LuaCallStatement;
+  const targetFunctionName = expressionName(callStatement.expression.base);
+  if (targetFunctionName === undefined) return undefined;
+
+  return {
+    dynamicGlobalExpression: sourceTextForNode(state, index.index),
+    targetFunctionName,
+    callbackParameters: callback.parameters.map((parameter) => parameter.name),
+    forwardedArguments: callStatement.expression.arguments.map((argument) => sourceTextForNode(state, argument)),
+    sourceRange: sourceRangeForNode(state, assignment),
+    callbackSourceRange: sourceRangeForNode(state, callback),
+    callbackBodyRange: sourceRangeForNode(state, callStatement),
+  };
 }
 
 function createScope(state: AnalyzerState, kind: RisuLuaModuleTableScopeKind, name: string, parent: ScopeFrame | undefined, sourceRange: LuaSourceRange): ScopeFrame {
@@ -571,6 +618,12 @@ function findContainingExecutableRange(sortedRanges: RisuLuaModuleTableParserRan
 function sourceRangeForNode(state: AnalyzerState, node: LuaNode): LuaSourceRange {
   const range = getNodeRange(node) ?? { startOffset: 0, endOffset: 0 };
   return sourceRangeFromOffsets(state, range.startOffset, range.endOffset);
+}
+
+function sourceTextForNode(state: AnalyzerState, node: LuaNode): string {
+  const range = getNodeRange(node);
+  if (range === undefined) return '';
+  return state.source.slice(range.startOffset, range.endOffset).trim();
 }
 
 function sourceRangeFromOffsets(state: AnalyzerState, startOffset: number, endOffset: number): LuaSourceRange {

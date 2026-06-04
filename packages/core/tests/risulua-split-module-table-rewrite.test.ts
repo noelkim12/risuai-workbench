@@ -326,6 +326,42 @@ describe('risulua-split module-table top-level rewrite planner', () => {
     expect(forgeModule!.body).toContain('__variable_store.CAT_CFG');
   });
 
+  it('keeps dynamic forge _G callback names in main but delegates bodies to domain.forge', async () => {
+    const result = await rewriteFixture(lines([
+      'local FORGE_SLOT_CATS = { "skill" }',
+      '',
+      'local function forgeSetSlotHandler(triggerId, slot, cat, idx)',
+      '  setChatVar(triggerId, "slot_" .. cat .. "_" .. idx, slot)',
+      'end',
+      '',
+      'for _, cat in ipairs(FORGE_SLOT_CATS) do',
+      '  for idx = 1, 3 do',
+      '    local buttonName = "forgeSetSlot_" .. cat .. "_" .. idx',
+      '    _G[buttonName] = function(triggerId, slot)',
+      '      forgeSetSlotHandler(triggerId, slot, cat, idx)',
+      '    end',
+      '  end',
+      'end',
+    ]), { domainGeneration: 'validated' });
+
+    expect(result.ok).toBe(true);
+    const main = result.mainRewritePlan.fullMainText;
+    expect(main).toContain('local __domain_forge = require("domain.forge")');
+    expect(main).toContain('for _, cat in ipairs(FORGE_SLOT_CATS) do');
+    expect(main).toContain('for idx = 1, 3 do');
+    expect(main).toContain('local buttonName = "forgeSetSlot_" .. cat .. "_" .. idx');
+    expect(main).toContain('_G[buttonName] = function(triggerId, slot)');
+    expect(main).toContain('return __domain_forge.setSlot(triggerId, slot, cat, idx)');
+    expect(main).not.toContain('local function forgeSetSlotHandler');
+    expect(main).not.toContain('forgeSetSlotHandler(triggerId, slot, cat, idx)');
+
+    const forgeModule = result.modulePlans.find((modulePlan) => modulePlan.modulePath === 'lua/domain/forge.risulua');
+    expect(forgeModule).toBeDefined();
+    expect(forgeModule!.body).toContain('function __impl.setSlot(triggerId, slot, cat, idx)');
+    expect(forgeModule!.body).toContain('setChatVar(triggerId, "slot_" .. cat .. "_" .. idx, slot)');
+    expect(forgeModule!.body).toContain('M.setSlot = __impl.setSlot');
+  });
+
   it('rewrites variable-store captures inside generated domain functions', async () => {
     const result = await rewriteFixture(lines([
       'local CORRUPTION_MAX_LEVEL = 5',

@@ -107,7 +107,18 @@ export interface RisuLuaModuleTableProceduralBlockFact {
   references: RisuLuaModuleTableReferenceFact[];
   mutations: RisuLuaModuleTableMutationFact[];
   callSites: RisuLuaModuleTableCallSiteFact[];
+  dynamicCallbacks: RisuLuaModuleTableDynamicCallbackFact[];
   extractable: false;
+}
+
+export interface RisuLuaModuleTableDynamicCallbackFact {
+  dynamicGlobalExpression: string;
+  targetFunctionName: string;
+  callbackParameters: string[];
+  forwardedArguments: string[];
+  sourceRange: LuaSourceRange;
+  callbackSourceRange: LuaSourceRange;
+  callbackBodyRange: LuaSourceRange;
 }
 
 export interface RisuLuaModuleTableAnalyzerResult {
