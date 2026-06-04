@@ -45,6 +45,16 @@ Unsafe extensions:
   - `classifyNestedHelper()`: 핸들러 내부의 중첩 함수를 파라미터화하여 추출할지 결정하는 8단계 우선순위 로직입니다.
   - `unsafePublicGlobalReason()`: 전역 함수를 안전하게 외부로 뺄 수 있는지 검사합니다.
 
+#### Residual closure clusters and ABI bridge policy
+
+`preserve:captures-mutable-state`가 남아 있는 report를 읽을 때는 남은 클러스터가 실제 미분할 구현인지, 아니면 의도적으로 `lua/main.risulua`에 유지한 host ABI bridge인지 먼저 구분합니다.
+
+- Host-visible callback(`onStart`, `onInput`, `onOutput`, `onButtonClick`)이나 동적 `_G[...]` 이름은 RisuAI host가 직접 호출할 수 있으므로 public ABI wrapper만 `lua/main.risulua`에 남길 수 있습니다.
+- wrapper body가 private/generated domain 함수로 위임된다면 이는 잔여 closure cluster가 아니라 의도된 ABI bridge입니다. 예를 들어 forge 계열 구현은 `lua/domain/forge.risulua`로 이동하고 main에는 host-visible wrapper나 dynamic `_G[...]` 등록 shell만 남깁니다.
+- 캡처된 상수와 테이블은 main closure에 계속 묶어 두지 말고 `lua/state/variable_store.risulua`(`state.variable_store`) 또는 generated domain module로 이동시키는 방향을 우선합니다.
+- `docs/domain-candidates.json`의 `generationStatus`, `generationBlockedReasons`, `recommendedPath`를 함께 확인합니다. `recommendedPath`가 `lua/domain/<topic>.risulua`인데 `generationStatus`가 blocked/report-only이면 아직 분리 후보이고, generated 상태이면 main의 얇은 wrapper는 ABI 유지 목적일 수 있습니다.
+- `cluster-policy`와 `domain-grouping:cluster-cycle-coalesced` evidence는 사람이 검토할 stable grouping 힌트입니다. 이 힌트를 바꿀 때는 classifier/refactor-map 테스트와 report rendering이 같은 recommended path를 설명하는지 함께 갱신합니다.
+
 ### 1.3. 특수 저장소(Variable/Prompt Store) 추출 기준
 
 최상위 변수들을 자동으로 `variable_store`나 `prompt_store`로 보내는 기준을 바꿀 때 수정합니다.
