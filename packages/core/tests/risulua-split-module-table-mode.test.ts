@@ -166,6 +166,71 @@ describe('risulua-split module-table artifact writer', () => {
     expect(companionPool).not.toContain('ipairs(COMPANION_POOL_BOT)');
   });
 
+  it('splits companion pool, reroll, and random gacha clusters behind main ABI bridges', async () => {
+    const source = lines([
+      'COMPANION_POOL_BOT = { { ko = "A", en = "A", origin = "X" }, { ko = "B", en = "B", origin = "Y" } }',
+      'local GACHA_CAT1_STYLE = { "고대" }',
+      'local GACHA_CAT2_RELIC = { "검" }',
+      '',
+      'local function buildMergedPool(triggerId)',
+      '  local pool = {}',
+      '  for _, c in ipairs(COMPANION_POOL_BOT) do table.insert(pool, c) end',
+      '  return pool',
+      'end',
+      '',
+      'local function pickRandomCompanion(triggerId)',
+      '  local pool = buildMergedPool(triggerId)',
+      '  return pool[math.random(#pool)]',
+      'end',
+      '',
+      'local function _rerollPickReplacement(triggerId, oldKo)',
+      '  local pool = buildMergedPool(triggerId)',
+      '  for _, c in ipairs(pool) do if c.ko ~= oldKo then return c end end',
+      '  return nil',
+      'end',
+      '',
+      'local function buildRandomGachaFragment(triggerId)',
+      '  local picked = pickRandomCompanion(triggerId)',
+      '  return "[GACHA_PICK:" .. picked.ko .. "|" .. picked.en .. "]"',
+      'end',
+      '',
+      'function gachaCompanion(triggerId)',
+      '  local picked = pickRandomCompanion(triggerId)',
+      '  addChat(triggerId, "user", picked.ko)',
+      'end',
+      '',
+      'function gachaRandom(triggerId)',
+      '  addChat(triggerId, "user", buildRandomGachaFragment(triggerId))',
+      'end',
+    ]);
+
+    const artifacts = await createRisuLuaModuleTableArtifacts({
+      source,
+      sourcePath: 'gacha_clusters.risulua',
+      domainGeneration: 'validated',
+      buttonActionSources: ['{{button::동료::gachaCompanion}}\n{{button::랜덤::gachaRandom}}'],
+    });
+
+    expect(fileContent(artifacts, 'lua/domain/companion_pool.risulua')).toContain('function __impl.buildMergedPool');
+    expect(fileContent(artifacts, 'lua/domain/companion_pool.risulua')).toContain('function __impl.pickRandomCompanion');
+    expect(fileContent(artifacts, 'lua/domain/companion_reroll.risulua')).toContain('function __impl.pickReplacement');
+    expect(fileContent(artifacts, 'lua/domain/random_gacha.risulua')).toContain('function __impl.buildFragment');
+
+    const main = fileContent(artifacts, 'lua/main.risulua');
+    expect(main).toContain('gachaCompanion = __button_actions.gachaCompanion');
+    expect(main).toContain('gachaRandom = __button_actions.gachaRandom');
+    expect(main).not.toContain('local function buildMergedPool');
+    expect(main).not.toContain('local function buildRandomGachaFragment');
+
+    const buttonActions = fileContent(artifacts, 'lua/button_actions/actions.risulua');
+    expect(buttonActions).toContain('local __domain_companion_pool = require("domain.companion_pool")');
+    expect(buttonActions).toContain('local __domain_random_gacha = require("domain.random_gacha")');
+    expect(buttonActions).toContain('local picked = __domain_companion_pool.pickRandomCompanion(triggerId)');
+    expect(buttonActions).toContain('addChat(triggerId, "user", __domain_random_gacha.buildFragment(triggerId))');
+    expect(buttonActions).not.toContain('local picked = pickRandomCompanion(triggerId)');
+    expect(buttonActions).not.toContain('buildRandomGachaFragment(triggerId)');
+  });
+
   it('does not extract column-zero local tables from inside functions into the variable store', async () => {
     const source = lines([
       'function onOutput(text)',

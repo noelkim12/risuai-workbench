@@ -629,10 +629,19 @@ function isQuotedStringLiteral(value: string): boolean {
 }
 
 function clusterExportName(name: string): string | undefined {
-  if (name === '_forgeApplyCat') return 'applyCat';
-  if (name === 'forgeSetSlotHandler') return 'setSlot';
-  return undefined;
+  return CLUSTER_EXPORT_NAMES.get(name);
 }
+
+const CLUSTER_EXPORT_NAMES = new Map<string, string>([
+  ['_forgeApplyCat', 'applyCat'],
+  ['_forgeClearCat', 'clearCat'],
+  ['forgeSetSlotHandler', 'setSlot'],
+  ['_rerollPickReplacement', 'pickReplacement'],
+  ['buildRandomGachaFragment', 'buildFragment'],
+  ['aux_discover_characters', 'discoverCharacters'],
+  ['aux_build_combined_prompt', 'buildCombinedPrompt'],
+  ['aux_generate_combined', 'generate'],
+]);
 
 function collectUnsafePublicNames(
   source: string,
