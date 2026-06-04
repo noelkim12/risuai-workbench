@@ -24,7 +24,7 @@ import {
   type RisuLuaModuleTableSymbolContract,
 } from './module-table-contracts';
 import type { DryRunPlanResult } from './module-table-refactor-map';
-import type { RisuLuaModuleTableRuntimeRootFact } from './module-table-analyzer-types';
+import type { RisuLuaModuleTableDynamicCallbackFact, RisuLuaModuleTableProceduralBlockFact, RisuLuaModuleTableRuntimeRootFact } from './module-table-analyzer-types';
 import type { RisuLuaModuleTableParseResult } from './module-table-parser';
 import { sliceSourceRange } from '../shared/source-slice';
 import { escapeRegExp } from '../shared/string-patterns';
@@ -143,7 +143,7 @@ export function planTopLevelRewrite(input: TopLevelRewriteInput): TopLevelRewrit
   );
 
   const mainRewritePlan = buildMainRewritePlan(
-    source, input.sourceFile, refactorMap, dryRunResult.runtimeRoots, task10Bindings, editPlan.mainBridgeInsertions, helperNames, variableStoreNames, promptStoreNames, nonExecIndex, input.buttonActionSources ?? [],
+    source, input.sourceFile, refactorMap, dryRunResult.runtimeRoots, dryRunResult.proceduralBlocks, task10Bindings, editPlan.mainBridgeInsertions, helperNames, variableStoreNames, promptStoreNames, nonExecIndex, input.buttonActionSources ?? [],
   );
 
   return { ok: true, modulePlans, mainRewritePlan, diagnostics };
@@ -612,6 +612,11 @@ interface CaptureRewritePlan {
   unresolvedCaptures: string[];
 }
 
+interface DynamicCallbackBodyReplacement {
+  range: LuaSourceRange;
+  text: string;
+}
+
 const VARIABLE_STORE_REQUIRE_BINDING = {
   requireId: 'state.variable_store',
   alias: '__variable_store',
@@ -629,6 +634,7 @@ function buildMainRewritePlan(
   sourceFile: string,
   refactorMap: RisuLuaModuleTableRefactorMapContract,
   runtimeRoots: RisuLuaModuleTableRuntimeRootFact[],
+  proceduralBlocks: RisuLuaModuleTableProceduralBlockFact[],
   requireBindings: DryRunPlanResult['editPlan']['mainRequireBindings'],
   bridgeInsertions: DryRunPlanResult['editPlan']['mainBridgeInsertions'],
   helperNames: Set<string>,
@@ -639,6 +645,7 @@ function buildMainRewritePlan(
 ): MainRewritePlan {
   const moduleContractsByPath = new Map(refactorMap.modules.map((moduleContract) => [moduleContract.path, moduleContract]));
   const helperRewriteMap = buildRewriteMapForSymbols(refactorMap.symbols, moduleContractsByPath, helperNames);
+  const dynamicCallbackBodyReplacements = buildDynamicCallbackBodyReplacements(refactorMap, moduleContractsByPath, proceduralBlocks);
   const extractionRanges: LuaSourceRange[] = [];
   for (const sym of refactorMap.symbols) {
     if (isExtracted(sym)) extractionRanges.push(ownedRangeForSymbol(source, sym.sourceRange));
@@ -687,7 +694,8 @@ function buildMainRewritePlan(
   for (const ext of extractions) {
     if (ext.range.startOffset > cursor) {
       const chunk = source.slice(cursor, ext.range.startOffset);
-      bodyParts.push(rewriteBoundReferences(chunk, helperRewriteMap, cursor, shadowedScopes, nonExecIndex));
+      const callbackRewrittenChunk = applyDynamicCallbackBodyReplacements(chunk, cursor, ext.range.startOffset, dynamicCallbackBodyReplacements);
+      bodyParts.push(rewriteBoundReferences(callbackRewrittenChunk, helperRewriteMap, cursor, shadowedScopes, nonExecIndex));
     }
     if (ext.isHostGlobal && ext.bridgeText) {
       bodyParts.push(`${ext.navigationComment ?? ''}${ext.bridgeText}`);
@@ -699,7 +707,8 @@ function buildMainRewritePlan(
 
   if (cursor < source.length) {
     const tail = source.slice(cursor);
-    bodyParts.push(rewriteBoundReferences(tail, helperRewriteMap, cursor, shadowedScopes, nonExecIndex));
+    const callbackRewrittenTail = applyDynamicCallbackBodyReplacements(tail, cursor, source.length, dynamicCallbackBodyReplacements);
+    bodyParts.push(rewriteBoundReferences(callbackRewrittenTail, helperRewriteMap, cursor, shadowedScopes, nonExecIndex));
   }
 
   const bodyText = joinMainParts(bodyParts);
@@ -724,6 +733,57 @@ function buildMainRewritePlan(
 
 function mainBodyUsesAlias(bodyText: string, alias: string): boolean {
   return new RegExp(`\\b${escapeRegExp(alias)}\\b`).test(bodyText);
+}
+
+function buildDynamicCallbackBodyReplacements(
+  refactorMap: RisuLuaModuleTableRefactorMapContract,
+  moduleContractsByPath: Map<string, RisuLuaModuleTableModuleContract>,
+  proceduralBlocks: RisuLuaModuleTableProceduralBlockFact[],
+): DynamicCallbackBodyReplacement[] {
+  const replacements: DynamicCallbackBodyReplacement[] = [];
+  for (const callback of proceduralBlocks.flatMap((block) => block.dynamicCallbacks)) {
+    const replacement = dynamicCallbackBodyReplacementForCallback(refactorMap, moduleContractsByPath, callback);
+    if (replacement !== undefined) replacements.push(replacement);
+  }
+  return replacements.sort((left, right) => left.range.startOffset - right.range.startOffset);
+}
+
+function dynamicCallbackBodyReplacementForCallback(
+  refactorMap: RisuLuaModuleTableRefactorMapContract,
+  moduleContractsByPath: Map<string, RisuLuaModuleTableModuleContract>,
+  callback: RisuLuaModuleTableDynamicCallbackFact,
+): DynamicCallbackBodyReplacement | undefined {
+  const targetSymbol = refactorMap.symbols.find((symbol) => symbol.originalName === callback.targetFunctionName && isExtracted(symbol) && isDomainModulePath(symbol.targetModule ?? ''));
+  if (targetSymbol?.targetModule === undefined) return undefined;
+  const moduleContract = moduleContractsByPath.get(targetSymbol.targetModule);
+  if (moduleContract === undefined) return undefined;
+  const exportName = targetSymbol.exportName ?? targetSymbol.originalName;
+  return {
+    range: callback.callbackBodyRange,
+    text: `return ${moduleContract.alias}.${exportName}(${callback.forwardedArguments.join(', ')})`,
+  };
+}
+
+function applyDynamicCallbackBodyReplacements(
+  text: string,
+  baseOffset: number,
+  endOffset: number,
+  replacements: DynamicCallbackBodyReplacement[],
+): string {
+  const inRange = replacements.filter((replacement) => replacement.range.startOffset >= baseOffset && replacement.range.endOffset <= endOffset);
+  if (inRange.length === 0) return text;
+
+  let cursor = 0;
+  const parts: string[] = [];
+  for (const replacement of inRange) {
+    const start = replacement.range.startOffset - baseOffset;
+    const end = replacement.range.endOffset - baseOffset;
+    if (start < cursor) continue;
+    parts.push(text.slice(cursor, start), replacement.text);
+    cursor = end;
+  }
+  parts.push(text.slice(cursor));
+  return parts.join('');
 }
 
 function isInternalDependencyModulePath(modulePath: string): boolean {

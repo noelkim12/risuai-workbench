@@ -630,6 +630,7 @@ function isQuotedStringLiteral(value: string): boolean {
 
 function clusterExportName(name: string): string | undefined {
   if (name === '_forgeApplyCat') return 'applyCat';
+  if (name === 'forgeSetSlotHandler') return 'setSlot';
   return undefined;
 }
 
@@ -1067,6 +1068,7 @@ function collectPrivateDomainGenerationBlockers(
     }
 
     for (const callSite of block.callSites) {
+      if (block.dynamicCallbacks.some((callback) => callback.targetFunctionName === callSite.name && containsRange(callback.callbackBodyRange, callSite.sourceRange))) continue;
       addPrivateDomainBlockerReason(
         reasonsByName,
         callSite.name,
