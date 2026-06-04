@@ -557,7 +557,7 @@ function safeAbiWrapperTarget(
   domainGrouping: ReturnType<typeof createRisuLuaDomainGroupingContext>,
 ): { targetName: string; targetModule: string; targetExportName: string } | undefined {
   if (symbol.hostEffects.dynamicEnvironment.length > 0) return undefined;
-  if (unsafeMutationNames(symbol).length > 0) return undefined;
+  if (unsafeMutationNames(symbol, safeCaptureNames).length > 0) return undefined;
   const parsed = parseSingleCallFunction(source.slice(symbol.sourceRange.startOffset, symbol.sourceRange.endOffset), symbol.originalName);
   if (parsed === undefined) return undefined;
   if (!validatedPrivateDomainNames.has(parsed.callee)) return undefined;
@@ -1039,7 +1039,7 @@ function collectValidatedPrivateDomainNames(
       if (names.has(symbol.originalName)) continue;
       if (symbol.declarationKind !== 'top-level-local-function') continue;
       if (privateDomainBlockers.has(symbol.originalName)) continue;
-      if (unsafeMutationNames(symbol).length > 0) continue;
+      if (unsafeMutationNames(symbol, variableStoreNames).length > 0) continue;
       if (symbol.hostEffects.asyncModelNetwork.length > 0) continue;
       if (symbol.hostEffects.dynamicEnvironment.length > 0) continue;
       if (!symbol.captures.every((capture) => extractableCommonHelperNames.has(capture) || rewriteablePublicHostGlobalNames.has(capture) || names.has(capture) || validatedPublicDomainNames.has(capture) || variableStoreNames.has(capture) || promptStoreNames.has(capture))) continue;
@@ -1132,9 +1132,10 @@ function isCommonHelperEffectsSafe(symbol: RisuLuaModuleTableLexicalSymbolFact):
     && symbol.hostEffects.dynamicEnvironment.length === 0;
 }
 
-function unsafeMutationNames(symbol: RisuLuaModuleTableLexicalSymbolFact): string[] {
+function unsafeMutationNames(symbol: RisuLuaModuleTableLexicalSymbolFact, storeBackedNames = new Set<string>()): string[] {
   return uniqueSorted(symbol.mutations
     .filter((mutation) => mutation.mutatesCapturedBinding || mutation.mutatesCapturedTable)
+    .filter((mutation) => !storeBackedNames.has(mutation.name))
     .map((mutation) => mutation.accessPath ?? mutation.name));
 }
 
