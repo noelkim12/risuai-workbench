@@ -1,0 +1,81 @@
+---
+name: 시스템 태그 - 가챠 & 이벤트
+comment: 시스템 태그 - 가챠 & 이벤트
+mode: normal
+constant: false
+selective: false
+insertion_order: 114
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+GACHA
+가챠 결과
+NEW_DAY
+FLOOR
+DUNGEON_ENTER
+DUNGEON_EXIT
+DEFEAT
+던전 진입
+던전 퇴장
+클리어
+새벽
+아침
+ガチャ結果
+ダンジョン入場
+ダンジョン退場
+クリア
+夜明け
+朝
+@@@ CONTENT
+[SYSTEM TAG OUTPUT FORMAT - GACHA & EVENT TAGS]
+
+This covers GACHA result tags and EVENT tags (no value). For NUMERIC/INVENTORY/INLINE placement / SELF-CHECK, see 「시스템 태그 출력 형식」.
+
+## GACHA RESULT TAGS (record stage - Lua extracts Korean name from parens)
+
+| Category | Tag (4-pipe: name | DESC | ⭐:N | EFFECT) | Lua extracts → |
+|----------|-----|----------------|
+| Skill | `[SYSTEM|GACHA: Skill Learned - ENGLISH (KOR_NAME) | KOR_DESC | ⭐:N | KOR_EFFECT]` + `[SYSTEM|SKILL_ADD: KOR_NAME]` | cv_skills, cv_skillDetails (4-field) |
+| Relic | `[SYSTEM|GACHA: Relic Acquired - ENGLISH (KOR_NAME) | KOR_DESC | ⭐:N | KOR_EFFECT]` | cv_relics, cv_relicDetails (4-field) |
+| Facility | `[SYSTEM|GACHA: Facility Built - ENGLISH (KOR_NAME) | KOR_DESC | ⭐:N | KOR_EFFECT]` | cv_facilities, cv_facilityDetails (4-field) |
+| Companion | `[SYSTEM|GACHA: Companion Summoned - 한글명 (English Name)]` | cv_companions (한글) |
+| Supply | `[SYSTEM|GACHA: Supply Acquired - ENGLISH (KOR_NAME) | KOR_DESC | ⭐:N | KOR_EFFECT]` + `[SYSTEM|ITEM_ADD: KOR_NAME]` | cv_itemDetails (4-field), cv_items |
+| Couple Item | `[SYSTEM|GACHA: Couple Item Acquired - ENGLISH (KOR_NAME) | KOR_DESC | ⭐:N | KOR_EFFECT]` + `[SYSTEM|ITEM_ADD: KOR_NAME]` | cv_itemDetails (4-field), cv_items |
+
+DESC vs EFFECT split (MANDATORY for Skill/Relic/Facility/Supply/Couple Item):
+- `DESC` = 짧은 flavor 설명, 1문장 함축 (~40~60자). 외형/유래/감각 위주.
+- `EFFECT` = mechanical one-line (예: `ATK +5`, `회복: +30 HP`, `마나: 30, HP +50`, `던전당 1회 자동 풀회복`).
+- Companion은 단일 태그. 4-pipe 불필요.
+
+NOTES:
+- Relic / Facility: NOT consumable. Do NOT also output [SYSTEM|ITEM_ADD]. Lua auto-tracks via the GACHA tag.
+- Companion: Selection is Lua-driven via `[GACHA_PICK:KO|EN]` user input tag - echo the exact KO·EN values. Full rules: lorebook '동료 소환'.
+- Supply / Couple Item: BOTH tags mandatory (GACHA + ITEM_ADD). Missing ITEM_ADD = item detail saved but inventory NOT updated.
+
+## EVENT TAGS (no value)
+
+- `[SYSTEM|NEW_DAY]` - output INLINE right after the morning awakening narration. Lua auto-handles cv_day++, hunger drain, HP loss if starving, gate state reset. (Full rules: lorebook '날짜 & 던전 게이트 규칙'.)
+- `[SYSTEM|DUNGEON_ENTER]` / `[SYSTEM|DUNGEON_EXIT]` — Lua IGNORES both tags. AI must NOT output. Entry/exit via 🌀 게이트 / [DUNGEON_CHOICE] button only.
+- `[SYSTEM|DEFEAT]` - output ONLY when party HP hits 0 inside the dungeon. Lua handles the entire penalty: 50% point loss, all 가챠 티켓 confiscated, HP/MANA/HUNGER forced to 20 (post-defeat safety floor). Do NOT output any HP/MANA/HUNGER/POINT tags in the same response.
+- `[SYSTEM|FLOOR:N description]` - output IMMEDIATELY after a Floor Guardian is defeated (or 미로 escape). N = the floor just cleared. Pair with [SYSTEM|ITEM_ADD: 가챠 티켓 x1] (auto gacha ticket reward). Lua updates cv_floor only if N > current.
+
+
+
+## GACHA tier suffix (mandatory)
+
+All 5 tiered GACHA result tags (Skill/Relic/Facility/Supply/Couple Item) MUST end with `| ⭐:N` (copy from `[GACHA_TIER:N]` in user msg).
+
+```
+[SYSTEM|GACHA: Relic Acquired - Crystal Saber (수정의 검) | 푸른 수정으로 벼린 양손검. 빛을 머금어 어둠을 가른다. | ⭐:2 | 빛 피해 +3, ATK +5]
+[SYSTEM|GACHA: Skill Learned - Heal Light (치유의 빛) | 손끝에서 빛을 피워올려 상처를 봉합한다. | ⭐:4 | 마나 30 → HP +50]
+[SYSTEM|GACHA: Facility Built - Watchtower (감시탑) | 절벽 위에 세운 석조 망루. 멀리 내다본다. | ⭐:3 | 던전 시야 +20%, DEF +8]
+[SYSTEM|GACHA: Supply Acquired - HP Potion (체력 회복약) | 붉은 약초로 만든 회복 물약. | ⭐:1 | 회복: +30 HP]
+[SYSTEM|GACHA: Couple Item Acquired - Resonance Vibe (공명 바이브) | 체온과 마나 맥박에 맞춰 떨리는 성인용 마석 장치. | ⭐:3 | (즉시마나회복) 합의된 스킨십 장면 후 회복: +25 MANA]
+```
+
+Missing `⭐:N` → Lua stores tier=null → forge breaks.
+
+---
+
+

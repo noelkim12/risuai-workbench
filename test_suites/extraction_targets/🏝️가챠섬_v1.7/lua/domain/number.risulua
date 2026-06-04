@@ -1,0 +1,28 @@
+local M = {}
+local __impl = {}
+
+function __impl._varEditClamp(key, val)
+    if key == "cv_points" then
+        return math.max(0, math.min(999999999, val))
+    elseif key == "cv_hp" or key == "cv_mana" or key == "cv_hunger" then
+        return math.max(0, val)
+    else
+        return math.max(0, math.min(999, val))
+    end
+end
+
+-- Helper: number narrative lines for line-number JSON patch protocol
+function __impl.aux_number_lines(content)
+    local lines = {}
+    local n = 0
+    for line in (content .. "\n"):gmatch("([^\n]*)\n") do
+        n = n + 1
+        lines[#lines+1] = "[" .. n .. "] " .. line
+    end
+    return table.concat(lines, "\n"), n
+end
+
+M._varEditClamp = __impl._varEditClamp
+M.aux_number_lines = __impl.aux_number_lines
+
+return M

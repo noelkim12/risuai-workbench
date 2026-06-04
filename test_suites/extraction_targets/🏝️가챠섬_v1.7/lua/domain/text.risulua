@@ -1,0 +1,88 @@
+local M = {}
+local __impl = {}
+
+function __impl._rerollSplitCsv(raw)
+    local list = {}
+    if raw and raw ~= "" and raw ~= "None" and raw ~= "null" then
+        for entry in tostring(raw):gmatch("([^,]+)") do
+            local v = entry:match("^%s*(.-)%s*$") or ""
+            if v ~= "" then list[#list+1] = v end
+        end
+    end
+    return list
+end
+
+function __impl._rerollJoinCsv(list)
+    if not list or #list == 0 then return "None" end
+    return table.concat(list, ", ")
+end
+
+-- 몬스터 이름은 LLM이 던전 테마에 맞춰 자유 생성.
+-- spawn 시점엔 generic placeholder만 부여 → LLM이 [SYSTEM|MONSTER_INIT:N 이름] 태그로 명명 → setMonsterName이 슬롯 갱신.
+function __impl.placeholderName(tier, idx)
+    local label
+    if     tier == "boss"  then label = "보스"
+    elseif tier == "elite" then label = "엘리트"
+    else                        label = "적"
+    end
+    return label .. (idx and idx > 1 and (" " .. idx) or "")
+end
+
+-- ";;" split. detailsStr이 비어있거나 None이면 빈 테이블.
+function __impl.eqSplitEntries(detailsStr)
+    local out = {}
+    if not detailsStr or detailsStr == "None" or detailsStr == "" or detailsStr == "null" then
+        return out
+    end
+    local pos = 1
+    while pos <= #detailsStr do
+        local s, e = detailsStr:find(";;", pos, true)
+        if s then
+            table.insert(out, detailsStr:sub(pos, s - 1))
+            pos = e + 1
+        else
+            table.insert(out, detailsStr:sub(pos))
+            break
+        end
+    end
+    return out
+end
+
+function __impl._varEditSplitItems(itemsStr)
+    local out = {}
+    if not itemsStr or itemsStr == "None" or itemsStr == "" or itemsStr == "null" then
+        return out
+    end
+    for entry in (itemsStr .. ","):gmatch("([^,]+),") do
+        local trimmed = entry:match("^%s*(.-)%s*$")
+        if trimmed ~= "" then
+            local base = trimmed:match("^(.+)%s+x%d+$") or trimmed
+            base = base:match("^%s*(.-)%s*$")
+            out[#out+1] = { raw = trimmed, base = base }
+        end
+    end
+    return out
+end
+
+function __impl._giSplitDetails(raw)
+    local out = {}
+    if not raw or raw == "None" or raw == "" or raw == "null" then return out end
+    local pos = 1
+    while pos <= #raw do
+        local s, e = raw:find(";;", pos, true)
+        local entry = s and raw:sub(pos, s - 1) or raw:sub(pos)
+        if entry ~= "" then table.insert(out, entry) end
+        if not s then break end
+        pos = e + 1
+    end
+    return out
+end
+
+M._rerollSplitCsv = __impl._rerollSplitCsv
+M._rerollJoinCsv = __impl._rerollJoinCsv
+M.placeholderName = __impl.placeholderName
+M.eqSplitEntries = __impl.eqSplitEntries
+M._varEditSplitItems = __impl._varEditSplitItems
+M._giSplitDetails = __impl._giSplitDetails
+
+return M

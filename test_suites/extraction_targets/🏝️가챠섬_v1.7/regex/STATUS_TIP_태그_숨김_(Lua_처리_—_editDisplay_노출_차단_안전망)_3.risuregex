@@ -1,0 +1,10 @@
+---
+comment: "STATUS_TIP 태그 숨김 (Lua 처리 — editDisplay 노출 차단 안전망)"
+type: editdisplay
+ableFlag: true
+flag: g
+---
+@@@ IN
+\[STATUS_TIP:[^\]]*\]
+@@@ OUT
+

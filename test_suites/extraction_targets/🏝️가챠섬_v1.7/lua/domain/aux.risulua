@@ -1,0 +1,72 @@
+local M = {}
+local __impl = {}
+
+-- Helper: strip thinking/reasoning tags from aux response (CoT-style models)
+function __impl.aux_strip_thinking(raw)
+    if not raw or raw == "" then return "" end
+    local original = raw
+    -- #437: attribute 허용 + Planning/Plan/Reflection/Reason/CoT 추가
+    raw = raw:gsub("<[Tt]houghts?[^>]*>[%s%S]-</[Tt]houghts?>", "")
+    raw = raw:gsub("<[Tt]hink[%w]*[^>]*>[%s%S]-</[Tt]hink[%w]*>", "")
+    raw = raw:gsub("<[Dd][Ss][Tt]hink[^>]*>[%s%S]-</[Dd][Ss][Tt]hink>", "")  -- #484: <DSThink> — DeepSeek 띵킹 가이드 모듈 호환
+    raw = raw:gsub("<[Rr]easoning[^>]*>[%s%S]-</[Rr]easoning>", "")
+    raw = raw:gsub("<[Aa]nalysis[^>]*>[%s%S]-</[Aa]nalysis>", "")
+    raw = raw:gsub("<[Pp]lanning[^>]*>[%s%S]-</[Pp]lanning>", "")
+    raw = raw:gsub("<[Pp]lan[^>]*>[%s%S]-</[Pp]lan>", "")
+    raw = raw:gsub("<[Rr]eflection[^>]*>[%s%S]-</[Rr]eflection>", "")
+    raw = raw:gsub("<[Rr]eason[^>]*>[%s%S]-</[Rr]eason>", "")
+    raw = raw:gsub("<[Cc][Oo][Tt][^>]*>[%s%S]-</[Cc][Oo][Tt]>", "")
+    raw = raw:gsub("^%s+", ""):gsub("%s+$", "")
+    if raw == "" and original ~= "" then
+        local last_close = nil
+        for pos in original:gmatch("()</[%w]+>") do last_close = pos end
+        if last_close then
+            local tail = original:sub(last_close):gsub("^</[%w]+>", ""):gsub("^%s+", ""):gsub("%s+$", "")
+            if tail ~= "" then return tail end
+        end
+        return original:gsub("^%s+", ""):gsub("%s+$", "")
+    end
+    return raw
+end
+
+-- Helper: deterministically insert <img> tags into narrative based on JSON patches
+-- 강화된 태그 정규화: <img=X>, <img='X'>, "X smile" → 표준 <img="X_smile">
+function __impl.aux_apply_patches(content, patches)
+    local lines = {}
+    for line in (content .. "\n"):gmatch("([^\n]*)\n") do
+        lines[#lines+1] = line
+    end
+    local inserts = {}
+    for _, p in ipairs(patches) do
+        local ln = tonumber(p.line)
+        local tag = p.tag or p.asset or p.content or ""
+        if tag ~= "" then
+            -- Strip wrapper variants: <img="X">, <img=X>, <img='X'>, with optional whitespace
+            tag = tag:gsub("^%s*<img=[\"']?", ""):gsub("[\"']?>%s*$", "")
+            tag = tag:gsub("^%s+", ""):gsub("%s+$", "")
+            -- Inside-name space → underscore (e.g., "Fern smile" → "Fern_smile")
+            tag = tag:gsub("%s+", "_")
+            if tag ~= "" and ln and ln >= 1 and ln <= #lines then
+                inserts[ln] = inserts[ln] or {}
+                table.insert(inserts[ln], '<img="' .. tag .. '">')
+            end
+        end
+    end
+    local result = {}
+    for i, line in ipairs(lines) do
+        if inserts[i] then
+            for _, tg in ipairs(inserts[i]) do
+                result[#result+1] = ""
+                result[#result+1] = tg
+                result[#result+1] = ""
+            end
+        end
+        result[#result+1] = line
+    end
+    return table.concat(result, "\n")
+end
+
+M.aux_strip_thinking = __impl.aux_strip_thinking
+M.aux_apply_patches = __impl.aux_apply_patches
+
+return M

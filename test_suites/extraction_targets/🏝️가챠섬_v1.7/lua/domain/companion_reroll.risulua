@@ -1,0 +1,66 @@
+local __domain_text = require("domain.text")
+local __domain_var = require("domain.var")
+
+local M = {}
+local __impl = {}
+
+-- =============================================
+-- COMPANION REROLL (500P) — 동료 다시 뽑기
+-- 직전 소환된 동료를 500P 로 새 동료로 교체. 일반 답변 리롤 대체 (몰입/변수 안정).
+-- =============================================
+function __impl._rerollParsePoints(raw)
+    raw = tostring(raw or "0"):gsub(",", "")
+    return tonumber(raw) or 0
+end
+
+function __impl._rerollFormatPoints(n)
+    n = math.max(0, math.floor(tonumber(n) or 0))
+    return tostring(n):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+end
+
+function __impl._rerollFindLastCompanion(triggerId)
+    local korList = _rerollSplitCsv(__domain_var.safeGetVar(triggerId, "cv_companions", "None"))
+    local engList = _rerollSplitCsv(__domain_var.safeGetVar(triggerId, "cv_companionsEng", "None"))
+    if #korList == 0 then return nil, nil end
+    return korList[#korList], engList[#korList]
+end
+
+function __impl.pickReplacement(triggerId, oldKo)
+    local pool = __domain_var.buildMergedPool(triggerId)
+    local summoned = {}
+    for _, name in ipairs(_rerollSplitCsv(__domain_var.safeGetVar(triggerId, "cv_companions", "None"))) do
+        if name ~= oldKo then summoned[name] = true end
+    end
+    local candidates = {}
+    for _, c in ipairs(pool) do
+        if c.ko ~= oldKo and not summoned[c.ko] then
+            candidates[#candidates+1] = c
+        end
+    end
+    if #candidates == 0 then return nil end
+    return candidates[math.random(#candidates)]
+end
+
+function __impl._rerollReplaceCompanion(triggerId, oldKo, newCompanion)
+    local korList = _rerollSplitCsv(__domain_var.safeGetVar(triggerId, "cv_companions", "None"))
+    local engList = _rerollSplitCsv(__domain_var.safeGetVar(triggerId, "cv_companionsEng", "None"))
+    local idx = nil
+    for i, name in ipairs(korList) do
+        if name == oldKo then idx = i; break end
+    end
+    if not idx then return false end
+    korList[idx] = newCompanion.ko
+    engList[idx] = (newCompanion.en or ""):match("^(%S+)") or newCompanion.en or ""
+    setChatVar(triggerId, "cv_companions",    _rerollJoinCsv(korList))
+    setChatVar(triggerId, "cv_companionsEng", _rerollJoinCsv(engList))
+    setChatVar(triggerId, "cv_lastGachaPick", newCompanion.ko)
+    return true
+end
+
+M._rerollParsePoints = __impl._rerollParsePoints
+M._rerollFormatPoints = __impl._rerollFormatPoints
+M._rerollFindLastCompanion = __impl._rerollFindLastCompanion
+M.pickReplacement = __impl.pickReplacement
+M._rerollReplaceCompanion = __impl._rerollReplaceCompanion
+
+return M

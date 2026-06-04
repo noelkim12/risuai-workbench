@@ -1,0 +1,10 @@
+---
+comment: "SAVE 상태 스냅샷 화면 숨김 (per-message state snapshot) (V1+V2)"
+type: editdisplay
+ableFlag: true
+flag: g
+---
+@@@ IN
+<=S\w*¦((?:(?!=>)[\s\S])*)=>
+@@@ OUT
+

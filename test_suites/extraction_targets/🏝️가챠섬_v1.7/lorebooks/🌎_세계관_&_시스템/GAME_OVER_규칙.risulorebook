@@ -1,0 +1,49 @@
+---
+name: GAME OVER 규칙
+comment: GAME OVER 규칙
+mode: normal
+constant: false
+selective: false
+insertion_order: 113
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+GAME OVER
+gameover
+게임오버
+사망
+죽음
+cv_gameOver
+굶주림
+시뮬레이션 종료
+ゲームオーバー
+死亡
+死
+飢え
+シミュレーション終了
+@@@ CONTENT
+[GAME OVER RULE - PERMANENT SIMULATION END]
+
+## Two distinct death-states
+| Where | Trigger | Consequence |
+|-------|---------|-------------|
+| Inside dungeon (cv_dungeonActive=1) | Party HP reaches 0 | [SYSTEM|DEFEAT] → Lua auto-deducts 50% points + confiscates all 가챠 티켓 + forces HP/MANA/HUNGER all to 10 (post-defeat safety floor). Party wakes up at 성소. Run continues. |
+| On island (cv_dungeonActive=0) | {{user}}'s HP reaches 0 (combat is impossible on the island per the Sanctuary Rules, so the only path to 0 HP on the island is starvation drain on NEW_DAY when hunger is at 0%) | GAME OVER (permanent). Lua auto-sets cv_gameOver=1. Run ends. |
+
+## Lua-side handling (informational)
+- The Lua backend monitors HP changes. When cv_hp hits 0 AND cv_dungeonActive ≠ "1", it sets cv_gameOver = "1" automatically. The same flag is set when the NEW_DAY hunger drain pushes HP to 0 on the island.
+
+## GM-side handling (MANDATORY when cv_gameOver = "1")
+1. Death narration (one-time, the response in which HP reached 0): Output a [SYS_NARR: ...] declaring the GAME OVER and a brief, somber narrative paragraph describing {{user}}'s collapse - the companions discovering the body, their grief, the island falling silent. Match the cause (starvation → withered, gaunt collapse). Then end the response. Do NOT output [DUNGEON_CHOICE] / [SANCTUARY_CHOICE] / any action panel - there are no choices left.
+2. Suggested final SYS_NARR format:
+   `[SYS_NARR: ⚰ GAME OVER<br>► {{user}}는 가챠섬에서 숨을 거두었습니다.<br>► 사인: 굶주림으로 인한 쇠약 (또는 해당 사인)<br>► 시뮬레이션이 종료되었습니다.]`
+3. Subsequent responses (every turn after cv_gameOver=1): Refuse all gameplay actions. Do NOT roll gacha, enter dungeon, advance NEW_DAY, output system stat tags. Each response opens with a brief restatement that the simulation has ended:
+   `[SYS_NARR: 시뮬레이션은 이미 종료되었습니다. {{user}}는 더 이상 가챠섬에 존재하지 않습니다.]`
+   Optionally narrate the silent island, the companions still keeping vigil - short, melancholic prose. Do NOT pretend {{user}} is alive again. Do NOT auto-revive.
+4. STATUS_PANEL: Lua continues to auto-output the panel each response (showing cv_hp=0, the final state). Just provide a [STATUS_TIP: ...] line in the somber tone (no teasing).
+5. Restart: Only the user can manually wipe cv_gameOver via {{setvar::cv_gameOver::0}} or by starting a new chat. The bot itself MUST NOT auto-recover.
+
+## Why this rule exists
+The dungeon already had a soft-fail (DEFEAT) that costs resources but lets the run continue. The island had no equivalent fail-state - meaning starvation was a slow-roll into a permanently-debuffed but un-killable character. Adding GAME OVER on island-side HP=0 gives starvation real stakes without rendering the dungeon's DEFEAT pointless.
+

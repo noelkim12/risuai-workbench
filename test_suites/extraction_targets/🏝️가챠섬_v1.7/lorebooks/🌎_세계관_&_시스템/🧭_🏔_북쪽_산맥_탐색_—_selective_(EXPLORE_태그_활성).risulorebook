@@ -1,0 +1,60 @@
+---
+name: 🧭 🏔 북쪽 산맥 탐색 — selective (EXPLORE 태그 활성)
+comment: 🧭 🏔 북쪽 산맥 탐색 — selective (EXPLORE 태그 활성)
+mode: normal
+constant: false
+selective: false
+insertion_order: 200
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+EXPLORE:북쪽산맥
+북쪽 산맥
+북쪽산맥
+north mountain range
+北の山脈
+北山
+山脈
+@@@ CONTENT
+[North Mountain Exploration - 북쪽산맥 탐색 규칙]
+
+This entry activates ONLY when {user} explores 북쪽산맥 via the World Map UI (button input contains [EXPLORE:북쪽산맥] tag).
+
+## Concept
+차갑고 청량한 고원. 설산이 멀리 보이고 폭포 소리 들림. 야생화 가득.
+북쪽산맥 is an alternative resource activity to gacha / facility labor. Lower yield but works without points.
+
+## Cost (mandatory)
+- HUNGER -10 per exploration — output [SYSTEM|HUNGER:-10]
+
+## Possible Yields (lower yield than supply gacha; vary each run)
+Pool: 산나물, 약수, 산딸기, 야생 염소 고기(드물게 사냥 성공 시), 단단한 돌, 산봉우리 약초, 깨끗한 눈(여름 갈증 해소)
+
+Rules:
+- 0~3 items gained (mostly 1~2). Empty-handed endings allowed (no [SYSTEM|ITEM_ADD]).
+- Tier rule: mostly ⭐1~⭐2 (⭐3 rare, only via facility/skill).
+- Never grant ⭐4 / ⭐5 items from exploration.
+- Output each gained item via [SYSTEM|ITEM_ADD: <한글이름> | <짧은설명> | ⭐:N | <효과>] — 가챠 보급품과 동일 형식.
+- ⭐:N = 1~2 (⭐3 rare, ⭐4/5 금지).
+
+## Hazards / Negative outcomes (optional, 30~50% chance)
+추위, 절벽, 산짐승(곰·늑대) 조우, 미끄러짐
+- Occasionally extra HUNGER loss, minor HP damage ([SYSTEM|HP:-N]), or failure-to-gather narration.
+
+## Narrative Style
+- 2~5 sentence short exploration vignette. Direct character action / sensory description.
+- If companions accompany, include only 1 naturally (no need to drag everyone — distracting).
+- State the outcome immediately (no vague endings).
+- At least 1 sensory detail (landscape / sound / scent).
+
+## State Transition
+- Exploration ends with {user} typically returning to 성소 (or staying in area).
+- AI may suggest next action (e.g., 다른 지역 탐색 / 성소 귀환 / 휴식).
+
+## Strict Constraints
+- DO NOT advance 가챠섬 day/floor.
+- DO NOT trigger combat unless hazard explicitly rolls into encounter.
+- DO NOT grant points/score from exploration (only items + state changes).
+- DO NOT auto-suggest dungeon entry from this entry (separate decision).
+

@@ -231,6 +231,52 @@ describe('risulua-split module-table artifact writer', () => {
     expect(buttonActions).not.toContain('buildRandomGachaFragment(triggerId)');
   });
 
+  it('allows a generated domain function to capture an extracted common helper rewritten via __local_helpers', async () => {
+    const source = lines([
+      'local function _capCat(cat) return cat:sub(1,1):upper() .. cat:sub(2) end',
+      '',
+      'local function _forgeApplyCat(triggerId, cat)',
+      '  local CapCat = _capCat(cat)',
+      '  setChatVar(triggerId, "cv_forgeSlot" .. CapCat .. "1", "x")',
+      'end',
+      '',
+      'function forgeApplySkill(triggerId)',
+      '  _forgeApplyCat(triggerId, "skill")',
+      'end',
+    ]);
+
+    const artifacts = await createRisuLuaModuleTableArtifacts({
+      source,
+      sourcePath: 'forge_with_cap.risulua',
+      domainGeneration: 'validated',
+      buttonActionSources: ['{{button::강화::forgeApplySkill}}'],
+    });
+
+    console.log('Generated files:', artifacts.workspaceFiles.map((f) => f.path).join(', '));
+
+    const main = fileContent(artifacts, 'lua/main.risulua');
+    expect(main).not.toContain('local function _forgeApplyCat');
+    expect(main).not.toContain('local function _capCat');
+
+    const commonHelpersFile = artifacts.workspaceFiles.find((f) => f.path === 'lua/common/local_helpers.risulua');
+    if (commonHelpersFile !== undefined) {
+      expect(commonHelpersFile.content).toContain('function __impl._capCat');
+    }
+
+    const domainPaths = artifacts.workspaceFiles
+      .filter((f) => f.path.startsWith('lua/domain/'))
+      .map((f) => f.path);
+    expect(domainPaths.length).toBeGreaterThan(0);
+
+    const domainFile = artifacts.workspaceFiles.find((f) => f.path.startsWith('lua/domain/') && f.content.includes('__impl.applyCat'));
+    expect(domainFile).toBeDefined();
+    if (commonHelpersFile !== undefined) {
+      expect(domainFile!.content).toContain('local __local_helpers = require("common.local_helpers")');
+      expect(domainFile!.content).toContain('__local_helpers._capCat');
+    }
+    expect(domainFile!.content).not.toContain('local function _capCat');
+  });
+
   it('splits aux generation internals while keeping main callback facade for runtime injection', async () => {
     const source = lines([
       'local AUX_SFW_EMOTIONS = "smile, sad"',

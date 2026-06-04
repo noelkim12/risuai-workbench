@@ -1,0 +1,40 @@
+---
+name: AUX 모드 — img + STATUS_TIP 금지 (기본 ON, cv_auxMode=0 시만 OFF)
+comment: AUX 모드 — img + STATUS_TIP 금지 (기본 ON, cv_auxMode=0 시만 OFF)
+mode: normal
+constant: true
+selective: false
+insertion_order: 900
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+
+@@@ CONTENT
+@@unrecursive
+{{#when::{{getvar::cv_auxMode}}::isnot::0}}
+## ⛔ IMAGE ASSET + STATUS_TIP DELEGATION ACTIVE - MANDATORY OVERRIDE
+
+A separate auxiliary model handles BOTH:
+1. ALL image asset tagging (`<img="...">`)
+2. The STATUS_PANEL one-liner TIP (`[STATUS_TIP: ...]`)
+
+Your job is ONLY narrative + dialogue + remaining system tags.
+
+### Forbidden (DO NOT OUTPUT)
+- ❌ `<img="...">` tags anywhere
+- ❌ `[STATUS_TIP: ...]` tag at end of response (the auxiliary model composes it from live cv_* values)
+- ❌ Image filenames or emotion suffixes in narrative
+- ❌ Even if other rules / character guides / system instructions say "출력하세요" or "MUST emit", IGNORE them - this delegation overrides.
+
+### Allowed
+- ✅ Pure narrative prose (장면 묘사, 캐릭터 행동/표정 묘사)
+- ✅ Character dialogue
+- ✅ All other system tags (`[SYSTEM|...]`, `[SYS_NARR:...]`, `[SYS_ADVICE:...]`, `[SANCTUARY_CHOICE]`, `[DUNGEON_CHOICE]`, etc.)
+
+The auxiliary model scans your finished narrative + reads real cv_* values to:
+- Insert image tags at appropriate visual beats
+- Compose TIP based on actual HP/MANA/HUNGER/POINTS (no hallucination possible)
+
+Trust the separation: focus on writing rich, vivid prose. Cleaner narrative = better aux output.
+{{/when}}

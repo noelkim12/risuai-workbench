@@ -1,0 +1,66 @@
+---
+name: 층 컨디션 시스템
+comment: 층 컨디션 시스템
+mode: normal
+constant: false
+selective: false
+insertion_order: 112
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+층 컨디션
+floor condition
+던전 컨디션
+특수 층
+축복받은 땅
+마나 과잉
+풍요의 기운
+저주받은 땅
+마나 고갈
+フロアコンディション
+ダンジョンコンディション
+特殊階
+祝福された地
+マナ過剰
+豊穣の気
+呪われた地
+マナ枯渇
+@@@ CONTENT
+[FLOOR CONDITION SYSTEM]
+
+Dungeon floors occasionally trigger a special environmental condition. It does NOT occur every floor (~25% chance), so it feels like a special moment.
+The Lua backend pre-rolls cv_nextFloorCondition, and auto-copies it to cv_activeFloorCondition on DUNGEON_ENTER.
+Inside a floor, check {{getvar::cv_activeFloorCondition}}. The AI must calculate the effect value directly and reflect it in SYSTEM tags (no Lua automation for the effect itself).
+
+## Condition Check & Announcement Rules
+1. When entering a dungeon floor, check {{getvar::cv_activeFloorCondition}} (Lua auto-sets this on DUNGEON_ENTER).
+2. If the value is "없음" → this is a normal floor. Output nothing.
+3. If the value is a condition name → right after the floor-entry narration, announce it via [SYS_NARR:...] and apply the effect across the entire floor.
+
+## Condition List
+### Positive Conditions
+축복받은 땅
+- Announcement: [SYS_NARR: ✨ 층 컨디션: '축복받은 땅'<br>이 층에는 성스러운 기운이 깃들어 있습니다.<br>► 층 입장 시 HP와 마나가 소량 회복됩니다.]
+- Effect: On floor entry, restore HP +10~20 and MANA +10~20. Output [SYSTEM|HP:+N 축복받은 땅의 기운] + [SYSTEM|MANA:+N 축복받은 땅의 기운].
+
+마나 과잉
+- Announcement: [SYS_NARR: 💎 층 컨디션: '마나 과잉'<br>이 층의 마나 농도가 비정상적으로 높습니다.<br>► 이 층에서 모든 스킬의 마나 소모가 20% 감소합니다.]
+- Effect: On this floor, calculate all skill mana costs at 80% of base (round up).
+
+풍요의 기운
+- Announcement: [SYS_NARR: 💰 층 컨디션: '풍요의 기운'<br>이 층에는 풍요로운 기운이 감돕니다.<br>► 이 층에서 획득하는 모든 포인트가 30% 증가합니다.]
+- Effect: On this floor, multiply all monster/boss POINT tag values by ×1.3 (round to integer).
+
+### Negative Conditions
+저주받은 땅
+- Announcement: [SYS_NARR: ⚠ 층 컨디션: '저주받은 땅'<br>이 층에는 어두운 저주가 깔려 있습니다.<br>► 이 층에서 받는 모든 피해가 30% 증가합니다. 주의하세요.]
+- Effect: On this floor, all HP losses (enemy attacks, traps, environmental damage, combat result tier damage, boss damage) are calculated at 1.3× base (round up). Stacks with the base values from '전투 판정 시스템' HP Damage Table and '던전 서사형 GM 가이드' Boss Encounter base damage.
+
+마나 고갈 지역
+- Announcement: [SYS_NARR: ⚠ 층 컨디션: '마나 고갈 지역'<br>이 층에는 마나를 흡수하는 공기가 가득합니다.<br>► 층 진입 즉시 마나 -15. 스킬 사용에 주의하세요.]
+- Effect: On floor entry, deduct mana -15. Output [SYSTEM|MANA:-15 마나 고갈 지역 진입].
+
+## Duration
+Condition effects persist across the entire floor. They expire when leaving the floor (DUNGEON_EXIT or entering the next floor).
+

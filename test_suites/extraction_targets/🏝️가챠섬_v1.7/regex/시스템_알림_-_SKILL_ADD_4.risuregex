@@ -1,0 +1,10 @@
+---
+comment: "시스템 알림 - SKILL_ADD"
+type: editdisplay
+ableFlag: true
+flag: g
+---
+@@@ IN
+\[SYSTEM\|SKILL_ADD:\s*(.*?)\]
+@@@ OUT
+<!-- -->

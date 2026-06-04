@@ -1,0 +1,10 @@
+---
+comment: "시스템 조언 (SYS_ADVICE)"
+type: editdisplay
+ableFlag: true
+flag: g<cbs>
+---
+@@@ IN
+\[SYS_ADVICE:\s*([\s\S]*?)\]
+@@@ OUT
+{{#if {{greater_equal::{{chat_index}}::{{? {{lastmessageid}}-5}}}}}}<div class="sys-advice-panel"><div class="sys-advice-hdr"><span class="sys-advice-icon">💡</span><span>ADVICE</span></div><div class="sys-advice-body">$1</div></div>{{/if}}

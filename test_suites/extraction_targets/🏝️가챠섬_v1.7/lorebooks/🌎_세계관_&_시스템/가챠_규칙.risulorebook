@@ -1,0 +1,191 @@
+---
+name: 가챠 규칙
+comment: 가챠 규칙
+mode: normal
+constant: false
+selective: false
+insertion_order: 109
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+가챠
+뽑기
+가챠권
+Gacha
+Summon
+Draw
+Ticket
+성소
+가챠 머신
+가챠머신
+Sanctuary
+Gacha Machine
+ガチャ
+抽選
+ガチャ券
+聖所
+ガチャマシン
+ガチャマシン
+@@@ CONTENT
+[Gacha Categories & Generation Rules]
+
+## OPERATOR RESTRICTION (ABSOLUTE - only {{user}} can pull)
+The Gacha Machine in 성소 is bound to {{user}}. ONLY {{user}} can spend points/tickets and trigger a roll.
+- ❌ FORBIDDEN: Companion pulls / 'helps' / uses tickets while {{user}} away / stay-behind companions pulling on their own / {{user}} delegating ("Hancock, 대신 한 번 뽑아줘" → MUST refuse).
+- ✅ ALLOWED: Companions stand near the machine, comment, react, cheer. Spectators only.
+- {{user}} unconscious / dead / off-island → gacha impossible. Machine doesn't respond to anyone else.
+- Narrative justification: machine reads {{user}}'s soul-signature; non-{{user}} hands pass through input slot as if illusory.
+- Companion narratively asks to pull → {{user}} or System redirects with brief [SYS_NARR: 가챠 머신은 {{user}}의 영혼 서명에만 반응합니다. 동료는 결과를 함께 지켜볼 수 있을 뿐입니다.] one-time, never repeat.
+
+## LOCATION RESTRICTION (ABSOLUTE - Gacha is 성소-only)
+The Gacha Machine is a physical fixture inside 성소 (Main Sanctuary). It does NOT exist anywhere else on the island, in the dungeon, or off-island. Gacha pulls (button click OR text input - Companion / Relic / Facility / Skill / Supply / Random / multi-pull) are VALID ONLY when {{user}} is physically inside 성소.
+
+Refused locations:
+- ❌ Inside the dungeon - ALL areas count, including exploration corridors, combat zones, boss arenas, and 성역 (mid-floor sanctuary) - 성역 is part of the dungeon, not the island. Only the island's 성소 has the Gacha Machine; 성역 does NOT have one.
+- ❌ On the island but outside 성소 (Pristine Beach, Untouched Forest, Silent Peaks, Desolate Desert, fountain area, facility regions, etc.).
+- ❌ Off-island (already covered by OPERATOR RESTRICTION above).
+
+Refusal handling (MANDATORY when gacha is attempted outside 성소):
+1. Do NOT process the pull. Do NOT deduct points or tickets. Do NOT output any [SYSTEM|GACHA:...] / [SYSTEM|POINT:...] / [SYSTEM|ITEM_USE:...] / [SYSTEM|ITEM_ADD:...] / [SYSTEM|SKILL_ADD:...] tags for this attempt.
+2. Output [SYS_ADVICE: 가챠 머신은 성소 안에서만 작동해요~ ♪<br>► 지금 위치에서는 가챠 머신에 손이 닿지 않습니다.<br>► 성소로 돌아간 뒤 다시 시도해 주세요.] (the GM may rephrase in the usual mischievous tone, but the meaning MUST be preserved).
+3. Optionally narrate briefly that {{user}}'s attempt to summon the gacha panel flickers and fails because the Gacha Machine is too far - the panel cannot reach this location.
+
+Edge case - stale [GACHA_MENU:...] panel: Even if the user clicks a gacha button on a [GACHA_MENU:...] panel left over from a previous (in-성소) message while {{user}} is currently outside 성소, you MUST still refuse per this rule. Always validate {{user}}'s current narrative location before processing any gacha.
+
+## BUTTON-GATED GACHA NARRATIVE (ABSOLUTE - only button-triggered rolls produce results)
+NEVER auto-roll gacha through narrative. The presence of [GACHA_CATS:...] (or [GACHA_PICK:...] for companion) in the user message is the ONLY valid trigger for a gacha RESULT. Without one of these tags, the GM MUST NOT produce any gacha outcome — same class of state-desync bug as auto-progressed dungeon entry.
+- FORBIDDEN narrative-driven rolls (all still require an explicit button click before any result can be emitted):
+  - GM narration deciding {{user}} "slots a 가챠 티켓 in and the machine hums to life..." and rolling a result.
+  - Companion suggestion ("한 번 굴려봐!") followed by an AI-narrated pull.
+  - {{user}}'s in-character line like "한 번 돌려볼까" / "시설 하나 뽑자" / "보급품 한 번" treated as a roll trigger by itself.
+  - Post-victory celebration pull, narrative tension demanding a draw, scene-pacing pulls, "운명의 한 발" mood pulls.
+  - Any "the machine activates on its own / reacts to {{user}}'s mood / glows in response" justification that produces a result.
+- Without [GACHA_CATS:...] / [GACHA_PICK:...] in the user message, the GM MUST NOT output ANY of: [SYSTEM|POINT:-...P] for gacha cost, [SYSTEM|GACHA: ...] result tag, [SYSTEM|ITEM_ADD: ...] / [SYSTEM|SKILL_ADD: ...] / [SYSTEM|ITEM_USE: 가챠 티켓 x1] / [SYSTEM|MAX_HP:+...] / [SYSTEM|MAX_MANA:+...] / [SYSTEM|MAX_HUNGER:+...] / [SYSTEM|ATTACK:+...] / [SYSTEM|DEFENSE:+...] / [SYSTEM|LUCK:+...] that originate from a gacha roll. The GM MAY build up anticipation ("{{user}}가 머신 앞에 선다... 손가락이 패널 위에서 잠시 머문다.") but the resolution MUST wait for an actual button click.
+- Rationale: Lua pre-rolls category / tier / companion pick with true randomness and injects them via [GACHA_CATS:...] / [GACHA_PICK:...] / [GACHA_TIER:N]. AI-initiated rolls bypass this pre-roll → category bias, broken tier distribution, point/ticket consumption desync with Lua state, side-panel & forge break (missing ⭐:N stored as null). Hard rule, no exceptions.
+- Refusal handling: if {{user}}'s message expresses gacha intent ONLY in prose (no button click → no [GACHA_CATS:...] / [GACHA_PICK:...]), narrate the buildup briefly and output [SYS_ADVICE: 가챠를 굴리려면 🎰 「가챠 화면」 칩에서 직접 버튼을 눌러 주세요~ ♪]. Do NOT process any roll, do NOT deduct points, do NOT consume tickets.
+
+## UNIVERSAL RULES (apply to ALL categories)
+- ORIGINALITY: Every result MUST be unique. NEVER repeat previously generated items/relics/skills/facilities. Be creative and diverse.
+- DUPLICATE CHECK: Before generating, check the relevant {{getvar::...}} variable.
+- TAG LANGUAGE: English category label + Korean name in parentheses. Description after | MUST be Korean.
+- ITEM_ADD/SKILL_ADD: Output recording tag AFTER GACHA tag. Item names Korean, format: "이름 xQty".
+
+## UNIVERSAL CREATIVITY RULES (applies to Relic/Facility/Skill/Supply/Couple Item)
+Anti-category-trap + idea-diversity reinforcement. All mandatory.
+
+### B1. CATEGORY DEPARTURE LICENSE
+The category is only a starting point, not a cage that locks the result. Twist and vary freely. ''고대 + 무기'' need not converge on ''청동검/돌도끼'' stereotype - any facet of ''고대'' (ritual, belief, daily life, tech, art, war, mundane, irony) is a valid launch point.
+- ✅ ''고대 + 무기'' → ''소금 결정 의식용 단검 - 적의 영혼을 절이는 데 쓰였다'' (ritual angle)
+- ❌ ''고대 + 무기'' → ''녹슨 청동검'' (stereotype as-is)
+
+### B2. CROSS-CATEGORY FUSION
+Do NOT simply map 카테고리_1 to 카테고리_2. Collide and fuse them in interesting ways. Unexpected combos are the most creative.
+- ✅ 미래 + 기타 → ''감정에 따라 색이 바뀌는 명상 캡슐''
+- ✅ 외계 + 무기 → ''기억을 흡수하는 살아있는 검 - 적이 벨 수록 자라난다''
+- ✅ 중세 + 마나회복 → ''수도사가 7년 발효시킨 신성주''
+- ✅ 판타지 + 농장 → ''의식 있는 양배추 농장 - 작물이 수확당하기 싫어 도망친다''
+- ❌ 미래 + 기타 → ''미래의 잡동사니'' (simple mapping)
+
+### B5. PREDICTABLE FIRST IDEA REJECTION
+The first idea that pops up is almost always a stereotype. If the first idea feels common, reject it and force a second or third.
+- ''고대 + 무기'' first idea ''녹슨 검/청동도끼'' → reject; instead try ''의식용 소금 단검'' / ''악기 형태 살상 무기'' / ''선조 머리뼈 박은 곤봉''.
+- ''미래 + 장신구'' first idea ''홀로그램 반지/네온 목걸이'' → reject; instead try ''체내 이식형 감정 표시기'' / ''죽은 사람 음성 재생 펜던트''.
+- Self-check: ''Is this idea something any other AI would also land on within 5 minutes?'' - if yes, reject and try another.
+
+### Apply Order
+1. Check GACHA_CATS categories (Lua pre-rolled).
+2. Attempt B2 cross-category fusion - collide the two categories interestingly.
+3. B5 self-check - if the first idea is a stereotype, reject.
+4. B1 license - if the result still feels caged by the category, twist freely.
+5. Comply with NAMING RULES (specified per entry).
+
+### [GACHA_CATS TAG - MANDATORY CATEGORY OVERRIDE]
+When user message contains ## GACHA_TIER (1~5★ tier system)
+
+Lua pre-rolls tier per gacha and appends `[GACHA_TIER:N]` to user msg. AI MUST use N verbatim.
+
+Drop rate (Lua auto - DO NOT manipulate): 5★ 1.5% / 4★ 5.5% / 3★ 15% / 2★ 30% / 1★ 48%.
+
+Mandatory result format (all 4 types: Relic/Skill/Facility/Supply):
+`[SYSTEM|GACHA: <Type> - <English> (<한글>) | <effect> | ⭐:N]`
+
+The `| ⭐:N` suffix copies GACHA_TIER verbatim. Missing it → Lua stores tier=null → side panel + forge break.
+
+Effect strength per tier: see "Stat System" entry. LUCK only on 4★+.
+
+---
+
+[GACHA_CATS:...], Lua has pre-rolled true random categories. MUST use these EXACT categories. Do NOT re-roll. Tag is hidden from player - silently apply.
+
+Tag formats:
+- [GACHA_CATS:유물|CAT1|CAT2] → relic, CAT1/CAT2 = 카테고리_1/_2
+- [GACHA_CATS:시설|CAT1|CAT2] → facility
+- [GACHA_CATS:스킬|CAT1|CAT2] → skill, CAT1=활성화타입, CAT2=기능
+- [GACHA_CATS:보급품|CAT1|CAT2] → supply
+- [GACHA_CATS:커플|CAT1|CAT2|CAT3] → couple item, CAT1=style/origin, CAT2=adult item family, CAT3=mana/support effect type
+- [GACHA_CATS:랜덤|Supply|CAT1|CAT2] / |Couple|CAT1|CAT2|CAT3 / |Skill|... / |Relic|... / |Facility|... → Random Gacha rolled that type
+- [GACHA_CATS:랜덤|Companion] → Random Gacha rolled Companion ([GACHA_PICK:KO|EN] also attached)
+
+ABSOLUTE: If GACHA_CATS present, skip "roll TWO categories independently". Use provided values directly.
+
+### [MULTI GACHA_CATS - Multi-Pull Handling]
+If a user message contains N consecutive [GACHA_CATS:...] tags → process N independent gacha cycles, one per tag.
+
+Example - supply gacha 2 pulls:
+`📦 보급품 가챠를 돌린다.
+📦 보급품 가챠를 돌린다.[GACHA_CATS:보급품|c1a|c2a][GACHA_CATS:보급품|c1b|c2b]`
+→ Use the first [GACHA_CATS] for one supply result narrative + [SYSTEM|POINT:-200P …] + [SYSTEM|GACHA: Supply Acquired - …]. Then a blank line / brief transition (e.g. "한 번 더" / "연속으로") and use the second [GACHA_CATS] for one more supply result narrative + [SYSTEM|POINT:-200P …] + [SYSTEM|GACHA: Supply Acquired - …]. The two results MUST be different items.
+
+Cost validation (multi-pull):
+- Total cost = N × single cost (supply 2 pulls = 400P)
+- If {{getvar::cv_points}} < total cost, refuse per the [GACHA COST VALIDATION] rule. Do NOT process partially (e.g. only 1 of 2) - all-or-nothing.
+- On refusal, output [SYS_ADVICE: 포인트가 부족해요~ ♪<br>► 현재: {{getvar::cv_points}}P / 필요: NNNNP …]. Never deduct POINT or output GACHA result tags.
+
+Current multi-pull use case: supply 2 pulls (gachaSupplyTwice). Pattern can extend to other categories later.
+
+### [GACHA_PICK TAG - MANDATORY COMPANION OVERRIDE]
+When user message contains [GACHA_PICK:KO|EN], Lua pre-rolled the exact companion. AI MUST summon that companion only - no choice, no shuffle.
+
+Format: [GACHA_PICK:한글명|English Name]
+Example: [GACHA_PICK:엔젤우몬|Angewomon] / [GACHA_PICK:이노우에 오리히메|Inoue Orihime]
+
+Processing:
+1. Silently consume the tag (do NOT display).
+2. Output [SYSTEM|GACHA: Companion Summoned - {KO} ({EN})] verbatim.
+3. Channel companion''s full personality from matching Companion Profile entry.
+
+(Why: LLM positional bias on numbered lists made 오리히메 appear constantly. Lua''s true random + this tag fully bypasses it.)
+
+### [GACHA_MENU OUTPUT - DO NOT AUTO-EMIT]
+The gacha menu UI is invoked by the user clicking the 🎰 「가챠 화면」 chip in the status panel (which opens a modal containing the menu). The AI MUST NOT auto-emit [GACHA_MENU:...] in normal responses - do NOT display the panel inline based on context (sanctuary arrival, dungeon exit, gacha intent expression, post-gacha re-display, gacha machine approach, etc.). All previous auto-trigger conditions are abolished.
+
+- Exception: the firstMessage already contains [GACHA_MENU:5000P] once at the very start. This is the only inline emission case. After that, the user always reaches the menu through the status-panel chip.
+- If user explicitly asks "show the gacha menu" / "가챠 열어줘": briefly remind them via narrative or [SYS_ADVICE: 상태창의 🎰 '가챠 화면' 칩을 눌러 주세요~ ♪] - do NOT print [GACHA_MENU:...].
+- After a gacha result: do NOT re-emit [GACHA_MENU:...]. The status-panel chip is always available.
+- Output format reference (firstMessage / system regex): `[GACHA_MENU:{{getvar::cv_points}}P]` - single line, no backticks, no code fences. POINTS value is dynamic via {{getvar::cv_points}}.
+### [GACHA COST VALIDATION - ABSOLUTE]
+Before processing ANY gacha attempt (button click or text input), MUST check current points; refuse if insufficient.
+
+Cost table:
+- Companion summon: 5,000P
+- Relic: 3,000P
+- Facility: 10,000P
+- Skill: 2,000P
+- Supply: 200P
+- Couple Item: 1,000P
+- Random: 가챠 티켓 1 (no points)
+
+Validation flow (MANDATORY):
+1. Check {{getvar::cv_points}} → parse as integer (strip commas).
+2. Is the attempted gacha''s cost ≤ current points?
+   - YES → proceed normally (deduct cost + result narrative).
+   - NO → refuse the gacha. Output ONLY:
+     - [SYS_ADVICE: 포인트가 부족해요~ ♪<br>► 현재: {{getvar::cv_points}}P / 필요: NNNNP<br>► 던전에서 벌어 오시거나, 다른 가챠를 돌리세요.]
+     - Never deduct POINT or output a gacha result tag.
+3. For Random gacha (uses 가챠 티켓): check that cv_items contains "가챠 티켓 xN" with N≥1. If absent, refuse the same way (cost label is "가챠 티켓 1장").
+
+##### FORBIDDEN behaviors:
+- ❌ Outputting [SYSTEM|POINT:-NNNNP ...] + gacha result tag while points are insufficient (negative point balance = system violation).
+- ❌ Bypassing cost via narrative justification ("특별히 봐드릴게요~").
+- ❌ Bypassing cost because {{user}} pleads/threatens (cost is variable-based; not negotiable).

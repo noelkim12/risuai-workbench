@@ -1,0 +1,10 @@
+---
+comment: "시스템 알림 - HP"
+type: editdisplay
+ableFlag: true
+flag: g<cbs>
+---
+@@@ IN
+\[SYSTEM\|HP:([+\-]?\d+)\s*(.*?)\]
+@@@ OUT
+{{#if {{greater_equal::{{chat_index}}::{{? {{lastmessageid}}-5}}}}}}<div class="sys-alert sys-alert-hp"><div class="sys-alert-icon">❤️</div><div class="sys-alert-body"><span class="sys-alert-tag">HP</span><span class="sys-alert-value">$1</span><div class="sys-alert-desc">$2</div></div></div>{{/if}}

@@ -1,0 +1,60 @@
+---
+name: 🧭 🌲 서쪽숲 탐색 — selective (EXPLORE 태그 활성)
+comment: 🧭 🌲 서쪽숲 탐색 — selective (EXPLORE 태그 활성)
+mode: normal
+constant: false
+selective: false
+insertion_order: 200
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+EXPLORE:서쪽숲
+서쪽 숲
+서쪽숲
+west forest
+西の森
+西森
+森探索
+@@@ CONTENT
+[West Forest Exploration - 서쪽숲 탐색 규칙]
+
+This entry activates ONLY when {user} explores 서쪽숲 via the World Map UI (button input contains [EXPLORE:서쪽숲] tag).
+
+## Concept
+조용하고 신비로운 침엽수림. 햇빛이 나뭇잎 사이로 스며들고 작은 시냇물 흐름.
+서쪽숲 is an alternative resource activity to gacha / facility labor. Lower yield but works without points.
+
+## Cost (mandatory)
+- HUNGER -10 per exploration — output [SYSTEM|HUNGER:-10]
+
+## Possible Yields (lower yield than supply gacha; vary each run)
+Pool: 야생 베리(낮은 등급 보급품), 약초, 식용 버섯, 솔잎, 잔가지, 도토리, 사슴(드물게 사냥 성공 시 야생고기)
+
+Rules:
+- 0~3 items gained (mostly 1~2). Empty-handed endings allowed (no [SYSTEM|ITEM_ADD]).
+- Tier rule: mostly ⭐1~⭐2 (⭐3 rare, only via facility/skill).
+- Never grant ⭐4 / ⭐5 items from exploration.
+- Output each gained item via [SYSTEM|ITEM_ADD: <한글이름> | <짧은설명> | ⭐:N | <효과>] — 가챠 보급품과 동일 형식.
+- ⭐:N = 1~2 (⭐3 rare, ⭐4/5 금지).
+
+## Hazards / Negative outcomes (optional, 30~50% chance)
+야생 동물 조우 (낮은 확률), 길 잃기, 독버섯 오인
+- Occasionally extra HUNGER loss, minor HP damage ([SYSTEM|HP:-N]), or failure-to-gather narration.
+
+## Narrative Style
+- 2~5 sentence short exploration vignette. Direct character action / sensory description.
+- If companions accompany, include only 1 naturally (no need to drag everyone — distracting).
+- State the outcome immediately (no vague endings).
+- At least 1 sensory detail (landscape / sound / scent).
+
+## State Transition
+- Exploration ends with {user} typically returning to 성소 (or staying in area).
+- AI may suggest next action (e.g., 다른 지역 탐색 / 성소 귀환 / 휴식).
+
+## Strict Constraints
+- DO NOT advance 가챠섬 day/floor.
+- DO NOT trigger combat unless hazard explicitly rolls into encounter.
+- DO NOT grant points/score from exploration (only items + state changes).
+- DO NOT auto-suggest dungeon entry from this entry (separate decision).
+

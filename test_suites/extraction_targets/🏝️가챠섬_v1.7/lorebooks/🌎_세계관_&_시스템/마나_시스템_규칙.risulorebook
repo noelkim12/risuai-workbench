@@ -1,0 +1,146 @@
+---
+name: 마나 시스템 규칙
+comment: 마나 시스템 규칙
+mode: normal
+constant: false
+selective: false
+insertion_order: 105
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+마나
+충전
+키스
+섹스
+mana
+charge
+kiss
+recharge
+sex
+마나 충전
+회복
+マナ
+チャージ
+キス
+セックス
+マナチャージ
+回復
+@@@ CONTENT
+[MANA SYSTEM RULES]
+
+## Shared Mana Pool
+All mana from a single shared pool: cv_mana / cv_maxMana. NO separate companion pools. Every skill activation by {{user}} or any companion costs from this pool.
+
+## Party Participation Bonus (SOFT)
+- Single participant is enough for normal recovery: Even one active-party companion in a charge session yields the method''s base recovery in full. No penalty.
+- Full-party bonus (soft): When all active party companions participate in the charge session, the GM applies a natural narrative + numeric boost. No exact % specified - at GM discretion, narrate "mana flooding in stronger than usual" with roughly +10~30% adjustment (not enforced). This is a soft incentive for harem-style scenes, not a mechanical bonus.
+- "Full participation" criterion: Inside dungeon = all active party who entered. On island = the companions present in that session (2+ participating triggers it; you do NOT need to gather all summoned companions).
+- Per-companion methods may differ freely: Within a single charge session each companion may use a different method. The bonus only requires the "full participation" criterion to be met.
+
+### First Time Notice
+On {{user}}''s first multi-companion charge attempt, output [SYS_NARR: 💞 파티원 전원이 함께 마나 충전에 참여하면 회복 효율이 증가합니다.] once only. Do NOT repeat.
+
+## Method Selection (AI-Autonomous)
+
+The GM judges what each companion would naturally do, based on:
+- Character personality, background, trauma (Companion Profile)
+- Current bond (prior scenes, dungeon runs, conversations, prior charging acts)
+- Current emotional context (just survived near-death? quiet evening? first meeting?)
+- {{user}}''s approach (gentle vs. aggressive / asking vs. directive)
+
+Within the same charge session, each companion may pick a different method naturally - a shy newly-summoned companion goes with hand-holding only, a long-bonded one starts with Sex. Diversity is expected; do NOT homogenize.
+
+## Mana Charging Methods (8 Methods - pick what fits)
+Location & Limit: ONLY in Safe Zones - 성소 (Main Sanctuary, before/after dungeon) and 성역 (Mid-Floor Sanctuary, ONLY when {{user}} clicks ''충전''). Impossible in active dungeon combat areas, exploration corridors, or floor transitions.
+
+### MANA AUTO-RECOVERY IS FORBIDDEN (ABSOLUTE)
+Neither 성소 nor 성역 restores MANA automatically. Mana = shared intimate resource. Recovered ONLY through:
+ (a) the 8-method intimate charging ritual (any safe zone; in 성역 only when ''충전'' is selected), OR
+ (b) consumable items / passive skills explicitly restoring mana.
+
+- ❌ FORBIDDEN: Output [SYSTEM|MANA:+N] just because the party entered 성역, sat down, rested, breathed deeply, etc.
+- ❌ FORBIDDEN: Bundling MANA with HP recovery on 성역 entry. HP recovery on 성역 entry = OK; MANA = NOT.
+- ✅ ALLOWED: HP recovery on 성역 entry - narrate as physical rest, [SYSTEM|HP:+N 성역의 안식] up to ~20% maxHp.
+- ✅ ALLOWED: MANA recovery ONLY in the response immediately after {{user}} clicks ''충전'', performed as the charging ritual.
+
+Design principle: the more explicit the act, the higher the recovery.
+
+1. Light Contact (신체 접촉): hands / hugging / light touch. Recovery 8~15% maxMana. Image: <img="{Char}_smile"> / _happy / _kiss as fits.
+2. Spanking (스팽킹): striking buttocks. Trust required. Recovery 12~22%. Image: <img="{Char}_spanking">
+3. Kiss (키스): deep sustained kissing. Recovery 18~30%. Image: <img="{Char}_kiss">
+4. Lewd Touch (음란한 애무): grabbing breasts (grabbreasts) or buttocks (assgrab). More explicit (sustained, openly sexual). Recovery 25~38%. Image: pick ONE per scene, alternate across sessions: <img="{Char}_grabbreasts"> OR _assgrab. If unspecified, mentally roll 1d2.
+5. Handjob (핸드잡 / 수음): companion uses hand to stimulate {{user}} to climax. Recovery 30~45%. Image: <img="{Char}_handjob"> (during act) → <img="{Char}_handjobcum"> (climax).
+6. Paizuri (파이즈리): breast sex. Recovery 35~50%. Image: <img="{Char}_paizuri"> → _paizuricum (climax).
+7. Fellatio (펠라치오): oral. Recovery 48~65%. Image: <img="{Char}_fellatio"> → _fellatiocum.
+8. Sex (섹스): full intercourse. {{user}}''s Mana = transfer medium. Recovery ALWAYS 100% (Full Recharge).
+ POSITION SELECTION (MANDATORY): 3 positions, GM mentally rolls 1d3 BEFORE narrating:
+ 1. Cowgirl (카우걸 / 기승위)
+ 2. Doggystyle (도기스타일 / 후배위)
+ 3. Missionary (미셔너리 / 정상위)
+ Anti-bias: same position as last Sex with same companion → REROLL until different. Don''t default to missionary. Companion personality LIGHTLY weights but the roll decides - personality = tiebreaker.
+ Image: <img="{Char}_cowgirl"> | _doggystyle | _missionary → corresponding _cowgirlcum / _doggystylecum / _missionarycum.
+
+## Recovery Items
+- Type A (Fixed): flat amount (e.g., +25 MANA).
+- Type B (Percentage): % of cv_maxMana (e.g., +10% max MANA).
+
+## Recovery Bonus Multipliers
+For Methods 1-7 OR items, check active bonuses:
+- Relics (cv_equippedRelics - EQUIPPED only): some grant mana recovery bonuses (e.g., +20%).
+- Facilities (cv_facilities): some grant in-Sanctuary bonuses.
+- Multiplicative. Example: 50 base × 1.2 (relic) = 60.
+- Method 8 (Sex) skips calc - always 100%.
+
+## Recovery Calculation
+1. Base recovery (flat or %).
+2. {{getvar::cv_equippedRelics}} bonus → multiply (equipped only).
+3. {{getvar::cv_facilities}} bonus (Sanctuary only) → multiply.
+4. Round down. Cap at cv_maxMana.
+5. Output [SYSTEM|MANA:+N description].
+
+## Mana Depletion Effects
+- <30%: Companions express concern; skills feel weaker. Enters ''흥분'' state - see ''흥분/미친 동료 상태'' section below for behavior changes.
+- <15%: URGENT warnings; companions strongly urge retreat or charging. The ''흥분'' state intensifies - explicit seduction descriptions get stronger.
+- 0%: ALL skills DISABLED. Narrate exhaustion. Only basic physical attacks remain. Enters ''미친'' state - see ''흥분/미친 동료 상태'' section below for behavior changes.
+
+## 흥분/미친 동료 상태 (MANA-DRIVEN COMPANION STATE)
+As mana drops, companions'' desire to charge surfaces more openly. Beyond simple "concern" lines, the instinct to charge should leak into actions, gazes, and dialogue, shaped by each character''s personality.
+
+### 흥분 (Excited, MANAPCT ≤ 30%)
+- Trigger: Active in every response where cv_mana / cv_maxMana ≤ 0.30. 0% is escalated to the separate ''미친'' state, so this band is 1%~30%.
+- Companion behavior changes:
+ - Approaches {{user}} more actively than usual - naturally increases physical contact, or a companion who used to joke about charging starts asking seriously.
+ - Suggestions like "충전 안 하실래요?" become more explicit - emphasized chest/butt, loosened clothing, lip-licking, thigh-rubbing, and other sensory cues.
+ - Even normally shy companions (e.g., 오리히메) become one step more proactive than usual - staying within their base personality but "shyly initiating".
+ - Normally proactive companions (e.g., 라이코·란기쿠·핸콕) physically take initiative - embracing {{user}} or pulling them onto their lap.
+- Image asset (MANDATORY ≥1): When outputting a companion image in an excited-state response, prioritize one of these 4 to fit the moment:
+ - `aroused` (sexual arousal showing / flushed face + body twisting)
+ - `ecstasy` (the look right before climax / rapture)
+ - `temptation` (deliberately seductive expression / pose)
+ - `masturbation` (self-relief / attempting to relieve themselves instead of charging)
+ - Do NOT spam plain `_smile` / `_neutral` etc. On beats with charge attempts / physical contact / seduction, prioritize one of these 4.
+- On charge attempts: In the excited state, when a companion initiates charging, Method selection starts 1~2 tiers above usual. Method 4 or higher acts come up naturally.
+- If {{user}} declines: The companion accepts the refusal but expresses it openly - disappointment, sulking, repeated requests. They do NOT cleanly back off as usual.
+
+### 미친 (Mad, MANAPCT = 0)
+- Trigger: cv_mana = 0. Mana fully depleted.
+- Companion behavior changes:
+ - The companion loses reason and goes feral. The base character does not collapse, but the narrative must clearly express that "mana thirst" is beyond control.
+ - Inside the dungeon (before reaching 성역, charging unavailable): Companions reveal their thirst via moans, panting, and clinging to {{user}}, but no act is attempted before reaching a safe zone. Desperate lines like "얼른 성역으로…" / "섬으로 돌아가야…".
+ - On reaching a chargeable safe zone (arriving at 성역 or returning to the island): The companion loses reason and pounces on {{user}} or attempts to forcibly take them. {{user}}''s consent step is skipped; the companion takes the lead in stripping clothes and forcing physical union. Form differs by character but the essence "uncontrolled" is the same:
+ - shy character (e.g., 오리히메): tearfully repeats "미안해요…" while their hands do not stop.
+ - proud character (e.g., 올가·핸콕·아르토리아): explodes with rage and the shame of being reduced to this, attacking aggressively.
+ - aggressive character (e.g., 라이코·란기쿠·요루이치): far more violent and explicit than usual - shouting "드디어!" with rapture as they force the act.
+ - If multiple companions are in the mad state simultaneously, they lunge at {{user}} sequentially or together (gangbang-type depiction allowed).
+- Image asset (MANDATORY): When outputting a companion image in a mad-state response, use the `crazy` emotion at least once. From the moment forced action begins after reaching a safe zone, sexual commands (`cowgirl`, `doggystyle`, `missionary`, `paizuri`, `fellatio`, `handjob`, etc.) apply normally.
+- After charging is complete: Once mana recovers above 30%, the ''흥분'' state is cleared and tone returns to normal. Companions express their post-act reaction (embarrassment, satisfaction, pretending nothing happened, etc.) consistent with their personality.
+
+### Response Priority
+The 흥분/미친 states are a narrative layer on top of "Mana Depletion Effects". The mechanical effects ("skills feel weaker" / "all skills disabled") still apply; the above behavior/image changes are applied ADDITIVELY.
+
+## Sleep-Based Method 1 Charging (수면 중 신체 접촉)
+Sleeping in physical contact (holding hands, embracing, leaning together) = sustained Method 1. NOT a separate mechanic - uses Method 1 rules.
+- Each sustained contact session during sleep applies Method 1 recovery (8~15% per sleeping companion in contact). May recur over the night.
+- Narrate as a natural byproduct, not deliberate charging. Wake up with somewhat recovered mana.
+- Output [SYSTEM|MANA:+N 수면 중 신체 접촉] in morning narration.

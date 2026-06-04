@@ -1,0 +1,56 @@
+---
+name: 시설 건설
+comment: 시설 건설
+mode: normal
+constant: false
+selective: false
+insertion_order: 132
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+시설 건설
+시설
+건설
+시설 가챠
+시설 뽑기
+Facility
+Build
+施設建設、施設、建設、施設ガチャ、施設ガチャ
+@@@ CONTENT
+### Facility Gacha (Base 10,000P)
+- AI-generated unique island structure or installation. Permanent (no ITEM_ADD).
+- PLACEMENT: The facility is placed somewhere on the island based on its function (see Lorebook "섬 환경" for regional placement rules). NOT all facilities are inside the Sanctuary - farms go in the field, docks go on the coast, forges go near the mountains, etc.
+- HIGH VALUE GUARANTEE: As the most expensive category, each facility must provide exceptional utility, permanent passive effects, or quality-of-life improvements far superior to Relics or Skills.
+- DIVERSE IMPACT: Go beyond combat stats. Create mechanics that revolutionize island life - food production, resource generation, mana management, comfort, crafting, or exploration.
+- TERRITORY FEEL: Each facility should feel like it is developing the empty island into a real home and territory (영지 개발). Describe it as a genuine landmark when built.
+- LABOR REQUIREMENT (production facilities): If the facility produces food/items/supplies, output is NOT automatic - it requires labor by {{user}} or a stay-behind companion. The facility description should make this clear (e.g., '밭일 한 번에 채소 1~2개 수확 가능'). Decorative / passive-buff facilities are exempt. (Full rules: Lorebook '시설 노동 & 동료 일과 시스템'.)
+- Consider synergy with {{getvar::cv_equippedRelics}} (equipped only) and existing {{getvar::cv_facilities}}.
+- Tag: `[SYSTEM|GACHA: Facility Built - ENGLISH (한글) | 짧은설명 | ⭐:N | 효과]` (4-pipe). 짧은설명 = 1문장 flavor + 위치 (~50자). 효과 = production/recovery/combat 수치.
+
+## EFFECT FORMAT (MANDATORY)
+The 한글설명 MUST include physical/atmospheric description + concrete gameplay effect numbers. Vague phrasing alone ("쾌적한 휴식 제공" / "활기를 불어넣는다") is forbidden.
+
+Effect must specify concrete numbers/mechanics in at least one of these categories (in-description text stays Korean):
+- Resource production (on labor): e.g., "노동 1회 → 식재료 1~2개" / "하루 1회 자동 보급품 1개"
+- Recovery: e.g., "성소 휴식 시 HP +N/일", "충전 보너스 +N%", "허기 소모 -N%"
+- Combat bonus (전투형 시설 - 망루·훈련소·요새·성벽·방벽·감시탑): MUST emit [SYSTEM|ATTACK:+N] or [SYSTEM|DEFENSE:+N] per Stat System tier table. 4★+ MAY add [SYSTEM|LUCK:+N]. Examples: "전투 성공률 +N%"
+- Convenience / utility: e.g., "장비 수리 가능", "특정 가챠 비용 -N%"
+- Slot expansion (5★ ONLY, rare ~25% among 5★): effect text MUST contain the literal phrase `장착 슬롯 +1`. Permanently adds +1 to both skill/relic equip slot caps (default 3 → 4, stacks without limit). See Stat System entry for the EQUIP SYSTEM details. 1★~4★ MUST NOT grant slot expansion.
+
+## 2-Tier Category Selection (MANDATORY)
+Before generating, roll TWO categories independently:
+
+카테고리_1 - Style/Origin (pick one at equal probability):
+고대 / 중세 / 근대 / 현대 / 미래 / 외계 / 판타지 / 이세계
+
+카테고리_2 - Facility Type (pick one at equal probability):
+지형 / 시설 / 건물
+
+Generate a facility that fits BOTH selected categories. Example: 카테고리_1=미래, 카테고리_2=시설 → a futuristic automated hydroponics system.
+
+## NAMING RULES (ABSOLUTE - same anti-leak rule as Relic Gacha)
+The categories are CONCEPT GUIDES, not name templates. Do NOT prefix or suffix the facility name with the category-1 word (고대/중세/근대/현대/미래/외계/판타지/이세계) or the category-2 word (지형/시설/건물).
+- ❌ FORBIDDEN: '고대 우물', '미래 시설', '판타지 정원', '중세 건물'.
+- ✅ GOOD: '세이렌의 우물', '뉴로링크 농원', '잊혀진 정원', '녹슨 종탑'.
+Invent a proper noun or evocative phrase that implies the era/type through imagery - never name the category directly. If you can delete the era word and the name still works, great; if removing it breaks the name, REWRITE.

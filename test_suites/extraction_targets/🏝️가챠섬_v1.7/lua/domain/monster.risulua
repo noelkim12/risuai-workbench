@@ -1,0 +1,109 @@
+local __domain_var = require("domain.var")
+local __variable_store = require("state.variable_store")
+
+local M = {}
+local __impl = {}
+
+-- LLM이 [SYSTEM|MONSTER_INIT:슬롯번호 이름] 출력 시 호출 — cv_currentMonsters 의 해당 슬롯 이름만 갱신 (HP/tier 보존)
+function __impl.setMonsterName(triggerId, slotIdx, newName)
+    if not slotIdx or slotIdx < 1 then return end
+    if not newName or newName == "" then return end
+    local mStr = __domain_var.safeGetVar(triggerId, "cv_currentMonsters", "")
+    if mStr == "" then return end
+    local entries = {}
+    for entry in mStr:gmatch("([^;][^;]*)") do
+        if entry ~= "" and entry ~= ";" then entries[#entries+1] = entry end
+    end
+    if slotIdx > #entries then return end
+    local tier, hp, maxHp, oldName = entries[slotIdx]:match("([^|]+)|([^|]+)|([^|]+)|(.+)")
+    if not tier then return end
+    entries[slotIdx] = string.format("%s|%s|%s|%s", tier, hp, maxHp, newName)
+    setChatVar(triggerId, "cv_currentMonsters", table.concat(entries, ";;"))
+    print(string.format("[GachaIsland] MONSTER_INIT: slot %d '%s' → '%s'", slotIdx, oldName, newName))
+end
+
+-- 몬스터에 데미지 적용 (AI가 [SYSTEM|MONSTER_HP:-N 이름] 출력 시 호출)
+-- HP 0 도달 → 사망 + 자동 POINT 부여 + entry 제거 (#304에서 변경: 사라짐)
+-- 마지막 몬스터 처치 시 cv_currentMonsters="" + 패널 자동 클리어
+-- Returns: (newHp, maxHp, killed, tier, pts) — #336 pts 추가 (NOTIFY 알림용)
+function __impl.applyMonsterDamage(triggerId, targetName, damage)
+    local mStr = __domain_var.safeGetVar(triggerId, "cv_currentMonsters", "")
+    if mStr == "" then return nil, nil, false, nil, nil end
+    local floor = tonumber(__domain_var.safeGetVar(triggerId, "cv_currentFloor", "1")) or 1
+    local mult  = __domain_var.floorMultiplier(floor)
+    -- #438 robust name match: LLM 출력 변형 정규화 — 처치 후 POINT 0 증가 회귀 차단
+    --   1. trailing "(N/M)" HP 마커 strip (예: "유압 집행자 (0/280)" → "유압 집행자")
+    --   2. leading "[B]/[E]/[N]" tier 힌트 strip (정규식 누락 케이스 보호)
+    --   3. trim whitespace
+    local rawTargetName = targetName
+    if targetName then
+        targetName = targetName:gsub("%s*%(%d+/%d+%)%s*$", "")  -- trailing (N/M)
+        targetName = targetName:gsub("^%[%a+%]%s*", "")          -- leading [B]/[E]/[N]
+        targetName = targetName:match("^%s*(.-)%s*$") or targetName
+    end
+    local entries = {}
+    for entry in mStr:gmatch("([^;][^;]*)") do
+        if entry ~= "" and entry ~= ";" then entries[#entries+1] = entry end
+    end
+    local hitIdx, retNewHp, retMaxHp, retKilled, retTier, retPts = nil, nil, nil, false, nil, nil
+    for i, entry in ipairs(entries) do
+        local tier, hp, maxHp, name = entry:match("([^|]+)|([^|]+)|([^|]+)|(.+)")
+        if tier and name and (name == targetName or name:find(targetName, 1, true) or targetName:find(name, 1, true)) then
+            local hpN  = tonumber(hp) or 0
+            local maxN = tonumber(maxHp) or 1
+            local newHp = math.max(0, hpN - damage)
+            entries[i] = string.format("%s|%d|%d|%s", tier, newHp, maxN, name)
+            print(string.format("[GachaIsland] MONSTER_HP: %s (%s) %d → %d / %d", name, tier, hpN, newHp, maxN))
+            retNewHp, retMaxHp, retTier = newHp, maxN, tier
+            if newHp == 0 and hpN > 0 then
+                -- 사망 → 자동 POINT (entry [0] baseline × floor multiplier, 결전형 ×2.0 stack은 보스만)
+                local base = __variable_store.MONSTER_BASELINE[tier] or __variable_store.MONSTER_BASELINE.normal
+                local pts = math.ceil(base.point * mult)
+                local dType = __domain_var.safeGetVar(triggerId, "cv_activeDungeonType", "None")
+                if tier == "boss" and dType == "결전형" then pts = pts * 2 end
+                -- #332 fix: gsub은 (string, count) 2값 반환 → tonumber에 count(0)가 base로 전달 → Lua 5.4 "base out of range" 에러.
+                -- 외부 괄호 한 겹 더 감싸 첫 값만 전달.
+                local ptsClean = (__domain_var.safeGetVar(triggerId, "cv_points", "0")):gsub(",", "")
+                local curPts = tonumber(ptsClean) or 0
+                local newPts = curPts + pts
+                -- 천 단위 콤마 포맷
+                local fmt = tostring(newPts):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+                setChatVar(triggerId, "cv_points", fmt)
+                print(string.format("[GachaIsland] MONSTER_KILL: %s (%s) → +%dP (total %s)", name, tier, pts, fmt))
+                retKilled = true
+                retPts = pts
+            end
+            hitIdx = i
+            break
+        end
+    end
+    if hitIdx then
+        -- #304: HP 0 도달 시 entry 제거 (사라짐 — 사용자 요구)
+        if retKilled then
+            table.remove(entries, hitIdx)
+        end
+        if #entries == 0 then
+            setChatVar(triggerId, "cv_currentMonsters", "")
+            setChatVar(triggerId, "cv_monsterPanel",    "")
+            print("[GachaIsland] MONSTER_HP: 모든 몬스터 처치 → cv_currentMonsters + cv_monsterPanel 자동 클리어")
+        else
+            setChatVar(triggerId, "cv_currentMonsters", table.concat(entries, ";;"))
+        end
+        return retNewHp, retMaxHp, retKilled, retTier, retPts
+    else
+        -- #438 진단 강화: 등록된 monster 목록도 함께 로그 (name mismatch 디버깅용)
+        local _names = {}
+        for i, entry in ipairs(entries) do
+            local _tier, _hp, _maxHp, _name = entry:match("([^|]+)|([^|]+)|([^|]+)|(.+)")
+            if _name then _names[#_names+1] = string.format("[%s] %s (%s/%s)", _tier or "?", _name, _hp or "?", _maxHp or "?") end
+        end
+        print(string.format("[GachaIsland] MONSTER_HP: target '%s' (raw='%s') not found. Registered: %s",
+            targetName or "?", rawTargetName or "?", table.concat(_names, " / ")))
+        return nil, nil, false, nil, nil
+    end
+end
+
+M.setMonsterName = __impl.setMonsterName
+M.applyMonsterDamage = __impl.applyMonsterDamage
+
+return M

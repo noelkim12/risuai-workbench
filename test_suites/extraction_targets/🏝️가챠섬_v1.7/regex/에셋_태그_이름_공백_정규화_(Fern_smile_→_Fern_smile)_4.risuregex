@@ -1,0 +1,10 @@
+---
+comment: "에셋 태그 이름 공백 정규화 (Fern smile → Fern_smile)"
+type: editoutput
+ableFlag: true
+flag: g
+---
+@@@ IN
+<img="([^"]+) ([^"]+)">
+@@@ OUT
+<img="$1_$2">

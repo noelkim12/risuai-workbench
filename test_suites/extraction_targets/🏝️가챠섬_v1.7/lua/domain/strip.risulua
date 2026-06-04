@@ -1,0 +1,48 @@
+local M = {}
+local __impl = {}
+
+-- =============================================
+-- Helper: CoT 블록 안의 bot-제어 태그만 strip (CoT narrative 는 보존)
+-- 사용: onOutput 의 메인 SYSTEM 태그 파싱 직전에 호출.
+-- 효과: 화면에는 사고 과정이 그대로 보이되, [SYSTEM|...] 등 stateful 태그는 안 보이고
+--       Lua 파싱도 outer 태그만 봄 → 이중 차감 없음.
+-- =============================================
+function __impl._stripSysTagsInBody(body)
+    body = body:gsub("%[SYSTEM%|[^%]]*%]", "")
+    body = body:gsub("%[SYS_NARR:[^%]]*%]", "")
+    body = body:gsub("%[SYS_ADVICE:[^%]]*%]", "")
+    body = body:gsub("%[STATUS_TIP:[^%]]*%]", "")
+    body = body:gsub("%[STATUS_PANEL%].-%[/STATUS_PANEL%]", "")
+    body = body:gsub("%[GACHA_PICK:[^%]]*%]", "")
+    body = body:gsub("%[GACHA_CATS:[^%]]*%]", "")
+    body = body:gsub("%[GACHA_TIER:[^%]]*%]", "")
+    body = body:gsub("%[GACHA_REROLL:[^%]]*%]", "")
+    body = body:gsub("%[GACHA_REROLL_PAID:[^%]]*%]", "")
+    body = body:gsub("%[GACHA_MENU:[^%]]*%]", "")
+    body = body:gsub("%[DUNGEON_TYPE:[^%]]*%]", "")
+    body = body:gsub("%[DUNGEON_CHOICE%]", "")
+    body = body:gsub("%[DEBUG_DUNGEON_CHOICE%]", "")
+    body = body:gsub("%[SANCTUARY_CHOICE%]", "")
+    body = body:gsub("%[ROUND_EV:[^%]]*%]", "")
+    body = body:gsub("%[MONSTERS:[^%]]*%]", "")
+    body = body:gsub("%[FLOOR:[^%]]*%]", "")
+    body = body:gsub("%[FLOOR_END_AUTO%]", "")
+    body = body:gsub("%[EXPLORE:[^%]]*%]", "")
+    return body
+end
+
+function __impl._stripBotTagsInsideCoTBlocks(s)
+    if not s or s == "" then return s end
+    for _, pair in ipairs(_COT_BLOCK_TAGS) do
+        local fullPat = "(" .. pair[1] .. ")(.-)(" .. pair[2] .. ")"
+        s = s:gsub(fullPat, function(openTag, body, closeTag)
+            return openTag .. __impl._stripSysTagsInBody(body) .. closeTag
+        end)
+    end
+    return s
+end
+
+M._stripSysTagsInBody = __impl._stripSysTagsInBody
+M._stripBotTagsInsideCoTBlocks = __impl._stripBotTagsInsideCoTBlocks
+
+return M

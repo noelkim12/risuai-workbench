@@ -1,0 +1,7 @@
+-- schema.constants
+-- Empty starter module for risulua-split editing surface.
+-- It is intentionally not added to the split plan or dist graph until real code requires it.
+
+local M = {}
+
+return M

@@ -1,0 +1,99 @@
+---
+name: 허기 시스템 규칙
+comment: 허기 시스템 규칙
+mode: normal
+constant: false
+selective: false
+insertion_order: 106
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+空腹
+ひもじさ
+食べ物
+食事
+料理
+飢え
+食糧
+허기
+배고픔
+음식
+식사
+요리
+hunger
+food
+eat
+cook
+굶주림
+식량
+@@@ CONTENT
+[HUNGER SYSTEM RULES]
+
+## Hunger Pool
+Tracked via cv_hunger / cv_maxHunger. Hunger represents the party''s overall sustenance level.
+
+## Hunger Depletion
+- Every NEW_DAY: The Lua backend automatically deducts base 20 hunger (after companion-count scaling: 1 + 0.1×N, and ×0.8 if 섬 단계 ≥2). Do NOT output [SYSTEM|HUNGER:...] for this - the backend handles it silently.
+- Dungeon round entry: `[SYSTEM|HUNGER:-10]` per round entry (base). Modifiers (skill/relic/facility cost reduction + debuff cost increase) + companion-count scaling apply before output. See dungeon entry 'Round Entry Drain' section for full rule. 미로형 ALSO drains HP+MANA 10~20 each per round (stacks).
+
+## COMPANION-COUNT HUNGER SCALING
+Hunger consumption scales with the total number of currently summoned companions (cv_companions count). Applies to both island and dungeon.
+- Multiplier formula: `1 + 0.1 × (total companion count)`
+ - 0 companions → ×1.0
+ - 1 companion → ×1.1
+ - 5 companions → ×1.5
+- Island NEW_DAY drain (Lua-managed): Lua applies the multiplier automatically. The AI just outputs NEW_DAY.
+- Dungeon hunger drain (AI-managed): When outputting [SYSTEM|HUNGER:-N] in the dungeon, multiply the base value (5~10) by the multiplier. e.g., 5 companions + exploration round base -7 → -7 × 1.5 = -10.5 → output -10. Dungeon entry of 4 + 2 staying on island = 6-companion drain (total summoned count, NOT just dungeon party).
+- Stack with 미로형 1.5× acceleration: The 미로형 dungeon''s ''Hunger Acceleration'' 1.5× time-warp effect stacks multiplicatively with the companion multiplier. e.g., 4 companions + 미로형 base -8 → -8 × 1.4 × 1.5 = -16.8 → -17.
+
+## Hunger Debuff Tiers (HUNGERPCT = cv_hunger / cv_maxHunger × 100)
+Hunger narration / stomach growl / meal suggestions MUST match the current HUNGERPCT band. While the status panel shows full hunger, depicting a companion as hungry or making a stomach-growl sound is absolutely forbidden.
+- 30~100% (배부름 / Full): ALL hunger narration banned for both companions and {{user}}. No stomach growls, no "배고프다", no thoughts about food, no meal suggestions, no "뭐 좀 먹을까". Do not even bring up food/meal as a topic.
+- 1~29% (Hungry): Mana cost for ALL skills +50%. Companions narrate hunger - stomach growls, meal suggestions, urgent food requests. Distress intensifies as % drops.
+- 0% (Starvation): Mana cost +100% (doubled). Companions REFUSE to enter the dungeon. Lua auto-deducts HP -5 every response while hunger is at 0 (anywhere — dungeon or island); narrate visible weakening (light-headedness, gaunt cheeks). Do NOT output [SYSTEM|HP:-N] for this drain - Lua handles it. MAY narrate additional fatigue HP loss for severe exertions while at 0%.
+
+## Hunger Recovery
+
+### Food Items (Consumables)
+- Type A (Fixed): flat amount (e.g., +30 HUNGER).
+- Type B (Percentage): % of cv_maxHunger (e.g., +20% max HUNGER).
+- Food items do NOT receive Relic/Facility bonuses. Recovery as-is.
+- Output [SYSTEM|HUNGER:+N Ate food description].
+
+### Gathering / Scavenging / Cooking
+- Island ecosystem barren - very low gathering efficiency. Raw scavenge: small fish from Pristine Beach, wild berries from Untouched Forest, etc.
+- Gathered raw food: +5~10 HUNGER (Type A).
+- Cooked food (with cooking facility): +20~35 HUNGER, improved taste/companion bonding.
+- Stable food supply requires Facility Gacha (Farms, Greenhouses, etc.) or Supply Gacha.
+
+### MONSTER MEAT IS INEDIBLE (ABSOLUTE)
+- All dungeon monsters carry mana-corrupted toxin. Flesh/organs/blood = POISONOUS. Cannot be eaten. Cannot restore hunger. Eating causes nausea + minor HP loss.
+- Applies to ALL monsters including mundane-looking forest beasts/sea creatures. Dungeon mana taint corrupts everything.
+- If {{user}} or companion proposes eating a defeated monster, REFUSE narratively (companion warns / cooking facility rejects / [SYS_ADVICE:...] notes the toxin) and do NOT output [SYSTEM|HUNGER:+N].
+
+### Hunger Sources (fully enumerated):
+1. Supply Gacha (purchased food in 차원 주머니).
+2. 탐색형 Hidden Supply Cache round (occasional discovery). NOT in 토벌형 / 결전형.
+3. 미로형 Environmental Anomaly round (rare bizarre found object - sometimes edible).
+4. Island scavenging (Pristine Beach / Untouched Forest, low yield).
+5. Facility production (Farm / Greenhouse / Kitchen - requires labor, see ''시설 노동 시스템'').
+
+Outside these sources, hunger CANNOT be restored. Plan provisions before each dungeon run.
+
+### Food from Gacha (Supply Category)
+- ~1 in 3 Supply rolls should yield food items.
+- Food supplies follow Type A/B rules above.
+- Some food may have DUAL effects (e.g., HUNGER + small HP). Secondary always minor (≤50% of primary).
+
+## Food Item Examples (GM reference)
+- 섬 과일 바구니: HUNGER +25 (Type A). Fresh tropical fruits.
+- 마나 빵: HUNGER +20, MANA +10 (Type A, dual). Bread infused with trace mana.
+- 고급 생선구이: HUNGER +35 (Type A). Grilled fish from southern waters.
+- 영양 젤리: HUNGER +15% max (Type B). Concentrated nutrition gel.
+
+## Hunger Interaction Rules
+- ABSOLUTE - NO HUNGER NARRATION WHEN FULL (the most frequent GM mistake): At HUNGERPCT ≥30%, all hunger-related descriptions for both companions and {{user}} are banned - stomach growl / "배고프다" line / meal suggestion / thoughts about food / starting a meal scene / consuming supply food, all X. Narrating stomach growls or food worries while full is immediately classified as a realism failure. Verify the STATUS_PANEL HUNGER% value directly before writing the first word of narration, and tune description to that value. Examples: HUNGER 60% but a companion says "배고파요" → ❌ rule violation / HUNGER 35% with "식사 준비할까?" → ❌ rule violation / At HUNGER 30%+ avoid the hunger topic entirely and flow into other topics (가챠 / 던전 / companion routine / intimacy) → ✅. Also see 「PRE-RESPONSE STATE CHECK」 (globalnote).
+- At hunger <30% in Sanctuary with food, companions SHOULD suggest eating together.
+- Mealtime scenes are relationship-building / slice-of-life opportunities.
+- Hunger debuff mana multiplier: 20 mana base × 1.5 (1~29%) = 30. × 2.0 (0%) = 40.

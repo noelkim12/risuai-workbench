@@ -232,7 +232,7 @@ export function classifyRisuLuaModuleTableDecisions(input: RisuLuaModuleTableCla
         ? undefined
         : maybeDomainCandidate(symbol.originalName, symbol.sourceRange, symbol.hostEffects, [symbol.originalName], domainDecision.status, domainDecision.blockedReasons, validatedDomainGrouping.pathForName(symbol.originalName), validatedDomainGrouping.groupingForName(symbol.originalName));
       if (domainCandidate !== undefined) domainCandidates.push(domainCandidate);
-      if (domainDecision.status === 'generated') {
+          if (domainDecision.status === 'generated') {
         symbols.push(domainFunctionSymbol(symbol, validatedDomainGrouping.pathForName(symbol.originalName)));
         continue;
       }
@@ -1032,6 +1032,16 @@ function collectValidatedPrivateDomainNames(
   const names = new Set<string>();
   if (domainGeneration !== 'validated') return names;
 
+  const pureHelperNames = new Set<string>();
+  for (const symbol of symbols) {
+    if (symbol.declarationKind !== 'top-level-local-function') continue;
+    if (symbol.hostEffects.asyncModelNetwork.length > 0) continue;
+    if (symbol.hostEffects.dynamicEnvironment.length > 0) continue;
+    if (symbol.captures.length > 0) continue;
+    if (unsafeMutationNames(symbol, variableStoreNames).length > 0) continue;
+    pureHelperNames.add(symbol.originalName);
+  }
+
   let changed = true;
   while (changed) {
     changed = false;
@@ -1042,7 +1052,7 @@ function collectValidatedPrivateDomainNames(
       if (unsafeMutationNames(symbol, variableStoreNames).length > 0) continue;
       if (symbol.hostEffects.asyncModelNetwork.length > 0) continue;
       if (symbol.hostEffects.dynamicEnvironment.length > 0) continue;
-      if (!symbol.captures.every((capture) => extractableCommonHelperNames.has(capture) || rewriteablePublicHostGlobalNames.has(capture) || names.has(capture) || validatedPublicDomainNames.has(capture) || variableStoreNames.has(capture) || promptStoreNames.has(capture))) continue;
+      if (!symbol.captures.every((capture) => extractableCommonHelperNames.has(capture) || pureHelperNames.has(capture) || rewriteablePublicHostGlobalNames.has(capture) || names.has(capture) || validatedPublicDomainNames.has(capture) || variableStoreNames.has(capture) || promptStoreNames.has(capture))) continue;
       names.add(symbol.originalName);
       changed = true;
     }

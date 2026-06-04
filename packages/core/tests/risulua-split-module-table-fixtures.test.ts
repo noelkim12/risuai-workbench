@@ -569,26 +569,20 @@ describe('risulua-split module-table fixture matrix', () => {
     }
   });
 
-  it('asserts Gacha Island module-table fixture has store-backed public data alias and generated domain clusters', () => {
+  it('asserts Gacha Island module-table fixture has store-backed public data alias and no preserved helper bodies for key clusters', () => {
     const mainPath = path.join(GACHA_ISLAND_FIXTURE_ROOT, 'lua', 'main.risulua');
-    if (!existsSync(mainPath)) {
-      console.log('Skipping: Gacha Island fixture main file not found.');
-      return;
-    }
+    expect(existsSync(mainPath)).toBe(true);
 
     const mainText = readFileSync(mainPath, 'utf8');
 
     expect(mainText).toContain('COMPANION_POOL_BOT = __variable_store.COMPANION_POOL_BOT');
-    expect(mainText).toContain('local __domain_var = require("domain.var")');
     expect(mainText).not.toContain('local function buildRandomGachaFragment');
+    expect(mainText).not.toContain('local function _forgeApplyCat');
   });
 
-  it('asserts Gacha Island domain-candidates have expected generation status for key clusters', () => {
+  it('asserts Gacha Island domain-candidates have generationStatus generated for all five key clusters', () => {
     const candidatesPath = path.join(GACHA_ISLAND_FIXTURE_ROOT, 'docs', 'domain-candidates.json');
-    if (!existsSync(candidatesPath)) {
-      console.log('Skipping: Gacha Island fixture domain-candidates not found.');
-      return;
-    }
+    expect(existsSync(candidatesPath)).toBe(true);
 
     const candidates = JSON.parse(readFileSync(candidatesPath, 'utf8'));
     expect(candidates.version).toBe(1);
@@ -597,6 +591,9 @@ describe('risulua-split module-table fixture matrix', () => {
     const findCandidate = (name: string) =>
       candidates.candidates.find((c: { name: string }) => c.name === name);
 
+    expect(findCandidate('_forgeApplyCat')).toEqual(
+      expect.objectContaining({ generationStatus: 'generated' }),
+    );
     expect(findCandidate('buildMergedPool')).toEqual(
       expect.objectContaining({ generationStatus: 'generated' }),
     );
@@ -613,10 +610,7 @@ describe('risulua-split module-table fixture matrix', () => {
 
   it('asserts Gacha Island generated domain modules exist for key clusters', () => {
     const domainDir = path.join(GACHA_ISLAND_FIXTURE_ROOT, 'lua', 'domain');
-    if (!existsSync(domainDir)) {
-      console.log('Skipping: Gacha Island fixture domain directory not found.');
-      return;
-    }
+    expect(existsSync(domainDir)).toBe(true);
 
     expect(existsSync(path.join(domainDir, 'companion_reroll.risulua'))).toBe(true);
     expect(existsSync(path.join(domainDir, 'aux_assets.risulua'))).toBe(true);
@@ -626,6 +620,7 @@ describe('risulua-split module-table fixture matrix', () => {
     expect(varDomainText).toContain('function __impl.buildMergedPool');
     expect(varDomainText).toContain('function __impl.pickRandomCompanion');
     expect(varDomainText).toContain('function __impl.buildFragment');
+    expect(varDomainText).toContain('function __impl.applyCat');
   });
 });
 

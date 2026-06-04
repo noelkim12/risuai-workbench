@@ -1,0 +1,64 @@
+---
+name: 날짜 & 던전 게이트 규칙
+comment: 날짜 & 던전 게이트 규칙
+mode: normal
+constant: false
+selective: false
+insertion_order: 107
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+NEW_DAY
+새벽
+아침
+기상
+던전 게이트
+gate
+夜明け
+朝
+起床
+ダンジョンゲート
+@@@ CONTENT
+[DAY & DUNGEON GATE SYSTEM RULES]
+
+## Day Transition Rules
+- A new day occurs when: sleeping through the night → waking up in the morning, explicit day skip, or extended dungeon rest until morning.
+- Short naps within the same day do NOT trigger a new day.
+- Output [SYSTEM|NEW_DAY] (no value, no colon) when a new day begins. The Lua backend increments cv_day, resets cv_dungeonEnteredToday → false, and resets cv_dungeonGateState → 열림.
+- On NEW_DAY: Lua auto-applies hunger depletion and HP loss - narrate the effects but do NOT output HUNGER/HP tags for these.
+
+## Dungeon Gate State (cv_dungeonGateState)
+The dungeon gate is shown in the GATE field of STATUS_PANEL with 3 states. Lua manages this automatically; the AI just renders {{getvar::cv_dungeonGateState}} into the GATE field.
+
+- 열림 (OPEN): Dungeon entry still possible today. Auto-set right after NEW_DAY. Companions may suggest "던전 가실래요?" etc.
+- 도전중 (IN-PROGRESS): Currently inside the dungeon (cv_dungeonActive = 1). Auto-set on DUNGEON_ENTER. Inside-dungeon narration is in progress.
+- 닫힘 (CLOSED): Dungeon already done today (returned or defeated). Auto-set on DUNGEON_EXIT / DEFEAT. Companions must NOT suggest the dungeon - re-entry is impossible until the next NEW_DAY.
+
+### Status Panel GATE Output Rule
+The GATE field outputs {{getvar::cv_dungeonGateState}} verbatim (one of 열림 / 도전중 / 닫힘). Never convert to a different word or value.
+
+## DUNGEON RE-ENTRY RULE (ABSOLUTE - DAILY LIMIT ENFORCEMENT)
+- Starting floor on entry = {{getvar::cv_floor}} + 1. All cleared floors are SKIPPED. Describe the portal opening directly to the next uncleared floor.
+- DAILY LIMIT (ABSOLUTE): The 던전 can ONLY be entered ONCE per day. If the party has already entered and returned from the dungeon today (same cv_day value as the last entry), you MUST REFUSE re-entry.
+  - Output a [SYS_NARR: ...] describing the portal flickering and rejecting them, followed by [SYS_ADVICE: 던전은 하루 1회만 입장 가능합니다.<br>► 내일까지 기다리거나 성소에서 시간을 보내세요.].
+  - Do NOT allow re-entry under any circumstances until a [SYSTEM|NEW_DAY] occurs.
+- VARIABLE CHECK before allowing dungeon entry, apply these checks IN ORDER:
+  1. If {{getvar::cv_dungeonEnteredToday}} is ''true'' → DENY entry (highest priority, no exceptions).
+  2. If {{getvar::cv_hunger}} is 0 → DENY entry (companions refuse, narrate exhaustion).
+  Both conditions independently prevent entry. Condition 1 takes priority.
+- Dungeon entry is triggered by 🌀 던전 게이트 button click → mapEnterDungeon lua function. Lua sets cv_dungeonGateState=도전중 / cv_dungeonEnteredToday=true automatically. AI must NOT output [SYSTEM|DUNGEON_ENTER] (lua IGNORES it).
+- BUTTON-GATED ENTRY NARRATIVE (ABSOLUTE): NEVER auto-progress into the dungeon through narrative. Even when companions are eager, cv_dungeonGateState=열림, and the user just had a calm beat — narrate ONLY up to "approaching / discussing / standing before the gate". Do NOT narrate crossing the portal, entering a floor, fighting dungeon monsters, exploring chambers, or any inside-dungeon scene until the user explicitly clicks the 🌀 던전 게이트 button (which calls mapEnterDungeon → sets cv_dungeonActive=1 / cv_dungeonGateState=도전중). Auto-progressed dungeon narrative desyncs Lua state — AI describes inside-dungeon scenes while the backend still shows outside-dungeon, breaking round system / monster spawn / floor progression. Hard rule, no exceptions.
+- BUTTON-GATED RETURN NARRATIVE (ABSOLUTE - mirror of entry rule): While cv_dungeonActive=1 (party is inside the dungeon), NEVER auto-return them to 성소 / 섬 through narrative. Even when the floor is cleared, the party is exhausted, companions plead "이제 돌아가자", points are low, or the scene reaches a natural pause — narrate ONLY up to "considering retreat / standing in front of the return portal / discussing whether to push further". Do NOT narrate stepping through the return portal, the dungeon dissolving around them, arriving back at 성소, drinking from the fountain, OR output [SYSTEM|DUNGEON_EXIT] (Lua ignores it anyway). Inside-dungeon → island transition is triggered ONLY by one of: (1) {{user}} explicitly clicking the 🔙 귀환 button on the round UI ([DUNGEON_CHOICE]) → Lua's mapReturnFromDungeon flips cv_dungeonActive=0 / cv_dungeonGateState=닫힘 / clears round state and auto-applies 신성한 분수의 치유. (2) [SYSTEM|DEFEAT] firing when party HP hits 0 inside the dungeon → Lua auto-returns the party with defeat penalty. Any other path (narrative-forced return, companion-led extraction, time-skip back to island, "우리 일단 돌아가자" mid-floor resolving into a 성소 scene) desyncs Lua state: round UI stays visible, GATE field stays 도전중, cv_dungeonActive remains 1 while the AI describes 성소 scenes, the dungeon does NOT reset, and on the next user message the party gets narrated back inside the dungeon mid-floor. Hard rule, no exceptions.
+
+## NEW_DAY TAG INLINE PLACEMENT (ABSOLUTE)
+[SYSTEM|NEW_DAY] MUST be placed INLINE - immediately after the morning awakening / new day narration. Do NOT push it to the end of the response. Placing it at the bottom causes the "NEW DAY" notification card to appear at the bottom of the message, far from the actual morning scene, which is a UX failure.
+- Correct: ...아침 햇살에 눈을 뜬다... [SYSTEM|NEW_DAY] (continue with morning scene)
+- WRONG: (entire response narrative) ... [SYSTEM|NEW_DAY] (at the very end)
+- Format: [SYSTEM|NEW_DAY] - no value, no parameter, no colon. Any tag with `:value` after NEW_DAY is INVALID and will not be parsed.
+- One NEW_DAY tag per message max.
+
+## NEW_DAY AUTOMATIC BACKEND EFFECTS (DO NOT output SYSTEM tags for these - Lua handles them automatically)
+- Hunger auto-depletion: Lua automatically deducts a base of 20 from cv_hunger (with companion-count multiplier 1+0.1·N, and ×0.8 if 섬 단계 ≥2). Do NOT output [SYSTEM|HUNGER:...] for overnight depletion.
+- HP auto-loss: If hunger reaches 0% after depletion, Lua deducts 15~25 HP. If hunger is 1~14% after depletion, Lua deducts 5~10 HP. Do NOT output [SYSTEM|HP:...] for this automatic HP loss.
+- You MUST narrate these effects (waking up famished, feeling weak, etc.) but let Lua handle the numeric changes silently.

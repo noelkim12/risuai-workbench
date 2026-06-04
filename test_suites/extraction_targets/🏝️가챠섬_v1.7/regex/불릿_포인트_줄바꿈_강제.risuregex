@@ -1,0 +1,10 @@
+---
+comment: "불릿 포인트 줄바꿈 강제"
+type: editdisplay
+ableFlag: true
+flag: g
+---
+@@@ IN
+(?<!<br>)\s*(►|👉|▶|▷|▪|•|🔹|🔸|✅|📌|※)
+@@@ OUT
+<br>$1

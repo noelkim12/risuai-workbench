@@ -1,0 +1,9 @@
+---
+comment: "SEED 마커 LLM 입력에서 strip (#441 토큰 절약)"
+type: editrequest
+ableFlag: false
+---
+@@@ IN
+<!--\[SEED\|[^\]]+\]-->
+@@@ OUT
+
