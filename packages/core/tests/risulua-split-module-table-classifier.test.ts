@@ -423,8 +423,34 @@ describe('risulua-split module-table classifier', () => {
     ]));
     expect(result.refactorMap.preserved).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ originalName: 'getCorruptionTotalExpForLevel' }),
+    ]))
+  })
+
+  it('treats allowlisted public data globals as variable-store dependencies for validated private domains', async () => {
+    const result = await classify(lines([
+      'COMPANION_POOL_BOT = { { ko = "A", en = "A", origin = "X" } }',
+      '',
+      'local function buildMergedPool(triggerId)',
+      '  local pool = {}',
+      '  for _, c in ipairs(COMPANION_POOL_BOT) do table.insert(pool, c) end',
+      '  return pool',
+      'end',
+    ]), {
+      domainGeneration: 'validated',
+      variableStoreNames: ['COMPANION_POOL_BOT'],
+    });
+
+    expect(result.refactorMap.symbols).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        originalName: 'buildMergedPool',
+        classification: 'extract:domain-function',
+        targetModule: 'lua/domain/companion_pool.risulua',
+      }),
     ]));
-  });
+    expect(result.refactorMap.preserved).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ originalName: 'buildMergedPool', reason: 'preserve:captures-mutable-state' }),
+    ]));
+  })
 
   it('blocks private domain helpers with captures that cannot be rewritten as module dependencies', async () => {
     const result = await classify(lines([

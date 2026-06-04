@@ -127,6 +127,45 @@ describe('risulua-split module-table artifact writer', () => {
     expect(variableStore.trim().endsWith('return M')).toBe(true);
   });
 
+  it('moves allowlisted public data globals into variable_store while preserving main compatibility alias', async () => {
+    const source = lines([
+      'COMPANION_POOL_BOT = {',
+      '  { ko = "이노우에 오리히메", en = "Inoue Orihime", origin = "BLEACH" },',
+      '}',
+      '',
+      'local function buildMergedPool(triggerId)',
+      '  local pool = {}',
+      '  for _, c in ipairs(COMPANION_POOL_BOT) do',
+      '    table.insert(pool, c)',
+      '  end',
+      '  return pool',
+      'end',
+      '',
+      'function gachaCompanion(triggerId)',
+      '  local pool = buildMergedPool(triggerId)',
+      '  return pool[1].ko',
+      'end',
+    ]);
+
+    const artifacts = await createRisuLuaModuleTableArtifacts({
+      source,
+      sourcePath: 'companion_pool_alias.risulua',
+      domainGeneration: 'validated',
+      buttonActionSources: ['{{button::가챠::gachaCompanion}}'],
+    });
+
+    const main = fileContent(artifacts, 'lua/main.risulua');
+    const store = fileContent(artifacts, 'lua/state/variable_store.risulua');
+    const companionPool = fileContent(artifacts, 'lua/domain/companion_pool.risulua');
+
+    expect(store).toContain('M.COMPANION_POOL_BOT = {');
+    expect(main).toContain('COMPANION_POOL_BOT = __variable_store.COMPANION_POOL_BOT');
+    expect(main).toContain('gachaCompanion = __button_actions.gachaCompanion');
+    expect(companionPool).toContain('local __variable_store = require("state.variable_store")');
+    expect(companionPool).toContain('__variable_store.COMPANION_POOL_BOT');
+    expect(companionPool).not.toContain('COMPANION_POOL_BOT)');
+  });
+
   it('does not extract column-zero local tables from inside functions into the variable store', async () => {
     const source = lines([
       'function onOutput(text)',
