@@ -329,7 +329,7 @@ function buildDomainFunctionModule(
     promptStoreNames,
     currentModulePath: modulePath,
   }));
-  const sameModuleRewriteMap = new Map(sorted.map((sym) => [sym.originalName, `__impl.${sym.originalName}`]));
+  const sameModuleRewriteMap = new Map(sorted.map((sym) => [sym.originalName, `__impl.${sym.exportName ?? sym.originalName}`]));
   const rewriteNames = new Set([
     ...capturePlans.flatMap((plan) => [...plan.rewriteMap.keys()]),
     ...sameModuleRewriteMap.keys(),
@@ -350,12 +350,12 @@ function buildDomainFunctionModule(
     const stripped = stripLocalPrefixWithOffset(sliceSourceRange(source, sym.sourceRange));
     let body = stripped.text.trimEnd();
     body = rewriteBoundReferences(body, new Map([...capturePlan.rewriteMap, ...sameModuleRewriteMap]), sym.sourceRange.startOffset + stripped.offsetAdjustment, shadowedScopes, nonExecIndex);
-    const functionBody = toPrivateImplementationFunction(body, sym.originalName);
+    const functionBody = toPrivateImplementationFunction(body, sym.originalName, sym.exportName ?? sym.originalName);
     lines.push(`${leadingCommentText}${functionBody}`, '');
   }
 
   for (const sym of sorted) {
-    lines.push(`M.${sym.originalName} = __impl.${sym.originalName}`);
+    lines.push(`M.${sym.exportName ?? sym.originalName} = __impl.${sym.exportName ?? sym.originalName}`);
   }
   lines.push('');
   lines.push('return M');
@@ -366,16 +366,16 @@ function buildDomainFunctionModule(
     alias: contract?.alias ?? pathToAlias(modulePath),
     category: 'domain-function',
     body: `${lines.join('\n')}\n`,
-    exportNames: sorted.map((s) => s.originalName),
+    exportNames: sorted.map((s) => s.exportName ?? s.originalName),
     internalRequires,
   };
 }
 
-function toPrivateImplementationFunction(sourceSlice: string, originalName: string): string {
+function toPrivateImplementationFunction(sourceSlice: string, originalName: string, exportName: string): string {
   const escapedName = escapeRegExp(originalName);
   return sourceSlice
-    .replace(new RegExp(`^(\\s*)(?:local\\s+)?function\\s+${escapedName}(\\s*\\()`, 'm'), `$1function __impl.${originalName}$2`)
-    .replace(new RegExp(`^(\\s*)${escapedName}(\\s*=\\s*(?:async\\s*\\(\\s*)?function\\b)`, 'm'), `$1function __impl.${originalName}`);
+    .replace(new RegExp(`^(\\s*)(?:local\\s+)?function\\s+${escapedName}(\\s*\\()`, 'm'), `$1function __impl.${exportName}$2`)
+    .replace(new RegExp(`^(\\s*)${escapedName}(\\s*=\\s*(?:async\\s*\\(\\s*)?function\\b)`, 'm'), `$1function __impl.${exportName}`);
 }
 
 function declarationHeadRange(source: string, range: LuaSourceRange): LuaSourceRange {
@@ -656,23 +656,16 @@ function buildMainRewritePlan(
         navigationComment: sym.targetModule === RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH
           ? buttonActionNavigationComment(sym.originalName, sourceFile, buttonActionUsagesByName)
           : undefined,
-        replacementText: sym.classification === 'extract:runtime-handler-body' && moduleContract !== undefined
-          ? buildRuntimeHandlerShim(
-            source.slice(sym.sourceRange.startOffset, sym.sourceRange.endOffset),
-            sym.originalName,
-            moduleContract.alias,
-            buildCaptureRewritePlan({
-              names: uniqueSorted([...sym.captures, ...helperUsagesInRange(source, sym.sourceRange, helperNames), ...symbolUsagesInRange(source, sym.sourceRange, refactorMap.symbols, new Set(refactorMap.preserved.map((entry) => entry.originalName)), sym.originalName)]),
-              moduleContracts: refactorMap.modules,
-              allSymbols: refactorMap.symbols,
-              preservedNames: new Set(refactorMap.preserved.map((entry) => entry.originalName)),
-              helperNames,
-              variableStoreNames,
-              promptStoreNames,
-              currentModulePath: sym.targetModule ?? '',
-            }).unresolvedCaptures.map((name) => helperRewriteMap.get(name) ?? name),
-          )
-          : undefined,
+        replacementText: replacementTextForExtractedMainSymbol(
+          source,
+          sym,
+          moduleContract,
+          refactorMap,
+          helperNames,
+          variableStoreNames,
+          promptStoreNames,
+          helperRewriteMap,
+        ),
       });
     }
   }
@@ -746,6 +739,107 @@ function buildListenEditShim(callback: ListenEditCallbackPlan): string {
     `    return __runtime_listen_edit.${callback.exportName}(${callArguments})`,
     'end)',
   ].join('\n');
+}
+
+function replacementTextForExtractedMainSymbol(
+  source: string,
+  sym: RisuLuaModuleTableSymbolContract,
+  moduleContract: RisuLuaModuleTableModuleContract | undefined,
+  refactorMap: RisuLuaModuleTableRefactorMapContract,
+  helperNames: Set<string>,
+  variableStoreNames: Set<string>,
+  promptStoreNames: Set<string>,
+  helperRewriteMap: Map<string, string>,
+): string | undefined {
+  if (moduleContract === undefined) return undefined;
+  if (sym.classification === 'extract:runtime-handler-body') {
+    return buildRuntimeHandlerShim(
+      source.slice(sym.sourceRange.startOffset, sym.sourceRange.endOffset),
+      sym.originalName,
+      moduleContract.alias,
+      buildCaptureRewritePlan({
+        names: uniqueSorted([...sym.captures, ...helperUsagesInRange(source, sym.sourceRange, helperNames), ...symbolUsagesInRange(source, sym.sourceRange, refactorMap.symbols, new Set(refactorMap.preserved.map((entry) => entry.originalName)), sym.originalName)]),
+        moduleContracts: refactorMap.modules,
+        allSymbols: refactorMap.symbols,
+        preservedNames: new Set(refactorMap.preserved.map((entry) => entry.originalName)),
+        helperNames,
+        variableStoreNames,
+        promptStoreNames,
+        currentModulePath: sym.targetModule ?? '',
+      }).unresolvedCaptures.map((name) => helperRewriteMap.get(name) ?? name),
+    );
+  }
+  if (sym.classification === 'extract:button-action' && sym.targetModule !== RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH && isDomainModulePath(sym.targetModule ?? '')) {
+    return buildAbiWrapperShim(source.slice(sym.sourceRange.startOffset, sym.sourceRange.endOffset), sym.originalName, moduleContract, refactorMap.symbols);
+  }
+  return undefined;
+}
+
+function buildAbiWrapperShim(
+  sourceSlice: string,
+  wrapperName: string,
+  moduleContract: RisuLuaModuleTableModuleContract,
+  allSymbols: RisuLuaModuleTableSymbolContract[],
+): string | undefined {
+  const parsed = parseSingleCallFunction(sourceSlice, wrapperName);
+  if (parsed === undefined) return undefined;
+  const targetSymbol = allSymbols.find((symbol) => symbol.originalName === parsed.callee && symbol.targetModule === moduleContract.path);
+  if (targetSymbol === undefined) return undefined;
+  const targetExportName = targetSymbol.exportName ?? targetSymbol.originalName;
+  return [
+    `function ${wrapperName}(${parsed.parameters.join(', ')})`,
+    `    return ${moduleContract.alias}.${targetExportName}(${parsed.arguments.join(', ')})`,
+    'end',
+  ].join('\n');
+}
+
+function parseSingleCallFunction(sourceSlice: string, functionName: string): { parameters: string[]; callee: string; arguments: string[] } | undefined {
+  const escapedName = escapeRegExp(functionName);
+  const functionMatch = new RegExp(`^\\s*function\\s+${escapedName}\\s*\\(([^)]*)\\)\\s*([\\s\\S]*?)\\s*end\\s*$`).exec(sourceSlice);
+  if (functionMatch === null) return undefined;
+  const body = functionMatch[2].trim();
+  if (/\r?\n/.test(body)) return undefined;
+  const callMatch = /^([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)$/.exec(body);
+  if (callMatch === null) return undefined;
+  return {
+    parameters: splitCommaList(functionMatch[1]),
+    callee: callMatch[1],
+    arguments: splitCommaList(callMatch[2]),
+  };
+}
+
+function splitCommaList(value: string): string[] {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return [];
+  const parts: string[] = [];
+  let current = '';
+  let quote: string | undefined;
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const char = trimmed[index];
+    if (quote !== undefined) {
+      current += char;
+      if (char === '\\') {
+        index += 1;
+        current += trimmed[index] ?? '';
+        continue;
+      }
+      if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      current += char;
+      continue;
+    }
+    if (char === ',') {
+      parts.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  parts.push(current.trim());
+  return parts;
 }
 
 function groupButtonActionUsagesByName(usages: RawButtonActionUsage[]): Map<string, RisuLuaModuleTableButtonActionUsageContract[]> {

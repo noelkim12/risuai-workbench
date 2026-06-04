@@ -168,6 +168,11 @@ export function classifyRisuLuaModuleTableDecisions(input: RisuLuaModuleTableCla
         preserved.push(preservedEntry(symbol.id, publicGlobal.name, publicGlobal.sourceRange, unsafeButtonReason.code, unsafeButtonReason.evidence));
         continue;
       }
+      const abiWrapper = safeAbiWrapperTarget(input.source, symbol, safeButtonCaptureNames, validatedPrivateDomainNames, validatedDomainGrouping);
+      if (abiWrapper !== undefined) {
+        symbols.push(abiWrapperButtonActionSymbol(symbol, publicGlobal.name, publicGlobal.sourceRange, abiWrapper.targetModule));
+        continue;
+      }
       symbols.push(buttonActionSymbol(symbol, publicGlobal.name, publicGlobal.sourceRange));
       continue;
     }
@@ -277,6 +282,7 @@ function domainFunctionSymbol(symbol: RisuLuaModuleTableLexicalSymbolFact, targe
     declarationKind: 'domain-candidate',
     classification: 'extract:domain-function',
     targetModule,
+    exportName: clusterExportName(symbol.originalName) ?? symbol.originalName,
   };
 }
 
@@ -410,6 +416,28 @@ function buttonActionSymbol(
   };
 }
 
+function abiWrapperButtonActionSymbol(
+  symbol: RisuLuaModuleTableLexicalSymbolFact,
+  publicName: string,
+  sourceRange: LuaSourceRange,
+  targetModule: string,
+): RisuLuaModuleTableSymbolContract {
+  void publicName;
+  return {
+    id: symbol.id,
+    originalName: symbol.originalName,
+    declarationKind: symbol.declarationKind,
+    sourceRange,
+    classification: 'extract:button-action',
+    targetModule,
+    globalBridge: false,
+    captures: symbol.captures,
+    mutates: symbol.mutates,
+    hostEffects: symbol.hostEffects,
+    rewriteRefs: symbol.callSites.map((callSite) => callSite.name),
+  };
+}
+
 function localHelperSymbol(symbol: RisuLuaModuleTableLexicalSymbolFact): RisuLuaModuleTableSymbolContract {
   return {
     id: symbol.id,
@@ -518,6 +546,90 @@ function unsafeButtonActionReason(symbol: RisuLuaModuleTableLexicalSymbolFact, s
   const unsafeMutations = unsafeMutationNames(symbol);
   if (unsafeMutations.length > 0) return { code: 'preserve:captures-mutable-state', evidence: [`Button action mutates captured bindings: ${unsafeMutations.join(', ')}.`] };
   if (symbol.hostEffects.dynamicEnvironment.length > 0) return { code: 'preserve:dynamic-global-reference-risk', evidence: [`Button action uses dynamic environment APIs: ${symbol.hostEffects.dynamicEnvironment.join(', ')}.`] };
+  return undefined;
+}
+
+function safeAbiWrapperTarget(
+  source: string,
+  symbol: RisuLuaModuleTableLexicalSymbolFact,
+  safeCaptureNames: Set<string>,
+  validatedPrivateDomainNames: Set<string>,
+  domainGrouping: ReturnType<typeof createRisuLuaDomainGroupingContext>,
+): { targetName: string; targetModule: string; targetExportName: string } | undefined {
+  if (symbol.hostEffects.dynamicEnvironment.length > 0) return undefined;
+  if (unsafeMutationNames(symbol).length > 0) return undefined;
+  const parsed = parseSingleCallFunction(source.slice(symbol.sourceRange.startOffset, symbol.sourceRange.endOffset), symbol.originalName);
+  if (parsed === undefined) return undefined;
+  if (!validatedPrivateDomainNames.has(parsed.callee)) return undefined;
+  if (!safeCaptureNames.has(parsed.callee)) return undefined;
+  if (symbol.captures.some((capture) => capture !== parsed.callee)) return undefined;
+  if (!parsed.arguments.slice(0, parsed.parameters.length).every((argument, index) => argument === parsed.parameters[index])) return undefined;
+  if (!parsed.arguments.slice(parsed.parameters.length).every(isQuotedStringLiteral)) return undefined;
+  const targetExportName = clusterExportName(parsed.callee);
+  if (targetExportName === undefined) return undefined;
+  const grouping = domainGrouping.groupingForName(parsed.callee);
+  if (grouping.reason !== 'cluster-policy') return undefined;
+  return {
+    targetName: parsed.callee,
+    targetModule: domainGrouping.pathForName(parsed.callee),
+    targetExportName,
+  };
+}
+
+function parseSingleCallFunction(sourceSlice: string, functionName: string): { parameters: string[]; callee: string; arguments: string[] } | undefined {
+  const escapedName = escapeRegExp(functionName);
+  const functionMatch = new RegExp(`^\\s*function\\s+${escapedName}\\s*\\(([^)]*)\\)\\s*([\\s\\S]*?)\\s*end\\s*$`).exec(sourceSlice);
+  if (functionMatch === null) return undefined;
+  const body = functionMatch[2].trim();
+  if (/\r?\n/.test(body)) return undefined;
+  const callMatch = /^([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)$/.exec(body);
+  if (callMatch === null) return undefined;
+  const parameters = splitCommaList(functionMatch[1]);
+  const callArguments = splitCommaList(callMatch[2]);
+  if (callArguments.length < parameters.length) return undefined;
+  return { parameters, callee: callMatch[1], arguments: callArguments };
+}
+
+function splitCommaList(value: string): string[] {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return [];
+  const parts: string[] = [];
+  let current = '';
+  let quote: string | undefined;
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const char = trimmed[index];
+    if (quote !== undefined) {
+      current += char;
+      if (char === '\\') {
+        index += 1;
+        current += trimmed[index] ?? '';
+        continue;
+      }
+      if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      current += char;
+      continue;
+    }
+    if (char === ',') {
+      parts.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  parts.push(current.trim());
+  return parts;
+}
+
+function isQuotedStringLiteral(value: string): boolean {
+  return /^(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')$/.test(value.trim());
+}
+
+function clusterExportName(name: string): string | undefined {
+  if (name === '_forgeApplyCat') return 'applyCat';
   return undefined;
 }
 
