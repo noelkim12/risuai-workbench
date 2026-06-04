@@ -580,7 +580,7 @@ describe('risulua-split module-table fixture matrix', () => {
     expect(mainText).not.toContain('local function _forgeApplyCat');
   });
 
-  it('asserts Gacha Island domain-candidates have generationStatus generated for all five key clusters', () => {
+  it('asserts Gacha Island domain-candidates have generationStatus generated with explicit grouping evidence', () => {
     const candidatesPath = path.join(GACHA_ISLAND_FIXTURE_ROOT, 'docs', 'domain-candidates.json');
     expect(existsSync(candidatesPath)).toBe(true);
 
@@ -605,6 +605,22 @@ describe('risulua-split module-table fixture matrix', () => {
     );
     expect(findCandidate('buildRandomGachaFragment')).toEqual(
       expect.objectContaining({ generationStatus: 'generated' }),
+    );
+
+    // Cycle-coalesced fallback must have explicit diagnostic evidence, not broad repeated-token var
+    const cycleCoalescedNames = ['_forgeApplyCat', 'buildRandomGachaFragment', 'buildMergedPool', 'pickRandomCompanion'];
+    for (const name of cycleCoalescedNames) {
+      const c = findCandidate(name);
+      expect(c).toBeDefined();
+      expect(c.grouping).toEqual(
+        expect.objectContaining({ reason: 'cycle-coalesced', path: 'lua/domain/var.risulua' }),
+      );
+    }
+
+    // Cluster-policy functions must NOT be swallowed by var coalescing
+    const reroll = findCandidate('_rerollPickReplacement');
+    expect(reroll.grouping).toEqual(
+      expect.objectContaining({ reason: 'cluster-policy', path: 'lua/domain/companion_reroll.risulua' }),
     );
   });
 

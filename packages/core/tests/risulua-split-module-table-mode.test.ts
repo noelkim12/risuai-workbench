@@ -252,8 +252,6 @@ describe('risulua-split module-table artifact writer', () => {
       buttonActionSources: ['{{button::강화::forgeApplySkill}}'],
     });
 
-    console.log('Generated files:', artifacts.workspaceFiles.map((f) => f.path).join(', '));
-
     const main = fileContent(artifacts, 'lua/main.risulua');
     expect(main).not.toContain('local function _forgeApplyCat');
     expect(main).not.toContain('local function _capCat');
