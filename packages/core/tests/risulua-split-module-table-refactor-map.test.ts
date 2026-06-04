@@ -998,19 +998,18 @@ describe('risulua-split module-table dry-run refactor-map planner', () => {
       reason: 'repeated-token',
       token: 'choice',
       path: 'lua/domain/choice.risulua',
-      peers: ['executeChoiceReroll', 'generateAndAppendChoices', 'makeChoicePrompt'],
+      peers: ['generateAndAppendChoices', 'makeChoicePrompt'],
     }));
     expect(grouping.groupingForName('executeChoiceReroll')).toEqual(expect.objectContaining({
-      reason: 'repeated-token',
-      token: 'choice',
+      reason: 'cycle-coalesced',
       path: 'lua/domain/choice.risulua',
-      peers: ['executeChoiceReroll', 'generateAndAppendChoices', 'makeChoicePrompt'],
+      peers: ['executeChoiceReroll', 'generateAndAppendChoices', 'makeChoicePrompt', 'syncPerkVars'],
     }));
     expect(grouping.groupingForName('generateAndAppendChoices')).toEqual(expect.objectContaining({
       reason: 'repeated-token',
       token: 'choice',
       path: 'lua/domain/choice.risulua',
-      peers: ['executeChoiceReroll', 'generateAndAppendChoices', 'makeChoicePrompt'],
+      peers: ['generateAndAppendChoices', 'makeChoicePrompt'],
     }));
 
     expect(grouping.groupingForName('parseAndApplySaveString')).toEqual(expect.objectContaining({
@@ -1025,6 +1024,78 @@ describe('risulua-split module-table dry-run refactor-map planner', () => {
       path: 'lua/domain/string.risulua',
       peers: ['loadLatestStateFromHistory', 'parseAndApplySaveString'],
     }));
+  });
+
+  it('groups known residual closure cluster names into stable policy modules', () => {
+    const grouping = createRisuLuaDomainGroupingContext([
+      '_forgeApplyCat',
+      'buildMergedPool',
+      'pickRandomCompanion',
+      '_rerollPickReplacement',
+      'buildRandomGachaFragment',
+      'aux_discoverCharacters',
+      'aux_buildCombinedPrompt',
+      'aux_generateCombinedOutput',
+    ]);
+
+    expect(grouping.groupingForName('_forgeApplyCat')).toEqual(expect.objectContaining({
+      reason: 'cluster-policy',
+      path: 'lua/domain/forge.risulua',
+    }));
+    for (const name of ['buildMergedPool', 'pickRandomCompanion']) {
+      expect(grouping.groupingForName(name)).toEqual(expect.objectContaining({
+        reason: 'cluster-policy',
+        path: 'lua/domain/companion_pool.risulua',
+        peers: ['buildMergedPool', 'pickRandomCompanion'],
+      }));
+    }
+    expect(grouping.groupingForName('_rerollPickReplacement')).toEqual(expect.objectContaining({
+      reason: 'cluster-policy',
+      path: 'lua/domain/companion_reroll.risulua',
+    }));
+    expect(grouping.groupingForName('buildRandomGachaFragment')).toEqual(expect.objectContaining({
+      reason: 'cluster-policy',
+      path: 'lua/domain/random_gacha.risulua',
+    }));
+    expect(grouping.groupingForName('aux_discoverCharacters')).toEqual(expect.objectContaining({
+      reason: 'cluster-policy',
+      path: 'lua/domain/aux_assets.risulua',
+    }));
+    expect(grouping.groupingForName('aux_buildCombinedPrompt')).toEqual(expect.objectContaining({
+      reason: 'cluster-policy',
+      path: 'lua/domain/aux_prompt.risulua',
+    }));
+    expect(grouping.groupingForName('aux_generateCombinedOutput')).toEqual(expect.objectContaining({
+      reason: 'cluster-policy',
+      path: 'lua/domain/aux_combined.risulua',
+    }));
+  });
+
+  it('coalesces cluster policy paths when they would create a module cycle', () => {
+    const grouping = createRisuLuaDomainGroupingContext([
+      'buildMergedPool',
+      'pickRandomCompanion',
+      '_rerollPickReplacement',
+    ], {
+      dependencies: new Map([
+        ['buildMergedPool', ['_rerollPickReplacement']],
+        ['pickRandomCompanion', []],
+        ['_rerollPickReplacement', ['pickRandomCompanion']],
+      ]),
+    });
+
+    for (const name of ['buildMergedPool', 'pickRandomCompanion', '_rerollPickReplacement']) {
+      expect(grouping.groupingForName(name)).toEqual(expect.objectContaining({
+        reason: 'cycle-coalesced',
+        peers: ['_rerollPickReplacement', 'buildMergedPool', 'pickRandomCompanion'],
+      }));
+    }
+    expect(grouping.diagnostics()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'domain-grouping:cluster-cycle-coalesced',
+        names: ['_rerollPickReplacement', 'buildMergedPool', 'pickRandomCompanion'],
+      }),
+    ]));
   });
 
   it('reports semantic cluster restoration diagnostics', () => {
@@ -1052,7 +1123,7 @@ describe('risulua-split module-table dry-run refactor-map planner', () => {
       expect.objectContaining({
         code: 'domain-grouping:semantic-cluster-restored',
         path: 'lua/domain/choice.risulua',
-        names: ['executeChoiceReroll', 'generateAndAppendChoices', 'makeChoicePrompt'],
+        names: ['generateAndAppendChoices', 'makeChoicePrompt'],
       }),
     ]));
   });
