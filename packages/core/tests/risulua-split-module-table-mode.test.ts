@@ -231,6 +231,48 @@ describe('risulua-split module-table artifact writer', () => {
     expect(buttonActions).not.toContain('buildRandomGachaFragment(triggerId)');
   });
 
+  it('splits aux generation internals while keeping main callback facade for runtime injection', async () => {
+    const source = lines([
+      'local AUX_SFW_EMOTIONS = "smile, sad"',
+      'local AUX_LORE_CACHE = { valid = false, chars = nil }',
+      '',
+      'local function aux_discover_characters(triggerId)',
+      '  if AUX_LORE_CACHE.valid then return AUX_LORE_CACHE.chars end',
+      '  AUX_LORE_CACHE.chars = { { english = "Fern", aliases = {} } }',
+      '  AUX_LORE_CACHE.valid = true',
+      '  return AUX_LORE_CACHE.chars',
+      'end',
+      '',
+      'local function aux_build_combined_prompt(content, chars)',
+      '  return AUX_SFW_EMOTIONS .. content .. chars[1].english',
+      'end',
+      '',
+      'local function aux_generate_combined(triggerId, content)',
+      '  local chars = aux_discover_characters(triggerId)',
+      '  return aux_build_combined_prompt(content, chars)',
+      'end',
+      '',
+      'function onOutput(triggerId)',
+      '  return aux_generate_combined(triggerId, "body")',
+      'end',
+    ]);
+
+    const artifacts = await createRisuLuaModuleTableArtifacts({
+      source,
+      sourcePath: 'aux_cluster.risulua',
+      domainGeneration: 'validated',
+    });
+
+    expect(fileContent(artifacts, 'lua/domain/aux_assets.risulua')).toContain('function __impl.discoverCharacters');
+    expect(fileContent(artifacts, 'lua/domain/aux_prompt.risulua')).toContain('function __impl.buildCombinedPrompt');
+    expect(fileContent(artifacts, 'lua/domain/aux_combined.risulua')).toContain('function __impl.generate');
+
+    const main = fileContent(artifacts, 'lua/main.risulua');
+    expect(main).toContain('local __domain_aux_combined = require("domain.aux_combined")');
+    expect(main).toContain('local function aux_generate_combined(triggerId, content)');
+    expect(main).toContain('return __domain_aux_combined.generate(triggerId, content)');
+  });
+
   it('does not extract column-zero local tables from inside functions into the variable store', async () => {
     const source = lines([
       'function onOutput(text)',

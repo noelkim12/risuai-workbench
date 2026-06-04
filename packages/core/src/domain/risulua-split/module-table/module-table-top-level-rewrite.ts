@@ -832,7 +832,26 @@ function replacementTextForExtractedMainSymbol(
   if (sym.classification === 'extract:button-action' && sym.targetModule !== RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH && isDomainModulePath(sym.targetModule ?? '')) {
     return buildAbiWrapperShim(source.slice(sym.sourceRange.startOffset, sym.sourceRange.endOffset), sym.originalName, moduleContract, refactorMap.symbols);
   }
+  if (sym.classification === 'extract:domain-function' && sym.originalName === 'aux_generate_combined' && sym.targetModule === 'lua/domain/aux_combined.risulua') {
+    return buildDomainCallbackFacadeShim(source.slice(sym.sourceRange.startOffset, sym.sourceRange.endOffset), sym, moduleContract);
+  }
   return undefined;
+}
+
+function buildDomainCallbackFacadeShim(
+  sourceSlice: string,
+  sym: RisuLuaModuleTableSymbolContract,
+  moduleContract: RisuLuaModuleTableModuleContract,
+): string | undefined {
+  const parameters = extractRuntimeHandlerParameters(sourceSlice, sym.originalName);
+  if (parameters === undefined) return undefined;
+  const exportName = sym.exportName ?? sym.originalName;
+  const prefix = /^\s*local\s+function\b/.test(sourceSlice) ? 'local ' : '';
+  return [
+    `${prefix}function ${sym.originalName}(${parameters})`,
+    `    return ${moduleContract.alias}.${exportName}(${parameters})`,
+    'end',
+  ].join('\n');
 }
 
 function buildAbiWrapperShim(
