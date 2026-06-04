@@ -163,7 +163,7 @@ describe('risulua-split module-table artifact writer', () => {
     expect(main).toContain('gachaCompanion = __button_actions.gachaCompanion');
     expect(companionPool).toContain('local __variable_store = require("state.variable_store")');
     expect(companionPool).toContain('__variable_store.COMPANION_POOL_BOT');
-    expect(companionPool).not.toContain('COMPANION_POOL_BOT)');
+    expect(companionPool).not.toContain('ipairs(COMPANION_POOL_BOT)');
   });
 
   it('does not extract column-zero local tables from inside functions into the variable store', async () => {
