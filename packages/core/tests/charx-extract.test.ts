@@ -164,6 +164,9 @@ describe('charx extract integration (canonical mode)', () => {
     );
 
     expect(result.status, result.stderr || result.stdout).toBe(0);
+    expect(existsSync(path.join(outDir, 'AGENTS.md'))).toBe(true);
+    expect(existsSync(path.join(outDir, 'docs', 'default-workspace-guide.md'))).toBe(true);
+    expect(existsSync(path.join(outDir, 'docs', 'extensions', 'risuchar.md'))).toBe(true);
 
     const manifest = JSON.parse(readFileSync(path.join(outDir, '.risuchar'), 'utf-8')) as Record<
       string,

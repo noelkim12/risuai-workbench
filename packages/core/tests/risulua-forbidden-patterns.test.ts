@@ -105,6 +105,23 @@ describe('risulua forbidden patterns', () => {
     expect(diagnostics).toEqual([]);
   });
 
+  it('risulua forbidden patterns allows Lua 5.2+ goto labels', () => {
+    const diagnostics = analyze([
+      'function onOutput(text)',
+      '  for companionName in text:gmatch("([^,]+)") do',
+      '    if companionName == "skip" then',
+      '      goto continue_companion_loop',
+      '    end',
+      '    print(companionName)',
+      '    ::continue_companion_loop::',
+      '  end',
+      '  return text',
+      'end',
+    ].join('\n'));
+
+    expect(diagnostics).toEqual([]);
+  });
+
   it('risulua forbidden patterns blocks resolver before accepting static graph', () => {
     const rootDir = createModularRoot();
     writeLua(rootDir, 'main', [

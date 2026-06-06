@@ -3,6 +3,7 @@ import path from 'node:path';
 import { runAnalyzePresetWorkflow } from '@/cli/analyze/preset/workflow';
 import { ensureDir, writeJson } from '@/node/fs-helpers';
 import { getErrorMessage } from '../../shared';
+import { installDocsProviderBundle } from '../../shared/docs-provider';
 import {
   phase1_parsePreset,
   phase2_extractPrompts,
@@ -130,6 +131,8 @@ function runMain(filePath: string, outArg: string | null, jsonOnly: boolean): vo
   phase7_extractPromptSettings(parsed, resolvedOutDir);
   phase8_extractRegexAndAdvanced(parsed, resolvedOutDir);
   runPresetAnalysis(resolvedOutDir);
+  const docsCount = installDocsProviderBundle({ outputRoot: resolvedOutDir });
+  console.log(`     📚 docs-provider: ${docsCount}개 파일 설치`);
 
   console.log('\n  ────────────────────────────────────────');
   console.log(`  추출 완료 -> ${path.relative('.', resolvedOutDir)}/`);

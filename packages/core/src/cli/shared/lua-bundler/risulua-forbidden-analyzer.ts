@@ -10,7 +10,7 @@ export const RISULUA_PARSE_OPTIONS = {
   locations: true,
   ranges: true,
   scope: true,
-  luaVersion: '5.1',
+  luaVersion: '5.3',
   extendedIdentifiers: true,
   encodingMode: 'none',
 } as const;

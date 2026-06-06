@@ -101,6 +101,9 @@ describe('preset extract binary risup integration', () => {
     const code = runPresetExtractWorkflow([sourcePath, '--out', outDir]);
 
     expect(code).toBe(0);
+    expect(existsSync(path.join(outDir, 'AGENTS.md'))).toBe(true);
+    expect(existsSync(path.join(outDir, 'docs', 'default-workspace-guide.md'))).toBe(true);
+    expect(existsSync(path.join(outDir, 'docs', 'extensions', 'risuprompt.md'))).toBe(true);
     expect(existsSync(path.join(outDir, 'preset.json'))).toBe(false);
     expect(existsSync(path.join(outDir, 'instruct_settings.json'))).toBe(false);
     expect(existsSync(path.join(outDir, 'prompt_template', '_order.json'))).toBe(true);
