@@ -318,7 +318,9 @@ describe('module extract', () => {
 
     expect(extracted).toBe(1);
     expect(fs.existsSync(path.join(tmpDir, 'assets', 'first_asset.bin'))).toBe(true);
-    expect(fs.readFileSync(path.join(tmpDir, 'assets', 'first_asset.bin'), 'utf-8')).toBe('first-data');
+    expect(fs.readFileSync(path.join(tmpDir, 'assets', 'first_asset.bin'), 'utf-8')).toBe(
+      'first-data',
+    );
     expect(manifest).toEqual({
       version: 1,
       source_format: 'risum',
@@ -587,7 +589,9 @@ describe('module extract', () => {
         trigger: [
           {
             comment: 'init',
-            effect: [{ type: 'triggerlua', code: `function init()\n  return "${preservedText}"\nend` }],
+            effect: [
+              { type: 'triggerlua', code: `function init()\n  return "${preservedText}"\nend` },
+            ],
           },
         ],
         defaultVariables: {
@@ -650,7 +654,8 @@ describe('module extract', () => {
     it('risulua extract modular writes main', async () => {
       const filePath = path.join(tmpDir, 'modular-source-module.json');
       const outDir = path.join(tmpDir, 'modular-out');
-      const upstreamLua = 'local value = "original upstream lua"\nfunction onOutput()\n  return value\nend';
+      const upstreamLua =
+        'local value = "original upstream lua"\nfunction onOutput()\n  return value\nend';
       const payload = {
         type: 'risuModule',
         module: {
@@ -676,20 +681,28 @@ describe('module extract', () => {
       ]);
 
       expect(exitCode).toBe(0);
+      expect(fs.existsSync(path.join(outDir, 'AGENTS.md'))).toBe(true);
+      expect(fs.existsSync(path.join(outDir, 'docs', 'default-workspace-guide.md'))).toBe(true);
+      expect(fs.existsSync(path.join(outDir, 'docs', 'extensions', 'risumodule.md'))).toBe(true);
       expect(fs.existsSync(path.join(outDir, 'lua', 'main.risulua'))).toBe(true);
       expect(fs.readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).toBe(upstreamLua);
-      expect(fs.existsSync(path.join(outDir, 'lua', 'modular-workflow-module.risulua'))).toBe(false);
+      expect(fs.existsSync(path.join(outDir, 'lua', 'modular-workflow-module.risulua'))).toBe(
+        false,
+      );
       expect(fs.existsSync(path.join(outDir, 'lua', 'features'))).toBe(false);
       expect(fs.existsSync(path.join(outDir, 'lua', 'manifest.json'))).toBe(false);
       expect(fs.existsSync(path.join(outDir, 'risulua.json'))).toBe(false);
       expect(fs.existsSync(path.join(outDir, 'dist'))).toBe(false);
-      expect(fs.existsSync(path.join(outDir, 'dist', 'modular-workflow-module.risulua'))).toBe(false);
+      expect(fs.existsSync(path.join(outDir, 'dist', 'modular-workflow-module.risulua'))).toBe(
+        false,
+      );
     });
 
     it('risulua extract modular module-table split failure falls back to lua/main.risulua and writes .risumodule', async () => {
       const filePath = path.join(tmpDir, 'split-fallback-module.json');
       const outDir = path.join(tmpDir, 'split-fallback-out');
-      const malformedLua = 'local __loader_common_local_helpers = .\nreturn __loader_common_local_helpers';
+      const malformedLua =
+        'local __loader_common_local_helpers = .\nreturn __loader_common_local_helpers';
       const payload = {
         type: 'risuModule',
         module: {
@@ -706,7 +719,11 @@ describe('module extract', () => {
       };
       fs.writeFileSync(filePath, JSON.stringify(payload), 'utf-8');
       fs.mkdirSync(path.join(outDir, 'docs'), { recursive: true });
-      fs.writeFileSync(path.join(outDir, 'docs', 'risulua-button-action-index.json'), '{}', 'utf-8');
+      fs.writeFileSync(
+        path.join(outDir, 'docs', 'risulua-button-action-index.json'),
+        '{}',
+        'utf-8',
+      );
       fs.writeFileSync(path.join(outDir, 'docs', 'risulua-export-manifest.json'), '{}', 'utf-8');
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
@@ -722,18 +739,30 @@ describe('module extract', () => {
         ]);
 
         expect(exitCode).toBe(0);
-        expect(fs.readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).toBe(malformedLua);
+        expect(fs.readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).toBe(
+          malformedLua,
+        );
         expect(fs.existsSync(path.join(outDir, '.risumodule'))).toBe(true);
         expect(fs.existsSync(path.join(outDir, 'docs', 'domain-candidates.json'))).toBe(false);
         expect(fs.existsSync(path.join(outDir, 'docs', 'refactor-map.json'))).toBe(false);
-        expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-button-action-index.json'))).toBe(false);
-        expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-export-manifest.json'))).toBe(false);
+        expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-button-action-index.json'))).toBe(
+          false,
+        );
+        expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-export-manifest.json'))).toBe(
+          false,
+        );
         expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-split-plan.json'))).toBe(false);
         expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-split-report.md'))).toBe(false);
         expect(fs.existsSync(path.join(outDir, 'dist'))).toBe(false);
         expect(fs.existsSync(path.join(outDir, 'legacy'))).toBe(false);
-        expect(fs.readdirSync(path.dirname(outDir)).filter((entry) => entry.startsWith('.tmp-risulua-split-split-fallback-out-'))).toEqual([]);
-        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('RisuLua split failed; preserving'));
+        expect(
+          fs
+            .readdirSync(path.dirname(outDir))
+            .filter((entry) => entry.startsWith('.tmp-risulua-split-split-fallback-out-')),
+        ).toEqual([]);
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining('RisuLua split failed; preserving'),
+        );
       } finally {
         warnSpy.mockRestore();
       }
@@ -745,9 +774,21 @@ describe('module extract', () => {
       const sourceRoot = path.join(tmpDir, 'recovery-source');
       fs.mkdirSync(path.join(sourceRoot, 'lua', 'common'), { recursive: true });
       fs.mkdirSync(path.join(sourceRoot, 'docs'), { recursive: true });
-      fs.writeFileSync(path.join(sourceRoot, 'lua', 'main.risulua'), 'local helper = require("common.helper")\nreturn helper.value\n', 'utf-8');
-      fs.writeFileSync(path.join(sourceRoot, 'lua', 'common', 'helper.risulua'), 'return { value = "module recovery helper" }\n', 'utf-8');
-      fs.writeFileSync(path.join(sourceRoot, 'docs', 'refactor-map.json'), `${JSON.stringify({ owner: 'module', restored: true }, null, 2)}\n`, 'utf-8');
+      fs.writeFileSync(
+        path.join(sourceRoot, 'lua', 'main.risulua'),
+        'local helper = require("common.helper")\nreturn helper.value\n',
+        'utf-8',
+      );
+      fs.writeFileSync(
+        path.join(sourceRoot, 'lua', 'common', 'helper.risulua'),
+        'return { value = "module recovery helper" }\n',
+        'utf-8',
+      );
+      fs.writeFileSync(
+        path.join(sourceRoot, 'docs', 'refactor-map.json'),
+        `${JSON.stringify({ owner: 'module', restored: true }, null, 2)}\n`,
+        'utf-8',
+      );
 
       const fallbackLua = 'print("fallback module lua")\n';
       const embeddedLua = `${fallbackLua}\n${encodeRisuLuaRecoveryBlock(createRisuLuaRecoveryManifest({ rootDir: sourceRoot }))}`;
@@ -778,10 +819,18 @@ describe('module extract', () => {
       ]);
 
       expect(exitCode).toBe(0);
-      expect(fs.readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).toBe('local helper = require("common.helper")\nreturn helper.value\n');
-      expect(fs.readFileSync(path.join(outDir, 'lua', 'common', 'helper.risulua'), 'utf-8')).toBe('return { value = "module recovery helper" }\n');
-      expect(JSON.parse(fs.readFileSync(path.join(outDir, 'docs', 'refactor-map.json'), 'utf-8'))).toEqual({ owner: 'module', restored: true });
-      expect(fs.readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).not.toContain(RISULUA_RECOVERY_BLOCK_START);
+      expect(fs.readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).toBe(
+        'local helper = require("common.helper")\nreturn helper.value\n',
+      );
+      expect(fs.readFileSync(path.join(outDir, 'lua', 'common', 'helper.risulua'), 'utf-8')).toBe(
+        'return { value = "module recovery helper" }\n',
+      );
+      expect(
+        JSON.parse(fs.readFileSync(path.join(outDir, 'docs', 'refactor-map.json'), 'utf-8')),
+      ).toEqual({ owner: 'module', restored: true });
+      expect(fs.readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).not.toContain(
+        RISULUA_RECOVERY_BLOCK_START,
+      );
     });
   });
 

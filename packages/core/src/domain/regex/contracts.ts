@@ -8,7 +8,7 @@ export interface CanonicalRegexEntry {
   type: RegexType;
   /** Raw regex flag string, preserved exactly when present. */
   flag?: string;
-  /** Raw ableFlag boolean, preserved exactly when present. */
+  /** Canonical ableFlag boolean, normalized from upstream boolean-like values when present. */
   ableFlag?: boolean;
   /** `@@@ IN` section body. */
   in: string;

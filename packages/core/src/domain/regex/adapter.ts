@@ -379,8 +379,16 @@ function requireString(value: unknown, context: string): string {
 }
 
 function requireBoolean(value: unknown, context: string): boolean {
-  if (typeof value !== 'boolean') {
-    throw new RegexAdapterError(`Expected ${context} to be a boolean.`);
+  if (typeof value === 'boolean') {
+    return value;
   }
-  return value;
+  if (value === 'true' || value === 'True') {
+    return true;
+  }
+  if (value === 'false' || value === 'False') {
+    return false;
+  }
+  throw new RegexAdapterError(
+    `Expected ${context} to be a boolean or true/false string, got ${JSON.stringify(value)}.`,
+  );
 }

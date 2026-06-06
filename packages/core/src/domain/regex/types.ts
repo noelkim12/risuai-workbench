@@ -4,6 +4,7 @@ export const REGEX_TYPES = [
   'editoutput',
   'editdisplay',
   'editprocess',
+  'editrequest',
   'edittrans',
   'disabled',
 ] as const;
@@ -16,7 +17,7 @@ export interface UpstreamRegexEntry {
   comment: string;
   type: string;
   flag?: string;
-  ableFlag?: boolean;
+  ableFlag?: boolean | 'true' | 'false' | 'True' | 'False';
   in: string;
   out: string;
 }

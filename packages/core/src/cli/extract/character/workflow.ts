@@ -4,6 +4,7 @@ import { ensureDir } from '@/node/fs-helpers';
 import { getCharacterName } from '@/domain/charx/data';
 import { sanitizeFilename } from '../../../utils/filenames';
 import { getErrorMessage } from '../../shared';
+import { installDocsProviderBundle } from '../../shared/docs-provider';
 import {
   RISULUA_RECOVERY_HELP_LINE,
   parseRisuLuaMode,
@@ -108,7 +109,15 @@ export async function runExtractWorkflow(argv: readonly string[]): Promise<numbe
   }
 
   try {
-    await runMain(filePath, outArg, jsonOnly, modeResult.mode ?? 'classic', recoveryResult.mode, splitResult.mode ?? 'none', domainGenerationResult.mode ?? 'validated');
+    await runMain(
+      filePath,
+      outArg,
+      jsonOnly,
+      modeResult.mode ?? 'classic',
+      recoveryResult.mode,
+      splitResult.mode ?? 'none',
+      domainGenerationResult.mode ?? 'validated',
+    );
     return 0;
   } catch (error) {
     const message = getErrorMessage(error);
@@ -149,7 +158,8 @@ async function runMain(
   console.log(`\n     ✅ Canonical extract mode — no charx.json`);
   console.log(`     🌙 RisuLua: ${formatRisuLuaModeLabel(risuluaMode)}`);
   console.log(`     🧩 RisuLua split: ${risuluaSplitMode}`);
-  if (risuluaSplitMode === 'module-table') console.log(`     🧩 RisuLua domain generation: ${domainGeneration}`);
+  if (risuluaSplitMode === 'module-table')
+    console.log(`     🧩 RisuLua domain generation: ${domainGeneration}`);
   console.log(`     ⏱  Phase 1: ${fmt(performance.now() - t)}`);
 
   if (jsonOnly) {
@@ -166,7 +176,14 @@ async function runMain(
   console.log(`     ⏱  Phase 3: ${fmt(performance.now() - t)}`);
 
   t = performance.now();
-  await phase4_extractTriggerLua(charx, resolvedOutDir, risuluaMode, risuluaRecovery, risuluaSplitMode, domainGeneration);
+  await phase4_extractTriggerLua(
+    charx,
+    resolvedOutDir,
+    risuluaMode,
+    risuluaRecovery,
+    risuluaSplitMode,
+    domainGeneration,
+  );
   console.log(`     ⏱  Phase 4: ${fmt(performance.now() - t)}`);
 
   t = performance.now();
@@ -188,6 +205,9 @@ async function runMain(
   // Phase 9 (Lua analysis) and Phase 10 (charx analysis) are temporarily disabled
   // because they depend on charx.json which is intentionally excluded in T12
   console.log(`     ⏱  Phase 9-10 (analysis): deferred to T13`);
+
+  const docsCount = installDocsProviderBundle({ outputRoot: resolvedOutDir });
+  console.log(`     📚 docs-provider: ${docsCount}개 파일 설치`);
 
   const total = performance.now() - t0;
   console.log('\n  ────────────────────────────────────────');

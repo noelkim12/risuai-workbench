@@ -3,6 +3,7 @@ import path from 'node:path';
 import { runAnalyzeModuleWorkflow } from '@/cli/analyze/module/workflow';
 import { ensureDir } from '@/node/fs-helpers';
 import { getErrorMessage } from '../../shared';
+import { installDocsProviderBundle } from '../../shared/docs-provider';
 import {
   RISULUA_RECOVERY_HELP_LINE,
   parseRisuLuaMode,
@@ -96,7 +97,14 @@ export async function runExtractWorkflow(argv: readonly string[]): Promise<numbe
   }
 
   try {
-    await runMain(filePath, outArg, modeResult.mode ?? 'classic', recoveryResult.mode, splitResult.mode ?? 'none', domainGenerationResult.mode ?? 'validated');
+    await runMain(
+      filePath,
+      outArg,
+      modeResult.mode ?? 'classic',
+      recoveryResult.mode,
+      splitResult.mode ?? 'none',
+      domainGenerationResult.mode ?? 'validated',
+    );
     return 0;
   } catch (error) {
     const message = getErrorMessage(error);
@@ -131,7 +139,8 @@ async function runMain(
 
   console.log(`     RisuLua: ${formatRisuLuaModeLabel(risuluaMode)}`);
   console.log(`     RisuLua split: ${risuluaSplitMode}`);
-  if (risuluaSplitMode === 'module-table') console.log(`     RisuLua domain generation: ${domainGeneration}`);
+  if (risuluaSplitMode === 'module-table')
+    console.log(`     RisuLua domain generation: ${domainGeneration}`);
   console.log(`     ⏱  Phase 1: ${fmt(performance.now() - t)}`);
 
   t = performance.now();
@@ -145,7 +154,14 @@ async function runMain(
   t = performance.now();
   let phase4Error: Error | undefined;
   try {
-    await phase4_extractLua(parsed.module, resolvedOutDir, risuluaMode, risuluaRecovery, risuluaSplitMode, domainGeneration);
+    await phase4_extractLua(
+      parsed.module,
+      resolvedOutDir,
+      risuluaMode,
+      risuluaRecovery,
+      risuluaSplitMode,
+      domainGeneration,
+    );
   } catch (error) {
     phase4Error = error instanceof Error ? error : new Error(String(error));
     console.error(`     ⚠️ Phase 4 failed: ${phase4Error.message}`);
@@ -171,6 +187,9 @@ async function runMain(
   t = performance.now();
   runModuleAnalysis(resolvedOutDir);
   console.log(`     ⏱  Phase 9 (analysis): ${fmt(performance.now() - t)}`);
+
+  const docsCount = installDocsProviderBundle({ outputRoot: resolvedOutDir });
+  console.log(`     📚 docs-provider: ${docsCount}개 파일 설치`);
 
   const total = performance.now() - t0;
   console.log('\n  ────────────────────────────────────────');
