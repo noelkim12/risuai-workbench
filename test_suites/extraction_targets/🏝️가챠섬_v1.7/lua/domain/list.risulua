@@ -1,0 +1,48 @@
+local M = {}
+local __impl = {}
+
+-- 콤마 구분 list에 name 존재? (whitespace trim)
+function __impl.eqInList(listStr, targetName)
+    if not listStr or listStr == "None" or listStr == "" or listStr == "null" then return false end
+    for entry in listStr:gmatch("([^,]+)") do
+        entry = entry:match("^%s*(.-)%s*$")
+        if entry == targetName then return true end
+    end
+    return false
+end
+
+-- 콤마 구분 list의 entry 개수
+function __impl.eqCountList(listStr)
+    if not listStr or listStr == "None" or listStr == "" or listStr == "null" then return 0 end
+    local n = 0
+    for _ in listStr:gmatch("([^,]+)") do n = n + 1 end
+    return n
+end
+
+-- 콤마 구분 list에 name 추가 (중복 방지)
+function __impl.eqAddToList(listStr, targetName)
+    if __impl.eqInList(listStr, targetName) then return listStr end
+    if not listStr or listStr == "None" or listStr == "" or listStr == "null" then
+        return targetName
+    end
+    return listStr .. ", " .. targetName
+end
+
+-- 콤마 구분 list에서 name 제거
+function __impl.eqRemoveFromList(listStr, targetName)
+    if not listStr or listStr == "None" or listStr == "" or listStr == "null" then return "None" end
+    local kept = {}
+    for entry in listStr:gmatch("([^,]+)") do
+        local e = entry:match("^%s*(.-)%s*$")
+        if e ~= targetName then table.insert(kept, e) end
+    end
+    if #kept == 0 then return "None" end
+    return table.concat(kept, ", ")
+end
+
+M.eqInList = __impl.eqInList
+M.eqCountList = __impl.eqCountList
+M.eqAddToList = __impl.eqAddToList
+M.eqRemoveFromList = __impl.eqRemoveFromList
+
+return M

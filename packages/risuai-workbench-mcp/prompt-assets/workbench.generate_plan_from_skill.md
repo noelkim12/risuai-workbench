@@ -9,7 +9,7 @@ Workflow:
 2. Read the full skill resource URI included in the `workbench.apply_skill` plan preview bundle.
 3. Generate a Korean planning document preview using the selected skill's Build Recipe, Common Pitfalls, and Acceptance Gate.
 4. Include the selected skill id, recommendation reason, and source resource URI in the plan preview.
-5. Do not write files automatically. If the user wants to save the plan, use the existing preview and mutation-gated artifact workflow.
+5. Do not write files automatically. If the user wants to save the plan, use the existing Workbench mutation workflow.
 
 Plan preview format:
 

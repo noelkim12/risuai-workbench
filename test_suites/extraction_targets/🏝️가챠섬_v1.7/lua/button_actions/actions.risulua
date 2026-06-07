@@ -1,0 +1,537 @@
+local __domain_var = require("domain.var")
+local __domain_dungeon = require("domain.dungeon")
+local __domain_companion_reroll = require("domain.companion_reroll")
+local __variable_store = require("state.variable_store")
+
+local M = {}
+
+local function exploreWestForest(triggerId)
+    __domain_var.refreshSeed(triggerId)
+    __domain_var._closeAllSidePanels(triggerId)
+    addChat(triggerId, "user", "🌲 서쪽 숲을 탐색한다.[EXPLORE:서쪽숲]")
+end
+
+M.exploreWestForest = exploreWestForest
+
+local function exploreEastDesert(triggerId)
+    __domain_var.refreshSeed(triggerId)
+    __domain_var._closeAllSidePanels(triggerId)
+    addChat(triggerId, "user", "🏜 동쪽 사막을 탐색한다.[EXPLORE:동쪽사막]")
+end
+
+M.exploreEastDesert = exploreEastDesert
+
+local function exploreSouthBeach(triggerId)
+    __domain_var.refreshSeed(triggerId)
+    __domain_var._closeAllSidePanels(triggerId)
+    addChat(triggerId, "user", "🌊 남쪽 해변을 탐색한다.[EXPLORE:남쪽해변]")
+end
+
+M.exploreSouthBeach = exploreSouthBeach
+
+local function exploreNorthMountain(triggerId)
+    __domain_var.refreshSeed(triggerId)
+    __domain_var._closeAllSidePanels(triggerId)
+    addChat(triggerId, "user", "🏔 북쪽 산맥을 탐색한다.[EXPLORE:북쪽산맥]")
+end
+
+M.exploreNorthMountain = exploreNorthMountain
+
+-- 중앙 — 성소로 귀환 (어디서든)
+local function mapGoToSanctuary(triggerId)
+    __domain_var._closeAllSidePanels(triggerId)
+    addChat(triggerId, "user", "🏠 성소로 귀환한다.")
+end
+
+M.mapGoToSanctuary = mapGoToSanctuary
+
+-- 중앙 — 던전 게이트 입장 (열려있을 때만 의미 있음)
+local function mapEnterDungeon(triggerId)
+    local gate = __domain_var.safeGetVar(triggerId, "cv_dungeonGateState", "열림")
+    if gate ~= "열림" then
+        alertError(triggerId, "던전 게이트가 닫혀 있습니다 (" .. gate .. "). 다음 날을 기다리세요.")
+        return
+    end
+    __domain_var._closeAllSidePanels(triggerId)
+    -- #353: cv_dungeonActive 즉시 set (lorebook 던전 GM 가이드 조건부 활성을 위한 pre-set).
+    setChatVar(triggerId, "cv_dungeonActive", "1")
+    setChatVar(triggerId, "cv_dungeonGateState", "도전중")
+
+    -- #453: 던전 재진입 시 cv_floor (누적 클리어 최고층) 부터 이어가기.
+    --   forceCloseDungeon 은 cv_currentFloor 를 0 으로 reset 하지만, mapEnterDungeon 진입 시
+    --   cv_floor 값으로 다시 set → _dungeonFloorSetup 의 cur+1 로 자연스럽게 cv_floor+1 시작.
+    --   효과: 5층 클리어 후 성소 다녀와도 다음 entry 는 floor 6 부터 (보스 HP 자동 스케일).
+    --   첫 진입 (cv_floor=0) 은 기존과 동일하게 floor 1 부터.
+    local clearedFloor = tonumber(__domain_var.safeGetVar(triggerId, "cv_floor", "0")) or 0
+    setChatVar(triggerId, "cv_currentFloor", tostring(clearedFloor))
+
+    -- 셋업: 컨디션 / 타입 / 라운드 시퀀스 / 몬스터 / 패널 (dungeonNextFloor와 동일)
+    -- cv_currentFloor = clearedFloor → _dungeonFloorSetup 가 +1 → clearedFloor + 1 시작.
+    local pickedDType = __domain_dungeon._dungeonFloorSetup(triggerId)
+
+    setChatVar(triggerId, "cv_gachaPanelOpen", "0")
+    addChat(triggerId, "user", "⚔ 던전 게이트를 통해 던전에 진입한다.[DUNGEON_TYPE:" .. pickedDType .. "]")
+end
+
+M.mapEnterDungeon = mapEnterDungeon
+
+local function forgeClearSkill(triggerId)    _forgeClearCat(triggerId, "skill")    end
+
+M.forgeClearSkill = forgeClearSkill
+
+local function forgeClearRelic(triggerId)    _forgeClearCat(triggerId, "relic")    end
+
+M.forgeClearRelic = forgeClearRelic
+
+local function forgeClearFacility(triggerId) _forgeClearCat(triggerId, "facility") end
+
+M.forgeClearFacility = forgeClearFacility
+
+local function forgeApplySkill(triggerId)    _forgeApplyCat(triggerId, "skill")    end
+
+M.forgeApplySkill = forgeApplySkill
+
+local function forgeApplyRelic(triggerId)    _forgeApplyCat(triggerId, "relic")    end
+
+M.forgeApplyRelic = forgeApplyRelic
+
+local function forgeApplyFacility(triggerId) _forgeApplyCat(triggerId, "facility") end
+
+M.forgeApplyFacility = forgeApplyFacility
+
+local function auxModeON(triggerId)
+    setChatVar(triggerId, "cv_auxMode", "1")
+    _stayInGuide(triggerId)  -- 내부에서 appendSaveToCurrentMessage 호출 (setChat → 재렌더)
+end
+
+M.auxModeON = auxModeON
+
+local function auxModeOFF(triggerId)
+    setChatVar(triggerId, "cv_auxMode", "0")
+    _stayInGuide(triggerId)
+end
+
+M.auxModeOFF = auxModeOFF
+
+-- #362 기본 캐릭터 포함/제외 토글 — 가챠풀 캐시 invalidate 후 reloadDisplay
+-- ON  (cv_baseCharsOff=0): COMPANION_POOL_BOT + DLC 동료 (기본)
+-- OFF (cv_baseCharsOff=1): DLC 동료만 (DLC 테스터 / DLC-only 운영용)
+local function baseCharsON(triggerId)
+    setChatVar(triggerId, "cv_baseCharsOff", "0")
+    setChatVar(triggerId, "cv_companionPoolCache", "")  -- 다음 가챠 시 풀 재빌드
+    _stayInGuide(triggerId)  -- 내부에서 appendSave (setChat → 재렌더)
+end
+
+M.baseCharsON = baseCharsON
+
+local function baseCharsOFF(triggerId)
+    setChatVar(triggerId, "cv_baseCharsOff", "1")
+    setChatVar(triggerId, "cv_companionPoolCache", "")
+    _stayInGuide(triggerId)
+end
+
+M.baseCharsOFF = baseCharsOFF
+
+local function gachaCompanion(triggerId)
+    __domain_var.refreshSeed(triggerId)
+    _markGachaPanelStay(triggerId)
+    -- AI에 위임하지 않고 Lua가 직접 추첨해 [GACHA_PICK:한글|English] 강제
+    local picked = __domain_var.pickRandomCompanion(triggerId)
+    if picked then
+        setChatVar(triggerId, "cv_lastGachaPick", picked.ko)
+        addChat(triggerId, "user", "👥 동료 소환 가챠를 돌린다.[GACHA_PICK:" .. picked.ko .. "|" .. picked.en .. "]")
+        print(string.format("[GachaIsland] COMPANION_PICK: %s (%s) origin=%s", picked.ko, picked.en, picked.origin))
+    else
+        -- pickRandomCompanion은 이제 항상 picked 리턴 (nil 안 옴) — 이 분기는 도달 불가능, 안전판
+        addChat(triggerId, "user", "👥 동료 소환 가챠를 돌린다.")
+        print("[GachaIsland] COMPANION_PICK: pickRandomCompanion returned nil unexpectedly")
+    end
+end
+
+M.gachaCompanion = gachaCompanion
+
+local function gachaCompanionReroll(triggerId)
+    __domain_var.refreshSeed(triggerId)
+    _markGachaPanelStay(triggerId)
+
+    if __domain_var.safeGetVar(triggerId, "cv_dungeonActive", "0") == "1" then
+        alertError(triggerId, "던전 안에서는 동료 다시 뽑기를 사용할 수 없습니다.")
+        return
+    end
+
+    local oldKo, oldEn = _rerollFindLastCompanion(triggerId)
+    if not oldKo or oldKo == "" or oldKo == "None" or oldKo == "null" then
+        alertError(triggerId, "다시 뽑을 최근 동료가 없습니다.")
+        return
+    end
+
+    local curPoints = _rerollParsePoints(__domain_var.safeGetVar(triggerId, "cv_points", "0"))
+    if curPoints < 500 then
+        alertError(triggerId, "포인트가 부족합니다. 다시 뽑기에는 500P가 필요합니다.")
+        return
+    end
+
+    local picked = _rerollPickReplacement(triggerId, oldKo)
+    if not picked then
+        alertError(triggerId, "교체 가능한 미소환 동료가 없습니다.")
+        return
+    end
+
+    if not _rerollReplaceCompanion(triggerId, oldKo, picked) then
+        alertError(triggerId, "기존 동료를 찾지 못해 다시 뽑기를 중단했습니다.")
+        return
+    end
+
+    setChatVar(triggerId, "cv_points", _rerollFormatPoints(curPoints - 500))
+    setChatVar(triggerId, "cv_skipNextRerollPoint", "1")
+    setChatVar(triggerId, "cv_panelStayOnce", "gacha")
+
+    -- #537 CRITICAL: 직전 char msg 의 SAVE 갱신 — onOutput SAVE_LOAD 가 cv_companions 를 옛 동료로
+    -- 덮어쓰지 않도록 reroll 상태 (바이켄 + 도바킨, points -500 등) 를 prior msg seed 에 박음.
+    -- dungeonReturn 과 동일 패턴 — state-mutating 버튼 후 addChat 전 필수.
+    __domain_var.appendSaveToCurrentMessage(triggerId)
+
+    addChat(triggerId, "user", "👥 동료 다시 뽑기를 실행한다. 직전 소환 동료 " .. oldKo .. "를 계약 해제하고 500P로 새 동료를 다시 뽑는다.[GACHA_REROLL:" .. oldKo .. "|" .. (oldEn or "") .. "][GACHA_REROLL_PAID:500P][GACHA_PICK:" .. picked.ko .. "|" .. picked.en .. "]")
+    print(string.format("[GachaIsland] COMPANION_REROLL: %s -> %s (%s), POINT %d -> %d", oldKo, picked.ko, picked.en, curPoints, curPoints - 500))
+end
+
+M.gachaCompanionReroll = gachaCompanionReroll
+
+-- 커플 아이템 가챠: 1,000P, 차원주머니 아이템으로 저장 (성소/성역 충전 보조)
+local function gachaCouple(triggerId)
+    __domain_var.refreshSeed(triggerId)
+    _markGachaPanelStay(triggerId)
+    local c1 = __variable_store.GACHA_CAT1_STYLE[math.random(#__variable_store.GACHA_CAT1_STYLE)]
+    local c2 = __variable_store.GACHA_CAT2_COUPLE[math.random(#__variable_store.GACHA_CAT2_COUPLE)]
+    local c3 = __variable_store.GACHA_CAT3_COUPLE[math.random(#__variable_store.GACHA_CAT3_COUPLE)]
+    local tier = __domain_var.rollGachaTier()
+    addChat(triggerId, "user", "💞 커플 아이템 가챠를 돌린다.[GACHA_CATS:커플|" .. c1 .. "|" .. c2 .. "|" .. c3 .. "][GACHA_TIER:" .. tier .. "]")
+end
+
+M.gachaCouple = gachaCouple
+
+local function gachaRelic(triggerId)
+    __domain_var.refreshSeed(triggerId)
+    _markGachaPanelStay(triggerId)
+    local c1 = __variable_store.GACHA_CAT1_STYLE[math.random(#__variable_store.GACHA_CAT1_STYLE)]
+    local c2 = __variable_store.GACHA_CAT2_RELIC[math.random(#__variable_store.GACHA_CAT2_RELIC)]
+    local tier = __domain_var.rollGachaTier()
+    addChat(triggerId, "user", "🏺 유물 획득 가챠를 돌린다.[GACHA_CATS:유물|" .. c1 .. "|" .. c2 .. "][GACHA_TIER:" .. tier .. "]")
+end
+
+M.gachaRelic = gachaRelic
+
+local function gachaFacility(triggerId)
+    __domain_var.refreshSeed(triggerId)
+    _markGachaPanelStay(triggerId)
+    local c1 = __variable_store.GACHA_CAT1_STYLE[math.random(#__variable_store.GACHA_CAT1_STYLE)]
+    local c2 = __variable_store.GACHA_CAT2_FAC[math.random(#__variable_store.GACHA_CAT2_FAC)]
+    local tier = __domain_var.rollGachaTier()
+    addChat(triggerId, "user", "🏛 시설 건설 가챠를 돌린다.[GACHA_CATS:시설|" .. c1 .. "|" .. c2 .. "][GACHA_TIER:" .. tier .. "]")
+end
+
+M.gachaFacility = gachaFacility
+
+local function gachaSkill(triggerId)
+    __domain_var.refreshSeed(triggerId)
+    _markGachaPanelStay(triggerId)
+    local c1 = __variable_store.GACHA_CAT2_SKILL1[math.random(#__variable_store.GACHA_CAT2_SKILL1)]
+    local c2 = __variable_store.GACHA_CAT2_SKILL2[math.random(#__variable_store.GACHA_CAT2_SKILL2)]
+    local tier = __domain_var.rollGachaTier()
+    -- #425: 공격 sub-type 일 때 range axis (단일/광역) 추가 추첨
+    local cats = "스킬|" .. c1 .. "|" .. c2
+    if c2 == "공격" then
+        local c3 = __variable_store.GACHA_CAT3_SKILL_RANGE[math.random(#__variable_store.GACHA_CAT3_SKILL_RANGE)]
+        cats = cats .. "|" .. c3
+    end
+    addChat(triggerId, "user", "✨ 스킬 습득 가챠를 돌린다.[GACHA_CATS:" .. cats .. "][GACHA_TIER:" .. tier .. "]")
+end
+
+M.gachaSkill = gachaSkill
+
+local function gachaSupply(triggerId)
+    __domain_var.refreshSeed(triggerId)
+    _markGachaPanelStay(triggerId)
+    local c1, c2 = pickSupplyCats(triggerId)
+    local tier = __domain_var.rollGachaTier()
+    addChat(triggerId, "user", "📦 보급품 가챠를 돌린다.[GACHA_CATS:보급품|" .. c1 .. "|" .. c2 .. "][GACHA_TIER:" .. tier .. "]")
+end
+
+M.gachaSupply = gachaSupply
+
+-- 보급품 가챠 2회 — 한 user 메시지에 [GACHA_CATS] 두 개 부착, 「보급품 가챠를 돌린다」 두 줄 표시
+-- AI는 「가챠 규칙」 entry의 [MULTI GACHA_CATS] 룰에 따라 두 번 결과 + 비용 2× 차감 (총 400P)
+local function gachaSupplyTwice(triggerId)
+    __domain_var.refreshSeed(triggerId)
+    _markGachaPanelStay(triggerId)
+    local c1a, c2a = pickSupplyCats(triggerId)
+    local c1b, c2b = pickSupplyCats(triggerId)
+    local tierA = __domain_var.rollGachaTier()
+    local tierB = __domain_var.rollGachaTier()
+    local msg = "📦 보급품 가챠를 돌린다.\n📦 보급품 가챠를 돌린다." ..
+        "[GACHA_CATS:보급품|" .. c1a .. "|" .. c2a .. "][GACHA_TIER:" .. tierA .. "]" ..
+        "[GACHA_CATS:보급품|" .. c1b .. "|" .. c2b .. "][GACHA_TIER:" .. tierB .. "]"
+    addChat(triggerId, "user", msg)
+end
+
+M.gachaSupplyTwice = gachaSupplyTwice
+
+local function gachaRandom(triggerId)
+    __domain_var.refreshSeed(triggerId)
+    _markGachaPanelStay(triggerId)
+    local frag = buildRandomGachaFragment(triggerId)
+    addChat(triggerId, "user", "🎲 랜덤 가챠를 돌린다." .. frag)
+end
+
+M.gachaRandom = gachaRandom
+
+-- #341: 보유한 가챠 티켓 전부 한 번에 사용
+-- cv_items에서 "가챠 티켓 xN" 매칭 → N회 추첨 → 한 user 메시지에 모두 부착
+local function gachaRandomAll(triggerId)
+    __domain_var.refreshSeed(triggerId)
+    _markGachaPanelStay(triggerId)
+    -- 보유 수량 추출
+    local items = __domain_var.safeGetVar(triggerId, "cv_items", "None")
+    local count = 0
+    if items ~= "None" and items ~= "" and items ~= "null" then
+        for entry in items:gmatch("([^,]+)") do
+            local nm = entry:match("^%s*(.-)%s*$")
+            local n = nm:match("^가챠 티켓%s+x(%d+)$")
+            if n then
+                count = tonumber(n) or 0
+                break
+            elseif nm == "가챠 티켓" then
+                count = 1
+                break
+            end
+        end
+    end
+    if count <= 0 then
+        alertError(triggerId, "보유한 가챠 티켓이 없습니다.")
+        return
+    end
+    if count == 1 then
+        local frag = buildRandomGachaFragment(triggerId)
+        addChat(triggerId, "user", "🎲 랜덤 가챠를 돌린다." .. frag)
+        return
+    end
+    -- N >= 2: N개 fragment 조립
+    local lines = {}
+    local frags = {}
+    for i = 1, count do
+        lines[#lines+1] = "🎲 랜덤 가챠를 돌린다."
+        frags[#frags+1] = buildRandomGachaFragment(triggerId)
+    end
+    local msg = table.concat(lines, "\n") .. table.concat(frags, "")
+    addChat(triggerId, "user", msg)
+    print(string.format("[GachaIsland] RANDOM_ALL: 가챠 티켓 %d장 한 번에 사용", count))
+end
+
+M.gachaRandomAll = gachaRandomAll
+
+local function dungeonReturn(triggerId)
+    forceCloseDungeon(triggerId)
+    setChatVar(triggerId, "cv_gachaPanelOpen", "0")
+    -- #433: #431 후 [SYSTEM|DUNGEON_EXIT] 자연 처리 폐기로 SAVE 갱신 fallback 사라짐.
+    -- forceCloseDungeon이 메모리상 cv_dungeonActive=0 등 reset해도 다음 onOutput의 SAVE_LOAD가
+    -- 직전 AI msg SAVE (cv_dungeonActive=1)로 되돌려서 던전 활성 상태 잔존. 직전 AI msg SAVE를 갱신.
+    __domain_var.appendSaveToCurrentMessage(triggerId)
+    addChat(triggerId, "user", "🏠 성소로 귀환한다.")
+end
+
+M.dungeonReturn = dungeonReturn
+
+local function dungeonNextFloor(triggerId)
+    -- 가드: 던전 진행 중이 아니면 무시 (DUNGEON_CHOICE 잘못 출력 / 부적절한 클릭 차단)
+    local active = __domain_var.safeGetVar(triggerId, "cv_dungeonActive", "0")
+    if active ~= "1" then
+        -- #469: silent skip 대신 사용자 alert — 무반응 원인 명확히 표시
+        local gate = __domain_var.safeGetVar(triggerId, "cv_dungeonGateState", "?")
+        alertError(triggerId, string.format("다음 층 진입 불가:\n던전이 비활성 상태입니다.\n\ncv_dungeonActive=%s, cv_dungeonGateState=%s\n\n던전 외부에서 클릭되었거나 던전이 이미 종료된 상태입니다.", active, gate))
+        print("[GachaIsland] dungeonNextFloor SKIPPED: 던전 진행 중 아님 (cv_dungeonActive=" .. active .. ", cv_dungeonGateState=" .. gate .. ")")
+        return
+    end
+
+    local pickedDType = __domain_dungeon._dungeonFloorSetup(triggerId)
+
+    -- [DUNGEON_TYPE:...] 태그로 user msg에 강제 부착 → AI는 verbatim 사용 (GACHA_PICK 패턴)
+    setChatVar(triggerId, "cv_gachaPanelOpen", "0")
+    addChat(triggerId, "user", "⬇ 다음 층으로 진입한다.[DUNGEON_TYPE:" .. pickedDType .. "]")
+end
+
+M.dungeonNextFloor = dungeonNextFloor
+
+local function sanctuaryReturn(triggerId)
+    forceCloseDungeon(triggerId)
+    setChatVar(triggerId, "cv_gachaPanelOpen", "0")
+    __domain_var.appendSaveToCurrentMessage(triggerId)  -- #433 동일 이유 (dungeonReturn 참조)
+    addChat(triggerId, "user", "🏠 던전을 빠져나가 성소로 귀환한다.")
+end
+
+M.sanctuaryReturn = sanctuaryReturn
+
+local function sanctuaryRecharge(triggerId)
+    setChatVar(triggerId, "cv_gachaPanelOpen", "0")
+    -- #452: user 가 충전 클릭 → consume flag set. 이후 같은 floor 에서 [SANCTUARY_CHOICE] 재출력 시 strip.
+    setChatVar(triggerId, "cv_sanctuaryConsumed", "1")
+    -- consumed=1 을 마지막 char msg seed 에 박아둠. 안 그러면 다음 SAVE_LOAD 가 직전 char msg 의 옛 seed (consumed=0) 로 덮어써 #506 가드가 SKIP → 라운드 advance 차단.
+    __domain_var.appendSaveToCurrentMessage(triggerId)
+    addChat(triggerId, "user", "💎 던전 내 성역에서 마나를 충전한다.")
+end
+
+M.sanctuaryRecharge = sanctuaryRecharge
+
+local function varEditMinusBig(triggerId)  _varEditApplyDeltaByUnit(triggerId, "big", -1) end
+
+M.varEditMinusBig = varEditMinusBig
+
+local function varEditMinusMed(triggerId)  _varEditApplyDeltaByUnit(triggerId, "med", -1) end
+
+M.varEditMinusMed = varEditMinusMed
+
+local function varEditMinusSml(triggerId)  _varEditApplyDeltaByUnit(triggerId, "sml", -1) end
+
+M.varEditMinusSml = varEditMinusSml
+
+local function varEditPlusSml(triggerId)   _varEditApplyDeltaByUnit(triggerId, "sml",  1) end
+
+M.varEditPlusSml = varEditPlusSml
+
+local function varEditPlusMed(triggerId)   _varEditApplyDeltaByUnit(triggerId, "med",  1) end
+
+M.varEditPlusMed = varEditPlusMed
+
+local function varEditPlusBig(triggerId)   _varEditApplyDeltaByUnit(triggerId, "big",  1) end
+
+M.varEditPlusBig = varEditPlusBig
+
+local function varEditSetMax(triggerId)
+    local target = __domain_var.safeGetVar(triggerId, "cv_varEditTarget", "")
+    if target == "" then return end
+    local maxV = _varEditMaxValue(triggerId, target)
+    if maxV then
+        _varEditWriteValue(triggerId, target, maxV)
+    elseif target == "cv_points" then
+        _varEditWriteValue(triggerId, target, 999999999)
+    else
+        _varEditWriteValue(triggerId, target, 999)
+    end
+    setChatVar(triggerId, "cv_debugOpen", "1")
+    setChatVar(triggerId, "cv_varEditOpen", "1")
+    setChatVar(triggerId, "cv_panelStayOnce", "")  -- 이전 trigger 잔재 cleanup (응답 후 reset 분기 진입 보장)
+    __domain_var.buildVarEditHtml(triggerId)
+    __domain_var.appendSaveToCurrentMessage(triggerId)
+end
+
+M.varEditSetMax = varEditSetMax
+
+local function varEditSetMin(triggerId)
+    local target = __domain_var.safeGetVar(triggerId, "cv_varEditTarget", "")
+    if target == "" then return end
+    _varEditWriteValue(triggerId, target, 0)
+    setChatVar(triggerId, "cv_debugOpen", "1")
+    setChatVar(triggerId, "cv_varEditOpen", "1")
+    setChatVar(triggerId, "cv_panelStayOnce", "")  -- 이전 trigger 잔재 cleanup (응답 후 reset 분기 진입 보장)
+    __domain_var.buildVarEditHtml(triggerId)
+    __domain_var.appendSaveToCurrentMessage(triggerId)
+end
+
+M.varEditSetMin = varEditSetMin
+
+local function debugShowDungeonChoice(triggerId)
+    _stayInDebug(triggerId)
+    if __domain_var.safeGetVar(triggerId, "cv_dungeonActive", "0") ~= "1" then
+        alertError(triggerId, "던전 진행 중이 아닙니다.")
+        return
+    end
+    local idx = _giAppendMarkerToLastChar(triggerId, "[DEBUG_DUNGEON_CHOICE]")
+    if not idx then
+        alertError(triggerId, "복구할 최근 응답을 찾지 못했습니다.")
+        return
+    end
+    __domain_var.appendSaveToCurrentMessage(triggerId)
+    reloadDisplay(triggerId)
+    alertNormal(triggerId, "층 클리어 선택지를 복구했습니다.")
+end
+
+M.debugShowDungeonChoice = debugShowDungeonChoice
+
+local function debugShowSanctuaryChoice(triggerId)
+    _stayInDebug(triggerId)
+    if __domain_var.safeGetVar(triggerId, "cv_dungeonActive", "0") ~= "1" then
+        alertError(triggerId, "던전 진행 중이 아닙니다.")
+        return
+    end
+    local idx = _giAppendMarkerToLastChar(triggerId, "[SANCTUARY_CHOICE]")
+    if not idx then
+        alertError(triggerId, "복구할 최근 응답을 찾지 못했습니다.")
+        return
+    end
+    setChatVar(triggerId, "cv_sanctuarySpawnedFloor", __domain_var.safeGetVar(triggerId, "cv_currentFloor", "0"))
+    setChatVar(triggerId, "cv_sanctuarySpawnedMsg", tostring(idx))
+    setChatVar(triggerId, "cv_sanctuaryConsumed", "0")
+    __domain_var.appendSaveToCurrentMessage(triggerId)
+    reloadDisplay(triggerId)
+    alertNormal(triggerId, "성역 선택지를 복구했습니다.")
+end
+
+M.debugShowSanctuaryChoice = debugShowSanctuaryChoice
+
+local function debugFloorClearReward(triggerId)
+    _stayInDebug(triggerId)
+    if __domain_var.safeGetVar(triggerId, "cv_dungeonActive", "0") ~= "1" then
+        alertError(triggerId, "던전 진행 중이 아닙니다.")
+        return
+    end
+    local curFloor = tonumber(__domain_var.safeGetVar(triggerId, "cv_currentFloor", "0")) or 0
+    if curFloor <= 0 then
+        alertError(triggerId, "현재 층 정보가 없습니다.")
+        return
+    end
+    local cleared = tonumber(__domain_var.safeGetVar(triggerId, "cv_floor", "0")) or 0
+    if curFloor > cleared then
+        setChatVar(triggerId, "cv_floor", tostring(curFloor))
+    end
+    setChatVar(triggerId, "cv_currentMonsters", "")
+    setChatVar(triggerId, "cv_monsterPanel", "")
+    setChatVar(triggerId, "cv_pendingMonsterSpawn", "0")
+    local dType = __domain_var.safeGetVar(triggerId, "cv_activeDungeonType", "None")
+    if dType == "미로형" then
+        setChatVar(triggerId, "cv_mazeEscapeCount", "3")
+        setChatVar(triggerId, "cv_mazeFailStreak", "0")
+    elseif dType == "탐색형" or dType == "토벌형" or dType == "결전형" then
+        local total = tonumber(__domain_var.safeGetVar(triggerId, "cv_totalRounds", "0")) or 0
+        if total <= 0 then total = 1; setChatVar(triggerId, "cv_totalRounds", "1") end
+        setChatVar(triggerId, "cv_currentRound", tostring(total))
+    end
+    buildRoundPanel(triggerId)
+    _giAddGachaTicket(triggerId, 1)
+    _giRefreshDerivedUi(triggerId)
+    _giRefreshLastStatusPanel(triggerId, "복구 완료: 현재 층 클리어와 가챠 티켓 1장이 반영되었습니다.")
+    _giAppendMarkerToLastChar(triggerId, "[DEBUG_DUNGEON_CHOICE]")
+    __domain_var.appendSaveToCurrentMessage(triggerId)
+    reloadDisplay(triggerId)
+    alertNormal(triggerId, "현재 층 클리어 보정과 선택지 복구를 적용했습니다.")
+end
+
+M.debugFloorClearReward = debugFloorClearReward
+
+local function debugForceDungeonReturn(triggerId)
+    _stayInDebug(triggerId)
+    local maxHp = tonumber(__domain_var.safeGetVar(triggerId, "cv_maxHp", "100")) or 100
+    local hp = tonumber(__domain_var.safeGetVar(triggerId, "cv_hp", tostring(maxHp))) or maxHp
+    local heal = math.max(1, math.floor(maxHp * 0.30))
+    setChatVar(triggerId, "cv_hp", tostring(math.min(maxHp, hp + heal)))
+    forceCloseDungeon(triggerId)
+    __domain_var._closeAllSidePanels(triggerId)
+    _giRemoveChoiceMarkersFromLastChar(triggerId)
+    _giRefreshDerivedUi(triggerId)
+    _giRefreshLastStatusPanel(triggerId, "복구 완료: 던전 상태를 종료하고 성소로 동기화했습니다.")
+    __domain_var.appendSaveToCurrentMessage(triggerId)
+    reloadDisplay(triggerId)
+    alertNormal(triggerId, "던전 상태를 종료하고 성소로 동기화했습니다.")
+end
+
+M.debugForceDungeonReturn = debugForceDungeonReturn
+
+return M

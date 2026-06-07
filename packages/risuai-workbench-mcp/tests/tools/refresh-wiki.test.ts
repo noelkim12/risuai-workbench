@@ -75,7 +75,6 @@ describe('handleRefreshWiki', () => {
 
     const result = mutationResult(await handleRefreshWiki(
       {
-        confirmation: { accepted: true },
         generatedFiles: [
           { content: '# New Overview\n', path: 'wiki/artifacts/merry/_generated/overview.md' },
           { content: '# Schema\n', path: 'wiki/SCHEMA.md' },
@@ -103,7 +102,6 @@ describe('handleRefreshWiki', () => {
 
     const result = diagnosticEnvelope(await handleRefreshWiki(
       {
-        confirmation: { accepted: true },
         generatedFiles: [
           { content: '# should not write\n', path: 'wiki/artifacts/merry/_generated/overview.md' },
           { content: 'blocked\n', path: 'wiki/notes/manual.md' },

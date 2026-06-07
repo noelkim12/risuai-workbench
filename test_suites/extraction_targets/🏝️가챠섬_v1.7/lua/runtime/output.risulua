@@ -1,0 +1,2597 @@
+local __domain_apply_starvation_hp_per_response = require("domain.apply_starvation_hp_per_response")
+local __domain_strip = require("domain.strip")
+local __domain_var = require("domain.var")
+local __domain_monster = require("domain.monster")
+local __domain_companion = require("domain.companion")
+local __domain_base = require("domain.base")
+local __domain_entry = require("domain.entry")
+local __domain_recalc = require("domain.recalc")
+local __domain_text = require("domain.text")
+local __variable_store = require("state.variable_store")
+local __domain_roll = require("domain.roll")
+
+local M = {}
+
+local onOutput
+
+onOutput = async(function(triggerId, aux_generate_combined)
+    local chatLength = getChatLength(triggerId)
+    if chatLength == 0 then return end
+
+    local lastMsg = getChat(triggerId, chatLength - 1)
+    if not lastMsg or lastMsg.role ~= "char" then return end
+
+    local text = ""
+    if type(lastMsg.data) == "string" then
+        text = lastMsg.data
+    end
+    if text == "" then return end
+
+    -- #343: 가챠 사이드 패널 — 가챠 버튼 클릭 시 var=1 마킹으로 addChat 재렌더 후에도 유지.
+    -- AI 응답 완료 시 var=0 리셋 — 다음 턴엔 자연 닫힘.
+    setChatVar(triggerId, "cv_gachaPanelOpen", "0")
+
+    -- #344: 사이드 패널 게이트 — `{{chat_index::is::lastmessageid}}`은 addChat(user) 후 char 메시지가
+    -- last가 아니게 되어 패널 HTML 자체가 사라짐. 마지막 char 메시지 ID를 변수로 추적해서
+    -- regex 게이트가 `chat_index::is::cv_lastCharMsgId`로 비교 → user 메시지 추가돼도 패널 유지.
+    setChatVar(triggerId, "cv_lastCharMsgId", tostring(chatLength - 1))
+
+    -- CoT / Extended Thinking 블록 안의 bot-제어 태그만 surgical strip
+    --   기존: CoT 블록 전체를 삭제 → setChat 으로 메시지 덮어쓸 때 화면에서도 CoT 사라짐
+    --   현재: CoT 블록은 보존 + 안의 [SYSTEM|...] / [SYS_*] / [GACHA_*] 등 태그만 제거
+    --         → Lua 파싱은 outer 태그만 봄 (이중 차감 X)
+    --         → 화면엔 AI 사고 과정 narrative 가 그대로 노출 (사용자 가시성 보장)
+    text = __domain_strip._stripBotTagsInsideCoTBlocks(text)
+
+    -- Initialize CBS vars on first run (before Lua has parsed any SYSTEM tags)
+    local rawHp = getChatVar(triggerId, "cv_hp")
+    if rawHp == nil or rawHp == "" or rawHp == "null" then
+        setChatVar(triggerId, "cv_hp",          "100")
+        setChatVar(triggerId, "cv_maxHp",        "100")
+        setChatVar(triggerId, "cv_mana",         "100")
+        setChatVar(triggerId, "cv_maxMana",      "100")
+        setChatVar(triggerId, "cv_hunger",       "100")
+        setChatVar(triggerId, "cv_maxHunger",    "100")
+        setChatVar(triggerId, "cv_day",          "1")
+        setChatVar(triggerId, "cv_floor",        "0")
+        setChatVar(triggerId, "cv_currentFloor", "0")
+        setChatVar(triggerId, "cv_points",       "5,000")
+        setChatVar(triggerId, "cv_attack",       "5")
+        setChatVar(triggerId, "cv_defense",      "5")
+        setChatVar(triggerId, "cv_luck",         "0")
+        setChatVar(triggerId, "cv_items",        "None")
+        setChatVar(triggerId, "cv_itemDetails",  "None")
+        setChatVar(triggerId, "cv_skills",       "None")
+        setChatVar(triggerId, "cv_skillDetails", "None")
+        setChatVar(triggerId, "cv_relics",       "None")
+        setChatVar(triggerId, "cv_relicDetails", "None")
+        setChatVar(triggerId, "cv_facilities",   "None")
+        setChatVar(triggerId, "cv_facilityDetails", "None")
+        setChatVar(triggerId, "cv_companions",           "None")
+        setChatVar(triggerId, "cv_companionsEng",        "None")
+        setChatVar(triggerId, "cv_companionsGrid",       "")
+        setChatVar(triggerId, "cv_dungeonActive",        "0")
+        setChatVar(triggerId, "cv_dungeonEnteredToday",  "false")
+        setChatVar(triggerId, "cv_dungeonGateState",     "열림")
+        setChatVar(triggerId, "cv_combatResult",         "보통")
+        setChatVar(triggerId, "cv_combatRoll",           "50")
+        setChatVar(triggerId, "cv_combatRate",           "55")
+        setChatVar(triggerId, "cv_lastDayMsg",           "-1")
+        setChatVar(triggerId, "cv_lastCompanionMsg",     "-1")
+        setChatVar(triggerId, "cv_lastGachaPick",        "None")
+        setChatVar(triggerId, "cv_nextFloorCondition",   "없음")
+        setChatVar(triggerId, "cv_activeFloorCondition", "없음")
+        setChatVar(triggerId, "cv_nextDungeonType",      "None")
+        setChatVar(triggerId, "cv_activeDungeonType",    "None")
+        setChatVar(triggerId, "cv_lastDungeonType",      "None")
+        setChatVar(triggerId, "cv_prevDungeonType",      "None")
+        setChatVar(triggerId, "cv_sanctuarySpawnedFloor", "0")
+        setChatVar(triggerId, "cv_sanctuarySpawnedMsg",   "-1")  -- #452
+        setChatVar(triggerId, "cv_sanctuaryConsumed",     "0")   -- #452
+        setChatVar(triggerId, "cv_currentRound",          "0")
+        setChatVar(triggerId, "cv_totalRounds",           "0")
+        setChatVar(triggerId, "cv_roundEvents",           "")
+        setChatVar(triggerId, "cv_roundPanel",            "")
+        setChatVar(triggerId, "cv_currentMonsters",       "")
+        setChatVar(triggerId, "cv_monsterPanel",          "")
+        setChatVar(triggerId, "cv_pendingMonsterSpawn",   "0")  -- #455
+        setChatVar(triggerId, "cv_mazeEscapeCount",       "0")
+        setChatVar(triggerId, "cv_islandStage",          "0")
+        setChatVar(triggerId, "cv_stage5MaxApplied",     "0")
+        setChatVar(triggerId, "cv_gameOver",             "0")
+        setChatVar(triggerId, "cv_invOpen",              "0")
+        setChatVar(triggerId, "cv_invCategory",          "bag")
+        setChatVar(triggerId, "cv_gachaPanelOpen",       "0")
+        setChatVar(triggerId, "cv_forgeOpen",             "0")
+        setChatVar(triggerId, "cv_forgeCategory",        "skill")
+        setChatVar(triggerId, "cv_forgeActiveSlot",      "0")
+        setChatVar(triggerId, "cv_forgeSlotSkill1",       "")
+        setChatVar(triggerId, "cv_forgeSlotSkill2",       "")
+        setChatVar(triggerId, "cv_forgeSlotSkill3",       "")
+        setChatVar(triggerId, "cv_forgeSlotRelic1",       "")
+        setChatVar(triggerId, "cv_forgeSlotRelic2",       "")
+        setChatVar(triggerId, "cv_forgeSlotRelic3",       "")
+        setChatVar(triggerId, "cv_forgeSlotFacility1",    "")
+        setChatVar(triggerId, "cv_forgeSlotFacility2",    "")
+        setChatVar(triggerId, "cv_forgeSlotFacility3",    "")
+        setChatVar(triggerId, "cv_guideOpen",            "0")
+        setChatVar(triggerId, "cv_auxMode",              "1")
+        -- #353 EQUIP SYSTEM 초기값
+        setChatVar(triggerId, "cv_equippedSkills",       "None")
+        setChatVar(triggerId, "cv_equippedRelics",       "None")
+        setChatVar(triggerId, "cv_maxSkillSlots",        "3")
+        setChatVar(triggerId, "cv_maxRelicSlots",        "3")
+        setChatVar(triggerId, "cv_attack_base",          "5")
+        setChatVar(triggerId, "cv_defense_base",         "5")
+        setChatVar(triggerId, "cv_luck_base",            "0")
+        setChatVar(triggerId, "cv_maxHp_base",           "100")
+        setChatVar(triggerId, "cv_maxMana_base",         "100")
+        setChatVar(triggerId, "cv_maxHunger_base",       "100")
+        setChatVar(triggerId, "cv_skillInvHtml",          "")  -- #373 첫 onOutput 에서 빌드
+        setChatVar(triggerId, "cv_relicInvHtml",          "")  -- #373 첫 onOutput 에서 빌드
+        setChatVar(triggerId, "cv_equippedSkillDetails",  "None")  -- #373 strict: AI 컨텍스트용
+        setChatVar(triggerId, "cv_equippedRelicDetails",  "None")  -- #373 strict: AI 컨텍스트용
+        -- #362 default ON (기본 캐릭터 포함)
+        setChatVar(triggerId, "cv_baseCharsOff",         "0")
+        print("[GachaIsland] INIT: CBS vars initialized to defaults")
+    end
+
+    -- =============================================
+    -- STATE RESTORE (per-message snapshot)
+    -- 이전 AI 메시지의 SAVE 태그에서 cv_* 복원
+    -- → reroll: 직전 ai_(N-1)의 SAVE에서 복원 후 새 태그 적용 = 정확한 ai_N_new
+    -- → 메시지 삭제: 남아있는 마지막 AI 메시지의 SAVE 시점으로 복원
+    -- 첫 응답 / 이전 SAVE 없음: no-op (cv_* 그대로 유지)
+    -- 구 SAVE(reversed key)는 whitelist 매칭 실패 → 자동 무시
+    -- =============================================
+
+    -- #482 MONSTER_STATE_SAVELOAD_GUARD
+    -- 외부 사용자 보고 (가챠섬 1.6.1 토벌 던전 성역→보스 라운드 stuck):
+    --   editRequest 가 보스 라운드용 spawn 한 live cv_currentMonsters 가 onOutput 시작 시 SAVE_LOAD 에
+    --   의해 옛 SAVE 의 빈 값으로 덮어씌워지는 케이스. POST_LOAD_SPAWN_RECOVERY ([5400+]) 가 같은 의도
+    --   안전망인데 spawnMonstersForRound 로 랜덤 재spawn (정확히 같은 보스 X). 이번 가드는 editRequest
+    --   spawn 한 live 상태 그대로 정확 복구.
+    -- 발동 조건 (모두 충족 시): dungeonActive=1 + 전투 라운드(M/B) + restored 가 비었음 + live 가 있었음
+    --   + 본 응답에 clear signal(FLOOR/DUNGEON_CHOICE/DEFEAT) 없음. 매우 보수적 가드 — 정상 종료 케이스 영향 X.
+    local __live_currentMonsters_beforeSaveLoad = __domain_var.safeGetVar(triggerId, "cv_currentMonsters", "")
+    local __live_monsterPanel_beforeSaveLoad    = __domain_var.safeGetVar(triggerId, "cv_monsterPanel", "")
+    local __live_pendingSpawn_beforeSaveLoad    = __domain_var.safeGetVar(triggerId, "cv_pendingMonsterSpawn", "0")
+
+    __domain_var.loadLatestStateFromHistory(triggerId)
+
+    do
+        local restoredMonsters = __domain_var.safeGetVar(triggerId, "cv_currentMonsters", "")
+        local dungeonActive = __domain_var.safeGetVar(triggerId, "cv_dungeonActive", "0") == "1"
+
+        if dungeonActive then
+            local cur = tonumber(__domain_var.safeGetVar(triggerId, "cv_currentRound", "0")) or 0
+            local total = tonumber(__domain_var.safeGetVar(triggerId, "cv_totalRounds", "0")) or 0
+            local evStr = __domain_var.safeGetVar(triggerId, "cv_roundEvents", "")
+            local events = {}
+            if evStr ~= "" and evStr ~= "None" and evStr ~= "null" then
+                for e in evStr:gmatch("([^|]+)") do
+                    events[#events + 1] = e
+                end
+            end
+            local ev = events[cur] or ""
+            local isCombatRound = (ev == "M" or ev == "B")
+            local hasClearSignal =
+                text:match("%[SYSTEM|FLOOR:") ~= nil
+                or text:match("%[DUNGEON_CHOICE%]") ~= nil
+                or text:match("%[SYSTEM|DEFEAT%]") ~= nil
+
+            if isCombatRound
+                and restoredMonsters == ""
+                and __live_currentMonsters_beforeSaveLoad ~= ""
+                and not hasClearSignal
+            then
+                setChatVar(triggerId, "cv_currentMonsters", __live_currentMonsters_beforeSaveLoad)
+                setChatVar(triggerId, "cv_pendingMonsterSpawn", "0")
+                if __live_monsterPanel_beforeSaveLoad ~= "" then
+                    setChatVar(triggerId, "cv_monsterPanel", __live_monsterPanel_beforeSaveLoad)
+                else
+                    __domain_var.buildMonsterPanel(triggerId)
+                end
+                __domain_var.buildRoundPanel(triggerId)
+                print(string.format(
+                    "[GachaIsland] MONSTER_STATE_SAVELOAD_GUARD (#482): SAVE_LOAD 가 currentMonsters 비웠지만 live 몬스터 상태 복구. round=%d/%d ev=%s monsters=%s",
+                    cur, total, ev, __live_currentMonsters_beforeSaveLoad
+                ))
+            else
+                print(string.format(
+                    "[GachaIsland] MONSTER_STATE_SAVELOAD_GUARD (#482) no restore: combat=%s restoredEmpty=%s liveHad=%s clearSignal=%s round=%d/%d ev=%s pendingBefore=%s",
+                    tostring(isCombatRound),
+                    tostring(restoredMonsters == ""),
+                    tostring(__live_currentMonsters_beforeSaveLoad ~= ""),
+                    tostring(hasClearSignal),
+                    cur,
+                    total,
+                    tostring(ev),
+                    tostring(__live_pendingSpawn_beforeSaveLoad)
+                ))
+            end
+        end
+    end
+
+    -- =============================================
+    -- LEGACY CHAT COMPAT — 신규 cv_* 변수 default 강제 초기화
+    -- 옛 채팅은 INIT 블록 미실행 (cv_hp 있음) + 옛 SAVE에 신규 변수 없음 → null 상태
+    -- 신규 변수 (라운드/몬스터/UI/AUX 토글) null이면 정규식 CBS 평가 시 raw 텍스트 노출 → CSS 파서 혼란
+    -- → SAVE_LOAD 직후 신규 변수만 default 보장 (기존 SAVE 값 절대 덮어쓰지 않음)
+    -- =============================================
+    do
+        local newDefaults = {
+            cv_currentRound   = "0",   cv_totalRounds    = "0",
+            cv_roundEvents    = "",    cv_roundPanel     = "",
+            cv_currentMonsters = "",   cv_monsterPanel   = "",
+            cv_auxMode        = "1",
+            cv_guideOpen      = "0",
+            cv_debugOpen      = "0",
+            cv_skipNextRerollPoint = "0",
+            cv_mazeEscapeCount = "0",  -- #308 미로 카운트
+            cv_mazeFailStreak  = "0",  -- #436 미로 anti-stall
+            cv_attack         = "5",   cv_defense        = "5",  cv_luck = "0",
+            cv_forgeOpen      = "0",   cv_forgeCategory  = "skill",
+            cv_forgeActiveSlot = "0",
+            cv_forgeSlotSkill1    = "", cv_forgeSlotSkill2    = "", cv_forgeSlotSkill3    = "",
+            cv_forgeSlotRelic1    = "", cv_forgeSlotRelic2    = "", cv_forgeSlotRelic3    = "",
+            cv_forgeSlotFacility1 = "", cv_forgeSlotFacility2 = "", cv_forgeSlotFacility3 = "",
+            -- #353 EQUIP SYSTEM defaults (옛 채팅 호환)
+            cv_equippedSkills = "None", cv_equippedRelics = "None",
+            cv_maxSkillSlots  = "3",    cv_maxRelicSlots  = "3",
+            cv_baseCharsOff   = "0",  -- #362 default ON
+            -- 변수 편집기 (디버그) — UI transient
+            cv_varEditTarget  = "",   -- 편집 대상 stat key ("cv_points" / "cv_hp" / ...). 빈 문자열 = 미선택.
+            cv_varEditHtml    = "",   -- 가이드 패널 안 변수 편집기 카드 HTML (buildVarEditHtml 가 빌드).
+            cv_varEditOpen    = "0",  -- details 펼침 상태 (button-trigger 후 재렌더 시 유지용; AI 응답 끝에 자동 reset).
+        }
+        for k, v in pairs(newDefaults) do
+            local cur = getChatVar(triggerId, k)
+            if cur == nil or cur == "" or cur == "null" then
+                setChatVar(triggerId, k, v)
+            end
+        end
+
+        -- #326: 옛 chat 임포트 직후 cv_forgePickList* 빌드 (SNAPSHOT 외 변수라 SAVE에 없음). 첫 onOutput에서 즉시 빌드 보장.
+        __domain_var.buildAllForgePickLists(triggerId)
+        -- #373 (Bug 3): cv_skillInvHtml / cv_relicInvHtml 도 동일하게 즉시 빌드
+        __domain_var.buildInvHtml(triggerId)
+        -- 변수 편집기 카드 HTML 도 즉시 빌드 (옛 채팅 임포트 시 가이드 패널 빈 카드 방지)
+        __domain_var.buildVarEditHtml(triggerId)
+        -- #373 (Bug 3 strict): cv_equippedSkillDetails / cv_equippedRelicDetails 도 즉시 빌드 (옛 채팅도 AI 가 equipped-only 인식)
+        __domain_var.buildEquippedDetails(triggerId)
+        -- 옛 채팅 호환: 던전 진행 중이지만 라운드 시퀀스 미초기화 케이스 → 즉시 결정 + 몬스터 스폰
+        -- (라운드 시스템 패치 전 채팅이 던전 중일 때 라운드 패널이 안 뜨는 버그 차단)
+        -- #308: 미로형 무한 시스템 호환 — events 비어있을 때만 재추첨 (진행 중 미로 보호)
+        if __domain_var.safeGetVar(triggerId, "cv_dungeonActive", "0") == "1"
+            and (tonumber(__domain_var.safeGetVar(triggerId, "cv_totalRounds", "0")) or 0) <= 0
+            and __domain_var.safeGetVar(triggerId, "cv_roundEvents", "") == "" then
+            local dType = __domain_var.safeGetVar(triggerId, "cv_activeDungeonType", "None")
+            if dType ~= "None" then
+                print("[GachaIsland] LEGACY: 던전 진행 중이지만 라운드 시퀀스 없음 → 자동 결정 (" .. dType .. ")")
+                __domain_var.rollRoundsForFloor(triggerId, dType)
+                __domain_var.spawnMonstersForRound(triggerId)
+                __domain_var.buildRoundPanel(triggerId)
+                __domain_var.buildMonsterPanel(triggerId)
+            end
+        end
+
+        -- #305 STALE_ROUNDS guard: SAVE_LOAD 후 cv_activeDungeonType과 cv_roundEvents 일치 검증
+        -- 옛 결전형 라운드 잔재가 미로형/탐색형 등 다른 형식으로 진입 후에도 남아있는 케이스 자동 fix
+        -- (예: 결전형 클리어 → DUNGEON_CHOICE 다음 층 → 미로형인데 SAVE에 cv_roundEvents=B 잔재)
+        if __domain_var.safeGetVar(triggerId, "cv_dungeonActive", "0") == "1" then
+            local dType = __domain_var.safeGetVar(triggerId, "cv_activeDungeonType", "None")
+            local events = __domain_var.safeGetVar(triggerId, "cv_roundEvents", "")
+            local total = tonumber(__domain_var.safeGetVar(triggerId, "cv_totalRounds", "0")) or 0
+            local stale = false
+            local reason = ""
+            if dType ~= "None" and events ~= "" then
+                local lastEv = events:match("([^|]+)$") or ""
+                if dType == "결전형" and not (total == 1 and events == "B") then
+                    stale = true; reason = "결전형인데 B 1개 시퀀스 아님"
+                elseif dType ~= "결전형" and total == 1 and events == "B" then
+                    stale = true; reason = "non-결전형인데 B 1개 시퀀스 (옛 결전형 잔재)"
+                elseif dType == "미로형" then
+                    -- #308: 미로형은 무한 (total=0 또는 카운트 도달 시 마지막 X). 옛 5~10 라운드 X 마지막은 stale로 마이그레이션.
+                    local mazeCount = tonumber(__domain_var.safeGetVar(triggerId, "cv_mazeEscapeCount", "0")) or 0
+                    if total > 0 and lastEv == "X" and mazeCount < 3 then
+                        stale = true; reason = "옛 미로형 (5~10 X 마지막) → 무한 시스템 마이그레이션"
+                    end
+                elseif (dType == "탐색형" or dType == "토벌형") and total > 0 and lastEv ~= "B" then
+                    stale = true; reason = "탐색/토벌형인데 마지막 라운드가 B 아님"
+                elseif (dType == "탐색형" or dType == "토벌형") and total <= 0 then
+                    stale = true; reason = "탐색/토벌형 라운드 시퀀스 미초기화"
+                end
+            end
+            if stale then
+                print(string.format("[GachaIsland] STALE_ROUNDS (type=%s, total=%d, events=%s) → %s → 재추첨",
+                    dType, total, events, reason))
+                __domain_var.rollRoundsForFloor(triggerId, dType)
+                __domain_var.spawnMonstersForRound(triggerId)
+                __domain_var.buildRoundPanel(triggerId)
+                __domain_var.buildMonsterPanel(triggerId)
+            end
+        end
+
+        -- #309 NON_DUNGEON CLEANUP: 던전 종료 후에도 라운드/패널 잔재가 남아있는 케이스 자동 정리
+        -- (이전 DUNGEON_EXIT 처리에서 라운드/몬스터/미로 카운트 리셋 누락된 옛 채팅 fix용)
+        if __domain_var.safeGetVar(triggerId, "cv_dungeonActive", "0") ~= "1" then
+            local needCleanup = (__domain_var.safeGetVar(triggerId, "cv_roundPanel",   "") ~= "") or
+                                (__domain_var.safeGetVar(triggerId, "cv_monsterPanel", "") ~= "") or
+                                (__domain_var.safeGetVar(triggerId, "cv_roundEvents",  "") ~= "") or
+                                (__domain_var.safeGetVar(triggerId, "cv_currentMonsters", "") ~= "")
+            if needCleanup then
+                setChatVar(triggerId, "cv_currentRound",    "0")
+                setChatVar(triggerId, "cv_totalRounds",     "0")
+                setChatVar(triggerId, "cv_roundEvents",     "")
+                setChatVar(triggerId, "cv_roundPanel",      "")
+                setChatVar(triggerId, "cv_currentMonsters", "")
+                setChatVar(triggerId, "cv_monsterPanel",    "")
+                setChatVar(triggerId, "cv_mazeEscapeCount", "0")
+                print("[GachaIsland] #309 NON_DUNGEON_CLEANUP: 던전 외 상태인데 라운드/패널 잔재 발견 → 자동 정리")
+            end
+        end
+    end
+
+    -- =============================================
+    -- LEGACY CHAT BACKFILL: cv_companionsEng
+    -- 기존 챗(v1.4 이전)에는 cv_companionsEng 변수가 없어 동료 탭이 비어 보임.
+    -- cv_companions(한글)는 있고 cv_companionsEng는 None인 케이스에서만 1회 backfill.
+    -- loadLoreBooks의 활성 entry에서 "- Name: Eng (Kor)" 패턴을 파싱 → 한글→영문 prefix 매핑
+    -- =============================================
+    do
+        local curEng = __domain_var.safeGetVar(triggerId, "cv_companionsEng", "None")
+        local curKor = __domain_var.safeGetVar(triggerId, "cv_companions", "None")
+        local needsBackfill = (curEng == "None" or curEng == "" or curEng == "null")
+            and (curKor ~= "None" and curKor ~= "" and curKor ~= "null")
+
+        if needsBackfill then
+            -- 한글명 리스트 추출
+            local kor_list = {}
+            for k in curKor:gmatch("([^,]+)") do
+                k = k:match("^%s*(.-)%s*$")
+                if k ~= "" then table.insert(kor_list, k) end
+            end
+
+            if #kor_list > 0 then
+                -- loadLoreBooks로 활성 entry 텍스트 수집
+                local ok, lore_data = pcall(function() return loadLoreBooks(triggerId) end)
+                if ok and type(lore_data) == "table" then
+                    local all_text = ""
+                    for _, item in ipairs(lore_data) do
+                        if type(item) == "table" and item.data then
+                            all_text = all_text .. "\n" .. tostring(item.data) .. "\n"
+                        end
+                    end
+
+                    -- ImageList의 영문 prefix 집합 (본체 + DLC Additional 모두)
+                    -- "### Characters Image Command List" 섹션의 콤마 리스트 파싱
+                    local image_prefixes = {}
+                    for block in all_text:gmatch("###[^\n]-Characters%s+Image%s+Command%s+List[^\n]*\n([^\n]+)") do
+                        for item in block:gmatch("([^,]+)") do
+                            item = item:gsub("^%s+", ""):gsub("%s+$", "")
+                            if item ~= "" then image_prefixes[item] = true end
+                        end
+                    end
+
+                    -- "- Name: <eng_full> (<korean>)" 패턴으로 kor→eng_prefix 맵 빌드
+                    -- 우선순위: eng_full의 토큰 중 ImageList에 있는 것 (사용자 의도) → 없으면 first word
+                    local kor_to_eng = {}
+                    for eng_full, kor in all_text:gmatch("%- Name:%s*([^%(\n]+)%s*%(([^%)\n]+)%)") do
+                        eng_full = eng_full:match("^%s*(.-)%s*$") or ""
+                        kor = kor:match("^%s*(.-)%s*$") or ""
+                        if kor ~= "" and eng_full ~= "" then
+                            local matched = nil
+                            -- 1) ImageList 매칭 우선 (이미지 에셋 파일명과 정확히 일치)
+                            for token in eng_full:gmatch("%S+") do
+                                if image_prefixes[token] then matched = token; break end
+                            end
+                            -- 2) fallback: first word
+                            if not matched then matched = eng_full:match("^(%S+)") end
+                            if matched and matched:match("^[A-Za-z][A-Za-z0-9_]*$") then
+                                kor_to_eng[kor] = matched
+                            end
+                        end
+                    end
+
+                    -- cv_companions 각 한글명 → 영문 변환
+                    local eng_list = {}
+                    local missed = {}
+                    for _, k in ipairs(kor_list) do
+                        local eng = kor_to_eng[k]
+                        if eng then
+                            table.insert(eng_list, eng)
+                        else
+                            table.insert(missed, k)
+                        end
+                    end
+
+                    if #eng_list > 0 then
+                        local result = table.concat(eng_list, ", ")
+                        setChatVar(triggerId, "cv_companionsEng", result)
+                        print(string.format("[GachaIsland] BACKFILL: cv_companionsEng <- %s (missed: %d)", result, #missed))
+                        if #missed > 0 then
+                            print(string.format("[GachaIsland] BACKFILL missed: %s (해당 캐릭터 로어북 미활성 또는 패턴 불일치)", table.concat(missed, ", ")))
+                        end
+                    else
+                        print(string.format("[GachaIsland] BACKFILL: 매칭 실패 — kor_list=%s (lorebook entry 미활성 가능성)", table.concat(kor_list, ", ")))
+                    end
+                end
+            end
+        end
+    end
+
+    -- Read current max values for cap calculations
+    local maxHp = tonumber(__domain_var.safeGetVar(triggerId, "cv_maxHp", "100")) or 100
+    local maxMana = tonumber(__domain_var.safeGetVar(triggerId, "cv_maxMana", "100")) or 100
+    local maxHunger = tonumber(__domain_var.safeGetVar(triggerId, "cv_maxHunger", "100")) or 100
+
+    -- #353 EQUIP SYSTEM: 가챠 응답이면 stat 태그(MAX_HP/MAX_MANA/MAX_HUNGER/ATK/DEF/LUCK)는 모두 SKIP.
+    -- 가챠 처리 블록에서 cv_*Details 의 5번째 stat 필드로 흡수한 후, 장착 상태에 따라 recalcStats 적용.
+    -- 비가챠 응답이면: cv_*_base 누적 + recalcStats 즉시 갱신.
+    local hasGachaTag = text:find("%[SYSTEM|GACHA:") ~= nil
+
+    -- =============================================
+    -- MAX_HP TRACKING (비가챠 응답만 base 누적)
+    -- =============================================
+
+    if not hasGachaTag then
+    for sign, val in text:gmatch("%[SYSTEM|MAX_HP:([%+%-]?)(%d+)[^%]]*%]") do
+        local d = tonumber(val) or 0
+        if d == 0 then
+            print("[GachaIsland] MAX_HP: zero value tag ignored (no-op)")
+        else
+        if sign == "-" then d = -d end
+        local oldBase = tonumber(__domain_var.safeGetVar(triggerId, "cv_maxHp_base", "100")) or 100
+        local newBase = math.max(1, oldBase + d)
+        setChatVar(triggerId, "cv_maxHp_base", tostring(newBase))
+        __domain_var.eqRecalcStats(triggerId)
+        maxHp = tonumber(__domain_var.safeGetVar(triggerId, "cv_maxHp", "100")) or 100
+        if d > 0 then
+            local curHp = tonumber(__domain_var.safeGetVar(triggerId, "cv_hp", "100")) or 100
+            local newHp = math.min(maxHp, curHp + d)
+            setChatVar(triggerId, "cv_hp", tostring(newHp))
+            print(string.format("[GachaIsland] MAX_HP_BASE: %d -> %d | HP: %d -> %d (bonus grant)", oldBase, newBase, curHp, newHp))
+        else
+            print(string.format("[GachaIsland] MAX_HP_BASE: %d -> %d", oldBase, newBase))
+        end
+        end
+    end
+    end
+
+    -- =============================================
+    -- MAX_MANA TRACKING (비가챠 응답만 base 누적)
+    -- =============================================
+
+    if not hasGachaTag then
+    for sign, val in text:gmatch("%[SYSTEM|MAX_MANA:([%+%-]?)(%d+)[^%]]*%]") do
+        local d = tonumber(val) or 0
+        if d == 0 then
+            print("[GachaIsland] MAX_MANA: zero value tag ignored (no-op)")
+        else
+        if sign == "-" then d = -d end
+        local oldBase = tonumber(__domain_var.safeGetVar(triggerId, "cv_maxMana_base", "100")) or 100
+        local newBase = math.max(1, oldBase + d)
+        setChatVar(triggerId, "cv_maxMana_base", tostring(newBase))
+        __domain_var.eqRecalcStats(triggerId)
+        maxMana = tonumber(__domain_var.safeGetVar(triggerId, "cv_maxMana", "100")) or 100
+        if d > 0 then
+            local curMana = tonumber(__domain_var.safeGetVar(triggerId, "cv_mana", "100")) or 100
+            local newMana = math.min(maxMana, curMana + d)
+            setChatVar(triggerId, "cv_mana", tostring(newMana))
+            print(string.format("[GachaIsland] MAX_MANA_BASE: %d -> %d | MANA: %d -> %d (bonus grant)", oldBase, newBase, curMana, newMana))
+        else
+            print(string.format("[GachaIsland] MAX_MANA_BASE: %d -> %d", oldBase, newBase))
+        end
+        end
+    end
+    end
+
+    -- =============================================
+    -- MAX_HUNGER TRACKING (비가챠 응답만 base 누적)
+    -- =============================================
+
+    if not hasGachaTag then
+    for sign, val in text:gmatch("%[SYSTEM|MAX_HUNGER:([%+%-]?)(%d+)[^%]]*%]") do
+        local d = tonumber(val) or 0
+        if d == 0 then
+            print("[GachaIsland] MAX_HUNGER: zero value tag ignored (no-op)")
+        else
+        if sign == "-" then d = -d end
+        local oldBase = tonumber(__domain_var.safeGetVar(triggerId, "cv_maxHunger_base", "100")) or 100
+        local newBase = math.max(1, oldBase + d)
+        setChatVar(triggerId, "cv_maxHunger_base", tostring(newBase))
+        __domain_var.eqRecalcStats(triggerId)
+        maxHunger = tonumber(__domain_var.safeGetVar(triggerId, "cv_maxHunger", "100")) or 100
+        if d > 0 then
+            local curHunger = tonumber(__domain_var.safeGetVar(triggerId, "cv_hunger", "100")) or 100
+            local newHunger = math.min(maxHunger, curHunger + d)
+            setChatVar(triggerId, "cv_hunger", tostring(newHunger))
+            print(string.format("[GachaIsland] MAX_HUNGER_BASE: %d -> %d | HUNGER: %d -> %d (bonus grant)", oldBase, newBase, curHunger, newHunger))
+        else
+            print(string.format("[GachaIsland] MAX_HUNGER_BASE: %d -> %d", oldBase, newBase))
+        end
+        end
+    end
+    end
+
+    -- ============ STAT TRACKING (ATK / DEF / LUCK) ============
+    -- #353 EQUIP SYSTEM: 가챠 응답이면 SKIP (위와 동일 정책). 비가챠면 base 누적 + recalcStats.
+    if not hasGachaTag then
+        local statChanged = false
+        for sign, val in text:gmatch("%[SYSTEM|ATTACK:([%+%-]?)(%d+)[^%]]*%]") do
+            local d = tonumber(val) or 0
+            if d ~= 0 then
+                if sign == "-" then d = -d end
+                local cur = tonumber(__domain_var.safeGetVar(triggerId, "cv_attack_base", "5")) or 5
+                local newVal = math.max(0, cur + d)
+                setChatVar(triggerId, "cv_attack_base", tostring(newVal))
+                statChanged = true
+                print(string.format("[GachaIsland] ATTACK_BASE: %d -> %d (%s%s)", cur, newVal, sign == "" and "+" or sign, val))
+            end
+        end
+        for sign, val in text:gmatch("%[SYSTEM|DEFENSE:([%+%-]?)(%d+)[^%]]*%]") do
+            local d = tonumber(val) or 0
+            if d ~= 0 then
+                if sign == "-" then d = -d end
+                local cur = tonumber(__domain_var.safeGetVar(triggerId, "cv_defense_base", "5")) or 5
+                local newVal = math.max(0, cur + d)
+                setChatVar(triggerId, "cv_defense_base", tostring(newVal))
+                statChanged = true
+                print(string.format("[GachaIsland] DEFENSE_BASE: %d -> %d (%s%s)", cur, newVal, sign == "" and "+" or sign, val))
+            end
+        end
+        for sign, val in text:gmatch("%[SYSTEM|LUCK:([%+%-]?)(%d+)[^%]]*%]") do
+            local d = tonumber(val) or 0
+            if d ~= 0 then
+                if sign == "-" then d = -d end
+                local cur = tonumber(__domain_var.safeGetVar(triggerId, "cv_luck_base", "0")) or 0
+                local newVal = math.max(0, cur + d)
+                setChatVar(triggerId, "cv_luck_base", tostring(newVal))
+                statChanged = true
+                print(string.format("[GachaIsland] LUCK_BASE: %d -> %d (%s%s)", cur, newVal, sign == "" and "+" or sign, val))
+            end
+        end
+        if statChanged then __domain_var.eqRecalcStats(triggerId) end
+    end
+
+    -- =============================================
+    -- POINT TRACKING
+    -- Parse [SYSTEM|POINT:+500P ...] tags
+    -- =============================================
+    -- #470: #417/#427 POINT SKIP 휴리스틱 제거. v1.4.4 동작 복귀.
+    --   기존: 던전 중 reason 에 "처치/격파/격퇴/처단" + MONSTER_HP (0/N) 있으면 LLM POINT 통째로 skip
+    --        → applyMonsterDamage 가 monster name 매칭 실패하면 자동 POINT 도 안 들어와 cv_points 0 증가 회귀
+    --   현재: LLM POINT 는 항상 가산. lua applyMonsterDamage 의 자동 POINT (결전형 ×2 stack 포함) 도 그대로 가산.
+    --        정상 케이스에서 약간의 이중 가산은 발생하나 0 증가 회귀(사용자 손해)는 제거.
+    --        lorebook 의 "보스/처치 POINT 별도 출력 금지" 룰이 LLM 측 출력을 1차 차단.
+
+    -- Duplicate-deduction detection: same sign + same amount within one response = likely AI mistake
+    local pointTagsThisResponse = {}
+    -- 동료 리롤 (500P) 가드: Lua 가 이미 차감했으므로 AI 가 [SYSTEM|POINT:-500P ...] 또 내면 1회 skip
+    local _skipRerollPoint = (__domain_var.safeGetVar(triggerId, "cv_skipNextRerollPoint", "0") == "1")
+    for sign, val, reason in text:gmatch("%[SYSTEM|POINT:([%+%-]?)([%d,]+)P?([^%]]*)%]") do
+        local cleanVal = val:gsub(",", "")
+        local d = tonumber(cleanVal) or 0
+        if d == 0 then
+            print("[GachaIsland] POINT: zero value tag ignored (no-op)")
+        elseif _skipRerollPoint and sign == "-" then
+            _skipRerollPoint = false  -- 첫 음수 1회만 skip (이후 음수 POINT 는 정상 처리)
+            print(string.format("[GachaIsland] POINT SKIP (reroll): companion reroll already paid by Lua; skipped AI negative POINT tag (-%sP)", val))
+        else
+            local curStr = (__domain_var.safeGetVar(triggerId, "cv_points", "0")):gsub(",", "")
+            local cur = tonumber(curStr) or 0
+            local signedD = sign == "-" and -d or d
+            local newVal = math.max(0, cur + signedD)
+            -- Format with comma separators (e.g. 2000 -> "2,000")
+            local formatted = tostring(newVal):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+            setChatVar(triggerId, "cv_points", formatted)
+            local cleanReason = (reason or ""):match("^%s*(.-)%s*$") or ""
+            local effSign = (sign == "" and "+" or sign)
+            print(string.format("[GachaIsland] POINT: %d -> %d (%s%sP | reason: %s)", cur, newVal, effSign, val, cleanReason))
+
+            local sig = effSign .. tostring(d)
+            if pointTagsThisResponse[sig] then
+                print(string.format("[GachaIsland] POINT WARNING: duplicate %s%dP detected within single response (count=%d). Possible AI double-deduction. All occurrences are still being applied. Check the response for redundant POINT tags.", effSign, d, pointTagsThisResponse[sig] + 1))
+                pointTagsThisResponse[sig] = pointTagsThisResponse[sig] + 1
+            else
+                pointTagsThisResponse[sig] = 1
+            end
+        end
+    end
+    -- 응답 끝에 cv_skipNextRerollPoint reset (음수 POINT 가 없어도 safety 차원)
+    if __domain_var.safeGetVar(triggerId, "cv_skipNextRerollPoint", "0") == "1" then
+        setChatVar(triggerId, "cv_skipNextRerollPoint", "0")
+    end
+
+    -- =============================================
+    -- HP TRACKING (uses dynamic maxHp)
+    -- =============================================
+
+    for sign, val in text:gmatch("%[SYSTEM|HP:([%+%-]?)(%d+)[^%]]*%]") do
+        local d = tonumber(val) or 0
+        if d == 0 then
+            print("[GachaIsland] HP: zero value tag ignored (no-op)")
+        else
+            local cur = tonumber(__domain_var.safeGetVar(triggerId, "cv_hp", tostring(maxHp))) or maxHp
+            -- 방어력 자동 차감: HP 손실 시 N - cv_defense, 최소 1 보장
+            if sign == "-" then
+                local def = tonumber(__domain_var.safeGetVar(triggerId, "cv_defense", "0")) or 0
+
+                -- =============================================
+                -- #393 GM의 권한 대행 자동 발동 가드
+                -- 조건 (모두 만족 시):
+                --   1) 게임마스터 ∈ cv_companions
+                --   2) "GM의 권한 대행" ∈ cv_equippedSkills (장착 상태)
+                --   3) cv_combatResult ∈ {실패, 대실패}
+                --   4) cv_mana ≥ 10
+                --   5) 이번 라운드에서 아직 발동 안 함 (cv_gmAdminUsedRound ≠ cv_currentRound)
+                -- 효과: cv_mana -10 + 이번 HP 손실에만 추가 방어력 +10 적용 + 라운드 마킹
+                -- =============================================
+                local companions = __domain_var.safeGetVar(triggerId, "cv_companions", "None")
+                local equippedSk = __domain_var.safeGetVar(triggerId, "cv_equippedSkills", "None")
+                local cResult    = __domain_var.safeGetVar(triggerId, "cv_combatResult", "보통")
+                local curMana    = tonumber(__domain_var.safeGetVar(triggerId, "cv_mana", "0")) or 0
+                local currentRound  = tonumber(__domain_var.safeGetVar(triggerId, "cv_currentRound", "0")) or 0
+                local lastUsedRound = tonumber(__domain_var.safeGetVar(triggerId, "cv_gmAdminUsedRound", "-1")) or -1
+
+                local hasGM       = companions ~= "None" and companions:find("게임마스터", 1, true) ~= nil
+                local hasSkill    = equippedSk ~= "None" and equippedSk:find("GM의 권한 대행", 1, true) ~= nil
+                local isFailJudge = (cResult == "실패" or cResult == "대실패")
+                local hasMana     = curMana >= 10
+                local notUsedYet  = (lastUsedRound ~= currentRound)
+
+                if hasGM and hasSkill and isFailJudge and hasMana and notUsedYet then
+                    def = def + 10
+                    setChatVar(triggerId, "cv_mana", tostring(curMana - 10))
+                    setChatVar(triggerId, "cv_gmAdminUsedRound", tostring(currentRound))
+                    print(string.format("[GachaIsland] GM의 권한 대행 AUTO-TRIGGER: round %d, cv_combatResult=%s, 마나 %d→%d, def +10 (this tag)", currentRound, cResult, curMana, curMana - 10))
+                end
+
+                -- =============================================
+                -- #395 다크니스 철벽 자동 발동 가드
+                -- 조건: 다크니스 ∈ companions + "철벽" ∈ equipped + 라운드당 1회 cap
+                --   (cv_combatResult 무관 — 다크니스 컨셉상 모든 공격 받아내기)
+                -- 효과: def +20 (이번 HP 손실에만 적용) + 라운드 마킹. 마나 비용 0.
+                -- =============================================
+                local hasDarkness    = companions ~= "None" and companions:find("다크니스", 1, true) ~= nil
+                local hasIronFort    = equippedSk ~= "None" and equippedSk:find("철벽", 1, true) ~= nil
+                local darknessRound  = tonumber(__domain_var.safeGetVar(triggerId, "cv_darknessFortressUsedRound", "-1")) or -1
+                if hasDarkness and hasIronFort and darknessRound ~= currentRound then
+                    def = def + 20
+                    setChatVar(triggerId, "cv_darknessFortressUsedRound", tostring(currentRound))
+                    print(string.format("[GachaIsland] 다크니스 철벽 AUTO-TRIGGER: round %d, def +20 (this tag)", currentRound))
+                end
+
+                -- =============================================
+                -- #395 요르 포저 뛰어난 전투 센스 자동 발동 가드
+                -- 조건: 요르 포저 ∈ companions + "뛰어난 전투 센스" ∈ equipped
+                --       + cv_combatResult ∈ {실패, 대실패} + 라운드당 1회 cap
+                -- 효과: 받는 피해 50% 감소 (cv_defense 차감 전 d 직접 절반화 — percentage)
+                --   GM 권한 대행 (def +10) / 다크니스 (def +20) 와 다른 mechanic — 회피 컨셉.
+                --   반격 부분은 narration only (적 식별/추가 데미지 처리 복잡).
+                -- =============================================
+                local hasYor         = companions ~= "None" and companions:find("요르 포저", 1, true) ~= nil
+                local hasCombatSense = equippedSk ~= "None" and equippedSk:find("뛰어난 전투 센스", 1, true) ~= nil
+                local yorRound       = tonumber(__domain_var.safeGetVar(triggerId, "cv_yorEvasionUsedRound", "-1")) or -1
+                if hasYor and hasCombatSense and isFailJudge and yorRound ~= currentRound then
+                    d = math.max(1, math.floor(d / 2))
+                    setChatVar(triggerId, "cv_yorEvasionUsedRound", tostring(currentRound))
+                    print(string.format("[GachaIsland] 요르 포저 전투 센스 AUTO-TRIGGER: round %d, 받는 피해 50%% 감소 (d=%d before defense)", currentRound, d))
+                end
+
+                if def > 0 then d = math.max(1, d - def) end
+                d = -d
+            end
+            local newVal = math.max(0, math.min(maxHp, cur + d))
+            setChatVar(triggerId, "cv_hp", tostring(newVal))
+            local effSign = (sign == "" and "+" or sign)
+            print(string.format("[GachaIsland] HP: %d -> %d (%s%s) [max:%d]", cur, newVal, effSign, val, maxHp))
+
+            -- GAME OVER detection: HP reaches 0 outside the dungeon (on the island) → permanent game over
+            if newVal == 0 then
+                local dungeonActive = __domain_var.safeGetVar(triggerId, "cv_dungeonActive", "0")
+                local alreadyOver = __domain_var.safeGetVar(triggerId, "cv_gameOver", "0")
+                if dungeonActive ~= "1" and alreadyOver ~= "1" then
+                    setChatVar(triggerId, "cv_gameOver", "1")
+                    print("[GachaIsland] !!!! GAME OVER !!!! HP reached 0 on the island (cv_dungeonActive=0). cv_gameOver set to 1.")
+                end
+            end
+        end
+    end
+
+    -- =============================================
+    -- MANA TRACKING (uses dynamic maxMana)
+    -- =============================================
+
+    for sign, val in text:gmatch("%[SYSTEM|MANA:([%+%-]?)(%d+)[^%]]*%]") do
+        local d = tonumber(val) or 0
+        if d == 0 then
+            print("[GachaIsland] MANA: zero value tag ignored (no-op)")
+        else
+            local cur = tonumber(__domain_var.safeGetVar(triggerId, "cv_mana", tostring(maxMana))) or maxMana
+            if sign == "-" then d = -d end
+            local newVal = math.max(0, math.min(maxMana, cur + d))
+            setChatVar(triggerId, "cv_mana", tostring(newVal))
+            local effSign = (sign == "" and "+" or sign)
+            print(string.format("[GachaIsland] MANA: %d -> %d (%s%s) [max:%d]", cur, newVal, effSign, val, maxMana))
+        end
+    end
+
+    -- =============================================
+    -- HUNGER TRACKING (uses dynamic maxHunger)
+    -- =============================================
+
+    for sign, val, reason in text:gmatch("%[SYSTEM|HUNGER:([%+%-]?)(%d+)([^%]]*)%]") do
+        local d = tonumber(val) or 0
+        if d == 0 then
+            print("[GachaIsland] HUNGER: zero value tag ignored (no-op)")
+        else
+            -- round drain 가드: dungeon-internal 라운드에만 적용. 같은 cv_currentRound 중복 emit 차단.
+            local skipDrain = false
+            if reason and reason:lower():find("round drain", 1, true) then
+                local dungeonActive = __domain_var.safeGetVar(triggerId, "cv_dungeonActive", "0") == "1"
+                local currentRound = tonumber(__domain_var.safeGetVar(triggerId, "cv_currentRound", "0")) or 0
+                -- 던전 외 / 라운드 0 상태에서 round drain emit → LLM 습관적 emit. 무시.
+                if not dungeonActive or currentRound == 0 then
+                    skipDrain = true
+                    print(string.format("[GachaIsland] HUNGER round drain SKIPPED: 던전 외 (active=%s, round=%d) — LLM 습관적 emit", tostring(dungeonActive), currentRound))
+                else
+                    local appliedRound = tonumber(__domain_var.safeGetVar(triggerId, "cv_hungerDrainAppliedRound", "-1")) or -1
+                    -- 같은 라운드 안 중복 emit 차단 (결전형 single-round 등)
+                    if appliedRound == currentRound then
+                        skipDrain = true
+                        print(string.format("[GachaIsland] HUNGER round drain SKIPPED: round %d already drained (anti-stacking)", currentRound))
+                    else
+                        setChatVar(triggerId, "cv_hungerDrainAppliedRound", tostring(currentRound))
+                    end
+                end
+            end
+            if not skipDrain then
+                local cur = tonumber(__domain_var.safeGetVar(triggerId, "cv_hunger", tostring(maxHunger))) or maxHunger
+                if sign == "-" then d = -d end
+                local newVal = math.max(0, math.min(maxHunger, cur + d))
+                setChatVar(triggerId, "cv_hunger", tostring(newVal))
+                local effSign = (sign == "" and "+" or sign)
+                print(string.format("[GachaIsland] HUNGER: %d -> %d (%s%s) [max:%d]", cur, newVal, effSign, val, maxHunger))
+            end
+        end
+    end
+
+    -- =============================================
+    -- ITEM MANAGEMENT: ITEM_ADD / ITEM_USE
+    -- 일반 아이템: single-use (이름만, quantity X). ITEM_USE 매치 시 entry 완전 제거.
+    -- 가챠 티켓: 유일한 stackable. counter 표기 유지 + 1장씩 차감.
+    -- =============================================
+    local STACKABLE_ITEMS = {
+        ["가챠 티켓"] = true,
+    }
+
+    local function parseInventory(invStr)
+        local inv = {}
+        local order = {}
+        if not invStr or invStr == "None" or invStr == "" or invStr == "null" then
+            return inv, order
+        end
+        for entry in invStr:gmatch("([^,]+)") do
+            entry = entry:match("^%s*(.-)%s*$")
+            local name, qty = entry:match("^(.+)%s+x(%d+)$")
+            if name and qty then
+                name = name:match("^%s*(.-)%s*$")
+                if name ~= "..." and name ~= "null" then
+                    inv[name] = tonumber(qty)
+                    table.insert(order, name)
+                end
+            else
+                entry = entry:match("^%s*(.-)%s*$")
+                if entry ~= "" and entry ~= "null" and entry ~= "..." then
+                    inv[entry] = 1
+                    table.insert(order, entry)
+                end
+            end
+        end
+        return inv, order
+    end
+
+    local function serializeInventory(inv, order)
+        local parts = {}
+        for _, name in ipairs(order) do
+            if inv[name] and inv[name] > 0 then
+                if STACKABLE_ITEMS[name] then
+                    -- 가챠 티켓 같은 stackable: counter 표기 유지
+                    table.insert(parts, name .. " x" .. inv[name])
+                else
+                    -- 일반 single-use 아이템: 이름만 (스킬·유물처럼)
+                    table.insert(parts, name)
+                end
+            end
+        end
+        if #parts == 0 then return "None" end
+        return table.concat(parts, ", ")
+    end
+
+    local itemsChanged = false
+    local curItems = __domain_var.safeGetVar(triggerId, "cv_items", "None")
+    local inv, order = parseInventory(curItems)
+
+    -- ITEM_ADD 형식 (가챠 외 경로 — 던전 발견/드롭/이벤트):
+    --   [SYSTEM|ITEM_ADD: 이름 | 짧은설명 | 효과]  → cv_itemDetails 4-field 등록 (효과 박스 표시)
+    --   [SYSTEM|ITEM_ADD: 이름 | 설명]             → 3-field (옛 호환, 효과 박스 없음)
+    --   [SYSTEM|ITEM_ADD: 이름]                    → cv_items만 (legacy / stackable)
+    --   [SYSTEM|ITEM_ADD: 이름 xN]                 → stackable counter (가챠 티켓)
+    -- pendingItemDetails: 이번 응답에서 ITEM_ADD로 추가된 (이름, 설명, 효과) 누적
+    local pendingItemDetails = {}
+
+    for itemEntry in text:gmatch("%[SYSTEM|ITEM_ADD:%s*(.-)%]") do
+        itemEntry = itemEntry:match("^%s*(.-)%s*$")
+        local namePart, descPart, tierPart, effectPart = nil, nil, nil, nil
+        -- 4-field 우선 (가챠 supply 동일 형식): 이름 | 설명 | ⭐:N | 효과
+        local n4, d4, t4, e4 = itemEntry:match("^(.-)%s*|%s*(.-)%s*|%s*⭐:?(%d)%s*|%s*(.+)$")
+        if n4 then
+            namePart = n4:match("^%s*(.-)%s*$")
+            descPart = d4:match("^%s*(.-)%s*$"); if descPart == "" then descPart = nil end
+            tierPart = t4
+            effectPart = e4:match("^%s*(.-)%s*$"); if effectPart == "" then effectPart = nil end
+        else
+            -- Legacy 3-field / 2-field / 1-field
+            local n, descRest = itemEntry:match("^(.-)%s*|%s*(.+)$")
+            if not n then
+                namePart = itemEntry
+            else
+                namePart = n:match("^%s*(.-)%s*$")
+                descPart = descRest:match("^%s*(.-)%s*$"); if descPart == "" then descPart = nil end
+                if descPart then
+                    local d, e = descPart:match("^(.-)%s*|%s*(.+)$")
+                    if d and e then
+                        descPart = d:match("^%s*(.-)%s*$")
+                        effectPart = e:match("^%s*(.-)%s*$"); if effectPart == "" then effectPart = nil end
+                    end
+                end
+            end
+        end
+        -- 2) 이름 부분에서 stackable counter (xN) 추출
+        local name, qty = namePart:match("^(.+)%s+x(%d+)$")
+        if name and qty then
+            name = name:match("^%s*(.-)%s*$")
+            qty = tonumber(qty) or 1
+        else
+            name = namePart
+            qty = 1
+        end
+        if name ~= "..." and name ~= "" and name ~= "null" then
+            if STACKABLE_ITEMS[name] then
+                -- 가챠 티켓: counter 누적
+                if not inv[name] then
+                    table.insert(order, name)
+                    inv[name] = 0
+                end
+                inv[name] = inv[name] + qty
+                itemsChanged = true
+                print(string.format("[GachaIsland] ITEM_ADD: %s x%d (stackable, total: %d)", name, qty, inv[name]))
+                -- 가챠 티켓 default 설명 자동 등록 (사이드 패널 / 상태창 표시용)
+                if name == "가챠 티켓" then
+                    table.insert(pendingItemDetails, {
+                        name = "가챠 티켓",
+                        desc = "랜덤 가챠 1회 사용권. 5종(스킬·유물·시설·동료·보급품) 중 임의 1개.",
+                        effect = "랜덤 가챠 1회"
+                    })
+                end
+            else
+                -- 일반 single-use: 항상 1로 set, 중복 add 시 무시 (이미 있으면 재추가 안 함)
+                if not inv[name] then
+                    table.insert(order, name)
+                    inv[name] = 1
+                    itemsChanged = true
+                    print(string.format("[GachaIsland] ITEM_ADD: %s (single-use, qty=%d ignored, set to 1)", name, qty))
+                else
+                    print(string.format("[GachaIsland] ITEM_ADD SKIPPED: %s already in inventory (single-use, no stacking)", name))
+                end
+            end
+            -- 설명이 있으면 cv_itemDetails 등록 대상에 추가 (effect 옵션, tier 옵션)
+            if descPart then
+                table.insert(pendingItemDetails, { name = name, desc = descPart, tier = tierPart, effect = effectPart })
+            elseif not STACKABLE_ITEMS[name] then
+                -- 설명 누락 fallback — AI가 `| 설명` 빼먹어도 사이드 패널에 카드 뜨도록 더미 설명 자동 등록
+                table.insert(pendingItemDetails, { name = name, desc = "(정보 없음 — 미지의 물품)", tier = nil, effect = nil })
+            end
+        else
+            print(string.format("[GachaIsland] ITEM_ADD SKIPPED: invalid name '%s'", name))
+        end
+    end
+
+    -- Track which items hit 0 for cv_itemDetails cleanup
+    local itemsReachedZero = {}
+
+    -- Helper: normalize a name for matching (trim, collapse internal whitespace, strip Korean quote brackets)
+    local function normalizeItemName(s)
+        if not s then return "" end
+        s = s:gsub("[「」『』\"']", "")
+        s = s:gsub("%s+", " ")
+        s = s:match("^%s*(.-)%s*$") or ""
+        return s
+    end
+
+    for itemEntry in text:gmatch("%[SYSTEM|ITEM_USE:%s*(.-)%]") do
+        itemEntry = itemEntry:match("^%s*(.-)%s*$")
+        local name, qty = itemEntry:match("^(.+)%s+x(%d+)$")
+        if name and qty then
+            name = name:match("^%s*(.-)%s*$")
+            qty = tonumber(qty) or 1
+        else
+            name = itemEntry
+            qty = 1
+        end
+
+        -- Match attempt 1: exact
+        local matched = inv[name] and name or nil
+
+        -- Match attempt 2: normalized (trim, collapse whitespace, strip Korean quote brackets)
+        if not matched then
+            local nName = normalizeItemName(name)
+            for k, _ in pairs(inv) do
+                if normalizeItemName(k) == nName then
+                    matched = k
+                    print(string.format("[GachaIsland] ITEM_USE: name normalized '%s' -> '%s'", name, k))
+                    break
+                end
+            end
+        end
+
+        -- 일반 아이템 single-use rule: 매치 성공 시 entry 완전 삭제.
+        -- 가챠 티켓 같은 stackable은 quantity 정상 차감 + 0 도달 시만 삭제.
+        if matched then
+            if STACKABLE_ITEMS[matched] then
+                inv[matched] = math.max(0, (inv[matched] or 0) - qty)
+                if inv[matched] == 0 then
+                    inv[matched] = nil
+                    table.insert(itemsReachedZero, matched)
+                end
+                itemsChanged = true
+                print(string.format("[GachaIsland] ITEM_USE: %s x%d → stackable counter (remaining: %s)", matched, qty, tostring(inv[matched] or 0)))
+            else
+                inv[matched] = nil
+                table.insert(itemsReachedZero, matched)
+                itemsChanged = true
+                print(string.format("[GachaIsland] ITEM_USE: %s → fully consumed (single-use rule)", matched))
+            end
+        else
+            -- Diagnostic: dump current inventory keys so the user can see what is in cv_items
+            local keyList = {}
+            for k, _ in pairs(inv) do table.insert(keyList, "'" .. k .. "'") end
+            print(string.format("[GachaIsland] ITEM_USE WARNING: '%s' not found in inventory! Current keys: [%s]", name, table.concat(keyList, ", ")))
+        end
+    end
+
+    if itemsChanged then
+        local newItems = serializeInventory(inv, order)
+        setChatVar(triggerId, "cv_items", newItems)
+        print(string.format("[GachaIsland] ITEMS updated: %s -> %s", curItems, newItems))
+    end
+
+    -- =============================================
+    -- HELPER: Details duplicate check, append & remove
+    -- New format (CBS parser-friendly): "이름||효과;;이름||효과;;..."
+    -- Old format (legacy): "[이름: 효과]; [이름: 효과]; ..." (auto-migrated below)
+    -- =============================================
+
+    -- #466: migrateOldFormat 함수 삭제됨 — 1.4 시절 `[이름: 효과]` 포맷 자동 변환 코드. 1.5 신규 chat 영향 없음.
+
+
+    -- entry 단위로 split (";;" 구분) → table 반환
+    local function splitEntries(detailsStr)
+        local out = {}
+        if not detailsStr or detailsStr == "None" or detailsStr == "" or detailsStr == "null" then
+            return out
+        end
+        local pos = 1
+        while pos <= #detailsStr do
+            local s, e = detailsStr:find(";;", pos, true)
+            if s then
+                table.insert(out, detailsStr:sub(pos, s - 1))
+                pos = e + 1
+            else
+                table.insert(out, detailsStr:sub(pos))
+                break
+            end
+        end
+        return out
+    end
+
+    -- stackable suffix " xN" 제거하여 base name 추출 (예: "가챠 티켓 x5" → "가챠 티켓")
+    local function extractBaseName(rawName)
+        if not rawName then return "" end
+        local base = rawName:match("^(.-)%s+x%d+$") or rawName
+        return base:match("^%s*(.-)%s*$") or base
+    end
+
+    local function detailsHasName(detailsStr, targetName)
+        for _, entry in ipairs(splitEntries(detailsStr)) do
+            local existName = entry:match("^([^|]+)||") or entry:match("^([^|]+)$")
+            if existName and extractBaseName(existName) == targetName then
+                return true
+            end
+        end
+        return false
+    end
+
+    -- "이름||설명||등급||효과" entry 추가. tier 미지정 시 1성. effect 옵션 (3-field 옛 데이터 호환).
+    local function appendDetail(detailsStr, name, desc, tier, effect)
+        local tn = tonumber(tier) or 1
+        if tn < 1 or tn > 5 then tn = 1 end
+        local newEntry = name .. "||" .. desc .. "||" .. tostring(tn)
+        if effect and effect ~= "" then
+            newEntry = newEntry .. "||" .. effect
+        end
+        if not detailsStr or detailsStr == "None" or detailsStr == "" or detailsStr == "null" then
+            return newEntry
+        end
+        return detailsStr .. ";;" .. newEntry
+    end
+
+    local function removeDetailByName(detailsStr, targetName)
+        if not detailsStr or detailsStr == "None" or detailsStr == "" or detailsStr == "null" then
+            return "None"
+        end
+        local entries = {}
+        for _, entry in ipairs(splitEntries(detailsStr)) do
+            local existName = entry:match("^([^|]+)||") or entry:match("^([^|]+)$")
+            if not (existName and extractBaseName(existName) == targetName) then
+                table.insert(entries, entry)
+            end
+        end
+        if #entries == 0 then return "None" end
+        return table.concat(entries, ";;")
+    end
+
+    -- Stackable item count를 cv_itemDetails entry 이름에 반영 (예: "가챠 티켓||설명" → "가챠 티켓 x5||설명")
+    -- inv 테이블 (parseInventory 결과) 기준으로 동기화
+    local function syncStackableInDetails(detailsStr, invTable)
+        if not detailsStr or detailsStr == "None" or detailsStr == "" or detailsStr == "null" then
+            return detailsStr
+        end
+        local entries = splitEntries(detailsStr)
+        local changed = false
+        local outEntries = {}
+        for _, entry in ipairs(entries) do
+            local n, d = entry:match("^([^|]+)||(.*)$")
+            if not n then n = entry:match("^([^|]+)$"); d = nil end
+            if n then
+                local base = extractBaseName(n)
+                if STACKABLE_ITEMS[base] then
+                    local count = invTable[base] or 0
+                    if count > 0 then
+                        local newName = base .. " x" .. count
+                        if n ~= newName then
+                            entry = newName .. (d and ("||" .. d) or "")
+                            changed = true
+                        end
+                        table.insert(outEntries, entry)
+                    else
+                        -- count 0 → 제거
+                        changed = true
+                    end
+                else
+                    table.insert(outEntries, entry)
+                end
+            else
+                table.insert(outEntries, entry)
+            end
+        end
+        if not changed then return detailsStr end
+        if #outEntries == 0 then return "None" end
+        return table.concat(outEntries, ";;")
+    end
+
+    -- =============================================
+    -- ITEM DETAILS: cv_itemDetails
+    -- Extract from GACHA Supply Acquired tag
+    -- + auto-remove when item quantity reaches 0
+    -- =============================================
+
+    -- GACHA Supply Acquired: "이름 (한글) | desc | ⭐:N [| effect]" 형식 (4번째 effect 필드 옵션)
+    for iNameRaw, iDesc, iTier, iEffectRaw in text:gmatch("%[SYSTEM|GACHA:%s*Supply Acquired %-%s*([^|]-)%s*|%s*(.-)%s*|%s*⭐:(%d)([^%]]*)%]") do
+        iNameRaw = iNameRaw:match("^%s*(.-)%s*$")
+        iDesc = iDesc:match("^%s*(.-)%s*$")
+        local iEffect = nil
+        if iEffectRaw then
+            local e = iEffectRaw:match("|%s*(.-)%s*$")
+            if e and e ~= "" then iEffect = e end
+        end
+        local iNameNoQty = iNameRaw:match("^(.-)%s+x%d+$") or iNameRaw
+        iNameNoQty = iNameNoQty:match("^%s*(.-)%s*$") or iNameNoQty
+        local iName = iNameNoQty:match("%((.-)%)%s*$") or iNameNoQty
+        if iName ~= "" and iName ~= "null" and iDesc ~= "" then
+            local curDetails = __domain_var.safeGetVar(triggerId, "cv_itemDetails", "None")
+            if not detailsHasName(curDetails, iName) then
+                setChatVar(triggerId, "cv_itemDetails", appendDetail(curDetails, iName, iDesc, iTier, iEffect))
+                print(string.format("[GachaIsland] ITEM_DETAIL: %s ⭐%s — %s [eff: %s]", iName, iTier, iDesc, iEffect or "-"))
+            end
+        end
+    end
+
+    -- GACHA Couple Item Acquired: 커플 가챠도 차원주머니 아이템으로 저장 (Supply 와 동일 형식)
+    for iNameRaw, iDesc, iTier, iEffectRaw in text:gmatch("%[SYSTEM|GACHA:%s*Couple Item Acquired %-%s*([^|]-)%s*|%s*(.-)%s*|%s*⭐:(%d)([^%]]*)%]") do
+        iNameRaw = iNameRaw:match("^%s*(.-)%s*$")
+        iDesc = iDesc:match("^%s*(.-)%s*$")
+        local iEffect = nil
+        if iEffectRaw then
+            local e = iEffectRaw:match("|%s*(.-)%s*$")
+            if e and e ~= "" then iEffect = e end
+        end
+        local iNameNoQty = iNameRaw:match("^(.-)%s+x%d+$") or iNameRaw
+        iNameNoQty = iNameNoQty:match("^%s*(.-)%s*$") or iNameNoQty
+        local iName = iNameNoQty:match("%((.-)%)%s*$") or iNameNoQty
+        if iName ~= "" and iName ~= "null" and iDesc ~= "" then
+            local curDetails = __domain_var.safeGetVar(triggerId, "cv_itemDetails", "None")
+            if not detailsHasName(curDetails, iName) then
+                setChatVar(triggerId, "cv_itemDetails", appendDetail(curDetails, iName, iDesc, iTier, iEffect))
+                print(string.format("[GachaIsland] COUPLE_ITEM_DETAIL: %s ⭐%s — %s [eff: %s]", iName, iTier, iDesc, iEffect or "-"))
+            end
+        end
+    end
+
+    -- 가챠 외 경로 (ITEM_ADD 태그) → cv_itemDetails 등록 (tier / effect 옵션, 4-field 또는 3-field)
+    for _, pair in ipairs(pendingItemDetails) do
+        local curDetails = __domain_var.safeGetVar(triggerId, "cv_itemDetails", "None")
+        if not detailsHasName(curDetails, pair.name) then
+            local newDetails = appendDetail(curDetails, pair.name, pair.desc, pair.tier, pair.effect)
+            setChatVar(triggerId, "cv_itemDetails", newDetails)
+            print(string.format("[GachaIsland] ITEM_DETAIL SAVED (item_add): [%s ⭐%s: %s | %s]", pair.name, pair.tier or "-", pair.desc, pair.effect or "-"))
+        else
+            print(string.format("[GachaIsland] ITEM_DETAIL DUPLICATE (item_add): %s already stored, skipping", pair.name))
+        end
+    end
+
+    -- Remove item details when item quantity reaches 0 via ITEM_USE
+    if #itemsReachedZero > 0 then
+        local curItemDetails = __domain_var.safeGetVar(triggerId, "cv_itemDetails", "None")
+        local detailsModified = false
+        for _, removedName in ipairs(itemsReachedZero) do
+            if detailsHasName(curItemDetails, removedName) then
+                curItemDetails = removeDetailByName(curItemDetails, removedName)
+                detailsModified = true
+                print(string.format("[GachaIsland] ITEM_DETAIL REMOVED: %s (quantity reached 0)", removedName))
+            end
+        end
+        if detailsModified then
+            setChatVar(triggerId, "cv_itemDetails", curItemDetails)
+            print(string.format("[GachaIsland] cv_itemDetails updated: %s", curItemDetails))
+        end
+    end
+
+    -- Stackable item count를 cv_itemDetails entry 이름에 반영
+    -- (가챠 티켓 등 — 사이드 패널/상태창에서 "가챠 티켓 x5" 형태로 표시되도록)
+    do
+        local curDetails = __domain_var.safeGetVar(triggerId, "cv_itemDetails", "None")
+        local syncedDetails = syncStackableInDetails(curDetails, inv)
+        if syncedDetails ~= curDetails then
+            setChatVar(triggerId, "cv_itemDetails", syncedDetails)
+            print(string.format("[GachaIsland] STACKABLE_SYNC: cv_itemDetails updated → %s", syncedDetails))
+        end
+    end
+
+    -- =============================================
+    -- SKILL TRACKING
+    -- Parse [SYSTEM|SKILL_ADD: 스킬이름] tags
+    -- + cv_skillDetails from GACHA Skill Learned
+    -- =============================================
+
+    for skillName in text:gmatch("%[SYSTEM|SKILL_ADD:%s*([^%]]+)%]") do
+        skillName = skillName:match("^%s*(.-)%s*$")
+        if skillName ~= "" and skillName ~= "null" and skillName ~= "..." then
+            local curSkills = __domain_var.safeGetVar(triggerId, "cv_skills", "None")
+
+            local alreadyExists = false
+            if curSkills ~= "None" and curSkills ~= "" and curSkills ~= "null" then
+                for existing in curSkills:gmatch("([^,]+)") do
+                    existing = existing:match("^%s*(.-)%s*$")
+                    if existing == skillName then
+                        alreadyExists = true
+                        break
+                    end
+                end
+            end
+
+            if not alreadyExists then
+                local newSkills
+                if curSkills == "None" or curSkills == "" or curSkills == "null" then
+                    newSkills = skillName
+                else
+                    newSkills = curSkills .. ", " .. skillName
+                end
+                setChatVar(triggerId, "cv_skills", newSkills)
+                print(string.format("[GachaIsland] SKILL_ADD: %s (List: %s -> %s)", skillName, curSkills, newSkills))
+            else
+                print(string.format("[GachaIsland] SKILL_ADD DUPLICATE: %s already in list, skipping", skillName))
+            end
+        else
+            print(string.format("[GachaIsland] SKILL_ADD SKIPPED: invalid name '%s'", skillName))
+        end
+    end
+
+    -- GACHA Skill Learned: "이름 (한글) | desc | ⭐:N [| effect]"
+    for sNameRaw, sDesc, sTier, sEffectRaw in text:gmatch("%[SYSTEM|GACHA:%s*Skill Learned %-%s*([^|]-)%s*|%s*(.-)%s*|%s*⭐:(%d)([^%]]*)%]") do
+        sNameRaw = sNameRaw:match("^%s*(.-)%s*$")
+        sDesc = sDesc:match("^%s*(.-)%s*$")
+        local sEffect = nil
+        if sEffectRaw then
+            local e = sEffectRaw:match("|%s*(.-)%s*$")
+            if e and e ~= "" then sEffect = e end
+        end
+        local sName = sNameRaw:match("%((.-)%)%s*$") or sNameRaw
+        if sName ~= "" and sName ~= "null" and sDesc ~= "" then
+            local curDetails = __domain_var.safeGetVar(triggerId, "cv_skillDetails", "None")
+            if not detailsHasName(curDetails, sName) then
+                setChatVar(triggerId, "cv_skillDetails", appendDetail(curDetails, sName, sDesc, sTier, sEffect))
+                print(string.format("[GachaIsland] SKILL_DETAIL: %s ⭐%s — %s [eff: %s]", sName, sTier, sDesc, sEffect or "-"))
+            end
+        end
+    end
+
+    -- =============================================
+    -- RELIC TRACKING
+    -- + cv_relicDetails from GACHA Relic Acquired
+    -- =============================================
+
+    -- 관대 매칭: canonical "English (한글) | desc" 또는 Korean-only "한글 | desc" 둘 다 처리 (#311: 끝의 ⭐:N tier는 무시)
+    for relicNameRaw in text:gmatch("%[SYSTEM|GACHA:%s*Relic Acquired %-%s*([^|]-)%s*|.-%]") do
+        relicNameRaw = relicNameRaw:match("^%s*(.-)%s*$")
+        local relicKorean = relicNameRaw:match("%((.-)%)%s*$") or relicNameRaw
+
+        if relicKorean ~= "" and relicKorean ~= "null" and relicKorean ~= "..." then
+            local curRelics = __domain_var.safeGetVar(triggerId, "cv_relics", "None")
+
+            local alreadyExists = false
+            if curRelics ~= "None" and curRelics ~= "" and curRelics ~= "null" then
+                for existing in curRelics:gmatch("([^,]+)") do
+                    existing = existing:match("^%s*(.-)%s*$")
+                    if existing == relicKorean then
+                        alreadyExists = true
+                        break
+                    end
+                end
+            end
+
+            if not alreadyExists then
+                local newRelics
+                if curRelics == "None" or curRelics == "" or curRelics == "null" then
+                    newRelics = relicKorean
+                else
+                    newRelics = curRelics .. ", " .. relicKorean
+                end
+                setChatVar(triggerId, "cv_relics", newRelics)
+                print(string.format("[GachaIsland] RELIC ACQUIRED: %s (List: %s -> %s)", relicKorean, curRelics, newRelics))
+            else
+                print(string.format("[GachaIsland] RELIC DUPLICATE: %s already in list, skipping", relicKorean))
+            end
+        else
+            print(string.format("[GachaIsland] RELIC SKIPPED: invalid name '%s'", relicKorean))
+        end
+    end
+
+    -- GACHA Relic Acquired: "이름 (한글) | desc | ⭐:N [| effect]"
+    for rNameRaw, rDesc, rTier, rEffectRaw in text:gmatch("%[SYSTEM|GACHA:%s*Relic Acquired %-%s*([^|]-)%s*|%s*(.-)%s*|%s*⭐:(%d)([^%]]*)%]") do
+        rNameRaw = rNameRaw:match("^%s*(.-)%s*$")
+        rDesc = rDesc:match("^%s*(.-)%s*$")
+        local rEffect = nil
+        if rEffectRaw then
+            local e = rEffectRaw:match("|%s*(.-)%s*$")
+            if e and e ~= "" then rEffect = e end
+        end
+        local rName = rNameRaw:match("%((.-)%)%s*$") or rNameRaw
+        if rName ~= "" and rName ~= "null" and rDesc ~= "" then
+            local curDetails = __domain_var.safeGetVar(triggerId, "cv_relicDetails", "None")
+            if not detailsHasName(curDetails, rName) then
+                setChatVar(triggerId, "cv_relicDetails", appendDetail(curDetails, rName, rDesc, rTier, rEffect))
+                print(string.format("[GachaIsland] RELIC_DETAIL: %s ⭐%s — %s [eff: %s]", rName, rTier, rDesc, rEffect or "-"))
+            end
+        end
+    end
+
+    -- =============================================
+    -- FACILITY TRACKING
+    -- + cv_facilityDetails from GACHA Facility Built
+    -- =============================================
+
+    -- 관대 매칭: canonical "English (한글) | desc" 또는 Korean-only "한글 | desc" 둘 다 처리
+    -- AI가 영어명 누락 시 (자주 발생) 한글명을 그대로 사용
+    for facNameRaw in text:gmatch("%[SYSTEM|GACHA:%s*Facility Built %-%s*([^|]-)%s*|.-%]") do
+        facNameRaw = facNameRaw:match("^%s*(.-)%s*$")
+        -- "English (한글)" 형식이면 마지막 괄호 내부 추출, 아니면 통째로 사용
+        local facilityKorean = facNameRaw:match("%((.-)%)%s*$") or facNameRaw
+
+        if facilityKorean ~= "" and facilityKorean ~= "null" and facilityKorean ~= "..." then
+            local curFacilities = __domain_var.safeGetVar(triggerId, "cv_facilities", "None")
+
+            local alreadyExists = false
+            if curFacilities ~= "None" and curFacilities ~= "" and curFacilities ~= "null" then
+                for existing in curFacilities:gmatch("([^,]+)") do
+                    existing = existing:match("^%s*(.-)%s*$")
+                    if existing == facilityKorean then
+                        alreadyExists = true
+                        break
+                    end
+                end
+            end
+
+            if not alreadyExists then
+                local newFacilities
+                if curFacilities == "None" or curFacilities == "" or curFacilities == "null" then
+                    newFacilities = facilityKorean
+                else
+                    newFacilities = curFacilities .. ", " .. facilityKorean
+                end
+                setChatVar(triggerId, "cv_facilities", newFacilities)
+                print(string.format("[GachaIsland] FACILITY BUILT: %s (List: %s -> %s)", facilityKorean, curFacilities, newFacilities))
+            else
+                print(string.format("[GachaIsland] FACILITY DUPLICATE: %s already in list, skipping", facilityKorean))
+            end
+        else
+            print(string.format("[GachaIsland] FACILITY SKIPPED: invalid name '%s'", facilityKorean))
+        end
+    end
+
+    -- GACHA Facility Built: "이름 (한글) | desc | ⭐:N [| effect]"
+    for fNameRaw, fDesc, fTier, fEffectRaw in text:gmatch("%[SYSTEM|GACHA:%s*Facility Built %-%s*([^|]-)%s*|%s*(.-)%s*|%s*⭐:(%d)([^%]]*)%]") do
+        fNameRaw = fNameRaw:match("^%s*(.-)%s*$")
+        fDesc = fDesc:match("^%s*(.-)%s*$")
+        local fEffect = nil
+        if fEffectRaw then
+            local e = fEffectRaw:match("|%s*(.-)%s*$")
+            if e and e ~= "" then fEffect = e end
+        end
+        local fName = fNameRaw:match("%((.-)%)%s*$") or fNameRaw
+        if fName ~= "" and fName ~= "null" and fDesc ~= "" then
+            local curDetails = __domain_var.safeGetVar(triggerId, "cv_facilityDetails", "None")
+            if not detailsHasName(curDetails, fName) then
+                setChatVar(triggerId, "cv_facilityDetails", appendDetail(curDetails, fName, fDesc, fTier, fEffect))
+                print(string.format("[GachaIsland] FACILITY_DETAIL: %s ⭐%s — %s [eff: %s]", fName, fTier, fDesc, fEffect or "-"))
+            end
+        end
+    end
+
+    -- =============================================
+    -- #353 EQUIP SYSTEM: GACHA STAT ABSORPTION
+    -- #423 (fix): EFFECT text 의 stat 표기가 single source of truth.
+    --   - 이전 로직 (statSum + effExtracted) → 이중 합산 버그 (예: "ATK +20" 표기 + [SYSTEM|ATTACK:+25] tag = ATK 45 적용)
+    --   - 신 로직: effExtracted 만 사용. [SYSTEM|ATTACK/DEFENSE/LUCK] tag 는 무시 (UI 의 effect text 가 sole source).
+    --     LLM 이 effect text 안에 'ATK +N' / 'DEF +N' / 'LUCK +N' 표기 안 한 stat 은 자동 0 → silent stat 차단.
+    --   - MAX_HP/MAX_MANA/MAX_HUNGER 도 effect text 의 '최대 HP +N' 등 표기에서만 추출.
+    --   - SLOT 효과 (시설 '장착 슬롯 +1') 도 effect text 한정.
+    -- 카테고리 우선순위: 응답 텍스트에서 가장 마지막에 emit된 GACHA 카테고리.
+    -- =============================================
+    if hasGachaTag then
+        -- 1) 마지막 emit 카테고리 결정 + 마지막 entry 이름 (text 순회)
+        local lastCat, lastNameKo = nil, nil
+        local function scanCat(pattern, cat)
+            for nameRaw in text:gmatch(pattern) do
+                local n = nameRaw:match("^%s*(.-)%s*$")
+                local ko = n:match("%((.-)%)%s*$") or n
+                lastCat, lastNameKo = cat, ko
+            end
+        end
+        scanCat("%[SYSTEM|GACHA:%s*Skill Learned %-%s*([^|]-)%s*|", "skill")
+        scanCat("%[SYSTEM|GACHA:%s*Relic Acquired %-%s*([^|]-)%s*|", "relic")
+        scanCat("%[SYSTEM|GACHA:%s*Facility Built %-%s*([^|]-)%s*|", "facility")
+
+        -- 2) EFFECT text 에서 stat 추출 (single source of truth)
+        if lastCat and lastNameKo and lastNameKo ~= "" and lastNameKo ~= "null" then
+            local detailKey = (lastCat == "skill") and "cv_skillDetails"
+                           or (lastCat == "relic") and "cv_relicDetails"
+                           or "cv_facilityDetails"
+            local curDet = __domain_var.safeGetVar(triggerId, detailKey, "None")
+            local entries = __domain_text.eqSplitEntries(curDet)
+            local final = {ATK=0, DEF=0, LUCK=0, MAXHP=0, MAXMANA=0, MAXHUNGER=0, SLOT=0}
+            for _, entry in ipairs(entries) do
+                local n, _, _, eff = __domain_entry.eqParseEntry(entry)
+                if n and __domain_base.eqExtractBase(n) == lastNameKo and eff then
+                    final = __domain_var.eqStatExtractFromEffect(eff)
+                    break
+                end
+            end
+            -- 카테고리 sanity: skill/relic 은 SLOT 부여 금지
+            if lastCat ~= "facility" then final.SLOT = 0 end
+            local merged = __domain_var.eqStatSerialize(final)
+            if merged ~= "" then
+                local updated = __domain_var.eqUpdateEntryStat(curDet, lastNameKo, final)
+                if updated ~= curDet then
+                    setChatVar(triggerId, detailKey, updated)
+                    print(string.format("[GachaIsland] GACHA_STAT_ABSORB (#423) %s '%s' → %s (from EFFECT text only)",
+                        lastCat, lastNameKo, merged))
+                end
+            end
+            if lastCat == "facility" then
+                __domain_recalc.eqRecalcSlots(triggerId)
+                __domain_var.eqRecalcStats(triggerId)  -- #483: 시설 stat (ATK/DEF/등) 즉시 derived value 반영
+            end
+        end
+    end
+
+    -- =============================================
+    -- ISLAND STAGE CALCULATION (섬 개발 단계 자동 갱신)
+    -- cv_facilities 개수를 기반으로 cv_islandStage 결정.
+    -- 0:황무지(0개) / 1:개척지(1~2) / 2:마을(3~4) / 3:요새(5~6) / 4:왕국(7~9) / 5:성지(10+)
+    --
+    -- #352 MONOTONIC: 한 번 도달한 단계는 강등되지 않음 (강화소 시설 합성으로 개수 줄어도 유지).
+    -- 새 stage = max(이전 stage, 카운트 기반 계산값)
+    -- =============================================
+    do
+        local facStr = __domain_var.safeGetVar(triggerId, "cv_facilities", "None")
+        local facCount = 0
+        if facStr ~= "None" and facStr ~= "" and facStr ~= "null" then
+            for _ in facStr:gmatch("[^,]+") do facCount = facCount + 1 end
+        end
+        local calcStage
+        if     facCount == 0 then calcStage = 0
+        elseif facCount <= 2 then calcStage = 1
+        elseif facCount <= 4 then calcStage = 2
+        elseif facCount <= 6 then calcStage = 3
+        elseif facCount <= 9 then calcStage = 4
+        else                      calcStage = 5
+        end
+        local prevStage = tonumber(__domain_var.safeGetVar(triggerId, "cv_islandStage", "0")) or 0
+        -- #352: monotonic — 강등 금지. 카운트 기반 stage가 prev보다 높을 때만 승급.
+        local stage = (calcStage > prevStage) and calcStage or prevStage
+        if stage ~= prevStage then
+            setChatVar(triggerId, "cv_islandStage", tostring(stage))
+            print(string.format("[GachaIsland] ISLAND_STAGE: %d -> %d (시설 %d개, monotonic)", prevStage, stage, facCount))
+
+            -- Stage 5 (성지) 첫 도달 시 MAX HP/MANA/HUNGER +100 영구 보너스 (한 번만 적용)
+            -- 현재 값도 +100 만큼 같이 증가하여 비율 유지
+            if stage == 5 then
+                local applied = __domain_var.safeGetVar(triggerId, "cv_stage5MaxApplied", "0")
+                if applied ~= "1" then
+                    local mh   = tonumber(__domain_var.safeGetVar(triggerId, "cv_maxHp",     "100")) or 100
+                    local mm   = tonumber(__domain_var.safeGetVar(triggerId, "cv_maxMana",   "100")) or 100
+                    local mhg  = tonumber(__domain_var.safeGetVar(triggerId, "cv_maxHunger", "100")) or 100
+                    local hp   = tonumber(__domain_var.safeGetVar(triggerId, "cv_hp",     tostring(mh)))  or mh
+                    local mn   = tonumber(__domain_var.safeGetVar(triggerId, "cv_mana",   tostring(mm)))  or mm
+                    local hg   = tonumber(__domain_var.safeGetVar(triggerId, "cv_hunger", tostring(mhg))) or mhg
+                    setChatVar(triggerId, "cv_maxHp",     tostring(mh  + 100))
+                    setChatVar(triggerId, "cv_maxMana",   tostring(mm  + 100))
+                    setChatVar(triggerId, "cv_maxHunger", tostring(mhg + 100))
+                    setChatVar(triggerId, "cv_hp",        tostring(hp  + 100))
+                    setChatVar(triggerId, "cv_mana",      tostring(mn  + 100))
+                    setChatVar(triggerId, "cv_hunger",    tostring(hg  + 100))
+                    setChatVar(triggerId, "cv_stage5MaxApplied", "1")
+                    print(string.format("[GachaIsland] STAGE5 BONUS: MAX +100 영구 적용 (HP %d→%d / MANA %d→%d / HUNGER %d→%d, 현재값도 +100 비율유지)",
+                        mh, mh+100, mm, mm+100, mhg, mhg+100))
+                end
+            end
+        end
+    end
+
+    -- =============================================
+    -- FLOOR TRACKING
+    -- =============================================
+
+    -- #447 미로형 FLOOR 태그 가드: mazeEscapeCount < 3 일 때 LLM 이 [SYSTEM|FLOOR:N] 잘못 emit 한 경우 strip + 무시.
+    --   미로형 정상 흐름: count 3 도달 → X 라운드 자동 생성 → 그 후 FLOOR 태그 emit. 그 전엔 절대 X.
+    --   AI 가 "대성공 = 탈출" 로 잘못 해석하고 FLOOR 태그 + "N층 탈출" narrate → state 망가짐 차단.
+    do
+        local _isMazeMid = (__domain_var.safeGetVar(triggerId, "cv_dungeonActive", "0") == "1")
+                       and (__domain_var.safeGetVar(triggerId, "cv_activeDungeonType", "None") == "미로형")
+                       and ((tonumber(__domain_var.safeGetVar(triggerId, "cv_mazeEscapeCount", "0")) or 0) < 3)
+        if _isMazeMid and text:find("[SYSTEM|FLOOR:", 1, true) then
+            local _cleaned, _stripCount = text:gsub("%[SYSTEM|FLOOR:[^%]]+%]", "")
+            if _stripCount > 0 then
+                local _lastIdx = getChatLength(triggerId) - 1
+                local _msg = getChat(triggerId, _lastIdx)
+                if _msg and _msg.data then
+                    setChat(triggerId, _lastIdx, _cleaned)
+                    text = _cleaned
+                    print(string.format("[GachaIsland] MAZE_FLOOR_STRIP (#447): %d개 [SYSTEM|FLOOR:] 태그 strip — 미로형 mazeEscapeCount=%d 미만 (3 도달 전엔 FLOOR emit 금지)", _stripCount, tonumber(__domain_var.safeGetVar(triggerId, "cv_mazeEscapeCount", "0")) or 0))
+                end
+            end
+        end
+    end
+
+    for floorNum in text:gmatch("%[SYSTEM|FLOOR:(%d+)[^%]]*%]") do
+        local aiEmittedFloor = tonumber(floorNum) or 0
+        -- #468: cv_currentFloor 가 authoritative — AI 가 hallucinate 한 FLOOR 값 무시.
+        --   AI 가 STATUS_PANEL `FLOOR:N` (= cv_floor = 클리어 최고층) 보고 헷갈려서 실제 진행 층 (cv_currentFloor) 과 다른 N 을 emit 하는 경우 보정.
+        --   예: cv_currentFloor=2 인데 AI 가 STATUS_PANEL FLOOR:1 보고 [SYSTEM|FLOOR:1] emit → cv_floor 그대로 1 → 클리어 안 됨.
+        --   Fix: 던전 진행 중 (cv_currentFloor>0) 이면 cv_currentFloor 사용.
+        local currentDungeonFloor = tonumber(__domain_var.safeGetVar(triggerId, "cv_currentFloor", "0")) or 0
+        local cleared = (currentDungeonFloor > 0) and currentDungeonFloor or aiEmittedFloor
+        local cur = tonumber(__domain_var.safeGetVar(triggerId, "cv_floor", "0")) or 0
+        if cleared > cur then
+            setChatVar(triggerId, "cv_floor", tostring(cleared))
+            if cleared ~= aiEmittedFloor then
+                print(string.format("[GachaIsland] FLOOR (#468 corrected): AI emit FLOOR:%d → cv_currentFloor %d 우선 → cv_floor %d -> %d", aiEmittedFloor, currentDungeonFloor, cur, cleared))
+            else
+                print(string.format("[GachaIsland] FLOOR: %d -> %d (Cleared Floor %d)", cur, cleared, cleared))
+            end
+        else
+            print(string.format("[GachaIsland] FLOOR: Floor %d already cleared (current best: %d), skipping", cleared, cur))
+        end
+    end
+
+    -- =============================================
+    -- DEFEAT TRACKING
+    -- =============================================
+
+    if text:match("%[SYSTEM|DEFEAT%]") then
+        -- 가챠 티켓 전량 몰수
+        local defeatItems = __domain_var.safeGetVar(triggerId, "cv_items", "None")
+        local defInv, defOrder = parseInventory(defeatItems)
+
+        local ticketsLost = defInv["가챠 티켓"] or 0
+        if ticketsLost > 0 then
+            defInv["가챠 티켓"] = nil
+            local newItems = serializeInventory(defInv, defOrder)
+            setChatVar(triggerId, "cv_items", newItems)
+            print(string.format("[GachaIsland] DEFEAT: Confiscated %d 가챠 티켓(s). Inventory: %s -> %s", ticketsLost, defeatItems, newItems))
+        else
+            print("[GachaIsland] DEFEAT: No 가챠 티켓 to confiscate.")
+        end
+
+        -- 현재 포인트 50% 차감
+        local curPtStr = (__domain_var.safeGetVar(triggerId, "cv_points", "0")):gsub(",", "")
+        local curPt = tonumber(curPtStr) or 0
+        local deduct = math.floor(curPt * 0.5)
+        local newPt = curPt - deduct
+        local formatted = tostring(newPt):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+        setChatVar(triggerId, "cv_points", formatted)
+        print(string.format("[GachaIsland] DEFEAT: Points %d -> %d (-%d, 50%% penalty)", curPt, newPt, deduct))
+
+        -- Deactivate dungeon & clear all dungeon state
+        setChatVar(triggerId, "cv_dungeonActive",         "0")
+        setChatVar(triggerId, "cv_dungeonGateState",      "닫힘")
+        setChatVar(triggerId, "cv_currentFloor",          "0")
+        setChatVar(triggerId, "cv_activeFloorCondition",  "없음")
+        setChatVar(triggerId, "cv_activeDungeonType",     "None")
+            setChatVar(triggerId, "cv_sanctuarySpawnedFloor", "0")
+            setChatVar(triggerId, "cv_sanctuarySpawnedMsg",   "-1")  -- #452
+            setChatVar(triggerId, "cv_sanctuaryConsumed",     "0")   -- #452
+        -- #309: DUNGEON_EXIT과 동일하게 라운드/몬스터/미로/패널 모두 리셋
+        setChatVar(triggerId, "cv_currentRound",          "0")
+        setChatVar(triggerId, "cv_totalRounds",           "0")
+        setChatVar(triggerId, "cv_roundEvents",           "")
+        setChatVar(triggerId, "cv_roundPanel",            "")
+        setChatVar(triggerId, "cv_currentMonsters",       "")
+        setChatVar(triggerId, "cv_monsterPanel",          "")
+        setChatVar(triggerId, "cv_pendingMonsterSpawn",   "0")  -- #455
+        setChatVar(triggerId, "cv_mazeEscapeCount",       "0")
+        setChatVar(triggerId, "cv_mazeFailStreak",        "0")  -- #436 미로 anti-stall 리셋
+        print("[GachaIsland] DEFEAT: 모든 던전 state 초기화 (라운드 + 몬스터 + 미로 카운트/streak + 패널 포함)")
+
+        -- POST-DEFEAT SAFETY FLOOR: force HP/MANA/HUNGER to 20/20/20 (#498 상향 — 기존 10)
+        -- 던전 밖 NEW_DAY 굶주림 자동 -15~25로 즉사 GAME OVER 되는 것 방지.
+        -- AI가 같은 응답 안에서 미리 출력한 HP/MANA/HUNGER 태그도 모두 override
+        -- (HP/MANA/HUNGER TRACKING이 DEFEAT TRACKING보다 먼저 실행되므로).
+        setChatVar(triggerId, "cv_hp",     "20")
+        setChatVar(triggerId, "cv_mana",   "20")
+        setChatVar(triggerId, "cv_hunger", "20")
+        print("[GachaIsland] DEFEAT: HP/MANA/HUNGER forced to 20/20/20 (post-defeat safety floor)")
+    end
+
+    -- =============================================
+    -- GACHA COMPANION TRACKING
+    -- =============================================
+
+    -- #386: 메시지 단위 dedupe 가드 (cv_lastCompanionMsg) 제거.
+    --   이유: chat 변수는 prior msg 로 swipe 해도 reset 안 됨 → lC 가 stale 1 로 유지되면 idx 1
+    --   응답 재처리 시 영구 SKIPPED. SAVE 에서 빼도 (#385) 변수 자체는 chat 에 잔존.
+    --   alreadyExists 가드가 이미 같은 캐릭터 중복 등록을 차단하므로 dedupe 가드는 잉여.
+    --   다른 캐릭터들이 재파싱 시 모두 재등록되는 케이스는 자연스러운 동작 (사용자가 가챠로 뽑은 것 복원).
+
+    -- #385 DIAG: GACHA Companion Summoned 태그가 text 에 있는데 패턴 매칭 0 개일 때 진단.
+    do
+        local hasGachaTag = text:find("Companion Summoned", 1, true) ~= nil
+        local matchCount = 0
+        for _ in text:gmatch("%[SYSTEM|GACHA:%s*Companion Summoned %- (.-)%s+%(([%u%d][^%]]*)%)%]") do
+            matchCount = matchCount + 1
+        end
+        if hasGachaTag and matchCount == 0 then
+            local idx = text:find("Companion Summoned", 1, true)
+            local ctxStart = math.max(1, idx - 40)
+            local ctxEnd   = math.min(#text, idx + 120)
+            local ctx = text:sub(ctxStart, ctxEnd):gsub("[\r\n]", "·")
+            print(string.format("[GachaIsland] GACHA_PARSE_FAIL: 'Companion Summoned' 텍스트는 있는데 패턴 매칭 0건. raw context: ...%s...", ctx))
+        end
+    end
+
+    -- #537 isLuaPaidReroll 가드: 사용자가 동료 리롤 버튼 누른 직후 응답이면
+    -- 직전 user msg 에 [GACHA_REROLL_PAID:500P] + [GACHA_PICK:newKo|newEn] 가 박혀있음.
+    -- AI 가 reroll 후에도 옛 동료 (oldKo) 를 `Companion Summoned - oldKo` 로 잘못 emit 하면
+    -- cv_companions 에 oldKo 가 다시 추가됨 (lua reroll 이 이미 제거했는데 도로 복귀). 차단 필요.
+    -- forcedPickKo 와 일치하는 tag 만 등록 허용.
+    local _isLuaPaidReroll = false
+    local _forcedPickKo = nil
+    do
+        local _chatLen = getChatLength(triggerId)
+        for i = _chatLen - 2, math.max(0, _chatLen - 6), -1 do
+            local _msg = getChat(triggerId, i)
+            local _body = (_msg and type(_msg.data) == "string") and _msg.data or ""
+            if _body:find("%[GACHA_REROLL_PAID:500P%]") then _isLuaPaidReroll = true end
+            local _pKo = _body:match("%[GACHA_PICK:([^|%]]+)|[^%]]+%]")
+            if _pKo then _forcedPickKo = _pKo; break end
+        end
+    end
+
+    -- 정규식: 한글명에 직군 표기 「(랜서)」 등이 들어가도 정상 캡처.
+    -- 영문명은 항상 ASCII 대문자(%u)로 시작하므로, 「공백 + ( + 대문자」 패턴을
+    -- 영문명 시작점으로 인식해 그 앞까지를 한글명으로 캡처. (예: 「아르토리아 펜드래곤 (랜서)」)
+    -- 추가: 괄호 안 영문명도 캡처 → cv_companionsEng에 asset prefix 저장 (사이드패널 동료 탭용)
+    for companionName, engFull in text:gmatch("%[SYSTEM|GACHA:%s*Companion Summoned %- (.-)%s+%(([%u%d][^%]]*)%)%]") do
+        companionName = companionName:match("^%s*(.-)%s*$")
+        engFull = engFull:match("^%s*(.-)%s*$") or ""
+        -- asset prefix = 영문명 첫 단어 (다중 단어 처리: "Flandre Scarlet" → "Flandre")
+        local engPrefix = engFull:match("^(%S+)") or engFull
+
+        -- #537 reroll 가드: forcedPickKo 와 다른 tag → AI 가 옛 동료 잘못 emit 한 케이스. 무시.
+        if _isLuaPaidReroll and _forcedPickKo and companionName ~= _forcedPickKo then
+            print(string.format("[GachaIsland] COMPANION_REROLL TAG SKIP: AI output %s but forced pick is %s", companionName, _forcedPickKo))
+            goto continue_companion_loop
+        end
+
+        if companionName ~= "" and companionName ~= "null" and companionName ~= "..." then
+            local curCompanions = __domain_var.safeGetVar(triggerId, "cv_companions", "None")
+
+            local alreadyExists = false
+            if curCompanions ~= "None" and curCompanions ~= "" and curCompanions ~= "null" then
+                for existing in curCompanions:gmatch("([^,]+)") do
+                    existing = existing:match("^%s*(.-)%s*$")
+                    if existing == companionName then
+                        alreadyExists = true
+                        break
+                    end
+                end
+            end
+
+            if not alreadyExists then
+                local newCompanions
+                if curCompanions == "None" or curCompanions == "" or curCompanions == "null" then
+                    newCompanions = companionName
+                else
+                    newCompanions = curCompanions .. ", " .. companionName
+                end
+                setChatVar(triggerId, "cv_companions", newCompanions)
+
+                -- 영문 prefix도 cv_companionsEng에 동기 추가 (사이드패널 동료 탭 portrait용)
+                if engPrefix ~= "" then
+                    local curEng = __domain_var.safeGetVar(triggerId, "cv_companionsEng", "None")
+                    local newEng
+                    if curEng == "None" or curEng == "" or curEng == "null" then
+                        newEng = engPrefix
+                    else
+                        newEng = curEng .. ", " .. engPrefix
+                    end
+                    setChatVar(triggerId, "cv_companionsEng", newEng)
+                end
+
+                print(string.format("[GachaIsland] COMPANION SUMMONED: %s (%s) (List: %s -> %s)", companionName, engPrefix, curCompanions, newCompanions))
+            else
+                print(string.format("[GachaIsland] COMPANION DUPLICATE: %s already in list, skipping", companionName))
+            end
+        else
+            print(string.format("[GachaIsland] COMPANION SKIPPED: invalid name '%s'", companionName))
+        end
+        ::continue_companion_loop::
+    end
+
+    -- =============================================
+    -- COMPANION GRID HTML 갱신 (사이드패널 👥 탭용)
+    -- cv_companions/Eng 변경 시만 재빌드 (cache key 비교) — 매 응답 부하 차단
+    -- 정규식이 {{getvar::cv_companionsGrid}}로 출력
+    -- =============================================
+    do
+        local cur_kor = __domain_var.safeGetVar(triggerId, "cv_companions", "None")
+        local cur_eng = __domain_var.safeGetVar(triggerId, "cv_companionsEng", "None")
+        local cache_key = cur_kor .. "|" .. cur_eng
+        local last_key = __domain_var.safeGetVar(triggerId, "cv_companionsGridKey", "")
+        if cache_key ~= last_key then
+            local grid_html = __domain_companion.buildCompanionsGrid(triggerId)
+            setChatVar(triggerId, "cv_companionsGrid", grid_html)
+            setChatVar(triggerId, "cv_companionsGridKey", cache_key)
+            print(string.format("[GachaIsland] COMPANION_GRID: rebuilt %d chars (companions=%s)",
+                #grid_html, cur_kor))
+        end
+    end
+
+    -- =============================================
+    -- NEW DAY TRACKING (with duplicate protection)
+    -- + Auto hunger depletion (base 20, × companion multiplier, × 0.8 if 섬 단계 ≥2)
+    -- + Auto HP loss (hunger 0% → -15~25, hunger 15~29% → -5~10)
+    -- =============================================
+
+    local isNewDay = text:match("%[SYSTEM|NEW_DAY%]") ~= nil
+    if isNewDay then
+        local lastProcessedMsg = __domain_var.safeGetVar(triggerId, "cv_lastDayMsg", "-1")
+        local currentMsgIdx = tostring(chatLength - 1)
+
+        if lastProcessedMsg ~= currentMsgIdx then
+            local curDay = tonumber(__domain_var.safeGetVar(triggerId, "cv_day", "1")) or 1
+            local newDay = curDay + 1
+            setChatVar(triggerId, "cv_day", tostring(newDay))
+            setChatVar(triggerId, "cv_lastDayMsg", currentMsgIdx)
+            setChatVar(triggerId, "cv_dungeonEnteredToday", "false")
+            setChatVar(triggerId, "cv_dungeonGateState",    "열림")
+            print(string.format("[GachaIsland] NEW_DAY: Day %d -> Day %d | Gate: 열림", curDay, newDay))
+
+            -- Auto hunger depletion: base 20 (× companion multiplier 1+0.1·N, × 0.8 if 섬 단계 ≥2)
+            local curHunger = tonumber(__domain_var.safeGetVar(triggerId, "cv_hunger", tostring(maxHunger))) or maxHunger
+            local hungerDrain = 20
+            local stageForHunger = tonumber(__domain_var.safeGetVar(triggerId, "cv_islandStage", "0")) or 0
+            if stageForHunger >= 2 then
+                hungerDrain = math.floor(hungerDrain * 0.8)
+                print(string.format("[GachaIsland] NEW_DAY: HUNGER drain reduced (섬 단계%d 마을효과): %d→%d", stageForHunger, math.ceil(hungerDrain / 0.8), hungerDrain))
+            end
+            -- 동료 수 보정: 1명당 +10% 추가 소모 (총 동료 수 기준 — 던전 잔류 동료 포함)
+            local hungerCompStr = __domain_var.safeGetVar(triggerId, "cv_companions", "None")
+            local hungerCompCount = 0
+            if hungerCompStr ~= "None" and hungerCompStr ~= "" and hungerCompStr ~= "null" then
+                for _ in hungerCompStr:gmatch("[^,]+") do hungerCompCount = hungerCompCount + 1 end
+            end
+            if hungerCompCount > 0 then
+                local mult = 1 + 0.1 * hungerCompCount
+                local before = hungerDrain
+                hungerDrain = math.floor(hungerDrain * mult)
+                print(string.format("[GachaIsland] NEW_DAY: HUNGER drain x%.1f for %d companions: %d→%d", mult, hungerCompCount, before, hungerDrain))
+            end
+            local newHunger = math.max(0, curHunger - hungerDrain)
+            setChatVar(triggerId, "cv_hunger", tostring(newHunger))
+            print(string.format("[GachaIsland] NEW_DAY: HUNGER auto-drain: %d -> %d (-%d)", curHunger, newHunger, hungerDrain))
+
+            -- Auto HP loss based on post-drain hunger level
+            -- #497: hunger=0 차감 제거 (매 onOutput -5 와 중복). hunger 1~14% (Hungry) 만 -5~10 패널티 유지.
+            local hungerPct = maxHunger > 0 and (newHunger / maxHunger * 100) or 0
+            local curHp = tonumber(__domain_var.safeGetVar(triggerId, "cv_hp", tostring(maxHp))) or maxHp
+            local newHp = curHp
+            local appliedLoss = 0
+            if newHunger > 0 and hungerPct < 15 then
+                appliedLoss = math.random(5, 10)
+                newHp = math.max(0, curHp - appliedLoss)
+                setChatVar(triggerId, "cv_hp", tostring(newHp))
+                print(string.format("[GachaIsland] NEW_DAY: HP loss (허기 %.0f%%<15%%): %d -> %d (-%d)", hungerPct, curHp, newHp, appliedLoss))
+            else
+                print(string.format("[GachaIsland] NEW_DAY: HP loss 없음 (허기 %.0f%%) — hunger=0 은 매 응답 -5 로 별도 처리", hungerPct))
+            end
+            -- GAME OVER trigger check after NEW_DAY HP drain (island context — cv_dungeonActive should be 0 here)
+            if newHp == 0 and __domain_var.safeGetVar(triggerId, "cv_gameOver", "0") ~= "1" then
+                setChatVar(triggerId, "cv_gameOver", "1")
+                print("[GachaIsland] !!!! GAME OVER !!!! HP reached 0 from NEW_DAY hunger drain on the island. cv_gameOver set to 1.")
+            end
+        else
+            print(string.format("[GachaIsland] NEW_DAY: SKIPPED duplicate processing for message %s", currentMsgIdx))
+        end
+    end
+
+    -- #497: hunger=0 시 매 onOutput 1회 HP -5 차감 (system-wide, 던전/섬 무관).
+    --   기존 advanceRound 호출 모두 제거. 위치는 NEW_DAY 처리 후 + STATUS_PANEL 빌드 전.
+    __domain_apply_starvation_hp_per_response._applyStarvationHpPerResponse(triggerId)
+
+    -- =============================================
+    -- DUNGEON STATE MANAGEMENT (서사형 — 라운드/UI 없음)
+    -- =============================================
+
+    -- 던전 진입/퇴장은 버튼 클릭만 (mapEnterDungeon / dungeonReturn / dungeonNextFloor).
+    -- LLM 의 [SYSTEM|DUNGEON_ENTER/EXIT] 태그는 무시 (별도 처리 없음).
+
+    -- =============================================
+    -- DUNGEON TYPE LOCK-IN 폐기.
+    --   floor 변경은 버튼 클릭만 (mapEnterDungeon / dungeonNextFloor / dungeonReturn).
+    --   LLM 의 narrative 안 "던전 N층 진입" 표기가 cv_* state 변경 못 하도록.
+    --   기존 lock-in 영역의 floor condition / cv_currentFloor sync 도 같이 폐기.
+    -- =============================================
+    -- floor condition active lock-in 만 보존 (pre-roll 됐는데 활성 안 된 케이스 보호, 버튼 진입 직후)
+    do
+        local nextFC = __domain_var.safeGetVar(triggerId, "cv_nextFloorCondition", "없음")
+        local activeFC = __domain_var.safeGetVar(triggerId, "cv_activeFloorCondition", "없음")
+        if activeFC ~= nextFC then
+            setChatVar(triggerId, "cv_activeFloorCondition", nextFC)
+            print(string.format("[GachaIsland] FLOOR_CONDITION_LOCKED: %s (was: %s)", nextFC, activeFC))
+        end
+    end
+
+    -- =============================================
+    -- SANCTUARY CHOICE PER-FLOOR + ROUND GUARD
+    -- 성역(Mid-Floor Sanctuary)은 1 floor당 1회만 허용 + 라운드 이벤트가 S일 때만 허용.
+    -- (#383) "라운드 ev != S 인데 LLM이 [SANCTUARY_CHOICE] 출력" 케이스 추가 strip.
+    --   - LLM이 narration에서 너무 빨리 성역 도착했다고 잘못 판단하는 경우 차단
+    --   - 가상 미래 라운드 = 현재 라운드 + ROUND_CLEAR 태그 개수 (이번 응답에서 advance될 라운드)
+    --   - 그 라운드 events 가 S 가 아니면 [SANCTUARY_CHOICE] 모두 strip
+    -- cv_sanctuarySpawnedFloor: 성역이 emit된 floor 번호 (0 = 미사용)
+    -- cv_sanctuarySpawnedMsg: 성역 버튼이 박힌 msg idx (#452)
+    -- cv_sanctuaryConsumed: user 가 충전/귀환 클릭한 경우 1 (#452 — 이후 emit 영구 차단)
+    -- 던전 진입/다음 층/퇴장/패배 시 모두 reset
+    --
+    -- #452 분기 변경: prior msg 에 박힌 마커가 있어도 consume 안 됐으면
+    --   현재 msg 로 transfer + prior msg 의 [SANCTUARY_CHOICE] 도 strip → 항상 latest msg 에만 버튼 1세트.
+    --   효과: auto-inject 가 라운드 전환 msg 에 박은 버튼이 도착 서사 msg 로 자동 이동.
+    -- =============================================
+    if text:match("%[SANCTUARY_CHOICE%]") then
+        local lastSpawnedFloor = tonumber(__domain_var.safeGetVar(triggerId, "cv_sanctuarySpawnedFloor", "0")) or 0
+        local lastSpawnedMsg   = tonumber(__domain_var.safeGetVar(triggerId, "cv_sanctuarySpawnedMsg",   "-1")) or -1
+        local consumed         = __domain_var.safeGetVar(triggerId, "cv_sanctuaryConsumed", "0") == "1"
+        local currentFloor     = tonumber(__domain_var.safeGetVar(triggerId, "cv_currentFloor", "0")) or 0
+        local currentMsg       = chatLength - 1
+
+        -- #383: 가상 미래 라운드 ev 체크
+        local cur = tonumber(__domain_var.safeGetVar(triggerId, "cv_currentRound", "0")) or 0
+        local clearCount = 0
+        for _ in text:gmatch("%[SYSTEM|ROUND_CLEAR%]") do clearCount = clearCount + 1 end
+        local futureRound = cur + clearCount
+        local evStr = __domain_var.safeGetVar(triggerId, "cv_roundEvents", "")
+        local events = {}
+        for e in evStr:gmatch("([^|]+)") do events[#events+1] = e end
+        local futureEv = events[futureRound]
+        local roundMismatch = (futureRound > 0 and futureEv ~= nil and futureEv ~= "S")
+
+        if roundMismatch then
+            -- 라운드 ev != S → AI 잘못 출력. 모든 SANCTUARY_CHOICE 태그 제거 (마킹도 안 함)
+            local cleaned = text:gsub("%[SANCTUARY_CHOICE%]", "")
+            if cleaned ~= text then
+                setChat(triggerId, chatLength - 1, cleaned)
+                text = cleaned
+                print(string.format("[GachaIsland] SANCTUARY_CHOICE STRIPPED: 라운드 %d ev=%s (S 아님 — LLM 잘못 출력)", futureRound, tostring(futureEv)))
+            end
+        elseif consumed and lastSpawnedFloor == currentFloor then
+            -- #452: user 이미 충전/귀환 클릭함 → 같은 floor 에서 추가 [SANCTUARY_CHOICE] 차단
+            local cleaned = text:gsub("%[SANCTUARY_CHOICE%]", "")
+            if cleaned ~= text then
+                setChat(triggerId, chatLength - 1, cleaned)
+                text = cleaned
+                print(string.format("[GachaIsland] SANCTUARY_CHOICE STRIPPED: floor %d 이미 consume됨 (충전/귀환 클릭 후 재출력 차단)", currentFloor))
+            end
+        elseif lastSpawnedFloor == currentFloor and currentFloor > 0 and lastSpawnedMsg ~= currentMsg then
+            -- #452 TRANSFER: 마커 set 됐지만 prior msg 에 있음, consume 안 됨 → 현재 msg 가 새 bearer.
+            --   prior msg 의 [SANCTUARY_CHOICE] 도 strip → 버튼이 latest msg 1곳에만 표시.
+            if lastSpawnedMsg >= 0 and lastSpawnedMsg < chatLength and lastSpawnedMsg ~= currentMsg then
+                local priorMsg = getChat(triggerId, lastSpawnedMsg)
+                if priorMsg and priorMsg.data and priorMsg.data:match("%[SANCTUARY_CHOICE%]") then
+                    local priorCleaned = priorMsg.data:gsub("%[SANCTUARY_CHOICE%]", "")
+                    priorCleaned = priorCleaned:gsub("\n\n\n+", "\n\n"):gsub("\n+$", "")
+                    setChat(triggerId, lastSpawnedMsg, priorCleaned)
+                    print(string.format("[GachaIsland] SANCTUARY_CHOICE PRIOR STRIPPED (#452): prior msg %d 의 버튼 제거 (latest msg %d 로 이전)", lastSpawnedMsg, currentMsg))
+                end
+            end
+            setChatVar(triggerId, "cv_sanctuarySpawnedMsg", tostring(currentMsg))
+            print(string.format("[GachaIsland] SANCTUARY_CHOICE TRANSFERRED (#452): marker msg %d → %d", lastSpawnedMsg, currentMsg))
+        elseif currentFloor > 0 then
+            -- 첫 등장 OR 같은 msg 내 재출력 → floor + msg 마킹 (idempotent)
+            setChatVar(triggerId, "cv_sanctuarySpawnedFloor", tostring(currentFloor))
+            setChatVar(triggerId, "cv_sanctuarySpawnedMsg",   tostring(currentMsg))
+            if lastSpawnedFloor ~= currentFloor then
+                print(string.format("[GachaIsland] SANCTUARY_CHOICE: floor %d 성역 등장 (첫 출현 마킹, 라운드 %d ev=%s, msg %d)", currentFloor, futureRound, tostring(futureEv), currentMsg))
+            end
+        end
+    end
+
+    -- =============================================
+    -- DUNGEON_CHOICE PER-CONDITION GUARD
+    -- AI가 floor clear 조건 미충족 상태에서 [DUNGEON_CHOICE] 출력 시 strip.
+    -- 던전 타입별 허용 조건:
+    --   미로형: cv_mazeEscapeCount >= 3 (탈출 완료)
+    --   탐색형/토벌형: cv_currentRound >= cv_totalRounds (마지막 라운드 도달)
+    --   결전형: ROUND_CLEAR 있거나 OR 보스 처치 state (cv_currentMonsters="" + 라운드 1/1 + pendingSpawn≠1) — #469
+    -- 조건 미충족 시 [DUNGEON_CHOICE] 태그 모두 제거.
+    -- =============================================
+    if text:match("%[DUNGEON_CHOICE%]") then
+        local dType = __domain_var.safeGetVar(triggerId, "cv_activeDungeonType", "None")
+        local valid = false
+        if dType == "미로형" then
+            local count = tonumber(__domain_var.safeGetVar(triggerId, "cv_mazeEscapeCount", "0")) or 0
+            if count >= 3 then valid = true end
+        elseif dType == "탐색형" or dType == "토벌형" then
+            local cur   = tonumber(__domain_var.safeGetVar(triggerId, "cv_currentRound", "0")) or 0
+            local total = tonumber(__domain_var.safeGetVar(triggerId, "cv_totalRounds",  "0")) or 0
+            if total > 0 and cur >= total then valid = true end
+        elseif dType == "결전형" then
+            -- #469: ROUND_CLEAR 태그 있거나 보스 처치 state 만족이면 valid
+            -- (이전: text 에 ROUND_CLEAR 있어야만 — AI 가 emit 안 하면 strip 됐던 문제 fix)
+            if text:match("%[SYSTEM|ROUND_CLEAR%]") then
+                valid = true
+            else
+                local monsters     = __domain_var.safeGetVar(triggerId, "cv_currentMonsters", "")
+                local cur          = tonumber(__domain_var.safeGetVar(triggerId, "cv_currentRound", "0")) or 0
+                local total        = tonumber(__domain_var.safeGetVar(triggerId, "cv_totalRounds",  "0")) or 0
+                local pendingSpawn = __domain_var.safeGetVar(triggerId, "cv_pendingMonsterSpawn", "0") == "1"
+                if monsters == "" and total > 0 and cur >= total and not pendingSpawn then
+                    valid = true
+                end
+            end
+        end
+        if not valid then
+            local cleaned = text:gsub("%[DUNGEON_CHOICE%]", "")
+            if cleaned ~= text then
+                setChat(triggerId, chatLength - 1, cleaned)
+                text = cleaned
+                print(string.format("[GachaIsland] DUNGEON_CHOICE STRIPPED: dType=%s 조건 미충족", dType))
+            end
+        end
+    end
+
+    -- =============================================
+    -- AUX MODEL DELEGATION (이미지 에셋 + GM TIP 통합)
+    -- 단일 axLLM 호출로 image tags + tip 동시 처리 (이전 2회 → 1회)
+    -- 기본 ON. cv_auxMode = "0" (chat 변수, 사이드 패널 ⚙ 토글로 설정) 명시 시만 비활성.
+    -- 실패/빈 결과 시 silent fallback (text 유지, TIP은 fallback 체인)
+    -- =============================================
+    local aux_combined_tip = nil  -- STATUS_PANEL block에서 사용
+    if __domain_var.safeGetVar(triggerId, "cv_auxMode", "1") ~= "0" then
+        -- 1) STATUS_TIP / STATUS_PANEL / 기존 <img> / SAVE 일시 분리
+        local tip_tag = text:match("(%[STATUS_TIP:[^%]]*%])")
+
+        local clean_narrative = text
+        clean_narrative = clean_narrative:gsub("%[STATUS_TIP:[^%]]*%]", "")
+        clean_narrative = clean_narrative:gsub("%[STATUS_PANEL%].-%[/STATUS_PANEL%]", "")
+        clean_narrative = clean_narrative:gsub('<img="[^"]*">', '')
+        clean_narrative = clean_narrative:gsub("<=SAVE¦.-=>", "")
+        clean_narrative = clean_narrative:gsub("\n\n\n+", "\n\n"):gsub("^%s+", ""):gsub("%s+$", "")
+
+        -- 2) 단일 aux 호출 (image tags + tip 동시)
+        local tagged, tip = aux_generate_combined(triggerId, clean_narrative)
+
+        -- 3a) Image tags 결과 적용 (실패/empty 시 원본 유지)
+        if tagged and tagged ~= "" then
+            local rebuilt = tagged
+            if tip_tag then
+                rebuilt = rebuilt .. "\n" .. tip_tag
+            end
+            text = rebuilt
+        end
+
+        -- 3b) TIP 결과 보관 (STATUS_PANEL block에서 우선 사용)
+        if tip and tip ~= "" then
+            aux_combined_tip = tip
+        end
+    end
+
+    -- =============================================
+    -- MONSTER_INIT + MONSTER_HP 처리 (text enrich)
+    -- #304 변경: STATUS_PANEL setChat 전에 처리 → text의 MONSTER_HP 태그를
+    -- (현재/최대) 정보 박힌 enriched 형식으로 in-place 교체 → chat log에 저장
+    -- 사망 시 (KO) 표기, 마지막 몬스터 처치 시 cv_currentMonsters/Panel 자동 클리어
+    -- =============================================
+    if __domain_var.safeGetVar(triggerId, "cv_dungeonActive", "0") == "1" then
+        -- =============================================
+        -- POST_LOAD_SPAWN_RECOVERY: cv_currentMonsters 가 SAVE_LOAD 로 빈 상태 reset 된 케이스 복구.
+        -- 전투 라운드 (M/B/W/E) + cv_currentMonsters 빈 상태 → spawn 재발동.
+        -- 단 마지막 라운드 처치 완료 상태는 spawn 안 함 (보스 재spawn 차단 #430).
+        do
+            local _cur = tonumber(__domain_var.safeGetVar(triggerId, "cv_currentRound", "0")) or 0
+            local _total = tonumber(__domain_var.safeGetVar(triggerId, "cv_totalRounds", "0")) or 0
+            local _evStr = __domain_var.safeGetVar(triggerId, "cv_roundEvents", "")
+            local _events = {}
+            for e in _evStr:gmatch("([^|]+)") do _events[#_events+1] = e end
+            local _ev = _events[_cur] or ""
+            local _isCombatRound = (_ev == "M" or _ev == "B")  -- #434: E (탐색) / W (옛 wave) 제거 — 비전투/폐기
+            local _monsters = __domain_var.safeGetVar(triggerId, "cv_currentMonsters", "")
+            local _isLastRoundCleared = (_total > 0 and _cur >= _total)
+            if _isCombatRound and _monsters == "" and _cur > 0 and not _isLastRoundCleared then
+                __domain_var.spawnMonstersForRound(triggerId)
+                print(string.format("[GachaIsland] POST_LOAD_SPAWN_RECOVERY (#397): round %d ev=%s 전투인데 cv_currentMonsters 비어있음 (SAVE_LOAD reset 추정) → spawn 재발동", _cur, _ev))
+            elseif _isLastRoundCleared and _monsters == "" then
+                print(string.format("[GachaIsland] POST_LOAD_SPAWN_RECOVERY SKIP (#430): round %d/%d (last round cleared) — 처치 완료 상태 보존, spawn 재발동 안 함", _cur, _total))
+            end
+        end
+
+        -- MONSTER_INIT 이름 부여 (HP 처리보다 먼저 — LLM이 같은 응답에서 명명 → 데미지 매치 일관성)
+        for idx, name in text:gmatch("%[SYSTEM|MONSTER_INIT:(%d+)%s+([^%]]+)%]") do
+            __domain_monster.setMonsterName(triggerId, tonumber(idx), name:match("^%s*(.-)%s*$"))
+        end
+
+        -- =============================================
+        -- #408 (위치 변경) MONSTER NAME FALLBACK — MONSTER_INIT 처리 직후 + MONSTER_HP 처리 전
+        -- 이전 위치 (enriched replace 후) 에서는 entry 제거 후라 같은 tier base 가 없으면 fallback 불가.
+        -- 이 위치에서 실행하면 같은 응답에서 명명된 base + 미명명 placeholder slot 활용 가능.
+        -- =============================================
+        do
+            local mStr = __domain_var.safeGetVar(triggerId, "cv_currentMonsters", "")
+            if mStr ~= "" then
+                local entries = {}
+                for entry in mStr:gmatch("([^;][^;]*)") do
+                    if entry ~= "" and entry ~= ";" then entries[#entries+1] = entry end
+                end
+
+                local function isPlaceholder(name, tier)
+                    local label = ({normal="적", elite="엘리트", boss="보스"})[tier] or "적"
+                    return name == label or name:match("^" .. label .. "%s+%d+$") ~= nil
+                end
+
+                local namedByTier = {}
+                local newEntries = {}
+                local changed = false
+
+                for i, entry in ipairs(entries) do
+                    local tier, hp, maxHp, name = entry:match("([^|]+)|([^|]+)|([^|]+)|(.+)")
+                    if tier and name then
+                        if isPlaceholder(name, tier) then
+                            if namedByTier[tier] then
+                                local rec = namedByTier[tier]
+                                rec.count = rec.count + 1
+                                local newName = rec.base .. " " .. rec.count
+                                entry = string.format("%s|%s|%s|%s", tier, hp, maxHp, newName)
+                                changed = true
+                                print(string.format("[GachaIsland] MONSTER_NAME_FALLBACK (#408): slot %d (tier %s) placeholder '%s' → '%s'", i, tier, name, newName))
+                            end
+                        else
+                            if not namedByTier[tier] then
+                                namedByTier[tier] = { base = name, count = 1 }
+                            end
+                        end
+                    end
+                    newEntries[#newEntries+1] = entry
+                end
+
+                if changed then
+                    setChatVar(triggerId, "cv_currentMonsters", table.concat(newEntries, ";;"))
+                end
+            end
+        end
+
+        -- MONSTER_HP: AI base + cv_attack = 최종 데미지. 결과는 enriched "[tier]이름 (현재/최대)" 태그로 교체.
+        local hpMatches = {}
+        local atkVal = tonumber(__domain_var.safeGetVar(triggerId, "cv_attack", "0")) or 0
+        -- #340: prefix tolerant 정규식 — AI가 enriched 형식 ([B] 등) 미리 박아도 매칭
+        -- 옛 형식: [SYSTEM|MONSTER_HP:-25 녹슨 강철 병사]
+        -- 새 형식: [SYSTEM|MONSTER_HP:-25 [B]유압 집행자 (165/280)]  ← AI가 미리 박음
+        -- [^%[%]]+ 로 변경 — name 안에 [ 또는 ] 못 들어감 (괄호 ()는 OK)
+        -- #438: `:` 뒤 공백 허용 (`%s*`) — LLM 변형 포맷 (`MONSTER_HP: -25`) 대응
+        for dmg, rawName in text:gmatch("%[SYSTEM|MONSTER_HP:%s*%-(%d+)%s*%[?%a*%]?%s*([^%[%]]+)%]") do
+            local name = rawName:match("^%s*(.-)%s*$")
+            local finalDmg = (tonumber(dmg) or 0) + atkVal
+            local newHp, maxHp, killed, tier, pts = __domain_monster.applyMonsterDamage(triggerId, name, finalDmg)
+            local effectiveName = name
+            -- #479 단일 target fallback — LLM 이 MONSTER_HP name 자리에 행동/스킬/이유 (예: "리코 시키가미 공격", "종원 화염 강화 일반 공격") 를
+            -- 넣어서 매칭 실패하는 케이스 흡수. cv_currentMonsters 안 entry 가 정확히 1개일 때만 발동 (단일 target 이라 ambiguity 없음).
+            -- 결전형 보스 라운드 / 일반 던전 보스 라운드 (B) / 잡몹 라운드 마지막 1마리 모두 커버.
+            -- 던전 type 무관, tier 무관 — 단일 target 보장만 검사.
+            if not newHp then
+                local _mStr = __domain_var.safeGetVar(triggerId, "cv_currentMonsters", "")
+                local _entries = {}
+                for e in _mStr:gmatch("([^;][^;]*)") do
+                    if e ~= "" and e ~= ";" then _entries[#_entries+1] = e end
+                end
+                if #_entries == 1 then
+                    local _, _, _, _resolvedName = _entries[1]:match("([^|]+)|([^|]+)|([^|]+)|(.+)")
+                    if _resolvedName then
+                        newHp, maxHp, killed, tier, pts = __domain_monster.applyMonsterDamage(triggerId, _resolvedName, finalDmg)
+                        if newHp then
+                            effectiveName = _resolvedName
+                            print(string.format("[GachaIsland] MONSTER_HP FALLBACK (#479): LLM name '%s' 매칭 실패 → 단일 target '%s' 에 적용 (-%d)", name, _resolvedName, finalDmg))
+                        end
+                    end
+                end
+            end
+            if newHp then
+                table.insert(hpMatches, {baseDmg=dmg, dmg=tostring(finalDmg), raw=rawName, name=effectiveName, newHp=newHp, maxHp=maxHp, killed=killed, tier=tier, pts=pts})
+            end
+        end
+        local tierCode = { normal = "N", elite = "E", boss = "B" }
+        for _, m in ipairs(hpMatches) do
+            local escRaw = m.raw:gsub("([%-%+%.%(%)%%%[%]%*%?%^%$])", "%%%1")
+            -- #340: 패턴도 prefix tolerant — 원본 text에 [B] 같은 prefix 있어도 매칭
+            local pattern = "%[SYSTEM%|MONSTER_HP:%s*%-" .. m.baseDmg .. "%s*%[?%a*%]?%s*" .. escRaw .. "%]"  -- #438: `:` 뒤 공백 허용
+            -- #407: m.name 의 trailing (cur/max) 제거 — LLM 이 이미 enriched 형식 출력 시 cur/max 2번 표시 차단
+            local cleanName = m.name:gsub("%s*%(%d+/%d+%)%s*$", ""):match("^%s*(.-)%s*$")
+            local replacement = string.format("[SYSTEM|MONSTER_HP:-%s [%s]%s (%d/%d)]",
+                m.dmg, tierCode[m.tier] or "N", cleanName, m.newHp, m.maxHp)
+            if m.killed and m.pts then
+                -- #407: LLM 이 이미 같은 monster 처치 NOTIFY 출력했는지 검사 — 중복 차단
+                local escName = cleanName:gsub("([%-%+%.%(%)%%%[%]%*%?%^%$])", "%%%1")
+                local existingNotify = text:find("%[SYSTEM|NOTIFY:[^%]]-" .. escName .. "[^%]]-처치 보상[^%]]-%]")
+                if not existingNotify then
+                    replacement = replacement .. "[SYSTEM|NOTIFY:🏆 " .. cleanName .. " 처치 보상 +" .. m.pts .. "P]"
+                else
+                    print(string.format("[GachaIsland] NOTIFY skipped (#407): LLM 이 이미 %s 처치 NOTIFY 출력함", cleanName))
+                end
+            end
+            text = text:gsub(pattern, replacement, 1)
+        end
+
+        -- #408 (이전 위치) — 새 위치로 이동 (MONSTER_INIT 직후). 여기서는 제거.
+    end
+
+    -- =============================================
+    -- STATUS_PANEL AUTO-GENERATION
+    -- AI는 응답 끝에 [STATUS_TIP: 한 줄 GM TIP] 만 출력.
+    -- Lua가 모든 cv_* 변수를 합쳐서 [STATUS_PANEL]...[/STATUS_PANEL] 조립 후 응답 끝에 부착.
+    -- #496: helper 추출 + tip outer scope. FLOOR_END_AUTO 후 cv_*(points/items 등) 변경 시 재빌드.
+    -- =============================================
+    local _statusTip = nil
+    local _buildStatusPanelStr = function(_tip)
+        local function gv(name, fb) return __domain_var.safeGetVar(triggerId, name, fb) end
+        local function num(s, fb) local c = (s or ""):gsub(",", ""); return tonumber(c) or fb end
+
+        local day        = gv("cv_day", "1")
+        local hpV        = num(gv("cv_hp",     "100"), 100)
+        local maxHpV     = num(gv("cv_maxHp",  "100"), 100)
+        local manaV      = num(gv("cv_mana",   "100"), 100)
+        local maxManaV   = num(gv("cv_maxMana","100"), 100)
+        local hungerV    = num(gv("cv_hunger", "100"), 100)
+        local maxHungerV = num(gv("cv_maxHunger","100"), 100)
+        local pointsStr  = gv("cv_points", "0")
+        local items      = gv("cv_items",      "None")
+        -- #353 EQUIP SYSTEM: AI에게는 장착된 스킬/유물만 노출 (미장착 효과는 발동 안 함).
+        local skills     = gv("cv_equippedSkills", "None")
+        local relics     = gv("cv_equippedRelics", "None")
+        local facilities = gv("cv_facilities", "None")
+        local companions = gv("cv_companions", "None")
+        local floorN     = gv("cv_floor", "0")
+        local gateState  = gv("cv_dungeonGateState", "열림")
+        local stageNum   = num(gv("cv_islandStage", "0"), 0)
+        local atkV       = num(gv("cv_attack",  "5"), 5)
+        local defV       = num(gv("cv_defense", "5"), 5)
+        local luckV      = num(gv("cv_luck",    "0"), 0)
+
+        local hpPct      = (maxHpV     > 0) and math.floor(hpV     / maxHpV     * 100) or 0
+        local manaPct    = (maxManaV   > 0) and math.floor(manaV   / maxManaV   * 100) or 0
+        local hungerPct  = (maxHungerV > 0) and math.floor(hungerV / maxHungerV * 100) or 0
+
+        local STAGE_NAMES = {[0]="황무지",[1]="개척지",[2]="마을",[3]="요새",[4]="왕국",[5]="성지"}
+        local stageName = STAGE_NAMES[stageNum] or "황무지"
+
+        return string.format(
+            "[STATUS_PANEL]DAY:%s|HP:%d|MAXHP:%d|HPPCT:%d|MANA:%d|MAXMANA:%d|MANAPCT:%d|HUNGER:%d|MAXHUNGER:%d|HUNGERPCT:%d|POINTS:%sP|ATK:%d|DEF:%d|LUCK:%d|ITEMS:%s|SKILLS:%s|RELICS:%s|FACILITIES:%s|COMPANIONS:%s|FLOOR:%s|GATE:%s|STAGE:%s|TIP:%s[/STATUS_PANEL]",
+            day, hpV, maxHpV, hpPct, manaV, maxManaV, manaPct, hungerV, maxHungerV, hungerPct,
+            pointsStr, atkV, defV, luckV, items, skills, relics, facilities, companions, floorN, gateState, stageName, _tip
+        )
+    end
+
+    do
+        -- 1) TIP 결정 (우선순위 체인): aux 통합 → 메인 STATUS_TIP → fallback
+        local tip = nil
+        if aux_combined_tip and aux_combined_tip ~= "" then
+            tip = aux_combined_tip
+        end
+        if not tip or tip == "" then
+            tip = text:match("%[STATUS_TIP:%s*(.-)%]")
+            if tip then
+                tip = tip:gsub("[%[%]|<>\r\n]", " "):gsub("%s+", " "):match("^%s*(.-)%s*$") or ""
+            end
+        end
+        if not tip or tip == "" then
+            tip = __domain_var.generateFallbackTip(triggerId)
+            print("[GachaIsland] STATUS_TIP missing — fallback used (" .. tip .. ")")
+        end
+        _statusTip = tip  -- #496: 후속 재빌드 시 같은 tip 재사용
+
+        -- 2) 모든 STATUS_TIP / STATUS_PANEL 태그 제거
+        local cleaned = text
+        cleaned = cleaned:gsub("%[STATUS_TIP:[^%]]*%]", "")
+        cleaned = cleaned:gsub("%[STATUS_PANEL%].-%[/STATUS_PANEL%]", "")
+        cleaned = cleaned:gsub("%s+$", "")
+
+        -- 3) panel 빌드 + append
+        local panel = _buildStatusPanelStr(tip)
+        local newContent = cleaned .. "\n\n" .. panel
+        if newContent ~= text then
+            setChat(triggerId, chatLength - 1, newContent)
+            print("[GachaIsland] STATUS_PANEL: regenerated and appended (TIP: " .. tip .. ")")
+        end
+    end
+
+    -- =============================================
+    -- ROUND TICK + PANEL REBUILD
+    -- AI가 [SYSTEM|ROUND_CLEAR] 출력 시 cv_currentRound 진행 + 다음 라운드 몬스터 스폰
+    -- (MONSTER_INIT + MONSTER_HP는 STATUS_PANEL 전에 이미 처리됨 — #304)
+    -- =============================================
+    if __domain_var.safeGetVar(triggerId, "cv_dungeonActive", "0") == "1" then
+        -- #434 던전 진입/다음 층 응답 가드 — 직전 user msg 가 [DUNGEON_TYPE:] 태그 (= mapEnterDungeon / dungeonNextFloor 버튼 직후) 면
+        -- LLM 이 첫 응답 끝에 [SYSTEM|ROUND_CLEAR] 잘못 emit 해도 advance 차단. 사용자 의도: 첫 응답 = round 1 그대로 유지.
+        local _isDungeonEntryResponse = false
+        do
+            local _lastUserIdx = getChatLength(triggerId) - 2
+            if _lastUserIdx >= 0 then
+                local _userMsg = getChat(triggerId, _lastUserIdx)
+                if _userMsg and _userMsg.role == "user" and _userMsg.data
+                    and _userMsg.data:find("[DUNGEON_TYPE:", 1, true) then
+                    _isDungeonEntryResponse = true
+                end
+            end
+        end
+
+        -- ROUND_CLEAR 태그 카운트만큼 advance.
+        -- 가드: #392 monster 잔존 시 거부 / #396 비전투 라운드 + MONSTER 태그 거부 (#425 완화: 모두 처치되면 advance + BONUS POINT)
+        -- #434: 던전 진입 응답이면 전체 루프 skip
+        -- #505: #434 가드 좁힘 — 적 잔존 시만 SKIP. 던전 진입 응답에서도 LLM 이 라운드 1 적 처치 narrate 완료 후
+        --   ROUND_CLEAR emit 한 경우는 정상 처리 허용 (cv_currentMonsters="" 면 정당한 emit).
+        for _ in text:gmatch("%[SYSTEM|ROUND_CLEAR%]") do
+            if _isDungeonEntryResponse then
+                local _entryMonsters = __domain_var.safeGetVar(triggerId, "cv_currentMonsters", "")
+                if _entryMonsters ~= "" then
+                    print(string.format("[GachaIsland] ROUND_CLEAR SKIPPED (#434/#505): 던전 진입 응답 + 적 잔존 (%s) — advance 차단", _entryMonsters))
+                    break
+                end
+                print(string.format("[GachaIsland] ROUND_CLEAR ALLOWED (#505): 던전 진입 응답이나 적 처치 완료 — advance 정상 처리"))
+            end
+            local _cur     = tonumber(__domain_var.safeGetVar(triggerId, "cv_currentRound", "0")) or 0
+            local _monsters = __domain_var.safeGetVar(triggerId, "cv_currentMonsters", "")
+
+            -- #396 비전투 라운드 + MONSTER 태그 검증 (#425 완화)
+            local _evStr = __domain_var.safeGetVar(triggerId, "cv_roundEvents", "")
+            local _events = {}
+            for e in _evStr:gmatch("([^|]+)") do _events[#_events+1] = e end
+            local _ev = _events[_cur] or ""
+
+            -- #506: S 라운드 (성역) 가드 — cv_sanctuaryConsumed=1 (사용자 [SANCTUARY_CHOICE] 버튼 클릭 후) 일 때만 advance 허용.
+            --   LLM 이 충전 버튼 클릭 전에 ROUND_CLEAR emit 하면 SKIP → SANCTUARY_CHOICE 자동 inject 정상 작동 (events[cur]=="S" 유지).
+            if _ev == "S" then
+                local _consumed = __domain_var.safeGetVar(triggerId, "cv_sanctuaryConsumed", "0") == "1"
+                if not _consumed then
+                    print(string.format("[GachaIsland] ROUND_CLEAR SKIPPED (#506): round %d ev=S (성역) — [SANCTUARY_CHOICE] 버튼 미클릭, LLM emit 무시 (consumed=0)", _cur))
+                    break
+                end
+            end
+            local _isNonCombat = (_ev == "S" or _ev == "X" or _ev == "T" or _ev == "I" or _ev == "E")  -- #434: E (탐색) 비전투 분류 추가 (T/I 와 동일 카테고리)
+            local _hasMonsterTags = (text:find("[SYSTEM|MONSTER_INIT", 1, true) ~= nil)
+                                or (text:find("[SYSTEM|MONSTER_HP", 1, true) ~= nil)
+            if _isNonCombat and _hasMonsterTags and _monsters ~= "" then
+                -- 비전투 라운드 + MONSTER 태그 + 미처치 monster 잔존 → 진짜 거부 (#396 원래 의도: 라운드 망가짐 차단)
+                print(string.format("[GachaIsland] ROUND_CLEAR REJECTED (#396): round %d ev=%s 비전투인데 narration 에 MONSTER_* 태그 + 처치 미완료 — advance skip", _cur, _ev))
+                break
+            elseif _isNonCombat and _hasMonsterTags then
+                -- #425: 비전투 + MONSTER 태그 but 모두 처치 완료 → advance 허용 (lua MONSTER_KILL 가 spawn 없는 케이스 못 처리하니 여기서 POINT 자동 지급)
+                -- LLM 출력 [SYSTEM|MONSTER_HP:-N name (0/M)] 패턴에서 (0/M) 처치 카운트 + tier hint ([B]/[E]/[N]) 로 baseline POINT 지급
+                local _floor = tonumber(__domain_var.safeGetVar(triggerId, "cv_currentFloor", "0")) or 0
+                local _mult = __domain_var.floorMultiplier(_floor)
+                local _killed = {normal=0, elite=0, boss=0}
+                for tag in text:gmatch("%[SYSTEM|MONSTER_HP:[^%]]+%]") do
+                    if tag:match("%(0/%d+%)") then
+                        local tierHint = tag:match("%[([BEN])%]") or "N"
+                        local tier = (tierHint == "B") and "boss" or (tierHint == "E") and "elite" or "normal"
+                        _killed[tier] = _killed[tier] + 1
+                    end
+                end
+                local _bonusPts = 0
+                for t, count in pairs(_killed) do
+                    if count > 0 then
+                        local base = __variable_store.MONSTER_BASELINE[t] or __variable_store.MONSTER_BASELINE.normal
+                        _bonusPts = _bonusPts + math.ceil(base.point * _mult * count)
+                    end
+                end
+                if _bonusPts > 0 then
+                    local _curStr = (__domain_var.safeGetVar(triggerId, "cv_points", "0")):gsub(",", "")
+                    local _curPts = tonumber(_curStr) or 0
+                    local _newPts = _curPts + _bonusPts
+                    local _fmt = tostring(_newPts):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+                    setChatVar(triggerId, "cv_points", _fmt)
+                    print(string.format("[GachaIsland] BONUS_POINT (#425): 비전투 라운드 임시 monster 처치 (N:%d/E:%d/B:%d) → +%dP × m=%.2f → total %s", _killed.normal, _killed.elite, _killed.boss, _bonusPts, _mult, _fmt))
+                end
+                print(string.format("[GachaIsland] ROUND_CLEAR (#425): round %d ev=%s 비전투인데 narration 에 MONSTER_* 태그 — 모두 처치 → advance 허용", _cur, _ev))
+            end
+
+            -- #392 monster 잔존 검증
+            if _monsters ~= "" then
+                -- =============================================
+                -- #409 ROUND_CLEAR AUTO-CLEANUP (안전망)
+                -- 2회 연속 ROUND_CLEAR REJECT → placeholder slot 강제 제거 → advance 정상화. 무한 루프 차단.
+                -- =============================================
+                local _rejectCount = tonumber(__domain_var.safeGetVar(triggerId, "cv_roundClearRejectCount", "0")) or 0
+                _rejectCount = _rejectCount + 1
+                setChatVar(triggerId, "cv_roundClearRejectCount", tostring(_rejectCount))
+
+                if _rejectCount >= 2 then
+                    local function _isPlaceholder(name, tier)
+                        local label = ({normal="적", elite="엘리트", boss="보스"})[tier] or "적"
+                        return name == label or name:match("^" .. label .. "%s+%d+$") ~= nil
+                    end
+                    local _kept = {}
+                    local _removed = 0
+                    for entry in _monsters:gmatch("([^;][^;]*)") do
+                        if entry ~= "" and entry ~= ";" then
+                            local tier, hp, maxHp, name = entry:match("([^|]+)|([^|]+)|([^|]+)|(.+)")
+                            if tier and name and _isPlaceholder(name, tier) then
+                                _removed = _removed + 1
+                            else
+                                _kept[#_kept+1] = entry
+                            end
+                        end
+                    end
+                    local _newMonsters = table.concat(_kept, ";;")
+                    setChatVar(triggerId, "cv_currentMonsters", _newMonsters)
+                    print(string.format("[GachaIsland] ROUND_CLEAR AUTO-CLEANUP (#409): %d회 연속 REJECT → placeholder slot %d개 제거. cv_currentMonsters: '%s'", _rejectCount, _removed, _newMonsters))
+
+                    if _newMonsters == "" then
+                        -- placeholder 만 잔존이었음 → 모두 정리됨 → advance 진행
+                        __domain_var.advanceRound(triggerId)
+                        setChatVar(triggerId, "cv_roundClearRejectCount", "0")
+                        -- buildRoundPanel/MonsterPanel 은 루프 밖에서 호출됨
+                    else
+                        -- 진짜 살아있는 monster 가 있음 (placeholder 외)
+                        print(string.format("[GachaIsland] ROUND_CLEAR still REJECTED: 실제 생존 monster 존재 — advance skip"))
+                    end
+                    break
+                end
+
+                print(string.format("[GachaIsland] ROUND_CLEAR REJECTED (#392): round %d monster 잔존 (cv_currentMonsters=%s) — LLM 오해, advance skip (reject count: %d)", _cur, _monsters, _rejectCount))
+                break  -- 같은 응답 내 이후 ROUND_CLEAR 도 모두 skip (raid 안 끝났으므로)
+            end
+            __domain_var.advanceRound(triggerId)
+            setChatVar(triggerId, "cv_roundClearRejectCount", "0")  -- #409: 성공 advance 시 reject count reset
+        end
+
+        -- #431 자동 라운드 진행 — LLM 의 [SYSTEM|ROUND_CLEAR] 누락 시 lua 가 검증 후 자동 advance.
+        -- ROUND PACING 룰 (lorebook entry 15): "1 응답 = 1 라운드" 자동 강제.
+        -- 조건: text 에 ROUND_CLEAR 태그 없음 + 적 처치 완료 + 라운드 != S(성역, 버튼 선택) + 라운드 != X(미로 출구) + 마지막 라운드 아님
+        -- #505: #434 가드 제거 — 적 처치 완료 (cv_currentMonsters="") 면 던전 진입 응답에서도 정상 auto-advance.
+        do
+            local _hasRoundClear = text:match("%[SYSTEM|ROUND_CLEAR%]") ~= nil
+            if not _hasRoundClear then
+                local _monsters = __domain_var.safeGetVar(triggerId, "cv_currentMonsters", "")
+                local _cur = tonumber(__domain_var.safeGetVar(triggerId, "cv_currentRound", "0")) or 0
+                local _total = tonumber(__domain_var.safeGetVar(triggerId, "cv_totalRounds", "0")) or 0
+                local _evStr = __domain_var.safeGetVar(triggerId, "cv_roundEvents", "")
+                local _events = {}
+                for e in _evStr:gmatch("([^|]+)") do _events[#_events+1] = e end
+                local _ev = _events[_cur] or ""
+                local _dType = __domain_var.safeGetVar(triggerId, "cv_activeDungeonType", "None")
+                local _isMaze = (_dType == "미로형")
+                local _isS = (_ev == "S")
+                local _isX = (_ev == "X")
+                local _isLastRound = (not _isMaze) and (_total > 0 and _cur >= _total)
+                -- 성역 stuck fix: 충전 버튼 클릭 후 (cv_sanctuaryConsumed=1) LLM 이 ROUND_CLEAR 누락해도 auto-advance 허용.
+                -- 미클릭 S (cv_sanctuaryConsumed=0) 는 기존대로 차단 — #506 의 premature emit 가드 의도 유지.
+                local _consumedS = _isS and (__domain_var.safeGetVar(triggerId, "cv_sanctuaryConsumed", "0") == "1")
+                local _blockS = _isS and (not _consumedS)
+                if _cur > 0 and _monsters == "" and not _blockS and not _isX and not _isLastRound then
+                    __domain_var.advanceRound(triggerId)
+                    setChatVar(triggerId, "cv_roundClearRejectCount", "0")
+                    print(string.format("[GachaIsland] AUTO_ADVANCE (#431): round %d ev=%s — LLM ROUND_CLEAR 누락 + cv_currentMonsters 빈 상태 → 자동 advance%s", _cur, _ev, _consumedS and " (S consumed)" or ""))
+                end
+            end
+        end
+
+        __domain_var.buildRoundPanel(triggerId)
+        __domain_var.buildMonsterPanel(triggerId)
+
+        -- =============================================
+        -- 던전 클리어 END SEQUENCE 자동 처리 (전 던전형).
+        -- 조건: cv_currentMonsters=="" + cv_totalRounds>0 + cv_currentRound>=cv_totalRounds + [DUNGEON_EXIT] 없음 + pendingSpawn!="1".
+        -- 자동 inject: [SYSTEM|FLOOR:N] + [SYSTEM|ITEM_ADD: 가챠 티켓 x1] + [DUNGEON_CHOICE].
+        -- 라벨: 미로형 "N층 탈출" / 다른 타입 "Cleared Floor N".
+        -- 결전형: [SANCTUARY_CHOICE] strip (NO 성역) + SYS_NARR 보상 안내 strip.
+        --
+        -- #454 pendingSpawn guard: 마지막 라운드 직전 (e.g. round 9/10) 에 ROUND_CLEAR → advanceRound 가
+        --   cv_currentRound 를 last (10) 으로 올리고 cv_pendingMonsterSpawn=1 set. 같은 onOutput 내에서
+        --   cv_currentMonsters="" (spawn 지연됨) + cv_cur>=total → false-trigger 로 floor 클리어 처리 발생.
+        --   → pendingSpawn=="1" 이면 보스 spawn 자체가 아직 안 됐다는 뜻 → 실제 처치 완료 아님 → block.
+        --   정상 클리어 (보스 처치 후 ROUND_CLEAR): spawn 은 이미 직전 editRequest 에서 됐고 pendingSpawn="0" → 통과.
+        -- =============================================
+        do
+            local _monsters = __domain_var.safeGetVar(triggerId, "cv_currentMonsters", "")
+            local _cur      = tonumber(__domain_var.safeGetVar(triggerId, "cv_currentRound", "0")) or 0
+            local _total    = tonumber(__domain_var.safeGetVar(triggerId, "cv_totalRounds",  "0")) or 0
+            local _alreadyExit = text:match("%[SYSTEM|DUNGEON_EXIT%]") ~= nil
+            local _pendingSpawn = __domain_var.safeGetVar(triggerId, "cv_pendingMonsterSpawn", "0") == "1"
+            -- #454 진단: floor clear 조건 거의 충족했는데 pendingSpawn 만 막은 케이스 로그
+            if _monsters == "" and _total > 0 and _cur >= _total and not _alreadyExit and _pendingSpawn then
+                print(string.format("[GachaIsland] FLOOR_END_AUTO BLOCKED (#454): round %d/%d advance만 발생 (pendingSpawn=1, 보스 미spawn) — 실제 처치 후에만 클리어 처리", _cur, _total))
+            end
+            if _monsters == "" and _total > 0 and _cur >= _total and not _alreadyExit and not _pendingSpawn then
+                local _dType = __domain_var.safeGetVar(triggerId, "cv_activeDungeonType", "None")
+                local _floor = tonumber(__domain_var.safeGetVar(triggerId, "cv_currentFloor", "0")) or 0
+                local _lastIdx = getChatLength(triggerId) - 1
+                local _msg = getChat(triggerId, _lastIdx)
+                if _msg and _msg.data then
+                    local _content = _msg.data
+                    local _modified = false
+
+                    -- (1) 결전형 한정: 잘못 출력된 [SANCTUARY_CHOICE] strip (결전형 NO 성역 ABSOLUTE)
+                    if _dType == "결전형" then
+                        local _cleaned, _scCount = _content:gsub("%[SANCTUARY_CHOICE%]", "")
+                        if _scCount > 0 then
+                            _content = _cleaned
+                            _modified = true
+                            print(string.format("[GachaIsland] FLOOR_END_AUTO (#417): %d개 [SANCTUARY_CHOICE] strip (결전형 NO 성역)", _scCount))
+                        end
+                    end
+
+                    -- (1.5) #418: LLM이 잘못 출력한 SYS_NARR 보상 안내 strip
+                    -- 패턴: [SYS_NARR: ... +NP ...] (포인트 표기 포함된 SYS_NARR)
+                    -- 이유: LLM이 base 값 (×2 stack 미적용) 으로 표시 → 사용자 혼란.
+                    --       NOTIFY 카드 (처치 시점) + STATUS_PANEL POINTS = single source of truth.
+                    do
+                        local _strippedContent, _narrCount = _content:gsub("(%[SYS_NARR:[^%]]-%+[%d,]+P[^%]]-%])", "")
+                        if _narrCount > 0 then
+                            _content = _strippedContent
+                            _modified = true
+                            print(string.format("[GachaIsland] FLOOR_END_AUTO (#418): %d개 SYS_NARR 보상 안내 strip (+NP 패턴 — base만 표시 → STATUS_PANEL/NOTIFY 가 정확)", _narrCount))
+                        end
+                    end
+
+                    -- (2) [SYSTEM|FLOOR:N] 없으면 inject (미로형은 "N층 탈출", 다른 타입은 "Cleared Floor N")
+                    -- #501: FLOOR 처리 loop ([5041]) 가 이미 지나서 단순 inject 만으론 cv_floor 미반영.
+                    -- inject + cv_floor 직접 갱신 (모든 던전 타입 공통 영향 — LLM FLOOR 태그 누락 시 클리어 손실).
+                    if not _content:match("%[SYSTEM|FLOOR:") then
+                        local _label = (_dType == "미로형") and (_floor .. "층 탈출") or ("Cleared Floor " .. _floor)
+                        _content = _content .. "\n\n[SYSTEM|FLOOR:" .. _floor .. " " .. _label .. "]"
+                        _modified = true
+
+                        local _curFloor = tonumber(__domain_var.safeGetVar(triggerId, "cv_floor", "0")) or 0
+                        if _floor > _curFloor then
+                            setChatVar(triggerId, "cv_floor", tostring(_floor))
+                            print(string.format("[GachaIsland] FLOOR_END_AUTO (#417/#501): cv_floor %d -> %d (직접 갱신)", _curFloor, _floor))
+                        end
+
+                        print(string.format("[GachaIsland] FLOOR_END_AUTO (#417): [SYSTEM|FLOOR:%d %s] auto-inject (%s)", _floor, _label, _dType))
+                    end
+
+                    -- (3) [SYSTEM|ITEM_ADD: 가챠 티켓 x1] 없으면 inject
+                    -- #496: ITEM_ADD 처리 loop ([4376]) 가 이미 지나서 단순 inject 만으론 cv_items 미반영.
+                    -- inject + cv_items/cv_itemDetails 직접 갱신 (stackable counter +1, 카드 default 등록).
+                    if not _content:match("%[SYSTEM|ITEM_ADD:%s*가챠 티켓") then
+                        _content = _content .. "\n[SYSTEM|ITEM_ADD: 가챠 티켓 x1]"
+                        _modified = true
+
+                        local _items = __domain_var.safeGetVar(triggerId, "cv_items", "None")
+                        local _ticketN = _items:match("가챠 티켓 x(%d+)")
+                        if _ticketN then
+                            local _new = tonumber(_ticketN) + 1
+                            _items = (_items:gsub("가챠 티켓 x" .. _ticketN, "가챠 티켓 x" .. _new))
+                        elseif _items == "None" or _items == "" or _items == "null" then
+                            _items = "가챠 티켓 x1"
+                        else
+                            _items = _items .. ", 가챠 티켓 x1"
+                        end
+                        setChatVar(triggerId, "cv_items", _items)
+
+                        local _details = __domain_var.safeGetVar(triggerId, "cv_itemDetails", "None")
+                        if not _details:find("가챠 티켓", 1, true) then
+                            local _newEntry = "가챠 티켓||랜덤 가챠 1회 사용권. 5종(스킬·유물·시설·동료·보급품) 중 임의 1개.||1||랜덤 가챠 1회"
+                            if _details == "None" or _details == "" or _details == "null" then
+                                _details = _newEntry
+                            else
+                                _details = _details .. ";;" .. _newEntry
+                            end
+                            setChatVar(triggerId, "cv_itemDetails", _details)
+                        end
+
+                        print(string.format("[GachaIsland] FLOOR_END_AUTO (#417/#496): 가챠 티켓 auto-inject + cv_items/cv_itemDetails 갱신 (%s, items=%s)", _dType, _items))
+                    end
+
+                    -- (4) [DUNGEON_CHOICE] 없으면 inject
+                    if not _content:match("%[DUNGEON_CHOICE%]") then
+                        _content = _content .. "\n[DUNGEON_CHOICE]"
+                        _modified = true
+                        print(string.format("[GachaIsland] FLOOR_END_AUTO (#417): [DUNGEON_CHOICE] auto-inject (%s)", _dType))
+                    end
+
+                    if _modified then
+                        setChat(triggerId, _lastIdx, _content)
+                        text = _content
+                    end
+                end
+            end
+        end
+
+        -- #496: advance / FLOOR_END_AUTO 가 cv_* (POINTS / ITEMS 등) 변경 → STATUS_PANEL 같은 위치 재빌드.
+        if _statusTip then
+            local _lastIdx2 = getChatLength(triggerId) - 1
+            local _msg2 = getChat(triggerId, _lastIdx2)
+            if _msg2 and _msg2.data then
+                local _newPanel = _buildStatusPanelStr(_statusTip)
+                local _startPos, _endPos = _msg2.data:find("%[STATUS_PANEL%].-%[/STATUS_PANEL%]")
+                if _startPos then
+                    local _existingPanel = _msg2.data:sub(_startPos, _endPos)
+                    if _newPanel ~= _existingPanel then
+                        local _updated = _msg2.data:sub(1, _startPos-1) .. _newPanel .. _msg2.data:sub(_endPos+1)
+                        setChat(triggerId, _lastIdx2, _updated)
+                        text = _updated
+                        print("[GachaIsland] STATUS_PANEL: refreshed after advance/floor_end (cv_* 갱신 반영)")
+                    end
+                end
+            end
+        end
+
+        -- #336: 다음 라운드가 S(성역) + 첫 등장이면 [SANCTUARY_CHOICE] 자동 주입.
+        -- AI가 누락할 때 fallback. 이미 있으면 skip.
+        -- #452: consume 체크 + msg idx 추적 — 마커가 prior msg 에 있어도 현재 msg 로 transfer 주입.
+        --   prior msg 의 [SANCTUARY_CHOICE] 도 strip → 항상 latest msg 1곳에만 버튼 표시.
+        -- #464: pendingSpawn guard 추가 — 같은 onOutput 에서 advance 직후 (cv_pendingMonsterSpawn=1) 면 inject SKIP.
+        --   이유: AUTO_ADVANCE(#431) 등으로 라운드가 S 로 막 advance 한 msg 에 sanctuary 버튼 박히면
+        --   해당 msg 는 이전 라운드 (M 등) 의 narrative 인데 sanctuary 선택지가 뒤에 붙어 "라운드 bleed" 발생.
+        --   guard 적용 시 다음 msg (AI 가 sanctuary 도착 narrate) 에서 자연스럽게 inject 됨.
+        --   FLOOR_END_AUTO 의 #454 패턴과 동일.
+        local cur = tonumber(__domain_var.safeGetVar(triggerId, "cv_currentRound", "0")) or 0
+        local evStr = __domain_var.safeGetVar(triggerId, "cv_roundEvents", "")
+        local events = {}
+        for e in evStr:gmatch("([^|]+)") do events[#events+1] = e end
+        if events[cur] == "S" then
+            local lastSpawnedFloor = tonumber(__domain_var.safeGetVar(triggerId, "cv_sanctuarySpawnedFloor", "0")) or 0
+            local lastSpawnedMsg   = tonumber(__domain_var.safeGetVar(triggerId, "cv_sanctuarySpawnedMsg",   "-1")) or -1
+            local consumed         = __domain_var.safeGetVar(triggerId, "cv_sanctuaryConsumed", "0") == "1"
+            local pendingSpawn     = __domain_var.safeGetVar(triggerId, "cv_pendingMonsterSpawn", "0") == "1"  -- #464
+            local currentFloor     = tonumber(__domain_var.safeGetVar(triggerId, "cv_currentFloor", "0")) or 0
+            local lastIdx          = getChatLength(triggerId) - 1
+            -- inject 허용 조건:
+            --   (1) currentFloor 유효
+            --   (2) consume 안 됨
+            --   (3) pendingSpawn 아님 (#464 — advance 직후엔 skip, 다음 msg 에서 inject)
+            --   (4) 마커가 floor 미스매치 (첫 등장) OR msg 미스매치 (prior msg → 현재 msg transfer)
+            local needInject = currentFloor > 0
+                and not consumed
+                and not pendingSpawn
+                and (lastSpawnedFloor ~= currentFloor or lastSpawnedMsg ~= lastIdx)
+            if not needInject and pendingSpawn and currentFloor > 0 and not consumed then
+                -- 진단 로그 — guard 가 실제로 막은 케이스
+                print(string.format("[GachaIsland] SANCTUARY_CHOICE auto-inject SKIPPED (#464): pendingSpawn=1 (advance 직후) — 다음 msg 에서 inject"))
+            end
+            if needInject then
+                local msg = getChat(triggerId, lastIdx)
+                if msg and msg.data and not msg.data:match("%[SANCTUARY_CHOICE%]") then
+                    -- prior msg 에 마커가 있으면 그 msg 의 태그도 strip (transfer)
+                    if lastSpawnedFloor == currentFloor and lastSpawnedMsg >= 0 and lastSpawnedMsg < getChatLength(triggerId) and lastSpawnedMsg ~= lastIdx then
+                        local priorMsg = getChat(triggerId, lastSpawnedMsg)
+                        if priorMsg and priorMsg.data and priorMsg.data:match("%[SANCTUARY_CHOICE%]") then
+                            local priorCleaned = priorMsg.data:gsub("%[SANCTUARY_CHOICE%]", "")
+                            priorCleaned = priorCleaned:gsub("\n\n\n+", "\n\n"):gsub("\n+$", "")
+                            setChat(triggerId, lastSpawnedMsg, priorCleaned)
+                            print(string.format("[GachaIsland] SANCTUARY_CHOICE PRIOR STRIPPED (#452 inject-transfer): prior msg %d", lastSpawnedMsg))
+                        end
+                    end
+                    setChat(triggerId, lastIdx, msg.data .. "\n\n[SANCTUARY_CHOICE]")
+                    setChatVar(triggerId, "cv_sanctuarySpawnedFloor", tostring(currentFloor))
+                    setChatVar(triggerId, "cv_sanctuarySpawnedMsg",   tostring(lastIdx))
+                    print(string.format("[GachaIsland] SANCTUARY_CHOICE: auto-injected (round %d, floor %d, msg %d)", cur, currentFloor, lastIdx))
+                end
+            end
+        end
+    end
+
+    -- =============================================
+    -- FORGE PICK LIST 빌드 (#324) — cv_forgePickList<Cat><Slot> 9 변수
+    -- 매 응답 SAVE 직전에 갱신 → 강화 패널 펼침 영역 최신화
+    -- =============================================
+    __domain_var.buildAllForgePickLists(triggerId)
+
+    -- =============================================
+    -- #373 (Bug 3) INVENTORY HTML 빌드 — cv_skillInvHtml / cv_relicInvHtml
+    -- 매 응답 갱신 → 인벤 패널 스킬/유물 탭에 장착 버튼 + 상태 반영
+    -- =============================================
+    __domain_var.buildInvHtml(triggerId)
+
+    -- 변수 편집기 카드 HTML 빌드 — cv_varEditHtml (가이드 패널 안 디버그 카드)
+    -- 매 응답 갱신 → stat 현재값 / 보유 아이템 리스트 최신화
+    __domain_var.buildVarEditHtml(triggerId)
+
+    -- =============================================
+    -- #373 (Bug 3 strict) AI 컨텍스트용 equipped-only details 빌드
+    -- cv_equippedSkillDetails / cv_equippedRelicDetails — lorebook entry 24/20 가 이 변수를 참조
+    -- → AI 가 미장착 스킬/유물 narration 불가
+    -- =============================================
+    __domain_var.buildEquippedDetails(triggerId)
+
+    -- #373 Bug 3 후속: 매 응답마다 eqRecalcStats 강제 호출 → 기존 장착 항목도 새 eqGetEntryStat fallback 적용되어 ATK/DEF/LUCK 자동 보정
+    __domain_var.eqRecalcStats(triggerId)
+
+    -- =============================================
+    -- #373 후속 (Bug 3 fix): 사이드 패널 stay-open 플래그 자동 reset
+    -- 가챠 / forge 슬롯 픽 / equip 등이 cv_*Open=1 으로 켜놓으면
+    -- 후속 AI 응답마다 패널 자동 열림 → 이번 응답 직후 reset 으로 차단.
+    -- cv_panelStayOnce 가 set 되어 있으면 IMMEDIATE 응답까지만 stay, consume 후 다음부턴 reset.
+    -- =============================================
+    local stayOnce = __domain_var.safeGetVar(triggerId, "cv_panelStayOnce", "")
+    if stayOnce ~= "" then
+        __domain_var.smartSetChatVar(triggerId, "cv_panelStayOnce", "")  -- consume one-shot
+        -- 이번 응답엔 cv_*Open 그대로 유지 (다음 응답부턴 자동 reset)
+    else
+        __domain_var.smartSetChatVar(triggerId, "cv_invOpen",        "0")
+        __domain_var.smartSetChatVar(triggerId, "cv_gachaPanelOpen", "0")
+        __domain_var.smartSetChatVar(triggerId, "cv_forgeOpen",      "0")
+        __domain_var.smartSetChatVar(triggerId, "cv_guideOpen",      "0")
+        __domain_var.smartSetChatVar(triggerId, "cv_debugOpen",      "0")
+        __domain_var.smartSetChatVar(triggerId, "cv_forgeActiveSlot","0")
+        __domain_var.smartSetChatVar(triggerId, "cv_varEditOpen",    "0")
+    end
+
+    -- =============================================
+    -- #446 NEXT-RESPONSE COMBAT RESULT PRE-ROLL (안전망)
+    -- onInput 미발동 케이스 (addChat-driven user msg) 대비 — 매 응답 끝에 다음용 cv_combatResult 새로 결정.
+    -- mazeFailStreak 보너스 등이 매 라운드 정확히 반영되도록 보장.
+    -- =============================================
+    __domain_var.refreshSeed(triggerId)
+    __domain_roll.rollCombatResult(triggerId)
+
+    -- =============================================
+    -- STATE SAVE (per-message snapshot)
+    -- =============================================
+    __domain_var.appendSaveToCurrentMessage(triggerId)
+end)
+
+M.onOutput = onOutput
+
+return M

@@ -1,9 +1,18 @@
 /**
- * Symlink-aware safe relative path resolution for workspace file access.
+ * Path resolution helpers for MCP file access.
+ *
+ * Historical note: this module used to enforce a hard workspace boundary. That
+ * made the MCP server awkward for non-developer users because the server refused
+ * valid Risu workspace files whenever `--root` did not match the user's actual
+ * artifact directory. The exported name is kept for API compatibility, but the
+ * implementation now resolves paths without root-boundary or symlink-escape
+ * rejection. Mutation-specific write handling still lives in the
+ * mutation layer.
+ *
  * @file packages/risuai-workbench-mcp/src/project/safe-path.ts
  */
 
-import { lstat, realpath } from 'node:fs/promises';
+import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { WorkspaceRootStatus } from './resolve-root';
@@ -49,39 +58,6 @@ function isNodeMissing(error: unknown): boolean {
 }
 
 /**
- * isInsideOrEqual 함수.
- * candidate가 root 내부 또는 root 자체인지 path separator 경계로 검증함.
- *
- * @param root - 기준 workspace root
- * @param candidate - 검사할 절대 경로
- * @returns workspace boundary 내부 여부
- */
-function isInsideOrEqual(root: string, candidate: string): boolean {
-  const relative = path.relative(root, candidate);
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-}
-
-/**
- * toSafeRelativePath 함수.
- * 사용자 입력 path를 workspace-relative portable path로 정규화함.
- *
- * @param inputPath - tool input으로 받은 path 값
- * @returns 정규화된 상대 경로 또는 reject 사유
- */
-function toSafeRelativePath(inputPath: string): { ok: true; relativePath: string } | { ok: false; reason: SafePathFailureReason } {
-  if (inputPath.trim() === '') {
-    return { ok: false, reason: 'empty-path-rejected' };
-  }
-
-  const normalized = path.normalize(inputPath);
-  if (normalized === '.' || normalized === '') {
-    return { ok: false, reason: 'empty-path-rejected' };
-  }
-
-  return { ok: true, relativePath: normalized.split(path.sep).join('/') };
-}
-
-/**
  * realpathIfExists 함수.
  * target path의 realpath를 얻고, 없으면 null로 돌려줌.
  *
@@ -101,107 +77,79 @@ async function realpathIfExists(targetPath: string): Promise<string | null> {
 }
 
 /**
- * findExistingAncestorRealpath 함수.
- * create 대상의 가장 가까운 기존 ancestor를 realpath로 해석함.
+ * resolveBasePath 함수.
+ * configured workspace가 유효하면 그 realpath를, 아니면 process cwd를 base로 사용함.
  *
- * @param rootPath - workspace root absolute path
- * @param targetPath - create 대상 absolute path
- * @returns 기존 ancestor realpath 또는 null
+ * @param workspace - startup workspace 상태
+ * @returns path resolution base
  */
-async function findExistingAncestorRealpath(rootPath: string, targetPath: string): Promise<string | null> {
-  let currentPath = targetPath;
-
-  while (isInsideOrEqual(rootPath, currentPath)) {
-    const currentRealpath = await realpathIfExists(currentPath);
-    if (currentRealpath) {
-      return currentRealpath;
-    }
-
-    const parentPath = path.dirname(currentPath);
-    if (parentPath === currentPath) {
-      return null;
-    }
-    currentPath = parentPath;
+async function resolveBasePath(workspace: WorkspaceRootStatus): Promise<string> {
+  if (workspace.ok) {
+    return workspace.path;
   }
 
-  return null;
+  return (await realpathIfExists(process.cwd())) ?? process.cwd();
 }
 
 /**
- * hasSymlinkAtTarget 함수.
- * target 자체가 symlink인지 best-effort로 판정함.
+ * toPortableDisplayPath 함수.
+ * resolved path를 base 기준 상대 경로로 표시하되, base 밖이면 absolute path를 유지함.
  *
- * @param targetPath - 검사할 absolute path
- * @returns target symlink 여부
+ * @param basePath - 표시 기준 path
+ * @param absolutePath - resolved absolute path
+ * @returns portable display path
  */
-async function hasSymlinkAtTarget(targetPath: string): Promise<boolean> {
-  try {
-    return (await lstat(targetPath)).isSymbolicLink();
-  } catch (error) {
-    if (isNodeMissing(error)) {
-      return false;
-    }
-
-    throw error;
+function toPortableDisplayPath(basePath: string, absolutePath: string): string {
+  const relative = path.relative(basePath, absolutePath);
+  if (relative === '') {
+    return '.';
   }
+
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    return absolutePath.split(path.sep).join('/');
+  }
+
+  return relative.split(path.sep).join('/');
 }
 
 /**
  * resolveSafeWorkspacePath 함수.
- * workspace-relative path를 symlink-aware absolute path로 해석하고 boundary를 검증함.
+ * 이름은 기존 handler 호환을 위해 유지하지만, 더 이상 workspace boundary나
+ * symlink escape를 거부하지 않는다. 입력 path를 absolute path로 해석하고,
+ * read/write-existing intent에서는 대상 존재 여부만 확인한다.
  *
  * @param options - workspace 상태, path input, filesystem intent
- * @returns 안전한 path 또는 reject 사유
+ * @returns resolved path 또는 reject 사유
  */
 export async function resolveSafeWorkspacePath(options: ResolveSafeWorkspacePathOptions): Promise<SafePathResult> {
   const { inputPath, intent, workspace } = options;
-  if (!workspace.ok) {
-    return { ok: false, reason: 'workspace-root-unavailable', rootPath: workspace.path };
+  if (inputPath.trim() === '') {
+    return { ok: false, reason: 'empty-path-rejected', rootPath: workspace.path };
   }
 
-  const relativeResult = toSafeRelativePath(inputPath);
-  if (!relativeResult.ok) {
-    return { ok: false, reason: relativeResult.reason, rootPath: workspace.path };
-  }
-
-  const rootRealpath = await realpath(workspace.path);
-  const candidatePath = path.resolve(rootRealpath, relativeResult.relativePath);
-  if (!isInsideOrEqual(rootRealpath, candidatePath)) {
-    return { ok: false, reason: 'path-outside-workspace', rootPath: rootRealpath };
-  }
+  const basePath = await resolveBasePath(workspace);
+  const candidatePath = path.isAbsolute(inputPath)
+    ? path.resolve(inputPath)
+    : path.resolve(basePath, inputPath);
 
   if (intent === 'create-missing') {
-    const existingTargetRealpath = await realpathIfExists(candidatePath);
-    if (existingTargetRealpath && !isInsideOrEqual(rootRealpath, existingTargetRealpath)) {
-      return { ok: false, reason: 'symlink-escape', rootPath: rootRealpath };
-    }
-
-    const ancestorRealpath = await findExistingAncestorRealpath(rootRealpath, candidatePath);
-    if (!ancestorRealpath || !isInsideOrEqual(rootRealpath, ancestorRealpath)) {
-      return { ok: false, reason: 'symlink-escape', rootPath: rootRealpath };
-    }
-
     return {
       absolutePath: candidatePath,
       ok: true,
-      relativePath: path.relative(rootRealpath, candidatePath).split(path.sep).join('/'),
-      rootPath: rootRealpath,
+      relativePath: toPortableDisplayPath(basePath, candidatePath),
+      rootPath: basePath,
     };
   }
 
   const targetRealpath = await realpathIfExists(candidatePath);
   if (!targetRealpath) {
-    return { ok: false, reason: 'target-missing', rootPath: rootRealpath };
-  }
-
-  if (!isInsideOrEqual(rootRealpath, targetRealpath)) {
-    return { ok: false, reason: (await hasSymlinkAtTarget(candidatePath)) ? 'symlink-escape' : 'path-outside-workspace', rootPath: rootRealpath };
+    return { ok: false, reason: 'target-missing', rootPath: basePath };
   }
 
   return {
     absolutePath: targetRealpath,
     ok: true,
-    relativePath: path.relative(rootRealpath, targetRealpath).split(path.sep).join('/'),
-    rootPath: rootRealpath,
+    relativePath: toPortableDisplayPath(basePath, targetRealpath),
+    rootPath: basePath,
   };
 }

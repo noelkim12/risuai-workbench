@@ -1,0 +1,81 @@
+---
+name: 커플 가챠
+comment: 커플 가챠
+mode: normal
+constant: false
+selective: true
+insertion_order: 135
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+커플 가챠
+커플 아이템
+성인 장난감
+성인용품
+마나 촉매
+Couple Gacha
+Couple Item
+adult toy
+lingerie
+mana catalyst
+カップル ガチャ
+カップルアイテム
+@@@ CONTENT
+### Couple Item Gacha (Fixed 1,000P)
+- AI-generated adult couple item for consensual intimate / mana charging scenes between {{user}} and a 동료. Stored as a 차원주머니 consumable item.
+- Adult-only and consent-first: all participants MUST be clearly adult, conscious, willing, and able to stop. The item may intensify sensation or mana resonance, but MUST NOT remove consent, impair agency, drug someone unknowingly, force obedience, or make refusal impossible.
+- Valid use locations: 성소, 성역, or another clearly safe/private rest space. Do NOT use during combat, dungeon corridors, coercive scenes, punishment scenes, or with unwilling participants.
+- Tag: `[SYSTEM|GACHA: Couple Item Acquired - ENGLISH (한글) | 짧은설명 | ⭐:N | 효과]` + `[SYSTEM|ITEM_ADD: 한글]` (single-use unless explicitly described as a wearable keepsake; mechanically treat as one use).
+- The 한글효과설명 MUST follow the EFFECT DESCRIPTION FORMAT below. Lua stores it in cv_itemDetails and the side panel displays it to {{user}}.
+
+## EFFECT DESCRIPTION FORMAT (MANDATORY - parens-safe for SYSTEM tag)
+Format: `(효과 타입) 효과 설명. 회복: +N MANA` OR `(효과 타입) 다음 충전 장면 효과: +N%` OR `(효과 타입) 효과: 구체적 1회 보조`
+- Use parens `( )`. NEVER use `[ ]` inside effect text because it closes the SYSTEM tag.
+- Required effect prefixes: `(즉시마나회복)` / `(다음충전증가)` / `(성소충전보너스)` / `(긴장완화)` / `(유대강화)`
+- Concrete values required. No vague "마나가 회복된다" without a number.
+
+## POWER RANGE BY TIER
+- 1★: +10~18 MANA or next charge +10%
+- 2★: +18~25 MANA or next charge +15%
+- 3★: +25~35 MANA or next charge +20%
+- 4★: +35~50 MANA or next charge +30%
+- 5★: +50~70 MANA or next charge +45%
+- 긴장완화 / 유대강화 types may use a smaller mana number plus a one-scene narrative support effect.
+
+## 3-Tier Category Selection (MANDATORY)
+If [GACHA_CATS:커플|CAT1|CAT2|CAT3] is present, use those exact categories. Otherwise roll independently.
+
+카테고리_1 - Style/Origin:
+고대 / 중세 / 근대 / 현대 / 미래 / 외계 / 판타지 / 이세계
+
+카테고리_2 - Adult Item Family:
+성인장난감 / 구속구 / 란제리 / 감각강화제 / 마나윤활제 / 최음촉매 / 성소의식도구
+
+카테고리_3 - Effect Type:
+즉시마나회복 / 다음충전증가 / 성소충전보너스 / 긴장완화 / 유대강화
+
+## ITEM FAMILY GUIDANCE
+- 성인장난감: 로터, 바이브, 딜도, 플러그, 감응 구슬, 원격 조율 장치 등. Keep descriptions sensual but concise.
+- 구속구: 커플 수갑, 실크 리본, 초커, 하네스, 부드러운 구속 벨트 등. MUST be explicitly playful/consensual; no forced restraint.
+- 란제리: 바니걸 코스튬, 메이드 란제리, 실크 가운, 서큐버스 의상, 마이크로 비키니 등 (동료가 입거나 {{user}}에게 선물하는 형태 모두 가능).
+- 감각강화제: 열감 젤, 민감화 오일, 향수, 체온 밤, 전율 마사지 오일 등.
+- 마나윤활제: mana-reactive lubricant / oil / gel that helps safe intimate charging.
+- 최음촉매: consensual arousal/mana catalyst only. It may heighten mood and mana resonance after agreement; NEVER mind-control, incapacitate, or bypass consent.
+- 성소의식도구: 공명 룬, 촛불, 결속 인장, 마나 서클, 침실 의식 소품.
+
+## NAMING RULES
+Do NOT simply prefix the category word. Avoid boring names like "현대 로터" or "판타지 란제리". Use evocative names that imply the category.
+- ✅ GOOD: "심박 공명 바이브", "달열매 윤활제", "칠흑 리본 하네스", "쌍월의 감응 향수"
+- ❌ FORBIDDEN: "미래 성인장난감", "중세 구속구", "판타지 최음제"
+
+## REQUIRED OUTPUT PER COUPLE GACHA
+1. Validate 성소 location and points first. If insufficient, refuse with SYS_ADVICE and output no tags.
+2. Deduct cost: `[SYSTEM|POINT:-1000P 커플 가챠]`
+3. Output result tag: `[SYSTEM|GACHA: Couple Item Acquired - ENGLISH (한글) | 짧은설명 | ⭐:N | 효과]`
+4. Add inventory tag: `[SYSTEM|ITEM_ADD: 한글]`
+
+## FORBIDDEN
+- No minors, youthful framing, non-consensual use, sleep/unconscious use, forced intoxication, mind-control, blackmail, punishment, or inability to refuse.
+- No permanent combat stats. Couple items are consumable/rest-scene support only. Do NOT output ATTACK/DEFENSE/LUCK/MAX_* tags.
+- Do NOT use square brackets inside effect text.

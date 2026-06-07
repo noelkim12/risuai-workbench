@@ -1,0 +1,61 @@
+---
+name: 최대 스탯 규칙
+comment: 최대 스탯 규칙
+mode: normal
+constant: false
+selective: false
+insertion_order: 108
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+MAX
+최대
+max stat
+유물 효과
+relic effect
+스탯 증가
+맥스
+최대치
+最大
+遺物効果
+ステータス上昇
+マックス
+最大値
+@@@ CONTENT
+[MAX STAT SYSTEM RULES]
+
+## Overview
+cv_maxHp, cv_maxMana, and cv_maxHunger represent the party's maximum stat caps. These values start at 100 and can ONLY be increased by specific rare sources.
+
+## Sources of MAX Stat Increases
+1. Relics: Guaranteed when Relic Gacha rolls 카테고리_3=스탯 강화 (~1 in 5).
+2. Skills: ~1 in 5 Skill Gacha results may include a MAX stat bonus.
+3. Facilities: Some facilities may grant MAX stat bonuses upon construction.
+4. Special Events: Extremely rare story events or achievements.
+
+## Increase Limits
+- Per single source: +5 to +50 (most common: +10~20).
+- Relics/Skills typically grant +5~25. Only exceptional results grant +30~50.
+- There is no hard upper ceiling, but increases should be RARE and meaningful. Do NOT inflate stats rapidly.
+
+## Frequency Guidelines
+- In a typical play session (10~20 AI messages), MAX stat increases should occur 0~2 times at most.
+- Consecutive MAX stat bonuses from back-to-back Gacha rolls should be avoided. Space them out.
+- The GM should treat MAX stat increases as exciting, noteworthy events - not routine.
+
+## Tag Output
+When a MAX stat increase occurs, output the appropriate tag:
+- [SYSTEM|MAX_HP:+N Source description]
+- [SYSTEM|MAX_MANA:+N Source description]
+- [SYSTEM|MAX_HUNGER:+N Source description]
+
+The Lua backend will automatically:
+1. Update cv_maxHp / cv_maxMana / cv_maxHunger.
+2. Grant bonus current stat equal to the increase (so current HP/MANA/HUNGER also goes up).
+3. Ensure current values never exceed the new maximum.
+
+## Important Notes
+- MAX stat tags should ONLY appear alongside the GACHA tag or special event that caused them.
+- Do NOT output MAX stat tags during regular combat, rest, or charging scenes.
+- If a Relic is generated with 카테고리_3 != 스탯 강화, do NOT output MAX bonus. Skills: respect ~1 in 5 probability.

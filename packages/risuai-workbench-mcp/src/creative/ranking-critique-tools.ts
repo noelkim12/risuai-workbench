@@ -535,7 +535,7 @@ function buildSixHats(idea: Idea, risks: readonly AdvisoryRisk[]): CritiquePersp
 function buildRedTeamVectors(idea: Idea, risks: readonly AdvisoryRisk[]): CritiquePerspective[] {
   return [
     perspective('evidence-gap', 'Evidence gap', 'unsupported claims or missing analyze/wiki/graph signals', evidenceGapDiagnostics(idea), ['Add or verify evidence before turning this into a patch plan.'], idea.evidence, idea.assumptions),
-    perspective('source-safety', 'Source safety', 'ways the concept could accidentally mutate or destabilize source artifacts', risks.map((risk) => risk.message), ['Keep all writes in later gated mutation tools; this tool stays read-only.'], risks.flatMap((risk) => risk.evidence), risks.flatMap((risk) => risk.assumptions)),
+    perspective('source-safety', 'Source safety', 'ways the concept could accidentally mutate or destabilize source artifacts', risks.map((risk) => risk.message), ['Keep all writes in later Workbench apply tools; this tool stays read-only.'], risks.flatMap((risk) => risk.evidence), risks.flatMap((risk) => risk.assumptions)),
     perspective('token-budget', 'Token budget', 'ways the concept could inflate prompt or lorebook token cost', [`Estimated token-cost dimension: ${dimensionScoresForIdea(idea).tokenCost}.`], ['Query token budget before expanding prose or prompt chains.'], idea.evidence.filter((entry) => entry.includes('token')), ['Token cost is estimated from supplied idea text only.']),
     perspective('integration', 'Integration conflict', 'composition/order/variable-flow conflict potential', integrationDiagnostics(idea), ['Validate order/frontmatter/composition before any patch preview.'], idea.evidence, ['Integration risk is advisory until analyze tools verify it.']),
   ];

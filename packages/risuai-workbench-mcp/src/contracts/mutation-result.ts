@@ -45,6 +45,8 @@ export interface MutationResultEnvelope {
   };
   /** Optional non-blocking follow-up tool recommendations; these are not executed automatically. */
   nextActions?: readonly string[];
+  /** Optional workflow-specific summary for external process mutations. */
+  workflowSummary?: Record<string, unknown>;
 }
 
 export interface MutationJournalEntry {

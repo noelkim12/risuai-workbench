@@ -30,6 +30,7 @@
     "!dist/runtime/**",
     "bin",
     "assets/rpack_map.bin",
+    "assets/docs-provider",
     "package.json",
     "README*",
     "LICENSE*"

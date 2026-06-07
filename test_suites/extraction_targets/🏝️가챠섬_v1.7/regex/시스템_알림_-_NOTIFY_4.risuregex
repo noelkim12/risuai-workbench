@@ -1,0 +1,10 @@
+---
+comment: "시스템 알림 - NOTIFY"
+type: editdisplay
+ableFlag: true
+flag: g<cbs>
+---
+@@@ IN
+\[SYSTEM\|NOTIFY:\s*(.*?)\]
+@@@ OUT
+{{#if {{greater_equal::{{chat_index}}::{{? {{lastmessageid}}-5}}}}}}<div class="sys-alert sys-alert-notify"><div class="sys-alert-icon">📢</div><div class="sys-alert-body"><span class="sys-alert-tag">NOTIFY</span><div class="sys-alert-desc">$1</div></div></div>{{/if}}

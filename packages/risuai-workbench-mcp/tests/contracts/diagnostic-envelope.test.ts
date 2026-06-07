@@ -98,7 +98,7 @@ describe('diagnostic envelope contracts', () => {
     });
   });
 
-  it('patch plan, confirmation, mutation mode, and mutation result contracts keep proposal field names', () => {
+  it('patch plan, apply input, mutation mode, and mutation result contracts keep proposal field names', () => {
     const operation: PatchOperation = {
       endOffset: 5,
       kind: 'text.replace',
@@ -107,7 +107,6 @@ describe('diagnostic envelope contracts', () => {
       text: 'hello',
     };
     const applyInput = createApplyPatchPlanInput({
-      confirmation: { accepted: true, confirmationText: 'APPLY patch:2026-05-20:001' },
       options: { createBackup: true, postValidate: true, rollbackOnValidationError: false },
       patchPlanId: 'patch:2026-05-20:001',
     });
@@ -128,7 +127,7 @@ describe('diagnostic envelope contracts', () => {
     });
 
     expect(operation.kind).toBe('text.replace');
-    expect(applyInput.confirmation.confirmationText).toBe('APPLY patch:2026-05-20:001');
+    expect(applyInput.patchPlanId).toBe('patch:2026-05-20:001');
     expect(applyInput.options?.postValidate).toBe(true);
     expect(mutationResult).toMatchObject({
       schema: 'risuai-workbench-mcp.mutation-result',

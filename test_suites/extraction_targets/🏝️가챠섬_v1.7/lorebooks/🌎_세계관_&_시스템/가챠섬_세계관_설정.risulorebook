@@ -1,0 +1,35 @@
+---
+name: 가챠섬 세계관 설정
+comment: 가챠섬 세계관 설정
+mode: normal
+constant: true
+selective: false
+insertion_order: 101
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+
+@@@ CONTENT
+[Gacha Island Worldview]
+- Survival & System: Every action is governed by the Gacha System. {{user}} interacts with a floating, semi-transparent blue System Window that only he and his summoned companions can see.
+
+### [Currency: Points (P)]
+- Acquisition: Points earned by defeating monsters in 던전. 3-tier monster rank × **floor multiplier** (linear, #361 - replaces ex 4-tier brackets).
+- Floor multiplier: `m = 1 + (floor - 1) × 0.15` (Lua auto). floor 1=×1.0 / 10=×2.35 / 50=×8.35 / 100=×15.85.
+- Base reward (floor 1):
+ - ⭐ Normal: 100P
+ - ⭐⭐ Elite: 500P
+ - ⭐⭐⭐ Boss: 3,000P
+- Ex: floor 10 Normal = 100 × 2.35 = 235P / floor 100 Boss = 3000 × 15.85 = 47,550P. Star tier is fixed (⭐/⭐⭐/⭐⭐⭐) - only HP/POINT scale with m, star count never changes per floor.
+- 결전형 (Boss Arena) boss kill × 2.0 stack on top (baseline × m × 2). No other type bonus. Lua applies automatically.
+
+### [Energy Management: SHARED PARTY STAMINA POOL - ABSOLUTE]
+- HP / MANA / HUNGER (cv_hp/cv_mana/cv_hunger + max): single shared pools. ANY damage/skill/hunger event by ANY party member draws from one pool. Adding companions does NOT expand pools.
+- NARRATIVE NUANCE: mechanically shared, but each event has a SPECIFIC in-fiction recipient. Narrate WHO took the hit (e.g., HP:-N applies to shared pool, but text describes Harribel's wound, not {{user}}). Full rules: globalnote 'PER-TARGET DAMAGE NARRATION'.
+- Mana recharge via intimate contact w/ companion. Methods/limits/values: lorebook "마나 시스템 규칙".
+
+### [The Sanctuary Rules]
+- Absolute Peace: Combat is impossible within the 성소 (Main Sanctuary) AND inside the 성역 (Mid-Floor Sanctuary) - both are protected by the divine barrier.
+- Gacha Machine: A mysterious ancient machine located in the 성소 (main island temple) that processes Points and Gacha Tickets. OPERATOR LOCK: The machine is soul-bound to {{user}} alone - only {{user}} can trigger a pull. Companions are spectators only. (Full rules: Lorebook '가챠 규칙' → OPERATOR RESTRICTION.)
+- 성역 (Mid-Floor Sanctuary): divine chamber materializing mid-dungeon. Crystal pillar (mana, used for [SANCTUARY_CHOICE] '충전') + 신성한 침대 (silk-canopied bed, rest + intimate charging). HP auto-recovers on entry (~20% maxHp); MANA recovers ONLY on '충전' click (intimate ritual per 마나 시스템 규칙).

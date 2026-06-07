@@ -1,0 +1,74 @@
+local __domain_list = require("domain.list")
+local __domain_var = require("domain.var")
+local __domain_eq_unequip = require("domain.eq_unequip")
+
+local M = {}
+local __impl = {}
+
+-- 장착 함수. kind = "skill" or "relic". 성공 시 true, 실패 시 false + reason 문자열.
+function __impl.eqEquip(triggerId, kind, name)
+    local listKey, maxKey, ownedKey, detailKey
+    if kind == "skill" then
+        listKey, maxKey, ownedKey, detailKey = "cv_equippedSkills", "cv_maxSkillSlots", "cv_skills", "cv_skillDetails"
+    elseif kind == "relic" then
+        listKey, maxKey, ownedKey, detailKey = "cv_equippedRelics", "cv_maxRelicSlots", "cv_relics", "cv_relicDetails"
+    else
+        return false, "unknown kind"
+    end
+    local owned = __domain_var.safeGetVar(triggerId, ownedKey, "None")
+    if not __domain_list.eqInList(owned, name) then
+        -- detail에는 있을 수 있음 (보유 list 동기화 누락)
+        if not __domain_var.eqGetEntryStat(__domain_var.safeGetVar(triggerId, detailKey, "None"), name) then
+            return false, "not owned"
+        end
+    end
+    local cur = __domain_var.safeGetVar(triggerId, listKey, "None")
+    if __domain_list.eqInList(cur, name) then return false, "already equipped" end
+    local max = tonumber(__domain_var.safeGetVar(triggerId, maxKey, "3")) or 3
+    if __domain_list.eqCountList(cur) >= max then return false, "slot full" end
+    setChatVar(triggerId, listKey, __domain_list.eqAddToList(cur, name))
+    __domain_var.eqRecalcStats(triggerId)
+    print(string.format("[GachaIsland] EQUIP %s: %s (slots used %d/%d)", kind, name, __domain_list.eqCountList(__domain_var.safeGetVar(triggerId, listKey, "None")), max))
+    return true
+end
+
+-- equip 토글 (인덱스 기반)
+function __impl.equipToggleByIdx(triggerId, kind, idx)
+    local entries = __domain_var.parseForgeEntries(triggerId, kind)
+    if idx + 1 > #entries then return end
+    local entry = entries[idx + 1]
+    local name = entry.name
+    local listKey = (kind == "skill") and "cv_equippedSkills" or "cv_equippedRelics"
+    local cur = __domain_var.safeGetVar(triggerId, listKey, "None")
+    if __domain_list.eqInList(cur, name) then
+        local ok, reason = eqUnequip(triggerId, kind, name)
+        if not ok then alertError(triggerId, "해제 실패: " .. (reason or "")) end
+    else
+        local ok, reason = __impl.eqEquip(triggerId, kind, name)
+        if not ok then
+            if reason == "slot full" then
+                local maxKey = (kind == "skill") and "cv_maxSkillSlots" or "cv_maxRelicSlots"
+                local maxV = __domain_var.safeGetVar(triggerId, maxKey, "3")
+                alertError(triggerId, "장착 슬롯이 가득 찼습니다 (" .. maxV .. "/" .. maxV .. "). 먼저 다른 것을 해제하세요.")
+            elseif reason == "not owned" then
+                alertError(triggerId, "보유하지 않은 항목입니다.")
+            else
+                alertError(triggerId, "장착 실패: " .. (reason or ""))
+            end
+        end
+    end
+    -- 패널 / 탭 유지 위해 cv 명시 + HTML 재빌드
+    setChatVar(triggerId, "cv_invOpen",     "1")
+    setChatVar(triggerId, "cv_invCategory", kind)
+    __domain_var.buildAllForgePickLists(triggerId)
+    buildInvHtml(triggerId)
+    buildEquippedDetails(triggerId)  -- #373 strict: AI 컨텍스트용 equipped-only details 갱신
+    -- #377 후속 (얼헌 refreshScreen 패턴): appendSave 의 setChat 만으로 ONE 재렌더 충분.
+    -- reloadDisplay 제거 → double-render 시 setvar 가 cv=0 으로 reset 되어 패널 닫히는 flicker 차단.
+    __domain_var.appendSaveToCurrentMessage(triggerId)
+end
+
+M.eqEquip = __impl.eqEquip
+M.equipToggleByIdx = __impl.equipToggleByIdx
+
+return M

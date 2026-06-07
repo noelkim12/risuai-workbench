@@ -1,0 +1,11 @@
+local M = {}
+local __impl = {}
+
+function __impl.escapeValueForSave(v)
+    if not v then return "" end
+    return tostring(v):gsub("¦", ""):gsub("=>", "→"):gsub("[\r\n]", " ")
+end
+
+M.escapeValueForSave = __impl.escapeValueForSave
+
+return M

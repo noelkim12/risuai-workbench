@@ -1,0 +1,107 @@
+---
+name: 시스템 태그 출력 형식
+comment: 시스템 태그 출력 형식
+mode: normal
+constant: true
+selective: false
+insertion_order: 114
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+시스템 태그
+SYSTEM
+태그 형식
+출력 형식
+tag format
+POINT
+HP
+MANA
+HUNGER
+ITEM
+NEW_DAY
+DUNGEON
+DEFEAT
+FLOOR
+GACHA
+STATUS_TIP
+STATUS_PANEL
+@@@ CONTENT
+[SYSTEM TAG OUTPUT FORMAT - ALL TAG TYPES]
+
+Lua parses [SYSTEM|...] tags after every response and updates cv_* variables.
+
+## Stat tags (ATK / DEF / LUCK)
+- `[SYSTEM|ATTACK:+N <reason>]` - permanent +N to cv_attack
+- `[SYSTEM|DEFENSE:+N <reason>]` - permanent +N to cv_defense
+- `[SYSTEM|LUCK:+N <reason>]` - permanent +N to cv_luck (4★+ only)
+- Sign +/- supported. 0 ignored.
+- Emit per gacha tier + category. Full rules: "Stat System" entry.
+
+## CORE PRINCIPLES
+- SIGN OPTIONAL: `+N` and `N` both work. Prefer explicit `+`/`-` for clarity.
+- ZERO IGNORED: `0`/`+0`/`-0` silently skipped (no effect).
+- STATUS_PANEL AUTO: NEVER manually output `[STATUS_PANEL]...[/STATUS_PANEL]` - Lua auto-assembles. AI only outputs `[STATUS_TIP: 한 줄]`.
+
+## NO MARKDOWN WRAPPING ON TAGS (ABSOLUTE)
+NEVER wrap system tags in backticks/code-fence/`<code>`. Wrapping breaks regex render → raw HTML leak.
+✅ `[SYSTEM|POINT:-5000P 동료 소환]`
+❌ ``[SYSTEM|...]`` / triple-backtick wrap / `<code>...</code>`
+
+## NUMERIC STAT TAGS
+
+### POINT (cumulative)
+- Format: `[SYSTEM|POINT:±NP description]` - comma separators OK (`+1,000P`)
+- Example: `[SYSTEM|POINT:+500P 늑대 처치]` / `[SYSTEM|POINT:-3,000P 유물 가챠]`
+- ONE TAG PER EVENT — duplicates compound. Consolidate multiple events into a single tag.
+- NO POINT TAG ON DEFEAT - Lua handles 50% deduction automatically.
+- Gacha cost + per-category result tags: see '가챠 규칙' entry.
+
+### HP / MANA / HUNGER (current - clamped [0, max])
+- Format: `[SYSTEM|HP:±N description]` / `MANA` / `HUNGER`
+- description = WHO took the hit (PER-TARGET, see '전투 판정 시스템').
+- INLINE - output IMMEDIATELY after triggering moment, NOT batched at end.
+
+### MAX_HP / MAX_MANA / MAX_HUNGER (cap changes - rare)
+- Format: `[SYSTEM|MAX_HP:±N source description]` / `MAX_MANA` / `MAX_HUNGER`
+- Output only on Relic/Skill/Facility PERMANENT changes. +N → Lua also +N to current stat.
+- Full rules: '최대 스탯 규칙'.
+
+
+## INVENTORY TAGS
+
+### ITEM_ADD / ITEM_USE
+- Korean names only. Lua stores verbatim.
+- Single-use items (supply / dungeon drop / event / exploration): `[SYSTEM|ITEM_ADD: <이름> | <짧은설명> | ⭐:N | <효과>]` — 가챠 보급품 (Supply Acquired) 과 동일 형식.
+- Legacy 3-pipe / 2-pipe 도 호환 (default ⭐1).
+- 가챠 티켓 is the ONLY stackable item: `[SYSTEM|ITEM_ADD: 가챠 티켓 x3]` / `[SYSTEM|ITEM_USE: 가챠 티켓 x1]`. Counter format MANDATORY. (Effect description exempted.)
+- ITEM_USE name matching: copy the name verbatim from `cv_items`. Lua only normalizes whitespace / quotes. NO translation / shortening / paraphrasing.
+- Gacha path: `[SYSTEM|GACHA: Supply Acquired - English (한글) | <짧은설명> | ⭐:N | <효과>]` or `[SYSTEM|GACHA: Couple Item Acquired - English (한글) | <짧은설명> | ⭐:N | <효과>]` — 4-pipe. Lua auto-extracts.
+
+### SKILL_ADD
+- `[SYSTEM|SKILL_ADD: 스킬이름]` Korean only. AFTER GACHA Skill Learned tag.
+
+## FREE-FORM TAGS
+- `[SYSTEM|NOTIFY: text]` - generic notification. `<br>` for line breaks (NEVER actual newlines - regex breaks).
+
+## INLINE PLACEMENT (CRITICAL - NOT BATCHED AT END)
+`[SYSTEM|...]` / `[SYS_NARR:...]` / `[SYS_ADVICE:...]` IMMEDIATELY after triggering narrative moment. NOT stacked at end.
+
+## END-OF-RESPONSE OUTPUT
+AI outputs at end ONLY:
+1. `[STATUS_TIP: 한 줄 GM TIP]` - Lua strips and inserts into auto-STATUS_PANEL.
+2. Optional `[DUNGEON_CHOICE]` / `[SANCTUARY_CHOICE]` if trigger applies (see '던전' lorebook).
+Lua auto-appends `[STATUS_PANEL]...[/STATUS_PANEL]`. Manual STATUS_PANEL stripped.
+
+## SELF-CHECK
+All numeric event tags · INLINE placement · NO HP/MANA/HUNGER/POINT tags in DEFEAT sequence · `[STATUS_TIP:...]` at response end · NO manual `[STATUS_PANEL]`.
+
+## INPUT-SIDE TAGS (inside user message, injected by Lua buttons — AI must follow verbatim)
+- `[GACHA_CATS:type|cat1|cat2|...]` — gacha category pre-roll (including 커플 type with cat1|cat2|cat3 axes)
+- `[GACHA_PICK:한글이름|EnglishName]` — companion gacha pre-pick (summon exactly this character)
+- `[DUNGEON_TYPE:type]` — floor-entry dungeon type (overrides cv_nextDungeonType)
+Hidden from user via regex (editdisplay). Backend-only.
+
+## 🚫 ABSOLUTE (절대 금지)
+- NO SYSTEM TAGS IN THINKING/REASONING: `<thinking>` / `<think>` / CoT blocks must NEVER contain `[SYSTEM|...]`. Lua parses inside those blocks too → HP/MANA/HUNGER/POINT DOUBLE-DEDUCTION. SYSTEM tags only in response body.
+- DO NOT omit ITEM_ADD `효과` field (required for every single-use item except stackable counters like 가챠 티켓).

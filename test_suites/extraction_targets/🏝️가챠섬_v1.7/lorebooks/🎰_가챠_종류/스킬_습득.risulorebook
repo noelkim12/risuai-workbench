@@ -1,0 +1,111 @@
+---
+name: 스킬 습득
+comment: 스킬 습득
+mode: normal
+constant: false
+selective: false
+insertion_order: 133
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+스킬 습득
+스킬
+기술
+스킬 가챠
+스킬 뽑기
+Skill
+Ability
+スキル習得
+スキル
+技術
+スキルガチャ
+スキルガチャ
+@@@ CONTENT
+### Skill (Base 2,000P)
+- AI-generated passive or active ability with a CLEARLY DEFINED, mechanically meaningful effect.
+- Tag: `[SYSTEM|GACHA: Skill Learned - ENGLISH (한글) | 짧은설명 | ⭐:N | 효과]` + `[SYSTEM|SKILL_ADD: 한글]`. 짧은설명 = 1문장 flavor (~40~60자). 효과 = `(액티브·기능) 효과. 마나: N` 형식.
+- The 한글효과설명 MUST follow the EFFECT DESCRIPTION FORMAT below (specific effect + mana cost). Lua stores it in cv_skillDetails - AI reads it back to apply effects every relevant turn (and side panel displays it to {{user}}).
+
+## EFFECT DESCRIPTION FORMAT (MANDATORY - same structure as companion skill entries, parens-safe for SYSTEM tag)
+Format: `(활성화 · 기능) 효과 설명. 마나: N` (공격 sub-type 은 `(활성화 · 공격 · 범위) 효과 설명. 마나: N`)
+- `(활성화 · 기능)` prefix = 카테고리_1 + 카테고리_2 (e.g., `(액티브 · 공격 · 단일)`, `(액티브 · 공격 · 광역)`, `(패시브 · 방어)`, `(조건부 · 치유)`)
+- 공격 sub-type: append 카테고리_3 range to the prefix (e.g., `(액티브 · 공격 · 단일)` or `(액티브 · 공격 · 광역)`).
+- IMPORTANT: use parens `( )`. NEVER `[ ]` - first `]` would close the SYSTEM tag and truncate description.
+- Effect text: natural Korean. Concrete mechanic (what / how much / where).
+- `마나: N` = number only. 액티브 = mana per use / 패시브 = 0 / 조건부 = mana per trigger.
+
+### REQUIRED (each generated skill MUST have)
+1. Activation prefix in parens: `(액티브 · ...)` / `(패시브 · ...)` / `(조건부 · ...)`
+2. Function in prefix (공격/방어/치유/기타)
+3. Concrete effect: what / magnitude / scope (단일/광역/파티/적/자기)
+4. Mana cost - number only (active = per use, passive = 0, conditional = per trigger)
+5. Conditional skills: trigger condition + frequency in natural Korean (e.g., "던전당 1회", "하루 1회", "매 응답 1회")
+
+### FORBIDDEN
+- ❌ Missing mana cost
+- ❌ Using `[ ]` brackets (truncates SYSTEM tag at first `]`)
+- ❌ Flavor-only descriptions: "강력한 힘이 깃든다" / "행운을 가져온다" / "신비한 효과" / etc.
+- ❌ Missing effect magnitude (must specify concrete number/grade)
+- ❌ Missing activation prefix
+- ❌ English meta-tags: "beat", "(always-on)", "(per trigger)", "(per dungeon)", "(per session)", "per turn", etc. - use natural Korean instead ("매 턴", "던전당 1회", "발동당", etc.)
+
+## 2-Tier Category Selection (MANDATORY)
+Before generating, roll TWO categories independently:
+
+카테고리_1 - Activation Type (pick one at equal probability):
+액티브 / 패시브 / 조건부
+- 액티브: Skill with a mana cost that {{user}} actively triggers.
+- 패시브: Always-on buff with no activation cost.
+- 조건부: Triggers automatically under a specific condition (e.g., "when HP < 30%", "on critical success").
+
+카테고리_2 - Function (pick one at equal probability, applies mainly to 액티브):
+공격 / 방어 / 치유 / 기타
+- For 패시브/조건부, use 카테고리_2 as a thematic guide, not a strict constraint.
+
+카테고리_3 - Range (#425, MANDATORY when 카테고리_2 = 공격, Lua-rolled):
+단일 / 광역
+- Lua pre-rolls this when 카테고리_2 = 공격. AI receives it via [GACHA_CATS:스킬|c1|c2|c3] tag — use the exact range Lua provided.
+- 단일 (single-target): one enemy per use. Multi-enemy fight = N enemies × N turns.
+- 광역 (AOE): one use clears the entire wave when 판정 ≥ 성공.
+- For 방어/치유/기타 sub-type, NO range axis (skip 카테고리_3).
+- Mirror the companion innate skill convention ([액티브|단일|딜] / [액티브|광역|딜]).
+
+## Stat tag (MANDATORY for combat categories)
+- 카테고리_2 = 공격 → MUST emit [SYSTEM|ATTACK:+N] per Stat System tier table.
+- 카테고리_2 = 방어 → MUST emit [SYSTEM|DEFENSE:+N] per tier.
+- 카테고리_2 = 치유 / 기타 → stat OPTIONAL (typically skip).
+- 4★+ MAY add [SYSTEM|LUCK:+N] regardless of category (운명·확률 조작 콘셉트 우선).
+
+Generate a skill that fits BOTH selected categories. NEVER output the category labels in the result.
+
+## PERSONA-BLIND GENERATION (ABSOLUTE RULE)
+The Gacha Machine draws from a UNIVERSAL skill pool. It is completely blind to:
+- {{user}}'s class, persona, background, or combat style
+- {{user}}'s current skills ({{getvar::cv_skills}})
+- The companions present
+- The current dungeon situation
+
+The machine does NOT "match" or "complement" the player. It generates purely at random.
+
+### FORBIDDEN Patterns - NEVER do these:
+- {{user}} is a mage → generating mana-sensing, spell amplification, arcane control, or any magic skill = BIAS. FORBIDDEN.
+- {{user}} is a warrior → generating sword mastery, combat endurance, berserker rage = BIAS. FORBIDDEN.
+- {{user}} just got a fire skill → generating water/ice "to balance" = BIAS. FORBIDDEN.
+- Generating any skill that is thematically similar to an already-owned skill = FORBIDDEN.
+
+### MANDATORY DOMAIN POOL (use all equally within the selected function):
+A. Combat: attack techniques, counter-moves, unusual weapon styles
+B. Survival: foraging, first aid, navigation, shelter building, weather reading
+C. Crafting: potion-making, tool repair, cooking, enchanting, leatherwork
+D. Social: intimidation, negotiation, emotion-reading, deception, performance
+E. Sensory/Perception: dungeon mapping, treasure detection, monster analysis, trap sensing
+F. Movement/Stealth: parkour, swimming, rope climbing, shadow-walking, trap disarmament
+G. Nature: plant identification, animal communication, terrain reading, toxin detection
+H. Unusual/Unexpected: ANY creative skill from an unexpected domain (music, gambling, art, memory, etc.)
+
+### ANTI-REPETITION CHECK:
+Before generating, review {{getvar::cv_skills}}. If the player owns 2+ skills from domain X, the next skill MUST come from a different domain.
+
+### ORIGINALITY:
+Every skill must be UNIQUE and creative. Never reuse a skill name or concept already in cv_skills.

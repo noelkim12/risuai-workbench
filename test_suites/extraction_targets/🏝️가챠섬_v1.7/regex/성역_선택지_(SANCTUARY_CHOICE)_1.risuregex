@@ -1,0 +1,10 @@
+---
+comment: "성역 선택지 (SANCTUARY_CHOICE)"
+type: editdisplay
+ableFlag: true
+flag: g<cbs>
+---
+@@@ IN
+\[SANCTUARY_CHOICE\]
+@@@ OUT
+{{#if {{greater_equal::{{chat_index}}::{{? {{lastmessageid}}-5}}}}}}<div class="dungeon-choice-panel sanctuary-choice-panel"><div class="dungeon-choice-hdr"><span class="dungeon-choice-icon">⛩</span><span>던전 성역 - 다음 행동 선택</span></div><div class="dungeon-choice-grid"><div class="dungeon-choice-cell"><div class="dungeon-choice-cell-icon">🏠</div><div class="dungeon-choice-cell-name">성소로 귀환</div><div class="dungeon-choice-cell-btn">{{button::귀환::sanctuaryReturn}}</div></div><div class="dungeon-choice-cell"><div class="dungeon-choice-cell-icon">💎</div><div class="dungeon-choice-cell-name">마나 충전</div><div class="dungeon-choice-cell-btn">{{button::충전::sanctuaryRecharge}}</div></div></div><div class="dungeon-choice-footer">선택지를 눌러 결정하세요</div></div>{{/if}}

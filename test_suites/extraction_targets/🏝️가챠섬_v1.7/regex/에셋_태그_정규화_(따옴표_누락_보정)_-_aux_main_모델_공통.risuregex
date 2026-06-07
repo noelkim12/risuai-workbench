@@ -1,0 +1,10 @@
+---
+comment: "에셋 태그 정규화 (따옴표 누락 보정) - aux/main 모델 공통"
+type: editoutput
+ableFlag: true
+flag: g
+---
+@@@ IN
+<img=([^"'<>\s][^<>]*?)>
+@@@ OUT
+<img="$1">

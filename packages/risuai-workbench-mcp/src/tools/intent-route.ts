@@ -19,6 +19,7 @@ import {
   type TargetKind,
   type WorkbenchIntent,
 } from '../contracts/intent-route';
+import { resolveCompactCanonicalIntent } from '../domain/canonical-intent';
 import { WORKBENCH_REGISTRY } from '../registry';
 
 // ---------------------------------------------------------------------------
@@ -45,6 +46,8 @@ const MUTATION_KEYWORDS = [
   '적용',
   '삭제',
   '이동',
+  '수정',
+  '바꿔',
 ];
 
 const SCAFFOLD_KEYWORDS = [
@@ -52,6 +55,7 @@ const SCAFFOLD_KEYWORDS = [
   'initialize',
   'init',
   'scaffold',
+  '새',
   '새로',
   '생성',
   '스캐폴드',
@@ -66,6 +70,19 @@ const PROJECT_TYPE_KEYWORDS = [
   '모듈',
   '프리셋',
 ];
+
+const EXTRACT_KEYWORDS = [
+  'extract',
+  'unpack',
+  'import',
+  'open',
+  '추출',
+  '풀어',
+  '가져오기',
+  '내보내기',
+];
+
+const EXTRACT_SOURCE_KEYWORDS = ['.risum', '.risup', '.charx', 'risum', 'risup', 'charx'];
 
 const PREVIEW_EVIDENCE_KEYWORDS = [
   'suggest',
@@ -117,8 +134,8 @@ const AUTHORING_SKILL_KEYWORDS = [
   '제작',
   '설계',
 ];
-const VALIDATE_KEYWORDS = ['validate', 'validation', 'verify', 'check'];
-const INSPECT_KEYWORDS = ['inspect', 'review', 'look at', 'check', 'examine'];
+const VALIDATE_KEYWORDS = ['validate', 'validation', 'verify', 'check', '검증', '확인'];
+const INSPECT_KEYWORDS = ['inspect', 'review', 'look at', 'check', 'examine', '봐줘', '확인'];
 
 const LOREBOOK_DOMAIN_KEYWORDS = ['lorebook', 'risulorebook', '로어북', 'entry', 'entries'];
 const CHARACTER_DOMAIN_KEYWORDS = ['risuchar', 'charx', 'character card', '캐릭터', '카드'];
@@ -137,12 +154,23 @@ const RISULUA_DOMAIN_KEYWORDS = [
   'id/async',
 ];
 const CBS_DOMAIN_KEYWORDS = [
-  'cbs', 'when', 'condition', '조건',
-  'getvar', 'setvar', 'addvar', 'tempvar',
-  'pick', 'roll', 'random',
-  'makearray', 'makedict',
-  'slot', 'pure_display',
-  '#each', '#func',
+  'cbs',
+  'when',
+  'condition',
+  '조건',
+  'getvar',
+  'setvar',
+  'addvar',
+  'tempvar',
+  'pick',
+  'roll',
+  'random',
+  'makearray',
+  'makedict',
+  'slot',
+  'pure_display',
+  '#each',
+  '#func',
 ];
 
 const CBS_FILE_SUFFIXES = [
@@ -154,6 +182,96 @@ const CBS_FILE_SUFFIXES = [
 ];
 const PROMPT_CHAIN_DOMAIN_KEYWORDS = ['risuprompt', 'prompt chain', '프롬프트', 'prompt template'];
 const ORDER_DOMAIN_KEYWORDS = ['_order.json', 'order', 'reorder', '순서'];
+const PRESET_DOMAIN_KEYWORDS = ['preset', '프리셋'];
+const REGEX_DOMAIN_KEYWORDS = ['regex', 'regexp', '정규식', 'presetregex', 'customscripts', '충돌'];
+const TEXT_DOMAIN_KEYWORDS = [
+  'risutext',
+  '.risutext',
+  'first_mes',
+  '첫 메시지',
+  '첫메시지',
+  '본문',
+];
+
+interface FileAffordancePolicy {
+  readonly id: string;
+  readonly patterns: readonly string[];
+  readonly domainTags: readonly string[];
+  readonly recommendedActions: readonly string[];
+  readonly routingSignals: readonly string[];
+}
+
+const FILE_AFFORDANCE_POLICIES: readonly FileAffordancePolicy[] = [
+  {
+    id: 'root-marker',
+    patterns: ['.risuchar', '.risumodule'],
+    domainTags: ['root-marker'],
+    recommendedActions: ['inspect.path', 'validate.root_markers'],
+    routingSignals: ['file_affordance:root-marker'],
+  },
+  {
+    id: 'risulua',
+    patterns: ['.risulua'],
+    domainTags: ['risulua'],
+    recommendedActions: [
+      'analyze.query_lua_analysis',
+      'analyze.query_lua_call_graph',
+      'analyze.query_lua_state_access',
+      'analyze.query_risulua_api',
+    ],
+    routingSignals: ['file_affordance:risulua'],
+  },
+  {
+    id: 'cbs',
+    patterns: ['.risulorebook', '.risuregex'],
+    domainTags: ['cbs'],
+    recommendedActions: [
+      'validate.cbs_syntax',
+      'analyze.query_cbs_usage',
+      'analyze.query_variable_flow',
+    ],
+    routingSignals: ['file_affordance:cbs'],
+  },
+  {
+    id: 'prompt-chain',
+    patterns: ['.risuprompt'],
+    domainTags: ['prompt-chain', 'cbs'],
+    recommendedActions: [
+      'analyze.query_prompt_chain',
+      'validate.cbs_syntax',
+      'analyze.query_cbs_usage',
+    ],
+    routingSignals: ['file_affordance:prompt-chain'],
+  },
+  {
+    id: 'html-artifact',
+    patterns: ['.risuhtml'],
+    domainTags: ['text'],
+    recommendedActions: ['inspect.path', 'validate.path'],
+    routingSignals: ['file_affordance:html'],
+  },
+  {
+    id: 'order',
+    patterns: ['_order.json'],
+    domainTags: ['order'],
+    recommendedActions: ['validate.order', 'patch.suggest_order'],
+    routingSignals: ['file_affordance:order'],
+  },
+  {
+    id: 'variable-artifact',
+    patterns: ['.risuvar'],
+    domainTags: ['text'],
+    recommendedActions: ['inspect.path', 'validate.path', 'analyze.query_variable_flow'],
+    routingSignals: ['file_affordance:variable'],
+  },
+  {
+    id: 'canonical-artifact',
+    patterns: ['.risutoggle', '.risutext'],
+    domainTags: ['text'],
+    recommendedActions: ['inspect.path', 'validate.path'],
+    routingSignals: ['file_affordance:canonical-artifact'],
+  },
+];
 
 // ---------------------------------------------------------------------------
 // Registry-derived tool categorization
@@ -196,10 +314,7 @@ const ANALYZE_TOOLS: readonly string[] = [
   'workbench.query_token_budget',
 ];
 
-const INSPECT_TOOLS: readonly string[] = [
-  'workbench.inspect_path',
-  'workbench.inspect_artifact',
-];
+const INSPECT_TOOLS: readonly string[] = ['workbench.inspect_path', 'workbench.inspect_artifact'];
 
 const VALIDATE_TOOLS: readonly string[] = [
   'workbench.validate_artifact',
@@ -210,14 +325,9 @@ const VALIDATE_TOOLS: readonly string[] = [
   'workbench.validate_frontmatter',
 ];
 
-const DOCS_TOOLS: readonly string[] = [
-  'workbench.search_wiki',
-];
+const DOCS_TOOLS: readonly string[] = ['workbench.search_wiki'];
 
-const WIKI_PREVIEW_TOOLS: readonly string[] = [
-  'workbench.plan_wiki_update',
-  'workbench.diff_wiki',
-];
+const WIKI_PREVIEW_TOOLS: readonly string[] = ['workbench.plan_wiki_update', 'workbench.diff_wiki'];
 
 const CREATIVE_PREVIEW_TOOLS: readonly string[] = [
   'workbench.creative.turn_idea_into_plan',
@@ -226,13 +336,9 @@ const CREATIVE_PREVIEW_TOOLS: readonly string[] = [
   'workbench.creative.red_team_concept',
 ];
 
-const CREATIVE_APPLY_TOOLS: readonly string[] = [
-  'workbench.creative.apply_idea_patch',
-];
+const CREATIVE_APPLY_TOOLS: readonly string[] = ['workbench.creative.apply_idea_patch'];
 
-const PATCH_APPLY_TOOLS: readonly string[] = [
-  'workbench.apply_patch_plan',
-];
+const PATCH_APPLY_TOOLS: readonly string[] = ['workbench.apply_patch_plan'];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -284,6 +390,28 @@ function hasCbsCurlyBraceSyntax(text: string): boolean {
   return /\{\{[^{}]+\}\}/.test(text);
 }
 
+function detectFileAffordancePolicies(text: string): readonly FileAffordancePolicy[] {
+  return FILE_AFFORDANCE_POLICIES.filter((policy) =>
+    policy.patterns.some((pattern) => text.includes(pattern)),
+  );
+}
+
+function fileAffordanceDomainTags(text: string): readonly string[] {
+  return uniqueStable(detectFileAffordancePolicies(text).flatMap((policy) => policy.domainTags));
+}
+
+function fileAffordanceRecommendedActions(text: string): readonly string[] {
+  return uniqueStable(
+    detectFileAffordancePolicies(text).flatMap((policy) => policy.recommendedActions),
+  );
+}
+
+function fileAffordanceRoutingSignals(text: string): readonly string[] {
+  return uniqueStable(
+    detectFileAffordancePolicies(text).flatMap((policy) => policy.routingSignals),
+  );
+}
+
 function detectDomainTags(text: string): readonly string[] {
   const tags: string[] = [];
   const addIf = (tag: string, keywords: readonly string[]) => {
@@ -300,6 +428,9 @@ function detectDomainTags(text: string): readonly string[] {
   addIf('prompt-chain', PROMPT_CHAIN_DOMAIN_KEYWORDS);
   addIf('order', ORDER_DOMAIN_KEYWORDS);
   addIf('frontmatter', FRONTMATTER_KEYWORDS);
+  addIf('preset', PRESET_DOMAIN_KEYWORDS);
+  addIf('regex', REGEX_DOMAIN_KEYWORDS);
+  addIf('text', TEXT_DOMAIN_KEYWORDS);
 
   // Path-based and content-based CBS detection
   if (!tags.includes('cbs')) {
@@ -307,6 +438,8 @@ function detectDomainTags(text: string): readonly string[] {
       tags.push('cbs');
     }
   }
+
+  tags.push(...fileAffordanceDomainTags(text));
 
   return uniqueStable(tags);
 }
@@ -320,7 +453,6 @@ function inferMutationMode(params: {
   if (!params.mutationRequested) return 'none';
   if (params.stopConditions.includes('mutation_tool_blocked')) return 'blocked';
   if (params.stopConditions.includes('preview_required')) return 'preview_required';
-  if (params.stopConditions.includes('confirmation_required')) return 'confirmation_required';
   if (params.commitAllowed && params.risk === 'write_modify') return 'guarded_direct';
   return 'preview_required';
 }
@@ -332,7 +464,6 @@ function generateRouteId(input: IntentRouteInput): string {
     patchPlanId: input.patchPlanId ?? '',
     request: (input.request ?? '').toLowerCase().trim(),
     target: (input.target ?? '').toLowerCase().trim(),
-    userConfirmed: input.userConfirmed ?? false,
   });
   const hash = createHash('sha256').update(normalized).digest('hex').slice(0, 8);
   return `route_${hash}`;
@@ -354,6 +485,7 @@ function buildRouteResult(
     requiredEvidence?: readonly string[];
     allowedTools?: readonly string[];
     recommendedTools?: readonly string[];
+    recommendedActions?: readonly string[];
     discouragedTools?: readonly string[];
     blockedTools?: readonly string[];
     domainTags?: readonly string[];
@@ -362,20 +494,46 @@ function buildRouteResult(
   },
 ): IntentRouteResult {
   const domainTags = overrides.domainTags ?? [];
-  const routingSignals = overrides.routingSignals ?? [];
-  const finalRoutingSignals = domainTags.includes('cbs') && !routingSignals.includes('cbs_authoring')
-    ? [...routingSignals, 'cbs_authoring']
-    : routingSignals;
+  const routeText = `${input.request} ${input.target ?? ''} ${input.context ?? ''}`.toLowerCase();
+  const routingSignals = uniqueStable([
+    ...(overrides.routingSignals ?? []),
+    ...fileAffordanceRoutingSignals(routeText),
+  ]);
+  const finalRoutingSignals =
+    domainTags.includes('cbs') && !routingSignals.includes('cbs_authoring')
+      ? [...routingSignals, 'cbs_authoring']
+      : routingSignals;
+
+  const intent = overrides.intent;
+  const capabilities = intentToCapabilities(intent);
+  const baseRecommendedActions = intentToRecommendedActions(intent);
+  const recommendedActions = uniqueStable([
+    ...baseRecommendedActions,
+    ...fileAffordanceRecommendedActions(routeText),
+    ...(overrides.recommendedActions ?? []),
+  ]).slice(0, 8);
+  const nextTool = intentToNextTool(intent);
+  const nextInput = intentToNextInput(intent, input);
+  const facadeRecommendedTools = intentToFacadeRecommendedTools(intent);
+
+  const canonical = resolveCompactCanonicalIntent({
+    context: input.context,
+    recommendedActions,
+    request: input.request,
+    target: input.target,
+  });
 
   return createIntentRouteResult({
     allowedTools: overrides.allowedTools ?? [],
     blockedTools: overrides.blockedTools ?? [],
+    capabilities,
+    canonical,
     commitAllowed: overrides.commitAllowed,
     confidence: overrides.confidence,
     discouragedTools: filterImplemented(overrides.discouragedTools ?? []),
     domainTags,
     explanation: overrides.explanation,
-    intent: overrides.intent,
+    intent,
     missingInputs: overrides.missingInputs ?? [],
     mutationMode:
       overrides.mutationMode ??
@@ -386,8 +544,11 @@ function buildRouteResult(
         stopConditions: overrides.stopConditions,
       }),
     mutationRequested: overrides.mutationRequested,
+    nextInput,
     nextStep: overrides.nextStep,
-    recommendedTools: limitRecommended(overrides.recommendedTools ?? overrides.allowedTools ?? []),
+    nextTool,
+    recommendedActions,
+    recommendedTools: uniqueStable(facadeRecommendedTools),
     requiredEvidence: overrides.requiredEvidence ?? [],
     risk: overrides.risk,
     routeId: generateRouteId(input),
@@ -420,10 +581,7 @@ function uniqueStable(names: readonly string[]): readonly string[] {
   return Array.from(new Set(names)).filter((name) => name.length > 0);
 }
 
-function withoutTools(
-  names: readonly string[],
-  excluded: readonly string[],
-): readonly string[] {
+function withoutTools(names: readonly string[], excluded: readonly string[]): readonly string[] {
   const excludedSet = new Set(excluded);
   return names.filter((name) => !excludedSet.has(name));
 }
@@ -465,6 +623,183 @@ function domainRecommendedTools(domainTags: readonly string[]): readonly string[
     );
   }
   return limitRecommended(tools);
+}
+
+// ---------------------------------------------------------------------------
+// Facade-oriented field mappings (Phase 8)
+// ---------------------------------------------------------------------------
+
+const FACADE_TOOLS = {
+  catalog: 'workbench.catalog',
+  prepareAction: 'workbench.prepare_action',
+  runAction: 'workbench.run_action',
+  context: 'workbench.context',
+  patchPreview: 'workbench.patch_preview',
+  patchApply: 'workbench.patch_apply',
+} as const;
+
+function intentToCapabilities(intent: WorkbenchIntent): readonly string[] {
+  switch (intent) {
+    case 'workspace.inspect':
+    case 'artifact.inspect':
+      return ['inspect'];
+    case 'artifact.validate':
+      return ['validate'];
+    case 'artifact.patch.preview':
+      return ['patch.preview'];
+    case 'artifact.patch.apply':
+      return ['patch.apply'];
+    case 'artifact.frontmatter.preview':
+      return ['patch.preview'];
+    case 'artifact.order.preview':
+      return ['patch.preview'];
+    case 'wiki.refresh.preview':
+      return ['wiki'];
+    case 'core.scaffold.preview':
+      return [];
+    case 'core.extract.preview':
+      return ['mutation.direct'];
+    case 'analyze.variable_flow':
+    case 'analyze.lua_handler':
+      return ['analyze'];
+    case 'creative.idea_to_patch':
+      return ['creative.ideation', 'creative.context'];
+    case 'creative.apply_patch':
+      return ['creative.apply'];
+    case 'docs.update':
+      return ['skills'];
+    case 'unknown':
+    default:
+      return [];
+  }
+}
+
+function intentToRecommendedActions(intent: WorkbenchIntent): readonly string[] {
+  switch (intent) {
+    case 'workspace.inspect':
+    case 'artifact.inspect':
+      return ['inspect.path', 'inspect.artifact'];
+    case 'artifact.validate':
+      return ['validate.artifact', 'validate.path'];
+    case 'artifact.patch.preview':
+      return [
+        'patch.suggest',
+        'patch.suggest_order',
+        'patch.suggest_frontmatter',
+        'patch.suggest_root_marker',
+      ];
+    case 'artifact.patch.apply':
+      return ['patch.apply'];
+    case 'artifact.frontmatter.preview':
+      return ['patch.suggest_frontmatter'];
+    case 'artifact.order.preview':
+      return ['patch.suggest_order'];
+    case 'wiki.refresh.preview':
+      return ['wiki.search', 'wiki.refresh'];
+    case 'core.scaffold.preview':
+      return [];
+    case 'core.extract.preview':
+      return ['core.run_extract'];
+    case 'analyze.variable_flow':
+      return ['analyze.query_variable_flow', 'analyze.query_variable'];
+    case 'analyze.lua_handler':
+      return [
+        'analyze.query_lua_analysis',
+        'analyze.query_lua_call_graph',
+        'analyze.query_lua_state_access',
+        'analyze.query_risulua_api',
+      ];
+    case 'creative.idea_to_patch':
+      return [
+        'creative.gather_context',
+        'creative.brainstorm_scamper',
+        'creative.critique_six_hats',
+      ];
+    case 'creative.apply_patch':
+      return ['creative.apply_idea_patch'];
+    case 'docs.update':
+      return ['skills.list', 'skills.recommend', 'skills.apply'];
+    case 'unknown':
+    default:
+      return [];
+  }
+}
+
+function intentToNextTool(intent: WorkbenchIntent): string {
+  switch (intent) {
+    case 'artifact.patch.apply':
+    case 'creative.apply_patch':
+      return FACADE_TOOLS.patchApply;
+    default:
+      return FACADE_TOOLS.catalog;
+  }
+}
+
+function intentToNextInput(
+  intent: WorkbenchIntent,
+  input: IntentRouteInput,
+): Record<string, unknown> {
+  switch (intent) {
+    case 'artifact.patch.apply':
+      return { patchPlanId: input.patchPlanId ?? '' };
+    case 'creative.apply_patch':
+      return { patchPlanId: input.ideaId ?? '' };
+    case 'workspace.inspect':
+    case 'artifact.inspect':
+      return { capability: 'inspect', limit: 5 };
+    case 'artifact.validate':
+      return { capability: 'validate', limit: 5 };
+    case 'artifact.patch.preview':
+    case 'artifact.frontmatter.preview':
+    case 'artifact.order.preview':
+      return { capability: 'patch.preview', limit: 5 };
+    case 'wiki.refresh.preview':
+      return { capability: 'wiki', limit: 5 };
+    case 'core.scaffold.preview':
+      return { query: 'scaffold', limit: 5 };
+    case 'core.extract.preview':
+      return { capability: 'mutation.direct', query: 'extract', limit: 5 };
+    case 'analyze.variable_flow':
+    case 'analyze.lua_handler':
+      return { capability: 'analyze', limit: 5 };
+    case 'creative.idea_to_patch':
+      return { capability: 'creative.ideation', limit: 5 };
+    case 'docs.update':
+      return { capability: 'skills', limit: 5 };
+    case 'unknown':
+    default:
+      return { limit: 5 };
+  }
+}
+
+function intentToFacadeRecommendedTools(intent: WorkbenchIntent): readonly string[] {
+  switch (intent) {
+    case 'artifact.patch.apply':
+    case 'creative.apply_patch':
+      return [FACADE_TOOLS.patchApply, FACADE_TOOLS.catalog];
+    case 'artifact.patch.preview':
+    case 'artifact.frontmatter.preview':
+    case 'artifact.order.preview':
+      return [
+        FACADE_TOOLS.patchPreview,
+        FACADE_TOOLS.catalog,
+        FACADE_TOOLS.prepareAction,
+        FACADE_TOOLS.runAction,
+      ];
+    case 'creative.idea_to_patch':
+      return [
+        FACADE_TOOLS.catalog,
+        FACADE_TOOLS.context,
+        FACADE_TOOLS.prepareAction,
+        FACADE_TOOLS.runAction,
+      ];
+    case 'unknown':
+      return [FACADE_TOOLS.catalog];
+    case 'core.extract.preview':
+      return [FACADE_TOOLS.catalog, FACADE_TOOLS.prepareAction, FACADE_TOOLS.runAction];
+    default:
+      return [FACADE_TOOLS.catalog, FACADE_TOOLS.prepareAction, FACADE_TOOLS.runAction];
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -515,7 +850,8 @@ function applyConstraints(
   // Do not override specific apply routes (artifact.patch.apply / creative.apply_patch)
   // because the classifier already handles their commit logic.
   if (!constraints.forceReadOnly && constraints.hasMutationLanguage) {
-    const isApplyRoute = route.intent === 'artifact.patch.apply' || route.intent === 'creative.apply_patch';
+    const isApplyRoute =
+      route.intent === 'artifact.patch.apply' || route.intent === 'creative.apply_patch';
     if (!isApplyRoute && mutationMode !== 'guarded_direct') {
       commitAllowed = false;
       blockedTools = unionSets([blockedTools, MUTATION_TOOLS]);
@@ -523,29 +859,32 @@ function applyConstraints(
       recommendedTools = differenceSets(recommendedTools, MUTATION_TOOLS);
       discouragedTools = unionSets([discouragedTools, MUTATION_TOOLS]);
       mutationMode = 'preview_required';
-      if (!routingSignals.includes('mutation_without_confirmation')) {
-        routingSignals = [...routingSignals, 'mutation_without_confirmation'];
+      if (!routingSignals.includes('mutation_requested')) {
+        routingSignals = [...routingSignals, 'mutation_requested'];
       }
 
       const needsPreview = !constraints.hasPreviewEvidence;
-      const needsConfirm = true;
-
       if (needsPreview && !stopConditions.includes('preview_required')) {
         stopConditions = [...stopConditions, 'preview_required'];
-      }
-      if (needsConfirm && !stopConditions.includes('confirmation_required')) {
-        stopConditions = [...stopConditions, 'confirmation_required'];
       }
     }
   }
 
+  // Sanitize facade recommendedTools: remove patch preview/apply when read-only
+  const facadeMutationTools = new Set<string>([FACADE_TOOLS.patchPreview, FACADE_TOOLS.patchApply]);
+  const sanitizedRecommendedTools = constraints.forceReadOnly
+    ? recommendedTools.filter((t) => !facadeMutationTools.has(t))
+    : recommendedTools;
+
   return createIntentRouteResult({
     allowedTools: filterImplemented(allowedTools),
     blockedTools: filterImplemented(blockedTools),
+    capabilities: route.capabilities,
+    canonical: route.canonical,
     commitAllowed,
     confidence: route.confidence,
     discouragedTools: filterImplemented(
-      withoutTools(discouragedTools, unionSets([blockedTools, recommendedTools])),
+      withoutTools(discouragedTools, unionSets([blockedTools, sanitizedRecommendedTools])),
     ),
     domainTags: route.domainTags,
     explanation: route.explanation,
@@ -553,8 +892,11 @@ function applyConstraints(
     missingInputs: route.missingInputs,
     mutationMode,
     mutationRequested: route.mutationRequested,
+    nextInput: route.nextInput,
     nextStep: route.nextStep,
-    recommendedTools: filterImplemented(recommendedTools),
+    nextTool: route.nextTool,
+    recommendedActions: route.recommendedActions,
+    recommendedTools: uniqueStable(sanitizedRecommendedTools),
     requiredEvidence: route.requiredEvidence,
     risk,
     routeId: route.routeId,
@@ -577,26 +919,19 @@ function classifyIntent(
 
   // Rule 3: patchPlanId + apply/commit/confirm language
   if (input.patchPlanId && hasKeyword(text, APPLY_COMMIT_KEYWORDS)) {
-    const userConfirmed = input.userConfirmed ?? false;
-    const allowed = userConfirmed
-      ? unionSets([READ_ONLY_TOOLS, PATCH_APPLY_TOOLS])
-      : unionSets([READ_ONLY_TOOLS, PREVIEW_TOOLS]);
-    const blocked = userConfirmed
-      ? differenceSets(MUTATION_TOOLS, PATCH_APPLY_TOOLS)
-      : MUTATION_TOOLS;
+    const allowed = unionSets([READ_ONLY_TOOLS, PATCH_APPLY_TOOLS]);
+    const blocked = differenceSets(MUTATION_TOOLS, PATCH_APPLY_TOOLS);
 
     return buildRouteResult(input, {
       intent: 'artifact.patch.apply',
-      nextStep: userConfirmed ? 'apply' : 'confirm',
+      nextStep: 'apply',
       confidence: 0.95,
-      risk: userConfirmed ? 'write_modify' : 'preview_only',
+      risk: 'write_modify',
       targetKind: 'patch_plan',
       mutationRequested: true,
-      commitAllowed: userConfirmed,
-      stopConditions: userConfirmed ? [] : ['confirmation_required'],
-      explanation: userConfirmed
-        ? `Patch plan ${input.patchPlanId} ready for apply. The mutation safety gate remains authoritative.`
-        : `Patch plan ${input.patchPlanId} ready for confirmation.`,
+      commitAllowed: true,
+      stopConditions: [],
+      explanation: `Patch plan ${input.patchPlanId} ready for apply.`,
       allowedTools: filterImplemented(allowed),
       blockedTools: filterImplemented(blocked),
       domainTags: constraints.domainTags,
@@ -605,24 +940,19 @@ function classifyIntent(
 
   // Rule 4: ideaId + apply/commit language
   if (input.ideaId && hasKeyword(text, APPLY_COMMIT_KEYWORDS)) {
-    const userConfirmed = input.userConfirmed ?? false;
-    const allowed = userConfirmed
-      ? unionSets([READ_ONLY_TOOLS, CREATIVE_APPLY_TOOLS])
-      : unionSets([READ_ONLY_TOOLS, CREATIVE_PREVIEW_TOOLS]);
-    const blocked = userConfirmed
-      ? differenceSets(MUTATION_TOOLS, CREATIVE_APPLY_TOOLS)
-      : MUTATION_TOOLS;
+    const allowed = unionSets([READ_ONLY_TOOLS, CREATIVE_APPLY_TOOLS]);
+    const blocked = differenceSets(MUTATION_TOOLS, CREATIVE_APPLY_TOOLS);
 
     return buildRouteResult(input, {
       intent: 'creative.apply_patch',
-      nextStep: userConfirmed ? 'apply' : 'confirm',
+      nextStep: 'apply',
       confidence: 0.92,
-      risk: userConfirmed ? 'write_modify' : 'preview_only',
+      risk: 'write_modify',
       targetKind: 'idea',
       mutationRequested: true,
-      commitAllowed: userConfirmed,
-      stopConditions: userConfirmed ? [] : ['confirmation_required'],
-      explanation: `Idea ${input.ideaId} ready for ${userConfirmed ? 'apply' : 'confirmation'}.`,
+      commitAllowed: true,
+      stopConditions: [],
+      explanation: `Idea ${input.ideaId} ready for apply.`,
       allowedTools: filterImplemented(allowed),
       blockedTools: filterImplemented(blocked),
       domainTags: constraints.domainTags,
@@ -657,12 +987,17 @@ function classifyIntent(
       targetKind: 'documentation',
       mutationRequested: false,
       commitAllowed: false,
-      stopConditions: ['confirmation_required'],
-      explanation: 'Authoring-oriented request detected. Recommend the LLM-assisted authoring skill selection workflow before planning.',
-      allowedTools: filterImplemented(unionSets([READ_ONLY_TOOLS, DOCS_TOOLS, ['workbench.recommend_skills', 'workbench.apply_skill']])),
-      recommendedTools: limitRecommended([
-        'workbench.recommend_skills',
-      ]),
+      stopConditions: [],
+      explanation:
+        'Authoring-oriented request detected. Recommend the LLM-assisted authoring skill selection workflow before planning.',
+      allowedTools: filterImplemented(
+        unionSets([
+          READ_ONLY_TOOLS,
+          DOCS_TOOLS,
+          ['workbench.recommend_skills', 'workbench.apply_skill'],
+        ]),
+      ),
+      recommendedTools: limitRecommended(['workbench.recommend_skills']),
       blockedTools: filterImplemented(MUTATION_TOOLS),
       domainTags: constraints.domainTags,
       requiredEvidence: [
@@ -728,16 +1063,18 @@ function classifyIntent(
       blockedTools: filterImplemented(MUTATION_TOOLS),
       domainTags: constraints.domainTags,
       routingSignals: ['analyze', 'lua', ...constraints.domainTags.map((tag) => `domain:${tag}`)],
-      recommendedTools: limitRecommended(unionSets([
-        [
-          'workbench.query_risulua_api',
-          'workbench.explain_risulua_runtime_api',
-          'workbench.query_lua_analysis',
-          'workbench.query_lua_call_graph',
-          'workbench.query_lua_state_access',
-        ],
-        domainRecommendedTools(constraints.domainTags),
-      ])),
+      recommendedTools: limitRecommended(
+        unionSets([
+          [
+            'workbench.query_risulua_api',
+            'workbench.explain_risulua_runtime_api',
+            'workbench.query_lua_analysis',
+            'workbench.query_lua_call_graph',
+            'workbench.query_lua_state_access',
+          ],
+          domainRecommendedTools(constraints.domainTags),
+        ]),
+      ),
     });
   }
 
@@ -751,13 +1088,59 @@ function classifyIntent(
       targetKind: 'workspace',
       mutationRequested: true,
       commitAllowed: false,
-      stopConditions: ['preview_required', 'confirmation_required'],
-      explanation: 'New project scaffold request detected. Preview risu-core scaffold output first.',
+      stopConditions: ['preview_required'],
+      explanation:
+        'New project scaffold request detected. Preview risu-core scaffold output first.',
       allowedTools: filterImplemented(unionSets([READ_ONLY_TOOLS, ['workbench.run_scaffold']])),
       recommendedTools: limitRecommended(['workbench.run_scaffold']),
       blockedTools: filterImplemented(differenceSets(MUTATION_TOOLS, ['workbench.run_scaffold'])),
       domainTags: constraints.domainTags,
-      routingSignals: ['scaffold', 'preview_required', ...constraints.domainTags.map((tag) => `domain:${tag}`)],
+      routingSignals: [
+        'scaffold',
+        'preview_required',
+        ...constraints.domainTags.map((tag) => `domain:${tag}`),
+      ],
+    });
+  }
+
+  // Rule 7.6: extract/unpack/import language with source file-type signal
+  const extractSourceText = `${text} ${input.target ?? ''}`;
+  if (
+    hasKeyword(text, EXTRACT_KEYWORDS) &&
+    hasKeyword(extractSourceText, EXTRACT_SOURCE_KEYWORDS)
+  ) {
+    const hasTarget = Boolean(input.target);
+    const hasSourceSignal = hasKeyword(extractSourceText, EXTRACT_SOURCE_KEYWORDS);
+    const missingSourcePath = !hasTarget && !hasSourceSignal;
+
+    return buildRouteResult(input, {
+      intent: 'core.extract.preview',
+      nextStep: 'apply',
+      confidence: 0.9,
+      risk: 'external_process',
+      targetKind: hasTarget ? 'path' : 'workspace',
+      mutationRequested: true,
+      commitAllowed: true,
+      mutationMode: 'guarded_direct',
+      stopConditions: missingSourcePath ? ['missing_target'] : [],
+      missingInputs: missingSourcePath ? ['sourcePath'] : [],
+      explanation:
+        'Extract or import request for RisuAI archive detected. Use facade catalog/prepare_action/run_action to route to core.run_extract. Do not call legacy workbench.run_extract in default MCP mode.',
+      allowedTools: filterImplemented(
+        unionSets([
+          READ_ONLY_TOOLS,
+          [FACADE_TOOLS.catalog, FACADE_TOOLS.prepareAction, FACADE_TOOLS.runAction],
+        ]),
+      ),
+      recommendedTools: [FACADE_TOOLS.catalog, FACADE_TOOLS.prepareAction, FACADE_TOOLS.runAction],
+      blockedTools: [],
+      domainTags: constraints.domainTags,
+      routingSignals: [
+        'extract',
+        'external_process',
+        'facade_action:core.run_extract',
+        ...constraints.domainTags.map((tag) => `domain:${tag}`),
+      ],
     });
   }
 
@@ -779,7 +1162,8 @@ function classifyIntent(
       commitAllowed: false,
       stopConditions: input.target ? [] : ['missing_target'],
       missingInputs: input.target ? [] : ['target'],
-      explanation: 'Explicit structured order edit detected. A guarded direct order mutation tool is appropriate, subject to validation and safety gate.',
+      explanation:
+        'Explicit structured order edit detected. A guarded direct order mutation tool is appropriate, subject to validation and safety gate.',
       allowedTools: filterImplemented(unionSets([READ_ONLY_TOOLS, ['workbench.edit_order']])),
       recommendedTools: limitRecommended([
         'workbench.inspect_path',
@@ -827,10 +1211,7 @@ function classifyIntent(
         'workbench.validate_order',
         'workbench.suggest_order_patch',
       ]),
-      discouragedTools: filterImplemented([
-        'workbench.edit_order',
-        'workbench.apply_patch_plan',
-      ]),
+      discouragedTools: filterImplemented(['workbench.edit_order', 'workbench.apply_patch_plan']),
       requiredEvidence: [
         'resolved _order.json path or canonical directory',
         'current order entries',
@@ -853,7 +1234,8 @@ function classifyIntent(
       commitAllowed: false,
       stopConditions: input.target ? [] : ['missing_target'],
       missingInputs: input.target ? [] : ['target'],
-      explanation: 'Explicit frontmatter field/value edit detected. A guarded direct mutation tool is appropriate, subject to its own validation and safety gate.',
+      explanation:
+        'Explicit frontmatter field/value edit detected. A guarded direct mutation tool is appropriate, subject to its own validation and safety gate.',
       allowedTools: filterImplemented(unionSets([READ_ONLY_TOOLS, ['workbench.edit_frontmatter']])),
       recommendedTools: limitRecommended([
         'workbench.inspect_path',
@@ -864,7 +1246,9 @@ function classifyIntent(
         'workbench.suggest_patch',
         'workbench.apply_patch_plan',
       ]),
-      blockedTools: filterImplemented(differenceSets(MUTATION_TOOLS, ['workbench.edit_frontmatter'])),
+      blockedTools: filterImplemented(
+        differenceSets(MUTATION_TOOLS, ['workbench.edit_frontmatter']),
+      ),
       requiredEvidence: [
         'resolved workspace-relative path',
         'explicit frontmatter field name',
@@ -883,7 +1267,10 @@ function classifyIntent(
 
   // Rule 9: frontmatter, yaml, metadata header, meta field, 프론트매터
   // When a target is provided alongside inspect language, prefer artifact.inspect (Rule 13).
-  if (hasKeyword(text, FRONTMATTER_KEYWORDS) && !(input.target && hasKeyword(text, INSPECT_KEYWORDS))) {
+  if (
+    hasKeyword(text, FRONTMATTER_KEYWORDS) &&
+    !(input.target && hasKeyword(text, INSPECT_KEYWORDS))
+  ) {
     return buildRouteResult(input, {
       intent: 'artifact.frontmatter.preview',
       nextStep: 'preview',
@@ -911,7 +1298,11 @@ function classifyIntent(
         'current frontmatter fields',
         'frontmatter validation result before preview',
       ],
-      routingSignals: ['preview', 'frontmatter', ...constraints.domainTags.map((tag) => `domain:${tag}`)],
+      routingSignals: [
+        'preview',
+        'frontmatter',
+        ...constraints.domainTags.map((tag) => `domain:${tag}`),
+      ],
     });
   }
 
@@ -934,7 +1325,11 @@ function classifyIntent(
   }
 
   // Rule 11: docs-only language without mutation language
-  if (!mutationNeedsPreview && hasKeyword(text, DOCS_KEYWORDS) && !constraints.hasMutationLanguage) {
+  if (
+    !mutationNeedsPreview &&
+    hasKeyword(text, DOCS_KEYWORDS) &&
+    !constraints.hasMutationLanguage
+  ) {
     return buildRouteResult(input, {
       intent: 'docs.update',
       nextStep: 'answer',
@@ -967,10 +1362,9 @@ function classifyIntent(
       blockedTools: filterImplemented(MUTATION_TOOLS),
       domainTags: constraints.domainTags,
       routingSignals: ['validate', ...constraints.domainTags.map((tag) => `domain:${tag}`)],
-      recommendedTools: limitRecommended(unionSets([
-        VALIDATE_TOOLS,
-        domainRecommendedTools(constraints.domainTags),
-      ])),
+      recommendedTools: limitRecommended(
+        unionSets([VALIDATE_TOOLS, domainRecommendedTools(constraints.domainTags)]),
+      ),
     });
   }
 
@@ -992,7 +1386,9 @@ function classifyIntent(
       routingSignals: ['inspect', ...constraints.domainTags.map((tag) => `domain:${tag}`)],
       recommendedTools: limitRecommended([
         ...INSPECT_TOOLS,
-        ...(constraints.domainTags.includes('frontmatter') ? ['workbench.validate_frontmatter'] : []),
+        ...(constraints.domainTags.includes('frontmatter')
+          ? ['workbench.validate_frontmatter']
+          : []),
         ...domainRecommendedTools(constraints.domainTags),
       ]),
     });
@@ -1008,20 +1404,22 @@ function classifyIntent(
       targetKind: 'unknown',
       mutationRequested: true,
       commitAllowed: false,
-      stopConditions: ['preview_required', 'confirmation_required'],
-      explanation: 'Mutation language detected without preview evidence; preview required before commit.',
+      stopConditions: ['preview_required'],
+      explanation:
+        'Mutation language detected without preview evidence; preview required before commit.',
       allowedTools: filterImplemented(unionSets([READ_ONLY_TOOLS, PREVIEW_TOOLS])),
       blockedTools: filterImplemented(MUTATION_TOOLS),
       domainTags: constraints.domainTags,
-      recommendedTools: limitRecommended(unionSets([
-        constraints.domainTags.includes('risulua') ? [
-          'workbench.query_lua_analysis',
-          'workbench.query_lua_state_access',
-        ] : [],
-        constraints.hasReadSignals ? ['workbench.inspect_path', 'workbench.validate_path'] : [],
-        ['workbench.suggest_patch'],
-        domainRecommendedTools(constraints.domainTags),
-      ])),
+      recommendedTools: limitRecommended(
+        unionSets([
+          constraints.domainTags.includes('risulua')
+            ? ['workbench.query_lua_analysis', 'workbench.query_lua_state_access']
+            : [],
+          constraints.hasReadSignals ? ['workbench.inspect_path', 'workbench.validate_path'] : [],
+          ['workbench.suggest_patch'],
+          domainRecommendedTools(constraints.domainTags),
+        ]),
+      ),
       discouragedTools: filterImplemented([
         'workbench.apply_patch_plan',
         'workbench.edit_order',

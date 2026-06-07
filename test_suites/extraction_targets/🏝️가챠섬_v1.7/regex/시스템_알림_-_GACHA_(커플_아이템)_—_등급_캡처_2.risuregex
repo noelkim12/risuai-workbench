@@ -1,0 +1,10 @@
+---
+comment: "시스템 알림 - GACHA (커플 아이템) — 등급 캡처"
+type: editdisplay
+ableFlag: true
+flag: g<cbs>
+---
+@@@ IN
+\[SYSTEM\|GACHA:\s*Couple Item Acquired\s*-\s*([^|]+?)\s*\|\s*(.-?)\s*\|\s*⭐:(\d)\s*(?:\|[^\]]*)?\]
+@@@ OUT
+{{#if {{greater_equal::{{chat_index}}::{{? {{lastmessageid}}-5}}}}}}<div class="sys-alert sys-alert-gacha sys-alert-couple"><div class="sys-alert-icon">💞</div><div class="sys-alert-body"><span class="sys-alert-tag">COUPLE ITEM</span><div class="sys-alert-desc">새로운 커플 아이템을 얻었습니다! - $1 ⭐$3</div></div></div>{{/if}}

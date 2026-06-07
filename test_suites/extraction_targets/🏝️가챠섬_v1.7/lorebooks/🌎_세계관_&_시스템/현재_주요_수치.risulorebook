@@ -1,0 +1,41 @@
+---
+name: 현재 주요 수치
+comment: 현재 주요 수치
+mode: normal
+constant: true
+selective: false
+insertion_order: 850
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+
+@@@ CONTENT
+## Current Major Figures
+- The figures are those of the current main stat, not the past. Description is based on these figures. The figures below are variables, so each request carries a different figure.
+- HP : {{getvar::cv_hp}}
+- Max HP : {{getvar::cv_maxHp}}
+- Mana : {{getvar::cv_mana}}
+- Max Mana : {{getvar::cv_maxMana}}
+- hunger : {{getvar::cv_hunger}}
+- Max Hunger : {{getvar::cv_maxHunger}}
+- day : {{getvar::cv_day}}
+- Dungeon Gate State (열림 / 도전중 / 닫힘): {{getvar::cv_dungeonGateState}}
+- Dungeon Active (1 = inside dungeon, 0 = outside): {{getvar::cv_dungeonActive}}
+- facilities: {{getvar::cv_facilities}}
+- points: {{getvar::cv_points}}
+- items: {{getvar::cv_items}}
+- skills (EQUIPPED - only these are active in combat / narration): {{getvar::cv_equippedSkills}}
+- relics (EQUIPPED - only these grant stat bonuses): {{getvar::cv_equippedRelics}}
+- skill_details (EQUIPPED full effects - use these for narration / mana resolution): {{getvar::cv_equippedSkillDetails}}
+- relic_details (EQUIPPED full effects): {{getvar::cv_equippedRelicDetails}}
+
+ABSOLUTE: items NOT in the equipped lists above are stored away and INACTIVE. Do NOT reference owned-but-unequipped skills / relics in narration, combat, or any roleplay. They simply do not exist from the player's combat perspective until equipped.
+- companions: {{getvar::cv_companions}}
+
+## ABSOLUTE — STAT VALUE SOURCE OF TRUTH (state desync 차단)
+The `{{getvar::cv_*}}` values above + the STATUS_PANEL block are the SOLE source of truth for HP / MANA / HUNGER / POINTS / ATK / DEF / LUCK at this moment.
+- When narrative or [SYS_NARR:] / [SYS_ADVICE:] / character dialogue references a numeric stat (e.g. "체력 N 남았다", "마나 N", "현재 체력: N/100"), use the EXACT current variable value above. NEVER fabricate or estimate.
+- DO NOT carry over old chat-history values. If MANA was 20 three turns ago but cv_mana is now 100 (variable edit / recharge / item), narrate it as 100 — not 20.
+- DO NOT lower a value for dramatic effect. If you want low-HP / mana-empty drama, only narrate it WHEN the variable is actually low. Fictional shortfalls confuse the player and desync from STATUS_PANEL.
+- Same for items / facilities / equipped skills / equipped relics: reference ONLY what is in the lists above. "갖고 있는 N" / "장착된 N" references must match the variables exactly.

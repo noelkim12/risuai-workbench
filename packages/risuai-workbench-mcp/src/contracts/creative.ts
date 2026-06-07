@@ -275,7 +275,6 @@ export interface IdeaPatchEnvelope {
   patchPlanResource: string;
   affectedFiles: readonly string[];
   operationKinds: readonly PatchOperation['kind'][];
-  requiredConfirmation: boolean;
   mutationTarget: IdeaMutationTarget;
   preApplyValidation: PreApplyValidation;
   resourceLinks: readonly string[];
@@ -292,7 +291,6 @@ export function createIdeaPatchEnvelope(input: {
   patchPlanResource?: string;
   affectedFiles?: readonly string[];
   operationKinds?: readonly PatchOperation['kind'][];
-  requiredConfirmation?: boolean;
   mutationTarget: IdeaMutationTarget;
   preApplyValidation: PreApplyValidation;
   resourceLinks: readonly string[];
@@ -306,7 +304,6 @@ export function createIdeaPatchEnvelope(input: {
     patchPlanId: input.patchPlanId,
     patchPlanResource,
     preApplyValidation: input.preApplyValidation,
-    requiredConfirmation: input.requiredConfirmation ?? input.mutationTarget.touchesSourceArtifacts,
     resourceLinks: input.resourceLinks,
     schema: 'risuai-workbench-mcp.creative.idea-patch',
     schemaVersion: CREATIVE_SCHEMA_VERSION,

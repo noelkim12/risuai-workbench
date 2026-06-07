@@ -52,7 +52,7 @@ function mutationResult(result: DiagnosticEnvelope | MutationResultEnvelope): Mu
 }
 
 describe('handleMoveArtifact', () => {
-  it('accepts missing or wrong confirmation because confirmation gate is disabled', async () => {
+  it('moves without confirmation', async () => {
     const missingFixture = await createMoveFixture();
     const wrongFixture = await createMoveFixture();
 
@@ -63,7 +63,6 @@ describe('handleMoveArtifact', () => {
     ));
     const wrong = mutationResult(await handleMoveArtifact(
       {
-        confirmation: { accepted: true, confirmationText: 'MOVE characters/merry/lorebooks/intro.risulorebook TO characters/merry/lorebooks/other.risulorebook' },
         from: 'characters/merry/lorebooks/intro.risulorebook',
         mode: 'commit',
         toStem: 'renamed',

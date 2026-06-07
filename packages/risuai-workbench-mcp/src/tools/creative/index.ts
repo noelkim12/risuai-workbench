@@ -77,7 +77,7 @@ export { handleSaveIdeaSession, handleWriteIdeaMemory } from './session-handlers
  * Creative tool definition used for placeholder registration.
  * Each entry maps to exactly one registry entry in CREATIVE_ROADMAP_TOOLS.
  */
-interface CreativeToolScaffolding {
+export interface CreativeToolScaffolding {
   readonly name: string;
   readonly inputSchema: Record<string, z.ZodTypeAny>;
 }
@@ -124,7 +124,7 @@ const COMMON_ADVISORY_INPUT_SCHEMA = {
   session: OPTIONAL_UNKNOWN,
 } as const;
 
-const CREATIVE_TOOL_SCAFFOLDING: readonly CreativeToolScaffolding[] = [
+export const CREATIVE_TOOL_SCAFFOLDING: readonly CreativeToolScaffolding[] = [
   {
     name: 'workbench.creative.gather_context',
     inputSchema: {
@@ -237,7 +237,6 @@ const CREATIVE_TOOL_SCAFFOLDING: readonly CreativeToolScaffolding[] = [
   {
     name: 'workbench.creative.apply_idea_patch',
     inputSchema: {
-      confirmation: z.object({ accepted: z.boolean(), confirmationText: z.string().optional() }),
       options: z.object({ createBackup: z.boolean().optional(), postValidate: z.boolean().optional(), rollbackOnValidationError: z.boolean().optional() }).optional(),
       patchPlanId: z.string(),
       sessionId: OPTIONAL_STRING,
@@ -246,7 +245,6 @@ const CREATIVE_TOOL_SCAFFOLDING: readonly CreativeToolScaffolding[] = [
   {
     name: 'workbench.creative.save_idea_session',
     inputSchema: {
-      confirmation: OPTIONAL_BOOLEAN,
       createdAt: OPTIONAL_STRING,
       ideas: OPTIONAL_UNKNOWN,
       patchPlanRefs: OPTIONAL_UNKNOWN,
@@ -264,7 +262,6 @@ const CREATIVE_TOOL_SCAFFOLDING: readonly CreativeToolScaffolding[] = [
     name: 'workbench.creative.write_idea_memory',
     inputSchema: {
       assumptions: OPTIONAL_STRING_ARRAY,
-      confirmation: OPTIONAL_BOOLEAN,
       createdAt: OPTIONAL_STRING,
       evidence: OPTIONAL_STRING_ARRAY,
       idea: OPTIONAL_UNKNOWN,
@@ -303,14 +300,14 @@ export function registerCreativeTools(server: McpServer, workspace: WorkspaceRoo
         title: registryEntry?.title ?? scaffolding.name,
       },
       async (input: unknown) => {
-        const result = await handleCreativeTool(scaffolding.name, input, workspace, patchStore, mutationMode);
+        const result = await handleCreativeAction(scaffolding.name, input, workspace, patchStore, mutationMode);
         return createJsonToolResult(result as object);
       },
     );
   }
 }
 
-async function handleCreativeTool(toolName: string, input: unknown, workspace: WorkspaceRootStatus, patchStore?: PatchPlanStore, mutationMode: MutationMode = 'preview-only'): Promise<unknown> {
+export async function handleCreativeAction(toolName: string, input: unknown, workspace: WorkspaceRootStatus, patchStore?: PatchPlanStore, mutationMode: MutationMode = 'preview-only'): Promise<unknown> {
   if (toolName === 'workbench.creative.gather_context') return handleGatherContext(input);
   if (toolName === 'workbench.creative.inspect_context') return handleInspectContext(input);
   if (toolName === 'workbench.creative.search_context') return handleSearchContext(input);

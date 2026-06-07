@@ -1,0 +1,3188 @@
+{
+  "version": 1,
+  "mode": "module-table-button-action-index",
+  "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+  "actions": [
+    {
+      "name": "auxModeOFF",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:31:auxModeOFF",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 692,
+          "endLine": 695,
+          "startOffset": 32652,
+          "endOffset": 32759
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"auxModeOFF\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 30790,
+            "endOffset": 30815
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"auxModeOFF\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 30790,
+            "endOffset": 30815
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"auxModeOFF\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 30790,
+            "endOffset": 30815
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"auxModeOFF\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 30790,
+            "endOffset": 30815
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"auxModeOFF\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 30790,
+            "endOffset": 30815
+          }
+        }
+      ]
+    },
+    {
+      "name": "auxModeON",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:30:auxModeON",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 688,
+          "endLine": 691,
+          "startOffset": 32490,
+          "endOffset": 32651
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"auxModeON\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 30642,
+            "endOffset": 30666
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"auxModeON\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 30642,
+            "endOffset": 30666
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"auxModeON\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 30642,
+            "endOffset": 30666
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"auxModeON\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 30642,
+            "endOffset": 30666
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"auxModeON\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 30642,
+            "endOffset": 30666
+          }
+        }
+      ]
+    },
+    {
+      "name": "baseCharsOFF",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:33:baseCharsOFF",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 705,
+          "endLine": 709,
+          "startOffset": 33166,
+          "endOffset": 33335
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"baseCharsOFF\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 31621,
+            "endOffset": 31648
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"baseCharsOFF\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 31621,
+            "endOffset": 31648
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"baseCharsOFF\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 31621,
+            "endOffset": 31648
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"baseCharsOFF\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 31621,
+            "endOffset": 31648
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"baseCharsOFF\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 31621,
+            "endOffset": 31648
+          }
+        }
+      ]
+    },
+    {
+      "name": "baseCharsON",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:32:baseCharsON",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 700,
+          "endLine": 704,
+          "startOffset": 32943,
+          "endOffset": 33165
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"baseCharsON\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 31466,
+            "endOffset": 31492
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"baseCharsON\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 31466,
+            "endOffset": 31492
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"baseCharsON\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 31466,
+            "endOffset": 31492
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"baseCharsON\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 31466,
+            "endOffset": 31492
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"baseCharsON\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 31466,
+            "endOffset": 31492
+          }
+        }
+      ]
+    },
+    {
+      "name": "debugFloorClearReward",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:149:debugFloorClearReward",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 3595,
+          "endLine": 3630,
+          "startOffset": 165365,
+          "endOffset": 166988
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"debugFloorClearReward\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 45882,
+            "endOffset": 45918
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"debugFloorClearReward\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 45882,
+            "endOffset": 45918
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"debugFloorClearReward\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 45882,
+            "endOffset": 45918
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"debugFloorClearReward\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 45882,
+            "endOffset": 45918
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"debugFloorClearReward\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 45882,
+            "endOffset": 45918
+          }
+        }
+      ]
+    },
+    {
+      "name": "debugForceDungeonReturn",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:150:debugForceDungeonReturn",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 3632,
+          "endLine": 3646,
+          "startOffset": 166990,
+          "endOffset": 167706
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"debugForceDungeonReturn\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 46278,
+            "endOffset": 46316
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"debugForceDungeonReturn\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 46278,
+            "endOffset": 46316
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"debugForceDungeonReturn\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 46278,
+            "endOffset": 46316
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"debugForceDungeonReturn\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 46278,
+            "endOffset": 46316
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"debugForceDungeonReturn\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 46278,
+            "endOffset": 46316
+          }
+        }
+      ]
+    },
+    {
+      "name": "debugShowDungeonChoice",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:147:debugShowDungeonChoice",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 3560,
+          "endLine": 3574,
+          "startOffset": 164129,
+          "endOffset": 164636
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"debugShowDungeonChoice\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 45320,
+            "endOffset": 45357
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"debugShowDungeonChoice\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 45320,
+            "endOffset": 45357
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"debugShowDungeonChoice\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 45320,
+            "endOffset": 45357
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"debugShowDungeonChoice\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 45320,
+            "endOffset": 45357
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"debugShowDungeonChoice\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 45320,
+            "endOffset": 45357
+          }
+        }
+      ]
+    },
+    {
+      "name": "debugShowSanctuaryChoice",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:148:debugShowSanctuaryChoice",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 3576,
+          "endLine": 3593,
+          "startOffset": 164638,
+          "endOffset": 165363
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"debugShowSanctuaryChoice\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 45614,
+            "endOffset": 45653
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"debugShowSanctuaryChoice\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 45614,
+            "endOffset": 45653
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"debugShowSanctuaryChoice\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 45614,
+            "endOffset": 45653
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"debugShowSanctuaryChoice\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 45614,
+            "endOffset": 45653
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"debugShowSanctuaryChoice\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 45614,
+            "endOffset": 45653
+          }
+        }
+      ]
+    },
+    {
+      "name": "dungeonNextFloor",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:70:dungeonNextFloor",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 1887,
+          "endLine": 1903,
+          "startOffset": 89427,
+          "endOffset": 90360
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::다음 층::dungeonNextFloor}}",
+          "sourceFile": "regex/던전_클리어_선택지_(DUNGEON_CHOICE).risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 745,
+            "endOffset": 779
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::다음 층::dungeonNextFloor}}",
+          "sourceFile": "regex/던전_클리어_선택지_(DUNGEON_CHOICE)_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 745,
+            "endOffset": 779
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::다음 층::dungeonNextFloor}}",
+          "sourceFile": "regex/던전_클리어_선택지_(DUNGEON_CHOICE)_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 745,
+            "endOffset": 779
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::다음 층::dungeonNextFloor}}",
+          "sourceFile": "regex/던전_클리어_선택지_(DUNGEON_CHOICE)_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 745,
+            "endOffset": 779
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::다음 층::dungeonNextFloor}}",
+          "sourceFile": "regex/던전_클리어_선택지_(DUNGEON_CHOICE)_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 745,
+            "endOffset": 779
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::다음 층::dungeonNextFloor}}",
+          "sourceFile": "regex/복구용_던전_클리어_선택지_(DEBUG_DUNGEON_CHOICE).risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 766,
+            "endOffset": 800
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::다음 층::dungeonNextFloor}}",
+          "sourceFile": "regex/복구용_던전_클리어_선택지_(DEBUG_DUNGEON_CHOICE)_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 766,
+            "endOffset": 800
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::다음 층::dungeonNextFloor}}",
+          "sourceFile": "regex/복구용_던전_클리어_선택지_(DEBUG_DUNGEON_CHOICE)_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 766,
+            "endOffset": 800
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::다음 층::dungeonNextFloor}}",
+          "sourceFile": "regex/복구용_던전_클리어_선택지_(DEBUG_DUNGEON_CHOICE)_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 766,
+            "endOffset": 800
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::다음 층::dungeonNextFloor}}",
+          "sourceFile": "regex/복구용_던전_클리어_선택지_(DEBUG_DUNGEON_CHOICE)_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 766,
+            "endOffset": 800
+          }
+        }
+      ]
+    },
+    {
+      "name": "dungeonReturn",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:68:dungeonReturn",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 1813,
+          "endLine": 1821,
+          "startOffset": 86269,
+          "endOffset": 86720
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::귀환::dungeonReturn}}",
+          "sourceFile": "regex/던전_클리어_선택지_(DUNGEON_CHOICE).risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 538,
+            "endOffset": 567
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::귀환::dungeonReturn}}",
+          "sourceFile": "regex/던전_클리어_선택지_(DUNGEON_CHOICE)_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 538,
+            "endOffset": 567
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::귀환::dungeonReturn}}",
+          "sourceFile": "regex/던전_클리어_선택지_(DUNGEON_CHOICE)_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 538,
+            "endOffset": 567
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::귀환::dungeonReturn}}",
+          "sourceFile": "regex/던전_클리어_선택지_(DUNGEON_CHOICE)_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 538,
+            "endOffset": 567
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::귀환::dungeonReturn}}",
+          "sourceFile": "regex/던전_클리어_선택지_(DUNGEON_CHOICE)_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 538,
+            "endOffset": 567
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::귀환::dungeonReturn}}",
+          "sourceFile": "regex/복구용_던전_클리어_선택지_(DEBUG_DUNGEON_CHOICE).risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 559,
+            "endOffset": 588
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::귀환::dungeonReturn}}",
+          "sourceFile": "regex/복구용_던전_클리어_선택지_(DEBUG_DUNGEON_CHOICE)_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 559,
+            "endOffset": 588
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::귀환::dungeonReturn}}",
+          "sourceFile": "regex/복구용_던전_클리어_선택지_(DEBUG_DUNGEON_CHOICE)_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 559,
+            "endOffset": 588
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::귀환::dungeonReturn}}",
+          "sourceFile": "regex/복구용_던전_클리어_선택지_(DEBUG_DUNGEON_CHOICE)_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 559,
+            "endOffset": 588
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::귀환::dungeonReturn}}",
+          "sourceFile": "regex/복구용_던전_클리어_선택지_(DEBUG_DUNGEON_CHOICE)_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 559,
+            "endOffset": 588
+          }
+        }
+      ]
+    },
+    {
+      "name": "exploreEastDesert",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:10:exploreEastDesert",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 366,
+          "endLine": 370,
+          "startOffset": 18515,
+          "endOffset": 18682
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"exploreEastDesert\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 6121,
+            "endOffset": 6153
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"exploreEastDesert\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 6121,
+            "endOffset": 6153
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"exploreEastDesert\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 6121,
+            "endOffset": 6153
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"exploreEastDesert\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 6121,
+            "endOffset": 6153
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"exploreEastDesert\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 6121,
+            "endOffset": 6153
+          }
+        }
+      ]
+    },
+    {
+      "name": "exploreNorthMountain",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:12:exploreNorthMountain",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 378,
+          "endLine": 382,
+          "startOffset": 18853,
+          "endOffset": 19023
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"exploreNorthMountain\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 5712,
+            "endOffset": 5747
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"exploreNorthMountain\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 5712,
+            "endOffset": 5747
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"exploreNorthMountain\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 5712,
+            "endOffset": 5747
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"exploreNorthMountain\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 5712,
+            "endOffset": 5747
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"exploreNorthMountain\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 5712,
+            "endOffset": 5747
+          }
+        }
+      ]
+    },
+    {
+      "name": "exploreSouthBeach",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:11:exploreSouthBeach",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 372,
+          "endLine": 376,
+          "startOffset": 18684,
+          "endOffset": 18851
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"exploreSouthBeach\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 6323,
+            "endOffset": 6355
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"exploreSouthBeach\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 6323,
+            "endOffset": 6355
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"exploreSouthBeach\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 6323,
+            "endOffset": 6355
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"exploreSouthBeach\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 6323,
+            "endOffset": 6355
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"exploreSouthBeach\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 6323,
+            "endOffset": 6355
+          }
+        }
+      ]
+    },
+    {
+      "name": "exploreWestForest",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:9:exploreWestForest",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 360,
+          "endLine": 364,
+          "startOffset": 18348,
+          "endOffset": 18513
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"exploreWestForest\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 5921,
+            "endOffset": 5953
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"exploreWestForest\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 5921,
+            "endOffset": 5953
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"exploreWestForest\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 5921,
+            "endOffset": 5953
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"exploreWestForest\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 5921,
+            "endOffset": 5953
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"exploreWestForest\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 5921,
+            "endOffset": 5953
+          }
+        }
+      ]
+    },
+    {
+      "name": "forgeApplyFacility",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:27:forgeApplyFacility",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 667,
+          "endLine": 667,
+          "startOffset": 31505,
+          "endOffset": 31585
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::🔨 강화::forgeApplyFacility}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 25556,
+            "endOffset": 25593
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::🔨 강화::forgeApplyFacility}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 25556,
+            "endOffset": 25593
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::🔨 강화::forgeApplyFacility}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 25556,
+            "endOffset": 25593
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::🔨 강화::forgeApplyFacility}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 25556,
+            "endOffset": 25593
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::🔨 강화::forgeApplyFacility}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 25556,
+            "endOffset": 25593
+          }
+        }
+      ]
+    },
+    {
+      "name": "forgeApplyRelic",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:26:forgeApplyRelic",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 666,
+          "endLine": 666,
+          "startOffset": 31424,
+          "endOffset": 31504
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::🔨 강화::forgeApplyRelic}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 22442,
+            "endOffset": 22476
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::🔨 강화::forgeApplyRelic}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 22442,
+            "endOffset": 22476
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::🔨 강화::forgeApplyRelic}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 22442,
+            "endOffset": 22476
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::🔨 강화::forgeApplyRelic}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 22442,
+            "endOffset": 22476
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::🔨 강화::forgeApplyRelic}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 22442,
+            "endOffset": 22476
+          }
+        }
+      ]
+    },
+    {
+      "name": "forgeApplySkill",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:25:forgeApplySkill",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 665,
+          "endLine": 665,
+          "startOffset": 31343,
+          "endOffset": 31423
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::🔨 강화::forgeApplySkill}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 19352,
+            "endOffset": 19386
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::🔨 강화::forgeApplySkill}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 19352,
+            "endOffset": 19386
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::🔨 강화::forgeApplySkill}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 19352,
+            "endOffset": 19386
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::🔨 강화::forgeApplySkill}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 19352,
+            "endOffset": 19386
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::🔨 강화::forgeApplySkill}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 19352,
+            "endOffset": 19386
+          }
+        }
+      ]
+    },
+    {
+      "name": "forgeClearFacility",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:22:forgeClearFacility",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 578,
+          "endLine": 578,
+          "startOffset": 27755,
+          "endOffset": 27835
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::↻ 초기화::forgeClearFacility}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 29576,
+            "endOffset": 29613
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::↻ 초기화::forgeClearFacility}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 29576,
+            "endOffset": 29613
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::↻ 초기화::forgeClearFacility}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 29576,
+            "endOffset": 29613
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::↻ 초기화::forgeClearFacility}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 29576,
+            "endOffset": 29613
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::↻ 초기화::forgeClearFacility}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 29576,
+            "endOffset": 29613
+          }
+        }
+      ]
+    },
+    {
+      "name": "forgeClearRelic",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:21:forgeClearRelic",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 577,
+          "endLine": 577,
+          "startOffset": 27674,
+          "endOffset": 27754
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::↻ 초기화::forgeClearRelic}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 29422,
+            "endOffset": 29456
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::↻ 초기화::forgeClearRelic}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 29422,
+            "endOffset": 29456
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::↻ 초기화::forgeClearRelic}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 29422,
+            "endOffset": 29456
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::↻ 초기화::forgeClearRelic}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 29422,
+            "endOffset": 29456
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::↻ 초기화::forgeClearRelic}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 29422,
+            "endOffset": 29456
+          }
+        }
+      ]
+    },
+    {
+      "name": "forgeClearSkill",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:20:forgeClearSkill",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 576,
+          "endLine": 576,
+          "startOffset": 27593,
+          "endOffset": 27673
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::↻ 초기화::forgeClearSkill}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 29271,
+            "endOffset": 29305
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::↻ 초기화::forgeClearSkill}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 29271,
+            "endOffset": 29305
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::↻ 초기화::forgeClearSkill}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 29271,
+            "endOffset": 29305
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::↻ 초기화::forgeClearSkill}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 29271,
+            "endOffset": 29305
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::↻ 초기화::forgeClearSkill}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 29271,
+            "endOffset": 29305
+          }
+        }
+      ]
+    },
+    {
+      "name": "gachaCompanion",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:36:gachaCompanion",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 853,
+          "endLine": 867,
+          "startOffset": 39934,
+          "endOffset": 40691
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaCompanion}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU).risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 614,
+            "endOffset": 644
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaCompanion}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 614,
+            "endOffset": 644
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaCompanion}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 614,
+            "endOffset": 644
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaCompanion}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 614,
+            "endOffset": 644
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaCompanion}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 614,
+            "endOffset": 644
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaCompanion}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 14478,
+            "endOffset": 14508
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaCompanion}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 14478,
+            "endOffset": 14508
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaCompanion}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 14478,
+            "endOffset": 14508
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaCompanion}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 14478,
+            "endOffset": 14508
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaCompanion}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 14478,
+            "endOffset": 14508
+          }
+        }
+      ]
+    },
+    {
+      "name": "gachaCompanionReroll",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:44:gachaCompanionReroll",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 938,
+          "endLine": 981,
+          "startOffset": 43245,
+          "endOffset": 45076
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::500P 다시::gachaCompanionReroll}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU).risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 702,
+            "endOffset": 743
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::500P 다시::gachaCompanionReroll}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 702,
+            "endOffset": 743
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::500P 다시::gachaCompanionReroll}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 702,
+            "endOffset": 743
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::500P 다시::gachaCompanionReroll}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 702,
+            "endOffset": 743
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::500P 다시::gachaCompanionReroll}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 702,
+            "endOffset": 743
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::500P 다시 뽑기::gachaCompanionReroll}}",
+          "sourceFile": "regex/시스템_알림_-_GACHA_(동료_소환).risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 602,
+            "endOffset": 646
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::500P 다시 뽑기::gachaCompanionReroll}}",
+          "sourceFile": "regex/시스템_알림_-_GACHA_(동료_소환)_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 602,
+            "endOffset": 646
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::500P 다시 뽑기::gachaCompanionReroll}}",
+          "sourceFile": "regex/시스템_알림_-_GACHA_(동료_소환)_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 602,
+            "endOffset": 646
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::500P 다시 뽑기::gachaCompanionReroll}}",
+          "sourceFile": "regex/시스템_알림_-_GACHA_(동료_소환)_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 602,
+            "endOffset": 646
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::500P 다시 뽑기::gachaCompanionReroll}}",
+          "sourceFile": "regex/시스템_알림_-_GACHA_(동료_소환)_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 602,
+            "endOffset": 646
+          }
+        }
+      ]
+    },
+    {
+      "name": "gachaCouple",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:45:gachaCouple",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 984,
+          "endLine": 992,
+          "startOffset": 45129,
+          "endOffset": 45589
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaCouple}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU).risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1967,
+            "endOffset": 1994
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaCouple}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1967,
+            "endOffset": 1994
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaCouple}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1967,
+            "endOffset": 1994
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaCouple}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1967,
+            "endOffset": 1994
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaCouple}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1967,
+            "endOffset": 1994
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaCouple}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15709,
+            "endOffset": 15736
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaCouple}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15709,
+            "endOffset": 15736
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaCouple}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15709,
+            "endOffset": 15736
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaCouple}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15709,
+            "endOffset": 15736
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaCouple}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15709,
+            "endOffset": 15736
+          }
+        }
+      ]
+    },
+    {
+      "name": "gachaFacility",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:48:gachaFacility",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 1019,
+          "endLine": 1026,
+          "startOffset": 46825,
+          "endOffset": 47201
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaFacility}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU).risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1252,
+            "endOffset": 1281
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaFacility}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1252,
+            "endOffset": 1281
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaFacility}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1252,
+            "endOffset": 1281
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaFacility}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1252,
+            "endOffset": 1281
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaFacility}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1252,
+            "endOffset": 1281
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaFacility}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 14954,
+            "endOffset": 14983
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaFacility}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 14954,
+            "endOffset": 14983
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaFacility}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 14954,
+            "endOffset": 14983
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaFacility}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 14954,
+            "endOffset": 14983
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaFacility}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 14954,
+            "endOffset": 14983
+          }
+        }
+      ]
+    },
+    {
+      "name": "gachaRandom",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:54:gachaRandom",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 1152,
+          "endLine": 1157,
+          "startOffset": 52827,
+          "endOffset": 53034
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaRandom}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU).risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 2188,
+            "endOffset": 2215
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaRandom}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 2188,
+            "endOffset": 2215
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaRandom}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 2188,
+            "endOffset": 2215
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaRandom}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 2188,
+            "endOffset": 2215
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaRandom}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 2188,
+            "endOffset": 2215
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::1회::gachaRandom}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15960,
+            "endOffset": 15987
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::1회::gachaRandom}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15960,
+            "endOffset": 15987
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::1회::gachaRandom}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15960,
+            "endOffset": 15987
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::1회::gachaRandom}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15960,
+            "endOffset": 15987
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::1회::gachaRandom}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15960,
+            "endOffset": 15987
+          }
+        }
+      ]
+    },
+    {
+      "name": "gachaRandomAll",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:55:gachaRandomAll",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 1161,
+          "endLine": 1199,
+          "startOffset": 53122,
+          "endOffset": 54392
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::전부::gachaRandomAll}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15987,
+            "endOffset": 16017
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::전부::gachaRandomAll}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15987,
+            "endOffset": 16017
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::전부::gachaRandomAll}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15987,
+            "endOffset": 16017
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::전부::gachaRandomAll}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15987,
+            "endOffset": 16017
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::전부::gachaRandomAll}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15987,
+            "endOffset": 16017
+          }
+        }
+      ]
+    },
+    {
+      "name": "gachaRelic",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:47:gachaRelic",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 1010,
+          "endLine": 1017,
+          "startOffset": 46446,
+          "endOffset": 46823
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaRelic}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU).risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1028,
+            "endOffset": 1054
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaRelic}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1028,
+            "endOffset": 1054
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaRelic}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1028,
+            "endOffset": 1054
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaRelic}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1028,
+            "endOffset": 1054
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaRelic}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1028,
+            "endOffset": 1054
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaRelic}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 14716,
+            "endOffset": 14742
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaRelic}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 14716,
+            "endOffset": 14742
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaRelic}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 14716,
+            "endOffset": 14742
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaRelic}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 14716,
+            "endOffset": 14742
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaRelic}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 14716,
+            "endOffset": 14742
+          }
+        }
+      ]
+    },
+    {
+      "name": "gachaSkill",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:49:gachaSkill",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 1028,
+          "endLine": 1041,
+          "startOffset": 47203,
+          "endOffset": 47809
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaSkill}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU).risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1474,
+            "endOffset": 1500
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaSkill}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1474,
+            "endOffset": 1500
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaSkill}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1474,
+            "endOffset": 1500
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaSkill}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1474,
+            "endOffset": 1500
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaSkill}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1474,
+            "endOffset": 1500
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaSkill}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15190,
+            "endOffset": 15216
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaSkill}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15190,
+            "endOffset": 15216
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaSkill}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15190,
+            "endOffset": 15216
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaSkill}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15190,
+            "endOffset": 15216
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::가챠::gachaSkill}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15190,
+            "endOffset": 15216
+          }
+        }
+      ]
+    },
+    {
+      "name": "gachaSupply",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:51:gachaSupply",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 1083,
+          "endLine": 1089,
+          "startOffset": 49775,
+          "endOffset": 50069
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::1회::gachaSupply}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU).risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1712,
+            "endOffset": 1739
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::1회::gachaSupply}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1712,
+            "endOffset": 1739
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::1회::gachaSupply}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1712,
+            "endOffset": 1739
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::1회::gachaSupply}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1712,
+            "endOffset": 1739
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::1회::gachaSupply}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1712,
+            "endOffset": 1739
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::1회::gachaSupply}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15440,
+            "endOffset": 15467
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::1회::gachaSupply}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15440,
+            "endOffset": 15467
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::1회::gachaSupply}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15440,
+            "endOffset": 15467
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::1회::gachaSupply}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15440,
+            "endOffset": 15467
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::1회::gachaSupply}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15440,
+            "endOffset": 15467
+          }
+        }
+      ]
+    },
+    {
+      "name": "gachaSupplyTwice",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:52:gachaSupplyTwice",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 1093,
+          "endLine": 1104,
+          "startOffset": 50214,
+          "endOffset": 50737
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::2회::gachaSupplyTwice}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU).risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1739,
+            "endOffset": 1771
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::2회::gachaSupplyTwice}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1739,
+            "endOffset": 1771
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::2회::gachaSupplyTwice}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1739,
+            "endOffset": 1771
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::2회::gachaSupplyTwice}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1739,
+            "endOffset": 1771
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::2회::gachaSupplyTwice}}",
+          "sourceFile": "regex/가챠_메뉴_UI_(GACHA_MENU)_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 1739,
+            "endOffset": 1771
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::2회::gachaSupplyTwice}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15467,
+            "endOffset": 15499
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::2회::gachaSupplyTwice}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15467,
+            "endOffset": 15499
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::2회::gachaSupplyTwice}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15467,
+            "endOffset": 15499
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::2회::gachaSupplyTwice}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15467,
+            "endOffset": 15499
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::2회::gachaSupplyTwice}}",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 15467,
+            "endOffset": 15499
+          }
+        }
+      ]
+    },
+    {
+      "name": "mapEnterDungeon",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:14:mapEnterDungeon",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 391,
+          "endLine": 416,
+          "startOffset": 19205,
+          "endOffset": 20497
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"mapEnterDungeon\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 6734,
+            "endOffset": 6764
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"mapEnterDungeon\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 6734,
+            "endOffset": 6764
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"mapEnterDungeon\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 6734,
+            "endOffset": 6764
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"mapEnterDungeon\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 6734,
+            "endOffset": 6764
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"mapEnterDungeon\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 6734,
+            "endOffset": 6764
+          }
+        }
+      ]
+    },
+    {
+      "name": "mapGoToSanctuary",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:13:mapGoToSanctuary",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 385,
+          "endLine": 388,
+          "startOffset": 19047,
+          "endOffset": 19169
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"mapGoToSanctuary\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 6526,
+            "endOffset": 6557
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"mapGoToSanctuary\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 6526,
+            "endOffset": 6557
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"mapGoToSanctuary\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 6526,
+            "endOffset": 6557
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"mapGoToSanctuary\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 6526,
+            "endOffset": 6557
+          }
+        },
+        {
+          "source": "risu-trigger-attribute",
+          "rawText": "risu-trigger=\"mapGoToSanctuary\"",
+          "sourceFile": "regex/상태창_UI_(STATUS_PANEL)_+_사이드토글_2개_+_인벤_가챠_사이드패널_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 6526,
+            "endOffset": 6557
+          }
+        }
+      ]
+    },
+    {
+      "name": "sanctuaryRecharge",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:72:sanctuaryRecharge",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 1912,
+          "endLine": 1919,
+          "startOffset": 90620,
+          "endOffset": 91098
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::충전::sanctuaryRecharge}}",
+          "sourceFile": "regex/성역_선택지_(SANCTUARY_CHOICE).risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 768,
+            "endOffset": 801
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::충전::sanctuaryRecharge}}",
+          "sourceFile": "regex/성역_선택지_(SANCTUARY_CHOICE)_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 768,
+            "endOffset": 801
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::충전::sanctuaryRecharge}}",
+          "sourceFile": "regex/성역_선택지_(SANCTUARY_CHOICE)_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 768,
+            "endOffset": 801
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::충전::sanctuaryRecharge}}",
+          "sourceFile": "regex/성역_선택지_(SANCTUARY_CHOICE)_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 768,
+            "endOffset": 801
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::충전::sanctuaryRecharge}}",
+          "sourceFile": "regex/성역_선택지_(SANCTUARY_CHOICE)_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 768,
+            "endOffset": 801
+          }
+        }
+      ]
+    },
+    {
+      "name": "sanctuaryReturn",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:71:sanctuaryReturn",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 1905,
+          "endLine": 1910,
+          "startOffset": 90362,
+          "endOffset": 90618
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": [
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::귀환::sanctuaryReturn}}",
+          "sourceFile": "regex/성역_선택지_(SANCTUARY_CHOICE).risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 560,
+            "endOffset": 591
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::귀환::sanctuaryReturn}}",
+          "sourceFile": "regex/성역_선택지_(SANCTUARY_CHOICE)_1.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 560,
+            "endOffset": 591
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::귀환::sanctuaryReturn}}",
+          "sourceFile": "regex/성역_선택지_(SANCTUARY_CHOICE)_2.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 560,
+            "endOffset": 591
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::귀환::sanctuaryReturn}}",
+          "sourceFile": "regex/성역_선택지_(SANCTUARY_CHOICE)_3.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 560,
+            "endOffset": 591
+          }
+        },
+        {
+          "source": "cbs-button",
+          "rawText": "{{button::귀환::sanctuaryReturn}}",
+          "sourceFile": "regex/성역_선택지_(SANCTUARY_CHOICE)_4.risuregex",
+          "sourceRange": {
+            "startLine": 10,
+            "endLine": 10,
+            "startOffset": 560,
+            "endOffset": 591
+          }
+        }
+      ]
+    },
+    {
+      "name": "varEditMinusBig",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:100:varEditMinusBig",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 2506,
+          "endLine": 2506,
+          "startOffset": 117037,
+          "endOffset": 117124
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": []
+    },
+    {
+      "name": "varEditMinusMed",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:101:varEditMinusMed",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 2507,
+          "endLine": 2507,
+          "startOffset": 117125,
+          "endOffset": 117212
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": []
+    },
+    {
+      "name": "varEditMinusSml",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:102:varEditMinusSml",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 2508,
+          "endLine": 2508,
+          "startOffset": 117213,
+          "endOffset": 117300
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": []
+    },
+    {
+      "name": "varEditPlusBig",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:105:varEditPlusBig",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 2511,
+          "endLine": 2511,
+          "startOffset": 117477,
+          "endOffset": 117564
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": []
+    },
+    {
+      "name": "varEditPlusMed",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:104:varEditPlusMed",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 2510,
+          "endLine": 2510,
+          "startOffset": 117389,
+          "endOffset": 117476
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": []
+    },
+    {
+      "name": "varEditPlusSml",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:103:varEditPlusSml",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 2509,
+          "endLine": 2509,
+          "startOffset": 117301,
+          "endOffset": 117388
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": []
+    },
+    {
+      "name": "varEditSetMax",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:106:varEditSetMax",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 2513,
+          "endLine": 2529,
+          "startOffset": 117566,
+          "endOffset": 118257
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": []
+    },
+    {
+      "name": "varEditSetMin",
+      "targetModule": "lua/button_actions/actions.risulua",
+      "declaration": {
+        "id": "symbol:107:varEditSetMin",
+        "sourceFile": "lua/가챠섬_(Gacha_Island).risulua",
+        "sourceRange": {
+          "startLine": 2531,
+          "endLine": 2540,
+          "startOffset": 118259,
+          "endOffset": 118710
+        },
+        "classification": "extract:button-action"
+      },
+      "usages": []
+    }
+  ]
+}

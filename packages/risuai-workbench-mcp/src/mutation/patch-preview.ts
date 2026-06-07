@@ -45,7 +45,6 @@ export function createPatchPlan(input: CreatePatchPlanInput): PatchPlan {
     },
     safety: {
       destructive: input.safety?.destructive ?? false,
-      requiresConfirmation: input.safety?.requiresConfirmation ?? true,
       touchesGeneratedOnly: input.safety?.touchesGeneratedOnly ?? false,
       touchesSourceArtifacts: input.safety?.touchesSourceArtifacts ?? true,
     },
@@ -74,7 +73,7 @@ export function createFileHashPrecondition(relativePath: string, expectedHash: s
 
 /**
  * createInsideWorkspacePrecondition 함수.
- * apply 단계가 workspace boundary를 다시 확인해야 함을 명시함.
+ * apply 단계가 mutation mode와 precondition을 다시 확인해야 함을 명시함.
  *
  * @param relativePath - workspace-relative target path
  * @returns path.inside-workspace precondition

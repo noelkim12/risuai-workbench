@@ -1,5 +1,5 @@
 /**
- * Creative tool startup and placeholder fail-closed smoke tests.
+ * Creative tool startup and actionization smoke tests.
  * @file packages/risuai-workbench-mcp/tests/server/creative-startup.test.ts
  */
 
@@ -44,7 +44,7 @@ const CREATIVE_TOOL_NAMES = [
 ] as const;
 
 describe('creative tool startup', () => {
-  it('lists all 26 creative tools over stdio', async () => {
+  it('does not list creative tools in default tools/list after Phase 5', async () => {
     const transport = new StdioClientTransport({
       args: [binPath, '--stdio'],
       command: process.execPath,
@@ -58,10 +58,34 @@ describe('creative tool startup', () => {
       const toolNames = tools.tools.map((tool) => tool.name);
 
       for (const creativeToolName of CREATIVE_TOOL_NAMES) {
+        expect(toolNames).not.toContain(creativeToolName);
+      }
+
+      const creativeCount = toolNames.filter((name) => name.startsWith('workbench.creative.')).length;
+      expect(creativeCount).toBe(0);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('lists creative tools when legacy env gate is set', async () => {
+    const transport = new StdioClientTransport({
+      args: [binPath, '--stdio'],
+      command: process.execPath,
+      env: { ...process.env, RISU_MCP_EXPOSE_LEGACY_TOOLS: '1' },
+      stderr: 'pipe',
+    });
+    const client = new Client({ name: 'creative-legacy-test', version: '0.1.0' });
+
+    try {
+      await client.connect(transport);
+      const tools = await client.listTools();
+      const toolNames = tools.tools.map((tool) => tool.name);
+
+      for (const creativeToolName of CREATIVE_TOOL_NAMES) {
         expect(toolNames).toContain(creativeToolName);
       }
 
-      // Verify exact count: 26 creative + 41 existing + smoke = 68
       const creativeCount = toolNames.filter((name) => name.startsWith('workbench.creative.')).length;
       expect(creativeCount).toBe(26);
     } finally {
@@ -73,6 +97,7 @@ describe('creative tool startup', () => {
     const transport = new StdioClientTransport({
       args: [binPath, '--stdio'],
       command: process.execPath,
+      env: { ...process.env, RISU_MCP_EXPOSE_LEGACY_TOOLS: '1' },
       stderr: 'pipe',
     });
     const client = new Client({ name: 'creative-placeholder-test', version: '0.1.0' });
@@ -81,7 +106,7 @@ describe('creative tool startup', () => {
       await client.connect(transport);
 
       const result = await client.callTool({
-        arguments: { confirmation: { accepted: true }, patchPlanId: 'patch:missing' },
+      arguments: { patchPlanId: 'patch:missing' },
         name: 'workbench.creative.apply_idea_patch',
       }) as { content: Array<{ text: string; type: string }> };
 
@@ -116,6 +141,7 @@ describe('creative tool startup', () => {
     const transport = new StdioClientTransport({
       args: [binPath, '--stdio', '--root', tempRoot],
       command: process.execPath,
+      env: { ...process.env, RISU_MCP_EXPOSE_LEGACY_TOOLS: '1' },
       stderr: 'pipe',
     });
     const client = new Client({ name: 'creative-no-mutation-test', version: '0.1.0' });
@@ -125,7 +151,7 @@ describe('creative tool startup', () => {
 
       // Call a mutation-creative tool with arbitrary input
       await client.callTool({
-        arguments: { confirmation: { accepted: true }, patchPlanId: 'test-plan' },
+      arguments: { patchPlanId: 'test-plan' },
         name: 'workbench.creative.apply_idea_patch',
       }) as { content: Array<{ text: string; type: string }> };
 
@@ -141,10 +167,11 @@ describe('creative tool startup', () => {
     expect(afterEntries).toEqual(beforeEntries);
   });
 
-  it('red_team_concept tool is discoverable (shared tool-prompt name)', async () => {
+  it('red_team_concept tool is discoverable via legacy gate (shared tool-prompt name)', async () => {
     const transport = new StdioClientTransport({
       args: [binPath, '--stdio'],
       command: process.execPath,
+      env: { ...process.env, RISU_MCP_EXPOSE_LEGACY_TOOLS: '1' },
       stderr: 'pipe',
     });
     const client = new Client({ name: 'creative-red-team-test', version: '0.1.0' });

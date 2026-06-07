@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { runScaffoldWorkflow } from '../src/cli/scaffold/workflow';
+import { installDocsProviderBundle } from '../src/cli/shared/docs-provider';
 import { RISUMODULE_FILENAME, RISUMODULE_KIND } from '../src/cli/shared/risumodule';
 
 const RISULUA_SCAFFOLD_EXPECTED_FILES = [
@@ -39,6 +40,20 @@ const RISULUA_SCAFFOLD_EXPECTED_FILES = [
   'docs/risulua-button-action-index.json',
 ];
 
+const DOCS_PROVIDER_EXPECTED_FILES = [
+  'AGENTS.md',
+  'docs/default-workspace-guide.md',
+  'docs/extensions/risuchar.md',
+  'docs/extensions/risumodule.md',
+  'docs/refs/risuai-structured-output-pipeline-ko.md',
+] as const;
+
+function expectDocsProviderBundle(outDir: string): void {
+  for (const filePath of DOCS_PROVIDER_EXPECTED_FILES) {
+    expect(fs.existsSync(path.join(outDir, filePath))).toBe(true);
+  }
+}
+
 function expectRisuLuaScaffoldStructure(outDir: string): void {
   for (const filePath of RISULUA_SCAFFOLD_EXPECTED_FILES) {
     expect(fs.existsSync(path.join(outDir, filePath))).toBe(true);
@@ -56,11 +71,16 @@ function expectRisuLuaScaffoldStructure(outDir: string): void {
   expect(starter).not.toContain('dofile(');
   expect(starter).not.toContain('loadfile(');
 
-  const runtimeStart = fs.readFileSync(path.join(outDir, 'lua', 'runtime', 'start.risulua'), 'utf-8');
+  const runtimeStart = fs.readFileSync(
+    path.join(outDir, 'lua', 'runtime', 'start.risulua'),
+    'utf-8',
+  );
   expect(runtimeStart).toContain('local M = {}');
   expect(runtimeStart).toContain('return M');
 
-  const plan = JSON.parse(fs.readFileSync(path.join(outDir, 'docs', 'risulua-split-plan.json'), 'utf-8'));
+  const plan = JSON.parse(
+    fs.readFileSync(path.join(outDir, 'docs', 'risulua-split-plan.json'), 'utf-8'),
+  );
   expect(plan.entryPath).toBe('lua/main.risulua');
   expect(plan.distBuildStrategy).toBe('concat-build-time-require');
 }
@@ -102,6 +122,7 @@ describe('src/cli scaffold workflow', () => {
 
       // Modular Lua structure is the default
       expectRisuLuaScaffoldStructure(outDir);
+      expectDocsProviderBundle(outDir);
 
       // No metadata.json
       expect(fs.existsSync(path.join(outDir, 'metadata.json'))).toBe(false);
@@ -114,7 +135,9 @@ describe('src/cli scaffold workflow', () => {
       expect(manifest.image).toBeNull();
       expect(manifest.description).toBe('');
       expect(manifest.name).toBe('RPG Module');
-      expect(manifest.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+      expect(manifest.id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+      );
       expect(manifest.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
       expect(manifest.modifiedAt).toBe(manifest.createdAt);
       expect(manifest.lowLevelAccess).toBe(false);
@@ -170,6 +193,21 @@ describe('src/cli scaffold workflow', () => {
     });
   });
 
+  describe('docs-provider bundle', () => {
+    it('does not overwrite existing workspace docs by default', () => {
+      const outDir = path.join(tmpDir, 'existing-docs-workspace');
+      const agentsPath = path.join(outDir, 'AGENTS.md');
+      fs.mkdirSync(path.dirname(agentsPath), { recursive: true });
+      fs.writeFileSync(agentsPath, 'custom workspace guidance', 'utf-8');
+
+      const copiedCount = installDocsProviderBundle({ outputRoot: outDir });
+
+      expect(copiedCount).toBeGreaterThan(0);
+      expect(fs.readFileSync(agentsPath, 'utf-8')).toBe('custom workspace guidance');
+      expectDocsProviderBundle(outDir);
+    });
+  });
+
   describe('preset scaffold', () => {
     it('still emits metadata.json and canonical preset files', () => {
       const outDir = path.join(tmpDir, 'my-preset');
@@ -187,6 +225,7 @@ describe('src/cli scaffold workflow', () => {
       expect(fs.existsSync(path.join(outDir, 'prompt_template', '_order.json'))).toBe(true);
       expect(fs.existsSync(path.join(outDir, 'prompt_template', 'main.risuprompt'))).toBe(true);
       expect(fs.existsSync(path.join(outDir, 'provider'))).toBe(true);
+      expectDocsProviderBundle(outDir);
 
       const metadata = JSON.parse(fs.readFileSync(path.join(outDir, 'metadata.json'), 'utf-8'));
       expect(metadata.name).toBe('My Preset');
@@ -213,16 +252,21 @@ describe('src/cli scaffold workflow', () => {
       expect(fs.existsSync(path.join(outDir, 'character', 'description.risutext'))).toBe(true);
       expect(fs.existsSync(path.join(outDir, 'character', 'first_mes.risutext'))).toBe(true);
       expect(fs.existsSync(path.join(outDir, 'character', 'system_prompt.risutext'))).toBe(true);
-      expect(fs.existsSync(path.join(outDir, 'character', 'replace_global_note.risutext'))).toBe(true);
+      expect(fs.existsSync(path.join(outDir, 'character', 'replace_global_note.risutext'))).toBe(
+        true,
+      );
       expect(fs.existsSync(path.join(outDir, 'character', 'creator_notes.risutext'))).toBe(true);
       expect(fs.existsSync(path.join(outDir, 'character', 'additional_text.risutext'))).toBe(true);
-      expect(fs.existsSync(path.join(outDir, 'character', 'alternate_greetings', '_order.json'))).toBe(true);
+      expect(
+        fs.existsSync(path.join(outDir, 'character', 'alternate_greetings', '_order.json')),
+      ).toBe(true);
       expect(fs.existsSync(path.join(outDir, 'lorebooks', '_order.json'))).toBe(true);
       expect(fs.existsSync(path.join(outDir, 'regex', '_order.json'))).toBe(true);
       expect(fs.existsSync(path.join(outDir, 'variables', 'My_Character.risuvar'))).toBe(true);
 
       // Modular is now the default — charx also gets lua structure
       expectRisuLuaScaffoldStructure(outDir);
+      expectDocsProviderBundle(outDir);
 
       const risuchar = JSON.parse(fs.readFileSync(path.join(outDir, '.risuchar'), 'utf-8'));
       expect(risuchar.kind).toBe('risu.character');

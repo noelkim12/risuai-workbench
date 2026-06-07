@@ -1,0 +1,10 @@
+---
+comment: "복구용 던전 클리어 선택지 (DEBUG_DUNGEON_CHOICE)"
+type: editdisplay
+ableFlag: true
+flag: g<cbs>
+---
+@@@ IN
+\[DEBUG_DUNGEON_CHOICE\]
+@@@ OUT
+{{#if {{greater_equal::{{chat_index}}::{{? {{lastmessageid}}-5}}}}}}<div class="dungeon-choice-panel"><div class="dungeon-choice-hdr"><span class="dungeon-choice-icon">🏰</span><span>층 클리어 - 다음 행동 선택 (복구)</span></div><div class="dungeon-choice-grid"><div class="dungeon-choice-cell"><div class="dungeon-choice-cell-icon">🏠</div><div class="dungeon-choice-cell-name">성소로 귀환</div><div class="dungeon-choice-cell-btn">{{button::귀환::dungeonReturn}}</div></div><div class="dungeon-choice-cell"><div class="dungeon-choice-cell-icon">⬇</div><div class="dungeon-choice-cell-name">다음 층 진입</div><div class="dungeon-choice-cell-btn">{{button::다음 층::dungeonNextFloor}}</div></div></div><div class="dungeon-choice-footer">선택지를 눌러 결정하세요</div></div>{{/if}}

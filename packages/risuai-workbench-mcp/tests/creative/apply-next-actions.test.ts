@@ -73,7 +73,7 @@ describe('applyStoredIdeaPatch next actions', () => {
     store.savePatchPlan(plan);
 
     const result = mutation(await applyStoredIdeaPatch(
-      { confirmation: { accepted: true }, options: { postValidate: true }, patchPlanId: plan.patchPlanId, sessionId: 'session:next-actions' },
+      { options: { postValidate: true }, patchPlanId: plan.patchPlanId, sessionId: 'session:next-actions' },
       { mutationMode: 'enabled', patchStore: store, workspace: fixture.workspace },
     ));
 
@@ -111,7 +111,7 @@ describe('applyStoredIdeaPatch next actions', () => {
     store.savePatchPlan(plan);
 
     const result = mutation(await applyStoredIdeaPatch(
-      { confirmation: { accepted: true }, options: { postValidate: true, rollbackOnValidationError: true }, patchPlanId: plan.patchPlanId },
+      { options: { postValidate: true, rollbackOnValidationError: true }, patchPlanId: plan.patchPlanId },
       { mutationMode: 'enabled', patchStore: store, workspace: fixture.workspace },
     ));
 

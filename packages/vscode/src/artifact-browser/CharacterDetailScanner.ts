@@ -22,6 +22,8 @@ const SECTION_ORDER: CharacterSectionKind[] = [
   'diagnostics',
 ];
 
+const SCAN_DIRECTORIES = ['lorebooks', 'lorebook', 'regex', 'html', 'lua'] as const;
+
 function createCharacterSectionDrafts(): Record<CharacterSectionKind, SectionDraft> {
   return {
     manifest: createSection('manifest', 'Manifest', 'manifest'),
@@ -35,24 +37,10 @@ function createCharacterSectionDrafts(): Record<CharacterSectionKind, SectionDra
 
 function classifyFile(relativePath: string): CharacterSectionKind | undefined {
   const lowerPath = relativePath.toLowerCase();
-  const extension = path.extname(lowerPath).replace('.', '');
-
-  if (extension === 'risulorebook') return 'lorebooks';
-  if (extension === 'risuregex') return 'regexRules';
-  if (extension === 'risuhtml') return 'html';
-  if (extension === 'risulua') return 'lua';
-  if (
-    /(^|\/)(lore|lorebook|book)(\/|[-_.])/.test(lowerPath) ||
-    /(^|[-_.])(lore|lorebook|book)([-_.]|$)/.test(lowerPath)
-  ) {
-    return 'lorebooks';
-  }
-  if (
-    /(^|\/)(regex|regexp|rule)(\/|[-_.])/.test(lowerPath) ||
-    /(^|[-_.])(regex|regexp|rule)([-_.]|$)/.test(lowerPath)
-  ) {
-    return 'regexRules';
-  }
+  if (isUnderDirectory(lowerPath, 'lorebooks') || isUnderDirectory(lowerPath, 'lorebook')) return 'lorebooks';
+  if (isUnderDirectory(lowerPath, 'regex')) return 'regexRules';
+  if (isUnderDirectory(lowerPath, 'html')) return 'html';
+  if (isUnderDirectory(lowerPath, 'lua')) return 'lua';
 
   return undefined;
 }
@@ -82,6 +70,10 @@ function isImageExtension(extension: string): boolean {
   return ['png', 'jpg', 'jpeg', 'webp'].includes(extension);
 }
 
+function isUnderDirectory(relativePath: string, directoryName: string): boolean {
+  return relativePath === directoryName || relativePath.startsWith(`${directoryName}/`);
+}
+
 const scanner = new GenericDetailScanner<CharacterSectionKind, CharacterItemType>({
   sectionOrder: SECTION_ORDER,
   createSectionDrafts: createCharacterSectionDrafts,
@@ -89,6 +81,7 @@ const scanner = new GenericDetailScanner<CharacterSectionKind, CharacterItemType
   classifyItemType,
   manifestMarkerName: '.risuchar',
   manifestSectionKind: 'manifest',
+  scanDirectories: SCAN_DIRECTORIES,
 });
 
 /**

@@ -1,0 +1,33 @@
+---
+source: generated
+page-class: chain
+artifact: char_🏝️가챠섬_v1.7
+artifact-type: character
+chain-type: "variable-flow"
+entry-point: cv_lastFallbackTip
+hops: 1
+max-depth: 1
+has-cycles: false
+cycle-count: 0
+touches-lua: true
+touches-variables: [cv_lastFallbackTip]
+generated-at: "2026-06-04T09:25:52.995Z"
+generator: "risu-workbench/analyze/wiki@0.1.0"
+---
+
+# Chain: variable flow for `cv_lastFallbackTip`
+
+**Default value:** `(none)`
+**Readers:** 0 · **Writers:** 1
+
+## Written by
+
+- Lua [`lua/domain/var`](../../lua.md#lua/domain/var)
+
+## Read by
+
+- (no readers detected — variable may be write-only, a dead write)
+
+## Notes
+
+See [`../../../notes/chains/cv_lastFallbackTip-flow.md`](../../../notes/chains/cv_lastFallbackTip-flow.md) _(optional)_.

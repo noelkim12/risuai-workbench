@@ -1,0 +1,10 @@
+---
+comment: "시스템 알림 - ITEM_ADD"
+type: editdisplay
+ableFlag: true
+flag: g
+---
+@@@ IN
+\[SYSTEM\|ITEM_ADD:\s*(.*?)\]
+@@@ OUT
+<!-- -->

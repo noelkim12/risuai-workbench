@@ -1,0 +1,10 @@
+---
+comment: "GACHA_REROLL 태그 숨김 (백엔드 전용 — 유저 화면에서 제거)"
+type: editdisplay
+ableFlag: true
+flag: g<cbs>
+---
+@@@ IN
+\[GACHA_REROLL:[^\]]*\]
+@@@ OUT
+

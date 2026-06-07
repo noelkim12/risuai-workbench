@@ -252,16 +252,6 @@ export function getBooleanField(candidate: Record<string, unknown>, key: string)
   return typeof value === 'boolean' ? value : undefined;
 }
 
-export function getConfirmationField(candidate: Record<string, unknown>): { accepted: boolean; confirmationText?: string } | undefined {
-  const value = candidate.confirmation;
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const record = value as Record<string, unknown>;
-  return {
-    accepted: record.accepted === true,
-    confirmationText: typeof record.confirmationText === 'string' ? record.confirmationText : undefined,
-  };
-}
-
 async function listFilesRecursive(root: string): Promise<string[]> {
   const entries = await readdir(root, { withFileTypes: true });
   const files: string[] = [];

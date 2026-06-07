@@ -45,6 +45,46 @@ Unsafe extensions:
   - `classifyNestedHelper()`: 핸들러 내부의 중첩 함수를 파라미터화하여 추출할지 결정하는 8단계 우선순위 로직입니다.
   - `unsafePublicGlobalReason()`: 전역 함수를 안전하게 외부로 뺄 수 있는지 검사합니다.
 
+#### Residual closure clusters and ABI bridge policy
+
+`preserve:captures-mutable-state`가 남아 있는 report를 읽을 때는 남은 클러스터가 실제 미분할 구현인지, 아니면 의도적으로 `lua/main.risulua`에 유지한 host ABI bridge인지 먼저 구분합니다. Gacha Island 같은 대형 스크립트에서는 main에 남은 public 이름이 모두 실패가 아니라, host가 호출해야 하는 ABI shell일 수 있습니다.
+
+Important fields:
+
+- `generationStatus`: candidate가 `generated`, `blocked`, `report-only` 중 어디에 있는지 보여줍니다. `generated`이면 main wrapper가 남아도 구현 body는 이미 domain module에 있을 수 있습니다.
+- `generationBlockedReasons`: candidate가 왜 아직 생성되지 않았는지 설명합니다. 이 값이 있으면 단순히 preserve 조건을 완화하지 말고 blocker를 제거하는 방향으로 수정합니다.
+- `recommendedPath`: 사람이 기대해야 하는 stable target입니다. 예를 들어 forge cluster는 `lua/domain/forge.risulua`, store-backed data는 `lua/state/variable_store.risulua`를 가리켜야 합니다.
+- `grouping.reason`: `cluster-policy` 또는 `domain-grouping:cluster-cycle-coalesced` 같은 grouping evidence를 확인하는 필드입니다. path 정책을 바꾸면 이 reason과 refactor-map/rendering 테스트도 같이 갱신합니다.
+
+Common Gacha Island-style blockers:
+
+- `preserve:captures-mutable-state`: 로컬 테이블/상수/캐시를 closure로 캡처해 body를 그대로 빼면 state alias가 깨질 수 있습니다. 먼저 `state.variable_store` 또는 explicit module dependency로 바꿉니다.
+- `preserve:top-level-side-effect`: top-level 실행 순서 자체가 의미를 가지는 초기화/등록 코드입니다. side effect shell은 main에 남기고 순수 구현만 domain module로 위임합니다.
+- `preserve:dynamic-global-reference-risk`: `_G[buttonName] = function(...) ... end`처럼 동적 이름을 host가 찾는 경우입니다. 동적 등록은 main에 남기되 callback body는 generated domain export로 delegate할 수 있습니다.
+
+Modern split pattern:
+
+1. Host-visible names와 dynamic `_G[...]` registrations는 `lua/main.risulua`에 유지합니다.
+2. Canonical data tables는 `lua/state/variable_store.risulua`(`state.variable_store`)로 이동합니다.
+3. Public global compatibility aliases는 main에 남겨 기존 host/script 참조가 계속 동작하게 합니다.
+4. Implementation bodies는 `lua/domain/forge.risulua` 같은 cluster modules로 이동합니다.
+5. Captures는 암묵적 closure가 아니라 explicit module dependencies로 rewrite합니다.
+
+예시:
+
+```lua
+local __variable_store = require("state.variable_store")
+local __domain_forge = require("domain.forge")
+
+COMPANION_POOL_BOT = __variable_store.COMPANION_POOL_BOT
+
+function forgeApplySkill(triggerId)
+  return __domain_forge.applyCat(triggerId, "skill")
+end
+```
+
+`unsafeLocalHelperReason()`을 임의로 완화해서 arbitrary captures를 추출 가능으로 만들지 마세요. 대신 capture를 `state.variable_store`, prompt-store, common helper, generated domain export, 또는 intentional ABI bridge 중 하나로 명시적으로 rewrite할 수 있게 만든 뒤 preserve reason을 제거해야 합니다.
+
 ### 1.3. 특수 저장소(Variable/Prompt Store) 추출 기준
 
 최상위 변수들을 자동으로 `variable_store`나 `prompt_store`로 보내는 기준을 바꿀 때 수정합니다.

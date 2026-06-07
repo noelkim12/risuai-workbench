@@ -1,0 +1,554 @@
+{
+  "schema": "risuai-workbench-mcp.facade-visualization",
+  "generatedAt": "1970-01-01T00:00:00.000Z",
+  "nodes": [
+    {
+      "details": {
+        "role": "Server/workspace status check"
+      },
+      "group": "Public facade",
+      "id": "tool:workbench.smoke",
+      "kind": "mcp_tool",
+      "label": "workbench.smoke"
+    },
+    {
+      "details": {
+        "role": "Classify intent and recommend facade next step"
+      },
+      "group": "Public facade",
+      "id": "tool:workbench.route_intent",
+      "kind": "mcp_tool",
+      "label": "workbench.route_intent"
+    },
+    {
+      "details": {
+        "role": "Search internal actions by intent/capability/risk"
+      },
+      "group": "Public facade",
+      "id": "tool:workbench.catalog",
+      "kind": "mcp_tool",
+      "label": "workbench.catalog"
+    },
+    {
+      "details": {
+        "role": "Explain selected action input requirements"
+      },
+      "group": "Public facade",
+      "id": "tool:workbench.prepare_action",
+      "kind": "mcp_tool",
+      "label": "workbench.prepare_action"
+    },
+    {
+      "details": {
+        "role": "Execute read-only or preview-safe internal actions"
+      },
+      "group": "Public facade",
+      "id": "tool:workbench.run_action",
+      "kind": "mcp_tool",
+      "label": "workbench.run_action"
+    },
+    {
+      "details": {
+        "role": "Manage handle-based large context records"
+      },
+      "group": "Public facade",
+      "id": "tool:workbench.context",
+      "kind": "mcp_tool",
+      "label": "workbench.context"
+    },
+    {
+      "details": {
+        "role": "Preview patch actions or store patch plans"
+      },
+      "group": "Public facade",
+      "id": "tool:workbench.patch_preview",
+      "kind": "mcp_tool",
+      "label": "workbench.patch_preview"
+    },
+    {
+      "details": {
+        "role": "Apply confirmed patch plans through safety gates"
+      },
+      "group": "Public facade",
+      "id": "tool:workbench.patch_apply",
+      "kind": "mcp_tool",
+      "label": "workbench.patch_apply"
+    },
+    {
+      "details": {
+        "actions": "2",
+        "capability": "inspect",
+        "risks": "read_only"
+      },
+      "group": "Internal Action Registry",
+      "id": "capability:inspect",
+      "kind": "action_group",
+      "label": "Inspect"
+    },
+    {
+      "details": {
+        "actions": "9",
+        "capability": "validate",
+        "risks": "read_only"
+      },
+      "group": "Internal Action Registry",
+      "id": "capability:validate",
+      "kind": "action_group",
+      "label": "Validate"
+    },
+    {
+      "details": {
+        "actions": "14",
+        "capability": "analyze",
+        "risks": "read_only"
+      },
+      "group": "Internal Action Registry",
+      "id": "capability:analyze",
+      "kind": "action_group",
+      "label": "Analyze"
+    },
+    {
+      "details": {
+        "actions": "3",
+        "capability": "wiki",
+        "risks": "commit_mutation, read_only"
+      },
+      "group": "Internal Action Registry",
+      "id": "capability:wiki",
+      "kind": "action_group",
+      "label": "Wiki"
+    },
+    {
+      "details": {
+        "actions": "3",
+        "capability": "skills",
+        "risks": "read_only"
+      },
+      "group": "Internal Action Registry",
+      "id": "capability:skills",
+      "kind": "action_group",
+      "label": "Skills"
+    },
+    {
+      "details": {
+        "actions": "3",
+        "capability": "creative.context",
+        "risks": "read_only"
+      },
+      "group": "Internal Action Registry",
+      "id": "capability:creative.context",
+      "kind": "action_group",
+      "label": "Creative Context"
+    },
+    {
+      "details": {
+        "actions": "5",
+        "capability": "creative.ideation",
+        "risks": "read_only"
+      },
+      "group": "Internal Action Registry",
+      "id": "capability:creative.ideation",
+      "kind": "action_group",
+      "label": "Creative Ideation"
+    },
+    {
+      "details": {
+        "actions": "12",
+        "capability": "creative.review",
+        "risks": "read_only"
+      },
+      "group": "Internal Action Registry",
+      "id": "capability:creative.review",
+      "kind": "action_group",
+      "label": "Creative Review"
+    },
+    {
+      "details": {
+        "actions": "6",
+        "capability": "creative.patch",
+        "risks": "commit_mutation, preview_mutation, read_only"
+      },
+      "group": "Internal Action Registry",
+      "id": "capability:creative.patch",
+      "kind": "action_group",
+      "label": "Creative Patch"
+    },
+    {
+      "details": {
+        "actions": "6",
+        "capability": "patch.preview",
+        "risks": "preview_mutation, read_only"
+      },
+      "group": "Internal Action Registry",
+      "id": "capability:patch.preview",
+      "kind": "action_group",
+      "label": "Patch Preview"
+    },
+    {
+      "details": {
+        "actions": "1",
+        "capability": "patch.apply",
+        "risks": "commit_mutation"
+      },
+      "group": "Internal Action Registry",
+      "id": "capability:patch.apply",
+      "kind": "action_group",
+      "label": "Patch Apply"
+    },
+    {
+      "group": "Mutation safety",
+      "id": "safety:patch-store",
+      "kind": "safety_gate",
+      "label": "PatchPlan store"
+    },
+    {
+      "group": "Mutation safety",
+      "id": "safety:confirmation",
+      "kind": "safety_gate",
+      "label": "confirmation gate"
+    },
+    {
+      "group": "Mutation safety",
+      "id": "safety:mutation-mode",
+      "kind": "safety_gate",
+      "label": "mutation mode"
+    },
+    {
+      "group": "Mutation safety",
+      "id": "safety:patch-engine",
+      "kind": "safety_gate",
+      "label": "canonical patch apply engine"
+    }
+  ],
+  "edges": [
+    {
+      "source": "tool:workbench.route_intent",
+      "target": "tool:workbench.catalog",
+      "kind": "next_tool",
+      "label": "routes to"
+    },
+    {
+      "source": "tool:workbench.catalog",
+      "target": "tool:workbench.prepare_action",
+      "kind": "next_tool",
+      "label": "selects action"
+    },
+    {
+      "source": "tool:workbench.prepare_action",
+      "target": "tool:workbench.run_action",
+      "kind": "next_tool",
+      "label": "runs safe action"
+    },
+    {
+      "source": "tool:workbench.prepare_action",
+      "target": "tool:workbench.patch_preview",
+      "kind": "next_tool",
+      "label": "previews mutation"
+    },
+    {
+      "source": "tool:workbench.patch_preview",
+      "target": "tool:workbench.patch_apply",
+      "kind": "next_tool",
+      "label": "after confirmation"
+    },
+    {
+      "source": "tool:workbench.context",
+      "target": "tool:workbench.run_action",
+      "kind": "hydrates",
+      "label": "contextId"
+    },
+    {
+      "source": "tool:workbench.context",
+      "target": "tool:workbench.patch_preview",
+      "kind": "hydrates",
+      "label": "contextId"
+    },
+    {
+      "source": "tool:workbench.catalog",
+      "target": "capability:inspect",
+      "kind": "routes_to",
+      "label": "inspect"
+    },
+    {
+      "source": "tool:workbench.catalog",
+      "target": "capability:validate",
+      "kind": "routes_to",
+      "label": "validate"
+    },
+    {
+      "source": "tool:workbench.catalog",
+      "target": "capability:analyze",
+      "kind": "routes_to",
+      "label": "analyze"
+    },
+    {
+      "source": "tool:workbench.catalog",
+      "target": "capability:wiki",
+      "kind": "routes_to",
+      "label": "wiki"
+    },
+    {
+      "source": "tool:workbench.catalog",
+      "target": "capability:skills",
+      "kind": "routes_to",
+      "label": "skills"
+    },
+    {
+      "source": "tool:workbench.catalog",
+      "target": "capability:creative.context",
+      "kind": "routes_to",
+      "label": "creative.context"
+    },
+    {
+      "source": "tool:workbench.catalog",
+      "target": "capability:creative.ideation",
+      "kind": "routes_to",
+      "label": "creative.ideation"
+    },
+    {
+      "source": "tool:workbench.catalog",
+      "target": "capability:creative.review",
+      "kind": "routes_to",
+      "label": "creative.review"
+    },
+    {
+      "source": "tool:workbench.catalog",
+      "target": "capability:creative.patch",
+      "kind": "routes_to",
+      "label": "creative.patch"
+    },
+    {
+      "source": "tool:workbench.catalog",
+      "target": "capability:patch.preview",
+      "kind": "routes_to",
+      "label": "patch.preview"
+    },
+    {
+      "source": "tool:workbench.catalog",
+      "target": "capability:patch.apply",
+      "kind": "routes_to",
+      "label": "patch.apply"
+    },
+    {
+      "source": "tool:workbench.patch_preview",
+      "target": "safety:patch-store",
+      "kind": "stores",
+      "label": "PatchPlan"
+    },
+    {
+      "source": "tool:workbench.patch_apply",
+      "target": "safety:patch-store",
+      "kind": "loads",
+      "label": "PatchPlan"
+    },
+    {
+      "source": "tool:workbench.patch_apply",
+      "target": "safety:confirmation",
+      "kind": "checks",
+      "label": "requires accepted confirmation"
+    },
+    {
+      "source": "tool:workbench.patch_apply",
+      "target": "safety:mutation-mode",
+      "kind": "checks",
+      "label": "preview-only/generated-only/enabled"
+    },
+    {
+      "source": "tool:workbench.patch_apply",
+      "target": "safety:patch-engine",
+      "kind": "applies",
+      "label": "approved operations"
+    }
+  ],
+  "actionGroups": [
+    {
+      "actionIds": [
+        "inspect.artifact",
+        "inspect.path"
+      ],
+      "capability": "inspect",
+      "count": 2,
+      "entrypoint": "workbench.catalog → workbench.prepare_action → workbench.run_action",
+      "label": "Inspect",
+      "risks": [
+        "read_only"
+      ]
+    },
+    {
+      "actionIds": [
+        "validate.artifact",
+        "validate.build_path",
+        "validate.cbs_syntax",
+        "validate.frontmatter",
+        "validate.metadata",
+        "validate.order",
+        "validate.path",
+        "validate.root_markers",
+        "validate.suggest_tests"
+      ],
+      "capability": "validate",
+      "count": 9,
+      "entrypoint": "workbench.catalog → workbench.prepare_action → workbench.run_action",
+      "label": "Validate",
+      "risks": [
+        "read_only"
+      ]
+    },
+    {
+      "actionIds": [
+        "analyze.query_button_actions",
+        "analyze.query_cbs_usage",
+        "analyze.query_composition_conflicts",
+        "analyze.query_dead_code_findings",
+        "analyze.query_lua_analysis",
+        "analyze.query_lua_call_graph",
+        "analyze.query_lua_state_access",
+        "analyze.query_prompt_chain",
+        "analyze.query_relationship_network",
+        "analyze.query_risulua_api",
+        "analyze.query_token_budget",
+        "analyze.query_variable",
+        "analyze.query_variable_flow",
+        "analyze.refresh_snapshot"
+      ],
+      "capability": "analyze",
+      "count": 14,
+      "entrypoint": "workbench.catalog → workbench.prepare_action → workbench.run_action",
+      "label": "Analyze",
+      "risks": [
+        "read_only"
+      ]
+    },
+    {
+      "actionIds": [
+        "wiki.ensure_root",
+        "wiki.refresh",
+        "wiki.search"
+      ],
+      "capability": "wiki",
+      "count": 3,
+      "entrypoint": "workbench.patch_preview → workbench.patch_apply",
+      "label": "Wiki",
+      "risks": [
+        "commit_mutation",
+        "read_only"
+      ]
+    },
+    {
+      "actionIds": [
+        "skills.apply",
+        "skills.list",
+        "skills.recommend"
+      ],
+      "capability": "skills",
+      "count": 3,
+      "entrypoint": "workbench.catalog → workbench.prepare_action → workbench.run_action",
+      "label": "Skills",
+      "risks": [
+        "read_only"
+      ]
+    },
+    {
+      "actionIds": [
+        "creative.gather_context",
+        "creative.inspect_context",
+        "creative.search_context"
+      ],
+      "capability": "creative.context",
+      "count": 3,
+      "entrypoint": "workbench.catalog → workbench.prepare_action → workbench.run_action",
+      "label": "Creative Context",
+      "risks": [
+        "read_only"
+      ]
+    },
+    {
+      "actionIds": [
+        "creative.brainstorm_scamper",
+        "creative.create_matrix",
+        "creative.extract_contradictions",
+        "creative.generate_combinations",
+        "creative.suggest_contradiction_resolutions"
+      ],
+      "capability": "creative.ideation",
+      "count": 5,
+      "entrypoint": "workbench.catalog → workbench.prepare_action → workbench.run_action",
+      "label": "Creative Ideation",
+      "risks": [
+        "read_only"
+      ]
+    },
+    {
+      "actionIds": [
+        "creative.cluster_ideas",
+        "creative.critique_idea_with_analyze",
+        "creative.critique_six_hats",
+        "creative.deduplicate_ideas",
+        "creative.find_graph_bridge_ideas",
+        "creative.open_idea_neighborhood",
+        "creative.optimize_prompt_chain_insertion",
+        "creative.preview_creative_impact",
+        "creative.rank_ideas",
+        "creative.red_team_concept",
+        "creative.remix_dead_code_into_ideas",
+        "creative.search_idea_graph"
+      ],
+      "capability": "creative.review",
+      "count": 12,
+      "entrypoint": "workbench.catalog → workbench.prepare_action → workbench.run_action",
+      "label": "Creative Review",
+      "risks": [
+        "read_only"
+      ]
+    },
+    {
+      "actionIds": [
+        "creative.apply_idea_patch",
+        "creative.preview_idea_patch",
+        "creative.save_idea_session",
+        "creative.turn_idea_into_patch_plan",
+        "creative.turn_idea_into_plan",
+        "creative.write_idea_memory"
+      ],
+      "capability": "creative.patch",
+      "count": 6,
+      "entrypoint": "workbench.patch_preview → workbench.patch_apply",
+      "label": "Creative Patch",
+      "risks": [
+        "commit_mutation",
+        "preview_mutation",
+        "read_only"
+      ]
+    },
+    {
+      "actionIds": [
+        "patch.diff_wiki",
+        "patch.plan_wiki",
+        "patch.suggest",
+        "patch.suggest_frontmatter",
+        "patch.suggest_order",
+        "patch.suggest_root_marker"
+      ],
+      "capability": "patch.preview",
+      "count": 6,
+      "entrypoint": "workbench.patch_preview",
+      "label": "Patch Preview",
+      "risks": [
+        "preview_mutation",
+        "read_only"
+      ]
+    },
+    {
+      "actionIds": [
+        "patch.apply"
+      ],
+      "capability": "patch.apply",
+      "count": 1,
+      "entrypoint": "workbench.patch_preview → workbench.patch_apply",
+      "label": "Patch Apply",
+      "risks": [
+        "commit_mutation"
+      ]
+    }
+  ]
+}

@@ -66,7 +66,6 @@ describe('handleCreateArtifact', () => {
       {
         artifact: 'lorebook',
         body: 'combat emotion text',
-        confirmation: { accepted: true },
         initialFrontmatter: { enabled: 'true', priority: '30' },
         mode: 'commit',
         order: { index: 1, insert: true },
@@ -127,7 +126,6 @@ describe('handleCreateArtifact', () => {
     const result = diagnosticEnvelope(await handleCreateArtifact(
       {
         artifact: 'lorebook',
-        confirmation: { accepted: true },
         mode: 'commit',
         root: 'characters/merry',
         stem: 'blocked',

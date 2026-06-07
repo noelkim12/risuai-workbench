@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  analyzeRisuLuaModuleTable,
+  classifyRisuLuaModuleTableDecisions,
+  findTopLevelLocalTableDeclarations,
+  parseRisuLuaModuleTableSource,
+  planDryRunRefactorMap,
+  planTopLevelRewrite,
   RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH,
   RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH,
   RISULUA_MODULE_TABLE_COMMON_HELPERS_PATH,
@@ -9,8 +15,42 @@ import {
   RISULUA_MODULE_TABLE_RUNTIME_BUTTON_CLICK_PATH,
   RISULUA_MODULE_TABLE_RUNTIME_LISTEN_EDIT_PATH,
   RISULUA_MODULE_TABLE_RUNTIME_OUTPUT_PATH,
+  type RisuLuaModuleTableDomainGenerationOption,
+  type TopLevelRewriteResult,
 } from '../src/domain/risulua-split';
 import { lines, rewriteFixture } from './helpers/module-table-refactor-map-helpers';
+
+async function rewriteWithButtonActionSources(source: string, options: {
+  domainGeneration?: RisuLuaModuleTableDomainGenerationOption;
+  buttonActionSources: string[];
+}): Promise<TopLevelRewriteResult> {
+  const sourceFile = 'legacy/original.risulua';
+  const parseResult = await parseRisuLuaModuleTableSource(source);
+  const analyzerResult = analyzeRisuLuaModuleTable({ source, parseResult });
+  const variableStoreNames = findTopLevelLocalTableDeclarations(source).map((declaration) => declaration.name);
+  const classificationResult = classifyRisuLuaModuleTableDecisions({
+    source,
+    sourceFile,
+    analyzerResult,
+    domainGeneration: options.domainGeneration,
+    buttonActionSources: options.buttonActionSources,
+    variableStoreNames,
+  });
+  const dryRunResult = planDryRunRefactorMap({
+    source,
+    sourceFile,
+    parseResult,
+    classificationResult,
+  });
+  return planTopLevelRewrite({
+    source,
+    sourceFile,
+    dryRunResult,
+    parseResult,
+    variableStoreNames,
+    buttonActionSources: options.buttonActionSources,
+  });
+}
 
 describe('risulua-split module-table top-level rewrite planner', () => {
   it('builds common helper module with forward declarations, bodies, and exports', async () => {
@@ -253,6 +293,73 @@ describe('risulua-split module-table top-level rewrite planner', () => {
     const main = result.mainRewritePlan.fullMainText;
     expect(main).toContain('Cheat_Set_Skill_Value = __button_actions.Cheat_Set_Skill_Value');
     expect(main).not.toContain('Cheat_Set_Skill_Value = async(function(triggerId)');
+  });
+
+  it('keeps forge button ABI wrappers in main while moving implementation to domain.forge', async () => {
+    const result = await rewriteWithButtonActionSources(lines([
+      'local CAT_CFG = { skill = { label = "스킬", detailsVar = "cv_skillDetails", listVar = "cv_skills" } }',
+      '',
+      'local function _forgeApplyCat(triggerId, cat)',
+      '  local cfg = CAT_CFG[cat]',
+      '  setChatVar(triggerId, cfg.detailsVar, "None")',
+      '  addChat(triggerId, "user", cfg.label)',
+      'end',
+      '',
+      'function forgeApplySkill(triggerId)',
+      '  _forgeApplyCat(triggerId, "skill")',
+      'end',
+    ]), {
+      domainGeneration: 'validated',
+      buttonActionSources: ['{{button::강화::forgeApplySkill}}'],
+    });
+
+    expect(result.ok).toBe(true);
+    const main = result.mainRewritePlan.fullMainText;
+    expect(main).toContain('local __domain_forge = require("domain.forge")');
+    expect(main).toContain('function forgeApplySkill(triggerId)');
+    expect(main).toContain('return __domain_forge.applyCat(triggerId, "skill")');
+    expect(main).not.toContain('local function _forgeApplyCat');
+
+    const forgeModule = result.modulePlans.find((modulePlan) => modulePlan.modulePath === 'lua/domain/forge.risulua');
+    expect(forgeModule).toBeDefined();
+    expect(forgeModule!.body).toContain('function __impl.applyCat(triggerId, cat)');
+    expect(forgeModule!.body).toContain('__variable_store.CAT_CFG');
+  });
+
+  it('keeps dynamic forge _G callback names in main but delegates bodies to domain.forge', async () => {
+    const result = await rewriteFixture(lines([
+      'local FORGE_SLOT_CATS = { "skill" }',
+      '',
+      'local function forgeSetSlotHandler(triggerId, slot, cat, idx)',
+      '  setChatVar(triggerId, "slot_" .. cat .. "_" .. idx, slot)',
+      'end',
+      '',
+      'for _, cat in ipairs(FORGE_SLOT_CATS) do',
+      '  for idx = 1, 3 do',
+      '    local buttonName = "forgeSetSlot_" .. cat .. "_" .. idx',
+      '    _G[buttonName] = function(triggerId, slot)',
+      '      forgeSetSlotHandler(triggerId, slot, cat, idx)',
+      '    end',
+      '  end',
+      'end',
+    ]), { domainGeneration: 'validated' });
+
+    expect(result.ok).toBe(true);
+    const main = result.mainRewritePlan.fullMainText;
+    expect(main).toContain('local __domain_forge = require("domain.forge")');
+    expect(main).toContain('for _, cat in ipairs(FORGE_SLOT_CATS) do');
+    expect(main).toContain('for idx = 1, 3 do');
+    expect(main).toContain('local buttonName = "forgeSetSlot_" .. cat .. "_" .. idx');
+    expect(main).toContain('_G[buttonName] = function(triggerId, slot)');
+    expect(main).toContain('return __domain_forge.setSlot(triggerId, slot, cat, idx)');
+    expect(main).not.toContain('local function forgeSetSlotHandler');
+    expect(main).not.toContain('forgeSetSlotHandler(triggerId, slot, cat, idx)');
+
+    const forgeModule = result.modulePlans.find((modulePlan) => modulePlan.modulePath === 'lua/domain/forge.risulua');
+    expect(forgeModule).toBeDefined();
+    expect(forgeModule!.body).toContain('function __impl.setSlot(triggerId, slot, cat, idx)');
+    expect(forgeModule!.body).toContain('setChatVar(triggerId, "slot_" .. cat .. "_" .. idx, slot)');
+    expect(forgeModule!.body).toContain('M.setSlot = __impl.setSlot');
   });
 
   it('rewrites variable-store captures inside generated domain functions', async () => {

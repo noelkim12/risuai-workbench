@@ -1,0 +1,60 @@
+---
+name: 스킬·아이템·유물·시설 효과 설명
+comment: 스킬·아이템·유물·시설 효과 설명
+mode: normal
+constant: false
+selective: false
+insertion_order: 851
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+사용
+장착
+착용
+작동
+마신다
+먹다
+먹는다
+회복
+효과
+스킬
+아이템
+유물
+시설
+건물
+가동
+use
+activate
+equip
+drink
+heal
+effect
+skill
+item
+relic
+facility
+building
+使用
+装着
+装備
+飲む
+食べる
+回復
+効果
+スキル
+アイテム
+遺物
+施設
+建物
+@@@ CONTENT
+## 스킬, 아이템, 유물, 건물 효과 설명 (Effect Descriptions - read on use)
+
+ACTIVATION: This block is injected only when player input or narrative depicts USING / ACTIVATING / EQUIPPING / CONSUMING an item, skill, relic, or facility. When triggered, READ the relevant detail variable below and apply the effect description EXACTLY as written. Do NOT guess or invent effects from narrative flow.
+
+- item details: {{getvar::cv_itemDetails}}
+- skill details (EQUIPPED): {{getvar::cv_equippedSkillDetails}}
+- relic details (EQUIPPED): {{getvar::cv_equippedRelicDetails}}
+- facility details: {{getvar::cv_facilityDetails}}
+
+Format: each entry is `이름||효과;;이름||효과;;...`. Match the name precisely against cv_items / cv_equippedSkills / cv_equippedRelics / cv_facilities (skill/relic = EQUIPPED only) (see 「현재 주요 수치」), then extract the effect after `||`.

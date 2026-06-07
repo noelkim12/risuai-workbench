@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 import { resolvePrivateFixturePath } from './helpers/private-fixture-paths';
+import { resolveFixtureRepositoryRoot } from './helpers/fixture-corpus';
 
 import {
   RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH,
@@ -35,6 +36,13 @@ const MODULE_TABLE_FIXTURE_A_ROOT = resolvePrivateFixturePath(
 const MODULE_TABLE_FIXTURE_B_ROOT = resolvePrivateFixturePath(
   'RISU_WORKBENCH_MODULE_TABLE_FIXTURE_B',
   'module-table-sample-b',
+);
+
+const GACHA_ISLAND_FIXTURE_ROOT = path.join(
+  resolveFixtureRepositoryRoot(),
+  'test_suites',
+  'extraction_targets',
+  '🏝️가챠섬_v1.7',
 );
 
 const APPROVED_MODULE_TABLE_TARGETS = [
@@ -559,6 +567,76 @@ describe('risulua-split module-table fixture matrix', () => {
     for (const manifestPath of fixtureManifestPaths) {
       expect(existsSync(manifestPath)).toBe(true);
     }
+  });
+
+  it('asserts Gacha Island module-table fixture has store-backed public data alias and no preserved helper bodies for key clusters', () => {
+    const mainPath = path.join(GACHA_ISLAND_FIXTURE_ROOT, 'lua', 'main.risulua');
+    expect(existsSync(mainPath)).toBe(true);
+
+    const mainText = readFileSync(mainPath, 'utf8');
+
+    expect(mainText).toContain('COMPANION_POOL_BOT = __variable_store.COMPANION_POOL_BOT');
+    expect(mainText).not.toContain('local function buildRandomGachaFragment');
+    expect(mainText).not.toContain('local function _forgeApplyCat');
+  });
+
+  it('asserts Gacha Island domain-candidates have generationStatus generated with explicit grouping evidence', () => {
+    const candidatesPath = path.join(GACHA_ISLAND_FIXTURE_ROOT, 'docs', 'domain-candidates.json');
+    expect(existsSync(candidatesPath)).toBe(true);
+
+    const candidates = JSON.parse(readFileSync(candidatesPath, 'utf8'));
+    expect(candidates.version).toBe(1);
+    expect(candidates.mode).toBe('module-table');
+
+    const findCandidate = (name: string) =>
+      candidates.candidates.find((c: { name: string }) => c.name === name);
+
+    expect(findCandidate('_forgeApplyCat')).toEqual(
+      expect.objectContaining({ generationStatus: 'generated' }),
+    );
+    expect(findCandidate('buildMergedPool')).toEqual(
+      expect.objectContaining({ generationStatus: 'generated' }),
+    );
+    expect(findCandidate('pickRandomCompanion')).toEqual(
+      expect.objectContaining({ generationStatus: 'generated' }),
+    );
+    expect(findCandidate('_rerollPickReplacement')).toEqual(
+      expect.objectContaining({ generationStatus: 'generated' }),
+    );
+    expect(findCandidate('buildRandomGachaFragment')).toEqual(
+      expect.objectContaining({ generationStatus: 'generated' }),
+    );
+
+    // Cycle-coalesced fallback must have explicit diagnostic evidence, not broad repeated-token var
+    const cycleCoalescedNames = ['_forgeApplyCat', 'buildRandomGachaFragment', 'buildMergedPool', 'pickRandomCompanion'];
+    for (const name of cycleCoalescedNames) {
+      const c = findCandidate(name);
+      expect(c).toBeDefined();
+      expect(c.grouping).toEqual(
+        expect.objectContaining({ reason: 'cycle-coalesced', path: 'lua/domain/var.risulua' }),
+      );
+    }
+
+    // Cluster-policy functions must NOT be swallowed by var coalescing
+    const reroll = findCandidate('_rerollPickReplacement');
+    expect(reroll.grouping).toEqual(
+      expect.objectContaining({ reason: 'cluster-policy', path: 'lua/domain/companion_reroll.risulua' }),
+    );
+  });
+
+  it('asserts Gacha Island generated domain modules exist for key clusters', () => {
+    const domainDir = path.join(GACHA_ISLAND_FIXTURE_ROOT, 'lua', 'domain');
+    expect(existsSync(domainDir)).toBe(true);
+
+    expect(existsSync(path.join(domainDir, 'companion_reroll.risulua'))).toBe(true);
+    expect(existsSync(path.join(domainDir, 'aux_assets.risulua'))).toBe(true);
+    expect(existsSync(path.join(domainDir, 'var.risulua'))).toBe(true);
+
+    const varDomainText = readFileSync(path.join(domainDir, 'var.risulua'), 'utf8');
+    expect(varDomainText).toContain('function __impl.buildMergedPool');
+    expect(varDomainText).toContain('function __impl.pickRandomCompanion');
+    expect(varDomainText).toContain('function __impl.buildFragment');
+    expect(varDomainText).toContain('function __impl.applyCat');
   });
 });
 

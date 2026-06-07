@@ -32,7 +32,6 @@ export interface EditFrontmatterInput {
   operations: readonly FrontmatterOperationInput[];
   mode: PatchPlanMutationMode;
   preserveBody?: boolean;
-  confirmation?: { accepted: boolean; confirmationText?: string };
   postValidate?: boolean;
   expectedHash?: string;
   force?: boolean;
@@ -44,7 +43,7 @@ const TOOL_NAME = 'workbench.edit_frontmatter';
  * handleEditFrontmatter 함수.
  * artifact frontmatter에 대해 structured field operation을 preview/commit으로 실행함.
  *
- * @param input - path, operations, mode, confirmation, preserveBody, force
+ * @param input - path, operations, mode, preserveBody, force
  * @param workspace - workspace root 상태
  * @param mutationMode - 서버 mutation mode
  * @param patchStore - 공유 patch plan store
@@ -57,7 +56,7 @@ export async function handleEditFrontmatter(
   patchStore: PatchPlanStore,
 ): Promise<EditFrontmatterToolResult> {
   const unknownFieldResult = createUnknownFieldDiagnosticEnvelope({
-    allowedKeys: ['path', 'operations', 'mode', 'preserveBody', 'confirmation', 'postValidate', 'expectedHash', 'force'],
+    allowedKeys: ['path', 'operations', 'mode', 'preserveBody', 'postValidate', 'expectedHash', 'force'],
     input,
     tool: TOOL_NAME,
   });
@@ -85,7 +84,7 @@ export async function handleEditFrontmatter(
   const safePath = await resolveSafeWorkspacePath({ inputPath: editInput.path, intent: 'read-existing', workspace });
   if (!safePath.ok) {
     return createDiagnosticEnvelope({
-      diagnostics: [{ category: 'path', id: 'PATH_OUTSIDE_WORKSPACE', message: `Path resolves outside workspace: ${editInput.path} (${safePath.reason}).`, path: editInput.path, ruleId: 'path.boundary', severity: 'error' }],
+        diagnostics: [{ category: 'path', id: 'PATH_RESOLVE_FAILED', message: `Path resolution failed: ${editInput.path} (${safePath.reason}).`, path: editInput.path, ruleId: `path.${safePath.reason}`, severity: 'error' }],
       status: 'domain_error',
       tool: TOOL_NAME,
     });
@@ -144,7 +143,7 @@ export async function handleEditFrontmatter(
       createFileHashPrecondition(editInput.path, effectiveHash ?? ''),
       createInsideWorkspacePrecondition(editInput.path),
     ],
-    safety: { destructive: editInput.operations.some((o) => o.kind === 'remove'), requiresConfirmation: true, touchesGeneratedOnly: false, touchesSourceArtifacts: true },
+    safety: { destructive: editInput.operations.some((o) => o.kind === 'remove'), touchesGeneratedOnly: false, touchesSourceArtifacts: true },
     unifiedDiff: buildUnifiedDiff(editInput.path, currentContent, previewContent),
     workspaceRoot: workspace.path,
   });
@@ -161,10 +160,7 @@ export async function handleEditFrontmatter(
   }
 
   const safetyResult = await evaluateMutationSafetyGate({
-    confirmation: editInput.confirmation ? { accepted: editInput.confirmation.accepted, confirmationText: editInput.confirmation.confirmationText } : undefined,
-    expectedConfirmationText: `APPLY ${patchPlan.patchPlanId}`,
     mode: mutationMode,
-    risk: 'medium',
     targets: [{ expectedHash: effectiveHash, intent: 'write-existing' as const, path: editInput.path }],
     toolName: TOOL_NAME,
     workspace,
@@ -182,7 +178,6 @@ export async function handleEditFrontmatter(
   }
 
   return applyPatchPlan({
-    confirmation: editInput.confirmation ? { accepted: editInput.confirmation.accepted, confirmationText: editInput.confirmation.confirmationText } : undefined,
     mutationMode,
     options: { postValidate: editInput.postValidate !== false },
     patchPlan,
@@ -250,10 +245,8 @@ function parseEditFrontmatterInput(input: unknown): { input: EditFrontmatterInpu
     }
   }
   const mode: PatchPlanMutationMode = 'commit';
-  const confirmation = candidate.confirmation as EditFrontmatterInput['confirmation'] | undefined;
   return {
     input: {
-      confirmation: confirmation ? { accepted: !!confirmation.accepted, confirmationText: confirmation.confirmationText } : undefined,
       expectedHash: typeof candidate.expectedHash === 'string' ? candidate.expectedHash : undefined,
       force: typeof candidate.force === 'boolean' ? candidate.force : undefined,
       mode,

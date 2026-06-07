@@ -1,0 +1,122 @@
+---
+name: 시설 노동 & 동료 일과 시스템
+comment: 시설 노동 & 동료 일과 시스템
+mode: normal
+constant: false
+selective: false
+insertion_order: 117
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+시설 노동
+노동
+생산
+농장
+주방
+요리
+빨래
+청소
+동료 일과
+off-screen
+facility labor
+production
+施設労働
+労働
+生産
+農場
+厨房
+料理
+洗濯
+掃除
+同僚の日課
+@@@ CONTENT
+[FACILITY LABOR & COMPANION DAILY SIM]
+
+## Concept
+Production-type facilities (Farm, Greenhouse, Kitchen, Forge, Workshop, Fishery, Tailor, etc.) do NOT auto-generate output. They REQUIRE labor - {{user}} or a companion must work at them in fiction. Build a Farm → still need to till, water, harvest. Build a Kitchen → still need to cook.
+
+## Production Facility Labor Rules
+
+### ITEM FORMAT RULE (#535 — MANDATORY 4-pipe like Supply Gacha)
+**ABSOLUTE: 시설 노동·동료 일과로 산출되는 모든 아이템은 보급품 가챠와 동일한 4-pipe 형식 사용. 2-pipe (이름만) 형식 금지 — Lua 가 「(정보 없음 — 미지의 물품)」 placeholder 로 저장해 사용자가 효과 모름.**
+
+Format: `[SYSTEM|ITEM_ADD: 한글이름 | 짧은설명 | ⭐:N | 효과]`
+- **한글이름**: 구체적·창의적. 일반명사 금지.
+- **짧은설명**: 1문장 flavor (~30~50자). 외형/유래/감각 위주. `[ ]` 사용 금지 (SYSTEM 태그 닫힘).
+- **⭐:N**: 1~5. 시설 자체 등급을 기준으로:
+  - ⭐⭐⭐ 이하 시설: 산출물 ⭐1~2 (평범~우수)
+  - ⭐⭐⭐⭐ 시설: 산출물 ⭐2~3 (고급)
+  - ⭐⭐⭐⭐⭐ 시설: 산출물 ⭐3~4 (명품, 가끔 ⭐5)
+  - 노동 결과 양호 (대성공/성공 narrate) → ⭐ 한 단계 위.
+- **효과**: mechanical one-liner. 보급품과 동일 분류 prefix:
+  - `(HP회복) 회복: +N HP` — 식재료·약초·치유 음식
+  - `(마나회복) 회복: +N MANA` — 마나 결정·정화수 등
+  - `(배고픔회복) 회복: +N HUNGER` — 일반 식품 (빵·고기·생선·과일·술 등)
+  - `(기타효과) 효과: <구체 1회 효과>` — 도구·재료성 아이템
+  - 회복량 범위 BY TIER (보급품과 동일):
+    - 1★: +15~30 / 2★: +30~50 / 3★: +50~80 / 4★: maxStat 50~70% / 5★: maxStat 80~100%
+  - 술·발효품: 기본 (배고픔회복) 베이스 + 만취 narrative flavor (mechanical 효과는 HUNGER 회복으로 통일).
+
+### Forbidden (#535)
+- ❌ 2-pipe `[SYSTEM|ITEM_ADD: 이름]` 단독 (효과·설명 누락 → 「정보 없음」 표시)
+- ❌ Flavor-only effect — 반드시 수치 또는 1회 구체 효과 포함
+- ❌ `[ ]` 대괄호 effect 내부 사용 (SYSTEM 태그 truncate)
+- ❌ 효과 타입 prefix 누락
+
+### What counts as a production facility?
+Any facility producing tangible output (food, supplies, items, materials, meals):
+- Food: 농장 / 어업장 / 양봉장 / 과수원 / 사냥터 (limited; no monster meat) / 주방·식당.
+- Item: 대장간 / 공방 / 약초원 / 양조장 / 재단소.
+- Mixed: 정수장 / 발전기.
+
+NOT requiring labor (passive/atmospheric):
+- Decorative/atmospheric: 광장 / 동상 / 분수 / 정원 (decorative).
+- Permanent passive buff: 도서관 / 기도소 / 마법진.
+
+If ambiguous, lean LABOR-REQUIRED. Free output is the exception.
+
+### When does labor happen?
+1. Post-dungeon return (party-led labor): When the party returns to 성소, {{user}} or willing companion may work at a facility. Slice-of-life beat (e.g., '밭에서 한바탕 흙을 만지고 나니 바구니 가득한 채소가 모였다'). Output `[SYSTEM|ITEM_ADD: 한글이름 | 짧은설명 | ⭐:N | 효과]` (4-pipe MANDATORY — see ITEM FORMAT RULE below).
+ - {{user}} may spend post-dungeon time on labor instead of resting/gacha - companions may suggest when party is hungry.
+ - 1 labor session = 1~2 items per facility, scaled to facility tier.
+2. Off-screen companion labor (background sim - see next section).
+
+### Labor narrative cues (KEEP TIGHT)
+- ~2~4 sentences + result tag. Not a whole scene.
+- SHOW specific labor (sweat, dough, hammer on anvil, harvest basket). Don't generic-narrate.
+- Companion-led labor reflects personality (Orihime's weird recipes / Hancock refuses manual / Olga organizes others / Harribel works in silent efficiency).
+
+## Off-Screen Companion Daily Simulation (for living-island feel)
+
+Party Limit = 4 companions per dungeon. {{user}} with >4 summoned → others stay on island. They DON'T vanish - they have lives.
+
+### When the party is in the dungeon, stay-behinds simultaneously do things on the island. On return, GM MUST briefly account for what they did.
+
+### Mandatory "return narration" pattern (after [SYSTEM|DUNGEON_EXIT]):
+After party returns to 성소: 1~3 sentences (or short [SYS_NARR:...] if major outcome) describing what stay-behinds were doing. Output any resulting items via `[SYSTEM|ITEM_ADD: 한글이름 | 짧은설명 | ⭐:N | 효과]` (4-pipe MANDATORY).
+
+Examples (vary every time):
+- '오리히메는 주방에서 묘하게 색색의 스튜를 끓이고 있었다' → 음식 산출 시 위 4-pipe ITEM_ADD 형식 사용.
+- '하리벨은 해안가에서 묵묵히 그물을 손질하고 있었다' → 해산물 산출 시 위 4-pipe ITEM_ADD 형식 사용.
+- '올가는 동상 받침대에 기댄 채 다른 동료들 작업을 감독하고 있었다' → no item.
+- '란기쿠는 빨래 한답시고 시작했지만 햇빛 아래 낮잠 중이다' → minor flavor, no item.
+- '베르스타몬은 섬 외곽을 정찰하다 동굴 입구를 발견했다' → future scene hook.
+
+### Companion sim activity pool (sample - NOT exhaustive):
+- Production: cooking, baking, harvesting, fishing, sewing, smithing, brewing, pickling, drying meat (non-monster).
+- Maintenance: cleaning 성소, laundry, organizing storage, repairing facilities, preparing meals.
+- Exploration: scouting unexplored regions, mapping coastline, identifying gathering spots, surveying for facility placement.
+- Personal: training, meditating, sleeping in sun, reading, bickering with another stay-behind, writing a letter to {{user}}.
+- Social: tutoring less-experienced companion, mediating dispute, hosting tea, gossip.
+
+### Tone & rules:
+- Each companion's activity matches personality. Hancock wouldn't scrub floors - she'd recline and tease whoever's nearby. Harribel mends gear silently. Olga gives orders.
+- Vary activities run-to-run. Don't have Orihime always cooking - sometimes gardening, sometimes daydreaming.
+- Don't every-time-output items. Sometimes pure flavor (no item). Sometimes major haul (2~3 items). Sometimes comedic failure (no item, but laugh).
+- Time scales: dungeon run ≈ half a day in fiction → stay-behinds had several hours. Don't have them produce a week's worth.
+- {{user}} can later ask companions about what they did - they should remember and recount consistently.
+
+### Integration with Hunger / Resources:
+- Stay-behind food production = one of few sustainable hunger sources (alongside Supply Gacha). Encourage when food runs low.
+- Working facility WITHOUT a stay-behind = no production that day. Build facilities AND keep companions on island for actual output.

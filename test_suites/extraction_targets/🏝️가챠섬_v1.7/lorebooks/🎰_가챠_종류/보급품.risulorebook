@@ -1,0 +1,74 @@
+---
+name: 보급품
+comment: 보급품
+mode: normal
+constant: false
+selective: false
+insertion_order: 134
+case_sensitive: false
+use_regex: false
+---
+@@@ KEYS
+보급품
+아이템
+보급품 가챠
+보급품 뽑기
+Supply
+Item
+補給品
+アイテム
+補給品ガチャ
+補給品ガチャ
+@@@ CONTENT
+### Supply (Fixed 200P)
+- AI-generated consumable with a CLEARLY DEFINED, mechanically meaningful effect. ALWAYS single-use (1 use, no stacking - see DIMENSION POUCH SYSTEM single-use rule).
+- Recovery magnitude per item BY TIER (HP/MANA/HUNGER 공통):
+  - 1★: +15~30
+  - 2★: +30~50
+  - 3★: +50~80
+  - 4★: maxStat 의 50~70% (cv_maxHp / cv_maxMana / cv_maxHunger 기준)
+  - 5★: maxStat 의 80~100% (강력)
+  - Utility (⭐ 무관): 1 use
+- Tag: `[SYSTEM|GACHA: Supply Acquired - ENGLISH (한글) | 짧은설명 | ⭐:N | 효과]` + `[SYSTEM|ITEM_ADD: 한글]` (single-use, no qty suffix). 짧은설명 = 1문장 flavor (~30~50자). 효과 = `(효과타입) 회복: +N` 형식.
+- The 한글효과설명 MUST follow the EFFECT DESCRIPTION FORMAT below. Lua stores it in cv_itemDetails - AI reads it back / side panel displays it to {{user}}.
+
+## EFFECT DESCRIPTION FORMAT (MANDATORY - parens-safe for SYSTEM tag)
+Format: `(효과 타입) 효과 설명. 회복: +N` (recovery items) OR `(기타효과) 효과 설명. 효과: 사용 시 동작` (utility)
+- `(효과 타입)` prefix = HP회복 / 마나회복 / 배고픔회복 / 기타효과
+- Use parens `( )`. NEVER `[ ]` (first `]` closes SYSTEM tag).
+- Effect text: natural Korean, what the item does.
+- Recovery items: `회복: +N HP` / `회복: +N MANA` / `회복: +N HUNGER` (concrete number)
+- Utility items: `효과: <one-shot action description>` (e.g., "함정 1회 감지", "1턴 은신")
+
+### REQUIRED (each generated supply MUST have)
+1. Effect type prefix in parens: `(HP회복)` / `(마나회복)` / `(배고픔회복)` / `(기타효과)`
+2. Concrete recovery number OR specific utility action
+3. Single-use only (no stacking, no charges)
+
+### FORBIDDEN
+- ❌ Missing recovery/effect number
+- ❌ Using `[ ]` brackets (truncates SYSTEM tag)
+- ❌ Flavor-only descriptions ("기운을 북돋아준다" / "신비한 효과" / etc.)
+- ❌ Effect type prefix omitted
+- ❌ English meta-tags ("(per use)", "(single-use)", etc.) - instead state count in natural Korean if needed
+
+## 2-Tier Category Selection (MANDATORY — 가챠 supply 전용, ITEM_ADD 무관)
+Before generating, roll TWO categories independently:
+
+카테고리_1 - Style/Origin (pick one at equal probability):
+고대 / 중세 / 근대 / 현대 / 미래 / 외계 / 판타지 / 이세계
+
+카테고리_2 - Effect Type (pick one at equal probability):
+HP회복 / 마나회복 / 배고픔회복 / 기타효과
+- HP회복: Restores cv_hp. Output [SYSTEM|HP:+N 아이템 사용].
+- 마나회복: Restores cv_mana. Output [SYSTEM|MANA:+N 아이템 사용].
+- 배고픔회복: Restores cv_hunger. Output [SYSTEM|HUNGER:+N 아이템 사용]. See Hunger System for dual-effect guidelines.
+- 기타효과: Utility item (e.g., trap detection, temporary buff, environmental tool). 1 use.
+
+Generate a supply item that fits BOTH selected categories. Example: 카테고리_1=외계, 카테고리_2=마나회복 → an alien crystalline vial that restores mana.
+
+## NAMING RULES (ABSOLUTE - same anti-leak rule as Relic/Facility Gacha)
+Do NOT prefix or suffix the supply name with the category-1 word (고대/중세/근대/현대/미래/외계/판타지/이세계).
+- ❌ FORBIDDEN: '고대 회복 물약', '미래 영양 바', '외계 결정 음료'.
+- ✅ GOOD: '녹슨 약초 추출액', '뉴로 에너지 바', '제논의 결정수'.
+Invent a creative item name that implies the era/type through imagery - never name the category directly.

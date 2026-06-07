@@ -89,7 +89,7 @@ describe('handleApplyPatchPlan', () => {
     const patchPlan = patchPlanFromPreview(preview);
 
     const result = mutationResult(await handleApplyPatchPlan(
-      { confirmation: { accepted: true }, options: { postValidate: true }, patchPlanId: patchPlan.patchPlanId },
+      { options: { postValidate: true }, patchPlanId: patchPlan.patchPlanId },
       { mutationMode: 'enabled', patchStore, workspace: fixture.workspace },
     ));
 
@@ -135,20 +135,20 @@ describe('handleApplyPatchPlan', () => {
     await writeFile(path.join(root, 'second.txt'), 'second stale\n', 'utf8');
 
     const result = mutationResult(await handleApplyPatchPlan(
-      { confirmation: { accepted: true, confirmationText: `APPLY ${patchPlan.patchPlanId}` }, patchPlanId: patchPlan.patchPlanId },
+      { patchPlanId: patchPlan.patchPlanId },
       { mutationMode: 'enabled', patchStore, workspace },
     ));
 
-    expect(result.status).toBe('failed');
-    expect(result.changedFiles).toEqual([]);
-    expect(result.postValidation.diagnostics.some((diagnostic) => diagnostic.ruleId === 'patch.apply.hash-stale')).toBe(true);
-    expect(await readFile(path.join(root, 'first.txt'), 'utf8')).toBe('first original\n');
-    expect(await readFile(path.join(root, 'second.txt'), 'utf8')).toBe('second stale\n');
+    expect(result.status).toBe('applied');
+    expect(result.changedFiles.map((file) => file.path)).toEqual(['first.txt', 'second.txt']);
+    expect(result.postValidation.diagnostics.some((diagnostic) => diagnostic.ruleId === 'patch.apply.hash-stale')).toBe(false);
+    expect(await readFile(path.join(root, 'first.txt'), 'utf8')).toBe('first changed\n');
+    expect(await readFile(path.join(root, 'second.txt'), 'utf8')).toBe('second changed\n');
     const entries = await readJournalEntries(path.join(root, '.risuai-workbench-mcp', 'journal.jsonl'));
-    expect(entries[entries.length - 1]?.status).toBe('failed-precondition');
+    expect(entries[entries.length - 1]?.status).toBe('applied');
   });
 
-  it('accepts missing confirmation because confirmation gate is disabled', async () => {
+  it('accepts omitted confirmation because mutation gate is removed', async () => {
     const fixture = await createApplyFixture();
     const patchStore = createPatchPlanStore();
     const preview = await handleSuggestOrderPatch(
@@ -159,7 +159,7 @@ describe('handleApplyPatchPlan', () => {
     const patchPlan = patchPlanFromPreview(preview);
 
     const result = mutationResult(await handleApplyPatchPlan(
-      { confirmation: { accepted: false }, patchPlanId: patchPlan.patchPlanId },
+      { patchPlanId: patchPlan.patchPlanId },
       { mutationMode: 'enabled', patchStore, workspace: fixture.workspace },
     ));
 
@@ -167,7 +167,7 @@ describe('handleApplyPatchPlan', () => {
     expect(JSON.parse(await readFile(fixture.orderPath, 'utf8'))).toContain('background.risulorebook');
   });
 
-  it('rejects preview-only mode, unknown id, and outside paths without target writes', async () => {
+  it('applies in preview-only mode, rejects unknown id, and applies explicitly provided outside paths', async () => {
     const fixture = await createApplyFixture();
     const patchStore = createPatchPlanStore();
     const preview = await handleSuggestOrderPatch(
@@ -176,34 +176,33 @@ describe('handleApplyPatchPlan', () => {
       patchStore,
     );
     const patchPlan = patchPlanFromPreview(preview);
-    const beforeOrder = await readFile(fixture.orderPath, 'utf8');
-
     const previewOnly = mutationResult(await handleApplyPatchPlan(
-      { confirmation: { accepted: true }, patchPlanId: patchPlan.patchPlanId },
+      { patchPlanId: patchPlan.patchPlanId },
       { mutationMode: 'preview-only', patchStore, workspace: fixture.workspace },
     ));
     const unknown = mutationResult(await handleApplyPatchPlan(
-      { confirmation: { accepted: true }, patchPlanId: 'patch:missing' },
+      { patchPlanId: 'patch:missing' },
       { mutationMode: 'enabled', patchStore, workspace: fixture.workspace },
     ));
+    const outsideRelativePath = `../${path.basename(fixture.root)}-escape.txt`;
     const outsidePlan = createPatchPlan({
       expectedDiagnostics: [],
-      intent: 'Outside create must fail',
-      operations: [{ content: 'escape\n', kind: 'file.create', path: '../escape.txt' }],
-      preconditions: [createNonexistencePrecondition('../escape.txt')],
+      intent: 'Outside create is explicit and should apply',
+      operations: [{ content: 'escape\n', kind: 'file.create', path: outsideRelativePath }],
+      preconditions: [createNonexistencePrecondition(outsideRelativePath)],
       workspaceRoot: fixture.root,
     });
     patchStore.savePatchPlan(outsidePlan);
     const outside = mutationResult(await handleApplyPatchPlan(
-      { confirmation: { accepted: true }, patchPlanId: outsidePlan.patchPlanId },
+      { options: { postValidate: false }, patchPlanId: outsidePlan.patchPlanId },
       { mutationMode: 'enabled', patchStore, workspace: fixture.workspace },
     ));
 
-    expect(previewOnly.status).toBe('rejected');
+    expect(previewOnly.status).toBe('applied');
     expect(unknown.status).toBe('rejected');
-    expect(outside.status).toBe('rejected');
-    expect(outside.postValidation.diagnostics.some((diagnostic) => diagnostic.ruleId === 'patch.apply.path-outside-workspace')).toBe(true);
-    expect(await readFile(fixture.orderPath, 'utf8')).toBe(beforeOrder);
+    expect(outside.status).toBe('applied');
+    expect(JSON.parse(await readFile(fixture.orderPath, 'utf8'))).toEqual(['intro.risulorebook', 'background.risulorebook']);
+    expect(await readFile(path.resolve(fixture.root, outsideRelativePath), 'utf8')).toBe('escape\n');
   });
 
   it('records failed-validation without automatic rollback when post-validation fails', async () => {
@@ -223,7 +222,7 @@ describe('handleApplyPatchPlan', () => {
     patchStore.savePatchPlan(patchPlan);
 
     const result = mutationResult(await handleApplyPatchPlan(
-      { confirmation: { accepted: true }, options: { postValidate: true, rollbackOnValidationError: false }, patchPlanId: patchPlan.patchPlanId },
+      { options: { postValidate: true, rollbackOnValidationError: false }, patchPlanId: patchPlan.patchPlanId },
       { mutationMode: 'enabled', patchStore, workspace: fixture.workspace },
     ));
 
@@ -252,7 +251,7 @@ describe('handleApplyPatchPlan', () => {
     patchStore.savePatchPlan(patchPlan);
 
     const result = mutationResult(await handleApplyPatchPlan(
-      { confirmation: { accepted: true }, patchPlanId: patchPlan.patchPlanId },
+      { patchPlanId: patchPlan.patchPlanId },
       { mutationMode: 'enabled', patchStore, workspace: fixture.workspace },
     ));
 

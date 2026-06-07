@@ -1,0 +1,10 @@
+---
+comment: "ROUND 태그 숨김 (백엔드 전용 — 유저 화면에서 제거) — ROUND / ROUND_EV 묶음"
+type: editdisplay
+ableFlag: true
+flag: g
+---
+@@@ IN
+\[ROUND(?:_EV)?:[^\]]*\]
+@@@ OUT
+

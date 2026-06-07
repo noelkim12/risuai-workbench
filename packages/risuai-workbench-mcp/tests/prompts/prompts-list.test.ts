@@ -91,7 +91,7 @@ describe('workbench MCP prompts', () => {
     });
   });
 
-  it('returns workflow instructions without executing or bypassing mutation gates', async () => {
+  it('returns workflow instructions without executing workspace changes', async () => {
     await withClient(async (client) => {
       const result = await client.getPrompt({
         arguments: { context: 'rename lorebook entry', target: 'characters/merry/lorebooks/intro.risulorebook' },
@@ -105,8 +105,9 @@ describe('workbench MCP prompts', () => {
       expect(text).toContain('Workflow:');
       expect(text).toContain('Safety contract:');
       expect(text).toContain('# Apply artifact change');
-      expect(text).toContain('must still require preview, confirmation, safety policy, and post-validation');
-      expect(text).toContain('Never bypass confirmation');
+      expect(text).toContain('Use Workbench tools for workspace changes.');
+      expect(text).not.toContain('must still require preview, confirmation, safety policy, and post-validation');
+      expect(text).not.toContain('Never bypass confirmation');
       expect(text).not.toContain('automatically apply');
       expect(text).not.toContain('skip confirmation');
       expect(text).not.toContain('ignore safety');

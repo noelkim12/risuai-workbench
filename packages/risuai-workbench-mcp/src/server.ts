@@ -24,6 +24,8 @@ import { createPatchPlanStore, type PatchPlanStore } from './mutation/patch-stor
 import { registerWorkbenchPrompts } from './prompts';
 import { resolveWorkspaceRoot, type WorkspaceRootStatus } from './project/resolve-root';
 import { registerWorkbenchResources } from './resources';
+import { ContextStore } from './context/context-store';
+import { ContextToolInputSchema } from './context/context-contracts';
 
 import {
   // intent-route
@@ -91,7 +93,22 @@ import {
   handleRecommendSkills,
   // creative
   registerCreativeTools,
+  // facade
+  handleCatalog,
+  CatalogInputSchema,
+  handlePrepareAction,
+  PrepareActionInputSchema,
+  handleRunAction,
+  RunActionInputSchema,
+  handleContextTool,
+  handlePatchPreview,
+  PatchPreviewInputSchema,
+  handlePatchApply,
+  PatchApplyInputSchema,
 } from './tools';
+
+import { createWorkbenchActionRegistry } from './actions/create-registry';
+import { createUnknownActionError } from './actions/errors';
 
 export { resolveWorkspaceRoot, type WorkspaceRootStatus } from './project/resolve-root';
 
@@ -171,17 +188,30 @@ export function createMcpServer(startupContext: StartupContext): McpServer {
   );
 
   registerIntentRouteTools(server);
-  registerAuthoringSkillTools(server);
-  registerInspectValidateTools(server, startupContext.workspace);
-  registerPatchPreviewTools(server, startupContext.workspace, patchStore);
-  registerPatchApplyTools(server, startupContext, patchStore);
-  registerDirectMutationTools(server, startupContext, patchStore);
-  registerCoreWorkflowTools(server, startupContext);
-  registerAnalyzeQueryTools(server, startupContext.workspace);
-  registerAdvancedMutationTools(server, startupContext);
   registerWorkbenchResources(server, startupContext.workspace, patchStore);
   registerWorkbenchPrompts(server);
-  registerCreativeTools(server, startupContext.workspace, patchStore, startupContext.mutationMode);
+
+  const actionExecutionContext = {
+    mutationMode: startupContext.mutationMode,
+    patchStore,
+    workspace: startupContext.workspace,
+  };
+  const contextStore = new ContextStore();
+  const actionRegistry = createWorkbenchActionRegistry(actionExecutionContext);
+  registerFacadeTools(server, actionRegistry, actionExecutionContext, contextStore);
+
+  // Phase 9: legacy tools are gated behind development env var; default exposes only facade
+  if (process.env.RISU_MCP_EXPOSE_LEGACY_TOOLS === '1') {
+    registerAuthoringSkillTools(server);
+    registerInspectValidateTools(server, startupContext.workspace);
+    registerPatchPreviewTools(server, startupContext.workspace, patchStore);
+    registerPatchApplyTools(server, startupContext, patchStore);
+    registerDirectMutationTools(server, startupContext, patchStore);
+    registerCoreWorkflowTools(server, startupContext);
+    registerAnalyzeQueryTools(server, startupContext.workspace);
+    registerAdvancedMutationTools(server, startupContext);
+    registerCreativeTools(server, startupContext.workspace, patchStore, startupContext.mutationMode);
+  }
 
   return server;
 }
@@ -639,20 +669,18 @@ function registerAnalyzeQueryTools(server: McpServer, workspace: WorkspaceRootSt
 
 /**
  * registerAdvancedMutationTools 함수.
- * Phase 5 advanced mutation tools를 high-risk safety gate 뒤에 등록함.
+ * Phase 5 advanced mutation tools를 등록함.
  *
  * @param server - MCP server 인스턴스
  * @param startupContext - workspace와 mutation mode startup context
  */
 function registerAdvancedMutationTools(server: McpServer, startupContext: StartupContext): void {
-  const confirmationSchema = z.object({ accepted: z.boolean(), confirmationText: z.string().optional() }).optional();
-
   server.registerTool(
     'workbench.move_artifact',
     {
       annotations: annotationsForTool('workbench.move_artifact'),
       description: 'Move or rename an artifact while preserving suffix and optional order ownership.',
-      inputSchema: { confirmation: confirmationSchema, expectedHash: z.string().optional(), from: z.string(), mode: z.enum(['preview', 'commit']), postValidate: z.boolean().optional(), toStem: z.string(), updateOrder: z.boolean().optional() },
+      inputSchema: { expectedHash: z.string().optional(), from: z.string(), mode: z.enum(['preview', 'commit']), postValidate: z.boolean().optional(), toStem: z.string(), updateOrder: z.boolean().optional() },
       outputSchema: workbenchJsonOutputSchema,
       title: 'Move artifact',
     },
@@ -665,8 +693,8 @@ function registerAdvancedMutationTools(server: McpServer, startupContext: Startu
   server.registerTool(
     'workbench.delete_artifact',
     {
-      description: 'Delete an artifact only after exact high-risk confirmation.',
-      inputSchema: { confirmation: confirmationSchema, createBackup: z.boolean().optional(), expectedHash: z.string().optional(), mode: z.enum(['preview', 'commit']), path: z.string(), postValidate: z.boolean().optional(), updateOrder: z.boolean().optional() },
+      description: 'Delete an artifact.',
+      inputSchema: { createBackup: z.boolean().optional(), expectedHash: z.string().optional(), mode: z.enum(['preview', 'commit']), path: z.string(), postValidate: z.boolean().optional(), updateOrder: z.boolean().optional() },
       outputSchema: workbenchJsonOutputSchema,
       title: 'Delete artifact',
     },
@@ -681,7 +709,7 @@ function registerAdvancedMutationTools(server: McpServer, startupContext: Startu
     {
       annotations: annotationsForTool('workbench.ensure_wiki_root'),
       description: 'Create the minimal generated wiki root files when they are missing.',
-      inputSchema: { confirmation: confirmationSchema, mode: z.enum(['preview', 'commit']), postValidate: z.boolean().optional(), wikiRoot: z.string().optional() },
+      inputSchema: { mode: z.enum(['preview', 'commit']), postValidate: z.boolean().optional(), wikiRoot: z.string().optional() },
       outputSchema: workbenchJsonOutputSchema,
       title: 'Ensure wiki root',
     },
@@ -695,7 +723,7 @@ function registerAdvancedMutationTools(server: McpServer, startupContext: Startu
     'workbench.refresh_wiki',
     {
       description: 'Refresh proposal-approved generated wiki files only.',
-      inputSchema: { confirmation: confirmationSchema, generatedFiles: z.array(z.object({ content: z.string(), path: z.string() })).optional(), mode: z.enum(['preview', 'commit']), postValidate: z.boolean().optional(), target: z.string().optional(), wikiRoot: z.string().optional() },
+      inputSchema: { generatedFiles: z.array(z.object({ content: z.string(), path: z.string() })).optional(), mode: z.enum(['preview', 'commit']), postValidate: z.boolean().optional(), target: z.string().optional(), wikiRoot: z.string().optional() },
       outputSchema: workbenchJsonOutputSchema,
       title: 'Refresh wiki',
     },
@@ -709,7 +737,7 @@ function registerAdvancedMutationTools(server: McpServer, startupContext: Startu
     'workbench.rollback_mutation',
     {
       description: 'Rollback a journaled mutation only when inverse state is sufficient.',
-      inputSchema: { confirmation: confirmationSchema, mode: z.enum(['preview', 'commit']), mutationId: z.string() },
+      inputSchema: { mode: z.enum(['preview', 'commit']), mutationId: z.string() },
       outputSchema: workbenchJsonOutputSchema,
       title: 'Rollback mutation',
     },
@@ -722,13 +750,12 @@ function registerAdvancedMutationTools(server: McpServer, startupContext: Startu
 
 /**
  * registerCoreWorkflowTools 함수.
- * core CLI extract/scaffold workflow를 gated mutation tool로 등록함.
+ * core CLI extract/scaffold workflow를 mutation tool로 등록함.
  *
  * @param server - MCP server 인스턴스
  * @param startupContext - workspace와 mutation mode startup context
  */
 function registerCoreWorkflowTools(server: McpServer, startupContext: StartupContext): void {
-  const confirmationSchema = z.object({ accepted: z.boolean(), confirmationText: z.string().optional() }).optional();
   const risuluaFields = {
     risuluaDomainGeneration: z.enum(['report', 'validated']).optional(),
     risuluaRecovery: z.enum(['none', 'full-source']).optional(),
@@ -739,8 +766,8 @@ function registerCoreWorkflowTools(server: McpServer, startupContext: StartupCon
     'workbench.run_extract',
     {
       annotations: annotationsForTool('workbench.run_extract'),
-      description: 'Extract a .risum (module), .risuchar (character), or .risup (preset) file into a canonical workspace directory. Use this tool when the user mentions a risum/charx/risup file path and asks to extract, unpack, open, or import it. If outDir is omitted, the output directory defaults to the same directory as the source file with the filename (without extension). Risk: medium.',
-      inputSchema: { confirmation: confirmationSchema, mode: z.enum(['preview', 'commit']), outDir: z.string().optional().describe('Output directory path (workspace-relative; defaults to source filename without extension)'), postValidate: z.boolean().optional(), sourcePath: z.string(), type: z.enum(['character', 'module', 'preset']).optional(), ...risuluaFields },
+      description: 'Extract a .risum (module), .charx (character), or .risup (preset) archive into a canonical workspace directory. Use this tool when the user mentions a risum/charx/risup file path and asks to extract, unpack, open, or import it. .risuchar is a workspace root marker, not an external archive input. If outDir is omitted, the output directory defaults to the same directory as the source file with the filename (without extension). Risk: medium.',
+      inputSchema: { outDir: z.string().optional().describe('Output directory path (workspace-relative; defaults to source filename without extension)'), postValidate: z.boolean().optional(), sourcePath: z.string(), type: z.enum(['character', 'module', 'preset']).optional(), ...risuluaFields },
       outputSchema: workbenchJsonOutputSchema,
       title: 'Run extract workflow',
     },
@@ -758,7 +785,7 @@ function registerCoreWorkflowTools(server: McpServer, startupContext: StartupCon
     'workbench.run_scaffold',
     {
       description: 'Generate a new charx, module, or preset workspace skeleton using risu-core scaffold. Use this tool when the user asks to create, initialize, or scaffold a new RisuAI character, module, or preset project. If outDir is omitted, the output directory defaults to the project name in the workspace root. Risk: medium.',
-      inputSchema: { confirmation: confirmationSchema, creator: z.string().optional(), mode: z.enum(['preview', 'commit']), name: z.string(), namespace: z.string().optional(), outDir: z.string().optional(), postValidate: z.boolean().optional(), type: z.enum(['charx', 'module', 'preset']) },
+      inputSchema: { creator: z.string().optional(), name: z.string(), namespace: z.string().optional(), outDir: z.string().optional(), postValidate: z.boolean().optional(), type: z.enum(['charx', 'module', 'preset']) },
       outputSchema: workbenchJsonOutputSchema,
       title: 'Run scaffold workflow',
     },
@@ -893,9 +920,8 @@ function registerPatchApplyTools(server: McpServer, startupContext: StartupConte
     'workbench.apply_patch_plan',
     {
       annotations: annotationsForTool('workbench.apply_patch_plan'),
-      description: 'Apply a stored patch plan after confirmation and precondition checks.',
+      description: 'Apply a stored patch plan.',
       inputSchema: {
-        confirmation: z.object({ accepted: z.boolean(), confirmationText: z.string().optional() }),
         options: z.object({ createBackup: z.boolean().optional(), postValidate: z.boolean().optional(), rollbackOnValidationError: z.boolean().optional() }).optional(),
         patchPlanId: z.string(),
       },
@@ -988,9 +1014,8 @@ function registerAuthoringSkillTools(server: McpServer): void {
     'workbench.apply_skill',
     {
       annotations: annotationsForTool('workbench.apply_skill'),
-      description: applyTool?.description ?? 'Apply an approved authoring skill as a plan preview.',
+      description: applyTool?.description ?? 'Apply an authoring skill as a plan preview.',
       inputSchema: {
-        confirmation: z.object({ accepted: z.boolean(), confirmationText: z.string().optional() }).optional(),
         recommendationReason: z.string().optional(),
         request: z.string(),
         skillId: z.string(),
@@ -1193,15 +1218,12 @@ function registerInspectValidateTools(server: McpServer, workspace: WorkspaceRoo
  * @param patchStore - preview/apply가 공유하는 patch plan store
  */
 function registerDirectMutationTools(server: McpServer, startupContext: StartupContext, patchStore: PatchPlanStore): void {
-  const confirmationSchema = z.object({ accepted: z.boolean(), confirmationText: z.string().optional() }).optional();
-
   server.registerTool(
     'workbench.edit_order',
     {
       annotations: annotationsForTool('workbench.edit_order'),
       description: 'Edit _order.json through structured insert/move/remove operations.',
       inputSchema: {
-        confirmation: confirmationSchema,
         expectedHash: z.string().optional(),
         mode: z.enum(['preview', 'commit']),
         operations: z.array(z.union([
@@ -1226,7 +1248,6 @@ function registerDirectMutationTools(server: McpServer, startupContext: StartupC
     {
       description: 'Edit frontmatter fields while preserving artifact body text.',
       inputSchema: {
-        confirmation: confirmationSchema,
         expectedHash: z.string().optional(),
         force: z.boolean().optional(),
         mode: z.enum(['preview', 'commit']),
@@ -1253,7 +1274,6 @@ function registerDirectMutationTools(server: McpServer, startupContext: StartupC
       description: 'Edit root marker or metadata JSON through structured json.set operations.',
       inputSchema: {
         allowedFields: z.array(z.string()).optional(),
-        confirmation: confirmationSchema,
         expectedHash: z.string().optional(),
         mode: z.enum(['preview', 'commit']),
         operations: z.array(z.object({ jsonPointer: z.string(), kind: z.literal('json.set'), value: z.any() })),
@@ -1276,7 +1296,6 @@ function registerDirectMutationTools(server: McpServer, startupContext: StartupC
       inputSchema: {
         artifact: z.string(),
         body: z.string().optional(),
-        confirmation: confirmationSchema,
         initialFrontmatter: z.record(z.string(), z.string()).optional(),
         mode: z.enum(['preview', 'commit']),
         order: z.object({ index: z.number().int().nonnegative().optional(), insert: z.boolean() }).optional(),
@@ -1290,6 +1309,115 @@ function registerDirectMutationTools(server: McpServer, startupContext: StartupC
     async (input: unknown) => {
       const result = await handleCreateArtifact(input, startupContext.workspace, startupContext.mutationMode, patchStore);
       return createJsonToolResult(result);
+    },
+  );
+}
+
+/**
+ * registerFacadeTools 함수.
+ * Phase 3 facade MVP tools (catalog, prepare_action, run_action)와
+ * Phase 6 context tool을 MCP server에 등록함.
+ * Legacy tools와 병렬로 노출되며, facade-only switch는 Phase 9에서 수행함.
+ *
+ * @param server - MCP server 인스턴스
+ * @param registry - ActionRegistry with Phase 2+ actions
+ * @param executionContext - shared action execution context
+ * @param contextStore - in-memory context store for handle-based lazy loading
+ */
+function registerFacadeTools(
+  server: McpServer,
+  registry: ReturnType<typeof createWorkbenchActionRegistry>,
+  executionContext: { mutationMode: MutationMode; patchStore: PatchPlanStore; workspace: WorkspaceRootStatus },
+  contextStore: ContextStore,
+): void {
+  server.registerTool(
+    'workbench.catalog',
+    {
+      description: 'List workbench actions with metadata. Use extension affordance to query: core.run_extract for .risum/.charx/.risup, analyze.query_lua_analysis for .risulua, validate.cbs_syntax for CBS files, validate.root_markers for .risuchar/.risumodule, patch.suggest_order for _order.json.',
+      inputSchema: CatalogInputSchema.shape,
+      outputSchema: workbenchJsonOutputSchema,
+      title: 'Catalog actions',
+    },
+    async (input: Parameters<typeof handleCatalog>[0]) => {
+      const result = handleCatalog(input, registry);
+      return createJsonToolResult(result);
+    },
+  );
+
+  server.registerTool(
+    'workbench.prepare_action',
+    {
+      description: 'Describe input requirements for a single action before running it. For RisuAI archive extraction, prepare actionId core.run_extract; do not prepare legacy workbench.run_extract in default facade mode.',
+      inputSchema: PrepareActionInputSchema.shape,
+      outputSchema: workbenchJsonOutputSchema,
+      title: 'Prepare action',
+    },
+    async (input: Parameters<typeof handlePrepareAction>[0]) => {
+      const result = handlePrepareAction(input, registry);
+      if (!result) {
+        let suggestions = registry.search({ query: input.actionId, limit: 4 });
+        if (suggestions.length === 0) {
+          suggestions = registry.list().slice(0, 4);
+        }
+        return createJsonToolResult(createUnknownActionError(input.actionId, suggestions));
+      }
+      return createJsonToolResult(result);
+    },
+  );
+
+  server.registerTool(
+    'workbench.run_action',
+    {
+      description: 'Execute an action with validated input. For .risum/.charx/.risup extraction, run actionId core.run_extract; for .risulua and CBS files prefer analysis/validation before mutation; do not use generic ZipFile/unzip for canonical workbench extraction.',
+      inputSchema: RunActionInputSchema.shape,
+      outputSchema: workbenchJsonOutputSchema,
+      title: 'Run action',
+    },
+    async (input: Parameters<typeof handleRunAction>[0]) => {
+      const result = await handleRunAction(input, registry, executionContext, contextStore);
+      return createJsonToolResult(result as Record<string, unknown>);
+    },
+  );
+
+  server.registerTool(
+    'workbench.context',
+    {
+      description: 'Create, read, search, summarize, or release in-memory context records for lazy loading large inputs.',
+      inputSchema: ContextToolInputSchema.shape,
+      outputSchema: workbenchJsonOutputSchema,
+      title: 'Manage context',
+    },
+    async (input: Parameters<typeof handleContextTool>[0]) => {
+      const result = handleContextTool(input, contextStore);
+      return createJsonToolResult(result);
+    },
+  );
+
+  server.registerTool(
+    'workbench.patch_preview',
+    {
+      description: 'Preview patch plans safely. Execute a registered preview action by actionId+args, or pass through a supplied patchPlan object.',
+      inputSchema: PatchPreviewInputSchema.shape,
+      outputSchema: workbenchJsonOutputSchema,
+      title: 'Patch preview',
+    },
+    async (input: Parameters<typeof handlePatchPreview>[0]) => {
+      const result = await handlePatchPreview(input, registry, executionContext, contextStore);
+      return createJsonToolResult(result as unknown as Record<string, unknown>);
+    },
+  );
+
+  server.registerTool(
+    'workbench.patch_apply',
+    {
+      description: 'Apply a stored patch plan.',
+      inputSchema: PatchApplyInputSchema.shape,
+      outputSchema: workbenchJsonOutputSchema,
+      title: 'Patch apply',
+    },
+    async (input: Parameters<typeof handlePatchApply>[0]) => {
+      const result = await handlePatchApply(input, executionContext);
+      return createJsonToolResult(result as unknown as Record<string, unknown>);
     },
   );
 }

@@ -68,7 +68,7 @@ function mutationResult(result: DiagnosticEnvelope | MutationResultEnvelope): Mu
 }
 
 describe('handleRollbackMutation', () => {
-  it('accepts missing or wrong confirmation because confirmation gate is disabled', async () => {
+  it('rolls back without confirmation', async () => {
     const missingFixture = await createRollbackFixture();
     const wrongFixture = await createRollbackFixture();
 
@@ -78,7 +78,7 @@ describe('handleRollbackMutation', () => {
       'enabled',
     ));
     const wrong = mutationResult(await handleRollbackMutation(
-      { confirmation: { accepted: true, confirmationText: `ROLLBACK ${wrongFixture.mutationId}-wrong` }, mode: 'commit', mutationId: wrongFixture.mutationId },
+      { mode: 'commit', mutationId: wrongFixture.mutationId },
       wrongFixture.workspace,
       'enabled',
     ));

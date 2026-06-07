@@ -1,0 +1,10 @@
+---
+comment: "시스템 알림 - DEFEAT"
+type: editdisplay
+ableFlag: true
+flag: g<cbs>
+---
+@@@ IN
+\[SYSTEM\|DEFEAT\]
+@@@ OUT
+{{#if {{greater_equal::{{chat_index}}::{{? {{lastmessageid}}-5}}}}}}<div class="sys-alert sys-alert-defeat"><div class="sys-alert-icon">💀</div><div class="sys-alert-body"><span class="sys-alert-tag">전멸</span><div class="sys-alert-desc">파티 전멸 - 가챠 티켓 전량 몰수 / 포인트 50% 차감 / 성소로 귀환</div></div></div>{{/if}}

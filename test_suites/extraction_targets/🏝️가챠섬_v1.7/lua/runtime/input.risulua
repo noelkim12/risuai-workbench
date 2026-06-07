@@ -1,0 +1,87 @@
+local __domain_var = require("domain.var")
+local __domain_roll = require("domain.roll")
+
+local M = {}
+
+local onInput
+
+onInput = async(function(triggerId)
+    -- 매 입력마다 PRNG seed refresh — 모든 random 호출 (전투/층/던전) 분산
+    __domain_var.refreshSeed(triggerId)
+
+    -- #373 (Bug 1, 3, 5): 일반 유저 입력 시 사이드패널 stay-open 플래그 일괄 해제.
+    -- 버튼은 addChat-driven → onInput 발동 안 함 (button-path).
+    -- onInput 발동 = 유저가 직접 타이핑 → 패널 잔여 stay-open 모두 해제 (가챠/인벤/강화/가이드).
+    setChatVar(triggerId, "cv_gachaPanelOpen", "0")
+    setChatVar(triggerId, "cv_invOpen",        "0")
+    setChatVar(triggerId, "cv_forgeOpen",      "0")
+    setChatVar(triggerId, "cv_guideOpen",      "0")
+    setChatVar(triggerId, "cv_forgeActiveSlot","0")
+
+    -- #446: rate 계산 + result/basic/ulti 결정은 rollCombatResult 헬퍼에서 처리.
+    __domain_roll.rollCombatResult(triggerId)
+
+    -- =============================================
+    -- FLOOR CONDITION PRE-ROLL (층 컨디션 사전 결정)
+    -- 25% 확률로 발생. 발생 시 5가지 컨디션 중 무작위 선택.
+    -- 저장 형식: "없음" 또는 컨디션 이름
+    -- =============================================
+    -- 모듈 레벨 FLOOR_CONDITIONS + rollFloorCondition 헬퍼 사용 (dungeonNextFloor와 일관)
+    local nextCond, condRoll = __domain_var.rollFloorCondition()
+    setChatVar(triggerId, "cv_nextFloorCondition", nextCond)
+    print(string.format("[GachaIsland] FLOOR_CONDITION_PREROLL (onInput): %d/100 → %s", condRoll, nextCond))
+
+    -- 첫 던전 진입 대비 pre-sync: 던전 밖일 때만 cv_activeFloorCondition 동기화
+    -- (이래야 AI가 자연어 "던전 가자" 입력 시 프롬프트에 활성 컨디션이 박혀 있어 narration 가능)
+    -- 던전 안일 땐 sync 안 함 — 현재 floor 진행 중인 활성 컨디션을 덮어쓰지 않기 위함
+    if __domain_var.safeGetVar(triggerId, "cv_dungeonActive", "0") ~= "1" then
+        setChatVar(triggerId, "cv_activeFloorCondition", nextCond)
+        print(string.format("[GachaIsland] FLOOR_CONDITION_PRESYNC (outside dungeon): %s", nextCond))
+    end
+
+    -- 직전 user 메시지 캡처 (이하 여러 곳에서 사용)
+    -- NOTE: button-path는 onInput이 발동 안 함 (addChat-driven user msg 특성).
+    -- 버튼 진입 시 floor condition·dungeon type pre-roll은 dungeonNextFloor에서 직접 처리.
+    -- 여기서 [DUNGEON_TYPE:...] 가드는 자연 narrative 경로에서 우연히 태그 들어간 케이스 안전망.
+    local lastUserMsg = ""
+    local chatLen = getChatLength(triggerId)
+    if chatLen > 0 then
+        local m = getChat(triggerId, chatLen - 1)
+        if m and m.role == "user" and m.data then lastUserMsg = m.data end
+    end
+
+    -- =============================================
+    -- DUNGEON TYPE PRE-ROLL (던전 타입 사전 결정)
+    -- 5종 균등 + cv_lastDungeonType 회피 (AI positional bias 차단)
+    -- AI는 floor entry SYS_NARR에서 cv_nextDungeonType verbatim 사용
+    --
+    -- 가드: 직전 user msg에 [DUNGEON_TYPE:...] 태그가 있으면 (dungeonNextFloor 버튼 경로)
+    -- pre-roll 스킵 → 버튼이 이미 픽한 값을 덮어쓰지 않음
+    -- =============================================
+    if lastUserMsg:match("%[DUNGEON_TYPE:[^%]]+%]") then
+        print("[GachaIsland] DUNGEON_TYPE_PREROLL: SKIPPED (user msg has [DUNGEON_TYPE:...] tag — button-driven path)")
+    else
+        -- 2-back exclusion (last + prev) + Fisher-Yates shuffle — dungeonNextFloor와 동일 정책
+        local dungeonTypes = { "탐색형", "토벌형", "미로형", "결전형" }
+        local last = __domain_var.safeGetVar(triggerId, "cv_lastDungeonType", "None")
+        local prev = __domain_var.safeGetVar(triggerId, "cv_prevDungeonType", "None")
+        local dPool = {}
+        for _, t in ipairs(dungeonTypes) do
+            if t ~= last and t ~= prev then table.insert(dPool, t) end
+        end
+        if #dPool == 0 then
+            for _, t in ipairs(dungeonTypes) do table.insert(dPool, t) end
+        end
+        for i = #dPool, 2, -1 do
+            local j = math.random(i)
+            dPool[i], dPool[j] = dPool[j], dPool[i]
+        end
+        local pickedDType = dPool[math.random(#dPool)]
+        setChatVar(triggerId, "cv_nextDungeonType", pickedDType)
+        print(string.format("[GachaIsland] DUNGEON_TYPE_PREROLL: %s (avoid: last=%s, prev=%s)", pickedDType, last, prev))
+    end
+end)
+
+M.onInput = onInput
+
+return M

@@ -1,0 +1,10 @@
+---
+comment: "ROUND LLM 컨텍스트 strip (옛 msg 만 — last user msg 의 editRequest inject 는 보존)"
+type: editprocess
+ableFlag: true
+flag: g
+---
+@@@ IN
+\[ROUND(?:_EV)?:[^\]]*\]
+@@@ OUT
+{{#when::{{chat_index}}::is::{{lastmessageid}}}}$&{{:else}}{{/when}}

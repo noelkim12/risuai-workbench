@@ -1,0 +1,9 @@
+---
+comment: "STATUS_PANEL 태그 LLM 입력에서 strip (#334)"
+type: editrequest
+ableFlag: false
+---
+@@@ IN
+\[STATUS_PANEL\][\s\S]*?\[/STATUS_PANEL\]
+@@@ OUT
+

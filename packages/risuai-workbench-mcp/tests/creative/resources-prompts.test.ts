@@ -99,7 +99,7 @@ describe('creative resources and prompts', () => {
         expect(payload.schema).toBe('risuai-workbench-mcp.resource');
         expect(payload.status).toBe('ok');
         expect(text).toContain(sourcePath);
-        expect(text).toContain('preview, explicit confirmation, gated mutation tools');
+        expect(text).toContain('Workbench apply tools');
         expect(text.length).toBeLessThan(5000);
         expect(text).not.toContain('creative layer는 structure MCP와 같은 mutation safety를 따른다');
       }
@@ -154,9 +154,7 @@ describe('creative resources and prompts', () => {
         const text = content?.type === 'text' ? content.text : '';
 
         expect(text).toContain('Safety contract:');
-        expect(text).toContain('Treat resources as read-only context only');
-        expect(text).toContain('must still require preview, confirmation, safety policy, and post-validation');
-        expect(text).toContain('gated mutation tool');
+        expect(text).toContain('Use Workbench tools; prompts do not write files.');
         expect(text.length).toBeLessThan(3000);
         expect(text).not.toContain('creative layer는 structure MCP와 같은 mutation safety를 따른다');
         expect(text).not.toContain('This prompt is registered but not implemented yet.');

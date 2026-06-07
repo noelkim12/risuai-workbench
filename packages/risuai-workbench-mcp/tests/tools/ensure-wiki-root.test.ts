@@ -35,7 +35,7 @@ describe('handleEnsureWikiRoot', () => {
     const fixture = await createFixture();
 
     const result = mutationResult(await handleEnsureWikiRoot(
-      { confirmation: { accepted: true }, mode: 'commit' },
+      { mode: 'commit' },
       fixture.workspace,
       'generated-only',
     ));
@@ -72,7 +72,7 @@ describe('handleEnsureWikiRoot', () => {
     await writeFile(path.join(fixture.root, 'wiki', 'SCHEMA.md'), 'custom schema\n', 'utf8');
 
     const result = mutationResult(await handleEnsureWikiRoot(
-      { confirmation: { accepted: true }, mode: 'commit' },
+      { mode: 'commit' },
       fixture.workspace,
       'generated-only',
     ));
@@ -88,10 +88,10 @@ describe('handleEnsureWikiRoot', () => {
 
   it('returns no-op diagnostics when bootstrap files already exist', async () => {
     const fixture = await createFixture();
-    await handleEnsureWikiRoot({ confirmation: { accepted: true }, mode: 'commit' }, fixture.workspace, 'generated-only');
+    await handleEnsureWikiRoot({ mode: 'commit' }, fixture.workspace, 'generated-only');
 
     const result = diagnosticEnvelope(await handleEnsureWikiRoot(
-      { confirmation: { accepted: true }, mode: 'commit' },
+      { mode: 'commit' },
       fixture.workspace,
       'generated-only',
     ));
@@ -104,7 +104,7 @@ describe('handleEnsureWikiRoot', () => {
     const fixture = await createFixture();
 
     const result = diagnosticEnvelope(await handleEnsureWikiRoot(
-      { confirmation: { accepted: true }, mode: 'commit', wikiRoot: 'project/wiki' },
+      { mode: 'commit', wikiRoot: 'project/wiki' },
       fixture.workspace,
       'generated-only',
     ));

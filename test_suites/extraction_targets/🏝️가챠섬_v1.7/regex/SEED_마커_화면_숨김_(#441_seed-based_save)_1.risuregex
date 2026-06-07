@@ -1,0 +1,10 @@
+---
+comment: "SEED 마커 화면 숨김 (#441 seed-based save)"
+type: editdisplay
+ableFlag: true
+flag: g
+---
+@@@ IN
+<!--\[SEED\|[^\]]+\]-->
+@@@ OUT
+

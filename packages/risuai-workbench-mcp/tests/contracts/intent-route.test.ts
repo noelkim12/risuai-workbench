@@ -28,6 +28,8 @@ describe('intent route contract', () => {
       'artifact.frontmatter.preview',
       'artifact.order.preview',
       'wiki.refresh.preview',
+      'core.scaffold.preview',
+      'core.extract.preview',
       'analyze.variable_flow',
       'analyze.lua_handler',
       'creative.idea_to_patch',
@@ -45,6 +47,38 @@ describe('intent route contract', () => {
     expect(() => workbenchIntentSchema.parse('invalid.intent')).toThrow();
     expect(() => workbenchIntentSchema.parse('artifact.patch')).toThrow();
     expect(() => workbenchIntentSchema.parse('')).toThrow();
+  });
+
+  it('accepts core.extract.preview in a full route result', () => {
+    const parsed = intentRouteResultSchema.parse({
+      allowedTools: ['workbench.inspect_path'],
+      blockedTools: ['workbench.apply_patch_plan'],
+      capabilities: ['mutation.direct'],
+      commitAllowed: true,
+      confidence: 0.9,
+      explanation: 'Extract request for RisuAI archive.',
+      intent: 'core.extract.preview',
+      missingInputs: [],
+      mutationMode: 'guarded_direct',
+      mutationRequested: true,
+      nextInput: { capability: 'mutation.direct', query: 'extract', limit: 5 },
+      nextStep: 'apply',
+      nextTool: 'workbench.catalog',
+      recommendedActions: ['core.run_extract'],
+      recommendedTools: ['workbench.catalog', 'workbench.prepare_action', 'workbench.run_action'],
+      requiredEvidence: [],
+      risk: 'external_process',
+      routeId: 'route_extract',
+      schema: 'risuai-workbench-mcp.intent-route',
+      schemaVersion: '0.1.0',
+      stopConditions: [],
+      targetKind: 'path',
+    });
+
+    expect(parsed.intent).toBe('core.extract.preview');
+    expect(parsed.risk).toBe('external_process');
+    expect(parsed.recommendedActions).toEqual(['core.run_extract']);
+    expect(parsed.nextInput).toEqual({ capability: 'mutation.direct', query: 'extract', limit: 5 });
   });
 
   it('accepts every valid RouteRisk value', () => {
@@ -102,7 +136,6 @@ describe('intent route contract', () => {
       'analyze',
       'creative_review',
       'preview',
-      'confirm',
       'apply',
       'post_validate',
       'answer',
@@ -126,7 +159,6 @@ describe('intent route contract', () => {
       'ambiguous_target',
       'outside_workspace',
       'preview_required',
-      'confirmation_required',
       'patch_plan_required',
       'hash_precondition_required',
       'blocking_diagnostics',
@@ -165,13 +197,17 @@ describe('intent route contract', () => {
     const parsed = intentRouteResultSchema.parse({
       allowedTools: ['workbench.inspect_path'],
       blockedTools: ['workbench.apply_patch_plan'],
+      capabilities: ['inspect'],
       commitAllowed: false,
       confidence: 0.85,
       explanation: 'Read-only inspect request with no mutation language.',
       intent: 'artifact.inspect',
       missingInputs: [],
       mutationRequested: false,
+      nextInput: { capability: 'inspect', limit: 5 },
       nextStep: 'inspect',
+      nextTool: 'workbench.catalog',
+      recommendedActions: ['inspect.path', 'inspect.artifact'],
       requiredEvidence: [],
       risk: 'read_only',
       routeId: 'route_abc123',
@@ -186,12 +222,154 @@ describe('intent route contract', () => {
     expect(parsed.intent).toBe('artifact.inspect');
     expect(parsed.risk).toBe('read_only');
     expect(parsed.nextStep).toBe('inspect');
+    expect(parsed.capabilities).toEqual(['inspect']);
+    expect(parsed.recommendedActions).toEqual(['inspect.path', 'inspect.artifact']);
+    expect(parsed.nextTool).toBe('workbench.catalog');
+    expect(parsed.nextInput).toEqual({ capability: 'inspect', limit: 5 });
+  });
+
+  it('accepts compact canonical intent metadata without payload bodies', () => {
+    const canonicalInput = {
+      taskType: 'analyze',
+      targets: [{ id: 'preset', confidence: 0.88, evidence: ['프리셋'] }],
+      extensions: [{ id: '.risuregex', confidence: 0.92, evidence: ['regex'] }],
+      upstreamFields: [{ id: 'presetRegex', extension: '.risuregex' }],
+      pathCandidates: [{ path: 'regex', reason: 'preset regex directory' }],
+      contextKinds: ['artifact-candidates', 'canonical-rules'],
+      actionIds: ['analyze.query_composition_conflicts', 'validate.artifact'],
+      resourceLinks: [
+        'risuai-workbench://wiki/custom-extension/targets/preset.md',
+        'risuai-workbench://wiki/custom-extension/extensions/regex.md',
+      ],
+      truncated: false,
+    };
+
+    const parsed = intentRouteResultSchema.parse({
+      allowedTools: ['workbench.inspect_path'],
+      blockedTools: ['workbench.apply_patch_plan'],
+      canonical: canonicalInput,
+      capabilities: ['analyze'],
+      commitAllowed: false,
+      confidence: 0.86,
+      discouragedTools: [],
+      domainTags: ['preset', 'regex'],
+      explanation: 'Preset regex conflict analysis detected.',
+      intent: 'analyze.variable_flow',
+      missingInputs: ['presetRoot'],
+      mutationMode: 'none',
+      mutationRequested: false,
+      nextInput: { capability: 'analyze', limit: 5 },
+      nextStep: 'analyze',
+      nextTool: 'workbench.catalog',
+      recommendedActions: ['analyze.query_composition_conflicts'],
+      recommendedTools: ['workbench.catalog', 'workbench.prepare_action', 'workbench.run_action'],
+      requiredEvidence: [],
+      risk: 'read_only',
+      routeId: 'route_canonical',
+      routingSignals: ['analyze', 'domain:preset', 'domain:regex'],
+      schema: 'risuai-workbench-mcp.intent-route',
+      schemaVersion: '0.1.0',
+      stopConditions: ['missing_target'],
+      targetKind: 'artifact_root',
+    });
+
+    expect(parsed.canonical?.taskType).toBe('analyze');
+    expect(parsed.canonical?.targets).toHaveLength(1);
+    expect(parsed.canonical?.extensions[0].id).toBe('.risuregex');
+    expect(JSON.stringify(parsed.canonical)).not.toContain('@@@ CONTENT');
+    expect(JSON.stringify(parsed.canonical)).not.toContain('fullText');
+
+    // Verify helper preserves canonical field
+    const helperResult = createIntentRouteResult({
+      allowedTools: ['workbench.inspect_path'],
+      blockedTools: ['workbench.apply_patch_plan'],
+      canonical: canonicalInput as unknown as import('../../src/contracts/intent-route').CompactCanonicalIntent,
+      capabilities: ['analyze'],
+      commitAllowed: false,
+      confidence: 0.86,
+      discouragedTools: [],
+      domainTags: ['preset', 'regex'],
+      explanation: 'Preset regex conflict analysis detected.',
+      intent: 'analyze.variable_flow',
+      missingInputs: ['presetRoot'],
+      mutationMode: 'none',
+      mutationRequested: false,
+      nextInput: { capability: 'analyze', limit: 5 },
+      nextStep: 'analyze',
+      nextTool: 'workbench.catalog',
+      recommendedActions: ['analyze.query_composition_conflicts'],
+      recommendedTools: ['workbench.catalog', 'workbench.prepare_action', 'workbench.run_action'],
+      requiredEvidence: [],
+      risk: 'read_only',
+      routeId: 'route_canonical',
+      routingSignals: ['analyze', 'domain:preset', 'domain:regex'],
+      stopConditions: ['missing_target'],
+      targetKind: 'artifact_root',
+    });
+
+    expect(helperResult.canonical).toEqual(canonicalInput);
+  });
+
+  it('accepts compact canonical intent with extension affordance action ids', () => {
+    const canonicalInput = {
+      taskType: 'analyze',
+      targets: [],
+      extensions: [{ id: '.risulua', confidence: 0.9, evidence: ['.risulua'] }],
+      upstreamFields: [{ id: 'triggerscript', extension: '.risulua' }],
+      pathCandidates: [],
+      contextKinds: ['artifact-candidates', 'canonical-rules'],
+      actionIds: [
+        'analyze.query_lua_analysis',
+        'analyze.query_lua_call_graph',
+        'analyze.query_lua_state_access',
+      ],
+      resourceLinks: ['risuai-workbench://wiki/custom-extension/extensions/lua.md'],
+      truncated: false,
+    };
+
+    const parsed = intentRouteResultSchema.parse({
+      allowedTools: ['workbench.inspect_path'],
+      blockedTools: ['workbench.apply_patch_plan'],
+      canonical: canonicalInput,
+      capabilities: ['analyze'],
+      commitAllowed: false,
+      confidence: 0.9,
+      discouragedTools: [],
+      domainTags: ['risulua'],
+      explanation: 'RisuLua path analysis detected.',
+      intent: 'analyze.lua_handler',
+      missingInputs: [],
+      mutationMode: 'none',
+      mutationRequested: false,
+      nextInput: { capability: 'analyze', limit: 5 },
+      nextStep: 'analyze',
+      nextTool: 'workbench.catalog',
+      recommendedActions: ['analyze.query_lua_analysis'],
+      recommendedTools: ['workbench.catalog', 'workbench.prepare_action', 'workbench.run_action'],
+      requiredEvidence: [],
+      risk: 'read_only',
+      routeId: 'route_extension_affordance',
+      routingSignals: ['analyze', 'file_affordance:risulua'],
+      schema: 'risuai-workbench-mcp.intent-route',
+      schemaVersion: '0.1.0',
+      stopConditions: [],
+      targetKind: 'lua_handler',
+    });
+
+    expect(parsed.canonical?.actionIds).toEqual(
+      expect.arrayContaining([
+        'analyze.query_lua_analysis',
+        'analyze.query_lua_call_graph',
+        'analyze.query_lua_state_access',
+      ]),
+    );
   });
 
   it('accepts route guidance fields for recommended, discouraged, domain, and signal metadata', () => {
     const parsed = intentRouteResultSchema.parse({
       allowedTools: ['workbench.inspect_path', 'workbench.validate_frontmatter'],
       blockedTools: ['workbench.apply_patch_plan'],
+      capabilities: ['patch.preview'],
       commitAllowed: false,
       confidence: 0.86,
       discouragedTools: ['workbench.edit_frontmatter'],
@@ -200,32 +378,41 @@ describe('intent route contract', () => {
       intent: 'artifact.frontmatter.preview',
       missingInputs: [],
       mutationRequested: true,
+      nextInput: { capability: 'patch.preview', limit: 5 },
       nextStep: 'preview',
-      recommendedTools: ['workbench.inspect_path', 'workbench.validate_frontmatter', 'workbench.suggest_frontmatter_patch'],
+      nextTool: 'workbench.catalog',
+      recommendedActions: ['patch.suggest_frontmatter'],
+      recommendedTools: ['workbench.patch_preview', 'workbench.catalog', 'workbench.prepare_action', 'workbench.run_action'],
       requiredEvidence: ['resolved target path', 'current frontmatter fields'],
       risk: 'preview_only',
       routeId: 'route_guidance',
       routingSignals: ['mutation', 'frontmatter', 'domain:lorebook'],
       schema: 'risuai-workbench-mcp.intent-route',
       schemaVersion: '0.1.0',
-      stopConditions: ['preview_required', 'confirmation_required'],
+      stopConditions: ['preview_required'],
       targetKind: 'path',
     });
 
     expect(parsed.recommendedTools).toEqual([
-      'workbench.inspect_path',
-      'workbench.validate_frontmatter',
-      'workbench.suggest_frontmatter_patch',
+      'workbench.patch_preview',
+      'workbench.catalog',
+      'workbench.prepare_action',
+      'workbench.run_action',
     ]);
     expect(parsed.discouragedTools).toEqual(['workbench.edit_frontmatter']);
     expect(parsed.domainTags).toEqual(['lorebook', 'frontmatter']);
     expect(parsed.routingSignals).toEqual(['mutation', 'frontmatter', 'domain:lorebook']);
+    expect(parsed.capabilities).toEqual(['patch.preview']);
+    expect(parsed.recommendedActions).toEqual(['patch.suggest_frontmatter']);
+    expect(parsed.nextTool).toBe('workbench.catalog');
+    expect(parsed.nextInput).toEqual({ capability: 'patch.preview', limit: 5 });
   });
 
   it('accepts advisory mutation mode as part of the compiled workflow state', () => {
     const parsed = intentRouteResultSchema.parse({
       allowedTools: ['workbench.edit_frontmatter'],
       blockedTools: [],
+      capabilities: ['patch.preview'],
       commitAllowed: false,
       confidence: 0.88,
       discouragedTools: [],
@@ -235,8 +422,11 @@ describe('intent route contract', () => {
       missingInputs: [],
       mutationMode: 'guarded_direct',
       mutationRequested: true,
+      nextInput: { capability: 'patch.preview', limit: 5 },
       nextStep: 'apply',
-      recommendedTools: ['workbench.edit_frontmatter'],
+      nextTool: 'workbench.catalog',
+      recommendedActions: ['patch.suggest_frontmatter'],
+      recommendedTools: ['workbench.patch_preview', 'workbench.catalog', 'workbench.prepare_action', 'workbench.run_action'],
       requiredEvidence: [
         'resolved workspace-relative path',
         'explicit frontmatter field name',
@@ -252,6 +442,9 @@ describe('intent route contract', () => {
     });
 
     expect(parsed.mutationMode).toBe('guarded_direct');
+    expect(parsed.capabilities).toEqual(['patch.preview']);
+    expect(parsed.recommendedActions).toEqual(['patch.suggest_frontmatter']);
+    expect(parsed.nextTool).toBe('workbench.catalog');
   });
 
   it('defaults mutationMode to none when omitted for backward-compatible parsing', () => {
@@ -275,6 +468,10 @@ describe('intent route contract', () => {
     });
 
     expect(parsed.mutationMode).toBe('none');
+    expect(parsed.capabilities).toEqual([]);
+    expect(parsed.recommendedActions).toEqual([]);
+    expect(parsed.nextTool).toBe('workbench.catalog');
+    expect(parsed.nextInput).toEqual({});
   });
 
   it('defaults route guidance fields to empty arrays when omitted', () => {
@@ -301,6 +498,10 @@ describe('intent route contract', () => {
     expect(parsed.discouragedTools).toEqual([]);
     expect(parsed.domainTags).toEqual([]);
     expect(parsed.routingSignals).toEqual([]);
+    expect(parsed.capabilities).toEqual([]);
+    expect(parsed.recommendedActions).toEqual([]);
+    expect(parsed.nextTool).toBe('workbench.catalog');
+    expect(parsed.nextInput).toEqual({});
   });
 
   it('rejects non-array route guidance fields', () => {
@@ -473,13 +674,17 @@ describe('intent route contract', () => {
       route: {
         allowedTools: ['workbench.inspect_path'],
         blockedTools: [],
+        capabilities: ['inspect'],
         commitAllowed: false,
         confidence: 0.9,
         explanation: 'Workspace inspect request.',
         intent: 'workspace.inspect',
         missingInputs: [],
         mutationRequested: false,
+        nextInput: { capability: 'inspect', limit: 5 },
         nextStep: 'inspect',
+        nextTool: 'workbench.catalog',
+        recommendedActions: ['inspect.path', 'inspect.artifact'],
         requiredEvidence: [],
         risk: 'read_only',
         routeId: 'route_def456',
@@ -492,12 +697,16 @@ describe('intent route contract', () => {
 
     expect(parsed.route.schema).toBe('risuai-workbench-mcp.intent-route');
     expect(parsed.route.schemaVersion).toBe('0.1.0');
+    expect(parsed.route.capabilities).toEqual(['inspect']);
+    expect(parsed.route.recommendedActions).toEqual(['inspect.path', 'inspect.artifact']);
+    expect(parsed.route.nextTool).toBe('workbench.catalog');
   });
 
   it('createIntentRouteResult preserves schema marker and version', () => {
     const result = createIntentRouteResult({
       allowedTools: ['workbench.inspect_path'],
       blockedTools: ['workbench.apply_patch_plan'],
+      capabilities: ['inspect'],
       commitAllowed: false,
       confidence: 0.85,
       discouragedTools: [],
@@ -507,8 +716,11 @@ describe('intent route contract', () => {
       missingInputs: [],
       mutationMode: 'none',
       mutationRequested: false,
+      nextInput: { capability: 'inspect', limit: 5 },
       nextStep: 'inspect',
-      recommendedTools: ['workbench.inspect_path'],
+      nextTool: 'workbench.catalog',
+      recommendedActions: ['inspect.path', 'inspect.artifact'],
+      recommendedTools: ['workbench.catalog', 'workbench.prepare_action', 'workbench.run_action'],
       requiredEvidence: [],
       risk: 'read_only',
       routeId: 'route_abc123',
@@ -523,5 +735,9 @@ describe('intent route contract', () => {
     expect(result.risk).toBe('read_only');
     expect(result.nextStep).toBe('inspect');
     expect(result.targetKind).toBe('path');
+    expect(result.capabilities).toEqual(['inspect']);
+    expect(result.recommendedActions).toEqual(['inspect.path', 'inspect.artifact']);
+    expect(result.nextTool).toBe('workbench.catalog');
+    expect(result.nextInput).toEqual({ capability: 'inspect', limit: 5 });
   });
 });

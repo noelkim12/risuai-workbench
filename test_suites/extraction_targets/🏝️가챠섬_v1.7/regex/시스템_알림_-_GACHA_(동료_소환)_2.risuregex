@@ -1,0 +1,10 @@
+---
+comment: "시스템 알림 - GACHA (동료 소환)"
+type: editdisplay
+ableFlag: true
+flag: g<cbs>
+---
+@@@ IN
+\[SYSTEM\|GACHA:\s*Companion Summoned - (.*?)\]
+@@@ OUT
+{{#if {{greater_equal::{{chat_index}}::{{? {{lastmessageid}}-5}}}}}}<div class="sys-alert sys-alert-gacha"><div class="sys-alert-icon">🎰</div><div class="sys-alert-body"><span class="sys-alert-tag">GACHA</span><div class="sys-alert-desc">새로운 동료가 합류했습니다! - $1</div><div class="sys-alert-actions" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><span style="font-size:0.78em;color:rgba(255,255,255,0.72);">직전 동료 교체</span>{{button::500P 다시 뽑기::gachaCompanionReroll}}</div></div></div>{{/if}}
