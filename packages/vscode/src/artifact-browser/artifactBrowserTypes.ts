@@ -195,6 +195,15 @@ export interface BrowserItem {
 
 export type CharacterItem = BrowserItem;
 
+export interface BrowserTreeNode {
+  id: string;
+  label: string;
+  kind: 'folder' | 'item';
+  relativePath?: string;
+  item?: BrowserItem;
+  children?: BrowserTreeNode[];
+}
+
 /**
  * CharacterSection interface.
  * Detail view accordion이 렌더링할 character 관련 항목 그룹.
@@ -205,6 +214,7 @@ export interface BrowserSection {
   kind: BrowserSectionKind;
   count: number;
   items: BrowserItem[];
+  tree?: BrowserTreeNode[];
 }
 
 export type CharacterSection = BrowserSection;
