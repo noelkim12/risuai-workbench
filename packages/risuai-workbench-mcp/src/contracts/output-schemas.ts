@@ -48,6 +48,7 @@ export const mutationResultEnvelopeOutputSchema = z.object({
   schemaVersion: z.string(),
   status: z.enum(['preview', 'applied', 'rejected', 'failed', 'failed-validation']),
   tool: z.string(),
+  workflowSummary: z.record(z.string(), z.unknown()).optional(),
 }).catchall(z.unknown());
 
 export const patchPlanOutputSchema = z.object({
