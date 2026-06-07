@@ -1369,7 +1369,7 @@ test('copies marker editor image selections into assets icons and updates asset 
   ]);
 });
 
-test('scans marker parent recursively and preserves nested character artifact paths', async () => {
+test('scans marker sibling artifact directories and preserves nested character artifact paths', async () => {
   const characterRootPath = path.join('/tmp', 'risu-character', 'alice');
   const scannerModule = loadBuiltCharacterDetailScannerModule(
     createCharacterScannerVscodeStub({
@@ -1382,7 +1382,11 @@ test('scans marker parent recursively and preserves nested character artifact pa
       ],
       [path.join(characterRootPath, 'html')]: [['page.risuhtml', 1]],
       [path.join(characterRootPath, 'lorebooks')]: [['foo.risulorebook', 1]],
-      [path.join(characterRootPath, 'lua')]: [['main.risulua', 1]],
+      [path.join(characterRootPath, 'lua')]: [
+        ['main.risulua', 1],
+        ['scripts', 2],
+      ],
+      [path.join(characterRootPath, 'lua', 'scripts')]: [['helper.risulua', 1]],
       [path.join(characterRootPath, 'regex')]: [['rule.risuregex', 1]],
     }),
   );
@@ -1406,6 +1410,54 @@ test('scans marker parent recursively and preserves nested character artifact pa
   ]);
   assert.deepEqual(getSectionItemSummaries(sections, 'lua'), [
     { label: 'main.risulua', relativePath: 'lua/main.risulua', type: 'risulua' },
+    { label: 'helper.risulua', relativePath: 'lua/scripts/helper.risulua', type: 'risulua' },
+  ]);
+});
+
+test('character detail scanner ignores artifact folders below non-sibling directories', async () => {
+  const characterRootPath = path.join('/tmp', 'risu-character', 'nested-noise');
+  const scannerModule = loadBuiltCharacterDetailScannerModule(
+    createCharacterScannerVscodeStub({
+      [characterRootPath]: [
+        ['.risuchar', 1],
+        ['html', 2],
+        ['lorebooks', 2],
+        ['lua', 2],
+        ['nested', 2],
+        ['regex', 2],
+      ],
+      [path.join(characterRootPath, 'html')]: [['root.risuhtml', 1]],
+      [path.join(characterRootPath, 'lorebooks')]: [['root.risulorebook', 1]],
+      [path.join(characterRootPath, 'lua')]: [['root.risulua', 1]],
+      [path.join(characterRootPath, 'regex')]: [['root.risuregex', 1]],
+      [path.join(characterRootPath, 'nested')]: [
+        ['html', 2],
+        ['lorebooks', 2],
+        ['lua', 2],
+        ['regex', 2],
+      ],
+      [path.join(characterRootPath, 'nested', 'html')]: [['deep.risuhtml', 1]],
+      [path.join(characterRootPath, 'nested', 'lorebooks')]: [['deep.risulorebook', 1]],
+      [path.join(characterRootPath, 'nested', 'lua')]: [['deep.risulua', 1]],
+      [path.join(characterRootPath, 'nested', 'regex')]: [['deep.risuregex', 1]],
+    }),
+  );
+
+  const sections = await new scannerModule.CharacterDetailScanner().scan(
+    createCharacterBrowserCardInput(characterRootPath, 'nested-noise'),
+  );
+
+  assert.deepEqual(getSectionItemSummaries(sections, 'lorebooks'), [
+    { label: 'root.risulorebook', relativePath: 'lorebooks/root.risulorebook', type: 'risulorebook' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'regexRules'), [
+    { label: 'root.risuregex', relativePath: 'regex/root.risuregex', type: 'risuregex' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'html'), [
+    { label: 'root.risuhtml', relativePath: 'html/root.risuhtml', type: 'risuhtml' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'lua'), [
+    { label: 'root.risulua', relativePath: 'lua/root.risulua', type: 'risulua' },
   ]);
 });
 
@@ -2362,7 +2414,11 @@ test('production module-only root produces module artifact and real module secti
       ],
       [path.join(moduleRootPath, 'lorebooks')]: [['enemies.risulorebook', 1]],
       [path.join(moduleRootPath, 'regex')]: [['damage.risuregex', 1]],
-      [path.join(moduleRootPath, 'lua')]: [['ai.risulua', 1]],
+      [path.join(moduleRootPath, 'lua')]: [
+        ['ai.risulua', 1],
+        ['scripts', 2],
+      ],
+      [path.join(moduleRootPath, 'lua', 'scripts')]: [['helper.risulua', 1]],
       [path.join(moduleRootPath, 'toggle')]: [['features.risutoggle', 1]],
       [path.join(moduleRootPath, 'variables')]: [['config.risuvar', 1]],
       [path.join(moduleRootPath, 'html')]: [['battle.risuhtml', 1]],
@@ -2403,6 +2459,7 @@ test('production module-only root produces module artifact and real module secti
   ]);
   assert.deepEqual(getSectionItemSummaries(sections, 'lua'), [
     { label: 'ai.risulua', relativePath: 'lua/ai.risulua', type: 'risulua' },
+    { label: 'helper.risulua', relativePath: 'lua/scripts/helper.risulua', type: 'risulua' },
   ]);
   assert.deepEqual(getSectionItemSummaries(sections, 'toggle'), [
     {
@@ -2550,6 +2607,67 @@ test('production module detail scanner returns exact module sections and file-ba
     { label: 'battle.risuhtml', relativePath: 'html/battle.risuhtml', type: 'risuhtml' },
   ]);
   assert.equal(sections.find((section) => section.kind === 'diagnostics')?.items.length, 0);
+});
+
+test('module detail scanner ignores artifact folders below non-sibling directories', async () => {
+  const moduleRootPath = path.join('/tmp', 'risu-module-detail', 'nested-noise');
+  const scannerModule = loadBuiltModuleDetailScannerModule(
+    createCharacterScannerVscodeStub({
+      [moduleRootPath]: [
+        ['.risumodule', 1],
+        ['html', 2],
+        ['lorebooks', 2],
+        ['lua', 2],
+        ['nested', 2],
+        ['regex', 2],
+        ['toggle', 2],
+        ['variables', 2],
+      ],
+      [path.join(moduleRootPath, 'html')]: [['root.risuhtml', 1]],
+      [path.join(moduleRootPath, 'lorebooks')]: [['root.risulorebook', 1]],
+      [path.join(moduleRootPath, 'lua')]: [['root.risulua', 1]],
+      [path.join(moduleRootPath, 'regex')]: [['root.risuregex', 1]],
+      [path.join(moduleRootPath, 'toggle')]: [['root.risutoggle', 1]],
+      [path.join(moduleRootPath, 'variables')]: [['root.risuvar', 1]],
+      [path.join(moduleRootPath, 'nested')]: [
+        ['html', 2],
+        ['lorebooks', 2],
+        ['lua', 2],
+        ['regex', 2],
+        ['toggle', 2],
+        ['variables', 2],
+      ],
+      [path.join(moduleRootPath, 'nested', 'html')]: [['deep.risuhtml', 1]],
+      [path.join(moduleRootPath, 'nested', 'lorebooks')]: [['deep.risulorebook', 1]],
+      [path.join(moduleRootPath, 'nested', 'lua')]: [['deep.risulua', 1]],
+      [path.join(moduleRootPath, 'nested', 'regex')]: [['deep.risuregex', 1]],
+      [path.join(moduleRootPath, 'nested', 'toggle')]: [['deep.risutoggle', 1]],
+      [path.join(moduleRootPath, 'nested', 'variables')]: [['deep.risuvar', 1]],
+    }),
+  );
+
+  const sections = await new scannerModule.ModuleDetailScanner().scan(
+    createModuleBrowserCardInput(moduleRootPath, 'module:nested-noise'),
+  );
+
+  assert.deepEqual(getSectionItemSummaries(sections, 'lorebooks'), [
+    { label: 'root.risulorebook', relativePath: 'lorebooks/root.risulorebook', type: 'risulorebook' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'regexRules'), [
+    { label: 'root.risuregex', relativePath: 'regex/root.risuregex', type: 'risuregex' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'lua'), [
+    { label: 'root.risulua', relativePath: 'lua/root.risulua', type: 'risulua' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'toggle'), [
+    { label: 'root.risutoggle', relativePath: 'toggle/root.risutoggle', type: 'risutoggle' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'variables'), [
+    { label: 'root.risuvar', relativePath: 'variables/root.risuvar', type: 'risuvar' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'html'), [
+    { label: 'root.risuhtml', relativePath: 'html/root.risuhtml', type: 'risuhtml' },
+  ]);
 });
 
 test('production module detail scanner adds invalid module warnings to diagnostics', async () => {
@@ -2934,8 +3052,8 @@ test('preserves existing .risuchar boundary coverage when adding module support'
       [characterRootPath]: [
         ['.risuchar', 1],
         ['lorebooks', 2],
-        ['lorebooks/world.risulorebook', 1],
       ],
+      [path.join(characterRootPath, 'lorebooks')]: [['world.risulorebook', 1]],
     }),
   );
 
