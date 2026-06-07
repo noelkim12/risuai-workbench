@@ -3,7 +3,7 @@
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
   import Breadcrumb from './Breadcrumb.svelte';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
-  import CharacterAccordion from './character/CharacterAccordion.svelte';
+  import CharacterAccordion from './sidebar/WorkbenchAccordions.svelte';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
   import StatusBadge from './StatusBadge.svelte';
 

@@ -67,6 +67,8 @@ export interface ScannerConfig<
   manifestMarkerName: string;
   /** Manifest marker가 속할 section kind. 항상 'manifest'. */
   manifestSectionKind: TSectionKind;
+  /** marker root 바로 아래에서만 스캔할 artifact content directory 이름 목록. */
+  scanDirectories: readonly string[];
 }
 
 /**
@@ -109,7 +111,7 @@ export class GenericDetailScanner<
     );
     usedRelativePaths.add(this.config.manifestMarkerName);
 
-    const files = await this.collectFiles(scanRootUri);
+    const files = await this.collectFiles(scanRootUri, this.config.scanDirectories);
     for (const file of files) {
       if (file.relativePath === this.config.manifestMarkerName) continue;
       if (SKIPPED_FILE_NAMES.has(path.posix.basename(file.relativePath))) continue;
@@ -145,9 +147,14 @@ export class GenericDetailScanner<
 
   private async collectFiles(
     rootUri: vscode.Uri,
+    scanDirectories: readonly string[],
   ): Promise<Array<{ uri: vscode.Uri; relativePath: string }>> {
     const files: Array<{ uri: vscode.Uri; relativePath: string }> = [];
-    await this.collectFilesFromDirectory(rootUri, '', 0, files);
+    for (const directoryName of scanDirectories) {
+      if (SKIPPED_DIRECTORIES.has(directoryName)) continue;
+      await this.collectFilesFromDirectory(vscode.Uri.joinPath(rootUri, directoryName), directoryName, 0, files);
+      if (files.length >= MAX_SCANNED_FILES) break;
+    }
     return files.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
   }
 
