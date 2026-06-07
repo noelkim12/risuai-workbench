@@ -7,7 +7,10 @@ export interface RisuLuaDomainGroupingContext {
 }
 
 export interface RisuLuaDomainGroupingDiagnostic {
-  code: 'domain-grouping:cycle-coalesced-large' | 'domain-grouping:semantic-cluster-restored';
+  code:
+    | 'domain-grouping:cycle-coalesced-large'
+    | 'domain-grouping:semantic-cluster-restored'
+    | 'domain-grouping:cluster-cycle-coalesced';
   message: string;
   names: string[];
   path: string;
@@ -118,6 +121,7 @@ export function createRisuLuaDomainGroupingContext(
   const groupingByName = new Map<string, RisuLuaDomainGroupingMetadata>();
   const diagnostics: RisuLuaDomainGroupingDiagnostic[] = [];
   for (const name of uniqueNames) {
+    const clusterPath = clusterPathForName(name);
     const groupToken = bestRepeatedToken(name, tokenCounts);
     const normalizedPhrase = normalizedTokenPhraseForName(name);
     const normalizedPhraseGroup =
@@ -142,13 +146,17 @@ export function createRisuLuaDomainGroupingContext(
       repeatedTokenPeers.every((peer, index) => peer === normalizedPhrasePeers[index]);
     const repeatedTokenGroup = shouldPreferNormalizedPhrase ? undefined : groupToken;
     const path =
-      repeatedTokenGroup !== undefined
+      clusterPath !== undefined
+        ? clusterPath
+        : repeatedTokenGroup !== undefined
         ? `lua/domain/${groupToken}.risulua`
         : normalizedPhraseGroup !== undefined
           ? `lua/domain/${normalizedPhraseGroup}.risulua`
           : domainFunctionPath(name);
     const peers =
-      repeatedTokenGroup !== undefined
+      clusterPath !== undefined
+        ? uniqueNames.filter((candidate) => clusterPathForName(candidate) === clusterPath)
+        : repeatedTokenGroup !== undefined
         ? repeatedTokenPeers!
         : normalizedPhraseGroup !== undefined
           ? normalizedPhrasePeers!
@@ -156,7 +164,9 @@ export function createRisuLuaDomainGroupingContext(
     groupedPaths.set(name, path);
     groupingByName.set(name, {
       reason:
-        repeatedTokenGroup !== undefined
+        clusterPath !== undefined
+          ? 'cluster-policy'
+          : repeatedTokenGroup !== undefined
           ? 'repeated-token'
           : normalizedPhraseGroup !== undefined
             ? 'normalized-token'
@@ -305,10 +315,21 @@ function coalesceCyclicModuleGroups(
       if (componentNames.length < 2) continue;
       const componentPath = pathForComponent(componentNames, tokenCounts, groupedPaths);
       const peers = [...componentNames].sort();
+      const containsClusterPolicy = peers.some(
+        (name) => groupingByName.get(name)?.reason === 'cluster-policy',
+      );
       if (peers.length >= 6) {
         diagnostics.push({
           code: 'domain-grouping:cycle-coalesced-large',
           message: `Cycle coalescing grouped ${peers.length} members into ${componentPath}.`,
+          names: peers,
+          path: componentPath,
+        });
+      }
+      if (containsClusterPolicy) {
+        diagnostics.push({
+          code: 'domain-grouping:cluster-cycle-coalesced',
+          message: `Cluster policy paths were coalesced into ${componentPath} to avoid a module cycle.`,
           names: peers,
           path: componentPath,
         });
@@ -628,6 +649,17 @@ function utilityFamilyForName(name: string): UtilityFamily | undefined {
 function actionFamilyForName(name: string): ActionFamily | undefined {
   const [head] = tokenizeName(name).map(normalizeDomainToken);
   return head === 'render' ? 'render' : undefined;
+}
+
+function clusterPathForName(name: string): string | undefined {
+  if (/forge/i.test(name)) return 'lua/domain/forge.risulua';
+  if (/^(?:buildMergedPool|pickRandomCompanion)$/.test(name)) return 'lua/domain/companion_pool.risulua';
+  if (/reroll/i.test(name)) return 'lua/domain/companion_reroll.risulua';
+  if (/randomGacha|GachaFragment/i.test(name)) return 'lua/domain/random_gacha.risulua';
+  if (/^aux_discover/i.test(name)) return 'lua/domain/aux_assets.risulua';
+  if (/^aux_build.*prompt/i.test(name)) return 'lua/domain/aux_prompt.risulua';
+  if (/^aux_generate/i.test(name)) return 'lua/domain/aux_combined.risulua';
+  return undefined;
 }
 
 function normalizeDomainToken(token: string): string {

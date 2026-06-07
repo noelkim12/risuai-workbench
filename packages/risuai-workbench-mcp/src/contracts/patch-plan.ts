@@ -5,11 +5,6 @@
 
 export type MutationMode = 'preview' | 'commit';
 
-export interface ConfirmationInput {
-  accepted: boolean;
-  confirmationText?: string;
-}
-
 export interface ApplyPatchPlanOptions {
   postValidate?: boolean;
   createBackup?: boolean;
@@ -18,7 +13,6 @@ export interface ApplyPatchPlanOptions {
 
 export interface ApplyPatchPlanInput {
   patchPlanId: string;
-  confirmation: ConfirmationInput;
   options?: ApplyPatchPlanOptions;
 }
 
@@ -69,7 +63,6 @@ export interface PatchPlan {
     resourceLinks: readonly string[];
   };
   safety: {
-    requiresConfirmation: boolean;
     destructive: boolean;
     touchesSourceArtifacts: boolean;
     touchesGeneratedOnly: boolean;
@@ -85,7 +78,6 @@ export interface PatchPlan {
  */
 export function createApplyPatchPlanInput(input: ApplyPatchPlanInput): ApplyPatchPlanInput {
   return {
-    confirmation: input.confirmation,
     options: input.options,
     patchPlanId: input.patchPlanId,
   };

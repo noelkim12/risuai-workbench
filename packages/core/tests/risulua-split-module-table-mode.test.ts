@@ -127,6 +127,196 @@ describe('risulua-split module-table artifact writer', () => {
     expect(variableStore.trim().endsWith('return M')).toBe(true);
   });
 
+  it('moves allowlisted public data globals into variable_store while preserving main compatibility alias', async () => {
+    const source = lines([
+      'COMPANION_POOL_BOT = {',
+      '  { ko = "이노우에 오리히메", en = "Inoue Orihime", origin = "BLEACH" },',
+      '}',
+      '',
+      'local function buildMergedPool(triggerId)',
+      '  local pool = {}',
+      '  for _, c in ipairs(COMPANION_POOL_BOT) do',
+      '    table.insert(pool, c)',
+      '  end',
+      '  return pool',
+      'end',
+      '',
+      'function gachaCompanion(triggerId)',
+      '  local pool = buildMergedPool(triggerId)',
+      '  return pool[1].ko',
+      'end',
+    ]);
+
+    const artifacts = await createRisuLuaModuleTableArtifacts({
+      source,
+      sourcePath: 'companion_pool_alias.risulua',
+      domainGeneration: 'validated',
+      buttonActionSources: ['{{button::가챠::gachaCompanion}}'],
+    });
+
+    const main = fileContent(artifacts, 'lua/main.risulua');
+    const store = fileContent(artifacts, 'lua/state/variable_store.risulua');
+    const companionPool = fileContent(artifacts, 'lua/domain/companion_pool.risulua');
+
+    expect(store).toContain('M.COMPANION_POOL_BOT = {');
+    expect(main).toContain('COMPANION_POOL_BOT = __variable_store.COMPANION_POOL_BOT');
+    expect(main).toContain('gachaCompanion = __button_actions.gachaCompanion');
+    expect(companionPool).toContain('local __variable_store = require("state.variable_store")');
+    expect(companionPool).toContain('__variable_store.COMPANION_POOL_BOT');
+    expect(companionPool).not.toContain('ipairs(COMPANION_POOL_BOT)');
+  });
+
+  it('splits companion pool, reroll, and random gacha clusters behind main ABI bridges', async () => {
+    const source = lines([
+      'COMPANION_POOL_BOT = { { ko = "A", en = "A", origin = "X" }, { ko = "B", en = "B", origin = "Y" } }',
+      'local GACHA_CAT1_STYLE = { "고대" }',
+      'local GACHA_CAT2_RELIC = { "검" }',
+      '',
+      'local function buildMergedPool(triggerId)',
+      '  local pool = {}',
+      '  for _, c in ipairs(COMPANION_POOL_BOT) do table.insert(pool, c) end',
+      '  return pool',
+      'end',
+      '',
+      'local function pickRandomCompanion(triggerId)',
+      '  local pool = buildMergedPool(triggerId)',
+      '  return pool[math.random(#pool)]',
+      'end',
+      '',
+      'local function _rerollPickReplacement(triggerId, oldKo)',
+      '  local pool = buildMergedPool(triggerId)',
+      '  for _, c in ipairs(pool) do if c.ko ~= oldKo then return c end end',
+      '  return nil',
+      'end',
+      '',
+      'local function buildRandomGachaFragment(triggerId)',
+      '  local picked = pickRandomCompanion(triggerId)',
+      '  return "[GACHA_PICK:" .. picked.ko .. "|" .. picked.en .. "]"',
+      'end',
+      '',
+      'function gachaCompanion(triggerId)',
+      '  local picked = pickRandomCompanion(triggerId)',
+      '  addChat(triggerId, "user", picked.ko)',
+      'end',
+      '',
+      'function gachaRandom(triggerId)',
+      '  addChat(triggerId, "user", buildRandomGachaFragment(triggerId))',
+      'end',
+    ]);
+
+    const artifacts = await createRisuLuaModuleTableArtifacts({
+      source,
+      sourcePath: 'gacha_clusters.risulua',
+      domainGeneration: 'validated',
+      buttonActionSources: ['{{button::동료::gachaCompanion}}\n{{button::랜덤::gachaRandom}}'],
+    });
+
+    expect(fileContent(artifacts, 'lua/domain/companion_pool.risulua')).toContain('function __impl.buildMergedPool');
+    expect(fileContent(artifacts, 'lua/domain/companion_pool.risulua')).toContain('function __impl.pickRandomCompanion');
+    expect(fileContent(artifacts, 'lua/domain/companion_reroll.risulua')).toContain('function __impl.pickReplacement');
+    expect(fileContent(artifacts, 'lua/domain/random_gacha.risulua')).toContain('function __impl.buildFragment');
+
+    const main = fileContent(artifacts, 'lua/main.risulua');
+    expect(main).toContain('gachaCompanion = __button_actions.gachaCompanion');
+    expect(main).toContain('gachaRandom = __button_actions.gachaRandom');
+    expect(main).not.toContain('local function buildMergedPool');
+    expect(main).not.toContain('local function buildRandomGachaFragment');
+
+    const buttonActions = fileContent(artifacts, 'lua/button_actions/actions.risulua');
+    expect(buttonActions).toContain('local __domain_companion_pool = require("domain.companion_pool")');
+    expect(buttonActions).toContain('local __domain_random_gacha = require("domain.random_gacha")');
+    expect(buttonActions).toContain('local picked = __domain_companion_pool.pickRandomCompanion(triggerId)');
+    expect(buttonActions).toContain('addChat(triggerId, "user", __domain_random_gacha.buildFragment(triggerId))');
+    expect(buttonActions).not.toContain('local picked = pickRandomCompanion(triggerId)');
+    expect(buttonActions).not.toContain('buildRandomGachaFragment(triggerId)');
+  });
+
+  it('allows a generated domain function to capture an extracted common helper rewritten via __local_helpers', async () => {
+    const source = lines([
+      'local function _capCat(cat) return cat:sub(1,1):upper() .. cat:sub(2) end',
+      '',
+      'local function _forgeApplyCat(triggerId, cat)',
+      '  local CapCat = _capCat(cat)',
+      '  setChatVar(triggerId, "cv_forgeSlot" .. CapCat .. "1", "x")',
+      'end',
+      '',
+      'function forgeApplySkill(triggerId)',
+      '  _forgeApplyCat(triggerId, "skill")',
+      'end',
+    ]);
+
+    const artifacts = await createRisuLuaModuleTableArtifacts({
+      source,
+      sourcePath: 'forge_with_cap.risulua',
+      domainGeneration: 'validated',
+      buttonActionSources: ['{{button::강화::forgeApplySkill}}'],
+    });
+
+    const main = fileContent(artifacts, 'lua/main.risulua');
+    expect(main).not.toContain('local function _forgeApplyCat');
+    expect(main).not.toContain('local function _capCat');
+
+    const commonHelpersFile = artifacts.workspaceFiles.find((f) => f.path === 'lua/common/local_helpers.risulua');
+    if (commonHelpersFile !== undefined) {
+      expect(commonHelpersFile.content).toContain('function __impl._capCat');
+    }
+
+    const domainPaths = artifacts.workspaceFiles
+      .filter((f) => f.path.startsWith('lua/domain/'))
+      .map((f) => f.path);
+    expect(domainPaths.length).toBeGreaterThan(0);
+
+    const domainFile = artifacts.workspaceFiles.find((f) => f.path.startsWith('lua/domain/') && f.content.includes('__impl.applyCat'));
+    expect(domainFile).toBeDefined();
+    if (commonHelpersFile !== undefined) {
+      expect(domainFile!.content).toContain('local __local_helpers = require("common.local_helpers")');
+      expect(domainFile!.content).toContain('__local_helpers._capCat');
+    }
+    expect(domainFile!.content).not.toContain('local function _capCat');
+  });
+
+  it('splits aux generation internals while keeping main callback facade for runtime injection', async () => {
+    const source = lines([
+      'local AUX_SFW_EMOTIONS = "smile, sad"',
+      'local AUX_LORE_CACHE = { valid = false, chars = nil }',
+      '',
+      'local function aux_discover_characters(triggerId)',
+      '  if AUX_LORE_CACHE.valid then return AUX_LORE_CACHE.chars end',
+      '  AUX_LORE_CACHE.chars = { { english = "Fern", aliases = {} } }',
+      '  AUX_LORE_CACHE.valid = true',
+      '  return AUX_LORE_CACHE.chars',
+      'end',
+      '',
+      'local function aux_build_combined_prompt(content, chars)',
+      '  return AUX_SFW_EMOTIONS .. content .. chars[1].english',
+      'end',
+      '',
+      'local function aux_generate_combined(triggerId, content)',
+      '  local chars = aux_discover_characters(triggerId)',
+      '  return aux_build_combined_prompt(content, chars)',
+      'end',
+      '',
+      'function onOutput(triggerId)',
+      '  return aux_generate_combined(triggerId, "body")',
+      'end',
+    ]);
+
+    const artifacts = await createRisuLuaModuleTableArtifacts({
+      source,
+      sourcePath: 'aux_cluster.risulua',
+      domainGeneration: 'validated',
+    });
+
+    expect(fileContent(artifacts, 'lua/domain/aux_assets.risulua')).toContain('function __impl.discoverCharacters');
+    expect(fileContent(artifacts, 'lua/domain/aux_prompt.risulua')).toContain('function __impl.buildCombinedPrompt');
+    expect(fileContent(artifacts, 'lua/domain/aux_combined.risulua')).toContain('function __impl.generate');
+
+    const main = fileContent(artifacts, 'lua/main.risulua');
+    expect(main).toContain('local __domain_aux_combined = require("domain.aux_combined")');
+    expect(main).toContain('local function aux_generate_combined(triggerId, content)');
+    expect(main).toContain('return __domain_aux_combined.generate(triggerId, content)');
+  });
+
   it('does not extract column-zero local tables from inside functions into the variable store', async () => {
     const source = lines([
       'function onOutput(text)',

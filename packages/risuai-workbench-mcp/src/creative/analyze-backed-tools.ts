@@ -566,7 +566,7 @@ function remixFindingIntoIdea(context: NormalizedContext, finding: DeadCodeFindi
   const evidence = compactStringList([...finding.evidence, analyzeResource(context.artifactKey, `dead-code-findings/${finding.id}`)], MAX_EVIDENCE);
   return {
     idea: createIdea({
-      assumptions: ['Dead-code remix is advisory only; destructive cleanup must use a separate confirmation flow.'],
+      assumptions: ['Dead-code remix is advisory only; destructive cleanup must use an explicit mutation workflow.'],
       candidateMutations: ['validation_only', 'edit_frontmatter', 'create_artifact'],
       evidence,
       id: `dead-code-remix:${stableId(`${finding.id}:${index}`)}`,

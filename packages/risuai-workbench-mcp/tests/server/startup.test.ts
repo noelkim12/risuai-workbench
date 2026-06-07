@@ -68,13 +68,24 @@ describe('risuai-workbench-mcp startup', () => {
       const prompts = await client.listPrompts();
 
       const toolNames = tools.tools.map((tool) => tool.name);
-      expect(toolNames).toContain('workbench.smoke');
-      expect(toolNames).toContain('workbench.route_intent');
-      expect(toolNames).toEqual(expect.arrayContaining([
-        'workbench.creative.gather_context',
-        'workbench.creative.turn_idea_into_patch_plan',
-        'workbench.creative.apply_idea_patch',
-      ]));
+      // Phase 9: default surface is exactly 8 facade tools
+      expect(toolNames.sort()).toEqual([
+        'workbench.catalog',
+        'workbench.context',
+        'workbench.patch_apply',
+        'workbench.patch_preview',
+        'workbench.prepare_action',
+        'workbench.route_intent',
+        'workbench.run_action',
+        'workbench.smoke',
+      ]);
+      expect(toolNames).not.toContain('workbench.inspect_path');
+      expect(toolNames).not.toContain('workbench.query_variable_flow');
+      expect(toolNames).not.toContain('workbench.suggest_patch');
+      expect(toolNames).not.toContain('workbench.apply_patch_plan');
+      expect(toolNames).not.toContain('workbench.creative.gather_context');
+      expect(toolNames).not.toContain('workbench.creative.apply_idea_patch');
+      expect(toolNames).not.toContain('workbench.run_extract');
 
       const routeTool = tools.tools.find((tool) => tool.name === 'workbench.route_intent');
       expect(routeTool).toBeDefined();
@@ -97,19 +108,42 @@ describe('risuai-workbench-mcp startup', () => {
     }
   });
 
-  it('inspect_path returns ok result with role data over stdio with --root', async () => {
+  it('exposes extension affordance guidance in facade tool descriptions', async () => {
     const transport = new StdioClientTransport({
       args: [binPath, '--stdio', '--root', fixturesRoot],
       command: process.execPath,
       stderr: 'pipe',
     });
-    const client = new Client({ name: 'risuai-workbench-mcp-inspect-test', version: '0.1.0' });
+    const client = new Client({ name: 'risuai-workbench-mcp-extension-guidance-test', version: '0.1.0' });
+
+    try {
+      await client.connect(transport);
+      const tools = await client.listTools();
+      const descriptions = new Map(tools.tools.map((tool) => [tool.name, tool.description ?? '']));
+
+      expect(descriptions.get('workbench.route_intent')).toContain('.risulua');
+      expect(descriptions.get('workbench.route_intent')).toContain('.risulorebook');
+      expect(descriptions.get('workbench.route_intent')).toContain('_order.json');
+      expect(descriptions.get('workbench.catalog')).toContain('extension affordance');
+      expect(descriptions.get('workbench.run_action')).toContain('core.run_extract');
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('catalog returns actions over stdio in default facade-only mode', async () => {
+    const transport = new StdioClientTransport({
+      args: [binPath, '--stdio', '--root', fixturesRoot],
+      command: process.execPath,
+      stderr: 'pipe',
+    });
+    const client = new Client({ name: 'risuai-workbench-mcp-catalog-test', version: '0.1.0' });
 
     try {
       await client.connect(transport);
       const result = await client.callTool({
-        arguments: { path: 'characters/merry/lorebooks/intro.risulorebook' },
-        name: 'workbench.inspect_path',
+        arguments: { query: 'inspect', limit: 5 },
+        name: 'workbench.catalog',
       }) as { content: Array<{ text: string; type: string }> };
 
       expect(result.content).toBeDefined();
@@ -117,19 +151,11 @@ describe('risuai-workbench-mcp startup', () => {
       expect(result.content[0].type).toBe('text');
 
       const parsed = JSON.parse(result.content[0].text);
-      const structured = (result as { structuredContent?: Record<string, unknown> }).structuredContent;
-      expect(structured).toBeDefined();
-      expect(structured?.schema).toBe('risuai-workbench-mcp.diagnostics');
-      expect(structured?.tool).toBe('workbench.inspect_path');
-      expect(parsed.schema).toBe('risuai-workbench-mcp.diagnostics');
-      expect(parsed.tool).toBe('workbench.inspect_path');
-      expect(parsed.status).toBe('ok');
-      expect(parsed.data).toBeDefined();
-      expect(parsed.data.role).toBe('canonical-file');
-      expect(parsed.data.relativePath).toBe('characters/merry/lorebooks/intro.risulorebook');
-      expect(parsed.data.artifact).toBe('lorebook');
-      expect(parsed.data.contract).toBeDefined();
-      expect(parsed.data.contract.suffix).toBe('.risulorebook');
+      expect(parsed.actions).toBeDefined();
+      expect(parsed.actions.length).toBeGreaterThan(0);
+      expect(parsed.actions[0]).toHaveProperty('id');
+      expect(parsed.actions[0]).toHaveProperty('title');
+      expect(parsed.actions[0]).toHaveProperty('next', 'workbench.prepare_action');
     } finally {
       await client.close();
     }

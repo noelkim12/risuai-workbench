@@ -30,7 +30,6 @@ export interface EditOrderInput {
   orderPath: string;
   operations: readonly OrderOperationInput[];
   mode: PatchPlanMutationMode;
-  confirmation?: { accepted: boolean; confirmationText?: string };
   postValidate?: boolean;
   expectedHash?: string;
 }
@@ -41,7 +40,7 @@ const TOOL_NAME = 'workbench.edit_order';
  * handleEditOrder 함수.
  * `_order.json`에 대해 structured order operation을 preview/commit으로 실행함.
  *
- * @param input - orderPath, operations, mode, confirmation
+ * @param input - orderPath, operations, mode
  * @param workspace - workspace root 상태
  * @param mutationMode - 서버 mutation mode
  * @param patchStore - 공유 patch plan store
@@ -54,7 +53,7 @@ export async function handleEditOrder(
   patchStore: PatchPlanStore,
 ): Promise<EditOrderToolResult> {
   const unknownFieldResult = createUnknownFieldDiagnosticEnvelope({
-    allowedKeys: ['orderPath', 'operations', 'mode', 'confirmation', 'postValidate', 'expectedHash'],
+    allowedKeys: ['orderPath', 'operations', 'mode', 'postValidate', 'expectedHash'],
     input,
     tool: TOOL_NAME,
   });
@@ -87,7 +86,7 @@ export async function handleEditOrder(
   const safePath = await resolveSafeWorkspacePath({ inputPath: editInput.orderPath, intent: 'read-existing', workspace });
   if (!safePath.ok) {
     return createDiagnosticEnvelope({
-      diagnostics: [{ category: 'path', id: 'PATH_OUTSIDE_WORKSPACE', message: `Path resolves outside workspace: ${editInput.orderPath} (${safePath.reason}).`, path: editInput.orderPath, ruleId: 'path.boundary', severity: 'error' }],
+        diagnostics: [{ category: 'path', id: 'PATH_RESOLVE_FAILED', message: `Path resolution failed: ${editInput.orderPath} (${safePath.reason}).`, path: editInput.orderPath, ruleId: `path.${safePath.reason}`, severity: 'error' }],
       status: 'domain_error',
       tool: TOOL_NAME,
     });
@@ -115,7 +114,7 @@ export async function handleEditOrder(
       createFileHashPrecondition(editInput.orderPath, effectiveHash ?? ''),
       createInsideWorkspacePrecondition(editInput.orderPath),
     ],
-    safety: { destructive: editInput.operations.some((o) => o.kind === 'remove'), requiresConfirmation: true, touchesGeneratedOnly: false, touchesSourceArtifacts: true },
+    safety: { destructive: editInput.operations.some((o) => o.kind === 'remove'), touchesGeneratedOnly: false, touchesSourceArtifacts: true },
     unifiedDiff: buildOrderDiff(editInput.orderPath, currentContent, patchOperations),
     workspaceRoot: workspace.path,
   });
@@ -132,10 +131,7 @@ export async function handleEditOrder(
   }
 
   const safetyResult = await evaluateMutationSafetyGate({
-    confirmation: editInput.confirmation ? { accepted: editInput.confirmation.accepted, confirmationText: editInput.confirmation.confirmationText } : undefined,
-    expectedConfirmationText: `APPLY ${patchPlan.patchPlanId}`,
     mode: mutationMode,
-    risk: editInput.operations.length > 1 ? 'medium' : 'low',
     targets: [{ expectedHash: effectiveHash, intent: 'write-existing' as const, path: editInput.orderPath }],
     toolName: TOOL_NAME,
     workspace,
@@ -153,7 +149,6 @@ export async function handleEditOrder(
   }
 
   return applyPatchPlan({
-    confirmation: editInput.confirmation ? { accepted: editInput.confirmation.accepted, confirmationText: editInput.confirmation.confirmationText } : undefined,
     mutationMode,
     options: { postValidate: editInput.postValidate !== false },
     patchPlan,
@@ -220,10 +215,8 @@ function parseEditOrderInput(input: unknown): { input: EditOrderInput; ok: true 
     }
   }
   const mode: PatchPlanMutationMode = 'commit';
-  const confirmation = candidate.confirmation as EditOrderInput['confirmation'] | undefined;
   return {
     input: {
-      confirmation: confirmation ? { accepted: !!confirmation.accepted, confirmationText: confirmation.confirmationText } : undefined,
       expectedHash: typeof candidate.expectedHash === 'string' ? candidate.expectedHash : undefined,
       mode,
       operations: candidate.operations as OrderOperationInput[],

@@ -159,6 +159,7 @@ export type RisuLuaDomainGroupingReason =
   | 'singleton'
   | 'repeated-token'
   | 'normalized-token'
+  | 'cluster-policy'
   | 'cycle-coalesced'
   | 'action-family'
   | 'utility-family';
@@ -430,6 +431,7 @@ export function validateRisuLuaModuleTableDomainCandidates(
         'singleton',
         'repeated-token',
         'normalized-token',
+        'cluster-policy',
         'cycle-coalesced',
         'action-family',
         'utility-family',

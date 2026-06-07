@@ -24,7 +24,7 @@ import {
   type RisuLuaModuleTableSymbolContract,
 } from './module-table-contracts';
 import type { DryRunPlanResult } from './module-table-refactor-map';
-import type { RisuLuaModuleTableRuntimeRootFact } from './module-table-analyzer-types';
+import type { RisuLuaModuleTableDynamicCallbackFact, RisuLuaModuleTableProceduralBlockFact, RisuLuaModuleTableRuntimeRootFact } from './module-table-analyzer-types';
 import type { RisuLuaModuleTableParseResult } from './module-table-parser';
 import { sliceSourceRange } from '../shared/source-slice';
 import { escapeRegExp } from '../shared/string-patterns';
@@ -143,7 +143,7 @@ export function planTopLevelRewrite(input: TopLevelRewriteInput): TopLevelRewrit
   );
 
   const mainRewritePlan = buildMainRewritePlan(
-    source, input.sourceFile, refactorMap, dryRunResult.runtimeRoots, task10Bindings, editPlan.mainBridgeInsertions, helperNames, variableStoreNames, promptStoreNames, nonExecIndex, input.buttonActionSources ?? [],
+    source, input.sourceFile, refactorMap, dryRunResult.runtimeRoots, dryRunResult.proceduralBlocks, task10Bindings, editPlan.mainBridgeInsertions, helperNames, variableStoreNames, promptStoreNames, nonExecIndex, input.buttonActionSources ?? [],
   );
 
   return { ok: true, modulePlans, mainRewritePlan, diagnostics };
@@ -329,7 +329,7 @@ function buildDomainFunctionModule(
     promptStoreNames,
     currentModulePath: modulePath,
   }));
-  const sameModuleRewriteMap = new Map(sorted.map((sym) => [sym.originalName, `__impl.${sym.originalName}`]));
+  const sameModuleRewriteMap = new Map(sorted.map((sym) => [sym.originalName, `__impl.${sym.exportName ?? sym.originalName}`]));
   const rewriteNames = new Set([
     ...capturePlans.flatMap((plan) => [...plan.rewriteMap.keys()]),
     ...sameModuleRewriteMap.keys(),
@@ -350,12 +350,12 @@ function buildDomainFunctionModule(
     const stripped = stripLocalPrefixWithOffset(sliceSourceRange(source, sym.sourceRange));
     let body = stripped.text.trimEnd();
     body = rewriteBoundReferences(body, new Map([...capturePlan.rewriteMap, ...sameModuleRewriteMap]), sym.sourceRange.startOffset + stripped.offsetAdjustment, shadowedScopes, nonExecIndex);
-    const functionBody = toPrivateImplementationFunction(body, sym.originalName);
+    const functionBody = toPrivateImplementationFunction(body, sym.originalName, sym.exportName ?? sym.originalName);
     lines.push(`${leadingCommentText}${functionBody}`, '');
   }
 
   for (const sym of sorted) {
-    lines.push(`M.${sym.originalName} = __impl.${sym.originalName}`);
+    lines.push(`M.${sym.exportName ?? sym.originalName} = __impl.${sym.exportName ?? sym.originalName}`);
   }
   lines.push('');
   lines.push('return M');
@@ -366,16 +366,16 @@ function buildDomainFunctionModule(
     alias: contract?.alias ?? pathToAlias(modulePath),
     category: 'domain-function',
     body: `${lines.join('\n')}\n`,
-    exportNames: sorted.map((s) => s.originalName),
+    exportNames: sorted.map((s) => s.exportName ?? s.originalName),
     internalRequires,
   };
 }
 
-function toPrivateImplementationFunction(sourceSlice: string, originalName: string): string {
+function toPrivateImplementationFunction(sourceSlice: string, originalName: string, exportName: string): string {
   const escapedName = escapeRegExp(originalName);
   return sourceSlice
-    .replace(new RegExp(`^(\\s*)(?:local\\s+)?function\\s+${escapedName}(\\s*\\()`, 'm'), `$1function __impl.${originalName}$2`)
-    .replace(new RegExp(`^(\\s*)${escapedName}(\\s*=\\s*(?:async\\s*\\(\\s*)?function\\b)`, 'm'), `$1function __impl.${originalName}`);
+    .replace(new RegExp(`^(\\s*)(?:local\\s+)?function\\s+${escapedName}(\\s*\\()`, 'm'), `$1function __impl.${exportName}$2`)
+    .replace(new RegExp(`^(\\s*)${escapedName}(\\s*=\\s*(?:async\\s*\\(\\s*)?function\\b)`, 'm'), `$1function __impl.${exportName}`);
 }
 
 function declarationHeadRange(source: string, range: LuaSourceRange): LuaSourceRange {
@@ -612,6 +612,11 @@ interface CaptureRewritePlan {
   unresolvedCaptures: string[];
 }
 
+interface DynamicCallbackBodyReplacement {
+  range: LuaSourceRange;
+  text: string;
+}
+
 const VARIABLE_STORE_REQUIRE_BINDING = {
   requireId: 'state.variable_store',
   alias: '__variable_store',
@@ -629,6 +634,7 @@ function buildMainRewritePlan(
   sourceFile: string,
   refactorMap: RisuLuaModuleTableRefactorMapContract,
   runtimeRoots: RisuLuaModuleTableRuntimeRootFact[],
+  proceduralBlocks: RisuLuaModuleTableProceduralBlockFact[],
   requireBindings: DryRunPlanResult['editPlan']['mainRequireBindings'],
   bridgeInsertions: DryRunPlanResult['editPlan']['mainBridgeInsertions'],
   helperNames: Set<string>,
@@ -639,6 +645,7 @@ function buildMainRewritePlan(
 ): MainRewritePlan {
   const moduleContractsByPath = new Map(refactorMap.modules.map((moduleContract) => [moduleContract.path, moduleContract]));
   const helperRewriteMap = buildRewriteMapForSymbols(refactorMap.symbols, moduleContractsByPath, helperNames);
+  const dynamicCallbackBodyReplacements = buildDynamicCallbackBodyReplacements(refactorMap, moduleContractsByPath, proceduralBlocks);
   const extractionRanges: LuaSourceRange[] = [];
   for (const sym of refactorMap.symbols) {
     if (isExtracted(sym)) extractionRanges.push(ownedRangeForSymbol(source, sym.sourceRange));
@@ -656,23 +663,16 @@ function buildMainRewritePlan(
         navigationComment: sym.targetModule === RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH
           ? buttonActionNavigationComment(sym.originalName, sourceFile, buttonActionUsagesByName)
           : undefined,
-        replacementText: sym.classification === 'extract:runtime-handler-body' && moduleContract !== undefined
-          ? buildRuntimeHandlerShim(
-            source.slice(sym.sourceRange.startOffset, sym.sourceRange.endOffset),
-            sym.originalName,
-            moduleContract.alias,
-            buildCaptureRewritePlan({
-              names: uniqueSorted([...sym.captures, ...helperUsagesInRange(source, sym.sourceRange, helperNames), ...symbolUsagesInRange(source, sym.sourceRange, refactorMap.symbols, new Set(refactorMap.preserved.map((entry) => entry.originalName)), sym.originalName)]),
-              moduleContracts: refactorMap.modules,
-              allSymbols: refactorMap.symbols,
-              preservedNames: new Set(refactorMap.preserved.map((entry) => entry.originalName)),
-              helperNames,
-              variableStoreNames,
-              promptStoreNames,
-              currentModulePath: sym.targetModule ?? '',
-            }).unresolvedCaptures.map((name) => helperRewriteMap.get(name) ?? name),
-          )
-          : undefined,
+        replacementText: replacementTextForExtractedMainSymbol(
+          source,
+          sym,
+          moduleContract,
+          refactorMap,
+          helperNames,
+          variableStoreNames,
+          promptStoreNames,
+          helperRewriteMap,
+        ),
       });
     }
   }
@@ -694,7 +694,8 @@ function buildMainRewritePlan(
   for (const ext of extractions) {
     if (ext.range.startOffset > cursor) {
       const chunk = source.slice(cursor, ext.range.startOffset);
-      bodyParts.push(rewriteBoundReferences(chunk, helperRewriteMap, cursor, shadowedScopes, nonExecIndex));
+      const callbackRewrittenChunk = applyDynamicCallbackBodyReplacements(chunk, cursor, ext.range.startOffset, dynamicCallbackBodyReplacements);
+      bodyParts.push(rewriteBoundReferences(callbackRewrittenChunk, helperRewriteMap, cursor, shadowedScopes, nonExecIndex));
     }
     if (ext.isHostGlobal && ext.bridgeText) {
       bodyParts.push(`${ext.navigationComment ?? ''}${ext.bridgeText}`);
@@ -706,7 +707,8 @@ function buildMainRewritePlan(
 
   if (cursor < source.length) {
     const tail = source.slice(cursor);
-    bodyParts.push(rewriteBoundReferences(tail, helperRewriteMap, cursor, shadowedScopes, nonExecIndex));
+    const callbackRewrittenTail = applyDynamicCallbackBodyReplacements(tail, cursor, source.length, dynamicCallbackBodyReplacements);
+    bodyParts.push(rewriteBoundReferences(callbackRewrittenTail, helperRewriteMap, cursor, shadowedScopes, nonExecIndex));
   }
 
   const bodyText = joinMainParts(bodyParts);
@@ -733,6 +735,57 @@ function mainBodyUsesAlias(bodyText: string, alias: string): boolean {
   return new RegExp(`\\b${escapeRegExp(alias)}\\b`).test(bodyText);
 }
 
+function buildDynamicCallbackBodyReplacements(
+  refactorMap: RisuLuaModuleTableRefactorMapContract,
+  moduleContractsByPath: Map<string, RisuLuaModuleTableModuleContract>,
+  proceduralBlocks: RisuLuaModuleTableProceduralBlockFact[],
+): DynamicCallbackBodyReplacement[] {
+  const replacements: DynamicCallbackBodyReplacement[] = [];
+  for (const callback of proceduralBlocks.flatMap((block) => block.dynamicCallbacks)) {
+    const replacement = dynamicCallbackBodyReplacementForCallback(refactorMap, moduleContractsByPath, callback);
+    if (replacement !== undefined) replacements.push(replacement);
+  }
+  return replacements.sort((left, right) => left.range.startOffset - right.range.startOffset);
+}
+
+function dynamicCallbackBodyReplacementForCallback(
+  refactorMap: RisuLuaModuleTableRefactorMapContract,
+  moduleContractsByPath: Map<string, RisuLuaModuleTableModuleContract>,
+  callback: RisuLuaModuleTableDynamicCallbackFact,
+): DynamicCallbackBodyReplacement | undefined {
+  const targetSymbol = refactorMap.symbols.find((symbol) => symbol.originalName === callback.targetFunctionName && isExtracted(symbol) && isDomainModulePath(symbol.targetModule ?? ''));
+  if (targetSymbol?.targetModule === undefined) return undefined;
+  const moduleContract = moduleContractsByPath.get(targetSymbol.targetModule);
+  if (moduleContract === undefined) return undefined;
+  const exportName = targetSymbol.exportName ?? targetSymbol.originalName;
+  return {
+    range: callback.callbackBodyRange,
+    text: `return ${moduleContract.alias}.${exportName}(${callback.forwardedArguments.join(', ')})`,
+  };
+}
+
+function applyDynamicCallbackBodyReplacements(
+  text: string,
+  baseOffset: number,
+  endOffset: number,
+  replacements: DynamicCallbackBodyReplacement[],
+): string {
+  const inRange = replacements.filter((replacement) => replacement.range.startOffset >= baseOffset && replacement.range.endOffset <= endOffset);
+  if (inRange.length === 0) return text;
+
+  let cursor = 0;
+  const parts: string[] = [];
+  for (const replacement of inRange) {
+    const start = replacement.range.startOffset - baseOffset;
+    const end = replacement.range.endOffset - baseOffset;
+    if (start < cursor) continue;
+    parts.push(text.slice(cursor, start), replacement.text);
+    cursor = end;
+  }
+  parts.push(text.slice(cursor));
+  return parts.join('');
+}
+
 function isInternalDependencyModulePath(modulePath: string): boolean {
   return isDomainModulePath(modulePath)
     || modulePath === RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH
@@ -746,6 +799,126 @@ function buildListenEditShim(callback: ListenEditCallbackPlan): string {
     `    return __runtime_listen_edit.${callback.exportName}(${callArguments})`,
     'end)',
   ].join('\n');
+}
+
+function replacementTextForExtractedMainSymbol(
+  source: string,
+  sym: RisuLuaModuleTableSymbolContract,
+  moduleContract: RisuLuaModuleTableModuleContract | undefined,
+  refactorMap: RisuLuaModuleTableRefactorMapContract,
+  helperNames: Set<string>,
+  variableStoreNames: Set<string>,
+  promptStoreNames: Set<string>,
+  helperRewriteMap: Map<string, string>,
+): string | undefined {
+  if (moduleContract === undefined) return undefined;
+  if (sym.classification === 'extract:runtime-handler-body') {
+    return buildRuntimeHandlerShim(
+      source.slice(sym.sourceRange.startOffset, sym.sourceRange.endOffset),
+      sym.originalName,
+      moduleContract.alias,
+      buildCaptureRewritePlan({
+        names: uniqueSorted([...sym.captures, ...helperUsagesInRange(source, sym.sourceRange, helperNames), ...symbolUsagesInRange(source, sym.sourceRange, refactorMap.symbols, new Set(refactorMap.preserved.map((entry) => entry.originalName)), sym.originalName)]),
+        moduleContracts: refactorMap.modules,
+        allSymbols: refactorMap.symbols,
+        preservedNames: new Set(refactorMap.preserved.map((entry) => entry.originalName)),
+        helperNames,
+        variableStoreNames,
+        promptStoreNames,
+        currentModulePath: sym.targetModule ?? '',
+      }).unresolvedCaptures.map((name) => helperRewriteMap.get(name) ?? name),
+    );
+  }
+  if (sym.classification === 'extract:button-action' && sym.targetModule !== RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH && isDomainModulePath(sym.targetModule ?? '')) {
+    return buildAbiWrapperShim(source.slice(sym.sourceRange.startOffset, sym.sourceRange.endOffset), sym.originalName, moduleContract, refactorMap.symbols);
+  }
+  if (sym.classification === 'extract:domain-function' && sym.originalName === 'aux_generate_combined' && sym.targetModule === 'lua/domain/aux_combined.risulua') {
+    return buildDomainCallbackFacadeShim(source.slice(sym.sourceRange.startOffset, sym.sourceRange.endOffset), sym, moduleContract);
+  }
+  return undefined;
+}
+
+function buildDomainCallbackFacadeShim(
+  sourceSlice: string,
+  sym: RisuLuaModuleTableSymbolContract,
+  moduleContract: RisuLuaModuleTableModuleContract,
+): string | undefined {
+  const parameters = extractRuntimeHandlerParameters(sourceSlice, sym.originalName);
+  if (parameters === undefined) return undefined;
+  const exportName = sym.exportName ?? sym.originalName;
+  const prefix = /^\s*local\s+function\b/.test(sourceSlice) ? 'local ' : '';
+  return [
+    `${prefix}function ${sym.originalName}(${parameters})`,
+    `    return ${moduleContract.alias}.${exportName}(${parameters})`,
+    'end',
+  ].join('\n');
+}
+
+function buildAbiWrapperShim(
+  sourceSlice: string,
+  wrapperName: string,
+  moduleContract: RisuLuaModuleTableModuleContract,
+  allSymbols: RisuLuaModuleTableSymbolContract[],
+): string | undefined {
+  const parsed = parseSingleCallFunction(sourceSlice, wrapperName);
+  if (parsed === undefined) return undefined;
+  const targetSymbol = allSymbols.find((symbol) => symbol.originalName === parsed.callee && symbol.targetModule === moduleContract.path);
+  if (targetSymbol === undefined) return undefined;
+  const targetExportName = targetSymbol.exportName ?? targetSymbol.originalName;
+  return [
+    `function ${wrapperName}(${parsed.parameters.join(', ')})`,
+    `    return ${moduleContract.alias}.${targetExportName}(${parsed.arguments.join(', ')})`,
+    'end',
+  ].join('\n');
+}
+
+function parseSingleCallFunction(sourceSlice: string, functionName: string): { parameters: string[]; callee: string; arguments: string[] } | undefined {
+  const escapedName = escapeRegExp(functionName);
+  const functionMatch = new RegExp(`^\\s*function\\s+${escapedName}\\s*\\(([^)]*)\\)\\s*([\\s\\S]*?)\\s*end\\s*$`).exec(sourceSlice);
+  if (functionMatch === null) return undefined;
+  const body = functionMatch[2].trim();
+  if (/\r?\n/.test(body)) return undefined;
+  const callMatch = /^([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)$/.exec(body);
+  if (callMatch === null) return undefined;
+  return {
+    parameters: splitCommaList(functionMatch[1]),
+    callee: callMatch[1],
+    arguments: splitCommaList(callMatch[2]),
+  };
+}
+
+function splitCommaList(value: string): string[] {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return [];
+  const parts: string[] = [];
+  let current = '';
+  let quote: string | undefined;
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const char = trimmed[index];
+    if (quote !== undefined) {
+      current += char;
+      if (char === '\\') {
+        index += 1;
+        current += trimmed[index] ?? '';
+        continue;
+      }
+      if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      current += char;
+      continue;
+    }
+    if (char === ',') {
+      parts.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  parts.push(current.trim());
+  return parts;
 }
 
 function groupButtonActionUsagesByName(usages: RawButtonActionUsage[]): Map<string, RisuLuaModuleTableButtonActionUsageContract[]> {

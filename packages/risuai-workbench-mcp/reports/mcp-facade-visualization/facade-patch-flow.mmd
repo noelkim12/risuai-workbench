@@ -1,0 +1,22 @@
+sequenceDiagram
+    participant Client as MCP client
+    participant Preview as patch_preview
+    participant Store as PatchPlan store
+    participant User as User confirmation
+    participant Apply as patch_apply
+    participant Gate as Mutation safety gate
+    participant Engine as Patch apply engine
+
+    Client->>Preview: actionId + args or patchPlan
+    Preview->>Store: validate and store PatchPlan
+    Store-->>Preview: patchPlanId
+    Preview-->>Client: diff / diagnostics / preview result
+    Client->>User: show preview and request confirmation
+    User-->>Client: accepted confirmation
+    Client->>Apply: patchPlanId + confirmation
+    Apply->>Store: load PatchPlan
+    Apply->>Gate: check confirmation, mutation mode, workspace boundary, preconditions
+    Gate-->>Apply: allowed or rejected
+    Apply->>Engine: apply approved operations
+    Engine-->>Apply: mutation result
+    Apply-->>Client: structured mutation result

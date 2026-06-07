@@ -48,6 +48,7 @@ export interface MutationJournalEntry {
   rollbackAvailable?: boolean;
   status: MutationJournalStatus;
   toolName: string;
+  workflowSummary?: Record<string, unknown>;
 }
 
 const MAX_JOURNAL_PATHS = 25;

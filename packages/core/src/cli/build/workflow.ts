@@ -283,7 +283,7 @@ function pickKnownRegexFields(raw: Record<string, unknown>): Record<string, unkn
     in: typeof raw.in === 'string' ? raw.in : '',
     out: typeof raw.out === 'string' ? raw.out : '',
     type: typeof raw.type === 'string' ? raw.type : 'editprocess',
-    ableFlag: typeof raw.ableFlag === 'boolean' ? raw.ableFlag : false,
+    ableFlag: normalizeBooleanLike(raw.ableFlag, false),
   };
 
   if (typeof raw.flag === 'string' && raw.flag.length > 0) {
@@ -299,6 +299,19 @@ function pickKnownRegexFields(raw: Record<string, unknown>): Record<string, unkn
   }
 
   return out;
+}
+
+function normalizeBooleanLike(value: unknown, fallback: boolean): boolean {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (value === 'true' || value === 'True') {
+    return true;
+  }
+  if (value === 'false' || value === 'False') {
+    return false;
+  }
+  return fallback;
 }
 
 function normalizeLorebookEntry(

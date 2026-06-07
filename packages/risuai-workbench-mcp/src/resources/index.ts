@@ -47,7 +47,7 @@ const CREATIVE_KB_REFERENCE = 'docs/mcp/risuai-workbench-mcp-for-creative-thinki
 const CREATIVE_SAFETY = [
   'Read resources as knowledge-base references only; resource reads never mutate files.',
   'Divergent creative steps must not write source artifacts.',
-  'Only a selected idea can become a patch plan, and application requires preview, explicit confirmation, gated mutation tools, and post-validation.',
+  'Only a selected idea can become a patch plan; application uses Workbench apply tools and post-validation.',
 ] as const;
 
 const CREATIVE_METHOD_CARDS: Record<string, CreativeReferenceCard> = {
@@ -502,5 +502,4 @@ function decodeWikiPath(uri: URL): string {
   const pathPart = uri.pathname.replace(/^\//, '');
   return decodeURIComponent(pathPart || 'index.md');
 }
-
 

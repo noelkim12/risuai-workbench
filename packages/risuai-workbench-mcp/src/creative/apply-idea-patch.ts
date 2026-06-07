@@ -7,7 +7,7 @@ import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 
 import { createDiagnosticEnvelope, createUnknownFieldDiagnosticEnvelope, type DiagnosticEnvelope, type WorkbenchDiagnostic } from '../contracts/diagnostics';
-import type { ApplyPatchPlanInput, ConfirmationInput } from '../contracts/patch-plan';
+import type { ApplyPatchPlanInput } from '../contracts/patch-plan';
 import type { MutationResultEnvelope } from '../contracts/mutation-result';
 import type { MutationJournalEntry } from '../mutation/journal';
 import { readJournalEntries } from '../mutation/journal';
@@ -39,7 +39,7 @@ interface CreativeApplyPostApplyMetadata {
 }
 
 const TOOL_NAME = 'workbench.creative.apply_idea_patch' as const;
-const ALLOWED_TOP_LEVEL_KEYS = ['confirmation', 'options', 'patchPlanId', 'sessionId'] as const;
+const ALLOWED_TOP_LEVEL_KEYS = ['options', 'patchPlanId', 'sessionId'] as const;
 const ALLOWED_OPTION_KEYS = ['createBackup', 'postValidate', 'rollbackOnValidationError'] as const;
 
 /**
@@ -82,7 +82,6 @@ export async function applyStoredIdeaPatch(input: unknown, context: ApplyIdeaPat
 
   const result = await handleApplyPatchPlan(
     {
-      confirmation: parsed.input.confirmation,
       options: parsed.input.options,
       patchPlanId: parsed.input.patchPlanId,
     },
@@ -154,9 +153,6 @@ function parseApplyIdeaPatchInput(input: unknown): { input: ApplyPatchPlanInput 
   const patchPlanId = stringField(candidate.patchPlanId);
   if (!patchPlanId) return { ok: false, reason: 'patchPlanId must be a non-empty string.' };
 
-  const confirmation = parseConfirmation(candidate.confirmation);
-  if (!confirmation.ok) return { ok: false, reason: confirmation.reason };
-
   const options = parseOptions(candidate.options);
   if (!options.ok) return { ok: false, reason: options.reason };
 
@@ -165,27 +161,12 @@ function parseApplyIdeaPatchInput(input: unknown): { input: ApplyPatchPlanInput 
 
   return {
     input: {
-      confirmation: confirmation.value,
       options: options.value,
       patchPlanId,
       sessionId,
     },
     ok: true,
   };
-}
-
-function parseConfirmation(value: unknown): { ok: true; value: ConfirmationInput } | { ok: false; reason: string } {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    return { ok: false, reason: 'confirmation object is required.' };
-  }
-  const record = value as Record<string, unknown>;
-  const unknownKeys = Object.keys(record).filter((key) => key !== 'accepted' && key !== 'confirmationText').sort((left, right) => left.localeCompare(right));
-  if (unknownKeys.length > 0) return { ok: false, reason: `Unknown confirmation fields are rejected: ${unknownKeys.join(', ')}.` };
-  if (typeof record.accepted !== 'boolean') return { ok: false, reason: 'confirmation.accepted must be boolean.' };
-  if (record.confirmationText !== undefined && typeof record.confirmationText !== 'string') {
-    return { ok: false, reason: 'confirmation.confirmationText must be a string when provided.' };
-  }
-  return { ok: true, value: { accepted: record.accepted, confirmationText: record.confirmationText as string | undefined } };
 }
 
 function parseOptions(value: unknown): { ok: true; value?: ApplyPatchPlanInput['options'] } | { ok: false; reason: string } {

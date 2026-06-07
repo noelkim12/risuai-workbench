@@ -11,4 +11,5 @@ export * from './analyze';
 export * from './wiki';
 export * from './creative';
 export * from './skills';
+export * from './facade';
 export { handleRouteIntent } from './intent-route';

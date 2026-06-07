@@ -40,7 +40,6 @@ function makePatchPlan(overrides: Partial<PatchPlan> = {}): PatchPlan {
     },
     safety: {
       destructive: false,
-      requiresConfirmation: true,
       touchesGeneratedOnly: false,
       touchesSourceArtifacts: true,
     },
@@ -91,7 +90,6 @@ describe('previewStoredIdeaPatch', () => {
     // Safety flags
     expect(preview.safety).toEqual({
       destructive: false,
-      requiresConfirmation: true,
       touchesGeneratedOnly: false,
       touchesSourceArtifacts: true,
     });
@@ -236,7 +234,6 @@ describe('idea patch-plan resource URI decoding', () => {
     expect(body.data.operationKinds).toEqual(['file.create', 'order.insert']);
     expect(body.data.safety).toEqual({
       destructive: false,
-      requiresConfirmation: true,
       touchesGeneratedOnly: false,
       touchesSourceArtifacts: true,
     });

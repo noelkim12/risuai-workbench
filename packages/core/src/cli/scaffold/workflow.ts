@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { writeJson, writeText } from '@/node/fs-helpers';
 import { sanitizeFilename } from '../../utils/filenames';
 import { argValue, getErrorMessage } from '../shared';
+import { installDocsProviderBundle } from '../shared/docs-provider';
 import { RISUMODULE_FILENAME, buildScaffoldRisumoduleManifest } from '../shared/risumodule';
 import { parseRisuLuaMode, type RisuLuaMode } from '../shared/lua-bundler/risulua-mode';
 
@@ -91,7 +92,9 @@ const RISULUA_SCAFFOLD_DOC_FILES: Array<[string, unknown]> = [
       distBuildStrategy: 'concat-build-time-require',
       files: [
         'lua/main.risulua',
-        ...RISULUA_SCAFFOLD_MODULES.map((moduleId) => `lua/${moduleId.replace(/\./g, '/')}.risulua`),
+        ...RISULUA_SCAFFOLD_MODULES.map(
+          (moduleId) => `lua/${moduleId.replace(/\./g, '/')}.risulua`,
+        ),
       ],
     },
   ],
@@ -202,6 +205,7 @@ function runScaffold(options: ScaffoldOptions): void {
       fileCount = scaffoldPreset(root, options);
       break;
   }
+  fileCount += installDocsProviderBundle({ outputRoot: root, overwrite: true });
 
   console.log(`\n  ✅ 스캐폴딩 완료 → ${path.relative('.', root)}/`);
   console.log(`  📁 생성된 파일: ${fileCount}개`);
@@ -341,7 +345,10 @@ function scaffoldRisuLuaLayout(root: string, sanitizedName: string, mode: RisuLu
   writeText(path.join(root, 'legacy', 'original.risulua'), '');
   count++;
 
-  writeText(path.join(root, 'docs', 'risulua-split-report.md'), renderRisuLuaScaffoldReport(sanitizedName));
+  writeText(
+    path.join(root, 'docs', 'risulua-split-report.md'),
+    renderRisuLuaScaffoldReport(sanitizedName),
+  );
   count++;
 
   for (const [filePath, data] of RISULUA_SCAFFOLD_DOC_FILES) {
@@ -363,7 +370,9 @@ function renderRisuLuaScaffoldMain(sanitizedName: string): string {
     '-- 모듈식 개발: build/pack 단계에서 dist 파일이 생성됩니다.',
     '-- Generated to mirror risulua-split output so future edits have clear module boundaries.',
     '',
-    ...RISULUA_SCAFFOLD_MODULES.map((moduleId) => `local ${moduleIdToLuaLocalName(moduleId)} = require("${moduleId}")`),
+    ...RISULUA_SCAFFOLD_MODULES.map(
+      (moduleId) => `local ${moduleIdToLuaLocalName(moduleId)} = require("${moduleId}")`,
+    ),
     '',
     'function onStart()',
     `  -- ${sanitizedName} starter`,

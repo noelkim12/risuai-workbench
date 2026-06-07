@@ -135,6 +135,19 @@ describe('risulua build workflow', () => {
     expect(joinedLogs(logs)).not.toContain('RisuLua Modular Dist Builder');
   });
 
+  it('component build workflow normalizes string regex ableFlag values', () => {
+    const rootDir = createWorkspace('String AbleFlag Component Module');
+    writeComponentInputs(rootDir, 'True');
+
+    const status = runBuildWorkflow(['--in', rootDir]);
+
+    expect(status).toBe(0);
+    expect(JSON.parse(fs.readFileSync(path.join(rootDir, 'regexscript_export.json'), 'utf-8'))).toEqual({
+      type: 'regex',
+      data: [{ comment: 'rx one', in: 'hello', out: 'world', type: 'editprocess', ableFlag: true }],
+    });
+  });
+
   it('component build workflow remains unchanged with classic mode stripped', () => {
     const rootDir = createWorkspace('Classic Component Module');
     writeComponentInputs(rootDir);
@@ -166,13 +179,13 @@ function createWorkspace(name: string): string {
   return rootDir;
 }
 
-function writeComponentInputs(rootDir: string): void {
+function writeComponentInputs(rootDir: string, ableFlag: boolean | 'true' | 'false' | 'True' | 'False' = true): void {
   writeFile(rootDir, 'regex/one.json', `${JSON.stringify({
     comment: 'rx one',
     in: 'hello',
     out: 'world',
     type: 'editprocess',
-    ableFlag: true,
+    ableFlag,
   }, null, 2)}\n`);
   writeFile(rootDir, 'lorebooks/one.json', `${JSON.stringify({
     key: 'alpha',

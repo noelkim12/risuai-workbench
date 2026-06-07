@@ -10,7 +10,7 @@ import path from 'node:path';
 import { parseEditorFrontmatter } from 'risu-workbench-core';
 
 import { createMutationResultEnvelope, type ChangedFileResult, type MutationResultEnvelope, type PostValidationResult } from '../contracts/mutation-result';
-import type { ConfirmationInput, PatchOperation, PatchPlan } from '../contracts/patch-plan';
+import type { PatchOperation, PatchPlan } from '../contracts/patch-plan';
 import { buildMutationJournalUri } from '../contracts/resource-uri';
 import type { WorkbenchDiagnostic } from '../contracts/diagnostics';
 import type { WorkspaceRootStatus } from '../project/resolve-root';
@@ -22,7 +22,6 @@ import { evaluateMutationSafetyGate } from './safety-gate';
 import type { MutationMode } from './mode';
 
 export interface ApplyPatchPlanEngineOptions {
-  confirmation?: ConfirmationInput;
   mutationMode: MutationMode;
   options?: {
     postValidate?: boolean;
@@ -47,9 +46,9 @@ const TOOL_NAME = 'workbench.apply_patch_plan';
 
 /**
  * applyPatchPlan 함수.
- * 저장된 PatchPlan의 precondition을 모두 재검증한 뒤 지원 operation을 파일에 적용함.
+ * 저장된 PatchPlan의 지원 operation을 파일에 적용함.
  *
- * @param options - patch plan, workspace, mutation mode, confirmation 입력
+ * @param options - patch plan, workspace, mutation mode 입력
  * @returns mutation result envelope
  */
 export async function applyPatchPlan(options: ApplyPatchPlanEngineOptions): Promise<MutationResultEnvelope> {
@@ -66,10 +65,7 @@ export async function applyPatchPlan(options: ApplyPatchPlanEngineOptions): Prom
   }
 
   const safetyResult = await evaluateMutationSafetyGate({
-    confirmation: options.confirmation,
-    expectedConfirmationText: `APPLY ${options.patchPlan.patchPlanId}`,
     mode: options.mutationMode,
-    risk: getPatchPlanRisk(options.patchPlan),
     targets: targetsResult.targets.map((target) => ({ expectedHash: target.expectedHash, intent: target.intent, path: target.path })),
     toolName: TOOL_NAME,
     workspace: options.workspace,
@@ -144,18 +140,10 @@ function buildTargetPlans(patchPlan: PatchPlan): { ok: true; targets: TargetPlan
     const previous = targets.get(precondition.path);
     const intent = precondition.kind === 'path.not-exists' ? 'create-missing' : previous?.intent ?? 'read-existing';
     targets.set(precondition.path, {
-      expectedHash: precondition.kind === 'file.hash' ? precondition.expectedHash : previous?.expectedHash,
+      expectedHash: previous?.expectedHash,
       intent,
       path: precondition.path,
     });
-  }
-
-  const missingHashTargets = [...targets.values()].filter((target) => target.intent === 'write-existing' && !target.expectedHash);
-  if (missingHashTargets.length > 0) {
-    return {
-      diagnostics: missingHashTargets.map((target) => ({ category: 'precondition', id: 'PATCH_HASH_PRECONDITION_MISSING', message: `${target.path} requires a file.hash precondition before apply.`, path: target.path, ruleId: 'patch.hash-required', severity: 'error' })),
-      ok: false,
-    };
   }
 
   return { ok: true, targets: [...targets.values()] };
@@ -484,17 +472,6 @@ function getPrimaryOperationPath(operation: PatchOperation): string | null {
  */
 function hasFrontmatterOperation(operations: readonly PatchOperation[], targetPath: string): boolean {
   return operations.some((operation) => getPrimaryOperationPath(operation) === targetPath && (operation.kind.startsWith('frontmatter.') || (operation.kind === 'text.replace' && /\.risu(?:lorebook|regex|prompt)$/.test(targetPath))));
-}
-
-/**
- * getPatchPlanRisk 함수.
- * patch plan safety metadata와 affected files로 confirmation risk를 산정함.
- *
- * @param patchPlan - 적용할 patch plan
- * @returns mutation risk level
- */
-function getPatchPlanRisk(patchPlan: PatchPlan): 'high' | 'medium' {
-  return patchPlan.safety.destructive || patchPlan.preview.affectedFiles.length > 1 ? 'high' : 'medium';
 }
 
 /**

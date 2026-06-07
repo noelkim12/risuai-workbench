@@ -26,6 +26,8 @@ const SECTION_ORDER: BrowserSectionKind[] = [
   'diagnostics',
 ];
 
+const SCAN_DIRECTORIES = ['lorebooks', 'lorebook', 'regex', 'lua', 'toggle', 'variables', 'html'] as const;
+
 function createModuleSectionDrafts(): Record<ModuleSectionKind, SectionDraft> {
   return {
     manifest: createSection('manifest', 'Manifest', 'manifest'),
@@ -41,15 +43,14 @@ function createModuleSectionDrafts(): Record<ModuleSectionKind, SectionDraft> {
 
 function classifyFile(relativePath: string): ModuleSectionKind | undefined {
   const lowerPath = relativePath.toLowerCase();
-  const extension = path.extname(lowerPath).replace('.', '');
 
   if (lowerPath === '.risumodule') return 'manifest';
-  if (extension === 'risulorebook' || isUnderDirectory(lowerPath, 'lorebooks')) return 'lorebooks';
-  if (extension === 'risuregex' || isUnderDirectory(lowerPath, 'regex')) return 'regexRules';
-  if (extension === 'risulua' || isUnderDirectory(lowerPath, 'lua')) return 'lua';
-  if (extension === 'risutoggle' || isUnderDirectory(lowerPath, 'toggle')) return 'toggle';
-  if (extension === 'risuvar' || isUnderDirectory(lowerPath, 'variables')) return 'variables';
-  if (extension === 'risuhtml' || isUnderDirectory(lowerPath, 'html')) return 'html';
+  if (isUnderDirectory(lowerPath, 'lorebooks') || isUnderDirectory(lowerPath, 'lorebook')) return 'lorebooks';
+  if (isUnderDirectory(lowerPath, 'regex')) return 'regexRules';
+  if (isUnderDirectory(lowerPath, 'lua')) return 'lua';
+  if (isUnderDirectory(lowerPath, 'toggle')) return 'toggle';
+  if (isUnderDirectory(lowerPath, 'variables')) return 'variables';
+  if (isUnderDirectory(lowerPath, 'html')) return 'html';
 
   return undefined;
 }
@@ -79,6 +80,7 @@ const scanner = new GenericDetailScanner<ModuleSectionKind, BrowserItemType>({
   classifyItemType,
   manifestMarkerName: '.risumodule',
   manifestSectionKind: 'manifest',
+  scanDirectories: SCAN_DIRECTORIES,
 });
 
 /**

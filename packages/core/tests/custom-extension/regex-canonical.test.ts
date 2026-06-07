@@ -254,12 +254,13 @@ safe-$1
   });
 
   describe('type and target semantics', () => {
-    it('freezes the six accepted regex types', () => {
+    it('freezes the seven accepted regex types', () => {
       expect(REGEX_TYPES).toEqual([
         'editinput',
         'editoutput',
         'editdisplay',
         'editprocess',
+        'editrequest',
         'edittrans',
         'disabled',
       ]);
@@ -297,6 +298,109 @@ safe-$1
       ).toEqual([entry]);
       expect(extractRegexFromModule({ regex: [entry] }, 'module')).toEqual([entry]);
       expect(extractRegexFromPreset({ presetRegex: [entry] }, 'preset')).toEqual([entry]);
+    });
+
+    it('normalizes string ableFlag values from upstream regex exports', () => {
+      expect(
+        extractRegexFromCharx(
+          {
+            data: {
+              extensions: {
+                risuai: {
+                  customScripts: [
+                    {
+                      comment: 'string flag',
+                      type: 'editdisplay',
+                      ableFlag: 'false',
+                      in: 'foo',
+                      out: 'bar',
+                    },
+                  ],
+                },
+              },
+            },
+          },
+          'charx'
+        )
+      ).toEqual([
+        {
+          comment: 'string flag',
+          type: 'editdisplay',
+          ableFlag: false,
+          in: 'foo',
+          out: 'bar',
+        },
+      ]);
+      expect(
+        extractRegexFromModule(
+          {
+            regex: [
+              {
+                comment: 'module string flag',
+                type: 'editinput',
+                ableFlag: 'True',
+                in: 'baz',
+                out: 'qux',
+              },
+            ],
+          },
+          'module'
+        )
+      ).toEqual([
+        {
+          comment: 'module string flag',
+          type: 'editinput',
+          ableFlag: true,
+          in: 'baz',
+          out: 'qux',
+        },
+      ]);
+      expect(
+        extractRegexFromPreset(
+          {
+            presetRegex: [
+              {
+                comment: 'preset string flag',
+                type: 'editoutput',
+                ableFlag: 'false',
+                in: 'before',
+                out: 'after',
+              },
+            ],
+          },
+          'preset'
+        )
+      ).toEqual([
+        {
+          comment: 'preset string flag',
+          type: 'editoutput',
+          ableFlag: false,
+          in: 'before',
+          out: 'after',
+        },
+      ]);
+    });
+
+    it('rejects non-exact upstream ableFlag string values', () => {
+      const entry = {
+        comment: 'invalid flag',
+        type: 'editdisplay',
+        in: 'foo',
+        out: 'bar',
+      };
+
+      expect(() =>
+        extractRegexFromCharx(
+          { data: { extensions: { risuai: { customScripts: [{ ...entry, ableFlag: 'TRUE' }] } } } },
+          'charx'
+        )
+      ).toThrow(/boolean or true\/false string/);
+      expect(() =>
+        extractRegexFromModule({ regex: [{ ...entry, ableFlag: '0' }] }, 'module')
+      ).toThrow(/boolean or true\/false string/);
+      expect(() =>
+        extractRegexFromPreset({ presetRegex: [{ ...entry, ableFlag: 1 }] }, 'preset')
+      ).toThrow(/boolean or true\/false string/);
     });
 
     it('returns null when an upstream regex collection is absent', () => {

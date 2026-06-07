@@ -28,13 +28,13 @@ Prompt를 추가하거나 제거할 때는 다음 4개 파일을 **항상 함께
 | --- | --- | --- |
 | `src/registry/index.ts` | Prompt metadata (`name`, `title`, `description`) | `PROMPTS` 배열에 `[name, title, description]` 튜플 추가 |
 | `prompt-assets/manifest.json` | Prompt name → Markdown 파일 매핑 | `prompts` 배열에 `{ "name": "...", "file": "..." }` 추가 |
-| `prompt-assets/{name}.md` | Prompt body (실제 워크플로우 텍스트) | 새 Markdown 파일 작성. tool 호출 시퀀스, 검증 단계, 안전 가이드라인 포함 |
+| `prompt-assets/{name}.md` | Prompt body (실제 워크플로우 텍스트) | 새 Markdown 파일 작성. 짧은 workflow와 필요한 검증 단계만 포함 |
 | `prompt-assets/README.md` | 인간-readable 색인 | 표에 Name / Purpose / Prompt asset 행 추가 |
 
 ### Prompt asset body 작성 규칙
 
 - **Tool 호출 시퀀스를 명시**: "먼저 `workbench.inspect_artifact`로 검증한 후 `workbench.suggest_patch`를 호출하세요"처럼 구체적인 tool name을 언급
-- **Mutation gate 언급**: preview-only → commit 전환 시 `confirmation`, `expectedHash`, `mode: 'commit'`을 요구
+- **Mutation field 반복 금지**: prompt body에서 `confirmation`, `expectedHash`, `mode: 'commit'` 같은 low-level gate field를 반복하지 않음
 - **Output schema 참조**: 결과가 `DiagnosticEnvelope`인지 `MutationResultEnvelope`인지 명시
 - **참조 문서 링크**: `docs/mcp/risuai-workbench-mcp.mutation-enabled.md` 등 KB 문서의 관련 섹션을 § 형태로 인용
 
@@ -124,7 +124,7 @@ grep -h "workbench\.[a-z_]*" prompt-assets/workbench.*.md | grep -oP "workbench\
 | | `workbench.apply_patch_plan` | 4단계: 승인 후 적용 |
 | | `workbench.validate_artifact` | 5단계: post-validate |
 
-이 prompt body에는 위 4개 tool name이 **직접 언급**되어 있어야 하며, 각 단계의 input schema와 mutation gate 정책이 정확히 기술되어야 합니다.
+이 prompt body에는 facade workflow와 필요한 action만 짧게 언급하고, schema 세부사항은 tool output과 implementation docs에 둡니다.
 
 ## 6. 종합 체크리스트 요약
 
@@ -144,7 +144,7 @@ grep -h "workbench\.[a-z_]*" prompt-assets/workbench.*.md | grep -oP "workbench\
 
 - [ ] `src/registry/index.ts` — `PROMPTS` 배열에 `[name, title, description]` 추가
 - [ ] `prompt-assets/manifest.json` — `{ name, file }` 매핑 추가
-- [ ] `prompt-assets/{name}.md` — prompt body 작성 (tool 시퀀스, mutation gate, 참조 문서 포함)
+- [ ] `prompt-assets/{name}.md` — prompt body 작성 (짧은 workflow와 참조 문서 포함)
 - [ ] `prompt-assets/README.md` — 색인 표에 행 추가
 - [ ] prompt body에서 참조하는 tool name이 실제 registry/server에 존재하는지 확인
 
