@@ -184,12 +184,22 @@ export interface BrowserItem {
 
 export type CharacterItem = BrowserItem;
 
+export interface BrowserTreeNode {
+  id: string;
+  label: string;
+  kind: 'folder' | 'item';
+  relativePath?: string;
+  item?: BrowserItem;
+  children?: BrowserTreeNode[];
+}
+
 export interface BrowserSection {
   id: string;
   label: string;
   kind: BrowserSectionKind;
   count: number;
   items: BrowserItem[];
+  tree?: BrowserTreeNode[];
 }
 
 export type CharacterSection = BrowserSection;

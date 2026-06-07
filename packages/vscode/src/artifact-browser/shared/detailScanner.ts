@@ -10,6 +10,7 @@ import type {
   BrowserItemType,
   BrowserSection,
   BrowserSectionKind,
+  BrowserTreeNode,
   ManifestParseWarning,
 } from '../artifactBrowserTypes';
 
@@ -139,6 +140,8 @@ export class GenericDetailScanner<
       }
     }
 
+    await this.populateLorebookTree(scanRootUri, sections);
+
     return this.config.sectionOrder.map((kind) => ({
       ...sections[kind],
       count: sections[kind].items.length,
@@ -194,6 +197,134 @@ export class GenericDetailScanner<
       }
     }
   }
+
+  private async populateLorebookTree(
+    scanRootUri: vscode.Uri,
+    sections: Record<TSectionKind, SectionDraft>,
+  ): Promise<void> {
+    const lorebookSection = (sections as Record<string, SectionDraft>)['lorebooks'];
+    if (!lorebookSection || lorebookSection.items.length === 0) return;
+
+    const orderedItems = await orderLorebookItems(scanRootUri, lorebookSection.items);
+    lorebookSection.tree = buildBrowserItemTree(orderedItems);
+  }
+}
+
+const LOREBOOK_DIRECTORY_NAMES = ['lorebooks', 'lorebook'] as const;
+
+async function orderLorebookItems(rootUri: vscode.Uri, items: BrowserItem[]): Promise<BrowserItem[]> {
+  const ordered: BrowserItem[] = [];
+  const seen = new Set<string>();
+
+  for (const directoryName of LOREBOOK_DIRECTORY_NAMES) {
+    const directoryItems = items
+      .map((item) => ({ item, localPath: stripDirectoryPrefix(item.relativePath, directoryName) }))
+      .filter((entry): entry is { item: BrowserItem; localPath: string } => entry.localPath !== undefined)
+      .sort((left, right) => left.localPath.localeCompare(right.localPath));
+    if (directoryItems.length === 0) continue;
+
+    const declaredOrder = await readLorebookOrder(rootUri, directoryName);
+    for (const orderPath of declaredOrder) {
+      for (const entry of directoryItems) {
+        if (seen.has(entry.item.id)) continue;
+        if (entry.localPath === orderPath || entry.localPath.startsWith(`${orderPath}/`)) {
+          ordered.push(entry.item);
+          seen.add(entry.item.id);
+        }
+      }
+    }
+
+    for (const entry of directoryItems) {
+      if (seen.has(entry.item.id)) continue;
+      ordered.push(entry.item);
+      seen.add(entry.item.id);
+    }
+  }
+
+  for (const item of items) {
+    if (seen.has(item.id)) continue;
+    ordered.push(item);
+    seen.add(item.id);
+  }
+
+  return ordered;
+}
+
+async function readLorebookOrder(rootUri: vscode.Uri, directoryName: string): Promise<string[]> {
+  try {
+    const orderUri = vscode.Uri.joinPath(rootUri, directoryName, '_order.json');
+    const content = Buffer.from(await vscode.workspace.fs.readFile(orderUri)).toString('utf8');
+    const parsed: unknown = JSON.parse(content);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((entry) => (typeof entry === 'string' ? normalizeRelativePath(entry) : undefined))
+      .filter((entry): entry is string => entry !== undefined);
+  } catch {
+    return [];
+  }
+}
+
+function buildBrowserItemTree(items: BrowserItem[]): BrowserTreeNode[] {
+  const roots: BrowserTreeNode[] = [];
+  const folders = new Map<string, BrowserTreeNode>();
+
+  for (const item of items) {
+    const treePath = getLorebookTreePath(item);
+    const segments = treePath.split('/').filter(Boolean);
+    if (segments.length === 0) {
+      roots.push(createItemTreeNode(item));
+      continue;
+    }
+
+    let siblings = roots;
+    let folderPath = '';
+    for (const segment of segments.slice(0, -1)) {
+      folderPath = folderPath ? `${folderPath}/${segment}` : segment;
+      let folderNode = folders.get(folderPath);
+      if (!folderNode) {
+        folderNode = {
+          id: `folder:${folderPath}`,
+          label: segment,
+          kind: 'folder',
+          relativePath: folderPath,
+          children: [],
+        };
+        folders.set(folderPath, folderNode);
+        siblings.push(folderNode);
+      }
+      siblings = folderNode.children ?? [];
+    }
+
+    siblings.push(createItemTreeNode(item));
+  }
+
+  return roots;
+}
+
+function createItemTreeNode(item: BrowserItem): BrowserTreeNode {
+  return {
+    id: `item:${item.id}`,
+    label: item.label,
+    kind: 'item',
+    relativePath: item.relativePath,
+    item,
+  };
+}
+
+function getLorebookTreePath(item: BrowserItem): string {
+  for (const directoryName of LOREBOOK_DIRECTORY_NAMES) {
+    const localPath = stripDirectoryPrefix(item.relativePath, directoryName);
+    if (localPath) return localPath;
+  }
+  return item.relativePath ?? item.label;
+}
+
+function stripDirectoryPrefix(relativePath: string | undefined, directoryName: string): string | undefined {
+  const normalized = normalizeRelativePath(relativePath);
+  if (!normalized) return undefined;
+  if (normalized === directoryName) return '';
+  const prefix = `${directoryName}/`;
+  return normalized.startsWith(prefix) ? normalized.slice(prefix.length) : undefined;
 }
 
 /**

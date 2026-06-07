@@ -731,6 +731,67 @@ h2 {
   line-height: 1.35;
 }
 
+.tree-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.tree-list--nested {
+  margin-top: var(--space-1);
+}
+
+.tree-list__item {
+  min-width: 0;
+}
+
+.tree-folder,
+.tree-item {
+  margin-left: calc(var(--tree-depth, 0) * var(--space-3));
+}
+
+.tree-folder {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  width: calc(100% - (var(--tree-depth, 0) * var(--space-3)));
+  border: 1px solid var(--card-border);
+  color: var(--text);
+  background: color-mix(in srgb, var(--section) 72%, var(--surface));
+  text-align: left;
+  font-weight: 700;
+}
+
+.tree-folder__chevron {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.tree-folder__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-folder__count {
+  min-width: var(--count-min-width);
+  padding: var(--pill-padding-y) var(--space-2);
+  border-radius: var(--radius-pill);
+  color: var(--badge-text);
+  background: var(--badge);
+  text-align: center;
+  font-size: var(--text-xs);
+}
+
+.tree-item .item-button {
+  width: calc(100% - (var(--tree-depth, 0) * var(--space-3)));
+}
+
 /* Marker Editor ---------------------------------------------------------- */
 
 .marker-editor-shell {
