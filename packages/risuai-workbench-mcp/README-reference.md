@@ -1,7 +1,7 @@
 # risuai-workbench-mcp reference
 
 이 문서는 `risuai-workbench-mcp`의 상세 운영/구현 reference입니다.
-짧은 설치와 사용법은 [README.md](./README.md)를 확인하세요.
+문서 탐색은 [README.md](./README.md), 짧은 설치와 사용법은 [docs/setup.md](./docs/setup.md)와 [docs/workflows.md](./docs/workflows.md)를 확인하세요.
 
 RisuAI Workbench의 Canonical Workspace를 AI agent가 안전하게 읽고, 검증하고, 필요한 경우 Workbench mutation tool로 수정할 수 있게 해 주는 local stdio MCP server입니다.
 

@@ -101,6 +101,19 @@ describe('core workflow wrappers', () => {
 
     expect(['applied', 'failed']).toContain(result.status);
     expect(result.resourceLinks).toContain('risuai-workbench://wiki/extracted/preset/wiki');
+    expect(result.workflowSummary).toEqual(expect.objectContaining({
+      outDir: 'extracted/preset',
+      sourcePath: 'source.risup',
+      wikiRoot: 'extracted/preset/wiki',
+    }));
+    expect(result.workflowSummary?.commands).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'extract' }),
+      expect.objectContaining({ label: 'post-extract analyze/wiki' }),
+    ]));
+    expect(result.postValidation.diagnostics.some((diagnostic) => diagnostic.id === 'RUN_EXTRACT_COMMAND_SUMMARY')).toBe(true);
+    const journal = await readFile(path.join(fixture.root, '.risuai-workbench-mcp', 'journal.jsonl'), 'utf8');
+    expect(journal).toContain('"workflowSummary"');
+    expect(journal).toContain('"sourcePath":"source.risup"');
   });
 
   it('rejects extract when output directory and fallback already exists', async () => {

@@ -1,171 +1,92 @@
-# risuai-workbench-mcp
+# risuai-workbench-mcp 문서 인덱스
 
-RisuAI Workbench의 Canonical Workspace를 AI agent가 안전하게 읽고, 검증하고, 필요한 경우 수정할 수 있게 해 주는 local stdio MCP server입니다.
+이 패키지는 RisuAI Workbench의 canonical workspace를 AI agent가 안전하게 읽고, 검증하고, 필요한 경우 승인된 patch plan으로 수정할 수 있게 해 주는 local stdio MCP server입니다. 이 README는 패키지 문서를 탐색하는 진입점이며, 세부 사용법은 주제별 문서로 분리되어 있습니다.
 
-기본 `tools/list`에는 8개 facade tool만 노출됩니다. 기존 domain tool들은 내부 Action Registry action으로 실행되며, 파일 변경은 preview/apply flow로 처리됩니다.
+문서의 신뢰 기준(Source of Truth)은 `packages/risuai-workbench-mcp/src/`, `package.json`, 테스트, 그리고 실제 MCP client 동작입니다. README는 운영 흐름을 한눈에 고르는 인덱스 역할만 합니다.
 
-## Extraction quick path
+## 이 문서는 왜 나뉘었나
 
-If the user asks to extract, import, or unpack a RisuAI archive (`.risum`, `.charx`, `.risup`), do **not** read the binary archive as text, do **not** hand-unzip it, and do **not** call `workbench.run_extract` in default MCP mode. `.risuchar` is a canonical workspace root marker, not an external archive input.
+- MCP package는 설치, client 설정, facade tool surface, archive 추출, mutation safety, troubleshooting, 개발 명령이 한 번에 섞이기 쉽습니다.
+- 대부분의 사용자는 처음에 설정과 기본 흐름만 필요하고, agent나 maintainer는 facade 내부 구조와 안전 경계를 별도로 확인해야 합니다.
+- README에는 페이지 선택 기준만 남기고, 반복되는 명령·표·주의사항은 `docs/` 하위 문서로 이동해 관심사를 분리합니다.
 
-Use the facade action:
-
-```text
-workbench.run_action({
-  actionId: "core.run_extract",
-  args: {
-    sourcePath: "test_suites/example.risum",
-    outDir: "test_suites/extraction_targets",
-    type: "module"
-  }
-})
-```
-
-`workbench.run_extract` is a legacy direct MCP tool name. It is hidden unless the server is started with `RISU_MCP_EXPOSE_LEGACY_TOOLS=1`.
-
-## 빠른 시작
-
-요구사항:
-
-- Node.js 20 이상
-- MCP-compatible client
-- RisuAI Workbench workspace root
-
-저장소에서 직접 사용할 때:
-
-```bash
-npm install
-npm run build --workspace risuai-workbench-mcp
-node packages/risuai-workbench-mcp/bin/risuai-workbench-mcp.js --help
-```
-
-## MCP client 설정
-
-Claude Desktop / Cursor 계열 `mcpServers` 예시:
-
-```json
-{
-  "mcpServers": {
-    "risuai-workbench": {
-      "type": "stdio",
-      "command": "node",
-      "args": [
-        "./packages/risuai-workbench-mcp/bin/risuai-workbench-mcp.js",
-        "--stdio"
-      ]
-    }
-  }
-}
-```
-
-VS Code style `servers`도 같은 `command`와 `args`를 사용합니다.
-
-## Facade workflow
-
-일반 read-only / preview workflow:
+## 디렉토리 구조
 
 ```text
-workbench.route_intent
-  -> workbench.catalog
-  -> workbench.prepare_action
-  -> workbench.run_action
+packages/risuai-workbench-mcp/
+├── README.md                  ← 이 파일. 인덱스 + 탐색 가이드
+├── README-reference.md        ← 상세 운영/구현 reference
+├── docs/
+│   ├── README.md              ← MCP package 문서 묶음 인덱스
+│   ├── setup.md               ← 요구사항, 빌드, MCP client 설정
+│   ├── workflows.md           ← 기본 facade 흐름과 archive 추출
+│   ├── facade-tools.md        ← 공개 facade tool 8개의 역할
+│   ├── mutation-safety.md     ← patch preview/apply와 파일 변경 안전성
+│   ├── troubleshooting.md     ← 자주 발생하는 문제와 점검 순서
+│   └── development.md         ← CLI, 개발 명령, stdout/stderr 규칙
+├── prompt-assets/README.md    ← prompt asset 목록
+└── src/tools/README.md        ← tool 구현 구조
 ```
 
-파일 변경 workflow:
+## 작업 유형 × 문서 매트릭스
 
-```text
-workbench.route_intent
-  -> workbench.catalog
-  -> workbench.prepare_action
-  -> workbench.patch_preview
-  -> workbench.patch_apply
-```
+| 작업 유형 | 먼저 읽을 페이지 | 현재 근거 |
+|---|---|---|
+| 처음 설치하거나 MCP client에 연결 | [`docs/setup.md`](docs/setup.md) | `package.json`, `bin/risuai-workbench-mcp.js`, `src/cli.ts` |
+| agent에게 기본 사용 흐름을 설명 | [`docs/workflows.md`](docs/workflows.md) | `src/tools/facade/*`, `src/actions/create-registry.ts` |
+| 공개 tool surface를 확인 | [`docs/facade-tools.md`](docs/facade-tools.md) | `src/tools/facade/index.ts`, `src/dev/snapshot-tool-surface.ts` |
+| 파일 변경 안전 경계를 검토 | [`docs/mutation-safety.md`](docs/mutation-safety.md) | `src/mutation/*`, `src/project/safe-path.ts`, `src/tools/facade/patch-*.ts` |
+| 실행 오류나 tool 노출 문제를 진단 | [`docs/troubleshooting.md`](docs/troubleshooting.md) | `src/cli.ts`, facade tools, MCP client 설정 |
+| maintainer용 CLI·개발 명령 확인 | [`docs/development.md`](docs/development.md) | `package.json`, `src/dev/*`, `README-reference.md` |
+| 상세 구조와 protocol reference 확인 | [`README-reference.md`](README-reference.md) | package source와 기존 상세 문서 |
 
-`core.run_extract` 같은 internal action도 facade flow로 실행합니다:
+## Subagent 사용 가이드
 
-```text
-workbench.route_intent
-  -> workbench.catalog
-  -> workbench.prepare_action
-  -> workbench.run_action({ actionId: "core.run_extract", args: ... })
-```
+subagent가 이 MCP package를 다룰 때는 다음 순서로 문서를 좁힙니다.
 
-`workbench.run_action`의 `dryRun: true`는 facade invocation dry-run입니다. `core.run_extract`에서는 action 존재와 args schema만 확인하고, `handleRunExtract()`를 호출하지 않습니다. 따라서 path safety 검사, `outDir` fallback 계산, `risu-core` 실행, 파일 생성은 하지 않으며, 실제 extraction preview를 뜻하지 않습니다.
+1. **이 README**, 작업 유형과 관련 페이지를 먼저 고릅니다.
+2. **[`docs/README.md`](docs/README.md)**, `docs/` 하위 페이지의 범위를 확인합니다.
+3. **작업별 leaf 문서**, 설치·workflow·tool surface·mutation safety 중 필요한 문서만 읽습니다.
+4. **[`README-reference.md`](README-reference.md)**, leaf 문서보다 상세한 protocol·architecture 근거가 필요할 때만 읽습니다.
+5. **관련 source/test**, 마지막에 실제 구현과 테스트로 문장을 고정합니다.
 
-## 기본 facade tools
+### 빠른 로드 조합
 
-| MCP tool | 역할 | Mutation |
-| --- | --- | --- |
-| `workbench.smoke` | server와 workspace 상태를 확인합니다. | no |
-| `workbench.route_intent` | 사용자 요청을 capability, risk, 추천 internal action 후보로 라우팅합니다. | no |
-| `workbench.catalog` | 현재 intent에 맞는 내부 action 후보만 짧게 반환합니다. | no |
-| `workbench.prepare_action` | 선택한 internal action 하나의 입력 가이드와 예시를 반환합니다. | no |
-| `workbench.run_action` | 내부 action을 schema 검증 후 실행합니다. | action-dependent |
-| `workbench.context` | 큰 context payload를 handle로 만들고, 읽고, 검색하고, 해제합니다. | no |
-| `workbench.patch_preview` | patch preview action 또는 patch plan pass-through를 실행하고 plan을 저장합니다. | preview only |
-| `workbench.patch_apply` | 저장된 patch plan을 적용합니다. | commit |
+| 상황 | 권장 로드 파일 |
+|---|---|
+| MCP client 설정 문구 수정 | `docs/setup.md` + `package.json` |
+| archive 추출 가이드 수정 | `docs/workflows.md` + `README-reference.md` |
+| facade tool 설명 수정 | `docs/facade-tools.md` + `src/tools/facade/index.ts` |
+| mutation 관련 문구 수정 | `docs/mutation-safety.md` + `src/mutation/*` |
+| 문제 해결 문구 수정 | `docs/troubleshooting.md` + 관련 설정 예시 |
+| 개발 명령 수정 | `docs/development.md` + `package.json` |
 
-`catalog`와 `prepare_action`이 반환하는 `actionId` 값은 MCP tool 이름이 아니라 내부 Action Registry ID입니다. 예: `inspect.path`, `analyze.query_lua_analysis`, `creative.brainstorm_scamper`, `patch.suggest_order`.
+## 핵심 운영 원칙
 
-## CLI
+- 기본 `tools/list`에는 facade tool 8개만 노출됩니다. 세부 기능은 `route_intent` → `catalog` → `prepare_action`으로 찾습니다.
+- 읽기/분석 작업은 `run_action`으로 실행하고, 파일 변경 작업은 `patch_preview`로 plan을 만든 뒤 저장된 plan만 `patch_apply`로 적용합니다.
+- `.risum`, `.charx`, `.risup` archive 추출은 내부 action `core.run_extract`를 사용합니다. archive를 text로 읽거나 수동 unzip하지 않습니다.
+- stdio mode에서 stdout은 MCP JSON-RPC 전용입니다. 일반 로그와 diagnostic은 stderr로 보냅니다.
 
-```bash
-risuai-workbench-mcp --stdio
-risuai-workbench-mcp --help
-risuai-workbench-mcp --version
-```
+## 파일 수정 규칙
 
-| 옵션 | 기본값 | 설명 |
-| --- | --- | --- |
-| `--stdio` | 없음 | MCP stdio server를 시작합니다. stdout은 JSON-RPC 전용입니다. |
-| `--help` | 없음 | stdio 시작 없이 사용법을 출력합니다. |
-| `--version` | 없음 | package version을 출력합니다. |
+- README에는 새 기능의 상세 사용법을 길게 복사하지 않습니다. 새 주제는 `docs/` leaf 문서에 추가하고 README의 매트릭스에서 링크합니다.
+- 공개 facade tool 이름과 내부 `actionId`를 구분해서 씁니다. 예: MCP tool은 `workbench.run_action`, 내부 action은 `core.run_extract`입니다.
+- 보장처럼 쓰는 문장은 구현 파일이나 테스트 근거를 함께 확인합니다. 구현만 확인한 내용은 `현재 구현` 또는 `코드 기준`처럼 표현합니다.
+- 링크는 패키지 내부 상대 링크를 우선 사용합니다.
 
-## Write behavior
+## 같이 읽을 문서
 
-- path input은 상대 경로와 absolute path를 모두 받을 수 있습니다. 상대 경로는 startup context 기준으로 해석합니다.
-- 파일 변경은 preview/apply flow와 append-only journal을 사용합니다.
-- mutation 결과는 append-only journal에 기록됩니다.
-
-## 더 보기
-
-- 상세 운영/구현 reference: [README-reference.md](./README-reference.md)
-- Prompt asset 목록: [prompt-assets/README.md](./prompt-assets/README.md)
-- Tool 구현 구조: [src/tools/README.md](./src/tools/README.md)
-
-## 개발
-
-```bash
-npm run build --workspace risuai-workbench-mcp
-npm test --workspace risuai-workbench-mcp
-npm run watch --workspace risuai-workbench-mcp
-```
-
-Manual smoke:
-
-```bash
-node packages/risuai-workbench-mcp/bin/risuai-workbench-mcp.js --help
-node packages/risuai-workbench-mcp/bin/risuai-workbench-mcp.js --stdio
-```
-
-## Troubleshooting
-
-### Server가 시작하지 않아요
-
-- Node.js 20 이상인지 확인하세요.
-- `npm run build --workspace risuai-workbench-mcp`를 먼저 실행하세요.
-- MCP client config의 `command`와 `args`가 실제 파일 경로를 가리키는지 확인하세요.
-- stdio mode에서 stdout은 JSON-RPC 전용입니다. 진단 로그는 stderr로 출력해야 합니다.
-
-### Tools가 client에 보이지 않아요
-
-- MCP client를 재시작하세요.
-- built `dist/`가 최신인지 확인하세요.
-- client가 `mcpServers`와 `servers` 중 어떤 config 형식을 요구하는지 확인하세요.
-
-### Mutation이 거부돼요
-
-- apply가 거부되거나 stale 상태가 의심되면 최신 파일 기준으로 preview를 다시 생성하세요.
+- [`docs/README.md`](docs/README.md)
+- [`docs/setup.md`](docs/setup.md)
+- [`docs/workflows.md`](docs/workflows.md)
+- [`docs/facade-tools.md`](docs/facade-tools.md)
+- [`docs/mutation-safety.md`](docs/mutation-safety.md)
+- [`docs/troubleshooting.md`](docs/troubleshooting.md)
+- [`docs/development.md`](docs/development.md)
+- [`README-reference.md`](README-reference.md)
+- [`prompt-assets/README.md`](prompt-assets/README.md)
+- [`src/tools/README.md`](src/tools/README.md)
 
 ## License
 
