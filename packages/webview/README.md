@@ -46,7 +46,7 @@
 
 `src/main.ts`는 하나의 bundle 안에서 view mode를 나눕니다.
 
-- `document.documentElement.dataset.editorMode === 'true'`이고 `risuWorkbenchView`가 `main-editor`이면 `MainEditor`를 mount합니다.
+- `document.documentElement.dataset.editorMode === 'true'`이고 `risuaiWorkbenchView`가 `main-editor`이면 `MainEditor`를 mount합니다.
 - editor mode이지만 main editor가 아니면 `MarkerEditor`를 mount합니다.
 - 그 외에는 Artifact Browser sidebar용 `App`을 mount하고 ready/refresh/select/openItem message 흐름을 연결합니다.
 

@@ -353,7 +353,7 @@ export function registerAdvancedLspProviders(
               lens.monacoRange ?? sourceRangeToMonacoRange(lens.sourceRange),
             ),
             command: {
-              id: lens.command ?? 'risuWorkbench.mainEditor.codeLensLabel',
+              id: lens.command ?? 'risuaiWorkbench.mainEditor.codeLensLabel',
               title: lens.title,
               tooltip: lens.tooltip,
               arguments: lens.arguments,
