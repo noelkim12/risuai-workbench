@@ -3,7 +3,7 @@
  * @file packages/vscode/src/lsp/cbsActivationCodeLens.ts
  */
 
-export const CBS_ACTIVATION_SUMMARY_COMMAND = 'risuWorkbench.cbs.showActivationLinks';
+export const CBS_ACTIVATION_SUMMARY_COMMAND = 'risuaiWorkbench.cbs.showActivationLinks';
 
 export interface CbsActivationNavigationTarget {
   range?: {

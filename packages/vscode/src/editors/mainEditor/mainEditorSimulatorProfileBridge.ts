@@ -15,7 +15,7 @@ import type {
 } from './mainEditorTypes';
 import { isSimulatorProfile as isStrictMainEditorSimulatorProfile } from './mainEditorTypes';
 
-export const MAIN_EDITOR_SIMULATOR_PROFILES_KEY = 'risuWorkbench.mainEditor.simulatorProfiles';
+export const MAIN_EDITOR_SIMULATOR_PROFILES_KEY = 'risuaiWorkbench.mainEditor.simulatorProfiles';
 
 interface SimulatorProfileStore {
   profiles: MainEditorSimulatorProfilePayload[];

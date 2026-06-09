@@ -7,7 +7,7 @@ import path from 'node:path';
 
 import { RISUAI_LUA_RUNTIME_STUB_FILE_NAME } from 'risu-workbench-core';
 
-export const RISU_LUALS_STUB_COMMAND = 'risuWorkbench.generateLuaStubs';
+export const RISU_LUALS_STUB_COMMAND = 'risuaiWorkbench.generateLuaStubs';
 
 const RISU_LUALS_STUB_ROOT_SEGMENTS = Object.freeze(['.vscode', 'risu-stubs']);
 

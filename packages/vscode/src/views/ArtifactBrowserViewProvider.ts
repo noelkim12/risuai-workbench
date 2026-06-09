@@ -13,6 +13,9 @@ import { WorkspaceArtifactDiscoveryService } from '../artifact-browser/Workspace
 import {
   createArtifactBrowserCardsMessage,
   createArtifactBrowserDetailMessage,
+  isArtifactBrowserMoveLorebookFolderMessage,
+  isArtifactBrowserMoveLorebookItemMessage,
+  isArtifactBrowserMoveRegexItemMessage,
   isArtifactBrowserOpenItemMessage,
   isArtifactBrowserReadyMessage,
   isArtifactBrowserRefreshMessage,
@@ -21,6 +24,7 @@ import {
 import {
   ARTIFACT_BROWSER_VIEW_ID,
   type BrowserArtifactCard,
+  type BrowserItem,
   type BrowserSection,
 } from '../artifact-browser/artifactBrowserTypes';
 import { MarkerEditorViewProvider } from './MarkerEditorViewProvider';
@@ -35,7 +39,7 @@ const MODULE_MARKER_FILENAME = '.risumodule';
 
 /**
  * ArtifactBrowserViewProvider 클래스.
- * 기존 `risuWorkbench.cards` view id에 Svelte bundle을 로드하고 typed bridge를 연결함.
+ * 기존 `risuaiWorkbench.cards` view id에 Svelte bundle을 로드하고 typed bridge를 연결함.
  */
 export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
   static readonly viewType = ARTIFACT_BROWSER_VIEW_ID;
@@ -107,7 +111,40 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
 
         if (isArtifactBrowserOpenItemMessage(message)) {
           void this.openItem(message.payload.stableId, message.payload.itemId);
+          return;
         }
+
+        if (isArtifactBrowserMoveLorebookItemMessage(message)) {
+          void this.moveLorebookItem(
+            message.payload.stableId,
+            message.payload.itemId,
+            message.payload.targetFolderPath,
+            message.payload.placement,
+            message.payload.targetItemId,
+          );
+          return;
+        }
+
+        if (isArtifactBrowserMoveLorebookFolderMessage(message)) {
+          void this.moveLorebookFolder(
+            message.payload.stableId,
+            message.payload.folderPath,
+            message.payload.targetFolderPath,
+            message.payload.placement,
+          );
+          return;
+        }
+
+        if (isArtifactBrowserMoveRegexItemMessage(message)) {
+          void this.moveRegexItem(
+            message.payload.stableId,
+            message.payload.itemId,
+            message.payload.targetItemId,
+            message.payload.placement,
+          );
+          return;
+        }
+
       },
       null,
       this.context.subscriptions,
@@ -223,6 +260,120 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     await vscode.commands.executeCommand('vscode.open', uri);
   }
 
+  private async moveLorebookItem(
+    stableId: string,
+    itemId: string,
+    targetFolderPath: string | null,
+    placement: 'inside' | 'before' | 'after' = 'inside',
+    targetItemId?: string,
+  ): Promise<void> {
+    const card = this.currentCards.find((entry) => entry.stableId === stableId);
+    const item = this.findSectionItem(stableId, itemId);
+    if (!card || !item?.fileUri || item.type !== 'risulorebook') return;
+
+    const sourceUri = vscode.Uri.parse(item.fileUri);
+    const sourceRelativePath = stripDirectoryPrefix(item.relativePath, 'lorebooks');
+    const lorebookRootUri = vscode.Uri.joinPath(vscode.Uri.parse(card.rootUri), 'lorebooks');
+    const targetDirectoryUri = targetFolderPath
+      ? vscode.Uri.joinPath(lorebookRootUri, ...targetFolderPath.split('/').filter(Boolean))
+      : lorebookRootUri;
+    const targetUri = vscode.Uri.joinPath(targetDirectoryUri, path.basename(sourceUri.fsPath));
+
+    if (sourceUri.toString() !== targetUri.toString()) {
+      await vscode.workspace.fs.rename(sourceUri, targetUri, { overwrite: false });
+    }
+
+    const targetRelativePath = targetFolderPath
+      ? `${targetFolderPath}/${path.basename(targetUri.fsPath)}`
+      : path.basename(targetUri.fsPath);
+    await this.updateLorebookOrder(stableId, lorebookRootUri, targetRelativePath, placement, targetItemId, undefined, sourceRelativePath);
+    await this.refreshSelectedDetail(card);
+  }
+
+  private async moveLorebookFolder(
+    stableId: string,
+    folderPath: string,
+    targetFolderPath: string,
+    placement: 'before' | 'after',
+  ): Promise<void> {
+    const card = this.currentCards.find((entry) => entry.stableId === stableId);
+    if (!card || folderPath === targetFolderPath || targetFolderPath.startsWith(`${folderPath}/`)) return;
+
+    const lorebookRootUri = vscode.Uri.joinPath(vscode.Uri.parse(card.rootUri), 'lorebooks');
+    const folderName = path.posix.basename(folderPath);
+    const targetParentPath = path.posix.dirname(targetFolderPath) === '.' ? null : path.posix.dirname(targetFolderPath);
+    const destinationPath = targetParentPath ? `${targetParentPath}/${folderName}` : folderName;
+    const sourceUri = vscode.Uri.joinPath(lorebookRootUri, ...folderPath.split('/').filter(Boolean));
+    const targetUri = vscode.Uri.joinPath(lorebookRootUri, ...destinationPath.split('/').filter(Boolean));
+
+    if (sourceUri.toString() !== targetUri.toString()) {
+      await vscode.workspace.fs.rename(sourceUri, targetUri, { overwrite: false });
+    }
+
+    await this.updateLorebookOrder(stableId, lorebookRootUri, destinationPath, placement, undefined, targetFolderPath, folderPath);
+    await this.refreshSelectedDetail(card);
+  }
+
+  private async moveRegexItem(
+    stableId: string,
+    itemId: string,
+    targetItemId: string,
+    placement: 'before' | 'after',
+  ): Promise<void> {
+    const card = this.currentCards.find((entry) => entry.stableId === stableId);
+    const item = this.findSectionItem(stableId, itemId);
+    const targetItem = this.findSectionItem(stableId, targetItemId);
+    if (!card || !item || !targetItem || item.id === targetItem.id) return;
+
+    const regexRootUri = vscode.Uri.joinPath(vscode.Uri.parse(card.rootUri), 'regex');
+    const movedPath = stripDirectoryPrefix(item.relativePath, 'regex');
+    const targetPath = stripDirectoryPrefix(targetItem.relativePath, 'regex');
+    if (!movedPath || !targetPath) return;
+
+    const currentOrder = await readOrderedPaths(regexRootUri);
+    const fallbackOrder = this.getSectionRelativePaths(stableId, 'regexRules', 'regex');
+    await writeOrderedPaths(regexRootUri, reorderPaths(mergeOrder(currentOrder, fallbackOrder), movedPath, targetPath, placement));
+    await this.refreshSelectedDetail(card);
+  }
+
+  private findSectionItem(stableId: string, itemId: string): BrowserItem | undefined {
+    return this.currentSections
+      .get(stableId)
+      ?.flatMap((section) => section.items)
+      .find((candidate) => candidate.id === itemId);
+  }
+
+  private async updateLorebookOrder(
+    stableId: string,
+    lorebookRootUri: vscode.Uri,
+    movedPath: string,
+    placement: 'inside' | 'before' | 'after',
+    targetItemId: string | undefined,
+    targetPathOverride?: string,
+    previousPath?: string,
+  ): Promise<void> {
+    const targetItem = targetItemId ? this.findSectionItem(stableId, targetItemId) : undefined;
+    const targetPath = targetPathOverride ?? (targetItem ? stripDirectoryPrefix(targetItem.relativePath, 'lorebooks') : undefined);
+    const currentOrder = withoutPaths(await readOrderedPaths(lorebookRootUri), previousPath);
+    const fallbackOrder = withoutPaths(this.getSectionRelativePaths(stableId, 'lorebooks', 'lorebooks'), previousPath);
+    const nextOrder = targetPath && placement !== 'inside'
+      ? reorderPaths(mergeOrder(currentOrder, fallbackOrder), movedPath, targetPath, placement)
+      : appendPath(mergeOrder(currentOrder, fallbackOrder), movedPath);
+    await writeOrderedPaths(lorebookRootUri, nextOrder);
+  }
+
+  private getSectionRelativePaths(stableId: string, sectionKind: string, directoryName: string): string[] {
+    const section = this.currentSections.get(stableId)?.find((entry) => entry.kind === sectionKind);
+    if (!section) return [];
+    return section.items
+      .map((item) => stripDirectoryPrefix(item.relativePath, directoryName))
+      .filter((entry): entry is string => Boolean(entry));
+  }
+
+  private async refreshSelectedDetail(card: BrowserArtifactCard): Promise<void> {
+    await this.postDetailSections(card);
+  }
+
   /**
    * openMarkerEditor 함수.
    * 선택된 character/module card의 root marker를 marker editor panel로 엶.
@@ -299,4 +450,63 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
 function isRootMarkerUri(uri: vscode.Uri): boolean {
   const basename = path.basename(uri.fsPath);
   return basename === CHARACTER_MARKER_FILENAME || basename === MODULE_MARKER_FILENAME;
+}
+
+function stripDirectoryPrefix(relativePath: string | undefined, directoryName: string): string | undefined {
+  if (!relativePath) return undefined;
+  const normalized = relativePath.replace(/\\/g, '/').replace(/^\/+/, '');
+  if (normalized === directoryName) return '';
+  const prefix = `${directoryName}/`;
+  return normalized.startsWith(prefix) ? normalized.slice(prefix.length) : undefined;
+}
+
+async function readOrderedPaths(directoryUri: vscode.Uri): Promise<string[]> {
+  try {
+    const orderUri = vscode.Uri.joinPath(directoryUri, '_order.json');
+    const content = Buffer.from(await vscode.workspace.fs.readFile(orderUri)).toString('utf8');
+    const parsed: unknown = JSON.parse(content);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+async function writeOrderedPaths(directoryUri: vscode.Uri, orderedPaths: string[]): Promise<void> {
+  const orderUri = vscode.Uri.joinPath(directoryUri, '_order.json');
+  const uniquePaths = [...new Set(orderedPaths)];
+  await vscode.workspace.fs.writeFile(orderUri, Buffer.from(`${JSON.stringify(uniquePaths, null, 2)}\n`, 'utf8'));
+}
+
+function appendPath(currentOrder: string[], movedPath: string): string[] {
+  return [...currentOrder.filter((entry) => entry !== movedPath), movedPath];
+}
+
+function mergeOrder(currentOrder: string[], fallbackOrder: string[]): string[] {
+  const merged: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of [...currentOrder, ...fallbackOrder]) {
+    if (seen.has(entry)) continue;
+    merged.push(entry);
+    seen.add(entry);
+  }
+  return merged;
+}
+
+function withoutPaths(paths: string[], ...removedPaths: Array<string | undefined>): string[] {
+  const removed = new Set(removedPaths.filter((entry): entry is string => Boolean(entry)));
+  return paths.filter((entry) => !removed.has(entry));
+}
+
+function reorderPaths(
+  currentOrder: string[],
+  movedPath: string,
+  targetPath: string,
+  placement: 'before' | 'after',
+): string[] {
+  const withoutMoved = currentOrder.filter((entry) => entry !== movedPath);
+  const targetIndex = withoutMoved.indexOf(targetPath);
+  if (targetIndex < 0) return appendPath(withoutMoved, movedPath);
+  const insertIndex = placement === 'before' ? targetIndex : targetIndex + 1;
+  return [...withoutMoved.slice(0, insertIndex), movedPath, ...withoutMoved.slice(insertIndex)];
 }

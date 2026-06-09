@@ -5,7 +5,7 @@
 
 export const ARTIFACT_BROWSER_PROTOCOL = 'risu-workbench.artifact-browser';
 export const ARTIFACT_BROWSER_PROTOCOL_VERSION = 1;
-export const ARTIFACT_BROWSER_VIEW_ID = 'risuWorkbench.cards';
+export const ARTIFACT_BROWSER_VIEW_ID = 'risuaiWorkbench.cards';
 export const MARKER_EDITOR_PROTOCOL = 'risu-workbench.marker-editor';
 export const MARKER_EDITOR_PROTOCOL_VERSION = 1;
 
@@ -200,6 +200,10 @@ export interface BrowserTreeNode {
   label: string;
   kind: 'folder' | 'item';
   relativePath?: string;
+  treePath?: string;
+  lorebookPath?: string;
+  description?: string;
+  detailDescription?: string;
   item?: BrowserItem;
   children?: BrowserTreeNode[];
 }
@@ -234,6 +238,28 @@ export interface ArtifactBrowserSelectPayload {
 export interface ArtifactBrowserOpenItemPayload {
   stableId: string;
   itemId: string;
+}
+
+export interface ArtifactBrowserMoveLorebookItemPayload {
+  stableId: string;
+  itemId: string;
+  targetFolderPath: string | null;
+  placement?: 'inside' | 'before' | 'after';
+  targetItemId?: string;
+}
+
+export interface ArtifactBrowserMoveLorebookFolderPayload {
+  stableId: string;
+  folderPath: string;
+  targetFolderPath: string;
+  placement: 'before' | 'after';
+}
+
+export interface ArtifactBrowserMoveRegexItemPayload {
+  stableId: string;
+  itemId: string;
+  targetItemId: string;
+  placement: 'before' | 'after';
 }
 
 export interface ArtifactBrowserCardsPayload {
@@ -382,6 +408,21 @@ export type ArtifactBrowserOpenItemMessage = MessageEnvelope<
   ArtifactBrowserOpenItemPayload
 >;
 
+export type ArtifactBrowserMoveLorebookItemMessage = MessageEnvelope<
+  'artifact-browser/moveLorebookItem',
+  ArtifactBrowserMoveLorebookItemPayload
+>;
+
+export type ArtifactBrowserMoveLorebookFolderMessage = MessageEnvelope<
+  'artifact-browser/moveLorebookFolder',
+  ArtifactBrowserMoveLorebookFolderPayload
+>;
+
+export type ArtifactBrowserMoveRegexItemMessage = MessageEnvelope<
+  'artifact-browser/moveRegexItem',
+  ArtifactBrowserMoveRegexItemPayload
+>;
+
 export type ArtifactBrowserDetailMessage = MessageEnvelope<
   'artifact-browser/detailLoaded',
   ArtifactBrowserDetailPayload
@@ -391,7 +432,10 @@ export type ArtifactBrowserWebviewMessage =
   | ArtifactBrowserReadyMessage
   | ArtifactBrowserRefreshMessage
   | ArtifactBrowserSelectMessage
-  | ArtifactBrowserOpenItemMessage;
+  | ArtifactBrowserOpenItemMessage
+  | ArtifactBrowserMoveLorebookItemMessage
+  | ArtifactBrowserMoveLorebookFolderMessage
+  | ArtifactBrowserMoveRegexItemMessage;
 export type ArtifactBrowserExtensionMessage = ArtifactBrowserCardsMessage | ArtifactBrowserDetailMessage;
 
 export type MarkerEditorReadyMessage = MessageEnvelope<'marker-editor/ready', MarkerEditorReadyPayload>;
