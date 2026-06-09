@@ -47,10 +47,10 @@ CBS LSP client 설정은 `package.json`의 `contributes.configuration`과 `src/l
 
 ```json
 {
-  "risuWorkbench.cbs.server.launchMode": "auto",
-  "risuWorkbench.cbs.server.installMode": "local-devDependency",
-  "risuWorkbench.cbs.server.path": "",
-  "risuWorkbench.cbs.server.luaLsPath": ""
+  "risuaiWorkbench.cbs.server.launchMode": "auto",
+  "risuaiWorkbench.cbs.server.installMode": "local-devDependency",
+  "risuaiWorkbench.cbs.server.path": "",
+  "risuaiWorkbench.cbs.server.luaLsPath": ""
 }
 ```
 

@@ -129,10 +129,10 @@ function importBuiltModuleWithVscodeStub<T>(relativePath: string): T {
 test('main editor format metadata maps supported extensions to view types', () => {
   const module = importBuiltModule<BuiltMainEditorTypesModule>('editors/mainEditor/mainEditorTypes.js');
 
-  assert.equal(module.detectMainEditorFormat('/tmp/entry.risulorebook')?.viewType, 'risuWorkbench.mainEditor.lorebook');
-  assert.equal(module.detectMainEditorFormat('/tmp/rule.risuregex')?.viewType, 'risuWorkbench.mainEditor.regex');
-  assert.equal(module.detectMainEditorFormat('/tmp/template.risuprompt')?.viewType, 'risuWorkbench.mainEditor.prompt');
-  assert.equal(module.detectMainEditorFormat('/tmp/page.risuhtml')?.viewType, 'risuWorkbench.mainEditor.html');
+  assert.equal(module.detectMainEditorFormat('/tmp/entry.risulorebook')?.viewType, 'risuaiWorkbench.mainEditor.lorebook');
+  assert.equal(module.detectMainEditorFormat('/tmp/rule.risuregex')?.viewType, 'risuaiWorkbench.mainEditor.regex');
+  assert.equal(module.detectMainEditorFormat('/tmp/template.risuprompt')?.viewType, 'risuaiWorkbench.mainEditor.prompt');
+  assert.equal(module.detectMainEditorFormat('/tmp/page.risuhtml')?.viewType, 'risuaiWorkbench.mainEditor.html');
   assert.equal(module.detectMainEditorFormat('/tmp/page.txt'), null);
 });
 
@@ -511,7 +511,7 @@ test('main editor format preview bridge and profile bridge export handlers', () 
   );
 
   assert.equal(typeof previewModule.createMainEditorFormatPreviewResult, 'function');
-  assert.equal(profileModule.MAIN_EDITOR_SIMULATOR_PROFILES_KEY, 'risuWorkbench.mainEditor.simulatorProfiles');
+  assert.equal(profileModule.MAIN_EDITOR_SIMULATOR_PROFILES_KEY, 'risuaiWorkbench.mainEditor.simulatorProfiles');
   const store = profileModule.readSimulatorProfileStore({ get: () => ({ profiles: [{ id: '' }], activeProfileId: 'broken' }) });
   assert.equal(store.profiles[0].id, 'default');
   assert.equal(store.profiles[0].name, 'Default');
@@ -605,11 +605,11 @@ test('main editor package contribution keeps lorebook custom editor default surf
     };
   };
   const lorebookEditor = packageJson.contributes?.customEditors?.find(
-    (editor) => editor.viewType === 'risuWorkbench.mainEditor.lorebook',
+    (editor) => editor.viewType === 'risuaiWorkbench.mainEditor.lorebook',
   );
 
   assert.deepEqual(lorebookEditor, {
-    viewType: 'risuWorkbench.mainEditor.lorebook',
+    viewType: 'risuaiWorkbench.mainEditor.lorebook',
     displayName: 'Risu Lorebook Editor',
     selector: [{ filenamePattern: '*.risulorebook' }],
     priority: 'default',

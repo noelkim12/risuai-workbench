@@ -10,16 +10,16 @@
   },
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onCommand:risuWorkbench.extractCard",
-    "onCommand:risuWorkbench.packCard",
-    "onCommand:risuWorkbench.analyzeLua",
-    "onCommand:risuWorkbench.inspectCard",
-    "onCommand:risuWorkbench.character.selectImage",
-    "onCommand:risuWorkbench.openCardPanel",
-    "onCommand:risuWorkbench.openMarkerEditor",
-    "onCommand:risuWorkbench.generateLuaStubs",
-    "onCommand:risuWorkbench.cbs.showActivationLinks",
-    "onView:risuWorkbench.cards",
+    "onCommand:risuaiWorkbench.extractCard",
+    "onCommand:risuaiWorkbench.packCard",
+    "onCommand:risuaiWorkbench.analyzeLua",
+    "onCommand:risuaiWorkbench.inspectCard",
+    "onCommand:risuaiWorkbench.character.selectImage",
+    "onCommand:risuaiWorkbench.openCardPanel",
+    "onCommand:risuaiWorkbench.openMarkerEditor",
+    "onCommand:risuaiWorkbench.generateLuaStubs",
+    "onCommand:risuaiWorkbench.cbs.showActivationLinks",
+    "onView:risuaiWorkbench.cards",
     "onLanguage:risulorebook",
     "onLanguage:risuregex",
     "onLanguage:risuprompt",
@@ -159,7 +159,7 @@
     ],
     "customEditors": [
       {
-        "viewType": "risuWorkbench.mainEditor.lorebook",
+        "viewType": "risuaiWorkbench.mainEditor.lorebook",
         "displayName": "Risu Lorebook Editor",
         "selector": [
           {
@@ -169,7 +169,7 @@
         "priority": "default"
       },
       {
-        "viewType": "risuWorkbench.mainEditor.regex",
+        "viewType": "risuaiWorkbench.mainEditor.regex",
         "displayName": "Risu Regex Editor",
         "selector": [
           {
@@ -179,7 +179,7 @@
         "priority": "default"
       },
       {
-        "viewType": "risuWorkbench.mainEditor.prompt",
+        "viewType": "risuaiWorkbench.mainEditor.prompt",
         "displayName": "Risu Prompt Editor",
         "selector": [
           {
@@ -189,7 +189,7 @@
         "priority": "default"
       },
       {
-        "viewType": "risuWorkbench.mainEditor.html",
+        "viewType": "risuaiWorkbench.mainEditor.html",
         "displayName": "Risu HTML Editor",
         "selector": [
           {
@@ -328,16 +328,16 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "risuWorkbench",
+          "id": "risuaiWorkbench",
           "title": "Risu Workbench",
           "icon": "resources/workbench.svg"
         }
       ]
     },
     "views": {
-      "risuWorkbench": [
+      "risuaiWorkbench": [
         {
-          "id": "risuWorkbench.cards",
+          "id": "risuaiWorkbench.cards",
           "name": "Items",
           "type": "webview"
         }
@@ -345,75 +345,68 @@
     },
     "commands": [
       {
-        "command": "risuWorkbench.extractCard",
+        "command": "risuaiWorkbench.extractCard",
         "title": "Risu Workbench: Extract Card"
       },
       {
-        "command": "risuWorkbench.packCard",
+        "command": "risuaiWorkbench.packCard",
         "title": "Risu Workbench: Pack Card"
       },
       {
-        "command": "risuWorkbench.analyzeLua",
+        "command": "risuaiWorkbench.analyzeLua",
         "title": "Risu Workbench: Analyze Lua"
       },
       {
-        "command": "risuWorkbench.inspectCard",
+        "command": "risuaiWorkbench.inspectCard",
         "title": "Risu Workbench: Inspect Card"
       },
       {
-        "command": "risuWorkbench.character.selectImage",
+        "command": "risuaiWorkbench.character.selectImage",
         "title": "Risu Workbench: Select Character Thumbnail"
       },
       {
-        "command": "risuWorkbench.openCardPanel",
+        "command": "risuaiWorkbench.openCardPanel",
         "title": "Risu Workbench: Open Card Panel"
       },
       {
-        "command": "risuWorkbench.openMarkerEditor",
+        "command": "risuaiWorkbench.openMarkerEditor",
         "title": "Risu Workbench: Open Marker Editor"
       },
       {
-        "command": "risuWorkbench.generateLuaStubs",
+        "command": "risuaiWorkbench.generateLuaStubs",
         "title": "Risu Workbench: Generate LuaLS Stubs"
       },
       {
-        "command": "risuWorkbench.cbs.openOccurrence",
+        "command": "risuaiWorkbench.cbs.openOccurrence",
         "title": "Risu Workbench: Open CBS Occurrence"
       },
       {
-        "command": "risuWorkbench.cbs.showActivationLinks",
+        "command": "risuaiWorkbench.cbs.showActivationLinks",
         "title": "Risu Workbench: Show Lorebook Activation Links"
       }
     ],
     "menus": {
       "explorer/context": [
         {
-          "command": "risuWorkbench.openMarkerEditor",
+          "command": "risuaiWorkbench.openMarkerEditor",
           "when": "resourceFilename == .risuchar",
           "group": "navigation"
         },
         {
-          "command": "risuWorkbench.openMarkerEditor",
+          "command": "risuaiWorkbench.openMarkerEditor",
           "when": "resourceFilename == .risumodule",
-          "group": "navigation"
-        }
-      ],
-      "view/title": [
-        {
-          "command": "risuWorkbench.openCardPanel",
-          "when": "view == risuWorkbench.cards",
           "group": "navigation"
         }
       ],
       "view/item/context": [
         {
-          "command": "risuWorkbench.inspectCard",
-          "when": "view == risuWorkbench.cards && viewItem == risuWorkbench.cardItem",
+          "command": "risuaiWorkbench.inspectCard",
+          "when": "view == risuaiWorkbench.cards && viewItem == risuaiWorkbench.cardItem",
           "group": "inline"
         },
         {
-          "command": "risuWorkbench.character.selectImage",
-          "when": "view == risuWorkbench.cards && viewItem == risuWorkbench.cardItem",
+          "command": "risuaiWorkbench.character.selectImage",
+          "when": "view == risuaiWorkbench.cards && viewItem == risuaiWorkbench.cardItem",
           "group": "inline"
         }
       ]
@@ -421,7 +414,7 @@
     "configuration": {
       "title": "Risu Workbench",
       "properties": {
-        "risuWorkbench.cbs.server.launchMode": {
+        "risuaiWorkbench.cbs.server.launchMode": {
           "type": "string",
           "scope": "window",
           "enum": [
@@ -432,7 +425,7 @@
           "default": "auto",
           "markdownDescription": "How the CBS language client resolves `cbs-language-server`. `auto` tries the selected standalone install strategy first, then falls back to the embedded monorepo server module when available."
         },
-        "risuWorkbench.cbs.server.installMode": {
+        "risuaiWorkbench.cbs.server.installMode": {
           "type": "string",
           "scope": "window",
           "enum": [
@@ -443,13 +436,13 @@
           "default": "local-devDependency",
           "markdownDescription": "Standalone attach strategy for `cbs-language-server`. `local-devDependency` resolves `<workspace>/node_modules/.bin/cbs-language-server`, `npx` runs `npx cbs-language-server --stdio`, and `global` runs `cbs-language-server --stdio` from PATH."
         },
-        "risuWorkbench.cbs.server.path": {
+        "risuaiWorkbench.cbs.server.path": {
           "type": "string",
           "scope": "window",
           "default": "",
           "markdownDescription": "Optional explicit path to the `cbs-language-server` executable. Relative paths resolve from the first workspace folder when available, otherwise from the extension root."
         },
-        "risuWorkbench.cbs.server.luaLsPath": {
+        "risuaiWorkbench.cbs.server.luaLsPath": {
           "type": "string",
           "scope": "window",
           "default": "",

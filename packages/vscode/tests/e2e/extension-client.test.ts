@@ -476,7 +476,7 @@ function readPackageJson(): {
       'view/item/context'?: Array<{ command?: string; group?: string; when?: string }>;
     };
     views?: {
-      risuWorkbench?: Array<{ id?: string; name?: string; type?: string }>;
+      risuaiWorkbench?: Array<{ id?: string; name?: string; type?: string }>;
     };
   };
   scripts?: Record<string, string>;
@@ -504,7 +504,7 @@ function readPackageJson(): {
         'view/item/context'?: Array<{ command?: string; group?: string; when?: string }>;
       };
       views?: {
-        risuWorkbench?: Array<{ id?: string; name?: string; type?: string }>;
+        risuaiWorkbench?: Array<{ id?: string; name?: string; type?: string }>;
       };
     };
     scripts?: Record<string, string>;
@@ -1069,6 +1069,26 @@ function getSectionItemSummaries(
   }));
 }
 
+function getSectionTree(sections: Array<{ kind: string; tree?: unknown }>, kind: string): any[] {
+  const section = sections.find((entry) => entry.kind === kind);
+  assert.ok(section, `Expected section ${kind}`);
+  return Array.isArray(section.tree) ? section.tree : [];
+}
+
+function summarizeTreeNode(node: any): unknown {
+  return {
+    id: node.id,
+    label: node.label,
+    kind: node.kind,
+    relativePath: node.relativePath,
+    treePath: node.treePath,
+    description: node.description,
+    detailDescription: node.detailDescription,
+    itemLabel: node.item?.label,
+    children: Array.isArray(node.children) ? node.children.map(summarizeTreeNode) : undefined,
+  };
+}
+
 /**
  * createCharacterBrowserCardInput 함수.
  * scanner boundary test에서 반복되는 card 입력을 최소 필드로 구성함.
@@ -1111,19 +1131,19 @@ test('separates standalone server validation from official VS Code client integr
 test('keeps the unified workbench browser on the existing cards view contribution', () => {
   const packageJson = readPackageJson();
   const activationEvents = packageJson.activationEvents ?? [];
-  const workbenchViews = packageJson.contributes?.views?.risuWorkbench ?? [];
+  const workbenchViews = packageJson.contributes?.views?.risuaiWorkbench ?? [];
 
-  assert.equal(activationEvents.includes('onView:risuWorkbench.cards'), true);
+  assert.equal(activationEvents.includes('onView:risuaiWorkbench.cards'), true);
   assert.equal(
-    activationEvents.some((event) => event.includes('risuWorkbench.modules')),
+    activationEvents.some((event) => event.includes('risuaiWorkbench.modules')),
     false,
   );
   assert.deepEqual(
     workbenchViews.map((view) => ({ id: view.id, name: view.name, type: view.type })),
-    [{ id: 'risuWorkbench.cards', name: 'Items', type: 'webview' }],
+    [{ id: 'risuaiWorkbench.cards', name: 'Items', type: 'webview' }],
   );
   assert.equal(
-    workbenchViews.some((view) => view.id === 'risuWorkbench.modules'),
+    workbenchViews.some((view) => view.id === 'risuaiWorkbench.modules'),
     false,
   );
 });
@@ -1143,7 +1163,7 @@ test('contributes CBS occurrence navigation command for trusted hover links', ()
   const commands = packageJson.contributes?.commands ?? [];
 
   assert.ok(
-    commands.some((command) => command.command === 'risuWorkbench.cbs.openOccurrence'),
+    commands.some((command) => command.command === 'risuaiWorkbench.cbs.openOccurrence'),
     'Expected CBS occurrence navigation command contribution',
   );
 });
@@ -1154,7 +1174,7 @@ test('contributes activation CodeLens popup command for clickable entry links', 
   const commands = packageJson.contributes?.commands ?? [];
   const activationEvents = packageJson.activationEvents ?? [];
 
-  assert.equal(activation.CBS_ACTIVATION_SUMMARY_COMMAND, 'risuWorkbench.cbs.showActivationLinks');
+  assert.equal(activation.CBS_ACTIVATION_SUMMARY_COMMAND, 'risuaiWorkbench.cbs.showActivationLinks');
   assert.ok(
     commands.some((command) => command.command === activation.CBS_ACTIVATION_SUMMARY_COMMAND),
     'Expected activation CodeLens popup command contribution',
@@ -1171,7 +1191,7 @@ test('contributes native LuaLS stub generation command', () => {
   const commands = packageJson.contributes?.commands ?? [];
   const activationEvents = packageJson.activationEvents ?? [];
 
-  assert.equal(stubs.RISU_LUALS_STUB_COMMAND, 'risuWorkbench.generateLuaStubs');
+  assert.equal(stubs.RISU_LUALS_STUB_COMMAND, 'risuaiWorkbench.generateLuaStubs');
   assert.ok(
     commands.some((command) => command.command === stubs.RISU_LUALS_STUB_COMMAND),
     'Expected native LuaLS stub generation command contribution',
@@ -1189,15 +1209,15 @@ test('contributes character thumbnail selection command', () => {
   const contextMenu = packageJson.contributes?.menus?.['view/item/context'] ?? [];
 
   assert.ok(
-    commands.some((command) => command.command === 'risuWorkbench.character.selectImage'),
+    commands.some((command) => command.command === 'risuaiWorkbench.character.selectImage'),
     'Expected character image selection command contribution',
   );
   assert.ok(
-    activationEvents.includes('onCommand:risuWorkbench.character.selectImage'),
+    activationEvents.includes('onCommand:risuaiWorkbench.character.selectImage'),
     'Expected activation event for character image selection command',
   );
   assert.ok(
-    contextMenu.some((item) => item.command === 'risuWorkbench.character.selectImage'),
+    contextMenu.some((item) => item.command === 'risuaiWorkbench.character.selectImage'),
     'Expected tree context menu entry for character image selection',
   );
 });
@@ -1209,17 +1229,17 @@ test('contributes marker editor command to explorer marker file context menus', 
   const explorerContext = packageJson.contributes?.menus?.['explorer/context'] ?? [];
 
   assert.ok(
-    commands.some((command) => command.command === 'risuWorkbench.openMarkerEditor'),
+    commands.some((command) => command.command === 'risuaiWorkbench.openMarkerEditor'),
     'Expected marker editor command contribution',
   );
   assert.ok(
-    activationEvents.includes('onCommand:risuWorkbench.openMarkerEditor'),
+    activationEvents.includes('onCommand:risuaiWorkbench.openMarkerEditor'),
     'Expected activation event for marker editor command',
   );
   assert.ok(
     explorerContext.some(
       (item) =>
-        item.command === 'risuWorkbench.openMarkerEditor' &&
+        item.command === 'risuaiWorkbench.openMarkerEditor' &&
         item.when === 'resourceFilename == .risuchar',
     ),
     'Expected explorer context menu for .risuchar marker files',
@@ -1227,7 +1247,7 @@ test('contributes marker editor command to explorer marker file context menus', 
   assert.ok(
     explorerContext.some(
       (item) =>
-        item.command === 'risuWorkbench.openMarkerEditor' &&
+        item.command === 'risuaiWorkbench.openMarkerEditor' &&
         item.when === 'resourceFilename == .risumodule',
     ),
     'Expected explorer context menu for .risumodule marker files',
@@ -1257,7 +1277,7 @@ test('builds deterministic character image metadata updates', () => {
 
   assert.equal(
     characterImage.RISU_CHARACTER_SELECT_IMAGE_COMMAND,
-    'risuWorkbench.character.selectImage',
+    'risuaiWorkbench.character.selectImage',
   );
   assert.equal(
     characterImage.getCharacterImageAssetPath('Portrait Image.PNG'),
@@ -1751,7 +1771,7 @@ test('creates immediate command document links for generated risulua source comm
   assert.equal(links[0]?.tooltip, 'Open original source: src/original.lua:42:7');
 
   const target = links[0]?.target.toString() ?? '';
-  assert.match(target, /^command:risuWorkbench\.cbs\.openOccurrence\?/);
+  assert.match(target, /^command:risuaiWorkbench\.cbs\.openOccurrence\?/);
   const encodedArgs = target.slice(target.indexOf('?') + 1);
   const args = JSON.parse(decodeURIComponent(encodedArgs)) as Array<{
     range?: {
@@ -2718,6 +2738,158 @@ test('production module detail scanner adds invalid module warnings to diagnosti
   );
 });
 
+test('module detail scanner builds lua directory tree with Korean helper metadata', async () => {
+  const moduleRootPath = path.join('/tmp', 'risu-module-detail', 'lua-tree-known');
+  const scannerModule = loadBuiltModuleDetailScannerModule(
+    createCharacterScannerVscodeStub({
+      [moduleRootPath]: [['.risumodule', 1], ['lua', 2]],
+      [path.join(moduleRootPath, 'lua')]: [
+        ['main.risulua', 1],
+        ['runtime', 2],
+        ['handler_helpers', 2],
+        ['domain', 2],
+      ],
+      [path.join(moduleRootPath, 'lua', 'runtime')]: [['start.risulua', 1]],
+      [path.join(moduleRootPath, 'lua', 'handler_helpers')]: [['start_helpers.risulua', 1]],
+      [path.join(moduleRootPath, 'lua', 'domain')]: [['story_choice_block.risulua', 1]],
+    }),
+  );
+
+  const sections = await new scannerModule.ModuleDetailScanner().scan(
+    createModuleBrowserCardInput(moduleRootPath, 'module:lua-tree-known'),
+  );
+
+  assert.deepEqual(getSectionItemSummaries(sections, 'lua'), [
+    { label: 'main.risulua', relativePath: 'lua/main.risulua', type: 'risulua' },
+    { label: 'story_choice_block.risulua', relativePath: 'lua/domain/story_choice_block.risulua', type: 'risulua' },
+    { label: 'start_helpers.risulua', relativePath: 'lua/handler_helpers/start_helpers.risulua', type: 'risulua' },
+    { label: 'start.risulua', relativePath: 'lua/runtime/start.risulua', type: 'risulua' },
+  ]);
+
+  assert.deepEqual(getSectionTree(sections, 'lua').map(summarizeTreeNode), [
+    {
+      id: 'lua-item:lua/main.risulua',
+      label: 'main.risulua',
+      kind: 'item',
+      relativePath: 'lua/main.risulua',
+      treePath: 'main.risulua',
+      description: '시스템의 초기화와 전체 흐름을 제어하는 최상위 관제 모듈',
+      detailDescription: '분산된 하위 모듈들을 하나로 병합하고, RisuAI 호스트 환경과의 통신 규약(ABI)을 정의하는 중심 파일입니다.',
+      itemLabel: 'main.risulua',
+      children: undefined,
+    },
+    {
+      id: 'lua-folder:domain',
+      label: 'domain',
+      kind: 'folder',
+      relativePath: 'lua/domain',
+      treePath: 'domain',
+      description: '핵심 기능이 기능적/주제별로 응집된 주 개발 구역',
+      detailDescription: '카드 연산, 텍스트 파싱 등 특정 주제에 속하는 핵심 로직이 모이는 실제 개발·유지보수 중심 영역입니다.',
+      itemLabel: undefined,
+      children: [
+        {
+          id: 'lua-item:lua/domain/story_choice_block.risulua',
+          label: 'story_choice_block.risulua',
+          kind: 'item',
+          relativePath: 'lua/domain/story_choice_block.risulua',
+          treePath: 'domain/story_choice_block.risulua',
+          description: undefined,
+          detailDescription: undefined,
+          itemLabel: 'story_choice_block.risulua',
+          children: undefined,
+        },
+      ],
+    },
+    {
+      id: 'lua-folder:handler_helpers',
+      label: 'handler_helpers',
+      kind: 'folder',
+      relativePath: 'lua/handler_helpers',
+      treePath: 'handler_helpers',
+      description: '런타임 이벤트 처리를 위한 내부 유틸리티 계층',
+      detailDescription: '메인 이벤트 루프의 복잡도를 낮추기 위해 핸들러 내부에서 호출되는 종속 로직을 캡슐화한 서브루틴 영역입니다.',
+      itemLabel: undefined,
+      children: [
+        {
+          id: 'lua-item:lua/handler_helpers/start_helpers.risulua',
+          label: 'start_helpers.risulua',
+          kind: 'item',
+          relativePath: 'lua/handler_helpers/start_helpers.risulua',
+          treePath: 'handler_helpers/start_helpers.risulua',
+          description: undefined,
+          detailDescription: undefined,
+          itemLabel: 'start_helpers.risulua',
+          children: undefined,
+        },
+      ],
+    },
+    {
+      id: 'lua-folder:runtime',
+      label: 'runtime',
+      kind: 'folder',
+      relativePath: 'lua/runtime',
+      treePath: 'runtime',
+      description: '시스템의 실행 주기에 맞춘 이벤트 처리 계층',
+      detailDescription: '`onStart`, `onInput`, `onOutput` 같은 런타임 경계에서 발생하는 트리거를 감지하고 지정된 동작이 정확한 타이밍에 실행되도록 제어합니다.',
+      itemLabel: undefined,
+      children: [
+        {
+          id: 'lua-item:lua/runtime/start.risulua',
+          label: 'start.risulua',
+          kind: 'item',
+          relativePath: 'lua/runtime/start.risulua',
+          treePath: 'runtime/start.risulua',
+          description: undefined,
+          detailDescription: undefined,
+          itemLabel: 'start.risulua',
+          children: undefined,
+        },
+      ],
+    },
+  ]);
+});
+
+test('module detail scanner keeps unknown lua folders captionless and adds recovery fallback captions', async () => {
+  const moduleRootPath = path.join('/tmp', 'risu-module-detail', 'lua-tree-fallbacks');
+  const scannerModule = loadBuiltModuleDetailScannerModule(
+    createCharacterScannerVscodeStub({
+      [moduleRootPath]: [['.risumodule', 1], ['lua', 2]],
+      [path.join(moduleRootPath, 'lua')]: [
+        ['preload', 2],
+        ['sections', 2],
+        ['custom_area', 2],
+        ['_order.json', 1],
+      ],
+      [path.join(moduleRootPath, 'lua', 'preload')]: [['plugin.risulua', 1]],
+      [path.join(moduleRootPath, 'lua', 'sections')]: [['000_prelude.risulua', 1]],
+      [path.join(moduleRootPath, 'lua', 'custom_area')]: [['experiment.risulua', 1]],
+    }),
+  );
+
+  const sections = await new scannerModule.ModuleDetailScanner().scan(
+    createModuleBrowserCardInput(moduleRootPath, 'module:lua-tree-fallbacks'),
+  );
+
+  const luaSection = sections.find((section) => section.kind === 'lua');
+  assert.ok(luaSection);
+  assert.equal((luaSection as any).count, 3);
+  assert.deepEqual(getSectionItemSummaries(sections, 'lua'), [
+    { label: 'experiment.risulua', relativePath: 'lua/custom_area/experiment.risulua', type: 'risulua' },
+    { label: 'plugin.risulua', relativePath: 'lua/preload/plugin.risulua', type: 'risulua' },
+    { label: '000_prelude.risulua', relativePath: 'lua/sections/000_prelude.risulua', type: 'risulua' },
+  ]);
+
+  const [customArea, preload, sectionsFolder] = getSectionTree(sections, 'lua') as any[];
+  assert.equal(customArea.label, 'custom_area');
+  assert.equal(customArea.description, undefined);
+  assert.equal(customArea.detailDescription, undefined);
+  assert.equal(preload.description, 'package.preload 복구 wrapper 저장소');
+  assert.equal(preload.detailDescription, '`package.preload` recovery 전용 영역으로, preload wrapper body를 파일로 복구한 결과를 담습니다.');
+  assert.equal(sectionsFolder.description, '번들 마커 복구용 ordered chunk fragment');
+  assert.equal(sectionsFolder.detailDescription, '`[BUNDLE]` marker recovery 전용 조각입니다. 독립 require module이 아니라 순서가 중요한 fragment로 취급합니다.');
+});
+
 test('provider dispatches module selections and opens module file-backed items', async () => {
   const moduleRootPath = path.join('/tmp', 'risu-module-detail', 'provider-module');
   const opened: Array<{ command: string; uri: string }> = [];
@@ -2787,7 +2959,7 @@ test('provider dispatches module selections and opens module file-backed items',
   assert.ok(manifestItem);
   assert.ok(luaItem);
   assert.deepEqual(markerPanels, [
-    { viewType: 'risuWorkbench.markerEditor', title: 'Edit Module Marker: provider-module' },
+    { viewType: 'risuaiWorkbench.markerEditor', title: 'Edit Module Marker: provider-module' },
   ]);
   assert.ok(
     postedMessages.some((message) =>
@@ -2857,7 +3029,7 @@ test('provider opens marker editor for character selections while posting detail
   await provider.selectArtifact('character:provider-character');
 
   assert.deepEqual(markerPanels, [
-    { viewType: 'risuWorkbench.markerEditor', title: 'Edit Character Marker: provider-character' },
+    { viewType: 'risuaiWorkbench.markerEditor', title: 'Edit Character Marker: provider-character' },
   ]);
   assert.equal(provider.currentSections?.has('character:provider-character'), true);
   assert.ok(

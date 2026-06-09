@@ -804,11 +804,11 @@ export class MainEditorProvider implements vscode.CustomTextEditorProvider {
       .replace(/<html(\s[^>]*)?>/i, (match, attrs: string | undefined) =>
         attrs?.includes('data-editor-mode=')
           ? match
-          : `<html${attrs ?? ''} data-editor-mode="true" data-risu-workbench-view="main-editor">`,
+          : `<html${attrs ?? ''} data-editor-mode="true" data-risuai-workbench-view="main-editor">`,
       )
       .replace(
         '</head>',
-        `    <meta name="risu-workbench-view" content="main-editor" />\n  </head>`,
+        `    <meta name="risuai-workbench-view" content="main-editor" />\n  </head>`,
       );
 
     return withEditorSignal.replace(
@@ -1010,11 +1010,11 @@ function createVariableCandidatesResultMessage(
 
 function createFallbackHtml(webview: vscode.Webview, title: string): string {
   return `<!doctype html>
-<html lang="en" data-editor-mode="true" data-risu-workbench-view="main-editor">
+<html lang="en" data-editor-mode="true" data-risuai-workbench-view="main-editor">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="risu-workbench-view" content="main-editor" />
+    <meta name="risuai-workbench-view" content="main-editor" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource}; worker-src ${webview.cspSource} blob:; child-src ${webview.cspSource} blob:;" />
     <title>${escapeHtmlText(title)}</title>
   </head>

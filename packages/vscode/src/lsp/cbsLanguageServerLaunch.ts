@@ -182,7 +182,7 @@ export function resolveCbsLanguageServerLaunch(
       `${standaloneLaunch.detail} Embedded dev module was also not found at ${embeddedModulePath}.`,
     kind: 'failure',
     recovery:
-      'Install `cbs-language-server` in the workspace, switch to `npx`/`global`, set `risuWorkbench.cbs.server.path`, or open the monorepo workspace that contains `packages/cbs-lsp/dist/embedded.js`.',
+      'Install `cbs-language-server` in the workspace, switch to `npx`/`global`, set `risuaiWorkbench.cbs.server.path`, or open the monorepo workspace that contains `packages/cbs-lsp/dist/embedded.js`.',
   };
 }
 
@@ -262,7 +262,7 @@ function resolveStandaloneLaunch(
         detail: `Configured CBS server path does not exist: ${resolvedPath}.`,
         kind: 'failure',
         recovery:
-          'Update `risuWorkbench.cbs.server.path` to a valid `cbs-language-server` executable, or clear the override to reuse install-mode resolution.',
+          'Update `risuaiWorkbench.cbs.server.path` to a valid `cbs-language-server` executable, or clear the override to reuse install-mode resolution.',
       };
     }
 

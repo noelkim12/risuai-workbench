@@ -141,6 +141,8 @@ export class GenericDetailScanner<
     }
 
     await this.populateLorebookTree(scanRootUri, sections);
+    await this.populateLuaTree(sections);
+    await this.populateRegexOrder(scanRootUri, sections);
 
     return this.config.sectionOrder.map((kind) => ({
       ...sections[kind],
@@ -208,6 +210,34 @@ export class GenericDetailScanner<
     const orderedItems = await orderLorebookItems(scanRootUri, lorebookSection.items);
     lorebookSection.tree = buildBrowserItemTree(orderedItems);
   }
+
+  private async populateLuaTree(sections: Record<TSectionKind, SectionDraft>): Promise<void> {
+    const luaSection = (sections as Record<string, SectionDraft>)['lua'];
+    if (!luaSection || luaSection.items.length === 0) return;
+
+    const orderedItems = luaSection.items
+      .map((item) => ({ item, localPath: getLuaTreePath(item) }))
+      .sort((left, right) => {
+        const leftHasSlash = left.localPath.includes('/');
+        const rightHasSlash = right.localPath.includes('/');
+        if (leftHasSlash !== rightHasSlash) return leftHasSlash ? 1 : -1;
+        return left.localPath.localeCompare(right.localPath);
+      })
+      .map((entry) => entry.item);
+
+    luaSection.items = orderedItems;
+    luaSection.tree = buildLuaItemTree(orderedItems);
+  }
+
+  private async populateRegexOrder(
+    scanRootUri: vscode.Uri,
+    sections: Record<TSectionKind, SectionDraft>,
+  ): Promise<void> {
+    const regexSection = (sections as Record<string, SectionDraft>)['regexRules'];
+    if (!regexSection || regexSection.items.length === 0) return;
+
+    regexSection.items = await orderDirectoryItems(scanRootUri, 'regex', regexSection.items);
+  }
 }
 
 const LOREBOOK_DIRECTORY_NAMES = ['lorebooks', 'lorebook'] as const;
@@ -224,14 +254,12 @@ async function orderLorebookItems(rootUri: vscode.Uri, items: BrowserItem[]): Pr
     if (directoryItems.length === 0) continue;
 
     const declaredOrder = await readLorebookOrder(rootUri, directoryName);
+    const directoryItemsByLocalPath = new Map(directoryItems.map((entry) => [entry.localPath, entry.item]));
     for (const orderPath of declaredOrder) {
-      for (const entry of directoryItems) {
-        if (seen.has(entry.item.id)) continue;
-        if (entry.localPath === orderPath || entry.localPath.startsWith(`${orderPath}/`)) {
-          ordered.push(entry.item);
-          seen.add(entry.item.id);
-        }
-      }
+      const item = directoryItemsByLocalPath.get(orderPath);
+      if (!item || seen.has(item.id)) continue;
+      ordered.push(item);
+      seen.add(item.id);
     }
 
     for (const entry of directoryItems) {
@@ -264,6 +292,44 @@ async function readLorebookOrder(rootUri: vscode.Uri, directoryName: string): Pr
   }
 }
 
+async function orderDirectoryItems(
+  rootUri: vscode.Uri,
+  directoryName: string,
+  items: BrowserItem[],
+): Promise<BrowserItem[]> {
+  const directoryItems = items
+    .map((item) => ({ item, localPath: stripDirectoryPrefix(item.relativePath, directoryName) }))
+    .filter((entry): entry is { item: BrowserItem; localPath: string } => entry.localPath !== undefined)
+    .sort((left, right) => left.localPath.localeCompare(right.localPath));
+  if (directoryItems.length === 0) return items;
+
+  const declaredOrder = await readLorebookOrder(rootUri, directoryName);
+  const byLocalPath = new Map(directoryItems.map((entry) => [entry.localPath, entry.item]));
+  const ordered: BrowserItem[] = [];
+  const seen = new Set<string>();
+
+  for (const orderPath of declaredOrder) {
+    const item = byLocalPath.get(orderPath);
+    if (!item || seen.has(item.id)) continue;
+    ordered.push(item);
+    seen.add(item.id);
+  }
+
+  for (const entry of directoryItems) {
+    if (seen.has(entry.item.id)) continue;
+    ordered.push(entry.item);
+    seen.add(entry.item.id);
+  }
+
+  for (const item of items) {
+    if (seen.has(item.id)) continue;
+    ordered.push(item);
+    seen.add(item.id);
+  }
+
+  return ordered;
+}
+
 function buildBrowserItemTree(items: BrowserItem[]): BrowserTreeNode[] {
   const roots: BrowserTreeNode[] = [];
   const folders = new Map<string, BrowserTreeNode>();
@@ -287,6 +353,7 @@ function buildBrowserItemTree(items: BrowserItem[]): BrowserTreeNode[] {
           label: segment,
           kind: 'folder',
           relativePath: folderPath,
+          lorebookPath: folderPath,
           children: [],
         };
         folders.set(folderPath, folderNode);
@@ -307,6 +374,7 @@ function createItemTreeNode(item: BrowserItem): BrowserTreeNode {
     label: item.label,
     kind: 'item',
     relativePath: item.relativePath,
+    lorebookPath: getLorebookTreePath(item),
     item,
   };
 }
@@ -317,6 +385,130 @@ function getLorebookTreePath(item: BrowserItem): string {
     if (localPath) return localPath;
   }
   return item.relativePath ?? item.label;
+}
+
+interface LuaTreeMetadata {
+  description: string;
+  detailDescription: string;
+}
+
+const LUA_TREE_METADATA: Record<string, LuaTreeMetadata> = {
+  'main.risulua': {
+    description: '시스템의 초기화와 전체 흐름을 제어하는 최상위 관제 모듈',
+    detailDescription: '분산된 하위 모듈들을 하나로 병합하고, RisuAI 호스트 환경과의 통신 규약(ABI)을 정의하는 중심 파일입니다.',
+  },
+  runtime: {
+    description: '시스템의 실행 주기에 맞춘 이벤트 처리 계층',
+    detailDescription: '`onStart`, `onInput`, `onOutput` 같은 런타임 경계에서 발생하는 트리거를 감지하고 지정된 동작이 정확한 타이밍에 실행되도록 제어합니다.',
+  },
+  handler_helpers: {
+    description: '런타임 이벤트 처리를 위한 내부 유틸리티 계층',
+    detailDescription: '메인 이벤트 루프의 복잡도를 낮추기 위해 핸들러 내부에서 호출되는 종속 로직을 캡슐화한 서브루틴 영역입니다.',
+  },
+  common: {
+    description: '도메인에 종속되지 않은 순수 공용 함수 집합',
+    detailDescription: '데이터 가공, 계산, 반복 호출되는 독립 헬퍼 로직을 모아 코드 재사용성과 유지보수성을 높입니다.',
+  },
+  host_globals: {
+    description: '시스템 전역에서 접근 가능한 공용 API 계층',
+    detailDescription: '어디서든 호출 가능한 글로벌 함수와 비동기 액션을 정의하며, 호스트 상태에 영향을 줄 수 있는 민감한 기능을 다룹니다.',
+  },
+  button_actions: {
+    description: '사용자 UI 상호작용에 응답하는 이벤트 모듈',
+    detailDescription: '사용자가 버튼을 클릭했을 때 발생하는 상태 변화나 실행 액션을 개별적으로 정의하고 매핑합니다.',
+  },
+  state: {
+    description: '시스템의 휘발성 및 비휘발성 데이터를 보관하는 저장소',
+    detailDescription: '세션 진행 상황, 전역 변수 등 런타임 동안 유지·추적해야 하는 주요 상태값을 구조화해 관리합니다.',
+  },
+  prompts: {
+    description: 'AI 모델 제어를 위한 텍스트 및 상수 데이터베이스',
+    detailDescription: 'AI의 행동 양식과 컨텍스트를 통제하는 instruction, prompt 상수를 코드와 분리해 관리합니다.',
+  },
+  domain: {
+    description: '핵심 기능이 기능적/주제별로 응집된 주 개발 구역',
+    detailDescription: '카드 연산, 텍스트 파싱 등 특정 주제에 속하는 핵심 로직이 모이는 실제 개발·유지보수 중심 영역입니다.',
+  },
+  schema: {
+    description: '시스템의 기반이 되는 불변 데이터 명세서',
+    detailDescription: '런타임 중 임의로 변경되지 않아야 하는 기본 설정값, 데이터 구조, 전역 상수를 정의합니다.',
+  },
+  features: {
+    description: '특정 도메인으로 분류하기 어려운 포괄적 기능 집합',
+    detailDescription: '아직 명확한 도메인 경계가 없거나 여러 환경에 걸쳐 동작하는 큰 기능을 임시 수용하는 공간입니다.',
+  },
+  sections: {
+    description: '번들 마커 복구용 ordered chunk fragment',
+    detailDescription: '`[BUNDLE]` marker recovery 전용 조각입니다. 독립 require module이 아니라 순서가 중요한 fragment로 취급합니다.',
+  },
+  preload: {
+    description: 'package.preload 복구 wrapper 저장소',
+    detailDescription: '`package.preload` recovery 전용 영역으로, preload wrapper body를 파일로 복구한 결과를 담습니다.',
+  },
+};
+
+function buildLuaItemTree(items: BrowserItem[]): BrowserTreeNode[] {
+  const roots: BrowserTreeNode[] = [];
+  const folders = new Map<string, BrowserTreeNode>();
+
+  for (const item of items) {
+    const treePath = getLuaTreePath(item);
+    const segments = treePath.split('/').filter(Boolean);
+    if (segments.length === 0) {
+      roots.push(createLuaItemTreeNode(item, item.label));
+      continue;
+    }
+
+    let siblings = roots;
+    let folderPath = '';
+    for (const segment of segments.slice(0, -1)) {
+      folderPath = folderPath ? `${folderPath}/${segment}` : segment;
+      let folderNode = folders.get(folderPath);
+      if (!folderNode) {
+        folderNode = createLuaFolderTreeNode(segment, folderPath);
+        folders.set(folderPath, folderNode);
+        siblings.push(folderNode);
+      }
+      siblings = folderNode.children ?? [];
+    }
+
+    siblings.push(createLuaItemTreeNode(item, treePath));
+  }
+
+  return roots;
+}
+
+function createLuaFolderTreeNode(label: string, treePath: string): BrowserTreeNode {
+  return {
+    id: `lua-folder:${treePath}`,
+    label,
+    kind: 'folder',
+    relativePath: `lua/${treePath}`,
+    treePath,
+    ...getLuaTreeMetadata(treePath),
+    children: [],
+  };
+}
+
+function createLuaItemTreeNode(item: BrowserItem, treePath: string): BrowserTreeNode {
+  return {
+    id: `lua-item:${item.relativePath ?? item.id}`,
+    label: item.label,
+    kind: 'item',
+    relativePath: item.relativePath,
+    treePath,
+    ...getLuaTreeMetadata(treePath),
+    item,
+  };
+}
+
+function getLuaTreeMetadata(treePath: string): Partial<LuaTreeMetadata> {
+  return LUA_TREE_METADATA[treePath] ?? {};
+}
+
+function getLuaTreePath(item: BrowserItem): string {
+  const localPath = stripDirectoryPrefix(item.relativePath, 'lua');
+  return localPath || item.relativePath || item.label;
 }
 
 function stripDirectoryPrefix(relativePath: string | undefined, directoryName: string): string | undefined {

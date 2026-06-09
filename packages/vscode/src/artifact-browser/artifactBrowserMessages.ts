@@ -7,6 +7,12 @@ import {
   ARTIFACT_BROWSER_PROTOCOL,
   ARTIFACT_BROWSER_PROTOCOL_VERSION,
   ARTIFACT_BROWSER_VIEW_ID,
+  type ArtifactBrowserMoveLorebookFolderMessage,
+  type ArtifactBrowserMoveLorebookFolderPayload,
+  type ArtifactBrowserMoveLorebookItemMessage,
+  type ArtifactBrowserMoveLorebookItemPayload,
+  type ArtifactBrowserMoveRegexItemMessage,
+  type ArtifactBrowserMoveRegexItemPayload,
   type ArtifactBrowserOpenItemPayload,
   type BrowserArtifactCard,
   type BrowserSection,
@@ -32,7 +38,16 @@ type ArtifactBrowserPayloadGuard<TPayload> = (payload: unknown) => payload is TP
  * @param payloadGuard - type별 payload shape 검증 callback
  * @returns message 전체를 검증하는 type guard
  */
-function createArtifactBrowserMessageGuard<TMessage extends ArtifactBrowserReadyMessage | ArtifactBrowserRefreshMessage | ArtifactBrowserSelectMessage | ArtifactBrowserOpenItemMessage>(
+type ArtifactBrowserInboundMessage =
+  | ArtifactBrowserReadyMessage
+  | ArtifactBrowserRefreshMessage
+  | ArtifactBrowserSelectMessage
+  | ArtifactBrowserOpenItemMessage
+  | ArtifactBrowserMoveLorebookItemMessage
+  | ArtifactBrowserMoveLorebookFolderMessage
+  | ArtifactBrowserMoveRegexItemMessage;
+
+function createArtifactBrowserMessageGuard<TMessage extends ArtifactBrowserInboundMessage>(
   type: TMessage['type'],
   payloadGuard: ArtifactBrowserPayloadGuard<TMessage['payload']>,
 ): (message: unknown) => message is TMessage {
@@ -60,6 +75,47 @@ const isArtifactBrowserOpenItemPayload: ArtifactBrowserPayloadGuard<ArtifactBrow
   typeof payload.itemId === 'string' &&
   payload.itemId.length > 0;
 
+const isPlacement = (value: unknown): value is 'inside' | 'before' | 'after' =>
+  value === 'inside' || value === 'before' || value === 'after';
+
+const isSiblingPlacement = (value: unknown): value is 'before' | 'after' => value === 'before' || value === 'after';
+
+const isArtifactBrowserMoveLorebookItemPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserMoveLorebookItemPayload> = (
+  payload,
+): payload is ArtifactBrowserMoveLorebookItemPayload =>
+  isPlainRecord(payload) &&
+  typeof payload.stableId === 'string' &&
+  payload.stableId.length > 0 &&
+  typeof payload.itemId === 'string' &&
+  payload.itemId.length > 0 &&
+  (payload.targetFolderPath === null || typeof payload.targetFolderPath === 'string') &&
+  (payload.placement === undefined || isPlacement(payload.placement)) &&
+  (payload.targetItemId === undefined || typeof payload.targetItemId === 'string');
+
+const isArtifactBrowserMoveLorebookFolderPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserMoveLorebookFolderPayload> = (
+  payload,
+): payload is ArtifactBrowserMoveLorebookFolderPayload =>
+  isPlainRecord(payload) &&
+  typeof payload.stableId === 'string' &&
+  payload.stableId.length > 0 &&
+  typeof payload.folderPath === 'string' &&
+  payload.folderPath.length > 0 &&
+  typeof payload.targetFolderPath === 'string' &&
+  payload.targetFolderPath.length > 0 &&
+  isSiblingPlacement(payload.placement);
+
+const isArtifactBrowserMoveRegexItemPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserMoveRegexItemPayload> = (
+  payload,
+): payload is ArtifactBrowserMoveRegexItemPayload =>
+  isPlainRecord(payload) &&
+  typeof payload.stableId === 'string' &&
+  payload.stableId.length > 0 &&
+  typeof payload.itemId === 'string' &&
+  payload.itemId.length > 0 &&
+  typeof payload.targetItemId === 'string' &&
+  payload.targetItemId.length > 0 &&
+  isSiblingPlacement(payload.placement);
+
 const isArtifactBrowserReadyMessageEnvelope = createArtifactBrowserMessageGuard<ArtifactBrowserReadyMessage>(
   'artifact-browser/ready',
   isArtifactBrowserViewPayload,
@@ -79,6 +135,24 @@ const isArtifactBrowserOpenItemMessageEnvelope = createArtifactBrowserMessageGua
   'artifact-browser/openItem',
   isArtifactBrowserOpenItemPayload,
 );
+
+const isArtifactBrowserMoveLorebookItemMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserMoveLorebookItemMessage>(
+    'artifact-browser/moveLorebookItem',
+    isArtifactBrowserMoveLorebookItemPayload,
+  );
+
+const isArtifactBrowserMoveLorebookFolderMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserMoveLorebookFolderMessage>(
+    'artifact-browser/moveLorebookFolder',
+    isArtifactBrowserMoveLorebookFolderPayload,
+  );
+
+const isArtifactBrowserMoveRegexItemMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserMoveRegexItemMessage>(
+    'artifact-browser/moveRegexItem',
+    isArtifactBrowserMoveRegexItemPayload,
+  );
 
 /**
  * isArtifactBrowserReadyMessage 함수.
@@ -122,6 +196,22 @@ export function isArtifactBrowserSelectMessage(message: unknown): message is Art
  */
 export function isArtifactBrowserOpenItemMessage(message: unknown): message is ArtifactBrowserOpenItemMessage {
   return isArtifactBrowserOpenItemMessageEnvelope(message);
+}
+
+export function isArtifactBrowserMoveLorebookItemMessage(
+  message: unknown,
+): message is ArtifactBrowserMoveLorebookItemMessage {
+  return isArtifactBrowserMoveLorebookItemMessageEnvelope(message);
+}
+
+export function isArtifactBrowserMoveLorebookFolderMessage(
+  message: unknown,
+): message is ArtifactBrowserMoveLorebookFolderMessage {
+  return isArtifactBrowserMoveLorebookFolderMessageEnvelope(message);
+}
+
+export function isArtifactBrowserMoveRegexItemMessage(message: unknown): message is ArtifactBrowserMoveRegexItemMessage {
+  return isArtifactBrowserMoveRegexItemMessageEnvelope(message);
 }
 
 type ArtifactBrowserExtensionResponse = ArtifactBrowserCardsMessage | ArtifactBrowserDetailMessage;
