@@ -14,10 +14,10 @@
   $: selectedCard = cards.find((card) => card.stableId === selectedStableId);
 </script>
 
-<main class="browser-shell" aria-label="Risu Workbench Sidebar">
+<main class="browser-shell" aria-label="Risuai Workbench Sidebar">
   <header class="browser-header">
     <div>
-      <p class="eyebrow">Risu Workbench</p>
+      <p class="eyebrow">Risuai Workbench</p>
     </div>
     <span class="count-pill">{cards.length}</span>
   </header>

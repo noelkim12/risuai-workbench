@@ -17,6 +17,14 @@ export let selectCard: (stableId: string) => void;
 export let returnToCards: () => void;
 export let toggleSection: (sectionId: string) => void;
 export let openItem: (item: CharacterItem) => void;
+export let moveLorebookItem: (
+  item: CharacterItem,
+  targetFolderPath: string | null,
+  placement?: 'inside' | 'before' | 'after',
+  targetItemId?: string,
+) => void;
+export let moveLorebookFolder: (folderPath: string, targetFolderPath: string, placement: 'before' | 'after') => void;
+export let moveRegexItem: (item: CharacterItem, targetItemId: string, placement: 'before' | 'after') => void;
 
 $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId);
 </script>
@@ -30,6 +38,9 @@ $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId)
     onBack={returnToCards}
     onToggleSection={toggleSection}
     onOpenItem={openItem}
+    onMoveLorebookItem={moveLorebookItem}
+    onMoveLorebookFolder={moveLorebookFolder}
+    onMoveRegexItem={moveRegexItem}
   />
 {:else}
   <SidebarView

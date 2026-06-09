@@ -27,7 +27,7 @@ import {
 import type { VsCodeApi } from '../vscode';
 import { getMainEditorRootCompletionContext } from './mainEditorCbsAutoSuggest';
 
-const CBS_OCCURRENCE_NAVIGATION_COMMAND = 'risuWorkbench.cbs.openOccurrence';
+const CBS_OCCURRENCE_NAVIGATION_COMMAND = 'risuaiWorkbench.cbs.openOccurrence';
 
 interface PendingRequest {
   resolve: (

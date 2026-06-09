@@ -667,6 +667,7 @@ h2 {
   gap: var(--space-2);
   align-items: center;
   width: 100%;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--card-border);
   color: var(--text);
   background: var(--surface);
@@ -679,11 +680,12 @@ h2 {
 }
 
 .item-button__type {
-  padding: var(--pill-padding-y) var(--space-2);
+  padding: 1px var(--space-1);
   border-radius: var(--radius-pill);
   color: var(--badge-text);
   background: var(--badge);
   font-size: var(--text-xs);
+  line-height: 1.4;
   text-transform: uppercase;
 }
 
@@ -704,28 +706,20 @@ h2 {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-}
-
-.item-button__label,
-.item-button__path {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  gap: 2px;
 }
 
 .item-button__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--text-md);
-  font-weight: 700;
+  font-weight: 600;
 }
 
-.item-button__path,
 .item-button__description {
   color: var(--muted);
   font-size: var(--text-sm);
-}
-
-.item-button__description {
   overflow: visible;
   white-space: normal;
   line-height: 1.35;
@@ -738,6 +732,25 @@ h2 {
   padding: 0;
   margin: 0;
   list-style: none;
+}
+
+.tree-root-surface {
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+
+.tree-root-surface--drop-active,
+.tree-folder--drop-active {
+  border-color: var(--focus);
+  background: color-mix(in srgb, var(--focus) 12%, transparent);
+}
+
+.tree-folder--drop-before {
+  box-shadow: inset 0 2px 0 var(--focus);
+}
+
+.tree-folder--drop-after {
+  box-shadow: inset 0 -2px 0 var(--focus);
 }
 
 .tree-list--nested {
@@ -756,8 +769,10 @@ h2 {
 .tree-folder {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
   align-items: center;
-  gap: var(--space-2);
+  column-gap: var(--space-2);
+  row-gap: var(--space-1);
   width: calc(100% - (var(--tree-depth, 0) * var(--space-3)));
   border: 1px solid var(--card-border);
   color: var(--text);
@@ -767,11 +782,15 @@ h2 {
 }
 
 .tree-folder__chevron {
+  grid-column: 1;
+  grid-row: 1;
   color: var(--muted);
   font-size: var(--text-sm);
 }
 
 .tree-folder__label {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -779,6 +798,8 @@ h2 {
 }
 
 .tree-folder__count {
+  grid-column: 3;
+  grid-row: 1;
   min-width: var(--count-min-width);
   padding: var(--pill-padding-y) var(--space-2);
   border-radius: var(--radius-pill);
@@ -788,8 +809,33 @@ h2 {
   font-size: var(--text-xs);
 }
 
+.tree-folder__caption {
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-folder > .tree-help {
+  grid-column: 3;
+  grid-row: 2;
+  justify-self: start;
+}
+
 .tree-item .item-button {
   width: calc(100% - (var(--tree-depth, 0) * var(--space-3)));
+}
+
+.tree-item--drop-before .item-button {
+  border-top-color: var(--focus);
+  box-shadow: inset 0 2px 0 var(--focus);
+}
+
+.tree-item--drop-after .item-button {
+  border-bottom-color: var(--focus);
+  box-shadow: inset 0 -2px 0 var(--focus);
 }
 
 /* Marker Editor ---------------------------------------------------------- */
