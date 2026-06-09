@@ -2426,6 +2426,63 @@ h2 {
   text-transform: none;
 }
 
+.regex-frontmatter__flags {
+  grid-column: 1 / -1;
+}
+
+.regex-frontmatter__able-flag,
+.regex-frontmatter__order-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: none;
+}
+
+.regex-frontmatter__able-flag input {
+  width: auto;
+}
+
+.regex-frontmatter__order-flag input {
+  width: 7rem;
+}
+
+.regex-frontmatter__flag-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm);
+}
+
+.regex-frontmatter__flag-button {
+  border: 0;
+  border-right: 1px solid var(--card-border);
+  border-bottom: 1px solid var(--card-border);
+  padding: var(--space-2);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.regex-frontmatter__flag-button:hover,
+.regex-frontmatter__flag-button:focus-visible,
+.regex-frontmatter__flag-button--active {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  color: var(--accent);
+}
+
+.regex-frontmatter__flag-output {
+  color: var(--muted);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--text-xs);
+  text-transform: none;
+}
+
 .lorebook-frontmatter__textarea {
   min-height: 70px;
   resize: vertical;

@@ -16,6 +16,7 @@
   import PromptSectionEditor from '../prompt/PromptSectionEditor.svelte';
   import RegexFrontmatter from '../regex/RegexFrontmatter.svelte';
   import RegexSplitEditor from '../regex/RegexSplitEditor.svelte';
+  import { generateRegexSampleInput } from '../regex/regexSampleInput';
   import SimulatorResultPanel from '../simulator/SimulatorResultPanel.svelte';
   import PreviewPanel from './PreviewPanel.svelte';
   import SideToolbar from '../shared/SideToolbar.svelte';
@@ -125,6 +126,7 @@
   let workspaceSymbolPending = false;
   let workspaceSymbols: MainEditorWorkspaceSymbolPayload[] = [];
   let regexSampleInput = '';
+  let regexSampleInputEdited = false;
   let promptActiveSection: 'TEXT' | 'INNER_FORMAT' | 'DEFAULT_TEXT' = 'TEXT';
   let promptSectionDrafts: Partial<Record<'TEXT' | 'INNER_FORMAT' | 'DEFAULT_TEXT', string>> = {};
   let simulatorProfiles: MainEditorSimulatorProfilePayload[] = [createDefaultSimulatorProfilePayload()];
@@ -209,6 +211,7 @@
         schedulePreview(message.payload.model.state.contentText);
         scheduleRuntimePreview(message.payload.model.state.contentText);
       } else if (message.payload.formatKind === 'regex' && isRegexEditorState(message.payload.model.state)) {
+        refreshRegexSampleInput(message.payload.model.state.inText, true);
         scheduleFormatPreview('IN', message.payload.model.state);
       } else if (message.payload.formatKind === 'prompt' && isPromptEditorState(message.payload.model.state)) {
         promptSectionDrafts = { ...message.payload.model.state.sections };
@@ -229,6 +232,9 @@
         previewPending = false;
         formatPreviewResult = null;
         resetRuntimePreviewState();
+      }
+      if (documentChanged && message.payload.formatKind === 'regex' && isRegexEditorState(message.payload.model.state)) {
+        refreshRegexSampleInput(message.payload.model.state.inText, true);
       }
       return;
     }
@@ -454,14 +460,22 @@
 
   function updateRegexState(nextState: RegexEditorState): void {
     if (!model || model.formatKind !== 'regex') return;
+    if (nextState.inText !== regexState?.inText) refreshRegexSampleInput(nextState.inText);
     model = { ...model, state: nextState };
     scheduleFormatPreview('IN', nextState);
     scheduleStructuredEdit(nextState);
   }
 
   function updateRegexSampleInput(sampleInput: string): void {
+    regexSampleInputEdited = true;
     regexSampleInput = sampleInput;
     if (regexState) scheduleFormatPreview('IN', regexState);
+  }
+
+  function refreshRegexSampleInput(inText: string, force = false): void {
+    if (force) regexSampleInputEdited = false;
+    if (regexSampleInputEdited) return;
+    regexSampleInput = generateRegexSampleInput(inText);
   }
 
   function updatePromptState(nextState: PromptEditorState): void {
