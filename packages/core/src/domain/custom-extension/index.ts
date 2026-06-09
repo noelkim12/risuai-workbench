@@ -6,3 +6,4 @@ export * from './file-discovery';
 export * from './extensions/variable';
 export * from './extensions/toggle';
 export * from './extensions/lua';
+export * from './extensions/lorebook';
