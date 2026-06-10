@@ -3,6 +3,7 @@ import {
   buildVariableDrawerSummary,
   coerceRawOverride,
   createFallbackGetvarBindings,
+  createRegexFallbackBindings,
   createVariableBindingKey,
   dedupeVariableBindings,
   isBareBooleanToggle,
@@ -558,5 +559,121 @@ describe('variable drawer helpers', () => {
         usageRanges: [],
       }),
     ).toEqual({ globalVariables: { toggle_pov: 'false' } });
+  });
+
+  describe('regex fallback bindings (IN + OUT scanning)', () => {
+    it('scans getvar references from both IN and OUT sections', () => {
+      const bindings = createRegexFallbackBindings(
+        '{{getvar::mood}}',
+        '{{getvar::actor}}',
+      );
+
+      const names = bindings.map((binding) => binding.variableName).sort();
+      expect(names).toEqual(['actor', 'mood']);
+    });
+
+    it('finds variables only in OUT section when IN is empty', () => {
+      const bindings = createRegexFallbackBindings(
+        '',
+        '{{getglobalvar::platform}}',
+      );
+
+      expect(bindings).toHaveLength(1);
+      expect(bindings[0]).toMatchObject({
+        variableName: 'platform',
+        operation: 'getglobalvar',
+        scope: 'global',
+        status: 'missing',
+      });
+    });
+
+    it('finds variables only in IN section when OUT is empty', () => {
+      const bindings = createRegexFallbackBindings(
+        '{{getvar::input_var}}',
+        '',
+      );
+
+      expect(bindings).toHaveLength(1);
+      expect(bindings[0]).toMatchObject({
+        variableName: 'input_var',
+        operation: 'getvar',
+        scope: 'chat',
+        status: 'missing',
+      });
+    });
+
+    it('deduplicates variables that appear in both IN and OUT sections', () => {
+      const bindings = createRegexFallbackBindings(
+        '{{getvar::shared}} and more',
+        'also {{getvar::shared}} here',
+      );
+
+      expect(bindings).toHaveLength(1);
+      expect(bindings[0].variableName).toBe('shared');
+      expect(bindings[0].usageRanges).toHaveLength(2);
+    });
+
+    it('scans #when condition references from both sections', () => {
+      const bindings = createRegexFallbackBindings(
+        '{{#when::var::active}}on{{/when}}',
+        '{{#when::toggle::nsfw}}hidden{{/when}}',
+      );
+
+      const bindingsByKey = new Map(
+        bindings.map((binding) => [
+          `${binding.variableName}\u0000${binding.scope}\u0000${binding.operation}`,
+          binding,
+        ]),
+      );
+
+      expect(bindingsByKey.get('active\u0000chat\u0000getvar')).toMatchObject({
+        variableName: 'active',
+        scope: 'chat',
+        operation: 'getvar',
+      });
+      expect(bindingsByKey.get('nsfw\u0000toggle\u0000gettoggle')).toMatchObject({
+        variableName: 'nsfw',
+        scope: 'toggle',
+        operation: 'gettoggle',
+        valueKind: 'boolean',
+      });
+    });
+
+    it('scans #when comparison candidates from OUT section', () => {
+      const bindings = createRegexFallbackBindings(
+        'plain in text',
+        '{{#when::mode::vis::hard}}hard{{/when}}',
+      );
+
+      const modeBinding = bindings.find((binding) => binding.variableName === 'mode');
+      expect(modeBinding?.candidates).toContainEqual({
+        value: 'hard',
+        source: 'usage',
+        label: 'hard',
+      });
+    });
+
+    it('returns empty array when both sections are empty', () => {
+      const bindings = createRegexFallbackBindings('', '');
+      expect(bindings).toEqual([]);
+    });
+
+    it('combines getvar and #when references from mixed CBS in both sections', () => {
+      const bindings = createRegexFallbackBindings(
+        '{{getvar::ct_Target_Name}}{{#if {{getvar::is_nsfw}}}}nsfw{{/if}}',
+        '{{#when::ct_Target_Name::vis::Risu}}match{{/when}}',
+      );
+
+      const names = bindings.map((binding) => binding.variableName).sort();
+      expect(names).toEqual(['ct_Target_Name', 'is_nsfw']);
+
+      const targetBindings = bindings.filter((binding) => binding.variableName === 'ct_Target_Name');
+      expect(targetBindings).toHaveLength(1);
+      expect(targetBindings[0].candidates).toContainEqual({
+        value: 'Risu',
+        source: 'usage',
+        label: 'Risu',
+      });
+    });
   });
 });

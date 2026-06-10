@@ -18,6 +18,7 @@ import type {
   MainEditorFormatPreviewRequestPayload,
   MainEditorFormatPreviewResultPayload,
   MainEditorSimulatorProfilePayload,
+  MainEditorVariableOverridesPayload,
   PromptStructuredState,
   RegexStructuredState,
 } from './mainEditorTypes';
@@ -43,7 +44,7 @@ export function createMainEditorFormatPreviewResult(
     return createFormatPreviewErrorResult(document, payload, 'FORMAT_MISMATCH', 'Format preview request format does not match the open document.');
   }
 
-  const variables = createProfileVariableContext(payload.profile);
+  const variables = createProfileVariableContext(payload.profile, payload.overrides);
   if (payload.formatKind === 'regex') {
     const preview = createRegexMainEditorPreview(toRegexEditorState(payload.state), {
       sampleInput: payload.sampleInput,
@@ -68,8 +69,11 @@ export function createMainEditorFormatPreviewResult(
   return toFormatResult(document, payload, preview.output, preview.status, preview.diagnostics, preview.metadata);
 }
 
-function createProfileVariableContext(profile: MainEditorSimulatorProfilePayload | undefined) {
-  return mergeSimulatorProfileVariables(profile?.variables ?? {});
+function createProfileVariableContext(
+  profile: MainEditorSimulatorProfilePayload | undefined,
+  overrides?: MainEditorVariableOverridesPayload,
+) {
+  return mergeSimulatorProfileVariables(profile?.variables ?? {}, overrides);
 }
 
 function toRegexEditorState(state: RegexStructuredState | PromptStructuredState | HtmlStructuredState): RegexEditorState {

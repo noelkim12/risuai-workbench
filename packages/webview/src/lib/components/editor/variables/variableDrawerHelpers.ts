@@ -198,6 +198,21 @@ export function createFallbackGetvarBindings(source: string): MainEditorVariable
 }
 
 /**
+ * createRegexFallbackBindings 함수.
+ * Regex IN + OUT 두 섹션에서 CBS 변수 참조를 스캔해서 drawer row를 만듦.
+ * 두 섹션을 구분자로 연결한 뒤 기존 fallback 스캔 로직을 재사용함.
+ *
+ * @param inText - @@@IN 섹션 원문
+ * @param outText - @@@OUT 섹션 원문
+ * @returns IN+OUT 결합 getvar / getglobalvar / #when fallback binding 목록
+ */
+export function createRegexFallbackBindings(inText: string, outText: string): MainEditorVariableBindingPayload[] {
+  const SECTION_DELIMITER = '\n\n@@@SECTION_BOUNDARY@@@\n\n';
+  const combined = `${inText}${SECTION_DELIMITER}${outText}`;
+  return createFallbackGetvarBindings(combined);
+}
+
+/**
  * coerceRawOverride 함수.
  * Raw input fallback 값을 override payload에 넣기 좋은 값으로 변환함.
  *
