@@ -520,6 +520,7 @@ export interface MainEditorFormatPreviewRequestPayload {
   activeProfileId: string;
   sampleInput?: string;
   profile?: MainEditorSimulatorProfilePayload;
+  overrides?: MainEditorVariableOverridesPayload;
   formatKind: 'regex' | 'prompt' | 'html';
   state: RegexStructuredState | PromptStructuredState | HtmlStructuredState;
 }
@@ -570,7 +571,7 @@ export interface MainEditorVariableCandidatesRequestPayload {
   documentVersion: number;
   contentVersion: number;
   formatKind: MainEditorFormatKind;
-  sectionName: 'CONTENT';
+  sectionName: 'CONTENT' | 'IN';
   scope: Exclude<MainEditorVariableSectionScope, 'usedHere'>;
   variableNames: string[];
 }
@@ -1137,6 +1138,7 @@ function isMainEditorFormatPreviewRequestPayload(
   if (typeof value.activeProfileId !== 'string') return false;
   if ('sampleInput' in value && typeof value.sampleInput !== 'string') return false;
   if ('profile' in value && !isSimulatorProfile(value.profile)) return false;
+  if ('overrides' in value && !isMainEditorVariableOverridesPayload(value.overrides)) return false;
 
   if (value.formatKind === 'regex')
     return isRegexPreviewSectionName(value.sectionName) && isRegexStructuredState(value.state);
@@ -1180,8 +1182,8 @@ function isMainEditorVariableCandidatesRequestPayload(
     Number.isInteger(value.documentVersion) &&
     typeof value.contentVersion === 'number' &&
     Number.isInteger(value.contentVersion) &&
-    value.formatKind === 'lorebook' &&
-    value.sectionName === 'CONTENT' &&
+    isMainEditorFormatKind(value.formatKind) &&
+    (value.sectionName === 'CONTENT' || value.sectionName === 'IN') &&
     isVariableCandidateScope(value.scope) &&
     Array.isArray(value.variableNames) &&
     value.variableNames.every((name) => typeof name === 'string')

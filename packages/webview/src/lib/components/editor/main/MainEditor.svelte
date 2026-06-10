@@ -23,7 +23,7 @@
   import SplitPane from '../shared/SplitPane.svelte';
   import VariableDrawer from '../variables/VariableDrawer.svelte';
   import VariableRail from '../variables/VariableRail.svelte';
-  import { createFallbackGetvarBindings, dedupeVariableBindings, mergeCandidateLists, resolveSentinelValue, toOverridePatch } from '../variables/variableDrawerHelpers';
+  import { createFallbackGetvarBindings, createRegexFallbackBindings, dedupeVariableBindings, mergeCandidateLists, resolveSentinelValue, toOverridePatch } from '../variables/variableDrawerHelpers';
   import {
     MAIN_EDITOR_PROTOCOL,
     MAIN_EDITOR_PROTOCOL_VERSION,
@@ -212,6 +212,7 @@
         scheduleRuntimePreview(message.payload.model.state.contentText);
       } else if (message.payload.formatKind === 'regex' && isRegexEditorState(message.payload.model.state)) {
         refreshRegexSampleInput(message.payload.model.state.inText, true);
+        refreshRegexDrawerBindings(message.payload.model.state.inText, message.payload.model.state.outText);
         scheduleFormatPreview('IN', message.payload.model.state);
       } else if (message.payload.formatKind === 'prompt' && isPromptEditorState(message.payload.model.state)) {
         promptSectionDrafts = { ...message.payload.model.state.sections };
@@ -461,6 +462,7 @@
   function updateRegexState(nextState: RegexEditorState): void {
     if (!model || model.formatKind !== 'regex') return;
     if (nextState.inText !== regexState?.inText) refreshRegexSampleInput(nextState.inText);
+    refreshRegexDrawerBindings(nextState.inText, nextState.outText);
     model = { ...model, state: nextState };
     scheduleFormatPreview('IN', nextState);
     scheduleStructuredEdit(nextState);
@@ -476,6 +478,12 @@
     if (force) regexSampleInputEdited = false;
     if (regexSampleInputEdited) return;
     regexSampleInput = generateRegexSampleInput(inText);
+  }
+
+  function refreshRegexDrawerBindings(inText: string, outText: string): void {
+    const fallback = createRegexFallbackBindings(inText, outText);
+    runtimePreviewBindings = applyOverridesToBindings(fallback);
+    runtimePreviewFallbackBindings = fallback;
   }
 
   function updatePromptState(nextState: PromptEditorState): void {
@@ -612,6 +620,7 @@
           activeProfileId,
           sampleInput: formatKind === 'regex' ? regexSampleInput : undefined,
           profile: activeSimulatorProfile,
+          overrides: formatKind === 'regex' ? variableOverrides : undefined,
           state: structuredState,
         }),
       );
@@ -648,6 +657,7 @@
     variableOverrides = mergeOverridePatch(variableOverrides, toOverridePatch(patchedBinding));
     runtimePreviewBindings = runtimePreviewBindings.map((entry) => entry.variableName === variableName ? patchedBinding : entry);
     if (lorebookState) scheduleRuntimePreview(lorebookState.contentText);
+    else if (regexState) scheduleFormatPreview('IN', regexState);
   }
 
   /**
@@ -668,7 +678,8 @@
    * @param section - lazy drawer section 이름
    */
   function requestLazyVariableSection(section: 'workspace' | 'profiles' | 'traceContext'): void {
-    if (section !== 'workspace' || !lorebookState) return;
+    if (section !== 'workspace') return;
+    if (!lorebookState && !regexState) return;
     const variableNames = runtimePreviewBindings.map((binding) => binding.variableName);
     const requestId = createRequestId('candidates');
     getTypedVsCodeApi()?.postMessage(
@@ -677,8 +688,8 @@
         documentUri,
         documentVersion,
         contentVersion,
-        formatKind: 'lorebook',
-        sectionName: 'CONTENT',
+        formatKind: lorebookState ? 'lorebook' : 'regex',
+        sectionName: lorebookState ? 'CONTENT' : 'IN',
         scope: 'workspace',
         variableNames,
       }),
@@ -796,6 +807,7 @@
   ): MainEditorVariableOverridesPayload {
     return {
       chatVariables: { ...(overrides.chatVariables ?? {}), ...(patch.chatVariables ?? {}) },
+      contextVariables: { ...(overrides.contextVariables ?? {}), ...(patch.contextVariables ?? {}) },
       globalVariables: { ...(overrides.globalVariables ?? {}), ...(patch.globalVariables ?? {}) },
       toggleValues: { ...(overrides.toggleValues ?? {}), ...(patch.toggleValues ?? {}) },
       tempVariables: { ...(overrides.tempVariables ?? {}), ...(patch.tempVariables ?? {}) },
@@ -834,6 +846,7 @@
     }
     if (binding.scope === 'global') return overrides.globalVariables?.[binding.variableName];
     if (binding.scope === 'temp') return overrides.tempVariables?.[binding.variableName];
+    if (binding.scope === 'context') return overrides.contextVariables?.[binding.variableName];
     return overrides.chatVariables?.[binding.variableName];
   }
 

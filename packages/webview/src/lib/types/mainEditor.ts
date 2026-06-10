@@ -410,6 +410,7 @@ export interface MainEditorFormatPreviewRequestPayload {
   activeProfileId: string;
   sampleInput?: string;
   profile?: MainEditorSimulatorProfilePayload;
+  overrides?: MainEditorVariableOverridesPayload;
   formatKind: 'regex' | 'prompt' | 'html';
   state:
     | MainEditorRegexStructuredStatePayload
@@ -548,7 +549,7 @@ export interface MainEditorVariableCandidatesRequestPayload {
   documentVersion: number;
   contentVersion: number;
   formatKind: MainEditorFormatKind;
-  sectionName: 'CONTENT';
+  sectionName: 'CONTENT' | 'IN';
   scope: Exclude<MainEditorVariableSectionScope, 'usedHere'>;
   variableNames: string[];
 }
