@@ -418,6 +418,31 @@ export interface MainEditorFormatPreviewRequestPayload {
     | MainEditorHtmlStructuredStatePayload;
 }
 
+export interface MainEditorRegexRiskFindingPayload {
+  code:
+    | 'NESTED_QUANTIFIER'
+    | 'REPEATED_WILDCARD'
+    | 'AMBIGUOUS_ALTERNATION'
+    | 'GREEDY_DOT_PREFIX'
+    | 'BACKREFERENCE'
+    | 'GLOBAL_EMPTY_MATCH'
+    | 'REGEX_PARSE_ERROR';
+  severity: 'info' | 'warning' | 'error';
+  confidence: 'low' | 'medium' | 'high';
+  message: string;
+  range?: { start: number; end: number };
+}
+
+export interface MainEditorRegexPreflightPayload {
+  pattern: { raw: string; effective: string; cbsStatus: 'ok' | 'partial' | 'aborted' | 'error' };
+  replacement: { raw: string; effective: string; cbsStatus: 'ok' | 'partial' | 'aborted' | 'error' };
+  jsFlags: string;
+  directives: string[];
+  risks: MainEditorRegexRiskFindingPayload[];
+  executionRequired: boolean;
+  nativeExecution: 'webview-worker-required';
+}
+
 export interface MainEditorFormatPreviewResultPayload {
   requestId: string;
   documentUri: string;
@@ -428,6 +453,7 @@ export interface MainEditorFormatPreviewResultPayload {
   output: string;
   diagnostics: Array<{ severity: 'error' | 'warning' | 'info'; message: string; code?: string }>;
   metadata: Record<string, string>;
+  regex?: MainEditorRegexPreflightPayload;
 }
 
 export interface MainEditorSimulatorProfileListRequestPayload {

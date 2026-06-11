@@ -281,3 +281,39 @@ export interface RisuRegexPreviewViewModel {
   /** Non-diagnostic viewer notices, including simulated runtime parity caveats. */
   notices: RisuRegexPreviewNoticeDto[];
 }
+
+export type RegexRiskSeverity = 'info' | 'warning' | 'error';
+export type RegexRiskConfidence = 'low' | 'medium' | 'high';
+
+export interface RegexRiskFindingDto {
+  code:
+    | 'NESTED_QUANTIFIER'
+    | 'REPEATED_WILDCARD'
+    | 'AMBIGUOUS_ALTERNATION'
+    | 'GREEDY_DOT_PREFIX'
+    | 'BACKREFERENCE'
+    | 'GLOBAL_EMPTY_MATCH'
+    | 'REGEX_PARSE_ERROR';
+  severity: RegexRiskSeverity;
+  confidence: RegexRiskConfidence;
+  message: string;
+  range?: { start: number; end: number };
+}
+
+export interface RegexPreflightSectionDto {
+  raw: string;
+  effective: string;
+  cbsStatus: 'ok' | 'partial' | 'aborted' | 'error';
+}
+
+export interface RegexPreflightResult {
+  status: 'ok' | 'partial' | 'aborted' | 'error';
+  pattern: RegexPreflightSectionDto;
+  replacement: RegexPreflightSectionDto;
+  jsFlags: string;
+  directives: string[];
+  diagnostics: SimulatorDiagnostic[];
+  risks: RegexRiskFindingDto[];
+  executionRequired: boolean;
+  nativeExecution: 'webview-worker-required';
+}

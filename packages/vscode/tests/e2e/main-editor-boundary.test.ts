@@ -659,7 +659,7 @@ test('main editor packaged HTML keeps custom editor webview CSP restrictive', ()
   const providerSource = fs.readFileSync(path.join(vscodeDistRoot, 'editors/mainEditor/MainEditorProvider.js'), 'utf8');
 
   assert.match(providerSource, /default-src 'none'/);
-  assert.match(providerSource, /script-src 'nonce-\$\{nonce\}'/);
+  assert.match(providerSource, /script-src 'nonce-\$\{nonce\}' \$\{webview\.cspSource\} blob:/);
   assert.match(providerSource, /worker-src \$\{webview\.cspSource\} blob:/);
   assert.doesNotMatch(providerSource, /connect-src \*/);
   assert.doesNotMatch(providerSource, /script-src[^;]*'unsafe-inline'/);
