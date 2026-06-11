@@ -122,9 +122,10 @@ function parseVariableReadMacro(source: string): string | undefined {
   return variableName;
 }
 
-function parseRuntimeContextMacro(source: string): 'chatIndex' | undefined {
+function parseRuntimeContextMacro(source: string): 'chatIndex' | 'lastmessageid' | undefined {
   const normalized = source.trim().toLowerCase().replace(/\s+/gu, '');
   if (normalized === '{{chat_index}}' || normalized === '{{chatindex}}') return 'chatIndex';
+  if (normalized === '{{lastmessageid}}') return 'lastmessageid';
   return undefined;
 }
 

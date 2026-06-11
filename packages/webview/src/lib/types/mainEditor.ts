@@ -402,6 +402,11 @@ export interface MainEditorSimulatorProfilePayload {
   htmlContext: { enabledHtmlDocumentUris: string[] };
 }
 
+export interface MainEditorHtmlPreviewContextPayload {
+  sourceUris: string[];
+  sourceHtml: string;
+}
+
 export interface MainEditorFormatPreviewRequestPayload {
   requestId: string;
   documentUri: string;
@@ -430,6 +435,7 @@ export interface MainEditorRegexRiskFindingPayload {
   severity: 'info' | 'warning' | 'error';
   confidence: 'low' | 'medium' | 'high';
   message: string;
+  suggestions: Array<{ title: string; description: string; example?: string }>;
   range?: { start: number; end: number };
 }
 
@@ -454,6 +460,7 @@ export interface MainEditorFormatPreviewResultPayload {
   diagnostics: Array<{ severity: 'error' | 'warning' | 'info'; message: string; code?: string }>;
   metadata: Record<string, string>;
   regex?: MainEditorRegexPreflightPayload;
+  htmlContext?: MainEditorHtmlPreviewContextPayload;
 }
 
 export interface MainEditorSimulatorProfileListRequestPayload {

@@ -39,6 +39,31 @@ describe('lorebook CONTENT runtime preview', () => {
     ]);
   });
 
+  it('injects runtime context overrides for chat index and last message id macros', () => {
+    const preview = createLorebookContentRuntimePreview({
+      contentText: '{{chat_index}}/{{lastmessageid}}',
+      overrides: { contextVariables: { chatIndex: '7', lastmessageid: '3' } },
+    });
+
+    expect(preview.output).toBe('7/3');
+    expect(preview.bindings).toEqual([
+      expect.objectContaining({
+        variableName: 'chatIndex',
+        scope: 'context',
+        status: 'resolved',
+        source: 'previewOverride',
+        rawValue: '7',
+      }),
+      expect.objectContaining({
+        variableName: 'lastmessageid',
+        scope: 'context',
+        status: 'resolved',
+        source: 'previewOverride',
+        rawValue: '3',
+      }),
+    ]);
+  });
+
   it('surfaces getvar reads inside legacy inline calc conditions for the variable drawer', () => {
     const preview = createLorebookContentRuntimePreview({
       contentText:

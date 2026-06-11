@@ -10,6 +10,22 @@ describe('analyzeRegexRisks', () => {
     expect(codes('(a+)+$')).toContain('NESTED_QUANTIFIER');
   });
 
+  it('returns static alternative suggestions for risk findings', () => {
+    const findings = analyzeRegexRisks({ pattern: '(a+)+$', flags: 'g', maxPatternLength: 2_000 });
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        code: 'NESTED_QUANTIFIER',
+        suggestions: [
+          expect.objectContaining({
+            title: expect.stringContaining('Flatten'),
+            example: expect.stringContaining('a+$'),
+          }),
+        ],
+      }),
+    ]);
+  });
+
   it('flags repeated wildcard groups', () => {
     expect(codes('(.*)+')).toContain('REPEATED_WILDCARD');
   });

@@ -212,8 +212,69 @@ function createFinding(
     severity,
     confidence,
     message,
+    suggestions: suggestionsForRisk(code),
     ...(start !== undefined && end !== undefined ? { range: { start, end } } : {}),
   };
+}
+
+function suggestionsForRisk(code: RegexRiskFindingDto['code']): RegexRiskFindingDto['suggestions'] {
+  switch (code) {
+    case 'NESTED_QUANTIFIER':
+      return [
+        {
+          title: 'Flatten or bound the repeated group',
+          description: 'Avoid repeating a token that already repeats. Prefer one quantifier, or cap the inner repetition when the upper bound is known.',
+          example: '(?:a{1,64})+$ or a+$ when equivalent',
+        },
+      ];
+    case 'REPEATED_WILDCARD':
+      return [
+        {
+          title: 'Replace the wildcard with a narrower token',
+          description: 'Use a negated character class, a lazy wildcard with a required delimiter, or a bounded repeat so the engine has fewer paths to retry.',
+          example: '[^\\n]*, .*?END, or .{0,500}',
+        },
+      ];
+    case 'AMBIGUOUS_ALTERNATION':
+      return [
+        {
+          title: 'Factor shared prefixes or order longest alternatives first',
+          description: 'Prefix-overlapping branches under repetition are hard to backtrack through. Factor the shared prefix so each branch consumes a distinct suffix.',
+          example: 'a(?:a)? instead of (a|aa)',
+        },
+      ];
+    case 'GREEDY_DOT_PREFIX':
+      return [
+        {
+          title: 'Constrain the scan before the suffix',
+          description: 'Anchor the pattern, make the dot lazy with a required suffix, or replace dot with a character class that cannot cross the intended boundary.',
+          example: '^.*?END or [^\\n]*END',
+        },
+      ];
+    case 'BACKREFERENCE':
+      return [
+        {
+          title: 'Move equality checks outside the regex when possible',
+          description: 'Capture candidate text with a simpler pattern, then compare captured values in code or CBS logic instead of relying on regex backtracking.',
+          example: '(\\w+) plus a separate equality check',
+        },
+      ];
+    case 'GLOBAL_EMPTY_MATCH':
+      return [
+        {
+          title: 'Require each global match to consume text',
+          description: 'Replace optional/star repetition with a plus or another mandatory token, or remove global iteration when empty matches are intentional.',
+          example: 'a+ instead of a* for global scans',
+        },
+      ];
+    case 'REGEX_PARSE_ERROR':
+      return [
+        {
+          title: 'Fix syntax before performance analysis',
+          description: 'Static alternatives are only reliable after the pattern parses. Check grouping, escapes, character classes, and flags first.',
+        },
+      ];
+  }
 }
 
 function dedupeFindings(findings: RegexRiskFindingDto[]): RegexRiskFindingDto[] {

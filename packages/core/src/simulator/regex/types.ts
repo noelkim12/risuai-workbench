@@ -285,6 +285,12 @@ export interface RisuRegexPreviewViewModel {
 export type RegexRiskSeverity = 'info' | 'warning' | 'error';
 export type RegexRiskConfidence = 'low' | 'medium' | 'high';
 
+export interface RegexRiskSuggestionDto {
+  title: string;
+  description: string;
+  example?: string;
+}
+
 export interface RegexRiskFindingDto {
   code:
     | 'NESTED_QUANTIFIER'
@@ -297,6 +303,7 @@ export interface RegexRiskFindingDto {
   severity: RegexRiskSeverity;
   confidence: RegexRiskConfidence;
   message: string;
+  suggestions: RegexRiskSuggestionDto[];
   range?: { start: number; end: number };
 }
 

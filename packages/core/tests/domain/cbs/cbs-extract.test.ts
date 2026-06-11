@@ -112,6 +112,13 @@ describe('extractCBSVarOps', () => {
     expect(Array.from(result.writes).sort()).toEqual([]);
   });
 
+  it('collects bare runtime context macros as drawer-readable variables', () => {
+    const result = extractCBSVarOps('{{chat_index}}/{{chatindex}}/{{lastmessageid}}');
+
+    expect(Array.from(result.reads).sort()).toEqual(['chatIndex', 'lastmessageid']);
+    expect(Array.from(result.writes).sort()).toEqual([]);
+  });
+
   it('ignores variable operations that appear inside pure-mode block bodies', () => {
     const result = extractCBSVarOps(
       '{{#escape}}before {{getvar::hidden}} {{setvar::ignored::1}}{{/}} {{getvar::visible}}',
@@ -262,10 +269,13 @@ describe('createAstConditionCandidateExtractor().extract', () => {
 
   it('creates candidates for chat_index runtime context macros in #when comparisons', () => {
     const result = createAstConditionCandidateExtractor().extract(
-      '{{#when::{{chat_index}}::<=::40}}early{{/when}}',
+      '{{#when::{{chat_index}}::<=::40}}early{{/when}}{{#when::{{lastmessageid}}::<=::3}}last{{/when}}',
     );
 
-    expect(result).toEqual([{ variableName: 'chatIndex', value: '40' }]);
+    expect(result).toEqual([
+      { variableName: 'chatIndex', value: '40' },
+      { variableName: 'lastmessageid', value: '3' },
+    ]);
   });
 
   it('extracts implicit #when var, vis, bare toggle, toggle literal, and chatindex candidates', () => {
