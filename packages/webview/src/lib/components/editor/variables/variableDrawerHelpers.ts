@@ -95,6 +95,7 @@ export interface VariableDrawerSummary {
 }
 
 const GETVAR_OCCURRENCE_PATTERN = /\{\{(getvar|getglobalvar)::([^}]+)\}\}/g;
+const RUNTIME_CONTEXT_OCCURRENCE_PATTERN = /\{\{\s*(chat_index|chatindex|lastmessageid)\s*\}\}/gi;
 const WHEN_CHAT_VARIABLE_OPERATORS = new Set(['vis', 'visnot']);
 const WHEN_TOGGLE_LITERAL_OPERATORS = new Set(['tis', 'tisnot']);
 const WHEN_CONTEXT_COMPARISON_OPERATORS = new Set(['is', 'isnot', '>', '<', '>=', '<=']);
@@ -170,16 +171,43 @@ export function createFallbackGetvarBindings(source: string): MainEditorVariable
     });
   }
 
-  for (const reference of extractFallbackWhenReferences(source)) {
-    const key = `${reference.variableName}\u0000${reference.scope}\u0000${reference.operation}`;
-    const range = toFallbackUsageRange(source, reference.startOffset, reference.endOffset);
+  for (const match of source.matchAll(RUNTIME_CONTEXT_OCCURRENCE_PATTERN)) {
+    const variableName = parseRuntimeContextName(match[1] ?? '');
+    if (!variableName) continue;
+
+    const key = `${variableName}\u0000context\u0000context`;
+    const range = toFallbackUsageRange(source, match.index, match.index + match[0].length);
     const existing = bindings.get(key);
     if (existing) {
       existing.usageRanges = [...existing.usageRanges, range];
       continue;
     }
 
+    bindings.set(key, {
+      variableName,
+      scope: 'context',
+      direction: 'read',
+      operation: 'context',
+      status: 'runtimeUnknown',
+      source: 'runtimeUnknown',
+      valueKind: 'number',
+      rawValue: '',
+      candidates: [],
+      usageRanges: [range],
+    });
+  }
+
+  for (const reference of extractFallbackWhenReferences(source)) {
+    const key = `${reference.variableName}\u0000${reference.scope}\u0000${reference.operation}`;
+    const range = toFallbackUsageRange(source, reference.startOffset, reference.endOffset);
     const extraCandidates = conditionCandidates.get(reference.variableName) ?? [];
+    const existing = bindings.get(key);
+    if (existing) {
+      existing.usageRanges = [...existing.usageRanges, range];
+      existing.candidates = mergeCandidateLists([...existing.candidates, ...extraCandidates]);
+      continue;
+    }
+
     bindings.set(key, {
       variableName: reference.variableName,
       scope: reference.scope,
@@ -478,9 +506,17 @@ function isStaticWhenLiteral(source: string): boolean {
   return value.length > 0 && !value.includes('{{') && !value.includes('}}');
 }
 
-function parseRuntimeContextMacro(source: string): 'chatIndex' | undefined {
+function parseRuntimeContextMacro(source: string): 'chatIndex' | 'lastmessageid' | undefined {
   const normalized = source.trim().toLowerCase().replace(/\s+/gu, '');
   if (normalized === '{{chat_index}}' || normalized === '{{chatindex}}') return 'chatIndex';
+  if (normalized === '{{lastmessageid}}') return 'lastmessageid';
+  return undefined;
+}
+
+function parseRuntimeContextName(source: string): 'chatIndex' | 'lastmessageid' | undefined {
+  const normalized = source.trim().toLowerCase().replace(/\s+/gu, '');
+  if (normalized === 'chat_index' || normalized === 'chatindex') return 'chatIndex';
+  if (normalized === 'lastmessageid') return 'lastmessageid';
   return undefined;
 }
 

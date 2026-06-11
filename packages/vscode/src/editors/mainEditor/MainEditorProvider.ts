@@ -474,7 +474,7 @@ export class MainEditorProvider implements vscode.CustomTextEditorProvider {
       this.postMessage(
         webviewPanel,
         createFormatPreviewResultMessage(
-          createMainEditorFormatPreviewResult(document, message.payload, format.kind),
+          await createMainEditorFormatPreviewResult(document, message.payload, format.kind),
         ),
       );
       return;

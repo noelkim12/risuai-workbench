@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import type { MainEditorFormatPreviewResultPayload } from '../../../types/mainEditor';
   import { createRequestId } from '../../../requestIds';
+  import type { MainEditorFormatPreviewResultPayload } from '../../../types/mainEditor';
   import RegexPerformancePanel from './RegexPerformancePanel.svelte';
   import RegexRiskPanel from './RegexRiskPanel.svelte';
   import { runRegexWorkerWithTimeout } from './regexWorkerClient';
@@ -13,16 +13,24 @@
 
   const EXECUTION_TIMEOUT_MS = 200;
   const limits = { maxInputLength: 50_000, maxMatches: 1_000, maxOutputLength: 50_000 };
+  const HTML_PREVIEW_CSP = "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'none'";
 
   let workerResult: RegexWorkerResult | null = null;
   let workerPending = false;
   let lastRunKey = '';
   let disposed = false;
+  let outputExpanded = true;
+  let performanceExpanded = true;
+  let matchesExpanded = true;
+  let riskExpanded = true;
+  let diagnosticsExpanded = true;
 
   $: regex = preview?.regex;
   $: runKey = regex ? `${regex.pattern.effective}\u0000${regex.jsFlags}\u0000${regex.replacement.effective}\u0000${sampleInput}` : '';
-  $: if (regex && regex.executionRequired && runKey && runKey !== lastRunKey) runWorker(runKey);
-  $: executionDisabled = regex && !regex.executionRequired;
+  $: if (regex?.executionRequired && runKey && runKey !== lastRunKey) runWorker(runKey);
+  $: executionDisabled = Boolean(regex && !regex.executionRequired);
+  $: if (executionDisabled && workerResult) workerResult = null;
+  $: renderedOutputSrcdoc = createRenderedOutputSrcdoc(workerResult, preview);
 
   onDestroy(() => {
     disposed = true;
@@ -32,7 +40,6 @@
     if (!regex) return;
     lastRunKey = nextRunKey;
     workerPending = true;
-    workerResult = null;
     const requestId = createRequestId('regex-worker');
     try {
       const result = await runRegexWorkerWithTimeout({
@@ -71,9 +78,36 @@
       }
     }
   }
+
+  function createRenderedOutputSrcdoc(
+    result: RegexWorkerResult | null,
+    previewResult: MainEditorFormatPreviewResultPayload | null,
+  ): string {
+    if (!result || (result.status !== 'ok' && result.status !== 'partial')) return '';
+    return createSandboxedHtmlSrcdoc(`${previewResult?.htmlContext?.sourceHtml ?? ''}${result.output}`, HTML_PREVIEW_CSP);
+  }
+
+  function createSandboxedHtmlSrcdoc(bodyHtml: string, csp: string): string {
+    return [
+      '<!doctype html>',
+      '<html>',
+      '<head>',
+      '<meta charset="UTF-8">',
+      `<meta http-equiv="Content-Security-Policy" content="${escapeHtmlAttribute(csp)}">`,
+      '</head>',
+      '<body>',
+      bodyHtml,
+      '</body>',
+      '</html>',
+    ].join('');
+  }
+
+  function escapeHtmlAttribute(value: string): string {
+    return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  }
 </script>
 
-<div class="rpi" aria-label="Regex inspector">
+<div class="rpi p-10" aria-label="Regex inspector">
   <header class="rpi__head">
     <div class="rpi__title-row">
       <h2 class="rpi__title">Regex Inspector</h2>
@@ -98,33 +132,45 @@
     </div>
   {:else}
     <!-- Output ---------------------------------------------------------- -->
-    <section class="rpi__card" aria-label="Replacement output">
-      <header class="rpi__card-head">Output</header>
+    <details class="rpi__card" aria-label="Replacement output" bind:open={outputExpanded}>
+      <summary class="rpi__card-head rpi__summary">
+        <span class="rpi__summary-title">Output</span>
+        <span class="rpi__chevron" aria-hidden="true"></span>
+      </summary>
       <div class="rpi__output-wrap">
-        {#if workerPending || !workerResult}
+        {#if !workerResult}
           {#if executionDisabled}
             <p class="rpi__card-muted">Regex execution disabled by preflight.</p>
           {:else}
             <p class="rpi__card-muted">Waiting for worker result&hellip;</p>
           {/if}
         {:else if workerResult.status === 'ok' || workerResult.status === 'partial'}
-          <pre class="rpi__output">{workerResult.output}</pre>
+          <iframe
+            class="rpi__output-frame"
+            title="Rendered regex output preview"
+            sandbox=""
+            srcdoc={renderedOutputSrcdoc}
+            referrerpolicy="no-referrer"
+          ></iframe>
         {:else}
           <p class="rpi__card-muted">Regex execution did not produce replacement output. See diagnostics.</p>
         {/if}
       </div>
-    </section>
+    </details>
 
     <!-- Subpanels ------------------------------------------------------- -->
-    <RegexPerformancePanel performance={workerResult?.performance ?? null} />
+    <RegexPerformancePanel performance={workerResult?.performance ?? null} bind:expanded={performanceExpanded} />
     <!-- Matches --------------------------------------------------------- -->
-    <section class="rpi__card" aria-label="Matches">
-      <header class="rpi__card-head">
-        Matches
-        {#if workerResult}
-          <span class="rpi__badge">{workerResult.matches.length}</span>
-        {/if}
-      </header>
+    <details class="rpi__card" aria-label="Matches" bind:open={matchesExpanded}>
+      <summary class="rpi__card-head rpi__summary">
+        <span class="rpi__summary-title">Matches</span>
+        <span class="rpi__summary-actions">
+          {#if workerResult}
+            <span class="rpi__badge">{workerResult.matches.length}</span>
+          {/if}
+          <span class="rpi__chevron" aria-hidden="true"></span>
+        </span>
+      </summary>
       {#if !workerResult}
         {#if executionDisabled}
           <p class="rpi__card-muted">Regex execution disabled by preflight.</p>
@@ -157,17 +203,20 @@
           {/each}
         </ol>
       {/if}
-    </section>
+    </details>
     <!-- RegexRiskPanel -------------------------------------------------- -->
-    <RegexRiskPanel risks={regex.risks} />
+    <RegexRiskPanel risks={regex.risks} bind:expanded={riskExpanded} />
 
     <!-- Diagnostics ----------------------------------------------------- -->
     {#if preview.diagnostics.length > 0 || workerResult?.diagnostics.length}
-      <section class="rpi__card" aria-label="Diagnostics">
-        <header class="rpi__card-head">
-          Diagnostics
-          <span class="rpi__badge rpi__badge--warn">{preview.diagnostics.length + (workerResult?.diagnostics?.length ?? 0)}</span>
-        </header>
+      <details class="rpi__card" aria-label="Diagnostics" bind:open={diagnosticsExpanded}>
+        <summary class="rpi__card-head rpi__summary">
+          <span class="rpi__summary-title">Diagnostics</span>
+          <span class="rpi__summary-actions">
+            <span class="rpi__badge rpi__badge--warn">{preview.diagnostics.length + (workerResult?.diagnostics?.length ?? 0)}</span>
+            <span class="rpi__chevron" aria-hidden="true"></span>
+          </span>
+        </summary>
         <ul class="rpi__diag-list">
           {#each preview.diagnostics as diagnostic}
             <li class={`rpi__diag rpi__diag--${diagnostic.severity}`}>
@@ -188,7 +237,7 @@
             </li>
           {/each}
         </ul>
-      </section>
+      </details>
     {/if}
 
   {/if}
@@ -196,13 +245,16 @@
 
 <style>
   .rpi {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    align-content: start;
+    grid-auto-rows: max-content;
     gap: var(--space-3);
     min-width: 0;
     min-height: 0;
-    overflow-y: auto;
+    height: 100%;
     max-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
     color: var(--text);
     font-family: var(--vscode-font-family);
     font-size: var(--vscode-font-size);
@@ -318,6 +370,50 @@
     text-transform: uppercase;
   }
 
+  .rpi__card:not([open]) > .rpi__card-head {
+    border-bottom: 0;
+  }
+
+  .rpi__summary {
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+  }
+
+  .rpi__summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .rpi__summary-title,
+  .rpi__summary-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .rpi__chevron {
+    width: 7px;
+    height: 7px;
+    border-right: 2px solid var(--muted);
+    border-bottom: 2px solid var(--muted);
+    transform: rotate(-45deg);
+    transition: transform 120ms ease, border-color 120ms ease;
+  }
+
+  .rpi__card[open] > .rpi__summary .rpi__chevron {
+    transform: rotate(45deg);
+  }
+
+  .rpi__summary:hover .rpi__chevron,
+  .rpi__summary:focus-visible .rpi__chevron {
+    border-color: var(--text);
+  }
+
+  .rpi__summary:focus-visible {
+    outline: 1px solid var(--focus);
+    outline-offset: -2px;
+  }
+
   /* Badge */
   .rpi__badge {
     min-width: var(--count-min-width);
@@ -338,20 +434,17 @@
 
   /* Output */
   .rpi__output-wrap {
-    max-height: 200px;
-    overflow: auto;
+    min-height: 200px;
     padding: var(--space-1) 0;
   }
 
-  .rpi__output {
-    margin: 0;
-    padding: var(--space-2) var(--space-3);
-    font-family: var(--vscode-editor-font-family, 'Cascadia Code', 'Fira Code', Consolas, monospace);
-    font-size: var(--text-md);
-    line-height: 1.55;
-    white-space: pre-wrap;
-    word-break: break-word;
-    color: var(--text);
+  .rpi__output-frame {
+    display: block;
+    width: 100%;
+    min-height: 320px;
+    border: 0;
+    background: var(--surface);
+    color-scheme: light dark;
   }
 
   /* Card muted text */

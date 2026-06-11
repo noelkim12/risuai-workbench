@@ -96,6 +96,9 @@ function buildEffectiveContext(input: CbsPreviewVariableInjectionInput): CbsSimu
   const baseContext = input.baseContext ?? {};
   const previewOverrides = input.previewOverrides ?? {};
   const workspaceDefaults = input.workspaceDefaults ?? {};
+  const previewLastMessageHistory = createPreviewLastMessageHistory(
+    previewOverrides.contextVariables?.lastmessageid,
+  );
   const globalVariables = {
     ...(baseContext.globalVariables ?? {}),
     ...(previewOverrides.globalVariables ?? {}),
@@ -136,10 +139,17 @@ function buildEffectiveContext(input: CbsPreviewVariableInjectionInput): CbsSimu
     chatIndex: previewOverrides.contextVariables?.chatIndex ?? baseContext.chatIndex,
     isFirstMessage: baseContext.isFirstMessage,
     lorePositions: baseContext.lorePositions,
-    chatHistory: baseContext.chatHistory,
+    chatHistory: previewLastMessageHistory ?? baseContext.chatHistory,
     chatHistoryCursor: baseContext.chatHistoryCursor,
     providers: baseContext.providers,
   });
+}
+
+function createPreviewLastMessageHistory(value: string | number | undefined): string[] | undefined {
+  if (value === undefined) return undefined;
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric) || numeric < 0) return undefined;
+  return Array.from({ length: numeric + 1 }, () => '');
 }
 
 /**
@@ -371,6 +381,14 @@ function resolveReadValue(
           status: 'resolved',
           source: 'context',
           valuePreview: stringifyVariableValue(context.chatIndex),
+        };
+      }
+
+      if (variableName === 'lastmessageid' && context.chatHistory !== undefined) {
+        return {
+          status: 'resolved',
+          source: 'context',
+          valuePreview: String(context.chatHistory.length - 1),
         };
       }
 

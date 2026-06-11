@@ -2,19 +2,23 @@
   import type { RegexWorkerPerformanceDto } from './regexWorkerTypes';
 
   export let performance: RegexWorkerPerformanceDto | null = null;
+  export let expanded = true;
 
   function formatMs(value: number): string {
     return `${value.toFixed(2)}ms`;
   }
 </script>
 
-<section class="rpp" aria-label="Regex performance">
-  <header class="rpp__head">
+<details class="rpp" aria-label="Regex performance" bind:open={expanded}>
+  <summary class="rpp__head rpp__summary">
     <h3 class="rpp__title">Performance</h3>
-    {#if performance && !performance.timedOut}
-      <span class="rpp__total">{formatMs(performance.totalMs)}</span>
-    {/if}
-  </header>
+    <span class="rpp__actions">
+      {#if performance && !performance.timedOut}
+        <span class="rpp__total">{formatMs(performance.totalMs)}</span>
+      {/if}
+      <span class="rpp__chevron" aria-hidden="true"></span>
+    </span>
+  </summary>
 
   {#if !performance}
     <div class="rpp__empty">
@@ -56,7 +60,7 @@
       </div>
     </div>
   {/if}
-</section>
+</details>
 
 <style>
   .rpp {
@@ -75,6 +79,49 @@
     padding: var(--space-2) var(--space-3);
     border-bottom: 1px solid var(--card-border);
     background: var(--section);
+  }
+
+  .rpp:not([open]) > .rpp__head {
+    border-bottom: 0;
+  }
+
+  .rpp__summary {
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+  }
+
+  .rpp__summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .rpp__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .rpp__chevron {
+    width: 7px;
+    height: 7px;
+    border-right: 2px solid var(--muted);
+    border-bottom: 2px solid var(--muted);
+    transform: rotate(-45deg);
+    transition: transform 120ms ease, border-color 120ms ease;
+  }
+
+  .rpp[open] > .rpp__summary .rpp__chevron {
+    transform: rotate(45deg);
+  }
+
+  .rpp__summary:hover .rpp__chevron,
+  .rpp__summary:focus-visible .rpp__chevron {
+    border-color: var(--text);
+  }
+
+  .rpp__summary:focus-visible {
+    outline: 1px solid var(--focus);
+    outline-offset: -2px;
   }
 
   .rpp__title {

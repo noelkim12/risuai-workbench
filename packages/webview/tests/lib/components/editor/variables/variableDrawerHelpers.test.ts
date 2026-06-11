@@ -202,6 +202,39 @@ describe('variable drawer helpers', () => {
     });
   });
 
+  it('creates fallback context bindings for runtime context macros', () => {
+    const bindings = createFallbackGetvarBindings(
+      '{{chat_index}} {{chatindex}} {{lastmessageid}} {{#when::{{lastmessageid}}::<=::3}}last{{/when}}',
+    );
+
+    const bindingsByKey = new Map(
+      bindings.map((binding) => [
+        `${binding.variableName}\u0000${binding.scope}\u0000${binding.operation}`,
+        binding,
+      ]),
+    );
+    expect(bindingsByKey.get('chatIndex\u0000context\u0000context')).toMatchObject({
+      variableName: 'chatIndex',
+      scope: 'context',
+      operation: 'context',
+      status: 'runtimeUnknown',
+      valueKind: 'number',
+    });
+    expect(bindingsByKey.get('chatIndex\u0000context\u0000context')?.usageRanges).toHaveLength(2);
+    expect(bindingsByKey.get('lastmessageid\u0000context\u0000context')).toMatchObject({
+      variableName: 'lastmessageid',
+      scope: 'context',
+      operation: 'context',
+      status: 'runtimeUnknown',
+      valueKind: 'number',
+    });
+    expect(bindingsByKey.get('lastmessageid\u0000context\u0000context')?.candidates).toContainEqual({
+      value: '3',
+      source: 'usage',
+      label: '3',
+    });
+  });
+
   it('adds direct and nested #when comparison candidates to fallback getvar bindings', () => {
     const bindings = createFallbackGetvarBindings(
       [

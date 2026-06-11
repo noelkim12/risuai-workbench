@@ -2,6 +2,7 @@
   import type { MainEditorRegexRiskFindingPayload } from '../../../types/mainEditor';
 
   export let risks: MainEditorRegexRiskFindingPayload[] = [];
+  export let expanded = true;
 
   $: sortedRisks = [...risks].sort((a, b) => severityRank(b.severity) - severityRank(a.severity));
 
@@ -12,13 +13,16 @@
   }
 </script>
 
-<section class="rrp" aria-label="Regex static risk analysis">
-  <header class="rrp__head">
+<details class="rrp" aria-label="Regex static risk analysis" bind:open={expanded}>
+  <summary class="rrp__head rrp__summary">
     <h3 class="rrp__title">Static risk analysis</h3>
-    {#if sortedRisks.length > 0}
-      <span class={`rrp__count rrp__count--${sortedRisks[0].severity}`}>{sortedRisks.length}</span>
-    {/if}
-  </header>
+    <span class="rrp__actions">
+      {#if sortedRisks.length > 0}
+        <span class={`rrp__count rrp__count--${sortedRisks[0].severity}`}>{sortedRisks.length}</span>
+      {/if}
+      <span class="rrp__chevron" aria-hidden="true"></span>
+    </span>
+  </summary>
 
   {#if sortedRisks.length === 0}
     <div class="rrp__empty">
@@ -32,6 +36,22 @@
           <div class="rrp__body">
             <strong class="rrp__code">{risk.code}</strong>
             <p class="rrp__msg">{risk.message}</p>
+            {#if risk.suggestions.length > 0}
+              <div class="rrp__suggestions" aria-label="Suggested alternatives">
+                <span class="rrp__suggestions-title">Suggested alternative</span>
+                <ul class="rrp__suggestion-list">
+                  {#each risk.suggestions as suggestion}
+                    <li class="rrp__suggestion">
+                      <strong class="rrp__suggestion-title">{suggestion.title}</strong>
+                      <span class="rrp__suggestion-desc">{suggestion.description}</span>
+                      {#if suggestion.example}
+                        <code class="rrp__suggestion-example">{suggestion.example}</code>
+                      {/if}
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+            {/if}
             <div class="rrp__meta">
               <span class="rrp__conf">confidence: <strong>{risk.confidence}</strong></span>
             </div>
@@ -40,7 +60,7 @@
       {/each}
     </ul>
   {/if}
-</section>
+</details>
 
 <style>
   .rrp {
@@ -59,6 +79,49 @@
     padding: var(--space-2) var(--space-3);
     border-bottom: 1px solid var(--card-border);
     background: var(--section);
+  }
+
+  .rrp:not([open]) > .rrp__head {
+    border-bottom: 0;
+  }
+
+  .rrp__summary {
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+  }
+
+  .rrp__summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .rrp__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .rrp__chevron {
+    width: 7px;
+    height: 7px;
+    border-right: 2px solid var(--muted);
+    border-bottom: 2px solid var(--muted);
+    transform: rotate(-45deg);
+    transition: transform 120ms ease, border-color 120ms ease;
+  }
+
+  .rrp[open] > .rrp__summary .rrp__chevron {
+    transform: rotate(45deg);
+  }
+
+  .rrp__summary:hover .rrp__chevron,
+  .rrp__summary:focus-visible .rrp__chevron {
+    border-color: var(--text);
+  }
+
+  .rrp__summary:focus-visible {
+    outline: 1px solid var(--focus);
+    outline-offset: -2px;
   }
 
   .rrp__title {
@@ -200,6 +263,65 @@
     color: var(--muted);
     font-size: var(--text-md);
     word-break: break-word;
+  }
+
+  .rrp__suggestions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin-top: var(--space-1);
+    padding: var(--space-2);
+    border: 1px solid color-mix(in srgb, var(--focus) 20%, var(--card-border));
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--focus) 6%, transparent);
+  }
+
+  .rrp__suggestions-title {
+    color: var(--text);
+    font-size: var(--text-xs);
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .rrp__suggestion-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .rrp__suggestion {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .rrp__suggestion-title {
+    color: var(--text);
+    font-size: var(--text-sm);
+    font-weight: 700;
+  }
+
+  .rrp__suggestion-desc {
+    color: var(--muted);
+    font-size: var(--text-md);
+    line-height: 1.4;
+  }
+
+  .rrp__suggestion-example {
+    align-self: flex-start;
+    margin-top: 1px;
+    padding: 1px 5px;
+    border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--card-border));
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    color: var(--text);
+    font-family: var(--vscode-editor-font-family, 'Cascadia Code', 'Fira Code', Consolas, monospace);
+    font-size: var(--text-sm);
+    line-height: 1.45;
   }
 
   .rrp__meta {
