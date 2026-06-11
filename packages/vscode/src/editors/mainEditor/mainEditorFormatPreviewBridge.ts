@@ -50,7 +50,10 @@ export function createMainEditorFormatPreviewResult(
       sampleInput: payload.sampleInput,
       variables,
     });
-    return toFormatResult(document, payload, preview.output, preview.status, preview.diagnostics, preview.metadata);
+    return {
+      ...toFormatResult(document, payload, preview.output, preview.status, preview.diagnostics, preview.metadata),
+      regex: preview.regex,
+    };
   }
   if (payload.formatKind === 'prompt') {
     const preview = createPromptMainEditorPreview(toPromptEditorState(payload.state), {

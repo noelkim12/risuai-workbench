@@ -19,6 +19,7 @@
   import { generateRegexSampleInput } from '../regex/regexSampleInput';
   import SimulatorResultPanel from '../simulator/SimulatorResultPanel.svelte';
   import PreviewPanel from './PreviewPanel.svelte';
+  import RegexPreviewPanel from '../regex/RegexPreviewPanel.svelte';
   import SideToolbar from '../shared/SideToolbar.svelte';
   import SplitPane from '../shared/SplitPane.svelte';
   import VariableDrawer from '../variables/VariableDrawer.svelte';
@@ -1413,7 +1414,7 @@
       </div>
     {:else if isStructuredAuthoring && model}
       <SplitPane ratio={preferences.splitRatio} onRatioChange={updateSplitRatio}>
-        <section class="main-editor-authoring main-editor-authoring--lorebook" aria-label={`${formatKind} authoring area`}>
+        <section class={`main-editor-authoring main-editor-authoring--lorebook${htmlState ? ' main-editor-authoring--html' : ''}`} aria-label={`${formatKind} authoring area`}>
           <header class="main-editor-header">
             <div class="main-editor-header__identity">
               <div class="main-editor-header__meta">
@@ -1495,12 +1496,16 @@
             <button type="button" class="main-editor-tab" class:main-editor-tab--active={resultTab === 'simulator'} onclick={() => (resultTab = 'simulator')}>Simulator</button>
           </div>
           {#if resultTab === 'preview'}
+            {#if regexState}
+              <RegexPreviewPanel preview={formatPreviewResult} pending={previewPending} sampleInput={regexSampleInput} />
+            {:else}
         <PreviewPanel preview={lorebookState ? previewResult : formatPreviewResult} pending={previewPending || runtimePreviewPending} sourceText={lorebookState?.contentText} />
-            {#if htmlState && formatPreviewResult}
-              <HtmlRenderedPreview
-                srcdoc={formatPreviewResult.output}
-                sandbox={formatPreviewResult.metadata.sandbox === 'allow-scripts' ? 'allow-scripts' : ''}
-              />
+              {#if htmlState && formatPreviewResult}
+                <HtmlRenderedPreview
+                  srcdoc={formatPreviewResult.output}
+                  sandbox={formatPreviewResult.metadata.sandbox === 'allow-scripts' ? 'allow-scripts' : ''}
+                />
+              {/if}
             {/if}
           {:else}
             <SimulatorResultPanel
