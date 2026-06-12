@@ -1,9 +1,0 @@
----
-comment: "SAVE 태그 LLM 입력에서 strip (#334 토큰 절약) (V1+V2)"
-type: editrequest
-ableFlag: false
----
-@@@ IN
-<=S\w*¦((?:(?!=>)[\s\S])*)=>
-@@@ OUT
-
