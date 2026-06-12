@@ -58,28 +58,28 @@ export const MAIN_EDITOR_FORMATS: readonly MainEditorFormatDefinition[] = [
     kind: 'lorebook',
     extension: '.risulorebook',
     languageId: 'risulorebook',
-    viewType: 'risuWorkbench.mainEditor.lorebook',
+    viewType: 'risuaiWorkbench.mainEditor.lorebook',
     displayName: 'Risu Lorebook Editor',
   },
   {
     kind: 'regex',
     extension: '.risuregex',
     languageId: 'risuregex',
-    viewType: 'risuWorkbench.mainEditor.regex',
+    viewType: 'risuaiWorkbench.mainEditor.regex',
     displayName: 'Risu Regex Editor',
   },
   {
     kind: 'prompt',
     extension: '.risuprompt',
     languageId: 'risuprompt',
-    viewType: 'risuWorkbench.mainEditor.prompt',
+    viewType: 'risuaiWorkbench.mainEditor.prompt',
     displayName: 'Risu Prompt Editor',
   },
   {
     kind: 'html',
     extension: '.risuhtml',
     languageId: 'risuhtml',
-    viewType: 'risuWorkbench.mainEditor.html',
+    viewType: 'risuaiWorkbench.mainEditor.html',
     displayName: 'Risu HTML Editor',
   },
 ];
@@ -156,6 +156,11 @@ export interface MainEditorSimulatorProfilePayload {
     timestamp?: string;
   }>;
   htmlContext: { enabledHtmlDocumentUris: string[] };
+}
+
+export interface MainEditorHtmlPreviewContextPayload {
+  sourceUris: string[];
+  sourceHtml: string;
 }
 
 export interface MainEditorReadyPayload {
@@ -520,8 +525,35 @@ export interface MainEditorFormatPreviewRequestPayload {
   activeProfileId: string;
   sampleInput?: string;
   profile?: MainEditorSimulatorProfilePayload;
+  overrides?: MainEditorVariableOverridesPayload;
   formatKind: 'regex' | 'prompt' | 'html';
   state: RegexStructuredState | PromptStructuredState | HtmlStructuredState;
+}
+
+export interface MainEditorRegexRiskFindingPayload {
+  code:
+    | 'NESTED_QUANTIFIER'
+    | 'REPEATED_WILDCARD'
+    | 'AMBIGUOUS_ALTERNATION'
+    | 'GREEDY_DOT_PREFIX'
+    | 'BACKREFERENCE'
+    | 'GLOBAL_EMPTY_MATCH'
+    | 'REGEX_PARSE_ERROR';
+  severity: 'info' | 'warning' | 'error';
+  confidence: 'low' | 'medium' | 'high';
+  message: string;
+  suggestions: Array<{ title: string; description: string; example?: string }>;
+  range?: { start: number; end: number };
+}
+
+export interface MainEditorRegexPreflightPayload {
+  pattern: { raw: string; effective: string; cbsStatus: 'ok' | 'partial' | 'aborted' | 'error' };
+  replacement: { raw: string; effective: string; cbsStatus: 'ok' | 'partial' | 'aborted' | 'error' };
+  jsFlags: string;
+  directives: string[];
+  risks: MainEditorRegexRiskFindingPayload[];
+  executionRequired: boolean;
+  nativeExecution: 'webview-worker-required';
 }
 
 export interface MainEditorFormatPreviewResultPayload {
@@ -534,6 +566,8 @@ export interface MainEditorFormatPreviewResultPayload {
   output: string;
   diagnostics: Array<{ severity: 'error' | 'warning' | 'info'; message: string; code?: string }>;
   metadata: Record<string, string>;
+  regex?: MainEditorRegexPreflightPayload;
+  htmlContext?: MainEditorHtmlPreviewContextPayload;
 }
 
 export interface MainEditorSimulatorProfileListRequestPayload {
@@ -570,7 +604,7 @@ export interface MainEditorVariableCandidatesRequestPayload {
   documentVersion: number;
   contentVersion: number;
   formatKind: MainEditorFormatKind;
-  sectionName: 'CONTENT';
+  sectionName: 'CONTENT' | 'IN';
   scope: Exclude<MainEditorVariableSectionScope, 'usedHere'>;
   variableNames: string[];
 }
@@ -1137,6 +1171,7 @@ function isMainEditorFormatPreviewRequestPayload(
   if (typeof value.activeProfileId !== 'string') return false;
   if ('sampleInput' in value && typeof value.sampleInput !== 'string') return false;
   if ('profile' in value && !isSimulatorProfile(value.profile)) return false;
+  if ('overrides' in value && !isMainEditorVariableOverridesPayload(value.overrides)) return false;
 
   if (value.formatKind === 'regex')
     return isRegexPreviewSectionName(value.sectionName) && isRegexStructuredState(value.state);
@@ -1180,8 +1215,8 @@ function isMainEditorVariableCandidatesRequestPayload(
     Number.isInteger(value.documentVersion) &&
     typeof value.contentVersion === 'number' &&
     Number.isInteger(value.contentVersion) &&
-    value.formatKind === 'lorebook' &&
-    value.sectionName === 'CONTENT' &&
+    isMainEditorFormatKind(value.formatKind) &&
+    (value.sectionName === 'CONTENT' || value.sectionName === 'IN') &&
     isVariableCandidateScope(value.scope) &&
     Array.isArray(value.variableNames) &&
     value.variableNames.every((name) => typeof name === 'string')

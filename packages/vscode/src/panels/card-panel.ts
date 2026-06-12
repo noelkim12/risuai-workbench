@@ -27,7 +27,7 @@ export class CardPanel {
     }
 
     const panel = vscode.window.createWebviewPanel(
-      'risuWorkbench.cardPanel',
+      'risuaiWorkbench.cardPanel',
       'Risu Card Panel',
       column,
       {

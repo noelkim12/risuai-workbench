@@ -127,7 +127,7 @@ describe('main editor Monaco LSP client source contract', () => {
 
   it('preserves trusted command hyperlinks in hover markdown', () => {
     expect(mainEditorLspClientSource).toContain('toHoverMarkdownString');
-    expect(mainEditorLspClientSource).toContain("CBS_OCCURRENCE_NAVIGATION_COMMAND = 'risuWorkbench.cbs.openOccurrence'");
+    expect(mainEditorLspClientSource).toContain("CBS_OCCURRENCE_NAVIGATION_COMMAND = 'risuaiWorkbench.cbs.openOccurrence'");
     expect(mainEditorLspClientSource).toContain('isTrusted: { enabledCommands: [CBS_OCCURRENCE_NAVIGATION_COMMAND] }');
     expect(mainEditorLspClientSource).toContain('](command:');
   });
@@ -188,15 +188,15 @@ describe('main editor Monaco LSP client source contract', () => {
     const resultPromise = providers.hover?.provideHover(model, createPosition(2, 8), {} as monaco.CancellationToken);
     const request = postedMessages[0];
     client.handleMessage(createLspHoverResult(request.payload.requestId, [
-      '[Open variable](command:risuWorkbench.cbs.openOccurrence?%5B%5D)',
+      '[Open variable](command:risuaiWorkbench.cbs.openOccurrence?%5B%5D)',
       'plain hover text',
     ]));
 
     await expect(resultPromise).resolves.toMatchObject({
       contents: [
         {
-          value: '[Open variable](command:risuWorkbench.cbs.openOccurrence?%5B%5D)',
-          isTrusted: { enabledCommands: ['risuWorkbench.cbs.openOccurrence'] },
+          value: '[Open variable](command:risuaiWorkbench.cbs.openOccurrence?%5B%5D)',
+          isTrusted: { enabledCommands: ['risuaiWorkbench.cbs.openOccurrence'] },
         },
         { value: 'plain hover text' },
       ],

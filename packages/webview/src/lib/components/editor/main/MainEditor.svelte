@@ -16,13 +16,15 @@
   import PromptSectionEditor from '../prompt/PromptSectionEditor.svelte';
   import RegexFrontmatter from '../regex/RegexFrontmatter.svelte';
   import RegexSplitEditor from '../regex/RegexSplitEditor.svelte';
+  import { generateRegexSampleInput } from '../regex/regexSampleInput';
   import SimulatorResultPanel from '../simulator/SimulatorResultPanel.svelte';
   import PreviewPanel from './PreviewPanel.svelte';
+  import RegexPreviewPanel from '../regex/RegexPreviewPanel.svelte';
   import SideToolbar from '../shared/SideToolbar.svelte';
   import SplitPane from '../shared/SplitPane.svelte';
   import VariableDrawer from '../variables/VariableDrawer.svelte';
   import VariableRail from '../variables/VariableRail.svelte';
-  import { createFallbackGetvarBindings, dedupeVariableBindings, mergeCandidateLists, resolveSentinelValue, toOverridePatch } from '../variables/variableDrawerHelpers';
+  import { createFallbackGetvarBindings, createRegexFallbackBindings, dedupeVariableBindings, mergeCandidateLists, resolveSentinelValue, toOverridePatch } from '../variables/variableDrawerHelpers';
   import {
     MAIN_EDITOR_PROTOCOL,
     MAIN_EDITOR_PROTOCOL_VERSION,
@@ -125,6 +127,7 @@
   let workspaceSymbolPending = false;
   let workspaceSymbols: MainEditorWorkspaceSymbolPayload[] = [];
   let regexSampleInput = '';
+  let regexSampleInputEdited = false;
   let promptActiveSection: 'TEXT' | 'INNER_FORMAT' | 'DEFAULT_TEXT' = 'TEXT';
   let promptSectionDrafts: Partial<Record<'TEXT' | 'INNER_FORMAT' | 'DEFAULT_TEXT', string>> = {};
   let simulatorProfiles: MainEditorSimulatorProfilePayload[] = [createDefaultSimulatorProfilePayload()];
@@ -209,6 +212,8 @@
         schedulePreview(message.payload.model.state.contentText);
         scheduleRuntimePreview(message.payload.model.state.contentText);
       } else if (message.payload.formatKind === 'regex' && isRegexEditorState(message.payload.model.state)) {
+        refreshRegexSampleInput(message.payload.model.state.inText, true);
+        refreshRegexDrawerBindings(message.payload.model.state.inText, message.payload.model.state.outText);
         scheduleFormatPreview('IN', message.payload.model.state);
       } else if (message.payload.formatKind === 'prompt' && isPromptEditorState(message.payload.model.state)) {
         promptSectionDrafts = { ...message.payload.model.state.sections };
@@ -229,6 +234,9 @@
         previewPending = false;
         formatPreviewResult = null;
         resetRuntimePreviewState();
+      }
+      if (documentChanged && message.payload.formatKind === 'regex' && isRegexEditorState(message.payload.model.state)) {
+        refreshRegexSampleInput(message.payload.model.state.inText, true);
       }
       return;
     }
@@ -454,14 +462,29 @@
 
   function updateRegexState(nextState: RegexEditorState): void {
     if (!model || model.formatKind !== 'regex') return;
+    if (nextState.inText !== regexState?.inText) refreshRegexSampleInput(nextState.inText);
+    refreshRegexDrawerBindings(nextState.inText, nextState.outText);
     model = { ...model, state: nextState };
     scheduleFormatPreview('IN', nextState);
     scheduleStructuredEdit(nextState);
   }
 
   function updateRegexSampleInput(sampleInput: string): void {
+    regexSampleInputEdited = true;
     regexSampleInput = sampleInput;
     if (regexState) scheduleFormatPreview('IN', regexState);
+  }
+
+  function refreshRegexSampleInput(inText: string, force = false): void {
+    if (force) regexSampleInputEdited = false;
+    if (regexSampleInputEdited) return;
+    regexSampleInput = generateRegexSampleInput(inText);
+  }
+
+  function refreshRegexDrawerBindings(inText: string, outText: string): void {
+    const fallback = createRegexFallbackBindings(inText, outText);
+    runtimePreviewBindings = applyOverridesToBindings(fallback);
+    runtimePreviewFallbackBindings = fallback;
   }
 
   function updatePromptState(nextState: PromptEditorState): void {
@@ -598,6 +621,7 @@
           activeProfileId,
           sampleInput: formatKind === 'regex' ? regexSampleInput : undefined,
           profile: activeSimulatorProfile,
+          overrides: formatKind === 'regex' ? variableOverrides : undefined,
           state: structuredState,
         }),
       );
@@ -634,6 +658,7 @@
     variableOverrides = mergeOverridePatch(variableOverrides, toOverridePatch(patchedBinding));
     runtimePreviewBindings = runtimePreviewBindings.map((entry) => entry.variableName === variableName ? patchedBinding : entry);
     if (lorebookState) scheduleRuntimePreview(lorebookState.contentText);
+    else if (regexState) scheduleFormatPreview('IN', regexState);
   }
 
   /**
@@ -654,7 +679,8 @@
    * @param section - lazy drawer section 이름
    */
   function requestLazyVariableSection(section: 'workspace' | 'profiles' | 'traceContext'): void {
-    if (section !== 'workspace' || !lorebookState) return;
+    if (section !== 'workspace') return;
+    if (!lorebookState && !regexState) return;
     const variableNames = runtimePreviewBindings.map((binding) => binding.variableName);
     const requestId = createRequestId('candidates');
     getTypedVsCodeApi()?.postMessage(
@@ -663,8 +689,8 @@
         documentUri,
         documentVersion,
         contentVersion,
-        formatKind: 'lorebook',
-        sectionName: 'CONTENT',
+        formatKind: lorebookState ? 'lorebook' : 'regex',
+        sectionName: lorebookState ? 'CONTENT' : 'IN',
         scope: 'workspace',
         variableNames,
       }),
@@ -782,6 +808,7 @@
   ): MainEditorVariableOverridesPayload {
     return {
       chatVariables: { ...(overrides.chatVariables ?? {}), ...(patch.chatVariables ?? {}) },
+      contextVariables: { ...(overrides.contextVariables ?? {}), ...(patch.contextVariables ?? {}) },
       globalVariables: { ...(overrides.globalVariables ?? {}), ...(patch.globalVariables ?? {}) },
       toggleValues: { ...(overrides.toggleValues ?? {}), ...(patch.toggleValues ?? {}) },
       tempVariables: { ...(overrides.tempVariables ?? {}), ...(patch.tempVariables ?? {}) },
@@ -820,6 +847,7 @@
     }
     if (binding.scope === 'global') return overrides.globalVariables?.[binding.variableName];
     if (binding.scope === 'temp') return overrides.tempVariables?.[binding.variableName];
+    if (binding.scope === 'context') return overrides.contextVariables?.[binding.variableName];
     return overrides.chatVariables?.[binding.variableName];
   }
 
@@ -1386,7 +1414,7 @@
       </div>
     {:else if isStructuredAuthoring && model}
       <SplitPane ratio={preferences.splitRatio} onRatioChange={updateSplitRatio}>
-        <section class="main-editor-authoring main-editor-authoring--lorebook" aria-label={`${formatKind} authoring area`}>
+        <section class={`main-editor-authoring main-editor-authoring--lorebook${htmlState ? ' main-editor-authoring--html' : ''}`} aria-label={`${formatKind} authoring area`}>
           <header class="main-editor-header">
             <div class="main-editor-header__identity">
               <div class="main-editor-header__meta">
@@ -1468,12 +1496,16 @@
             <button type="button" class="main-editor-tab" class:main-editor-tab--active={resultTab === 'simulator'} onclick={() => (resultTab = 'simulator')}>Simulator</button>
           </div>
           {#if resultTab === 'preview'}
+            {#if regexState}
+              <RegexPreviewPanel preview={formatPreviewResult} pending={previewPending} sampleInput={regexSampleInput} />
+            {:else}
         <PreviewPanel preview={lorebookState ? previewResult : formatPreviewResult} pending={previewPending || runtimePreviewPending} sourceText={lorebookState?.contentText} />
-            {#if htmlState && formatPreviewResult}
-              <HtmlRenderedPreview
-                srcdoc={formatPreviewResult.output}
-                sandbox={formatPreviewResult.metadata.sandbox === 'allow-scripts' ? 'allow-scripts' : ''}
-              />
+              {#if htmlState && formatPreviewResult}
+                <HtmlRenderedPreview
+                  srcdoc={formatPreviewResult.output}
+                  sandbox={formatPreviewResult.metadata.sandbox === 'allow-scripts' ? 'allow-scripts' : ''}
+                />
+              {/if}
             {/if}
           {:else}
             <SimulatorResultPanel

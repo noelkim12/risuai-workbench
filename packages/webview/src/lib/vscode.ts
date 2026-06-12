@@ -7,6 +7,9 @@ import {
   ARTIFACT_BROWSER_PROTOCOL,
   ARTIFACT_BROWSER_PROTOCOL_VERSION,
   ARTIFACT_BROWSER_VIEW_ID,
+  type ArtifactBrowserMoveLorebookFolderMessage,
+  type ArtifactBrowserMoveLorebookItemMessage,
+  type ArtifactBrowserMoveRegexItemMessage,
   type ArtifactBrowserOpenItemMessage,
   type ArtifactBrowserReadyMessage,
   type ArtifactBrowserRefreshMessage,
@@ -110,5 +113,49 @@ export function createArtifactBrowserOpenItemMessage(stableId: string, itemId: s
   return createArtifactBrowserWebviewMessage('artifact-browser/openItem', {
     stableId,
     itemId,
+  });
+}
+
+export function createArtifactBrowserMoveLorebookItemMessage(
+  stableId: string,
+  itemId: string,
+  targetFolderPath: string | null,
+  placement?: 'inside' | 'before' | 'after',
+  targetItemId?: string,
+): ArtifactBrowserMoveLorebookItemMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/moveLorebookItem', {
+    stableId,
+    itemId,
+    targetFolderPath,
+    ...(placement && { placement }),
+    ...(targetItemId && { targetItemId }),
+  });
+}
+
+export function createArtifactBrowserMoveLorebookFolderMessage(
+  stableId: string,
+  folderPath: string,
+  targetFolderPath: string,
+  placement: 'before' | 'after',
+): ArtifactBrowserMoveLorebookFolderMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/moveLorebookFolder', {
+    stableId,
+    folderPath,
+    targetFolderPath,
+    placement,
+  });
+}
+
+export function createArtifactBrowserMoveRegexItemMessage(
+  stableId: string,
+  itemId: string,
+  targetItemId: string,
+  placement: 'before' | 'after',
+): ArtifactBrowserMoveRegexItemMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/moveRegexItem', {
+    stableId,
+    itemId,
+    targetItemId,
+    placement,
   });
 }

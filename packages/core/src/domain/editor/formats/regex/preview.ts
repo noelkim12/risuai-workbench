@@ -4,8 +4,8 @@
  */
 
 import type { CbsSimulationContextInput } from '../../../../simulator';
-import { simulateRisuRegexPreview } from '../../../../simulator/regex';
-import type { SimulatorDiagnostic, SimulatorTraceEvent } from '../../../../simulator/regex';
+import { createRisuRegexPreflight } from '../../../../simulator/regex';
+import type { RegexPreflightResult, SimulatorDiagnostic, SimulatorTraceEvent } from '../../../../simulator/regex';
 import type { RegexEditorState } from '../../document-model/types';
 
 export interface RegexMainEditorPreviewInput {
@@ -24,6 +24,7 @@ export interface RegexMainEditorPreviewResult {
     matchCount: string;
     directiveCount: string;
   };
+  regex?: RegexPreflightResult;
 }
 
 /**
@@ -38,23 +39,23 @@ export function createRegexMainEditorPreview(
   state: RegexEditorState,
   input: RegexMainEditorPreviewInput = {},
 ): RegexMainEditorPreviewResult {
-  const preview = simulateRisuRegexPreview({
+  const preflight = createRisuRegexPreflight({
     rawDocument: serializeRegexStateForPreview(state),
-    sampleInput: input.sampleInput ?? '',
     context: input.variables,
   });
 
   return {
-    status: preview.status,
+    status: preflight.status,
     title: '.risuregex Preview',
-    output: preview.replacementPreview.output,
-    diagnostics: preview.diagnostics,
-    trace: preview.trace,
+    output: '',
+    diagnostics: preflight.diagnostics,
+    trace: [],
     metadata: {
       format: 'regex',
-      matchCount: String(preview.nativePreview.matches.length),
-      directiveCount: String(preview.flags?.directives.length ?? 0),
+      matchCount: 'worker',
+      directiveCount: String(preflight.directives.length),
     },
+    regex: preflight,
   };
 }
 

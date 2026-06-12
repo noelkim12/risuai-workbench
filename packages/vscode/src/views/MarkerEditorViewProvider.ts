@@ -43,7 +43,7 @@ import {
   getWebviewDevServerPortMapping,
 } from './webviewDevServer';
 
-const PANEL_VIEW_TYPE = 'risuWorkbench.markerEditor';
+const PANEL_VIEW_TYPE = 'risuaiWorkbench.markerEditor';
 const CHARACTER_MARKER_FILENAME = '.risuchar';
 const MODULE_MARKER_FILENAME = '.risumodule';
 const ASSETS_DIRECTORY = 'assets';
@@ -449,7 +449,7 @@ export class MarkerEditorViewProvider {
       )
       .replace(
         '</head>',
-        `    <meta name="risu-workbench-view" content="marker-editor" />\n  </head>`,
+        `    <meta name="risuai-workbench-view" content="marker-editor" />\n  </head>`,
       );
 
     return withEditorSignal.replace(
@@ -464,7 +464,7 @@ export class MarkerEditorViewProvider {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="risu-workbench-view" content="marker-editor" />
+    <meta name="risuai-workbench-view" content="marker-editor" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource};" />
     <title>Risu Marker Editor</title>
   </head>

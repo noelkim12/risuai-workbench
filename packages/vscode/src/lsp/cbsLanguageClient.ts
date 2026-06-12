@@ -111,7 +111,7 @@ export function startCbsLanguageClient(context: vscode.ExtensionContext): void {
   };
 
   // Server-advertised executeCommand ids are reserved for languageclient proxy commands;
-  // activation CodeLens UI uses a separate risuWorkbench.* command to avoid duplicate registration.
+  // activation CodeLens UI uses a separate risuaiWorkbench.* command to avoid duplicate registration.
   client = new LanguageClient(
     'cbs-language-server',
     'CBS Language Server',
@@ -234,7 +234,7 @@ async function reportCbsRuntimeAvailability(
   const detail = luaLsFailure?.detail ?? luaLsRuntime.detail ?? 'LuaLS sidecar is unavailable.';
   const recovery =
     luaLsFailure?.recovery ??
-    'Install lua-language-server, add it to PATH, or set risuWorkbench.cbs.server.luaLsPath.';
+    'Install lua-language-server, add it to PATH, or set risuaiWorkbench.cbs.server.luaLsPath.';
   output.appendLine(`[CBS Language Server] LuaLS unavailable: ${detail}`);
   output.appendLine(`[CBS Language Server] LuaLS recovery: ${recovery}`);
 }
@@ -247,7 +247,7 @@ async function reportCbsRuntimeAvailability(
  */
 function readCbsLanguageServerSettings(): CbsLanguageServerSettings {
   const defaults = defaultCbsLanguageServerSettings();
-  const config = vscode.workspace.getConfiguration('risuWorkbench.cbs.server');
+  const config = vscode.workspace.getConfiguration('risuaiWorkbench.cbs.server');
   const configuredLuaLsPath =
     config.get<string>('luaLsPath', defaults.luaLsPath) ?? defaults.luaLsPath;
   return {
@@ -436,7 +436,7 @@ async function handleLaunchFailure(
   if (selection === 'Open Settings') {
     await vscode.commands.executeCommand(
       'workbench.action.openSettings',
-      'risuWorkbench.cbs.server',
+      'risuaiWorkbench.cbs.server',
     );
   }
 }

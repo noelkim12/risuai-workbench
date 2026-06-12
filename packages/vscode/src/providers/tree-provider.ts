@@ -45,7 +45,7 @@ export class RisuTreeProvider implements vscode.TreeDataProvider<vscode.TreeItem
       title: 'Open Card File',
       arguments: [fileUri],
     };
-    item.contextValue = 'risuWorkbench.cardItem';
+    item.contextValue = 'risuaiWorkbench.cardItem';
     return item;
   }
 }

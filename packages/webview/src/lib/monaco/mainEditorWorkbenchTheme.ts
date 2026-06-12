@@ -137,6 +137,7 @@ export function registerMainEditorFindShortcut(editor: monaco.editor.IStandalone
   if (!ownerDocument) return { dispose: () => undefined };
 
   const handlePaste = (event: ClipboardEvent): void => {
+    if (isFindWidgetEventTarget(event.target)) return;
     if (!editor.hasTextFocus()) return;
     const text = event.clipboardData?.getData('text/plain') ?? '';
     if (!text) return;
@@ -147,6 +148,7 @@ export function registerMainEditorFindShortcut(editor: monaco.editor.IStandalone
   };
 
   const handleCut = (event: ClipboardEvent): void => {
+    if (isFindWidgetEventTarget(event.target)) return;
     if (!editor.hasTextFocus()) return;
     const selectedText = getEditorSelectedText(editor);
     if (!selectedText) return;
@@ -161,6 +163,7 @@ export function registerMainEditorFindShortcut(editor: monaco.editor.IStandalone
     if (!editor.hasTextFocus() && !editor.hasWidgetFocus()) return;
 
     if (isPlainPasteShortcut(event)) {
+      if (!editor.hasTextFocus() || isFindWidgetEventTarget(event.target)) return;
       event.preventDefault();
       event.stopPropagation();
       void pasteFromNavigatorClipboard(editor);
@@ -168,6 +171,7 @@ export function registerMainEditorFindShortcut(editor: monaco.editor.IStandalone
     }
 
     if (isPlainCutShortcut(event)) {
+      if (!editor.hasTextFocus() || isFindWidgetEventTarget(event.target)) return;
       event.preventDefault();
       event.stopPropagation();
       void cutToNavigatorClipboard(editor);
@@ -214,6 +218,10 @@ export function registerMainEditorFindShortcut(editor: monaco.editor.IStandalone
       ownerDocument.removeEventListener('keydown', handleKeydown, { capture: true });
     },
   };
+}
+
+function isFindWidgetEventTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('.find-widget') !== null;
 }
 
 /**

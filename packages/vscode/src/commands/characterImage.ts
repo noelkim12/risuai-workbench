@@ -9,7 +9,7 @@ import { isPlainRecord as isRecord } from '../shared/protocolEnvelope';
 
 type VsCodeApi = typeof import('vscode');
 
-export const RISU_CHARACTER_SELECT_IMAGE_COMMAND = 'risuWorkbench.character.selectImage';
+export const RISU_CHARACTER_SELECT_IMAGE_COMMAND = 'risuaiWorkbench.character.selectImage';
 
 const SUPPORTED_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
 
