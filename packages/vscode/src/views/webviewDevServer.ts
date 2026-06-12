@@ -47,10 +47,10 @@ export function createWebviewDevServerHtml(devServerUrl: URL, options: DevServer
   const websocketOrigin = `${devServerUrl.protocol === 'https:' ? 'wss:' : 'ws:'}//${devServerUrl.host}`;
   const editorModeAttribute = options.editorMode ? ' data-editor-mode="true"' : '';
   const viewNameAttribute = options.viewName
-    ? ` data-risu-workbench-view="${escapeHtmlAttribute(options.viewName)}"`
+    ? ` data-risuai-workbench-view="${escapeHtmlAttribute(options.viewName)}"`
     : '';
   const viewMeta = options.viewName
-    ? `    <meta name="risu-workbench-view" content="${escapeHtmlAttribute(options.viewName)}" />\n`
+    ? `    <meta name="risuai-workbench-view" content="${escapeHtmlAttribute(options.viewName)}" />\n`
     : '';
 
   return `<!doctype html>

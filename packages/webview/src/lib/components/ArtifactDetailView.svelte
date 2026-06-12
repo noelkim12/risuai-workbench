@@ -14,6 +14,14 @@
   export let onBack: () => void;
   export let onToggleSection: (sectionId: string) => void;
   export let onOpenItem: (item: CharacterItem) => void;
+  export let onMoveLorebookItem: (
+    item: CharacterItem,
+    targetFolderPath: string | null,
+    placement?: 'inside' | 'before' | 'after',
+    targetItemId?: string,
+  ) => void;
+  export let onMoveLorebookFolder: (folderPath: string, targetFolderPath: string, placement: 'before' | 'after') => void;
+  export let onMoveRegexItem: (item: CharacterItem, targetItemId: string, placement: 'before' | 'after') => void;
 
   $: detailLabel = artifact.artifactKind === 'module' ? 'Module Detail' : 'Character Detail';
   $: detailMeta =
@@ -41,5 +49,13 @@
     <p><strong>Manifest</strong> {artifact.markerPathLabel}</p>
   </section>
 
-  <CharacterAccordion {sections} {expandedSectionIds} {onToggleSection} {onOpenItem} />
+  <CharacterAccordion
+    {sections}
+    {expandedSectionIds}
+    {onToggleSection}
+    {onOpenItem}
+    {onMoveLorebookItem}
+    {onMoveLorebookFolder}
+    {onMoveRegexItem}
+  />
 </main>

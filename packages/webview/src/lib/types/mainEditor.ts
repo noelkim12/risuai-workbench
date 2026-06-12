@@ -402,6 +402,11 @@ export interface MainEditorSimulatorProfilePayload {
   htmlContext: { enabledHtmlDocumentUris: string[] };
 }
 
+export interface MainEditorHtmlPreviewContextPayload {
+  sourceUris: string[];
+  sourceHtml: string;
+}
+
 export interface MainEditorFormatPreviewRequestPayload {
   requestId: string;
   documentUri: string;
@@ -410,11 +415,38 @@ export interface MainEditorFormatPreviewRequestPayload {
   activeProfileId: string;
   sampleInput?: string;
   profile?: MainEditorSimulatorProfilePayload;
+  overrides?: MainEditorVariableOverridesPayload;
   formatKind: 'regex' | 'prompt' | 'html';
   state:
     | MainEditorRegexStructuredStatePayload
     | MainEditorPromptStructuredStatePayload
     | MainEditorHtmlStructuredStatePayload;
+}
+
+export interface MainEditorRegexRiskFindingPayload {
+  code:
+    | 'NESTED_QUANTIFIER'
+    | 'REPEATED_WILDCARD'
+    | 'AMBIGUOUS_ALTERNATION'
+    | 'GREEDY_DOT_PREFIX'
+    | 'BACKREFERENCE'
+    | 'GLOBAL_EMPTY_MATCH'
+    | 'REGEX_PARSE_ERROR';
+  severity: 'info' | 'warning' | 'error';
+  confidence: 'low' | 'medium' | 'high';
+  message: string;
+  suggestions: Array<{ title: string; description: string; example?: string }>;
+  range?: { start: number; end: number };
+}
+
+export interface MainEditorRegexPreflightPayload {
+  pattern: { raw: string; effective: string; cbsStatus: 'ok' | 'partial' | 'aborted' | 'error' };
+  replacement: { raw: string; effective: string; cbsStatus: 'ok' | 'partial' | 'aborted' | 'error' };
+  jsFlags: string;
+  directives: string[];
+  risks: MainEditorRegexRiskFindingPayload[];
+  executionRequired: boolean;
+  nativeExecution: 'webview-worker-required';
 }
 
 export interface MainEditorFormatPreviewResultPayload {
@@ -427,6 +459,8 @@ export interface MainEditorFormatPreviewResultPayload {
   output: string;
   diagnostics: Array<{ severity: 'error' | 'warning' | 'info'; message: string; code?: string }>;
   metadata: Record<string, string>;
+  regex?: MainEditorRegexPreflightPayload;
+  htmlContext?: MainEditorHtmlPreviewContextPayload;
 }
 
 export interface MainEditorSimulatorProfileListRequestPayload {
@@ -548,7 +582,7 @@ export interface MainEditorVariableCandidatesRequestPayload {
   documentVersion: number;
   contentVersion: number;
   formatKind: MainEditorFormatKind;
-  sectionName: 'CONTENT';
+  sectionName: 'CONTENT' | 'IN';
   scope: Exclude<MainEditorVariableSectionScope, 'usedHere'>;
   variableNames: string[];
 }

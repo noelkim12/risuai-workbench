@@ -3,8 +3,8 @@ import { MAIN_EDITOR_FIXED_OVERFLOW_WIDGETS } from '../../../src/lib/monaco/main
 import mainEditorWorkbenchThemeSource from '../../../src/lib/monaco/mainEditorWorkbenchTheme.ts?raw';
 
 describe('main editor Monaco workbench options', () => {
-  it('keeps overflow widgets in the editor coordinate space by default', () => {
-    expect(MAIN_EDITOR_FIXED_OVERFLOW_WIDGETS).toBe(false);
+  it('lets overflow widgets escape clipped split-pane editor containers', () => {
+    expect(MAIN_EDITOR_FIXED_OVERFLOW_WIDGETS).toBe(true);
   });
 
   it('registers Monaco core editor contributions as a complete bundle', () => {
@@ -41,6 +41,11 @@ describe('main editor Monaco workbench options', () => {
     expect(mainEditorWorkbenchThemeSource).toContain('cutToNavigatorClipboard');
     expect(mainEditorWorkbenchThemeSource).toContain("event.key.toLowerCase() === 'v'");
     expect(mainEditorWorkbenchThemeSource).toContain("event.key.toLowerCase() === 'x'");
+  });
+
+  it('lets Monaco find widget inputs own paste and cut events', () => {
+    expect(mainEditorWorkbenchThemeSource).toContain('isFindWidgetEventTarget(event.target)');
+    expect(mainEditorWorkbenchThemeSource).toContain("target.closest('.find-widget')");
   });
 
   it('handles native paste and cut clipboard events before Monaco loses them', () => {

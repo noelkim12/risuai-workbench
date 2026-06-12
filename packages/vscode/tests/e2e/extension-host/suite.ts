@@ -81,7 +81,7 @@ function toHoverText(hover: vscode.Hover): string {
 async function updateWorkspaceServerSettings(
   settings: WorkspaceServerSettings,
 ): Promise<void> {
-  const config = vscode.workspace.getConfiguration('risuWorkbench.cbs.server');
+  const config = vscode.workspace.getConfiguration('risuaiWorkbench.cbs.server');
   await config.update('launchMode', settings.launchMode, vscode.ConfigurationTarget.Workspace);
   await config.update('installMode', settings.installMode, vscode.ConfigurationTarget.Workspace);
   await config.update('luaLsPath', settings.luaLsPath, vscode.ConfigurationTarget.Workspace);
@@ -218,7 +218,7 @@ async function runMainEditorRuntimeSmoke(): Promise<void> {
   assert.equal(document.languageId, 'risulorebook');
   assert.match(document.getText(), /@@@ CONTENT/);
 
-  await vscode.commands.executeCommand('vscode.openWith', fixtureUri, 'risuWorkbench.mainEditor.lorebook', {
+  await vscode.commands.executeCommand('vscode.openWith', fixtureUri, 'risuaiWorkbench.mainEditor.lorebook', {
     preview: false,
     viewColumn: vscode.ViewColumn.One,
   });

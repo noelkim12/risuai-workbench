@@ -50,6 +50,7 @@ export interface CBSVariableOccurrence {
 
 const COMPATIBLE_VAR_OPS = new Set(['getvar', 'setvar', 'addvar', 'setdefaultvar', 'getglobalvar']);
 const VAR_OP_FALLBACK_PATTERN = /\{\{(getvar|setvar|addvar|setdefaultvar|getglobalvar)::([^}:]+)/g;
+const RUNTIME_CONTEXT_FALLBACK_PATTERN = /\{\{\s*(chat_index|chatindex|lastmessageid)\s*\}\}/gi;
 const STATIC_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 const WHEN_CHAT_VARIABLE_OPERATORS = new Set(['vis', 'visnot']);
 const WHEN_TOGGLE_LITERAL_OPERATORS = new Set(['tis', 'tisnot']);
@@ -80,6 +81,19 @@ export function extractCBSVariableOccurrences(text: string): CBSVariableOccurren
     walkAST(document.nodes, {
       visitMacroCall(node) {
         const op = readRangeText(text, lineStarts, node.nameRange);
+        const contextVariable = parseRuntimeContextName(op);
+        if (contextVariable) {
+          occurrences.push({
+            variableName: contextVariable,
+            direction: 'read',
+            operation: 'context',
+            range: node.nameRange,
+            keyStart: node.nameRange.start,
+            keyEnd: node.nameRange.end,
+          });
+          return;
+        }
+
         if (!COMPATIBLE_VAR_OPS.has(op)) return;
 
         const firstArg = node.arguments[0];
@@ -222,9 +236,17 @@ function isStaticWhenLiteral(source: string): boolean {
   return value.length > 0 && STATIC_WHEN_LITERAL_PATTERN.test(value);
 }
 
-function parseRuntimeContextMacro(source: string): 'chatIndex' | undefined {
+function parseRuntimeContextMacro(source: string): 'chatIndex' | 'lastmessageid' | undefined {
   const normalized = source.trim().toLowerCase().replace(/\s+/gu, '');
   if (normalized === '{{chat_index}}' || normalized === '{{chatindex}}') return 'chatIndex';
+  if (normalized === '{{lastmessageid}}') return 'lastmessageid';
+  return undefined;
+}
+
+function parseRuntimeContextName(source: string): 'chatIndex' | 'lastmessageid' | undefined {
+  const normalized = source.trim().toLowerCase().replace(/\s+/gu, '');
+  if (normalized === 'chat_index' || normalized === 'chatindex') return 'chatIndex';
+  if (normalized === 'lastmessageid') return 'lastmessageid';
   return undefined;
 }
 
@@ -533,6 +555,23 @@ function extractCBSVariableOccurrencesFallback(text: string): CBSVariableOccurre
       range: { start: rangeStart, end: rangeEnd },
       keyStart,
       keyEnd,
+    });
+  }
+
+  for (const match of text.matchAll(RUNTIME_CONTEXT_FALLBACK_PATTERN)) {
+    const variableName = parseRuntimeContextName(match[1] ?? '');
+    if (!variableName) continue;
+
+    const start = match.index + match[0].indexOf(match[1]);
+    const end = start + match[1].length;
+    const range = { start: indexToPosition(lineStarts, start), end: indexToPosition(lineStarts, end) };
+    occurrences.push({
+      variableName,
+      direction: 'read',
+      operation: 'context',
+      range,
+      keyStart: range.start,
+      keyEnd: range.end,
     });
   }
 

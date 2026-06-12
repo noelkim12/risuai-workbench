@@ -16,7 +16,7 @@ import { RISU_CHARACTER_SELECT_IMAGE_COMMAND, selectCharacterImage } from './cha
 import { MarkerEditorViewProvider } from '../views/MarkerEditorViewProvider';
 import { getErrorMessage } from '../shared/errors';
 
-const MARKER_EDITOR_COMMAND = 'risuWorkbench.openMarkerEditor';
+const MARKER_EDITOR_COMMAND = 'risuaiWorkbench.openMarkerEditor';
 const MARKER_EDITOR_FILENAMES = new Set(['.risuchar', '.risumodule']);
 
 interface CbsOccurrenceNavigationTarget {
@@ -36,7 +36,7 @@ export function registerCoreCommands(
   const cliService = new CoreCliService();
 
   const commands: vscode.Disposable[] = [
-    vscode.commands.registerCommand('risuWorkbench.extractCard', async () => {
+    vscode.commands.registerCommand('risuaiWorkbench.extractCard', async () => {
       const source = await pickSingleFile('Select source card', ['charx', 'png']);
       if (!source) {
         return;
@@ -53,7 +53,7 @@ export function registerCoreCommands(
         }),
       );
     }),
-    vscode.commands.registerCommand('risuWorkbench.packCard', async () => {
+    vscode.commands.registerCommand('risuaiWorkbench.packCard', async () => {
       const sourceDir = await pickFolder('Select extracted character folder');
       if (!sourceDir) {
         return;
@@ -75,7 +75,7 @@ export function registerCoreCommands(
         }),
       );
     }),
-    vscode.commands.registerCommand('risuWorkbench.analyzeLua', async () => {
+    vscode.commands.registerCommand('risuaiWorkbench.analyzeLua', async () => {
       const luaFile = await pickSingleFile('Select lua file to analyze', ['lua']);
       if (!luaFile) {
         return;
@@ -102,7 +102,7 @@ export function registerCoreCommands(
         }
       }
     }),
-    vscode.commands.registerCommand('risuWorkbench.inspectCard', async (uri?: vscode.Uri) => {
+    vscode.commands.registerCommand('risuaiWorkbench.inspectCard', async (uri?: vscode.Uri) => {
       const target = uri ?? (await pickSingleFile('Select card to inspect', ['json', 'png']));
       if (!target) {
         return;
@@ -121,7 +121,7 @@ export function registerCoreCommands(
     vscode.commands.registerCommand(RISU_CHARACTER_SELECT_IMAGE_COMMAND, async (uri?: vscode.Uri) => {
       await selectCharacterImage(uri);
     }),
-    vscode.commands.registerCommand('risuWorkbench.openCardPanel', () => {
+    vscode.commands.registerCommand('risuaiWorkbench.openCardPanel', () => {
       CardPanel.createOrShow(context);
     }),
     vscode.commands.registerCommand(MARKER_EDITOR_COMMAND, async (uri?: vscode.Uri) => {

@@ -285,6 +285,20 @@ export function resolveLorebookOrder(
   return [...ordered, ...remaining];
 }
 
+/** buildLorebookFolderKeyMapFromOrder mirrors assembly's path-based folder key generation. */
+export function buildLorebookFolderKeyMapFromOrder(declaredOrder: readonly string[]): Map<string, string> {
+  const folderInfoFromPaths = buildFolderInfoFromOrder(declaredOrder);
+  const folderKeyMap = new Map<string, string>();
+  let keyCounter = 1;
+
+  for (const folderPath of folderInfoFromPaths.keys()) {
+    folderKeyMap.set(folderPath, `folder-${keyCounter}`);
+    keyCounter += 1;
+  }
+
+  return folderKeyMap;
+}
+
 /** buildLorebookFolders lifts folder-mode lorebooks into `_folders.json` shape. */
 export function buildLorebookFolders(contents: readonly LorebookContent[]): LorebookFolders {
   const folders: LorebookFolders = {};
@@ -382,17 +396,8 @@ export function assembleLorebookCollection(
   }
 
   // Generate folder keys from paths for upstream compatibility
-  const folderKeyMap = new Map<string, string>(); // path -> generated key
-  const generatedKeys = new Set<string>();
-  let keyCounter = 1;
-
-  for (const folderPath of folderInfoFromPaths.keys()) {
-    // Generate a stable key from path
-    const generatedKey = `folder-${keyCounter}`;
-    folderKeyMap.set(folderPath, generatedKey);
-    generatedKeys.add(generatedKey);
-    keyCounter += 1;
-  }
+  const folderKeyMap = buildLorebookFolderKeyMapFromOrder(order || []); // path -> generated key
+  const generatedKeys = new Set(folderKeyMap.values());
 
   // Also map legacy folder keys
   for (const legacyKey of Object.keys(normalizedFolders)) {

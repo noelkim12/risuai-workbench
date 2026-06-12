@@ -49,7 +49,7 @@ interface BuiltMainEditorSimulatorProfileSummary {
 
 interface BuiltMainEditorFormatPreviewBridgeModule {
   createMainEditorFormatPreviewResult: (
-    document: { uri: { toString: () => string }; version: number },
+    document: { uri: { toString: () => string; fsPath?: string }; version: number },
     payload: {
       requestId: string;
       documentUri: string;
@@ -58,9 +58,10 @@ interface BuiltMainEditorFormatPreviewBridgeModule {
       sectionName: 'IN' | 'OUT' | 'TEXT' | 'INNER_FORMAT' | 'DEFAULT_TEXT' | 'FULL';
       activeProfileId: string;
       state: unknown;
+      profile?: { htmlContext: { enabledHtmlDocumentUris: string[] } };
     },
     expectedFormatKind?: 'regex' | 'prompt' | 'html' | 'lorebook',
-  ) => { status: string; diagnostics: Array<{ code?: string }> };
+  ) => Promise<{ status: string; diagnostics: Array<{ code?: string }>; htmlContext?: { sourceHtml: string; sourceUris: string[] } }>;
 }
 
 interface BuiltMainEditorEditQueueModule {
@@ -129,10 +130,10 @@ function importBuiltModuleWithVscodeStub<T>(relativePath: string): T {
 test('main editor format metadata maps supported extensions to view types', () => {
   const module = importBuiltModule<BuiltMainEditorTypesModule>('editors/mainEditor/mainEditorTypes.js');
 
-  assert.equal(module.detectMainEditorFormat('/tmp/entry.risulorebook')?.viewType, 'risuWorkbench.mainEditor.lorebook');
-  assert.equal(module.detectMainEditorFormat('/tmp/rule.risuregex')?.viewType, 'risuWorkbench.mainEditor.regex');
-  assert.equal(module.detectMainEditorFormat('/tmp/template.risuprompt')?.viewType, 'risuWorkbench.mainEditor.prompt');
-  assert.equal(module.detectMainEditorFormat('/tmp/page.risuhtml')?.viewType, 'risuWorkbench.mainEditor.html');
+  assert.equal(module.detectMainEditorFormat('/tmp/entry.risulorebook')?.viewType, 'risuaiWorkbench.mainEditor.lorebook');
+  assert.equal(module.detectMainEditorFormat('/tmp/rule.risuregex')?.viewType, 'risuaiWorkbench.mainEditor.regex');
+  assert.equal(module.detectMainEditorFormat('/tmp/template.risuprompt')?.viewType, 'risuaiWorkbench.mainEditor.prompt');
+  assert.equal(module.detectMainEditorFormat('/tmp/page.risuhtml')?.viewType, 'risuaiWorkbench.mainEditor.html');
   assert.equal(module.detectMainEditorFormat('/tmp/page.txt'), null);
 });
 
@@ -504,20 +505,20 @@ test('main editor Phase 5 bridges export handler factories', () => {
   assert.equal(typeof candidateModule.createMainEditorVariableCandidatesResult, 'function');
 });
 
-test('main editor format preview bridge and profile bridge export handlers', () => {
+test('main editor format preview bridge and profile bridge export handlers', async () => {
   const previewModule = importBuiltModuleWithVscodeStub<BuiltMainEditorFormatPreviewBridgeModule>('editors/mainEditor/mainEditorFormatPreviewBridge.js');
   const profileModule = importBuiltModuleWithVscodeStub<BuiltMainEditorSimulatorProfileBridgeModule>(
     'editors/mainEditor/mainEditorSimulatorProfileBridge.js',
   );
 
   assert.equal(typeof previewModule.createMainEditorFormatPreviewResult, 'function');
-  assert.equal(profileModule.MAIN_EDITOR_SIMULATOR_PROFILES_KEY, 'risuWorkbench.mainEditor.simulatorProfiles');
+  assert.equal(profileModule.MAIN_EDITOR_SIMULATOR_PROFILES_KEY, 'risuaiWorkbench.mainEditor.simulatorProfiles');
   const store = profileModule.readSimulatorProfileStore({ get: () => ({ profiles: [{ id: '' }], activeProfileId: 'broken' }) });
   assert.equal(store.profiles[0].id, 'default');
   assert.equal(store.profiles[0].name, 'Default');
   assert.equal(store.activeProfileId, 'default');
-  const mismatch = previewModule.createMainEditorFormatPreviewResult(
-    { uri: { toString: () => 'file:///tmp/background.risuhtml' }, version: 9 },
+  const mismatch = await previewModule.createMainEditorFormatPreviewResult(
+    { uri: { toString: () => 'file:///tmp/background.risuhtml', fsPath: '/tmp/background.risuhtml' }, version: 9 },
     {
       requestId: 'preview-1',
       documentUri: 'file:///tmp/background.risuhtml',
@@ -531,6 +532,39 @@ test('main editor format preview bridge and profile bridge export handlers', () 
   );
   assert.equal(mismatch.status, 'error');
   assert.equal(mismatch.diagnostics[0].code, 'FORMAT_MISMATCH');
+
+  const regexPreview = await previewModule.createMainEditorFormatPreviewResult(
+    { uri: { toString: () => 'file:///tmp/project/regex/rule.risuregex', fsPath: '/tmp/project/regex/rule.risuregex' }, version: 10 },
+    {
+      requestId: 'preview-2',
+      documentUri: 'file:///tmp/project/regex/rule.risuregex',
+      documentVersion: 10,
+      formatKind: 'regex',
+      sectionName: 'IN',
+      activeProfileId: 'default',
+      state: { frontmatter: {}, inText: '(Alice)', outText: '<span class="speaker">$1</span>' },
+      profile: { htmlContext: { enabledHtmlDocumentUris: ['file:///tmp/project/html/background.risuhtml'] } },
+    },
+    'regex',
+  );
+  assert.equal(regexPreview.htmlContext?.sourceUris[0], 'file:///tmp/project/html/background.risuhtml');
+  assert.match(regexPreview.htmlContext?.sourceHtml ?? '', /\.speaker/);
+
+  const autoContextRegexPreview = await previewModule.createMainEditorFormatPreviewResult(
+    { uri: { toString: () => 'file:///tmp/project/regex/auto.risuregex', fsPath: '/tmp/project/regex/auto.risuregex' }, version: 11 },
+    {
+      requestId: 'preview-3',
+      documentUri: 'file:///tmp/project/regex/auto.risuregex',
+      documentVersion: 11,
+      formatKind: 'regex',
+      sectionName: 'IN',
+      activeProfileId: 'default',
+      state: { frontmatter: {}, inText: '(Alice)', outText: '<span class="speaker">$1</span>' },
+    },
+    'regex',
+  );
+  assert.equal(autoContextRegexPreview.htmlContext?.sourceUris[0], 'file:///tmp/project/html/background.risuhtml');
+  assert.match(autoContextRegexPreview.htmlContext?.sourceHtml ?? '', /\.speaker/);
 });
 
 test('main editor simulator profile list normalizes without writing workspaceState', async () => {
@@ -605,11 +639,11 @@ test('main editor package contribution keeps lorebook custom editor default surf
     };
   };
   const lorebookEditor = packageJson.contributes?.customEditors?.find(
-    (editor) => editor.viewType === 'risuWorkbench.mainEditor.lorebook',
+    (editor) => editor.viewType === 'risuaiWorkbench.mainEditor.lorebook',
   );
 
   assert.deepEqual(lorebookEditor, {
-    viewType: 'risuWorkbench.mainEditor.lorebook',
+    viewType: 'risuaiWorkbench.mainEditor.lorebook',
     displayName: 'Risu Lorebook Editor',
     selector: [{ filenamePattern: '*.risulorebook' }],
     priority: 'default',
@@ -659,7 +693,7 @@ test('main editor packaged HTML keeps custom editor webview CSP restrictive', ()
   const providerSource = fs.readFileSync(path.join(vscodeDistRoot, 'editors/mainEditor/MainEditorProvider.js'), 'utf8');
 
   assert.match(providerSource, /default-src 'none'/);
-  assert.match(providerSource, /script-src 'nonce-\$\{nonce\}'/);
+  assert.match(providerSource, /script-src 'nonce-\$\{nonce\}' \$\{webview\.cspSource\} blob:/);
   assert.match(providerSource, /worker-src \$\{webview\.cspSource\} blob:/);
   assert.doesNotMatch(providerSource, /connect-src \*/);
   assert.doesNotMatch(providerSource, /script-src[^;]*'unsafe-inline'/);
@@ -910,6 +944,7 @@ function createVscodeStub(): unknown {
       ) {}
     },
     Uri: {
+      parse: (value: string) => ({ toString: () => value, fsPath: value.replace('file://', '') }),
       joinPath: (base: { fsPath?: string; path?: string }, ...segments: string[]) => ({
         fsPath: path.join(base.fsPath ?? base.path ?? '', ...segments),
       }),
@@ -919,7 +954,16 @@ function createVscodeStub(): unknown {
     },
     workspace: {
       applyEdit: async () => true,
-      findFiles: async () => [],
+      findFiles: async () => [
+        { toString: () => 'file:///tmp/project/html/background.risuhtml', fsPath: '/tmp/project/html/background.risuhtml' },
+        { toString: () => 'file:///tmp/other/html/background.risuhtml', fsPath: '/tmp/other/html/background.risuhtml' },
+      ],
+      getWorkspaceFolder: (uri: { fsPath?: string }) => uri.fsPath?.startsWith('/tmp/project/')
+        ? { uri: { fsPath: '/tmp/project' } }
+        : undefined,
+      openTextDocument: async (uri: { toString: () => string }) => ({
+        getText: () => uri.toString().endsWith('/background.risuhtml') ? '<style>.speaker { color: red; }</style>' : '',
+      }),
       fs: {
         readFile: async () => new Uint8Array(),
       },

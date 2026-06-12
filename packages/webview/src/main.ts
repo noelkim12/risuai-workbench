@@ -5,6 +5,9 @@ import MarkerEditor from './lib/components/editor/marker/MarkerEditor.svelte';
 import { mount } from 'svelte';
 import { writable } from 'svelte/store';
 import {
+  createArtifactBrowserMoveLorebookFolderMessage,
+  createArtifactBrowserMoveLorebookItemMessage,
+  createArtifactBrowserMoveRegexItemMessage,
   createArtifactBrowserOpenItemMessage,
   createArtifactBrowserReadyMessage,
   createArtifactBrowserRefreshMessage,
@@ -42,8 +45,8 @@ const status = writable('Connecting to extension host…');
 const app = document.querySelector<HTMLDivElement>('#app');
 const isEditorMode = document.documentElement.dataset.editorMode === 'true';
 const webviewName =
-  document.documentElement.dataset.risuWorkbenchView ??
-  document.querySelector('meta[name="risu-workbench-view"]')?.getAttribute('content');
+  document.documentElement.dataset.risuaiWorkbenchView ??
+  document.querySelector('meta[name="risuai-workbench-view"]')?.getAttribute('content');
 let artifactBrowserReadyRetryTimer: ReturnType<typeof setInterval> | undefined;
 let artifactBrowserInitialized = false;
 
@@ -96,6 +99,9 @@ if (isEditorMode && webviewName === 'main-editor') {
       returnToCards,
       toggleSection,
       openItem,
+      moveLorebookItem,
+      moveLorebookFolder,
+      moveRegexItem,
     },
   });
 
@@ -219,6 +225,39 @@ function openItem(item: CharacterItem): void {
   if (!stableId) return;
 
   vscode?.postMessage(createArtifactBrowserOpenItemMessage(stableId, item.id));
+}
+
+function getSelectedStableId(): string | undefined {
+  let stableId: string | undefined;
+  selectedStableId.subscribe((value) => {
+    stableId = value;
+  })();
+  return stableId;
+}
+
+function moveLorebookItem(
+  item: CharacterItem,
+  targetFolderPath: string | null,
+  placement?: 'inside' | 'before' | 'after',
+  targetItemId?: string,
+): void {
+  const stableId = getSelectedStableId();
+  if (!stableId) return;
+  vscode?.postMessage(
+    createArtifactBrowserMoveLorebookItemMessage(stableId, item.id, targetFolderPath, placement, targetItemId),
+  );
+}
+
+function moveLorebookFolder(folderPath: string, targetFolderPath: string, placement: 'before' | 'after'): void {
+  const stableId = getSelectedStableId();
+  if (!stableId) return;
+  vscode?.postMessage(createArtifactBrowserMoveLorebookFolderMessage(stableId, folderPath, targetFolderPath, placement));
+}
+
+function moveRegexItem(item: CharacterItem, targetItemId: string, placement: 'before' | 'after'): void {
+  const stableId = getSelectedStableId();
+  if (!stableId) return;
+  vscode?.postMessage(createArtifactBrowserMoveRegexItemMessage(stableId, item.id, targetItemId, placement));
 }
 
 function setStatus(text: string): void {
