@@ -5,6 +5,9 @@ import MarkerEditor from './lib/components/editor/marker/MarkerEditor.svelte';
 import { mount } from 'svelte';
 import { writable } from 'svelte/store';
 import {
+  createArtifactBrowserCreateArtifactMessage,
+  createArtifactBrowserCreateSectionEntryMessage,
+  createArtifactBrowserImportArtifactMessage,
   createArtifactBrowserMoveLorebookFolderMessage,
   createArtifactBrowserMoveLorebookItemMessage,
   createArtifactBrowserMoveRegexItemMessage,
@@ -18,6 +21,9 @@ import {
   ARTIFACT_BROWSER_PROTOCOL,
   ARTIFACT_BROWSER_PROTOCOL_VERSION,
   type ArtifactBrowserCardsPayload,
+  type ArtifactBrowserCreateArtifactPayload,
+  type ArtifactBrowserCreateSectionEntryKind,
+  type ArtifactBrowserCreateSectionKind,
   type BrowserArtifactCard,
   type ArtifactBrowserExtensionMessage,
   type ArtifactBrowserDetailPayload,
@@ -95,6 +101,8 @@ if (isEditorMode && webviewName === 'main-editor') {
       viewMode,
       status,
       refreshCards,
+      createArtifact,
+      importArtifact,
       selectCard,
       returnToCards,
       toggleSection,
@@ -102,6 +110,7 @@ if (isEditorMode && webviewName === 'main-editor') {
       moveLorebookItem,
       moveLorebookFolder,
       moveRegexItem,
+      createSectionEntry,
     },
   });
 
@@ -168,6 +177,20 @@ function refreshCards(): void {
   viewMode.set('artifacts');
   detailSections.set([]);
   vscode?.postMessage(createArtifactBrowserRefreshMessage());
+}
+
+function createArtifact(payload: ArtifactBrowserCreateArtifactPayload): void {
+  setStatus(`Creating ${payload.kind === 'charx' ? '.risuchar' : '.risumodule'} scaffold…`);
+  viewMode.set('artifacts');
+  detailSections.set([]);
+  vscode?.postMessage(createArtifactBrowserCreateArtifactMessage(payload));
+}
+
+function importArtifact(): void {
+  setStatus('Opening native file picker for import…');
+  viewMode.set('artifacts');
+  detailSections.set([]);
+  vscode?.postMessage(createArtifactBrowserImportArtifactMessage());
 }
 
 /**
@@ -258,6 +281,16 @@ function moveRegexItem(item: CharacterItem, targetItemId: string, placement: 'be
   const stableId = getSelectedStableId();
   if (!stableId) return;
   vscode?.postMessage(createArtifactBrowserMoveRegexItemMessage(stableId, item.id, targetItemId, placement));
+}
+
+function createSectionEntry(
+  sectionKind: ArtifactBrowserCreateSectionKind,
+  entryKind: ArtifactBrowserCreateSectionEntryKind,
+  targetFolderPath?: string,
+): void {
+  const stableId = getSelectedStableId();
+  if (!stableId) return;
+  vscode?.postMessage(createArtifactBrowserCreateSectionEntryMessage(stableId, sectionKind, entryKind, targetFolderPath));
 }
 
 function setStatus(text: string): void {

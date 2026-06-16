@@ -205,10 +205,13 @@ export class GenericDetailScanner<
     sections: Record<TSectionKind, SectionDraft>,
   ): Promise<void> {
     const lorebookSection = (sections as Record<string, SectionDraft>)['lorebooks'];
-    if (!lorebookSection || lorebookSection.items.length === 0) return;
+    if (!lorebookSection) return;
 
     const orderedItems = await orderLorebookItems(scanRootUri, lorebookSection.items);
-    lorebookSection.tree = buildBrowserItemTree(orderedItems);
+    const folderPaths = await collectLorebookFolderPaths(scanRootUri, orderedItems);
+    if (orderedItems.length === 0 && folderPaths.length === 0) return;
+
+    lorebookSection.tree = buildBrowserItemTree(orderedItems, folderPaths);
   }
 
   private async populateLuaTree(sections: Record<TSectionKind, SectionDraft>): Promise<void> {
@@ -292,6 +295,81 @@ async function readLorebookOrder(rootUri: vscode.Uri, directoryName: string): Pr
   }
 }
 
+async function collectLorebookFolderPaths(rootUri: vscode.Uri, items: BrowserItem[]): Promise<string[]> {
+  const folderPaths: string[] = [];
+  const seen = new Set<string>();
+
+  for (const directoryName of LOREBOOK_DIRECTORY_NAMES) {
+    const itemPaths = new Set(
+      items
+        .map((item) => stripDirectoryPrefix(item.relativePath, directoryName))
+        .filter((entry): entry is string => entry !== undefined),
+    );
+    const orderedPaths = await readLorebookOrder(rootUri, directoryName);
+    for (const orderedPath of orderedPaths) {
+      if (itemPaths.has(orderedPath)) continue;
+      if (!(await isDirectory(vscode.Uri.joinPath(rootUri, directoryName, ...orderedPath.split('/'))))) continue;
+      addFolderPathWithParents(folderPaths, seen, orderedPath);
+    }
+
+    const scannedFolderPaths = await collectDirectoryFolderPaths(vscode.Uri.joinPath(rootUri, directoryName));
+    for (const folderPath of scannedFolderPaths) {
+      addFolderPathWithParents(folderPaths, seen, folderPath);
+    }
+  }
+
+  return folderPaths;
+}
+
+async function collectDirectoryFolderPaths(
+  directoryUri: vscode.Uri,
+  relativePath = '',
+  depth = 0,
+): Promise<string[]> {
+  if (depth > MAX_SCAN_DEPTH) return [];
+
+  let entries: [string, vscode.FileType][];
+  try {
+    entries = await vscode.workspace.fs.readDirectory(directoryUri);
+  } catch {
+    return [];
+  }
+
+  const folderPaths: string[] = [];
+  for (const [name, fileType] of entries) {
+    if (fileType !== vscode.FileType.Directory) continue;
+    if (SKIPPED_DIRECTORIES.has(name)) continue;
+
+    const childRelativePath = relativePath ? `${relativePath}/${name}` : name;
+    folderPaths.push(childRelativePath);
+    folderPaths.push(
+      ...(await collectDirectoryFolderPaths(vscode.Uri.joinPath(directoryUri, name), childRelativePath, depth + 1)),
+    );
+  }
+
+  return folderPaths;
+}
+
+async function isDirectory(uri: vscode.Uri): Promise<boolean> {
+  try {
+    const stat = await vscode.workspace.fs.stat(uri);
+    return stat.type === vscode.FileType.Directory;
+  } catch {
+    return false;
+  }
+}
+
+function addFolderPathWithParents(folderPaths: string[], seen: Set<string>, folderPath: string): void {
+  const segments = folderPath.split('/').filter(Boolean);
+  let currentPath = '';
+  for (const segment of segments) {
+    currentPath = currentPath ? `${currentPath}/${segment}` : segment;
+    if (seen.has(currentPath)) continue;
+    folderPaths.push(currentPath);
+    seen.add(currentPath);
+  }
+}
+
 async function orderDirectoryItems(
   rootUri: vscode.Uri,
   directoryName: string,
@@ -330,9 +408,13 @@ async function orderDirectoryItems(
   return ordered;
 }
 
-function buildBrowserItemTree(items: BrowserItem[]): BrowserTreeNode[] {
+function buildBrowserItemTree(items: BrowserItem[], folderPaths: string[] = []): BrowserTreeNode[] {
   const roots: BrowserTreeNode[] = [];
   const folders = new Map<string, BrowserTreeNode>();
+
+  for (const folderPath of folderPaths) {
+    ensureLorebookFolderNode(roots, folders, folderPath);
+  }
 
   for (const item of items) {
     const treePath = getLorebookTreePath(item);
@@ -342,30 +424,42 @@ function buildBrowserItemTree(items: BrowserItem[]): BrowserTreeNode[] {
       continue;
     }
 
-    let siblings = roots;
-    let folderPath = '';
-    for (const segment of segments.slice(0, -1)) {
-      folderPath = folderPath ? `${folderPath}/${segment}` : segment;
-      let folderNode = folders.get(folderPath);
-      if (!folderNode) {
-        folderNode = {
-          id: `folder:${folderPath}`,
-          label: segment,
-          kind: 'folder',
-          relativePath: folderPath,
-          lorebookPath: folderPath,
-          children: [],
-        };
-        folders.set(folderPath, folderNode);
-        siblings.push(folderNode);
-      }
-      siblings = folderNode.children ?? [];
-    }
-
-    siblings.push(createItemTreeNode(item));
+    const parentPath = segments.slice(0, -1).join('/');
+    const parentNode = ensureLorebookFolderNode(roots, folders, parentPath);
+    (parentNode.children ??= []).push(createItemTreeNode(item));
   }
 
   return roots;
+}
+
+function ensureLorebookFolderNode(
+  roots: BrowserTreeNode[],
+  folders: Map<string, BrowserTreeNode>,
+  folderPath: string,
+): BrowserTreeNode {
+  let siblings = roots;
+  let currentPath = '';
+  let currentNode: BrowserTreeNode | undefined;
+
+  for (const segment of folderPath.split('/').filter(Boolean)) {
+    currentPath = currentPath ? `${currentPath}/${segment}` : segment;
+    currentNode = folders.get(currentPath);
+    if (!currentNode) {
+      currentNode = {
+        id: `folder:${currentPath}`,
+        label: segment,
+        kind: 'folder',
+        relativePath: currentPath,
+        lorebookPath: currentPath,
+        children: [],
+      };
+      folders.set(currentPath, currentNode);
+      siblings.push(currentNode);
+    }
+    siblings = currentNode.children ??= [];
+  }
+
+  return currentNode ?? { id: 'folder:', label: '', kind: 'folder', children: roots };
 }
 
 function createItemTreeNode(item: BrowserItem): BrowserTreeNode {

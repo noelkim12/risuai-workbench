@@ -1,5 +1,12 @@
 <script lang="ts">
-  import type { BrowserArtifactCard, CharacterItem, CharacterSection } from '../types';
+  // biome-ignore assist/source/organizeImports: Existing Svelte import ordering keeps component usage comments adjacent.
+  import type {
+    ArtifactBrowserCreateSectionEntryKind,
+    ArtifactBrowserCreateSectionKind,
+    BrowserArtifactCard,
+    CharacterItem,
+    CharacterSection,
+  } from '../types';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
   import Breadcrumb from './Breadcrumb.svelte';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
@@ -22,6 +29,11 @@
   ) => void;
   export let onMoveLorebookFolder: (folderPath: string, targetFolderPath: string, placement: 'before' | 'after') => void;
   export let onMoveRegexItem: (item: CharacterItem, targetItemId: string, placement: 'before' | 'after') => void;
+  export let onCreateSectionEntry: (
+    sectionKind: ArtifactBrowserCreateSectionKind,
+    entryKind: ArtifactBrowserCreateSectionEntryKind,
+    targetFolderPath?: string,
+  ) => void;
 
   $: detailLabel = artifact.artifactKind === 'module' ? 'Module Detail' : 'Character Detail';
   $: detailMeta =
@@ -57,5 +69,6 @@
     {onMoveLorebookItem}
     {onMoveLorebookFolder}
     {onMoveRegexItem}
+    {onCreateSectionEntry}
   />
 </main>

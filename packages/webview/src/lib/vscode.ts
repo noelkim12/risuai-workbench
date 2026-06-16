@@ -7,6 +7,9 @@ import {
   ARTIFACT_BROWSER_PROTOCOL,
   ARTIFACT_BROWSER_PROTOCOL_VERSION,
   ARTIFACT_BROWSER_VIEW_ID,
+  type ArtifactBrowserCreateSectionEntryKind,
+  type ArtifactBrowserCreateSectionEntryMessage,
+  type ArtifactBrowserCreateSectionKind,
   type ArtifactBrowserMoveLorebookFolderMessage,
   type ArtifactBrowserMoveLorebookItemMessage,
   type ArtifactBrowserMoveRegexItemMessage,
@@ -157,5 +160,19 @@ export function createArtifactBrowserMoveRegexItemMessage(
     itemId,
     targetItemId,
     placement,
+  });
+}
+
+export function createArtifactBrowserCreateSectionEntryMessage(
+  stableId: string,
+  sectionKind: ArtifactBrowserCreateSectionKind,
+  entryKind: ArtifactBrowserCreateSectionEntryKind,
+  targetFolderPath?: string,
+): ArtifactBrowserCreateSectionEntryMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/createSectionEntry', {
+    stableId,
+    sectionKind,
+    entryKind,
+    ...(targetFolderPath && { targetFolderPath }),
   });
 }
