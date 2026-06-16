@@ -7,6 +7,8 @@ import {
   ARTIFACT_BROWSER_PROTOCOL,
   ARTIFACT_BROWSER_PROTOCOL_VERSION,
   ARTIFACT_BROWSER_VIEW_ID,
+  type ArtifactBrowserCreateSectionEntryMessage,
+  type ArtifactBrowserCreateSectionEntryPayload,
   type ArtifactBrowserMoveLorebookFolderMessage,
   type ArtifactBrowserMoveLorebookFolderPayload,
   type ArtifactBrowserMoveLorebookItemMessage,
@@ -45,7 +47,8 @@ type ArtifactBrowserInboundMessage =
   | ArtifactBrowserOpenItemMessage
   | ArtifactBrowserMoveLorebookItemMessage
   | ArtifactBrowserMoveLorebookFolderMessage
-  | ArtifactBrowserMoveRegexItemMessage;
+  | ArtifactBrowserMoveRegexItemMessage
+  | ArtifactBrowserCreateSectionEntryMessage;
 
 function createArtifactBrowserMessageGuard<TMessage extends ArtifactBrowserInboundMessage>(
   type: TMessage['type'],
@@ -116,6 +119,17 @@ const isArtifactBrowserMoveRegexItemPayload: ArtifactBrowserPayloadGuard<Artifac
   payload.targetItemId.length > 0 &&
   isSiblingPlacement(payload.placement);
 
+const isArtifactBrowserCreateSectionEntryPayload: ArtifactBrowserPayloadGuard<
+  ArtifactBrowserCreateSectionEntryPayload
+> = (payload): payload is ArtifactBrowserCreateSectionEntryPayload =>
+  isPlainRecord(payload) &&
+  typeof payload.stableId === 'string' &&
+  payload.stableId.length > 0 &&
+  isCreatableSectionKind(payload.sectionKind) &&
+  isCreateSectionEntryKind(payload.entryKind) &&
+  isCreateSectionEntryCompatible(payload.sectionKind, payload.entryKind) &&
+  (payload.targetFolderPath === undefined || isSafeTargetFolderPath(payload.targetFolderPath));
+
 const isArtifactBrowserReadyMessageEnvelope = createArtifactBrowserMessageGuard<ArtifactBrowserReadyMessage>(
   'artifact-browser/ready',
   isArtifactBrowserViewPayload,
@@ -152,6 +166,12 @@ const isArtifactBrowserMoveRegexItemMessageEnvelope =
   createArtifactBrowserMessageGuard<ArtifactBrowserMoveRegexItemMessage>(
     'artifact-browser/moveRegexItem',
     isArtifactBrowserMoveRegexItemPayload,
+  );
+
+const isArtifactBrowserCreateSectionEntryMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserCreateSectionEntryMessage>(
+    'artifact-browser/createSectionEntry',
+    isArtifactBrowserCreateSectionEntryPayload,
   );
 
 /**
@@ -212,6 +232,36 @@ export function isArtifactBrowserMoveLorebookFolderMessage(
 
 export function isArtifactBrowserMoveRegexItemMessage(message: unknown): message is ArtifactBrowserMoveRegexItemMessage {
   return isArtifactBrowserMoveRegexItemMessageEnvelope(message);
+}
+
+export function isArtifactBrowserCreateSectionEntryMessage(
+  message: unknown,
+): message is ArtifactBrowserCreateSectionEntryMessage {
+  return isArtifactBrowserCreateSectionEntryMessageEnvelope(message);
+}
+
+function isCreatableSectionKind(value: unknown): value is ArtifactBrowserCreateSectionEntryPayload['sectionKind'] {
+  return value === 'lorebooks' || value === 'regexRules' || value === 'lua';
+}
+
+function isCreateSectionEntryKind(value: unknown): value is ArtifactBrowserCreateSectionEntryPayload['entryKind'] {
+  return value === 'folder' || value === 'file';
+}
+
+function isCreateSectionEntryCompatible(
+  sectionKind: ArtifactBrowserCreateSectionEntryPayload['sectionKind'],
+  entryKind: ArtifactBrowserCreateSectionEntryPayload['entryKind'],
+): boolean {
+  return entryKind === 'file' || sectionKind === 'lorebooks' || sectionKind === 'lua';
+}
+
+function isSafeTargetFolderPath(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    !value.startsWith('/') &&
+    !value.split('/').some((segment) => !segment || segment === '.' || segment === '..')
+  );
 }
 
 type ArtifactBrowserExtensionResponse = ArtifactBrowserCardsMessage | ArtifactBrowserDetailMessage;

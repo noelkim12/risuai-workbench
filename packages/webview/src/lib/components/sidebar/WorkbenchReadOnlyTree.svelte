@@ -9,8 +9,17 @@
   export let expandedTreeNodeIds: string[];
   export let onToggleTreeNode: (nodeId: string) => void;
   export let onOpenItem: (item: BrowserItem) => void;
+  export let onCreateFile: ((targetFolderPath: string) => void) | undefined = undefined;
 
   let activeHelpNodeId: string | undefined;
+
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this handler.
+  function createFileInFolder(event: MouseEvent | KeyboardEvent, folderPath: string): void {
+    if (event instanceof KeyboardEvent && event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    event.stopPropagation();
+    onCreateFile?.(folderPath);
+  }
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this helper.
   function countTreeItems(currentNodes: BrowserTreeNode[]): number {
@@ -69,6 +78,23 @@
           <span class="tree-folder__chevron" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
           <span class="tree-folder__label">{node.label}</span>
           <span class="tree-folder__count">{itemCount}</span>
+          {#if onCreateFile && node.treePath}
+            <span
+              class="tree-folder__action"
+              role="button"
+              tabindex="0"
+              title={`Create risulua in ${node.label}`}
+              aria-label={`Create risulua in ${node.label}`}
+              onclick={(event) => createFileInFolder(event, node.treePath ?? '')}
+              onkeydown={(event) => createFileInFolder(event, node.treePath ?? '')}
+            >
+              <svg class="accordion__action-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                <path d="M4.25 1.75h5.5l3 3v9.5h-8.5z" />
+                <path d="M9.75 1.75v3h3" />
+                <path class="accordion__action-plus" d="M8.5 7.35v4.3M6.35 9.5h4.3" />
+              </svg>
+            </span>
+          {/if}
           {#if node.description}
             <span class="tree-folder__caption">{node.description}</span>
           {/if}

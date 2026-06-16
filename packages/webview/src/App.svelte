@@ -4,7 +4,13 @@ import type { Writable } from 'svelte/store';
 import ArtifactDetailView from './lib/components/ArtifactDetailView.svelte';
 // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
 import SidebarView from './lib/components/SidebarView.svelte';
-import type { BrowserArtifactCard, CharacterItem, CharacterSection } from './lib/types';
+import type {
+  ArtifactBrowserCreateSectionEntryKind,
+  ArtifactBrowserCreateSectionKind,
+  BrowserArtifactCard,
+  CharacterItem,
+  CharacterSection,
+} from './lib/types';
 
 export let cards: Writable<BrowserArtifactCard[]>;
 export let selectedStableId: Writable<string | undefined>;
@@ -25,6 +31,11 @@ export let moveLorebookItem: (
 ) => void;
 export let moveLorebookFolder: (folderPath: string, targetFolderPath: string, placement: 'before' | 'after') => void;
 export let moveRegexItem: (item: CharacterItem, targetItemId: string, placement: 'before' | 'after') => void;
+export let createSectionEntry: (
+  sectionKind: ArtifactBrowserCreateSectionKind,
+  entryKind: ArtifactBrowserCreateSectionEntryKind,
+  targetFolderPath?: string,
+) => void;
 
 $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId);
 </script>
@@ -41,6 +52,7 @@ $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId)
     onMoveLorebookItem={moveLorebookItem}
     onMoveLorebookFolder={moveLorebookFolder}
     onMoveRegexItem={moveRegexItem}
+    onCreateSectionEntry={createSectionEntry}
   />
 {:else}
   <SidebarView
