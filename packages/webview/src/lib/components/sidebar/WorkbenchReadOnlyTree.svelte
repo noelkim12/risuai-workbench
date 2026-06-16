@@ -12,6 +12,44 @@
   export let onCreateFile: ((targetFolderPath: string) => void) | undefined = undefined;
 
   let activeHelpNodeId: string | undefined;
+  let activeHelpTooltip:
+    | {
+        nodeId: string;
+        description: string;
+        top: number;
+        left: number;
+        maxInlineSize: number;
+        placement: 'above' | 'below';
+      }
+    | undefined;
+
+  function openTreeHelp(target: EventTarget | null, nodeId: string, description: string): void {
+    if (!(target instanceof HTMLElement)) return;
+
+    const rect = target.getBoundingClientRect();
+    const gap = 6;
+    const edgePadding = 8;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const maxInlineSize = Math.max(160, viewportWidth - edgePadding * 2);
+    const preferredWidth = Math.min(288, maxInlineSize);
+    const left = Math.min(
+      Math.max(edgePadding, rect.left),
+      Math.max(edgePadding, viewportWidth - preferredWidth - edgePadding),
+    );
+    const hasMoreSpaceAbove = rect.top > viewportHeight - rect.bottom;
+    const placement = rect.bottom + 120 > viewportHeight && hasMoreSpaceAbove ? 'above' : 'below';
+
+    activeHelpNodeId = nodeId;
+    activeHelpTooltip = {
+      nodeId,
+      description,
+      left,
+      maxInlineSize,
+      placement,
+      top: placement === 'above' ? rect.top - gap : rect.bottom + gap,
+    };
+  }
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this handler.
   function createFileInFolder(event: MouseEvent | KeyboardEvent, folderPath: string): void {
@@ -30,29 +68,44 @@
   }
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this handler.
-  function showTreeHelp(event: MouseEvent | FocusEvent, nodeId: string): void {
+  function showTreeHelp(event: MouseEvent | FocusEvent, nodeId: string, description: string): void {
     event.stopPropagation();
-    activeHelpNodeId = nodeId;
+    openTreeHelp(event.currentTarget, nodeId, description);
   }
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this handler.
   function hideTreeHelp(nodeId: string): void {
-    if (activeHelpNodeId === nodeId) activeHelpNodeId = undefined;
+    if (activeHelpNodeId === nodeId) {
+      activeHelpNodeId = undefined;
+      activeHelpTooltip = undefined;
+    }
   }
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this handler.
-  function toggleTreeHelp(event: MouseEvent, nodeId: string): void {
+  function toggleTreeHelp(event: MouseEvent, nodeId: string, description: string): void {
     event.preventDefault();
     event.stopPropagation();
-    activeHelpNodeId = activeHelpNodeId === nodeId ? undefined : nodeId;
+    if (activeHelpNodeId === nodeId) {
+      activeHelpNodeId = undefined;
+      activeHelpTooltip = undefined;
+      return;
+    }
+
+    openTreeHelp(event.currentTarget, nodeId, description);
   }
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this handler.
-  function keydownTreeHelp(event: KeyboardEvent, nodeId: string): void {
+  function keydownTreeHelp(event: KeyboardEvent, nodeId: string, description: string): void {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
     event.stopPropagation();
-    activeHelpNodeId = activeHelpNodeId === nodeId ? undefined : nodeId;
+    if (activeHelpNodeId === nodeId) {
+      activeHelpNodeId = undefined;
+      activeHelpTooltip = undefined;
+      return;
+    }
+
+    openTreeHelp(event.currentTarget, nodeId, description);
   }
 </script>
 
@@ -72,7 +125,7 @@
           type="button"
           class="tree-folder"
           aria-expanded={expanded}
-          title={node.relativePath ?? node.label}
+          aria-label={node.relativePath ? `${node.label} (${node.relativePath})` : node.label}
           onclick={() => onToggleTreeNode(node.id)}
         >
           <span class="tree-folder__chevron" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
@@ -106,18 +159,13 @@
                 tabindex="0"
                 aria-label={`${node.label} 설명 보기`}
                 aria-describedby={`tree-help-${node.id}`}
-                onmouseenter={(event) => showTreeHelp(event, node.id)}
-                onfocus={(event) => showTreeHelp(event, node.id)}
+                onmouseenter={(event) => showTreeHelp(event, node.id, node.detailDescription ?? '')}
+                onfocus={(event) => showTreeHelp(event, node.id, node.detailDescription ?? '')}
                 onmouseleave={() => hideTreeHelp(node.id)}
                 onblur={() => hideTreeHelp(node.id)}
-                onclick={(event) => toggleTreeHelp(event, node.id)}
-                onkeydown={(event) => keydownTreeHelp(event, node.id)}
+                onclick={(event) => toggleTreeHelp(event, node.id, node.detailDescription ?? '')}
+                onkeydown={(event) => keydownTreeHelp(event, node.id, node.detailDescription ?? '')}
               >ⓘ</span>
-              {#if activeHelpNodeId === node.id}
-                <span id={`tree-help-${node.id}`} class="tree-help__detail" role="tooltip">
-                  {node.detailDescription}
-                </span>
-              {/if}
             </span>
           {/if}
         </button>
@@ -138,18 +186,13 @@
                     tabindex="0"
                     aria-label={`${node.label} 설명 보기`}
                     aria-describedby={`tree-help-${node.id}`}
-                    onmouseenter={(event) => showTreeHelp(event, node.id)}
-                    onfocus={(event) => showTreeHelp(event, node.id)}
+                    onmouseenter={(event) => showTreeHelp(event, node.id, node.detailDescription ?? '')}
+                    onfocus={(event) => showTreeHelp(event, node.id, node.detailDescription ?? '')}
                     onmouseleave={() => hideTreeHelp(node.id)}
                     onblur={() => hideTreeHelp(node.id)}
-                    onclick={(event) => toggleTreeHelp(event, node.id)}
-                    onkeydown={(event) => keydownTreeHelp(event, node.id)}
+                    onclick={(event) => toggleTreeHelp(event, node.id, node.detailDescription ?? '')}
+                    onkeydown={(event) => keydownTreeHelp(event, node.id, node.detailDescription ?? '')}
                   >ⓘ</span>
-                  {#if activeHelpNodeId === node.id}
-                    <span id={`tree-help-${node.id}`} class="tree-help__detail" role="tooltip">
-                      {node.detailDescription}
-                    </span>
-                  {/if}
                 </span>
               {/if}
             </span>
@@ -162,6 +205,18 @@
 {/snippet}
 
 {@render readOnlyTree(nodes, depth)}
+
+{#if activeHelpTooltip}
+  <span
+    id={`tree-help-${activeHelpTooltip.nodeId}`}
+    class="tree-help__detail tree-help__detail--floating"
+    class:tree-help__detail--above={activeHelpTooltip.placement === 'above'}
+    role="tooltip"
+    style={`--tree-help-top: ${activeHelpTooltip.top}px; --tree-help-left: ${activeHelpTooltip.left}px; --tree-help-max-inline-size: ${activeHelpTooltip.maxInlineSize}px;`}
+  >
+    {activeHelpTooltip.description}
+  </span>
+{/if}
 
 <style>
   .tree-folder__caption,
@@ -211,8 +266,17 @@
     z-index: 20;
   }
 
-  .tree-folder > .tree-help .tree-help__detail {
-    left: auto;
-    right: 0;
+  .tree-help__detail--floating {
+    left: var(--tree-help-left);
+    max-height: calc(100vh - 1rem);
+    max-inline-size: var(--tree-help-max-inline-size);
+    overflow-y: auto;
+    position: fixed;
+    top: var(--tree-help-top);
+    z-index: 1000;
+  }
+
+  .tree-help__detail--above {
+    transform: translateY(-100%);
   }
 </style>

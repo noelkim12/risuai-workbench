@@ -7,6 +7,8 @@ import {
   ARTIFACT_BROWSER_PROTOCOL,
   ARTIFACT_BROWSER_PROTOCOL_VERSION,
   ARTIFACT_BROWSER_VIEW_ID,
+  type ArtifactBrowserCreateArtifactMessage,
+  type ArtifactBrowserCreateArtifactPayload,
   type ArtifactBrowserCreateSectionEntryMessage,
   type ArtifactBrowserCreateSectionEntryPayload,
   type ArtifactBrowserMoveLorebookFolderMessage,
@@ -25,6 +27,8 @@ import {
   type ArtifactBrowserReadyPayload,
   type ArtifactBrowserRefreshPayload,
   type ArtifactBrowserRefreshMessage,
+  type ArtifactBrowserImportArtifactMessage,
+  type ArtifactBrowserImportArtifactPayload,
   type ArtifactBrowserSelectPayload,
   type ArtifactBrowserSelectMessage,
 } from './artifactBrowserTypes';
@@ -43,6 +47,8 @@ type ArtifactBrowserPayloadGuard<TPayload> = (payload: unknown) => payload is TP
 type ArtifactBrowserInboundMessage =
   | ArtifactBrowserReadyMessage
   | ArtifactBrowserRefreshMessage
+  | ArtifactBrowserCreateArtifactMessage
+  | ArtifactBrowserImportArtifactMessage
   | ArtifactBrowserSelectMessage
   | ArtifactBrowserOpenItemMessage
   | ArtifactBrowserMoveLorebookItemMessage
@@ -130,6 +136,24 @@ const isArtifactBrowserCreateSectionEntryPayload: ArtifactBrowserPayloadGuard<
   isCreateSectionEntryCompatible(payload.sectionKind, payload.entryKind) &&
   (payload.targetFolderPath === undefined || isSafeTargetFolderPath(payload.targetFolderPath));
 
+const isArtifactBrowserCreateArtifactPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserCreateArtifactPayload> = (
+  payload,
+): payload is ArtifactBrowserCreateArtifactPayload =>
+  isPlainRecord(payload) &&
+  (payload.kind === 'charx' || payload.kind === 'module') &&
+  typeof payload.name === 'string' &&
+  payload.name.trim().length > 0 &&
+  (payload.creator === undefined || typeof payload.creator === 'string') &&
+  (payload.description === undefined || typeof payload.description === 'string') &&
+  (payload.tags === undefined || (Array.isArray(payload.tags) && payload.tags.every((tag) => typeof tag === 'string'))) &&
+  (payload.utilityBot === undefined || typeof payload.utilityBot === 'boolean') &&
+  (payload.lowLevelAccess === undefined || typeof payload.lowLevelAccess === 'boolean');
+
+const isArtifactBrowserImportArtifactPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserImportArtifactPayload> = (
+  payload,
+): payload is ArtifactBrowserImportArtifactPayload =>
+  isPlainRecord(payload) && payload.viewId === ARTIFACT_BROWSER_VIEW_ID;
+
 const isArtifactBrowserReadyMessageEnvelope = createArtifactBrowserMessageGuard<ArtifactBrowserReadyMessage>(
   'artifact-browser/ready',
   isArtifactBrowserViewPayload,
@@ -139,6 +163,18 @@ const isArtifactBrowserRefreshMessageEnvelope = createArtifactBrowserMessageGuar
   'artifact-browser/refresh',
   isArtifactBrowserViewPayload,
 );
+
+const isArtifactBrowserCreateArtifactMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserCreateArtifactMessage>(
+    'artifact-browser/createArtifact',
+    isArtifactBrowserCreateArtifactPayload,
+  );
+
+const isArtifactBrowserImportArtifactMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserImportArtifactMessage>(
+    'artifact-browser/importArtifact',
+    isArtifactBrowserImportArtifactPayload,
+  );
 
 const isArtifactBrowserSelectMessageEnvelope = createArtifactBrowserMessageGuard<ArtifactBrowserSelectMessage>(
   'artifact-browser/select',
@@ -194,6 +230,18 @@ export function isArtifactBrowserReadyMessage(message: unknown): message is Arti
  */
 export function isArtifactBrowserRefreshMessage(message: unknown): message is ArtifactBrowserRefreshMessage {
   return isArtifactBrowserRefreshMessageEnvelope(message);
+}
+
+export function isArtifactBrowserCreateArtifactMessage(
+  message: unknown,
+): message is ArtifactBrowserCreateArtifactMessage {
+  return isArtifactBrowserCreateArtifactMessageEnvelope(message);
+}
+
+export function isArtifactBrowserImportArtifactMessage(
+  message: unknown,
+): message is ArtifactBrowserImportArtifactMessage {
+  return isArtifactBrowserImportArtifactMessageEnvelope(message);
 }
 
 /**

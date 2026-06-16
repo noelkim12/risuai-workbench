@@ -218,6 +218,22 @@ export interface ArtifactBrowserRefreshPayload {
   viewId: typeof ARTIFACT_BROWSER_VIEW_ID;
 }
 
+export type ArtifactBrowserCreateArtifactKind = 'charx' | 'module';
+
+export interface ArtifactBrowserCreateArtifactPayload {
+  kind: ArtifactBrowserCreateArtifactKind;
+  name: string;
+  creator?: string;
+  tags?: string[];
+  utilityBot?: boolean;
+  lowLevelAccess?: boolean;
+  description?: string;
+}
+
+export interface ArtifactBrowserImportArtifactPayload {
+  viewId: typeof ARTIFACT_BROWSER_VIEW_ID;
+}
+
 export interface ArtifactBrowserSelectPayload {
   stableId: string;
 }
@@ -283,6 +299,16 @@ export type ArtifactBrowserRefreshMessage = MessageEnvelope<
   ArtifactBrowserRefreshPayload
 >;
 
+export type ArtifactBrowserCreateArtifactMessage = MessageEnvelope<
+  'artifact-browser/createArtifact',
+  ArtifactBrowserCreateArtifactPayload
+>;
+
+export type ArtifactBrowserImportArtifactMessage = MessageEnvelope<
+  'artifact-browser/importArtifact',
+  ArtifactBrowserImportArtifactPayload
+>;
+
 export type ArtifactBrowserSelectMessage = MessageEnvelope<
   'artifact-browser/select',
   ArtifactBrowserSelectPayload
@@ -321,6 +347,8 @@ export type ArtifactBrowserDetailMessage = MessageEnvelope<
 export type ArtifactBrowserWebviewMessage =
   | ArtifactBrowserReadyMessage
   | ArtifactBrowserRefreshMessage
+  | ArtifactBrowserCreateArtifactMessage
+  | ArtifactBrowserImportArtifactMessage
   | ArtifactBrowserSelectMessage
   | ArtifactBrowserOpenItemMessage
   | ArtifactBrowserMoveLorebookItemMessage

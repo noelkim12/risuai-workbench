@@ -5,6 +5,7 @@ import ArtifactDetailView from './lib/components/ArtifactDetailView.svelte';
 // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
 import SidebarView from './lib/components/SidebarView.svelte';
 import type {
+  ArtifactBrowserCreateArtifactPayload,
   ArtifactBrowserCreateSectionEntryKind,
   ArtifactBrowserCreateSectionKind,
   BrowserArtifactCard,
@@ -19,6 +20,8 @@ export let expandedSectionIds: Writable<string[]>;
 export let viewMode: Writable<'artifacts' | 'artifactDetail'>;
 export let status: Writable<string>;
 export let refreshCards: () => void;
+export let createArtifact: (payload: ArtifactBrowserCreateArtifactPayload) => void;
+export let importArtifact: () => void;
 export let selectCard: (stableId: string) => void;
 export let returnToCards: () => void;
 export let toggleSection: (sectionId: string) => void;
@@ -60,6 +63,8 @@ $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId)
     selectedStableId={$selectedStableId}
     status={$status}
     onRefresh={refreshCards}
+    onCreateArtifact={createArtifact}
+    onImportArtifact={importArtifact}
     onSelect={selectCard}
   />
 {/if}
