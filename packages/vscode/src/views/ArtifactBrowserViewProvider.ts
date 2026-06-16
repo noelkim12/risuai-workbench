@@ -5,15 +5,19 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { CharacterDetailScanner } from '../artifact-browser/CharacterDetailScanner';
 import { ModuleDetailScanner } from '../artifact-browser/ModuleDetailScanner';
 import * as vscode from 'vscode';
+import { getErrorMessage } from '../shared/errors';
 import { createWebviewNonce } from '../shared/webviewNonce';
 import { WorkspaceArtifactDiscoveryService } from '../artifact-browser/WorkspaceArtifactDiscoveryService';
 import {
   createArtifactBrowserCardsMessage,
   createArtifactBrowserDetailMessage,
+  isArtifactBrowserCreateArtifactMessage,
   isArtifactBrowserCreateSectionEntryMessage,
+  isArtifactBrowserImportArtifactMessage,
   isArtifactBrowserMoveLorebookFolderMessage,
   isArtifactBrowserMoveLorebookItemMessage,
   isArtifactBrowserMoveRegexItemMessage,
@@ -24,6 +28,7 @@ import {
 } from '../artifact-browser/artifactBrowserMessages';
 import {
   ARTIFACT_BROWSER_VIEW_ID,
+  type ArtifactBrowserCreateArtifactPayload,
   type ArtifactBrowserCreateSectionEntryKind,
   type ArtifactBrowserCreateSectionKind,
   type BrowserArtifactCard,
@@ -39,6 +44,9 @@ import {
 
 const CHARACTER_MARKER_FILENAME = '.risuchar';
 const MODULE_MARKER_FILENAME = '.risumodule';
+const IMPORT_FILE_FILTERS = {
+  'RisuAI artifacts': ['charx', 'png', 'risum', 'risup', 'risupreset', 'preset', 'json'],
+};
 const SECTION_CREATE_CONFIGS = {
   lorebooks: {
     directoryName: 'lorebooks',
@@ -138,6 +146,16 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
           return;
         }
 
+        if (isArtifactBrowserCreateArtifactMessage(message)) {
+          void this.createArtifact(message.payload, webviewView.webview);
+          return;
+        }
+
+        if (isArtifactBrowserImportArtifactMessage(message)) {
+          void this.importArtifact(webviewView.webview);
+          return;
+        }
+
         if (isArtifactBrowserSelectMessage(message)) {
           void this.selectArtifact(message.payload.stableId);
           return;
@@ -203,6 +221,63 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
       | ReturnType<typeof createArtifactBrowserDetailMessage>,
   ): void {
     void this.view?.webview.postMessage(message);
+  }
+
+  private async createArtifact(payload: ArtifactBrowserCreateArtifactPayload, webview: vscode.Webview): Promise<void> {
+    const workspaceRoot = getPrimaryWorkspaceRoot();
+    if (!workspaceRoot) {
+      void vscode.window.showErrorMessage('Open a workspace folder before creating a RisuAI artifact.');
+      await this.sendDiscoveredCards(webview);
+      return;
+    }
+
+    try {
+      const outDir = resolveUniqueWorkspacePath(workspaceRoot, sanitizeWorkspaceName(payload.name, 'untitled'));
+      const args = ['scaffold', payload.kind, '--name', payload.name.trim(), '--out', outDir];
+      if (payload.kind === 'charx' && payload.creator?.trim()) {
+        args.push('--creator', payload.creator.trim());
+      }
+
+      await runRisuCoreCli(args, workspaceRoot);
+      patchScaffoldRootMarker(outDir, payload);
+      void vscode.window.showInformationMessage(`Created ${payload.kind === 'charx' ? '.risuchar' : '.risumodule'} scaffold.`);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Create failed: ${getErrorMessage(error)}`);
+    } finally {
+      await this.sendDiscoveredCards(webview);
+    }
+  }
+
+  private async importArtifact(webview: vscode.Webview): Promise<void> {
+    const workspaceRoot = getPrimaryWorkspaceRoot();
+    if (!workspaceRoot) {
+      void vscode.window.showErrorMessage('Open a workspace folder before importing a RisuAI artifact.');
+      await this.sendDiscoveredCards(webview);
+      return;
+    }
+
+    const selectedFiles = await vscode.window.showOpenDialog({
+      title: 'Import RisuAI artifact',
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      filters: IMPORT_FILE_FILTERS,
+      openLabel: 'Import',
+    });
+    const selectedFile = selectedFiles?.[0];
+    if (!selectedFile) {
+      await this.sendDiscoveredCards(webview);
+      return;
+    }
+
+    try {
+      await runRisuCoreCli(['extract', selectedFile.fsPath], workspaceRoot);
+      void vscode.window.showInformationMessage(`Imported ${path.basename(selectedFile.fsPath)}.`);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Import failed: ${getErrorMessage(error)}`);
+    } finally {
+      await this.sendDiscoveredCards(webview);
+    }
   }
 
   private async sendDiscoveredCards(webview: vscode.Webview): Promise<void> {
@@ -754,4 +829,86 @@ function reorderPaths(
   if (targetIndex < 0) return appendPath(withoutMoved, movedPath);
   const insertIndex = placement === 'before' ? targetIndex : targetIndex + 1;
   return [...withoutMoved.slice(0, insertIndex), movedPath, ...withoutMoved.slice(insertIndex)];
+}
+
+function getPrimaryWorkspaceRoot(): string | undefined {
+  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+}
+
+function resolveUniqueWorkspacePath(workspaceRoot: string, baseName: string): string {
+  let candidate = path.join(workspaceRoot, baseName);
+  let suffix = 1;
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(workspaceRoot, `${baseName}_${suffix}`);
+    suffix += 1;
+  }
+  return candidate;
+}
+
+function resolveRisuCoreBinPath(): string {
+  const coreEntry = require.resolve('risu-workbench-core');
+  return path.join(path.dirname(coreEntry), '..', 'bin', 'risu-core.js');
+}
+
+function runRisuCoreCli(args: string[], cwd: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [resolveRisuCoreBinPath(), ...args], { cwd, env: process.env });
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      reject(new Error((stderr.trim() || stdout.trim() || `risu-core exited with code ${code}`).slice(0, 2000)));
+    });
+  });
+}
+
+function patchScaffoldRootMarker(outDir: string, payload: ArtifactBrowserCreateArtifactPayload): void {
+  const markerPath = path.join(outDir, payload.kind === 'charx' ? CHARACTER_MARKER_FILENAME : MODULE_MARKER_FILENAME);
+  const manifest = readJsonObject(markerPath);
+  const now = new Date().toISOString();
+
+  manifest.name = payload.name.trim();
+  manifest.modifiedAt = now;
+
+  if (payload.kind === 'charx') {
+    const flags = isPlainObject(manifest.flags) ? manifest.flags : {};
+    manifest.creator = payload.creator?.trim() ?? '';
+    manifest.tags = payload.tags ?? [];
+    manifest.flags = {
+      ...flags,
+      utilityBot: payload.utilityBot === true,
+      lowLevelAccess: payload.lowLevelAccess === true,
+    };
+  } else {
+    manifest.description = payload.description?.trim() ?? '';
+    manifest.lowLevelAccess = payload.lowLevelAccess === true;
+  }
+
+  fs.writeFileSync(markerPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+}
+
+function readJsonObject(filePath: string): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  if (!isPlainObject(parsed)) {
+    throw new Error(`Expected JSON object at ${filePath}`);
+  }
+  return parsed;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

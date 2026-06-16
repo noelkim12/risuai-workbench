@@ -7,9 +7,12 @@ import {
   ARTIFACT_BROWSER_PROTOCOL,
   ARTIFACT_BROWSER_PROTOCOL_VERSION,
   ARTIFACT_BROWSER_VIEW_ID,
+  type ArtifactBrowserCreateArtifactMessage,
+  type ArtifactBrowserCreateArtifactPayload,
   type ArtifactBrowserCreateSectionEntryKind,
   type ArtifactBrowserCreateSectionEntryMessage,
   type ArtifactBrowserCreateSectionKind,
+  type ArtifactBrowserImportArtifactMessage,
   type ArtifactBrowserMoveLorebookFolderMessage,
   type ArtifactBrowserMoveLorebookItemMessage,
   type ArtifactBrowserMoveRegexItemMessage,
@@ -87,6 +90,18 @@ export function createArtifactBrowserReadyMessage(): ArtifactBrowserReadyMessage
  */
 export function createArtifactBrowserRefreshMessage(): ArtifactBrowserRefreshMessage {
   return createArtifactBrowserWebviewMessage('artifact-browser/refresh', {
+    viewId: ARTIFACT_BROWSER_VIEW_ID,
+  });
+}
+
+export function createArtifactBrowserCreateArtifactMessage(
+  payload: ArtifactBrowserCreateArtifactPayload,
+): ArtifactBrowserCreateArtifactMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/createArtifact', payload);
+}
+
+export function createArtifactBrowserImportArtifactMessage(): ArtifactBrowserImportArtifactMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/importArtifact', {
     viewId: ARTIFACT_BROWSER_VIEW_ID,
   });
 }

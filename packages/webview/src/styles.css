@@ -117,7 +117,7 @@ h1 {
 
 .toolbar {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 4.5fr 4.5fr 1fr;
   gap: var(--space-2);
 }
 
@@ -142,6 +142,21 @@ button:disabled {
   background: var(--secondary);
 }
 
+.button-icon {
+  display: inline-grid;
+  min-width: 0;
+  place-items: center;
+  padding: var(--space-2);
+  font-size: var(--text-lg);
+  line-height: 1;
+}
+
+.button-icon--quiet {
+  color: var(--muted);
+  background: transparent;
+  border-color: var(--card-border);
+}
+
 button:hover:not(:disabled) {
   outline: 1px solid var(--focus);
 }
@@ -156,6 +171,126 @@ button:focus-visible {
   color: var(--muted);
   font-size: var(--text-md);
   line-height: 1.45;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  align-items: start;
+  padding: var(--space-3);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+
+.modal-scrim {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.create-modal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 360px);
+  margin: var(--space-4) auto 0;
+  padding: var(--space-3);
+  border: 1px solid var(--focus);
+  border-radius: var(--radius-lg);
+  color: var(--text);
+  background: var(--card);
+  box-shadow: var(--card-selected-shadow);
+}
+
+.create-modal__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.create-modal__header,
+.create-modal__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.create-modal__actions {
+  justify-content: flex-end;
+}
+
+.create-type-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.create-type-switch label,
+.checkbox-line,
+.checkbox-grid label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.create-type-switch label {
+  justify-content: center;
+  padding: var(--space-2);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm);
+  background: var(--section);
+}
+
+.create-type-switch label.active {
+  border-color: var(--focus);
+  color: var(--accent-text);
+  background: var(--accent);
+}
+
+.field-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.field-stack input,
+.field-stack textarea {
+  width: 100%;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  color: var(--text);
+  background: var(--surface);
+  font: inherit;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.field-stack input:focus,
+.field-stack textarea:focus {
+  border-color: var(--focus);
+  outline: 1px solid var(--focus);
+}
+
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-2);
+  color: var(--text);
 }
 
 .card-list {
