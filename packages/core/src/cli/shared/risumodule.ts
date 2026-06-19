@@ -239,6 +239,12 @@ export function parseRisumoduleManifest(text: string, markerPath: string): Risum
     );
   }
 
+  if ('namespace' in obj && typeof obj.namespace !== 'string') {
+    throw new Error(
+      `.risumodule namespace must be a string at ${markerPath}`,
+    );
+  }
+
   const manifest: RisumoduleManifest = {
     $schema: obj.$schema,
     kind: obj.kind,
