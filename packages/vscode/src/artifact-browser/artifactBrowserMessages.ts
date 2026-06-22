@@ -152,7 +152,13 @@ const isArtifactBrowserCreateArtifactPayload: ArtifactBrowserPayloadGuard<Artifa
 const isArtifactBrowserImportArtifactPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserImportArtifactPayload> = (
   payload,
 ): payload is ArtifactBrowserImportArtifactPayload =>
-  isPlainRecord(payload) && payload.viewId === ARTIFACT_BROWSER_VIEW_ID;
+  isPlainRecord(payload) &&
+  payload.viewId === ARTIFACT_BROWSER_VIEW_ID &&
+  ((payload.fileName === undefined && payload.dataBase64 === undefined) ||
+    (typeof payload.fileName === 'string' &&
+      payload.fileName.length > 0 &&
+      typeof payload.dataBase64 === 'string' &&
+      payload.dataBase64.length > 0));
 
 const isArtifactBrowserReadyMessageEnvelope = createArtifactBrowserMessageGuard<ArtifactBrowserReadyMessage>(
   'artifact-browser/ready',

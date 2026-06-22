@@ -4,12 +4,14 @@
  */
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { CharacterDetailScanner } from '../artifact-browser/CharacterDetailScanner';
 import { ModuleDetailScanner } from '../artifact-browser/ModuleDetailScanner';
 import * as vscode from 'vscode';
 import { getErrorMessage } from '../shared/errors';
+import { pickImportArtifactFileWithSystemPicker } from '../shared/systemFilePicker';
 import { createWebviewNonce } from '../shared/webviewNonce';
 import { WorkspaceArtifactDiscoveryService } from '../artifact-browser/WorkspaceArtifactDiscoveryService';
 import {
@@ -29,6 +31,7 @@ import {
 import {
   ARTIFACT_BROWSER_VIEW_ID,
   type ArtifactBrowserCreateArtifactPayload,
+  type ArtifactBrowserImportArtifactPayload,
   type ArtifactBrowserCreateSectionEntryKind,
   type ArtifactBrowserCreateSectionKind,
   type BrowserArtifactCard,
@@ -152,7 +155,7 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
         }
 
         if (isArtifactBrowserImportArtifactMessage(message)) {
-          void this.importArtifact(webviewView.webview);
+          void this.importArtifact(message.payload, webviewView.webview);
           return;
         }
 
@@ -248,7 +251,7 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async importArtifact(webview: vscode.Webview): Promise<void> {
+  private async importArtifact(payload: ArtifactBrowserImportArtifactPayload, webview: vscode.Webview): Promise<void> {
     const workspaceRoot = getPrimaryWorkspaceRoot();
     if (!workspaceRoot) {
       void vscode.window.showErrorMessage('Open a workspace folder before importing a RisuAI artifact.');
@@ -256,26 +259,19 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    const selectedFiles = await vscode.window.showOpenDialog({
-      title: 'Import RisuAI artifact',
-      canSelectFiles: true,
-      canSelectFolders: false,
-      canSelectMany: false,
-      filters: IMPORT_FILE_FILTERS,
-      openLabel: 'Import',
-    });
-    const selectedFile = selectedFiles?.[0];
-    if (!selectedFile) {
+    const importedFile = await resolveImportFilePath(payload);
+    if (!importedFile) {
       await this.sendDiscoveredCards(webview);
       return;
     }
 
     try {
-      await runRisuCoreCli(['extract', selectedFile.fsPath], workspaceRoot);
-      void vscode.window.showInformationMessage(`Imported ${path.basename(selectedFile.fsPath)}.`);
+      await runRisuCoreCli(['extract', importedFile], workspaceRoot);
+      void vscode.window.showInformationMessage(`Imported ${path.basename(importedFile)}.`);
     } catch (error) {
       void vscode.window.showErrorMessage(`Import failed: ${getErrorMessage(error)}`);
     } finally {
+      removeTemporaryImportFileIfNeeded(importedFile);
       await this.sendDiscoveredCards(webview);
     }
   }
@@ -843,6 +839,35 @@ function resolveUniqueWorkspacePath(workspaceRoot: string, baseName: string): st
     suffix += 1;
   }
   return candidate;
+}
+
+async function resolveImportFilePath(payload: ArtifactBrowserImportArtifactPayload): Promise<string | undefined> {
+  if (payload.fileName && payload.dataBase64) return writeTemporaryImportFile(payload.fileName, payload.dataBase64);
+
+  const systemSelectedPath = await pickImportArtifactFileWithSystemPicker();
+  if (systemSelectedPath) return systemSelectedPath;
+
+  const selectedFiles = await vscode.window.showOpenDialog({
+    title: 'Import RisuAI artifact',
+    canSelectFiles: true,
+    canSelectFolders: false,
+    canSelectMany: false,
+    filters: IMPORT_FILE_FILTERS,
+    openLabel: 'Import',
+  });
+  return selectedFiles?.[0]?.fsPath;
+}
+
+function writeTemporaryImportFile(fileName: string, dataBase64: string): string {
+  const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'risuai-import-'));
+  const filePath = path.join(tempDirectory, path.basename(fileName));
+  fs.writeFileSync(filePath, Buffer.from(dataBase64, 'base64'));
+  return filePath;
+}
+
+function removeTemporaryImportFileIfNeeded(filePath: string): void {
+  if (!path.dirname(filePath).startsWith(path.join(os.tmpdir(), 'risuai-import-'))) return;
+  fs.rmSync(path.dirname(filePath), { recursive: true, force: true });
 }
 
 function resolveRisuCoreBinPath(): string {

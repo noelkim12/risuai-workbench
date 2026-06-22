@@ -247,6 +247,8 @@ export interface ArtifactBrowserCreateArtifactPayload {
 
 export interface ArtifactBrowserImportArtifactPayload {
   viewId: typeof ARTIFACT_BROWSER_VIEW_ID;
+  fileName?: string;
+  dataBase64?: string;
 }
 
 export interface ArtifactBrowserSelectPayload {

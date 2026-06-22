@@ -13,6 +13,7 @@ import {
   type ArtifactBrowserCreateSectionEntryMessage,
   type ArtifactBrowserCreateSectionKind,
   type ArtifactBrowserImportArtifactMessage,
+  type ArtifactBrowserImportArtifactPayload,
   type ArtifactBrowserMoveLorebookFolderMessage,
   type ArtifactBrowserMoveLorebookItemMessage,
   type ArtifactBrowserMoveRegexItemMessage,
@@ -100,9 +101,12 @@ export function createArtifactBrowserCreateArtifactMessage(
   return createArtifactBrowserWebviewMessage('artifact-browser/createArtifact', payload);
 }
 
-export function createArtifactBrowserImportArtifactMessage(): ArtifactBrowserImportArtifactMessage {
+export function createArtifactBrowserImportArtifactMessage(
+  payload: Omit<ArtifactBrowserImportArtifactPayload, 'viewId'>,
+): ArtifactBrowserImportArtifactMessage {
   return createArtifactBrowserWebviewMessage('artifact-browser/importArtifact', {
     viewId: ARTIFACT_BROWSER_VIEW_ID,
+    ...payload,
   });
 }
 

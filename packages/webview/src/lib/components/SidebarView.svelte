@@ -10,7 +10,7 @@
   export let status: string;
   export let onRefresh: () => void;
   export let onCreateArtifact: (payload: ArtifactBrowserCreateArtifactPayload) => void;
-  export let onImportArtifact: () => void;
+  export let onImportArtifact: (file: File) => void;
   export let onSelect: (stableId: string) => void;
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup reads and writes this modal state.
@@ -22,6 +22,7 @@
   let utilityBot = false;
   let lowLevelAccess = false;
   let description = '';
+  let importInput: HTMLInputElement;
 
   $: selectedCard = cards.find((card) => card.stableId === selectedStableId);
 
@@ -33,6 +34,20 @@
 
   function closeCreateModal(): void {
     isCreateModalOpen = false;
+  }
+
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup calls this action.
+  function openImportPicker(): void {
+    importInput.click();
+  }
+
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup calls this action.
+  function importSelectedFile(): void {
+    const selectedFile = importInput.files?.[0];
+    if (!selectedFile) return;
+
+    onImportArtifact(selectedFile);
+    importInput.value = '';
   }
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup calls this form handler.
@@ -72,7 +87,14 @@
 
   <section class="toolbar" aria-label="Sidebar actions">
     <button type="button" on:click={() => openCreateModal()}>Create</button>
-    <button type="button" class="button-secondary" on:click={onImportArtifact}>Import</button>
+    <button type="button" class="button-secondary" on:click={openImportPicker}>Import</button>
+    <input
+      bind:this={importInput}
+      class="visually-hidden"
+      type="file"
+      accept=".charx,.png,.risum,.risup,.risupreset,.preset,.json"
+      on:change={importSelectedFile}
+    />
     <button type="button" class="button-icon" aria-label="Refresh artifacts" title="Refresh" on:click={onRefresh}>
       ↻
     </button>
