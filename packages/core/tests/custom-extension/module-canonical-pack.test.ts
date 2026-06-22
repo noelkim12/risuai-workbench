@@ -367,6 +367,24 @@ describe('module canonical pack workflow', () => {
     expect(() => buildModuleFromCanonicalDirectory(workDir)).toThrow(/schemaVersion.*1/);
   });
 
+  it('fails on non-string .risumodule namespace', () => {
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'module-canonical-pack-bad-namespace-'));
+    tempDirs.push(workDir);
+
+    fs.writeFileSync(
+      path.join(workDir, '.risumodule'),
+      `${JSON.stringify(makeRisumodule({ namespace: 123 }), null, 2)}\n`,
+      'utf-8',
+    );
+
+    const outPath = path.join(workDir, 'packed-module.json');
+    const exitCode = runPackWorkflow(['--in', workDir, '--out', outPath, '--format', 'json']);
+
+    expect(exitCode).toBe(1);
+    expect(fs.existsSync(outPath)).toBe(false);
+    expect(() => buildModuleFromCanonicalDirectory(workDir)).toThrow(/namespace must be a string/);
+  });
+
   // ============================================================================
   // RISULUA CLASSIC REGRESSION TESTS
   // ============================================================================

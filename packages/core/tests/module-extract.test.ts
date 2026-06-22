@@ -18,6 +18,7 @@ import {
   isModuleFile,
   runExtractWorkflow as runModuleExtractWorkflow,
 } from '../src/cli/extract/module/workflow';
+import { runPackWorkflow as runModulePackWorkflow } from '../src/cli/pack/module/workflow';
 import { isModuleJson } from '../src/cli/extract/parsers';
 import { parseLorebookContent } from '../src/domain/custom-extension/extensions/lorebook';
 import { parseRegexContent } from '../src/domain/regex';
@@ -522,6 +523,47 @@ describe('module extract', () => {
     expect(exitCode).toBe(0);
     const manifest = JSON.parse(fs.readFileSync(path.join(outDir, '.risumodule'), 'utf-8'));
     expect(manifest.image).toBe('assets/icons/module.png');
+  });
+
+  it('preserves module namespace through json extract and canonical pack round-trip', async () => {
+    const workDir = path.join(tmpDir, 'module-namespace-roundtrip');
+    fs.mkdirSync(workDir, { recursive: true });
+    const inputPath = path.join(workDir, 'module.json');
+    const outDir = path.join(workDir, 'out');
+    const packedPath = path.join(workDir, 'packed.json');
+
+    fs.writeFileSync(
+      inputPath,
+      `${JSON.stringify(
+        {
+          type: 'risuModule',
+          module: {
+            id: 'module-namespace-id',
+            name: 'Module Namespace',
+            description: 'Module with upstream namespace',
+            namespace: 'upstream.namespace',
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      'utf-8',
+    );
+
+    const extractExitCode = await runModuleExtractWorkflow([inputPath, '--out', outDir]);
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(outDir, '.risumodule'), 'utf-8'),
+    ) as Record<string, unknown>;
+    const packExitCode = runModulePackWorkflow(['--in', outDir, '--out', packedPath, '--format', 'json']);
+    const packed = JSON.parse(fs.readFileSync(packedPath, 'utf-8')) as {
+      type: string;
+      module: Record<string, unknown>;
+    };
+
+    expect(extractExitCode).toBe(0);
+    expect(manifest.namespace).toBe('upstream.namespace');
+    expect(packExitCode).toBe(0);
+    expect(packed.module.namespace).toBe('upstream.namespace');
   });
 
   it('phase9_extractModuleToggle writes module toggle artifact when present', () => {
