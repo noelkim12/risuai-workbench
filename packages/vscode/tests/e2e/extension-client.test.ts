@@ -185,6 +185,21 @@ interface BuiltArtifactBrowserViewProviderModule {
   };
 }
 
+interface BuiltFileDialogPreferenceModule {
+  promptForSystemFilePickerWhenSimpleDialogEnabled: () => Promise<void>;
+}
+
+interface BuiltSystemFilePickerModule {
+  pickImportArtifactFileWithSystemPickerForTest: (deps: {
+    readonly platform: NodeJS.Platform;
+    readonly execFile: (file: string, args: readonly string[]) => Promise<{ readonly stdout: string }>;
+  }) => Promise<string | undefined>;
+}
+
+interface BuiltArtifactBrowserMessagesModule {
+  isArtifactBrowserImportArtifactMessage: (message: unknown) => boolean;
+}
+
 interface BuiltWorkspaceArtifactDiscoveryModule {
   WorkspaceArtifactDiscoveryService: new (webview: { asWebviewUri: (uri: TestUri) => TestUri }) => {
     discoverCards: () => Promise<BrowserArtifactCard[]>;
@@ -355,6 +370,7 @@ function createModuleBrowserCardInput(
 }
 
 interface TestVscodeModule {
+  ConfigurationTarget?: { Global: 1 };
   commands?: {
     executeCommand: (command: string, uri: TestUri) => Promise<void>;
   };
@@ -370,7 +386,7 @@ interface TestVscodeModule {
   };
   window?: {
     activeTextEditor?: { viewColumn?: number };
-    createWebviewPanel: (
+    createWebviewPanel?: (
       viewType: string,
       title: string,
       column: number,
@@ -386,11 +402,16 @@ interface TestVscodeModule {
         html?: string;
       };
     };
+    showInformationMessage?: (message: string, ...items: string[]) => PromiseLike<string | undefined> | string | undefined;
     showErrorMessage?: (message: string) => PromiseLike<void> | void;
   };
   workspace: {
     findFiles?: (include: string, exclude?: string) => Promise<TestUri[]>;
     getWorkspaceFolder?: (uri: TestUri) => { name: string; uri: TestUri } | undefined;
+    getConfiguration?: (section: string) => {
+      get: (key: string) => unknown;
+      update: (key: string, value: unknown, target: unknown) => PromiseLike<void> | void;
+    };
     fs: {
       createDirectory?: (uri: TestUri) => Promise<void>;
       readFile?: (uri: TestUri) => Promise<Uint8Array>;
@@ -944,6 +965,46 @@ function loadBuiltArtifactBrowserViewProviderModule(
   } finally {
     nodeModule._load = originalLoad;
   }
+}
+
+function loadBuiltFileDialogPreferenceModule(vscodeStub: TestVscodeModule): BuiltFileDialogPreferenceModule {
+  const nodeModule = Module as unknown as {
+    _load: (request: string, parent: NodeJS.Module | null, isMain: boolean) => unknown;
+  };
+  const originalLoad = nodeModule._load;
+  const modulePath = path.join(packageRoot, 'dist', 'shared', 'fileDialogPreference.js');
+
+  assert.ok(existsSync(modulePath), `Built file dialog preference helper not found: ${modulePath}`);
+  delete localRequire.cache[localRequire.resolve(modulePath)];
+
+  nodeModule._load = (request, parent, isMain) => {
+    if (request === 'vscode') return vscodeStub;
+    return originalLoad(request, parent, isMain);
+  };
+
+  try {
+    return localRequire(modulePath) as BuiltFileDialogPreferenceModule;
+  } finally {
+    nodeModule._load = originalLoad;
+  }
+}
+
+function loadBuiltSystemFilePickerModule(): BuiltSystemFilePickerModule {
+  const modulePath = path.join(packageRoot, 'dist', 'shared', 'systemFilePicker.js');
+
+  assert.ok(existsSync(modulePath), `Built system file picker helper not found: ${modulePath}`);
+  delete localRequire.cache[localRequire.resolve(modulePath)];
+
+  return localRequire(modulePath) as BuiltSystemFilePickerModule;
+}
+
+function loadBuiltArtifactBrowserMessagesModule(): BuiltArtifactBrowserMessagesModule {
+  const modulePath = path.join(packageRoot, 'dist', 'artifact-browser', 'artifactBrowserMessages.js');
+
+  assert.ok(existsSync(modulePath), `Built artifact browser messages helper not found: ${modulePath}`);
+  delete localRequire.cache[localRequire.resolve(modulePath)];
+
+  return localRequire(modulePath) as BuiltArtifactBrowserMessagesModule;
 }
 
 /**
@@ -2888,6 +2949,172 @@ test('module detail scanner keeps unknown lua folders captionless and adds recov
   assert.equal(preload.detailDescription, '`package.preload` recovery 전용 영역으로, preload wrapper body를 파일로 복구한 결과를 담습니다.');
   assert.equal(sectionsFolder.description, '번들 마커 복구용 ordered chunk fragment');
   assert.equal(sectionsFolder.detailDescription, '`[BUNDLE]` marker recovery 전용 조각입니다. 독립 require module이 아니라 순서가 중요한 fragment로 취급합니다.');
+});
+
+test('file dialog preference disables VS Code simple dialog after explicit opt-in', async () => {
+  const updates: Array<{ key: string; target: unknown; value: unknown }> = [];
+  const vscodeStub = createCharacterScannerVscodeStub({});
+  vscodeStub.ConfigurationTarget = { Global: 1 };
+  vscodeStub.window = {
+    showInformationMessage: (_message, ...items) => items[0],
+  };
+  vscodeStub.workspace.getConfiguration = (section) => {
+    assert.equal(section, 'files');
+    return {
+      get: (key) => {
+        assert.equal(key, 'simpleDialog.enable');
+        return true;
+      },
+      update: async (key, value, target) => {
+        updates.push({ key, value, target });
+      },
+    };
+  };
+  const preferenceModule = loadBuiltFileDialogPreferenceModule(vscodeStub);
+
+  await preferenceModule.promptForSystemFilePickerWhenSimpleDialogEnabled();
+
+  assert.deepEqual(updates, [{ key: 'simpleDialog.enable', value: false, target: 1 }]);
+});
+
+test('file dialog preference keeps VS Code simple dialog without opt-in', async () => {
+  const updates: Array<{ key: string; target: unknown; value: unknown }> = [];
+  const vscodeStub = createCharacterScannerVscodeStub({});
+  vscodeStub.ConfigurationTarget = { Global: 1 };
+  vscodeStub.window = {
+    showInformationMessage: (_message, ...items) => items[1],
+  };
+  vscodeStub.workspace.getConfiguration = (section) => {
+    assert.equal(section, 'files');
+    return {
+      get: (key) => {
+        assert.equal(key, 'simpleDialog.enable');
+        return true;
+      },
+      update: async (key, value, target) => {
+        updates.push({ key, value, target });
+      },
+    };
+  };
+  const preferenceModule = loadBuiltFileDialogPreferenceModule(vscodeStub);
+
+  await preferenceModule.promptForSystemFilePickerWhenSimpleDialogEnabled();
+
+  assert.deepEqual(updates, []);
+});
+
+test('system file picker uses macOS osascript and returns selected path', async () => {
+  const calls: Array<{ file: string; args: readonly string[] }> = [];
+  const pickerModule = loadBuiltSystemFilePickerModule();
+
+  const selectedPath = await pickerModule.pickImportArtifactFileWithSystemPickerForTest({
+    platform: 'darwin',
+    execFile: async (file, args) => {
+      calls.push({ file, args });
+      return { stdout: '/tmp/import.charx\n' };
+    },
+  });
+
+  assert.equal(selectedPath, '/tmp/import.charx');
+  assert.deepEqual(calls, [
+    {
+      file: 'osascript',
+      args: ['-e', 'POSIX path of (choose file with prompt "Import RisuAI artifact")'],
+    },
+  ]);
+});
+
+test('system file picker uses Windows OpenFileDialog with RisuAI filters', async () => {
+  const calls: Array<{ file: string; args: readonly string[] }> = [];
+  const pickerModule = loadBuiltSystemFilePickerModule();
+
+  const selectedPath = await pickerModule.pickImportArtifactFileWithSystemPickerForTest({
+    platform: 'win32',
+    execFile: async (file, args) => {
+      calls.push({ file, args });
+      return { stdout: 'C:\\tmp\\import.risum\r\n' };
+    },
+  });
+
+  assert.equal(selectedPath, 'C:\\tmp\\import.risum');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.file, 'powershell.exe');
+  assert.deepEqual(calls[0]?.args.slice(0, 3), ['-NoProfile', '-STA', '-Command']);
+  assert.match(calls[0]?.args[3] ?? '', /OpenFileDialog/);
+  assert.match(calls[0]?.args[3] ?? '', /\.charx;\*\.png;\*\.risum/);
+});
+
+test('system file picker falls back from zenity to kdialog on Linux', async () => {
+  const calls: Array<{ file: string; args: readonly string[] }> = [];
+  const pickerModule = loadBuiltSystemFilePickerModule();
+
+  const selectedPath = await pickerModule.pickImportArtifactFileWithSystemPickerForTest({
+    platform: 'linux',
+    execFile: async (file, args) => {
+      calls.push({ file, args });
+      if (file === 'zenity') throw new Error('missing zenity');
+      return { stdout: '/tmp/import.risup\n' };
+    },
+  });
+
+  assert.equal(selectedPath, '/tmp/import.risup');
+  assert.deepEqual(calls.map((call) => call.file), ['zenity', 'kdialog']);
+});
+
+test('system file picker returns undefined when native Linux pickers are unavailable', async () => {
+  const calls: Array<{ file: string; args: readonly string[] }> = [];
+  const pickerModule = loadBuiltSystemFilePickerModule();
+
+  const selectedPath = await pickerModule.pickImportArtifactFileWithSystemPickerForTest({
+    platform: 'linux',
+    execFile: async (file, args) => {
+      calls.push({ file, args });
+      throw new Error(`missing ${file}`);
+    },
+  });
+
+  assert.equal(selectedPath, undefined);
+  assert.deepEqual(calls.map((call) => call.file), ['zenity', 'kdialog']);
+});
+
+test('system file picker treats empty native dialog output as cancel', async () => {
+  const pickerModule = loadBuiltSystemFilePickerModule();
+
+  const selectedPath = await pickerModule.pickImportArtifactFileWithSystemPickerForTest({
+    platform: 'darwin',
+    execFile: async () => ({ stdout: '\n' }),
+  });
+
+  assert.equal(selectedPath, undefined);
+});
+
+test('artifact browser import message accepts webview-selected content and legacy picker requests', () => {
+  const messagesModule = loadBuiltArtifactBrowserMessagesModule();
+
+  assert.equal(
+    messagesModule.isArtifactBrowserImportArtifactMessage({
+      protocol: 'risu-workbench.artifact-browser',
+      version: 1,
+      type: 'artifact-browser/importArtifact',
+      payload: {
+        viewId: 'risuaiWorkbench.cards',
+        fileName: 'import.charx',
+        dataBase64: Buffer.from('artifact').toString('base64'),
+      },
+    }),
+    true,
+  );
+  assert.equal(
+    messagesModule.isArtifactBrowserImportArtifactMessage({
+      protocol: 'risu-workbench.artifact-browser',
+      version: 1,
+      type: 'artifact-browser/importArtifact',
+      payload: {
+        viewId: 'risuaiWorkbench.cards',
+      },
+    }),
+    true,
+  );
 });
 
 test('provider dispatches module selections and opens module file-backed items', async () => {

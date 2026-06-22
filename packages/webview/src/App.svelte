@@ -21,7 +21,7 @@ export let viewMode: Writable<'artifacts' | 'artifactDetail'>;
 export let status: Writable<string>;
 export let refreshCards: () => void;
 export let createArtifact: (payload: ArtifactBrowserCreateArtifactPayload) => void;
-export let importArtifact: () => void;
+export let importArtifact: (file: File) => void;
 export let selectCard: (stableId: string) => void;
 export let returnToCards: () => void;
 export let toggleSection: (sectionId: string) => void;

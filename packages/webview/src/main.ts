@@ -186,11 +186,21 @@ function createArtifact(payload: ArtifactBrowserCreateArtifactPayload): void {
   vscode?.postMessage(createArtifactBrowserCreateArtifactMessage(payload));
 }
 
-function importArtifact(): void {
-  setStatus('Opening native file picker for import…');
+function encodeArrayBufferAsBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
+async function importArtifact(file: File): Promise<void> {
+  setStatus(`Importing ${file.name}…`);
   viewMode.set('artifacts');
   detailSections.set([]);
-  vscode?.postMessage(createArtifactBrowserImportArtifactMessage());
+  const dataBase64 = encodeArrayBufferAsBase64(await file.arrayBuffer());
+  vscode?.postMessage(createArtifactBrowserImportArtifactMessage({ fileName: file.name, dataBase64 }));
 }
 
 /**
