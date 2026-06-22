@@ -4,7 +4,14 @@ import type { Writable } from 'svelte/store';
 import ArtifactDetailView from './lib/components/ArtifactDetailView.svelte';
 // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
 import SidebarView from './lib/components/SidebarView.svelte';
-import type { BrowserArtifactCard, CharacterItem, CharacterSection } from './lib/types';
+import type {
+  ArtifactBrowserCreateArtifactPayload,
+  ArtifactBrowserCreateSectionEntryKind,
+  ArtifactBrowserCreateSectionKind,
+  BrowserArtifactCard,
+  CharacterItem,
+  CharacterSection,
+} from './lib/types';
 
 export let cards: Writable<BrowserArtifactCard[]>;
 export let selectedStableId: Writable<string | undefined>;
@@ -13,6 +20,8 @@ export let expandedSectionIds: Writable<string[]>;
 export let viewMode: Writable<'artifacts' | 'artifactDetail'>;
 export let status: Writable<string>;
 export let refreshCards: () => void;
+export let createArtifact: (payload: ArtifactBrowserCreateArtifactPayload) => void;
+export let importArtifact: (file: File) => void;
 export let selectCard: (stableId: string) => void;
 export let returnToCards: () => void;
 export let toggleSection: (sectionId: string) => void;
@@ -25,6 +34,11 @@ export let moveLorebookItem: (
 ) => void;
 export let moveLorebookFolder: (folderPath: string, targetFolderPath: string, placement: 'before' | 'after') => void;
 export let moveRegexItem: (item: CharacterItem, targetItemId: string, placement: 'before' | 'after') => void;
+export let createSectionEntry: (
+  sectionKind: ArtifactBrowserCreateSectionKind,
+  entryKind: ArtifactBrowserCreateSectionEntryKind,
+  targetFolderPath?: string,
+) => void;
 
 $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId);
 </script>
@@ -41,6 +55,7 @@ $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId)
     onMoveLorebookItem={moveLorebookItem}
     onMoveLorebookFolder={moveLorebookFolder}
     onMoveRegexItem={moveRegexItem}
+    onCreateSectionEntry={createSectionEntry}
   />
 {:else}
   <SidebarView
@@ -48,6 +63,8 @@ $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId)
     selectedStableId={$selectedStableId}
     status={$status}
     onRefresh={refreshCards}
+    onCreateArtifact={createArtifact}
+    onImportArtifact={importArtifact}
     onSelect={selectCard}
   />
 {/if}

@@ -7,6 +7,13 @@ import {
   ARTIFACT_BROWSER_PROTOCOL,
   ARTIFACT_BROWSER_PROTOCOL_VERSION,
   ARTIFACT_BROWSER_VIEW_ID,
+  type ArtifactBrowserCreateArtifactMessage,
+  type ArtifactBrowserCreateArtifactPayload,
+  type ArtifactBrowserCreateSectionEntryKind,
+  type ArtifactBrowserCreateSectionEntryMessage,
+  type ArtifactBrowserCreateSectionKind,
+  type ArtifactBrowserImportArtifactMessage,
+  type ArtifactBrowserImportArtifactPayload,
   type ArtifactBrowserMoveLorebookFolderMessage,
   type ArtifactBrowserMoveLorebookItemMessage,
   type ArtifactBrowserMoveRegexItemMessage,
@@ -88,6 +95,21 @@ export function createArtifactBrowserRefreshMessage(): ArtifactBrowserRefreshMes
   });
 }
 
+export function createArtifactBrowserCreateArtifactMessage(
+  payload: ArtifactBrowserCreateArtifactPayload,
+): ArtifactBrowserCreateArtifactMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/createArtifact', payload);
+}
+
+export function createArtifactBrowserImportArtifactMessage(
+  payload: Omit<ArtifactBrowserImportArtifactPayload, 'viewId'>,
+): ArtifactBrowserImportArtifactMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/importArtifact', {
+    viewId: ARTIFACT_BROWSER_VIEW_ID,
+    ...payload,
+  });
+}
+
 /**
  * createArtifactBrowserSelectMessage 함수.
  * Card selection state를 Phase 4 detail view의 seed로 extension host에 전달함.
@@ -157,5 +179,19 @@ export function createArtifactBrowserMoveRegexItemMessage(
     itemId,
     targetItemId,
     placement,
+  });
+}
+
+export function createArtifactBrowserCreateSectionEntryMessage(
+  stableId: string,
+  sectionKind: ArtifactBrowserCreateSectionKind,
+  entryKind: ArtifactBrowserCreateSectionEntryKind,
+  targetFolderPath?: string,
+): ArtifactBrowserCreateSectionEntryMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/createSectionEntry', {
+    stableId,
+    sectionKind,
+    entryKind,
+    ...(targetFolderPath && { targetFolderPath }),
   });
 }

@@ -18,6 +18,7 @@
     targetFolderPath: string,
     placement: 'before' | 'after',
   ) => void;
+  export let onCreateLorebookFile: (targetFolderPath: string) => void;
 
   let draggedLorebookItem: BrowserItem | undefined;
   let draggedLorebookFolderPath: string | undefined;
@@ -31,6 +32,14 @@
       (count, node) => count + (node.kind === 'item' ? 1 : countTreeItems(node.children ?? [])),
       0,
     );
+  }
+
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this handler.
+  function createLorebookFileInFolder(event: MouseEvent | KeyboardEvent, folderPath: string): void {
+    if (event instanceof KeyboardEvent && event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    event.stopPropagation();
+    onCreateLorebookFile(folderPath);
   }
 
   function clearDraggedLorebookItem(): void {
@@ -195,6 +204,23 @@
             <span class="tree-folder__chevron" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
             <span class="tree-folder__label">{node.label}</span>
             <span class="tree-folder__count">{itemCount}</span>
+            {#if node.lorebookPath}
+              <span
+                class="tree-folder__action"
+                role="button"
+                tabindex="0"
+                title={`Create risulorebook in ${node.label}`}
+                aria-label={`Create risulorebook in ${node.label}`}
+                onclick={(event) => createLorebookFileInFolder(event, node.lorebookPath ?? '')}
+                onkeydown={(event) => createLorebookFileInFolder(event, node.lorebookPath ?? '')}
+              >
+                <svg class="accordion__action-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                  <path d="M4.25 1.75h5.5l3 3v9.5h-8.5z" />
+                  <path d="M9.75 1.75v3h3" />
+                  <path class="accordion__action-plus" d="M8.5 7.35v4.3M6.35 9.5h4.3" />
+                </svg>
+              </span>
+            {/if}
           </button>
           {#if expanded && children.length > 0}
             {@render lorebookTree(children, depth + 1)}
@@ -226,7 +252,7 @@
 {/snippet}
 
 <div
-  class="tree-root-surface"
+  class="tree-root-surface tree-root-surface--compact-folders"
   role="tree"
   aria-label="Lorebook tree"
   tabindex="-1"

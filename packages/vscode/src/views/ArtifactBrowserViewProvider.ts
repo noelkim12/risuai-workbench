@@ -4,15 +4,22 @@
  */
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { CharacterDetailScanner } from '../artifact-browser/CharacterDetailScanner';
 import { ModuleDetailScanner } from '../artifact-browser/ModuleDetailScanner';
 import * as vscode from 'vscode';
+import { getErrorMessage } from '../shared/errors';
+import { pickImportArtifactFileWithSystemPicker } from '../shared/systemFilePicker';
 import { createWebviewNonce } from '../shared/webviewNonce';
 import { WorkspaceArtifactDiscoveryService } from '../artifact-browser/WorkspaceArtifactDiscoveryService';
 import {
   createArtifactBrowserCardsMessage,
   createArtifactBrowserDetailMessage,
+  isArtifactBrowserCreateArtifactMessage,
+  isArtifactBrowserCreateSectionEntryMessage,
+  isArtifactBrowserImportArtifactMessage,
   isArtifactBrowserMoveLorebookFolderMessage,
   isArtifactBrowserMoveLorebookItemMessage,
   isArtifactBrowserMoveRegexItemMessage,
@@ -23,6 +30,10 @@ import {
 } from '../artifact-browser/artifactBrowserMessages';
 import {
   ARTIFACT_BROWSER_VIEW_ID,
+  type ArtifactBrowserCreateArtifactPayload,
+  type ArtifactBrowserImportArtifactPayload,
+  type ArtifactBrowserCreateSectionEntryKind,
+  type ArtifactBrowserCreateSectionKind,
   type BrowserArtifactCard,
   type BrowserItem,
   type BrowserSection,
@@ -36,6 +47,40 @@ import {
 
 const CHARACTER_MARKER_FILENAME = '.risuchar';
 const MODULE_MARKER_FILENAME = '.risumodule';
+const IMPORT_FILE_FILTERS = {
+  'RisuAI artifacts': ['charx', 'png', 'risum', 'risup', 'risupreset', 'preset', 'json'],
+};
+const SECTION_CREATE_CONFIGS = {
+  lorebooks: {
+    directoryName: 'lorebooks',
+    fileExtension: '.risulorebook',
+    defaultFolderName: 'new_lorebook_folder',
+    defaultFileName: 'new_lorebook',
+    fileLabel: 'Lorebook',
+    folderLabel: 'Lorebook Folder',
+  },
+  regexRules: {
+    directoryName: 'regex',
+    fileExtension: '.risuregex',
+    defaultFileName: 'new_regex',
+    fileLabel: 'Regex Rule',
+  },
+  lua: {
+    directoryName: 'lua',
+    fileExtension: '.risulua',
+    defaultFolderName: 'new_lua_folder',
+    defaultFileName: 'new_lua',
+    fileLabel: 'RisuLua',
+    folderLabel: 'Lua Folder',
+  },
+} as const;
+
+interface SectionCreationConfig {
+  directoryName: string;
+  fileExtension?: string;
+  defaultName: string;
+  label: string;
+}
 
 /**
  * ArtifactBrowserViewProvider 클래스.
@@ -104,6 +149,16 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
           return;
         }
 
+        if (isArtifactBrowserCreateArtifactMessage(message)) {
+          void this.createArtifact(message.payload, webviewView.webview);
+          return;
+        }
+
+        if (isArtifactBrowserImportArtifactMessage(message)) {
+          void this.importArtifact(message.payload, webviewView.webview);
+          return;
+        }
+
         if (isArtifactBrowserSelectMessage(message)) {
           void this.selectArtifact(message.payload.stableId);
           return;
@@ -111,6 +166,16 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
 
         if (isArtifactBrowserOpenItemMessage(message)) {
           void this.openItem(message.payload.stableId, message.payload.itemId);
+          return;
+        }
+
+        if (isArtifactBrowserCreateSectionEntryMessage(message)) {
+          void this.createSectionEntry(
+            message.payload.stableId,
+            message.payload.sectionKind,
+            message.payload.entryKind,
+            message.payload.targetFolderPath,
+          );
           return;
         }
 
@@ -159,6 +224,56 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
       | ReturnType<typeof createArtifactBrowserDetailMessage>,
   ): void {
     void this.view?.webview.postMessage(message);
+  }
+
+  private async createArtifact(payload: ArtifactBrowserCreateArtifactPayload, webview: vscode.Webview): Promise<void> {
+    const workspaceRoot = getPrimaryWorkspaceRoot();
+    if (!workspaceRoot) {
+      void vscode.window.showErrorMessage('Open a workspace folder before creating a RisuAI artifact.');
+      await this.sendDiscoveredCards(webview);
+      return;
+    }
+
+    try {
+      const outDir = resolveUniqueWorkspacePath(workspaceRoot, sanitizeWorkspaceName(payload.name, 'untitled'));
+      const args = ['scaffold', payload.kind, '--name', payload.name.trim(), '--out', outDir];
+      if (payload.kind === 'charx' && payload.creator?.trim()) {
+        args.push('--creator', payload.creator.trim());
+      }
+
+      await runRisuCoreCli(args, workspaceRoot);
+      patchScaffoldRootMarker(outDir, payload);
+      void vscode.window.showInformationMessage(`Created ${payload.kind === 'charx' ? '.risuchar' : '.risumodule'} scaffold.`);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Create failed: ${getErrorMessage(error)}`);
+    } finally {
+      await this.sendDiscoveredCards(webview);
+    }
+  }
+
+  private async importArtifact(payload: ArtifactBrowserImportArtifactPayload, webview: vscode.Webview): Promise<void> {
+    const workspaceRoot = getPrimaryWorkspaceRoot();
+    if (!workspaceRoot) {
+      void vscode.window.showErrorMessage('Open a workspace folder before importing a RisuAI artifact.');
+      await this.sendDiscoveredCards(webview);
+      return;
+    }
+
+    const importedFile = await resolveImportFilePath(payload);
+    if (!importedFile) {
+      await this.sendDiscoveredCards(webview);
+      return;
+    }
+
+    try {
+      await runRisuCoreCli(['extract', importedFile], workspaceRoot);
+      void vscode.window.showInformationMessage(`Imported ${path.basename(importedFile)}.`);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Import failed: ${getErrorMessage(error)}`);
+    } finally {
+      removeTemporaryImportFileIfNeeded(importedFile);
+      await this.sendDiscoveredCards(webview);
+    }
   }
 
   private async sendDiscoveredCards(webview: vscode.Webview): Promise<void> {
@@ -260,6 +375,63 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     await vscode.commands.executeCommand('vscode.open', uri);
   }
 
+  private async createSectionEntry(
+    stableId: string,
+    sectionKind: ArtifactBrowserCreateSectionKind,
+    entryKind: ArtifactBrowserCreateSectionEntryKind,
+    targetFolderPath?: string,
+  ): Promise<void> {
+    const card = this.currentCards.find((entry) => entry.stableId === stableId);
+    const config = getSectionCreationConfig(sectionKind, entryKind);
+    if (!card || !config) return;
+
+    const requestedName = await vscode.window.showInputBox({
+      title: `Create ${config.label}`,
+      prompt: `Name for the new ${config.label.toLowerCase()}. Invalid filename characters are cleaned automatically.`,
+      value: config.defaultName,
+      valueSelection: [0, config.defaultName.length],
+      ignoreFocusOut: true,
+    });
+    if (requestedName === undefined) return;
+
+    const sanitizedName = sanitizeWorkspaceName(stripKnownExtension(requestedName, config.fileExtension), config.defaultName);
+    const normalizedTargetFolderPath = normalizeTargetFolderPath(targetFolderPath);
+    const artifactRootUri = vscode.Uri.parse(card.rootUri);
+    const sectionRootUri = vscode.Uri.joinPath(artifactRootUri, config.directoryName);
+    const targetDirectoryUri = normalizedTargetFolderPath
+      ? vscode.Uri.joinPath(sectionRootUri, ...normalizedTargetFolderPath.split('/'))
+      : sectionRootUri;
+    await vscode.workspace.fs.createDirectory(targetDirectoryUri);
+
+    if (entryKind === 'folder') {
+      const folderUri = await resolveUniqueChildUri(targetDirectoryUri, sanitizedName);
+      await vscode.workspace.fs.createDirectory(folderUri);
+      if (sectionKind === 'lorebooks') {
+        const createdFolderPath = normalizedTargetFolderPath
+          ? `${normalizedTargetFolderPath}/${path.basename(folderUri.fsPath)}`
+          : path.basename(folderUri.fsPath);
+        await this.appendSectionOrderPath(stableId, sectionRootUri, sectionKind, config.directoryName, createdFolderPath);
+      }
+      await this.refreshSelectedDetail(card);
+      return;
+    }
+
+    if (!config.fileExtension) return;
+    const fileUri = await resolveUniqueChildUri(targetDirectoryUri, sanitizedName, config.fileExtension);
+    const fileStem = path.basename(fileUri.fsPath, config.fileExtension);
+    const createdFilePath = normalizedTargetFolderPath
+      ? `${normalizedTargetFolderPath}/${path.basename(fileUri.fsPath)}`
+      : path.basename(fileUri.fsPath);
+    await vscode.workspace.fs.writeFile(fileUri, Buffer.from(renderCreatedFileContent(sectionKind, fileStem), 'utf8'));
+
+    if (sectionKind === 'lorebooks' || sectionKind === 'regexRules') {
+      await this.appendSectionOrderPath(stableId, sectionRootUri, sectionKind, config.directoryName, createdFilePath);
+    }
+
+    await this.refreshSelectedDetail(card);
+    await vscode.commands.executeCommand('vscode.open', fileUri);
+  }
+
   private async moveLorebookItem(
     stableId: string,
     itemId: string,
@@ -336,6 +508,18 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     await this.refreshSelectedDetail(card);
   }
 
+  private async appendSectionOrderPath(
+    stableId: string,
+    sectionRootUri: vscode.Uri,
+    sectionKind: ArtifactBrowserCreateSectionKind,
+    directoryName: string,
+    createdPath: string,
+  ): Promise<void> {
+    const currentOrder = await readOrderedPaths(sectionRootUri);
+    const fallbackOrder = this.getSectionOrderPaths(stableId, sectionKind, directoryName);
+    await writeOrderedPaths(sectionRootUri, appendPath(mergeOrder(currentOrder, fallbackOrder), createdPath));
+  }
+
   private findSectionItem(stableId: string, itemId: string): BrowserItem | undefined {
     return this.currentSections
       .get(stableId)
@@ -355,7 +539,7 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     const targetItem = targetItemId ? this.findSectionItem(stableId, targetItemId) : undefined;
     const targetPath = targetPathOverride ?? (targetItem ? stripDirectoryPrefix(targetItem.relativePath, 'lorebooks') : undefined);
     const currentOrder = withoutPaths(await readOrderedPaths(lorebookRootUri), previousPath);
-    const fallbackOrder = withoutPaths(this.getSectionRelativePaths(stableId, 'lorebooks', 'lorebooks'), previousPath);
+    const fallbackOrder = withoutPaths(this.getSectionOrderPaths(stableId, 'lorebooks', 'lorebooks'), previousPath);
     const nextOrder = targetPath && placement !== 'inside'
       ? reorderPaths(mergeOrder(currentOrder, fallbackOrder), movedPath, targetPath, placement)
       : appendPath(mergeOrder(currentOrder, fallbackOrder), movedPath);
@@ -368,6 +552,16 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     return section.items
       .map((item) => stripDirectoryPrefix(item.relativePath, directoryName))
       .filter((entry): entry is string => Boolean(entry));
+  }
+
+  private getSectionOrderPaths(stableId: string, sectionKind: string, directoryName: string): string[] {
+    const section = this.currentSections.get(stableId)?.find((entry) => entry.kind === sectionKind);
+    if (!section) return [];
+
+    const fromTree = collectTreeOrderPaths(section.tree ?? [], directoryName);
+    if (fromTree.length > 0) return fromTree;
+
+    return this.getSectionRelativePaths(stableId, sectionKind, directoryName);
   }
 
   private async refreshSelectedDetail(card: BrowserArtifactCard): Promise<void> {
@@ -452,6 +646,128 @@ function isRootMarkerUri(uri: vscode.Uri): boolean {
   return basename === CHARACTER_MARKER_FILENAME || basename === MODULE_MARKER_FILENAME;
 }
 
+
+function getSectionCreationConfig(
+  sectionKind: ArtifactBrowserCreateSectionKind,
+  entryKind: ArtifactBrowserCreateSectionEntryKind,
+): SectionCreationConfig | undefined {
+  const baseConfig = SECTION_CREATE_CONFIGS[sectionKind];
+  if (entryKind === 'folder') {
+    if (!('defaultFolderName' in baseConfig)) return undefined;
+    return {
+      directoryName: baseConfig.directoryName,
+      defaultName: baseConfig.defaultFolderName,
+      label: baseConfig.folderLabel,
+    };
+  }
+
+  return {
+    directoryName: baseConfig.directoryName,
+    fileExtension: baseConfig.fileExtension,
+    defaultName: baseConfig.defaultFileName,
+    label: baseConfig.fileLabel,
+  };
+}
+
+function stripKnownExtension(value: string, extension: string | undefined): string {
+  const trimmed = value.trim();
+  if (!extension) return trimmed;
+  return trimmed.toLowerCase().endsWith(extension) ? trimmed.slice(0, -extension.length) : trimmed;
+}
+
+function sanitizeWorkspaceName(name: string, fallback: string): string {
+  const cleaned = [...name]
+    .map((ch) => (/[<>:"/\\|?*]/.test(ch) || ch.charCodeAt(0) < 32 ? '_' : ch))
+    .join('')
+    .replace(/\.\./g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^[._]+|[._]+$/g, '')
+    .slice(0, 100);
+  return cleaned || fallback;
+}
+
+function normalizeTargetFolderPath(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const segments = value.replace(/\\/g, '/').split('/').filter(Boolean);
+  if (segments.some((segment) => segment === '.' || segment === '..')) return undefined;
+  return segments.join('/') || undefined;
+}
+
+async function resolveUniqueChildUri(directoryUri: vscode.Uri, baseName: string, extension = ''): Promise<vscode.Uri> {
+  let candidateName = `${baseName}${extension}`;
+  let candidateUri = vscode.Uri.joinPath(directoryUri, candidateName);
+  let suffix = 1;
+  while (await uriExists(candidateUri)) {
+    candidateName = `${baseName}_${suffix}${extension}`;
+    candidateUri = vscode.Uri.joinPath(directoryUri, candidateName);
+    suffix += 1;
+  }
+  return candidateUri;
+}
+
+async function uriExists(uri: vscode.Uri): Promise<boolean> {
+  try {
+    await vscode.workspace.fs.stat(uri);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function renderCreatedFileContent(sectionKind: ArtifactBrowserCreateSectionKind, fileStem: string): string {
+  if (sectionKind === 'lorebooks') return renderLorebookTemplate(fileStem);
+  if (sectionKind === 'regexRules') return renderRegexTemplate(fileStem);
+  return renderLuaTemplate(fileStem);
+}
+
+function renderLorebookTemplate(name: string): string {
+  return [
+    '---',
+    `name: ${JSON.stringify(name)}`,
+    'comment: ""',
+    'mode: normal',
+    'constant: false',
+    'selective: false',
+    'insertion_order: 100',
+    'case_sensitive: false',
+    'use_regex: false',
+    '---',
+    '@@@ KEYS',
+    '',
+    '@@@ CONTENT',
+    '',
+  ].join('\n');
+}
+
+function renderRegexTemplate(name: string): string {
+  return [
+    '---',
+    `comment: ${JSON.stringify(name)}`,
+    'type: editinput',
+    '---',
+    '@@@ IN',
+    '',
+    '@@@ OUT',
+    '',
+  ].join('\n');
+}
+
+function renderLuaTemplate(name: string): string {
+  return [`-- ${name}`, '', ''].join('\n');
+}
+
+function collectTreeOrderPaths(nodes: BrowserSection['tree'], directoryName: string): string[] {
+  if (!nodes) return [];
+  const paths: string[] = [];
+  for (const node of nodes) {
+    const localPath = stripDirectoryPrefix(node.relativePath, directoryName) ?? node.lorebookPath ?? node.treePath;
+    if (localPath) paths.push(localPath);
+    paths.push(...collectTreeOrderPaths(node.children, directoryName));
+  }
+  return paths;
+}
+
 function stripDirectoryPrefix(relativePath: string | undefined, directoryName: string): string | undefined {
   if (!relativePath) return undefined;
   const normalized = relativePath.replace(/\\/g, '/').replace(/^\/+/, '');
@@ -509,4 +825,115 @@ function reorderPaths(
   if (targetIndex < 0) return appendPath(withoutMoved, movedPath);
   const insertIndex = placement === 'before' ? targetIndex : targetIndex + 1;
   return [...withoutMoved.slice(0, insertIndex), movedPath, ...withoutMoved.slice(insertIndex)];
+}
+
+function getPrimaryWorkspaceRoot(): string | undefined {
+  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+}
+
+function resolveUniqueWorkspacePath(workspaceRoot: string, baseName: string): string {
+  let candidate = path.join(workspaceRoot, baseName);
+  let suffix = 1;
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(workspaceRoot, `${baseName}_${suffix}`);
+    suffix += 1;
+  }
+  return candidate;
+}
+
+async function resolveImportFilePath(payload: ArtifactBrowserImportArtifactPayload): Promise<string | undefined> {
+  if (payload.fileName && payload.dataBase64) return writeTemporaryImportFile(payload.fileName, payload.dataBase64);
+
+  const systemSelectedPath = await pickImportArtifactFileWithSystemPicker();
+  if (systemSelectedPath) return systemSelectedPath;
+
+  const selectedFiles = await vscode.window.showOpenDialog({
+    title: 'Import RisuAI artifact',
+    canSelectFiles: true,
+    canSelectFolders: false,
+    canSelectMany: false,
+    filters: IMPORT_FILE_FILTERS,
+    openLabel: 'Import',
+  });
+  return selectedFiles?.[0]?.fsPath;
+}
+
+function writeTemporaryImportFile(fileName: string, dataBase64: string): string {
+  const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'risuai-import-'));
+  const filePath = path.join(tempDirectory, path.basename(fileName));
+  fs.writeFileSync(filePath, Buffer.from(dataBase64, 'base64'));
+  return filePath;
+}
+
+function removeTemporaryImportFileIfNeeded(filePath: string): void {
+  if (!path.dirname(filePath).startsWith(path.join(os.tmpdir(), 'risuai-import-'))) return;
+  fs.rmSync(path.dirname(filePath), { recursive: true, force: true });
+}
+
+function resolveRisuCoreBinPath(): string {
+  const coreEntry = require.resolve('risu-workbench-core');
+  return path.join(path.dirname(coreEntry), '..', 'bin', 'risu-core.js');
+}
+
+function runRisuCoreCli(args: string[], cwd: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [resolveRisuCoreBinPath(), ...args], { cwd, env: process.env });
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      reject(new Error((stderr.trim() || stdout.trim() || `risu-core exited with code ${code}`).slice(0, 2000)));
+    });
+  });
+}
+
+function patchScaffoldRootMarker(outDir: string, payload: ArtifactBrowserCreateArtifactPayload): void {
+  const markerPath = path.join(outDir, payload.kind === 'charx' ? CHARACTER_MARKER_FILENAME : MODULE_MARKER_FILENAME);
+  const manifest = readJsonObject(markerPath);
+  const now = new Date().toISOString();
+
+  manifest.name = payload.name.trim();
+  manifest.modifiedAt = now;
+
+  if (payload.kind === 'charx') {
+    const flags = isPlainObject(manifest.flags) ? manifest.flags : {};
+    manifest.creator = payload.creator?.trim() ?? '';
+    manifest.tags = payload.tags ?? [];
+    manifest.flags = {
+      ...flags,
+      utilityBot: payload.utilityBot === true,
+      lowLevelAccess: payload.lowLevelAccess === true,
+    };
+  } else {
+    manifest.description = payload.description?.trim() ?? '';
+    manifest.lowLevelAccess = payload.lowLevelAccess === true;
+  }
+
+  fs.writeFileSync(markerPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+}
+
+function readJsonObject(filePath: string): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  if (!isPlainObject(parsed)) {
+    throw new Error(`Expected JSON object at ${filePath}`);
+  }
+  return parsed;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

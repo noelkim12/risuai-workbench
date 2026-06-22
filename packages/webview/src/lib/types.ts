@@ -82,6 +82,8 @@ export type CharacterSourceFormat = 'charx' | 'png' | 'json' | 'scaffold';
 export type ModuleSourceFormat = 'risum' | 'json' | 'scaffold' | 'unknown';
 export type CharacterSectionKind = 'manifest' | 'lorebooks' | 'regexRules' | 'html' | 'lua' | 'diagnostics';
 export type BrowserSectionKind = CharacterSectionKind | 'toggle' | 'variables';
+export type ArtifactBrowserCreateSectionKind = Extract<BrowserSectionKind, 'lorebooks' | 'regexRules' | 'lua'>;
+export type ArtifactBrowserCreateSectionEntryKind = 'folder' | 'file';
 export type BrowserItemType =
   | 'manifest'
   | 'image'
@@ -216,6 +218,24 @@ export interface ArtifactBrowserRefreshPayload {
   viewId: typeof ARTIFACT_BROWSER_VIEW_ID;
 }
 
+export type ArtifactBrowserCreateArtifactKind = 'charx' | 'module';
+
+export interface ArtifactBrowserCreateArtifactPayload {
+  kind: ArtifactBrowserCreateArtifactKind;
+  name: string;
+  creator?: string;
+  tags?: string[];
+  utilityBot?: boolean;
+  lowLevelAccess?: boolean;
+  description?: string;
+}
+
+export interface ArtifactBrowserImportArtifactPayload {
+  viewId: typeof ARTIFACT_BROWSER_VIEW_ID;
+  fileName?: string;
+  dataBase64?: string;
+}
+
 export interface ArtifactBrowserSelectPayload {
   stableId: string;
 }
@@ -247,6 +267,13 @@ export interface ArtifactBrowserMoveRegexItemPayload {
   placement: 'before' | 'after';
 }
 
+export interface ArtifactBrowserCreateSectionEntryPayload {
+  stableId: string;
+  sectionKind: ArtifactBrowserCreateSectionKind;
+  entryKind: ArtifactBrowserCreateSectionEntryKind;
+  targetFolderPath?: string;
+}
+
 export interface ArtifactBrowserCardsPayload {
   generatedAt: string;
   cards: BrowserArtifactCard[];
@@ -274,6 +301,16 @@ export type ArtifactBrowserRefreshMessage = MessageEnvelope<
   ArtifactBrowserRefreshPayload
 >;
 
+export type ArtifactBrowserCreateArtifactMessage = MessageEnvelope<
+  'artifact-browser/createArtifact',
+  ArtifactBrowserCreateArtifactPayload
+>;
+
+export type ArtifactBrowserImportArtifactMessage = MessageEnvelope<
+  'artifact-browser/importArtifact',
+  ArtifactBrowserImportArtifactPayload
+>;
+
 export type ArtifactBrowserSelectMessage = MessageEnvelope<
   'artifact-browser/select',
   ArtifactBrowserSelectPayload
@@ -299,6 +336,11 @@ export type ArtifactBrowserMoveRegexItemMessage = MessageEnvelope<
   ArtifactBrowserMoveRegexItemPayload
 >;
 
+export type ArtifactBrowserCreateSectionEntryMessage = MessageEnvelope<
+  'artifact-browser/createSectionEntry',
+  ArtifactBrowserCreateSectionEntryPayload
+>;
+
 export type ArtifactBrowserDetailMessage = MessageEnvelope<
   'artifact-browser/detailLoaded',
   ArtifactBrowserDetailPayload
@@ -307,11 +349,14 @@ export type ArtifactBrowserDetailMessage = MessageEnvelope<
 export type ArtifactBrowserWebviewMessage =
   | ArtifactBrowserReadyMessage
   | ArtifactBrowserRefreshMessage
+  | ArtifactBrowserCreateArtifactMessage
+  | ArtifactBrowserImportArtifactMessage
   | ArtifactBrowserSelectMessage
   | ArtifactBrowserOpenItemMessage
   | ArtifactBrowserMoveLorebookItemMessage
   | ArtifactBrowserMoveLorebookFolderMessage
-  | ArtifactBrowserMoveRegexItemMessage;
+  | ArtifactBrowserMoveRegexItemMessage
+  | ArtifactBrowserCreateSectionEntryMessage;
 export type ArtifactBrowserExtensionMessage = ArtifactBrowserCardsMessage | ArtifactBrowserDetailMessage;
 
 export type MarkerEditorReadyMessage = MessageEnvelope<'marker-editor/ready', MarkerEditorReadyPayload>;
