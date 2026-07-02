@@ -8,6 +8,7 @@ import type {
   ArtifactBrowserCreateArtifactPayload,
   ArtifactBrowserCreateSectionEntryKind,
   ArtifactBrowserCreateSectionKind,
+  ArtifactBrowserPackCompletedPayload,
   BrowserArtifactCard,
   CharacterItem,
   CharacterSection,
@@ -39,6 +40,8 @@ export let createSectionEntry: (
   entryKind: ArtifactBrowserCreateSectionEntryKind,
   targetFolderPath?: string,
 ) => void;
+export let packArtifact: (stableId: string, recovery: boolean) => void;
+export let packState: Writable<ArtifactBrowserPackCompletedPayload | null>;
 
 $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId);
 </script>
@@ -49,7 +52,9 @@ $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId)
     sections={$detailSections}
     expandedSectionIds={$expandedSectionIds}
     status={$status}
+    packState={packState}
     onBack={returnToCards}
+    onPackArtifact={packArtifact}
     onToggleSection={toggleSection}
     onOpenItem={openItem}
     onMoveLorebookItem={moveLorebookItem}
