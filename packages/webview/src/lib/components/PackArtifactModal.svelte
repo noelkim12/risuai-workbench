@@ -18,23 +18,42 @@
   $: fileName = `${artifact.name}${ext}`;
   $: outputPath = `${artifact.rootPathLabel}/out/${fileName}`;
 
-  $: phase = !submitted ? 'idle' : $packState === null ? 'packing' : $packState.ok ? 'done' : 'error';
+  $: matchesThisArtifact = $packState?.stableId === artifact.stableId;
+  $: phase =
+    !submitted ? 'idle' : $packState === null || !matchesThisArtifact ? 'packing' : $packState.ok ? 'done' : 'error';
 
   function confirm(): void {
     submitted = true;
     onConfirm(recovery);
   }
+
+  function dismiss(): void {
+    if (phase === 'packing') return;
+    onClose();
+  }
 </script>
 
 <section class="modal-backdrop" aria-label="Pack dialog backdrop">
-  <button type="button" class="modal-scrim" aria-label="Close pack dialog" on:click={onClose}></button>
+  <button
+    type="button"
+    class="modal-scrim"
+    aria-label="Close pack dialog"
+    disabled={phase === 'packing'}
+    on:click={dismiss}
+  ></button>
   <div class="create-modal" aria-label="Pack workbench artifact" role="dialog" aria-modal="true">
     <header class="create-modal__header">
       <div>
         <p class="eyebrow">Pack artifact</p>
         <h2>{artifact.name}</h2>
       </div>
-      <button type="button" class="button-icon button-icon--quiet" aria-label="Close pack dialog" on:click={onClose}>×</button>
+      <button
+        type="button"
+        class="button-icon button-icon--quiet"
+        aria-label="Close pack dialog"
+        disabled={phase === 'packing'}
+        on:click={dismiss}
+      >×</button>
     </header>
 
     <dl class="pack-modal__info">

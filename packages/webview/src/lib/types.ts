@@ -242,6 +242,7 @@ export interface ArtifactBrowserPackArtifactPayload {
 }
 
 export interface ArtifactBrowserPackCompletedPayload {
+  stableId: string;
   ok: boolean;
   outputPath?: string;
   error?: string;

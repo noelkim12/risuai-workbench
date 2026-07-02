@@ -289,9 +289,12 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async packArtifact(payload: ArtifactBrowserPackArtifactPayload, _webview: vscode.Webview): Promise<void> {
-    const selectedCard = this.currentCards.find((card) => card.stableId === payload.stableId);
+    const stableId = payload.stableId;
+    const selectedCard = this.currentCards.find((card) => card.stableId === stableId);
     if (!selectedCard) {
-      this.postMessage(createArtifactBrowserPackCompletedMessage({ ok: false, error: 'Selected artifact not found.' }));
+      this.postMessage(
+        createArtifactBrowserPackCompletedMessage({ stableId, ok: false, error: 'Selected artifact not found.' }),
+      );
       return;
     }
 
@@ -299,22 +302,24 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     if (!workspaceRoot) {
       const error = 'Open a workspace folder before packing a RisuAI artifact.';
       void vscode.window.showErrorMessage(error);
-      this.postMessage(createArtifactBrowserPackCompletedMessage({ ok: false, error }));
+      this.postMessage(createArtifactBrowserPackCompletedMessage({ stableId, ok: false, error }));
       return;
     }
 
+    let archivedPath: string | undefined;
+    let finalPath: string | undefined;
     try {
       const rootFsPath = vscode.Uri.parse(selectedCard.rootUri).fsPath;
       const { formatArgs, ext } = resolvePackFormat(selectedCard);
       const baseName = sanitizePackFilename(selectedCard.name, 'artifact');
       const outDir = path.join(rootFsPath, 'out');
       fs.mkdirSync(outDir, { recursive: true });
-      const finalPath = path.join(outDir, `${baseName}${ext}`);
+      finalPath = path.join(outDir, `${baseName}${ext}`);
 
       if (fs.existsSync(finalPath)) {
         const stat = fs.statSync(finalPath);
         const timestamp = formatCompactTimestamp(new Date(pickCollisionTimestampMs(stat.birthtimeMs, stat.mtimeMs)));
-        const archivedPath = path.join(outDir, `${timestamp}_${baseName}${ext}`);
+        archivedPath = pickUniqueArchivePath(outDir, timestamp, baseName, ext);
         fs.renameSync(finalPath, archivedPath);
       }
 
@@ -322,11 +327,14 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
       await runRisuCoreCli(['pack', '--in', rootFsPath, '--out', finalPath, ...formatArgs, ...recoveryArgs], workspaceRoot);
 
       void vscode.window.showInformationMessage(`Packed → ${finalPath}`);
-      this.postMessage(createArtifactBrowserPackCompletedMessage({ ok: true, outputPath: finalPath }));
+      this.postMessage(createArtifactBrowserPackCompletedMessage({ stableId, ok: true, outputPath: finalPath }));
     } catch (error) {
+      if (archivedPath && finalPath && !fs.existsSync(finalPath) && fs.existsSync(archivedPath)) {
+        fs.renameSync(archivedPath, finalPath);
+      }
       const message = getErrorMessage(error);
       void vscode.window.showErrorMessage(`Pack failed: ${message}`);
-      this.postMessage(createArtifactBrowserPackCompletedMessage({ ok: false, error: message }));
+      this.postMessage(createArtifactBrowserPackCompletedMessage({ stableId, ok: false, error: message }));
     }
   }
 
@@ -890,6 +898,16 @@ function resolveUniqueWorkspacePath(workspaceRoot: string, baseName: string): st
   let suffix = 1;
   while (fs.existsSync(candidate)) {
     candidate = path.join(workspaceRoot, `${baseName}_${suffix}`);
+    suffix += 1;
+  }
+  return candidate;
+}
+
+function pickUniqueArchivePath(outDir: string, timestamp: string, baseName: string, ext: string): string {
+  let candidate = path.join(outDir, `${timestamp}_${baseName}${ext}`);
+  let suffix = 1;
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(outDir, `${timestamp}_${baseName}-${suffix}${ext}`);
     suffix += 1;
   }
   return candidate;
