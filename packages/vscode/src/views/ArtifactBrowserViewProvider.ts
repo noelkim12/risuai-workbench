@@ -50,6 +50,7 @@ const MODULE_MARKER_FILENAME = '.risumodule';
 const IMPORT_FILE_FILTERS = {
   'RisuAI artifacts': ['charx', 'png', 'risum', 'risup', 'risupreset', 'preset', 'json'],
 };
+const MODULE_TABLE_IMPORT_EXTENSIONS = new Set(['.charx', '.risum']);
 const SECTION_CREATE_CONFIGS = {
   lorebooks: {
     directoryName: 'lorebooks',
@@ -266,7 +267,7 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     }
 
     try {
-      await runRisuCoreCli(['extract', importedFile], workspaceRoot);
+      await runRisuCoreCli(createImportExtractArgs(importedFile), workspaceRoot);
       void vscode.window.showInformationMessage(`Imported ${path.basename(importedFile)}.`);
     } catch (error) {
       void vscode.window.showErrorMessage(`Import failed: ${getErrorMessage(error)}`);
@@ -899,6 +900,14 @@ function runRisuCoreCli(args: string[], cwd: string): Promise<void> {
       reject(new Error((stderr.trim() || stdout.trim() || `risu-core exited with code ${code}`).slice(0, 2000)));
     });
   });
+}
+
+function createImportExtractArgs(importedFile: string): string[] {
+  const extractArgs = ['extract', importedFile];
+  if (MODULE_TABLE_IMPORT_EXTENSIONS.has(path.extname(importedFile).toLowerCase())) {
+    extractArgs.push('--risulua-mode', 'modular', '--risulua-split', 'module-table');
+  }
+  return extractArgs;
 }
 
 function patchScaffoldRootMarker(outDir: string, payload: ArtifactBrowserCreateArtifactPayload): void {
