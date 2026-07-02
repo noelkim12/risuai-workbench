@@ -329,7 +329,11 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
       this.postMessage(createArtifactBrowserPackCompletedMessage({ stableId, ok: true, outputPath: finalPath }));
     } catch (error) {
       if (archivedPath && finalPath && !fs.existsSync(finalPath) && fs.existsSync(archivedPath)) {
-        fs.renameSync(archivedPath, finalPath);
+        try {
+          fs.renameSync(archivedPath, finalPath);
+        } catch (restoreError) {
+          console.warn(`Failed to restore archived artifact ${archivedPath} to ${finalPath}: ${getErrorMessage(restoreError)}`);
+        }
       }
       const message = getErrorMessage(error);
       void vscode.window.showErrorMessage(`Pack failed: ${message}`);
