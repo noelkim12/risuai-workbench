@@ -27,6 +27,7 @@ import {
   type BrowserArtifactCard,
   type ArtifactBrowserExtensionMessage,
   type ArtifactBrowserDetailPayload,
+  type ArtifactBrowserPackCompletedPayload,
   type CharacterItem,
   type CharacterSection,
 } from './lib/types';
@@ -65,6 +66,7 @@ type ArtifactBrowserExtensionMessageGuard = (message: unknown) => message is Art
 const ARTIFACT_BROWSER_EXTENSION_MESSAGE_TYPES = [
   'artifact-browser/cards',
   'artifact-browser/detailLoaded',
+  'artifact-browser/packCompleted',
 ] as const satisfies readonly ArtifactBrowserExtensionMessageType[];
 
 const ARTIFACT_BROWSER_EXTENSION_MESSAGE_GUARDS = {
@@ -75,6 +77,10 @@ const ARTIFACT_BROWSER_EXTENSION_MESSAGE_GUARDS = {
   'artifact-browser/detailLoaded': createArtifactBrowserExtensionMessageGuard(
     'artifact-browser/detailLoaded',
     isArtifactBrowserDetailPayload,
+  ),
+  'artifact-browser/packCompleted': createArtifactBrowserExtensionMessageGuard(
+    'artifact-browser/packCompleted',
+    isArtifactBrowserPackCompletedPayload,
   ),
 } satisfies Record<ArtifactBrowserExtensionMessageType, ArtifactBrowserExtensionMessageGuard>;
 
@@ -336,6 +342,10 @@ function isArtifactBrowserCardsPayload(payload: unknown): payload is ArtifactBro
 
 function isArtifactBrowserDetailPayload(payload: unknown): payload is ArtifactBrowserDetailPayload {
   return isPlainRecord(payload) && typeof payload.stableId === 'string' && Array.isArray(payload.sections);
+}
+
+function isArtifactBrowserPackCompletedPayload(payload: unknown): payload is ArtifactBrowserPackCompletedPayload {
+  return isPlainRecord(payload) && typeof payload.ok === 'boolean';
 }
 
 function isArtifactBrowserExtensionMessageType(value: unknown): value is ArtifactBrowserExtensionMessageType {
