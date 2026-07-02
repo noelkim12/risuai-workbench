@@ -110,8 +110,8 @@ test('resolvePackFormat maps every module sourceFormat to risum flags (module fi
   }
 });
 
-test('sanitizePackFilename replaces reserved chars and trims trailing dots/spaces', () => {
-  assert.equal(sanitizePackFilename('a/b:c*?"<>|d'), 'a_b_c_____d');
+test('sanitizePackFilename replaces reserved chars, keeps inner spaces, trims trailing dots/spaces', () => {
+  assert.equal(sanitizePackFilename('a/b:c*?"<>|d'), 'a_b_c______d');
   assert.equal(sanitizePackFilename('  spaced name  '), 'spaced name');
   assert.equal(sanitizePackFilename('trailing...'), 'trailing');
 });
@@ -173,8 +173,7 @@ export function resolvePackFormat(input: {
   return { formatArgs: ['--format', 'charx'], ext: '.charx', label: 'charx' };
 }
 
-// biome-ignore lint/suspicious/noControlCharactersInRegex: strip filesystem-illegal control chars.
-const RESERVED_FILENAME_CHARS = /[\\/:*?"<>| -]/g;
+const RESERVED_FILENAME_CHARS = /[\\/:*?"<>|]/g;
 const TRAILING_DOTS_SPACES = /[.\s]+$/;
 
 /**
