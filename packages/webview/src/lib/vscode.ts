@@ -18,6 +18,8 @@ import {
   type ArtifactBrowserMoveLorebookItemMessage,
   type ArtifactBrowserMoveRegexItemMessage,
   type ArtifactBrowserOpenItemMessage,
+  type ArtifactBrowserPackArtifactMessage,
+  type ArtifactBrowserPackArtifactPayload,
   type ArtifactBrowserReadyMessage,
   type ArtifactBrowserRefreshMessage,
   type ArtifactBrowserSelectMessage,
@@ -108,6 +110,12 @@ export function createArtifactBrowserImportArtifactMessage(
     viewId: ARTIFACT_BROWSER_VIEW_ID,
     ...payload,
   });
+}
+
+export function createArtifactBrowserPackArtifactMessage(
+  payload: ArtifactBrowserPackArtifactPayload,
+): ArtifactBrowserPackArtifactMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/packArtifact', payload);
 }
 
 /**
