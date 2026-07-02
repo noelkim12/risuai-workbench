@@ -12,6 +12,7 @@ import {
   createArtifactBrowserMoveLorebookItemMessage,
   createArtifactBrowserMoveRegexItemMessage,
   createArtifactBrowserOpenItemMessage,
+  createArtifactBrowserPackArtifactMessage,
   createArtifactBrowserReadyMessage,
   createArtifactBrowserRefreshMessage,
   createArtifactBrowserSelectMessage,
@@ -49,6 +50,7 @@ const expandedSectionIds = writable<string[]>([
 ]);
 const viewMode = writable<'artifacts' | 'artifactDetail'>('artifacts');
 const status = writable('Connecting to extension host…');
+const packState = writable<ArtifactBrowserPackCompletedPayload | null>(null);
 const app = document.querySelector<HTMLDivElement>('#app');
 const isEditorMode = document.documentElement.dataset.editorMode === 'true';
 const webviewName =
@@ -117,6 +119,8 @@ if (isEditorMode && webviewName === 'main-editor') {
       moveLorebookFolder,
       moveRegexItem,
       createSectionEntry,
+      packArtifact,
+      packState,
     },
   });
 
@@ -171,6 +175,17 @@ function handleMessage(event: MessageEvent<unknown>): void {
     expandedSectionIds.update((current) => mergeExpandedSections(current, message.payload.sections));
     viewMode.set('artifactDetail');
     setStatus(`Detail loaded with ${message.payload.sections.length} sections.`);
+    return;
+  }
+
+  if (message.type === 'artifact-browser/packCompleted') {
+    packState.set(message.payload);
+    setStatus(
+      message.payload.ok
+        ? `Packed → ${message.payload.outputPath}`
+        : `Pack failed: ${message.payload.error ?? 'unknown error'}`,
+    );
+    return;
   }
 }
 
@@ -207,6 +222,19 @@ async function importArtifact(file: File): Promise<void> {
   detailSections.set([]);
   const dataBase64 = encodeArrayBufferAsBase64(await file.arrayBuffer());
   vscode?.postMessage(createArtifactBrowserImportArtifactMessage({ fileName: file.name, dataBase64 }));
+}
+
+/**
+ * packArtifact 함수.
+ * Pack 요청을 typed webview-to-extension message로 전달하고 완료 상태를 초기화함.
+ *
+ * @param stableId - Pack 대상 artifact stable id
+ * @param recovery - RisuLua 복원 메타데이터 포함 여부
+ */
+function packArtifact(stableId: string, recovery: boolean): void {
+  packState.set(null);
+  setStatus('Packing…');
+  vscode?.postMessage(createArtifactBrowserPackArtifactMessage({ stableId, recovery }));
 }
 
 /**

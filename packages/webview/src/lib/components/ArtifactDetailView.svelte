@@ -13,12 +13,16 @@
   import CharacterAccordion from './sidebar/WorkbenchAccordions.svelte';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
   import StatusBadge from './StatusBadge.svelte';
+  // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
+  import PackArtifactModal from './PackArtifactModal.svelte';
 
   export let artifact: BrowserArtifactCard;
   export let sections: CharacterSection[];
   export let expandedSectionIds: string[];
   export let status: string;
+  export let packState: import('svelte/store').Writable<import('../types').ArtifactBrowserPackCompletedPayload | null>;
   export let onBack: () => void;
+  export let onPackArtifact: (stableId: string, recovery: boolean) => void;
   export let onToggleSection: (sectionId: string) => void;
   export let onOpenItem: (item: CharacterItem) => void;
   export let onMoveLorebookItem: (
@@ -40,6 +44,24 @@
     artifact.artifactKind === 'module'
       ? `${artifact.namespace ?? artifact.sourceFormat} · ${artifact.sourceFormat}`
       : `${artifact.creator} · ${artifact.sourceFormat} · v${artifact.characterVersion}`;
+
+  let isPackModalOpen = false;
+
+  /**
+   * openPackModal 함수.
+   * Pack dialog를 연다.
+   */
+  function openPackModal(): void {
+    isPackModalOpen = true;
+  }
+
+  /**
+   * closePackModal 함수.
+   * Pack dialog를 닫는다.
+   */
+  function closePackModal(): void {
+    isPackModalOpen = false;
+  }
 </script>
 
 <main class="browser-shell detail-shell" aria-label={`Risu ${detailLabel}`}>
@@ -51,7 +73,10 @@
       <h1>{artifact.name}</h1>
       <p class="detail-header__meta">{detailMeta}</p>
     </div>
-    <StatusBadge status={artifact.status} />
+    <div class="detail-header__actions">
+      <button type="button" class="button-secondary" on:click={openPackModal}>Pack</button>
+      <StatusBadge status={artifact.status} />
+    </div>
   </header>
 
   <p class="bridge-status" id="status-text">{status}</p>
@@ -72,3 +97,20 @@
     {onCreateSectionEntry}
   />
 </main>
+
+{#if isPackModalOpen}
+  <PackArtifactModal
+    {artifact}
+    packState={packState}
+    onConfirm={(recovery) => onPackArtifact(artifact.stableId, recovery)}
+    onClose={closePackModal}
+  />
+{/if}
+
+<style>
+  .detail-header__actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+</style>
