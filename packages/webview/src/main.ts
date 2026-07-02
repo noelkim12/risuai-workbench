@@ -373,7 +373,7 @@ function isArtifactBrowserDetailPayload(payload: unknown): payload is ArtifactBr
 }
 
 function isArtifactBrowserPackCompletedPayload(payload: unknown): payload is ArtifactBrowserPackCompletedPayload {
-  return isPlainRecord(payload) && typeof payload.ok === 'boolean';
+  return isPlainRecord(payload) && typeof payload.stableId === 'string' && typeof payload.ok === 'boolean';
 }
 
 function isArtifactBrowserExtensionMessageType(value: unknown): value is ArtifactBrowserExtensionMessageType {
