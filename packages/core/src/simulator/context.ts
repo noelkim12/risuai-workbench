@@ -69,6 +69,7 @@ export function createDefaultCbsSimulationContext(
     characterLabel: overrides.characterLabel ?? 'Character',
     role: overrides.role,
     chatIndex: overrides.chatIndex,
+    lastMessageId: overrides.lastMessageId,
     isFirstMessage: overrides.isFirstMessage,
     lorePositions: overrides.lorePositions ? { ...overrides.lorePositions } : undefined,
     chatHistory: overrides.chatHistory ? overrides.chatHistory.map(cloneChatHistoryEntry) : undefined,

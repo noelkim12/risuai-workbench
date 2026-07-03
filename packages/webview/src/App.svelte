@@ -55,6 +55,7 @@ export let createSectionEntry: (
   targetFolderPath?: string,
 ) => void;
 export let packArtifact: (stableId: string, recovery: boolean) => void;
+export let analyzeArtifact: (stableId: string) => void;
 export let packState: Writable<ArtifactBrowserPackCompletedPayload | null>;
 
 $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId);
@@ -68,6 +69,7 @@ $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId)
     status={$status}
     packState={packState}
     onBack={returnToCards}
+    onAnalyzeArtifact={analyzeArtifact}
     onPackArtifact={packArtifact}
     onToggleSection={toggleSection}
     onOpenItem={openItem}

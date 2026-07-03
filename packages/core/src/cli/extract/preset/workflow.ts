@@ -13,7 +13,7 @@ import {
   phase6_extractProviderSettings,
   phase7_extractPromptSettings,
   phase8_extractRegexAndAdvanced,
-} from './phases';
+} from './phases/index';
 
 const HELP_TEXT = `
   RisuAI Preset Extractor

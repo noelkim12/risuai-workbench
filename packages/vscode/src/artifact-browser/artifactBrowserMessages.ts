@@ -7,6 +7,8 @@ import {
   ARTIFACT_BROWSER_PROTOCOL,
   ARTIFACT_BROWSER_PROTOCOL_VERSION,
   ARTIFACT_BROWSER_VIEW_ID,
+  type ArtifactBrowserAnalyzeArtifactMessage,
+  type ArtifactBrowserAnalyzeArtifactPayload,
   type ArtifactBrowserCreateArtifactMessage,
   type ArtifactBrowserCreateArtifactPayload,
   type ArtifactBrowserCreateSectionEntryMessage,
@@ -54,6 +56,7 @@ type ArtifactBrowserInboundMessage =
   | ArtifactBrowserCreateArtifactMessage
   | ArtifactBrowserImportArtifactMessage
   | ArtifactBrowserPackArtifactMessage
+  | ArtifactBrowserAnalyzeArtifactMessage
   | ArtifactBrowserSelectMessage
   | ArtifactBrowserOpenItemMessage
   | ArtifactBrowserMoveLorebookItemMessage
@@ -173,6 +176,11 @@ const isArtifactBrowserPackArtifactPayload: ArtifactBrowserPayloadGuard<Artifact
   payload.stableId.length > 0 &&
   typeof payload.recovery === 'boolean';
 
+const isArtifactBrowserAnalyzeArtifactPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserAnalyzeArtifactPayload> = (
+  payload,
+): payload is ArtifactBrowserAnalyzeArtifactPayload =>
+  isPlainRecord(payload) && typeof payload.stableId === 'string' && payload.stableId.length > 0;
+
 const isArtifactBrowserReadyMessageEnvelope = createArtifactBrowserMessageGuard<ArtifactBrowserReadyMessage>(
   'artifact-browser/ready',
   isArtifactBrowserViewPayload,
@@ -199,6 +207,12 @@ const isArtifactBrowserPackArtifactMessageEnvelope =
   createArtifactBrowserMessageGuard<ArtifactBrowserPackArtifactMessage>(
     'artifact-browser/packArtifact',
     isArtifactBrowserPackArtifactPayload,
+  );
+
+const isArtifactBrowserAnalyzeArtifactMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserAnalyzeArtifactMessage>(
+    'artifact-browser/analyzeArtifact',
+    isArtifactBrowserAnalyzeArtifactPayload,
   );
 
 const isArtifactBrowserSelectMessageEnvelope = createArtifactBrowserMessageGuard<ArtifactBrowserSelectMessage>(
@@ -273,6 +287,12 @@ export function isArtifactBrowserPackArtifactMessage(
   message: unknown,
 ): message is ArtifactBrowserPackArtifactMessage {
   return isArtifactBrowserPackArtifactMessageEnvelope(message);
+}
+
+export function isArtifactBrowserAnalyzeArtifactMessage(
+  message: unknown,
+): message is ArtifactBrowserAnalyzeArtifactMessage {
+  return isArtifactBrowserAnalyzeArtifactMessageEnvelope(message);
 }
 
 /**

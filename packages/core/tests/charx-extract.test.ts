@@ -414,6 +414,67 @@ describe('charx extract integration (canonical mode)', () => {
     expect(luaContent).toContain('Hello from trigger!');
   });
 
+  it('extracts Risu toggles to canonical .risutoggle file', async () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-toggle-extract-'));
+    tempDirs.push(workDir);
+
+    const charxPath = path.join(workDir, 'toggle.charx');
+    const charxData = {
+      spec: 'chara_card_v3',
+      spec_version: '3.0',
+      data: {
+        name: 'Toggle Character',
+        description: 'Test description',
+        extensions: {
+          risuai: {
+            toggles: 'battle-mode=전투 모드',
+          },
+        },
+      },
+    };
+    writeFileSync(
+      charxPath,
+      Buffer.from(zipSync({ 'charx.json': strToU8(JSON.stringify(charxData, null, 2)) }, { level: 0 })),
+    );
+
+    const outDir = path.join(workDir, 'output');
+    const exitCode = await runCharacterExtractWorkflow([charxPath, '--out', outDir]);
+
+    expect(exitCode).toBe(0);
+    expect(readFileSync(path.join(outDir, 'toggle', 'Toggle_Character.risutoggle'), 'utf-8')).toBe(
+      'battle-mode=전투 모드',
+    );
+  });
+
+  it('extracts empty variable and toggle scaffolds when charx fields are missing', async () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-empty-scaffold-'));
+    tempDirs.push(workDir);
+
+    const charxPath = path.join(workDir, 'empty-scaffold.charx');
+    const charxData = {
+      spec: 'chara_card_v3',
+      spec_version: '3.0',
+      data: {
+        name: 'Empty Scaffold Character',
+        description: 'Test description',
+        extensions: {
+          risuai: {},
+        },
+      },
+    };
+    writeFileSync(
+      charxPath,
+      Buffer.from(zipSync({ 'charx.json': strToU8(JSON.stringify(charxData, null, 2)) }, { level: 0 })),
+    );
+
+    const outDir = path.join(workDir, 'output');
+    const exitCode = await runCharacterExtractWorkflow([charxPath, '--out', outDir]);
+
+    expect(exitCode).toBe(0);
+    expect(readFileSync(path.join(outDir, 'variables', 'Empty_Scaffold_Character.risuvar'), 'utf-8')).toBe('');
+    expect(readFileSync(path.join(outDir, 'toggle', 'Empty_Scaffold_Character.risutoggle'), 'utf-8')).toBe('');
+  });
+
   it('risulua extract modular writes main', async () => {
     const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-modular-lua-extract-'));
     tempDirs.push(workDir);
@@ -742,7 +803,7 @@ describe('charx extract integration (canonical mode)', () => {
     expect(existsSync(path.join(outDir, 'character', 'additional_text.txt'))).toBe(false);
     expect(existsSync(path.join(outDir, 'character', 'alternate_greetings.json'))).toBe(false);
 
-    // .risutoggle should NOT exist for charx (module/preset only)
+    // Risu toggles are emitted as canonical toggle artifacts when present.
     expect(existsSync(path.join(outDir, 'character', 'module.risutoggle'))).toBe(false);
 
     // Canonical lorebooks

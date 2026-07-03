@@ -1,14 +1,13 @@
 # `.risutoggle` LLM authoring template
 
-Use this guide when a `module` or `preset` workspace contains toggle configuration. `.risutoggle` is a raw toggle DSL surface, not CBS.
+Use this guide when a `charx`, `module`, or `preset` workspace contains toggle configuration. `.risutoggle` is a raw toggle DSL surface, not CBS.
 
 ## Canonical location
 
 - Directory: `toggle/`
 - Extension: `.risutoggle`
-- Targets: `module`, `preset`
-- Unsupported target: `charx`
-- Module filename: usually `toggle/<targetName>.risutoggle`
+- Targets: `charx`, `module`, `preset`
+- Character/module filename: usually `toggle/<targetName>.risutoggle`
 - Preset filename: `toggle/prompt_template.risutoggle`
 
 ## Frontmatter
@@ -30,3 +29,4 @@ another_toggle=Show advanced output
 2. Do not insert CBS macros unless the user explicitly wants literal text inside the DSL.
 3. Only one `.risutoggle` file is supported per target; do not create duplicates.
 4. For module workspaces, `.risumodule` must not contain `customModuleToggle`; the toggle payload belongs here.
+5. For character workspaces, extracted RisuAI toggles round-trip through `data.extensions.risuai.toggles`.

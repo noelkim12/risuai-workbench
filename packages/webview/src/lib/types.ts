@@ -241,6 +241,10 @@ export interface ArtifactBrowserPackArtifactPayload {
   recovery: boolean;
 }
 
+export interface ArtifactBrowserAnalyzeArtifactPayload {
+  stableId: string;
+}
+
 export interface ArtifactBrowserPackCompletedPayload {
   stableId: string;
   ok: boolean;
@@ -328,6 +332,11 @@ export type ArtifactBrowserPackArtifactMessage = MessageEnvelope<
   ArtifactBrowserPackArtifactPayload
 >;
 
+export type ArtifactBrowserAnalyzeArtifactMessage = MessageEnvelope<
+  'artifact-browser/analyzeArtifact',
+  ArtifactBrowserAnalyzeArtifactPayload
+>;
+
 export type ArtifactBrowserPackCompletedMessage = MessageEnvelope<
   'artifact-browser/packCompleted',
   ArtifactBrowserPackCompletedPayload
@@ -374,6 +383,7 @@ export type ArtifactBrowserWebviewMessage =
   | ArtifactBrowserCreateArtifactMessage
   | ArtifactBrowserImportArtifactMessage
   | ArtifactBrowserPackArtifactMessage
+  | ArtifactBrowserAnalyzeArtifactMessage
   | ArtifactBrowserSelectMessage
   | ArtifactBrowserOpenItemMessage
   | ArtifactBrowserMoveLorebookItemMessage

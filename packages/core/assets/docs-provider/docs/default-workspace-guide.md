@@ -60,7 +60,7 @@ Edit these files as the source of truth.
 | Regex scripts | `regex/**/*.risuregex` | Preserve `regex/_order.json` and stage-specific types such as `editdisplay`, `editoutput`, and `editprocess`. |
 | RisuLua | `lua/main.risulua`, `lua/**/*.risulua` | Edit source modules under `lua/`; use `lua/main.risulua` as the composition root. |
 | Variables | `variables/*.risuvar` | Default variable definitions and state-related authoring surface. |
-| Module toggles | `toggle/*.risutoggle` | Module toggle payloads belong here, not in `.risumodule`. |
+| Toggles | `toggle/*.risutoggle` | Character/module/preset toggle payloads belong here; module toggles do not belong in `.risumodule`. |
 | Background UI | `html/background.risuhtml` | Background HTML/CSS extracted from character or module UI settings. |
 | Assets | `assets/manifest.json`, `assets/**` | Asset manifest tracks extracted or skipped assets; binary files live under `assets/`. |
 | Preset prompts | `prompt_template/*.risuprompt` | Preset scaffold prompt templates and ordering. |

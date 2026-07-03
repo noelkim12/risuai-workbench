@@ -12,6 +12,7 @@ import { cloneRange, sourceForRange } from '../engine/source-range';
 import type { SourceInfo } from '../engine/source-range';
 import { pushTrace } from '../engine/trace';
 import type { TraceState } from '../engine/trace';
+import { stringifyVariableValue } from '../values';
 import {
   findLatestUserMessageTimestamps,
   findPreviousChatHistoryContentByRole,
@@ -189,6 +190,15 @@ function evaluateIsFirstMessageMacro(node: MacroCallNode, state: ContextualState
 
 /** evaluateLastMessageIdMacro 함수. 명시 chatHistory의 마지막 zero-based index만 반환함. */
 function evaluateLastMessageIdMacro(node: MacroCallNode, state: ContextualState): string {
+  if (state.explicitContextKeys.has('lastMessageId') && state.context.lastMessageId !== undefined) {
+    const value = stringifyContextualLastMessageId(state.context.lastMessageId);
+    pushProviderTrace(state, node, 'resolved lastmessageid from explicit context', {
+      source: 'context.lastMessageId',
+      value,
+    });
+    return value;
+  }
+
   if (!state.explicitContextKeys.has('chatHistory') || state.context.chatHistory === undefined) {
     return preserveContextMacro(node, state, 'context.chatHistory');
   }
@@ -199,6 +209,10 @@ function evaluateLastMessageIdMacro(node: MacroCallNode, state: ContextualState)
     value,
   });
   return value;
+}
+
+function stringifyContextualLastMessageId(value: string | number | null): string {
+  return value === null ? 'null' : stringifyVariableValue(value);
 }
 
 /** evaluatePreviousChatLogMacro 함수. 명시 chatHistory의 indexed message content 또는 Out of range를 반환함. */

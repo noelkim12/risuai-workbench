@@ -15,6 +15,11 @@ import {
   extractHtmlFromCharx,
   serializeHtmlContent,
 } from '@/domain/custom-extension/extensions/html';
+import {
+  buildTogglePath,
+  extractToggleFromCharx,
+  serializeToggleContent,
+} from '@/domain/custom-extension/extensions/toggle';
 import { toPosix } from '@/domain/lorebook/folders';
 import type { ExtractedAssetManifest } from './types';
 
@@ -34,6 +39,7 @@ const CANONICAL_RISUAI_KEYS = new Set([
   'defaultVariables',
   'lowLevelAccess',
   'triggerscript',
+  'toggles',
   'utilityBot',
   '_moduleLorebook',
 ]);
@@ -174,22 +180,19 @@ export function phase7_extractVariables(charx: any, outputDir: string): number {
 
   // Extract canonical variables from charx using verified adapter
   const variables = extractVariablesFromCharx(charx, 'charx');
-  if (!variables) {
-    console.log('     (defaultVariables 없음)');
-    return 0;
-  }
+  const scaffoldVariables = variables ?? {};
 
   // Write as canonical .risuvar file using target-name-based naming
   const charxName = charx.data?.name || 'character';
   const sanitizedName = sanitizeFilename(charxName, 'character');
   const fileName = path.join(variablesDir, `${sanitizedName}.risuvar`);
-  writeText(fileName, serializeVariableContent(variables));
+  writeText(fileName, serializeVariableContent(scaffoldVariables));
 
-  const count = Object.keys(variables).length;
+  const count = Object.keys(scaffoldVariables).length;
   console.log(
     `     ✅ variables/${sanitizedName}.risuvar (${count}개 변수) → ${path.relative('.', variablesDir)}/`,
   );
-  return count;
+  return 1;
 }
 
 export function phase8_extractCharacterFields(
@@ -233,8 +236,10 @@ export function phase8_extractCharacterFields(
   writeJson(path.join(alternateGreetingsDir, '_order.json'), greetingOrder);
   fileCount += 1;
 
-  // Note: .risutoggle is NOT emitted for charx per spec
-  // .risutoggle is module/preset only
+  const toggle = extractToggleFromCharx(charx, 'charx') ?? '';
+  const charxName = data.name || 'character';
+  writeText(path.join(outputDir, buildTogglePath('charx', charxName)), serializeToggleContent(toggle));
+  fileCount += 1;
 
   console.log(
     `     risutext: ${CHARACTER_PROSE_FIELDS.length}개, greetings: ${greetings.length}개, manifest: .risuchar`,

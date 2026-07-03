@@ -7,6 +7,8 @@ import {
   ARTIFACT_BROWSER_PROTOCOL,
   ARTIFACT_BROWSER_PROTOCOL_VERSION,
   ARTIFACT_BROWSER_VIEW_ID,
+  type ArtifactBrowserAnalyzeArtifactMessage,
+  type ArtifactBrowserAnalyzeArtifactPayload,
   type ArtifactBrowserCreateArtifactMessage,
   type ArtifactBrowserCreateArtifactPayload,
   type ArtifactBrowserCreateSectionEntryKind,
@@ -116,6 +118,12 @@ export function createArtifactBrowserPackArtifactMessage(
   payload: ArtifactBrowserPackArtifactPayload,
 ): ArtifactBrowserPackArtifactMessage {
   return createArtifactBrowserWebviewMessage('artifact-browser/packArtifact', payload);
+}
+
+export function createArtifactBrowserAnalyzeArtifactMessage(
+  payload: ArtifactBrowserAnalyzeArtifactPayload,
+): ArtifactBrowserAnalyzeArtifactMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/analyzeArtifact', payload);
 }
 
 /**

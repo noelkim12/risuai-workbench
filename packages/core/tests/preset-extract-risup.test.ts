@@ -124,4 +124,23 @@ describe('preset extract binary risup integration', () => {
       '<toggle>{{user}}</toggle>',
     );
   });
+
+  it('extracts empty prompt template toggle scaffold when preset toggle is missing', () => {
+    const outDir = mkdtempSync(path.join(tmpdir(), 'risu-core-preset-empty-toggle-'));
+    tempDirs.push(outDir);
+
+    const sourceDir = mkdtempSync(path.join(tmpdir(), 'risu-core-preset-empty-toggle-source-'));
+    tempDirs.push(sourceDir);
+    const sourcePath = path.join(sourceDir, 'preset.json');
+    writeFileSync(
+      sourcePath,
+      `${JSON.stringify({ name: 'Preset Empty Toggle', mainPrompt: 'hello' }, null, 2)}\n`,
+      'utf-8',
+    );
+
+    const code = runPresetExtractWorkflow([sourcePath, '--out', outDir]);
+
+    expect(code).toBe(0);
+    expect(readFileSync(path.join(outDir, 'toggle', 'prompt_template.risutoggle'), 'utf-8')).toBe('');
+  });
 });

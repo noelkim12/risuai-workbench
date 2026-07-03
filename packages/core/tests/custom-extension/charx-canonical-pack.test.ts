@@ -32,6 +32,13 @@ function readPackedCharx(outPath: string): any {
   return JSON.parse(strFromU8(archive['charx.json']));
 }
 
+function readPackedModule(outPath: string): any {
+  const archive = unzipSync(readFileSync(outPath));
+  const module = parseModuleRisum(Buffer.from(archive['module.risum']));
+  expect(module).not.toBeNull();
+  return module;
+}
+
 function writeCanonicalManifest(workDir: string, overrides: Record<string, unknown> = {}): void {
   writeFileSync(
     path.join(workDir, '.risuchar'),
@@ -87,6 +94,24 @@ describe('charx canonical pack', () => {
     expect(packedCharx.data.description).toBe('canonical description');
     expect(packedCharx.data.first_mes).toBe('canonical first message');
     expect(packedCharx.data.extensions.risuai.additionalText).toBe('canonical additional text');
+  });
+
+  it('packs upstream-compatible CHARX card.json entry', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-card-json-'));
+    tempDirs.push(workDir);
+
+    const characterDir = path.join(workDir, 'character');
+    mkdirSync(characterDir, { recursive: true });
+    writeCanonicalManifest(workDir, { name: 'Card Json Character' });
+    writeFileSync(path.join(characterDir, 'description.risutext'), 'card json description', 'utf-8');
+
+    const outPath = path.join(workDir, 'packed.charx');
+    packCharx(workDir, outPath);
+    const archive = unzipSync(readFileSync(outPath));
+    const packedCharx = JSON.parse(strFromU8(archive['card.json']));
+
+    expect(packedCharx.data.name).toBe('Card Json Character');
+    expect(packedCharx.data.description).toBe('card json description');
   });
 
   it('packs canonical sidecar extensions, assets, and script safety flags', () => {
@@ -705,22 +730,76 @@ emptyValue=
     expect(packedCharx.data.extensions.risuai.defaultVariables).toContain('playerName=Hero');
     expect(packedCharx.data.extensions.risuai.defaultVariables).toContain('health=100');
     expect(packedCharx.data.extensions.risuai.defaultVariables).toContain('mana=50');
+
+    const module = readPackedModule(outPath);
+    expect(module.defaultVariables).toEqual({
+      playerName: 'Hero',
+      health: '100',
+      mana: '50',
+      emptyValue: '',
+    });
   });
 
-  it('does not include .risutoggle in charx output', () => {
-    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-toggle-check-'));
+  it('packs fallback variable files and extracted toggle filenames for root marker projects', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-root-marker-artifacts-'));
+    tempDirs.push(workDir);
+
+    const characterDir = path.join(workDir, 'character');
+    const variablesDir = path.join(workDir, 'variables');
+    const toggleDir = path.join(workDir, 'toggle');
+    mkdirSync(characterDir, { recursive: true });
+    mkdirSync(variablesDir, { recursive: true });
+    mkdirSync(toggleDir, { recursive: true });
+
+    writeCanonicalManifest(workDir, { name: 'Versioned Character v1.3' });
+    writeFileSync(path.join(characterDir, 'description.risutext'), 'root marker character', 'utf-8');
+    writeFileSync(path.join(variablesDir, 'default.risuvar'), 'route=default\nhp=100\n', 'utf-8');
+    writeFileSync(path.join(toggleDir, 'Versioned_Character_v1_3.risutoggle'), 'mode=enabled', 'utf-8');
+
+    const outPath = path.join(workDir, 'packed.charx');
+    packCharx(workDir, outPath);
+    const packedCharx = readPackedCharx(outPath);
+    const module = readPackedModule(outPath);
+
+    expect(packedCharx.data.extensions.risuai.defaultVariables).toBe('route=default\nhp=100\n');
+    expect(packedCharx.data.extensions.risuai.toggles).toBe('mode=enabled');
+    expect(module.defaultVariables).toEqual({ route: 'default', hp: '100' });
+    expect(module.customModuleToggle).toBe('mode=enabled');
+  });
+
+  it('packs empty toggles as an empty string instead of omitting the field', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-empty-toggle-'));
     tempDirs.push(workDir);
 
     const characterDir = path.join(workDir, 'character');
     mkdirSync(characterDir, { recursive: true });
+    writeCanonicalManifest(workDir, { name: 'Empty Toggle Character' });
+    writeFileSync(path.join(characterDir, 'description.risutext'), 'no toggle artifact', 'utf-8');
+
+    const outPath = path.join(workDir, 'packed.charx');
+    packCharx(workDir, outPath);
+    const packedCharx = readPackedCharx(outPath);
+    const module = readPackedModule(outPath);
+
+    expect(packedCharx.data.extensions.risuai.toggles).toBe('');
+    expect(module.customModuleToggle).toBe('');
+  });
+
+  it('includes canonical .risutoggle in charx output', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-toggle-check-'));
+    tempDirs.push(workDir);
+
+    const characterDir = path.join(workDir, 'character');
+    const toggleDir = path.join(workDir, 'toggle');
+    mkdirSync(characterDir, { recursive: true });
+    mkdirSync(toggleDir, { recursive: true });
 
     // Write minimal character
     writeFileSync(path.join(characterDir, 'description.txt'), 'test', 'utf-8');
     writeFileSync(path.join(characterDir, 'metadata.json'), `${JSON.stringify({ name: 'Toggle Test' })}
 `, 'utf-8');
 
-    // Write module.risutoggle (should be ignored for charx)
-    writeFileSync(path.join(characterDir, 'module.risutoggle'), '<module-toggle>test</module-toggle>', 'utf-8');
+    writeFileSync(path.join(toggleDir, 'Toggle_Test.risutoggle'), 'character-toggle=enabled', 'utf-8');
 
     const outPath = path.join(workDir, 'packed.charx');
     execFileSync(
@@ -735,8 +814,10 @@ emptyValue=
     const archive = unzipSync(readFileSync(outPath));
     const packedCharx = JSON.parse(strFromU8(archive['charx.json']));
 
-    // customModuleToggle should NOT be in charx extensions
-    expect(packedCharx.data.extensions.risuai.customModuleToggle).toBeUndefined();
+    expect(packedCharx.data.extensions.risuai.toggles).toBe('character-toggle=enabled');
+
+    const module = readPackedModule(outPath);
+    expect(module.customModuleToggle).toBe('character-toggle=enabled');
   });
 
   // ============================================================================

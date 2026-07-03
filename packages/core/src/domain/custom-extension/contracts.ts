@@ -90,7 +90,7 @@ export const CUSTOM_EXTENSION_ARTIFACT_CONTRACTS = Object.freeze({
     artifact: 'toggle',
     directory: 'toggle',
     suffix: '.risutoggle',
-    supportedTargets: ['module', 'preset'],
+    supportedTargets: ['charx', 'module', 'preset'],
     markerFiles: [],
     stemPolicy: 'target_name_or_fixed',
     fixedStemByTarget: {

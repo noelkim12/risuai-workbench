@@ -54,12 +54,11 @@ export function phase7_extractPromptSettings(preset: ParsedPreset, outputDir: st
       : {},
     'preset',
   );
-  if (typeof promptTemplateToggle === 'string' && promptTemplateToggle.length > 0) {
-    const outPath = path.join(outputDir, buildTogglePath('preset'));
-    writeText(outPath, serializeToggleContent(promptTemplateToggle));
-    count += 1;
-    console.log(`     ✅ ${path.relative('.', outPath)} (${promptTemplateToggle.length} chars)`);
-  }
+  const scaffoldPromptTemplateToggle = promptTemplateToggle ?? '';
+  const togglePath = path.join(outputDir, buildTogglePath('preset'));
+  writeText(togglePath, serializeToggleContent(scaffoldPromptTemplateToggle));
+  count += 1;
+  console.log(`     ✅ ${path.relative('.', togglePath)} (${scaffoldPromptTemplateToggle.length} chars)`);
 
   const schemaSettings = pickDefined(data, [
     'jsonSchemaEnabled',

@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { CustomExtensionTarget } from '../../src/domain/custom-extension/contracts';
 import {
   buildTogglePath,
+  extractToggleFromCharx,
   extractToggleFromModule,
   extractToggleFromPreset,
+  injectToggleIntoCharx,
   injectToggleIntoModule,
   injectToggleIntoPreset,
   parseToggleContent,
@@ -102,13 +104,8 @@ SoundEffect=🔊 효과음
   });
 
   describe('target discrimination', () => {
-    it('rejects charx target with clear error', () => {
-      expect(() => buildTogglePath('charx' as CustomExtensionTarget)).toThrow(
-        ToggleAdapterError
-      );
-      expect(() => buildTogglePath('charx' as CustomExtensionTarget)).toThrow(
-        /charx.*does not support.*risutoggle/
-      );
+    it('accepts charx target', () => {
+      expect(() => buildTogglePath('charx', 'test-character')).not.toThrow();
     });
 
     it('accepts module target', () => {
@@ -121,6 +118,11 @@ SoundEffect=🔊 효과음
   });
 
   describe('buildTogglePath', () => {
+    it('builds charx toggle path with target name', () => {
+      const path = buildTogglePath('charx', 'toggle character');
+      expect(path).toBe('toggle/toggle_character.risutoggle');
+    });
+
     it('builds module toggle path with target name', () => {
       const path = buildTogglePath('module', 'lightboard-module');
       expect(path).toBe('toggle/lightboard-module.risutoggle');
@@ -141,9 +143,30 @@ SoundEffect=🔊 효과음
       expect(path).toBe('toggle/라이트보드-모듈.risutoggle');
     });
 
-    it('throws for module without target name', () => {
+    it('throws for charx or module without target name', () => {
+      expect(() => buildTogglePath('charx')).toThrow(ToggleAdapterError);
+      expect(() => buildTogglePath('charx', '')).toThrow(ToggleAdapterError);
       expect(() => buildTogglePath('module')).toThrow(ToggleAdapterError);
       expect(() => buildTogglePath('module', '')).toThrow(ToggleAdapterError);
+    });
+  });
+
+  describe('extractToggleFromCharx', () => {
+    it('extracts toggle from data.extensions.risuai.toggles field', () => {
+      const charx = { data: { extensions: { risuai: { toggles: 'mode=on' } } } };
+      const result = extractToggleFromCharx(charx, 'charx');
+      expect(result).toBe('mode=on');
+    });
+
+    it('returns null when toggles is missing', () => {
+      const charx = { data: { extensions: { risuai: {} } } };
+      const result = extractToggleFromCharx(charx, 'charx');
+      expect(result).toBeNull();
+    });
+
+    it('rejects module target for charx extraction', () => {
+      const charx = { data: { extensions: { risuai: { toggles: 'content' } } } };
+      expect(() => extractToggleFromCharx(charx, 'module')).toThrow(ToggleAdapterError);
     });
   });
 
@@ -264,6 +287,22 @@ SoundEffect=🔊 효과음
           'charx' as CustomExtensionTarget
         )
       ).toThrow(ToggleAdapterError);
+    });
+  });
+
+  describe('injectToggleIntoCharx', () => {
+    it('injects toggle into data.extensions.risuai.toggles field', () => {
+      const charx = {};
+      injectToggleIntoCharx(charx, 'character-toggle=on', 'charx');
+      expect(charx).toEqual({
+        data: { extensions: { risuai: { toggles: 'character-toggle=on' } } },
+      });
+    });
+
+    it('removes toggle field when content is null', () => {
+      const charx = { data: { extensions: { risuai: { toggles: 'remove-me' } } } };
+      injectToggleIntoCharx(charx, null, 'charx');
+      expect(charx.data.extensions.risuai.toggles).toBeUndefined();
     });
   });
 

@@ -72,6 +72,8 @@ export interface CbsSimulationContext {
   role?: string;
   /** Explicit current chat/message index for chatindex macros. */
   chatIndex?: string | number;
+  /** Explicit last message index override for lastmessageid preview contexts. */
+  lastMessageId?: string | number | null;
   /** Explicit first-message flag for isfirstmsg macros. */
   isFirstMessage?: boolean;
   /** Explicit lore position text keyed by position id. */
