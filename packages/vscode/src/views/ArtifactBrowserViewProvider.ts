@@ -980,7 +980,20 @@ function runRisuCoreCli(args: string[], cwd: string): Promise<void> {
 function createImportExtractArgs(importedFile: string): string[] {
   const extractArgs = ['extract', importedFile];
   if (MODULE_TABLE_IMPORT_EXTENSIONS.has(path.extname(importedFile).toLowerCase())) {
-    extractArgs.push('--risulua-mode', 'modular', '--risulua-split', 'module-table');
+    // `--risulua-recovery full-source` lets extract restore the original modular
+    // source verbatim when the packed `main.risulua` carries an embedded recovery
+    // manifest. Without it, `risuluaRecovery` defaults to 'none' and the recovery
+    // block is decoded but ignored, so extract re-splits via module-table instead
+    // of restoring. When no recovery block is present, decode returns null and this
+    // flag has no effect (falls through to the normal module-table split path).
+    extractArgs.push(
+      '--risulua-mode',
+      'modular',
+      '--risulua-split',
+      'module-table',
+      '--risulua-recovery',
+      'full-source',
+    );
   }
   return extractArgs;
 }
