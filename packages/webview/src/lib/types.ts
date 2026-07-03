@@ -236,6 +236,18 @@ export interface ArtifactBrowserImportArtifactPayload {
   dataBase64?: string;
 }
 
+export interface ArtifactBrowserPackArtifactPayload {
+  stableId: string;
+  recovery: boolean;
+}
+
+export interface ArtifactBrowserPackCompletedPayload {
+  stableId: string;
+  ok: boolean;
+  outputPath?: string;
+  error?: string;
+}
+
 export interface ArtifactBrowserSelectPayload {
   stableId: string;
 }
@@ -311,6 +323,16 @@ export type ArtifactBrowserImportArtifactMessage = MessageEnvelope<
   ArtifactBrowserImportArtifactPayload
 >;
 
+export type ArtifactBrowserPackArtifactMessage = MessageEnvelope<
+  'artifact-browser/packArtifact',
+  ArtifactBrowserPackArtifactPayload
+>;
+
+export type ArtifactBrowserPackCompletedMessage = MessageEnvelope<
+  'artifact-browser/packCompleted',
+  ArtifactBrowserPackCompletedPayload
+>;
+
 export type ArtifactBrowserSelectMessage = MessageEnvelope<
   'artifact-browser/select',
   ArtifactBrowserSelectPayload
@@ -351,13 +373,17 @@ export type ArtifactBrowserWebviewMessage =
   | ArtifactBrowserRefreshMessage
   | ArtifactBrowserCreateArtifactMessage
   | ArtifactBrowserImportArtifactMessage
+  | ArtifactBrowserPackArtifactMessage
   | ArtifactBrowserSelectMessage
   | ArtifactBrowserOpenItemMessage
   | ArtifactBrowserMoveLorebookItemMessage
   | ArtifactBrowserMoveLorebookFolderMessage
   | ArtifactBrowserMoveRegexItemMessage
   | ArtifactBrowserCreateSectionEntryMessage;
-export type ArtifactBrowserExtensionMessage = ArtifactBrowserCardsMessage | ArtifactBrowserDetailMessage;
+export type ArtifactBrowserExtensionMessage =
+  | ArtifactBrowserCardsMessage
+  | ArtifactBrowserDetailMessage
+  | ArtifactBrowserPackCompletedMessage;
 
 export type MarkerEditorReadyMessage = MessageEnvelope<'marker-editor/ready', MarkerEditorReadyPayload>;
 

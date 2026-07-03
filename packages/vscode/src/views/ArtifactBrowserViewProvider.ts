@@ -17,6 +17,7 @@ import { WorkspaceArtifactDiscoveryService } from '../artifact-browser/Workspace
 import {
   createArtifactBrowserCardsMessage,
   createArtifactBrowserDetailMessage,
+  createArtifactBrowserPackCompletedMessage,
   isArtifactBrowserCreateArtifactMessage,
   isArtifactBrowserCreateSectionEntryMessage,
   isArtifactBrowserImportArtifactMessage,
@@ -24,6 +25,7 @@ import {
   isArtifactBrowserMoveLorebookItemMessage,
   isArtifactBrowserMoveRegexItemMessage,
   isArtifactBrowserOpenItemMessage,
+  isArtifactBrowserPackArtifactMessage,
   isArtifactBrowserReadyMessage,
   isArtifactBrowserRefreshMessage,
   isArtifactBrowserSelectMessage,
@@ -34,10 +36,13 @@ import {
   type ArtifactBrowserImportArtifactPayload,
   type ArtifactBrowserCreateSectionEntryKind,
   type ArtifactBrowserCreateSectionKind,
+  type ArtifactBrowserPackArtifactPayload,
+  type ArtifactBrowserPackCompletedMessage,
   type BrowserArtifactCard,
   type BrowserItem,
   type BrowserSection,
 } from '../artifact-browser/artifactBrowserTypes';
+import { resolvePackFormat, sanitizePackFilename, formatCompactTimestamp, pickCollisionTimestampMs } from '../artifact-browser/packArtifactPlanner';
 import { MarkerEditorViewProvider } from './MarkerEditorViewProvider';
 import {
   createWebviewDevServerHtml,
@@ -50,6 +55,7 @@ const MODULE_MARKER_FILENAME = '.risumodule';
 const IMPORT_FILE_FILTERS = {
   'RisuAI artifacts': ['charx', 'png', 'risum', 'risup', 'risupreset', 'preset', 'json'],
 };
+const MODULE_TABLE_IMPORT_EXTENSIONS = new Set(['.charx', '.risum']);
 const SECTION_CREATE_CONFIGS = {
   lorebooks: {
     directoryName: 'lorebooks',
@@ -159,6 +165,11 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
           return;
         }
 
+        if (isArtifactBrowserPackArtifactMessage(message)) {
+          void this.packArtifact(message.payload, webviewView.webview);
+          return;
+        }
+
         if (isArtifactBrowserSelectMessage(message)) {
           void this.selectArtifact(message.payload.stableId);
           return;
@@ -221,7 +232,8 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
   private postMessage(
     message:
       | ReturnType<typeof createArtifactBrowserCardsMessage>
-      | ReturnType<typeof createArtifactBrowserDetailMessage>,
+      | ReturnType<typeof createArtifactBrowserDetailMessage>
+      | ArtifactBrowserPackCompletedMessage,
   ): void {
     void this.view?.webview.postMessage(message);
   }
@@ -266,13 +278,67 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     }
 
     try {
-      await runRisuCoreCli(['extract', importedFile], workspaceRoot);
+      await runRisuCoreCli(createImportExtractArgs(importedFile), workspaceRoot);
       void vscode.window.showInformationMessage(`Imported ${path.basename(importedFile)}.`);
     } catch (error) {
       void vscode.window.showErrorMessage(`Import failed: ${getErrorMessage(error)}`);
     } finally {
       removeTemporaryImportFileIfNeeded(importedFile);
       await this.sendDiscoveredCards(webview);
+    }
+  }
+
+  private async packArtifact(payload: ArtifactBrowserPackArtifactPayload, _webview: vscode.Webview): Promise<void> {
+    const stableId = payload.stableId;
+    const selectedCard = this.currentCards.find((card) => card.stableId === stableId);
+    if (!selectedCard) {
+      this.postMessage(
+        createArtifactBrowserPackCompletedMessage({ stableId, ok: false, error: 'Selected artifact not found.' }),
+      );
+      return;
+    }
+
+    const workspaceRoot = getPrimaryWorkspaceRoot();
+    if (!workspaceRoot) {
+      const error = 'Open a workspace folder before packing a RisuAI artifact.';
+      void vscode.window.showErrorMessage(error);
+      this.postMessage(createArtifactBrowserPackCompletedMessage({ stableId, ok: false, error }));
+      return;
+    }
+
+    let archivedPath: string | undefined;
+    let finalPath: string | undefined;
+    try {
+      const rootFsPath = vscode.Uri.parse(selectedCard.rootUri).fsPath;
+      const { formatArgs, ext } = resolvePackFormat(selectedCard);
+      const baseName = sanitizePackFilename(selectedCard.name, 'artifact');
+      const outDir = path.join(rootFsPath, 'out');
+      fs.mkdirSync(outDir, { recursive: true });
+      finalPath = path.join(outDir, `${baseName}${ext}`);
+
+      if (fs.existsSync(finalPath)) {
+        const stat = fs.statSync(finalPath);
+        const timestamp = formatCompactTimestamp(new Date(pickCollisionTimestampMs(stat.birthtimeMs, stat.mtimeMs)));
+        archivedPath = pickUniqueArchivePath(outDir, timestamp, baseName, ext);
+        fs.renameSync(finalPath, archivedPath);
+      }
+
+      const recoveryArgs = payload.recovery ? ['--risulua-recovery', 'full-source'] : [];
+      await runRisuCoreCli(['pack', '--in', rootFsPath, '--out', finalPath, ...formatArgs, ...recoveryArgs], workspaceRoot);
+
+      void vscode.window.showInformationMessage(`Packed → ${finalPath}`);
+      this.postMessage(createArtifactBrowserPackCompletedMessage({ stableId, ok: true, outputPath: finalPath }));
+    } catch (error) {
+      if (archivedPath && finalPath && !fs.existsSync(finalPath) && fs.existsSync(archivedPath)) {
+        try {
+          fs.renameSync(archivedPath, finalPath);
+        } catch (restoreError) {
+          console.warn(`Failed to restore archived artifact ${archivedPath} to ${finalPath}: ${getErrorMessage(restoreError)}`);
+        }
+      }
+      const message = getErrorMessage(error);
+      void vscode.window.showErrorMessage(`Pack failed: ${message}`);
+      this.postMessage(createArtifactBrowserPackCompletedMessage({ stableId, ok: false, error: message }));
     }
   }
 
@@ -841,6 +907,16 @@ function resolveUniqueWorkspacePath(workspaceRoot: string, baseName: string): st
   return candidate;
 }
 
+function pickUniqueArchivePath(outDir: string, timestamp: string, baseName: string, ext: string): string {
+  let candidate = path.join(outDir, `${timestamp}_${baseName}${ext}`);
+  let suffix = 1;
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(outDir, `${timestamp}_${baseName}-${suffix}${ext}`);
+    suffix += 1;
+  }
+  return candidate;
+}
+
 async function resolveImportFilePath(payload: ArtifactBrowserImportArtifactPayload): Promise<string | undefined> {
   if (payload.fileName && payload.dataBase64) return writeTemporaryImportFile(payload.fileName, payload.dataBase64);
 
@@ -899,6 +975,27 @@ function runRisuCoreCli(args: string[], cwd: string): Promise<void> {
       reject(new Error((stderr.trim() || stdout.trim() || `risu-core exited with code ${code}`).slice(0, 2000)));
     });
   });
+}
+
+function createImportExtractArgs(importedFile: string): string[] {
+  const extractArgs = ['extract', importedFile];
+  if (MODULE_TABLE_IMPORT_EXTENSIONS.has(path.extname(importedFile).toLowerCase())) {
+    // `--risulua-recovery full-source` lets extract restore the original modular
+    // source verbatim when the packed `main.risulua` carries an embedded recovery
+    // manifest. Without it, `risuluaRecovery` defaults to 'none' and the recovery
+    // block is decoded but ignored, so extract re-splits via module-table instead
+    // of restoring. When no recovery block is present, decode returns null and this
+    // flag has no effect (falls through to the normal module-table split path).
+    extractArgs.push(
+      '--risulua-mode',
+      'modular',
+      '--risulua-split',
+      'module-table',
+      '--risulua-recovery',
+      'full-source',
+    );
+  }
+  return extractArgs;
 }
 
 function patchScaffoldRootMarker(outDir: string, payload: ArtifactBrowserCreateArtifactPayload): void {

@@ -8,6 +8,7 @@ import type {
   ArtifactBrowserCreateArtifactPayload,
   ArtifactBrowserCreateSectionEntryKind,
   ArtifactBrowserCreateSectionKind,
+  ArtifactBrowserPackCompletedPayload,
   BrowserArtifactCard,
   CharacterItem,
   CharacterSection,
@@ -19,26 +20,42 @@ export let detailSections: Writable<CharacterSection[]>;
 export let expandedSectionIds: Writable<string[]>;
 export let viewMode: Writable<'artifacts' | 'artifactDetail'>;
 export let status: Writable<string>;
+
+// Listener props are injected from packages/webview/src/main.ts in mount(App, { props }).
+// App.svelte does not own these actions; it only routes them to the active child view.
+// From main.ts: refreshCards() -> SidebarView.onRefresh.
 export let refreshCards: () => void;
+// From main.ts: createArtifact() -> SidebarView.onCreateArtifact.
 export let createArtifact: (payload: ArtifactBrowserCreateArtifactPayload) => void;
+// From main.ts: importArtifact() -> SidebarView.onImportArtifact.
 export let importArtifact: (file: File) => void;
+// From main.ts: selectCard() -> SidebarView.onSelect.
 export let selectCard: (stableId: string) => void;
+// From main.ts: returnToCards() -> ArtifactDetailView.onBack.
 export let returnToCards: () => void;
+// From main.ts: toggleSection() -> ArtifactDetailView.onToggleSection.
 export let toggleSection: (sectionId: string) => void;
+// From main.ts: openItem() -> ArtifactDetailView.onOpenItem.
 export let openItem: (item: CharacterItem) => void;
+// From main.ts: moveLorebookItem() -> ArtifactDetailView.onMoveLorebookItem.
 export let moveLorebookItem: (
   item: CharacterItem,
   targetFolderPath: string | null,
   placement?: 'inside' | 'before' | 'after',
   targetItemId?: string,
 ) => void;
+// From main.ts: moveLorebookFolder() -> ArtifactDetailView.onMoveLorebookFolder.
 export let moveLorebookFolder: (folderPath: string, targetFolderPath: string, placement: 'before' | 'after') => void;
+// From main.ts: moveRegexItem() -> ArtifactDetailView.onMoveRegexItem.
 export let moveRegexItem: (item: CharacterItem, targetItemId: string, placement: 'before' | 'after') => void;
+// From main.ts: createSectionEntry() -> ArtifactDetailView.onCreateSectionEntry.
 export let createSectionEntry: (
   sectionKind: ArtifactBrowserCreateSectionKind,
   entryKind: ArtifactBrowserCreateSectionEntryKind,
   targetFolderPath?: string,
 ) => void;
+export let packArtifact: (stableId: string, recovery: boolean) => void;
+export let packState: Writable<ArtifactBrowserPackCompletedPayload | null>;
 
 $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId);
 </script>
@@ -49,7 +66,9 @@ $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId)
     sections={$detailSections}
     expandedSectionIds={$expandedSectionIds}
     status={$status}
+    packState={packState}
     onBack={returnToCards}
+    onPackArtifact={packArtifact}
     onToggleSection={toggleSection}
     onOpenItem={openItem}
     onMoveLorebookItem={moveLorebookItem}
