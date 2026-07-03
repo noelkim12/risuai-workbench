@@ -29,6 +29,10 @@ import {
   type ArtifactBrowserRefreshMessage,
   type ArtifactBrowserImportArtifactMessage,
   type ArtifactBrowserImportArtifactPayload,
+  type ArtifactBrowserPackArtifactMessage,
+  type ArtifactBrowserPackArtifactPayload,
+  type ArtifactBrowserPackCompletedMessage,
+  type ArtifactBrowserPackCompletedPayload,
   type ArtifactBrowserSelectPayload,
   type ArtifactBrowserSelectMessage,
 } from './artifactBrowserTypes';
@@ -49,6 +53,7 @@ type ArtifactBrowserInboundMessage =
   | ArtifactBrowserRefreshMessage
   | ArtifactBrowserCreateArtifactMessage
   | ArtifactBrowserImportArtifactMessage
+  | ArtifactBrowserPackArtifactMessage
   | ArtifactBrowserSelectMessage
   | ArtifactBrowserOpenItemMessage
   | ArtifactBrowserMoveLorebookItemMessage
@@ -160,6 +165,14 @@ const isArtifactBrowserImportArtifactPayload: ArtifactBrowserPayloadGuard<Artifa
       typeof payload.dataBase64 === 'string' &&
       payload.dataBase64.length > 0));
 
+const isArtifactBrowserPackArtifactPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserPackArtifactPayload> = (
+  payload,
+): payload is ArtifactBrowserPackArtifactPayload =>
+  isPlainRecord(payload) &&
+  typeof payload.stableId === 'string' &&
+  payload.stableId.length > 0 &&
+  typeof payload.recovery === 'boolean';
+
 const isArtifactBrowserReadyMessageEnvelope = createArtifactBrowserMessageGuard<ArtifactBrowserReadyMessage>(
   'artifact-browser/ready',
   isArtifactBrowserViewPayload,
@@ -180,6 +193,12 @@ const isArtifactBrowserImportArtifactMessageEnvelope =
   createArtifactBrowserMessageGuard<ArtifactBrowserImportArtifactMessage>(
     'artifact-browser/importArtifact',
     isArtifactBrowserImportArtifactPayload,
+  );
+
+const isArtifactBrowserPackArtifactMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserPackArtifactMessage>(
+    'artifact-browser/packArtifact',
+    isArtifactBrowserPackArtifactPayload,
   );
 
 const isArtifactBrowserSelectMessageEnvelope = createArtifactBrowserMessageGuard<ArtifactBrowserSelectMessage>(
@@ -250,6 +269,12 @@ export function isArtifactBrowserImportArtifactMessage(
   return isArtifactBrowserImportArtifactMessageEnvelope(message);
 }
 
+export function isArtifactBrowserPackArtifactMessage(
+  message: unknown,
+): message is ArtifactBrowserPackArtifactMessage {
+  return isArtifactBrowserPackArtifactMessageEnvelope(message);
+}
+
 /**
  * isArtifactBrowserSelectMessage 함수.
  * Webview selection message가 detail-view seed로 저장 가능한지 확인함.
@@ -318,7 +343,10 @@ function isSafeTargetFolderPath(value: unknown): value is string {
   );
 }
 
-type ArtifactBrowserExtensionResponse = ArtifactBrowserCardsMessage | ArtifactBrowserDetailMessage;
+type ArtifactBrowserExtensionResponse =
+  | ArtifactBrowserCardsMessage
+  | ArtifactBrowserDetailMessage
+  | ArtifactBrowserPackCompletedMessage;
 
 /**
  * createArtifactBrowserExtensionMessage 함수.
@@ -376,4 +404,17 @@ export function createArtifactBrowserDetailMessage(
     stableId,
     sections,
   });
+}
+
+/**
+ * createArtifactBrowserPackCompletedMessage 함수.
+ * Pack(export) 작업 결과를 versioned extension-host 메시지로 감쌈.
+ *
+ * @param payload - pack 작업 성공 여부와 결과 경로/에러 메시지
+ * @returns Artifact Browser pack completed message
+ */
+export function createArtifactBrowserPackCompletedMessage(
+  payload: ArtifactBrowserPackCompletedPayload,
+): ArtifactBrowserPackCompletedMessage {
+  return createArtifactBrowserExtensionMessage('artifact-browser/packCompleted', payload);
 }
