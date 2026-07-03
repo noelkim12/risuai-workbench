@@ -28,7 +28,7 @@ import {
   phase7_extractVariables,
   phase8_extractModuleIdentity,
   phase9_extractModuleToggle,
-} from './phases';
+} from './phases/index';
 
 const HELP_TEXT = `
   RisuAI Module Extractor

@@ -31,6 +31,7 @@ import {
 } from '@/domain/regex';
 import {
   parseVariableContent,
+  serializeVariableContent,
 } from '@/domain/custom-extension/extensions/variable';
 import {
   parseHtmlContent,
@@ -39,6 +40,11 @@ import {
 import {
   parseLuaContent,
 } from '@/domain/custom-extension/extensions/lua';
+import {
+  buildTogglePath,
+  injectToggleIntoCharx,
+  parseToggleContent,
+} from '@/domain/custom-extension/extensions/toggle';
 import { buildRisuLuaModularDist } from '@/cli/build/workflow';
 import {
   argValue,
@@ -75,7 +81,7 @@ ${RISULUA_RECOVERY_HELP_LINE}
     - variables/<charxName>.risuvar → extensions.risuai.defaultVariables (target-name-based naming)
     - .risuchar, character/*.risutext → character fields
     - character/*.txt, metadata.json → legacy fallback-only character fields
-    - .risutoggle is NOT supported for charx (module/preset only)
+    - toggle/<charxName>.risutoggle → extensions.risuai.toggles
     - 현재는 chara_card_v3만 지원합니다.
     - cover를 지정하지 않으면 png/jpg는 1x1 fallback 이미지를 사용합니다.
 `;
@@ -194,6 +200,7 @@ function buildCharxFromCanonical(
   mergeLuaCanonical(charx, inRoot, risuluaMode, risuluaRecovery);
   mergeHtmlCanonical(charx, inRoot);
   mergeVariablesCanonical(charx, inRoot);
+  mergeToggleCanonical(charx, inRoot);
 
   return charx;
 }
@@ -516,9 +523,14 @@ function mergeVariablesCanonical(charx: any, inRoot: string): void {
   // Determine the expected variables filename based on character name
   const charxName = charx.data?.name || 'character';
   const sanitizedName = sanitizeFilename(charxName, 'character');
-  const varPath = path.join(inRoot, 'variables', `${sanitizedName}.risuvar`);
+  const variablesDir = path.join(inRoot, 'variables');
+  const varPath = resolveArtifactPath({
+    dir: variablesDir,
+    preferredNames: [`${sanitizedName}.risuvar`, 'default.risuvar'],
+    suffix: '.risuvar',
+  });
 
-  if (!fs.existsSync(varPath)) return;
+  if (!varPath) return;
 
   try {
     const content = parseVariableContent(fs.readFileSync(varPath, 'utf-8'));
@@ -526,11 +538,10 @@ function mergeVariablesCanonical(charx: any, inRoot: string): void {
     if (!charx.data) charx.data = {};
     if (!charx.data.extensions) charx.data.extensions = {};
     if (!charx.data.extensions.risuai) charx.data.extensions.risuai = {};
-    // Convert variables object to string format
-    const varLines = Object.entries(content).map(([key, value]) => `${key}=${value}`);
-    charx.data.extensions.risuai.defaultVariables = varLines.join('\n') + (varLines.length > 0 ? '\n' : '');
+    const serialized = serializeVariableContent(content);
+    charx.data.extensions.risuai.defaultVariables = serialized + (serialized.length > 0 ? '\n' : '');
   } catch (error) {
-    console.warn(`  ⚠️ Failed to parse ${sanitizedName}.risuvar`);
+    console.warn(`  ⚠️ Failed to parse ${path.basename(varPath)}`);
   }
 }
 
@@ -540,7 +551,6 @@ function mergeVariablesCanonical(charx: any, inRoot: string): void {
  *
  * @param charx - CharX envelope being assembled from canonical workspace files
  * @param inRoot - Character workspace root containing .risuchar and character artifacts
- * Note: .risutoggle is NOT supported for charx (module/preset only per spec).
  */
 function mergeCharacterCanonical(charx: any, inRoot: string): void {
   const characterDir = path.join(inRoot, 'character');
@@ -592,9 +602,56 @@ function mergeCharacterCanonical(charx: any, inRoot: string): void {
     }
     charx.data.alternate_greetings = greetings;
   }
+}
 
-  // Note: module.risutoggle is NOT read for charx per spec
-  // .risutoggle is module/preset only
+function mergeToggleCanonical(charx: any, inRoot: string): void {
+  const charxName = charx.data?.name || 'character';
+  const sanitizedName = sanitizeFilename(charxName, 'character');
+  const togglePath = resolveArtifactPath({
+    dir: path.join(inRoot, 'toggle'),
+    preferredNames: [
+      path.basename(buildTogglePath('charx', charxName)),
+      `${sanitizedName}.risutoggle`,
+      'default.risutoggle',
+    ],
+    suffix: '.risutoggle',
+  });
+
+  if (!charx.data) charx.data = {};
+  if (!charx.data.extensions) charx.data.extensions = {};
+  if (!charx.data.extensions.risuai) charx.data.extensions.risuai = {};
+
+  if (!togglePath) {
+    charx.data.extensions.risuai.toggles ??= '';
+    return;
+  }
+
+  try {
+    const content = parseToggleContent(fs.readFileSync(togglePath, 'utf-8'));
+    injectToggleIntoCharx(charx, content, 'charx');
+  } catch (error) {
+    console.warn(`  ⚠️ Failed to parse ${path.basename(togglePath)}`);
+  }
+}
+
+function resolveArtifactPath(params: {
+  dir: string;
+  preferredNames: readonly string[];
+  suffix: string;
+}): string | null {
+  if (!isDir(params.dir)) return null;
+
+  for (const name of params.preferredNames) {
+    const candidate = path.join(params.dir, name);
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
+  }
+
+  const matches = fs
+    .readdirSync(params.dir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(params.suffix))
+    .map((entry) => path.join(params.dir, entry.name));
+
+  return matches.length === 1 ? matches[0] : null;
 }
 
 /**
@@ -963,7 +1020,9 @@ function buildCharxBuffer(charx: any, inRoot: string): Buffer {
   // Note: We do NOT delete triggerscript/customScripts/_moduleLorebook from charx.json
   // The module.risum is built from charx data, but charx.json retains all fields for round-trip fidelity
 
-  zipEntries['charx.json'] = Buffer.from(`${JSON.stringify(work, null, 2)}\n`, 'utf-8');
+  const cardJson = Buffer.from(`${JSON.stringify(work, null, 2)}\n`, 'utf-8');
+  zipEntries['card.json'] = cardJson;
+  zipEntries['charx.json'] = cardJson;
   zipEntries['module.risum'] = encodeModuleRisum(moduleObj);
 
   return Buffer.from(zipSync(zipEntries, { level: 0 }));
@@ -971,21 +1030,29 @@ function buildCharxBuffer(charx: any, inRoot: string): Buffer {
 
 /**
  * Build module.risum content from charx data.
- * Note: customModuleToggle is NOT included for charx per spec (.risutoggle is module/preset only).
+ * Character toggle data is preserved in charx.json/card.json as data.extensions.risuai.toggles.
  */
 function buildModuleFromCharx(charx: any): Record<string, unknown> {
   const name = charx.data?.name || 'Character';
   const risu = charx.data?.extensions?.risuai || {};
-  return {
+  const moduleObj: Record<string, unknown> = {
     name: `${name} Module`,
     description: `Module for ${name}`,
     id: crypto.randomUUID(),
     trigger: Array.isArray(risu.triggerscript) ? risu.triggerscript : [],
     regex: Array.isArray(risu.customScripts) ? risu.customScripts : [],
     lorebook: Array.isArray(risu._moduleLorebook) ? risu._moduleLorebook : [],
-    // Note: customModuleToggle is NOT included for charx per spec
     assets: [],
   };
+
+  if (typeof risu.defaultVariables === 'string') {
+    moduleObj.defaultVariables = parseVariableContent(risu.defaultVariables);
+  }
+  if (typeof risu.toggles === 'string') {
+    moduleObj.customModuleToggle = risu.toggles;
+  }
+
+  return moduleObj;
 }
 
 function collectAssetBuffers(charx: any, inRoot: string): Map<number, Buffer> {

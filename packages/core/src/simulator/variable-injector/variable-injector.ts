@@ -5,7 +5,7 @@
 import { extractCBSVariableOccurrences, type CBSVariableOccurrence } from '../../domain/cbs/cbs';
 import { createDefaultCbsSimulationContext } from '../context';
 import type { CbsSimulationContext, CbsSimulationEffect } from '../types';
-import { stringifyVariableValue } from '../values';
+import { hasOwn, stringifyVariableValue } from '../values';
 import type {
   CbsPreviewVariableBinding,
   CbsPreviewVariableBindingStatus,
@@ -99,6 +99,10 @@ function buildEffectiveContext(input: CbsPreviewVariableInjectionInput): CbsSimu
   const previewLastMessageHistory = createPreviewLastMessageHistory(
     previewOverrides.contextVariables?.lastmessageid,
   );
+  const hasPreviewLastMessageId = hasOwn(
+    previewOverrides.contextVariables ?? {},
+    'lastmessageid',
+  );
   const globalVariables = {
     ...(baseContext.globalVariables ?? {}),
     ...(previewOverrides.globalVariables ?? {}),
@@ -137,6 +141,9 @@ function buildEffectiveContext(input: CbsPreviewVariableInjectionInput): CbsSimu
     characterLabel: baseContext.characterLabel,
     role: baseContext.role,
     chatIndex: previewOverrides.contextVariables?.chatIndex ?? baseContext.chatIndex,
+    lastMessageId: hasPreviewLastMessageId
+      ? previewOverrides.contextVariables?.lastmessageid
+      : baseContext.lastMessageId,
     isFirstMessage: baseContext.isFirstMessage,
     lorePositions: baseContext.lorePositions,
     chatHistory: previewLastMessageHistory ?? baseContext.chatHistory,
@@ -145,7 +152,9 @@ function buildEffectiveContext(input: CbsPreviewVariableInjectionInput): CbsSimu
   });
 }
 
-function createPreviewLastMessageHistory(value: string | number | undefined): string[] | undefined {
+function createPreviewLastMessageHistory(
+  value: string | number | null | undefined,
+): string[] | undefined {
   if (value === undefined) return undefined;
   const numeric = Number(value);
   if (!Number.isInteger(numeric) || numeric < 0) return undefined;
@@ -367,7 +376,7 @@ function resolveReadValue(
       };
     case 'context': {
       const previewContextVars = input.previewOverrides?.contextVariables ?? {};
-      const previewResult = readLayer(previewContextVars, variableName);
+      const previewResult = readContextLayer(previewContextVars, variableName);
       if (previewResult.found) {
         return {
           status: 'resolved',
@@ -381,6 +390,14 @@ function resolveReadValue(
           status: 'resolved',
           source: 'context',
           valuePreview: stringifyVariableValue(context.chatIndex),
+        };
+      }
+
+      if (variableName === 'lastmessageid' && context.lastMessageId !== undefined) {
+        return {
+          status: 'resolved',
+          source: 'context',
+          valuePreview: stringifyContextValue(context.lastMessageId),
         };
       }
 
@@ -406,6 +423,20 @@ function resolveReadValue(
     source: 'missing',
     valuePreview: undefined,
   };
+}
+
+function stringifyContextValue(value: unknown): string {
+  return value === null ? 'null' : stringifyVariableValue(value);
+}
+
+function readContextLayer(
+  layer: Readonly<Record<string, unknown>>,
+  key: string,
+): { found: boolean; value: string } {
+  if (hasOwn(layer, key)) {
+    return { found: true, value: stringifyContextValue(layer[key]) };
+  }
+  return { found: false, value: '' };
 }
 
 /**

@@ -183,6 +183,7 @@ interface BuiltArtifactBrowserViewProviderModule {
     }) => Promise<void>;
     view?: { webview: { postMessage: (message: unknown) => PromiseLike<boolean> | boolean } };
   };
+  createAnalyzeArgsForExtractedArtifact: (extractedDir: string) => string[];
 }
 
 interface BuiltFileDialogPreferenceModule {
@@ -1460,6 +1461,8 @@ test('scans marker sibling artifact directories and preserves nested character a
         ['lorebooks', 2],
         ['lua', 2],
         ['regex', 2],
+        ['toggle', 2],
+        ['variables', 2],
       ],
       [path.join(characterRootPath, 'html')]: [['page.risuhtml', 1]],
       [path.join(characterRootPath, 'lorebooks')]: [['foo.risulorebook', 1]],
@@ -1469,6 +1472,8 @@ test('scans marker sibling artifact directories and preserves nested character a
       ],
       [path.join(characterRootPath, 'lua', 'scripts')]: [['helper.risulua', 1]],
       [path.join(characterRootPath, 'regex')]: [['rule.risuregex', 1]],
+      [path.join(characterRootPath, 'toggle')]: [['alice.risutoggle', 1]],
+      [path.join(characterRootPath, 'variables')]: [['alice.risuvar', 1]],
     }),
   );
 
@@ -1478,7 +1483,7 @@ test('scans marker sibling artifact directories and preserves nested character a
 
   assert.deepEqual(
     sections.map((section) => section.label),
-    ['Manifest', 'Lorebooks', 'Regex Rules', 'HTML', 'Lua', 'Diagnostics'],
+    ['Manifest', 'Lorebooks', 'Regex Rules', 'HTML', 'Lua', 'Toggle', 'Variables', 'Diagnostics'],
   );
   assert.deepEqual(getSectionItemSummaries(sections, 'lorebooks'), [
     { label: 'foo.risulorebook', relativePath: 'lorebooks/foo.risulorebook', type: 'risulorebook' },
@@ -1492,6 +1497,12 @@ test('scans marker sibling artifact directories and preserves nested character a
   assert.deepEqual(getSectionItemSummaries(sections, 'lua'), [
     { label: 'main.risulua', relativePath: 'lua/main.risulua', type: 'risulua' },
     { label: 'helper.risulua', relativePath: 'lua/scripts/helper.risulua', type: 'risulua' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'toggle'), [
+    { label: 'alice.risutoggle', relativePath: 'toggle/alice.risutoggle', type: 'risutoggle' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'variables'), [
+    { label: 'alice.risuvar', relativePath: 'variables/alice.risuvar', type: 'risuvar' },
   ]);
 });
 
@@ -1574,7 +1585,7 @@ test('does not let large asset directories exhaust artifact scan budget', async 
 
   assert.deepEqual(
     sections.map((section) => section.label),
-    ['Manifest', 'Lorebooks', 'Regex Rules', 'HTML', 'Lua', 'Diagnostics'],
+    ['Manifest', 'Lorebooks', 'Regex Rules', 'HTML', 'Lua', 'Toggle', 'Variables', 'Diagnostics'],
   );
   assert.deepEqual(getSectionItemSummaries(sections, 'lorebooks'), [
     {
@@ -3264,6 +3275,20 @@ test('provider opens marker editor for character selections while posting detail
       JSON.stringify(message).includes('artifact-browser/detailLoaded'),
     ),
   );
+});
+
+test('provider analyze args place generated wiki under the artifact root', () => {
+  const workspaceRootPath = path.join('/tmp', 'risu-analyze-workspace');
+  const characterRootPath = path.join(workspaceRootPath, 'char1');
+  const providerModule = loadBuiltArtifactBrowserViewProviderModule(createCharacterScannerVscodeStub({}));
+
+  assert.deepEqual(providerModule.createAnalyzeArgsForExtractedArtifact(characterRootPath), [
+    'analyze',
+    characterRootPath,
+    '--wiki',
+    '--wiki-root',
+    path.join(characterRootPath, 'wiki'),
+  ]);
 });
 
 test('provider keeps character detail selection across marker refresh when fallback stable id changes', async () => {

@@ -18,6 +18,7 @@ import {
   createArtifactBrowserCardsMessage,
   createArtifactBrowserDetailMessage,
   createArtifactBrowserPackCompletedMessage,
+  isArtifactBrowserAnalyzeArtifactMessage,
   isArtifactBrowserCreateArtifactMessage,
   isArtifactBrowserCreateSectionEntryMessage,
   isArtifactBrowserImportArtifactMessage,
@@ -170,6 +171,11 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
           return;
         }
 
+        if (isArtifactBrowserAnalyzeArtifactMessage(message)) {
+          void this.analyzeArtifact(message.payload.stableId, webviewView.webview);
+          return;
+        }
+
         if (isArtifactBrowserSelectMessage(message)) {
           void this.selectArtifact(message.payload.stableId);
           return;
@@ -278,7 +284,8 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     }
 
     try {
-      await runRisuCoreCli(createImportExtractArgs(importedFile), workspaceRoot);
+      const extractedDir = await runImportExtract(importedFile, workspaceRoot);
+      await runAnalyzeForExtractedArtifact(extractedDir, workspaceRoot);
       void vscode.window.showInformationMessage(`Imported ${path.basename(importedFile)}.`);
     } catch (error) {
       void vscode.window.showErrorMessage(`Import failed: ${getErrorMessage(error)}`);
@@ -339,6 +346,31 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
       const message = getErrorMessage(error);
       void vscode.window.showErrorMessage(`Pack failed: ${message}`);
       this.postMessage(createArtifactBrowserPackCompletedMessage({ stableId, ok: false, error: message }));
+    }
+  }
+
+  private async analyzeArtifact(stableId: string, webview: vscode.Webview): Promise<void> {
+    const selectedCard = this.currentCards.find((card) => card.stableId === stableId);
+    if (!selectedCard) {
+      void vscode.window.showErrorMessage('Analyze failed: Selected artifact not found.');
+      return;
+    }
+
+    const workspaceRoot = getPrimaryWorkspaceRoot();
+    if (!workspaceRoot) {
+      void vscode.window.showErrorMessage('Open a workspace folder before analyzing a RisuAI artifact.');
+      return;
+    }
+
+    try {
+      const rootFsPath = vscode.Uri.parse(selectedCard.rootUri).fsPath;
+      await runAnalyzeForExtractedArtifact(rootFsPath, workspaceRoot);
+      void vscode.window.showInformationMessage(`Analyzed ${selectedCard.name}.`);
+      await this.refreshSelectedDetail(selectedCard);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Analyze failed: ${getErrorMessage(error)}`);
+    } finally {
+      await this.sendDiscoveredCards(webview);
     }
   }
 
@@ -951,7 +983,7 @@ function resolveRisuCoreBinPath(): string {
   return path.join(path.dirname(coreEntry), '..', 'bin', 'risu-core.js');
 }
 
-function runRisuCoreCli(args: string[], cwd: string): Promise<void> {
+function runRisuCoreCli(args: string[], cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [resolveRisuCoreBinPath(), ...args], { cwd, env: process.env });
     let stdout = '';
@@ -968,7 +1000,7 @@ function runRisuCoreCli(args: string[], cwd: string): Promise<void> {
     child.on('error', reject);
     child.on('close', (code) => {
       if (code === 0) {
-        resolve();
+        resolve(stdout);
         return;
       }
 
@@ -996,6 +1028,30 @@ function createImportExtractArgs(importedFile: string): string[] {
     );
   }
   return extractArgs;
+}
+
+async function runImportExtract(importedFile: string, workspaceRoot: string): Promise<string> {
+  const stdout = await runRisuCoreCli(createImportExtractArgs(importedFile), workspaceRoot);
+  return resolveExtractedDir(importedFile, stdout, workspaceRoot);
+}
+
+async function runAnalyzeForExtractedArtifact(extractedDir: string, workspaceRoot: string): Promise<void> {
+  await runRisuCoreCli(createAnalyzeArgsForExtractedArtifact(extractedDir), workspaceRoot);
+}
+
+export function createAnalyzeArgsForExtractedArtifact(extractedDir: string): string[] {
+  return ['analyze', extractedDir, '--wiki', '--wiki-root', path.join(extractedDir, 'wiki')];
+}
+
+function resolveExtractedDir(importedFile: string, stdout: string, workspaceRoot: string): string {
+  const outputMatch = stdout.match(/(?:추출 완료\s*(?:→|->)|Imported\s*→)\s*(.+?)\/?\s*$/m);
+  if (outputMatch?.[1]) return path.resolve(workspaceRoot, outputMatch[1].trim());
+
+  const stem = sanitizeWorkspaceName(path.basename(importedFile, path.extname(importedFile)), 'artifact');
+  const prefix = MODULE_TABLE_IMPORT_EXTENSIONS.has(path.extname(importedFile).toLowerCase()) && path.extname(importedFile).toLowerCase() === '.risum'
+    ? 'module'
+    : 'character';
+  return path.resolve(workspaceRoot, `${prefix}_${stem}`);
 }
 
 function patchScaffoldRootMarker(outDir: string, payload: ArtifactBrowserCreateArtifactPayload): void {

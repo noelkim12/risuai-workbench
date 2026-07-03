@@ -5,6 +5,7 @@ import MarkerEditor from './lib/components/editor/marker/MarkerEditor.svelte';
 import { mount } from 'svelte';
 import { writable } from 'svelte/store';
 import {
+  createArtifactBrowserAnalyzeArtifactMessage,
   createArtifactBrowserCreateArtifactMessage,
   createArtifactBrowserCreateSectionEntryMessage,
   createArtifactBrowserImportArtifactMessage,
@@ -119,6 +120,7 @@ if (isEditorMode && webviewName === 'main-editor') {
       moveLorebookFolder,
       moveRegexItem,
       createSectionEntry,
+      analyzeArtifact,
       packArtifact,
       packState,
     },
@@ -235,6 +237,11 @@ function packArtifact(stableId: string, recovery: boolean): void {
   packState.set(null);
   setStatus('Packing…');
   vscode?.postMessage(createArtifactBrowserPackArtifactMessage({ stableId, recovery }));
+}
+
+function analyzeArtifact(stableId: string): void {
+  setStatus('Analyzing and generating wiki…');
+  vscode?.postMessage(createArtifactBrowserAnalyzeArtifactMessage({ stableId }));
 }
 
 /**
