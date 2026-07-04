@@ -35,7 +35,7 @@ RisuAI 캐릭터 봇은 `<img src="Elsie_Dress_angry">` 형태의 이미지 커�
 |---|---|---|
 | 1 | UI 컨테이너 | 사이드바 아코디언 = "Open Asset Manager" 버튼 + 카운트만. 모든 기능은 메인 영역 WebviewPanel |
 | 2 | 데이터 모델 | 별도 `assets/asset-catalog.json`이 진실의 원천. manifest는 빌드 산출물, CLI가 catalog merge |
-| 3 | 슬롯 스키마 | 설정형 1~3슬롯: 슬롯 수, 슬롯별 라벨, joinTemplate을 아티팩트별 설정 |
+| 3 | 슬롯 스키마 | 설정형 1~3슬롯: 슬롯 수, 슬롯별 라벨, joinTemplate을 아티팩트별 설정. **기본은 2슬롯** — 대부분의 봇이 s1+s2 구성이고, 3슬롯은 조합 공간(n×n×n)이 커서 소수 케이스 |
 | 4 | 파생 출력 | 프롬프트 블록 + 화이트리스트 정규식 + missing 리포트 3종 모두 v1 |
 | 5 | 중복 의미 | 파일 간 동일 조합 허용(경고 표시). 슬롯당 값은 단일 |
 | 6 | 메타데이터 | 파일정보 + AI 생성정보(PNG tEXt/iTXt, webp EXIF — NAI/SD/ComfyUI 포맷) |
@@ -161,7 +161,7 @@ packages/core/src/domain/analyze/
 ### 7.3 Vocab 뷰
 
 - 슬롯별 컬럼: 값 목록 CRUD + 순서 변경(파생 출력의 나열 순서에 반영).
-- 스키마 편집: 슬롯 수(1~3)/라벨/joinTemplate + 샘플 name 라이브 프리뷰. 슬롯 수 축소 시 잘리는 할당은 데이터 보존 + 경고.
+- 스키마 편집: 슬롯 수(1~3)/라벨/joinTemplate + 샘플 name 라이브 프리뷰. 슬롯 수 축소 시 잘리는 할당은 데이터 보존 + 경고. 첫 실행 스키마 설정 스텝(§9)은 이 편집기를 모달로 재사용.
 - 후보 패널 2종:
   - **lorebook 분석**: `analyzeLorebookNames` 결과를 폴더별 그룹으로 표시(지역/아이템 등 비캐릭터 폴더를 그룹 단위로 걸러내기 용이). 체크 → 편집(로마자 교정 등) → vocab 채택.
   - **파일명 부트스트랩**: `bootstrapFromFilenames` 빈도 클러스터 후보 → 채택.
@@ -184,7 +184,7 @@ packages/core/src/domain/analyze/
 
 ## 9. 엣지 케이스 · 에러 처리
 
-- catalog 부재: 기본 스키마(3슬롯 `character/attire/emotion`, `{s1}_{s2}_{s3}`)로 시작, 첫 편집 저장 시 파일 생성.
+- catalog 부재: Manager 최초 오픈 시 1회성 **스키마 설정 스텝** 표시 — 슬롯 수 선택(기본 2: `character`/`emotion`), 라벨 프리필, joinTemplate(기본 `{s1}_{s2}`), 샘플 name 라이브 프리뷰. 파일명 부트스트랩 클러스터링 결과로 "이 워크스페이스는 3슬롯으로 보임" 힌트 제공 가능. 확정(또는 건너뛰기) 시 2슬롯 기본 스키마로 시작하고, 첫 편집 저장 시 catalog 파일 생성.
 - catalog 파손(JSON 오류/스키마 불일치): 오류 배너 + 읽기 전용 그리드로 폴백, 덮어쓰기는 사용자 확인 후.
 - orphan 할당: 상태 필터로 노출 + "orphan 일괄 제거" 액션.
 - 중복 조합: Grid 배지 + Matrix ⚠ + 빌드 경고. 차단하지 않음(결정 #5).
@@ -195,13 +195,14 @@ packages/core/src/domain/analyze/
 ## 10. 테스트 전략
 
 - **core (vitest, `packages/core/tests/`)**
-  - catalog load/save/validate/migration.
+  - catalog load/save/validate/migration, 기본 2슬롯 스키마 생성.
   - tokenizer: `Ahn_Do-hyun_acting_coy`(이름 내 `_`·`-`), `breast caress`(공백↔`_` 정규화), 미분류 잔여 처리.
   - joinTemplate 렌더/역파싱 (`{s1}_{s2}_{s3}`, `{s1} {s2}`).
   - merge 빌드: 할당 name 반영 + 미할당 fallback + 재빌드 큐레이션 보존 + orphan/중복 경고.
   - missing 계산: expected override, null=전체, 2슬롯/3슬롯.
   - derived: 정규식 escape·경계 케이스, 프롬프트 블록 구조, 리포트.
   - lorebook-names: frontmatter 추출 + 폴더 그룹.
+  - 픽스처 우선순위: 2슬롯(example2형, 공백 구분)을 1차 검증 경로로, 3슬롯(example1형, `_` 구분)을 후속 검증으로.
 - **vscode**: 신규 메시지 guard 단위 테스트(기존 패턴), scanner assets 섹션, AssetManagerPanel 인스턴스 맵.
 - **webview**: 가상 그리드/모달은 수동 검증 중심 + 기존 e2e(`extension-client.test.ts`) 스타일의 Manager 오픈 스모크.
 
