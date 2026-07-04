@@ -50,6 +50,10 @@ export {
   type AssetDict,
   type ResolvedAsset,
 } from './asset/asset-uri';
+export * from './asset/catalog';
+export * from './asset/naming';
+export * from './asset/missing';
+export * from './asset/derived';
 export {
   analyzeLorebookStructure,
   analyzeLorebookStructureFromCharx,
@@ -122,6 +126,7 @@ export {
   PHASE_MAP,
   type ElementType,
 } from './analyze/constants';
+export * from './analyze/lorebook-names';
 export {
   estimateTokens,
   analyzeTokenBudget,

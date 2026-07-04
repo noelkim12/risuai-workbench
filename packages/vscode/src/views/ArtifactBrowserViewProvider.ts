@@ -14,6 +14,7 @@ import { getErrorMessage } from '../shared/errors';
 import { pickImportArtifactFileWithSystemPicker } from '../shared/systemFilePicker';
 import { createWebviewNonce } from '../shared/webviewNonce';
 import { WorkspaceArtifactDiscoveryService } from '../artifact-browser/WorkspaceArtifactDiscoveryService';
+import { AssetManagerPanel } from '../asset-manager/AssetManagerPanel';
 import {
   createArtifactBrowserCardsMessage,
   createArtifactBrowserDetailMessage,
@@ -24,7 +25,9 @@ import {
   isArtifactBrowserImportArtifactMessage,
   isArtifactBrowserMoveLorebookFolderMessage,
   isArtifactBrowserMoveLorebookItemMessage,
+  isArtifactBrowserMoveGreetingItemMessage,
   isArtifactBrowserMoveRegexItemMessage,
+  isArtifactBrowserOpenAssetManagerMessage,
   isArtifactBrowserOpenItemMessage,
   isArtifactBrowserPackArtifactMessage,
   isArtifactBrowserReadyMessage,
@@ -176,6 +179,11 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
           return;
         }
 
+        if (isArtifactBrowserOpenAssetManagerMessage(message)) {
+          this.openAssetManager(message.payload.stableId);
+          return;
+        }
+
         if (isArtifactBrowserSelectMessage(message)) {
           void this.selectArtifact(message.payload.stableId);
           return;
@@ -219,6 +227,16 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
 
         if (isArtifactBrowserMoveRegexItemMessage(message)) {
           void this.moveRegexItem(
+            message.payload.stableId,
+            message.payload.itemId,
+            message.payload.targetItemId,
+            message.payload.placement,
+          );
+          return;
+        }
+
+        if (isArtifactBrowserMoveGreetingItemMessage(message)) {
+          void this.moveGreetingItem(
             message.payload.stableId,
             message.payload.itemId,
             message.payload.targetItemId,
@@ -374,6 +392,17 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private openAssetManager(stableId: string): void {
+    const selectedCard = this.currentCards.find((card) => card.stableId === stableId);
+    if (!selectedCard) return;
+
+    AssetManagerPanel.createOrShow(this.context, {
+      stableId: selectedCard.stableId,
+      name: selectedCard.name,
+      rootUri: selectedCard.rootUri,
+    });
+  }
+
   private async sendDiscoveredCards(webview: vscode.Webview): Promise<void> {
     const previousSelectedCard = this.selectedStableId
       ? this.currentCards.find((card) => card.stableId === this.selectedStableId)
@@ -480,8 +509,14 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     targetFolderPath?: string,
   ): Promise<void> {
     const card = this.currentCards.find((entry) => entry.stableId === stableId);
+    if (!card) return;
+    if (sectionKind === 'character') {
+      await this.createGreetingEntry(card);
+      return;
+    }
+
     const config = getSectionCreationConfig(sectionKind, entryKind);
-    if (!card || !config) return;
+    if (!config) return;
 
     const requestedName = await vscode.window.showInputBox({
       title: `Create ${config.label}`,
@@ -606,6 +641,28 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     await this.refreshSelectedDetail(card);
   }
 
+  private async moveGreetingItem(
+    stableId: string,
+    itemId: string,
+    targetItemId: string,
+    placement: 'before' | 'after',
+  ): Promise<void> {
+    const card = this.currentCards.find((entry) => entry.stableId === stableId);
+    const item = this.findSectionItem(stableId, itemId);
+    const targetItem = this.findSectionItem(stableId, targetItemId);
+    if (!card || !item || !targetItem || item.id === targetItem.id) return;
+
+    const greetingRootUri = vscode.Uri.joinPath(vscode.Uri.parse(card.rootUri), 'character', 'alternate_greetings');
+    const movedPath = stripDirectoryPrefix(item.relativePath, 'character/alternate_greetings');
+    const targetPath = stripDirectoryPrefix(targetItem.relativePath, 'character/alternate_greetings');
+    if (!movedPath || !targetPath) return;
+
+    const currentOrder = await readOrderedPaths(greetingRootUri);
+    const fallbackOrder = this.getGreetingRelativePaths(stableId);
+    await writeOrderedPaths(greetingRootUri, reorderPaths(mergeOrder(currentOrder, fallbackOrder), movedPath, targetPath, placement));
+    await this.refreshSelectedDetail(card);
+  }
+
   private async appendSectionOrderPath(
     stableId: string,
     sectionRootUri: vscode.Uri,
@@ -650,6 +707,30 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     return section.items
       .map((item) => stripDirectoryPrefix(item.relativePath, directoryName))
       .filter((entry): entry is string => Boolean(entry));
+  }
+
+  private getGreetingRelativePaths(stableId: string): string[] {
+    const section = this.currentSections.get(stableId)?.find((entry) => entry.kind === 'character');
+    if (!section) return [];
+    return section.items
+      .map((item) => stripDirectoryPrefix(item.relativePath, 'character/alternate_greetings'))
+      .filter((entry): entry is string => Boolean(entry));
+  }
+
+  private async createGreetingEntry(card: BrowserArtifactCard): Promise<void> {
+    const greetingRootUri = vscode.Uri.joinPath(vscode.Uri.parse(card.rootUri), 'character', 'alternate_greetings');
+    await vscode.workspace.fs.createDirectory(greetingRootUri);
+
+    const existingFileNames = await listGreetingFileNames(greetingRootUri);
+    const fileName = nextGreetingFileName(existingFileNames);
+    const fileUri = vscode.Uri.joinPath(greetingRootUri, fileName);
+    await vscode.workspace.fs.writeFile(fileUri, Buffer.from('', 'utf8'));
+
+    const currentOrder = await readOrderedPaths(greetingRootUri);
+    await writeOrderedPaths(greetingRootUri, appendPath(mergeOrder(currentOrder, existingFileNames), fileName));
+
+    await this.refreshSelectedDetail(card);
+    await vscode.commands.executeCommand('vscode.open', fileUri);
   }
 
   private getSectionOrderPaths(stableId: string, sectionKind: string, directoryName: string): string[] {
@@ -746,7 +827,7 @@ function isRootMarkerUri(uri: vscode.Uri): boolean {
 
 
 function getSectionCreationConfig(
-  sectionKind: ArtifactBrowserCreateSectionKind,
+  sectionKind: Exclude<ArtifactBrowserCreateSectionKind, 'character'>,
   entryKind: ArtifactBrowserCreateSectionEntryKind,
 ): SectionCreationConfig | undefined {
   const baseConfig = SECTION_CREATE_CONFIGS[sectionKind];
@@ -802,6 +883,33 @@ async function resolveUniqueChildUri(directoryUri: vscode.Uri, baseName: string,
     suffix += 1;
   }
   return candidateUri;
+}
+
+async function listGreetingFileNames(directoryUri: vscode.Uri): Promise<string[]> {
+  let entries: [string, vscode.FileType][];
+  try {
+    entries = await vscode.workspace.fs.readDirectory(directoryUri);
+  } catch {
+    return [];
+  }
+
+  return entries
+    .filter(([name, fileType]) => fileType === vscode.FileType.File && name.toLowerCase().endsWith('.risutext'))
+    .map(([name]) => name);
+}
+
+export function nextGreetingFileName(existingFileNames: string[]): string {
+  let maxIndex = 0;
+  for (const name of existingFileNames) {
+    const match = /^greeting-(\d+)\.risutext$/i.exec(name);
+    const digits = match?.[1];
+    if (!digits) continue;
+
+    const value = Number.parseInt(digits, 10);
+    if (Number.isFinite(value) && value > maxIndex) maxIndex = value;
+  }
+
+  return `greeting-${String(maxIndex + 1).padStart(3, '0')}.risutext`;
 }
 
 async function uriExists(uri: vscode.Uri): Promise<boolean> {

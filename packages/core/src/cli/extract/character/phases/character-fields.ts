@@ -27,7 +27,7 @@ const CHARACTER_PROSE_FIELDS: Array<[string, (data: any, risuai: any) => string]
   ['description', (data) => data.description || ''],
   ['first_mes', (data) => data.first_mes || ''],
   ['system_prompt', (data) => data.system_prompt || ''],
-  ['replace_global_note', (data) => data.replaceGlobalNote || ''],
+  ['replace_global_note', (data) => data.post_history_instructions ?? data.replaceGlobalNote ?? ''],
   ['creator_notes', (data) => data.creator_notes || ''],
   ['additional_text', (_data, risuai) => risuai.additionalText || ''],
 ];

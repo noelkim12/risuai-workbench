@@ -70,7 +70,7 @@ export interface CharxV3Data {
   creator_notes: string;
   system_prompt: string;
   alternate_greetings: string[];
-  replaceGlobalNote: string;
+  post_history_instructions: string;
   tags: string[];
   personality: string;
   scenario: string;
@@ -186,7 +186,7 @@ export function createBlankCharxV3(char: UpstreamCharacter = createBlankChar()):
       creator_notes: char.creatorNotes,
       system_prompt: char.systemPrompt,
       alternate_greetings: char.alternateGreetings,
-      replaceGlobalNote: char.replaceGlobalNote,
+      post_history_instructions: char.replaceGlobalNote,
       tags: char.tags,
       personality: char.personality,
       scenario: char.scenario,

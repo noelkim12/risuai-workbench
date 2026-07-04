@@ -17,8 +17,10 @@ import {
   type ArtifactBrowserImportArtifactMessage,
   type ArtifactBrowserImportArtifactPayload,
   type ArtifactBrowserMoveLorebookFolderMessage,
+  type ArtifactBrowserMoveGreetingItemMessage,
   type ArtifactBrowserMoveLorebookItemMessage,
   type ArtifactBrowserMoveRegexItemMessage,
+  type ArtifactBrowserOpenAssetManagerMessage,
   type ArtifactBrowserOpenItemMessage,
   type ArtifactBrowserPackArtifactMessage,
   type ArtifactBrowserPackArtifactPayload,
@@ -29,8 +31,13 @@ import {
   type MainEditorWebviewMessage,
   type MarkerEditorWebviewMessage,
 } from './types';
+import type { AssetManagerWebviewMessage } from './types/assetManager';
 
-type WebviewOutboundMessage = ArtifactBrowserWebviewMessage | MarkerEditorWebviewMessage | MainEditorWebviewMessage;
+type WebviewOutboundMessage =
+  | ArtifactBrowserWebviewMessage
+  | MarkerEditorWebviewMessage
+  | MainEditorWebviewMessage
+  | AssetManagerWebviewMessage;
 
 export type VsCodeApi = {
   postMessage(message: WebviewOutboundMessage): void;
@@ -140,6 +147,21 @@ export function createArtifactBrowserSelectMessage(stableId: string): ArtifactBr
 }
 
 /**
+ * createArtifactBrowserOpenAssetManagerMessage 함수.
+ * Assets 아코디언의 진입 버튼이 Asset Manager 패널 오픈을 요청하는 메시지를 생성함.
+ *
+ * @param stableId - 대상 artifact stable id
+ * @returns Artifact Browser openAssetManager message
+ */
+export function createArtifactBrowserOpenAssetManagerMessage(
+  stableId: string,
+): ArtifactBrowserOpenAssetManagerMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/openAssetManager', {
+    stableId,
+  });
+}
+
+/**
  * createArtifactBrowserOpenItemMessage 함수.
  * Detail item open action을 extension host가 처리할 versioned message로 생성함.
  *
@@ -191,6 +213,20 @@ export function createArtifactBrowserMoveRegexItemMessage(
   placement: 'before' | 'after',
 ): ArtifactBrowserMoveRegexItemMessage {
   return createArtifactBrowserWebviewMessage('artifact-browser/moveRegexItem', {
+    stableId,
+    itemId,
+    targetItemId,
+    placement,
+  });
+}
+
+export function createArtifactBrowserMoveGreetingItemMessage(
+  stableId: string,
+  itemId: string,
+  targetItemId: string,
+  placement: 'before' | 'after',
+): ArtifactBrowserMoveGreetingItemMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/moveGreetingItem', {
     stableId,
     itemId,
     targetItemId,

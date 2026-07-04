@@ -28,6 +28,28 @@ import {
   isJpeg,
 } from './png';
 import { parseCardFile, parseCharxFile } from './charx-io';
+import {
+  readImageMeta,
+  readImageMetaFromBuffer,
+  type ImageFileInfo,
+  type ImageFormat,
+  type ImageGenerationInfo,
+  type ImageGenerationSource,
+  type ImageMeta,
+} from './image-meta';
+import {
+  CHARACTER_ASSET_DIRS,
+  buildCharacterAssetManifest,
+  collectCharacterAssetEntries,
+  computeAssetBuildWarnings,
+  loadAssetCatalogFromAssetsDir,
+  type AssetBuildWarnings,
+  type AssetManifestBuildSummary,
+  type CharacterAssetManifest,
+  type CharacterAssetManifestEntry,
+  type CharacterAssetSubdir,
+} from './asset-manifest';
+import { extractLorebookNameCandidates } from './lorebook-names';
 import { executeLorebookPlan } from './lorebook-io';
 import {
   listJsonFilesRecursive,
@@ -83,6 +105,24 @@ export {
   decodeCharacterJsonFromChunks,
   parseCharxFile,
   parseCardFile,
+  readImageMeta,
+  readImageMetaFromBuffer,
+  type ImageFileInfo,
+  type ImageFormat,
+  type ImageGenerationInfo,
+  type ImageGenerationSource,
+  type ImageMeta,
+  CHARACTER_ASSET_DIRS,
+  buildCharacterAssetManifest,
+  collectCharacterAssetEntries,
+  computeAssetBuildWarnings,
+  loadAssetCatalogFromAssetsDir,
+  extractLorebookNameCandidates,
+  type AssetBuildWarnings,
+  type AssetManifestBuildSummary,
+  type CharacterAssetManifest,
+  type CharacterAssetManifestEntry,
+  type CharacterAssetSubdir,
   ensureDir,
   writeJson,
   writeText,

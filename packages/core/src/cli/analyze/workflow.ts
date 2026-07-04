@@ -5,8 +5,9 @@ import { runAnalyzeComposeWorkflow } from './compose/workflow';
 import { runAnalyzeModuleWorkflow } from './module/workflow';
 import { runAnalyzePresetWorkflow } from './preset/workflow';
 import { loadWorkspaceConfig } from './shared/wiki/workspace/workspace-yaml';
+import { extractLorebookNameCandidates } from '@/node/lorebook-names';
 
-const KNOWN_TYPES = ['lua', 'charx', 'module', 'preset', 'compose'] as const;
+const KNOWN_TYPES = ['lua', 'charx', 'module', 'preset', 'compose', 'lorebook-names'] as const;
 
 function runLuaAnalyze(argv: readonly string[]): number {
   const luaWorkflow = require('./lua/workflow') as typeof import('./lua/workflow');
@@ -59,6 +60,7 @@ const HELP_TEXT = `
     module        모듈 종합 분석 (default for directories with canonical module markers)
     preset        프리셋 종합 분석 (default for directories with canonical preset markers)
     compose       아티팩트 조합 충돌 분석 (explicit only)
+    lorebook-names *.risulorebook frontmatter name 후보 추출 (explicit only)
 
   Auto-detection (canonical workspaces):
     .lua/.risulua file → lua
@@ -106,6 +108,10 @@ export function runAnalyzeWorkflow(argv: readonly string[]): number {
 
   if (typeArg === 'compose') {
     return runAnalyzeComposeWorkflow(argv.filter(stripType));
+  }
+
+  if (typeArg === 'lorebook-names') {
+    return runLorebookNamesAnalyze(argv.filter(stripType));
   }
 
   if (typeArg && !KNOWN_TYPES.includes(typeArg as (typeof KNOWN_TYPES)[number])) {
@@ -163,6 +169,39 @@ function isOptionValue(argv: readonly string[], value: string): boolean {
   if (idx <= 0) return false;
   const prev = argv[idx - 1];
   return prev === '--type' || prev === '--card' || prev === '--charx' || prev === '--out' || prev === '--locale';
+}
+
+function runLorebookNamesAnalyze(argv: readonly string[]): number {
+  const jsonMode = argv.includes('--json');
+  const target = argv.find((value) => !value.startsWith('-'));
+
+  if (!target || !fs.existsSync(target) || !fs.statSync(target).isDirectory()) {
+    console.error(`\n  ❌ Target directory not found: ${target ?? '(missing)'}\n`);
+    return 1;
+  }
+
+  const candidates = extractLorebookNameCandidates(target);
+  if (jsonMode) {
+    console.log(JSON.stringify({ candidates }, null, 2));
+    return 0;
+  }
+
+  console.log(`\n  📚 Lorebook name candidates (${candidates.length})\n`);
+  if (candidates.length === 0) {
+    console.log('  No lorebook name candidates found.');
+    return 0;
+  }
+
+  let currentFolder: string | null = null;
+  for (const candidate of candidates) {
+    if (candidate.folderPath !== currentFolder) {
+      currentFolder = candidate.folderPath;
+      console.log(`  ${currentFolder}`);
+    }
+    console.log(`    - ${candidate.name} (${candidate.filePath})`);
+  }
+
+  return 0;
 }
 
 function runAllArtifacts(argv: readonly string[]): number {

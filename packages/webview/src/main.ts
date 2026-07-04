@@ -1,5 +1,6 @@
 import './styles.css';
 import App from './App.svelte';
+import AssetManagerApp from './AssetManagerApp.svelte';
 import MainEditor from './lib/components/editor/main/MainEditor.svelte';
 import MarkerEditor from './lib/components/editor/marker/MarkerEditor.svelte';
 import { mount } from 'svelte';
@@ -11,7 +12,9 @@ import {
   createArtifactBrowserImportArtifactMessage,
   createArtifactBrowserMoveLorebookFolderMessage,
   createArtifactBrowserMoveLorebookItemMessage,
+  createArtifactBrowserMoveGreetingItemMessage,
   createArtifactBrowserMoveRegexItemMessage,
+  createArtifactBrowserOpenAssetManagerMessage,
   createArtifactBrowserOpenItemMessage,
   createArtifactBrowserPackArtifactMessage,
   createArtifactBrowserReadyMessage,
@@ -41,17 +44,20 @@ const selectedStableId = writable<string | undefined>(undefined);
 const detailSections = writable<CharacterSection[]>([]);
 const expandedSectionIds = writable<string[]>([
   'manifest',
+  'character',
   'lorebooks',
   'regexRules',
   'lua',
   'toggle',
   'variables',
+  'assets',
   'html',
   'diagnostics',
 ]);
 const viewMode = writable<'artifacts' | 'artifactDetail'>('artifacts');
 const status = writable('Connecting to extension host…');
 const packState = writable<ArtifactBrowserPackCompletedPayload | null>(null);
+const importing = writable(false);
 const app = document.querySelector<HTMLDivElement>('#app');
 const isEditorMode = document.documentElement.dataset.editorMode === 'true';
 const webviewName =
@@ -91,7 +97,11 @@ if (!app) {
   throw new Error('Missing #app root for Risu Workbench webview.');
 }
 
-if (isEditorMode && webviewName === 'main-editor') {
+if (webviewName === 'asset-manager') {
+  mount(AssetManagerApp, {
+    target: app,
+  });
+} else if (isEditorMode && webviewName === 'main-editor') {
   mount(MainEditor, {
     target: app,
   });
@@ -109,6 +119,7 @@ if (isEditorMode && webviewName === 'main-editor') {
       expandedSectionIds,
       viewMode,
       status,
+      importing,
       refreshCards,
       createArtifact,
       importArtifact,
@@ -116,9 +127,11 @@ if (isEditorMode && webviewName === 'main-editor') {
       returnToCards,
       toggleSection,
       openItem,
+      openAssetManager,
       moveLorebookItem,
       moveLorebookFolder,
       moveRegexItem,
+      moveGreetingItem,
       createSectionEntry,
       analyzeArtifact,
       packArtifact,
@@ -160,6 +173,7 @@ function handleMessage(event: MessageEvent<unknown>): void {
   if (!isArtifactBrowserExtensionMessage(message)) return;
 
   if (message.type === 'artifact-browser/cards') {
+    importing.set(false);
     artifactBrowserInitialized = true;
     stopArtifactBrowserReadyRetry();
     const nextCards = message.payload.cards;
@@ -219,11 +233,17 @@ function encodeArrayBufferAsBase64(buffer: ArrayBuffer): string {
 }
 
 async function importArtifact(file: File): Promise<void> {
+  importing.set(true);
   setStatus(`Importing ${file.name}…`);
   viewMode.set('artifacts');
   detailSections.set([]);
-  const dataBase64 = encodeArrayBufferAsBase64(await file.arrayBuffer());
-  vscode?.postMessage(createArtifactBrowserImportArtifactMessage({ fileName: file.name, dataBase64 }));
+  try {
+    const dataBase64 = encodeArrayBufferAsBase64(await file.arrayBuffer());
+    vscode?.postMessage(createArtifactBrowserImportArtifactMessage({ fileName: file.name, dataBase64 }));
+  } catch (error) {
+    importing.set(false);
+    setStatus(`Import failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+  }
 }
 
 /**
@@ -242,6 +262,14 @@ function packArtifact(stableId: string, recovery: boolean): void {
 function analyzeArtifact(stableId: string): void {
   setStatus('Analyzing and generating wiki…');
   vscode?.postMessage(createArtifactBrowserAnalyzeArtifactMessage({ stableId }));
+}
+
+/**
+ * openAssetManager 함수.
+ * Assets 아코디언 진입 버튼 → extension host에 Asset Manager 패널 오픈을 요청함.
+ */
+function openAssetManager(stableId: string): void {
+  vscode?.postMessage(createArtifactBrowserOpenAssetManagerMessage(stableId));
 }
 
 /**
@@ -332,6 +360,12 @@ function moveRegexItem(item: CharacterItem, targetItemId: string, placement: 'be
   const stableId = getSelectedStableId();
   if (!stableId) return;
   vscode?.postMessage(createArtifactBrowserMoveRegexItemMessage(stableId, item.id, targetItemId, placement));
+}
+
+function moveGreetingItem(item: CharacterItem, targetItemId: string, placement: 'before' | 'after'): void {
+  const stableId = getSelectedStableId();
+  if (!stableId) return;
+  vscode?.postMessage(createArtifactBrowserMoveGreetingItemMessage(stableId, item.id, targetItemId, placement));
 }
 
 function createSectionEntry(
