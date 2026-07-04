@@ -564,7 +564,7 @@ function mergeCharacterCanonical(charx: any, inRoot: string): void {
     description: ['data', 'description'],
     first_mes: ['data', 'first_mes'],
     system_prompt: ['data', 'system_prompt'],
-    replace_global_note: ['data', 'replaceGlobalNote'],
+    replace_global_note: ['data', 'post_history_instructions'],
     creator_notes: ['data', 'creator_notes'],
     additional_text: ['data', 'extensions', 'risuai', 'additionalText'],
   };

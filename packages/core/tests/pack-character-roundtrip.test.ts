@@ -95,8 +95,8 @@ describe('pack.js character round-trip (canonical mode)', () => {
     expect(packedCharx.data.description).toBe('canonical description');
     expect(packedCharx.data.first_mes).toBe('canonical first message');
     expect(packedCharx.data.system_prompt).toBe('canonical system prompt');
-    expect(packedCharx.data.replaceGlobalNote).toBe('canonical replace global note');
-    expect(packedCharx.data.replaceGlobalNote ?? '').not.toBe('legacy wrong basename value');
+    expect(packedCharx.data.post_history_instructions).toBe('canonical replace global note');
+    expect(packedCharx.data.post_history_instructions ?? '').not.toBe('legacy wrong basename value');
     expect(packedCharx.data.creator_notes).toBe('canonical creator notes');
     expect(packedCharx.data.extensions.risuai.additionalText).toBe('canonical additional text');
     expect(packedCharx.data.alternate_greetings).toEqual(['greeting one', 'greeting two']);

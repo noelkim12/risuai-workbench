@@ -26,6 +26,7 @@
   export let onPackArtifact: (stableId: string, recovery: boolean) => void;
   export let onToggleSection: (sectionId: string) => void;
   export let onOpenItem: (item: CharacterItem) => void;
+  export let onOpenAssetManager: (stableId: string) => void;
   export let onMoveLorebookItem: (
     item: CharacterItem,
     targetFolderPath: string | null,
@@ -34,6 +35,7 @@
   ) => void;
   export let onMoveLorebookFolder: (folderPath: string, targetFolderPath: string, placement: 'before' | 'after') => void;
   export let onMoveRegexItem: (item: CharacterItem, targetItemId: string, placement: 'before' | 'after') => void;
+  export let onMoveGreetingItem: (item: CharacterItem, targetItemId: string, placement: 'before' | 'after') => void;
   export let onCreateSectionEntry: (
     sectionKind: ArtifactBrowserCreateSectionKind,
     entryKind: ArtifactBrowserCreateSectionEntryKind,
@@ -98,9 +100,11 @@
     {expandedSectionIds}
     {onToggleSection}
     {onOpenItem}
+    onOpenAssetManager={() => onOpenAssetManager(artifact.stableId)}
     {onMoveLorebookItem}
     {onMoveLorebookFolder}
     {onMoveRegexItem}
+    {onMoveGreetingItem}
     {onCreateSectionEntry}
   />
 </main>

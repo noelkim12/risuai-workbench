@@ -9,12 +9,16 @@ import {
   ARTIFACT_BROWSER_VIEW_ID,
   type ArtifactBrowserAnalyzeArtifactMessage,
   type ArtifactBrowserAnalyzeArtifactPayload,
+  type ArtifactBrowserOpenAssetManagerMessage,
+  type ArtifactBrowserOpenAssetManagerPayload,
   type ArtifactBrowserCreateArtifactMessage,
   type ArtifactBrowserCreateArtifactPayload,
   type ArtifactBrowserCreateSectionEntryMessage,
   type ArtifactBrowserCreateSectionEntryPayload,
   type ArtifactBrowserMoveLorebookFolderMessage,
   type ArtifactBrowserMoveLorebookFolderPayload,
+  type ArtifactBrowserMoveGreetingItemMessage,
+  type ArtifactBrowserMoveGreetingItemPayload,
   type ArtifactBrowserMoveLorebookItemMessage,
   type ArtifactBrowserMoveLorebookItemPayload,
   type ArtifactBrowserMoveRegexItemMessage,
@@ -57,11 +61,13 @@ type ArtifactBrowserInboundMessage =
   | ArtifactBrowserImportArtifactMessage
   | ArtifactBrowserPackArtifactMessage
   | ArtifactBrowserAnalyzeArtifactMessage
+  | ArtifactBrowserOpenAssetManagerMessage
   | ArtifactBrowserSelectMessage
   | ArtifactBrowserOpenItemMessage
   | ArtifactBrowserMoveLorebookItemMessage
   | ArtifactBrowserMoveLorebookFolderMessage
   | ArtifactBrowserMoveRegexItemMessage
+  | ArtifactBrowserMoveGreetingItemMessage
   | ArtifactBrowserCreateSectionEntryMessage;
 
 function createArtifactBrowserMessageGuard<TMessage extends ArtifactBrowserInboundMessage>(
@@ -133,6 +139,18 @@ const isArtifactBrowserMoveRegexItemPayload: ArtifactBrowserPayloadGuard<Artifac
   payload.targetItemId.length > 0 &&
   isSiblingPlacement(payload.placement);
 
+const isArtifactBrowserMoveGreetingItemPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserMoveGreetingItemPayload> = (
+  payload,
+): payload is ArtifactBrowserMoveGreetingItemPayload =>
+  isPlainRecord(payload) &&
+  typeof payload.stableId === 'string' &&
+  payload.stableId.length > 0 &&
+  typeof payload.itemId === 'string' &&
+  payload.itemId.length > 0 &&
+  typeof payload.targetItemId === 'string' &&
+  payload.targetItemId.length > 0 &&
+  isSiblingPlacement(payload.placement);
+
 const isArtifactBrowserCreateSectionEntryPayload: ArtifactBrowserPayloadGuard<
   ArtifactBrowserCreateSectionEntryPayload
 > = (payload): payload is ArtifactBrowserCreateSectionEntryPayload =>
@@ -181,6 +199,11 @@ const isArtifactBrowserAnalyzeArtifactPayload: ArtifactBrowserPayloadGuard<Artif
 ): payload is ArtifactBrowserAnalyzeArtifactPayload =>
   isPlainRecord(payload) && typeof payload.stableId === 'string' && payload.stableId.length > 0;
 
+const isArtifactBrowserOpenAssetManagerPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserOpenAssetManagerPayload> = (
+  payload,
+): payload is ArtifactBrowserOpenAssetManagerPayload =>
+  isPlainRecord(payload) && typeof payload.stableId === 'string' && payload.stableId.length > 0;
+
 const isArtifactBrowserReadyMessageEnvelope = createArtifactBrowserMessageGuard<ArtifactBrowserReadyMessage>(
   'artifact-browser/ready',
   isArtifactBrowserViewPayload,
@@ -215,6 +238,12 @@ const isArtifactBrowserAnalyzeArtifactMessageEnvelope =
     isArtifactBrowserAnalyzeArtifactPayload,
   );
 
+const isArtifactBrowserOpenAssetManagerMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserOpenAssetManagerMessage>(
+    'artifact-browser/openAssetManager',
+    isArtifactBrowserOpenAssetManagerPayload,
+  );
+
 const isArtifactBrowserSelectMessageEnvelope = createArtifactBrowserMessageGuard<ArtifactBrowserSelectMessage>(
   'artifact-browser/select',
   isArtifactBrowserSelectPayload,
@@ -241,6 +270,12 @@ const isArtifactBrowserMoveRegexItemMessageEnvelope =
   createArtifactBrowserMessageGuard<ArtifactBrowserMoveRegexItemMessage>(
     'artifact-browser/moveRegexItem',
     isArtifactBrowserMoveRegexItemPayload,
+  );
+
+const isArtifactBrowserMoveGreetingItemMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserMoveGreetingItemMessage>(
+    'artifact-browser/moveGreetingItem',
+    isArtifactBrowserMoveGreetingItemPayload,
   );
 
 const isArtifactBrowserCreateSectionEntryMessageEnvelope =
@@ -295,6 +330,12 @@ export function isArtifactBrowserAnalyzeArtifactMessage(
   return isArtifactBrowserAnalyzeArtifactMessageEnvelope(message);
 }
 
+export function isArtifactBrowserOpenAssetManagerMessage(
+  message: unknown,
+): message is ArtifactBrowserOpenAssetManagerMessage {
+  return isArtifactBrowserOpenAssetManagerMessageEnvelope(message);
+}
+
 /**
  * isArtifactBrowserSelectMessage 함수.
  * Webview selection message가 detail-view seed로 저장 가능한지 확인함.
@@ -333,6 +374,12 @@ export function isArtifactBrowserMoveRegexItemMessage(message: unknown): message
   return isArtifactBrowserMoveRegexItemMessageEnvelope(message);
 }
 
+export function isArtifactBrowserMoveGreetingItemMessage(
+  message: unknown,
+): message is ArtifactBrowserMoveGreetingItemMessage {
+  return isArtifactBrowserMoveGreetingItemMessageEnvelope(message);
+}
+
 export function isArtifactBrowserCreateSectionEntryMessage(
   message: unknown,
 ): message is ArtifactBrowserCreateSectionEntryMessage {
@@ -340,7 +387,7 @@ export function isArtifactBrowserCreateSectionEntryMessage(
 }
 
 function isCreatableSectionKind(value: unknown): value is ArtifactBrowserCreateSectionEntryPayload['sectionKind'] {
-  return value === 'lorebooks' || value === 'regexRules' || value === 'lua';
+  return value === 'lorebooks' || value === 'regexRules' || value === 'lua' || value === 'character';
 }
 
 function isCreateSectionEntryKind(value: unknown): value is ArtifactBrowserCreateSectionEntryPayload['entryKind'] {

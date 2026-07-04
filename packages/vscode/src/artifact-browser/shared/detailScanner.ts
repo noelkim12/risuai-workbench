@@ -143,6 +143,7 @@ export class GenericDetailScanner<
     await this.populateLorebookTree(scanRootUri, sections);
     await this.populateLuaTree(sections);
     await this.populateRegexOrder(scanRootUri, sections);
+    await this.populateCharacterTree(scanRootUri, sections);
 
     return this.config.sectionOrder.map((kind) => ({
       ...sections[kind],
@@ -240,6 +241,19 @@ export class GenericDetailScanner<
     if (!regexSection || regexSection.items.length === 0) return;
 
     regexSection.items = await orderDirectoryItems(scanRootUri, 'regex', regexSection.items);
+  }
+
+  private async populateCharacterTree(
+    scanRootUri: vscode.Uri,
+    sections: Record<TSectionKind, SectionDraft>,
+  ): Promise<void> {
+    const characterSection = (sections as Record<string, SectionDraft>)['character'];
+    if (!characterSection || characterSection.items.length === 0) return;
+
+    const greetingOrder = (await readLorebookOrder(scanRootUri, `character/${ALTERNATE_GREETINGS_DIR}`)).filter(
+      (entry) => !entry.includes('/'),
+    );
+    characterSection.tree = buildCharacterTree(characterSection.items, greetingOrder);
   }
 }
 
@@ -426,7 +440,8 @@ function buildBrowserItemTree(items: BrowserItem[], folderPaths: string[] = []):
 
     const parentPath = segments.slice(0, -1).join('/');
     const parentNode = ensureLorebookFolderNode(roots, folders, parentPath);
-    (parentNode.children ??= []).push(createItemTreeNode(item));
+    if (!parentNode.children) parentNode.children = [];
+    parentNode.children.push(createItemTreeNode(item));
   }
 
   return roots;
@@ -456,7 +471,8 @@ function ensureLorebookFolderNode(
       folders.set(currentPath, currentNode);
       siblings.push(currentNode);
     }
-    siblings = currentNode.children ??= [];
+    if (!currentNode.children) currentNode.children = [];
+    siblings = currentNode.children;
   }
 
   return currentNode ?? { id: 'folder:', label: '', kind: 'folder', children: roots };
@@ -603,6 +619,152 @@ function getLuaTreeMetadata(treePath: string): Partial<LuaTreeMetadata> {
 function getLuaTreePath(item: BrowserItem): string {
   const localPath = stripDirectoryPrefix(item.relativePath, 'lua');
   return localPath || item.relativePath || item.label;
+}
+
+const ALTERNATE_GREETINGS_DIR = 'alternate_greetings';
+
+const CHARACTER_FIELD_ORDER = [
+  'description.risutext',
+  'first_mes.risutext',
+  'system_prompt.risutext',
+  'replace_global_note.risutext',
+  'creator_notes.risutext',
+  'additional_text.risutext',
+] as const;
+
+interface CharacterTreeMetadata {
+  description: string;
+  detailDescription: string;
+}
+
+const CHARACTER_FIELD_METADATA: Record<string, CharacterTreeMetadata> = {
+  'description.risutext': {
+    description: '설명',
+    detailDescription:
+      '캐릭터의 정체성·성격·배경·외형을 서술하는 핵심 프롬프트 본문입니다. 대화 전반에 지속적으로 주입되어 캐릭터의 기준 페르소나를 형성합니다.',
+  },
+  'first_mes.risutext': {
+    description: '퍼스트 메세지',
+    detailDescription:
+      '대화가 시작될 때 캐릭터가 가장 먼저 출력하는 첫 인사 메시지입니다. 장면의 분위기와 말투의 기준을 잡는 도입부 역할을 합니다.',
+  },
+  'system_prompt.risutext': {
+    description: '시스템 프롬프트',
+    detailDescription:
+      '모델을 최상위에서 통제하는 캐릭터 전용 system 지침입니다. 비어 있으면 프리셋 기본값을 따르고, 값이 있으면 이 카드에 한해 우선 적용됩니다.',
+  },
+  'replace_global_note.risutext': {
+    description: '글로벌 노트 덮어쓰기',
+    detailDescription:
+      '프리셋의 global note(전역 보조 지침)를 이 캐릭터 값으로 대체합니다. 카드별로 전역 지침을 재정의할 때 사용합니다.',
+  },
+  'creator_notes.risutext': {
+    description: '제작자 코멘트',
+    detailDescription:
+      '런타임 프롬프트에는 주입되지 않는 제작자용 메모입니다. 사용법·주의사항·크레딧 등 사람이 읽는 설명을 남깁니다.',
+  },
+  'additional_text.risutext': {
+    description: '추가 디스크립션',
+    detailDescription:
+      'description을 보완하는 부가 서술 필드입니다. 세계관·설정 등 본문과 분리해 두고 싶은 추가 맥락을 담습니다.',
+  },
+  [ALTERNATE_GREETINGS_DIR]: {
+    description: '추가 첫 메시지',
+    detailDescription:
+      '사용자가 대화 시작 시 선택할 수 있는 대체 첫 인사 모음입니다. 순서는 _order.json으로 관리되며, [+]로 추가하고 드래그로 재정렬합니다.',
+  },
+};
+
+function getCharacterTreeMetadata(key: string): Partial<CharacterTreeMetadata> {
+  return CHARACTER_FIELD_METADATA[key] ?? {};
+}
+
+function getCharacterTreePath(item: BrowserItem): string {
+  const localPath = stripDirectoryPrefix(item.relativePath, 'character');
+  return localPath || item.relativePath || item.label;
+}
+
+export function buildCharacterTree(items: BrowserItem[], greetingOrder: string[]): BrowserTreeNode[] {
+  const greetingPrefix = `${ALTERNATE_GREETINGS_DIR}/`;
+  const fieldItems = new Map<string, BrowserItem>();
+  const greetingItems: Array<{ item: BrowserItem; fileName: string }> = [];
+
+  for (const item of items) {
+    const localPath = getCharacterTreePath(item);
+    if (localPath.startsWith(greetingPrefix)) {
+      const fileName = localPath.slice(greetingPrefix.length);
+      if (fileName && !fileName.includes('/')) greetingItems.push({ item, fileName });
+      continue;
+    }
+    if (localPath && !localPath.includes('/')) fieldItems.set(localPath, item);
+  }
+
+  const roots: BrowserTreeNode[] = [];
+  const known = new Set<string>(CHARACTER_FIELD_ORDER);
+  const orderedFieldNames = [
+    ...CHARACTER_FIELD_ORDER.filter((name) => fieldItems.has(name)),
+    ...[...fieldItems.keys()].filter((name) => !known.has(name)).sort(),
+  ];
+  for (const name of orderedFieldNames) {
+    const item = fieldItems.get(name);
+    if (item) roots.push(createCharacterFieldNode(item, name));
+  }
+
+  roots.push(createGreetingFolderNode(greetingItems, greetingOrder));
+  return roots;
+}
+
+function createCharacterFieldNode(item: BrowserItem, fieldName: string): BrowserTreeNode {
+  return {
+    id: `character-item:${item.relativePath ?? item.id}`,
+    label: item.label,
+    kind: 'item',
+    relativePath: item.relativePath,
+    treePath: fieldName,
+    ...getCharacterTreeMetadata(fieldName),
+    item,
+  };
+}
+
+function createGreetingFolderNode(
+  greetingItems: Array<{ item: BrowserItem; fileName: string }>,
+  greetingOrder: string[],
+): BrowserTreeNode {
+  const byFileName = new Map(greetingItems.map((entry) => [entry.fileName, entry.item]));
+  const orderedItems: BrowserItem[] = [];
+  const seen = new Set<string>();
+  for (const fileName of greetingOrder) {
+    const item = byFileName.get(fileName);
+    if (!item || seen.has(item.id)) continue;
+    orderedItems.push(item);
+    seen.add(item.id);
+  }
+  for (const entry of [...greetingItems].sort((left, right) => left.fileName.localeCompare(right.fileName))) {
+    if (seen.has(entry.item.id)) continue;
+    orderedItems.push(entry.item);
+    seen.add(entry.item.id);
+  }
+
+  return {
+    id: `character-folder:${ALTERNATE_GREETINGS_DIR}`,
+    label: ALTERNATE_GREETINGS_DIR,
+    kind: 'folder',
+    relativePath: `character/${ALTERNATE_GREETINGS_DIR}`,
+    treePath: ALTERNATE_GREETINGS_DIR,
+    ...getCharacterTreeMetadata(ALTERNATE_GREETINGS_DIR),
+    children: orderedItems.map((item) => createGreetingItemNode(item)),
+  };
+}
+
+function createGreetingItemNode(item: BrowserItem): BrowserTreeNode {
+  return {
+    id: `character-greeting:${item.relativePath ?? item.id}`,
+    label: item.label,
+    kind: 'item',
+    relativePath: item.relativePath,
+    treePath: `${ALTERNATE_GREETINGS_DIR}/${item.label}`,
+    item,
+  };
 }
 
 function stripDirectoryPrefix(relativePath: string | undefined, directoryName: string): string | undefined {

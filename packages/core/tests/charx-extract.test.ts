@@ -97,7 +97,7 @@ function createCanonicalCharacterFixture(): Buffer {
       description: 'Fixture description',
       first_mes: 'Fixture first message',
       system_prompt: 'Fixture system prompt',
-      replaceGlobalNote: 'Fixture replace global note',
+      post_history_instructions: 'Fixture replace global note',
       creator_notes: 'Fixture creator notes',
       alternate_greetings: ['Greeting one', 'Greeting two'],
       tags: ['female', 'OfficeLady', 'romance'],

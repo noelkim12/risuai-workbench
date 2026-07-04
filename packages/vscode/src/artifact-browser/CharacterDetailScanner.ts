@@ -5,6 +5,7 @@
  */
 
 import path from 'node:path';
+import * as vscode from 'vscode';
 import type {
   BrowserItemType,
   BrowserSectionKind,
@@ -15,34 +16,39 @@ import { GenericDetailScanner, type SectionDraft, createSection } from './shared
 
 const SECTION_ORDER = [
   'manifest',
+  'character',
   'lorebooks',
   'regexRules',
   'html',
   'lua',
   'toggle',
   'variables',
+  'assets',
   'diagnostics',
 ] as const satisfies readonly BrowserSectionKind[];
 
 type CharacterDetailSectionKind = (typeof SECTION_ORDER)[number];
 
-const SCAN_DIRECTORIES = ['lorebooks', 'lorebook', 'regex', 'html', 'lua', 'toggle', 'variables'] as const;
+const SCAN_DIRECTORIES = ['character', 'lorebooks', 'lorebook', 'regex', 'html', 'lua', 'toggle', 'variables'] as const;
 
 function createCharacterSectionDrafts(): Record<CharacterDetailSectionKind, SectionDraft> {
   return {
     manifest: createSection('manifest', 'Manifest', 'manifest'),
+    character: createSection('character', 'Character', 'character'),
     lorebooks: createSection('lorebooks', 'Lorebooks', 'lorebooks'),
     regexRules: createSection('regexRules', 'Regex Rules', 'regexRules'),
     html: createSection('html', 'HTML', 'html'),
     lua: createSection('lua', 'Lua', 'lua'),
     toggle: createSection('toggle', 'Toggle', 'toggle'),
     variables: createSection('variables', 'Variables', 'variables'),
+    assets: createSection('assets', 'Assets', 'assets'),
     diagnostics: createSection('diagnostics', 'Diagnostics', 'diagnostics'),
   };
 }
 
 function classifyFile(relativePath: string): CharacterDetailSectionKind | undefined {
   const lowerPath = relativePath.toLowerCase();
+  if (isUnderDirectory(lowerPath, 'character')) return 'character';
   if (isUnderDirectory(lowerPath, 'lorebooks') || isUnderDirectory(lowerPath, 'lorebook')) return 'lorebooks';
   if (isUnderDirectory(lowerPath, 'regex')) return 'regexRules';
   if (isUnderDirectory(lowerPath, 'html')) return 'html';
@@ -107,6 +113,42 @@ export class CharacterDetailScanner {
    * @returns detail view에 표시할 stable section 목록
    */
   async scan(card: CharacterBrowserCard): Promise<CharacterSection[]> {
-    return scanner.scan(card) as Promise<CharacterSection[]>;
+    const sections = (await scanner.scan(card)) as CharacterSection[];
+    return withAssetCount(card.markerUri, sections);
   }
+}
+
+async function withAssetCount(markerUri: string, sections: CharacterSection[]): Promise<CharacterSection[]> {
+  const assetsSection = sections.find((section) => section.kind === 'assets');
+  if (!assetsSection) return sections;
+
+  const rootUri = vscode.Uri.file(path.dirname(vscode.Uri.parse(markerUri).fsPath));
+  const count = await countAssetFiles(vscode.Uri.joinPath(rootUri, 'assets'));
+  return sections.map((section) =>
+    section.kind === 'assets'
+      ? { ...assetsSection, count, items: [] }
+      : section,
+  );
+}
+
+async function countAssetFiles(directoryUri: vscode.Uri): Promise<number> {
+  let entries: [string, vscode.FileType][];
+  try {
+    entries = await vscode.workspace.fs.readDirectory(directoryUri);
+  } catch {
+    return 0;
+  }
+
+  let count = 0;
+  for (const [name, fileType] of entries) {
+    const childUri = vscode.Uri.joinPath(directoryUri, name);
+    if (fileType === vscode.FileType.Directory) {
+      count += await countAssetFiles(childUri);
+      continue;
+    }
+    if (fileType === vscode.FileType.File && name !== 'manifest.json' && name !== 'asset-catalog.json') {
+      count += 1;
+    }
+  }
+  return count;
 }
