@@ -174,30 +174,38 @@
   .output-card {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
+    gap: var(--space-2);
     border: 1px solid var(--card-border);
-    border-radius: var(--radius-sm);
-    padding: var(--space-2);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    background: var(--card);
   }
   .output-card header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: var(--space-2);
+  }
+  .output-card header > div {
+    display: flex;
+    gap: var(--space-1);
+    flex: 0 0 auto;
   }
   .output-card h2 {
     margin: 0;
-    font-size: 0.95rem;
+    font-size: var(--text-lg);
+    font-weight: 700;
   }
   .output-card textarea {
     width: 100%;
     box-sizing: border-box;
     font-family: var(--vscode-editor-font-family, monospace);
-    font-size: 11px;
+    font-size: var(--text-sm);
     resize: vertical;
   }
   .output-save {
     display: flex;
-    gap: 4px;
+    gap: var(--space-1);
   }
   .output-save input {
     flex: 1;
