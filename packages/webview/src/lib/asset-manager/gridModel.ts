@@ -238,7 +238,7 @@ export function computeMissingMatrixClient(
 
   if (slotIds.length === 3) {
     if (s1 === undefined) return null;
-    return computeThreeSlotMatrix(catalog, s1, s2);
+    return computeThreeSlotMatrix(catalog, s1, s2, options);
   }
 
   if (slotIds.length === 2) return computeTwoSlotMatrix(catalog, s1, options);
@@ -254,42 +254,103 @@ export function computeMissingMatrixClient(
 export interface MatrixViewOptions {
   /** true 면 s2 조합 파일도 없고 명시적 expected override 도 없는 "s1-only" 값을 축에서 제외. */
   readonly hideBareS1?: boolean;
+  /**
+   * true 면 hideBareS1 이 켜져 있어도 "부분 조합"(s1·s2 만 있고 s3 없는) 캐릭터를 축에 포함한다.
+   * 3슬롯에서 s3 축까지 완성돼야 비교 대상이 되는 기본 규칙을 s2 까지로 완화한다(2슬롯은 무영향).
+   */
+  readonly includePartialCombos?: boolean;
+  /** 각 슬롯 축에서 제외(숨김)할 값. 해당 슬롯이 행/열 축으로 등장하는 곳에서 제거된다. */
+  readonly excluded?: {
+    readonly s1?: ReadonlySet<string>;
+    readonly s2?: ReadonlySet<string>;
+    readonly s3?: ReadonlySet<string>;
+  };
 }
 
 /**
- * s2 조합(assignments 중 s2 정의됨) 또는 명시적 expected override 가 있는 s1 집합.
- * 여기에 없는 s1 은 "s1 만 태그된 포트레이트류" 로 간주해 조합 비교 축에서 뺄 수 있다.
+ * "완전한 조합" 파일(s1 이후 모든 슬롯이 채워진 assignment) 또는 명시적 expected override 가 있는 s1 집합.
+ * 여기에 없는 s1 은 "조합이 불완전한(포트레이트/부분태그) 캐릭터" 로 간주해 조합 비교 축에서 뺄 수 있다.
+ * 슬롯 수에 따라 요구 조건이 달라진다: 2슬롯이면 s2 만, 3슬롯이면 s2·s3 가 모두 있어야 비교 축에 남는다.
+ * (3슬롯인데 s1·s2 만 있는 캐릭터는 s3 축 비교가 불가능하므로 제외한다.)
  */
-function s1WithCombosOrOverride(catalog: AssetCatalogMirror): Set<string> {
+function s1WithCombosOrOverride(catalog: AssetCatalogMirror, options?: MatrixViewOptions): Set<string> {
+  const nonFirstSlotIds = catalog.schema.slots.slice(1).map((slot) => slot.id);
+  // includePartialCombos 면 첫 비-첫 슬롯(s2)까지만 요구 → 3슬롯이라도 s1·s2 만 있으면 축에 포함.
+  const requiredSlotIds = options?.includePartialCombos ? nonFirstSlotIds.slice(0, 1) : nonFirstSlotIds;
   const set = new Set<string>();
   for (const slots of Object.values(catalog.assignments)) {
-    if (slots.s1 !== undefined && slots.s2 !== undefined) set.add(slots.s1);
+    if (slots.s1 !== undefined && requiredSlotIds.every((slotId) => slots[slotId] !== undefined)) set.add(slots.s1);
   }
   for (const s1 of Object.keys(catalog.expected)) set.add(s1);
   return set;
 }
 
-/** hideBareS1 옵션이 켜져 있으면 조합/override 없는 s1 을 걸러낸다. */
+/** hideBareS1 옵션이 켜져 있으면 조합/override 없는 s1 을 걸러낸다(includePartialCombos 로 완화 가능). excluded.s1 은 항상 제외. */
 function filterAxisS1(catalog: AssetCatalogMirror, s1Values: readonly string[], options?: MatrixViewOptions): string[] {
-  if (!options?.hideBareS1) return [...s1Values];
-  const keep = s1WithCombosOrOverride(catalog);
-  return s1Values.filter((s1) => keep.has(s1));
+  const excluded = options?.excluded?.s1;
+  const values = excluded ? s1Values.filter((s1) => !excluded.has(s1)) : [...s1Values];
+  if (!options?.hideBareS1) return values;
+  const keep = s1WithCombosOrOverride(catalog, options);
+  return values.filter((s1) => keep.has(s1));
+}
+
+/**
+ * 실제 "완전 조합"(첫 슬롯 이후 모든 슬롯이 채워진 assignment) 에 등장하는 s2 값 ∪ expected override 의 s2.
+ * 3슬롯에서 s1·s2 만 있는(s3 없는) 파일에서만 쓰인 s2 는 여기 안 들어온다 → 요약 축 노이즈 제거.
+ */
+function s2InFullCombosOrOverride(catalog: AssetCatalogMirror): Set<string> {
+  const nonFirstSlotIds = catalog.schema.slots.slice(1).map((slot) => slot.id);
+  const set = new Set<string>();
+  for (const slots of Object.values(catalog.assignments)) {
+    if (slots.s1 !== undefined && slots.s2 !== undefined && nonFirstSlotIds.every((slotId) => slots[slotId] !== undefined)) {
+      set.add(slots.s2);
+    }
+  }
+  for (const slotMap of Object.values(catalog.expected)) {
+    for (const value of slotMap.s2 ?? []) set.add(value);
+  }
+  return set;
+}
+
+/** hideBareS1 시 s2 축을 "실제 완전 조합/override 에 쓰인 값" 으로 제한한다. excluded.s2 은 hideBareS1 과 무관하게 항상 제외. */
+function filterAxisS2(catalog: AssetCatalogMirror, s2Values: readonly string[], options?: MatrixViewOptions): string[] {
+  const excluded = options?.excluded?.s2;
+  const values = excluded ? s2Values.filter((s2) => !excluded.has(s2)) : [...s2Values];
+  if (!options?.hideBareS1) return values;
+  const keep = s2InFullCombosOrOverride(catalog);
+  return values.filter((s2) => keep.has(s2));
 }
 
 export function computeSummaryMatrixClient(catalog: AssetCatalogMirror, options?: MatrixViewOptions): SummaryMatrixClient | null {
   if (catalog.schema.slots.length !== 3) return null;
   const rows = filterAxisS1(catalog, catalog.vocab.s1 ?? [], options);
-  const cols = [...(catalog.vocab.s2 ?? [])];
+  // 열(s2)도 실제 완전 조합에 등장하는 값만 — vocab 전체를 깔면 s1·s2 만 있던 s2 가 빈 열로 새어나온다.
+  const cols = filterAxisS2(catalog, catalog.vocab.s2 ?? [], options);
   const { detailedGroups, comboGroups } = groupSummaryAssignments(catalog);
   return {
     rows,
     cols,
     cells: rows.map((row) => {
       const expectedS2 = new Set(expectedListForClient(catalog, row, 's2'));
-      const expectedS3 = expectedListForClient(catalog, row, 's3');
+      const s3Excluded = options?.excluded?.s3;
+      const expectedS3 = expectedListForClient(catalog, row, 's3').filter((s3) => !s3Excluded?.has(s3));
       return cols.map((col) => summarizeSummaryCell(detailedGroups, comboGroups, row, col, expectedS2.has(col), expectedS3));
     }),
   };
+}
+
+/**
+ * 3슬롯 스키마를 s3 무시하고 s1×s2 존재 여부만 비교하는 매트릭스(2슬롯 로직 재사용).
+ * 셀 = 해당 (s1, s2) 로 태그된 파일이 하나라도 있으면 present(그 s3 조합은 신경쓰지 않음).
+ * s3 를 의도적으로 무시하므로 축 필터는 "s2 만 있으면 유지"(includePartialCombos)로 완화한다.
+ */
+export function computeS1S2MatrixClient(catalog: AssetCatalogMirror, options?: MatrixViewOptions): MissingMatrixClient | null {
+  if (catalog.schema.slots.length !== 3) return null;
+  return computeTwoSlotMatrix(catalog, undefined, {
+    hideBareS1: options?.hideBareS1,
+    includePartialCombos: true,
+    excluded: options?.excluded,
+  });
 }
 
 /**
@@ -321,7 +382,11 @@ export function computeCrossMatrixClient(catalog: AssetCatalogMirror, options?: 
     if (slots.s2 !== undefined && slots.s3 !== undefined) comboSet.add(comboKey([slots.s2, slots.s3]));
   }
 
-  const rows = orderCrossRows(comboSet, catalog.vocab.s2 ?? [], catalog.vocab.s3 ?? []);
+  const excludedS2 = options?.excluded?.s2;
+  const excludedS3 = options?.excluded?.s3;
+  const rows = orderCrossRows(comboSet, catalog.vocab.s2 ?? [], catalog.vocab.s3 ?? []).filter(
+    (row) => !excludedS2?.has(row.s2) && !excludedS3?.has(row.s3),
+  );
   const groups = groupAssignments(catalog, ['s1', 's2', 's3']);
   return {
     rows,
@@ -510,10 +575,12 @@ function cellState(count: number, excluded: boolean): MissingCellState {
   return count > 1 ? 'duplicate' : 'present';
 }
 
-function computeThreeSlotMatrix(catalog: AssetCatalogMirror, s1: string, s2?: string): MissingMatrixClient {
+function computeThreeSlotMatrix(catalog: AssetCatalogMirror, s1: string, s2?: string, options?: MatrixViewOptions): MissingMatrixClient {
+  const excludedS2 = options?.excluded?.s2;
+  const excludedS3 = options?.excluded?.s3;
   // s2 조건이 걸리면 해당 outfit 한 행으로 축소(후보 검증은 호출측 드롭다운이 담당)
-  const rows = s2 ? [s2] : expectedListForClient(catalog, s1, 's2');
-  const cols = expectedListForClient(catalog, s1, 's3');
+  const rows = (s2 ? [s2] : expectedListForClient(catalog, s1, 's2')).filter((row) => !excludedS2?.has(row));
+  const cols = expectedListForClient(catalog, s1, 's3').filter((col) => !excludedS3?.has(col));
   const groups = groupAssignments(catalog, ['s1', 's2', 's3']);
   return {
     rowSlotId: 's2',
@@ -533,7 +600,8 @@ function computeTwoSlotMatrix(catalog: AssetCatalogMirror, s1?: string, options?
   const allRows = catalog.vocab.s1 ?? [];
   // s1 pin 이 걸리면 해당 캐릭터 한 행으로 축소, 아니면 전체(옵션에 따라 s1-only 제외).
   const rows = s1 ? allRows.filter((row) => row === s1) : filterAxisS1(catalog, allRows, options);
-  const cols = [...(catalog.vocab.s2 ?? [])];
+  const excludedS2 = options?.excluded?.s2;
+  const cols = (catalog.vocab.s2 ?? []).filter((col) => !excludedS2?.has(col));
   const groups = groupAssignments(catalog, ['s1', 's2']);
   return {
     rowSlotId: 's1',

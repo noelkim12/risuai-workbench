@@ -10,6 +10,7 @@ import {
   chainedValuesForClient,
   computeCrossMatrixClient,
   computeMissingMatrixClient,
+  computeS1S2MatrixClient,
   computeSummaryMatrixClient,
   computeVirtualWindow,
   filterAssetEntries,
@@ -348,6 +349,80 @@ describe('computeSummaryMatrixClient', () => {
     expect(computeSummaryMatrixClient(withBare, { hideBareS1: true })?.rows).toEqual(['Rin', 'Yua']);
   });
 
+  it('excludes s2 columns that only appear in s1+s2-only files (never in a full combo) when hideBareS1 is set', () => {
+    const withPartialS2 = {
+      ...threeSlotCatalog,
+      vocab: { s1: ['Rin'], s2: ['casual', 'mapview'], s3: ['angry', 'sad'] },
+      expected: {},
+      assignments: {
+        'a/rin_casual_angry.png': { s1: 'Rin', s2: 'casual', s3: 'angry' }, // casual: 완전 조합
+        'a/rin_mapview.png': { s1: 'Rin', s2: 'mapview' }, // mapview: s1·s2 만 (s3 없음)
+      },
+    };
+    // 필터 없이는 vocab s2 전체(casual, mapview)
+    expect(computeSummaryMatrixClient(withPartialS2)?.cols).toEqual(['casual', 'mapview']);
+    // hideBareS1: 완전 조합에 없는 mapview 열 제외
+    expect(computeSummaryMatrixClient(withPartialS2, { hideBareS1: true })?.cols).toEqual(['casual']);
+  });
+
+  it('keeps s2 columns that appear in an expected override even without a full-combo file', () => {
+    const withOverrideS2 = {
+      ...threeSlotCatalog,
+      vocab: { s1: ['Rin'], s2: ['casual', 'planned'], s3: ['angry', 'sad'] },
+      expected: { Rin: { s2: ['casual', 'planned'] } },
+      assignments: {
+        'a/rin_casual_angry.png': { s1: 'Rin', s2: 'casual', s3: 'angry' },
+      },
+    };
+    // planned 는 파일이 없지만 expected override 라 열로 유지(빠진 걸 보여주기 위함)
+    expect(computeSummaryMatrixClient(withOverrideS2, { hideBareS1: true })?.cols).toEqual(['casual', 'planned']);
+  });
+
+  it('excludes s1+s2-only characters (no s3) in the 3-slot matrix when hideBareS1 is set', () => {
+    const withPartial = {
+      ...threeSlotCatalog,
+      vocab: { ...threeSlotCatalog.vocab, s1: ['Rin', 'Sol'] },
+      expected: {},
+      assignments: {
+        ...threeSlotCatalog.assignments, // Rin: 완전한 s1+s2+s3 조합
+        'a/sol_casual.png': { s1: 'Sol', s2: 'casual' }, // Sol: s3 없음 → 3슬롯 비교 불가
+      },
+    };
+    // 필터 없이는 vocab 전체 노출
+    expect(computeSummaryMatrixClient(withPartial)?.rows).toEqual(['Rin', 'Sol']);
+    // hideBareS1: Sol 은 s3 가 없어 제외, Rin 만 남는다
+    expect(computeSummaryMatrixClient(withPartial, { hideBareS1: true })?.rows).toEqual(['Rin']);
+    // includePartialCombos: s1·s2 만 있는 Sol 도 비교 축에 다시 포함
+    expect(computeSummaryMatrixClient(withPartial, { hideBareS1: true, includePartialCombos: true })?.rows).toEqual([
+      'Rin',
+      'Sol',
+    ]);
+  });
+
+  it('computeS1S2MatrixClient compares s1×s2 ignoring s3, including s1+s2-only characters', () => {
+    const withPartial = {
+      ...threeSlotCatalog,
+      vocab: { s1: ['Rin', 'Sol'], s2: ['casual', 'uniform'], s3: ['angry', 'sad'] },
+      expected: {},
+      assignments: {
+        'a/rin_casual_angry.png': { s1: 'Rin', s2: 'casual', s3: 'angry' }, // Rin: 완전 조합
+        'a/sol_uniform.png': { s1: 'Sol', s2: 'uniform' }, // Sol: s1·s2 만 (s3 없음)
+      },
+    };
+    const m = computeS1S2MatrixClient(withPartial, { hideBareS1: true });
+    expect(m?.rowSlotId).toBe('s1');
+    expect(m?.colSlotId).toBe('s2');
+    // hideBareS1 이어도 Sol 은 s2 가 있어 s1×s2 축에 남는다(s3 무시).
+    expect(m?.rows).toEqual(['Rin', 'Sol']);
+    // Rin×casual, Sol×uniform 존재
+    const cellState = (row: string, col: string) =>
+      m?.cells[m.rows.indexOf(row)]?.find((c: { col: string }) => c.col === col)?.state;
+    expect(cellState('Rin', 'casual')).toBe('present');
+    expect(cellState('Sol', 'uniform')).toBe('present');
+    // 비-3슬롯 스키마엔 null
+    expect(computeS1S2MatrixClient({ ...withPartial, schema: { ...withPartial.schema, slots: withPartial.schema.slots.slice(0, 2) } })).toBeNull();
+  });
+
   it('returns null for non-3-slot schemas', () => {
     const twoSlot = {
       version: 1 as const,
@@ -489,6 +564,84 @@ describe('computeCrossMatrixClient', () => {
       assignments: {},
     };
     expect(computeCrossMatrixClient(twoSlot)).toBeNull();
+  });
+});
+
+describe('axis exclusion (MatrixViewOptions.excluded)', () => {
+  const twoSlot = {
+    version: 1 as const,
+    schema: {
+      slots: [
+        { id: 's1' as const, label: 'character' },
+        { id: 's2' as const, label: 'emotion' },
+      ],
+      joinTemplate: '{s1} {s2}',
+    },
+    vocab: { s1: ['Rin', 'Yua'], s2: ['angry', 'sad'] },
+    expected: {},
+    assignments: { 'a/rin_angry.png': { s1: 'Rin', s2: 'angry' } },
+  };
+
+  const threeSlot = {
+    version: 1 as const,
+    schema: {
+      slots: [
+        { id: 's1' as const, label: 'character' },
+        { id: 's2' as const, label: 'outfit' },
+        { id: 's3' as const, label: 'emotion' },
+      ],
+      joinTemplate: '{s1} {s2} {s3}',
+    },
+    vocab: { s1: ['Rin', 'Yua'], s2: ['casual', 'uniform'], s3: ['angry', 'sad'] },
+    expected: {},
+    assignments: {
+      'a/rin_casual_angry.png': { s1: 'Rin', s2: 'casual', s3: 'angry' },
+      'a/rin_casual_sad.png': { s1: 'Rin', s2: 'casual', s3: 'sad' },
+      'a/rin_uniform_angry.png': { s1: 'Rin', s2: 'uniform', s3: 'angry' },
+    },
+  };
+
+  it('2-slot: drops excluded s1 rows and s2 cols', () => {
+    expect(
+      computeMissingMatrixClient(twoSlot, undefined, undefined, { excluded: { s1: new Set(['Yua']) } })?.rows,
+    ).toEqual(['Rin']);
+    expect(
+      computeMissingMatrixClient(twoSlot, undefined, undefined, { excluded: { s2: new Set(['sad']) } })?.cols,
+    ).toEqual(['angry']);
+  });
+
+  it('3-slot detail (pinned s1): drops excluded s2 rows and s3 cols', () => {
+    expect(
+      computeMissingMatrixClient(threeSlot, 'Rin', undefined, { excluded: { s2: new Set(['uniform']) } })?.rows,
+    ).toEqual(['casual']);
+    expect(
+      computeMissingMatrixClient(threeSlot, 'Rin', undefined, { excluded: { s3: new Set(['sad']) } })?.cols,
+    ).toEqual(['angry']);
+  });
+
+  it('summary: drops excluded s1 rows / s2 cols and removes excluded s3 from cell counts', () => {
+    expect(computeSummaryMatrixClient(threeSlot, { excluded: { s1: new Set(['Yua']) } })?.rows).toEqual(['Rin']);
+    expect(computeSummaryMatrixClient(threeSlot, { excluded: { s2: new Set(['uniform']) } })?.cols).toEqual(['casual']);
+    // Rin/uniform normally has sad missing (expectedCount 2, missingValues ['sad']).
+    // Excluding s3 'sad' → only angry expected, angry present → complete, expectedCount 1, no missing.
+    const cell = computeSummaryMatrixClient(threeSlot, { excluded: { s3: new Set(['sad']) } })?.cells[0]?.[1];
+    expect(cell).toMatchObject({ state: 'complete', expectedCount: 1, missingValues: [] });
+  });
+
+  it('cross: drops excluded s1 cols and any row whose s2 or s3 is excluded', () => {
+    expect(computeCrossMatrixClient(threeSlot, { excluded: { s1: new Set(['Yua']) } })?.cols).toEqual(['Rin']);
+    expect(computeCrossMatrixClient(threeSlot, { excluded: { s2: new Set(['casual']) } })?.rows).toEqual([
+      { s2: 'uniform', s3: 'angry' },
+    ]);
+    expect(computeCrossMatrixClient(threeSlot, { excluded: { s3: new Set(['sad']) } })?.rows).toEqual([
+      { s2: 'casual', s3: 'angry' },
+      { s2: 'uniform', s3: 'angry' },
+    ]);
+  });
+
+  it('empty/undefined excluded reproduces baseline', () => {
+    expect(computeSummaryMatrixClient(threeSlot, { excluded: {} })?.rows).toEqual(['Rin', 'Yua']);
+    expect(computeMissingMatrixClient(twoSlot)?.rows).toEqual(['Rin', 'Yua']);
   });
 });
 
