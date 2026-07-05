@@ -643,6 +643,25 @@ describe('axis exclusion (MatrixViewOptions.excluded)', () => {
     expect(computeSummaryMatrixClient(threeSlot, { excluded: {} })?.rows).toEqual(['Rin', 'Yua']);
     expect(computeMissingMatrixClient(twoSlot)?.rows).toEqual(['Rin', 'Yua']);
   });
+
+  it('summary: excluded s3 does not keep an out-of-expected s2 cell showing empty', () => {
+    const catalog = {
+      ...threeSlot,
+      expected: { Rin: { s2: ['casual'], s3: ['angry'] } }, // uniform out-of-expected s2; sad out-of-expected s3
+      assignments: { 'a/rin_uniform_sad.png': { s1: 'Rin', s2: 'uniform', s3: 'sad' } },
+    };
+    // Baseline: the uniform cell has a real file → visible as 'empty'.
+    expect(computeSummaryMatrixClient(catalog)?.cells[0]?.[1]?.state).toBe('empty');
+    // Excluding s3 'sad' hides that file entirely → the cell reads 'excluded', not 'empty'.
+    expect(
+      computeSummaryMatrixClient(catalog, { excluded: { s3: new Set(['sad']) } })?.cells[0]?.[1]?.state,
+    ).toBe('excluded');
+  });
+
+  it('computeS1S2MatrixClient forwards excluded to the delegated 2-slot matrix', () => {
+    expect(computeS1S2MatrixClient(threeSlot, { excluded: { s2: new Set(['uniform']) } })?.cols).toEqual(['casual']);
+    expect(computeS1S2MatrixClient(threeSlot, { excluded: { s1: new Set(['Yua']) } })?.rows).toEqual(['Rin']);
+  });
 });
 
 describe('filterEntriesByCombo', () => {
