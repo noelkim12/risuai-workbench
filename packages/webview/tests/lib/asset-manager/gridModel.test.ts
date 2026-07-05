@@ -311,6 +311,20 @@ describe('computeSummaryMatrixClient', () => {
     expect(summary?.cells[0]?.[0]?.state).toBe('excluded');
   });
 
+  it('hides bare s1 (only s1-tagged, no override) rows when hideBareS1 is set', () => {
+    const withBare = {
+      ...threeSlotCatalog,
+      vocab: { ...threeSlotCatalog.vocab, s1: ['Rin', 'Yua', 'Mei'] },
+      expected: { Yua: { s2: ['casual'] } }, // Yua: override 있음 → 조합 파일 없어도 유지
+      assignments: {
+        ...threeSlotCatalog.assignments, // Rin: s2 조합 파일 있음
+        'a/mei_portrait.png': { s1: 'Mei' }, // Mei: s1-only → bare
+      },
+    };
+    expect(computeSummaryMatrixClient(withBare)?.rows).toEqual(['Rin', 'Yua', 'Mei']);
+    expect(computeSummaryMatrixClient(withBare, { hideBareS1: true })?.rows).toEqual(['Rin', 'Yua']);
+  });
+
   it('returns null for non-3-slot schemas', () => {
     const twoSlot = {
       version: 1 as const,
@@ -411,6 +425,22 @@ describe('computeCrossMatrixClient', () => {
       { s2: 'beach', s3: 'wink' },
       { s2: 'winter', s3: 'sad' },
     ]);
+  });
+
+  it('hides bare s1 (only s1-tagged, no override) columns when hideBareS1 is set', () => {
+    const withBare = {
+      ...catalog,
+      vocab: { ...catalog.vocab, s1: ['Rin', 'Yua', 'Mei'] },
+      assignments: {
+        ...catalog.assignments, // Rin: 조합 파일, Yua: override + beach_wink 조합
+        'a/mei_portrait.png': { s1: 'Mei' }, // Mei: s1-only → bare
+      },
+    };
+    expect(computeCrossMatrixClient(withBare)?.cols).toEqual(['Rin', 'Yua', 'Mei']);
+    const hidden = computeCrossMatrixClient(withBare, { hideBareS1: true });
+    expect(hidden?.cols).toEqual(['Rin', 'Yua']);
+    // 각 행 셀도 필터된 열 수와 일치해야 함
+    expect(hidden?.cells.every((cellRow) => cellRow.length === 2)).toBe(true);
   });
 
   it('ignores assignments missing s2 or s3 and returns null for non-3-slot schemas', () => {

@@ -2,6 +2,7 @@
   Asset Manager Matrix view: missing 매트릭스 + expected 편집 + 셀 클릭 콤보 열기.
   D5 가 D3 스텁을 본 구현으로 교체함.
   - 2슬롯: 행=s1·열=s2 매트릭스. 3슬롯: 전체=요약 히트맵 ↔ 교차 비교(행=s2×s3·열=s1) 토글, s1 선택=상세.
+  - "조합 없는 캐릭터" 토글: s2 조합·override 없는 s1-only 값을 비교 축에서 숨김(기본)/표시.
   - 셀 클릭 시 onOpenCombo 로 조합 에셋 모달을 연다.
   - expected 사이드패널: per-s1 슬롯 override 토글(vocab 전체와 같으면 제거).
   @file packages/webview/src/lib/components/asset-manager/MatrixView.svelte
@@ -26,6 +27,7 @@
   let selectedS1 = ''; // '' = 전체 (2슬롯·3슬롯 공통)
   let selectedS2 = ''; // '' = 전체
   let crossMode = false; // 3슬롯 + s1 전체에서 요약 히트맵 ↔ 교차 비교 토글
+  let hideBareS1 = true; // s2 조합·override 없는 "s1-only" 캐릭터를 비교 축에서 숨김(기본 숨김)
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup binds this via bind:value.
   let editingS1 = '';
 
@@ -33,8 +35,8 @@
   $: s1List = catalog.vocab.s1 ?? [];
   // 3슬롯 + s1 전체 → 요약 히트맵 모드 (행=s1 × 열=s2 완성도 집계)
   $: summaryMode = slotCount === 3 && !selectedS1;
-  $: summary = summaryMode && !crossMode ? computeSummaryMatrixClient(catalog) : null;
-  $: cross = summaryMode && crossMode ? computeCrossMatrixClient(catalog) : null;
+  $: summary = summaryMode && !crossMode ? computeSummaryMatrixClient(catalog, { hideBareS1 }) : null;
+  $: cross = summaryMode && crossMode ? computeCrossMatrixClient(catalog, { hideBareS1 }) : null;
   // s2 조건 후보: 선택된 s1 을 통해 chaining 된 s2 (override 있으면 큐레이션, 없으면 실제 할당값)
   $: s2Options = slotCount === 3 && selectedS1 ? chainedValuesForClient(catalog, selectedS1, 's2') : [];
   // s1 이 바뀌어 현재 s2 선택이 후보 밖이면 전체로 리셋
@@ -113,6 +115,14 @@
         {#if slotCount === 3 && !selectedS1}
           <button type="button" class="mode-toggle" onclick={() => (crossMode = !crossMode)}>
             {crossMode ? '요약 보기' : '교차 비교'}
+          </button>
+          <button
+            type="button"
+            class="mode-toggle"
+            title="s2/s3 조합도 override 도 없는 s1-only 캐릭터를 비교 축에서 숨기거나 표시"
+            onclick={() => (hideBareS1 = !hideBareS1)}
+          >
+            {hideBareS1 ? '조합 없는 캐릭터 표시' : '조합 없는 캐릭터 숨김'}
           </button>
         {/if}
         {#if slotCount === 3 && selectedS1}
