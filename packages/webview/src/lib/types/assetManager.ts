@@ -47,7 +47,9 @@ export type AssetExpectedMapMirror = Record<string, Partial<Record<'s2' | 's3', 
 
 export interface AssetCatalogOutputsMirror {
   readonly tagFormat: { readonly prefix: string; readonly suffix: string };
+  /** @deprecated No longer consumed by the generator. Kept for backward compat. */
   readonly fallbackTemplate: string;
+  readonly outputTemplate: string;
 }
 
 export interface AssetCatalogMirror {

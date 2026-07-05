@@ -345,6 +345,7 @@ test('service delegates catalog updates metadata outputs lorebooks tokenization 
     const withSchema = service.updateSchema(withExpected.catalog.schema, {
       tagFormat: { prefix: '<asset:', suffix: '>' },
       fallbackTemplate: '{s1}_fallback',
+      outputTemplate: '<img src="{{raw::{name}}}" alt="{name}">',
     });
     assert.equal(withSchema.catalog.outputs?.tagFormat.prefix, '<asset:');
 
