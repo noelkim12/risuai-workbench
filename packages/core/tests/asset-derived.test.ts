@@ -137,6 +137,24 @@ describe('generateWhitelistRegex', () => {
     empty.vocab.s1 = [];
     expect(generateWhitelistRegex(empty)).toBeNull();
   });
+
+  it('emits an empty tail group when there are no valid suffixes (>=2 slots)', () => {
+    const noSuffix = {
+      ...catalog(),
+      vocab: { s1: ['Elsie'], s2: [] },
+      expected: {},
+      assignments: {},
+    };
+    const result = generateWhitelistRegex(noSuffix);
+    if (result === null) throw new Error('expected non-null');
+    // No suffixes -> tail collapses to an empty capture group '()', keeping $2 valid.
+    expect(result.inPattern).toBe('<img src="(Elsie)()">');
+    const regex = new RegExp(result.inPattern);
+    expect(regex.test('<img src="Elsie">')).toBe(true); // name-only still matches
+    expect(regex.test('<img src="Elsie_angry">')).toBe(false); // nothing after the name is allowed
+    // $1$2 reconstruction still yields just the name (empty $2).
+    expect('<img src="Elsie">'.replace(regex, result.outPattern)).toBe('<img src="{{raw::Elsie}}" alt="Elsie">');
+  });
 });
 
 describe('generateMissingReport', () => {
