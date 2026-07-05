@@ -58,6 +58,13 @@
   let expandedTreeNodeIds: string[] = [];
   let treeFolderFingerprint = '';
 
+  $: assetSection = sections.find((section) => section.kind === 'assets');
+  $: orderedSections = assetSection
+    ? sections.flatMap((section) => {
+        if (section.kind === 'assets') return [];
+        return section.kind === 'character' ? [section, assetSection] : [section];
+      })
+    : sections;
   $: syncTreeExpansion(sections);
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this handler.
@@ -120,7 +127,7 @@
 </script>
 
 <section class="accordion" aria-label="Workbench detail sections">
-  {#each sections as section (section.id)}
+  {#each orderedSections as section (section.id)}
     {@const expanded = expandedSectionIds.includes(section.id)}
     {@const createActions = getCreateActions(section)}
     <article class="accordion__section">

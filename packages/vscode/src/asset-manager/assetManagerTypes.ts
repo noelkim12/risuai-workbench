@@ -14,7 +14,7 @@ import type {
   LorebookNameCandidate,
   MissingCombo,
 } from 'risu-workbench-core';
-import type { ImageMeta } from 'risu-workbench-core/node';
+import type { AssetCatalogBootstrapGroupSummary, AssetCatalogBootstrapSplitOptions, ImageMeta } from 'risu-workbench-core/node';
 
 export const ASSET_MANAGER_PROTOCOL = 'risu-workbench.asset-manager';
 export const ASSET_MANAGER_PROTOCOL_VERSION = 1;
@@ -76,6 +76,23 @@ export interface AssetManagerUpdateExpectedPayload extends AssetManagerStableIdP
   readonly expected: AssetExpectedMap;
 }
 
+export type AssetManagerCatalogBootstrapSource = 'manifest' | 'filename';
+export type AssetManagerCatalogBootstrapMode = 'full' | 'missing';
+
+export interface AssetManagerBootstrapCatalogPayload extends AssetManagerStableIdPayload {
+  readonly source: AssetManagerCatalogBootstrapSource;
+  readonly mode: AssetManagerCatalogBootstrapMode;
+  readonly split?: AssetCatalogBootstrapSplitOptions;
+  /** 부트스트랩과 함께 적용할 스키마(슬롯 수/라벨/구분자). 없으면 기존 catalog 스키마 사용. */
+  readonly schema?: AssetCatalogSchema;
+}
+
+export interface AssetManagerCatalogBootstrapPreviewEntry {
+  readonly path: string;
+  readonly name: string;
+  readonly slots: AssetSlotValues | null;
+}
+
 export interface AssetManagerReadImageMetaPayload extends AssetManagerStableIdPayload {
   readonly path: string;
 }
@@ -101,6 +118,9 @@ export type AssetManagerUpdateSchemaMessage = AssetManagerEnvelope<'asset-manage
 export type AssetManagerUpdateExpectedMessage = AssetManagerEnvelope<'asset-manager/updateExpected', AssetManagerUpdateExpectedPayload>;
 export type AssetManagerAnalyzeLorebookNamesMessage = AssetManagerEnvelope<'asset-manager/analyzeLorebookNames', AssetManagerStableIdPayload>;
 export type AssetManagerBootstrapMessage = AssetManagerEnvelope<'asset-manager/bootstrapFromFilenames', AssetManagerStableIdPayload>;
+export type AssetManagerBootstrapFromManifestMessage = AssetManagerEnvelope<'asset-manager/bootstrapFromManifest', AssetManagerStableIdPayload>;
+export type AssetManagerBootstrapCatalogMessage = AssetManagerEnvelope<'asset-manager/bootstrapCatalog', AssetManagerBootstrapCatalogPayload>;
+export type AssetManagerPreviewCatalogBootstrapMessage = AssetManagerEnvelope<'asset-manager/previewCatalogBootstrap', AssetManagerBootstrapCatalogPayload>;
 export type AssetManagerReadImageMetaMessage = AssetManagerEnvelope<'asset-manager/readImageMeta', AssetManagerReadImageMetaPayload>;
 export type AssetManagerGenerateOutputsMessage = AssetManagerEnvelope<'asset-manager/generateOutputs', AssetManagerGenerateOutputsPayload>;
 export type AssetManagerSaveOutputMessage = AssetManagerEnvelope<'asset-manager/saveOutput', AssetManagerSaveOutputPayload>;
@@ -115,6 +135,9 @@ export type AssetManagerWebviewMessage =
   | AssetManagerUpdateExpectedMessage
   | AssetManagerAnalyzeLorebookNamesMessage
   | AssetManagerBootstrapMessage
+  | AssetManagerBootstrapFromManifestMessage
+  | AssetManagerBootstrapCatalogMessage
+  | AssetManagerPreviewCatalogBootstrapMessage
   | AssetManagerReadImageMetaMessage
   | AssetManagerGenerateOutputsMessage
   | AssetManagerSaveOutputMessage
@@ -173,6 +196,11 @@ export interface AssetManagerManifestBuiltPayload extends AssetManagerStableIdPa
   readonly orphanPaths: readonly string[];
 }
 
+export interface AssetManagerCatalogBootstrapPreviewPayload extends AssetManagerStableIdPayload {
+  readonly rows: readonly AssetManagerCatalogBootstrapPreviewEntry[];
+  readonly groups: readonly AssetCatalogBootstrapGroupSummary[];
+}
+
 export interface AssetManagerErrorPayload {
   readonly stableId: string;
   readonly context: string;
@@ -190,6 +218,7 @@ export type AssetManagerImageMetaResultMessage = AssetManagerEnvelope<'asset-man
 export type AssetManagerOutputsResultMessage = AssetManagerEnvelope<'asset-manager/outputsResult', AssetManagerOutputsResultPayload>;
 export type AssetManagerOutputSavedMessage = AssetManagerEnvelope<'asset-manager/outputSaved', AssetManagerOutputSavedPayload>;
 export type AssetManagerManifestBuiltMessage = AssetManagerEnvelope<'asset-manager/manifestBuilt', AssetManagerManifestBuiltPayload>;
+export type AssetManagerCatalogBootstrapPreviewMessage = AssetManagerEnvelope<'asset-manager/catalogBootstrapPreview', AssetManagerCatalogBootstrapPreviewPayload>;
 export type AssetManagerErrorMessage = AssetManagerEnvelope<'asset-manager/error', AssetManagerErrorPayload>;
 
 export type AssetManagerExtensionMessage =
@@ -201,4 +230,5 @@ export type AssetManagerExtensionMessage =
   | AssetManagerOutputsResultMessage
   | AssetManagerOutputSavedMessage
   | AssetManagerManifestBuiltMessage
+  | AssetManagerCatalogBootstrapPreviewMessage
   | AssetManagerErrorMessage;

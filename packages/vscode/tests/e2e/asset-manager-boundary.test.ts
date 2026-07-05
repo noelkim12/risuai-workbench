@@ -49,6 +49,42 @@ test('asset manager accepts valid webview messages', () => {
     ),
     true,
   );
+  assert.equal(
+    messages.isAssetManagerWebviewMessage(
+      envelope('asset-manager/bootstrapCatalog', { stableId: 'abc', source: 'filename', mode: 'missing' }),
+    ),
+    true,
+  );
+  assert.equal(
+    messages.isAssetManagerWebviewMessage(
+      envelope('asset-manager/previewCatalogBootstrap', {
+        stableId: 'abc',
+        source: 'filename',
+        mode: 'full',
+        split: { separator: '_', slotTokenCounts: { s1: 2 } },
+      }),
+    ),
+    true,
+  );
+  assert.equal(
+    messages.isAssetManagerWebviewMessage(
+      envelope('asset-manager/previewCatalogBootstrap', {
+        stableId: 'abc',
+        source: 'filename',
+        mode: 'full',
+        split: {
+          separator: '_',
+          slotTokenCounts: { s1: 2 },
+          groupOverrides: [{ firstToken: 'Rivea', slotTokenCounts: { s1: 1 } }],
+        },
+      }),
+    ),
+    true,
+  );
+  assert.equal(
+    messages.isAssetManagerWebviewMessage(envelope('asset-manager/bootstrapFromManifest', { stableId: 'abc' })),
+    true,
+  );
 });
 
 test('asset manager rejects traversal paths absolute output targets and wrong protocol', () => {
@@ -124,6 +160,28 @@ test('asset manager rejects traversal paths absolute output targets and wrong pr
     ),
     false,
   );
+  assert.equal(
+    messages.isAssetManagerWebviewMessage(
+      envelope('asset-manager/previewCatalogBootstrap', {
+        stableId: 'abc',
+        source: 'filename',
+        mode: 'full',
+        split: { separator: '_', groupOverrides: [{ firstToken: '', slotTokenCounts: { s1: 1 } }] },
+      }),
+    ),
+    false,
+  );
+  assert.equal(
+    messages.isAssetManagerWebviewMessage(
+      envelope('asset-manager/previewCatalogBootstrap', {
+        stableId: 'abc',
+        source: 'filename',
+        mode: 'full',
+        split: { separator: '_', groupOverrides: [{ firstToken: 'Rivea', slotTokenCounts: { s1: 0 } }] },
+      }),
+    ),
+    false,
+  );
 });
 
 test('asset manager creates typed extension messages', () => {
@@ -166,6 +224,89 @@ test('service scans assets, applies assignments, persists catalog', () => {
     const again = new serviceModule.AssetManagerService(workDir).scan();
     assert.equal(again.catalogExists, true);
     assert.equal(again.entries[0]?.generatedName, 'Rin_angry');
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test('service bootstraps catalog from filenames', () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-vscode-asset-bootstrap-'));
+  try {
+    fs.mkdirSync(path.join(workDir, 'assets', 'additional'), { recursive: true });
+    fs.writeFileSync(path.join(workDir, 'assets', 'additional', 'rin_angry.png'), Buffer.from([1]));
+
+    const service = new serviceModule.AssetManagerService(workDir);
+    const updated = service.bootstrapCatalog({ source: 'filename', mode: 'full' });
+
+    assert.equal(updated.entries[0]?.generatedName, 'rin_angry');
+    assert.deepEqual(updated.catalog.assignments, { 'additional/rin_angry.png': { s1: 'rin', s2: 'angry' } });
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test('service previews configured catalog bootstrap without saving', () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-vscode-asset-preview-'));
+  try {
+    fs.mkdirSync(path.join(workDir, 'assets', 'additional'), { recursive: true });
+    fs.writeFileSync(path.join(workDir, 'assets', 'additional', 'Ahn_Do-hyun_angry.png'), Buffer.from([1]));
+    fs.writeFileSync(path.join(workDir, 'assets', 'additional', 'Rivea_angry.png'), Buffer.from([2]));
+
+    const service = new serviceModule.AssetManagerService(workDir);
+    const { rows, groups } = service.previewCatalogBootstrap({
+      source: 'filename',
+      mode: 'full',
+      split: {
+        separator: '_',
+        slotTokenCounts: { s1: 2 },
+        groupOverrides: [{ firstToken: 'Rivea', slotTokenCounts: { s1: 1 } }],
+      },
+    });
+
+    assert.deepEqual(rows.find((row) => row.name === 'Ahn_Do-hyun_angry')?.slots, { s1: 'Ahn_Do-hyun', s2: 'angry' });
+    assert.deepEqual(rows.find((row) => row.name === 'Rivea_angry')?.slots, { s1: 'Rivea', s2: 'angry' });
+    assert.deepEqual(
+      groups.map((group) => group.firstToken).sort(),
+      ['Ahn', 'Rivea'],
+    );
+    assert.deepEqual(groups.find((group) => group.firstToken === 'Rivea')?.anomalies, []);
+    assert.equal(fs.existsSync(path.join(workDir, 'assets', 'asset-catalog.json')), false);
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test('service applies a bootstrap-supplied schema (slot count) to preview and persisted catalog', () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-vscode-asset-schema-'));
+  try {
+    fs.mkdirSync(path.join(workDir, 'assets', 'additional'), { recursive: true });
+    fs.writeFileSync(path.join(workDir, 'assets', 'additional', 'Kang_do-gyun_happy.png'), Buffer.from([1]));
+    fs.writeFileSync(path.join(workDir, 'assets', 'additional', 'Kang_do-gyun_angry.png'), Buffer.from([2]));
+
+    const schema = {
+      slots: [
+        { id: 's1' as const, label: 'character' },
+        { id: 's2' as const, label: 'emotion' },
+        { id: 's3' as const, label: 'attire' },
+      ],
+      joinTemplate: '{s1}_{s2}_{s3}',
+    };
+    const split = { separator: '_', slotTokenCounts: { s1: 2, s2: 1 } };
+
+    const service = new serviceModule.AssetManagerService(workDir);
+    // Preview honors the supplied 3-slot schema without persisting it.
+    const { rows } = service.previewCatalogBootstrap({ source: 'filename', mode: 'full', split, schema });
+    // 3-slot schema with s1=2, s2=1 → s3 is the (empty) remainder for a 3-token name.
+    assert.deepEqual(rows.find((row) => row.name === 'Kang_do-gyun_happy')?.slots, { s1: 'Kang_do-gyun', s2: 'happy', s3: undefined });
+    assert.equal(fs.existsSync(path.join(workDir, 'assets', 'asset-catalog.json')), false);
+
+    // Applying persists the 3-slot schema and the split assignments.
+    const saved = service.bootstrapCatalog({ source: 'filename', mode: 'full', split, schema });
+    assert.deepEqual(
+      saved.catalog.schema.slots.map((slot) => slot.id),
+      ['s1', 's2', 's3'],
+    );
+    assert.deepEqual(saved.catalog.assignments['additional/Kang_do-gyun_happy.png'], { s1: 'Kang_do-gyun', s2: 'happy' });
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
   }

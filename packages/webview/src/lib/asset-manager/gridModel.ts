@@ -4,11 +4,20 @@
  * @file packages/webview/src/lib/asset-manager/gridModel.ts
  */
 
-import type { AssetCatalogMirror, AssetManagerAssetEntry, AssetSlotId } from '../types/assetManager';
+import type {
+  AssetCatalogMirror,
+  AssetManagerAssetEntry,
+  AssetSlotDefinition,
+  AssetSlotId,
+  AssetSlotValues,
+} from '../types/assetManager';
+
+const ASSET_SLOT_IDS = ['s1', 's2', 's3'] as const;
 
 export interface AssetGridFilter {
   readonly subdir: string | 'all';
   readonly query: string;
+  readonly slotFilters: AssetSlotValues;
   readonly onlyUnassigned: boolean;
   readonly onlyDuplicate: boolean;
 }
@@ -52,6 +61,24 @@ export interface MissingMatrixClient {
   readonly cells: readonly (readonly MissingCellClient[])[];
 }
 
+export type SummaryCellState = 'complete' | 'partial' | 'empty' | 'excluded';
+
+export interface SummaryCellClient {
+  readonly row: string;
+  readonly col: string;
+  readonly state: SummaryCellState;
+  readonly presentCount: number;
+  readonly expectedCount: number;
+  readonly duplicateCount: number;
+  readonly missingValues: readonly string[];
+}
+
+export interface SummaryMatrixClient {
+  readonly rows: readonly string[];
+  readonly cols: readonly string[];
+  readonly cells: readonly (readonly SummaryCellClient[])[];
+}
+
 export function filterAssetEntries(
   entries: readonly AssetManagerAssetEntry[],
   filter: AssetGridFilter,
@@ -61,10 +88,45 @@ export function filterAssetEntries(
     if (filter.subdir !== 'all' && entry.subdir !== filter.subdir) return false;
     if (filter.onlyUnassigned && !entry.flags.unassigned) return false;
     if (filter.onlyDuplicate && !entry.flags.duplicate) return false;
+    if (!matchesSlotFilters(entry, filter.slotFilters)) return false;
     if (!query) return true;
 
     return searchableEntryText(entry).includes(query);
   });
+}
+
+/**
+ * 슬롯 순서(combo[i] ↔ ASSET_SLOT_IDS[i]) 조합으로 entries 필터링.
+ * undefined 슬롯은 와일드카드. Matrix 셀 클릭 → 콤보 모달의 매칭 목록용.
+ */
+export function filterEntriesByCombo(
+  entries: readonly AssetManagerAssetEntry[],
+  combo: readonly (string | undefined)[],
+): AssetManagerAssetEntry[] {
+  return entries.filter((entry) =>
+    combo.every((value, index) => {
+      if (value === undefined) return true;
+      const slotId = ASSET_SLOT_IDS[index];
+      return slotId !== undefined && entry.assignment?.[slotId] === value;
+    }),
+  );
+}
+
+export function assignmentProgressLabel(
+  assignment: AssetSlotValues | null,
+  slots: readonly AssetSlotDefinition[],
+): string | null {
+  if (!assignment) return '미할당';
+
+  const assignedCount = slots.filter((slot) => assignment[slot.id] !== undefined).length;
+  if (assignedCount === 0) return '미할당';
+  if (assignedCount === slots.length) return null;
+
+  const prefixCount = countAssignedPrefix(assignment, slots);
+  if (prefixCount === 0) return '부분 할당';
+
+  const lastAssignedSlot = slots[prefixCount - 1];
+  return lastAssignedSlot ? `${lastAssignedSlot.id}까지` : '부분 할당';
 }
 
 export function sortAssetEntries(entries: readonly AssetManagerAssetEntry[], sortKey: AssetGridSortKey): AssetManagerAssetEntry[] {
@@ -121,22 +183,145 @@ export function expectedListForClient(
   return [...override];
 }
 
-export function computeMissingMatrixClient(catalog: AssetCatalogMirror, s1?: string): MissingMatrixClient | null {
+/**
+ * s1 을 통해 chaining 된 slot vocab.
+ * expected override 가 있으면 그 큐레이션 목록을, 없으면 해당 s1 에 실제 할당된 값만
+ * (vocab 순서 유지, vocab 밖 값은 뒤에 append) 반환한다. matrix pin 드롭다운 후보용.
+ */
+export function chainedValuesForClient(
+  catalog: AssetCatalogMirror,
+  s1Value: string,
+  slotId: Exclude<AssetSlotId, 's1'>,
+): string[] {
+  const override = catalog.expected[s1Value]?.[slotId];
+  if (override !== undefined && override !== null) return [...override];
+
+  const assigned = new Set<string>();
+  for (const slots of Object.values(catalog.assignments)) {
+    if (slots.s1 !== s1Value) continue;
+    const value = slots[slotId];
+    if (value !== undefined) assigned.add(value);
+  }
+  const vocab = catalog.vocab[slotId] ?? [];
+  const ordered = vocab.filter((value) => assigned.has(value));
+  const extras = [...assigned].filter((value) => !vocab.includes(value)).sort();
+  return [...ordered, ...extras];
+}
+
+export function computeMissingMatrixClient(catalog: AssetCatalogMirror, s1?: string, s2?: string): MissingMatrixClient | null {
   const slotIds = catalog.schema.slots.map((slot) => slot.id);
 
   if (slotIds.length === 3) {
     if (s1 === undefined) return null;
-    return computeThreeSlotMatrix(catalog, s1);
+    return computeThreeSlotMatrix(catalog, s1, s2);
   }
 
-  if (slotIds.length === 2) return computeTwoSlotMatrix(catalog);
+  if (slotIds.length === 2) return computeTwoSlotMatrix(catalog, s1);
   return computeOneSlotMatrix(catalog);
+}
+
+/**
+ * 3슬롯 전용 s1×s2 완성도 요약 매트릭스.
+ * 셀 = 해당 (s1, s2) 에서 expected s3 조합 중 존재/누락 집계.
+ * 파일 전체를 groupAssignments 로 1회 순회하므로 파일 수천 개 규모에서도 저비용.
+ */
+export function computeSummaryMatrixClient(catalog: AssetCatalogMirror): SummaryMatrixClient | null {
+  if (catalog.schema.slots.length !== 3) return null;
+  const rows = [...(catalog.vocab.s1 ?? [])];
+  const cols = [...(catalog.vocab.s2 ?? [])];
+  const { detailedGroups, comboGroups } = groupSummaryAssignments(catalog);
+  return {
+    rows,
+    cols,
+    cells: rows.map((row) => {
+      const expectedS2 = new Set(expectedListForClient(catalog, row, 's2'));
+      const expectedS3 = expectedListForClient(catalog, row, 's3');
+      return cols.map((col) => summarizeSummaryCell(detailedGroups, comboGroups, row, col, expectedS2.has(col), expectedS3));
+    }),
+  };
+}
+
+function groupSummaryAssignments(catalog: AssetCatalogMirror): {
+  readonly detailedGroups: ReadonlyMap<string, readonly string[]>;
+  readonly comboGroups: ReadonlyMap<string, readonly string[]>;
+} {
+  const detailedGroups = new Map<string, string[]>();
+  const comboGroups = new Map<string, string[]>();
+  for (const [path, slots] of Object.entries(catalog.assignments)) {
+    const detailedKey = comboKey(['s1', 's2', 's3'].map((slotId) => slots[slotId as AssetSlotId]));
+    const comboKeyValue = comboKey(['s1', 's2'].map((slotId) => slots[slotId as AssetSlotId]));
+    const detailedPaths = detailedGroups.get(detailedKey) ?? [];
+    const comboPaths = comboGroups.get(comboKeyValue) ?? [];
+    detailedPaths.push(path);
+    comboPaths.push(path);
+    detailedGroups.set(detailedKey, detailedPaths);
+    comboGroups.set(comboKeyValue, comboPaths);
+  }
+  for (const paths of detailedGroups.values()) paths.sort();
+  for (const paths of comboGroups.values()) paths.sort();
+  return { detailedGroups, comboGroups };
+}
+
+function summarizeSummaryCell(
+  detailedGroups: ReadonlyMap<string, readonly string[]>,
+  comboGroups: ReadonlyMap<string, readonly string[]>,
+  s1: string,
+  s2: string,
+  s2Expected: boolean,
+  expectedS3: readonly string[],
+): SummaryCellClient {
+  let presentCount = 0;
+  let duplicateCount = 0;
+  const missingValues: string[] = [];
+  for (const s3 of expectedS3) {
+    const count = detailedGroups.get(comboKey([s1, s2, s3]))?.length ?? 0;
+    if (count === 0) {
+      missingValues.push(s3);
+    } else {
+      presentCount += 1;
+      if (count > 1) duplicateCount += 1;
+    }
+  }
+  const actualCount = comboGroups.get(comboKey([s1, s2]))?.length ?? 0;
+  const state = summaryCellState(s2Expected, presentCount, expectedS3.length, actualCount);
+  return { row: s1, col: s2, state, presentCount, expectedCount: expectedS3.length, duplicateCount, missingValues };
+}
+
+function summaryCellState(
+  s2Expected: boolean,
+  presentCount: number,
+  expectedCount: number,
+  actualCount: number,
+): SummaryCellState {
+  // expected 밖 s2 라도 실제 파일이 있으면 집계 표시(2슬롯 excluded 의미론과 동일)
+  if (expectedCount === 0) return 'excluded';
+  if (presentCount === 0 && !s2Expected && actualCount === 0) return 'excluded';
+  if (presentCount === 0) return 'empty';
+  return presentCount === expectedCount ? 'complete' : 'partial';
 }
 
 function searchableEntryText(entry: AssetManagerAssetEntry): string {
   return [entry.path, entry.fileStem, entry.generatedName ?? '', ...Object.values(entry.assignment ?? {})]
     .join(' ')
     .toLowerCase();
+}
+
+function matchesSlotFilters(entry: AssetManagerAssetEntry, slotFilters: AssetSlotValues): boolean {
+  for (const slotId of ASSET_SLOT_IDS) {
+    const value = slotFilters[slotId];
+    if (value === undefined || value === '') continue;
+    if (entry.assignment?.[slotId] !== value) return false;
+  }
+  return true;
+}
+
+function countAssignedPrefix(assignment: AssetSlotValues, slots: readonly AssetSlotDefinition[]): number {
+  let count = 0;
+  for (const slot of slots) {
+    if (assignment[slot.id] === undefined) return count;
+    count += 1;
+  }
+  return count;
 }
 
 function compareEntries(left: AssetManagerAssetEntry, right: AssetManagerAssetEntry, sortKey: AssetGridSortKey): number {
@@ -207,8 +392,9 @@ function cellState(count: number, excluded: boolean): MissingCellState {
   return count > 1 ? 'duplicate' : 'present';
 }
 
-function computeThreeSlotMatrix(catalog: AssetCatalogMirror, s1: string): MissingMatrixClient {
-  const rows = expectedListForClient(catalog, s1, 's2');
+function computeThreeSlotMatrix(catalog: AssetCatalogMirror, s1: string, s2?: string): MissingMatrixClient {
+  // s2 조건이 걸리면 해당 outfit 한 행으로 축소(후보 검증은 호출측 드롭다운이 담당)
+  const rows = s2 ? [s2] : expectedListForClient(catalog, s1, 's2');
   const cols = expectedListForClient(catalog, s1, 's3');
   const groups = groupAssignments(catalog, ['s1', 's2', 's3']);
   return {
@@ -225,8 +411,10 @@ function computeThreeSlotMatrix(catalog: AssetCatalogMirror, s1: string): Missin
   };
 }
 
-function computeTwoSlotMatrix(catalog: AssetCatalogMirror): MissingMatrixClient {
-  const rows = [...(catalog.vocab.s1 ?? [])];
+function computeTwoSlotMatrix(catalog: AssetCatalogMirror, s1?: string): MissingMatrixClient {
+  const allRows = catalog.vocab.s1 ?? [];
+  // s1 pin 이 걸리면 해당 캐릭터 한 행으로 축소, 아니면 전체
+  const rows = s1 ? allRows.filter((row) => row === s1) : [...allRows];
   const cols = [...(catalog.vocab.s2 ?? [])];
   const groups = groupAssignments(catalog, ['s1', 's2']);
   return {

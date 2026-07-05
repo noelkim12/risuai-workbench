@@ -38,21 +38,21 @@ describe('asset manifest builder', () => {
     expect(manifest.assets).toEqual([
       expect.objectContaining({
         index: 0,
-        extracted_path: 'additional/voice.ogg',
-        type: 'x-risu-asset',
-        name: 'voice',
-        ext: 'ogg',
-        status: 'extracted',
-        size_bytes: 2,
-      }),
-      expect.objectContaining({
-        index: 1,
         extracted_path: 'icons/main.png',
         type: 'icon',
         name: 'main',
         ext: 'png',
         status: 'extracted',
         size_bytes: 3,
+      }),
+      expect.objectContaining({
+        index: 1,
+        extracted_path: 'additional/voice.ogg',
+        type: 'x-risu-asset',
+        name: 'voice',
+        ext: 'ogg',
+        status: 'extracted',
+        size_bytes: 2,
       }),
     ]);
   });

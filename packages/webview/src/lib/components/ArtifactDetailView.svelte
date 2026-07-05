@@ -48,12 +48,14 @@
       ? `${artifact.namespace ?? artifact.sourceFormat} · ${artifact.sourceFormat}`
       : `${artifact.creator} · ${artifact.sourceFormat} · v${artifact.characterVersion}`;
 
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this modal state.
   let isPackModalOpen = false;
 
   /**
    * openPackModal 함수.
    * Pack dialog를 연다.
    */
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this event handler.
   function openPackModal(): void {
     isPackModalOpen = true;
   }
@@ -62,30 +64,33 @@
    * closePackModal 함수.
    * Pack dialog를 닫는다.
    */
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this event handler.
   function closePackModal(): void {
     isPackModalOpen = false;
   }
 </script>
 
 <main class="browser-shell detail-shell" aria-label={`Risu ${detailLabel}`}>
-  <Breadcrumb artifactName={artifact.name} backLabel="Artifacts" ariaLabel={`${detailLabel} breadcrumb`} {onBack} />
+  <div class="detail-sticky-header">
+    <Breadcrumb artifactName={artifact.name} backLabel="Artifacts" ariaLabel={`${detailLabel} breadcrumb`} {onBack} />
 
-  <header class="browser-header detail-header">
-    <div class="detail-header__info">
-      <p class="eyebrow">{detailLabel}</p>
-      <h1>{artifact.name}</h1>
-      <p class="detail-header__meta">{detailMeta}</p>
+    <header class="browser-header detail-header">
+      <div class="detail-header__info">
+        <p class="eyebrow">{detailLabel}</p>
+        <h1>{artifact.name}</h1>
+        <p class="detail-header__meta">{detailMeta}</p>
+      </div>
+      <StatusBadge status={artifact.status} />
+    </header>
+
+    <div class="detail-actions">
+      <button type="button" class="detail-action" on:click={() => onAnalyzeArtifact(artifact.stableId)}>
+        Analyze
+      </button>
+      <button type="button" class="detail-action detail-action--primary" on:click={openPackModal}>
+        Pack
+      </button>
     </div>
-    <StatusBadge status={artifact.status} />
-  </header>
-
-  <div class="detail-actions">
-    <button type="button" class="detail-action" on:click={() => onAnalyzeArtifact(artifact.stableId)}>
-      Analyze
-    </button>
-    <button type="button" class="detail-action detail-action--primary" on:click={openPackModal}>
-      Pack
-    </button>
   </div>
 
   <p class="bridge-status" id="status-text">{status}</p>
@@ -119,6 +124,20 @@
 {/if}
 
 <style>
+  .detail-sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin: calc(var(--space-3) * -1) calc(var(--space-3) * -1) var(--space-3);
+    padding: var(--space-3) var(--space-3);
+    background: var(--surface);
+    border-bottom: 1px solid var(--card-border);
+    box-shadow: 0 6px 12px -8px var(--vscode-widget-shadow);
+  }
+
   .detail-header {
     align-items: flex-start;
   }
