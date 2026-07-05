@@ -186,22 +186,112 @@
 <style>
   .vocab-layout { display: flex; gap: var(--space-3); flex: 1; min-height: 0; }
   .vocab-slots { flex: 1; display: flex; gap: var(--space-3); min-width: 0; }
-  .vocab-column { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
-  .vocab-column h2 { margin: 0; font-size: 0.95rem; }
-  .vocab-count { color: var(--secondary-text); font-weight: 400; }
-  .vocab-add { display: flex; gap: 4px; }
+  .vocab-column {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    background: var(--card);
+  }
+  .vocab-column h2 {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin: 0;
+    font-size: var(--text-lg);
+    font-weight: 700;
+  }
+  .vocab-count {
+    min-width: var(--count-min-width);
+    padding: var(--pill-padding-y) var(--space-2);
+    border-radius: var(--radius-pill);
+    color: var(--badge-text);
+    background: var(--badge);
+    text-align: center;
+    font-size: var(--text-xs);
+    font-weight: 700;
+  }
+  .vocab-add { display: flex; gap: var(--space-1); }
   .vocab-add input { flex: 1; min-width: 0; }
-  .vocab-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
-  .vocab-list li { display: flex; justify-content: space-between; align-items: center; padding: 2px 0; font-size: var(--text-sm); }
+  .vocab-add button {
+    flex: 0 0 auto;
+    display: inline-grid;
+    place-items: center;
+    width: var(--control-height, 28px);
+    padding: 0;
+    font-size: var(--text-lg);
+  }
+  .vocab-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+  .vocab-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-md);
+  }
+  .vocab-list li:hover { background: color-mix(in srgb, var(--focus) 10%, transparent); }
   .vocab-value { overflow-wrap: anywhere; }
-  .vocab-item-actions button { padding: 0 4px; }
+  .vocab-item-actions { display: inline-flex; gap: 2px; flex: 0 0 auto; }
+  .vocab-item-actions button {
+    display: inline-grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border-color: var(--card-border);
+    color: var(--muted);
+    background: transparent;
+    font-weight: 700;
+  }
+  .vocab-item-actions button:hover:not(:disabled) { color: var(--text); background: var(--secondary); outline: none; }
   .vocab-side { width: 280px; flex-shrink: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-3); }
-  .schema-editor, .candidates { display: flex; flex-direction: column; gap: var(--space-1); }
-  .schema-editor h2, .candidates h2 { margin: 0; font-size: 0.95rem; }
-  .schema-editor label { display: flex; flex-direction: column; gap: 2px; font-size: var(--text-sm); }
-  .candidates h3 { margin: var(--space-1) 0 0; font-size: 0.8rem; color: var(--secondary-text); }
-  .candidate-row { display: flex; justify-content: space-between; align-items: center; font-size: var(--text-sm); gap: 4px; }
-  .candidate-row em { color: var(--secondary-text); font-style: normal; }
-  .schema-sample code, .schema-template code { font-weight: 700; }
-  .schema-template { color: var(--secondary-text); font-size: var(--text-sm); margin: 0; }
+  .schema-editor, .candidates {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    background: var(--card);
+  }
+  .schema-editor h2, .candidates h2 { margin: 0; font-size: var(--text-lg); font-weight: 700; }
+  .schema-editor label {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    font-size: var(--text-sm);
+    color: var(--muted);
+  }
+  .candidates h3 { margin: var(--space-1) 0 0; font-size: var(--text-sm); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+  .candidates :global(details) {
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-1) var(--space-2);
+  }
+  .candidates :global(summary) { cursor: pointer; font-size: var(--text-md); font-weight: 600; }
+  .candidate-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) 0;
+    font-size: var(--text-md);
+  }
+  .candidate-row button { padding: var(--space-1) var(--space-2); font-size: var(--text-sm); }
+  .candidate-row em { color: var(--muted); font-style: normal; }
+  .schema-sample, .schema-template { margin: 0; font-size: var(--text-sm); }
+  .schema-sample code, .schema-template code {
+    padding: 1px var(--space-1);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--focus) 14%, transparent);
+    font-weight: 700;
+  }
+  .schema-template { color: var(--muted); }
 </style>

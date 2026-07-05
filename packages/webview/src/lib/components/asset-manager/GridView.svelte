@@ -310,12 +310,27 @@
     flex-wrap: wrap;
     gap: var(--space-2);
     align-items: center;
-    padding-bottom: var(--space-2);
+    margin-bottom: var(--space-2);
+    padding: var(--space-2);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    background: var(--section);
+  }
+  .grid-toolbar :global(label) {
+    font-size: var(--text-sm);
+    color: var(--muted);
+  }
+  .grid-toolbar :global(input[type='range']) {
+    width: 96px;
   }
   .grid-toolbar__count {
     margin-left: auto;
-    color: var(--secondary-text);
+    padding: var(--pill-padding-y) var(--space-2);
+    border-radius: var(--radius-pill);
+    color: var(--badge-text);
+    background: var(--badge);
     font-size: var(--text-sm);
+    font-weight: 700;
   }
   .grid-viewport {
     flex: 1;
@@ -326,77 +341,118 @@
     display: grid;
   }
   .tile {
+    position: relative;
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    padding: 0;
-    border: 2px solid transparent;
-    border-radius: var(--radius-sm);
-    background: none;
+    gap: var(--space-1);
+    padding: var(--space-1);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    background: var(--card);
     cursor: pointer;
     text-align: left;
+    transition:
+      border-color 120ms ease,
+      box-shadow 120ms ease,
+      transform 120ms ease;
+  }
+  .tile:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--focus) 55%, var(--card-border));
+    outline: none;
+    transform: translateY(-1px);
   }
   .tile--selected {
-    border-color: var(--focus, #3794ff);
+    border-color: var(--focus);
+    box-shadow: 0 0 0 1px var(--focus);
   }
   .tile img {
+    width: 100%;
     object-fit: cover;
     border-radius: var(--radius-sm);
     background: var(--secondary);
   }
   .tile__name {
-    font-size: 11px;
-    color: var(--secondary-text);
+    padding: 0 2px;
+    font-size: var(--text-sm);
+    color: var(--text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .tile__badges {
+    position: absolute;
+    top: var(--space-2);
+    left: var(--space-2);
     display: flex;
-    gap: 4px;
-    min-height: 14px;
+    gap: var(--space-1);
   }
   .badge {
-    font-size: 10px;
-    padding: 0 4px;
-    border-radius: 3px;
+    padding: 1px var(--space-1);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    box-shadow: 0 1px 3px color-mix(in srgb, black 40%, transparent);
   }
   .badge--warn {
-    background: var(--vscode-editorWarning-foreground, #cca700);
+    background: var(--warning);
     color: #000;
   }
   .badge--dup {
-    background: var(--vscode-editorInfo-foreground, #3794ff);
-    color: #000;
+    background: var(--focus);
+    color: #fff;
   }
   .inspector {
-    width: 220px;
+    width: 240px;
     flex-shrink: 0;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    background: var(--card);
   }
   .inspector h2 {
     margin: 0;
-    font-size: 0.95rem;
+    font-size: var(--text-lg);
+    font-weight: 700;
   }
   .inspector__field {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-1);
+  }
+  .inspector__field > span {
+    color: var(--muted);
     font-size: var(--text-sm);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
   }
   .inspector__actions {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
+    gap: var(--space-2);
+    margin-top: var(--space-1);
   }
   .inspector__meta {
-    font-size: 11px;
-    color: var(--secondary-text);
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 2px var(--space-2);
+    margin: 0;
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--card-border);
+    font-size: var(--text-sm);
+    color: var(--muted);
     overflow-wrap: anywhere;
   }
   .inspector__meta dt {
     font-weight: 700;
+    color: var(--muted);
+  }
+  .inspector__meta dd {
+    margin: 0;
+    color: var(--text);
   }
 </style>

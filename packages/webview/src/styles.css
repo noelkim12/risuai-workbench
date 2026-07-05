@@ -3529,3 +3529,135 @@ h2 {
 .p-10 {
   padding: 10px;
 }
+
+/* Asset Manager form controls ------------------------------------------- */
+/* 모든 asset-manager 뷰(모달 포함)는 <main class="asset-manager"> 하위에 렌더된다.
+   native select/input/textarea 는 전역 스타일이 없어 브라우저 기본값으로 떨어지므로,
+   여기서 VS Code input 토큰 기반의 일관된 컨트롤 룩을 한 곳에서 정의한다. */
+
+.asset-manager {
+  --control-height: 28px;
+  --control-bg: var(--vscode-input-background, var(--surface));
+  --control-fg: var(--vscode-input-foreground, var(--text));
+  --control-border: var(--vscode-input-border, var(--card-border));
+  --control-radius: var(--radius-sm);
+}
+
+.asset-manager select,
+.asset-manager input[type='text'],
+.asset-manager input[type='search'],
+.asset-manager input[type='number'],
+.asset-manager textarea {
+  min-width: 0;
+  min-height: var(--control-height);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--control-border);
+  border-radius: var(--control-radius);
+  color: var(--control-fg);
+  background: var(--control-bg);
+  font: inherit;
+  line-height: 1.4;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.asset-manager textarea {
+  padding: var(--space-2);
+  line-height: 1.5;
+}
+
+.asset-manager input::placeholder,
+.asset-manager textarea::placeholder {
+  color: var(--muted);
+}
+
+.asset-manager select:hover:not(:disabled),
+.asset-manager input[type='text']:hover:not(:disabled),
+.asset-manager input[type='search']:hover:not(:disabled),
+.asset-manager input[type='number']:hover:not(:disabled),
+.asset-manager textarea:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--focus) 45%, var(--control-border));
+}
+
+.asset-manager select:focus,
+.asset-manager select:focus-visible,
+.asset-manager input[type='text']:focus,
+.asset-manager input[type='search']:focus,
+.asset-manager input[type='number']:focus,
+.asset-manager textarea:focus {
+  border-color: var(--focus);
+  outline: none;
+  box-shadow: 0 0 0 1px var(--focus);
+}
+
+.asset-manager select:disabled,
+.asset-manager input:disabled,
+.asset-manager textarea:disabled {
+  cursor: not-allowed;
+  opacity: var(--disabled-opacity);
+}
+
+/* select: 네이티브 화살표 제거 + 커스텀 chevron(라이트/다크 모두 무난한 중립색). */
+.asset-manager select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: calc(var(--space-4) + var(--space-2));
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%23888' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-2) center;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+
+.asset-manager select option {
+  color: var(--control-fg);
+  /* 드롭다운 팝업은 OS/브라우저 제어라 dropdown 배경 토큰으로 최대한 맞춘다. */
+  background: var(--vscode-dropdown-background, var(--card));
+}
+
+/* checkbox / radio: VS Code accent 로 통일. */
+.asset-manager input[type='checkbox'],
+.asset-manager input[type='radio'] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  flex: 0 0 auto;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* checkbox/radio 를 감싸는 라벨은 인라인 정렬 + 클릭 가능한 룩. */
+.asset-manager label:has(> input[type='checkbox']),
+.asset-manager label:has(> input[type='radio']) {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  cursor: pointer;
+  user-select: none;
+}
+
+/* range: 트랙/썸을 테마 색으로. */
+.asset-manager input[type='range'] {
+  height: var(--control-height);
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* fieldset/legend: matrix expected 편집·모달 radio 그룹. */
+.asset-manager fieldset {
+  margin: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm);
+  min-width: 0;
+}
+
+.asset-manager legend {
+  padding: 0 var(--space-1);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}

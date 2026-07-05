@@ -142,21 +142,34 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
+    gap: var(--space-3);
     padding: var(--space-3);
     border: 1px solid var(--card-border);
-    border-radius: var(--radius-md, 8px);
-    background: var(--vscode-editor-background, #1e1e1e);
+    border-radius: var(--radius-lg);
+    background: var(--card);
+    box-shadow: var(--card-shadow);
+    color: var(--text);
   }
   .detail-modal__header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: var(--space-2);
   }
+  .detail-modal__header > div { display: flex; gap: var(--space-1); flex: 0 0 auto; }
   .detail-modal__header h2 {
     margin: 0;
-    font-size: 1rem;
+    min-width: 0;
+    font-size: var(--text-xl);
     overflow-wrap: anywhere;
+  }
+  .detail-modal__header button {
+    display: inline-grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    font-size: var(--text-lg);
   }
   .detail-modal__body {
     display: flex;
@@ -181,25 +194,38 @@
   }
   .detail-modal__side h3 {
     margin: var(--space-2) 0 0;
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
   }
   .detail-modal__info,
   .detail-modal__gen {
-    font-size: 11px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 2px var(--space-2);
+    font-size: var(--text-sm);
     overflow-wrap: anywhere;
     margin: 0;
   }
   .detail-modal__info dt,
   .detail-modal__gen dt {
     font-weight: 700;
-    margin-top: 4px;
+    color: var(--muted);
+  }
+  .detail-modal__info dd,
+  .detail-modal__gen dd {
+    margin: 0;
+    color: var(--text);
   }
   .detail-modal__slot {
     display: flex;
     flex-direction: column;
     font-size: var(--text-sm);
-    gap: 2px;
+    gap: var(--space-1);
   }
+  .detail-modal__slot > span { color: var(--muted); font-weight: 700; }
   .detail-modal__hint {
     color: var(--secondary-text);
     font-size: var(--text-sm);

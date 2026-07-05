@@ -137,21 +137,60 @@
 <style>
   .matrix-layout { display: flex; gap: var(--space-3); flex: 1; min-height: 0; }
   .matrix-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
-  .matrix-s1 { display: flex; flex-direction: column; gap: 2px; font-size: var(--text-sm); max-width: 240px; }
-  .matrix-scroll { overflow: auto; min-height: 0; }
-  .matrix-table { border-collapse: collapse; font-size: var(--text-sm); }
-  .matrix-table th { position: sticky; top: 0; background: var(--vscode-editor-background, #1e1e1e); padding: 4px 6px; text-align: left; }
-  .matrix-table tbody th { position: sticky; left: 0; }
-  .matrix-table td { padding: 1px; }
-  .cell { width: 34px; height: 26px; border: 1px solid var(--card-border); border-radius: 3px; background: none; cursor: pointer; }
-  .cell--present { color: var(--vscode-testing-iconPassed, #73c991); }
-  .cell--duplicate { color: var(--vscode-editorInfo-foreground, #3794ff); }
-  .cell--missing { color: var(--vscode-errorForeground, #f66); font-weight: 700; }
-  .cell--excluded { color: var(--secondary-text); opacity: 0.5; }
-  .matrix-legend, .matrix-empty { color: var(--secondary-text); font-size: var(--text-sm); margin: 0; }
-  .expected-editor { width: 240px; flex-shrink: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-2); }
-  .expected-editor h2 { margin: 0; font-size: 0.95rem; }
-  .expected-editor label { display: flex; flex-direction: column; gap: 2px; font-size: var(--text-sm); }
-  .expected-editor fieldset { border: 1px solid var(--card-border); border-radius: var(--radius-sm); }
-  .expected-editor__item { display: block; font-size: var(--text-sm); }
+  .matrix-s1 { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); color: var(--muted); max-width: 240px; }
+  .matrix-scroll {
+    overflow: auto;
+    min-height: 0;
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    background: var(--card);
+  }
+  .matrix-table { border-collapse: separate; border-spacing: 0; font-size: var(--text-sm); }
+  .matrix-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: var(--space-1) var(--space-2);
+    background: var(--section);
+    color: var(--muted);
+    text-align: left;
+    font-weight: 700;
+  }
+  .matrix-table tbody th { position: sticky; left: 0; z-index: 1; color: var(--text); }
+  .matrix-table td { padding: 2px; }
+  .cell {
+    display: inline-grid;
+    place-items: center;
+    width: 34px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--muted);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .cell:hover:not(:disabled) { outline: 1px solid var(--focus); }
+  .cell--present { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, var(--card-border)); background: color-mix(in srgb, var(--success) 10%, var(--surface)); }
+  .cell--duplicate { color: var(--focus); border-color: color-mix(in srgb, var(--focus) 40%, var(--card-border)); background: color-mix(in srgb, var(--focus) 12%, var(--surface)); }
+  .cell--missing { color: var(--error); font-weight: 800; border-color: color-mix(in srgb, var(--error) 45%, var(--card-border)); background: color-mix(in srgb, var(--error) 12%, var(--surface)); }
+  .cell--excluded { color: var(--muted); opacity: 0.55; }
+  .matrix-legend, .matrix-empty { color: var(--muted); font-size: var(--text-sm); margin: 0; }
+  .expected-editor {
+    width: 240px;
+    flex-shrink: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    background: var(--card);
+  }
+  .expected-editor h2 { margin: 0; font-size: var(--text-lg); font-weight: 700; }
+  .expected-editor > label { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); color: var(--muted); }
+  .expected-editor fieldset { display: flex; flex-direction: column; gap: var(--space-1); }
+  .expected-editor__item { display: flex; align-items: center; gap: var(--space-1); font-size: var(--text-md); }
 </style>
