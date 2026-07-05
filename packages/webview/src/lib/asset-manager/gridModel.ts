@@ -326,13 +326,13 @@ export function computeSummaryMatrixClient(catalog: AssetCatalogMirror, options?
   const rows = filterAxisS1(catalog, catalog.vocab.s1 ?? [], options);
   // 열(s2)도 실제 완전 조합에 등장하는 값만 — vocab 전체를 깔면 s1·s2 만 있던 s2 가 빈 열로 새어나온다.
   const cols = filterAxisS2(catalog, catalog.vocab.s2 ?? [], options);
-  const { detailedGroups, comboGroups } = groupSummaryAssignments(catalog);
+  const s3Excluded = options?.excluded?.s3;
+  const { detailedGroups, comboGroups } = groupSummaryAssignments(catalog, s3Excluded);
   return {
     rows,
     cols,
     cells: rows.map((row) => {
       const expectedS2 = new Set(expectedListForClient(catalog, row, 's2'));
-      const s3Excluded = options?.excluded?.s3;
       const expectedS3 = expectedListForClient(catalog, row, 's3').filter((s3) => !s3Excluded?.has(s3));
       return cols.map((col) => summarizeSummaryCell(detailedGroups, comboGroups, row, col, expectedS2.has(col), expectedS3));
     }),
@@ -424,7 +424,7 @@ function orderCrossRows(comboSet: ReadonlySet<string>, vocabS2: readonly string[
   return [...ordered, ...extras];
 }
 
-function groupSummaryAssignments(catalog: AssetCatalogMirror): {
+function groupSummaryAssignments(catalog: AssetCatalogMirror, s3Excluded?: ReadonlySet<string>): {
   readonly detailedGroups: ReadonlyMap<string, readonly string[]>;
   readonly comboGroups: ReadonlyMap<string, readonly string[]>;
 } {
@@ -432,12 +432,14 @@ function groupSummaryAssignments(catalog: AssetCatalogMirror): {
   const comboGroups = new Map<string, string[]>();
   for (const [path, slots] of Object.entries(catalog.assignments)) {
     const detailedKey = comboKey(['s1', 's2', 's3'].map((slotId) => slots[slotId as AssetSlotId]));
-    const comboKeyValue = comboKey(['s1', 's2'].map((slotId) => slots[slotId as AssetSlotId]));
     const detailedPaths = detailedGroups.get(detailedKey) ?? [];
-    const comboPaths = comboGroups.get(comboKeyValue) ?? [];
     detailedPaths.push(path);
-    comboPaths.push(path);
     detailedGroups.set(detailedKey, detailedPaths);
+    // actualCount(comboGroups) 는 "안 보는 s3" 파일을 세지 않는다 → 요약 셀 상태가 excluded s3 에 새지 않음.
+    if (s3Excluded?.has(slots.s3 ?? '')) continue;
+    const comboKeyValue = comboKey(['s1', 's2'].map((slotId) => slots[slotId as AssetSlotId]));
+    const comboPaths = comboGroups.get(comboKeyValue) ?? [];
+    comboPaths.push(path);
     comboGroups.set(comboKeyValue, comboPaths);
   }
   for (const paths of detailedGroups.values()) paths.sort();
