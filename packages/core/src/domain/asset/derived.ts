@@ -1,6 +1,6 @@
 /**
  * vocab/할당에서 파생되는 출력 3종 생성기.
- * 프롬프트 Image Command List 블록, Negative Lookahead 화이트리스트 정규식, missing 리포트.
+ * 프롬프트 Image Command List 블록, positive-whitelist 디스플레이 정규식({{raw}} 렌더러), missing 리포트.
  * 에셋찐빠 가이드의 수작업(특수문자 escape, prefix 경계)을 코드가 책임짐.
  * @file packages/core/src/domain/asset/derived.ts
  */
