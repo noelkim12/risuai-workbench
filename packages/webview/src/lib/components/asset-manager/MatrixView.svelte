@@ -1,10 +1,11 @@
 <!--
   Asset Manager Matrix view: missing 매트릭스 + expected 편집 + 셀 클릭 콤보 열기.
   D5 가 D3 스텁을 본 구현으로 교체함.
-  - 2슬롯: 행=s1·열=s2 매트릭스. 3슬롯: 전체=요약 히트맵 ↔ 교차 비교(행=s2×s3·열=s1) 토글, s1 선택=상세.
+  - 2슬롯: 행=s1·열=s2 매트릭스. 3슬롯 전체: 요약 히트맵 / 교차 비교(행=s2×s3·열=s1) / s1×s2(s3 무시) 3모드, s1 선택=상세.
+  - 기본(요약/교차)은 s1·s2·s3 완전 조합만 축에 넣지만, "s1×s2" 모드는 s3 를 무시해 s1·s2 만 있는 캐릭터도 따로 본다.
   - "조합 없는 캐릭터" 토글(2·3슬롯 s1 전체): s2 조합·override 없는 s1-only 값을 축에서 숨김(기본)/표시.
   - 셀 클릭 시 onOpenCombo 로 조합 에셋 모달을 연다.
-  - expected 사이드패널: per-s1 슬롯 override 토글(vocab 전체와 같으면 제거).
+  - 축 제외 사이드패널: S1/S2/S3 값을 임시로 매트릭스 축에서 숨김(새로고침 시 초기화).
   @file packages/webview/src/lib/components/asset-manager/MatrixView.svelte
 -->
 
@@ -13,36 +14,41 @@
     chainedValuesForClient,
     computeCrossMatrixClient,
     computeMissingMatrixClient,
+    computeS1S2MatrixClient,
     computeSummaryMatrixClient,
-    expectedListForClient,
     type CrossCellClient,
     type SummaryCellClient,
   } from '../../asset-manager/gridModel';
-  import type { AssetCatalogMirror, AssetExpectedMapMirror } from '../../types/assetManager';
+  import type { AssetCatalogMirror } from '../../types/assetManager';
 
   export let catalog: AssetCatalogMirror;
-  export let onUpdateExpected: (expected: AssetExpectedMapMirror) => void = () => undefined;
   export let onOpenCombo: (values: (string | undefined)[]) => void = () => undefined;
 
   let selectedS1 = ''; // '' = 전체 (2슬롯·3슬롯 공통)
   let selectedS2 = ''; // '' = 전체
-  let crossMode = false; // 3슬롯 + s1 전체에서 요약 히트맵 ↔ 교차 비교 토글
+  // 3슬롯 + s1 전체 보기 모드: 요약 히트맵 / 교차 비교(s2×s3) / s1×s2(s3 무시)
+  let viewMode: 'summary' | 'cross' | 's1s2' = 'summary';
   let hideBareS1 = true; // s2 조합·override 없는 "s1-only" 캐릭터를 비교 축에서 숨김(기본 숨김)
-  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup binds this via bind:value.
-  let editingS1 = '';
+  // 축 제외(임시 뷰 상태): 새로고침 시 초기화. in-place 변이 금지 — 항상 재할당.
+  let excludedS1 = new Set<string>();
+  let excludedS2 = new Set<string>();
+  let excludedS3 = new Set<string>();
+  $: excluded = { s1: excludedS1, s2: excludedS2, s3: excludedS3 };
 
   $: slotCount = catalog.schema.slots.length;
   $: s1List = catalog.vocab.s1 ?? [];
   // 3슬롯 + s1 전체 → 요약 히트맵 모드 (행=s1 × 열=s2 완성도 집계)
   $: summaryMode = slotCount === 3 && !selectedS1;
-  $: summary = summaryMode && !crossMode ? computeSummaryMatrixClient(catalog, { hideBareS1 }) : null;
-  $: cross = summaryMode && crossMode ? computeCrossMatrixClient(catalog, { hideBareS1 }) : null;
+  $: summary = summaryMode && viewMode === 'summary' ? computeSummaryMatrixClient(catalog, { hideBareS1, excluded }) : null;
+  $: cross = summaryMode && viewMode === 'cross' ? computeCrossMatrixClient(catalog, { hideBareS1, excluded }) : null;
   // s2 조건 후보: 선택된 s1 을 통해 chaining 된 s2 (override 있으면 큐레이션, 없으면 실제 할당값)
   $: s2Options = slotCount === 3 && selectedS1 ? chainedValuesForClient(catalog, selectedS1, 's2') : [];
   // s1 이 바뀌어 현재 s2 선택이 후보 밖이면 전체로 리셋
   $: if (selectedS2 && !s2Options.includes(selectedS2)) selectedS2 = '';
-  $: matrix = summaryMode ? null : computeMissingMatrixClient(catalog, selectedS1 || undefined, selectedS2 || undefined, { hideBareS1 });
-  $: editableSlots = (slotCount === 3 ? ['s2', 's3'] : ['s2']) as Array<'s2' | 's3'>;
+  // s1×s2 모드는 s3 를 무시한 s1×s2 존재 매트릭스(요약/교차와 달리 MissingMatrix 형태로 렌더).
+  $: matrix = summaryMode
+    ? (viewMode === 's1s2' ? computeS1S2MatrixClient(catalog, { hideBareS1, excluded }) : null)
+    : computeMissingMatrixClient(catalog, selectedS1 || undefined, selectedS2 || undefined, { hideBareS1, excluded });
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this constant.
   const STATE_LABEL: Record<string, string> = {
@@ -54,7 +60,9 @@
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup calls this action.
   function clickCell(row: string, col: string): void {
-    if (slotCount === 3) onOpenCombo([selectedS1, row, col]);
+    // s1×s2 모드: row=s1, col=s2, s3 미지정. (일반 3슬롯 상세는 row=s2, col=s3 + 고정 selectedS1)
+    if (summaryMode && viewMode === 's1s2') onOpenCombo([row, col, undefined]);
+    else if (slotCount === 3) onOpenCombo([selectedS1, row, col]);
     else if (slotCount === 2) onOpenCombo([row, col]);
     else onOpenCombo([row]);
   }
@@ -67,6 +75,24 @@
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup calls this action.
   function clickCrossCell(cell: CrossCellClient): void {
     onOpenCombo([cell.s1, cell.s2, cell.s3]);
+  }
+
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup calls this action.
+  function toggleExcluded(slotId: 's1' | 's2' | 's3', value: string): void {
+    const current = slotId === 's1' ? excludedS1 : slotId === 's2' ? excludedS2 : excludedS3;
+    const next = new Set(current);
+    if (next.has(value)) next.delete(value);
+    else next.add(value);
+    if (slotId === 's1') excludedS1 = next;
+    else if (slotId === 's2') excludedS2 = next;
+    else excludedS3 = next;
+  }
+
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup calls this action.
+  function clearExcluded(slotId: 's1' | 's2' | 's3'): void {
+    if (slotId === 's1') excludedS1 = new Set();
+    else if (slotId === 's2') excludedS2 = new Set();
+    else excludedS3 = new Set();
   }
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup calls this action.
@@ -83,22 +109,6 @@
     return `${base} · 빠짐: ${preview}${rest > 0 ? ` 외 ${rest}개` : ''}`;
   }
 
-  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup calls this action.
-  function toggleExpected(s1Value: string, slotId: 's2' | 's3', value: string): void {
-    const current = new Set(expectedListForClient(catalog, s1Value, slotId));
-    if (current.has(value)) current.delete(value);
-    else current.add(value);
-    const fullVocab = catalog.vocab[slotId] ?? [];
-    const nextList = fullVocab.filter((entry) => current.has(entry));
-    const nextExpected: AssetExpectedMapMirror = { ...catalog.expected };
-    const slotMap = { ...(nextExpected[s1Value] ?? {}) };
-    // vocab 전체와 동일해지면 override 제거(null 의미론 유지)
-    if (nextList.length === fullVocab.length) delete slotMap[slotId];
-    else slotMap[slotId] = nextList;
-    if (Object.keys(slotMap).length === 0) delete nextExpected[s1Value];
-    else nextExpected[s1Value] = slotMap;
-    onUpdateExpected(nextExpected);
-  }
 </script>
 
 <div class="matrix-layout">
@@ -113,9 +123,23 @@
           </select>
         </label>
         {#if slotCount === 3 && !selectedS1}
-          <button type="button" class="mode-toggle" onclick={() => (crossMode = !crossMode)}>
-            {crossMode ? '요약 보기' : '교차 비교'}
-          </button>
+          <div class="mode-group" role="group" aria-label="비교 보기 모드">
+            <button type="button" class="mode-toggle" class:is-on={viewMode === 'summary'} onclick={() => (viewMode = 'summary')}>
+              요약
+            </button>
+            <button type="button" class="mode-toggle" class:is-on={viewMode === 'cross'} onclick={() => (viewMode = 'cross')}>
+              교차 비교
+            </button>
+            <button
+              type="button"
+              class="mode-toggle"
+              class:is-on={viewMode === 's1s2'}
+              title="s3 를 무시하고 s1×s2 조합만 비교 (s1·s2 만 있는 캐릭터도 함께 확인)"
+              onclick={() => (viewMode = 's1s2')}
+            >
+              s1×s2
+            </button>
+          </div>
         {/if}
         {#if slotCount >= 2 && !selectedS1}
           <button
@@ -139,7 +163,7 @@
       </div>
     {/if}
 
-    {#if summaryMode && crossMode}
+    {#if summaryMode && viewMode === 'cross'}
       {#if cross && cross.rows.length > 0 && cross.cols.length > 0}
         <div class="matrix-scroll">
           <table class="matrix-table">
@@ -180,7 +204,7 @@
       {:else}
         <p class="matrix-empty">표시할 조합이 없습니다. Vocab/Expected 를 먼저 구성하세요.</p>
       {/if}
-    {:else if summaryMode}
+    {:else if summaryMode && viewMode === 'summary'}
       {#if summary && summary.rows.length > 0}
         <div class="matrix-scroll">
           <table class="matrix-table">
@@ -249,40 +273,34 @@
           </tbody>
         </table>
       </div>
-      <p class="matrix-legend">✓ 존재 · ⚠ 중복 · ✗ missing(기대 조합) · · 비대상(expected 밖)</p>
+      <p class="matrix-legend">
+        {#if summaryMode && viewMode === 's1s2'}s3 무시 · s1×s2 존재만 비교 · {/if}✓ 존재 · ⚠ 중복 · ✗ missing(기대 조합) · · 비대상(expected 밖)
+      </p>
     {:else}
       <p class="matrix-empty">vocab의 {catalog.schema.slots[0].label} 목록이 비어 있습니다. Vocab 탭에서 먼저 등록하세요.</p>
     {/if}
   </section>
 
-  <aside class="expected-editor" aria-label="Expected set editor">
-    <h2>Expected 편집</h2>
-    <label>
-      <span>{catalog.schema.slots[0].label}</span>
-      <select bind:value={editingS1}>
-        <option value="">선택…</option>
-        {#each s1List as value (value)}<option {value}>{value}</option>{/each}
-      </select>
-    </label>
-    {#if editingS1}
-      {#each editableSlots as slotId (slotId)}
-        {@const slotDef = catalog.schema.slots.find((slot) => slot.id === slotId)}
-        {@const expectedSet = new Set(expectedListForClient(catalog, editingS1, slotId))}
-        <fieldset>
-          <legend>{slotDef?.label ?? slotId}</legend>
-          {#each catalog.vocab[slotId] ?? [] as value (value)}
-            <label class="expected-editor__item">
-              <input
-                type="checkbox"
-                checked={expectedSet.has(value)}
-                onchange={() => toggleExpected(editingS1, slotId, value)}
-              />
-              {value}
-            </label>
-          {/each}
-        </fieldset>
-      {/each}
-    {/if}
+  <aside class="axis-exclude" aria-label="축 제외">
+    <h2>축 제외</h2>
+    <p class="axis-exclude__hint">체크한 값을 매트릭스 축에서 숨깁니다.</p>
+    {#each catalog.schema.slots as slot (slot.id)}
+      {@const excludedSet = slot.id === 's1' ? excludedS1 : slot.id === 's2' ? excludedS2 : excludedS3}
+      <fieldset>
+        <legend>
+          <span>{slot.label}</span>
+          {#if excludedSet.size > 0}
+            <button type="button" class="axis-exclude__reset" onclick={() => clearExcluded(slot.id)}>모두 포함</button>
+          {/if}
+        </legend>
+        {#each catalog.vocab[slot.id] ?? [] as value (value)}
+          <label class="axis-exclude__item" class:is-excluded={excludedSet.has(value)}>
+            <input type="checkbox" checked={excludedSet.has(value)} onchange={() => toggleExcluded(slot.id, value)} />
+            {value}
+          </label>
+        {/each}
+      </fieldset>
+    {/each}
   </aside>
 </div>
 
@@ -376,8 +394,14 @@
     cursor: pointer;
   }
   .mode-toggle:hover { outline: 2px solid var(--focus); outline-offset: -1px; }
+  .mode-group { display: inline-flex; align-self: flex-end; gap: 4px; }
+  .mode-toggle.is-on {
+    border-color: color-mix(in srgb, var(--focus) 55%, var(--card-border));
+    background: color-mix(in srgb, var(--focus) 16%, var(--surface));
+    color: var(--focus);
+  }
   .matrix-legend, .matrix-empty { color: var(--muted); font-size: var(--text-sm); margin: 0; }
-  .expected-editor {
+  .axis-exclude {
     width: 240px;
     flex-shrink: 0;
     overflow-y: auto;
@@ -389,8 +413,12 @@
     border-radius: var(--radius-md);
     background: var(--card);
   }
-  .expected-editor h2 { margin: 0; font-size: var(--text-lg); font-weight: 700; }
-  .expected-editor > label { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); color: var(--muted); }
-  .expected-editor fieldset { display: flex; flex-direction: column; gap: var(--space-1); }
-  .expected-editor__item { display: flex; align-items: center; gap: var(--space-1); font-size: var(--text-md); }
+  .axis-exclude h2 { margin: 0; font-size: var(--text-lg); font-weight: 700; }
+  .axis-exclude__hint { margin: 0; font-size: var(--text-sm); color: var(--muted); }
+  .axis-exclude fieldset { display: flex; flex-direction: column; gap: var(--space-1); }
+  .axis-exclude legend { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); width: 100%; font-weight: 700; font-size: var(--text-sm); }
+  .axis-exclude__reset { padding: 0 var(--space-1); border: 1px solid var(--card-border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: var(--text-sm); cursor: pointer; }
+  .axis-exclude__reset:hover { outline: 2px solid var(--focus); outline-offset: -1px; }
+  .axis-exclude__item { display: flex; align-items: center; gap: var(--space-1); font-size: var(--text-md); }
+  .axis-exclude__item.is-excluded { color: var(--muted); text-decoration: line-through; opacity: 0.7; }
 </style>
