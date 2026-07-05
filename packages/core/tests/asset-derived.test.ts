@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AssetCatalog } from '../src/domain/asset/catalog';
+import { DEFAULT_ASSET_OUTPUTS, parseAssetCatalog } from '../src/domain/asset/catalog';
 import {
   escapeRegexLiteral,
   generateMissingReport,
@@ -101,5 +102,40 @@ describe('generateMissingReport', () => {
     expect(isMissingReportJson(parsed)).toBe(true);
     if (!isMissingReportJson(parsed)) return;
     expect(parsed.missing.some((combo) => combo.name === 'Elsie_nervous')).toBe(true);
+  });
+});
+
+describe('outputs.outputTemplate', () => {
+  it('exposes the default outputTemplate', () => {
+    expect(DEFAULT_ASSET_OUTPUTS.outputTemplate).toBe('<img src="{{raw::{name}}}" alt="{name}">');
+  });
+
+  it('defaults outputTemplate when a catalog omits it', () => {
+    const parsed = parseAssetCatalog({
+      version: 1,
+      schema: { slots: [{ id: 's1', label: 'character' }], joinTemplate: '{s1}' },
+      vocab: { s1: ['Elsie'] },
+      expected: {},
+      assignments: {},
+      outputs: { tagFormat: { prefix: '<img src="', suffix: '">' }, fallbackTemplate: '{s1}_default' },
+    });
+    expect(parsed).not.toBeNull();
+    expect(parsed?.outputs?.outputTemplate).toBe('<img src="{{raw::{name}}}" alt="{name}">');
+  });
+
+  it('preserves a custom outputTemplate', () => {
+    const parsed = parseAssetCatalog({
+      version: 1,
+      schema: { slots: [{ id: 's1', label: 'character' }], joinTemplate: '{s1}' },
+      vocab: { s1: ['Elsie'] },
+      expected: {},
+      assignments: {},
+      outputs: {
+        tagFormat: { prefix: '<img src="', suffix: '">' },
+        fallbackTemplate: '{s1}_default',
+        outputTemplate: '{{img::{name}}}',
+      },
+    });
+    expect(parsed?.outputs?.outputTemplate).toBe('{{img::{name}}}');
   });
 });

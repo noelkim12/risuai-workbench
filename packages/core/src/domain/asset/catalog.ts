@@ -30,7 +30,9 @@ export type AssetExpectedMap = Record<
 
 export interface AssetCatalogOutputsConfig {
   readonly tagFormat: { readonly prefix: string; readonly suffix: string };
+  /** @deprecated No longer consumed by generateWhitelistRegex. Kept for backward compat with existing asset-catalog.json. */
   readonly fallbackTemplate: string;
+  readonly outputTemplate: string;
 }
 
 export interface AssetCatalog {
@@ -45,6 +47,7 @@ export interface AssetCatalog {
 export const DEFAULT_ASSET_OUTPUTS: AssetCatalogOutputsConfig = {
   tagFormat: { prefix: '<img src="', suffix: '">' },
   fallbackTemplate: '{s1}_default',
+  outputTemplate: '<img src="{{raw::{name}}}" alt="{name}">',
 };
 
 export function createDefaultAssetCatalog(): AssetCatalog {
@@ -139,9 +142,12 @@ function parseOutputs(raw: unknown): AssetCatalogOutputsConfig | null | undefine
   if (!isPlainRecord(raw) || !isPlainRecord(raw.tagFormat)) return null;
   if (typeof raw.tagFormat.prefix !== 'string' || typeof raw.tagFormat.suffix !== 'string') return null;
   if (typeof raw.fallbackTemplate !== 'string') return null;
+  if (raw.outputTemplate !== undefined && typeof raw.outputTemplate !== 'string') return null;
   return {
     tagFormat: { prefix: raw.tagFormat.prefix, suffix: raw.tagFormat.suffix },
     fallbackTemplate: raw.fallbackTemplate,
+    outputTemplate:
+      typeof raw.outputTemplate === 'string' ? raw.outputTemplate : DEFAULT_ASSET_OUTPUTS.outputTemplate,
   };
 }
 
