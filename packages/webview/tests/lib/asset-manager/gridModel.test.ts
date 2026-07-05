@@ -8,6 +8,7 @@ import {
   applyTileSelection,
   assignmentProgressLabel,
   chainedValuesForClient,
+  computeCrossMatrixClient,
   computeMissingMatrixClient,
   computeSummaryMatrixClient,
   computeVirtualWindow,
@@ -325,6 +326,97 @@ describe('computeSummaryMatrixClient', () => {
       assignments: {},
     };
     expect(computeSummaryMatrixClient(twoSlot)).toBeNull();
+  });
+});
+
+describe('computeCrossMatrixClient', () => {
+  const catalog = {
+    version: 1 as const,
+    schema: {
+      slots: [
+        { id: 's1' as const, label: 'character' },
+        { id: 's2' as const, label: 'outfit' },
+        { id: 's3' as const, label: 'emotion' },
+      ],
+      joinTemplate: '{s1} {s2} {s3}',
+    },
+    vocab: { s1: ['Rin', 'Yua'], s2: ['casual', 'uniform'], s3: ['angry', 'sad'] },
+    // Yua 는 uniform 만, sad 만 기대 → (casual,*)·(uniform,angry) 셀은 Yua 열에서 excluded
+    expected: { Yua: { s2: ['uniform'], s3: ['sad'] } },
+    assignments: {
+      'a/rin_casual_angry.png': { s1: 'Rin', s2: 'casual', s3: 'angry' },
+      'a/rin_casual_angry2.png': { s1: 'Rin', s2: 'casual', s3: 'angry' },
+      'a/yua_beach_wink.png': { s1: 'Yua', s2: 'beach', s3: 'wink' },
+    },
+  };
+
+  it('builds rows from expected union plus actual files, vocab order first', () => {
+    const cross = computeCrossMatrixClient(catalog);
+    // Rin 은 override 없음 → vocab 전체 기대 → vocab 조합 4개 전부 포함.
+    // (beach, wink) 는 vocab 밖이지만 실제 파일 존재 → 뒤에 append.
+    expect(cross?.rows).toEqual([
+      { s2: 'casual', s3: 'angry' },
+      { s2: 'casual', s3: 'sad' },
+      { s2: 'uniform', s3: 'angry' },
+      { s2: 'uniform', s3: 'sad' },
+      { s2: 'beach', s3: 'wink' },
+    ]);
+    expect(cross?.cols).toEqual(['Rin', 'Yua']);
+  });
+
+  it('marks cells present/duplicate/missing/excluded per s1 expected sets', () => {
+    const cross = computeCrossMatrixClient(catalog);
+    // (casual, angry): Rin 파일 2개 → duplicate. Yua 는 기대 밖 + 파일 없음 → excluded.
+    expect(cross?.cells[0]?.[0]).toMatchObject({ s1: 'Rin', state: 'duplicate', count: 2 });
+    expect(cross?.cells[0]?.[1]).toMatchObject({ s1: 'Yua', state: 'excluded' });
+    // (uniform, sad): Rin 기대 + 파일 없음 → missing. Yua 기대 + 파일 없음 → missing.
+    expect(cross?.cells[3]?.[0]?.state).toBe('missing');
+    expect(cross?.cells[3]?.[1]?.state).toBe('missing');
+    // (beach, wink): Yua 파일 1개 → present (기대 밖이어도 파일 있으면 표시). Rin → excluded.
+    expect(cross?.cells[4]?.[1]).toMatchObject({ state: 'present', count: 1, paths: ['a/yua_beach_wink.png'] });
+    expect(cross?.cells[4]?.[0]?.state).toBe('excluded');
+  });
+
+  it('sorts out-of-vocab extras lexicographically after vocab combos', () => {
+    const withExtras = {
+      ...catalog,
+      assignments: {
+        'a/z.png': { s1: 'Rin', s2: 'winter', s3: 'sad' },
+        'a/y.png': { s1: 'Rin', s2: 'beach', s3: 'wink' },
+        'a/x.png': { s1: 'Rin', s2: 'beach', s3: 'angry' },
+      },
+    };
+    const cross = computeCrossMatrixClient(withExtras);
+    expect(cross?.rows.slice(4)).toEqual([
+      { s2: 'beach', s3: 'angry' },
+      { s2: 'beach', s3: 'wink' },
+      { s2: 'winter', s3: 'sad' },
+    ]);
+  });
+
+  it('ignores assignments missing s2 or s3 and returns null for non-3-slot schemas', () => {
+    const partial = {
+      ...catalog,
+      expected: { Rin: { s2: [], s3: [] }, Yua: { s2: [], s3: [] } },
+      assignments: { 'a/rin_only.png': { s1: 'Rin', s2: 'casual' } },
+    };
+    // s3 미할당 파일은 행을 만들지 않음 + expected 전부 비면 행 없음
+    expect(computeCrossMatrixClient(partial)?.rows).toEqual([]);
+
+    const twoSlot = {
+      version: 1 as const,
+      schema: {
+        slots: [
+          { id: 's1' as const, label: 'character' },
+          { id: 's2' as const, label: 'emotion' },
+        ],
+        joinTemplate: '{s1} {s2}',
+      },
+      vocab: { s1: ['Rin'], s2: ['angry'] },
+      expected: {},
+      assignments: {},
+    };
+    expect(computeCrossMatrixClient(twoSlot)).toBeNull();
   });
 });
 

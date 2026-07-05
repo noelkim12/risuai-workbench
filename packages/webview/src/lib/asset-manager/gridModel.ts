@@ -79,6 +79,26 @@ export interface SummaryMatrixClient {
   readonly cells: readonly (readonly SummaryCellClient[])[];
 }
 
+export interface CrossRowClient {
+  readonly s2: string;
+  readonly s3: string;
+}
+
+export interface CrossCellClient {
+  readonly s1: string;
+  readonly s2: string;
+  readonly s3: string;
+  readonly state: MissingCellState;
+  readonly count: number;
+  readonly paths: readonly string[];
+}
+
+export interface CrossMatrixClient {
+  readonly rows: readonly CrossRowClient[];
+  readonly cols: readonly string[]; // vocab.s1 순서
+  readonly cells: readonly (readonly CrossCellClient[])[];
+}
+
 export function filterAssetEntries(
   entries: readonly AssetManagerAssetEntry[],
   filter: AssetGridFilter,
@@ -239,6 +259,65 @@ export function computeSummaryMatrixClient(catalog: AssetCatalogMirror): Summary
       return cols.map((col) => summarizeSummaryCell(detailedGroups, comboGroups, row, col, expectedS2.has(col), expectedS3));
     }),
   };
+}
+
+/**
+ * 3슬롯 전용 교차 비교 매트릭스. 행=(s2,s3) 조합 × 열=s1.
+ * 행 범위 = 어느 s1이든 expected 인 조합 ∪ 실제 파일이 있는 조합.
+ * vocab 순서(s2 외부 × s3 내부) 우선, vocab 밖 조합은 사전순 append.
+ */
+export function computeCrossMatrixClient(catalog: AssetCatalogMirror): CrossMatrixClient | null {
+  if (catalog.schema.slots.length !== 3) return null;
+  const cols = [...(catalog.vocab.s1 ?? [])];
+  const expectedS2 = new Map(cols.map((s1) => [s1, new Set(expectedListForClient(catalog, s1, 's2'))]));
+  const expectedS3 = new Map(cols.map((s1) => [s1, new Set(expectedListForClient(catalog, s1, 's3'))]));
+
+  const comboSet = new Set<string>();
+  for (const s1 of cols) {
+    for (const s2 of expectedS2.get(s1) ?? []) {
+      for (const s3 of expectedS3.get(s1) ?? []) comboSet.add(comboKey([s2, s3]));
+    }
+  }
+  for (const slots of Object.values(catalog.assignments)) {
+    if (slots.s2 !== undefined && slots.s3 !== undefined) comboSet.add(comboKey([slots.s2, slots.s3]));
+  }
+
+  const rows = orderCrossRows(comboSet, catalog.vocab.s2 ?? [], catalog.vocab.s3 ?? []);
+  const groups = groupAssignments(catalog, ['s1', 's2', 's3']);
+  return {
+    rows,
+    cols,
+    cells: rows.map(({ s2, s3 }) =>
+      cols.map((s1) => {
+        const paths = groups.get(comboKey([s1, s2, s3])) ?? [];
+        const expected = (expectedS2.get(s1)?.has(s2) ?? false) && (expectedS3.get(s1)?.has(s3) ?? false);
+        const excluded = paths.length === 0 && !expected;
+        return { s1, s2, s3, state: cellState(paths.length, excluded), count: paths.length, paths };
+      }),
+    ),
+  };
+}
+
+/** vocab 순서(s2 외부 × s3 내부) 우선 정렬, vocab 밖 조합은 (s2, s3) 사전순 append. */
+function orderCrossRows(comboSet: ReadonlySet<string>, vocabS2: readonly string[], vocabS3: readonly string[]): CrossRowClient[] {
+  const ordered: CrossRowClient[] = [];
+  const consumed = new Set<string>();
+  for (const s2 of vocabS2) {
+    for (const s3 of vocabS3) {
+      const key = comboKey([s2, s3]);
+      if (!comboSet.has(key)) continue;
+      ordered.push({ s2, s3 });
+      consumed.add(key);
+    }
+  }
+  const extras = [...comboSet]
+    .filter((key) => !consumed.has(key))
+    .map((key) => {
+      const [s2 = '', s3 = ''] = key.split('\u0000');
+      return { s2, s3 };
+    })
+    .sort((left, right) => left.s2.localeCompare(right.s2) || left.s3.localeCompare(right.s3));
+  return [...ordered, ...extras];
 }
 
 function groupSummaryAssignments(catalog: AssetCatalogMirror): {
