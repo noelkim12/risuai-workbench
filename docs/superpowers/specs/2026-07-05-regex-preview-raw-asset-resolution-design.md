@@ -106,24 +106,27 @@ Pure, no Node/VS Code deps, unit-tested.
 - `resolveAssetName(name, candidates: string[], maxDiff?): { matchedName: string } | null` —
   lowercase-exact against candidates → trimmed-exact → nearest by `getDistance(trimmer,…)`,
   reject if `> maxDiff`. Returns the matched candidate name (caller maps name→path).
+- `substituteAssetCbs(output, resolved: Record<string, string | null>): string` — replaces each
+  `{{raw|path::name}}` (same regex as extract): name present with a src → the src; name present
+  but null (confirmed miss) → empty string; name absent (still pending) → left literal.
 
 > Note: matching returns the matched **candidate name**; the extension owns the
-> candidate-name → relative-path mapping (built from catalog assignments + manifest entries).
-> This keeps the core module free of file-shape assumptions and easy to test.
+> candidate-name → relative-path mapping. This keeps the core module free of file-shape
+> assumptions and easy to test.
 
 ### 5.2 Extension host: resolve handler
 
 New handler in `MainEditorProvider.ts` (registered next to `main-editor/formatPreviewRequest`):
 
 1. Receive `{ requestId, documentUri, names[] }`.
-2. Resolve character root = grandparent dir of `documentUri` (shared helper; reuse/extract the
-   same grandparent logic the html-context path relies on). `assetsDir = <root>/assets`.
-3. Load catalog (`loadAssetCatalogFromAssetsDir`) and/or manifest via `AssetManagerService`
-   scoped to that root. Build **candidate name → relative path** map:
-   - From catalog `assignments`: derive the join name via `schema.joinTemplate` + slot values
-     (e.g. `{s1}_{s2}` → `anelia_default`), path = the assignment key (relative to `assets/`).
-   - From manifest `assets[]`: `name` → `extracted_path`.
-   - Merge; catalog-derived names take precedence on conflict.
+2. Resolve character root = grandparent dir of `documentUri`
+   (`path.dirname(path.dirname(fsPath))`), matching the html-context convention.
+   `assetsDir = <root>/assets`.
+3. `new AssetManagerService(rootFsPath).scan()` yields `entries[]`, each with `path`
+   (relative to `assets/`), `generatedName` (the join name from catalog, e.g. `anelia_default`,
+   or null), and `fileStem`. Build **candidate name → relative path** map:
+   - `generatedName → path` (primary; when present).
+   - `fileStem → path` (fallback; does not overwrite a `generatedName` mapping).
 4. For each requested `name`: `resolveAssetName(name, candidateNames)` → matched name → rel path.
 5. Read file bytes (`vscode.workspace.fs.readFile`), base64-encode, mime from ext, build
    `data:<mime>;base64,…`. Enforce cap (see §6). 
@@ -207,5 +210,8 @@ the Regex Inspector Output panel renders the emotion image(s).
   structured to add them by extending `RESOLVABLE_ASSET_TAGS` + per-tag HTML wrapping.
 - `webview.asWebviewUri` transport (lighter for many/large assets) — deferred; `data:` chosen
   for v1 robustness.
+- Manifest `name`-based candidates (original card names with spaces) — v1 uses catalog
+  `generatedName` + `fileStem`, which already cover the regex-emitted underscored names via the
+  trimmed-fuzzy match. Add manifest names later if a card resolves differently in real RisuAI.
 - Multi-source selection (`srcPaths.length > 1` hash-random pick) — v1 uses the single
   catalog/manifest path per name.
