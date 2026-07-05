@@ -245,9 +245,35 @@ export function computeMissingMatrixClient(catalog: AssetCatalogMirror, s1?: str
  * 셀 = 해당 (s1, s2) 에서 expected s3 조합 중 존재/누락 집계.
  * 파일 전체를 groupAssignments 로 1회 순회하므로 파일 수천 개 규모에서도 저비용.
  */
-export function computeSummaryMatrixClient(catalog: AssetCatalogMirror): SummaryMatrixClient | null {
+/** 요약/교차 비교 뷰 공통 옵션. */
+export interface MatrixViewOptions {
+  /** true 면 s2 조합 파일도 없고 명시적 expected override 도 없는 "s1-only" 값을 축에서 제외. */
+  readonly hideBareS1?: boolean;
+}
+
+/**
+ * s2 조합(assignments 중 s2 정의됨) 또는 명시적 expected override 가 있는 s1 집합.
+ * 여기에 없는 s1 은 "s1 만 태그된 포트레이트류" 로 간주해 조합 비교 축에서 뺄 수 있다.
+ */
+function s1WithCombosOrOverride(catalog: AssetCatalogMirror): Set<string> {
+  const set = new Set<string>();
+  for (const slots of Object.values(catalog.assignments)) {
+    if (slots.s1 !== undefined && slots.s2 !== undefined) set.add(slots.s1);
+  }
+  for (const s1 of Object.keys(catalog.expected)) set.add(s1);
+  return set;
+}
+
+/** hideBareS1 옵션이 켜져 있으면 조합/override 없는 s1 을 걸러낸다. */
+function filterAxisS1(catalog: AssetCatalogMirror, s1Values: readonly string[], options?: MatrixViewOptions): string[] {
+  if (!options?.hideBareS1) return [...s1Values];
+  const keep = s1WithCombosOrOverride(catalog);
+  return s1Values.filter((s1) => keep.has(s1));
+}
+
+export function computeSummaryMatrixClient(catalog: AssetCatalogMirror, options?: MatrixViewOptions): SummaryMatrixClient | null {
   if (catalog.schema.slots.length !== 3) return null;
-  const rows = [...(catalog.vocab.s1 ?? [])];
+  const rows = filterAxisS1(catalog, catalog.vocab.s1 ?? [], options);
   const cols = [...(catalog.vocab.s2 ?? [])];
   const { detailedGroups, comboGroups } = groupSummaryAssignments(catalog);
   return {
@@ -270,9 +296,9 @@ export function computeSummaryMatrixClient(catalog: AssetCatalogMirror): Summary
  *  override 없는 s1 은 "그 조합을 기대하지만 빠진" missing 으로 표시되어야 비교가 된다.)
  * vocab 순서(s2 외부 × s3 내부) 우선, vocab 밖 조합은 사전순 append.
  */
-export function computeCrossMatrixClient(catalog: AssetCatalogMirror): CrossMatrixClient | null {
+export function computeCrossMatrixClient(catalog: AssetCatalogMirror, options?: MatrixViewOptions): CrossMatrixClient | null {
   if (catalog.schema.slots.length !== 3) return null;
-  const cols = [...(catalog.vocab.s1 ?? [])];
+  const cols = filterAxisS1(catalog, catalog.vocab.s1 ?? [], options);
   const expectedS2 = new Map(cols.map((s1) => [s1, new Set(expectedListForClient(catalog, s1, 's2'))]));
   const expectedS3 = new Map(cols.map((s1) => [s1, new Set(expectedListForClient(catalog, s1, 's3'))]));
 
