@@ -10,6 +10,29 @@ export const ASSET_MANAGER_PROTOCOL_VERSION = 1;
 export type AssetSlotId = 's1' | 's2' | 's3';
 export type AssetSlotValues = Partial<Record<AssetSlotId, string>>;
 
+export type AssetCatalogBootstrapAnomalyReason = 'insufficient-tokens' | 'vocab-overlap';
+
+export interface AssetCatalogBootstrapGroupSummaryMirror {
+  readonly firstToken: string;
+  readonly entryCount: number;
+  readonly tokenCountMin: number;
+  readonly tokenCountMax: number;
+  readonly anomalies: readonly AssetCatalogBootstrapAnomalyReason[];
+  // insufficient-tokens 경고를 유발한 실제 항목명(가장 조각이 적은 항목).
+  readonly insufficientExample?: string;
+}
+
+export interface AssetCatalogBootstrapGroupOverride {
+  readonly firstToken: string;
+  readonly slotTokenCounts: Partial<Record<AssetSlotId, number>>;
+}
+
+export interface AssetCatalogBootstrapSplitOptions {
+  readonly separator?: string;
+  readonly slotTokenCounts?: Partial<Record<AssetSlotId, number>>;
+  readonly groupOverrides?: readonly AssetCatalogBootstrapGroupOverride[];
+}
+
 export interface AssetSlotDefinition {
   readonly id: AssetSlotId;
   readonly label: string;
@@ -111,6 +134,21 @@ export interface AssetManagerWebviewPayloadByType {
   readonly 'asset-manager/updateExpected': { readonly stableId: string; readonly expected: AssetExpectedMapMirror };
   readonly 'asset-manager/analyzeLorebookNames': { readonly stableId: string };
   readonly 'asset-manager/bootstrapFromFilenames': { readonly stableId: string };
+  readonly 'asset-manager/bootstrapFromManifest': { readonly stableId: string };
+  readonly 'asset-manager/bootstrapCatalog': {
+    readonly stableId: string;
+    readonly source: 'manifest' | 'filename';
+    readonly mode: 'full' | 'missing';
+    readonly split?: AssetCatalogBootstrapSplitOptions;
+    readonly schema?: AssetCatalogSchemaMirror;
+  };
+  readonly 'asset-manager/previewCatalogBootstrap': {
+    readonly stableId: string;
+    readonly source: 'manifest' | 'filename';
+    readonly mode: 'full' | 'missing';
+    readonly split?: AssetCatalogBootstrapSplitOptions;
+    readonly schema?: AssetCatalogSchemaMirror;
+  };
   readonly 'asset-manager/readImageMeta': { readonly stableId: string; readonly path: string };
   readonly 'asset-manager/generateOutputs': { readonly stableId: string; readonly kinds: readonly AssetOutputKind[] };
   readonly 'asset-manager/saveOutput': {
@@ -153,6 +191,14 @@ export type AssetManagerExtensionMessage =
         readonly missingCombos?: readonly { readonly slots: AssetSlotValues; readonly name: string | null }[];
       }
     >
+  | AssetManagerEnvelope<
+      'asset-manager/catalogBootstrapPreview',
+      {
+        readonly stableId: string;
+        readonly rows: readonly { readonly path: string; readonly name: string; readonly slots: AssetSlotValues | null }[];
+        readonly groups: readonly AssetCatalogBootstrapGroupSummaryMirror[];
+      }
+    >
   | AssetManagerEnvelope<'asset-manager/outputSaved', { readonly stableId: string; readonly kind: AssetOutputKind; readonly savedPath: string }>
   | AssetManagerEnvelope<
       'asset-manager/manifestBuilt',
@@ -174,6 +220,7 @@ const EXTENSION_MESSAGE_TYPES: ReadonlySet<string> = new Set([
   'asset-manager/tokenizeResult',
   'asset-manager/imageMetaResult',
   'asset-manager/outputsResult',
+  'asset-manager/catalogBootstrapPreview',
   'asset-manager/outputSaved',
   'asset-manager/manifestBuilt',
   'asset-manager/error',

@@ -9,8 +9,10 @@
 -->
 
 <script lang="ts">
+  // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes assignmentProgressLabel.
   import {
     applyTileSelection,
+    assignmentProgressLabel,
     computeVirtualWindow,
     filterAssetEntries,
     sortAssetEntries,
@@ -45,6 +47,7 @@
 
   let subdir: string | 'all' = 'all';
   let query = '';
+  let slotFilters: AssetSlotValues = {};
   let onlyUnassigned = false;
   let onlyDuplicate = false;
   let sortKey: 'name' | 'size' | 'mtime' = 'name';
@@ -66,7 +69,7 @@
   }
 
   $: visibleEntries = sortAssetEntries(
-    filterAssetEntries(entries, { subdir, query, onlyUnassigned, onlyDuplicate }),
+    filterAssetEntries(entries, { subdir, query, slotFilters, onlyUnassigned, onlyDuplicate }),
     sortKey,
   );
   $: orderedPaths = visibleEntries.map((entry) => entry.path);
@@ -170,6 +173,12 @@
     const value = (event.currentTarget as HTMLSelectElement).value;
     inspectorValues = { ...inspectorValues, [slotId]: value };
   }
+
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup calls this handler.
+  function onSlotFilterChange(slotId: AssetSlotId, event: Event): void {
+    const value = (event.currentTarget as HTMLSelectElement).value;
+    slotFilters = { ...slotFilters, [slotId]: value };
+  }
 </script>
 
 <div class="grid-layout">
@@ -181,6 +190,21 @@
         {/each}
       </select>
       <input type="search" placeholder="검색 (이름/슬롯 값)" bind:value={query} />
+      {#each catalog.schema.slots as slot (slot.id)}
+        <label class="slot-filter">
+          <span>{slot.id}</span>
+          <select
+            aria-label={`${slot.label} filter`}
+            value={slotFilters[slot.id] ?? ''}
+            onchange={(event) => onSlotFilterChange(slot.id, event)}
+          >
+            <option value="">전체</option>
+            {#each catalog.vocab[slot.id] ?? [] as value (value)}
+              <option {value}>{value}</option>
+            {/each}
+          </select>
+        </label>
+      {/each}
       <label><input type="checkbox" bind:checked={onlyUnassigned} /> 미할당</label>
       <label><input type="checkbox" bind:checked={onlyDuplicate} /> 중복</label>
       <select bind:value={sortKey} aria-label="Sort key">
@@ -231,7 +255,9 @@
             />
             <span class="tile__name">{entry.generatedName ?? entry.fileStem}</span>
             <span class="tile__badges">
-              {#if entry.flags.unassigned}<span class="badge badge--warn">미할당</span>{/if}
+              {#if assignmentProgressLabel(entry.assignment, catalog.schema.slots)}
+                <span class="badge badge--warn">{assignmentProgressLabel(entry.assignment, catalog.schema.slots)}</span>
+              {/if}
               {#if entry.flags.duplicate}<span class="badge badge--dup">중복</span>{/if}
             </span>
           </button>
@@ -322,6 +348,15 @@
   }
   .grid-toolbar :global(input[type='range']) {
     width: 96px;
+  }
+  .slot-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+  .slot-filter span {
+    font-weight: 700;
+    color: var(--muted);
   }
   .grid-toolbar__count {
     margin-left: auto;

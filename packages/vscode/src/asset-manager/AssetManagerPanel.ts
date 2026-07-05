@@ -168,6 +168,32 @@ export class AssetManagerPanel {
             }),
           );
           return;
+        case 'asset-manager/bootstrapFromManifest':
+          this.service.bootstrapFromManifest();
+          this.sendSnapshot('asset-manager/catalogSaved');
+          return;
+        case 'asset-manager/bootstrapCatalog':
+          this.service.bootstrapCatalog({
+            source: message.payload.source,
+            mode: message.payload.mode,
+            split: message.payload.split,
+            schema: message.payload.schema,
+          });
+          this.sendSnapshot('asset-manager/catalogSaved');
+          return;
+        case 'asset-manager/previewCatalogBootstrap':
+          this.post(
+            createAssetManagerExtensionMessage('asset-manager/catalogBootstrapPreview', {
+              stableId,
+              ...this.service.previewCatalogBootstrap({
+                source: message.payload.source,
+                mode: message.payload.mode,
+                split: message.payload.split,
+                schema: message.payload.schema,
+              }),
+            }),
+          );
+          return;
         case 'asset-manager/readImageMeta':
           this.post(
             createAssetManagerExtensionMessage('asset-manager/imageMetaResult', {

@@ -15,6 +15,8 @@ type PayloadValidator = (payload: unknown) => boolean;
 
 const ASSET_OUTPUT_KINDS: readonly string[] = ['promptBlock', 'whitelistRegex', 'missingReport'];
 const ASSET_SLOT_IDS: readonly string[] = ['s1', 's2', 's3'];
+const CATALOG_BOOTSTRAP_SOURCES: readonly string[] = ['manifest', 'filename'];
+const CATALOG_BOOTSTRAP_MODES: readonly string[] = ['full', 'missing'];
 
 function hasStableId(payload: unknown): payload is Record<string, unknown> & { readonly stableId: string } {
   return isPlainRecord(payload) && typeof payload.stableId === 'string' && payload.stableId.length > 0;
@@ -22,6 +24,53 @@ function hasStableId(payload: unknown): payload is Record<string, unknown> & { r
 
 function isAssetOutputKind(value: unknown): boolean {
   return typeof value === 'string' && ASSET_OUTPUT_KINDS.includes(value);
+}
+
+function isCatalogBootstrapSource(value: unknown): boolean {
+  return typeof value === 'string' && CATALOG_BOOTSTRAP_SOURCES.includes(value);
+}
+
+function isCatalogBootstrapMode(value: unknown): boolean {
+  return typeof value === 'string' && CATALOG_BOOTSTRAP_MODES.includes(value);
+}
+
+function isSlotTokenCountsRecord(value: unknown): boolean {
+  return (
+    isPlainRecord(value) &&
+    Object.entries(value).every(
+      ([key, count]) => ASSET_SLOT_IDS.includes(key) && typeof count === 'number' && Number.isInteger(count) && count > 0,
+    )
+  );
+}
+
+function isCatalogBootstrapGroupOverride(value: unknown): boolean {
+  return (
+    isPlainRecord(value) &&
+    typeof value.firstToken === 'string' &&
+    value.firstToken.length > 0 &&
+    isSlotTokenCountsRecord(value.slotTokenCounts)
+  );
+}
+
+function isCatalogBootstrapSplitOptions(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!isPlainRecord(value)) return false;
+  return (
+    (value.separator === undefined || typeof value.separator === 'string') &&
+    (value.slotTokenCounts === undefined || isSlotTokenCountsRecord(value.slotTokenCounts)) &&
+    (value.groupOverrides === undefined ||
+      (Array.isArray(value.groupOverrides) && value.groupOverrides.every(isCatalogBootstrapGroupOverride)))
+  );
+}
+
+function isCatalogBootstrapPayload(payload: unknown): boolean {
+  return (
+    hasStableId(payload) &&
+    isCatalogBootstrapSource(payload.source) &&
+    isCatalogBootstrapMode(payload.mode) &&
+    isCatalogBootstrapSplitOptions(payload.split) &&
+    (payload.schema === undefined || isPlainRecord(payload.schema))
+  );
 }
 
 function isSafeRelativePath(value: string): boolean {
@@ -60,6 +109,9 @@ const WEBVIEW_MESSAGE_VALIDATORS: Record<AssetManagerWebviewMessage['type'], Pay
   'asset-manager/updateExpected': (payload) => hasStableId(payload) && isPlainRecord(payload.expected),
   'asset-manager/analyzeLorebookNames': hasStableId,
   'asset-manager/bootstrapFromFilenames': hasStableId,
+  'asset-manager/bootstrapFromManifest': hasStableId,
+  'asset-manager/bootstrapCatalog': isCatalogBootstrapPayload,
+  'asset-manager/previewCatalogBootstrap': isCatalogBootstrapPayload,
   'asset-manager/readImageMeta': (payload) =>
     hasStableId(payload) && typeof payload.path === 'string' && isSafeRelativePath(payload.path),
   'asset-manager/generateOutputs': (payload) =>

@@ -16,13 +16,14 @@ import { findDuplicateNameGroups, type DuplicateNameGroup } from '../domain/asse
 import { renderAssetName } from '../domain/asset/naming';
 import { readJsonIfExists, writeText } from './fs-helpers';
 
-export const CHARACTER_ASSET_DIRS = ['additional', 'emotions', 'icons', 'other'] as const;
+// 순회 순서가 곧 manifest의 index 순서. 원본(charx) manifest와 정렬을 맞추려고 icon을 먼저 둠.
+export const CHARACTER_ASSET_DIRS = ['icons', 'additional', 'emotions', 'other'] as const;
 
 export type CharacterAssetSubdir = (typeof CHARACTER_ASSET_DIRS)[number];
 
 export interface CharacterAssetManifestEntry {
   readonly index: number;
-  readonly original_uri: null;
+  readonly original_uri: string;
   readonly extracted_path: string;
   readonly status: 'extracted';
   readonly type: 'icon' | 'emotion' | 'x-risu-asset' | 'asset';
@@ -77,14 +78,17 @@ export function collectCharacterAssetEntries(
       const relativePath = toPosix(path.relative(assetsDir, filePath));
       const parsed = path.parse(filePath);
       const renderedName = renderAssignedName(catalog, relativePath);
+      const type = assetTypeFromSubdir(subdir);
+      const name = renderedName ?? parsed.name;
+      const ext = parsed.ext.replace(/^\./, '') || 'bin';
       entries.push({
         index: entries.length,
-        original_uri: null,
+        original_uri: buildOriginalUri(type, name, ext),
         extracted_path: relativePath,
         status: 'extracted',
-        type: assetTypeFromSubdir(subdir),
-        name: renderedName ?? parsed.name,
-        ext: parsed.ext.replace(/^\./, '') || 'bin',
+        type,
+        name,
+        ext,
         subdir,
         size_bytes: fs.statSync(filePath).size,
       });
@@ -178,6 +182,62 @@ function assetTypeFromSubdir(
       return 'x-risu-asset';
     case 'other':
       return 'asset';
+  }
+}
+
+/**
+ * RisuAI charx export가 사용하는 `embeded://assets/{type}/{itype}/{name}.{ext}` URI를 재구성함.
+ * 디스크 스캔 manifest에는 원본 URI가 없으므로 type/name/ext로 강제 할당함.
+ * 규칙 출처: RisuAI characterCards.ts exportCharacterCard (assets 경로 생성부).
+ */
+function buildOriginalUri(
+  type: CharacterAssetManifestEntry['type'],
+  name: string,
+  ext: string,
+): string {
+  const typeSegment = type === 'icon' || type === 'emotion' ? type : 'other';
+  return `embeded://assets/${typeSegment}/${assetItypeFromExt(ext)}/${name}.${ext}`;
+}
+
+/** ext → RisuAI가 쓰는 매체 세그먼트(image/audio/video/...) 매핑. */
+function assetItypeFromExt(ext: string): string {
+  switch (ext.toLowerCase()) {
+    case 'png':
+    case 'jpg':
+    case 'jpeg':
+    case 'gif':
+    case 'webp':
+    case 'avif':
+      return 'image';
+    case 'mp3':
+    case 'wav':
+    case 'ogg':
+    case 'flac':
+      return 'audio';
+    case 'mp4':
+    case 'webm':
+    case 'mov':
+    case 'avi':
+    case 'mkv':
+      return 'video';
+    case 'mmd':
+    case 'obj':
+      return 'model';
+    case 'safetensors':
+    case 'cpkt':
+    case 'onnx':
+      return 'ai';
+    case 'otf':
+    case 'ttf':
+    case 'woff':
+    case 'woff2':
+      return 'fonts';
+    case 'js':
+    case 'ts':
+    case 'lua':
+      return 'code';
+    default:
+      return 'image';
   }
 }
 

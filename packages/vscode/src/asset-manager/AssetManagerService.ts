@@ -27,17 +27,25 @@ import {
   type MissingCombo,
 } from 'risu-workbench-core';
 import {
+  bootstrapAssetCatalogFromEntries,
+  bootstrapAssetCatalogFromManifest,
   buildCharacterAssetManifest,
+  collectAssetCatalogBootstrapEntriesFromManifest,
   collectCharacterAssetEntries,
   extractLorebookNameCandidates,
   loadAssetCatalogFromAssetsDir,
+  previewAssetCatalogBootstrapEntries,
   readImageMeta,
+  summarizeAssetCatalogBootstrapGroups,
+  type AssetCatalogBootstrapGroupSummary,
   type AssetManifestBuildSummary,
   type ImageMeta,
 } from 'risu-workbench-core/node';
 import type {
   AssetManagerAssetEntry,
   AssetManagerAssignmentChange,
+  AssetManagerBootstrapCatalogPayload,
+  AssetManagerCatalogBootstrapPreviewEntry,
   AssetManagerScanSnapshot,
   AssetManagerTokenizeProposal,
   AssetOutputKind,
@@ -74,6 +82,14 @@ function withCatalogAssignments(
   return { ...catalog, assignments };
 }
 
+function isAssetManagerPath(relativePath: string): boolean {
+  return !relativePath.startsWith('icons/');
+}
+
+function isAssetManagerEntry(entry: { readonly extracted_path: string }): boolean {
+  return isAssetManagerPath(entry.extracted_path);
+}
+
 export class AssetManagerService {
   private readonly assetsDir: string;
 
@@ -83,8 +99,10 @@ export class AssetManagerService {
 
   scan(): AssetManagerScanSnapshot {
     const { catalog, exists } = this.loadCatalog();
-    const rawEntries = collectCharacterAssetEntries(this.assetsDir, null);
-    const duplicateGroups = findDuplicateNameGroups(catalog);
+    const rawEntries = collectCharacterAssetEntries(this.assetsDir, null).filter(isAssetManagerEntry);
+    const duplicateGroups = findDuplicateNameGroups(catalog)
+      .map((group) => ({ ...group, paths: group.paths.filter(isAssetManagerPath) }))
+      .filter((group) => group.paths.length > 1);
     const duplicatePaths = new Set(duplicateGroups.flatMap((group) => group.paths));
     const scannedPaths = new Set(rawEntries.map((entry) => entry.extracted_path));
 
@@ -111,7 +129,9 @@ export class AssetManagerService {
       entries,
       catalog,
       catalogExists: exists,
-      orphanPaths: Object.keys(catalog.assignments).filter((assignedPath) => !scannedPaths.has(assignedPath)).sort(),
+      orphanPaths: Object.keys(catalog.assignments)
+        .filter((assignedPath) => isAssetManagerPath(assignedPath) && !scannedPaths.has(assignedPath))
+        .sort(),
       duplicateNames: duplicateGroups.map((group) => group.name),
     };
   }
@@ -164,6 +184,29 @@ export class AssetManagerService {
     return { proposals, prefixes: clusters.prefixes, suffixes: clusters.suffixes };
   }
 
+  bootstrapFromManifest(): AssetManagerScanSnapshot {
+    return this.saveAndScan(bootstrapAssetCatalogFromManifest({ rootDir: this.rootFsPath }));
+  }
+
+  bootstrapCatalog(options: Pick<AssetManagerBootstrapCatalogPayload, 'source' | 'mode' | 'split' | 'schema'>): AssetManagerScanSnapshot {
+    const catalog = withBootstrapSchema(this.loadCatalog().catalog, options.schema);
+    return this.saveAndScan(bootstrapAssetCatalogFromEntries(catalog, this.bootstrapEntries(options.source), options));
+  }
+
+  previewCatalogBootstrap(
+    options: Pick<AssetManagerBootstrapCatalogPayload, 'source' | 'mode' | 'split' | 'schema'>,
+  ): {
+    readonly rows: readonly AssetManagerCatalogBootstrapPreviewEntry[];
+    readonly groups: readonly AssetCatalogBootstrapGroupSummary[];
+  } {
+    const catalog = withBootstrapSchema(this.loadCatalog().catalog, options.schema);
+    const preview = previewAssetCatalogBootstrapEntries(catalog, this.bootstrapEntries(options.source), options.split);
+    return {
+      rows: preview.slice(0, 80),
+      groups: summarizeAssetCatalogBootstrapGroups(catalog, preview, options.split),
+    };
+  }
+
   generateOutputs(kinds: readonly AssetOutputKind[]): AssetOutputsBundle {
     const { catalog } = this.loadCatalog();
     const result: AssetOutputsBundle = {};
@@ -188,6 +231,18 @@ export class AssetManagerService {
     return buildCharacterAssetManifest({ rootDir: this.rootFsPath });
   }
 
+  private bootstrapEntries(source: AssetManagerBootstrapCatalogPayload['source']): readonly { readonly path: string; readonly name: string }[] {
+    if (source === 'manifest') {
+      return collectAssetCatalogBootstrapEntriesFromManifest(this.rootFsPath).filter((entry) => isAssetManagerPath(entry.path));
+    }
+    return collectCharacterAssetEntries(this.assetsDir, null)
+      .filter(isAssetManagerEntry)
+      .map((entry) => ({
+        path: entry.extracted_path,
+        name: stripExtensionResidue(path.parse(entry.extracted_path).name),
+      }));
+  }
+
   private loadCatalog(): { readonly catalog: AssetCatalog; readonly exists: boolean } {
     const catalog = loadAssetCatalogFromAssetsDir(this.assetsDir);
     if (catalog !== null) return { catalog, exists: true };
@@ -202,4 +257,12 @@ export class AssetManagerService {
     fs.writeFileSync(path.join(this.assetsDir, ASSET_CATALOG_FILENAME), serializeAssetCatalog(catalog), 'utf-8');
     return this.scan();
   }
+}
+
+/** 부트스트랩 시 함께 전달된 스키마를 catalog에 적용(누락 슬롯 vocab 보정). 없으면 그대로 반환. */
+function withBootstrapSchema(catalog: AssetCatalog, schema?: AssetCatalogSchema): AssetCatalog {
+  if (schema === undefined) return catalog;
+  const vocab: AssetCatalog['vocab'] = { ...catalog.vocab };
+  for (const slot of schema.slots) vocab[slot.id] = vocab[slot.id] ?? [];
+  return { ...catalog, schema, vocab };
 }

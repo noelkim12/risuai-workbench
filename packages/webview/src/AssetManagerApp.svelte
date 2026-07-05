@@ -1,10 +1,3 @@
-<!--
-  Asset Manager webview 최상위 셸.
-  extension host 의 asset-manager/* 메시지를 받아 snapshot/state 를 저장하고,
-  Grid/Matrix/Vocab/Outputs 뷰에 props + 콜백을 내려줌. D4/D5 가 뷰 본 구현을 채움.
-  @file packages/webview/src/AssetManagerApp.svelte
--->
-
 <script lang="ts">
   import { onMount } from 'svelte';
   import { getVsCodeApi } from './lib/vscode';
@@ -12,6 +5,8 @@
     createAssetManagerWebviewMessage,
     isAssetManagerExtensionMessage,
     type AssetCatalogMirror,
+    type AssetCatalogBootstrapGroupSummaryMirror,
+    type AssetCatalogBootstrapSplitOptions,
     type AssetCatalogOutputsMirror,
     type AssetCatalogSchemaMirror,
     type AssetExpectedMapMirror,
@@ -23,8 +18,15 @@
     type ImageMetaMirror,
     type LorebookNameCandidateMirror,
   } from './lib/types/assetManager';
+  import { filterEntriesByCombo } from './lib/asset-manager/gridModel';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes these components.
-  import FirstRunSchemaModal from './lib/components/asset-manager/FirstRunSchemaModal.svelte';
+  import AssetDetailModal from './lib/components/asset-manager/AssetDetailModal.svelte';
+  // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes these components.
+  import AssetManagerHeader from './lib/components/asset-manager/AssetManagerHeader.svelte';
+  // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes these components.
+  import CatalogBootstrapModal from './lib/components/asset-manager/CatalogBootstrapModal.svelte';
+  // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes these components.
+  import ComboAssetsModal from './lib/components/asset-manager/ComboAssetsModal.svelte';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes these components.
   import GridView from './lib/components/asset-manager/GridView.svelte';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes these components.
@@ -37,6 +39,8 @@
   const vscode = getVsCodeApi();
 
   type Tab = 'grid' | 'matrix' | 'vocab' | 'outputs';
+  type CatalogBootstrapSource = 'manifest' | 'filename';
+  type CatalogBootstrapMode = 'full' | 'missing';
 
   let tab: Tab = 'grid';
   let stableId = '';
@@ -65,16 +69,22 @@
   let metaByPath: Record<string, ImageMetaMirror> = {};
   let readyRetryTimer: ReturnType<typeof setInterval> | undefined;
   let gridPresetQuery: string | null = null;
+  // Matrix 셀 클릭 → 콤보 에셋 모달 (undefined = 와일드카드 슬롯)
+  let comboValues: readonly (string | undefined)[] | null = null;
+  let comboDetailIndex: number | null = null;
+  let showBootstrapModal = false;
+  let firstRunOpened = false;
+  let bootstrapPreviewRows: readonly { readonly path: string; readonly name: string; readonly slots: AssetCatalogMirror['assignments'][string] | null }[] = [];
+  let bootstrapGroups: readonly AssetCatalogBootstrapGroupSummaryMirror[] = [];
 
-  $: suggestThreeSlots = entriesLookThreeSlot(entries);
-  $: showSchemaModal = initialized && !catalogExists && !schemaModalDismissed;
-
-  function entriesLookThreeSlot(current: readonly AssetManagerAssetEntry[]): boolean {
-    const sample = current.slice(0, 200);
-    if (sample.length === 0) return false;
-    const threeish = sample.filter((entry) => entry.fileStem.split(/[\s_]+/).length >= 3).length;
-    return threeish / sample.length > 0.7;
+  // catalog가 없으면 FirstRunSchemaModal 대신 Catalog 생성 모달을 바로 띄운다(불필요한 단계 축소).
+  $: if (initialized && !catalogExists && !schemaModalDismissed && !firstRunOpened) {
+    firstRunOpened = true;
+    showBootstrapModal = true;
   }
+  $: comboEntries = comboValues ? filterEntriesByCombo(entries, comboValues) : [];
+  $: comboLabel = comboValues ? comboValues.map((value) => value ?? '*').join(' / ') : '';
+  $: comboDetailEntry = comboDetailIndex === null ? null : (comboEntries[comboDetailIndex] ?? null);
 
   function post(message: AssetManagerWebviewMessage): void {
     vscode?.postMessage(message);
@@ -118,6 +128,10 @@
         tokenizeProposals = message.payload.proposals;
         tokenizePrefixes = message.payload.prefixes;
         tokenizeSuffixes = message.payload.suffixes;
+        return;
+      case 'asset-manager/catalogBootstrapPreview':
+        bootstrapPreviewRows = message.payload.rows;
+        bootstrapGroups = message.payload.groups;
         return;
       case 'asset-manager/imageMetaResult':
         metaByPath = { ...metaByPath, [message.payload.path]: message.payload.meta };
@@ -188,10 +202,68 @@
     post(createAssetManagerWebviewMessage('asset-manager/saveOutput', { stableId, kind, targetPath, content }));
   const onBuildManifest = () => post(createAssetManagerWebviewMessage('asset-manager/buildManifest', { stableId }));
 
+  function selectTab(nextTab: Tab): void {
+    tab = nextTab;
+  }
+
+  function runCatalogBootstrap(
+    source: CatalogBootstrapSource,
+    mode: CatalogBootstrapMode,
+    split?: AssetCatalogBootstrapSplitOptions,
+    schema?: AssetCatalogSchemaMirror,
+  ): void {
+    showBootstrapModal = false;
+    schemaModalDismissed = true;
+    status = `Catalog 생성 중 · ${source === 'manifest' ? 'manifest' : 'file name'} / ${mode === 'full' ? '전체 재생성' : '누락항목 생성'}`;
+    post(createAssetManagerWebviewMessage('asset-manager/bootstrapCatalog', { stableId, source, mode, ...(split && { split }), ...(schema && { schema }) }));
+  }
+
+  function previewCatalogBootstrap(
+    source: CatalogBootstrapSource,
+    mode: CatalogBootstrapMode,
+    split?: AssetCatalogBootstrapSplitOptions,
+    schema?: AssetCatalogSchemaMirror,
+  ): void {
+    post(createAssetManagerWebviewMessage('asset-manager/previewCatalogBootstrap', { stableId, source, mode, ...(split && { split }), ...(schema && { schema }) }));
+  }
+
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this callback.
   function jumpToCombo(values: string[]): void {
     gridPresetQuery = values.filter(Boolean).join(' ');
     tab = 'grid';
+  }
+
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this callback.
+  function openCombo(values: (string | undefined)[]): void {
+    comboValues = values;
+    comboDetailIndex = null;
+  }
+
+  function closeCombo(): void {
+    comboValues = null;
+    comboDetailIndex = null;
+  }
+
+  function comboJumpToGrid(): void {
+    if (!comboValues) return;
+    jumpToCombo(comboValues.filter((value): value is string => value !== undefined));
+    closeCombo();
+  }
+
+  function openComboDetail(path: string): void {
+    const index = comboEntries.findIndex((item) => item.path === path);
+    if (index < 0) return;
+    comboDetailIndex = index;
+    if (!metaByPath[path]) onReadMeta(path);
+  }
+
+  function moveComboDetail(delta: number): void {
+    if (comboDetailIndex === null || comboEntries.length === 0) return;
+    // 콤보 부분집합 내에서 순환 탐색
+    const next = (comboDetailIndex + delta + comboEntries.length) % comboEntries.length;
+    comboDetailIndex = next;
+    const item = comboEntries[next];
+    if (item && !metaByPath[item.path]) onReadMeta(item.path);
   }
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this helper.
@@ -199,59 +271,28 @@
     return `${assetsRootUri}/${path.split('/').map(encodeURIComponent).join('/')}`;
   }
 
-  function confirmSchema(schema: AssetCatalogSchemaMirror): void {
-    schemaModalDismissed = true;
-    onUpdateSchema(schema);
-  }
 </script>
 
 <main class="asset-manager" aria-label="Risu Asset Manager">
-  <header class="asset-manager__header">
-    <div>
-      <p class="eyebrow">Asset Manager</p>
-      <h1>{artifactName || '…'}</h1>
-    </div>
-    <nav class="asset-manager__tabs" aria-label="Asset manager views">
-      {#each [['grid', 'Grid'], ['matrix', 'Matrix'], ['vocab', 'Vocab'], ['outputs', 'Outputs']] as [id, label] (id)}
-        <button type="button" class:active={tab === id} onclick={() => (tab = id as Tab)}>{label}</button>
-      {/each}
-    </nav>
-    <div class="asset-manager__actions">
-      <button type="button" class="button-secondary" onclick={onRefresh} title="재스캔">⟳</button>
-      <button type="button" onclick={onBuildManifest} title="catalog merge로 manifest.json 빌드">Build ▶</button>
-    </div>
-  </header>
+  <AssetManagerHeader
+    {artifactName}
+    {tab}
+    onSelectTab={selectTab}
+    {onRefresh}
+    onOpenBootstrap={() => (showBootstrapModal = true)}
+    {onBuildManifest}
+  />
 
   <p class="asset-manager__status">{status}</p>
   {#if errorText}<p class="asset-manager__error" role="alert">{errorText}</p>{/if}
 
   {#if catalog}
     {#if tab === 'grid'}
-      <GridView
-        {entries}
-        {catalog}
-        {orphanPaths}
-        {tokenizeProposals}
-        {metaByPath}
-        {assetImageSrc}
-        {onUpdateAssignments}
-        {onBootstrap}
-        {onReadMeta}
-        presetQuery={gridPresetQuery}
-      />
+      <GridView {entries} {catalog} {orphanPaths} {tokenizeProposals} {metaByPath} {assetImageSrc} {onUpdateAssignments} {onBootstrap} {onReadMeta} presetQuery={gridPresetQuery} />
     {:else if tab === 'matrix'}
-      <MatrixView {catalog} {onUpdateExpected} onJumpToCombo={jumpToCombo} />
+      <MatrixView {catalog} {onUpdateExpected} onOpenCombo={openCombo} />
     {:else if tab === 'vocab'}
-      <VocabView
-        {catalog}
-        {lorebookCandidates}
-        {tokenizePrefixes}
-        {tokenizeSuffixes}
-        {onUpdateVocab}
-        {onUpdateSchema}
-        {onAnalyzeLorebook}
-        {onBootstrap}
-      />
+      <VocabView {catalog} {lorebookCandidates} {tokenizePrefixes} {tokenizeSuffixes} {onUpdateVocab} {onUpdateSchema} {onAnalyzeLorebook} {onBootstrap} />
     {:else}
       <OutputsView {catalog} {outputsState} {buildSummary} {onGenerateOutputs} {onSaveOutput} {onBuildManifest} />
     {/if}
@@ -259,11 +300,42 @@
     <p class="asset-manager__loading">Loading assets…</p>
   {/if}
 
-  {#if showSchemaModal}
-    <FirstRunSchemaModal
-      {suggestThreeSlots}
-      onConfirm={confirmSchema}
-      onSkip={() => (schemaModalDismissed = true)}
+  {#if showBootstrapModal && catalog}
+    <CatalogBootstrapModal
+      schema={catalog.schema}
+      {catalogExists}
+      previewRows={bootstrapPreviewRows}
+      groups={bootstrapGroups}
+      onPreview={previewCatalogBootstrap}
+      onSelect={runCatalogBootstrap}
+      onClose={() => {
+        showBootstrapModal = false;
+        schemaModalDismissed = true;
+      }}
+    />
+  {/if}
+
+  {#if comboValues && !comboDetailEntry}
+    <ComboAssetsModal
+      entries={comboEntries}
+      {comboLabel}
+      {assetImageSrc}
+      onClose={closeCombo}
+      onOpenDetail={openComboDetail}
+      onJumpToGrid={comboJumpToGrid}
+    />
+  {/if}
+
+  {#if comboDetailEntry && catalog}
+    <AssetDetailModal
+      entry={comboDetailEntry}
+      imgSrc={assetImageSrc(comboDetailEntry.path)}
+      meta={metaByPath[comboDetailEntry.path] ?? null}
+      {catalog}
+      onClose={() => (comboDetailIndex = null)}
+      onPrev={() => moveComboDetail(-1)}
+      onNext={() => moveComboDetail(1)}
+      onApplySlots={(path, slots) => onUpdateAssignments([{ path, slots }])}
     />
   {/if}
 </main>
@@ -277,22 +349,6 @@
     gap: var(--space-2);
     box-sizing: border-box;
   }
-  .asset-manager__header {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-  }
-  .asset-manager__header h1 { margin: 0; font-size: 1.1rem; }
-  .asset-manager__tabs { display: flex; gap: 4px; margin-left: auto; }
-  .asset-manager__tabs button {
-    padding: var(--space-1) var(--space-3);
-    border: 1px solid var(--card-border);
-    border-radius: var(--radius-sm);
-    background: var(--secondary);
-    color: var(--secondary-text);
-  }
-  .asset-manager__tabs button.active { background: var(--accent); color: var(--accent-text); border-color: transparent; }
-  .asset-manager__actions { display: flex; gap: var(--space-1); }
   .asset-manager__status { margin: 0; color: var(--secondary-text); font-size: var(--text-sm); }
   .asset-manager__error { margin: 0; color: var(--vscode-errorForeground, #f66); }
   .asset-manager__loading { color: var(--secondary-text); }

@@ -68,13 +68,26 @@ export function dirExists(dirPath: string): boolean {
  * @param ext - 파일 확장자 (점 포함)
  * @returns 고유한 파일 경로
  */
-export function uniquePath(dir: string, baseName: string, ext: string): string {
+/**
+ * 아직 존재하지 않는 유니크한 파일 경로를 반환함.
+ *
+ * `reserved`를 넘기면 디스크(`existsSync`)뿐 아니라 이번 실행에서 이미 예약된 경로도
+ * 충돌로 간주하고, 반환한 경로를 set에 추가함. 파일 쓰기를 뒤로 미루는 async 추출에서
+ * `existsSync`만으로는 같은 이름의 asset이 동일 경로로 할당되는 문제를 막기 위함.
+ */
+export function uniquePath(
+  dir: string,
+  baseName: string,
+  ext: string,
+  reserved?: Set<string>,
+): string {
   let candidate = path.join(dir, `${baseName}${ext}`);
   let counter = 1;
-  while (fs.existsSync(candidate)) {
+  while (fs.existsSync(candidate) || reserved?.has(candidate)) {
     candidate = path.join(dir, `${baseName}_${counter}${ext}`);
     counter += 1;
   }
+  reserved?.add(candidate);
   return candidate;
 }
 

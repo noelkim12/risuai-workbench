@@ -42,18 +42,7 @@ const vscode = getVsCodeApi();
 const cards = writable<BrowserArtifactCard[]>([]);
 const selectedStableId = writable<string | undefined>(undefined);
 const detailSections = writable<CharacterSection[]>([]);
-const expandedSectionIds = writable<string[]>([
-  'manifest',
-  'character',
-  'lorebooks',
-  'regexRules',
-  'lua',
-  'toggle',
-  'variables',
-  'assets',
-  'html',
-  'diagnostics',
-]);
+const expandedSectionIds = writable<string[]>([]);
 const viewMode = writable<'artifacts' | 'artifactDetail'>('artifacts');
 const status = writable('Connecting to extension host…');
 const packState = writable<ArtifactBrowserPackCompletedPayload | null>(null);
@@ -188,7 +177,7 @@ function handleMessage(event: MessageEvent<unknown>): void {
   if (message.type === 'artifact-browser/detailLoaded') {
     selectedStableId.set(message.payload.stableId);
     detailSections.set(message.payload.sections);
-    expandedSectionIds.update((current) => mergeExpandedSections(current, message.payload.sections));
+    expandedSectionIds.set([]);
     viewMode.set('artifactDetail');
     setStatus(`Detail loaded with ${message.payload.sections.length} sections.`);
     return;
@@ -422,10 +411,4 @@ function isArtifactBrowserExtensionMessageType(value: unknown): value is Artifac
     typeof value === 'string' &&
     ARTIFACT_BROWSER_EXTENSION_MESSAGE_TYPES.includes(value as ArtifactBrowserExtensionMessageType)
   );
-}
-
-function mergeExpandedSections(current: string[], sections: CharacterSection[]): string[] {
-  const sectionIds = sections.map((section) => section.id);
-  const knownCurrent = current.filter((id) => sectionIds.includes(id));
-  return knownCurrent.length > 0 ? knownCurrent : sectionIds;
 }
