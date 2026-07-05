@@ -1,7 +1,7 @@
 <!--
   Asset Manager Matrix view: missing 매트릭스 + expected 편집 + 셀 클릭 콤보 열기.
   D5 가 D3 스텁을 본 구현으로 교체함.
-  - 2슬롯: 행=s1·열=s2 매트릭스. 3슬롯: 전체=요약 히트맵, s1 선택=상세.
+  - 2슬롯: 행=s1·열=s2 매트릭스. 3슬롯: 전체=요약 히트맵 ↔ 교차 비교(행=s2×s3·열=s1) 토글, s1 선택=상세.
   - 셀 클릭 시 onOpenCombo 로 조합 에셋 모달을 연다.
   - expected 사이드패널: per-s1 슬롯 override 토글(vocab 전체와 같으면 제거).
   @file packages/webview/src/lib/components/asset-manager/MatrixView.svelte
@@ -10,9 +10,11 @@
 <script lang="ts">
   import {
     chainedValuesForClient,
+    computeCrossMatrixClient,
     computeMissingMatrixClient,
     computeSummaryMatrixClient,
     expectedListForClient,
+    type CrossCellClient,
     type SummaryCellClient,
   } from '../../asset-manager/gridModel';
   import type { AssetCatalogMirror, AssetExpectedMapMirror } from '../../types/assetManager';
@@ -23,6 +25,7 @@
 
   let selectedS1 = ''; // '' = 전체 (2슬롯·3슬롯 공통)
   let selectedS2 = ''; // '' = 전체
+  let crossMode = false; // 3슬롯 + s1 전체에서 요약 히트맵 ↔ 교차 비교 토글
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup binds this via bind:value.
   let editingS1 = '';
 
@@ -30,7 +33,8 @@
   $: s1List = catalog.vocab.s1 ?? [];
   // 3슬롯 + s1 전체 → 요약 히트맵 모드 (행=s1 × 열=s2 완성도 집계)
   $: summaryMode = slotCount === 3 && !selectedS1;
-  $: summary = summaryMode ? computeSummaryMatrixClient(catalog) : null;
+  $: summary = summaryMode && !crossMode ? computeSummaryMatrixClient(catalog) : null;
+  $: cross = summaryMode && crossMode ? computeCrossMatrixClient(catalog) : null;
   // s2 조건 후보: 선택된 s1 을 통해 chaining 된 s2 (override 있으면 큐레이션, 없으면 실제 할당값)
   $: s2Options = slotCount === 3 && selectedS1 ? chainedValuesForClient(catalog, selectedS1, 's2') : [];
   // s1 이 바뀌어 현재 s2 선택이 후보 밖이면 전체로 리셋
@@ -56,6 +60,11 @@
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup calls this action.
   function clickSummaryCell(cell: SummaryCellClient): void {
     onOpenCombo([cell.row, cell.col, undefined]);
+  }
+
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup calls this action.
+  function clickCrossCell(cell: CrossCellClient): void {
+    onOpenCombo([cell.s1, cell.s2, cell.s3]);
   }
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup calls this action.
@@ -101,6 +110,11 @@
             {#each s1List as value (value)}<option {value}>{value}</option>{/each}
           </select>
         </label>
+        {#if slotCount === 3 && !selectedS1}
+          <button type="button" class="mode-toggle" onclick={() => (crossMode = !crossMode)}>
+            {crossMode ? '요약 보기' : '교차 비교'}
+          </button>
+        {/if}
         {#if slotCount === 3 && selectedS1}
           <label class="matrix-s1">
             <span>{catalog.schema.slots[1].label}</span>
@@ -113,7 +127,48 @@
       </div>
     {/if}
 
-    {#if summaryMode}
+    {#if summaryMode && crossMode}
+      {#if cross && cross.rows.length > 0 && cross.cols.length > 0}
+        <div class="matrix-scroll">
+          <table class="matrix-table">
+            <thead>
+              <tr>
+                <th></th>
+                {#each cross.cols as col (col)}
+                  <th>
+                    <button type="button" class="row-drill" title={`${col} 상세 매트릭스 보기`} onclick={() => drillToRow(col)}>
+                      {col}
+                    </button>
+                  </th>
+                {/each}
+              </tr>
+            </thead>
+            <tbody>
+              {#each cross.rows as row, rowIndex (`${row.s2}\u0000${row.s3}`)}
+                <tr>
+                  <th>{row.s2} / {row.s3}</th>
+                  {#each cross.cells[rowIndex] as cell (cell.s1)}
+                    <td>
+                      <button
+                        type="button"
+                        class={`cell cell--${cell.state}`}
+                        title={`${cell.s1} · ${cell.s2} / ${cell.s3} · ${cell.count} file(s)`}
+                        onclick={() => clickCrossCell(cell)}
+                      >
+                        {STATE_LABEL[cell.state]}{cell.count > 1 ? cell.count : ''}
+                      </button>
+                    </td>
+                  {/each}
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+        <p class="matrix-legend">✓ 존재 · ⚠ 중복 · ✗ missing(기대 조합) · · 비대상(expected 밖) · 열 이름 클릭 = 상세 매트릭스</p>
+      {:else}
+        <p class="matrix-empty">표시할 조합이 없습니다. Vocab/Expected 를 먼저 구성하세요.</p>
+      {/if}
+    {:else if summaryMode}
       {#if summary && summary.rows.length > 0}
         <div class="matrix-scroll">
           <table class="matrix-table">
@@ -232,18 +287,43 @@
     background: var(--card);
   }
   .matrix-table { border-collapse: separate; border-spacing: 0; font-size: var(--text-sm); }
-  .matrix-table th {
+  /* 열 헤더: 세로 스크롤 시 위쪽에만 고정 */
+  .matrix-table thead th {
     position: sticky;
     top: 0;
+    z-index: 2;
+    padding: var(--space-1) var(--space-2);
+    /* --section 은 반투명(sideBarSectionHeader) → 불투명 --card 위에 올려 스크롤 시 비침 방지 */
+    background-color: var(--card);
+    background-image: linear-gradient(var(--section), var(--section));
+    color: var(--muted);
+    text-align: center;
+    font-weight: 700;
+    white-space: nowrap;
+    box-shadow: inset 0 -1px 0 var(--card-border);
+  }
+  /* 행 헤더: 가로 스크롤 시 왼쪽에만 고정(top:auto 로 해당 행과 함께 스크롤 → 겹침 방지) */
+  .matrix-table tbody th {
+    position: sticky;
+    left: 0;
+    top: auto;
     z-index: 1;
     padding: var(--space-1) var(--space-2);
-    background: var(--section);
-    color: var(--muted);
+    background-color: var(--card);
+    background-image: linear-gradient(var(--section), var(--section));
+    color: var(--text);
     text-align: left;
     font-weight: 700;
+    white-space: nowrap;
+    box-shadow: inset -1px 0 0 var(--card-border);
   }
-  .matrix-table tbody th { position: sticky; left: 0; z-index: 1; color: var(--text); }
-  .matrix-table td { padding: 2px; }
+  /* 좌상단 코너: 양축 고정 + 최상단 */
+  .matrix-table thead th:first-child {
+    left: 0;
+    z-index: 3;
+    box-shadow: inset -1px -1px 0 var(--card-border);
+  }
+  .matrix-table td { padding: 2px; text-align: center; }
   .cell {
     display: inline-grid;
     place-items: center;
@@ -256,8 +336,11 @@
     color: var(--muted);
     font-weight: 600;
     cursor: pointer;
+    transition: outline-color 0.12s ease, transform 0.08s ease;
   }
-  .cell:hover:not(:disabled) { outline: 1px solid var(--focus); }
+  .cell:hover:not(:disabled) { outline: 2px solid var(--focus); outline-offset: -1px; }
+  .cell:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+  .cell:active:not(:disabled) { transform: scale(0.94); }
   .cell--present { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, var(--card-border)); background: color-mix(in srgb, var(--success) 10%, var(--surface)); }
   .cell--duplicate { color: var(--focus); border-color: color-mix(in srgb, var(--focus) 40%, var(--card-border)); background: color-mix(in srgb, var(--focus) 12%, var(--surface)); }
   .cell--missing { color: var(--error); font-weight: 800; border-color: color-mix(in srgb, var(--error) 45%, var(--card-border)); background: color-mix(in srgb, var(--error) 12%, var(--surface)); }
@@ -269,6 +352,18 @@
   .summary--excluded { color: var(--muted); opacity: 0.55; }
   .row-drill { padding: 0; border: 0; background: none; color: var(--text); font-weight: 700; cursor: pointer; text-decoration: underline dotted; }
   .row-drill:hover { color: var(--focus); }
+  .mode-toggle {
+    align-self: flex-end;
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .mode-toggle:hover { outline: 2px solid var(--focus); outline-offset: -1px; }
   .matrix-legend, .matrix-empty { color: var(--muted); font-size: var(--text-sm); margin: 0; }
   .expected-editor {
     width: 240px;
