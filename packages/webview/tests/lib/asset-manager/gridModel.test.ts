@@ -350,18 +350,35 @@ describe('computeCrossMatrixClient', () => {
     },
   };
 
-  it('builds rows from expected union plus actual files, vocab order first', () => {
+  it('builds rows from explicit-override combos union actual files, vocab order first', () => {
     const cross = computeCrossMatrixClient(catalog);
-    // Rin 은 override 없음 → vocab 전체 기대 → vocab 조합 4개 전부 포함.
-    // (beach, wink) 는 vocab 밖이지만 실제 파일 존재 → 뒤에 append.
+    // 행 = 명시적 override 기대 조합 ∪ 실제 파일 조합만 (override 없는 Rin 은 vocab 전체를 깔지 않음).
+    //   - (casual, angry): Rin 실제 파일 → vocab 조합.
+    //   - (uniform, sad): Yua override(s2:uniform × s3:sad) → vocab 조합.
+    //   - (beach, wink): Yua 실제 파일이지만 vocab 밖 → 뒤에 append.
     expect(cross?.rows).toEqual([
       { s2: 'casual', s3: 'angry' },
-      { s2: 'casual', s3: 'sad' },
-      { s2: 'uniform', s3: 'angry' },
       { s2: 'uniform', s3: 'sad' },
       { s2: 'beach', s3: 'wink' },
     ]);
     expect(cross?.cols).toEqual(['Rin', 'Yua']);
+  });
+
+  it('does not fall back to full vocab cartesian for uncurated s1 (no row explosion)', () => {
+    const noOverrides = {
+      ...catalog,
+      expected: {}, // 아무도 override 안 함
+      assignments: {
+        'a/rin_casual_angry.png': { s1: 'Rin', s2: 'casual', s3: 'angry' },
+        'a/yua_uniform_sad.png': { s1: 'Yua', s2: 'uniform', s3: 'sad' },
+      },
+    };
+    const cross = computeCrossMatrixClient(noOverrides);
+    // vocab 는 2×2=4 조합이지만 override 없음 → 실제 파일 2조합만 행이 됨(폭발 방지).
+    expect(cross?.rows).toEqual([
+      { s2: 'casual', s3: 'angry' },
+      { s2: 'uniform', s3: 'sad' },
+    ]);
   });
 
   it('marks cells present/duplicate/missing/excluded per s1 expected sets', () => {
@@ -369,12 +386,12 @@ describe('computeCrossMatrixClient', () => {
     // (casual, angry): Rin 파일 2개 → duplicate. Yua 는 기대 밖 + 파일 없음 → excluded.
     expect(cross?.cells[0]?.[0]).toMatchObject({ s1: 'Rin', state: 'duplicate', count: 2 });
     expect(cross?.cells[0]?.[1]).toMatchObject({ s1: 'Yua', state: 'excluded' });
-    // (uniform, sad): Rin 기대 + 파일 없음 → missing. Yua 기대 + 파일 없음 → missing.
-    expect(cross?.cells[3]?.[0]?.state).toBe('missing');
-    expect(cross?.cells[3]?.[1]?.state).toBe('missing');
+    // (uniform, sad): Rin 기대(override 없음 → 전체 vocab 기대) + 파일 없음 → missing. Yua override 기대 + 파일 없음 → missing.
+    expect(cross?.cells[1]?.[0]?.state).toBe('missing');
+    expect(cross?.cells[1]?.[1]?.state).toBe('missing');
     // (beach, wink): Yua 파일 1개 → present (기대 밖이어도 파일 있으면 표시). Rin → excluded.
-    expect(cross?.cells[4]?.[1]).toMatchObject({ state: 'present', count: 1, paths: ['a/yua_beach_wink.png'] });
-    expect(cross?.cells[4]?.[0]?.state).toBe('excluded');
+    expect(cross?.cells[2]?.[1]).toMatchObject({ state: 'present', count: 1, paths: ['a/yua_beach_wink.png'] });
+    expect(cross?.cells[2]?.[0]?.state).toBe('excluded');
   });
 
   it('sorts out-of-vocab extras lexicographically after vocab combos', () => {
@@ -387,7 +404,9 @@ describe('computeCrossMatrixClient', () => {
       },
     };
     const cross = computeCrossMatrixClient(withExtras);
-    expect(cross?.rows.slice(4)).toEqual([
+    // vocab 조합은 Yua override 로부터 (uniform, sad) 1개뿐 → extras 는 index 1 부터.
+    expect(cross?.rows[0]).toEqual({ s2: 'uniform', s3: 'sad' });
+    expect(cross?.rows.slice(1)).toEqual([
       { s2: 'beach', s3: 'angry' },
       { s2: 'beach', s3: 'wink' },
       { s2: 'winter', s3: 'sad' },
