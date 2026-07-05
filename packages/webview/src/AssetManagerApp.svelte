@@ -9,7 +9,6 @@
     type AssetCatalogBootstrapSplitOptions,
     type AssetCatalogOutputsMirror,
     type AssetCatalogSchemaMirror,
-    type AssetExpectedMapMirror,
     type AssetManagerAssetEntry,
     type AssetManagerAssignmentChange,
     type AssetManagerTokenizeProposal,
@@ -188,8 +187,6 @@
     post(createAssetManagerWebviewMessage('asset-manager/updateVocab', { stableId, vocab }));
   const onUpdateSchema = (schema: AssetCatalogSchemaMirror, outputs?: AssetCatalogOutputsMirror) =>
     post(createAssetManagerWebviewMessage('asset-manager/updateSchema', { stableId, schema, ...(outputs && { outputs }) }));
-  const onUpdateExpected = (expected: AssetExpectedMapMirror) =>
-    post(createAssetManagerWebviewMessage('asset-manager/updateExpected', { stableId, expected }));
   const onAnalyzeLorebook = () =>
     post(createAssetManagerWebviewMessage('asset-manager/analyzeLorebookNames', { stableId }));
   const onBootstrap = () =>
@@ -290,7 +287,7 @@
     {#if tab === 'grid'}
       <GridView {entries} {catalog} {orphanPaths} {tokenizeProposals} {metaByPath} {assetImageSrc} {onUpdateAssignments} {onBootstrap} {onReadMeta} presetQuery={gridPresetQuery} />
     {:else if tab === 'matrix'}
-      <MatrixView {catalog} {onUpdateExpected} onOpenCombo={openCombo} />
+      <MatrixView {catalog} onOpenCombo={openCombo} />
     {:else if tab === 'vocab'}
       <VocabView {catalog} {lorebookCandidates} {tokenizePrefixes} {tokenizeSuffixes} {onUpdateVocab} {onUpdateSchema} {onAnalyzeLorebook} {onBootstrap} />
     {:else}
