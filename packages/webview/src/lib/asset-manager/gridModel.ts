@@ -263,7 +263,11 @@ export function computeSummaryMatrixClient(catalog: AssetCatalogMirror): Summary
 
 /**
  * 3슬롯 전용 교차 비교 매트릭스. 행=(s2,s3) 조합 × 열=s1.
- * 행 범위 = 어느 s1이든 expected 인 조합 ∪ 실제 파일이 있는 조합.
+ * 행 범위 = 명시적 expected override 로 기대된 조합 ∪ 실제 파일이 있는 조합.
+ *   override 없는 s1 은 행을 만들지 않는다 — vocab 전체를 깔면 |s2|×|s3| 카테시안
+ *   폭발로 뷰가 프리징되고 "실제 존재/누락" 비교 신호가 빈 격자에 묻히기 때문.
+ * (셀의 missing/excluded 판정은 여전히 expectedListForClient 의 vocab 폴백을 쓴다:
+ *  override 없는 s1 은 "그 조합을 기대하지만 빠진" missing 으로 표시되어야 비교가 된다.)
  * vocab 순서(s2 외부 × s3 내부) 우선, vocab 밖 조합은 사전순 append.
  */
 export function computeCrossMatrixClient(catalog: AssetCatalogMirror): CrossMatrixClient | null {
@@ -273,9 +277,13 @@ export function computeCrossMatrixClient(catalog: AssetCatalogMirror): CrossMatr
   const expectedS3 = new Map(cols.map((s1) => [s1, new Set(expectedListForClient(catalog, s1, 's3'))]));
 
   const comboSet = new Set<string>();
+  // 행 후보는 명시적 override 만 — catalog.expected 를 직접 읽어 vocab 폴백을 피한다.
   for (const s1 of cols) {
-    for (const s2 of expectedS2.get(s1) ?? []) {
-      for (const s3 of expectedS3.get(s1) ?? []) comboSet.add(comboKey([s2, s3]));
+    const overrideS2 = catalog.expected[s1]?.s2;
+    const overrideS3 = catalog.expected[s1]?.s3;
+    if (overrideS2 == null || overrideS3 == null) continue;
+    for (const s2 of overrideS2) {
+      for (const s3 of overrideS3) comboSet.add(comboKey([s2, s3]));
     }
   }
   for (const slots of Object.values(catalog.assignments)) {
