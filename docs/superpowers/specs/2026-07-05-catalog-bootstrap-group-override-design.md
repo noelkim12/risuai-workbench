@@ -13,10 +13,10 @@ Catalog Bootstrap은 구분자와 슬롯별 조각 수(`slotTokenCounts`)를 지
 | 이름 | 결과 | 문제 |
 |---|---|---|
 | `Park_Hye-in_angry` | s1=`Park_Hye-in`, s2=`angry` | 정상 |
-| `Rivea_angry` (2조각) | `configuredSplit`이 `null` → 조용히 스킵 | **조각 부족** — 감지되지 않고 누락 |
+| `Rivea_angry` (2조각) | `configuredSplit` 적용 불가 → 휴리스틱 폴백(`positionalSplit`)으로 s1=`Rivea`, s2=`angry` | **규칙 불일치** — 결과는 우연히 맞지만, 이 그룹이 전역 규칙을 따르지 않는다는 신호 |
 | `Rivea_acting_coy` (3조각) | s1=`Rivea_acting`, s2=`coy` | **오분할** — 성공으로 위장되어 `Rivea_acting` 등 가짜 s1 그룹 생성 |
 
-즉 실패 모드가 두 가지다: (a) 조각 부족으로 `null` (감지 쉬움), (b) 조각 수는 충분하지만 잘못 분할 (겉보기 성공, 감지 어려움). 매트릭스 뷰에 `Rivea_acting`, `Rivea_blushing` 같은 파편 행이 생기는 원인이 (b)다.
+즉 실패 모드가 두 가지다: (a) 지정한 조각 수를 적용할 수 없어 규칙과 무관한 휴리스틱으로 폴백 (같은 그룹 안에서 분할 규칙이 갈라짐), (b) 조각 수는 충분하지만 잘못 분할 (겉보기 성공, 감지 어려움). 매트릭스 뷰에 `Rivea_acting`, `Rivea_blushing` 같은 파편 행이 생기는 원인이 (b)다.
 
 ## 2. 목표 / 비목표
 
@@ -61,7 +61,7 @@ export interface AssetCatalogBootstrapSplitOptions {
 ```
 
 - `inferSlotsFromName` → `configuredSplit` 경로에서: 이름을 실제 사용된 구분자(`actualSeparator` 결과)로 분할한 첫 토큰이 `groupOverrides`의 `firstToken`과 일치하면 그 그룹의 `slotTokenCounts`를 전역 값 대신 사용한다. 매칭은 대소문자 구분(파일명 그대로).
-- override가 있어도 여전히 조각 부족이면 기존과 동일하게 `null` (미리보기에서 시각적으로 노출됨 — §6).
+- override가 있어도 여전히 조각 수를 적용할 수 없으면 기존과 동일하게 휴리스틱 추론으로 폴백한다 (감지 신호 ⓐ가 계속 그룹을 플래그하므로 사용자에게 노출됨 — §5, §6).
 - 직렬화 가능한 순수 데이터이므로 webview↔extension 메시지 payload에 그대로 실린다. `assetManagerMessages.ts`의 `isCatalogBootstrapSplitOptions` 검증에 `groupOverrides` 배열 검증을 추가한다.
 
 ### 4.2 감지 결과 모델 (core)
@@ -82,15 +82,15 @@ export interface AssetCatalogBootstrapGroupSummary {
 
 ```ts
 export function summarizeAssetCatalogBootstrapGroups(
+  catalog: AssetCatalog,
   preview: readonly AssetCatalogBootstrapPreviewEntry[],
-  slotIds: readonly AssetSlotId[],
-  split: AssetCatalogBootstrapSplitOptions,
+  split?: AssetCatalogBootstrapSplitOptions,
 ): readonly AssetCatalogBootstrapGroupSummary[];
 ```
 
-- 입력은 미리보기 결과(이미 분할 시도 완료) + 분할 옵션. 파일시스템 접근 없음.
+- 입력은 catalog(슬롯 목록·joinTemplate 접근용) + 미리보기 결과(이미 분할 시도 완료) + 분할 옵션. 파일시스템 접근 없음.
 - 그룹핑: 각 항목 이름을 실제 사용된 구분자로 분할 → 첫 토큰으로 그룹.
-- **신호 (a) insufficient-tokens**: 그룹 내에 `slots === null`인 항목이 1개 이상.
+- **신호 (a) insufficient-tokens**: 그룹 내에 유효 조각 수 규칙(override 우선, 없으면 전역)을 적용할 수 없는 항목이 1개 이상. 판정식: `토큰 수 < (비마지막 슬롯들의 count 합) + 1`. 이런 항목은 `configuredSplit`을 통과하지 못하고 휴리스틱으로 폴백되므로, 그룹의 분할 규칙이 전역 규칙과 다르다는 신호다.
 - **신호 (b) vocab-overlap**: 그룹의 s1 값이 2종 이상으로 파편화되어 있고, 그 s1 값들의 마지막 토큰 중 하나 이상이 **다른 그룹들의 s2 값 집합**에 등장. (예: Rivea 그룹의 s1 `Rivea_acting`의 마지막 토큰 `acting`이 Park 계열의 s2 어휘에 존재 → 오분할 의심)
 - override가 이미 적용된 그룹은 신호 (b) 판정에서 제외하지 않는다 — override 후에도 여전히 어긋나면 계속 경고되는 것이 올바른 동작. 단, 사용자가 값을 만졌는지는 UI가 알고 있으므로 표시만 "override 적용됨 + 여전히 의심"으로 구분한다.
 - 정렬: 의심 그룹 우선, 그 안에서 entryCount 내림차순.
@@ -119,7 +119,7 @@ export function summarizeAssetCatalogBootstrapGroups(
 ## 7. 에러 처리
 
 - `groupOverrides`에 조각 수 ≤ 0 또는 비정상 값: 메시지 검증(`isCatalogBootstrapSplitOptions`)에서 거부. UI input은 `min=1 max=8`로 제한.
-- override 적용 후에도 조각 부족인 항목: 기존 동작대로 `null` → 스킵, 미리보기에서 경고색으로 노출.
+- override 적용 후에도 조각 수 적용 불가인 항목: 기존 동작대로 휴리스틱 폴백, 그룹은 계속 신호 ⓐ로 플래그. `slots === null` 항목(예: 3슬롯 스키마에 2토큰 이름)은 미리보기에서 경고색으로 노출.
 - 그룹 수가 매우 많을 때(수백): 그룹 섹션은 `max-height` + 스크롤, 의심 그룹이 항상 상단.
 
 ## 8. 테스트 전략
@@ -128,7 +128,7 @@ core 단위 테스트 (`packages/core/tests/`):
 
 1. `groupOverrides` 적용: Rivea 계열 이름에 `s1=1` override → 올바른 분할, 다른 그룹은 전역 규칙 유지.
 2. override 미매칭 그룹은 전역 규칙 사용.
-3. `summarizeAssetCatalogBootstrapGroups`: (a) 신호 — 2조각 Rivea 이름 포함 시 `insufficient-tokens`; (b) 신호 — 3조각 Rivea만 있어도 s2 어휘 겹침으로 `vocab-overlap`; 정상 그룹은 `anomalies` 빈 배열.
+3. `summarizeAssetCatalogBootstrapGroups`: (a) 신호 — 전역 `s1=2`일 때 2조각 Rivea 이름 포함 시 `insufficient-tokens`; (b) 신호 — 3조각 Rivea만 있어도 s2 어휘 토큰 겹침으로 `vocab-overlap`; 정상 그룹은 `anomalies` 빈 배열; override 적용 후 규칙이 맞으면 신호 해제.
 4. 정렬/요약 값(min/max/entryCount) 검증.
 
 메시지 검증 테스트 (`packages/vscode/tests/`): `groupOverrides` 포함 payload 통과, 비정상 값 거부.
