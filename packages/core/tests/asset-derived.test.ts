@@ -40,7 +40,11 @@ function catalog(): AssetCatalog {
     vocab: { s1: ['Elsie', 'Char(Adult)'], s2: ['angry', 'nervous', 'nervous pouting'] },
     expected: { 'Char(Adult)': { s2: ['angry'] } },
     assignments: { 'additional/elsie_angry.webp': { s1: 'Elsie', s2: 'angry' } },
-    outputs: { tagFormat: { prefix: '<img src="', suffix: '">' }, fallbackTemplate: '{s1}_default' },
+    outputs: {
+      tagFormat: { prefix: '<img src="', suffix: '">' },
+      fallbackTemplate: '{s1}_default',
+      outputTemplate: '<img src="{{raw::{name}}}" alt="{name}">',
+    },
   };
 }
 
@@ -62,22 +66,70 @@ describe('generatePromptBlock', () => {
 });
 
 describe('generateWhitelistRegex', () => {
-  it('builds negative-lookahead whitelist with escaping and close boundary', () => {
+  it('builds a positive whitelist matching valid combos and name-only', () => {
     const result = generateWhitelistRegex(catalog());
     expect(result).not.toBeNull();
     if (result === null) return;
     const { inPattern, outPattern } = result;
+
     expect(inPattern).toContain('Char\\(Adult\\)');
-    expect(inPattern).toContain('(?=">)');
-    expect(outPattern).toBe('<img src="$1_default">');
+    expect(outPattern).toBe('<img src="{{raw::$1$2}}" alt="$1$2">');
 
     const regex = new RegExp(inPattern);
-    expect(regex.test('<img src="Elsie_invalidmood">')).toBe(true);
-    expect(regex.test('<img src="Elsie_angry">')).toBe(false);
-    expect(regex.test('<img src="Elsie_nervous">')).toBe(false);
-    expect(regex.test('<img src="Elsie_nervous pouting">')).toBe(false);
-    expect(regex.test('<img src="Elsie">')).toBe(true);
-    expect(regex.test('<img src="Unknown_angry">')).toBe(false);
+    // joinTemplate is '{s1}_{s2}', separator '_'
+    expect(regex.test('<img src="Elsie_angry">')).toBe(true); // valid full combo
+    expect(regex.test('<img src="Elsie">')).toBe(true); // name-only
+    expect(regex.test('<img src="Elsie_nervous pouting">')).toBe(true); // multi-word s2
+    expect(regex.test('<img src="Elsie_invalidmood">')).toBe(false); // invalid emotion
+    expect(regex.test('<img src="Unknown_angry">')).toBe(false); // unknown name
+    // Per-name suffix restriction is NOT enforced: spec §4.1 unions valid
+    // suffixes across all s1 values into one shared tail group. 'nervous' is
+    // valid for Elsie, so it is accepted after any name.
+    expect(regex.test('<img src="Char(Adult)_angry">')).toBe(true);
+    expect(regex.test('<img src="Char(Adult)_nervous">')).toBe(true);
+    // The shared whitelist still rejects a globally-invalid emotion after any name.
+    expect(regex.test('<img src="Char(Adult)_invalidmood">')).toBe(false);
+  });
+
+  it('reconstructs the asset name via $1$2 backreferences', () => {
+    const result = generateWhitelistRegex(catalog());
+    if (result === null) throw new Error('expected non-null');
+    const full = '<img src="Elsie_angry">'.replace(new RegExp(result.inPattern), result.outPattern);
+    expect(full).toBe('<img src="{{raw::Elsie_angry}}" alt="Elsie_angry">');
+    const nameOnly = '<img src="Elsie">'.replace(new RegExp(result.inPattern), result.outPattern);
+    expect(nameOnly).toBe('<img src="{{raw::Elsie}}" alt="Elsie">');
+  });
+
+  it('honors a custom outputTemplate', () => {
+    const custom = catalog();
+    const result = generateWhitelistRegex({
+      ...custom,
+      outputs: { ...(custom.outputs ?? DEFAULT_ASSET_OUTPUTS), outputTemplate: '{{img::{name}}}' },
+    });
+    expect(result?.outPattern).toBe('{{img::$1$2}}');
+  });
+
+  it('matches all valid prefixes in a 3-slot schema', () => {
+    const three = {
+      ...catalog(),
+      schema: {
+        slots: [
+          { id: 's1' as const, label: 'character' },
+          { id: 's2' as const, label: 'emotion' },
+          { id: 's3' as const, label: 'variant' },
+        ],
+        joinTemplate: '{s1}_{s2}_{s3}',
+      },
+      vocab: { s1: ['Elsie'], s2: ['angry'], s3: ['a', 'b'] },
+      expected: {},
+    };
+    const result = generateWhitelistRegex(three);
+    if (result === null) throw new Error('expected non-null');
+    const regex = new RegExp(result.inPattern);
+    expect(regex.test('<img src="Elsie">')).toBe(true); // s1 only
+    expect(regex.test('<img src="Elsie_angry">')).toBe(true); // s1+s2 partial
+    expect(regex.test('<img src="Elsie_angry_a">')).toBe(true); // full
+    expect(regex.test('<img src="Elsie_angry_z">')).toBe(false); // invalid s3
   });
 
   it('returns null when s1 vocab is empty', () => {

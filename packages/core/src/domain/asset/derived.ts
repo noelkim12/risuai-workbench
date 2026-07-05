@@ -87,23 +87,23 @@ export function generateWhitelistRegex(catalog: AssetCatalog): WhitelistRegexPat
   const s1Vocab = catalog.vocab.s1 ?? [];
   if (parsed === null || s1Vocab.length === 0) return null;
 
-  const { tagFormat, fallbackTemplate } = outputsOf(catalog);
+  const { tagFormat, outputTemplate } = outputsOf(catalog);
   const names = s1Vocab.map(escapeRegexLiteral).join('|');
-  const closeEscaped = escapeRegexLiteral(tagFormat.suffix);
-  const closeFirstChar = tagFormat.suffix.charAt(0) || '"';
-  const bodyCharClass = `[^${escapeRegexLiteral(closeFirstChar)}]`;
   const prefixEscaped = escapeRegexLiteral(tagFormat.prefix);
+  const closeEscaped = escapeRegexLiteral(tagFormat.suffix);
 
-  let alternatives = `(?=${closeEscaped})`;
+  let tail = '';
+  let nameBackref = '$1';
   if (parsed.slotOrder.length >= 2) {
     const separator = escapeRegexLiteral(parsed.separators[0] ?? '');
-    const suffixes = collectValidSuffixes(catalog).map(escapeRegexLiteral).join('|');
-    const suffixGuard = suffixes.length > 0 ? `(?!(?:${suffixes})(?=${closeEscaped}))` : '';
-    alternatives = `${separator}${suffixGuard}${bodyCharClass}+|(?=${closeEscaped})`;
+    const suffixAlt = collectValidSuffixes(catalog).map(escapeRegexLiteral).join('|');
+    // Tail carries its own leading separator so name-only yields an empty $2.
+    tail = suffixAlt.length > 0 ? `((?:${separator}(?:${suffixAlt}))?)` : '()';
+    nameBackref = '$1$2';
   }
 
-  const inPattern = `${prefixEscaped}(${names})(?:${alternatives})${closeEscaped}`;
-  const outPattern = `${tagFormat.prefix}${fallbackTemplate.replace(/\{s1\}/g, '$1')}${tagFormat.suffix}`;
+  const inPattern = `${prefixEscaped}(${names})${tail}${closeEscaped}`;
+  const outPattern = outputTemplate.replace(/\{name\}/g, () => nameBackref);
   return { inPattern, outPattern };
 }
 
