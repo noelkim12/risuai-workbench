@@ -228,7 +228,12 @@ export function chainedValuesForClient(
   return [...ordered, ...extras];
 }
 
-export function computeMissingMatrixClient(catalog: AssetCatalogMirror, s1?: string, s2?: string): MissingMatrixClient | null {
+export function computeMissingMatrixClient(
+  catalog: AssetCatalogMirror,
+  s1?: string,
+  s2?: string,
+  options?: MatrixViewOptions,
+): MissingMatrixClient | null {
   const slotIds = catalog.schema.slots.map((slot) => slot.id);
 
   if (slotIds.length === 3) {
@@ -236,7 +241,7 @@ export function computeMissingMatrixClient(catalog: AssetCatalogMirror, s1?: str
     return computeThreeSlotMatrix(catalog, s1, s2);
   }
 
-  if (slotIds.length === 2) return computeTwoSlotMatrix(catalog, s1);
+  if (slotIds.length === 2) return computeTwoSlotMatrix(catalog, s1, options);
   return computeOneSlotMatrix(catalog);
 }
 
@@ -524,10 +529,10 @@ function computeThreeSlotMatrix(catalog: AssetCatalogMirror, s1: string, s2?: st
   };
 }
 
-function computeTwoSlotMatrix(catalog: AssetCatalogMirror, s1?: string): MissingMatrixClient {
+function computeTwoSlotMatrix(catalog: AssetCatalogMirror, s1?: string, options?: MatrixViewOptions): MissingMatrixClient {
   const allRows = catalog.vocab.s1 ?? [];
-  // s1 pin 이 걸리면 해당 캐릭터 한 행으로 축소, 아니면 전체
-  const rows = s1 ? allRows.filter((row) => row === s1) : [...allRows];
+  // s1 pin 이 걸리면 해당 캐릭터 한 행으로 축소, 아니면 전체(옵션에 따라 s1-only 제외).
+  const rows = s1 ? allRows.filter((row) => row === s1) : filterAxisS1(catalog, allRows, options);
   const cols = [...(catalog.vocab.s2 ?? [])];
   const groups = groupAssignments(catalog, ['s1', 's2']);
   return {

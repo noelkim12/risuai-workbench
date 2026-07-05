@@ -231,6 +231,29 @@ describe('computeMissingMatrixClient', () => {
     expect(pinned?.rows).toEqual(['Yua']);
     expect(pinned?.cols).toEqual(['angry', 'sad']);
   });
+
+  it('hides bare s1 (only s1-tagged, no override) rows in the 2-slot matrix when hideBareS1 is set', () => {
+    const catalog = {
+      version: 1 as const,
+      schema: {
+        slots: [
+          { id: 's1' as const, label: 'character' },
+          { id: 's2' as const, label: 'emotion' },
+        ],
+        joinTemplate: '{s1} {s2}',
+      },
+      vocab: { s1: ['Rin', 'Yua', 'Mei'], s2: ['angry', 'sad'] },
+      expected: { Yua: { s2: ['angry'] } }, // Yua: override → 유지
+      assignments: {
+        'a/rin_angry.png': { s1: 'Rin', s2: 'angry' }, // Rin: s2 조합 → 유지
+        'a/mei_portrait.png': { s1: 'Mei' }, // Mei: s1-only → bare
+      },
+    };
+    expect(computeMissingMatrixClient(catalog)?.rows).toEqual(['Rin', 'Yua', 'Mei']);
+    expect(computeMissingMatrixClient(catalog, undefined, undefined, { hideBareS1: true })?.rows).toEqual(['Rin', 'Yua']);
+    // s1 핀이 걸리면 필터와 무관하게 그 행만 남는다.
+    expect(computeMissingMatrixClient(catalog, 'Mei', undefined, { hideBareS1: true })?.rows).toEqual(['Mei']);
+  });
 });
 
 describe('computeSummaryMatrixClient', () => {
