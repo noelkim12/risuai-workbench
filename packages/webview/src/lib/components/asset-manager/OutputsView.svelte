@@ -1,8 +1,8 @@
 <!--
-  Asset Manager Outputs view: 파생 출력 3종(프롬프트/화이트리스트 정규식/missing 리포트) + manifest 빌드 요약.
+  Asset Manager Outputs view: 파생 출력 3종(프롬프트/디스플레이 정규식/missing 리포트) + manifest 빌드 요약.
   D5 가 D3 스텁을 본 구현으로 교체함.
   - 각 카드: 생성·복사·저장(기본 경로 편집 가능).
-  - 화이트리스트 정규식: .risuregex 직렬화(frontmatter comment/type + @@@ IN/OUT).
+  - 디스플레이 정규식: .risuregex 직렬화(frontmatter comment/type editdisplay + @@@ IN/OUT).
   - manifest 빌드 카드: onBuildManifest → buildSummary 표시.
   @file packages/webview/src/lib/components/asset-manager/OutputsView.svelte
 -->
@@ -37,8 +37,8 @@
   $: whitelistDocument = outputsState.whitelistRegex
     ? [
         '---',
-        'comment: "asset-whitelist"',
-        'type: editoutput',
+        'comment: "asset-display"',
+        'type: editdisplay',
         '---',
         '@@@ IN',
         outputsState.whitelistRegex.inPattern,
@@ -81,7 +81,7 @@
 
   <section class="output-card">
     <header>
-      <h2>화이트리스트 정규식</h2>
+      <h2>디스플레이 정규식</h2>
       <div>
         <button
           type="button"
