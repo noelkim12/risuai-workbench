@@ -68,11 +68,10 @@ function collectValidSuffixes(catalog: AssetCatalog): string[] {
   const suffixes = new Set<string>();
   for (const s1Value of catalog.vocab.s1 ?? []) {
     const s2List = expectedListFor(catalog, s1Value, 's2');
-    if (parsed.slotOrder.length === 2) {
-      for (const s2Value of s2List) suffixes.add(s2Value);
-    } else {
-      const innerSeparator = parsed.separators[1] ?? '';
-      for (const s2Value of s2List) {
+    for (const s2Value of s2List) {
+      suffixes.add(s2Value);
+      if (parsed.slotOrder.length >= 3) {
+        const innerSeparator = parsed.separators[1] ?? '';
         for (const s3Value of expectedListFor(catalog, s1Value, 's3')) {
           suffixes.add(`${s2Value}${innerSeparator}${s3Value}`);
         }
@@ -80,7 +79,7 @@ function collectValidSuffixes(catalog: AssetCatalog): string[] {
     }
   }
 
-  return [...suffixes].sort();
+  return [...suffixes].sort((left, right) => right.length - left.length || left.localeCompare(right));
 }
 
 export function generateWhitelistRegex(catalog: AssetCatalog): WhitelistRegexPatterns | null {
