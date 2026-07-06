@@ -259,6 +259,15 @@ export interface ArtifactBrowserImportArtifactPayload {
   dataBase64?: string;
 }
 
+export interface ArtifactBrowserImportArtifactChunkPayload {
+  viewId: typeof ARTIFACT_BROWSER_VIEW_ID;
+  transferId: string;
+  fileName: string;
+  chunkIndex: number;
+  totalChunks: number;
+  chunkBase64: string;
+}
+
 export interface ArtifactBrowserPackArtifactPayload {
   stableId: string;
   recovery: boolean;
@@ -468,6 +477,11 @@ export type ArtifactBrowserCreateArtifactMessage = MessageEnvelope<
 export type ArtifactBrowserImportArtifactMessage = MessageEnvelope<
   'artifact-browser/importArtifact',
   ArtifactBrowserImportArtifactPayload
+>;
+
+export type ArtifactBrowserImportArtifactChunkMessage = MessageEnvelope<
+  'artifact-browser/importArtifactChunk',
+  ArtifactBrowserImportArtifactChunkPayload
 >;
 
 export type ArtifactBrowserPackArtifactMessage = MessageEnvelope<

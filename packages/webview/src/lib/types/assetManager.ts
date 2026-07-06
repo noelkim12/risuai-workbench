@@ -20,6 +20,8 @@ export interface AssetCatalogBootstrapGroupSummaryMirror {
   readonly anomalies: readonly AssetCatalogBootstrapAnomalyReason[];
   // insufficient-tokens 경고를 유발한 실제 항목명(가장 조각이 적은 항목).
   readonly insufficientExample?: string;
+  // 이 그룹의 슬롯 값 표본(상한 있음). firstToken 외 슬롯 내용 검색용.
+  readonly sampleValues?: readonly string[];
 }
 
 export interface AssetCatalogBootstrapGroupOverride {

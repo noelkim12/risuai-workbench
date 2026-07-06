@@ -14,6 +14,11 @@ import { getErrorMessage } from '../shared/errors';
 import { pickImportArtifactFileWithSystemPicker } from '../shared/systemFilePicker';
 import { createWebviewNonce } from '../shared/webviewNonce';
 import { WorkspaceArtifactDiscoveryService } from '../artifact-browser/WorkspaceArtifactDiscoveryService';
+import {
+  createDebouncedTrigger,
+  wireWatcherToTrigger,
+  type DebouncedTrigger,
+} from '../artifact-browser/artifactBrowserWatch';
 import { AssetManagerPanel } from '../asset-manager/AssetManagerPanel';
 import {
   createArtifactBrowserCardsMessage,
@@ -23,6 +28,7 @@ import {
   isArtifactBrowserCreateArtifactMessage,
   isArtifactBrowserCreateSectionEntryMessage,
   isArtifactBrowserImportArtifactMessage,
+  isArtifactBrowserImportArtifactChunkMessage,
   isArtifactBrowserMoveLorebookFolderMessage,
   isArtifactBrowserMoveLorebookItemMessage,
   isArtifactBrowserMoveGreetingItemMessage,
@@ -37,6 +43,7 @@ import {
 import {
   ARTIFACT_BROWSER_VIEW_ID,
   type ArtifactBrowserCreateArtifactPayload,
+  type ArtifactBrowserImportArtifactChunkPayload,
   type ArtifactBrowserImportArtifactPayload,
   type ArtifactBrowserCreateSectionEntryKind,
   type ArtifactBrowserCreateSectionKind,
@@ -56,6 +63,10 @@ import {
 
 const CHARACTER_MARKER_FILENAME = '.risuchar';
 const MODULE_MARKER_FILENAME = '.risumodule';
+/** Coalesce window for card-list rescans triggered by external marker changes. */
+const CARDS_REFRESH_DEBOUNCE_MS = 250;
+/** Coalesce window for detail/asset rescans triggered by external content changes. */
+const DETAIL_REFRESH_DEBOUNCE_MS = 250;
 const IMPORT_FILE_FILTERS = {
   'RisuAI artifacts': ['charx', 'png', 'risum', 'risup', 'risupreset', 'preset', 'json'],
 };
@@ -92,6 +103,12 @@ interface SectionCreationConfig {
   label: string;
 }
 
+interface PendingImportTransfer {
+  filePath: string;
+  nextChunkIndex: number;
+  totalChunks: number;
+}
+
 /**
  * ArtifactBrowserViewProvider 클래스.
  * 기존 `risuaiWorkbench.cards` view id에 Svelte bundle을 로드하고 typed bridge를 연결함.
@@ -104,12 +121,89 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
   private selectedStableId: string | undefined;
   private currentCards: BrowserArtifactCard[] = [];
   private currentSections = new Map<string, BrowserSection[]>();
+  private readonly pendingImportTransfers = new Map<string, PendingImportTransfer>();
+
+  private detailWatcher: vscode.FileSystemWatcher | undefined;
+  private detailWatcherSubscriptions: vscode.Disposable[] = [];
+  private detailTrigger: DebouncedTrigger | undefined;
+  private detailWatcherRootUri: string | undefined;
 
   constructor(private readonly context: vscode.ExtensionContext) {
     ArtifactBrowserViewProvider.instances.add(this);
+    this.registerMarkerWatcher();
     this.context.subscriptions.push({
-      dispose: () => ArtifactBrowserViewProvider.instances.delete(this),
+      dispose: () => {
+        this.clearDetailWatcher();
+        ArtifactBrowserViewProvider.instances.delete(this);
+      },
     });
+  }
+
+  /**
+   * registerMarkerWatcher 함수.
+   * `.risuchar`/`.risumodule` marker의 외부 생성·삭제·변경을 감시해 card 목록을 debounce refresh함.
+   * 외부(터미널·git·다른 에디터)에서 artifact가 추가/삭제되어도 사이드바가 즉시 갱신되도록 함.
+   */
+  private registerMarkerWatcher(): void {
+    const watcher = vscode.workspace.createFileSystemWatcher(
+      `**/{${CHARACTER_MARKER_FILENAME},${MODULE_MARKER_FILENAME}}`,
+    );
+    const trigger = createDebouncedTrigger(() => this.refreshIfOpen(), CARDS_REFRESH_DEBOUNCE_MS);
+    const subscriptions = wireWatcherToTrigger(watcher, () => trigger.trigger()) as vscode.Disposable[];
+    this.context.subscriptions.push(watcher, ...subscriptions, { dispose: () => trigger.dispose() });
+  }
+
+  /**
+   * watchSelectedArtifactContents 함수.
+   * 현재 선택된 artifact root 하위 파일의 외부 변경을 감시해 detail/asset section을 debounce refresh함.
+   * root가 바뀔 때만 watcher를 재생성하고, 동일 root면 기존 watcher를 유지함.
+   *
+   * @param card - 새로 선택되었거나 refresh 후 유지된 선택 card
+   */
+  private watchSelectedArtifactContents(card: BrowserArtifactCard): void {
+    if (this.detailWatcherRootUri === card.rootUri) return;
+    this.clearDetailWatcher();
+
+    const pattern = new vscode.RelativePattern(vscode.Uri.parse(card.rootUri), '**/*');
+    const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+    const stableId = card.stableId;
+    const trigger = createDebouncedTrigger(
+      () => this.refreshWatchedDetail(stableId),
+      DETAIL_REFRESH_DEBOUNCE_MS,
+    );
+    this.detailWatcher = watcher;
+    this.detailTrigger = trigger;
+    this.detailWatcherSubscriptions = wireWatcherToTrigger(watcher, () =>
+      trigger.trigger(),
+    ) as vscode.Disposable[];
+    this.detailWatcherRootUri = card.rootUri;
+  }
+
+  /**
+   * clearDetailWatcher 함수.
+   * 선택된 artifact content watcher와 관련 구독·timer를 모두 해제함.
+   */
+  private clearDetailWatcher(): void {
+    this.detailTrigger?.dispose();
+    this.detailTrigger = undefined;
+    for (const subscription of this.detailWatcherSubscriptions) subscription.dispose();
+    this.detailWatcherSubscriptions = [];
+    this.detailWatcher?.dispose();
+    this.detailWatcher = undefined;
+    this.detailWatcherRootUri = undefined;
+  }
+
+  /**
+   * refreshWatchedDetail 함수.
+   * watcher가 가리키는 artifact가 아직 선택 상태일 때만 detail section을 다시 scan해 전송함.
+   *
+   * @param stableId - watcher 생성 시점에 선택되어 있던 artifact stable id
+   */
+  private refreshWatchedDetail(stableId: string): void {
+    if (this.selectedStableId !== stableId) return;
+    const card = this.currentCards.find((candidate) => candidate.stableId === stableId);
+    if (!card) return;
+    void this.refreshSelectedDetail(card);
   }
 
   /**
@@ -166,6 +260,11 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
 
         if (isArtifactBrowserImportArtifactMessage(message)) {
           void this.importArtifact(message.payload, webviewView.webview);
+          return;
+        }
+
+        if (isArtifactBrowserImportArtifactChunkMessage(message)) {
+          void this.importArtifactChunk(message.payload, webviewView.webview);
           return;
         }
 
@@ -302,13 +401,51 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     }
 
     try {
-      const extractedDir = await runImportExtract(importedFile, workspaceRoot);
-      await runAnalyzeForExtractedArtifact(extractedDir, workspaceRoot);
-      void vscode.window.showInformationMessage(`Imported ${path.basename(importedFile)}.`);
+      await runImportPipeline(importedFile, workspaceRoot);
     } catch (error) {
       void vscode.window.showErrorMessage(`Import failed: ${getErrorMessage(error)}`);
     } finally {
       removeTemporaryImportFileIfNeeded(importedFile);
+      await this.sendDiscoveredCards(webview);
+    }
+  }
+
+  private async importArtifactChunk(payload: ArtifactBrowserImportArtifactChunkPayload, webview: vscode.Webview): Promise<void> {
+    const workspaceRoot = getPrimaryWorkspaceRoot();
+    if (!workspaceRoot) {
+      void vscode.window.showErrorMessage('Open a workspace folder before importing a RisuAI artifact.');
+      await this.sendDiscoveredCards(webview);
+      return;
+    }
+
+    let transfer = this.pendingImportTransfers.get(payload.transferId);
+    try {
+      if (!transfer) {
+        if (payload.chunkIndex !== 0) throw new Error(`Import chunk ${payload.transferId} started at ${payload.chunkIndex}.`);
+        const filePath = createTemporaryImportFile(payload.fileName);
+        transfer = { filePath, nextChunkIndex: 0, totalChunks: payload.totalChunks };
+        this.pendingImportTransfers.set(payload.transferId, transfer);
+      }
+
+      if (payload.totalChunks !== transfer.totalChunks || payload.chunkIndex !== transfer.nextChunkIndex) {
+        throw new Error(`Import chunk order mismatch for ${payload.fileName}.`);
+      }
+
+      fs.appendFileSync(transfer.filePath, Buffer.from(payload.chunkBase64, 'base64'));
+      transfer.nextChunkIndex += 1;
+
+      if (transfer.nextChunkIndex < transfer.totalChunks) return;
+
+      this.pendingImportTransfers.delete(payload.transferId);
+      await runImportPipeline(transfer.filePath, workspaceRoot);
+      removeTemporaryImportFileIfNeeded(transfer.filePath);
+      await this.sendDiscoveredCards(webview);
+    } catch (error) {
+      if (transfer) {
+        this.pendingImportTransfers.delete(payload.transferId);
+        removeTemporaryImportFileIfNeeded(transfer.filePath);
+      }
+      void vscode.window.showErrorMessage(`Import failed: ${getErrorMessage(error)}`);
       await this.sendDiscoveredCards(webview);
     }
   }
@@ -414,8 +551,10 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
 
     if (refreshedSelectedCard) {
       this.selectedStableId = refreshedSelectedCard.stableId;
+      this.watchSelectedArtifactContents(refreshedSelectedCard);
     } else if (this.selectedStableId) {
       this.selectedStableId = undefined;
+      this.clearDetailWatcher();
     }
 
     this.postMessage(createArtifactBrowserCardsMessage(cards, refreshedSelectedCard?.stableId));
@@ -456,6 +595,7 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     const selectedCard = this.currentCards.find((card) => card.stableId === stableId);
     if (!selectedCard) return;
 
+    this.watchSelectedArtifactContents(selectedCard);
     this.openMarkerEditor(selectedCard.markerUri);
 
     await this.postDetailSections(selectedCard);
@@ -1075,9 +1215,14 @@ async function resolveImportFilePath(payload: ArtifactBrowserImportArtifactPaylo
 }
 
 function writeTemporaryImportFile(fileName: string, dataBase64: string): string {
+  const filePath = createTemporaryImportFile(fileName);
+  fs.writeFileSync(filePath, Buffer.from(dataBase64, 'base64'));
+  return filePath;
+}
+
+function createTemporaryImportFile(fileName: string): string {
   const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'risuai-import-'));
   const filePath = path.join(tempDirectory, path.basename(fileName));
-  fs.writeFileSync(filePath, Buffer.from(dataBase64, 'base64'));
   return filePath;
 }
 
@@ -1141,6 +1286,12 @@ function createImportExtractArgs(importedFile: string): string[] {
 async function runImportExtract(importedFile: string, workspaceRoot: string): Promise<string> {
   const stdout = await runRisuCoreCli(createImportExtractArgs(importedFile), workspaceRoot);
   return resolveExtractedDir(importedFile, stdout, workspaceRoot);
+}
+
+async function runImportPipeline(importedFile: string, workspaceRoot: string): Promise<void> {
+  const extractedDir = await runImportExtract(importedFile, workspaceRoot);
+  await runAnalyzeForExtractedArtifact(extractedDir, workspaceRoot);
+  void vscode.window.showInformationMessage(`Imported ${path.basename(importedFile)}.`);
 }
 
 async function runAnalyzeForExtractedArtifact(extractedDir: string, workspaceRoot: string): Promise<void> {

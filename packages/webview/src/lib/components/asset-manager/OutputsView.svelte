@@ -55,7 +55,8 @@
 </script>
 
 <div class="outputs-layout">
-  <section class="output-card">
+  <div class="outputs-primary">
+  <section class="output-card output-card--primary">
     <header>
       <h2>프롬프트 블록</h2>
       <div>
@@ -79,7 +80,7 @@
     </div>
   </section>
 
-  <section class="output-card">
+  <section class="output-card output-card--primary">
     <header>
       <h2>디스플레이 정규식</h2>
       <div>
@@ -109,8 +110,10 @@
       >
     </div>
   </section>
+  </div>
 
-  <section class="output-card">
+  <div class="outputs-secondary">
+  <section class="output-card output-card--compact">
     <header>
       <h2>Missing 리포트</h2>
       <div>
@@ -159,16 +162,32 @@
       <p class="output-hint">아직 빌드하지 않았습니다. catalog 큐레이션이 manifest name에 반영됩니다.</p>
     {/if}
   </section>
+  </div>
 </div>
 
 <style>
   .outputs-layout {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    display: flex;
+    flex-direction: column;
     gap: var(--space-3);
     overflow-y: auto;
     flex: 1;
     min-height: 0;
+  }
+  /* 프롬프트 블록 + 디스플레이 정규식: 함께 보는 주 출력. 남는 세로 공간을 채움. */
+  .outputs-primary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  /* Missing 리포트 + Manifest 빌드: 보조 정보. 내용 높이만큼만 차지. */
+  .outputs-secondary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: var(--space-3);
+    flex: 0 0 auto;
     align-content: start;
   }
   .output-card {
@@ -202,6 +221,20 @@
     font-family: var(--vscode-editor-font-family, monospace);
     font-size: var(--text-sm);
     resize: vertical;
+  }
+  /* 주 카드: 카드가 세로로 늘어나면 textarea가 함께 채워지도록. 최소 높이 확보. */
+  .output-card--primary {
+    flex: 1 1 380px;
+    min-width: 0;
+    min-height: 0;
+  }
+  .output-card--primary textarea {
+    flex: 1 1 auto;
+    min-height: 260px;
+  }
+  /* 보조 카드: 낮게 시작하되 필요하면 드래그로 확장. */
+  .output-card--compact textarea {
+    min-height: 140px;
   }
   .output-save {
     display: flex;
