@@ -240,8 +240,11 @@ export async function phase5_extractAssetsAsync(
 
   const subdirCounts: Record<string, number> = {};
   const writeJobs: Array<{ outPath: string; data: Buffer }> = [];
+  // Writes are deferred, so existsSync can't see them during allocation.
+  // Track reserved paths in-memory so same-named assets don't collide (e.g. 3x "iconx").
+  const reservedPaths = new Set<string>();
 
-  // Path allocation must be serial (uniquePath uses existsSync)
+  // Path allocation must be serial (uniquePath tracks reserved paths)
   for (let i = 0; i < assets.length; i += 1) {
     const asset = assets[i] as CharacterAssetLike | null | undefined;
     const resolved = resolveAssetUri(asset?.uri ?? '', assetSources);
@@ -277,7 +280,7 @@ export async function phase5_extractAssetsAsync(
         const targetDir = path.join(assetsDir, subdir);
         const ccExt = asset?.ext ? `.${String(asset.ext).replace(/^\./, '')}` : '.png';
         const ccBaseName = sanitizeFilename(asset?.name || 'main');
-        const ccOutPath = uniquePath(targetDir, ccBaseName, ccExt);
+        const ccOutPath = uniquePath(targetDir, ccBaseName, ccExt, reservedPaths);
         writeJobs.push({ outPath: ccOutPath, data: mainImage });
         entry.extracted_path = `${subdir}/${path.basename(ccOutPath)}`;
         entry.status = 'extracted';
@@ -304,7 +307,7 @@ export async function phase5_extractAssetsAsync(
       ? `.${String(asset.ext).replace(/^\./, '')}`
       : guessMimeExt(resolved.metadata?.mime || '');
     const baseName = sanitizeFilename(asset?.name || `asset_${i}`);
-    const outPath = uniquePath(targetDir, baseName, ext);
+    const outPath = uniquePath(targetDir, baseName, ext, reservedPaths);
     const buf = bufferFromResolvedData(resolved.data);
     if (!buf) {
       entry.status = 'unresolved';

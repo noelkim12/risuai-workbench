@@ -20,6 +20,7 @@ import {
   type MainEditorPreviewRequestMessage,
   type MainEditorPreviewRuntimeRequestMessage,
   type MainEditorReadyMessage,
+  type MainEditorResolveRegexAssetsRequestMessage,
   type MainEditorSimulatorProfileListRequestMessage,
   type MainEditorSimulatorProfileSaveRequestMessage,
   type MainEditorStructuredEditMessage,
@@ -40,6 +41,7 @@ import type {
   MainEditorRevealLocationRequestPayload,
   MainEditorReferencesRequestPayload,
   MainEditorRenameRequestPayload,
+  MainEditorResolveRegexAssetsRequestPayload,
   MainEditorSimulatorProfileListRequestPayload,
   MainEditorSimulatorProfileSaveRequestPayload,
   MainEditorStructuredEditPayload,
@@ -266,6 +268,19 @@ export function createMainEditorFormatPreviewRequestMessage(
   payload: MainEditorFormatPreviewRequestPayload,
 ): MainEditorFormatPreviewRequestMessage {
   return createMainEditorMessage('main-editor/formatPreviewRequest', payload);
+}
+
+/**
+ * createMainEditorResolveRegexAssetsRequestMessage 함수.
+ * Regex preview raw/path asset resolution request를 typed envelope로 감쌈.
+ *
+ * @param payload - resolve asset request payload
+ * @returns resolveRegexAssetsRequest message envelope
+ */
+export function createMainEditorResolveRegexAssetsRequestMessage(
+  payload: MainEditorResolveRegexAssetsRequestPayload,
+): MainEditorResolveRegexAssetsRequestMessage {
+  return createMainEditorMessage('main-editor/resolveRegexAssetsRequest', payload);
 }
 
 /**

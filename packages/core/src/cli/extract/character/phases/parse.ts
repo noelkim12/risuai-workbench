@@ -52,8 +52,10 @@ export function phase1_parseCharx(inputPath: string): ParsedCharacterResult {
           console.log(`     lorebook (module): ${mod.lorebook.length}개 병합됨`);
         }
 
-        // Note: customModuleToggle is NOT merged into charx per T12 spec
-        // .risutoggle is module/preset only; charx workspaces exclude it
+        if (typeof mod.customModuleToggle === 'string') {
+          charx.data.extensions.risuai.toggles = mod.customModuleToggle;
+          console.log('     toggles: module.risum에서 병합됨');
+        }
       }
     }
 
@@ -161,8 +163,10 @@ export async function phase1_parseCharxAsync(inputPath: string): Promise<ParsedC
           console.log(`     lorebook (module): ${mod.lorebook.length}개 병합됨`);
         }
 
-        // Note: customModuleToggle is NOT merged into charx per T12 spec
-        // .risutoggle is module/preset only; charx workspaces exclude it
+        if (typeof mod.customModuleToggle === 'string') {
+          charx.data.extensions.risuai.toggles = mod.customModuleToggle;
+          console.log('     toggles: module.risum에서 병합됨');
+        }
       }
     }
 

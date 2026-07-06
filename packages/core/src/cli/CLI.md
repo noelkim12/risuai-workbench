@@ -45,6 +45,7 @@ workflow 함수를 직접 import하여 등록한다. 별도의 래퍼 파일은 
   - `analyze/module/`: artifact-wide module analyzer + cross-cutting analyzer 통합
   - `analyze/preset/`: artifact-wide preset analyzer + prompt chain analyzer 통합
   - `analyze/compose/`: explicit multi-artifact composition/conflict analyzer
+  - `analyze --type lorebook-names`: `*.risulorebook` frontmatter `name:` 후보 추출
 - `build/`: 옵션 파싱 → regex/lorebook 빌드 → 출력
 - `pack/`: 아티팩트 유형별 패킹 (character, module, preset 지원)
 
@@ -77,8 +78,13 @@ CLI는 domain과 node를 호출하지만, domain이나 node가 CLI를 호출하�
 | `pack` | 추출된 컴포넌트를 카드로 재조립 | 프로젝트 디렉토리 | 출력 카드 |
 | `analyze` | Lua / charx / module / preset / compose 분석 (통합) | `.lua` 파일 또는 artifact 디렉토리 | Markdown / HTML / JSON 리포트 |
 | `build` | regex / lorebook 컴포넌트 빌드 | `regex/`, `lorebooks/` 디렉토리 | `regexscript_export.json`, `lorebook_export.json` |
+| `assets` | 캐릭터 asset manifest 생성/검사 | 캐릭터 프로젝트 디렉토리 | `assets/manifest.json` 또는 검사 리포트 |
 
-`analyze` 커맨드는 `--type lua`, `--type charx`, `--type module`, `--type preset`, `--type compose`로 분석 유형을 명시할 수 있다. 생략 시 대상을 자동 감지한다 (`.lua` 파일 → lua, canonical workspace markers → charx/module/preset). `compose`는 자동 감지하지 않고 명시적으로만 진입한다.
+`analyze` 커맨드는 `--type lua`, `--type charx`, `--type module`, `--type preset`, `--type compose`, `--type lorebook-names`로 분석 유형을 명시할 수 있다. 생략 시 대상을 자동 감지한다 (`.lua` 파일 → lua, canonical workspace markers → charx/module/preset). `compose`와 `lorebook-names`는 자동 감지하지 않고 명시적으로만 진입한다.
+
+`risu-core analyze --type lorebook-names <workspaceDir>`는 `lorebooks/` 또는 `lorebook/` 아래의 `*.risulorebook` frontmatter `name:` 값을 캐릭터명 후보로 수집하고 폴더별로 출력한다. `--json`을 추가하면 `{ candidates }` JSON을 표준 출력으로 출력한다.
+
+`risu-core assets --in <workspaceDir>`는 `assets/manifest.json`을 생성한다. `risu-core assets --in <workspaceDir> --check`는 manifest를 쓰지 않고 `asset-catalog.json` 기반 missing/중복/orphan 리포트만 출력한다.
 
 **Canonical workspace auto-detection (precedence order):**
 1. `.risumodule` → module (strictest criteria, checked first)

@@ -8,6 +8,7 @@
   export let cards: BrowserArtifactCard[];
   export let selectedStableId: string | undefined;
   export let status: string;
+  export let importing: boolean;
   export let onRefresh: () => void;
   export let onCreateArtifact: (payload: ArtifactBrowserCreateArtifactPayload) => void;
   export let onImportArtifact: (file: File) => void;
@@ -87,7 +88,7 @@
 
   <section class="toolbar" aria-label="Sidebar actions">
     <button type="button" on:click={() => openCreateModal()}>Create</button>
-    <button type="button" class="button-secondary" on:click={openImportPicker}>Import</button>
+    <button type="button" class="button-secondary" on:click={openImportPicker} disabled={importing}>Import</button>
     <input
       bind:this={importInput}
       class="visually-hidden"
@@ -101,6 +102,12 @@
   </section>
 
   <p class="bridge-status" id="status-text">{status}</p>
+
+  {#if importing}
+    <div class="import-progress" role="progressbar" aria-label="Import in progress">
+      <div class="import-progress__bar"></div>
+    </div>
+  {/if}
 
   {#if cards.length === 0}
     <EmptyState {onRefresh} />
@@ -179,3 +186,25 @@
     </section>
   {/if}
 </main>
+
+<style>
+  .import-progress {
+    height: 4px;
+    margin-bottom: var(--space-2);
+    border-radius: 2px;
+    background: var(--vscode-progressBar-background, rgba(255, 255, 255, 0.15));
+    overflow: hidden;
+  }
+
+  .import-progress__bar {
+    height: 100%;
+    width: 40%;
+    background: var(--vscode-progressBar-foreground, #0a84ff);
+    animation: import-indeterminate 1.1s ease-in-out infinite;
+  }
+
+  @keyframes import-indeterminate {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(300%); }
+  }
+</style>

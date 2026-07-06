@@ -35,9 +35,17 @@ export type BrowserArtifactStatus = 'ready' | 'warning' | 'invalid';
 export type CharacterSourceFormat = 'charx' | 'png' | 'json' | 'scaffold';
 export type ModuleSourceFormat = 'risum' | 'json' | 'scaffold' | 'unknown';
 export type CharacterBrowserStatus = BrowserArtifactStatus;
-export type CharacterSectionKind = 'manifest' | 'lorebooks' | 'regexRules' | 'html' | 'lua' | 'diagnostics';
+export type CharacterSectionKind =
+  | 'manifest'
+  | 'character'
+  | 'lorebooks'
+  | 'regexRules'
+  | 'html'
+  | 'lua'
+  | 'assets'
+  | 'diagnostics';
 export type BrowserSectionKind = CharacterSectionKind | 'toggle' | 'variables';
-export type ArtifactBrowserCreateSectionKind = Extract<BrowserSectionKind, 'lorebooks' | 'regexRules' | 'lua'>;
+export type ArtifactBrowserCreateSectionKind = Extract<BrowserSectionKind, 'lorebooks' | 'regexRules' | 'lua' | 'character'>;
 export type ArtifactBrowserCreateSectionEntryKind = 'folder' | 'file';
 export type BrowserItemType =
   | 'manifest'
@@ -251,9 +259,26 @@ export interface ArtifactBrowserImportArtifactPayload {
   dataBase64?: string;
 }
 
+export interface ArtifactBrowserImportArtifactChunkPayload {
+  viewId: typeof ARTIFACT_BROWSER_VIEW_ID;
+  transferId: string;
+  fileName: string;
+  chunkIndex: number;
+  totalChunks: number;
+  chunkBase64: string;
+}
+
 export interface ArtifactBrowserPackArtifactPayload {
   stableId: string;
   recovery: boolean;
+}
+
+export interface ArtifactBrowserAnalyzeArtifactPayload {
+  stableId: string;
+}
+
+export interface ArtifactBrowserOpenAssetManagerPayload {
+  stableId: string;
 }
 
 export interface ArtifactBrowserPackCompletedPayload {
@@ -288,6 +313,13 @@ export interface ArtifactBrowserMoveLorebookFolderPayload {
 }
 
 export interface ArtifactBrowserMoveRegexItemPayload {
+  stableId: string;
+  itemId: string;
+  targetItemId: string;
+  placement: 'before' | 'after';
+}
+
+export interface ArtifactBrowserMoveGreetingItemPayload {
   stableId: string;
   itemId: string;
   targetItemId: string;
@@ -447,9 +479,24 @@ export type ArtifactBrowserImportArtifactMessage = MessageEnvelope<
   ArtifactBrowserImportArtifactPayload
 >;
 
+export type ArtifactBrowserImportArtifactChunkMessage = MessageEnvelope<
+  'artifact-browser/importArtifactChunk',
+  ArtifactBrowserImportArtifactChunkPayload
+>;
+
 export type ArtifactBrowserPackArtifactMessage = MessageEnvelope<
   'artifact-browser/packArtifact',
   ArtifactBrowserPackArtifactPayload
+>;
+
+export type ArtifactBrowserAnalyzeArtifactMessage = MessageEnvelope<
+  'artifact-browser/analyzeArtifact',
+  ArtifactBrowserAnalyzeArtifactPayload
+>;
+
+export type ArtifactBrowserOpenAssetManagerMessage = MessageEnvelope<
+  'artifact-browser/openAssetManager',
+  ArtifactBrowserOpenAssetManagerPayload
 >;
 
 export type ArtifactBrowserPackCompletedMessage = MessageEnvelope<
@@ -482,6 +529,11 @@ export type ArtifactBrowserMoveRegexItemMessage = MessageEnvelope<
   ArtifactBrowserMoveRegexItemPayload
 >;
 
+export type ArtifactBrowserMoveGreetingItemMessage = MessageEnvelope<
+  'artifact-browser/moveGreetingItem',
+  ArtifactBrowserMoveGreetingItemPayload
+>;
+
 export type ArtifactBrowserCreateSectionEntryMessage = MessageEnvelope<
   'artifact-browser/createSectionEntry',
   ArtifactBrowserCreateSectionEntryPayload
@@ -498,11 +550,14 @@ export type ArtifactBrowserWebviewMessage =
   | ArtifactBrowserCreateArtifactMessage
   | ArtifactBrowserImportArtifactMessage
   | ArtifactBrowserPackArtifactMessage
+  | ArtifactBrowserAnalyzeArtifactMessage
+  | ArtifactBrowserOpenAssetManagerMessage
   | ArtifactBrowserSelectMessage
   | ArtifactBrowserOpenItemMessage
   | ArtifactBrowserMoveLorebookItemMessage
   | ArtifactBrowserMoveLorebookFolderMessage
   | ArtifactBrowserMoveRegexItemMessage
+  | ArtifactBrowserMoveGreetingItemMessage
   | ArtifactBrowserCreateSectionEntryMessage;
 export type ArtifactBrowserExtensionMessage =
   | ArtifactBrowserCardsMessage

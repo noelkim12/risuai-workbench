@@ -150,6 +150,8 @@ export async function phase5_extractAssetsAsync(
   const manifest = createModuleAssetManifest(sourceFormat, assets.length);
 
   const writeJobs: Array<{ outPath: string; data: Buffer }> = [];
+  // Writes are deferred; track reserved paths so same-named assets don't collide.
+  const reservedPaths = new Set<string>();
 
   for (let i = 0; i < assets.length; i += 1) {
     const tuple = assets[i];
@@ -173,7 +175,7 @@ export async function phase5_extractAssetsAsync(
     }
 
     const baseName = sanitizeFilename(name || `asset_${i}`);
-    const outPath = uniquePath(assetsDir, baseName, '.bin');
+    const outPath = uniquePath(assetsDir, baseName, '.bin', reservedPaths);
     writeJobs.push({ outPath, data: buffer });
 
     manifest.assets.push({

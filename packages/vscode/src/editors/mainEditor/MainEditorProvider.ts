@@ -20,6 +20,7 @@ import {
   type PromptEditorState,
   type RegexEditorState,
 } from 'risu-workbench-core';
+import { resolveRegexAssets } from 'risu-workbench-core/node';
 import {
   MAIN_EDITOR_FORMATS,
   MAIN_EDITOR_PROTOCOL,
@@ -46,6 +47,8 @@ import {
   type MainEditorPreviewRuntimeResultPayload,
   type MainEditorReferencesResultPayload,
   type MainEditorRenameResultPayload,
+  type MainEditorResolveRegexAssetsRequestPayload,
+  type MainEditorResolveRegexAssetsResultPayload,
   type MainEditorSimulatorProfileListResultPayload,
   type MainEditorSimulatorProfileSaveResultPayload,
   type MainEditorVariableCandidatesResultPayload,
@@ -158,6 +161,12 @@ type MainEditorExtensionMessage =
       version: typeof MAIN_EDITOR_PROTOCOL_VERSION;
       type: 'main-editor/formatPreviewResult';
       payload: MainEditorFormatPreviewResultPayload;
+    }
+  | {
+      protocol: typeof MAIN_EDITOR_PROTOCOL;
+      version: typeof MAIN_EDITOR_PROTOCOL_VERSION;
+      type: 'main-editor/resolveRegexAssetsResult';
+      payload: MainEditorResolveRegexAssetsResultPayload;
     }
   | {
       protocol: typeof MAIN_EDITOR_PROTOCOL;
@@ -476,6 +485,14 @@ export class MainEditorProvider implements vscode.CustomTextEditorProvider {
         createFormatPreviewResultMessage(
           await createMainEditorFormatPreviewResult(document, message.payload, format.kind),
         ),
+      );
+      return;
+    }
+
+    if (message.type === 'main-editor/resolveRegexAssetsRequest') {
+      this.postMessage(
+        webviewPanel,
+        createResolveRegexAssetsResultMessage(resolveRegexAssetsForDocument(document, message.payload)),
       );
       return;
     }
@@ -988,6 +1005,21 @@ function createFormatPreviewResultMessage(
   payload: MainEditorFormatPreviewResultPayload,
 ): MainEditorExtensionMessage {
   return createMainEditorExtensionMessage('main-editor/formatPreviewResult', payload);
+}
+
+function resolveRegexAssetsForDocument(
+  document: vscode.TextDocument,
+  payload: MainEditorResolveRegexAssetsRequestPayload,
+): MainEditorResolveRegexAssetsResultPayload {
+  const rootDir = path.dirname(path.dirname(document.uri.fsPath));
+  const { resolved, truncated } = resolveRegexAssets({ rootDir, names: payload.names });
+  return { requestId: payload.requestId, documentUri: payload.documentUri, resolved: [...resolved], truncated };
+}
+
+function createResolveRegexAssetsResultMessage(
+  payload: MainEditorResolveRegexAssetsResultPayload,
+): MainEditorExtensionMessage {
+  return createMainEditorExtensionMessage('main-editor/resolveRegexAssetsResult', payload);
 }
 
 function createSimulatorProfileListResultMessage(

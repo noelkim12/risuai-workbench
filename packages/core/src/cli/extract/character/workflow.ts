@@ -28,7 +28,7 @@ import {
   phase6_extractBackgroundHTML,
   phase7_extractVariables,
   phase8_extractCharacterFields,
-} from './phases';
+} from './phases/index';
 
 type ParsedCharxResult = {
   charx: unknown;
@@ -58,14 +58,14 @@ ${RISULUA_DOMAIN_GENERATION_HELP_LINE}
     5. 에셋 바이너리 추출 → assets/ + assets/manifest.json
     6. backgroundHTML 추출 → html/background.risuhtml
     7. defaultVariables 추출 → variables/default.risuvar
-    8. Character Card 추출 → .risuchar + character/*.risutext + alternate_greetings/*.risutext
+    8. Character Card 추출 → .risuchar + character/*.risutext + alternate_greetings/*.risutext + toggle/*.risutoggle
     9. Lua 분석 (analyze.js) — deferred to T13
     10. 카드 종합 분석 (analyze-charx.js) → analysis/ — deferred to T13
 
   Notes:
     - charx.json is NOT emitted in canonical mode
     - All data is stored as canonical .risu* artifacts
-    - .risutoggle is NOT supported for charx (module/preset only)
+    - Risu toggles are emitted as toggle/<character-name>.risutoggle
     - Charx analysis (Phase 10) is temporarily disabled pending T13 migration
 
   Examples:

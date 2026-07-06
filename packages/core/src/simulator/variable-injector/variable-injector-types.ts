@@ -69,7 +69,7 @@ export interface CbsPreviewVariableOverrides {
   /** Toggle value overrides. */
   readonly toggleValues?: Readonly<Record<string, boolean>>;
   /** Runtime context overrides such as chatIndex. */
-  readonly contextVariables?: Readonly<Record<string, string | number>>;
+  readonly contextVariables?: Readonly<Record<string, string | number | null>>;
   /** Temp variable overrides. */
   readonly tempVariables?: Readonly<Record<string, unknown>>;
 }

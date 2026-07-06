@@ -5,6 +5,7 @@
  */
 
 import path from 'node:path';
+import * as vscode from 'vscode';
 import type {
   BrowserItemType,
   BrowserSection,
@@ -13,9 +14,7 @@ import type {
 } from './artifactBrowserTypes';
 import { GenericDetailScanner, type SectionDraft, createSection } from './shared/detailScanner';
 
-type ModuleSectionKind = (typeof SECTION_ORDER)[number];
-
-const SECTION_ORDER: BrowserSectionKind[] = [
+const SECTION_ORDER = [
   'manifest',
   'lorebooks',
   'regexRules',
@@ -23,8 +22,11 @@ const SECTION_ORDER: BrowserSectionKind[] = [
   'toggle',
   'variables',
   'html',
+  'assets',
   'diagnostics',
-];
+] as const satisfies readonly BrowserSectionKind[];
+
+type ModuleSectionKind = (typeof SECTION_ORDER)[number];
 
 const SCAN_DIRECTORIES = ['lorebooks', 'lorebook', 'regex', 'lua', 'toggle', 'variables', 'html'] as const;
 
@@ -37,6 +39,7 @@ function createModuleSectionDrafts(): Record<ModuleSectionKind, SectionDraft> {
     toggle: createSection('toggle', 'Toggle', 'toggle'),
     variables: createSection('variables', 'Variables', 'variables'),
     html: createSection('html', 'HTML', 'html'),
+    assets: createSection('assets', 'Assets', 'assets'),
     diagnostics: createSection('diagnostics', 'Diagnostics', 'diagnostics'),
   };
 }
@@ -74,7 +77,7 @@ function isUnderDirectory(relativePath: string, directoryName: string): boolean 
 }
 
 const scanner = new GenericDetailScanner<ModuleSectionKind, BrowserItemType>({
-  sectionOrder: SECTION_ORDER,
+  sectionOrder: [...SECTION_ORDER],
   createSectionDrafts: createModuleSectionDrafts,
   classifyFile,
   classifyItemType,
@@ -96,6 +99,38 @@ export class ModuleDetailScanner {
    * @returns detail view에 표시할 stable section 목록
    */
   async scan(card: ModuleBrowserCard): Promise<BrowserSection[]> {
-    return scanner.scan(card);
+    const sections = await scanner.scan(card);
+    return withAssetCount(card.markerUri, sections);
   }
+}
+
+async function withAssetCount(markerUri: string, sections: BrowserSection[]): Promise<BrowserSection[]> {
+  const assetsSection = sections.find((section) => section.kind === 'assets');
+  if (!assetsSection) return sections;
+
+  const rootUri = vscode.Uri.file(path.dirname(vscode.Uri.parse(markerUri).fsPath));
+  const count = await countAssetFiles(vscode.Uri.joinPath(rootUri, 'assets'));
+  return sections.map((section) => (section.kind === 'assets' ? { ...assetsSection, count, items: [] } : section));
+}
+
+async function countAssetFiles(directoryUri: vscode.Uri): Promise<number> {
+  let entries: [string, vscode.FileType][];
+  try {
+    entries = await vscode.workspace.fs.readDirectory(directoryUri);
+  } catch {
+    return 0;
+  }
+
+  let count = 0;
+  for (const [name, fileType] of entries) {
+    const childUri = vscode.Uri.joinPath(directoryUri, name);
+    if (fileType === vscode.FileType.Directory) {
+      count += await countAssetFiles(childUri);
+      continue;
+    }
+    if (fileType === vscode.FileType.File && name !== 'manifest.json' && name !== 'asset-catalog.json') {
+      count += 1;
+    }
+  }
+  return count;
 }

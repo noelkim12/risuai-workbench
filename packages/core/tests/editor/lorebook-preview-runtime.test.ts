@@ -64,6 +64,32 @@ describe('lorebook CONTENT runtime preview', () => {
     ]);
   });
 
+  it('prints null lastmessageid preview overrides as explicit context values', () => {
+    const preview = createLorebookContentRuntimePreview({
+      contentText: '{{lastmessageid}}',
+      overrides: { contextVariables: { lastmessageid: 'null' } },
+    });
+    const nullPreview = createLorebookContentRuntimePreview({
+      contentText: '{{lastmessageid}}',
+      overrides: { contextVariables: { lastmessageid: null } },
+    });
+
+    expect(preview.status).toBe('ok');
+    expect(preview.output).toBe('null');
+    expect(preview.bindings).toEqual([
+      expect.objectContaining({
+        variableName: 'lastmessageid',
+        scope: 'context',
+        status: 'resolved',
+        source: 'previewOverride',
+        rawValue: 'null',
+      }),
+    ]);
+    expect(nullPreview.status).toBe('ok');
+    expect(nullPreview.output).toBe('null');
+    expect(nullPreview.bindings[0]?.rawValue).toBe('null');
+  });
+
   it('surfaces getvar reads inside legacy inline calc conditions for the variable drawer', () => {
     const preview = createLorebookContentRuntimePreview({
       contentText:
