@@ -67,6 +67,26 @@ describe('bootstrap split with groupOverrides', () => {
   });
 });
 
+describe('separator fallback does not split on underscore', () => {
+  // 데이터셋 지배 구분자가 '.'인데 일부 이름은 '.'이 없고 '_'만 들어있다(EP_005-1).
+  // 예전엔 폴백이 '_'로 쪼개 EP / 005-1로 오분할됐다. 이제는 '.'이 없으면 통째로 s1에 담아야 한다.
+  const MIXED = [
+    { path: 'a/C003.after sex.1.png', name: 'C003.after sex.1' },
+    { path: 'a/EP_005-1.png', name: 'EP_005-1' },
+    { path: 'a/EP_005-2.png', name: 'EP_005-2' },
+  ] as const;
+
+  it('keeps a name whole when it lacks the chosen "." separator', () => {
+    const split: AssetCatalogBootstrapSplitOptions = { separator: '.', slotTokenCounts: { s1: 1 } };
+    const preview = previewAssetCatalogBootstrapEntries(createDefaultAssetCatalog(), MIXED, split);
+    const bySource = new Map(preview.map((entry) => [entry.name, entry.slots]));
+    expect(bySource.get('EP_005-1')).toEqual({ s1: 'EP_005-1' });
+    expect(bySource.get('EP_005-2')).toEqual({ s1: 'EP_005-2' });
+    // '.' 이름은 정상 분할된다(remainder는 value-separator '.'로 재결합됨).
+    expect(bySource.get('C003.after sex.1')).toEqual({ s1: 'C003', s2: 'after.sex.1' });
+  });
+});
+
 describe('summarizeAssetCatalogBootstrapGroups', () => {
   const SPLIT: AssetCatalogBootstrapSplitOptions = { separator: '_', slotTokenCounts: { s1: 2, s2: 1 } };
 

@@ -26,3 +26,12 @@ export {
   isProtocolMessageEnvelope,
   isProtocolEnvelope,
 } from './shared/protocol-envelope';
+export {
+  ASSET_NAME_MAX_DIFFERENCE,
+  extractAssetCbsNames,
+  getDistance,
+  resolveAssetName,
+  substituteAssetCbs,
+  trimmer,
+  type ResolvedAssetMatch,
+} from './simulator/regex/asset-resolver';

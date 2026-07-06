@@ -235,6 +235,7 @@ interface BuiltSystemFilePickerModule {
 
 interface BuiltArtifactBrowserMessagesModule {
   isArtifactBrowserImportArtifactMessage: (message: unknown) => boolean;
+  isArtifactBrowserImportArtifactChunkMessage: (message: unknown) => boolean;
 }
 
 interface BuiltWorkspaceArtifactDiscoveryModule {
@@ -3401,7 +3402,7 @@ test('system file picker treats empty native dialog output as cancel', async () 
   assert.equal(selectedPath, undefined);
 });
 
-test('artifact browser import message accepts webview-selected content and legacy picker requests', () => {
+test('artifact browser import message accepts webview import payload variants', () => {
   const messagesModule = loadBuiltArtifactBrowserMessagesModule();
 
   assert.equal(
@@ -3427,6 +3428,38 @@ test('artifact browser import message accepts webview-selected content and legac
       },
     }),
     true,
+  );
+  assert.equal(
+    messagesModule.isArtifactBrowserImportArtifactChunkMessage({
+      protocol: 'risu-workbench.artifact-browser',
+      version: 1,
+      type: 'artifact-browser/importArtifactChunk',
+      payload: {
+        viewId: 'risuaiWorkbench.cards',
+        transferId: 'transfer-1',
+        fileName: 'import.charx',
+        chunkIndex: 0,
+        totalChunks: 2,
+        chunkBase64: Buffer.from('artifact').toString('base64'),
+      },
+    }),
+    true,
+  );
+  assert.equal(
+    messagesModule.isArtifactBrowserImportArtifactChunkMessage({
+      protocol: 'risu-workbench.artifact-browser',
+      version: 1,
+      type: 'artifact-browser/importArtifactChunk',
+      payload: {
+        viewId: 'risuaiWorkbench.cards',
+        transferId: 'transfer-1',
+        fileName: 'import.charx',
+        chunkIndex: 2,
+        totalChunks: 2,
+        chunkBase64: '',
+      },
+    }),
+    false,
   );
 });
 

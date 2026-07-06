@@ -34,6 +34,8 @@ import type {
   MainEditorReferencesResultPayload,
   MainEditorRenameRequestPayload,
   MainEditorRenameResultPayload,
+  MainEditorResolveRegexAssetsRequestPayload,
+  MainEditorResolveRegexAssetsResultPayload,
   MainEditorSimulatorProfileListRequestPayload,
   MainEditorSimulatorProfileListResultPayload,
   MainEditorSimulatorProfileSaveRequestPayload,
@@ -244,6 +246,15 @@ export interface ArtifactBrowserImportArtifactPayload {
   dataBase64?: string;
 }
 
+export interface ArtifactBrowserImportArtifactChunkPayload {
+  viewId: typeof ARTIFACT_BROWSER_VIEW_ID;
+  transferId: string;
+  fileName: string;
+  chunkIndex: number;
+  totalChunks: number;
+  chunkBase64: string;
+}
+
 export interface ArtifactBrowserPackArtifactPayload {
   stableId: string;
   recovery: boolean;
@@ -346,6 +357,11 @@ export type ArtifactBrowserImportArtifactMessage = MessageEnvelope<
   ArtifactBrowserImportArtifactPayload
 >;
 
+export type ArtifactBrowserImportArtifactChunkMessage = MessageEnvelope<
+  'artifact-browser/importArtifactChunk',
+  ArtifactBrowserImportArtifactChunkPayload
+>;
+
 export type ArtifactBrowserPackArtifactMessage = MessageEnvelope<
   'artifact-browser/packArtifact',
   ArtifactBrowserPackArtifactPayload
@@ -411,6 +427,7 @@ export type ArtifactBrowserWebviewMessage =
   | ArtifactBrowserRefreshMessage
   | ArtifactBrowserCreateArtifactMessage
   | ArtifactBrowserImportArtifactMessage
+  | ArtifactBrowserImportArtifactChunkMessage
   | ArtifactBrowserPackArtifactMessage
   | ArtifactBrowserAnalyzeArtifactMessage
   | ArtifactBrowserSelectMessage
@@ -529,6 +546,11 @@ export type MainEditorFormatPreviewRequestMessage = MessageEnvelope<
   MainEditorFormatPreviewRequestPayload
 >;
 
+export type MainEditorResolveRegexAssetsRequestMessage = MessageEnvelope<
+  'main-editor/resolveRegexAssetsRequest',
+  MainEditorResolveRegexAssetsRequestPayload
+>;
+
 export type MainEditorSimulatorProfileListRequestMessage = MessageEnvelope<
   'main-editor/simulatorProfileListRequest',
   MainEditorSimulatorProfileListRequestPayload
@@ -599,6 +621,11 @@ export type MainEditorFormatPreviewResultMessage = MessageEnvelope<
   MainEditorFormatPreviewResultPayload
 >;
 
+export type MainEditorResolveRegexAssetsResultMessage = MessageEnvelope<
+  'main-editor/resolveRegexAssetsResult',
+  MainEditorResolveRegexAssetsResultPayload
+>;
+
 export type MainEditorSimulatorProfileListResultMessage = MessageEnvelope<
   'main-editor/simulatorProfileListResult',
   MainEditorSimulatorProfileListResultPayload
@@ -644,6 +671,7 @@ export type MainEditorWebviewMessage =
   | MainEditorPreviewRequestMessage
   | MainEditorPreviewRuntimeRequestMessage
   | MainEditorFormatPreviewRequestMessage
+  | MainEditorResolveRegexAssetsRequestMessage
   | MainEditorSimulatorProfileListRequestMessage
   | MainEditorSimulatorProfileSaveRequestMessage
   | MainEditorVariableCandidatesRequestMessage;
@@ -667,6 +695,7 @@ export type MainEditorExtensionMessage =
   | MainEditorPreviewResultMessage
   | MainEditorPreviewRuntimeResultMessage
   | MainEditorFormatPreviewResultMessage
+  | MainEditorResolveRegexAssetsResultMessage
   | MainEditorSimulatorProfileListResultMessage
   | MainEditorSimulatorProfileSaveResultMessage
   | MainEditorVariableCandidatesResultMessage;

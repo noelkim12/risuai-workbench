@@ -475,6 +475,36 @@ describe('charx extract integration (canonical mode)', () => {
     expect(readFileSync(path.join(outDir, 'toggle', 'Empty_Scaffold_Character.risutoggle'), 'utf-8')).toBe('');
   });
 
+  it('extracts an empty toggle scaffold when upstream charx toggles is an object', async () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-object-toggle-'));
+    tempDirs.push(workDir);
+
+    const charxPath = path.join(workDir, 'object-toggle.charx');
+    const charxData = {
+      spec: 'chara_card_v3',
+      spec_version: '3.0',
+      data: {
+        name: 'Object Toggle Character',
+        description: 'Test description',
+        extensions: {
+          risuai: {
+            toggles: {},
+          },
+        },
+      },
+    };
+    writeFileSync(
+      charxPath,
+      Buffer.from(zipSync({ 'charx.json': strToU8(JSON.stringify(charxData, null, 2)) }, { level: 0 })),
+    );
+
+    const outDir = path.join(workDir, 'output');
+    const exitCode = await runCharacterExtractWorkflow([charxPath, '--out', outDir]);
+
+    expect(exitCode).toBe(0);
+    expect(readFileSync(path.join(outDir, 'toggle', 'Object_Toggle_Character.risutoggle'), 'utf-8')).toBe('');
+  });
+
   it('risulua extract modular writes main', async () => {
     const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-modular-lua-extract-'));
     tempDirs.push(workDir);
