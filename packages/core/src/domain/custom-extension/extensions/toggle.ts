@@ -40,7 +40,7 @@ function assertSupportedTarget(target: CustomExtensionTarget): void {
 }
 
 export function extractToggleFromCharx(
-  upstream: { data?: { extensions?: { risuai?: { toggles?: string | null } } } },
+  upstream: { data?: { extensions?: { risuai?: { toggles?: unknown } } } },
   target: CustomExtensionTarget
 ): ToggleContent | null {
   assertSupportedTarget(target);
@@ -52,6 +52,10 @@ export function extractToggleFromCharx(
   const content = upstream.data?.extensions?.risuai?.toggles;
   if (content === undefined || content === null) {
     return null;
+  }
+
+  if (typeof content !== 'string') {
+    return '';
   }
 
   return parseToggleContent(content);
