@@ -12,14 +12,11 @@ export function phase9_extractModuleToggle(module: any, outputDir: string): numb
   console.log('\n  🧩 Phase 9: Module Toggle 추출');
 
   const toggle = extractToggleFromModule(module ?? {}, 'module');
-  if (toggle === null) {
-    console.log('     (customModuleToggle 없음)');
-    return 0;
-  }
+  const scaffoldToggle = toggle ?? '';
 
   const outPath = path.join(outputDir, buildTogglePath('module', resolveModuleTargetName(module)));
-  writeText(outPath, toggle);
-  console.log(`     ✅ ${path.relative('.', outPath)} -> ${toggle.length} chars`);
+  writeText(outPath, scaffoldToggle);
+  console.log(`     ✅ ${path.relative('.', outPath)} -> ${scaffoldToggle.length} chars`);
   return 1;
 }
 

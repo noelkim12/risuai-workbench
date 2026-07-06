@@ -57,6 +57,25 @@ describe('regex CBS section dry-run adapter', () => {
     expect(result.diagnostics).toEqual([]);
   });
 
+  it('preserves raw/path asset tags in the replacement for post-execution preview resolution', () => {
+    const result = simulateRegexCbsSections({
+      patternSource: 'x',
+      replacementSource: '<img src="{{raw::$1$2}}" alt="$1$2">{{path::portrait.png}} {{getvar::name}}',
+      simulatePattern: false,
+      simulateReplacement: true,
+      context: {
+        chatVariables: {
+          name: 'Noel',
+        },
+      },
+    });
+
+    expect(result.replacement.output).toBe(
+      '<img src="{{raw::$1$2}}" alt="$1$2">{{path::portrait.png}} Noel',
+    );
+    expect(result.diagnostics).toEqual([]);
+  });
+
   it('maps CBS diagnostics into regex-local combined diagnostics', () => {
     const result = simulateRegexCbsSections({
       patternSource: 'A{{slot}}',

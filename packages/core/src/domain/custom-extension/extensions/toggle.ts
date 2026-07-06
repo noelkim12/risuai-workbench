@@ -16,9 +16,9 @@ export interface ToggleDefinition {
 
 /**
  * Supported targets for .risutoggle artifacts.
- * Per spec: module and preset only. Charx is explicitly excluded.
+ * Character cards store the same Risu toggle DSL in data.extensions.risuai.toggles.
  */
-const SUPPORTED_TARGETS: readonly CustomExtensionTarget[] = ['module', 'preset'];
+const SUPPORTED_TARGETS: readonly CustomExtensionTarget[] = ['charx', 'module', 'preset'];
 
 /** Error thrown when toggle operations encounter unsupported targets or duplicate sources. */
 export class ToggleAdapterError extends Error {
@@ -30,13 +30,56 @@ export class ToggleAdapterError extends Error {
 
 /**
  * Validates that the target supports .risutoggle artifacts.
- * Per spec, charx must fail clearly.
  */
 function assertSupportedTarget(target: CustomExtensionTarget): void {
   if (!SUPPORTED_TARGETS.includes(target)) {
     throw new ToggleAdapterError(
-      `Target "${target}" does not support .risutoggle. Only module and preset are supported.`
+      `Target "${target}" does not support .risutoggle.`
     );
+  }
+}
+
+export function extractToggleFromCharx(
+  upstream: { data?: { extensions?: { risuai?: { toggles?: unknown } } } },
+  target: CustomExtensionTarget
+): ToggleContent | null {
+  assertSupportedTarget(target);
+
+  if (target !== 'charx') {
+    throw new ToggleAdapterError(`Expected target "charx", got "${target}"`);
+  }
+
+  const content = upstream.data?.extensions?.risuai?.toggles;
+  if (content === undefined || content === null) {
+    return null;
+  }
+
+  if (typeof content !== 'string') {
+    return '';
+  }
+
+  return parseToggleContent(content);
+}
+
+export function injectToggleIntoCharx(
+  upstream: { data?: { extensions?: { risuai?: { toggles?: string } } } },
+  content: ToggleContent | null,
+  target: CustomExtensionTarget
+): void {
+  assertSupportedTarget(target);
+
+  if (target !== 'charx') {
+    throw new ToggleAdapterError(`Expected target "charx", got "${target}"`);
+  }
+
+  upstream.data ??= {};
+  upstream.data.extensions ??= {};
+  upstream.data.extensions.risuai ??= {};
+
+  if (content === null) {
+    delete upstream.data.extensions.risuai.toggles;
+  } else {
+    upstream.data.extensions.risuai.toggles = serializeToggleContent(content);
   }
 }
 
@@ -107,7 +150,7 @@ export function serializeToggleContent(content: ToggleContent): string {
 
 /** Source identifier for toggle content origin. */
 export interface ToggleSource {
-  /** Target type (module or preset) */
+  /** Target type (charx, module, or preset) */
   target: CustomExtensionTarget;
   /** Source path or identifier */
   source: string;
@@ -275,6 +318,7 @@ export function injectToggleIntoPreset(
 /**
  * Build the canonical file path for a .risutoggle artifact.
  * Per spec:
+ * - Charx: toggle/${characterName}.risutoggle
  * - Module: toggle/${moduleName}.risutoggle
  * - Preset: toggle/prompt_template.risutoggle (fixed stem)
  *
@@ -292,9 +336,9 @@ export function buildTogglePath(
     return 'toggle/prompt_template.risutoggle';
   }
 
-  // Module target
+  // Charx/module target
   if (!targetName || targetName.length === 0) {
-    throw new ToggleAdapterError('Module target requires targetName for toggle path');
+    throw new ToggleAdapterError(`${target} target requires targetName for toggle path`);
   }
 
   // Sanitize filename to prevent path traversal

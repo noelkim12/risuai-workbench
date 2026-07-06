@@ -7,12 +7,18 @@ import {
   ARTIFACT_BROWSER_PROTOCOL,
   ARTIFACT_BROWSER_PROTOCOL_VERSION,
   ARTIFACT_BROWSER_VIEW_ID,
+  type ArtifactBrowserAnalyzeArtifactMessage,
+  type ArtifactBrowserAnalyzeArtifactPayload,
+  type ArtifactBrowserOpenAssetManagerMessage,
+  type ArtifactBrowserOpenAssetManagerPayload,
   type ArtifactBrowserCreateArtifactMessage,
   type ArtifactBrowserCreateArtifactPayload,
   type ArtifactBrowserCreateSectionEntryMessage,
   type ArtifactBrowserCreateSectionEntryPayload,
   type ArtifactBrowserMoveLorebookFolderMessage,
   type ArtifactBrowserMoveLorebookFolderPayload,
+  type ArtifactBrowserMoveGreetingItemMessage,
+  type ArtifactBrowserMoveGreetingItemPayload,
   type ArtifactBrowserMoveLorebookItemMessage,
   type ArtifactBrowserMoveLorebookItemPayload,
   type ArtifactBrowserMoveRegexItemMessage,
@@ -28,6 +34,8 @@ import {
   type ArtifactBrowserRefreshPayload,
   type ArtifactBrowserRefreshMessage,
   type ArtifactBrowserImportArtifactMessage,
+  type ArtifactBrowserImportArtifactChunkMessage,
+  type ArtifactBrowserImportArtifactChunkPayload,
   type ArtifactBrowserImportArtifactPayload,
   type ArtifactBrowserPackArtifactMessage,
   type ArtifactBrowserPackArtifactPayload,
@@ -53,12 +61,16 @@ type ArtifactBrowserInboundMessage =
   | ArtifactBrowserRefreshMessage
   | ArtifactBrowserCreateArtifactMessage
   | ArtifactBrowserImportArtifactMessage
+  | ArtifactBrowserImportArtifactChunkMessage
   | ArtifactBrowserPackArtifactMessage
+  | ArtifactBrowserAnalyzeArtifactMessage
+  | ArtifactBrowserOpenAssetManagerMessage
   | ArtifactBrowserSelectMessage
   | ArtifactBrowserOpenItemMessage
   | ArtifactBrowserMoveLorebookItemMessage
   | ArtifactBrowserMoveLorebookFolderMessage
   | ArtifactBrowserMoveRegexItemMessage
+  | ArtifactBrowserMoveGreetingItemMessage
   | ArtifactBrowserCreateSectionEntryMessage;
 
 function createArtifactBrowserMessageGuard<TMessage extends ArtifactBrowserInboundMessage>(
@@ -130,6 +142,18 @@ const isArtifactBrowserMoveRegexItemPayload: ArtifactBrowserPayloadGuard<Artifac
   payload.targetItemId.length > 0 &&
   isSiblingPlacement(payload.placement);
 
+const isArtifactBrowserMoveGreetingItemPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserMoveGreetingItemPayload> = (
+  payload,
+): payload is ArtifactBrowserMoveGreetingItemPayload =>
+  isPlainRecord(payload) &&
+  typeof payload.stableId === 'string' &&
+  payload.stableId.length > 0 &&
+  typeof payload.itemId === 'string' &&
+  payload.itemId.length > 0 &&
+  typeof payload.targetItemId === 'string' &&
+  payload.targetItemId.length > 0 &&
+  isSiblingPlacement(payload.placement);
+
 const isArtifactBrowserCreateSectionEntryPayload: ArtifactBrowserPayloadGuard<
   ArtifactBrowserCreateSectionEntryPayload
 > = (payload): payload is ArtifactBrowserCreateSectionEntryPayload =>
@@ -165,6 +189,24 @@ const isArtifactBrowserImportArtifactPayload: ArtifactBrowserPayloadGuard<Artifa
       typeof payload.dataBase64 === 'string' &&
       payload.dataBase64.length > 0));
 
+const isArtifactBrowserImportArtifactChunkPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserImportArtifactChunkPayload> = (
+  payload,
+): payload is ArtifactBrowserImportArtifactChunkPayload =>
+  isPlainRecord(payload) &&
+  payload.viewId === ARTIFACT_BROWSER_VIEW_ID &&
+  typeof payload.transferId === 'string' &&
+  payload.transferId.length > 0 &&
+  typeof payload.fileName === 'string' &&
+  payload.fileName.length > 0 &&
+  typeof payload.chunkIndex === 'number' &&
+  Number.isInteger(payload.chunkIndex) &&
+  payload.chunkIndex >= 0 &&
+  typeof payload.totalChunks === 'number' &&
+  Number.isInteger(payload.totalChunks) &&
+  payload.totalChunks > 0 &&
+  payload.chunkIndex < payload.totalChunks &&
+  typeof payload.chunkBase64 === 'string';
+
 const isArtifactBrowserPackArtifactPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserPackArtifactPayload> = (
   payload,
 ): payload is ArtifactBrowserPackArtifactPayload =>
@@ -172,6 +214,16 @@ const isArtifactBrowserPackArtifactPayload: ArtifactBrowserPayloadGuard<Artifact
   typeof payload.stableId === 'string' &&
   payload.stableId.length > 0 &&
   typeof payload.recovery === 'boolean';
+
+const isArtifactBrowserAnalyzeArtifactPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserAnalyzeArtifactPayload> = (
+  payload,
+): payload is ArtifactBrowserAnalyzeArtifactPayload =>
+  isPlainRecord(payload) && typeof payload.stableId === 'string' && payload.stableId.length > 0;
+
+const isArtifactBrowserOpenAssetManagerPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserOpenAssetManagerPayload> = (
+  payload,
+): payload is ArtifactBrowserOpenAssetManagerPayload =>
+  isPlainRecord(payload) && typeof payload.stableId === 'string' && payload.stableId.length > 0;
 
 const isArtifactBrowserReadyMessageEnvelope = createArtifactBrowserMessageGuard<ArtifactBrowserReadyMessage>(
   'artifact-browser/ready',
@@ -195,10 +247,28 @@ const isArtifactBrowserImportArtifactMessageEnvelope =
     isArtifactBrowserImportArtifactPayload,
   );
 
+const isArtifactBrowserImportArtifactChunkMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserImportArtifactChunkMessage>(
+    'artifact-browser/importArtifactChunk',
+    isArtifactBrowserImportArtifactChunkPayload,
+  );
+
 const isArtifactBrowserPackArtifactMessageEnvelope =
   createArtifactBrowserMessageGuard<ArtifactBrowserPackArtifactMessage>(
     'artifact-browser/packArtifact',
     isArtifactBrowserPackArtifactPayload,
+  );
+
+const isArtifactBrowserAnalyzeArtifactMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserAnalyzeArtifactMessage>(
+    'artifact-browser/analyzeArtifact',
+    isArtifactBrowserAnalyzeArtifactPayload,
+  );
+
+const isArtifactBrowserOpenAssetManagerMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserOpenAssetManagerMessage>(
+    'artifact-browser/openAssetManager',
+    isArtifactBrowserOpenAssetManagerPayload,
   );
 
 const isArtifactBrowserSelectMessageEnvelope = createArtifactBrowserMessageGuard<ArtifactBrowserSelectMessage>(
@@ -227,6 +297,12 @@ const isArtifactBrowserMoveRegexItemMessageEnvelope =
   createArtifactBrowserMessageGuard<ArtifactBrowserMoveRegexItemMessage>(
     'artifact-browser/moveRegexItem',
     isArtifactBrowserMoveRegexItemPayload,
+  );
+
+const isArtifactBrowserMoveGreetingItemMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserMoveGreetingItemMessage>(
+    'artifact-browser/moveGreetingItem',
+    isArtifactBrowserMoveGreetingItemPayload,
   );
 
 const isArtifactBrowserCreateSectionEntryMessageEnvelope =
@@ -269,10 +345,28 @@ export function isArtifactBrowserImportArtifactMessage(
   return isArtifactBrowserImportArtifactMessageEnvelope(message);
 }
 
+export function isArtifactBrowserImportArtifactChunkMessage(
+  message: unknown,
+): message is ArtifactBrowserImportArtifactChunkMessage {
+  return isArtifactBrowserImportArtifactChunkMessageEnvelope(message);
+}
+
 export function isArtifactBrowserPackArtifactMessage(
   message: unknown,
 ): message is ArtifactBrowserPackArtifactMessage {
   return isArtifactBrowserPackArtifactMessageEnvelope(message);
+}
+
+export function isArtifactBrowserAnalyzeArtifactMessage(
+  message: unknown,
+): message is ArtifactBrowserAnalyzeArtifactMessage {
+  return isArtifactBrowserAnalyzeArtifactMessageEnvelope(message);
+}
+
+export function isArtifactBrowserOpenAssetManagerMessage(
+  message: unknown,
+): message is ArtifactBrowserOpenAssetManagerMessage {
+  return isArtifactBrowserOpenAssetManagerMessageEnvelope(message);
 }
 
 /**
@@ -313,6 +407,12 @@ export function isArtifactBrowserMoveRegexItemMessage(message: unknown): message
   return isArtifactBrowserMoveRegexItemMessageEnvelope(message);
 }
 
+export function isArtifactBrowserMoveGreetingItemMessage(
+  message: unknown,
+): message is ArtifactBrowserMoveGreetingItemMessage {
+  return isArtifactBrowserMoveGreetingItemMessageEnvelope(message);
+}
+
 export function isArtifactBrowserCreateSectionEntryMessage(
   message: unknown,
 ): message is ArtifactBrowserCreateSectionEntryMessage {
@@ -320,7 +420,7 @@ export function isArtifactBrowserCreateSectionEntryMessage(
 }
 
 function isCreatableSectionKind(value: unknown): value is ArtifactBrowserCreateSectionEntryPayload['sectionKind'] {
-  return value === 'lorebooks' || value === 'regexRules' || value === 'lua';
+  return value === 'lorebooks' || value === 'regexRules' || value === 'lua' || value === 'character';
 }
 
 function isCreateSectionEntryKind(value: unknown): value is ArtifactBrowserCreateSectionEntryPayload['entryKind'] {

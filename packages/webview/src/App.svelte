@@ -20,6 +20,7 @@ export let detailSections: Writable<CharacterSection[]>;
 export let expandedSectionIds: Writable<string[]>;
 export let viewMode: Writable<'artifacts' | 'artifactDetail'>;
 export let status: Writable<string>;
+export let importing: Writable<boolean>;
 
 // Listener props are injected from packages/webview/src/main.ts in mount(App, { props }).
 // App.svelte does not own these actions; it only routes them to the active child view.
@@ -37,6 +38,8 @@ export let returnToCards: () => void;
 export let toggleSection: (sectionId: string) => void;
 // From main.ts: openItem() -> ArtifactDetailView.onOpenItem.
 export let openItem: (item: CharacterItem) => void;
+// From main.ts: openAssetManager() -> ArtifactDetailView.onOpenAssetManager.
+export let openAssetManager: (stableId: string) => void;
 // From main.ts: moveLorebookItem() -> ArtifactDetailView.onMoveLorebookItem.
 export let moveLorebookItem: (
   item: CharacterItem,
@@ -48,6 +51,8 @@ export let moveLorebookItem: (
 export let moveLorebookFolder: (folderPath: string, targetFolderPath: string, placement: 'before' | 'after') => void;
 // From main.ts: moveRegexItem() -> ArtifactDetailView.onMoveRegexItem.
 export let moveRegexItem: (item: CharacterItem, targetItemId: string, placement: 'before' | 'after') => void;
+// From main.ts: moveGreetingItem() -> ArtifactDetailView.onMoveGreetingItem.
+export let moveGreetingItem: (item: CharacterItem, targetItemId: string, placement: 'before' | 'after') => void;
 // From main.ts: createSectionEntry() -> ArtifactDetailView.onCreateSectionEntry.
 export let createSectionEntry: (
   sectionKind: ArtifactBrowserCreateSectionKind,
@@ -55,6 +60,7 @@ export let createSectionEntry: (
   targetFolderPath?: string,
 ) => void;
 export let packArtifact: (stableId: string, recovery: boolean) => void;
+export let analyzeArtifact: (stableId: string) => void;
 export let packState: Writable<ArtifactBrowserPackCompletedPayload | null>;
 
 $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId);
@@ -68,12 +74,15 @@ $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId)
     status={$status}
     packState={packState}
     onBack={returnToCards}
+    onAnalyzeArtifact={analyzeArtifact}
     onPackArtifact={packArtifact}
     onToggleSection={toggleSection}
     onOpenItem={openItem}
+    onOpenAssetManager={openAssetManager}
     onMoveLorebookItem={moveLorebookItem}
     onMoveLorebookFolder={moveLorebookFolder}
     onMoveRegexItem={moveRegexItem}
+    onMoveGreetingItem={moveGreetingItem}
     onCreateSectionEntry={createSectionEntry}
   />
 {:else}
@@ -81,6 +90,7 @@ $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId)
     cards={$cards}
     selectedStableId={$selectedStableId}
     status={$status}
+    importing={$importing}
     onRefresh={refreshCards}
     onCreateArtifact={createArtifact}
     onImportArtifact={importArtifact}

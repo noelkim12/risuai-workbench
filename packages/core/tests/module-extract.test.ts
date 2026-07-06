@@ -411,6 +411,19 @@ describe('module extract', () => {
     });
   });
 
+  it('phase7_extractVariables writes empty .risuvar scaffold when default variables are missing', () => {
+    const module = {
+      name: 'module-name',
+    };
+
+    const count = phase7_extractVariables(module, tmpDir);
+    const variablePath = path.join(tmpDir, 'variables', 'module-name.risuvar');
+
+    expect(count).toBe(1);
+    expect(fs.existsSync(variablePath)).toBe(true);
+    expect(fs.readFileSync(variablePath, 'utf-8')).toBe('');
+  });
+
   it('phase7_extractVariables preserves variable value sigils and emoji', () => {
     const preservedValue = '{{getvar::$vg_asdf}} 😈🔥';
     const module = {
@@ -578,6 +591,19 @@ describe('module extract', () => {
     expect(count).toBe(1);
     expect(fs.existsSync(togglePath)).toBe(true);
     expect(fs.readFileSync(togglePath, 'utf-8')).toBe('<toggle condition="1 == 1"/>');
+  });
+
+  it('phase9_extractModuleToggle writes empty .risutoggle scaffold when toggle is missing', () => {
+    const module = {
+      name: 'module-toggle-name',
+    };
+
+    const count = phase9_extractModuleToggle(module, tmpDir);
+    const togglePath = path.join(tmpDir, 'toggle', 'module-toggle-name.risutoggle');
+
+    expect(count).toBe(1);
+    expect(fs.existsSync(togglePath)).toBe(true);
+    expect(fs.readFileSync(togglePath, 'utf-8')).toBe('');
   });
 
   it('phase9_extractModuleToggle preserves CBS variable sigils and emoji in toggle artifacts', () => {

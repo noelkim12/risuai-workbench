@@ -7,6 +7,8 @@
     BrowserTreeNode,
   } from '../../types';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
+  import WorkbenchCharacterTree from './WorkbenchCharacterTree.svelte';
+  // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
   import WorkbenchFlatItemList from './WorkbenchFlatItemList.svelte';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
   import WorkbenchLorebookTree from './WorkbenchLorebookTree.svelte';
@@ -19,6 +21,7 @@
   export let expandedSectionIds: string[];
   export let onToggleSection: (sectionId: string) => void;
   export let onOpenItem: (item: BrowserItem) => void;
+  export let onOpenAssetManager: () => void;
   export let onMoveLorebookItem: (
     item: BrowserItem,
     targetFolderPath: string | null,
@@ -31,6 +34,11 @@
     placement: 'before' | 'after',
   ) => void;
   export let onMoveRegexItem: (
+    item: BrowserItem,
+    targetItemId: string,
+    placement: 'before' | 'after',
+  ) => void;
+  export let onMoveGreetingItem: (
     item: BrowserItem,
     targetItemId: string,
     placement: 'before' | 'after',
@@ -50,6 +58,13 @@
   let expandedTreeNodeIds: string[] = [];
   let treeFolderFingerprint = '';
 
+  $: assetSection = sections.find((section) => section.kind === 'assets');
+  $: orderedSections = assetSection
+    ? sections.flatMap((section) => {
+        if (section.kind === 'assets') return [];
+        return section.kind === 'character' ? [section, assetSection] : [section];
+      })
+    : sections;
   $: syncTreeExpansion(sections);
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this handler.
@@ -112,7 +127,7 @@
 </script>
 
 <section class="accordion" aria-label="Workbench detail sections">
-  {#each sections as section (section.id)}
+  {#each orderedSections as section (section.id)}
     {@const expanded = expandedSectionIds.includes(section.id)}
     {@const createActions = getCreateActions(section)}
     <article class="accordion__section">
@@ -180,6 +195,24 @@
               {onMoveLorebookFolder}
               onCreateLorebookFile={(targetFolderPath) => onCreateSectionEntry('lorebooks', 'file', targetFolderPath)}
             />
+          {:else if section.kind === 'character' && section.tree?.length}
+            <div class="tree-root-surface" role="tree" aria-label="Character tree" tabindex="-1">
+              <WorkbenchCharacterTree
+                nodes={section.tree}
+                {expandedTreeNodeIds}
+                onToggleTreeNode={toggleTreeNode}
+                {onOpenItem}
+                onCreateGreeting={(targetFolderPath) => onCreateSectionEntry('character', 'file', targetFolderPath)}
+                {onMoveGreetingItem}
+              />
+            </div>
+          {:else if section.kind === 'assets'}
+            <div class="assets-entry">
+              <p class="assets-entry__summary">{section.count} asset files</p>
+              <button type="button" class="assets-entry__open" onclick={() => onOpenAssetManager()}>
+                Open Asset Manager ↗
+              </button>
+            </div>
           {:else if section.items.length === 0}
             <p class="accordion__empty">No related items found.</p>
           {:else if section.kind === 'regexRules'}
@@ -192,3 +225,28 @@
     </article>
   {/each}
 </section>
+
+<style>
+  .assets-entry {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-2);
+  }
+
+  .assets-entry__summary {
+    margin: 0;
+    color: var(--secondary-text);
+    font-size: var(--text-sm);
+  }
+
+  .assets-entry__open {
+    align-self: flex-start;
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-sm);
+    background: var(--accent);
+    color: var(--accent-text);
+    font-weight: 600;
+  }
+</style>

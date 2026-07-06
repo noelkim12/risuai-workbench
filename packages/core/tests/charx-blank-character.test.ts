@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { createBlankChar, createBlankCharxV3 } from '../src/domain/charx/blank-char';
 
 describe('blank character CharX mapping', () => {
-  it('exports replaceGlobalNote directly on charx data', () => {
+  it('exports replaceGlobalNote as the chara card post-history instructions field', () => {
     const character = createBlankChar();
     character.replaceGlobalNote = 'Replace global note with {{original}} plus character context.';
 
     const charx = createBlankCharxV3(character);
 
-    expect(charx.data.replaceGlobalNote).toBe(
+    expect(charx.data.post_history_instructions).toBe(
       'Replace global note with {{original}} plus character context.',
     );
   });

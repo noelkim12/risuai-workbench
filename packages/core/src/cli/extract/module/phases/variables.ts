@@ -16,16 +16,13 @@ export function phase7_extractVariables(module: any, outputDir: string): number 
   console.log('\n  🧮 Phase 7: Module Variables 추출');
 
   const variables = extractVariablesFromModule(module ?? {}, 'module');
-  if (variables === null) {
-    console.log('     (defaultVariables 없음)');
-    return 0;
-  }
+  const scaffoldVariables = variables ?? {};
 
   const outPath = path.join(
     outputDir,
     buildVariablePath('module', resolveModuleTargetName(module)),
   );
-  writeText(outPath, serializeVariableContent(variables));
-  console.log(`     ✅ ${path.relative('.', outPath)} -> ${Object.keys(variables).length} vars`);
+  writeText(outPath, serializeVariableContent(scaffoldVariables));
+  console.log(`     ✅ ${path.relative('.', outPath)} -> ${Object.keys(scaffoldVariables).length} vars`);
   return 1;
 }

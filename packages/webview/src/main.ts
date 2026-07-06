@@ -1,16 +1,20 @@
 import './styles.css';
 import App from './App.svelte';
+import AssetManagerApp from './AssetManagerApp.svelte';
 import MainEditor from './lib/components/editor/main/MainEditor.svelte';
 import MarkerEditor from './lib/components/editor/marker/MarkerEditor.svelte';
 import { mount } from 'svelte';
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import {
+  createArtifactBrowserAnalyzeArtifactMessage,
+  createArtifactBrowserImportArtifactChunkMessage,
   createArtifactBrowserCreateArtifactMessage,
   createArtifactBrowserCreateSectionEntryMessage,
-  createArtifactBrowserImportArtifactMessage,
   createArtifactBrowserMoveLorebookFolderMessage,
   createArtifactBrowserMoveLorebookItemMessage,
+  createArtifactBrowserMoveGreetingItemMessage,
   createArtifactBrowserMoveRegexItemMessage,
+  createArtifactBrowserOpenAssetManagerMessage,
   createArtifactBrowserOpenItemMessage,
   createArtifactBrowserPackArtifactMessage,
   createArtifactBrowserReadyMessage,
@@ -38,20 +42,13 @@ const vscode = getVsCodeApi();
 const cards = writable<BrowserArtifactCard[]>([]);
 const selectedStableId = writable<string | undefined>(undefined);
 const detailSections = writable<CharacterSection[]>([]);
-const expandedSectionIds = writable<string[]>([
-  'manifest',
-  'lorebooks',
-  'regexRules',
-  'lua',
-  'toggle',
-  'variables',
-  'html',
-  'diagnostics',
-]);
+const expandedSectionIds = writable<string[]>([]);
 const viewMode = writable<'artifacts' | 'artifactDetail'>('artifacts');
 const status = writable('Connecting to extension host…');
 const packState = writable<ArtifactBrowserPackCompletedPayload | null>(null);
+const importing = writable(false);
 const app = document.querySelector<HTMLDivElement>('#app');
+const IMPORT_CHUNK_BYTES = 1024 * 1024;
 const isEditorMode = document.documentElement.dataset.editorMode === 'true';
 const webviewName =
   document.documentElement.dataset.risuaiWorkbenchView ??
@@ -90,7 +87,11 @@ if (!app) {
   throw new Error('Missing #app root for Risu Workbench webview.');
 }
 
-if (isEditorMode && webviewName === 'main-editor') {
+if (webviewName === 'asset-manager') {
+  mount(AssetManagerApp, {
+    target: app,
+  });
+} else if (isEditorMode && webviewName === 'main-editor') {
   mount(MainEditor, {
     target: app,
   });
@@ -108,6 +109,7 @@ if (isEditorMode && webviewName === 'main-editor') {
       expandedSectionIds,
       viewMode,
       status,
+      importing,
       refreshCards,
       createArtifact,
       importArtifact,
@@ -115,10 +117,13 @@ if (isEditorMode && webviewName === 'main-editor') {
       returnToCards,
       toggleSection,
       openItem,
+      openAssetManager,
       moveLorebookItem,
       moveLorebookFolder,
       moveRegexItem,
+      moveGreetingItem,
       createSectionEntry,
+      analyzeArtifact,
       packArtifact,
       packState,
     },
@@ -158,6 +163,7 @@ function handleMessage(event: MessageEvent<unknown>): void {
   if (!isArtifactBrowserExtensionMessage(message)) return;
 
   if (message.type === 'artifact-browser/cards') {
+    importing.set(false);
     artifactBrowserInitialized = true;
     stopArtifactBrowserReadyRetry();
     const nextCards = message.payload.cards;
@@ -170,9 +176,15 @@ function handleMessage(event: MessageEvent<unknown>): void {
   }
 
   if (message.type === 'artifact-browser/detailLoaded') {
+    // 같은 아티팩트에 대한 background refresh(외부 파일 추가/삭제 감지)면 펼침 상태를 유지하고,
+    // 다른 아티팩트를 새로 선택한 경우에만 접힌 상태로 초기화한다. section/item은 keyed each로
+    // in-place diff되어 변경된 항목만 갱신되므로, 스크롤·포커스·작업 위치가 보존된다.
+    const isSameArtifactRefresh = get(selectedStableId) === message.payload.stableId;
     selectedStableId.set(message.payload.stableId);
     detailSections.set(message.payload.sections);
-    expandedSectionIds.update((current) => mergeExpandedSections(current, message.payload.sections));
+    if (!isSameArtifactRefresh) {
+      expandedSectionIds.set([]);
+    }
     viewMode.set('artifactDetail');
     setStatus(`Detail loaded with ${message.payload.sections.length} sections.`);
     return;
@@ -207,21 +219,41 @@ function createArtifact(payload: ArtifactBrowserCreateArtifactPayload): void {
   vscode?.postMessage(createArtifactBrowserCreateArtifactMessage(payload));
 }
 
-function encodeArrayBufferAsBase64(buffer: ArrayBuffer): string {
+function encodeChunkAsBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
   let binary = '';
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
   }
   return btoa(binary);
 }
 
 async function importArtifact(file: File): Promise<void> {
+  importing.set(true);
   setStatus(`Importing ${file.name}…`);
   viewMode.set('artifacts');
   detailSections.set([]);
-  const dataBase64 = encodeArrayBufferAsBase64(await file.arrayBuffer());
-  vscode?.postMessage(createArtifactBrowserImportArtifactMessage({ fileName: file.name, dataBase64 }));
+  try {
+    const transferId = crypto.randomUUID();
+    const totalChunks = Math.max(1, Math.ceil(file.size / IMPORT_CHUNK_BYTES));
+    for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += 1) {
+      const start = chunkIndex * IMPORT_CHUNK_BYTES;
+      const chunk = file.slice(start, start + IMPORT_CHUNK_BYTES);
+      vscode?.postMessage(
+        createArtifactBrowserImportArtifactChunkMessage({
+          transferId,
+          fileName: file.name,
+          chunkIndex,
+          totalChunks,
+          chunkBase64: encodeChunkAsBase64(await chunk.arrayBuffer()),
+        }),
+      );
+    }
+  } catch (error) {
+    importing.set(false);
+    setStatus(`Import failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+  }
 }
 
 /**
@@ -235,6 +267,19 @@ function packArtifact(stableId: string, recovery: boolean): void {
   packState.set(null);
   setStatus('Packing…');
   vscode?.postMessage(createArtifactBrowserPackArtifactMessage({ stableId, recovery }));
+}
+
+function analyzeArtifact(stableId: string): void {
+  setStatus('Analyzing and generating wiki…');
+  vscode?.postMessage(createArtifactBrowserAnalyzeArtifactMessage({ stableId }));
+}
+
+/**
+ * openAssetManager 함수.
+ * Assets 아코디언 진입 버튼 → extension host에 Asset Manager 패널 오픈을 요청함.
+ */
+function openAssetManager(stableId: string): void {
+  vscode?.postMessage(createArtifactBrowserOpenAssetManagerMessage(stableId));
 }
 
 /**
@@ -327,6 +372,12 @@ function moveRegexItem(item: CharacterItem, targetItemId: string, placement: 'be
   vscode?.postMessage(createArtifactBrowserMoveRegexItemMessage(stableId, item.id, targetItemId, placement));
 }
 
+function moveGreetingItem(item: CharacterItem, targetItemId: string, placement: 'before' | 'after'): void {
+  const stableId = getSelectedStableId();
+  if (!stableId) return;
+  vscode?.postMessage(createArtifactBrowserMoveGreetingItemMessage(stableId, item.id, targetItemId, placement));
+}
+
 function createSectionEntry(
   sectionKind: ArtifactBrowserCreateSectionKind,
   entryKind: ArtifactBrowserCreateSectionEntryKind,
@@ -381,10 +432,4 @@ function isArtifactBrowserExtensionMessageType(value: unknown): value is Artifac
     typeof value === 'string' &&
     ARTIFACT_BROWSER_EXTENSION_MESSAGE_TYPES.includes(value as ArtifactBrowserExtensionMessageType)
   );
-}
-
-function mergeExpandedSections(current: string[], sections: CharacterSection[]): string[] {
-  const sectionIds = sections.map((section) => section.id);
-  const knownCurrent = current.filter((id) => sectionIds.includes(id));
-  return knownCurrent.length > 0 ? knownCurrent : sectionIds;
 }

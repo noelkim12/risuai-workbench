@@ -55,7 +55,9 @@ describe('pack.js character round-trip (canonical mode)', () => {
       'utf-8'
     );
 
-    // Note: module.risutoggle is NOT written for charx (module/preset only per spec)
+    const toggleDir = path.join(workDir, 'toggle');
+    mkdirSync(toggleDir, { recursive: true });
+    writeFileSync(path.join(toggleDir, 'Canonical_Character.risutoggle'), 'roundtrip-toggle=on', 'utf-8');
 
     // Write canonical lua file using target-name-based naming (sanitized)
     const luaDir = path.join(workDir, 'lua');
@@ -93,8 +95,8 @@ describe('pack.js character round-trip (canonical mode)', () => {
     expect(packedCharx.data.description).toBe('canonical description');
     expect(packedCharx.data.first_mes).toBe('canonical first message');
     expect(packedCharx.data.system_prompt).toBe('canonical system prompt');
-    expect(packedCharx.data.replaceGlobalNote).toBe('canonical replace global note');
-    expect(packedCharx.data.replaceGlobalNote ?? '').not.toBe('legacy wrong basename value');
+    expect(packedCharx.data.post_history_instructions).toBe('canonical replace global note');
+    expect(packedCharx.data.post_history_instructions ?? '').not.toBe('legacy wrong basename value');
     expect(packedCharx.data.creator_notes).toBe('canonical creator notes');
     expect(packedCharx.data.extensions.risuai.additionalText).toBe('canonical additional text');
     expect(packedCharx.data.alternate_greetings).toEqual(['greeting one', 'greeting two']);
@@ -106,25 +108,27 @@ describe('pack.js character round-trip (canonical mode)', () => {
     expect(packedCharx.data.extensions.risuai.utilityBot).toBe(false);
     expect(packedCharx.data.extensions.risuai.lowLevelAccess).toBe(true);
 
-    // Verify module.risum exists but customModuleToggle is NOT present for charx
+    expect(packedCharx.data.extensions.risuai.toggles).toBe('roundtrip-toggle=on');
+
+    // Verify module.risum exists.
     const module = parseModuleRisum(Buffer.from(archive['module.risum']));
     expect(module.name).toBe('Canonical Character Module');
-    expect(module.customModuleToggle).toBeUndefined();
   });
 
-  it('ignores module.risutoggle for charx (module/preset only)', () => {
+  it('packs canonical character .risutoggle into charx toggles', () => {
     const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-pack-charx-no-toggle-'));
     tempDirs.push(workDir);
 
     const characterDir = path.join(workDir, 'character');
+    const toggleDir = path.join(workDir, 'toggle');
     mkdirSync(characterDir, { recursive: true });
+    mkdirSync(toggleDir, { recursive: true });
 
     // Write canonical character artifacts
     writeFileSync(path.join(characterDir, 'description.txt'), 'test description', 'utf-8');
     writeFileSync(path.join(characterDir, 'metadata.json'), `${JSON.stringify({ name: 'Test Char' })}\n`, 'utf-8');
 
-    // Write module.risutoggle (should be ignored for charx per spec)
-    writeFileSync(path.join(characterDir, 'module.risutoggle'), '<module-toggle>should-be-ignored</module-toggle>', 'utf-8');
+    writeFileSync(path.join(toggleDir, 'Test_Char.risutoggle'), '<toggle>preserved</toggle>', 'utf-8');
 
     const outPath = path.join(workDir, 'packed.charx');
     execFileSync(
@@ -137,9 +141,7 @@ describe('pack.js character round-trip (canonical mode)', () => {
     );
 
     const archive = unzipSync(readFileSync(outPath));
-    const module = parseModuleRisum(Buffer.from(archive['module.risum']));
-
-    // customModuleToggle should NOT be present for charx
-    expect(module.customModuleToggle).toBeUndefined();
+    const packedCharx = JSON.parse(strFromU8(archive['charx.json']));
+    expect(packedCharx.data.extensions.risuai.toggles).toBe('<toggle>preserved</toggle>');
   });
 });

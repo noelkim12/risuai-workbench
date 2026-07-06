@@ -22,9 +22,10 @@ import type { CbsLanguageServerSettings } from '../../src/lsp/cbsLanguageServerL
 import type {
   BrowserArtifactCard,
   ModuleBrowserCard,
+  BrowserSection,
 } from '../../src/artifact-browser/artifactBrowserTypes';
 
-const packageRoot = process.cwd();
+const packageRoot = path.resolve(__dirname, '..', '..', '..');
 const localRequire = createRequire(__filename);
 
 interface BuiltClientBoundaryModule {
@@ -141,10 +142,31 @@ interface BuiltCharacterDetailScannerModule {
       Array<{
         kind: string;
         label: string;
+        count: number;
         items: Array<{ label: string; relativePath?: string; type: string }>;
+        tree?: Array<{
+          kind: string;
+          label: string;
+          description?: string;
+          children?: Array<{ label: string }>;
+        }>;
       }>
     >;
   };
+}
+
+interface BuiltDetailScannerSharedModule {
+  buildCharacterTree: (
+    items: Array<{ id: string; label: string; relativePath: string }>,
+    greetingOrder: string[],
+  ) => Array<{
+    id: string;
+    label: string;
+    kind: string;
+    treePath?: string;
+    description?: string;
+    children?: Array<{ label: string }>;
+  }>;
 }
 
 interface BuiltModuleDetailScannerModule {
@@ -153,6 +175,7 @@ interface BuiltModuleDetailScannerModule {
       Array<{
         kind: string;
         label: string;
+        count: number;
         items: Array<{
           fileUri?: string;
           id: string;
@@ -171,18 +194,32 @@ interface BuiltArtifactBrowserViewProviderModule {
     extensionUri: TestUri;
     subscriptions: unknown[];
   }) => {
+    createSectionEntry?: (
+      stableId: string,
+      sectionKind: 'character' | 'lorebooks' | 'lua' | 'regexRules',
+      entryKind: 'file' | 'folder',
+      targetFolderPath?: string,
+    ) => Promise<void>;
     currentCards?: BrowserArtifactCard[];
-    currentSections?: Map<string, Array<{ items: Array<{ id: string; fileUri?: string }> }>>;
+    currentSections?: Map<string, BrowserSection[]>;
     getHtml?: (webview: { asWebviewUri: (uri: TestUri) => TestUri; cspSource: string }) => string;
     selectedStableId?: string;
     selectArtifact?: (stableId: string) => Promise<void>;
     openItem?: (stableId: string, itemId: string) => Promise<void>;
+    moveGreetingItem?: (
+      stableId: string,
+      itemId: string,
+      targetItemId: string,
+      placement: 'before' | 'after',
+    ) => Promise<void>;
     sendDiscoveredCards?: (webview: {
       asWebviewUri?: (uri: TestUri) => TestUri;
       postMessage: (message: unknown) => PromiseLike<boolean> | boolean;
     }) => Promise<void>;
     view?: { webview: { postMessage: (message: unknown) => PromiseLike<boolean> | boolean } };
   };
+  createAnalyzeArgsForExtractedArtifact: (extractedDir: string) => string[];
+  nextGreetingFileName?: (existingFileNames: string[]) => string;
 }
 
 interface BuiltFileDialogPreferenceModule {
@@ -198,6 +235,7 @@ interface BuiltSystemFilePickerModule {
 
 interface BuiltArtifactBrowserMessagesModule {
   isArtifactBrowserImportArtifactMessage: (message: unknown) => boolean;
+  isArtifactBrowserImportArtifactChunkMessage: (message: unknown) => boolean;
 }
 
 interface BuiltWorkspaceArtifactDiscoveryModule {
@@ -803,6 +841,7 @@ function createRisuLuaSourceLinksVscodeStub(workspaceRootPath: string): TestVsco
  */
 function createCharacterScannerVscodeStub(
   entriesByDirectory: Record<string, Array<[string, 1 | 2]>>,
+  filesByPath: Record<string, string> = {},
 ): TestVscodeModule {
   return {
     FileType: { File: 1, Directory: 2 },
@@ -819,7 +858,8 @@ function createCharacterScannerVscodeStub(
     workspace: {
       fs: {
         readDirectory: async (uri: TestUri) => entriesByDirectory[path.normalize(uri.fsPath)] ?? [],
-        readFile: async () => Buffer.from('{}', 'utf-8'),
+        readFile: async (uri: TestUri) =>
+          Buffer.from(filesByPath[path.normalize(uri.fsPath)] ?? '{}', 'utf-8'),
       },
     },
     window: {
@@ -835,6 +875,64 @@ function createCharacterScannerVscodeStub(
       showErrorMessage: () => {},
     },
   };
+}
+
+function createWriteCapturingProviderVscodeStub(
+  entriesByDirectory: Record<string, Array<[string, 1 | 2]>>,
+  filesByPath: Record<string, string> = {},
+): { files: Map<string, Buffer>; openedUris: TestUri[]; vscodeStub: TestVscodeModule } {
+  const files = new Map(
+    Object.entries(filesByPath).map(([filePath, content]) => [
+      path.normalize(filePath),
+      Buffer.from(content, 'utf-8'),
+    ]),
+  );
+  const openedUris: TestUri[] = [];
+  const vscodeStub = createCharacterScannerVscodeStub(entriesByDirectory, filesByPath);
+  vscodeStub.commands = {
+    executeCommand: async (command: string, uri: TestUri) => {
+      assert.equal(command, 'vscode.open');
+      openedUris.push(uri);
+    },
+  };
+  vscodeStub.workspace.fs.createDirectory = async () => {};
+  vscodeStub.workspace.fs.readFile = async (uri: TestUri) => {
+    const content = files.get(path.normalize(uri.fsPath));
+    if (!content) throw new Error(`Missing test file: ${uri.fsPath}`);
+    return content;
+  };
+  vscodeStub.workspace.fs.writeFile = async (uri: TestUri, bytes: Uint8Array) => {
+    files.set(path.normalize(uri.fsPath), Buffer.from(bytes));
+  };
+
+  return { files, openedUris, vscodeStub };
+}
+
+function loadBuiltDetailScannerSharedModule(vscodeStub: TestVscodeModule): BuiltDetailScannerSharedModule {
+  const nodeModule = Module as unknown as {
+    _load: (request: string, parent: NodeJS.Module | null, isMain: boolean) => unknown;
+  };
+  const originalLoad = nodeModule._load;
+  const sharedModulePath = path.join(
+    packageRoot,
+    'dist',
+    'artifact-browser',
+    'shared',
+    'detailScanner.js',
+  );
+
+  assert.ok(existsSync(sharedModulePath), `Built shared detail scanner module not found: ${sharedModulePath}`);
+  delete localRequire.cache[localRequire.resolve(sharedModulePath)];
+  nodeModule._load = (request, parent, isMain) => {
+    if (request === 'vscode') return vscodeStub;
+    return originalLoad(request, parent, isMain);
+  };
+
+  try {
+    return localRequire(sharedModulePath) as BuiltDetailScannerSharedModule;
+  } finally {
+    nodeModule._load = originalLoad;
+  }
 }
 
 /**
@@ -1150,6 +1248,11 @@ function summarizeTreeNode(node: any): unknown {
   };
 }
 
+function greetingChildLabels(tree: Array<{ kind: string; children?: Array<{ label: string }> }>): string[] {
+  const folder = tree.find((node) => node.kind === 'folder');
+  return (folder?.children ?? []).map((child) => child.label);
+}
+
 /**
  * createCharacterBrowserCardInput 함수.
  * scanner boundary test에서 반복되는 card 입력을 최소 필드로 구성함.
@@ -1405,6 +1508,38 @@ test('normalizes marker editor images to supported assets paths only', () => {
   assert.equal(markerEditor.normalizeMarkerEditorImagePath(null), null);
 });
 
+test('buildCharacterTree orders fixed fields canonically and greetings by _order.json', () => {
+  const shared = loadBuiltDetailScannerSharedModule(createCharacterScannerVscodeStub({}));
+  const items = [
+    { id: 'a', label: 'first_mes.risutext', relativePath: 'character/first_mes.risutext' },
+    { id: 'b', label: 'description.risutext', relativePath: 'character/description.risutext' },
+    {
+      id: 'c',
+      label: 'greeting-002.risutext',
+      relativePath: 'character/alternate_greetings/greeting-002.risutext',
+    },
+    {
+      id: 'd',
+      label: 'greeting-001.risutext',
+      relativePath: 'character/alternate_greetings/greeting-001.risutext',
+    },
+  ];
+
+  const tree = shared.buildCharacterTree(items, ['greeting-002.risutext', 'greeting-001.risutext']);
+
+  const rootLabels = tree.filter((node) => node.kind === 'item').map((node) => node.label);
+  assert.deepEqual(rootLabels, ['description.risutext', 'first_mes.risutext']);
+
+  const descriptionNode = tree.find((node) => node.label === 'description.risutext');
+  assert.equal(descriptionNode?.description, '설명');
+
+  const folder = tree.find((node) => node.kind === 'folder');
+  assert.equal(folder?.label, 'alternate_greetings');
+  assert.equal(folder?.treePath, 'alternate_greetings');
+  assert.equal(folder?.description, '추가 첫 메시지');
+  assert.deepEqual(greetingChildLabels(tree), ['greeting-002.risutext', 'greeting-001.risutext']);
+});
+
 test('copies marker editor image selections into assets icons and updates asset manifest', async () => {
   const rootPath = path.join('/tmp', 'risu-marker-root');
   const externalPath = path.join('/tmp', 'selected', 'Portrait Image.PNG');
@@ -1460,6 +1595,8 @@ test('scans marker sibling artifact directories and preserves nested character a
         ['lorebooks', 2],
         ['lua', 2],
         ['regex', 2],
+        ['toggle', 2],
+        ['variables', 2],
       ],
       [path.join(characterRootPath, 'html')]: [['page.risuhtml', 1]],
       [path.join(characterRootPath, 'lorebooks')]: [['foo.risulorebook', 1]],
@@ -1469,6 +1606,8 @@ test('scans marker sibling artifact directories and preserves nested character a
       ],
       [path.join(characterRootPath, 'lua', 'scripts')]: [['helper.risulua', 1]],
       [path.join(characterRootPath, 'regex')]: [['rule.risuregex', 1]],
+      [path.join(characterRootPath, 'toggle')]: [['alice.risutoggle', 1]],
+      [path.join(characterRootPath, 'variables')]: [['alice.risuvar', 1]],
     }),
   );
 
@@ -1478,7 +1617,7 @@ test('scans marker sibling artifact directories and preserves nested character a
 
   assert.deepEqual(
     sections.map((section) => section.label),
-    ['Manifest', 'Lorebooks', 'Regex Rules', 'HTML', 'Lua', 'Diagnostics'],
+    ['Manifest', 'Character', 'Lorebooks', 'Regex Rules', 'HTML', 'Lua', 'Toggle', 'Variables', 'Assets', 'Diagnostics'],
   );
   assert.deepEqual(getSectionItemSummaries(sections, 'lorebooks'), [
     { label: 'foo.risulorebook', relativePath: 'lorebooks/foo.risulorebook', type: 'risulorebook' },
@@ -1493,6 +1632,177 @@ test('scans marker sibling artifact directories and preserves nested character a
     { label: 'main.risulua', relativePath: 'lua/main.risulua', type: 'risulua' },
     { label: 'helper.risulua', relativePath: 'lua/scripts/helper.risulua', type: 'risulua' },
   ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'toggle'), [
+    { label: 'alice.risutoggle', relativePath: 'toggle/alice.risutoggle', type: 'risutoggle' },
+  ]);
+  assert.deepEqual(getSectionItemSummaries(sections, 'variables'), [
+    { label: 'alice.risuvar', relativePath: 'variables/alice.risuvar', type: 'risuvar' },
+  ]);
+});
+
+test('scans the character directory into a captioned Character section ordered by _order.json', async () => {
+  const characterRootPath = path.join('/tmp', 'risu-character', 'bob');
+  const orderPath = path.join(characterRootPath, 'character', 'alternate_greetings', '_order.json');
+  const scannerModule = loadBuiltCharacterDetailScannerModule(
+    createCharacterScannerVscodeStub(
+      {
+        [characterRootPath]: [['.risuchar', 1], ['character', 2]],
+        [path.join(characterRootPath, 'character')]: [
+          ['description.risutext', 1],
+          ['first_mes.risutext', 1],
+          ['alternate_greetings', 2],
+        ],
+        [path.join(characterRootPath, 'character', 'alternate_greetings')]: [
+          ['_order.json', 1],
+          ['greeting-001.risutext', 1],
+          ['greeting-002.risutext', 1],
+        ],
+      },
+      { [orderPath]: JSON.stringify(['greeting-002.risutext', 'greeting-001.risutext']) },
+    ),
+  );
+
+  const sections = await new scannerModule.CharacterDetailScanner().scan(
+    createCharacterBrowserCardInput(characterRootPath, 'bob'),
+  );
+
+  const character = sections.find((section) => section.kind === 'character');
+  assert.ok(character, 'expected a character section');
+  assert.equal(character.label, 'Character');
+  assert.equal(sections[1].kind, 'character');
+
+  const rootFieldLabels = (character.tree ?? [])
+    .filter((node) => node.kind === 'item')
+    .map((node) => node.label);
+  assert.deepEqual(rootFieldLabels, ['description.risutext', 'first_mes.risutext']);
+
+  const folder = (character.tree ?? []).find((node) => node.kind === 'folder');
+  assert.equal(folder?.description, '추가 첫 메시지');
+  assert.deepEqual(
+    (folder?.children ?? []).map((child: { label: string }) => child.label),
+    ['greeting-002.risutext', 'greeting-001.risutext'],
+  );
+});
+
+test('moveGreetingItem rewrites alternate greeting _order.json with bare filenames', async () => {
+  const stableId = 'character:greeting-reorder';
+  const characterRootPath = path.join('/tmp', 'risu-character', 'greeting-reorder');
+  const orderPath = path.join(characterRootPath, 'character', 'alternate_greetings', '_order.json');
+  const { files, vscodeStub } = createWriteCapturingProviderVscodeStub(
+    {
+      [characterRootPath]: [['.risuchar', 1], ['character', 2]],
+      [path.join(characterRootPath, 'character')]: [['alternate_greetings', 2]],
+      [path.join(characterRootPath, 'character', 'alternate_greetings')]: [
+        ['_order.json', 1],
+        ['greeting-001.risutext', 1],
+        ['greeting-002.risutext', 1],
+        ['greeting-003.risutext', 1],
+      ],
+    },
+    { [orderPath]: JSON.stringify(['greeting-002.risutext', 'greeting-001.risutext']) },
+  );
+  const providerModule = loadBuiltArtifactBrowserViewProviderModule(vscodeStub);
+  const provider = new providerModule.ArtifactBrowserViewProvider({
+    extensionUri: new TestUri('/tmp/extension'),
+    subscriptions: [],
+  });
+  const card: BrowserArtifactCard = {
+    ...createCharacterBrowserCardInput(characterRootPath, stableId),
+    artifactKind: 'character',
+  };
+  const section: BrowserSection = {
+    id: 'character-section',
+    label: 'Character',
+    kind: 'character',
+    count: 3,
+    items: [
+      {
+        id: 'greeting-001',
+        label: 'greeting-001.risutext',
+        relativePath: 'character/alternate_greetings/greeting-001.risutext',
+        type: 'risutext',
+      },
+      {
+        id: 'greeting-002',
+        label: 'greeting-002.risutext',
+        relativePath: 'character/alternate_greetings/greeting-002.risutext',
+        type: 'risutext',
+      },
+      {
+        id: 'greeting-003',
+        label: 'greeting-003.risutext',
+        relativePath: 'character/alternate_greetings/greeting-003.risutext',
+        type: 'risutext',
+      },
+    ],
+  };
+  provider.currentCards = [card];
+  provider.currentSections = new Map([[stableId, [section]]]);
+
+  if (typeof provider.moveGreetingItem !== 'function') assert.fail('provider.moveGreetingItem is not a function');
+  const moveGreetingItem = provider.moveGreetingItem.bind(provider);
+  await moveGreetingItem(stableId, 'greeting-001', 'greeting-003', 'after');
+
+  const orderBytes = files.get(path.normalize(orderPath));
+  assert.ok(orderBytes, 'expected alternate greeting order to be written');
+  assert.deepEqual(JSON.parse(orderBytes.toString('utf-8')), [
+    'greeting-002.risutext',
+    'greeting-003.risutext',
+    'greeting-001.risutext',
+  ]);
+});
+
+test('nextGreetingFileName returns the next zero-padded greeting name', () => {
+  const providerModule = loadBuiltArtifactBrowserViewProviderModule(createCharacterScannerVscodeStub({}));
+  if (typeof providerModule.nextGreetingFileName !== 'function') {
+    assert.fail('providerModule.nextGreetingFileName is not a function');
+  }
+
+  assert.equal(providerModule.nextGreetingFileName([]), 'greeting-001.risutext');
+  assert.equal(
+    providerModule.nextGreetingFileName(['greeting-001.risutext', 'greeting-003.risutext', 'notes.risutext']),
+    'greeting-004.risutext',
+  );
+});
+
+test('createGreetingEntry auto-numbers a new greeting and appends it to _order.json', async () => {
+  const stableId = 'character:greeting-create';
+  const characterRootPath = path.join('/tmp', 'risu-character', 'greeting-create');
+  const greetingDir = path.join(characterRootPath, 'character', 'alternate_greetings');
+  const orderPath = path.join(greetingDir, '_order.json');
+  const { files, openedUris, vscodeStub } = createWriteCapturingProviderVscodeStub(
+    {
+      [characterRootPath]: [['.risuchar', 1], ['character', 2]],
+      [path.join(characterRootPath, 'character')]: [['alternate_greetings', 2]],
+      [greetingDir]: [['_order.json', 1], ['greeting-001.risutext', 1]],
+    },
+    { [orderPath]: JSON.stringify(['greeting-001.risutext']) },
+  );
+  const providerModule = loadBuiltArtifactBrowserViewProviderModule(vscodeStub);
+  const provider = new providerModule.ArtifactBrowserViewProvider({
+    extensionUri: new TestUri('/tmp/extension'),
+    subscriptions: [],
+  });
+  const card: BrowserArtifactCard = {
+    ...createCharacterBrowserCardInput(characterRootPath, stableId),
+    artifactKind: 'character',
+  };
+  provider.currentCards = [card];
+  provider.currentSections = new Map([[stableId, []]]);
+
+  if (typeof provider.createSectionEntry !== 'function') assert.fail('provider.createSectionEntry is not a function');
+  const createSectionEntry = provider.createSectionEntry.bind(provider);
+  await createSectionEntry(stableId, 'character', 'file', 'alternate_greetings');
+
+  const newGreetingPath = path.join(greetingDir, 'greeting-002.risutext');
+  assert.equal(files.get(path.normalize(newGreetingPath))?.toString('utf-8'), '');
+  const orderBytes = files.get(path.normalize(orderPath));
+  assert.ok(orderBytes, 'expected alternate greeting order to be written');
+  assert.deepEqual(JSON.parse(orderBytes.toString('utf-8')), [
+    'greeting-001.risutext',
+    'greeting-002.risutext',
+  ]);
+  assert.deepEqual(openedUris.map((uri) => uri.fsPath), [path.normalize(newGreetingPath)]);
 });
 
 test('character detail scanner ignores artifact folders below non-sibling directories', async () => {
@@ -1574,8 +1884,10 @@ test('does not let large asset directories exhaust artifact scan budget', async 
 
   assert.deepEqual(
     sections.map((section) => section.label),
-    ['Manifest', 'Lorebooks', 'Regex Rules', 'HTML', 'Lua', 'Diagnostics'],
+    ['Manifest', 'Character', 'Lorebooks', 'Regex Rules', 'HTML', 'Lua', 'Toggle', 'Variables', 'Assets', 'Diagnostics'],
   );
+  const assetsSection = sections.find((section) => section.kind === 'assets');
+  assert.deepEqual(assetsSection, { id: 'assets', kind: 'assets', label: 'Assets', count: assetEntries.length, items: [] });
   assert.deepEqual(getSectionItemSummaries(sections, 'lorebooks'), [
     {
       label: 'entry.risulorebook',
@@ -2519,11 +2831,11 @@ test('production module-only root produces module artifact and real module secti
   const sections = await new scannerModule.ModuleDetailScanner().scan(card);
   assert.deepEqual(
     sections.map((section) => section.kind),
-    ['manifest', 'lorebooks', 'regexRules', 'lua', 'toggle', 'variables', 'html', 'diagnostics'],
+    ['manifest', 'lorebooks', 'regexRules', 'lua', 'toggle', 'variables', 'html', 'assets', 'diagnostics'],
   );
   assert.deepEqual(
     sections.map((section) => section.label),
-    ['Manifest', 'Lorebooks', 'Regex Rules', 'Lua', 'Toggle', 'Variables', 'HTML', 'Diagnostics'],
+    ['Manifest', 'Lorebooks', 'Regex Rules', 'Lua', 'Toggle', 'Variables', 'HTML', 'Assets', 'Diagnostics'],
   );
   assert.deepEqual(getSectionItemSummaries(sections, 'manifest'), [
     { label: '.risumodule', relativePath: '.risumodule', type: 'manifest' },
@@ -2656,8 +2968,10 @@ test('production module detail scanner returns exact module sections and file-ba
 
   assert.deepEqual(
     sections.map((section) => section.label),
-    ['Manifest', 'Lorebooks', 'Regex Rules', 'Lua', 'Toggle', 'Variables', 'HTML', 'Diagnostics'],
+    ['Manifest', 'Lorebooks', 'Regex Rules', 'Lua', 'Toggle', 'Variables', 'HTML', 'Assets', 'Diagnostics'],
   );
+  const assetsSection = sections.find((section) => section.kind === 'assets');
+  assert.deepEqual(assetsSection, { id: 'assets', kind: 'assets', label: 'Assets', count: 1, items: [] });
   assert.deepEqual(getSectionItemSummaries(sections, 'manifest'), [
     { label: '.risumodule', relativePath: '.risumodule', type: 'manifest' },
   ]);
@@ -3088,7 +3402,7 @@ test('system file picker treats empty native dialog output as cancel', async () 
   assert.equal(selectedPath, undefined);
 });
 
-test('artifact browser import message accepts webview-selected content and legacy picker requests', () => {
+test('artifact browser import message accepts webview import payload variants', () => {
   const messagesModule = loadBuiltArtifactBrowserMessagesModule();
 
   assert.equal(
@@ -3114,6 +3428,38 @@ test('artifact browser import message accepts webview-selected content and legac
       },
     }),
     true,
+  );
+  assert.equal(
+    messagesModule.isArtifactBrowserImportArtifactChunkMessage({
+      protocol: 'risu-workbench.artifact-browser',
+      version: 1,
+      type: 'artifact-browser/importArtifactChunk',
+      payload: {
+        viewId: 'risuaiWorkbench.cards',
+        transferId: 'transfer-1',
+        fileName: 'import.charx',
+        chunkIndex: 0,
+        totalChunks: 2,
+        chunkBase64: Buffer.from('artifact').toString('base64'),
+      },
+    }),
+    true,
+  );
+  assert.equal(
+    messagesModule.isArtifactBrowserImportArtifactChunkMessage({
+      protocol: 'risu-workbench.artifact-browser',
+      version: 1,
+      type: 'artifact-browser/importArtifactChunk',
+      payload: {
+        viewId: 'risuaiWorkbench.cards',
+        transferId: 'transfer-1',
+        fileName: 'import.charx',
+        chunkIndex: 2,
+        totalChunks: 2,
+        chunkBase64: '',
+      },
+    }),
+    false,
   );
 });
 
@@ -3264,6 +3610,20 @@ test('provider opens marker editor for character selections while posting detail
       JSON.stringify(message).includes('artifact-browser/detailLoaded'),
     ),
   );
+});
+
+test('provider analyze args place generated wiki under the artifact root', () => {
+  const workspaceRootPath = path.join('/tmp', 'risu-analyze-workspace');
+  const characterRootPath = path.join(workspaceRootPath, 'char1');
+  const providerModule = loadBuiltArtifactBrowserViewProviderModule(createCharacterScannerVscodeStub({}));
+
+  assert.deepEqual(providerModule.createAnalyzeArgsForExtractedArtifact(characterRootPath), [
+    'analyze',
+    characterRootPath,
+    '--wiki',
+    '--wiki-root',
+    path.join(characterRootPath, 'wiki'),
+  ]);
 });
 
 test('provider keeps character detail selection across marker refresh when fallback stable id changes', async () => {

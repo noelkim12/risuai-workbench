@@ -7,16 +7,22 @@ import {
   ARTIFACT_BROWSER_PROTOCOL,
   ARTIFACT_BROWSER_PROTOCOL_VERSION,
   ARTIFACT_BROWSER_VIEW_ID,
+  type ArtifactBrowserAnalyzeArtifactMessage,
+  type ArtifactBrowserAnalyzeArtifactPayload,
   type ArtifactBrowserCreateArtifactMessage,
   type ArtifactBrowserCreateArtifactPayload,
   type ArtifactBrowserCreateSectionEntryKind,
   type ArtifactBrowserCreateSectionEntryMessage,
   type ArtifactBrowserCreateSectionKind,
+  type ArtifactBrowserImportArtifactChunkMessage,
+  type ArtifactBrowserImportArtifactChunkPayload,
   type ArtifactBrowserImportArtifactMessage,
   type ArtifactBrowserImportArtifactPayload,
   type ArtifactBrowserMoveLorebookFolderMessage,
+  type ArtifactBrowserMoveGreetingItemMessage,
   type ArtifactBrowserMoveLorebookItemMessage,
   type ArtifactBrowserMoveRegexItemMessage,
+  type ArtifactBrowserOpenAssetManagerMessage,
   type ArtifactBrowserOpenItemMessage,
   type ArtifactBrowserPackArtifactMessage,
   type ArtifactBrowserPackArtifactPayload,
@@ -27,8 +33,13 @@ import {
   type MainEditorWebviewMessage,
   type MarkerEditorWebviewMessage,
 } from './types';
+import type { AssetManagerWebviewMessage } from './types/assetManager';
 
-type WebviewOutboundMessage = ArtifactBrowserWebviewMessage | MarkerEditorWebviewMessage | MainEditorWebviewMessage;
+type WebviewOutboundMessage =
+  | ArtifactBrowserWebviewMessage
+  | MarkerEditorWebviewMessage
+  | MainEditorWebviewMessage
+  | AssetManagerWebviewMessage;
 
 export type VsCodeApi = {
   postMessage(message: WebviewOutboundMessage): void;
@@ -112,10 +123,25 @@ export function createArtifactBrowserImportArtifactMessage(
   });
 }
 
+export function createArtifactBrowserImportArtifactChunkMessage(
+  payload: Omit<ArtifactBrowserImportArtifactChunkPayload, 'viewId'>,
+): ArtifactBrowserImportArtifactChunkMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/importArtifactChunk', {
+    viewId: ARTIFACT_BROWSER_VIEW_ID,
+    ...payload,
+  });
+}
+
 export function createArtifactBrowserPackArtifactMessage(
   payload: ArtifactBrowserPackArtifactPayload,
 ): ArtifactBrowserPackArtifactMessage {
   return createArtifactBrowserWebviewMessage('artifact-browser/packArtifact', payload);
+}
+
+export function createArtifactBrowserAnalyzeArtifactMessage(
+  payload: ArtifactBrowserAnalyzeArtifactPayload,
+): ArtifactBrowserAnalyzeArtifactMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/analyzeArtifact', payload);
 }
 
 /**
@@ -127,6 +153,21 @@ export function createArtifactBrowserPackArtifactMessage(
  */
 export function createArtifactBrowserSelectMessage(stableId: string): ArtifactBrowserSelectMessage {
   return createArtifactBrowserWebviewMessage('artifact-browser/select', {
+    stableId,
+  });
+}
+
+/**
+ * createArtifactBrowserOpenAssetManagerMessage 함수.
+ * Assets 아코디언의 진입 버튼이 Asset Manager 패널 오픈을 요청하는 메시지를 생성함.
+ *
+ * @param stableId - 대상 artifact stable id
+ * @returns Artifact Browser openAssetManager message
+ */
+export function createArtifactBrowserOpenAssetManagerMessage(
+  stableId: string,
+): ArtifactBrowserOpenAssetManagerMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/openAssetManager', {
     stableId,
   });
 }
@@ -183,6 +224,20 @@ export function createArtifactBrowserMoveRegexItemMessage(
   placement: 'before' | 'after',
 ): ArtifactBrowserMoveRegexItemMessage {
   return createArtifactBrowserWebviewMessage('artifact-browser/moveRegexItem', {
+    stableId,
+    itemId,
+    targetItemId,
+    placement,
+  });
+}
+
+export function createArtifactBrowserMoveGreetingItemMessage(
+  stableId: string,
+  itemId: string,
+  targetItemId: string,
+  placement: 'before' | 'after',
+): ArtifactBrowserMoveGreetingItemMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/moveGreetingItem', {
     stableId,
     itemId,
     targetItemId,

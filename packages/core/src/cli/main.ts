@@ -3,6 +3,7 @@ import { runPackWorkflow } from './pack/workflow';
 import { runAnalyzeWorkflow } from './analyze/workflow';
 import { runBuildWorkflow } from './build/workflow';
 import { runScaffoldWorkflow } from './scaffold/workflow';
+import { runAssetsWorkflow } from './assets/workflow';
 
 type CommandRunner = (argv: readonly string[]) => number | Promise<number>;
 
@@ -27,6 +28,10 @@ const COMMANDS: Record<string, CommandDef> = {
   build: {
     run: runBuildWorkflow,
     description: '컴포넌트 빌드',
+  },
+  assets: {
+    run: runAssetsWorkflow,
+    description: '캐릭터 assets/manifest.json 생성',
   },
   scaffold: {
     run: runScaffoldWorkflow,
