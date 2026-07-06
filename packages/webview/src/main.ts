@@ -4,12 +4,12 @@ import AssetManagerApp from './AssetManagerApp.svelte';
 import MainEditor from './lib/components/editor/main/MainEditor.svelte';
 import MarkerEditor from './lib/components/editor/marker/MarkerEditor.svelte';
 import { mount } from 'svelte';
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import {
   createArtifactBrowserAnalyzeArtifactMessage,
+  createArtifactBrowserImportArtifactChunkMessage,
   createArtifactBrowserCreateArtifactMessage,
   createArtifactBrowserCreateSectionEntryMessage,
-  createArtifactBrowserImportArtifactMessage,
   createArtifactBrowserMoveLorebookFolderMessage,
   createArtifactBrowserMoveLorebookItemMessage,
   createArtifactBrowserMoveGreetingItemMessage,
@@ -48,6 +48,7 @@ const status = writable('Connecting to extension host…');
 const packState = writable<ArtifactBrowserPackCompletedPayload | null>(null);
 const importing = writable(false);
 const app = document.querySelector<HTMLDivElement>('#app');
+const IMPORT_CHUNK_BYTES = 1024 * 1024;
 const isEditorMode = document.documentElement.dataset.editorMode === 'true';
 const webviewName =
   document.documentElement.dataset.risuaiWorkbenchView ??
@@ -175,9 +176,15 @@ function handleMessage(event: MessageEvent<unknown>): void {
   }
 
   if (message.type === 'artifact-browser/detailLoaded') {
+    // 같은 아티팩트에 대한 background refresh(외부 파일 추가/삭제 감지)면 펼침 상태를 유지하고,
+    // 다른 아티팩트를 새로 선택한 경우에만 접힌 상태로 초기화한다. section/item은 keyed each로
+    // in-place diff되어 변경된 항목만 갱신되므로, 스크롤·포커스·작업 위치가 보존된다.
+    const isSameArtifactRefresh = get(selectedStableId) === message.payload.stableId;
     selectedStableId.set(message.payload.stableId);
     detailSections.set(message.payload.sections);
-    expandedSectionIds.set([]);
+    if (!isSameArtifactRefresh) {
+      expandedSectionIds.set([]);
+    }
     viewMode.set('artifactDetail');
     setStatus(`Detail loaded with ${message.payload.sections.length} sections.`);
     return;
@@ -212,11 +219,12 @@ function createArtifact(payload: ArtifactBrowserCreateArtifactPayload): void {
   vscode?.postMessage(createArtifactBrowserCreateArtifactMessage(payload));
 }
 
-function encodeArrayBufferAsBase64(buffer: ArrayBuffer): string {
+function encodeChunkAsBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
   let binary = '';
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
   }
   return btoa(binary);
 }
@@ -227,8 +235,21 @@ async function importArtifact(file: File): Promise<void> {
   viewMode.set('artifacts');
   detailSections.set([]);
   try {
-    const dataBase64 = encodeArrayBufferAsBase64(await file.arrayBuffer());
-    vscode?.postMessage(createArtifactBrowserImportArtifactMessage({ fileName: file.name, dataBase64 }));
+    const transferId = crypto.randomUUID();
+    const totalChunks = Math.max(1, Math.ceil(file.size / IMPORT_CHUNK_BYTES));
+    for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += 1) {
+      const start = chunkIndex * IMPORT_CHUNK_BYTES;
+      const chunk = file.slice(start, start + IMPORT_CHUNK_BYTES);
+      vscode?.postMessage(
+        createArtifactBrowserImportArtifactChunkMessage({
+          transferId,
+          fileName: file.name,
+          chunkIndex,
+          totalChunks,
+          chunkBase64: encodeChunkAsBase64(await chunk.arrayBuffer()),
+        }),
+      );
+    }
   } catch (error) {
     importing.set(false);
     setStatus(`Import failed: ${error instanceof Error ? error.message : 'unknown error'}`);

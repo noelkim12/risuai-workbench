@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { extractAssetCbsNames, substituteAssetCbs } from 'risu-workbench-core/cbs-browser';
   import { onDestroy } from 'svelte';
   import { createRequestId } from '../../../requestIds';
   import type { MainEditorFormatPreviewResultPayload } from '../../../types/mainEditor';
@@ -10,6 +11,9 @@
   export let preview: MainEditorFormatPreviewResultPayload | null;
   export let pending: boolean;
   export let sampleInput: string;
+  export let resolvedAssets: Record<string, string | null> = {};
+  export let assetsTruncated = false;
+  export let onRequestAssets: ((names: string[]) => void) | undefined = undefined;
 
   const EXECUTION_TIMEOUT_MS = 200;
   const limits = { maxInputLength: 50_000, maxMatches: 1_000, maxOutputLength: 50_000 };
@@ -30,7 +34,11 @@
   $: if (regex?.executionRequired && runKey && runKey !== lastRunKey) runWorker(runKey);
   $: executionDisabled = Boolean(regex && !regex.executionRequired);
   $: if (executionDisabled && workerResult) workerResult = null;
-  $: renderedOutputSrcdoc = createRenderedOutputSrcdoc(workerResult, preview);
+  $: renderedOutputSrcdoc = createRenderedOutputSrcdoc(workerResult, preview, resolvedAssets);
+  $: outputAssetNames = workerResult && (workerResult.status === 'ok' || workerResult.status === 'partial')
+    ? extractAssetCbsNames(workerResult.output)
+    : [];
+  $: requestMissingAssets(outputAssetNames);
 
   onDestroy(() => {
     disposed = true;
@@ -82,9 +90,17 @@
   function createRenderedOutputSrcdoc(
     result: RegexWorkerResult | null,
     previewResult: MainEditorFormatPreviewResultPayload | null,
+    resolved: Record<string, string | null>,
   ): string {
     if (!result || (result.status !== 'ok' && result.status !== 'partial')) return '';
-    return createSandboxedHtmlSrcdoc(`${previewResult?.htmlContext?.sourceHtml ?? ''}${result.output}`, HTML_PREVIEW_CSP);
+    const substituted = substituteAssetCbs(result.output, resolved);
+    return createSandboxedHtmlSrcdoc(`${previewResult?.htmlContext?.sourceHtml ?? ''}${substituted}`, HTML_PREVIEW_CSP);
+  }
+
+  function requestMissingAssets(names: string[]): void {
+    if (!onRequestAssets || names.length === 0) return;
+    const missing = names.filter((name) => !(name in resolvedAssets));
+    if (missing.length > 0) onRequestAssets(missing);
   }
 
   function createSandboxedHtmlSrcdoc(bodyHtml: string, csp: string): string {
@@ -154,6 +170,9 @@
           ></iframe>
         {:else}
           <p class="rpi__card-muted">Regex execution did not produce replacement output. See diagnostics.</p>
+        {/if}
+        {#if assetsTruncated}
+          <p class="rpi__card-muted">Some assets were not rendered (preview asset limit reached).</p>
         {/if}
       </div>
     </details>

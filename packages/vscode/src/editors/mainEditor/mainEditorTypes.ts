@@ -570,6 +570,25 @@ export interface MainEditorFormatPreviewResultPayload {
   htmlContext?: MainEditorHtmlPreviewContextPayload;
 }
 
+export interface MainEditorResolveRegexAssetsRequestPayload {
+  requestId: string;
+  documentUri: string;
+  names: string[];
+}
+
+export interface MainEditorResolvedAssetEntry {
+  name: string;
+  src: string | null;
+  matchedName?: string;
+}
+
+export interface MainEditorResolveRegexAssetsResultPayload {
+  requestId: string;
+  documentUri: string;
+  resolved: MainEditorResolvedAssetEntry[];
+  truncated: boolean;
+}
+
 export interface MainEditorSimulatorProfileListRequestPayload {
   requestId: string;
   documentUri: string;
@@ -723,6 +742,12 @@ export type MainEditorWebviewMessage =
   | {
       protocol: typeof MAIN_EDITOR_PROTOCOL;
       version: typeof MAIN_EDITOR_PROTOCOL_VERSION;
+      type: 'main-editor/resolveRegexAssetsRequest';
+      payload: MainEditorResolveRegexAssetsRequestPayload;
+    }
+  | {
+      protocol: typeof MAIN_EDITOR_PROTOCOL;
+      version: typeof MAIN_EDITOR_PROTOCOL_VERSION;
       type: 'main-editor/simulatorProfileListRequest';
       payload: MainEditorSimulatorProfileListRequestPayload;
     }
@@ -762,6 +787,7 @@ const MAIN_EDITOR_WEBVIEW_MESSAGE_TYPES = [
   'main-editor/previewRequest',
   'main-editor/previewRuntimeRequest',
   'main-editor/formatPreviewRequest',
+  'main-editor/resolveRegexAssetsRequest',
   'main-editor/simulatorProfileListRequest',
   'main-editor/simulatorProfileSaveRequest',
   'main-editor/variableCandidatesRequest',
@@ -855,6 +881,10 @@ const MAIN_EDITOR_WEBVIEW_MESSAGE_GUARDS = {
   'main-editor/formatPreviewRequest': createMainEditorMessageGuard(
     'main-editor/formatPreviewRequest',
     isMainEditorFormatPreviewRequestPayload,
+  ),
+  'main-editor/resolveRegexAssetsRequest': createMainEditorMessageGuard(
+    'main-editor/resolveRegexAssetsRequest',
+    isMainEditorResolveRegexAssetsRequestPayload,
   ),
   'main-editor/simulatorProfileListRequest': createMainEditorMessageGuard(
     'main-editor/simulatorProfileListRequest',
@@ -1180,6 +1210,18 @@ function isMainEditorFormatPreviewRequestPayload(
   if (value.formatKind === 'html')
     return value.sectionName === 'FULL' && isHtmlStructuredState(value.state);
   return false;
+}
+
+function isMainEditorResolveRegexAssetsRequestPayload(
+  value: unknown,
+): value is MainEditorResolveRegexAssetsRequestPayload {
+  return (
+    isPlainRecord(value) &&
+    typeof value.requestId === 'string' &&
+    typeof value.documentUri === 'string' &&
+    Array.isArray(value.names) &&
+    value.names.every((entry) => typeof entry === 'string')
+  );
 }
 
 function isMainEditorSimulatorProfileListRequestPayload(

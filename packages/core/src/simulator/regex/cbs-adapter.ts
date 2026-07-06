@@ -4,6 +4,7 @@
  */
 import { simulateCbsText } from '../simulate';
 import type { CbsSimulationDiagnostic, CbsSimulationResult, CbsSimulationStatus } from '../types';
+import { maskAssetCbs, unmaskAssetCbs } from './asset-resolver';
 import type { SimulatorDiagnostic } from './shared';
 import type { RegexCbsSectionSimulationInput, RegexCbsSectionSimulationResult } from './types';
 import { isPlainRecord } from '@/shared/guards';
@@ -29,7 +30,7 @@ export function simulateRegexCbsSections(
     ? simulateCbsText(input.patternSource, input.context, input.simulationOptions)
     : createPassThroughCbsResult(input.patternSource);
   const replacement = input.simulateReplacement
-    ? simulateCbsText(input.replacementSource, input.context, input.simulationOptions)
+    ? simulateReplacementPreservingAssetCbs(input)
     : createPassThroughCbsResult(input.replacementSource);
 
   return {
@@ -41,6 +42,24 @@ export function simulateRegexCbsSections(
       ...mapRequestedDiagnostics(replacement.diagnostics, input.simulateReplacement),
     ],
   };
+}
+
+/**
+ * simulateReplacementPreservingAssetCbs 함수.
+ * OUT 섹션의 `{{raw::…}}`/`{{path::…}}` 태그는 regex 실행 이후 preview panel이
+ * asset data URI로 치환하므로, CBS dry-run의 preview-empty fallback으로부터
+ * 마스킹해 원문 그대로 통과시킴.
+ *
+ * @param input - replacement source와 simulation context/options
+ * @returns asset 태그가 보존된 replacement CBS result
+ */
+function simulateReplacementPreservingAssetCbs(
+  input: RegexCbsSectionSimulationInput,
+): CbsSimulationResult {
+  const { masked, tags } = maskAssetCbs(input.replacementSource);
+  const result = simulateCbsText(masked, input.context, input.simulationOptions);
+  if (tags.length === 0) return result;
+  return { ...result, output: unmaskAssetCbs(result.output, tags) };
 }
 
 /**

@@ -58,6 +58,7 @@
     createMainEditorPreviewRequestMessage,
     createMainEditorPreviewRuntimeRequestMessage,
     createMainEditorReadyMessage,
+    createMainEditorResolveRegexAssetsRequestMessage,
     createMainEditorSimulatorProfileListRequestMessage,
     createMainEditorSimulatorProfileSaveRequestMessage,
     createMainEditorStructuredEditMessage,
@@ -111,6 +112,9 @@
   let previewResult: MainEditorPreviewResultPayload | MainEditorPreviewRuntimeResultPayload | null = null;
   let formatPreviewResult: MainEditorFormatPreviewResultPayload | null = null;
   let formatPreviewRequestId: string | undefined;
+  let resolvedRegexAssets: Record<string, string | null> = {};
+  let regexAssetsTruncated = false;
+  let regexAssetResolveRequestId: string | undefined;
   let runtimePreviewRequestId: string | undefined;
   let runtimePreviewPending = false;
   let runtimePreviewBindings: MainEditorVariableBindingPayload[] = [];
@@ -202,6 +206,7 @@
       diagnosticsMarkers = [];
       previewResult = null;
       formatPreviewResult = null;
+      resetRegexAssetState();
       previewPending = false;
       resetRuntimePreviewState();
       initialized = true;
@@ -233,6 +238,7 @@
         latestPreviewRequestId = undefined;
         previewPending = false;
         formatPreviewResult = null;
+        resetRegexAssetState();
         resetRuntimePreviewState();
       }
       if (documentChanged && message.payload.formatKind === 'regex' && isRegexEditorState(message.payload.model.state)) {
@@ -303,8 +309,19 @@
         message.payload.documentUri === documentUri &&
         message.payload.formatKind === formatKind
       ) {
+        resetRegexAssetState();
         formatPreviewResult = message.payload;
         previewPending = false;
+      }
+      return;
+    }
+
+    if (message.type === 'main-editor/resolveRegexAssetsResult') {
+      if (message.payload.requestId === regexAssetResolveRequestId && message.payload.documentUri === documentUri) {
+        const merged: Record<string, string | null> = { ...resolvedRegexAssets };
+        for (const entry of message.payload.resolved) merged[entry.name] = entry.src;
+        resolvedRegexAssets = merged;
+        regexAssetsTruncated = message.payload.truncated;
       }
       return;
     }
@@ -626,6 +643,21 @@
         }),
       );
     }, PREVIEW_DEBOUNCE_MS);
+  }
+
+  function requestRegexAssets(names: string[]): void {
+    if (!initialized || names.length === 0) return;
+    const requestId = createRequestId('regex-assets');
+    regexAssetResolveRequestId = requestId;
+    getTypedVsCodeApi()?.postMessage(
+      createMainEditorResolveRegexAssetsRequestMessage({ requestId, documentUri, names }),
+    );
+  }
+
+  function resetRegexAssetState(): void {
+    resolvedRegexAssets = {};
+    regexAssetsTruncated = false;
+    regexAssetResolveRequestId = undefined;
   }
 
   function toFormatPreviewState(
@@ -1126,6 +1158,11 @@
       return Boolean(payload) && typeof payload?.requestId === 'string' && typeof payload.output === 'string';
     }
 
+    if (candidate.type === 'main-editor/resolveRegexAssetsResult') {
+      const payload = candidate.payload;
+      return Boolean(payload) && typeof payload?.requestId === 'string' && typeof payload.documentUri === 'string' && Array.isArray(payload.resolved);
+    }
+
     if (candidate.type === 'main-editor/simulatorProfileListResult') {
       const payload = candidate.payload;
       return Boolean(payload) && typeof payload?.requestId === 'string' && typeof payload.documentUri === 'string' && Array.isArray(payload.profiles);
@@ -1497,7 +1534,14 @@
           </div>
           {#if resultTab === 'preview'}
             {#if regexState}
-              <RegexPreviewPanel preview={formatPreviewResult} pending={previewPending} sampleInput={regexSampleInput} />
+              <RegexPreviewPanel
+                preview={formatPreviewResult}
+                pending={previewPending}
+                sampleInput={regexSampleInput}
+                resolvedAssets={resolvedRegexAssets}
+                assetsTruncated={regexAssetsTruncated}
+                onRequestAssets={requestRegexAssets}
+              />
             {:else}
         <PreviewPanel preview={lorebookState ? previewResult : formatPreviewResult} pending={previewPending || runtimePreviewPending} sourceText={lorebookState?.contentText} />
               {#if htmlState && formatPreviewResult}

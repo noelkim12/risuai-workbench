@@ -14,6 +14,8 @@ import {
   type ArtifactBrowserCreateSectionEntryKind,
   type ArtifactBrowserCreateSectionEntryMessage,
   type ArtifactBrowserCreateSectionKind,
+  type ArtifactBrowserImportArtifactChunkMessage,
+  type ArtifactBrowserImportArtifactChunkPayload,
   type ArtifactBrowserImportArtifactMessage,
   type ArtifactBrowserImportArtifactPayload,
   type ArtifactBrowserMoveLorebookFolderMessage,
@@ -116,6 +118,15 @@ export function createArtifactBrowserImportArtifactMessage(
   payload: Omit<ArtifactBrowserImportArtifactPayload, 'viewId'>,
 ): ArtifactBrowserImportArtifactMessage {
   return createArtifactBrowserWebviewMessage('artifact-browser/importArtifact', {
+    viewId: ARTIFACT_BROWSER_VIEW_ID,
+    ...payload,
+  });
+}
+
+export function createArtifactBrowserImportArtifactChunkMessage(
+  payload: Omit<ArtifactBrowserImportArtifactChunkPayload, 'viewId'>,
+): ArtifactBrowserImportArtifactChunkMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/importArtifactChunk', {
     viewId: ARTIFACT_BROWSER_VIEW_ID,
     ...payload,
   });

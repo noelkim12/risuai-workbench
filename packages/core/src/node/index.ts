@@ -50,6 +50,12 @@ import {
   type CharacterAssetSubdir,
 } from './asset-manifest';
 import {
+  resolveRegexAssets,
+  type ResolveRegexAssetsOptions,
+  type ResolveRegexAssetsResult,
+  type ResolvedRegexAsset,
+} from './regex-asset-resolver';
+import {
   bootstrapAssetCatalogFromEntries,
   bootstrapAssetCatalogFromManifest,
   collectAssetCatalogBootstrapEntriesFromManifest,
@@ -137,6 +143,7 @@ export {
   collectCharacterAssetEntries,
   computeAssetBuildWarnings,
   loadAssetCatalogFromAssetsDir,
+  resolveRegexAssets,
   extractLorebookNameCandidates,
   type AssetBuildWarnings,
   type AssetCatalogBootstrapAnomalyReason,
@@ -151,6 +158,9 @@ export {
   type CharacterAssetManifest,
   type CharacterAssetManifestEntry,
   type CharacterAssetSubdir,
+  type ResolveRegexAssetsOptions,
+  type ResolveRegexAssetsResult,
+  type ResolvedRegexAsset,
   ensureDir,
   writeJson,
   writeText,
