@@ -34,6 +34,8 @@ import {
   type ArtifactBrowserRefreshPayload,
   type ArtifactBrowserRefreshMessage,
   type ArtifactBrowserImportArtifactMessage,
+  type ArtifactBrowserImportArtifactChunkMessage,
+  type ArtifactBrowserImportArtifactChunkPayload,
   type ArtifactBrowserImportArtifactPayload,
   type ArtifactBrowserPackArtifactMessage,
   type ArtifactBrowserPackArtifactPayload,
@@ -59,6 +61,7 @@ type ArtifactBrowserInboundMessage =
   | ArtifactBrowserRefreshMessage
   | ArtifactBrowserCreateArtifactMessage
   | ArtifactBrowserImportArtifactMessage
+  | ArtifactBrowserImportArtifactChunkMessage
   | ArtifactBrowserPackArtifactMessage
   | ArtifactBrowserAnalyzeArtifactMessage
   | ArtifactBrowserOpenAssetManagerMessage
@@ -186,6 +189,24 @@ const isArtifactBrowserImportArtifactPayload: ArtifactBrowserPayloadGuard<Artifa
       typeof payload.dataBase64 === 'string' &&
       payload.dataBase64.length > 0));
 
+const isArtifactBrowserImportArtifactChunkPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserImportArtifactChunkPayload> = (
+  payload,
+): payload is ArtifactBrowserImportArtifactChunkPayload =>
+  isPlainRecord(payload) &&
+  payload.viewId === ARTIFACT_BROWSER_VIEW_ID &&
+  typeof payload.transferId === 'string' &&
+  payload.transferId.length > 0 &&
+  typeof payload.fileName === 'string' &&
+  payload.fileName.length > 0 &&
+  typeof payload.chunkIndex === 'number' &&
+  Number.isInteger(payload.chunkIndex) &&
+  payload.chunkIndex >= 0 &&
+  typeof payload.totalChunks === 'number' &&
+  Number.isInteger(payload.totalChunks) &&
+  payload.totalChunks > 0 &&
+  payload.chunkIndex < payload.totalChunks &&
+  typeof payload.chunkBase64 === 'string';
+
 const isArtifactBrowserPackArtifactPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserPackArtifactPayload> = (
   payload,
 ): payload is ArtifactBrowserPackArtifactPayload =>
@@ -224,6 +245,12 @@ const isArtifactBrowserImportArtifactMessageEnvelope =
   createArtifactBrowserMessageGuard<ArtifactBrowserImportArtifactMessage>(
     'artifact-browser/importArtifact',
     isArtifactBrowserImportArtifactPayload,
+  );
+
+const isArtifactBrowserImportArtifactChunkMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserImportArtifactChunkMessage>(
+    'artifact-browser/importArtifactChunk',
+    isArtifactBrowserImportArtifactChunkPayload,
   );
 
 const isArtifactBrowserPackArtifactMessageEnvelope =
@@ -316,6 +343,12 @@ export function isArtifactBrowserImportArtifactMessage(
   message: unknown,
 ): message is ArtifactBrowserImportArtifactMessage {
   return isArtifactBrowserImportArtifactMessageEnvelope(message);
+}
+
+export function isArtifactBrowserImportArtifactChunkMessage(
+  message: unknown,
+): message is ArtifactBrowserImportArtifactChunkMessage {
+  return isArtifactBrowserImportArtifactChunkMessageEnvelope(message);
 }
 
 export function isArtifactBrowserPackArtifactMessage(

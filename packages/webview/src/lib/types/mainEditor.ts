@@ -463,6 +463,25 @@ export interface MainEditorFormatPreviewResultPayload {
   htmlContext?: MainEditorHtmlPreviewContextPayload;
 }
 
+export interface MainEditorResolveRegexAssetsRequestPayload {
+  requestId: string;
+  documentUri: string;
+  names: string[];
+}
+
+export interface MainEditorResolvedAssetEntry {
+  name: string;
+  src: string | null;
+  matchedName?: string;
+}
+
+export interface MainEditorResolveRegexAssetsResultPayload {
+  requestId: string;
+  documentUri: string;
+  resolved: MainEditorResolvedAssetEntry[];
+  truncated: boolean;
+}
+
 export interface MainEditorSimulatorProfileListRequestPayload {
   requestId: string;
   documentUri: string;

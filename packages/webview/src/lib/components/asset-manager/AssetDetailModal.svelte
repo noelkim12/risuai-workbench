@@ -137,7 +137,7 @@
   }
   .detail-modal {
     position: relative;
-    width: min(920px, 94vw);
+    width: min(1200px, 96vw);
     max-height: 90vh;
     overflow: hidden;
     display: flex;
@@ -185,7 +185,7 @@
     border-radius: var(--radius-sm);
   }
   .detail-modal__side {
-    width: 280px;
+    width: 360px;
     flex-shrink: 0;
     overflow-y: auto;
     display: flex;
@@ -200,8 +200,8 @@
     text-transform: uppercase;
     color: var(--muted);
   }
-  .detail-modal__info,
-  .detail-modal__gen {
+  /* 짧은 메타(path/format/size…) → 컴팩트 2열 */
+  .detail-modal__info {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     gap: 2px var(--space-2);
@@ -209,15 +209,42 @@
     overflow-wrap: anywhere;
     margin: 0;
   }
-  .detail-modal__info dt,
-  .detail-modal__gen dt {
+  .detail-modal__info dt {
     font-weight: 700;
     color: var(--muted);
   }
-  .detail-modal__info dd,
-  .detail-modal__gen dd {
+  .detail-modal__info dd {
     margin: 0;
     color: var(--text);
+  }
+  /* 생성정보(프롬프트 등 긴 값) → 라벨 위, 값은 전체 폭 박스로 row-by-row */
+  .detail-modal__gen {
+    display: block;
+    font-size: var(--text-sm);
+    margin: 0;
+  }
+  .detail-modal__gen dt {
+    margin: var(--space-2) 0 var(--space-1);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .detail-modal__gen dt:first-of-type {
+    margin-top: 0;
+  }
+  .detail-modal__gen dd {
+    margin: 0;
+    padding: var(--space-2);
+    color: var(--text);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    background: var(--surface);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-sm);
+    max-height: 220px;
+    overflow-y: auto;
   }
   .detail-modal__slot {
     display: flex;

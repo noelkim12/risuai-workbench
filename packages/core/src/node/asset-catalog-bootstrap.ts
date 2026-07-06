@@ -147,7 +147,9 @@ function splitAssetName(name: string, separator: string): string[] {
   if (separator === '_' && cleaned.includes('_')) return cleaned.split('_').filter(Boolean);
   if (separator.trim() === '') return cleaned.split(/[\s_]+/).filter(Boolean);
   if (cleaned.includes(separator)) return cleaned.split(separator).map((part) => part.trim()).filter(Boolean);
-  return cleaned.split(/[\s_]+/).filter(Boolean);
+  // 선택한 구분자가 이름에 없을 때의 폴백. 공백만 나누고 '_'는 건드리지 않는다.
+  // (예: 구분자 '.'인데 'EP_005-1'은 '.'이 없다 — 여기서 '_'로 쪼개면 EP/005-1로 오분할된다.)
+  return cleaned.split(/\s+/).filter(Boolean);
 }
 
 function actualSeparator(preferredSeparator: string, names: readonly string[]): string {
@@ -290,12 +292,17 @@ export interface AssetCatalogBootstrapGroupSummary {
   readonly anomalies: readonly AssetCatalogBootstrapAnomalyReason[];
   // insufficient-tokens 경고를 유발한 실제 항목명(가장 조각이 적은 항목). 모달이 오해 없이 원인을 짚어주기 위함.
   readonly insufficientExample?: string;
+  // 이 그룹의 슬롯 값 표본(chip에 보이는 값들, 상한 있음). 모달에서 firstToken 외 슬롯 내용으로도 검색 가능하게 한다.
+  readonly sampleValues?: readonly string[];
 }
+
+const GROUP_SAMPLE_VALUE_CAP = 24;
 
 interface MutableGroupStats {
   readonly tokenCounts: number[];
   readonly firstSlotValues: Set<string>;
   readonly lastSlotTokens: Set<string>;
+  readonly sampleValues: Set<string>;
   insufficient: boolean;
   insufficientExample?: string;
   insufficientExampleTokens: number;
@@ -336,10 +343,19 @@ export function summarizeAssetCatalogBootstrapGroups(
       tokenCounts: [],
       firstSlotValues: new Set<string>(),
       lastSlotTokens: new Set<string>(),
+      sampleValues: new Set<string>(),
       insufficient: false,
       insufficientExampleTokens: Number.POSITIVE_INFINITY,
     };
     group.tokenCounts.push(words.length);
+    // 검색용 슬롯 값 표본 수집(chip에 보이는 값). 상한까지만 담아 payload 팽창 방지.
+    if (entry.slots !== null) {
+      for (const value of Object.values(entry.slots)) {
+        if (typeof value === 'string' && value.length > 0 && group.sampleValues.size < GROUP_SAMPLE_VALUE_CAP) {
+          group.sampleValues.add(value);
+        }
+      }
+    }
     const counts = effectiveSlotTokenCounts(firstToken, split);
     if (counts !== undefined && Object.keys(counts).length > 0 && words.length < minimumConfiguredTokens(slotIds, counts)) {
       group.insufficient = true;
@@ -371,6 +387,7 @@ export function summarizeAssetCatalogBootstrapGroups(
       tokenCountMax: Math.max(...group.tokenCounts),
       anomalies,
       ...(group.insufficientExample !== undefined && { insufficientExample: group.insufficientExample }),
+      ...(group.sampleValues.size > 0 && { sampleValues: [...group.sampleValues] }),
     };
   });
 
