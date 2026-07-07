@@ -3,7 +3,7 @@
   D4 가 D3 스텁을 본 구현으로 교체함.
   - 가상화: computeVirtualWindow 로 위/아래 spacer + visible window 렌더.
   - 선택: ctrl/meta 토글, shift 범위, 단일 클릭 단일 선택 (applyTileSelection).
-  - Inspector: KEEP 시맨틱 일괄 부여, tokenize 제안 적용, orphan 정리.
+  - Inspector: KEEP 시맨틱 일괄 부여, orphan 정리.
   - 더블클릭 시 AssetDetailModal 오픈(메타 온디맨드 로드).
   @file packages/webview/src/lib/components/asset-manager/GridView.svelte
 -->
@@ -21,7 +21,6 @@
     AssetCatalogMirror,
     AssetManagerAssetEntry,
     AssetManagerAssignmentChange,
-    AssetManagerTokenizeProposal,
     AssetSlotId,
     AssetSlotValues,
     ImageMetaMirror,
@@ -33,12 +32,11 @@
   export let entries: readonly AssetManagerAssetEntry[] = [];
   export let catalog: AssetCatalogMirror;
   export let orphanPaths: readonly string[] = [];
-  export let tokenizeProposals: readonly AssetManagerTokenizeProposal[] = [];
   export let metaByPath: Record<string, ImageMetaMirror> = {};
   export let assetImageSrc: (path: string) => string = () => '';
   export let onUpdateAssignments: (changes: AssetManagerAssignmentChange[]) => void = () => undefined;
-  export let onBootstrap: () => void = () => undefined;
   export let onReadMeta: (path: string) => void = () => undefined;
+  export let onReplaceFile: ((path: string) => void) | null = null;
   export let presetQuery: string | null = null;
 
   // KEEP 센티넬: 해당 슬롯은 기존 할당 값을 유지(덮어쓰지 않음).
@@ -85,7 +83,6 @@
   });
   $: windowEntries = visibleEntries.slice(window_.startIndex, window_.endIndex);
   $: selectedEntries = visibleEntries.filter((entry) => selected.has(entry.path));
-  $: proposalByPath = new Map(tokenizeProposals.map((proposal) => [proposal.path, proposal]));
   $: modalEntry = modalIndex === null ? null : (visibleEntries[modalIndex] ?? null);
 
   function selectionMode(event: MouseEvent): 'single' | 'toggle' | 'range' {
@@ -139,21 +136,6 @@
   function clearAssignments(): void {
     if (selectedEntries.length === 0) return;
     onUpdateAssignments(selectedEntries.map((entry) => ({ path: entry.path, slots: null })));
-  }
-
-  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup calls this action.
-  function applyTokenizeToSelection(): void {
-    if (tokenizeProposals.length === 0) {
-      onBootstrap();
-      return;
-    }
-    const targets = selectedEntries.length > 0 ? selectedEntries : visibleEntries;
-    const changes: AssetManagerAssignmentChange[] = [];
-    for (const entry of targets) {
-      const proposal = proposalByPath.get(entry.path);
-      if (proposal?.matched) changes.push({ path: entry.path, slots: { ...proposal.slots } });
-    }
-    if (changes.length > 0) onUpdateAssignments(changes);
   }
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup calls this action.
@@ -213,9 +195,6 @@
         <option value="mtime">수정순</option>
       </select>
       <input type="range" min="96" max="256" step="16" bind:value={tileSize} aria-label="Tile size" />
-      <button type="button" class="button-secondary" onclick={applyTokenizeToSelection}>
-        {tokenizeProposals.length === 0 ? 'tokenize 분석' : 'tokenize 제안 적용'}
-      </button>
       {#if orphanPaths.length > 0}
         <button type="button" class="button-secondary" onclick={cleanOrphans}
           >orphan {orphanPaths.length} 정리</button
@@ -315,6 +294,7 @@
     onPrev={() => moveModal(-1)}
     onNext={() => moveModal(1)}
     onApplySlots={(path, slots) => onUpdateAssignments([{ path, slots }])}
+    {onReplaceFile}
   />
 {/if}
 

@@ -6,6 +6,7 @@ import {
   detectSeparator,
   detectSlotCount,
   pruneStaleOverrides,
+  seedFromBootstrapConfig,
 } from '../../../src/lib/asset-manager/bootstrapGroups';
 import type { AssetCatalogBootstrapGroupSummaryMirror } from '../../../src/lib/types/assetManager';
 
@@ -112,5 +113,25 @@ describe('detectFirstSlotCounts', () => {
     const detection = detectFirstSlotCounts(['Solo_do-gyun_happy'], '_', 3);
     expect(detection.groupS1.has('Solo')).toBe(false);
     expect(detection.global).toBe(1);
+  });
+});
+
+describe('seedFromBootstrapConfig', () => {
+  it('maps persisted config to modal seed state', () => {
+    const seed = seedFromBootstrapConfig({
+      separator: '-',
+      slotTokenCounts: { s1: 2, s2: 1 },
+      groupOverrides: [{ firstToken: 'mel', slotTokenCounts: { s1: 1 } }],
+    });
+    expect(seed.separator).toBe('-');
+    expect(seed.globalCounts).toEqual({ s1: 2, s2: 1 });
+    expect(seed.groupCounts.get('mel')).toEqual({ s1: 1 });
+    expect(seed.groupCounts.size).toBe(1);
+  });
+
+  it('returns an empty override map when config has no groupOverrides', () => {
+    const seed = seedFromBootstrapConfig({ separator: '_', slotTokenCounts: {} });
+    expect(seed.groupCounts.size).toBe(0);
+    expect(seed.globalCounts).toEqual({});
   });
 });

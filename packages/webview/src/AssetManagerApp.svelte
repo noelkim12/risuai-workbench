@@ -11,13 +11,16 @@
     type AssetCatalogSchemaMirror,
     type AssetManagerAssetEntry,
     type AssetManagerAssignmentChange,
-    type AssetManagerTokenizeProposal,
+    type AssetManagerPickedFile,
     type AssetManagerWebviewMessage,
+    type AssetManagerWriteAssetFile,
     type AssetOutputKind,
+    type AssetSlotId,
     type ImageMetaMirror,
     type LorebookNameCandidateMirror,
   } from './lib/types/assetManager';
   import { filterEntriesByCombo } from './lib/asset-manager/gridModel';
+  import { fileToBase64, isSupportedAssetFile, type StagedItem } from './lib/asset-manager/staging';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes these components.
   import AssetDetailModal from './lib/components/asset-manager/AssetDetailModal.svelte';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes these components.
@@ -34,6 +37,8 @@
   import VocabView from './lib/components/asset-manager/VocabView.svelte';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes these components.
   import OutputsView from './lib/components/asset-manager/OutputsView.svelte';
+  // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes these components.
+  import AssetStagingModal from './lib/components/asset-manager/AssetStagingModal.svelte';
 
   const vscode = getVsCodeApi();
 
@@ -55,7 +60,6 @@
   let initialized = false;
   let schemaModalDismissed = false;
   let lorebookCandidates: readonly LorebookNameCandidateMirror[] = [];
-  let tokenizeProposals: readonly AssetManagerTokenizeProposal[] = [];
   let tokenizePrefixes: readonly { readonly value: string; readonly count: number }[] = [];
   let tokenizeSuffixes: readonly { readonly value: string; readonly count: number }[] = [];
   let outputsState: {
@@ -75,6 +79,16 @@
   let firstRunOpened = false;
   let bootstrapPreviewRows: readonly { readonly path: string; readonly name: string; readonly slots: AssetCatalogMirror['assignments'][string] | null }[] = [];
   let bootstrapGroups: readonly AssetCatalogBootstrapGroupSummaryMirror[] = [];
+  let autoAssignNotice: {
+    readonly assignedPaths: readonly string[];
+    readonly anomalyPaths: readonly string[];
+    readonly addedVocab: Partial<Record<AssetSlotId, readonly string[]>>;
+  } | null = null;
+  let stagedItems: StagedItem[] | null = null;
+  let stagedApplying = false;
+  let dragActive = false;
+  let dropNotice = '';
+  let stagedSeq = 0;
 
   // catalog가 없으면 FirstRunSchemaModal 대신 Catalog 생성 모달을 바로 띄운다(불필요한 단계 축소).
   $: if (initialized && !catalogExists && !schemaModalDismissed && !firstRunOpened) {
@@ -120,11 +134,28 @@
       case 'asset-manager/catalogSaved':
         applySnapshot(message.payload);
         return;
+      case 'asset-manager/autoAssignApplied': {
+        applySnapshot(message.payload);
+        const { assignedPaths, anomalyPaths, addedVocab } = message.payload;
+        autoAssignNotice = assignedPaths.length > 0 || anomalyPaths.length > 0 ? { assignedPaths, anomalyPaths, addedVocab } : null;
+        status = `새 파일 감지 · 자동 assign ${assignedPaths.length}개 · 파싱 실패 ${anomalyPaths.length}개`;
+        return;
+      }
+      case 'asset-manager/assetsWritten': {
+        const { writtenPaths, deletedPaths } = message.payload;
+        stagedItems = null;
+        stagedApplying = false;
+        status = `파일 ${writtenPaths.length}개 기록됨${deletedPaths.length > 0 ? ` · 교체로 ${deletedPaths.length}개 삭제` : ''} · 자동 반영 대기중`;
+        return;
+      }
+      case 'asset-manager/filesPicked': {
+        stageFiles(message.payload.files, [...message.payload.skipped]);
+        return;
+      }
       case 'asset-manager/lorebookNamesResult':
         lorebookCandidates = message.payload.candidates;
         return;
       case 'asset-manager/tokenizeResult':
-        tokenizeProposals = message.payload.proposals;
         tokenizePrefixes = message.payload.prefixes;
         tokenizeSuffixes = message.payload.suffixes;
         return;
@@ -158,12 +189,17 @@
         return;
       case 'asset-manager/error':
         errorText = `${message.payload.context}: ${message.payload.message}`;
+        stagedApplying = false;
         return;
     }
   }
 
   onMount(() => {
     window.addEventListener('message', handleMessage);
+    window.addEventListener('dragenter', onDragEnter, { capture: true });
+    window.addEventListener('dragover', onDragOver, { capture: true });
+    window.addEventListener('dragleave', onDragLeave, { capture: true });
+    window.addEventListener('drop', onDrop, { capture: true });
     post(createAssetManagerWebviewMessage('asset-manager/ready', {}));
     readyRetryTimer = setInterval(() => {
       if (initialized) {
@@ -174,6 +210,10 @@
     }, 500);
     return () => {
       window.removeEventListener('message', handleMessage);
+      window.removeEventListener('dragenter', onDragEnter, { capture: true });
+      window.removeEventListener('dragover', onDragOver, { capture: true });
+      window.removeEventListener('dragleave', onDragLeave, { capture: true });
+      window.removeEventListener('drop', onDrop, { capture: true });
       if (readyRetryTimer) clearInterval(readyRetryTimer);
     };
   });
@@ -198,6 +238,111 @@
   const onSaveOutput = (kind: AssetOutputKind, targetPath: string, content: string) =>
     post(createAssetManagerWebviewMessage('asset-manager/saveOutput', { stableId, kind, targetPath, content }));
   const onBuildManifest = () => post(createAssetManagerWebviewMessage('asset-manager/buildManifest', { stableId }));
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this callback.
+  const onPickFiles = () => post(createAssetManagerWebviewMessage('asset-manager/pickAssetFiles', { stableId }));
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this callback.
+  function undoAutoAssign(): void {
+    if (!autoAssignNotice) return;
+    post(
+      createAssetManagerWebviewMessage('asset-manager/undoAutoAssign', {
+        stableId,
+        assignedPaths: autoAssignNotice.assignedPaths,
+        addedVocab: autoAssignNotice.addedVocab,
+      }),
+    );
+    autoAssignNotice = null;
+  }
+
+  const MAX_DROP_FILE_BYTES = 50 * 1024 * 1024;
+
+  function isPotentialFileDrag(event: DragEvent): boolean {
+    const transfer = event.dataTransfer;
+    if (!transfer) return false;
+    if (transfer.files.length > 0) return true;
+
+    const types = [...transfer.types];
+    if (types.includes('Files')) return true;
+    if ([...transfer.items].some((item) => item.kind === 'file')) return true;
+
+    // Windows Explorer through VS Code/Electron may hide file details until drop.
+    return types.length === 0;
+  }
+
+  function onDragEnter(event: DragEvent): void {
+    if (!isPotentialFileDrag(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dragActive = true;
+  }
+
+  function onDragOver(event: DragEvent): void {
+    if (!isPotentialFileDrag(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    dragActive = true;
+  }
+
+  function onDragLeave(event: DragEvent): void {
+    if (!isPotentialFileDrag(event)) return;
+    const leavingWindow = event.clientX <= 0 || event.clientY <= 0 || event.clientX >= window.innerWidth || event.clientY >= window.innerHeight;
+    if (!leavingWindow) return;
+    dragActive = false;
+  }
+
+  async function onDrop(event: DragEvent): Promise<void> {
+    event.preventDefault();
+    event.stopPropagation();
+    dragActive = false;
+    const dropped = [...(event.dataTransfer?.files ?? [])];
+    if (dropped.length === 0) return;
+
+    const rejected: string[] = [];
+    const candidates: AssetManagerPickedFile[] = [];
+    for (const file of dropped) {
+      if (file.size > MAX_DROP_FILE_BYTES) {
+        rejected.push(file.name);
+        continue;
+      }
+      candidates.push({ name: file.name, bytesBase64: await fileToBase64(file), sizeBytes: file.size });
+    }
+    stageFiles(candidates, rejected);
+  }
+
+  /** drop/파일 선택 공통 staging 진입점. 지원 확장자를 거른 뒤 staging modal에 쌓는다. */
+  function stageFiles(files: readonly AssetManagerPickedFile[], rejected: string[]): void {
+    const accepted: StagedItem[] = [];
+    for (const file of files) {
+      if (!isSupportedAssetFile(file.name)) {
+        rejected.push(file.name);
+        continue;
+      }
+      stagedSeq += 1;
+      accepted.push({
+        id: `staged-${stagedSeq}`,
+        originalName: file.name,
+        editedName: file.name,
+        bytesBase64: file.bytesBase64,
+        sizeBytes: file.sizeBytes,
+      });
+    }
+    dropNotice = rejected.length > 0 ? `지원하지 않거나 너무 큰 파일 ${rejected.length}개 제외: ${rejected.join(', ')}` : '';
+    if (accepted.length === 0) return;
+    stagedItems = [...(stagedItems ?? []), ...accepted];
+  }
+
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this callback.
+  function applyStagedFiles(files: readonly AssetManagerWriteAssetFile[]): void {
+    stagedApplying = true;
+    status = `파일 ${files.length}개 기록 중…`;
+    post(createAssetManagerWebviewMessage('asset-manager/writeAssets', { stableId, files }));
+  }
+
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this callback.
+  function onReplaceFile(path: string): void {
+    status = `파일 교체 대기: ${path} (파일 선택 다이얼로그 확인)`;
+    post(createAssetManagerWebviewMessage('asset-manager/replaceAssetFile', { stableId, path }));
+  }
 
   function selectTab(nextTab: Tab): void {
     tab = nextTab;
@@ -263,14 +408,23 @@
     if (item && !metaByPath[item.path]) onReadMeta(item.path);
   }
 
+  // 같은 경로 덮어쓰기(파일 교체) 후 stale 캐시가 남지 않게 mtime을 쿼리로 붙인다.
+  $: mtimeByPath = new Map(entries.map((entry) => [entry.path, entry.mtimeMs]));
+
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this helper.
   function assetImageSrc(path: string): string {
-    return `${assetsRootUri}/${path.split('/').map(encodeURIComponent).join('/')}`;
+    const base = `${assetsRootUri}/${path.split('/').map(encodeURIComponent).join('/')}`;
+    const mtime = mtimeByPath.get(path);
+    return mtime === undefined ? base : `${base}?v=${mtime}`;
   }
 
 </script>
 
-<main class="asset-manager" aria-label="Risu Asset Manager">
+<main
+  class="asset-manager"
+  class:is-dragover={dragActive}
+  aria-label="Risu Asset Manager"
+>
   <AssetManagerHeader
     {artifactName}
     {tab}
@@ -278,14 +432,36 @@
     {onRefresh}
     onOpenBootstrap={() => (showBootstrapModal = true)}
     {onBuildManifest}
+    {onPickFiles}
   />
 
   <p class="asset-manager__status">{status}</p>
   {#if errorText}<p class="asset-manager__error" role="alert">{errorText}</p>{/if}
+  {#if autoAssignNotice}
+    <div class="asset-manager__autobanner" role="status">
+      <span class="asset-manager__autobanner-text">
+        새 파일 자동 assign {autoAssignNotice.assignedPaths.length}개
+      {#if autoAssignNotice.anomalyPaths.length > 0}
+          · 규칙 파싱 실패 {autoAssignNotice.anomalyPaths.length}개(미할당으로 추가됨)
+      {/if}
+        {#each Object.entries(autoAssignNotice.addedVocab) as [slotId, values] (slotId)}
+          <span class="asset-manager__autobanner-vocab">신규 vocab {slotId}: {values?.join(', ')}</span>
+        {/each}
+      </span>
+      {#if autoAssignNotice.assignedPaths.length > 0}
+        <button type="button" onclick={undoAutoAssign}>실행취소</button>
+      {/if}
+      <button type="button" onclick={() => (autoAssignNotice = null)}>닫기</button>
+    </div>
+  {/if}
+  {#if dropNotice}<p class="asset-manager__dropnotice" role="status">{dropNotice}</p>{/if}
+  {#if dragActive}<div class="asset-manager__dropzone" aria-hidden="true">여기에 놓으면 assets에 추가/교체합니다</div>{/if}
+  <!-- VS Code workbench가 Shift 없는 외부 파일 드래그를 webview에 전달하지 않으므로(🚫 커서) 상시 안내 -->
+  <p class="asset-manager__drophint">외부 탐색기에서 파일을 끌어올 때는 <kbd>Shift</kbd>를 누른 채 드롭하거나, 헤더의 <strong>파일 추가</strong> 버튼을 사용하세요.</p>
 
   {#if catalog}
     {#if tab === 'grid'}
-      <GridView {entries} {catalog} {orphanPaths} {tokenizeProposals} {metaByPath} {assetImageSrc} {onUpdateAssignments} {onBootstrap} {onReadMeta} presetQuery={gridPresetQuery} />
+      <GridView {entries} {catalog} {orphanPaths} {metaByPath} {assetImageSrc} {onUpdateAssignments} {onReadMeta} {onReplaceFile} presetQuery={gridPresetQuery} />
     {:else if tab === 'matrix'}
       <MatrixView {catalog} onOpenCombo={openCombo} />
     {:else if tab === 'vocab'}
@@ -301,6 +477,7 @@
     <CatalogBootstrapModal
       schema={catalog.schema}
       {catalogExists}
+      bootstrapConfig={catalog.bootstrap ?? null}
       previewRows={bootstrapPreviewRows}
       groups={bootstrapGroups}
       onPreview={previewCatalogBootstrap}
@@ -309,6 +486,19 @@
         showBootstrapModal = false;
         schemaModalDismissed = true;
       }}
+    />
+  {/if}
+
+  {#if stagedItems && stagedItems.length > 0 && catalog}
+    <AssetStagingModal
+      bind:items={stagedItems}
+      {entries}
+      bootstrapConfig={catalog.bootstrap ?? null}
+      slotIds={catalog.schema.slots.map((slot) => slot.id)}
+      {assetImageSrc}
+      applying={stagedApplying}
+      onApply={applyStagedFiles}
+      onClose={() => (stagedItems = null)}
     />
   {/if}
 
@@ -333,6 +523,7 @@
       onPrev={() => moveComboDetail(-1)}
       onNext={() => moveComboDetail(1)}
       onApplySlots={(path, slots) => onUpdateAssignments([{ path, slots }])}
+      {onReplaceFile}
     />
   {/if}
 </main>
@@ -348,5 +539,50 @@
   }
   .asset-manager__status { margin: 0; color: var(--secondary-text); font-size: var(--text-sm); }
   .asset-manager__error { margin: 0; color: var(--vscode-errorForeground, #f66); }
+  .asset-manager__autobanner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    margin: 0;
+    padding: 6px 10px;
+    border: 1px solid color-mix(in srgb, var(--focus) 40%, var(--card-border));
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--focus) 10%, transparent);
+    font-size: var(--text-sm);
+  }
+  .asset-manager__autobanner-text { display: inline-flex; gap: var(--space-2); flex-wrap: wrap; }
+  .asset-manager__autobanner-vocab { color: var(--secondary-text); }
+  .asset-manager__autobanner button {
+    padding: 2px 10px;
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-sm);
+    background: var(--secondary);
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  .asset-manager.is-dragover { outline: 2px dashed var(--focus); outline-offset: -6px; }
+  .asset-manager__dropzone {
+    position: fixed;
+    inset: 0;
+    z-index: 15;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+    background: color-mix(in srgb, var(--focus) 12%, transparent);
+    color: var(--focus);
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+  .asset-manager__dropnotice { margin: 0; color: var(--vscode-editorWarning-foreground, #cca700); font-size: var(--text-sm); }
+  .asset-manager__drophint { margin: 0; color: var(--secondary-text); font-size: var(--text-sm); }
+  .asset-manager__drophint kbd {
+    padding: 0 var(--space-1);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--secondary) 70%, transparent);
+    font-family: inherit;
+  }
   .asset-manager__loading { color: var(--secondary-text); }
 </style>
