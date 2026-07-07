@@ -23,6 +23,7 @@ import {
   type AssetCatalogOutputsConfig,
   type AssetCatalogSchema,
   type AssetExpectedMap,
+  type AssetSlotId,
   type LorebookNameCandidate,
   type MissingCombo,
 } from 'risu-workbench-core';
@@ -38,6 +39,7 @@ import {
   readImageMeta,
   summarizeAssetCatalogBootstrapGroups,
   type AssetCatalogBootstrapGroupSummary,
+  type AssetCatalogBootstrapSplitOptions,
   type AssetManifestBuildSummary,
   type ImageMeta,
 } from 'risu-workbench-core/node';
@@ -48,6 +50,7 @@ import type {
   AssetManagerCatalogBootstrapPreviewEntry,
   AssetManagerScanSnapshot,
   AssetManagerTokenizeProposal,
+  AssetManagerWriteAssetFile,
   AssetOutputKind,
 } from './assetManagerTypes';
 
@@ -57,6 +60,28 @@ export interface AssetOutputsBundle {
   missingReport?: string;
   missingCombos?: readonly MissingCombo[];
 }
+
+export interface AssetAutoAssignResult {
+  readonly snapshot: AssetManagerScanSnapshot;
+  readonly assignedPaths: readonly string[];
+  readonly anomalyPaths: readonly string[];
+  readonly addedVocab: Partial<Record<AssetSlotId, string[]>>;
+}
+
+export interface AssetManagerWriteAssetFilesResult {
+  readonly writtenPaths: readonly string[];
+  readonly deletedPaths: readonly string[];
+}
+
+class AssetManagerWriteValidationError extends Error {
+  readonly name = 'AssetManagerWriteValidationError';
+}
+
+const MAX_WRITE_ASSET_FILES = 200;
+const WRITEABLE_ASSET_SUBDIRS: readonly string[] = ['additional', 'emotions', 'other'];
+const SUPPORTED_ASSET_EXTENSIONS: readonly string[] = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'mp3', 'ogg', 'wav', 'mp4', 'webm'];
+const RESERVED_ASSET_BASENAMES: readonly string[] = ['asset-catalog.json', 'manifest.json'];
+const ASSET_EXTENSION_RESIDUE = /(\.(png|jpe?g|webp|gif|avif|mp3|ogg|wav|mp4|webm))+$/i;
 
 function assertSafeRelativePath(relPath: string): void {
   if (
@@ -68,6 +93,77 @@ function assertSafeRelativePath(relPath: string): void {
   ) {
     throw new Error(`Unsafe asset manager path: ${relPath}`);
   }
+}
+
+function assetPathBasename(relPath: string): string {
+  const segments = relPath.split('/');
+  return segments[segments.length - 1] ?? '';
+}
+
+function assetPathExtension(relPath: string): string {
+  const match = /\.([A-Za-z0-9]+)$/.exec(assetPathBasename(relPath));
+  return match?.[1].toLowerCase() ?? '';
+}
+
+function strippedAssetStem(relPath: string): string {
+  return assetPathBasename(relPath).replace(/\.[A-Za-z0-9]+$/, '').replace(ASSET_EXTENSION_RESIDUE, '');
+}
+
+export function replacementTargetForAsset(
+  existingPath: string,
+  pickedFileName: string,
+): { readonly targetPath: string; readonly deletePath?: string } {
+  const pickedExt = /\.([A-Za-z0-9]+)$/.exec(pickedFileName)?.[1].toLowerCase() ?? '';
+  if (pickedExt === assetPathExtension(existingPath)) return { targetPath: existingPath };
+
+  const dir = existingPath.includes('/') ? existingPath.slice(0, existingPath.lastIndexOf('/') + 1) : '';
+  const stem = assetPathBasename(existingPath).replace(/\.[A-Za-z0-9]+$/, '');
+  return { targetPath: `${dir}${stem}.${pickedExt}`, deletePath: existingPath };
+}
+
+function assertWriteableAssetPath(relPath: string): void {
+  assertSafeRelativePath(relPath);
+  const subdir = relPath.split('/')[0];
+  if (subdir === undefined || !WRITEABLE_ASSET_SUBDIRS.includes(subdir)) {
+    throw new AssetManagerWriteValidationError(`Unsupported asset manager write subdir: ${relPath}`);
+  }
+  if (!SUPPORTED_ASSET_EXTENSIONS.includes(assetPathExtension(relPath))) {
+    throw new AssetManagerWriteValidationError(`Unsupported asset extension: ${relPath}`);
+  }
+  if (RESERVED_ASSET_BASENAMES.includes(assetPathBasename(relPath).toLowerCase())) {
+    throw new AssetManagerWriteValidationError(`Reserved asset basename: ${relPath}`);
+  }
+}
+
+function decodeAssetBase64(bytesBase64: string): Buffer {
+  if (bytesBase64.length === 0 || bytesBase64.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(bytesBase64)) {
+    throw new AssetManagerWriteValidationError('Invalid base64 asset payload');
+  }
+  const decoded = Buffer.from(bytesBase64, 'base64');
+  if (decoded.length === 0) throw new AssetManagerWriteValidationError('Empty asset payload');
+  return decoded;
+}
+
+function assertValidAssetReplacement(targetPath: string, deletePath: string): void {
+  assertWriteableAssetPath(deletePath);
+  if (deletePath === targetPath) throw new AssetManagerWriteValidationError(`Replacement path matches target: ${targetPath}`);
+  if (strippedAssetStem(deletePath) !== strippedAssetStem(targetPath)) {
+    throw new AssetManagerWriteValidationError(`Replacement stem mismatch: ${deletePath} -> ${targetPath}`);
+  }
+}
+
+function validateWriteAssetFiles(files: readonly AssetManagerWriteAssetFile[]): readonly Buffer[] {
+  if (files.length === 0 || files.length > MAX_WRITE_ASSET_FILES) {
+    throw new AssetManagerWriteValidationError(`Asset write count out of range: ${files.length}`);
+  }
+
+  const decoded: Buffer[] = [];
+  for (const file of files) {
+    assertWriteableAssetPath(file.targetPath);
+    if (file.deletePath !== undefined) assertValidAssetReplacement(file.targetPath, file.deletePath);
+    decoded.push(decodeAssetBase64(file.bytesBase64));
+  }
+  return decoded;
 }
 
 function withCatalogAssignments(
@@ -190,7 +286,81 @@ export class AssetManagerService {
 
   bootstrapCatalog(options: Pick<AssetManagerBootstrapCatalogPayload, 'source' | 'mode' | 'split' | 'schema'>): AssetManagerScanSnapshot {
     const catalog = withBootstrapSchema(this.loadCatalog().catalog, options.schema);
-    return this.saveAndScan(bootstrapAssetCatalogFromEntries(catalog, this.bootstrapEntries(options.source), options));
+    const bootstrapped = bootstrapAssetCatalogFromEntries(catalog, this.bootstrapEntries(options.source), options);
+    return this.saveAndScan(withBootstrapConfig(bootstrapped, options.split));
+  }
+
+  autoAssignNewAssets(newPaths: readonly string[]): AssetAutoAssignResult {
+    for (const relPath of newPaths) assertSafeRelativePath(relPath);
+    const { catalog } = this.loadCatalog();
+    const rules = catalog.bootstrap;
+    if (rules === undefined) {
+      return { snapshot: this.scan(), assignedPaths: [], anomalyPaths: [], addedVocab: {} };
+    }
+
+    const scanned = new Set(this.bootstrapEntries('filename').map((entry) => entry.path));
+    const entries = newPaths
+      .filter((relPath) => scanned.has(relPath) && catalog.assignments[relPath] === undefined)
+      .map((relPath) => ({ path: relPath, name: stripExtensionResidue(path.parse(relPath).name) }));
+    const preview = previewAssetCatalogBootstrapEntries(catalog, entries, rules);
+    const assignedPaths = preview.filter((entry) => entry.slots !== null).map((entry) => entry.path).sort();
+    const anomalyPaths = preview.filter((entry) => entry.slots === null).map((entry) => entry.path).sort();
+    if (assignedPaths.length === 0) {
+      return { snapshot: this.scan(), assignedPaths, anomalyPaths, addedVocab: {} };
+    }
+
+    const next = bootstrapAssetCatalogFromEntries(catalog, entries, { mode: 'missing', split: rules });
+    return { snapshot: this.saveAndScan(next), assignedPaths, anomalyPaths, addedVocab: diffVocab(catalog.vocab, next.vocab) };
+  }
+
+  undoAutoAssign(payload: {
+    readonly assignedPaths: readonly string[];
+    readonly addedVocab: Partial<Record<AssetSlotId, readonly string[]>>;
+  }): AssetManagerScanSnapshot {
+    for (const relPath of payload.assignedPaths) assertSafeRelativePath(relPath);
+    const { catalog } = this.loadCatalog();
+    const assignments = { ...catalog.assignments };
+    for (const relPath of payload.assignedPaths) delete assignments[relPath];
+    const vocab: AssetCatalog['vocab'] = { ...catalog.vocab };
+    for (const [slotId, removed] of Object.entries(payload.addedVocab) as [AssetSlotId, readonly string[]][]) {
+      const drop = new Set(removed);
+      vocab[slotId] = (vocab[slotId] ?? []).filter((value) => !drop.has(value));
+    }
+    return this.saveAndScan({ ...catalog, assignments, vocab });
+  }
+
+  writeAssetFiles(files: readonly AssetManagerWriteAssetFile[]): AssetManagerWriteAssetFilesResult {
+    const decoded = validateWriteAssetFiles(files);
+    const writtenPaths: string[] = [];
+    const deletedPaths: string[] = [];
+    const { catalog } = this.loadCatalog();
+    const assignments: AssetCatalog['assignments'] = { ...catalog.assignments };
+    let catalogChanged = false;
+
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index];
+      const bytes = decoded[index];
+      if (file === undefined || bytes === undefined) throw new AssetManagerWriteValidationError('Mismatched asset write payload');
+
+      const targetAbsolutePath = path.join(this.assetsDir, ...file.targetPath.split('/'));
+      fs.mkdirSync(path.dirname(targetAbsolutePath), { recursive: true });
+      fs.writeFileSync(targetAbsolutePath, bytes);
+      writtenPaths.push(file.targetPath);
+
+      if (file.deletePath !== undefined) {
+        fs.rmSync(path.join(this.assetsDir, ...file.deletePath.split('/')), { force: true });
+        deletedPaths.push(file.deletePath);
+        const existingAssignment = assignments[file.deletePath];
+        if (existingAssignment !== undefined) {
+          assignments[file.targetPath] = existingAssignment;
+          delete assignments[file.deletePath];
+          catalogChanged = true;
+        }
+      }
+    }
+
+    if (catalogChanged) this.saveAndScan({ ...catalog, assignments });
+    return { writtenPaths, deletedPaths };
   }
 
   previewCatalogBootstrap(
@@ -265,4 +435,27 @@ function withBootstrapSchema(catalog: AssetCatalog, schema?: AssetCatalogSchema)
   const vocab: AssetCatalog['vocab'] = { ...catalog.vocab };
   for (const slot of schema.slots) vocab[slot.id] = vocab[slot.id] ?? [];
   return { ...catalog, schema, vocab };
+}
+
+/** 적용된 split 옵션을 catalog의 bootstrap 섹션으로 persist. split이 없으면 기존 섹션을 유지한다. */
+function withBootstrapConfig(catalog: AssetCatalog, split?: AssetCatalogBootstrapSplitOptions): AssetCatalog {
+  if (split === undefined) return catalog;
+  return {
+    ...catalog,
+    bootstrap: {
+      separator: split.separator ?? '_',
+      slotTokenCounts: split.slotTokenCounts ?? {},
+      ...(split.groupOverrides !== undefined && split.groupOverrides.length > 0 && { groupOverrides: split.groupOverrides }),
+    },
+  };
+}
+
+function diffVocab(before: AssetCatalog['vocab'], after: AssetCatalog['vocab']): Partial<Record<AssetSlotId, string[]>> {
+  const added: Partial<Record<AssetSlotId, string[]>> = {};
+  for (const [slotId, values] of Object.entries(after) as [AssetSlotId, string[]][]) {
+    const previous = new Set(before[slotId] ?? []);
+    const fresh = values.filter((value) => !previous.has(value));
+    if (fresh.length > 0) added[slotId] = fresh;
+  }
+  return added;
 }

@@ -35,6 +35,13 @@ export interface AssetCatalogBootstrapSplitOptions {
   readonly groupOverrides?: readonly AssetCatalogBootstrapGroupOverride[];
 }
 
+/** catalog에 persist된 bootstrap 생성 규칙 (vscode측 AssetCatalogBootstrapConfig 미러). */
+export interface AssetCatalogBootstrapConfigMirror {
+  readonly separator: string;
+  readonly slotTokenCounts: Partial<Record<AssetSlotId, number>>;
+  readonly groupOverrides?: readonly AssetCatalogBootstrapGroupOverride[];
+}
+
 export interface AssetSlotDefinition {
   readonly id: AssetSlotId;
   readonly label: string;
@@ -61,6 +68,7 @@ export interface AssetCatalogMirror {
   readonly expected: AssetExpectedMapMirror;
   readonly assignments: Record<string, AssetSlotValues>;
   readonly outputs?: AssetCatalogOutputsMirror;
+  readonly bootstrap?: AssetCatalogBootstrapConfigMirror;
 }
 
 export interface AssetManagerAssetEntry {
@@ -80,6 +88,18 @@ export type AssetOutputKind = 'promptBlock' | 'whitelistRegex' | 'missingReport'
 export interface AssetManagerAssignmentChange {
   readonly path: string;
   readonly slots: AssetSlotValues | null;
+}
+
+export interface AssetManagerWriteAssetFile {
+  readonly targetPath: string;
+  readonly bytesBase64: string;
+  readonly deletePath?: string;
+}
+
+export interface AssetManagerPickedFile {
+  readonly name: string;
+  readonly bytesBase64: string;
+  readonly sizeBytes: number;
 }
 
 export interface AssetManagerTokenizeProposal {
@@ -162,6 +182,14 @@ export interface AssetManagerWebviewPayloadByType {
     readonly content: string;
   };
   readonly 'asset-manager/buildManifest': { readonly stableId: string };
+  readonly 'asset-manager/undoAutoAssign': {
+    readonly stableId: string;
+    readonly assignedPaths: readonly string[];
+    readonly addedVocab: Partial<Record<AssetSlotId, readonly string[]>>;
+  };
+  readonly 'asset-manager/writeAssets': { readonly stableId: string; readonly files: readonly AssetManagerWriteAssetFile[] };
+  readonly 'asset-manager/replaceAssetFile': { readonly stableId: string; readonly path: string };
+  readonly 'asset-manager/pickAssetFiles': { readonly stableId: string };
 }
 
 export type AssetManagerWebviewMessage = {
@@ -171,6 +199,15 @@ export type AssetManagerWebviewMessage = {
 export type AssetManagerExtensionMessage =
   | AssetManagerEnvelope<'asset-manager/assetsLoaded', AssetManagerAssetsLoadedPayload>
   | AssetManagerEnvelope<'asset-manager/catalogSaved', AssetManagerCatalogSavedPayload>
+  | AssetManagerEnvelope<
+      'asset-manager/autoAssignApplied',
+      AssetManagerScanSnapshot & {
+        readonly stableId: string;
+        readonly assignedPaths: readonly string[];
+        readonly anomalyPaths: readonly string[];
+        readonly addedVocab: Partial<Record<AssetSlotId, readonly string[]>>;
+      }
+    >
   | AssetManagerEnvelope<
       'asset-manager/lorebookNamesResult',
       { readonly stableId: string; readonly candidates: readonly LorebookNameCandidateMirror[] }
@@ -205,6 +242,14 @@ export type AssetManagerExtensionMessage =
     >
   | AssetManagerEnvelope<'asset-manager/outputSaved', { readonly stableId: string; readonly kind: AssetOutputKind; readonly savedPath: string }>
   | AssetManagerEnvelope<
+      'asset-manager/assetsWritten',
+      { readonly stableId: string; readonly writtenPaths: readonly string[]; readonly deletedPaths: readonly string[] }
+    >
+  | AssetManagerEnvelope<
+      'asset-manager/filesPicked',
+      { readonly stableId: string; readonly files: readonly AssetManagerPickedFile[]; readonly skipped: readonly string[] }
+    >
+  | AssetManagerEnvelope<
       'asset-manager/manifestBuilt',
       {
         readonly stableId: string;
@@ -220,12 +265,15 @@ export type AssetManagerExtensionMessage =
 const EXTENSION_MESSAGE_TYPES: ReadonlySet<string> = new Set([
   'asset-manager/assetsLoaded',
   'asset-manager/catalogSaved',
+  'asset-manager/autoAssignApplied',
   'asset-manager/lorebookNamesResult',
   'asset-manager/tokenizeResult',
   'asset-manager/imageMetaResult',
   'asset-manager/outputsResult',
   'asset-manager/catalogBootstrapPreview',
   'asset-manager/outputSaved',
+  'asset-manager/assetsWritten',
+  'asset-manager/filesPicked',
   'asset-manager/manifestBuilt',
   'asset-manager/error',
 ]);

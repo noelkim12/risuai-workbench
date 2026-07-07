@@ -28,6 +28,33 @@ describe('asset catalog', () => {
     expect(parsed).toEqual(catalog);
   });
 
+  it('round-trips bootstrap config through serialize/parse', () => {
+    const catalog = {
+      ...createDefaultAssetCatalog(),
+      bootstrap: {
+        separator: '_',
+        slotTokenCounts: { s1: 2 },
+        groupOverrides: [{ firstToken: 'mel', slotTokenCounts: { s1: 1 } }],
+      },
+    };
+    const parsed = parseAssetCatalog(JSON.parse(serializeAssetCatalog(catalog)));
+    expect(parsed).toEqual(catalog);
+  });
+
+  it('accepts bootstrap config without groupOverrides', () => {
+    const parsed = parseAssetCatalog({
+      ...JSON.parse(serializeAssetCatalog(createDefaultAssetCatalog())),
+      bootstrap: { separator: '-', slotTokenCounts: {} },
+    });
+    expect(parsed?.bootstrap).toEqual({ separator: '-', slotTokenCounts: {} });
+  });
+
+  it('keeps parsing catalogs without bootstrap section (backward compat)', () => {
+    const parsed = parseAssetCatalog(JSON.parse(serializeAssetCatalog(createDefaultAssetCatalog())));
+    expect(parsed).not.toBeNull();
+    expect(parsed?.bootstrap).toBeUndefined();
+  });
+
   it('accepts a valid 3-slot catalog with expected/outputs', () => {
     const parsed = parseAssetCatalog({
       version: 1,
@@ -77,6 +104,20 @@ describe('asset catalog', () => {
         vocab: {},
         expected: {},
         assignments: {},
+      }),
+    ).toBeNull();
+  });
+
+  it('rejects malformed bootstrap sections', () => {
+    const base = JSON.parse(serializeAssetCatalog(createDefaultAssetCatalog()));
+    expect(parseAssetCatalog({ ...base, bootstrap: 'nope' })).toBeNull();
+    expect(parseAssetCatalog({ ...base, bootstrap: { separator: 1, slotTokenCounts: {} } })).toBeNull();
+    expect(parseAssetCatalog({ ...base, bootstrap: { separator: '_', slotTokenCounts: { s1: 0 } } })).toBeNull();
+    expect(parseAssetCatalog({ ...base, bootstrap: { separator: '_', slotTokenCounts: { s9: 1 } } })).toBeNull();
+    expect(
+      parseAssetCatalog({
+        ...base,
+        bootstrap: { separator: '_', slotTokenCounts: {}, groupOverrides: [{ firstToken: '', slotTokenCounts: {} }] },
       }),
     ).toBeNull();
   });

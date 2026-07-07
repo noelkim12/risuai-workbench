@@ -7,10 +7,12 @@
     detectSeparator,
     detectSlotCount,
     pruneStaleOverrides,
+    seedFromBootstrapConfig,
     type GroupTokenCounts,
   } from '../../asset-manager/bootstrapGroups';
   import type {
     AssetCatalogBootstrapAnomalyReason,
+    AssetCatalogBootstrapConfigMirror,
     AssetCatalogBootstrapGroupSummaryMirror,
     AssetCatalogBootstrapSplitOptions,
     AssetCatalogSchemaMirror,
@@ -27,6 +29,8 @@
 
   export let schema: AssetCatalogSchemaMirror;
   export let catalogExists = true;
+  /** catalog에 persist된 생성 규칙. 있으면 이 값으로 seed하고 자동 감지를 건너뛴다. */
+  export let bootstrapConfig: AssetCatalogBootstrapConfigMirror | null = null;
   export let previewRows: readonly { readonly path: string; readonly name: string; readonly slots: AssetSlotValues | null }[];
   export let groups: readonly AssetCatalogBootstrapGroupSummaryMirror[] = [];
   export let onPreview: (source: BootstrapSource, mode: BootstrapMode, split: AssetCatalogBootstrapSplitOptions, schema: AssetCatalogSchemaMirror) => void;
@@ -64,18 +68,26 @@
     joinTemplate: slotIds.map((id) => `{${id}}`).join(separator),
   } satisfies AssetCatalogSchemaMirror;
 
-  // catalog 스키마에서 슬롯 수/라벨/구분자 1회 시드(최초 생성 시엔 이후 정적 감지가 덮어씀).
+  // catalog 스키마에서 슬롯 수/라벨 1회 시드. persist된 bootstrap 규칙이 있으면
+  // 구분자/조각 수/그룹 override를 그 값으로 복원한다(자동 감지보다 우선).
   $: if (schema && !schemaSeeded) {
     schemaSeeded = true;
     slotCount = Math.min(3, Math.max(1, schema.slots.length)) as 1 | 2 | 3;
     labels = DEFAULT_LABELS.map((def, index) => schema.slots[index]?.label ?? def);
     separator = joinTemplateSeparator(schema.joinTemplate);
+    if (bootstrapConfig !== null) {
+      const seed = seedFromBootstrapConfig(bootstrapConfig);
+      separator = seed.separator;
+      globalCounts = seed.globalCounts;
+      groupCounts = seed.groupCounts;
+    }
   }
 
-  // previewRows가 처음 채워질 때 1회: (최초 생성 시) 구분자·슬롯 수 + s1 조각 수 정적 감지 → 재미리보기.
+  // previewRows가 처음 채워질 때 1회: persist된 규칙이 없을 때만 정적 감지를 돌린다.
+  // 규칙이 있으면 seed된 상태 그대로 미리보기만 갱신한다(감지가 저장된 규칙을 덮어쓰지 않게).
   $: if (!autoDetected && previewRows.length > 0) {
     autoDetected = true;
-    runAutoDetect();
+    if (bootstrapConfig === null) runAutoDetect();
   }
 
   // groups가 갱신될 때 한 번만 prune — groupCounts를 $: 의존성으로 직접 쓰면 자기참조 재실행이 되므로 guard 패턴 사용
