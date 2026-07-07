@@ -79,6 +79,9 @@
   let firstRunOpened = false;
   let bootstrapPreviewRows: readonly { readonly path: string; readonly name: string; readonly slots: AssetCatalogMirror['assignments'][string] | null }[] = [];
   let bootstrapGroups: readonly AssetCatalogBootstrapGroupSummaryMirror[] = [];
+  // 스냅샷(assetsLoaded/catalogSaved 등)이 도착할 때마다 증가. bootstrap modal이 열린 채로
+  // watcher가 파일을 발견하면 이 값으로 modal이 미리보기를 재요청한다.
+  let snapshotRevision = 0;
   let autoAssignNotice: {
     readonly assignedPaths: readonly string[];
     readonly anomalyPaths: readonly string[];
@@ -119,6 +122,7 @@
     catalogExists = payload.catalogExists;
     orphanPaths = payload.orphanPaths;
     duplicateNames = payload.duplicateNames;
+    snapshotRevision += 1;
     status = `${entries.length} assets · 미할당 ${entries.filter((entry) => entry.flags.unassigned).length} · orphan ${orphanPaths.length}`;
   }
 
@@ -520,6 +524,7 @@
       bootstrapConfig={catalog.bootstrap ?? null}
       previewRows={bootstrapPreviewRows}
       groups={bootstrapGroups}
+      assetRevision={snapshotRevision}
       onPreview={previewCatalogBootstrap}
       onSelect={runCatalogBootstrap}
       onClose={() => {
