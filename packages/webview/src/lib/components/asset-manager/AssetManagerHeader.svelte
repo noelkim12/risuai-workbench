@@ -19,6 +19,7 @@
   export let onRefresh: () => void;
   export let onOpenBootstrap: () => void;
   export let onBuildManifest: () => void;
+  export let onPickFiles: () => void;
 
   $: activeIndex = Math.max(
     0,
@@ -68,6 +69,15 @@
       aria-label="재스캔"
     >
       <span class="action__icon">⟳</span>
+    </button>
+    <button
+      type="button"
+      class="action"
+      onclick={onPickFiles}
+      title="파일 선택으로 assets에 추가 (외부 탐색기 드래그는 Shift를 누른 채 드롭)"
+    >
+      <span class="action__glyph">＋</span>
+      파일 추가
     </button>
     <button type="button" class="action" onclick={onOpenBootstrap} title="vocab과 할당을 자동 생성">
       <span class="action__glyph">✦</span>

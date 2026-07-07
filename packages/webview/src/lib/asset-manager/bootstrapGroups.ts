@@ -5,6 +5,7 @@
 
 import type {
   AssetCatalogBootstrapAnomalyReason,
+  AssetCatalogBootstrapConfigMirror,
   AssetCatalogBootstrapGroupOverride,
   AssetCatalogBootstrapGroupSummaryMirror,
   AssetSlotId,
@@ -45,6 +46,19 @@ export function pruneStaleOverrides(
 ): Map<string, GroupTokenCounts> {
   const known = new Set(groups.map((group) => group.firstToken));
   return new Map([...edited.entries()].filter(([firstToken]) => known.has(firstToken)));
+}
+
+/** persist된 bootstrap 규칙을 모달 편집 상태(구분자/전역 조각 수/그룹 override)로 변환. */
+export function seedFromBootstrapConfig(config: AssetCatalogBootstrapConfigMirror): {
+  readonly separator: string;
+  readonly globalCounts: GroupTokenCounts;
+  readonly groupCounts: Map<string, GroupTokenCounts>;
+} {
+  return {
+    separator: config.separator,
+    globalCounts: { ...config.slotTokenCounts },
+    groupCounts: new Map((config.groupOverrides ?? []).map((entry) => [entry.firstToken, { ...entry.slotTokenCounts }])),
+  };
 }
 
 /** 후보 구분자로 이름을 토큰화(공백은 연속 공백 축약, 나머지는 리터럴 분리 후 trim). */
