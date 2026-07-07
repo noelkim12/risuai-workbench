@@ -87,6 +87,10 @@
   let stagedItems: StagedItem[] | null = null;
   let stagedApplying = false;
   let dragActive = false;
+  /** 드래그 중 상세 모달이 열려 있으면 해당 asset 경로 — drop을 교체로 라우팅한다. */
+  let dragReplaceTarget: string | null = null;
+  /** webview 내부 요소(타일/모달 이미지 등)에서 시작된 드래그 — 외부 파일 drop 흐름에서 제외한다. */
+  let internalDrag = false;
   let dropNotice = '';
   let stagedSeq = 0;
 
@@ -196,6 +200,8 @@
 
   onMount(() => {
     window.addEventListener('message', handleMessage);
+    window.addEventListener('dragstart', onInternalDragStart, { capture: true });
+    window.addEventListener('dragend', onInternalDragEnd, { capture: true });
     window.addEventListener('dragenter', onDragEnter, { capture: true });
     window.addEventListener('dragover', onDragOver, { capture: true });
     window.addEventListener('dragleave', onDragLeave, { capture: true });
@@ -210,6 +216,8 @@
     }, 500);
     return () => {
       window.removeEventListener('message', handleMessage);
+      window.removeEventListener('dragstart', onInternalDragStart, { capture: true });
+      window.removeEventListener('dragend', onInternalDragEnd, { capture: true });
       window.removeEventListener('dragenter', onDragEnter, { capture: true });
       window.removeEventListener('dragover', onDragOver, { capture: true });
       window.removeEventListener('dragleave', onDragLeave, { capture: true });
@@ -256,6 +264,8 @@
   const MAX_DROP_FILE_BYTES = 50 * 1024 * 1024;
 
   function isPotentialFileDrag(event: DragEvent): boolean {
+    // 내부에서 시작된 드래그(dragstart가 webview 안에서 발생)는 외부 파일이 아니다.
+    if (internalDrag) return false;
     const transfer = event.dataTransfer;
     if (!transfer) return false;
     if (transfer.files.length > 0) return true;
@@ -268,11 +278,26 @@
     return types.length === 0;
   }
 
+  // 내부 드래그(dragstart는 외부 파일 드래그에서는 절대 발생하지 않음) 동안 파일 drop 흐름을 잠근다.
+  function onInternalDragStart(): void {
+    internalDrag = true;
+  }
+
+  function onInternalDragEnd(): void {
+    internalDrag = false;
+  }
+
+  /** 상세 모달이 열려 있으면 그 asset 경로(교체 대상), 아니면 null. 모달이 자신을 data 속성으로 광고한다. */
+  function activeReplaceTargetPath(): string | null {
+    return document.querySelector('[data-asset-replace-target]')?.getAttribute('data-asset-replace-target') ?? null;
+  }
+
   function onDragEnter(event: DragEvent): void {
     if (!isPotentialFileDrag(event)) return;
     event.preventDefault();
     event.stopPropagation();
     dragActive = true;
+    dragReplaceTarget = activeReplaceTargetPath();
   }
 
   function onDragOver(event: DragEvent): void {
@@ -281,6 +306,7 @@
     event.stopPropagation();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
     dragActive = true;
+    dragReplaceTarget = activeReplaceTargetPath();
   }
 
   function onDragLeave(event: DragEvent): void {
@@ -288,12 +314,17 @@
     const leavingWindow = event.clientX <= 0 || event.clientY <= 0 || event.clientX >= window.innerWidth || event.clientY >= window.innerHeight;
     if (!leavingWindow) return;
     dragActive = false;
+    dragReplaceTarget = null;
   }
 
   async function onDrop(event: DragEvent): Promise<void> {
+    // 내부 드래그의 drop은 파일 staging 대상이 아니다 (dragend가 flag를 정리한다).
+    if (internalDrag) return;
     event.preventDefault();
     event.stopPropagation();
     dragActive = false;
+    const replaceTarget = dragReplaceTarget;
+    dragReplaceTarget = null;
     const dropped = [...(event.dataTransfer?.files ?? [])];
     if (dropped.length === 0) return;
 
@@ -306,11 +337,15 @@
       }
       candidates.push({ name: file.name, bytesBase64: await fileToBase64(file), sizeBytes: file.size });
     }
-    stageFiles(candidates, rejected);
+    // 상세 모달 위 drop은 단일 파일일 때만 그 asset 교체로 고정한다.
+    stageFiles(candidates, rejected, dropped.length === 1 ? (replaceTarget ?? undefined) : undefined);
+    if (replaceTarget !== null && dropped.length > 1) {
+      dropNotice = `여러 파일이 드롭되어 ${replaceTarget} 교체 대신 일반 추가/교체로 처리합니다. ${dropNotice}`.trim();
+    }
   }
 
   /** drop/파일 선택 공통 staging 진입점. 지원 확장자를 거른 뒤 staging modal에 쌓는다. */
-  function stageFiles(files: readonly AssetManagerPickedFile[], rejected: string[]): void {
+  function stageFiles(files: readonly AssetManagerPickedFile[], rejected: string[], replaceTargetPath?: string): void {
     const accepted: StagedItem[] = [];
     for (const file of files) {
       if (!isSupportedAssetFile(file.name)) {
@@ -324,6 +359,7 @@
         editedName: file.name,
         bytesBase64: file.bytesBase64,
         sizeBytes: file.sizeBytes,
+        ...(replaceTargetPath !== undefined && { replaceTargetPath }),
       });
     }
     dropNotice = rejected.length > 0 ? `지원하지 않거나 너무 큰 파일 ${rejected.length}개 제외: ${rejected.join(', ')}` : '';
@@ -422,7 +458,8 @@
 
 <main
   class="asset-manager"
-  class:is-dragover={dragActive}
+  class:is-dragover={dragActive && !dragReplaceTarget}
+  class:is-replace-drag={dragActive && dragReplaceTarget !== null}
   aria-label="Risu Asset Manager"
 >
   <AssetManagerHeader
@@ -455,9 +492,12 @@
     </div>
   {/if}
   {#if dropNotice}<p class="asset-manager__dropnotice" role="status">{dropNotice}</p>{/if}
-  {#if dragActive}<div class="asset-manager__dropzone" aria-hidden="true">여기에 놓으면 assets에 추가/교체합니다</div>{/if}
+  <!-- 교체 drop(상세 모달 열림)일 때는 전체 오버레이 대신 모달 자체에 grid와 같은 dashed outline을 준다. -->
+  {#if dragActive && !dragReplaceTarget}
+    <div class="asset-manager__dropzone" aria-hidden="true">여기에 놓으면 assets에 추가/교체합니다</div>
+  {/if}
   <!-- VS Code workbench가 Shift 없는 외부 파일 드래그를 webview에 전달하지 않으므로(🚫 커서) 상시 안내 -->
-  <p class="asset-manager__drophint">외부 탐색기에서 파일을 끌어올 때는 <kbd>Shift</kbd>를 누른 채 드롭하거나, 헤더의 <strong>파일 추가</strong> 버튼을 사용하세요.</p>
+  <p class="asset-manager__drophint">외부 탐색기에서 파일을 <kbd>Drag&Drop</kbd>하여 에셋을 추가할 수 있습니다</p>
 
   {#if catalog}
     {#if tab === 'grid'}
@@ -563,6 +603,25 @@
     cursor: pointer;
   }
   .asset-manager.is-dragover { outline: 2px dashed var(--focus); outline-offset: -6px; }
+  /* 교체 drop: grid의 is-dragover와 같은 tone(dashed outline)을 열린 상세 모달에 적용한다. */
+  .asset-manager.is-replace-drag :global(.detail-modal) {
+    outline: 2px dashed var(--focus);
+    outline-offset: -6px;
+  }
+  .asset-manager.is-replace-drag :global(.detail-modal)::after {
+    content: '놓으면 이 asset 파일을 교체합니다';
+    position: absolute;
+    left: 50%;
+    bottom: var(--space-3);
+    transform: translateX(-50%);
+    padding: 4px 14px;
+    border-radius: var(--radius-pill, 999px);
+    background: color-mix(in srgb, var(--focus) 18%, var(--card));
+    color: var(--focus);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    pointer-events: none;
+  }
   .asset-manager__dropzone {
     position: fixed;
     inset: 0;

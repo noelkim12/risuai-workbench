@@ -38,6 +38,8 @@ export interface StagedItem {
   editedName: string;
   readonly bytesBase64: string;
   readonly sizeBytes: number;
+  /** 상세 모달 위 drop처럼 교체 대상이 확정된 경우 그 asset의 상대 경로. 파일명 기반 분류를 건너뛴다. */
+  readonly replaceTargetPath?: string;
 }
 
 export type AssetFilenameValidationReason = 'unsupported-extension' | 'unsafe-path' | 'dot-segment' | 'reserved-basename';
@@ -102,6 +104,27 @@ export function classifyDroppedFile(fileName: string, entries: readonly AssetMan
     deletePath: match.path,
     replaces: match,
     extChange: { from: matchExt, to: ext },
+  };
+}
+
+/**
+ * 교체 대상이 확정된 drop(상세 모달 위 drop 등)의 분류.
+ * 드롭된 파일명과 무관하게 기존 asset의 디렉토리/stem을 유지하고 확장자만 따라간다.
+ */
+export function classifyReplacementDrop(target: AssetManagerAssetEntry, fileName: string): StagedClassification {
+  const ext = assetExtension(fileName);
+  const targetExt = assetExtension(target.path);
+  if (targetExt === ext) return { kind: 'replace', targetPath: target.path, replaces: target };
+
+  const separatorIndex = target.path.lastIndexOf('/');
+  const dir = separatorIndex === -1 ? '' : target.path.slice(0, separatorIndex + 1);
+  const stem = stripAssetExtension(target.path.slice(separatorIndex + 1));
+  return {
+    kind: 'replace',
+    targetPath: `${dir}${stem}.${ext}`,
+    deletePath: target.path,
+    replaces: target,
+    extChange: { from: targetExt, to: ext },
   };
 }
 

@@ -224,6 +224,7 @@
             ondblclick={() => openModal(index)}
             title={entry.path}
           >
+            <!-- 타일 이미지를 끌면 외부 파일 드래그로 오인되므로 native drag를 끈다. -->
             <img
               src={assetImageSrc(entry.path)}
               alt={entry.generatedName ?? entry.fileStem}
@@ -231,6 +232,7 @@
               height={tileSize}
               loading="lazy"
               decoding="async"
+              draggable="false"
             />
             <span class="tile__name">{entry.generatedName ?? entry.fileStem}</span>
             <span class="tile__badges">
