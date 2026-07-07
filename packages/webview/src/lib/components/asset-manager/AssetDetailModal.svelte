@@ -56,7 +56,8 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<section class="modal-backdrop" aria-label="Asset detail backdrop">
+<!-- data-asset-replace-target: 열려 있는 동안 App의 window drop이 이 asset 교체로 라우팅되도록 알린다. -->
+<section class="modal-backdrop" aria-label="Asset detail backdrop" data-asset-replace-target={entry.path}>
   <button
     type="button"
     class="modal-scrim"
@@ -67,12 +68,12 @@
       <h2>{entry.generatedName ?? entry.fileStem}</h2>
       <div>
         {#if onReplaceFile}
-          <button
+          <!-- <button
             type="button"
             class="button-secondary"
             onclick={() => onReplaceFile?.(entry.path)}
             title="다른 파일로 내용 교체 (이름 유지)"
-          >파일 교체…</button>
+          >파일 교체…</button> -->
         {/if}
         <button type="button" class="button-secondary" onclick={onPrev} aria-label="Previous asset"
           >←</button
