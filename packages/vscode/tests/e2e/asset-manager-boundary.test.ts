@@ -87,6 +87,172 @@ test('asset manager accepts valid webview messages', () => {
   );
 });
 
+test('asset manager validates undoAutoAssign payloads', () => {
+  assert.equal(
+    messages.isAssetManagerWebviewMessage(
+      envelope('asset-manager/undoAutoAssign', {
+        stableId: 'abc',
+        assignedPaths: ['additional/rin_excited.png'],
+        addedVocab: { s2: ['excited'] },
+      }),
+    ),
+    true,
+  );
+  assert.equal(
+    messages.isAssetManagerWebviewMessage(
+      envelope('asset-manager/undoAutoAssign', { stableId: 'abc', assignedPaths: ['../evil.png'], addedVocab: {} }),
+    ),
+    false,
+  );
+  assert.equal(
+    messages.isAssetManagerWebviewMessage(
+      envelope('asset-manager/undoAutoAssign', { stableId: 'abc', assignedPaths: [], addedVocab: { s9: ['x'] } }),
+    ),
+    false,
+  );
+});
+
+test('asset manager accepts valid dropped-file write messages', () => {
+  assert.equal(
+    messages.isAssetManagerWebviewMessage(
+      envelope('asset-manager/writeAssets', {
+        stableId: 'abc',
+        files: [
+          { targetPath: 'additional/rin_angry.png', bytesBase64: Buffer.from([1, 2, 3]).toString('base64') },
+          {
+            targetPath: 'emotions/rin_happy.webp',
+            bytesBase64: Buffer.from([4]).toString('base64'),
+            deletePath: 'emotions/rin_happy.png',
+          },
+        ],
+      }),
+    ),
+    true,
+  );
+});
+
+test('asset manager validates replaceAssetFile payloads', () => {
+  assert.equal(
+    messages.isAssetManagerWebviewMessage(
+      envelope('asset-manager/replaceAssetFile', { stableId: 'abc', path: 'additional/rin_angry.png' }),
+    ),
+    true,
+  );
+  assert.equal(
+    messages.isAssetManagerWebviewMessage(
+      envelope('asset-manager/replaceAssetFile', { stableId: 'abc', path: '../evil.png' }),
+    ),
+    false,
+  );
+  assert.equal(
+    messages.isAssetManagerWebviewMessage(envelope('asset-manager/replaceAssetFile', { stableId: 'abc' })),
+    false,
+  );
+});
+
+test('asset manager validates pickAssetFiles payloads and creates filesPicked messages', () => {
+  assert.equal(
+    messages.isAssetManagerWebviewMessage(envelope('asset-manager/pickAssetFiles', { stableId: 'abc' })),
+    true,
+  );
+  assert.equal(messages.isAssetManagerWebviewMessage(envelope('asset-manager/pickAssetFiles', {})), false);
+
+  const message = messages.createAssetManagerExtensionMessage('asset-manager/filesPicked', {
+    stableId: 'abc',
+    files: [{ name: 'rin_angry.png', bytesBase64: Buffer.from([1]).toString('base64'), sizeBytes: 1 }],
+    skipped: ['huge.mp4'],
+  });
+  assert.deepEqual(message, {
+    protocol: types.ASSET_MANAGER_PROTOCOL,
+    version: types.ASSET_MANAGER_PROTOCOL_VERSION,
+    type: 'asset-manager/filesPicked',
+    payload: {
+      stableId: 'abc',
+      files: [{ name: 'rin_angry.png', bytesBase64: Buffer.from([1]).toString('base64'), sizeBytes: 1 }],
+      skipped: ['huge.mp4'],
+    },
+  });
+});
+
+test('asset manager rejects unsafe dropped-file write messages', () => {
+  assert.equal(
+    messages.isAssetManagerWebviewMessage(
+      envelope('asset-manager/writeAssets', { stableId: 'abc', files: [] }),
+    ),
+    false,
+  );
+  assert.equal(
+    messages.isAssetManagerWebviewMessage(
+      envelope('asset-manager/writeAssets', {
+        stableId: 'abc',
+        files: [{ targetPath: 'icons/rin.png', bytesBase64: Buffer.from([1]).toString('base64') }],
+      }),
+    ),
+    false,
+  );
+  assert.equal(
+    messages.isAssetManagerWebviewMessage(
+      envelope('asset-manager/writeAssets', {
+        stableId: 'abc',
+        files: [{ targetPath: 'additional/manifest.json', bytesBase64: Buffer.from([1]).toString('base64') }],
+      }),
+    ),
+    false,
+  );
+  assert.equal(
+    messages.isAssetManagerWebviewMessage(
+      envelope('asset-manager/writeAssets', {
+        stableId: 'abc',
+        files: [{ targetPath: 'additional/rin.txt', bytesBase64: Buffer.from([1]).toString('base64') }],
+      }),
+    ),
+    false,
+  );
+  assert.equal(
+    messages.isAssetManagerWebviewMessage(
+      envelope('asset-manager/writeAssets', {
+        stableId: 'abc',
+        files: [{ targetPath: 'additional/rin.png', bytesBase64: 'not base64' }],
+      }),
+    ),
+    false,
+  );
+  assert.equal(
+    messages.isAssetManagerWebviewMessage(
+      envelope('asset-manager/writeAssets', {
+        stableId: 'abc',
+        files: [
+          {
+            targetPath: 'additional/rin.webp',
+            bytesBase64: Buffer.from([1]).toString('base64'),
+            deletePath: 'other/mel.png',
+          },
+        ],
+      }),
+    ),
+    false,
+  );
+});
+
+test('asset manager creates assetsWritten extension messages', () => {
+  const message = messages.createAssetManagerExtensionMessage('asset-manager/assetsWritten', {
+    stableId: 'abc',
+    writtenPaths: ['additional/rin_angry.png'],
+    deletedPaths: ['additional/rin_angry.webp'],
+  });
+
+  assert.deepEqual(message, {
+    protocol: types.ASSET_MANAGER_PROTOCOL,
+    version: types.ASSET_MANAGER_PROTOCOL_VERSION,
+    type: 'asset-manager/assetsWritten',
+    payload: {
+      stableId: 'abc',
+      writtenPaths: ['additional/rin_angry.png'],
+      deletedPaths: ['additional/rin_angry.webp'],
+    },
+  });
+});
+
 test('asset manager rejects traversal paths absolute output targets and wrong protocol', () => {
   assert.equal(
     messages.isAssetManagerWebviewMessage(
@@ -240,6 +406,230 @@ test('service bootstraps catalog from filenames', () => {
 
     assert.equal(updated.entries[0]?.generatedName, 'rin_angry');
     assert.deepEqual(updated.catalog.assignments, { 'additional/rin_angry.png': { s1: 'rin', s2: 'angry' } });
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test('service persists bootstrap rules when bootstrapCatalog is applied with split options', () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-vscode-asset-bootstrap-persist-'));
+  try {
+    fs.mkdirSync(path.join(workDir, 'assets', 'additional'), { recursive: true });
+    fs.writeFileSync(path.join(workDir, 'assets', 'additional', 'rin_angry.png'), Buffer.from([1]));
+    fs.writeFileSync(path.join(workDir, 'assets', 'additional', 'mel_flower_smile.png'), Buffer.from([1]));
+
+    const split = {
+      separator: '_',
+      slotTokenCounts: { s1: 1 },
+      groupOverrides: [{ firstToken: 'mel', slotTokenCounts: { s1: 2 } }],
+    };
+    const service = new serviceModule.AssetManagerService(workDir);
+    const updated = service.bootstrapCatalog({ source: 'filename', mode: 'full', split });
+
+    assert.deepEqual(updated.catalog.bootstrap, split);
+    const onDisk = JSON.parse(fs.readFileSync(path.join(workDir, 'assets', 'asset-catalog.json'), 'utf-8'));
+    assert.deepEqual(onDisk.bootstrap, split);
+
+    const after = service.applyAssignmentChanges([
+      { path: 'additional/rin_angry.png', slots: { s1: 'Rin', s2: 'angry' } },
+    ]);
+    assert.deepEqual(after.catalog.bootstrap, split);
+
+    const again = service.bootstrapCatalog({ source: 'filename', mode: 'missing' });
+    assert.deepEqual(again.catalog.bootstrap, split);
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test('service auto-assigns new files using persisted bootstrap rules', () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-vscode-asset-autoassign-'));
+  try {
+    fs.mkdirSync(path.join(workDir, 'assets', 'additional'), { recursive: true });
+    fs.writeFileSync(path.join(workDir, 'assets', 'additional', 'rin_angry.png'), Buffer.from([1]));
+
+    const service = new serviceModule.AssetManagerService(workDir);
+    service.bootstrapCatalog({ source: 'filename', mode: 'full', split: { separator: '_', slotTokenCounts: { s1: 1 } } });
+
+    fs.writeFileSync(path.join(workDir, 'assets', 'additional', 'rin_excited.png'), Buffer.from([1]));
+    const result = service.autoAssignNewAssets(['additional/rin_excited.png']);
+
+    assert.deepEqual(result.assignedPaths, ['additional/rin_excited.png']);
+    assert.deepEqual(result.anomalyPaths, []);
+    assert.deepEqual(result.addedVocab, { s2: ['excited'] });
+    assert.deepEqual(result.snapshot.catalog.assignments['additional/rin_excited.png'], { s1: 'rin', s2: 'excited' });
+    assert.equal(result.snapshot.catalog.vocab.s2?.includes('excited'), true);
+    assert.deepEqual(result.snapshot.catalog.assignments['additional/rin_angry.png'], { s1: 'rin', s2: 'angry' });
+
+    const onDisk = JSON.parse(fs.readFileSync(path.join(workDir, 'assets', 'asset-catalog.json'), 'utf-8'));
+    assert.deepEqual(onDisk.assignments['additional/rin_excited.png'], { s1: 'rin', s2: 'excited' });
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test('service reports anomalies without saving when nothing is assignable', () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-vscode-asset-autoassign-anomaly-'));
+  try {
+    fs.mkdirSync(path.join(workDir, 'assets', 'additional'), { recursive: true });
+    fs.writeFileSync(path.join(workDir, 'assets', 'additional', 'rin_summer_blue_smile.png'), Buffer.from([1]));
+
+    const service = new serviceModule.AssetManagerService(workDir);
+    service.bootstrapCatalog({
+      source: 'filename',
+      mode: 'full',
+      split: { separator: '_', slotTokenCounts: { s1: 2, s2: 1 } },
+      schema: {
+        slots: [
+          { id: 's1', label: 'character' },
+          { id: 's2', label: 'attire' },
+          { id: 's3', label: 'emotion' },
+        ],
+        joinTemplate: '{s1}_{s2}_{s3}',
+      },
+    });
+    const savedBefore = fs.readFileSync(path.join(workDir, 'assets', 'asset-catalog.json'), 'utf-8');
+
+    fs.writeFileSync(path.join(workDir, 'assets', 'additional', 'mel_smile.png'), Buffer.from([1]));
+    const result = service.autoAssignNewAssets(['additional/mel_smile.png']);
+
+    assert.deepEqual(result.assignedPaths, []);
+    assert.deepEqual(result.anomalyPaths, ['additional/mel_smile.png']);
+    assert.deepEqual(result.addedVocab, {});
+    assert.equal(fs.readFileSync(path.join(workDir, 'assets', 'asset-catalog.json'), 'utf-8'), savedBefore);
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test('service auto-assign is a no-op when no bootstrap rules are persisted', () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-vscode-asset-autoassign-norules-'));
+  try {
+    fs.mkdirSync(path.join(workDir, 'assets', 'additional'), { recursive: true });
+    fs.writeFileSync(path.join(workDir, 'assets', 'additional', 'rin_angry.png'), Buffer.from([1]));
+
+    const service = new serviceModule.AssetManagerService(workDir);
+    const result = service.autoAssignNewAssets(['additional/rin_angry.png']);
+
+    assert.deepEqual(result.assignedPaths, []);
+    assert.deepEqual(result.anomalyPaths, []);
+    assert.deepEqual(result.addedVocab, {});
+    assert.equal(result.snapshot.entries[0]?.flags.unassigned, true);
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test('service writes dropped asset files and migrates extension-change assignments', () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-vscode-asset-write-'));
+  try {
+    fs.mkdirSync(path.join(workDir, 'assets', 'emotions'), { recursive: true });
+    fs.writeFileSync(path.join(workDir, 'assets', 'emotions', 'rin_happy.png'), Buffer.from([9]));
+
+    const service = new serviceModule.AssetManagerService(workDir);
+    service.applyAssignmentChanges([{ path: 'emotions/rin_happy.png', slots: { s1: 'Rin', s2: 'happy' } }]);
+
+    const result = service.writeAssetFiles([
+      {
+        targetPath: 'emotions/rin_happy.webp',
+        bytesBase64: Buffer.from([1, 2, 3, 4]).toString('base64'),
+        deletePath: 'emotions/rin_happy.png',
+      },
+    ]);
+
+    assert.deepEqual(result.writtenPaths, ['emotions/rin_happy.webp']);
+    assert.deepEqual(result.deletedPaths, ['emotions/rin_happy.png']);
+    assert.equal(fs.readFileSync(path.join(workDir, 'assets', 'emotions', 'rin_happy.webp')).toString('base64'), 'AQIDBA==');
+    assert.equal(fs.existsSync(path.join(workDir, 'assets', 'emotions', 'rin_happy.png')), false);
+
+    const again = new serviceModule.AssetManagerService(workDir).scan();
+    assert.deepEqual(again.catalog.assignments['emotions/rin_happy.webp'], { s1: 'Rin', s2: 'happy' });
+    assert.equal(again.catalog.assignments['emotions/rin_happy.png'], undefined);
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test('replacementTargetForAsset keeps the asset stem and swaps only the extension', () => {
+  assert.deepEqual(serviceModule.replacementTargetForAsset('additional/rin_angry.png', 'final_v3_수정본.png'), {
+    targetPath: 'additional/rin_angry.png',
+  });
+  assert.deepEqual(serviceModule.replacementTargetForAsset('emotions/mel_sad.webp', 'export (1).png'), {
+    targetPath: 'emotions/mel_sad.png',
+    deletePath: 'emotions/mel_sad.webp',
+  });
+  assert.deepEqual(serviceModule.replacementTargetForAsset('additional/rin_angry.png', 'IMG_0001.WEBP'), {
+    targetPath: 'additional/rin_angry.webp',
+    deletePath: 'additional/rin_angry.png',
+  });
+  assert.deepEqual(serviceModule.replacementTargetForAsset('additional/sub/luna_smile.png', 'x.webp'), {
+    targetPath: 'additional/sub/luna_smile.webp',
+    deletePath: 'additional/sub/luna_smile.png',
+  });
+});
+
+test('replacementTargetForAsset output passes writeAssetFiles replacement validation', () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-vscode-asset-replace-'));
+  try {
+    fs.mkdirSync(path.join(workDir, 'assets', 'additional'), { recursive: true });
+    fs.writeFileSync(path.join(workDir, 'assets', 'additional', 'rin_angry.png'), Buffer.from([1]));
+
+    const service = new serviceModule.AssetManagerService(workDir);
+    service.applyAssignmentChanges([{ path: 'additional/rin_angry.png', slots: { s1: 'Rin', s2: 'angry' } }]);
+
+    const target = serviceModule.replacementTargetForAsset('additional/rin_angry.png', 'downloaded.webp');
+    const result = service.writeAssetFiles([
+      { targetPath: target.targetPath, bytesBase64: Buffer.from([2, 3]).toString('base64'), deletePath: target.deletePath },
+    ]);
+
+    assert.deepEqual(result.writtenPaths, ['additional/rin_angry.webp']);
+    assert.deepEqual(result.deletedPaths, ['additional/rin_angry.png']);
+    const snapshot = service.scan();
+    assert.deepEqual(snapshot.catalog.assignments['additional/rin_angry.webp'], { s1: 'Rin', s2: 'angry' });
+    assert.equal(snapshot.catalog.assignments['additional/rin_angry.png'], undefined);
+    assert.deepEqual(snapshot.orphanPaths, []);
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test('service rejects unsafe dropped asset writes at the service boundary', () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-vscode-asset-write-reject-'));
+  try {
+    const service = new serviceModule.AssetManagerService(workDir);
+    assert.throws(() => service.writeAssetFiles([]));
+    assert.throws(() => service.writeAssetFiles([{ targetPath: 'icons/rin.png', bytesBase64: 'AQ==' }]));
+    assert.throws(() => service.writeAssetFiles([{ targetPath: 'additional/asset-catalog.json', bytesBase64: 'AQ==' }]));
+    assert.throws(() => service.writeAssetFiles([{ targetPath: 'additional/rin.txt', bytesBase64: 'AQ==' }]));
+    assert.throws(() => service.writeAssetFiles([{ targetPath: 'additional/rin.png', bytesBase64: 'not base64' }]));
+    assert.throws(() =>
+      service.writeAssetFiles([
+        { targetPath: 'additional/rin.webp', bytesBase64: 'AQ==', deletePath: 'additional/mel.png' },
+      ]),
+    );
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test('service undoAutoAssign removes auto assignments and added vocab values', () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-vscode-asset-undo-'));
+  try {
+    fs.mkdirSync(path.join(workDir, 'assets', 'additional'), { recursive: true });
+    fs.writeFileSync(path.join(workDir, 'assets', 'additional', 'rin_angry.png'), Buffer.from([1]));
+
+    const service = new serviceModule.AssetManagerService(workDir);
+    service.bootstrapCatalog({ source: 'filename', mode: 'full', split: { separator: '_', slotTokenCounts: { s1: 1 } } });
+
+    fs.writeFileSync(path.join(workDir, 'assets', 'additional', 'rin_excited.png'), Buffer.from([1]));
+    const applied = service.autoAssignNewAssets(['additional/rin_excited.png']);
+    assert.deepEqual(applied.addedVocab, { s2: ['excited'] });
+
+    const undone = service.undoAutoAssign({ assignedPaths: applied.assignedPaths, addedVocab: applied.addedVocab });
+    assert.equal(undone.catalog.assignments['additional/rin_excited.png'], undefined);
+    assert.equal(undone.catalog.vocab.s2?.includes('excited'), false);
+    assert.deepEqual(undone.catalog.assignments['additional/rin_angry.png'], { s1: 'rin', s2: 'angry' });
+    assert.equal(undone.catalog.vocab.s2?.includes('angry'), true);
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
   }

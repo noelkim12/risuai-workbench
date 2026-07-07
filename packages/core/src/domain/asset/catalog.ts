@@ -35,6 +35,18 @@ export interface AssetCatalogOutputsConfig {
   readonly outputTemplate: string;
 }
 
+export interface AssetCatalogBootstrapGroupOverrideConfig {
+  readonly firstToken: string;
+  readonly slotTokenCounts: Partial<Record<AssetSlotId, number>>;
+}
+
+/** Catalog bootstrap 생성 규칙의 persist 형태. CatalogBootstrapModal 재진입 시 seed 소스다. */
+export interface AssetCatalogBootstrapConfig {
+  readonly separator: string;
+  readonly slotTokenCounts: Partial<Record<AssetSlotId, number>>;
+  readonly groupOverrides?: readonly AssetCatalogBootstrapGroupOverrideConfig[];
+}
+
 export interface AssetCatalog {
   readonly version: 1;
   readonly schema: AssetCatalogSchema;
@@ -42,6 +54,7 @@ export interface AssetCatalog {
   readonly expected: AssetExpectedMap;
   readonly assignments: Record<string, AssetSlotValues>;
   readonly outputs?: AssetCatalogOutputsConfig;
+  readonly bootstrap?: AssetCatalogBootstrapConfig;
 }
 
 export const DEFAULT_ASSET_OUTPUTS: AssetCatalogOutputsConfig = {
@@ -151,6 +164,33 @@ function parseOutputs(raw: unknown): AssetCatalogOutputsConfig | null | undefine
   };
 }
 
+function parseSlotTokenCounts(raw: unknown): Partial<Record<AssetSlotId, number>> | null {
+  if (!isPlainRecord(raw)) return null;
+  const counts: Partial<Record<AssetSlotId, number>> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (!isSlotId(key) || typeof value !== 'number' || !Number.isInteger(value) || value < 1) return null;
+    counts[key] = value;
+  }
+  return counts;
+}
+
+function parseBootstrap(raw: unknown): AssetCatalogBootstrapConfig | null | undefined {
+  if (raw === undefined) return undefined;
+  if (!isPlainRecord(raw) || typeof raw.separator !== 'string') return null;
+  const slotTokenCounts = parseSlotTokenCounts(raw.slotTokenCounts);
+  if (slotTokenCounts === null) return null;
+  if (raw.groupOverrides === undefined) return { separator: raw.separator, slotTokenCounts };
+  if (!Array.isArray(raw.groupOverrides)) return null;
+  const groupOverrides: AssetCatalogBootstrapGroupOverrideConfig[] = [];
+  for (const entry of raw.groupOverrides) {
+    if (!isPlainRecord(entry) || typeof entry.firstToken !== 'string' || entry.firstToken.length === 0) return null;
+    const counts = parseSlotTokenCounts(entry.slotTokenCounts);
+    if (counts === null) return null;
+    groupOverrides.push({ firstToken: entry.firstToken, slotTokenCounts: counts });
+  }
+  return { separator: raw.separator, slotTokenCounts, groupOverrides };
+}
+
 export function parseAssetCatalog(raw: unknown): AssetCatalog | null {
   if (!isPlainRecord(raw) || raw.version !== 1) return null;
   const schema = parseSchema(raw.schema);
@@ -158,10 +198,12 @@ export function parseAssetCatalog(raw: unknown): AssetCatalog | null {
   const expected = parseExpected(raw.expected);
   const assignments = parseAssignments(raw.assignments);
   const outputs = parseOutputs(raw.outputs);
-  if (!schema || !vocab || !expected || !assignments || outputs === null) return null;
+  const bootstrap = parseBootstrap(raw.bootstrap);
+  if (!schema || !vocab || !expected || !assignments || outputs === null || bootstrap === null) return null;
 
-  const catalog: AssetCatalog = { version: 1, schema, vocab, expected, assignments };
-  if (outputs !== undefined) return { ...catalog, outputs };
+  let catalog: AssetCatalog = { version: 1, schema, vocab, expected, assignments };
+  if (outputs !== undefined) catalog = { ...catalog, outputs };
+  if (bootstrap !== undefined) catalog = { ...catalog, bootstrap };
   return catalog;
 }
 

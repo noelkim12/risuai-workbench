@@ -9,6 +9,7 @@ import type {
   AssetCatalogOutputsConfig,
   AssetCatalogSchema,
   AssetExpectedMap,
+  AssetSlotId,
   AssetSlotValues,
   DuplicateNameGroup,
   LorebookNameCandidate,
@@ -107,6 +108,32 @@ export interface AssetManagerSaveOutputPayload extends AssetManagerStableIdPaylo
   readonly content: string;
 }
 
+export interface AssetManagerUndoAutoAssignPayload extends AssetManagerStableIdPayload {
+  readonly assignedPaths: readonly string[];
+  readonly addedVocab: Partial<Record<AssetSlotId, readonly string[]>>;
+}
+
+export interface AssetManagerWriteAssetFile {
+  readonly targetPath: string;
+  readonly bytesBase64: string;
+  readonly deletePath?: string;
+}
+
+export interface AssetManagerWriteAssetsPayload extends AssetManagerStableIdPayload {
+  readonly files: readonly AssetManagerWriteAssetFile[];
+}
+
+export interface AssetManagerReplaceAssetFilePayload extends AssetManagerStableIdPayload {
+  /** 교체할 기존 asset의 assets/ 기준 상대 경로 */
+  readonly path: string;
+}
+
+export interface AssetManagerPickedFile {
+  readonly name: string;
+  readonly bytesBase64: string;
+  readonly sizeBytes: number;
+}
+
 export type AssetManagerReadyMessage = AssetManagerEnvelope<'asset-manager/ready', AssetManagerReadyPayload>;
 export type AssetManagerRefreshAssetsMessage = AssetManagerEnvelope<'asset-manager/refreshAssets', AssetManagerStableIdPayload>;
 export type AssetManagerUpdateAssignmentsMessage = AssetManagerEnvelope<
@@ -125,6 +152,10 @@ export type AssetManagerReadImageMetaMessage = AssetManagerEnvelope<'asset-manag
 export type AssetManagerGenerateOutputsMessage = AssetManagerEnvelope<'asset-manager/generateOutputs', AssetManagerGenerateOutputsPayload>;
 export type AssetManagerSaveOutputMessage = AssetManagerEnvelope<'asset-manager/saveOutput', AssetManagerSaveOutputPayload>;
 export type AssetManagerBuildManifestMessage = AssetManagerEnvelope<'asset-manager/buildManifest', AssetManagerStableIdPayload>;
+export type AssetManagerUndoAutoAssignMessage = AssetManagerEnvelope<'asset-manager/undoAutoAssign', AssetManagerUndoAutoAssignPayload>;
+export type AssetManagerWriteAssetsMessage = AssetManagerEnvelope<'asset-manager/writeAssets', AssetManagerWriteAssetsPayload>;
+export type AssetManagerReplaceAssetFileMessage = AssetManagerEnvelope<'asset-manager/replaceAssetFile', AssetManagerReplaceAssetFilePayload>;
+export type AssetManagerPickAssetFilesMessage = AssetManagerEnvelope<'asset-manager/pickAssetFiles', AssetManagerStableIdPayload>;
 
 export type AssetManagerWebviewMessage =
   | AssetManagerReadyMessage
@@ -141,7 +172,11 @@ export type AssetManagerWebviewMessage =
   | AssetManagerReadImageMetaMessage
   | AssetManagerGenerateOutputsMessage
   | AssetManagerSaveOutputMessage
-  | AssetManagerBuildManifestMessage;
+  | AssetManagerBuildManifestMessage
+  | AssetManagerUndoAutoAssignMessage
+  | AssetManagerWriteAssetsMessage
+  | AssetManagerReplaceAssetFileMessage
+  | AssetManagerPickAssetFilesMessage;
 
 export interface AssetManagerScanSnapshot {
   readonly entries: readonly AssetManagerAssetEntry[];
@@ -159,6 +194,13 @@ export interface AssetManagerAssetsLoadedPayload extends AssetManagerScanSnapsho
 
 export interface AssetManagerCatalogSavedPayload extends AssetManagerScanSnapshot {
   readonly stableId: string;
+}
+
+export interface AssetManagerAutoAssignAppliedPayload extends AssetManagerScanSnapshot {
+  readonly stableId: string;
+  readonly assignedPaths: readonly string[];
+  readonly anomalyPaths: readonly string[];
+  readonly addedVocab: Partial<Record<AssetSlotId, string[]>>;
 }
 
 export interface AssetManagerLorebookNamesResultPayload extends AssetManagerStableIdPayload {
@@ -196,6 +238,16 @@ export interface AssetManagerManifestBuiltPayload extends AssetManagerStableIdPa
   readonly orphanPaths: readonly string[];
 }
 
+export interface AssetManagerAssetsWrittenPayload extends AssetManagerStableIdPayload {
+  readonly writtenPaths: readonly string[];
+  readonly deletedPaths: readonly string[];
+}
+
+export interface AssetManagerFilesPickedPayload extends AssetManagerStableIdPayload {
+  readonly files: readonly AssetManagerPickedFile[];
+  readonly skipped: readonly string[];
+}
+
 export interface AssetManagerCatalogBootstrapPreviewPayload extends AssetManagerStableIdPayload {
   readonly rows: readonly AssetManagerCatalogBootstrapPreviewEntry[];
   readonly groups: readonly AssetCatalogBootstrapGroupSummary[];
@@ -209,6 +261,7 @@ export interface AssetManagerErrorPayload {
 
 export type AssetManagerAssetsLoadedMessage = AssetManagerEnvelope<'asset-manager/assetsLoaded', AssetManagerAssetsLoadedPayload>;
 export type AssetManagerCatalogSavedMessage = AssetManagerEnvelope<'asset-manager/catalogSaved', AssetManagerCatalogSavedPayload>;
+export type AssetManagerAutoAssignAppliedMessage = AssetManagerEnvelope<'asset-manager/autoAssignApplied', AssetManagerAutoAssignAppliedPayload>;
 export type AssetManagerLorebookNamesResultMessage = AssetManagerEnvelope<
   'asset-manager/lorebookNamesResult',
   AssetManagerLorebookNamesResultPayload
@@ -219,11 +272,14 @@ export type AssetManagerOutputsResultMessage = AssetManagerEnvelope<'asset-manag
 export type AssetManagerOutputSavedMessage = AssetManagerEnvelope<'asset-manager/outputSaved', AssetManagerOutputSavedPayload>;
 export type AssetManagerManifestBuiltMessage = AssetManagerEnvelope<'asset-manager/manifestBuilt', AssetManagerManifestBuiltPayload>;
 export type AssetManagerCatalogBootstrapPreviewMessage = AssetManagerEnvelope<'asset-manager/catalogBootstrapPreview', AssetManagerCatalogBootstrapPreviewPayload>;
+export type AssetManagerAssetsWrittenMessage = AssetManagerEnvelope<'asset-manager/assetsWritten', AssetManagerAssetsWrittenPayload>;
+export type AssetManagerFilesPickedMessage = AssetManagerEnvelope<'asset-manager/filesPicked', AssetManagerFilesPickedPayload>;
 export type AssetManagerErrorMessage = AssetManagerEnvelope<'asset-manager/error', AssetManagerErrorPayload>;
 
 export type AssetManagerExtensionMessage =
   | AssetManagerAssetsLoadedMessage
   | AssetManagerCatalogSavedMessage
+  | AssetManagerAutoAssignAppliedMessage
   | AssetManagerLorebookNamesResultMessage
   | AssetManagerTokenizeResultMessage
   | AssetManagerImageMetaResultMessage
@@ -231,4 +287,6 @@ export type AssetManagerExtensionMessage =
   | AssetManagerOutputSavedMessage
   | AssetManagerManifestBuiltMessage
   | AssetManagerCatalogBootstrapPreviewMessage
+  | AssetManagerAssetsWrittenMessage
+  | AssetManagerFilesPickedMessage
   | AssetManagerErrorMessage;

@@ -13,11 +13,12 @@ import {
   getConfiguredWebviewDevServerUrl,
   getWebviewDevServerPortMapping,
 } from '../views/webviewDevServer';
-import { AssetManagerService } from './AssetManagerService';
+import { AssetManagerService, replacementTargetForAsset } from './AssetManagerService';
 import { createAssetManagerExtensionMessage, isAssetManagerWebviewMessage } from './assetManagerMessages';
 import {
   ASSET_MANAGER_VIEW_NAME,
   type AssetManagerExtensionMessage,
+  type AssetManagerScanSnapshot,
   type AssetManagerWebviewMessage,
 } from './assetManagerTypes';
 
@@ -51,6 +52,25 @@ export class AssetManagerPanel {
 
   private readonly service: AssetManagerService;
   private readonly rootUri: vscode.Uri;
+  private readonly watcher: vscode.FileSystemWatcher;
+  private fsRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+  private knownPaths = new Set<string>();
+
+  private static readonly FS_REFRESH_DEBOUNCE_MS = 500;
+  private static readonly REPLACE_MAX_BYTES = 50 * 1024 * 1024;
+  private static readonly REPLACE_DIALOG_EXTENSIONS = [
+    'png',
+    'jpg',
+    'jpeg',
+    'webp',
+    'gif',
+    'avif',
+    'mp3',
+    'ogg',
+    'wav',
+    'mp4',
+    'webm',
+  ] as const;
 
   private constructor(
     private readonly panel: vscode.WebviewPanel,
@@ -59,6 +79,12 @@ export class AssetManagerPanel {
   ) {
     this.rootUri = vscode.Uri.parse(target.rootUri);
     this.service = new AssetManagerService(this.rootUri.fsPath);
+    this.rememberPaths(this.service.scan());
+    this.watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(this.rootUri, 'assets/**/*'));
+    const onFsEvent = (uri: vscode.Uri) => this.scheduleFsRefresh(uri);
+    this.watcher.onDidCreate(onFsEvent, null, context.subscriptions);
+    this.watcher.onDidDelete(onFsEvent, null, context.subscriptions);
+    this.watcher.onDidChange(onFsEvent, null, context.subscriptions);
 
     this.panel.webview.options = {
       enableScripts: true,
@@ -82,6 +108,8 @@ export class AssetManagerPanel {
     this.panel.onDidDispose(
       () => {
         AssetManagerPanel.panels.delete(this.target.stableId);
+        this.watcher.dispose();
+        if (this.fsRefreshTimer !== undefined) clearTimeout(this.fsRefreshTimer);
       },
       null,
       context.subscriptions,
@@ -109,6 +137,7 @@ export class AssetManagerPanel {
 
   private sendSnapshot(type: 'asset-manager/assetsLoaded' | 'asset-manager/catalogSaved'): void {
     const snapshot = this.service.scan();
+    this.rememberPaths(snapshot);
     if (type === 'asset-manager/assetsLoaded') {
       this.post(
         createAssetManagerExtensionMessage('asset-manager/assetsLoaded', {
@@ -126,6 +155,137 @@ export class AssetManagerPanel {
         stableId: this.target.stableId,
       }),
     );
+  }
+
+  private static isSelfWrittenFile(uri: vscode.Uri): boolean {
+    const base = path.basename(uri.fsPath);
+    return base === 'asset-catalog.json' || base.startsWith('asset-catalog.json.bak-') || base === 'manifest.json';
+  }
+
+  private scheduleFsRefresh(uri: vscode.Uri): void {
+    if (AssetManagerPanel.isSelfWrittenFile(uri)) return;
+    if (this.fsRefreshTimer !== undefined) clearTimeout(this.fsRefreshTimer);
+    this.fsRefreshTimer = setTimeout(() => {
+      this.fsRefreshTimer = undefined;
+      this.refreshFromFsChange();
+    }, AssetManagerPanel.FS_REFRESH_DEBOUNCE_MS);
+  }
+
+  private rememberPaths(snapshot: AssetManagerScanSnapshot): void {
+    this.knownPaths = new Set(snapshot.entries.map((entry) => entry.path));
+  }
+
+  private refreshFromFsChange(): void {
+    try {
+      const snapshot = this.service.scan();
+      const newPaths = snapshot.entries.map((entry) => entry.path).filter((entryPath) => !this.knownPaths.has(entryPath));
+
+      if (newPaths.length > 0 && snapshot.catalog.bootstrap !== undefined) {
+        const result = this.service.autoAssignNewAssets(newPaths);
+        this.rememberPaths(result.snapshot);
+        this.post(
+          createAssetManagerExtensionMessage('asset-manager/autoAssignApplied', {
+            ...result.snapshot,
+            stableId: this.target.stableId,
+            assignedPaths: result.assignedPaths,
+            anomalyPaths: result.anomalyPaths,
+            addedVocab: result.addedVocab,
+          }),
+        );
+        return;
+      }
+
+      this.rememberPaths(snapshot);
+      this.post(
+        createAssetManagerExtensionMessage('asset-manager/assetsLoaded', {
+          ...snapshot,
+          stableId: this.target.stableId,
+          artifactName: this.target.name,
+          assetsRootWebviewUri: this.assetsRootWebviewUri(),
+        }),
+      );
+    } catch (error) {
+      this.postError('asset-manager/fsWatch', error);
+    }
+  }
+
+  private async replaceAssetFile(relPath: string): Promise<void> {
+    try {
+      const picked = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        openLabel: '이 파일로 교체',
+        filters: { 'Asset files': [...AssetManagerPanel.REPLACE_DIALOG_EXTENSIONS] },
+      });
+      const pickedUri = picked?.[0];
+      if (pickedUri === undefined) return;
+
+      const target = replacementTargetForAsset(relPath, path.basename(pickedUri.fsPath));
+      const detail =
+        target.deletePath !== undefined
+          ? `${relPath} → ${target.targetPath}\n기존 파일은 삭제되고 slot 할당은 새 경로로 이어집니다.`
+          : `${relPath}의 내용을 선택한 파일로 덮어씁니다.`;
+      const confirm = '교체';
+      const answer = await vscode.window.showWarningMessage('Asset 파일을 교체할까요?', { modal: true, detail }, confirm);
+      if (answer !== confirm) return;
+
+      const bytes = await vscode.workspace.fs.readFile(pickedUri);
+      if (bytes.byteLength > AssetManagerPanel.REPLACE_MAX_BYTES) {
+        throw new Error(`50MB를 넘는 파일은 교체할 수 없습니다: ${path.basename(pickedUri.fsPath)}`);
+      }
+
+      const result = this.service.writeAssetFiles([
+        {
+          targetPath: target.targetPath,
+          bytesBase64: Buffer.from(bytes).toString('base64'),
+          ...(target.deletePath !== undefined && { deletePath: target.deletePath }),
+        },
+      ]);
+      this.post(
+        createAssetManagerExtensionMessage('asset-manager/assetsWritten', {
+          stableId: this.target.stableId,
+          writtenPaths: result.writtenPaths,
+          deletedPaths: result.deletedPaths,
+        }),
+      );
+    } catch (error) {
+      this.postError('asset-manager/replaceAssetFile', error);
+    }
+  }
+
+  /**
+   * VS Code는 Shift 없는 외부 파일 드래그에서 webview iframe을 pointer-events:none으로 막으므로
+   * (workbench WebviewWindowDragMonitor), D&D가 막힌 사용자를 위한 네이티브 파일 선택 fallback.
+   */
+  private async pickAssetFiles(): Promise<void> {
+    try {
+      const picked = await vscode.window.showOpenDialog({
+        canSelectMany: true,
+        openLabel: 'assets에 추가',
+        filters: { 'Asset files': [...AssetManagerPanel.REPLACE_DIALOG_EXTENSIONS] },
+      });
+      if (picked === undefined || picked.length === 0) return;
+
+      const files: { name: string; bytesBase64: string; sizeBytes: number }[] = [];
+      const skipped: string[] = [];
+      for (const uri of picked) {
+        const name = path.basename(uri.fsPath);
+        const bytes = await vscode.workspace.fs.readFile(uri);
+        if (bytes.byteLength > AssetManagerPanel.REPLACE_MAX_BYTES) {
+          skipped.push(name);
+          continue;
+        }
+        files.push({ name, bytesBase64: Buffer.from(bytes).toString('base64'), sizeBytes: bytes.byteLength });
+      }
+      this.post(
+        createAssetManagerExtensionMessage('asset-manager/filesPicked', {
+          stableId: this.target.stableId,
+          files,
+          skipped,
+        }),
+      );
+    } catch (error) {
+      this.postError('asset-manager/pickAssetFiles', error);
+    }
   }
 
   private handleMessage(message: AssetManagerWebviewMessage): void {
@@ -236,6 +396,30 @@ export class AssetManagerPanel {
           );
           return;
         }
+        case 'asset-manager/undoAutoAssign':
+          this.service.undoAutoAssign({
+            assignedPaths: message.payload.assignedPaths,
+            addedVocab: message.payload.addedVocab,
+          });
+          this.sendSnapshot('asset-manager/catalogSaved');
+          return;
+        case 'asset-manager/writeAssets': {
+          const result = this.service.writeAssetFiles(message.payload.files);
+          this.post(
+            createAssetManagerExtensionMessage('asset-manager/assetsWritten', {
+              stableId,
+              writtenPaths: result.writtenPaths,
+              deletedPaths: result.deletedPaths,
+            }),
+          );
+          return;
+        }
+        case 'asset-manager/replaceAssetFile':
+          void this.replaceAssetFile(message.payload.path);
+          return;
+        case 'asset-manager/pickAssetFiles':
+          void this.pickAssetFiles();
+          return;
       }
     } catch (error) {
       this.postError(message.type, error);
