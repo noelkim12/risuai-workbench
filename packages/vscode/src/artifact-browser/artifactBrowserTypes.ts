@@ -303,6 +303,14 @@ export interface ArtifactBrowserOpenAssetManagerPayload {
   stableId: string;
 }
 
+export interface ArtifactBrowserOpenMarkerEditorPayload {
+  stableId: string;
+}
+
+export interface ArtifactBrowserOpenPluginViewerPayload {
+  stableId: string;
+}
+
 export interface ArtifactBrowserPackCompletedPayload {
   stableId: string;
   ok: boolean;
@@ -560,6 +568,16 @@ export type ArtifactBrowserOpenAssetManagerMessage = MessageEnvelope<
   ArtifactBrowserOpenAssetManagerPayload
 >;
 
+export type ArtifactBrowserOpenMarkerEditorMessage = MessageEnvelope<
+  'artifact-browser/openMarkerEditor',
+  ArtifactBrowserOpenMarkerEditorPayload
+>;
+
+export type ArtifactBrowserOpenPluginViewerMessage = MessageEnvelope<
+  'artifact-browser/openPluginViewer',
+  ArtifactBrowserOpenPluginViewerPayload
+>;
+
 export type ArtifactBrowserPackCompletedMessage = MessageEnvelope<
   'artifact-browser/packCompleted',
   ArtifactBrowserPackCompletedPayload
@@ -621,7 +639,9 @@ export type ArtifactBrowserWebviewMessage =
   | ArtifactBrowserMoveLorebookFolderMessage
   | ArtifactBrowserMoveRegexItemMessage
   | ArtifactBrowserMoveGreetingItemMessage
-  | ArtifactBrowserCreateSectionEntryMessage;
+  | ArtifactBrowserCreateSectionEntryMessage
+  | ArtifactBrowserOpenMarkerEditorMessage
+  | ArtifactBrowserOpenPluginViewerMessage;
 export type ArtifactBrowserExtensionMessage =
   | ArtifactBrowserCardsMessage
   | ArtifactBrowserDetailMessage

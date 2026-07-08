@@ -3,6 +3,8 @@ import {
   isArtifactBrowserCreateArtifactMessage,
   isArtifactBrowserOpenCreateWizardMessage,
   isArtifactBrowserCloseCreateWizardMessage,
+  isArtifactBrowserOpenMarkerEditorMessage,
+  isArtifactBrowserOpenPluginViewerMessage,
 } from './artifactBrowserMessages';
 import {
   ARTIFACT_BROWSER_PROTOCOL,
@@ -82,5 +84,48 @@ describe('create wizard open/close message guards', () => {
       payload: { viewId: 'nope' },
     };
     expect(isArtifactBrowserOpenCreateWizardMessage(bad)).toBe(false);
+  });
+});
+
+describe('plugin action message guards', () => {
+  function pluginActionEnvelope(type: string, payload: unknown): unknown {
+    return {
+      protocol: ARTIFACT_BROWSER_PROTOCOL,
+      version: ARTIFACT_BROWSER_PROTOCOL_VERSION,
+      type,
+      payload,
+    };
+  }
+
+  it('accepts a well-formed openMarkerEditor envelope', () => {
+    expect(
+      isArtifactBrowserOpenMarkerEditorMessage(
+        pluginActionEnvelope('artifact-browser/openMarkerEditor', { stableId: 'plugin:abc' }),
+      ),
+    ).toBe(true);
+  });
+
+  it('accepts a well-formed openPluginViewer envelope', () => {
+    expect(
+      isArtifactBrowserOpenPluginViewerMessage(
+        pluginActionEnvelope('artifact-browser/openPluginViewer', { stableId: 'plugin:abc' }),
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects an empty stableId', () => {
+    expect(
+      isArtifactBrowserOpenPluginViewerMessage(
+        pluginActionEnvelope('artifact-browser/openPluginViewer', { stableId: '' }),
+      ),
+    ).toBe(false);
+  });
+
+  it('rejects the wrong type', () => {
+    expect(
+      isArtifactBrowserOpenMarkerEditorMessage(
+        pluginActionEnvelope('artifact-browser/openPluginViewer', { stableId: 'plugin:abc' }),
+      ),
+    ).toBe(false);
   });
 });
