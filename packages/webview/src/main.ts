@@ -4,6 +4,7 @@ import AssetManagerApp from './AssetManagerApp.svelte';
 import CreateWizardApp from './CreateWizardApp.svelte';
 import MainEditor from './lib/components/editor/main/MainEditor.svelte';
 import MarkerEditor from './lib/components/editor/marker/MarkerEditor.svelte';
+import PluginViewerApp from './lib/components/plugin-viewer/PluginViewerApp.svelte';
 import { mount } from 'svelte';
 import { get, writable } from 'svelte/store';
 import {
@@ -90,7 +91,11 @@ if (!app) {
   throw new Error('Missing #app root for Risu Workbench webview.');
 }
 
-if (webviewName === 'asset-manager') {
+if (webviewName === 'plugin-viewer') {
+  mount(PluginViewerApp, {
+    target: app,
+  });
+} else if (webviewName === 'asset-manager') {
   mount(AssetManagerApp, {
     target: app,
   });
