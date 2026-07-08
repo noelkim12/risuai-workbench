@@ -11,6 +11,10 @@ import {
   type ArtifactBrowserAnalyzeArtifactPayload,
   type ArtifactBrowserOpenAssetManagerMessage,
   type ArtifactBrowserOpenAssetManagerPayload,
+  type ArtifactBrowserOpenCreateWizardMessage,
+  type ArtifactBrowserOpenCreateWizardPayload,
+  type ArtifactBrowserCloseCreateWizardMessage,
+  type ArtifactBrowserCloseCreateWizardPayload,
   type ArtifactBrowserCreateArtifactMessage,
   type ArtifactBrowserCreateArtifactPayload,
   type ArtifactBrowserCreateSectionEntryMessage,
@@ -65,6 +69,8 @@ type ArtifactBrowserInboundMessage =
   | ArtifactBrowserPackArtifactMessage
   | ArtifactBrowserAnalyzeArtifactMessage
   | ArtifactBrowserOpenAssetManagerMessage
+  | ArtifactBrowserOpenCreateWizardMessage
+  | ArtifactBrowserCloseCreateWizardMessage
   | ArtifactBrowserSelectMessage
   | ArtifactBrowserOpenItemMessage
   | ArtifactBrowserMoveLorebookItemMessage
@@ -241,6 +247,28 @@ const isArtifactBrowserRefreshMessageEnvelope = createArtifactBrowserMessageGuar
   isArtifactBrowserViewPayload,
 );
 
+const isArtifactBrowserOpenCreateWizardPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserOpenCreateWizardPayload> = (
+  payload,
+): payload is ArtifactBrowserOpenCreateWizardPayload =>
+  isPlainRecord(payload) && payload.viewId === ARTIFACT_BROWSER_VIEW_ID;
+
+const isArtifactBrowserCloseCreateWizardPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserCloseCreateWizardPayload> = (
+  payload,
+): payload is ArtifactBrowserCloseCreateWizardPayload =>
+  isPlainRecord(payload) && payload.viewId === ARTIFACT_BROWSER_VIEW_ID;
+
+const isArtifactBrowserOpenCreateWizardMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserOpenCreateWizardMessage>(
+    'artifact-browser/openCreateWizard',
+    isArtifactBrowserOpenCreateWizardPayload,
+  );
+
+const isArtifactBrowserCloseCreateWizardMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserCloseCreateWizardMessage>(
+    'artifact-browser/closeCreateWizard',
+    isArtifactBrowserCloseCreateWizardPayload,
+  );
+
 const isArtifactBrowserCreateArtifactMessageEnvelope =
   createArtifactBrowserMessageGuard<ArtifactBrowserCreateArtifactMessage>(
     'artifact-browser/createArtifact',
@@ -373,6 +401,18 @@ export function isArtifactBrowserOpenAssetManagerMessage(
   message: unknown,
 ): message is ArtifactBrowserOpenAssetManagerMessage {
   return isArtifactBrowserOpenAssetManagerMessageEnvelope(message);
+}
+
+export function isArtifactBrowserOpenCreateWizardMessage(
+  message: unknown,
+): message is ArtifactBrowserOpenCreateWizardMessage {
+  return isArtifactBrowserOpenCreateWizardMessageEnvelope(message);
+}
+
+export function isArtifactBrowserCloseCreateWizardMessage(
+  message: unknown,
+): message is ArtifactBrowserCloseCreateWizardMessage {
+  return isArtifactBrowserCloseCreateWizardMessageEnvelope(message);
 }
 
 /**
