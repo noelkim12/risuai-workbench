@@ -1267,9 +1267,9 @@ function resolveRisuCoreBinPath(): string {
   return path.join(path.dirname(coreEntry), '..', 'bin', 'risu-core.js');
 }
 
-function runRisuCoreCli(args: string[], cwd: string): Promise<string> {
+function runNodeCli(binPath: string, args: string[], cwd: string, cliLabel: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [resolveRisuCoreBinPath(), ...args], { cwd, env: process.env });
+    const child = spawn(process.execPath, [binPath, ...args], { cwd, env: process.env });
     let stdout = '';
     let stderr = '';
 
@@ -1288,12 +1288,14 @@ function runRisuCoreCli(args: string[], cwd: string): Promise<string> {
         return;
       }
 
-      reject(new Error((stderr.trim() || stdout.trim() || `risu-core exited with code ${code}`).slice(0, 2000)));
+      reject(new Error((stderr.trim() || stdout.trim() || `${cliLabel} exited with code ${code}`).slice(0, 2000)));
     });
   });
 }
 
-const CREATE_RISU_PLUGIN_PACKAGE = 'create-risu-plugin@^3.1.0';
+function runRisuCoreCli(args: string[], cwd: string): Promise<string> {
+  return runNodeCli(resolveRisuCoreBinPath(), args, cwd, 'risu-core');
+}
 
 function runCreateRisuPluginCli(
   payload: ArtifactBrowserCreateArtifactPayload,
@@ -1301,8 +1303,6 @@ function runCreateRisuPluginCli(
   cwd: string,
 ): Promise<string> {
   const args = [
-    '-y',
-    CREATE_RISU_PLUGIN_PACKAGE,
     payload.name.trim(),
     '--framework',
     payload.framework ?? 'vanilla',
@@ -1314,35 +1314,7 @@ function runCreateRisuPluginCli(
     args.push('--description', payload.description.trim());
   }
 
-  return new Promise((resolve, reject) => {
-    const child = spawn('npx', args, { cwd, env: process.env, shell: process.platform === 'win32' });
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk: string) => {
-      stdout += chunk;
-    });
-    child.stderr.on('data', (chunk: string) => {
-      stderr += chunk;
-    });
-    child.on('error', (error: NodeJS.ErrnoException) => {
-      reject(
-        error.code === 'ENOENT'
-          ? new Error('npx not found on PATH. Install Node.js 20+ (with npm) to create plugin scaffolds.')
-          : error,
-      );
-    });
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve(stdout);
-        return;
-      }
-
-      reject(new Error((stderr.trim() || stdout.trim() || `create-risu-plugin exited with code ${code}`).slice(0, 2000)));
-    });
-  });
+  return runNodeCli(require.resolve('create-risu-plugin/bin/index.js'), args, cwd, 'create-risu-plugin');
 }
 
 function createImportExtractArgs(importedFile: string): string[] {
