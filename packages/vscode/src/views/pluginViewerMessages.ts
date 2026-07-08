@@ -74,3 +74,17 @@ export function isPluginViewerRunScriptMessage(
   const script = (payload as Record<string, unknown>).script;
   return script === 'build' || script === 'dev';
 }
+
+export interface PluginViewerOpenFilePayload {
+  relativePath: string;
+}
+
+export function isPluginViewerOpenFileMessage(
+  message: unknown,
+): message is { payload: PluginViewerOpenFilePayload } {
+  if (!isEnvelope(message, 'plugin-viewer/openFile')) return false;
+  const payload = (message as { payload?: unknown }).payload;
+  if (typeof payload !== 'object' || payload === null) return false;
+  const relativePath = (payload as Record<string, unknown>).relativePath;
+  return typeof relativePath === 'string' && relativePath.length > 0 && !relativePath.includes('..');
+}
