@@ -198,6 +198,7 @@ export interface PluginBrowserCard {
   name: string;
   description: string;
   framework: PluginFramework | 'unknown';
+  iconUri?: string;
   status: BrowserArtifactStatus;
   markerUri: string;
   rootUri: string;

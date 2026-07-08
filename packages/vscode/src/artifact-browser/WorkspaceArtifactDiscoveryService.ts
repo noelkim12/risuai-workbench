@@ -28,7 +28,7 @@ export class WorkspaceArtifactDiscoveryService {
   async discoverCards(): Promise<BrowserArtifactCard[]> {
     const characters = await new CharacterManifestDiscoveryService(this.webview).discoverCards();
     const modules = await new ModuleManifestDiscoveryService(this.webview).discoverCards();
-    const plugins = await new PluginManifestDiscoveryService().discoverCards();
+    const plugins = await new PluginManifestDiscoveryService(this.webview).discoverCards();
     const withConflicts = applyRootMarkerConflictWarnings([...characters, ...modules, ...plugins]);
     return sortArtifactCards(withConflicts);
   }
