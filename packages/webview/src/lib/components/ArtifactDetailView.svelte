@@ -24,6 +24,8 @@
   export let onBack: () => void;
   export let onAnalyzeArtifact: (stableId: string) => void;
   export let onPackArtifact: (stableId: string, recovery: boolean) => void;
+  export let onOpenMarkerEditor: (stableId: string) => void;
+  export let onOpenPluginViewer: (stableId: string) => void;
   export let onToggleSection: (sectionId: string) => void;
   export let onOpenItem: (item: CharacterItem) => void;
   export let onOpenAssetManager: (stableId: string) => void;
@@ -42,13 +44,20 @@
     targetFolderPath?: string,
   ) => void;
 
-  $: detailLabel = artifact.artifactKind === 'module' ? 'Module Detail' : 'Character Detail';
+  $: detailLabel =
+    artifact.artifactKind === 'module'
+      ? 'Module Detail'
+      : artifact.artifactKind === 'plugin'
+        ? 'Plugin Detail'
+        : 'Character Detail';
   $: detailMeta =
     artifact.artifactKind === 'module'
       ? `${artifact.namespace ?? artifact.sourceFormat} · ${artifact.sourceFormat}`
       : artifact.artifactKind === 'character'
         ? `${artifact.creator} · ${artifact.sourceFormat} · v${artifact.characterVersion}`
-        : '';
+        : artifact.artifactKind === 'plugin'
+          ? artifact.framework
+          : '';
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this modal state.
   let isPackModalOpen = false;
@@ -86,12 +95,21 @@
     </header>
 
     <div class="detail-actions">
-      <button type="button" class="detail-action" on:click={() => onAnalyzeArtifact(artifact.stableId)}>
-        Analyze
-      </button>
-      <button type="button" class="detail-action detail-action--primary" on:click={openPackModal}>
-        Pack
-      </button>
+      {#if artifact.artifactKind === 'plugin'}
+        <button type="button" class="detail-action" on:click={() => onOpenMarkerEditor(artifact.stableId)}>
+          Marker Editor
+        </button>
+        <button type="button" class="detail-action detail-action--primary" on:click={() => onOpenPluginViewer(artifact.stableId)}>
+          Plugin Viewer
+        </button>
+      {:else}
+        <button type="button" class="detail-action" on:click={() => onAnalyzeArtifact(artifact.stableId)}>
+          Analyze
+        </button>
+        <button type="button" class="detail-action detail-action--primary" on:click={openPackModal}>
+          Pack
+        </button>
+      {/if}
     </div>
   </div>
 
@@ -102,21 +120,23 @@
     <p><strong>Manifest</strong> {artifact.markerPathLabel}</p>
   </section>
 
-  <CharacterAccordion
-    {sections}
-    {expandedSectionIds}
-    {onToggleSection}
-    {onOpenItem}
-    onOpenAssetManager={() => onOpenAssetManager(artifact.stableId)}
-    {onMoveLorebookItem}
-    {onMoveLorebookFolder}
-    {onMoveRegexItem}
-    {onMoveGreetingItem}
-    {onCreateSectionEntry}
-  />
+  {#if artifact.artifactKind !== 'plugin'}
+    <CharacterAccordion
+      {sections}
+      {expandedSectionIds}
+      {onToggleSection}
+      {onOpenItem}
+      onOpenAssetManager={() => onOpenAssetManager(artifact.stableId)}
+      {onMoveLorebookItem}
+      {onMoveLorebookFolder}
+      {onMoveRegexItem}
+      {onMoveGreetingItem}
+      {onCreateSectionEntry}
+    />
+  {/if}
 </main>
 
-{#if isPackModalOpen}
+{#if isPackModalOpen && artifact.artifactKind !== 'plugin'}
   <PackArtifactModal
     {artifact}
     packState={packState}

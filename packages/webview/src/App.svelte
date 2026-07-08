@@ -60,6 +60,10 @@ export let createSectionEntry: (
 ) => void;
 export let packArtifact: (stableId: string, recovery: boolean) => void;
 export let analyzeArtifact: (stableId: string) => void;
+// From main.ts: openMarkerEditor() -> ArtifactDetailView.onOpenMarkerEditor.
+export let openMarkerEditor: (stableId: string) => void;
+// From main.ts: openPluginViewer() -> ArtifactDetailView.onOpenPluginViewer.
+export let openPluginViewer: (stableId: string) => void;
 export let packState: Writable<ArtifactBrowserPackCompletedPayload | null>;
 
 $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId);
@@ -75,6 +79,8 @@ $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId)
     onBack={returnToCards}
     onAnalyzeArtifact={analyzeArtifact}
     onPackArtifact={packArtifact}
+    onOpenMarkerEditor={openMarkerEditor}
+    onOpenPluginViewer={openPluginViewer}
     onToggleSection={toggleSection}
     onOpenItem={openItem}
     onOpenAssetManager={openAssetManager}
