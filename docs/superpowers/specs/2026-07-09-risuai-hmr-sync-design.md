@@ -11,7 +11,7 @@
 | 동기화 방향 | **단방향** (워크벤치 → RisuAI). 양방향은 비스코프 |
 | 동기화 범위 | 정의 텍스트 + **에셋 전부** (v1부터). 에셋은 콘텐츠 해시 기반 증분 전송 |
 | 아티팩트 종류 | character, module. plugin 아티팩트는 비스코프 (본체 developMode 핫 리로드 영역) |
-| 신규 생성 | **비스코프.** RisuAI에 대상이 없으면 기존 pack → import 경로로 부트스트랩. 블랭크 character 기본값(40+ 필드)은 risu 내부 지식이라 복제 시 drift 위험 |
+| 신규 생성 | **NOT SCOPE.** RisuAI에 대상이 없으면 기존 pack → import 경로로 부트스트랩. 블랭크 character 기본값(40+ 필드)은 risu 내부 지식이라 복제 시 drift 위험 |
 | 연결 방식 | **연결 문자열 붙여넣기** — `risu-hmr://127.0.0.1:PORT#k=TOKEN` 한 줄에 주소+인증 포함. 워크벤치에 [복사] 버튼, 플러그인에 붙여넣기 1회 |
 | 전송 | **HTTP 롱폴링** (`nativeFetch`, `method:'GET'` 명시, `networkRoute:'local_network'`). 정의 JSON은 매번 전체 전송(루프백에서 diff는 복잡도만 삼) |
 | 동시 방송 | **1개.** 다른 아티팩트에서 방송 시작 시 전환 confirm |
@@ -20,7 +20,7 @@
 | Merge 정책 | **페이로드에 존재하는 키만 덮어씀.** `chats`/`chatPage`/`chaId`는 절대 보존, `name`은 덮어씀 |
 | DB 쓰기 비용 | HMR push는 경량 경로(`setDatabaseLite`/`setCharacterToIndex`)로 즉시 반영, 마지막 push 후 idle 시 `setDatabase` 1회로 확정 저장 |
 | 재연결 | pluginStorage의 매핑(문자열+stableId+chaId)이 완전 동일하면 자동 재연결. **방송 대상 stableId가 바뀌면 자동 추종 없이 안전 정지** |
-| 상태 표시 | `setChatPanel` 상주 뱃지 (비문서화 API — 없으면 버튼 라벨 카운트로 폴백) |
+| 상태 표시 | **전역 플로팅 배지** — `getRootDocument`(mainDom 권한, `.d.ts` 문서화 API)로 host DOM에 `position:fixed` 배지 부착, 모든 화면에서 보임. 권한 거부 시 배지 생략(위저드 대시보드가 상태 소스). 크리티컬 이벤트는 `alertError` 모달로 별도 통지. `setChatPanel`은 채팅 화면에서만 렌더돼 상주 용도 부적합, iframe 토스트는 표시 중 전 화면 입력 차단이라 기각 |
 
 ## 아키텍처
 
@@ -33,7 +33,7 @@
 │    ↕ typed message bridge            │      │  · fullscreen 위저드 UI         │
 │ extension host                       │      │  · 롱폴 루프 + merge 적용       │
 │  · HMR 서버 (node:http 싱글턴)        │◄─────┤  · nativeFetch (host측 실행)    │
-│  · watcher(debounce) → core 빌드     │ 롱폴  │  · setChatPanel 상태 뱃지       │
+│  · watcher(debounce) → core 빌드     │ 롱폴  │  · mainDom 전역 상태 배지        │
 │  · risu-native JSON + 에셋 매니페스트  │      │                               │
 └──────────────────────────────────────┘      └───────────────────────────────┘
 ```
@@ -88,7 +88,8 @@
 ### 4. RisuAI 수신 플러그인 (신규 — 저장 위치·빌드 체계는 구현 계획에서 결정, 워크스페이스의 `create-risu-plugin` 스캐폴드 활용 검토)
 
 - **진입**: `registerButton(location:'hamburger')` 1개 → `showContainer('fullscreen')` 위저드. 채팅 화면을 침범하는 `action` 플로팅 버튼은 쓰지 않음.
-- **상주 뱃지**: 수신 활성 중에만 `setChatPanel`. DOMPurify가 이벤트 핸들러를 제거하므로 **표시 전용** — 조작은 전부 위저드에서.
+- **전역 상태 배지**: 수신 활성 중에만 표시. `getRootDocument()`(mainDom 권한) → `createElement('div')` + `setStyle`(position:fixed 우하단 등) + `setTextContent`로 host DOM에 직접 부착. `setChatPanel`은 채팅 화면(`DefaultChatScreen.svelte`)에서만 렌더되지만 이 배지는 **모든 화면에서 보임**. SafeDocument/SafeElement는 `.d.ts` 문서화 API. **표시 전용** — 조작은 전부 위저드에서. mainDom 권한 거부 시 배지 없이 동작(상태는 위저드 대시보드), 크리티컬 이벤트는 `alertError`가 커버하므로 안전.
+- **iframe 토스트 기각 근거**: `showContainer`는 fullscreen 단일 모드이며 iframe이 보이는 동안 전체 화면의 포인터 이벤트를 가로챔(`v3.svelte.ts:893-920`, 배경 투명이어도 iframe 엘리먼트가 클릭을 흡수하고 플러그인은 host측 iframe 스타일에 `pointer-events:none`을 걸 수 없음) — 매 갱신마다 입력이 차단되므로 틱 알림용으론 부적합.
 
 ```
  ⚡ HMR: Aria · 12회 갱신 · 3초 전     ← 정상 수신
@@ -118,7 +119,8 @@
 │ ⓘ RisuAI에서 한 정의 수정은   │        │  기존 에셋 확인 120/120 ✓     │
 │   다음 저장 때 덮어써집니다.   │        │  누락 에셋 수신 2/2 ✓        │
 │   채팅 기록은 안전합니다.      │        │ [일시정지] [연결 해제] [닫기]  │
-│      [수신 시작]  [뒤로]      │        └──────────────────────────────┘
+│ [x] 전역 상태 배지 (권장)     │        └──────────────────────────────┘
+│      [수신 시작]  [뒤로]      │
 └────────────────────────────┘
 ```
 
@@ -185,11 +187,13 @@
 | 상황 | 동작 |
 | --- | --- |
 | 폴 실패 (서버 중지·창 닫힘) | 지수 백오프 2s→30s 재시도, 뱃지 ⏳. 복귀 시 자동 재개 |
-| 복귀 후 방송 대상(stableId) 변경 | **자동 추종 안 함** — 수신 정지 + 뱃지 ⚠ + 위저드 재확인 (다른 프로젝트가 기존 캐릭터를 덮어쓰는 사고 방지) |
-| 대상 chaId 소실 (삭제됨) | 수신 정지 + 위저드에서 재선택 유도 |
+| 복귀 후 방송 대상(stableId) 변경 | **자동 추종 안 함** — 수신 정지 + `alertError` 모달 + 뱃지 ⚠ + 위저드 재확인 (다른 프로젝트가 기존 캐릭터를 덮어쓰는 사고 방지) |
+| 대상 chaId 소실 (삭제됨) | 수신 정지 + `alertError` 모달 + 위저드에서 재선택 유도 |
 | protocolVersion 불일치 | 연결 단계에서 업데이트 안내 |
 | RisuAI 재시작 | 매핑 완전 동일 시 자동 재연결 + 뱃지 알림, 하나라도 다르면 정지 |
 | 빌드 실패 (워크벤치) | 서버가 마지막 정상 버전 유지, webview 스트립에 오류 표시 |
+
+크리티컬 이벤트(안전 정지·대상 소실)는 배지 유무·현재 화면과 무관하게 `alertError` 모달로 통지 — 놓치면 사용자가 동기화된다고 믿은 채 편집을 계속하는 무음 발산(silent divergence)으로 이어지기 때문. 틱 카운트 같은 정보성 갱신은 배지만.
 
 ## 검증된 v3 API 표면 (전부 `risuai-pork/src/ts/plugins/apiV3/v3.svelte.ts`)
 
@@ -203,15 +207,18 @@
 | 모듈 쓰기 | `setDatabaseLite` / `setDatabase` | `:720/:721` |
 | 진입 버튼 | `registerButton` | `:995` |
 | 위저드 UI | `showContainer('fullscreen')` / `hideContainer` | `:893` |
-| 상태 뱃지 | `setChatPanel` (비문서화) | `:1069` |
+| 전역 상태 배지 | `getRootDocument` → `SafeDocument.createElement` / `SafeElement.appendChild`·`setTextContent`·`setStyle` | `:923/:356/:69/:106/:127` |
 | confirm | `alertConfirm` (비문서화) | `:1152` |
+| 크리티컬 알림 | `alert` / `alertError` (비문서화) | `:1149/:1155` |
 | 플랫폼 감지 | `getRuntimeInfo` | `:1158` |
 | 영속화 | `pluginStorage.*` | `:1192-1198` |
 | 정리 | `onUnload` | `:1128` |
 
 ## 리스크 & 구현 시 확인 사항
 
-- `setChatPanel`·`alertConfirm`은 구현돼 있으나 `.d.ts` 비문서화 — 업스트림 변경 대비 **존재 검사 후 우아한 생략** (뱃지→버튼 라벨 폴백, confirm→자체 UI).
+- `alert`·`alertConfirm`·`alertError`는 구현돼 있으나 `.d.ts` 비문서화 — 업스트림 변경 대비 **존재 검사 후 폴백** (confirm→자체 UI, 크리티컬 알림→배지·위저드 표시로 대체).
+- 첫 연결에 권한 프롬프트가 최대 2회(db + mainDom) — 배지는 위저드 화면 3 체크박스(기본 ON)로 opt-out 가능하게 해 프롬프트 피로 완화. mainDom 거부는 기능 저하 없이 배지만 생략.
+- SafeDocument는 `documentElement`를 감싸므로 배지 부착점·z-index가 risu 모달/오버레이와 겹치는 방식 실기기 확인.
 - fullscreen iframe(z-index 1000)이 RisuAI 권한 프롬프트 모달을 가릴 가능성 — 목록 로드 직전 `hideContainer()` 후 복귀하는 우회 준비.
 - 계정 저장소(saveMethod 'account')에선 에셋 참조가 원격 URL일 수 있음 — 썸네일은 src 직접 사용, probe는 miss→다운로드 폴백으로 정확성 유지.
 - 롱폴 25초와 `nativeFetch`의 `requestTimeoutMs` 기본값 상호작용 확인 (타임아웃이 더 짧으면 조정).
@@ -230,4 +237,4 @@
 - 자동 탐색 + 페어링 코드 (C안 — 포트 대역 probe, 연결 문자열 위에 얹기)
 - 양방향 동기화 (RisuAI→로컬 pull-back, 채팅 로그 가공 워크플로우)
 - 다중 동시 방송 (아티팩트별 채널)
-- 뱃지 클릭 상호작용 (getRootDocument 권한 필요 — 현재는 표시 전용)
+- 배지 클릭 상호작용 (SafeElement 이벤트 리스너는 document 레벨 whitelist 방식이라 배지 자체 클릭 판정은 별도 설계 필요 — v1은 표시 전용)
