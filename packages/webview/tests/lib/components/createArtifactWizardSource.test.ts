@@ -28,11 +28,12 @@ describe('CreateArtifactWizard source contract', () => {
     expect(wizardSource).toContain('pluginNameInvalid');
   });
 
-  it('is rendered by the sidebar with delegated callbacks', () => {
-    expect(sidebarSource).toContain('CreateArtifactWizard');
-    expect(sidebarSource).toContain('onCreate={onCreateArtifact}');
-    expect(sidebarSource).toContain('onClose={closeCreateModal}');
-    // The inline create form no longer lives in the sidebar.
+  it('is hosted by the create-wizard panel app, not the sidebar', () => {
+    expect(wizardSource).toContain('export let onCreate');
+    expect(wizardSource).toContain('export let onClose');
+    // The sidebar now only opens the wizard; it no longer hosts it.
+    expect(sidebarSource).toContain('onOpenCreateWizard');
+    expect(sidebarSource).not.toContain('CreateArtifactWizard');
     expect(sidebarSource).not.toContain('submitCreate');
   });
 

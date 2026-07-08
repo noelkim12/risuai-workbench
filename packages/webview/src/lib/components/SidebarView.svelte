@@ -1,9 +1,7 @@
 <script lang="ts">
-  import type { ArtifactBrowserCreateArtifactKind, ArtifactBrowserCreateArtifactPayload, BrowserArtifactCard } from '../types';
+  import type { BrowserArtifactCard } from '../types';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
   import ArtifactCard from './ArtifactCard.svelte';
-  // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
-  import CreateArtifactWizard from './CreateArtifactWizard.svelte';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
   import EmptyState from './EmptyState.svelte';
 
@@ -12,26 +10,13 @@
   export let status: string;
   export let importing: boolean;
   export let onRefresh: () => void;
-  export let onCreateArtifact: (payload: ArtifactBrowserCreateArtifactPayload) => void;
+  export let onOpenCreateWizard: () => void;
   export let onImportArtifact: (file: File) => void;
   export let onSelect: (stableId: string) => void;
 
-  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup reads and writes this modal state.
-  let isCreateModalOpen = false;
-  let createKind: ArtifactBrowserCreateArtifactKind = 'charx';
   let importInput: HTMLInputElement;
 
   $: selectedCard = cards.find((card) => card.stableId === selectedStableId);
-
-  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup calls this action.
-  function openCreateModal(kind: ArtifactBrowserCreateArtifactKind = 'charx'): void {
-    createKind = kind;
-    isCreateModalOpen = true;
-  }
-
-  function closeCreateModal(): void {
-    isCreateModalOpen = false;
-  }
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup calls this action.
   function openImportPicker(): void {
@@ -57,7 +42,7 @@
   </header>
 
   <section class="toolbar" aria-label="Sidebar actions">
-    <button type="button" class="toolbar-button toolbar-button--create" on:click={() => openCreateModal()}>
+    <button type="button" class="toolbar-button toolbar-button--create" on:click={onOpenCreateWizard}>
       <svg class="toolbar-button__icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
         <path d="M8 3.25v9.5M3.25 8h9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
       </svg>
@@ -110,13 +95,6 @@
       <p>{selectedCard.rootPathLabel}</p>
     </section>
   {/if}
-
-  <CreateArtifactWizard
-    open={isCreateModalOpen}
-    initialKind={createKind}
-    onCreate={onCreateArtifact}
-    onClose={closeCreateModal}
-  />
 </main>
 
 <style>

@@ -1,6 +1,7 @@
 import './styles.css';
 import App from './App.svelte';
 import AssetManagerApp from './AssetManagerApp.svelte';
+import CreateWizardApp from './CreateWizardApp.svelte';
 import MainEditor from './lib/components/editor/main/MainEditor.svelte';
 import MarkerEditor from './lib/components/editor/marker/MarkerEditor.svelte';
 import { mount } from 'svelte';
@@ -15,6 +16,8 @@ import {
   createArtifactBrowserMoveGreetingItemMessage,
   createArtifactBrowserMoveRegexItemMessage,
   createArtifactBrowserOpenAssetManagerMessage,
+  createArtifactBrowserOpenCreateWizardMessage,
+  createArtifactBrowserCloseCreateWizardMessage,
   createArtifactBrowserOpenItemMessage,
   createArtifactBrowserPackArtifactMessage,
   createArtifactBrowserReadyMessage,
@@ -91,6 +94,14 @@ if (webviewName === 'asset-manager') {
   mount(AssetManagerApp, {
     target: app,
   });
+} else if (webviewName === 'create-wizard') {
+  mount(CreateWizardApp, {
+    target: app,
+    props: {
+      onCreate: createArtifact,
+      onClose: closeCreateWizard,
+    },
+  });
 } else if (isEditorMode && webviewName === 'main-editor') {
   mount(MainEditor, {
     target: app,
@@ -111,7 +122,7 @@ if (webviewName === 'asset-manager') {
       status,
       importing,
       refreshCards,
-      createArtifact,
+      openCreateWizard,
       importArtifact,
       selectCard,
       returnToCards,
@@ -218,6 +229,14 @@ function createArtifact(payload: ArtifactBrowserCreateArtifactPayload): void {
   viewMode.set('artifacts');
   detailSections.set([]);
   vscode?.postMessage(createArtifactBrowserCreateArtifactMessage(payload));
+}
+
+function openCreateWizard(): void {
+  vscode?.postMessage(createArtifactBrowserOpenCreateWizardMessage());
+}
+
+function closeCreateWizard(): void {
+  vscode?.postMessage(createArtifactBrowserCloseCreateWizardMessage());
 }
 
 function encodeChunkAsBase64(buffer: ArrayBuffer): string {
