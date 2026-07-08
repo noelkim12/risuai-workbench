@@ -35,6 +35,7 @@ import {
   isArtifactBrowserMoveGreetingItemMessage,
   isArtifactBrowserMoveRegexItemMessage,
   isArtifactBrowserOpenAssetManagerMessage,
+  isArtifactBrowserOpenCreateWizardMessage,
   isArtifactBrowserOpenItemMessage,
   isArtifactBrowserPackArtifactMessage,
   isArtifactBrowserReadyMessage,
@@ -55,6 +56,7 @@ import {
   type BrowserSection,
 } from '../artifact-browser/artifactBrowserTypes';
 import { resolvePackFormat, sanitizePackFilename, formatCompactTimestamp, pickCollisionTimestampMs } from '../artifact-browser/packArtifactPlanner';
+import { CreateWizardPanel } from './CreateWizardPanel';
 import { MarkerEditorViewProvider } from './MarkerEditorViewProvider';
 import {
   createWebviewDevServerHtml,
@@ -282,6 +284,13 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
 
         if (isArtifactBrowserOpenAssetManagerMessage(message)) {
           this.openAssetManager(message.payload.stableId);
+          return;
+        }
+
+        if (isArtifactBrowserOpenCreateWizardMessage(message)) {
+          CreateWizardPanel.createOrShow(this.context, {
+            onSubmit: (payload) => this.createArtifactFromWizard(payload),
+          });
           return;
         }
 
