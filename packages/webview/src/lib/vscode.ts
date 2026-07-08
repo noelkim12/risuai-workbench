@@ -23,6 +23,8 @@ import {
   type ArtifactBrowserMoveLorebookItemMessage,
   type ArtifactBrowserMoveRegexItemMessage,
   type ArtifactBrowserOpenAssetManagerMessage,
+  type ArtifactBrowserOpenCreateWizardMessage,
+  type ArtifactBrowserCloseCreateWizardMessage,
   type ArtifactBrowserOpenItemMessage,
   type ArtifactBrowserPackArtifactMessage,
   type ArtifactBrowserPackArtifactPayload,
@@ -169,6 +171,18 @@ export function createArtifactBrowserOpenAssetManagerMessage(
 ): ArtifactBrowserOpenAssetManagerMessage {
   return createArtifactBrowserWebviewMessage('artifact-browser/openAssetManager', {
     stableId,
+  });
+}
+
+export function createArtifactBrowserOpenCreateWizardMessage(): ArtifactBrowserOpenCreateWizardMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/openCreateWizard', {
+    viewId: ARTIFACT_BROWSER_VIEW_ID,
+  });
+}
+
+export function createArtifactBrowserCloseCreateWizardMessage(): ArtifactBrowserCloseCreateWizardMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/closeCreateWizard', {
+    viewId: ARTIFACT_BROWSER_VIEW_ID,
   });
 }
 

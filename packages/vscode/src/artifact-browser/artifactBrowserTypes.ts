@@ -490,6 +490,24 @@ export type ArtifactBrowserRefreshMessage = MessageEnvelope<
   ArtifactBrowserRefreshPayload
 >;
 
+export interface ArtifactBrowserOpenCreateWizardPayload {
+  viewId: typeof ARTIFACT_BROWSER_VIEW_ID;
+}
+
+export interface ArtifactBrowserCloseCreateWizardPayload {
+  viewId: typeof ARTIFACT_BROWSER_VIEW_ID;
+}
+
+export type ArtifactBrowserOpenCreateWizardMessage = MessageEnvelope<
+  'artifact-browser/openCreateWizard',
+  ArtifactBrowserOpenCreateWizardPayload
+>;
+
+export type ArtifactBrowserCloseCreateWizardMessage = MessageEnvelope<
+  'artifact-browser/closeCreateWizard',
+  ArtifactBrowserCloseCreateWizardPayload
+>;
+
 export type ArtifactBrowserCreateArtifactMessage = MessageEnvelope<
   'artifact-browser/createArtifact',
   ArtifactBrowserCreateArtifactPayload
@@ -573,6 +591,8 @@ export type ArtifactBrowserWebviewMessage =
   | ArtifactBrowserPackArtifactMessage
   | ArtifactBrowserAnalyzeArtifactMessage
   | ArtifactBrowserOpenAssetManagerMessage
+  | ArtifactBrowserOpenCreateWizardMessage
+  | ArtifactBrowserCloseCreateWizardMessage
   | ArtifactBrowserSelectMessage
   | ArtifactBrowserOpenItemMessage
   | ArtifactBrowserMoveLorebookItemMessage
