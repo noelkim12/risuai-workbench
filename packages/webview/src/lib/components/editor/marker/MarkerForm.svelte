@@ -6,14 +6,19 @@
 -->
 
 <script lang="ts">
-  import type { CharacterEditFields, MarkerEditorMode, ModuleEditFields } from '../../../types/markerEditor';
+  import type {
+    CharacterEditFields,
+    MarkerEditorMode,
+    ModuleEditFields,
+    PluginEditFields,
+  } from '../../../types/markerEditor';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
   import ImagePicker from './ImagePicker.svelte';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
   import TagsInput from './TagsInput.svelte';
 
   export let mode: MarkerEditorMode;
-  export let fields: CharacterEditFields | ModuleEditFields;
+  export let fields: CharacterEditFields | ModuleEditFields | PluginEditFields;
   export let imageUri: string | null | undefined = undefined;
   export let markerUri: string;
   export let rootUri: string;
@@ -21,14 +26,17 @@
   export let onReset: () => void;
 
   $: isCharacterMode = mode === 'character';
+  $: isModuleMode = mode === 'module';
+  $: isPluginMode = mode === 'plugin';
   $: characterFields = isCharacterMode ? (fields as CharacterEditFields) : null;
-  $: moduleFields = isCharacterMode ? null : (fields as ModuleEditFields);
+  $: moduleFields = isModuleMode ? (fields as ModuleEditFields) : null;
+  $: pluginFields = isPluginMode ? (fields as PluginEditFields) : null;
 </script>
 
 <section class="marker-form" aria-label="Root Marker Editor Form">
   <header class="marker-form__header">
-    <h2 class="marker-form__title">{isCharacterMode ? 'Character Root Marker' : 'Module Root Marker'}</h2>
-    <p class="marker-form__subtitle">Edit .{isCharacterMode ? 'risuchar' : 'risumodule'} metadata</p>
+    <h2 class="marker-form__title">{isCharacterMode ? 'Character Root Marker' : isModuleMode ? 'Module Root Marker' : 'Plugin Root Marker'}</h2>
+    <p class="marker-form__subtitle">Edit .{isCharacterMode ? 'risuchar' : isModuleMode ? 'risumodule' : 'risuplugin'} metadata</p>
   </header>
 
   <div class="marker-form__fields">
@@ -85,6 +93,13 @@
       </label>
     {/if}
 
+    {#if pluginFields}
+      <label class="marker-form__field">
+        <span class="marker-form__field-label">Description</span>
+        <textarea class="marker-form__input" bind:value={pluginFields.description}></textarea>
+      </label>
+    {/if}
+
     <ImagePicker bind:imagePath={fields.image} bind:imageUri {markerUri} {rootUri} {mode} />
 
     {#if characterFields}
@@ -100,14 +115,27 @@
       </label>
     {/if}
 
-    <label class="marker-form__field marker-form__field--toggle">
-      <span class="marker-form__field-label">Low Level Access</span>
-      <input type="checkbox" role="switch" bind:checked={fields.lowLevelAccess} class="marker-form__toggle" />
-      <span class="marker-form__switch" aria-hidden="true">
-        <span class="marker-form__switch-thumb"></span>
-      </span>
-      <span class="marker-form__toggle-label">{fields.lowLevelAccess ? 'On' : 'Off'}</span>
-    </label>
+    {#if characterFields}
+      <label class="marker-form__field marker-form__field--toggle">
+        <span class="marker-form__field-label">Low Level Access</span>
+        <input type="checkbox" role="switch" bind:checked={characterFields.lowLevelAccess} class="marker-form__toggle" />
+        <span class="marker-form__switch" aria-hidden="true">
+          <span class="marker-form__switch-thumb"></span>
+        </span>
+        <span class="marker-form__toggle-label">{characterFields.lowLevelAccess ? 'On' : 'Off'}</span>
+      </label>
+    {/if}
+
+    {#if moduleFields}
+      <label class="marker-form__field marker-form__field--toggle">
+        <span class="marker-form__field-label">Low Level Access</span>
+        <input type="checkbox" role="switch" bind:checked={moduleFields.lowLevelAccess} class="marker-form__toggle" />
+        <span class="marker-form__switch" aria-hidden="true">
+          <span class="marker-form__switch-thumb"></span>
+        </span>
+        <span class="marker-form__toggle-label">{moduleFields.lowLevelAccess ? 'On' : 'Off'}</span>
+      </label>
+    {/if}
 
     {#if moduleFields}
       <label class="marker-form__field marker-form__field--toggle">

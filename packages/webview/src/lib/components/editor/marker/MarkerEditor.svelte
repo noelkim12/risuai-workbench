@@ -17,6 +17,7 @@
     MarkerEditorMode,
     MarkerEditorResetResponsePayload,
     ModuleEditFields,
+    PluginEditFields,
   } from '../../../types/markerEditor';
   import { getVsCodeApi } from '../../../vscode';
   import {
@@ -111,6 +112,20 @@
       image: null,
       lowLevelAccess: false,
       hideIcon: false,
+    };
+  }
+
+  /**
+   * createEmptyPluginFields 함수.
+   * Plugin editor field 교체가 필요할 때 안전한 빈 상태를 제공함.
+   *
+   * @returns 빈 plugin marker edit fields
+   */
+  function createEmptyPluginFields(): PluginEditFields {
+    return {
+      name: '',
+      description: '',
+      image: null,
     };
   }
 
@@ -225,9 +240,16 @@
       };
     }
 
+    if (isPluginEditFields(value)) {
+      return {
+        ...createEmptyPluginFields(),
+        ...value,
+      };
+    }
+
     return {
       ...createEmptyModuleFields(),
-      ...value,
+      ...(value as ModuleEditFields),
     };
   }
 
@@ -274,18 +296,29 @@
   }
 
   function isMarkerEditorMode(value: unknown): value is MarkerEditorMode {
-    return value === 'character' || value === 'module';
+    return value === 'character' || value === 'module' || value === 'plugin';
   }
 
   function isMarkerEditFields(value: unknown): value is MarkerEditFields {
     if (!value || typeof value !== 'object') return false;
 
-    const candidate = value as Partial<MarkerEditFields>;
-    return typeof candidate.name === 'string' && 'image' in candidate && typeof candidate.lowLevelAccess === 'boolean';
+    const candidate = value as {
+      name?: unknown;
+      image?: unknown;
+      lowLevelAccess?: unknown;
+      description?: unknown;
+    };
+    if (typeof candidate.name !== 'string' || !('image' in candidate)) return false;
+    if (typeof candidate.lowLevelAccess === 'boolean') return true;
+    return typeof candidate.description === 'string';
   }
 
   function isCharacterEditFields(value: MarkerEditFields): value is CharacterEditFields {
     return 'tags' in value;
+  }
+
+  function isPluginEditFields(value: MarkerEditFields): value is PluginEditFields {
+    return !('tags' in value) && !('namespace' in value);
   }
 </script>
 
