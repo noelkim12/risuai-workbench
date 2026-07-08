@@ -35,4 +35,10 @@ describe('CreateArtifactWizard source contract', () => {
     // The inline create form no longer lives in the sidebar.
     expect(sidebarSource).not.toContain('submitCreate');
   });
+
+  it('animates step changes and respects reduced motion', () => {
+    expect(wizardSource).toContain("from 'svelte/transition'");
+    expect(wizardSource).toContain('prefers-reduced-motion');
+    expect(wizardSource).toContain('motionDuration');
+  });
 });
