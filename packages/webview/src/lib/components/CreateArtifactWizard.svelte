@@ -1,5 +1,11 @@
 <script lang="ts">
   import type { ArtifactBrowserCreateArtifactKind, ArtifactBrowserCreateArtifactPayload } from '../types';
+  import { fly } from 'svelte/transition';
+
+  // Webview is always client-side; matchMedia is safe here.
+  const prefersReducedMotion =
+    typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const motionDuration = prefersReducedMotion ? 0 : 160;
 
   export let open = false;
   export let initialKind: ArtifactBrowserCreateArtifactKind = 'charx';
@@ -116,7 +122,12 @@
       </ol>
 
       {#if step === 1}
-        <div class="wizard-cards" role="group" aria-label="Artifact type">
+        <div
+          class="wizard-cards"
+          role="group"
+          aria-label="Artifact type"
+          in:fly={{ x: -12, duration: motionDuration }}
+        >
           {#each KIND_CARDS as card (card.kind)}
             <button
               type="button"
@@ -131,7 +142,11 @@
           {/each}
         </div>
       {:else}
-        <form class="create-modal__form" on:submit|preventDefault={submitCreate}>
+        <form
+          class="create-modal__form"
+          on:submit|preventDefault={submitCreate}
+          in:fly={{ x: 12, duration: motionDuration }}
+        >
           <label class="field-stack">
             <span>Name</span>
             <input
