@@ -113,10 +113,34 @@
     <button type="button" class="plugin-viewer__refresh" on:click={() => post('plugin-viewer/refresh')}>
       Refresh
     </button>
+    <section class="plugin-viewer__files" aria-label="Plugin files">
+      {@render treeNodes(loaded.tree)}
+    </section>
   {:else}
     <p>Loading plugin…</p>
   {/if}
 </main>
+
+{#snippet treeNodes(nodes: TreeNode[])}
+  <ul class="plugin-viewer__tree">
+    {#each nodes as node (node.relativePath)}
+      <li>
+        {#if node.kind === 'directory'}
+          <span class="plugin-viewer__dir">📁 {node.name}</span>
+          {#if node.children}{@render treeNodes(node.children)}{/if}
+        {:else}
+          <button
+            type="button"
+            class="plugin-viewer__file"
+            on:click={() => post('plugin-viewer/openFile', { relativePath: node.relativePath })}
+          >
+            📄 {node.name}
+          </button>
+        {/if}
+      </li>
+    {/each}
+  </ul>
+{/snippet}
 
 <style>
   .plugin-viewer {

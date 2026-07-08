@@ -14,12 +14,15 @@ import {
   getWebviewDevServerPortMapping,
 } from './webviewDevServer';
 import { derivePluginPackageInfo, type PluginPackageInfo } from './pluginPackageJson';
+import { shouldExcludePluginEntry } from './pluginFileTree';
 import {
   createPluginViewerLoadedMessage,
+  isPluginViewerOpenFileMessage,
   isPluginViewerReadyMessage,
   isPluginViewerRefreshMessage,
   isPluginViewerRunScriptMessage,
   PLUGIN_VIEWER_VIEW_NAME,
+  type PluginTreeNode,
   type PluginViewerLoadedPayload,
 } from './pluginViewerMessages';
 
@@ -79,6 +82,10 @@ export class PluginViewerPanel {
         }
         if (isPluginViewerRunScriptMessage(message)) {
           this.runScript(message.payload.script);
+          return;
+        }
+        if (isPluginViewerOpenFileMessage(message)) {
+          void this.openFile(message.payload.relativePath);
         }
       },
       null,
@@ -114,9 +121,42 @@ export class PluginViewerPanel {
       version: packageInfo.version,
       scripts: packageInfo.scripts,
       packageJsonError: packageInfo.error,
-      tree: [],
+      tree: await this.scanTree(this.rootUri, ''),
     };
     this.panel.webview.postMessage(createPluginViewerLoadedMessage(payload));
+  }
+
+  private async scanTree(dirUri: vscode.Uri, relativePrefix: string): Promise<PluginTreeNode[]> {
+    let entries: [string, vscode.FileType][];
+    try {
+      entries = await vscode.workspace.fs.readDirectory(dirUri);
+    } catch {
+      return [];
+    }
+    const nodes: PluginTreeNode[] = [];
+    for (const [name, fileType] of entries) {
+      if (shouldExcludePluginEntry(name)) continue;
+      const relativePath = relativePrefix ? `${relativePrefix}/${name}` : name;
+      if (fileType === vscode.FileType.Directory) {
+        nodes.push({
+          name,
+          relativePath,
+          kind: 'directory',
+          children: await this.scanTree(vscode.Uri.joinPath(dirUri, name), relativePath),
+        });
+      } else if (fileType === vscode.FileType.File) {
+        nodes.push({ name, relativePath, kind: 'file' });
+      }
+    }
+    return nodes.sort((a, b) =>
+      a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'directory' ? -1 : 1,
+    );
+  }
+
+  private async openFile(relativePath: string): Promise<void> {
+    const fileUri = vscode.Uri.joinPath(this.rootUri, ...relativePath.split('/'));
+    const document = await vscode.workspace.openTextDocument(fileUri);
+    await vscode.window.showTextDocument(document, { preview: true });
   }
 
   private runScript(script: 'build' | 'dev'): void {
