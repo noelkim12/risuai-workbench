@@ -14,6 +14,7 @@ import { getErrorMessage } from '../shared/errors';
 import { pickImportArtifactFileWithSystemPicker } from '../shared/systemFilePicker';
 import { createWebviewNonce } from '../shared/webviewNonce';
 import { WorkspaceArtifactDiscoveryService } from '../artifact-browser/WorkspaceArtifactDiscoveryService';
+import { selectPreferredCard } from '../artifact-browser/cardSelection';
 import {
   createDebouncedTrigger,
   wireWatcherToTrigger,
@@ -255,7 +256,7 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
         }
 
         if (isArtifactBrowserCreateArtifactMessage(message)) {
-          void this.createArtifact(message.payload, webviewView.webview);
+          void this.createArtifactFromWizard(message.payload);
           return;
         }
 
@@ -362,14 +363,17 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     void this.view?.webview.postMessage(message);
   }
 
-  private async createArtifact(payload: ArtifactBrowserCreateArtifactPayload, webview: vscode.Webview): Promise<void> {
+  private async createArtifactFromWizard(payload: ArtifactBrowserCreateArtifactPayload): Promise<boolean> {
+    const webview = this.view?.webview;
     const workspaceRoot = getPrimaryWorkspaceRoot();
     if (!workspaceRoot) {
       void vscode.window.showErrorMessage('Open a workspace folder before creating a RisuAI artifact.');
-      await this.sendDiscoveredCards(webview);
-      return;
+      if (webview) await this.sendDiscoveredCards(webview);
+      return false;
     }
 
+    let createdRootUri: string | undefined;
+    let created = false;
     try {
       const outDir = resolveUniqueWorkspacePath(workspaceRoot, sanitizeWorkspaceName(payload.name, 'untitled'));
 
@@ -389,11 +393,16 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
         patchScaffoldRootMarker(outDir, payload);
         void vscode.window.showInformationMessage(`Created ${payload.kind === 'charx' ? '.risuchar' : '.risumodule'} scaffold.`);
       }
+
+      createdRootUri = vscode.Uri.file(outDir).toString();
+      created = true;
     } catch (error) {
       void vscode.window.showErrorMessage(`Create failed: ${getErrorMessage(error)}`);
     } finally {
-      await this.sendDiscoveredCards(webview);
+      if (webview) await this.sendDiscoveredCards(webview, createdRootUri);
     }
+
+    return created;
   }
 
   private async importArtifact(payload: ArtifactBrowserImportArtifactPayload, webview: vscode.Webview): Promise<void> {
@@ -559,13 +568,14 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     });
   }
 
-  private async sendDiscoveredCards(webview: vscode.Webview): Promise<void> {
+  private async sendDiscoveredCards(webview: vscode.Webview, preferredRootUri?: string): Promise<void> {
     const previousSelectedCard = this.selectedStableId
       ? this.currentCards.find((card) => card.stableId === this.selectedStableId)
       : undefined;
     const discoveryService = new WorkspaceArtifactDiscoveryService(webview);
     const cards = await discoveryService.discoverCards();
-    const refreshedSelectedCard = this.resolveRefreshedSelection(cards, previousSelectedCard);
+    const refreshedSelectedCard =
+      selectPreferredCard(cards, preferredRootUri) ?? this.resolveRefreshedSelection(cards, previousSelectedCard);
     this.currentCards = cards;
 
     if (refreshedSelectedCard) {
