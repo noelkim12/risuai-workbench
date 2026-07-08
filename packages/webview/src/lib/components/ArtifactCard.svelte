@@ -111,9 +111,13 @@
       {/if}
     </div>
   {:else if card.artifactKind === 'plugin'}
-    <div class="thumbnail thumbnail--fallback" aria-hidden="true">
-      <span class="thumbnail__initials">{getInitials(card.name)}</span>
-      <span class="thumbnail__hint">PLUGIN</span>
+    <div class:thumbnail--fallback={!card.iconUri} class="thumbnail" aria-hidden="true">
+      {#if card.iconUri}
+        <img src={card.iconUri} alt="" loading="lazy" />
+      {:else}
+        <span class="thumbnail__initials">{getInitials(card.name)}</span>
+        <span class="thumbnail__hint">PLUGIN</span>
+      {/if}
     </div>
   {/if}
 
