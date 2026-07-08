@@ -20,6 +20,8 @@ import {
   createArtifactBrowserOpenCreateWizardMessage,
   createArtifactBrowserCloseCreateWizardMessage,
   createArtifactBrowserOpenItemMessage,
+  createArtifactBrowserOpenMarkerEditorMessage,
+  createArtifactBrowserOpenPluginViewerMessage,
   createArtifactBrowserPackArtifactMessage,
   createArtifactBrowserReadyMessage,
   createArtifactBrowserRefreshMessage,
@@ -142,6 +144,8 @@ if (webviewName === 'plugin-viewer') {
       analyzeArtifact,
       packArtifact,
       packState,
+      openMarkerEditor,
+      openPluginViewer,
     },
   });
 
@@ -308,6 +312,26 @@ function openAssetManager(stableId: string): void {
 }
 
 /**
+ * openMarkerEditor 함수.
+ * Plugin detail header의 Marker Editor 버튼 action을 extension host에 typed message로 전달함.
+ *
+ * @param stableId - 대상 plugin artifact stable id
+ */
+function openMarkerEditor(stableId: string): void {
+  vscode?.postMessage(createArtifactBrowserOpenMarkerEditorMessage(stableId));
+}
+
+/**
+ * openPluginViewer 함수.
+ * Plugin detail header의 Plugin Viewer 버튼 action을 extension host에 typed message로 전달함.
+ *
+ * @param stableId - 대상 plugin artifact stable id
+ */
+function openPluginViewer(stableId: string): void {
+  vscode?.postMessage(createArtifactBrowserOpenPluginViewerMessage(stableId));
+}
+
+/**
  * selectCard 함수.
  * 선택한 card id를 local state와 extension host에 함께 반영함.
  *
@@ -323,7 +347,9 @@ function selectCard(stableId: string): void {
   if (selectedCard.artifactKind === 'plugin') {
     selectedStableId.set(stableId);
     detailSections.set([]);
-    setStatus('Plugin project selected. Detail view is not available yet.');
+    viewMode.set('artifactDetail');
+    setStatus('Plugin project selected.');
+    vscode?.postMessage(createArtifactBrowserSelectMessage(stableId));
     return;
   }
 

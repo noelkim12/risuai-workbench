@@ -15,9 +15,9 @@ describe('Plugin create webview/source contract', () => {
     expect(wizardSource).toContain('disabled={!canCreate}');
   });
 
-  it('keeps plugin cards list-only (no detail round-trip)', () => {
+  it('routes plugin card selection into the detail view with an empty section list', () => {
     expect(mainSource).toContain("selectedCard.artifactKind === 'plugin'");
-    expect(mainSource).toContain('Detail view is not available yet');
+    expect(mainSource).toContain("viewMode.set('artifactDetail')");
   });
 
   it('renders plugin cards with framework metadata', () => {

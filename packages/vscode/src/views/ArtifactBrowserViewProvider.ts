@@ -37,6 +37,8 @@ import {
   isArtifactBrowserOpenAssetManagerMessage,
   isArtifactBrowserOpenCreateWizardMessage,
   isArtifactBrowserOpenItemMessage,
+  isArtifactBrowserOpenMarkerEditorMessage,
+  isArtifactBrowserOpenPluginViewerMessage,
   isArtifactBrowserPackArtifactMessage,
   isArtifactBrowserReadyMessage,
   isArtifactBrowserRefreshMessage,
@@ -58,6 +60,7 @@ import {
 import { resolvePackFormat, sanitizePackFilename, formatCompactTimestamp, pickCollisionTimestampMs } from '../artifact-browser/packArtifactPlanner';
 import { CreateWizardPanel } from './CreateWizardPanel';
 import { MarkerEditorViewProvider } from './MarkerEditorViewProvider';
+import { PluginViewerPanel } from './PluginViewerPanel';
 import {
   createWebviewDevServerHtml,
   getConfiguredWebviewDevServerUrl,
@@ -284,6 +287,16 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
 
         if (isArtifactBrowserOpenAssetManagerMessage(message)) {
           this.openAssetManager(message.payload.stableId);
+          return;
+        }
+
+        if (isArtifactBrowserOpenMarkerEditorMessage(message)) {
+          this.openPluginMarkerEditor(message.payload.stableId);
+          return;
+        }
+
+        if (isArtifactBrowserOpenPluginViewerMessage(message)) {
+          this.openPluginViewer(message.payload.stableId);
           return;
         }
 
@@ -577,6 +590,36 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     });
   }
 
+  /**
+   * openPluginMarkerEditor 함수.
+   * Plugin detail header의 Marker Editor 버튼 요청을 `.risuplugin` marker editor open으로 연결함.
+   *
+   * @param stableId - 대상 plugin artifact stable id
+   */
+  private openPluginMarkerEditor(stableId: string): void {
+    const card = this.currentCards.find((candidate) => candidate.stableId === stableId);
+    if (!card) return;
+    MarkerEditorViewProvider.openEditor(this.context, vscode.Uri.parse(card.markerUri));
+  }
+
+  /**
+   * openPluginViewer 함수.
+   * Plugin detail header의 Plugin Viewer 버튼 요청을 PluginViewerPanel open으로 연결함.
+   *
+   * @param stableId - 대상 plugin artifact stable id
+   */
+  private openPluginViewer(stableId: string): void {
+    const card = this.currentCards.find((candidate) => candidate.stableId === stableId);
+    if (!card || card.artifactKind !== 'plugin') return;
+    PluginViewerPanel.createOrShow(this.context, {
+      stableId: card.stableId,
+      name: card.name,
+      description: card.description,
+      iconUri: card.iconUri,
+      rootUri: card.rootUri,
+    });
+  }
+
   private async sendDiscoveredCards(webview: vscode.Webview, preferredRootUri?: string): Promise<void> {
     const previousSelectedCard = this.selectedStableId
       ? this.currentCards.find((card) => card.stableId === this.selectedStableId)
@@ -638,8 +681,12 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     if (!selectedCard) return;
 
     if (selectedCard.artifactKind === 'plugin') {
-      // MVP: plugin cards are list-only - no detail scanner, watcher, or marker editor.
+      // Plugin cards render header-action buttons instead of an accordion, so the
+      // detail view gets an empty section list. Marker editor / plugin viewer are
+      // opened on-demand by the header buttons, not auto-opened on selection.
       this.clearDetailWatcher();
+      this.currentSections.set(stableId, []);
+      this.postMessage(createArtifactBrowserDetailMessage(stableId, []));
       return;
     }
 
