@@ -46,7 +46,9 @@
   $: detailMeta =
     artifact.artifactKind === 'module'
       ? `${artifact.namespace ?? artifact.sourceFormat} · ${artifact.sourceFormat}`
-      : `${artifact.creator} · ${artifact.sourceFormat} · v${artifact.characterVersion}`;
+      : artifact.artifactKind === 'character'
+        ? `${artifact.creator} · ${artifact.sourceFormat} · v${artifact.characterVersion}`
+        : '';
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this modal state.
   let isPackModalOpen = false;

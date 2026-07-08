@@ -213,7 +213,8 @@ function refreshCards(): void {
 }
 
 function createArtifact(payload: ArtifactBrowserCreateArtifactPayload): void {
-  setStatus(`Creating ${payload.kind === 'charx' ? '.risuchar' : '.risumodule'} scaffold…`);
+  const artifactLabel = payload.kind === 'charx' ? '.risuchar' : payload.kind === 'plugin' ? '.risuplugin' : '.risumodule';
+  setStatus(`Creating ${artifactLabel} scaffold…`);
   viewMode.set('artifacts');
   detailSections.set([]);
   vscode?.postMessage(createArtifactBrowserCreateArtifactMessage(payload));
@@ -294,6 +295,13 @@ function selectCard(stableId: string): void {
     selectedCard = value.find((card) => card.stableId === stableId);
   })();
   if (!selectedCard) return;
+
+  if (selectedCard.artifactKind === 'plugin') {
+    selectedStableId.set(stableId);
+    detailSections.set([]);
+    setStatus('Plugin project selected. Detail view is not available yet.');
+    return;
+  }
 
   selectedStableId.set(stableId);
   detailSections.set([]);

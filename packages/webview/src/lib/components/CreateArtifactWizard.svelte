@@ -293,4 +293,97 @@
     font-size: 12px;
     color: var(--vscode-errorForeground, #f14c4c);
   }
+
+  /* --- Wizard-scoped modal presentation ---------------------------------
+     The shared .modal-backdrop / .create-modal top-align the dialog. Center
+     it here so the wizard reads as a true modal within the webview panel.
+     Svelte scoping raises specificity by one class, so these win over the
+     shared rules without touching the other modals that reuse them. */
+  .modal-backdrop {
+    align-items: center;
+    justify-items: center;
+    padding: var(--space-4);
+    background: color-mix(in srgb, var(--surface) 55%, transparent);
+    backdrop-filter: blur(3px);
+  }
+
+  .create-modal {
+    width: min(100%, 380px);
+    margin: 0;
+    animation: wizard-pop 180ms ease;
+  }
+
+  @keyframes wizard-pop {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  /* --- Segmented-pill framework toggle ----------------------------------
+     Replace the raw native radios with an iOS-style segmented control:
+     the container is the track, each label is a pill, the checked one fills
+     with the accent. The native input is visually hidden but stays
+     focusable for keyboard users. */
+  .create-type-switch {
+    gap: var(--space-1);
+    padding: var(--space-1);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-pill);
+    background: var(--section);
+  }
+
+  .create-type-switch label {
+    justify-content: center;
+    gap: 0;
+    padding: var(--space-2) var(--space-3);
+    border: 0;
+    border-radius: var(--radius-pill);
+    color: var(--muted);
+    font-weight: 600;
+    background: transparent;
+    cursor: pointer;
+    transition:
+      color 140ms ease,
+      background 140ms ease,
+      box-shadow 140ms ease;
+  }
+
+  .create-type-switch label:hover {
+    color: var(--text);
+  }
+
+  .create-type-switch label.active {
+    color: var(--accent-text);
+    background: var(--accent);
+    box-shadow: 0 1px 4px color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+
+  .create-type-switch label:focus-within {
+    outline: 1px solid var(--focus);
+    outline-offset: 1px;
+  }
+
+  .create-type-switch input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .create-modal {
+      animation: none;
+    }
+
+    .create-type-switch label {
+      transition: none;
+    }
+  }
 </style>

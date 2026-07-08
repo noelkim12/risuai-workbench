@@ -30,10 +30,11 @@ export interface MessageEnvelope<TType extends string, TPayload> {
   payload: TPayload;
 }
 
-export type BrowserArtifactKind = 'character' | 'module';
+export type BrowserArtifactKind = 'character' | 'module' | 'plugin';
 export type BrowserArtifactStatus = 'ready' | 'warning' | 'invalid';
 export type CharacterSourceFormat = 'charx' | 'png' | 'json' | 'scaffold';
 export type ModuleSourceFormat = 'risum' | 'json' | 'scaffold' | 'unknown';
+export type PluginFramework = 'vanilla' | 'svelte';
 export type CharacterBrowserStatus = BrowserArtifactStatus;
 export type CharacterSectionKind =
   | 'manifest'
@@ -186,7 +187,26 @@ export interface ModuleBrowserCard {
   warnings: ManifestParseWarning[];
 }
 
-export type BrowserArtifactCard = CharacterBrowserCard | ModuleBrowserCard;
+/**
+ * PluginBrowserCard interface.
+ * `.risuplugin` marker-backed plugin project card. MVP: list/selection only - no detail view.
+ */
+export interface PluginBrowserCard {
+  artifactKind: 'plugin';
+  stableId: string;
+  manifestId: string;
+  name: string;
+  description: string;
+  framework: PluginFramework | 'unknown';
+  status: BrowserArtifactStatus;
+  markerUri: string;
+  rootUri: string;
+  rootPathLabel: string;
+  markerPathLabel: string;
+  warnings: ManifestParseWarning[];
+}
+
+export type BrowserArtifactCard = CharacterBrowserCard | ModuleBrowserCard | PluginBrowserCard;
 
 /**
  * CharacterItem interface.
@@ -241,7 +261,7 @@ export interface ArtifactBrowserRefreshPayload {
   viewId: typeof ARTIFACT_BROWSER_VIEW_ID;
 }
 
-export type ArtifactBrowserCreateArtifactKind = 'charx' | 'module';
+export type ArtifactBrowserCreateArtifactKind = 'charx' | 'module' | 'plugin';
 
 export interface ArtifactBrowserCreateArtifactPayload {
   kind: ArtifactBrowserCreateArtifactKind;
@@ -251,6 +271,7 @@ export interface ArtifactBrowserCreateArtifactPayload {
   utilityBot?: boolean;
   lowLevelAccess?: boolean;
   description?: string;
+  framework?: PluginFramework;
 }
 
 export interface ArtifactBrowserImportArtifactPayload {

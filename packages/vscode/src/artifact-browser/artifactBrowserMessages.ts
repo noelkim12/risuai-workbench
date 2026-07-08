@@ -165,13 +165,19 @@ const isArtifactBrowserCreateSectionEntryPayload: ArtifactBrowserPayloadGuard<
   isCreateSectionEntryCompatible(payload.sectionKind, payload.entryKind) &&
   (payload.targetFolderPath === undefined || isSafeTargetFolderPath(payload.targetFolderPath));
 
+const PLUGIN_NAME_PATTERN = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
+
 const isArtifactBrowserCreateArtifactPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserCreateArtifactPayload> = (
   payload,
 ): payload is ArtifactBrowserCreateArtifactPayload =>
   isPlainRecord(payload) &&
-  (payload.kind === 'charx' || payload.kind === 'module') &&
+  (payload.kind === 'charx' || payload.kind === 'module' || payload.kind === 'plugin') &&
   typeof payload.name === 'string' &&
   payload.name.trim().length > 0 &&
+  (payload.kind !== 'plugin' ||
+    (PLUGIN_NAME_PATTERN.test(payload.name.trim()) &&
+      (payload.framework === 'vanilla' || payload.framework === 'svelte'))) &&
+  (payload.framework === undefined || payload.framework === 'vanilla' || payload.framework === 'svelte') &&
   (payload.creator === undefined || typeof payload.creator === 'string') &&
   (payload.description === undefined || typeof payload.description === 'string') &&
   (payload.tags === undefined || (Array.isArray(payload.tags) && payload.tags.every((tag) => typeof tag === 'string'))) &&
