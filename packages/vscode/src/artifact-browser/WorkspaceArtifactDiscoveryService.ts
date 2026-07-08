@@ -6,7 +6,11 @@
 import * as vscode from 'vscode';
 import { CharacterManifestDiscoveryService } from './CharacterManifestDiscoveryService';
 import { ModuleManifestDiscoveryService } from './ModuleManifestDiscoveryService';
+import { PluginManifestDiscoveryService } from './PluginManifestDiscoveryService';
 import type { BrowserArtifactCard, ManifestParseWarning } from './artifactBrowserTypes';
+
+const ARTIFACT_KIND_RANK = { character: 0, module: 1, plugin: 2 } as const;
+const MARKER_FILENAME_BY_KIND = { character: '.risuchar', module: '.risumodule', plugin: '.risuplugin' } as const;
 
 /**
  * WorkspaceArtifactDiscoveryService 클래스.
@@ -24,7 +28,8 @@ export class WorkspaceArtifactDiscoveryService {
   async discoverCards(): Promise<BrowserArtifactCard[]> {
     const characters = await new CharacterManifestDiscoveryService(this.webview).discoverCards();
     const modules = await new ModuleManifestDiscoveryService(this.webview).discoverCards();
-    const withConflicts = applyRootMarkerConflictWarnings([...characters, ...modules]);
+    const plugins = await new PluginManifestDiscoveryService().discoverCards();
+    const withConflicts = applyRootMarkerConflictWarnings([...characters, ...modules, ...plugins]);
     return sortArtifactCards(withConflicts);
   }
 }
@@ -47,7 +52,7 @@ export function applyRootMarkerConflictWarnings(cards: BrowserArtifactCard[]): B
   return cards.map((card) => {
     const sameRoot = cardsByRootUri.get(card.rootUri) ?? [];
     const kinds = new Set(sameRoot.map((candidate) => candidate.artifactKind));
-    if (!kinds.has('character') || !kinds.has('module')) return card;
+    if (kinds.size < 2) return card;
 
     const warning = createConflictingRootMarkersWarning(card.rootPathLabel, sameRoot);
     return {
@@ -71,7 +76,7 @@ export function sortArtifactCards(cards: BrowserArtifactCard[]): BrowserArtifact
     if (nameCompare !== 0) return nameCompare;
 
     if (a.artifactKind !== b.artifactKind) {
-      return a.artifactKind === 'character' ? -1 : 1;
+      return ARTIFACT_KIND_RANK[a.artifactKind] - ARTIFACT_KIND_RANK[b.artifactKind];
     }
 
     return a.rootPathLabel.localeCompare(b.rootPathLabel);
@@ -79,7 +84,7 @@ export function sortArtifactCards(cards: BrowserArtifactCard[]): BrowserArtifact
 }
 
 function createConflictingRootMarkersWarning(rootPathLabel: string, sameRoot: BrowserArtifactCard[]): ManifestParseWarning {
-  const markerFilenames = sameRoot.map((card) => (card.artifactKind === 'character' ? '.risuchar' : '.risumodule'));
+  const markerFilenames = sameRoot.map((card) => MARKER_FILENAME_BY_KIND[card.artifactKind]);
   return {
     code: 'conflictingRootMarkers',
     field: 'marker',

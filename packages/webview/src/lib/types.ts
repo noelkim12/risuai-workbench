@@ -78,7 +78,8 @@ export type WebviewMessageProtocolVersion =
   | ArtifactBrowserProtocolVersion
   | MarkerEditorProtocolVersion
   | MainEditorProtocolVersion;
-export type BrowserArtifactKind = 'character' | 'module';
+export type BrowserArtifactKind = 'character' | 'module' | 'plugin';
+export type PluginFramework = 'vanilla' | 'svelte';
 export type BrowserArtifactStatus = 'ready' | 'warning' | 'invalid';
 export type CharacterSourceFormat = 'charx' | 'png' | 'json' | 'scaffold';
 export type ModuleSourceFormat = 'risum' | 'json' | 'scaffold' | 'unknown';
@@ -181,7 +182,26 @@ export interface ModuleBrowserCard {
   warnings: ManifestParseWarning[];
 }
 
-export type BrowserArtifactCard = CharacterBrowserCard | ModuleBrowserCard;
+/**
+ * PluginBrowserCard interface.
+ * `.risuplugin` marker-backed plugin project card. MVP: list/selection only — no detail view.
+ */
+export interface PluginBrowserCard {
+  artifactKind: 'plugin';
+  stableId: string;
+  manifestId: string;
+  name: string;
+  description: string;
+  framework: PluginFramework | 'unknown';
+  status: BrowserArtifactStatus;
+  markerUri: string;
+  rootUri: string;
+  rootPathLabel: string;
+  markerPathLabel: string;
+  warnings: ManifestParseWarning[];
+}
+
+export type BrowserArtifactCard = CharacterBrowserCard | ModuleBrowserCard | PluginBrowserCard;
 
 export interface BrowserItem {
   id: string;
@@ -228,7 +248,7 @@ export interface ArtifactBrowserRefreshPayload {
   viewId: typeof ARTIFACT_BROWSER_VIEW_ID;
 }
 
-export type ArtifactBrowserCreateArtifactKind = 'charx' | 'module';
+export type ArtifactBrowserCreateArtifactKind = 'charx' | 'module' | 'plugin';
 
 export interface ArtifactBrowserCreateArtifactPayload {
   kind: ArtifactBrowserCreateArtifactKind;
@@ -238,6 +258,7 @@ export interface ArtifactBrowserCreateArtifactPayload {
   utilityBot?: boolean;
   lowLevelAccess?: boolean;
   description?: string;
+  framework?: PluginFramework;
 }
 
 export interface ArtifactBrowserImportArtifactPayload {

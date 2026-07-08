@@ -110,11 +110,16 @@
         <span class="thumbnail__hint module-thumbnail__icon">MOD</span>
       {/if}
     </div>
+  {:else if card.artifactKind === 'plugin'}
+    <div class="thumbnail thumbnail--fallback" aria-hidden="true">
+      <span class="thumbnail__initials">{getInitials(card.name)}</span>
+      <span class="thumbnail__hint">PLUGIN</span>
+    </div>
   {/if}
 
   <span class="card-body">
     <span class="card-source-icon" aria-hidden="true">
-      {card.artifactKind === 'module' ? getModuleIcon(card.sourceFormat) : getSourceIcon(card.sourceFormat)}
+      {card.artifactKind === 'module' ? getModuleIcon(card.sourceFormat) : card.artifactKind === 'plugin' ? '🔌' : getSourceIcon(card.sourceFormat)}
     </span>
 
     <span class="card-title-row">
@@ -131,10 +136,12 @@
       </span>
     {:else if card.artifactKind === 'module'}
       <span class="meta">{subtitle}</span>
+    {:else if card.artifactKind === 'plugin'}
+      <span class="meta">{card.framework}</span>
     {/if}
 
     <span class="card-bottom-row" aria-label={`${card.artifactKind} metadata and status`}>
-      <span class="card-version">{card.artifactKind === 'character' ? `v${card.characterVersion}` : card.sourceFormat}</span>
+      <span class="card-version">{card.artifactKind === 'character' ? `v${card.characterVersion}` : card.artifactKind === 'module' ? card.sourceFormat : card.framework}</span>
       <StatusBadge status={card.status} />
     </span>
   </span>

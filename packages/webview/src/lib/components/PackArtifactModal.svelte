@@ -13,7 +13,11 @@
   // Mirror of the host planner's format→extension mapping (cosmetic preview only;
   // the host recomputes authoritatively). Keep in sync with resolvePackFormat.
   $: formatLabel =
-    artifact.artifactKind === 'module' ? 'risum' : artifact.sourceFormat === 'png' ? 'png' : 'charx';
+    artifact.artifactKind === 'module'
+      ? 'risum'
+      : artifact.artifactKind === 'character' && artifact.sourceFormat === 'png'
+        ? 'png'
+        : 'charx';
   $: ext = formatLabel === 'risum' ? '.risum' : formatLabel === 'png' ? '.png' : '.charx';
   $: fileName = `${artifact.name}${ext}`;
   $: outputPath = `${artifact.rootPathLabel}/out/${fileName}`;
@@ -22,11 +26,13 @@
   $: phase =
     !submitted ? 'idle' : $packState === null || !matchesThisArtifact ? 'packing' : $packState.ok ? 'done' : 'error';
 
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this event handler.
   function confirm(): void {
     submitted = true;
     onConfirm(recovery);
   }
 
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this event handler.
   function dismiss(): void {
     if (phase === 'packing') return;
     onClose();

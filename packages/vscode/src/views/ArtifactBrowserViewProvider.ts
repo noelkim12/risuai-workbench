@@ -60,6 +60,7 @@ import {
   getConfiguredWebviewDevServerUrl,
   getWebviewDevServerPortMapping,
 } from './webviewDevServer';
+import { RISUPLUGIN_FILENAME, RISUPLUGIN_KIND, RISUPLUGIN_SCHEMA_VERSION } from '../artifact-browser/risupluginManifest';
 
 const CHARACTER_MARKER_FILENAME = '.risuchar';
 const MODULE_MARKER_FILENAME = '.risumodule';
@@ -146,7 +147,7 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
    */
   private registerMarkerWatcher(): void {
     const watcher = vscode.workspace.createFileSystemWatcher(
-      `**/{${CHARACTER_MARKER_FILENAME},${MODULE_MARKER_FILENAME}}`,
+      `**/{${CHARACTER_MARKER_FILENAME},${MODULE_MARKER_FILENAME},${RISUPLUGIN_FILENAME}}`,
     );
     const trigger = createDebouncedTrigger(() => this.refreshIfOpen(), CARDS_REFRESH_DEBOUNCE_MS);
     const subscriptions = wireWatcherToTrigger(watcher, () => trigger.trigger()) as vscode.Disposable[];
@@ -371,14 +372,23 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
 
     try {
       const outDir = resolveUniqueWorkspacePath(workspaceRoot, sanitizeWorkspaceName(payload.name, 'untitled'));
-      const args = ['scaffold', payload.kind, '--name', payload.name.trim(), '--out', outDir];
-      if (payload.kind === 'charx' && payload.creator?.trim()) {
-        args.push('--creator', payload.creator.trim());
-      }
 
-      await runRisuCoreCli(args, workspaceRoot);
-      patchScaffoldRootMarker(outDir, payload);
-      void vscode.window.showInformationMessage(`Created ${payload.kind === 'charx' ? '.risuchar' : '.risumodule'} scaffold.`);
+      if (payload.kind === 'plugin') {
+        await runCreateRisuPluginCli(payload, outDir, workspaceRoot);
+        writePluginRootMarker(outDir, payload);
+        void vscode.window.showInformationMessage(
+          `Created plugin scaffold. Run "npm install" in ${path.basename(outDir)} before building.`,
+        );
+      } else {
+        const args = ['scaffold', payload.kind, '--name', payload.name.trim(), '--out', outDir];
+        if (payload.kind === 'charx' && payload.creator?.trim()) {
+          args.push('--creator', payload.creator.trim());
+        }
+
+        await runRisuCoreCli(args, workspaceRoot);
+        patchScaffoldRootMarker(outDir, payload);
+        void vscode.window.showInformationMessage(`Created ${payload.kind === 'charx' ? '.risuchar' : '.risumodule'} scaffold.`);
+      }
     } catch (error) {
       void vscode.window.showErrorMessage(`Create failed: ${getErrorMessage(error)}`);
     } finally {
@@ -459,6 +469,11 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
       );
       return;
     }
+    if (selectedCard.artifactKind === 'plugin') {
+      const error = 'Plugin cards do not support packing yet.';
+      this.postMessage(createArtifactBrowserPackCompletedMessage({ stableId, ok: false, error }));
+      return;
+    }
 
     const workspaceRoot = getPrimaryWorkspaceRoot();
     if (!workspaceRoot) {
@@ -510,6 +525,10 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
       void vscode.window.showErrorMessage('Analyze failed: Selected artifact not found.');
       return;
     }
+    if (selectedCard.artifactKind === 'plugin') {
+      void vscode.window.showErrorMessage('Analyze failed: Plugin cards do not support analysis yet.');
+      return;
+    }
 
     const workspaceRoot = getPrimaryWorkspaceRoot();
     if (!workspaceRoot) {
@@ -551,14 +570,18 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
 
     if (refreshedSelectedCard) {
       this.selectedStableId = refreshedSelectedCard.stableId;
-      this.watchSelectedArtifactContents(refreshedSelectedCard);
+      if (refreshedSelectedCard.artifactKind === 'plugin') {
+        this.clearDetailWatcher();
+      } else {
+        this.watchSelectedArtifactContents(refreshedSelectedCard);
+      }
     } else if (this.selectedStableId) {
       this.selectedStableId = undefined;
       this.clearDetailWatcher();
     }
 
     this.postMessage(createArtifactBrowserCardsMessage(cards, refreshedSelectedCard?.stableId));
-    if (refreshedSelectedCard) {
+    if (refreshedSelectedCard && refreshedSelectedCard.artifactKind !== 'plugin') {
       await this.postDetailSections(refreshedSelectedCard);
     }
   }
@@ -595,6 +618,12 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     const selectedCard = this.currentCards.find((card) => card.stableId === stableId);
     if (!selectedCard) return;
 
+    if (selectedCard.artifactKind === 'plugin') {
+      // MVP: plugin cards are list-only - no detail scanner, watcher, or marker editor.
+      this.clearDetailWatcher();
+      return;
+    }
+
     this.watchSelectedArtifactContents(selectedCard);
     this.openMarkerEditor(selectedCard.markerUri);
 
@@ -608,6 +637,8 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
    * @param selectedCard - detail section을 만들 현재 선택 card
    */
   private async postDetailSections(selectedCard: BrowserArtifactCard): Promise<void> {
+    if (selectedCard.artifactKind === 'plugin') return;
+
     const stableId = selectedCard.stableId;
     const sections =
       selectedCard.artifactKind === 'character'
@@ -1262,6 +1293,58 @@ function runRisuCoreCli(args: string[], cwd: string): Promise<string> {
   });
 }
 
+const CREATE_RISU_PLUGIN_PACKAGE = 'create-risu-plugin@^3.1.0';
+
+function runCreateRisuPluginCli(
+  payload: ArtifactBrowserCreateArtifactPayload,
+  outDir: string,
+  cwd: string,
+): Promise<string> {
+  const args = [
+    '-y',
+    CREATE_RISU_PLUGIN_PACKAGE,
+    payload.name.trim(),
+    '--framework',
+    payload.framework ?? 'vanilla',
+    '--out',
+    outDir,
+    '--skip-install',
+  ];
+  if (payload.description?.trim()) {
+    args.push('--description', payload.description.trim());
+  }
+
+  return new Promise((resolve, reject) => {
+    const child = spawn('npx', args, { cwd, env: process.env, shell: process.platform === 'win32' });
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on('error', (error: NodeJS.ErrnoException) => {
+      reject(
+        error.code === 'ENOENT'
+          ? new Error('npx not found on PATH. Install Node.js 20+ (with npm) to create plugin scaffolds.')
+          : error,
+      );
+    });
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve(stdout);
+        return;
+      }
+
+      reject(new Error((stderr.trim() || stdout.trim() || `create-risu-plugin exited with code ${code}`).slice(0, 2000)));
+    });
+  });
+}
+
 function createImportExtractArgs(importedFile: string): string[] {
   const extractArgs = ['extract', importedFile];
   if (MODULE_TABLE_IMPORT_EXTENSIONS.has(path.extname(importedFile).toLowerCase())) {
@@ -1336,6 +1419,22 @@ function patchScaffoldRootMarker(outDir: string, payload: ArtifactBrowserCreateA
   }
 
   fs.writeFileSync(markerPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+}
+
+function writePluginRootMarker(outDir: string, payload: ArtifactBrowserCreateArtifactPayload): void {
+  const now = new Date().toISOString();
+  const manifest = {
+    kind: RISUPLUGIN_KIND,
+    schemaVersion: RISUPLUGIN_SCHEMA_VERSION,
+    id: payload.name.trim(),
+    name: payload.name.trim(),
+    description: payload.description?.trim() ?? '',
+    framework: payload.framework ?? 'vanilla',
+    createdAt: now,
+    modifiedAt: now,
+  };
+
+  fs.writeFileSync(path.join(outDir, RISUPLUGIN_FILENAME), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
 }
 
 function readJsonObject(filePath: string): Record<string, unknown> {

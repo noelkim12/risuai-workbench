@@ -58,7 +58,7 @@ export async function readManifestText(uri: vscode.Uri): Promise<string> {
  * @param stableId - parser가 만든 기존 stable id
  * @returns artifact kind discriminator가 포함된 stable id
  */
-export function withArtifactKindStableId(kind: 'character' | 'module', stableId: string): string {
+export function withArtifactKindStableId(kind: 'character' | 'module' | 'plugin', stableId: string): string {
   return stableId.startsWith(`${kind}:`) ? stableId : `${kind}:${stableId}`;
 }
 
