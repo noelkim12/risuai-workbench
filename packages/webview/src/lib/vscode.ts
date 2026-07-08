@@ -26,6 +26,8 @@ import {
   type ArtifactBrowserOpenCreateWizardMessage,
   type ArtifactBrowserCloseCreateWizardMessage,
   type ArtifactBrowserOpenItemMessage,
+  type ArtifactBrowserOpenMarkerEditorMessage,
+  type ArtifactBrowserOpenPluginViewerMessage,
   type ArtifactBrowserPackArtifactMessage,
   type ArtifactBrowserPackArtifactPayload,
   type ArtifactBrowserReadyMessage,
@@ -172,6 +174,18 @@ export function createArtifactBrowserOpenAssetManagerMessage(
   return createArtifactBrowserWebviewMessage('artifact-browser/openAssetManager', {
     stableId,
   });
+}
+
+export function createArtifactBrowserOpenMarkerEditorMessage(
+  stableId: string,
+): ArtifactBrowserOpenMarkerEditorMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/openMarkerEditor', { stableId });
+}
+
+export function createArtifactBrowserOpenPluginViewerMessage(
+  stableId: string,
+): ArtifactBrowserOpenPluginViewerMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/openPluginViewer', { stableId });
 }
 
 export function createArtifactBrowserOpenCreateWizardMessage(): ArtifactBrowserOpenCreateWizardMessage {

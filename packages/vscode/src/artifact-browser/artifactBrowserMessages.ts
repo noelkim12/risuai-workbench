@@ -28,6 +28,10 @@ import {
   type ArtifactBrowserMoveRegexItemMessage,
   type ArtifactBrowserMoveRegexItemPayload,
   type ArtifactBrowserOpenItemPayload,
+  type ArtifactBrowserOpenMarkerEditorMessage,
+  type ArtifactBrowserOpenMarkerEditorPayload,
+  type ArtifactBrowserOpenPluginViewerMessage,
+  type ArtifactBrowserOpenPluginViewerPayload,
   type BrowserArtifactCard,
   type BrowserSection,
   type ArtifactBrowserCardsMessage,
@@ -77,7 +81,9 @@ type ArtifactBrowserInboundMessage =
   | ArtifactBrowserMoveLorebookFolderMessage
   | ArtifactBrowserMoveRegexItemMessage
   | ArtifactBrowserMoveGreetingItemMessage
-  | ArtifactBrowserCreateSectionEntryMessage;
+  | ArtifactBrowserCreateSectionEntryMessage
+  | ArtifactBrowserOpenMarkerEditorMessage
+  | ArtifactBrowserOpenPluginViewerMessage;
 
 function createArtifactBrowserMessageGuard<TMessage extends ArtifactBrowserInboundMessage>(
   type: TMessage['type'],
@@ -237,6 +243,16 @@ const isArtifactBrowserOpenAssetManagerPayload: ArtifactBrowserPayloadGuard<Arti
 ): payload is ArtifactBrowserOpenAssetManagerPayload =>
   isPlainRecord(payload) && typeof payload.stableId === 'string' && payload.stableId.length > 0;
 
+const isArtifactBrowserOpenMarkerEditorPayload: ArtifactBrowserPayloadGuard<
+  ArtifactBrowserOpenMarkerEditorPayload
+> = (payload): payload is ArtifactBrowserOpenMarkerEditorPayload =>
+  isPlainRecord(payload) && typeof payload.stableId === 'string' && payload.stableId.length > 0;
+
+const isArtifactBrowserOpenPluginViewerPayload: ArtifactBrowserPayloadGuard<
+  ArtifactBrowserOpenPluginViewerPayload
+> = (payload): payload is ArtifactBrowserOpenPluginViewerPayload =>
+  isPlainRecord(payload) && typeof payload.stableId === 'string' && payload.stableId.length > 0;
+
 const isArtifactBrowserReadyMessageEnvelope = createArtifactBrowserMessageGuard<ArtifactBrowserReadyMessage>(
   'artifact-browser/ready',
   isArtifactBrowserViewPayload,
@@ -303,6 +319,18 @@ const isArtifactBrowserOpenAssetManagerMessageEnvelope =
   createArtifactBrowserMessageGuard<ArtifactBrowserOpenAssetManagerMessage>(
     'artifact-browser/openAssetManager',
     isArtifactBrowserOpenAssetManagerPayload,
+  );
+
+const isArtifactBrowserOpenMarkerEditorMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserOpenMarkerEditorMessage>(
+    'artifact-browser/openMarkerEditor',
+    isArtifactBrowserOpenMarkerEditorPayload,
+  );
+
+const isArtifactBrowserOpenPluginViewerMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserOpenPluginViewerMessage>(
+    'artifact-browser/openPluginViewer',
+    isArtifactBrowserOpenPluginViewerPayload,
   );
 
 const isArtifactBrowserSelectMessageEnvelope = createArtifactBrowserMessageGuard<ArtifactBrowserSelectMessage>(
@@ -463,6 +491,18 @@ export function isArtifactBrowserCreateSectionEntryMessage(
   message: unknown,
 ): message is ArtifactBrowserCreateSectionEntryMessage {
   return isArtifactBrowserCreateSectionEntryMessageEnvelope(message);
+}
+
+export function isArtifactBrowserOpenMarkerEditorMessage(
+  message: unknown,
+): message is ArtifactBrowserOpenMarkerEditorMessage {
+  return isArtifactBrowserOpenMarkerEditorMessageEnvelope(message);
+}
+
+export function isArtifactBrowserOpenPluginViewerMessage(
+  message: unknown,
+): message is ArtifactBrowserOpenPluginViewerMessage {
+  return isArtifactBrowserOpenPluginViewerMessageEnvelope(message);
 }
 
 function isCreatableSectionKind(value: unknown): value is ArtifactBrowserCreateSectionEntryPayload['sectionKind'] {
