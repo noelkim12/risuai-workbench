@@ -60,3 +60,17 @@ export function isPluginViewerReadyMessage(message: unknown): boolean {
 export function isPluginViewerRefreshMessage(message: unknown): boolean {
   return isEnvelope(message, 'plugin-viewer/refresh');
 }
+
+export interface PluginViewerRunScriptPayload {
+  script: 'build' | 'dev';
+}
+
+export function isPluginViewerRunScriptMessage(
+  message: unknown,
+): message is { payload: PluginViewerRunScriptPayload } {
+  if (!isEnvelope(message, 'plugin-viewer/runScript')) return false;
+  const payload = (message as { payload?: unknown }).payload;
+  if (typeof payload !== 'object' || payload === null) return false;
+  const script = (payload as Record<string, unknown>).script;
+  return script === 'build' || script === 'dev';
+}
