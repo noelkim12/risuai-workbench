@@ -1,0 +1,281 @@
+<script lang="ts">
+  import type { ArtifactBrowserCreateArtifactKind, ArtifactBrowserCreateArtifactPayload } from '../types';
+
+  export let open = false;
+  export let initialKind: ArtifactBrowserCreateArtifactKind = 'charx';
+  export let onCreate: (payload: ArtifactBrowserCreateArtifactPayload) => void;
+  export let onClose: () => void;
+
+  const PLUGIN_NAME_PATTERN = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
+
+  const KIND_CARDS: { kind: ArtifactBrowserCreateArtifactKind; icon: string; title: string; blurb: string }[] = [
+    { kind: 'charx', icon: '🎭', title: 'CharX', blurb: 'Character card' },
+    { kind: 'module', icon: '🧩', title: 'Module', blurb: 'Reusable bundle' },
+    { kind: 'plugin', icon: '🔌', title: 'Plugin', blurb: 'Editor extension' },
+  ];
+
+  let step: 1 | 2 = 1;
+  let createKind: ArtifactBrowserCreateArtifactKind = 'charx';
+  let name = '';
+  let creator = '';
+  let tags = '';
+  let utilityBot = false;
+  let lowLevelAccess = false;
+  let description = '';
+  let pluginFramework: 'vanilla' | 'svelte' = 'vanilla';
+  let nameInput: HTMLInputElement | undefined;
+
+  $: pluginNameInvalid =
+    createKind === 'plugin' && name.trim().length > 0 && !PLUGIN_NAME_PATTERN.test(name.trim());
+  $: canCreate = name.trim().length > 0 && !pluginNameInvalid;
+
+  // Reset form + step exactly once each time the modal opens.
+  let wasOpen = false;
+  $: if (open && !wasOpen) resetForOpen();
+  $: if (!open) wasOpen = false;
+
+  function resetForOpen(): void {
+    wasOpen = true;
+    createKind = initialKind;
+    step = 1;
+    name = '';
+    creator = '';
+    tags = '';
+    utilityBot = false;
+    lowLevelAccess = false;
+    description = '';
+    pluginFramework = 'vanilla';
+  }
+
+  function selectKind(kind: ArtifactBrowserCreateArtifactKind): void {
+    createKind = kind;
+    step = 2;
+    // Focus the name field after the step-2 markup renders.
+    queueMicrotask(() => nameInput?.focus());
+  }
+
+  function back(): void {
+    step = 1;
+  }
+
+  function submitCreate(): void {
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+    if (createKind === 'plugin' && !PLUGIN_NAME_PATTERN.test(trimmedName)) return;
+
+    if (createKind === 'charx') {
+      onCreate({
+        kind: 'charx',
+        name: trimmedName,
+        creator: creator.trim(),
+        tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean),
+        utilityBot,
+        lowLevelAccess,
+      });
+    } else if (createKind === 'plugin') {
+      onCreate({
+        kind: 'plugin',
+        name: trimmedName,
+        description: description.trim(),
+        framework: pluginFramework,
+      });
+    } else {
+      onCreate({
+        kind: 'module',
+        name: trimmedName,
+        description: description.trim(),
+        lowLevelAccess,
+      });
+    }
+
+    onClose();
+  }
+
+  function onKeydown(event: KeyboardEvent): void {
+    if (open && event.key === 'Escape') onClose();
+  }
+</script>
+
+<svelte:window on:keydown={onKeydown} />
+
+{#if open}
+  <section class="modal-backdrop" aria-label="Create dialog backdrop">
+    <button type="button" class="modal-scrim" aria-label="Close create dialog" on:click={onClose}></button>
+    <div class="create-modal" aria-label="Create workbench artifact" role="dialog" aria-modal="true">
+      <header class="create-modal__header">
+        <div>
+          <p class="eyebrow">Create root marker</p>
+          <h2>New Workbench Item</h2>
+        </div>
+        <button type="button" class="button-icon button-icon--quiet" aria-label="Close create dialog" on:click={onClose}>×</button>
+      </header>
+
+      <ol class="wizard-steps" aria-label="Wizard progress">
+        <li class:active={step === 1} class:done={step === 2}>1. Type</li>
+        <li class:active={step === 2}>2. Details</li>
+      </ol>
+
+      {#if step === 1}
+        <div class="wizard-cards" role="group" aria-label="Artifact type">
+          {#each KIND_CARDS as card (card.kind)}
+            <button
+              type="button"
+              class="wizard-card"
+              class:active={createKind === card.kind}
+              on:click={() => selectKind(card.kind)}
+            >
+              <span class="wizard-card__icon" aria-hidden="true">{card.icon}</span>
+              <span class="wizard-card__title">{card.title}</span>
+              <span class="wizard-card__blurb">{card.blurb}</span>
+            </button>
+          {/each}
+        </div>
+      {:else}
+        <form class="create-modal__form" on:submit|preventDefault={submitCreate}>
+          <label class="field-stack">
+            <span>Name</span>
+            <input
+              bind:this={nameInput}
+              type="text"
+              bind:value={name}
+              required
+              autocomplete="off"
+              placeholder={createKind === 'charx' ? 'Character name' : createKind === 'plugin' ? 'my-risu-plugin' : 'Module name'}
+            />
+          </label>
+
+          {#if createKind === 'charx'}
+            <label class="field-stack">
+              <span>Creator</span>
+              <input type="text" bind:value={creator} autocomplete="off" placeholder="Creator" />
+            </label>
+            <label class="field-stack">
+              <span>Tags</span>
+              <input type="text" bind:value={tags} autocomplete="off" placeholder="tag-a, tag-b" />
+            </label>
+            <div class="checkbox-grid">
+              <label><input type="checkbox" bind:checked={utilityBot} /> Utility bot</label>
+              <label><input type="checkbox" bind:checked={lowLevelAccess} /> Low level access</label>
+            </div>
+          {:else if createKind === 'module'}
+            <label class="field-stack">
+              <span>Description</span>
+              <textarea bind:value={description} rows="3" placeholder="Short module description"></textarea>
+            </label>
+            <label class="checkbox-line"><input type="checkbox" bind:checked={lowLevelAccess} /> Low level access</label>
+          {:else if createKind === 'plugin'}
+            <label class="field-stack">
+              <span>Description</span>
+              <textarea bind:value={description} rows="3" placeholder="Short plugin description"></textarea>
+            </label>
+            <fieldset class="create-type-switch" aria-label="Plugin framework">
+              <label class:active={pluginFramework === 'vanilla'}>
+                <input type="radio" bind:group={pluginFramework} value="vanilla" />
+                Vanilla
+              </label>
+              <label class:active={pluginFramework === 'svelte'}>
+                <input type="radio" bind:group={pluginFramework} value="svelte" />
+                Svelte
+              </label>
+            </fieldset>
+            {#if pluginNameInvalid}
+              <p class="field-hint field-hint--error">Plugin name must be kebab-case (e.g. my-risu-plugin).</p>
+            {/if}
+          {/if}
+
+          <footer class="create-modal__actions">
+            <button type="button" class="button-secondary" on:click={back}>← Back</button>
+            <button type="submit" disabled={!canCreate}>Create</button>
+          </footer>
+        </form>
+      {/if}
+    </div>
+  </section>
+{/if}
+
+<style>
+  .wizard-steps {
+    display: flex;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    color: var(--muted);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .wizard-steps li {
+    flex: 1;
+    padding-bottom: var(--space-1);
+    border-bottom: 2px solid var(--card-border);
+  }
+
+  .wizard-steps li.active {
+    color: var(--text);
+    border-bottom-color: var(--accent);
+  }
+
+  .wizard-steps li.done {
+    color: var(--text);
+    border-bottom-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+
+  .wizard-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-2);
+  }
+
+  .wizard-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-3) var(--space-2);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    color: var(--text);
+    background: var(--section);
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+  }
+
+  .wizard-card:hover {
+    border-color: var(--focus);
+    transform: translateY(-1px);
+  }
+
+  .wizard-card.active {
+    border-color: var(--focus);
+    background: color-mix(in srgb, var(--accent) 18%, var(--section));
+  }
+
+  .wizard-card:focus-visible {
+    outline: 1px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  .wizard-card__icon {
+    font-size: 22px;
+    line-height: 1;
+  }
+
+  .wizard-card__title {
+    font-weight: 700;
+  }
+
+  .wizard-card__blurb {
+    color: var(--muted);
+    font-size: var(--text-sm);
+  }
+
+  .field-hint--error {
+    margin: 0;
+    font-size: 12px;
+    color: var(--vscode-errorForeground, #f14c4c);
+  }
+</style>
