@@ -598,7 +598,7 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
    */
   private openPluginMarkerEditor(stableId: string): void {
     const card = this.currentCards.find((candidate) => candidate.stableId === stableId);
-    if (!card) return;
+    if (!card || card.artifactKind !== 'plugin') return;
     MarkerEditorViewProvider.openEditor(this.context, vscode.Uri.parse(card.markerUri));
   }
 
