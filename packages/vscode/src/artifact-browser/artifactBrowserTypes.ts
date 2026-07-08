@@ -402,7 +402,13 @@ export interface ModuleEditFields {
   hideIcon: ModuleBrowserFlags['hideIcon'];
 }
 
-export type MarkerEditFields = CharacterEditFields | ModuleEditFields;
+export interface PluginEditFields {
+  name: string;
+  description: string;
+  image: string | null;
+}
+
+export type MarkerEditFields = CharacterEditFields | ModuleEditFields | PluginEditFields;
 
 export interface CharacterEditorInitPayload {
   mode: 'character';
@@ -428,7 +434,22 @@ export interface ModuleEditorInitPayload {
   modifiedAt: MarkerEditorTimestamp;
 }
 
-export type MarkerEditorInitPayload = CharacterEditorInitPayload | ModuleEditorInitPayload;
+export interface PluginEditorInitPayload {
+  mode: 'plugin';
+  markerUri: string;
+  rootUri: string;
+  rootPathLabel: string;
+  markerPathLabel?: string;
+  fields: PluginEditFields;
+  imageUri?: string;
+  createdAt: MarkerEditorTimestamp;
+  modifiedAt: MarkerEditorTimestamp;
+}
+
+export type MarkerEditorInitPayload =
+  | CharacterEditorInitPayload
+  | ModuleEditorInitPayload
+  | PluginEditorInitPayload;
 
 export interface MarkerEditorReadyPayload {
   markerUri: string;

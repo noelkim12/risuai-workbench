@@ -9,12 +9,17 @@
   import cosmosTopTextureUrl from '../../../assets/live-preview-effects/cosmos-top-trans.png';
   import glitterTextureUrl from '../../../assets/live-preview-effects/glitter.png';
   import grainTextureUrl from '../../../assets/live-preview-effects/grain.webp';
-  import type { CharacterEditFields, MarkerEditorMode, ModuleEditFields } from '../../../types/markerEditor';
+  import type {
+    CharacterEditFields,
+    MarkerEditorMode,
+    ModuleEditFields,
+    PluginEditFields,
+  } from '../../../types/markerEditor';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
   import TagChip from '../../TagChip.svelte';
 
   export let mode: MarkerEditorMode;
-  export let fields: CharacterEditFields | ModuleEditFields;
+  export let fields: CharacterEditFields | ModuleEditFields | PluginEditFields;
   export let imageUri: string | undefined = undefined;
 
   const MAX_TILT = 16;
@@ -189,29 +194,37 @@
   let selectedPresetId: PreviewEffectPresetId = 'aurora';
 
   $: isCharacterMode = mode === 'character';
+  $: isModuleMode = mode === 'module';
+  $: isPluginMode = mode === 'plugin';
   $: characterFields = isCharacterMode ? (fields as CharacterEditFields) : null;
-  $: moduleFields = isCharacterMode ? null : (fields as ModuleEditFields);
+  $: moduleFields = isModuleMode ? (fields as ModuleEditFields) : null;
+  $: pluginFields = isPluginMode ? (fields as PluginEditFields) : null;
   $: previewName = fields.name.trim() || 'Unnamed';
   $: creatorName = characterFields?.creator.trim() || 'Unknown Creator';
   $: characterVersion = characterFields?.characterVersion.trim() || '';
   $: moduleNamespace = moduleFields?.namespace.trim() || '';
   $: moduleDescription = moduleFields?.description.trim() || '';
-  $: cardKind = isCharacterMode ? 'Character' : 'Module';
-  $: stageLabel = isCharacterMode ? 'Basic Character' : 'Module Card';
+  $: pluginDescription = pluginFields?.description.trim() || '';
+  $: cardKind = isCharacterMode ? 'Character' : isPluginMode ? 'Plugin' : 'Module';
+  $: stageLabel = isCharacterMode ? 'Basic Character' : isPluginMode ? 'Plugin Card' : 'Module Card';
   $: editionLabel = characterVersion ? `v${characterVersion}` : moduleNamespace || 'Draft';
   $: imageCaption = isCharacterMode
     ? `Creator · ${creatorName}`
-    : moduleNamespace
-      ? `Namespace · ${moduleNamespace}`
-      : 'Module Preview';
+    : isPluginMode
+      ? 'Plugin Preview'
+      : moduleNamespace
+        ? `Namespace · ${moduleNamespace}`
+        : 'Module Preview';
   $: flavorText = isCharacterMode
     ? `Created by ${creatorName}`
-    : moduleDescription || 'Configure the module details to complete this preview.';
+    : isPluginMode
+      ? pluginDescription || 'Configure the plugin details to complete this preview.'
+      : moduleDescription || 'Configure the module details to complete this preview.';
   $: tags = characterFields?.tags ?? [];
   $: visibleTags = tags.slice(0, 3);
   $: hiddenTagCount = Math.max(tags.length - visibleTags.length, 0);
   $: rarityText = isCharacterMode ? '' : '';
-  $: typeInitial = isCharacterMode ? 'C' : 'M';
+  $: typeInitial = isCharacterMode ? 'C' : isPluginMode ? 'P' : 'M';
   $: cardClass = `live-preview__card live-preview__card--${mode} live-preview__card--theme-${selectedThemeId} live-preview__card--effect-${selectedPresetId}`;
   $: selectedTheme = PREVIEW_CARD_THEMES.find((theme) => theme.id === selectedThemeId) ?? PREVIEW_CARD_THEMES[0];
   $: selectedPreset = PREVIEW_EFFECT_PRESETS.find((preset) => preset.id === selectedPresetId) ?? PREVIEW_EFFECT_PRESETS[0];
@@ -433,7 +446,7 @@
 
       <div class="live-preview__ability-panel">
         <div class="live-preview__section-title">
-          <span>{isCharacterMode ? 'Tags / Abilities' : 'Module Text'}</span>
+          <span>{isCharacterMode ? 'Tags / Abilities' : isPluginMode ? 'Plugin Text' : 'Module Text'}</span>
           <span>{rarityText}</span>
         </div>
 
@@ -470,10 +483,12 @@
           </div>
         {/if}
 
-        <div class="live-preview__status" class:is-off={!fields.lowLevelAccess}>
-          <span class="live-preview__status-dot"></span>
-          Low Level Access
-        </div>
+        {#if characterFields || moduleFields}
+          <div class="live-preview__status" class:is-off={!(characterFields ?? moduleFields)?.lowLevelAccess}>
+            <span class="live-preview__status-dot"></span>
+            Low Level Access
+          </div>
+        {/if}
 
         {#if moduleFields}
           <div class="live-preview__status" class:is-off={moduleFields.hideIcon}>

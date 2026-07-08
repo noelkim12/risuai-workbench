@@ -5,7 +5,7 @@
 
 import type { CharacterManifestFlags, ModuleBrowserFlags } from '../types';
 
-export type MarkerEditorMode = 'character' | 'module';
+export type MarkerEditorMode = 'character' | 'module' | 'plugin';
 
 export type MarkerEditorArtifactKind = MarkerEditorMode;
 
@@ -42,7 +42,13 @@ export interface ModuleEditFields {
   hideIcon: ModuleBrowserFlags['hideIcon'];
 }
 
-export type MarkerEditFields = CharacterEditFields | ModuleEditFields;
+export interface PluginEditFields {
+  name: string;
+  description: string;
+  image: string | null;
+}
+
+export type MarkerEditFields = CharacterEditFields | ModuleEditFields | PluginEditFields;
 
 export interface MarkerEditorReadyPayload {
   markerUri: string;
@@ -72,7 +78,22 @@ export interface ModuleEditorInitPayload {
   modifiedAt: MarkerEditorTimestamp;
 }
 
-export type MarkerEditorInitPayload = CharacterEditorInitPayload | ModuleEditorInitPayload;
+export interface PluginEditorInitPayload {
+  mode: 'plugin';
+  markerUri: string;
+  rootUri: string;
+  rootPathLabel: string;
+  markerPathLabel?: string;
+  fields: PluginEditFields;
+  imageUri?: string;
+  createdAt: MarkerEditorTimestamp;
+  modifiedAt: MarkerEditorTimestamp;
+}
+
+export type MarkerEditorInitPayload =
+  | CharacterEditorInitPayload
+  | ModuleEditorInitPayload
+  | PluginEditorInitPayload;
 
 export interface MarkerEditorSavePayload {
   markerUri: string;
