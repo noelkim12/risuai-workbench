@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as vscode from 'vscode';
 import { createWebviewNonce } from '../shared/webviewNonce';
+import { getErrorMessage } from '../shared/errors';
 import {
   createWebviewDevServerHtml,
   getConfiguredWebviewDevServerUrl,
@@ -155,8 +156,12 @@ export class PluginViewerPanel {
 
   private async openFile(relativePath: string): Promise<void> {
     const fileUri = vscode.Uri.joinPath(this.rootUri, ...relativePath.split('/'));
-    const document = await vscode.workspace.openTextDocument(fileUri);
-    await vscode.window.showTextDocument(document, { preview: true });
+    try {
+      const document = await vscode.workspace.openTextDocument(fileUri);
+      await vscode.window.showTextDocument(document, { preview: true });
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Could not open ${relativePath}: ${getErrorMessage(error)}`);
+    }
   }
 
   private runScript(script: 'build' | 'dev'): void {

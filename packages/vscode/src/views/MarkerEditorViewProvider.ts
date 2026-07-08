@@ -246,7 +246,9 @@ export class MarkerEditorViewProvider {
         return;
       }
 
-      manifest.modifiedAt = new Date().toISOString();
+      if (this.mode === 'plugin') {
+        manifest.modifiedAt = new Date().toISOString();
+      }
 
       await vscode.workspace.fs.writeFile(
         this.markerUri,
