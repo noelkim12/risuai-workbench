@@ -13,10 +13,12 @@ import {
   getConfiguredWebviewDevServerUrl,
   getWebviewDevServerPortMapping,
 } from './webviewDevServer';
+import { derivePluginPackageInfo, type PluginPackageInfo } from './pluginPackageJson';
 import {
   createPluginViewerLoadedMessage,
   isPluginViewerReadyMessage,
   isPluginViewerRefreshMessage,
+  isPluginViewerRunScriptMessage,
   PLUGIN_VIEWER_VIEW_NAME,
   type PluginViewerLoadedPayload,
 } from './pluginViewerMessages';
@@ -73,6 +75,10 @@ export class PluginViewerPanel {
       (message: unknown) => {
         if (isPluginViewerReadyMessage(message) || isPluginViewerRefreshMessage(message)) {
           void this.sendSnapshot();
+          return;
+        }
+        if (isPluginViewerRunScriptMessage(message)) {
+          this.runScript(message.payload.script);
         }
       },
       null,
@@ -88,18 +94,40 @@ export class PluginViewerPanel {
     );
   }
 
+  private async readPackageInfo(): Promise<PluginPackageInfo> {
+    const packageJsonUri = vscode.Uri.joinPath(this.rootUri, 'package.json');
+    try {
+      const bytes = await vscode.workspace.fs.readFile(packageJsonUri);
+      return derivePluginPackageInfo(Buffer.from(bytes).toString('utf-8'));
+    } catch {
+      return { version: null, scripts: { build: false, dev: false }, error: 'package.json not found' };
+    }
+  }
+
   private async sendSnapshot(): Promise<void> {
+    const packageInfo = await this.readPackageInfo();
     const payload: PluginViewerLoadedPayload = {
       stableId: this.target.stableId,
       name: this.target.name,
       description: this.target.description,
       iconUri: this.target.iconUri ?? null,
-      version: null,
-      scripts: { build: false, dev: false },
-      packageJsonError: null,
+      version: packageInfo.version,
+      scripts: packageInfo.scripts,
+      packageJsonError: packageInfo.error,
       tree: [],
     };
     this.panel.webview.postMessage(createPluginViewerLoadedMessage(payload));
+  }
+
+  private runScript(script: 'build' | 'dev'): void {
+    const task = new vscode.Task(
+      { type: 'risuaiWorkbench.pluginViewer', script },
+      vscode.TaskScope.Workspace,
+      `plugin: ${script}`,
+      'risuai-workbench',
+      new vscode.ShellExecution(`npm run ${script}`, { cwd: this.rootUri.fsPath }),
+    );
+    void vscode.tasks.executeTask(task);
   }
 
   private getHtml(extensionUri: vscode.Uri, webview: vscode.Webview): string {

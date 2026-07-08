@@ -89,6 +89,27 @@
         <p class="plugin-viewer__description">{loaded.description}</p>
       </div>
     </header>
+    <div class="plugin-viewer__actions">
+      <button
+        type="button"
+        class="plugin-viewer__run"
+        disabled={!loaded.scripts.build}
+        on:click={() => post('plugin-viewer/runScript', { script: 'build' })}
+      >
+        Build
+      </button>
+      <button
+        type="button"
+        class="plugin-viewer__run"
+        disabled={!loaded.scripts.dev}
+        on:click={() => post('plugin-viewer/runScript', { script: 'dev' })}
+      >
+        Dev
+      </button>
+    </div>
+    {#if loaded.packageJsonError}
+      <p class="plugin-viewer__error">{loaded.packageJsonError} — Build/Dev disabled.</p>
+    {/if}
     <button type="button" class="plugin-viewer__refresh" on:click={() => post('plugin-viewer/refresh')}>
       Refresh
     </button>
