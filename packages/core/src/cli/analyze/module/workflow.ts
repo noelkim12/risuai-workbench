@@ -30,6 +30,7 @@ import { renderModuleMarkdown } from './reporting';
 import { renderModuleHtml } from './reporting/htmlRenderer';
 import type { ModuleReportData } from './types';
 import { runModuleWiki } from './wiki/workflow';
+import { buildAnalysisShowcase, countAssetFiles, writeAnalysisShowcase } from '../shared/showcase';
 
 const HELP_TEXT = `
   🐿️ RisuAI Module Analyzer
@@ -50,6 +51,7 @@ const HELP_TEXT = `
 /** module analyze CLI 진입점. COLLECT → CORRELATE → REPORT 파이프라인을 실행한다. */
 export function runAnalyzeModuleWorkflow(argv: readonly string[]): number {
   const helpMode = argv.length === 0 || argv.includes('-h') || argv.includes('--help');
+  const noHtml = argv.includes('--no-html');
   const wiki = argv.includes('--wiki');
   const wikiOnly = argv.includes('--wiki-only');
   const wikiRootIdx = argv.indexOf('--wiki-root');
@@ -172,18 +174,33 @@ export function runAnalyzeModuleWorkflow(argv: readonly string[]): number {
       variableFlow,
       deadCode,
       textMentions,
+      assetFiles: countAssetFiles(outputDir),
       luaArtifacts: collected.luaArtifacts,
     };
 
     if (!wikiOnly) {
       renderModuleMarkdown(reportData, outputDir, locale);
-      renderModuleHtml(reportData, outputDir, locale);
+      if (!noHtml) {
+        renderModuleHtml(reportData, outputDir, locale);
+      }
     }
     if (wiki || wikiOnly) {
       runModuleWiki(reportData, {
         extractDir: outputDir,
         wikiRoot,
       });
+    }
+    if (!wikiOnly) {
+      const resolvedOutputDir = path.resolve(outputDir);
+      const showcase = buildAnalysisShowcase({
+        kind: 'module',
+        stableId: `module:${path.basename(resolvedOutputDir)}`,
+        data: reportData,
+        locale,
+        generatedAt: new Date().toISOString(),
+        reportHtml: 'module-analysis.html',
+      });
+      writeAnalysisShowcase(path.join(resolvedOutputDir, 'analysis'), showcase);
     }
     return 0;
   } catch (error) {

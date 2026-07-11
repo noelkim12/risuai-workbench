@@ -42,5 +42,6 @@ export interface ModuleReportData {
   variableFlow: VarFlowResult;
   deadCode: DeadCodeResult;
   textMentions: TextMentionEdge[];
+  assetFiles: number;
   luaArtifacts: LuaAnalysisArtifact[];
 }
