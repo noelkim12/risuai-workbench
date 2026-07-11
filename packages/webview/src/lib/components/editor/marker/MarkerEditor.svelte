@@ -47,6 +47,7 @@
 
   onMount(() => {
     window.addEventListener('message', handleMessage);
+    window.addEventListener('keydown', handleSaveShortcut);
     announceMarkerEditorReady();
     readyRetryTimer = setInterval(() => {
       if (initialized) {
@@ -59,6 +60,7 @@
 
   onDestroy(() => {
     window.removeEventListener('message', handleMessage);
+    window.removeEventListener('keydown', handleSaveShortcut);
     stopReadyRetry();
   });
 
@@ -178,7 +180,6 @@
    * saveMarker 함수.
    * 현재 shell state를 marker editor save message로 전달함.
    */
-  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup passes this handler to MarkerForm.
   function saveMarker(): void {
     getTypedVsCodeApi()?.postMessage(
       createMarkerEditorSaveMessage({
@@ -187,6 +188,19 @@
         fields: cloneFields(fields),
       }),
     );
+  }
+
+  /**
+   * handleSaveShortcut 함수.
+   * Root marker editor가 초기화된 상태에서 Ctrl/Cmd+S 입력을 현재 marker 저장으로 처리함.
+   *
+   * @param event - webview window에서 발생한 keyboard event
+   */
+  function handleSaveShortcut(event: KeyboardEvent): void {
+    if (!initialized || event.key.toLowerCase() !== 's' || (!event.ctrlKey && !event.metaKey)) return;
+
+    event.preventDefault();
+    saveMarker();
   }
 
   /**

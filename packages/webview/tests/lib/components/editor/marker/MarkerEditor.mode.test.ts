@@ -13,3 +13,11 @@ describe('marker editor plugin mode wiring', () => {
     expect(MarkerFormSource).toMatch(/isPluginMode/);
   });
 });
+
+describe('marker editor save shortcut wiring', () => {
+  it('saves through the existing marker save path on Ctrl or Cmd+S', () => {
+    expect(MarkerEditorSource).toContain("window.addEventListener('keydown', handleSaveShortcut)");
+    expect(MarkerEditorSource).toMatch(/event\.ctrlKey && !event\.metaKey/);
+    expect(MarkerEditorSource).toMatch(/event\.preventDefault\(\);\s+saveMarker\(\);/);
+  });
+});
