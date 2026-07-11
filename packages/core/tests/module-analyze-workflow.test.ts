@@ -5,6 +5,7 @@ import path from 'node:path';
 import { collectModuleCBS } from '../src/cli/analyze/module/collectors';
 import { runAnalyzeModuleWorkflow } from '../src/cli/analyze/module/workflow';
 import { runExtractWorkflow as runModuleExtractWorkflow } from '../src/cli/extract/module/workflow';
+import { parseAnalysisShowcase } from '../src/domain';
 
 function makeRisumodule(opts: { name: string; id?: string; namespace?: string }): string {
   return JSON.stringify(
@@ -23,6 +24,14 @@ function makeRisumodule(opts: { name: string; id?: string; namespace?: string })
     null,
     2,
   );
+}
+
+function readValidSidecar(rootDir: string) {
+  const raw = JSON.parse(fs.readFileSync(path.join(rootDir, 'analysis', 'risu-analysis.showcase.json'), 'utf-8')) as unknown;
+  const parsed = parseAnalysisShowcase(raw);
+  expect(parsed.kind).toBe('valid');
+  if (parsed.kind !== 'valid') throw new Error('expected valid analysis showcase sidecar');
+  return parsed.value;
 }
 
 describe('module analyze collectors and workflow', () => {
@@ -118,6 +127,49 @@ type: editdisplay
     const result = collectModuleCBS(tempDir);
     expect(result.lorebookCBS.length).toBeGreaterThan(0);
     expect(result.lorebookCBS[0]?.reads.has('mode')).toBe(true);
+  });
+
+  it('emits a schema-valid showcase sidecar for default module analysis', () => {
+    const code = runAnalyzeModuleWorkflow([tempDir, '--locale', 'en']);
+
+    expect(code).toBe(0);
+    const sidecar = readValidSidecar(tempDir);
+    expect(sidecar.artifact).toEqual({ stableId: `module:${path.basename(tempDir)}`, name: 'test_module', type: 'module' });
+    expect(sidecar.report.html).toBe('module-analysis.html');
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'module-analysis.html'))).toBe(true);
+  });
+
+  it('emits a module showcase sidecar without html when html output is disabled', () => {
+    const code = runAnalyzeModuleWorkflow([tempDir, '--no-html', '--locale', 'en']);
+
+    expect(code).toBe(0);
+    expect(fs.existsSync(path.join(tempDir, 'analysis', 'module-analysis.html'))).toBe(false);
+    expect(readValidSidecar(tempDir).report.html).toBe('module-analysis.html');
+  });
+
+  it('preserves an existing module showcase sidecar during wiki-only analysis', () => {
+    const sidecarPath = path.join(tempDir, 'analysis', 'risu-analysis.showcase.json');
+    fs.mkdirSync(path.dirname(sidecarPath), { recursive: true });
+    const oldBytes = '{"legacy":true}\n';
+    fs.writeFileSync(sidecarPath, oldBytes, 'utf-8');
+
+    const code = runAnalyzeModuleWorkflow([tempDir, '--wiki-only', '--locale', 'en']);
+
+    expect(code).toBe(0);
+    expect(fs.readFileSync(sidecarPath, 'utf-8')).toBe(oldBytes);
+  });
+
+  it('preserves an existing module showcase sidecar when an earlier requested html output fails', () => {
+    const analysisDir = path.join(tempDir, 'analysis');
+    const sidecarPath = path.join(analysisDir, 'risu-analysis.showcase.json');
+    fs.mkdirSync(path.join(analysisDir, 'module-analysis.html'), { recursive: true });
+    const oldBytes = '{"previous":true}\n';
+    fs.writeFileSync(sidecarPath, oldBytes, 'utf-8');
+
+    const code = runAnalyzeModuleWorkflow([tempDir, '--locale', 'en']);
+
+    expect(code).toBe(1);
+    expect(fs.readFileSync(sidecarPath, 'utf-8')).toBe(oldBytes);
   });
 
   it('collects regex CBS data from extracted module directory', () => {

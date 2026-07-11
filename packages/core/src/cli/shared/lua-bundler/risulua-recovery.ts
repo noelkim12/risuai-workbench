@@ -11,7 +11,8 @@ export const RISULUA_RECOVERY_VERSION = 1;
 export const RISULUA_RECOVERY_BLOCK_START = '--[=[#risulua-bundle-manifest-v1';
 export const RISULUA_RECOVERY_BLOCK_END = ']=]';
 
-const RECOVERY_BLOCK_PATTERN = /--\[=\[#risulua-bundle-manifest-v1\r?\n([A-Za-z0-9+/=\r\n]+)\r?\n\]=\]\r?\n?/;
+const RECOVERY_BLOCK_PATTERN =
+  /--\[=\[#risulua-bundle-manifest-v1\r?\n([A-Za-z0-9+/=\r\n]+)\r?\n\]=\]\r?\n?/;
 const RECOVERY_ROOT_NAMES = ['docs', 'legacy', 'lua'] as const;
 const RECOVERY_ROOTS = ['docs/', 'legacy/', 'lua/'] as const;
 const GZIP_MTIME_START = 4;
@@ -45,12 +46,26 @@ export class RisuLuaRecoveryError extends Error {
   }
 }
 
-export function encodeRisuLuaRecoveryBlock(manifest: RisuLuaRecoveryManifest): string {
+export function encodeRisuLuaRecoveryPayload(manifest: RisuLuaRecoveryManifest): Buffer {
   const json = JSON.stringify(sortManifest(parseRecoveryManifest(manifest)));
   const compressed = gzipSync(Buffer.from(json, 'utf8'), { level: 9 });
   compressed.fill(0, GZIP_MTIME_START, GZIP_MTIME_END);
   compressed[GZIP_OS_BYTE] = GZIP_UNKNOWN_OS;
-  const encoded = compressed.toString('base64');
+  return compressed;
+}
+
+export function decodeRisuLuaRecoveryPayload(payload: Buffer): RisuLuaRecoveryManifest {
+  try {
+    const json = gunzipSync(payload).toString('utf8');
+    return parseRecoveryManifest(JSON.parse(json));
+  } catch (error) {
+    if (error instanceof RisuLuaRecoveryError) throw error;
+    throw new RisuLuaRecoveryError(`Invalid recovery manifest payload: ${getErrorMessage(error)}`);
+  }
+}
+
+export function encodeRisuLuaRecoveryBlock(manifest: RisuLuaRecoveryManifest): string {
+  const encoded = encodeRisuLuaRecoveryPayload(manifest).toString('base64');
   return `${RISULUA_RECOVERY_BLOCK_START}\n${encoded}\n${RISULUA_RECOVERY_BLOCK_END}\n`;
 }
 
@@ -60,8 +75,7 @@ export function decodeRisuLuaRecoveryBlock(code: string): DecodedRisuLuaRecovery
 
   try {
     const encoded = match[1].replace(/\s+/g, '');
-    const json = gunzipSync(Buffer.from(encoded, 'base64')).toString('utf8');
-    const manifest = parseRecoveryManifest(JSON.parse(json));
+    const manifest = decodeRisuLuaRecoveryPayload(Buffer.from(encoded, 'base64'));
     return { manifest, encoded, block: match[0] };
   } catch (error) {
     if (error instanceof RisuLuaRecoveryError) throw error;
@@ -90,7 +104,9 @@ export function collectRisuLuaRecoveryFiles(options: { rootDir: string }): RisuL
   return files.sort(compareRecoveryFiles);
 }
 
-export function createRisuLuaRecoveryManifest(options: { rootDir: string }): RisuLuaRecoveryManifest {
+export function createRisuLuaRecoveryManifest(options: {
+  rootDir: string;
+}): RisuLuaRecoveryManifest {
   return {
     schema: RISULUA_RECOVERY_SCHEMA,
     version: RISULUA_RECOVERY_VERSION,
@@ -126,12 +142,23 @@ export function restoreRisuLuaRecoveryFiles(options: {
 
 function parseRecoveryManifest(value: unknown): RisuLuaRecoveryManifest {
   if (!isRecord(value)) throw new RisuLuaRecoveryError('Recovery manifest must be an object');
-  if (value.schema !== RISULUA_RECOVERY_SCHEMA) throw new RisuLuaRecoveryError('Unsupported recovery manifest schema');
-  if (value.version !== RISULUA_RECOVERY_VERSION) throw new RisuLuaRecoveryError('Unsupported recovery manifest version');
-  if (value.mode !== 'full-source') throw new RisuLuaRecoveryError('Unsupported recovery manifest mode');
-  if (!Array.isArray(value.files)) throw new RisuLuaRecoveryError('Recovery manifest files must be an array');
+  if (value.schema !== RISULUA_RECOVERY_SCHEMA) {
+    throw new RisuLuaRecoveryError('Unsupported recovery manifest schema');
+  }
+  if (value.version !== RISULUA_RECOVERY_VERSION) {
+    throw new RisuLuaRecoveryError('Unsupported recovery manifest version');
+  }
+  if (value.mode !== 'full-source')
+    throw new RisuLuaRecoveryError('Unsupported recovery manifest mode');
+  if (!Array.isArray(value.files))
+    throw new RisuLuaRecoveryError('Recovery manifest files must be an array');
   const files = value.files.map((file) => parseRecoveryFile(file));
-  return { schema: RISULUA_RECOVERY_SCHEMA, version: RISULUA_RECOVERY_VERSION, mode: 'full-source', files };
+  return {
+    schema: RISULUA_RECOVERY_SCHEMA,
+    version: RISULUA_RECOVERY_VERSION,
+    mode: 'full-source',
+    files,
+  };
 }
 
 function parseRecoveryFile(value: unknown): RisuLuaRecoveryFile {
@@ -140,9 +167,14 @@ function parseRecoveryFile(value: unknown): RisuLuaRecoveryFile {
   const filePath = value.path;
   const content = value.content;
   const hash = value.sha256;
-  if (typeof filePath !== 'string') throw new RisuLuaRecoveryError('Recovery file path must be a string');
-  if (typeof content !== 'string') throw new RisuLuaRecoveryError(`Recovery file content must be a string: ${filePath}`);
-  if (typeof hash !== 'string') throw new RisuLuaRecoveryError(`Recovery file sha256 must be a string: ${filePath}`);
+  if (typeof filePath !== 'string')
+    throw new RisuLuaRecoveryError('Recovery file path must be a string');
+  if (typeof content !== 'string') {
+    throw new RisuLuaRecoveryError(`Recovery file content must be a string: ${filePath}`);
+  }
+  if (typeof hash !== 'string') {
+    throw new RisuLuaRecoveryError(`Recovery file sha256 must be a string: ${filePath}`);
+  }
   assertSafeRecoveryPath(filePath);
   return { path: filePath, content, sha256: hash };
 }
