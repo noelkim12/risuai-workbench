@@ -139,6 +139,13 @@ const en = {
   'common.label.yes': 'Yes',
   'common.label.no': 'No',
 
+  // ── Showcase traits ──
+  'showcase.trait.cross-layer': 'Cross-layer',
+  'showcase.trait.chain-reaction': 'Chain reaction',
+  'showcase.trait.deep-lore': 'Deep lore',
+  'showcase.trait.lua-driven': 'Lua-driven',
+  'showcase.trait.regex-rich': 'Regex-rich',
+
   // ── Common table headers ──
   'common.table.variable': 'Variable',
   'common.table.direction': 'Direction',
@@ -788,6 +795,13 @@ const ko: Record<string, string> = {
   'common.label.missing': '없음',
   'common.label.yes': '예',
   'common.label.no': '아니오',
+
+  // ── Showcase traits ──
+  'showcase.trait.cross-layer': '크로스 레이어',
+  'showcase.trait.chain-reaction': '연쇄 반응',
+  'showcase.trait.deep-lore': '깊은 로어',
+  'showcase.trait.lua-driven': 'Lua 중심',
+  'showcase.trait.regex-rich': 'Regex 풍부',
 
   // ── Common table headers ──
   'common.table.variable': '변수',
