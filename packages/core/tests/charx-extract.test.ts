@@ -16,8 +16,14 @@ import { runExtractWorkflow as runCharacterExtractWorkflow } from '../src/cli/ex
 import {
   createRisuLuaRecoveryManifest,
   encodeRisuLuaRecoveryBlock,
+  encodeRisuLuaRecoveryPayload,
   RISULUA_RECOVERY_BLOCK_START,
 } from '../src/cli/shared';
+import {
+  RISULUA_RECOVERY_ASSET_EXT,
+  RISULUA_RECOVERY_ASSET_NAME,
+  RISULUA_RECOVERY_ASSET_TYPE,
+} from '../src/cli/shared/lua-bundler/risulua-recovery-asset';
 import { resolvePrivateFixturePath } from './helpers/private-fixture-paths';
 
 const tempDirs: string[] = [];
@@ -141,6 +147,80 @@ function createCanonicalCharacterFixture(): Buffer {
       { level: 0 },
     ),
   );
+}
+
+function writeRecoverySourceRoot(
+  workDir: string,
+  label: string,
+  files: Record<string, string>,
+): string {
+  const sourceRoot = path.join(workDir, label);
+  for (const [relativePath, content] of Object.entries(files)) {
+    const targetPath = path.join(sourceRoot, ...relativePath.split('/'));
+    mkdirSync(path.dirname(targetPath), { recursive: true });
+    writeFileSync(targetPath, content, 'utf-8');
+  }
+  return sourceRoot;
+}
+
+function encodeRecoveryPayloadFromFiles(
+  workDir: string,
+  label: string,
+  files: Record<string, string>,
+): Buffer {
+  const sourceRoot = writeRecoverySourceRoot(workDir, label, files);
+  return encodeRisuLuaRecoveryPayload(createRisuLuaRecoveryManifest({ rootDir: sourceRoot }));
+}
+
+function createCharxWithRecoveryAssetOptions(options: {
+  name: string;
+  luaCode: string;
+  assets: Array<{ type: string; name: string; ext: string; uri: string }>;
+  zipEntries: Record<string, Uint8Array>;
+}): Buffer {
+  const charxData = {
+    spec: 'chara_card_v3',
+    spec_version: '3.0',
+    data: {
+      name: options.name,
+      assets: options.assets,
+      extensions: {
+        risuai: {
+          triggerscript: [
+            {
+              comment: 'entrypoint',
+              type: 'manual',
+              conditions: [],
+              effect: [{ type: 'triggerlua', code: options.luaCode }],
+            },
+          ],
+          customScripts: [],
+          additionalText: '',
+          utilityBot: false,
+          lowLevelAccess: false,
+        },
+      },
+    },
+  };
+
+  return Buffer.from(
+    zipSync(
+      {
+        'charx.json': strToU8(JSON.stringify(charxData, null, 2)),
+        ...options.zipEntries,
+      },
+      { level: 0 },
+    ),
+  );
+}
+
+function recoveryAsset(uri: string): { type: string; name: string; ext: string; uri: string } {
+  return {
+    type: RISULUA_RECOVERY_ASSET_TYPE,
+    name: RISULUA_RECOVERY_ASSET_NAME,
+    ext: RISULUA_RECOVERY_ASSET_EXT,
+    uri,
+  };
 }
 
 describe('charx extract integration (canonical mode)', () => {
@@ -726,6 +806,220 @@ describe('charx extract integration (canonical mode)', () => {
     ).toEqual({ owner: 'charx', restored: true });
     expect(readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).not.toContain(
       RISULUA_RECOVERY_BLOCK_START,
+    );
+  });
+
+  it('risulua extract modular full-source restores from the first recovery asset and extracts it normally', async () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-recovery-asset-extract-'));
+    tempDirs.push(workDir);
+
+    const firstPayload = encodeRecoveryPayloadFromFiles(workDir, 'source-a', {
+      'lua/main.risulua': 'local source = "asset A"\nreturn source\n',
+      'lua/common/helper.risulua': 'return { value = "asset A helper" }\n',
+      'docs/refactor-map.json': `${JSON.stringify({ owner: 'asset-a' }, null, 2)}\n`,
+    });
+    const secondPayload = encodeRecoveryPayloadFromFiles(workDir, 'source-b', {
+      'lua/main.risulua': 'return "asset B must be ignored"\n',
+    });
+
+    const charxPath = path.join(workDir, 'recovery-asset.charx');
+    writeFileSync(
+      charxPath,
+      createCharxWithRecoveryAssetOptions({
+        name: 'Recovery Asset Character',
+        luaCode: 'print("no inline recovery marker")\n',
+        assets: [
+          { type: 'x-risu-asset', name: 'ordinary', ext: 'bin', uri: 'embeded://assets/ordinary.bin' },
+          recoveryAsset('embeded://assets/recovery-a.rpack'),
+          recoveryAsset('embeded://assets/recovery-b.rpack'),
+        ],
+        zipEntries: {
+          'assets/ordinary.bin': new Uint8Array([1, 2, 3]),
+          'assets/recovery-a.rpack': firstPayload,
+          'assets/recovery-b.rpack': secondPayload,
+        },
+      }),
+    );
+
+    const outDir = path.join(workDir, 'output');
+    const exitCode = await runCharacterExtractWorkflow([
+      charxPath,
+      '--out',
+      outDir,
+      '--risulua-mode',
+      'modular',
+      '--risulua-recovery',
+      'full-source',
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).toBe(
+      'local source = "asset A"\nreturn source\n',
+    );
+    expect(readFileSync(path.join(outDir, 'lua', 'common', 'helper.risulua'), 'utf-8')).toBe(
+      'return { value = "asset A helper" }\n',
+    );
+    expect(readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).not.toContain(
+      RISULUA_RECOVERY_BLOCK_START,
+    );
+    expect(
+      JSON.parse(readFileSync(path.join(outDir, 'docs', 'refactor-map.json'), 'utf-8')),
+    ).toEqual({ owner: 'asset-a' });
+
+    const assetManifest = JSON.parse(
+      readFileSync(path.join(outDir, 'assets', 'manifest.json'), 'utf-8'),
+    ) as { assets: Array<Record<string, unknown>> };
+    expect(assetManifest.assets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          index: 0,
+          status: 'extracted',
+          original_uri: 'embeded://assets/ordinary.bin',
+          extracted_path: 'additional/ordinary.bin',
+        }),
+        expect.objectContaining({
+          index: 1,
+          status: 'extracted',
+          type: RISULUA_RECOVERY_ASSET_TYPE,
+          name: RISULUA_RECOVERY_ASSET_NAME,
+          ext: RISULUA_RECOVERY_ASSET_EXT,
+          extracted_path: 'other/risulua-full-source-v1.rpack',
+        }),
+        expect.objectContaining({
+          index: 2,
+          status: 'extracted',
+          type: RISULUA_RECOVERY_ASSET_TYPE,
+          extracted_path: 'other/risulua-full-source-v1_1.rpack',
+        }),
+      ]),
+    );
+  });
+
+  it('risulua extract modular full-source fails on corrupt first recovery asset without later or inline fallback', async () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-recovery-asset-corrupt-'));
+    tempDirs.push(workDir);
+
+    const laterPayload = encodeRecoveryPayloadFromFiles(workDir, 'later-source', {
+      'lua/main.risulua': 'return "later asset must be ignored"\n',
+    });
+    const inlinePayload = encodeRisuLuaRecoveryBlock(
+      createRisuLuaRecoveryManifest({
+        rootDir: writeRecoverySourceRoot(workDir, 'inline-source', {
+          'lua/main.risulua': 'return "inline must be ignored"\n',
+        }),
+      }),
+    );
+
+    const charxPath = path.join(workDir, 'corrupt-first.charx');
+    writeFileSync(
+      charxPath,
+      createCharxWithRecoveryAssetOptions({
+        name: 'Corrupt First Recovery Character',
+        luaCode: `print("fallback body")\n${inlinePayload}`,
+        assets: [
+          recoveryAsset('embeded://assets/recovery-a.rpack'),
+          recoveryAsset('embeded://assets/recovery-b.rpack'),
+        ],
+        zipEntries: {
+          'assets/recovery-a.rpack': strToU8('not a valid recovery payload'),
+          'assets/recovery-b.rpack': laterPayload,
+        },
+      }),
+    );
+
+    const outDir = path.join(workDir, 'output');
+    const exitCode = await runCharacterExtractWorkflow([
+      charxPath,
+      '--out',
+      outDir,
+      '--risulua-mode',
+      'modular',
+      '--risulua-recovery',
+      'full-source',
+    ]);
+
+    expect(exitCode).toBe(1);
+    expect(existsSync(path.join(outDir, 'lua', 'main.risulua'))).toBe(false);
+  });
+
+  it('risulua extract modular full-source fails when the first recovery asset bytes are missing', async () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-recovery-asset-missing-'));
+    tempDirs.push(workDir);
+
+    const laterPayload = encodeRecoveryPayloadFromFiles(workDir, 'later-source', {
+      'lua/main.risulua': 'return "later missing fallback"\n',
+    });
+
+    const charxPath = path.join(workDir, 'missing-first.charx');
+    writeFileSync(
+      charxPath,
+      createCharxWithRecoveryAssetOptions({
+        name: 'Missing First Recovery Character',
+        luaCode: 'print("inline absent")\n',
+        assets: [
+          recoveryAsset('embeded://assets/missing-recovery.rpack'),
+          recoveryAsset('embeded://assets/recovery-b.rpack'),
+        ],
+        zipEntries: {
+          'assets/recovery-b.rpack': laterPayload,
+        },
+      }),
+    );
+
+    const outDir = path.join(workDir, 'output');
+    const exitCode = await runCharacterExtractWorkflow([
+      charxPath,
+      '--out',
+      outDir,
+      '--risulua-mode',
+      'modular',
+      '--risulua-recovery',
+      'full-source',
+    ]);
+
+    expect(exitCode).toBe(1);
+    expect(existsSync(path.join(outDir, 'lua', 'main.risulua'))).toBe(false);
+  });
+
+  it('risulua extract modular full-source keeps legacy inline fallback when no recovery asset metadata exists', async () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-recovery-inline-fallback-'));
+    tempDirs.push(workDir);
+
+    const inlinePayload = encodeRisuLuaRecoveryBlock(
+      createRisuLuaRecoveryManifest({
+        rootDir: writeRecoverySourceRoot(workDir, 'inline-source', {
+          'lua/main.risulua': 'return "legacy inline"\n',
+        }),
+      }),
+    );
+
+    const charxPath = path.join(workDir, 'inline-fallback.charx');
+    writeFileSync(
+      charxPath,
+      createCharxWithRecoveryAssetOptions({
+        name: 'Inline Fallback Character',
+        luaCode: `print("fallback body")\n${inlinePayload}`,
+        assets: [{ type: 'x-risu-asset', name: 'ordinary', ext: 'bin', uri: 'embeded://assets/ordinary.bin' }],
+        zipEntries: {
+          'assets/ordinary.bin': new Uint8Array([4, 5, 6]),
+        },
+      }),
+    );
+
+    const outDir = path.join(workDir, 'output');
+    const exitCode = await runCharacterExtractWorkflow([
+      charxPath,
+      '--out',
+      outDir,
+      '--risulua-mode',
+      'modular',
+      '--risulua-recovery',
+      'full-source',
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).toBe(
+      'return "legacy inline"\n',
     );
   });
 

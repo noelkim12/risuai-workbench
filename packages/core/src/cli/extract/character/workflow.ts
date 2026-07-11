@@ -179,6 +179,7 @@ async function runMain(
   await phase4_extractTriggerLua(
     charx,
     resolvedOutDir,
+    assetSources,
     risuluaMode,
     risuluaRecovery,
     risuluaSplitMode,

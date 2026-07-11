@@ -24,9 +24,13 @@ import {
   parseRisuLuaRecoveryMode,
   RISULUA_MODE_HELP_LINE,
   RISULUA_RECOVERY_HELP_LINE,
+  RISULUA_DIST_GENERATED_HEADER,
   resolveRisuLuaModularGraph,
   validateRisuLuaDist,
+  analyzeRisuLuaDistOutput,
   writeRisuLuaDist,
+  encodeRisuLuaRecoveryBlock,
+  RisuLuaDistError,
   type RisuLuaRecoveryMode,
   type RisuLuaBundleTarget,
   type RisuLuaDistValidationResult,
@@ -48,6 +52,7 @@ interface BuildOptions {
 export interface BuildRisuLuaModularDistOptions {
   rootDir: string;
   recovery?: RisuLuaRecoveryMode;
+  writeDist?: boolean;
 }
 
 export interface RisuLuaModularDistBuildResult {
@@ -150,8 +155,12 @@ export function buildRisuLuaModularDist(
     options.recovery === 'full-source'
       ? createRisuLuaRecoveryManifest({ rootDir: target.rootDir })
       : undefined;
-  const writeResult = writeRisuLuaDist({ target, bundled, recoveryManifest });
-  const validation = validateRisuLuaDist({ target, selectedPaths: [target.distPath] });
+  const writeResult = options.writeDist === false
+    ? buildVirtualRisuLuaDist({ target, bundled, recoveryManifest })
+    : writeRisuLuaDist({ target, bundled, recoveryManifest });
+  const validation = options.writeDist === false
+    ? validateVirtualRisuLuaDist({ target, writeResult })
+    : validateRisuLuaDist({ target, selectedPaths: [target.distPath] });
 
   return {
     target,
@@ -169,6 +178,42 @@ export function buildRisuLuaModularDist(
       moduleCount: graph.modules.length,
       edgeCount: graph.edges.length,
     },
+  };
+}
+
+function buildVirtualRisuLuaDist(options: {
+  target: RisuLuaBundleTarget;
+  bundled: RisuLuaBundledOutput;
+  recoveryManifest?: ReturnType<typeof createRisuLuaRecoveryManifest>;
+}): RisuLuaDistWriteResult {
+  const bundledCode = options.bundled.code;
+  const recoveryBlock = options.recoveryManifest
+    ? `${bundledCode.endsWith('\n') ? '' : '\n'}${encodeRisuLuaRecoveryBlock(options.recoveryManifest)}`
+    : '';
+  return {
+    distPath: options.target.distPath,
+    distRelativePath: options.target.distRelativePath,
+    code: `${RISULUA_DIST_GENERATED_HEADER}${bundledCode}${recoveryBlock}`,
+  };
+}
+
+function validateVirtualRisuLuaDist(options: {
+  target: RisuLuaBundleTarget;
+  writeResult: RisuLuaDistWriteResult;
+}): RisuLuaDistValidationResult {
+  const diagnostics = analyzeRisuLuaDistOutput({
+    code: options.writeResult.code,
+    distPath: options.target.distPath,
+    distRelativePath: options.target.distRelativePath,
+  });
+  const blockingDiagnostic = diagnostics.find((diagnostic) => diagnostic.severity !== 'warning');
+  if (blockingDiagnostic) {
+    throw new RisuLuaDistError(blockingDiagnostic);
+  }
+  return {
+    distPath: options.target.distPath,
+    distRelativePath: options.target.distRelativePath,
+    code: options.writeResult.code,
   };
 }
 

@@ -126,6 +126,23 @@ export {
   PHASE_MAP,
   type ElementType,
 } from './analyze/constants';
+export {
+  ANALYSIS_SHOWCASE_TRAIT_IDS,
+  ANALYSIS_SHOWCASE_VERSION,
+  analysisShowcaseArtifactSchema,
+  analysisShowcaseDistributionBucketSchema,
+  analysisShowcaseDistributionsSchema,
+  analysisShowcaseFindingsSchema,
+  analysisShowcaseMetricsSchema,
+  analysisShowcaseReportSchema,
+  analysisShowcaseSchema,
+  analysisShowcaseTraitSchema,
+  isSafeAnalysisReportFileName,
+  parseAnalysisShowcase,
+  type AnalysisShowcase,
+  type AnalysisShowcaseParseResult,
+  type AnalysisShowcaseTraitId,
+} from './analyze/showcase';
 export * from './analyze/lorebook-names';
 export {
   estimateTokens,
@@ -247,3 +264,8 @@ export {
 } from './analyze/lua-analysis-types';
 export { runCollectPhase } from './analyze/lua-collector';
 export { runAnalyzePhase } from './analyze/lua-analyzer';
+export * from './hmr/protocol';
+export {
+  convertCharbookEntriesToGlobalLore,
+  convertCharxV3ToRisuDefinition,
+} from './hmr/charx-to-risu';

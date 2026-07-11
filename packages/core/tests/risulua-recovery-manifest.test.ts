@@ -10,12 +10,38 @@ import {
   RISULUA_RECOVERY_FLAG,
   RisuLuaRecoveryError,
   collectRisuLuaRecoveryFiles,
+  decodeRisuLuaRecoveryPayload,
   decodeRisuLuaRecoveryBlock,
+  encodeRisuLuaRecoveryPayload,
   encodeRisuLuaRecoveryBlock,
   parseRisuLuaRecoveryMode,
   removeRisuLuaRecoveryBlock,
   restoreRisuLuaRecoveryFiles,
+  type RisuLuaRecoveryManifest,
 } from '../src/cli/shared';
+
+const FULL_SOURCE_MANIFEST: RisuLuaRecoveryManifest = {
+  schema: 'risulua.bundle-recovery',
+  version: 1,
+  mode: 'full-source',
+  files: [
+    {
+      path: 'lua/main.risulua',
+      content: 'return require("common.helper")\n',
+      sha256: 'lua-main-sha',
+    },
+    {
+      path: 'docs/refactor-map.json',
+      content: '{"version":1}\n',
+      sha256: 'docs-sha',
+    },
+    {
+      path: 'legacy/original.risulua',
+      content: 'return true\n',
+      sha256: 'legacy-sha',
+    },
+  ],
+};
 
 function encodeRawRecoveryManifest(value: unknown): string {
   return `--[=[#risulua-bundle-manifest-v1\n${gzipSync(Buffer.from(JSON.stringify(value), 'utf8')).toString('base64')}\n]=]\n`;
@@ -57,6 +83,38 @@ describe('RisuLua recovery CLI parsing', () => {
 });
 
 describe('RisuLua recovery manifest codec', () => {
+  it('round-trips a deterministic raw gzip payload for the sorted recovery manifest', () => {
+    const unsortedManifest: RisuLuaRecoveryManifest = {
+      ...FULL_SOURCE_MANIFEST,
+      files: [...FULL_SOURCE_MANIFEST.files].reverse(),
+    };
+
+    const firstPayload = encodeRisuLuaRecoveryPayload(FULL_SOURCE_MANIFEST);
+    const secondPayload = encodeRisuLuaRecoveryPayload(unsortedManifest);
+    const decoded = decodeRisuLuaRecoveryPayload(firstPayload);
+
+    expect(Buffer.isBuffer(firstPayload)).toBe(true);
+    expect(firstPayload.equals(secondPayload)).toBe(true);
+    expect(decoded.files.map((file) => file.path)).toEqual([
+      'docs/refactor-map.json',
+      'legacy/original.risulua',
+      'lua/main.risulua',
+    ]);
+    expect(decoded).toEqual({
+      ...FULL_SOURCE_MANIFEST,
+      files: [FULL_SOURCE_MANIFEST.files[1], FULL_SOURCE_MANIFEST.files[2], FULL_SOURCE_MANIFEST.files[0]],
+    });
+  });
+
+  it('reports corrupt raw payload gzip, JSON, and schema as recovery errors', () => {
+    const corruptJsonPayload = gzipSync(Buffer.from('not-json', 'utf8'));
+    const invalidSchemaPayload = gzipSync(Buffer.from(JSON.stringify({ ...FULL_SOURCE_MANIFEST, schema: 'other' }), 'utf8'));
+
+    expect(() => decodeRisuLuaRecoveryPayload(Buffer.from('not-rpack'))).toThrow(RisuLuaRecoveryError);
+    expect(() => decodeRisuLuaRecoveryPayload(corruptJsonPayload)).toThrow(RisuLuaRecoveryError);
+    expect(() => decodeRisuLuaRecoveryPayload(invalidSchemaPayload)).toThrow(RisuLuaRecoveryError);
+  });
+
   it('round-trips a compressed base64 manifest block and removes it from Lua code', () => {
     const manifest = {
       schema: 'risulua.bundle-recovery' as const,

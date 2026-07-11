@@ -5,13 +5,16 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { sanitizeFilename } from '@/domain';
+import { resolveAssetUri, sanitizeFilename } from '@/domain';
 import { ensureDir, writeText } from '@/node';
 import { getErrorMessage } from '../../../shared';
 import type { RisuLuaMode, RisuLuaRecoveryMode } from '../../../shared/lua-bundler/risulua-mode';
+import { findFirstRisuLuaRecoveryCharxAssetIndex } from '../../../shared/lua-bundler/risulua-recovery-asset';
 import {
   decodeRisuLuaRecoveryBlock,
+  decodeRisuLuaRecoveryPayload,
   removeRisuLuaRecoveryBlock,
+  RisuLuaRecoveryError,
   restoreRisuLuaRecoveryFiles,
 } from '../../../shared/lua-bundler/risulua-recovery';
 import {
@@ -36,6 +39,7 @@ const RISULUA_SPLIT_FALLBACK_PATHS = [
 export async function phase4_extractTriggerLua(
   charx: any,
   outputDir: string,
+  assetSources: Record<string, Uint8Array> = {},
   risuluaMode: RisuLuaMode = 'classic',
   risuluaRecovery: RisuLuaRecoveryMode = 'none',
   risuluaSplitMode: RisuLuaSplitCliMode = 'none',
@@ -89,6 +93,17 @@ export async function phase4_extractTriggerLua(
   const luaFileName = risuluaMode === 'modular' ? 'main.risulua' : `${sanitizedName}.risulua`;
   const fileName = path.join(luaDir, luaFileName);
   const luaSource = risuluaMode === 'modular' ? luaParts.join('\n\n') : luaParts.join('\n');
+  if (risuluaMode === 'modular' && risuluaRecovery !== 'none') {
+    const restoredFromAsset = restoreFirstRisuLuaRecoveryAsset({ charx, outputDir, assetSources });
+    if (restoredFromAsset) {
+      cleanupRisuLuaSplitTemps(outputDir);
+      console.log(
+        `     ✅ recovery asset manifest → ${path.relative('.', path.join(outputDir, 'lua'))}/`,
+      );
+      return 1;
+    }
+  }
+
   const recoveryBlock = risuluaMode === 'modular' ? decodeRisuLuaRecoveryBlock(luaSource) : null;
   if (recoveryBlock && risuluaRecovery !== 'none') {
     restoreRisuLuaRecoveryFiles({ outputRoot: outputDir, files: recoveryBlock.manifest.files });
@@ -127,6 +142,92 @@ export async function phase4_extractTriggerLua(
 
   console.log(`     ✅ ${triggerscript.length}개 trigger → ${path.relative('.', fileName)}`);
   return 1;
+}
+
+function restoreFirstRisuLuaRecoveryAsset(options: {
+  readonly charx: unknown;
+  readonly outputDir: string;
+  readonly assetSources: Record<string, Uint8Array>;
+}): boolean {
+  const assets = readCharxAssetArray(options.charx);
+
+  const firstRecoveryIndex = findFirstRisuLuaRecoveryCharxAssetIndex(assets);
+  if (firstRecoveryIndex === null) return false;
+
+  const payload = resolveRecoveryAssetPayload(
+    assets[firstRecoveryIndex],
+    options.assetSources,
+    firstRecoveryIndex,
+  );
+  const manifest = decodeRisuLuaRecoveryPayload(payload);
+  restoreRisuLuaRecoveryFiles({ outputRoot: options.outputDir, files: manifest.files });
+  return true;
+}
+
+function readCharxAssetArray(charx: unknown): readonly unknown[] {
+  if (!isRecord(charx)) return [];
+
+  const data = charx['data'];
+  if (!isRecord(data)) return [];
+
+  const assets = data['assets'];
+  return Array.isArray(assets) ? assets : [];
+}
+
+function resolveRecoveryAssetPayload(
+  asset: unknown,
+  assetSources: Record<string, Uint8Array>,
+  index: number,
+): Buffer {
+  const uri = readRecoveryAssetUri(asset, index);
+  const resolved = resolveAssetUri(uri, assetSources);
+  if (resolved === null) {
+    throw new RisuLuaRecoveryError(
+      `Recovery asset URI is not resolvable: charx.data.assets[${index}]`,
+    );
+  }
+
+  if (resolved.type === 'remote') {
+    throw new RisuLuaRecoveryError(`Recovery asset URI is remote: charx.data.assets[${index}]`);
+  }
+
+  const payload = bufferFromResolvedData(resolved.data);
+  if (payload === null) {
+    throw new RisuLuaRecoveryError(
+      `Recovery asset payload is missing: charx.data.assets[${index}]`,
+    );
+  }
+
+  return payload;
+}
+
+function readRecoveryAssetUri(asset: unknown, index: number): string {
+  if (!isRecord(asset)) {
+    throw new RisuLuaRecoveryError(
+      `Recovery asset metadata must be an object: charx.data.assets[${index}]`,
+    );
+  }
+
+  const uri = asset['uri'];
+  if (typeof uri !== 'string') {
+    throw new RisuLuaRecoveryError(
+      `Recovery asset URI must be a string: charx.data.assets[${index}]`,
+    );
+  }
+
+  return uri;
+}
+
+function bufferFromResolvedData(data: unknown): Buffer | null {
+  if (Buffer.isBuffer(data)) return data;
+  if (data instanceof Uint8Array) return Buffer.from(data);
+  if (data instanceof ArrayBuffer) return Buffer.from(data);
+  if (ArrayBuffer.isView(data)) return Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+  return null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function cleanupRisuLuaSplitFallbackArtifacts(outputDir: string): void {
