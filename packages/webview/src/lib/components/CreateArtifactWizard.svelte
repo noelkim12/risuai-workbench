@@ -1,5 +1,8 @@
 <script lang="ts">
   import type { ArtifactBrowserCreateArtifactKind, ArtifactBrowserCreateArtifactPayload } from '../types';
+  import charxCardImage from '../assets/create-artifact-wizard/charx.webp?inline';
+  import moduleCardImage from '../assets/create-artifact-wizard/module.webp?inline';
+  import pluginCardImage from '../assets/create-artifact-wizard/plugin.webp?inline';
   import { fly } from 'svelte/transition';
 
   // Webview is always client-side; matchMedia is safe here.
@@ -14,10 +17,10 @@
 
   const PLUGIN_NAME_PATTERN = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
 
-  const KIND_CARDS: { kind: ArtifactBrowserCreateArtifactKind; icon: string; title: string; blurb: string }[] = [
-    { kind: 'charx', icon: '🎭', title: 'CharX', blurb: 'Character card' },
-    { kind: 'module', icon: '🧩', title: 'Module', blurb: 'Reusable bundle' },
-    { kind: 'plugin', icon: '🔌', title: 'Plugin', blurb: 'Editor extension' },
+  const KIND_CARDS: { kind: ArtifactBrowserCreateArtifactKind; imageUrl: string; title: string; blurb: string }[] = [
+    { kind: 'charx', imageUrl: charxCardImage, title: 'CharX', blurb: 'Character card' },
+    { kind: 'module', imageUrl: moduleCardImage, title: 'Module', blurb: 'Risuai Module' },
+    { kind: 'plugin', imageUrl: pluginCardImage, title: 'Plugin', blurb: 'Risual Plugin' },
   ];
 
   let step: 1 | 2 = 1;
@@ -135,9 +138,13 @@
               class:active={createKind === card.kind}
               on:click={() => selectKind(card.kind)}
             >
-              <span class="wizard-card__icon" aria-hidden="true">{card.icon}</span>
-              <span class="wizard-card__title">{card.title}</span>
-              <span class="wizard-card__blurb">{card.blurb}</span>
+              <span class="wizard-card__header">
+                <span class="wizard-card__title">{card.title}</span>
+              </span>
+              <img class="wizard-card__image" src={card.imageUrl} alt="" decoding="async" />
+              <span class="wizard-card__body">
+                <span class="wizard-card__blurb">{card.blurb}</span>
+              </span>
             </button>
           {/each}
         </div>
@@ -241,32 +248,65 @@
   .wizard-cards {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: var(--space-2);
+    gap: var(--space-5);
   }
 
   .wizard-card {
+    --wizard-card-frame: color-mix(in srgb, var(--text) 28%, var(--card-border));
+    --wizard-card-frame-strong: color-mix(in srgb, var(--text) 44%, var(--card-border));
+    --wizard-card-frame-soft: color-mix(in srgb, var(--text) 10%, var(--card));
+
+    position: relative;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: var(--space-1);
-    padding: var(--space-3) var(--space-2);
-    border: 1px solid var(--card-border);
-    border-radius: var(--radius-md);
+    align-items: stretch;
+    gap: 0;
+    min-width: 0;
+    padding: 7px;
+    overflow: hidden;
+    border: 5px solid var(--wizard-card-frame);
+    border-radius: 8px;
     color: var(--text);
-    background: var(--section);
+    background: var(--card);
+    box-shadow:
+      inset 0 0 0 2px var(--wizard-card-frame-soft),
+      0 0 0 1px var(--wizard-card-frame-strong),
+      var(--card-shadow);
     text-align: center;
     cursor: pointer;
-    transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+    transition:
+      border-color 140ms ease,
+      background 140ms ease,
+      box-shadow 140ms ease,
+      transform 140ms ease;
+  }
+
+  .wizard-card::before {
+    position: absolute;
+    z-index: 1;
+    inset: 3px;
+    border: 1px solid var(--wizard-card-frame-soft);
+    border-radius: 2px;
+    content: '';
+    pointer-events: none;
   }
 
   .wizard-card:hover {
-    border-color: var(--focus);
-    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--focus) 64%, var(--wizard-card-frame));
+    box-shadow:
+      inset 0 0 0 2px color-mix(in srgb, var(--focus) 14%, var(--wizard-card-frame-soft)),
+      0 0 0 2px color-mix(in srgb, var(--focus) 28%, transparent),
+      var(--card-selected-shadow);
+    transform: translateY(-2px);
   }
 
   .wizard-card.active {
-    border-color: var(--focus);
-    background: color-mix(in srgb, var(--accent) 18%, var(--section));
+    border-color: color-mix(in srgb, var(--focus) 76%, var(--wizard-card-frame));
+    background: color-mix(in srgb, var(--focus) 8%, var(--card));
+    box-shadow:
+      inset 0 0 0 2px color-mix(in srgb, var(--focus) 18%, var(--wizard-card-frame-soft)),
+      0 0 0 3px color-mix(in srgb, var(--focus) 34%, transparent),
+      var(--card-selected-shadow);
   }
 
   .wizard-card:focus-visible {
@@ -274,18 +314,67 @@
     outline-offset: 2px;
   }
 
-  .wizard-card__icon {
-    font-size: 22px;
-    line-height: 1;
+  .wizard-card__header {
+    position: relative;
+    display: flex;
+    min-height: 46px;
+    align-items: center;
+    padding: var(--space-2) 36px var(--space-2) var(--space-3);
+    border: 1px solid var(--wizard-card-frame-strong);
+    border-radius: 3px 3px 0 0;
+    background: var(--wizard-card-frame-soft);
+    text-align: left;
+  }
+
+  .wizard-card__header::after {
+    position: absolute;
+    top: 50%;
+    right: 14px;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--wizard-card-frame-strong);
+    background: var(--card);
+    content: '';
+    transform: translateY(-50%) rotate(45deg);
+  }
+
+  .wizard-card__image {
+    display: block;
+    width: 100%;
+    aspect-ratio: 5 / 7;
+    margin: 6px 0;
+    border: 3px solid var(--wizard-card-frame-strong);
+    border-radius: 2px;
+    box-shadow:
+      0 0 0 1px var(--wizard-card-frame-soft),
+      inset 0 0 0 1px var(--card-border);
+    object-fit: cover;
+  }
+
+  .wizard-card__body {
+    display: flex;
+    min-height: 72px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--wizard-card-frame-strong);
+    border-top: 3px double var(--wizard-card-frame-strong);
+    border-radius: 0 0 3px 3px;
+    background: var(--wizard-card-frame-soft);
   }
 
   .wizard-card__title {
+    font-size: 18px;
     font-weight: 700;
+    line-height: 1.2;
   }
 
   .wizard-card__blurb {
     color: var(--muted);
-    font-size: var(--text-sm);
+    font-size: 13px;
+    line-height: 1.4;
   }
 
   .field-hint--error {
@@ -308,9 +397,22 @@
   }
 
   .create-modal {
-    width: min(100%, 380px);
+    gap: var(--space-4);
+    width: 80vw;
+    max-height: 80vh;
     margin: 0;
+    padding: var(--space-5);
+    overflow-y: auto;
     animation: wizard-pop 180ms ease;
+  }
+
+  .create-modal__header h2 {
+    font-size: 20px;
+  }
+
+  .create-modal__form {
+    width: min(100%, 720px);
+    align-self: center;
   }
 
   @keyframes wizard-pop {
@@ -375,6 +477,28 @@
     margin: 0;
     opacity: 0;
     pointer-events: none;
+  }
+
+  @media (max-width: 640px) {
+    .modal-backdrop {
+      padding: var(--space-3);
+    }
+
+    .create-modal {
+      width: calc(100vw - 24px);
+      max-height: calc(100vh - 24px);
+      padding: var(--space-4);
+    }
+
+    .wizard-cards {
+      grid-template-columns: 1fr;
+      gap: var(--space-3);
+      justify-items: center;
+    }
+
+    .wizard-card {
+      width: min(100%, 320px);
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {

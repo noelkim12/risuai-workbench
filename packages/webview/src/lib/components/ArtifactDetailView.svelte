@@ -15,14 +15,22 @@
   import StatusBadge from './StatusBadge.svelte';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
   import PackArtifactModal from './PackArtifactModal.svelte';
+  // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
+  import HmrStatusStrip from './HmrStatusStrip.svelte';
+  // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
+  import AnalysisProfileCard from './analysis-showcase/AnalysisProfileCard.svelte';
 
   export let artifact: BrowserArtifactCard;
   export let sections: CharacterSection[];
   export let expandedSectionIds: string[];
   export let status: string;
   export let packState: import('svelte/store').Writable<import('../types').ArtifactBrowserPackCompletedPayload | null>;
+  export let hmrState: import('svelte/store').Writable<import('../types').ArtifactBrowserHmrStatusPayload | null>;
+  export let onHmrStartBroadcast: (stableId: string) => void;
+  export let onHmrStopBroadcast: () => void;
   export let onBack: () => void;
   export let onAnalyzeArtifact: (stableId: string) => void;
+  export let onOpenAnalysisReport: (stableId: string) => void;
   export let onPackArtifact: (stableId: string, recovery: boolean) => void;
   export let onOpenMarkerEditor: (stableId: string) => void;
   export let onOpenPluginViewer: (stableId: string) => void;
@@ -58,6 +66,14 @@
         : artifact.artifactKind === 'plugin'
           ? artifact.framework
           : '';
+
+  $: isBroadcasting = $hmrState?.running === true;
+  $: isBroadcastingHere = isBroadcasting && $hmrState?.stableId === artifact.stableId;
+  $: broadcastTitle = isBroadcastingHere
+    ? 'This artifact is already broadcasting.'
+    : isBroadcasting
+      ? `Already broadcasting: ${$hmrState?.artifactName}. Stop it first, or use "Broadcast this instead" below.`
+      : 'Broadcast this artifact to RisuAI';
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this modal state.
   let isPackModalOpen = false;
@@ -103,14 +119,29 @@
           Plugin Viewer
         </button>
       {:else}
-        <button type="button" class="detail-action" on:click={() => onAnalyzeArtifact(artifact.stableId)}>
-          Analyze
+        <button
+          type="button"
+          class="detail-action"
+          disabled={isBroadcasting}
+          title={broadcastTitle}
+          on:click={() => onHmrStartBroadcast(artifact.stableId)}
+        >
+          {isBroadcastingHere ? 'Broadcasting' : 'Broadcast'}
         </button>
         <button type="button" class="detail-action detail-action--primary" on:click={openPackModal}>
           Pack
         </button>
       {/if}
     </div>
+
+    {#if artifact.artifactKind !== 'plugin'}
+      <HmrStatusStrip
+        hmrStatus={$hmrState}
+        currentStableId={artifact.stableId}
+        onStop={onHmrStopBroadcast}
+        onBroadcastHere={() => onHmrStartBroadcast(artifact.stableId)}
+      />
+    {/if}
   </div>
 
   <p class="bridge-status" id="status-text">{status}</p>
@@ -119,6 +150,15 @@
     <p><strong>Root</strong> {artifact.rootPathLabel}</p>
     <p><strong>Manifest</strong> {artifact.markerPathLabel}</p>
   </section>
+
+  {#if artifact.artifactKind !== 'plugin'}
+    <AnalysisProfileCard
+      profile={artifact.analysisProfile}
+      stableId={artifact.stableId}
+      onAnalyze={onAnalyzeArtifact}
+      onOpenReport={onOpenAnalysisReport}
+    />
+  {/if}
 
   {#if artifact.artifactKind !== 'plugin'}
     <CharacterAccordion
@@ -194,6 +234,11 @@
     background: color-mix(in srgb, var(--secondary) 82%, var(--focus));
     border-color: var(--focus);
     outline: none;
+  }
+
+  .detail-action:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 
   .detail-action--primary {

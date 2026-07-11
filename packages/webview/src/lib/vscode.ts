@@ -9,6 +9,8 @@ import {
   ARTIFACT_BROWSER_VIEW_ID,
   type ArtifactBrowserAnalyzeArtifactMessage,
   type ArtifactBrowserAnalyzeArtifactPayload,
+  type ArtifactBrowserOpenAnalysisReportMessage,
+  type ArtifactBrowserOpenAnalysisShowcaseMessage,
   type ArtifactBrowserCreateArtifactMessage,
   type ArtifactBrowserCreateArtifactPayload,
   type ArtifactBrowserCreateSectionEntryKind,
@@ -18,6 +20,9 @@ import {
   type ArtifactBrowserImportArtifactChunkPayload,
   type ArtifactBrowserImportArtifactMessage,
   type ArtifactBrowserImportArtifactPayload,
+  type ArtifactBrowserHmrStartBroadcastMessage,
+  type ArtifactBrowserHmrStartBroadcastPayload,
+  type ArtifactBrowserHmrStopBroadcastMessage,
   type ArtifactBrowserMoveLorebookFolderMessage,
   type ArtifactBrowserMoveGreetingItemMessage,
   type ArtifactBrowserMoveLorebookItemMessage,
@@ -33,14 +38,17 @@ import {
   type ArtifactBrowserReadyMessage,
   type ArtifactBrowserRefreshMessage,
   type ArtifactBrowserSelectMessage,
+  type ArtifactBrowserShareAnalysisShowcaseMessage,
   type ArtifactBrowserWebviewMessage,
   type MainEditorWebviewMessage,
   type MarkerEditorWebviewMessage,
 } from './types';
+import type { AnalysisShowcaseWebviewMessage } from './analysis-showcase/protocol';
 import type { AssetManagerWebviewMessage } from './types/assetManager';
 
 type WebviewOutboundMessage =
   | ArtifactBrowserWebviewMessage
+  | AnalysisShowcaseWebviewMessage
   | MarkerEditorWebviewMessage
   | MainEditorWebviewMessage
   | AssetManagerWebviewMessage;
@@ -66,6 +74,10 @@ let vscodeApi: VsCodeApi | undefined;
 export function getVsCodeApi(): VsCodeApi | undefined {
   vscodeApi ??= window.acquireVsCodeApi?.();
   return vscodeApi;
+}
+
+export function postAnalysisShowcaseMessage(message: AnalysisShowcaseWebviewMessage): void {
+  getVsCodeApi()?.postMessage(message);
 }
 
 /**
@@ -142,6 +154,16 @@ export function createArtifactBrowserPackArtifactMessage(
   return createArtifactBrowserWebviewMessage('artifact-browser/packArtifact', payload);
 }
 
+export function createArtifactBrowserHmrStartBroadcastMessage(
+  payload: ArtifactBrowserHmrStartBroadcastPayload,
+): ArtifactBrowserHmrStartBroadcastMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/hmrStartBroadcast', payload);
+}
+
+export function createArtifactBrowserHmrStopBroadcastMessage(): ArtifactBrowserHmrStopBroadcastMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/hmrStopBroadcast', {});
+}
+
 export function createArtifactBrowserAnalyzeArtifactMessage(
   payload: ArtifactBrowserAnalyzeArtifactPayload,
 ): ArtifactBrowserAnalyzeArtifactMessage {
@@ -186,6 +208,39 @@ export function createArtifactBrowserOpenPluginViewerMessage(
   stableId: string,
 ): ArtifactBrowserOpenPluginViewerMessage {
   return createArtifactBrowserWebviewMessage('artifact-browser/openPluginViewer', { stableId });
+}
+
+export function createArtifactBrowserOpenAnalysisShowcaseMessage(
+  stableId: string,
+): ArtifactBrowserOpenAnalysisShowcaseMessage {
+  return {
+    protocol: ARTIFACT_BROWSER_PROTOCOL,
+    version: ARTIFACT_BROWSER_PROTOCOL_VERSION,
+    type: 'artifact-browser/openAnalysisShowcase',
+    payload: { stableId },
+  };
+}
+
+export function createArtifactBrowserShareAnalysisShowcaseMessage(
+  stableId: string,
+): ArtifactBrowserShareAnalysisShowcaseMessage {
+  return {
+    protocol: ARTIFACT_BROWSER_PROTOCOL,
+    version: ARTIFACT_BROWSER_PROTOCOL_VERSION,
+    type: 'artifact-browser/shareAnalysisShowcase',
+    payload: { stableId },
+  };
+}
+
+export function createArtifactBrowserOpenAnalysisReportMessage(
+  stableId: string,
+): ArtifactBrowserOpenAnalysisReportMessage {
+  return {
+    protocol: ARTIFACT_BROWSER_PROTOCOL,
+    version: ARTIFACT_BROWSER_PROTOCOL_VERSION,
+    type: 'artifact-browser/openAnalysisReport',
+    payload: { stableId },
+  };
 }
 
 export function createArtifactBrowserOpenCreateWizardMessage(): ArtifactBrowserOpenCreateWizardMessage {

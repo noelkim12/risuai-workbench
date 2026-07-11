@@ -284,6 +284,7 @@ interface ModuleBrowserCardInput {
     message: string;
   }>;
   namespace?: string;
+  analysisProfile: { readonly kind: 'none' };
 }
 
 const RISUMODULE_SCHEMA_URL = 'https://risuai-workbench.dev/schemas/risumodule.schema.json';
@@ -403,6 +404,7 @@ function createModuleBrowserCardInput(
     stableId,
     status: options?.status ?? 'ready',
     warnings: options?.warnings ?? [],
+    analysisProfile: { kind: 'none' },
     ...(options?.namespace !== undefined && { namespace: options.namespace }),
   };
 }
@@ -416,6 +418,7 @@ interface TestVscodeModule {
   FileType: { Directory: 2; File: 1 };
   Position?: new (line: number, character: number) => TestPosition;
   Range?: new (start: TestPosition, end: TestPosition) => TestRange;
+  RelativePattern?: new (base: TestUri, pattern: string) => { base: TestUri; pattern: string };
   ViewColumn?: { One: 1 };
   Uri: {
     file: (fsPath: string) => TestUri;
@@ -444,6 +447,12 @@ interface TestVscodeModule {
     showErrorMessage?: (message: string) => PromiseLike<void> | void;
   };
   workspace: {
+    createFileSystemWatcher?: (pattern: unknown) => {
+      dispose: () => void;
+      onDidChange: (listener: () => void) => { dispose: () => void };
+      onDidCreate: (listener: () => void) => { dispose: () => void };
+      onDidDelete: (listener: () => void) => { dispose: () => void };
+    };
     findFiles?: (include: string, exclude?: string) => Promise<TestUri[]>;
     getWorkspaceFolder?: (uri: TestUri) => { name: string; uri: TestUri } | undefined;
     getConfiguration?: (section: string) => {
@@ -509,6 +518,15 @@ class TestUri {
   toString(): string {
     return this.rawString ?? `file://${this.fsPath}`;
   }
+}
+
+function createNoopFileSystemWatcher() {
+  return {
+    dispose: () => {},
+    onDidChange: () => ({ dispose: () => {} }),
+    onDidCreate: () => ({ dispose: () => {} }),
+    onDidDelete: () => ({ dispose: () => {} }),
+  };
 }
 
 /**
@@ -770,6 +788,12 @@ function createMarkerEditorImageVscodeStub(bytesByPath: Record<string, Uint8Arra
       },
     },
     workspace: {
+      createFileSystemWatcher: () => ({
+        dispose: () => {},
+        onDidChange: () => ({ dispose: () => {} }),
+        onDidCreate: () => ({ dispose: () => {} }),
+        onDidDelete: () => ({ dispose: () => {} }),
+      }),
       fs: {
         createDirectory: async (uri: TestUri) => {
           directories.add(path.normalize(uri.fsPath));
@@ -813,6 +837,7 @@ function createRisuLuaSourceLinksVscodeStub(workspaceRootPath: string): TestVsco
       },
     },
     workspace: {
+      createFileSystemWatcher: createNoopFileSystemWatcher,
       fs: {
         readDirectory: async () => [],
       },
@@ -845,6 +870,12 @@ function createCharacterScannerVscodeStub(
 ): TestVscodeModule {
   return {
     FileType: { File: 1, Directory: 2 },
+    RelativePattern: class {
+      constructor(
+        readonly base: TestUri,
+        readonly pattern: string,
+      ) {}
+    },
     ViewColumn: { One: 1 },
     Uri: {
       file: (fsPath: string) => new TestUri(path.normalize(fsPath)),
@@ -856,6 +887,7 @@ function createCharacterScannerVscodeStub(
       },
     },
     workspace: {
+      createFileSystemWatcher: createNoopFileSystemWatcher,
       fs: {
         readDirectory: async (uri: TestUri) => entriesByDirectory[path.normalize(uri.fsPath)] ?? [],
         readFile: async (uri: TestUri) =>
@@ -1040,6 +1072,7 @@ function loadBuiltArtifactBrowserViewProviderModule(
     path.join(packageRoot, 'dist', 'views', 'MarkerEditorViewProvider.js'),
     path.join(packageRoot, 'dist', 'artifact-browser', 'WorkspaceArtifactDiscoveryService.js'),
     path.join(packageRoot, 'dist', 'artifact-browser', 'ModuleManifestDiscoveryService.js'),
+    path.join(packageRoot, 'dist', 'artifact-browser', 'PluginManifestDiscoveryService.js'),
     path.join(packageRoot, 'dist', 'artifact-browser', 'CharacterDetailScanner.js'),
     path.join(packageRoot, 'dist', 'artifact-browser', 'ModuleDetailScanner.js'),
     path.join(packageRoot, 'dist', 'artifact-browser', 'shared', 'detailScanner.js'),
@@ -1127,6 +1160,12 @@ function createArtifactDiscoveryVscodeStub(
 
   return {
     FileType: { File: 1, Directory: 2 },
+    RelativePattern: class {
+      constructor(
+        readonly base: TestUri,
+        readonly pattern: string,
+      ) {}
+    },
     Uri: {
       file: (fsPath: string) => new TestUri(path.normalize(fsPath)),
       joinPath: (base: TestUri, ...paths: string[]) =>
@@ -1137,8 +1176,13 @@ function createArtifactDiscoveryVscodeStub(
       },
     },
     workspace: {
+      createFileSystemWatcher: createNoopFileSystemWatcher,
       findFiles: async (include: string) => {
-        const markerName = include.endsWith('.risuchar') ? '.risuchar' : '.risumodule';
+        const markerName = include.endsWith('.risuchar')
+          ? '.risuchar'
+          : include.endsWith('.risuplugin')
+            ? '.risuplugin'
+            : '.risumodule';
         return [...entries.keys()]
           .filter((filePath) => path.basename(filePath) === markerName)
           .sort((a, b) => a.localeCompare(b))
@@ -1187,6 +1231,7 @@ function loadBuiltWorkspaceArtifactDiscoveryModule(
     path.join(packageRoot, 'dist', 'artifact-browser', 'WorkspaceArtifactDiscoveryService.js'),
     path.join(packageRoot, 'dist', 'artifact-browser', 'CharacterManifestDiscoveryService.js'),
     path.join(packageRoot, 'dist', 'artifact-browser', 'ModuleManifestDiscoveryService.js'),
+    path.join(packageRoot, 'dist', 'artifact-browser', 'PluginManifestDiscoveryService.js'),
     path.join(packageRoot, 'dist', 'artifact-browser', 'shared', 'manifestDiscovery.js'),
   ];
 
@@ -1277,6 +1322,7 @@ function createCharacterBrowserCardInput(characterRootPath: string, stableId: st
     status: 'ready' as const,
     tags: [],
     warnings: [] as [],
+    analysisProfile: { kind: 'none' } as const,
   };
 }
 

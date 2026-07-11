@@ -7,7 +7,8 @@ import * as vscode from 'vscode';
 import { CharacterManifestDiscoveryService } from './CharacterManifestDiscoveryService';
 import { ModuleManifestDiscoveryService } from './ModuleManifestDiscoveryService';
 import { PluginManifestDiscoveryService } from './PluginManifestDiscoveryService';
-import type { BrowserArtifactCard, ManifestParseWarning } from './artifactBrowserTypes';
+import { AnalysisProfileService } from '../analysis-showcase/AnalysisProfileService';
+import type { BrowserAnalysisProfile, BrowserArtifactCard, ManifestParseWarning } from './artifactBrowserTypes';
 
 const ARTIFACT_KIND_RANK = { character: 0, module: 1, plugin: 2 } as const;
 const MARKER_FILENAME_BY_KIND = { character: '.risuchar', module: '.risumodule', plugin: '.risuplugin' } as const;
@@ -26,11 +27,37 @@ export class WorkspaceArtifactDiscoveryService {
    * @returns mixed artifact card 목록
    */
   async discoverCards(): Promise<BrowserArtifactCard[]> {
-    const characters = await new CharacterManifestDiscoveryService(this.webview).discoverCards();
-    const modules = await new ModuleManifestDiscoveryService(this.webview).discoverCards();
-    const plugins = await new PluginManifestDiscoveryService(this.webview).discoverCards();
-    const withConflicts = applyRootMarkerConflictWarnings([...characters, ...modules, ...plugins]);
+    const [characters, modules, plugins] = await Promise.all([
+      new CharacterManifestDiscoveryService(this.webview).discoverCards(),
+      new ModuleManifestDiscoveryService(this.webview).discoverCards(),
+      new PluginManifestDiscoveryService(this.webview).discoverCards(),
+    ]);
+    const withProfiles = await attachAnalysisProfiles([...characters, ...modules, ...plugins]);
+    const withConflicts = applyRootMarkerConflictWarnings(withProfiles);
     return sortArtifactCards(withConflicts);
+  }
+}
+
+export async function attachAnalysisProfiles(cards: BrowserArtifactCard[]): Promise<BrowserArtifactCard[]> {
+  const profileService = new AnalysisProfileService();
+  return Promise.all(cards.map(async (card): Promise<BrowserArtifactCard> => {
+    if (card.artifactKind === 'plugin') {
+      return card;
+    }
+    const profile = await readProfileSafely(profileService, card.rootUri, card.artifactKind);
+    return { ...card, analysisProfile: profile };
+  }));
+}
+
+async function readProfileSafely(
+  service: AnalysisProfileService,
+  rootUri: string,
+  artifactKind: 'character' | 'module',
+): Promise<BrowserAnalysisProfile> {
+  try {
+    return await service.read(vscode.Uri.parse(rootUri), artifactKind);
+  } catch {
+    return { kind: 'invalid', reason: 'malformed' };
   }
 }
 
