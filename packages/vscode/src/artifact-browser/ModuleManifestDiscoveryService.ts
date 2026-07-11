@@ -18,7 +18,7 @@ import {
   sortArtifactCardsByRootLabel,
   withArtifactKindStableId,
 } from './shared/manifestDiscovery';
-import type { ManifestParseWarning, ModuleBrowserCard } from './artifactBrowserTypes';
+import type { BrowserAnalysisProfile, ManifestParseWarning, ModuleBrowserCard } from './artifactBrowserTypes';
 import { getErrorMessage } from '../shared/errors';
 import { isPlainRecord } from '../shared/protocolEnvelope';
 
@@ -124,6 +124,7 @@ export class ModuleManifestDiscoveryService {
       rootPathLabel: context.rootPathLabel,
       markerPathLabel: context.markerPathLabel,
       warnings,
+      analysisProfile: { kind: 'none' } as BrowserAnalysisProfile,
     };
   }
 
@@ -192,6 +193,7 @@ export class ModuleManifestDiscoveryService {
       rootPathLabel: context.rootPathLabel,
       markerPathLabel: context.markerPathLabel,
       warnings: [warning],
+      analysisProfile: { kind: 'none' } as BrowserAnalysisProfile,
     };
   }
 }
@@ -231,6 +233,7 @@ function readRawModuleFields(
   | 'rootPathLabel'
   | 'markerPathLabel'
   | 'warnings'
+  | 'analysisProfile'
 > {
   const fallback = createRawModuleFallback();
   if (
@@ -277,6 +280,7 @@ function createRawModuleFallback(): Omit<
   | 'rootPathLabel'
   | 'markerPathLabel'
   | 'warnings'
+  | 'analysisProfile'
 > {
   return {
     manifestId: '',

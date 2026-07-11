@@ -7,6 +7,7 @@ import SidebarView from './lib/components/SidebarView.svelte';
 import type {
   ArtifactBrowserCreateSectionEntryKind,
   ArtifactBrowserCreateSectionKind,
+  ArtifactBrowserHmrStatusPayload,
   ArtifactBrowserPackCompletedPayload,
   BrowserArtifactCard,
   CharacterItem,
@@ -60,11 +61,15 @@ export let createSectionEntry: (
 ) => void;
 export let packArtifact: (stableId: string, recovery: boolean) => void;
 export let analyzeArtifact: (stableId: string) => void;
+export let openAnalysisReport: (stableId: string) => void;
 // From main.ts: openMarkerEditor() -> ArtifactDetailView.onOpenMarkerEditor.
 export let openMarkerEditor: (stableId: string) => void;
 // From main.ts: openPluginViewer() -> ArtifactDetailView.onOpenPluginViewer.
 export let openPluginViewer: (stableId: string) => void;
 export let packState: Writable<ArtifactBrowserPackCompletedPayload | null>;
+export let hmrState: Writable<ArtifactBrowserHmrStatusPayload | null>;
+export let onHmrStartBroadcast: (stableId: string) => void;
+export let onHmrStopBroadcast: () => void;
 
 $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId);
 </script>
@@ -76,8 +81,12 @@ $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId)
     expandedSectionIds={$expandedSectionIds}
     status={$status}
     packState={packState}
+    {hmrState}
+    {onHmrStartBroadcast}
+    {onHmrStopBroadcast}
     onBack={returnToCards}
     onAnalyzeArtifact={analyzeArtifact}
+    onOpenAnalysisReport={openAnalysisReport}
     onPackArtifact={packArtifact}
     onOpenMarkerEditor={openMarkerEditor}
     onOpenPluginViewer={openPluginViewer}

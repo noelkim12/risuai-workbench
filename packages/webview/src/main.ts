@@ -5,10 +5,13 @@ import CreateWizardApp from './CreateWizardApp.svelte';
 import MainEditor from './lib/components/editor/main/MainEditor.svelte';
 import MarkerEditor from './lib/components/editor/marker/MarkerEditor.svelte';
 import PluginViewerApp from './lib/components/plugin-viewer/PluginViewerApp.svelte';
+import AnalysisShowcaseApp from './lib/analysis-showcase/AnalysisShowcaseApp.svelte';
 import { mount } from 'svelte';
 import { get, writable } from 'svelte/store';
 import {
   createArtifactBrowserAnalyzeArtifactMessage,
+  createArtifactBrowserHmrStartBroadcastMessage,
+  createArtifactBrowserHmrStopBroadcastMessage,
   createArtifactBrowserImportArtifactChunkMessage,
   createArtifactBrowserCreateArtifactMessage,
   createArtifactBrowserCreateSectionEntryMessage,
@@ -16,6 +19,7 @@ import {
   createArtifactBrowserMoveLorebookItemMessage,
   createArtifactBrowserMoveGreetingItemMessage,
   createArtifactBrowserMoveRegexItemMessage,
+  createArtifactBrowserOpenAnalysisReportMessage,
   createArtifactBrowserOpenAssetManagerMessage,
   createArtifactBrowserOpenCreateWizardMessage,
   createArtifactBrowserCloseCreateWizardMessage,
@@ -38,6 +42,7 @@ import {
   type BrowserArtifactCard,
   type ArtifactBrowserExtensionMessage,
   type ArtifactBrowserDetailPayload,
+  type ArtifactBrowserHmrStatusPayload,
   type ArtifactBrowserPackCompletedPayload,
   type CharacterItem,
   type CharacterSection,
@@ -52,6 +57,7 @@ const expandedSectionIds = writable<string[]>([]);
 const viewMode = writable<'artifacts' | 'artifactDetail'>('artifacts');
 const status = writable('Connecting to extension host…');
 const packState = writable<ArtifactBrowserPackCompletedPayload | null>(null);
+const hmrState = writable<ArtifactBrowserHmrStatusPayload | null>(null);
 const importing = writable(false);
 const app = document.querySelector<HTMLDivElement>('#app');
 const IMPORT_CHUNK_BYTES = 1024 * 1024;
@@ -72,6 +78,7 @@ const ARTIFACT_BROWSER_EXTENSION_MESSAGE_TYPES = [
   'artifact-browser/cards',
   'artifact-browser/detailLoaded',
   'artifact-browser/packCompleted',
+  'artifact-browser/hmrStatus',
 ] as const satisfies readonly ArtifactBrowserExtensionMessageType[];
 
 const ARTIFACT_BROWSER_EXTENSION_MESSAGE_GUARDS = {
@@ -87,6 +94,10 @@ const ARTIFACT_BROWSER_EXTENSION_MESSAGE_GUARDS = {
     'artifact-browser/packCompleted',
     isArtifactBrowserPackCompletedPayload,
   ),
+  'artifact-browser/hmrStatus': createArtifactBrowserExtensionMessageGuard(
+    'artifact-browser/hmrStatus',
+    isArtifactBrowserHmrStatusPayload,
+  ),
 } satisfies Record<ArtifactBrowserExtensionMessageType, ArtifactBrowserExtensionMessageGuard>;
 
 if (!app) {
@@ -95,6 +106,10 @@ if (!app) {
 
 if (webviewName === 'plugin-viewer') {
   mount(PluginViewerApp, {
+    target: app,
+  });
+} else if (webviewName === 'analysis-showcase') {
+  mount(AnalysisShowcaseApp, {
     target: app,
   });
 } else if (webviewName === 'asset-manager') {
@@ -142,8 +157,12 @@ if (webviewName === 'plugin-viewer') {
       moveGreetingItem,
       createSectionEntry,
       analyzeArtifact,
+      openAnalysisReport,
       packArtifact,
       packState,
+      hmrState,
+      onHmrStartBroadcast: hmrStartBroadcast,
+      onHmrStopBroadcast: hmrStopBroadcast,
       openMarkerEditor,
       openPluginViewer,
     },
@@ -217,6 +236,11 @@ function handleMessage(event: MessageEvent<unknown>): void {
         ? `Packed → ${message.payload.outputPath}`
         : `Pack failed: ${message.payload.error ?? 'unknown error'}`,
     );
+    return;
+  }
+
+  if (message.type === 'artifact-browser/hmrStatus') {
+    hmrState.set(message.payload);
     return;
   }
 }
@@ -298,9 +322,21 @@ function packArtifact(stableId: string, recovery: boolean): void {
   vscode?.postMessage(createArtifactBrowserPackArtifactMessage({ stableId, recovery }));
 }
 
+function hmrStartBroadcast(stableId: string): void {
+  vscode?.postMessage(createArtifactBrowserHmrStartBroadcastMessage({ stableId }));
+}
+
+function hmrStopBroadcast(): void {
+  vscode?.postMessage(createArtifactBrowserHmrStopBroadcastMessage());
+}
+
 function analyzeArtifact(stableId: string): void {
   setStatus('Analyzing and generating wiki…');
   vscode?.postMessage(createArtifactBrowserAnalyzeArtifactMessage({ stableId }));
+}
+
+function openAnalysisReport(stableId: string): void {
+  vscode?.postMessage(createArtifactBrowserOpenAnalysisReportMessage(stableId));
 }
 
 /**
@@ -483,6 +519,10 @@ function isArtifactBrowserDetailPayload(payload: unknown): payload is ArtifactBr
 
 function isArtifactBrowserPackCompletedPayload(payload: unknown): payload is ArtifactBrowserPackCompletedPayload {
   return isPlainRecord(payload) && typeof payload.stableId === 'string' && typeof payload.ok === 'boolean';
+}
+
+function isArtifactBrowserHmrStatusPayload(payload: unknown): payload is ArtifactBrowserHmrStatusPayload {
+  return isPlainRecord(payload) && typeof payload.running === 'boolean' && typeof payload.updateCount === 'number';
 }
 
 function isArtifactBrowserExtensionMessageType(value: unknown): value is ArtifactBrowserExtensionMessageType {

@@ -25,6 +25,7 @@
     "vitest": "^4.1.6"
   },
   "dependencies": {
+    "html-to-image": "^1.11.13",
     "monaco-editor": "^0.55.1",
     "risu-workbench-core": "^0.1.0"
   }

@@ -11,6 +11,7 @@ import {
   type CbsLanguageClientRuntimeState,
 } from './lsp/cbsLanguageClient';
 import { registerRisuLuaSourceDocumentLinks } from './lsp/risuLuaSourceLinks';
+import { disposeHmrServer } from './hmr/HmrServerService';
 import { AnalysisService } from './services/analysis-service';
 import { CardService } from './services/card-service';
 import { ArtifactBrowserViewProvider } from './views/ArtifactBrowserViewProvider';
@@ -74,5 +75,6 @@ export function activate(context: vscode.ExtensionContext): RisuWorkbenchExtensi
 
 export async function deactivate() {
   console.log('risu-workbench-vscode extension deactivated');
+  await disposeHmrServer();
   await stopCbsLanguageClient();
 }

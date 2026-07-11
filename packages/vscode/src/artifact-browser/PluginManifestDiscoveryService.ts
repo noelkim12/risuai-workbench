@@ -14,7 +14,7 @@ import {
   withArtifactKindStableId,
 } from './shared/manifestDiscovery';
 import { parseRisupluginManifest, RISUPLUGIN_FILENAME } from './risupluginManifest';
-import type { ManifestParseWarning, PluginBrowserCard } from './artifactBrowserTypes';
+import type { BrowserAnalysisProfile, ManifestParseWarning, PluginBrowserCard } from './artifactBrowserTypes';
 import { getErrorMessage } from '../shared/errors';
 
 export const RISUPLUGIN_GLOB = `**/${RISUPLUGIN_FILENAME}`;
@@ -73,6 +73,7 @@ export class PluginManifestDiscoveryService {
         ...(iconUri && { iconUri }),
         status: 'ready',
         warnings: [],
+        analysisProfile: { kind: 'none' } as BrowserAnalysisProfile,
         ...base,
       };
     } catch (error) {
@@ -97,6 +98,7 @@ export class PluginManifestDiscoveryService {
         framework: 'unknown',
         status: 'invalid',
         warnings: [warning],
+        analysisProfile: { kind: 'none' } as BrowserAnalysisProfile,
         ...base,
       };
     }
