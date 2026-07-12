@@ -7,7 +7,7 @@ RisuAI Workbench의 Canonical Workspace를 AI agent가 안전하게 읽고, 검�
 
 이 패키지는 facade MCP surface를 기본으로 노출합니다. 기본 `tools/list`는 8개 facade tool만 반환하며, 기존 domain tool들은 내부 Action Registry action으로 실행됩니다.
 
-Creative thinking surface는 `docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md`를 knowledge-base reference로 삼아 구현되어 있습니다. README는 운영 surface만 요약하며, 상세 method/rubric 배경은 해당 KB 문서를 확인하세요.
+Creative thinking surface의 method와 rubric은 MCP resource card로 제공됩니다.
 
 ## 제공 기능
 
@@ -310,7 +310,7 @@ Tool annotation은 client/user를 위한 힌트일 뿐이며, 실제 보호는 �
 
 ## Creative thinking surface
 
-Creative 기능은 일반-purpose brainstorm app이 아니라 RisuAI Workbench artifact 변경을 안전하게 구상하고 검증하기 위한 agent-facing MCP surface입니다. Source of truth는 `docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md`이며, 구현은 다음 경계를 지킵니다.
+Creative 기능은 일반-purpose brainstorm app이 아니라 RisuAI Workbench artifact 변경을 안전하게 구상하고 검증하기 위한 agent-facing MCP surface이며, 다음 경계를 지킵니다.
 
 ### Read-only creative actions
 

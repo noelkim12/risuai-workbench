@@ -80,16 +80,6 @@ Cleanup
 - [ ] Hidden markers and next-prompt markers are separated.
 - [ ] Source-first boundaries are explicit: `lua/**/*.risulua` is source, `dist/*.risulua` is generated/export output.
 
-## Evidence Paths
-
-- `test_suites/extraction_targets/⚔️ Merry RPG 모듈 V1.3/lua/domain/main_rpg.risulua`
-- `test_suites/extraction_targets/⚔️ Merry RPG 모듈 V1.3/lua/state/variable_store.risulua`
-- `test_suites/extraction_targets/⚔️ Merry RPG 모듈 V1.3/regex/패널_Panel.risuregex`
-- `test_suites/extraction_targets/⚔️ Merry RPG 모듈 V1.3/html/background.risuhtml`
-- `test_suites/extraction_targets/⚔️ Merry RPG 모듈 V1.3/docs/risulua-split-report.md`
-- `docs/reference/LUA_FOR_LLM.md`
-- `docs/reference/CBS_FOR_LLM.md`
-
 ## Fixture Caveat
 
 Extraction target files are implementation evidence, not automatically canonical clean patterns. Prefer split source paths for authoring claims. Treat `dist/*.risulua`, `legacy/original.risulua`, generated wiki, and analysis output as secondary evidence unless the skill explicitly discusses packaging or recovery.

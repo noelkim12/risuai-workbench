@@ -103,7 +103,6 @@ export async function handleExplainRisuLuaRuntimeApi(input: ExplainRisuLuaRuntim
       'risuai-workbench://risulua/pitfalls',
     ],
     references: [
-      'docs/reference/LUA_FOR_LLM.md',
       'docs/risuai-lua.d.ts',
       'packages/core/src/domain/analyze/lua-api.ts',
       'packages/core/src/domain/analyze/lua-type-stubs.ts',
@@ -128,8 +127,6 @@ export async function handleExplainLorebookPromptInjection(input: ExplainLoreboo
       ? ['@@depth', '@@position', '@@role', '@@recursive', '@@unrecursive', '@@no_recursive_search']
       : [],
     references: [
-      'docs/upstream-traceability/domains/lorebook-runtime.md',
-      'docs/decorator/reference.md',
       'packages/core/src/domain/lorebook/structure.ts',
       'packages/core/src/domain/lorebook/activation-chain.ts',
     ],

@@ -57,7 +57,6 @@ describe('RisuLua lifecycle guide tools', () => {
     expect(JSON.stringify(result.data)).toContain(':await()');
     expect(JSON.stringify(result.data)).toContain('LowLevel');
     expect(JSON.stringify(result.data)).toContain('risuai-workbench://risulua/index');
-    expect(JSON.stringify(result.data)).toContain('docs/reference/LUA_FOR_LLM.md');
     expect(JSON.stringify(result.data)).toContain('docs/risuai-lua.d.ts');
     expect(JSON.stringify(result.data)).toContain('packages/core/src/domain/analyze/lua-api.ts');
     expect(JSON.stringify(result.data)).toContain('packages/core/src/domain/analyze/lua-type-stubs.ts');
@@ -72,8 +71,6 @@ describe('RisuLua lifecycle guide tools', () => {
     expect(JSON.stringify(result.data)).toContain('keyword');
     expect(JSON.stringify(result.data)).toContain('recursive');
     expect(JSON.stringify(result.data)).toContain('@@depth');
-    expect(JSON.stringify(result.data)).toContain('docs/upstream-traceability/domains/lorebook-runtime.md');
-    expect(JSON.stringify(result.data)).toContain('docs/decorator/reference.md');
     expect(JSON.stringify(result.data)).toContain('packages/core/src/domain/lorebook/structure.ts');
     expect(JSON.stringify(result.data)).toContain('packages/core/src/domain/lorebook/activation-chain.ts');
   });
