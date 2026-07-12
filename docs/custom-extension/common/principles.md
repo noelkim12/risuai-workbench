@@ -23,7 +23,7 @@
 | 정규식          | `.risuregex`    |       ✓       |      ✓       |       ✓        | 다중 파일 지원 + `_order.json`                                                                                                                        |
 | Lua             | `.risulua`      |       ✓       |      ✓       |                | **단일 파일 개발**은 `lua/<targetName>.risulua`, **모듈식 개발**은 `lua/main.risulua` source graph와 `dist/<targetName>.risulua` 생성 artifact를 사용 |
 | 프롬프트 템플릿 | `.risuprompt`   |               |              |       ✓        | 다중 파일 지원 + `_order.json`                                                                                                                        |
-| 토글            | `.risutoggle`   |               |      ✓       |       ✓        | 대상당 단일 파일                                                                                                                                      |
+| 토글            | `.risutoggle`   |       ✓       |      ✓       |       ✓        | 대상당 단일 파일                                                                                                                                      |
 | 변수            | `.risuvar`      |       ✓       |      ✓       |                | 대상당 단일 파일                                                                                                                                      |
 | HTML            | `.risuhtml`     |       ✓       |      ✓       |                | `background.risuhtml` 고정                                                                                                                            |
 
