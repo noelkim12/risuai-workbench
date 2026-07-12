@@ -59,6 +59,8 @@ import {
   type ArtifactBrowserHmrStopBroadcastPayload,
   type ArtifactBrowserPackArtifactMessage,
   type ArtifactBrowserPackArtifactPayload,
+  type ArtifactBrowserOpenPackedOutputMessage,
+  type ArtifactBrowserOpenPackedOutputPayload,
   type ArtifactBrowserPackCompletedMessage,
   type ArtifactBrowserPackCompletedPayload,
   type ArtifactBrowserSelectPayload,
@@ -83,6 +85,7 @@ type ArtifactBrowserInboundMessage =
   | ArtifactBrowserImportArtifactMessage
   | ArtifactBrowserImportArtifactChunkMessage
   | ArtifactBrowserPackArtifactMessage
+  | ArtifactBrowserOpenPackedOutputMessage
   | ArtifactBrowserHmrStartBroadcastMessage
   | ArtifactBrowserHmrStopBroadcastMessage
   | ArtifactBrowserAnalyzeArtifactMessage
@@ -261,6 +264,14 @@ const isArtifactBrowserPackArtifactPayload: ArtifactBrowserPayloadGuard<Artifact
   payload.stableId.length > 0 &&
   typeof payload.recovery === 'boolean';
 
+const isArtifactBrowserOpenPackedOutputPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserOpenPackedOutputPayload> = (
+  payload,
+): payload is ArtifactBrowserOpenPackedOutputPayload =>
+  isPlainRecord(payload) &&
+  typeof payload.stableId === 'string' &&
+  payload.stableId.length > 0 &&
+  (payload.destination === 'os' || payload.destination === 'explorer' || payload.destination === 'clipboard');
+
 const isArtifactBrowserHmrStartBroadcastPayload: ArtifactBrowserPayloadGuard<
   ArtifactBrowserHmrStartBroadcastPayload
 > = (payload): payload is ArtifactBrowserHmrStartBroadcastPayload =>
@@ -362,6 +373,12 @@ const isArtifactBrowserPackArtifactMessageEnvelope =
   createArtifactBrowserMessageGuard<ArtifactBrowserPackArtifactMessage>(
     'artifact-browser/packArtifact',
     isArtifactBrowserPackArtifactPayload,
+  );
+
+const isArtifactBrowserOpenPackedOutputMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserOpenPackedOutputMessage>(
+    'artifact-browser/openPackedOutput',
+    isArtifactBrowserOpenPackedOutputPayload,
   );
 
 const isArtifactBrowserHmrStartBroadcastMessageEnvelope =
@@ -502,6 +519,12 @@ export function isArtifactBrowserPackArtifactMessage(
   message: unknown,
 ): message is ArtifactBrowserPackArtifactMessage {
   return isArtifactBrowserPackArtifactMessageEnvelope(message);
+}
+
+export function isArtifactBrowserOpenPackedOutputMessage(
+  message: unknown,
+): message is ArtifactBrowserOpenPackedOutputMessage {
+  return isArtifactBrowserOpenPackedOutputMessageEnvelope(message);
 }
 
 export function isArtifactBrowserHmrStartBroadcastMessage(

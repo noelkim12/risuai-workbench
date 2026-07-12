@@ -361,7 +361,13 @@ export interface ArtifactBrowserPackCompletedPayload {
   stableId: string;
   ok: boolean;
   outputPath?: string;
+  outputRelativePath?: string;
   error?: string;
+}
+
+export interface ArtifactBrowserOpenPackedOutputPayload {
+  stableId: string;
+  destination: 'os' | 'explorer' | 'clipboard';
 }
 
 export interface ArtifactBrowserSelectPayload {
@@ -604,6 +610,11 @@ export type ArtifactBrowserPackArtifactMessage = MessageEnvelope<
   ArtifactBrowserPackArtifactPayload
 >;
 
+export type ArtifactBrowserOpenPackedOutputMessage = MessageEnvelope<
+  'artifact-browser/openPackedOutput',
+  ArtifactBrowserOpenPackedOutputPayload
+>;
+
 export type ArtifactBrowserHmrStartBroadcastMessage = MessageEnvelope<
   'artifact-browser/hmrStartBroadcast',
   ArtifactBrowserHmrStartBroadcastPayload
@@ -705,6 +716,7 @@ export type ArtifactBrowserWebviewMessage =
   | ArtifactBrowserCreateArtifactMessage
   | ArtifactBrowserImportArtifactMessage
   | ArtifactBrowserPackArtifactMessage
+  | ArtifactBrowserOpenPackedOutputMessage
   | ArtifactBrowserHmrStartBroadcastMessage
   | ArtifactBrowserHmrStopBroadcastMessage
   | ArtifactBrowserAnalyzeArtifactMessage

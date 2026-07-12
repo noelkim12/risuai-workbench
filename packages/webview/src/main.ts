@@ -26,6 +26,7 @@ import {
   createArtifactBrowserOpenItemMessage,
   createArtifactBrowserOpenMarkerEditorMessage,
   createArtifactBrowserOpenPluginViewerMessage,
+  createArtifactBrowserOpenPackedOutputMessage,
   createArtifactBrowserPackArtifactMessage,
   createArtifactBrowserReadyMessage,
   createArtifactBrowserRefreshMessage,
@@ -67,6 +68,9 @@ const webviewName =
   document.querySelector('meta[name="risuai-workbench-view"]')?.getAttribute('content');
 let artifactBrowserReadyRetryTimer: ReturnType<typeof setInterval> | undefined;
 let artifactBrowserInitialized = false;
+// detailLoaded는 background refresh(watcher rescan, Refresh 버튼)에서도 도착하므로,
+// 사용자가 카드를 직접 선택한 경우에만 detail view로 전환하기 위한 대기 표식.
+let pendingDetailNavigationStableId: string | undefined;
 
 type ArtifactBrowserExtensionMessageType = ArtifactBrowserExtensionMessage['type'];
 type ArtifactBrowserExtensionPayloadGuard<TType extends ArtifactBrowserExtensionMessageType> = (
@@ -159,6 +163,7 @@ if (webviewName === 'plugin-viewer') {
       analyzeArtifact,
       openAnalysisReport,
       packArtifact,
+      openPackedOutput,
       packState,
       hmrState,
       onHmrStartBroadcast: hmrStartBroadcast,
@@ -224,7 +229,10 @@ function handleMessage(event: MessageEvent<unknown>): void {
     if (!isSameArtifactRefresh) {
       expandedSectionIds.set([]);
     }
-    viewMode.set('artifactDetail');
+    if (pendingDetailNavigationStableId === message.payload.stableId) {
+      pendingDetailNavigationStableId = undefined;
+      viewMode.set('artifactDetail');
+    }
     setStatus(`Detail loaded with ${message.payload.sections.length} sections.`);
     return;
   }
@@ -233,7 +241,7 @@ function handleMessage(event: MessageEvent<unknown>): void {
     packState.set(message.payload);
     setStatus(
       message.payload.ok
-        ? `Packed → ${message.payload.outputPath}`
+        ? `Packed → ${message.payload.outputRelativePath ?? 'artifact output folder'}`
         : `Pack failed: ${message.payload.error ?? 'unknown error'}`,
     );
     return;
@@ -251,6 +259,7 @@ function handleMessage(event: MessageEvent<unknown>): void {
  */
 function refreshCards(): void {
   setStatus('Refreshing .risuchar and .risumodule root markers…');
+  pendingDetailNavigationStableId = undefined;
   viewMode.set('artifacts');
   detailSections.set([]);
   vscode?.postMessage(createArtifactBrowserRefreshMessage());
@@ -259,6 +268,7 @@ function refreshCards(): void {
 function createArtifact(payload: ArtifactBrowserCreateArtifactPayload): void {
   const artifactLabel = payload.kind === 'charx' ? '.risuchar' : payload.kind === 'plugin' ? '.risuplugin' : '.risumodule';
   setStatus(`Creating ${artifactLabel} scaffold…`);
+  pendingDetailNavigationStableId = undefined;
   viewMode.set('artifacts');
   detailSections.set([]);
   vscode?.postMessage(createArtifactBrowserCreateArtifactMessage(payload));
@@ -285,6 +295,7 @@ function encodeChunkAsBase64(buffer: ArrayBuffer): string {
 async function importArtifact(file: File): Promise<void> {
   importing.set(true);
   setStatus(`Importing ${file.name}…`);
+  pendingDetailNavigationStableId = undefined;
   viewMode.set('artifacts');
   detailSections.set([]);
   try {
@@ -320,6 +331,10 @@ function packArtifact(stableId: string, recovery: boolean): void {
   packState.set(null);
   setStatus('Packing…');
   vscode?.postMessage(createArtifactBrowserPackArtifactMessage({ stableId, recovery }));
+}
+
+function openPackedOutput(stableId: string, destination: 'os' | 'explorer' | 'clipboard'): void {
+  vscode?.postMessage(createArtifactBrowserOpenPackedOutputMessage({ stableId, destination }));
 }
 
 function hmrStartBroadcast(stableId: string): void {
@@ -380,6 +395,8 @@ function selectCard(stableId: string): void {
   })();
   if (!selectedCard) return;
 
+  pendingDetailNavigationStableId = stableId;
+
   if (selectedCard.artifactKind === 'plugin') {
     selectedStableId.set(stableId);
     detailSections.set([]);
@@ -400,6 +417,7 @@ function selectCard(stableId: string): void {
  * Host discovery를 다시 요청하지 않고 보존된 card state로 돌아감.
  */
 function returnToCards(): void {
+  pendingDetailNavigationStableId = undefined;
   viewMode.set('artifacts');
   setStatus('Returned to artifact cards.');
 }
@@ -518,7 +536,12 @@ function isArtifactBrowserDetailPayload(payload: unknown): payload is ArtifactBr
 }
 
 function isArtifactBrowserPackCompletedPayload(payload: unknown): payload is ArtifactBrowserPackCompletedPayload {
-  return isPlainRecord(payload) && typeof payload.stableId === 'string' && typeof payload.ok === 'boolean';
+  return (
+    isPlainRecord(payload) &&
+    typeof payload.stableId === 'string' &&
+    typeof payload.ok === 'boolean' &&
+    (payload.outputRelativePath === undefined || typeof payload.outputRelativePath === 'string')
+  );
 }
 
 function isArtifactBrowserHmrStatusPayload(payload: unknown): payload is ArtifactBrowserHmrStatusPayload {

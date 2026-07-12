@@ -18,7 +18,7 @@
   const PLUGIN_NAME_PATTERN = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
 
   const KIND_CARDS: { kind: ArtifactBrowserCreateArtifactKind; imageUrl: string; title: string; blurb: string }[] = [
-    { kind: 'charx', imageUrl: charxCardImage, title: 'CharX', blurb: 'Character card' },
+    { kind: 'charx', imageUrl: charxCardImage, title: 'CharX', blurb: 'Risuai Character card' },
     { kind: 'module', imageUrl: moduleCardImage, title: 'Module', blurb: 'Risuai Module' },
     { kind: 'plugin', imageUrl: pluginCardImage, title: 'Plugin', blurb: 'Risual Plugin' },
   ];
@@ -109,7 +109,7 @@
 
 {#if open}
   <section class="modal-backdrop" aria-label="Create dialog backdrop">
-    <button type="button" class="modal-scrim" aria-label="Close create dialog" on:click={onClose}></button>
+    <div class="modal-scrim" aria-hidden="true"></div>
     <div class="create-modal" aria-label="Create workbench artifact" role="dialog" aria-modal="true">
       <header class="create-modal__header">
         <div>
@@ -135,7 +135,7 @@
             <button
               type="button"
               class="wizard-card"
-              class:active={createKind === card.kind}
+              // class:active={createKind === card.kind}
               on:click={() => selectKind(card.kind)}
             >
               <span class="wizard-card__header">
@@ -175,16 +175,28 @@
               <span>Tags</span>
               <input type="text" bind:value={tags} autocomplete="off" placeholder="tag-a, tag-b" />
             </label>
-            <div class="checkbox-grid">
-              <label><input type="checkbox" bind:checked={utilityBot} /> Utility bot</label>
-              <label><input type="checkbox" bind:checked={lowLevelAccess} /> Low level access</label>
+            <div class="toggle-grid">
+              <label class="toggle-row">
+                <span class="toggle-row__label">Utility bot</span>
+                <input type="checkbox" role="switch" class="toggle-row__input" bind:checked={utilityBot} />
+                <span class="toggle-row__switch" aria-hidden="true"><span class="toggle-row__thumb"></span></span>
+              </label>
+              <label class="toggle-row">
+                <span class="toggle-row__label">Low level access</span>
+                <input type="checkbox" role="switch" class="toggle-row__input" bind:checked={lowLevelAccess} />
+                <span class="toggle-row__switch" aria-hidden="true"><span class="toggle-row__thumb"></span></span>
+              </label>
             </div>
           {:else if createKind === 'module'}
             <label class="field-stack">
               <span>Description</span>
               <textarea bind:value={description} rows="3" placeholder="Short module description"></textarea>
             </label>
-            <label class="checkbox-line"><input type="checkbox" bind:checked={lowLevelAccess} /> Low level access</label>
+            <label class="toggle-row">
+              <span class="toggle-row__label">Low level access</span>
+              <input type="checkbox" role="switch" class="toggle-row__input" bind:checked={lowLevelAccess} />
+              <span class="toggle-row__switch" aria-hidden="true"><span class="toggle-row__thumb"></span></span>
+            </label>
           {:else if createKind === 'plugin'}
             <label class="field-stack">
               <span>Description</span>
@@ -247,8 +259,11 @@
 
   .wizard-cards {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    /* Cap card width so the 5/7 images never push the modal past 70vh:
+       the vh term shrinks cards on short windows instead of scrolling. */
+    grid-template-columns: repeat(3, minmax(0, min(280px, 50vh - 230px)));
     gap: var(--space-5);
+    justify-content: center;
   }
 
   .wizard-card {
@@ -398,11 +413,13 @@
 
   .create-modal {
     gap: var(--space-4);
-    width: 80vw;
-    max-height: 80vh;
+    /* Cap at the natural width of three 280px cards (+ gaps/padding) so
+       wide screens don't leave dead space beside the card row. */
+    width: min(70vw, 960px);
+    max-height: 70vh;
     margin: 0;
     padding: var(--space-5);
-    overflow-y: auto;
+    overflow: hidden;
     animation: wizard-pop 180ms ease;
   }
 
@@ -411,8 +428,150 @@
   }
 
   .create-modal__form {
-    width: min(100%, 720px);
-    align-self: center;
+    width: 100%;
+    gap: var(--space-4);
+  }
+
+  /* --- Modern form fields -----------------------------------------------
+     Softly filled inputs with a glow focus ring, card-style checkbox rows,
+     and a divided action footer. Scoped so the shared modal forms keep
+     their plainer look. */
+  .field-stack {
+    gap: 6px;
+    font-size: 11px;
+  }
+
+  .field-stack input,
+  .field-stack textarea {
+    padding: 10px 12px;
+    border: 1px solid color-mix(in srgb, var(--text) 16%, transparent);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--text) 4%, var(--surface));
+    transition:
+      border-color 140ms ease,
+      background 140ms ease,
+      box-shadow 140ms ease;
+  }
+
+  .field-stack input:hover,
+  .field-stack textarea:hover {
+    border-color: color-mix(in srgb, var(--text) 32%, transparent);
+  }
+
+  .field-stack input:focus,
+  .field-stack textarea:focus {
+    border-color: var(--focus);
+    outline: none;
+    background: var(--surface);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 22%, transparent);
+  }
+
+  .field-stack input::placeholder,
+  .field-stack textarea::placeholder {
+    color: color-mix(in srgb, var(--muted) 70%, transparent);
+  }
+
+  .field-stack textarea {
+    min-height: 84px;
+    resize: vertical;
+  }
+
+  .toggle-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-2);
+  }
+
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: 10px 12px;
+    border: 1px solid color-mix(in srgb, var(--text) 16%, transparent);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--text) 4%, var(--surface));
+    cursor: pointer;
+    user-select: none;
+    transition:
+      border-color 140ms ease,
+      background 140ms ease;
+  }
+
+  .toggle-row:hover {
+    border-color: color-mix(in srgb, var(--text) 32%, transparent);
+  }
+
+  .toggle-row:has(input:checked) {
+    border-color: color-mix(in srgb, var(--focus) 70%, transparent);
+    background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  }
+
+  .toggle-row__label {
+    font-weight: 500;
+  }
+
+  /* Visually hidden but still focusable for keyboard users. */
+  .toggle-row__input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    border: 0;
+    white-space: nowrap;
+  }
+
+  .toggle-row__switch {
+    position: relative;
+    display: inline-flex;
+    flex: none;
+    width: 40px;
+    height: 22px;
+    align-items: center;
+    border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+    border-radius: var(--radius-pill);
+    background: color-mix(in srgb, var(--text) 14%, var(--surface));
+    transition:
+      border-color 140ms ease,
+      background 140ms ease;
+  }
+
+  .toggle-row__thumb {
+    position: absolute;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--vscode-widget-shadow) 60%, rgb(0 0 0 / 25%));
+    transition: transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .toggle-row__input:checked + .toggle-row__switch {
+    border-color: transparent;
+    background: var(--accent);
+  }
+
+  .toggle-row__input:checked + .toggle-row__switch .toggle-row__thumb {
+    transform: translateX(18px);
+  }
+
+  .toggle-row__input:focus-visible + .toggle-row__switch {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  .create-modal__actions {
+    margin-top: var(--space-2);
+    padding-top: var(--space-4);
+    border-top: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+  }
+
+  .create-modal__actions button {
+    padding: var(--space-2) var(--space-5);
+    border-radius: var(--radius-md);
   }
 
   @keyframes wizard-pop {
@@ -488,6 +647,8 @@
       width: calc(100vw - 24px);
       max-height: calc(100vh - 24px);
       padding: var(--space-4);
+      /* Stacked cards can't fit one screen; allow scrolling again here. */
+      overflow-y: auto;
     }
 
     .wizard-cards {

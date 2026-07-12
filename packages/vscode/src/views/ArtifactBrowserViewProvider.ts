@@ -17,6 +17,7 @@ import { WorkspaceArtifactDiscoveryService } from '../artifact-browser/Workspace
 import { selectPreferredCard } from '../artifact-browser/cardSelection';
 import {
   createDebouncedTrigger,
+  isEqualOrAncestorPath,
   wireWatcherToTrigger,
   type DebouncedTrigger,
 } from '../artifact-browser/artifactBrowserWatch';
@@ -44,6 +45,7 @@ import {
   isArtifactBrowserOpenAnalysisReportMessage,
   isArtifactBrowserOpenAnalysisShowcaseMessage,
   isArtifactBrowserOpenPluginViewerMessage,
+  isArtifactBrowserOpenPackedOutputMessage,
   isArtifactBrowserShareAnalysisShowcaseMessage,
   isArtifactBrowserPackArtifactMessage,
   isArtifactBrowserReadyMessage,
@@ -143,6 +145,7 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
   private currentCards: BrowserArtifactCard[] = [];
   private currentSections = new Map<string, BrowserSection[]>();
   private readonly pendingImportTransfers = new Map<string, PendingImportTransfer>();
+  private readonly packedOutputUris = new Map<string, vscode.Uri>();
 
   private detailWatcher: vscode.FileSystemWatcher | undefined;
   private detailWatcherSubscriptions: vscode.Disposable[] = [];
@@ -181,7 +184,52 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     );
     const trigger = createDebouncedTrigger(() => this.refreshIfOpen(), CARDS_REFRESH_DEBOUNCE_MS);
     const subscriptions = wireWatcherToTrigger(watcher, () => trigger.trigger()) as vscode.Disposable[];
-    this.context.subscriptions.push(watcher, ...subscriptions, { dispose: () => trigger.dispose() });
+
+    // 폴더 전체가 삭제·이동되면 VS Code는 폴더 하나의 이벤트만 내보내고 내부 marker
+    // 파일 이벤트는 생략하므로, marker glob watcher만으로는 카드 목록이 갱신되지 않음.
+    const folderWatcher = vscode.workspace.createFileSystemWatcher('**/*');
+    const folderSubscriptions = [
+      folderWatcher.onDidDelete((uri) => {
+        if (this.coversKnownArtifactRoot(uri.fsPath)) trigger.trigger();
+      }),
+      folderWatcher.onDidCreate((uri) => {
+        void this.triggerOnDirectoryCreate(uri, trigger);
+      }),
+    ];
+
+    this.context.subscriptions.push(watcher, folderWatcher, ...subscriptions, ...folderSubscriptions, {
+      dispose: () => trigger.dispose(),
+    });
+  }
+
+  /**
+   * coversKnownArtifactRoot 함수.
+   * 삭제된 경로가 현재 카드 root와 같거나 그 상위 폴더인지 판별함.
+   *
+   * @param deletedFsPath - 삭제 이벤트가 발생한 파일시스템 경로
+   * @returns 카드 목록 rescan이 필요한 삭제 여부
+   */
+  private coversKnownArtifactRoot(deletedFsPath: string): boolean {
+    return this.currentCards.some((card) =>
+      isEqualOrAncestorPath(deletedFsPath, vscode.Uri.parse(card.rootUri).fsPath, path.sep),
+    );
+  }
+
+  /**
+   * triggerOnDirectoryCreate 함수.
+   * 폴더 단위 이동/복사로 생긴 create 이벤트에서만 카드 rescan을 예약함.
+   * 파일 create는 marker glob watcher가 담당하므로 directory만 확인함.
+   *
+   * @param uri - create 이벤트가 발생한 URI
+   * @param trigger - 카드 목록 debounce trigger
+   */
+  private async triggerOnDirectoryCreate(uri: vscode.Uri, trigger: DebouncedTrigger): Promise<void> {
+    try {
+      const stat = await vscode.workspace.fs.stat(uri);
+      if (stat.type & vscode.FileType.Directory) trigger.trigger();
+    } catch {
+      // 이벤트 처리 전에 경로가 사라진 경우: 삭제 이벤트가 별도로 처리함.
+    }
   }
 
   /**
@@ -303,6 +351,11 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
 
         if (isArtifactBrowserPackArtifactMessage(message)) {
           void this.packArtifact(message.payload, webviewView.webview);
+          return;
+        }
+
+        if (isArtifactBrowserOpenPackedOutputMessage(message)) {
+          void this.openPackedOutput(message.payload.stableId, message.payload.destination);
           return;
         }
 
@@ -568,6 +621,7 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
 
   private async packArtifact(payload: ArtifactBrowserPackArtifactPayload, _webview: vscode.Webview): Promise<void> {
     const stableId = payload.stableId;
+    this.packedOutputUris.delete(stableId);
     const selectedCard = this.currentCards.find((card) => card.stableId === stableId);
     if (!selectedCard) {
       this.postMessage(
@@ -609,8 +663,16 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
       const recoveryArgs = payload.recovery ? ['--risulua-recovery', 'full-source'] : [];
       await runRisuCoreCli(['pack', '--in', rootFsPath, '--out', finalPath, ...formatArgs, ...recoveryArgs], workspaceRoot);
 
-      void vscode.window.showInformationMessage(`Packed → ${finalPath}`);
-      this.postMessage(createArtifactBrowserPackCompletedMessage({ stableId, ok: true, outputPath: finalPath }));
+      this.packedOutputUris.set(stableId, vscode.Uri.file(finalPath));
+      void vscode.window.showInformationMessage(`Packed ${path.basename(finalPath)} to the artifact out folder.`);
+      this.postMessage(
+        createArtifactBrowserPackCompletedMessage({
+          stableId,
+          ok: true,
+          outputPath: finalPath,
+          outputRelativePath: `out/${path.basename(finalPath)}`,
+        }),
+      );
     } catch (error) {
       if (archivedPath && finalPath && !fs.existsSync(finalPath) && fs.existsSync(archivedPath)) {
         try {
@@ -623,6 +685,30 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
       void vscode.window.showErrorMessage(`Pack failed: ${message}`);
       this.postMessage(createArtifactBrowserPackCompletedMessage({ stableId, ok: false, error: message }));
     }
+  }
+
+  private async openPackedOutput(
+    stableId: string,
+    destination: 'os' | 'explorer' | 'clipboard',
+  ): Promise<void> {
+    const outputUri = this.packedOutputUris.get(stableId);
+    if (!outputUri) {
+      void vscode.window.showErrorMessage('Pack the artifact before opening its output.');
+      return;
+    }
+
+    if (destination === 'os') {
+      await vscode.commands.executeCommand('revealFileInOS', outputUri);
+      return;
+    }
+
+    if (destination === 'explorer') {
+      await vscode.commands.executeCommand('revealInExplorer', outputUri);
+      return;
+    }
+
+    await vscode.env.clipboard.writeText(outputUri.fsPath);
+    void vscode.window.showInformationMessage('Packed artifact path copied.');
   }
 
   private async startHmrBroadcast(stableId: string): Promise<void> {
