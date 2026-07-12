@@ -1,0 +1,153 @@
+name: cbs-lsp publish
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel to publish
+        required: true
+        default: stable
+        type: choice
+        options:
+          - stable
+          - next
+          - canary
+
+concurrency:
+  group: cbs-lsp-publish-${{ github.ref }}-${{ github.event.inputs.channel || 'stable' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  stable-release:
+    if: github.event_name == 'push' || github.event.inputs.channel == 'stable'
+    runs-on: ubuntu-latest
+    outputs:
+      cbs_lsp_published: ${{ steps.release_meta.outputs.cbs_lsp_published }}
+      cbs_lsp_version: ${{ steps.release_meta.outputs.cbs_lsp_version }}
+      npm_tag: latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Verify release candidate
+        run: npm run verify:cbs-lsp-release
+
+      - name: Create release PR or publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: npm run release:version
+          publish: npm run release:publish:cbs-lsp
+          title: chore(release): version public packages
+          commit: chore(release): version public packages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+
+      - name: Derive published cbs-lsp version
+        id: release_meta
+        env:
+          PUBLISHED_PACKAGES: ${{ steps.changesets.outputs.publishedPackages }}
+        run: |
+          node <<'EOF' >> "$GITHUB_OUTPUT"
+          const publishedPackages = JSON.parse(process.env.PUBLISHED_PACKAGES || '[]');
+          const cbsLanguageServer = publishedPackages.find((pkg) => pkg.name === 'cbs-language-server');
+          if (!cbsLanguageServer) {
+            console.log('cbs_lsp_published=false');
+            console.log('cbs_lsp_version=');
+            process.exit(0);
+          }
+
+          console.log('cbs_lsp_published=true');
+          console.log(`cbs_lsp_version=${cbsLanguageServer.version}`);
+          EOF
+
+  snapshot-release:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.channel != 'stable'
+    runs-on: ubuntu-latest
+    outputs:
+      cbs_lsp_published: true
+      cbs_lsp_version: ${{ steps.snapshot_meta.outputs.cbs_lsp_version }}
+      npm_tag: ${{ github.event.inputs.channel }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Verify snapshot candidate
+        run: npm run verify:cbs-lsp-release
+
+      - name: Create snapshot versions
+        run: npx changeset version --snapshot ${{ github.event.inputs.channel }}
+
+      - name: Publish snapshot channel
+        run: npx changeset publish --tag ${{ github.event.inputs.channel }}
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+
+      - name: Read snapshot version
+        id: snapshot_meta
+        run: |
+          VERSION=$(node -p "require('./packages/cbs-lsp/package.json').version")
+          echo "cbs_lsp_version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+  smoke-published-package:
+    needs:
+      - stable-release
+      - snapshot-release
+    if: |
+      always() && (
+        (needs.stable-release.result == 'success' && needs.stable-release.outputs.cbs_lsp_published == 'true') ||
+        (needs.snapshot-release.result == 'success' && needs.snapshot-release.outputs.cbs_lsp_published == 'true')
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Smoke test published cbs-language-server
+        env:
+          CBS_LSP_RELEASE_TAG: ${{ needs.snapshot-release.result == 'success' && needs.snapshot-release.outputs.npm_tag || needs.stable-release.outputs.npm_tag }}
+          CBS_LSP_RELEASE_VERSION: ${{ needs.snapshot-release.result == 'success' && needs.snapshot-release.outputs.cbs_lsp_version || needs.stable-release.outputs.cbs_lsp_version }}
+        run: npm run release:smoke:published:cbs-lsp
