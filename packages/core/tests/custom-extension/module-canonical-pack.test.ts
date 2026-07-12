@@ -7,15 +7,24 @@ import {
   runPackWorkflow,
   buildModuleFromCanonicalDirectory,
 } from '../../src/cli/pack/module/workflow';
+import { parseModuleRisumFull } from '../../src/cli/extract/parsers';
 import {
   serializeLorebookContent,
   serializeLorebookOrder,
 } from '../../src/domain/custom-extension/extensions/lorebook';
 import { serializeRegexContent } from '../../src/domain/regex';
 import { serializeVariableContent } from '../../src/domain/custom-extension/extensions/variable';
-import { decodeRisuLuaRecoveryBlock } from '../../src/cli/shared';
+import {
+  decodeRisuLuaRecoveryBlock,
+  decodeRisuLuaRecoveryPayload,
+} from '../../src/cli/shared';
+import {
+  RISULUA_RECOVERY_ASSET_FILENAME,
+  RISULUA_RECOVERY_ASSET_TYPE,
+} from '../../src/cli/shared/lua-bundler/risulua-recovery-asset';
 
 const tempDirs: string[] = [];
+const RISULUA_RECOVERY_ASSET_RISUM_URI = 'embeded://assets/x-risu-recovery/other/risulua-full-source-v1.rpack';
 
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
@@ -36,6 +45,104 @@ function makeRisumodule(partial: Record<string, unknown> = {}): Record<string, u
     sourceFormat: 'json',
     ...partial,
   };
+}
+
+function writeRisumodule(workDir: string, partial: Record<string, unknown> = {}): void {
+  fs.writeFileSync(
+    path.join(workDir, '.risumodule'),
+    `${JSON.stringify(makeRisumodule(partial), null, 2)}\n`,
+    'utf-8',
+  );
+}
+
+function writeModularLuaWorkspace(workDir: string, helperResult: string): void {
+  fs.mkdirSync(path.join(workDir, 'lua', 'common'), { recursive: true });
+  fs.writeFileSync(path.join(workDir, 'lua', 'main.risulua'), [
+    'local helper = require("common.helper")',
+    'function onStart()',
+    '  return helper.ready()',
+    'end',
+  ].join('\n'), 'utf-8');
+  fs.writeFileSync(path.join(workDir, 'lua', 'common', 'helper.risulua'), [
+    'return {',
+    `  ready = function() return "${helperResult}" end`,
+    '}',
+  ].join('\n'), 'utf-8');
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parsePackedRisum(outPath: string): {
+  module: Record<string, unknown>;
+  assetBuffers: Buffer[];
+} {
+  const parsed = parseModuleRisumFull(fs.readFileSync(outPath));
+  if (parsed === null) throw new Error('Expected packed module.risum to parse');
+
+  const moduleValue: unknown = parsed.module;
+  if (!isRecord(moduleValue)) throw new Error('Expected packed module to be an object');
+
+  return { module: moduleValue, assetBuffers: parsed.assetBuffers };
+}
+
+function extractFirstLuaCode(moduleObj: Record<string, unknown>): string {
+  const triggers = moduleObj.trigger;
+  if (!Array.isArray(triggers) || triggers.length === 0) throw new Error('Expected packed module trigger');
+
+  const trigger = triggers[0];
+  if (!isRecord(trigger)) throw new Error('Expected trigger object');
+  const effects = trigger.effect;
+  if (!Array.isArray(effects) || effects.length === 0) throw new Error('Expected trigger effect');
+
+  const effect = effects[0];
+  if (!isRecord(effect)) throw new Error('Expected trigger effect object');
+  const code = effect.code;
+  if (typeof code !== 'string') throw new Error('Expected trigger Lua code');
+  return code;
+}
+
+function writeRisumAssetsFixture(workDir: string): void {
+  const assetDir = path.join(workDir, 'assets');
+  fs.mkdirSync(assetDir, { recursive: true });
+  fs.writeFileSync(path.join(assetDir, 'ordinary-before.bin'), Buffer.from('ordinary-before'));
+  fs.writeFileSync(path.join(assetDir, 'stale-recovery.rpack'), Buffer.from('stale-recovery'));
+  fs.writeFileSync(path.join(assetDir, 'ordinary-after.bin'), Buffer.from('ordinary-after'));
+  fs.writeFileSync(
+    path.join(assetDir, 'manifest.json'),
+    `${JSON.stringify({
+      version: 1,
+      source_format: 'risum',
+      total: 3,
+      extracted: 3,
+      skipped: 0,
+      assets: [
+        {
+          index: 0,
+          name: 'ordinary-before.bin',
+          uri: 'embeded://assets/ordinary-before.bin',
+          type: 'x-risu-asset',
+          extracted_path: 'ordinary-before.bin',
+        },
+        {
+          index: 1,
+          name: RISULUA_RECOVERY_ASSET_FILENAME,
+          uri: 'embeded://assets/stale-recovery.rpack',
+          type: RISULUA_RECOVERY_ASSET_TYPE,
+          extracted_path: 'stale-recovery.rpack',
+        },
+        {
+          index: 2,
+          name: 'ordinary-after.bin',
+          uri: 'embeded://assets/ordinary-after.bin',
+          type: 'icon',
+          extracted_path: 'ordinary-after.bin',
+        },
+      ],
+    }, null, 2)}\n`,
+    'utf-8',
+  );
 }
 
 describe('module canonical pack workflow', () => {
@@ -674,10 +781,82 @@ end
     const decoded = decodeRisuLuaRecoveryBlock(packedLua);
 
     expect(decoded).not.toBeNull();
+    expect(payload.module).not.toHaveProperty('assets');
     expect(decoded!.manifest.files.map((file) => file.path)).toEqual(expect.arrayContaining([
       'lua/main.risulua',
       'lua/common/helper.risulua',
     ]));
+  });
+
+  it('module pack risum full-source emits one final recovery tuple and preserves ordinary asset alignment', () => {
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'module-risulua-risum-recovery-'));
+    tempDirs.push(workDir);
+
+    writeRisumodule(workDir, { name: 'risum-recovery-module', id: 'risum-recovery-id' });
+    writeModularLuaWorkspace(workDir, 'risum-recovery');
+    writeRisumAssetsFixture(workDir);
+
+    const outPath = path.join(workDir, 'packed-module.risum');
+    const exitCode = runPackWorkflow([
+      '--risulua-mode', 'modular',
+      '--risulua-recovery', 'full-source',
+      '--in', workDir,
+      '--out', outPath,
+      '--format', 'risum',
+    ]);
+
+    expect(exitCode).toBe(0);
+    const packed = parsePackedRisum(outPath);
+    const packedLua = extractFirstLuaCode(packed.module);
+    const recoveryBuffer = packed.assetBuffers[2];
+    if (recoveryBuffer === undefined) throw new Error('Expected final recovery buffer');
+    const decodedRecovery = decodeRisuLuaRecoveryPayload(recoveryBuffer);
+
+    expect(decodeRisuLuaRecoveryBlock(packedLua)).toBeNull();
+    expect(packed.module.assets).toEqual([
+      ['ordinary-before.bin', 'embeded://assets/ordinary-before.bin', 'x-risu-asset'],
+      ['ordinary-after.bin', 'embeded://assets/ordinary-after.bin', 'icon'],
+      [RISULUA_RECOVERY_ASSET_FILENAME, RISULUA_RECOVERY_ASSET_RISUM_URI, RISULUA_RECOVERY_ASSET_TYPE],
+    ]);
+    expect(packed.assetBuffers.map((buffer) => buffer.toString('utf-8'))).toEqual([
+      'ordinary-before',
+      'ordinary-after',
+      recoveryBuffer.toString('utf-8'),
+    ]);
+    expect(decodedRecovery.files.map((file) => file.path)).toEqual(expect.arrayContaining([
+      'lua/main.risulua',
+      'lua/common/helper.risulua',
+    ]));
+  });
+
+  it('module pack risum none removes stale recovery pairs without drifting adjacent buffers', () => {
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'module-risulua-risum-none-'));
+    tempDirs.push(workDir);
+
+    writeRisumodule(workDir, { name: 'risum-none-module', id: 'risum-none-id' });
+    writeModularLuaWorkspace(workDir, 'risum-none');
+    writeRisumAssetsFixture(workDir);
+
+    const outPath = path.join(workDir, 'packed-module.risum');
+    const exitCode = runPackWorkflow([
+      '--risulua-mode', 'modular',
+      '--risulua-recovery', 'none',
+      '--in', workDir,
+      '--out', outPath,
+      '--format', 'risum',
+    ]);
+
+    expect(exitCode).toBe(0);
+    const packed = parsePackedRisum(outPath);
+
+    expect(packed.module.assets).toEqual([
+      ['ordinary-before.bin', 'embeded://assets/ordinary-before.bin', 'x-risu-asset'],
+      ['ordinary-after.bin', 'embeded://assets/ordinary-after.bin', 'icon'],
+    ]);
+    expect(packed.assetBuffers.map((buffer) => buffer.toString('utf-8'))).toEqual([
+      'ordinary-before',
+      'ordinary-after',
+    ]);
   });
 
   it('module pack risulua modular rejects invalid source', () => {

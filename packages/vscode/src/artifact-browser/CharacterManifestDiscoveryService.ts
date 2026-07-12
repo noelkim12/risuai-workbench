@@ -7,6 +7,7 @@ import path from 'node:path';
 import * as vscode from 'vscode';
 import { createManifestReadErrorModel, RisucharManifestParser } from './RisucharManifestParser';
 import type {
+  BrowserAnalysisProfile,
   CharacterBrowserCard,
   ManifestParseWarning,
   RisucharManifestNormalized,
@@ -106,6 +107,7 @@ export class CharacterManifestDiscoveryService {
       createdAtLabel: manifest.createdAt ?? undefined,
       modifiedAtLabel: manifest.modifiedAt ?? undefined,
       warnings,
+      analysisProfile: { kind: 'none' } as BrowserAnalysisProfile,
     };
   }
 

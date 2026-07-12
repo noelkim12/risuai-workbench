@@ -32,6 +32,8 @@
   /** catalog에 persist된 생성 규칙. 있으면 이 값으로 seed하고 자동 감지를 건너뛴다. */
   export let bootstrapConfig: AssetCatalogBootstrapConfigMirror | null = null;
   export let previewRows: readonly { readonly path: string; readonly name: string; readonly slots: AssetSlotValues | null }[];
+  /** asset 스냅샷 세대. watcher가 파일 변화를 감지할 때마다 증가 — 모달이 열린 채로도 미리보기를 다시 요청한다. */
+  export let assetRevision = 0;
   export let groups: readonly AssetCatalogBootstrapGroupSummaryMirror[] = [];
   export let onPreview: (source: BootstrapSource, mode: BootstrapMode, split: AssetCatalogBootstrapSplitOptions, schema: AssetCatalogSchemaMirror) => void;
   export let onSelect: (source: BootstrapSource, mode: BootstrapMode, split: AssetCatalogBootstrapSplitOptions, schema: AssetCatalogSchemaMirror) => void;
@@ -58,6 +60,7 @@
   let prunedForGroups: typeof groups | null = null;
   let schemaSeeded = false;
   let autoDetected = false;
+  let seenAssetRevision: number | null = null;
 
   $: slotIds = ALL_SLOT_IDS.slice(0, slotCount);
   $: nonLastSlotIds = slotIds.slice(0, -1);
@@ -88,6 +91,14 @@
   $: if (!autoDetected && previewRows.length > 0) {
     autoDetected = true;
     if (bootstrapConfig === null) runAutoDetect();
+  }
+
+  // 모달이 열린 뒤 watcher가 파일 변화를 보고하면(스냅샷 세대 증가) 미리보기를 다시 요청한다.
+  // 모달이 스냅샷보다 먼저 떠서 빈 채로 남는 레이스 방지. 최초 렌더는 onMount의 refreshPreview가 담당.
+  $: if (assetRevision !== seenAssetRevision) {
+    const isFirst = seenAssetRevision === null;
+    seenAssetRevision = assetRevision;
+    if (!isFirst) refreshPreview();
   }
 
   // groups가 갱신될 때 한 번만 prune — groupCounts를 $: 의존성으로 직접 쓰면 자기참조 재실행이 되므로 guard 패턴 사용

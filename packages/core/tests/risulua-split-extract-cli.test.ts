@@ -2,13 +2,22 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { strToU8, zipSync } from 'fflate';
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 
 import { runExtractWorkflow as runCharacterExtractWorkflow } from '../src/cli/extract/character/workflow';
+import { parseModuleRisumFull } from '../src/cli/extract/parsers';
 import { runExtractWorkflow as runModuleExtractWorkflow } from '../src/cli/extract/module/workflow';
 import { runPackWorkflow as runCharacterPackWorkflow } from '../src/cli/pack/character/workflow';
 import { runPackWorkflow as runModulePackWorkflow } from '../src/cli/pack/module/workflow';
-import { hasExecutableRequireCalls, runRisuLuaSplitExtract } from '../src/cli/shared';
+import {
+  decodeRisuLuaRecoveryBlock,
+  decodeRisuLuaRecoveryPayload,
+  hasExecutableRequireCalls,
+  runRisuLuaSplitExtract,
+} from '../src/cli/shared';
+import {
+  RISULUA_RECOVERY_ASSET_TYPE,
+} from '../src/cli/shared/lua-bundler/risulua-recovery-asset';
 import {
   parseRisuLuaDomainGenerationMode,
   parseRisuLuaSplitMode,
@@ -533,6 +542,8 @@ describe('risulua-split extract CLI integration', () => {
     fs.writeFileSync(input, createCharacterCharx('RoundTripCharacter', sourceLua));
     const firstOut = path.join(workDir, 'first-extract');
     const packedPath = path.join(workDir, 'packed.charx');
+    const repackedFullSourcePath = path.join(workDir, 'repacked-full-source.charx');
+    const repackedNonePath = path.join(workDir, 'repacked-none.charx');
     const secondOut = path.join(workDir, 'second-extract');
 
     const firstExtractCode = await runCharacterExtractWorkflow([
@@ -568,10 +579,48 @@ describe('risulua-split extract CLI integration', () => {
 
     expect(firstExtractCode).toBe(0);
     expect(packCode).toBe(0);
+    expectPackedCharxRecoveryAssetCount(packedPath, 1);
     expect(secondExtractCode).toBe(0);
-    expectSameFileBytes(firstOut, secondOut, 'lua/main.risulua');
-    expectSameFileBytes(firstOut, secondOut, 'docs/refactor-map.json');
-    expectSameFileBytes(firstOut, secondOut, 'lua/button_actions/actions.risulua');
+    expectSameFileBytesForPaths(firstOut, secondOut, [
+      'lua/main.risulua',
+      'lua/button_actions/actions.risulua',
+      'docs/refactor-map.json',
+      'docs/domain-candidates.json',
+      'docs/risulua-button-action-index.json',
+      'docs/risulua-export-manifest.json',
+      'docs/risulua-split-plan.json',
+      'docs/risulua-split-report.md',
+    ]);
+
+    const repackFullSourceCode = runCharacterPackWorkflow([
+      '--in',
+      secondOut,
+      '--format',
+      'charx',
+      '--out',
+      repackedFullSourcePath,
+      '--risulua-mode',
+      'modular',
+      '--risulua-recovery',
+      'full-source',
+    ]);
+    const repackNoneCode = runCharacterPackWorkflow([
+      '--in',
+      secondOut,
+      '--format',
+      'charx',
+      '--out',
+      repackedNonePath,
+      '--risulua-mode',
+      'modular',
+      '--risulua-recovery',
+      'none',
+    ]);
+
+    expect(repackFullSourceCode).toBe(0);
+    expectPackedCharxRecoveryAssetCount(repackedFullSourcePath, 1);
+    expect(repackNoneCode).toBe(0);
+    expectPackedCharxRecoveryAssetCount(repackedNonePath, 0);
   });
 
   it('restores module-table module files after extract pack extract with full-source recovery', async () => {
@@ -587,7 +636,9 @@ describe('risulua-split extract CLI integration', () => {
     ]);
     const input = writeModuleJson(workDir, 'round-trip-module.json', 'round-trip-module', sourceLua);
     const firstOut = path.join(workDir, 'first-extract');
-    const packedPath = path.join(workDir, 'packed-module.json');
+    const packedPath = path.join(workDir, 'packed-module.risum');
+    const repackedFullSourcePath = path.join(workDir, 'repacked-full-source.risum');
+    const repackedNonePath = path.join(workDir, 'repacked-none.risum');
     const secondOut = path.join(workDir, 'second-extract');
 
     const firstExtractCode = await runModuleExtractWorkflow([
@@ -605,7 +656,7 @@ describe('risulua-split extract CLI integration', () => {
       '--out',
       packedPath,
       '--format',
-      'json',
+      'risum',
       '--risulua-mode',
       'modular',
       '--risulua-recovery',
@@ -624,10 +675,48 @@ describe('risulua-split extract CLI integration', () => {
 
     expect(firstExtractCode).toBe(0);
     expect(packCode).toBe(0);
+    expectPackedRisumRecoveryAssetCount(packedPath, 1);
     expect(secondExtractCode).toBe(0);
-    expectSameFileBytes(firstOut, secondOut, 'lua/main.risulua');
-    expectSameFileBytes(firstOut, secondOut, 'docs/refactor-map.json');
-    expectSameFileBytes(firstOut, secondOut, generatedModulePath);
+    expectSameFileBytesForPaths(firstOut, secondOut, [
+      'lua/main.risulua',
+      generatedModulePath,
+      'docs/refactor-map.json',
+      'docs/domain-candidates.json',
+      'docs/risulua-button-action-index.json',
+      'docs/risulua-export-manifest.json',
+      'docs/risulua-split-plan.json',
+      'docs/risulua-split-report.md',
+    ]);
+
+    const repackFullSourceCode = runModulePackWorkflow([
+      '--in',
+      secondOut,
+      '--out',
+      repackedFullSourcePath,
+      '--format',
+      'risum',
+      '--risulua-mode',
+      'modular',
+      '--risulua-recovery',
+      'full-source',
+    ]);
+    const repackNoneCode = runModulePackWorkflow([
+      '--in',
+      secondOut,
+      '--out',
+      repackedNonePath,
+      '--format',
+      'risum',
+      '--risulua-mode',
+      'modular',
+      '--risulua-recovery',
+      'none',
+    ]);
+
+    expect(repackFullSourceCode).toBe(0);
+    expectPackedRisumRecoveryAssetCount(repackedFullSourcePath, 1);
+    expect(repackNoneCode).toBe(0);
+    expectPackedRisumRecoveryAssetCount(repackedNonePath, 0);
   });
 });
 
@@ -804,6 +893,114 @@ function readBytes(root: string, relativePath: string): Buffer {
 
 function expectSameFileBytes(firstRoot: string, secondRoot: string, relativePath: string): void {
   expect(readBytes(secondRoot, relativePath)).toEqual(readBytes(firstRoot, relativePath));
+}
+
+function expectSameFileBytesForPaths(
+  firstRoot: string,
+  secondRoot: string,
+  relativePaths: readonly string[],
+): void {
+  for (const relativePath of relativePaths) {
+    expectSameFileBytes(firstRoot, secondRoot, relativePath);
+  }
+}
+
+function expectPackedCharxRecoveryAssetCount(packedPath: string, expectedCount: number): void {
+  const archive = unzipSync(fs.readFileSync(packedPath));
+  const charxEntry = archive['charx.json'];
+  if (!charxEntry) throw new Error('Expected packed charx.json');
+
+  const packedCharx: unknown = JSON.parse(strFromU8(charxEntry));
+  const packedLua = readPackedCharxLua(packedCharx);
+  const recoveryAssets = readPackedCharxAssetRecords(packedCharx).filter(
+    (asset) => asset['type'] === RISULUA_RECOVERY_ASSET_TYPE,
+  );
+
+  expect(decodeRisuLuaRecoveryBlock(packedLua)).toBeNull();
+  expect(recoveryAssets).toHaveLength(expectedCount);
+  for (const asset of recoveryAssets) {
+    decodeRisuLuaRecoveryPayload(readEmbededCharxAssetPayload(archive, asset));
+  }
+}
+
+function expectPackedRisumRecoveryAssetCount(packedPath: string, expectedCount: number): void {
+  const parsed = parseModuleRisumFull(fs.readFileSync(packedPath));
+  if (parsed === null) throw new Error('Expected packed RISUM to parse');
+  const moduleValue: unknown = parsed.module;
+  if (!isRecord(moduleValue)) throw new Error('Expected packed RISUM module object');
+
+  const packedLua = readPackedModuleLua(moduleValue);
+  const assets = Array.isArray(moduleValue['assets']) ? moduleValue['assets'] : [];
+  const recoveryAssetBuffers = assets.flatMap((asset, index) => {
+    if (!isRecoveryRisumAssetTuple(asset)) return [];
+    const buffer = parsed.assetBuffers[index];
+    if (!buffer) throw new Error('Expected recovery RISUM asset buffer');
+    return [buffer];
+  });
+
+  expect(decodeRisuLuaRecoveryBlock(packedLua)).toBeNull();
+  expect(recoveryAssetBuffers).toHaveLength(expectedCount);
+  for (const buffer of recoveryAssetBuffers) {
+    decodeRisuLuaRecoveryPayload(buffer);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readPackedCharxAssetRecords(packedCharx: unknown): Array<Record<string, unknown>> {
+  if (!isRecord(packedCharx)) throw new Error('Expected packed CharX object');
+  const data = packedCharx['data'];
+  if (!isRecord(data)) throw new Error('Expected packed CharX data object');
+  const assets = data['assets'];
+  if (!Array.isArray(assets)) return [];
+  return assets.filter(isRecord);
+}
+
+function readPackedCharxLua(packedCharx: unknown): string {
+  if (!isRecord(packedCharx)) throw new Error('Expected packed CharX object');
+  const data = packedCharx['data'];
+  if (!isRecord(data)) throw new Error('Expected packed CharX data object');
+  return readPackedModuleLua(data);
+}
+
+function readPackedModuleLua(moduleValue: Record<string, unknown>): string {
+  const triggers = moduleValue['trigger'] ?? readNestedRisuaiValue(moduleValue, 'triggerscript');
+  if (!Array.isArray(triggers)) throw new Error('Expected packed Lua triggers');
+  const trigger = triggers[0];
+  if (!isRecord(trigger)) throw new Error('Expected packed Lua trigger object');
+  const effects = trigger['effect'];
+  if (!Array.isArray(effects)) throw new Error('Expected packed Lua effect list');
+  const effect = effects[0];
+  if (!isRecord(effect)) throw new Error('Expected packed Lua effect object');
+  const code = effect['code'];
+  if (typeof code !== 'string') throw new Error('Expected packed Lua code string');
+  return code;
+}
+
+function readNestedRisuaiValue(moduleValue: Record<string, unknown>, key: string): unknown {
+  const extensions = moduleValue['extensions'];
+  if (!isRecord(extensions)) return undefined;
+  const risuai = extensions['risuai'];
+  if (!isRecord(risuai)) return undefined;
+  return risuai[key];
+}
+
+function readEmbededCharxAssetPayload(
+  archive: Record<string, Uint8Array>,
+  asset: Record<string, unknown>,
+): Buffer {
+  const uri = asset['uri'];
+  if (typeof uri !== 'string') throw new Error('Expected embedded asset uri');
+  const entryName = uri.replace(/^embeded:\/\//, '');
+  const entry = archive[entryName];
+  if (!entry) throw new Error(`Expected embedded asset payload for ${entryName}`);
+  return Buffer.from(entry);
+}
+
+function isRecoveryRisumAssetTuple(value: unknown): boolean {
+  return Array.isArray(value) && value.length === 3 && value[2] === RISULUA_RECOVERY_ASSET_TYPE;
 }
 
 function chooseGeneratedLuaModulePath(root: string): string {

@@ -6,7 +6,11 @@ import path from 'node:path';
 import { unzipSync, strFromU8, zipSync, strToU8 } from 'fflate';
 import { parseModuleRisum } from '../../src/cli/extract/parsers';
 import { runPackWorkflow as runCharxPackWorkflow } from '../../src/cli/pack/character/workflow';
-import { decodeRisuLuaRecoveryBlock } from '../../src/cli/shared';
+import { decodeRisuLuaRecoveryBlock, decodeRisuLuaRecoveryPayload } from '../../src/cli/shared';
+import {
+  RISULUA_RECOVERY_ASSET_CHARX_METADATA,
+  RISULUA_RECOVERY_ASSET_TYPE,
+} from '../../src/cli/shared/lua-bundler/risulua-recovery-asset';
 
 const tempDirs: string[] = [];
 
@@ -37,6 +41,96 @@ function readPackedModule(outPath: string): any {
   const module = parseModuleRisum(Buffer.from(archive['module.risum']));
   expect(module).not.toBeNull();
   return module;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readPackedAssets(outPath: string): { archive: Record<string, Uint8Array>; packedCharx: unknown } {
+  const archive = unzipSync(readFileSync(outPath));
+  const packedCharx = JSON.parse(strFromU8(archive['charx.json']));
+  expect(isRecord(packedCharx)).toBe(true);
+  expect(isRecord(isRecord(packedCharx) ? packedCharx.data : null)).toBe(true);
+  const data = isRecord(packedCharx) && isRecord(packedCharx.data) ? packedCharx.data : null;
+  expect(Array.isArray(data?.assets)).toBe(true);
+  return { archive, packedCharx };
+}
+
+function getPackedAssetRecords(packedCharx: unknown): Array<Record<string, unknown>> {
+  if (!isRecord(packedCharx) || !isRecord(packedCharx.data) || !Array.isArray(packedCharx.data.assets)) {
+    return [];
+  }
+  return packedCharx.data.assets.filter((asset: unknown): asset is Record<string, unknown> => isRecord(asset));
+}
+
+function getRecoveryAssetRecords(packedCharx: unknown): Array<Record<string, unknown>> {
+  return getPackedAssetRecords(packedCharx).filter((asset) => asset.type === RISULUA_RECOVERY_ASSET_TYPE);
+}
+
+function getPackedLua(packedCharx: unknown): string {
+  if (!isRecord(packedCharx) || !isRecord(packedCharx.data)) return '';
+  const extensions = packedCharx.data.extensions;
+  if (!isRecord(extensions) || !isRecord(extensions.risuai)) return '';
+  const triggerscript = extensions.risuai.triggerscript;
+  if (!Array.isArray(triggerscript)) return '';
+  const trigger = triggerscript[0];
+  if (!isRecord(trigger) || !Array.isArray(trigger.effect)) return '';
+  const effect = trigger.effect[0];
+  if (!isRecord(effect) || typeof effect.code !== 'string') return '';
+  return effect.code;
+}
+
+function readEmbededAssetPayload(archive: Record<string, Uint8Array>, asset: Record<string, unknown>): Buffer {
+  const uri = asset.uri;
+  expect(typeof uri).toBe('string');
+  if (typeof uri !== 'string') return Buffer.alloc(0);
+  expect(uri.startsWith('embeded://')).toBe(true);
+  const entryName = uri.replace(/^embeded:\/\//, '');
+  const entry = archive[entryName];
+  expect(entry).toBeDefined();
+  return Buffer.from(entry ?? []);
+}
+
+function writeAssetFixture(
+  workDir: string,
+  assets: ReadonlyArray<{
+    readonly index: number;
+    readonly extractedPath: string;
+    readonly type: string;
+    readonly name: string;
+    readonly ext: string;
+    readonly content: Buffer;
+  }>,
+): void {
+  const assetDir = path.join(workDir, 'assets');
+  for (const asset of assets) {
+    const absolutePath = path.join(assetDir, asset.extractedPath);
+    mkdirSync(path.dirname(absolutePath), { recursive: true });
+    writeFileSync(absolutePath, asset.content);
+  }
+
+  writeFileSync(
+    path.join(assetDir, 'manifest.json'),
+    `${JSON.stringify({
+      version: 1,
+      source_format: 'charx',
+      total: assets.length,
+      extracted: assets.length,
+      skipped: 0,
+      assets: assets.map((asset) => ({
+        index: asset.index,
+        original_uri: `embeded://${asset.extractedPath}`,
+        extracted_path: asset.extractedPath,
+        status: 'extracted',
+        type: asset.type,
+        name: asset.name,
+        ext: asset.ext,
+        size_bytes: asset.content.length,
+      })),
+    })}\n`,
+    'utf-8',
+  );
 }
 
 function writeCanonicalManifest(workDir: string, overrides: Record<string, unknown> = {}): void {
@@ -1030,7 +1124,7 @@ end
     const distContent = readFileSync(path.join(workDir, 'dist', 'Modular_Lua_Character.risulua'), 'utf-8');
     const archive = unzipSync(readFileSync(outPath));
     const packedCharx = JSON.parse(strFromU8(archive['charx.json']));
-    const packedLua = packedCharx.data.extensions.risuai.triggerscript[0].effect[0].code;
+    const packedLua = getPackedLua(packedCharx);
     const module = parseModuleRisum(Buffer.from(archive['module.risum']));
 
     expect(packedLua).toBe(distContent);
@@ -1041,7 +1135,7 @@ end
     expect(module.trigger[0].effect[0].code).toBe(distContent);
   });
 
-  it('character pack risulua modular embeds full-source recovery manifest when requested', () => {
+  it('character pack risulua modular emits one full-source recovery asset when requested', () => {
     const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-risulua-modular-recovery-'));
     tempDirs.push(workDir);
 
@@ -1076,13 +1170,163 @@ end
     expect(exitCode).toBe(0);
     const archive = unzipSync(readFileSync(outPath));
     const packedCharx = JSON.parse(strFromU8(archive['charx.json']));
-    const packedLua = packedCharx.data.extensions.risuai.triggerscript[0].effect[0].code;
-    const decoded = decodeRisuLuaRecoveryBlock(packedLua);
+    const packedLua = getPackedLua(packedCharx);
+    const recoveryAssets = getRecoveryAssetRecords(packedCharx);
 
-    expect(decoded).not.toBeNull();
-    expect(decoded!.manifest.files.map((file) => file.path)).toEqual(expect.arrayContaining([
+    expect(decodeRisuLuaRecoveryBlock(packedLua)).toBeNull();
+    expect(recoveryAssets).toHaveLength(1);
+    expect(recoveryAssets[0]).toMatchObject(RISULUA_RECOVERY_ASSET_CHARX_METADATA);
+
+    const recoveryAsset = recoveryAssets[0];
+    expect(recoveryAsset).toBeDefined();
+    if (!recoveryAsset) return;
+
+    const decoded = decodeRisuLuaRecoveryPayload(readEmbededAssetPayload(archive, recoveryAsset));
+    const moduleBytes = Buffer.from(archive['module.risum'] ?? []);
+
+    expect(moduleBytes.includes(readEmbededAssetPayload(archive, recoveryAsset))).toBe(false);
+    expect(decoded.files.map((file) => file.path)).toEqual(expect.arrayContaining([
       'lua/main.risulua',
       'lua/common/helper.risulua',
     ]));
+  });
+
+  it('character pack risulua modular replaces stale recovery assets pair-safely and preserves ordinary asset order', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-risulua-recovery-stale-many-'));
+    tempDirs.push(workDir);
+
+    const characterDir = path.join(workDir, 'character');
+    const luaDir = path.join(workDir, 'lua');
+    mkdirSync(characterDir, { recursive: true });
+    mkdirSync(path.join(luaDir, 'common'), { recursive: true });
+
+    writeCanonicalManifest(workDir, { name: 'Recovery Asset Ordering' });
+    writeFileSync(path.join(characterDir, 'description.risutext'), 'ordered assets', 'utf-8');
+    writeFileSync(path.join(luaDir, 'main.risulua'), 'return require("common.helper")\n', 'utf-8');
+    writeFileSync(path.join(luaDir, 'common', 'helper.risulua'), 'return { value = "fresh" }\n', 'utf-8');
+
+    const beforeBytes = Buffer.from('ordinary-before');
+    const middleBytes = Buffer.from('ordinary-middle');
+    const afterBytes = Buffer.from('ordinary-after');
+    const staleOneBytes = Buffer.from('stale-recovery-one');
+    const staleTwoBytes = Buffer.from('stale-recovery-two');
+    writeAssetFixture(workDir, [
+      { index: 0, extractedPath: 'audio/before.bin', type: 'audio', name: 'before', ext: 'bin', content: beforeBytes },
+      {
+        index: 1,
+        extractedPath: 'recovery/old-one.rpack',
+        type: RISULUA_RECOVERY_ASSET_TYPE,
+        name: RISULUA_RECOVERY_ASSET_CHARX_METADATA.name,
+        ext: RISULUA_RECOVERY_ASSET_CHARX_METADATA.ext,
+        content: staleOneBytes,
+      },
+      { index: 2, extractedPath: 'icons/middle.png', type: 'icon', name: 'middle', ext: 'png', content: middleBytes },
+      {
+        index: 3,
+        extractedPath: 'recovery/old-two.rpack',
+        type: RISULUA_RECOVERY_ASSET_TYPE,
+        name: RISULUA_RECOVERY_ASSET_CHARX_METADATA.name,
+        ext: RISULUA_RECOVERY_ASSET_CHARX_METADATA.ext,
+        content: staleTwoBytes,
+      },
+      { index: 4, extractedPath: 'docs/after.txt', type: 'text', name: 'after', ext: 'txt', content: afterBytes },
+    ]);
+
+    const outPath = path.join(workDir, 'packed.charx');
+    const exitCode = runCharxPackWorkflow([
+      '--risulua-mode', 'modular',
+      '--risulua-recovery', 'full-source',
+      '--in', workDir,
+      '--format', 'charx',
+      '--out', outPath,
+    ]);
+
+    expect(exitCode).toBe(0);
+    const { archive, packedCharx } = readPackedAssets(outPath);
+    const packedAssets = getPackedAssetRecords(packedCharx);
+    const packedLua = getPackedLua(packedCharx);
+    const recoveryAssets = getRecoveryAssetRecords(packedCharx);
+
+    expect(decodeRisuLuaRecoveryBlock(packedLua)).toBeNull();
+    expect(packedAssets.map((asset) => asset.name)).toEqual([
+      'before',
+      'middle',
+      'after',
+      RISULUA_RECOVERY_ASSET_CHARX_METADATA.name,
+    ]);
+    expect(recoveryAssets).toHaveLength(1);
+
+    const beforeAsset = packedAssets.find((asset) => asset.name === 'before');
+    const middleAsset = packedAssets.find((asset) => asset.name === 'middle');
+    const afterAsset = packedAssets.find((asset) => asset.name === 'after');
+    const recoveryAsset = recoveryAssets[0];
+    expect(beforeAsset).toBeDefined();
+    expect(middleAsset).toBeDefined();
+    expect(afterAsset).toBeDefined();
+    expect(recoveryAsset).toBeDefined();
+    if (!beforeAsset || !middleAsset || !afterAsset || !recoveryAsset) return;
+
+    expect(readEmbededAssetPayload(archive, beforeAsset)).toEqual(beforeBytes);
+    expect(readEmbededAssetPayload(archive, middleAsset)).toEqual(middleBytes);
+    expect(readEmbededAssetPayload(archive, afterAsset)).toEqual(afterBytes);
+
+    const recoveryPayload = readEmbededAssetPayload(archive, recoveryAsset);
+    const decoded = decodeRisuLuaRecoveryPayload(recoveryPayload);
+    const moduleBytes = Buffer.from(archive['module.risum'] ?? []);
+
+    expect(decoded.files.map((file) => file.path)).toEqual(['lua/common/helper.risulua', 'lua/main.risulua']);
+    expect(moduleBytes.includes(recoveryPayload)).toBe(false);
+    expect(Object.values(archive).some((entry) => Buffer.from(entry).equals(staleOneBytes))).toBe(false);
+    expect(Object.values(archive).some((entry) => Buffer.from(entry).equals(staleTwoBytes))).toBe(false);
+  });
+
+  it('character pack risulua modular none removes stale recovery pairs without metadata, bytes, or inline carrier', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-risulua-recovery-none-'));
+    tempDirs.push(workDir);
+
+    const characterDir = path.join(workDir, 'character');
+    const luaDir = path.join(workDir, 'lua');
+    mkdirSync(characterDir, { recursive: true });
+    mkdirSync(luaDir, { recursive: true });
+
+    writeCanonicalManifest(workDir, { name: 'No Recovery Asset' });
+    writeFileSync(path.join(characterDir, 'description.risutext'), 'no recovery assets', 'utf-8');
+    writeFileSync(path.join(luaDir, 'main.risulua'), 'return "no recovery"\n', 'utf-8');
+
+    const ordinaryBytes = Buffer.from('ordinary-still-present');
+    const staleBytes = Buffer.from('stale-recovery-single');
+    writeAssetFixture(workDir, [
+      { index: 0, extractedPath: 'data/ordinary.bin', type: 'data', name: 'ordinary', ext: 'bin', content: ordinaryBytes },
+      {
+        index: 1,
+        extractedPath: 'recovery/old.rpack',
+        type: RISULUA_RECOVERY_ASSET_TYPE,
+        name: RISULUA_RECOVERY_ASSET_CHARX_METADATA.name,
+        ext: 'rpack',
+        content: staleBytes,
+      },
+    ]);
+
+    const outPath = path.join(workDir, 'packed.charx');
+    const exitCode = runCharxPackWorkflow([
+      '--risulua-mode', 'modular',
+      '--risulua-recovery', 'none',
+      '--in', workDir,
+      '--format', 'charx',
+      '--out', outPath,
+    ]);
+
+    expect(exitCode).toBe(0);
+    const { archive, packedCharx } = readPackedAssets(outPath);
+    const packedAssets = getPackedAssetRecords(packedCharx);
+    const packedLua = packedCharx.data.extensions.risuai.triggerscript[0].effect[0].code;
+    const ordinaryAsset = packedAssets.find((asset) => asset.name === 'ordinary');
+
+    expect(getRecoveryAssetRecords(packedCharx)).toHaveLength(0);
+    expect(decodeRisuLuaRecoveryBlock(packedLua)).toBeNull();
+    expect(Object.values(archive).some((entry) => Buffer.from(entry).equals(staleBytes))).toBe(false);
+    expect(ordinaryAsset).toBeDefined();
+    if (!ordinaryAsset) return;
+    expect(readEmbededAssetPayload(archive, ordinaryAsset)).toEqual(ordinaryBytes);
   });
 });

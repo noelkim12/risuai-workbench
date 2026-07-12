@@ -35,6 +35,7 @@ import {
   type MarkerEditorSavedMessage,
   type MarkerEditorSelectImageMessage,
   type ModuleEditFields,
+  type PluginEditFields,
 } from '../artifact-browser/artifactBrowserTypes';
 import { ArtifactBrowserViewProvider } from './ArtifactBrowserViewProvider';
 import {
@@ -46,6 +47,7 @@ import {
 const PANEL_VIEW_TYPE = 'risuaiWorkbench.markerEditor';
 const CHARACTER_MARKER_FILENAME = '.risuchar';
 const MODULE_MARKER_FILENAME = '.risumodule';
+const PLUGIN_MARKER_FILENAME = '.risuplugin';
 const ASSETS_DIRECTORY = 'assets';
 const SUPPORTED_IMAGE_EXTENSIONS = new Set([
   '.png',
@@ -81,7 +83,7 @@ export class MarkerEditorViewProvider {
     const mode = detectMarkerMode(markerUri);
     if (!mode) {
       void vscode.window.showErrorMessage(
-        'Marker editor only supports .risuchar and .risumodule files.',
+        'Marker editor only supports .risuchar, .risumodule, and .risuplugin files.',
       );
       return;
     }
@@ -232,6 +234,8 @@ export class MarkerEditorViewProvider {
         applyCharacterEditFields(manifest, fields);
       } else if (this.mode === 'module' && isModuleEditFields(fields)) {
         applyModuleEditFields(manifest, fields);
+      } else if (this.mode === 'plugin' && isPluginEditFields(fields)) {
+        applyPluginEditFields(manifest, fields);
       } else {
         this.postMessage(
           createErrorMessage(
@@ -240,6 +244,10 @@ export class MarkerEditorViewProvider {
           ),
         );
         return;
+      }
+
+      if (this.mode === 'plugin') {
+        manifest.modifiedAt = new Date().toISOString();
       }
 
       await vscode.workspace.fs.writeFile(
@@ -347,29 +355,24 @@ export class MarkerEditorViewProvider {
 
   private async createInitPayload(): Promise<MarkerEditorInitPayload> {
     const manifest = await this.readManifestJson();
+    const imagePath = this.mode === 'plugin' ? manifest.icon : manifest.image;
     const base = {
       markerUri: this.markerUri.toString(),
       rootUri: this.rootUri.toString(),
       rootPathLabel: getWorkspaceRelativePath(this.rootUri),
       markerPathLabel: getWorkspaceRelativePath(this.markerUri),
-      imageUri: await this.resolveImageUri(readMarkerEditorImagePath(manifest.image)),
+      imageUri: await this.resolveImageUri(readMarkerEditorImagePath(imagePath)),
       createdAt: readTimestamp(manifest.createdAt),
       modifiedAt: readTimestamp(manifest.modifiedAt),
     };
 
     if (this.mode === 'character') {
-      return {
-        mode: 'character',
-        ...base,
-        fields: toCharacterEditFields(manifest),
-      };
+      return { mode: 'character', ...base, fields: toCharacterEditFields(manifest) };
     }
-
-    return {
-      mode: 'module',
-      ...base,
-      fields: toModuleEditFields(manifest),
-    };
+    if (this.mode === 'module') {
+      return { mode: 'module', ...base, fields: toModuleEditFields(manifest) };
+    }
+    return { mode: 'plugin', ...base, fields: toPluginEditFields(manifest) };
   }
 
   private async readManifestJson(): Promise<JsonObject> {
@@ -480,13 +483,15 @@ function detectMarkerMode(markerUri: vscode.Uri): MarkerEditorMode | null {
   const basename = path.basename(markerUri.fsPath);
   if (basename === CHARACTER_MARKER_FILENAME) return 'character';
   if (basename === MODULE_MARKER_FILENAME) return 'module';
+  if (basename === PLUGIN_MARKER_FILENAME) return 'plugin';
   return null;
 }
 
 function createPanelTitle(mode: MarkerEditorMode, markerUri: vscode.Uri): string {
-  return mode === 'character'
-    ? `Edit Character Marker: ${path.dirname(markerUri.fsPath).split(path.sep).pop() ?? CHARACTER_MARKER_FILENAME}`
-    : `Edit Module Marker: ${path.dirname(markerUri.fsPath).split(path.sep).pop() ?? MODULE_MARKER_FILENAME}`;
+  const folderName = path.dirname(markerUri.fsPath).split(path.sep).pop();
+  if (mode === 'character') return `Edit Character Marker: ${folderName ?? CHARACTER_MARKER_FILENAME}`;
+  if (mode === 'module') return `Edit Module Marker: ${folderName ?? MODULE_MARKER_FILENAME}`;
+  return `Edit Plugin Marker: ${folderName ?? PLUGIN_MARKER_FILENAME}`;
 }
 
 function toCharacterEditFields(manifest: JsonObject): CharacterEditFields {
@@ -515,6 +520,14 @@ function toModuleEditFields(manifest: JsonObject): ModuleEditFields {
   };
 }
 
+function toPluginEditFields(manifest: JsonObject): PluginEditFields {
+  return {
+    name: readString(manifest.name),
+    description: readString(manifest.description),
+    image: readMarkerEditorImagePath(manifest.icon),
+  };
+}
+
 function applyCharacterEditFields(manifest: JsonObject, fields: CharacterEditFields): void {
   manifest.name = fields.name;
   manifest.creator = fields.creator;
@@ -534,6 +547,16 @@ function applyModuleEditFields(manifest: JsonObject, fields: ModuleEditFields): 
   manifest.image = fields.image;
   manifest.lowLevelAccess = fields.lowLevelAccess;
   manifest.hideIcon = fields.hideIcon;
+}
+
+function isPluginEditFields(fields: JsonObject): fields is PluginEditFields & JsonObject {
+  return typeof fields.name === 'string' && typeof fields.description === 'string';
+}
+
+function applyPluginEditFields(manifest: JsonObject, fields: PluginEditFields): void {
+  manifest.name = fields.name;
+  manifest.description = fields.description;
+  manifest.icon = fields.image ?? '';
 }
 
 function isMarkerEditorSaveMessage(message: unknown): message is MarkerEditorSaveMessage {
@@ -585,7 +608,7 @@ function isMarkerEditorMessage(
     message.version === MARKER_EDITOR_PROTOCOL_VERSION &&
     message.type === type &&
     typeof payload.markerUri === 'string' &&
-    (payload.mode === 'character' || payload.mode === 'module')
+    (payload.mode === 'character' || payload.mode === 'module' || payload.mode === 'plugin')
   );
 }
 

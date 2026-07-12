@@ -45,10 +45,18 @@ import {
   getErrorMessage,
   parseRisuLuaMode,
   parseRisuLuaRecoveryMode,
+  createRisuLuaRecoveryManifest,
+  encodeRisuLuaRecoveryPayload,
   RISULUA_RECOVERY_HELP_LINE,
   type RisuLuaMode,
   type RisuLuaRecoveryMode,
 } from '@/cli/shared';
+import {
+  filterRisuLuaRecoveryAssetPairs,
+  isRisuLuaRecoveryRisumAssetTuple,
+  RISULUA_RECOVERY_ASSET_FILENAME,
+  RISULUA_RECOVERY_ASSET_TYPE,
+} from '@/cli/shared/lua-bundler/risulua-recovery-asset';
 
 const HELP_TEXT = `
   📦 RisuAI Module Packer
@@ -66,6 +74,14 @@ ${RISULUA_RECOVERY_HELP_LINE}
 `;
 
 type PackFormat = 'json' | 'risum';
+type ModuleAssetTuple = [string | null, string | null, string | null];
+
+interface BuildModuleOptions {
+  risuluaMode?: RisuLuaMode | null;
+  risuluaRecovery?: RisuLuaRecoveryMode;
+  writeRisuLuaDist?: boolean;
+  risumRecoveryCarrier?: RisuLuaRecoveryMode;
+}
 
 interface PackOptions {
   inDir: string;
@@ -77,9 +93,12 @@ interface PackOptions {
 }
 
 interface ModuleAssetsResult {
-  tuples: Array<[string | null, string | null, string | null]>;
+  tuples: ModuleAssetTuple[];
   buffers: Array<Buffer | null>;
 }
+
+const RISULUA_RECOVERY_ASSET_RISUM_URI =
+  'embeded://assets/x-risu-recovery/other/risulua-full-source-v1.rpack';
 
 export function runPackWorkflow(argv: readonly string[]): number {
   const helpMode = argv.includes('-h') || argv.includes('--help') || argv.length === 0;
@@ -124,14 +143,14 @@ export function buildModuleFromCanonicalDirectory(inRoot: string): {
 };
 export function buildModuleFromCanonicalDirectory(
   inRoot: string,
-  options: { risuluaMode?: RisuLuaMode | null; risuluaRecovery?: RisuLuaRecoveryMode },
+  options: BuildModuleOptions,
 ): {
   module: Record<string, unknown>;
   assetBuffers: Array<Buffer | null>;
 };
 export function buildModuleFromCanonicalDirectory(
   inRoot: string,
-  options: { risuluaMode?: RisuLuaMode | null; risuluaRecovery?: RisuLuaRecoveryMode } = {},
+  options: BuildModuleOptions = {},
 ): {
   module: Record<string, unknown>;
   assetBuffers: Array<Buffer | null>;
@@ -142,12 +161,24 @@ export function buildModuleFromCanonicalDirectory(
   applyRisumoduleToModule(moduleObj, manifest);
   mergeLorebooks(moduleObj, inRoot);
   mergeRegex(moduleObj, inRoot);
-  mergeLua(moduleObj, inRoot, options.risuluaMode ?? null, options.risuluaRecovery ?? 'none');
+  mergeLua(
+    moduleObj,
+    inRoot,
+    options.risuluaMode ?? null,
+    options.risuluaRecovery ?? 'none',
+    options,
+  );
   mergeVariables(moduleObj, inRoot);
   mergeBackgroundHtml(moduleObj, inRoot);
   mergeToggle(moduleObj, inRoot);
 
-  const assets = mergeAssets(moduleObj, inRoot);
+  let assets = mergeAssets(inRoot);
+  if (options.risumRecoveryCarrier !== undefined) {
+    assets = applyRisumRecoveryAssetCarrier(assets, inRoot, options.risumRecoveryCarrier);
+  }
+  if (assets.tuples.length > 0) {
+    moduleObj.assets = assets.tuples;
+  }
   return { module: moduleObj, assetBuffers: assets.buffers };
 }
 
@@ -160,7 +191,8 @@ function runMain(options: PackOptions): void {
   const format = resolveTargetFormat(options.formatArg);
   const packed = buildModuleFromCanonicalDirectory(resolvedIn, {
     risuluaMode: options.risuluaMode,
-    risuluaRecovery: options.risuluaRecovery,
+    risuluaRecovery: format === 'risum' ? 'none' : options.risuluaRecovery,
+    risumRecoveryCarrier: format === 'risum' ? options.risuluaRecovery : undefined,
   });
   const { outPath, baseName } = resolveOutputPath({
     inRoot: resolvedIn,
@@ -279,10 +311,15 @@ function mergeLua(
   inRoot: string,
   risuluaMode: RisuLuaMode | null,
   risuluaRecovery: RisuLuaRecoveryMode,
+  options: { writeRisuLuaDist?: boolean },
 ): void {
   const target = discoverRisuLuaBundleTarget({ rootDir: inRoot, mode: risuluaMode });
   if (target.mode === 'modular') {
-    const result = buildRisuLuaModularDist({ rootDir: inRoot, recovery: risuluaRecovery });
+    const result = buildRisuLuaModularDist({
+      rootDir: inRoot,
+      recovery: risuluaRecovery,
+      writeDist: options.writeRisuLuaDist,
+    });
     injectLuaIntoModule(moduleObj, result.validation.code, 'module');
     return;
   }
@@ -371,7 +408,7 @@ function mergeToggle(
   injectToggleIntoModule(moduleObj, resolved.content, 'module');
 }
 
-function mergeAssets(moduleObj: Record<string, unknown>, inRoot: string): ModuleAssetsResult {
+function mergeAssets(inRoot: string): ModuleAssetsResult {
   const assetDir = path.join(inRoot, 'assets');
   const manifestPath = path.join(assetDir, 'manifest.json');
   if (!fs.existsSync(manifestPath)) {
@@ -387,7 +424,7 @@ function mergeAssets(moduleObj: Record<string, unknown>, inRoot: string): Module
     .filter(isPlainObject)
     .filter((entry) => Number.isFinite(entry.index))
     .sort((left, right) => Number(left.index) - Number(right.index));
-  const tuples: Array<[string | null, string | null, string | null]> = [];
+  const tuples: ModuleAssetTuple[] = [];
   const buffers: Array<Buffer | null> = [];
 
   for (const entry of entries) {
@@ -405,8 +442,29 @@ function mergeAssets(moduleObj: Record<string, unknown>, inRoot: string): Module
     }
   }
 
-  if (tuples.length > 0) {
-    moduleObj.assets = tuples;
+  return { tuples, buffers };
+}
+
+function applyRisumRecoveryAssetCarrier(
+  assets: ModuleAssetsResult,
+  inRoot: string,
+  recovery: RisuLuaRecoveryMode,
+): ModuleAssetsResult {
+  const filtered = filterRisuLuaRecoveryAssetPairs(
+    assets.tuples,
+    assets.buffers,
+    isRisuLuaRecoveryRisumAssetTuple,
+  );
+  const tuples: ModuleAssetTuple[] = [...filtered.metadata];
+  const buffers: Array<Buffer | null> = filtered.buffers.map((buffer) => buffer ?? null);
+
+  if (recovery === 'full-source') {
+    tuples.push([
+      RISULUA_RECOVERY_ASSET_FILENAME,
+      RISULUA_RECOVERY_ASSET_RISUM_URI,
+      RISULUA_RECOVERY_ASSET_TYPE,
+    ]);
+    buffers.push(encodeRisuLuaRecoveryPayload(createRisuLuaRecoveryManifest({ rootDir: inRoot })));
   }
 
   return { tuples, buffers };
@@ -447,7 +505,12 @@ function resolveDeclaredOrder(rootDir: string, files: string[]): string[] {
     fileMap.delete(normalized);
   }
 
-  return [...ordered, ...[...fileMap.entries()].sort((left, right) => left[0].localeCompare(right[0])).map(([, absolutePath]) => absolutePath)];
+  return [
+    ...ordered,
+    ...[...fileMap.entries()]
+      .sort((left, right) => left[0].localeCompare(right[0]))
+      .map(([, absolutePath]) => absolutePath),
+  ];
 }
 
 function listFilesRecursiveBySuffix(rootDir: string, suffix: string): string[] {

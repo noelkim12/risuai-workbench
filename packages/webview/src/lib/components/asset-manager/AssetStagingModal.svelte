@@ -2,6 +2,7 @@
   import {
     assetExtension,
     classifyDroppedFile,
+    classifyReplacementDrop,
     mimeForAssetExtension,
     parseNameWithRules,
     stripAssetExtension,
@@ -32,6 +33,8 @@
   interface StagedRow {
     readonly item: StagedItem;
     readonly cls: StagedClassification;
+    /** 교체 대상 고정 row — 파일명 파싱/이름 규칙이 적용되지 않는다. */
+    readonly pinned: boolean;
     readonly slots: AssetSlotValues | null;
     readonly previewUrl: string;
     readonly isImage: boolean;
@@ -45,14 +48,26 @@
     'reserved-basename': '예약 파일명',
   };
 
+  // replaceTargetPath 핀이 있으면(상세 모달 위 drop) 그 asset 기준으로, 없으면 파일명 stem 기준으로 분류.
+  function classifyItem(item: StagedItem): StagedClassification {
+    if (item.replaceTargetPath !== undefined) {
+      const target = entries.find((candidate) => candidate.path === item.replaceTargetPath);
+      if (target !== undefined) return classifyReplacementDrop(target, item.editedName);
+    }
+    return classifyDroppedFile(item.editedName, entries);
+  }
+
   // 이름 편집 시 분류/파싱/검증을 실시간 재계산한다 (Q8).
   $: rows = items.map((item): StagedRow => {
     const ext = assetExtension(item.editedName);
     const mime = mimeForAssetExtension(ext);
+    const pinned = item.replaceTargetPath !== undefined;
     return {
       item,
-      cls: classifyDroppedFile(item.editedName, entries),
-      slots: bootstrapConfig === null ? null : parseNameWithRules(stripAssetExtension(item.editedName), bootstrapConfig, slotIds),
+      cls: classifyItem(item),
+      pinned,
+      // 핀 row는 기존 asset의 이름/할당을 그대로 유지하므로 드롭 파일명 파싱은 의미가 없다.
+      slots: pinned || bootstrapConfig === null ? null : parseNameWithRules(stripAssetExtension(item.editedName), bootstrapConfig, slotIds),
       previewUrl: `data:${mime};base64,${item.bytesBase64}`,
       isImage: mime.startsWith('image/'),
       validation: validateEditedAssetFilename(item.editedName),
@@ -95,7 +110,7 @@
   <li
     class="stg-row"
     class:is-invalid={!row.validation.valid}
-    class:is-unparsed={row.validation.valid && row.slots === null}
+    class:is-unparsed={row.validation.valid && !row.pinned && row.slots === null}
   >
     <span class="stg-thumbs">
       {#if row.cls.replaces}
@@ -115,7 +130,8 @@
         value={row.item.editedName}
         onchange={(event) => renameItem(row.item.id, event.currentTarget.value)}
         aria-label="파일명 편집"
-        disabled={applying}
+        title={row.item.replaceTargetPath !== undefined ? '교체 대상이 고정되어 파일명은 사용되지 않습니다' : undefined}
+        disabled={applying || row.item.replaceTargetPath !== undefined}
       />
       {#if row.validation.valid}
         <span class="stg-meta">
@@ -123,7 +139,11 @@
           {#if row.cls.extChange}<span class="stg-tag stg-tag--ext">{row.cls.extChange.from} → {row.cls.extChange.to}</span>{/if}
           · {(row.item.sizeBytes / 1024).toFixed(1)} KB
         </span>
-        <span class="stg-slots">{slotsLabel(row.slots)}</span>
+        {#if row.pinned}
+          <span class="stg-slots">기존 이름·슬롯 할당 유지 (내용만 교체)</span>
+        {:else}
+          <span class="stg-slots">{slotsLabel(row.slots)}</span>
+        {/if}
       {:else}
         <span class="stg-error">{VALIDATION_LABEL[row.validation.reason]}</span>
       {/if}
@@ -173,7 +193,8 @@
   .modal-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 20;
+    /* asset detail modal(z-index 20) 위에서도 staging 확인이 보이도록 한 단계 높인다. */
+    z-index: 25;
     display: grid;
     place-items: center;
     background: rgb(0 0 0 / 45%);

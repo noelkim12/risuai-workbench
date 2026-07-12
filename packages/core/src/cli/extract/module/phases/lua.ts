@@ -11,9 +11,15 @@ import { getErrorMessage } from '../../../shared';
 import type { RisuLuaMode, RisuLuaRecoveryMode } from '../../../shared/lua-bundler/risulua-mode';
 import {
   decodeRisuLuaRecoveryBlock,
+  decodeRisuLuaRecoveryPayload,
   removeRisuLuaRecoveryBlock,
+  RisuLuaRecoveryError,
   restoreRisuLuaRecoveryFiles,
 } from '../../../shared/lua-bundler/risulua-recovery';
+import {
+  filterRisuLuaRecoveryAssetPairs,
+  isRisuLuaRecoveryRisumAssetTuple,
+} from '../../../shared/lua-bundler/risulua-recovery-asset';
 import {
   cleanupRisuLuaSplitTemps,
   runRisuLuaSplitExtract,
@@ -34,6 +40,11 @@ const RISULUA_SPLIT_FALLBACK_PATHS = [
   'legacy',
 ] as const;
 
+export type ModuleRisuLuaRecoveryAssets = {
+  readonly moduleAssets: readonly unknown[];
+  readonly assetBuffers: readonly (Buffer | null | undefined)[];
+};
+
 export async function phase4_extractLua(
   module: any,
   outputDir: string,
@@ -41,6 +52,7 @@ export async function phase4_extractLua(
   risuluaRecovery: RisuLuaRecoveryMode = 'none',
   risuluaSplitMode: RisuLuaSplitCliMode = 'none',
   domainGeneration: RisuLuaDomainGenerationCliMode = 'validated',
+  recoveryAssets?: ModuleRisuLuaRecoveryAssets,
 ): Promise<number> {
   console.log('\n  🌙 Phase 4: Lua triggerscript 추출');
 
@@ -58,11 +70,24 @@ export async function phase4_extractLua(
     outputDir,
     risuluaMode === 'modular' ? 'lua/main.risulua' : buildLuaPath('module', targetName),
   );
+  if (risuluaMode === 'modular' && risuluaRecovery !== 'none') {
+    const recoveredFromAsset = restoreRisuLuaRecoveryAsset({ outputDir, recoveryAssets });
+    if (recoveredFromAsset) {
+      cleanupRisuLuaSplitTemps(outputDir);
+      console.log(
+        `     ✅ asset recovery manifest -> ${path.relative('.', path.join(outputDir, 'lua'))}/`,
+      );
+      return 1;
+    }
+  }
+
   const recoveryBlock = risuluaMode === 'modular' ? decodeRisuLuaRecoveryBlock(lua) : null;
   if (recoveryBlock && risuluaRecovery !== 'none') {
     restoreRisuLuaRecoveryFiles({ outputRoot: outputDir, files: recoveryBlock.manifest.files });
     cleanupRisuLuaSplitTemps(outputDir);
-    console.log(`     ✅ embedded recovery manifest -> ${path.relative('.', path.join(outputDir, 'lua'))}/`);
+    console.log(
+      `     ✅ embedded recovery manifest -> ${path.relative('.', path.join(outputDir, 'lua'))}/`,
+    );
     return 1;
   }
 
@@ -103,12 +128,48 @@ function cleanupRisuLuaSplitFallbackArtifacts(outputDir: string): void {
 
 export const phase4_extractTriggerLua = phase4_extractLua;
 
-function collectRegexButtonActionSources(outputDir: string): Array<{ sourceFile: string; source: string }> {
+function restoreRisuLuaRecoveryAsset(options: {
+  readonly outputDir: string;
+  readonly recoveryAssets: ModuleRisuLuaRecoveryAssets | undefined;
+}): boolean {
+  const recoveryAssets = options.recoveryAssets;
+  if (recoveryAssets === undefined) return false;
+
+  const result = filterRisuLuaRecoveryAssetPairs(
+    recoveryAssets.moduleAssets,
+    recoveryAssets.assetBuffers,
+    isRisuLuaRecoveryRisumAssetTuple,
+  );
+  if (result.status === 'no-match') return false;
+
+  const firstPair = result.removedPairs[0];
+  if (firstPair === undefined) {
+    throw new RisuLuaRecoveryError('Matched RISUM recovery asset tuple was not available');
+  }
+
+  const buffer = firstPair.buffer;
+  if (buffer === null || buffer === undefined) {
+    throw new RisuLuaRecoveryError(
+      `Missing RISUM recovery asset buffer at module.assets[${firstPair.index}]`,
+    );
+  }
+
+  const manifest = decodeRisuLuaRecoveryPayload(buffer);
+  restoreRisuLuaRecoveryFiles({ outputRoot: options.outputDir, files: manifest.files });
+  return true;
+}
+
+function collectRegexButtonActionSources(
+  outputDir: string,
+): Array<{ sourceFile: string; source: string }> {
   const regexDir = path.join(outputDir, 'regex');
   if (!fs.existsSync(regexDir)) return [];
   const sources: Array<{ sourceFile: string; source: string }> = [];
   for (const filePath of listRisuRegexFiles(regexDir)) {
-    sources.push({ sourceFile: path.relative(outputDir, filePath), source: fs.readFileSync(filePath, 'utf8') });
+    sources.push({
+      sourceFile: path.relative(outputDir, filePath),
+      source: fs.readFileSync(filePath, 'utf8'),
+    });
   }
   return sources;
 }

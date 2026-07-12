@@ -57,6 +57,7 @@ export interface CharxReportData {
   variableFlow: VarFlowResult;
   deadCode: DeadCodeResult;
   textMentions: TextMentionEdge[];
+  assetFiles: number;
   collected: CollectResult;
   luaArtifacts: LuaAnalysisArtifact[];
 }

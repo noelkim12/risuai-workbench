@@ -51,11 +51,18 @@ import {
   parseRisuLuaMode,
   parseRisuLuaRecoveryMode,
   discoverRisuLuaBundleTarget,
+  createRisuLuaRecoveryManifest,
+  encodeRisuLuaRecoveryPayload,
   getErrorMessage,
   RISULUA_RECOVERY_HELP_LINE,
   type RisuLuaMode,
   type RisuLuaRecoveryMode,
 } from '@/cli/shared';
+import {
+  RISULUA_RECOVERY_ASSET_CHARX_METADATA,
+  filterRisuLuaRecoveryAssetPairs,
+  isRisuLuaRecoveryCharxAssetMetadata,
+} from '@/cli/shared/lua-bundler/risulua-recovery-asset';
 
 const HELP_TEXT = `
   🐿️ RisuAI Character Card Packer (canonical mode)
@@ -87,6 +94,20 @@ ${RISULUA_RECOVERY_HELP_LINE}
 `;
 
 type PackFormat = 'png' | 'charx' | 'charx-jpg';
+
+type CharxAssetPair = {
+  readonly metadata: unknown;
+  readonly buffer: Buffer | null | undefined;
+};
+
+type CharxAssetPairsResult = {
+  readonly metadata: readonly unknown[] | null;
+  readonly pairs: readonly CharxAssetPair[];
+};
+
+type MutableCharxEnvelope = {
+  data?: Record<string, unknown>;
+};
 
 interface PackOptions {
   inDir: string;
@@ -142,10 +163,12 @@ function runMain(options: PackOptions): void {
   console.log('\n  🐿️ RisuAI Character Card Packer (canonical mode)\n');
   console.log(`  입력: ${path.relative('.', resolvedIn)}`);
 
-  // Build charx from createBlankChar() + canonical overlays
-  const charx = buildCharxFromCanonical(resolvedIn, options.risuluaMode, options.risuluaRecovery);
-
   const targetFormat = resolveTargetFormat(resolvedIn, options.formatArg);
+  const buildRecovery = targetFormat === 'png' ? options.risuluaRecovery : 'none';
+
+  // Build charx from createBlankChar() + canonical overlays
+  const charx = buildCharxFromCanonical(resolvedIn, options.risuluaMode, buildRecovery);
+
   const { outPath, baseName } = resolveOutputPath({
     inRoot: resolvedIn,
     outArg: options.outArg,
@@ -159,10 +182,10 @@ function runMain(options: PackOptions): void {
     const pngBuf = buildPngCharxBuffer(charx, resolvedIn, options.coverArg);
     fs.writeFileSync(outPath, pngBuf);
   } else if (targetFormat === 'charx') {
-    const charxBuf = buildCharxBuffer(charx, resolvedIn);
+    const charxBuf = buildCharxBuffer(charx, resolvedIn, options.risuluaRecovery);
     fs.writeFileSync(outPath, charxBuf);
   } else if (targetFormat === 'charx-jpg') {
-    const charxBuf = buildCharxBuffer(charx, resolvedIn);
+    const charxBuf = buildCharxBuffer(charx, resolvedIn, options.risuluaRecovery);
     const jpegCover = resolveCoverBytes(resolvedIn, options.coverArg, ['.jpg', '.jpeg'], JPEG_1X1);
     fs.writeFileSync(outPath, Buffer.concat([jpegCover, charxBuf]));
   } else {
@@ -177,10 +200,11 @@ function runMain(options: PackOptions): void {
  * Build charx from createBlankChar() + canonical artifact overlays.
  * This is the canonical pack mode — no charx.json required.
  */
-function buildCharxFromCanonical(
+export function buildCharxFromCanonical(
   inRoot: string,
   risuluaMode: RisuLuaMode | null,
   risuluaRecovery: RisuLuaRecoveryMode,
+  options: { writeRisuLuaDist?: boolean } = {},
 ): any {
   // Start with blank charx V3 envelope
   const charx = createBlankCharxV3();
@@ -197,7 +221,7 @@ function buildCharxFromCanonical(
   mergeCharacterCanonical(charx, inRoot);
   mergeLorebooksCanonical(charx, inRoot);
   mergeRegexCanonical(charx, inRoot);
-  mergeLuaCanonical(charx, inRoot, risuluaMode, risuluaRecovery);
+  mergeLuaCanonical(charx, inRoot, risuluaMode, risuluaRecovery, options);
   mergeHtmlCanonical(charx, inRoot);
   mergeVariablesCanonical(charx, inRoot);
   mergeToggleCanonical(charx, inRoot);
@@ -279,7 +303,11 @@ function mergeAssetsCanonical(charx: any, inRoot: string): void {
  * @param inRoot - canonical workspace root
  * @param imagePath - `.risuchar.image`에서 읽은 상대 경로
  */
-function applyManifestImageSelection(charx: any, inRoot: string, imagePath: string | null): void {
+export function applyManifestImageSelection(
+  charx: any,
+  inRoot: string,
+  imagePath: string | null,
+): void {
   if (!imagePath) return;
   const normalizedImagePath = normalizeWorkspaceRelativePath(imagePath);
   if (!normalizedImagePath || !isSupportedImagePath(normalizedImagePath)) {
@@ -454,11 +482,16 @@ function mergeLuaCanonical(
   inRoot: string,
   risuluaMode: RisuLuaMode | null,
   risuluaRecovery: RisuLuaRecoveryMode,
+  options: { writeRisuLuaDist?: boolean },
 ): void {
   const target = discoverRisuLuaBundleTarget({ rootDir: inRoot, mode: risuluaMode });
 
   if (target.mode === 'modular') {
-    const result = buildRisuLuaModularDist({ rootDir: inRoot, recovery: risuluaRecovery });
+    const result = buildRisuLuaModularDist({
+      rootDir: inRoot,
+      recovery: risuluaRecovery,
+      writeDist: options.writeRisuLuaDist,
+    });
     applyLuaTriggerToCharx(charx, result.validation.code);
     return;
   }
@@ -980,29 +1013,40 @@ function buildPngCharxBuffer(charx: any, inRoot: string, coverArgPath: string | 
   return writePngTextChunks(cover, chunks);
 }
 
-function buildCharxBuffer(charx: any, inRoot: string): Buffer {
+function buildCharxBuffer(charx: any, inRoot: string, recovery: RisuLuaRecoveryMode): Buffer {
   const work = structuredClone(charx);
-  const assetBlobs = collectAssetBuffers(work, inRoot);
+  const assetResult = buildCharxAssetPairs(work, inRoot, recovery);
+  const assetPairs = assetResult.pairs;
+  if (assetResult.metadata !== null) {
+    work.data = { ...(work.data ?? {}), assets: assetResult.metadata };
+  }
   const zipEntries: Record<string, Uint8Array | Buffer> = {};
   const usedPaths = new Set<string>();
 
-  const assets = Array.isArray(work.data.assets) ? work.data.assets : [];
-  for (let i = 0; i < assets.length; i += 1) {
-    const asset = assets[i];
-    if (!asset || typeof asset !== 'object') continue;
+  for (let i = 0; i < assetPairs.length; i += 1) {
+    const pair = assetPairs[i];
+    if (!pair || !isPlainRecord(pair.metadata)) continue;
 
+    const asset = pair.metadata;
     const idx = i + 1;
-    const blob = assetBlobs.get(idx);
+    const blob = pair.buffer;
     if (!blob) continue;
 
     const uri = typeof asset.uri === 'string' ? asset.uri : '';
     if (uri.startsWith('http://') || uri.startsWith('https://') || uri.startsWith('data:'))
       continue;
 
-    const assetType = sanitizeFilename(asset.type || 'asset', 'asset').toLowerCase();
-    const extClass = classifyAssetExt(asset.ext || 'bin');
-    const ext = normalizeExt(asset.ext || 'bin');
-    const stem = sanitizeFilename(asset.name || `asset_${idx}`, `asset_${idx}`);
+    const assetType = sanitizeFilename(
+      typeof asset.type === 'string' ? asset.type : 'asset',
+      'asset',
+    ).toLowerCase();
+    const extValue = typeof asset.ext === 'string' ? asset.ext : 'bin';
+    const extClass = classifyAssetExt(extValue);
+    const ext = normalizeExt(extValue);
+    const stem = sanitizeFilename(
+      typeof asset.name === 'string' ? asset.name : `asset_${idx}`,
+      `asset_${idx}`,
+    );
 
     let rel = `assets/${assetType}/${extClass}/${stem}.${ext}`;
     let serial = 1;
@@ -1026,6 +1070,36 @@ function buildCharxBuffer(charx: any, inRoot: string): Buffer {
   zipEntries['module.risum'] = encodeModuleRisum(moduleObj);
 
   return Buffer.from(zipSync(zipEntries, { level: 0 }));
+}
+
+function buildCharxAssetPairs(
+  charx: MutableCharxEnvelope,
+  inRoot: string,
+  recovery: RisuLuaRecoveryMode,
+): CharxAssetPairsResult {
+  const assetBlobs = collectAssetBuffers(charx, inRoot);
+  const assets = charx.data?.assets;
+  const hadAssetArray = Array.isArray(assets);
+  const metadata = hadAssetArray ? Array.from(assets) : [];
+  const buffers = metadata.map((_, index) => assetBlobs.get(index + 1));
+  const filtered = filterRisuLuaRecoveryAssetPairs(
+    metadata,
+    buffers,
+    isRisuLuaRecoveryCharxAssetMetadata,
+  );
+  const finalMetadata = [...filtered.metadata];
+  const finalBuffers: Array<Buffer | null | undefined> = [...filtered.buffers];
+
+  if (recovery === 'full-source') {
+    finalMetadata.push({ ...RISULUA_RECOVERY_ASSET_CHARX_METADATA });
+    finalBuffers.push(
+      encodeRisuLuaRecoveryPayload(createRisuLuaRecoveryManifest({ rootDir: inRoot })),
+    );
+  }
+
+  const outputMetadata = hadAssetArray || finalMetadata.length > 0 ? finalMetadata : null;
+  const pairs = finalMetadata.map((metadata, index) => ({ metadata, buffer: finalBuffers[index] }));
+  return { metadata: outputMetadata, pairs };
 }
 
 /**
@@ -1055,7 +1129,10 @@ function buildModuleFromCharx(charx: any): Record<string, unknown> {
   return moduleObj;
 }
 
-function collectAssetBuffers(charx: any, inRoot: string): Map<number, Buffer> {
+function collectAssetBuffers(
+  charx: { data?: Record<string, unknown> },
+  inRoot: string,
+): Map<number, Buffer> {
   const out = new Map<number, Buffer>();
   const assetDir = path.join(inRoot, 'assets');
   const manifestPath = path.join(assetDir, 'manifest.json');
@@ -1075,11 +1152,12 @@ function collectAssetBuffers(charx: any, inRoot: string): Map<number, Buffer> {
     }
   }
 
-  for (let i = 0; i < (charx.data.assets || []).length; i += 1) {
+  const assets = Array.isArray(charx.data?.assets) ? charx.data.assets : [];
+  for (let i = 0; i < assets.length; i += 1) {
     const idx = i + 1;
     if (out.has(idx)) continue;
-    const asset = charx.data.assets[i];
-    if (!asset || typeof asset.uri !== 'string') continue;
+    const asset = assets[i];
+    if (!isPlainRecord(asset) || typeof asset.uri !== 'string') continue;
 
     if (asset.uri.startsWith('embeded://') || asset.uri.startsWith('embedded://')) {
       const rel = asset.uri.replace(/^embeded:\/\//, '').replace(/^embedded:\/\//, '');

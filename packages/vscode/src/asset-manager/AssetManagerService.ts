@@ -310,7 +310,9 @@ export class AssetManagerService {
     }
 
     const next = bootstrapAssetCatalogFromEntries(catalog, entries, { mode: 'missing', split: rules });
-    return { snapshot: this.saveAndScan(next), assignedPaths, anomalyPaths, addedVocab: diffVocab(catalog.vocab, next.vocab) };
+    const snapshot = this.saveAndScan(next);
+    this.buildManifest();
+    return { snapshot, assignedPaths, anomalyPaths, addedVocab: diffVocab(catalog.vocab, next.vocab) };
   }
 
   undoAutoAssign(payload: {

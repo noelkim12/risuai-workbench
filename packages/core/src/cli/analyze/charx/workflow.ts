@@ -55,6 +55,7 @@ import {
   type VariablesResult,
 } from './types';
 import { runCharxWiki } from './wiki/workflow';
+import { buildAnalysisShowcase, countAssetFiles, writeAnalysisShowcase } from '../shared/showcase';
 
 const HELP_TEXT = `
   🐿️ RisuAI Character Card Analyzer
@@ -349,9 +350,11 @@ function runMain(
     variableFlow,
     deadCode,
     textMentions,
+    assetFiles: countAssetFiles(resolvedOutDir),
     collected,
     luaArtifacts: collected.luaArtifacts,
   };
+  let requestedOutputsSucceeded = true;
 
   if (!options.noMarkdown && !options.wikiOnly) {
     try {
@@ -360,6 +363,7 @@ function runMain(
         `     ✅ charx-analysis.md → ${path.relative('.', path.join(analysisDir, 'charx-analysis.md'))}`,
       );
     } catch (error) {
+      requestedOutputsSucceeded = false;
       const message = getErrorMessage(error);
       console.warn(`  ⚠️ Markdown 리포트 생성 실패: ${message}`);
     }
@@ -372,6 +376,7 @@ function runMain(
         `     ✅ charx-analysis.html → ${path.relative('.', path.join(analysisDir, 'charx-analysis.html'))}`,
       );
     } catch (error) {
+      requestedOutputsSucceeded = false;
       const message = getErrorMessage(error);
       console.warn(`  ⚠️ HTML 리포트 생성 실패: ${message}`);
     }
@@ -387,9 +392,22 @@ function runMain(
         `     ✅ wiki → ${path.relative('.', path.join(path.dirname(resolvedOutDir), 'wiki'))}/`,
       );
     } catch (error) {
+      requestedOutputsSucceeded = false;
       const message = getErrorMessage(error);
       console.warn(`  ⚠️ wiki 생성 실패: ${message}`);
     }
+  }
+
+  if (!options.wikiOnly && requestedOutputsSucceeded) {
+    const showcase = buildAnalysisShowcase({
+      kind: 'character',
+      stableId: `character:${path.basename(resolvedOutDir)}`,
+      data: reportData,
+      locale,
+      generatedAt: new Date().toISOString(),
+      reportHtml: 'charx-analysis.html',
+    });
+    writeAnalysisShowcase(analysisDir, showcase);
   }
 
   console.log('\n  ────────────────────────────────────────');

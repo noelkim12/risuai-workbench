@@ -9,8 +9,16 @@ import {
   ARTIFACT_BROWSER_VIEW_ID,
   type ArtifactBrowserAnalyzeArtifactMessage,
   type ArtifactBrowserAnalyzeArtifactPayload,
+  type ArtifactBrowserOpenAnalysisReportMessage,
+  type ArtifactBrowserOpenAnalysisReportPayload,
+  type ArtifactBrowserOpenAnalysisShowcaseMessage,
+  type ArtifactBrowserOpenAnalysisShowcasePayload,
   type ArtifactBrowserOpenAssetManagerMessage,
   type ArtifactBrowserOpenAssetManagerPayload,
+  type ArtifactBrowserOpenCreateWizardMessage,
+  type ArtifactBrowserOpenCreateWizardPayload,
+  type ArtifactBrowserCloseCreateWizardMessage,
+  type ArtifactBrowserCloseCreateWizardPayload,
   type ArtifactBrowserCreateArtifactMessage,
   type ArtifactBrowserCreateArtifactPayload,
   type ArtifactBrowserCreateSectionEntryMessage,
@@ -24,6 +32,10 @@ import {
   type ArtifactBrowserMoveRegexItemMessage,
   type ArtifactBrowserMoveRegexItemPayload,
   type ArtifactBrowserOpenItemPayload,
+  type ArtifactBrowserOpenMarkerEditorMessage,
+  type ArtifactBrowserOpenMarkerEditorPayload,
+  type ArtifactBrowserOpenPluginViewerMessage,
+  type ArtifactBrowserOpenPluginViewerPayload,
   type BrowserArtifactCard,
   type BrowserSection,
   type ArtifactBrowserCardsMessage,
@@ -33,12 +45,22 @@ import {
   type ArtifactBrowserReadyPayload,
   type ArtifactBrowserRefreshPayload,
   type ArtifactBrowserRefreshMessage,
+  type ArtifactBrowserShareAnalysisShowcaseMessage,
+  type ArtifactBrowserShareAnalysisShowcasePayload,
   type ArtifactBrowserImportArtifactMessage,
   type ArtifactBrowserImportArtifactChunkMessage,
   type ArtifactBrowserImportArtifactChunkPayload,
   type ArtifactBrowserImportArtifactPayload,
+  type ArtifactBrowserHmrStartBroadcastMessage,
+  type ArtifactBrowserHmrStartBroadcastPayload,
+  type ArtifactBrowserHmrStatusMessage,
+  type ArtifactBrowserHmrStatusPayload,
+  type ArtifactBrowserHmrStopBroadcastMessage,
+  type ArtifactBrowserHmrStopBroadcastPayload,
   type ArtifactBrowserPackArtifactMessage,
   type ArtifactBrowserPackArtifactPayload,
+  type ArtifactBrowserOpenPackedOutputMessage,
+  type ArtifactBrowserOpenPackedOutputPayload,
   type ArtifactBrowserPackCompletedMessage,
   type ArtifactBrowserPackCompletedPayload,
   type ArtifactBrowserSelectPayload,
@@ -63,21 +85,42 @@ type ArtifactBrowserInboundMessage =
   | ArtifactBrowserImportArtifactMessage
   | ArtifactBrowserImportArtifactChunkMessage
   | ArtifactBrowserPackArtifactMessage
+  | ArtifactBrowserOpenPackedOutputMessage
+  | ArtifactBrowserHmrStartBroadcastMessage
+  | ArtifactBrowserHmrStopBroadcastMessage
   | ArtifactBrowserAnalyzeArtifactMessage
   | ArtifactBrowserOpenAssetManagerMessage
+  | ArtifactBrowserOpenCreateWizardMessage
+  | ArtifactBrowserCloseCreateWizardMessage
   | ArtifactBrowserSelectMessage
   | ArtifactBrowserOpenItemMessage
   | ArtifactBrowserMoveLorebookItemMessage
   | ArtifactBrowserMoveLorebookFolderMessage
   | ArtifactBrowserMoveRegexItemMessage
   | ArtifactBrowserMoveGreetingItemMessage
-  | ArtifactBrowserCreateSectionEntryMessage;
+  | ArtifactBrowserCreateSectionEntryMessage
+  | ArtifactBrowserOpenMarkerEditorMessage
+  | ArtifactBrowserOpenPluginViewerMessage
+  | ArtifactBrowserOpenAnalysisShowcaseMessage
+  | ArtifactBrowserShareAnalysisShowcaseMessage
+  | ArtifactBrowserOpenAnalysisReportMessage;
 
 function createArtifactBrowserMessageGuard<TMessage extends ArtifactBrowserInboundMessage>(
   type: TMessage['type'],
   payloadGuard: ArtifactBrowserPayloadGuard<TMessage['payload']>,
 ): (message: unknown) => message is TMessage {
   return (message: unknown): message is TMessage =>
+    isProtocolEnvelope(message, ARTIFACT_BROWSER_PROTOCOL, ARTIFACT_BROWSER_PROTOCOL_VERSION, type) &&
+    payloadGuard(message.payload);
+ }
+
+function createExactArtifactBrowserMessageGuard<TMessage extends ArtifactBrowserInboundMessage>(
+  type: TMessage['type'],
+  payloadGuard: ArtifactBrowserPayloadGuard<TMessage['payload']>,
+): (message: unknown) => message is TMessage {
+  return (message: unknown): message is TMessage =>
+    isPlainRecord(message) &&
+    hasOnlyKeys(message, ['protocol', 'version', 'type', 'payload']) &&
     isProtocolEnvelope(message, ARTIFACT_BROWSER_PROTOCOL, ARTIFACT_BROWSER_PROTOCOL_VERSION, type) &&
     payloadGuard(message.payload);
 }
@@ -165,13 +208,19 @@ const isArtifactBrowserCreateSectionEntryPayload: ArtifactBrowserPayloadGuard<
   isCreateSectionEntryCompatible(payload.sectionKind, payload.entryKind) &&
   (payload.targetFolderPath === undefined || isSafeTargetFolderPath(payload.targetFolderPath));
 
+const PLUGIN_NAME_PATTERN = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
+
 const isArtifactBrowserCreateArtifactPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserCreateArtifactPayload> = (
   payload,
 ): payload is ArtifactBrowserCreateArtifactPayload =>
   isPlainRecord(payload) &&
-  (payload.kind === 'charx' || payload.kind === 'module') &&
+  (payload.kind === 'charx' || payload.kind === 'module' || payload.kind === 'plugin') &&
   typeof payload.name === 'string' &&
   payload.name.trim().length > 0 &&
+  (payload.kind !== 'plugin' ||
+    (PLUGIN_NAME_PATTERN.test(payload.name.trim()) &&
+      (payload.framework === 'vanilla' || payload.framework === 'svelte'))) &&
+  (payload.framework === undefined || payload.framework === 'vanilla' || payload.framework === 'svelte') &&
   (payload.creator === undefined || typeof payload.creator === 'string') &&
   (payload.description === undefined || typeof payload.description === 'string') &&
   (payload.tags === undefined || (Array.isArray(payload.tags) && payload.tags.every((tag) => typeof tag === 'string'))) &&
@@ -215,6 +264,23 @@ const isArtifactBrowserPackArtifactPayload: ArtifactBrowserPayloadGuard<Artifact
   payload.stableId.length > 0 &&
   typeof payload.recovery === 'boolean';
 
+const isArtifactBrowserOpenPackedOutputPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserOpenPackedOutputPayload> = (
+  payload,
+): payload is ArtifactBrowserOpenPackedOutputPayload =>
+  isPlainRecord(payload) &&
+  typeof payload.stableId === 'string' &&
+  payload.stableId.length > 0 &&
+  (payload.destination === 'os' || payload.destination === 'explorer' || payload.destination === 'clipboard');
+
+const isArtifactBrowserHmrStartBroadcastPayload: ArtifactBrowserPayloadGuard<
+  ArtifactBrowserHmrStartBroadcastPayload
+> = (payload): payload is ArtifactBrowserHmrStartBroadcastPayload =>
+  isPlainRecord(payload) && typeof payload.stableId === 'string' && payload.stableId.length > 0;
+
+const isArtifactBrowserHmrStopBroadcastPayload: ArtifactBrowserPayloadGuard<
+  ArtifactBrowserHmrStopBroadcastPayload
+> = (payload): payload is ArtifactBrowserHmrStopBroadcastPayload => isPlainRecord(payload);
+
 const isArtifactBrowserAnalyzeArtifactPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserAnalyzeArtifactPayload> = (
   payload,
 ): payload is ArtifactBrowserAnalyzeArtifactPayload =>
@@ -225,6 +291,34 @@ const isArtifactBrowserOpenAssetManagerPayload: ArtifactBrowserPayloadGuard<Arti
 ): payload is ArtifactBrowserOpenAssetManagerPayload =>
   isPlainRecord(payload) && typeof payload.stableId === 'string' && payload.stableId.length > 0;
 
+const isArtifactBrowserOpenMarkerEditorPayload: ArtifactBrowserPayloadGuard<
+  ArtifactBrowserOpenMarkerEditorPayload
+> = (payload): payload is ArtifactBrowserOpenMarkerEditorPayload =>
+  isPlainRecord(payload) && typeof payload.stableId === 'string' && payload.stableId.length > 0;
+
+const isArtifactBrowserOpenPluginViewerPayload: ArtifactBrowserPayloadGuard<
+  ArtifactBrowserOpenPluginViewerPayload
+> = (payload): payload is ArtifactBrowserOpenPluginViewerPayload =>
+  isPlainRecord(payload) && typeof payload.stableId === 'string' && payload.stableId.length > 0;
+
+function hasOnlyKeys(payload: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actualKeys = Object.keys(payload);
+  return actualKeys.length === keys.length && actualKeys.every((key) => keys.includes(key));
+}
+
+const isArtifactBrowserAnalysisActionPayload: ArtifactBrowserPayloadGuard<
+  | ArtifactBrowserOpenAnalysisShowcasePayload
+  | ArtifactBrowserShareAnalysisShowcasePayload
+  | ArtifactBrowserOpenAnalysisReportPayload
+> = (payload): payload is
+  | ArtifactBrowserOpenAnalysisShowcasePayload
+  | ArtifactBrowserShareAnalysisShowcasePayload
+  | ArtifactBrowserOpenAnalysisReportPayload =>
+  isPlainRecord(payload) &&
+  hasOnlyKeys(payload, ['stableId']) &&
+  typeof payload.stableId === 'string' &&
+  payload.stableId.length > 0;
+
 const isArtifactBrowserReadyMessageEnvelope = createArtifactBrowserMessageGuard<ArtifactBrowserReadyMessage>(
   'artifact-browser/ready',
   isArtifactBrowserViewPayload,
@@ -234,6 +328,28 @@ const isArtifactBrowserRefreshMessageEnvelope = createArtifactBrowserMessageGuar
   'artifact-browser/refresh',
   isArtifactBrowserViewPayload,
 );
+
+const isArtifactBrowserOpenCreateWizardPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserOpenCreateWizardPayload> = (
+  payload,
+): payload is ArtifactBrowserOpenCreateWizardPayload =>
+  isPlainRecord(payload) && payload.viewId === ARTIFACT_BROWSER_VIEW_ID;
+
+const isArtifactBrowserCloseCreateWizardPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserCloseCreateWizardPayload> = (
+  payload,
+): payload is ArtifactBrowserCloseCreateWizardPayload =>
+  isPlainRecord(payload) && payload.viewId === ARTIFACT_BROWSER_VIEW_ID;
+
+const isArtifactBrowserOpenCreateWizardMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserOpenCreateWizardMessage>(
+    'artifact-browser/openCreateWizard',
+    isArtifactBrowserOpenCreateWizardPayload,
+  );
+
+const isArtifactBrowserCloseCreateWizardMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserCloseCreateWizardMessage>(
+    'artifact-browser/closeCreateWizard',
+    isArtifactBrowserCloseCreateWizardPayload,
+  );
 
 const isArtifactBrowserCreateArtifactMessageEnvelope =
   createArtifactBrowserMessageGuard<ArtifactBrowserCreateArtifactMessage>(
@@ -259,6 +375,24 @@ const isArtifactBrowserPackArtifactMessageEnvelope =
     isArtifactBrowserPackArtifactPayload,
   );
 
+const isArtifactBrowserOpenPackedOutputMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserOpenPackedOutputMessage>(
+    'artifact-browser/openPackedOutput',
+    isArtifactBrowserOpenPackedOutputPayload,
+  );
+
+const isArtifactBrowserHmrStartBroadcastMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserHmrStartBroadcastMessage>(
+    'artifact-browser/hmrStartBroadcast',
+    isArtifactBrowserHmrStartBroadcastPayload,
+  );
+
+const isArtifactBrowserHmrStopBroadcastMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserHmrStopBroadcastMessage>(
+    'artifact-browser/hmrStopBroadcast',
+    isArtifactBrowserHmrStopBroadcastPayload,
+  );
+
 const isArtifactBrowserAnalyzeArtifactMessageEnvelope =
   createArtifactBrowserMessageGuard<ArtifactBrowserAnalyzeArtifactMessage>(
     'artifact-browser/analyzeArtifact',
@@ -269,6 +403,36 @@ const isArtifactBrowserOpenAssetManagerMessageEnvelope =
   createArtifactBrowserMessageGuard<ArtifactBrowserOpenAssetManagerMessage>(
     'artifact-browser/openAssetManager',
     isArtifactBrowserOpenAssetManagerPayload,
+  );
+
+const isArtifactBrowserOpenMarkerEditorMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserOpenMarkerEditorMessage>(
+    'artifact-browser/openMarkerEditor',
+    isArtifactBrowserOpenMarkerEditorPayload,
+  );
+
+const isArtifactBrowserOpenPluginViewerMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserOpenPluginViewerMessage>(
+    'artifact-browser/openPluginViewer',
+    isArtifactBrowserOpenPluginViewerPayload,
+  );
+
+const isArtifactBrowserOpenAnalysisShowcaseMessageEnvelope =
+  createExactArtifactBrowserMessageGuard<ArtifactBrowserOpenAnalysisShowcaseMessage>(
+    'artifact-browser/openAnalysisShowcase',
+    isArtifactBrowserAnalysisActionPayload,
+  );
+
+const isArtifactBrowserShareAnalysisShowcaseMessageEnvelope =
+  createExactArtifactBrowserMessageGuard<ArtifactBrowserShareAnalysisShowcaseMessage>(
+    'artifact-browser/shareAnalysisShowcase',
+    isArtifactBrowserAnalysisActionPayload,
+  );
+
+const isArtifactBrowserOpenAnalysisReportMessageEnvelope =
+  createExactArtifactBrowserMessageGuard<ArtifactBrowserOpenAnalysisReportMessage>(
+    'artifact-browser/openAnalysisReport',
+    isArtifactBrowserAnalysisActionPayload,
   );
 
 const isArtifactBrowserSelectMessageEnvelope = createArtifactBrowserMessageGuard<ArtifactBrowserSelectMessage>(
@@ -357,6 +521,24 @@ export function isArtifactBrowserPackArtifactMessage(
   return isArtifactBrowserPackArtifactMessageEnvelope(message);
 }
 
+export function isArtifactBrowserOpenPackedOutputMessage(
+  message: unknown,
+): message is ArtifactBrowserOpenPackedOutputMessage {
+  return isArtifactBrowserOpenPackedOutputMessageEnvelope(message);
+}
+
+export function isArtifactBrowserHmrStartBroadcastMessage(
+  message: unknown,
+): message is ArtifactBrowserHmrStartBroadcastMessage {
+  return isArtifactBrowserHmrStartBroadcastMessageEnvelope(message);
+}
+
+export function isArtifactBrowserHmrStopBroadcastMessage(
+  message: unknown,
+): message is ArtifactBrowserHmrStopBroadcastMessage {
+  return isArtifactBrowserHmrStopBroadcastMessageEnvelope(message);
+}
+
 export function isArtifactBrowserAnalyzeArtifactMessage(
   message: unknown,
 ): message is ArtifactBrowserAnalyzeArtifactMessage {
@@ -367,6 +549,18 @@ export function isArtifactBrowserOpenAssetManagerMessage(
   message: unknown,
 ): message is ArtifactBrowserOpenAssetManagerMessage {
   return isArtifactBrowserOpenAssetManagerMessageEnvelope(message);
+}
+
+export function isArtifactBrowserOpenCreateWizardMessage(
+  message: unknown,
+): message is ArtifactBrowserOpenCreateWizardMessage {
+  return isArtifactBrowserOpenCreateWizardMessageEnvelope(message);
+}
+
+export function isArtifactBrowserCloseCreateWizardMessage(
+  message: unknown,
+): message is ArtifactBrowserCloseCreateWizardMessage {
+  return isArtifactBrowserCloseCreateWizardMessageEnvelope(message);
 }
 
 /**
@@ -419,6 +613,36 @@ export function isArtifactBrowserCreateSectionEntryMessage(
   return isArtifactBrowserCreateSectionEntryMessageEnvelope(message);
 }
 
+export function isArtifactBrowserOpenMarkerEditorMessage(
+  message: unknown,
+): message is ArtifactBrowserOpenMarkerEditorMessage {
+  return isArtifactBrowserOpenMarkerEditorMessageEnvelope(message);
+}
+
+export function isArtifactBrowserOpenPluginViewerMessage(
+  message: unknown,
+): message is ArtifactBrowserOpenPluginViewerMessage {
+  return isArtifactBrowserOpenPluginViewerMessageEnvelope(message);
+}
+
+export function isArtifactBrowserOpenAnalysisShowcaseMessage(
+  message: unknown,
+): message is ArtifactBrowserOpenAnalysisShowcaseMessage {
+  return isArtifactBrowserOpenAnalysisShowcaseMessageEnvelope(message);
+}
+
+export function isArtifactBrowserShareAnalysisShowcaseMessage(
+  message: unknown,
+): message is ArtifactBrowserShareAnalysisShowcaseMessage {
+  return isArtifactBrowserShareAnalysisShowcaseMessageEnvelope(message);
+}
+
+export function isArtifactBrowserOpenAnalysisReportMessage(
+  message: unknown,
+): message is ArtifactBrowserOpenAnalysisReportMessage {
+  return isArtifactBrowserOpenAnalysisReportMessageEnvelope(message);
+}
+
 function isCreatableSectionKind(value: unknown): value is ArtifactBrowserCreateSectionEntryPayload['sectionKind'] {
   return value === 'lorebooks' || value === 'regexRules' || value === 'lua' || value === 'character';
 }
@@ -446,7 +670,8 @@ function isSafeTargetFolderPath(value: unknown): value is string {
 type ArtifactBrowserExtensionResponse =
   | ArtifactBrowserCardsMessage
   | ArtifactBrowserDetailMessage
-  | ArtifactBrowserPackCompletedMessage;
+  | ArtifactBrowserPackCompletedMessage
+  | ArtifactBrowserHmrStatusMessage;
 
 /**
  * createArtifactBrowserExtensionMessage 함수.
@@ -517,4 +742,10 @@ export function createArtifactBrowserPackCompletedMessage(
   payload: ArtifactBrowserPackCompletedPayload,
 ): ArtifactBrowserPackCompletedMessage {
   return createArtifactBrowserExtensionMessage('artifact-browser/packCompleted', payload);
+}
+
+export function createArtifactBrowserHmrStatusMessage(
+  payload: ArtifactBrowserHmrStatusPayload,
+): ArtifactBrowserHmrStatusMessage {
+  return createArtifactBrowserExtensionMessage('artifact-browser/hmrStatus', payload);
 }

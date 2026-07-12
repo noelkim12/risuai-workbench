@@ -14,6 +14,11 @@ import {
   uniquePath,
 } from '@/node';
 import { createLimiter } from '../../../shared/concurrency';
+import {
+  isRisuLuaRecoveryRisumAssetTuple,
+  RISULUA_RECOVERY_ASSET_EXT,
+  RISULUA_RECOVERY_ASSET_NAME,
+} from '../../../shared/lua-bundler/risulua-recovery-asset';
 import type { ModuleAssetManifest } from './types';
 
 /**
@@ -41,7 +46,7 @@ function createModuleAssetManifest(
 export function phase5_extractAssets(
   module: any,
   outputDir: string,
-  assetBuffers: Buffer[],
+  assetBuffers: readonly (Buffer | null | undefined)[],
   sourceFormat: 'risum' | 'json',
 ): number {
   console.log('\n  🖼️ Phase 5: 에셋 추출');
@@ -75,7 +80,7 @@ export function phase5_extractAssets(
     const type = Array.isArray(tuple) ? tuple[2] : null;
 
     const buffer = assetBuffers[i];
-    if (!buffer) {
+    if (buffer === null || buffer === undefined) {
       manifest.assets.push({
         index: i,
         name,
@@ -89,8 +94,8 @@ export function phase5_extractAssets(
       continue;
     }
 
-    const baseName = sanitizeFilename(name || `asset_${i}`);
-    const outPath = uniquePath(assetsDir, baseName, '.bin');
+    const outputName = resolveModuleAssetOutputName(tuple, i, name);
+    const outPath = uniquePath(assetsDir, outputName.baseName, outputName.ext);
     writeBinary(outPath, buffer);
 
     manifest.assets.push({
@@ -116,7 +121,7 @@ export function phase5_extractAssets(
 export async function phase5_extractAssetsAsync(
   module: any,
   outputDir: string,
-  assetBuffers: Buffer[],
+  assetBuffers: readonly (Buffer | null | undefined)[],
   sourceFormat: 'risum' | 'json',
 ): Promise<number> {
   console.log('\n  🖼️ Phase 5: 에셋 추출 (async)');
@@ -160,7 +165,7 @@ export async function phase5_extractAssetsAsync(
     const type = Array.isArray(tuple) ? tuple[2] : null;
 
     const buffer = assetBuffers[i];
-    if (!buffer) {
+    if (buffer === null || buffer === undefined) {
       manifest.assets.push({
         index: i,
         name,
@@ -174,8 +179,8 @@ export async function phase5_extractAssetsAsync(
       continue;
     }
 
-    const baseName = sanitizeFilename(name || `asset_${i}`);
-    const outPath = uniquePath(assetsDir, baseName, '.bin', reservedPaths);
+    const outputName = resolveModuleAssetOutputName(tuple, i, name);
+    const outPath = uniquePath(assetsDir, outputName.baseName, outputName.ext, reservedPaths);
     writeJobs.push({ outPath, data: buffer });
 
     manifest.assets.push({
@@ -198,4 +203,19 @@ export async function phase5_extractAssetsAsync(
     `     ✅ ${manifest.extracted}개 에셋 추출, ${manifest.skipped}개 스킵 → ${path.relative('.', assetsDir)}/`,
   );
   return manifest.extracted;
+}
+
+function resolveModuleAssetOutputName(
+  tuple: unknown,
+  index: number,
+  name: unknown,
+): { readonly baseName: string; readonly ext: string } {
+  if (isRisuLuaRecoveryRisumAssetTuple(tuple)) {
+    return { baseName: RISULUA_RECOVERY_ASSET_NAME, ext: `.${RISULUA_RECOVERY_ASSET_EXT}` };
+  }
+
+  return {
+    baseName: sanitizeFilename(typeof name === 'string' ? name : `asset_${index}`),
+    ext: '.bin',
+  };
 }

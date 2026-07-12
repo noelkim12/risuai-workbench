@@ -80,6 +80,28 @@ export function createDebouncedTrigger(
 }
 
 /**
+ * isEqualOrAncestorPath 함수.
+ * 삭제 이벤트 경로가 알려진 artifact root 자체이거나 그 상위 폴더인지 판별함.
+ * 폴더 단위 삭제/이동은 폴더 하나의 이벤트만 발생하므로 marker glob 대신 이 비교가 필요함.
+ *
+ * @param ancestorFsPath - 이벤트가 발생한(삭제된) 경로
+ * @param targetFsPath - 알려진 artifact root 경로
+ * @param separator - 플랫폼 경로 구분자
+ * @returns 같은 경로이거나 상위 폴더면 true
+ */
+export function isEqualOrAncestorPath(
+	ancestorFsPath: string,
+	targetFsPath: string,
+	separator = "/",
+): boolean {
+	const trim = (value: string): string =>
+		value.endsWith(separator) ? value.slice(0, -separator.length) : value;
+	const ancestor = trim(ancestorFsPath);
+	const target = trim(targetFsPath);
+	return target === ancestor || target.startsWith(ancestor + separator);
+}
+
+/**
  * wireWatcherToTrigger 함수.
  * watcher의 create/change/delete 이벤트를 모두 하나의 trigger로 연결함.
  *

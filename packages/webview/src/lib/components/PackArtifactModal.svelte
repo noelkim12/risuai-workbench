@@ -5,6 +5,7 @@
   export let artifact: BrowserArtifactCard;
   export let packState: Writable<ArtifactBrowserPackCompletedPayload | null>;
   export let onConfirm: (recovery: boolean) => void;
+  export let onOpenOutput: (destination: 'os' | 'explorer' | 'clipboard') => void;
   export let onClose: () => void;
 
   let recovery = false;
@@ -13,20 +14,27 @@
   // Mirror of the host planner's format→extension mapping (cosmetic preview only;
   // the host recomputes authoritatively). Keep in sync with resolvePackFormat.
   $: formatLabel =
-    artifact.artifactKind === 'module' ? 'risum' : artifact.sourceFormat === 'png' ? 'png' : 'charx';
+    artifact.artifactKind === 'module'
+      ? 'risum'
+      : artifact.artifactKind === 'character' && artifact.sourceFormat === 'png'
+        ? 'png'
+        : 'charx';
   $: ext = formatLabel === 'risum' ? '.risum' : formatLabel === 'png' ? '.png' : '.charx';
   $: fileName = `${artifact.name}${ext}`;
-  $: outputPath = `${artifact.rootPathLabel}/out/${fileName}`;
+  $: outputPath = `out/${fileName}`;
 
   $: matchesThisArtifact = $packState?.stableId === artifact.stableId;
+  $: completedOutputPath = matchesThisArtifact ? ($packState?.outputRelativePath ?? outputPath) : outputPath;
   $: phase =
     !submitted ? 'idle' : $packState === null || !matchesThisArtifact ? 'packing' : $packState.ok ? 'done' : 'error';
 
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this event handler.
   function confirm(): void {
     submitted = true;
     onConfirm(recovery);
   }
 
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this event handler.
   function dismiss(): void {
     if (phase === 'packing') return;
     onClose();
@@ -59,8 +67,11 @@
     <dl class="pack-modal__info">
       <div><dt>Format</dt><dd>{formatLabel}</dd></div>
       <div><dt>File</dt><dd>{fileName}</dd></div>
-      <div><dt>Path</dt><dd>{outputPath}</dd></div>
+      <div><dt>Output</dt><dd>{outputPath}</dd></div>
     </dl>
+    {#if phase === 'idle'}
+      <p class="pack-modal__hint">The packed file will be created in this artifact's <code>out</code> folder.</p>
+    {/if}
 
     <label class="pack-modal__toggle">
       <input type="checkbox" bind:checked={recovery} disabled={phase === 'packing'} />
@@ -73,7 +84,15 @@
       </div>
       <p class="bridge-status">Packing…</p>
     {:else if phase === 'done'}
-      <p class="pack-modal__result pack-modal__result--ok">Packed → {$packState?.outputPath}</p>
+      <div class="pack-modal__result pack-modal__result--ok" role="status">
+        <strong>Packing complete</strong>
+        <span>{completedOutputPath}</span>
+      </div>
+      <div class="pack-modal__output-actions" aria-label="Packed artifact actions">
+        <button type="button" on:click={() => onOpenOutput('os')}>Show in File Explorer</button>
+        <button type="button" class="button-secondary" on:click={() => onOpenOutput('explorer')}>Show in VS Code</button>
+        <button type="button" class="button-secondary" on:click={() => onOpenOutput('clipboard')}>Copy Path</button>
+      </div>
     {:else if phase === 'error'}
       <p class="pack-modal__result pack-modal__result--error">Pack failed: {$packState?.error ?? 'unknown error'}</p>
     {/if}
@@ -115,6 +134,11 @@
     font-size: 0.85rem;
     margin-bottom: 0.75rem;
   }
+  .pack-modal__hint {
+    margin: 0 0 0.75rem;
+    color: var(--secondary-text);
+    font-size: 0.8rem;
+  }
   .pack-modal__progress {
     height: 4px;
     border-radius: 2px;
@@ -134,6 +158,20 @@
   .pack-modal__result {
     font-size: 0.85rem;
     word-break: break-all;
+  }
+  .pack-modal__result--ok {
+    display: grid;
+    gap: var(--space-1);
+    padding: var(--space-2);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-sm);
+    background: var(--secondary);
+  }
+  .pack-modal__output-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
   }
   .pack-modal__result--error {
     color: var(--vscode-errorForeground, #f14c4c);

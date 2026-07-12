@@ -11,6 +11,7 @@ import {
   type RisuLuaMode,
   type RisuLuaRecoveryMode,
 } from '../../shared/lua-bundler/risulua-mode';
+import { RisuLuaRecoveryError } from '../../shared/lua-bundler/risulua-recovery';
 import {
   RISULUA_DOMAIN_GENERATION_HELP_LINE,
   parseRisuLuaDomainGenerationMode,
@@ -161,8 +162,13 @@ async function runMain(
       risuluaRecovery,
       risuluaSplitMode,
       domainGeneration,
+      {
+        moduleAssets: Array.isArray(parsed.module?.assets) ? parsed.module.assets : [],
+        assetBuffers: parsed.assetBuffers,
+      },
     );
   } catch (error) {
+    if (error instanceof RisuLuaRecoveryError) throw error;
     phase4Error = error instanceof Error ? error : new Error(String(error));
     console.error(`     ⚠️ Phase 4 failed: ${phase4Error.message}`);
   }

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	createDebouncedTrigger,
 	type FileSystemWatcherLike,
+	isEqualOrAncestorPath,
 	type TimerScheduler,
 	wireWatcherToTrigger,
 } from "./artifactBrowserWatch";
@@ -69,6 +70,36 @@ describe("createDebouncedTrigger", () => {
 		scheduler.flush();
 
 		expect(refresh).not.toHaveBeenCalled();
+	});
+});
+
+describe("isEqualOrAncestorPath", () => {
+	it("matches the exact same path", () => {
+		expect(isEqualOrAncestorPath("/ws/project", "/ws/project")).toBe(true);
+	});
+
+	it("matches an ancestor directory of the target", () => {
+		expect(isEqualOrAncestorPath("/ws", "/ws/project")).toBe(true);
+		expect(isEqualOrAncestorPath("/ws/project", "/ws/project/lorebooks/entry.risulorebook")).toBe(true);
+	});
+
+	it("rejects sibling paths sharing a name prefix", () => {
+		expect(isEqualOrAncestorPath("/ws/pro", "/ws/project")).toBe(false);
+		expect(isEqualOrAncestorPath("/ws/project", "/ws/project-copy")).toBe(false);
+	});
+
+	it("rejects a descendant posing as ancestor", () => {
+		expect(isEqualOrAncestorPath("/ws/project/lorebooks", "/ws/project")).toBe(false);
+	});
+
+	it("ignores trailing separators on either side", () => {
+		expect(isEqualOrAncestorPath("/ws/project/", "/ws/project")).toBe(true);
+		expect(isEqualOrAncestorPath("/ws/", "/ws/project/")).toBe(true);
+	});
+
+	it("supports windows-style separators", () => {
+		expect(isEqualOrAncestorPath("C:\\ws", "C:\\ws\\project", "\\")).toBe(true);
+		expect(isEqualOrAncestorPath("C:\\ws\\pro", "C:\\ws\\project", "\\")).toBe(false);
 	});
 });
 
