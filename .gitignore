@@ -24,7 +24,12 @@ Thumbs.db
 tmp/
 
 ## Local agent/runtime artifacts
+.superpowers/
+.grill-me/
+.omo/
 .sisyphus/
+.risuai-workbench-mcp/
+.mcp.json
 graphify-out/
 .code-review-graph/
 
@@ -33,6 +38,7 @@ graphify-out/
 
 ## CLI package publishing/test artifacts
 *.tgz
+packages/risuai-workbench-mcp/reports/mcp-tool-surface/
 
 ## Samples (local verification assets)
 sample/
@@ -60,13 +66,8 @@ packages/cbs-lsp/checklist/
 .changeset/README.md
 .history/
 docs/refactor/
-docs/superpowers/plans/2026-04-27-risuai-lua-runtime-overlay.md
-docs/superpowers/plans/2026-04-27-risulua-runtime-completion-overlay.md
-docs/superpowers/plans/2026-04-28-cbs-lsp-features-reorganization.md
-docs/superpowers/plans/2026-04-28-diagnostics-router-policy.md
-docs/superpowers/plans/2026-04-28-unified-variable-graph-phase-1.md
-docs/superpowers/plans/2026-04-28-unified-variable-graph-phase-2.md
-docs/superpowers/plans/2026-04-28-unified-variable-graph-phase-3.md
-docs/superpowers/plans/2026-04-29-replace-global-note-canonicalization.md
-docs/superpowers/plans/2026-04-29-risuchar-image-tags-metadata.md
-docs/superpowers/plans/2026-04-30-cbs-lsp-local-func-macro-support.md
+docs/core/
+docs/plans/
+docs/superpowers/
+.opencode/layout-forge/sessions/
+test_suites/
