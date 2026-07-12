@@ -33,6 +33,8 @@ import {
   type ArtifactBrowserOpenItemMessage,
   type ArtifactBrowserOpenMarkerEditorMessage,
   type ArtifactBrowserOpenPluginViewerMessage,
+  type ArtifactBrowserOpenPackedOutputMessage,
+  type ArtifactBrowserOpenPackedOutputPayload,
   type ArtifactBrowserPackArtifactMessage,
   type ArtifactBrowserPackArtifactPayload,
   type ArtifactBrowserReadyMessage,
@@ -152,6 +154,12 @@ export function createArtifactBrowserPackArtifactMessage(
   payload: ArtifactBrowserPackArtifactPayload,
 ): ArtifactBrowserPackArtifactMessage {
   return createArtifactBrowserWebviewMessage('artifact-browser/packArtifact', payload);
+}
+
+export function createArtifactBrowserOpenPackedOutputMessage(
+  payload: ArtifactBrowserOpenPackedOutputPayload,
+): ArtifactBrowserOpenPackedOutputMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/openPackedOutput', payload);
 }
 
 export function createArtifactBrowserHmrStartBroadcastMessage(

@@ -32,6 +32,7 @@
   export let onAnalyzeArtifact: (stableId: string) => void;
   export let onOpenAnalysisReport: (stableId: string) => void;
   export let onPackArtifact: (stableId: string, recovery: boolean) => void;
+  export let onOpenPackedOutput: (stableId: string, destination: 'os' | 'explorer' | 'clipboard') => void;
   export let onOpenMarkerEditor: (stableId: string) => void;
   export let onOpenPluginViewer: (stableId: string) => void;
   export let onToggleSection: (sectionId: string) => void;
@@ -181,6 +182,7 @@
     {artifact}
     packState={packState}
     onConfirm={(recovery) => onPackArtifact(artifact.stableId, recovery)}
+    onOpenOutput={(destination) => onOpenPackedOutput(artifact.stableId, destination)}
     onClose={closePackModal}
   />
 {/if}

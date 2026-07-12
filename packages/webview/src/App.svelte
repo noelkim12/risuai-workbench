@@ -60,6 +60,7 @@ export let createSectionEntry: (
   targetFolderPath?: string,
 ) => void;
 export let packArtifact: (stableId: string, recovery: boolean) => void;
+export let openPackedOutput: (stableId: string, destination: 'os' | 'explorer' | 'clipboard') => void;
 export let analyzeArtifact: (stableId: string) => void;
 export let openAnalysisReport: (stableId: string) => void;
 // From main.ts: openMarkerEditor() -> ArtifactDetailView.onOpenMarkerEditor.
@@ -88,6 +89,7 @@ $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId)
     onAnalyzeArtifact={analyzeArtifact}
     onOpenAnalysisReport={openAnalysisReport}
     onPackArtifact={packArtifact}
+    onOpenPackedOutput={openPackedOutput}
     onOpenMarkerEditor={openMarkerEditor}
     onOpenPluginViewer={openPluginViewer}
     onToggleSection={toggleSection}

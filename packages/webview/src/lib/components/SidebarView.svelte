@@ -35,10 +35,24 @@
 
 <main class="browser-shell" aria-label="Risuai Workbench Sidebar">
   <header class="browser-header">
-    <div>
-      <p class="eyebrow">Risuai Workbench</p>
+    <div class="browser-header__brand">
+      <span class="browser-header__mark" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none">
+          <path
+            d="M2.5 5.25 8 2.25l5.5 3v5.5l-5.5 3-5.5-3v-5.5Z"
+            stroke="currentColor"
+            stroke-width="1.3"
+            stroke-linejoin="round"
+          />
+          <path d="M2.5 5.25 8 8.25l5.5-3M8 8.25v5.5" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+        </svg>
+      </span>
+      <div class="browser-header__titles">
+        <h1 class="browser-header__title">Risuai Workbench</h1>
+        <p class="browser-header__subtitle">Artifact Browser</p>
+      </div>
     </div>
-    <span class="count-pill">{cards.length}</span>
+    <span class="count-pill browser-header__count" title="{cards.length} artifacts">{cards.length}</span>
   </header>
 
   <section class="toolbar" aria-label="Sidebar actions">
@@ -98,6 +112,99 @@
 </main>
 
 <style>
+  .browser-header {
+    position: relative;
+    padding: var(--space-3) var(--space-3);
+    border: 1px solid color-mix(in srgb, var(--focus) 36%, var(--card-border));
+    background:
+      radial-gradient(120% 160% at 0% 0%, color-mix(in srgb, var(--accent) 16%, transparent) 0%, transparent 55%),
+      linear-gradient(
+        160deg,
+        color-mix(in srgb, var(--card) 92%, var(--focus)) 0%,
+        var(--section, var(--card)) 70%
+      );
+    overflow: hidden;
+  }
+
+  /* Accent hairline across the top edge. */
+  .browser-header::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto;
+    height: 2px;
+    background: linear-gradient(
+      90deg,
+      var(--accent) 0%,
+      color-mix(in srgb, var(--accent) 45%, var(--focus)) 45%,
+      transparent 100%
+    );
+    pointer-events: none;
+  }
+
+  .browser-header__brand {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3, 12px);
+    min-width: 0;
+  }
+
+  .browser-header__mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    flex: none;
+    border-radius: var(--radius-md, 10px);
+    color: var(--accent-text, #fff);
+    border: 1px solid color-mix(in srgb, var(--accent-text, #fff) 18%, transparent);
+    background: linear-gradient(
+      140deg,
+      var(--accent) 0%,
+      color-mix(in srgb, var(--accent) 72%, var(--focus)) 100%
+    );
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 36%, transparent);
+  }
+
+  .browser-header__mark svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .browser-header__titles {
+    min-width: 0;
+  }
+
+  .browser-header__title {
+    font-size: var(--text-lg, 13px);
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .browser-header__subtitle {
+    margin-top: 1px;
+    color: var(--muted);
+    font-size: var(--text-xs, 10px);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .browser-header__count {
+    flex: none;
+    font-size: var(--text-sm, 11px);
+    border: 1px solid color-mix(in srgb, var(--focus) 40%, var(--card-border));
+    color: var(--text);
+    background: color-mix(in srgb, var(--card) 70%, var(--focus));
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent-text, #fff) 8%, transparent);
+  }
+
   .toolbar-button {
     position: relative;
     display: inline-flex;
