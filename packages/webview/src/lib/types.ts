@@ -3,6 +3,7 @@
  * @file packages/webview/src/lib/types.ts
  */
 
+import type { AnalysisShowcase } from 'risu-workbench-core';
 import type {
   MainEditorAdvancedLspErrorPayload,
   MainEditorCodeLensRequestPayload,
@@ -78,7 +79,8 @@ export type WebviewMessageProtocolVersion =
   | ArtifactBrowserProtocolVersion
   | MarkerEditorProtocolVersion
   | MainEditorProtocolVersion;
-export type BrowserArtifactKind = 'character' | 'module';
+export type BrowserArtifactKind = 'character' | 'module' | 'plugin';
+export type PluginFramework = 'vanilla' | 'svelte';
 export type BrowserArtifactStatus = 'ready' | 'warning' | 'invalid';
 export type CharacterSourceFormat = 'charx' | 'png' | 'json' | 'scaffold';
 export type ModuleSourceFormat = 'risum' | 'json' | 'scaffold' | 'unknown';
@@ -160,6 +162,7 @@ export interface CharacterBrowserCard {
   createdAtLabel?: string;
   modifiedAtLabel?: string;
   warnings: ManifestParseWarning[];
+  analysisProfile: BrowserAnalysisProfile;
 }
 
 export interface ModuleBrowserCard {
@@ -179,9 +182,31 @@ export interface ModuleBrowserCard {
   rootPathLabel: string;
   markerPathLabel: string;
   warnings: ManifestParseWarning[];
+  analysisProfile: BrowserAnalysisProfile;
 }
 
-export type BrowserArtifactCard = CharacterBrowserCard | ModuleBrowserCard;
+/**
+ * PluginBrowserCard interface.
+ * `.risuplugin` marker-backed plugin project card. MVP: list/selection only — no detail view.
+ */
+export interface PluginBrowserCard {
+  artifactKind: 'plugin';
+  stableId: string;
+  manifestId: string;
+  name: string;
+  description: string;
+  framework: PluginFramework | 'unknown';
+  iconUri?: string;
+  status: BrowserArtifactStatus;
+  markerUri: string;
+  rootUri: string;
+  rootPathLabel: string;
+  markerPathLabel: string;
+  warnings: ManifestParseWarning[];
+  analysisProfile: BrowserAnalysisProfile;
+}
+
+export type BrowserArtifactCard = CharacterBrowserCard | ModuleBrowserCard | PluginBrowserCard;
 
 export interface BrowserItem {
   id: string;
@@ -220,6 +245,17 @@ export interface BrowserSection {
 
 export type CharacterSection = BrowserSection;
 
+export type BrowserAnalysisProfile =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'legacy'; readonly reportAvailable: true }
+  | { readonly kind: 'invalid'; readonly reason: 'malformed' | 'unsupported-version' | 'artifact-mismatch' }
+  | {
+      readonly kind: 'available';
+      readonly freshness: 'fresh' | 'outdated';
+      readonly reportAvailable: boolean;
+      readonly showcase: AnalysisShowcase;
+    };
+
 export interface ArtifactBrowserReadyPayload {
   viewId: typeof ARTIFACT_BROWSER_VIEW_ID;
 }
@@ -228,7 +264,7 @@ export interface ArtifactBrowserRefreshPayload {
   viewId: typeof ARTIFACT_BROWSER_VIEW_ID;
 }
 
-export type ArtifactBrowserCreateArtifactKind = 'charx' | 'module';
+export type ArtifactBrowserCreateArtifactKind = 'charx' | 'module' | 'plugin';
 
 export interface ArtifactBrowserCreateArtifactPayload {
   kind: ArtifactBrowserCreateArtifactKind;
@@ -238,6 +274,7 @@ export interface ArtifactBrowserCreateArtifactPayload {
   utilityBot?: boolean;
   lowLevelAccess?: boolean;
   description?: string;
+  framework?: PluginFramework;
 }
 
 export interface ArtifactBrowserImportArtifactPayload {
@@ -260,6 +297,24 @@ export interface ArtifactBrowserPackArtifactPayload {
   recovery: boolean;
 }
 
+export interface ArtifactBrowserHmrStartBroadcastPayload {
+  stableId: string;
+}
+
+export type ArtifactBrowserHmrStopBroadcastPayload = Record<string, never>;
+
+export interface ArtifactBrowserHmrStatusPayload {
+  running: boolean;
+  stableId?: string;
+  artifactName?: string;
+  artifactKind?: 'character' | 'module';
+  connectionString?: string;
+  version?: number;
+  updateCount: number;
+  lastPollAtMs?: number;
+  lastError?: string;
+}
+
 export interface ArtifactBrowserAnalyzeArtifactPayload {
   stableId: string;
 }
@@ -268,7 +323,13 @@ export interface ArtifactBrowserPackCompletedPayload {
   stableId: string;
   ok: boolean;
   outputPath?: string;
+  outputRelativePath?: string;
   error?: string;
+}
+
+export interface ArtifactBrowserOpenPackedOutputPayload {
+  stableId: string;
+  destination: 'os' | 'explorer' | 'clipboard';
 }
 
 export interface ArtifactBrowserSelectPayload {
@@ -276,6 +337,26 @@ export interface ArtifactBrowserSelectPayload {
 }
 
 export interface ArtifactBrowserOpenAssetManagerPayload {
+  stableId: string;
+}
+
+export interface ArtifactBrowserOpenMarkerEditorPayload {
+  stableId: string;
+}
+
+export interface ArtifactBrowserOpenPluginViewerPayload {
+  stableId: string;
+}
+
+export interface ArtifactBrowserOpenAnalysisShowcasePayload {
+  stableId: string;
+}
+
+export interface ArtifactBrowserShareAnalysisShowcasePayload {
+  stableId: string;
+}
+
+export interface ArtifactBrowserOpenAnalysisReportPayload {
   stableId: string;
 }
 
@@ -347,6 +428,24 @@ export type ArtifactBrowserRefreshMessage = MessageEnvelope<
   ArtifactBrowserRefreshPayload
 >;
 
+export interface ArtifactBrowserOpenCreateWizardPayload {
+  viewId: typeof ARTIFACT_BROWSER_VIEW_ID;
+}
+
+export interface ArtifactBrowserCloseCreateWizardPayload {
+  viewId: typeof ARTIFACT_BROWSER_VIEW_ID;
+}
+
+export type ArtifactBrowserOpenCreateWizardMessage = MessageEnvelope<
+  'artifact-browser/openCreateWizard',
+  ArtifactBrowserOpenCreateWizardPayload
+>;
+
+export type ArtifactBrowserCloseCreateWizardMessage = MessageEnvelope<
+  'artifact-browser/closeCreateWizard',
+  ArtifactBrowserCloseCreateWizardPayload
+>;
+
 export type ArtifactBrowserCreateArtifactMessage = MessageEnvelope<
   'artifact-browser/createArtifact',
   ArtifactBrowserCreateArtifactPayload
@@ -367,6 +466,21 @@ export type ArtifactBrowserPackArtifactMessage = MessageEnvelope<
   ArtifactBrowserPackArtifactPayload
 >;
 
+export type ArtifactBrowserOpenPackedOutputMessage = MessageEnvelope<
+  'artifact-browser/openPackedOutput',
+  ArtifactBrowserOpenPackedOutputPayload
+>;
+
+export type ArtifactBrowserHmrStartBroadcastMessage = MessageEnvelope<
+  'artifact-browser/hmrStartBroadcast',
+  ArtifactBrowserHmrStartBroadcastPayload
+>;
+
+export type ArtifactBrowserHmrStopBroadcastMessage = MessageEnvelope<
+  'artifact-browser/hmrStopBroadcast',
+  ArtifactBrowserHmrStopBroadcastPayload
+>;
+
 export type ArtifactBrowserAnalyzeArtifactMessage = MessageEnvelope<
   'artifact-browser/analyzeArtifact',
   ArtifactBrowserAnalyzeArtifactPayload
@@ -377,6 +491,11 @@ export type ArtifactBrowserPackCompletedMessage = MessageEnvelope<
   ArtifactBrowserPackCompletedPayload
 >;
 
+export type ArtifactBrowserHmrStatusMessage = MessageEnvelope<
+  'artifact-browser/hmrStatus',
+  ArtifactBrowserHmrStatusPayload
+>;
+
 export type ArtifactBrowserSelectMessage = MessageEnvelope<
   'artifact-browser/select',
   ArtifactBrowserSelectPayload
@@ -385,6 +504,31 @@ export type ArtifactBrowserSelectMessage = MessageEnvelope<
 export type ArtifactBrowserOpenAssetManagerMessage = MessageEnvelope<
   'artifact-browser/openAssetManager',
   ArtifactBrowserOpenAssetManagerPayload
+>;
+
+export type ArtifactBrowserOpenMarkerEditorMessage = MessageEnvelope<
+  'artifact-browser/openMarkerEditor',
+  ArtifactBrowserOpenMarkerEditorPayload
+>;
+
+export type ArtifactBrowserOpenPluginViewerMessage = MessageEnvelope<
+  'artifact-browser/openPluginViewer',
+  ArtifactBrowserOpenPluginViewerPayload
+>;
+
+export type ArtifactBrowserOpenAnalysisShowcaseMessage = MessageEnvelope<
+  'artifact-browser/openAnalysisShowcase',
+  ArtifactBrowserOpenAnalysisShowcasePayload
+>;
+
+export type ArtifactBrowserShareAnalysisShowcaseMessage = MessageEnvelope<
+  'artifact-browser/shareAnalysisShowcase',
+  ArtifactBrowserShareAnalysisShowcasePayload
+>;
+
+export type ArtifactBrowserOpenAnalysisReportMessage = MessageEnvelope<
+  'artifact-browser/openAnalysisReport',
+  ArtifactBrowserOpenAnalysisReportPayload
 >;
 
 export type ArtifactBrowserOpenItemMessage = MessageEnvelope<
@@ -429,19 +573,30 @@ export type ArtifactBrowserWebviewMessage =
   | ArtifactBrowserImportArtifactMessage
   | ArtifactBrowserImportArtifactChunkMessage
   | ArtifactBrowserPackArtifactMessage
+  | ArtifactBrowserOpenPackedOutputMessage
+  | ArtifactBrowserHmrStartBroadcastMessage
+  | ArtifactBrowserHmrStopBroadcastMessage
   | ArtifactBrowserAnalyzeArtifactMessage
   | ArtifactBrowserSelectMessage
   | ArtifactBrowserOpenAssetManagerMessage
+  | ArtifactBrowserOpenCreateWizardMessage
+  | ArtifactBrowserCloseCreateWizardMessage
   | ArtifactBrowserOpenItemMessage
   | ArtifactBrowserMoveLorebookItemMessage
   | ArtifactBrowserMoveLorebookFolderMessage
   | ArtifactBrowserMoveRegexItemMessage
   | ArtifactBrowserMoveGreetingItemMessage
-  | ArtifactBrowserCreateSectionEntryMessage;
+  | ArtifactBrowserCreateSectionEntryMessage
+  | ArtifactBrowserOpenMarkerEditorMessage
+  | ArtifactBrowserOpenPluginViewerMessage
+  | ArtifactBrowserOpenAnalysisShowcaseMessage
+  | ArtifactBrowserShareAnalysisShowcaseMessage
+  | ArtifactBrowserOpenAnalysisReportMessage;
 export type ArtifactBrowserExtensionMessage =
   | ArtifactBrowserCardsMessage
   | ArtifactBrowserDetailMessage
-  | ArtifactBrowserPackCompletedMessage;
+  | ArtifactBrowserPackCompletedMessage
+  | ArtifactBrowserHmrStatusMessage;
 
 export type MarkerEditorReadyMessage = MessageEnvelope<'marker-editor/ready', MarkerEditorReadyPayload>;
 

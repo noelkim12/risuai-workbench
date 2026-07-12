@@ -17,6 +17,7 @@
     MarkerEditorMode,
     MarkerEditorResetResponsePayload,
     ModuleEditFields,
+    PluginEditFields,
   } from '../../../types/markerEditor';
   import { getVsCodeApi } from '../../../vscode';
   import {
@@ -46,6 +47,7 @@
 
   onMount(() => {
     window.addEventListener('message', handleMessage);
+    window.addEventListener('keydown', handleSaveShortcut);
     announceMarkerEditorReady();
     readyRetryTimer = setInterval(() => {
       if (initialized) {
@@ -58,6 +60,7 @@
 
   onDestroy(() => {
     window.removeEventListener('message', handleMessage);
+    window.removeEventListener('keydown', handleSaveShortcut);
     stopReadyRetry();
   });
 
@@ -115,6 +118,20 @@
   }
 
   /**
+   * createEmptyPluginFields 함수.
+   * Plugin editor field 교체가 필요할 때 안전한 빈 상태를 제공함.
+   *
+   * @returns 빈 plugin marker edit fields
+   */
+  function createEmptyPluginFields(): PluginEditFields {
+    return {
+      name: '',
+      description: '',
+      image: null,
+    };
+  }
+
+  /**
    * handleMessage 함수.
    * Marker editor protocol message만 받아 shell state로 반영함.
    *
@@ -163,7 +180,6 @@
    * saveMarker 함수.
    * 현재 shell state를 marker editor save message로 전달함.
    */
-  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup passes this handler to MarkerForm.
   function saveMarker(): void {
     getTypedVsCodeApi()?.postMessage(
       createMarkerEditorSaveMessage({
@@ -172,6 +188,19 @@
         fields: cloneFields(fields),
       }),
     );
+  }
+
+  /**
+   * handleSaveShortcut 함수.
+   * Root marker editor가 초기화된 상태에서 Ctrl/Cmd+S 입력을 현재 marker 저장으로 처리함.
+   *
+   * @param event - webview window에서 발생한 keyboard event
+   */
+  function handleSaveShortcut(event: KeyboardEvent): void {
+    if (!initialized || event.key.toLowerCase() !== 's' || (!event.ctrlKey && !event.metaKey)) return;
+
+    event.preventDefault();
+    saveMarker();
   }
 
   /**
@@ -225,9 +254,16 @@
       };
     }
 
+    if (isPluginEditFields(value)) {
+      return {
+        ...createEmptyPluginFields(),
+        ...value,
+      };
+    }
+
     return {
       ...createEmptyModuleFields(),
-      ...value,
+      ...(value as ModuleEditFields),
     };
   }
 
@@ -274,18 +310,29 @@
   }
 
   function isMarkerEditorMode(value: unknown): value is MarkerEditorMode {
-    return value === 'character' || value === 'module';
+    return value === 'character' || value === 'module' || value === 'plugin';
   }
 
   function isMarkerEditFields(value: unknown): value is MarkerEditFields {
     if (!value || typeof value !== 'object') return false;
 
-    const candidate = value as Partial<MarkerEditFields>;
-    return typeof candidate.name === 'string' && 'image' in candidate && typeof candidate.lowLevelAccess === 'boolean';
+    const candidate = value as {
+      name?: unknown;
+      image?: unknown;
+      lowLevelAccess?: unknown;
+      description?: unknown;
+    };
+    if (typeof candidate.name !== 'string' || !('image' in candidate)) return false;
+    if (typeof candidate.lowLevelAccess === 'boolean') return true;
+    return typeof candidate.description === 'string';
   }
 
   function isCharacterEditFields(value: MarkerEditFields): value is CharacterEditFields {
     return 'tags' in value;
+  }
+
+  function isPluginEditFields(value: MarkerEditFields): value is PluginEditFields {
+    return !('tags' in value) && !('namespace' in value);
   }
 </script>
 

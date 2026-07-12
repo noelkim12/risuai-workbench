@@ -15,15 +15,26 @@
   import StatusBadge from './StatusBadge.svelte';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
   import PackArtifactModal from './PackArtifactModal.svelte';
+  // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
+  import HmrStatusStrip from './HmrStatusStrip.svelte';
+  // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
+  import AnalysisProfileCard from './analysis-showcase/AnalysisProfileCard.svelte';
 
   export let artifact: BrowserArtifactCard;
   export let sections: CharacterSection[];
   export let expandedSectionIds: string[];
   export let status: string;
   export let packState: import('svelte/store').Writable<import('../types').ArtifactBrowserPackCompletedPayload | null>;
+  export let hmrState: import('svelte/store').Writable<import('../types').ArtifactBrowserHmrStatusPayload | null>;
+  export let onHmrStartBroadcast: (stableId: string) => void;
+  export let onHmrStopBroadcast: () => void;
   export let onBack: () => void;
   export let onAnalyzeArtifact: (stableId: string) => void;
+  export let onOpenAnalysisReport: (stableId: string) => void;
   export let onPackArtifact: (stableId: string, recovery: boolean) => void;
+  export let onOpenPackedOutput: (stableId: string, destination: 'os' | 'explorer' | 'clipboard') => void;
+  export let onOpenMarkerEditor: (stableId: string) => void;
+  export let onOpenPluginViewer: (stableId: string) => void;
   export let onToggleSection: (sectionId: string) => void;
   export let onOpenItem: (item: CharacterItem) => void;
   export let onOpenAssetManager: (stableId: string) => void;
@@ -42,11 +53,28 @@
     targetFolderPath?: string,
   ) => void;
 
-  $: detailLabel = artifact.artifactKind === 'module' ? 'Module Detail' : 'Character Detail';
+  $: detailLabel =
+    artifact.artifactKind === 'module'
+      ? 'Module Detail'
+      : artifact.artifactKind === 'plugin'
+        ? 'Plugin Detail'
+        : 'Character Detail';
   $: detailMeta =
     artifact.artifactKind === 'module'
       ? `${artifact.namespace ?? artifact.sourceFormat} · ${artifact.sourceFormat}`
-      : `${artifact.creator} · ${artifact.sourceFormat} · v${artifact.characterVersion}`;
+      : artifact.artifactKind === 'character'
+        ? `${artifact.creator} · ${artifact.sourceFormat} · v${artifact.characterVersion}`
+        : artifact.artifactKind === 'plugin'
+          ? artifact.framework
+          : '';
+
+  $: isBroadcasting = $hmrState?.running === true;
+  $: isBroadcastingHere = isBroadcasting && $hmrState?.stableId === artifact.stableId;
+  $: broadcastTitle = isBroadcastingHere
+    ? 'This artifact is already broadcasting.'
+    : isBroadcasting
+      ? `Already broadcasting: ${$hmrState?.artifactName}. Stop it first, or use "Broadcast this instead" below.`
+      : 'Broadcast this artifact to RisuAI';
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this modal state.
   let isPackModalOpen = false;
@@ -84,13 +112,37 @@
     </header>
 
     <div class="detail-actions">
-      <button type="button" class="detail-action" on:click={() => onAnalyzeArtifact(artifact.stableId)}>
-        Analyze
-      </button>
-      <button type="button" class="detail-action detail-action--primary" on:click={openPackModal}>
-        Pack
-      </button>
+      {#if artifact.artifactKind === 'plugin'}
+        <button type="button" class="detail-action" on:click={() => onOpenMarkerEditor(artifact.stableId)}>
+          Marker Editor
+        </button>
+        <button type="button" class="detail-action detail-action--primary" on:click={() => onOpenPluginViewer(artifact.stableId)}>
+          Plugin Viewer
+        </button>
+      {:else}
+        <button
+          type="button"
+          class="detail-action"
+          disabled={isBroadcasting}
+          title={broadcastTitle}
+          on:click={() => onHmrStartBroadcast(artifact.stableId)}
+        >
+          {isBroadcastingHere ? 'Broadcasting' : 'Broadcast'}
+        </button>
+        <button type="button" class="detail-action detail-action--primary" on:click={openPackModal}>
+          Pack
+        </button>
+      {/if}
     </div>
+
+    {#if artifact.artifactKind !== 'plugin'}
+      <HmrStatusStrip
+        hmrStatus={$hmrState}
+        currentStableId={artifact.stableId}
+        onStop={onHmrStopBroadcast}
+        onBroadcastHere={() => onHmrStartBroadcast(artifact.stableId)}
+      />
+    {/if}
   </div>
 
   <p class="bridge-status" id="status-text">{status}</p>
@@ -100,25 +152,37 @@
     <p><strong>Manifest</strong> {artifact.markerPathLabel}</p>
   </section>
 
-  <CharacterAccordion
-    {sections}
-    {expandedSectionIds}
-    {onToggleSection}
-    {onOpenItem}
-    onOpenAssetManager={() => onOpenAssetManager(artifact.stableId)}
-    {onMoveLorebookItem}
-    {onMoveLorebookFolder}
-    {onMoveRegexItem}
-    {onMoveGreetingItem}
-    {onCreateSectionEntry}
-  />
+  {#if artifact.artifactKind !== 'plugin'}
+    <AnalysisProfileCard
+      profile={artifact.analysisProfile}
+      stableId={artifact.stableId}
+      onAnalyze={onAnalyzeArtifact}
+      onOpenReport={onOpenAnalysisReport}
+    />
+  {/if}
+
+  {#if artifact.artifactKind !== 'plugin'}
+    <CharacterAccordion
+      {sections}
+      {expandedSectionIds}
+      {onToggleSection}
+      {onOpenItem}
+      onOpenAssetManager={() => onOpenAssetManager(artifact.stableId)}
+      {onMoveLorebookItem}
+      {onMoveLorebookFolder}
+      {onMoveRegexItem}
+      {onMoveGreetingItem}
+      {onCreateSectionEntry}
+    />
+  {/if}
 </main>
 
-{#if isPackModalOpen}
+{#if isPackModalOpen && artifact.artifactKind !== 'plugin'}
   <PackArtifactModal
     {artifact}
     packState={packState}
     onConfirm={(recovery) => onPackArtifact(artifact.stableId, recovery)}
+    onOpenOutput={(destination) => onOpenPackedOutput(artifact.stableId, destination)}
     onClose={closePackModal}
   />
 {/if}
@@ -172,6 +236,11 @@
     background: color-mix(in srgb, var(--secondary) 82%, var(--focus));
     border-color: var(--focus);
     outline: none;
+  }
+
+  .detail-action:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 
   .detail-action--primary {

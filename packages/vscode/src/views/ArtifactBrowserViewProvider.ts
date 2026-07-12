@@ -14,8 +14,10 @@ import { getErrorMessage } from '../shared/errors';
 import { pickImportArtifactFileWithSystemPicker } from '../shared/systemFilePicker';
 import { createWebviewNonce } from '../shared/webviewNonce';
 import { WorkspaceArtifactDiscoveryService } from '../artifact-browser/WorkspaceArtifactDiscoveryService';
+import { selectPreferredCard } from '../artifact-browser/cardSelection';
 import {
   createDebouncedTrigger,
+  isEqualOrAncestorPath,
   wireWatcherToTrigger,
   type DebouncedTrigger,
 } from '../artifact-browser/artifactBrowserWatch';
@@ -23,10 +25,13 @@ import { AssetManagerPanel } from '../asset-manager/AssetManagerPanel';
 import {
   createArtifactBrowserCardsMessage,
   createArtifactBrowserDetailMessage,
+  createArtifactBrowserHmrStatusMessage,
   createArtifactBrowserPackCompletedMessage,
   isArtifactBrowserAnalyzeArtifactMessage,
   isArtifactBrowserCreateArtifactMessage,
   isArtifactBrowserCreateSectionEntryMessage,
+  isArtifactBrowserHmrStartBroadcastMessage,
+  isArtifactBrowserHmrStopBroadcastMessage,
   isArtifactBrowserImportArtifactMessage,
   isArtifactBrowserImportArtifactChunkMessage,
   isArtifactBrowserMoveLorebookFolderMessage,
@@ -34,7 +39,14 @@ import {
   isArtifactBrowserMoveGreetingItemMessage,
   isArtifactBrowserMoveRegexItemMessage,
   isArtifactBrowserOpenAssetManagerMessage,
+  isArtifactBrowserOpenCreateWizardMessage,
   isArtifactBrowserOpenItemMessage,
+  isArtifactBrowserOpenMarkerEditorMessage,
+  isArtifactBrowserOpenAnalysisReportMessage,
+  isArtifactBrowserOpenAnalysisShowcaseMessage,
+  isArtifactBrowserOpenPluginViewerMessage,
+  isArtifactBrowserOpenPackedOutputMessage,
+  isArtifactBrowserShareAnalysisShowcaseMessage,
   isArtifactBrowserPackArtifactMessage,
   isArtifactBrowserReadyMessage,
   isArtifactBrowserRefreshMessage,
@@ -53,13 +65,19 @@ import {
   type BrowserItem,
   type BrowserSection,
 } from '../artifact-browser/artifactBrowserTypes';
+import { getHmrServerService } from '../hmr/HmrServerService';
 import { resolvePackFormat, sanitizePackFilename, formatCompactTimestamp, pickCollisionTimestampMs } from '../artifact-browser/packArtifactPlanner';
+import { CreateWizardPanel } from './CreateWizardPanel';
 import { MarkerEditorViewProvider } from './MarkerEditorViewProvider';
+import { PluginViewerPanel } from './PluginViewerPanel';
+import { AnalysisReportService, type AnalysisReportOpenResult } from '../analysis-showcase/AnalysisReportService';
+import { AnalysisShowcasePanel } from '../analysis-showcase/AnalysisShowcasePanel';
 import {
   createWebviewDevServerHtml,
   getConfiguredWebviewDevServerUrl,
   getWebviewDevServerPortMapping,
 } from './webviewDevServer';
+import { RISUPLUGIN_FILENAME, RISUPLUGIN_KIND, RISUPLUGIN_SCHEMA_VERSION } from '../artifact-browser/risupluginManifest';
 
 const CHARACTER_MARKER_FILENAME = '.risuchar';
 const MODULE_MARKER_FILENAME = '.risumodule';
@@ -67,6 +85,11 @@ const MODULE_MARKER_FILENAME = '.risumodule';
 const CARDS_REFRESH_DEBOUNCE_MS = 250;
 /** Coalesce window for detail/asset rescans triggered by external content changes. */
 const DETAIL_REFRESH_DEBOUNCE_MS = 250;
+const HMR_REBUILD_DEBOUNCE_MS = 500;
+const LEGACY_ANALYSIS_REPORT_BY_KIND = {
+  character: 'charx-analysis.html',
+  module: 'module-analysis.html',
+} as const;
 const IMPORT_FILE_FILTERS = {
   'RisuAI artifacts': ['charx', 'png', 'risum', 'risup', 'risupreset', 'preset', 'json'],
 };
@@ -122,11 +145,20 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
   private currentCards: BrowserArtifactCard[] = [];
   private currentSections = new Map<string, BrowserSection[]>();
   private readonly pendingImportTransfers = new Map<string, PendingImportTransfer>();
+  private readonly packedOutputUris = new Map<string, vscode.Uri>();
 
   private detailWatcher: vscode.FileSystemWatcher | undefined;
   private detailWatcherSubscriptions: vscode.Disposable[] = [];
   private detailTrigger: DebouncedTrigger | undefined;
   private detailWatcherRootUri: string | undefined;
+
+  private hmrWatcher: vscode.FileSystemWatcher | undefined;
+  private hmrWatcherSubscriptions: vscode.Disposable[] = [];
+  private hmrTrigger: DebouncedTrigger | undefined;
+  private hmrStatusSubscription: vscode.Disposable | undefined;
+  private artifactBrowserInitialized = false;
+  private artifactBrowserInitialization: Promise<void> | undefined;
+  private readonly analysisReportService = new AnalysisReportService();
 
   constructor(private readonly context: vscode.ExtensionContext) {
     ArtifactBrowserViewProvider.instances.add(this);
@@ -134,6 +166,8 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     this.context.subscriptions.push({
       dispose: () => {
         this.clearDetailWatcher();
+        this.clearHmrWatcher();
+        this.clearHmrStatusSubscription();
         ArtifactBrowserViewProvider.instances.delete(this);
       },
     });
@@ -146,11 +180,56 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
    */
   private registerMarkerWatcher(): void {
     const watcher = vscode.workspace.createFileSystemWatcher(
-      `**/{${CHARACTER_MARKER_FILENAME},${MODULE_MARKER_FILENAME}}`,
+      `**/{${CHARACTER_MARKER_FILENAME},${MODULE_MARKER_FILENAME},${RISUPLUGIN_FILENAME}}`,
     );
     const trigger = createDebouncedTrigger(() => this.refreshIfOpen(), CARDS_REFRESH_DEBOUNCE_MS);
     const subscriptions = wireWatcherToTrigger(watcher, () => trigger.trigger()) as vscode.Disposable[];
-    this.context.subscriptions.push(watcher, ...subscriptions, { dispose: () => trigger.dispose() });
+
+    // 폴더 전체가 삭제·이동되면 VS Code는 폴더 하나의 이벤트만 내보내고 내부 marker
+    // 파일 이벤트는 생략하므로, marker glob watcher만으로는 카드 목록이 갱신되지 않음.
+    const folderWatcher = vscode.workspace.createFileSystemWatcher('**/*');
+    const folderSubscriptions = [
+      folderWatcher.onDidDelete((uri) => {
+        if (this.coversKnownArtifactRoot(uri.fsPath)) trigger.trigger();
+      }),
+      folderWatcher.onDidCreate((uri) => {
+        void this.triggerOnDirectoryCreate(uri, trigger);
+      }),
+    ];
+
+    this.context.subscriptions.push(watcher, folderWatcher, ...subscriptions, ...folderSubscriptions, {
+      dispose: () => trigger.dispose(),
+    });
+  }
+
+  /**
+   * coversKnownArtifactRoot 함수.
+   * 삭제된 경로가 현재 카드 root와 같거나 그 상위 폴더인지 판별함.
+   *
+   * @param deletedFsPath - 삭제 이벤트가 발생한 파일시스템 경로
+   * @returns 카드 목록 rescan이 필요한 삭제 여부
+   */
+  private coversKnownArtifactRoot(deletedFsPath: string): boolean {
+    return this.currentCards.some((card) =>
+      isEqualOrAncestorPath(deletedFsPath, vscode.Uri.parse(card.rootUri).fsPath, path.sep),
+    );
+  }
+
+  /**
+   * triggerOnDirectoryCreate 함수.
+   * 폴더 단위 이동/복사로 생긴 create 이벤트에서만 카드 rescan을 예약함.
+   * 파일 create는 marker glob watcher가 담당하므로 directory만 확인함.
+   *
+   * @param uri - create 이벤트가 발생한 URI
+   * @param trigger - 카드 목록 debounce trigger
+   */
+  private async triggerOnDirectoryCreate(uri: vscode.Uri, trigger: DebouncedTrigger): Promise<void> {
+    try {
+      const stat = await vscode.workspace.fs.stat(uri);
+      if (stat.type & vscode.FileType.Directory) trigger.trigger();
+    } catch {
+      // 이벤트 처리 전에 경로가 사라진 경우: 삭제 이벤트가 별도로 처리함.
+    }
   }
 
   /**
@@ -233,6 +312,8 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
    */
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.view = webviewView;
+    this.artifactBrowserInitialized = false;
+    this.artifactBrowserInitialization = undefined;
     webviewView.webview.options = {
       enableScripts: true,
       localResourceRoots: [
@@ -244,7 +325,7 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     webviewView.webview.onDidReceiveMessage(
       (message: unknown) => {
         if (isArtifactBrowserReadyMessage(message)) {
-          void this.sendDiscoveredCards(webviewView.webview);
+          void this.initializeArtifactBrowser(webviewView.webview);
           return;
         }
 
@@ -254,7 +335,7 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
         }
 
         if (isArtifactBrowserCreateArtifactMessage(message)) {
-          void this.createArtifact(message.payload, webviewView.webview);
+          void this.createArtifactFromWizard(message.payload);
           return;
         }
 
@@ -273,13 +354,60 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
           return;
         }
 
+        if (isArtifactBrowserOpenPackedOutputMessage(message)) {
+          void this.openPackedOutput(message.payload.stableId, message.payload.destination);
+          return;
+        }
+
+        if (isArtifactBrowserHmrStartBroadcastMessage(message)) {
+          void this.startHmrBroadcast(message.payload.stableId);
+          return;
+        }
+
+        if (isArtifactBrowserHmrStopBroadcastMessage(message)) {
+          void this.stopHmrBroadcast();
+          return;
+        }
+
         if (isArtifactBrowserAnalyzeArtifactMessage(message)) {
           void this.analyzeArtifact(message.payload.stableId, webviewView.webview);
           return;
         }
 
+        if (isArtifactBrowserOpenAnalysisShowcaseMessage(message)) {
+          this.openAnalysisShowcase(message.payload.stableId, false);
+          return;
+        }
+
+        if (isArtifactBrowserShareAnalysisShowcaseMessage(message)) {
+          this.openAnalysisShowcase(message.payload.stableId, true);
+          return;
+        }
+
+        if (isArtifactBrowserOpenAnalysisReportMessage(message)) {
+          void this.openAnalysisReport(message.payload.stableId);
+          return;
+        }
+
         if (isArtifactBrowserOpenAssetManagerMessage(message)) {
           this.openAssetManager(message.payload.stableId);
+          return;
+        }
+
+        if (isArtifactBrowserOpenMarkerEditorMessage(message)) {
+          this.openPluginMarkerEditor(message.payload.stableId);
+          return;
+        }
+
+        if (isArtifactBrowserOpenPluginViewerMessage(message)) {
+          this.openPluginViewer(message.payload.stableId);
+          return;
+        }
+
+        if (isArtifactBrowserOpenCreateWizardMessage(message)) {
+          CreateWizardPanel.createOrShow(this.context, {
+            onSubmit: (payload) => this.createArtifactFromWizard(payload),
+          });
           return;
         }
 
@@ -349,6 +477,12 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
       this.context.subscriptions,
     );
 
+    this.clearHmrStatusSubscription();
+    const unsubscribeHmrStatus = getHmrServerService().onStatus((status) => {
+      this.postMessage(createArtifactBrowserHmrStatusMessage(status));
+    });
+    this.hmrStatusSubscription = { dispose: unsubscribeHmrStatus };
+
     webviewView.webview.html = this.getHtml(webviewView.webview);
   }
 
@@ -356,34 +490,69 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     message:
       | ReturnType<typeof createArtifactBrowserCardsMessage>
       | ReturnType<typeof createArtifactBrowserDetailMessage>
+      | ReturnType<typeof createArtifactBrowserHmrStatusMessage>
       | ArtifactBrowserPackCompletedMessage,
   ): void {
     void this.view?.webview.postMessage(message);
   }
 
-  private async createArtifact(payload: ArtifactBrowserCreateArtifactPayload, webview: vscode.Webview): Promise<void> {
+  private async initializeArtifactBrowser(webview: vscode.Webview): Promise<void> {
+    if (this.artifactBrowserInitialized) return;
+    if (this.artifactBrowserInitialization) return this.artifactBrowserInitialization;
+
+    this.artifactBrowserInitialization = (async () => {
+      await this.sendDiscoveredCards(webview);
+      this.artifactBrowserInitialized = true;
+      this.postMessage(createArtifactBrowserHmrStatusMessage(getHmrServerService().getStatus()));
+    })();
+
+    try {
+      await this.artifactBrowserInitialization;
+    } finally {
+      this.artifactBrowserInitialization = undefined;
+    }
+  }
+
+  private async createArtifactFromWizard(payload: ArtifactBrowserCreateArtifactPayload): Promise<boolean> {
+    const webview = this.view?.webview;
     const workspaceRoot = getPrimaryWorkspaceRoot();
     if (!workspaceRoot) {
       void vscode.window.showErrorMessage('Open a workspace folder before creating a RisuAI artifact.');
-      await this.sendDiscoveredCards(webview);
-      return;
+      if (webview) await this.sendDiscoveredCards(webview);
+      return false;
     }
 
+    let createdRootUri: string | undefined;
+    let created = false;
     try {
       const outDir = resolveUniqueWorkspacePath(workspaceRoot, sanitizeWorkspaceName(payload.name, 'untitled'));
-      const args = ['scaffold', payload.kind, '--name', payload.name.trim(), '--out', outDir];
-      if (payload.kind === 'charx' && payload.creator?.trim()) {
-        args.push('--creator', payload.creator.trim());
+
+      if (payload.kind === 'plugin') {
+        await runCreateRisuPluginCli(payload, outDir, workspaceRoot);
+        writePluginRootMarker(outDir, payload);
+        void vscode.window.showInformationMessage(
+          `Created plugin scaffold. Run "npm install" in ${path.basename(outDir)} before building.`,
+        );
+      } else {
+        const args = ['scaffold', payload.kind, '--name', payload.name.trim(), '--out', outDir];
+        if (payload.kind === 'charx' && payload.creator?.trim()) {
+          args.push('--creator', payload.creator.trim());
+        }
+
+        await runRisuCoreCli(args, workspaceRoot);
+        patchScaffoldRootMarker(outDir, payload);
+        void vscode.window.showInformationMessage(`Created ${payload.kind === 'charx' ? '.risuchar' : '.risumodule'} scaffold.`);
       }
 
-      await runRisuCoreCli(args, workspaceRoot);
-      patchScaffoldRootMarker(outDir, payload);
-      void vscode.window.showInformationMessage(`Created ${payload.kind === 'charx' ? '.risuchar' : '.risumodule'} scaffold.`);
+      createdRootUri = vscode.Uri.file(outDir).toString();
+      created = true;
     } catch (error) {
       void vscode.window.showErrorMessage(`Create failed: ${getErrorMessage(error)}`);
     } finally {
-      await this.sendDiscoveredCards(webview);
+      if (webview) await this.sendDiscoveredCards(webview, createdRootUri);
     }
+
+    return created;
   }
 
   private async importArtifact(payload: ArtifactBrowserImportArtifactPayload, webview: vscode.Webview): Promise<void> {
@@ -452,11 +621,17 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
 
   private async packArtifact(payload: ArtifactBrowserPackArtifactPayload, _webview: vscode.Webview): Promise<void> {
     const stableId = payload.stableId;
+    this.packedOutputUris.delete(stableId);
     const selectedCard = this.currentCards.find((card) => card.stableId === stableId);
     if (!selectedCard) {
       this.postMessage(
         createArtifactBrowserPackCompletedMessage({ stableId, ok: false, error: 'Selected artifact not found.' }),
       );
+      return;
+    }
+    if (selectedCard.artifactKind === 'plugin') {
+      const error = 'Plugin cards do not support packing yet.';
+      this.postMessage(createArtifactBrowserPackCompletedMessage({ stableId, ok: false, error }));
       return;
     }
 
@@ -488,8 +663,16 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
       const recoveryArgs = payload.recovery ? ['--risulua-recovery', 'full-source'] : [];
       await runRisuCoreCli(['pack', '--in', rootFsPath, '--out', finalPath, ...formatArgs, ...recoveryArgs], workspaceRoot);
 
-      void vscode.window.showInformationMessage(`Packed → ${finalPath}`);
-      this.postMessage(createArtifactBrowserPackCompletedMessage({ stableId, ok: true, outputPath: finalPath }));
+      this.packedOutputUris.set(stableId, vscode.Uri.file(finalPath));
+      void vscode.window.showInformationMessage(`Packed ${path.basename(finalPath)} to the artifact out folder.`);
+      this.postMessage(
+        createArtifactBrowserPackCompletedMessage({
+          stableId,
+          ok: true,
+          outputPath: finalPath,
+          outputRelativePath: `out/${path.basename(finalPath)}`,
+        }),
+      );
     } catch (error) {
       if (archivedPath && finalPath && !fs.existsSync(finalPath) && fs.existsSync(archivedPath)) {
         try {
@@ -504,10 +687,102 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private async openPackedOutput(
+    stableId: string,
+    destination: 'os' | 'explorer' | 'clipboard',
+  ): Promise<void> {
+    const outputUri = this.packedOutputUris.get(stableId);
+    if (!outputUri) {
+      void vscode.window.showErrorMessage('Pack the artifact before opening its output.');
+      return;
+    }
+
+    if (destination === 'os') {
+      await vscode.commands.executeCommand('revealFileInOS', outputUri);
+      return;
+    }
+
+    if (destination === 'explorer') {
+      await vscode.commands.executeCommand('revealInExplorer', outputUri);
+      return;
+    }
+
+    await vscode.env.clipboard.writeText(outputUri.fsPath);
+    void vscode.window.showInformationMessage('Packed artifact path copied.');
+  }
+
+  private async startHmrBroadcast(stableId: string): Promise<void> {
+    const card = this.currentCards.find((candidate) => candidate.stableId === stableId);
+    if (!card) {
+      void vscode.window.showErrorMessage('HMR broadcast failed: Selected artifact not found.');
+      return;
+    }
+
+    if (card.artifactKind === 'plugin') {
+      void vscode.window.showErrorMessage('HMR broadcast failed: Plugin artifacts are not broadcastable.');
+      return;
+    }
+
+    const service = getHmrServerService();
+    const status = service.getStatus();
+    if (status.running && status.stableId && status.stableId !== stableId) {
+      const choice = await vscode.window.showWarningMessage(
+        `Currently broadcasting '${status.artifactName ?? status.stableId}'. Switch to '${card.name}'?`,
+        { modal: true },
+        'Switch',
+      );
+      if (choice !== 'Switch') return;
+    }
+
+    try {
+      await service.startBroadcast({
+        stableId,
+        name: card.name,
+        kind: card.artifactKind,
+        rootFsPath: vscode.Uri.parse(card.rootUri).fsPath,
+      });
+      this.watchHmrRoot(card.rootUri);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`HMR broadcast failed: ${getErrorMessage(error)}`);
+    }
+  }
+
+  private async stopHmrBroadcast(): Promise<void> {
+    this.clearHmrWatcher();
+    await getHmrServerService().stop();
+  }
+
+  private watchHmrRoot(rootUri: string): void {
+    this.clearHmrWatcher();
+    const pattern = new vscode.RelativePattern(vscode.Uri.parse(rootUri), '**/*');
+    const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+    const trigger = createDebouncedTrigger(() => getHmrServerService().rebuild(), HMR_REBUILD_DEBOUNCE_MS);
+    this.hmrWatcher = watcher;
+    this.hmrTrigger = trigger;
+    this.hmrWatcherSubscriptions = wireWatcherToTrigger(watcher, () => trigger.trigger()) as vscode.Disposable[];
+  }
+
+  private clearHmrWatcher(): void {
+    this.hmrTrigger?.dispose();
+    this.hmrTrigger = undefined;
+    for (const subscription of this.hmrWatcherSubscriptions.splice(0)) subscription.dispose();
+    this.hmrWatcher?.dispose();
+    this.hmrWatcher = undefined;
+  }
+
+  private clearHmrStatusSubscription(): void {
+    this.hmrStatusSubscription?.dispose();
+    this.hmrStatusSubscription = undefined;
+  }
+
   private async analyzeArtifact(stableId: string, webview: vscode.Webview): Promise<void> {
     const selectedCard = this.currentCards.find((card) => card.stableId === stableId);
     if (!selectedCard) {
       void vscode.window.showErrorMessage('Analyze failed: Selected artifact not found.');
+      return;
+    }
+    if (selectedCard.artifactKind === 'plugin') {
+      void vscode.window.showErrorMessage('Analyze failed: Plugin cards do not support analysis yet.');
       return;
     }
 
@@ -521,12 +796,85 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
       const rootFsPath = vscode.Uri.parse(selectedCard.rootUri).fsPath;
       await runAnalyzeForExtractedArtifact(rootFsPath, workspaceRoot);
       void vscode.window.showInformationMessage(`Analyzed ${selectedCard.name}.`);
-      await this.refreshSelectedDetail(selectedCard);
+      await this.sendDiscoveredCards(webview);
     } catch (error) {
       void vscode.window.showErrorMessage(`Analyze failed: ${getErrorMessage(error)}`);
-    } finally {
-      await this.sendDiscoveredCards(webview);
     }
+  }
+
+  private openAnalysisShowcase(stableId: string, captureOnReady: boolean): void {
+    const selectedCard = this.currentCards.find((card) => card.stableId === stableId);
+    if (!selectedCard || selectedCard.artifactKind === 'plugin') return;
+    this.openAvailableAnalysisShowcase(selectedCard, captureOnReady);
+  }
+
+  private async openAnalysisReport(stableId: string): Promise<void> {
+    const selectedCard = this.currentCards.find((card) => card.stableId === stableId);
+    if (!selectedCard || selectedCard.artifactKind === 'plugin') return;
+
+    const reportFileName = this.resolveAnalysisReportFileName(selectedCard);
+    if (!reportFileName) {
+      void vscode.window.showErrorMessage('Analysis report is not available. Re-analyze to generate it.');
+      return;
+    }
+
+    const result = await this.analysisReportService.open(vscode.Uri.parse(selectedCard.rootUri), reportFileName);
+    await this.handleAnalysisReportOpenResult(result);
+  }
+
+  private resolveAnalysisReportFileName(card: BrowserArtifactCard): string | undefined {
+    if (card.artifactKind === 'plugin') return undefined;
+
+    const { analysisProfile } = card;
+    switch (analysisProfile.kind) {
+      case 'available':
+        return analysisProfile.reportAvailable ? analysisProfile.showcase.report.html : undefined;
+      case 'legacy':
+        return LEGACY_ANALYSIS_REPORT_BY_KIND[card.artifactKind];
+      case 'invalid':
+      case 'none':
+        return undefined;
+    }
+  }
+
+  private async handleAnalysisReportOpenResult(result: AnalysisReportOpenResult): Promise<void> {
+    switch (result.kind) {
+      case 'opened':
+        return;
+      case 'missing':
+        void vscode.window.showErrorMessage('Report file not found. Re-analyze to generate it.');
+        return;
+      case 'unsafe':
+        void vscode.window.showErrorMessage('Report filename is invalid.');
+        return;
+      case 'not-opened': {
+        const choice = await vscode.window.showWarningMessage(
+          'The report could not be opened in the default browser.',
+          'Reveal Report',
+        );
+        if (choice === 'Reveal Report') {
+          await this.analysisReportService.reveal(result.uri);
+        }
+        return;
+      }
+    }
+  }
+
+  private openAvailableAnalysisShowcase(card: BrowserArtifactCard, captureOnReady: boolean): void {
+    if (card.analysisProfile.kind !== 'available') {
+      void vscode.window.showErrorMessage('Analysis Showcase is not available. Analyze this artifact first.');
+      return;
+    }
+
+    AnalysisShowcasePanel.createOrShow(
+      this.context,
+      {
+        stableId: card.stableId,
+        rootUri: vscode.Uri.parse(card.rootUri),
+        profile: card.analysisProfile,
+      },
+      { captureOnReady },
+    );
   }
 
   private openAssetManager(stableId: string): void {
@@ -540,25 +888,60 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     });
   }
 
-  private async sendDiscoveredCards(webview: vscode.Webview): Promise<void> {
+  /**
+   * openPluginMarkerEditor 함수.
+   * Plugin detail header의 Marker Editor 버튼 요청을 `.risuplugin` marker editor open으로 연결함.
+   *
+   * @param stableId - 대상 plugin artifact stable id
+   */
+  private openPluginMarkerEditor(stableId: string): void {
+    const card = this.currentCards.find((candidate) => candidate.stableId === stableId);
+    if (!card || card.artifactKind !== 'plugin') return;
+    MarkerEditorViewProvider.openEditor(this.context, vscode.Uri.parse(card.markerUri));
+  }
+
+  /**
+   * openPluginViewer 함수.
+   * Plugin detail header의 Plugin Viewer 버튼 요청을 PluginViewerPanel open으로 연결함.
+   *
+   * @param stableId - 대상 plugin artifact stable id
+   */
+  private openPluginViewer(stableId: string): void {
+    const card = this.currentCards.find((candidate) => candidate.stableId === stableId);
+    if (!card || card.artifactKind !== 'plugin') return;
+    PluginViewerPanel.createOrShow(this.context, {
+      stableId: card.stableId,
+      name: card.name,
+      description: card.description,
+      iconUri: card.iconUri,
+      rootUri: card.rootUri,
+    });
+  }
+
+  private async sendDiscoveredCards(webview: vscode.Webview, preferredRootUri?: string): Promise<void> {
     const previousSelectedCard = this.selectedStableId
       ? this.currentCards.find((card) => card.stableId === this.selectedStableId)
       : undefined;
     const discoveryService = new WorkspaceArtifactDiscoveryService(webview);
     const cards = await discoveryService.discoverCards();
-    const refreshedSelectedCard = this.resolveRefreshedSelection(cards, previousSelectedCard);
+    const refreshedSelectedCard =
+      selectPreferredCard(cards, preferredRootUri) ?? this.resolveRefreshedSelection(cards, previousSelectedCard);
     this.currentCards = cards;
 
     if (refreshedSelectedCard) {
       this.selectedStableId = refreshedSelectedCard.stableId;
-      this.watchSelectedArtifactContents(refreshedSelectedCard);
+      if (refreshedSelectedCard.artifactKind === 'plugin') {
+        this.clearDetailWatcher();
+      } else {
+        this.watchSelectedArtifactContents(refreshedSelectedCard);
+      }
     } else if (this.selectedStableId) {
       this.selectedStableId = undefined;
       this.clearDetailWatcher();
     }
 
     this.postMessage(createArtifactBrowserCardsMessage(cards, refreshedSelectedCard?.stableId));
-    if (refreshedSelectedCard) {
+    if (refreshedSelectedCard && refreshedSelectedCard.artifactKind !== 'plugin') {
       await this.postDetailSections(refreshedSelectedCard);
     }
   }
@@ -595,6 +978,16 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     const selectedCard = this.currentCards.find((card) => card.stableId === stableId);
     if (!selectedCard) return;
 
+    if (selectedCard.artifactKind === 'plugin') {
+      // Plugin cards render header-action buttons instead of an accordion, so the
+      // detail view gets an empty section list. Marker editor / plugin viewer are
+      // opened on-demand by the header buttons, not auto-opened on selection.
+      this.clearDetailWatcher();
+      this.currentSections.set(stableId, []);
+      this.postMessage(createArtifactBrowserDetailMessage(stableId, []));
+      return;
+    }
+
     this.watchSelectedArtifactContents(selectedCard);
     this.openMarkerEditor(selectedCard.markerUri);
 
@@ -608,6 +1001,8 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
    * @param selectedCard - detail section을 만들 현재 선택 card
    */
   private async postDetailSections(selectedCard: BrowserArtifactCard): Promise<void> {
+    if (selectedCard.artifactKind === 'plugin') return;
+
     const stableId = selectedCard.stableId;
     const sections =
       selectedCard.artifactKind === 'character'
@@ -1236,9 +1631,9 @@ function resolveRisuCoreBinPath(): string {
   return path.join(path.dirname(coreEntry), '..', 'bin', 'risu-core.js');
 }
 
-function runRisuCoreCli(args: string[], cwd: string): Promise<string> {
+function runNodeCli(binPath: string, args: string[], cwd: string, cliLabel: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [resolveRisuCoreBinPath(), ...args], { cwd, env: process.env });
+    const child = spawn(process.execPath, [binPath, ...args], { cwd, env: process.env });
     let stdout = '';
     let stderr = '';
 
@@ -1257,9 +1652,33 @@ function runRisuCoreCli(args: string[], cwd: string): Promise<string> {
         return;
       }
 
-      reject(new Error((stderr.trim() || stdout.trim() || `risu-core exited with code ${code}`).slice(0, 2000)));
+      reject(new Error((stderr.trim() || stdout.trim() || `${cliLabel} exited with code ${code}`).slice(0, 2000)));
     });
   });
+}
+
+function runRisuCoreCli(args: string[], cwd: string): Promise<string> {
+  return runNodeCli(resolveRisuCoreBinPath(), args, cwd, 'risu-core');
+}
+
+function runCreateRisuPluginCli(
+  payload: ArtifactBrowserCreateArtifactPayload,
+  outDir: string,
+  cwd: string,
+): Promise<string> {
+  const args = [
+    payload.name.trim(),
+    '--framework',
+    payload.framework ?? 'vanilla',
+    '--out',
+    outDir,
+    '--skip-install',
+  ];
+  if (payload.description?.trim()) {
+    args.push('--description', payload.description.trim());
+  }
+
+  return runNodeCli(require.resolve('create-risu-plugin/bin/index.js'), args, cwd, 'create-risu-plugin');
 }
 
 function createImportExtractArgs(importedFile: string): string[] {
@@ -1336,6 +1755,22 @@ function patchScaffoldRootMarker(outDir: string, payload: ArtifactBrowserCreateA
   }
 
   fs.writeFileSync(markerPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+}
+
+function writePluginRootMarker(outDir: string, payload: ArtifactBrowserCreateArtifactPayload): void {
+  const now = new Date().toISOString();
+  const manifest = {
+    kind: RISUPLUGIN_KIND,
+    schemaVersion: RISUPLUGIN_SCHEMA_VERSION,
+    id: payload.name.trim(),
+    name: payload.name.trim(),
+    description: payload.description?.trim() ?? '',
+    framework: payload.framework ?? 'vanilla',
+    createdAt: now,
+    modifiedAt: now,
+  };
+
+  fs.writeFileSync(path.join(outDir, RISUPLUGIN_FILENAME), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
 }
 
 function readJsonObject(filePath: string): Record<string, unknown> {

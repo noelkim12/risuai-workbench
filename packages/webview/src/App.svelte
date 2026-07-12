@@ -5,9 +5,9 @@ import ArtifactDetailView from './lib/components/ArtifactDetailView.svelte';
 // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
 import SidebarView from './lib/components/SidebarView.svelte';
 import type {
-  ArtifactBrowserCreateArtifactPayload,
   ArtifactBrowserCreateSectionEntryKind,
   ArtifactBrowserCreateSectionKind,
+  ArtifactBrowserHmrStatusPayload,
   ArtifactBrowserPackCompletedPayload,
   BrowserArtifactCard,
   CharacterItem,
@@ -26,8 +26,8 @@ export let importing: Writable<boolean>;
 // App.svelte does not own these actions; it only routes them to the active child view.
 // From main.ts: refreshCards() -> SidebarView.onRefresh.
 export let refreshCards: () => void;
-// From main.ts: createArtifact() -> SidebarView.onCreateArtifact.
-export let createArtifact: (payload: ArtifactBrowserCreateArtifactPayload) => void;
+// From main.ts: openCreateWizard() -> SidebarView.onOpenCreateWizard.
+export let openCreateWizard: () => void;
 // From main.ts: importArtifact() -> SidebarView.onImportArtifact.
 export let importArtifact: (file: File) => void;
 // From main.ts: selectCard() -> SidebarView.onSelect.
@@ -60,8 +60,17 @@ export let createSectionEntry: (
   targetFolderPath?: string,
 ) => void;
 export let packArtifact: (stableId: string, recovery: boolean) => void;
+export let openPackedOutput: (stableId: string, destination: 'os' | 'explorer' | 'clipboard') => void;
 export let analyzeArtifact: (stableId: string) => void;
+export let openAnalysisReport: (stableId: string) => void;
+// From main.ts: openMarkerEditor() -> ArtifactDetailView.onOpenMarkerEditor.
+export let openMarkerEditor: (stableId: string) => void;
+// From main.ts: openPluginViewer() -> ArtifactDetailView.onOpenPluginViewer.
+export let openPluginViewer: (stableId: string) => void;
 export let packState: Writable<ArtifactBrowserPackCompletedPayload | null>;
+export let hmrState: Writable<ArtifactBrowserHmrStatusPayload | null>;
+export let onHmrStartBroadcast: (stableId: string) => void;
+export let onHmrStopBroadcast: () => void;
 
 $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId);
 </script>
@@ -73,9 +82,16 @@ $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId)
     expandedSectionIds={$expandedSectionIds}
     status={$status}
     packState={packState}
+    {hmrState}
+    {onHmrStartBroadcast}
+    {onHmrStopBroadcast}
     onBack={returnToCards}
     onAnalyzeArtifact={analyzeArtifact}
+    onOpenAnalysisReport={openAnalysisReport}
     onPackArtifact={packArtifact}
+    onOpenPackedOutput={openPackedOutput}
+    onOpenMarkerEditor={openMarkerEditor}
+    onOpenPluginViewer={openPluginViewer}
     onToggleSection={toggleSection}
     onOpenItem={openItem}
     onOpenAssetManager={openAssetManager}
@@ -92,7 +108,7 @@ $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId)
     status={$status}
     importing={$importing}
     onRefresh={refreshCards}
-    onCreateArtifact={createArtifact}
+    onOpenCreateWizard={openCreateWizard}
     onImportArtifact={importArtifact}
     onSelect={selectCard}
   />

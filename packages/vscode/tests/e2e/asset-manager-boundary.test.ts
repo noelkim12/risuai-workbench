@@ -463,6 +463,8 @@ test('service auto-assigns new files using persisted bootstrap rules', () => {
 
     const onDisk = JSON.parse(fs.readFileSync(path.join(workDir, 'assets', 'asset-catalog.json'), 'utf-8'));
     assert.deepEqual(onDisk.assignments['additional/rin_excited.png'], { s1: 'rin', s2: 'excited' });
+    const manifest = JSON.parse(fs.readFileSync(path.join(workDir, 'assets', 'manifest.json'), 'utf-8'));
+    assert.equal(manifest.assets.some((entry: { extracted_path: string }) => entry.extracted_path === 'additional/rin_excited.png'), true);
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
   }

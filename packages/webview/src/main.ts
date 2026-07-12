@@ -1,12 +1,17 @@
 import './styles.css';
 import App from './App.svelte';
 import AssetManagerApp from './AssetManagerApp.svelte';
+import CreateWizardApp from './CreateWizardApp.svelte';
 import MainEditor from './lib/components/editor/main/MainEditor.svelte';
 import MarkerEditor from './lib/components/editor/marker/MarkerEditor.svelte';
+import PluginViewerApp from './lib/components/plugin-viewer/PluginViewerApp.svelte';
+import AnalysisShowcaseApp from './lib/analysis-showcase/AnalysisShowcaseApp.svelte';
 import { mount } from 'svelte';
 import { get, writable } from 'svelte/store';
 import {
   createArtifactBrowserAnalyzeArtifactMessage,
+  createArtifactBrowserHmrStartBroadcastMessage,
+  createArtifactBrowserHmrStopBroadcastMessage,
   createArtifactBrowserImportArtifactChunkMessage,
   createArtifactBrowserCreateArtifactMessage,
   createArtifactBrowserCreateSectionEntryMessage,
@@ -14,8 +19,14 @@ import {
   createArtifactBrowserMoveLorebookItemMessage,
   createArtifactBrowserMoveGreetingItemMessage,
   createArtifactBrowserMoveRegexItemMessage,
+  createArtifactBrowserOpenAnalysisReportMessage,
   createArtifactBrowserOpenAssetManagerMessage,
+  createArtifactBrowserOpenCreateWizardMessage,
+  createArtifactBrowserCloseCreateWizardMessage,
   createArtifactBrowserOpenItemMessage,
+  createArtifactBrowserOpenMarkerEditorMessage,
+  createArtifactBrowserOpenPluginViewerMessage,
+  createArtifactBrowserOpenPackedOutputMessage,
   createArtifactBrowserPackArtifactMessage,
   createArtifactBrowserReadyMessage,
   createArtifactBrowserRefreshMessage,
@@ -32,6 +43,7 @@ import {
   type BrowserArtifactCard,
   type ArtifactBrowserExtensionMessage,
   type ArtifactBrowserDetailPayload,
+  type ArtifactBrowserHmrStatusPayload,
   type ArtifactBrowserPackCompletedPayload,
   type CharacterItem,
   type CharacterSection,
@@ -46,6 +58,7 @@ const expandedSectionIds = writable<string[]>([]);
 const viewMode = writable<'artifacts' | 'artifactDetail'>('artifacts');
 const status = writable('Connecting to extension host…');
 const packState = writable<ArtifactBrowserPackCompletedPayload | null>(null);
+const hmrState = writable<ArtifactBrowserHmrStatusPayload | null>(null);
 const importing = writable(false);
 const app = document.querySelector<HTMLDivElement>('#app');
 const IMPORT_CHUNK_BYTES = 1024 * 1024;
@@ -55,6 +68,9 @@ const webviewName =
   document.querySelector('meta[name="risuai-workbench-view"]')?.getAttribute('content');
 let artifactBrowserReadyRetryTimer: ReturnType<typeof setInterval> | undefined;
 let artifactBrowserInitialized = false;
+// detailLoaded는 background refresh(watcher rescan, Refresh 버튼)에서도 도착하므로,
+// 사용자가 카드를 직접 선택한 경우에만 detail view로 전환하기 위한 대기 표식.
+let pendingDetailNavigationStableId: string | undefined;
 
 type ArtifactBrowserExtensionMessageType = ArtifactBrowserExtensionMessage['type'];
 type ArtifactBrowserExtensionPayloadGuard<TType extends ArtifactBrowserExtensionMessageType> = (
@@ -66,6 +82,7 @@ const ARTIFACT_BROWSER_EXTENSION_MESSAGE_TYPES = [
   'artifact-browser/cards',
   'artifact-browser/detailLoaded',
   'artifact-browser/packCompleted',
+  'artifact-browser/hmrStatus',
 ] as const satisfies readonly ArtifactBrowserExtensionMessageType[];
 
 const ARTIFACT_BROWSER_EXTENSION_MESSAGE_GUARDS = {
@@ -81,15 +98,35 @@ const ARTIFACT_BROWSER_EXTENSION_MESSAGE_GUARDS = {
     'artifact-browser/packCompleted',
     isArtifactBrowserPackCompletedPayload,
   ),
+  'artifact-browser/hmrStatus': createArtifactBrowserExtensionMessageGuard(
+    'artifact-browser/hmrStatus',
+    isArtifactBrowserHmrStatusPayload,
+  ),
 } satisfies Record<ArtifactBrowserExtensionMessageType, ArtifactBrowserExtensionMessageGuard>;
 
 if (!app) {
   throw new Error('Missing #app root for Risu Workbench webview.');
 }
 
-if (webviewName === 'asset-manager') {
+if (webviewName === 'plugin-viewer') {
+  mount(PluginViewerApp, {
+    target: app,
+  });
+} else if (webviewName === 'analysis-showcase') {
+  mount(AnalysisShowcaseApp, {
+    target: app,
+  });
+} else if (webviewName === 'asset-manager') {
   mount(AssetManagerApp, {
     target: app,
+  });
+} else if (webviewName === 'create-wizard') {
+  mount(CreateWizardApp, {
+    target: app,
+    props: {
+      onCreate: createArtifact,
+      onClose: closeCreateWizard,
+    },
   });
 } else if (isEditorMode && webviewName === 'main-editor') {
   mount(MainEditor, {
@@ -111,7 +148,7 @@ if (webviewName === 'asset-manager') {
       status,
       importing,
       refreshCards,
-      createArtifact,
+      openCreateWizard,
       importArtifact,
       selectCard,
       returnToCards,
@@ -124,8 +161,15 @@ if (webviewName === 'asset-manager') {
       moveGreetingItem,
       createSectionEntry,
       analyzeArtifact,
+      openAnalysisReport,
       packArtifact,
+      openPackedOutput,
       packState,
+      hmrState,
+      onHmrStartBroadcast: hmrStartBroadcast,
+      onHmrStopBroadcast: hmrStopBroadcast,
+      openMarkerEditor,
+      openPluginViewer,
     },
   });
 
@@ -185,7 +229,10 @@ function handleMessage(event: MessageEvent<unknown>): void {
     if (!isSameArtifactRefresh) {
       expandedSectionIds.set([]);
     }
-    viewMode.set('artifactDetail');
+    if (pendingDetailNavigationStableId === message.payload.stableId) {
+      pendingDetailNavigationStableId = undefined;
+      viewMode.set('artifactDetail');
+    }
     setStatus(`Detail loaded with ${message.payload.sections.length} sections.`);
     return;
   }
@@ -194,9 +241,14 @@ function handleMessage(event: MessageEvent<unknown>): void {
     packState.set(message.payload);
     setStatus(
       message.payload.ok
-        ? `Packed → ${message.payload.outputPath}`
+        ? `Packed → ${message.payload.outputRelativePath ?? 'artifact output folder'}`
         : `Pack failed: ${message.payload.error ?? 'unknown error'}`,
     );
+    return;
+  }
+
+  if (message.type === 'artifact-browser/hmrStatus') {
+    hmrState.set(message.payload);
     return;
   }
 }
@@ -207,16 +259,27 @@ function handleMessage(event: MessageEvent<unknown>): void {
  */
 function refreshCards(): void {
   setStatus('Refreshing .risuchar and .risumodule root markers…');
+  pendingDetailNavigationStableId = undefined;
   viewMode.set('artifacts');
   detailSections.set([]);
   vscode?.postMessage(createArtifactBrowserRefreshMessage());
 }
 
 function createArtifact(payload: ArtifactBrowserCreateArtifactPayload): void {
-  setStatus(`Creating ${payload.kind === 'charx' ? '.risuchar' : '.risumodule'} scaffold…`);
+  const artifactLabel = payload.kind === 'charx' ? '.risuchar' : payload.kind === 'plugin' ? '.risuplugin' : '.risumodule';
+  setStatus(`Creating ${artifactLabel} scaffold…`);
+  pendingDetailNavigationStableId = undefined;
   viewMode.set('artifacts');
   detailSections.set([]);
   vscode?.postMessage(createArtifactBrowserCreateArtifactMessage(payload));
+}
+
+function openCreateWizard(): void {
+  vscode?.postMessage(createArtifactBrowserOpenCreateWizardMessage());
+}
+
+function closeCreateWizard(): void {
+  vscode?.postMessage(createArtifactBrowserCloseCreateWizardMessage());
 }
 
 function encodeChunkAsBase64(buffer: ArrayBuffer): string {
@@ -232,6 +295,7 @@ function encodeChunkAsBase64(buffer: ArrayBuffer): string {
 async function importArtifact(file: File): Promise<void> {
   importing.set(true);
   setStatus(`Importing ${file.name}…`);
+  pendingDetailNavigationStableId = undefined;
   viewMode.set('artifacts');
   detailSections.set([]);
   try {
@@ -269,9 +333,25 @@ function packArtifact(stableId: string, recovery: boolean): void {
   vscode?.postMessage(createArtifactBrowserPackArtifactMessage({ stableId, recovery }));
 }
 
+function openPackedOutput(stableId: string, destination: 'os' | 'explorer' | 'clipboard'): void {
+  vscode?.postMessage(createArtifactBrowserOpenPackedOutputMessage({ stableId, destination }));
+}
+
+function hmrStartBroadcast(stableId: string): void {
+  vscode?.postMessage(createArtifactBrowserHmrStartBroadcastMessage({ stableId }));
+}
+
+function hmrStopBroadcast(): void {
+  vscode?.postMessage(createArtifactBrowserHmrStopBroadcastMessage());
+}
+
 function analyzeArtifact(stableId: string): void {
   setStatus('Analyzing and generating wiki…');
   vscode?.postMessage(createArtifactBrowserAnalyzeArtifactMessage({ stableId }));
+}
+
+function openAnalysisReport(stableId: string): void {
+  vscode?.postMessage(createArtifactBrowserOpenAnalysisReportMessage(stableId));
 }
 
 /**
@@ -280,6 +360,26 @@ function analyzeArtifact(stableId: string): void {
  */
 function openAssetManager(stableId: string): void {
   vscode?.postMessage(createArtifactBrowserOpenAssetManagerMessage(stableId));
+}
+
+/**
+ * openMarkerEditor 함수.
+ * Plugin detail header의 Marker Editor 버튼 action을 extension host에 typed message로 전달함.
+ *
+ * @param stableId - 대상 plugin artifact stable id
+ */
+function openMarkerEditor(stableId: string): void {
+  vscode?.postMessage(createArtifactBrowserOpenMarkerEditorMessage(stableId));
+}
+
+/**
+ * openPluginViewer 함수.
+ * Plugin detail header의 Plugin Viewer 버튼 action을 extension host에 typed message로 전달함.
+ *
+ * @param stableId - 대상 plugin artifact stable id
+ */
+function openPluginViewer(stableId: string): void {
+  vscode?.postMessage(createArtifactBrowserOpenPluginViewerMessage(stableId));
 }
 
 /**
@@ -295,6 +395,17 @@ function selectCard(stableId: string): void {
   })();
   if (!selectedCard) return;
 
+  pendingDetailNavigationStableId = stableId;
+
+  if (selectedCard.artifactKind === 'plugin') {
+    selectedStableId.set(stableId);
+    detailSections.set([]);
+    viewMode.set('artifactDetail');
+    setStatus('Plugin project selected.');
+    vscode?.postMessage(createArtifactBrowserSelectMessage(stableId));
+    return;
+  }
+
   selectedStableId.set(stableId);
   detailSections.set([]);
   setStatus(`Loading ${selectedCard.artifactKind} detail…`);
@@ -306,6 +417,7 @@ function selectCard(stableId: string): void {
  * Host discovery를 다시 요청하지 않고 보존된 card state로 돌아감.
  */
 function returnToCards(): void {
+  pendingDetailNavigationStableId = undefined;
   viewMode.set('artifacts');
   setStatus('Returned to artifact cards.');
 }
@@ -424,7 +536,16 @@ function isArtifactBrowserDetailPayload(payload: unknown): payload is ArtifactBr
 }
 
 function isArtifactBrowserPackCompletedPayload(payload: unknown): payload is ArtifactBrowserPackCompletedPayload {
-  return isPlainRecord(payload) && typeof payload.stableId === 'string' && typeof payload.ok === 'boolean';
+  return (
+    isPlainRecord(payload) &&
+    typeof payload.stableId === 'string' &&
+    typeof payload.ok === 'boolean' &&
+    (payload.outputRelativePath === undefined || typeof payload.outputRelativePath === 'string')
+  );
+}
+
+function isArtifactBrowserHmrStatusPayload(payload: unknown): payload is ArtifactBrowserHmrStatusPayload {
+  return isPlainRecord(payload) && typeof payload.running === 'boolean' && typeof payload.updateCount === 'number';
 }
 
 function isArtifactBrowserExtensionMessageType(value: unknown): value is ArtifactBrowserExtensionMessageType {

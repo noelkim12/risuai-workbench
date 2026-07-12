@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assetExtension,
   classifyDroppedFile,
+  classifyReplacementDrop,
   fileToBase64,
   isSupportedAssetFile,
   mimeForAssetExtension,
@@ -64,6 +65,31 @@ describe('classifyDroppedFile', () => {
     expect(result.targetPath).toBe('emotions/mel_sad.png');
     expect(result.deletePath).toBe('emotions/mel_sad.webp');
     expect(result.extChange).toEqual({ from: 'webp', to: 'png' });
+  });
+});
+
+describe('classifyReplacementDrop', () => {
+  it('keeps path for same-extension drops regardless of dropped filename', () => {
+    const result = classifyReplacementDrop(entry('additional/rin_happy.png', 'rin_happy'), 'final_v3_수정본.png');
+    expect(result.kind).toBe('replace');
+    expect(result.targetPath).toBe('additional/rin_happy.png');
+    expect(result.deletePath).toBeUndefined();
+    expect(result.extChange).toBeUndefined();
+    expect(result.replaces?.path).toBe('additional/rin_happy.png');
+  });
+
+  it('keeps stem and swaps extension for ext-change drops', () => {
+    const result = classifyReplacementDrop(entry('emotions/mel_sad.webp', 'mel_sad'), 'export (1).PNG');
+    expect(result.kind).toBe('replace');
+    expect(result.targetPath).toBe('emotions/mel_sad.png');
+    expect(result.deletePath).toBe('emotions/mel_sad.webp');
+    expect(result.extChange).toEqual({ from: 'webp', to: 'png' });
+  });
+
+  it('keeps nested directories', () => {
+    const result = classifyReplacementDrop(entry('additional/sub/luna_smile.png', 'luna_smile'), 'x.webp');
+    expect(result.targetPath).toBe('additional/sub/luna_smile.webp');
+    expect(result.deletePath).toBe('additional/sub/luna_smile.png');
   });
 });
 

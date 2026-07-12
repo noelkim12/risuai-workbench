@@ -119,6 +119,7 @@ function toCharxWikiInput(data: ModuleReportData): CharxReportData {
     variableFlow: data.variableFlow,
     deadCode: data.deadCode,
     textMentions: data.textMentions,
+    assetFiles: data.assetFiles,
     collected,
     luaArtifacts: data.luaArtifacts,
   };

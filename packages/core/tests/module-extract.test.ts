@@ -25,9 +25,15 @@ import { parseRegexContent } from '../src/domain/regex';
 import { parseVariableContent } from '../src/domain/custom-extension/extensions/variable';
 import {
   createRisuLuaRecoveryManifest,
+  encodeRisuLuaRecoveryPayload,
   encodeRisuLuaRecoveryBlock,
   RISULUA_RECOVERY_BLOCK_START,
 } from '../src/cli/shared';
+import {
+  RISULUA_RECOVERY_ASSET_FILENAME,
+  RISULUA_RECOVERY_ASSET_TYPE,
+} from '../src/cli/shared/lua-bundler/risulua-recovery-asset';
+import { encodeRPack } from '../src/node/rpack';
 
 /**
  * expectEmptyAssetScaffold 함수.
@@ -49,6 +55,43 @@ function expectEmptyAssetScaffold(outputDir: string, sourceFormat: 'risum' | 'js
     skipped: 0,
     assets: [],
   });
+}
+
+function encodeLength(length: number): Buffer {
+  const buffer = Buffer.alloc(4);
+  buffer.writeUInt32LE(length, 0);
+  return buffer;
+}
+
+function writeRisumFixture(options: {
+  readonly filePath: string;
+  readonly module: Record<string, unknown>;
+  readonly assetBuffers: readonly Buffer[];
+}): void {
+  const payload = Buffer.from(
+    JSON.stringify({ type: 'risuModule', module: options.module }, null, 2),
+    'utf-8',
+  );
+  const encodedMain = encodeRPack(payload);
+  const chunks: Buffer[] = [Buffer.from([111, 0]), encodeLength(encodedMain.length), encodedMain];
+
+  for (const buffer of options.assetBuffers) {
+    const encodedAsset = encodeRPack(buffer);
+    chunks.push(Buffer.from([1]), encodeLength(encodedAsset.length), encodedAsset);
+  }
+
+  chunks.push(Buffer.from([0]));
+  fs.writeFileSync(options.filePath, Buffer.concat(chunks));
+}
+
+function createRecoveryPayload(rootDir: string): Buffer {
+  return encodeRisuLuaRecoveryPayload(createRisuLuaRecoveryManifest({ rootDir }));
+}
+
+function writeRecoverySource(rootDir: string, mainSource: string, helperSource: string): void {
+  fs.mkdirSync(path.join(rootDir, 'lua', 'common'), { recursive: true });
+  fs.writeFileSync(path.join(rootDir, 'lua', 'main.risulua'), mainSource, 'utf-8');
+  fs.writeFileSync(path.join(rootDir, 'lua', 'common', 'helper.risulua'), helperSource, 'utf-8');
 }
 
 describe('module extract', () => {
@@ -898,6 +941,243 @@ describe('module extract', () => {
       ).toEqual({ owner: 'module', restored: true });
       expect(fs.readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).not.toContain(
         RISULUA_RECOVERY_BLOCK_START,
+      );
+    });
+
+    it('risulua extract modular full-source restores from the aligned RISUM recovery asset and extracts assets normally', async () => {
+      const filePath = path.join(tmpDir, 'recovery-asset-module.risum');
+      const outDir = path.join(tmpDir, 'recovery-asset-out');
+      const sourceRoot = path.join(tmpDir, 'recovery-asset-source');
+      writeRecoverySource(
+        sourceRoot,
+        'local helper = require("common.helper")\nreturn helper.value\n',
+        'return { value = "asset recovery helper" }\n',
+      );
+      const module = {
+        name: 'recovery-asset-module',
+        description: 'module with asset-carried recovery lua extract',
+        id: 'recovery-asset-module-id',
+        trigger: [
+          {
+            comment: 'entrypoint',
+            effect: [{ type: 'triggerlua', code: 'print("inline fallback must not be used")\n' }],
+          },
+        ],
+        assets: [
+          ['before asset', 'risu://asset/before', 'icon'],
+          [RISULUA_RECOVERY_ASSET_FILENAME, null, RISULUA_RECOVERY_ASSET_TYPE],
+          ['after asset', 'risu://asset/after', 'icon'],
+        ],
+      };
+      writeRisumFixture({
+        filePath,
+        module,
+        assetBuffers: [
+          Buffer.from('before-bytes'),
+          createRecoveryPayload(sourceRoot),
+          Buffer.from('after-bytes'),
+        ],
+      });
+
+      const exitCode = await runModuleExtractWorkflow([
+        filePath,
+        '--out',
+        outDir,
+        '--risulua-mode',
+        'modular',
+        '--risulua-recovery',
+        'full-source',
+      ]);
+
+      expect(exitCode).toBe(0);
+      expect(fs.readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).toBe(
+        'local helper = require("common.helper")\nreturn helper.value\n',
+      );
+      expect(fs.readFileSync(path.join(outDir, 'lua', 'common', 'helper.risulua'), 'utf-8')).toBe(
+        'return { value = "asset recovery helper" }\n',
+      );
+      expect(fs.readFileSync(path.join(outDir, 'assets', 'before_asset.bin'), 'utf-8')).toBe(
+        'before-bytes',
+      );
+      expect(fs.readFileSync(path.join(outDir, 'assets', 'after_asset.bin'), 'utf-8')).toBe(
+        'after-bytes',
+      );
+      expect(fs.existsSync(path.join(outDir, 'assets', RISULUA_RECOVERY_ASSET_FILENAME))).toBe(
+        true,
+      );
+      expect(
+        fs.existsSync(path.join(outDir, 'assets', `${RISULUA_RECOVERY_ASSET_FILENAME}.bin`)),
+      ).toBe(false);
+      const manifest = JSON.parse(
+        fs.readFileSync(path.join(outDir, 'assets', 'manifest.json'), 'utf-8'),
+      ) as Record<string, unknown>;
+      expect(manifest).toMatchObject({ total: 3, extracted: 3, skipped: 0 });
+      expect(manifest.assets).toEqual([
+        expect.objectContaining({ index: 0, extracted_path: 'before_asset.bin' }),
+        expect.objectContaining({ index: 1, extracted_path: RISULUA_RECOVERY_ASSET_FILENAME }),
+        expect.objectContaining({ index: 2, extracted_path: 'after_asset.bin' }),
+      ]);
+    });
+
+    it('risulua extract modular full-source uses the first matching RISUM recovery asset', async () => {
+      const filePath = path.join(tmpDir, 'first-recovery-asset-module.risum');
+      const outDir = path.join(tmpDir, 'first-recovery-asset-out');
+      const firstSourceRoot = path.join(tmpDir, 'first-recovery-source');
+      const secondSourceRoot = path.join(tmpDir, 'second-recovery-source');
+      writeRecoverySource(firstSourceRoot, 'return "first recovery"\n', 'return "first helper"\n');
+      writeRecoverySource(secondSourceRoot, 'return "second recovery"\n', 'return "second helper"\n');
+      const module = {
+        name: 'first-recovery-asset-module',
+        description: 'module with duplicate recovery assets',
+        id: 'first-recovery-asset-module-id',
+        trigger: [
+          {
+            comment: 'entrypoint',
+            effect: [{ type: 'triggerlua', code: 'print("inline fallback must not be used")\n' }],
+          },
+        ],
+        assets: [
+          [RISULUA_RECOVERY_ASSET_FILENAME, null, RISULUA_RECOVERY_ASSET_TYPE],
+          [RISULUA_RECOVERY_ASSET_FILENAME, 'risu://asset/later', RISULUA_RECOVERY_ASSET_TYPE],
+        ],
+      };
+      writeRisumFixture({
+        filePath,
+        module,
+        assetBuffers: [createRecoveryPayload(firstSourceRoot), createRecoveryPayload(secondSourceRoot)],
+      });
+
+      const exitCode = await runModuleExtractWorkflow([
+        filePath,
+        '--out',
+        outDir,
+        '--risulua-mode',
+        'modular',
+        '--risulua-recovery',
+        'full-source',
+      ]);
+
+      expect(exitCode).toBe(0);
+      expect(fs.readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).toBe(
+        'return "first recovery"\n',
+      );
+      expect(fs.readFileSync(path.join(outDir, 'lua', 'common', 'helper.risulua'), 'utf-8')).toBe(
+        'return "first helper"\n',
+      );
+    });
+
+    it('risulua extract modular full-source fails on a corrupt first RISUM recovery asset before later or inline recovery', async () => {
+      const filePath = path.join(tmpDir, 'corrupt-first-recovery-asset-module.risum');
+      const outDir = path.join(tmpDir, 'corrupt-first-recovery-asset-out');
+      const laterSourceRoot = path.join(tmpDir, 'later-recovery-source');
+      const inlineSourceRoot = path.join(tmpDir, 'inline-recovery-source');
+      writeRecoverySource(laterSourceRoot, 'return "later recovery"\n', 'return "later helper"\n');
+      writeRecoverySource(inlineSourceRoot, 'return "inline recovery"\n', 'return "inline helper"\n');
+      const inlineLua = `print("inline fallback")\n${encodeRisuLuaRecoveryBlock(
+        createRisuLuaRecoveryManifest({ rootDir: inlineSourceRoot }),
+      )}`;
+      const module = {
+        name: 'corrupt-first-recovery-asset-module',
+        description: 'module with corrupt first recovery asset',
+        id: 'corrupt-first-recovery-asset-module-id',
+        trigger: [{ comment: 'entrypoint', effect: [{ type: 'triggerlua', code: inlineLua }] }],
+        assets: [
+          [RISULUA_RECOVERY_ASSET_FILENAME, null, RISULUA_RECOVERY_ASSET_TYPE],
+          [RISULUA_RECOVERY_ASSET_FILENAME, 'risu://asset/later', RISULUA_RECOVERY_ASSET_TYPE],
+        ],
+      };
+      writeRisumFixture({
+        filePath,
+        module,
+        assetBuffers: [Buffer.from('not-a-gzip-recovery-payload'), createRecoveryPayload(laterSourceRoot)],
+      });
+
+      const exitCode = await runModuleExtractWorkflow([
+        filePath,
+        '--out',
+        outDir,
+        '--risulua-mode',
+        'modular',
+        '--risulua-recovery',
+        'full-source',
+      ]);
+
+      expect(exitCode).toBe(1);
+      expect(fs.existsSync(path.join(outDir, 'lua', 'main.risulua'))).toBe(false);
+      expect(fs.existsSync(path.join(outDir, 'lua', 'common', 'helper.risulua'))).toBe(false);
+    });
+
+    it('phase4_extractLua modular full-source fails on a null first RISUM recovery asset before later or inline recovery', async () => {
+      const outDir = path.join(tmpDir, 'missing-first-recovery-asset-out');
+      const laterSourceRoot = path.join(tmpDir, 'missing-later-recovery-source');
+      const inlineSourceRoot = path.join(tmpDir, 'missing-inline-recovery-source');
+      writeRecoverySource(laterSourceRoot, 'return "later recovery"\n', 'return "later helper"\n');
+      writeRecoverySource(inlineSourceRoot, 'return "inline recovery"\n', 'return "inline helper"\n');
+      const inlineLua = `print("inline fallback")\n${encodeRisuLuaRecoveryBlock(
+        createRisuLuaRecoveryManifest({ rootDir: inlineSourceRoot }),
+      )}`;
+      const module = {
+        name: 'missing-first-recovery-asset-module',
+        description: 'module with missing first recovery asset',
+        id: 'missing-first-recovery-asset-module-id',
+        trigger: [{ comment: 'entrypoint', effect: [{ type: 'triggerlua', code: inlineLua }] }],
+        assets: [
+          [RISULUA_RECOVERY_ASSET_FILENAME, null, RISULUA_RECOVERY_ASSET_TYPE],
+          [RISULUA_RECOVERY_ASSET_FILENAME, 'risu://asset/later', RISULUA_RECOVERY_ASSET_TYPE],
+        ],
+      };
+
+      await expect(
+        phase4_extractLua(
+          module,
+          outDir,
+          'modular',
+          'full-source',
+          'none',
+          'validated',
+          {
+            moduleAssets: module.assets,
+            assetBuffers: [null, createRecoveryPayload(laterSourceRoot)],
+          },
+        ),
+      ).rejects.toMatchObject({ name: 'RisuLuaRecoveryError' });
+      expect(fs.existsSync(path.join(outDir, 'lua', 'main.risulua'))).toBe(false);
+      expect(fs.existsSync(path.join(outDir, 'lua', 'common', 'helper.risulua'))).toBe(false);
+    });
+
+    it('risulua extract modular full-source keeps legacy inline fallback when no RISUM recovery tuple matches', async () => {
+      const filePath = path.join(tmpDir, 'inline-fallback-recovery-module.risum');
+      const outDir = path.join(tmpDir, 'inline-fallback-recovery-out');
+      const inlineSourceRoot = path.join(tmpDir, 'inline-fallback-recovery-source');
+      writeRecoverySource(inlineSourceRoot, 'return "inline recovery"\n', 'return "inline helper"\n');
+      const inlineLua = `print("inline fallback")\n${encodeRisuLuaRecoveryBlock(
+        createRisuLuaRecoveryManifest({ rootDir: inlineSourceRoot }),
+      )}`;
+      const module = {
+        name: 'inline-fallback-recovery-module',
+        description: 'module without matching recovery assets',
+        id: 'inline-fallback-recovery-module-id',
+        trigger: [{ comment: 'entrypoint', effect: [{ type: 'triggerlua', code: inlineLua }] }],
+        assets: [['not-recovery.rpack', null, 'ordinary']],
+      };
+      writeRisumFixture({ filePath, module, assetBuffers: [Buffer.from('ordinary bytes')] });
+
+      const exitCode = await runModuleExtractWorkflow([
+        filePath,
+        '--out',
+        outDir,
+        '--risulua-mode',
+        'modular',
+        '--risulua-recovery',
+        'full-source',
+      ]);
+
+      expect(exitCode).toBe(0);
+      expect(fs.readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).toBe(
+        'return "inline recovery"\n',
+      );
+      expect(fs.readFileSync(path.join(outDir, 'lua', 'common', 'helper.risulua'), 'utf-8')).toBe(
+        'return "inline helper"\n',
       );
     });
   });

@@ -117,6 +117,9 @@ import {
   writeArtifactFiles,
   writeSchemaIfChanged,
 } from '../cli/analyze/shared/wiki/write-protect';
+import { AssetHashCache, sha256Hex } from './hmr-asset-hash';
+import { buildHmrCharacterPayload, buildHmrModulePayload } from './hmr-build';
+import type { HmrAssetSource, HmrBuildResult } from './hmr-build';
 
 const parsePngChunks = parsePngTextChunks;
 
@@ -222,4 +225,10 @@ export {
   rewriteIndexArtifactsSection,
   writeArtifactFiles,
   writeSchemaIfChanged,
+  AssetHashCache,
+  sha256Hex,
+  buildHmrCharacterPayload,
+  buildHmrModulePayload,
+  type HmrAssetSource,
+  type HmrBuildResult,
 };
