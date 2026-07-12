@@ -36,7 +36,7 @@ describe('creative session store', () => {
       ideas: [
         {
           assumptions: ['prototype only'],
-          evidence: ['docs/mcp/reference.md'],
+          evidence: ['risuai-workbench://wiki/reference.md'],
           id: 'idea-1',
           summary: 'Keep creative memory explicit and local.',
           title: 'Local explicit memory',

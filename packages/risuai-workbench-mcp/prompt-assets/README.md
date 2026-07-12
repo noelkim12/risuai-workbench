@@ -25,19 +25,19 @@ Source of truth 경계는 다음과 같습니다.
 | `workbench.review_prompt_chain` | Review prompt dependency chain and conflicts. | `workbench.review_prompt_chain.md` |
 | `workbench.explain_analyze_diagnostic` | Explain analyze output diagnostic and evidence. | `workbench.explain_analyze_diagnostic.md` |
 | `workbench.create_project` | Guide scaffold workflow for creating new RisuAI charx/module/preset projects. | `workbench.create_project.md` |
-| `workbench.creative.brainstorm_from_context` | Creative workflow prompt; see docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md §Prompt 목록. | `workbench.creative.brainstorm_from_context.md` |
-| `workbench.creative.scamper_lorebook_entries` | Creative workflow prompt; see docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md §Prompt 목록. | `workbench.creative.scamper_lorebook_entries.md` |
-| `workbench.creative.scamper_prompt_chain_variants` | Creative workflow prompt; see docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md §Prompt 목록. | `workbench.creative.scamper_prompt_chain_variants.md` |
-| `workbench.creative.six_hats_idea_review` | Creative workflow prompt; see docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md §Prompt 목록. | `workbench.creative.six_hats_idea_review.md` |
-| `workbench.creative.morphological_explore` | Creative workflow prompt; see docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md §Prompt 목록. | `workbench.creative.morphological_explore.md` |
-| `workbench.creative.triz_resolve_contradiction` | Creative workflow prompt; see docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md §Prompt 목록. | `workbench.creative.triz_resolve_contradiction.md` |
-| `workbench.creative.reverse_brainstorm_failure_modes` | Creative workflow prompt; see docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md §Prompt 목록. | `workbench.creative.reverse_brainstorm_failure_modes.md` |
-| `workbench.creative.combine_concepts` | Creative workflow prompt; see docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md §Prompt 목록. | `workbench.creative.combine_concepts.md` |
-| `workbench.creative.find_distant_analogies` | Creative workflow prompt; see docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md §Prompt 목록. | `workbench.creative.find_distant_analogies.md` |
-| `workbench.creative.turn_idea_into_patch` | Creative workflow prompt; see docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md §Prompt 목록. | `workbench.creative.turn_idea_into_patch.md` |
-| `workbench.creative.apply_selected_idea` | Creative workflow prompt; see docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md §Prompt 목록. | `workbench.creative.apply_selected_idea.md` |
-| `workbench.creative.red_team_concept` | Creative workflow prompt; see docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md §Prompt 목록. | `workbench.creative.red_team_concept.md` |
-| `workbench.creative.synthesize_idea_session` | Creative workflow prompt; see docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md §Prompt 목록. | `workbench.creative.synthesize_idea_session.md` |
+| `workbench.creative.brainstorm_from_context` | Creative workflow prompt. | `workbench.creative.brainstorm_from_context.md` |
+| `workbench.creative.scamper_lorebook_entries` | Creative workflow prompt. | `workbench.creative.scamper_lorebook_entries.md` |
+| `workbench.creative.scamper_prompt_chain_variants` | Creative workflow prompt. | `workbench.creative.scamper_prompt_chain_variants.md` |
+| `workbench.creative.six_hats_idea_review` | Creative workflow prompt. | `workbench.creative.six_hats_idea_review.md` |
+| `workbench.creative.morphological_explore` | Creative workflow prompt. | `workbench.creative.morphological_explore.md` |
+| `workbench.creative.triz_resolve_contradiction` | Creative workflow prompt. | `workbench.creative.triz_resolve_contradiction.md` |
+| `workbench.creative.reverse_brainstorm_failure_modes` | Creative workflow prompt. | `workbench.creative.reverse_brainstorm_failure_modes.md` |
+| `workbench.creative.combine_concepts` | Creative workflow prompt. | `workbench.creative.combine_concepts.md` |
+| `workbench.creative.find_distant_analogies` | Creative workflow prompt. | `workbench.creative.find_distant_analogies.md` |
+| `workbench.creative.turn_idea_into_patch` | Creative workflow prompt. | `workbench.creative.turn_idea_into_patch.md` |
+| `workbench.creative.apply_selected_idea` | Creative workflow prompt. | `workbench.creative.apply_selected_idea.md` |
+| `workbench.creative.red_team_concept` | Creative workflow prompt. | `workbench.creative.red_team_concept.md` |
+| `workbench.creative.synthesize_idea_session` | Creative workflow prompt. | `workbench.creative.synthesize_idea_session.md` |
 
 ## Maintenance note
 

@@ -34,16 +34,10 @@ interface CreativeReferenceCard {
   useWhen: string[];
   workflow: string[];
   safety: string[];
-  source: {
-    path: typeof CREATIVE_KB_REFERENCE;
-    lines: string;
-  };
 }
 
 const JSON_MIME = 'application/json' as const;
 const TEXT_MIME = 'text/plain' as const;
-const CREATIVE_KB_REFERENCE = 'docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md' as const;
-
 const CREATIVE_SAFETY = [
   'Read resources as knowledge-base references only; resource reads never mutate files.',
   'Divergent creative steps must not write source artifacts.',
@@ -55,7 +49,6 @@ const CREATIVE_METHOD_CARDS: Record<string, CreativeReferenceCard> = {
     id: 'morphological-analysis',
     purpose: 'Explore combinations across artifact dimensions such as trigger, variable, lorebook entry, prompt position, and validation path.',
     safety: [...CREATIVE_SAFETY],
-    source: { lines: '612-626, 731-741', path: CREATIVE_KB_REFERENCE },
     title: 'Morphological analysis',
     useWhen: ['You need a broad option matrix.', 'The design space has several independent dimensions.'],
     workflow: ['Name dimensions and values.', 'Generate bounded combinations.', 'Rank combinations by evidence, feasibility, risk, token cost, and patch readiness.'],
@@ -64,7 +57,6 @@ const CREATIVE_METHOD_CARDS: Record<string, CreativeReferenceCard> = {
     id: 'reverse-brainstorming',
     purpose: 'Find failure modes first, then invert them into safer design ideas and test questions.',
     safety: [...CREATIVE_SAFETY],
-    source: { lines: '612-626, 731-741', path: CREATIVE_KB_REFERENCE },
     title: 'Reverse brainstorming',
     useWhen: ['A proposal looks risky.', 'You need red-team style checks before patch planning.'],
     workflow: ['List how the concept could fail.', 'Tie each failure to evidence or an assumption.', 'Invert failures into mitigations, validators, or smaller patch previews.'],
@@ -73,7 +65,6 @@ const CREATIVE_METHOD_CARDS: Record<string, CreativeReferenceCard> = {
     id: 'scamper',
     purpose: 'Use Substitute, Combine, Adapt, Modify, Put to another use, Eliminate, and Reverse to create artifact-safe variants.',
     safety: [...CREATIVE_SAFETY],
-    source: { lines: '612-626, 703-719, 731-741', path: CREATIVE_KB_REFERENCE },
     title: 'SCAMPER',
     useWhen: ['You have an existing lorebook entry, prompt chain, variable flow, or artifact pattern to vary.', 'You need many small candidate ideas before selecting one.'],
     workflow: ['Gather context and separate evidence from assumptions.', 'Generate concise variants under each SCAMPER lens.', 'Select candidates before any patch plan preview.'],
@@ -82,7 +73,6 @@ const CREATIVE_METHOD_CARDS: Record<string, CreativeReferenceCard> = {
     id: 'six-hats',
     purpose: 'Review an idea through neutral facts, benefits, risks, emotions, alternatives, and process control.',
     safety: [...CREATIVE_SAFETY],
-    source: { lines: '612-626, 703-719, 731-741', path: CREATIVE_KB_REFERENCE },
     title: 'Six Hats',
     useWhen: ['An idea needs balanced critique.', 'You need to distinguish evidence, assumptions, risks, and next actions.'],
     workflow: ['Summarize facts and missing context.', 'Evaluate benefits and risks separately.', 'Return next validation or preview steps without applying changes.'],
@@ -91,7 +81,6 @@ const CREATIVE_METHOD_CARDS: Record<string, CreativeReferenceCard> = {
     id: 'triz',
     purpose: 'Frame contradictions between desired creative impact and constraints such as token budget, ordering, validation, or source safety.',
     safety: [...CREATIVE_SAFETY],
-    source: { lines: '612-626, 731-741', path: CREATIVE_KB_REFERENCE },
     title: 'TRIZ',
     useWhen: ['Two requirements conflict.', 'You need a smaller resolution path before creating a patch plan.'],
     workflow: ['State the contradiction plainly.', 'List constraints and evidence.', 'Suggest separation, substitution, or staged preview options.'],
@@ -103,7 +92,6 @@ const CREATIVE_RUBRIC_CARDS: Record<string, CreativeReferenceCard> = {
     id: 'artifact-fit',
     purpose: 'Judge whether an idea fits the target artifact, ownership boundaries, order semantics, and validation path.',
     safety: [...CREATIVE_SAFETY],
-    source: { lines: '612-626, 721-741', path: CREATIVE_KB_REFERENCE },
     title: 'Artifact fit rubric',
     useWhen: ['Choosing which idea can become a patch plan.', 'Checking source artifact risk before preview.'],
     workflow: ['Check target artifact ownership.', 'Check affected files and expected diagnostics.', 'Prefer ideas with clear preview and validation steps.'],
@@ -112,7 +100,6 @@ const CREATIVE_RUBRIC_CARDS: Record<string, CreativeReferenceCard> = {
     id: 'idea-quality',
     purpose: 'Score ideas by impact, feasibility, novelty, risk, token cost, and patch readiness while keeping evidence separate from assumptions.',
     safety: [...CREATIVE_SAFETY],
-    source: { lines: '612-626, 628-668, 731-741', path: CREATIVE_KB_REFERENCE },
     title: 'Idea quality rubric',
     useWhen: ['Ranking creative candidates.', 'Deciding whether an idea is ready for red-team review or patch planning.'],
     workflow: ['Require evidence and assumptions arrays.', 'Score positives and risks separately.', 'Return next actions such as validation, ranking, or patch preview.'],
@@ -244,7 +231,7 @@ function readCreativeResource(entry: WorkbenchResourceRegistryEntry, uri: URL, p
   if (entry.name === 'workbench.creative.resource.methods') {
     return jsonResource(uriText, {
       data: {
-        methods: Object.values(CREATIVE_METHOD_CARDS).map(({ id, title, purpose, source }) => ({ id, title, purpose, source })),
+        methods: Object.values(CREATIVE_METHOD_CARDS).map(({ id, title, purpose }) => ({ id, title, purpose })),
         safety: CREATIVE_SAFETY,
       },
       resource: entry.name,
@@ -328,7 +315,6 @@ function creativeNotFoundResource(entry: WorkbenchResourceRegistryEntry, uriText
   return jsonResource(uriText, buildStablePayload(entry.name, uriText, 'not_found', `${entry.title} is not materialized yet.`, {
     requestedId,
     readOnly: true,
-    source: CREATIVE_KB_REFERENCE,
   }));
 }
 
@@ -502,4 +488,3 @@ function decodeWikiPath(uri: URL): string {
   const pathPart = uri.pathname.replace(/^\//, '');
   return decodeURIComponent(pathPart || 'index.md');
 }
-
