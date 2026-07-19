@@ -4,7 +4,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { mkdtemp } from 'node:fs/promises';
@@ -63,6 +63,81 @@ function diagnosticEnvelope(result: DiagnosticEnvelope | MutationResultEnvelope)
 }
 
 describe('handleRefreshWiki', () => {
+  it('runs the analyzer when target all is requested without generatedFiles', async () => {
+    const fixture = await createRefreshWikiFixture();
+    const wikiRoot = path.join(fixture.root, 'wiki');
+    await writeFile(
+      path.join(fixture.root, '.risumodule'),
+      `${JSON.stringify({
+        $schema: 'https://risuai-workbench.dev/schemas/risumodule.schema.json',
+        id: 'refresh-test',
+        kind: 'risu.module',
+        name: 'refresh-test',
+        schemaVersion: 1,
+        sourceFormat: 'json',
+      }, null, 2)}\n`,
+      'utf8',
+    );
+    await writeFile(
+      path.join(wikiRoot, 'workspace.yaml'),
+      'artifacts:\n  - path: .\n    type: module\n',
+      'utf8',
+    );
+
+    const result = mutationResult(await handleRefreshWiki(
+      {
+        mode: 'commit',
+        postValidate: true,
+        target: 'all',
+        wikiRoot,
+      },
+      fixture.workspace,
+      'generated-only',
+    ));
+
+    expect(result.status).toBe('applied');
+    expect(result.postValidation.status).toBe('ok');
+    expect(result.workflowSummary?.analyzeArgs).toContain('--all');
+    expect(result.changedFiles.some((file) => file.path.endsWith('/_generated/overview.md'))).toBe(true);
+    expect(result.changedFiles.some((file) => file.path === 'wiki/_log.md')).toBe(true);
+    expect(await readFile(path.join(wikiRoot, '_log.md'), 'utf8')).toContain('regenerated _generated/');
+  });
+
+  it('refuses an analyzer wiki root that escapes through a symlink', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'risuai-workbench-mcp-refresh-wiki-root-'));
+    const outside = await mkdtemp(path.join(tmpdir(), 'risuai-workbench-mcp-refresh-wiki-outside-'));
+    const protectedFile = path.join(outside, 'artifacts', 'external', '_generated', 'overview.md');
+    await mkdir(path.dirname(protectedFile), { recursive: true });
+    await writeFile(protectedFile, 'external generated content\n', 'utf8');
+    await symlink(outside, path.join(root, 'wiki'), 'dir');
+
+    const result = diagnosticEnvelope(await handleRefreshWiki(
+      { mode: 'commit', postValidate: true, target: 'all', wikiRoot: 'wiki' },
+      { ok: true, path: root, reason: null },
+      'generated-only',
+    ));
+
+    expect(result.status).toBe('domain_error');
+    expect(result.diagnostics.map((diagnostic) => diagnostic.id)).toContain('REFRESH_WIKI_PROTECTED_PATH');
+    expect(await readFile(protectedFile, 'utf8')).toBe('external generated content\n');
+  });
+
+  it('refuses nested symlinks in analyzer-owned wiki paths', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'risuai-workbench-mcp-refresh-wiki-nested-root-'));
+    const outside = await mkdtemp(path.join(tmpdir(), 'risuai-workbench-mcp-refresh-wiki-nested-outside-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await symlink(outside, path.join(root, 'wiki', 'artifacts'), 'dir');
+
+    const result = diagnosticEnvelope(await handleRefreshWiki(
+      { mode: 'preview', postValidate: true, target: 'all', wikiRoot: 'wiki' },
+      { ok: true, path: root, reason: null },
+      'preview-only',
+    ));
+
+    expect(result.status).toBe('domain_error');
+    expect(result.diagnostics.map((diagnostic) => diagnostic.id)).toContain('REFRESH_WIKI_PROTECTED_PATH');
+  });
+
   it('writes only generated wiki paths and preserves protected manual/source files', async () => {
     const fixture = await createRefreshWikiFixture();
     const protectedPaths = [

@@ -191,12 +191,13 @@ export function createMcpServer(startupContext: StartupContext): McpServer {
   registerWorkbenchResources(server, startupContext.workspace, patchStore);
   registerWorkbenchPrompts(server);
 
+  const contextStore = new ContextStore();
   const actionExecutionContext = {
     mutationMode: startupContext.mutationMode,
     patchStore,
     workspace: startupContext.workspace,
+    contextStore,
   };
-  const contextStore = new ContextStore();
   const actionRegistry = createWorkbenchActionRegistry(actionExecutionContext);
   registerFacadeTools(server, actionRegistry, actionExecutionContext, contextStore);
 

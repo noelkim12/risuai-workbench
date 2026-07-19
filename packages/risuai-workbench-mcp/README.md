@@ -21,6 +21,7 @@ packages/risuai-workbench-mcp/
 │   ├── setup.md               ← 요구사항, 빌드, MCP client 설정
 │   ├── workflows.md           ← 기본 facade 흐름과 archive 추출
 │   ├── facade-tools.md        ← 공개 facade tool 8개의 역할
+│   ├── risulua-runtime.md     ← Fengari runtime action, source/context, trace 흐름
 │   ├── mutation-safety.md     ← patch preview/apply와 파일 변경 안전성
 │   ├── troubleshooting.md     ← 자주 발생하는 문제와 점검 순서
 │   └── development.md         ← CLI, 개발 명령, stdout/stderr 규칙
@@ -35,6 +36,7 @@ packages/risuai-workbench-mcp/
 | 처음 설치하거나 MCP client에 연결 | [`docs/setup.md`](docs/setup.md) | `package.json`, `bin/risuai-workbench-mcp.js`, `src/cli.ts` |
 | agent에게 기본 사용 흐름을 설명 | [`docs/workflows.md`](docs/workflows.md) | `src/tools/facade/*`, `src/actions/create-registry.ts` |
 | 공개 tool surface를 확인 | [`docs/facade-tools.md`](docs/facade-tools.md) | `src/tools/facade/index.ts`, `src/dev/snapshot-tool-surface.ts` |
+| RisuLua를 Fengari로 실행·회귀 테스트 | [`docs/risulua-runtime.md`](docs/risulua-runtime.md) | `src/actions/adapters/runtime-actions.ts`, `src/tools/runtime/*` |
 | 파일 변경 안전 경계를 검토 | [`docs/mutation-safety.md`](docs/mutation-safety.md) | `src/mutation/*`, `src/project/safe-path.ts`, `src/tools/facade/patch-*.ts` |
 | 실행 오류나 tool 노출 문제를 진단 | [`docs/troubleshooting.md`](docs/troubleshooting.md) | `src/cli.ts`, facade tools, MCP client 설정 |
 | maintainer용 CLI·개발 명령 확인 | [`docs/development.md`](docs/development.md) | `package.json`, `src/dev/*`, `README-reference.md` |
@@ -66,6 +68,7 @@ subagent가 이 MCP package를 다룰 때는 다음 순서로 문서를 좁힙�
 - 기본 `tools/list`에는 facade tool 8개만 노출됩니다. 세부 기능은 `route_intent` → `catalog` → `prepare_action`으로 찾습니다.
 - 읽기/분석 작업은 `run_action`으로 실행하고, 파일 변경 작업은 `patch_preview`로 plan을 만든 뒤 저장된 plan만 `patch_apply`로 적용합니다.
 - `.risum`, `.charx`, `.risup` archive 추출은 내부 action `core.run_extract`를 사용합니다. archive를 text로 읽거나 수동 unzip하지 않습니다.
+- RisuLua 실행은 공개 tool을 추가하지 않고 내부 action `risulua.debug_call`, `risulua.runtime_smoke`를 `workbench.run_action`으로 호출합니다. 큰 source는 먼저 `workbench.context`에 저장합니다.
 - stdio mode에서 stdout은 MCP JSON-RPC 전용입니다. 일반 로그와 diagnostic은 stderr로 보냅니다.
 
 ## 파일 수정 규칙
@@ -81,6 +84,7 @@ subagent가 이 MCP package를 다룰 때는 다음 순서로 문서를 좁힙�
 - [`docs/setup.md`](docs/setup.md)
 - [`docs/workflows.md`](docs/workflows.md)
 - [`docs/facade-tools.md`](docs/facade-tools.md)
+- [`docs/risulua-runtime.md`](docs/risulua-runtime.md)
 - [`docs/mutation-safety.md`](docs/mutation-safety.md)
 - [`docs/troubleshooting.md`](docs/troubleshooting.md)
 - [`docs/development.md`](docs/development.md)

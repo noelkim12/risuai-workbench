@@ -118,8 +118,7 @@ export function runAnalyzeCharxWorkflow(argv: readonly string[]): number {
   }
 
   try {
-    runMain(outputDir, charxJsonPath, { noMarkdown, noHtml, wiki, wikiOnly, wikiRoot }, locale);
-    return 0;
+    return runMain(outputDir, charxJsonPath, { noMarkdown, noHtml, wiki, wikiOnly, wikiRoot }, locale);
   } catch (error) {
     const message = getErrorMessage(error);
     console.error(`\n  ❌ analyze-charx 실행 실패: ${message}\n`);
@@ -204,12 +203,12 @@ function runMain(
   charxJsonPath: string | null,
   options: { noMarkdown: boolean; noHtml: boolean; wiki: boolean; wikiOnly: boolean; wikiRoot?: string },
   locale: Locale,
-): void {
+): number {
   console.log('\n  🐿️ RisuAI Character Card Analyzer\n');
 
   const resolvedOutDir = path.resolve(outputDir);
   const analysisDir = path.join(resolvedOutDir, 'analysis');
-  ensureDir(analysisDir);
+  if (!options.wikiOnly) ensureDir(analysisDir);
 
   let charx: unknown;
   if (charxJsonPath && fs.existsSync(charxJsonPath)) {
@@ -413,6 +412,7 @@ function runMain(
   console.log('\n  ────────────────────────────────────────');
   console.log(`  📊 분석 완료 → ${path.relative('.', analysisDir)}/`);
   console.log('  ────────────────────────────────────────\n');
+  return options.wikiOnly && !requestedOutputsSucceeded ? 1 : 0;
 }
 
 function resolveCharxJsonPath(outputDir: string): string | null {

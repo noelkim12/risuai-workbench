@@ -29,6 +29,37 @@ RisuAI Workbench의 재사용 가능한 core engine package입니다.
 
 각 surface는 서로 다른 계약입니다. root import는 browser-safe surface이고, Node helper는 `risu-workbench-core/node`로 분리됩니다. `risu-core`는 라이브러리 import가 아니라 executable boundary입니다.
 
+## Node 전용 RisuLua Fengari runtime
+
+`risu-workbench-core/node`는 canonical module map이나 생성된 dist Lua를 격리된 Fengari Worker에서 실행할 수 있습니다. browser-safe root entry에는 Worker와 Fengari가 포함되지 않습니다.
+
+```ts
+import { executeRisuLua } from 'risu-workbench-core/node';
+
+const result = await executeRisuLua({
+  moduleMap: {
+    entryModuleId: 'main',
+    modules: {
+      main: 'return { add = function(a, b) return a + b end }',
+    },
+  },
+  target: { kind: 'export', exportName: 'add', args: [2, 3] },
+  hostProfile: 'minimal',
+});
+```
+
+각 요청은 새 Worker와 Lua state를 사용합니다. `require`는 전달된 module map만 읽고 `io`, `os`, `debug`, `package`, `load`, `loadfile`, `dofile`, filesystem, network를 노출하지 않습니다. Lua bytecode나 JavaScript callback도 입력으로 받지 않습니다.
+
+| profile | 제공하는 RisuAI 호환 함수 |
+|---|---|
+| `minimal` | `async`, 결정적 `math.random` |
+| `button-action` | `minimal` + chat/global variable get/set, alert, display reload, addChat |
+| `chat-state` | `button-action` + state get/set |
+
+기본 상한은 module 2 MiB, bundle 8 MiB, wall-clock 2초, Lua instruction 1,000,000회, host call 1,000회, retained trace 2,000건입니다. 호출자가 더 큰 값을 요청해도 이 상한을 넘지 않습니다. `runRisuLuaSmoke`는 JSON equality 기반 smoke assertion과 canonical/dist parity를 제공하며 별도 표현식 언어는 실행하지 않습니다.
+
+이 runtime은 회귀 테스트와 함수 디버깅을 위한 결정적 부분 구현입니다. 실제 RisuAI 브라우저 lifecycle, chat application 전체 동작, filesystem/network side effect를 에뮬레이션하지 않습니다.
+
 ## 빠른 시작
 
 저장소 루트에서 실행합니다.

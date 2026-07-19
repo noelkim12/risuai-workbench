@@ -17,6 +17,7 @@ import { analyzeRisuLuaModuleTable } from './module-table-analyzer';
 import { classifyRisuLuaModuleTableDecisions } from './module-table-classifier';
 import { planDryRunRefactorMap, validateWriterParity, type DryRunPlanResult } from './module-table-refactor-map';
 import { planTopLevelRewrite, type TopLevelRewriteResult } from './module-table-top-level-rewrite';
+import { validateRisuLuaModuleTableCapturePreservation } from './module-table-capture-validator';
 import { planNestedHandlerRewrite, type NestedHandlerRewriteResult } from './module-table-nested-handler-rewrite';
 import { getNodeRange, parseLuaBody, type LuaAssignmentStatement, type LuaIdentifier, type LuaLocalStatement, type LuaNode } from './module-table-analyzer-lua-ast';
 import { applyReplacements } from './module-table-identifier-rewrite';
@@ -239,7 +240,7 @@ async function runPipeline(input: CreateRisuLuaModuleTableArtifactsInput): Promi
     parseResult,
     classificationResult,
   });
-  const topLevelRewrite = planTopLevelRewrite({
+  const plannedTopLevelRewrite = planTopLevelRewrite({
     source: input.source,
     sourceFile: input.sourcePath,
     dryRunResult,
@@ -248,9 +249,23 @@ async function runPipeline(input: CreateRisuLuaModuleTableArtifactsInput): Promi
     promptStoreNames,
     buttonActionSources: input.buttonActionSources,
   });
+  const captureDiagnostics = plannedTopLevelRewrite.ok
+    ? await validateRisuLuaModuleTableCapturePreservation({
+        modulePlans: plannedTopLevelRewrite.modulePlans,
+        refactorMap: dryRunResult.refactorMap,
+      })
+    : [];
+  const topLevelRewrite = captureDiagnostics.length === 0
+    ? plannedTopLevelRewrite
+    : {
+        ...plannedTopLevelRewrite,
+        ok: false,
+        diagnostics: [...plannedTopLevelRewrite.diagnostics, ...captureDiagnostics],
+      };
   const nestedHandlerRewrite = planNestedHandlerRewrite({ source: input.source, sourceFile: input.sourcePath, dryRunResult, parseResult });
   if (!dryRunResult.ok || !topLevelRewrite.ok || !nestedHandlerRewrite.ok) {
-    throw new Error('Module-table rewrite planning failed; artifact writer blocked.');
+    const captureDetails = captureDiagnostics.join(' ');
+    throw new Error(`Module-table rewrite planning failed; artifact writer blocked.${captureDetails.length > 0 ? ` ${captureDetails}` : ''}`);
   }
   return { profileResult, dryRunResult, topLevelRewrite, nestedHandlerRewrite };
 }

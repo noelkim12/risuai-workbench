@@ -36,7 +36,7 @@ Prompt를 추가하거나 제거할 때는 다음 4개 파일을 **항상 함께
 - **Tool 호출 시퀀스를 명시**: "먼저 `workbench.inspect_artifact`로 검증한 후 `workbench.suggest_patch`를 호출하세요"처럼 구체적인 tool name을 언급
 - **Mutation field 반복 금지**: prompt body에서 `confirmation`, `expectedHash`, `mode: 'commit'` 같은 low-level gate field를 반복하지 않음
 - **Output schema 참조**: 결과가 `DiagnosticEnvelope`인지 `MutationResultEnvelope`인지 명시
-- **참조 문서 링크**: `docs/mcp/risuai-workbench-mcp.mutation-enabled.md` 등 KB 문서의 관련 섹션을 § 형태로 인용
+- **자체 완결적 설명**: 저장소 외부 문서 경로 대신 필요한 계약과 검증 단계를 prompt body에 직접 작성
 
 ## 3. Tool 추가 시 Prompt 매핑 체크리스트
 
