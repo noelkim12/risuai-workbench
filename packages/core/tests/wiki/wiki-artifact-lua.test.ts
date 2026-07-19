@@ -83,4 +83,46 @@ describe('wiki/artifact/lua', () => {
     expect(file!.content).toContain('- **role:** `domain`');
     expect(file!.content).toContain('- **role:** `features`');
   });
+
+  it('renders require modules and static table metadata from Lua source structure', () => {
+    const report = minimalCharxReport();
+    const first = report.luaArtifacts[0];
+    report.luaArtifacts = [
+      {
+        ...first,
+        relativePath: 'lua/state/variable_store.risulua',
+        sourceText: `
+local anal = require("domain.anal")
+M.vgAnalState = { varName = "vg_Anal_State" }
+M.constUnrelated = { displayPriority = 10 }
+M.constEffectType = {
+  analRelaxation = 516,
+}
+`,
+        collected: {
+          ...first.collected,
+          requireBindings: [
+            {
+              localName: 'anal',
+              moduleName: 'domain.anal',
+              containingFunction: null,
+              line: 2,
+            },
+          ],
+        },
+        analyzePhase: {
+          ...first.analyzePhase,
+          callGraph: new Map(),
+        },
+      },
+    ];
+
+    const file = renderLua(report, ctx);
+
+    expect(file).not.toBeNull();
+    expect(file!.content).toContain('- **requires:** `domain.anal`');
+    expect(file!.content).toContain('state variable `vg_Anal_State`');
+    expect(file!.content).toContain('effect type `analRelaxation` = `516`');
+    expect(file!.content).not.toContain('displayPriority');
+  });
 });

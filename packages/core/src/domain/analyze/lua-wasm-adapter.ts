@@ -39,7 +39,7 @@ export async function loadLuaAnalyzerWasm(): Promise<LuaAnalyzerWasmModule> {
   if (wasmModule) {
     return wasmModule;
   }
-  wasmModulePromise ??= import('@risuai/lua-analyzer-wasm').then((module) => {
+  wasmModulePromise ??= import('@risuai-workbench/lua-analyzer-wasm').then((module) => {
     wasmModule = normalizeLuaAnalyzerWasmModule(module);
     return wasmModule;
   });
@@ -57,7 +57,9 @@ export function loadLuaAnalyzerWasmSync(): LuaAnalyzerWasmModule {
     return wasmModule;
   }
 
-  wasmModule = normalizeLuaAnalyzerWasmModule(requireFromCurrentFile('@risuai/lua-analyzer-wasm'));
+  wasmModule = normalizeLuaAnalyzerWasmModule(
+    requireFromCurrentFile('@risuai-workbench/lua-analyzer-wasm'),
+  );
   return wasmModule;
 }
 
@@ -137,11 +139,7 @@ export function normalizeLuaWasmResult(value: unknown): LuaWasmAnalyzeResult {
     throw new Error('Lua WASM analyzer returned an unsupported result version');
   }
 
-  const stringLiterals = readArray(
-    value.stringLiterals,
-    normalizeStringLiteral,
-    'stringLiterals',
-  );
+  const stringLiterals = readArray(value.stringLiterals, normalizeStringLiteral, 'stringLiterals');
   const stateAccesses = readArray(value.stateAccesses, normalizeStateAccess, 'stateAccesses');
   const requireAliases = readOptionalArray(
     value.requireAliases,
@@ -240,10 +238,7 @@ function normalizeStateAccess(value: unknown): LuaWasmStateAccess {
     argStartByte: readNumber(value.argStartByte, 'stateAccesses.argStartByte'),
     argEndByte: readNumber(value.argEndByte, 'stateAccesses.argEndByte'),
     line: readNumber(value.line, 'stateAccesses.line'),
-    containingFunction: readString(
-      value.containingFunction,
-      'stateAccesses.containingFunction',
-    ),
+    containingFunction: readString(value.containingFunction, 'stateAccesses.containingFunction'),
   };
 }
 
@@ -283,7 +278,10 @@ function normalizeRequireAlias(value: unknown): LuaWasmRequireAlias {
     aliasEndUtf16: readNumber(value.aliasEndUtf16, 'requireAliases.aliasEndUtf16'),
     moduleStartUtf16: readNumber(value.moduleStartUtf16, 'requireAliases.moduleStartUtf16'),
     moduleEndUtf16: readNumber(value.moduleEndUtf16, 'requireAliases.moduleEndUtf16'),
-    statementStartUtf16: readNumber(value.statementStartUtf16, 'requireAliases.statementStartUtf16'),
+    statementStartUtf16: readNumber(
+      value.statementStartUtf16,
+      'requireAliases.statementStartUtf16',
+    ),
     statementEndUtf16: readNumber(value.statementEndUtf16, 'requireAliases.statementEndUtf16'),
     line: readNumber(value.line, 'requireAliases.line'),
   };
@@ -304,11 +302,17 @@ function normalizeMemberBridgeAssignment(value: unknown): LuaWasmMemberBridgeAss
     publicName: readString(value.publicName, 'memberBridgeAssignments.publicName'),
     aliasName: readString(value.aliasName, 'memberBridgeAssignments.aliasName'),
     memberName: readString(value.memberName, 'memberBridgeAssignments.memberName'),
-    publicStartUtf16: readNumber(value.publicStartUtf16, 'memberBridgeAssignments.publicStartUtf16'),
+    publicStartUtf16: readNumber(
+      value.publicStartUtf16,
+      'memberBridgeAssignments.publicStartUtf16',
+    ),
     publicEndUtf16: readNumber(value.publicEndUtf16, 'memberBridgeAssignments.publicEndUtf16'),
     aliasStartUtf16: readNumber(value.aliasStartUtf16, 'memberBridgeAssignments.aliasStartUtf16'),
     aliasEndUtf16: readNumber(value.aliasEndUtf16, 'memberBridgeAssignments.aliasEndUtf16'),
-    memberStartUtf16: readNumber(value.memberStartUtf16, 'memberBridgeAssignments.memberStartUtf16'),
+    memberStartUtf16: readNumber(
+      value.memberStartUtf16,
+      'memberBridgeAssignments.memberStartUtf16',
+    ),
     memberEndUtf16: readNumber(value.memberEndUtf16, 'memberBridgeAssignments.memberEndUtf16'),
     statementStartUtf16: readNumber(
       value.statementStartUtf16,
@@ -333,10 +337,7 @@ function normalizeModuleMemberDefinition(value: unknown): LuaWasmModuleMemberDef
   if (!isRecord(value)) {
     throw new Error('Lua WASM analyzer returned malformed module member definition');
   }
-  const definitionKind = readString(
-    value.definitionKind,
-    'moduleMemberDefinitions.definitionKind',
-  );
+  const definitionKind = readString(value.definitionKind, 'moduleMemberDefinitions.definitionKind');
   if (!isLuaWasmModuleMemberDefinitionKind(definitionKind)) {
     throw new Error('Lua WASM analyzer returned unsupported module member definition kind');
   }
@@ -494,10 +495,7 @@ function isLuaWasmQuoteKind(value: string): value is LuaWasmQuoteKind {
  */
 function isLuaWasmApiName(value: string): value is LuaWasmApiName {
   return (
-    value === 'getState' ||
-    value === 'setState' ||
-    value === 'getChatVar' ||
-    value === 'setChatVar'
+    value === 'getState' || value === 'setState' || value === 'getChatVar' || value === 'setChatVar'
   );
 }
 

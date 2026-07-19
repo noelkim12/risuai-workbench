@@ -1,5 +1,5 @@
 {
-  "name": "@risuai/lua-analyzer-wasm",
+  "name": "@risuai-workbench/lua-analyzer-wasm",
   "private": true,
   "version": "0.1.0",
   "description": "Rust WASM Lua analyzer kernel for RisuAI workbench experiments",

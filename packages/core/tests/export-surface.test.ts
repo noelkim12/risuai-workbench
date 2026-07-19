@@ -322,9 +322,11 @@ describe('export surface (snapshot)', () => {
     expect(exportedKeys).toMatchInlineSnapshot(`
       [
         "CHARACTER_ASSET_DIRS",
+        "DEFAULT_RISULUA_EXECUTION_LIMITS",
         "JPEG_1X1",
         "PNG_1X1_TRANSPARENT",
         "PNG_SIGNATURE",
+        "RISULUA_RUNTIME_LIMITS",
         "RISUMODULE_FILENAME",
         "RISUMODULE_KIND",
         "RISUMODULE_SCHEMA_URL",
@@ -346,6 +348,7 @@ describe('export surface (snapshot)', () => {
         "ensureDir",
         "ensureDirAsync",
         "executeLorebookPlan",
+        "executeRisuLua",
         "extractLorebookNameCandidates",
         "extractRisuLuaStaticRequireReferences",
         "isDir",
@@ -373,6 +376,7 @@ describe('export surface (snapshot)', () => {
         "resolveOrderedFiles",
         "resolveRisuLuaModulePath",
         "rewriteIndexArtifactsSection",
+        "runRisuLuaSmoke",
         "stripPngTextChunks",
         "uniquePath",
         "validateRisuLuaModuleId",

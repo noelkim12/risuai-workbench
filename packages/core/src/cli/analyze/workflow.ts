@@ -224,24 +224,27 @@ function runAllArtifacts(argv: readonly string[]): number {
   }
 
   const workspaceRoot = path.dirname(wikiRoot);
+  let failed = false;
   for (const artifact of workspace.artifacts) {
     const extractDir = path.isAbsolute(artifact.path)
       ? artifact.path
       : path.resolve(workspaceRoot, artifact.path);
 
     const subArgv = [extractDir, ...argv.filter((value) => value !== '--all')];
+    let exitCode: number;
     switch (artifact.type) {
       case 'character':
-        runCharxAnalyze(subArgv);
+        exitCode = runCharxAnalyze(subArgv);
         break;
       case 'module':
-        runAnalyzeModuleWorkflow(subArgv);
+        exitCode = runAnalyzeModuleWorkflow(subArgv);
         break;
       case 'preset':
-        runAnalyzePresetWorkflow(subArgv);
+        exitCode = runAnalyzePresetWorkflow(subArgv);
         break;
     }
+    if (exitCode !== 0) failed = true;
   }
 
-  return 0;
+  return failed ? 1 : 0;
 }

@@ -143,6 +143,7 @@ export function runAnalyzePresetWorkflow(argv: readonly string[]): number {
         } catch (error) {
           const message = getErrorMessage(error);
           console.warn(`  ⚠️ wiki 생성 실패: ${message}`);
+          if (wikiOnly) return 1;
         }
       }
       return 0;

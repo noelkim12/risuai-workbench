@@ -89,6 +89,25 @@ describe('runAnalyzeCharxWorkflow', () => {
     expect(fs.readFileSync(sidecarPath, 'utf8')).toBe(oldBytes);
   });
 
+  it('does not create analysis output during wiki-only analysis', () => {
+    const tempDir = createCanonicalCharacterWorkspace('risu-charx-showcase-wiki-boundary-');
+
+    const exitCode = runAnalyzeCharxWorkflow([tempDir, '--wiki-only', '--locale', 'en']);
+
+    expect(exitCode).toBe(0);
+    expect(fs.existsSync(path.join(tempDir, 'analysis'))).toBe(false);
+  });
+
+  it('returns a failure when wiki-only generation fails', () => {
+    const tempDir = createCanonicalCharacterWorkspace('risu-charx-showcase-wiki-failure-');
+    const wikiRoot = path.join(tempDir, 'wiki-output-file');
+    fs.writeFileSync(wikiRoot, 'not a directory\n', 'utf8');
+
+    const exitCode = runAnalyzeCharxWorkflow([tempDir, '--wiki-only', '--wiki-root', wikiRoot, '--locale', 'en']);
+
+    expect(exitCode).toBe(1);
+  });
+
   it('preserves an existing character showcase sidecar when an earlier requested html output fails', () => {
     const tempDir = createCanonicalCharacterWorkspace('risu-charx-showcase-html-failure-');
     const analysisDir = path.join(tempDir, 'analysis');

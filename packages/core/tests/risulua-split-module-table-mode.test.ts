@@ -13,6 +13,7 @@ import {
   RISULUA_MODULE_TABLE_VARIABLE_STORE_PATH,
   serializeRisuLuaModuleTableDomainCandidates,
   serializeRisuLuaModuleTableRefactorMap,
+  validateRisuLuaModuleTableCapturePreservation,
   writeRisuLuaModuleTableWorkspace,
 } from '../src/domain/risulua-split';
 import { lines } from './helpers/module-table-refactor-map-helpers';
@@ -707,6 +708,63 @@ describe('risulua-split module-table artifact writer', () => {
     expect(domain).toContain('local __variable_store = require("state.variable_store")');
     expect(domain).toContain('return #__impl.normalizeDeck(cards) * __variable_store.DECK_SCORE_MULTIPLIER');
     expect(domain).not.toContain('return #__impl.normalizeDeck(cards) * DECK_SCORE_MULTIPLIER');
+  });
+
+  it('preserves sensitivity range captures and rejects a generated bare global regression', async () => {
+    const source = lines([
+      'local sensitivityRanges = {',
+      '  { min = 0, level = 1 },',
+      '  { min = 20, level = 2 },',
+      '}',
+      '',
+      'function getsensitivityRangeForLevel(level)',
+      '  local selectedRange = sensitivityRanges[level]',
+      '  if selectedRange then',
+      '    local max = level < #sensitivityRanges and sensitivityRanges[level + 1].min - 1 or math.huge',
+      '    return selectedRange.min, max',
+      '  end',
+      '  return nil',
+      'end',
+      '',
+      'function onOutput(text)',
+      '  local minimum = getsensitivityRangeForLevel(1)',
+      '  return tostring(minimum) .. text',
+      'end',
+    ]);
+
+    const artifacts = await createRisuLuaModuleTableArtifacts({
+      source,
+      sourcePath: 'sensitivity_range_capture_fixture.risulua',
+      domainGeneration: 'validated',
+    });
+
+    const domainModule = artifacts.topLevelRewrite.modulePlans.find(
+      (modulePlan) => modulePlan.category === 'domain-function'
+        && modulePlan.exportNames.includes('getsensitivityRangeForLevel'),
+    );
+    expect(domainModule).toBeDefined();
+    expect(domainModule!.body).toContain('local __variable_store = require("state.variable_store")');
+    expect(domainModule!.body).toContain('__variable_store.sensitivityRanges[level]');
+
+    await expect(validateRisuLuaModuleTableCapturePreservation({
+      modulePlans: artifacts.topLevelRewrite.modulePlans,
+      refactorMap: artifacts.dryRunResult.refactorMap,
+    })).resolves.toEqual([]);
+
+    const brokenModule = {
+      ...domainModule!,
+      body: domainModule!.body.replaceAll('__variable_store.sensitivityRanges', 'sensitivityRanges'),
+    };
+    const brokenPlans = artifacts.topLevelRewrite.modulePlans.map((modulePlan) => (
+      modulePlan.modulePath === brokenModule.modulePath ? brokenModule : modulePlan
+    ));
+
+    await expect(validateRisuLuaModuleTableCapturePreservation({
+      modulePlans: brokenPlans,
+      refactorMap: artifacts.dryRunResult.refactorMap,
+    })).resolves.toEqual([
+      expect.stringContaining('RISULUA_SPLIT_CAPTURE_LOST'),
+    ]);
   });
 
   it('rewrites prompt store captures inside validated domain modules', async () => {

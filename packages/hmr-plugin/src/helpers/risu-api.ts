@@ -35,7 +35,6 @@ const WEB_FETCH_OPTIONS: LocalNetworkRequestInit = {
 };
 
 let cachedPlatform: Promise<RisuPlatform> | undefined;
-let requiredPermissionsRequest: Promise<boolean> | undefined;
 
 function getPlatform(): Promise<RisuPlatform> {
   cachedPlatform ??= risuai.getRuntimeInfo().then((info) => toPlatform(info.platform));
@@ -52,6 +51,10 @@ function toPlatform(value: string): RisuPlatform {
 
 async function requestRequiredPluginPermissions(): Promise<boolean> {
   for (const permission of REQUIRED_PLUGIN_PERMISSIONS) {
+    if (permission === "db") {
+      if ((await risuai.getDatabase([])) === null) return false;
+      continue;
+    }
     if (!(await risuai.requestPluginPermission(permission))) return false;
   }
 
@@ -145,19 +148,7 @@ export function createRisuControllerDeps(
 export const risuUi = {
   showContainer: () => risuai.showContainer("fullscreen"),
   hideContainer: () => risuai.hideContainer(),
-  requestRequiredPermissions: () => {
-    requiredPermissionsRequest ??= requestRequiredPluginPermissions().then(
-      (granted) => {
-        if (!granted) requiredPermissionsRequest = undefined;
-        return granted;
-      },
-      (error: unknown) => {
-        requiredPermissionsRequest = undefined;
-        throw error;
-      },
-    );
-    return requiredPermissionsRequest;
-  },
+  requestRequiredPermissions: requestRequiredPluginPermissions,
   readImageBytes: async (path: string): Promise<Uint8Array | null> => {
     try {
       return toImageBytes(await risuai.readImage(path));
