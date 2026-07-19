@@ -294,6 +294,10 @@ export {
   type TopLevelRewriteInput,
 } from './module-table/module-table-top-level-rewrite';
 export {
+  validateRisuLuaModuleTableCapturePreservation,
+  type ValidateRisuLuaModuleTableCapturePreservationInput,
+} from './module-table/module-table-capture-validator';
+export {
   planNestedHandlerRewrite,
   type HandlerHelperModulePlan,
   type HandlerBodyRewritePlan,

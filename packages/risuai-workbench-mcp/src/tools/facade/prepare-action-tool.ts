@@ -90,6 +90,9 @@ function contextHintForAction(action: ErasedWorkbenchAction): string | undefined
   if (action.capability.startsWith('creative.')) {
     return 'For large creative inputs, create a context record with workbench.context and pass the contextId to run_action instead of embedding large objects in args.';
   }
+  if (action.capability === 'risulua.runtime') {
+    return 'Inline RisuLua source is limited to 128 KiB. Prefer source.kind=workspace when canonical modules or dist output already exist. For larger source, create a workbench.context record and pass its id as source.contextId. This differs from the top-level run_action.contextId, which hydrates the complete action args before validation.';
+  }
   return undefined;
 }
 

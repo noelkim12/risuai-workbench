@@ -12,6 +12,7 @@ import { registerSkillsActions } from './adapters/skills-actions';
 import { registerCreativeActions } from './adapters/creative-actions';
 import { registerPatchActions } from './adapters/patch-actions';
 import { registerCoreWorkflowActions } from './adapters/core-workflow-actions';
+import { registerRuntimeActions } from './adapters/runtime-actions';
 
 /**
  * createWorkbenchActionRegistry 함수.
@@ -32,6 +33,7 @@ export function createWorkbenchActionRegistry(
   registerCreativeActions(registry);
   registerPatchActions(registry);
   registerCoreWorkflowActions(registry);
+  registerRuntimeActions(registry);
   void context;
   return registry;
 }

@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { collectModuleCBS } from '../src/cli/analyze/module/collectors';
 import { runAnalyzeModuleWorkflow } from '../src/cli/analyze/module/workflow';
+import { runAnalyzeWorkflow } from '../src/cli/analyze/workflow';
 import { runExtractWorkflow as runModuleExtractWorkflow } from '../src/cli/extract/module/workflow';
 import { parseAnalysisShowcase } from '../src/domain';
 
@@ -159,6 +160,20 @@ type: editdisplay
     expect(fs.readFileSync(sidecarPath, 'utf-8')).toBe(oldBytes);
   });
 
+  it('returns a failure when any --all artifact analysis fails', () => {
+    const wikiRoot = path.join(tempDir, 'wiki');
+    fs.mkdirSync(wikiRoot, { recursive: true });
+    fs.writeFileSync(
+      path.join(wikiRoot, 'workspace.yaml'),
+      'artifacts:\n  - path: .\n    type: module\n  - path: ./missing-module\n    type: module\n',
+      'utf8',
+    );
+
+    const code = runAnalyzeWorkflow(['--all', '--wiki-only', '--wiki-root', wikiRoot]);
+
+    expect(code).toBe(1);
+  });
+
   it('preserves an existing module showcase sidecar when an earlier requested html output fails', () => {
     const analysisDir = path.join(tempDir, 'analysis');
     const sidecarPath = path.join(analysisDir, 'risu-analysis.showcase.json');
@@ -176,6 +191,32 @@ type: editdisplay
     const result = collectModuleCBS(tempDir);
     expect(result.regexCBS.length).toBeGreaterThan(0);
     expect(result.regexCBS[0]?.writes.has('mode')).toBe(true);
+  });
+
+  it('keeps no-op canonical regex scripts out of active CBS analysis', () => {
+    fs.writeFileSync(
+      path.join(tempDir, 'regex', '_order.json'),
+      `${JSON.stringify(['init_script.risuregex', 'status_display.risuregex'], null, 2)}\n`,
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'regex', 'status_display.risuregex'),
+      `---
+comment: status_display
+type: editdisplay
+---
+@@@ IN
+\\[Anal State:([^\\]]+)\\]
+@@@ OUT
+<span>Anal State:$1</span>
+`,
+      'utf-8',
+    );
+
+    const result = collectModuleCBS(tempDir);
+
+    expect(result.regexScriptTotal).toBe(2);
+    expect(result.regexCBS.map((script) => script.elementName)).not.toContain('[module]/status_display');
   });
 
   it('imports lua analysis and background html data from extracted module directory', () => {

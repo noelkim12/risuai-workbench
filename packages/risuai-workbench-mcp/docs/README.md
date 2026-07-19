@@ -9,6 +9,7 @@
 | [`setup.md`](setup.md) | 요구사항, 저장소 빌드, MCP client 설정 |
 | [`workflows.md`](workflows.md) | 읽기/분석 workflow, 파일 변경 workflow, archive 추출 |
 | [`facade-tools.md`](facade-tools.md) | 기본 공개 facade tool 8개의 역할과 내부 actionId 구분 |
+| [`risulua-runtime.md`](risulua-runtime.md) | Fengari runtime action, source/context, trace와 제한 |
 | [`mutation-safety.md`](mutation-safety.md) | patch preview/apply, path safety, stale state 처리 |
 | [`troubleshooting.md`](troubleshooting.md) | startup, tool surface, mutation 거부 문제 해결 |
 | [`development.md`](development.md) | CLI 옵션, 개발 명령, facade visualization |
@@ -18,9 +19,10 @@
 1. client에 연결하려면 [`setup.md`](setup.md)를 먼저 읽습니다.
 2. agent prompt나 사용 가이드를 작성하려면 [`workflows.md`](workflows.md)를 읽습니다.
 3. tool 이름을 정확히 써야 하면 [`facade-tools.md`](facade-tools.md)를 읽습니다.
-4. 파일 변경을 다루면 [`mutation-safety.md`](mutation-safety.md)를 반드시 함께 읽습니다.
-5. 문제가 발생하면 [`troubleshooting.md`](troubleshooting.md)에서 증상별 점검 순서를 확인합니다.
-6. maintainer 작업이면 [`development.md`](development.md)와 [`../README-reference.md`](../README-reference.md)를 같이 봅니다.
+4. RisuLua 실행이나 split runtime 회귀를 다루면 [`risulua-runtime.md`](risulua-runtime.md)를 읽습니다.
+5. 파일 변경을 다루면 [`mutation-safety.md`](mutation-safety.md)를 반드시 함께 읽습니다.
+6. 문제가 발생하면 [`troubleshooting.md`](troubleshooting.md)에서 증상별 점검 순서를 확인합니다.
+7. maintainer 작업이면 [`development.md`](development.md)와 [`../README-reference.md`](../README-reference.md)를 같이 봅니다.
 
 ## 문서 작성 규칙
 

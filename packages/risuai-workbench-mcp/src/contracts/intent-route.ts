@@ -22,6 +22,8 @@ export type WorkbenchIntent =
   | 'core.extract.preview'
   | 'analyze.variable_flow'
   | 'analyze.lua_handler'
+  | 'risulua_runtime_debug'
+  | 'risulua_runtime_smoke'
   | 'creative.idea_to_patch'
   | 'creative.apply_patch'
   | 'docs.update'
@@ -43,6 +45,7 @@ export type TargetKind =
   | 'diagnostic'
   | 'variable'
   | 'lua_handler'
+  | 'lua_runtime'
   | 'idea'
   | 'patch_plan'
   | 'documentation';
@@ -53,6 +56,7 @@ export type RouteNextStep =
   | 'read_resource'
   | 'validate'
   | 'analyze'
+  | 'execute'
   | 'creative_review'
   | 'preview'
   | 'apply'
@@ -94,6 +98,8 @@ export const workbenchIntentSchema = z.enum([
   'core.extract.preview',
   'analyze.variable_flow',
   'analyze.lua_handler',
+  'risulua_runtime_debug',
+  'risulua_runtime_smoke',
   'creative.idea_to_patch',
   'creative.apply_patch',
   'docs.update',
@@ -117,6 +123,7 @@ export const targetKindSchema = z.enum([
   'diagnostic',
   'variable',
   'lua_handler',
+  'lua_runtime',
   'idea',
   'patch_plan',
   'documentation',
@@ -128,6 +135,7 @@ export const routeNextStepSchema = z.enum([
   'read_resource',
   'validate',
   'analyze',
+  'execute',
   'creative_review',
   'preview',
   'apply',

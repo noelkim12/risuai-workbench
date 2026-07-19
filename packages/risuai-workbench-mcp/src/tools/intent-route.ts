@@ -112,6 +112,44 @@ const LUA_KEYWORDS = [
   'id/async',
   'access rules',
 ];
+const RISULUA_RUNTIME_SUBJECT_KEYWORDS = [
+  'risulua',
+  'lua function',
+  'lua runtime',
+  'fengari',
+  'button action',
+  '버튼 액션',
+];
+const RISULUA_RUNTIME_DEBUG_KEYWORDS = [
+  '실행',
+  '호출',
+  '디버그',
+  '재현',
+];
+const RISULUA_RUNTIME_SMOKE_KEYWORDS = [
+  'runtime smoke',
+  'smoke test',
+  'regression',
+  'parity',
+  'canonical dist',
+  'split runtime',
+  'split 후 실행 오류',
+  '런타임 회귀',
+  '런타임 스모크',
+];
+const RISULUA_SPLIT_RUNTIME_KEYWORDS = [
+  'split runtime',
+  'split 후 실행 오류',
+];
+const LARGE_RUNTIME_INPUT_KEYWORDS = [
+  'very large',
+  'large file',
+  'big file',
+  '128 kib',
+  '큰 파일',
+  '대용량',
+  '파일이 커',
+];
 const ORDER_KEYWORDS = ['_order.json', 'order', 'reorder', '순서'];
 const FRONTMATTER_KEYWORDS = ['frontmatter', 'yaml', 'metadata header', 'meta field', '프론트매터'];
 const WIKI_KEYWORDS = ['wiki', 'refresh wiki', 'update wiki'];
@@ -662,6 +700,9 @@ function intentToCapabilities(intent: WorkbenchIntent): readonly string[] {
     case 'analyze.variable_flow':
     case 'analyze.lua_handler':
       return ['analyze'];
+    case 'risulua_runtime_debug':
+    case 'risulua_runtime_smoke':
+      return ['risulua.runtime'];
     case 'creative.idea_to_patch':
       return ['creative.ideation', 'creative.context'];
     case 'creative.apply_patch':
@@ -708,6 +749,14 @@ function intentToRecommendedActions(intent: WorkbenchIntent): readonly string[] 
         'analyze.query_lua_call_graph',
         'analyze.query_lua_state_access',
         'analyze.query_risulua_api',
+      ];
+    case 'risulua_runtime_debug':
+      return ['analyze.query_lua_analysis', 'risulua.debug_call'];
+    case 'risulua_runtime_smoke':
+      return [
+        'analyze.query_lua_analysis',
+        'risulua.debug_call',
+        'risulua.runtime_smoke',
       ];
     case 'creative.idea_to_patch':
       return [
@@ -762,6 +811,9 @@ function intentToNextInput(
     case 'analyze.variable_flow':
     case 'analyze.lua_handler':
       return { capability: 'analyze', limit: 5 };
+    case 'risulua_runtime_debug':
+    case 'risulua_runtime_smoke':
+      return { capability: 'risulua.runtime', limit: 5 };
     case 'creative.idea_to_patch':
       return { capability: 'creative.ideation', limit: 5 };
     case 'docs.update':
@@ -797,6 +849,14 @@ function intentToFacadeRecommendedTools(intent: WorkbenchIntent): readonly strin
       return [FACADE_TOOLS.catalog];
     case 'core.extract.preview':
       return [FACADE_TOOLS.catalog, FACADE_TOOLS.prepareAction, FACADE_TOOLS.runAction];
+    case 'risulua_runtime_debug':
+    case 'risulua_runtime_smoke':
+      return [
+        FACADE_TOOLS.catalog,
+        FACADE_TOOLS.context,
+        FACADE_TOOLS.prepareAction,
+        FACADE_TOOLS.runAction,
+      ];
     default:
       return [FACADE_TOOLS.catalog, FACADE_TOOLS.prepareAction, FACADE_TOOLS.runAction];
   }
@@ -1044,6 +1104,46 @@ function classifyIntent(
       allowedTools: filterImplemented(unionSets([READ_ONLY_TOOLS, ANALYZE_TOOLS])),
       blockedTools: filterImplemented(MUTATION_TOOLS),
       domainTags: constraints.domainTags,
+    });
+  }
+
+  // Rule 6.5: explicit RisuLua/Fengari execution, debugging, smoke, or parity language.
+  // This must precede the generic Lua analysis rule below.
+  const runtimeSubjectRequested = hasKeyword(text, RISULUA_RUNTIME_SUBJECT_KEYWORDS);
+  const runtimeSmokeRequested = hasKeyword(text, RISULUA_RUNTIME_SMOKE_KEYWORDS)
+    && (runtimeSubjectRequested || hasKeyword(text, RISULUA_SPLIT_RUNTIME_KEYWORDS));
+  const hasEnglishRuntimeDebugVerb = /\b(?:execute|run|debug|reproduce)\b/u.test(text)
+    || (/\bcall\b/u.test(text) && !/\bcall graph\b/u.test(text));
+  const runtimeDebugRequested = runtimeSubjectRequested
+    && (hasEnglishRuntimeDebugVerb || hasKeyword(text, RISULUA_RUNTIME_DEBUG_KEYWORDS));
+  if (runtimeSmokeRequested || runtimeDebugRequested) {
+    const intent: WorkbenchIntent = runtimeSmokeRequested
+      ? 'risulua_runtime_smoke'
+      : 'risulua_runtime_debug';
+    const largeInput = hasKeyword(text, LARGE_RUNTIME_INPUT_KEYWORDS);
+    const buttonAction = text.includes('button action') || text.includes('버튼 액션');
+    return buildRouteResult(input, {
+      intent,
+      nextStep: 'execute',
+      confidence: runtimeSmokeRequested ? 0.93 : 0.9,
+      risk: 'read_only',
+      targetKind: 'lua_runtime',
+      mutationRequested: false,
+      commitAllowed: false,
+      stopConditions: [],
+      explanation: buttonAction
+        ? 'RisuLua runtime debugging request detected. Prepare risulua.debug_call with the button-action host profile.'
+        : largeInput
+          ? 'RisuLua runtime execution request detected. Put source larger than 128 KiB in workbench.context before prepare_action and run_action.'
+          : 'RisuLua runtime execution request detected. Use the isolated Fengari runtime actions.',
+      allowedTools: filterImplemented(READ_ONLY_TOOLS),
+      blockedTools: filterImplemented(MUTATION_TOOLS),
+      domainTags: uniqueStable([...constraints.domainTags, 'risulua', 'lua-runtime']),
+      routingSignals: [
+        runtimeSmokeRequested ? 'risulua_runtime:smoke' : 'risulua_runtime:debug',
+        ...(largeInput ? ['large_input:context_required'] : []),
+        ...(buttonAction ? ['host_profile:button-action'] : []),
+      ],
     });
   }
 
