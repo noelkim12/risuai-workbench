@@ -12,8 +12,6 @@ import { describe, expect, it } from 'vitest';
 const packageRoot = path.resolve(__dirname, '..', '..');
 const binPath = path.join(packageRoot, 'bin', 'risuai-workbench-mcp.js');
 const fixturesRoot = path.resolve(__dirname, '..', 'fixtures', 'workspaces', 'standard');
-const sourcePath = 'docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md';
-
 const creativeResources = [
   ['workbench.creative.resource.methods', 'risuai-workbench://methods'],
   ['workbench.creative.resource.method.scamper', 'risuai-workbench://methods/scamper'],
@@ -80,7 +78,7 @@ describe('creative resources and prompts', () => {
     });
   });
 
-  it('returns concise creative method and rubric resources with KB references', async () => {
+  it('returns concise creative method and rubric resources', async () => {
     await withClient(async (client) => {
       for (const uri of [
         'risuai-workbench://methods',
@@ -98,7 +96,6 @@ describe('creative resources and prompts', () => {
 
         expect(payload.schema).toBe('risuai-workbench-mcp.resource');
         expect(payload.status).toBe('ok');
-        expect(text).toContain(sourcePath);
         expect(text).toContain('Workbench apply tools');
         expect(text.length).toBeLessThan(5000);
         expect(text).not.toContain('creative layer는 structure MCP와 같은 mutation safety를 따른다');
@@ -120,7 +117,7 @@ describe('creative resources and prompts', () => {
         expect(payload.resource).toBe(resource);
         expect(payload.status).toBe('not_found');
         expect(payload.data.readOnly).toBe(true);
-        expect(payload.data.source).toBe(sourcePath);
+        expect(payload.data.source).toBeUndefined();
       }
     });
   });
@@ -139,14 +136,14 @@ describe('creative resources and prompts', () => {
         expect(payload.resource).toBe(resource);
         expect(payload.status).toBe('not_found');
         expect(payload.data.readOnly).toBe(true);
-        expect(payload.data.source).toBe(sourcePath);
+        expect(payload.data.source).toBeUndefined();
         expect(payload.data.method).toBeUndefined();
         expect(payload.data.rubric).toBeUndefined();
       }
     });
   });
 
-  it('returns concise safety-aligned creative prompt instructions with KB references', async () => {
+  it('returns concise self-contained creative prompt instructions', async () => {
     await withClient(async (client) => {
       for (const name of creativePrompts) {
         const result = await client.getPrompt({ arguments: { context: 'test context', target: 'test target' }, name });

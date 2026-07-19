@@ -3,7 +3,7 @@
  * @file packages/risuai-workbench-mcp/src/tools/wiki/refresh-wiki.ts
  */
 
-import { mkdir, readFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, readdir, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { appendLogEntry, rewriteIndexArtifactsSection, writeArtifactFiles, writeSchemaIfChanged } from 'risu-workbench-core/node';
@@ -17,6 +17,7 @@ import { isGeneratedMutationAllowedPath } from '../../mutation/validation-allowl
 import { evaluateMutationSafetyGate } from '../../mutation/safety-gate';
 import type { WorkspaceRootStatus } from '../../project/resolve-root';
 import { resolveSafeWorkspacePath } from '../../project/safe-path';
+import { runRisuCoreCommand } from '../mutation/core-workflow-cli';
 
 export type RefreshWikiToolResult = DiagnosticEnvelope | MutationResultEnvelope;
 
@@ -58,7 +59,11 @@ export async function handleRefreshWiki(input: unknown, workspace: WorkspaceRoot
 
   if (!workspace.ok) return createDiagnosticEnvelope({ diagnostics: [workspaceDiagnostic(workspace.reason)], status: 'domain_error', tool: TOOL_NAME });
 
-  const requestedFiles = normalizeGeneratedFiles(refreshInput);
+  if (!refreshInput.generatedFiles || refreshInput.generatedFiles.length === 0) {
+    return runAnalyzerRefresh(refreshInput, workspace, mutationMode);
+  }
+
+  const requestedFiles = refreshInput.generatedFiles;
   const protectedFiles = requestedFiles.filter((file) => !isGeneratedMutationAllowedPath(file.path));
   if (protectedFiles.length > 0) {
     return createDiagnosticEnvelope({
@@ -128,16 +133,196 @@ export async function handleRefreshWiki(input: unknown, workspace: WorkspaceRoot
   });
 }
 
-/**
- * normalizeGeneratedFiles 함수.
- * generatedFiles가 없을 때 안전한 최소 schema/log 갱신 payload를 만든다.
- *
- * @param input - refresh wiki 입력
- * @returns write 대상 파일 목록
- */
-function normalizeGeneratedFiles(input: RefreshWikiInput): readonly RefreshWikiFileInput[] {
-  if (input.generatedFiles && input.generatedFiles.length > 0) return input.generatedFiles;
-  return [{ content: `## refresh_wiki\n- target: ${input.target ?? 'all'}\n`, path: `${input.wikiRoot ?? 'wiki'}/_log.md` }];
+async function runAnalyzerRefresh(
+  input: RefreshWikiInput,
+  workspace: Extract<WorkspaceRootStatus, { ok: true }>,
+  mutationMode: MutationMode,
+): Promise<RefreshWikiToolResult> {
+  const safeWikiRoot = await resolveSafeWorkspacePath({
+    inputPath: input.wikiRoot ?? 'wiki',
+    intent: 'create-missing',
+    workspace,
+  });
+  if (!safeWikiRoot.ok) return pathError(input.wikiRoot ?? 'wiki', safeWikiRoot.reason);
+
+  if (!await isContainedWikiRoot(safeWikiRoot.absolutePath, workspace.path)) {
+    return createDiagnosticEnvelope({
+      data: { protectedPaths: [safeWikiRoot.relativePath], writePolicy: 'generated-only' },
+      diagnostics: [{ category: 'wiki', id: 'REFRESH_WIKI_PROTECTED_PATH', message: `${safeWikiRoot.relativePath} resolves outside the workspace generated wiki boundary.`, path: safeWikiRoot.relativePath, ruleId: 'wiki.protected-path', severity: 'error' }],
+      status: 'domain_error',
+      tool: TOOL_NAME,
+    });
+  }
+
+  if (await hasGeneratedWikiSymlink(safeWikiRoot.absolutePath)) {
+    return createDiagnosticEnvelope({
+      data: { protectedPaths: [safeWikiRoot.relativePath], writePolicy: 'generated-only' },
+      diagnostics: [{ category: 'wiki', id: 'REFRESH_WIKI_PROTECTED_PATH', message: `${safeWikiRoot.relativePath} contains a symlink in an analyzer-owned write path.`, path: safeWikiRoot.relativePath, ruleId: 'wiki.protected-path', severity: 'error' }],
+      status: 'domain_error',
+      tool: TOOL_NAME,
+    });
+  }
+
+  const policyProbe = path.posix.join(safeWikiRoot.relativePath, '_log.md');
+  if (!isGeneratedMutationAllowedPath(policyProbe)) {
+    return createDiagnosticEnvelope({
+      data: { protectedPaths: [safeWikiRoot.relativePath], writePolicy: 'generated-only' },
+      diagnostics: [{ category: 'wiki', id: 'REFRESH_WIKI_PROTECTED_PATH', message: `${safeWikiRoot.relativePath} is outside generated wiki write-protect boundaries.`, path: safeWikiRoot.relativePath, ruleId: 'wiki.protected-path', severity: 'error' }],
+      status: 'domain_error',
+      tool: TOOL_NAME,
+    });
+  }
+
+  const args = await buildAnalyzeArgs(workspace.path, safeWikiRoot.absolutePath);
+  if (mutationMode === 'preview-only') {
+    return createDiagnosticEnvelope({
+      data: { analyzeArgs: args, preview: true, target: input.target ?? 'all', wikiRoot: safeWikiRoot.relativePath, writePolicy: 'generated-only' },
+      diagnostics: [{ category: 'wiki', id: 'REFRESH_WIKI_PREVIEW', message: 'Analyzer-backed wiki refresh preview created; no files were changed.', path: safeWikiRoot.relativePath, ruleId: 'wiki.refresh-preview', severity: 'info' }],
+      status: 'ok',
+      tool: TOOL_NAME,
+    });
+  }
+
+  const before = await snapshotGeneratedWiki(safeWikiRoot.absolutePath, safeWikiRoot.relativePath);
+  const commandResult = await runRisuCoreCommand(args, workspace.path);
+  const after = await snapshotGeneratedWiki(safeWikiRoot.absolutePath, safeWikiRoot.relativePath);
+  const changedFiles = diffWikiSnapshots(before, after);
+  const commandFailed = commandResult.exitCode !== 0;
+  const missingGeneratedOutput = ![...after.keys()].some((filePath) => filePath.includes('/_generated/'));
+  const diagnostics: WorkbenchDiagnostic[] = [];
+  if (commandFailed) {
+    diagnostics.push({ category: 'workflow', id: 'REFRESH_WIKI_ANALYZE_FAILED', message: `risu-core analyze exited with code ${commandResult.exitCode}.`, path: safeWikiRoot.relativePath, ruleId: 'wiki.refresh-analyze-exit', severity: 'error' });
+  } else if (missingGeneratedOutput) {
+    diagnostics.push({ category: 'post-validation', id: 'REFRESH_WIKI_GENERATED_OUTPUT_MISSING', message: 'Analyzer completed without producing any _generated wiki files.', path: safeWikiRoot.relativePath, ruleId: 'wiki.generated-output-missing', severity: 'error' });
+  }
+  const postValidation: PostValidationResult = input.postValidate === false
+    ? { diagnostics, status: diagnostics.length > 0 ? 'error' : 'not_run' }
+    : { diagnostics, status: diagnostics.length > 0 ? 'error' : 'ok' };
+  const mutationId = `mutation:${Date.now().toString(36)}:refresh-wiki`;
+  const status = postValidation.status === 'error' ? 'failed' : 'applied';
+
+  await appendJournalEntry(path.join(workspace.path, '.risuai-workbench-mcp', 'journal.jsonl'), {
+    affectedFiles: changedFiles.map((file) => file.path),
+    changedFiles,
+    mutationId,
+    patchOperations: [{ kind: 'text.replace', path: safeWikiRoot.relativePath }],
+    postValidation,
+    rollbackAvailable: false,
+    status: status === 'applied' ? 'applied' : 'failed-validation',
+    toolName: TOOL_NAME,
+    workflowSummary: { analyzeArgs: args, exitCode: commandResult.exitCode, stderr: commandResult.stderr, stdout: commandResult.stdout },
+  });
+
+  return createMutationResultEnvelope({
+    appliedAt: new Date().toISOString(),
+    changedFiles,
+    mutationId,
+    postValidation,
+    resourceLinks: [`risuai-workbench://mutations/journal/${mutationId}`],
+    status,
+    tool: TOOL_NAME,
+    workflowSummary: { analyzeArgs: args, exitCode: commandResult.exitCode, timedOut: commandResult.timedOut },
+  });
+}
+
+async function isContainedWikiRoot(wikiRoot: string, workspaceRoot: string): Promise<boolean> {
+  const resolvedWorkspaceRoot = await realpath(workspaceRoot);
+  let existingAncestor = wikiRoot;
+  while (true) {
+    try {
+      existingAncestor = await realpath(existingAncestor);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return false;
+      const parent = path.dirname(existingAncestor);
+      if (parent === existingAncestor) return false;
+      existingAncestor = parent;
+    }
+  }
+  const relative = path.relative(resolvedWorkspaceRoot, existingAncestor);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+async function hasGeneratedWikiSymlink(wikiRoot: string): Promise<boolean> {
+  const analyzerOwnedPaths = [
+    wikiRoot,
+    path.join(wikiRoot, 'artifacts'),
+    path.join(wikiRoot, '_schema'),
+    path.join(wikiRoot, 'SCHEMA.md'),
+    path.join(wikiRoot, '_index.md'),
+    path.join(wikiRoot, '_log.md'),
+  ];
+  if (await isSymlink(wikiRoot)) return true;
+  for (const ownedPath of analyzerOwnedPaths.slice(1)) {
+    if (await containsSymlink(ownedPath)) return true;
+  }
+  return false;
+}
+
+async function containsSymlink(targetPath: string): Promise<boolean> {
+  let targetStat;
+  try {
+    targetStat = await lstat(targetPath);
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ENOENT';
+  }
+  if (targetStat.isSymbolicLink()) return true;
+  if (!targetStat.isDirectory()) return false;
+  const entries = await readdir(targetPath, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isSymbolicLink()) return true;
+    if (entry.isDirectory() && await containsSymlink(path.join(targetPath, entry.name))) return true;
+  }
+  return false;
+}
+
+async function isSymlink(targetPath: string): Promise<boolean> {
+  try {
+    return (await lstat(targetPath)).isSymbolicLink();
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ENOENT';
+  }
+}
+
+async function buildAnalyzeArgs(workspaceRoot: string, wikiRoot: string): Promise<string[]> {
+  try {
+    await stat(path.join(wikiRoot, 'workspace.yaml'));
+    return ['analyze', '--all', '--wiki-only', '--wiki-root', wikiRoot];
+  } catch {
+    return ['analyze', workspaceRoot, '--wiki-only', '--wiki-root', wikiRoot];
+  }
+}
+
+async function snapshotGeneratedWiki(wikiRoot: string, relativeWikiRoot: string): Promise<Map<string, string>> {
+  const snapshot = new Map<string, string>();
+  const pending = [wikiRoot];
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    let entries;
+    try {
+      entries = await readdir(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const absolutePath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(absolutePath);
+        continue;
+      }
+      const relativePath = path.posix.join(relativeWikiRoot, path.relative(wikiRoot, absolutePath).split(path.sep).join('/'));
+      if (isGeneratedMutationAllowedPath(relativePath)) snapshot.set(relativePath, await computeFileHash(absolutePath));
+    }
+  }
+  return snapshot;
+}
+
+function diffWikiSnapshots(before: ReadonlyMap<string, string>, after: ReadonlyMap<string, string>): ChangedFileResult[] {
+  const paths = new Set([...before.keys(), ...after.keys()]);
+  return [...paths]
+    .filter((filePath) => before.get(filePath) !== after.get(filePath))
+    .sort((left, right) => left.localeCompare(right))
+    .map((filePath) => ({ afterHash: after.get(filePath), beforeHash: before.get(filePath), operationCount: 1, path: filePath }));
 }
 
 /**

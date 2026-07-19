@@ -1,7 +1,7 @@
 /**
  * Bundled CBS semantic reference snippets for MCP resources.
- * These snippets are derived from docs/reference/CBS_FOR_LLM.md and intentionally
- * kept small so the default resource path is an index, not a raw document dump.
+ * These snippets are intentionally kept small so the default resource path is
+ * an index, not a raw document dump.
  * @file packages/risuai-workbench-mcp/src/resources/cbs-index-data.ts
  */
 

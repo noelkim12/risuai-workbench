@@ -7,6 +7,7 @@ import type { z } from 'zod';
 import type { PatchPlanStore } from '../mutation/patch-store';
 import type { MutationMode } from '../mutation/mode';
 import type { WorkspaceRootStatus } from '../project/resolve-root';
+import type { ContextStore } from '../context/context-store';
 
 export type ActionRisk =
   | 'read_only'
@@ -24,6 +25,7 @@ export type ActionCapability =
   | 'creative.ideation'
   | 'creative.review'
   | 'creative.patch'
+  | 'risulua.runtime'
   | 'patch.preview'
   | 'patch.apply'
   | 'mutation.direct';
@@ -32,6 +34,7 @@ export interface ActionExecutionContext {
   workspace: WorkspaceRootStatus;
   mutationMode: MutationMode;
   patchStore: PatchPlanStore;
+  contextStore?: ContextStore;
 }
 
 export interface WorkbenchAction<TInput = unknown, TOutput = unknown> {

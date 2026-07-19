@@ -8,7 +8,7 @@ import { PLUGIN_DISPLAY_NAME, PLUGIN_NAME } from './constants/plugin';
 import ErrorPanel from './ErrorPanel.svelte';
 import { createBadge } from './helpers/badge';
 import { isNotificationVisible } from './helpers/notification-visibility';
-import { createRisuControllerDeps, risuUi } from './helpers/risu-api';
+import { alertErrorSafe, createRisuControllerDeps, risuUi } from './helpers/risu-api';
 import { createToast, type HmrToast } from './helpers/toast';
 import { HmrController, type HmrEvent, type HmrPublicState } from './hmr/controller';
 import { createNotifier } from './hmr/notifier';
@@ -19,6 +19,10 @@ let mountedApp: ReturnType<typeof mount> | null = null;
 let badge: Awaited<ReturnType<typeof createBadge>> = null;
 let badgeRequested = false;
 let panelOpen = false;
+
+const PERMISSION_REQUIRED_MESSAGE =
+  'PocketRisu에서 DB/mainDom 권한을 허용해야 모듈을 탐색할 수 있습니다. ' +
+  '권한을 거부했다면 설정 > 플러그인에서 Risu Workbench HMR의 방패 버튼으로 권한을 초기화한 뒤 다시 열어주세요.';
 
 // 핸들이 아니라 프로미스를 캐시한다. 첫 이벤트가 생성 완료를 기다리지 못하면 유실되고,
 // then 콜백은 등록 순서대로 실행되므로 토스트 순서도 보존된다.
@@ -126,11 +130,16 @@ const renderErrorPanel = (message: string): void => {
 };
 
 const openPanel = async (): Promise<void> => {
-  await risuUi.showContainer();
-  panelOpen = true;
-
   try {
+    const permissionsGranted = await risuUi.requestRequiredPermissions();
+    await risuUi.showContainer();
+    panelOpen = true;
     unmountCurrentApp();
+    if (!permissionsGranted) {
+      renderErrorPanel(PERMISSION_REQUIRED_MESSAGE);
+      return;
+    }
+
     document.body.replaceChildren();
     mountedApp = mount(App, {
       target: document.body,
@@ -144,7 +153,11 @@ const openPanel = async (): Promise<void> => {
     unmountCurrentApp();
     const message = error instanceof Error ? error.message : 'Unknown plugin error';
     console.error(`${PLUGIN_DISPLAY_NAME} failed to open`, error);
-    renderErrorPanel(message);
+    if (panelOpen) {
+      renderErrorPanel(message);
+    } else {
+      await alertErrorSafe(message);
+    }
   }
 };
 

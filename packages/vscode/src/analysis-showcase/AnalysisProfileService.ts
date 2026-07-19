@@ -16,7 +16,10 @@ const LEGACY_REPORT_BY_KIND = {
 export type BrowserAnalysisProfile =
   | { readonly kind: 'none' }
   | { readonly kind: 'legacy'; readonly reportAvailable: true }
-  | { readonly kind: 'invalid'; readonly reason: 'malformed' | 'unsupported-version' | 'artifact-mismatch' }
+  | {
+      readonly kind: 'invalid';
+      readonly reason: 'malformed' | 'unsupported-version' | 'artifact-mismatch';
+    }
   | {
       readonly kind: 'available';
       readonly freshness: AnalysisFreshness;
@@ -25,9 +28,14 @@ export type BrowserAnalysisProfile =
     };
 
 export class AnalysisProfileService {
-  constructor(private readonly reportService: AnalysisReportService = new AnalysisReportService()) {}
+  constructor(
+    private readonly reportService: AnalysisReportService = new AnalysisReportService(),
+  ) {}
 
-  async read(rootUri: vscode.Uri, artifactKind: 'character' | 'module'): Promise<BrowserAnalysisProfile> {
+  async read(
+    rootUri: vscode.Uri,
+    artifactKind: 'character' | 'module',
+  ): Promise<BrowserAnalysisProfile> {
     const rawSidecar = await this.readSidecar(rootUri);
     if (rawSidecar === null) {
       return this.readLegacyProfile(rootUri, artifactKind);
@@ -60,7 +68,10 @@ export class AnalysisProfileService {
     rootUri: vscode.Uri,
     artifactKind: 'character' | 'module',
   ): Promise<BrowserAnalysisProfile> {
-    const legacyAvailable = await this.reportService.exists(rootUri, LEGACY_REPORT_BY_KIND[artifactKind]);
+    const legacyAvailable = await this.reportService.exists(
+      rootUri,
+      LEGACY_REPORT_BY_KIND[artifactKind],
+    );
     return legacyAvailable ? { kind: 'legacy', reportAvailable: true } : { kind: 'none' };
   }
 

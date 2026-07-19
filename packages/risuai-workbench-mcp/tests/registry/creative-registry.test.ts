@@ -7,8 +7,6 @@ import { describe, expect, it } from 'vitest';
 
 import { buildRegistrySnapshot, WORKBENCH_REGISTRY } from '../../src/registry';
 
-const creativeKbReference = 'docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md';
-
 const readOnlyCreativeToolNames = [
   'workbench.creative.gather_context',
   'workbench.creative.inspect_context',
@@ -150,7 +148,7 @@ describe('creative registry metadata', () => {
     expect(snapshot.prompts.some((prompt) => prompt.name === 'workbench.creative.red_team_concept')).toBe(true);
   });
 
-  it('keeps registry descriptions concise and references the creative KB instead of copying it', () => {
+  it('keeps registry descriptions concise and self-contained', () => {
     const snapshot = buildRegistrySnapshot(WORKBENCH_REGISTRY);
     const creativeDescriptions = [
       ...snapshot.tools.filter((tool) => tool.name.startsWith('workbench.creative.')).map((tool) => tool.description),
@@ -158,7 +156,6 @@ describe('creative registry metadata', () => {
       ...snapshot.prompts.filter((prompt) => prompt.name.startsWith('workbench.creative.')).map((prompt) => prompt.description),
     ];
 
-    expect(creativeDescriptions.every((description) => description.includes(creativeKbReference))).toBe(true);
     expect(creativeDescriptions.every((description) => description.length < 220)).toBe(true);
     expect(creativeDescriptions.every((description) => !description.includes('\n') && !description.includes('|'))).toBe(true);
     expect(creativeDescriptions).not.toContain('artifact/analyze/wiki/relationship summary를 창작 context bundle로 모음');

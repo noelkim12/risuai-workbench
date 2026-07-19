@@ -167,6 +167,15 @@ type: editdisplay
     expect(fs.existsSync(path.join(generatedDir, 'prompt-chain.md'))).toBe(true);
   });
 
+  it('returns a failure when wiki-only generation fails', () => {
+    const wikiRoot = path.join(tempDir, 'wiki-output-file');
+    fs.writeFileSync(wikiRoot, 'not a directory\n', 'utf8');
+
+    const code = runAnalyzePresetWorkflow([tempDir, '--wiki-only', '--wiki-root', wikiRoot, '--locale', 'en']);
+
+    expect(code).toBe(1);
+  });
+
   it('runs preset-wide analysis automatically after extract', async () => {
     const sourcePath = path.join(tempDir, 'preset-source.json');
     const outDir = path.join(tempDir, 'extracted-preset');

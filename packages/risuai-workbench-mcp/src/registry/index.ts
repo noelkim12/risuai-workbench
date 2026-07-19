@@ -53,10 +53,8 @@ interface RoadmapToolDefinition {
   phaseDescription: string;
 }
 
-const CREATIVE_KB_REFERENCE = 'docs/mcp/risuai-workbench-mcp-for-creative-thinking.mutation-enabled.md';
-
-const CREATIVE_TOOL_PHASE_DESCRIPTION = `Creative capability manifest (${CREATIVE_KB_REFERENCE} §§397-432)`;
-const CREATIVE_ANALYZE_TOOL_PHASE_DESCRIPTION = `Creative analyze helper manifest (${CREATIVE_KB_REFERENCE} §§439-585)`;
+const CREATIVE_TOOL_PHASE_DESCRIPTION = 'Creative capability';
+const CREATIVE_ANALYZE_TOOL_PHASE_DESCRIPTION = 'Creative analyze helpers';
 
 function createCreativeToolDefinition(
   name: string,
@@ -67,7 +65,7 @@ function createCreativeToolDefinition(
   phaseDescription = CREATIVE_TOOL_PHASE_DESCRIPTION,
 ): RoadmapToolDefinition {
   return {
-    description: `${capability}; see ${CREATIVE_KB_REFERENCE}.`,
+    description: capability,
     mutates,
     name,
     phase,
@@ -719,19 +717,19 @@ const PROMPTS: readonly WorkbenchPromptRegistryEntry[] = [
   ['workbench.create_project', 'Create new project', 'Guide scaffold workflow for creating new RisuAI charx/module/preset projects.'],
   ['workbench.select_authoring_skill', 'Select authoring skill', 'LLM-assisted workflow prompt for selecting the best authoring skill from the packaged skill catalog.'],
   ['workbench.generate_plan_from_skill', 'Generate plan from skill', 'Workflow prompt for generating a Korean plan document preview from an approved authoring skill.'],
-  ['workbench.creative.brainstorm_from_context', 'Brainstorm from context', `Creative workflow prompt; see ${CREATIVE_KB_REFERENCE} §Prompt 목록.`],
-  ['workbench.creative.scamper_lorebook_entries', 'SCAMPER lorebook entries', `Creative workflow prompt; see ${CREATIVE_KB_REFERENCE} §Prompt 목록.`],
-  ['workbench.creative.scamper_prompt_chain_variants', 'SCAMPER prompt chain variants', `Creative workflow prompt; see ${CREATIVE_KB_REFERENCE} §Prompt 목록.`],
-  ['workbench.creative.six_hats_idea_review', 'Six Hats idea review', `Creative workflow prompt; see ${CREATIVE_KB_REFERENCE} §Prompt 목록.`],
-  ['workbench.creative.morphological_explore', 'Morphological explore', `Creative workflow prompt; see ${CREATIVE_KB_REFERENCE} §Prompt 목록.`],
-  ['workbench.creative.triz_resolve_contradiction', 'TRIZ resolve contradiction', `Creative workflow prompt; see ${CREATIVE_KB_REFERENCE} §Prompt 목록.`],
-  ['workbench.creative.reverse_brainstorm_failure_modes', 'Reverse brainstorm failure modes', `Creative workflow prompt; see ${CREATIVE_KB_REFERENCE} §Prompt 목록.`],
-  ['workbench.creative.combine_concepts', 'Combine concepts', `Creative workflow prompt; see ${CREATIVE_KB_REFERENCE} §Prompt 목록.`],
-  ['workbench.creative.find_distant_analogies', 'Find distant analogies', `Creative workflow prompt; see ${CREATIVE_KB_REFERENCE} §Prompt 목록.`],
-  ['workbench.creative.turn_idea_into_patch', 'Turn idea into patch', `Creative workflow prompt; see ${CREATIVE_KB_REFERENCE} §Prompt 목록.`],
-  ['workbench.creative.apply_selected_idea', 'Apply selected idea', `Creative workflow prompt; see ${CREATIVE_KB_REFERENCE} §Prompt 목록.`],
-  ['workbench.creative.red_team_concept', 'Red-team concept', `Creative workflow prompt; see ${CREATIVE_KB_REFERENCE} §Prompt 목록.`],
-  ['workbench.creative.synthesize_idea_session', 'Synthesize idea session', `Creative workflow prompt; see ${CREATIVE_KB_REFERENCE} §Prompt 목록.`],
+  ['workbench.creative.brainstorm_from_context', 'Brainstorm from context', 'Creative workflow prompt.'],
+  ['workbench.creative.scamper_lorebook_entries', 'SCAMPER lorebook entries', 'Creative workflow prompt.'],
+  ['workbench.creative.scamper_prompt_chain_variants', 'SCAMPER prompt chain variants', 'Creative workflow prompt.'],
+  ['workbench.creative.six_hats_idea_review', 'Six Hats idea review', 'Creative workflow prompt.'],
+  ['workbench.creative.morphological_explore', 'Morphological explore', 'Creative workflow prompt.'],
+  ['workbench.creative.triz_resolve_contradiction', 'TRIZ resolve contradiction', 'Creative workflow prompt.'],
+  ['workbench.creative.reverse_brainstorm_failure_modes', 'Reverse brainstorm failure modes', 'Creative workflow prompt.'],
+  ['workbench.creative.combine_concepts', 'Combine concepts', 'Creative workflow prompt.'],
+  ['workbench.creative.find_distant_analogies', 'Find distant analogies', 'Creative workflow prompt.'],
+  ['workbench.creative.turn_idea_into_patch', 'Turn idea into patch', 'Creative workflow prompt.'],
+  ['workbench.creative.apply_selected_idea', 'Apply selected idea', 'Creative workflow prompt.'],
+  ['workbench.creative.red_team_concept', 'Red-team concept', 'Creative workflow prompt.'],
+  ['workbench.creative.synthesize_idea_session', 'Synthesize idea session', 'Creative workflow prompt.'],
 ].map(([name, title, description]) => ({ description, name, title }));
 
 const RESOURCES: readonly WorkbenchResourceRegistryEntry[] = [
@@ -813,77 +811,77 @@ const RESOURCES: readonly WorkbenchResourceRegistryEntry[] = [
     uriTemplate: 'risuai-workbench://skills/{skillPath}',
   },
   {
-    description: `Read creative method catalog cards; see ${CREATIVE_KB_REFERENCE} §Creative method resources.`,
+    description: 'Read creative method catalog cards.',
     name: 'workbench.creative.resource.methods',
     readOnly: true,
     title: 'Creative methods resource',
     uriTemplate: 'risuai-workbench://methods',
   },
   {
-    description: `Read SCAMPER method card; see ${CREATIVE_KB_REFERENCE} §Creative method resources.`,
+    description: 'Read SCAMPER method card.',
     name: 'workbench.creative.resource.method.scamper',
     readOnly: true,
     title: 'SCAMPER method resource',
     uriTemplate: 'risuai-workbench://methods/scamper',
   },
   {
-    description: `Read Six Hats method card; see ${CREATIVE_KB_REFERENCE} §Creative method resources.`,
+    description: 'Read Six Hats method card.',
     name: 'workbench.creative.resource.method.six_hats',
     readOnly: true,
     title: 'Six Hats method resource',
     uriTemplate: 'risuai-workbench://methods/six-hats',
   },
   {
-    description: `Read morphological analysis method card; see ${CREATIVE_KB_REFERENCE} §Creative method resources.`,
+    description: 'Read morphological analysis method card.',
     name: 'workbench.creative.resource.method.morphological_analysis',
     readOnly: true,
     title: 'Morphological analysis method resource',
     uriTemplate: 'risuai-workbench://methods/morphological-analysis',
   },
   {
-    description: `Read TRIZ method card; see ${CREATIVE_KB_REFERENCE} §Creative method resources.`,
+    description: 'Read TRIZ method card.',
     name: 'workbench.creative.resource.method.triz',
     readOnly: true,
     title: 'TRIZ method resource',
     uriTemplate: 'risuai-workbench://methods/triz',
   },
   {
-    description: `Read reverse brainstorming method card; see ${CREATIVE_KB_REFERENCE} §Creative method resources.`,
+    description: 'Read reverse brainstorming method card.',
     name: 'workbench.creative.resource.method.reverse_brainstorming',
     readOnly: true,
     title: 'Reverse brainstorming method resource',
     uriTemplate: 'risuai-workbench://methods/reverse-brainstorming',
   },
   {
-    description: `Read idea quality rubric; see ${CREATIVE_KB_REFERENCE} §Creative method resources.`,
+    description: 'Read idea quality rubric.',
     name: 'workbench.creative.resource.rubric.idea_quality',
     readOnly: true,
     title: 'Idea quality rubric resource',
     uriTemplate: 'risuai-workbench://rubrics/idea-quality',
   },
   {
-    description: `Read artifact fit rubric; see ${CREATIVE_KB_REFERENCE} §Creative method resources.`,
+    description: 'Read artifact fit rubric.',
     name: 'workbench.creative.resource.rubric.artifact_fit',
     readOnly: true,
     title: 'Artifact fit rubric resource',
     uriTemplate: 'risuai-workbench://rubrics/artifact-fit',
   },
   {
-    description: `Read one creative session artifact; see ${CREATIVE_KB_REFERENCE} §Creative method resources.`,
+    description: 'Read one creative session artifact.',
     name: 'workbench.creative.resource.idea_session',
     readOnly: true,
     title: 'Idea session resource',
     uriTemplate: 'risuai-workbench://ideas/sessions/{sessionId}',
   },
   {
-    description: `Read one creative idea artifact; see ${CREATIVE_KB_REFERENCE} §Creative method resources.`,
+    description: 'Read one creative idea artifact.',
     name: 'workbench.creative.resource.idea',
     readOnly: true,
     title: 'Idea resource',
     uriTemplate: 'risuai-workbench://ideas/{ideaId}',
   },
   {
-    description: `Read one creative idea patch plan; see ${CREATIVE_KB_REFERENCE} §Creative method resources.`,
+    description: 'Read one creative idea patch plan.',
     name: 'workbench.creative.resource.idea_patch_plan',
     readOnly: true,
     title: 'Idea patch plan resource',

@@ -1,7 +1,7 @@
 /**
  * Bundled RisuLua semantic reference snippets for MCP resources.
- * These snippets are derived from docs/reference/LUA_FOR_LLM.md and intentionally
- * kept small so default resource reads remain navigational rather than raw document dumps.
+ * These snippets are intentionally kept small so default resource reads remain
+ * navigational rather than raw document dumps.
  * @file packages/risuai-workbench-mcp/src/resources/risulua-index-data.ts
  */
 

@@ -11,9 +11,9 @@ npm run wasm:check
 패키지 단위로는 아래 명령을 씁니다.
 
 ```bash
-npm --workspace @risuai/lua-analyzer-wasm run test:rust
-npm --workspace @risuai/lua-analyzer-wasm run build:wasm
-npm --workspace @risuai/lua-analyzer-wasm run test:smoke
+npm --workspace @risuai-workbench/lua-analyzer-wasm run test:rust
+npm --workspace @risuai-workbench/lua-analyzer-wasm run build:wasm
+npm --workspace @risuai-workbench/lua-analyzer-wasm run test:smoke
 ```
 
 `pkg/`는 `wasm-pack build --target nodejs`가 생성하는 산출물이며 git에는 커밋하지 않습니다.

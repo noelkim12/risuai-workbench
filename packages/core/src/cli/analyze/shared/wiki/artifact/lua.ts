@@ -31,6 +31,30 @@ function countRoles(artifacts: LuaAnalysisArtifact[]): Map<string, number> {
   return counts;
 }
 
+function collectRequireModules(artifact: LuaAnalysisArtifact): string[] {
+  return [...new Set(artifact.collected.requireBindings.map((binding) => binding.moduleName))]
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function collectStaticTableMetadata(artifact: LuaAnalysisArtifact): string[] {
+  const source = artifact.sourceText;
+  if (!source) return [];
+
+  const metadata = new Set<string>();
+  for (const match of source.matchAll(/\bvarName\s*=\s*["']([^"']+)["']/g)) {
+    const value = match[1];
+    if (value) metadata.add(`state variable \`${value}\``);
+  }
+  const effectTypeBody = source.match(/\bconstEffectType\s*=\s*\{([\s\S]*?)\n\}/)?.[1] ?? '';
+  for (const match of effectTypeBody.matchAll(/\b([A-Za-z][A-Za-z0-9_]*)\s*=\s*(-?\d+)\b/g)) {
+    const name = match[1];
+    const value = match[2];
+    if (name && value) metadata.add(`effect type \`${name}\` = \`${value}\``);
+  }
+
+  return [...metadata].sort((a, b) => a.localeCompare(b));
+}
+
 /**
  * Render lua.md. Returns null when the artifact has no Lua files.
  *
@@ -77,7 +101,16 @@ export function renderLua(data: CharxReportData, ctx: RenderContext): WikiFile |
     if (artifact.splitRole) {
       lines.push(`- **role:** \`${artifact.splitRole}\``, '');
     }
+    const requireModules = collectRequireModules(artifact);
+    if (requireModules.length > 0) {
+      lines.push(`- **requires:** ${requireModules.map((moduleName) => `\`${moduleName}\``).join(', ')}`);
+    }
+    const staticTableMetadata = collectStaticTableMetadata(artifact);
+    if (staticTableMetadata.length > 0) {
+      lines.push(`- **static table metadata:** ${staticTableMetadata.join(', ')}`);
+    }
     const fns = artifact.collected.functions.filter((fn) => fn.name && fn.name !== '<top-level>');
+    if (requireModules.length > 0 || staticTableMetadata.length > 0) lines.push('');
     for (const fn of fns) {
       lines.push(`### \`${fn.name}\``, '');
       if (fn.stateReads && fn.stateReads.size > 0) {
