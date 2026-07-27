@@ -28,7 +28,7 @@ function positionAt(source: string, needle: string, delta = 0): Position {
   const offset = source.indexOf(needle) + delta;
   const prefix = source.slice(0, offset);
   const lines = prefix.split('\n');
-  return Position.create(lines.length - 1, lines.at(-1)?.length ?? 0);
+  return Position.create(lines.length - 1, lines[lines.length - 1]?.length ?? 0);
 }
 
 describe('findRisuAiRuntimeTokenAtPosition', () => {
@@ -199,24 +199,24 @@ describe('createRisuAiRuntimeHover', () => {
     expect(JSON.stringify(hover)).toContain('axLLM');
   });
 
-  it('renders rich LLM documentation from the core runtime catalog', () => {
+  it('renders the LLM catalog signature and runtime metadata', () => {
     const source = 'local result = LLM(triggerId, request_msgs)';
     const hover = createRisuAiRuntimeHover(source, positionAt(source, 'LLM', 1));
 
     expect(hover).not.toBeNull();
-    expect(JSON.stringify(hover)).toContain('Wrapper: LLM convenience function (main model).');
-    expect(JSON.stringify(hover)).toContain('`prompt` — OpenAI-style prompt item array or compatible table.');
-    expect(JSON.stringify(hover)).toContain('**Returns:** Result envelope with success and result text.');
+    expect(JSON.stringify(hover)).toContain('LLM(id: string, prompt: table, useMultimodal: boolean): table');
+    expect(JSON.stringify(hover)).toContain('_Category:_ ai');
+    expect(JSON.stringify(hover)).toContain('_Access:_ low-level');
     expect(JSON.stringify(hover)).toContain('local result = LLM(id,');
   });
 
-  it('renders rich axLLM documentation from the core runtime catalog', () => {
+  it('renders the axLLM catalog signature and runtime metadata', () => {
     const source = 'local result = axLLM(triggerId, request_msgs)';
     const hover = createRisuAiRuntimeHover(source, positionAt(source, 'axLLM', 1));
 
     expect(hover).not.toBeNull();
-    expect(JSON.stringify(hover)).toContain('Wrapper: axLLM convenience function (secondary model).');
-    expect(JSON.stringify(hover)).toContain('configured secondary model instead of the main model');
+    expect(JSON.stringify(hover)).toContain('axLLM(id: string, prompt: table, useMultimodal: boolean): table');
+    expect(JSON.stringify(hover)).toContain('_Direction:_ write');
     expect(JSON.stringify(hover)).toContain('local result = axLLM(id,');
   });
 
@@ -226,9 +226,10 @@ describe('createRisuAiRuntimeHover', () => {
     const stateHover = createRisuAiRuntimeHover(stateSource, positionAt(stateSource, 'getState', 2));
     const listenerHover = createRisuAiRuntimeHover(listenerSource, positionAt(listenerSource, 'listenEdit', 2));
 
-    expect(JSON.stringify(stateHover)).toContain('Wrapper: get JSON-backed state from chat variables.');
+    expect(JSON.stringify(stateHover)).toContain('getState(id: string, name: string): RisuStateValue');
+    expect(JSON.stringify(stateHover)).toContain('_Category:_ state');
     expect(JSON.stringify(stateHover)).toContain('local state = getState(id,');
-    expect(JSON.stringify(listenerHover)).toContain('Wrapper: register edit listeners');
+    expect(JSON.stringify(listenerHover)).toContain('listenEdit(type: string, func: function): void');
     expect(JSON.stringify(listenerHover)).toContain('editInput');
   });
 
@@ -237,8 +238,9 @@ describe('createRisuAiRuntimeHover', () => {
     const hover = createRisuAiRuntimeHover(source, positionAt(source, 'getName', 2));
 
     expect(hover).not.toBeNull();
-    expect(JSON.stringify(hover)).toContain('RisuAI runtime global: getName.');
-    expect(JSON.stringify(hover)).toContain('Category: character');
+    expect(JSON.stringify(hover)).toContain('getName(...: any): any');
+    expect(JSON.stringify(hover)).toContain('_Category:_ character');
+    expect(JSON.stringify(hover)).toContain('_Access:_ injected');
   });
 
   it('renders runtime hover markdown for runtime functions assigned to aliases', () => {

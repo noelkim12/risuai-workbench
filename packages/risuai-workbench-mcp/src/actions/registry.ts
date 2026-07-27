@@ -29,7 +29,13 @@ export class ActionRegistry {
   }
 
   get(id: string): ErasedWorkbenchAction | null {
-    return this.actions.get(id) ?? null;
+    const canonical = this.actions.get(id);
+    if (canonical) {
+      return canonical;
+    }
+    return this.list().find((action) =>
+      action.legacyToolName === id || action.aliases?.includes(id),
+    ) ?? null;
   }
 
   list(): readonly ErasedWorkbenchAction[] {
@@ -38,13 +44,13 @@ export class ActionRegistry {
 
   search(input: ActionSearchInput): readonly ErasedWorkbenchAction[] {
     const limit = input.limit ?? 8;
-    const query = input.query?.toLowerCase();
+    const query = input.query?.toLowerCase().trim();
+    const queryTerms = query?.split(/\s+/u).filter((term) => term.length > 1) ?? [];
 
     return this.list()
-      .filter((action) => {
+      .map((action) => {
         if (input.capability && action.capability !== input.capability) return false;
         if (input.risk && action.risk !== input.risk) return false;
-        if (!query) return true;
 
         const haystack = [
           action.id,
@@ -58,8 +64,15 @@ export class ActionRegistry {
           .join(' ')
           .toLowerCase();
 
-        return haystack.includes(query);
+        const score = query
+          ? (haystack.includes(query) ? 1_000 : queryTerms.filter((term) => haystack.includes(term)).length)
+          : 0;
+        return { action, score };
       })
+      .filter((candidate): candidate is { action: ErasedWorkbenchAction; score: number } => candidate !== false)
+      .filter((candidate) => !query || candidate.score > 0 || Boolean(input.capability) || Boolean(input.risk))
+      .sort((left, right) => right.score - left.score)
+      .map((candidate) => candidate.action)
       .slice(0, limit);
   }
 }

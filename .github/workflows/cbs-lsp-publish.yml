@@ -71,7 +71,7 @@ jobs:
         run: |
           node <<'EOF' >> "$GITHUB_OUTPUT"
           const publishedPackages = JSON.parse(process.env.PUBLISHED_PACKAGES || '[]');
-          const cbsLanguageServer = publishedPackages.find((pkg) => pkg.name === 'cbs-language-server');
+          const cbsLanguageServer = publishedPackages.find((pkg) => pkg.name === '@risuai-workbench-workbench/cbs-language-server');
           if (!cbsLanguageServer) {
             console.log('cbs_lsp_published=false');
             console.log('cbs_lsp_version=');
@@ -146,7 +146,7 @@ jobs:
       - name: Install workspace dependencies
         run: npm ci
 
-      - name: Smoke test published cbs-language-server
+      - name: Smoke test published @risuai-workbench-workbench/cbs-language-server
         env:
           CBS_LSP_RELEASE_TAG: ${{ needs.snapshot-release.result == 'success' && needs.snapshot-release.outputs.npm_tag || needs.stable-release.outputs.npm_tag }}
           CBS_LSP_RELEASE_VERSION: ${{ needs.snapshot-release.result == 'success' && needs.snapshot-release.outputs.cbs_lsp_version || needs.stable-release.outputs.cbs_lsp_version }}

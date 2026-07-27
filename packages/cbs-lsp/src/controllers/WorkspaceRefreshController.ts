@@ -111,6 +111,15 @@ export class WorkspaceRefreshController {
 
     this.refreshScheduler.flushDocumentChange();
     if (reason === 'open') {
+      if (!this.workspaceStateRepository.getByRoot(workspaceRoot)) {
+        this.refreshExecutor.refreshChangedUris({
+          reason: 'document-open',
+          changedUris: [document.uri],
+          prioritySourceUris: [document.uri],
+        });
+        return;
+      }
+
       this.publishLocalFirstDocumentOpen(document.uri, workspaceRoot);
       this.refreshScheduler.scheduleDocumentOpen(document.uri);
       return;

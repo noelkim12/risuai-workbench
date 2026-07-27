@@ -329,30 +329,54 @@ function creativeNotFoundResource(entry: WorkbenchResourceRegistryEntry, uriText
  */
 async function readWikiResource(resource: string, uri: URL, workspace: WorkspaceRootStatus): Promise<ReadResourceResult> {
   const uriText = uri.toString();
-  const wikiPath = decodeWikiPath(uri);
+  let wikiPath: string;
+  try {
+    wikiPath = decodeWikiPath(uri);
+  } catch (error) {
+    if (!(error instanceof URIError)) throw error;
+    return jsonResource(uriText, buildStablePayload(resource, uriText, 'not_found', 'Wiki resource URI is invalid.', {
+      code: 'WIKI_RESOURCE_URI_INVALID',
+      lookupRoot: workspace.ok ? path.join(workspace.path, 'wiki') : null,
+      normalizedRelativePath: null,
+      requestedUri: uriText,
+    }));
+  }
+  const normalizedRelativePath = path.posix.join('wiki', wikiPath);
+  const lookupRoot = workspace.ok ? path.join(workspace.path, 'wiki') : null;
 
   if (!workspace.ok) {
     return jsonResource(uriText, buildStablePayload(resource, uriText, 'unavailable', 'Workspace root is unavailable.', {
+      code: 'WIKI_WORKSPACE_UNAVAILABLE',
+      lookupRoot,
+      normalizedRelativePath,
       reason: workspace.reason,
-      wikiPath,
+      requestedUri: uriText,
     }));
   }
 
   const safePath = await resolveSafeWorkspacePath({
-    inputPath: path.posix.join('wiki', wikiPath),
+    inputPath: normalizedRelativePath,
     intent: 'read-existing',
     workspace,
   });
   if (!safePath.ok) {
     return jsonResource(uriText, buildStablePayload(resource, uriText, 'not_found', 'Wiki resource was not found.', {
+      code: 'WIKI_RESOURCE_NOT_FOUND',
+      lookupRoot,
+      normalizedRelativePath,
       reason: safePath.reason,
-      wikiPath,
+      requestedUri: uriText,
     }));
   }
 
   const fileStat = await stat(safePath.absolutePath);
   if (!fileStat.isFile()) {
-    return jsonResource(uriText, buildStablePayload(resource, uriText, 'not_found', 'Wiki resource is not a file.', { wikiPath }));
+    return jsonResource(uriText, buildStablePayload(resource, uriText, 'not_found', 'Wiki resource is not a file.', {
+      code: 'WIKI_RESOURCE_NOT_A_FILE',
+      lookupRoot,
+      normalizedRelativePath,
+      requestedUri: uriText,
+    }));
   }
 
   const text = await readFile(safePath.absolutePath, 'utf8');

@@ -103,6 +103,7 @@ function createControllerFixture(debounceMs: number) {
   const diagnosticsPublisher = {
     publish: vi.fn(),
   } as unknown as DiagnosticsPublisher;
+  const workspaceStateRepository = new WorkspaceStateRepository();
   const controller = new WorkspaceRefreshController({
     codeLensRefreshScheduler: new CodeLensRefreshScheduler({
       connection,
@@ -113,7 +114,7 @@ function createControllerFixture(debounceMs: number) {
     documentChangeDebounceMs: debounceMs,
     documents,
     luaLsCompanionController: createLuaLsCompanionStub(),
-    workspaceStateRepository: new WorkspaceStateRepository(),
+    workspaceStateRepository,
   });
 
   return {
@@ -121,6 +122,7 @@ function createControllerFixture(debounceMs: number) {
     diagnosticsPublisher,
     document,
     rootPath,
+    workspaceStateRepository,
   };
 }
 
@@ -214,17 +216,18 @@ describe('WorkspaceRefreshController', () => {
     }
   });
 
-  it('publishes local diagnostics immediately and defers first document-open workspace refresh', () => {
+  it('initializes workspace state before returning from the first document-open refresh', () => {
     vi.useFakeTimers();
-    const { controller, diagnosticsPublisher, document, rootPath } = createControllerFixture(50);
+    const { controller, diagnosticsPublisher, document, rootPath, workspaceStateRepository } =
+      createControllerFixture(50);
 
     try {
       controller.refreshDocumentLifecycle(document, 'open');
+      expect(workspaceStateRepository.getByRoot(rootPath)).not.toBeNull();
       expect(diagnosticsPublisher.publish).toHaveBeenCalledTimes(1);
 
       vi.advanceTimersByTime(0);
-      expect(diagnosticsPublisher.publish).toHaveBeenCalled();
-      expect(vi.mocked(diagnosticsPublisher.publish).mock.calls.length).toBeGreaterThan(1);
+      expect(diagnosticsPublisher.publish).toHaveBeenCalledTimes(1);
     } finally {
       rmSync(path.dirname(rootPath), { recursive: true, force: true });
     }

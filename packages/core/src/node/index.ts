@@ -81,6 +81,11 @@ import {
 } from './json-listing';
 import { encodeModuleRisum, encodeRPack, loadRPackEncodeMap } from './rpack';
 import {
+  buildModuleFromCanonicalDirectory,
+  encodeModuleRisumWithAssets,
+} from '../cli/pack/module/workflow';
+import { discoverRisuLuaBundleTarget } from '../cli/shared';
+import {
   discoverCustomExtensionWorkspace,
   listCanonicalFilesByArtifact,
   type DiscoveredCanonicalFile,
@@ -191,6 +196,9 @@ export {
   encodeModuleRisum,
   encodeRPack,
   loadRPackEncodeMap,
+  buildModuleFromCanonicalDirectory,
+  encodeModuleRisumWithAssets,
+  discoverRisuLuaBundleTarget,
   ensureDirAsync,
   writeBinaryAsync,
   writeJsonAsync,

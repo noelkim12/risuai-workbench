@@ -129,6 +129,7 @@ describe('ElementRegistry', () => {
         toggle: { files: 0, elements: 0, graphSeeds: 0 },
         variable: { files: 0, elements: 0, graphSeeds: 0 },
         html: { files: 1, elements: 1, graphSeeds: 1 },
+        text: { files: 0, elements: 0, graphSeeds: 0 },
       },
     })
 
@@ -515,6 +516,7 @@ describe('ElementRegistry', () => {
         toggle: { files: 1, elements: 0, graphSeeds: 0 },
         variable: { files: 1, elements: 0, graphSeeds: 0 },
         html: { files: 0, elements: 0, graphSeeds: 0 },
+        text: { files: 0, elements: 0, graphSeeds: 0 },
       },
     })
   })

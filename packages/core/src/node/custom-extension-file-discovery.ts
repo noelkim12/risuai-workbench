@@ -3,7 +3,6 @@ import path from 'node:path';
 import {
   CUSTOM_EXTENSION_MARKER_FILES,
   type CustomExtensionArtifact,
-  type CustomExtensionMarkerKind,
   parseCustomExtensionArtifactFromSuffix,
 } from '../domain/custom-extension/contracts';
 import type {
@@ -92,6 +91,7 @@ function walkDirectory(
       continue;
     }
 
+    if (lowerSuffix === '.risum' || lowerSuffix === '.risup') continue;
     if (!lowerSuffix.startsWith('.risu')) continue;
 
     canonicalFiles.push({

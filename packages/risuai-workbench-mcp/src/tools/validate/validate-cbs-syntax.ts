@@ -14,13 +14,7 @@ export interface ValidateCbsSyntaxInput {
 }
 
 export interface ValidateCbsSyntaxData {
-  /**
-   * CBS diagnostics from the LSP engine (DiagnosticInfo shape).
-   * Note: These are placed inside `data.diagnostics`, not the envelope-level
-   * `diagnostics` field, because DiagnosticInfo and WorkbenchDiagnostic have
-   * different shapes (e.g., `code` vs `id`). Consumers must read from
-   * `result.data.diagnostics`, not `result.diagnostics`.
-   */
+  /** CBS diagnostics from the LSP engine, preserved for range-aware consumers. */
   readonly diagnostics: readonly DiagnosticInfo[];
   readonly parsed: boolean;
   readonly tagCount: number;
@@ -47,6 +41,19 @@ export async function handleValidateCbsSyntax(
 
   const document = parser.parse(sourceText);
   const diagnostics = engine.analyze(document, sourceText);
+  const envelopeDiagnostics = diagnostics.map((diagnostic) => ({
+    category: 'cbs',
+    id: diagnostic.code,
+    message: diagnostic.message,
+    path: input.path ?? null,
+    ruleId: diagnostic.code,
+    severity: diagnostic.severity,
+  }));
+  const status = envelopeDiagnostics.some((diagnostic) => diagnostic.severity === 'error')
+    ? 'domain_error'
+    : envelopeDiagnostics.length > 0
+      ? 'domain_warning'
+      : 'ok';
 
   const unknownTags = diagnostics
     .filter((d) => d.code === 'CBS003')
@@ -60,8 +67,8 @@ export async function handleValidateCbsSyntax(
       tagCount: document.nodes.filter((n) => n.type !== 'PlainText').length,
       unknownTags,
     },
-    diagnostics: [],
-    status: 'ok',
+    diagnostics: envelopeDiagnostics,
+    status,
     tool: 'workbench.validate_cbs_syntax',
   });
 }

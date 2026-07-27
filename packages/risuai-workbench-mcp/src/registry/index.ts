@@ -738,7 +738,7 @@ const RESOURCES: readonly WorkbenchResourceRegistryEntry[] = [
     name: 'workbench.resource.wiki',
     readOnly: true,
     title: 'Wiki resource',
-    uriTemplate: 'risuai-workbench://wiki/{path}',
+    uriTemplate: 'risuai-workbench://wiki/{+path}',
   },
   {
     description: 'Read canonical artifact and mutation rule catalog data.',

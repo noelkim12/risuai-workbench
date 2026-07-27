@@ -1169,6 +1169,7 @@ describe('LSP server integration', () => {
     });
 
     documents.open(lorebookUri, lorebookText, 1);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
     expect(luaLsManager.syncDocument).toHaveBeenCalledWith({
       sourceUri: luaUri,
@@ -2408,10 +2409,15 @@ describe('LSP server integration', () => {
     expect(result).toHaveLength(1);
     const chain = flattenSelectionRangeChain(result?.[0]);
     expect(chain).toHaveLength(4);
-    expect(chain[0]!.start.line).toBeGreaterThanOrEqual(4);
-    expect(chain.at(-1)!.start.line).toBe(4);
-    expect(chain.at(-1)!.start.character).toBeLessThan(chain[0]!.start.character);
-    expect(chain.at(-1)!.end.character).toBeGreaterThan(chain[0]!.end.character);
+    const innerRange = chain[0];
+    const outerRange = chain[3];
+    if (!innerRange || !outerRange) {
+      throw new TypeError('Expected a four-level selection range chain');
+    }
+    expect(innerRange.start.line).toBeGreaterThanOrEqual(4);
+    expect(outerRange.start.line).toBe(4);
+    expect(outerRange.start.character).toBeLessThan(innerRange.start.character);
+    expect(outerRange.end.character).toBeGreaterThan(innerRange.end.character);
   });
 
   it('routes textDocument/codeAction through the server seam and returns safe quick fixes plus guidance actions', async () => {

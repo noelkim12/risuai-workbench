@@ -93,7 +93,7 @@ export interface CompanionRuntimeMap {
 export interface DeferredScopeContract {
   deferredFeatures: readonly (keyof DeferredFeatureAvailabilityMap)[];
   featureAvailability: DeferredFeatureAvailabilityMap;
-  luaRoutingMode: 'full-document-fragment';
+  luaRoutingMode: 'string-literal-fragments';
 }
 
 /** cbs-language-server 실행 binary 설치 방식. */
@@ -433,10 +433,10 @@ export const DEFERRED_SCOPE_CONTRACT = Object.freeze({
     'lua-ast-fragment-routing': createAgentMetadataAvailability(
       'deferred',
       'deferred-scope-contract:lua-ast-fragment-routing',
-      'Lua AST-specific fragment routing stays deferred while the current contract still uses full-document fragment routing.',
+      'Lua AST-specific fragment routing stays deferred while the current contract uses string-literal fragment routing.',
     ),
   },
-  luaRoutingMode: 'full-document-fragment' as const,
+  luaRoutingMode: 'string-literal-fragments' as const,
 }) satisfies DeferredScopeContract;
 
 /**

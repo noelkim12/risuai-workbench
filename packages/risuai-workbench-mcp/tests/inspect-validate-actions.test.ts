@@ -152,7 +152,9 @@ describe('action execute parity with direct handlers', () => {
     const codes = (actionResult.data as { diagnostics: { code: string }[] }).diagnostics.map((d) => d.code);
 
     expect(codes).toContain('CBS003');
-    expect(actionResult.status).toBe('ok');
+    expect(actionResult.diagnostics.map((diagnostic) => diagnostic.id)).toContain('CBS003');
+    expect(actionResult.summary.errorCount).toBe(1);
+    expect(actionResult.status).toBe('domain_error');
   });
 
   it('validate.build_path action execute returns canonical path', async () => {
