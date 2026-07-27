@@ -47,6 +47,7 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
     preloadModules: [],
     requireBindings: [],
     moduleMemberCalls: [],
+    moduleExports: [],
     stateAccessOccurrences: [],
   };
 
@@ -723,6 +724,47 @@ export function runCollectPhase(params: { body: LuaASTNode[]; risuApi: Record<st
   };
 
   walk(body, null);
+
+  const returnedModuleTables = new Set(
+    body.flatMap((statement) => {
+      if (statement.type !== 'ReturnStatement') return [];
+      const returnedValue = safeArray<LuaASTNode>(statement.arguments)[0];
+      return returnedValue?.type === 'Identifier' && returnedValue.name ? [returnedValue.name] : [];
+    }),
+  );
+  for (const fn of collected.functions) {
+    const separatorIndex = fn.displayName.indexOf('.');
+    if (separatorIndex < 1 || fn.parentFunction !== null) continue;
+    const tableName = fn.displayName.slice(0, separatorIndex);
+    const memberName = fn.displayName.slice(separatorIndex + 1);
+    if (!memberName || memberName.includes('.') || !returnedModuleTables.has(tableName)) continue;
+    collected.moduleExports?.push({
+      functionName: fn.name,
+      line: fn.startLine,
+      memberName,
+    });
+  }
+  for (const statement of body) {
+    if (statement.type !== 'AssignmentStatement') continue;
+    const variables = safeArray<LuaASTNode>(statement.variables);
+    const values = safeArray<LuaASTNode>(statement.init);
+    for (const [index, target] of variables.entries()) {
+      const value = values[index];
+      if (target.type !== 'MemberExpression' || value?.type !== 'Identifier') continue;
+      const tableName = exprName(target.base);
+      const memberName = exprName(target.identifier);
+      if (!tableName || !memberName || !returnedModuleTables.has(tableName) || !value.name) continue;
+      const exportedFunction = collected.functions.find((fn) => (
+        fn.displayName === value.name && fn.parentFunction === null
+      ));
+      if (!exportedFunction) continue;
+      collected.moduleExports?.push({
+        functionName: exportedFunction.name,
+        line: exportedFunction.startLine,
+        memberName,
+      });
+    }
+  }
 
   const functionNameByStartLine = new Map(
     collected.functions.map((fn) => [fn.startLine, fn.name] as const),

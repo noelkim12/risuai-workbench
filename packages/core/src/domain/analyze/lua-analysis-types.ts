@@ -142,6 +142,16 @@ export interface CollectedModuleMemberCall {
   line: number;
 }
 
+/** A function member exported from the table returned by a standalone Lua module. */
+export interface CollectedModuleExport {
+  /** Exported member name used by require callers. */
+  memberName: string;
+  /** Normalized function name that implements the exported member. */
+  functionName: string;
+  /** Function declaration line. */
+  line: number;
+}
+
 /**
  * API 호출 정보.
  */
@@ -224,6 +234,8 @@ export interface CollectedData {
   requireBindings: CollectedRequireBinding[];
   /** 수집된 모듈 멤버 호출 목록. */
   moduleMemberCalls: CollectedModuleMemberCall[];
+  /** Standalone module members proven to be exported from its returned table. */
+  moduleExports?: CollectedModuleExport[];
   /** 정적 문자열 키 기준 상태 접근 발생 목록. */
   stateAccessOccurrences: StateAccessOccurrence[];
 }

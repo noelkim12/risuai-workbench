@@ -6,6 +6,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 
@@ -14,24 +15,12 @@ import { expect } from 'vitest';
 export const packageRoot = process.cwd();
 export const cliPath = path.join(packageRoot, 'dist', 'cli.js');
 
-let packageBuilt = false;
-
 /**
  * ensureBuiltPackage 함수.
- * product-level 테스트가 dist CLI/server 산출물을 직접 실행할 수 있게 build를 한 번만 보장함.
+ * product-level 테스트가 실행되기 전에 package script가 dist 산출물을 만들었는지 확인함.
  */
 export function ensureBuiltPackage(): void {
-  if (packageBuilt) {
-    return;
-  }
-
-  const buildResult = spawnSync('npm', ['run', 'build'], {
-    cwd: packageRoot,
-    encoding: 'utf8',
-  });
-
-  expect(buildResult.status, buildResult.stderr).toBe(0);
-  packageBuilt = true;
+  expect(existsSync(cliPath), 'Expected cbs-language-server to be built before product tests').toBe(true);
 }
 
 /**

@@ -78,14 +78,18 @@ export class ContextStore {
   /**
    * Search context records by optional query string.
    */
-  search(query?: string, maxItems = 8): WorkbenchContextRecord[] {
+  search(query?: string, maxItems = 8, kind?: string): WorkbenchContextRecord[] {
     const q = query?.toLowerCase();
     const results = [...this.records.values()]
       .filter((r) => {
+        if (kind && r.kind !== kind) return false;
         if (!q) return true;
-        const haystack = [r.id, r.kind, r.summary, ...r.resourceLinks]
+        const haystack = [r.id, r.kind, r.summary, ...r.resourceLinks, typeof r.payload === 'string' ? r.payload : '']
           .join(' ')
           .toLowerCase();
+        if (kind === 'wiki') {
+          return q.split(/\s+/).filter(Boolean).some((term) => haystack.includes(term));
+        }
         return haystack.includes(q);
       })
       .slice(0, maxItems)
@@ -94,6 +98,10 @@ export class ContextStore {
         payload: undefined,
       }));
     return results;
+  }
+
+  hasKind(kind: string): boolean {
+    return [...this.records.values()].some((record) => record.kind === kind);
   }
 
   /**

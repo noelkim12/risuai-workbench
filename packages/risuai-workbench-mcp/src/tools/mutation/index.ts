@@ -11,4 +11,5 @@ export { handleMoveArtifact } from './move-artifact';
 export { handleDeleteArtifact } from './delete-artifact';
 export { handleRollbackMutation } from './rollback-mutation';
 export { handleRunExtract } from './run-extract';
+export { handleRunPack } from './run-pack';
 export { handleRunScaffold } from './run-scaffold';

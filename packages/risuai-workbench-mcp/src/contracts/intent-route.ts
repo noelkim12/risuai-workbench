@@ -18,8 +18,10 @@ export type WorkbenchIntent =
   | 'artifact.frontmatter.preview'
   | 'artifact.order.preview'
   | 'wiki.refresh.preview'
+  | 'wiki.explore'
   | 'core.scaffold.preview'
   | 'core.extract.preview'
+  | 'pack.module'
   | 'analyze.variable_flow'
   | 'analyze.lua_handler'
   | 'risulua_runtime_debug'
@@ -46,6 +48,7 @@ export type TargetKind =
   | 'variable'
   | 'lua_handler'
   | 'lua_runtime'
+  | 'module'
   | 'idea'
   | 'patch_plan'
   | 'documentation';
@@ -68,6 +71,15 @@ export type RouteMutationMode =
   | 'guarded_direct'
   | 'preview_required'
   | 'blocked';
+
+export type RouteWorkflowStage = 'analyze' | 'preview' | 'apply' | 'validate' | 'pack' | 'verify';
+
+export interface RouteWorkflowStep {
+  readonly stage: RouteWorkflowStage;
+  readonly actionId?: string;
+  readonly tool?: string;
+  readonly requiresApproval?: boolean;
+}
 
 export type RouteStopCondition =
   | 'missing_request'
@@ -94,8 +106,10 @@ export const workbenchIntentSchema = z.enum([
   'artifact.frontmatter.preview',
   'artifact.order.preview',
   'wiki.refresh.preview',
+  'wiki.explore',
   'core.scaffold.preview',
   'core.extract.preview',
+  'pack.module',
   'analyze.variable_flow',
   'analyze.lua_handler',
   'risulua_runtime_debug',
@@ -124,6 +138,7 @@ export const targetKindSchema = z.enum([
   'variable',
   'lua_handler',
   'lua_runtime',
+  'module',
   'idea',
   'patch_plan',
   'documentation',
@@ -149,6 +164,13 @@ export const routeMutationModeSchema = z.enum([
   'preview_required',
   'blocked',
 ]);
+
+export const routeWorkflowStepSchema = z.object({
+  stage: z.enum(['analyze', 'preview', 'apply', 'validate', 'pack', 'verify']),
+  actionId: z.string().optional(),
+  tool: z.string().optional(),
+  requiresApproval: z.boolean().optional(),
+});
 
 export const routeStopConditionSchema = z.enum([
   'missing_request',
@@ -263,6 +285,7 @@ export interface IntentRouteResult {
   recommendedActions: readonly string[];
   nextTool: string;
   nextInput: Record<string, unknown>;
+  workflow: readonly RouteWorkflowStep[];
   canonical?: CompactCanonicalIntent;
 }
 
@@ -292,6 +315,7 @@ export const intentRouteResultSchema = z.object({
   recommendedActions: z.array(z.string()).default([]),
   nextTool: z.string().default('workbench.catalog'),
   nextInput: z.record(z.string(), z.unknown()).default({}),
+  workflow: z.array(routeWorkflowStepSchema).default([]),
   canonical: compactCanonicalIntentSchema.optional(),
 }).catchall(z.unknown());
 
@@ -319,7 +343,9 @@ export const intentRouteEnvelopeDataSchema = z.object({
  * @returns 변경 없이 정규화된 intent route result
  */
 export function createIntentRouteResult(
-  input: Omit<IntentRouteResult, 'schema' | 'schemaVersion'>,
+  input: Omit<IntentRouteResult, 'schema' | 'schemaVersion' | 'workflow'> & {
+    readonly workflow?: readonly RouteWorkflowStep[];
+  },
 ): IntentRouteResult {
   return {
     allowedTools: input.allowedTools,
@@ -348,5 +374,6 @@ export function createIntentRouteResult(
     schemaVersion: '0.1.0',
     stopConditions: input.stopConditions,
     targetKind: input.targetKind,
+    workflow: input.workflow ?? [],
   };
 }

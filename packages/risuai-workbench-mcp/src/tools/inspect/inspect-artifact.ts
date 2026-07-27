@@ -9,10 +9,13 @@ import {
   type CustomExtensionArtifact,
 } from 'risu-workbench-core';
 import { discoverCustomExtensionWorkspace } from 'risu-workbench-core/node';
+import fs from 'node:fs';
+import path from 'node:path';
 
 import { createDiagnosticEnvelope, type DiagnosticEnvelope } from '../../contracts/diagnostics';
 import type { WorkspaceRootStatus } from '../../project/resolve-root';
 import { resolveSafeWorkspacePath } from '../../project/safe-path';
+import { isArchiveArtifactPath } from '../artifact-input-kind';
 
 export interface InspectArtifactInput {
   artifactRoot: string;
@@ -29,6 +32,8 @@ export interface MarkerFileInfo {
 }
 
 export interface InspectArtifactResultData {
+  allowedRootMarkers: readonly ['.risuchar', '.risumodule'];
+  artifactKind: 'module' | 'character' | 'canonical-directory' | 'archive';
   canonicalFiles: ArtifactFileInfo[];
   contractSummaries: Array<{
     artifact: string;
@@ -38,7 +43,10 @@ export interface InspectArtifactResultData {
     suffix: string;
     supportedTargets: string[];
   }>;
+  inputKind: 'directory' | 'archive' | 'file';
   markerFiles: MarkerFileInfo[];
+  resolutionStage: 'artifact-root-kind' | 'canonical-discovery';
+  resolvedPath: string;
 }
 
 /**
@@ -52,7 +60,7 @@ export interface InspectArtifactResultData {
 export async function handleInspectArtifact(
   input: InspectArtifactInput,
   workspace: WorkspaceRootStatus,
-): Promise<DiagnosticEnvelope> {
+): Promise<DiagnosticEnvelope<InspectArtifactResultData>> {
   if (!workspace.ok) {
     return createDiagnosticEnvelope({
       diagnostics: [
@@ -94,7 +102,37 @@ export async function handleInspectArtifact(
   }
 
   const artifactRoot = safeResult.absolutePath;
+  if (!fs.statSync(artifactRoot).isDirectory()) {
+    const isArchive = isArchiveArtifactPath(artifactRoot);
+    return createDiagnosticEnvelope({
+      data: {
+        allowedRootMarkers: ['.risuchar', '.risumodule'],
+        artifactKind: isArchive ? 'archive' : 'canonical-directory',
+        canonicalFiles: [],
+        contractSummaries: [],
+        inputKind: isArchive ? 'archive' : 'file',
+        markerFiles: [],
+        resolutionStage: 'artifact-root-kind',
+        resolvedPath: artifactRoot,
+      },
+      diagnostics: [{
+        category: 'artifact',
+        id: isArchive ? 'ARCHIVE_REQUIRES_EXTRACTION' : 'ARTIFACT_ROOT_NOT_DIRECTORY',
+        message: isArchive
+          ? 'A .risum archive is an extraction input, not a canonical workspace root. Use core.run_extract first.'
+          : `Artifact root must be a directory: ${safeResult.relativePath}.`,
+        path: safeResult.relativePath,
+        ruleId: isArchive ? 'artifact.archive-requires-extraction' : 'artifact.root-not-directory',
+        severity: 'error',
+      }],
+      status: 'domain_error',
+      tool: 'workbench.inspect_artifact',
+    });
+  }
+
   const discovery = discoverCustomExtensionWorkspace(artifactRoot);
+  const hasModuleMarker = fs.existsSync(path.join(artifactRoot, '.risumodule'));
+  const hasCharacterMarker = fs.existsSync(path.join(artifactRoot, '.risuchar'));
 
   const canonicalFiles: ArtifactFileInfo[] = discovery.canonicalFiles.map((f) => ({
     artifact: f.artifact,
@@ -125,9 +163,18 @@ export async function handleInspectArtifact(
 
   return createDiagnosticEnvelope({
     data: {
+      allowedRootMarkers: ['.risuchar', '.risumodule'],
+      artifactKind: hasModuleMarker
+        ? 'module'
+        : hasCharacterMarker
+          ? 'character'
+          : 'canonical-directory',
       canonicalFiles,
       contractSummaries,
+      inputKind: 'directory',
       markerFiles,
+      resolutionStage: 'canonical-discovery',
+      resolvedPath: artifactRoot,
     },
     diagnostics: [],
     status: 'ok',
