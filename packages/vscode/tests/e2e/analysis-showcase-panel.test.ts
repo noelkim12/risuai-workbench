@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import Module from 'node:module';
 import path from 'node:path';
 import test from 'node:test';
-import type { AnalysisShowcase } from 'risu-workbench-core';
+import type { AnalysisShowcase } from '@risuai-workbench/core';
 
 const localRequire = createRequire(__filename);
 const vscodeDistRoot = path.resolve(__dirname, '../../../dist');

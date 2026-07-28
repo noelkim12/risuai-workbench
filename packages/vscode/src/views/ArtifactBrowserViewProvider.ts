@@ -1627,7 +1627,7 @@ function removeTemporaryImportFileIfNeeded(filePath: string): void {
 }
 
 function resolveRisuCoreBinPath(): string {
-  const coreEntry = require.resolve('risu-workbench-core');
+  const coreEntry = require.resolve('@risuai-workbench/core');
   return path.join(path.dirname(coreEntry), '..', 'bin', 'risu-core.js');
 }
 

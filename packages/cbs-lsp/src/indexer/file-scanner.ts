@@ -17,7 +17,7 @@ import {
   type CustomExtensionArtifact,
   type LuaWasmStateAccess,
   type StateAccessOccurrence,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 
 import { MAX_LUA_ANALYSIS_TEXT_LENGTH } from '../utils/oversized-lua';
 import { scanLuaStateAccessOccurrences } from '../utils/lua-state-access-scanner';

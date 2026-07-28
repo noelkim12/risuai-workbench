@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/core/completion-context/detectors/plain-text-macro-context.ts
  */
 
-import { TokenType } from 'risu-workbench-core';
+import { TokenType } from '@risuai-workbench/core';
 import type { CompletionTriggerContext } from '../../completion-context';
 import type { CompletionDetectionState } from '../detection-state';
 import { routeMacroArgumentContext } from './macro-argument-context';

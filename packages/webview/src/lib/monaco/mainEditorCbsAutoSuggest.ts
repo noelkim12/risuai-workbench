@@ -4,7 +4,7 @@
  */
 
 import type * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
-import { CBSBuiltinRegistry, type CBSBuiltinFunction } from 'risu-workbench-core/cbs-browser';
+import { CBSBuiltinRegistry, type CBSBuiltinFunction } from '@risuai-workbench/core/cbs-browser';
 
 interface CbsSuggestInput {
   insertedText: string;

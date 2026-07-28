@@ -14,8 +14,8 @@ import type {
   DuplicateNameGroup,
   LorebookNameCandidate,
   MissingCombo,
-} from 'risu-workbench-core';
-import type { AssetCatalogBootstrapGroupSummary, AssetCatalogBootstrapSplitOptions, ImageMeta } from 'risu-workbench-core/node';
+} from '@risuai-workbench/core';
+import type { AssetCatalogBootstrapGroupSummary, AssetCatalogBootstrapSplitOptions, ImageMeta } from '@risuai-workbench/core/node';
 
 export const ASSET_MANAGER_PROTOCOL = 'risu-workbench.asset-manager';
 export const ASSET_MANAGER_PROTOCOL_VERSION = 1;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AnalysisShowcase } from 'risu-workbench-core';
+import type { AnalysisShowcase } from '@risuai-workbench/core';
 import {
   ARTIFACT_BROWSER_PROTOCOL,
   ARTIFACT_BROWSER_PROTOCOL_VERSION,

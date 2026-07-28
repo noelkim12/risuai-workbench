@@ -4,7 +4,7 @@
 -->
 
 <script lang="ts">
-  import type { HtmlEditorState, LorebookEditorState, PromptEditorState, RegexEditorState } from 'risu-workbench-core';
+  import type { HtmlEditorState, LorebookEditorState, PromptEditorState, RegexEditorState } from '@risuai-workbench/core';
   import { onDestroy, onMount } from 'svelte';
   import HtmlRenderedPreview from '../html/HtmlRenderedPreview.svelte';
   import HtmlSourceEditor from '../html/HtmlSourceEditor.svelte';

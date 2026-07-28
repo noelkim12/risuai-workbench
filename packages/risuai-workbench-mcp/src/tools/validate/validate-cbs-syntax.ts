@@ -7,12 +7,12 @@ import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
-import { CBSParser, CBSBuiltinRegistry } from 'risu-workbench-core';
-import { DiagnosticsEngine } from 'cbs-language-server/analyzer/diagnostics';
+import { CBSParser, CBSBuiltinRegistry } from '@risuai-workbench/core';
+import { DiagnosticsEngine } from '@risuai-workbench/cbs-language-server/analyzer/diagnostics';
 import { createDiagnosticEnvelope, type DiagnosticEnvelope } from '../../contracts/diagnostics';
 import type { WorkspaceRootStatus } from '../../project/resolve-root';
 import { resolveSafeWorkspacePath } from '../../project/safe-path';
-import type { DiagnosticInfo } from 'risu-workbench-core';
+import type { DiagnosticInfo } from '@risuai-workbench/core';
 
 export interface ValidateCbsSyntaxInput {
   readonly path?: string;

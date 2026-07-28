@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer';
 
-import type { RisuLuaTraceEvent } from 'risu-workbench-core/node';
+import type { RisuLuaTraceEvent } from '@risuai-workbench/core/node';
 
 import type { ContextStore } from '../../context/context-store';
 

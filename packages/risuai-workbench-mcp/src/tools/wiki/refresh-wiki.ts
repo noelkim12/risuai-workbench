@@ -6,7 +6,7 @@
 import { lstat, mkdir, readFile, readdir, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 
-import { appendLogEntry, rewriteIndexArtifactsSection, writeArtifactFiles, writeSchemaIfChanged } from 'risu-workbench-core/node';
+import { appendLogEntry, rewriteIndexArtifactsSection, writeArtifactFiles, writeSchemaIfChanged } from '@risuai-workbench/core/node';
 
 import { createDiagnosticEnvelope, createUnknownFieldDiagnosticEnvelope, type DiagnosticEnvelope, type WorkbenchDiagnostic } from '../../contracts/diagnostics';
 import { createMutationResultEnvelope, type ChangedFileResult, type MutationResultEnvelope, type PostValidationResult } from '../../contracts/mutation-result';

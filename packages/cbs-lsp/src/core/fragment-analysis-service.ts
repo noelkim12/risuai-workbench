@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/core/fragment-analysis-service.ts
  */
 
-import * as core from 'risu-workbench-core';
+import * as core from '@risuai-workbench/core';
 import type { CancellationToken } from 'vscode-languageserver/node';
 import type {
   CbsBearingArtifact,
@@ -15,7 +15,7 @@ import type {
   Position,
   Token,
   TokenizerDiagnostic,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 
 import { DiagnosticsEngine } from '../analyzer/diagnostics';
 import { ScopeAnalyzer } from '../analyzer/scopeAnalyzer';

@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/analyzer/diagnostics/taxonomy.ts
  */
 
-import type { DiagnosticInfo } from 'risu-workbench-core';
+import type { DiagnosticInfo } from '@risuai-workbench/core';
 
 import {
   CALC_EXPRESSION_SUBLANGUAGE_LABEL,

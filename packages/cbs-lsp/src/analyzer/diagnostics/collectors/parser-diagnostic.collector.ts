@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/analyzer/diagnostics/collectors/parser-diagnostic.collector.ts
  */
 
-import type { DiagnosticInfo } from 'risu-workbench-core';
+import type { DiagnosticInfo } from '@risuai-workbench/core';
 
 import type { DiagnosticsContext } from '../context';
 import { normalizeBuiltinLookupKey, sliceRange } from '../builtin-helpers';

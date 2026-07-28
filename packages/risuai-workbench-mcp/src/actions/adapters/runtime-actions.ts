@@ -2,7 +2,7 @@ import {
   executeRisuLua,
   runRisuLuaSmoke,
   type RisuLuaSmokeScenario,
-} from 'risu-workbench-core/node';
+} from '@risuai-workbench/core/node';
 
 import { ActionRegistry } from '../registry';
 import type { WorkbenchAction } from '../types';

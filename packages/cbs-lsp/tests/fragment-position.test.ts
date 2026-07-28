@@ -1,4 +1,4 @@
-import type { CbsFragment, Range } from 'risu-workbench-core';
+import type { CbsFragment, Range } from '@risuai-workbench/core';
 import { describe, expect, it } from 'vitest';
 
 import { createFragmentOffsetMapper } from '../src/core';

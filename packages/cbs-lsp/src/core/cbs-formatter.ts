@@ -5,7 +5,7 @@
  * @file packages/cbs-lsp/src/core/cbs-formatter.ts
  */
 
-import type { BlockKind, BlockNode, CBSDocument, CBSNode } from 'risu-workbench-core';
+import type { BlockKind, BlockNode, CBSDocument, CBSNode } from '@risuai-workbench/core';
 
 /**
  * getCanonicalBlockName 함수.

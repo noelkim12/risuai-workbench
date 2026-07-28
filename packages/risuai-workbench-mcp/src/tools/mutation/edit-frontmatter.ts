@@ -5,7 +5,7 @@
 
 import { readFile } from 'node:fs/promises';
 
-import { parseEditorFrontmatter } from 'risu-workbench-core';
+import { parseEditorFrontmatter } from '@risuai-workbench/core';
 
 import { createDiagnosticEnvelope, createUnknownFieldDiagnosticEnvelope, type DiagnosticEnvelope } from '../../contracts/diagnostics';
 import type { PatchOperation, MutationMode as PatchPlanMutationMode } from '../../contracts/patch-plan';

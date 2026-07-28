@@ -8,6 +8,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 export const CBS_LANGUAGE_SERVER_BINARY_NAME = 'cbs-language-server';
+export const CBS_LANGUAGE_SERVER_PACKAGE_NAME = '@risuai-workbench/cbs-language-server';
 
 export const CBS_LANGUAGE_SERVER_INSTALL_MODES = Object.freeze([
   'local-devDependency',
@@ -182,7 +183,7 @@ export function resolveCbsLanguageServerLaunch(
       `${standaloneLaunch.detail} Embedded dev module was also not found at ${embeddedModulePath}.`,
     kind: 'failure',
     recovery:
-      'Install `cbs-language-server` in the workspace, switch to `npx`/`global`, set `risuaiWorkbench.cbs.server.path`, or open the monorepo workspace that contains `packages/cbs-lsp/dist/embedded.js`.',
+      'Install `@risuai-workbench/cbs-language-server` in the workspace, switch to `npx`/`global`, set `risuaiWorkbench.cbs.server.path`, or open the monorepo workspace that contains `packages/cbs-lsp/dist/embedded.js`.',
   };
 }
 
@@ -296,7 +297,7 @@ function resolveStandaloneLaunch(
         detail: `Workspace local CBS server binary was not found at ${localBinaryPath}.`,
         kind: 'failure',
         recovery:
-          'Run `npm install --save-dev cbs-language-server` in the workspace, or switch install mode to `npx`, `global`, or a path override.',
+          'Run `npm install --save-dev @risuai-workbench/cbs-language-server` in the workspace, or switch install mode to `npx`, `global`, or a path override.',
       };
     }
 
@@ -313,11 +314,11 @@ function resolveStandaloneLaunch(
 
   if (options.installMode === 'npx') {
     return {
-      args: [CBS_LANGUAGE_SERVER_BINARY_NAME, ...STDIO_ARGS],
+      args: [CBS_LANGUAGE_SERVER_PACKAGE_NAME, ...STDIO_ARGS],
       command: options.platform === 'win32' ? 'npx.cmd' : 'npx',
       cwd: options.workspaceRootPath ?? undefined,
       detail:
-        'Using `npx cbs-language-server --stdio`. This mode expects npm/npx to be available in the environment.',
+        'Using `npx @risuai-workbench/cbs-language-server --stdio`. This mode expects npm/npx to be available in the environment.',
       installMode: 'npx',
       kind: 'standalone',
       source: 'npx',

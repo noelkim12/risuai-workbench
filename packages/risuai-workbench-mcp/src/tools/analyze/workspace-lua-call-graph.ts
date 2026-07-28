@@ -1,8 +1,8 @@
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 
-import { analyzeLuaSource } from 'risu-workbench-core';
-import { listRisuLuaSourceModules } from 'risu-workbench-core/node';
+import { analyzeLuaSource } from '@risuai-workbench/core';
+import { listRisuLuaSourceModules } from '@risuai-workbench/core/node';
 
 type LuaArtifact = ReturnType<typeof analyzeLuaSource>;
 

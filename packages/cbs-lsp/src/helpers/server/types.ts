@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/helpers/server/types.ts
  */
 
-import type { CBSBuiltinRegistry } from 'risu-workbench-core';
+import type { CBSBuiltinRegistry } from '@risuai-workbench/core';
 import type { Connection } from 'vscode-languageserver/node';
 
 import type { LuaLsCompanionController } from '../../controllers/LuaLsCompanionController';

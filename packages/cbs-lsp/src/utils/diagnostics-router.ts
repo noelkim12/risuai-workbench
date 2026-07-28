@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/utils/diagnostics-router.ts
  */
 
-import type { CbsFragmentMap } from 'risu-workbench-core';
+import type { CbsFragmentMap } from '@risuai-workbench/core';
 import { DiagnosticSeverity, type Diagnostic, type DiagnosticRelatedInformation } from 'vscode-languageserver';
 
 import {

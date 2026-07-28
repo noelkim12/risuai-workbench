@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/analyzer/diagnostics/compare.ts
  */
 
-import type { DiagnosticInfo, DiagnosticRelatedInfo, Range } from 'risu-workbench-core';
+import type { DiagnosticInfo, DiagnosticRelatedInfo, Range } from '@risuai-workbench/core';
 
 import type {
   DiagnosticMachineData,

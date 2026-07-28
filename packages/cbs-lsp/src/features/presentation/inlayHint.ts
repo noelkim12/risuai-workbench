@@ -18,7 +18,7 @@ import {
   type Position,
   type Range,
   type Token,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 
 import {
   ACTIVE_FEATURE_AVAILABILITY,

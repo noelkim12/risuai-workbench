@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/analyzer/block-header/block-header.ts
  */
 
-import { type BlockNode, type Range } from 'risu-workbench-core';
+import { type BlockNode, type Range } from '@risuai-workbench/core';
 
 import { CbsLspTextHelper } from '../../helpers/text-helper';
 import { offsetToPosition, positionToOffset } from '../../utils/position';

@@ -1,4 +1,4 @@
-import { isPlainRecord, parseAnalysisShowcase, type AnalysisShowcase } from 'risu-workbench-core';
+import { isPlainRecord, parseAnalysisShowcase, type AnalysisShowcase } from '@risuai-workbench/core';
 
 export const ANALYSIS_SHOWCASE_PROTOCOL = 'risu-workbench.analysis-showcase' as const;
 export const ANALYSIS_SHOWCASE_PROTOCOL_VERSION = 1 as const;

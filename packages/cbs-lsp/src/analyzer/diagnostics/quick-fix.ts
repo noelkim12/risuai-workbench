@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/analyzer/diagnostics/quick-fix.ts
  */
 
-import type { DiagnosticInfo } from 'risu-workbench-core';
+import type { DiagnosticInfo } from '@risuai-workbench/core';
 
 import {
   createAgentMetadataExplanation,

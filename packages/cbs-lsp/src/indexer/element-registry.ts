@@ -14,7 +14,7 @@ import {
   type CustomExtensionArtifact,
   type ElementCBSData,
   type LuaAnalysisArtifact,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 
 import { createCbsAgentProtocolMarker, type CbsAgentProtocolMarker } from '../core';
 

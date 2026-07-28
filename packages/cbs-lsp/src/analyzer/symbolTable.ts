@@ -2,7 +2,7 @@
  * CBS scope 분석에서 변수/함수 심볼과 참조를 추적하는 심볼 테이블.
  * @file packages/cbs-lsp/src/analyzer/symbolTable.ts
  */
-import type { Range } from 'risu-workbench-core';
+import type { Range } from '@risuai-workbench/core';
 
 /**
  * VariableSymbolKind 타입.

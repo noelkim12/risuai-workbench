@@ -3,7 +3,7 @@
  * @file packages/vscode/src/artifact-browser/artifactBrowserTypes.ts
  */
 
-import type { AnalysisShowcase } from 'risu-workbench-core';
+import type { AnalysisShowcase } from '@risuai-workbench/core';
 
 export const ARTIFACT_BROWSER_PROTOCOL = 'risu-workbench.artifact-browser';
 export const ARTIFACT_BROWSER_PROTOCOL_VERSION = 1;

@@ -9,7 +9,7 @@ import {
   type CBSVariableOccurrence,
   type BlockNode,
   type Range,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 import { extractEachLoopBinding, isStaticEachIteratorIdentifier } from '../analyzer/block-header';
 import type { ElementRegistryFragmentElement, ElementRegistryGraphSeed } from './element-registry';
 import { positionToOffset, rebaseRangeToHost } from './unified-variable-coordinates';

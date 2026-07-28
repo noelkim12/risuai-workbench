@@ -3,7 +3,7 @@
  * @file packages/webview/src/lib/analysis-showcase/analysisShowcaseViewModel.ts
  */
 
-import type { AnalysisShowcase } from 'risu-workbench-core';
+import type { AnalysisShowcase } from '@risuai-workbench/core';
 
 export interface ShowcaseMetric {
   readonly id: string;

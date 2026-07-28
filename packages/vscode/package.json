@@ -468,7 +468,7 @@
   },
   "dependencies": {
     "create-risu-plugin": "^3.1.0",
-    "risu-workbench-core": "^0.1.0",
+    "@risuai-workbench/core": "^0.1.0",
     "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {

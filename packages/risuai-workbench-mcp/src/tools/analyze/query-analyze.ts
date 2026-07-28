@@ -17,7 +17,7 @@ import {
   type LorebookEntryInfo,
   type RegexScriptInfo,
   type TokenComponent,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 
 import { createDiagnosticEnvelope, type DiagnosticEnvelope, type DiagnosticEnvelopeStatus, type WorkbenchDiagnostic } from '../../contracts/diagnostics';
 import type { WorkspaceRootStatus } from '../../project/resolve-root';

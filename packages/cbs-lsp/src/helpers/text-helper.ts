@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/helpers/text-helper.ts
  */
 
-import type { Range } from 'risu-workbench-core';
+import type { Range } from '@risuai-workbench/core';
 
 import { positionToOffset } from '../utils/position';
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import * as core from 'risu-workbench-core';
+import * as core from '@risuai-workbench/core';
 import type { CancellationToken } from 'vscode-languageserver/node';
 
 import {

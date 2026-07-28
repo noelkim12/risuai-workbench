@@ -12,7 +12,7 @@ import {
   type CBSBuiltinFunction,
   type CBSNode,
   type Range,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 
 /**
  * normalizeBuiltinLookupKey 함수.

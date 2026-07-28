@@ -1,5 +1,5 @@
-import type { BlockNode, MacroCallNode } from 'risu-workbench-core';
-import { TokenType } from 'risu-workbench-core';
+import type { BlockNode, MacroCallNode } from '@risuai-workbench/core';
+import { TokenType } from '@risuai-workbench/core';
 import { describe, expect, it } from 'vitest';
 
 import {

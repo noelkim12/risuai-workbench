@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AnalysisShowcase } from 'risu-workbench-core';
+import type { AnalysisShowcase } from '@risuai-workbench/core';
 import { toAnalysisShowcaseViewModel } from '../../src/lib/analysis-showcase/analysisShowcaseViewModel';
 
 const baseShowcase: AnalysisShowcase = {

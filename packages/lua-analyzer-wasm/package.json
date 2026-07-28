@@ -1,6 +1,5 @@
 {
   "name": "@risuai-workbench/lua-analyzer-wasm",
-  "private": true,
   "version": "0.1.0",
   "description": "Rust WASM Lua analyzer kernel for RisuAI workbench experiments",
   "type": "commonjs",
@@ -13,11 +12,18 @@
     }
   },
   "files": [
-    "pkg",
+    "pkg/lua_analyzer_wasm.js",
+    "pkg/lua_analyzer_wasm.d.ts",
+    "pkg/lua_analyzer_wasm_bg.wasm",
+    "pkg/lua_analyzer_wasm_bg.wasm.d.ts",
     "README.md",
     "Cargo.toml",
     "src"
   ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build:wasm": "npx --yes wasm-pack build --target nodejs --out-dir pkg",
     "test:rust": "cargo test",
@@ -25,5 +31,5 @@
     "test:smoke": "node ./test/smoke.cjs",
     "test": "npm run test:rust && npm run test:wasm && npm run build:wasm && npm run test:smoke"
   },
-  "license": "MIT"
+  "license": "GPL-3.0-only"
 }

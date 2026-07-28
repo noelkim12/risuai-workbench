@@ -3,7 +3,7 @@
  * @file packages/webview/src/lib/types.ts
  */
 
-import type { AnalysisShowcase } from 'risu-workbench-core';
+import type { AnalysisShowcase } from '@risuai-workbench/core';
 import type {
   MainEditorAdvancedLspErrorPayload,
   MainEditorCodeLensRequestPayload,

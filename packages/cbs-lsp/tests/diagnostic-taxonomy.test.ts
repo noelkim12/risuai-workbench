@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CBSBuiltinRegistry } from 'risu-workbench-core';
+import { CBSBuiltinRegistry } from '@risuai-workbench/core';
 import {
   DEFERRED_SCOPE_CONTRACT,
   DIAGNOSTIC_TAXONOMY,
