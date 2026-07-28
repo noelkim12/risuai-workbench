@@ -212,10 +212,10 @@ describe('diagnostic taxonomy contract', () => {
           scope: 'deferred',
           source: 'deferred-scope-contract:lua-ast-fragment-routing',
           detail:
-            'Lua AST-specific fragment routing stays deferred while the current contract still uses full-document fragment routing.',
+            'Lua AST-specific fragment routing stays deferred while the current contract uses string-literal fragment routing.',
         },
       },
-      luaRoutingMode: 'full-document-fragment',
+      luaRoutingMode: 'string-literal-fragments',
     });
 
     const symbolTable = new SymbolTable();
@@ -229,8 +229,8 @@ describe('diagnostic taxonomy contract', () => {
 
     expect(fragmentMap?.fragments).toHaveLength(1);
     expect(fragmentMap?.fragments[0]).toMatchObject({
-      section: 'full',
-      content: luaFixture.text,
+      section: 'lua-string:1',
+      content: '{{user}}',
     });
   });
 });

@@ -42,7 +42,21 @@ export function registerWikiActions(registry: ActionRegistry): void {
     capability: 'wiki',
     risk: 'read_only',
     inputSchema: SearchWikiInputSchema,
-    execute: (input) => handleSearchWiki(input),
+    examples: [{ query: 'project features', scope: 'workspace' }],
+    inputGuidance: {
+      fields: {
+        query: {
+          type: 'string',
+          description: 'Terms to match against wiki titles, identifiers, and canonical page bodies.',
+        },
+        scope: {
+          type: 'enum',
+          description: 'Wiki source to search. Workspace scope is used when an active workspace is available.',
+          enumValues: ['workspace', 'provider-docs', 'all'],
+        },
+      },
+    },
+    execute: (input, context) => handleSearchWiki(input, context.workspace),
   } as WorkbenchAction<SearchWikiInput, DiagnosticEnvelope>);
 
   registry.register({

@@ -16,3 +16,11 @@ export const RunExtractInputSchema = z.object({
   risuluaSplit: z.enum(['none', 'report', 'coarse', 'module-table']).optional(),
   risuluaMode: z.literal('modular').optional(),
 }).strict();
+
+export const RunPackInputSchema = z.object({
+  inputRoot: z.string(),
+  outputPath: z.string(),
+  outputPolicy: z.enum(['create-new', 'replace-atomic']).default('create-new'),
+  risuluaMode: z.enum(['classic', 'modular']).default('modular'),
+  risuluaRecovery: z.enum(['none', 'full-source']).default('none'),
+}).strict();

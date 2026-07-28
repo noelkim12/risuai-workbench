@@ -107,7 +107,7 @@ User: {{input}}
       expect(result?.fragments[0].content).toBe(content);
     });
 
-    it('maps lua full file to single fragment', () => {
+    it('maps a CBS-bearing lua string to a single fragment', () => {
       const content = `local name = "{{char}}"
 local greeting = "Hello, " .. name
 return greeting`;
@@ -116,7 +116,7 @@ return greeting`;
       expect(result).not.toBeNull();
       expect(result?.artifact).toBe('lua');
       expect(result?.fragments).toHaveLength(1);
-      expect(result?.fragments[0].section).toBe('full');
+      expect(result?.fragments[0].section).toBe('lua-string:1');
     });
 
     it('maps risutext full body to a single TEXT fragment', () => {

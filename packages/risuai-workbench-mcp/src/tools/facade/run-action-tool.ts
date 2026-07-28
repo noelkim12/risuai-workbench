@@ -12,6 +12,7 @@ import {
   type ActionErrorResult,
 } from '../../actions/errors';
 import { ContextStore, createContextNotFoundRunActionError } from '../../context/context-store';
+import { presentActionResult } from './action-result-presenter';
 
 export const RunActionInputSchema = z.object({
   actionId: z.string(),
@@ -80,5 +81,6 @@ export async function handleRunAction(
     return { actionId: action.id, dryRun: true, ok: true };
   }
 
-  return action.execute(parsed.data, executionContext);
+  const result = await action.execute(parsed.data, executionContext);
+  return presentActionResult(action.id, result, contextStore ?? executionContext.contextStore);
 }

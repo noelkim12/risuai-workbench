@@ -16,6 +16,7 @@ import {
   type RouteNextStep,
   type RouteRisk,
   type RouteStopCondition,
+  type RouteWorkflowStep,
   type TargetKind,
   type WorkbenchIntent,
 } from '../contracts/intent-route';
@@ -29,8 +30,12 @@ import { WORKBENCH_REGISTRY } from '../registry';
 const NO_WRITE_KEYWORDS = [
   'do not modify',
   "don't modify",
+  'do not edit',
+  "don't edit",
   'read only',
+  'read-only',
   'no changes',
+  '탐색만',
   '수정하지',
   '변경하지',
 ];
@@ -83,6 +88,7 @@ const EXTRACT_KEYWORDS = [
 ];
 
 const EXTRACT_SOURCE_KEYWORDS = ['.risum', '.risup', '.charx', 'risum', 'risup', 'charx'];
+const PACK_REQUEST_PATTERN = /\b(?:pack|repack|bundle)\b|build\s+(?:the\s+)?(?:generated\s+)?distributable|패킹|재패킹/u;
 
 const PREVIEW_EVIDENCE_KEYWORDS = [
   'suggest',
@@ -692,11 +698,14 @@ function intentToCapabilities(intent: WorkbenchIntent): readonly string[] {
     case 'artifact.order.preview':
       return ['patch.preview'];
     case 'wiki.refresh.preview':
+    case 'wiki.explore':
       return ['wiki'];
     case 'core.scaffold.preview':
       return [];
     case 'core.extract.preview':
       return ['mutation.direct'];
+    case 'pack.module':
+      return ['validate', 'pack'];
     case 'analyze.variable_flow':
     case 'analyze.lua_handler':
       return ['analyze'];
@@ -737,10 +746,14 @@ function intentToRecommendedActions(intent: WorkbenchIntent): readonly string[] 
       return ['patch.suggest_order'];
     case 'wiki.refresh.preview':
       return ['wiki.search', 'wiki.refresh'];
+    case 'wiki.explore':
+      return ['wiki.search'];
     case 'core.scaffold.preview':
       return [];
     case 'core.extract.preview':
       return ['core.run_extract'];
+    case 'pack.module':
+      return ['validate.artifact', 'core.run_pack', 'inspect.artifact'];
     case 'analyze.variable_flow':
       return ['analyze.query_variable_flow', 'analyze.query_variable'];
     case 'analyze.lua_handler':
@@ -803,11 +816,14 @@ function intentToNextInput(
     case 'artifact.order.preview':
       return { capability: 'patch.preview', limit: 5 };
     case 'wiki.refresh.preview':
+    case 'wiki.explore':
       return { capability: 'wiki', limit: 5 };
     case 'core.scaffold.preview':
       return { query: 'scaffold', limit: 5 };
     case 'core.extract.preview':
       return { capability: 'mutation.direct', query: 'extract', limit: 5 };
+    case 'pack.module':
+      return { capability: 'pack', actionIds: ['core.run_pack'], limit: 5 };
     case 'analyze.variable_flow':
     case 'analyze.lua_handler':
       return { capability: 'analyze', limit: 5 };
@@ -862,6 +878,29 @@ function intentToFacadeRecommendedTools(intent: WorkbenchIntent): readonly strin
   }
 }
 
+function buildRouteWorkflow(route: Pick<IntentRouteResult, 'intent' | 'mutationMode' | 'mutationRequested' | 'recommendedActions'>): readonly RouteWorkflowStep[] {
+  if (route.intent === 'pack.module') {
+    return [
+      { actionId: 'validate.artifact', stage: 'validate' },
+      { actionId: 'core.run_pack', stage: 'pack' },
+      { actionId: 'inspect.artifact', stage: 'verify' },
+    ];
+  }
+
+  if (!route.mutationRequested || route.mutationMode !== 'preview_required') {
+    return [];
+  }
+
+  const analyzeAction = route.recommendedActions.find((actionId) => actionId.startsWith('analyze.'));
+  const previewAction = route.recommendedActions.find((actionId) => actionId.startsWith('patch.')) ?? 'patch.suggest';
+  return [
+    ...(analyzeAction ? [{ actionId: analyzeAction, stage: 'analyze' as const }] : []),
+    { actionId: previewAction, stage: 'preview' },
+    { requiresApproval: true, stage: 'apply', tool: FACADE_TOOLS.patchApply },
+    ...(analyzeAction ? [{ actionId: analyzeAction, stage: 'validate' as const }] : []),
+  ];
+}
+
 // ---------------------------------------------------------------------------
 // Constraint application
 // ---------------------------------------------------------------------------
@@ -881,9 +920,13 @@ function applyConstraints(
   let {
     allowedTools,
     blockedTools,
+    capabilities,
     commitAllowed,
     discouragedTools,
     mutationMode,
+    mutationRequested,
+    nextInput,
+    recommendedActions,
     recommendedTools,
     risk,
     routingSignals,
@@ -894,6 +937,9 @@ function applyConstraints(
     risk = 'read_only';
     commitAllowed = false;
     mutationMode = 'blocked';
+    mutationRequested = false;
+    capabilities = capabilities.filter((capability) => capability !== 'patch.preview');
+    recommendedActions = recommendedActions.filter((actionId) => !actionId.startsWith('patch.'));
     blockedTools = unionSets([blockedTools, MUTATION_TOOLS]);
     allowedTools = differenceSets(allowedTools, MUTATION_TOOLS);
     recommendedTools = differenceSets(recommendedTools, MUTATION_TOOLS);
@@ -913,7 +959,19 @@ function applyConstraints(
     const isApplyRoute =
       route.intent === 'artifact.patch.apply' || route.intent === 'creative.apply_patch';
     if (!isApplyRoute && mutationMode !== 'guarded_direct') {
+      mutationRequested = true;
       commitAllowed = false;
+      risk = 'preview_only';
+      capabilities = uniqueStable([...capabilities, 'patch.preview']);
+      recommendedActions = uniqueStable([...recommendedActions, 'patch.suggest']);
+      recommendedTools = uniqueStable([
+        ...recommendedTools,
+        FACADE_TOOLS.patchPreview,
+        FACADE_TOOLS.catalog,
+        FACADE_TOOLS.prepareAction,
+        FACADE_TOOLS.runAction,
+      ]);
+      nextInput = { ...nextInput, actionIds: recommendedActions };
       blockedTools = unionSets([blockedTools, MUTATION_TOOLS]);
       allowedTools = differenceSets(allowedTools, MUTATION_TOOLS);
       recommendedTools = differenceSets(recommendedTools, MUTATION_TOOLS);
@@ -939,7 +997,7 @@ function applyConstraints(
   return createIntentRouteResult({
     allowedTools: filterImplemented(allowedTools),
     blockedTools: filterImplemented(blockedTools),
-    capabilities: route.capabilities,
+    capabilities,
     canonical: route.canonical,
     commitAllowed,
     confidence: route.confidence,
@@ -951,11 +1009,11 @@ function applyConstraints(
     intent: route.intent,
     missingInputs: route.missingInputs,
     mutationMode,
-    mutationRequested: route.mutationRequested,
-    nextInput: route.nextInput,
+    mutationRequested,
+    nextInput,
     nextStep: route.nextStep,
     nextTool: route.nextTool,
-    recommendedActions: route.recommendedActions,
+    recommendedActions,
     recommendedTools: uniqueStable(sanitizedRecommendedTools),
     requiredEvidence: route.requiredEvidence,
     risk,
@@ -963,6 +1021,7 @@ function applyConstraints(
     routingSignals,
     stopConditions,
     targetKind: route.targetKind,
+    workflow: buildRouteWorkflow({ intent: route.intent, mutationMode, mutationRequested, recommendedActions }),
   });
 }
 
@@ -1070,6 +1129,50 @@ function classifyIntent(
         'approval_required',
         ...constraints.domainTags.map((tag) => `domain:${tag}`),
       ],
+    });
+  }
+
+  if (
+    input.target?.trim().toLowerCase() === 'wiki' &&
+    (!constraints.hasMutationLanguage || constraints.forceReadOnly)
+  ) {
+    return buildRouteResult(input, {
+      intent: 'wiki.explore',
+      nextStep: 'read_resource',
+      confidence: 0.95,
+      risk: 'read_only',
+      targetKind: 'workspace',
+      mutationRequested: false,
+      commitAllowed: false,
+      stopConditions: [],
+      explanation: 'Explicit workspace wiki exploration target detected.',
+      allowedTools: filterImplemented(READ_ONLY_TOOLS),
+      blockedTools: filterImplemented(MUTATION_TOOLS),
+      domainTags: constraints.domainTags,
+      routingSignals: ['explicit_target:wiki'],
+    });
+  }
+
+  if (PACK_REQUEST_PATTERN.test(text)) {
+    return buildRouteResult(input, {
+      intent: 'pack.module',
+      nextStep: 'execute',
+      confidence: 0.95,
+      risk: 'external_process',
+      targetKind: 'module',
+      mutationRequested: true,
+      commitAllowed: true,
+      mutationMode: 'guarded_direct',
+      stopConditions: [],
+      explanation: 'Module pack request detected. Validate the canonical workspace, run core.run_pack, then inspect the generated artifact.',
+      allowedTools: filterImplemented([
+        FACADE_TOOLS.catalog,
+        FACADE_TOOLS.prepareAction,
+        FACADE_TOOLS.runAction,
+      ]),
+      blockedTools: [],
+      domainTags: uniqueStable([...constraints.domainTags, 'module']),
+      routingSignals: ['pack', 'facade_action:core.run_pack'],
     });
   }
 

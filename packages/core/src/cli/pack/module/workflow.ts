@@ -414,6 +414,11 @@ function mergeAssets(inRoot: string): ModuleAssetsResult {
   if (!fs.existsSync(manifestPath)) {
     return { tuples: [], buffers: [] };
   }
+  const realRoot = fs.realpathSync(inRoot);
+  const realAssetDir = fs.realpathSync(assetDir);
+  if (!isPathInside(realRoot, realAssetDir)) {
+    throw new Error(`assets directory resolves outside module root: ${assetDir}`);
+  }
 
   const parsed = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as unknown;
   if (!isPlainObject(parsed) || !Array.isArray(parsed.assets)) {
@@ -435,14 +440,30 @@ function mergeAssets(inRoot: string): ModuleAssetsResult {
     ]);
 
     if (typeof entry.extracted_path === 'string' && entry.extracted_path.length > 0) {
-      const assetPath = path.join(assetDir, entry.extracted_path);
-      buffers.push(fs.existsSync(assetPath) ? fs.readFileSync(assetPath) : null);
+      const assetPath = path.resolve(assetDir, entry.extracted_path);
+      if (!isPathInside(path.resolve(assetDir), assetPath)) {
+        throw new Error(`Asset extracted_path resolves outside assets directory: ${entry.extracted_path}`);
+      }
+      if (!fs.existsSync(assetPath)) {
+        buffers.push(null);
+        continue;
+      }
+      const realAssetPath = fs.realpathSync(assetPath);
+      if (!isPathInside(realAssetDir, realAssetPath)) {
+        throw new Error(`Asset extracted_path resolves outside assets directory: ${entry.extracted_path}`);
+      }
+      buffers.push(fs.readFileSync(realAssetPath));
     } else {
       buffers.push(null);
     }
   }
 
   return { tuples, buffers };
+}
+
+function isPathInside(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
 function applyRisumRecoveryAssetCarrier(
@@ -540,7 +561,7 @@ function listFilesRecursiveBySuffix(rootDir: string, suffix: string): string[] {
   return out;
 }
 
-function encodeModuleRisumWithAssets(
+export function encodeModuleRisumWithAssets(
   moduleObj: Record<string, unknown>,
   assetBuffers: Array<Buffer | null>,
 ): Buffer {

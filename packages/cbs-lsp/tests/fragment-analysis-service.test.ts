@@ -9,7 +9,10 @@ import {
 } from '../src/core';
 import { MAX_LUA_WORKSPACE_INDEX_TEXT_LENGTH } from '../src/indexer';
 import { DiagnosticCode } from '../src/analyzer/diagnostics';
-import { routeDiagnosticsForDocument } from '../src/utils/diagnostics-router';
+import {
+  mapDocumentToCbsFragments,
+  routeDiagnosticsForDocument,
+} from '../src/utils/diagnostics-router';
 import {
   createFixtureRequest,
   getFixtureCorpusEntry,
@@ -43,12 +46,17 @@ afterEach(() => {
 
 describe('FragmentAnalysisService', () => {
   it.each(supportedServiceFixtures)(
-    'matches core fragment routing for $label artifacts',
+    'matches LSP fragment routing for $label artifacts',
     (entry) => {
       const service = new FragmentAnalysisService();
       const analysis = service.analyzeDocument(createFixtureRequest(entry));
       const expectedArtifact = core.parseCustomExtensionArtifactFromPath(entry.filePath);
-      const expected = core.mapToCbsFragments(expectedArtifact, entry.text);
+      const expected = entry.artifact === 'lua'
+        ? mapDocumentToCbsFragments(entry.filePath, entry.text)
+        : core.mapToCbsFragments(expectedArtifact, entry.text);
+      if (!expected) {
+        throw new TypeError(`Expected a routed CBS fragment map for ${entry.id}`);
+      }
 
       expect(analysis).not.toBeNull();
       expect(analysis?.artifact).toBe(expected.artifact);

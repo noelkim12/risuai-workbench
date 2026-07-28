@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 
 interface PackageManifest {
   version: string;
@@ -32,15 +32,6 @@ function runCliFlag(flag: '--help' | '--version') {
   });
 }
 
-beforeAll(() => {
-  const buildResult = spawnSync('npm', ['run', 'build'], {
-    cwd: packageRoot,
-    encoding: 'utf8',
-  });
-
-  expect(buildResult.status, buildResult.stderr).toBe(0);
-});
-
 afterAll(async () => {
   await Promise.all(
     [...stdioChildren].map(
@@ -58,7 +49,7 @@ afterAll(async () => {
   );
 });
 
-describe.sequential('cbs-language-server standalone CLI contract', () => {
+describe('cbs-language-server standalone CLI contract', () => {
   it('publishes an explicit bin and server-module export surface', () => {
     expect(manifest.bin?.['cbs-language-server']).toBe('dist/cli.js');
     expect(manifest.exports?.['.']).toEqual({

@@ -8,7 +8,7 @@ import os from 'node:os';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 
-import { beforeAll, afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { getCustomExtensionArtifactContract, type CustomExtensionArtifact } from 'risu-workbench-core';
 
 type WorkspaceFileSeed = {
@@ -119,20 +119,11 @@ function runCliJson(args: readonly string[]): {
   };
 }
 
-beforeAll(() => {
-  const buildResult = spawnSync('npm', ['run', 'build'], {
-    cwd: packageRoot,
-    encoding: 'utf8',
-  });
-
-  expect(buildResult.status, buildResult.stderr).toBe(0);
-});
-
 afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-describe.sequential('cbs-language-server auxiliary CLI surfaces', () => {
+describe('cbs-language-server auxiliary CLI surfaces', () => {
   it('emits runtime availability JSON without requiring a workspace', () => {
     const { payload } = runCliJson(['report', 'availability']);
 

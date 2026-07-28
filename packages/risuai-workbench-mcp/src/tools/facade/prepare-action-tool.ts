@@ -18,11 +18,21 @@ export interface PrepareActionFieldSummary {
   [key: string]: string;
 }
 
+export interface PrepareActionFieldContract {
+  required: boolean;
+  type: string;
+  description?: string;
+  enumValues?: readonly (string | number)[];
+  defaultValue?: unknown;
+}
+
 export interface PrepareActionResult {
   actionId: string;
   required: string[];
   optional: PrepareActionFieldSummary;
   examples: unknown[];
+  fields: Record<string, PrepareActionFieldContract>;
+  oneOf: readonly (readonly string[])[];
   next: 'workbench.run_action';
   contextHint?: string;
   runActionInput?: {
@@ -35,26 +45,62 @@ export interface PrepareActionResult {
  * Summarize a Zod schema into required/optional field names.
  * Best-effort: works for ZodObject shapes; falls back to empty for non-object schemas.
  */
-function summarizeSchema(action: ErasedWorkbenchAction): { required: string[]; optional: PrepareActionFieldSummary } {
-  const schema = action.inputSchema as unknown as z.ZodType<unknown>;
+function fieldType(schema: z.ZodType<unknown>): string {
+  if (schema instanceof z.ZodEnum) return 'enum';
+  if (schema instanceof z.ZodString) return 'string';
+  if (schema instanceof z.ZodNumber) return 'number';
+  if (schema instanceof z.ZodBoolean) return 'boolean';
+  if (schema instanceof z.ZodArray) return 'array';
+  if (schema instanceof z.ZodObject) return 'object';
+  if (schema instanceof z.ZodUnion || schema instanceof z.ZodDiscriminatedUnion) return 'union';
+  return 'unknown';
+}
+
+function fieldContract(
+  key: string,
+  schema: z.ZodType<unknown>,
+  action: ErasedWorkbenchAction,
+): PrepareActionFieldContract {
+  const guidance = action.inputGuidance?.fields?.[key];
+  return {
+    required: !schema.safeParse(undefined).success,
+    type: guidance?.type ?? fieldType(schema),
+    ...(guidance?.description
+      ? { description: guidance.description }
+      : {}),
+    ...(guidance?.enumValues ? { enumValues: guidance.enumValues } : {}),
+    ...(guidance && 'defaultValue' in guidance
+      ? { defaultValue: guidance.defaultValue }
+      : {}),
+  };
+}
+
+function summarizeSchema(action: ErasedWorkbenchAction): {
+  required: string[];
+  optional: PrepareActionFieldSummary;
+  fields: Record<string, PrepareActionFieldContract>;
+} {
+  const schema = action.inputSchema;
 
   if (!(schema instanceof z.ZodObject)) {
-    return { optional: {}, required: [] };
+    return { fields: {}, optional: {}, required: [] };
   }
 
   const shape = schema.shape as Record<string, z.ZodType<unknown>>;
   const required: string[] = [];
   const optional: PrepareActionFieldSummary = {};
+  const fields: Record<string, PrepareActionFieldContract> = {};
 
   for (const [key, value] of Object.entries(shape)) {
-    if (value instanceof z.ZodOptional) {
+    fields[key] = fieldContract(key, value, action);
+    if (value.safeParse(undefined).success) {
       optional[key] = 'optional';
     } else {
       required.push(key);
     }
   }
 
-  return { optional, required };
+  return { fields, optional, required };
 }
 
 function extractionOptionalDescriptions(optional: PrepareActionFieldSummary): PrepareActionFieldSummary {
@@ -71,16 +117,19 @@ function extractionOptionalDescriptions(optional: PrepareActionFieldSummary): Pr
 }
 
 function runActionInputForAction(action: ErasedWorkbenchAction, examples: unknown[]): PrepareActionResult['runActionInput'] {
+  const firstExample = examples[0];
+  const parsedExample = z.record(z.string(), z.unknown()).safeParse(firstExample);
+  if (parsedExample.success) {
+    return { actionId: action.id, args: parsedExample.data };
+  }
   if (action.id !== 'core.run_extract') {
     return undefined;
   }
 
-  const firstExample = examples[0];
-  const args = firstExample && typeof firstExample === 'object' && !Array.isArray(firstExample)
-    ? firstExample as Record<string, unknown>
-    : { sourcePath: 'test_suites/example.risum', outDir: 'test_suites/extraction_targets', type: 'module' };
-
-  return { actionId: action.id, args };
+  return {
+    actionId: action.id,
+    args: { sourcePath: 'test_suites/example.risum', outDir: 'test_suites/extraction_targets', type: 'module' },
+  };
 }
 
 function contextHintForAction(action: ErasedWorkbenchAction): string | undefined {
@@ -126,7 +175,9 @@ export function handlePrepareAction(input: PrepareActionInput, registry: ActionR
   return {
     actionId: action.id,
     examples,
+    fields: summary.fields,
     next: 'workbench.run_action',
+    oneOf: action.inputGuidance?.atLeastOneOf ?? [],
     optional,
     required: summary.required,
     contextHint,

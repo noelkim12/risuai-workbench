@@ -23,6 +23,10 @@ import { createDiagnosticEnvelope, type DiagnosticEnvelope, type DiagnosticEnvel
 import type { WorkspaceRootStatus } from '../../project/resolve-root';
 import { resolveSafeWorkspacePath } from '../../project/safe-path';
 import { type AnalyzeSnapshotInput, type AnalyzeSnapshotMetadata, resolveAnalyzeSnapshot } from '../../analyze/snapshot';
+import {
+  buildWorkspaceLuaCallGraph,
+  type WorkspaceLuaCallGraphResult,
+} from './workspace-lua-call-graph';
 
 interface ElementInput {
   elementName: string;
@@ -164,12 +168,16 @@ export async function handleQueryLuaCallGraph(input: QueryLuaInput, workspace: W
   if (!snapshot.ok) return createQueryEnvelope('workbench.query_lua_call_graph', 'domain_error', snapshot.diagnostics);
 
   const artifact = analyzeLuaSource({ charxData: input.charxData ?? null, filePath: source.filePath, source: source.sourceText });
+  const workspaceGraph = source.absolutePath
+    ? await buildWorkspaceLuaCallGraph(source.absolutePath)
+    : { crossModuleEdges: [], workspaceCallGraph: [] };
   return createQueryEnvelope('workbench.query_lua_call_graph', statusForSnapshot(snapshot.refused, snapshot.diagnostics), snapshot.diagnostics, {
     callGraph: mapToSortedEntries(artifact.analyzePhase.callGraph, 'caller', 'callees'),
     calledBy: mapToSortedEntries(artifact.analyzePhase.calledBy, 'callee', 'callers'),
     functions: artifact.serialized.functions,
     handlers: artifact.serialized.handlers,
     snapshot: snapshot.snapshot,
+    ...workspaceGraph,
   });
 }
 
@@ -186,8 +194,11 @@ export async function handleQueryLuaAnalysis(input: QueryLuaInput, workspace: Wo
   if (!resolved.ok) return resolved.envelope;
 
   const artifact = resolved.artifact;
+  const workspaceGraph = resolved.absolutePath
+    ? await buildWorkspaceLuaCallGraph(resolved.absolutePath)
+    : undefined;
   return createQueryEnvelope('workbench.query_lua_analysis', statusForSnapshot(resolved.snapshot.refused, resolved.snapshot.diagnostics), resolved.snapshot.diagnostics, {
-    analyzeSummary: createLuaAnalyzeSummary(artifact),
+    analyzeSummary: createLuaAnalyzeSummary(artifact, workspaceGraph),
     apiCalls: artifact.serialized.apiCalls,
     baseName: artifact.baseName,
     correlations: {
@@ -435,6 +446,7 @@ function toArtifactInput(artifact: ArtifactAnalyzeInput): ArtifactInput {
 }
 
 interface LuaSourceResolution {
+  absolutePath: string | null;
   filePath: string;
   ok: true;
   sourceText: string;
@@ -447,6 +459,7 @@ interface LuaSourceFailure {
 
 type LuaQueryResolution =
   | {
+      absolutePath: string | null;
       artifact: ReturnType<typeof analyzeLuaSource>;
       ok: true;
       snapshot: Extract<Awaited<ReturnType<typeof resolveAnalyzeSnapshot>>, { ok: true }>;
@@ -473,6 +486,7 @@ async function analyzeLuaQueryInput(input: QueryLuaInput, workspace: WorkspaceRo
   if (!snapshot.ok) return { envelope: createQueryEnvelope(toolName, 'domain_error', snapshot.diagnostics), ok: false };
 
   return {
+    absolutePath: source.absolutePath,
     artifact: analyzeLuaSource({ charxData: input.charxData ?? null, filePath: source.filePath, source: source.sourceText }),
     ok: true,
     snapshot,
@@ -489,7 +503,7 @@ async function analyzeLuaQueryInput(input: QueryLuaInput, workspace: WorkspaceRo
  */
 async function resolveLuaSource(input: QueryLuaInput, workspace: WorkspaceRootStatus): Promise<LuaSourceResolution | LuaSourceFailure> {
   if (input.sourceText !== undefined) {
-    return { filePath: input.filePath ?? input.sourcePath ?? '<inline>.lua', ok: true, sourceText: input.sourceText };
+    return { absolutePath: null, filePath: input.filePath ?? input.sourcePath ?? '<inline>.lua', ok: true, sourceText: input.sourceText };
   }
 
   if (!input.sourcePath) {
@@ -514,7 +528,12 @@ async function resolveLuaSource(input: QueryLuaInput, workspace: WorkspaceRootSt
     };
   }
 
-  return { filePath: input.filePath ?? safeResult.relativePath, ok: true, sourceText: await readFile(safeResult.absolutePath, 'utf8') };
+  return {
+    absolutePath: safeResult.absolutePath,
+    filePath: input.filePath ?? safeResult.relativePath,
+    ok: true,
+    sourceText: await readFile(safeResult.absolutePath, 'utf8'),
+  };
 }
 
 /**
@@ -566,13 +585,21 @@ function mapToSortedEntries(map: Map<string, Set<string>>, keyName: string, valu
  * @param artifact - core Lua analysis artifact
  * @returns agent-facing analyze summary
  */
-function createLuaAnalyzeSummary(artifact: ReturnType<typeof analyzeLuaSource>): Record<string, unknown> {
+function createLuaAnalyzeSummary(
+  artifact: ReturnType<typeof analyzeLuaSource>,
+  workspaceGraph?: WorkspaceLuaCallGraphResult,
+): Record<string, unknown> {
+  const workspaceEdges = workspaceGraph?.crossModuleEdges ?? [];
   return {
     apiByCategory: [...artifact.analyzePhase.apiByCategory.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([category, value]) => ({ apis: [...value.apis].sort(), category, count: value.count })),
     calledBy: mapToSortedEntries(artifact.analyzePhase.calledBy, 'callee', 'callers'),
-    callGraph: mapToSortedEntries(artifact.analyzePhase.callGraph, 'caller', 'callees'),
+    callGraph: [
+      ...mapToSortedEntries(artifact.analyzePhase.callGraph, 'caller', 'callees'),
+      ...(workspaceGraph?.workspaceCallGraph ?? []),
+    ],
+    crossModuleEdges: workspaceEdges,
     commentSections: artifact.analyzePhase.commentSections,
     moduleByFunction: [...artifact.analyzePhase.moduleByFunction.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
@@ -585,7 +612,10 @@ function createLuaAnalyzeSummary(artifact: ReturnType<typeof analyzeLuaSource>):
       tables: [...group.tables].sort(),
     })),
     registryVars: artifact.analyzePhase.registryVars,
-    resolvedModuleCalls: artifact.analyzePhase.resolvedModuleCalls,
+    resolvedModuleCalls: [
+      ...artifact.analyzePhase.resolvedModuleCalls,
+      ...workspaceEdges.filter((edge) => edge.status === 'resolved'),
+    ],
     rootFunctionNames: artifact.analyzePhase.rootFunctions.map((fn) => fn.name).sort(),
     sectionMapSections: artifact.analyzePhase.sectionMapSections,
     stateOwnership: artifact.analyzePhase.stateOwnership,
@@ -596,6 +626,7 @@ function createLuaAnalyzeSummary(artifact: ReturnType<typeof analyzeLuaSource>):
       stateAccessOccurrences: artifact.serialized.stateAccessOccurrences.length,
       stateVars: Object.keys(artifact.serialized.stateVars).length,
     },
+    unresolvedModuleCalls: workspaceEdges.filter((edge) => edge.status === 'unresolved'),
   };
 }
 

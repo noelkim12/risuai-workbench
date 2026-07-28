@@ -12,6 +12,8 @@ workbench.route_intent -> workbench.catalog -> workbench.prepare_action
 
 `catalog`와 `prepare_action`이 반환하는 `actionId`는 MCP tool 이름이 아니라 내부 action ID입니다. 예: `inspect.path`, `analyze.query_lua_analysis`, `patch.suggest_order`, `core.run_extract`.
 
+`route_intent.nextInput`은 그대로 `catalog`에 전달할 수 있습니다. 복합 요청에서는 `actionIds`가 강한 seed로 포함되어 분석 action과 patch preview action이 함께 발견됩니다. 검색 결과가 비면 `catalog.emptyReason`을 확인합니다.
+
 ## 읽기/분석 작업
 
 읽기, 검증, 분석, wiki/resource 조회처럼 파일을 직접 변경하지 않는 작업은 다음 흐름을 사용합니다.
@@ -29,6 +31,8 @@ workbench.route_intent
 - root marker, `_order.json`, frontmatter 검증
 - RisuLua/CBS/prompt/lorebook 관련 분석 조회
 - wiki/resource 기반 설명 생성
+
+Lua 분석 action은 `sourcePath` 또는 `sourceText` 중 하나를 사용합니다. `stalePolicy`는 `mark`(기본값, stale diagnostic을 결과에 표시) 또는 `refuse`(stale snapshot을 domain error로 거부)입니다. `prepare_action`은 이 enum, 기본값, source 대안과 실행 가능한 예시를 함께 반환합니다.
 
 ## 파일 변경 작업
 
@@ -60,3 +64,21 @@ workbench.run_action({
 ```
 
 `workbench.run_extract`는 legacy direct MCP tool 이름이며 기본 mode에서는 보이지 않습니다.
+
+## Module pack
+
+canonical `.risumodule` workspace는 catalog에서 `capability: "pack"`으로 `core.run_pack`을 찾은 뒤 실행합니다. 입력과 출력은 모두 workspace-relative 경로여야 합니다. 기본 `outputPolicy: "create-new"`는 기존 output을 거부하고 `reason: "output_exists"`를 반환하며, 명시적인 `outputPolicy: "replace-atomic"`은 같은 디렉터리의 임시 파일을 완성한 뒤 기존 archive를 교체합니다.
+
+```text
+workbench.run_action({
+  actionId: "core.run_pack",
+  args: {
+    inputRoot: "module",
+    outputPath: "packed.risum",
+    outputPolicy: "create-new",
+    risuluaMode: "modular"
+  }
+})
+```
+
+결과에는 archive 경로, 기록된 byte 수, 생성된 modular dist 경로, pack 전 validation 요약이 포함되며 binary payload는 MCP 응답에 포함되지 않습니다.
