@@ -139,7 +139,7 @@ test('Analysis Showcase panel tests use deterministic flushing with no wall-cloc
 });
 
 test('task 11 matrix manifest references exact named tests that exist', () => {
-  const manifestPath = path.join(workspaceRoot, '.omo/evidence/task-11-analysis-showcase.json');
+  const manifestPath = path.join(packageRoot, 'tests/fixtures/task-11-analysis-showcase.json');
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as ManifestTree;
   const references = collectManifestReferences(manifest);
   assert.ok(references.length > 0, 'expected matrix test references in manifest');
