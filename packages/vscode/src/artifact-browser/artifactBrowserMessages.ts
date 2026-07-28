@@ -53,6 +53,12 @@ import {
   type ArtifactBrowserImportArtifactPayload,
   type ArtifactBrowserHmrStartBroadcastMessage,
   type ArtifactBrowserHmrStartBroadcastPayload,
+  type ArtifactBrowserHmrSavePluginMessage,
+  type ArtifactBrowserHmrSavePluginPayload,
+  type ArtifactBrowserHmrOpenSavedPluginMessage,
+  type ArtifactBrowserHmrOpenSavedPluginPayload,
+  type ArtifactBrowserHmrSaveCompletedMessage,
+  type ArtifactBrowserHmrSaveCompletedPayload,
   type ArtifactBrowserHmrStatusMessage,
   type ArtifactBrowserHmrStatusPayload,
   type ArtifactBrowserHmrStopBroadcastMessage,
@@ -88,6 +94,8 @@ type ArtifactBrowserInboundMessage =
   | ArtifactBrowserOpenPackedOutputMessage
   | ArtifactBrowserHmrStartBroadcastMessage
   | ArtifactBrowserHmrStopBroadcastMessage
+  | ArtifactBrowserHmrSavePluginMessage
+  | ArtifactBrowserHmrOpenSavedPluginMessage
   | ArtifactBrowserAnalyzeArtifactMessage
   | ArtifactBrowserOpenAssetManagerMessage
   | ArtifactBrowserOpenCreateWizardMessage
@@ -281,6 +289,16 @@ const isArtifactBrowserHmrStopBroadcastPayload: ArtifactBrowserPayloadGuard<
   ArtifactBrowserHmrStopBroadcastPayload
 > = (payload): payload is ArtifactBrowserHmrStopBroadcastPayload => isPlainRecord(payload);
 
+const isArtifactBrowserHmrSavePluginPayload: ArtifactBrowserPayloadGuard<
+  ArtifactBrowserHmrSavePluginPayload
+> = (payload): payload is ArtifactBrowserHmrSavePluginPayload =>
+  isPlainRecord(payload) && Object.keys(payload).length === 0;
+
+const isArtifactBrowserHmrOpenSavedPluginPayload: ArtifactBrowserPayloadGuard<
+  ArtifactBrowserHmrOpenSavedPluginPayload
+> = (payload): payload is ArtifactBrowserHmrOpenSavedPluginPayload =>
+  isPlainRecord(payload) && Object.keys(payload).length === 0;
+
 const isArtifactBrowserAnalyzeArtifactPayload: ArtifactBrowserPayloadGuard<ArtifactBrowserAnalyzeArtifactPayload> = (
   payload,
 ): payload is ArtifactBrowserAnalyzeArtifactPayload =>
@@ -391,6 +409,18 @@ const isArtifactBrowserHmrStopBroadcastMessageEnvelope =
   createArtifactBrowserMessageGuard<ArtifactBrowserHmrStopBroadcastMessage>(
     'artifact-browser/hmrStopBroadcast',
     isArtifactBrowserHmrStopBroadcastPayload,
+  );
+
+const isArtifactBrowserHmrSavePluginMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserHmrSavePluginMessage>(
+    'artifact-browser/hmrSavePlugin',
+    isArtifactBrowserHmrSavePluginPayload,
+  );
+
+const isArtifactBrowserHmrOpenSavedPluginMessageEnvelope =
+  createArtifactBrowserMessageGuard<ArtifactBrowserHmrOpenSavedPluginMessage>(
+    'artifact-browser/hmrOpenSavedPlugin',
+    isArtifactBrowserHmrOpenSavedPluginPayload,
   );
 
 const isArtifactBrowserAnalyzeArtifactMessageEnvelope =
@@ -539,6 +569,18 @@ export function isArtifactBrowserHmrStopBroadcastMessage(
   return isArtifactBrowserHmrStopBroadcastMessageEnvelope(message);
 }
 
+export function isArtifactBrowserHmrSavePluginMessage(
+  message: unknown,
+): message is ArtifactBrowserHmrSavePluginMessage {
+  return isArtifactBrowserHmrSavePluginMessageEnvelope(message);
+}
+
+export function isArtifactBrowserHmrOpenSavedPluginMessage(
+  message: unknown,
+): message is ArtifactBrowserHmrOpenSavedPluginMessage {
+  return isArtifactBrowserHmrOpenSavedPluginMessageEnvelope(message);
+}
+
 export function isArtifactBrowserAnalyzeArtifactMessage(
   message: unknown,
 ): message is ArtifactBrowserAnalyzeArtifactMessage {
@@ -671,7 +713,8 @@ type ArtifactBrowserExtensionResponse =
   | ArtifactBrowserCardsMessage
   | ArtifactBrowserDetailMessage
   | ArtifactBrowserPackCompletedMessage
-  | ArtifactBrowserHmrStatusMessage;
+  | ArtifactBrowserHmrStatusMessage
+  | ArtifactBrowserHmrSaveCompletedMessage;
 
 /**
  * createArtifactBrowserExtensionMessage 함수.
@@ -748,4 +791,10 @@ export function createArtifactBrowserHmrStatusMessage(
   payload: ArtifactBrowserHmrStatusPayload,
 ): ArtifactBrowserHmrStatusMessage {
   return createArtifactBrowserExtensionMessage('artifact-browser/hmrStatus', payload);
+}
+
+export function createArtifactBrowserHmrSaveCompletedMessage(
+  payload: ArtifactBrowserHmrSaveCompletedPayload,
+): ArtifactBrowserHmrSaveCompletedMessage {
+  return createArtifactBrowserExtensionMessage('artifact-browser/hmrSaveCompleted', payload);
 }

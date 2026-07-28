@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   createArtifactBrowserHmrStatusMessage,
+  createArtifactBrowserHmrSaveCompletedMessage,
+  isArtifactBrowserHmrOpenSavedPluginMessage,
+  isArtifactBrowserHmrSavePluginMessage,
   isArtifactBrowserHmrStartBroadcastMessage,
   isArtifactBrowserHmrStopBroadcastMessage,
 } from './artifactBrowserMessages';
@@ -28,6 +31,41 @@ describe('hmr message contract', () => {
     };
 
     expect(isArtifactBrowserHmrStopBroadcastMessage(message)).toBe(true);
+  });
+
+  it('accepts hmrSavePlugin only with an empty payload', () => {
+    const message = {
+      protocol: 'risu-workbench.artifact-browser',
+      version: 1,
+      type: 'artifact-browser/hmrSavePlugin',
+      payload: {},
+    };
+
+    expect(isArtifactBrowserHmrSavePluginMessage(message)).toBe(true);
+    expect(isArtifactBrowserHmrSavePluginMessage({ ...message, payload: { path: '/tmp/plugin.js' } })).toBe(false);
+  });
+
+  it('accepts hmrOpenSavedPlugin only with an empty payload', () => {
+    const message = {
+      protocol: 'risu-workbench.artifact-browser',
+      version: 1,
+      type: 'artifact-browser/hmrOpenSavedPlugin',
+      payload: {},
+    };
+
+    expect(isArtifactBrowserHmrOpenSavedPluginMessage(message)).toBe(true);
+    expect(isArtifactBrowserHmrOpenSavedPluginMessage({ ...message, payload: { uri: 'file:///tmp/plugin.js' } })).toBe(false);
+  });
+
+  it('creates hmrSaveCompleted envelopes', () => {
+    expect(createArtifactBrowserHmrSaveCompletedMessage({ kind: 'saved' })).toMatchObject({
+      type: 'artifact-browser/hmrSaveCompleted',
+      payload: { kind: 'saved' },
+    });
+    expect(createArtifactBrowserHmrSaveCompletedMessage({ kind: 'failed', error: 'disk full' }).payload).toEqual({
+      kind: 'failed',
+      error: 'disk full',
+    });
   });
 
   it('creates hmrStatus envelope', () => {

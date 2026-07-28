@@ -11,6 +11,8 @@ import { get, writable } from 'svelte/store';
 import {
   createArtifactBrowserAnalyzeArtifactMessage,
   createArtifactBrowserHmrStartBroadcastMessage,
+  createArtifactBrowserHmrOpenSavedPluginMessage,
+  createArtifactBrowserHmrSavePluginMessage,
   createArtifactBrowserHmrStopBroadcastMessage,
   createArtifactBrowserImportArtifactChunkMessage,
   createArtifactBrowserCreateArtifactMessage,
@@ -44,6 +46,8 @@ import {
   type ArtifactBrowserExtensionMessage,
   type ArtifactBrowserDetailPayload,
   type ArtifactBrowserHmrStatusPayload,
+  type ArtifactBrowserHmrSaveCompletedPayload,
+  type ArtifactBrowserHmrPluginSaveState,
   type ArtifactBrowserPackCompletedPayload,
   type CharacterItem,
   type CharacterSection,
@@ -59,6 +63,8 @@ const viewMode = writable<'artifacts' | 'artifactDetail'>('artifacts');
 const status = writable('Connecting to extension host…');
 const packState = writable<ArtifactBrowserPackCompletedPayload | null>(null);
 const hmrState = writable<ArtifactBrowserHmrStatusPayload | null>(null);
+const hmrStartPending = writable(false);
+const hmrPluginSaveState = writable<ArtifactBrowserHmrPluginSaveState>('idle');
 const importing = writable(false);
 const app = document.querySelector<HTMLDivElement>('#app');
 const IMPORT_CHUNK_BYTES = 1024 * 1024;
@@ -83,6 +89,7 @@ const ARTIFACT_BROWSER_EXTENSION_MESSAGE_TYPES = [
   'artifact-browser/detailLoaded',
   'artifact-browser/packCompleted',
   'artifact-browser/hmrStatus',
+  'artifact-browser/hmrSaveCompleted',
 ] as const satisfies readonly ArtifactBrowserExtensionMessageType[];
 
 const ARTIFACT_BROWSER_EXTENSION_MESSAGE_GUARDS = {
@@ -101,6 +108,10 @@ const ARTIFACT_BROWSER_EXTENSION_MESSAGE_GUARDS = {
   'artifact-browser/hmrStatus': createArtifactBrowserExtensionMessageGuard(
     'artifact-browser/hmrStatus',
     isArtifactBrowserHmrStatusPayload,
+  ),
+  'artifact-browser/hmrSaveCompleted': createArtifactBrowserExtensionMessageGuard(
+    'artifact-browser/hmrSaveCompleted',
+    isArtifactBrowserHmrSaveCompletedPayload,
   ),
 } satisfies Record<ArtifactBrowserExtensionMessageType, ArtifactBrowserExtensionMessageGuard>;
 
@@ -166,8 +177,12 @@ if (webviewName === 'plugin-viewer') {
       openPackedOutput,
       packState,
       hmrState,
+      hmrStartPending,
+      hmrPluginSaveState,
       onHmrStartBroadcast: hmrStartBroadcast,
       onHmrStopBroadcast: hmrStopBroadcast,
+      onHmrSavePlugin: hmrSavePlugin,
+      onHmrOpenSavedPlugin: hmrOpenSavedPlugin,
       openMarkerEditor,
       openPluginViewer,
     },
@@ -248,8 +263,26 @@ function handleMessage(event: MessageEvent<unknown>): void {
   }
 
   if (message.type === 'artifact-browser/hmrStatus') {
+    hmrStartPending.set(false);
     hmrState.set(message.payload);
     return;
+  }
+
+  if (message.type === 'artifact-browser/hmrSaveCompleted') {
+    switch (message.payload.kind) {
+      case 'saved':
+        hmrPluginSaveState.set('saved');
+        setStatus('HMR plugin saved.');
+        return;
+      case 'cancelled':
+        hmrPluginSaveState.set('idle');
+        setStatus('HMR plugin save cancelled.');
+        return;
+      case 'failed':
+        hmrPluginSaveState.set('idle');
+        setStatus(`HMR plugin save failed: ${message.payload.error}`);
+        return;
+    }
   }
 }
 
@@ -338,11 +371,21 @@ function openPackedOutput(stableId: string, destination: 'os' | 'explorer' | 'cl
 }
 
 function hmrStartBroadcast(stableId: string): void {
+  hmrStartPending.set(true);
   vscode?.postMessage(createArtifactBrowserHmrStartBroadcastMessage({ stableId }));
 }
 
 function hmrStopBroadcast(): void {
   vscode?.postMessage(createArtifactBrowserHmrStopBroadcastMessage());
+}
+
+function hmrSavePlugin(): void {
+  hmrPluginSaveState.set('saving');
+  vscode?.postMessage(createArtifactBrowserHmrSavePluginMessage());
+}
+
+function hmrOpenSavedPlugin(): void {
+  vscode?.postMessage(createArtifactBrowserHmrOpenSavedPluginMessage());
 }
 
 function analyzeArtifact(stableId: string): void {
@@ -546,6 +589,17 @@ function isArtifactBrowserPackCompletedPayload(payload: unknown): payload is Art
 
 function isArtifactBrowserHmrStatusPayload(payload: unknown): payload is ArtifactBrowserHmrStatusPayload {
   return isPlainRecord(payload) && typeof payload.running === 'boolean' && typeof payload.updateCount === 'number';
+}
+
+function isArtifactBrowserHmrSaveCompletedPayload(
+  payload: unknown,
+): payload is ArtifactBrowserHmrSaveCompletedPayload {
+  return (
+    isPlainRecord(payload) &&
+    (payload.kind === 'saved' ||
+      payload.kind === 'cancelled' ||
+      (payload.kind === 'failed' && typeof payload.error === 'string'))
+  );
 }
 
 function isArtifactBrowserExtensionMessageType(value: unknown): value is ArtifactBrowserExtensionMessageType {
