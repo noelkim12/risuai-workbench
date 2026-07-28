@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import type { HmrBuildResult } from 'risu-workbench-core/node';
+import type { HmrBuildResult } from '@risuai-workbench/core/node';
 import { HmrServerService } from './HmrServerService';
 
 function stubBuild(overrides: Partial<HmrBuildResult> = {}): HmrBuildResult {

@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/core/local-functions.ts
  */
 
-import type { BlockNode, CBSDocument, CBSNode, MacroCallNode, Range } from 'risu-workbench-core';
+import type { BlockNode, CBSDocument, CBSNode, MacroCallNode, Range } from '@risuai-workbench/core';
 
 import { offsetToPosition, positionToOffset } from '../utils/position';
 import type { FragmentCursorLookupResult } from './fragment-locator';

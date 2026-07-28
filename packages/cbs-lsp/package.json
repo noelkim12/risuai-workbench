@@ -1,5 +1,5 @@
 {
-  "name": "cbs-language-server",
+  "name": "@risuai-workbench/cbs-language-server",
   "version": "0.1.0",
   "description": "Language Server Protocol implementation for CBS (Curly Braced Syntax)",
   "bin": {
@@ -60,14 +60,14 @@
   "dependencies": {
     "vscode-languageserver": "^9.0.1",
     "vscode-languageserver-textdocument": "^1.0.12",
-    "risu-workbench-core": "^0.1.0"
+    "@risuai-workbench/core": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^20.x",
     "typescript": "^5.3.0",
     "vitest": "^4.1.4"
   },
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "homepage": "https://github.com/risuai/risu-workbench/tree/main/packages/cbs-lsp",
   "bugs": {
     "url": "https://github.com/risuai/risu-workbench/issues"

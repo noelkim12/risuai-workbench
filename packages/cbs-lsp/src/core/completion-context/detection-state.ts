@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/core/completion-context/detection-state.ts
  */
 
-import { TokenType, type Range as CBSRange } from 'risu-workbench-core';
+import { TokenType, type Range as CBSRange } from '@risuai-workbench/core';
 import { normalizeLookupKey } from '../../analyzer/scope/lookup-key';
 import { getVariableMacroArgumentKind } from '../../analyzer/scope/scope-macro-rules';
 import { positionToOffset } from '../../utils/position';

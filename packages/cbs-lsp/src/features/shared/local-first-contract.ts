@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/features/shared/local-first-contract.ts
  */
 
-import type { Range } from 'risu-workbench-core';
+import type { Range } from '@risuai-workbench/core';
 
 import {
   extractNumberedArgumentReference,

@@ -10,7 +10,7 @@ import {
   type CodeActionParams,
   type WorkspaceEdit,
 } from 'vscode-languageserver/node';
-import { type BlockNode, type Range, escapeRegExp } from 'risu-workbench-core';
+import { type BlockNode, type Range, escapeRegExp } from '@risuai-workbench/core';
 
 import { CbsLspTextHelper } from '../../helpers/text-helper';
 import {
@@ -904,7 +904,7 @@ function findBlockByNameRange(
  * @param nodes - traversal 대상 nodes
  * @returns block node 목록
  */
-function collectBlocks(nodes: readonly import('risu-workbench-core').CBSNode[]): BlockNode[] {
+function collectBlocks(nodes: readonly import('@risuai-workbench/core').CBSNode[]): BlockNode[] {
   const blocks: BlockNode[] = [];
 
   for (const node of nodes) {

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { RisuLuaJsonValue } from 'risu-workbench-core/node';
+import type { RisuLuaJsonValue } from '@risuai-workbench/core/node';
 
 const workspaceRuntimeSourceSchema = z.object({
   kind: z.literal('workspace'),

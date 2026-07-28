@@ -17,7 +17,7 @@ import {
   formatLorebookDecoratorMarkdown,
   getLorebookDecoratorHoverToken,
   getLorebookDecoratorSpec,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 import type {
   BlockNode,
   CBSBuiltinFunction,
@@ -26,7 +26,7 @@ import type {
   MacroCallNode,
   Position,
   Range,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 import {
   CALC_EXPRESSION_SUBLANGUAGE_LABEL,
   getCalcExpressionSublanguageDocumentation,
@@ -67,7 +67,7 @@ import type {
   WorkspaceSnapshotState,
 } from '../../services';
 import { positionToOffset } from '../../utils/position';
-import { isContextualBuiltin, isDocOnlyBuiltin } from 'risu-workbench-core';
+import { isContextualBuiltin, isDocOnlyBuiltin } from '@risuai-workbench/core';
 import { resolveVariablePosition } from '../shared/local-first-contract';
 
 const MAX_OVERSIZED_HOVER_LINE_SCAN_LENGTH = 1024 * 1024;

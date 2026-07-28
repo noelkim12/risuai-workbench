@@ -9,7 +9,7 @@ import {
   getRisuAiLuaRuntimeDocumentation,
   getRisuAiLuaRuntimeSignatures,
   type ApiMeta,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 
 import {
   RISULUA_ACCESS_TIERS_MARKDOWN,

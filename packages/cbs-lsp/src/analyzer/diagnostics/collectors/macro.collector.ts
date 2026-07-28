@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/analyzer/diagnostics/collectors/macro.collector.ts
  */
 
-import { type CBSBuiltinFunction, type DiagnosticInfo, type MacroCallNode } from 'risu-workbench-core';
+import { type CBSBuiltinFunction, type DiagnosticInfo, type MacroCallNode } from '@risuai-workbench/core';
 
 import type { DiagnosticsContext } from '../context';
 import {

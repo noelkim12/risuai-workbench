@@ -16,7 +16,7 @@ import {
   getLorebookDecoratorCompletionCandidates,
   getLorebookDecoratorCompletionContext,
   type LorebookDecoratorCompletionContext,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 
 /**
  * buildDecoratorCompletions.

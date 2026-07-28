@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/services/variable-flow-service.ts
  */
 
-import { parseToggleDefinitions, type Range, type VarEvent, type VarFlowEntry, type VarFlowIssue, type VarFlowResult } from 'risu-workbench-core';
+import { parseToggleDefinitions, type Range, type VarEvent, type VarFlowEntry, type VarFlowIssue, type VarFlowResult } from '@risuai-workbench/core';
 
 import {
   createAgentMetadataWorkspaceSnapshot,

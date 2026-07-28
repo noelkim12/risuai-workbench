@@ -4,7 +4,7 @@ import {
   LocationLink,
   TextDocumentPositionParams,
 } from 'vscode-languageserver/node';
-import type { CBSBuiltinRegistry, Position, Range } from 'risu-workbench-core';
+import type { CBSBuiltinRegistry, Position, Range } from '@risuai-workbench/core';
 
 import {
   createAgentMetadataAvailability,

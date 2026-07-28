@@ -4,7 +4,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { analyzeLuaWithWasmSync } from 'risu-workbench-core';
+import { analyzeLuaWithWasmSync } from '@risuai-workbench/core';
 import {
   buildRisuLuaBridgeIndex,
   createRisuLuaBridgeDefinition,

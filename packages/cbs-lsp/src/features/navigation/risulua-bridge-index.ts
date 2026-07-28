@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Hover, LocationLink, MarkupKind, Position, Range } from 'vscode-languageserver/node';
 
-import { analyzeLuaWithWasmSync, type LuaWasmAnalyzeResult } from 'risu-workbench-core';
+import { analyzeLuaWithWasmSync, type LuaWasmAnalyzeResult } from '@risuai-workbench/core';
 
 export interface RisuLuaBridgeModuleResult {
   readonly text: string;

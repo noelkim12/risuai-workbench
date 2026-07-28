@@ -2,8 +2,8 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { HMR_PORT_RANGE, HMR_PROTOCOL_VERSION, buildHmrConnectionString, type HmrHealthResponse, type HmrPayloadResponse, type HmrWatchResponse } from 'risu-workbench-core';
-import { AssetHashCache, buildHmrCharacterPayload, buildHmrModulePayload, type HmrBuildResult } from 'risu-workbench-core/node';
+import { HMR_PORT_RANGE, HMR_PROTOCOL_VERSION, buildHmrConnectionString, type HmrHealthResponse, type HmrPayloadResponse, type HmrWatchResponse } from '@risuai-workbench/core';
+import { AssetHashCache, buildHmrCharacterPayload, buildHmrModulePayload, type HmrBuildResult } from '@risuai-workbench/core/node';
 
 export interface HmrBroadcastTarget { readonly stableId: string; readonly name: string; readonly kind: 'character' | 'module'; readonly rootFsPath: string }
 

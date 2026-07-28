@@ -8,7 +8,7 @@ import {
   type CBSBuiltinRegistry,
   type CBSDocument,
   type Token,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 
 import type { ScopeAnalysisResult } from '../symbolTable';
 

@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/core/recovery-contract.ts
  */
 
-import type { CBSDocument, TokenizerDiagnostic } from 'risu-workbench-core';
+import type { CBSDocument, TokenizerDiagnostic } from '@risuai-workbench/core';
 
 /**
  * FragmentRecoveryMode 타입.

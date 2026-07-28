@@ -12,7 +12,7 @@ try {
   }
 } catch (e) {
   console.error(`\n  ❌ Failed to load CLI dispatcher: ${e.message}`);
-  console.error(`  Make sure to run: npm run build --workspace risu-workbench-core\n`);
+  console.error(`  Make sure to run: npm run build --workspace @risuai-workbench/core\n`);
   process.exit(1);
 }
 

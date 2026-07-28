@@ -10,7 +10,7 @@ import { rm } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CBSBuiltinRegistry } from 'risu-workbench-core';
+import { CBSBuiltinRegistry } from '@risuai-workbench/core';
 import type { Diagnostic } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 

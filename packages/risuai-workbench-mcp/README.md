@@ -1,5 +1,7 @@
 # risuai-workbench-mcp 문서 인덱스
 
+> npm package: `@risuai-workbench/mcp`. RisuAI와 제휴·승인되지 않은 비공식 companion 도구입니다.
+
 이 패키지는 RisuAI Workbench의 canonical workspace를 AI agent가 안전하게 읽고, 검증하고, 필요한 경우 승인된 patch plan으로 수정할 수 있게 해 주는 local stdio MCP server입니다. 이 README는 패키지 문서를 탐색하는 진입점이며, 세부 사용법은 주제별 문서로 분리되어 있습니다.
 
 문서의 신뢰 기준(Source of Truth)은 `packages/risuai-workbench-mcp/src/`, `package.json`, 테스트, 그리고 실제 MCP client 동작입니다. README는 운영 흐름을 한눈에 고르는 인덱스 역할만 합니다.

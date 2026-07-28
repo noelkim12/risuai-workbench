@@ -9,7 +9,7 @@ import {
   type CBSNode,
   type MacroCallNode,
   type Range,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 
 import {
   extractNumberedArgumentReference,

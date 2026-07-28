@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/helpers/server/lua/LuaLsFallbackService.ts
  */
 
-import { RISUAI_LUA_RUNTIME_STUB_FILE_NAME } from 'risu-workbench-core';
+import { RISUAI_LUA_RUNTIME_STUB_FILE_NAME } from '@risuai-workbench/core';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {

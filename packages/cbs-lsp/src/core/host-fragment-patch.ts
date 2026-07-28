@@ -5,7 +5,7 @@
  * @file packages/cbs-lsp/src/core/host-fragment-patch.ts
  */
 
-import type { Range } from 'risu-workbench-core';
+import type { Range } from '@risuai-workbench/core';
 
 import { positionToOffset, offsetToPosition } from '../utils/position';
 import type {

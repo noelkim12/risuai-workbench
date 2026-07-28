@@ -5,7 +5,7 @@
 
 <script lang="ts">
   import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
-  import type { PromptEditorState } from 'risu-workbench-core';
+  import type { PromptEditorState } from '@risuai-workbench/core';
   import { onDestroy, onMount } from 'svelte';
   import { MAIN_EDITOR_CBS_LANGUAGE_ID, retainMainEditorCbsLanguage } from '../../../monaco/mainEditorCbsLanguage';
   import { createMainEditorContentVersionCounter, createMainEditorSectionController, type MainEditorContentVersionCounter, type MainEditorSectionController } from '../../../monaco/mainEditorSectionController';

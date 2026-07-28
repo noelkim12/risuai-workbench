@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/indexer/unified-variable-coordinates.ts
  */
 
-import type { Range } from 'risu-workbench-core';
+import type { Range } from '@risuai-workbench/core';
 
 /**
  * positionToOffset 함수.

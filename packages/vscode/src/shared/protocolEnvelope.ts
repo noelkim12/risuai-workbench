@@ -1,7 +1,7 @@
 /**
  * VS Code extension host compatibility wrapper for protocol envelope guards.
  *
- * Implementation lives in `risu-workbench-core` shared module.
+ * Implementation lives in `@risuai-workbench/core` shared module.
  * This file re-exports the shared guards so existing import paths continue to resolve.
  *
  * @file packages/vscode/src/shared/protocolEnvelope.ts
@@ -11,4 +11,4 @@ export {
   isProtocolMessageEnvelope,
   isProtocolEnvelope,
   isPlainRecord,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';

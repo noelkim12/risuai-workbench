@@ -12,7 +12,7 @@ import {
   CUSTOM_EXTENSION_MARKER_FILES,
   parseCustomExtensionArtifactFromSuffix,
   type CustomExtensionArtifact,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 
 import { createDiagnosticEnvelope, type DiagnosticEnvelope, type WorkbenchDiagnostic } from '../../contracts/diagnostics';
 import { resolveSafeWorkspacePath, type SafePathResult } from '../../project/safe-path';

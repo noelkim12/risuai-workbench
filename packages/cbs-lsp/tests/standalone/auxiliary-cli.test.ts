@@ -9,7 +9,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { getCustomExtensionArtifactContract, type CustomExtensionArtifact } from 'risu-workbench-core';
+import { getCustomExtensionArtifactContract, type CustomExtensionArtifact } from '@risuai-workbench/core';
 
 type WorkspaceFileSeed = {
   artifact: CustomExtensionArtifact;

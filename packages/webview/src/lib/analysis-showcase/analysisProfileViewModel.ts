@@ -1,4 +1,4 @@
-import type { AnalysisShowcase } from 'risu-workbench-core';
+import type { AnalysisShowcase } from '@risuai-workbench/core';
 import type { BrowserAnalysisProfile } from '../types';
 
 const METRIC_LABELS: Readonly<Record<string, string>> = {

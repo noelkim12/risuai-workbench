@@ -6,7 +6,7 @@
 
 import fs from 'node:fs';
 
-import { parseEditorFrontmatter, type EditorDocumentWarning } from 'risu-workbench-core';
+import { parseEditorFrontmatter, type EditorDocumentWarning } from '@risuai-workbench/core';
 
 import { createDiagnosticEnvelope, type DiagnosticEnvelope, type WorkbenchDiagnostic } from '../../contracts/diagnostics';
 import type { WorkspaceRootStatus } from '../../project/resolve-root';

@@ -5,7 +5,7 @@
 
 import { TextDecoder } from 'node:util';
 import * as vscode from 'vscode';
-import { parseToggleDefinitions, parseVariableContent } from 'risu-workbench-core';
+import { parseToggleDefinitions, parseVariableContent } from '@risuai-workbench/core';
 import type {
   MainEditorVariableCandidatePayload,
   MainEditorVariableCandidatesRequestPayload,

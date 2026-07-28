@@ -12,7 +12,7 @@ import { createDiagnosticsFallbackMemo } from '../src/utils/diagnostics/suppress
 import { createWorkspaceVariableDiagnosticsForUri } from '../src/utils/diagnostics/workspace-issue-policy';
 import { DiagnosticCode } from '../src/analyzer/diagnostics';
 import type { VariableFlowQueryResult, VariableFlowService } from '../src/services';
-import type { CbsFragment } from 'risu-workbench-core';
+import type { CbsFragment } from '@risuai-workbench/core';
 import { fragmentAnalysisService } from '../src/core';
 import { WATCHED_FILE_GLOB_PATTERNS } from '../src/helpers/server-workspace-helper';
 import { shouldRouteForDiagnostics, SUPPORTED_CBS_EXTENSIONS } from '../src/utils/document-router';

@@ -2,7 +2,7 @@
 
 ## 정체성
 
-`src/cli/`는 risu-workbench-core의 **애플리케이션 레이어**다. 라이브러리가 아니라 도구다.
+`src/cli/`는 @risuai-workbench/core의 **애플리케이션 레이어**다. 라이브러리가 아니라 도구다.
 
 `src/types/`가 데이터 형태를, `src/domain/`이 순수 변환 로직을, `src/node/`가 플랫폼 어댑터를 담당한다면, `src/cli/`는 이 세 레이어를 **조합하여 실행 가능한 워크플로우로 만드는** 곳이다. 사용자가 터미널에서 `risu-core <command>`를 입력하면, 그 명령이 도달하는 최종 목적지가 바로 이 디렉토리다.
 

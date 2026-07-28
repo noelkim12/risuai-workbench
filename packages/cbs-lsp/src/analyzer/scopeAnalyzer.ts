@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/analyzer/scopeAnalyzer.ts
  */
 
-import { type CBSDocument } from 'risu-workbench-core';
+import { type CBSDocument } from '@risuai-workbench/core';
 
 import { ScopeIssueStore, type ScopeAnalysisResult, SymbolTable } from './symbolTable';
 import { AnalyzableBodyResolver } from './scope/analyzable-body-resolver';

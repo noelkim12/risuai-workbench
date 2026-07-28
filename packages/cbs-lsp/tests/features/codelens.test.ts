@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   getCustomExtensionArtifactContract,
   type CustomExtensionArtifact,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 
 import {
   ACTIVATION_CHAIN_CODELENS_CLIENT_COMMAND,

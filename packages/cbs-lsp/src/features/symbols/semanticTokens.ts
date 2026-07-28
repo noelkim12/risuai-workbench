@@ -4,8 +4,8 @@
  */
 
 import type { CancellationToken } from 'vscode-languageserver/node';
-import type { MacroCallNode, Token } from 'risu-workbench-core';
-import { CBSBuiltinRegistry, TokenType } from 'risu-workbench-core';
+import type { MacroCallNode, Token } from '@risuai-workbench/core';
+import { CBSBuiltinRegistry, TokenType } from '@risuai-workbench/core';
 import {
   SemanticTokens,
   SemanticTokensParams,

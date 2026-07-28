@@ -3,7 +3,7 @@
  * @file packages/risuai-workbench-mcp/src/tools/analyze/query-cbs-usage.ts
  */
 
-import { CBSBuiltinRegistry } from 'risu-workbench-core';
+import { CBSBuiltinRegistry } from '@risuai-workbench/core';
 import { createDiagnosticEnvelope, type DiagnosticEnvelope } from '../../contracts/diagnostics';
 
 export interface QueryCbsUsageInput {

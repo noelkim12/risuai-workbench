@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/analyzer/diagnostics/collectors/block.collector.ts
  */
 
-import { type BlockNode, type CBSBuiltinFunction, type DiagnosticInfo } from 'risu-workbench-core';
+import { type BlockNode, type CBSBuiltinFunction, type DiagnosticInfo } from '@risuai-workbench/core';
 
 import type { DiagnosticsContext } from '../context';
 import {

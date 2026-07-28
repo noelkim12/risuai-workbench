@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/tests/features/provider-variable-query.test.ts
  */
 
-import type { Range } from 'risu-workbench-core';
+import type { Range } from '@risuai-workbench/core';
 import { describe, expect, it, vi } from 'vitest';
 
 import {

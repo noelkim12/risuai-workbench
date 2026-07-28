@@ -66,8 +66,12 @@ packages/cbs-lsp/checklist/
 .changeset/README.md
 .history/
 docs/refactor/
+docs/*.md
+docs/cbs-preview-editor/
 docs/core/
+docs/mcp/
 docs/plans/
 docs/superpowers/
+docs/upstream-traceability/
 .opencode/layout-forge/sessions/
 test_suites/

@@ -10,7 +10,7 @@ import {
   CUSTOM_EXTENSION_ARTIFACT_CONTRACTS,
   parseCustomExtensionArtifactFromSuffix,
   type CustomExtensionArtifact,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 
 import { createDiagnosticEnvelope, type DiagnosticEnvelope, type WorkbenchDiagnostic } from '../../contracts/diagnostics';
 import { resolveSafeWorkspacePath } from '../../project/safe-path';
