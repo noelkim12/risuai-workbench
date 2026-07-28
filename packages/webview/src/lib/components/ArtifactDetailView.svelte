@@ -3,6 +3,7 @@
   import type {
     ArtifactBrowserCreateSectionEntryKind,
     ArtifactBrowserCreateSectionKind,
+    ArtifactBrowserHmrPluginSaveState,
     BrowserArtifactCard,
     CharacterItem,
     CharacterSection,
@@ -26,8 +27,12 @@
   export let status: string;
   export let packState: import('svelte/store').Writable<import('../types').ArtifactBrowserPackCompletedPayload | null>;
   export let hmrState: import('svelte/store').Writable<import('../types').ArtifactBrowserHmrStatusPayload | null>;
+  export let hmrStartPending: boolean;
+  export let hmrPluginSaveState: ArtifactBrowserHmrPluginSaveState;
   export let onHmrStartBroadcast: (stableId: string) => void;
   export let onHmrStopBroadcast: () => void;
+  export let onHmrSavePlugin: () => void;
+  export let onHmrOpenSavedPlugin: () => void;
   export let onBack: () => void;
   export let onAnalyzeArtifact: (stableId: string) => void;
   export let onOpenAnalysisReport: (stableId: string) => void;
@@ -123,11 +128,12 @@
         <button
           type="button"
           class="detail-action"
-          disabled={isBroadcasting}
+          disabled={isBroadcasting || hmrStartPending}
+          aria-busy={hmrStartPending}
           title={broadcastTitle}
           on:click={() => onHmrStartBroadcast(artifact.stableId)}
         >
-          {isBroadcastingHere ? 'Broadcasting' : 'Broadcast'}
+          {hmrStartPending ? 'Starting…' : isBroadcastingHere ? 'Broadcasting' : 'Broadcast'}
         </button>
         <button type="button" class="detail-action detail-action--primary" on:click={openPackModal}>
           Pack
@@ -140,6 +146,9 @@
         hmrStatus={$hmrState}
         currentStableId={artifact.stableId}
         onStop={onHmrStopBroadcast}
+        onSavePlugin={onHmrSavePlugin}
+        onOpenSavedPlugin={onHmrOpenSavedPlugin}
+        pluginSaveState={hmrPluginSaveState}
         onBroadcastHere={() => onHmrStartBroadcast(artifact.stableId)}
       />
     {/if}

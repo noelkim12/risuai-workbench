@@ -1,10 +1,13 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import type { ArtifactBrowserHmrStatusPayload } from '../types';
+  import type { ArtifactBrowserHmrPluginSaveState, ArtifactBrowserHmrStatusPayload } from '../types';
 
   export let hmrStatus: ArtifactBrowserHmrStatusPayload | null;
   export let currentStableId: string;
   export let onStop: () => void;
+  export let onSavePlugin: () => void;
+  export let onOpenSavedPlugin: () => void;
+  export let pluginSaveState: ArtifactBrowserHmrPluginSaveState;
   export let onBroadcastHere: () => void;
 
   const RECEIVER_FRESH_WINDOW_MS = 35_000;
@@ -69,6 +72,19 @@
         {/if}
       </span>
       <span class="hmr-strip__actions">
+        {#if !receiverConnected}
+          <button
+            type="button"
+            class="hmr-strip__button"
+            title="Save the RisuAI HMR plugin"
+            disabled={pluginSaveState === 'saving'}
+            aria-busy={pluginSaveState === 'saving'}
+            on:click={onSavePlugin}
+          >{pluginSaveState === 'saving' ? 'Saving…' : pluginSaveState === 'saved' ? 'Save again' : 'Save plugin'}</button>
+          {#if pluginSaveState === 'saved'}
+            <button type="button" class="hmr-strip__button" on:click={onOpenSavedPlugin}>Open in Explorer</button>
+          {/if}
+        {/if}
         <button
           type="button"
           class="hmr-strip__button"
@@ -80,6 +96,15 @@
         <button type="button" class="hmr-strip__button hmr-strip__button--stop" on:click={onStop}>Stop</button>
       </span>
     </div>
+    {#if !receiverConnected}
+      <p class="hmr-strip__guide">
+        {pluginSaveState === 'saving'
+          ? 'Saving the HMR plugin…'
+          : pluginSaveState === 'saved'
+            ? 'Plugin saved. Install it as a RisuAI API v3 plugin, then paste the copied connection string.'
+            : 'Install the saved JavaScript as a RisuAI API v3 plugin, then paste the copied connection string.'}
+      </p>
+    {/if}
     {#if hmrStatus.lastError}
       <p class="hmr-strip__error">Build error — last good version kept: {hmrStatus.lastError}</p>
     {/if}
@@ -187,6 +212,12 @@
   .hmr-strip__error {
     margin: 0;
     color: var(--error);
+    overflow-wrap: anywhere;
+  }
+
+  .hmr-strip__guide {
+    margin: 0;
+    color: var(--muted);
     overflow-wrap: anywhere;
   }
 </style>

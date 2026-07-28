@@ -5,6 +5,8 @@ import {
 } from '../../src/lib/types';
 import {
   createArtifactBrowserHmrStartBroadcastMessage,
+  createArtifactBrowserHmrOpenSavedPluginMessage,
+  createArtifactBrowserHmrSavePluginMessage,
   createArtifactBrowserHmrStopBroadcastMessage,
 } from '../../src/lib/vscode';
 
@@ -23,6 +25,24 @@ describe('hmr message factories', () => {
       protocol: ARTIFACT_BROWSER_PROTOCOL,
       version: ARTIFACT_BROWSER_PROTOCOL_VERSION,
       type: 'artifact-browser/hmrStopBroadcast',
+      payload: {},
+    });
+  });
+
+  it('builds an hmrSavePlugin envelope', () => {
+    expect(createArtifactBrowserHmrSavePluginMessage()).toEqual({
+      protocol: ARTIFACT_BROWSER_PROTOCOL,
+      version: ARTIFACT_BROWSER_PROTOCOL_VERSION,
+      type: 'artifact-browser/hmrSavePlugin',
+      payload: {},
+    });
+  });
+
+  it('builds an hmrOpenSavedPlugin envelope', () => {
+    expect(createArtifactBrowserHmrOpenSavedPluginMessage()).toEqual({
+      protocol: ARTIFACT_BROWSER_PROTOCOL,
+      version: ARTIFACT_BROWSER_PROTOCOL_VERSION,
+      type: 'artifact-browser/hmrOpenSavedPlugin',
       payload: {},
     });
   });
