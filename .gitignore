@@ -75,6 +75,7 @@ packages/cbs-lsp/checklist/
 .changeset/config.json
 !.changeset/config.json
 .changeset/README.md
+!.changeset/README.md
 .history/
 docs/refactor/
 docs/*.md
