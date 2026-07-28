@@ -14,13 +14,22 @@ export function presentActionResult(
   contextStore?: ContextStore,
 ): unknown {
   const serialized = JSON.stringify(result);
-  if (serialized === undefined || Buffer.byteLength(serialized, 'utf8') <= MAX_INLINE_ACTION_RESULT_BYTES) {
+  const resultRecord = isRecord(result) ? result : {};
+  const resultData = isRecord(resultRecord.data) ? resultRecord.data : null;
+  const canonicalFiles = resultData?.canonicalFiles;
+  const hasLargeArtifactList = actionId === 'inspect.artifact'
+    && Array.isArray(canonicalFiles)
+    && canonicalFiles.length > 200;
+  if (serialized === undefined || (!hasLargeArtifactList && Buffer.byteLength(serialized, 'utf8') <= MAX_INLINE_ACTION_RESULT_BYTES)) {
     return result;
   }
 
-  const resultRecord = isRecord(result) ? result : {};
+  const compactData = actionId === 'inspect.artifact' && resultData
+    ? Object.fromEntries(Object.entries(resultData).filter(([key]) => key !== 'canonicalFiles'))
+    : undefined;
   const compactResult = {
     actionId,
+    ...(compactData ? { data: compactData } : {}),
     diagnostics: resultRecord.diagnostics,
     externalized: Boolean(contextStore),
     status: resultRecord.status,

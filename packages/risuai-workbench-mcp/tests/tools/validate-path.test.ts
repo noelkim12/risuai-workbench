@@ -3,8 +3,11 @@
  * @file packages/risuai-workbench-mcp/tests/tools/validate-path.test.ts
  */
 
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, it, expect } from 'vitest';
+
+import { describe, expect, it } from 'vitest';
 
 import { handleValidatePath } from '../../src/tools/validate/validate-path';
 import type { WorkspaceRootStatus } from '../../src/project/resolve-root';
@@ -82,5 +85,35 @@ describe('handleValidatePath', () => {
     expect(result).toHaveProperty('schema', 'risuai-workbench-mcp.diagnostics');
     expect(result).toHaveProperty('schemaVersion', '0.2.0');
     expect(result).toHaveProperty('summary');
+  });
+
+  it('accepts canonical files nested below their artifact directory', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'risuai-workbench-mcp-validate-path-'));
+    const nestedPath = 'lorebooks/system/actions/opponent.risulorebook';
+    await mkdir(path.join(root, 'lorebooks/system/actions'), { recursive: true });
+    await writeFile(path.join(root, nestedPath), 'body\n', 'utf8');
+
+    const result = await handleValidatePath(
+      { path: nestedPath },
+      { ok: true, path: root, reason: null },
+    );
+
+    expect(result.status).toBe('ok');
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it('warns when a canonical file is outside its artifact directory', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'risuai-workbench-mcp-validate-path-'));
+    const misplacedPath = 'other/opponent.risulorebook';
+    await mkdir(path.join(root, 'other'), { recursive: true });
+    await writeFile(path.join(root, misplacedPath), 'body\n', 'utf8');
+
+    const result = await handleValidatePath(
+      { path: misplacedPath },
+      { ok: true, path: root, reason: null },
+    );
+
+    expect(result.status).toBe('domain_warning');
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ id: 'PATH_DIRECTORY_MISMATCH' }));
   });
 });

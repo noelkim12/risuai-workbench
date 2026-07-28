@@ -313,6 +313,57 @@ describe('facade run_action', () => {
     expect(contextStore.read(result.contextId, true)?.payload).toEqual(largeResult);
   });
 
+  it('externalizes inspect.artifact file lists above 200 entries and keeps a compact summary', async () => {
+    const registry = new ActionRegistry();
+    const canonicalFiles = Array.from({ length: 201 }, (_, index) => ({
+      artifact: 'lorebook',
+      relativePath: `lorebooks/group/file-${index}.risulorebook`,
+    }));
+    const inspectResult = {
+      data: {
+        allowedRootMarkers: ['.risuchar', '.risumodule'],
+        artifactCounts: { lorebook: canonicalFiles.length },
+        artifactKind: 'module',
+        canonicalFileCount: canonicalFiles.length,
+        canonicalFiles,
+        contractSummaries: [{ artifact: 'lorebook', suffix: '.risulorebook' }],
+        inputKind: 'directory',
+        markerFiles: [],
+        resolutionStage: 'canonical-discovery',
+        resolvedPath: '/workspace/module',
+      },
+      diagnostics: [],
+      status: 'ok',
+      summary: { errorCount: 0, warningCount: 0 },
+    };
+    registry.register(dummyAction({
+      id: 'inspect.artifact',
+      execute: () => inspectResult,
+      inputSchema: z.object({}),
+    }));
+    const contextStore = new ContextStore();
+
+    const result = await handleRunAction(
+      { actionId: 'inspect.artifact', args: {} },
+      registry,
+      dummyContext,
+      contextStore,
+    );
+
+    expect(result).toMatchObject({
+      actionId: 'inspect.artifact',
+      contextId: expect.stringMatching(/^ctx_/),
+      data: {
+        artifactCounts: { lorebook: 201 },
+        canonicalFileCount: 201,
+      },
+      externalized: true,
+      truncated: true,
+    });
+    expect(result).not.toHaveProperty('data.canonicalFiles');
+    expect(contextStore.search('file-200.risulorebook')).toHaveLength(1);
+  });
+
   it('executes a read-only action with valid args', async () => {
     const registry = new ActionRegistry();
     registry.register(dummyAction({

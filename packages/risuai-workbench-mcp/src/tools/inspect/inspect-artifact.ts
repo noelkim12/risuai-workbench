@@ -33,7 +33,9 @@ export interface MarkerFileInfo {
 
 export interface InspectArtifactResultData {
   allowedRootMarkers: readonly ['.risuchar', '.risumodule'];
+  artifactCounts: Readonly<Record<string, number>>;
   artifactKind: 'module' | 'character' | 'canonical-directory' | 'archive';
+  canonicalFileCount: number;
   canonicalFiles: ArtifactFileInfo[];
   contractSummaries: Array<{
     artifact: string;
@@ -107,7 +109,9 @@ export async function handleInspectArtifact(
     return createDiagnosticEnvelope({
       data: {
         allowedRootMarkers: ['.risuchar', '.risumodule'],
+        artifactCounts: {},
         artifactKind: isArchive ? 'archive' : 'canonical-directory',
+        canonicalFileCount: 0,
         canonicalFiles: [],
         contractSummaries: [],
         inputKind: isArchive ? 'archive' : 'file',
@@ -145,8 +149,10 @@ export async function handleInspectArtifact(
   }));
 
   const detectedArtifacts = new Set<CustomExtensionArtifact>();
+  const artifactCounts: Record<string, number> = {};
   for (const cf of discovery.canonicalFiles) {
     detectedArtifacts.add(cf.artifact);
+    artifactCounts[cf.artifact] = (artifactCounts[cf.artifact] ?? 0) + 1;
   }
 
   const contractSummaries = [...detectedArtifacts].map((artifact) => {
@@ -164,11 +170,13 @@ export async function handleInspectArtifact(
   return createDiagnosticEnvelope({
     data: {
       allowedRootMarkers: ['.risuchar', '.risumodule'],
+      artifactCounts,
       artifactKind: hasModuleMarker
         ? 'module'
         : hasCharacterMarker
           ? 'character'
           : 'canonical-directory',
+      canonicalFileCount: canonicalFiles.length,
       canonicalFiles,
       contractSummaries,
       inputKind: 'directory',

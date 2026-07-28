@@ -155,7 +155,16 @@ export function registerInspectValidateActions(registry: ActionRegistry): void {
     capability: 'validate',
     risk: 'read_only',
     inputSchema: ValidateCbsSyntaxInputSchema,
-    execute: (input) => handleValidateCbsSyntax(input),
+    inputGuidance: {
+      atLeastOneOf: [['sourcePath', 'sourceText']],
+      fields: {
+        path: { type: 'string', description: 'Optional display path for inline sourceText diagnostics.' },
+        sourcePath: { type: 'string', description: 'Workspace-relative canonical CBS file to read and validate.' },
+        sourceText: { type: 'string', description: 'Inline CBS text. Cannot be combined with sourcePath.' },
+      },
+    },
+    examples: [{ sourcePath: 'lorebooks/example.risulorebook' }],
+    execute: (input, context) => handleValidateCbsSyntax(input, context.workspace),
   } as WorkbenchAction<ValidateCbsSyntaxInput, DiagnosticEnvelope<unknown>>);
 
   registry.register({

@@ -84,7 +84,12 @@ export class ContextStore {
       .filter((r) => {
         if (kind && r.kind !== kind) return false;
         if (!q) return true;
-        const haystack = [r.id, r.kind, r.summary, ...r.resourceLinks, typeof r.payload === 'string' ? r.payload : '']
+        const searchablePayload = typeof r.payload === 'string'
+          ? r.payload
+          : r.kind === 'action-result'
+            ? JSON.stringify(r.payload)
+            : '';
+        const haystack = [r.id, r.kind, r.summary, ...r.resourceLinks, searchablePayload]
           .join(' ')
           .toLowerCase();
         if (kind === 'wiki') {
