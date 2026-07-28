@@ -4,17 +4,39 @@
  * @file packages/risuai-workbench-mcp/src/tools/wiki/search-wiki.ts
  */
 
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { createDiagnosticEnvelope, type DiagnosticEnvelope } from '../../contracts/diagnostics';
+import type { WorkspaceRootStatus } from '../../project/resolve-root';
 
 export interface SearchWikiInput {
-  query: string;
-  limit?: number;
+  readonly query: string;
+  readonly scope?: WikiSearchScope;
 }
 
-const MAX_HITS = 5;
+export type WikiSearchScope = 'workspace' | 'provider-docs' | 'all';
+
+export interface WikiPage {
+  readonly path: string;
+  readonly resourceUri: string;
+  readonly scope: Exclude<WikiSearchScope, 'all'>;
+  readonly text: string;
+  readonly title: string;
+}
+
+export type WikiMatchField = 'title' | 'identifier' | 'body';
+
+export interface WikiRankingReason {
+  readonly bodyTermMatches: number;
+  readonly exactIdentifier: boolean;
+  readonly exactTitle: boolean;
+  readonly identifierTermMatches: number;
+  readonly score: number;
+  readonly titleTermMatches: number;
+}
+
+const MAX_HITS = 30;
 const MAX_SNIPPET = 180;
 
 function repoRootFromHere(): string {
@@ -22,6 +44,7 @@ function repoRootFromHere(): string {
 }
 
 function walkMarkdown(dir: string): string[] {
+  if (!existsSync(dir)) return [];
   const entries = readdirSync(dir).sort();
   const files: string[] = [];
   for (const entry of entries) {
@@ -50,7 +73,46 @@ function titleOf(markdown: string, fallback: string): string {
   return heading ? heading.replace(/^#\s+/, '').trim() : fallback;
 }
 
-export async function handleSearchWiki(input: SearchWikiInput): Promise<DiagnosticEnvelope> {
+function countTermMatches(value: string, terms: readonly string[]): number {
+  return terms.reduce((count, term) => count + Number(value.includes(term)), 0);
+}
+
+export function loadWorkspaceWikiPages(workspace: WorkspaceRootStatus): readonly WikiPage[] {
+  if (!workspace.ok) return [];
+  const wikiRoot = path.join(workspace.path, 'wiki');
+  return walkMarkdown(wikiRoot).map((filePath) => {
+    const text = readFileSync(filePath, 'utf8');
+    const relativePath = path.relative(workspace.path, filePath).replace(/\\/g, '/');
+    return {
+      path: relativePath,
+      resourceUri: `risuai-workbench://wiki/${relativePath.replace(/^wiki\//, '')}`,
+      scope: 'workspace',
+      text,
+      title: titleOf(text, relativePath),
+    };
+  });
+}
+
+function loadProviderWikiPages(): readonly WikiPage[] {
+  const root = repoRootFromHere();
+  const docsRoot = path.join(root, 'docs/custom-extension');
+  return walkMarkdown(docsRoot).map((filePath) => {
+    const text = readFileSync(filePath, 'utf8');
+    const relativePath = path.relative(root, filePath).replace(/\\/g, '/');
+    return {
+      path: relativePath,
+      resourceUri: `risuai-workbench://wiki/${relativePath.replace(/^docs\//, '')}`,
+      scope: 'provider-docs',
+      text,
+      title: titleOf(text, relativePath),
+    };
+  });
+}
+
+export async function handleSearchWiki(
+  input: SearchWikiInput,
+  workspace?: WorkspaceRootStatus,
+): Promise<DiagnosticEnvelope> {
   if (!input.query || input.query.trim().length === 0) {
     return createDiagnosticEnvelope({
       diagnostics: [{
@@ -66,25 +128,59 @@ export async function handleSearchWiki(input: SearchWikiInput): Promise<Diagnost
     });
   }
 
-  const root = repoRootFromHere();
-  const docsRoot = path.join(root, 'docs/custom-extension');
-  const terms = input.query.toLowerCase().split(/\s+/).filter(Boolean);
-  const limit = Math.min(input.limit ?? MAX_HITS, MAX_HITS);
-  const scored = walkMarkdown(docsRoot)
-    .map((filePath) => {
-      const text = readFileSync(filePath, 'utf8');
-      const lower = text.toLowerCase();
-      const score = terms.reduce((sum, term) => sum + (lower.includes(term) ? 1 : 0), 0);
-      const relativePath = path.relative(root, filePath).replace(/\\/g, '/');
-      return { filePath, relativePath, score, text };
+  const normalizedQuery = input.query.trim().toLowerCase();
+  const terms = normalizedQuery.split(/\s+/).filter(Boolean);
+  const scope = input.scope ?? (workspace?.ok ? 'workspace' : 'provider-docs');
+  const pages = [
+    ...(scope === 'provider-docs' || !workspace ? [] : loadWorkspaceWikiPages(workspace)),
+    ...(scope === 'workspace' ? [] : loadProviderWikiPages()),
+  ];
+  const scored = pages
+    .map((page) => {
+      const title = page.title.toLowerCase();
+      const identifier = path.basename(page.path, '.md').replace(/[_-]+/g, ' ').toLowerCase();
+      const body = page.text.replace(/^# .*?(?:\r?\n|$)/, '').toLowerCase();
+      const titleTermMatches = countTermMatches(title, terms);
+      const identifierTermMatches = countTermMatches(identifier, terms);
+      const bodyTermMatches = countTermMatches(body, terms);
+      const exactTitle = title === normalizedQuery;
+      const exactIdentifier = identifier === normalizedQuery;
+      const score =
+        Number(exactTitle) * 1_000 +
+        Number(exactIdentifier) * 900 +
+        titleTermMatches * 100 +
+        identifierTermMatches * 10 +
+        bodyTermMatches;
+      const matchedFields: WikiMatchField[] = [
+        ...(titleTermMatches > 0 ? ['title' as const] : []),
+        ...(identifierTermMatches > 0 ? ['identifier' as const] : []),
+        ...(bodyTermMatches > 0 ? ['body' as const] : []),
+      ];
+      const rankingReason: WikiRankingReason = {
+        bodyTermMatches,
+        exactIdentifier,
+        exactTitle,
+        identifierTermMatches,
+        score,
+        titleTermMatches,
+      };
+      return { matchedFields, page, rankingReason, score };
     })
     .filter((entry) => entry.score > 0)
-    .sort((left, right) => right.score - left.score || left.relativePath.localeCompare(right.relativePath));
-  const hits = scored.slice(0, limit).map((entry) => ({
-    path: entry.relativePath,
-    resourceUri: `risuai-workbench://wiki/${entry.relativePath.replace(/^docs\//, '')}`,
-    snippet: compactSnippet(entry.text, terms),
-    title: titleOf(entry.text, entry.relativePath),
+    .sort((left, right) => {
+      const scoreDifference = right.score - left.score;
+      if (scoreDifference !== 0) return scoreDifference;
+      const scopeDifference = Number(left.page.scope === 'provider-docs') - Number(right.page.scope === 'provider-docs');
+      return scopeDifference || left.page.path.localeCompare(right.page.path);
+    });
+  const hits = scored.slice(0, MAX_HITS).map((entry) => ({
+    matchedFields: entry.matchedFields,
+    path: entry.page.path,
+    rankingReason: entry.rankingReason,
+    resourceUri: entry.page.resourceUri,
+    scope: entry.page.scope,
+    snippet: compactSnippet(entry.page.text, terms),
+    title: entry.page.title,
   }));
 
   return createDiagnosticEnvelope({
@@ -92,6 +188,7 @@ export async function handleSearchWiki(input: SearchWikiInput): Promise<Diagnost
       hits,
       query: input.query,
       returned: hits.length,
+      scope,
       total: scored.length,
       truncated: scored.length > hits.length,
     },

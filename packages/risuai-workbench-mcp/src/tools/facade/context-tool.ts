@@ -7,6 +7,8 @@ import { z } from 'zod';
 import type { ContextStore } from '../../context/context-store';
 import type { ContextToolResult } from '../../context/context-contracts';
 import { ContextToolInputSchema } from '../../context/context-contracts';
+import type { WorkspaceRootStatus } from '../../project/resolve-root';
+import { loadWorkspaceWikiPages } from '../wiki/search-wiki';
 import {
   createContextNotFoundError,
   createMissingContextIdError,
@@ -26,6 +28,7 @@ export type { ContextToolResult } from '../../context/context-contracts';
 export function handleContextTool(
   input: z.infer<typeof ContextToolInputSchema>,
   store: ContextStore,
+  workspace?: WorkspaceRootStatus,
 ): ContextToolResult {
   switch (input.operation) {
     case 'create': {
@@ -49,7 +52,12 @@ export function handleContextTool(
     }
 
     case 'search': {
-      const records = store.search(input.query, input.maxItems ?? 8);
+      if (input.source === 'wiki' && !store.hasKind('wiki') && workspace) {
+        for (const page of loadWorkspaceWikiPages(workspace)) {
+          store.create('wiki', page.title, page.text, [page.resourceUri]);
+        }
+      }
+      const records = store.search(input.query, input.maxItems ?? 8, input.source);
       return { ok: true, records };
     }
 

@@ -62,6 +62,8 @@ CBS LSP client 설정은 `package.json`의 `contributes.configuration`과 `src/l
 - `installMode = "global"` — `cbs-language-server --stdio`
 - `path` — explicit executable override. 상대 경로는 first workspace folder 기준으로 해석합니다.
 - `luaLsPath` — CBS LuaLS sidecar가 사용할 `lua-language-server` executable override입니다.
+- standalone 실행 계약: `packages/cbs-lsp/docs/STANDALONE_USAGE.md`
+- 지원 환경과 호환성: `packages/cbs-lsp/docs/COMPATIBILITY.md`
 
 ## Failure UX policy
 

@@ -26,6 +26,7 @@ export type ActionCapability =
   | 'creative.review'
   | 'creative.patch'
   | 'risulua.runtime'
+  | 'pack'
   | 'patch.preview'
   | 'patch.apply'
   | 'mutation.direct';
@@ -35,6 +36,16 @@ export interface ActionExecutionContext {
   mutationMode: MutationMode;
   patchStore: PatchPlanStore;
   contextStore?: ContextStore;
+}
+
+export interface ActionInputGuidance {
+  readonly atLeastOneOf?: readonly (readonly string[])[];
+  readonly fields?: Readonly<Record<string, {
+    readonly type: string;
+    readonly description?: string;
+    readonly enumValues?: readonly (string | number)[];
+    readonly defaultValue?: unknown;
+  }>>;
 }
 
 export interface WorkbenchAction<TInput = unknown, TOutput = unknown> {
@@ -48,6 +59,7 @@ export interface WorkbenchAction<TInput = unknown, TOutput = unknown> {
   aliases?: readonly string[];
   searchText?: string;
   examples?: readonly unknown[];
+  inputGuidance?: ActionInputGuidance;
   execute: (
     input: TInput,
     context: ActionExecutionContext,

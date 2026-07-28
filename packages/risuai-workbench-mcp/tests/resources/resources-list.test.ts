@@ -80,7 +80,7 @@ describe('workbench MCP resources', () => {
 
       expect(result.resourceTemplates.map((resource) => resource.name)).toEqual(expectedResourceNames);
       expect(result.resourceTemplates.map((resource) => resource.uriTemplate)).toEqual([
-        'risuai-workbench://wiki/{path}',
+        'risuai-workbench://wiki/{+path}',
         'risuai-workbench://rules/catalog',
         'risuai-workbench://schemas/{schemaName}',
         'risuai-workbench://analyze/{snapshotId}',

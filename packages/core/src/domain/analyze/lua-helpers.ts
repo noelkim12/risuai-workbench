@@ -26,6 +26,10 @@ export interface LuaASTNode {
   arguments?: LuaASTNode[];
   /** 함수 정의 등의 파라미터 목록 */
   args?: LuaASTNode[];
+  /** 할당문의 왼쪽 변수 목록 */
+  variables?: LuaASTNode[];
+  /** 할당문의 오른쪽 값 목록 */
+  init?: LuaASTNode[];
   /** 멤버/인덱스 표현식의 베이스 노드 */
   base?: LuaASTNode;
   /** 멤버 표현식의 식별자 */

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://risuai-workbench.dev/schemas/risumodule.schema.json",
+  "kind": "risu.module",
+  "schemaVersion": 1,
+  "id": "mymod",
+  "name": "My Module",
+  "description": "",
+  "createdAt": null,
+  "modifiedAt": null,
+  "sourceFormat": "json"
+}

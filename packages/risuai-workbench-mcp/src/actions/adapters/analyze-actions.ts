@@ -57,6 +57,34 @@ import {
   handleQueryRisuLuaApi,
 } from '../../tools/analyze';
 
+const LUA_INPUT_GUIDANCE = {
+  atLeastOneOf: [['sourcePath', 'sourceText']],
+  fields: {
+    filePath: {
+      type: 'string',
+      description: 'Optional display path for inline sourceText diagnostics.',
+    },
+    sourcePath: {
+      type: 'string',
+      description: 'Workspace-relative path to a canonical Lua source file.',
+    },
+    sourceText: {
+      type: 'string',
+      description: 'Inline Lua source. Use sourcePath instead when the file exists in the workspace.',
+    },
+    stalePolicy: {
+      type: 'enum',
+      description: 'Snapshot handling policy. mark reports stale data; refuse returns a domain error.',
+      enumValues: ['mark', 'refuse'],
+      defaultValue: 'mark',
+    },
+  },
+} as const;
+
+const LUA_INPUT_EXAMPLES = [
+  { sourcePath: 'lua/main.risulua', stalePolicy: 'mark' },
+] as const;
+
 /**
  * registerAnalyzeActions 함수.
  * Populates the ActionRegistry with read-only analyze actions.
@@ -105,6 +133,8 @@ export function registerAnalyzeActions(registry: ActionRegistry): void {
     capability: 'analyze',
     risk: 'read_only',
     inputSchema: QueryLuaAnalysisInputSchema,
+    examples: LUA_INPUT_EXAMPLES,
+    inputGuidance: LUA_INPUT_GUIDANCE,
     execute: (input, context) => handleQueryLuaAnalysis(input, context.workspace),
   } as WorkbenchAction<QueryLuaInput, DiagnosticEnvelope>);
 
@@ -116,6 +146,8 @@ export function registerAnalyzeActions(registry: ActionRegistry): void {
     capability: 'analyze',
     risk: 'read_only',
     inputSchema: QueryLuaCallGraphInputSchema,
+    examples: LUA_INPUT_EXAMPLES,
+    inputGuidance: LUA_INPUT_GUIDANCE,
     execute: (input, context) => handleQueryLuaCallGraph(input, context.workspace),
   } as WorkbenchAction<QueryLuaInput, DiagnosticEnvelope>);
 
@@ -127,6 +159,8 @@ export function registerAnalyzeActions(registry: ActionRegistry): void {
     capability: 'analyze',
     risk: 'read_only',
     inputSchema: QueryLuaStateAccessInputSchema,
+    examples: LUA_INPUT_EXAMPLES,
+    inputGuidance: LUA_INPUT_GUIDANCE,
     execute: (input, context) => handleQueryLuaStateAccess(input, context.workspace),
   } as WorkbenchAction<QueryLuaInput, DiagnosticEnvelope>);
 

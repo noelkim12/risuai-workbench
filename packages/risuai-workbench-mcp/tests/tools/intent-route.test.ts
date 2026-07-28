@@ -28,6 +28,39 @@ function isImplementedTool(name: string): boolean {
 }
 
 describe('handleRouteIntent', () => {
+  describe('module pack routing', () => {
+    it.each([
+      'Pack this .risumodule workspace from canonical lua sources into its generated distributable after validating the encounter fallback fix.',
+      'Validate and pack this module using modular Lua',
+      '이 .risumodule 워크스페이스를 검증하고 재패킹해줘',
+    ])('routes an explicit pack request before Lua analysis: %s', async (request) => {
+      const result = await handleRouteIntent({ request, target: '.' });
+
+      expect(result.data?.route).toMatchObject({
+        intent: 'pack.module',
+        targetKind: 'module',
+        mutationMode: 'guarded_direct',
+        nextStep: 'execute',
+        capabilities: ['validate', 'pack'],
+        recommendedActions: expect.arrayContaining(['validate.artifact', 'core.run_pack', 'inspect.artifact']),
+        workflow: [
+          { stage: 'validate', actionId: 'validate.artifact' },
+          { stage: 'pack', actionId: 'core.run_pack' },
+          { stage: 'verify', actionId: 'inspect.artifact' },
+        ],
+      });
+    });
+
+    it('keeps a plain Lua analysis request on the analyzer route', async () => {
+      const result = await handleRouteIntent({
+        request: 'Analyze lua/domain/block.risulua',
+        target: 'lua/domain/block.risulua',
+      });
+
+      expect(result.data?.route.intent).toBe('analyze.lua_handler');
+    });
+  });
+
   describe('read-only', () => {
     it('routes explicit no-write language to read-only with blocked mutations', async () => {
       const result = await handleRouteIntent({
@@ -873,7 +906,7 @@ describe('handleRouteIntent', () => {
         routingSignalsInclude: ['analyze', 'lua', 'domain:risulua'],
       },
       {
-        name: 'Lorebook frontmatter mutation routes to specific frontmatter preview (classifier: fix wording yields mutationRequested false)',
+        name: 'Lorebook frontmatter mutation routes to specific frontmatter preview',
         input: {
           request: 'Fix lorebook frontmatter condition',
           target: 'characters/merry/lorebooks/intro.risulorebook',
@@ -882,7 +915,7 @@ describe('handleRouteIntent', () => {
         expectedNextStep: 'preview',
         expectedRisk: 'preview_only',
         expectedTargetKind: 'artifact_root',
-        expectedMutationRequested: false,
+        expectedMutationRequested: true,
         expectedCommitAllowed: false,
         expectedStopConditions: ['preview_required'],
         recommendedIncludes: ['workbench.patch_preview', 'workbench.catalog', 'workbench.prepare_action', 'workbench.run_action'],
@@ -890,19 +923,19 @@ describe('handleRouteIntent', () => {
         routingSignalsInclude: ['preview', 'frontmatter'],
       },
       {
-        name: 'Mixed analyze and fix request routes to lua analysis (classifier: analyze keyword takes precedence over fix)',
+        name: 'Mixed analyze and fix request routes to Lua analysis plus safe preview',
         input: {
           request: 'Analyze the risulua state access and fix issues',
           target: 'modules/demo/lua/main.risulua',
         },
         expectedIntent: 'analyze.lua_handler',
         expectedNextStep: 'analyze',
-        expectedRisk: 'read_only',
+        expectedRisk: 'preview_only',
         expectedTargetKind: 'lua_handler',
-        expectedMutationRequested: false,
+        expectedMutationRequested: true,
         expectedCommitAllowed: false,
         expectedStopConditions: ['preview_required'],
-        recommendedIncludes: ['workbench.catalog', 'workbench.prepare_action', 'workbench.run_action'],
+        recommendedIncludes: ['workbench.patch_preview', 'workbench.catalog', 'workbench.prepare_action', 'workbench.run_action'],
         domainTagsInclude: ['risulua'],
         routingSignalsInclude: ['analyze', 'lua', 'domain:risulua', 'mutation_requested'],
       },
@@ -924,7 +957,7 @@ describe('handleRouteIntent', () => {
         routingSignalsInclude: ['direct_structured_edit'],
       },
       {
-        name: 'Ambiguous frontmatter fix remains preview required (classifier: fix wording yields mutationRequested false)',
+        name: 'Ambiguous frontmatter fix remains preview required',
         input: {
           request: 'Fix the lorebook frontmatter condition',
           target: 'characters/merry/lorebooks/intro.risulorebook',
@@ -933,7 +966,7 @@ describe('handleRouteIntent', () => {
         expectedNextStep: 'preview',
         expectedRisk: 'preview_only',
         expectedTargetKind: 'artifact_root',
-        expectedMutationRequested: false,
+        expectedMutationRequested: true,
         expectedCommitAllowed: false,
         expectedMutationMode: 'preview_required',
         recommendedIncludes: ['workbench.patch_preview', 'workbench.catalog', 'workbench.prepare_action', 'workbench.run_action'],
@@ -1089,6 +1122,51 @@ describe('handleRouteIntent', () => {
   });
 
   describe('direct mutation posture guidance', () => {
+    it('preserves explicit Lua fix intent and exposes the safe preview workflow', async () => {
+      const result = await handleRouteIntent({
+        request: 'Investigate and fix module behavior where clothing-related options do not appear during reward selection',
+        target: 'current module workspace',
+        context: 'Canonical source only; validate Lua/CBS and module packaging after fix.',
+      });
+
+      const route = result.data!.route;
+      expect(route.intent).toBe('analyze.lua_handler');
+      expect(route.mutationRequested).toBe(true);
+      expect(route.mutationMode).toBe('preview_required');
+      expect(route.commitAllowed).toBe(false);
+      expect(route.capabilities).toEqual(expect.arrayContaining(['analyze', 'patch.preview']));
+      expect(route.recommendedActions).toEqual(expect.arrayContaining([
+        'analyze.query_lua_analysis',
+        'patch.suggest',
+      ]));
+      expect(route.recommendedTools).toContain('workbench.patch_preview');
+      expect(route.blockedTools).toContain('workbench.apply_patch_plan');
+      expect(route).toHaveProperty('workflow');
+      expect(Reflect.get(route, 'workflow')).toEqual(expect.arrayContaining([
+        expect.objectContaining({ stage: 'analyze', actionId: 'analyze.query_lua_analysis' }),
+        expect.objectContaining({ stage: 'preview', actionId: 'patch.suggest' }),
+        expect.objectContaining({ stage: 'apply', tool: 'workbench.patch_apply', requiresApproval: true }),
+        expect.objectContaining({ stage: 'validate', actionId: 'analyze.query_lua_analysis' }),
+      ]));
+    });
+
+    it('keeps explicit no-edit Lua investigation read-only', async () => {
+      const result = await handleRouteIntent({
+        request: 'Investigate why the Lua clothing options are missing, but do not modify anything',
+        target: 'current module workspace',
+      });
+
+      const route = result.data!.route;
+      expect(route.mutationRequested).toBe(false);
+      expect(route.mutationMode).toBe('blocked');
+      expect(route.risk).toBe('read_only');
+      expect(route.recommendedActions).not.toContain('patch.suggest');
+      expect(route.recommendedTools).not.toContain('workbench.patch_preview');
+      expect(Reflect.get(route, 'workflow')).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ stage: 'preview' }),
+      ]));
+    });
+
     it('allows guarded direct frontmatter edit for explicit field/value requests', async () => {
       const result = await handleRouteIntent({
         request: 'Set frontmatter key enabled to false',

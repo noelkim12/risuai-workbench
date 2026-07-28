@@ -12,7 +12,7 @@ const snapshotFields = {
   previousSnapshot: previousSnapshotSchema,
   sourcePath: z.string().optional(),
   sourceText: z.string().optional(),
-  stalePolicy: z.enum(['mark', 'refuse']).optional(),
+  stalePolicy: z.enum(['mark', 'refuse']).default('mark'),
 };
 
 const elementSchema = z.object({

@@ -8,6 +8,7 @@ import { z } from 'zod';
 
 export const SearchWikiInputSchema = z.object({
   query: z.string(),
+  scope: z.enum(['workspace', 'provider-docs', 'all']).optional(),
 });
 
 export const EnsureWikiRootInputSchema = z.object({

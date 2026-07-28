@@ -49,6 +49,7 @@ describe('handleInspectArtifact', () => {
     const result = await handleInspectArtifact({ artifactRoot: 'foo' }, workspace);
     expect(result.status).toBe('domain_error');
   });
+
 });
 
 describe('handleValidateArtifact', () => {
@@ -65,16 +66,38 @@ describe('handleValidateArtifact', () => {
     expect(['ok', 'domain_warning']).toContain(result.status);
   });
 
-  it('returns domain_warning for missing marker files', async () => {
+  it('recognizes and structurally validates a .risumodule workspace root', async () => {
     const workspace = makeOkWorkspace(STANDARD_ROOT);
     const result = await handleValidateArtifact(
       { artifactRoot: 'modules/mymod' },
       workspace,
     );
 
-    // Lua has no marker files requirement, so may be ok or warning
     expect(['ok', 'domain_warning']).toContain(result.status);
+    expect(result.data).toMatchObject({
+      artifactKind: 'module',
+      canonicalFileCount: expect.any(Number),
+      resolvedPath: path.join(STANDARD_ROOT, 'modules/mymod'),
+    });
+    expect(result.diagnostics.map((diagnostic) => diagnostic.id)).not.toContain('UNSUPPORTED_CANONICAL_EXTENSION');
   });
+
+  it('reports the resolved marker path when .risumodule JSON is invalid', async () => {
+    const workspace = makeOkWorkspace(STANDARD_ROOT);
+    const result = await handleValidateArtifact(
+      { artifactRoot: 'modules/invalidmod' },
+      workspace,
+    );
+
+    expect(result.status).toBe('domain_error');
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'INVALID_RISUMODULE_MARKER',
+        path: 'modules/invalidmod/.risumodule',
+      }),
+    ]));
+  });
+
 });
 
 describe('handleValidateRootMarkers', () => {

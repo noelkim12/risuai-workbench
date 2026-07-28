@@ -1185,12 +1185,15 @@ function registerInspectValidateTools(server: McpServer, workspace: WorkspaceRoo
     'workbench.search_wiki',
     {
       description: 'Search docs, wiki, and rule resources.',
-      inputSchema: { query: z.string() },
+      inputSchema: {
+        query: z.string(),
+        scope: z.enum(['workspace', 'provider-docs', 'all']).optional(),
+      },
       outputSchema: diagnosticEnvelopeOutputSchema,
       title: 'Search wiki',
     },
-    async (input: { query: string }) => {
-      const result = await handleSearchWiki(input);
+    async (input: Parameters<typeof handleSearchWiki>[0]) => {
+      const result = await handleSearchWiki(input, workspace);
       return createJsonToolResult(result);
     },
   );
@@ -1334,7 +1337,7 @@ function registerFacadeTools(
   server.registerTool(
     'workbench.catalog',
     {
-      description: 'List workbench actions with metadata. Use extension affordance to query: core.run_extract for .risum/.charx/.risup, analyze.query_lua_analysis for .risulua, validate.cbs_syntax for CBS files, validate.root_markers for .risuchar/.risumodule, patch.suggest_order for _order.json.',
+      description: 'extension affordance: list actions by capability, query, or route-provided actionIds. Key actions: core.run_extract, core.run_pack, analyze.query_lua_analysis, validate.cbs_syntax.',
       inputSchema: CatalogInputSchema.shape,
       outputSchema: workbenchJsonOutputSchema,
       title: 'Catalog actions',
@@ -1389,7 +1392,7 @@ function registerFacadeTools(
       title: 'Manage context',
     },
     async (input: Parameters<typeof handleContextTool>[0]) => {
-      const result = handleContextTool(input, contextStore);
+      const result = handleContextTool(input, contextStore, executionContext.workspace);
       return createJsonToolResult(result);
     },
   );

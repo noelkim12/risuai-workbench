@@ -5,12 +5,14 @@
 
 import { z } from 'zod';
 import type { ActionRegistry } from '../../actions/registry';
+import type { ErasedWorkbenchAction } from '../../actions/registry';
 
 export const CatalogInputSchema = z.object({
   intent: z.string().optional(),
   capability: z.string().optional(),
   risk: z.string().optional(),
   query: z.string().optional(),
+  actionIds: z.array(z.string()).max(12).optional(),
   limit: z.number().int().min(1).max(12).optional(),
 });
 
@@ -29,6 +31,8 @@ export interface CatalogActionItem {
 
 export interface CatalogResult {
   actions: CatalogActionItem[];
+  excluded?: Array<{ actionId: string; reason: string }>;
+  emptyReason?: string;
 }
 
 function canonicalActionNote(actionId: string): string | undefined {
@@ -47,12 +51,24 @@ function canonicalActionNote(actionId: string): string | undefined {
  * @returns catalog result with action summaries
  */
 export function handleCatalog(input: CatalogInput, registry: ActionRegistry): CatalogResult {
-  const actions = registry.search({
+  const limit = input.limit ?? 8;
+  const explicitActions = (input.actionIds ?? [])
+    .map((actionId) => registry.get(actionId))
+    .filter((action): action is ErasedWorkbenchAction => action !== null);
+  const explicitIds = new Set(explicitActions.map((action) => action.id));
+  const searchedActions = registry.search({
     capability: input.capability,
-    limit: input.limit,
+    limit,
     query: input.query ?? input.intent,
     risk: input.risk,
   });
+  const actions = [
+    ...explicitActions,
+    ...searchedActions.filter((action) => !explicitIds.has(action.id)),
+  ].slice(0, limit);
+  const excluded = (input.actionIds ?? [])
+    .filter((actionId) => registry.get(actionId) === null)
+    .map((actionId) => ({ actionId, reason: 'Action is not registered in this Workbench build.' }));
 
   return {
     actions: actions.map((action) => ({
@@ -65,5 +81,9 @@ export function handleCatalog(input: CatalogInput, registry: ActionRegistry): Ca
       summary: action.summary,
       title: action.title,
     })),
+    ...(excluded.length > 0 ? { excluded } : {}),
+    ...(actions.length === 0
+      ? { emptyReason: `No registered actions matched ${input.query ?? input.intent ?? input.capability ?? 'the supplied filters'}.` }
+      : {}),
   };
 }

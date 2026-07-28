@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { ActionRegistry } from '../src/actions/registry';
 import type { WorkbenchAction, ActionExecutionContext } from '../src/actions/types';
 import {
+  CatalogInputSchema,
   handleCatalog,
   handlePrepareAction,
   handleRunAction,
@@ -92,6 +93,34 @@ describe('facade catalog', () => {
 
     const result = handleCatalog({ limit: 3 }, registry);
     expect(result.actions).toHaveLength(3);
+  });
+
+  it('uses route-recommended action ids as strong catalog seeds', async () => {
+    const { createWorkbenchActionRegistry } = await import('../src/actions/create-registry.js');
+    const registry = createWorkbenchActionRegistry(dummyContext);
+    const routeResult = await handleRouteIntent({
+      request: 'Investigate and fix module behavior where clothing-related options do not appear during reward selection',
+      target: 'current module workspace',
+      context: 'Canonical source only; validate Lua/CBS and module packaging after fix.',
+    });
+    const route = routeResult.data!.route;
+
+    const input = CatalogInputSchema.parse(route.nextInput);
+    const result = handleCatalog(input, registry);
+
+    for (const actionId of route.recommendedActions) {
+      expect(result.actions.map((action) => action.id)).toContain(actionId);
+    }
+  });
+
+  it('explains an empty catalog result', () => {
+    const registry = new ActionRegistry();
+    registry.register(dummyAction({ id: 'inspect.path' }));
+
+    const result = handleCatalog({ query: 'does-not-exist' }, registry);
+
+    expect(result.actions).toEqual([]);
+    expect(result.emptyReason).toContain('does-not-exist');
   });
 
   it('marks core.run_extract as the canonical facade action for legacy extract matches', () => {
@@ -219,9 +248,122 @@ describe('facade prepare_action', () => {
       args: { sourcePath: 'test_suites/example.risum', outDir: 'test_suites/extraction_targets', type: 'module' },
     });
   });
+
+  it('describes Lua source alternatives, stale policy values, default, and a runnable example', async () => {
+    const { createWorkbenchActionRegistry } = await import('../src/actions/create-registry.js');
+    const registry = createWorkbenchActionRegistry(dummyContext);
+
+    const result = handlePrepareAction({ actionId: 'analyze.query_lua_analysis' }, registry);
+
+    expect(result).not.toBeNull();
+    expect(result!.fields.stalePolicy).toMatchObject({
+      required: false,
+      type: 'enum',
+      enumValues: ['mark', 'refuse'],
+      defaultValue: 'mark',
+    });
+    expect(result!.oneOf).toContainEqual(['sourcePath', 'sourceText']);
+    expect(result!.examples).toEqual([
+      { sourcePath: 'lua/main.risulua', stalePolicy: 'mark' },
+    ]);
+    expect(result!.runActionInput).toEqual({
+      actionId: 'analyze.query_lua_analysis',
+      args: { sourcePath: 'lua/main.risulua', stalePolicy: 'mark' },
+    });
+  });
 });
 
 describe('facade run_action', () => {
+  it('externalizes oversized generic action results into Workbench context', async () => {
+    const registry = new ActionRegistry();
+    const largeResult = {
+      diagnostics: [{ id: 'TEST_INFO', severity: 'info' }],
+      payload: 'x'.repeat(60_000),
+      status: 'ok',
+      summary: { errorCount: 0, warningCount: 0 },
+    };
+    registry.register(dummyAction({
+      id: 'analyze.large',
+      capability: 'analyze',
+      execute: () => largeResult,
+      inputSchema: z.object({}),
+    }));
+    const contextStore = new ContextStore();
+
+    const result = await handleRunAction(
+      { actionId: 'analyze.large', args: {} },
+      registry,
+      dummyContext,
+      contextStore,
+    );
+
+    expect(result).toMatchObject({
+      actionId: 'analyze.large',
+      contextId: expect.stringMatching(/^ctx_/),
+      diagnostics: largeResult.diagnostics,
+      externalized: true,
+      status: 'ok',
+      summary: largeResult.summary,
+      truncated: true,
+    });
+    expect(result).not.toHaveProperty('payload');
+    if (!result || typeof result !== 'object' || !('contextId' in result) || typeof result.contextId !== 'string') {
+      throw new Error('Expected externalized action result with contextId.');
+    }
+    expect(contextStore.read(result.contextId, true)?.payload).toEqual(largeResult);
+  });
+
+  it('externalizes inspect.artifact file lists above 200 entries and keeps a compact summary', async () => {
+    const registry = new ActionRegistry();
+    const canonicalFiles = Array.from({ length: 201 }, (_, index) => ({
+      artifact: 'lorebook',
+      relativePath: `lorebooks/group/file-${index}.risulorebook`,
+    }));
+    const inspectResult = {
+      data: {
+        allowedRootMarkers: ['.risuchar', '.risumodule'],
+        artifactCounts: { lorebook: canonicalFiles.length },
+        artifactKind: 'module',
+        canonicalFileCount: canonicalFiles.length,
+        canonicalFiles,
+        contractSummaries: [{ artifact: 'lorebook', suffix: '.risulorebook' }],
+        inputKind: 'directory',
+        markerFiles: [],
+        resolutionStage: 'canonical-discovery',
+        resolvedPath: '/workspace/module',
+      },
+      diagnostics: [],
+      status: 'ok',
+      summary: { errorCount: 0, warningCount: 0 },
+    };
+    registry.register(dummyAction({
+      id: 'inspect.artifact',
+      execute: () => inspectResult,
+      inputSchema: z.object({}),
+    }));
+    const contextStore = new ContextStore();
+
+    const result = await handleRunAction(
+      { actionId: 'inspect.artifact', args: {} },
+      registry,
+      dummyContext,
+      contextStore,
+    );
+
+    expect(result).toMatchObject({
+      actionId: 'inspect.artifact',
+      contextId: expect.stringMatching(/^ctx_/),
+      data: {
+        artifactCounts: { lorebook: 201 },
+        canonicalFileCount: 201,
+      },
+      externalized: true,
+      truncated: true,
+    });
+    expect(result).not.toHaveProperty('data.canonicalFiles');
+    expect(contextStore.search('file-200.risulorebook')).toHaveLength(1);
+  });
+
   it('executes a read-only action with valid args', async () => {
     const registry = new ActionRegistry();
     registry.register(dummyAction({
@@ -259,7 +401,7 @@ describe('facade run_action', () => {
     expect(result.suggestions!.length).toBeLessThanOrEqual(4);
   });
 
-  it('explains that workbench.run_extract is a legacy direct tool name', async () => {
+  it('resolves workbench.run_extract to the canonical action', async () => {
     const registry = new ActionRegistry();
     registry.register(dummyAction({
       id: 'core.run_extract',
@@ -268,11 +410,13 @@ describe('facade run_action', () => {
       inputSchema: z.object({ sourcePath: z.string() }),
     }));
 
-    const result = (await handleRunAction({ actionId: 'workbench.run_extract', args: { sourcePath: 'example.risum' } }, registry, dummyContext)) as { ok: false; error: { code: string; message?: string }; suggestions?: Array<{ id: string; title: string }> };
-    expect(result.ok).toBe(false);
-    expect(result.error.code).toBe('UNKNOWN_ACTION');
-    expect(result.error.message).toBe('"workbench.run_extract" is a legacy direct MCP tool name. Use internal action id "core.run_extract" with workbench.run_action.');
-    expect(result.suggestions).toEqual([{ id: 'core.run_extract', title: 'Run extract workflow' }]);
+    const result = await handleRunAction(
+      { actionId: 'workbench.run_extract', args: { sourcePath: 'example.risum' }, dryRun: true },
+      registry,
+      dummyContext,
+    );
+
+    expect(result).toEqual({ actionId: 'core.run_extract', dryRun: true, ok: true });
   });
 
   it('returns invalid args error with retry and prepare hints', async () => {
