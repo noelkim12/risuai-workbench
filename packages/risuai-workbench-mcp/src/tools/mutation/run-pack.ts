@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { rename, rm, writeFile } from 'node:fs/promises';
 
 import {
   buildModuleFromCanonicalDirectory,
@@ -17,6 +18,7 @@ import { handleValidateArtifact } from '../validate/validate-artifact';
 export interface RunPackInput {
   readonly inputRoot: string;
   readonly outputPath: string;
+  readonly outputPolicy: 'create-new' | 'replace-atomic';
   readonly risuluaMode: 'classic' | 'modular';
   readonly risuluaRecovery: 'none' | 'full-source';
 }
@@ -31,6 +33,11 @@ export interface RunPackData {
     readonly errorCount: number;
     readonly warningCount: number;
   };
+}
+
+export interface RunPackOutputErrorData {
+  readonly outputPath: string;
+  readonly reason: 'output_exists';
 }
 
 const TOOL_NAME = 'workbench.run_pack';
@@ -51,7 +58,7 @@ export async function handleRunPack(
   input: RunPackInput,
   workspace: WorkspaceRootStatus,
   mutationMode: MutationMode,
-): Promise<DiagnosticEnvelope<RunPackData>> {
+): Promise<DiagnosticEnvelope<RunPackData | RunPackOutputErrorData>> {
   if (!workspace.ok) {
     return createDiagnosticEnvelope({
       diagnostics: [{
@@ -135,14 +142,30 @@ export async function handleRunPack(
   const bundleTarget = input.risuluaMode === 'modular'
     ? discoverRisuLuaBundleTarget({ rootDir: inputRoot, mode: 'modular' })
     : null;
-  if (path.extname(outputPath).toLowerCase() !== '.risum' || fs.existsSync(outputPath)) {
+  if (path.extname(outputPath).toLowerCase() !== '.risum') {
     return createDiagnosticEnvelope({
       diagnostics: [{
         category: 'path',
         id: 'RUN_PACK_OUTPUT_INVALID',
-        message: 'Pack output must be a new workspace-relative .risum file.',
+        message: 'Pack output must be a workspace-relative .risum file.',
         path: input.outputPath,
         ruleId: 'run-pack.output-file',
+        severity: 'error',
+      }],
+      status: 'domain_error',
+      tool: TOOL_NAME,
+    });
+  }
+  const outputExists = fs.existsSync(outputPath);
+  if (outputExists && input.outputPolicy === 'create-new') {
+    return createDiagnosticEnvelope({
+      data: { outputPath: input.outputPath, reason: 'output_exists' },
+      diagnostics: [{
+        category: 'path',
+        id: 'RUN_PACK_OUTPUT_EXISTS',
+        message: `Pack output already exists: ${input.outputPath}. Use outputPolicy "replace-atomic" to replace it safely.`,
+        path: input.outputPath,
+        ruleId: 'run-pack.output-exists',
         severity: 'error',
       }],
       status: 'domain_error',
@@ -184,7 +207,7 @@ export async function handleRunPack(
     mode: mutationMode,
     targets: [
       { intent: 'read-existing', path: input.inputRoot },
-      { intent: 'create-missing', path: input.outputPath },
+      { intent: outputExists ? 'write-existing' : 'create-missing', path: input.outputPath },
       ...(bundleTarget
         ? [{
             intent: fs.existsSync(bundleTarget.distPath) ? 'write-existing' as const : 'create-missing' as const,
@@ -210,6 +233,7 @@ export async function handleRunPack(
     });
   }
 
+  let temporaryOutputPath: string | null = null;
   try {
     const packed = buildModuleFromCanonicalDirectory(inputRoot, {
       risuluaMode: input.risuluaMode,
@@ -217,7 +241,14 @@ export async function handleRunPack(
       writeRisuLuaDist: input.risuluaMode === 'modular',
     });
     const archive = encodeModuleRisumWithAssets(packed.module, packed.assetBuffers);
-    await writeFile(outputPath, archive, { flag: 'wx' });
+    if (input.outputPolicy === 'replace-atomic') {
+      temporaryOutputPath = path.join(outputParent, `.${path.basename(outputPath)}.pack-tmp-${process.pid}-${randomUUID()}`);
+      await writeFile(temporaryOutputPath, archive, { flag: 'wx' });
+      await rename(temporaryOutputPath, outputPath);
+      temporaryOutputPath = null;
+    } else {
+      await writeFile(outputPath, archive, { flag: 'wx' });
+    }
     return createDiagnosticEnvelope({
       data: {
         artifactKind: 'module',
@@ -235,12 +266,23 @@ export async function handleRunPack(
       tool: TOOL_NAME,
     });
   } catch (error) {
+    let cleanupFailure: string | null = null;
+    if (temporaryOutputPath !== null) {
+      try {
+        await rm(temporaryOutputPath, { force: true });
+      } catch (cleanupError) {
+        if (!(cleanupError instanceof Error)) throw cleanupError;
+        cleanupFailure = cleanupError.message;
+      }
+    }
     if (!(error instanceof Error)) throw error;
     return createDiagnosticEnvelope({
       diagnostics: [{
         category: 'pack',
         id: 'RUN_PACK_FAILED',
-        message: error.message,
+        message: cleanupFailure
+          ? `${error.message} Temporary output cleanup also failed: ${cleanupFailure}`
+          : error.message,
         path: input.inputRoot,
         ruleId: 'run-pack.failed',
         severity: 'error',

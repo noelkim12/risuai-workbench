@@ -109,7 +109,14 @@ export async function handleValidatePath(
     const dirName = path.dirname(relativePath);
     const expectedDir = contract.directory;
 
-    if (!dirName.endsWith(expectedDir) && dirName !== '.') {
+    const portableDir = dirName.split(path.sep).join('/');
+    const portableExpectedDir = expectedDir.split(path.sep).join('/');
+    const isInsideExpectedDirectory = portableDir === portableExpectedDir
+      || portableDir.startsWith(`${portableExpectedDir}/`)
+      || portableDir.includes(`/${portableExpectedDir}/`)
+      || portableDir.endsWith(`/${portableExpectedDir}`);
+
+    if (!isInsideExpectedDirectory && dirName !== '.') {
       diagnostics.push({
         category: 'path',
         id: 'PATH_DIRECTORY_MISMATCH',

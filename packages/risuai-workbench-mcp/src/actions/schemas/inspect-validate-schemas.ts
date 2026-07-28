@@ -40,7 +40,16 @@ export const ValidateRootMarkersInputSchema = z.object({
 
 export const ValidateCbsSyntaxInputSchema = z.object({
   path: z.string().optional(),
-  sourceText: z.string(),
+  sourcePath: z.string().optional(),
+  sourceText: z.string().optional(),
+}).superRefine((input, context) => {
+  if ((input.sourcePath === undefined) === (input.sourceText === undefined)) {
+    context.addIssue({
+      code: 'custom',
+      message: 'Provide exactly one of sourcePath or sourceText.',
+      path: [],
+    });
+  }
 });
 
 export const BuildPathInputSchema = z.object({

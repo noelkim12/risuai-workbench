@@ -67,7 +67,7 @@ workbench.run_action({
 
 ## Module pack
 
-canonical `.risumodule` workspace는 catalog에서 `capability: "pack"`으로 `core.run_pack`을 찾은 뒤 실행합니다. 입력과 출력은 모두 workspace-relative 경로여야 하며 기존 output은 덮어쓰지 않습니다.
+canonical `.risumodule` workspace는 catalog에서 `capability: "pack"`으로 `core.run_pack`을 찾은 뒤 실행합니다. 입력과 출력은 모두 workspace-relative 경로여야 합니다. 기본 `outputPolicy: "create-new"`는 기존 output을 거부하고 `reason: "output_exists"`를 반환하며, 명시적인 `outputPolicy: "replace-atomic"`은 같은 디렉터리의 임시 파일을 완성한 뒤 기존 archive를 교체합니다.
 
 ```text
 workbench.run_action({
@@ -75,6 +75,7 @@ workbench.run_action({
   args: {
     inputRoot: "module",
     outputPath: "packed.risum",
+    outputPolicy: "create-new",
     risuluaMode: "modular"
   }
 })

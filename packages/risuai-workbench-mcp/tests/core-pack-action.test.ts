@@ -79,7 +79,10 @@ describe('core.run_pack action', () => {
       });
       expect(prepared.structuredContent).toMatchObject({
         actionId: 'core.run_pack',
-        fields: { risuluaMode: { enumValues: ['classic', 'modular'], defaultValue: 'modular' } },
+        fields: {
+          outputPolicy: { enumValues: ['create-new', 'replace-atomic'], defaultValue: 'create-new' },
+          risuluaMode: { enumValues: ['classic', 'modular'], defaultValue: 'modular' },
+        },
       });
 
       const packed = await client.callTool({
@@ -121,11 +124,17 @@ describe('core.run_pack action', () => {
       enumValues: ['classic', 'modular'],
       defaultValue: 'modular',
     });
+    expect(prepared.fields.outputPolicy).toMatchObject({
+      type: 'enum',
+      enumValues: ['create-new', 'replace-atomic'],
+      defaultValue: 'create-new',
+    });
     expect(prepared.runActionInput).toEqual({
       actionId: 'core.run_pack',
       args: {
         inputRoot: 'module',
         outputPath: 'packed.risum',
+        outputPolicy: 'create-new',
         risuluaMode: 'modular',
       },
     });
@@ -206,5 +215,39 @@ describe('core.run_pack action', () => {
       diagnostics: expect.arrayContaining([expect.objectContaining({ id: 'RUN_PACK_PATH_OUTSIDE_WORKSPACE' })]),
     });
     await expect(readFile(path.join(externalOutput, 'packed.risum'))).rejects.toThrow();
+  });
+
+  it('returns a structured output_exists reason under the default policy', async () => {
+    const fixture = await createModuleFixture();
+    const registry = createWorkbenchActionRegistry(fixture.context);
+    const args = { inputRoot: 'module', outputPath: 'packed.risum', risuluaMode: 'modular' as const };
+    await handleRunAction({ actionId: 'core.run_pack', args }, registry, fixture.context);
+
+    const result = await handleRunAction({ actionId: 'core.run_pack', args }, registry, fixture.context);
+
+    expect(result).toMatchObject({
+      status: 'domain_error',
+      data: { outputPath: 'packed.risum', reason: 'output_exists' },
+      diagnostics: expect.arrayContaining([expect.objectContaining({ id: 'RUN_PACK_OUTPUT_EXISTS' })]),
+    });
+  });
+
+  it('atomically replaces an existing archive when requested', async () => {
+    const fixture = await createModuleFixture();
+    const registry = createWorkbenchActionRegistry(fixture.context);
+    const initialArgs = { inputRoot: 'module', outputPath: 'packed.risum', risuluaMode: 'modular' as const };
+    await handleRunAction({ actionId: 'core.run_pack', args: initialArgs }, registry, fixture.context);
+    const before = await readFile(fixture.outputPath);
+    await writeFile(path.join(fixture.context.workspace.path, 'module/lua/main.risulua'), 'return { value = false }\n', 'utf8');
+
+    const result = await handleRunAction({
+      actionId: 'core.run_pack',
+      args: { ...initialArgs, outputPolicy: 'replace-atomic' },
+    }, registry, fixture.context);
+    const after = await readFile(fixture.outputPath);
+
+    expect(result).toMatchObject({ status: 'ok', data: { outputPath: 'packed.risum' } });
+    expect(after.equals(before)).toBe(false);
+    expect((await readdir(fixture.context.workspace.path)).some((entry) => entry.includes('.pack-tmp-'))).toBe(false);
   });
 });

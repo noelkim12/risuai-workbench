@@ -14,6 +14,7 @@ import type { DiagnosticEnvelope } from '../src/contracts/diagnostics';
 
 import { handleInspectPath } from '../src/tools/inspect/inspect-path';
 import { handleValidatePath } from '../src/tools/validate/validate-path';
+import { handlePrepareAction } from '../src/tools/facade';
 import type { WorkspaceRootStatus } from '../src/project/resolve-root';
 
 const STANDARD_ROOT = path.resolve(__dirname, './fixtures/workspaces/standard');
@@ -155,6 +156,22 @@ describe('action execute parity with direct handlers', () => {
     expect(actionResult.diagnostics.map((diagnostic) => diagnostic.id)).toContain('CBS003');
     expect(actionResult.summary.errorCount).toBe(1);
     expect(actionResult.status).toBe('domain_error');
+  });
+
+  it('validate.cbs_syntax prepares source alternatives and rejects ambiguous input', async () => {
+    const registry = createWorkbenchActionRegistry(dummyContext);
+    const action = registry.get('validate.cbs_syntax');
+
+    const prepared = handlePrepareAction({ actionId: 'validate.cbs_syntax' }, registry);
+    const ambiguous = action?.inputSchema.safeParse({
+      sourcePath: 'lorebooks/intro.risulorebook',
+      sourceText: '{{user}}',
+    });
+
+    expect(prepared?.oneOf).toContainEqual(['sourcePath', 'sourceText']);
+    expect(prepared?.fields.sourcePath).toMatchObject({ required: false, type: 'string' });
+    expect(prepared?.fields.sourceText).toMatchObject({ required: false, type: 'string' });
+    expect(ambiguous?.success).toBe(false);
   });
 
   it('validate.build_path action execute returns canonical path', async () => {
