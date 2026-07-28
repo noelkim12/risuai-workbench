@@ -26,5 +26,8 @@ jobs:
       - name: Install workspace dependencies
         run: npm ci
 
+      - name: Build Lua analyzer WASM
+        run: npm run wasm:build
+
       - name: Verify cbs-lsp release surface
         run: npm run verify:cbs-lsp-release
