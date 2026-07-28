@@ -4,7 +4,7 @@
  */
 
 import * as vscode from 'vscode';
-import { createMinimalRisuAiLuaTypeStub } from 'risu-workbench-core';
+import { createMinimalRisuAiLuaTypeStub } from '@risuai-workbench/core';
 
 import {
   getWorkspaceRisuLuaStubFilePath,

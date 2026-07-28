@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/utils/diagnostics/fragment-diagnostic-policy.ts
  */
 
-import type { CbsFragment, DiagnosticInfo } from 'risu-workbench-core';
+import type { CbsFragment, DiagnosticInfo } from '@risuai-workbench/core';
 import { DiagnosticSeverity, type Diagnostic, type DiagnosticRelatedInformation } from 'vscode-languageserver';
 
 import {

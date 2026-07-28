@@ -7,7 +7,7 @@ import {
   buildModuleFromCanonicalDirectory,
   discoverRisuLuaBundleTarget,
   encodeModuleRisumWithAssets,
-} from 'risu-workbench-core/node';
+} from '@risuai-workbench/core/node';
 
 import { createDiagnosticEnvelope, type DiagnosticEnvelope } from '../../contracts/diagnostics';
 import type { MutationMode } from '../../mutation/mode';

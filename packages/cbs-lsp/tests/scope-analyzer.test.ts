@@ -1,4 +1,4 @@
-import { CBSParser } from 'risu-workbench-core';
+import { CBSParser } from '@risuai-workbench/core';
 import { describe, expect, it } from 'vitest';
 
 import { ScopeAnalyzer } from '../src/analyzer/scopeAnalyzer';

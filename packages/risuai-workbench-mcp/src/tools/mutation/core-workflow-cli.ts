@@ -43,7 +43,7 @@ export interface RunRisuCoreCommandOptions {
  * @returns risu-core binary absolute path
  */
 export function resolveRisuCoreBinPath(): string {
-  const mainEntryPath = requireFromHere.resolve('risu-workbench-core');
+  const mainEntryPath = requireFromHere.resolve('@risuai-workbench/core');
   return path.join(path.dirname(mainEntryPath), '..', 'bin', 'risu-core.js');
 }
 

@@ -7,8 +7,8 @@
 import {
   getCustomExtensionArtifactContract,
   type CustomExtensionArtifact,
-} from 'risu-workbench-core';
-import { discoverCustomExtensionWorkspace } from 'risu-workbench-core/node';
+} from '@risuai-workbench/core';
+import { discoverCustomExtensionWorkspace } from '@risuai-workbench/core/node';
 import fs from 'node:fs';
 import path from 'node:path';
 

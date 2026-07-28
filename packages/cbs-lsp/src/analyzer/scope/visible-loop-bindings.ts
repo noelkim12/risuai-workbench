@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/analyzer/scope/visible-loop-bindings.ts
  */
 
-import { type CBSNode } from 'risu-workbench-core';
+import { type CBSNode } from '@risuai-workbench/core';
 
 import { offsetToPosition } from '../../utils/position';
 import { type EachLoopBinding, extractEachLoopBinding } from '../block-header';

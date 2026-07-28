@@ -1,7 +1,7 @@
 /**
  * Webview compatibility wrapper for protocol envelope guards.
  *
- * Implementation lives in `risu-workbench-core/cbs-browser`.
+ * Implementation lives in `@risuai-workbench/core/cbs-browser`.
  * This file re-exports the shared guards so existing import paths continue to resolve.
  *
  * @file packages/webview/src/lib/protocolEnvelope.ts
@@ -11,4 +11,4 @@ export {
   isProtocolMessageEnvelope,
   isProtocolEnvelope,
   isPlainRecord,
-} from 'risu-workbench-core/cbs-browser';
+} from '@risuai-workbench/core/cbs-browser';

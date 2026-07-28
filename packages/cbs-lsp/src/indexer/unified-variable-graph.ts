@@ -19,7 +19,7 @@
 import type {
   Range,
   CustomExtensionArtifact,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 import type { WorkspaceFileArtifactClass } from './file-scanner';
 import type {
   ElementRegistry,

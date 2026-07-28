@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/core/pure-mode.ts
  */
 
-import { TokenType, type BlockKind, type BlockNode } from 'risu-workbench-core';
+import { TokenType, type BlockKind, type BlockNode } from '@risuai-workbench/core';
 
 import type { FragmentCursorLookupResult } from './fragment-locator';
 import { positionToOffset } from '../utils/position';

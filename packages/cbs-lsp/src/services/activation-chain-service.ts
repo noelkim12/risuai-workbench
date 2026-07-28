@@ -9,8 +9,8 @@ import type {
   LorebookActivationEdge,
   LorebookActivationEdgeStatus,
   LorebookActivationEntry,
-} from 'risu-workbench-core';
-import { analyzeLorebookActivationChains } from 'risu-workbench-core';
+} from '@risuai-workbench/core';
+import { analyzeLorebookActivationChains } from '@risuai-workbench/core';
 
 import { createCbsAgentProtocolMarker, type CbsAgentProtocolMarker } from '../core';
 import type { ElementRegistry, ElementRegistryFileRecord } from '../indexer';

@@ -1,6 +1,6 @@
 import type { CancellationToken } from 'vscode-languageserver/node';
-import type { BlockKind, BlockNode, Range } from 'risu-workbench-core';
-import { walkAST } from 'risu-workbench-core';
+import type { BlockKind, BlockNode, Range } from '@risuai-workbench/core';
+import { walkAST } from '@risuai-workbench/core';
 import { FoldingRange, FoldingRangeParams } from 'vscode-languageserver/node';
 
 import {

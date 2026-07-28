@@ -7,7 +7,7 @@ import {
   Range as LSPRange,
   type Position,
 } from 'vscode-languageserver/node';
-import type { CBSBuiltinRegistry } from 'risu-workbench-core';
+import type { CBSBuiltinRegistry } from '@risuai-workbench/core';
 
 import { isAgentMetadataEnvelope, type FragmentAnalysisRequest } from '../../core';
 import {

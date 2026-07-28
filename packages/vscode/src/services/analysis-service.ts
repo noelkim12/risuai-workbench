@@ -1,4 +1,4 @@
-import * as core from 'risu-workbench-core';
+import * as core from '@risuai-workbench/core';
 import { CardService } from './card-service';
 
 export interface CardAnalysisSummary {

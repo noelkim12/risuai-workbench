@@ -10,8 +10,8 @@ import type {
   Position,
   Range,
   Token,
-} from 'risu-workbench-core';
-import { TokenType } from 'risu-workbench-core';
+} from '@risuai-workbench/core';
+import { TokenType } from '@risuai-workbench/core';
 
 import { offsetToPosition, positionToOffset } from '../utils/position';
 import type {

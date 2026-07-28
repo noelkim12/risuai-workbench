@@ -12,7 +12,7 @@ import {
 import {
   type CBSBuiltinRegistry,
   type CBSBuiltinFunction,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 
 import {
   createAgentMetadataEnvelope,

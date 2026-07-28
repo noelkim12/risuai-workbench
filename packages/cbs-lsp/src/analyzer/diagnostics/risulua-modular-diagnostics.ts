@@ -12,7 +12,7 @@ import {
   listRisuLuaSourceModuleIds,
   moduleIdFromRisuLuaSourcePath,
   validateRisuLuaModuleId,
-} from 'risu-workbench-core/node';
+} from '@risuai-workbench/core/node';
 import { getErrorMessage } from '../../helpers/error-helper';
 import {
   type ParsedLuaArgument,

@@ -9,7 +9,7 @@ import {
   parseRisumoduleManifest,
   RISUMODULE_FILENAME,
   type RisumoduleManifest,
-} from 'risu-workbench-core/node';
+} from '@risuai-workbench/core/node';
 import {
   createHashFallbackStableId,
   findArtifactMarkers,

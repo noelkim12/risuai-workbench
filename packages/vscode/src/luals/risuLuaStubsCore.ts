@@ -5,7 +5,7 @@
 
 import path from 'node:path';
 
-import { RISUAI_LUA_RUNTIME_STUB_FILE_NAME } from 'risu-workbench-core';
+import { RISUAI_LUA_RUNTIME_STUB_FILE_NAME } from '@risuai-workbench/core';
 
 export const RISU_LUALS_STUB_COMMAND = 'risuaiWorkbench.generateLuaStubs';
 

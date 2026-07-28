@@ -4,7 +4,7 @@
  */
 
 import * as vscode from 'vscode';
-import { createLorebookContentPreview } from 'risu-workbench-core';
+import { createLorebookContentPreview } from '@risuai-workbench/core';
 import type { MainEditorPreviewRequestPayload, MainEditorPreviewResultPayload } from './mainEditorTypes';
 import { createPreviewBaseResultFields } from './shared/bridge-helpers';
 

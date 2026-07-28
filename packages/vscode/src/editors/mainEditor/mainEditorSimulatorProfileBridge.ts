@@ -4,7 +4,7 @@
  */
 
 import * as vscode from 'vscode';
-import { createDefaultMainEditorSimulatorProfile, type MainEditorSimulatorProfile } from 'risu-workbench-core';
+import { createDefaultMainEditorSimulatorProfile, type MainEditorSimulatorProfile } from '@risuai-workbench/core';
 import { isPlainRecord as isRecord } from '../../shared/protocolEnvelope';
 import type {
   MainEditorSimulatorProfileListRequestPayload,

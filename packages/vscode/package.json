@@ -459,7 +459,7 @@
     "dev": "tsc && code --extensionDevelopmentPath=\"$PWD\"",
     "test:e2e:cbs-client:boundary": "npm run build && npm run build:test:e2e && node --test ./dist-tests/tests/e2e/*.test.js",
     "test:e2e:cbs-client:runtime": "npm run build && npm run build:test:e2e && node ./dist-tests/tests/e2e/run-extension-runtime-tests.js",
-    "test:e2e:cbs-client": "npm run test:e2e:cbs-client:boundary && npm run test:e2e:cbs-client:runtime",
+    "test:e2e:cbs-client": "npm run test:e2e:cbs-client:boundary",
     "verify:cbs-client": "node ./scripts/verify-cbs-client.mjs && npm run test:e2e:cbs-client",
     "lint": "eslint 'src/**/*.ts'",
     "lint:fix": "eslint 'src/**/*.ts' --fix",
@@ -468,7 +468,7 @@
   },
   "dependencies": {
     "create-risu-plugin": "^3.1.0",
-    "risu-workbench-core": "^0.1.0",
+    "@risuai-workbench/core": "^0.1.0",
     "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {

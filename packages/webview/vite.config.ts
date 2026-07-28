@@ -6,7 +6,7 @@ export default defineConfig({
   base: './',
   resolve: {
     alias: {
-      'risu-workbench-core/cbs-browser': path.resolve(__dirname, '../core/src/cbs-browser.ts'),
+      '@risuai-workbench/core/cbs-browser': path.resolve(__dirname, '../core/src/cbs-browser.ts'),
     },
   },
   server: {

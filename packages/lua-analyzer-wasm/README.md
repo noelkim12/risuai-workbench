@@ -2,6 +2,8 @@
 
 Rust WASM 실험 패키지입니다. 거대 `.risulua` 파일을 TypeScript CBS parser에 그대로 넘기지 않기 위한 Lua 분석 커널을 이 패키지에서 독립적으로 검증합니다.
 
+> npm package: `@risuai-workbench/lua-analyzer-wasm`. RisuAI와 제휴·승인되지 않은 비공식 companion 도구입니다.
+
 ## Commands
 
 ```bash

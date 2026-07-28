@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/utils/lua-state-access-scanner.ts
  */
 
-import type { StateAccessOccurrence } from 'risu-workbench-core';
+import type { StateAccessOccurrence } from '@risuai-workbench/core';
 
 import {
   type ParsedLuaArgument,

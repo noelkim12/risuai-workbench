@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/analyzer/scope/static-argument.ts
  */
 
-import { type MacroCallNode, type Range } from 'risu-workbench-core';
+import { type MacroCallNode, type Range } from '@risuai-workbench/core';
 
 import { positionToOffset, offsetToPosition } from '../../utils/position';
 

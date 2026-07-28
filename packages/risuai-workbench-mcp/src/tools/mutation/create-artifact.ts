@@ -12,7 +12,7 @@ import {
   isCustomExtensionArtifact,
   type CustomExtensionTarget,
   type CustomExtensionArtifact,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 
 import { createDiagnosticEnvelope, createUnknownFieldDiagnosticEnvelope, type DiagnosticEnvelope, type WorkbenchDiagnostic } from '../../contracts/diagnostics';
 import type { PatchOperation, MutationMode as PatchPlanMutationMode } from '../../contracts/patch-plan';

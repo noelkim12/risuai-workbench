@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/analyzer/scope/definition-collector.ts
  */
 
-import { type CBSDocument, type CBSNode, type MacroCallNode } from 'risu-workbench-core';
+import { type CBSDocument, type CBSNode, type MacroCallNode } from '@risuai-workbench/core';
 
 import { extractFunctionDeclaration } from '../block-header';
 import { SymbolTable, type FunctionSymbol, type VariableSymbol } from '../symbolTable';

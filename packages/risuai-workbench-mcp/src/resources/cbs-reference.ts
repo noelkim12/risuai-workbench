@@ -4,8 +4,8 @@
  * @file packages/risuai-workbench-mcp/src/resources/cbs-reference.ts
  */
 
-import { CBSBuiltinRegistry } from 'risu-workbench-core';
-import type { FunctionCategory } from 'risu-workbench-core';
+import { CBSBuiltinRegistry } from '@risuai-workbench/core';
+import type { FunctionCategory } from '@risuai-workbench/core';
 
 import {
   CBS_BLOCKS_MARKDOWN,

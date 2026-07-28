@@ -7,10 +7,10 @@
 import {
   getCustomExtensionArtifactContract,
   type CustomExtensionArtifact,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 import fs from 'node:fs';
 import path from 'node:path';
-import { discoverCustomExtensionWorkspace, parseRisumoduleManifest } from 'risu-workbench-core/node';
+import { discoverCustomExtensionWorkspace, parseRisumoduleManifest } from '@risuai-workbench/core/node';
 
 import { createDiagnosticEnvelope, type DiagnosticEnvelope, type WorkbenchDiagnostic } from '../../contracts/diagnostics';
 import type { WorkspaceRootStatus } from '../../project/resolve-root';

@@ -1,13 +1,15 @@
-# risu-workbench-core
+# @risuai-workbench/core
 
 RisuAI Workbench의 재사용 가능한 core engine package입니다.
+
+> RisuAI와 제휴·승인되지 않은 비공식 companion 도구입니다.
 
 이 패키지는 RisuAI 아티팩트를 다루는 순수 도메인 로직, Node.js I/O 어댑터, `risu-core` CLI workflow를 한곳에 모읍니다. 다른 패키지는 이 패키지의 공개 경계를 통해 CharX, module, preset, CBS, Lua, lorebook, regex 관련 로직을 재사용합니다.
 
 > **패키지:** `packages/core/`  
-> **root import:** `risu-workbench-core`  
-> **browser CBS import:** `risu-workbench-core/cbs-browser`  
-> **Node import:** `risu-workbench-core/node`  
+> **root import:** `@risuai-workbench/core`
+> **browser CBS import:** `@risuai-workbench/core/cbs-browser`
+> **Node import:** `@risuai-workbench/core/node`
 > **CLI:** `risu-core`
 
 ## 언제 쓰나요?
@@ -22,19 +24,19 @@ RisuAI Workbench의 재사용 가능한 core engine package입니다.
 
 | surface | import / command | 역할 | package-local 문서 |
 |---|---|---|---|
-| root browser entry | `risu-workbench-core` | Node.js I/O 없는 domain 중심 public API | [`docs/public-surface.md`](docs/public-surface.md) |
-| browser CBS entry | `risu-workbench-core/cbs-browser` | webview/browser용 CBS registry, lorebook decorator, protocol guard | [`docs/public-surface.md`](docs/public-surface.md) |
-| Node entry | `risu-workbench-core/node` | filesystem, PNG/card I/O, JSON listing, rpack, custom-extension discovery | [`docs/public-surface.md`](docs/public-surface.md) |
+| root browser entry | `@risuai-workbench/core` | Node.js I/O 없는 domain 중심 public API | [`docs/public-surface.md`](docs/public-surface.md) |
+| browser CBS entry | `@risuai-workbench/core/cbs-browser` | webview/browser용 CBS registry, lorebook decorator, protocol guard | [`docs/public-surface.md`](docs/public-surface.md) |
+| Node entry | `@risuai-workbench/core/node` | filesystem, PNG/card I/O, JSON listing, rpack, custom-extension discovery | [`docs/public-surface.md`](docs/public-surface.md) |
 | CLI executable | `risu-core` | extract, pack, analyze, build, scaffold 실행 표면 | [`docs/cli.md`](docs/cli.md) |
 
-각 surface는 서로 다른 계약입니다. root import는 browser-safe surface이고, Node helper는 `risu-workbench-core/node`로 분리됩니다. `risu-core`는 라이브러리 import가 아니라 executable boundary입니다.
+각 surface는 서로 다른 계약입니다. root import는 browser-safe surface이고, Node helper는 `@risuai-workbench/core/node`로 분리됩니다. `risu-core`는 라이브러리 import가 아니라 executable boundary입니다.
 
 ## Node 전용 RisuLua Fengari runtime
 
-`risu-workbench-core/node`는 canonical module map이나 생성된 dist Lua를 격리된 Fengari Worker에서 실행할 수 있습니다. browser-safe root entry에는 Worker와 Fengari가 포함되지 않습니다.
+`@risuai-workbench/core/node`는 canonical module map이나 생성된 dist Lua를 격리된 Fengari Worker에서 실행할 수 있습니다. browser-safe root entry에는 Worker와 Fengari가 포함되지 않습니다.
 
 ```ts
-import { executeRisuLua } from 'risu-workbench-core/node';
+import { executeRisuLua } from '@risuai-workbench/core/node';
 
 const result = await executeRisuLua({
   moduleMap: {
@@ -65,9 +67,9 @@ const result = await executeRisuLua({
 저장소 루트에서 실행합니다.
 
 ```bash
-npm run build --workspace risu-workbench-core
-npm test --workspace risu-workbench-core
-npm run lint --workspace risu-workbench-core
+npm run build --workspace @risuai-workbench/core
+npm test --workspace @risuai-workbench/core
+npm run lint --workspace @risuai-workbench/core
 node packages/core/bin/risu-core.js --help
 ```
 
@@ -152,4 +154,4 @@ README는 전체 API 목록을 반복하지 않습니다. 현재 export surface�
 
 ## License
 
-MIT
+GPL-3.0-only

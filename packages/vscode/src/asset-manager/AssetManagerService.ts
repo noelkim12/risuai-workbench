@@ -26,7 +26,7 @@ import {
   type AssetSlotId,
   type LorebookNameCandidate,
   type MissingCombo,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 import {
   bootstrapAssetCatalogFromEntries,
   bootstrapAssetCatalogFromManifest,
@@ -42,7 +42,7 @@ import {
   type AssetCatalogBootstrapSplitOptions,
   type AssetManifestBuildSummary,
   type ImageMeta,
-} from 'risu-workbench-core/node';
+} from '@risuai-workbench/core/node';
 import type {
   AssetManagerAssetEntry,
   AssetManagerAssignmentChange,

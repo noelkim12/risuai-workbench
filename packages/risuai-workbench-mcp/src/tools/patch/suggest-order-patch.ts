@@ -7,7 +7,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { readJson } from 'risu-workbench-core/node';
+import { readJson } from '@risuai-workbench/core/node';
 
 import { createDiagnosticEnvelope, type DiagnosticEnvelope } from '../../contracts/diagnostics';
 import type { PatchOperation } from '../../contracts/patch-plan';

@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { parseEditorFrontmatter } from 'risu-workbench-core';
+import { parseEditorFrontmatter } from '@risuai-workbench/core';
 
 import { createMutationResultEnvelope, type ChangedFileResult, type MutationResultEnvelope, type PostValidationResult } from '../contracts/mutation-result';
 import type { PatchOperation, PatchPlan } from '../contracts/patch-plan';

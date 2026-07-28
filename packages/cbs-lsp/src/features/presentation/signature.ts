@@ -5,7 +5,7 @@ import {
   SignatureHelp,
   SignatureHelpParams,
 } from 'vscode-languageserver/node';
-import { generateDocumentation, TokenType } from 'risu-workbench-core';
+import { generateDocumentation, TokenType } from '@risuai-workbench/core';
 import type {
   BlockKind,
   CBSBuiltinFunction,
@@ -14,7 +14,7 @@ import type {
   Position,
   Range,
   Token,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 
 import {
   createSyntheticDocumentVersion,

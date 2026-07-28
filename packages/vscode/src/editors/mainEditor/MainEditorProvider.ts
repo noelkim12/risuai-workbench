@@ -19,8 +19,8 @@ import {
   type LorebookEditorState,
   type PromptEditorState,
   type RegexEditorState,
-} from 'risu-workbench-core';
-import { resolveRegexAssets } from 'risu-workbench-core/node';
+} from '@risuai-workbench/core';
+import { resolveRegexAssets } from '@risuai-workbench/core/node';
 import {
   MAIN_EDITOR_FORMATS,
   MAIN_EDITOR_PROTOCOL,

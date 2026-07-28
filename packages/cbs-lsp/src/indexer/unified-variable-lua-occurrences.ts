@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/indexer/unified-variable-lua-occurrences.ts
  */
 
-import type { Range, StateAccessOccurrence } from 'risu-workbench-core';
+import type { Range, StateAccessOccurrence } from '@risuai-workbench/core';
 import type { ElementRegistryGraphSeed } from './element-registry';
 import { offsetToPosition } from './unified-variable-coordinates';
 import { buildOccurrenceId } from './unified-variable-occurrence-policy';

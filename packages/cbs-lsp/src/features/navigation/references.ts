@@ -1,5 +1,5 @@
 import { type CancellationToken, Location, ReferenceParams } from 'vscode-languageserver/node';
-import type { Range } from 'risu-workbench-core';
+import type { Range } from '@risuai-workbench/core';
 
 import {
   createAgentMetadataAvailability,
