@@ -8,7 +8,7 @@ import {
   isNonCbsArtifact,
   parseCustomExtensionArtifactFromPath,
   type CustomExtensionArtifact,
-} from 'risu-workbench-core'
+} from '@risuai-workbench/core'
 
 /**
  * SUPPORTED_CBS_EXTENSIONS 상수.

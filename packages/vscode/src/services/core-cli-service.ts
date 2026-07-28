@@ -30,7 +30,7 @@ export class CoreCliService {
     args: readonly string[],
     options: CoreCliRunOptions = {},
   ): Promise<void> {
-    const binPath = require.resolve('risu-workbench-core/bin/risu-core.js');
+    const binPath = require.resolve('@risuai-workbench/core/bin/risu-core.js');
     const nodeArgs = [binPath, command, ...args];
     await execFileAsync(process.execPath, nodeArgs, {
       cwd: options.cwd,

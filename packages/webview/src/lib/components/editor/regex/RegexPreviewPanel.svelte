@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { extractAssetCbsNames, substituteAssetCbs } from 'risu-workbench-core/cbs-browser';
+  import { extractAssetCbsNames, substituteAssetCbs } from '@risuai-workbench/core/cbs-browser';
   import { onDestroy } from 'svelte';
   import { createRequestId } from '../../../requestIds';
   import type { MainEditorFormatPreviewResultPayload } from '../../../types/mainEditor';

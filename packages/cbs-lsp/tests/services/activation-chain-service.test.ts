@@ -8,7 +8,7 @@ import path from 'node:path';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { getCustomExtensionArtifactContract, type CustomExtensionArtifact } from 'risu-workbench-core';
+import { getCustomExtensionArtifactContract, type CustomExtensionArtifact } from '@risuai-workbench/core';
 
 import { ElementRegistry, FileScanner } from '../../src/indexer';
 import { ActivationChainService } from '../../src/services';

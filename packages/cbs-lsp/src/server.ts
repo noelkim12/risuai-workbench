@@ -10,7 +10,7 @@
 
 import {
   CBSBuiltinRegistry,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 import {
   createConnection,
   type Connection,

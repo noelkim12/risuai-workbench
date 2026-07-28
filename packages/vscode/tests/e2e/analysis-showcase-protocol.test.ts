@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { AnalysisShowcase } from 'risu-workbench-core';
+import type { AnalysisShowcase } from '@risuai-workbench/core';
 import {
   ANALYSIS_SHOWCASE_PROTOCOL,
   ANALYSIS_SHOWCASE_PROTOCOL_VERSION,

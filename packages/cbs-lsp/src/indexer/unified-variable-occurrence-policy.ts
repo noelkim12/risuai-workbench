@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/indexer/unified-variable-occurrence-policy.ts
  */
 
-import type { CustomExtensionArtifact } from 'risu-workbench-core';
+import type { CustomExtensionArtifact } from '@risuai-workbench/core';
 import type { UnifiedVariableOccurrenceId } from './unified-variable-graph';
 
 /**

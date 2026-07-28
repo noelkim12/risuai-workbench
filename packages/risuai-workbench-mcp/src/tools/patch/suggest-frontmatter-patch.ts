@@ -7,7 +7,7 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
-import { parseEditorFrontmatter, type EditorDocumentWarning } from 'risu-workbench-core';
+import { parseEditorFrontmatter, type EditorDocumentWarning } from '@risuai-workbench/core';
 
 import { createDiagnosticEnvelope, type DiagnosticEnvelope, type WorkbenchDiagnostic } from '../../contracts/diagnostics';
 import type { PatchOperation } from '../../contracts/patch-plan';

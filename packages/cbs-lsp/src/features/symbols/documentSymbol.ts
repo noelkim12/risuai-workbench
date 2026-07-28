@@ -13,7 +13,7 @@ import type {
 import {
   SymbolKind as LspSymbolKind,
 } from 'vscode-languageserver/node';
-import type { BlockKind, BlockNode, CBSNode } from 'risu-workbench-core';
+import type { BlockKind, BlockNode, CBSNode } from '@risuai-workbench/core';
 
 import {
   ACTIVE_FEATURE_AVAILABILITY,

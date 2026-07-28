@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { isSafeAnalysisReportFileName } from 'risu-workbench-core';
+import { isSafeAnalysisReportFileName } from '@risuai-workbench/core';
 import { serveRemoteAnalysisReport } from './RemoteAnalysisReportServer';
 
 export type AnalysisReportOpenResult =

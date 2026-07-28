@@ -65,11 +65,11 @@ describe('cbs-lsp release pipeline contract', () => {
     const coreManifest = readJson<ReleaseManifest>('packages/core/package.json');
     const vscodeManifest = readJson<ReleaseManifest>('packages/vscode/package.json');
 
-    expect(cbsLspManifest.dependencies?.['risu-workbench-core']).toBe('^0.1.0');
+    expect(cbsLspManifest.dependencies?.['@risuai-workbench/core']).toBe('^0.1.0');
     expect(cbsLspManifest.publishConfig).toEqual({ access: 'public', provenance: true });
     expect(coreManifest.publishConfig).toEqual({ access: 'public', provenance: true });
     expect(vscodeManifest.private).toBe(true);
-    expect(vscodeManifest.dependencies?.['risu-workbench-core']).toBe('^0.1.0');
+    expect(vscodeManifest.dependencies?.['@risuai-workbench/core']).toBe('^0.1.0');
   });
 
   it('declares changesets policy for public and private packages', () => {

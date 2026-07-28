@@ -1,8 +1,8 @@
-import * as core from 'risu-workbench-core';
+import * as core from '@risuai-workbench/core';
 
 declare const require: (id: string) => any;
 
-const { parseCardFile } = require('risu-workbench-core/node') as {
+const { parseCardFile } = require('@risuai-workbench/core/node') as {
   parseCardFile: (cardPath: string) => unknown;
 };
 

@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/indexer/unified-variable-derived-flow.ts
  */
 
-import { analyzeVariableFlow, type ElementCBSData, type VarFlowResult } from 'risu-workbench-core';
+import { analyzeVariableFlow, type ElementCBSData, type VarFlowResult } from '@risuai-workbench/core';
 import type { ElementRegistry } from './element-registry';
 import type { UnifiedVariableGraph } from './unified-variable-graph';
 

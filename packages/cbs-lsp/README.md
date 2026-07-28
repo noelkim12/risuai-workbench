@@ -1,5 +1,7 @@
 # CBS Language Server — RisuAI 통합 아티팩트 LSP
 
+> npm package: `@risuai-workbench/cbs-language-server`. RisuAI와 제휴·승인되지 않은 비공식 companion 도구입니다.
+
 > **패키지:** `packages/cbs-lsp/`
 > **의존:** `packages/core/` (CBS 파서, 분석 함수, 도메인 타입)
 > **대상 환경:** 추출된 `.charx`/`.risum` 디렉토리를 VS Code workspace로 편집

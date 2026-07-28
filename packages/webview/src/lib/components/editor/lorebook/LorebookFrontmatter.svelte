@@ -4,7 +4,7 @@
 -->
 
 <script lang="ts">
-  import type { LorebookEditorState } from 'risu-workbench-core';
+  import type { LorebookEditorState } from '@risuai-workbench/core';
   import type { MainEditorDocumentWarningPayload } from '../../../types/mainEditor';
   import LorebookSummaryBar from './LorebookSummaryBar.svelte';
   import {

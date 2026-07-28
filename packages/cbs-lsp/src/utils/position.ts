@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/utils/position.ts
  */
 
-import type { Position, Range } from 'risu-workbench-core';
+import type { Position, Range } from '@risuai-workbench/core';
 import { Position as LSPPosition, Range as LSPRange } from 'vscode-languageserver/node';
 
 /**

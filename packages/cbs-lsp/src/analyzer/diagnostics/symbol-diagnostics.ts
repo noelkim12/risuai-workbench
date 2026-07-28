@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/analyzer/diagnostics/symbol-diagnostics.ts
  */
 
-import type { DiagnosticInfo, DiagnosticRelatedInfo } from 'risu-workbench-core';
+import type { DiagnosticInfo, DiagnosticRelatedInfo } from '@risuai-workbench/core';
 
 import { compareRanges } from './compare';
 import { createDiagnosticInfo } from './diagnostic-info';

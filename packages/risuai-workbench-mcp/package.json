@@ -1,5 +1,5 @@
 {
-  "name": "risuai-workbench-mcp",
+  "name": "@risuai-workbench/mcp",
   "version": "0.1.0",
   "description": "MCP server skeleton for RisuAI Workbench artifact inspection and future mutation workflows",
   "bin": {
@@ -50,8 +50,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "cbs-language-server": "*",
-    "risu-workbench-core": "*",
+    "@risuai-workbench/cbs-language-server": "^0.1.0",
+    "@risuai-workbench/core": "^0.1.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -59,7 +59,7 @@
     "typescript": "^5.3.0",
     "vitest": "^4.1.4"
   },
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "homepage": "https://github.com/risuai/risu-workbench/tree/main/packages/risuai-workbench-mcp",
   "bugs": {
     "url": "https://github.com/risuai/risu-workbench/issues"

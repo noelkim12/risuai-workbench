@@ -9,7 +9,7 @@ import {
   type DocumentHighlight,
   type DocumentHighlightParams,
 } from 'vscode-languageserver/node';
-import { TokenType, type BlockNode, type CBSNode, type Range } from 'risu-workbench-core';
+import { TokenType, type BlockNode, type CBSNode, type Range } from '@risuai-workbench/core';
 
 import {
   ACTIVE_FEATURE_AVAILABILITY,

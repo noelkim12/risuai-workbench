@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/core/fragment-position.ts
  */
 
-import type { CbsFragment, Position, Range } from 'risu-workbench-core';
+import type { CbsFragment, Position, Range } from '@risuai-workbench/core';
 
 import { offsetToPosition, positionToOffset } from '../utils/position';
 

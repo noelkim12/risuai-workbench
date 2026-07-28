@@ -8,7 +8,7 @@ import {
   getLorebookDecoratorCompletionCandidates,
   getLorebookDecoratorCompletionContext,
   type LorebookDecoratorCompletionCandidate,
-} from 'risu-workbench-core/cbs-browser';
+} from '@risuai-workbench/core/cbs-browser';
 import { getMainEditorChangeEndPosition } from './mainEditorCbsAutoSuggest';
 
 interface LorebookDecoratorSuggestInput {

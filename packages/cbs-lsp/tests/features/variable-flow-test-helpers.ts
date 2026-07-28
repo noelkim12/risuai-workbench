@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/tests/features/variable-flow-test-helpers.ts
  */
 
-import type { CustomExtensionArtifact, Range } from 'risu-workbench-core';
+import type { CustomExtensionArtifact, Range } from '@risuai-workbench/core';
 
 import { createCbsAgentProtocolMarker } from '../../src/core';
 import type {

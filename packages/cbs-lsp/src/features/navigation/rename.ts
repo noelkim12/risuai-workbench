@@ -5,7 +5,7 @@ import {
   TextDocumentPositionParams,
   Range as LSPRange,
 } from 'vscode-languageserver/node';
-import type { Range } from 'risu-workbench-core';
+import type { Range } from '@risuai-workbench/core';
 
 import { SymbolTable, VariableSymbol, VariableSymbolKind } from '../../analyzer/symbolTable';
 import {

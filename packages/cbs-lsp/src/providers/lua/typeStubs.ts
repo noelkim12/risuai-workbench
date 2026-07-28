@@ -11,9 +11,9 @@ import process from 'node:process';
 import {
   RISUAI_LUA_RUNTIME_STUB_FILE_NAME,
   createMinimalRisuAiLuaTypeStub,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 
-export { createMinimalRisuAiLuaTypeStub, getRisuAiLuaDiagnosticGlobals } from 'risu-workbench-core';
+export { createMinimalRisuAiLuaTypeStub, getRisuAiLuaDiagnosticGlobals } from '@risuai-workbench/core';
 
 const DEFAULT_RISUAI_STUB_ROOT = path.join(tmpdir(), `cbs-lsp-risu-stubs-${process.pid}`);
 

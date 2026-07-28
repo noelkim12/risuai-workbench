@@ -7,7 +7,7 @@ import {
   type Position,
   type TextDocumentPositionParams,
 } from 'vscode-languageserver/node';
-import type { CBSBuiltinFunction, CBSBuiltinRegistry } from 'risu-workbench-core';
+import type { CBSBuiltinFunction, CBSBuiltinRegistry } from '@risuai-workbench/core';
 
 import {
   CBS_AGENT_PROTOCOL_SCHEMA,

@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import {
   getCustomExtensionArtifactContract,
   parseCustomExtensionArtifactFromPath,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 
 const CHARACTER_WORKSPACE_ROOT_MARKER_FILE_NAME = '.risuchar';
 

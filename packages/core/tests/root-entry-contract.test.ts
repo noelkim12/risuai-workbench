@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { CardData, CharxData, RegexScript, LorebookEntry } from 'risu-workbench-core';
+import type { CardData, CharxData, RegexScript, LorebookEntry } from '@risuai-workbench/core';
 
 describe('root entry contract (1-7)', () => {
   it('should export only types and domain, not shared', async () => {
     // Import the built root entry as Record to avoid TS2339 on missing properties
-    const core = (await import('risu-workbench-core')) as Record<string, unknown>;
+    const core = (await import('@risuai-workbench/core')) as Record<string, unknown>;
     
     // Verify domain exports exist (pure logic, no Node.js I/O)
     expect(core.extractCBSVarOps).toBeTypeOf('function');

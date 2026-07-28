@@ -8,7 +8,7 @@ import {
   type MacroCallNode,
   type MathExprNode,
   type Range,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 
 import {
   type CalcExpressionDiagnostic,

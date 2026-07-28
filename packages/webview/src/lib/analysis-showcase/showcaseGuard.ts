@@ -1,4 +1,4 @@
-import type { AnalysisShowcase } from 'risu-workbench-core';
+import type { AnalysisShowcase } from '@risuai-workbench/core';
 
 const METRIC_KEYS: ReadonlySet<string> = new Set([
   'variables',

@@ -10,7 +10,7 @@ import {
   isCustomExtensionArtifact,
   type CustomExtensionTarget,
   type CustomExtensionArtifact,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 
 import { createDiagnosticEnvelope, type DiagnosticEnvelope, type WorkbenchDiagnostic } from '../../contracts/diagnostics';
 

@@ -4,7 +4,7 @@
 -->
 
 <script lang="ts">
-  import type { PromptEditorState } from 'risu-workbench-core';
+  import type { PromptEditorState } from '@risuai-workbench/core';
   import type { MainEditorDocumentWarningPayload } from '../../../types/mainEditor';
   import FrontmatterSummaryBar from '../shared/FrontmatterSummaryBar.svelte';
 

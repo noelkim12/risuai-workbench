@@ -580,7 +580,7 @@ Validation violation과 domain rejection은 MCP transport error가 아니라 str
 
 - Tool/resource/prompt namespace와 phase layout은 제안서와 맞습니다.
 - append-only journal이 구현되어 있습니다.
-- core source-of-truth를 재구현하지 않고 `risu-workbench-core` / `risu-workbench-core/node`를 호출합니다.
+- core source-of-truth를 재구현하지 않고 `@risuai-workbench/core` / `@risuai-workbench/core/node`를 호출합니다.
  - 기본 `tools/list`는 facade tool 8개만 노출합니다. Legacy direct MCP tools are available only with `RISU_MCP_EXPOSE_LEGACY_TOOLS=1`.
  - creative thinking action 26개, creative resource 11개, creative prompt 13개가 registry에 discoverable하고 implemented 상태입니다.
 - creative apply는 patch apply engine과 journal behavior를 재사용하며, analyze/wiki refresh 또는 rollback을 자동 실행하지 않습니다.

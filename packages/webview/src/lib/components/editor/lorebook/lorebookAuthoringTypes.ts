@@ -3,7 +3,7 @@
  * @file packages/webview/src/lib/components/editor/lorebook/lorebookAuthoringTypes.ts
  */
 
-import type { LorebookEditorState } from 'risu-workbench-core';
+import type { LorebookEditorState } from '@risuai-workbench/core';
 
 export type LorebookTextFieldKey =
   | 'name'

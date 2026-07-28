@@ -1,4 +1,4 @@
-import type { AnalysisShowcase } from 'risu-workbench-core';
+import type { AnalysisShowcase } from '@risuai-workbench/core';
 import { isAnalysisShowcase } from './showcaseGuard';
 
 export const ANALYSIS_SHOWCASE_PROTOCOL = 'risu-workbench.analysis-showcase' as const;

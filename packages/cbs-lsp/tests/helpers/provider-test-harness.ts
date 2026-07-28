@@ -4,7 +4,7 @@
  */
 
 import type { Position, ReferenceParams, RenameParams, TextDocumentPositionParams } from 'vscode-languageserver/node';
-import { CBSBuiltinRegistry } from 'risu-workbench-core';
+import { CBSBuiltinRegistry } from '@risuai-workbench/core';
 
 import type { FragmentAnalysisService } from '../../src/core';
 import type { VariableFlowService, WorkspaceSnapshotState } from '../../src/services';

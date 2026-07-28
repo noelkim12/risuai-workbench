@@ -1,0 +1,353 @@
+{
+  "task": 11,
+  "name": "Lock the complete state/security regression matrix",
+  "status": "pass_with_attributed_pre_existing_failures",
+  "date": "2026-07-10",
+  "touchedFileAllowlist": [
+    "packages/vscode/tests/e2e/analysis-showcase-source-contract.test.ts",
+    "packages/vscode/tests/e2e/analysis-showcase-panel.test.ts",
+    "packages/vscode/tests/fixtures/task-11-analysis-showcase.json"
+  ],
+  "changedFiles": [
+    {
+      "path": "packages/vscode/tests/e2e/analysis-showcase-source-contract.test.ts",
+      "kind": "test-only",
+      "purpose": "Machine-readable source-contract proof for Todo 11 forbidden Showcase patterns and webview action payload path leaks."
+    },
+    {
+      "path": "packages/vscode/tests/e2e/analysis-showcase-panel.test.ts",
+      "kind": "test-only",
+      "purpose": "Replaced wall-clock timer sleeps with deterministic microtask flushing in Analysis Showcase panel boundary tests."
+    },
+    {
+      "path": "packages/vscode/tests/fixtures/task-11-analysis-showcase.json",
+      "kind": "test-fixture",
+      "purpose": "Matrix manifest consumed by the Analysis Showcase source-contract test."
+    }
+  ],
+  "redTestsFirst": [
+    {
+      "command": "npm --workspace risu-workbench-vscode run build:test:e2e && node --test packages/vscode/dist-tests/tests/e2e/analysis-showcase-source-contract.test.js",
+      "result": "red",
+      "reason": "New source-contract test initially failed because the harness referenced packages/webview/src/lib/components/analysis-showcase/ShowcaseExportCard.svelte, while the actual Showcase file is packages/webview/src/lib/analysis-showcase/ShowcaseExportCard.svelte.",
+      "fix": "Corrected the test harness path only; no production source change was required."
+    }
+  ],
+  "minimalProductionFixes": [],
+  "matrixCoverage": {
+    "artifactKinds": {
+      "character": [
+        "packages/core/tests/analysis-showcase.test.ts::parses a complete character payload",
+        "packages/core/tests/analysis-showcase.test.ts::derives character metrics, distributions, findings, labels, and report identity deterministically",
+        "packages/core/tests/charx-analyze-workflow.test.ts::emits a schema-valid showcase sidecar for default character analysis",
+        "packages/vscode/tests/e2e/analysis-showcase-discovery.test.ts::character cards with valid sidecar get available profile"
+      ],
+      "module": [
+        "packages/core/tests/analysis-showcase.test.ts::parses a sparse module payload and preserves omitted metrics versus zero",
+        "packages/core/tests/analysis-showcase.test.ts::derives module names, module report filename, regex entry total, and asset file total",
+        "packages/core/tests/module-analyze-workflow.test.ts::emits a schema-valid showcase sidecar for default module analysis",
+        "packages/vscode/tests/e2e/analysis-showcase-discovery.test.ts::module cards with valid sidecar get available profile"
+      ]
+    },
+    "profileStates": {
+      "none": [
+        "packages/vscode/tests/e2e/analysis-showcase-profile.test.ts::read returns none or artifact-specific legacy only when no sidecar exists",
+        "packages/webview/tests/lib/analysisProfileViewModel.test.ts::shows a creator-focused state label"
+      ],
+      "legacy": [
+        "packages/vscode/tests/e2e/analysis-showcase-profile.test.ts::read returns none or artifact-specific legacy only when no sidecar exists",
+        "packages/webview/tests/lib/analysisProfileViewModel.test.ts::shows a legacy state label",
+        "packages/webview/tests/lib/components/AnalysisProfileActions.source.test.ts::renders Open Full Report for legacy and available states"
+      ],
+      "availableFresh": [
+        "packages/vscode/tests/e2e/analysis-showcase-profile.test.ts::read returns available fresh, tolerance, outdated, and missing-report states",
+        "packages/webview/tests/lib/analysisProfileViewModel.test.ts::shows freshness and generated time for fresh profile"
+      ],
+      "availableOutdated": [
+        "packages/vscode/tests/e2e/analysis-showcase-profile.test.ts::read returns available fresh, tolerance, outdated, and missing-report states",
+        "packages/webview/tests/lib/analysisProfileViewModel.test.ts::marks outdated profile"
+      ],
+      "invalid": [
+        "packages/vscode/tests/e2e/analysis-showcase-profile.test.ts::read returns invalid for malformed unsupported version and artifact mismatch",
+        "packages/webview/tests/lib/analysisProfileViewModel.test.ts::shows reason for malformed"
+      ]
+    },
+    "reportAvailability": {
+      "present": [
+        "packages/vscode/tests/e2e/analysis-showcase-report.test.ts::open joins sidecar-selected report filenames under analysis and opens externally",
+        "packages/webview/tests/lib/analysisProfileViewModel.test.ts::enables all actions when report is available"
+      ],
+      "missing": [
+        "packages/vscode/tests/e2e/analysis-showcase-report.test.ts::open returns missing and never calls openExternal when stat fails",
+        "packages/webview/tests/lib/analysisProfileViewModel.test.ts::disables report action when report is missing"
+      ]
+    },
+    "analyzeOutcome": {
+      "success": [
+        "packages/vscode/tests/e2e/analysis-showcase-provider.test.ts::successful Analyze refreshes once without opening the Showcase panel",
+        "packages/core/tests/charx-analyze-workflow.test.ts::emits a schema-valid showcase sidecar for default character analysis",
+        "packages/core/tests/module-analyze-workflow.test.ts::emits a schema-valid showcase sidecar for default module analysis"
+      ],
+      "failure": [
+        "packages/vscode/tests/e2e/analysis-showcase-provider.test.ts::failed Analyze preserves the prior profile and posts the existing error only"
+      ]
+    },
+    "reportOpenOutcome": {
+      "openExternalTrue": [
+        "packages/vscode/tests/e2e/analysis-showcase-report.test.ts::open joins sidecar-selected report filenames under analysis and opens externally"
+      ],
+      "openExternalFalse": [
+        "packages/vscode/tests/e2e/analysis-showcase-report.test.ts::open returns not-opened and reveal uses revealFileInOS for explicit fallback",
+        "packages/vscode/tests/e2e/analysis-showcase-provider.test.ts::Artifact Browser report route reveals only after explicit Reveal Report selection"
+      ],
+      "unsafe": [
+        "packages/vscode/tests/e2e/analysis-showcase-report.test.ts::open returns unsafe and never stats or opens malformed filenames",
+        "packages/vscode/tests/e2e/analysis-showcase-report.test.ts::manual qa boundary prints joined URI and zero external calls on failure"
+      ]
+    },
+    "pngOutcome": {
+      "valid": [
+        "packages/vscode/tests/e2e/analysis-showcase-png.test.ts::parseShowcasePngDataUrl returns exact bytes for a valid PNG data URL",
+        "packages/vscode/tests/e2e/analysis-showcase-png.test.ts::AnalysisPngExportService.save owns Save Dialog options and writes exact decoded bytes"
+      ],
+      "cancelled": [
+        "packages/vscode/tests/e2e/analysis-showcase-png.test.ts::AnalysisPngExportService.save returns cancelled and never writes when dialog is cancelled"
+      ],
+      "wrongMime": [
+        "packages/vscode/tests/e2e/analysis-showcase-png.test.ts::parseShowcasePngDataUrl rejects wrong MIME malformed alphabet padding and whitespace",
+        "packages/vscode/tests/e2e/analysis-showcase-png.test.ts::AnalysisPngExportService.save rejects invalid data before opening Save Dialog"
+      ],
+      "malformed": [
+        "packages/vscode/tests/e2e/analysis-showcase-png.test.ts::parseShowcasePngDataUrl rejects wrong MIME malformed alphabet padding and whitespace"
+      ],
+      "oversized": [
+        "packages/vscode/tests/e2e/analysis-showcase-png.test.ts::parseShowcasePngDataUrl accepts 10 MiB and rejects 10 MiB plus one byte"
+      ]
+    },
+    "optionalMetrics": {
+      "absent": [
+        "packages/core/tests/analysis-showcase.test.ts::parses a sparse module payload and preserves omitted metrics versus zero",
+        "packages/webview/tests/lib/analysisProfileViewModel.test.ts::includes only present metrics — zero is included, absent is omitted"
+      ],
+      "zero": [
+        "packages/core/tests/analysis-showcase.test.ts::parses a sparse module payload and preserves omitted metrics versus zero",
+        "packages/webview/tests/lib/analysisProfileViewModel.test.ts::includes only present metrics — zero is included, absent is omitted"
+      ]
+    },
+    "locale": {
+      "en": [
+        "packages/core/tests/analysis-showcase.test.ts::derives character metrics, distributions, findings, labels, and report identity deterministically"
+      ],
+      "ko": [
+        "packages/core/tests/analysis-showcase.test.ts::derives module names, module report filename, regex entry total, and asset file total"
+      ]
+    },
+    "sourceContracts": {
+      "noDataJsEvaluationOrReportScraping": [
+        "packages/vscode/tests/e2e/analysis-showcase-source-contract.test.ts::Showcase feature sources never evaluate report data JS or scrape rendered reports"
+      ],
+      "noReportPanelIframeCdnChildProcessOrOsLaunch": [
+        "packages/vscode/tests/e2e/analysis-showcase-source-contract.test.ts::Showcase feature sources keep Option A boundaries: no embedded report panel iframe CDN or OS process launch"
+      ],
+      "noLocalPathFieldsInWebviewActionPayloads": [
+        "packages/vscode/tests/e2e/analysis-showcase-source-contract.test.ts::Analysis webview action payload contracts expose stableId or in-memory PNG data only, never local paths",
+        "packages/webview/tests/lib/analysisShowcaseProtocol.test.ts::rejects malformed host messages at the webview boundary"
+      ],
+      "noWallClockSleepsInPanelTests": [
+        "packages/vscode/tests/e2e/analysis-showcase-source-contract.test.ts::Analysis Showcase panel tests use deterministic flushing with no wall-clock sleeps"
+      ],
+      "exactNamedManifestReferences": [
+        "packages/vscode/tests/e2e/analysis-showcase-source-contract.test.ts::task 11 matrix manifest references exact named tests that exist"
+      ]
+    },
+    "pluginExclusion": [
+      "packages/vscode/tests/e2e/analysis-showcase-discovery.test.ts::plugin cards are never enriched — always keep none profile",
+      "packages/webview/tests/lib/components/ArtifactDetailView.plugin.test.ts::renders Marker Editor and Plugin Viewer buttons for plugin artifacts"
+    ],
+    "uncoveredRows": []
+  },
+  "commands": [
+    {
+      "command": "npm --workspace risu-workbench-vscode run build:test:e2e",
+      "result": "pass",
+      "observed": "tsc -p ./tsconfig.tests.json exited 0."
+    },
+    {
+      "command": "node --test packages/vscode/dist-tests/tests/e2e/analysis-showcase-source-contract.test.js",
+      "result": "pass_after_red_harness_fix",
+      "observed": "5 tests pass, 0 fail. Includes no-wall-clock-sleep scan and exact named manifest reference validator."
+    },
+    {
+      "command": "npm --workspace risu-workbench-core run test -- tests/analysis-showcase.test.ts tests/charx-analyze-workflow.test.ts tests/module-analyze-workflow.test.ts",
+      "result": "fail_attributed_pre_existing",
+      "observed": "41 passed, 1 failed. Failure: tests/module-analyze-workflow.test.ts::emits relationship-network bridge edges into module analysis data for lorebook<->lua and lua<->regex flows expected module-analysis.data.js to contain lb-lua-bridge. packages/core/tests/analysis-showcase.test.ts passed 15/15 and charx workflow passed 5/5."
+    },
+    {
+      "command": "npm --workspace risu-workbench-webview run check",
+      "result": "pass_with_warnings",
+      "observed": "0 errors, 2 pre-existing Svelte warnings: MarkerForm.svelte unused onReset; VariableRow.svelte self-closing span."
+    },
+    {
+      "command": "npm --workspace risu-workbench-webview run test -- analysis showcase focused allowlist",
+      "result": "pass",
+      "observed": "9 files passed, 75 tests passed."
+    },
+    {
+      "command": "node --test packages/vscode/dist-tests/tests/e2e/analysis-showcase-*.test.js",
+      "result": "pass",
+      "observed": "48 tests pass, 0 fail."
+    },
+    {
+      "command": "npm --workspace risu-workbench-webview run test -- ArtifactDetail/HMR/plugin focused allowlist",
+      "result": "pass",
+      "observed": "5 files passed, 17 tests passed."
+    },
+    {
+      "command": "npm --workspace risu-workbench-core run test -- analysis visualization/HMR/workflow neighbor allowlist",
+      "result": "pass",
+      "observed": "8 files passed, 62 tests passed."
+    },
+    {
+      "command": "npm --workspace risu-workbench-webview run test",
+      "result": "pass",
+      "observed": "43 files passed, 311 tests passed."
+    },
+    {
+      "command": "node --test packages/vscode/dist-tests/tests/e2e/*.test.js",
+      "result": "pass",
+      "observed": "188 tests pass, 0 fail."
+    },
+    {
+      "command": "npm run build:core",
+      "result": "pass",
+      "observed": "tsc, tsc-alias, and build:assets exited 0."
+    },
+    {
+      "command": "npm run build:webview",
+      "result": "pass_with_warnings",
+      "observed": "Vite build exited 0. Same Svelte warnings plus browser externalization and chunk-size warnings."
+    },
+    {
+      "command": "npm run build:vscode",
+      "result": "pass_with_warnings",
+      "observed": "Webview build and extension tsc/copy exited 0. Same Vite/Svelte warnings."
+    },
+    {
+      "command": "npm --workspace risu-workbench-core run test",
+      "result": "fail_attributed_pre_existing",
+      "observed": "158 files passed, 12 files failed, 1938 tests passed, 15 tests failed, 7 skipped, 2 snapshots failed. Failures include existing lua-type-stubs documentation/snapshot drift and cbs-simulator stale @file paths; not caused by the Task 11 test-only change."
+    }
+  ],
+  "diagnosticsAndQuality": {
+    "lspDiagnostics": [
+      {
+        "path": "packages/vscode/tests/e2e/analysis-showcase-source-contract.test.ts",
+        "result": "No diagnostics found"
+      },
+      {
+        "path": "packages/vscode/tests/e2e/analysis-showcase-panel.test.ts",
+        "result": "No diagnostics found"
+      }
+    ],
+    "pureLoc": [
+      {
+        "path": "packages/vscode/tests/e2e/analysis-showcase-source-contract.test.ts",
+        "pureLoc": 143,
+        "status": "healthy"
+      },
+      {
+        "path": "packages/vscode/tests/e2e/analysis-showcase-panel.test.ts",
+        "pureLoc": 476,
+        "status": "pre-existing oversized test fixture; scoped edit only replaced sleeps and did not refactor unrelated panel harness"
+      }
+    ],
+    "noExcuse": {
+      "result": "not_available",
+      "observed": "Repository scripts directory contains only graph and release; scripts/typescript/check-no-excuse-rules.ts is absent. Substituted TypeScript compile, LSP diagnostics, and focused source-contract forbidden-pattern tests."
+    }
+  },
+  "manualNonBrowserDrivers": [
+    {
+      "surface": "character artifact",
+      "drivers": [
+        "packages/core/tests/charx-analyze-workflow.test.ts::emits a schema-valid showcase sidecar for default character analysis",
+        "packages/vscode/tests/e2e/analysis-showcase-provider.test.ts::successful Analyze refreshes once without opening the Showcase panel",
+        "packages/vscode/tests/e2e/analysis-showcase-report.test.ts::manual qa boundary prints joined URI and zero external calls on failure",
+        "packages/webview/tests/lib/analysisShowcaseManualQa.test.ts::view model hierarchy renders artifact identity, hero metric, traits, distributions, findings"
+      ],
+      "observables": [
+        "Character analysis emitted analysis/risu-analysis.showcase.json and charx-analysis.html in temp workspace output.",
+        "Provider order was analyze -> one cards refresh -> Showcase panel create call with title 'Showcase: Merry Sisters'.",
+        "Report open joined root + analysis + sidecar filename without user path handling.",
+        "View model exposed artifact identity, hero metric, traits, distribution buckets, findings, freshness, and generatedAt label."
+      ]
+    },
+    {
+      "surface": "module artifact",
+      "drivers": [
+        "packages/core/tests/analysis-showcase.test.ts::derives module names, module report filename, regex entry total, and asset file total",
+        "packages/core/tests/module-analyze-workflow.test.ts::emits a schema-valid showcase sidecar for default module analysis",
+        "packages/vscode/tests/e2e/analysis-showcase-discovery.test.ts::module cards with valid sidecar get available profile"
+      ],
+      "observables": [
+        "Module payload uses artifact.type='module' and module-analysis.html, never charx-analysis.html.",
+        "Module valid sidecar attaches available profile in discovery.",
+        "KO labels are emitted for deterministic traits."
+      ],
+      "caveat": "The focused module workflow command has an unrelated failing relationship-network bridge-edge assertion later in the same file; the module showcase sidecar tests in that file passed before that failure."
+    },
+    {
+      "surface": "failure containment",
+      "drivers": [
+        "packages/vscode/tests/e2e/analysis-showcase-profile.test.ts::read returns invalid for malformed unsupported version and artifact mismatch",
+        "packages/vscode/tests/e2e/analysis-showcase-report.test.ts::open returns unsafe and never stats or opens malformed filenames",
+        "packages/vscode/tests/e2e/analysis-showcase-report.test.ts::open returns not-opened and reveal uses revealFileInOS for explicit fallback",
+        "packages/vscode/tests/e2e/analysis-showcase-png.test.ts::parseShowcasePngDataUrl accepts 10 MiB and rejects 10 MiB plus one byte",
+        "packages/vscode/tests/e2e/analysis-showcase-png.test.ts::AnalysisPngExportService.save rejects invalid data before opening Save Dialog"
+      ],
+      "observables": [
+        "Malformed/version/type-mismatch sidecars classify invalid without throw.",
+        "Traversal report name returns unsafe with zero stat and zero openExternal calls.",
+        "openExternal=false returns not-opened; revealFileInOS executes only after explicit Reveal Report selection.",
+        "Oversized PNG is rejected as too-large before Save Dialog/write.",
+        "Wrong MIME and malformed base64 never open Save Dialog and never write bytes."
+      ]
+    }
+  ],
+  "adversarialCoverage": {
+    "malformedInput": "Malformed sidecar, unsupported version, artifact mismatch, malformed protocol messages, malformed base64, wrong MIME, traversal report names.",
+    "promptInjectionUntrustedTextSourceContracts": "New source-contract test prevents Showcase files from reading/evaluating data.js or scraping report HTML/Markdown; no report details/path fields cross action payloads.",
+    "staleState": "Fresh/outdated and generated-output-only exclusions covered by AnalysisProfileService freshness tests.",
+    "generatedArtifacts": "Source-contract tests intentionally exclude legacy report shell CDN scanning; Option A keeps generated report shell unchanged.",
+    "dirtyWorktree": "Initial git status showed a large shared dirty tree; only allowlisted Task 11 files were modified.",
+    "hungLongCommands": "All commands ran with 120000 ms timeouts; no command hung or required cancellation.",
+    "flakyTests": "No rerun-only pass observed; focused and package webview/VS Code boundary suites were deterministic in this run.",
+    "wallClockSleeps": "Source-contract test scans packages/vscode/tests/e2e/analysis-showcase-panel.test.ts and rejects setTimeout/sleep usage; panel tests now use flushAsyncHandlers microtask flushing.",
+    "misleadingSuccessOutput": "Exit codes and failure summaries were read; core package-wide failures are recorded despite many passing tests.",
+    "repeatedInterruptions": "No interruptions occurred.",
+    "cancelResume": "Not applicable; none of the invoked runners exposed a cancel/resume flow for this task."
+  },
+  "preExistingFailures": [
+    {
+      "scope": "focused core workflow allowlist",
+      "command": "npm --workspace risu-workbench-core run test -- tests/analysis-showcase.test.ts tests/charx-analyze-workflow.test.ts tests/module-analyze-workflow.test.ts",
+      "failure": "tests/module-analyze-workflow.test.ts::emits relationship-network bridge edges into module analysis data for lorebook<->lua and lua<->regex flows expected module-analysis.data.js to contain lb-lua-bridge.",
+      "attribution": "Unrelated to Task 11; this file was already dirty before this task and no production code changed here."
+    },
+    {
+      "scope": "full core package suite",
+      "command": "npm --workspace risu-workbench-core run test",
+      "failure": "12 failed files / 15 failed tests / 2 failed snapshots, including lua-type-stubs documentation drift and cbs-simulator stale @file path sweep.",
+      "attribution": "Unrelated to Task 11 test-only change; preserved for downstream reviewers."
+    }
+  ],
+  "cleanup": {
+    "tempResources": "No persistent temp resources created by Task 11. Test harnesses used in-memory stubs and OS temp directories owned by existing suites.",
+    "processes": "No Extension Host, browser, or long-running server process launched. No Playwright was used.",
+    "destructiveActions": "No git checkout/restore/reset/clean, deletion, commit, or staging performed."
+  },
+  "risksOrBlockers": [
+    "Todo 12 real Extension Host QA is still required for live VS Code surface confirmation.",
+    "Core package-wide suite is not green because of unrelated baseline failures recorded above."
+  ]
+}

@@ -6,7 +6,7 @@ import {
   listRisuLuaSourceModules,
   validateRisuLuaModuleId,
   type RisuLuaModuleMap,
-} from 'risu-workbench-core/node';
+} from '@risuai-workbench/core/node';
 
 import type { ContextStore } from '../../context/context-store';
 import type { WorkspaceRootStatus } from '../../project/resolve-root';

@@ -6,9 +6,9 @@
 
 | surface | 근거 | 현재 역할 |
 |---|---|---|
-| root import `risu-workbench-core` | [`../package.json`](../package.json), [`../src/index.ts`](../src/index.ts) | Node.js I/O 없는 domain 중심 export |
-| browser CBS import `risu-workbench-core/cbs-browser` | [`../package.json`](../package.json), [`../src/cbs-browser.ts`](../src/cbs-browser.ts) | browser/webview에서 쓰는 CBS registry, lorebook decorator, protocol guard export |
-| Node import `risu-workbench-core/node` | [`../package.json`](../package.json), [`../src/node/index.ts`](../src/node/index.ts) | filesystem, PNG/card I/O, JSON listing, rpack, custom-extension discovery 등 Node runtime helper export |
+| root import `@risuai-workbench/core` | [`../package.json`](../package.json), [`../src/index.ts`](../src/index.ts) | Node.js I/O 없는 domain 중심 export |
+| browser CBS import `@risuai-workbench/core/cbs-browser` | [`../package.json`](../package.json), [`../src/cbs-browser.ts`](../src/cbs-browser.ts) | browser/webview에서 쓰는 CBS registry, lorebook decorator, protocol guard export |
+| Node import `@risuai-workbench/core/node` | [`../package.json`](../package.json), [`../src/node/index.ts`](../src/node/index.ts) | filesystem, PNG/card I/O, JSON listing, rpack, custom-extension discovery 등 Node runtime helper export |
 | CLI `risu-core` | [`../package.json`](../package.json), [`../bin/risu-core.js`](../bin/risu-core.js), [`../src/cli/main.ts`](../src/cli/main.ts) | executable command dispatcher |
 
 ## Root import

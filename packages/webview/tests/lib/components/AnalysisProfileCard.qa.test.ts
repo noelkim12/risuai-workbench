@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AnalysisShowcase } from 'risu-workbench-core';
+import type { AnalysisShowcase } from '@risuai-workbench/core';
 import type { BrowserAnalysisProfile, BrowserArtifactCard } from '../../../src/lib/types';
 import { toAnalysisProfileViewModel } from '../../../src/lib/analysis-showcase/analysisProfileViewModel';
 import { compile } from 'svelte/compiler';

@@ -3,7 +3,7 @@ import {
   type AnalysisShowcase,
   type AnalysisShowcaseParseResult,
   parseAnalysisShowcase,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 import { AnalysisReportService } from './AnalysisReportService';
 import { computeAnalysisFreshness, type AnalysisFreshness } from './analysisFreshness';
 

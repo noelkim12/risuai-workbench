@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url'
 
 import { afterEach, describe, expect, it } from 'vitest'
 import { TextDocument } from 'vscode-languageserver-textdocument'
-import { getCustomExtensionArtifactContract, type CustomExtensionArtifact } from 'risu-workbench-core'
+import { getCustomExtensionArtifactContract, type CustomExtensionArtifact } from '@risuai-workbench/core'
 
 import { IncrementalRebuilder, scanWorkspaceFilesSync } from '../../src/indexer'
 

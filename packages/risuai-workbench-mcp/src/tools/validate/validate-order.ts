@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { discoverCustomExtensionWorkspace, readJson } from 'risu-workbench-core/node';
+import { discoverCustomExtensionWorkspace, readJson } from '@risuai-workbench/core/node';
 
 import { createDiagnosticEnvelope, type DiagnosticEnvelope, type WorkbenchDiagnostic } from '../../contracts/diagnostics';
 import type { WorkspaceRootStatus } from '../../project/resolve-root';

@@ -1,5 +1,5 @@
 import type { SignatureHelp, SignatureHelpParams } from 'vscode-languageserver/node';
-import { CBSBuiltinRegistry, generateDocumentation } from 'risu-workbench-core';
+import { CBSBuiltinRegistry, generateDocumentation } from '@risuai-workbench/core';
 import { describe, expect, it } from 'vitest';
 
 import { FragmentAnalysisService } from '../../src/core';

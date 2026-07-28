@@ -3,7 +3,7 @@
  * @file packages/cbs-lsp/src/analyzer/diagnostics/collectors/legacy-angle.collector.ts
  */
 
-import { TokenType, type DiagnosticInfo } from 'risu-workbench-core';
+import { TokenType, type DiagnosticInfo } from '@risuai-workbench/core';
 
 import type { DiagnosticsContext } from '../context';
 import { createDiagnosticInfo } from '../diagnostic-info';

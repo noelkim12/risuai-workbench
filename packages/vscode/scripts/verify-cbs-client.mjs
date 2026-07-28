@@ -21,6 +21,7 @@ const EXPECTED_SELECTORS = [
   '**/*.risuprompt',
   '**/*.risuhtml',
   '**/*.risulua',
+  '**/*.risutext',
 ];
 const EXPECTED_PATTERN_SELECTOR_COUNT = EXPECTED_SELECTORS.length + 1;
 
@@ -108,7 +109,7 @@ if (!selectorsBlock.includes("language: 'lua'") || !selectorsBlock.includes("pat
   fail('Missing Lua-language .risulua compatibility selector');
 }
 
-// Check for unexpected pattern selectors (5 file selectors + lua-language .risulua compatibility selector)
+// Check for unexpected pattern selectors (6 file selectors + lua-language .risulua compatibility selector)
 const allPatternMatches = selectorsBlock.match(/\*\/\*\.\w+/g) || [];
 if (allPatternMatches.length !== EXPECTED_PATTERN_SELECTOR_COUNT) {
   fail(
@@ -161,7 +162,7 @@ if (!extensionSource.includes('stopCbsLanguageClient')) {
 }
 pass('extension.ts calls stopCbsLanguageClient() in deactivate');
 
-// Verify package.json has activation events for the 5 languages
+// Verify package.json has activation events for the 6 languages
 const packageJsonPath = join(__dirname, '..', 'package.json');
 const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
 
@@ -172,6 +173,7 @@ const languageActivations = [
   'onLanguage:risuprompt',
   'onLanguage:risuhtml',
   'onLanguage:risulua',
+  'onLanguage:risutext',
 ];
 
 for (const event of languageActivations) {
@@ -179,7 +181,7 @@ for (const event of languageActivations) {
     fail(`Missing activation event: ${event}`);
   }
 }
-pass('package.json has activation events for all 5 CBS-bearing languages');
+pass('package.json has activation events for all 6 CBS-bearing languages');
 
 for (const event of ['onLanguage:lua', 'workspaceContains:**/*.risulua']) {
   if (!activationEvents.includes(event)) {
@@ -195,29 +197,37 @@ if (!deps['vscode-languageclient']) {
 }
 pass(`vscode-languageclient dependency present: ${deps['vscode-languageclient']}`);
 
-// Verify contributes.languages entries for the 5 file types
+// Verify contributes.languages entries for the 6 file types
 const contributes = packageJson.contributes || {};
 const languages = contributes.languages || [];
-const expectedLanguages = ['risulorebook', 'risuregex', 'risuprompt', 'risuhtml', 'risulua'];
+const expectedLanguages = ['risulorebook', 'risuregex', 'risuprompt', 'risuhtml', 'risulua', 'risutext'];
 
 for (const langId of expectedLanguages) {
   const langEntry = languages.find((l) => l.id === langId);
   if (!langEntry) {
     fail(`Missing contributes.languages entry for: ${langId}`);
   }
+  if (langId === 'risulua') {
+    continue;
+  }
   const expectedExt = `.${langId}`;
   if (!langEntry.extensions || !langEntry.extensions.includes(expectedExt)) {
     fail(`Language ${langId} missing expected extension: ${expectedExt}`);
   }
 }
-pass(`contributes.languages has all 5 CBS-bearing file types with correct extensions`);
+pass(`contributes.languages has all 6 CBS-bearing file types with correct extensions`);
+
+if (packageJson.contributes?.configurationDefaults?.['files.associations']?.['*.risulua'] !== 'lua') {
+  fail('Missing Lua association for .risulua files');
+}
+pass('package.json associates .risulua files with Lua');
 
 const configurationProperties = packageJson.contributes?.configuration?.properties ?? {};
 const requiredConfigurationKeys = [
-  'risuWorkbench.cbs.server.launchMode',
-  'risuWorkbench.cbs.server.installMode',
-  'risuWorkbench.cbs.server.path',
-  'risuWorkbench.cbs.server.luaLsPath',
+  'risuaiWorkbench.cbs.server.launchMode',
+  'risuaiWorkbench.cbs.server.installMode',
+  'risuaiWorkbench.cbs.server.path',
+  'risuaiWorkbench.cbs.server.luaLsPath',
 ];
 
 for (const key of requiredConfigurationKeys) {

@@ -10,7 +10,7 @@ import {
   SelectionRange,
   SelectionRangeParams,
 } from 'vscode-languageserver/node';
-import type { BlockNode, CBSNode, MacroCallNode, Range } from 'risu-workbench-core';
+import type { BlockNode, CBSNode, MacroCallNode, Range } from '@risuai-workbench/core';
 
 import {
   ACTIVE_FEATURE_AVAILABILITY,

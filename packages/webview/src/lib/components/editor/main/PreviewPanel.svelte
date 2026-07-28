@@ -4,7 +4,7 @@
 -->
 
 <script lang="ts">
-  import { getLorebookDecoratorSpec, type LorebookDecoratorSpec } from 'risu-workbench-core/cbs-browser';
+  import { getLorebookDecoratorSpec, type LorebookDecoratorSpec } from '@risuai-workbench/core/cbs-browser';
   import type { MainEditorFormatPreviewResultPayload, MainEditorPreviewResultPayload, MainEditorPreviewRuntimeResultPayload } from '../../../types/mainEditor';
   import { createTraceLensViewModel, getParentLensSource, isNestedLensChildTrace, isParentLensTraceNode, isVariableTraceNode, type PreviewLensTone } from './cbsLensFormatter';
 

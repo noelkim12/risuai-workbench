@@ -5,7 +5,7 @@ import {
   mapToCbsFragments,
   parseCustomExtensionArtifactFromPath,
   type CbsFragment,
-} from 'risu-workbench-core';
+} from '@risuai-workbench/core';
 
 import {
   type DiagnosticMachineData,
