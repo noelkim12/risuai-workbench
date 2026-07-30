@@ -17,6 +17,7 @@ export type {
   MainEditorFormatKind,
   PromptEditorState,
   RegexEditorState,
+  TextEditorState,
   SourceLocatedRange,
   SourcePosition,
   SourceRange,

@@ -194,6 +194,50 @@ describe('risulua-split module-table top-level rewrite planner', () => {
     expect(main).not.toContain('require("host_globals.global_functions")');
   });
 
+  it('rewrites extracted domain captures inside host globals', async () => {
+    const result = await rewriteFixture(lines([
+      'local function trim(value)',
+      '  return value:gsub("^%s+", "")',
+      'end',
+      '',
+      'local function splitPipe(value)',
+      '  return trim(value):match("([^|]+)")',
+      'end',
+      '',
+      'function describeAlertLocal(value)',
+      '  return splitPipe(value)',
+      'end',
+    ]), { domainGeneration: 'validated' });
+
+    const globalModule = result.modulePlans.find(
+      (modulePlan) => modulePlan.modulePath === RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH,
+    );
+    expect(globalModule).toBeDefined();
+    expect(globalModule!.body).toContain('local __local_helpers = require("common.local_helpers")');
+    expect(globalModule!.body).toContain('return __local_helpers.splitPipe(value)');
+  });
+
+  it('preserves host globals that reference a later declaration', async () => {
+    const result = await rewriteFixture(lines([
+      'function setFirst(value)',
+      '  return setSecond(value)',
+      'end',
+      '',
+      'function setSecond(value)',
+      '  return value',
+      'end',
+    ]));
+
+    const globalModule = result.modulePlans.find(
+      (modulePlan) => modulePlan.modulePath === RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH,
+    );
+    expect(globalModule).toBeDefined();
+    expect(globalModule!.body).not.toContain('function setFirst(value)');
+    expect(globalModule!.body).toContain('local function setSecond(value)');
+    expect(result.mainRewritePlan.fullMainText).toContain('function setFirst(value)');
+    expect(result.mainRewritePlan.fullMainText).toContain('return setSecond(value)');
+  });
+
   it('builds button_actions module and main trigger bridges', async () => {
     const result = await rewriteFixture(lines([
       'local html = [[<button type="button" risu-trigger="toggleSidePanel">Open</button>]]',
@@ -270,6 +314,35 @@ describe('risulua-split module-table top-level rewrite planner', () => {
     expect(main).not.toContain('resetTargetState = __host_globals.resetTargetState');
     expect(main).not.toContain('local __host_globals = require("host_globals.global_functions")');
     expect(main).not.toContain('function generateStartInput(triggerId)');
+  });
+
+  it('rewrites helper captures declared between extracted button actions', async () => {
+    const result = await rewriteWithButtonActionSources(lines([
+      'function openPanel(triggerId)',
+      '  addChat(triggerId, "user", "open")',
+      'end',
+      '',
+      'local function adjustSkill(triggerId, delta)',
+      '  setChatVar(triggerId, "skill", tostring(delta))',
+      'end',
+      '',
+      'function skill_1_Up(triggerId)',
+      '  adjustSkill(triggerId, 1)',
+      'end',
+    ]), {
+      domainGeneration: 'validated',
+      buttonActionSources: [
+        '<button risu-trigger="openPanel">Open</button><button risu-trigger="skill_1_Up">+</button>',
+      ],
+    });
+
+    const buttonModule = result.modulePlans.find(
+      (modulePlan) => modulePlan.modulePath === RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH,
+    );
+    expect(buttonModule).toBeDefined();
+    expect(buttonModule!.body).toContain('local __domain_adjust_skill = require("domain.adjust_skill")');
+    expect(buttonModule!.body).toContain('__domain_adjust_skill.adjustSkill(triggerId, 1)');
+    expect(buttonModule!.body).not.toContain('\n  adjustSkill(triggerId, 1)');
   });
 
   it('rewrites variable-store captures inside extracted button actions', async () => {

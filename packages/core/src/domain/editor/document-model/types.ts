@@ -3,7 +3,7 @@
  * @file packages/core/src/domain/editor/document-model/types.ts
  */
 
-export const MAIN_EDITOR_FORMAT_KINDS = ['lorebook', 'regex', 'prompt', 'html'] as const;
+export const MAIN_EDITOR_FORMAT_KINDS = ['lorebook', 'regex', 'prompt', 'html', 'text'] as const;
 
 export type MainEditorFormatKind = (typeof MAIN_EDITOR_FORMAT_KINDS)[number];
 
@@ -50,7 +50,11 @@ export interface HtmlEditorState {
   contentText: string;
 }
 
-export type EditorFormatState = LorebookEditorState | RegexEditorState | PromptEditorState | HtmlEditorState;
+export interface TextEditorState {
+  contentText: string;
+}
+
+export type EditorFormatState = LorebookEditorState | RegexEditorState | PromptEditorState | HtmlEditorState | TextEditorState;
 
 export interface EditorDocumentModel<TState extends EditorFormatState = EditorFormatState> extends EditorDocumentBaseModel {
   state: TState;

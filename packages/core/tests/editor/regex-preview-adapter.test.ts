@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createRegexMainEditorPreview } from '../../src/domain/editor';
+import { createRegexMainEditorPreview, mergeSimulatorProfileVariables } from '../../src/domain/editor';
 
 describe('main editor .risuregex preview adapter', () => {
   it('prepares IN and OUT for regex webview worker preview', () => {
@@ -35,5 +35,22 @@ describe('main editor .risuregex preview adapter', () => {
       nativeExecution: 'webview-worker-required',
     }));
     expect(preview.output).toBe('');
+  });
+
+  it('evaluates OUT conditions with runtime context overrides', () => {
+    const variables = mergeSimulatorProfileVariables({}, {
+      chatVariables: {},
+      contextVariables: { chatIndex: '1', lastmessageid: '2' },
+    });
+    const preview = createRegexMainEditorPreview(
+      {
+        frontmatter: { comment: 'context condition', type: 'editdisplay', flag: '' },
+        inText: '▶▶▶',
+        outText: '{{#if {{greater_equal::{{chat_index}}::{{? {{lastmessageid}}-1}}}}}}\ntest\nasdf\n{{/if}}',
+      },
+      { sampleInput: '123123\n▶▶▶', variables },
+    );
+
+    expect(preview.regex?.replacement.effective).toBe('test\nasdf');
   });
 });

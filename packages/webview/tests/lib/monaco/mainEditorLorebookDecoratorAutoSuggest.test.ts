@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import lorebookContentEditorSource from '../../../src/lib/components/editor/lorebook/LorebookContentEditor.svelte?raw';
+import mainEditorSource from '../../../src/lib/components/editor/main/MainEditor.svelte?raw';
 import {
   createMainEditorLorebookDecoratorCompletionItems,
   getMainEditorLorebookDecoratorCompletionContext,
@@ -90,10 +91,12 @@ describe('main editor lorebook decorator auto suggest helpers', () => {
     expect(disposed).toBe(true);
   });
 
-  it('wires decorator provider registration and disposal in the lorebook content editor', () => {
+  it('wires decorator completion only for the lorebook body editor', () => {
     expect(lorebookContentEditorSource).toContain('registerMainEditorLorebookDecoratorCompletionProvider');
-    expect(lorebookContentEditorSource).toContain('decoratorCompletionDisposable = registerMainEditorLorebookDecoratorCompletionProvider(monaco, CONTENT_LANGUAGE_ID);');
+    expect(lorebookContentEditorSource).toContain('decoratorCompletionDisposable = enableDecoratorCompletion');
     expect(lorebookContentEditorSource).toContain('decoratorCompletionDisposable?.dispose();');
+    expect(mainEditorSource).toContain('formatKind="lorebook"\n              sectionName="CONTENT"\n              enableDecoratorCompletion={true}');
+    expect(mainEditorSource).toContain('formatKind="text"\n              sectionName="TEXT"\n              enableDecoratorCompletion={false}');
   });
 });
 

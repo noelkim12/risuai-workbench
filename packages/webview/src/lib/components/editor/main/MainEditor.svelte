@@ -4,7 +4,7 @@
 -->
 
 <script lang="ts">
-  import type { HtmlEditorState, LorebookEditorState, PromptEditorState, RegexEditorState } from '@risuai-workbench/core';
+  import type { HtmlEditorState, LorebookEditorState, PromptEditorState, RegexEditorState, TextEditorState } from '@risuai-workbench/core';
   import { onDestroy, onMount } from 'svelte';
   import HtmlRenderedPreview from '../html/HtmlRenderedPreview.svelte';
   import HtmlSourceEditor from '../html/HtmlSourceEditor.svelte';
@@ -55,6 +55,7 @@
     createMainEditorEditMessage,
     createMainEditorFormatPreviewRequestMessage,
     createMainEditorLspRevealLocationMessage,
+    createMainEditorOpenDefaultEditorMessage,
     createMainEditorPreviewRequestMessage,
     createMainEditorPreviewRuntimeRequestMessage,
     createMainEditorReadyMessage,
@@ -81,7 +82,7 @@
   const PREVIEW_DEBOUNCE_MS = 160;
   const RUNTIME_PREVIEW_DEBOUNCE_MS = 250;
 
-  type MainEditorStructuredState = LorebookEditorState | RegexEditorState | PromptEditorState | HtmlEditorState;
+  type MainEditorStructuredState = LorebookEditorState | RegexEditorState | PromptEditorState | HtmlEditorState | TextEditorState;
   type MainEditorLocalDraftSyncState = MainEditorDraftSyncState<MainEditorStructuredState>;
 
   let initialized = false;
@@ -143,13 +144,15 @@
   let latestProfileListRequestId: string | undefined;
   let latestProfileSaveRequestId: string | undefined;
   let readyRetryTimer: ReturnType<typeof setInterval> | undefined;
+  let openDefaultEditorRequested = false;
 
   $: lorebookState = getLorebookEditorState(model, formatKind);
   $: regexState = getRegexEditorState(model, formatKind);
   $: promptState = getPromptEditorState(model, formatKind);
   $: htmlState = getHtmlEditorState(model, formatKind);
+  $: textState = getTextEditorState(model, formatKind);
   $: isLorebookAuthoring = Boolean(lorebookState);
-  $: isStructuredAuthoring = Boolean(lorebookState || regexState || promptState || htmlState);
+  $: isStructuredAuthoring = Boolean(lorebookState || regexState || promptState || htmlState || textState);
   $: activeSimulatorProfile = simulatorProfiles.find((profile) => profile.id === activeProfileId) ?? simulatorProfiles[0];
   $: profileLabel = activeSimulatorProfile?.name ?? 'Default';
   $: profileSummary = buildSimulatorProfileSummary(activeSimulatorProfile);
@@ -225,6 +228,9 @@
         scheduleFormatPreview(promptActiveSection, message.payload.model.state);
       } else if (message.payload.formatKind === 'html' && isHtmlEditorState(message.payload.model.state)) {
         scheduleFormatPreview('FULL', message.payload.model.state);
+      } else if (message.payload.formatKind === 'text' && isTextEditorState(message.payload.model.state)) {
+        schedulePreview(message.payload.model.state.contentText);
+        scheduleRuntimePreview(message.payload.model.state.contentText);
       }
       return;
     }
@@ -248,7 +254,7 @@
     }
 
     if (message.type === 'main-editor/diagnosticsUpdate') {
-      if (message.payload.documentUri === documentUri && message.payload.documentVersion === documentVersion && message.payload.sectionName === 'CONTENT') {
+      if (message.payload.documentUri === documentUri && message.payload.documentVersion === documentVersion && message.payload.sectionName === getActiveBodySectionName()) {
         diagnosticsMarkers = message.payload.markers;
       }
       return;
@@ -259,7 +265,7 @@
         message.payload.requestId === runtimePreviewRequestId &&
         message.payload.documentUri === documentUri &&
         message.payload.formatKind === formatKind &&
-        message.payload.sectionName === 'CONTENT' &&
+        message.payload.sectionName === getActiveBodySectionName() &&
         message.payload.contentVersion === contentVersion
       ) {
         runtimePreviewPending = false;
@@ -294,7 +300,7 @@
         message.payload.requestId === latestPreviewRequestId &&
         message.payload.documentUri === documentUri &&
         message.payload.formatKind === formatKind &&
-        message.payload.sectionName === 'CONTENT' &&
+        message.payload.sectionName === getActiveBodySectionName() &&
         message.payload.contentVersion === contentVersion
       ) {
         if (!previewResult) previewResult = message.payload;
@@ -357,11 +363,13 @@
       applyDraftSyncState(nextDraftSync);
       if (nextDraftSync.shouldSendQueuedStructuredEdit && nextQueuedStructuredState) scheduleStructuredEdit(nextQueuedStructuredState);
       else if (nextDraftSync.shouldRescheduleRawEdit) scheduleEdit();
+      openDefaultEditorWhenReady();
       return;
     }
 
     if (message.type === 'main-editor/error') {
       applyDraftSyncState(applyEditError(createDraftSyncState(), message.payload));
+      openDefaultEditorRequested = false;
     }
   }
 
@@ -381,6 +389,28 @@
     if (!readyRetryTimer) return;
     clearInterval(readyRetryTimer);
     readyRetryTimer = undefined;
+  }
+
+  /**
+   * requestDefaultEditor 함수.
+   * 진행 중인 draft edit이 모두 적용된 뒤 현재 문서를 VS Code 기본 텍스트 편집기로 전환함.
+   */
+  function requestDefaultEditor(): void {
+    if (!initialized || !documentUri) return;
+    openDefaultEditorRequested = true;
+    status = 'Finishing edits before opening the VS Code text editor...';
+    openDefaultEditorWhenReady();
+  }
+
+  /**
+   * openDefaultEditorWhenReady 함수.
+   * pending/queued edit이 없는 안정 상태에서만 editor 전환 메시지를 보냄.
+   */
+  function openDefaultEditorWhenReady(): void {
+    if (!openDefaultEditorRequested || pendingTimer || pendingRequestId || queuedStructuredState || draftText !== rawText) return;
+    openDefaultEditorRequested = false;
+    status = 'Opening in the VS Code text editor...';
+    getTypedVsCodeApi()?.postMessage(createMainEditorOpenDefaultEditorMessage(documentUri));
   }
 
   /**
@@ -446,6 +476,7 @@
 
     const requestId = createRequestId('edit');
     pendingTimer = setTimeout(() => {
+      pendingTimer = undefined;
       const baseVersion = documentVersion;
       const nextDraftSync = markRawEditSent(createDraftSyncState(), {
         requestId,
@@ -533,6 +564,12 @@
     scheduleStructuredEdit(nextState);
   }
 
+  function updateTextState(nextState: TextEditorState): void {
+    if (!model || model.formatKind !== 'text') return;
+    model = { ...model, state: nextState };
+    scheduleStructuredEdit(nextState);
+  }
+
   /**
    * updateLorebookContent 함수.
    * Monaco CONTENT 변경을 lorebook structured state에 반영함.
@@ -544,6 +581,13 @@
     if (!previewResult) schedulePreview(contentText);
     scheduleRuntimePreview(contentText);
     updateLorebookState({ ...lorebookState, contentText });
+  }
+
+  function updateTextContent(contentText: string): void {
+    if (!textState) return;
+    if (!previewResult) schedulePreview(contentText);
+    scheduleRuntimePreview(contentText);
+    updateTextState({ contentText });
   }
 
   /**
@@ -563,7 +607,7 @@
    * @param contentText - preview할 최신 CONTENT draft
    */
   function schedulePreview(contentText: string): void {
-    if (!initialized || formatKind !== 'lorebook') return;
+    if (!initialized || (formatKind !== 'lorebook' && formatKind !== 'text')) return;
     if (previewTimer) clearTimeout(previewTimer);
     previewTimer = setTimeout(() => {
       previewTimer = undefined;
@@ -576,8 +620,8 @@
           documentUri,
           documentVersion,
           contentVersion,
-          formatKind: 'lorebook',
-          sectionName: 'CONTENT',
+          formatKind,
+          sectionName: formatKind === 'lorebook' ? 'CONTENT' : 'TEXT',
           contentText,
         }),
       );
@@ -591,7 +635,7 @@
    * @param contentText - preview할 최신 CONTENT draft
    */
   function scheduleRuntimePreview(contentText: string): void {
-    if (!initialized || formatKind !== 'lorebook') return;
+    if (!initialized || (formatKind !== 'lorebook' && formatKind !== 'text')) return;
     if (runtimePreviewTimer) clearTimeout(runtimePreviewTimer);
     runtimePreviewTimer = setTimeout(() => {
       runtimePreviewTimer = undefined;
@@ -608,8 +652,8 @@
           documentUri,
           documentVersion,
           contentVersion,
-          formatKind: 'lorebook',
-          sectionName: 'CONTENT',
+          formatKind,
+          sectionName: formatKind === 'lorebook' ? 'CONTENT' : 'TEXT',
           contentText,
           overrides: variableOverrides,
           profileId: activeProfileId,
@@ -690,6 +734,7 @@
     variableOverrides = mergeOverridePatch(variableOverrides, toOverridePatch(patchedBinding));
     runtimePreviewBindings = runtimePreviewBindings.map((entry) => entry.variableName === variableName ? patchedBinding : entry);
     if (lorebookState) scheduleRuntimePreview(lorebookState.contentText);
+    else if (textState) scheduleRuntimePreview(textState.contentText);
     else if (regexState) scheduleFormatPreview('IN', regexState);
   }
 
@@ -712,7 +757,7 @@
    */
   function requestLazyVariableSection(section: 'workspace' | 'profiles' | 'traceContext'): void {
     if (section !== 'workspace') return;
-    if (!lorebookState && !regexState) return;
+    if (!lorebookState && !textState && !regexState) return;
     const variableNames = runtimePreviewBindings.map((binding) => binding.variableName);
     const requestId = createRequestId('candidates');
     getTypedVsCodeApi()?.postMessage(
@@ -721,8 +766,8 @@
         documentUri,
         documentVersion,
         contentVersion,
-        formatKind: lorebookState ? 'lorebook' : 'regex',
-        sectionName: lorebookState ? 'CONTENT' : 'IN',
+        formatKind: lorebookState ? 'lorebook' : textState ? 'text' : 'regex',
+        sectionName: lorebookState ? 'CONTENT' : textState ? 'TEXT' : 'IN',
         scope: 'workspace',
         variableNames,
       }),
@@ -824,6 +869,7 @@
     if (promptState) scheduleFormatPreview(resolvePromptPreviewSection(promptState), promptState);
     if (htmlState) scheduleFormatPreview('FULL', htmlState);
     if (lorebookState) scheduleRuntimePreview(lorebookState.contentText);
+    if (textState) scheduleRuntimePreview(textState.contentText);
   }
 
   /**
@@ -1182,7 +1228,7 @@
   }
 
   function isMainEditorFormatKind(value: unknown): value is MainEditorFormatKind {
-    return value === 'lorebook' || value === 'regex' || value === 'prompt' || value === 'html';
+    return value === 'lorebook' || value === 'regex' || value === 'prompt' || value === 'html' || value === 'text';
   }
 
   function isMainEditorPreferenceState(value: unknown): value is MainEditorPreferenceState {
@@ -1240,6 +1286,14 @@
     return isHtmlEditorState(documentModel.state) ? documentModel.state : undefined;
   }
 
+  function getTextEditorState(
+    documentModel: MainEditorDocumentModelPayload | undefined,
+    activeFormatKind: MainEditorFormatKind,
+  ): TextEditorState | undefined {
+    if (activeFormatKind !== 'text' || documentModel?.formatKind !== 'text') return undefined;
+    return isTextEditorState(documentModel.state) ? documentModel.state : undefined;
+  }
+
   function isLorebookEditorState(value: unknown): value is LorebookEditorState {
     if (!value || typeof value !== 'object') return false;
     const candidate = value as Partial<LorebookEditorState>;
@@ -1269,6 +1323,18 @@
     if (!value || typeof value !== 'object') return false;
     const candidate = value as Partial<HtmlEditorState>;
     return typeof candidate.contentText === 'string';
+  }
+
+  function isTextEditorState(value: unknown): value is TextEditorState {
+    if (!value || typeof value !== 'object') return false;
+    const candidate = value as Partial<TextEditorState>;
+    return typeof candidate.contentText === 'string';
+  }
+
+  function getActiveBodySectionName(): 'CONTENT' | 'TEXT' | undefined {
+    if (formatKind === 'lorebook') return 'CONTENT';
+    if (formatKind === 'text') return 'TEXT';
+    return undefined;
   }
 
   function isPromptSections(value: unknown): value is Partial<Record<'TEXT' | 'INNER_FORMAT' | 'DEFAULT_TEXT', string>> {
@@ -1405,7 +1471,7 @@
 
 <main class="main-editor-shell" class:main-editor-shell--raw={initialized && !isStructuredAuthoring} class:main-editor-shell--drawer-open={preferences.drawerOpen} aria-label="Risu Main Editor" style={`--main-editor-authoring-ratio: ${preferences.splitRatio}fr; --main-editor-result-ratio: ${1 - preferences.splitRatio}fr;`}>
     <aside class="main-editor-side-toolbar" aria-label="Side toolbar">
-      {#if lorebookState}
+      {#if lorebookState || textState}
         <SideToolbar onInsertSnippet={queueSnippet} />
       {:else}
         <span>Tools</span>
@@ -1422,7 +1488,10 @@
               </div>
               <span class="main-editor-header__path" title={documentUri || documentPathLabel}>{documentPathLabel}</span>
             </div>
-            <span class="main-editor-header__status" role="status">{status}</span>
+            <div class="main-editor-header__actions">
+              <span class="main-editor-header__status" role="status">{status}</span>
+              <button type="button" class="main-editor-header__default-editor" disabled>Open Text Editor</button>
+            </div>
           </header>
           <div class="main-editor-placeholder main-editor-placeholder--skeleton" role="status" aria-live="polite">
             <p>Waiting for document model...</p>
@@ -1451,7 +1520,7 @@
       </div>
     {:else if isStructuredAuthoring && model}
       <SplitPane ratio={preferences.splitRatio} onRatioChange={updateSplitRatio}>
-        <section class={`main-editor-authoring main-editor-authoring--lorebook${htmlState ? ' main-editor-authoring--html' : ''}`} aria-label={`${formatKind} authoring area`}>
+        <section class={`main-editor-authoring main-editor-authoring--lorebook${htmlState ? ' main-editor-authoring--html' : ''}${textState ? ' main-editor-authoring--text' : ''}`} aria-label={`${formatKind} authoring area`}>
           <header class="main-editor-header">
             <div class="main-editor-header__identity">
               <div class="main-editor-header__meta">
@@ -1460,7 +1529,10 @@
               </div>
               <span class="main-editor-header__path" title={documentUri}>{documentDisplayPath}</span>
             </div>
-            <span class="main-editor-header__status">{status}</span>
+            <div class="main-editor-header__actions">
+              <span class="main-editor-header__status">{status}</span>
+              <button type="button" class="main-editor-header__default-editor" onclick={requestDefaultEditor}>Open Text Editor</button>
+            </div>
           </header>
           {#if lorebookState}
             <LorebookFrontmatter
@@ -1472,6 +1544,9 @@
             />
             <LorebookContentEditor
               {documentUri}
+              formatKind="lorebook"
+              sectionName="CONTENT"
+              enableDecoratorCompletion={true}
               {documentVersion}
               {contentVersion}
               contentText={lorebookState.contentText}
@@ -1481,6 +1556,24 @@
               advancedLspController={activeAdvancedLspController}
               onStatus={(message) => (status = message)}
               onChange={updateLorebookContent}
+              onContentVersionChange={updateContentVersion}
+              onSnippetConsumed={consumeSnippet}
+            />
+          {:else if textState}
+            <LorebookContentEditor
+              {documentUri}
+              formatKind="text"
+              sectionName="TEXT"
+              enableDecoratorCompletion={false}
+              {documentVersion}
+              {contentVersion}
+              contentText={textState.contentText}
+              {diagnosticsMarkers}
+              {pendingSnippet}
+              lspClient={undefined}
+              advancedLspController={undefined}
+              onStatus={(message) => (status = message)}
+              onChange={updateTextContent}
               onContentVersionChange={updateContentVersion}
               onSnippetConsumed={consumeSnippet}
             />
@@ -1543,7 +1636,12 @@
                 onRequestAssets={requestRegexAssets}
               />
             {:else}
-        <PreviewPanel preview={lorebookState ? previewResult : formatPreviewResult} pending={previewPending || runtimePreviewPending} sourceText={lorebookState?.contentText} />
+        <PreviewPanel
+          preview={lorebookState || textState ? previewResult : formatPreviewResult}
+          pending={previewPending || runtimePreviewPending}
+          sourceText={lorebookState?.contentText ?? textState?.contentText}
+          enableDecoratorLenses={Boolean(lorebookState)}
+        />
               {#if htmlState && formatPreviewResult}
                 <HtmlRenderedPreview
                   srcdoc={formatPreviewResult.output}
@@ -1577,7 +1675,10 @@
             </div>
             <span class="main-editor-header__path" title={documentUri}>{documentDisplayPath}</span>
           </div>
-          <span class="main-editor-header__status">{status}</span>
+          <div class="main-editor-header__actions">
+            <span class="main-editor-header__status">{status}</span>
+            <button type="button" class="main-editor-header__default-editor" onclick={requestDefaultEditor}>Open Text Editor</button>
+          </div>
         </header>
         <textarea
           class="main-editor-raw-textarea"

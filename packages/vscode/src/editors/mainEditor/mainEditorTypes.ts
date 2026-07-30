@@ -13,7 +13,7 @@ import {
 export const MAIN_EDITOR_PROTOCOL = 'risu-workbench.main-editor';
 export const MAIN_EDITOR_PROTOCOL_VERSION = 1;
 
-export type MainEditorFormatKind = 'lorebook' | 'regex' | 'prompt' | 'html';
+export type MainEditorFormatKind = 'lorebook' | 'regex' | 'prompt' | 'html' | 'text';
 export type MainEditorSectionName =
   | 'CONTENT'
   | 'KEYS'
@@ -47,8 +47,8 @@ export type MainEditorFormatSectionName =
 
 export interface MainEditorFormatDefinition {
   kind: MainEditorFormatKind;
-  extension: '.risulorebook' | '.risuregex' | '.risuprompt' | '.risuhtml';
-  languageId: 'risulorebook' | 'risuregex' | 'risuprompt' | 'risuhtml';
+  extension: '.risulorebook' | '.risuregex' | '.risuprompt' | '.risuhtml' | '.risutext';
+  languageId: 'risulorebook' | 'risuregex' | 'risuprompt' | 'risuhtml' | 'risutext';
   viewType: string;
   displayName: string;
 }
@@ -81,6 +81,13 @@ export const MAIN_EDITOR_FORMATS: readonly MainEditorFormatDefinition[] = [
     languageId: 'risuhtml',
     viewType: 'risuaiWorkbench.mainEditor.html',
     displayName: 'Risu HTML Editor',
+  },
+  {
+    kind: 'text',
+    extension: '.risutext',
+    languageId: 'risutext',
+    viewType: 'risuaiWorkbench.mainEditor.text',
+    displayName: 'Risu Text Editor',
   },
 ];
 
@@ -142,6 +149,10 @@ export interface PromptStructuredState {
 }
 
 export interface HtmlStructuredState {
+  contentText: string;
+}
+
+export interface TextStructuredState {
   contentText: string;
 }
 
@@ -494,7 +505,7 @@ export interface MainEditorPreviewRuntimeRequestPayload {
   documentVersion: number;
   contentVersion: number;
   formatKind: MainEditorFormatKind;
-  sectionName: 'CONTENT';
+  sectionName: 'CONTENT' | 'TEXT';
   contentText: string;
   overrides: MainEditorVariableOverridesPayload;
   profileId?: string;
@@ -506,7 +517,7 @@ export interface MainEditorPreviewRuntimeResultPayload {
   documentVersion: number;
   contentVersion: number;
   formatKind: MainEditorFormatKind;
-  sectionName: 'CONTENT';
+  sectionName: 'CONTENT' | 'TEXT';
   status: 'ok' | 'partial' | 'aborted' | 'error' | 'stale';
   output: string;
   bindings: MainEditorVariableBindingPayload[];
@@ -648,6 +659,12 @@ export type MainEditorWebviewMessage =
   | {
       protocol: typeof MAIN_EDITOR_PROTOCOL;
       version: typeof MAIN_EDITOR_PROTOCOL_VERSION;
+      type: 'main-editor/openDefaultEditor';
+      payload: MainEditorReadyPayload;
+    }
+  | {
+      protocol: typeof MAIN_EDITOR_PROTOCOL;
+      version: typeof MAIN_EDITOR_PROTOCOL_VERSION;
       type: 'main-editor/edit';
       payload: MainEditorEditPayload;
     }
@@ -772,6 +789,7 @@ type MainEditorMessageGuard = (message: unknown) => message is MainEditorWebview
 
 const MAIN_EDITOR_WEBVIEW_MESSAGE_TYPES = [
   'main-editor/ready',
+  'main-editor/openDefaultEditor',
   'main-editor/edit',
   'main-editor/structuredEdit',
   'main-editor/updatePreferences',
@@ -813,6 +831,11 @@ function createMainEditorMessageGuard<TType extends MainEditorWebviewMessageType
 const MAIN_EDITOR_WEBVIEW_MESSAGE_GUARDS = {
   'main-editor/ready': createMainEditorMessageGuard(
     'main-editor/ready',
+    (payload): payload is MainEditorReadyPayload =>
+      isPlainRecord(payload) && typeof payload.documentUri === 'string',
+  ),
+  'main-editor/openDefaultEditor': createMainEditorMessageGuard(
+    'main-editor/openDefaultEditor',
     (payload): payload is MainEditorReadyPayload =>
       isPlainRecord(payload) && typeof payload.documentUri === 'string',
   ),
@@ -1017,6 +1040,8 @@ function isMainEditorStructuredEditPayload(
       return isPromptStructuredState(value.state);
     case 'html':
       return isHtmlStructuredState(value.state);
+    case 'text':
+      return isTextStructuredState(value.state);
   }
 }
 
@@ -1151,6 +1176,7 @@ function isSectionAllowedForFormat(
       sectionName === 'TEXT' || sectionName === 'INNER_FORMAT' || sectionName === 'DEFAULT_TEXT'
     );
   if (formatKind === 'html') return sectionName === 'FULL';
+  if (formatKind === 'text') return sectionName === 'TEXT';
   return false;
 }
 
@@ -1165,8 +1191,8 @@ function isMainEditorPreviewRequestPayload(
     Number.isInteger(value.documentVersion) &&
     typeof value.contentVersion === 'number' &&
     Number.isInteger(value.contentVersion) &&
-    value.formatKind === 'lorebook' &&
-    value.sectionName === 'CONTENT' &&
+    ((value.formatKind === 'lorebook' && value.sectionName === 'CONTENT') ||
+      (value.formatKind === 'text' && value.sectionName === 'TEXT')) &&
     typeof value.contentText === 'string'
   );
 }
@@ -1182,8 +1208,8 @@ function isMainEditorPreviewRuntimeRequestPayload(
     Number.isInteger(value.documentVersion) &&
     typeof value.contentVersion === 'number' &&
     Number.isInteger(value.contentVersion) &&
-    value.formatKind === 'lorebook' &&
-    value.sectionName === 'CONTENT' &&
+    ((value.formatKind === 'lorebook' && value.sectionName === 'CONTENT') ||
+      (value.formatKind === 'text' && value.sectionName === 'TEXT')) &&
     typeof value.contentText === 'string' &&
     isMainEditorVariableOverridesPayload(value.overrides) &&
     (!('profileId' in value) || typeof value.profileId === 'string')
@@ -1258,7 +1284,7 @@ function isMainEditorVariableCandidatesRequestPayload(
     typeof value.contentVersion === 'number' &&
     Number.isInteger(value.contentVersion) &&
     isMainEditorFormatKind(value.formatKind) &&
-    (value.sectionName === 'CONTENT' || value.sectionName === 'IN') &&
+    (value.sectionName === 'CONTENT' || value.sectionName === 'TEXT' || value.sectionName === 'IN') &&
     isVariableCandidateScope(value.scope) &&
     Array.isArray(value.variableNames) &&
     value.variableNames.every((name) => typeof name === 'string')
@@ -1369,6 +1395,10 @@ export function isHtmlStructuredState(value: unknown): value is HtmlStructuredSt
   return isPlainRecord(value) && typeof value.contentText === 'string';
 }
 
+export function isTextStructuredState(value: unknown): value is TextStructuredState {
+  return isPlainRecord(value) && typeof value.contentText === 'string';
+}
+
 export function isSimulatorProfile(value: unknown): value is MainEditorSimulatorProfilePayload {
   if (!isPlainRecord(value)) return false;
   if (typeof value.id !== 'string' || value.id.trim().length === 0) return false;
@@ -1454,7 +1484,7 @@ function isSimulatorChatRole(value: unknown): value is 'user' | 'assistant' | 's
 }
 
 function isMainEditorFormatKind(value: unknown): value is MainEditorFormatKind {
-  return value === 'lorebook' || value === 'regex' || value === 'prompt' || value === 'html';
+  return value === 'lorebook' || value === 'regex' || value === 'prompt' || value === 'html' || value === 'text';
 }
 
 function isMainEditorSectionName(value: unknown): value is MainEditorSectionName {

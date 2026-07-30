@@ -258,9 +258,9 @@ describe('risulua-split module-table artifact writer', () => {
     expect(main).not.toContain('local function _capCat');
 
     const commonHelpersFile = artifacts.workspaceFiles.find((f) => f.path === 'lua/common/local_helpers.risulua');
-    if (commonHelpersFile !== undefined) {
-      expect(commonHelpersFile.content).toContain('function __impl._capCat');
-    }
+    expect(commonHelpersFile).toBeDefined();
+    expect(commonHelpersFile!.content).toContain('function _capCat');
+    expect(commonHelpersFile!.content).toContain('M._capCat = _capCat');
 
     const domainPaths = artifacts.workspaceFiles
       .filter((f) => f.path.startsWith('lua/domain/'))
@@ -269,10 +269,8 @@ describe('risulua-split module-table artifact writer', () => {
 
     const domainFile = artifacts.workspaceFiles.find((f) => f.path.startsWith('lua/domain/') && f.content.includes('__impl.applyCat'));
     expect(domainFile).toBeDefined();
-    if (commonHelpersFile !== undefined) {
-      expect(domainFile!.content).toContain('local __local_helpers = require("common.local_helpers")');
-      expect(domainFile!.content).toContain('__local_helpers._capCat');
-    }
+    expect(domainFile!.content).toContain('local __local_helpers = require("common.local_helpers")');
+    expect(domainFile!.content).toContain('__local_helpers._capCat');
     expect(domainFile!.content).not.toContain('local function _capCat');
   });
 

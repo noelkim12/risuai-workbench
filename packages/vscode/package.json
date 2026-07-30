@@ -197,6 +197,16 @@
           }
         ],
         "priority": "default"
+      },
+      {
+        "viewType": "risuaiWorkbench.mainEditor.text",
+        "displayName": "Risu Text Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.risutext"
+          }
+        ],
+        "priority": "default"
       }
     ],
     "configurationDefaults": {
