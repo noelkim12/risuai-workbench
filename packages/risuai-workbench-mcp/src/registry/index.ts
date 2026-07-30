@@ -172,7 +172,7 @@ const ROADMAP_TOOLS: readonly RoadmapToolDefinition[] = [
     title: 'Suggest tests',
   },
   {
-    description: 'Classify caller intent into a route with allowed tools, risk, and next step. Extension affordance: .risum/.charx/.risup->core.run_extract; .risulua->Lua analysis; .risulorebook/.risuregex/.risuprompt->CBS/prompt analysis; .risuhtml->inspect/validate; .risuchar/.risumodule->root-marker; _order.json->order validation.',
+    description: 'Route intent to tools/actions. .risum/.charx/.risup->core.run_extract; .risulua test/debug/Fengari->risulua.debug_call or risulua.runtime_smoke, static->Lua analysis; .risulorebook/.risuregex/.risuprompt->analysis; .risuhtml->inspect; .risuchar/.risumodule->root markers; _order.json->validation.',
     mutates: false,
     name: 'workbench.route_intent',
     phase: 'phase-1',
