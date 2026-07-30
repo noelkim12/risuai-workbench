@@ -13,12 +13,14 @@ import {
   reassembleLorebookEditorDocument,
   reassemblePromptEditorDocument,
   reassembleRegexEditorDocument,
+  reassembleTextEditorDocument,
   type EditorDocumentModel,
   type EditorFormatState,
   type HtmlEditorState,
   type LorebookEditorState,
   type PromptEditorState,
   type RegexEditorState,
+  type TextEditorState,
 } from '@risuai-workbench/core';
 import { resolveRegexAssets } from '@risuai-workbench/core/node';
 import {
@@ -384,6 +386,23 @@ export class MainEditorProvider implements vscode.CustomTextEditorProvider {
       return;
     }
 
+    if (message.type === 'main-editor/openDefaultEditor') {
+      if (message.payload.documentUri !== document.uri.toString()) {
+        this.postMessage(
+          webviewPanel,
+          createErrorMessage('staleDocument', 'Default editor request does not match the open document.'),
+        );
+        return;
+      }
+      await vscode.commands.executeCommand(
+        'vscode.openWith',
+        document.uri,
+        'default',
+        webviewPanel.viewColumn,
+      );
+      return;
+    }
+
     if (message.type === 'main-editor/lspCompletion') {
       await this.handleLspBridgeResult(
         webviewPanel,
@@ -699,13 +718,13 @@ export class MainEditorProvider implements vscode.CustomTextEditorProvider {
     document: vscode.TextDocument,
     format: MainEditorFormatDefinition,
   ): void {
-    if (format.kind !== 'lorebook') return;
+    if (format.kind !== 'lorebook' && format.kind !== 'text') return;
     this.postMessage(
       webviewPanel,
       createMainEditorExtensionMessage('main-editor/diagnosticsUpdate', {
         documentUri: document.uri.toString(),
         documentVersion: document.version,
-        sectionName: 'CONTENT',
+        sectionName: format.kind === 'lorebook' ? 'CONTENT' : 'TEXT',
         markers: [],
       }),
     );
@@ -930,6 +949,11 @@ function reassembleStructuredMainEditorText(
       return reassembleHtmlEditorDocument(
         model as EditorDocumentModel<HtmlEditorState>,
         state as HtmlEditorState,
+      );
+    case 'text':
+      return reassembleTextEditorDocument(
+        model as EditorDocumentModel<TextEditorState>,
+        state as TextEditorState,
       );
   }
 }

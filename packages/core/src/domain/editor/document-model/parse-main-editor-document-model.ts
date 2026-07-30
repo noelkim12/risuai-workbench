@@ -8,6 +8,7 @@ import { parseHtmlEditorDocument } from '../formats/html/document-model';
 import { parseLorebookEditorDocument } from '../formats/lorebook/document-model';
 import { parsePromptEditorDocument } from '../formats/prompt/document-model';
 import { parseRegexEditorDocument } from '../formats/regex/document-model';
+import { parseTextEditorDocument } from '../formats/text/document-model';
 
 /**
  * parseMainEditorDocumentModel 함수.
@@ -30,5 +31,7 @@ export function parseMainEditorDocumentModel(
       return parsePromptEditorDocument(source);
     case 'html':
       return parseHtmlEditorDocument(source);
+    case 'text':
+      return parseTextEditorDocument(source);
   }
 }

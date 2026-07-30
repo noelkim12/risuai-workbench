@@ -84,6 +84,12 @@ export function classifyRisuLuaModuleTableDecisions(input: RisuLuaModuleTableCla
   const consumedSymbolIds = new Set<string>();
   const buttonActionNames = collectButtonActionNames([input.source, ...(input.buttonActionSources ?? [])]);
   const extractableCommonHelperNames = collectCommonHelperClosureNames(input.analyzerResult.lexicalSymbols);
+  const requiredCommonHelperNames = collectRequiredCommonHelperNames(
+    input.analyzerResult.lexicalSymbols,
+    input.analyzerResult.publicGlobals,
+    buttonActionNames,
+  );
+  for (const name of requiredCommonHelperNames) extractableCommonHelperNames.add(name);
   const variableStoreNames = new Set(input.variableStoreNames ?? []);
   const promptStoreNames = new Set(input.promptStoreNames ?? []);
   const privateDomainBlockers = collectPrivateDomainGenerationBlockers(input.analyzerResult);
@@ -225,7 +231,7 @@ export function classifyRisuLuaModuleTableDecisions(input: RisuLuaModuleTableCla
       }
       const commonHelper = extractableCommonHelperNames.has(symbol.originalName);
       const privateDomainBlockerReasons = privateDomainBlockers.get(symbol.originalName) ?? [];
-      const domainDecision = domainGeneration === 'validated' && privateDomainBlockerReasons.length === 0 && isValidatedPrivateDomainFunction(symbol, validatedPrivateDomainNames)
+      const domainDecision = domainGeneration === 'validated' && !requiredCommonHelperNames.has(symbol.originalName) && privateDomainBlockerReasons.length === 0 && isValidatedPrivateDomainFunction(symbol, validatedPrivateDomainNames)
         ? { status: 'generated' as const, blockedReasons: [] }
         : { status: domainGeneration === 'validated' && !commonHelper ? 'blocked' as const : 'report-only' as const, blockedReasons: domainGenerationBlockedReasons(symbol, domainGeneration, commonHelper, extractableCommonHelperNames, rewriteablePublicHostGlobalNames, validatedPrivateDomainNames, validatedPublicDomainNames, variableStoreNames, promptStoreNames, privateDomainBlockerReasons) };
       const domainCandidate = commonHelper && domainDecision.status !== 'generated'
@@ -952,6 +958,53 @@ function collectCommonHelperClosureNames(symbols: RisuLuaModuleTableLexicalSymbo
     }
   }
 
+  return extractable;
+}
+
+function collectRequiredCommonHelperNames(
+  symbols: RisuLuaModuleTableLexicalSymbolFact[],
+  publicGlobals: RisuLuaModuleTablePublicGlobalFact[],
+  buttonActionNames: Set<string>,
+): Set<string> {
+  const requiredNames = new Set(
+    symbols
+      .filter((symbol) => buttonActionNames.has(symbol.originalName)
+        || publicGlobals.some((global) => global.name === symbol.originalName && !isPublicDomainCandidate(global)))
+      .flatMap((symbol) => symbol.captures),
+  );
+  const uniqueTopLevelLocals = new Map<string, RisuLuaModuleTableLexicalSymbolFact>();
+  const duplicateNames = new Set<string>();
+  for (const symbol of symbols) {
+    if (symbol.declarationKind !== 'top-level-local-function') continue;
+    if (uniqueTopLevelLocals.has(symbol.originalName)) duplicateNames.add(symbol.originalName);
+    else uniqueTopLevelLocals.set(symbol.originalName, symbol);
+  }
+  for (const name of duplicateNames) uniqueTopLevelLocals.delete(name);
+
+  const pending = [...requiredNames];
+  while (pending.length > 0) {
+    const symbol = uniqueTopLevelLocals.get(pending.pop() ?? '');
+    if (symbol === undefined) continue;
+    for (const capture of symbol.captures) {
+      if (requiredNames.has(capture)) continue;
+      requiredNames.add(capture);
+      pending.push(capture);
+    }
+  }
+
+  const extractable = new Set<string>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const name of requiredNames) {
+      if (extractable.has(name)) continue;
+      const symbol = uniqueTopLevelLocals.get(name);
+      if (symbol === undefined || !isCommonHelperEffectsSafe(symbol)) continue;
+      if (!symbol.captures.every((capture) => extractable.has(capture))) continue;
+      extractable.add(name);
+      changed = true;
+    }
+  }
   return extractable;
 }
 

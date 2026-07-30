@@ -39,4 +39,6 @@ export interface SimulatorProfile {
 
 export type MainEditorSimulatorProfile = SimulatorProfile;
 
-export type SimulatorProfileVariablePatch = Partial<SimulatorProfileVariableOverrides>;
+export type SimulatorProfileVariablePatch = Partial<SimulatorProfileVariableOverrides> & {
+  contextVariables?: Readonly<Record<string, string | number | null>>;
+};

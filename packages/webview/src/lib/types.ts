@@ -659,6 +659,11 @@ export type MarkerEditorErrorMessage = MessageEnvelope<'marker-editor/error', Ma
 
 export type MainEditorReadyMessage = MessageEnvelope<'main-editor/ready', MainEditorReadyPayload>;
 
+export type MainEditorOpenDefaultEditorMessage = MessageEnvelope<
+  'main-editor/openDefaultEditor',
+  MainEditorReadyPayload
+>;
+
 export type MainEditorEditMessage = MessageEnvelope<'main-editor/edit', MainEditorEditPayload>;
 
 export type MainEditorStructuredEditMessage = MessageEnvelope<
@@ -840,6 +845,7 @@ export type MarkerEditorExtensionMessage =
 
 export type MainEditorWebviewMessage =
   | MainEditorReadyMessage
+  | MainEditorOpenDefaultEditorMessage
   | MainEditorEditMessage
   | MainEditorStructuredEditMessage
   | MainEditorUpdatePreferencesMessage

@@ -62,4 +62,19 @@ test('main editor protocol guards accept structured model payloads', () => {
     }),
     false,
   );
+  assert.equal(
+    module.isMainEditorStructuredEditMessage({
+      protocol: module.MAIN_EDITOR_PROTOCOL,
+      version: module.MAIN_EDITOR_PROTOCOL_VERSION,
+      type: 'main-editor/structuredEdit',
+      payload: {
+        requestId: 'req-text',
+        documentUri: 'file:///tmp/greeting.risutext',
+        baseVersion: 1,
+        formatKind: 'text',
+        state: { contentText: 'Hello {{user}}' },
+      },
+    }),
+    true,
+  );
 });

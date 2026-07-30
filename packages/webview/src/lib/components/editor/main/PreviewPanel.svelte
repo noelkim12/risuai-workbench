@@ -36,6 +36,7 @@
   export let preview: PreviewPayload | null;
   export let pending: boolean;
   export let sourceText: string | undefined = undefined;
+  export let enableDecoratorLenses = true;
 
   $: outputLines = preview ? splitPreviewOutput(preview.output) : [];
   $: sourceLines = sourceText?.split('\n') ?? [];
@@ -330,7 +331,7 @@
    * @returns output 내부에 렌더링할 lens 배열
    */
   function createPreviewOutputLenses(previewPayload: PreviewPayload, outputLineCount: number, lines: string[]): PreviewOutputLens[] {
-    const decoratorLenses = createDecoratorOutputLenses(outputLines);
+    const decoratorLenses = enableDecoratorLenses ? createDecoratorOutputLenses(outputLines) : [];
     if (!isRuntimePreview(previewPayload)) {
       return decoratorLenses.slice(0, MAX_PREVIEW_OUTPUT_LENSES);
     }

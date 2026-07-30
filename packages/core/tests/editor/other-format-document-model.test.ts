@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   parseHtmlEditorDocument,
+  parseMainEditorDocumentModel,
   parsePromptEditorDocument,
   parseRegexEditorDocument,
+  parseTextEditorDocument,
   reassembleHtmlEditorDocument,
   reassemblePromptEditorDocument,
   reassembleRegexEditorDocument,
+  reassembleTextEditorDocument,
 } from '../../src/domain/editor';
 
 describe('other format editor document models', () => {
@@ -50,7 +53,20 @@ describe('other format editor document models', () => {
 
     expect(model.formatKind).toBe('html');
     expect(model.state.contentText).toBe(source);
+    expect(parseMainEditorDocumentModel('text', source).formatKind).toBe('text');
     expect(reassembleHtmlEditorDocument(model, { contentText: '<main>{{user}}</main>\n' })).toBe('<main>{{user}}</main>\n');
+  });
+
+  it('maps risutext as a frontmatter-free TEXT identity document', () => {
+    const source = 'Hello {{getvar::name}}\n';
+    const model = parseTextEditorDocument(source);
+
+    expect(model.formatKind).toBe('text');
+    expect(model.frontmatter).toBeNull();
+    expect(model.sections).toHaveLength(1);
+    expect(model.sections[0]?.name).toBe('TEXT');
+    expect(model.state.contentText).toBe(source);
+    expect(reassembleTextEditorDocument(model, { contentText: 'Hi {{user}}\n' })).toBe('Hi {{user}}\n');
   });
 
   it('preserves regex raw source when unsupported sections are present', () => {

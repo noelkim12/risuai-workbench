@@ -3,7 +3,9 @@
   import { onDestroy } from 'svelte';
   import { createRequestId } from '../../../requestIds';
   import type { MainEditorFormatPreviewResultPayload } from '../../../types/mainEditor';
+  // biome-ignore lint/correctness/noUnusedImports: Svelte markup renders this component.
   import RegexPerformancePanel from './RegexPerformancePanel.svelte';
+  // biome-ignore lint/correctness/noUnusedImports: Svelte markup renders this component.
   import RegexRiskPanel from './RegexRiskPanel.svelte';
   import { runRegexWorkerWithTimeout } from './regexWorkerClient';
   import type { RegexWorkerResult } from './regexWorkerTypes';
@@ -20,13 +22,19 @@
   const HTML_PREVIEW_CSP = "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'none'";
 
   let workerResult: RegexWorkerResult | null = null;
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup reads this pending state.
   let workerPending = false;
   let lastRunKey = '';
   let disposed = false;
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup binds this details state.
   let outputExpanded = true;
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup binds this details state.
   let performanceExpanded = true;
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup binds this details state.
   let matchesExpanded = true;
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup binds this details state.
   let riskExpanded = true;
+  // biome-ignore lint/correctness/noUnusedVariables: Svelte markup binds this details state.
   let diagnosticsExpanded = true;
 
   $: regex = preview?.regex;
@@ -110,6 +118,7 @@
       '<head>',
       '<meta charset="UTF-8">',
       `<meta http-equiv="Content-Security-Policy" content="${escapeHtmlAttribute(csp)}">`,
+      '<style>:root { color-scheme: light dark; } body { margin: 0; color: CanvasText; background: Canvas; white-space: pre-wrap; }</style>',
       '</head>',
       '<body>',
       bodyHtml,

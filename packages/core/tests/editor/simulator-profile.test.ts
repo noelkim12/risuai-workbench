@@ -53,6 +53,18 @@ describe('main editor simulator profile contracts', () => {
     expect(merged.tempVariables).toEqual({ scratch: 'preview' });
   });
 
+  it('maps preview runtime context overrides into the CBS simulation context', () => {
+    const previewOverrides = {
+      chatVariables: {},
+      contextVariables: { chatIndex: '1', lastmessageid: '2' },
+    };
+
+    const merged = mergeSimulatorProfileVariables({}, previewOverrides);
+
+    expect(merged.chatIndex).toBe('1');
+    expect(merged.lastMessageId).toBe('2');
+  });
+
   it('merges variables when the saved profile object is passed directly', () => {
     const profile = createDefaultMainEditorSimulatorProfile();
     profile.variables.chatVariables.mood = 'profile';
