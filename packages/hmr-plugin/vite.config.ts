@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
@@ -14,7 +14,6 @@ type PackageMetadata = {
 
 const configRoot = dirname(fileURLToPath(import.meta.url));
 const distRoot = resolve(configRoot, 'dist');
-const windowsDriveOutputRoot = '/mnt/d/risu';
 
 const sanitizeBannerValue = (value: string): string =>
   value.replace(/[\r\n]+/g, ' ').trim();
@@ -89,14 +88,6 @@ const singleBundlePlugin = (): Plugin => ({
   },
 });
 
-const copyBundleToWindowsDrivePlugin = (): Plugin => ({
-  name: 'risu-copy-plugin-bundle-to-windows-drive',
-  closeBundle() {
-    mkdirSync(windowsDriveOutputRoot, { recursive: true });
-    cpSync(distRoot, windowsDriveOutputRoot, { recursive: true });
-  },
-});
-
 export default defineConfig({
   build: {
     lib: {
@@ -124,6 +115,5 @@ export default defineConfig({
       emitCss: false,
     }),
     singleBundlePlugin(),
-    copyBundleToWindowsDrivePlugin(),
   ],
 });

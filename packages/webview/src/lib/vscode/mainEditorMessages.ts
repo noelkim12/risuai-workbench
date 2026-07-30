@@ -17,6 +17,7 @@ import {
   type MainEditorLspRevealLocationRequestMessage,
   type MainEditorLspRenameRequestMessage,
   type MainEditorLspWorkspaceSymbolsRequestMessage,
+  type MainEditorOpenDefaultEditorMessage,
   type MainEditorPreviewRequestMessage,
   type MainEditorPreviewRuntimeRequestMessage,
   type MainEditorReadyMessage,
@@ -79,6 +80,17 @@ function createMainEditorMessage<TType extends string, TPayload>(
  */
 export function createMainEditorReadyMessage(documentUri: string): MainEditorReadyMessage {
   return createMainEditorMessage('main-editor/ready', { documentUri });
+}
+
+/**
+ * createMainEditorOpenDefaultEditorMessage 함수.
+ * 현재 custom editor 문서를 VS Code 기본 텍스트 편집기로 열도록 요청함.
+ *
+ * @param documentUri - 기본 텍스트 편집기로 열 문서 URI
+ * @returns openDefaultEditor message envelope
+ */
+export function createMainEditorOpenDefaultEditorMessage(documentUri: string): MainEditorOpenDefaultEditorMessage {
+  return createMainEditorMessage('main-editor/openDefaultEditor', { documentUri });
 }
 
 /**

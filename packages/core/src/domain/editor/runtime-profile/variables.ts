@@ -20,10 +20,13 @@ export function mergeSimulatorProfileVariables(
   previewOverrides: SimulatorProfileVariablePatch = {},
 ): CbsSimulationContextInput {
   const profileVariables = isSimulatorProfile(profileOrVariables) ? profileOrVariables.variables : profileOrVariables;
+  const contextVariables = previewOverrides.contextVariables ?? {};
   return {
     chatVariables: { ...(profileVariables.chatVariables ?? {}), ...(previewOverrides.chatVariables ?? {}) },
     globalVariables: { ...(profileVariables.globalVariables ?? {}), ...(previewOverrides.globalVariables ?? {}) },
     toggleValues: { ...(profileVariables.toggleValues ?? {}), ...(previewOverrides.toggleValues ?? {}) },
     tempVariables: { ...(profileVariables.tempVariables ?? {}), ...(previewOverrides.tempVariables ?? {}) },
+    chatIndex: contextVariables.chatIndex ?? undefined,
+    lastMessageId: contextVariables.lastmessageid,
   };
 }

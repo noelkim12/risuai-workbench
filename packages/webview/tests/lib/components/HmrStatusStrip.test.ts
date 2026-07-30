@@ -115,6 +115,26 @@ describe('HmrStatusStrip', () => {
     expect(stopBtn!.source).toContain('>Stop<');
   });
 
+  it('wires Save plugin button to onSavePlugin callback', () => {
+    const buttons = collectButtons();
+    const savePluginBtn = buttons.find((b) => b.clickHandler === 'onSavePlugin');
+    expect(savePluginBtn).toBeDefined();
+    expect(savePluginBtn!.source).toContain('Save plugin');
+  });
+
+  it('wires Open in Explorer button to onOpenSavedPlugin callback', () => {
+    const buttons = collectButtons();
+    const openPluginBtn = buttons.find((b) => b.clickHandler === 'onOpenSavedPlugin');
+    expect(openPluginBtn).toBeDefined();
+    expect(openPluginBtn!.source).toContain('Open in Explorer');
+  });
+
+  it('shows an explicit saving state on the plugin action', () => {
+    expect(StripSource).toContain("pluginSaveState === 'saving'");
+    expect(StripSource).toContain('Saving…');
+    expect(StripSource).toContain('aria-busy');
+  });
+
   it('wires Broadcast this instead button to onBroadcastHere callback', () => {
     const buttons = collectButtons();
     const broadcastBtn = buttons.find((b) => b.source.includes('Broadcast this instead'));

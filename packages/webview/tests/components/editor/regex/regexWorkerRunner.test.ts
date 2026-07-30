@@ -215,6 +215,21 @@ describe('runRegexWorkerRequest', () => {
     expect(result.performance.matchCount).toBe(0);
   });
 
+  it('preserves unmatched sample text when a matched marker is replaced', () => {
+    const result = runRegexWorkerRequest({
+      requestId: 'r10-marker',
+      pattern: '▶▶▶',
+      flags: '',
+      replacement: 'test\nasdf',
+      sampleInput: '123123\n▶▶▶',
+      limits: defaultLimits,
+    });
+
+    expect(result.status).toBe('ok');
+    expect(result.matches).toHaveLength(1);
+    expect(result.output).toBe('123123\ntest\nasdf');
+  });
+
   it('treats invalid $ sequences as literal text (regression)', () => {
     const result = runRegexWorkerRequest({
       requestId: 'r11',

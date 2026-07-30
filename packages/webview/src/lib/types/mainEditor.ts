@@ -3,8 +3,8 @@
  * @file packages/webview/src/lib/types/mainEditor.ts
  */
 
-export type MainEditorFormatKind = 'lorebook' | 'regex' | 'prompt' | 'html';
-export type MainEditorLanguageId = 'risulorebook' | 'risuregex' | 'risuprompt' | 'risuhtml';
+export type MainEditorFormatKind = 'lorebook' | 'regex' | 'prompt' | 'html' | 'text';
+export type MainEditorLanguageId = 'risulorebook' | 'risuregex' | 'risuprompt' | 'risuhtml' | 'risutext';
 export type MainEditorSectionName =
   | 'CONTENT'
   | 'KEYS'
@@ -572,7 +572,7 @@ export interface MainEditorPreviewRuntimeRequestPayload {
   documentVersion: number;
   contentVersion: number;
   formatKind: MainEditorFormatKind;
-  sectionName: 'CONTENT';
+  sectionName: 'CONTENT' | 'TEXT';
   contentText: string;
   overrides: MainEditorVariableOverridesPayload;
   profileId?: string;
@@ -584,7 +584,7 @@ export interface MainEditorPreviewRuntimeResultPayload {
   documentVersion: number;
   contentVersion: number;
   formatKind: MainEditorFormatKind;
-  sectionName: 'CONTENT';
+  sectionName: 'CONTENT' | 'TEXT';
   status: 'ok' | 'partial' | 'aborted' | 'error' | 'stale';
   output: string;
   bindings: MainEditorVariableBindingPayload[];
@@ -601,7 +601,7 @@ export interface MainEditorVariableCandidatesRequestPayload {
   documentVersion: number;
   contentVersion: number;
   formatKind: MainEditorFormatKind;
-  sectionName: 'CONTENT' | 'IN';
+  sectionName: 'CONTENT' | 'TEXT' | 'IN';
   scope: Exclude<MainEditorVariableSectionScope, 'usedHere'>;
   variableNames: string[];
 }

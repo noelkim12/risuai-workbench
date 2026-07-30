@@ -134,6 +134,7 @@ test('main editor format metadata maps supported extensions to view types', () =
   assert.equal(module.detectMainEditorFormat('/tmp/rule.risuregex')?.viewType, 'risuaiWorkbench.mainEditor.regex');
   assert.equal(module.detectMainEditorFormat('/tmp/template.risuprompt')?.viewType, 'risuaiWorkbench.mainEditor.prompt');
   assert.equal(module.detectMainEditorFormat('/tmp/page.risuhtml')?.viewType, 'risuaiWorkbench.mainEditor.html');
+  assert.equal(module.detectMainEditorFormat('/tmp/greeting.risutext')?.viewType, 'risuaiWorkbench.mainEditor.text');
   assert.equal(module.detectMainEditorFormat('/tmp/page.txt'), null);
 });
 
@@ -199,9 +200,9 @@ test('main editor format list has one provider per Phase 1 format', () => {
 
   assert.deepEqual(
     module.MAIN_EDITOR_FORMATS.map((format) => format.kind),
-    ['lorebook', 'regex', 'prompt', 'html'],
+    ['lorebook', 'regex', 'prompt', 'html', 'text'],
   );
-  assert.equal(new Set(module.MAIN_EDITOR_FORMATS.map((format) => format.viewType)).size, 4);
+  assert.equal(new Set(module.MAIN_EDITOR_FORMATS.map((format) => format.viewType)).size, 5);
 });
 
 test('main editor structured edit messages accept complete lorebook state', () => {
@@ -372,6 +373,22 @@ test('main editor protocol guards accept LSP and preview request payloads', () =
     }),
     true,
   );
+  assert.equal(
+    module.isMainEditorWebviewMessage({
+      ...base,
+      type: 'main-editor/previewRequest',
+      payload: {
+        requestId: 'preview-text',
+        documentUri: 'file:///tmp/greeting.risutext',
+        documentVersion: 2,
+        contentVersion: 1,
+        formatKind: 'text',
+        sectionName: 'TEXT',
+        contentText: 'Hello {{getvar::name}}',
+      },
+    }),
+    true,
+  );
 });
 
 test('main editor protocol guards reject invalid Monaco positions', () => {
@@ -449,6 +466,21 @@ test('main editor protocol guards accept Phase 5 runtime preview requests', () =
       profileId: 'default',
     },
   }), true);
+  assert.equal(module.isMainEditorWebviewMessage({
+    protocol: module.MAIN_EDITOR_PROTOCOL,
+    version: module.MAIN_EDITOR_PROTOCOL_VERSION,
+    type: 'main-editor/previewRuntimeRequest',
+    payload: {
+      requestId: 'runtime-text',
+      documentUri: 'file:///tmp/greeting.risutext',
+      documentVersion: 2,
+      contentVersion: 1,
+      formatKind: 'text',
+      sectionName: 'TEXT',
+      contentText: 'Hello {{getvar::mood}}',
+      overrides: { chatVariables: { mood: 'calm' } },
+    },
+  }), true);
 });
 
 test('main editor protocol guards accept lazy variable candidate requests', () => {
@@ -467,6 +499,21 @@ test('main editor protocol guards accept lazy variable candidate requests', () =
       sectionName: 'CONTENT',
       scope: 'workspace',
       variableNames: ['mood', 'is_night'],
+    },
+  }), true);
+  assert.equal(module.isMainEditorWebviewMessage({
+    protocol: module.MAIN_EDITOR_PROTOCOL,
+    version: module.MAIN_EDITOR_PROTOCOL_VERSION,
+    type: 'main-editor/variableCandidatesRequest',
+    payload: {
+      requestId: 'candidates-text',
+      documentUri: 'file:///tmp/greeting.risutext',
+      documentVersion: 2,
+      contentVersion: 1,
+      formatKind: 'text',
+      sectionName: 'TEXT',
+      scope: 'workspace',
+      variableNames: ['mood'],
     },
   }), true);
 });

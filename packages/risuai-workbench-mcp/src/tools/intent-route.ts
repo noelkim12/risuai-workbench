@@ -131,6 +131,7 @@ const RISULUA_RUNTIME_DEBUG_KEYWORDS = [
   '호출',
   '디버그',
   '재현',
+  '테스트',
 ];
 const RISULUA_RUNTIME_SMOKE_KEYWORDS = [
   'runtime smoke',
@@ -1215,7 +1216,7 @@ function classifyIntent(
   const runtimeSubjectRequested = hasKeyword(text, RISULUA_RUNTIME_SUBJECT_KEYWORDS);
   const runtimeSmokeRequested = hasKeyword(text, RISULUA_RUNTIME_SMOKE_KEYWORDS)
     && (runtimeSubjectRequested || hasKeyword(text, RISULUA_SPLIT_RUNTIME_KEYWORDS));
-  const hasEnglishRuntimeDebugVerb = /\b(?:execute|run|debug|reproduce)\b/u.test(text)
+  const hasEnglishRuntimeDebugVerb = /\b(?:execute|run|debug|reproduce|test)\b/u.test(text)
     || (/\bcall\b/u.test(text) && !/\bcall graph\b/u.test(text));
   const runtimeDebugRequested = runtimeSubjectRequested
     && (hasEnglishRuntimeDebugVerb || hasKeyword(text, RISULUA_RUNTIME_DEBUG_KEYWORDS));

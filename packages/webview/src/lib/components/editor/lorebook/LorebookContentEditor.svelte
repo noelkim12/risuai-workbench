@@ -18,6 +18,9 @@
   import type { CbsSnippetVariant } from './lorebookAuthoringTypes';
 
   export let documentUri: string;
+  export let formatKind: 'lorebook' | 'text';
+  export let sectionName: 'CONTENT' | 'TEXT';
+  export let enableDecoratorCompletion: boolean;
   export let documentVersion: number;
   export let contentVersion: number;
   export let contentText: string;
@@ -49,7 +52,7 @@
       container,
       initialValue: contentText,
       languageId: CONTENT_LANGUAGE_ID,
-      modelUri: `${documentUri}#CONTENT`,
+      modelUri: `${documentUri}#${sectionName}`,
       onChange: (value, event) => {
         onChange(value);
         scheduleCbsAutoSuggest(event.changes);
@@ -62,7 +65,9 @@
     model = controller.model;
 
     rootCompletionDisposable = registerMainEditorCbsRootCompletionProvider(monaco, CONTENT_LANGUAGE_ID);
-    decoratorCompletionDisposable = registerMainEditorLorebookDecoratorCompletionProvider(monaco, CONTENT_LANGUAGE_ID);
+    decoratorCompletionDisposable = enableDecoratorCompletion
+      ? registerMainEditorLorebookDecoratorCompletionProvider(monaco, CONTENT_LANGUAGE_ID)
+      : undefined;
     registerProviders();
     applyMarkers();
   });
@@ -125,13 +130,13 @@
   function registerProviders(): void {
     if (!lspClient || providerDisposables.length > 0) return;
     providerDisposables = lspClient.register(monaco, CONTENT_LANGUAGE_ID);
-    if (advancedLspController) {
+    if (advancedLspController && formatKind === 'lorebook' && sectionName === 'CONTENT') {
       providerDisposables.push(
         ...registerAdvancedLspProviders(monaco, advancedLspController, {
           documentUri,
           getDocumentVersion: () => documentVersion,
-          getFormatKind: () => 'lorebook',
-          getSectionName: () => 'CONTENT',
+          getFormatKind: () => formatKind,
+          getSectionName: () => sectionName,
           onStatus,
         }),
       );
@@ -148,7 +153,9 @@
     const currentModel = model;
     if (!editor || !currentModel) return;
     const triggerChange = changes.find(
-      (change) => shouldTriggerMainEditorCbsSuggestForChange(currentModel, change) || shouldTriggerMainEditorLorebookDecoratorSuggestForChange(currentModel, change),
+      (change) =>
+        shouldTriggerMainEditorCbsSuggestForChange(currentModel, change) ||
+        (enableDecoratorCompletion && shouldTriggerMainEditorLorebookDecoratorSuggestForChange(currentModel, change)),
     );
     if (!triggerChange) return;
 
@@ -219,4 +226,4 @@
   }
 </script>
 
-<div class="lorebook-content-editor" bind:this={container} aria-label="Lorebook CONTENT editor"></div>
+<div class="lorebook-content-editor" bind:this={container} aria-label={`${formatKind} ${sectionName} editor`}></div>
