@@ -17,6 +17,7 @@ import type {
   HtmlStructuredState,
   MainEditorFormatPreviewRequestPayload,
   MainEditorFormatPreviewResultPayload,
+  MainEditorFormatKind,
   MainEditorHtmlPreviewContextPayload,
   MainEditorSimulatorProfilePayload,
   MainEditorVariableOverridesPayload,
@@ -36,7 +37,7 @@ import { createPreviewBaseResultFields } from './shared/bridge-helpers';
 export async function createMainEditorFormatPreviewResult(
   document: vscode.TextDocument,
   payload: MainEditorFormatPreviewRequestPayload,
-  expectedFormatKind?: 'regex' | 'prompt' | 'html' | 'lorebook',
+  expectedFormatKind?: MainEditorFormatKind,
 ): Promise<MainEditorFormatPreviewResultPayload> {
   if (payload.documentUri !== document.uri.toString()) {
     return createStaleFormatPreviewResult(document, payload, 'Format preview request document URI does not match the open TextDocument.');

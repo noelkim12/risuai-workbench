@@ -13,7 +13,7 @@ export const CatalogInputSchema = z.object({
   risk: z.string().optional(),
   query: z.string().optional(),
   actionIds: z.array(z.string()).max(12).optional(),
-  limit: z.number().int().min(1).max(12).optional(),
+  limit: z.number().int().min(1).max(20).optional(),
 });
 
 export type CatalogInput = z.infer<typeof CatalogInputSchema>;

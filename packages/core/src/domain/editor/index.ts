@@ -29,6 +29,7 @@ export type {
   MainEditorFormatKind,
   PromptEditorState,
   RegexEditorState,
+  TextEditorState,
   SourceLocatedRange,
   SourcePosition,
   SourceRange,
@@ -71,6 +72,9 @@ export { HTML_PREVIEW_CSP, createSandboxedHtmlSrcdoc, escapeHtmlAttribute, resol
 export type { HtmlPreviewSandboxMode } from './formats/html/preview-security';
 export type { HtmlMainEditorPreviewInput, HtmlMainEditorPreviewResult } from './formats/html/preview';
 export { createHtmlMainEditorPreview } from './formats/html/preview';
+
+// Text format — frontmatter-free full-file identity model
+export { parseTextEditorDocument, reassembleTextEditorDocument } from './formats/text/document-model';
 
 // Runtime profile — simulator profile 타입, 기본값, validation, clone, variable merge
 export type {

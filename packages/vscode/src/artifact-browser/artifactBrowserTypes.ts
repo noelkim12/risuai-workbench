@@ -317,6 +317,15 @@ export interface ArtifactBrowserHmrStartBroadcastPayload {
 
 export type ArtifactBrowserHmrStopBroadcastPayload = Record<string, never>;
 
+export type ArtifactBrowserHmrSavePluginPayload = Record<string, never>;
+
+export type ArtifactBrowserHmrOpenSavedPluginPayload = Record<string, never>;
+
+export type ArtifactBrowserHmrSaveCompletedPayload =
+  | { readonly kind: 'saved' }
+  | { readonly kind: 'cancelled' }
+  | { readonly kind: 'failed'; readonly error: string };
+
 export interface ArtifactBrowserHmrStatusPayload {
   running: boolean;
   stableId?: string;
@@ -625,6 +634,21 @@ export type ArtifactBrowserHmrStopBroadcastMessage = MessageEnvelope<
   ArtifactBrowserHmrStopBroadcastPayload
 >;
 
+export type ArtifactBrowserHmrSavePluginMessage = MessageEnvelope<
+  'artifact-browser/hmrSavePlugin',
+  ArtifactBrowserHmrSavePluginPayload
+>;
+
+export type ArtifactBrowserHmrOpenSavedPluginMessage = MessageEnvelope<
+  'artifact-browser/hmrOpenSavedPlugin',
+  ArtifactBrowserHmrOpenSavedPluginPayload
+>;
+
+export type ArtifactBrowserHmrSaveCompletedMessage = MessageEnvelope<
+  'artifact-browser/hmrSaveCompleted',
+  ArtifactBrowserHmrSaveCompletedPayload
+>;
+
 export type ArtifactBrowserAnalyzeArtifactMessage = MessageEnvelope<
   'artifact-browser/analyzeArtifact',
   ArtifactBrowserAnalyzeArtifactPayload
@@ -719,6 +743,8 @@ export type ArtifactBrowserWebviewMessage =
   | ArtifactBrowserOpenPackedOutputMessage
   | ArtifactBrowserHmrStartBroadcastMessage
   | ArtifactBrowserHmrStopBroadcastMessage
+  | ArtifactBrowserHmrSavePluginMessage
+  | ArtifactBrowserHmrOpenSavedPluginMessage
   | ArtifactBrowserAnalyzeArtifactMessage
   | ArtifactBrowserOpenAssetManagerMessage
   | ArtifactBrowserOpenCreateWizardMessage
@@ -739,7 +765,8 @@ export type ArtifactBrowserExtensionMessage =
   | ArtifactBrowserCardsMessage
   | ArtifactBrowserDetailMessage
   | ArtifactBrowserPackCompletedMessage
-  | ArtifactBrowserHmrStatusMessage;
+  | ArtifactBrowserHmrStatusMessage
+  | ArtifactBrowserHmrSaveCompletedMessage;
 
 export type MarkerEditorReadyMessage = MessageEnvelope<'marker-editor/ready', MarkerEditorReadyPayload>;
 

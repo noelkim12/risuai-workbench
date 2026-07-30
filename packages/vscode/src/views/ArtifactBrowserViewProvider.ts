@@ -26,11 +26,14 @@ import {
   createArtifactBrowserCardsMessage,
   createArtifactBrowserDetailMessage,
   createArtifactBrowserHmrStatusMessage,
+  createArtifactBrowserHmrSaveCompletedMessage,
   createArtifactBrowserPackCompletedMessage,
   isArtifactBrowserAnalyzeArtifactMessage,
   isArtifactBrowserCreateArtifactMessage,
   isArtifactBrowserCreateSectionEntryMessage,
   isArtifactBrowserHmrStartBroadcastMessage,
+  isArtifactBrowserHmrSavePluginMessage,
+  isArtifactBrowserHmrOpenSavedPluginMessage,
   isArtifactBrowserHmrStopBroadcastMessage,
   isArtifactBrowserImportArtifactMessage,
   isArtifactBrowserImportArtifactChunkMessage,
@@ -66,6 +69,7 @@ import {
   type BrowserSection,
 } from '../artifact-browser/artifactBrowserTypes';
 import { getHmrServerService } from '../hmr/HmrServerService';
+import { HmrPluginExportService } from '../hmr/HmrPluginExportService';
 import { resolvePackFormat, sanitizePackFilename, formatCompactTimestamp, pickCollisionTimestampMs } from '../artifact-browser/packArtifactPlanner';
 import { CreateWizardPanel } from './CreateWizardPanel';
 import { MarkerEditorViewProvider } from './MarkerEditorViewProvider';
@@ -159,8 +163,10 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
   private artifactBrowserInitialized = false;
   private artifactBrowserInitialization: Promise<void> | undefined;
   private readonly analysisReportService = new AnalysisReportService();
+  private readonly hmrPluginExportService: HmrPluginExportService;
 
   constructor(private readonly context: vscode.ExtensionContext) {
+    this.hmrPluginExportService = new HmrPluginExportService(context.extensionUri);
     ArtifactBrowserViewProvider.instances.add(this);
     this.registerMarkerWatcher();
     this.context.subscriptions.push({
@@ -360,12 +366,24 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
         }
 
         if (isArtifactBrowserHmrStartBroadcastMessage(message)) {
-          void this.startHmrBroadcast(message.payload.stableId);
+          void this.startHmrBroadcast(message.payload.stableId).finally(() => {
+            this.postMessage(createArtifactBrowserHmrStatusMessage(getHmrServerService().getStatus()));
+          });
           return;
         }
 
         if (isArtifactBrowserHmrStopBroadcastMessage(message)) {
           void this.stopHmrBroadcast();
+          return;
+        }
+
+        if (isArtifactBrowserHmrSavePluginMessage(message)) {
+          void this.saveHmrPlugin();
+          return;
+        }
+
+        if (isArtifactBrowserHmrOpenSavedPluginMessage(message)) {
+          void this.hmrPluginExportService.openInExplorer();
           return;
         }
 
@@ -491,6 +509,7 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
       | ReturnType<typeof createArtifactBrowserCardsMessage>
       | ReturnType<typeof createArtifactBrowserDetailMessage>
       | ReturnType<typeof createArtifactBrowserHmrStatusMessage>
+      | ReturnType<typeof createArtifactBrowserHmrSaveCompletedMessage>
       | ArtifactBrowserPackCompletedMessage,
   ): void {
     void this.view?.webview.postMessage(message);
@@ -745,6 +764,11 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     } catch (error) {
       void vscode.window.showErrorMessage(`HMR broadcast failed: ${getErrorMessage(error)}`);
     }
+  }
+
+  private async saveHmrPlugin(): Promise<void> {
+    const result = await this.hmrPluginExportService.save();
+    this.postMessage(createArtifactBrowserHmrSaveCompletedMessage(result));
   }
 
   private async stopHmrBroadcast(): Promise<void> {

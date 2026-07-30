@@ -22,6 +22,8 @@ import {
   type ArtifactBrowserImportArtifactPayload,
   type ArtifactBrowserHmrStartBroadcastMessage,
   type ArtifactBrowserHmrStartBroadcastPayload,
+  type ArtifactBrowserHmrSavePluginMessage,
+  type ArtifactBrowserHmrOpenSavedPluginMessage,
   type ArtifactBrowserHmrStopBroadcastMessage,
   type ArtifactBrowserMoveLorebookFolderMessage,
   type ArtifactBrowserMoveGreetingItemMessage,
@@ -170,6 +172,14 @@ export function createArtifactBrowserHmrStartBroadcastMessage(
 
 export function createArtifactBrowserHmrStopBroadcastMessage(): ArtifactBrowserHmrStopBroadcastMessage {
   return createArtifactBrowserWebviewMessage('artifact-browser/hmrStopBroadcast', {});
+}
+
+export function createArtifactBrowserHmrSavePluginMessage(): ArtifactBrowserHmrSavePluginMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/hmrSavePlugin', {});
+}
+
+export function createArtifactBrowserHmrOpenSavedPluginMessage(): ArtifactBrowserHmrOpenSavedPluginMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/hmrOpenSavedPlugin', {});
 }
 
 export function createArtifactBrowserAnalyzeArtifactMessage(

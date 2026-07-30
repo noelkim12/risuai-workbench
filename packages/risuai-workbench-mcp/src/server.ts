@@ -10,6 +10,7 @@ import packageJson from '../package.json';
 import type { PatchOperation } from './contracts/patch-plan';
 import { createDiagnosticEnvelope } from './contracts/diagnostics';
 import { createJsonToolResult } from './contracts/mcp-result';
+import { withMcpJsonSchemaDialect } from './contracts/json-schema-dialect';
 import {
   diagnosticEnvelopeOutputSchema,
   workbenchJsonOutputSchema,
@@ -168,7 +169,7 @@ export function createMcpServer(startupContext: StartupContext): McpServer {
     {
       annotations: annotationsForTool('workbench.smoke'),
       description: smokeTool?.description ?? 'Return a minimal risuai-workbench-mcp startup smoke response.',
-      inputSchema: {},
+      inputSchema: withMcpJsonSchemaDialect(z.object({}), 'input'),
       outputSchema: diagnosticEnvelopeOutputSchema,
       title: smokeTool?.title ?? 'RisuAI Workbench MCP smoke check',
     },
@@ -950,7 +951,7 @@ function registerIntentRouteTools(server: McpServer): void {
     {
       annotations: annotationsForTool('workbench.route_intent'),
       description: routeTool?.description ?? 'Classify caller intent into a deterministic route with allowed tools, risk, and next step.',
-      inputSchema: intentRouteInputSchema,
+      inputSchema: withMcpJsonSchemaDialect(intentRouteInputSchema, 'input'),
       outputSchema: diagnosticEnvelopeOutputSchema,
       title: routeTool?.title ?? 'Route intent',
     },
@@ -1337,8 +1338,8 @@ function registerFacadeTools(
   server.registerTool(
     'workbench.catalog',
     {
-      description: 'extension affordance: list actions by capability, query, or route-provided actionIds. Key actions: core.run_extract, core.run_pack, analyze.query_lua_analysis, validate.cbs_syntax.',
-      inputSchema: CatalogInputSchema.shape,
+      description: 'extension affordance: list route actions. RisuLua runtime: risulua.debug_call, risulua.runtime_smoke.',
+      inputSchema: withMcpJsonSchemaDialect(CatalogInputSchema, 'input'),
       outputSchema: workbenchJsonOutputSchema,
       title: 'Catalog actions',
     },
@@ -1351,8 +1352,8 @@ function registerFacadeTools(
   server.registerTool(
     'workbench.prepare_action',
     {
-      description: 'Describe input requirements for a single action before running it. For RisuAI archive extraction, prepare actionId core.run_extract; do not prepare legacy workbench.run_extract in default facade mode.',
-      inputSchema: PrepareActionInputSchema.shape,
+      description: 'Describe action inputs. RisuLua runtime: risulua.debug_call or risulua.runtime_smoke; archives: core.run_extract.',
+      inputSchema: withMcpJsonSchemaDialect(PrepareActionInputSchema, 'input'),
       outputSchema: workbenchJsonOutputSchema,
       title: 'Prepare action',
     },
@@ -1372,8 +1373,8 @@ function registerFacadeTools(
   server.registerTool(
     'workbench.run_action',
     {
-      description: 'Execute an action with validated input. For .risum/.charx/.risup extraction, run actionId core.run_extract; for .risulua and CBS files prefer analysis/validation before mutation; do not use generic ZipFile/unzip for canonical workbench extraction.',
-      inputSchema: RunActionInputSchema.shape,
+      description: 'Execute an action. Use Fengari-backed risulua.debug_call or risulua.runtime_smoke for RisuLua tests; core.run_extract for archives.',
+      inputSchema: withMcpJsonSchemaDialect(RunActionInputSchema, 'input'),
       outputSchema: workbenchJsonOutputSchema,
       title: 'Run action',
     },
@@ -1387,7 +1388,7 @@ function registerFacadeTools(
     'workbench.context',
     {
       description: 'Create, read, search, summarize, or release in-memory context records for lazy loading large inputs.',
-      inputSchema: ContextToolInputSchema.shape,
+      inputSchema: withMcpJsonSchemaDialect(ContextToolInputSchema, 'input'),
       outputSchema: workbenchJsonOutputSchema,
       title: 'Manage context',
     },
@@ -1401,7 +1402,7 @@ function registerFacadeTools(
     'workbench.patch_preview',
     {
       description: 'Preview patch plans safely. Execute a registered preview action by actionId+args, or pass through a supplied patchPlan object.',
-      inputSchema: PatchPreviewInputSchema.shape,
+      inputSchema: withMcpJsonSchemaDialect(PatchPreviewInputSchema, 'input'),
       outputSchema: workbenchJsonOutputSchema,
       title: 'Patch preview',
     },
@@ -1415,7 +1416,7 @@ function registerFacadeTools(
     'workbench.patch_apply',
     {
       description: 'Apply a stored patch plan.',
-      inputSchema: PatchApplyInputSchema.shape,
+      inputSchema: withMcpJsonSchemaDialect(PatchApplyInputSchema, 'input'),
       outputSchema: workbenchJsonOutputSchema,
       title: 'Patch apply',
     },

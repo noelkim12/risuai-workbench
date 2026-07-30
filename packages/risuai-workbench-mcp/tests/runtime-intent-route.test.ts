@@ -16,7 +16,9 @@ function route(request: string) {
 describe('RisuLua runtime intent gate', () => {
   it.each([
     'execute the RisuLua function vg_Init with Fengari',
+    'Test this RisuLua function.',
     'RisuLua 함수 vg_Init을 실행해줘',
+    '이 .risulua에 방금 추가한 기능을 테스트해줘.',
   ])('routes an interactive runtime call: %s', async (request) => {
     const result = await route(request);
 

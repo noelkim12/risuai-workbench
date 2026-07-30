@@ -118,13 +118,13 @@ export function planTopLevelRewrite(input: TopLevelRewriteInput): TopLevelRewrit
     modulePlans.push(buildCommonHelperModule(commonSyms, source));
   }
   if (globalSyms.length > 0) {
-    modulePlans.push(buildHostGlobalModule(globalSyms, source, RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH, refactorMap.modules, helperNames, nonExecIndex));
+    modulePlans.push(buildHostGlobalModule(globalSyms, source, RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH, refactorMap.modules, refactorMap.symbols, helperNames, variableStoreNames, promptStoreNames, nonExecIndex));
   }
   if (duplicateSyms.length > 0) {
-    modulePlans.push(buildHostGlobalModule(duplicateSyms, source, RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH, refactorMap.modules, helperNames, nonExecIndex));
+    modulePlans.push(buildHostGlobalModule(duplicateSyms, source, RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH, refactorMap.modules, refactorMap.symbols, helperNames, variableStoreNames, promptStoreNames, nonExecIndex));
   }
   if (asyncSyms.length > 0) {
-    modulePlans.push(buildHostGlobalModule(asyncSyms, source, RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH, refactorMap.modules, helperNames, nonExecIndex));
+    modulePlans.push(buildHostGlobalModule(asyncSyms, source, RISULUA_MODULE_TABLE_ASYNC_ACTIONS_PATH, refactorMap.modules, refactorMap.symbols, helperNames, variableStoreNames, promptStoreNames, nonExecIndex));
   }
   if (buttonSyms.length > 0) {
     modulePlans.push(buildButtonActionModule(buttonSyms, source, refactorMap.modules, refactorMap.symbols, helperNames, variableStoreNames, promptStoreNames, nonExecIndex));
@@ -190,28 +190,35 @@ function buildHostGlobalModule(
   source: string,
   modulePath: string,
   moduleContracts: RisuLuaModuleTableModuleContract[],
+  allSymbols: RisuLuaModuleTableSymbolContract[],
   helperNames: Set<string>,
+  variableStoreNames: Set<string>,
+  promptStoreNames: Set<string>,
   nonExecIndex: OffsetRangeIndex,
 ): ModuleBodyPlan {
   const sorted = bySourceOrder(symbols);
   const contract = moduleContracts.find((m) => m.path === modulePath);
-  const needsHelpers = sorted.some((s) => s.rewriteRefs.some((r) => helperNames.has(r)));
-
-  const helperRewriteMap = buildRewriteMap(helperNames);
+  const capturePlans = sorted.map((sym) => buildCaptureRewritePlan({
+    names: uniqueSorted([...sym.captures, ...helperUsagesInRange(source, sym.sourceRange, helperNames), ...symbolUsagesInRange(source, sym.sourceRange, allSymbols, new Set(), sym.originalName)]),
+    moduleContracts,
+    allSymbols,
+    helperNames,
+    variableStoreNames,
+    promptStoreNames,
+    currentModulePath: modulePath,
+  }));
   const lines: string[] = [];
 
-  if (needsHelpers) {
-    lines.push('local __local_helpers = require("common.local_helpers")', '');
-  }
+  const internalRequires = uniqueRequireBindings(capturePlans.flatMap((plan) => plan.requires));
+  if (internalRequires.length > 0) lines.push(...internalRequires.map((binding) => binding.text), '');
 
   lines.push('local M = {}', '');
 
-  for (const sym of sorted) {
+  for (const [index, sym] of sorted.entries()) {
+    const capturePlan = capturePlans[index];
+    const shadowedScopes = detectShadowedScopes(source, new Set(capturePlan.rewriteMap.keys()), [], nonExecIndex, sym.sourceRange);
     const leadingCommentText = leadingCommentTextForSymbol(source, sym.sourceRange);
-    let body = sliceSourceRange(source, sym.sourceRange);
-    if (needsHelpers && sym.rewriteRefs.some((r) => helperNames.has(r))) {
-      body = rewriteBoundReferences(body, helperRewriteMap, sym.sourceRange.startOffset, undefined, nonExecIndex);
-    }
+    let body = rewriteBoundReferences(sliceSourceRange(source, sym.sourceRange), capturePlan.rewriteMap, sym.sourceRange.startOffset, shadowedScopes, nonExecIndex);
     if (modulePath === RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH) {
       body = toRenamedLocalModuleFunction(body, sym.originalName, sym.exportName ?? sym.originalName);
       lines.push(`${leadingCommentText}${body}`, '');
@@ -224,10 +231,6 @@ function buildHostGlobalModule(
     lines.push(`M.${sym.exportName ?? sym.originalName} = ${sym.exportName ?? sym.originalName}`);
   }
   lines.push('', 'return M');
-
-  const internalRequires = needsHelpers
-    ? [{ requireId: 'common.local_helpers', alias: '__local_helpers', text: 'local __local_helpers = require("common.local_helpers")' }]
-    : [];
 
   return {
     modulePath,
@@ -267,8 +270,6 @@ function buildRuntimeHandlerModule(
     promptStoreNames,
     currentModulePath: modulePath,
   }));
-  const rewriteNames = new Set(capturePlans.flatMap((plan) => [...plan.rewriteMap.keys()]));
-  const shadowedScopes = detectShadowedScopes(source, rewriteNames, ignoredShadowRanges, nonExecIndex, unionRange(sorted.map((sym) => sym.sourceRange)));
   const lines: string[] = [];
 
   const internalRequires = uniqueRequireBindings(capturePlans.flatMap((plan) => plan.requires));
@@ -283,6 +284,7 @@ function buildRuntimeHandlerModule(
 
   for (const [index, sym] of sorted.entries()) {
     const capturePlan = capturePlans[index];
+    const shadowedScopes = detectShadowedScopes(source, new Set(capturePlan.rewriteMap.keys()), ignoredShadowRanges, nonExecIndex, sym.sourceRange);
     const leadingCommentText = leadingCommentTextForSymbol(source, sym.sourceRange);
     let body = rewriteBoundReferences(sliceSourceRange(source, sym.sourceRange), capturePlan.rewriteMap, sym.sourceRange.startOffset, shadowedScopes, nonExecIndex);
     body = transformRuntimeHandlerBody(body, sym.originalName, capturePlan.unresolvedCaptures);
@@ -330,13 +332,7 @@ function buildDomainFunctionModule(
     currentModulePath: modulePath,
   }));
   const sameModuleRewriteMap = new Map(sorted.map((sym) => [sym.originalName, `__impl.${sym.exportName ?? sym.originalName}`]));
-  const rewriteNames = new Set([
-    ...capturePlans.flatMap((plan) => [...plan.rewriteMap.keys()]),
-    ...sameModuleRewriteMap.keys(),
-  ]);
-  const sortedRanges = sorted.map((sym) => sym.sourceRange);
   const declarationShadowIgnoreRanges = sorted.map((sym) => declarationHeadRange(source, sym.sourceRange));
-  const shadowedScopes = detectShadowedScopes(source, rewriteNames, declarationShadowIgnoreRanges, nonExecIndex, unionRange(sortedRanges));
   const lines: string[] = [];
 
   const internalRequires = uniqueRequireBindings(capturePlans.flatMap((plan) => plan.requires));
@@ -346,6 +342,7 @@ function buildDomainFunctionModule(
 
   for (const [index, sym] of sorted.entries()) {
     const capturePlan = capturePlans[index];
+    const shadowedScopes = detectShadowedScopes(source, new Set([...capturePlan.rewriteMap.keys(), ...sameModuleRewriteMap.keys()]), declarationShadowIgnoreRanges, nonExecIndex, sym.sourceRange);
     const leadingCommentText = leadingCommentTextForSymbol(source, sym.sourceRange);
     const stripped = stripLocalPrefixWithOffset(sliceSourceRange(source, sym.sourceRange));
     let body = stripped.text.trimEnd();
@@ -410,8 +407,6 @@ function buildButtonActionModule(
     promptStoreNames,
     currentModulePath: RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH,
   }));
-  const rewriteNames = new Set(capturePlans.flatMap((plan) => [...plan.rewriteMap.keys()]));
-  const shadowedScopes = detectShadowedScopes(source, rewriteNames, [], nonExecIndex, unionRange(sorted.map((sym) => sym.sourceRange)));
   const lines: string[] = [];
 
   const internalRequires = uniqueRequireBindings(capturePlans.flatMap((plan) => plan.requires));
@@ -421,6 +416,7 @@ function buildButtonActionModule(
 
   for (const [index, sym] of sorted.entries()) {
     const capturePlan = capturePlans[index];
+    const shadowedScopes = detectShadowedScopes(source, new Set(capturePlan.rewriteMap.keys()), [], nonExecIndex, sym.sourceRange);
     const leadingCommentText = leadingCommentTextForSymbol(source, sym.sourceRange);
     let body = toLocalModuleFunction(sliceSourceRange(source, sym.sourceRange)).trimEnd();
     body = rewriteBoundReferences(body, capturePlan.rewriteMap, sym.sourceRange.startOffset, shadowedScopes, nonExecIndex);
@@ -1112,25 +1108,6 @@ function isInsideAnyRange(offset: number, ranges: LuaSourceRange[]): boolean {
   return false;
 }
 
-function unionRange(ranges: LuaSourceRange[]): LuaSourceRange | undefined {
-  if (ranges.length === 0) return undefined;
-  let startOffset = ranges[0].startOffset;
-  let endOffset = ranges[0].endOffset;
-  let startLine = ranges[0].startLine;
-  let endLine = ranges[0].endLine;
-  for (const range of ranges.slice(1)) {
-    if (range.startOffset < startOffset) {
-      startOffset = range.startOffset;
-      startLine = range.startLine;
-    }
-    if (range.endOffset > endOffset) {
-      endOffset = range.endOffset;
-      endLine = range.endLine;
-    }
-  }
-  return { startLine, endLine, startOffset, endOffset };
-}
-
 function isDeclarationContext(text: string, pos: number): boolean {
   const before = text.slice(Math.max(0, pos - 30), pos);
   return /\blocal\s+function\s*$/.test(before) || /\blocal\s+$/.test(before) || /\bfunction\s*$/.test(before);
@@ -1188,7 +1165,8 @@ function buildCaptureRewritePlan(input: {
       continue;
     }
 
-    const symbol = input.allSymbols.find((candidate) => candidate.originalName === name);
+    const matchingSymbols = input.allSymbols.filter((candidate) => candidate.originalName === name);
+    const symbol = matchingSymbols.length === 1 ? matchingSymbols[0] : undefined;
     if (symbol?.targetModule !== undefined && symbol.targetModule !== input.currentModulePath && isExtracted(symbol)) {
       const contract = moduleContractsByPath.get(symbol.targetModule);
       if (contract !== undefined) {

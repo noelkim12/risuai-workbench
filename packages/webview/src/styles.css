@@ -2395,7 +2395,8 @@ h2 {
   overflow: hidden;
 }
 
-.main-editor-authoring--html {
+.main-editor-authoring--html,
+.main-editor-authoring--text {
   grid-template-rows: auto minmax(0, 1fr);
 }
 
@@ -2815,12 +2816,41 @@ h2 {
 }
 
 .main-editor-header__status {
-  flex: 0 1 36%;
   min-width: 120px;
   overflow: hidden;
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.main-editor-header__actions {
+  display: flex;
+  flex: 0 1 44%;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.main-editor-header__default-editor {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm);
+  background: var(--secondary);
+  color: var(--secondary-text);
+  cursor: pointer;
+  font: inherit;
+  white-space: nowrap;
+}
+
+.main-editor-header__default-editor:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.main-editor-header__default-editor:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .main-editor-header strong {
