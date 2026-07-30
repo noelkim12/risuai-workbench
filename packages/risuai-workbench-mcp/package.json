@@ -49,10 +49,10 @@
     "directory": "packages/risuai-workbench-mcp"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@risuai-workbench/cbs-language-server": "^0.1.0",
     "@risuai-workbench/core": "^0.1.0",
-    "zod": "^4.4.3"
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "^20.x",

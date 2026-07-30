@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod';
+import { withMcpJsonSchemaDialect } from './json-schema-dialect';
 
 const diagnosticSeveritySchema = z.enum(['info', 'warning', 'error']);
 
@@ -16,7 +17,7 @@ export const workbenchDiagnosticOutputSchema = z.object({
   severity: diagnosticSeveritySchema,
 }).catchall(z.unknown());
 
-export const diagnosticEnvelopeOutputSchema = z.object({
+export const diagnosticEnvelopeOutputSchema = withMcpJsonSchemaDialect(z.object({
   data: z.record(z.string(), z.unknown()).optional(),
   diagnostics: z.array(workbenchDiagnosticOutputSchema),
   schema: z.literal('risuai-workbench-mcp.diagnostics'),
@@ -28,9 +29,9 @@ export const diagnosticEnvelopeOutputSchema = z.object({
     warningCount: z.number(),
   }).catchall(z.unknown()),
   tool: z.string(),
-}).catchall(z.unknown());
+}).catchall(z.unknown()), 'output');
 
-export const mutationResultEnvelopeOutputSchema = z.object({
+export const mutationResultEnvelopeOutputSchema = withMcpJsonSchemaDialect(z.object({
   appliedAt: z.string().optional(),
   changedFiles: z.array(z.object({
     afterHash: z.string().optional(),
@@ -49,9 +50,9 @@ export const mutationResultEnvelopeOutputSchema = z.object({
   status: z.enum(['preview', 'applied', 'rejected', 'failed', 'failed-validation']),
   tool: z.string(),
   workflowSummary: z.record(z.string(), z.unknown()).optional(),
-}).catchall(z.unknown());
+}).catchall(z.unknown()), 'output');
 
-export const patchPlanOutputSchema = z.object({
+export const patchPlanOutputSchema = withMcpJsonSchemaDialect(z.object({
   createdAt: z.string(),
   diagnostics: z.array(workbenchDiagnosticOutputSchema),
   intent: z.string(),
@@ -60,6 +61,9 @@ export const patchPlanOutputSchema = z.object({
   schema: z.literal('risuai-workbench-mcp.patch-plan'),
   schemaVersion: z.string(),
   summary: z.record(z.string(), z.unknown()),
-}).catchall(z.unknown());
+}).catchall(z.unknown()), 'output');
 
-export const workbenchJsonOutputSchema = z.object({}).catchall(z.unknown());
+export const workbenchJsonOutputSchema = withMcpJsonSchemaDialect(
+  z.object({}).catchall(z.unknown()),
+  'output',
+);
