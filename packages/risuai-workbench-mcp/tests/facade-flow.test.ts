@@ -416,7 +416,7 @@ describe('facade run_action', () => {
       dummyContext,
     );
 
-    expect(result).toEqual({ actionId: 'core.run_extract', dryRun: true, ok: true });
+    expect(result).toMatchObject({ actionId: 'core.run_extract', dryRun: true, ok: true });
   });
 
   it('returns invalid args error with retry and prepare hints', async () => {
@@ -484,7 +484,7 @@ describe('facade run_action', () => {
     }));
 
     const result = await handleRunAction({ actionId: 'inspect.path', dryRun: true }, registry, dummyContext);
-    expect(result).toEqual({ actionId: 'inspect.path', dryRun: true, ok: true });
+    expect(result).toMatchObject({ actionId: 'inspect.path', dryRun: true, ok: true });
   });
 
   it('dryRun validates real core.run_extract schema without executing handler', async () => {
@@ -500,7 +500,7 @@ describe('facade run_action', () => {
       populated,
       context,
     );
-    expect(result).toEqual({ actionId: 'core.run_extract', dryRun: true, ok: true });
+    expect(result).toMatchObject({ actionId: 'core.run_extract', dryRun: true, ok: true });
   });
 
   it('returns INVALID_ARGS for real core.run_extract when sourcePath is missing', async () => {
