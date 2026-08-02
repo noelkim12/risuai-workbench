@@ -78,7 +78,15 @@ export async function handleRunAction(
   }
 
   if (input.dryRun) {
-    return { actionId: action.id, dryRun: true, ok: true };
+    return {
+      actionId: action.id,
+      dryRun: true,
+      executed: false,
+      meaning: 'arguments_validated_only',
+      next: { actionId: action.id, dryRun: false },
+      ok: true,
+      risk: action.risk,
+    };
   }
 
   const result = await action.execute(parsed.data, executionContext);
