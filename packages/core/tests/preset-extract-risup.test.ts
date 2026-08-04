@@ -104,6 +104,8 @@ describe('preset extract binary risup integration', () => {
     expect(existsSync(path.join(outDir, 'AGENTS.md'))).toBe(true);
     expect(existsSync(path.join(outDir, 'docs', 'default-workspace-guide.md'))).toBe(true);
     expect(existsSync(path.join(outDir, 'docs', 'extensions', 'risuprompt.md'))).toBe(true);
+    expect(existsSync(path.join(outDir, 'docs', 'reference', 'CBS_FOR_LLM.md'))).toBe(true);
+    expect(existsSync(path.join(outDir, 'docs', 'reference', 'LUA_FOR_LLM.md'))).toBe(true);
     expect(existsSync(path.join(outDir, 'preset.json'))).toBe(false);
     expect(existsSync(path.join(outDir, 'instruct_settings.json'))).toBe(false);
     expect(existsSync(path.join(outDir, 'prompt_template', '_order.json'))).toBe(true);
