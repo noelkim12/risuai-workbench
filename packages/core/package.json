@@ -40,8 +40,9 @@
     "provenance": true
   },
   "scripts": {
-    "build": "tsc && npx tsc-alias && npm run build:assets",
+    "build": "tsc && npx tsc-alias && npm run build:assets && npm run build:reference-docs",
     "build:assets": "mkdir -p dist/cli/analyze/shared/report-shell && cp src/cli/analyze/shared/report-shell/template.html src/cli/analyze/shared/report-shell/client.js dist/cli/analyze/shared/report-shell/",
+    "build:reference-docs": "mkdir -p assets/docs-provider/docs/reference && cp ../../docs/reference/CBS_FOR_LLM.md ../../docs/reference/LUA_FOR_LLM.md assets/docs-provider/docs/reference/",
     "watch": "npm run build:assets && (tsc --watch --preserveWatchOutput & npx tsc-alias -w)",
     "test": "vitest run",
     "lint": "eslint 'src/**/*.ts'",

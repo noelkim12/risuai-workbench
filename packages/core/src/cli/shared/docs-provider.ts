@@ -15,6 +15,17 @@ const DOCS_PROVIDER_SOURCE_ROOT = path.resolve(
   'docs-provider',
 );
 
+const LLM_REFERENCE_FILENAMES = ['CBS_FOR_LLM.md', 'LUA_FOR_LLM.md'] as const;
+const WORKSPACE_REFERENCE_SOURCE_ROOT = path.resolve(
+  DOCS_PROVIDER_SOURCE_ROOT,
+  '..',
+  '..',
+  '..',
+  '..',
+  'docs',
+  'reference',
+);
+
 export function installDocsProviderBundle(options: InstallDocsProviderOptions): number {
   const sourceRoot = DOCS_PROVIDER_SOURCE_ROOT;
   if (!fs.existsSync(sourceRoot) || !fs.statSync(sourceRoot).isDirectory()) {
@@ -29,6 +40,24 @@ export function installDocsProviderBundle(options: InstallDocsProviderOptions): 
     overwrite,
   );
   copied += copyDirectory(path.join(sourceRoot, 'docs'), path.join(options.outputRoot, 'docs'), overwrite);
+
+  const bundledReferenceRoot = path.join(sourceRoot, 'docs', 'reference');
+  const hasBundledReferences = LLM_REFERENCE_FILENAMES.every((filename) =>
+    fs.existsSync(path.join(bundledReferenceRoot, filename)),
+  );
+  if (!hasBundledReferences) {
+    for (const filename of LLM_REFERENCE_FILENAMES) {
+      const sourcePath = path.join(WORKSPACE_REFERENCE_SOURCE_ROOT, filename);
+      if (!fs.existsSync(sourcePath)) {
+        throw new Error(`LLM reference document not found: ${sourcePath}`);
+      }
+      copied += copyFileIfNeeded(
+        sourcePath,
+        path.join(options.outputRoot, 'docs', 'reference', filename),
+        overwrite,
+      );
+    }
+  }
   return copied;
 }
 
