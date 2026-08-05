@@ -3401,7 +3401,7 @@ test('system file picker uses Windows OpenFileDialog with RisuAI filters', async
   assert.equal(calls[0]?.file, 'powershell.exe');
   assert.deepEqual(calls[0]?.args.slice(0, 3), ['-NoProfile', '-STA', '-Command']);
   assert.match(calls[0]?.args[3] ?? '', /OpenFileDialog/);
-  assert.match(calls[0]?.args[3] ?? '', /\.charx;\*\.png;\*\.risum/);
+  assert.match(calls[0]?.args[3] ?? '', /\.charx;\*\.png;\*\.jpg;\*\.jpeg;\*\.risum/);
 });
 
 test('system file picker falls back from zenity to kdialog on Linux', async () => {

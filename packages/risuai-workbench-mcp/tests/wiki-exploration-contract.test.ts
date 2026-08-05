@@ -80,11 +80,21 @@ describe('wiki exploration contract', () => {
     expect(registry.get('workbench.find_wiki')).toBe(aliasedAction);
     expect(registry.get('wiki-find')).toBe(aliasedAction);
     expect(handlePrepareAction({ actionId: 'workbench.search_wiki' }, registry)?.actionId).toBe('wiki.search');
-    await expect(handleRunAction(
-      { actionId: 'workbench.search_wiki', args: { query: 'project' }, dryRun: true },
-      registry,
-      context,
-    )).resolves.toEqual({ actionId: 'wiki.search', dryRun: true, ok: true });
+    await expect(
+      handleRunAction(
+        { actionId: 'workbench.search_wiki', args: { query: 'project' }, dryRun: true },
+        registry,
+        context,
+      ),
+    ).resolves.toEqual({
+      actionId: 'wiki.search',
+      dryRun: true,
+      executed: false,
+      meaning: 'arguments_validated_only',
+      next: { actionId: 'wiki.search', dryRun: false },
+      ok: true,
+      risk: 'read_only',
+    });
   });
 
   it('prepares wiki.search with its canonical scope contract and no caller-controlled limit', () => {

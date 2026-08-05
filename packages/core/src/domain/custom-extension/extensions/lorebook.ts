@@ -2,7 +2,7 @@ import { sanitizeFilename } from '../../../utils/filenames';
 import type { CustomExtensionTarget } from '../contracts';
 
 /** Accepted canonical lorebook modes. */
-export const LOREBOOK_MODES = ['normal', 'folder', 'constant', 'multiple', 'child'] as const;
+export const LOREBOOK_MODES = ['normal', 'folder', 'constant', 'multiple', 'child', 'always'] as const;
 
 /** Canonical lorebook mode. */
 export type LorebookMode = (typeof LOREBOOK_MODES)[number];

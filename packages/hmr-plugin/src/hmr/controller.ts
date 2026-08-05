@@ -2,10 +2,14 @@
 import { ensureAssets, type EnsureAssetsProgress } from './assets';
 import { nextBackoffDelayMs } from './backoff';
 import { buildDefinitionDiff, type ConfirmDiff } from './diff';
+import { captureCurrentChatSnapshot, ChatSnapshotCaptureError } from '../helpers/risu-api';
 import {
+  HMR_CHAT_DEBUG_MAX_RESULT_BYTES,
   HMR_PROTOCOL_VERSION,
   buildRequestUrl,
   parseConnectionString,
+  type HmrChatDebugCommand,
+  type HmrChatDebugResult,
   type HmrConnection,
   type HmrHealthResponse,
   type HmrPayloadResponse,
@@ -58,6 +62,7 @@ export type HmrEvent =
 export interface ControllerDeps {
   getPlatform(): Promise<'web' | 'tauri' | 'node'>;
   fetchJson(url: string): Promise<unknown>;
+  readonly postJson?: ((url: string, body: string) => Promise<void>) | undefined;
   fetchBinary(url: string): Promise<Uint8Array>;
   getCharacters(): Promise<unknown[]>;
   setCharacterToIndex(index: number, character: unknown): Promise<void>;
@@ -337,6 +342,9 @@ export class HmrController {
           return;
         }
         if (this.phase === 'reconnecting') this.setPhase('active');
+        if (watch.debugCommand !== undefined) {
+          await this.handleDebugCommand(watch.debugCommand);
+        }
         if (watch.version > this.appliedVersion && watch.definitionChanged) {
           const fromVersion = this.appliedVersion;
           await this.applyLatest(watch.version);
@@ -377,6 +385,45 @@ export class HmrController {
       if (error instanceof Error) return 'down';
       throw error;
     }
+  }
+
+  private async handleDebugCommand(command: HmrChatDebugCommand): Promise<void> {
+    if (this.connection === undefined || this.mapping === undefined) return;
+    const connection = this.connection;
+    const stableId = this.mapping.stableId;
+    if (stableId.length === 0) throw new Error('Chat debug correlation is unavailable.');
+    const postJson = this.deps.postJson;
+    if (postJson === undefined) throw new Error('Chat debug transport is unavailable.');
+
+    const result = await this.captureChatDebugResult(command, stableId);
+    const body = this.serializeChatDebugResult(result);
+    await postJson(buildRequestUrl(connection, '/debug/chat-snapshot'), body);
+  }
+
+  private async captureChatDebugResult(command: HmrChatDebugCommand, stableId: string): Promise<HmrChatDebugResult> {
+    try {
+      return {
+        requestId: command.requestId,
+        stableId,
+        ok: true,
+        snapshot: await captureCurrentChatSnapshot(),
+      };
+    } catch (error) {
+      const code = error instanceof ChatSnapshotCaptureError
+        ? error.code
+        : 'CAPTURE_FAILED';
+      return createChatDebugErrorResult(command.requestId, stableId, code);
+    }
+  }
+
+  private serializeChatDebugResult(result: HmrChatDebugResult): string {
+    const serialized = JSON.stringify(result);
+    if (new TextEncoder().encode(serialized).byteLength <= HMR_CHAT_DEBUG_MAX_RESULT_BYTES) return serialized;
+
+    const fallback = JSON.stringify(createChatDebugErrorResult(result.requestId, result.stableId, 'SNAPSHOT_TOO_LARGE'));
+    if (new TextEncoder().encode(fallback).byteLength <= HMR_CHAT_DEBUG_MAX_RESULT_BYTES) return fallback;
+
+    throw new Error('Chat debug result exceeds the maximum size.');
   }
 
   private async applyLatest(version: number): Promise<number> {
@@ -484,7 +531,7 @@ function parseHealthResponse(value: unknown): HmrHealthResponse {
 }
 
 function parseWatchResponse(value: unknown): HmrWatchResponse {
-  if (!isRecord(value) || typeof value['version'] !== 'number' || typeof value['definitionChanged'] !== 'boolean' || !isStringArray(value['changedAssets']) || typeof value['stableId'] !== 'string') {
+  if (!isRecord(value) || typeof value['version'] !== 'number' || typeof value['definitionChanged'] !== 'boolean' || !isStringArray(value['changedAssets']) || typeof value['stableId'] !== 'string' || !isChatDebugCommand(value['debugCommand'])) {
     throw new Error('워크벤치 HMR watch 응답 형식이 올바르지 않습니다.');
   }
   return {
@@ -492,7 +539,27 @@ function parseWatchResponse(value: unknown): HmrWatchResponse {
     definitionChanged: value['definitionChanged'],
     changedAssets: value['changedAssets'],
     stableId: value['stableId'],
+    ...(value['debugCommand'] === undefined ? {} : { debugCommand: value['debugCommand'] }),
   };
+}
+
+function isChatDebugCommand(value: unknown): value is HmrChatDebugCommand | undefined {
+  return value === undefined || (isRecord(value) && typeof value['requestId'] === 'string' && value['requestId'].length > 0 && value['kind'] === 'currentChatSnapshot');
+}
+
+function createChatDebugErrorResult(
+  requestId: string,
+  stableId: string,
+  code: 'CHAT_UNAVAILABLE' | 'CHAT_SHAPE_INVALID' | 'SNAPSHOT_TOO_LARGE' | 'CAPTURE_FAILED',
+): HmrChatDebugResult {
+  const message = code === 'CHAT_UNAVAILABLE'
+    ? 'The current chat is unavailable.'
+    : code === 'CHAT_SHAPE_INVALID'
+      ? 'The current chat data is invalid.'
+      : code === 'SNAPSHOT_TOO_LARGE'
+        ? 'The complete chat snapshot is too large.'
+        : 'The chat snapshot could not be captured.';
+  return { requestId, stableId, ok: false, error: { code, message } };
 }
 
 function parsePayloadResponse(value: unknown): HmrPayloadResponse {
