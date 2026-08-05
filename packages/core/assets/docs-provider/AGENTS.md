@@ -124,5 +124,7 @@ Expected docs-provider bundle links when installed into a workspace:
 - [`.risuprompt` guide](docs/extensions/risuprompt.md): prompt-template frontmatter, sections, variants, and ordering rules. Read when editing `prompt_template/*.risuprompt`.
 - [`_order.json` guide](docs/extensions/order-json.md): ordered artifact sidecar contract. Read when adding, deleting, renaming, or reordering ordered files.
 - [`_folders.json` guide](docs/extensions/folders-json.md): lorebook folder compatibility sidecar note. Read when `lorebooks/_folders.json` exists or folder compatibility metadata is relevant.
+- [CBS reference for LLMs](docs/reference/CBS_FOR_LLM.md): canonical CBS syntax, built-ins, blocks, recipes, and pitfalls. Read before authoring or modifying CBS expressions.
+- [Lua reference for LLMs](docs/reference/LUA_FOR_LLM.md): canonical RisuAI Lua lifecycle, permissions, host APIs, recipes, and pitfalls. Read before authoring or modifying RisuLua scripts.
 - [Structured output pipeline guide, EN](docs/refs/risuai-structured-output-pipeline-en.md): English guide for model markers, regex/Lua/hooks capture, and chat UI rendering. Read when designing structured output to status/button/UI flows.
 - [Structured output pipeline guide, KO](docs/refs/risuai-structured-output-pipeline-ko.md): Korean guide for model markers, regex/Lua/hooks capture, and chat UI rendering. Read when designing structured output to status/button/UI flows and Korean context is preferred.
