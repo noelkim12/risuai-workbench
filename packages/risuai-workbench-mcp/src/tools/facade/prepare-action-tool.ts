@@ -45,7 +45,10 @@ export interface PrepareActionResult {
  * Summarize a Zod schema into required/optional field names.
  * Best-effort: works for ZodObject shapes; falls back to empty for non-object schemas.
  */
-function fieldType(schema: z.ZodType<unknown>): string {
+function fieldType(schema: z.core.$ZodType): string {
+  if (schema instanceof z.ZodOptional) return fieldType(schema.unwrap());
+  if (schema instanceof z.ZodNullable) return fieldType(schema.unwrap());
+  if (schema instanceof z.ZodDefault) return fieldType(schema.unwrap());
   if (schema instanceof z.ZodEnum) return 'enum';
   if (schema instanceof z.ZodString) return 'string';
   if (schema instanceof z.ZodNumber) return 'number';
