@@ -315,6 +315,16 @@ export interface ArtifactBrowserHmrStartBroadcastPayload {
   stableId: string;
 }
 
+export interface ArtifactBrowserHmrChatDebugRequestPayload {
+  requestId: string;
+  stableId: string;
+}
+
+export type ArtifactBrowserHmrChatDebugStatusPayload =
+  | { readonly requestId: string; readonly stableId: string; readonly state: 'pending' }
+  | { readonly requestId: string; readonly stableId: string; readonly state: 'opened' }
+  | { readonly requestId: string; readonly stableId: string; readonly state: 'failed'; readonly message?: string };
+
 export type ArtifactBrowserHmrStopBroadcastPayload = Record<string, never>;
 
 export type ArtifactBrowserHmrSavePluginPayload = Record<string, never>;
@@ -629,6 +639,11 @@ export type ArtifactBrowserHmrStartBroadcastMessage = MessageEnvelope<
   ArtifactBrowserHmrStartBroadcastPayload
 >;
 
+export type ArtifactBrowserHmrChatDebugRequestMessage = MessageEnvelope<
+  'artifact-browser/hmrChatDebugRequest',
+  ArtifactBrowserHmrChatDebugRequestPayload
+>;
+
 export type ArtifactBrowserHmrStopBroadcastMessage = MessageEnvelope<
   'artifact-browser/hmrStopBroadcast',
   ArtifactBrowserHmrStopBroadcastPayload
@@ -694,6 +709,11 @@ export type ArtifactBrowserHmrStatusMessage = MessageEnvelope<
   ArtifactBrowserHmrStatusPayload
 >;
 
+export type ArtifactBrowserHmrChatDebugStatusMessage = MessageEnvelope<
+  'artifact-browser/hmrChatDebugStatus',
+  ArtifactBrowserHmrChatDebugStatusPayload
+>;
+
 export type ArtifactBrowserSelectMessage = MessageEnvelope<
   'artifact-browser/select',
   ArtifactBrowserSelectPayload
@@ -742,6 +762,7 @@ export type ArtifactBrowserWebviewMessage =
   | ArtifactBrowserPackArtifactMessage
   | ArtifactBrowserOpenPackedOutputMessage
   | ArtifactBrowserHmrStartBroadcastMessage
+  | ArtifactBrowserHmrChatDebugRequestMessage
   | ArtifactBrowserHmrStopBroadcastMessage
   | ArtifactBrowserHmrSavePluginMessage
   | ArtifactBrowserHmrOpenSavedPluginMessage
@@ -766,6 +787,7 @@ export type ArtifactBrowserExtensionMessage =
   | ArtifactBrowserDetailMessage
   | ArtifactBrowserPackCompletedMessage
   | ArtifactBrowserHmrStatusMessage
+  | ArtifactBrowserHmrChatDebugStatusMessage
   | ArtifactBrowserHmrSaveCompletedMessage;
 
 export type MarkerEditorReadyMessage = MessageEnvelope<'marker-editor/ready', MarkerEditorReadyPayload>;

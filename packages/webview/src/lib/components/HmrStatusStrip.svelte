@@ -9,6 +9,9 @@
   export let onOpenSavedPlugin: () => void;
   export let pluginSaveState: ArtifactBrowserHmrPluginSaveState;
   export let onBroadcastHere: () => void;
+  export let chatDebugPending: { readonly requestId: string; readonly stableId: string } | null;
+  export let chatDebugError: string | null;
+  export let onChatDebug: () => void;
 
   const RECEIVER_FRESH_WINDOW_MS = 35_000;
 
@@ -30,6 +33,9 @@
     typeof hmrStatus?.lastPollAtMs === 'number' && nowMs - hmrStatus.lastPollAtMs < RECEIVER_FRESH_WINDOW_MS;
   $: pollAgeSeconds =
     typeof hmrStatus?.lastPollAtMs === 'number' ? Math.max(0, Math.round((nowMs - hmrStatus.lastPollAtMs) / 1000)) : null;
+  // Owner-only Chat Debug: blocked while a correlated request is in flight or
+  // when no fresh receiver poll has confirmed RisuAI is listening.
+  $: chatDebugDisabled = chatDebugPending !== null || !receiverConnected;
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup consumes this copied flag.
   let copied = false;
@@ -93,6 +99,16 @@
         >
           {copied ? 'Copied!' : 'Copy'}
         </button>
+        <button
+          type="button"
+          class="hmr-strip__button"
+          title={chatDebugPending ? 'Opening Chat Debug snapshot…' : 'Open the Chat Debug snapshot in RisuAI'}
+          disabled={chatDebugDisabled}
+          aria-busy={chatDebugPending !== null}
+          on:click={onChatDebug}
+        >
+          {chatDebugPending ? 'Opening…' : 'Chat Debug'}
+        </button>
         <button type="button" class="hmr-strip__button hmr-strip__button--stop" on:click={onStop}>Stop</button>
       </span>
     </div>
@@ -107,6 +123,9 @@
     {/if}
     {#if hmrStatus.lastError}
       <p class="hmr-strip__error">Build error — last good version kept: {hmrStatus.lastError}</p>
+    {/if}
+    {#if chatDebugError}
+      <p class="hmr-strip__error">Chat debug — {chatDebugError}</p>
     {/if}
   </div>
 {:else if isRunning && hmrStatus}

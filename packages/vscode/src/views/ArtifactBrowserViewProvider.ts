@@ -25,12 +25,14 @@ import { AssetManagerPanel } from '../asset-manager/AssetManagerPanel';
 import {
   createArtifactBrowserCardsMessage,
   createArtifactBrowserDetailMessage,
+  createArtifactBrowserHmrChatDebugStatusMessage,
   createArtifactBrowserHmrStatusMessage,
   createArtifactBrowserHmrSaveCompletedMessage,
   createArtifactBrowserPackCompletedMessage,
   isArtifactBrowserAnalyzeArtifactMessage,
   isArtifactBrowserCreateArtifactMessage,
   isArtifactBrowserCreateSectionEntryMessage,
+  isArtifactBrowserHmrChatDebugRequestMessage,
   isArtifactBrowserHmrStartBroadcastMessage,
   isArtifactBrowserHmrSavePluginMessage,
   isArtifactBrowserHmrOpenSavedPluginMessage,
@@ -60,6 +62,7 @@ import {
   type ArtifactBrowserCreateArtifactPayload,
   type ArtifactBrowserImportArtifactChunkPayload,
   type ArtifactBrowserImportArtifactPayload,
+  type ArtifactBrowserHmrChatDebugRequestPayload,
   type ArtifactBrowserCreateSectionEntryKind,
   type ArtifactBrowserCreateSectionKind,
   type ArtifactBrowserPackArtifactPayload,
@@ -372,6 +375,11 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
           return;
         }
 
+        if (isArtifactBrowserHmrChatDebugRequestMessage(message)) {
+          void this.requestHmrChatDebugSnapshot(message.payload);
+          return;
+        }
+
         if (isArtifactBrowserHmrStopBroadcastMessage(message)) {
           void this.stopHmrBroadcast();
           return;
@@ -508,6 +516,7 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     message:
       | ReturnType<typeof createArtifactBrowserCardsMessage>
       | ReturnType<typeof createArtifactBrowserDetailMessage>
+      | ReturnType<typeof createArtifactBrowserHmrChatDebugStatusMessage>
       | ReturnType<typeof createArtifactBrowserHmrStatusMessage>
       | ReturnType<typeof createArtifactBrowserHmrSaveCompletedMessage>
       | ArtifactBrowserPackCompletedMessage,
@@ -763,6 +772,56 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
       this.watchHmrRoot(card.rootUri);
     } catch (error) {
       void vscode.window.showErrorMessage(`HMR broadcast failed: ${getErrorMessage(error)}`);
+    }
+  }
+
+  private async requestHmrChatDebugSnapshot(
+    payload: ArtifactBrowserHmrChatDebugRequestPayload,
+  ): Promise<void> {
+    const { requestId, stableId } = payload;
+    const failedStatus = createArtifactBrowserHmrChatDebugStatusMessage({
+      requestId,
+      stableId,
+      state: 'failed',
+      message: 'Unable to open chat debug snapshot.',
+    });
+
+    try {
+      const selectedCard = this.currentCards.find((card) => card.stableId === stableId);
+      const service = getHmrServerService();
+      const activeStatus = service.getStatus();
+      if (
+        !selectedCard ||
+        this.selectedStableId !== stableId ||
+        !activeStatus.running ||
+        activeStatus.stableId !== stableId
+      ) {
+        this.postMessage(failedStatus);
+        return;
+      }
+
+      this.postMessage(createArtifactBrowserHmrChatDebugStatusMessage({ requestId, stableId, state: 'pending' }));
+      const snapshot = await service.requestChatDebugSnapshot(requestId, stableId);
+      const currentSelectedCard = this.currentCards.find((card) => card.stableId === stableId);
+      const currentStatus = service.getStatus();
+      if (
+        !currentSelectedCard ||
+        this.selectedStableId !== stableId ||
+        !currentStatus.running ||
+        currentStatus.stableId !== stableId
+      ) {
+        this.postMessage(failedStatus);
+        return;
+      }
+
+      const document = await vscode.workspace.openTextDocument({
+        language: 'json',
+        content: JSON.stringify(snapshot, null, 2),
+      });
+      await vscode.window.showTextDocument(document, { preview: true });
+      this.postMessage(createArtifactBrowserHmrChatDebugStatusMessage({ requestId, stableId, state: 'opened' }));
+    } catch {
+      this.postMessage(failedStatus);
     }
   }
 

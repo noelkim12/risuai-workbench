@@ -53,6 +53,8 @@ import {
   type ArtifactBrowserImportArtifactPayload,
   type ArtifactBrowserHmrStartBroadcastMessage,
   type ArtifactBrowserHmrStartBroadcastPayload,
+  type ArtifactBrowserHmrChatDebugRequestMessage,
+  type ArtifactBrowserHmrChatDebugRequestPayload,
   type ArtifactBrowserHmrSavePluginMessage,
   type ArtifactBrowserHmrSavePluginPayload,
   type ArtifactBrowserHmrOpenSavedPluginMessage,
@@ -61,6 +63,8 @@ import {
   type ArtifactBrowserHmrSaveCompletedPayload,
   type ArtifactBrowserHmrStatusMessage,
   type ArtifactBrowserHmrStatusPayload,
+  type ArtifactBrowserHmrChatDebugStatusMessage,
+  type ArtifactBrowserHmrChatDebugStatusPayload,
   type ArtifactBrowserHmrStopBroadcastMessage,
   type ArtifactBrowserHmrStopBroadcastPayload,
   type ArtifactBrowserPackArtifactMessage,
@@ -93,6 +97,7 @@ type ArtifactBrowserInboundMessage =
   | ArtifactBrowserPackArtifactMessage
   | ArtifactBrowserOpenPackedOutputMessage
   | ArtifactBrowserHmrStartBroadcastMessage
+  | ArtifactBrowserHmrChatDebugRequestMessage
   | ArtifactBrowserHmrStopBroadcastMessage
   | ArtifactBrowserHmrSavePluginMessage
   | ArtifactBrowserHmrOpenSavedPluginMessage
@@ -285,6 +290,16 @@ const isArtifactBrowserHmrStartBroadcastPayload: ArtifactBrowserPayloadGuard<
 > = (payload): payload is ArtifactBrowserHmrStartBroadcastPayload =>
   isPlainRecord(payload) && typeof payload.stableId === 'string' && payload.stableId.length > 0;
 
+const isArtifactBrowserHmrChatDebugRequestPayload: ArtifactBrowserPayloadGuard<
+  ArtifactBrowserHmrChatDebugRequestPayload
+> = (payload): payload is ArtifactBrowserHmrChatDebugRequestPayload =>
+  isPlainRecord(payload) &&
+  hasOnlyKeys(payload, ['requestId', 'stableId']) &&
+  typeof payload.requestId === 'string' &&
+  payload.requestId.trim().length > 0 &&
+  typeof payload.stableId === 'string' &&
+  payload.stableId.trim().length > 0;
+
 const isArtifactBrowserHmrStopBroadcastPayload: ArtifactBrowserPayloadGuard<
   ArtifactBrowserHmrStopBroadcastPayload
 > = (payload): payload is ArtifactBrowserHmrStopBroadcastPayload => isPlainRecord(payload);
@@ -403,6 +418,12 @@ const isArtifactBrowserHmrStartBroadcastMessageEnvelope =
   createArtifactBrowserMessageGuard<ArtifactBrowserHmrStartBroadcastMessage>(
     'artifact-browser/hmrStartBroadcast',
     isArtifactBrowserHmrStartBroadcastPayload,
+  );
+
+const isArtifactBrowserHmrChatDebugRequestMessageEnvelope =
+  createExactArtifactBrowserMessageGuard<ArtifactBrowserHmrChatDebugRequestMessage>(
+    'artifact-browser/hmrChatDebugRequest',
+    isArtifactBrowserHmrChatDebugRequestPayload,
   );
 
 const isArtifactBrowserHmrStopBroadcastMessageEnvelope =
@@ -563,6 +584,12 @@ export function isArtifactBrowserHmrStartBroadcastMessage(
   return isArtifactBrowserHmrStartBroadcastMessageEnvelope(message);
 }
 
+export function isArtifactBrowserHmrChatDebugRequestMessage(
+  message: unknown,
+): message is ArtifactBrowserHmrChatDebugRequestMessage {
+  return isArtifactBrowserHmrChatDebugRequestMessageEnvelope(message);
+}
+
 export function isArtifactBrowserHmrStopBroadcastMessage(
   message: unknown,
 ): message is ArtifactBrowserHmrStopBroadcastMessage {
@@ -714,6 +741,7 @@ type ArtifactBrowserExtensionResponse =
   | ArtifactBrowserDetailMessage
   | ArtifactBrowserPackCompletedMessage
   | ArtifactBrowserHmrStatusMessage
+  | ArtifactBrowserHmrChatDebugStatusMessage
   | ArtifactBrowserHmrSaveCompletedMessage;
 
 /**
@@ -791,6 +819,12 @@ export function createArtifactBrowserHmrStatusMessage(
   payload: ArtifactBrowserHmrStatusPayload,
 ): ArtifactBrowserHmrStatusMessage {
   return createArtifactBrowserExtensionMessage('artifact-browser/hmrStatus', payload);
+}
+
+export function createArtifactBrowserHmrChatDebugStatusMessage(
+  payload: ArtifactBrowserHmrChatDebugStatusPayload,
+): ArtifactBrowserHmrChatDebugStatusMessage {
+  return createArtifactBrowserExtensionMessage('artifact-browser/hmrChatDebugStatus', payload);
 }
 
 export function createArtifactBrowserHmrSaveCompletedMessage(

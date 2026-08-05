@@ -66,9 +66,42 @@ HmrController -> asset materialization -> character/module merge -> RisuAI DB
 4. payload 전체를 순회하며 `hmr-asset://<hash>`를 실제 RisuAI asset path로 바꾼다.
 5. 완성된 정의를 캐릭터 또는 모듈 DB에 반영한다.
 
+### 4. On-demand Chat Debug
+
+활성 HMR owner의 **Chat Debug** 버튼은 한 번에 하나의 요청만 시작한다. 버튼은
+receiver가 fresh할 때만 사용할 수 있으며, 현재 artifact가 owner가 아니거나 이미
+요청 중이면 비활성화된다. webview가 `requestId`와 `stableId`를 만든 뒤 host로
+보내면, host는 authenticated `/watch` long poll을 통해
+`{ requestId, kind: 'currentChatSnapshot' }` 명령을 전달한다.
+
+plugin은 명령을 받은 순간 RisuAI에서 현재 열려 있는 character와 chat을 읽는다.
+HMR로 선택한 character/module과 chat을 연결하거나 추론하지 않는다. 결과는
+`POST /debug/chat-snapshot`으로 같은 `requestId`와 `stableId`를 포함해 돌려보낸다.
+provider는 상관된 성공 결과만 pretty-printed JSON의 untitled preview editor를
+열고, 실패 결과는 content-free message로 표시한다. 이 경로는 definition apply,
+DB write-back, asset 처리, version 증가에 들어가지 않는다.
+
+snapshot에는 optional character/chat `id`와 `name`, `$`로 시작하는 키만 남긴
+filtered `scriptstate`, 그리고 native message의 최신 0개에서 2개가 들어간다.
+messages는 chronological order로 유지하며 전체 배열의 absolute `index`,
+string `role`과 `data`, optional numeric `time`을 포함한다. full history,
+`generationInfo`, `saying`, asset data와 임의 metadata는 포함하지 않는다.
+
+성공 결과가 UTF-8 기준 512 KiB를 넘으면 partial JSON을 보내지 않고
+`SNAPSHOT_TOO_LARGE` 오류를 반환한다. 요청은 30초 뒤 timeout되며, target 전환,
+stop, extension disposal 또는 server shutdown 때 server-owned 요청이 취소된다.
+카드 선택 변경은 webview의 stale pending/error UI만 로컬에서 지운다. 이후 도착한
+terminal status는 현재 pending record의 `requestId`와 `stableId`에 맞을 때만
+반영되고, 그렇지 않으면 무시된다.
+snapshot content는 로그, plugin storage, workspace 파일 또는 streaming history에
+남지 않는다. 이 문서와 plugin은 token, chat content, private variable value를
+기록하지 않는다.
+
 ## HTTP 프로토콜
 
-서버와 플러그인은 현재 protocol version `2`를 사용한다. 모든 요청은 query parameter `k=<token>`을 포함한다.
+서버와 플러그인은 현재 protocol version `3`을 사용한다. 이 번호는 stale
+pre-release plugin bundle을 식별하기 위한 것이다. 모든 요청은 query parameter
+`k=<token>`을 포함한다.
 
 | Endpoint | 역할 |
 | --- | --- |
@@ -76,6 +109,8 @@ HmrController -> asset materialization -> character/module merge -> RisuAI DB
 | `GET /watch?since=N` | 새 version이 생길 때까지 최대 25초 대기하고 변경 여부와 변경 에셋 hash를 반환 |
 | `GET /payload` | 최신 character/module 정의와 에셋 manifest 반환 |
 | `GET /asset/<hash>` | hash에 해당하는 에셋 bytes 반환 |
+| `GET /watch?since=N` | definition 변경 없이 한 번 전달되는 `currentChatSnapshot` debug command 포함 가능 |
+| `POST /debug/chat-snapshot` | correlated snapshot success 또는 safe error result 수신 |
 
 프로토콜 계약은 `packages/core/src/domain/hmr/protocol.ts`와 `src/hmr/protocol.ts`에 의도적으로 중복되어 있다. 플러그인은 샌드박스에서 실행되는 독립 단일 번들이므로 `risu-workbench-core`를 런타임 의존성으로 가져오지 않는다. 계약을 바꿀 때는 양쪽 정의를 함께 수정하고 `HMR_PROTOCOL_VERSION`을 올려야 한다.
 
@@ -213,6 +248,36 @@ npm run --workspace risuai-hmr-provider build
 npm run --workspace risuai-hmr-provider typecheck
 npm run --workspace risuai-hmr-provider test
 ```
+
+Todo 8의 compile/package 확인은 다음 순서다. 이 명령들은 compile과 packaging만
+확인하며 RisuAI runtime 동작을 자동으로 검증하지 않는다.
+
+```bash
+npm run build:core
+npm run --workspace risuai-hmr-provider typecheck
+npm run --workspace risuai-hmr-provider build
+npm run --workspace risu-workbench-webview check
+npm run --workspace risu-workbench-webview build
+npm run --workspace risu-workbench-vscode build:extension
+```
+
+## 사용자 smoke 절차
+
+이 절차는 자동화하지 않았으며 agent가 실행하거나 verified라고 주장하지 않는다.
+실제 RisuAI session을 가진 사용자가 직접 수행한다.
+
+1. **Connected success:** fresh plugin bundle을 설치하고 character 또는 module을
+   Broadcast한 뒤 RisuAI receiver를 연결한다. 현재 RisuAI chat을 열고 알아볼 수
+   있는 chat variable과 최소 두 개의 message를 준비한다. active owner의
+   **Chat Debug**를 누르고, 열린 untitled JSON preview에 현재 character/chat
+   identity, filtered `$` scriptstate, 최신 두 message와 absolute index가 보이는지
+   비교한다.
+2. **Disconnected failure:** receiver를 disconnected 상태로 둔 채 같은 active HMR
+   owner에서 **Chat Debug**를 누른다. 요청이 성공 snapshot으로 열리지 않고 safe
+   failure가 표시되며 pending 상태가 종료되는지 확인한다.
+
+두 단계 모두 user-owned runtime smoke이며 자동 테스트나 agent-verified runtime
+결과가 아니다.
 
 기본 산출물은 `dist/risuai-hmr-provider.js`다. bundle 상단에는 `//@name`, `//@display-name`, `//@api 3.0`, `//@version`, `//@description`, `//@link` metadata가 붙고 CSS도 런타임 `<style>` 생성 코드로 포함된다.
 

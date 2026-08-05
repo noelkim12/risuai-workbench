@@ -2,8 +2,9 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { HMR_PORT_RANGE, HMR_PROTOCOL_VERSION, buildHmrConnectionString, type HmrHealthResponse, type HmrPayloadResponse, type HmrWatchResponse } from '@risuai-workbench/core';
+import { HMR_CHAT_DEBUG_MAX_RESULT_BYTES, HMR_PORT_RANGE, HMR_PROTOCOL_VERSION, buildHmrConnectionString, type HmrChatDebugSnapshot, type HmrHealthResponse, type HmrPayloadResponse, type HmrWatchResponse } from '@risuai-workbench/core';
 import { AssetHashCache, buildHmrCharacterPayload, buildHmrModulePayload, type HmrBuildResult } from '@risuai-workbench/core/node';
+import { isHmrChatDebugResult, readBoundedJsonBody, type BoundedJsonBody } from './hmrChatDebugResult';
 
 export interface HmrBroadcastTarget { readonly stableId: string; readonly name: string; readonly kind: 'character' | 'module'; readonly rootFsPath: string }
 
@@ -19,11 +20,22 @@ interface HmrServerOptions {
 
 interface WatchWaiter { readonly response: ServerResponse; readonly timer: NodeJS.Timeout; readonly since: number }
 
+interface PendingChatDebugRequest {
+  readonly requestId: string;
+  readonly stableId: string;
+  state: 'queued' | 'delivered';
+  readonly resolve: (snapshot: HmrChatDebugSnapshot) => void;
+  readonly reject: (error: Error) => void;
+  readonly timer: NodeJS.Timeout;
+}
+
 const DEFAULT_LONG_POLL_TIMEOUT_MS = 25_000;
+const CHAT_DEBUG_TIMEOUT_MS = 30_000;
+const CHAT_DEBUG_BODY_READ_TIMEOUT_MS = 5_000;
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   // Chrome Private Network Access: HTTPS 페이지 → 127.0.0.1 요청의 preflight 승인용.
   'Access-Control-Allow-Private-Network': 'true',
   Connection: 'close',
@@ -49,6 +61,8 @@ export class HmrServerService {
   private cache = new AssetHashCache(); private readonly waiters: WatchWaiter[] = []; private readonly listeners = new Set<(status: HmrServerStatus) => void>();
   private port = 0; private token = ''; private version = 0; private updateCount = 0;
   private lastChangedAssets: readonly string[] = []; private lastPollAtMs: number | undefined; private lastError: string | undefined;
+  private pendingChatDebugRequest: PendingChatDebugRequest | undefined;
+  private readonly activeChatDebugRequests = new Set<IncomingMessage>();
 
   constructor(private readonly options: HmrServerOptions = {}) {}
 
@@ -74,6 +88,7 @@ export class HmrServerService {
 
   async startBroadcast(target: HmrBroadcastTarget): Promise<void> {
     await this.ensureServer();
+    this.rejectPendingChatDebugRequest('Chat debug request cancelled because the broadcast target changed.');
     this.target = target;
     this.current = undefined; this.cache = new AssetHashCache(); this.version = 0; this.updateCount = 0;
     this.lastChangedAssets = []; this.lastPollAtMs = undefined; this.lastError = undefined;
@@ -97,7 +112,33 @@ export class HmrServerService {
     this.emit();
   }
 
+  requestChatDebugSnapshot(requestId: string, stableId: string): Promise<HmrChatDebugSnapshot> {
+    if (!this.target || !this.current || this.target.stableId !== stableId) {
+      return Promise.reject(new Error('Chat debug request target is not active.'));
+    }
+    if (this.pendingChatDebugRequest) {
+      return Promise.reject(new Error('A chat debug request is already pending.'));
+    }
+
+    return new Promise<HmrChatDebugSnapshot>((resolve, reject) => {
+      const pendingRequest: PendingChatDebugRequest = {
+        requestId,
+        stableId,
+        state: 'queued',
+        resolve,
+        reject,
+        timer: setTimeout(() => {
+          this.rejectPendingChatDebugRequest('Chat debug request timed out.');
+        }, CHAT_DEBUG_TIMEOUT_MS),
+      };
+      this.pendingChatDebugRequest = pendingRequest;
+      this.deliverPendingChatDebugRequest();
+    });
+  }
+
   async stop(): Promise<void> {
+    this.rejectPendingChatDebugRequest('Chat debug request cancelled because the HMR server stopped.');
+    for (const request of this.activeChatDebugRequests) request.destroy();
     for (const waiter of this.waiters.splice(0)) {
       clearTimeout(waiter.timer);
       this.respondJson(waiter.response, 200, this.noChangeResponse());
@@ -153,6 +194,11 @@ export class HmrServerService {
       this.respondJson(response, 401, { error: 'unauthorized' });
       return;
     }
+    if (url.pathname === '/debug/chat-snapshot') {
+      void this.respondChatDebugResult(request, response);
+      return;
+    }
+
     const target = this.target;
     const current = this.current;
     if (!target || !current) {
@@ -192,6 +238,11 @@ export class HmrServerService {
   private respondWatch(url: URL, response: ServerResponse): void {
     this.lastPollAtMs = Date.now();
     this.emit();
+    if (this.pendingChatDebugRequest?.state === 'queued') {
+      this.respondJson(response, 200, this.debugResponse(this.pendingChatDebugRequest));
+      this.pendingChatDebugRequest.state = 'delivered';
+      return;
+    }
     const since = Number(url.searchParams.get('since')) || 0;
     if (since < this.version) {
       this.respondJson(response, 200, this.changedResponse(since));
@@ -232,6 +283,65 @@ export class HmrServerService {
     }
   }
 
+  private deliverPendingChatDebugRequest(): void {
+    const pendingRequest = this.pendingChatDebugRequest;
+    const waiter = this.waiters.shift();
+    if (!pendingRequest || pendingRequest.state !== 'queued' || !waiter) return;
+    clearTimeout(waiter.timer);
+    this.respondJson(waiter.response, 200, this.debugResponse(pendingRequest));
+    pendingRequest.state = 'delivered';
+  }
+
+  private async respondChatDebugResult(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    if (request.method !== 'POST') {
+      this.respondJson(response, 405, { error: 'method-not-allowed' });
+      return;
+    }
+    if (request.headers['content-type'] !== 'application/json') {
+      this.respondJson(response, 415, { error: 'unsupported-media-type' });
+      return;
+    }
+
+    this.activeChatDebugRequests.add(request);
+    let body: BoundedJsonBody;
+    try {
+      body = await readBoundedJsonBody(
+        request,
+        HMR_CHAT_DEBUG_MAX_RESULT_BYTES,
+        CHAT_DEBUG_BODY_READ_TIMEOUT_MS,
+      );
+    } finally {
+      this.activeChatDebugRequests.delete(request);
+    }
+    if (body.kind === 'oversize') {
+      this.respondJson(response, 413, { error: 'payload-too-large' });
+      return;
+    }
+    if (body.kind === 'invalid' || !isHmrChatDebugResult(body.value)) {
+      this.respondJson(response, 400, { error: 'invalid-chat-debug-result' });
+      return;
+    }
+
+    const pendingRequest = this.pendingChatDebugRequest;
+    if (!pendingRequest || pendingRequest.state !== 'delivered') {
+      this.respondJson(response, 409, { error: 'no-pending-chat-debug-request' });
+      return;
+    }
+    if (body.value.requestId !== pendingRequest.requestId || body.value.stableId !== pendingRequest.stableId) {
+      this.respondJson(response, 409, { error: 'chat-debug-result-mismatch' });
+      return;
+    }
+
+    this.pendingChatDebugRequest = undefined;
+    clearTimeout(pendingRequest.timer);
+    if (body.value.ok) {
+      pendingRequest.resolve(body.value.snapshot);
+    } else {
+      pendingRequest.reject(new Error(chatDebugErrorMessage(body.value.error.code)));
+    }
+    this.respondNoContent(response);
+  }
+
   private removeWaiter(response: ServerResponse): void {
     const index = this.waiters.findIndex((waiter) => waiter.response === response);
     if (index >= 0) this.waiters.splice(index, 1);
@@ -248,6 +358,24 @@ export class HmrServerService {
     return { version: this.version, definitionChanged: false, changedAssets: [], stableId: this.target?.stableId ?? '' };
   }
 
+  private debugResponse(pendingRequest: PendingChatDebugRequest): HmrWatchResponse {
+    return {
+      version: this.version,
+      definitionChanged: false,
+      changedAssets: [],
+      debugCommand: { requestId: pendingRequest.requestId, kind: 'currentChatSnapshot' },
+      stableId: this.target?.stableId ?? '',
+    };
+  }
+
+  private rejectPendingChatDebugRequest(message: string): void {
+    const pendingRequest = this.pendingChatDebugRequest;
+    if (!pendingRequest) return;
+    this.pendingChatDebugRequest = undefined;
+    clearTimeout(pendingRequest.timer);
+    pendingRequest.reject(new Error(message));
+  }
+
   private isAuthorized(candidate: string | null): boolean {
     if (candidate === null || !HMR_AUTH_TOKEN_PATTERN.test(candidate)) return false;
     const candidateBytes = Buffer.from(candidate, 'utf8');
@@ -259,6 +387,11 @@ export class HmrServerService {
   private respondJson(response: ServerResponse, statusCode: number, body: unknown): void {
     if (response.writableEnded) return;
     response.writeHead(statusCode, { ...CORS_HEADERS, 'content-type': 'application/json' }).end(JSON.stringify(body));
+  }
+
+  private respondNoContent(response: ServerResponse): void {
+    if (response.writableEnded) return;
+    response.writeHead(204, CORS_HEADERS).end();
   }
 }
 
@@ -272,6 +405,15 @@ function portCandidates(): readonly number[] {
 function changedAssetHashes(previous: HmrBuildResult | undefined, next: HmrBuildResult): readonly string[] {
   const previousHashes = new Set((previous?.assets ?? []).map((asset) => asset.hash));
   return next.assets.map((asset) => asset.hash).filter((hash) => !previousHashes.has(hash));
+}
+
+function chatDebugErrorMessage(code: 'CHAT_UNAVAILABLE' | 'CHAT_SHAPE_INVALID' | 'SNAPSHOT_TOO_LARGE' | 'CAPTURE_FAILED'): string {
+  switch (code) {
+    case 'CHAT_UNAVAILABLE': return 'The current chat is unavailable.';
+    case 'CHAT_SHAPE_INVALID': return 'The current chat has an unsupported shape.';
+    case 'SNAPSHOT_TOO_LARGE': return 'The chat snapshot exceeds the size limit.';
+    case 'CAPTURE_FAILED': return 'The chat snapshot could not be captured.';
+  }
 }
 
 let hmrServerService: HmrServerService | undefined;

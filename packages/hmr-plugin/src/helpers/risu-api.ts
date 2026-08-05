@@ -2,6 +2,11 @@
  * Boundary adapter for direct risuai.* access.
  */
 import type { ControllerDeps, HmrEvent, HmrPublicState } from "../hmr/controller";
+import type {
+  HmrChatDebugMessage,
+  HmrChatDebugScriptStateValue,
+  HmrChatDebugSnapshot,
+} from "../hmr/protocol";
 import { createMappingStore } from "../hmr/storage";
 import { getGlobalStorage, removeGlobalStorage, setGlobalStorage } from "./plugin-storage";
 
@@ -61,14 +66,122 @@ async function requestRequiredPluginPermissions(): Promise<boolean> {
   return true;
 }
 
-async function fetchOk(url: string): Promise<Response> {
-  const options = (await getPlatform()) === "web" ? WEB_FETCH_OPTIONS : LOCAL_ROUTE_FETCH_OPTIONS;
+async function fetchOk(url: string, init?: RequestInit): Promise<Response> {
+  const baseOptions = (await getPlatform()) === "web" ? WEB_FETCH_OPTIONS : LOCAL_ROUTE_FETCH_OPTIONS;
+  const options: LocalNetworkRequestInit = { ...baseOptions, ...init, requestTimeoutMs: 40_000 };
   const response = await risuai.nativeFetch(url, options);
   if (!response.ok) {
     throw new Error(`HMR server response ${response.status}`);
   }
 
   return response;
+}
+
+export class ChatSnapshotCaptureError extends Error {
+  constructor(readonly code: "CHAT_UNAVAILABLE" | "CHAT_SHAPE_INVALID") {
+    super(code);
+    this.name = "ChatSnapshotCaptureError";
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function readOptionalString(value: Record<string, unknown>, fields: readonly string[]): string | undefined {
+  let selected: string | undefined;
+  for (const field of fields) {
+    const candidate = value[field];
+    if (candidate === undefined) continue;
+    if (typeof candidate !== "string" || candidate.length === 0) {
+      throw new ChatSnapshotCaptureError("CHAT_SHAPE_INVALID");
+    }
+    selected ??= candidate;
+  }
+  return selected;
+}
+
+function captureScriptstate(value: unknown): Readonly<Record<string, HmrChatDebugScriptStateValue>> {
+  if (value === undefined) return {};
+  if (!isPlainRecord(value)) throw new ChatSnapshotCaptureError("CHAT_SHAPE_INVALID");
+
+  const scriptstate: Record<string, HmrChatDebugScriptStateValue> = {};
+  for (const [key, stateValue] of Object.entries(value)) {
+    if (
+      !key.startsWith("$") ||
+      (typeof stateValue !== "string" &&
+        typeof stateValue !== "boolean" &&
+        (typeof stateValue !== "number" || !Number.isFinite(stateValue)))
+    ) {
+      throw new ChatSnapshotCaptureError("CHAT_SHAPE_INVALID");
+    }
+    scriptstate[key] = stateValue;
+  }
+  return scriptstate;
+}
+
+function captureRecentMessages(value: unknown): readonly HmrChatDebugMessage[] {
+  if (!Array.isArray(value)) throw new ChatSnapshotCaptureError("CHAT_SHAPE_INVALID");
+
+  const startIndex = Math.max(0, value.length - 2);
+  const recentMessages: HmrChatDebugMessage[] = [];
+  for (let index = startIndex; index < value.length; index += 1) {
+    const candidate = value[index];
+    if (!isRecord(candidate) || typeof candidate["role"] !== "string" || typeof candidate["data"] !== "string") {
+      throw new ChatSnapshotCaptureError("CHAT_SHAPE_INVALID");
+    }
+    if (candidate["role"].length === 0) throw new ChatSnapshotCaptureError("CHAT_SHAPE_INVALID");
+    const time = candidate["time"];
+    if (time !== undefined && (typeof time !== "number" || !Number.isFinite(time))) {
+      throw new ChatSnapshotCaptureError("CHAT_SHAPE_INVALID");
+    }
+    recentMessages.push(time === undefined
+      ? { index, role: candidate["role"], data: candidate["data"] }
+      : { index, role: candidate["role"], data: candidate["data"], time });
+  }
+  return recentMessages;
+}
+
+export async function captureCurrentChatSnapshot(): Promise<HmrChatDebugSnapshot> {
+  const [characterIndex, chatIndex] = await Promise.all([
+    risuai.getCurrentCharacterIndex(),
+    risuai.getCurrentChatIndex(),
+  ]);
+  if (!Number.isInteger(characterIndex) || characterIndex < 0 || !Number.isInteger(chatIndex) || chatIndex < 0) {
+    throw new ChatSnapshotCaptureError("CHAT_UNAVAILABLE");
+  }
+
+  const [characterValue, chatValue] = await Promise.all([
+    risuai.getCharacterFromIndex(characterIndex),
+    risuai.getChatFromIndex(characterIndex, chatIndex),
+  ]);
+  if (characterValue === null || chatValue === null) throw new ChatSnapshotCaptureError("CHAT_UNAVAILABLE");
+  if (!isRecord(characterValue) || !isRecord(chatValue)) throw new ChatSnapshotCaptureError("CHAT_SHAPE_INVALID");
+
+  const characterId = readOptionalString(characterValue, ["chaId", "characterId", "id"]);
+  const characterName = readOptionalString(characterValue, ["name", "characterName"]);
+  const character = characterId === undefined
+    ? characterName === undefined ? {} : { name: characterName }
+    : characterName === undefined ? { id: characterId } : { id: characterId, name: characterName };
+  const chatId = readOptionalString(chatValue, ["chatId", "id"]);
+  const chatName = readOptionalString(chatValue, ["name", "chatName", "title"]);
+  const chat = chatId === undefined
+    ? chatName === undefined ? {} : { name: chatName }
+    : chatName === undefined ? { id: chatId } : { id: chatId, name: chatName };
+
+  return {
+    capturedAt: Date.now(),
+    character,
+    chat,
+    scriptstate: captureScriptstate(chatValue["scriptstate"]),
+    recentMessages: captureRecentMessages(chatValue["message"]),
+  };
 }
 
 function toImageBytes(value: unknown): Uint8Array | null {
@@ -103,6 +216,13 @@ export function createRisuControllerDeps(
   return {
     getPlatform,
     fetchJson: async (url) => (await fetchOk(url)).json(),
+    postJson: async (url, body) => {
+      await fetchOk(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+      });
+    },
     fetchBinary: async (url) => new Uint8Array(await (await fetchOk(url)).arrayBuffer()),
     getCharacters: async () => {
       const db = await risuai.getDatabase(["characters"]);
