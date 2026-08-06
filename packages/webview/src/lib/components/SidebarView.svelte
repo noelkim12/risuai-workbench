@@ -73,7 +73,7 @@
       bind:this={importInput}
       class="visually-hidden"
       type="file"
-      accept=".charx,.png,.risum,.risup,.risupreset,.preset,.json"
+      accept=".charx,.png,.jpg,.jpeg,.risum,.risup,.risupreset,.preset,.json"
       on:change={importSelectedFile}
     />
     <button type="button" class="toolbar-button toolbar-button--refresh" aria-label="Refresh artifacts" title="Refresh" on:click={onRefresh}>

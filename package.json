@@ -37,6 +37,7 @@
     "release:version": "changeset version",
     "release:publish:cbs-lsp": "changeset publish",
     "release:smoke:published:cbs-lsp": "node ./scripts/release/smoke-published-cbs-lsp.mjs",
+    "release:smoke:published:mcp": "node ./scripts/release/smoke-published-mcp.mjs",
     "lint": "eslint 'packages/*/src/**/*.ts'",
     "lint:fix": "eslint 'packages/*/src/**/*.ts' --fix",
     "format": "prettier --write 'packages/*/src/**/*.ts' '*.{json,mjs}' '.prettierrc'",

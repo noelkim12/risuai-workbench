@@ -13,7 +13,8 @@ interface SystemFilePickerDeps {
   readonly execFile: ExecFileRunner;
 }
 
-const IMPORT_FILE_FILTER = 'RisuAI artifacts (*.charx;*.png;*.risum;*.risup;*.risupreset;*.preset;*.json)|*.charx;*.png;*.risum;*.risup;*.risupreset;*.preset;*.json|All files (*.*)|*.*';
+const IMPORT_FILE_FILTER =
+  'RisuAI artifacts (*.charx;*.png;*.jpg;*.jpeg;*.risum;*.risup;*.risupreset;*.preset;*.json)|*.charx;*.png;*.jpg;*.jpeg;*.risum;*.risup;*.risupreset;*.preset;*.json|All files (*.*)|*.*';
 
 function runExecFile(file: string, args: readonly string[]): Promise<ExecFileResult> {
   return new Promise((resolve, reject) => {
@@ -33,7 +34,11 @@ function parsePickerStdout(stdout: string): string | undefined {
   return selectedPath.length > 0 ? selectedPath : undefined;
 }
 
-async function runPicker(file: string, args: readonly string[], execFileRunner: ExecFileRunner): Promise<string | undefined> {
+async function runPicker(
+  file: string,
+  args: readonly string[],
+  execFileRunner: ExecFileRunner,
+): Promise<string | undefined> {
   try {
     const result = await execFileRunner(file, args);
     return parsePickerStdout(result.stdout);
@@ -74,7 +79,7 @@ async function pickWithLinux(execFileRunner: ExecFileRunner): Promise<string | u
     [
       '--file-selection',
       '--title=Import RisuAI artifact',
-      '--file-filter=RisuAI artifacts | *.charx *.png *.risum *.risup *.risupreset *.preset *.json',
+      '--file-filter=RisuAI artifacts | *.charx *.png *.jpg *.jpeg *.risum *.risup *.risupreset *.preset *.json',
       '--file-filter=All files | *',
     ],
     execFileRunner,
@@ -83,7 +88,13 @@ async function pickWithLinux(execFileRunner: ExecFileRunner): Promise<string | u
 
   return runPicker(
     'kdialog',
-    ['--title', 'Import RisuAI artifact', '--getopenfilename', '', '*.charx *.png *.risum *.risup *.risupreset *.preset *.json|RisuAI artifacts'],
+    [
+      '--title',
+      'Import RisuAI artifact',
+      '--getopenfilename',
+      '',
+      '*.charx *.png *.jpg *.jpeg *.risum *.risup *.risupreset *.preset *.json|RisuAI artifacts',
+    ],
     execFileRunner,
   );
 }

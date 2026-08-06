@@ -54,7 +54,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/risuai/risu-workbench.git",
+    "url": "https://github.com/noelkim12/risuai-workbench.git",
     "directory": "packages/cbs-lsp"
   },
   "dependencies": {
@@ -68,8 +68,8 @@
     "vitest": "^4.1.4"
   },
   "license": "GPL-3.0-only",
-  "homepage": "https://github.com/risuai/risu-workbench/tree/main/packages/cbs-lsp",
+  "homepage": "https://github.com/noelkim12/risuai-workbench/tree/main/packages/cbs-lsp",
   "bugs": {
-    "url": "https://github.com/risuai/risu-workbench/issues"
+    "url": "https://github.com/noelkim12/risuai-workbench/issues"
   }
 }

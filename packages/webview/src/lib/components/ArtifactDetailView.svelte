@@ -29,10 +29,13 @@
   export let hmrState: import('svelte/store').Writable<import('../types').ArtifactBrowserHmrStatusPayload | null>;
   export let hmrStartPending: boolean;
   export let hmrPluginSaveState: ArtifactBrowserHmrPluginSaveState;
+  export let hmrChatDebugPending: { readonly requestId: string; readonly stableId: string } | null;
+  export let hmrChatDebugError: string | null;
   export let onHmrStartBroadcast: (stableId: string) => void;
   export let onHmrStopBroadcast: () => void;
   export let onHmrSavePlugin: () => void;
   export let onHmrOpenSavedPlugin: () => void;
+  export let onHmrChatDebug: (stableId: string) => void;
   export let onBack: () => void;
   export let onAnalyzeArtifact: (stableId: string) => void;
   export let onOpenAnalysisReport: (stableId: string) => void;
@@ -150,6 +153,9 @@
         onOpenSavedPlugin={onHmrOpenSavedPlugin}
         pluginSaveState={hmrPluginSaveState}
         onBroadcastHere={() => onHmrStartBroadcast(artifact.stableId)}
+        chatDebugPending={hmrChatDebugPending}
+        chatDebugError={hmrChatDebugError}
+        onChatDebug={() => onHmrChatDebug(artifact.stableId)}
       />
     {/if}
   </div>

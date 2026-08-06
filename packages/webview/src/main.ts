@@ -10,6 +10,7 @@ import { mount } from 'svelte';
 import { get, writable } from 'svelte/store';
 import {
   createArtifactBrowserAnalyzeArtifactMessage,
+  createArtifactBrowserHmrChatDebugRequestMessage,
   createArtifactBrowserHmrStartBroadcastMessage,
   createArtifactBrowserHmrOpenSavedPluginMessage,
   createArtifactBrowserHmrSavePluginMessage,
@@ -46,6 +47,7 @@ import {
   type ArtifactBrowserExtensionMessage,
   type ArtifactBrowserDetailPayload,
   type ArtifactBrowserHmrStatusPayload,
+  type ArtifactBrowserHmrChatDebugStatusPayload,
   type ArtifactBrowserHmrSaveCompletedPayload,
   type ArtifactBrowserHmrPluginSaveState,
   type ArtifactBrowserPackCompletedPayload,
@@ -66,8 +68,14 @@ const hmrState = writable<ArtifactBrowserHmrStatusPayload | null>(null);
 const hmrStartPending = writable(false);
 const hmrPluginSaveState = writable<ArtifactBrowserHmrPluginSaveState>('idle');
 const importing = writable(false);
+// Chat Debug correlation: one in-flight request identified by (requestId, stableId).
+// A status affects pending/error only when both ids match the live record.
+type HmrChatDebugPending = { readonly requestId: string; readonly stableId: string } | null;
+const hmrChatDebugPending = writable<HmrChatDebugPending>(null);
+const hmrChatDebugError = writable<string | null>(null);
 const app = document.querySelector<HTMLDivElement>('#app');
 const IMPORT_CHUNK_BYTES = 1024 * 1024;
+const HMR_CHAT_DEBUG_MAX_MESSAGE_LENGTH = 256;
 const isEditorMode = document.documentElement.dataset.editorMode === 'true';
 const webviewName =
   document.documentElement.dataset.risuaiWorkbenchView ??
@@ -89,6 +97,7 @@ const ARTIFACT_BROWSER_EXTENSION_MESSAGE_TYPES = [
   'artifact-browser/detailLoaded',
   'artifact-browser/packCompleted',
   'artifact-browser/hmrStatus',
+  'artifact-browser/hmrChatDebugStatus',
   'artifact-browser/hmrSaveCompleted',
 ] as const satisfies readonly ArtifactBrowserExtensionMessageType[];
 
@@ -108,6 +117,10 @@ const ARTIFACT_BROWSER_EXTENSION_MESSAGE_GUARDS = {
   'artifact-browser/hmrStatus': createArtifactBrowserExtensionMessageGuard(
     'artifact-browser/hmrStatus',
     isArtifactBrowserHmrStatusPayload,
+  ),
+  'artifact-browser/hmrChatDebugStatus': createArtifactBrowserExtensionMessageGuard(
+    'artifact-browser/hmrChatDebugStatus',
+    isArtifactBrowserHmrChatDebugStatusPayload,
   ),
   'artifact-browser/hmrSaveCompleted': createArtifactBrowserExtensionMessageGuard(
     'artifact-browser/hmrSaveCompleted',
@@ -179,10 +192,13 @@ if (webviewName === 'plugin-viewer') {
       hmrState,
       hmrStartPending,
       hmrPluginSaveState,
+      hmrChatDebugPending,
+      hmrChatDebugError,
       onHmrStartBroadcast: hmrStartBroadcast,
       onHmrStopBroadcast: hmrStopBroadcast,
       onHmrSavePlugin: hmrSavePlugin,
       onHmrOpenSavedPlugin: hmrOpenSavedPlugin,
+      onHmrChatDebug: hmrChatDebug,
       openMarkerEditor,
       openPluginViewer,
     },
@@ -264,8 +280,42 @@ function handleMessage(event: MessageEvent<unknown>): void {
 
   if (message.type === 'artifact-browser/hmrStatus') {
     hmrStartPending.set(false);
-    hmrState.set(message.payload);
+    const payload = message.payload;
+    // Owner/target change: a status for a different (or stopped) broadcast cannot
+    // influence the next Chat Debug target, so drop any in-flight record locally.
+    const pendingChatDebug = get(hmrChatDebugPending);
+    if (pendingChatDebug && (!payload.running || payload.stableId !== pendingChatDebug.stableId)) {
+      hmrChatDebugPending.set(null);
+      hmrChatDebugError.set(null);
+    }
+    hmrState.set(payload);
     return;
+  }
+
+  if (message.type === 'artifact-browser/hmrChatDebugStatus') {
+    const payload = message.payload;
+    const pendingChatDebug = get(hmrChatDebugPending);
+    // Only the matching request AND stable id may affect pending/error state.
+    // Unrelated or stale statuses (different request, different target) are ignored.
+    if (
+      !pendingChatDebug ||
+      payload.requestId !== pendingChatDebug.requestId ||
+      payload.stableId !== pendingChatDebug.stableId
+    ) {
+      return;
+    }
+    switch (payload.state) {
+      case 'pending':
+        return;
+      case 'opened':
+        hmrChatDebugPending.set(null);
+        hmrChatDebugError.set(null);
+        return;
+      case 'failed':
+        hmrChatDebugPending.set(null);
+        hmrChatDebugError.set(payload.message ?? 'Chat debug failed.');
+        return;
+    }
   }
 
   if (message.type === 'artifact-browser/hmrSaveCompleted') {
@@ -375,6 +425,21 @@ function hmrStartBroadcast(stableId: string): void {
   vscode?.postMessage(createArtifactBrowserHmrStartBroadcastMessage({ stableId }));
 }
 
+/**
+ * hmrChatDebug 함수.
+ * Owner-only Chat Debug: 하나의 UUID를 발급해 pending을 기록한 뒤 정확히 하나의
+ * correlated request를 host로 보낸다. 이후 동일 (requestId, stableId) status만
+ * pending/error 상태에 영향을 줄 수 있다.
+ *
+ * @param stableId - Chat Debug를 요청할 broadcasting owner artifact stable id
+ */
+function hmrChatDebug(stableId: string): void {
+  const requestId = crypto.randomUUID();
+  hmrChatDebugError.set(null);
+  hmrChatDebugPending.set({ requestId, stableId });
+  vscode?.postMessage(createArtifactBrowserHmrChatDebugRequestMessage({ requestId, stableId }));
+}
+
 function hmrStopBroadcast(): void {
   vscode?.postMessage(createArtifactBrowserHmrStopBroadcastMessage());
 }
@@ -437,6 +502,15 @@ function selectCard(stableId: string): void {
     selectedCard = value.find((card) => card.stableId === stableId);
   })();
   if (!selectedCard) return;
+
+  // Artifact selection change: a stale in-flight Chat Debug request for the
+  // previous artifact must not influence the newly selected target, so drop it
+  // locally. Mirrors the owner-change clearance in the hmrStatus handler; the
+  // (requestId, stableId) correlation gate then rejects any late old status.
+  if (get(selectedStableId) !== stableId) {
+    hmrChatDebugPending.set(null);
+    hmrChatDebugError.set(null);
+  }
 
   pendingDetailNavigationStableId = stableId;
 
@@ -589,6 +663,15 @@ function isArtifactBrowserPackCompletedPayload(payload: unknown): payload is Art
 
 function isArtifactBrowserHmrStatusPayload(payload: unknown): payload is ArtifactBrowserHmrStatusPayload {
   return isPlainRecord(payload) && typeof payload.running === 'boolean' && typeof payload.updateCount === 'number';
+}
+
+function isArtifactBrowserHmrChatDebugStatusPayload(payload: unknown): payload is ArtifactBrowserHmrChatDebugStatusPayload {
+  if (!isPlainRecord(payload) || typeof payload.requestId !== 'string' || payload.requestId.trim().length === 0) return false;
+  if (typeof payload.stableId !== 'string' || payload.stableId.trim().length === 0) return false;
+  if (payload.state === 'pending' || payload.state === 'opened') return Object.keys(payload).length === 3;
+  return payload.state === 'failed' && Object.keys(payload).every((key) => ['requestId', 'stableId', 'state', 'message'].includes(key)) &&
+    (payload.message === undefined ||
+      (typeof payload.message === 'string' && payload.message.length <= HMR_CHAT_DEBUG_MAX_MESSAGE_LENGTH));
 }
 
 function isArtifactBrowserHmrSaveCompletedPayload(
