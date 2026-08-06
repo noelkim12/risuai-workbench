@@ -210,8 +210,12 @@
 
   .hmr-strip__actions {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
     gap: var(--space-2);
-    flex: none;
+    row-gap: var(--space-1);
+    flex: 0 1 auto;
     margin-left: auto;
   }
 
