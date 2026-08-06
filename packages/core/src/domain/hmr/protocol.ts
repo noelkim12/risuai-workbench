@@ -4,7 +4,9 @@
  * 플러그인은 이 파일을 import할 수 없으므로 동일 정의를 복제한다.
  */
 
-export const HMR_PROTOCOL_VERSION = 2;
+export const HMR_PROTOCOL_VERSION = 3;
+
+export const HMR_CHAT_DEBUG_MAX_RESULT_BYTES = 512 * 1024;
 
 export const HMR_ASSET_PLACEHOLDER_PREFIX = 'hmr-asset://';
 
@@ -28,9 +30,57 @@ export interface HmrWatchResponse {
   readonly version: number;
   readonly definitionChanged: boolean;
   readonly changedAssets: readonly string[];
+  readonly debugCommand?: HmrChatDebugCommand;
   /** 방송 중인 프로젝트의 stableId. 수신측은 매 응답마다 매핑과 대조해 대상 전환을 감지한다. */
   readonly stableId: string;
 }
+
+export type HmrChatDebugCommand =
+  { readonly requestId: string; readonly kind: 'currentChatSnapshot' };
+
+export type HmrChatDebugScriptStateValue = string | number | boolean;
+
+export interface HmrChatDebugMessage {
+  readonly index: number;
+  readonly role: string;
+  readonly data: string;
+  readonly time?: number;
+}
+
+export interface HmrChatDebugCharacterContext {
+  readonly id?: string;
+  readonly name?: string;
+}
+
+export interface HmrChatDebugChatContext {
+  readonly id?: string;
+  readonly name?: string;
+}
+
+export interface HmrChatDebugSnapshot {
+  readonly capturedAt: number;
+  readonly character: HmrChatDebugCharacterContext;
+  readonly chat: HmrChatDebugChatContext;
+  readonly scriptstate: Readonly<Record<`$${string}`, HmrChatDebugScriptStateValue>>;
+  readonly recentMessages: readonly HmrChatDebugMessage[];
+}
+
+export type HmrChatDebugResult =
+  | {
+      readonly requestId: string;
+      readonly stableId: string;
+      readonly ok: true;
+      readonly snapshot: HmrChatDebugSnapshot;
+    }
+  | {
+      readonly requestId: string;
+      readonly stableId: string;
+      readonly ok: false;
+      readonly error: {
+        readonly code: 'CHAT_UNAVAILABLE' | 'CHAT_SHAPE_INVALID' | 'SNAPSHOT_TOO_LARGE' | 'CAPTURE_FAILED';
+        readonly message: string;
+      };
+    };
 
 export interface HmrPayloadResponse {
   readonly kind: 'character' | 'module';

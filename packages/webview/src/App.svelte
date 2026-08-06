@@ -72,10 +72,13 @@ export let packState: Writable<ArtifactBrowserPackCompletedPayload | null>;
 export let hmrState: Writable<ArtifactBrowserHmrStatusPayload | null>;
 export let hmrStartPending: Writable<boolean>;
 export let hmrPluginSaveState: Writable<ArtifactBrowserHmrPluginSaveState>;
+export let hmrChatDebugPending: Writable<{ readonly requestId: string; readonly stableId: string } | null>;
+export let hmrChatDebugError: Writable<string | null>;
 export let onHmrStartBroadcast: (stableId: string) => void;
 export let onHmrStopBroadcast: () => void;
 export let onHmrSavePlugin: () => void;
 export let onHmrOpenSavedPlugin: () => void;
+export let onHmrChatDebug: (stableId: string) => void;
 
 $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId);
 </script>
@@ -90,10 +93,13 @@ $: selectedArtifact = $cards.find((card) => card.stableId === $selectedStableId)
     {hmrState}
     hmrStartPending={$hmrStartPending}
     hmrPluginSaveState={$hmrPluginSaveState}
+    hmrChatDebugPending={$hmrChatDebugPending}
+    hmrChatDebugError={$hmrChatDebugError}
     {onHmrStartBroadcast}
     {onHmrStopBroadcast}
     {onHmrSavePlugin}
     {onHmrOpenSavedPlugin}
+    {onHmrChatDebug}
     onBack={returnToCards}
     onAnalyzeArtifact={analyzeArtifact}
     onOpenAnalysisReport={openAnalysisReport}

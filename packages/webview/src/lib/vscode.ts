@@ -22,6 +22,8 @@ import {
   type ArtifactBrowserImportArtifactPayload,
   type ArtifactBrowserHmrStartBroadcastMessage,
   type ArtifactBrowserHmrStartBroadcastPayload,
+  type ArtifactBrowserHmrChatDebugRequestMessage,
+  type ArtifactBrowserHmrChatDebugRequestPayload,
   type ArtifactBrowserHmrSavePluginMessage,
   type ArtifactBrowserHmrOpenSavedPluginMessage,
   type ArtifactBrowserHmrStopBroadcastMessage,
@@ -168,6 +170,12 @@ export function createArtifactBrowserHmrStartBroadcastMessage(
   payload: ArtifactBrowserHmrStartBroadcastPayload,
 ): ArtifactBrowserHmrStartBroadcastMessage {
   return createArtifactBrowserWebviewMessage('artifact-browser/hmrStartBroadcast', payload);
+}
+
+export function createArtifactBrowserHmrChatDebugRequestMessage(
+  payload: ArtifactBrowserHmrChatDebugRequestPayload,
+): ArtifactBrowserHmrChatDebugRequestMessage {
+  return createArtifactBrowserWebviewMessage('artifact-browser/hmrChatDebugRequest', payload);
 }
 
 export function createArtifactBrowserHmrStopBroadcastMessage(): ArtifactBrowserHmrStopBroadcastMessage {

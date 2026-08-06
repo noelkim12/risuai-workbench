@@ -10,6 +10,20 @@ import { getErrorMessage } from '../../../shared';
 import { parseCharx, parseCharxAsync, parseModuleRisum } from '../../parsers';
 import type { ParsedCharacterResult } from './types';
 
+/**
+ * RisuAI의 .jpg/.jpeg 캐릭터 카드에서 ZIP 아카이브 부분만 추출.
+ * RisuAI는 JPEG CharX 하이브리드를 [JPEG 이미지 바이트][ZIP 아카이브] 형태로 저장한다.
+ * ZIP은 항상 Local File Header 시그니처(PK\x03\x04)로 시작하므로 첫 출현 위치까지 잘라낸다.
+ */
+function extractZipFromJpegHybrid(buf: Buffer): Buffer {
+  const ZIP_LOCAL_FILE_HEADER = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+  const zipStart = buf.indexOf(ZIP_LOCAL_FILE_HEADER);
+  if (zipStart < 0) {
+    throw new Error('JPEG 파일에서 CharX ZIP 아카이브를 찾을 수 없습니다 (RisuAI JPEG 하이브리드가 아닐 수 있음).');
+  }
+  return buf.subarray(zipStart);
+}
+
 export function phase1_parseCharx(inputPath: string): ParsedCharacterResult {
   const ext = path.extname(inputPath).toLowerCase();
   const buf = fs.readFileSync(inputPath);
@@ -17,9 +31,14 @@ export function phase1_parseCharx(inputPath: string): ParsedCharacterResult {
   console.log('\n  📦 Phase 1: 캐릭터 카드 파싱');
   console.log(`     입력: ${path.basename(inputPath)} (${(buf.length / 1024).toFixed(1)} KB)`);
 
-  if (ext === '.charx') {
-    console.log('     포맷: CharX (ZIP)');
-    const { card: charx, moduleData, assets } = parseCharx(buf);
+  if (ext === '.charx' || ext === '.jpg' || ext === '.jpeg') {
+    const isJpegHybrid = ext === '.jpg' || ext === '.jpeg';
+    const zipBuf = isJpegHybrid ? extractZipFromJpegHybrid(buf) : buf;
+
+    console.log(
+      isJpegHybrid ? '     포맷: JPEG+ZIP 하이브리드 (CharX)' : '     포맷: CharX (ZIP)',
+    );
+    const { card: charx, moduleData, assets } = parseCharx(zipBuf);
     if (!charx) {
       throw new Error('charx.json을 찾을 수 없습니다.');
     }
@@ -117,7 +136,7 @@ export function phase1_parseCharx(inputPath: string): ParsedCharacterResult {
     return { charx, assetSources: {}, mainImage: null };
   }
 
-  throw new Error(`지원하지 않는 파일 포맷: ${ext} (지원: .charx, .png, .json)`);
+  throw new Error(`지원하지 않는 파일 포맷: ${ext} (지원: .charx, .png, .jpg, .jpeg, .json)`);
 }
 
 /** phase1_parseCharx의 async 버전 — .charx ZIP 해제에 fflate async unzip 사용 (worker_threads) */
@@ -128,9 +147,16 @@ export async function phase1_parseCharxAsync(inputPath: string): Promise<ParsedC
   console.log('\n  📦 Phase 1: 캐릭터 카드 파싱');
   console.log(`     입력: ${path.basename(inputPath)} (${(buf.length / 1024).toFixed(1)} KB)`);
 
-  if (ext === '.charx') {
-    console.log('     포맷: CharX (ZIP) — async unzip');
-    const { card: charx, moduleData, assets } = await parseCharxAsync(buf);
+  if (ext === '.charx' || ext === '.jpg' || ext === '.jpeg') {
+    const isJpegHybrid = ext === '.jpg' || ext === '.jpeg';
+    const zipBuf = isJpegHybrid ? extractZipFromJpegHybrid(buf) : buf;
+
+    console.log(
+      isJpegHybrid
+        ? '     포맷: JPEG+ZIP 하이브리드 (CharX) — async unzip'
+        : '     포맷: CharX (ZIP) — async unzip',
+    );
+    const { card: charx, moduleData, assets } = await parseCharxAsync(zipBuf);
     if (!charx) {
       throw new Error('charx.json을 찾을 수 없습니다.');
     }

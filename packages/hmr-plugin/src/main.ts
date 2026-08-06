@@ -182,19 +182,27 @@ await risuai.registerButton(
   () => void openPanel(),
 );
 
-const initialPermissionsGranted = await risuUi
-  .requestRequiredPermissions()
-  .catch((error: unknown) => {
-    console.error(`${PLUGIN_DISPLAY_NAME} permission preflight failed`, error);
-    return false;
-  });
-
-if (initialPermissionsGranted) {
-  await controller.tryAutoReconnect();
-}
+// RisuAI 초기 initialize 과정에서 권한 팝업이 씹히는 현상을 피하기 위해
+// plugin init 이후 약 5초 지연시켜 권한 체크 및 요청을 수행한다.
+// 버튼 클릭(openPanel) 시에도 동일한 요청이 수행되므로 사용자가 먼저 버튼을 누르면
+// 권한이 이미 부여되어 있어 이 콜백은 no-op로 동작한다.
+const initPermissionTimer: ReturnType<typeof setTimeout> = setTimeout(() => {
+  void risuUi
+    .requestRequiredPermissions()
+    .then((granted) => {
+      if (granted) {
+        return controller.tryAutoReconnect();
+      }
+      return;
+    })
+    .catch((error: unknown) => {
+      console.error(`${PLUGIN_DISPLAY_NAME} delayed permission preflight failed`, error);
+    });
+}, 5000);
 
 await risuai.onUnload(() => {
   controller.stopLoops();
+  clearTimeout(initPermissionTimer);
   document.removeEventListener('visibilitychange', handleForegroundChange);
   window.removeEventListener('focus', handleForegroundChange);
   badge?.destroy();
