@@ -13,6 +13,12 @@ permissions:
 jobs:
   verify-cbs-lsp-release-surface:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version:
+          - 20
+          - 22
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -20,7 +26,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ matrix.node-version }}
           cache: npm
 
       - name: Install workspace dependencies
@@ -31,3 +37,9 @@ jobs:
 
       - name: Verify cbs-lsp release surface
         run: npm run verify:cbs-lsp-release
+
+      - name: Verify MCP release surface
+        run: npm run --workspace @risuai-workbench/mcp test
+
+      - name: Smoke local release tarballs
+        run: npm run release:smoke:local
