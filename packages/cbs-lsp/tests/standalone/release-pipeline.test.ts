@@ -16,11 +16,13 @@ interface RootManifest {
 
 interface ReleaseManifest {
   dependencies?: Record<string, string>;
+  packageManager?: string;
   private?: boolean;
   publishConfig?: {
     access?: string;
     provenance?: boolean;
   };
+  version?: string;
 }
 
 const repoRoot = path.resolve(process.cwd(), '..', '..');
@@ -59,19 +61,30 @@ describe('cbs-lsp release pipeline contract', () => {
     expect(manifest.scripts?.['release:smoke:published:cbs-lsp']).toContain(
       'smoke-published-cbs-lsp.mjs',
     );
+    expect(manifest.scripts?.['release:smoke:local']).toContain('smoke-local-release.mjs');
     expect(manifest.scripts?.['verify:cbs-lsp-release']).toContain('test:product-matrix');
   });
 
   it('pins public package dependency ranges and publish metadata', () => {
     const cbsLspManifest = readJson<ReleaseManifest>('packages/cbs-lsp/package.json');
     const coreManifest = readJson<ReleaseManifest>('packages/core/package.json');
+    const mcpManifest = readJson<ReleaseManifest>('packages/risuai-workbench-mcp/package.json');
+    const wasmManifest = readJson<ReleaseManifest>('packages/lua-analyzer-wasm/package.json');
     const vscodeManifest = readJson<ReleaseManifest>('packages/vscode/package.json');
 
-    expect(cbsLspManifest.dependencies?.['@risuai-workbench/core']).toBe('^0.1.0');
+    expect(wasmManifest.version).toBe('0.1.1');
+    expect(coreManifest.version).toBe('0.1.1');
+    expect(cbsLspManifest.version).toBe('0.1.1');
+    expect(mcpManifest.version).toBe('0.1.1');
+    expect(coreManifest.dependencies?.['@risuai-workbench/lua-analyzer-wasm']).toBe('^0.1.1');
+    expect(cbsLspManifest.dependencies?.['@risuai-workbench/core']).toBe('^0.1.1');
+    expect(mcpManifest.dependencies?.['@risuai-workbench/cbs-language-server']).toBe('^0.1.1');
+    expect(mcpManifest.dependencies?.['@risuai-workbench/core']).toBe('^0.1.1');
     expect(cbsLspManifest.publishConfig).toEqual({ access: 'public', provenance: true });
+    expect(coreManifest.packageManager).toMatch(/^npm@/);
     expect(coreManifest.publishConfig).toEqual({ access: 'public', provenance: true });
     expect(vscodeManifest.private).toBe(true);
-    expect(vscodeManifest.dependencies?.['@risuai-workbench/core']).toBe('^0.1.0');
+    expect(vscodeManifest.dependencies?.['@risuai-workbench/core']).toBe('^0.1.1');
   });
 
   it('declares changesets policy for public and private packages', () => {
@@ -101,11 +114,14 @@ describe('cbs-lsp release pipeline contract', () => {
     const smokeScript = readText('scripts/release/smoke-published-cbs-lsp.mjs');
 
     expect(ciWorkflow).toContain('npm run verify:cbs-lsp-release');
+    expect(ciWorkflow).toContain('npm run --workspace @risuai-workbench/mcp test');
     expect(publishWorkflow).toContain('changesets/action@v1');
     expect(publishWorkflow).toContain('workflow_dispatch');
     expect(publishWorkflow).toContain('- next');
     expect(publishWorkflow).toContain('- canary');
+    expect(publishWorkflow).toContain('.changeset/snapshot-release.md');
     expect(publishWorkflow).toContain('release:smoke:published:cbs-lsp');
+    expect(publishWorkflow).toContain('release:smoke:local');
     expect(publishWorkflow).toContain('NPM_CONFIG_PROVENANCE: true');
     expect(smokeScript).toContain('CBS_LSP_RELEASE_VERSION');
     expect(smokeScript).toContain('npm install');

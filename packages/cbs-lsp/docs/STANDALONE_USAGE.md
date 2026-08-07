@@ -11,10 +11,10 @@
 
 ### 1. Local devDependency
 
-프로젝트에 서버 버전을 고정하고 싶다면 local install을 권장합니다.
+프로젝트에서 서버를 사용하려면 local install을 권장합니다.
 
 ```bash
-npm install --save-dev cbs-language-server
+npm install --save-dev @risuai-workbench/cbs-language-server
 ./node_modules/.bin/cbs-language-server --stdio
 ```
 
@@ -23,7 +23,7 @@ npm install --save-dev cbs-language-server
 빠르게 attach만 확인할 때는 ephemeral `npx` 실행을 지원합니다.
 
 ```bash
-npx cbs-language-server --stdio
+npx --yes --package @risuai-workbench/cbs-language-server cbs-language-server --stdio
 ```
 
 ### 3. Global install
@@ -31,11 +31,18 @@ npx cbs-language-server --stdio
 여러 editor가 같은 binary를 재사용한다면 global install을 사용할 수 있습니다.
 
 ```bash
-npm install -g cbs-language-server
+npm install --global @risuai-workbench/cbs-language-server
 cbs-language-server --stdio
 ```
 
 이 모드는 `cbs-language-server` binary가 shell `PATH`에 잡혀 있어야 합니다.
+
+업데이트와 제거는 같은 scoped package 이름을 사용합니다.
+
+```bash
+npm install --global @risuai-workbench/cbs-language-server
+npm uninstall --global @risuai-workbench/cbs-language-server
+```
 
 ## Official VS Code client handoff
 

@@ -20,7 +20,9 @@ packages/risuai-workbench-mcp/
 ├── README-reference.md        ← 상세 운영/구현 reference
 ├── docs/
 │   ├── README.md              ← MCP package 문서 묶음 인덱스
-│   ├── setup.md               ← 요구사항, 빌드, MCP client 설정
+│   ├── INSTALLATION.md        ← npm / npx / global / source 설치
+│   ├── HARNESS_SETUP.md       ← Codex / OpenCode / Claude Code / Pi / Hermes 설정
+│   ├── setup.md               ← 기존 통합 설정 문서
 │   ├── workflows.md           ← 기본 facade 흐름과 archive 추출
 │   ├── facade-tools.md        ← 공개 facade tool 8개의 역할
 │   ├── risulua-runtime.md     ← Fengari runtime action, source/context, trace 흐름
@@ -35,7 +37,8 @@ packages/risuai-workbench-mcp/
 
 | 작업 유형 | 먼저 읽을 페이지 | 현재 근거 |
 |---|---|---|
-| 처음 설치하거나 MCP client에 연결 | [`docs/setup.md`](docs/setup.md) | `package.json`, `bin/risuai-workbench-mcp.js`, `src/cli.ts` |
+| 처음 설치 | [`docs/INSTALLATION.md`](docs/INSTALLATION.md) | `package.json`, `bin/risuai-workbench-mcp.js`, `src/cli.ts` |
+| Codex / OpenCode / Claude Code / Pi / Hermes에 연결 | [`docs/HARNESS_SETUP.md`](docs/HARNESS_SETUP.md) | 각 harness 공식 설정 형식 + package CLI contract |
 | agent에게 기본 사용 흐름을 설명 | [`docs/workflows.md`](docs/workflows.md) | `src/tools/facade/*`, `src/actions/create-registry.ts` |
 | 공개 tool surface를 확인 | [`docs/facade-tools.md`](docs/facade-tools.md) | `src/tools/facade/index.ts`, `src/dev/snapshot-tool-surface.ts` |
 | RisuLua를 Fengari로 실행·회귀 테스트 | [`docs/risulua-runtime.md`](docs/risulua-runtime.md) | `src/actions/adapters/runtime-actions.ts`, `src/tools/runtime/*` |
@@ -83,6 +86,8 @@ subagent가 이 MCP package를 다룰 때는 다음 순서로 문서를 좁힙�
 ## 같이 읽을 문서
 
 - [`docs/README.md`](docs/README.md)
+- [`docs/INSTALLATION.md`](docs/INSTALLATION.md)
+- [`docs/HARNESS_SETUP.md`](docs/HARNESS_SETUP.md)
 - [`docs/setup.md`](docs/setup.md)
 - [`docs/workflows.md`](docs/workflows.md)
 - [`docs/facade-tools.md`](docs/facade-tools.md)
@@ -96,4 +101,4 @@ subagent가 이 MCP package를 다룰 때는 다음 순서로 문서를 좁힙�
 
 ## License
 
-MIT
+GPL-3.0-only

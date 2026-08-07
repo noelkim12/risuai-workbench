@@ -25,6 +25,8 @@ const DEFAULT_DELAY_MS = 10_000;
 function parseCliArgs(argv, env) {
   let version = env.CBS_LSP_RELEASE_VERSION?.trim() ?? '';
   let tag = env.CBS_LSP_RELEASE_TAG?.trim() || 'latest';
+  let packageSpec = env.CBS_LSP_RELEASE_SPEC?.trim() ?? '';
+  const dependencySpecs = [];
   let attempts = Number.parseInt(env.CBS_LSP_RELEASE_ATTEMPTS ?? String(DEFAULT_ATTEMPTS), 10);
   let delayMs = Number.parseInt(env.CBS_LSP_RELEASE_DELAY_MS ?? String(DEFAULT_DELAY_MS), 10);
 
@@ -44,6 +46,18 @@ function parseCliArgs(argv, env) {
       continue;
     }
 
+    if (argument === '--package-spec' && nextValue) {
+      packageSpec = nextValue.trim();
+      index += 1;
+      continue;
+    }
+
+    if (argument === '--dependency-spec' && nextValue) {
+      dependencySpecs.push(nextValue.trim());
+      index += 1;
+      continue;
+    }
+
     if (argument === '--attempts' && nextValue) {
       attempts = Number.parseInt(nextValue, 10);
       index += 1;
@@ -56,7 +70,7 @@ function parseCliArgs(argv, env) {
     }
   }
 
-  return { version, tag, attempts, delayMs };
+  return { version, tag, packageSpec, dependencySpecs, attempts, delayMs };
 }
 
 /**
@@ -132,7 +146,7 @@ async function verifyPublishedPackage(options) {
     throw new Error(`Invalid retry delay: ${String(delayMs)}`);
   }
 
-  const packageSpec = `${PACKAGE_NAME}@${version}`;
+  const packageSpec = options.packageSpec || `${PACKAGE_NAME}@${version}`;
   let lastError = '';
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -145,11 +159,10 @@ async function verifyPublishedPackage(options) {
         JSON.stringify({ name: 'cbs-lsp-smoke', private: true, version: '0.0.0' }, null, 2),
       );
 
-      const installResult = await runCommand(
-        'npm',
-        ['install', '--no-fund', '--no-audit', '--tag', tag, packageSpec],
-        tempRoot,
-      );
+      const installArgs = ['install', '--no-fund', '--no-audit'];
+      if (!options.packageSpec) installArgs.push('--tag', tag);
+      installArgs.push(...options.dependencySpecs, packageSpec);
+      const installResult = await runCommand('npm', installArgs, tempRoot);
 
       if (installResult.code !== 0) {
         lastError = installResult.stderr || installResult.stdout;

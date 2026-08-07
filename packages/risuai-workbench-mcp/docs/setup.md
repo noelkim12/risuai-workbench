@@ -2,33 +2,51 @@
 
 이 문서는 `risuai-workbench-mcp`를 로컬 stdio MCP server로 실행하기 위한 최소 설정만 다룹니다. tool 선택과 안전한 파일 변경 흐름은 [`workflows.md`](workflows.md)와 [`mutation-safety.md`](mutation-safety.md)를 읽습니다.
 
+> 최신 분리 가이드: 설치는 [`INSTALLATION.md`](INSTALLATION.md), Codex / OpenCode / Claude Code / Pi / Hermes 설정은 [`HARNESS_SETUP.md`](HARNESS_SETUP.md)를 사용하세요. 이 페이지는 기존 링크를 위한 통합 요약으로 유지합니다.
+
 ## 요구사항
 
 - Node.js 20 이상
 - MCP-compatible client
 - RisuAI Workbench workspace root
-- 저장소 source에서 실행할 경우 root dependency install과 package build
 
-## 저장소에서 직접 실행
+## npm에서 설치
+
+여러 MCP client가 같은 executable을 재사용한다면 global install을 사용할 수 있습니다.
 
 ```bash
-npm install
-npm run build --workspace risuai-workbench-mcp
-node packages/risuai-workbench-mcp/bin/risuai-workbench-mcp.js --help
+npm install --global @risuai-workbench/mcp
+risuai-workbench-mcp --version
+```
+
+프로젝트별로 사용하려면 local devDependency로 설치합니다.
+
+```bash
+npm install --save-dev @risuai-workbench/mcp
+./node_modules/.bin/risuai-workbench-mcp --version
+```
+
+설치 없이 한 번 실행하거나 MCP client 설정에 직접 넣으려면 package와 binary를 모두 명시합니다.
+
+```bash
+npx --yes --package @risuai-workbench/mcp risuai-workbench-mcp --help
 ```
 
 ## MCP client 설정
 
-Claude Desktop / Cursor 계열 `mcpServers` 예시입니다.
+Claude Desktop / Cursor 계열 `mcpServers` 예시입니다. `--root`를 생략하면 harness가 server를 시작한 현재 project directory를 workspace root로 사용합니다.
 
 ```json
 {
   "mcpServers": {
     "risuai-workbench": {
       "type": "stdio",
-      "command": "node",
+      "command": "npx",
       "args": [
-        "/absolute/path/to/risuai-workbench/packages/risuai-workbench-mcp/bin/risuai-workbench-mcp.js",
+        "--yes",
+        "--package",
+        "@risuai-workbench/mcp",
+        "risuai-workbench-mcp",
         "--stdio"
       ]
     }
@@ -36,7 +54,16 @@ Claude Desktop / Cursor 계열 `mcpServers` 예시입니다.
 }
 ```
 
-VS Code style `servers`도 같은 `command`와 `args`를 사용합니다. client의 실행 위치가 달라도 안정적으로 동작하도록 absolute path를 권장합니다.
+global install을 사용한다면 `command`를 `risuai-workbench-mcp`로 바꾸고 `args`에는 `--stdio`만 남깁니다. VS Code style `servers`도 같은 command와 args를 사용합니다. 현재 project와 다른 workspace를 의도적으로 지정할 때만 `--root`, 절대경로를 추가합니다.
+
+파일 변경을 preview로만 제한하려면 args 끝에 `--mutation`, `preview-only`를 추가합니다. 지원 값은 `enabled`, `generated-only`, `preview-only`입니다.
+
+## 업데이트와 제거
+
+```bash
+npm install --global @risuai-workbench/mcp
+npm uninstall --global @risuai-workbench/mcp
+```
 
 ## 설정 후 확인
 

@@ -58,7 +58,7 @@ CBS LSP client 설정은 `package.json`의 `contributes.configuration`과 `src/l
 - `launchMode = "standalone"` — standalone public surface만 사용합니다. fallback 없이 resolution failure UX를 바로 노출합니다.
 - `launchMode = "embedded"` — monorepo 개발용 `packages/cbs-lsp/dist/embedded.js` IPC launch를 강제합니다.
 - `installMode = "local-devDependency"` — `<workspace>/node_modules/.bin/cbs-language-server --stdio`
-- `installMode = "npx"` — `npx cbs-language-server --stdio`
+- `installMode = "npx"` — `npx --yes --package @risuai-workbench/cbs-language-server cbs-language-server --stdio`
 - `installMode = "global"` — `cbs-language-server --stdio`
 - `path` — explicit executable override. 상대 경로는 first workspace folder 기준으로 해석합니다.
 - `luaLsPath` — CBS LuaLS sidecar가 사용할 `lua-language-server` executable override입니다.

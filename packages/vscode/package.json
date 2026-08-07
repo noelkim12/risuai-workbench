@@ -444,7 +444,7 @@
             "global"
           ],
           "default": "local-devDependency",
-          "markdownDescription": "Standalone attach strategy for `cbs-language-server`. `local-devDependency` resolves `<workspace>/node_modules/.bin/cbs-language-server`, `npx` runs `npx cbs-language-server --stdio`, and `global` runs `cbs-language-server --stdio` from PATH."
+          "markdownDescription": "Standalone attach strategy for `cbs-language-server`. `local-devDependency` resolves `<workspace>/node_modules/.bin/cbs-language-server`, `npx` runs `npx --yes --package @risuai-workbench/cbs-language-server cbs-language-server --stdio`, and `global` runs `cbs-language-server --stdio` from PATH."
         },
         "risuaiWorkbench.cbs.server.path": {
           "type": "string",
@@ -479,7 +479,7 @@
   },
   "dependencies": {
     "create-risu-plugin": "^3.1.0",
-    "@risuai-workbench/core": "^0.1.0",
+    "@risuai-workbench/core": "^0.1.1",
     "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {
