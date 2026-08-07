@@ -314,11 +314,17 @@ function resolveStandaloneLaunch(
 
   if (options.installMode === 'npx') {
     return {
-      args: [CBS_LANGUAGE_SERVER_PACKAGE_NAME, ...STDIO_ARGS],
+      args: [
+        '--yes',
+        '--package',
+        CBS_LANGUAGE_SERVER_PACKAGE_NAME,
+        CBS_LANGUAGE_SERVER_BINARY_NAME,
+        ...STDIO_ARGS,
+      ],
       command: options.platform === 'win32' ? 'npx.cmd' : 'npx',
       cwd: options.workspaceRootPath ?? undefined,
       detail:
-        'Using `npx @risuai-workbench/cbs-language-server --stdio`. This mode expects npm/npx to be available in the environment.',
+        'Using non-interactive `npx --yes --package @risuai-workbench/cbs-language-server cbs-language-server --stdio`. This mode expects npm/npx to be available in the environment.',
       installMode: 'npx',
       kind: 'standalone',
       source: 'npx',

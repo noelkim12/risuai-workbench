@@ -1,6 +1,6 @@
 {
   "name": "@risuai-workbench/lua-analyzer-wasm",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Rust WASM Lua analyzer kernel for RisuAI workbench experiments",
   "type": "commonjs",
   "main": "pkg/lua_analyzer_wasm.js",

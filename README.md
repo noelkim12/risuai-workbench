@@ -1,14 +1,16 @@
 # risu-workbench
 
+> **설치 가이드:** [MCP 서버](./packages/risuai-workbench-mcp/docs/INSTALLATION.md) · [CBS LSP](./packages/cbs-lsp/docs/INSTALLATION.md) · [LuaLS](./packages/cbs-lsp/docs/LUALS_COMPANION.md) · [VS Code 확장](./packages/vscode/README.md)
+
 RisuAI 프로젝트를 위한 VS Code 기반 크리에이터 워크벤치.
 
-`.charx` / `.risum` / `.risup` 아티팩트를 편집 가능한 canonical 워크스페이스로 추출하고, CBS · Lua · 로어북 · 에셋 등 RisuAI 고유 저작 요소를 전용 툴링으로 편집·분석·시뮬레이션한 뒤, 유효한 RisuAI 포맷으로 다시 패킹한다. RisuAI 앱을 대체하는 것이 아니라, 원시 파일이나 웹 UI로 다루기 어려운 아티팩트와 워크플로우를 위한 개발자 지향 워크벤치다.
+`.charx` / `.risum` 아티팩트를 편집 가능한 canonical 워크스페이스로 추출하고, CBS · Lua · 로어북 · 에셋 등 RisuAI 고유 저작 요소를 전용 툴링으로 편집·분석·시뮬레이션한 뒤, 유효한 RisuAI 포맷으로 다시 패킹한다. RisuAI 앱을 대체하는 것이 아니라, 원시 파일이나 웹 UI로 다루기 어려운 아티팩트와 워크플로우를 위한 개발자 지향 워크벤치다.
 
 ## 주요 기능
 
 ### 카드 추출 / 패킹 (Round-trip)
 
-- `.charx`, `.risum`, `.risup` 아티팩트를 워크스페이스 프로젝트 구조로 추출 (`Risu Workbench: Extract Card`)
+- `.charx`, `.risum` 아티팩트를 워크스페이스 프로젝트 구조로 추출 (`Risu Workbench: Extract Card`)
 - 편집 후 원본 포맷으로 재패킹 (`Pack Card`) — 진행률/완료 다이얼로그를 갖춘 웹뷰 Pack 플로우 포함
 - 임베디드 recovery manifest 기반 복원, 충돌 아카이브/복구 등 엄격한 round-trip 계약 보장
 

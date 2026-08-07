@@ -58,6 +58,9 @@ jobs:
       - name: Verify MCP release candidate
         run: npm run --workspace @risuai-workbench/mcp test
 
+      - name: Smoke local release tarballs
+        run: npm run release:smoke:local
+
       - name: Create release PR or publish
         id: changesets
         uses: changesets/action@v1
@@ -119,8 +122,28 @@ jobs:
       - name: Verify MCP snapshot candidate
         run: npm run --workspace @risuai-workbench/mcp test
 
+      - name: Create ephemeral snapshot changeset
+        run: |
+          node <<'EOF'
+          const { writeFileSync } = require('node:fs');
+          writeFileSync('.changeset/snapshot-release.md', `---
+          '@risuai-workbench/lua-analyzer-wasm': patch
+          '@risuai-workbench/core': patch
+          '@risuai-workbench/cbs-language-server': patch
+          '@risuai-workbench/mcp': patch
+          ---
+
+          Publish an ephemeral ${process.env.SNAPSHOT_CHANNEL} snapshot release.
+          `);
+          EOF
+        env:
+          SNAPSHOT_CHANNEL: ${{ github.event.inputs.channel }}
+
       - name: Create snapshot versions
         run: npx changeset version --snapshot ${{ github.event.inputs.channel }}
+
+      - name: Smoke local snapshot tarballs
+        run: npm run release:smoke:local
 
       - name: Publish snapshot channel
         run: npx changeset publish --tag ${{ github.event.inputs.channel }}
