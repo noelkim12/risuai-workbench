@@ -6,7 +6,9 @@
 
 | 페이지 | 역할 |
 |---|---|
-| [`setup.md`](setup.md) | 요구사항, 저장소 빌드, MCP client 설정 |
+| [`INSTALLATION.md`](INSTALLATION.md) | npm / npx / global / source 설치와 실행 확인 |
+| [`HARNESS_SETUP.md`](HARNESS_SETUP.md) | Codex / OpenCode / Claude Code / Pi / Hermes MCP 설정 |
+| [`setup.md`](setup.md) | 기존 통합 설치·client 설정 요약 |
 | [`workflows.md`](workflows.md) | 읽기/분석 workflow, 파일 변경 workflow, archive 추출 |
 | [`facade-tools.md`](facade-tools.md) | 기본 공개 facade tool 8개의 역할과 내부 actionId 구분 |
 | [`risulua-runtime.md`](risulua-runtime.md) | Fengari runtime action, source/context, trace와 제한 |
@@ -16,13 +18,14 @@
 
 ## 읽는 순서
 
-1. client에 연결하려면 [`setup.md`](setup.md)를 먼저 읽습니다.
-2. agent prompt나 사용 가이드를 작성하려면 [`workflows.md`](workflows.md)를 읽습니다.
-3. tool 이름을 정확히 써야 하면 [`facade-tools.md`](facade-tools.md)를 읽습니다.
-4. RisuLua 실행이나 split runtime 회귀를 다루면 [`risulua-runtime.md`](risulua-runtime.md)를 읽습니다.
-5. 파일 변경을 다루면 [`mutation-safety.md`](mutation-safety.md)를 반드시 함께 읽습니다.
-6. 문제가 발생하면 [`troubleshooting.md`](troubleshooting.md)에서 증상별 점검 순서를 확인합니다.
-7. maintainer 작업이면 [`development.md`](development.md)와 [`../README-reference.md`](../README-reference.md)를 같이 봅니다.
+1. 처음 설치한다면 [`INSTALLATION.md`](INSTALLATION.md)를 읽습니다.
+2. client에 연결하려면 [`HARNESS_SETUP.md`](HARNESS_SETUP.md)에서 사용하는 harness를 고릅니다.
+3. agent prompt나 사용 가이드를 작성하려면 [`workflows.md`](workflows.md)를 읽습니다.
+4. tool 이름을 정확히 써야 하면 [`facade-tools.md`](facade-tools.md)를 읽습니다.
+5. RisuLua 실행이나 split runtime 회귀를 다루면 [`risulua-runtime.md`](risulua-runtime.md)를 읽습니다.
+6. 파일 변경을 다루면 [`mutation-safety.md`](mutation-safety.md)를 반드시 함께 읽습니다.
+7. 문제가 발생하면 [`troubleshooting.md`](troubleshooting.md)에서 증상별 점검 순서를 확인합니다.
+8. maintainer 작업이면 [`development.md`](development.md)와 [`../README-reference.md`](../README-reference.md)를 같이 봅니다.
 
 ## 문서 작성 규칙
 

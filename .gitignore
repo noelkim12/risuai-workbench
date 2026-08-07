@@ -68,6 +68,8 @@ scripts/*
 !scripts/release/
 scripts/release/*
 !scripts/release/smoke-published-cbs-lsp.mjs
+!scripts/release/smoke-published-mcp.mjs
+!scripts/release/smoke-local-release.mjs
 packages/vscode/.vscode-test/
 packages/cbs-lsp/checklist/
 .vscode/launch.json

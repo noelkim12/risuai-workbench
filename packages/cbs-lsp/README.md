@@ -23,21 +23,23 @@
 ### Standalone attach
 
 ```bash
-# local install
-npx cbs-language-server --stdio
+# ephemeral npx attach
+npx --yes --package @risuai-workbench/cbs-language-server cbs-language-server --stdio
 
 # inspect runtime/operator contract without booting the sidecar
-npx cbs-language-server report availability
+npx --yes --package @risuai-workbench/cbs-language-server cbs-language-server report availability
 
 # inspect Layer 1 / Layer 3 contracts
-npx cbs-language-server report layer1 --workspace ./playground/sample-workspace
-npx cbs-language-server query variable sharedVar --workspace ./playground/sample-workspace
+npx --yes --package @risuai-workbench/cbs-language-server cbs-language-server report layer1 --workspace ./playground/sample-workspace
+npx --yes --package @risuai-workbench/cbs-language-server cbs-language-server query variable sharedVar --workspace ./playground/sample-workspace
 ```
 
-- 설치/실행, config precedence, workspace root selection: `packages/cbs-lsp/docs/STANDALONE_USAGE.md`
-- agent/automation consumption patterns: `packages/cbs-lsp/docs/AGENT_INTEGRATION.md`
-- LuaLS companion 설치/검증: `packages/cbs-lsp/docs/LUALS_COMPANION.md`
-- 장애 복구: `packages/cbs-lsp/docs/TROUBLESHOOTING.md`
+- 설치/실행, config precedence, workspace root selection: [`docs/STANDALONE_USAGE.md`](docs/STANDALONE_USAGE.md)
+- 처음 설치하기: [`docs/INSTALLATION.md`](docs/INSTALLATION.md)
+- Codex / OpenCode / Claude Code / Pi / Hermes 설정: [`docs/HARNESS_SETUP.md`](docs/HARNESS_SETUP.md)
+- agent/automation consumption patterns: [`docs/AGENT_INTEGRATION.md`](docs/AGENT_INTEGRATION.md)
+- LuaLS companion 설치/검증: [`docs/LUALS_COMPANION.md`](docs/LUALS_COMPANION.md)
+- 장애 복구: [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)
 
 ### Official VS Code client
 
@@ -69,6 +71,8 @@ npx cbs-language-server query variable sharedVar --workspace ./playground/sample
 | 문서 | 역할 |
 | --- | --- |
 | `packages/cbs-lsp/README.md` | 제품 개요와 빠른 진입점 |
+| `packages/cbs-lsp/docs/INSTALLATION.md` | npm / npx / global / source 설치와 실행 확인 |
+| `packages/cbs-lsp/docs/HARNESS_SETUP.md` | Codex / OpenCode / Claude Code / Pi / Hermes 연결 설정과 지원 경계 |
 | `packages/cbs-lsp/docs/STANDALONE_USAGE.md` | standalone 설치/실행, runtime config precedence, workspace root 정책 |
 | `packages/cbs-lsp/docs/AGENT_INTEGRATION.md` | stdio LSP + JSON `report/query` adapter를 agent가 소비하는 방법 |
 | `packages/cbs-lsp/docs/LUALS_COMPANION.md` | LuaLS companion 설치, override, 상태 확인, degraded policy |
@@ -76,7 +80,7 @@ npx cbs-language-server query variable sharedVar --workspace ./playground/sample
 | `packages/cbs-lsp/docs/COMPATIBILITY.md` | Node / workspace / LuaLS / VS Code client attach 지원 경계 |
 | `packages/vscode/README.md` | 공식 VS Code client 설정과 standalone 소비 방식 |
 
-`experimental.cbs.operator.docs`와 trace `availability.operator.docs`는 위 문서 경로를 같은 용어로 노출합니다.
+`experimental.cbs.operator.docs`와 trace `availability.operator.docs`는 기존 runtime reference 문서 경로를 같은 용어로 노출합니다. `INSTALLATION.md`와 `HARNESS_SETUP.md`는 사람을 위한 onboarding 문서이며 현재 protocol field에는 추가하지 않습니다.
 
 ## 운영 계약 요약
 

@@ -37,6 +37,7 @@
     "changeset": "changeset",
     "release:version": "changeset version",
     "release:publish:cbs-lsp": "changeset publish",
+    "release:smoke:local": "node ./scripts/release/smoke-local-release.mjs",
     "release:smoke:published:cbs-lsp": "node ./scripts/release/smoke-published-cbs-lsp.mjs",
     "release:smoke:published:mcp": "node ./scripts/release/smoke-published-mcp.mjs",
     "lint": "eslint 'packages/*/src/**/*.ts'",

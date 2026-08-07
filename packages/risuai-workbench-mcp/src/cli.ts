@@ -27,14 +27,16 @@ export function buildHelpText(): string {
     'risuai-workbench-mcp',
     '',
     'Usage:',
-    '  risuai-workbench-mcp --stdio',
+    '  risuai-workbench-mcp --stdio [--root /workspace] [--mutation MODE]',
     '  risuai-workbench-mcp --help',
     '  risuai-workbench-mcp --version',
     '',
     'Options:',
-    '  --stdio     Start the MCP server over stdio. stdout is reserved for JSON-RPC.',
-    '  --help      Show this help message without starting MCP stdio.',
-    '  --version   Show the package version.',
+    '  --stdio          Start the MCP server over stdio. stdout is reserved for JSON-RPC.',
+    '  --root PATH      Override the workspace root; otherwise use the current directory.',
+    '  --mutation MODE  Set mutation mode (default: enabled): enabled, generated-only, or preview-only.',
+    '  --help           Show this help message without starting MCP stdio.',
+    '  --version        Show the package version.',
   ].join('\n');
 }
 
