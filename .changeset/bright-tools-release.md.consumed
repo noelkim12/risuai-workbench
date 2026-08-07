@@ -6,3 +6,5 @@
 ---
 
 Prepare the first public npm release train for the WASM analyzer, core library, CBS language server, and MCP server.
+
+Consumed by the manual 0.1.1 first-release version alignment. Kept as a release record so the repository's no-delete policy is preserved.
