@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 interface RootManifest {
   devDependencies?: Record<string, string>;
+  packageManager?: string;
   scripts?: Record<string, string>;
 }
 
@@ -51,6 +52,7 @@ describe('cbs-lsp release pipeline contract', () => {
     const manifest = readJson<RootManifest>('package.json');
 
     expect(manifest.devDependencies?.['@changesets/cli']).toBeTruthy();
+    expect(manifest.packageManager).toMatch(/^npm@/);
     expect(manifest.scripts?.changeset).toBe('changeset');
     expect(manifest.scripts?.['release:version']).toBe('changeset version');
     expect(manifest.scripts?.['release:publish:cbs-lsp']).toBe('changeset publish');

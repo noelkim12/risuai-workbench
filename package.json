@@ -2,6 +2,7 @@
   "name": "risu-workbench",
   "private": true,
   "version": "1.0.0",
+  "packageManager": "npm@10.8.2",
   "description": "RisuAI 캐릭터 번들러 - 모듈화를 통한 캐릭터 카드 생성 도구",
   "workspaces": [
     "packages/*"
