@@ -244,6 +244,8 @@ risuai-workbench-mcp --version
 | 옵션 | 기본값 | 설명 |
 | --- | --- | --- |
 | `--stdio` | 없음 | MCP stdio server를 시작합니다. stdout은 JSON-RPC 전용입니다. |
+| `--root PATH` | 현재 project directory | 현재 project와 다른 workspace를 사용할 때만 root를 override합니다. |
+| `--mutation MODE` | `enabled` | `generated-only` 또는 `preview-only`로 mutation 범위를 명시적으로 제한합니다. |
 | `--help` | 없음 | stdio 시작 없이 사용법을 출력합니다. |
 | `--version` | 없음 | package version을 출력합니다. |
 
@@ -251,6 +253,8 @@ risuai-workbench-mcp --version
 
 Current behavior:
 
+- 기본 server command는 `risuai-workbench-mcp --stdio`이며, workspace root는 server process의 현재 project directory입니다.
+- `--root PATH`는 현재 project와 다른 workspace를 의도적으로 지정할 때만 사용하는 override입니다.
 - User-provided file paths may be relative or absolute. Relative paths are resolved from the startup context.
 - MCP client-provided `roots` are not queried yet.
 

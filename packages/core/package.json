@@ -1,6 +1,7 @@
 {
   "name": "@risuai-workbench/core",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "packageManager": "npm@10.8.2",
   "description": "Core engine for RisuAI character card workbench",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -55,7 +56,7 @@
     "directory": "packages/core"
   },
   "dependencies": {
-    "@risuai-workbench/lua-analyzer-wasm": "^0.1.0",
+    "@risuai-workbench/lua-analyzer-wasm": "^0.1.1",
     "@tree-sitter-grammars/tree-sitter-lua": "^0.4.1",
     "fengari": "0.1.5",
     "fflate": "^0.8.2",
