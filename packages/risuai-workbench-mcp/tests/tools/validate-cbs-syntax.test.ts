@@ -22,8 +22,16 @@ describe('handleValidateCbsSyntax', () => {
     expect(codes).toContain('CBS003');
   });
 
-  it('detects deprecated #if as CBS100', async () => {
+  it('accepts supported #if without deprecation diagnostics', async () => {
     const result = await handleValidateCbsSyntax({ sourceText: '{{#if::cond}}body{{/if}}' });
+    expect(result.data?.diagnostics).toEqual([]);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.summary.warningCount).toBe(0);
+    expect(result.status).toBe('ok');
+  });
+
+  it('detects deprecated #pure as CBS100', async () => {
+    const result = await handleValidateCbsSyntax({ sourceText: '{{#pure}}body{{/pure}}' });
     const codes = result.data?.diagnostics.map((d) => d.code) ?? [];
     expect(codes).toContain('CBS100');
     expect(result.diagnostics.map((diagnostic) => diagnostic.id)).toContain('CBS100');
@@ -56,7 +64,7 @@ describe('handleValidateCbsSyntax', () => {
   it('reads a workspace-relative sourcePath and reports its normalized path and hash', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'risuai-workbench-mcp-cbs-source-'));
     const sourcePath = 'lorebooks/system/action.risulorebook';
-    const sourceText = '{{#if::cond}}body{{/if}}';
+    const sourceText = '{{#pure}}body{{/pure}}';
     await mkdir(path.join(root, 'lorebooks/system'), { recursive: true });
     await writeFile(path.join(root, sourcePath), sourceText, 'utf8');
 
