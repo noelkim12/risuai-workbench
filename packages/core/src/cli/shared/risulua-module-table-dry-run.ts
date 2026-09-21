@@ -5,6 +5,7 @@ import {
   detectRisuLuaSourceProfile,
   writeRisuLuaSplitPlan,
   parseRisuLuaModuleTableSource,
+  RISULUA_MODULE_TABLE_VARIABLE_STORE_PATH,
   attachRisuLuaSplitValidation,
   buildRisuLuaSplitDist,
   createRisuLuaModuleTableArtifacts,
@@ -15,6 +16,7 @@ import {
   type SourceProfileSummary,
   type SourceProfileResult,
 } from '@/domain/risulua-split';
+import { executeRisuLua } from '../../node/risulua-runtime';
 
 import type { RunRisuLuaSplitOptions } from './risulua-split';
 
@@ -192,6 +194,7 @@ export async function runModuleTableDryRunAsync(options: RunRisuLuaSplitOptions)
     buttonActionSources: options.buttonActionSources,
   });
   writeRisuLuaModuleTableWorkspace(artifacts, { outputRoot: options.outputRoot, cwd: options.cwd });
+  await validateVariableStoreInitialization(options.outputRoot);
   const buildResult = buildRisuLuaSplitDist({ outputRoot: options.outputRoot, plan: artifacts.plan });
   const validation = validateRisuLuaSplitWorkspace({
     outputRoot: options.outputRoot,
@@ -212,6 +215,27 @@ export async function runModuleTableDryRunAsync(options: RunRisuLuaSplitOptions)
   if (!validation.ok && !hasOnlyDistBuildBlockingFindings(validation, buildResult)) {
     throw new Error('Module-table split validation failed; diagnostics were written to docs/.');
   }
+}
+
+async function validateVariableStoreInitialization(outputRoot: string): Promise<void> {
+  const storePath = path.join(outputRoot, ...RISULUA_MODULE_TABLE_VARIABLE_STORE_PATH.split('/'));
+  if (!fs.existsSync(storePath)) return;
+
+  const result = await executeRisuLua({
+    moduleMap: {
+      entryModuleId: 'main',
+      modules: {
+        main: 'require("state.variable_store")\nreturn true',
+        'state.variable_store': fs.readFileSync(storePath, 'utf8'),
+      },
+    },
+    target: { kind: 'module' },
+    hostProfile: 'minimal',
+  });
+  if (result.status === 'ok') return;
+
+  const diagnostics = result.diagnostics.map((diagnostic) => diagnostic.message).join('; ');
+  throw new Error(`RisuLua state.variable_store initialization failed: ${diagnostics}`);
 }
 
 function hasOnlyDistBuildBlockingFindings(

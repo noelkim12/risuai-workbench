@@ -64,6 +64,21 @@ describe('RisuLua runtime intent gate', () => {
     expect(result.recommendedActions).not.toContain('risulua.debug_call');
   });
 
+  it('prioritizes an exact runtime action target over analysis wording', async () => {
+    const result = (await handleRouteIntent({
+      request: 'analyze whether this call works',
+      target: 'risulua.debug_call',
+    })).data!.route;
+
+    expect(result.intent).toBe('risulua_runtime_debug');
+    expect(result.routingSignals).toContain('explicit_action:risulua.debug_call');
+    expect(result.nextInput).toEqual(expect.objectContaining({ actionIds: ['risulua.debug_call'] }));
+    expect(result.recommendedActions.slice(0, 2)).toEqual([
+      'analyze.query_lua_analysis',
+      'risulua.debug_call',
+    ]);
+  });
+
   it.each([
     '앱 실행 오류를 확인해줘',
     'run regression checks for the documentation pipeline',

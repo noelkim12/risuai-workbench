@@ -126,7 +126,22 @@ export async function handleValidateOrder(
 
   const discovery = discoverCustomExtensionWorkspace(dirPath);
   const canonicalRelativePaths = new Set(discovery.canonicalFiles.map((f) => f.relativePath));
+  const canonicalDirectoryPaths = new Set<string>();
+  for (const canonicalPath of canonicalRelativePaths) {
+    const segments = canonicalPath.split('/');
+    segments.pop();
+    let directoryPath = '';
+    for (const segment of segments) {
+      directoryPath = directoryPath ? `${directoryPath}/${segment}` : segment;
+      canonicalDirectoryPaths.add(directoryPath);
+    }
+  }
+  const existingRelativePaths = new Set([
+    ...canonicalRelativePaths,
+    ...canonicalDirectoryPaths,
+  ]);
   const orderEntries = new Set<string>();
+  const orderedStringEntries: string[] = [];
 
   for (const entry of order) {
     if (typeof entry !== 'string') {
@@ -141,13 +156,43 @@ export async function handleValidateOrder(
       continue;
     }
     orderEntries.add(entry);
-    if (!canonicalRelativePaths.has(entry)) {
+    orderedStringEntries.push(entry);
+    if (!existingRelativePaths.has(entry)) {
       diagnostics.push({
         category: 'order',
         id: 'ORDER_LISTS_MISSING_FILE',
-        message: `_order.json references "${entry}" but the file does not exist in ${input.directory}.`,
+        message: `_order.json references "${entry}" but the path does not exist in ${input.directory}.`,
         path: `${input.directory}/${entry}`,
         ruleId: 'order.listed-file-missing',
+        severity: 'warning',
+      });
+    }
+  }
+
+  for (const directoryPath of canonicalDirectoryPaths) {
+    if (!orderEntries.has(directoryPath)) {
+      diagnostics.push({
+        category: 'order',
+        id: 'ORDER_UNLISTED_DIRECTORY',
+        message: `Directory "${directoryPath}" contains canonical files but is not listed in _order.json.`,
+        path: `${input.directory}/${directoryPath}`,
+        ruleId: 'order.unlisted-directory',
+        severity: 'warning',
+      });
+      continue;
+    }
+
+    const directoryIndex = orderedStringEntries.indexOf(directoryPath);
+    const firstDescendantIndex = orderedStringEntries.findIndex((entry) =>
+      entry.startsWith(`${directoryPath}/`),
+    );
+    if (firstDescendantIndex !== -1 && firstDescendantIndex < directoryIndex) {
+      diagnostics.push({
+        category: 'order',
+        id: 'ORDER_DIRECTORY_AFTER_DESCENDANT',
+        message: `Directory "${directoryPath}" must be listed before its contents in _order.json.`,
+        path: `${input.directory}/_order.json`,
+        ruleId: 'order.directory-after-descendant',
         severity: 'warning',
       });
     }

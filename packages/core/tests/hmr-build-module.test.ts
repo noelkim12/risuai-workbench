@@ -90,4 +90,26 @@ describe('buildHmrModulePayload', () => {
     expect(JSON.stringify(result.data.trigger)).toContain('local helper = __risulua_loaders');
     expect(existsSync(path.join(root, 'dist'))).toBe(false);
   });
+
+  it('broadcasts a single prebundled risulua source without modular resolution', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'risu-core-hmr-module-single-lua-'));
+    tempDirs.push(root);
+    writeRisumodule(root);
+    mkdirSync(path.join(root, 'lua'), { recursive: true });
+    const source = [
+      'package.preload["./handler"] = function() return { ready = true } end',
+      'local handler = require("./handler")',
+      'return handler',
+    ].join('\n');
+    writeFileSync(path.join(root, 'lua', 'main.risulua'), source);
+
+    const result = buildHmrModulePayload(root);
+
+    expect(result.data.trigger).toEqual([
+      expect.objectContaining({
+        effect: [expect.objectContaining({ code: source })],
+      }),
+    ]);
+    expect(existsSync(path.join(root, 'dist'))).toBe(false);
+  });
 });

@@ -110,7 +110,7 @@
       {@const confirmSelection = selection}
       <ConfirmScreen
         projectName={project.name}
-        kind={project.kind}
+        kind={confirmSelection.kind}
         selection={confirmSelection}
         loadDiff={() => controller.buildConfirmDiff(confirmSelection)}
         onBack={() => {

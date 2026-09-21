@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   applyAssetPlaceholders,
+  convertCharacterToModuleDefinition,
   findCharacterIndexByChaId,
   mergeCharacterDefinition,
   replaceModuleById,
@@ -90,5 +91,52 @@ describe('replaceModuleById', () => {
       { id: 'm2', name: 'B2', lorebook: [] },
     ]);
     expect(replaceModuleById(modules, 'nope', { name: 'X' })).toBeNull();
+  });
+});
+
+describe('convertCharacterToModuleDefinition', () => {
+  it('maps a charx character definition to the current RisuAI module shape', () => {
+    const converted = convertCharacterToModuleDefinition({
+      name: 'Aria',
+      creatorNotes: 'Creator note',
+      globalLore: [{ content: 'Base lore' }],
+      customscript: [{ comment: 'Regex' }],
+      triggerscript: [{ comment: 'Trigger' }],
+      lowLevelAccess: true,
+      hideChatIcon: true,
+      backgroundHTML: '<div />',
+      additionalAssets: [['asset', 'assets/a.png', 'image']],
+      moduleNamespace: 'aria',
+      customModuleToggle: 'toggle',
+      image: 'assets/icon.png',
+      desc: 'Character description',
+      firstMessage: 'Hello',
+      alternateGreetings: ['Welcome'],
+      replaceGlobalNote: 'Global note',
+    });
+
+    expect(converted).toMatchObject({
+      name: 'Aria',
+      description: 'Creator note',
+      regex: [{ comment: 'Regex' }],
+      trigger: [{ comment: 'Trigger' }],
+      lowLevelAccess: true,
+      hideIcon: true,
+      backgroundEmbedding: '<div />',
+      assets: [['asset', 'assets/a.png', 'image']],
+      namespace: 'aria',
+      customModuleToggle: 'toggle',
+      icon: 'assets/icon.png',
+    });
+    expect(converted['id']).toBeUndefined();
+    expect(converted['lorebook']).toEqual([
+      { content: 'Base lore' },
+      expect.objectContaining({ content: expect.stringContaining('@@indicator character_desc') }),
+      expect.objectContaining({
+        content:
+          '@@indicator character_first_message\n\n<FM>\nHello\n</FM>\n<FM_alt>\nWelcome\n</FM_alt>',
+      }),
+      expect.objectContaining({ content: expect.stringContaining('@@indicator replace_global_note') }),
+    ]);
   });
 });

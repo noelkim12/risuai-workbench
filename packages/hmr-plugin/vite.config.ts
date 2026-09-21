@@ -14,6 +14,7 @@ type PackageMetadata = {
 
 const configRoot = dirname(fileURLToPath(import.meta.url));
 const distRoot = resolve(configRoot, 'dist');
+const bundleFileName = 'risuai-hmr-provider.js';
 
 const sanitizeBannerValue = (value: string): string =>
   value.replace(/[\r\n]+/g, ' ').trim();
@@ -22,9 +23,6 @@ const getStringField = (source: object, key: string, fallback: string): string =
   const value = Reflect.get(source, key);
   return typeof value === 'string' ? sanitizeBannerValue(value) : fallback;
 };
-
-const toBundleFileName = (packageName: string): string =>
-  `${packageName.replace(/^@/, '').replace(/[\\/]/g, '-')}.js`;
 
 const readPackageMetadata = (): PackageMetadata => {
   const parsedPackageJson: unknown = JSON.parse(
@@ -41,7 +39,7 @@ const readPackageMetadata = (): PackageMetadata => {
   const link = getStringField(
     parsedPackageJson,
     'homepage',
-    `https://unpkg.com/${name}@${version}/dist/${toBundleFileName(name)}`,
+    `https://unpkg.com/${name}@${version}/dist/${bundleFileName}`,
   );
 
   return {
@@ -54,7 +52,6 @@ const readPackageMetadata = (): PackageMetadata => {
 };
 
 const packageMetadata = readPackageMetadata();
-const bundleFileName = toBundleFileName(packageMetadata.name);
 const metadataBanner = `//@name ${packageMetadata.name}
 //@display-name ${packageMetadata.displayName}
 //@api 3.0

@@ -26,7 +26,8 @@ async function createModuleFixture(): Promise<{ context: ActionExecutionContext;
     modifiedAt: null,
     sourceFormat: 'json',
   }, null, 2)}\n`, 'utf8');
-  await writeFile(path.join(moduleRoot, 'lua', 'main.risulua'), 'return { value = true }\n', 'utf8');
+  await writeFile(path.join(moduleRoot, 'lua', 'main.risulua'), 'local helper = require("helper")\nreturn helper\n', 'utf8');
+  await writeFile(path.join(moduleRoot, 'lua', 'helper.risulua'), 'return { value = true }\n', 'utf8');
   return {
     context: {
       workspace: { ok: true, path: root, reason: null },

@@ -21,8 +21,11 @@ import {
   parseLorebookContent,
   parseLorebookOrder,
   assembleLorebookCollection,
+  extractLorebooksFromCharx,
   injectLorebooksIntoCharx,
+  injectLorebooksIntoModule,
   type LorebookCanonicalFile,
+  type UpstreamModuleLorebookEntry,
 } from '@/domain/custom-extension/extensions/lorebook';
 import {
   parseRegexContent,
@@ -487,6 +490,13 @@ function mergeLuaCanonical(
   const target = discoverRisuLuaBundleTarget({ rootDir: inRoot, mode: risuluaMode });
 
   if (target.mode === 'modular') {
+    const sourcePaths = listFilesRecursiveBySuffix(target.sourceRoot, '.risulua');
+    if (sourcePaths.length === 1) {
+      const luaCode = parseLuaContent(fs.readFileSync(target.entryPath, 'utf-8'));
+      applyLuaTriggerToCharx(charx, luaCode);
+      return;
+    }
+
     const result = buildRisuLuaModularDist({
       rootDir: inRoot,
       recovery: risuluaRecovery,
@@ -1109,13 +1119,19 @@ function buildCharxAssetPairs(
 function buildModuleFromCharx(charx: any): Record<string, unknown> {
   const name = charx.data?.name || 'Character';
   const risu = charx.data?.extensions?.risuai || {};
+  const moduleLorebookTarget: { lorebook?: UpstreamModuleLorebookEntry[] } = {};
+  injectLorebooksIntoModule(
+    moduleLorebookTarget,
+    extractLorebooksFromCharx(charx, 'charx'),
+    'module',
+  );
   const moduleObj: Record<string, unknown> = {
     name: `${name} Module`,
     description: `Module for ${name}`,
     id: crypto.randomUUID(),
     trigger: Array.isArray(risu.triggerscript) ? risu.triggerscript : [],
     regex: Array.isArray(risu.customScripts) ? risu.customScripts : [],
-    lorebook: Array.isArray(risu._moduleLorebook) ? risu._moduleLorebook : [],
+    lorebook: moduleLorebookTarget.lorebook ?? [],
     assets: [],
   };
 

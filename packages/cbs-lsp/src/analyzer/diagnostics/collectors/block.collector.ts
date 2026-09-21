@@ -77,7 +77,7 @@ function appendDeprecatedDiagnostic(
   builtin: CBSBuiltinFunction,
   range: BlockNode['openRange'],
 ): void {
-  if (!builtin.deprecated) {
+  if (!builtin.deprecated || builtin.name === '#if') {
     return;
   }
 

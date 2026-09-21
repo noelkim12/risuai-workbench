@@ -16,15 +16,19 @@ export function presentRuntimeResult(
   result: Record<string, unknown>,
   contextStore?: ContextStore,
 ): PresentedRuntimeResult {
+  const guidance = runtimeGuidance(result);
+  const enrichedResult = guidance.length > 0 ? { ...result, guidance } : result;
   const trace = collectTrace(result);
-  const compactBytes = Buffer.byteLength(JSON.stringify(result), 'utf8');
+  const compactBytes = Buffer.byteLength(JSON.stringify(enrichedResult), 'utf8');
   if (trace.length <= MAX_INLINE_TRACE_EVENTS && compactBytes <= MAX_COMPACT_BYTES) {
-    return { ...result, externalized: false };
+    return { ...enrichedResult, externalized: false };
   }
 
   const summary = {
     status: result.status,
     diagnostics: result.diagnostics,
+    metrics: result.metrics,
+    ...(guidance.length > 0 ? { guidance } : {}),
     traceEventCount: trace.length,
     tracePreview: trace.slice(0, MAX_PREVIEW_EVENTS),
     truncated: true,
@@ -34,13 +38,32 @@ export function presentRuntimeResult(
   const record = contextStore.create(
     'risulua-runtime-result',
     `RisuLua runtime ${String(result.status)} result with ${trace.length} trace events`,
-    result,
+    enrichedResult,
   );
   return {
     ...summary,
     externalized: true,
     contextId: record.id,
   };
+}
+
+function runtimeGuidance(result: Record<string, unknown>): readonly Record<string, string>[] {
+  const diagnostics = Array.isArray(result.diagnostics) ? result.diagnostics : [];
+  const instructionLimited = diagnostics.some((diagnostic) => {
+    if (!diagnostic || typeof diagnostic !== 'object') return false;
+    return (diagnostic as Record<string, unknown>).id === 'RUNTIME_INSTRUCTION_LIMIT';
+  });
+  const metrics = result.metrics;
+  if (!instructionLimited || !metrics || typeof metrics !== 'object') return [];
+  const metricRecord = metrics as Record<string, unknown>;
+  if (metricRecord.hostCalls !== 0 || typeof metricRecord.moduleLoads !== 'number' || metricRecord.moduleLoads < 2) {
+    return [];
+  }
+  return [{
+    code: 'BOOTSTRAP_INSTRUCTION_LIMIT',
+    recommendedAction: 'risulua.runtime_smoke',
+    recommendation: 'Use bounded named exports and multiple smoke scenarios instead of one aggregate run export.',
+  }];
 }
 
 function collectTrace(result: Record<string, unknown>): RisuLuaTraceEvent[] {

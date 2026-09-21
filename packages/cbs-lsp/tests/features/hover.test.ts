@@ -81,21 +81,20 @@ describe('HoverProvider', () => {
     const entry = getFixtureCorpusEntry('regex-deprecated-block');
     const request = createFixtureRequest(entry);
     const provider = createProvider(new FragmentAnalysisService(), request);
-    const hover = provider.provide(createParams(request, positionAt(entry.text, '#if', 2)));
+    const hover = provider.provide(createParams(request, positionAt(entry.text, '#pure', 2)));
     const markdown = expectMarkdownHover(hover);
 
-    expect(markdown).toContain('**#if**');
-    expect(markdown).toContain('Conditional statement for CBS.');
+    expect(markdown).toContain('**#pure**');
     expect(markdown).toContain('**Deprecated:**');
-    expect(markdown).toContain('Use `#when` instead.');
+    expect(markdown).toContain('Use `#puredisplay` instead.');
     expect(extractHoverCategory(hover)).toEqual({
       category: 'block-keyword',
-      kind: 'callable-builtin',
+      kind: 'documentation-only-builtin',
     });
     expect(extractHoverExplanation(hover)).toEqual({
       reason: 'registry-lookup',
       source: 'builtin-registry',
-      detail: 'Hover resolved #if from the builtin registry as a callable CBS builtin.',
+      detail: 'Hover resolved #pure from the builtin registry as a documentation-only CBS syntax entry.',
     });
   });
 

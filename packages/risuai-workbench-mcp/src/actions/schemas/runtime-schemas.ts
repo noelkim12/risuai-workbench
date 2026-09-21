@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { RisuLuaJsonValue } from '@risuai-workbench/core/node';
+import { RISULUA_RUNTIME_LIMITS, type RisuLuaJsonValue } from '@risuai-workbench/core/node';
 
 const workspaceRuntimeSourceSchema = z.object({
   kind: z.literal('workspace'),
@@ -52,10 +52,10 @@ const hostOverridesSchema = z.object({
 }).strict();
 
 const executionLimitsSchema = z.object({
-  timeoutMs: z.number().int().positive().optional(),
-  instructionLimit: z.number().int().positive().optional(),
-  hostCallLimit: z.number().int().positive().optional(),
-  maxTraceEvents: z.number().int().positive().optional(),
+  timeoutMs: z.number().int().positive().max(RISULUA_RUNTIME_LIMITS.defaultTimeoutMs).optional(),
+  instructionLimit: z.number().int().positive().max(RISULUA_RUNTIME_LIMITS.defaultInstructionLimit).optional(),
+  hostCallLimit: z.number().int().positive().max(RISULUA_RUNTIME_LIMITS.defaultHostCallLimit).optional(),
+  maxTraceEvents: z.number().int().positive().max(RISULUA_RUNTIME_LIMITS.defaultMaxTraceEvents).optional(),
 }).strict();
 
 const moduleTargetSchema = z.object({

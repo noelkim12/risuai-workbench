@@ -315,6 +315,13 @@ function mergeLua(
 ): void {
   const target = discoverRisuLuaBundleTarget({ rootDir: inRoot, mode: risuluaMode });
   if (target.mode === 'modular') {
+    const sourcePaths = listFilesRecursiveBySuffix(target.sourceRoot, '.risulua');
+    if (sourcePaths.length === 1) {
+      const luaCode = parseLuaContent(fs.readFileSync(target.entryPath, 'utf-8'));
+      injectLuaIntoModule(moduleObj, luaCode, 'module');
+      return;
+    }
+
     const result = buildRisuLuaModularDist({
       rootDir: inRoot,
       recovery: risuluaRecovery,

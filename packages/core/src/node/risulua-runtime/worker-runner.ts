@@ -21,14 +21,31 @@ export async function executeRisuLua(
   request: RisuLuaExecutionRequest,
   options: { signal?: AbortSignal } = {},
 ): Promise<RisuLuaExecutionResult> {
+  const startedAt = performance.now();
   const normalizedRequest = normalizeRequest(request);
-  if (options.signal?.aborted) return boundaryError('RUNTIME_ABORTED', 'RisuLua execution was aborted');
+  const metricContext = {
+    effectiveLimits: normalizedRequest.limits,
+    requestedLimits: request.limits ?? {},
+  } as const;
+  if (options.signal?.aborted) {
+    return boundaryError('RUNTIME_ABORTED', 'RisuLua execution was aborted', {
+      ...metricContext,
+      executionDurationMs: performance.now() - startedAt,
+      workerStarted: false,
+      workerTerminationRequested: false,
+    });
+  }
 
   let worker: Worker;
   try {
     worker = createRuntimeWorker(normalizedRequest);
   } catch (error) {
-    return boundaryError('RUNTIME_INTERNAL_ERROR', errorMessage(error));
+    return boundaryError('RUNTIME_INTERNAL_ERROR', errorMessage(error), {
+      ...metricContext,
+      executionDurationMs: performance.now() - startedAt,
+      workerStarted: false,
+      workerTerminationRequested: false,
+    });
   }
 
   return new Promise((resolve) => {
@@ -40,13 +57,23 @@ export async function executeRisuLua(
       options.signal?.removeEventListener('abort', abort);
       worker.removeAllListeners();
       void worker.terminate();
-      resolve(result);
+      resolve({
+        ...result,
+        metrics: {
+          ...result.metrics,
+          ...metricContext,
+          executionDurationMs: performance.now() - startedAt,
+          workerStarted: true,
+          workerTerminationRequested: true,
+        },
+      });
     };
     const abort = () => finish(boundaryError('RUNTIME_ABORTED', 'RisuLua execution was aborted'));
     const timeout = setTimeout(() => {
       finish(boundaryError(
         'RUNTIME_TIMEOUT',
         `RisuLua execution exceeded ${normalizedRequest.limits.timeoutMs} ms`,
+        { timeoutPhase: 'worker-execution' },
       ));
     }, normalizedRequest.limits.timeoutMs);
 
@@ -64,6 +91,7 @@ export async function executeRisuLua(
       }
     });
     options.signal?.addEventListener('abort', abort, { once: true });
+    if (options.signal?.aborted) abort();
   });
 }
 
@@ -142,7 +170,11 @@ function isExecutionResult(value: unknown): value is RisuLuaExecutionResult {
     && typeof candidate.metrics === 'object';
 }
 
-function boundaryError(id: RisuLuaDiagnosticId, message: string): RisuLuaExecutionResult {
+function boundaryError(
+  id: RisuLuaDiagnosticId,
+  message: string,
+  metrics: Partial<RisuLuaExecutionResult['metrics']> = {},
+): RisuLuaExecutionResult {
   return {
     status: 'error',
     stateDiff: {},
@@ -153,6 +185,7 @@ function boundaryError(id: RisuLuaDiagnosticId, message: string): RisuLuaExecuti
       hostCalls: 0,
       traceEvents: 0,
       traceTruncated: false,
+      ...metrics,
     },
   };
 }

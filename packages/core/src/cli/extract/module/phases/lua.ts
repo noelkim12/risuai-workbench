@@ -39,6 +39,7 @@ const RISULUA_SPLIT_FALLBACK_PATHS = [
   'dist',
   'legacy',
 ] as const;
+const RISULUA_SPLIT_FAILURE_PATH = 'docs/risulua-split-failure.json';
 
 export type ModuleRisuLuaRecoveryAssets = {
   readonly moduleAssets: readonly unknown[];
@@ -93,6 +94,7 @@ export async function phase4_extractLua(
 
   const strippedLua = removeRisuLuaRecoveryBlock(lua);
   writeText(outPath, strippedLua);
+  fs.rmSync(path.join(outputDir, ...RISULUA_SPLIT_FAILURE_PATH.split('/')), { force: true });
   cleanupRisuLuaSplitTemps(outputDir);
   try {
     await runRisuLuaSplitExtract({
@@ -112,6 +114,15 @@ export async function phase4_extractLua(
     cleanupRisuLuaSplitFallbackArtifacts(outputDir);
     writeText(outPath, strippedLua);
     const message = getErrorMessage(error);
+    writeText(
+      path.join(outputDir, ...RISULUA_SPLIT_FAILURE_PATH.split('/')),
+      `${JSON.stringify({
+        version: 1,
+        mode: risuluaSplitMode,
+        sourcePath: path.relative(outputDir, outPath).split(path.sep).join('/'),
+        diagnostics: [{ code: 'RISULUA_SPLIT_FAILED', message }],
+      }, null, 2)}\n`,
+    );
     console.warn(
       `     ⚠️ RisuLua split failed; preserving ${path.relative('.', outPath)} as single-file Lua and continuing extract: ${message}`,
     );

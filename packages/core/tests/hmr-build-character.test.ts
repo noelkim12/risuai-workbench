@@ -98,6 +98,16 @@ describe('buildHmrCharacterPayload', () => {
     expect(existsSync(path.join(root, 'lua', 'dist'))).toBe(false);
   });
 
+  it('preserves canonical toggles in the broadcast character definition', () => {
+    const { root } = makeCharacterRoot();
+    mkdirSync(path.join(root, 'toggle'), { recursive: true });
+    writeFileSync(path.join(root, 'toggle', 'HMR_Character.risutoggle'), 'hmr-toggle=enabled', 'utf-8');
+
+    const result = buildHmrCharacterPayload(root);
+
+    expect(result.data.customModuleToggle).toBe('hmr-toggle=enabled');
+  });
+
   it('ignores manifest asset paths that resolve outside the assets directory', () => {
     const { root, iconBytes, emotionBytes } = makeCharacterRoot();
     const secretBytes = Buffer.from('hmr-secret-outside-assets');
@@ -179,6 +189,28 @@ describe('buildHmrCharacterPayload', () => {
     const result = buildHmrCharacterPayload(root);
 
     expect(JSON.stringify(result.data.triggerscript)).toContain('local helper = __risulua_loaders');
+    expect(existsSync(path.join(root, 'dist'))).toBe(false);
+  });
+
+  it('broadcasts a single prebundled risulua source without modular resolution', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'risu-core-hmr-char-single-lua-'));
+    tempDirs.push(root);
+    writeRisuchar(root, null);
+    mkdirSync(path.join(root, 'lua'), { recursive: true });
+    const source = [
+      'package.preload["./handler"] = function() return { ready = true } end',
+      'local handler = require("./handler")',
+      'return handler',
+    ].join('\n');
+    writeFileSync(path.join(root, 'lua', 'main.risulua'), source);
+
+    const result = buildHmrCharacterPayload(root);
+
+    expect(result.data.triggerscript).toEqual([
+      expect.objectContaining({
+        effect: [expect.objectContaining({ code: source })],
+      }),
+    ]);
     expect(existsSync(path.join(root, 'dist'))).toBe(false);
   });
 });

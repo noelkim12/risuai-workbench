@@ -111,7 +111,36 @@ function collectButtonActionUsagesFromSource(source: string, sourceFile: string)
     cbsButtonMatch = cbsButtonPattern.exec(source);
   }
 
+  const interpolatedAttributePattern = /\brisu-trigger\s*=\s*["']\s*["']\s*(?:,|\.\.)\s*([A-Za-z_][A-Za-z0-9_]*)/g;
+  let interpolatedMatch = interpolatedAttributePattern.exec(source);
+  while (interpolatedMatch !== null) {
+    for (const name of assignedStaticNames(source, interpolatedMatch[1])) {
+      usages.push({
+        name,
+        source: 'risu-trigger-attribute',
+        rawText: interpolatedMatch[0],
+        sourceFile,
+        sourceRange: rangeFromOffsets(
+          interpolatedMatch.index,
+          interpolatedMatch.index + interpolatedMatch[0].length,
+          lineStarts,
+        ),
+      });
+    }
+    interpolatedMatch = interpolatedAttributePattern.exec(source);
+  }
+
   return usages.sort((left, right) => left.sourceFile.localeCompare(right.sourceFile) || left.sourceRange.startOffset - right.sourceRange.startOffset);
+}
+
+function assignedStaticNames(source: string, variableName: string): string[] {
+  const assignmentPattern = new RegExp(
+    `(?:^|\\n)\\s*(?:local\\s+)?${variableName}\\s*=([^\\n]+)`,
+  );
+  const assignment = assignmentPattern.exec(source)?.[1];
+  if (assignment === undefined) return [];
+  const names = assignment.match(/["']([A-Za-z_][A-Za-z0-9_]*)["']/g) ?? [];
+  return [...new Set(names.map((value) => value.slice(1, -1)))];
 }
 
 function cbsButtonTriggerName(buttonBody: string): string | undefined {

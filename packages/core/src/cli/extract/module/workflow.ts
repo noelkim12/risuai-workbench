@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { runAnalyzeModuleWorkflow } from '@/cli/analyze/module/workflow';
-import { ensureDir } from '@/node/fs-helpers';
+import { createUniqueDir, ensureDir } from '@/node/fs-helpers';
 import { getErrorMessage } from '../../shared';
 import { installDocsProviderBundle } from '../../shared/docs-provider';
 import {
@@ -135,8 +135,9 @@ async function runMain(
     parsed.module?.name || path.basename(filePath, path.extname(filePath)),
   );
   const defaultOutDir = `module_${safeName}`;
-  const resolvedOutDir = path.resolve(outArg || defaultOutDir);
-  ensureDir(resolvedOutDir);
+  const requestedOutDir = path.resolve(outArg || defaultOutDir);
+  const resolvedOutDir = outArg ? requestedOutDir : createUniqueDir(requestedOutDir);
+  if (outArg) ensureDir(resolvedOutDir);
 
   console.log(`     RisuLua: ${formatRisuLuaModeLabel(risuluaMode)}`);
   console.log(`     RisuLua split: ${risuluaSplitMode}`);

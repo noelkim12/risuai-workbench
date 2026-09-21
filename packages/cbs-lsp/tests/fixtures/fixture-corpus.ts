@@ -519,7 +519,7 @@ const fixtureCorpusSeeds: readonly FixtureCorpusSeed[] = [
     expectedSections: ['CONTENT'],
     expectedDiagnosticCodes: [DiagnosticCode.DeprecatedFunction],
     features: ['taxonomy'],
-    text: lorebookDocument(['{{#if true}}fallback{{/if}}']),
+    text: lorebookDocument(['{{#pure}}fallback{{/pure}}']),
   },
   {
     id: 'lorebook-legacy-angle',
@@ -684,7 +684,7 @@ const fixtureCorpusSeeds: readonly FixtureCorpusSeed[] = [
     expectedSections: ['IN', 'OUT'],
     expectedDiagnosticCodes: [DiagnosticCode.DeprecatedFunction],
     features: ['taxonomy', 'multi-fragment'],
-    text: regexDocument(['{{#if true}}legacy{{/if}}'], ['fallback']),
+    text: regexDocument(['{{#pure}}legacy{{/pure}}'], ['fallback']),
   },
   {
     id: 'regex-foldable-block',

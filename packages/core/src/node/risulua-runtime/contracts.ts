@@ -118,6 +118,13 @@ export interface RisuLuaExecutionResult {
     hostCalls: number;
     traceEvents: number;
     traceTruncated: boolean;
+    moduleLoads?: number;
+    executionDurationMs?: number;
+    requestedLimits?: Readonly<Partial<RisuLuaExecutionLimits>>;
+    effectiveLimits?: Readonly<RisuLuaExecutionLimits>;
+    timeoutPhase?: 'source-resolution' | 'worker-execution' | 'result-presentation';
+    workerStarted?: boolean;
+    workerTerminationRequested?: boolean;
   };
 }
 

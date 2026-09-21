@@ -46,6 +46,7 @@ interface HmrCharxDataExtras {
 type RisuExtension = CharxV3Envelope['data']['extensions']['risuai'] & {
   readonly backgroundHTML?: unknown;
   readonly defaultVariables?: unknown;
+  readonly toggles?: unknown;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -163,6 +164,7 @@ export function convertCharxV3ToRisuDefinition(
     globalLore: charbook?.entries ? convertCharbookEntriesToGlobalLore(charbook.entries) : [],
     customscript: risuExt.customScripts ?? [],
     triggerscript: risuExt.triggerscript ?? [],
+    customModuleToggle: risuExt.toggles ?? {},
     additionalText: risuExt.additionalText ?? '',
     utilityBot: risuExt.utilityBot ?? false,
     emotionImages,

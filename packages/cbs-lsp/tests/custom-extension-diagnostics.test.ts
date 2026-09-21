@@ -347,7 +347,7 @@ name: test
 @@@ KEYS
 key
 @@@ CONTENT
-{{#if true}}fallback{{/if}}
+{{#pure}}fallback{{/pure}}
 `;
       const legacyAngleContent = `---
 name: test
@@ -394,14 +394,14 @@ Hello <user>
         },
         fixes: [
           {
-            title: 'Replace with "#when"',
+            title: 'Replace with "#puredisplay"',
             editKind: 'replace',
             explanation: {
               reason: 'diagnostic-taxonomy',
-              source: 'registry-deprecated:#if:#when',
-              detail: 'Registry deprecation metadata marks #if as replaceable with #when.',
+              source: 'registry-deprecated:#pure:#puredisplay',
+              detail: 'Registry deprecation metadata marks #pure as replaceable with #puredisplay.',
             },
-            replacement: '#when',
+            replacement: '#puredisplay',
           },
         ],
       });

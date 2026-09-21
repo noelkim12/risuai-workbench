@@ -13,8 +13,8 @@ export const RISULUA_RECOVERY_BLOCK_END = ']=]';
 
 const RECOVERY_BLOCK_PATTERN =
   /--\[=\[#risulua-bundle-manifest-v1\r?\n([A-Za-z0-9+/=\r\n]+)\r?\n\]=\]\r?\n?/;
-const RECOVERY_ROOT_NAMES = ['docs', 'legacy', 'lua'] as const;
-const RECOVERY_ROOTS = ['docs/', 'legacy/', 'lua/'] as const;
+const RECOVERY_ROOT_NAMES = ['lua'] as const;
+const RECOVERY_ROOTS = ['lua/'] as const;
 const GZIP_MTIME_START = 4;
 const GZIP_MTIME_END = 8;
 const GZIP_OS_BYTE = 9;

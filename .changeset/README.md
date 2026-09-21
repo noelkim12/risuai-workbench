@@ -15,8 +15,9 @@ This repository uses Changesets as the source of truth for versioning and change
 - `@risuai-workbench/cbs-language-server`
 - `@risuai-workbench/lua-analyzer-wasm`
 - `@risuai-workbench/mcp`
+- `@risuai-workbench/hmr-provider`
 
-The release train follows `lua-analyzer-wasm -> core -> cbs-language-server -> mcp`. A package may release independently only when every internal dependency range already exists on npm. If a change requires a new internal runtime contract, include changesets for every affected package so Changesets publishes dependencies before consumers.
+The release train follows `lua-analyzer-wasm -> core -> cbs-language-server -> mcp`, with the dependency-free `@risuai-workbench/hmr-provider` plugin published from the same workflow. A package may release independently only when every internal dependency range already exists on npm. If a change requires a new internal runtime contract, include changesets for every affected package so Changesets publishes dependencies before consumers.
 
 ### Private workspace packages
 
@@ -42,4 +43,4 @@ Manual `next` / `canary` dispatches create an ephemeral patch changeset in the w
 
 ### Smoke policy
 
-Before publish, CI packs all four public packages, installs the tarballs into isolated temporary projects, and verifies the LSP CLI plus the MCP `tools/list` / `workbench.smoke` handshake. After publish, CI repeats smoke checks against the exact npm versions before the release job is considered complete.
+Before publish, CI packs all five public packages, verifies the HMR plugin bundle, and installs the release-train tarballs into isolated temporary projects to check the LSP CLI plus the MCP `tools/list` / `workbench.smoke` handshake. After publish, CI repeats the LSP and MCP smoke checks against the exact npm versions before the release job is considered complete.

@@ -864,6 +864,21 @@ describe('module extract', () => {
         );
         expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-split-plan.json'))).toBe(false);
         expect(fs.existsSync(path.join(outDir, 'docs', 'risulua-split-report.md'))).toBe(false);
+        expect(
+          JSON.parse(
+            fs.readFileSync(path.join(outDir, 'docs', 'risulua-split-failure.json'), 'utf-8'),
+          ),
+        ).toMatchObject({
+          version: 1,
+          mode: 'module-table',
+          sourcePath: 'lua/main.risulua',
+          diagnostics: [
+            {
+              code: 'RISULUA_SPLIT_FAILED',
+              message: expect.stringContaining('Failed to parse Lua source'),
+            },
+          ],
+        });
         expect(fs.existsSync(path.join(outDir, 'dist'))).toBe(false);
         expect(fs.existsSync(path.join(outDir, 'legacy'))).toBe(false);
         expect(

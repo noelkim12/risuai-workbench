@@ -164,7 +164,8 @@ function buildCommonHelperModule(
   lines.push('');
 
   for (const sym of sorted) {
-    lines.push(`${leadingCommentTextForSymbol(source, sym.sourceRange)}${stripLocalPrefix(sliceSourceRange(source, sym.sourceRange))}`, '');
+    const sourceSlice = sliceSourceRange(source, sym.sourceRange);
+    lines.push(`${leadingCommentTextForSymbol(source, sym.sourceRange)}${renderCommonHelperDefinition(sourceSlice, sym.originalName)}`, '');
   }
 
   for (const sym of sorted) {
@@ -198,6 +199,15 @@ function buildHostGlobalModule(
 ): ModuleBodyPlan {
   const sorted = bySourceOrder(symbols);
   const contract = moduleContracts.find((m) => m.path === modulePath);
+  const symbolNameCounts = new Map<string, number>();
+  for (const symbol of allSymbols) {
+    symbolNameCounts.set(symbol.originalName, (symbolNameCounts.get(symbol.originalName) ?? 0) + 1);
+  }
+  const sameModuleRewriteMap = new Map(
+    sorted
+      .filter((symbol) => symbolNameCounts.get(symbol.originalName) === 1)
+      .map((symbol) => [symbol.originalName, `M.${symbol.exportName ?? symbol.originalName}`]),
+  );
   const capturePlans = sorted.map((sym) => buildCaptureRewritePlan({
     names: uniqueSorted([...sym.captures, ...helperUsagesInRange(source, sym.sourceRange, helperNames), ...symbolUsagesInRange(source, sym.sourceRange, allSymbols, new Set(), sym.originalName)]),
     moduleContracts,
@@ -216,14 +226,15 @@ function buildHostGlobalModule(
 
   for (const [index, sym] of sorted.entries()) {
     const capturePlan = capturePlans[index];
-    const shadowedScopes = detectShadowedScopes(source, new Set(capturePlan.rewriteMap.keys()), [], nonExecIndex, sym.sourceRange);
+    const rewriteMap = new Map([...capturePlan.rewriteMap, ...sameModuleRewriteMap]);
+    const shadowedScopes = detectShadowedScopes(source, new Set(rewriteMap.keys()), [], nonExecIndex, sym.sourceRange);
     const leadingCommentText = leadingCommentTextForSymbol(source, sym.sourceRange);
-    let body = rewriteBoundReferences(sliceSourceRange(source, sym.sourceRange), capturePlan.rewriteMap, sym.sourceRange.startOffset, shadowedScopes, nonExecIndex);
+    let body = rewriteBoundReferences(sliceSourceRange(source, sym.sourceRange), rewriteMap, sym.sourceRange.startOffset, shadowedScopes, nonExecIndex);
     if (modulePath === RISULUA_MODULE_TABLE_DUPLICATE_GLOBALS_PATH) {
       body = toRenamedLocalModuleFunction(body, sym.originalName, sym.exportName ?? sym.originalName);
       lines.push(`${leadingCommentText}${body}`, '');
     } else {
-      lines.push(`${leadingCommentText}local ${body}`, '');
+      lines.push(`${leadingCommentText}${toLocalModuleFunction(body, sym.originalName)}`, '');
     }
   }
 
@@ -370,9 +381,11 @@ function buildDomainFunctionModule(
 
 function toPrivateImplementationFunction(sourceSlice: string, originalName: string, exportName: string): string {
   const escapedName = escapeRegExp(originalName);
-  return sourceSlice
+  const rewritten = sourceSlice
     .replace(new RegExp(`^(\\s*)(?:local\\s+)?function\\s+${escapedName}(\\s*\\()`, 'm'), `$1function __impl.${exportName}$2`)
     .replace(new RegExp(`^(\\s*)${escapedName}(\\s*=\\s*(?:async\\s*\\(\\s*)?function\\b)`, 'm'), `$1function __impl.${exportName}`);
+  if (rewritten !== sourceSlice) return rewritten;
+  return sourceSlice.replace(/^(\s*)function(\s*\()/, `$1function __impl.${exportName}$2`);
 }
 
 function declarationHeadRange(source: string, range: LuaSourceRange): LuaSourceRange {
@@ -418,7 +431,7 @@ function buildButtonActionModule(
     const capturePlan = capturePlans[index];
     const shadowedScopes = detectShadowedScopes(source, new Set(capturePlan.rewriteMap.keys()), [], nonExecIndex, sym.sourceRange);
     const leadingCommentText = leadingCommentTextForSymbol(source, sym.sourceRange);
-    let body = toLocalModuleFunction(sliceSourceRange(source, sym.sourceRange)).trimEnd();
+    let body = toLocalModuleFunction(sliceSourceRange(source, sym.sourceRange), sym.originalName).trimEnd();
     body = rewriteBoundReferences(body, capturePlan.rewriteMap, sym.sourceRange.startOffset, shadowedScopes, nonExecIndex);
     lines.push(`${leadingCommentText}${body}`, '', `M.${sym.originalName} = ${sym.originalName}`, '');
   }
@@ -453,20 +466,31 @@ function buttonActionNavigationComment(
   return sourceNavigationComment(`Button action bridge: ${name}`, usage.sourceFile, usage.sourceRange);
 }
 
-function toLocalModuleFunction(sourceSlice: string): string {
+function toLocalModuleFunction(sourceSlice: string, functionName?: string): string {
   const trimmedStart = sourceSlice.replace(/^\s+/, '');
   const leadingWhitespace = sourceSlice.slice(0, sourceSlice.length - trimmedStart.length);
   if (trimmedStart.startsWith('local ')) return stripLocalPrefix(sourceSlice);
   if (/^function\s+[A-Za-z_][A-Za-z0-9_]*\s*\(/.test(trimmedStart)) return `${leadingWhitespace}local ${trimmedStart}`;
   if (/^[A-Za-z_][A-Za-z0-9_]*\s*=\s*(?:async\s*\(\s*)?function\b/.test(trimmedStart)) return `${leadingWhitespace}local ${trimmedStart}`;
+  if (functionName !== undefined && /^function\s*\(/.test(trimmedStart)) {
+    return `${leadingWhitespace}local ${functionName} = ${trimmedStart}`;
+  }
   return stripLocalPrefix(sourceSlice);
 }
 
 function toRenamedLocalModuleFunction(sourceSlice: string, originalName: string, exportName: string): string {
-  const localBody = toLocalModuleFunction(sourceSlice);
+  const localBody = toLocalModuleFunction(sourceSlice, originalName);
   return localBody
     .replace(new RegExp(`local\\s+function\\s+${escapeRegExp(originalName)}\\s*\\(`), `local function ${exportName}(`)
     .replace(new RegExp(`local\\s+${escapeRegExp(originalName)}\\s*=\\s*`), `local ${exportName} = `);
+}
+
+function renderCommonHelperDefinition(sourceSlice: string, functionName: string): string {
+  const stripped = stripLocalPrefix(sourceSlice);
+  const trimmedStart = stripped.replace(/^\s+/, '');
+  if (!/^function\s*\(/.test(trimmedStart)) return stripped;
+  const leadingWhitespace = stripped.slice(0, stripped.length - trimmedStart.length);
+  return `${leadingWhitespace}${functionName} = ${trimmedStart}`;
 }
 
 function buildRuntimeListenEditModules(

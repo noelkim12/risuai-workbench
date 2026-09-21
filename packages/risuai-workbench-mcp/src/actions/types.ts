@@ -43,9 +43,13 @@ export interface ActionInputGuidance {
   readonly fields?: Readonly<Record<string, {
     readonly type: string;
     readonly description?: string;
-    readonly enumValues?: readonly (string | number)[];
-    readonly defaultValue?: unknown;
-  }>>;
+     readonly enumValues?: readonly (string | number)[];
+     readonly defaultValue?: unknown;
+     readonly variants?: readonly {
+       readonly name: string;
+       readonly fields: Readonly<Record<string, string>>;
+     }[];
+   }>>;
 }
 
 export interface WorkbenchAction<TInput = unknown, TOutput = unknown> {

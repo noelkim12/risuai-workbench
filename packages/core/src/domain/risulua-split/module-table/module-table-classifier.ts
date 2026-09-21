@@ -30,6 +30,7 @@ import type {
   RisuLuaModuleTableRuntimeRootFact,
 } from './module-table-analyzer-types';
 import type { LuaSourceRange } from '../shared/types';
+import { collectButtonActionUsages } from './module-table-button-action-index';
 import { createRisuLuaDomainGroupingContext, domainFunctionPath } from './module-table-domain-grouping';
 
 export interface RisuLuaModuleTableClassifierInput {
@@ -82,7 +83,9 @@ export function classifyRisuLuaModuleTableDecisions(input: RisuLuaModuleTableCla
   const domainCandidates: RisuLuaModuleTableDomainCandidateContract[] = [];
   const parameterizedHelpers: RisuLuaModuleTableParameterizedHelperDecision[] = [];
   const consumedSymbolIds = new Set<string>();
-  const buttonActionNames = collectButtonActionNames([input.source, ...(input.buttonActionSources ?? [])]);
+  const buttonActionNames = new Set(
+    collectButtonActionUsages([input.source, ...(input.buttonActionSources ?? [])]).map((usage) => usage.name),
+  );
   const extractableCommonHelperNames = collectCommonHelperClosureNames(input.analyzerResult.lexicalSymbols);
   const requiredCommonHelperNames = collectRequiredCommonHelperNames(
     input.analyzerResult.lexicalSymbols,
@@ -261,15 +264,24 @@ export function classifyRisuLuaModuleTableDecisions(input: RisuLuaModuleTableCla
     }
   }
 
+  const stabilized = stabilizeTopLevelModuleCaptures({
+    symbols,
+    variableStoreNames,
+    promptStoreNames,
+  });
+  const demotedByName = new Map(stabilized.preserved.map((entry) => [entry.originalName, entry]));
+
   const refactorMap: RisuLuaModuleTableRefactorMapContract = {
     version: 1,
     mode: 'module-table',
     domainGeneration,
     sourceFile: input.sourceFile,
-    modules: moduleContractsForSymbols(symbols, input.analyzerResult.runtimeRoots),
-    symbols,
-    preserved: dedupePreserved(preserved),
-    domainCandidates: dedupeDomainCandidates(domainCandidates),
+    modules: moduleContractsForSymbols(stabilized.symbols, input.analyzerResult.runtimeRoots),
+    symbols: stabilized.symbols,
+    preserved: dedupePreserved([...preserved, ...stabilized.preserved]),
+    domainCandidates: dedupeDomainCandidates(
+      domainCandidates.map((candidate) => blockDemotedDomainCandidate(candidate, demotedByName)),
+    ),
   };
 
   return {
@@ -541,7 +553,7 @@ function unsafeLocalHelperReason(symbol: RisuLuaModuleTableLexicalSymbolFact, ex
   const unsafeMutations = unsafeMutationNames(symbol);
   if (unsafeMutations.length > 0) return { code: 'preserve:captures-mutable-state', evidence: [`Top-level local helper mutates bindings: ${unsafeMutations.join(', ')}.`] };
   if (symbol.hostEffects.dynamicEnvironment.length > 0) return { code: 'preserve:dynamic-global-reference-risk', evidence: [`Dynamic environment usage: ${symbol.hostEffects.dynamicEnvironment.join(', ')}.`] };
-  if (symbol.hostEffects.writes.length > 0) return { code: 'preserve:host-write-order', evidence: [`Host writes require order preservation: ${symbol.hostEffects.writes.join(', ')}.`] };
+  if (symbol.hostEffects.writes.length > 0 && !extractableCommonHelperNames.has(symbol.originalName)) return { code: 'preserve:host-write-order', evidence: [`Host writes require order preservation: ${symbol.hostEffects.writes.join(', ')}.`] };
   if (symbol.hostEffects.uiInteraction.length > 0 || symbol.hostEffects.asyncModelNetwork.length > 0) return { code: 'preserve:async-boundary-risk', evidence: [`UI/async boundary effects: ${[...symbol.hostEffects.uiInteraction, ...symbol.hostEffects.asyncModelNetwork].join(', ')}.`] };
   return undefined;
 }
@@ -999,7 +1011,7 @@ function collectRequiredCommonHelperNames(
     for (const name of requiredNames) {
       if (extractable.has(name)) continue;
       const symbol = uniqueTopLevelLocals.get(name);
-      if (symbol === undefined || !isCommonHelperEffectsSafe(symbol)) continue;
+      if (symbol === undefined || !isRequiredCommonHelperEffectsSafe(symbol)) continue;
       if (!symbol.captures.every((capture) => extractable.has(capture))) continue;
       extractable.add(name);
       changed = true;
@@ -1195,6 +1207,18 @@ function isCommonHelperEffectsSafe(symbol: RisuLuaModuleTableLexicalSymbolFact):
     && symbol.hostEffects.dynamicEnvironment.length === 0;
 }
 
+function isRequiredCommonHelperEffectsSafe(symbol: RisuLuaModuleTableLexicalSymbolFact): boolean {
+  return unsafeMutationNames(symbol).length === 0
+    && (symbol.hostEffects.writes.length === 0 || isHostAdapterHelperName(symbol.originalName))
+    && symbol.hostEffects.uiInteraction.length === 0
+    && symbol.hostEffects.asyncModelNetwork.length === 0
+    && symbol.hostEffects.dynamicEnvironment.length === 0;
+}
+
+function isHostAdapterHelperName(name: string): boolean {
+  return /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/.test(name);
+}
+
 function unsafeMutationNames(symbol: RisuLuaModuleTableLexicalSymbolFact, storeBackedNames = new Set<string>()): string[] {
   return uniqueSorted(symbol.mutations
     .filter((mutation) => mutation.mutatesCapturedBinding || mutation.mutatesCapturedTable)
@@ -1205,33 +1229,6 @@ function unsafeMutationNames(symbol: RisuLuaModuleTableLexicalSymbolFact, storeB
 function isStrictCommonHelperName(name: string): boolean {
   return /(?:trim|clamp|split|join|normalize|format|escape|unescape)/i.test(name)
     || /^(?:safeGet|appendComma|appendPipe|to[A-Z]|from[A-Z]|is[A-Z]|has[A-Z])/.test(name);
-}
-
-function collectButtonActionNames(sources: RisuLuaModuleTableButtonActionSourceInput[]): Set<string> {
-  const names = new Set<string>();
-  const attributePattern = /\brisu-trigger\s*=\s*(["'])([A-Za-z_][A-Za-z0-9_]*)\1/g;
-  const cbsButtonPattern = /\{\{\s*button\s*::([\s\S]*?)\}\}/g;
-  for (const entry of sources) {
-    const source = typeof entry === 'string' ? entry : entry.source;
-    let attributeMatch = attributePattern.exec(source);
-    while (attributeMatch !== null) {
-      names.add(attributeMatch[2]);
-      attributeMatch = attributePattern.exec(source);
-    }
-    let cbsButtonMatch = cbsButtonPattern.exec(source);
-    while (cbsButtonMatch !== null) {
-      const triggerName = cbsButtonTriggerName(cbsButtonMatch[1]);
-      if (triggerName !== undefined) names.add(triggerName);
-      cbsButtonMatch = cbsButtonPattern.exec(source);
-    }
-  }
-  return names;
-}
-
-function cbsButtonTriggerName(buttonBody: string): string | undefined {
-  const segments = buttonBody.split('::').map((segment) => segment.trim()).filter((segment) => segment.length > 0);
-  const triggerName = segments.at(-1);
-  return triggerName !== undefined && /^[A-Za-z_][A-Za-z0-9_]*$/.test(triggerName) ? triggerName : undefined;
 }
 
 function preservedEntry(id: string, originalName: string, sourceRange: LuaSourceRange, reason: RisuLuaModuleTableClassificationCode, evidence: string[]): RisuLuaModuleTableRefactorMapContract['preserved'][number] {
@@ -1313,6 +1310,206 @@ function dedupeDomainCandidates(candidates: RisuLuaModuleTableDomainCandidateCon
   const byName = new Map<string, RisuLuaModuleTableDomainCandidateContract>();
   for (const candidate of candidates) byName.set(candidate.name, candidate);
   return [...byName.values()];
+}
+
+function stabilizeTopLevelModuleCaptures(input: {
+  symbols: RisuLuaModuleTableSymbolContract[];
+  variableStoreNames: Set<string>;
+  promptStoreNames: Set<string>;
+}): {
+  symbols: RisuLuaModuleTableSymbolContract[];
+  preserved: RisuLuaModuleTableRefactorMapContract['preserved'];
+} {
+  let symbols = [...input.symbols];
+  const preserved: RisuLuaModuleTableRefactorMapContract['preserved'] = [];
+
+  while (true) {
+    const symbolsByName = new Map<string, RisuLuaModuleTableSymbolContract[]>();
+    for (const symbol of symbols) {
+      symbolsByName.set(symbol.originalName, [...(symbolsByName.get(symbol.originalName) ?? []), symbol]);
+    }
+
+    const unsafe = symbols.find((symbol) => {
+      if (!requiresClosedModuleCaptures(symbol)) return false;
+      return symbol.captures.some((capture) => !isModuleCaptureResolvable(
+        capture,
+        symbol,
+        symbolsByName,
+        input.variableStoreNames,
+        input.promptStoreNames,
+      ));
+    });
+    if (unsafe !== undefined) {
+      const unresolved = unsafe.captures.filter((capture) => !isModuleCaptureResolvable(
+        capture,
+        unsafe,
+        symbolsByName,
+        input.variableStoreNames,
+        input.promptStoreNames,
+      ));
+      preserved.push(preservedEntry(
+        unsafe.id,
+        unsafe.originalName,
+        unsafe.sourceRange,
+        'preserve:captures-mutable-state',
+        [`Module extraction cannot resolve lexical captures: ${unresolved.join(', ')}.`],
+      ));
+      symbols = symbols.filter((candidate) => candidate.id !== unsafe.id);
+      continue;
+    }
+
+    const cycle = findButtonActionDomainCycle(symbols, symbolsByName);
+    if (cycle !== undefined) {
+      preserved.push(preservedEntry(
+        cycle.owner.id,
+        cycle.owner.originalName,
+        cycle.owner.sourceRange,
+        'preserve:ambiguous',
+        [`Module extraction would create dependency cycle ${cycle.ownerModule} -> ${RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH} -> ${cycle.ownerModule} through ${cycle.capture}.`],
+      ));
+      symbols = symbols.filter((candidate) => candidate.id !== cycle.owner.id);
+      continue;
+    }
+
+    const hostGlobalCycle = findHostGlobalModuleCycle(symbols, symbolsByName);
+    if (hostGlobalCycle === undefined) break;
+    preserved.push(preservedEntry(
+      hostGlobalCycle.owner.id,
+      hostGlobalCycle.owner.originalName,
+      hostGlobalCycle.owner.sourceRange,
+      'preserve:ambiguous',
+      [`Module extraction would create dependency cycle ${hostGlobalCycle.moduleCycle.join(' -> ')} through ${hostGlobalCycle.capture}.`],
+    ));
+    symbols = symbols.filter((candidate) => candidate.id !== hostGlobalCycle.owner.id);
+  }
+
+  return { symbols, preserved };
+}
+
+function findButtonActionDomainCycle(
+  symbols: RisuLuaModuleTableSymbolContract[],
+  symbolsByName: Map<string, RisuLuaModuleTableSymbolContract[]>,
+): { owner: RisuLuaModuleTableSymbolContract; ownerModule: string; capture: string } | undefined {
+  const buttonDependencies = new Set<string>();
+  for (const symbol of symbols) {
+    if (symbol.targetModule !== RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH) continue;
+    for (const capture of symbol.captures) {
+      const matches = symbolsByName.get(capture) ?? [];
+      const targetModule = matches.length === 1 ? matches[0].targetModule : undefined;
+      if (targetModule !== undefined && targetModule !== RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH) {
+        buttonDependencies.add(targetModule);
+      }
+    }
+  }
+
+  for (const owner of symbols) {
+    const ownerModule = owner.targetModule;
+    if (owner.classification !== 'extract:domain-function'
+      || ownerModule === undefined
+      || !buttonDependencies.has(ownerModule)) continue;
+    const capture = owner.captures.find((name) => {
+      const matches = symbolsByName.get(name) ?? [];
+      return matches.length === 1 && matches[0].targetModule === RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH;
+    });
+    if (capture !== undefined) return { owner, ownerModule, capture };
+  }
+  return undefined;
+}
+
+function findHostGlobalModuleCycle(
+  symbols: RisuLuaModuleTableSymbolContract[],
+  symbolsByName: Map<string, RisuLuaModuleTableSymbolContract[]>,
+): { owner: RisuLuaModuleTableSymbolContract; capture: string; moduleCycle: string[] } | undefined {
+  const moduleEdges = new Map<string, Set<string>>();
+  for (const owner of symbols) {
+    if (owner.targetModule === undefined) continue;
+    for (const dependencyName of uniqueSorted([...owner.captures, ...owner.rewriteRefs])) {
+      const matches = symbolsByName.get(dependencyName) ?? [];
+      const targetModule = matches.length === 1 ? matches[0].targetModule : undefined;
+      if (targetModule === undefined || targetModule === owner.targetModule) continue;
+      const targets = moduleEdges.get(owner.targetModule) ?? new Set<string>();
+      targets.add(targetModule);
+      moduleEdges.set(owner.targetModule, targets);
+    }
+  }
+
+  const owners = symbols
+    .filter((symbol) => symbol.classification === 'extract:host-global-function'
+      && symbol.targetModule === RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH)
+    .sort((left, right) => left.sourceRange.startOffset - right.sourceRange.startOffset
+      || left.id.localeCompare(right.id));
+  for (const owner of owners) {
+    for (const dependencyName of uniqueSorted([...owner.captures, ...owner.rewriteRefs])) {
+      const matches = symbolsByName.get(dependencyName) ?? [];
+      const targetModule = matches.length === 1 ? matches[0].targetModule : undefined;
+      if (targetModule === undefined || targetModule === RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH) continue;
+      const returnPath = findModulePath(moduleEdges, targetModule, RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH);
+      if (returnPath !== undefined) {
+        return {
+          owner,
+          capture: dependencyName,
+          moduleCycle: [RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH, ...returnPath],
+        };
+      }
+    }
+  }
+  return undefined;
+}
+
+function findModulePath(edges: Map<string, Set<string>>, start: string, target: string): string[] | undefined {
+  const queue: string[][] = [[start]];
+  const visited = new Set<string>();
+  while (queue.length > 0) {
+    const path = queue.shift();
+    if (path === undefined) break;
+    const current = path[path.length - 1];
+    if (current === target) return path;
+    if (visited.has(current)) continue;
+    visited.add(current);
+    const neighbors = [...(edges.get(current) ?? [])].sort((left, right) => left.localeCompare(right));
+    for (const neighbor of neighbors) queue.push([...path, neighbor]);
+  }
+  return undefined;
+}
+
+function requiresClosedModuleCaptures(symbol: RisuLuaModuleTableSymbolContract): boolean {
+  return symbol.classification === 'extract:pure-helper'
+    || symbol.classification === 'extract:domain-function'
+    || symbol.classification === 'extract:button-action'
+    || symbol.classification === 'extract:host-global-function';
+}
+
+function isModuleCaptureResolvable(
+  capture: string,
+  owner: RisuLuaModuleTableSymbolContract,
+  symbolsByName: Map<string, RisuLuaModuleTableSymbolContract[]>,
+  variableStoreNames: Set<string>,
+  promptStoreNames: Set<string>,
+): boolean {
+  const matches = symbolsByName.get(capture) ?? [];
+  if (matches.length === 1) {
+    const dependency = matches[0];
+    return dependency.id === owner.id || dependency.targetModule !== undefined;
+  }
+  if (matches.length > 1) return false;
+  return variableStoreNames.has(capture) || promptStoreNames.has(capture);
+}
+
+function blockDemotedDomainCandidate(
+  candidate: RisuLuaModuleTableDomainCandidateContract,
+  demotedByName: Map<string, RisuLuaModuleTableRefactorMapContract['preserved'][number]>,
+): RisuLuaModuleTableDomainCandidateContract {
+  const demoted = demotedByName.get(candidate.name);
+  if (demoted === undefined || candidate.generationStatus !== 'generated') return candidate;
+  const reason = demoted.evidence.join(' ');
+  return {
+    ...candidate,
+    generationStatus: 'blocked',
+    generatedPath: undefined,
+    generationBlockedReasons: [...candidate.generationBlockedReasons, reason],
+    notGeneratedReason: reason,
+    autoGenerated: false,
+  };
 }
 
 function uniqueSorted(values: string[]): string[] {

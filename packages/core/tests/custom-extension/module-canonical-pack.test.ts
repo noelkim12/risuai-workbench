@@ -742,6 +742,34 @@ end
     expect(decodeRisuLuaRecoveryBlock(packedLua)).toBeNull();
   });
 
+  it('module pack passes through a single prebundled risulua source', () => {
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'module-risulua-single-'));
+    tempDirs.push(workDir);
+
+    fs.writeFileSync(
+      path.join(workDir, '.risumodule'),
+      `${JSON.stringify(makeRisumodule({ name: 'single-lua-module', id: 'single-lua-id' }), null, 2)}\n`,
+      'utf-8',
+    );
+    fs.mkdirSync(path.join(workDir, 'lua'), { recursive: true });
+    const source = [
+      'package.preload["./handler"] = function() return { ready = true } end',
+      'local handler = require("./handler")',
+      'return handler',
+    ].join('\n');
+    fs.writeFileSync(path.join(workDir, 'lua', 'main.risulua'), source, 'utf-8');
+
+    const outPath = path.join(workDir, 'packed-module.json');
+    const exitCode = runPackWorkflow(['--in', workDir, '--out', outPath, '--format', 'json']);
+
+    expect(exitCode).toBe(0);
+    const payload = JSON.parse(fs.readFileSync(outPath, 'utf-8')) as {
+      module: { trigger?: Array<{ effect?: Array<{ code?: string }> }> };
+    };
+    expect(payload.module.trigger![0].effect![0].code).toBe(source);
+    expect(fs.existsSync(path.join(workDir, 'dist', 'single-lua-module.risulua'))).toBe(false);
+  });
+
   it('module pack risulua modular embeds full-source recovery manifest when requested', () => {
     const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'module-risulua-modular-recovery-'));
     tempDirs.push(workDir);
@@ -874,6 +902,11 @@ end
       'local helper = require(moduleName)',
       'return helper',
     ].join('\n'), 'utf-8');
+    fs.writeFileSync(
+      path.join(workDir, 'lua', 'helper.risulua'),
+      'return { ready = true }\n',
+      'utf-8',
+    );
 
     const outPath = path.join(workDir, 'packed-module.json');
     const exitCode = runPackWorkflow([
