@@ -4,10 +4,13 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { createWorkbenchActionRegistry } from '../src/actions/create-registry';
+import { createInvalidArgsError } from '../src/actions/errors';
 import { RuntimeDebugInputSchema, RuntimeSmokeInputSchema } from '../src/actions/schemas/runtime-schemas';
 import type { ActionExecutionContext } from '../src/actions/types';
 import { ContextStore } from '../src/context/context-store';
 import { createPatchPlanStore } from '../src/mutation/patch-store';
+import { handlePrepareAction } from '../src/tools/facade';
+import { presentRuntimeResult } from '../src/tools/runtime/result-presenter';
 
 function executionContext(withStore = true): ActionExecutionContext {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'risulua-runtime-actions-'));
@@ -33,6 +36,38 @@ describe('MCP RisuLua runtime actions', () => {
     }
   });
 
+  it('prepares executable workspace, context, and inline source examples', () => {
+    const registry = createWorkbenchActionRegistry(executionContext());
+    const action = registry.get('risulua.debug_call')!;
+    const prepared = handlePrepareAction({ actionId: action.id }, registry)!;
+
+    expect(prepared.examples).toHaveLength(3);
+    expect(prepared.examples.every((example) => RuntimeDebugInputSchema.safeParse(example).success)).toBe(true);
+    expect(prepared.fields.source.variants?.map((variant) => variant.name)).toEqual([
+      'workspace',
+      'context',
+      'inline',
+    ]);
+    expect(RuntimeDebugInputSchema.safeParse(
+      (createInvalidArgsError(action, []).retry?.input.args),
+    ).success).toBe(true);
+  });
+
+  it('rejects limits above the runtime hard caps and suggests the canonical instruction field', () => {
+    const action = createWorkbenchActionRegistry(executionContext()).get('risulua.debug_call')!;
+    expect(RuntimeDebugInputSchema.safeParse({
+      source: { kind: 'workspace', form: 'canonical' },
+      exportName: 'run',
+      limits: { timeoutMs: 2_001 },
+    }).success).toBe(false);
+
+    const error = createInvalidArgsError(action, [{
+      path: ['limits'],
+      message: 'Unrecognized key: maxInstructions',
+    }]);
+    expect(error.error.issues?.[0]?.message).toContain('instructionLimit');
+  });
+
   it('debug_call executes one export and returns a compact inline result', async () => {
     const context = executionContext();
     const action = createWorkbenchActionRegistry(context).get('risulua.debug_call')!;
@@ -47,6 +82,41 @@ describe('MCP RisuLua runtime actions', () => {
       status: 'ok',
       value: 12,
     }));
+    const metrics = result.metrics as Record<string, unknown>;
+    expect(metrics.requestedLimits).toEqual({});
+    expect(metrics.effectiveLimits).toEqual(expect.objectContaining({ timeoutMs: 2_000 }));
+    expect(metrics.moduleLoads).toBe(1);
+    expect(metrics.sourceResolutionMs).toEqual(expect.any(Number));
+    expect(metrics.totalDurationMs).toEqual(expect.any(Number));
+  });
+
+  it('returns an action-level worker timeout phase before a transport timeout', async () => {
+    const context = executionContext();
+    const action = createWorkbenchActionRegistry(context).get('risulua.debug_call')!;
+    const startedAt = Date.now();
+    const result = await action.execute({
+      source: { kind: 'inline', moduleId: 'main', source: 'while true do end' },
+      exportName: 'run',
+      limits: { timeoutMs: 5, instructionLimit: 1_000_000 },
+    }, context) as Record<string, unknown>;
+
+    expect(result.status).toBe('error');
+    expect(JSON.stringify(result)).toContain('worker-execution');
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+  });
+
+  it('classifies bootstrap-heavy instruction limits with bounded-scenario guidance', () => {
+    const result = presentRuntimeResult({
+      status: 'error',
+      diagnostics: [{ id: 'RUNTIME_INSTRUCTION_LIMIT' }],
+      trace: [],
+      metrics: { hostCalls: 0, moduleLoads: 4 },
+    });
+
+    expect(result.guidance).toEqual([expect.objectContaining({
+      code: 'BOOTSTRAP_INSTRUCTION_LIMIT',
+      recommendedAction: 'risulua.runtime_smoke',
+    })]);
   });
 
   it('runtime_smoke executes declarative scenarios', async () => {

@@ -261,7 +261,7 @@ describe.sequential('cbs-language-server large workspace product matrix', () => 
   });
 
   it('keeps unresolved code action payloads meaningfully smaller than resolved payloads under a stable contract', () => {
-    const text = ['---', 'name: perf-action-resolve', '---', '@@@ CONTENT', '{{#if::ready}}ok{{/if}}', ''].join('\n');
+    const text = ['---', 'name: perf-action-resolve', '---', '@@@ CONTENT', '{{#pure}}ok{{/pure}}', ''].join('\n');
     const request = {
       uri: 'file:///fixtures/perf-code-action-resolve.risulorebook',
       version: 1,

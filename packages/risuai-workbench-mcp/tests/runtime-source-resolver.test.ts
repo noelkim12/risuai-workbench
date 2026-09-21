@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ContextStore } from '../src/context/context-store';
 import { runtimeSourceSchema } from '../src/actions/schemas/runtime-schemas';
-import { resolveRuntimeSource } from '../src/tools/runtime/source-resolver';
+import { getRuntimeSourceMetrics, resolveRuntimeSource } from '../src/tools/runtime/source-resolver';
 
 function workspace(): { root: string; status: { ok: true; path: string; reason: null } } {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'risulua-runtime-source-'));
@@ -29,6 +29,23 @@ describe('MCP RisuLua runtime source resolver', () => {
         'domain.phase': 'return { phase = 2 }',
       },
     });
+  });
+
+  it('reuses unchanged workspace modules and refreshes only a changed module', async () => {
+    const { root, status } = workspace();
+    fs.mkdirSync(path.join(root, 'lua'));
+    fs.writeFileSync(path.join(root, 'lua', 'main.risulua'), 'return require("dep")');
+    fs.writeFileSync(path.join(root, 'lua', 'dep.risulua'), 'return 1');
+
+    const first = await resolveRuntimeSource({ kind: 'workspace', form: 'canonical' }, { workspace: status });
+    const second = await resolveRuntimeSource({ kind: 'workspace', form: 'canonical' }, { workspace: status });
+    expect(getRuntimeSourceMetrics(first)).toEqual(expect.objectContaining({ cache: 'miss', modulesRead: 2 }));
+    expect(getRuntimeSourceMetrics(second)).toEqual(expect.objectContaining({ cache: 'hit', modulesRead: 0 }));
+
+    fs.writeFileSync(path.join(root, 'lua', 'dep.risulua'), 'return 22');
+    const changed = await resolveRuntimeSource({ kind: 'workspace', form: 'canonical' }, { workspace: status });
+    expect(changed.modules.dep).toBe('return 22');
+    expect(getRuntimeSourceMetrics(changed)).toEqual(expect.objectContaining({ cache: 'partial', modulesRead: 1 }));
   });
 
   it('maps the single generated dist artifact to __dist', async () => {

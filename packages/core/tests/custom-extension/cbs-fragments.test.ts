@@ -660,6 +660,50 @@ name: not metadata
         content: 'hello {{user}}',
       });
     });
+
+    it('keeps CBS blocks in one fragment when Lua concatenation splits their string literals', () => {
+      const open = '{{#if {{? ({{lastmessageid}}-{{chat_index}})<2}}}}';
+      const close = '{{/if}}';
+      const source = `html = "${open}" .. html .. "${close}"`;
+      const openStart = source.indexOf(open);
+      const closeStart = source.indexOf(close);
+
+      const fragmentMap = mapLuaWasmStringLiteralsToCbsFragments(source, [
+        {
+          startUtf16: openStart - 1,
+          endUtf16: openStart + open.length + 1,
+          contentStartUtf16: openStart,
+          contentEndUtf16: openStart + open.length,
+          startByte: openStart - 1,
+          endByte: openStart + open.length + 1,
+          contentStartByte: openStart,
+          contentEndByte: openStart + open.length,
+          quoteKind: 'double',
+          hasCbsMarker: true,
+        },
+        {
+          startUtf16: closeStart - 1,
+          endUtf16: closeStart + close.length + 1,
+          contentStartUtf16: closeStart,
+          contentEndUtf16: closeStart + close.length,
+          startByte: closeStart - 1,
+          endByte: closeStart + close.length + 1,
+          contentStartByte: closeStart,
+          contentEndByte: closeStart + close.length,
+          quoteKind: 'double',
+          hasCbsMarker: true,
+        },
+      ]);
+
+      expect(fragmentMap.fragments).toEqual([
+        {
+          section: 'lua-string:1',
+          start: openStart,
+          end: closeStart + close.length,
+          content: source.slice(openStart, closeStart + close.length),
+        },
+      ]);
+    });
   });
 
   describe('mapNonCbsToFragments', () => {

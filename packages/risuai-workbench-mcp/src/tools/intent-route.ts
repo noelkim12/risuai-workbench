@@ -829,8 +829,9 @@ function intentToNextInput(
     case 'analyze.lua_handler':
       return { capability: 'analyze', limit: 5 };
     case 'risulua_runtime_debug':
+      return { capability: 'risulua.runtime', actionIds: ['risulua.debug_call'], limit: 5 };
     case 'risulua_runtime_smoke':
-      return { capability: 'risulua.runtime', limit: 5 };
+      return { capability: 'risulua.runtime', actionIds: ['risulua.runtime_smoke'], limit: 5 };
     case 'creative.idea_to_patch':
       return { capability: 'creative.ideation', limit: 5 };
     case 'docs.update':
@@ -1208,6 +1209,26 @@ function classifyIntent(
       allowedTools: filterImplemented(unionSets([READ_ONLY_TOOLS, ANALYZE_TOOLS])),
       blockedTools: filterImplemented(MUTATION_TOOLS),
       domainTags: constraints.domainTags,
+    });
+  }
+
+  const exactRuntimeAction = input.target?.trim().toLowerCase();
+  if (exactRuntimeAction === 'risulua.debug_call' || exactRuntimeAction === 'risulua.runtime_smoke') {
+    const smoke = exactRuntimeAction === 'risulua.runtime_smoke';
+    return buildRouteResult(input, {
+      intent: smoke ? 'risulua_runtime_smoke' : 'risulua_runtime_debug',
+      nextStep: 'execute',
+      confidence: 1,
+      risk: 'read_only',
+      targetKind: 'lua_runtime',
+      mutationRequested: false,
+      commitAllowed: false,
+      stopConditions: [],
+      explanation: `Explicit runtime action target detected: ${exactRuntimeAction}.`,
+      allowedTools: filterImplemented(READ_ONLY_TOOLS),
+      blockedTools: filterImplemented(MUTATION_TOOLS),
+      domainTags: uniqueStable([...constraints.domainTags, 'risulua', 'lua-runtime']),
+      routingSignals: [`explicit_action:${exactRuntimeAction}`],
     });
   }
 

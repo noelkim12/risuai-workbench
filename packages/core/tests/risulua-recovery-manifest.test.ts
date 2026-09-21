@@ -31,14 +31,9 @@ const FULL_SOURCE_MANIFEST: RisuLuaRecoveryManifest = {
       sha256: 'lua-main-sha',
     },
     {
-      path: 'docs/refactor-map.json',
-      content: '{"version":1}\n',
-      sha256: 'docs-sha',
-    },
-    {
-      path: 'legacy/original.risulua',
+      path: 'lua/common/helper.risulua',
       content: 'return true\n',
-      sha256: 'legacy-sha',
+      sha256: 'lua-helper-sha',
     },
   ],
 };
@@ -96,13 +91,12 @@ describe('RisuLua recovery manifest codec', () => {
     expect(Buffer.isBuffer(firstPayload)).toBe(true);
     expect(firstPayload.equals(secondPayload)).toBe(true);
     expect(decoded.files.map((file) => file.path)).toEqual([
-      'docs/refactor-map.json',
-      'legacy/original.risulua',
+      'lua/common/helper.risulua',
       'lua/main.risulua',
     ]);
     expect(decoded).toEqual({
       ...FULL_SOURCE_MANIFEST,
-      files: [FULL_SOURCE_MANIFEST.files[1], FULL_SOURCE_MANIFEST.files[2], FULL_SOURCE_MANIFEST.files[0]],
+      files: [FULL_SOURCE_MANIFEST.files[1], FULL_SOURCE_MANIFEST.files[0]],
     });
   });
 
@@ -164,6 +158,8 @@ describe('RisuLua recovery manifest codec', () => {
       { ...valid, files: [{ path: 'lua/', content: '', sha256: '' }] },
       { ...valid, files: [{ path: 'docs/', content: '', sha256: '' }] },
       { ...valid, files: [{ path: 'legacy/', content: '', sha256: '' }] },
+      { ...valid, files: [{ path: 'docs/refactor-map.json', content: '', sha256: '' }] },
+      { ...valid, files: [{ path: 'legacy/original.risulua', content: '', sha256: '' }] },
       { ...valid, files: [{ path: 'lua/common/', content: '', sha256: '' }] },
       { ...valid, files: [{ path: 'private/main.risulua', content: '', sha256: '' }] },
     ]) {
@@ -187,8 +183,6 @@ describe('RisuLua recovery manifest codec', () => {
       const files = collectRisuLuaRecoveryFiles({ rootDir: root });
 
       expect(files.map((file) => file.path)).toEqual([
-        'docs/refactor-map.json',
-        'legacy/original.risulua',
         'lua/common/helper.risulua',
         'lua/main.risulua',
       ]);
@@ -200,6 +194,10 @@ describe('RisuLua recovery manifest codec', () => {
 
   it('restores recovery files and rejects unsafe paths', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'risulua-recovery-restore-'));
+    fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'legacy'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'docs', 'keep.md'), 'keep docs\n', 'utf8');
+    fs.writeFileSync(path.join(root, 'legacy', 'keep.risulua'), 'keep legacy\n', 'utf8');
     try {
       restoreRisuLuaRecoveryFiles({
         outputRoot: root,
@@ -213,6 +211,8 @@ describe('RisuLua recovery manifest codec', () => {
       });
 
       expect(fs.readFileSync(path.join(root, 'lua', 'main.risulua'), 'utf8')).toBe('return true\n');
+      expect(fs.readFileSync(path.join(root, 'docs', 'keep.md'), 'utf8')).toBe('keep docs\n');
+      expect(fs.readFileSync(path.join(root, 'legacy', 'keep.risulua'), 'utf8')).toBe('keep legacy\n');
       expect(() => restoreRisuLuaRecoveryFiles({
         outputRoot: root,
         files: [

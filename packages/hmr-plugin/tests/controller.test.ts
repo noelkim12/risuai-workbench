@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { HmrController, HmrTargetMissingError, type ControllerDeps, type HmrEvent, type HmrPublicState } from '../src/hmr/controller';
+import { HMR_PROTOCOL_VERSION } from '../src/hmr/protocol';
 import { createMappingStore } from '../src/hmr/storage';
 
 const CONN = 'risu-hmr://127.0.0.1:41520#k=tok';
@@ -36,7 +37,7 @@ function makeFake(): Fake {
   ];
   let health: unknown = {
     app: 'risu-workbench-hmr',
-    protocolVersion: 2,
+    protocolVersion: HMR_PROTOCOL_VERSION,
     project: { name: 'Aria', kind: 'character', stableId: 'sid-1' },
     version: 1,
   };
@@ -189,7 +190,7 @@ describe('HmrController', () => {
 
   it('buildConfirmDiff compares payload against the selected module', async () => {
     const fake = makeFake();
-    fake.setHealth({ app: 'risu-workbench-hmr', protocolVersion: 2, project: { name: 'Module', kind: 'module', stableId: 'sid-1' }, version: 1 });
+    fake.setHealth({ app: 'risu-workbench-hmr', protocolVersion: HMR_PROTOCOL_VERSION, project: { name: 'Module', kind: 'module', stableId: 'sid-1' }, version: 1 });
     fake.setPayload({ kind: 'module', data: { id: 'ignored', name: 'New module' }, assets: [] });
     const controller = new HmrController(fake.deps);
     await controller.connect(CONN);
@@ -254,7 +255,7 @@ describe('HmrController', () => {
 
   it('applies module updates with setModulesLite and does not copy enabledModules', async () => {
     const fake = makeFake();
-    fake.setHealth({ app: 'risu-workbench-hmr', protocolVersion: 2, project: { name: 'Module', kind: 'module', stableId: 'sid-1' }, version: 1 });
+    fake.setHealth({ app: 'risu-workbench-hmr', protocolVersion: HMR_PROTOCOL_VERSION, project: { name: 'Module', kind: 'module', stableId: 'sid-1' }, version: 1 });
     fake.setPayload({ kind: 'module', data: { id: 'ignored', name: 'New module', enabledModules: ['drop'] }, assets: [] });
     const controller = new HmrController(fake.deps);
 
@@ -311,7 +312,7 @@ describe('HmrController', () => {
     expect(second.getState().targetLabel).toBe('Old');
 
     second.stopLoops();
-    fake.setHealth({ app: 'risu-workbench-hmr', protocolVersion: 2, project: { name: 'Other', kind: 'character', stableId: 'other' }, version: 1 });
+    fake.setHealth({ app: 'risu-workbench-hmr', protocolVersion: HMR_PROTOCOL_VERSION, project: { name: 'Other', kind: 'character', stableId: 'other' }, version: 1 });
     const third = new HmrController(fake.deps);
     await expect(third.tryAutoReconnect()).resolves.toBe(false);
     fake.releaseAll();
@@ -354,7 +355,7 @@ describe('HmrController', () => {
     await controller.connect(CONN);
     await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false });
 
-    fake.setHealth({ app: 'risu-workbench-hmr', protocolVersion: 2, project: { name: 'Bob', kind: 'character', stableId: 'sid-OTHER' }, version: 1 });
+    fake.setHealth({ app: 'risu-workbench-hmr', protocolVersion: HMR_PROTOCOL_VERSION, project: { name: 'Bob', kind: 'character', stableId: 'sid-OTHER' }, version: 1 });
     fake.pushWatch(new Error('conn refused'));
     await waitFor(() => controller.getState().phase === 'stoppedError');
 
@@ -439,7 +440,7 @@ describe('HmrController', () => {
 
     fake.setHealth({
       app: 'risu-workbench-hmr',
-      protocolVersion: 2,
+      protocolVersion: HMR_PROTOCOL_VERSION,
       project: { name: 'Aria', kind: 'character', stableId: 'sid-1' },
       version: 5,
     });
@@ -462,7 +463,7 @@ describe('HmrController', () => {
 
     fake.setHealth({
       app: 'risu-workbench-hmr',
-      protocolVersion: 2,
+      protocolVersion: HMR_PROTOCOL_VERSION,
       project: { name: 'Aria', kind: 'character', stableId: 'sid-1' },
       version: 7,
     });

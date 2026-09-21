@@ -59,6 +59,12 @@ describe('RisuLua runtime MCP transport smoke', () => {
         arguments: { actionId: 'risulua.debug_call' },
       }));
       expect(prepared.contextHint).toContain('128 KiB');
+      expect(prepared.examples).toHaveLength(3);
+      expect(prepared.fields.source.variants.map((variant: { name: string }) => variant.name)).toEqual([
+        'workspace',
+        'context',
+        'inline',
+      ]);
 
       const inline = payload(await client.callTool({
         name: 'workbench.run_action',
@@ -75,6 +81,25 @@ describe('RisuLua runtime MCP transport smoke', () => {
         },
       }));
       expect(inline).toEqual(expect.objectContaining({ status: 'ok', value: 11 }));
+      expect(inline.metrics).toEqual(expect.objectContaining({
+        moduleLoads: 1,
+        requestedLimits: {},
+        effectiveLimits: expect.objectContaining({ timeoutMs: 2_000 }),
+        sourceResolutionMs: expect.any(Number),
+      }));
+
+      const invalidLimit = payload(await client.callTool({
+        name: 'workbench.run_action',
+        arguments: {
+          actionId: 'risulua.debug_call',
+          args: {
+            source: { kind: 'inline', moduleId: 'main', source: 'return { value = function() return 11 end }' },
+            exportName: 'value',
+            limits: { timeoutMs: 2_001 },
+          },
+        },
+      }));
+      expect(invalidLimit.error.code).toBe('INVALID_ARGS');
 
       const created = payload(await client.callTool({
         name: 'workbench.context',

@@ -94,7 +94,7 @@ describe('CodeActionProvider', () => {
   it('rewrites deprecated block open and explicit close tags together', () => {
     const request = createInlineRequest(
       '/virtual/lorebooks/deprecated.risulorebook',
-      lorebookDocument('{{#if true}}fallback{{/if}}'),
+      lorebookDocument('{{#pure}}fallback{{/pure}}'),
     );
     const provider = createProvider(request);
     const diagnostics = routeDiagnosticsForDocument(request.filePath, request.text, {}, request);
@@ -102,10 +102,10 @@ describe('CodeActionProvider', () => {
       createParams(request, [getDiagnosticByCode(diagnostics, DiagnosticCode.DeprecatedFunction)]),
     );
 
-    const action = getActionByTitle(actions, 'Replace with "#when"');
+    const action = getActionByTitle(actions, 'Replace with "#puredisplay"');
     expect(action.kind).toBe(CodeActionKind.QuickFix);
     expect(applyWorkspaceEdit(request.text, request.uri, action.edit)).toBe(
-      lorebookDocument('{{#when true}}fallback{{/when}}'),
+      lorebookDocument('{{#puredisplay}}fallback{{/puredisplay}}'),
     );
   });
 
@@ -205,7 +205,7 @@ describe('CodeActionProvider', () => {
   it('builds a deterministic normalized snapshot view for quick fix payloads', () => {
     const request = createInlineRequest(
       '/virtual/lorebooks/deprecated-snapshot.risulorebook',
-      lorebookDocument('{{#if true}}fallback{{/if}}'),
+      lorebookDocument('{{#pure}}fallback{{/pure}}'),
     );
     const provider = createProvider(request);
     const diagnostics = routeDiagnosticsForDocument(request.filePath, request.text, {}, request);
@@ -217,20 +217,20 @@ describe('CodeActionProvider', () => {
     const reversed = snapshotCodeActions([...actions].reverse());
 
     expect(reversed).toEqual(forward);
-    expect(forward.find((action) => action.title === 'Replace with "#when"')).toEqual(
+    expect(forward.find((action) => action.title === 'Replace with "#puredisplay"')).toEqual(
       expect.objectContaining({
         edit: {
           changes: {
             [request.uri]: expect.arrayContaining([
               {
-                newText: '#when',
+                newText: '#puredisplay',
                 range: {
                   start: { line: 4, character: 2 },
-                  end: { line: 4, character: 5 },
+                  end: { line: 4, character: 7 },
                 },
               },
               expect.objectContaining({
-                newText: '/when',
+                newText: '/puredisplay',
                 range: expect.any(Object),
               }),
             ]),
@@ -244,11 +244,11 @@ describe('CodeActionProvider', () => {
         linkedDiagnostics: [
           expect.objectContaining({
             code: String(DiagnosticCode.DeprecatedFunction),
-            message: expect.stringContaining('#if'),
+            message: expect.stringContaining('#pure'),
             source: 'risu-cbs',
           }),
         ],
-        title: 'Replace with "#when"',
+        title: 'Replace with "#puredisplay"',
       }),
     );
   });
@@ -323,7 +323,7 @@ describe('CodeActionProvider', () => {
     it('provideUnresolved omits edit payload', () => {
       const request = createInlineRequest(
         '/virtual/lorebooks/deprecated.risulorebook',
-        lorebookDocument('{{#if true}}fallback{{/if}}'),
+        lorebookDocument('{{#pure}}fallback{{/pure}}'),
       );
       const provider = createProvider(request);
       const diagnostics = routeDiagnosticsForDocument(request.filePath, request.text, {}, request);
@@ -345,7 +345,7 @@ describe('CodeActionProvider', () => {
     it('resolve restores edit payload from an unresolved action', () => {
       const request = createInlineRequest(
         '/virtual/lorebooks/deprecated.risulorebook',
-        lorebookDocument('{{#if true}}fallback{{/if}}'),
+        lorebookDocument('{{#pure}}fallback{{/pure}}'),
       );
       const provider = createProvider(request);
       const diagnostics = routeDiagnosticsForDocument(request.filePath, request.text, {}, request);
@@ -364,7 +364,7 @@ describe('CodeActionProvider', () => {
     it('snapshot marks unresolved actions as resolved: false and resolved as resolved: true', () => {
       const request = createInlineRequest(
         '/virtual/lorebooks/deprecated.risulorebook',
-        lorebookDocument('{{#if true}}fallback{{/if}}'),
+        lorebookDocument('{{#pure}}fallback{{/pure}}'),
       );
       const provider = createProvider(request);
       const diagnostics = routeDiagnosticsForDocument(request.filePath, request.text, {}, request);
@@ -384,7 +384,7 @@ describe('CodeActionProvider', () => {
     it('resolve returns null when the unresolved action does not match any current result', () => {
       const request = createInlineRequest(
         '/virtual/lorebooks/deprecated.risulorebook',
-        lorebookDocument('{{#if true}}fallback{{/if}}'),
+        lorebookDocument('{{#pure}}fallback{{/pure}}'),
       );
       const provider = createProvider(request);
       const diagnostics = routeDiagnosticsForDocument(request.filePath, request.text, {}, request);
@@ -412,7 +412,7 @@ describe('CodeActionProvider', () => {
     it('resolve returns null when the unresolved action was produced for a different uri', () => {
       const request = createInlineRequest(
         '/virtual/lorebooks/deprecated.risulorebook',
-        lorebookDocument('{{#if true}}fallback{{/if}}'),
+        lorebookDocument('{{#pure}}fallback{{/pure}}'),
       );
       const provider = createProvider(request);
       const diagnostics = routeDiagnosticsForDocument(request.filePath, request.text, {}, request);

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { writeJson, writeText } from '@/node/fs-helpers';
+import { createUniqueDir, writeJson, writeText } from '@/node/fs-helpers';
 import { sanitizeFilename } from '../../utils/filenames';
 import { argValue, getErrorMessage } from '../shared';
 import { installDocsProviderBundle } from '../shared/docs-provider';
@@ -181,11 +181,7 @@ function parseOptions(argv: readonly string[]): ScaffoldOptions {
 // ── Dispatcher ──────────────────────────────────────────────────────
 
 function runScaffold(options: ScaffoldOptions): void {
-  const root = path.resolve(options.outDir);
-
-  if (fs.existsSync(root)) {
-    throw new Error(`이미 존재하는 디렉토리입니다: ${root}`);
-  }
+  const root = createUniqueDir(path.resolve(options.outDir));
 
   console.log('\n  🐿️ risu-core scaffold\n');
   console.log(`  타입: ${options.type}`);

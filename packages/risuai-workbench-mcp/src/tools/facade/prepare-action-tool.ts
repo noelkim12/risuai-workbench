@@ -24,6 +24,10 @@ export interface PrepareActionFieldContract {
   description?: string;
   enumValues?: readonly (string | number)[];
   defaultValue?: unknown;
+  variants?: readonly {
+    readonly name: string;
+    readonly fields: Readonly<Record<string, string>>;
+  }[];
 }
 
 export interface PrepareActionResult {
@@ -75,6 +79,7 @@ function fieldContract(
     ...(guidance && 'defaultValue' in guidance
       ? { defaultValue: guidance.defaultValue }
       : {}),
+    ...(guidance?.variants ? { variants: guidance.variants } : {}),
   };
 }
 
@@ -143,7 +148,7 @@ function contextHintForAction(action: ErasedWorkbenchAction): string | undefined
     return 'For large creative inputs, create a context record with workbench.context and pass the contextId to run_action instead of embedding large objects in args.';
   }
   if (action.capability === 'risulua.runtime') {
-    return 'Inline RisuLua source is limited to 128 KiB. Prefer source.kind=workspace when canonical modules or dist output already exist. For larger source, create a workbench.context record and pass its id as source.contextId. This differs from the top-level run_action.contextId, which hydrates the complete action args before validation.';
+    return 'Inline RisuLua source is limited to 128 KiB. Prefer source.kind=workspace when canonical modules or dist output already exist. For larger source, create a workbench.context record and pass its id as source.contextId. This differs from the top-level run_action.contextId, which hydrates the complete action args before validation. For several checks against one source, use runtime_smoke scenarios with bounded named exports instead of repeatedly calling a large aggregate run export.';
   }
   return undefined;
 }
@@ -166,7 +171,9 @@ export function handlePrepareAction(input: PrepareActionInput, registry: ActionR
   const examples = input.detail === 'brief'
     ? []
     : action.examples && action.examples.length > 0
-      ? [action.examples[0]]
+      ? action.capability === 'risulua.runtime'
+        ? [...action.examples]
+        : [action.examples[0]]
       : [];
 
   const optional = action.id === 'core.run_extract'

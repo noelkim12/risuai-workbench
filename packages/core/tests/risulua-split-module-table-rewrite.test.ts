@@ -18,6 +18,7 @@ import {
   type RisuLuaModuleTableDomainGenerationOption,
   type TopLevelRewriteResult,
 } from '../src/domain/risulua-split';
+import { executeRisuLua } from '../src/node/risulua-runtime/worker-runner';
 import { lines, rewriteFixture } from './helpers/module-table-refactor-map-helpers';
 
 async function rewriteWithButtonActionSources(source: string, options: {
@@ -84,6 +85,32 @@ describe('risulua-split module-table top-level rewrite planner', () => {
     expect(localMCount).toBe(1);
     const returnMCount = (body.match(/return M/g) ?? []).length;
     expect(returnMCount).toBe(1);
+  });
+
+  it('extracts forward-declared local helpers without treating global assignments as captures', async () => {
+    const result = await rewriteWithButtonActionSources(lines([
+      'FORMAT_PREFIX = ">"',
+      'local set_value',
+      '',
+      'set_value = function(value)',
+      '  setChatVar(0, "formatted", value)',
+      '  return FORMAT_PREFIX .. value',
+      'end',
+      '',
+      'function format_value(text)',
+      '  return set_value(text)',
+      'end',
+    ]), {
+      buttonActionSources: ['<button risu-trigger="format_value">Format</button>'],
+    });
+
+    const commonModule = result.modulePlans.find(
+      (modulePlan) => modulePlan.modulePath === RISULUA_MODULE_TABLE_COMMON_HELPERS_PATH,
+    );
+    expect(commonModule).toBeDefined();
+    expect(commonModule!.body).toContain('M.set_value = set_value');
+    expect(commonModule!.body).toContain('return FORMAT_PREFIX .. value');
+    expect(result.mainRewritePlan.fullMainText).not.toContain('set_value = function(value)');
   });
 
   it('moves runtime handler body to a runtime module and leaves a thin main shim', async () => {
@@ -194,6 +221,75 @@ describe('risulua-split module-table top-level rewrite planner', () => {
     expect(main).not.toContain('require("host_globals.global_functions")');
   });
 
+  it('rewrites references between public globals extracted into the same module', async () => {
+    const result = await rewriteFixture(lines([
+      'function toggleRuneSlot(value, slot)',
+      '  return value .. tostring(slot)',
+      'end',
+      '',
+      'function toggleRune1(value)',
+      '  return toggleRuneSlot(value, 1)',
+      'end',
+    ]));
+
+    const globalModule = result.modulePlans.find(
+      (modulePlan) => modulePlan.modulePath === RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH,
+    );
+    expect(globalModule).toBeDefined();
+    expect(globalModule!.body).toContain('return M.toggleRuneSlot(value, 1)');
+    expect(globalModule!.body).not.toContain('return toggleRuneSlot(value, 1)');
+  });
+
+  it('preserves public globals whose captured public dependency cannot be extracted', async () => {
+    const result = await rewriteFixture(lines([
+      'function toggleRuneSlot(value, slot)',
+      '  return unknownHost(value) .. tostring(slot)',
+      'end',
+      '',
+      'function toggleRune1(value)',
+      '  return toggleRuneSlot(value, 1)',
+      'end',
+    ]));
+
+    const globalModule = result.modulePlans.find(
+      (modulePlan) => modulePlan.modulePath === RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH,
+    );
+    expect(globalModule).toBeUndefined();
+    expect(result.mainRewritePlan.fullMainText).toContain('function toggleRuneSlot(value, slot)');
+    expect(result.mainRewritePlan.fullMainText).toContain('function toggleRune1(value)');
+  });
+
+  it('breaks module cycles owned by an extracted host-global function', async () => {
+    const result = await rewriteFixture(lines([
+      'function calculateEffect(value)',
+      '  return getLanguage(value)',
+      'end',
+      '',
+      'function getLanguage(value)',
+      '  return toggleEffect(value)',
+      'end',
+      '',
+      'function toggleEffect(value)',
+      '  return calculateEffect(value)',
+      'end',
+    ]), { domainGeneration: 'validated' });
+
+    const globalModule = result.modulePlans.find(
+      (modulePlan) => modulePlan.modulePath === RISULUA_MODULE_TABLE_GLOBAL_FUNCTIONS_PATH,
+    );
+    expect(globalModule).toBeUndefined();
+    expect(result.mainRewritePlan.fullMainText).toContain('function toggleEffect(value)');
+    expect(result.mainRewritePlan.fullMainText).not.toContain('function getLanguage(value)');
+    expect(result.mainRewritePlan.fullMainText).not.toContain('function calculateEffect(value)');
+    const languageModule = result.modulePlans.find(
+      (modulePlan) => modulePlan.modulePath === 'lua/domain/get_language.risulua',
+    );
+    expect(languageModule?.body).toContain('return toggleEffect(value)');
+    expect(languageModule?.internalRequires).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ requireId: 'host_globals.global_functions' }),
+    ]));
+  });
+
   it('rewrites extracted domain captures inside host globals', async () => {
     const result = await rewriteFixture(lines([
       'local function trim(value)',
@@ -279,6 +375,48 @@ describe('risulua-split module-table top-level rewrite planner', () => {
     expect(main).toContain('setAutoSuccess = __button_actions.setAutoSuccess');
     expect(main).not.toContain('local function toggleSidePanel()');
     expect(main).not.toContain('function setAutoSuccess()');
+  });
+
+  it('preserves the host ABI when an indirect raw HTML trigger moves to a domain module', async () => {
+    const result = await rewriteWithButtonActionSources(lines([
+      'function rote_boot_next_stage(id)',
+      '  setChatVar("rote_boot_stage_v1", "origin")',
+      '  reloadDisplay(id)',
+      'end',
+    ]), {
+      domainGeneration: 'validated',
+      buttonActionSources: [
+        'local apply_trigger = reopened and "rote_boot_settings_close" or "rote_boot_next_stage"\n'
+          + 'return table.concat({ \'<button risu-trigger="\', apply_trigger, \'">Next</button>\' })',
+      ],
+    });
+
+    const buttonModule = result.modulePlans.find(
+      (modulePlan) => modulePlan.modulePath === RISULUA_MODULE_TABLE_BUTTON_ACTIONS_PATH,
+    );
+    expect(buttonModule?.body).toContain('M.rote_boot_next_stage = rote_boot_next_stage');
+    expect(result.mainRewritePlan.fullMainText).toContain(
+      'rote_boot_next_stage = __button_actions.rote_boot_next_stage',
+    );
+
+    const execution = await executeRisuLua({
+      moduleMap: {
+        entryModuleId: 'test',
+        modules: {
+          test: [
+            'require("generated_main")',
+            'return { run = function(id) return rote_boot_next_stage(id) end }',
+          ].join('\n'),
+          generated_main: result.mainRewritePlan.fullMainText,
+          ...Object.fromEntries(result.modulePlans.map((modulePlan) => [modulePlan.requireId, modulePlan.body])),
+        },
+      },
+      target: { kind: 'export', exportName: 'run', args: [7] },
+      hostProfile: 'button-action',
+    });
+    expect(execution.status, execution.diagnostics.map((diagnostic) => diagnostic.message).join('; ')).toBe('ok');
+    expect(execution.stateDiff.chatVariables).toEqual({ rote_boot_stage_v1: 'origin' });
+    expect(execution.trace.some((event) => event.name === 'reloadDisplay')).toBe(true);
   });
 
   it('rewrites host-global dependencies inside button_actions modules', async () => {

@@ -1,12 +1,17 @@
 {
-  "name": "risuai-hmr-provider",
+  "name": "@risuai-workbench/hmr-provider",
   "version": "1.0.0",
   "displayName": "Risu Workbench HMR",
   "description": "Receives live definition updates from Risu Workbench over local HMR",
-  "private": true,
   "type": "module",
   "main": "dist/risuai-hmr-provider.js",
   "browser": "dist/risuai-hmr-provider.js",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "dev": "vite build --watch",
     "dev:drive": "vite build --watch --outDir /mnt/d/risu/plugin-dev",

@@ -19,7 +19,7 @@ import { planDryRunRefactorMap, validateWriterParity, type DryRunPlanResult } fr
 import { planTopLevelRewrite, type TopLevelRewriteResult } from './module-table-top-level-rewrite';
 import { validateRisuLuaModuleTableCapturePreservation } from './module-table-capture-validator';
 import { planNestedHandlerRewrite, type NestedHandlerRewriteResult } from './module-table-nested-handler-rewrite';
-import { getNodeRange, parseLuaBody, type LuaAssignmentStatement, type LuaIdentifier, type LuaLocalStatement, type LuaNode } from './module-table-analyzer-lua-ast';
+import { expressionName, getNodeRange, parseLuaBody, type LuaAssignmentStatement, type LuaIdentifier, type LuaLocalStatement, type LuaNode } from './module-table-analyzer-lua-ast';
 import { applyReplacements } from './module-table-identifier-rewrite';
 import type { Replacement } from './module-table-identifier-rewrite';
 import { serializeRisuLuaModuleTableDomainCandidates, serializeRisuLuaModuleTableRefactorMap } from './module-table-rendering';
@@ -604,10 +604,20 @@ export function findTopLevelPublicDataDeclarations(text: string): RisuLuaModuleT
     return declarations;
   }
 
+  const assignmentCounts = new Map<string, number>();
+  for (const statement of body) {
+    if (statement.type !== 'AssignmentStatement') continue;
+    for (const variable of (statement as LuaAssignmentStatement).variables) {
+      if (variable.type !== 'Identifier') continue;
+      const name = (variable as LuaIdentifier).name;
+      assignmentCounts.set(name, (assignmentCounts.get(name) ?? 0) + 1);
+    }
+  }
+
   for (const statement of body) {
     if (!isSinglePublicDataStoreStatement(statement)) continue;
     const name = (statement.variables[0] as LuaIdentifier).name;
-    if (!isStoreBackedPublicDataGlobalName(name)) continue;
+    if (!isStoreBackedPublicDataGlobalName(name) || assignmentCounts.get(name) !== 1) continue;
     const initializer = statement.init[0];
     const initializerRange = getNodeRange(initializer);
     if (initializerRange === undefined) continue;
@@ -638,7 +648,7 @@ function isSinglePublicDataStoreStatement(node: LuaNode): node is LuaAssignmentS
 }
 
 function isStoreBackedPublicDataGlobalName(name: string): boolean {
-  return name === 'COMPANION_POOL_BOT';
+  return /^[A-Z][A-Z0-9_]*$/.test(name);
 }
 
 function isSingleLocalStoreStatement(node: LuaNode): node is LuaLocalStatement {
@@ -651,6 +661,18 @@ function isSingleLocalStoreStatement(node: LuaNode): node is LuaLocalStatement {
 
 function isVariableStoreInitializer(node: LuaNode | undefined): boolean {
   if (node === undefined) return false;
+  if (node.type === 'BinaryExpression') {
+    return isLuaNode(node.left)
+      && isLuaNode(node.right)
+      && isVariableStoreInitializer(node.left)
+      && isVariableStoreInitializer(node.right);
+  }
+  if (node.type === 'CallExpression') {
+    return isLuaNode(node.base)
+      && expressionName(node.base) === 'utf8.char'
+      && Array.isArray(node.arguments)
+      && node.arguments.every((argument) => isLuaNode(argument) && argument.type === 'NumericLiteral');
+  }
   return node.type === 'TableConstructorExpression'
     || node.type === 'NumericLiteral'
     || node.type === 'StringLiteral'

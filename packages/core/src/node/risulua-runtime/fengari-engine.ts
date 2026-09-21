@@ -12,6 +12,7 @@ import {
   type RisuLuaEngineRequest,
   type RisuLuaEngineResult,
   type RisuLuaJsonValue,
+  type RisuLuaModuleMap,
   type RisuLuaTraceEvent,
 } from './contracts';
 import { validateRuntimeModuleId, validateRuntimeModuleMap } from './module-map';
@@ -19,7 +20,7 @@ import { normalizeRisuLuaJsonValue } from './value-codec';
 import { installHostProfile, type HostProfileController } from './host-profiles';
 
 export function runRisuLuaInProcess(request: RisuLuaEngineRequest): RisuLuaEngineResult {
-  let moduleMap;
+  let moduleMap: RisuLuaModuleMap;
   try {
     moduleMap = validateRuntimeModuleMap(request.moduleMap);
   } catch (error) {
@@ -385,6 +386,7 @@ function metrics(trace: readonly RisuLuaTraceEvent[]) {
   return {
     instructions: 0,
     hostCalls: 0,
+    moduleLoads: trace.filter((event) => event.kind === 'module').length,
     traceEvents: trace.length,
     traceTruncated: false,
   };

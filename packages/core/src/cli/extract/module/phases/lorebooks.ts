@@ -57,28 +57,7 @@ export function phase2_extractLorebooks(module: any, outputDir: string): number 
 
   // Write _order.json with folder paths + file paths (path-based contract)
   if (orderList.length > 0) {
-    // Build order list with folder paths included
-    const fullOrderList: string[] = [];
-    const emittedFolders = new Set<string>();
-
-    for (const item of convertedPlan.items) {
-      if (item.type === 'folder') {
-        if (!emittedFolders.has(item.relDir)) {
-          fullOrderList.push(item.relDir);
-          emittedFolders.add(item.relDir);
-        }
-      } else {
-        // Check if this entry is inside a folder
-        const parentDir = item.relPath.includes('/') ? item.relPath.split('/')[0] : null;
-        if (parentDir && !emittedFolders.has(parentDir)) {
-          fullOrderList.push(parentDir);
-          emittedFolders.add(parentDir);
-        }
-        fullOrderList.push(item.relPath);
-      }
-    }
-
-    writeText(path.join(lorebooksDir, '_order.json'), serializeLorebookOrder(fullOrderList));
+    writeText(path.join(lorebooksDir, '_order.json'), serializeLorebookOrder(orderList));
   }
 
   console.log(`     ✅ ${count}개 lorebook → ${path.relative('.', lorebooksDir)}/`);

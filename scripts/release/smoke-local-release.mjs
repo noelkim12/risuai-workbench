@@ -16,6 +16,7 @@ const packageDefinitions = [
   { key: 'core', workspace: '@risuai-workbench/core' },
   { key: 'lsp', workspace: '@risuai-workbench/cbs-language-server' },
   { key: 'mcp', workspace: '@risuai-workbench/mcp' },
+  { key: 'hmr', workspace: '@risuai-workbench/hmr-provider' },
 ];
 
 function runCommand(command, args, cwd) {
@@ -74,6 +75,8 @@ async function readPackageVersion(relativePath) {
 async function main() {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'risuai-release-smoke-'));
   try {
+    await runChecked('npm', ['run', '--workspace', '@risuai-workbench/hmr-provider', 'build'], repoRoot);
+
     const tarballs = {};
     for (const definition of packageDefinitions) {
       tarballs[definition.key] = await packWorkspace(definition.workspace, tempRoot);
@@ -109,7 +112,9 @@ async function main() {
       repoRoot,
     );
 
-    console.log(`Local release tarballs passed LSP and MCP smoke tests at version ${lspVersion}.`);
+    console.log(
+      `Local release tarballs passed HMR packaging plus LSP and MCP smoke tests at version ${lspVersion}.`,
+    );
   } finally {
     await rm(tempRoot, { force: true, recursive: true });
   }

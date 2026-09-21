@@ -2424,7 +2424,7 @@ describe('LSP server integration', () => {
     const connection = new FakeConnection();
     const documents = new FakeDocuments();
     const root = await createWorkspaceRoot();
-    const deprecatedText = lorebookDocument(['{{#if true}}fallback{{/if}}']);
+    const deprecatedText = lorebookDocument(['{{#pure}}fallback{{/pure}}']);
     const slotText = promptDocument(['{{slot::item}}']);
     const deprecatedUri = await writeWorkspaceFile(root, 'lorebooks/deprecated.risulorebook', deprecatedText);
     const slotUri = await writeWorkspaceFile(root, 'prompt_template/slot.risuprompt', slotText);
@@ -2458,7 +2458,7 @@ describe('LSP server integration', () => {
       actions: expect.arrayContaining([
         expect.objectContaining({
           edit: null,
-          title: 'Replace with "#when"',
+          title: 'Replace with "#puredisplay"',
           kind: CodeActionKind.QuickFix,
           hasEdit: false,
           isNoopGuidance: false,
@@ -2471,11 +2471,11 @@ describe('LSP server integration', () => {
 
     expect(deprecatedActions).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ title: 'Replace with "#when"' }),
+        expect.objectContaining({ title: 'Replace with "#puredisplay"' }),
       ]),
     );
 
-    const deprecatedAction = deprecatedActions?.find((action) => action.title === 'Replace with "#when"');
+    const deprecatedAction = deprecatedActions?.find((action) => action.title === 'Replace with "#puredisplay"');
     expect(deprecatedAction?.edit).toBeUndefined();
 
     const resolvedDeprecatedAction = connection.codeActionResolveHandler?.(
@@ -2483,7 +2483,7 @@ describe('LSP server integration', () => {
       createCancellationToken(false),
     );
     expect(applyTextEdits(deprecatedText, resolvedDeprecatedAction?.edit?.changes?.[deprecatedUri] ?? [])).toBe(
-      lorebookDocument(['{{#when true}}fallback{{/when}}']),
+      lorebookDocument(['{{#puredisplay}}fallback{{/puredisplay}}']),
     );
 
     const slotDiagnostics = getLatestDiagnosticsForUri(connection, slotUri).diagnostics;
@@ -3410,9 +3410,8 @@ describe('LSP server integration', () => {
     const uri = 'file:///fixtures/server-provider-bundle-cache.risulorebook';
     const version1Text = lorebookDocument([
       '{{setvar::mood::happy}}',
-      '{{#if true}}',
       '{{getvar::mood}}{{getvar::}}',
-      '{{/if}}',
+      '{{#pure}}fallback{{/pure}}',
     ]);
     const changedSameVersionText = lorebookDocument([
       '{{setvar::energy::charged}}',
@@ -3506,19 +3505,19 @@ describe('LSP server integration', () => {
         hasEdit: false,
         isNoopGuidance: false,
         kind: CodeActionKind.QuickFix,
-        title: 'Replace with "#when"',
+        title: 'Replace with "#puredisplay"',
       }),
     ]);
 
     const version1Action = version1Bundle.raw.codeActions.find(
-      (action) => action.title === 'Replace with "#when"',
+      (action) => action.title === 'Replace with "#puredisplay"',
     );
     const resolvedVersion1Action = connection.codeActionResolveHandler?.(
       version1Action!,
       createCancellationToken(false),
     );
     expect(resolvedVersion1Action).toMatchObject({
-      title: 'Replace with "#when"',
+      title: 'Replace with "#puredisplay"',
       edit: expect.any(Object),
     });
 

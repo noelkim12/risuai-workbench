@@ -553,7 +553,7 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
     let createdRootUri: string | undefined;
     let created = false;
     try {
-      const outDir = resolveUniqueWorkspacePath(workspaceRoot, sanitizeWorkspaceName(payload.name, 'untitled'));
+      let outDir = resolveUniqueWorkspacePath(workspaceRoot, sanitizeWorkspaceName(payload.name, 'untitled'));
 
       if (payload.kind === 'plugin') {
         await runCreateRisuPluginCli(payload, outDir, workspaceRoot);
@@ -567,7 +567,8 @@ export class ArtifactBrowserViewProvider implements vscode.WebviewViewProvider {
           args.push('--creator', payload.creator.trim());
         }
 
-        await runRisuCoreCli(args, workspaceRoot);
+        const stdout = await runRisuCoreCli(args, workspaceRoot);
+        outDir = resolveScaffoldedDir(stdout, outDir, workspaceRoot);
         patchScaffoldRootMarker(outDir, payload);
         void vscode.window.showInformationMessage(`Created ${payload.kind === 'charx' ? '.risuchar' : '.risumodule'} scaffold.`);
       }
@@ -1813,6 +1814,13 @@ function resolveExtractedDir(importedFile: string, stdout: string, workspaceRoot
     ? 'module'
     : 'character';
   return path.resolve(workspaceRoot, `${prefix}_${stem}`);
+}
+
+function resolveScaffoldedDir(stdout: string, requestedOutDir: string, workspaceRoot: string): string {
+  const outputMatch = stdout.match(/스캐폴딩 완료\s*(?:→|->)\s*(.+?)\/?\s*$/m);
+  return outputMatch?.[1]
+    ? path.resolve(workspaceRoot, outputMatch[1].trim())
+    : requestedOutDir;
 }
 
 function patchScaffoldRootMarker(outDir: string, payload: ArtifactBrowserCreateArtifactPayload): void {

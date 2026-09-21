@@ -26,6 +26,7 @@ packages/risuai-workbench-mcp/
 │   ├── workflows.md           ← 기본 facade 흐름과 archive 추출
 │   ├── facade-tools.md        ← 공개 facade tool 8개의 역할
 │   ├── risulua-runtime.md     ← Fengari runtime action, source/context, trace 흐름
+│   ├── risulua-runtime-improvements.md ← runtime 결함·최적화 backlog
 │   ├── mutation-safety.md     ← patch preview/apply와 파일 변경 안전성
 │   ├── troubleshooting.md     ← 자주 발생하는 문제와 점검 순서
 │   └── development.md         ← CLI, 개발 명령, stdout/stderr 규칙
@@ -42,6 +43,7 @@ packages/risuai-workbench-mcp/
 | agent에게 기본 사용 흐름을 설명 | [`docs/workflows.md`](docs/workflows.md) | `src/tools/facade/*`, `src/actions/create-registry.ts` |
 | 공개 tool surface를 확인 | [`docs/facade-tools.md`](docs/facade-tools.md) | `src/tools/facade/index.ts`, `src/dev/snapshot-tool-surface.ts` |
 | RisuLua를 Fengari로 실행·회귀 테스트 | [`docs/risulua-runtime.md`](docs/risulua-runtime.md) | `src/actions/adapters/runtime-actions.ts`, `src/tools/runtime/*` |
+| RisuLua runtime 개선 항목과 우선순위 검토 | [`docs/risulua-runtime-improvements.md`](docs/risulua-runtime-improvements.md) | OpenCode 세션 기록 + runtime action/source/worker 구현 |
 | 파일 변경 안전 경계를 검토 | [`docs/mutation-safety.md`](docs/mutation-safety.md) | `src/mutation/*`, `src/project/safe-path.ts`, `src/tools/facade/patch-*.ts` |
 | 실행 오류나 tool 노출 문제를 진단 | [`docs/troubleshooting.md`](docs/troubleshooting.md) | `src/cli.ts`, facade tools, MCP client 설정 |
 | maintainer용 CLI·개발 명령 확인 | [`docs/development.md`](docs/development.md) | `package.json`, `src/dev/*`, `README-reference.md` |
@@ -92,6 +94,7 @@ subagent가 이 MCP package를 다룰 때는 다음 순서로 문서를 좁힙�
 - [`docs/workflows.md`](docs/workflows.md)
 - [`docs/facade-tools.md`](docs/facade-tools.md)
 - [`docs/risulua-runtime.md`](docs/risulua-runtime.md)
+- [`docs/risulua-runtime-improvements.md`](docs/risulua-runtime-improvements.md)
 - [`docs/mutation-safety.md`](docs/mutation-safety.md)
 - [`docs/troubleshooting.md`](docs/troubleshooting.md)
 - [`docs/development.md`](docs/development.md)

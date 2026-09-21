@@ -22,11 +22,7 @@ export function executeLorebookPlan(
       // Create folder directory
       ensureDir(path.join(lorebooksDir, item.relDir));
 
-      // Add to order list if not already present
-      if (!emittedFolders.has(item.relDir)) {
-        orderList.push(item.relDir);
-        emittedFolders.add(item.relDir);
-      }
+      appendLorebookDirectories(item.relDir, orderList, emittedFolders);
 
       manifestEntries.push({
         type: 'folder',
@@ -39,12 +35,8 @@ export function executeLorebookPlan(
       const outPath = path.join(lorebooksDir, item.relPath);
       ensureDir(path.dirname(outPath));
 
-      // Add parent folder to order list if inside a folder
-      const parentDir = item.relPath.includes('/') ? item.relPath.split('/')[0] : null;
-      if (parentDir && !emittedFolders.has(parentDir)) {
-        orderList.push(parentDir);
-        emittedFolders.add(parentDir);
-      }
+      const parentDir = path.posix.dirname(item.relPath);
+      if (parentDir !== '.') appendLorebookDirectories(parentDir, orderList, emittedFolders);
 
       orderList.push(item.relPath);
       manifestEntries.push({ type: 'entry', source: item.source, path: item.relPath });
@@ -53,4 +45,18 @@ export function executeLorebookPlan(
   }
 
   return { count, orderList, manifestEntries };
+}
+
+function appendLorebookDirectories(
+  relativeDirectory: string,
+  orderList: string[],
+  emittedFolders: Set<string>,
+): void {
+  let currentDirectory = '';
+  for (const segment of relativeDirectory.split('/').filter(Boolean)) {
+    currentDirectory = currentDirectory ? `${currentDirectory}/${segment}` : segment;
+    if (emittedFolders.has(currentDirectory)) continue;
+    orderList.push(currentDirectory);
+    emittedFolders.add(currentDirectory);
+  }
 }

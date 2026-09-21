@@ -2,19 +2,20 @@
   import { onDestroy } from "svelte";
   import { risuUi } from "../helpers/risu-api";
   import type { HmrController } from "../hmr/controller";
-  import type { WizardSelection } from "./selection";
+  import { availableTargetKinds, type HmrTargetKind, type WizardSelection } from "./selection";
 
   type Target = {
-    key: string;
-    label: string;
-    description?: string | undefined;
-    imagePath?: string | undefined;
-    selection: WizardSelection;
+    readonly key: string;
+    readonly kind: HmrTargetKind;
+    readonly label: string;
+    readonly description?: string | undefined;
+    readonly imagePath?: string | undefined;
+    readonly selection: WizardSelection;
   };
 
   type Props = {
     readonly controller: HmrController;
-    readonly kind: "character" | "module";
+    readonly kind: HmrTargetKind;
     readonly projectName: string;
     readonly onSelected: (selection: WizardSelection) => void;
   };
@@ -45,20 +46,27 @@
 
   const load = async (): Promise<void> => {
     loaded = false;
-    targets =
-      kind === "character"
-        ? (await controller.listCharacterTargets()).map((target) => ({
-            key: target.chaId,
-            label: target.name,
-            imagePath: target.image,
-            selection: { chaId: target.chaId, label: target.name },
-          }))
-        : (await controller.listModuleTargets()).map((target) => ({
-            key: target.id,
-            label: target.name,
-            description: target.description,
-            selection: { moduleId: target.id, label: target.name },
-          }));
+    const targetKinds = availableTargetKinds(kind);
+    const characterTargets = targetKinds.includes("character")
+      ? (await controller.listCharacterTargets()).map((target) => ({
+          key: `character:${target.chaId}`,
+          kind: "character" as const,
+          label: target.name,
+          description: "캐릭터",
+          imagePath: target.image,
+          selection: { kind: "character" as const, chaId: target.chaId, label: target.name },
+        }))
+      : [];
+    const moduleTargets = targetKinds.includes("module")
+      ? (await controller.listModuleTargets()).map((target) => ({
+          key: `module:${target.id}`,
+          kind: "module" as const,
+          label: target.name,
+          description: target.description ? `모듈 · ${target.description}` : "모듈",
+          selection: { kind: "module" as const, moduleId: target.id, label: target.name },
+        }))
+      : [];
+    targets = [...characterTargets, ...moduleTargets];
     loaded = true;
     for (const target of targets) void loadThumbnail(target);
   };
@@ -77,7 +85,7 @@
 <section class="screen">
   <header class="screen-head">
     <h2>
-      수신할 {kind === "character" ? "캐릭터" : "모듈"} 선택
+      수신할 {kind === "character" ? "캐릭터 또는 모듈" : "모듈"} 선택
       {#if loaded}<span class="count-chip">{filtered.length} / {targets.length}</span>{/if}
     </h2>
     <p class="note">워크벤치: "{projectName}" ({kind}) — RisuAI가 DB 권한을 물으면 허용해주세요.</p>
@@ -86,7 +94,7 @@
   <div class="target-list">
     {#each filtered as target (target.key)}
       <button class="target-row" type="button" onclick={() => onSelected(target.selection)}>
-        {#if kind === "character" && thumbnails[target.key]}
+        {#if target.kind === "character" && thumbnails[target.key]}
           <img class="thumb" alt="" src={thumbnails[target.key]} />
         {:else}
           <span class="thumb thumb-fallback" aria-hidden="true">{target.label.slice(0, 1)}</span>

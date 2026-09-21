@@ -400,20 +400,45 @@ export function mapLuaWasmStringLiteralsToCbsFragments(
   rawContent: string,
   stringLiterals: readonly LuaWasmStringLiteral[],
 ): CbsFragmentMap {
-  const fragments = stringLiterals
-    .filter((literal) => literal.hasCbsMarker)
-    .map((literal, index) => ({
-      section: `lua-string:${index + 1}`,
-      start: literal.contentStartUtf16,
-      end: literal.contentEndUtf16,
-      content: rawContent.slice(literal.contentStartUtf16, literal.contentEndUtf16),
-    }));
+  const fragments: CbsFragment[] = [];
+  const orderedLiterals = [...stringLiterals].sort(
+    (left, right) => left.startUtf16 - right.startUtf16,
+  );
+  let chainStart = 0;
+
+  for (let index = 0; index <= orderedLiterals.length; index += 1) {
+    const previous = orderedLiterals[index - 1];
+    const current = orderedLiterals[index];
+    const continuesChain = previous !== undefined
+      && current !== undefined
+      && isLuaConcatenationGap(rawContent.slice(previous.endUtf16, current.startUtf16));
+
+    if (continuesChain) continue;
+
+    const chain = orderedLiterals.slice(chainStart, index);
+    const first = chain[0];
+    const last = chain[chain.length - 1];
+    if (first && last && chain.some((literal) => literal.hasCbsMarker)) {
+      fragments.push({
+        section: `lua-string:${fragments.length + 1}`,
+        start: first.contentStartUtf16,
+        end: last.contentEndUtf16,
+        content: rawContent.slice(first.contentStartUtf16, last.contentEndUtf16),
+      });
+    }
+
+    chainStart = index;
+  }
 
   return {
     artifact: 'lua',
     fragments,
     fileLength: rawContent.length,
   };
+}
+
+function isLuaConcatenationGap(source: string): boolean {
+  return /^\s*\.\.(?:[\s\S]*\.\.)?\s*$/u.test(source);
 }
 
 /**

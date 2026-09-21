@@ -58,6 +58,9 @@ jobs:
       - name: Verify MCP release candidate
         run: npm run --workspace @risuai-workbench/mcp test
 
+      - name: Verify HMR plugin release candidate
+        run: npm run --workspace @risuai-workbench/hmr-provider typecheck
+
       - name: Smoke local release tarballs
         run: npm run release:smoke:local
 
@@ -122,6 +125,9 @@ jobs:
       - name: Verify MCP snapshot candidate
         run: npm run --workspace @risuai-workbench/mcp test
 
+      - name: Verify HMR plugin snapshot candidate
+        run: npm run --workspace @risuai-workbench/hmr-provider typecheck
+
       - name: Create ephemeral snapshot changeset
         run: |
           node <<'EOF'
@@ -131,6 +137,7 @@ jobs:
           '@risuai-workbench/core': patch
           '@risuai-workbench/cbs-language-server': patch
           '@risuai-workbench/mcp': patch
+          '@risuai-workbench/hmr-provider': patch
           ---
 
           Publish an ephemeral ${process.env.SNAPSHOT_CHANNEL} snapshot release.

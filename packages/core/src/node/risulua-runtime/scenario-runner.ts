@@ -11,7 +11,10 @@ import {
 } from './contracts';
 import { executeRisuLua } from './worker-runner';
 
-export async function runRisuLuaSmoke(request: RisuLuaSmokeRequest): Promise<RisuLuaSmokeResult> {
+export async function runRisuLuaSmoke(
+  request: RisuLuaSmokeRequest,
+  options: { readonly signal?: AbortSignal } = {},
+): Promise<RisuLuaSmokeResult> {
   if (request.scenarios.length > RISULUA_RUNTIME_LIMITS.maxScenarios) {
     return {
       status: 'error',
@@ -28,11 +31,11 @@ export async function runRisuLuaSmoke(request: RisuLuaSmokeRequest): Promise<Ris
   const scenarios: RisuLuaScenarioResult[] = [];
   if (request.kind === 'smoke') {
     for (const item of request.scenarios) {
-      scenarios.push(await runSmokeScenario(request.moduleMap, item));
+      scenarios.push(await runSmokeScenario(request.moduleMap, item, options.signal));
     }
   } else {
     for (const item of request.scenarios) {
-      scenarios.push(await runParityScenario(item));
+      scenarios.push(await runParityScenario(item, options.signal));
     }
   }
   const diagnostics = scenarios.flatMap((item) => item.diagnostics);
@@ -46,6 +49,7 @@ export async function runRisuLuaSmoke(request: RisuLuaSmokeRequest): Promise<Ris
 async function runSmokeScenario(
   moduleMap: Extract<RisuLuaSmokeRequest, { kind: 'smoke' }>['moduleMap'],
   scenario: RisuLuaSmokeScenario,
+  signal?: AbortSignal,
 ): Promise<RisuLuaScenarioResult> {
   const execution = await executeRisuLua({
     moduleMap,
@@ -53,7 +57,7 @@ async function runSmokeScenario(
     hostProfile: scenario.hostProfile,
     host: scenario.host,
     limits: scenario.limits,
-  });
+  }, { signal });
   const assertion = assertScenario(scenario, execution);
   return {
     id: scenario.id,
@@ -63,7 +67,7 @@ async function runSmokeScenario(
   };
 }
 
-async function runParityScenario(item: RisuLuaParityScenario): Promise<RisuLuaScenarioResult> {
+async function runParityScenario(item: RisuLuaParityScenario, signal?: AbortSignal): Promise<RisuLuaScenarioResult> {
   const [canonical, dist] = await Promise.all([
     executeRisuLua({
       moduleMap: item.canonical,
@@ -71,14 +75,14 @@ async function runParityScenario(item: RisuLuaParityScenario): Promise<RisuLuaSc
       hostProfile: item.scenario.hostProfile,
       host: item.scenario.host,
       limits: item.scenario.limits,
-    }),
+    }, { signal }),
     executeRisuLua({
       moduleMap: item.dist,
       target: item.scenario.target,
       hostProfile: item.scenario.hostProfile,
       host: item.scenario.host,
       limits: item.scenario.limits,
-    }),
+    }, { signal }),
   ]);
   const canonicalSignature = paritySignature(canonical);
   const distSignature = paritySignature(dist);

@@ -17,6 +17,13 @@ describe('RisuLua runtime Worker isolation', () => {
     expect(result.status).toBe('ok');
     expect(result.value).toEqual({ answer: 42, worker: true });
     expect(result.diagnostics).toEqual([]);
+    expect(result.metrics).toEqual(expect.objectContaining({
+      moduleLoads: 1,
+      requestedLimits: {},
+      effectiveLimits: expect.objectContaining({ timeoutMs: 2_000 }),
+      workerStarted: true,
+      workerTerminationRequested: true,
+    }));
   });
 
   it('stops an infinite loop at the Lua instruction budget', async () => {
@@ -53,6 +60,17 @@ describe('RisuLua runtime Worker isolation', () => {
 
     const result = await pending;
     expect(result.diagnostics).toContainEqual(expect.objectContaining({ id: 'RUNTIME_ABORTED' }));
+  });
+
+  it('does not miss a timeout signal that expires during Worker startup', async () => {
+    const startedAt = Date.now();
+    const result = await executeRisuLua(request('while true do end', {
+      timeoutMs: 2_000,
+      instructionLimit: 1_000_000,
+    }), { signal: AbortSignal.timeout(1) });
+
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ id: 'RUNTIME_ABORTED' }));
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
   });
 
   it('does not share Lua globals or module cache between requests', async () => {

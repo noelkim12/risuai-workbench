@@ -110,7 +110,7 @@ describe('DiagnosticsEngine', () => {
   });
 
   it('attaches registry-backed replacement metadata to deprecated diagnostics with a precise edit range', () => {
-    const source = '{{#if true}}fallback{{/if}}';
+    const source = '{{#pure}}fallback{{/pure}}';
     const diagnostics = diagnosticsEngine.analyze(new CBSParser().parse(source), source);
     const diagnostic = diagnostics.find(
       (candidate) => candidate.code === DiagnosticCode.DeprecatedFunction,
@@ -118,7 +118,7 @@ describe('DiagnosticsEngine', () => {
 
     expect(diagnostic?.range).toEqual({
       start: { line: 0, character: 2 },
-      end: { line: 0, character: 5 },
+      end: { line: 0, character: 7 },
     });
     expect(diagnostic?.data).toEqual({
       rule: {
@@ -135,17 +135,26 @@ describe('DiagnosticsEngine', () => {
       },
       fixes: [
         {
-          title: 'Replace with "#when"',
+          title: 'Replace with "#puredisplay"',
           editKind: 'replace',
           explanation: {
             reason: 'diagnostic-taxonomy',
-            source: 'registry-deprecated:#if:#when',
-            detail: 'Registry deprecation metadata marks #if as replaceable with #when.',
+            source: 'registry-deprecated:#pure:#puredisplay',
+            detail: 'Registry deprecation metadata marks #pure as replaceable with #puredisplay.',
           },
-          replacement: '#when',
+          replacement: '#puredisplay',
         },
       ],
     });
+  });
+
+  it('does not report the supported #if block as deprecated', () => {
+    const source = '{{#if true}}fallback{{/if}}';
+    const diagnostics = diagnosticsEngine.analyze(new CBSParser().parse(source), source);
+
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      DiagnosticCode.DeprecatedFunction,
+    );
   });
 
   it('uses registry argument metadata for missing required argument messages', () => {

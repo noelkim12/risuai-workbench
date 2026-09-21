@@ -17,6 +17,7 @@ import {
 } from './protocol';
 import {
   applyAssetPlaceholders,
+  convertCharacterToModuleDefinition,
   findCharacterIndexByChaId,
   mergeCharacterDefinition,
   replaceModuleById,
@@ -182,9 +183,11 @@ export class HmrController {
       throw new Error('connect가 선행되어야 합니다.');
     }
     const payload = parsePayloadResponse(await this.deps.fetchJson(buildRequestUrl(this.connection, '/payload')));
+    const targetKind = resolveTargetKind(target);
+    const incoming = resolveDefinitionForTarget(payload.kind, payload.data, targetKind);
 
     let existing: Record<string, unknown>;
-    if (payload.kind === 'character') {
+    if (targetKind === 'character') {
       if (target.chaId === undefined) throw new Error('character 대상에 chaId가 없습니다.');
       const characters = await this.deps.getCharacters();
       const index = findCharacterIndexByChaId(characters, target.chaId);
@@ -203,7 +206,7 @@ export class HmrController {
       existing = candidate;
     }
 
-    return buildDefinitionDiff({ kind: payload.kind, incoming: payload.data, existing, assets: payload.assets });
+    return buildDefinitionDiff({ kind: targetKind, incoming, existing, assets: payload.assets });
   }
 
   async confirmAndStart(target: ConfirmTarget): Promise<void> {
@@ -216,7 +219,7 @@ export class HmrController {
     this.mapping = {
       connectionString: this.connection.raw,
       stableId: this.project.stableId,
-      kind: this.project.kind,
+      kind: resolveTargetKind(target),
       targetChaId: target.chaId,
       targetModuleId: target.moduleId,
       targetLabel: target.label,
@@ -454,10 +457,11 @@ export class HmrController {
       return resolvedPath;
     });
 
-    if (payload.kind === 'character') {
-      await this.applyCharacter(materialized, mapping);
+    const definition = resolveDefinitionForTarget(payload.kind, materialized, mapping.kind);
+    if (mapping.kind === 'character') {
+      await this.applyCharacter(definition, mapping);
     } else {
-      await this.applyModule(materialized, mapping);
+      await this.applyModule(definition, mapping);
     }
 
     this.appliedVersion = version;
@@ -571,6 +575,30 @@ function parsePayloadResponse(value: unknown): HmrPayloadResponse {
     data: value['data'],
     assets: value['assets'],
   };
+}
+
+function resolveTargetKind(target: {
+  readonly chaId?: string | undefined;
+  readonly moduleId?: string | undefined;
+}): HmrMapping['kind'] {
+  const hasCharacterTarget = target.chaId !== undefined;
+  const hasModuleTarget = target.moduleId !== undefined;
+  if (hasCharacterTarget === hasModuleTarget) {
+    throw new Error('character 또는 module 대상 하나만 선택해야 합니다.');
+  }
+  return hasCharacterTarget ? 'character' : 'module';
+}
+
+function resolveDefinitionForTarget(
+  payloadKind: HmrPayloadResponse['kind'],
+  definition: Record<string, unknown>,
+  targetKind: HmrMapping['kind'],
+): Record<string, unknown> {
+  if (payloadKind === targetKind) return definition;
+  if (payloadKind === 'character' && targetKind === 'module') {
+    return convertCharacterToModuleDefinition(definition);
+  }
+  throw new Error('module HMR payload는 character 대상으로 적용할 수 없습니다.');
 }
 
 function isProject(value: unknown): value is HmrHealthResponse['project'] {

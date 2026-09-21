@@ -1,6 +1,6 @@
 # Risu Workbench HMR Provider
 
-`risuai-hmr-provider`는 VS Code의 Risu Workbench가 canonical 캐릭터/모듈 프로젝트를 다시 빌드할 때마다 그 정의를 실행 중인 RisuAI 데이터베이스에 반영하는 RisuAI API v3 플러그인이다.
+`@risuai-workbench/hmr-provider`는 VS Code의 Risu Workbench가 canonical 캐릭터/모듈 프로젝트를 다시 빌드할 때마다 그 정의를 실행 중인 RisuAI 데이터베이스에 반영하는 RisuAI API v3 플러그인이다.
 
 이 패키지에서 말하는 HMR은 Vite의 브라우저 모듈 HMR이나 WebSocket 교체가 아니다. Vite는 플러그인을 단일 JavaScript 파일로 묶는 빌드 도구이고, 실제 동기화는 **VS Code 확장이 `127.0.0.1`에 연 HTTP 서버를 플러그인이 long polling하는 구조**다.
 
@@ -244,9 +244,9 @@ npm test           # Vitest 전체 실행
 모노레포 루트에서는 workspace를 지정할 수 있다.
 
 ```bash
-npm run --workspace risuai-hmr-provider build
-npm run --workspace risuai-hmr-provider typecheck
-npm run --workspace risuai-hmr-provider test
+npm run --workspace @risuai-workbench/hmr-provider build
+npm run --workspace @risuai-workbench/hmr-provider typecheck
+npm run --workspace @risuai-workbench/hmr-provider test
 ```
 
 Todo 8의 compile/package 확인은 다음 순서다. 이 명령들은 compile과 packaging만
@@ -254,8 +254,8 @@ Todo 8의 compile/package 확인은 다음 순서다. 이 명령들은 compile�
 
 ```bash
 npm run build:core
-npm run --workspace risuai-hmr-provider typecheck
-npm run --workspace risuai-hmr-provider build
+npm run --workspace @risuai-workbench/hmr-provider typecheck
+npm run --workspace @risuai-workbench/hmr-provider build
 npm run --workspace risu-workbench-webview check
 npm run --workspace risu-workbench-webview build
 npm run --workspace risu-workbench-vscode build:extension

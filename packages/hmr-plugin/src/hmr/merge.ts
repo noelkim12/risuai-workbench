@@ -3,6 +3,7 @@ import { HMR_ASSET_PLACEHOLDER_PREFIX } from './protocol';
 export const PRESERVED_CHARACTER_KEYS = ['chats', 'chatPage', 'chaId'] as const;
 
 type JsonLikeRecord = Record<string, unknown>;
+type CharacterIndicator = 'character_desc' | 'character_first_message' | 'replace_global_note';
 
 function isPlainRecord(value: unknown): value is JsonLikeRecord {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -15,6 +16,23 @@ function isPlainRecord(value: unknown): value is JsonLikeRecord {
 
 function isPreservedCharacterKey(key: string): key is (typeof PRESERVED_CHARACTER_KEYS)[number] {
   return PRESERVED_CHARACTER_KEYS.some((preservedKey) => preservedKey === key);
+}
+
+function createIndicatorLoreEntry(
+  comment: string,
+  indicator: CharacterIndicator,
+  content: string,
+): Record<string, unknown> {
+  return {
+    key: '',
+    secondkey: '',
+    insertorder: 0,
+    comment,
+    content: `@@indicator ${indicator}\n\n${content}`,
+    mode: 'constant',
+    alwaysActive: indicator !== 'character_first_message',
+    selective: false,
+  };
 }
 
 export function mergeCharacterDefinition(
@@ -32,6 +50,52 @@ export function mergeCharacterDefinition(
   }
 
   return merged;
+}
+
+export function convertCharacterToModuleDefinition(
+  definition: Record<string, unknown>,
+): Record<string, unknown> {
+  const lorebook = Array.isArray(definition['globalLore'])
+    ? structuredClone(definition['globalLore'])
+    : [];
+  const converted: Record<string, unknown> = {
+    name: typeof definition['name'] === 'string' ? definition['name'] : '',
+    description: typeof definition['creatorNotes'] === 'string' ? definition['creatorNotes'] : '',
+    lorebook,
+    regex: definition['customscript'],
+    trigger: definition['triggerscript'],
+    lowLevelAccess: definition['lowLevelAccess'],
+    hideIcon: definition['hideChatIcon'],
+    backgroundEmbedding: definition['backgroundHTML'],
+    assets: definition['additionalAssets'],
+    namespace: definition['moduleNamespace'],
+    customModuleToggle: definition['customModuleToggle'],
+    icon: definition['image'],
+  };
+
+  const description = definition['desc'];
+  if (typeof description === 'string' && description.length > 0) {
+    lorebook.push(createIndicatorLoreEntry('From Character Description', 'character_desc', description));
+  }
+
+  const firstMessage = typeof definition['firstMessage'] === 'string' ? definition['firstMessage'] : '';
+  const alternateGreetings = Array.isArray(definition['alternateGreetings'])
+    ? definition['alternateGreetings'].filter((value): value is string => typeof value === 'string')
+    : [];
+  if (firstMessage.length > 0 || alternateGreetings.length > 0) {
+    let firstMessages = `<FM>\n${firstMessage}\n</FM>`;
+    for (const greeting of alternateGreetings) {
+      firstMessages += `\n<FM_alt>\n${greeting}\n</FM_alt>`;
+    }
+    lorebook.push(createIndicatorLoreEntry('From First Messages', 'character_first_message', firstMessages));
+  }
+
+  const globalNote = definition['replaceGlobalNote'];
+  if (typeof globalNote === 'string' && globalNote.length > 0) {
+    lorebook.push(createIndicatorLoreEntry('From Global Note Replacement', 'replace_global_note', globalNote));
+  }
+
+  return converted;
 }
 
 export function applyAssetPlaceholders<T>(value: T, resolve: (hash: string) => string): T {

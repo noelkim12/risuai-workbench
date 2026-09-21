@@ -587,6 +587,66 @@ This is the lorebook content.
     expect(entry.enabled).toBe(true); // V3 export hardcodes enabled: true
   });
 
+  it('packs canonical lorebooks into the embedded module override', () => {
+    // Given: a canonical character workspace with one foldered lorebook.
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-module-lorebooks-'));
+    tempDirs.push(workDir);
+
+    const characterDir = path.join(workDir, 'character');
+    const lorebooksDir = path.join(workDir, 'lorebooks');
+    const folderDir = path.join(lorebooksDir, 'World');
+    mkdirSync(characterDir, { recursive: true });
+    mkdirSync(folderDir, { recursive: true });
+
+    writeFileSync(path.join(characterDir, 'description.txt'), 'test', 'utf-8');
+    writeFileSync(path.join(characterDir, 'metadata.json'), `${JSON.stringify({ name: 'Module Lorebook Test' })}\n`, 'utf-8');
+    writeFileSync(
+      path.join(folderDir, 'city.risulorebook'),
+      `---
+name: "City"
+comment: "A city entry"
+mode: normal
+constant: false
+selective: false
+insertion_order: 7
+case_sensitive: true
+use_regex: false
+---
+@@@ KEYS
+city
+capital
+@@@ CONTENT
+The capital city.
+`,
+      'utf-8'
+    );
+    writeFileSync(
+      path.join(lorebooksDir, '_order.json'),
+      `${JSON.stringify(['World', 'World/city.risulorebook'])}\n`,
+      'utf-8'
+    );
+
+    // When: the workspace is packed as CHARX.
+    const outPath = path.join(workDir, 'packed.charx');
+    expect(runCharxPackWorkflow(['--in', workDir, '--format', 'charx', '--out', outPath])).toBe(0);
+
+    // Then: the embedded module carries the same ordered lorebook collection.
+    const module = readPackedModule(outPath);
+    expect(module.lorebook).toHaveLength(2);
+    expect(module.lorebook[0]).toMatchObject({
+      key: 'folder-1',
+      comment: 'World',
+      mode: 'folder',
+    });
+    expect(module.lorebook[1]).toMatchObject({
+      key: 'city, capital',
+      comment: 'City',
+      content: 'The capital city.',
+      insertorder: 7,
+      folder: 'folder-1',
+    });
+  });
+
   it('packs lorebook folder metadata from path-based lorebook directories and _order.json', () => {
     const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-folders-'));
     tempDirs.push(workDir);
@@ -1133,6 +1193,34 @@ end
     expect(packedLua).not.toContain('sourceOnlyShouldNotLeak');
     expect(decodeRisuLuaRecoveryBlock(packedLua)).toBeNull();
     expect(module.trigger[0].effect[0].code).toBe(distContent);
+  });
+
+  it('character pack passes through a single prebundled risulua source', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-risulua-single-'));
+    tempDirs.push(workDir);
+
+    const luaDir = path.join(workDir, 'lua');
+    mkdirSync(luaDir, { recursive: true });
+    writeCanonicalManifest(workDir, { name: 'Single Lua Character' });
+    const source = [
+      'package.preload["./handler"] = function() return { ready = true } end',
+      'local handler = require("./handler")',
+      'return handler',
+    ].join('\n');
+    writeFileSync(path.join(luaDir, 'main.risulua'), source, 'utf-8');
+
+    const outPath = path.join(workDir, 'packed.charx');
+    const exitCode = runCharxPackWorkflow([
+      '--in', workDir,
+      '--format', 'charx',
+      '--out', outPath,
+    ]);
+
+    expect(exitCode).toBe(0);
+    const archive = unzipSync(readFileSync(outPath));
+    const packedCharx = JSON.parse(strFromU8(archive['charx.json']));
+    expect(getPackedLua(packedCharx)).toBe(source);
+    expect(existsSync(path.join(workDir, 'dist', 'Single_Lua_Character.risulua'))).toBe(false);
   });
 
   it('character pack risulua modular emits one full-source recovery asset when requested', () => {

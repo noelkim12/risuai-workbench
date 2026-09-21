@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ensureDir } from '@/node/fs-helpers';
+import { createUniqueDir, ensureDir } from '@/node/fs-helpers';
 import { getCharacterName } from '@/domain/charx/data';
 import { sanitizeFilename } from '../../../utils/filenames';
 import { getErrorMessage } from '../../shared';
@@ -150,8 +150,9 @@ async function runMain(
     path.basename(filePath, path.extname(filePath)),
   );
   const defaultOutDir = `character_${safeName}`;
-  const resolvedOutDir = path.resolve(outArg || defaultOutDir);
-  ensureDir(resolvedOutDir);
+  const requestedOutDir = path.resolve(outArg || defaultOutDir);
+  const resolvedOutDir = outArg ? requestedOutDir : createUniqueDir(requestedOutDir);
+  if (outArg) ensureDir(resolvedOutDir);
 
   // Note: charx.json is NOT written in canonical mode
   // All data is emitted as canonical .risu* artifacts only

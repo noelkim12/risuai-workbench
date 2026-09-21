@@ -153,6 +153,43 @@ describe('src/cli main dispatcher integration', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
+  it('preserves an existing character project and extracts into a postfix directory', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-core-extract-character-collision-'));
+    const cardPath = path.join(tempDir, 'sample-character.json');
+    const existingOutDir = path.join(tempDir, 'character_Default_Output_Character');
+    const existingFile = path.join(existingOutDir, 'existing-project.txt');
+    fs.mkdirSync(existingOutDir, { recursive: true });
+    fs.writeFileSync(existingFile, 'keep this project', 'utf-8');
+    fs.writeFileSync(
+      cardPath,
+      `${JSON.stringify({
+        spec: 'chara_card_v3',
+        data: {
+          name: 'Default Output Character',
+          description: 'new import',
+          character_book: { entries: [] },
+          extensions: { risuai: { customScripts: [] } },
+        },
+      })}\n`,
+      'utf-8',
+    );
+
+    const result = spawnSync('node', [cliPath, 'extract', cardPath], {
+      cwd: tempDir,
+      encoding: 'utf-8',
+      env: {
+        ...process.env,
+        NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --require=${scriptGuardPath}`.trim(),
+      },
+    });
+
+    expect(result.status).toBe(0);
+    expect(fs.readFileSync(existingFile, 'utf-8')).toBe('keep this project');
+    expect(fs.existsSync(path.join(`${existingOutDir}_1`, '.risuchar'))).toBe(true);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
   it('dispatches pack to TypeScript command path', () => {
     const result = runCli(['pack', '--help']);
 

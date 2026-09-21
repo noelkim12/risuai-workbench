@@ -136,7 +136,9 @@ function analyzeTopLevelStatement(statement: LuaNode, state: AnalyzerState, modu
 
   if (statement.type === 'CallStatement' && maybeAnalyzeListenEditRoot(statement as LuaCallStatement, state, moduleScope)) return;
   if (statement.type === 'LocalStatement') {
-    for (const variable of (statement as LuaLocalStatement).variables) moduleScope.declared.add(variable.name);
+    const localStatement = statement as LuaLocalStatement;
+    for (const variable of localStatement.variables) moduleScope.declared.add(variable.name);
+    if (localStatement.init.length === 0) return;
   }
   addProceduralBlock(state, statement);
 }
@@ -153,11 +155,6 @@ function maybeAnalyzeListenEditRoot(statement: LuaCallStatement, state: Analyzer
 }
 
 function analyzeTopLevelAssignment(statement: LuaAssignmentStatement, state: AnalyzerState, moduleScope: ScopeFrame): void {
-  for (const variable of statement.variables) {
-    const assignedName = expressionName(variable);
-    if (assignedName !== undefined) moduleScope.declared.add(assignedName);
-  }
-
   const firstName = expressionName(statement.variables[0]);
   const wrapped = functionLikeInitializer(statement.init[0]);
   if (firstName === undefined || wrapped === undefined) {
@@ -166,12 +163,17 @@ function analyzeTopLevelAssignment(statement: LuaAssignmentStatement, state: Ana
   }
 
   const isRuntimeRoot = RUNTIME_HANDLER_NAMES.has(firstName);
+  const isLocalAssignment = moduleScope.declared.has(firstName);
   const handler = isRuntimeRoot ? handlerContext(firstName, 'handler', statement, state) : undefined;
-  const symbol = addFunctionSymbol(state, wrapped.functionNode, firstName, 'top-level-global-assignment', moduleScope, wrapped.wrapperKind, handler);
+  const declarationKind: RisuLuaModuleTableDeclarationKind = isLocalAssignment
+    ? 'top-level-local-function'
+    : 'top-level-global-assignment';
+  const symbol = addFunctionSymbol(state, wrapped.functionNode, firstName, declarationKind, moduleScope, wrapped.wrapperKind, handler);
+  symbol.sourceRange = sourceRangeForNode(state, statement);
   if (isRuntimeRoot) {
     const rootKind: RisuLuaModuleTableRuntimeRootKind = wrapped.wrapperKind === 'async-wrapper' ? 'async-handler-assignment' : 'handler-assignment';
     addRuntimeRoot(state, firstName, rootKind, wrapped.wrapperKind, statement, symbol.hostEffects);
-  } else {
+  } else if (!isLocalAssignment) {
     const globalKind: RisuLuaModuleTablePublicGlobalKind = wrapped.wrapperKind === 'async-wrapper' ? 'async-function-assignment' : 'function-assignment';
     addPublicGlobal(state, firstName, globalKind, wrapped.wrapperKind, statement, symbol.hostEffects);
   }

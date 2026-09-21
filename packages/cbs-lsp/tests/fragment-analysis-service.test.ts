@@ -105,6 +105,26 @@ describe('FragmentAnalysisService', () => {
     },
   );
 
+  it('analyzes a CBS block split across a Lua concatenation as one fragment', () => {
+    const service = new FragmentAnalysisService();
+    const text = 'html = "{{#if {{? ({{lastmessageid}}-{{chat_index}})<2}}}}" .. html .. "{{/if}}"';
+
+    const analysis = service.analyzeDocument({
+      uri: 'file:///workspace/script.risulua',
+      version: 1,
+      filePath: '/workspace/script.risulua',
+      text,
+    });
+
+    expect(analysis?.fragments).toHaveLength(1);
+    expect(analysis?.diagnostics.map((diagnostic) => diagnostic.message)).not.toContain(
+      'Unclosed CBS block "#if"',
+    );
+    expect(analysis?.diagnostics.map((diagnostic) => diagnostic.message)).not.toContain(
+      'Callable CBS block builtin "#if" has an empty body',
+    );
+  });
+
   it('caches by uri and version and prunes stale versions for the same document', () => {
     const service = new FragmentAnalysisService();
     const entry = getFixtureCorpusEntry('lorebook-basic');

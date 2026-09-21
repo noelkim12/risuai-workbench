@@ -12,6 +12,7 @@
 | [`workflows.md`](workflows.md) | 읽기/분석 workflow, 파일 변경 workflow, archive 추출 |
 | [`facade-tools.md`](facade-tools.md) | 기본 공개 facade tool 8개의 역할과 내부 actionId 구분 |
 | [`risulua-runtime.md`](risulua-runtime.md) | Fengari runtime action, source/context, trace와 제한 |
+| [`risulua-runtime-improvements.md`](risulua-runtime-improvements.md) | 세션 근거 기반 runtime 결함·최적화 backlog와 완료 조건 |
 | [`mutation-safety.md`](mutation-safety.md) | patch preview/apply, path safety, stale state 처리 |
 | [`troubleshooting.md`](troubleshooting.md) | startup, tool surface, mutation 거부 문제 해결 |
 | [`development.md`](development.md) | CLI 옵션, 개발 명령, facade visualization |

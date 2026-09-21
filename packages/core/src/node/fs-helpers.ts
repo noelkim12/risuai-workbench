@@ -9,6 +9,25 @@ export function ensureDir(dirPath: string): void {
   fs.mkdirSync(dirPath, { recursive: true });
 }
 
+/** 기존 디렉토리를 재사용하지 않고 `_1`, `_2` 접미사로 새 디렉토리를 선점합니다. */
+export function createUniqueDir(dirPath: string): string {
+  ensureDir(path.dirname(dirPath));
+  let suffix = 0;
+  while (true) {
+    const candidate = suffix === 0 ? dirPath : `${dirPath}_${suffix}`;
+    try {
+      fs.mkdirSync(candidate);
+      return candidate;
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'EEXIST') {
+        suffix += 1;
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
 /** 데이터를 JSON 형식으로 파일에 저장합니다. 부모 디렉토리가 없으면 생성합니다.
  * @param filePath - 저장할 파일 경로
  * @param data - 저장할 데이터 객체

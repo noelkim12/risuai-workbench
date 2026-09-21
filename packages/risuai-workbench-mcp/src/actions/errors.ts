@@ -181,11 +181,22 @@ export function createInvalidArgsError(
   action: WorkbenchAction,
   issues: readonly ActionErrorIssue[],
 ): ActionErrorResult {
+  const actionableIssues = issues.map((issue) => ({
+    ...issue,
+    message: issue.message.includes('maxInstructions')
+      ? `${issue.message} Use limits.instructionLimit instead of limits.maxInstructions.`
+      : issue.message,
+  }));
+  const firstExample = action.examples?.[0];
+  const parsedExample = z.record(z.string(), z.unknown()).safeParse(firstExample);
+  const retryArgs = parsedExample.success
+    ? parsedExample.data
+    : generateMinimalArgsExample(action.inputSchema);
   return {
     error: {
       actionId: action.id,
       code: 'INVALID_ARGS',
-      issues,
+      issues: actionableIssues,
       message: 'Action input did not match schema.',
     },
     ok: false,
@@ -194,7 +205,7 @@ export function createInvalidArgsError(
       tool: 'workbench.prepare_action',
     },
     retry: {
-      input: { actionId: action.id, args: generateMinimalArgsExample(action.inputSchema) },
+      input: { actionId: action.id, args: retryArgs },
       tool: 'workbench.run_action',
     },
   };

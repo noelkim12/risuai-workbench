@@ -103,6 +103,19 @@ describe('src/cli scaffold workflow', () => {
   });
 
   describe('module scaffold', () => {
+    it('preserves an existing project and creates the scaffold with a postfix', () => {
+      const outDir = path.join(tmpDir, 'rpg-module');
+      const existingFile = path.join(outDir, 'existing-project.txt');
+      fs.mkdirSync(outDir, { recursive: true });
+      fs.writeFileSync(existingFile, 'keep this project', 'utf-8');
+
+      const exitCode = runScaffoldWorkflow(['module', '--name', 'RPG Module', '--out', outDir]);
+
+      expect(exitCode).toBe(0);
+      expect(fs.readFileSync(existingFile, 'utf-8')).toBe('keep this project');
+      expect(fs.existsSync(path.join(`${outDir}_1`, RISUMODULE_FILENAME))).toBe(true);
+    });
+
     it('emits .risumodule and canonical files with correct marker fields', () => {
       const outDir = path.join(tmpDir, 'rpg-module');
       const exitCode = runScaffoldWorkflow(['module', '--name', 'RPG Module', '--out', outDir]);
