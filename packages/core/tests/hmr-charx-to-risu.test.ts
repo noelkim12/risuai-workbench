@@ -120,6 +120,19 @@ describe('convertCharxV3ToRisuDefinition', () => {
     expect(def).not.toHaveProperty('image');
   });
 
+  it('mirrors creator metadata into additionalData read by RisuAI UI and export', () => {
+    const def = convertCharxV3ToRisuDefinition(makeEnvelope(), new Map());
+
+    expect(def.additionalData).toEqual({ tag: ['t1'], creator: 'noel', character_version: '1.2' });
+  });
+
+  it('maps risuai lowLevelAccess flag', () => {
+    const envelope = makeEnvelope();
+    envelope.data.extensions.risuai.lowLevelAccess = true;
+
+    expect(convertCharxV3ToRisuDefinition(envelope, new Map()).lowLevelAccess).toBe(true);
+  });
+
   it('maps sparse asset slots by charx data.assets indexes with placeholders', () => {
     const envelope = makeEnvelope({
       assets: [
@@ -146,7 +159,7 @@ describe('convertCharxV3ToRisuDefinition', () => {
     expect(def.ccAssets).toEqual([{ type: 'asset', uri: 'hmr-asset://h5', name: 'misc', ext: 'png' }]);
   });
 
-  it('includes loreSettings only when charbook has the full settings triple', () => {
+  it('maps custom loreSettings and explicitly resets missing settings to global mode', () => {
     const withSettings = convertCharxV3ToRisuDefinition(
       makeEnvelope({
         character_book: {
@@ -171,6 +184,6 @@ describe('convertCharxV3ToRisuDefinition', () => {
       makeEnvelope({ character_book: { entries: [] } }),
       new Map(),
     );
-    expect(withoutSettings).not.toHaveProperty('loreSettings');
+    expect(withoutSettings).toHaveProperty('loreSettings', null);
   });
 });

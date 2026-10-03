@@ -14,6 +14,7 @@
   },
   "exports": {
     ".": "./dist/index.js",
+    "./bin/risu-core.js": "./bin/risu-core.js",
     "./cbs-browser": {
       "types": "./dist/cbs-browser.d.ts",
       "default": "./dist/cbs-browser.js"

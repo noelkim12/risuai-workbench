@@ -9,6 +9,15 @@ import {
 } from '../src/hmr/merge';
 
 describe('mergeCharacterDefinition', () => {
+  it('clears custom lore settings when the incoming definition requests global mode', () => {
+    const existing = { loreSettings: { scanDepth: 5, tokenBudget: 800 }, chats: [{ message: [] }] };
+
+    const merged = mergeCharacterDefinition(existing, JSON.parse('{"loreSettings":null}'));
+
+    expect(merged).not.toHaveProperty('loreSettings');
+    expect(merged['chats']).toEqual(existing.chats);
+  });
+
   it('overwrites definition keys and preserves user state', () => {
     const existing = {
       name: 'Old',

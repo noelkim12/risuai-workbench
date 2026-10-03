@@ -46,6 +46,11 @@ export function mergeCharacterDefinition(
       continue;
     }
 
+    if (key === 'loreSettings' && value === null) {
+      delete merged[key];
+      continue;
+    }
+
     merged[key] = value;
   }
 

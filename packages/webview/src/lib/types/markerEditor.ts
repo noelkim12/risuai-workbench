@@ -4,6 +4,7 @@
  */
 
 import type { CharacterManifestFlags, ModuleBrowserFlags } from '../types';
+import type { CharacterLoreSettings } from '@risuai-workbench/core';
 
 export type MarkerEditorMode = 'character' | 'module' | 'plugin';
 
@@ -17,6 +18,7 @@ export type CharacterMarkerEditField =
   | 'characterVersion'
   | 'image'
   | 'tags'
+  | 'loreSettings'
   | keyof CharacterManifestFlags;
 
 export type ModuleMarkerEditField = 'name' | 'description' | 'namespace' | 'image' | keyof ModuleBrowserFlags;
@@ -31,6 +33,7 @@ export interface CharacterEditFields {
   tags: string[];
   utilityBot: CharacterManifestFlags['utilityBot'];
   lowLevelAccess: CharacterManifestFlags['lowLevelAccess'];
+  loreSettings: CharacterLoreSettings | null;
 }
 
 export interface ModuleEditFields {

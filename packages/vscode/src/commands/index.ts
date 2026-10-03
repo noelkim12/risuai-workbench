@@ -13,6 +13,7 @@ import {
 import { CBS_OCCURRENCE_NAVIGATION_COMMAND } from '../lsp/cbsCommands';
 import { RISU_LUALS_STUB_COMMAND, installRisuLuaWorkspaceStubs } from '../luals/risuLuaStubs';
 import { RISU_CHARACTER_SELECT_IMAGE_COMMAND, selectCharacterImage } from './characterImage';
+import { RISU_COPY_MCP_CONFIG_COMMAND, copyMcpConfig } from './mcpConfig';
 import { MarkerEditorViewProvider } from '../views/MarkerEditorViewProvider';
 import { getErrorMessage } from '../shared/errors';
 
@@ -134,6 +135,9 @@ export function registerCoreCommands(
     }),
     vscode.commands.registerCommand(RISU_LUALS_STUB_COMMAND, async () => {
       await generateRisuLuaStubs(output);
+    }),
+    vscode.commands.registerCommand(RISU_COPY_MCP_CONFIG_COMMAND, async () => {
+      await copyMcpConfig();
     }),
     vscode.commands.registerCommand(
       CBS_OCCURRENCE_NAVIGATION_COMMAND,

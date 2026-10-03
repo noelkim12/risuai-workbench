@@ -12,6 +12,10 @@
 npx --yes --package @risuai-workbench/mcp risuai-workbench-mcp --stdio
 ```
 
+### 버전 고정
+
+예시의 `@risuai-workbench/mcp`는 실행할 때마다 npm `latest`를 사용합니다. VS Code 확장과 함께 쓴다면 `@risuai-workbench/mcp@<version>`처럼 버전을 고정해 확장과 MCP가 같은 workspace 형식을 보도록 하세요. VS Code 확장의 **Risu Workbench: Copy MCP Config** 명령은 확장과 맞는 버전으로 고정된 설정을 client별 형식으로 클립보드에 복사합니다.
+
 ### Root와 설치 범위
 
 기본 설정에는 `--root`를 넣지 않습니다. Server는 harness가 MCP process를 시작한 현재 project directory(`process.cwd()`)를 workspace root로 사용하므로 global MCP entry 하나가 project마다 올바른 root에서 동작합니다.

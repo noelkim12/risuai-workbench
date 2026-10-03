@@ -36,6 +36,7 @@
   "sourceFormat": "charx",
   "image": null,
   "tags": [],
+  "loreSettings": null,
   "flags": {
     "utilityBot": false,
     "lowLevelAccess": false
@@ -44,6 +45,25 @@
 ```
 
 필수 필드와 타입은 `../../schemas/risuchar.schema.json`을 기준으로 합니다. `image`는 보통 `assets/icons/<filename>` 형태의 워크스페이스 상대 경로이고, 실제 바이너리 또는 asset manifest 전체를 `.risuchar`에 넣지 않습니다. `tags`는 CCv3 `data.tags`로 다시 패킹되는 canonical 태그 배열입니다.
+
+## 로어북 설정
+
+`loreSettings`는 선택 필드입니다. 생략하거나 `null`이면 RisuAI 글로벌 설정을 사용합니다. 새 scaffold의 기본값은 `null`입니다.
+
+```json
+{
+  "loreSettings": {
+    "scanDepth": 5,
+    "tokenBudget": 800,
+    "recursiveScanning": false,
+    "fullWordMatching": false
+  }
+}
+```
+
+객체를 지정할 때는 네 필드를 모두 작성합니다. 깊이와 토큰은 숫자이며 별도 범위 제한은 없습니다. `scanDepth`는 검색할 대화 범위이고 재귀 횟수가 아닙니다. pack은 `data.character_book.scan_depth`, `token_budget`, `recursive_scanning`, `extensions.risu_fullWordMatching`으로 변환합니다. 글로벌 모드에서는 해당 설정을 출력하지 않습니다. 로어북 엔트리는 계속 `lorebooks/*.risulorebook`가 소유합니다.
+
+마커 편집기의 글로벌 설정 스위치는 기본으로 켜져 있습니다. 개별 설정을 처음 활성화할 때 깊이 5, 토큰 800으로 시작하며, 이 값은 현재 RisuAI 설치의 글로벌 DB를 읽은 값이 아닙니다. HMR에서 글로벌 모드로 전환하면 기존 캐릭터별 설정도 해제합니다.
 
 ## 생성 소스
 

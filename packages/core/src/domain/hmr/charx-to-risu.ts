@@ -1,4 +1,5 @@
 import type { CharxV3Envelope } from '../charx/blank-char';
+import { readCharbookLoreSettings } from '../lorebook/settings';
 
 /**
  * card v3 → RisuAI 네이티브 character 정의 변환.
@@ -147,6 +148,9 @@ export function convertCharxV3ToRisuDefinition(
   });
 
   const charbook = data.character_book;
+  const creator = data.creator ?? '';
+  const characterVersion = `${data.character_version ?? ''}`;
+  const tags = data.tags ?? [];
   const definition: Record<string, unknown> = {
     name: data.name ?? '',
     desc: data.description ?? '',
@@ -156,9 +160,11 @@ export function convertCharxV3ToRisuDefinition(
     systemPrompt: data.system_prompt ?? '',
     replaceGlobalNote: data.post_history_instructions ?? '',
     alternateGreetings: data.alternate_greetings ?? [],
-    tags: data.tags ?? [],
-    creator: data.creator ?? '',
-    characterVersion: `${data.character_version ?? ''}`,
+    tags,
+    creator,
+    characterVersion,
+    // RisuAI의 CharConfig UI와 카드 export는 top-level이 아니라 additionalData의 creator/character_version을 읽는다.
+    additionalData: { tag: tags, creator, character_version: characterVersion },
     personality: data.personality ?? '',
     scenario: data.scenario ?? '',
     globalLore: charbook?.entries ? convertCharbookEntriesToGlobalLore(charbook.entries) : [],
@@ -167,6 +173,7 @@ export function convertCharxV3ToRisuDefinition(
     customModuleToggle: risuExt.toggles ?? {},
     additionalText: risuExt.additionalText ?? '',
     utilityBot: risuExt.utilityBot ?? false,
+    lowLevelAccess: risuExt.lowLevelAccess ?? false,
     emotionImages,
     additionalAssets,
     ccAssets,
@@ -175,19 +182,7 @@ export function convertCharxV3ToRisuDefinition(
   if (image !== undefined) definition.image = image;
   if (risuExt.backgroundHTML !== undefined) definition.backgroundHTML = risuExt.backgroundHTML;
   if (risuExt.defaultVariables !== undefined) definition.defaultVariables = risuExt.defaultVariables;
-  if (
-    charbook &&
-    charbook.recursive_scanning !== undefined &&
-    charbook.scan_depth !== undefined &&
-    charbook.token_budget !== undefined
-  ) {
-    definition.loreSettings = {
-      tokenBudget: charbook.token_budget,
-      scanDepth: charbook.scan_depth,
-      recursiveScanning: charbook.recursive_scanning,
-      fullWordMatching: charbook.extensions?.risu_fullWordMatching ?? false,
-    };
-  }
+  definition.loreSettings = readCharbookLoreSettings(charbook);
 
   return definition;
 }

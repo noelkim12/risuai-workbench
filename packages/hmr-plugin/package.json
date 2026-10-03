@@ -1,6 +1,6 @@
 {
   "name": "@risuai-workbench/hmr-provider",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "displayName": "Risu Workbench HMR",
   "description": "Receives live definition updates from Risu Workbench over local HMR",
   "type": "module",

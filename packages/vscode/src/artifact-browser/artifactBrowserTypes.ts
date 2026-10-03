@@ -456,6 +456,7 @@ export type CharacterMarkerEditField =
   | 'characterVersion'
   | 'image'
   | 'tags'
+  | 'loreSettings'
   | keyof CharacterManifestFlags;
 
 export type ModuleMarkerEditField = 'name' | 'description' | 'namespace' | 'image' | keyof ModuleBrowserFlags;
@@ -470,6 +471,7 @@ export interface CharacterEditFields {
   tags: string[];
   utilityBot: CharacterManifestFlags['utilityBot'];
   lowLevelAccess: CharacterManifestFlags['lowLevelAccess'];
+  loreSettings: import('@risuai-workbench/core').CharacterLoreSettings | null;
 }
 
 export interface ModuleEditFields {

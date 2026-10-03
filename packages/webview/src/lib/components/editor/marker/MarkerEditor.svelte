@@ -97,6 +97,7 @@
       tags: [],
       utilityBot: false,
       lowLevelAccess: false,
+      loreSettings: null,
     };
   }
 
@@ -251,6 +252,7 @@
         ...createEmptyCharacterFields(),
         ...value,
         tags: [...value.tags],
+        loreSettings: value.loreSettings ? { ...value.loreSettings } : null,
       };
     }
 

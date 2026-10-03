@@ -88,12 +88,21 @@ export function defaultCbsLanguageServerSettings(): CbsLanguageServerSettings {
 
 /**
  * getEmbeddedCbsServerModulePath 함수.
- * monorepo 개발 환경에서만 존재하는 embedded server module 경로를 계산함.
+ * VSIX에 포함된 server를 우선 사용하고 monorepo 개발 경로를 fallback으로 사용함.
  *
  * @param extensionRootPath - VS Code extension root 경로
  * @returns embedded `embedded.js` 예상 경로
  */
-export function getEmbeddedCbsServerModulePath(extensionRootPath: string): string {
+export function getEmbeddedCbsServerModulePath(
+  extensionRootPath: string,
+  exists: (filePath: string) => boolean = existsSync,
+): string {
+  const packagedModulePath = path.join(
+    extensionRootPath, 'node_modules', '@risuai-workbench', 'cbs-language-server', 'dist', 'embedded.js',
+  );
+  if (exists(packagedModulePath)) {
+    return packagedModulePath;
+  }
   return path.join(extensionRootPath, '..', 'cbs-lsp', 'dist', 'embedded.js');
 }
 
@@ -128,7 +137,7 @@ export function resolveCbsLanguageServerLaunch(
   const exists = options.exists ?? existsSync;
   const platform = options.platform ?? process.platform;
   const settings = normalizeSettings(options.settings);
-  const embeddedModulePath = getEmbeddedCbsServerModulePath(options.extensionRootPath);
+  const embeddedModulePath = getEmbeddedCbsServerModulePath(options.extensionRootPath, exists);
   const explicitPathConfigured = settings.pathOverride.length > 0;
 
   if (settings.launchMode === 'embedded') {
@@ -170,8 +179,7 @@ export function resolveCbsLanguageServerLaunch(
   if (exists(embeddedModulePath)) {
     return {
       detail:
-        `${standaloneLaunch.detail} Falling back to embedded dev module at ${embeddedModulePath}. ` +
-        'This fallback is intended for monorepo development only.',
+        `${standaloneLaunch.detail} Falling back to embedded server at ${embeddedModulePath}.`,
       kind: 'embedded',
       modulePath: embeddedModulePath,
     };
@@ -180,7 +188,7 @@ export function resolveCbsLanguageServerLaunch(
   return {
     attemptedModes: ['standalone', 'embedded'],
     detail:
-      `${standaloneLaunch.detail} Embedded dev module was also not found at ${embeddedModulePath}.`,
+      `${standaloneLaunch.detail} Embedded server was also not found at ${embeddedModulePath}.`,
     kind: 'failure',
     recovery:
       'Install `@risuai-workbench/cbs-language-server` in the workspace, switch to `npx`/`global`, set `risuaiWorkbench.cbs.server.path`, or open the monorepo workspace that contains `packages/cbs-lsp/dist/embedded.js`.',
@@ -230,7 +238,7 @@ function resolveEmbeddedLaunch(
 ): CbsLanguageServerLaunchPlan {
   if (exists(modulePath)) {
     return {
-      detail: `Using embedded dev server module at ${modulePath}.`,
+      detail: `Using embedded server module at ${modulePath}.`,
       kind: 'embedded',
       modulePath,
     };

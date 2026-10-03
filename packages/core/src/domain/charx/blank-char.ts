@@ -76,6 +76,10 @@ export interface CharxV3Data {
   scenario: string;
   character_book?: {
     entries?: unknown[];
+    scan_depth?: number;
+    token_budget?: number;
+    recursive_scanning?: boolean;
+    extensions?: Record<string, unknown>;
   };
   extensions: {
     risuai: {

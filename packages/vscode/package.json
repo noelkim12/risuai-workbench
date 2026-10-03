@@ -5,6 +5,12 @@
   "version": "0.1.0",
   "private": true,
   "description": "VSCode extension for RisuAI character card workbench",
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/noelkim12/risuai-workbench.git",
+    "directory": "packages/vscode"
+  },
   "engines": {
     "vscode": "^1.96.0"
   },
@@ -18,6 +24,7 @@
     "onCommand:risuaiWorkbench.openCardPanel",
     "onCommand:risuaiWorkbench.openMarkerEditor",
     "onCommand:risuaiWorkbench.generateLuaStubs",
+    "onCommand:risuaiWorkbench.copyMcpConfig",
     "onCommand:risuaiWorkbench.cbs.showActivationLinks",
     "onView:risuaiWorkbench.cards",
     "onLanguage:risulorebook",
@@ -387,6 +394,10 @@
         "title": "Risu Workbench: Generate LuaLS Stubs"
       },
       {
+        "command": "risuaiWorkbench.copyMcpConfig",
+        "title": "Risu Workbench: Copy MCP Config"
+      },
+      {
         "command": "risuaiWorkbench.cbs.openOccurrence",
         "title": "Risu Workbench: Open CBS Occurrence"
       },
@@ -433,7 +444,7 @@
             "standalone"
           ],
           "default": "auto",
-          "markdownDescription": "How the CBS language client resolves `cbs-language-server`. `auto` tries the selected standalone install strategy first, then falls back to the embedded monorepo server module when available."
+          "markdownDescription": "How the CBS language client resolves `cbs-language-server`. `auto` tries the selected standalone install strategy first, then falls back to the server included in the VSIX or the monorepo development server."
         },
         "risuaiWorkbench.cbs.server.installMode": {
           "type": "string",

@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { parseCharacterLoreSettings, toCharbookLoreSettings } from '@/domain/lorebook/settings';
+import { asRecord } from '@/domain/types';
 import type { LuaAnalysisArtifact } from '@/domain/analyze/lua-core';
 import {
   analyzeTextMentions,
@@ -475,6 +477,11 @@ function readLegacyCharacterName(outputDir: string): string | null {
  */
 function buildMinimalCharxFromCanonical(outputDir: string): unknown {
   const name = readCanonicalCharacterName(outputDir) ?? readLegacyCharacterName(outputDir) ?? 'Unknown';
+  const markerPath = path.join(outputDir, '.risuchar');
+  const manifest: unknown = fs.existsSync(markerPath)
+    ? JSON.parse(fs.readFileSync(markerPath, 'utf8'))
+    : {};
+  const loreSettings = parseCharacterLoreSettings(asRecord(manifest)?.loreSettings);
 
   // Read lorebook entries from canonical .risulorebook files
   const lorebookEntries = collectLorebookEntriesFromCanonical(outputDir);
@@ -487,7 +494,7 @@ function buildMinimalCharxFromCanonical(outputDir: string): unknown {
     spec: 'chara_card_v3',
     data: {
       name,
-      character_book: { entries: lorebookEntries },
+      character_book: { ...toCharbookLoreSettings(loreSettings), entries: lorebookEntries },
       extensions: {
         risuai: {
           customScripts,

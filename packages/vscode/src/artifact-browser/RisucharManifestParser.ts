@@ -12,6 +12,7 @@ import type {
 import { getErrorMessage } from '../shared/errors';
 import { isPlainRecord } from '../shared/protocolEnvelope';
 import { createHashFallbackStableId } from './shared/manifestDiscovery';
+import { characterLoreSettingsSchema } from '@risuai-workbench/core';
 
 const REQUIRED_FIELDS = [
   'kind',
@@ -26,7 +27,7 @@ const REQUIRED_FIELDS = [
   'flags',
 ] as const;
 
-const KNOWN_FIELDS = new Set<string>(['$schema', ...REQUIRED_FIELDS, 'image', 'tags']);
+const KNOWN_FIELDS = new Set<string>(['$schema', ...REQUIRED_FIELDS, 'image', 'tags', 'loreSettings']);
 
 const SOURCE_FORMATS = new Set<CharacterSourceFormat>(['charx', 'png', 'json', 'scaffold']);
 
@@ -88,6 +89,14 @@ export class RisucharManifestParser {
     const modifiedAt = normalizeTimestamp(raw.modifiedAt, 'modifiedAt', warnings);
     const tags = normalizeTags(raw.tags, warnings);
     const imagePath = normalizeImagePath(raw.image, warnings);
+    const loreSettingsResult = characterLoreSettingsSchema.nullish().safeParse(raw.loreSettings);
+    if (!loreSettingsResult.success) {
+      warnings.push({
+        code: 'missingOptionalField',
+        field: 'loreSettings',
+        message: `Invalid loreSettings: ${loreSettingsResult.error.message}`,
+      });
+    }
 
     if (raw.kind !== 'risu.character') {
       warnings.push({
@@ -114,7 +123,7 @@ export class RisucharManifestParser {
       typeof raw.creator === 'string' &&
       typeof raw.characterVersion === 'string' &&
       Boolean(sourceFormat !== 'unknown') &&
-      flags.valid;
+      flags.valid && loreSettingsResult.success;
 
     return {
       stableId,

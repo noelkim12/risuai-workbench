@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -161,6 +161,39 @@ describe('buildHmrCharacterPayload', () => {
     expect(JSON.stringify(result.data)).not.toContain(`hmr-asset://${secretHash}`);
     expect(result.assets.map((asset) => asset.hash)).not.toContain(secretHash);
     expect(result.assetSources.has(secretHash)).toBe(false);
+  });
+
+  it('switches the broadcast image when .risuchar selects another manifest icon', () => {
+    const { root, iconBytes } = makeCharacterRoot();
+    const coverBytes = Buffer.from('fake-png-cover');
+    writeFileSync(path.join(root, 'assets', 'icons', 'cover.png'), coverBytes);
+    writeFileSync(
+      path.join(root, 'assets', 'manifest.json'),
+      JSON.stringify({
+        assets: [
+          { index: 0, original_uri: 'embeded://assets/icons/cover.png', extracted_path: 'icons/cover.png', type: 'icon', name: 'cover', ext: 'png' },
+          { index: 1, original_uri: 'embeded://assets/icons/main.png', extracted_path: 'icons/main.png', type: 'icon', name: 'main', ext: 'png' },
+        ],
+      }),
+    );
+    writeRisuchar(root, 'assets/icons/cover.png');
+
+    const result = buildHmrCharacterPayload(root);
+
+    expect(result.data.image).toBe(`hmr-asset://${sha256Hex(coverBytes)}`);
+    expect(result.data.ccAssets).toEqual([
+      { type: 'icon', uri: `hmr-asset://${sha256Hex(iconBytes)}`, name: 'icon-1', ext: 'png' },
+    ]);
+  });
+
+  it('broadcasts .risuchar lowLevelAccess flag', () => {
+    const { root } = makeCharacterRoot();
+    const risucharPath = path.join(root, '.risuchar');
+    const manifest = JSON.parse(readFileSync(risucharPath, 'utf-8'));
+    manifest.flags.lowLevelAccess = true;
+    writeFileSync(risucharPath, JSON.stringify(manifest));
+
+    expect(buildHmrCharacterPayload(root).data.lowLevelAccess).toBe(true);
   });
 
   it('builds an empty-asset payload for a root without assets dir', () => {

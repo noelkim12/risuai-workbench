@@ -31,6 +31,13 @@
   $: characterFields = isCharacterMode ? (fields as CharacterEditFields) : null;
   $: moduleFields = isModuleMode ? (fields as ModuleEditFields) : null;
   $: pluginFields = isPluginMode ? (fields as PluginEditFields) : null;
+
+  function toggleGlobalLoreSettings(): void {
+    if (!characterFields) return;
+    characterFields.loreSettings = characterFields.loreSettings === null
+      ? { scanDepth: 5, tokenBudget: 800, recursiveScanning: false, fullWordMatching: false }
+      : null;
+  }
 </script>
 
 <section class="marker-form" aria-label="Root Marker Editor Form">
@@ -104,6 +111,37 @@
 
     {#if characterFields}
       <TagsInput bind:tags={characterFields.tags} />
+
+      <label class="marker-form__field marker-form__field--toggle">
+        <span class="marker-form__field-label">Use Global Lorebook Settings</span>
+        <input type="checkbox" role="switch" checked={characterFields.loreSettings === null} onchange={toggleGlobalLoreSettings} class="marker-form__toggle" />
+        <span class="marker-form__switch" aria-hidden="true"><span class="marker-form__switch-thumb"></span></span>
+        <span class="marker-form__toggle-label">{characterFields.loreSettings === null ? 'On' : 'Off'}</span>
+      </label>
+
+      {#if characterFields.loreSettings}
+        <p class="marker-form__subtitle">Initial values: depth 5, budget 800. Global mode uses the settings of your RisuAI installation.</p>
+        <label class="marker-form__field">
+          <span class="marker-form__field-label">Lorebook Scan Depth</span>
+          <input type="number" step="any" bind:value={characterFields.loreSettings.scanDepth} class="marker-form__input" />
+        </label>
+        <label class="marker-form__field">
+          <span class="marker-form__field-label">Lorebook Token Budget</span>
+          <input type="number" step="any" bind:value={characterFields.loreSettings.tokenBudget} class="marker-form__input" />
+        </label>
+        <label class="marker-form__field marker-form__field--toggle">
+          <span class="marker-form__field-label">Recursive Scanning</span>
+          <input type="checkbox" role="switch" bind:checked={characterFields.loreSettings.recursiveScanning} class="marker-form__toggle" />
+          <span class="marker-form__switch" aria-hidden="true"><span class="marker-form__switch-thumb"></span></span>
+          <span class="marker-form__toggle-label">{characterFields.loreSettings.recursiveScanning ? 'On' : 'Off'}</span>
+        </label>
+        <label class="marker-form__field marker-form__field--toggle">
+          <span class="marker-form__field-label">Full Word Matching</span>
+          <input type="checkbox" role="switch" bind:checked={characterFields.loreSettings.fullWordMatching} class="marker-form__toggle" />
+          <span class="marker-form__switch" aria-hidden="true"><span class="marker-form__switch-thumb"></span></span>
+          <span class="marker-form__toggle-label">{characterFields.loreSettings.fullWordMatching ? 'On' : 'Off'}</span>
+        </label>
+      {/if}
 
       <label class="marker-form__field marker-form__field--toggle">
         <span class="marker-form__field-label">Utility Bot</span>

@@ -17,6 +17,7 @@ import { sanitizeFilename } from '../../../utils/filenames';
 import { setNestedValue, classifyAssetExt, normalizeExt } from '../utils';
 import { isPlainRecord as isPlainRecordShared } from '@/shared/guards';
 import { createBlankCharxV3 } from '@/domain/charx/blank-char';
+import { parseCharacterLoreSettings, toCharbookLoreSettings } from '@/domain/lorebook/settings';
 import {
   parseLorebookContent,
   parseLorebookOrder,
@@ -357,6 +358,15 @@ export function applyManifestImageSelection(
   const existingIndex = charx.data.assets.findIndex(
     (asset: unknown) => isPlainRecord(asset) && typeof asset.uri === 'string' && candidateUris.has(asset.uri),
   );
+
+  // 선택되지 않은 기존 main icon은 강등한다. RisuAI import는 마지막 main icon을 대표 이미지로 쓰므로
+  // 남겨두면 `.risuchar.image` 변경이 무시되고 archive 경로(assets/icon/image/main.*)도 충돌한다.
+  charx.data.assets.forEach((asset: unknown, index: number) => {
+    if (index === existingIndex || !isPlainRecord(asset)) return;
+    if (asset.type !== 'icon' || asset.name !== 'main') return;
+    const stem = typeof asset.uri === 'string' ? path.posix.parse(asset.uri.replace(/^embeded:\/\//, '')).name : '';
+    asset.name = stem.length > 0 && stem !== 'main' ? stem : `icon-${index}`;
+  });
 
   if (existingIndex >= 0) {
     charx.data.assets[existingIndex] = {
@@ -741,6 +751,11 @@ function mergeCharacterMetadata(charx: any, inRoot: string, characterDir: string
     }
 
     applyManifestImageSelection(charx, inRoot, normalizeWorkspaceRelativePath(manifest.image));
+
+    Object.assign(
+      charx.data.character_book ??= { entries: [] },
+      toCharbookLoreSettings(parseCharacterLoreSettings(manifest.loreSettings)),
+    );
 
     const flags = manifest.flags;
     if (isPlainRecord(flags)) {

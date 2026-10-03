@@ -5,6 +5,7 @@ import { sanitizeFilename } from '../../../utils/filenames';
 import { RISUMODULE_FILENAME, RISUMODULE_KIND, readRisumoduleManifest } from '../risumodule';
 import type { RisuLuaMode } from './risulua-mode';
 import { isPlainRecord } from '@/shared/guards';
+import { parseCharacterLoreSettings, type CharacterLoreSettings } from '@/domain/lorebook/settings';
 
 /**
  * RisuLua 캐릭터 마커 파일 이름.
@@ -48,6 +49,7 @@ export interface RisucharManifest {
   sourceFormat?: string;
   image?: string | null;
   tags?: string[];
+  loreSettings?: CharacterLoreSettings | null;
   flags?: Record<string, unknown>;
 }
 
@@ -191,6 +193,7 @@ export function parseRisucharManifest(text: string, markerPath: string): Risucha
   if (isPlainObject(obj.flags)) {
     manifest.flags = obj.flags;
   }
+  manifest.loreSettings = parseCharacterLoreSettings(obj.loreSettings);
 
   return manifest;
 }

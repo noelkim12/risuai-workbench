@@ -2,6 +2,7 @@ export { asRecord, type GenericRecord } from './types';
 export * from './cbs';
 export * from './custom-extension';
 export * from './editor';
+export * from './lorebook/settings';
 export {
   buildFolderMap as buildRisuFolderMap,
   resolveFolderName as resolveRisuFolderName,

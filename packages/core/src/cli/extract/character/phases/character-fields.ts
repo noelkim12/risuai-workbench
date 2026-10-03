@@ -22,6 +22,7 @@ import {
 } from '@/domain/custom-extension/extensions/toggle';
 import { toPosix } from '@/domain/lorebook/folders';
 import type { ExtractedAssetManifest } from './types';
+import { readCharbookLoreSettings } from '@/domain/lorebook/settings';
 
 const CHARACTER_PROSE_FIELDS: Array<[string, (data: any, risuai: any) => string]> = [
   ['description', (data) => data.description || ''],
@@ -144,6 +145,7 @@ function buildCharacterManifest(
     sourceFormat: 'charx',
     image: selectCharacterImagePath(assetManifest),
     tags: normalizeStringArray(data.tags),
+    loreSettings: readCharbookLoreSettings(data.character_book),
     flags: {
       utilityBot: risuai.utilityBot ?? false,
       lowLevelAccess: risuai.lowLevelAccess ?? false,

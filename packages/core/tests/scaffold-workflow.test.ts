@@ -285,6 +285,7 @@ describe('src/cli scaffold workflow', () => {
       expect(risuchar.kind).toBe('risu.character');
       expect(risuchar.schemaVersion).toBe(1);
       expect(risuchar.sourceFormat).toBe('scaffold');
+      expect(risuchar.loreSettings).toBeNull();
       expect(risuchar.name).toBe('My Character');
       expect(risuchar.creator).toBe('TestAuthor');
     });

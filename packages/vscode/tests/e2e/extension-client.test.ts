@@ -113,6 +113,25 @@ interface BuiltCharacterImageModule {
 }
 
 interface BuiltMarkerEditorViewProviderModule {
+  toCharacterEditFields: (manifest: Record<string, unknown>) => {
+    name: string;
+    creator: string;
+    characterVersion: string;
+    image: string | null;
+    tags: string[];
+    utilityBot: boolean;
+    lowLevelAccess: boolean;
+    loreSettings: {
+      scanDepth: number;
+      tokenBudget: number;
+      recursiveScanning: boolean;
+      fullWordMatching: boolean;
+    } | null;
+  };
+  applyCharacterEditFields: (
+    manifest: Record<string, unknown>,
+    fields: ReturnType<BuiltMarkerEditorViewProviderModule['toCharacterEditFields']>,
+  ) => void;
   copyMarkerEditorImageToAssets: (
     rootUri: TestUri,
     imageUri: TestUri,
@@ -1528,6 +1547,33 @@ test('builds deterministic character image metadata updates', () => {
       ],
     },
   );
+});
+
+test('marker editor defaults to global lore settings and saves custom values without range limits', () => {
+  const markerEditor = loadBuiltMarkerEditorViewProviderModule(createCharacterScannerVscodeStub({}));
+  const manifest: Record<string, unknown> = { name: 'Lore settings', vendorData: { keep: true } };
+  const fields = markerEditor.toCharacterEditFields(manifest);
+  assert.equal(fields.loreSettings, null);
+  fields.loreSettings = { scanDepth: 100, tokenBudget: 100000, recursiveScanning: false, fullWordMatching: true };
+
+  markerEditor.applyCharacterEditFields(manifest, fields);
+
+  assert.deepEqual(manifest.loreSettings, fields.loreSettings);
+  assert.deepEqual(markerEditor.toCharacterEditFields(manifest).loreSettings, fields.loreSettings);
+  assert.deepEqual(manifest.vendorData, { keep: true });
+});
+
+test('marker editor saves the transition from custom lore settings to global settings', () => {
+  const markerEditor = loadBuiltMarkerEditorViewProviderModule(createCharacterScannerVscodeStub({}));
+  const manifest: Record<string, unknown> = { loreSettings: {
+    scanDepth: 0, tokenBudget: 0, recursiveScanning: false, fullWordMatching: false,
+  } };
+  const fields = markerEditor.toCharacterEditFields(manifest);
+  fields.loreSettings = null;
+
+  markerEditor.applyCharacterEditFields(manifest, fields);
+
+  assert.equal(manifest.loreSettings, null);
 });
 
 test('normalizes marker editor images to supported assets paths only', () => {

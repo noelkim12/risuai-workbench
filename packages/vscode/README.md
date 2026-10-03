@@ -54,9 +54,9 @@ CBS LSP client 설정은 `package.json`의 `contributes.configuration`과 `src/l
 }
 ```
 
-- `launchMode = "auto"` — selected standalone install mode를 먼저 시도하고, `local-devDependency`가 workspace에서 해석되지 않을 때만 embedded monorepo module로 fallback합니다.
+- `launchMode = "auto"` — selected standalone install mode를 먼저 시도하고, workspace-local server를 찾지 못하면 VSIX에 포함된 embedded server로 fallback합니다. 모노레포 개발 환경에서는 sibling `packages/cbs-lsp/dist/embedded.js`도 사용할 수 있습니다. 잘못된 explicit path override는 fallback으로 숨기지 않습니다.
 - `launchMode = "standalone"` — standalone public surface만 사용합니다. fallback 없이 resolution failure UX를 바로 노출합니다.
-- `launchMode = "embedded"` — monorepo 개발용 `packages/cbs-lsp/dist/embedded.js` IPC launch를 강제합니다.
+- `launchMode = "embedded"` — VSIX의 `node_modules/@risuai-workbench/cbs-language-server/dist/embedded.js`를 IPC로 실행합니다. 패키징되지 않은 개발 환경에서는 monorepo server를 사용합니다.
 - `installMode = "local-devDependency"` — `<workspace>/node_modules/.bin/cbs-language-server --stdio`
 - `installMode = "npx"` — `npx --yes --package @risuai-workbench/cbs-language-server cbs-language-server --stdio`
 - `installMode = "global"` — `cbs-language-server --stdio`
@@ -73,6 +73,19 @@ client는 resolution 실패를 silent no-op으로 숨기지 않습니다.
 - VS Code error message에 recovery hint를 노출합니다.
 - explicit path override가 잘못되면 fallback으로 감추지 않습니다.
 - standalone server 자체의 stdio smoke, extracted workspace E2E, perf budget은 server 패키지가 소유하고, 이 패키지는 공식 VS Code client가 public server surface를 어떻게 선택하고 붙는지만 검증합니다.
+
+## AI agent 연결 (MCP)
+
+Workbench MCP server(`@risuai-workbench/mcp`)는 VSIX에 포함되지 않는 별도 npm 패키지입니다. Claude Code, Codex, OpenCode 같은 agent가 같은 canonical workspace를 읽고 검증·수정하게 할 때 사용합니다. Node.js 20 이상이 필요합니다.
+
+1. Command Palette에서 **Risu Workbench: Copy MCP Config**를 실행합니다.
+2. 사용할 client와 형식을 고르면 이 확장 버전과 맞춘 `@risuai-workbench/mcp@<version>`으로 고정된 설정이 클립보드에 복사됩니다.
+3. 등록 명령은 workspace root 터미널에서 실행하고, 설정 snippet은 해당 client 설정 파일에 붙여 넣습니다.
+4. agent에서 `workbench.smoke`를 호출해 workspace root가 현재 프로젝트인지 확인합니다.
+
+- 구현: `src/commands/mcpConfig.ts`, 테스트: `tests/e2e/mcp-config-boundary.test.ts`
+- 고정 버전 `RISU_MCP_PACKAGE_VERSION`은 `packages/risuai-workbench-mcp/package.json`의 `version`과 같아야 하며 boundary test가 이를 검사합니다.
+- client별 상세 설정과 문제 해결: `packages/risuai-workbench-mcp/docs/HARNESS_SETUP.md`
 
 ## 개발과 검증
 
@@ -92,6 +105,44 @@ npm run verify:cbs-client
 - `npm run test:e2e:cbs-client:boundary` — built output + static boundary/failure UX snapshot 회귀입니다.
 - `npm run test:e2e:cbs-client:runtime` — `@vscode/test-electron` 기반 Extension Host runtime roundtrip입니다.
 - `npm run verify:cbs-client` — static/build contract smoke와 official client E2E를 묶은 release verify entry입니다.
+
+## VSIX 생성과 배포
+
+저장소 루트에서 Node.js 22와 Rust/`wasm-pack` 빌드 환경을 사용합니다. `wasm:build`는 `npx wasm-pack`을 호출합니다.
+
+```bash
+npm ci
+npm run package:vsix
+npm run verify:vsix
+```
+
+- 산출물: `dist/vsix/risu-workbench-vscode-<platform>-<arch>-<version>.vsix`
+- 버전 기준: `packages/vscode/package.json`의 `version`. 이 확장은 npm Changesets 버전 관리와 별도입니다.
+- 현재 checkout의 core, CBS server, Lua WASM 패키지와 runtime dependencies를 별도 staging 디렉터리에 설치해 포함합니다. 로컬 workspace symlink에 의존하지 않습니다.
+- verifier는 VSIX를 저장소 밖에 풀고 런타임 의존성 및 server 동작을 검사합니다. 실제 VS Code UI 설치 테스트를 대체하지 않습니다.
+- 네이티브 Tree-sitter 의존성 때문에 범용 VSIX가 아닙니다. 빌드한 호스트의 플랫폼으로 패키징하며 CI는 `linux-x64`(Ubuntu 22.04), `win32-x64`, `darwin-arm64`를 각각 빌드·검증합니다. Linux ARM64, Windows ARM64, Intel macOS, Alpine Linux는 이 배포 matrix에 포함하지 않습니다.
+- VSIX는 **확장이 실행되는 호스트**에 맞춰 선택합니다. 로컬 Windows 창은 `win32-x64`, WSL/SSH/container의 Linux x64 Extension Host는 `linux-x64`, Apple Silicon macOS는 `darwin-arm64`입니다.
+- Windows에서 소스 빌드는 Git Bash와 네이티브 Node addon 빌드 도구가 필요하며 `npm_config_script_shell=bash` 환경변수를 설정합니다. 일반 사용자는 빌드 도구 없이 해당 플랫폼 VSIX를 설치합니다.
+
+### staging에서 검증하고 main에서 배포하기
+
+1. 변경 브랜치에서 **staging을 대상으로 PR**을 만듭니다. `VSIX release` workflow가 빌드·검증하고 `vscode-vsix-<target>` artifact를 업로드합니다. PR에서는 Release를 게시하지 않습니다.
+2. artifact의 VSIX를 내려받아 VS Code의 **Extensions → … → Install from VSIX…**로 설치합니다. 확장 개발 호스트가 아닌 일반 창에서 테스트합니다.
+3. 작은 Risu 프로젝트를 열어 Artifact Browser와 편집기를 확인하고, CBS 진단이 나타나는지 확인합니다. **Output → CBS Language Server**에서 server launch 경로를 확인합니다. 실패하면 오류 메시지와 launch 로그를 공유합니다.
+4. staging → main PR을 머지합니다. npm 패키지 릴리스 workflow는 기존대로 별도로 실행됩니다.
+5. **main에 포함된 배포할 커밋**에 확장 버전과 같은 태그를 생성하고 push합니다. 아래는 첫 `0.1.0` 배포 예입니다.
+
+```bash
+git fetch origin main
+git tag vscode-v0.1.0 origin/main
+git push origin vscode-v0.1.0
+```
+
+태그 push는 **공개 GitHub Release 배포를 실행**합니다. 태그/manifest 버전 불일치나 main에 포함되지 않은 커밋은 거부합니다. 빌드·검증 성공 후 `vscode-v0.1.0` Release에 VSIX가 첨부됩니다. npm Release의 latest 표시는 변경하지 않습니다.
+
+`workflow_dispatch` 수동 실행은 브랜치에서 artifact만 만들 때 사용할 수 있습니다. 태그를 선택하면 같은 release gate와 게시 단계가 적용됩니다. 이미 게시된 버전의 파일을 덮어쓰지 않습니다. 수정 배포는 확장 버전을 올리고 새 태그를 사용합니다.
+
+Marketplace/Open VSX 게시는 포함하지 않습니다. GitHub Release 배포에는 기본 `GITHUB_TOKEN`만 사용하며 `VSCE_PAT`가 필요하지 않습니다. LuaLS sidecar는 별도 `lua-language-server` 설치 또는 `risuaiWorkbench.cbs.server.luaLsPath` 설정이 필요합니다.
 
 ## 문서 수정 규칙
 

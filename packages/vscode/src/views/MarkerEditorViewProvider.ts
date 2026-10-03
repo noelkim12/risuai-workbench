@@ -38,6 +38,7 @@ import {
   type PluginEditFields,
 } from '../artifact-browser/artifactBrowserTypes';
 import { ArtifactBrowserViewProvider } from './ArtifactBrowserViewProvider';
+import { parseCharacterLoreSettings, characterLoreSettingsSchema } from '@risuai-workbench/core';
 import {
   createWebviewDevServerHtml,
   getConfiguredWebviewDevServerUrl,
@@ -494,7 +495,7 @@ function createPanelTitle(mode: MarkerEditorMode, markerUri: vscode.Uri): string
   return `Edit Plugin Marker: ${folderName ?? PLUGIN_MARKER_FILENAME}`;
 }
 
-function toCharacterEditFields(manifest: JsonObject): CharacterEditFields {
+export function toCharacterEditFields(manifest: JsonObject): CharacterEditFields {
   const flags = isJsonObject(manifest.flags) ? manifest.flags : {};
   return {
     name: readString(manifest.name),
@@ -506,6 +507,7 @@ function toCharacterEditFields(manifest: JsonObject): CharacterEditFields {
       : [],
     utilityBot: flags.utilityBot === true,
     lowLevelAccess: flags.lowLevelAccess === true,
+    loreSettings: parseCharacterLoreSettings(manifest.loreSettings),
   };
 }
 
@@ -528,12 +530,13 @@ function toPluginEditFields(manifest: JsonObject): PluginEditFields {
   };
 }
 
-function applyCharacterEditFields(manifest: JsonObject, fields: CharacterEditFields): void {
+export function applyCharacterEditFields(manifest: JsonObject, fields: CharacterEditFields): void {
   manifest.name = fields.name;
   manifest.creator = fields.creator;
   manifest.characterVersion = fields.characterVersion;
   manifest.image = fields.image;
   manifest.tags = fields.tags;
+  manifest.loreSettings = parseCharacterLoreSettings(fields.loreSettings);
   const flags = isJsonObject(manifest.flags) ? manifest.flags : {};
   flags.utilityBot = fields.utilityBot;
   flags.lowLevelAccess = fields.lowLevelAccess;
@@ -622,7 +625,9 @@ function isCharacterEditFields(fields: MarkerEditFields): fields is CharacterEdi
     typeof fields.characterVersion === 'string' &&
     Array.isArray(fields.tags) &&
     typeof fields.utilityBot === 'boolean' &&
-    typeof fields.lowLevelAccess === 'boolean'
+    typeof fields.lowLevelAccess === 'boolean' &&
+    'loreSettings' in fields &&
+    characterLoreSettingsSchema.nullable().safeParse(fields.loreSettings).success
   );
 }
 

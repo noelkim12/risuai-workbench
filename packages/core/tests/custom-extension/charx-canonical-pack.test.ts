@@ -327,6 +327,28 @@ describe('charx canonical pack', () => {
     expect(Object.keys(archive)).toContain('assets/icon/image/main.png');
   });
 
+  it('demotes the previous main icon when .risuchar image selects another icon', () => {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-image-switch-'));
+    tempDirs.push(workDir);
+
+    writeCanonicalManifest(workDir, { image: 'assets/icons/cover.png' });
+    writeAssetFixture(workDir, [
+      { index: 0, extractedPath: 'icons/cover.png', type: 'icon', name: 'cover', ext: 'png', content: Buffer.from([137, 80, 78, 71, 1]) },
+      { index: 1, extractedPath: 'icons/cover2.png', type: 'icon', name: 'main', ext: 'png', content: Buffer.from([137, 80, 78, 71, 2]) },
+    ]);
+
+    const outPath = path.join(workDir, 'packed.charx');
+    packCharx(workDir, outPath);
+    const archive = unzipSync(readFileSync(outPath));
+    const packedCharx = JSON.parse(strFromU8(archive['charx.json']));
+    const mainIcons = packedCharx.data.assets.filter((asset: any) => asset.type === 'icon' && asset.name === 'main');
+
+    expect(mainIcons).toHaveLength(1);
+    expect(Array.from(readEmbededAssetPayload(archive, mainIcons[0]))).toEqual([137, 80, 78, 71, 1]);
+    expect(packedCharx.data.assets[1]).toMatchObject({ type: 'icon', name: 'cover2', ext: 'png' });
+    expect(Array.from(readEmbededAssetPayload(archive, packedCharx.data.assets[1]))).toEqual([137, 80, 78, 71, 2]);
+  });
+
   it('packs manifestless .risuchar selected image as the main icon asset', () => {
     const workDir = mkdtempSync(path.join(tmpdir(), 'risu-core-charx-image-no-manifest-'));
     tempDirs.push(workDir);

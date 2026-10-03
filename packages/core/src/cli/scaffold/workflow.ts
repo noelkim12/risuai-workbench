@@ -230,6 +230,7 @@ function scaffoldCharx(root: string, options: ScaffoldOptions): number {
     sourceFormat: 'scaffold',
     image: null,
     tags: [],
+    loreSettings: null,
     flags: {
       utilityBot: false,
       lowLevelAccess: false,

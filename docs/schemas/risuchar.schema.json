@@ -75,6 +75,22 @@
       },
       "description": "Canonical character tag list mapped to CCv3 data.tags."
     },
+    "loreSettings": {
+      "description": "Character lorebook settings. Null or omission uses global settings.",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["scanDepth", "tokenBudget", "recursiveScanning", "fullWordMatching"],
+          "properties": {
+            "scanDepth": { "type": "number" },
+            "tokenBudget": { "type": "number" },
+            "recursiveScanning": { "type": "boolean" },
+            "fullWordMatching": { "type": "boolean" }
+          }
+        }
+      ]
+    },
     "flags": {
       "type": "object",
       "additionalProperties": false,
