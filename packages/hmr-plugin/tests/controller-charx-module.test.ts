@@ -73,7 +73,7 @@ describe('charx-backed module target', () => {
     const fixture = makeFixture({
       name: 'Aria module',
       creatorNotes: 'Module description',
-      globalLore: [{ content: 'Base lore' }],
+      globalLore: [{ comment: 'Base', content: 'Base lore' }],
       desc: 'Character description',
       image: 'assets/icon.png',
     });
@@ -89,7 +89,7 @@ describe('charx-backed module target', () => {
         description: 'Module description',
         icon: 'assets/icon.png',
         lorebook: [
-          { content: 'Base lore' },
+          { comment: 'Base', content: 'Base lore' },
           expect.objectContaining({ content: expect.stringContaining('@@indicator character_desc') }),
         ],
       }),

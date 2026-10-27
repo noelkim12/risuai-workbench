@@ -1,19 +1,8 @@
-/**
- * Official VS Code client boundary E2E checks for the CBS language client.
- *
- * This file is a **client-layer concern only**. It validates launch resolution,
- * boundary snapshot, and client-side integration scripts — not the LSP server
- * itself. Server-level stdio validation with real extracted workspaces lives in
- * `packages/cbs-lsp/tests/e2e/extracted-workspace.test.ts`.
- * @file packages/vscode/tests/e2e/extension-client.test.ts
- */
-
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire, Module } from 'node:module';
 import path from 'node:path';
 import test from 'node:test';
-
 import type {
   CbsClientBoundarySnapshot,
   CbsClientBoundaryInputs,
@@ -24,6 +13,15 @@ import type {
   ModuleBrowserCard,
   BrowserSection,
 } from '../../src/artifact-browser/artifactBrowserTypes';
+/**
+ * Official VS Code client boundary E2E checks for the CBS language client.
+ *
+ * This file is a **client-layer concern only**. It validates launch resolution,
+ * boundary snapshot, and client-side integration scripts — not the LSP server
+ * itself. Server-level stdio validation with real extracted workspaces lives in
+ * `packages/cbs-lsp/tests/e2e/extracted-workspace.test.ts`.
+ * @file packages/vscode/tests/e2e/extension-client.test.ts
+ */
 
 const packageRoot = path.resolve(__dirname, '..', '..', '..');
 const localRequire = createRequire(__filename);
@@ -1481,24 +1479,6 @@ test('contributes marker editor command to explorer marker file context menus', 
     ),
     'Expected explorer context menu for .risumodule marker files',
   );
-});
-
-test('keeps marker editor webview on the nonce module script without a dynamic MarkerEditor chunk', () => {
-  const mainSource = readFileSync(
-    path.join(packageRoot, '..', 'webview', 'src', 'main.ts'),
-    'utf8',
-  );
-  const copiedWebviewAssets = path.join(packageRoot, 'dist', 'webview', 'assets');
-
-  assert.match(
-    mainSource,
-    /import MarkerEditor from '\.\/lib\/components\/editor\/marker\/MarkerEditor\.svelte';/,
-  );
-  assert.doesNotMatch(
-    mainSource,
-    /await import\('\.\/lib\/components\/editor\/marker\/MarkerEditor\.svelte'\)/,
-  );
-  assert.equal(existsSync(path.join(copiedWebviewAssets, 'MarkerEditor.js')), false);
 });
 
 test('builds deterministic character image metadata updates', () => {

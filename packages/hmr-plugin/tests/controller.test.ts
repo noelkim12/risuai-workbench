@@ -65,6 +65,7 @@ function makeFake(): Fake {
         }
         const next = watchQueue.shift();
         if (next instanceof Error) throw next;
+        if (isRecord(next) && next['definitionChanged'] === true && isRecord(health)) health = { ...health, version: next['version'] };
         return next;
       }
       throw new Error(`unexpected url: ${url}`);
@@ -142,6 +143,142 @@ function countRequests(urls: readonly string[], path: string): number {
 }
 
 describe('HmrController', () => {
+  it.each([true, false])('restores saved pause offline and resumes with autoApply=%s', async (autoApply) => {
+    const fake = makeFake();
+    const first = new HmrController(fake.deps);
+    await first.connect(CONN);
+    await first.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false });
+    await first.setAutoApply(autoApply);
+    await first.pause();
+    expect((await fake.deps.store.load())?.paused).toBe(true);
+    const fetchJson = fake.deps.fetchJson;
+    const offline = vi.fn(async () => { throw new Error('server offline'); });
+    fake.deps.fetchJson = offline;
+    const revived = new HmrController(fake.deps);
+    expect(await revived.tryAutoReconnect()).toBe(true);
+    expect(revived.getState()).toMatchObject({ phase: 'paused', autoApply, appliedVersion: 1 });
+    expect(offline).not.toHaveBeenCalled();
+    expect(fake.written).toHaveLength(1);
+    fake.deps.fetchJson = fetchJson;
+    fake.setHealth({ app: 'risu-workbench-hmr', protocolVersion: HMR_PROTOCOL_VERSION, project: { name: 'Aria', kind: 'character', stableId: 'sid-1' }, version: 2 });
+    await revived.resume();
+    expect(revived.getState()).toMatchObject({ phase: 'active', autoApply, appliedVersion: autoApply ? 2 : 1 });
+    expect(revived.getState().pendingVersion).toBe(autoApply ? undefined : 2);
+    expect(fake.written).toHaveLength(autoApply ? 2 : 1);
+    expect((await fake.deps.store.load())?.paused).toBe(false);
+    revived.stopLoops();
+    fake.releaseAll();
+  });
+
+  it('reports pause persistence failure and keeps resume paused when its save fails', async () => {
+    const fake = makeFake();
+    const controller = new HmrController(fake.deps);
+    await controller.connect(CONN);
+    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false });
+    fake.deps.store.save = async () => { throw new Error('storage failed'); };
+    await expect(controller.pause()).rejects.toThrow('storage failed');
+    expect(controller.getState()).toMatchObject({ phase: 'paused', lastError: 'storage failed' });
+    await expect(controller.resume()).rejects.toThrow('storage failed');
+    expect(controller.getState().phase).toBe('paused');
+    expect(fake.written).toHaveLength(1);
+    controller.stopLoops();
+    fake.releaseAll();
+  });
+  it('keeps OFF across latest pending manual sync and reconnect, then catches up on ON', async () => {
+    const fake = makeFake();
+    const controller = new HmrController(fake.deps);
+    await controller.connect(CONN);
+    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false });
+    await controller.setAutoApply(false);
+    for (const version of [2, 3, 4]) fake.pushWatch({ version, definitionChanged: true, changedAssets: [], stableId: 'sid-1' });
+    await waitFor(() => controller.getState().pendingVersion === 4);
+    expect(fake.written).toHaveLength(1);
+    const snapshot = await controller.prepareManualPreview('replace');
+    expect((await controller.applyPreview(snapshot)).status).toBe('applied');
+    expect(fake.written).toHaveLength(2);
+    expect(controller.getState()).toMatchObject({ autoApply: false, mergeMode: 'replace', appliedVersion: 4 });
+    controller.stopLoops();
+    fake.setHealth({ app: 'risu-workbench-hmr', protocolVersion: HMR_PROTOCOL_VERSION, project: { name: 'Aria', kind: 'character', stableId: 'sid-1' }, version: 5 });
+    const revived = new HmrController(fake.deps);
+    expect(await revived.tryAutoReconnect()).toBe(true);
+    expect(fake.written).toHaveLength(2);
+    expect(revived.getState()).toMatchObject({ autoApply: false, mergeMode: 'replace', pendingVersion: 5 });
+    await revived.setAutoApply(true);
+    expect(fake.written).toHaveLength(3);
+    expect(revived.getState().appliedVersion).toBe(5);
+    revived.stopLoops();
+    fake.releaseAll();
+  });
+
+  it('rejects stale source and target snapshots without writes and serializes manual apply', async () => {
+    const fake = makeFake();
+    const controller = new HmrController(fake.deps);
+    await controller.connect(CONN);
+    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false });
+    await controller.setAutoApply(false);
+    const snapshot = await controller.prepareManualPreview();
+    fake.setPayload({ kind: 'character', data: { name: 'changed' }, assets: [] });
+    const changed = await controller.applyPreview(snapshot);
+    expect(changed.status).toBe('stale');
+    expect(fake.written).toHaveLength(1);
+    if (changed.status !== 'stale') throw new Error('expected refreshed preview');
+    toRecord(fake.characters[0])['desc'] = 'local';
+    expect((await controller.applyPreview(changed.snapshot)).status).toBe('stale');
+    const current = await controller.prepareManualPreview();
+    const results = await Promise.all([controller.applyPreview(current), controller.applyPreview(current)]);
+    expect(results.map((result) => result.status)).toEqual(['applied', 'busy']);
+    expect(fake.written).toHaveLength(2);
+    controller.stopLoops();
+    fake.releaseAll();
+  });
+
+  it('cancels an automatic asset download before host write when switched OFF', async () => {
+    const fake = makeFake();
+    const controller = new HmrController(fake.deps);
+    await controller.connect(CONN);
+    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false });
+    let release: (() => void) | undefined;
+    fake.deps.fetchBinary = async () => {
+      await new Promise<void>((resolve) => { release = resolve; });
+      return new Uint8Array([1]);
+    };
+    fake.setPayload({ kind: 'character', data: { image: 'hmr-asset://new' }, assets: [{ hash: 'new', ext: 'png', role: 'icon', size: 1 }] });
+    fake.pushWatch({ version: 2, definitionChanged: true, changedAssets: ['new'], stableId: 'sid-1' });
+    await waitFor(() => release !== undefined);
+    await controller.setAutoApply(false);
+    release?.();
+    await waitFor(() => !controller.getState().applyBusy);
+    expect(fake.written).toHaveLength(1);
+    expect(controller.getState()).toMatchObject({ appliedVersion: 1, pendingVersion: 2, autoApply: false });
+    controller.stopLoops();
+    fake.releaseAll();
+  });
+  it.each(['character', 'module'] as const)('previews and applies the same lore merge for a %s target', async (kind) => {
+    const fake = makeFake();
+    const loreKey = kind === 'character' ? 'globalLore' : 'lorebook';
+    const targets = kind === 'character' ? fake.characters : fake.modules;
+    const existing = toRecord(targets[0]);
+    const user = { comment: 'User', content: 'keep' };
+    existing[loreKey] = [user, { comment: 'Base', content: 'old' }];
+    const updated = { comment: 'Base', content: 'new' };
+    const added = { comment: 'New', content: 'added' };
+    fake.setHealth({ app: 'risu-workbench-hmr', protocolVersion: HMR_PROTOCOL_VERSION, project: { name: 'Aria', kind, stableId: 'sid-1' }, version: 1 });
+    fake.setPayload({ kind, data: { [loreKey]: [updated, added] }, assets: [] });
+    const controller = new HmrController(fake.deps);
+    await controller.connect(CONN);
+    const target = kind === 'character' ? { chaId: 'cha-1' } : { moduleId: 'mod-1' };
+
+    try {
+      const diff = await controller.buildConfirmDiff(target);
+      expect(diff.fields.find((field) => field.key === loreKey)?.entrySummary).toEqual({ added: 1, modified: 1, removed: 0 });
+      await controller.confirmAndStart({ ...target, label: 'Old', badgeEnabled: false });
+      expect(toRecord(targets[0])[loreKey]).toEqual([user, updated, added]);
+    } finally {
+      controller.stopLoops();
+      fake.releaseAll();
+    }
+  });
+
   it('connects on web platform when the local server is reachable', async () => {
     const fake = makeFake();
     fake.deps.getPlatform = async () => 'web';
@@ -249,6 +386,7 @@ describe('HmrController', () => {
     expect(countRequests(fake.requestedUrls, '/payload')).toBe(initialPayloadRequests);
     expect(fake.written).toHaveLength(initialWrites);
     expect(controller.getState().updateCount).toBe(0);
+    expect(controller.getState().observedVersion).toBe(1);
     await controller.disconnect();
     fake.releaseAll();
   });
@@ -363,6 +501,26 @@ describe('HmrController', () => {
     fake.releaseAll();
   });
 
+  it('retries a pending failed write without requiring a new watch version', async () => {
+    const fake = makeFake();
+    const controller = new HmrController(fake.deps);
+    await controller.connect(CONN);
+    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false });
+    const write = fake.deps.setCharacterToIndex;
+    let attempts = 0;
+    fake.deps.setCharacterToIndex = async (index, value) => {
+      if (++attempts === 1) throw new Error('temporary host failure');
+      await write(index, value);
+    };
+    fake.pushWatch({ version: 2, definitionChanged: true, changedAssets: [], stableId: 'sid-1' });
+    await waitFor(() => controller.getState().appliedVersion === 2);
+    expect(attempts).toBe(2);
+    expect(controller.getState().pendingVersion).toBeUndefined();
+    expect(fake.written).toHaveLength(2);
+    controller.stopLoops();
+    fake.releaseAll();
+  });
+
   it('emits initialSynced once after confirmAndStart applies the payload', async () => {
     const fake = makeFake();
     fake.setPayload({
@@ -393,7 +551,7 @@ describe('HmrController', () => {
     controller.stopLoops();
     fake.releaseAll();
 
-    expect(fake.events[1]).toEqual({ kind: 'applied', fromVersion: 1, version: 2, assetCount: 2 });
+    expect(fake.events[1]).toEqual({ kind: 'applied', fromVersion: 1, version: 2, assetCount: 0 });
   });
 
   it('does not emit when a watch response reports no definition change', async () => {
@@ -458,7 +616,7 @@ describe('HmrController', () => {
     const controller = new HmrController(fake.deps);
     await controller.connect(CONN);
     await controller.confirmAndStart({ chaId: 'cha-1', label: '미카', badgeEnabled: true });
-    controller.pause();
+    await controller.pause();
     fake.events.length = 0;
 
     fake.setHealth({
@@ -467,7 +625,7 @@ describe('HmrController', () => {
       project: { name: 'Aria', kind: 'character', stableId: 'sid-1' },
       version: 7,
     });
-    controller.resume();
+    await controller.resume();
     await vi.waitFor(() => expect(fake.events).toHaveLength(1));
     controller.stopLoops();
     fake.releaseAll();

@@ -270,7 +270,7 @@ Twist.
         {
           key: 'alpha, beta',
           secondkey: 'gamma, delta',
-          comment: 'Canonical Comment',
+          comment: 'Canonical Name',
           content: 'Lore body',
           mode: 'normal',
           alwaysActive: false,

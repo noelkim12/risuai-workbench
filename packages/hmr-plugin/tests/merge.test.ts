@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   applyAssetPlaceholders,
+  calculateEffectiveDefinition,
   convertCharacterToModuleDefinition,
   findCharacterIndexByChaId,
   mergeCharacterDefinition,
@@ -9,6 +10,36 @@ import {
 } from '../src/hmr/merge';
 
 describe('mergeCharacterDefinition', () => {
+  it('updates same-named lore in place and preserves user entries', () => {
+    const user = { comment: 'User', content: 'saved profile' };
+    const copy = { comment: 'Base copy', content: 'user copy' };
+    const existing = { globalLore: [user, { comment: 'Base', content: 'old' }, copy] };
+    const updated = { comment: 'Base', content: 'new', key: 'changed' };
+    const added = { comment: 'New', content: 'added' };
+    const definition = { globalLore: [updated, added] };
+
+    const merged = mergeCharacterDefinition(existing, definition);
+
+    expect(merged['globalLore']).toEqual([user, updated, copy, added]);
+    expect(existing.globalLore[1]).toEqual({ comment: 'Base', content: 'old' });
+    expect(definition.globalLore).toEqual([updated, added]);
+    expect(mergeCharacterDefinition(merged, definition)['globalLore']).toEqual(merged['globalLore']);
+  });
+
+  it('keeps installed lore when incoming lore is empty or omitted', () => {
+    const existing = { globalLore: [{ comment: 'User', content: 'keep' }] };
+
+    expect(mergeCharacterDefinition(existing, { globalLore: [] })['globalLore']).toEqual(existing.globalLore);
+    expect(mergeCharacterDefinition(existing, { name: 'Updated' })['globalLore']).toEqual(existing.globalLore);
+  });
+
+  it('uses incoming lore when the installed value is not an array', () => {
+    const globalLore = [{ comment: 'Base', content: 'new' }];
+
+    expect(mergeCharacterDefinition({}, { globalLore })['globalLore']).toEqual(globalLore);
+    expect(mergeCharacterDefinition({ globalLore: null }, { globalLore })['globalLore']).toEqual(globalLore);
+  });
+
   it('clears custom lore settings when the incoming definition requests global mode', () => {
     const existing = { loreSettings: { scanDepth: 5, tokenBudget: 800 }, chats: [{ message: [] }] };
 
@@ -87,6 +118,21 @@ describe('findCharacterIndexByChaId', () => {
 });
 
 describe('replaceModuleById', () => {
+  it('merges module lore by name while replacing other definition fields', () => {
+    const user = { comment: 'User', content: 'keep' };
+    const copy = { comment: 'Base copy', content: 'copy' };
+    const modules = [{ id: 'm1', obsolete: true, lorebook: [user, { comment: 'Base', content: 'old' }, copy] }];
+    const updated = { comment: 'Base', content: 'new' };
+    const added = { comment: 'New', content: 'added' };
+
+    expect(replaceModuleById(modules, 'm1', { name: 'Updated', lorebook: [updated, added] })).toEqual([
+      { id: 'm1', name: 'Updated', lorebook: [user, updated, copy, added] },
+    ]);
+    expect(replaceModuleById(modules, 'm1', { lorebook: [] })).toEqual([
+      { id: 'm1', lorebook: modules[0]?.lorebook },
+    ]);
+  });
+
   it('replaces the matching module, forcing id, preserving order', () => {
     const modules = [
       { id: 'm1', name: 'A' },
@@ -100,6 +146,67 @@ describe('replaceModuleById', () => {
       { id: 'm2', name: 'B2', lorebook: [] },
     ]);
     expect(replaceModuleById(modules, 'nope', { name: 'X' })).toBeNull();
+  });
+});
+
+describe('calculateEffectiveDefinition', () => {
+  it.each([
+    ['character', 'globalLore'], ['character', 'customscript'], ['character', 'triggerscript'],
+    ['module', 'lorebook'], ['module', 'regex'], ['module', 'trigger'],
+  ] as const)('merges %s %s by exact comment and replaces each complete entry', (kind, key) => {
+    const local = { comment: 'Local', content: 'keep' };
+    const existing = { [key]: [local, { comment: 'A', content: 'old', obsolete: true }] };
+    const incoming = { [key]: [{ comment: 'A', content: 'new' }, { comment: 'a', content: 'case' }, { comment: ' A ', content: 'space' }] };
+    const before = structuredClone({ existing, incoming });
+
+    const result = calculateEffectiveDefinition({ kind, existing, incoming });
+
+    expect(result.status).toBe('ready');
+    expect(result.after[key]).toEqual([local, ...(incoming[key] ?? [])]);
+    expect(result.preserved).toEqual([{ key, labels: ['Local'] }]);
+    expect({ existing, incoming }).toEqual(before);
+  });
+
+  it('pairs unnamed entries in order instead of blocking', () => {
+    const existing = { triggerscript: [{ comment: '', code: 'old' }, { comment: 'A' }, { comment: '', code: 'extra' }] };
+    const incoming = { triggerscript: [{ comment: '', code: 'new' }] };
+
+    const result = calculateEffectiveDefinition({ kind: 'character', existing, incoming });
+
+    expect(result.status).toBe('ready');
+    expect(result.after['triggerscript']).toEqual([{ comment: '', code: 'new' }, { comment: 'A' }, { comment: '', code: 'extra' }]);
+    expect(result.preserved).toEqual([{ key: 'triggerscript', labels: ['A', '(이름 없음)'] }]);
+  });
+
+  it.each(['existing', 'incoming'] as const)('blocks duplicate names in %s', (side) => {
+    const single = { regex: [{ comment: 'A' }] };
+    const duplicate = { regex: [{ comment: 'A' }, { comment: 'A' }] };
+
+    const result = calculateEffectiveDefinition({ kind: 'module', existing: side === 'existing' ? duplicate : single, incoming: side === 'incoming' ? duplicate : single });
+
+    expect(result.status).toBe('conflict');
+    expect(result.conflicts).toEqual([expect.objectContaining({ side, reason: 'duplicate-name', name: 'A' })]);
+  });
+
+  it('allows explicit replacement to clear lists and bypass malformed installed names', () => {
+    const existing = { id: 'kept', regex: [{ comment: '' }], trigger: [{ comment: 'A' }] };
+
+    const result = calculateEffectiveDefinition({ kind: 'module', mode: 'replace', existing, incoming: { id: 'ignored', regex: [], trigger: [{ comment: '' }] } });
+
+    expect(result.status).toBe('ready');
+    expect(result.after).toEqual({ id: 'kept', regex: [], trigger: [{ comment: '' }] });
+    expect(result.conflicts).toEqual([]);
+  });
+
+  it('replaces legacy script fields as whole values and does not name-merge assets', () => {
+    const result = calculateEffectiveDefinition({ kind: 'character', existing: { customscript: 'legacy', additionalAssets: [['local', 'path']] }, incoming: { customscript: [{ comment: 'New' }], additionalAssets: [] } });
+
+    expect(result.after).toEqual({ customscript: [{ comment: 'New' }], additionalAssets: [] });
+    expect(result.legacyFields).toEqual(['customscript']);
+  });
+
+  it('throws for conflicts through the legacy writer wrapper', () => {
+    expect(() => mergeCharacterDefinition({ globalLore: [{ comment: 'A' }, { comment: 'A' }] }, { globalLore: [] })).toThrow();
   });
 });
 

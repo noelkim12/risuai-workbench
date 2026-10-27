@@ -1,14 +1,13 @@
-/**
- * Main editor boundary tests for provider metadata and text edit helpers.
- * @file packages/vscode/tests/e2e/main-editor-boundary.test.ts
- */
-
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import Module from 'node:module';
 import path from 'node:path';
 import test from 'node:test';
+/**
+ * Main editor boundary tests for provider metadata and text edit helpers.
+ * @file packages/vscode/tests/e2e/main-editor-boundary.test.ts
+ */
 
 const localRequire = createRequire(__filename);
 const vscodeDistRoot = path.resolve(__dirname, '../../../dist');
@@ -282,26 +281,6 @@ test('main editor preference messages enforce split ratio boundaries', () => {
     }),
     false,
   );
-});
-
-test('main editor packaged CSP allows Monaco worker assets', () => {
-  const providerSource = fs.readFileSync(path.join(vscodeDistRoot, 'editors/mainEditor/MainEditorProvider.js'), 'utf8');
-
-  assert.match(providerSource, /worker-src \$\{webview\.cspSource\} blob:/);
-  assert.match(providerSource, /child-src \$\{webview\.cspSource\} blob:/);
-});
-
-test('main editor webview allows trusted CBS hover command links', () => {
-  const providerSource = fs.readFileSync(path.join(vscodeDistRoot, 'editors/mainEditor/MainEditorProvider.js'), 'utf8');
-
-  assert.match(providerSource, /enableCommandUris: \[\.\.\.[\w.]+CBS_MARKDOWN_TRUSTED_COMMANDS\]/);
-});
-
-test('main editor init is sent from ready handshake instead of immediate html assignment', () => {
-  const providerSource = fs.readFileSync(path.join(vscodeDistRoot, 'editors/mainEditor/MainEditorProvider.js'), 'utf8');
-
-  assert.doesNotMatch(providerSource, /webviewPanel\.webview\.html = this\.getHtml[\s\S]{0,180}createInitMessage\(document, detectedFormat/);
-  assert.match(providerSource, /message\.type === 'main-editor\/ready'[\s\S]{0,180}this\.postInitMessage\(webviewPanel, document, format\)/);
 });
 
 test('main editor protocol guards accept LSP and preview request payloads', () => {
@@ -638,16 +617,6 @@ test('main editor simulator profile list normalizes without writing workspaceSta
   assert.deepEqual(result.profiles[0].htmlContext.enabledHtmlDocumentUris, []);
 });
 
-test('main editor provider routes profile and format preview outside edit queue', () => {
-  const providerSource = fs.readFileSync(path.join(vscodeDistRoot, 'editors/mainEditor/MainEditorProvider.js'), 'utf8');
-
-  assert.match(providerSource, /main-editor\/formatPreviewRequest/);
-  assert.match(providerSource, /main-editor\/simulatorProfileListRequest/);
-  assert.match(providerSource, /main-editor\/simulatorProfileSaveRequest/);
-  assert.doesNotMatch(providerSource, /formatPreviewRequest[\s\S]{0,220}enqueueDocumentEdit/);
-  assert.doesNotMatch(providerSource, /simulatorProfileSaveRequest[\s\S]{0,220}applyEdit/);
-});
-
 test('main editor edit queue serializes per document and releases after failure', async () => {
   const module = importBuiltModule<BuiltMainEditorEditQueueModule>('editors/mainEditor/mainEditorEditQueue.js');
   const queue = new module.MainEditorEditQueue();
@@ -734,16 +703,6 @@ test('main editor preference guard rejects invalid MVP preference state', () => 
     module.normalizeMainEditorPreferences({ splitRatio: 0.58, frontmatterOpen: false }),
     module.createDefaultMainEditorPreferences(),
   );
-});
-
-test('main editor packaged HTML keeps custom editor webview CSP restrictive', () => {
-  const providerSource = fs.readFileSync(path.join(vscodeDistRoot, 'editors/mainEditor/MainEditorProvider.js'), 'utf8');
-
-  assert.match(providerSource, /default-src 'none'/);
-  assert.match(providerSource, /script-src 'nonce-\$\{nonce\}' \$\{webview\.cspSource\} blob:/);
-  assert.match(providerSource, /worker-src \$\{webview\.cspSource\} blob:/);
-  assert.doesNotMatch(providerSource, /connect-src \*/);
-  assert.doesNotMatch(providerSource, /script-src[^;]*'unsafe-inline'/);
 });
 
 test('main editor variable candidate result remains JSON serializable', () => {

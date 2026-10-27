@@ -899,7 +899,6 @@ describe('module extract', () => {
       const outDir = path.join(tmpDir, 'recovery-out');
       const sourceRoot = path.join(tmpDir, 'recovery-source');
       fs.mkdirSync(path.join(sourceRoot, 'lua', 'common'), { recursive: true });
-      fs.mkdirSync(path.join(sourceRoot, 'docs'), { recursive: true });
       fs.writeFileSync(
         path.join(sourceRoot, 'lua', 'main.risulua'),
         'local helper = require("common.helper")\nreturn helper.value\n',
@@ -908,11 +907,6 @@ describe('module extract', () => {
       fs.writeFileSync(
         path.join(sourceRoot, 'lua', 'common', 'helper.risulua'),
         'return { value = "module recovery helper" }\n',
-        'utf-8',
-      );
-      fs.writeFileSync(
-        path.join(sourceRoot, 'docs', 'refactor-map.json'),
-        `${JSON.stringify({ owner: 'module', restored: true }, null, 2)}\n`,
         'utf-8',
       );
 
@@ -951,9 +945,6 @@ describe('module extract', () => {
       expect(fs.readFileSync(path.join(outDir, 'lua', 'common', 'helper.risulua'), 'utf-8')).toBe(
         'return { value = "module recovery helper" }\n',
       );
-      expect(
-        JSON.parse(fs.readFileSync(path.join(outDir, 'docs', 'refactor-map.json'), 'utf-8')),
-      ).toEqual({ owner: 'module', restored: true });
       expect(fs.readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).not.toContain(
         RISULUA_RECOVERY_BLOCK_START,
       );

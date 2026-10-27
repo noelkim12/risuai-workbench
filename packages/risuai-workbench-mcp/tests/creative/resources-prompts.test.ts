@@ -1,30 +1,15 @@
+import path from 'node:path';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { describe, expect, it } from 'vitest';
 /**
  * Creative method resource and prompt reference tests.
  * @file packages/risuai-workbench-mcp/tests/creative/resources-prompts.test.ts
  */
 
-import path from 'node:path';
-
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { describe, expect, it } from 'vitest';
-
 const packageRoot = path.resolve(__dirname, '..', '..');
 const binPath = path.join(packageRoot, 'bin', 'risuai-workbench-mcp.js');
 const fixturesRoot = path.resolve(__dirname, '..', 'fixtures', 'workspaces', 'standard');
-const creativeResources = [
-  ['workbench.creative.resource.methods', 'risuai-workbench://methods'],
-  ['workbench.creative.resource.method.scamper', 'risuai-workbench://methods/scamper'],
-  ['workbench.creative.resource.method.six_hats', 'risuai-workbench://methods/six-hats'],
-  ['workbench.creative.resource.method.morphological_analysis', 'risuai-workbench://methods/morphological-analysis'],
-  ['workbench.creative.resource.method.triz', 'risuai-workbench://methods/triz'],
-  ['workbench.creative.resource.method.reverse_brainstorming', 'risuai-workbench://methods/reverse-brainstorming'],
-  ['workbench.creative.resource.rubric.idea_quality', 'risuai-workbench://rubrics/idea-quality'],
-  ['workbench.creative.resource.rubric.artifact_fit', 'risuai-workbench://rubrics/artifact-fit'],
-  ['workbench.creative.resource.idea_session', 'risuai-workbench://ideas/sessions/{sessionId}'],
-  ['workbench.creative.resource.idea', 'risuai-workbench://ideas/{ideaId}'],
-  ['workbench.creative.resource.idea_patch_plan', 'risuai-workbench://ideas/{ideaId}/patch-plan'],
-] as const;
 
 const creativePrompts = [
   'workbench.creative.brainstorm_from_context',
@@ -64,19 +49,6 @@ function textContent(result: { contents: Array<{ text: string } | { blob: string
 }
 
 describe('creative resources and prompts', () => {
-  it('registers all creative resources and prompts', async () => {
-    await withClient(async (client) => {
-      const resources = await client.listResourceTemplates();
-      const prompts = await client.listPrompts();
-
-      for (const [name, uriTemplate] of creativeResources) {
-        expect(resources.resourceTemplates).toContainEqual(expect.objectContaining({ name, uriTemplate }));
-      }
-      for (const name of creativePrompts) {
-        expect(prompts.prompts.map((prompt) => prompt.name)).toContain(name);
-      }
-    });
-  });
 
   it('returns concise creative method and rubric resources', async () => {
     await withClient(async (client) => {

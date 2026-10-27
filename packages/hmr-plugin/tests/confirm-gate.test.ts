@@ -23,11 +23,11 @@ describe('confirm gate', () => {
   const error: DiffLoadState = { status: 'error', message: 'boom' };
   const missing: DiffLoadState = { status: 'target-missing', message: 'gone' };
 
-  it('requires consent only for differences and load errors', () => {
+  it('requires consent only for successfully loaded differences', () => {
     expect(needsConsent(loading)).toBe(false);
     expect(needsConsent(identical)).toBe(false);
     expect(needsConsent(different)).toBe(true);
-    expect(needsConsent(error)).toBe(true);
+    expect(needsConsent(error)).toBe(false);
     expect(needsConsent(missing)).toBe(false);
   });
 
@@ -38,6 +38,8 @@ describe('confirm gate', () => {
     expect(canStart(different, false)).toBe(false);
     expect(canStart(different, true)).toBe(true);
     expect(canStart(error, false)).toBe(false);
-    expect(canStart(error, true)).toBe(true);
+    expect(canStart(error, true)).toBe(false);
+    expect(canStart({ status: 'stale', message: 'changed' }, true)).toBe(false);
+    expect(canStart({ status: 'ready', diff: { ...DIFFERENT, conflicts: [{ key: 'globalLore', side: 'incoming', reason: 'duplicate-name', name: 'A', index: 1 }] } }, true)).toBe(false);
   });
 });

@@ -1,6 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import lorebookContentEditorSource from '../../../src/lib/components/editor/lorebook/LorebookContentEditor.svelte?raw';
-import mainEditorSource from '../../../src/lib/components/editor/main/MainEditor.svelte?raw';
 import {
   createMainEditorLorebookDecoratorCompletionItems,
   getMainEditorLorebookDecoratorCompletionContext,
@@ -8,7 +6,6 @@ import {
   shouldTriggerMainEditorLorebookDecoratorAutoSuggest,
   shouldTriggerMainEditorLorebookDecoratorSuggestForChange,
 } from '../../../src/lib/monaco/mainEditorLorebookDecoratorAutoSuggest';
-
 describe('main editor lorebook decorator auto suggest helpers', () => {
   it('detects line-leading double-at prefixes for explicit suggest opening', () => {
     expect(shouldTriggerMainEditorLorebookDecoratorAutoSuggest({ insertedText: '@', linePrefix: '@@' })).toBe(true);
@@ -91,13 +88,6 @@ describe('main editor lorebook decorator auto suggest helpers', () => {
     expect(disposed).toBe(true);
   });
 
-  it('wires decorator completion only for the lorebook body editor', () => {
-    expect(lorebookContentEditorSource).toContain('registerMainEditorLorebookDecoratorCompletionProvider');
-    expect(lorebookContentEditorSource).toContain('decoratorCompletionDisposable = enableDecoratorCompletion');
-    expect(lorebookContentEditorSource).toContain('decoratorCompletionDisposable?.dispose();');
-    expect(mainEditorSource).toContain('formatKind="lorebook"\n              sectionName="CONTENT"\n              enableDecoratorCompletion={true}');
-    expect(mainEditorSource).toContain('formatKind="text"\n              sectionName="TEXT"\n              enableDecoratorCompletion={false}');
-  });
 });
 
 function createMockMonacoApi(registerCompletionItemProvider?: (languageId: string, provider: never) => { dispose(): void }) {

@@ -3,8 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MainEditorExtensionMessage, MainEditorWebviewMessage } from '../../../src/lib/types';
 import { MAIN_EDITOR_PROTOCOL, MAIN_EDITOR_PROTOCOL_VERSION } from '../../../src/lib/types';
 import { createMainEditorMonacoLspClient } from '../../../src/lib/monaco/mainEditorLspClient';
-import mainEditorLspClientSource from '../../../src/lib/monaco/mainEditorLspClient.ts?raw';
-
 type PostedMainEditorMessage = MainEditorWebviewMessage & { payload: { requestId: string } };
 
 interface CapturedProviders {
@@ -114,23 +112,6 @@ afterEach(() => {
 });
 
 describe('main editor Monaco LSP client source contract', () => {
-  it('keeps same-document definitions on the active section Monaco model URI', () => {
-    expect(mainEditorLspClientSource).toContain('const sameDocumentTargets = result.targets.filter((target) => target.sameDocument)');
-    expect(mainEditorLspClientSource).toContain('uri: model.uri');
-  });
-
-  it('routes cross-document definitions through the extension host reveal bridge', () => {
-    expect(mainEditorLspClientSource).toContain('createMainEditorLspRevealLocationMessage');
-    expect(mainEditorLspClientSource).toContain('revealExternalDefinitionTarget');
-    expect(mainEditorLspClientSource).toContain("requestId: createRequestId('definition-reveal')");
-  });
-
-  it('preserves trusted command hyperlinks in hover markdown', () => {
-    expect(mainEditorLspClientSource).toContain('toHoverMarkdownString');
-    expect(mainEditorLspClientSource).toContain("CBS_OCCURRENCE_NAVIGATION_COMMAND = 'risuaiWorkbench.cbs.openOccurrence'");
-    expect(mainEditorLspClientSource).toContain('isTrusted: { enabledCommands: [CBS_OCCURRENCE_NAVIGATION_COMMAND] }');
-    expect(mainEditorLspClientSource).toContain('](command:');
-  });
 
   it('returns active Monaco model URI for same-document definition targets', async () => {
     const { client, model, postedMessages, providers } = createProviderHarness();

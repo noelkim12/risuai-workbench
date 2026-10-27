@@ -25,6 +25,9 @@ const CHARACTER_MAPPING: HmrMapping = {
   targetLabel: "Aria",
   appliedVersion: 3,
   badgeEnabled: true,
+  mergeMode: "merge-by-name",
+  autoApply: true,
+  paused: false,
   assetCache: { aaa: "assets/aaa.png" },
   savedAtMs: 1,
 }
@@ -38,11 +41,28 @@ const MODULE_MAPPING: HmrMapping = {
   targetLabel: "Weather Module",
   appliedVersion: 4,
   badgeEnabled: false,
+  mergeMode: "replace",
+  autoApply: false,
+  paused: true,
   assetCache: {},
   savedAtMs: 2,
 }
 
 describe("createMappingStore", () => {
+  it("requires legacy mappings to be confirmed and defaults only missing autoApply", async () => {
+    const storage = makeFakeStorage()
+    const store = createMappingStore(storage)
+    await storage.setItem("mapping-v1", { ...CHARACTER_MAPPING, mergeMode: undefined })
+    expect(await store.load()).toBeNull()
+    await storage.setItem("mapping-v1", { ...CHARACTER_MAPPING, autoApply: undefined })
+    expect((await store.load())?.autoApply).toBe(true)
+    await storage.setItem("mapping-v1", { ...CHARACTER_MAPPING, paused: undefined })
+    expect((await store.load())?.paused).toBe(false)
+    await storage.setItem("mapping-v1", { ...CHARACTER_MAPPING, paused: "yes" })
+    expect(await store.load()).toBeNull()
+    await storage.setItem("mapping-v1", { ...CHARACTER_MAPPING, autoApply: "yes" })
+    expect(await store.load()).toBeNull()
+  })
   it("round-trips a character mapping and clears it", async () => {
     const store = createMappingStore(makeFakeStorage())
 

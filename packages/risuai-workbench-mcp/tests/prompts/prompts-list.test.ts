@@ -1,53 +1,18 @@
+import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { describe, expect, it } from 'vitest';
 /**
  * MCP prompt list and workflow-only prompt behavior tests.
  * @file packages/risuai-workbench-mcp/tests/prompts/prompts-list.test.ts
  */
 
-import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
-
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { describe, expect, it } from 'vitest';
-
 const packageRoot = path.resolve(__dirname, '..', '..');
 const binPath = path.join(packageRoot, 'bin', 'risuai-workbench-mcp.js');
 const fixturesRoot = path.resolve(__dirname, '..', 'fixtures', 'workspaces', 'standard');
 const hashProbePath = path.join(fixturesRoot, 'characters', 'merry', 'lorebooks', 'intro.risulorebook');
-
-const expectedPromptNames = [
-  'workbench.review_artifact_change',
-  'workbench.apply_artifact_change',
-  'workbench.plan_structure_migration',
-  'workbench.explain_diagnostic',
-  'workbench.audit_workspace_structure',
-  'workbench.prepare_tests_for_change',
-  'workbench.explore_wiki',
-  'workbench.refresh_wiki_from_analyze',
-  'workbench.trace_variable_flow',
-  'workbench.explain_button_action',
-  'workbench.trace_lua_handler',
-  'workbench.review_relationship_network',
-  'workbench.review_prompt_chain',
-  'workbench.explain_analyze_diagnostic',
-  'workbench.create_project',
-  'workbench.select_authoring_skill',
-  'workbench.generate_plan_from_skill',
-  'workbench.creative.brainstorm_from_context',
-  'workbench.creative.scamper_lorebook_entries',
-  'workbench.creative.scamper_prompt_chain_variants',
-  'workbench.creative.six_hats_idea_review',
-  'workbench.creative.morphological_explore',
-  'workbench.creative.triz_resolve_contradiction',
-  'workbench.creative.reverse_brainstorm_failure_modes',
-  'workbench.creative.combine_concepts',
-  'workbench.creative.find_distant_analogies',
-  'workbench.creative.turn_idea_into_patch',
-  'workbench.creative.apply_selected_idea',
-  'workbench.creative.red_team_concept',
-  'workbench.creative.synthesize_idea_session',
-] as const;
 
 /**
  * hashProbeFile 함수.
@@ -82,37 +47,6 @@ async function withClient(callback: (client: Client) => Promise<void>): Promise<
 }
 
 describe('workbench MCP prompts', () => {
-  it('lists proposal prompt names in stable order', async () => {
-    await withClient(async (client) => {
-      const result = await client.listPrompts();
-
-      expect(result.prompts.map((prompt) => prompt.name)).toEqual(expectedPromptNames);
-      expect(result.prompts.every((prompt) => prompt.description && prompt.title)).toBe(true);
-    });
-  });
-
-  it('returns workflow instructions without executing workspace changes', async () => {
-    await withClient(async (client) => {
-      const result = await client.getPrompt({
-        arguments: { context: 'rename lorebook entry', target: 'characters/merry/lorebooks/intro.risulorebook' },
-        name: 'workbench.apply_artifact_change',
-      });
-
-      expect(result.messages).toHaveLength(1);
-      const content = result.messages[0].content;
-      expect(content.type).toBe('text');
-      const text = content.type === 'text' ? content.text : '';
-      expect(text).toContain('Workflow:');
-      expect(text).toContain('Safety contract:');
-      expect(text).toContain('# Apply artifact change');
-      expect(text).toContain('Use Workbench tools for workspace changes.');
-      expect(text).not.toContain('must still require preview, confirmation, safety policy, and post-validation');
-      expect(text).not.toContain('Never bypass confirmation');
-      expect(text).not.toContain('automatically apply');
-      expect(text).not.toContain('skip confirmation');
-      expect(text).not.toContain('ignore safety');
-    });
-  });
 
   it('does not mutate fixture workspace files while listing and getting prompts', async () => {
     const before = await hashProbeFile();

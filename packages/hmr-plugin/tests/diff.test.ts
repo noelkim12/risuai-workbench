@@ -193,13 +193,13 @@ describe('buildDefinitionDiff', () => {
     });
 
     expect(diff.status).toBe('different');
-    expect(diff.unchangedKeys).toEqual(['name']);
+    expect(diff.unchangedKeys).toEqual(['name', 'legacy']);
     const byKey = new Map(diff.fields.map((field) => [field.key, field]));
     expect(byKey.get('desc')?.kind).toBe('modified');
     expect(byKey.get('desc')?.lines?.segments.length).toBeGreaterThan(0);
     expect(byKey.get('newField')?.kind).toBe('added');
-    expect(byKey.get('legacy')?.kind).toBe('removed');
-    expect(byKey.get('legacy')?.preservedByMerge).toBe(true);
+    expect(byKey.has('legacy')).toBe(false);
+    expect(diff.preserved).toEqual([{ key: 'legacy', labels: [] }]);
   });
 
   it('excludes merge-preserved keys from character diffs', () => {

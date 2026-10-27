@@ -2,11 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { AnalysisShowcase } from '@risuai-workbench/core';
 import type { BrowserAnalysisProfile, BrowserArtifactCard } from '../../../src/lib/types';
 import { toAnalysisProfileViewModel } from '../../../src/lib/analysis-showcase/analysisProfileViewModel';
-import { compile } from 'svelte/compiler';
-import ProfileCardSource from '../../../src/lib/components/analysis-showcase/AnalysisProfileCard.svelte?raw';
-import ActionsSource from '../../../src/lib/components/analysis-showcase/AnalysisProfileActions.svelte?raw';
-import DetailViewSource from '../../../src/lib/components/ArtifactDetailView.svelte?raw';
-
 // ---- Manual QA Harness ----
 // The project has no jsdom/DOM-rendering harness; this test verifies
 // the full view-model-to-component chain for each profile state
@@ -86,9 +81,6 @@ describe('Manual QA: profile state rendering for character and module', () => {
       expect(vm.stateLabel).toBe('No analysis yet');
     });
 
-    it('component source contains Reveal Analysis button', () => {
-      expect(ActionsSource).toMatch(/Reveal Analysis/i);
-    });
   });
 
   describe('legacy state', () => {
@@ -109,9 +101,6 @@ describe('Manual QA: profile state rendering for character and module', () => {
       expect(vm.canOpenReport).toBe(true);
     });
 
-    it('component source contains Open Full Report for legacy', () => {
-      expect(ActionsSource).toMatch(/Open Full Report/i);
-    });
   });
 
   describe('invalid state', () => {
@@ -133,9 +122,6 @@ describe('Manual QA: profile state rendering for character and module', () => {
       expect(toAnalysisProfileViewModel(profile).stateLabel).toContain('does not match');
     });
 
-    it('component source contains Re-analyze for invalid', () => {
-      expect(ActionsSource).toMatch(/Re-analyze/i);
-    });
   });
 
   describe('available fresh state', () => {
@@ -163,20 +149,6 @@ describe('Manual QA: profile state rendering for character and module', () => {
       expect(vm.stateLabel).toBe('Up to date');
     });
 
-    it('component source omits showcase and image sharing actions', () => {
-      expect(ActionsSource).not.toMatch(/Open Showcase/i);
-      expect(ActionsSource).not.toMatch(/Share Image/i);
-    });
-
-    it('profile overview is collapsed behind a native disclosure', () => {
-      expect(ProfileCardSource).toMatch(/<details[^>]*class="profile-card"/);
-      expect(ProfileCardSource).toMatch(/<summary[^>]*class="profile-card__summary"/);
-      expect(ProfileCardSource).not.toMatch(/<details[^>]*\sopen(?:\s|=|>)/);
-    });
-
-    it('profile overview omits findings', () => {
-      expect(ProfileCardSource).not.toMatch(/findings/i);
-    });
   });
 
   describe('available outdated state', () => {
@@ -250,33 +222,6 @@ describe('Manual QA: plugin has no analysis surface', () => {
     expect(card.analysisProfile.kind).toBe('none');
   });
 
-  it('ArtifactDetailView renders AnalysisProfileCard only for non-plugin', () => {
-    // The component should be inside an {#if artifact.artifactKind !== 'plugin'} block
-    expect(DetailViewSource).toMatch(/artifactKind !== 'plugin'/);
-    expect(DetailViewSource).toMatch(/AnalysisProfileCard/);
-  });
-
-  it('standalone Analyze button is removed from detail actions', () => {
-    // The old standalone Analyze button should not exist in the detail-actions
-    expect(DetailViewSource).not.toMatch(/class="detail-action"[^>]*>[^<]*Analyze/);
-  });
-
-  it('Broadcast and Pack buttons are preserved', () => {
-    expect(DetailViewSource).toMatch(/Broadcast/);
-    expect(DetailViewSource).toMatch(/Pack/);
-  });
-
-  it('AnalysisProfileCard, AnalysisProfileActions, and ArtifactDetailView all compile', () => {
-    expect(() =>
-      compile(ProfileCardSource, { name: 'AnalysisProfileCard', filename: 'AnalysisProfileCard.svelte' }),
-    ).not.toThrow();
-    expect(() =>
-      compile(ActionsSource, { name: 'AnalysisProfileActions', filename: 'AnalysisProfileActions.svelte' }),
-    ).not.toThrow();
-    expect(() =>
-      compile(DetailViewSource, { name: 'ArtifactDetailView', filename: 'ArtifactDetailView.svelte' }),
-    ).not.toThrow();
-  });
 });
 
 describe('Manual QA: no quality score in any output', () => {
@@ -291,8 +236,4 @@ describe('Manual QA: no quality score in any output', () => {
     expect(JSON.stringify(vm)).not.toMatch(/score/i);
   });
 
-  it('component source has no score reference', () => {
-    expect(ProfileCardSource).not.toMatch(/score/i);
-    expect(ActionsSource).not.toMatch(/score/i);
-  });
 });

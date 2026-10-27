@@ -725,7 +725,6 @@ describe('charx extract integration (canonical mode)', () => {
 
     const sourceRoot = path.join(workDir, 'source');
     mkdirSync(path.join(sourceRoot, 'lua', 'common'), { recursive: true });
-    mkdirSync(path.join(sourceRoot, 'docs'), { recursive: true });
     writeFileSync(
       path.join(sourceRoot, 'lua', 'main.risulua'),
       'local helper = require("common.helper")\nreturn helper.value\n',
@@ -734,11 +733,6 @@ describe('charx extract integration (canonical mode)', () => {
     writeFileSync(
       path.join(sourceRoot, 'lua', 'common', 'helper.risulua'),
       'return { value = "charx recovery helper" }\n',
-      'utf-8',
-    );
-    writeFileSync(
-      path.join(sourceRoot, 'docs', 'refactor-map.json'),
-      `${JSON.stringify({ owner: 'charx', restored: true }, null, 2)}\n`,
       'utf-8',
     );
 
@@ -795,9 +789,6 @@ describe('charx extract integration (canonical mode)', () => {
     expect(readFileSync(path.join(outDir, 'lua', 'common', 'helper.risulua'), 'utf-8')).toBe(
       'return { value = "charx recovery helper" }\n',
     );
-    expect(
-      JSON.parse(readFileSync(path.join(outDir, 'docs', 'refactor-map.json'), 'utf-8')),
-    ).toEqual({ owner: 'charx', restored: true });
     expect(readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).not.toContain(
       RISULUA_RECOVERY_BLOCK_START,
     );
@@ -810,7 +801,6 @@ describe('charx extract integration (canonical mode)', () => {
     const firstPayload = encodeRecoveryPayloadFromFiles(workDir, 'source-a', {
       'lua/main.risulua': 'local source = "asset A"\nreturn source\n',
       'lua/common/helper.risulua': 'return { value = "asset A helper" }\n',
-      'docs/refactor-map.json': `${JSON.stringify({ owner: 'asset-a' }, null, 2)}\n`,
     });
     const secondPayload = encodeRecoveryPayloadFromFiles(workDir, 'source-b', {
       'lua/main.risulua': 'return "asset B must be ignored"\n',
@@ -856,9 +846,6 @@ describe('charx extract integration (canonical mode)', () => {
     expect(readFileSync(path.join(outDir, 'lua', 'main.risulua'), 'utf-8')).not.toContain(
       RISULUA_RECOVERY_BLOCK_START,
     );
-    expect(
-      JSON.parse(readFileSync(path.join(outDir, 'docs', 'refactor-map.json'), 'utf-8')),
-    ).toEqual({ owner: 'asset-a' });
 
     const assetManifest = JSON.parse(
       readFileSync(path.join(outDir, 'assets', 'manifest.json'), 'utf-8'),

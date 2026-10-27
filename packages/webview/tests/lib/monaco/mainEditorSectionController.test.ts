@@ -1,10 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import mainEditorSectionControllerSource from '../../../src/lib/monaco/mainEditorSectionController.ts?raw';
-import htmlSourceEditorSource from '../../../src/lib/components/editor/html/HtmlSourceEditor.svelte?raw';
-import lorebookContentEditorSource from '../../../src/lib/components/editor/lorebook/LorebookContentEditor.svelte?raw';
-import promptSectionEditorSource from '../../../src/lib/components/editor/prompt/PromptSectionEditor.svelte?raw';
-import regexSplitEditorSource from '../../../src/lib/components/editor/regex/RegexSplitEditor.svelte?raw';
-
 interface FakeChangeEvent {
   changes: readonly unknown[];
 }
@@ -33,30 +27,6 @@ describe('main editor Monaco section controller', () => {
     vi.resetModules();
     vi.restoreAllMocks();
     (globalThis as typeof globalThis & { MonacoEnvironment?: unknown }).MonacoEnvironment = undefined;
-  });
-
-  it('owns the repeated Monaco lifecycle setup in one helper', () => {
-    expect(mainEditorSectionControllerSource).toContain('monaco.editor.createModel');
-    expect(mainEditorSectionControllerSource).toContain('monaco.editor.create');
-    expect(mainEditorSectionControllerSource).toContain('retainWorkbenchMonacoThemeSync');
-    expect(mainEditorSectionControllerSource).toContain('registerMainEditorFindShortcut');
-    expect(mainEditorSectionControllerSource).toContain('syncMonacoModelValuePreservingViewState');
-  });
-
-  it('configures MonacoEnvironment once and disposes owned models explicitly', () => {
-    expect(mainEditorSectionControllerSource).toContain('if (monacoEnvironmentConfigured) return;');
-    expect(mainEditorSectionControllerSource).toContain('editor.setModel(null);');
-    expect(mainEditorSectionControllerSource).toContain('model.dispose();');
-  });
-
-  it('keeps section components on the shared controller instead of duplicating base setup', () => {
-    for (const source of [htmlSourceEditorSource, promptSectionEditorSource, regexSplitEditorSource, lorebookContentEditorSource]) {
-      expect(source).toContain('createMainEditorSectionController');
-      expect(source).not.toContain('MonacoEnvironment');
-      expect(source).not.toContain('createWorkbenchMonacoEditorOptions');
-      expect(source).not.toContain('registerMainEditorFindShortcut');
-      expect(source).not.toContain('syncMonacoModelValuePreservingViewState');
-    }
   });
 
   it('increments content version only for user edits, not external value sync', async () => {

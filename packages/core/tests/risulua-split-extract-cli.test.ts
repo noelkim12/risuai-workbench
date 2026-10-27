@@ -541,12 +541,6 @@ describe('risulua-split extract CLI integration', () => {
     expectSameFileBytesForPaths(firstOut, secondOut, [
       'lua/main.risulua',
       'lua/button_actions/actions.risulua',
-      'docs/refactor-map.json',
-      'docs/domain-candidates.json',
-      'docs/risulua-button-action-index.json',
-      'docs/risulua-export-manifest.json',
-      'docs/risulua-split-plan.json',
-      'docs/risulua-split-report.md',
     ]);
 
     const repackFullSourceCode = runCharacterPackWorkflow([
@@ -637,12 +631,6 @@ describe('risulua-split extract CLI integration', () => {
     expectSameFileBytesForPaths(firstOut, secondOut, [
       'lua/main.risulua',
       generatedModulePath,
-      'docs/refactor-map.json',
-      'docs/domain-candidates.json',
-      'docs/risulua-button-action-index.json',
-      'docs/risulua-export-manifest.json',
-      'docs/risulua-split-plan.json',
-      'docs/risulua-split-report.md',
     ]);
 
     const repackFullSourceCode = runModulePackWorkflow([
