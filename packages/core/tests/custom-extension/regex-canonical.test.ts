@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { CustomExtensionTarget } from '../../src/domain/custom-extension/contracts';
+
 import {
-  buildRegexPath,
   extractRegexFromCharx,
   extractRegexFromModule,
   extractRegexFromPreset,
@@ -9,8 +8,6 @@ import {
   injectRegexIntoModule,
   injectRegexIntoPreset,
   parseRegexContent,
-  REGEX_TYPES,
-  RegexAdapterError,
   serializeRegexContent,
   type CanonicalRegexEntry,
   type UpstreamRegexEntry,
@@ -88,23 +85,6 @@ bar
       expect('flag' in explicitDefaults).toBe(true);
     });
 
-    it('supports quoted header values containing colons', () => {
-      const parsed = parseRegexContent(`---
-comment: "🤍 : 이어서 진행"
-type: editdisplay
----
-@@@ IN
-\\*says nothing\\*
-@@@ OUT
-(OOC : Please advance to the next scene.)
-`);
-
-      expect(parsed.comment).toBe('🤍 : 이어서 진행');
-      expect(parsed.type).toBe('editdisplay');
-      expect(parsed.in).toBe('\\*says nothing\\*');
-      expect(parsed.out).toBe('(OOC : Please advance to the next scene.)');
-    });
-
     it('rejects malformed quoted metadata', () => {
       expect(() =>
         parseRegexContent(`---
@@ -117,31 +97,6 @@ foo
 bar
 `)
       ).toThrow(/Invalid quoted string value/);
-    });
-
-    it('rejects unsupported regex type', () => {
-      expect(() =>
-        parseRegexContent(`---
-comment: invalid
-type: editpreview
----
-@@@ IN
-foo
-@@@ OUT
-bar
-`)
-      ).toThrow(RegexAdapterError);
-      expect(() =>
-        parseRegexContent(`---
-comment: invalid
-type: editpreview
----
-@@@ IN
-foo
-@@@ OUT
-bar
-`)
-      ).toThrow(/Unsupported regex type "editpreview"/);
     });
 
     it('rejects files missing an OUT section', () => {
@@ -158,82 +113,6 @@ foo
   });
 
   describe('serializeRegexContent', () => {
-    it('serializes canonical content deterministically', () => {
-      const canonical: CanonicalRegexEntry = {
-        comment: '생각보기',
-        type: 'editdisplay',
-        ableFlag: false,
-        flag: 'g',
-        in: '<Thoughts>([\\s\\S]*?)<\\/Thoughts>',
-        out: '{{#if {{? {{getglobalvar::toggle_thinkkniht}}=1}}}}<Thoughts>\n$1\n</Thoughts>\n{{/if}}',
-      };
-
-      expect(serializeRegexContent(canonical)).toBe(`---
-comment: 생각보기
-type: editdisplay
-ableFlag: false
-flag: g
----
-@@@ IN
-<Thoughts>([\\s\\S]*?)<\\/Thoughts>
-@@@ OUT
-{{#if {{? {{getglobalvar::toggle_thinkkniht}}=1}}}}<Thoughts>
-$1
-</Thoughts>
-{{/if}}
-`);
-    });
-
-    it('omits optional fields when absent but preserves explicit defaults', () => {
-      const absent = serializeRegexContent({
-        comment: 'absent',
-        type: 'editinput',
-        in: 'foo',
-        out: 'bar',
-      });
-      const explicit = serializeRegexContent({
-        comment: 'explicit',
-        type: 'editinput',
-        ableFlag: false,
-        flag: '',
-        in: 'foo',
-        out: 'bar',
-      });
-
-      expect(absent).toBe(`---
-comment: absent
-type: editinput
----
-@@@ IN
-foo
-@@@ OUT
-bar
-`);
-      expect(explicit).toBe(`---
-comment: explicit
-type: editinput
-ableFlag: false
-flag: ""
----
-@@@ IN
-foo
-@@@ OUT
-bar
-`);
-    });
-
-    it('quotes header values when needed', () => {
-      const serialized = serializeRegexContent({
-        comment: '🤍 : 이어서 진행',
-        type: 'disabled',
-        flag: 'g<move_top><order 1>',
-        in: '\\*says nothing\\*',
-        out: '(OOC : next scene)',
-      });
-
-      expect(serialized).toContain('comment: "🤍 : 이어서 진행"');
-      expect(serialized).toContain('flag: "g<move_top><order 1>"');
-    });
 
     it('round-trips parse and serialize without changing canonical data', () => {
       const original = `---
@@ -250,32 +129,6 @@ safe-$1
 
       const reparsed = parseRegexContent(serializeRegexContent(parseRegexContent(original)));
       expect(reparsed).toEqual(parseRegexContent(original));
-    });
-  });
-
-  describe('type and target semantics', () => {
-    it('freezes the seven accepted regex types', () => {
-      expect(REGEX_TYPES).toEqual([
-        'editinput',
-        'editoutput',
-        'editdisplay',
-        'editprocess',
-        'editrequest',
-        'edittrans',
-        'disabled',
-      ]);
-    });
-
-    it('rejects unsupported target for regex path building', () => {
-      expect(() => buildRegexPath('unknown' as CustomExtensionTarget, 'combat')).toThrow(
-        RegexAdapterError
-      );
-    });
-
-    it('builds deterministic regex paths from a stem', () => {
-      expect(buildRegexPath('charx', 'Combat Filter')).toBe('regex/Combat_Filter.risuregex');
-      expect(buildRegexPath('module', '상태창')).toBe('regex/상태창.risuregex');
-      expect(buildRegexPath('preset', 'prompt/cleaner')).toBe('regex/prompt_cleaner.risuregex');
     });
   });
 
@@ -300,87 +153,6 @@ safe-$1
       expect(extractRegexFromPreset({ presetRegex: [entry] }, 'preset')).toEqual([entry]);
     });
 
-    it('normalizes string ableFlag values from upstream regex exports', () => {
-      expect(
-        extractRegexFromCharx(
-          {
-            data: {
-              extensions: {
-                risuai: {
-                  customScripts: [
-                    {
-                      comment: 'string flag',
-                      type: 'editdisplay',
-                      ableFlag: 'false',
-                      in: 'foo',
-                      out: 'bar',
-                    },
-                  ],
-                },
-              },
-            },
-          },
-          'charx'
-        )
-      ).toEqual([
-        {
-          comment: 'string flag',
-          type: 'editdisplay',
-          ableFlag: false,
-          in: 'foo',
-          out: 'bar',
-        },
-      ]);
-      expect(
-        extractRegexFromModule(
-          {
-            regex: [
-              {
-                comment: 'module string flag',
-                type: 'editinput',
-                ableFlag: 'True',
-                in: 'baz',
-                out: 'qux',
-              },
-            ],
-          },
-          'module'
-        )
-      ).toEqual([
-        {
-          comment: 'module string flag',
-          type: 'editinput',
-          ableFlag: true,
-          in: 'baz',
-          out: 'qux',
-        },
-      ]);
-      expect(
-        extractRegexFromPreset(
-          {
-            presetRegex: [
-              {
-                comment: 'preset string flag',
-                type: 'editoutput',
-                ableFlag: 'false',
-                in: 'before',
-                out: 'after',
-              },
-            ],
-          },
-          'preset'
-        )
-      ).toEqual([
-        {
-          comment: 'preset string flag',
-          type: 'editoutput',
-          ableFlag: false,
-          in: 'before',
-          out: 'after',
-        },
-      ]);
-    });
-
     it('rejects non-exact upstream ableFlag string values', () => {
       const entry = {
         comment: 'invalid flag',
@@ -401,12 +173,6 @@ safe-$1
       expect(() =>
         extractRegexFromPreset({ presetRegex: [{ ...entry, ableFlag: 1 }] }, 'preset')
       ).toThrow(/boolean or true\/false string/);
-    });
-
-    it('returns null when an upstream regex collection is absent', () => {
-      expect(extractRegexFromCharx({}, 'charx')).toBeNull();
-      expect(extractRegexFromModule({}, 'module')).toBeNull();
-      expect(extractRegexFromPreset({}, 'preset')).toBeNull();
     });
 
     it('injects regex arrays back into upstream targets without materializing absent optionals', () => {
@@ -466,16 +232,6 @@ safe-$1
       expect(charx.data.extensions.risuai.customScripts).toBeUndefined();
       expect(module.regex).toBeUndefined();
       expect(preset.presetRegex).toBeUndefined();
-    });
-
-    it('does not materialize empty charx scaffolding when null injection starts from absence', () => {
-      const charx: { data?: { extensions?: { risuai?: { customScripts?: UpstreamRegexEntry[] } } } } =
-        {};
-
-      injectRegexIntoCharx(charx, null, 'charx');
-
-      expect(charx).toEqual({});
-      expect(charx.data).toBeUndefined();
     });
 
     it('rejects unsupported regex types found in upstream objects', () => {

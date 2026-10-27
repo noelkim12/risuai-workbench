@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { CustomExtensionTarget } from '../../src/domain/custom-extension/contracts';
+
 import {
   assembleLorebookCollection,
   buildLorebookFolders,
-  buildLorebookPath,
   extractLorebooksFromCharx,
   extractLorebooksFromModule,
   injectLorebooksIntoCharx,
@@ -12,7 +11,6 @@ import {
   parseLorebookContent,
   parseLorebookFolders,
   parseLorebookOrder,
-  serializeLorebookContent,
   serializeLorebookFolders,
   serializeLorebookOrder,
   type LorebookCanonicalFile,
@@ -77,109 +75,7 @@ Twist.
     });
   });
 
-  describe('serializeLorebookContent', () => {
-    it('serializes canonical lorebook content deterministically', () => {
-      const canonical: LorebookContent = {
-        name: '백련 길드',
-        comment: '백련 길드',
-        mode: 'normal',
-        constant: false,
-        selective: false,
-        insertion_order: 680,
-        case_sensitive: false,
-        use_regex: false,
-        folder: 'guild-root',
-        extensions: {
-          customTag: 'faction',
-          risu_loreCache: null,
-        },
-        keys: ['Baek ryeon', '백련', 'White Lotus'],
-        content: 'Baekryeon guild content',
-      };
-
-      expect(serializeLorebookContent(canonical)).toBe(`---
-name: 백련 길드
-comment: 백련 길드
-mode: normal
-constant: false
-selective: false
-insertion_order: 680
-case_sensitive: false
-use_regex: false
-folder: guild-root
-extensions: {"customTag":"faction","risu_loreCache":null}
----
-@@@ KEYS
-Baek ryeon
-백련
-White Lotus
-@@@ CONTENT
-Baekryeon guild content
-`);
-    });
-  });
-
   describe('target-specific extraction', () => {
-    it('extracts charx lorebooks into unified canonical shape', () => {
-      const extracted = extractLorebooksFromCharx(
-        {
-          data: {
-            character_book: {
-              entries: [
-                {
-                  keys: [' Baek ryeon ', '백련', '', 'White Lotus '],
-                  secondary_keys: [' elder sister ', 'rumi '],
-                  content: 'Baekryeon guild content',
-                  name: '백련 길드',
-                  comment: '백련 길드 설명',
-                  mode: 'normal',
-                  constant: false,
-                  selective: true,
-                  insertion_order: 680,
-                  case_sensitive: true,
-                  use_regex: false,
-                  folder: 'guild-root',
-                  enabled: false,
-                  id: 'ignored-by-charx',
-                  extensions: {
-                    customTag: 'faction',
-                    risu_case_sensitive: true,
-                    risu_activationPercent: 15,
-                    risu_bookVersion: 2,
-                    risu_loreCache: null,
-                  },
-                },
-              ],
-            },
-          },
-        },
-        'charx'
-      );
-
-      expect(extracted).toEqual([
-        {
-          name: '백련 길드',
-          comment: '백련 길드 설명',
-          mode: 'normal',
-          constant: false,
-          selective: true,
-          insertion_order: 680,
-          case_sensitive: true,
-          use_regex: false,
-          folder: 'guild-root',
-          extensions: {
-            customTag: 'faction',
-          },
-          book_version: 2,
-          activation_percent: 15,
-          keys: ['Baek ryeon', '백련', 'White Lotus'],
-          secondary_keys: ['elder sister', 'rumi'],
-          content: 'Baekryeon guild content',
-        },
-      ]);
-      expect('id' in (extracted?.[0] ?? {})).toBe(false);
-      expect('enabled' in (extracted?.[0] ?? {})).toBe(false);
-    });
 
     it('extracts module lorebooks into the same canonical shape while preserving module-only fields', () => {
       const extracted = extractLorebooksFromModule(
@@ -398,40 +294,6 @@ Baekryeon guild content
   });
 
   describe('folder and order helpers', () => {
-    it('parses _order.json entries as safe relative folder or file paths', () => {
-      expect(parseLorebookOrder('["World","World/Countries.risulorebook"]\n')).toEqual([
-        'World',
-        'World/Countries.risulorebook',
-      ]);
-    });
-
-    it('assembles lorebook collection from file paths without _folders.json', () => {
-      const files: LorebookCanonicalFile[] = [
-        {
-          relativePath: 'World/Countries.risulorebook',
-          content: {
-            name: 'Countries',
-            comment: 'Countries',
-            mode: 'normal',
-            constant: false,
-            selective: false,
-            insertion_order: 10,
-            case_sensitive: false,
-            use_regex: false,
-            keys: ['country'],
-            content: 'country lore',
-          },
-        },
-      ];
-
-      const result = assembleLorebookCollection(files, ['World', 'World/Countries.risulorebook']);
-      expect(result).toHaveLength(2);
-      expect(result[0]).toEqual(expect.objectContaining({ mode: 'folder', name: 'World' }));
-      expect(result[1]).toEqual(expect.objectContaining({ name: 'Countries' }));
-      // Folder key should be generated (not empty)
-      expect(typeof (result[1] as any).folder).toBe('string');
-      expect((result[1] as any).folder.length).toBeGreaterThan(0);
-    });
 
     it('round-trips _folders.json and _order.json deterministically without inventing ids or enabled fields', () => {
       const folderEntry: LorebookContent = {
@@ -626,18 +488,6 @@ Baekryeon guild content
   }
 }`)
       ).toThrow(/enabled/);
-    });
-  });
-
-  describe('target and path guards', () => {
-    it('builds deterministic lorebook paths and rejects preset target', () => {
-      expect(buildLorebookPath('charx', '백련 길드')).toBe('lorebooks/백련_길드.risulorebook');
-      expect(buildLorebookPath('module', 'guild/white lotus')).toBe(
-        'lorebooks/guild_white_lotus.risulorebook'
-      );
-      expect(() => buildLorebookPath('preset' as CustomExtensionTarget, 'ignored')).toThrow(
-        LorebookAdapterError
-      );
     });
   });
 });

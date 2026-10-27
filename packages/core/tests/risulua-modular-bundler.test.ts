@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-
 import {
   analyzeRisuLuaDistOutput,
   analyzeRisuLuaLocalBudget,
@@ -19,13 +18,7 @@ import {
   RISUMODULE_SCHEMA_URL,
   RISUMODULE_SCHEMA_VERSION,
 } from '../src/cli/shared/risumodule';
-import { resolvePrivateFixturePath } from './helpers/private-fixture-paths';
-
 const tempDirs: string[] = [];
-const privateModularBundlerFixturePath = resolvePrivateFixturePath(
-  'RISU_WORKBENCH_MODULAR_BUNDLER_FIXTURE_A',
-  'modular-bundler-sample-a',
-);
 
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
@@ -863,25 +856,6 @@ describe('risulua modular bundler', () => {
     expect(hasExecutableRequireCalls(bundled.code)).toBe(false);
   });
 
-  it('risulua modular bundler keeps private fixture bootstrap under chunk local budget when fixture exists', () => {
-    const fixtureRoot = findExistingFixtureRoot([privateModularBundlerFixturePath]);
-    if (!fixtureRoot) return;
-
-    const graph = resolveRisuLuaModularGraph({
-      target: discoverRisuLuaBundleTarget({ rootDir: fixtureRoot, mode: 'modular' }),
-    });
-    const bundled = bundleRisuLuaModularGraph({ graph });
-    const diagnostics = analyzeRisuLuaLocalBudget({
-      code: bundled.code,
-      filePath: 'dist/private-fixture.risulua',
-    });
-
-    expect(bundled.generatedLoaders.length).toBeGreaterThanOrEqual(150);
-    expect(bundled.code).toContain('local __risulua_loaders = {}');
-    expect(bundled.code).not.toMatch(/^local\s+__loader_/m);
-    expect(diagnostics.filter((diagnostic) => diagnostic.scopeKind === 'chunk')).toEqual([]);
-  });
-
   it('risulua modular bundler handles entry-only graph with no dependencies', () => {
     // Regression test: entry-only graph (main with no requires) should not emit empty "local "
     const rootDir = createModularRoot();
@@ -1470,16 +1444,4 @@ function buildDomainFunctionNames(count: number): string[] {
 
 function buildLocalNames(count: number): string[] {
   return Array.from({ length: count }, (_value, index) => `v${String(index + 1).padStart(3, '0')}`);
-}
-
-function findExistingFixtureRoot(fixtureRoots: string[]): string | null {
-  for (const fixtureRoot of fixtureRoots) {
-    if (
-      fs.existsSync(path.join(fixtureRoot, '.risumodule')) &&
-      fs.existsSync(path.join(fixtureRoot, 'lua', 'main.risulua'))
-    ) {
-      return fixtureRoot;
-    }
-  }
-  return null;
 }

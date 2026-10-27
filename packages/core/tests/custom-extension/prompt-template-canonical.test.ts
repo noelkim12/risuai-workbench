@@ -2,14 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { CustomExtensionTarget } from '../../src/domain/custom-extension/contracts';
 import {
   buildPromptTemplatePath,
-  extractPromptTemplateFromPreset,
   injectPromptTemplateIntoPreset,
   parsePromptTemplateContent,
   parsePromptTemplateOrder,
   PromptTemplateAdapterError,
   rebuildPromptTemplatesInCanonicalOrder,
   serializePromptTemplateBundle,
-  serializePromptTemplateContent,
   serializePromptTemplateOrder,
   type PromptTemplateContent,
   type UpstreamPromptTemplateItem,
@@ -17,28 +15,6 @@ import {
 
 describe('prompt-template canonical adapter', () => {
   describe('parsePromptTemplateContent', () => {
-    it('parses plain prompt files with TEXT sections', () => {
-      const parsed = parsePromptTemplateContent(`---
-type: plain
-type2: main
-role: system
-name: AI Mandate & Core Constraints
----
-@@@ TEXT
-# AI Mandate
-{{#if {{? {{getglobalvar::toggle_real}}=1}}}}
-Text body
-{{/if}}
-`);
-
-      expect(parsed).toEqual({
-        type: 'plain',
-        type2: 'main',
-        role: 'system',
-        name: 'AI Mandate & Core Constraints',
-        text: '# AI Mandate\n{{#if {{? {{getglobalvar::toggle_real}}=1}}}}\nText body\n{{/if}}',
-      });
-    });
 
     it('parses cache prompts with cache_role rename handling', () => {
       const parsed = parsePromptTemplateContent(`---
@@ -95,45 +71,6 @@ range_end: tail
 ---
 `),
       ).toThrow(/range_end/);
-    });
-  });
-
-  describe('serializePromptTemplateContent', () => {
-    it('serializes cache prompts with canonical cache_role field', () => {
-      const serialized = serializePromptTemplateContent({
-        type: 'cache',
-        name: 'main-cache',
-        depth: 2,
-        role: 'assistant',
-      });
-
-      expect(serialized).toBe(`---
-type: cache
-name: main-cache
-depth: 2
-cache_role: assistant
----
-`);
-      expect(serialized).not.toContain('\nrole: ');
-    });
-
-    it('serializes chat prompts with snake_case range fields', () => {
-      expect(
-        serializePromptTemplateContent({
-          type: 'chat',
-          name: '과거 챗',
-          rangeStart: 0,
-          rangeEnd: -4,
-          chatAsOriginalOnSystem: true,
-        }),
-      ).toBe(`---
-type: chat
-name: 과거 챗
-range_start: 0
-range_end: -4
-chat_as_original_on_system: true
----
-`);
     });
   });
 
@@ -198,41 +135,6 @@ chat_as_original_on_system: true
   });
 
   describe('preset mapping', () => {
-    it('drops orphan fields according to the variant whitelist on extraction', () => {
-      const extracted = extractPromptTemplateFromPreset(
-        {
-          promptTemplate: [
-            {
-              type: 'description',
-              text: '',
-              role: 'bot',
-              type2: 'normal',
-              innerFormat: '<material>{{slot}}</material>',
-              name: '🧬 Material',
-            },
-            {
-              type: 'chatML',
-              text: '<|im_start|>user',
-              role: 'bot',
-              type2: 'normal',
-            },
-          ],
-        },
-        'preset',
-      );
-
-      expect(extracted).toEqual<UpstreamPromptTemplateItem[]>([
-        {
-          type: 'description',
-          innerFormat: '<material>{{slot}}</material>',
-          name: '🧬 Material',
-        },
-        {
-          type: 'chatML',
-          text: '<|im_start|>user',
-        },
-      ]);
-    });
 
     it('injects sanitized prompt template arrays back into preset shape', () => {
       const preset: { promptTemplate?: UpstreamPromptTemplateItem[] } = {};

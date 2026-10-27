@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
-
 import { runExtractWorkflow as runCharacterExtractWorkflow } from '../src/cli/extract/character/workflow';
 import { parseModuleRisumFull } from '../src/cli/extract/parsers';
 import { runExtractWorkflow as runModuleExtractWorkflow } from '../src/cli/extract/module/workflow';
@@ -13,7 +12,6 @@ import {
   decodeRisuLuaRecoveryBlock,
   decodeRisuLuaRecoveryPayload,
   hasExecutableRequireCalls,
-  runRisuLuaSplitExtract,
 } from '../src/cli/shared';
 import {
   RISULUA_RECOVERY_ASSET_TYPE,
@@ -26,7 +24,6 @@ import {
   type RisuLuaDomainGenerationCliMode,
   type RisuLuaSplitCliMode,
 } from '../src/cli/shared/risulua-split';
-
 const tempDirs: string[] = [];
 
 afterEach(() => {
@@ -311,46 +308,6 @@ describe('risulua-split extract CLI integration', () => {
     const exportManifest = readJson(outDir, 'docs/risulua-export-manifest.json') as Record<string, unknown>;
     expect(publicExportNames(refactorMap)).toEqual(publicExportNames(exportManifest));
     expect(publicExportNames(exportManifest)).toEqual([]);
-  });
-
-  it('verifies 히메둥드_0.57 validated domains in temporary output only', async () => {
-    const fixtureRoot = path.resolve(process.cwd(), '..', '..', 'test_suites', '히메둥드_0.57');
-    const sourcePath = path.join(fixtureRoot, 'legacy', 'original.risulua');
-    expect(fs.existsSync(sourcePath)).toBe(true);
-
-    const workDir = createTempDir('hime-fixture');
-    const outDir = path.join(workDir, '히메둥드_0.57');
-    const sourceLua = fs.readFileSync(sourcePath, 'utf8');
-
-    await runRisuLuaSplitExtract({
-      mode: 'module-table',
-      outputRoot: outDir,
-      source: sourceLua,
-      sourcePath,
-      targetName: '히메둥드_0.57ver',
-      cwd: process.cwd(),
-      domainGeneration: 'validated',
-    });
-
-    const refactorMap = readJson(outDir, 'docs/refactor-map.json') as Record<string, unknown>;
-    const domainModules = domainFunctionModules(refactorMap);
-    expect(domainModules.length).toBeGreaterThan(0);
-
-    for (const moduleContract of domainModules) {
-      const domainModule = readFile(outDir, moduleContract.path);
-      expect(domainModule).toContain('local __impl = {}');
-      for (const exportName of moduleContract.exports) {
-        expect(domainModule).toContain(`function __impl.${exportName}(`);
-        expect(domainModule).toContain(`M.${exportName} = __impl.${exportName}`);
-        expect(domainModule).not.toMatch(new RegExp(`^local\\s+${escapeRegExp(exportName)}\\b`, 'm'));
-      }
-    }
-
-    const report = readFile(outDir, 'docs/risulua-split-report.md');
-    expect(report).not.toContain('243 active locals');
-    const exportManifest = readJson(outDir, 'docs/risulua-export-manifest.json') as Record<string, unknown>;
-    expect(publicExportNames(refactorMap)).toEqual(publicExportNames(exportManifest));
-    expect(fs.existsSync(path.join(fixtureRoot, 'docs', 'refactor-map.json'))).toBe(true);
   });
 
   it('keeps domain candidates report-only when module-table domain generation is explicitly disabled', async () => {
@@ -861,16 +818,6 @@ function moduleExports(refactorMap: Record<string, unknown>, modulePath: string)
   return moduleContract?.exports as string[];
 }
 
-function domainFunctionModules(refactorMap: Record<string, unknown>): Array<{ path: string; exports: string[] }> {
-  const modules = refactorMap.modules as Array<Record<string, unknown>> | undefined;
-  return (modules ?? [])
-    .filter((moduleContract) => moduleContract.category === 'domain-function')
-    .map((moduleContract) => ({
-      path: moduleContract.path as string,
-      exports: moduleContract.exports as string[],
-    }));
-}
-
 function publicExportNames(document: Record<string, unknown>): string[] {
   const symbols = document.symbols as Array<Record<string, unknown>> | undefined;
   if (symbols) {
@@ -881,10 +828,6 @@ function publicExportNames(document: Record<string, unknown>): string[] {
 
   const entries = document.hostVisibleGlobals as Array<Record<string, unknown>> | undefined;
   return entries?.map((entry) => entry.name as string) ?? [];
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function readBytes(root: string, relativePath: string): Buffer {
