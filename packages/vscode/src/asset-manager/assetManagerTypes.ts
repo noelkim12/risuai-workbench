@@ -156,6 +156,10 @@ export type AssetManagerUndoAutoAssignMessage = AssetManagerEnvelope<'asset-mana
 export type AssetManagerWriteAssetsMessage = AssetManagerEnvelope<'asset-manager/writeAssets', AssetManagerWriteAssetsPayload>;
 export type AssetManagerReplaceAssetFileMessage = AssetManagerEnvelope<'asset-manager/replaceAssetFile', AssetManagerReplaceAssetFilePayload>;
 export type AssetManagerPickAssetFilesMessage = AssetManagerEnvelope<'asset-manager/pickAssetFiles', AssetManagerStableIdPayload>;
+export type AssetManagerDeleteAssetsMessage = AssetManagerEnvelope<
+  'asset-manager/deleteAssets',
+  AssetManagerStableIdPayload & { readonly paths: readonly string[] }
+>;
 
 export type AssetManagerWebviewMessage =
   | AssetManagerReadyMessage
@@ -175,6 +179,7 @@ export type AssetManagerWebviewMessage =
   | AssetManagerBuildManifestMessage
   | AssetManagerUndoAutoAssignMessage
   | AssetManagerWriteAssetsMessage
+  | AssetManagerDeleteAssetsMessage
   | AssetManagerReplaceAssetFileMessage
   | AssetManagerPickAssetFilesMessage;
 
@@ -277,6 +282,7 @@ export type AssetManagerFilesPickedMessage = AssetManagerEnvelope<'asset-manager
 export type AssetManagerErrorMessage = AssetManagerEnvelope<'asset-manager/error', AssetManagerErrorPayload>;
 
 export type AssetManagerExtensionMessage =
+  | AssetManagerEnvelope<'asset-manager/deleteFinished', AssetManagerStableIdPayload>
   | AssetManagerAssetsLoadedMessage
   | AssetManagerCatalogSavedMessage
   | AssetManagerAutoAssignAppliedMessage

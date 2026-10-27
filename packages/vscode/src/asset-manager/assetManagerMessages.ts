@@ -204,6 +204,11 @@ const WEBVIEW_MESSAGE_VALIDATORS: Record<AssetManagerWebviewMessage['type'], Pay
     payload.assignedPaths.every((entry) => typeof entry === 'string' && isSafeRelativePath(entry)) &&
     isVocabAdditionsRecord(payload.addedVocab),
   'asset-manager/writeAssets': isWriteAssetsPayload,
+  'asset-manager/deleteAssets': (payload) =>
+    hasStableId(payload) &&
+    Array.isArray(payload.paths) &&
+    payload.paths.length > 0 &&
+    payload.paths.every((entry) => typeof entry === 'string' && isWriteableAssetPath(entry)),
   'asset-manager/replaceAssetFile': (payload) =>
     hasStableId(payload) && typeof payload.path === 'string' && isSafeRelativePath(payload.path),
   'asset-manager/pickAssetFiles': hasStableId,

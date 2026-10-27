@@ -26,6 +26,8 @@
   export let onApplySlots: (path: string, slots: AssetSlotValues) => void = () => undefined;
   /** '파일 교체' 진입점. null이면 버튼을 렌더하지 않는다(콜백 미배선 컨텍스트 대비). */
   export let onReplaceFile: ((path: string) => void) | null = null;
+  export let onDeleteAssets: (paths: readonly string[]) => void;
+  export let deletingAssets = false;
 
   let draft: AssetSlotValues = {};
   // entry 가 바뀌면(탐색) 해당 entry 의 기존 할당으로 draft 초기화.
@@ -67,6 +69,8 @@
     <header class="detail-modal__header">
       <h2>{entry.generatedName ?? entry.fileStem}</h2>
       <div>
+        <button type="button" class="button-secondary" disabled={deletingAssets}
+          onclick={() => onDeleteAssets([entry.path])}>삭제</button>
         {#if onReplaceFile}
           <!-- <button
             type="button"

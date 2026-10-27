@@ -1716,8 +1716,18 @@ function resolveRisuCoreBinPath(): string {
 }
 
 function runNodeCli(binPath: string, args: string[], cwd: string, cliLabel: string): Promise<string> {
+  return runCli(process.execPath, [binPath, ...args], cwd, cliLabel);
+}
+
+function runCli(
+  command: string,
+  args: string[],
+  cwd: string,
+  cliLabel: string,
+  options: { shell?: boolean; timeout?: number } = {},
+): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [binPath, ...args], { cwd, env: process.env });
+    const child = spawn(command, args, { cwd, env: process.env, ...options });
     let stdout = '';
     let stderr = '';
 
@@ -1745,7 +1755,7 @@ function runRisuCoreCli(args: string[], cwd: string): Promise<string> {
   return runNodeCli(resolveRisuCoreBinPath(), args, cwd, 'risu-core');
 }
 
-function runCreateRisuPluginCli(
+async function runCreateRisuPluginCli(
   payload: ArtifactBrowserCreateArtifactPayload,
   outDir: string,
   cwd: string,
@@ -1762,7 +1772,24 @@ function runCreateRisuPluginCli(
     args.push('--description', payload.description.trim());
   }
 
-  return runNodeCli(require.resolve('create-risu-plugin/bin/index.js'), args, cwd, 'create-risu-plugin');
+  try {
+    return await runLatestCreateRisuPluginCli(args, cwd);
+  } catch (error) {
+    // Offline or no npx on PATH: fall back to the bundled copy.
+    console.warn(`[risu-workbench] create-risu-plugin@latest failed, using bundled version: ${getErrorMessage(error)}`);
+    fs.rmSync(outDir, { recursive: true, force: true });
+    return runNodeCli(require.resolve('create-risu-plugin/bin/index.js'), args, cwd, 'create-risu-plugin');
+  }
+}
+
+function runLatestCreateRisuPluginCli(args: string[], cwd: string): Promise<string> {
+  const npxArgs = ['--yes', 'create-risu-plugin@latest', ...args];
+  // Windows needs a shell to run npx.cmd, so quote each arg for cmd.exe.
+  if (process.platform === 'win32') {
+    const quoted = npxArgs.map((arg) => `"${arg.replace(/"/g, '\\"')}"`);
+    return runCli('npx', quoted, cwd, 'create-risu-plugin@latest', { shell: true, timeout: 120_000 });
+  }
+  return runCli('npx', npxArgs, cwd, 'create-risu-plugin@latest', { timeout: 120_000 });
 }
 
 function createImportExtractArgs(importedFile: string): string[] {

@@ -331,6 +331,30 @@ export class AssetManagerService {
     return this.saveAndScan({ ...catalog, assignments, vocab });
   }
 
+  async deleteAssetFiles(paths: readonly string[], removeFile: (absolutePath: string) => PromiseLike<void>): Promise<void> {
+    const uniquePaths = [...new Set(paths)];
+    const assetsRoot = fs.realpathSync(this.assetsDir);
+    const targets = uniquePaths.map((relPath) => {
+      assertWriteableAssetPath(relPath);
+      const absolutePath = path.join(this.assetsDir, ...relPath.split('/'));
+      const relative = path.relative(assetsRoot, fs.realpathSync(absolutePath));
+      if (relative.startsWith(`..${path.sep}`) || relative === '..' || path.isAbsolute(relative) ||
+          !fs.lstatSync(absolutePath).isFile()) {
+        throw new Error(`Invalid asset deletion target: ${relPath}`);
+      }
+      return { relPath, absolutePath };
+    });
+    const deleted: AssetManagerAssignmentChange[] = [];
+    try {
+      for (const target of targets) {
+        await removeFile(target.absolutePath);
+        deleted.push({ path: target.relPath, slots: null });
+      }
+    } finally {
+      if (deleted.length > 0) this.applyAssignmentChanges(deleted);
+    }
+  }
+
   writeAssetFiles(files: readonly AssetManagerWriteAssetFile[]): AssetManagerWriteAssetFilesResult {
     const decoded = validateWriteAssetFiles(files);
     const writtenPaths: string[] = [];

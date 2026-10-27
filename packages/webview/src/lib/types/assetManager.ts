@@ -190,6 +190,7 @@ export interface AssetManagerWebviewPayloadByType {
   readonly 'asset-manager/writeAssets': { readonly stableId: string; readonly files: readonly AssetManagerWriteAssetFile[] };
   readonly 'asset-manager/replaceAssetFile': { readonly stableId: string; readonly path: string };
   readonly 'asset-manager/pickAssetFiles': { readonly stableId: string };
+  readonly 'asset-manager/deleteAssets': { readonly stableId: string; readonly paths: readonly string[] };
 }
 
 export type AssetManagerWebviewMessage = {
@@ -197,6 +198,7 @@ export type AssetManagerWebviewMessage = {
 }[keyof AssetManagerWebviewPayloadByType];
 
 export type AssetManagerExtensionMessage =
+  | AssetManagerEnvelope<'asset-manager/deleteFinished', { readonly stableId: string }>
   | AssetManagerEnvelope<'asset-manager/assetsLoaded', AssetManagerAssetsLoadedPayload>
   | AssetManagerEnvelope<'asset-manager/catalogSaved', AssetManagerCatalogSavedPayload>
   | AssetManagerEnvelope<
@@ -263,6 +265,7 @@ export type AssetManagerExtensionMessage =
   | AssetManagerEnvelope<'asset-manager/error', { readonly stableId: string; readonly context: string; readonly message: string }>;
 
 const EXTENSION_MESSAGE_TYPES: ReadonlySet<string> = new Set([
+  'asset-manager/deleteFinished',
   'asset-manager/assetsLoaded',
   'asset-manager/catalogSaved',
   'asset-manager/autoAssignApplied',

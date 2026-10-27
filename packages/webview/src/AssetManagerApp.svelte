@@ -89,6 +89,7 @@
   } | null = null;
   let stagedItems: StagedItem[] | null = null;
   let stagedApplying = false;
+  let deletingAssets = false;
   let dragActive = false;
   /** 드래그 중 상세 모달이 열려 있으면 해당 asset 경로 — drop을 교체로 라우팅한다. */
   let dragReplaceTarget: string | null = null;
@@ -117,7 +118,12 @@
     orphanPaths: readonly string[];
     duplicateNames: readonly string[];
   }): void {
+    if (comboDetailEntry && !payload.entries.some((entry) => entry.path === comboDetailEntry.path)) {
+      comboDetailIndex = null;
+    }
     entries = payload.entries;
+    const existingPaths = new Set(entries.map((entry) => entry.path));
+    metaByPath = Object.fromEntries(Object.entries(metaByPath).filter(([path]) => existingPaths.has(path)));
     catalog = payload.catalog;
     catalogExists = payload.catalogExists;
     orphanPaths = payload.orphanPaths;
@@ -129,6 +135,10 @@
   function handleMessage(event: MessageEvent): void {
     const message: unknown = event.data;
     if (!isAssetManagerExtensionMessage(message)) return;
+    if (message.type === 'asset-manager/deleteFinished') {
+      deletingAssets = false;
+      return;
+    }
     errorText = '';
     switch (message.type) {
       case 'asset-manager/assetsLoaded': {
@@ -384,6 +394,12 @@
     post(createAssetManagerWebviewMessage('asset-manager/replaceAssetFile', { stableId, path }));
   }
 
+  function onDeleteAssets(paths: readonly string[]): void {
+    if (deletingAssets || paths.length === 0) return;
+    deletingAssets = true;
+    post(createAssetManagerWebviewMessage('asset-manager/deleteAssets', { stableId, paths }));
+  }
+
   function selectTab(nextTab: Tab): void {
     tab = nextTab;
   }
@@ -505,7 +521,7 @@
 
   {#if catalog}
     {#if tab === 'grid'}
-      <GridView {entries} {catalog} {orphanPaths} {metaByPath} {assetImageSrc} {onUpdateAssignments} {onReadMeta} {onReplaceFile} presetQuery={gridPresetQuery} />
+      <GridView {entries} {catalog} {orphanPaths} {metaByPath} {assetImageSrc} {onUpdateAssignments} {onReadMeta} {onReplaceFile} {onDeleteAssets} {deletingAssets} presetQuery={gridPresetQuery} />
     {:else if tab === 'matrix'}
       <MatrixView {catalog} onOpenCombo={openCombo} />
     {:else if tab === 'vocab'}
@@ -569,6 +585,8 @@
       onNext={() => moveComboDetail(1)}
       onApplySlots={(path, slots) => onUpdateAssignments([{ path, slots }])}
       {onReplaceFile}
+      {onDeleteAssets}
+      {deletingAssets}
     />
   {/if}
 </main>

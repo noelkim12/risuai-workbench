@@ -27,6 +27,7 @@
   } from '../../types/assetManager';
   // biome-ignore lint/correctness/noUnusedImports: Svelte markup consumes this component.
   import AssetDetailModal from './AssetDetailModal.svelte';
+  import AssetContextMenu from './AssetContextMenu.svelte';
 
   // D3 AssetManagerApp 가 readonly 상태를 내려주므로 props 도 readonly 로 받는다.
   export let entries: readonly AssetManagerAssetEntry[] = [];
@@ -37,6 +38,8 @@
   export let onUpdateAssignments: (changes: AssetManagerAssignmentChange[]) => void = () => undefined;
   export let onReadMeta: (path: string) => void = () => undefined;
   export let onReplaceFile: ((path: string) => void) | null = null;
+  export let onDeleteAssets: (paths: readonly string[]) => void;
+  export let deletingAssets = false;
   export let presetQuery: string | null = null;
 
   // KEEP 센티넬: 해당 슬롯은 기존 할당 값을 유지(덮어쓰지 않음).
@@ -55,7 +58,8 @@
   let viewportWidth = 0;
   let selected = new Set<string>();
   let anchorPath: string | null = null;
-  let modalIndex: number | null = null;
+  let modalPath: string | null = null;
+  let contextMenu: { path: string; x: number; y: number } | null = null;
   // Inspector select 값. KEEP 또는 vocab 값. 미선택 시 KEEP(유지).
   let inspectorValues: Record<string, string> = {};
   // Matrix 셀 클릭 점프 시 presetQuery 를 query/subdir 에 1회 적용하기 위한 가드.
@@ -83,7 +87,19 @@
   });
   $: windowEntries = visibleEntries.slice(window_.startIndex, window_.endIndex);
   $: selectedEntries = visibleEntries.filter((entry) => selected.has(entry.path));
-  $: modalEntry = modalIndex === null ? null : (visibleEntries[modalIndex] ?? null);
+  $: modalEntry = visibleEntries.find((entry) => entry.path === modalPath) ?? null;
+  $: existingPaths = new Set(entries.map((entry) => entry.path));
+  $: selected = new Set([...selected].filter((path) => existingPaths.has(path)));
+  $: if (modalPath !== null && !entries.some((entry) => entry.path === modalPath)) modalPath = null;
+
+  function openContextMenu(event: MouseEvent, path: string): void {
+    event.preventDefault();
+    if (!selected.has(path)) {
+      selected = new Set([path]);
+      anchorPath = path;
+    }
+    contextMenu = { path, x: event.clientX, y: event.clientY };
+  }
 
   function selectionMode(event: MouseEvent): 'single' | 'toggle' | 'range' {
     if (event.shiftKey) return 'range';
@@ -100,8 +116,8 @@
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup calls this action.
   function openModal(index: number): void {
-    modalIndex = index;
     const entry = visibleEntries[index];
+    modalPath = entry?.path ?? null;
     if (entry && !metaByPath[entry.path]) onReadMeta(entry.path);
   }
 
@@ -112,9 +128,10 @@
 
   // biome-ignore lint/correctness/noUnusedVariables: Svelte markup calls this action.
   function moveModal(delta: number): void {
-    if (modalIndex === null) return;
+    const modalIndex = visibleEntries.findIndex((entry) => entry.path === modalPath);
+    if (modalIndex < 0) return;
     const nextIndex = Math.min(visibleEntries.length - 1, Math.max(0, modalIndex + delta));
-    modalIndex = nextIndex;
+    modalPath = visibleEntries[nextIndex]?.path ?? null;
     ensureMeta(nextIndex);
   }
 
@@ -222,6 +239,7 @@
             class:tile--selected={selected.has(entry.path)}
             onclick={(event) => clickTile(event, entry.path)}
             ondblclick={() => openModal(index)}
+            oncontextmenu={(event) => openContextMenu(event, entry.path)}
             title={entry.path}
           >
             <!-- 타일 이미지를 끌면 외부 파일 드래그로 오인되므로 native drag를 끈다. -->
@@ -275,6 +293,10 @@
         disabled={selectedEntries.length === 0}>할당 해제</button
       >
     </div>
+    <button type="button" class="button-secondary"
+      disabled={deletingAssets || selectedEntries.length === 0}
+      onclick={() => onDeleteAssets(selectedEntries.map((entry) => entry.path))}
+    >선택한 파일 삭제{selectedEntries.length > 0 ? ` (${selectedEntries.length})` : ''}</button>
     {#if selectedEntries.length === 1}
       {@const single = selectedEntries[0]}
       <dl class="inspector__meta">
@@ -292,12 +314,26 @@
     imgSrc={assetImageSrc(modalEntry.path)}
     meta={metaByPath[modalEntry.path] ?? null}
     {catalog}
-    onClose={() => (modalIndex = null)}
+    onClose={() => (modalPath = null)}
     onPrev={() => moveModal(-1)}
     onNext={() => moveModal(1)}
     onApplySlots={(path, slots) => onUpdateAssignments([{ path, slots }])}
     {onReplaceFile}
+    {onDeleteAssets}
+    {deletingAssets}
   />
+{/if}
+
+{#if contextMenu}
+  {#key contextMenu}
+    <AssetContextMenu x={contextMenu.x} y={contextMenu.y}
+      disabled={deletingAssets}
+      onDelete={() => {
+        if (contextMenu) onDeleteAssets([contextMenu.path]);
+        contextMenu = null;
+      }}
+      onClose={() => (contextMenu = null)} />
+  {/key}
 {/if}
 
 <style>

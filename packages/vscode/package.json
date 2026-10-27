@@ -489,13 +489,13 @@
     "format:check": "prettier --check 'src/**/*.ts'"
   },
   "dependencies": {
-    "create-risu-plugin": "^3.1.0",
     "@risuai-workbench/core": "^0.1.1",
+    "create-risu-plugin": "^3.2.0",
     "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {
-    "@vscode/test-electron": "^2.5.2",
     "@types/vscode": "^1.96.0",
+    "@vscode/test-electron": "^2.5.2",
     "tsc-alias": "^1.8.0",
     "typescript": "^5.7.0"
   }

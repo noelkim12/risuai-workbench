@@ -55,6 +55,7 @@ export class AssetManagerPanel {
   private readonly watcher: vscode.FileSystemWatcher;
   private fsRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   private knownPaths = new Set<string>();
+  private deletingAssets = false;
 
   private static readonly FS_REFRESH_DEBOUNCE_MS = 500;
   private static readonly REPLACE_MAX_BYTES = 50 * 1024 * 1024;
@@ -206,6 +207,32 @@ export class AssetManagerPanel {
       );
     } catch (error) {
       this.postError('asset-manager/fsWatch', error);
+    }
+  }
+
+  private async deleteAssets(paths: readonly string[]): Promise<void> {
+    if (this.deletingAssets) return;
+    this.deletingAssets = true;
+    const uniquePaths = [...new Set(paths)];
+    try {
+      const answer = await vscode.window.showWarningMessage(
+        `Asset 파일 ${uniquePaths.length}개를 삭제할까요?`,
+        { modal: true, detail: `${uniquePaths.slice(0, 10).join('\n')}${uniquePaths.length > 10 ? '\n…' : ''}\n\n파일을 휴지통으로 이동하고 slot 할당을 해제합니다.` },
+        '삭제',
+      );
+      if (answer !== '삭제') return;
+      try {
+        await this.service.deleteAssetFiles(uniquePaths, (absolutePath) =>
+          vscode.workspace.fs.delete(vscode.Uri.file(absolutePath), { useTrash: true }),
+        );
+      } finally {
+        this.sendSnapshot('asset-manager/catalogSaved');
+      }
+    } catch (error) {
+      this.postError('asset-manager/deleteAssets', error);
+    } finally {
+      this.deletingAssets = false;
+      this.post(createAssetManagerExtensionMessage('asset-manager/deleteFinished', { stableId: this.target.stableId }));
     }
   }
 
@@ -416,6 +443,10 @@ export class AssetManagerPanel {
         }
         case 'asset-manager/replaceAssetFile':
           void this.replaceAssetFile(message.payload.path);
+          return;
+        case 'asset-manager/deleteAssets':
+          if (message.payload.stableId !== stableId) return;
+          void this.deleteAssets(message.payload.paths);
           return;
         case 'asset-manager/pickAssetFiles':
           void this.pickAssetFiles();
