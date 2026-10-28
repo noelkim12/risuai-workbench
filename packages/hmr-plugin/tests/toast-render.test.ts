@@ -6,6 +6,7 @@ interface FakeElement {
   text: string;
   appendChild(child: FakeElement): Promise<void>;
   remove(): Promise<void>;
+  setAttribute(name: string, value: string): Promise<void>;
   setStyle(property: string, value: string): Promise<void>;
   setTextContent(text: string): Promise<void>;
 }
@@ -28,6 +29,7 @@ describe('createToast', () => {
 
     const rootDocument = {
       async appendChild(): Promise<void> {},
+      async querySelectorAll() { return { length: async () => 0, at: async () => null }; },
       async createElement(): Promise<FakeElement> {
         const index = elements.length;
         let writeCount = 0;
@@ -35,6 +37,7 @@ describe('createToast', () => {
           text: '',
           async appendChild(): Promise<void> {},
           async remove(): Promise<void> {},
+          async setAttribute(): Promise<void> {},
           async setStyle(): Promise<void> {},
           async setTextContent(text: string): Promise<void> {
             writeCount += 1;

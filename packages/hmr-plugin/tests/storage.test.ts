@@ -10,9 +10,6 @@ function makeFakeStorage(): MappingStorageDeps {
     setItem: async (key: string, value: unknown) => {
       backing.set(key, value)
     },
-    removeItem: async (key: string) => {
-      backing.delete(key)
-    },
   }
 }
 
@@ -63,17 +60,13 @@ describe("createMappingStore", () => {
     await storage.setItem("mapping-v1", { ...CHARACTER_MAPPING, autoApply: "yes" })
     expect(await store.load()).toBeNull()
   })
-  it("round-trips a character mapping and clears it", async () => {
+  it("round-trips a character mapping", async () => {
     const store = createMappingStore(makeFakeStorage())
 
     expect(await store.load()).toBeNull()
     await store.save(CHARACTER_MAPPING)
 
     expect(await store.load()).toEqual(CHARACTER_MAPPING)
-
-    await store.clear()
-
-    expect(await store.load()).toBeNull()
   })
 
   it("round-trips a module mapping with explicit undefined optional target ids", async () => {

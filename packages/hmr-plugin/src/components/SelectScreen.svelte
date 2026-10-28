@@ -21,7 +21,9 @@
   };
   const { controller, kind, projectName, onSelected }: Props = $props();
 
-  let query = $state("");
+  // 워크벤치 프로젝트 이름으로 미리 필터 — 지우면 전체 목록. 초기값만 쓰는 게 의도다.
+  // svelte-ignore state_referenced_locally
+  let query = $state(projectName);
   let targets = $state<Target[]>([]);
   let loaded = $state(false);
   const thumbnails = $state<Record<string, string>>({});
@@ -49,7 +51,7 @@
     const targetKinds = availableTargetKinds(kind);
     const characterTargets = targetKinds.includes("character")
       ? (await controller.listCharacterTargets()).map((target) => ({
-          key: `character:${target.chaId}`,
+          key: `character:${target.index}`,
           kind: "character" as const,
           label: target.name,
           description: "캐릭터",
@@ -58,8 +60,8 @@
         }))
       : [];
     const moduleTargets = targetKinds.includes("module")
-      ? (await controller.listModuleTargets()).map((target) => ({
-          key: `module:${target.id}`,
+      ? (await controller.listModuleTargets()).map((target, index) => ({
+          key: `module:${index}`,
           kind: "module" as const,
           label: target.name,
           description: target.description ? `모듈 · ${target.description}` : "모듈",
@@ -88,7 +90,7 @@
       수신할 {kind === "character" ? "캐릭터 또는 모듈" : "모듈"} 선택
       {#if loaded}<span class="count-chip">{filtered.length} / {targets.length}</span>{/if}
     </h2>
-    <p class="note">워크벤치: "{projectName}" ({kind}) — RisuAI가 DB 권한을 물으면 허용해주세요.</p>
+    <p class="note">워크벤치: "{projectName}" ({kind}) (RisuAI가 DB 권한을 물으면 허용해주세요.</p>
   </header>
   <input placeholder="이름으로 필터…" bind:value={query} />
   <div class="target-list">
@@ -109,7 +111,7 @@
     {#if loaded && targets.length === 0}
       <div class="empty-state">
         <p class="note">
-          일치하는 대상이 없어요. 처음이라면: ① 워크벤치에서 [Pack] ② RisuAI로 import ③ 아래 새로고침
+          일치하는 대상이 없습니다. 처음이라면: ① 워크벤치에서 [Pack] ② RisuAI로 import ③ 아래 새로고침
         </p>
         <button type="button" onclick={() => void load()}>목록 새로고침 ⟳</button>
       </div>

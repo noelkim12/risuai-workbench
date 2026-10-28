@@ -49,7 +49,6 @@ function makeFake(): Fake {
   const store = createMappingStore({
     getItem: async (key) => storageBacking.get(key),
     setItem: async (key, value) => void storageBacking.set(key, value),
-    removeItem: async (key) => void storageBacking.delete(key),
   });
 
   const deps: ControllerDeps = {
@@ -75,6 +74,8 @@ function makeFake(): Fake {
       return new Uint8Array([1, 2, 3]);
     },
     getCharacters: async () => characters,
+    getCharacterAt: async (index) => characters[index] ?? null,
+    getCurrentCharacterIndex: async () => -1,
     setCharacterToIndex: async (index, character) => {
       const record = toRecord(character);
       written.push({ index, character: record });
@@ -85,7 +86,6 @@ function makeFake(): Fake {
       moduleWrites.push(nextModules);
       modules.splice(0, modules.length, ...nextModules);
     },
-    persistDatabase: async () => {},
     probeImage: async () => false,
     saveAsset: async () => 'assets/x.png',
     store,
@@ -93,7 +93,6 @@ function makeFake(): Fake {
     onState: (state) => states.push(state),
     onEvent: (event) => events.push(event),
     alertError: async (message) => void alerts.push(message),
-    idlePersistDelayMs: 1,
   };
 
   return {
@@ -147,7 +146,7 @@ describe('HmrController', () => {
     const fake = makeFake();
     const first = new HmrController(fake.deps);
     await first.connect(CONN);
-    await first.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false });
+    await first.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false, autoApply: true });
     await first.setAutoApply(autoApply);
     await first.pause();
     expect((await fake.deps.store.load())?.paused).toBe(true);
@@ -174,7 +173,7 @@ describe('HmrController', () => {
     const fake = makeFake();
     const controller = new HmrController(fake.deps);
     await controller.connect(CONN);
-    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false });
+    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false, autoApply: true });
     fake.deps.store.save = async () => { throw new Error('storage failed'); };
     await expect(controller.pause()).rejects.toThrow('storage failed');
     expect(controller.getState()).toMatchObject({ phase: 'paused', lastError: 'storage failed' });
@@ -188,7 +187,7 @@ describe('HmrController', () => {
     const fake = makeFake();
     const controller = new HmrController(fake.deps);
     await controller.connect(CONN);
-    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false });
+    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false, autoApply: true });
     await controller.setAutoApply(false);
     for (const version of [2, 3, 4]) fake.pushWatch({ version, definitionChanged: true, changedAssets: [], stableId: 'sid-1' });
     await waitFor(() => controller.getState().pendingVersion === 4);
@@ -214,7 +213,7 @@ describe('HmrController', () => {
     const fake = makeFake();
     const controller = new HmrController(fake.deps);
     await controller.connect(CONN);
-    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false });
+    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false, autoApply: true });
     await controller.setAutoApply(false);
     const snapshot = await controller.prepareManualPreview();
     fake.setPayload({ kind: 'character', data: { name: 'changed' }, assets: [] });
@@ -236,7 +235,7 @@ describe('HmrController', () => {
     const fake = makeFake();
     const controller = new HmrController(fake.deps);
     await controller.connect(CONN);
-    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false });
+    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false, autoApply: true });
     let release: (() => void) | undefined;
     fake.deps.fetchBinary = async () => {
       await new Promise<void>((resolve) => { release = resolve; });
@@ -271,7 +270,7 @@ describe('HmrController', () => {
     try {
       const diff = await controller.buildConfirmDiff(target);
       expect(diff.fields.find((field) => field.key === loreKey)?.entrySummary).toEqual({ added: 1, modified: 1, removed: 0 });
-      await controller.confirmAndStart({ ...target, label: 'Old', badgeEnabled: false });
+      await controller.confirmAndStart({ ...target, label: 'Old', badgeEnabled: false, autoApply: true });
       expect(toRecord(targets[0])[loreKey]).toEqual([user, updated, added]);
     } finally {
       controller.stopLoops();
@@ -356,7 +355,7 @@ describe('HmrController', () => {
     const fake = makeFake();
     const controller = new HmrController(fake.deps);
     await controller.connect(CONN);
-    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false });
+    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false, autoApply: true });
 
     fake.setPayload({ kind: 'character', data: { name: 'Newer', desc: 'v2', chats: [], chaId: 'evil' }, assets: [] });
     fake.pushWatch({ version: 2, definitionChanged: true, changedAssets: [], stableId: 'sid-1' });
@@ -375,7 +374,7 @@ describe('HmrController', () => {
     const fake = makeFake();
     const controller = new HmrController(fake.deps);
     await controller.connect(CONN);
-    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false });
+    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false, autoApply: true });
     await waitFor(() => countRequests(fake.requestedUrls, '/watch') >= 1);
     const initialPayloadRequests = countRequests(fake.requestedUrls, '/payload');
     const initialWrites = fake.written.length;
@@ -398,7 +397,7 @@ describe('HmrController', () => {
     const controller = new HmrController(fake.deps);
 
     await controller.connect(CONN);
-    await controller.confirmAndStart({ moduleId: 'mod-1', label: 'Old module', badgeEnabled: true });
+    await controller.confirmAndStart({ moduleId: 'mod-1', label: 'Old module', badgeEnabled: true, autoApply: true });
 
     expect(fake.moduleWrites).toHaveLength(1);
     expect(fake.modules).toEqual([{ id: 'mod-1', name: 'New module', enabledModules: ['drop'] }]);
@@ -417,7 +416,7 @@ describe('HmrController', () => {
     const controller = new HmrController(fake.deps);
 
     await controller.connect(CONN);
-    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false });
+    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false, autoApply: true });
 
     expect(fake.written.at(-1)?.character['image']).toBe('assets/x.png');
     expect(fake.requestedUrls.some((url) => url.includes('/asset/hash-a?k=tok'))).toBe(true);
@@ -429,7 +428,7 @@ describe('HmrController', () => {
     const fake = makeFake();
     const controller = new HmrController(fake.deps);
     await controller.connect(CONN);
-    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false });
+    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false, autoApply: true });
 
     controller.stopLoops();
 
@@ -441,7 +440,7 @@ describe('HmrController', () => {
     const fake = makeFake();
     const first = new HmrController(fake.deps);
     await first.connect(CONN);
-    await first.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: true });
+    await first.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: true, autoApply: true });
     first.stopLoops();
 
     const second = new HmrController(fake.deps);
@@ -456,11 +455,29 @@ describe('HmrController', () => {
     fake.releaseAll();
   });
 
+  it('keeps a disconnected mapping for manual reconnect only', async () => {
+    const fake = makeFake();
+    const first = new HmrController(fake.deps);
+    await first.connect(CONN);
+    await first.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false, autoApply: true });
+    await first.disconnect();
+
+    expect(await first.getSavedTargetLabel()).toBe('Old');
+    expect(await new HmrController(fake.deps).tryAutoReconnect()).toBe(false);
+    expect(await first.tryAutoReconnect(true)).toBe(true);
+    expect(first.getState()).toMatchObject({ phase: 'active', targetLabel: 'Old' });
+    first.stopLoops();
+    const revived = new HmrController(fake.deps);
+    expect(await revived.tryAutoReconnect()).toBe(true);
+    revived.stopLoops();
+    fake.releaseAll();
+  });
+
   it('safe-stops without applying when a watch response reports a different stableId', async () => {
     const fake = makeFake();
     const controller = new HmrController(fake.deps);
     await controller.connect(CONN);
-    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false });
+    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false, autoApply: true });
     const initialWrites = fake.written.length;
 
     fake.setPayload({ kind: 'character', data: { name: 'Bob definition', desc: 'not for Aria' }, assets: [] });
@@ -477,7 +494,7 @@ describe('HmrController', () => {
     const fake = makeFake();
     const controller = new HmrController(fake.deps);
     await controller.connect(CONN);
-    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false });
+    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false, autoApply: true });
     const initialWrites = fake.written.length;
 
     fake.pushWatch({ version: 1, definitionChanged: false, changedAssets: [], stableId: 'sid-OTHER' });
@@ -491,7 +508,7 @@ describe('HmrController', () => {
     const fake = makeFake();
     const controller = new HmrController(fake.deps);
     await controller.connect(CONN);
-    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false });
+    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false, autoApply: true });
 
     fake.setHealth({ app: 'risu-workbench-hmr', protocolVersion: HMR_PROTOCOL_VERSION, project: { name: 'Bob', kind: 'character', stableId: 'sid-OTHER' }, version: 1 });
     fake.pushWatch(new Error('conn refused'));
@@ -505,7 +522,7 @@ describe('HmrController', () => {
     const fake = makeFake();
     const controller = new HmrController(fake.deps);
     await controller.connect(CONN);
-    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false });
+    await controller.confirmAndStart({ chaId: 'cha-1', label: 'Old', badgeEnabled: false, autoApply: true });
     const write = fake.deps.setCharacterToIndex;
     let attempts = 0;
     fake.deps.setCharacterToIndex = async (index, value) => {
@@ -534,7 +551,7 @@ describe('HmrController', () => {
     const controller = new HmrController(fake.deps);
     await controller.connect(CONN);
 
-    await controller.confirmAndStart({ chaId: 'cha-1', label: '미카', badgeEnabled: true });
+    await controller.confirmAndStart({ chaId: 'cha-1', label: '미카', badgeEnabled: true, autoApply: true });
     controller.stopLoops();
 
     expect(fake.events).toEqual([{ kind: 'initialSynced', version: 1, assetCount: 2 }]);
@@ -544,7 +561,7 @@ describe('HmrController', () => {
     const fake = makeFake();
     const controller = new HmrController(fake.deps);
     await controller.connect(CONN);
-    await controller.confirmAndStart({ chaId: 'cha-1', label: '미카', badgeEnabled: true });
+    await controller.confirmAndStart({ chaId: 'cha-1', label: '미카', badgeEnabled: true, autoApply: true });
 
     fake.pushWatch({ version: 2, definitionChanged: true, changedAssets: ['a', 'b'], stableId: 'sid-1' });
     await vi.waitFor(() => expect(fake.events).toHaveLength(2));
@@ -558,7 +575,7 @@ describe('HmrController', () => {
     const fake = makeFake();
     const controller = new HmrController(fake.deps);
     await controller.connect(CONN);
-    await controller.confirmAndStart({ chaId: 'cha-1', label: '미카', badgeEnabled: true });
+    await controller.confirmAndStart({ chaId: 'cha-1', label: '미카', badgeEnabled: true, autoApply: true });
     const afterInitial = fake.events.length;
 
     fake.pushWatch({ version: 2, definitionChanged: false, changedAssets: ['a'], stableId: 'sid-1' });
@@ -576,7 +593,7 @@ describe('HmrController', () => {
     const fake = makeFake();
     const controller = new HmrController(fake.deps);
     await controller.connect(CONN);
-    await controller.confirmAndStart({ chaId: 'cha-1', label: '미카', badgeEnabled: true });
+    await controller.confirmAndStart({ chaId: 'cha-1', label: '미카', badgeEnabled: true, autoApply: true });
     const afterInitial = fake.events.length;
 
     fake.characters.length = 0;
@@ -592,7 +609,7 @@ describe('HmrController', () => {
     const fake = makeFake();
     const first = new HmrController(fake.deps);
     await first.connect(CONN);
-    await first.confirmAndStart({ chaId: 'cha-1', label: '미카', badgeEnabled: true });
+    await first.confirmAndStart({ chaId: 'cha-1', label: '미카', badgeEnabled: true, autoApply: true });
     first.stopLoops();
     fake.events.length = 0;
 
@@ -615,7 +632,7 @@ describe('HmrController', () => {
     const fake = makeFake();
     const controller = new HmrController(fake.deps);
     await controller.connect(CONN);
-    await controller.confirmAndStart({ chaId: 'cha-1', label: '미카', badgeEnabled: true });
+    await controller.confirmAndStart({ chaId: 'cha-1', label: '미카', badgeEnabled: true, autoApply: true });
     await controller.pause();
     fake.events.length = 0;
 

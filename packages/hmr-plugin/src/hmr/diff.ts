@@ -1,6 +1,6 @@
 import { diffLines } from 'diff';
 
-import { PRESERVED_CHARACTER_KEYS } from './merge';
+import { calculateEffectiveDefinition, NAMED_LIST_KEYS, PRESERVED_CHARACTER_KEYS, type EffectiveDefinition, type MergeMode, type NameConflict, type PreservedEntries } from './merge';
 import { HMR_ASSET_PLACEHOLDER_PREFIX, type HmrAssetEntry } from './protocol';
 
 export const MAX_DIFF_LINES = 400;
@@ -54,6 +54,9 @@ export interface ConfirmDiff {
   readonly fields: readonly FieldDiff[];
   readonly unchangedKeys: readonly string[];
   readonly assetSummary: { readonly count: number; readonly totalBytes: number };
+  readonly conflicts?: readonly NameConflict[];
+  readonly preserved?: readonly PreservedEntries[];
+  readonly legacyFields?: readonly string[];
 }
 
 const MATCH_KEY_CANDIDATES = ['id', 'key', 'name', 'comment'] as const;
@@ -264,6 +267,17 @@ function countSummary(entries: readonly EntryDiff[]): EntrySummary {
   };
 }
 
+function wholeEntryDiff(record: JsonLikeRecord, index: number, kind: 'added' | 'removed'): EntryDiff {
+  return {
+    label: entryLabel(record, index),
+    kind,
+    fields: Object.entries(record).map(([key, value]) => {
+      const text = toDiffText(maskIncomingOnly(value));
+      return { key, lines: buildLineDiff(kind === 'removed' ? text : '', kind === 'added' ? text : '') };
+    }),
+  };
+}
+
 function diffRecordArrayByIndex(existing: readonly JsonLikeRecord[], incoming: readonly JsonLikeRecord[]): EntryDiff[] {
   const entries: EntryDiff[] = [];
   const length = Math.max(existing.length, incoming.length);
@@ -272,12 +286,12 @@ function diffRecordArrayByIndex(existing: readonly JsonLikeRecord[], incoming: r
     const before = existing[index];
     const after = incoming[index];
     if (before === undefined && after !== undefined) {
-      entries.push({ label: entryLabel(after, index), kind: 'added', fields: [] });
+      entries.push(wholeEntryDiff(after, index, 'added'));
       continue;
     }
 
     if (after === undefined && before !== undefined) {
-      entries.push({ label: entryLabel(before, index), kind: 'removed', fields: [] });
+      entries.push(wholeEntryDiff(before, index, 'removed'));
       continue;
     }
 
@@ -305,7 +319,7 @@ function diffRecordArrayByKey(
     const keyValue = after[matchKey] as string;
     const before = existingByKey.get(keyValue);
     if (before === undefined) {
-      entries.push({ label: entryLabel(after, index), kind: 'added', fields: [] });
+      entries.push(wholeEntryDiff(after, index, 'added'));
       return;
     }
 
@@ -318,7 +332,7 @@ function diffRecordArrayByKey(
 
   existing.forEach((before, index) => {
     if (!seen.has(before[matchKey] as string)) {
-      entries.push({ label: entryLabel(before, index), kind: 'removed', fields: [] });
+      entries.push(wholeEntryDiff(before, index, 'removed'));
     }
   });
 
@@ -328,8 +342,11 @@ function diffRecordArrayByKey(
 export function diffRecordArray(
   existing: readonly JsonLikeRecord[],
   incoming: readonly JsonLikeRecord[],
+  named = false,
 ): { entries: EntryDiff[]; summary: EntrySummary } {
-  const matchKey = pickMatchKey(existing, incoming);
+  const matchKey = named
+    ? (hasUniqueStringKey(existing, 'comment') && hasUniqueStringKey(incoming, 'comment') ? 'comment' : null)
+    : pickMatchKey(existing, incoming);
   const entries = matchKey === null ? diffRecordArrayByIndex(existing, incoming) : diffRecordArrayByKey(existing, incoming, matchKey);
 
   return { entries, summary: countSummary(entries) };
@@ -340,7 +357,10 @@ export function buildDefinitionDiff(input: {
   readonly incoming: Record<string, unknown>;
   readonly existing: Record<string, unknown>;
   readonly assets: readonly HmrAssetEntry[];
+  readonly mode?: MergeMode;
+  readonly effective?: EffectiveDefinition;
 }): ConfirmDiff {
+  const effective = input.effective ?? calculateEffectiveDefinition(input);
   const excluded: readonly string[] = input.kind === 'character' ? PRESERVED_CHARACTER_KEYS : MODULE_PRESERVED_KEYS;
   const incomingKeys = Object.keys(input.incoming).filter((key) => !excluded.includes(key));
   const existingOnlyKeys = Object.keys(input.existing).filter((key) => !excluded.includes(key) && !(key in input.incoming));
@@ -348,40 +368,42 @@ export function buildDefinitionDiff(input: {
   const fields: FieldDiff[] = [];
   const unchangedKeys: string[] = [];
 
-  for (const key of incomingKeys) {
-    if (!(key in input.existing)) {
-      fields.push({ key, kind: 'added', preservedByMerge: false });
-      continue;
-    }
-
-    const masked = maskAssetPair(input.incoming[key], input.existing[key]);
+  for (const key of [...incomingKeys, ...existingOnlyKeys]) {
+    const incoming = effective.after[key];
+    const previous = input.existing[key];
+    const masked = maskAssetPair(incoming, previous);
     if (deepEqual(masked.incoming, masked.existing)) {
       unchangedKeys.push(key);
       continue;
     }
 
-    if (isRecordArrayPair(masked.existing, masked.incoming)) {
-      const { entries, summary } = diffRecordArray(masked.existing as JsonLikeRecord[], masked.incoming as JsonLikeRecord[]);
-      fields.push({ key, kind: 'modified', preservedByMerge: false, entries, entrySummary: summary });
+    const kind = !(key in input.existing) ? 'added' : !(key in effective.after) ? 'removed' : 'modified';
+    const beforeList = previous === undefined ? [] : previous;
+    const afterList = incoming === undefined ? [] : incoming;
+    if (Array.isArray(beforeList) && beforeList.every(isPlainRecord) && Array.isArray(afterList) && afterList.every(isPlainRecord)) {
+      const namedKeys: readonly string[] = NAMED_LIST_KEYS[input.kind];
+      const { entries, summary } = diffRecordArray(beforeList, afterList, namedKeys.includes(key));
+      fields.push({ key, kind, preservedByMerge: false, entries, entrySummary: summary,
+        ...(entries.length === 0 ? { lines: buildLineDiff(toDiffText(masked.existing), toDiffText(masked.incoming)) } : {}),
+      });
       continue;
     }
 
     fields.push({
       key,
-      kind: 'modified',
+      kind,
       preservedByMerge: false,
       lines: buildLineDiff(toDiffText(masked.existing), toDiffText(masked.incoming)),
     });
   }
 
-  for (const key of existingOnlyKeys) {
-    fields.push({ key, kind: 'removed', preservedByMerge: input.kind === 'character' });
-  }
-
   return {
-    status: fields.length === 0 ? 'identical' : 'different',
+    status: fields.length === 0 && effective.conflicts.length === 0 ? 'identical' : 'different',
     fields,
     unchangedKeys,
+    conflicts: effective.conflicts,
+    preserved: effective.preserved,
+    legacyFields: effective.legacyFields,
     assetSummary: {
       count: input.assets.length,
       totalBytes: input.assets.reduce((total, asset) => total + asset.size, 0),

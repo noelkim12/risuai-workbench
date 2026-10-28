@@ -29,6 +29,8 @@ function makeFixture(payloadData: Record<string, unknown>): {
     },
     fetchBinary: async () => new Uint8Array(),
     getCharacters: async () => [],
+    getCharacterAt: async () => null,
+    getCurrentCharacterIndex: async () => -1,
     setCharacterToIndex: async () => {
       throw new Error('character write is not expected');
     },
@@ -37,13 +39,11 @@ function makeFixture(payloadData: Record<string, unknown>): {
       moduleWrites.push(nextModules);
       modules.splice(0, modules.length, ...nextModules);
     },
-    persistDatabase: async () => {},
     probeImage: async () => false,
     saveAsset: async () => 'unused',
     store: {
       load: async () => null,
       save: async () => {},
-      clear: async () => {},
     },
     sleep: async () => {},
     onState: () => {},

@@ -8,7 +8,7 @@ import type {
   HmrChatDebugSnapshot,
 } from "../hmr/protocol";
 import { createMappingStore } from "../hmr/storage";
-import { getGlobalStorage, removeGlobalStorage, setGlobalStorage } from "./plugin-storage";
+import { getGlobalStorage, setGlobalStorage } from "./plugin-storage";
 
 type RisuPlatform = "web" | "tauri" | "node";
 
@@ -25,7 +25,10 @@ type RisuDatabaseSubset = Parameters<typeof risuai.setDatabaseLite>[0];
 type RisuModuleList = NonNullable<RisuDatabaseSubset["modules"]>;
 const REQUIRED_PLUGIN_PERMISSIONS = ["db", "mainDom"] as const;
 
-// tauri/node: 'local_network' routes to native/server-side fetch that can reach 127.0.0.1.
+// tauri: 'local_network' routes to the native fetch that can reach 127.0.0.1.
+// node: 'local_network' forces every request through the server's /proxy2 (browser → node server → HMR),
+// which adds seconds per request. A plain nativeFetch lets the browser hit 127.0.0.1 directly when it can
+// (Plain Fetch, or PocketRisu's direct-first attempt) and still falls back to /proxy2 otherwise.
 // web: RisuAI hard-rejects networkRoute='local_network'; a plain nativeFetch becomes a direct
 // browser fetch when the user enables Plain Fetch (loopback is a secure-context exception).
 const LOCAL_ROUTE_FETCH_OPTIONS: LocalNetworkRequestInit = {
@@ -67,7 +70,7 @@ async function requestRequiredPluginPermissions(): Promise<boolean> {
 }
 
 async function fetchOk(url: string, init?: RequestInit): Promise<Response> {
-  const baseOptions = (await getPlatform()) === "web" ? WEB_FETCH_OPTIONS : LOCAL_ROUTE_FETCH_OPTIONS;
+  const baseOptions = (await getPlatform()) === "tauri" ? LOCAL_ROUTE_FETCH_OPTIONS : WEB_FETCH_OPTIONS;
   const options: LocalNetworkRequestInit = { ...baseOptions, ...init, requestTimeoutMs: 40_000 };
   const response = await risuai.nativeFetch(url, options);
   if (!response.ok) {
@@ -228,18 +231,14 @@ export function createRisuControllerDeps(
       const db = await risuai.getDatabase(["characters"]);
       return Array.isArray(db?.characters) ? [...db.characters] : [];
     },
+    getCharacterAt: (index) => risuai.getCharacterFromIndex(index),
+    getCurrentCharacterIndex: () => risuai.getCurrentCharacterIndex(),
     setCharacterToIndex: (index, character) => risuai.setCharacterToIndex(index, character),
     getModules: async () => {
       const db = await risuai.getDatabase(["modules"]);
       return Array.isArray(db?.modules) ? [...db.modules] : [];
     },
     setModulesLite: (modules) => risuai.setDatabaseLite({ modules: modules as RisuModuleList }),
-    persistDatabase: async () => {
-      const db = await risuai.getDatabase(["characters", "modules"]);
-      if (db !== null) {
-        await risuai.setDatabase(db);
-      }
-    },
     probeImage: async (fileName) => {
       try {
         const bytes = await risuai.readImage(fileName);
@@ -256,7 +255,6 @@ export function createRisuControllerDeps(
     store: createMappingStore({
       getItem: (key) => getGlobalStorage(key),
       setItem: (key, value) => setGlobalStorage(key, value),
-      removeItem: (key) => removeGlobalStorage(key),
     }),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     onState: ui.onState,

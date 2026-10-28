@@ -14,6 +14,8 @@ export interface EnsureAssetsProgress {
   readonly total: number;
 }
 
+const PROBE_CONCURRENCY = 6;
+
 export async function ensureAssets(
   entries: readonly HmrAssetEntry[],
   deps: AssetDeps,
@@ -21,29 +23,22 @@ export async function ensureAssets(
 ): Promise<Map<string, string>> {
   const resolved = new Map<string, string>();
   const misses = new Map<string, HmrAssetEntry>();
-  const processed = new Set<string>();
+  const unique = entries.filter((assetEntry, index) => entries.findIndex((other) => other.hash === assetEntry.hash) === index);
 
+  // readImage는 이미지 바이트 전체를 호스트 저장소(노드 서버면 HTTP)에서 읽어 오므로 하나씩 기다리면 에셋 수만큼 느려진다.
   let probed = 0;
-  for (const assetEntry of entries) {
-    if (!processed.has(assetEntry.hash)) {
-      processed.add(assetEntry.hash);
-      const cached = deps.cacheGet(assetEntry.hash);
-
-      if (cached !== undefined) {
-        resolved.set(assetEntry.hash, cached);
+  for (let start = 0; start < unique.length; start += PROBE_CONCURRENCY) {
+    await Promise.all(unique.slice(start, start + PROBE_CONCURRENCY).map(async (assetEntry) => {
+      const path = deps.cacheGet(assetEntry.hash) ?? await probeAsset(assetEntry, deps);
+      if (path !== undefined) {
+        resolved.set(assetEntry.hash, path);
+        deps.cacheSet(assetEntry.hash, path);
       } else {
-        const adoptedPath = await probeAsset(assetEntry, deps);
-        if (adoptedPath !== undefined) {
-          resolved.set(assetEntry.hash, adoptedPath);
-          deps.cacheSet(assetEntry.hash, adoptedPath);
-        } else {
-          misses.set(assetEntry.hash, assetEntry);
-        }
+        misses.set(assetEntry.hash, assetEntry);
       }
-    }
-
-    probed += 1;
-    onProgress?.({ phase: 'probe', done: probed, total: entries.length });
+      probed += 1;
+      onProgress?.({ phase: 'probe', done: probed, total: unique.length });
+    }));
   }
 
   if (entries.length === 0) {

@@ -7,6 +7,7 @@
   import { risuUi } from "./helpers/risu-api";
   import type { HmrController } from "./hmr/controller";
   import type { HmrHealthResponse } from "./hmr/protocol";
+  import type { PreviewSnapshot } from "./hmr/preview";
   import { hmrState } from "./state.svelte";
 
   type Props = {
@@ -30,7 +31,6 @@
   let project = $state<HmrHealthResponse["project"] | null>(null);
   let selection = $state<WizardSelection | null>(null);
   let permissionError = $state<string | null>(null);
-  let startError = $state<string | null>(null);
 
   const stepIndex = $derived(STEPS.findIndex((step) => step.key === screen));
 
@@ -42,15 +42,10 @@
     }
   };
 
-  const startReceiving = async (badgeEnabled: boolean): Promise<void> => {
+  const startReceiving = async (badgeEnabled: boolean, snapshot: PreviewSnapshot): Promise<void> => {
     if (!selection) return;
-    startError = null;
-    try {
-      await controller.confirmAndStart({ ...selection, badgeEnabled });
-      screen = "dashboard";
-    } catch (err) {
-      startError = err instanceof Error ? err.message : String(err);
-    }
+    await controller.confirmAndStart({ ...selection, badgeEnabled, mergeMode: snapshot.mode }, snapshot);
+    screen = "dashboard";
   };
 
   void requestInitialPermissions().catch((error: unknown) => {
@@ -112,13 +107,12 @@
         projectName={project.name}
         kind={confirmSelection.kind}
         selection={confirmSelection}
-        loadDiff={() => controller.buildConfirmDiff(confirmSelection)}
+        loadPreview={(mode) => controller.prepareConfirmPreview(confirmSelection, mode)}
         onBack={() => {
           screen = "select";
         }}
-        onStart={(badgeEnabled) => void startReceiving(badgeEnabled)}
+        onStart={startReceiving}
       />
-      {#if startError}<p class="error">{startError}</p>{/if}
     {:else}
       <Dashboard
         {controller}

@@ -7,7 +7,7 @@
  * 뒤늦게 재개된 렌더가 최신 텍스트를 덮어쓰는 것을 막는다.
  * 권한 거부 시 null — 토스트 없이도 기능 저하는 없다.
  */
-import { applyStyles, getHostDocument } from './host-dom';
+import { applyStyles, getHostDocument, removeLeftovers } from './host-dom';
 import type { HmrNotice } from '../hmr/notifier';
 
 const GOLD = '#ffc000';
@@ -35,14 +35,16 @@ export function formatNotice(notice: HmrNotice): { readonly line1: string; reado
 
 export interface HmrToast {
   show(notice: HmrNotice): void;
-  destroy(): void;
+  destroy(): Promise<void>;
 }
 
 export async function createToast(): Promise<HmrToast | null> {
   const rootDocument = await getHostDocument();
   if (rootDocument === null) return null;
 
+  await removeLeftovers(rootDocument, '[x-workbench-hmr-toast]');
   const toast = await rootDocument.createElement('div');
+  await toast.setAttribute('x-workbench-hmr-toast', 'true');
   await applyStyles(toast, [
     ['position', 'fixed'],
     ['top', '48px'],
@@ -149,13 +151,13 @@ export async function createToast(): Promise<HmrToast | null> {
       }, notice.kind === 'digest' ? DIGEST_HOLD_MS : SINGLE_HOLD_MS);
     },
 
-    destroy(): void {
+    destroy(): Promise<void> {
       destroyed = true;
       if (hideTimer !== null) {
         clearTimeout(hideTimer);
         hideTimer = null;
       }
-      void toast.remove();
+      return toast.remove();
     },
   };
 }

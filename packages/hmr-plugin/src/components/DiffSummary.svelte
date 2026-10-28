@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ConfirmDiff, FieldDiff } from "../hmr/diff";
+  import { namedListLabel } from "../hmr/merge";
   import LineDiff from "./LineDiff.svelte";
 
   type Props = { readonly diff: ConfirmDiff };
@@ -22,7 +23,7 @@
     if (field.kind === "added") return { text: "+ 추가", tone: "add" };
     if (field.kind === "removed") {
       return field.preservedByMerge
-        ? { text: "대상에만 있음 (유지됨)", tone: "neutral" }
+        ? { text: "RisuAI에만 있음 (유지됨)", tone: "neutral" }
         : { text: "− 삭제됨", tone: "remove" };
     }
     if (field.entrySummary) {
@@ -31,7 +32,7 @@
       if (added > 0) parts.push(`+${added}`);
       if (modified > 0) parts.push(`±${modified}`);
       if (removed > 0) parts.push(`−${removed}`);
-      return { text: parts.join(" · "), tone: "modify" };
+      return { text: parts.length > 0 ? parts.join(" · ") : "순서 변경", tone: "modify" };
     }
     return { text: "± 수정됨", tone: "modify" };
   };
@@ -53,8 +54,17 @@
 </script>
 
 <div class="diff-summary diff-card">
+  {#if (diff.conflicts?.length ?? 0) > 0}
+    <p class="error">같은 이름의 항목이 여러 개 있어 이름 기준으로 병합할 수 없습니다. 중복된 이름을 고치거나 전체 치환을 선택하세요.</p>
+    <ul>
+      {#each diff.conflicts ?? [] as conflict}
+        <li>{namedListLabel(conflict.key)} · {conflict.side === "existing" ? "RisuAI" : "워크벤치"} · {conflict.index + 1}번:
+          중복 이름 "{conflict.name}"</li>
+      {/each}
+    </ul>
+  {/if}
   {#if diff.status === "identical"}
-    <p class="note">✓ 대상과 워크벤치 정의가 동일합니다.</p>
+    <p class="note">✓ RisuAI와 워크벤치 정의가 동일합니다.</p>
   {:else}
     <h3>변경 요약</h3>
     <ul class="diff-fields">
@@ -71,7 +81,7 @@
             <span class="diff-badge tone-{badge.tone}">{badge.text}</span>
           </button>
           {#if expandedFields.has(field.key)}
-            {#if field.entries !== undefined}
+            {#if field.entries !== undefined && field.entries.length > 0}
               <ul class="diff-entries">
                 {#each field.entries as entry, entryIndex (field.key + "/" + String(entryIndex))}
                   {@const entryKey = field.key + "/" + String(entryIndex)}
@@ -107,6 +117,17 @@
       </button>
       {#if showUnchanged}<p class="note">{diff.unchangedKeys.join(", ")}</p>{/if}
     {/if}
+  {/if}
+  {#if (diff.preserved?.length ?? 0) > 0}
+    <p class="note">RisuAI에만 있는 항목 유지</p>
+    <ul>
+      {#each diff.preserved ?? [] as kept (kept.key)}
+        <li>{namedListLabel(kept.key)}{kept.labels.length > 0 ? `: ${kept.labels.join(", ")}` : ""}</li>
+      {/each}
+    </ul>
+  {/if}
+  {#if (diff.legacyFields?.length ?? 0) > 0}
+    <p class="note">기존 스크립트 형식은 필드 전체로 반영됩니다: {diff.legacyFields?.join(", ")}</p>
   {/if}
   {#if diff.assetSummary.count > 0}
     <p class="diff-foot">

@@ -17,6 +17,16 @@ export async function getHostDocument(): Promise<SafeHostDocument | null> {
   }
 }
 
+/**
+ * 플러그인이 재설치/리로드되면 RisuAI는 onUnload를 최대 1초만 기다리고 iframe을 종료한다.
+ * 그 사이 remove가 끝나지 못한 요소는 호스트 DOM에 고아로 남으므로, 새로 만들기 전에 치운다.
+ */
+export async function removeLeftovers(rootDocument: SafeHostDocument, selector: string): Promise<void> {
+  const leftovers = await rootDocument.querySelectorAll(selector);
+  const count = await leftovers.length();
+  for (let index = 0; index < count; index += 1) await (await leftovers.at(index))?.remove();
+}
+
 export async function applyStyles(
   element: SafeHostElement,
   styles: ReadonlyArray<readonly [string, string]>,

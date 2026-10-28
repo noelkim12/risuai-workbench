@@ -16,6 +16,7 @@ export interface HmrServerStatus {
 interface HmrServerOptions {
   readonly build?: (kind: HmrBroadcastTarget['kind'], rootFsPath: string, cache: AssetHashCache) => HmrBuildResult;
   readonly longPollTimeoutMs?: number;
+  readonly token?: string | undefined;
 }
 
 interface WatchWaiter { readonly response: ServerResponse; readonly timer: NodeJS.Timeout; readonly since: number }
@@ -59,12 +60,17 @@ function errorMessage(error: unknown): string {
 export class HmrServerService {
   private server: Server | undefined; private target: HmrBroadcastTarget | undefined; private current: HmrBuildResult | undefined;
   private cache = new AssetHashCache(); private readonly waiters: WatchWaiter[] = []; private readonly listeners = new Set<(status: HmrServerStatus) => void>();
-  private port = 0; private token = ''; private version = 0; private updateCount = 0;
+  private port = 0; private version = 0; private updateCount = 0;
   private lastChangedAssets: readonly string[] = []; private lastPollAtMs: number | undefined; private lastError: string | undefined;
   private pendingChatDebugRequest: PendingChatDebugRequest | undefined;
   private readonly activeChatDebugRequests = new Set<IncomingMessage>();
 
-  constructor(private readonly options: HmrServerOptions = {}) {}
+  /** 플러그인이 저장한 연결 문자열로 재연결할 수 있도록 서버 재시작 후에도 유지되는 인증 토큰 */
+  readonly token: string;
+
+  constructor(private readonly options: HmrServerOptions = {}) {
+    this.token = options.token !== undefined && HMR_AUTH_TOKEN_PATTERN.test(options.token) ? options.token : randomBytes(16).toString('hex');
+  }
 
   onStatus(listener: (status: HmrServerStatus) => void): () => void {
     this.listeners.add(listener);
@@ -158,7 +164,6 @@ export class HmrServerService {
 
   private async ensureServer(): Promise<void> {
     if (this.server) return;
-    this.token = randomBytes(16).toString('hex');
     for (const port of portCandidates()) {
       try {
         this.port = await this.listen(port);
@@ -417,6 +422,11 @@ function chatDebugErrorMessage(code: 'CHAT_UNAVAILABLE' | 'CHAT_SHAPE_INVALID' |
 }
 
 let hmrServerService: HmrServerService | undefined;
+
+export function initHmrServer(token: string | undefined): HmrServerService {
+  hmrServerService = new HmrServerService({ token });
+  return hmrServerService;
+}
 
 export function getHmrServerService(): HmrServerService {
   hmrServerService ??= new HmrServerService();

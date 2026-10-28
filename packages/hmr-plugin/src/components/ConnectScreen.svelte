@@ -29,10 +29,10 @@
   const reconnect = async (): Promise<void> => {
     busy = true;
     error = null;
-    const ok = await controller.tryAutoReconnect();
+    const ok = await controller.tryAutoReconnect(true);
     busy = false;
     if (ok) onReconnected();
-    else error = "자동 재연결 실패 — 연결 문자열을 다시 붙여넣으세요.";
+    else error = "자동 재연결 실패 — 연결 문자열을 다시 붙여넣어야 합니다.";
   };
 </script>
 
@@ -40,7 +40,7 @@
   <header class="screen-head">
     <h2>워크벤치와 연결</h2>
     <p class="note">
-      워크벤치 상태 스트립의 [Copy connection string]으로 복사한 문자열을 붙여넣으세요.
+      워크벤치 상태 스트립의 [Copy connection string]으로 복사한 문자열을 붙여넣기.
     </p>
   </header>
   <div class="connect-row">
@@ -57,7 +57,7 @@
   </div>
   {#if recentLabel}
     <button class="recent-chip" type="button" disabled={busy} onclick={() => void reconnect()}>
-      ↻ 최근 연결로 재연결 — {recentLabel}
+      ↻ 최근 연결로 재연결 - {recentLabel}
     </button>
   {/if}
   {#if error}<p class="error">{error}</p>{/if}

@@ -243,7 +243,8 @@ body {
 /* ---- controls ---- */
 
 .screen input[type="text"],
-.screen input:not([type="checkbox"]) {
+.screen input:not([type="checkbox"]),
+.screen select {
   box-sizing: border-box;
   width: 100%;
   padding: 12px 14px;
@@ -259,7 +260,8 @@ body {
   color: var(--faint);
 }
 
-.screen input:focus-visible {
+.screen input:focus-visible,
+.screen select:focus-visible {
   outline: none;
   border-color: var(--ink);
 }

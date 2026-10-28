@@ -11,7 +11,7 @@ import {
   type CbsLanguageClientRuntimeState,
 } from './lsp/cbsLanguageClient';
 import { registerRisuLuaSourceDocumentLinks } from './lsp/risuLuaSourceLinks';
-import { disposeHmrServer } from './hmr/HmrServerService';
+import { disposeHmrServer, initHmrServer } from './hmr/HmrServerService';
 import { AnalysisService } from './services/analysis-service';
 import { CardService } from './services/card-service';
 import { ArtifactBrowserViewProvider } from './views/ArtifactBrowserViewProvider';
@@ -26,8 +26,14 @@ export interface RisuWorkbenchExtensionApi {
   stopCbsLanguageClient: () => Promise<void>;
 }
 
+const HMR_TOKEN_KEY = 'hmr.authToken';
+
 export function activate(context: vscode.ExtensionContext): RisuWorkbenchExtensionApi {
   console.log('risu-workbench-vscode extension activated');
+
+  const savedHmrToken = context.globalState.get<string>(HMR_TOKEN_KEY);
+  const hmrToken = initHmrServer(savedHmrToken).token;
+  if (hmrToken !== savedHmrToken) void context.globalState.update(HMR_TOKEN_KEY, hmrToken);
 
   const cardService = new CardService();
   const analysisService = new AnalysisService(cardService);

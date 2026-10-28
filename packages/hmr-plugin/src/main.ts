@@ -13,12 +13,18 @@ import { createToast, type HmrToast } from './helpers/toast';
 import { HmrController, type HmrEvent, type HmrPublicState } from './hmr/controller';
 import { createNotifier } from './hmr/notifier';
 import { publishState } from './state.svelte';
+import { createPreviewModal, type PreviewModal } from './root-ui/preview-modal';
 import './styles.css';
 
 let mountedApp: ReturnType<typeof mount> | null = null;
 let badge: Awaited<ReturnType<typeof createBadge>> = null;
 let badgeRequested = false;
 let panelOpen = false;
+let unloaded = false;
+let badgeGeneration = 0;
+let previewPromise: Promise<PreviewModal> | null = null;
+let previewVisible = false;
+let previewGeneration = 0;
 
 const PERMISSION_REQUIRED_MESSAGE =
   'PocketRisu에서 DB/mainDom 권한을 허용해야 모듈을 탐색할 수 있습니다. ' +
@@ -63,34 +69,92 @@ const closePanel = async (): Promise<void> => {
   notifier.flush();
 };
 
+const destroyPreview = (): Promise<void> => {
+  previewGeneration += 1;
+  previewVisible = false;
+  const pending = previewPromise;
+  previewPromise = null;
+  return Promise.resolve(pending?.then((modal) => modal.destroy())).catch((error: unknown) => {
+    console.warn(`${PLUGIN_DISPLAY_NAME} preview cleanup failed`, error);
+  });
+};
+
+const openSync = async (): Promise<void> => {
+  const state = controller.getState();
+  if (unloaded || previewVisible || state.autoApply !== false || state.applyBusy || state.previewBusy) return;
+  const generation = previewGeneration;
+  previewVisible = true;
+  badge?.update(state, true);
+  try {
+    previewPromise ??= createPreviewModal({
+      prepare: (mode) => controller.prepareManualPreview(mode),
+      apply: (snapshot) => controller.applyPreview(snapshot),
+      onVisibilityChange: (visible) => {
+        if (unloaded || generation !== previewGeneration) return;
+        previewVisible = visible;
+        badge?.update(controller.getState(), visible);
+      },
+      returnFocus: async () => { await badge?.focusSync(); },
+      onError: (message) => { void alertErrorSafe(message); },
+    });
+    const modal = await previewPromise;
+    if (unloaded || generation !== previewGeneration) return;
+    await modal.update({ observedVersion: controller.getState().observedVersion ?? 0, applying: false });
+    await modal.show(state.mergeMode ?? 'merge-by-name');
+  } catch (error) {
+    if (unloaded || generation !== previewGeneration) return;
+    void destroyPreview();
+    badge?.update(controller.getState(), false);
+    await alertErrorSafe(error instanceof Error ? error.message : String(error));
+  }
+};
+
+const toggleAutoApply = async (enabled: boolean): Promise<void> => {
+  if (unloaded || previewVisible || (enabled && (controller.getState().applyBusy || controller.getState().previewBusy))) return;
+  try {
+    await controller.setAutoApply(enabled);
+  } catch (error) {
+    if (unloaded || controller.getState().autoApply !== enabled) return;
+    await alertErrorSafe(error instanceof Error ? error.message : String(error));
+  }
+};
+
 const handleState = (state: HmrPublicState): void => {
+  if (unloaded) return;
   publishState(state);
+  if (['idle', 'connecting', 'selecting', 'confirming', 'initialSync'].includes(state.phase)) {
+    if (previewPromise || previewVisible) void destroyPreview();
+  } else {
+    void previewPromise?.then((modal) => modal.update({ observedVersion: state.observedVersion ?? 0, applying: state.applyBusy === true }))
+      .catch((error: unknown) => console.warn(`${PLUGIN_DISPLAY_NAME} preview update failed`, error));
+  }
   if (!state.badgeEnabled) {
+    badgeGeneration += 1;
     badgeRequested = false;
-    badge?.destroy();
+    void badge?.destroy();
     badge = null;
     return;
   }
 
-  if (state.phase === 'active' && state.badgeEnabled && badge === null && !badgeRequested) {
+  if ((state.phase === 'active' || state.phase === 'paused') && state.badgeEnabled && badge === null && !badgeRequested) {
     badgeRequested = true;
-    void createBadge()
+    const generation = ++badgeGeneration;
+    void createBadge({ onToggle: toggleAutoApply, onSync: openSync })
       .then((created) => {
         const current = controller.getState();
-        if (!current.badgeEnabled) {
-          created?.destroy();
-          badgeRequested = false;
+        if (unloaded || generation !== badgeGeneration || !current.badgeEnabled) {
+          void created?.destroy();
           return;
         }
         badge = created;
-        badge?.update(current);
+        badge?.update(current, previewVisible);
       })
       .catch((error: unknown) => {
         badgeRequested = false;
         console.error(`${PLUGIN_DISPLAY_NAME} badge creation failed`, error);
       });
   }
-  badge?.update(state);
+  badge?.update(state, previewVisible);
 };
 
 const handleEvent = (event: HmrEvent): void => {
@@ -130,6 +194,7 @@ const renderErrorPanel = (message: string): void => {
 };
 
 const openPanel = async (): Promise<void> => {
+  if (unloaded) return;
   try {
     const permissionsGranted = await risuUi.requestRequiredPermissions();
     await risuUi.showContainer();
@@ -190,7 +255,7 @@ const initPermissionTimer: ReturnType<typeof setTimeout> = setTimeout(() => {
   void risuUi
     .requestRequiredPermissions()
     .then((granted) => {
-      if (granted) {
+      if (granted && !unloaded) {
         return controller.tryAutoReconnect();
       }
       return;
@@ -200,13 +265,20 @@ const initPermissionTimer: ReturnType<typeof setTimeout> = setTimeout(() => {
     });
 }, 5000);
 
-await risuai.onUnload(() => {
+// RisuAI는 onUnload가 돌려준 Promise를 최대 1초 기다린 뒤 iframe을 종료하므로, 호스트 DOM 정리를 끝까지 기다리게 한다.
+await risuai.onUnload(async () => {
+  unloaded = true;
+  badgeGeneration += 1;
   controller.stopLoops();
   clearTimeout(initPermissionTimer);
   document.removeEventListener('visibilitychange', handleForegroundChange);
   window.removeEventListener('focus', handleForegroundChange);
-  badge?.destroy();
-  void toastPromise?.then((toast) => toast?.destroy());
-  toastPromise = null;
   unmountCurrentApp();
+  const pendingToast = toastPromise;
+  toastPromise = null;
+  await Promise.allSettled([
+    destroyPreview(),
+    badge?.destroy(),
+    pendingToast?.then((toast) => toast?.destroy()),
+  ]);
 });
